@@ -129,14 +129,14 @@ export function MappingSheetPanel({ locationId }: MappingSheetPanelProps) {
       <div className="flex flex-wrap items-center gap-3">
         <button
           type="button"
-          className="rounded border border-gray-200 px-3 py-2 text-xs font-semibold text-bms-ink disabled:opacity-50"
+          className="rounded border border-line px-3 py-2 text-xs font-semibold text-ink disabled:opacity-50"
           disabled={!locationId || downloadMutation.isPending}
           aria-busy={downloadMutation.isPending}
           onClick={() => downloadMutation.mutate()}
         >
           {downloadMutation.isPending ? "Preparing…" : "Download mapping sheet"}
         </button>
-        <label className="text-xs font-semibold text-bms-muted">
+        <label className="text-xs font-semibold text-ink-muted">
           Mapping sheet file
           <input
             ref={fileInputRef}
@@ -149,7 +149,7 @@ export function MappingSheetPanel({ locationId }: MappingSheetPanelProps) {
         </label>
         <button
           type="button"
-          className="rounded bg-bms-green px-3 py-2 text-xs font-semibold text-white disabled:opacity-50"
+          className="rounded bg-accent px-3 py-2 text-xs font-semibold text-on-accent disabled:opacity-50"
           disabled={!locationId || !file || previewMutation.isPending}
           aria-busy={previewMutation.isPending}
           onClick={() => previewMutation.mutate()}
@@ -158,7 +158,7 @@ export function MappingSheetPanel({ locationId }: MappingSheetPanelProps) {
         </button>
         <button
           type="button"
-          className="rounded bg-bms-green px-3 py-2 text-xs font-semibold text-white disabled:opacity-50"
+          className="rounded bg-accent px-3 py-2 text-xs font-semibold text-on-accent disabled:opacity-50"
           disabled={!canCommit}
           aria-busy={commitMutation.isPending}
           onClick={() => commitMutation.mutate()}
@@ -168,23 +168,23 @@ export function MappingSheetPanel({ locationId }: MappingSheetPanelProps) {
       </div>
 
       {!locationId ? (
-        <p className="text-xs text-bms-muted">
+        <p className="text-xs text-ink-muted">
           Choose a location above — the sheet covers one location&apos;s assets.
         </p>
       ) : null}
-      {error ? <p className="text-xs text-red-700">{error}</p> : null}
+      {error ? <p className="text-xs text-critical-ink">{error}</p> : null}
 
       {previewedDto ? (
         <div className="space-y-3">
-          <p className="text-sm text-bms-ink">{summarizeMappingPreview(previewedDto)}</p>
+          <p className="text-sm text-ink">{summarizeMappingPreview(previewedDto)}</p>
 
           {previewedDto.creates.length > 0 ? (
             <table className="min-w-full text-sm" aria-label="Rows to create">
-              <caption className="px-2 py-1 text-left text-xs font-semibold uppercase text-bms-muted">
+              <caption className="px-2 py-1 text-left text-xs font-semibold uppercase text-ink-muted">
                 New mappings
               </caption>
               <thead>
-                <tr className="border-b text-left text-xs uppercase text-bms-muted">
+                <tr className="border-b text-left text-xs uppercase text-ink-muted">
                   <th className="px-2 py-2">Row</th>
                   <th className="px-2 py-2">Asset</th>
                   <th className="px-2 py-2">Point key</th>
@@ -195,7 +195,7 @@ export function MappingSheetPanel({ locationId }: MappingSheetPanelProps) {
               </thead>
               <tbody>
                 {previewedDto.creates.map((create) => (
-                  <tr key={`${create.assetCode}-${create.pointKey}`} className="border-b border-gray-100">
+                  <tr key={`${create.assetCode}-${create.pointKey}`} className="border-b border-well-deep">
                     <td className="px-2 py-2">{create.row}</td>
                     <td className="px-2 py-2">{create.assetCode}</td>
                     <td className="px-2 py-2 font-mono">{create.pointKey}</td>
@@ -218,11 +218,11 @@ export function MappingSheetPanel({ locationId }: MappingSheetPanelProps) {
 
           {previewedDto.updates.length > 0 ? (
             <table className="min-w-full text-sm" aria-label="Rows to update">
-              <caption className="px-2 py-1 text-left text-xs font-semibold uppercase text-bms-muted">
+              <caption className="px-2 py-1 text-left text-xs font-semibold uppercase text-ink-muted">
                 Changes to existing mappings
               </caption>
               <thead>
-                <tr className="border-b text-left text-xs uppercase text-bms-muted">
+                <tr className="border-b text-left text-xs uppercase text-ink-muted">
                   <th className="px-2 py-2">Row</th>
                   <th className="px-2 py-2">Asset</th>
                   <th className="px-2 py-2">Point key</th>
@@ -234,7 +234,7 @@ export function MappingSheetPanel({ locationId }: MappingSheetPanelProps) {
               <tbody>
                 {previewedDto.updates.flatMap((update) =>
                   update.changes.map((change) => (
-                    <tr key={`${update.assetPointId}-${change.field}`} className="border-b border-gray-100">
+                    <tr key={`${update.assetPointId}-${change.field}`} className="border-b border-well-deep">
                       <td className="px-2 py-2">{update.row}</td>
                       <td className="px-2 py-2">{update.assetCode}</td>
                       <td className="px-2 py-2 font-mono">{update.pointKey}</td>
@@ -255,8 +255,8 @@ export function MappingSheetPanel({ locationId }: MappingSheetPanelProps) {
       ) : null}
 
       {commitResult ? (
-        <div className="space-y-2 rounded border border-gray-200 bg-gray-50 p-3">
-          <p className="text-sm font-semibold text-bms-ink">{summarizeMappingCommit(commitResult)}</p>
+        <div className="space-y-2 rounded border border-line bg-well p-3">
+          <p className="text-sm font-semibold text-ink">{summarizeMappingCommit(commitResult)}</p>
           {commitResult.skipped.length > 0 ? (
             <MappingSheetProblems errors={commitResult.skipped} />
           ) : null}
@@ -281,11 +281,11 @@ function MappingSheetProblems({
 }) {
   return (
     <table className="min-w-full text-sm" aria-label="Problems">
-      <caption className="px-2 py-1 text-left text-xs font-semibold uppercase text-bms-muted">
+      <caption className="px-2 py-1 text-left text-xs font-semibold uppercase text-ink-muted">
         Rows that will not be written
       </caption>
       <thead>
-        <tr className="border-b text-left text-xs uppercase text-bms-muted">
+        <tr className="border-b text-left text-xs uppercase text-ink-muted">
           <th className="px-2 py-2">Excel row</th>
           <th className="px-2 py-2">Column</th>
           <th className="px-2 py-2">Problem</th>
@@ -295,12 +295,12 @@ function MappingSheetProblems({
       <tbody>
         {errorsByRow(errors).flatMap((group) =>
           group.errors.map((problem) => (
-            <tr key={`${group.row ?? "file"}-${problem.column ?? "-"}-${problem.code}`} className="border-b border-gray-100">
+            <tr key={`${group.row ?? "file"}-${problem.column ?? "-"}-${problem.code}`} className="border-b border-well-deep">
               {/* A file-level problem has no row and no column (`row: null`). */}
               <td className="px-2 py-2">{group.row === null ? "File" : group.row}</td>
               <td className="px-2 py-2 font-mono">{problem.column ?? "—"}</td>
               <td className="px-2 py-2">{MAPPING_SHEET_ERROR_LABELS[problem.code]}</td>
-              <td className="px-2 py-2 text-bms-muted">{problem.message}</td>
+              <td className="px-2 py-2 text-ink-muted">{problem.message}</td>
             </tr>
           )),
         )}

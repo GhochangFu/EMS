@@ -120,7 +120,7 @@ export function DashboardTemplateStockViewPage({ user }: DashboardTemplateStockV
   if (stockQ.isPending) {
     return (
       <MasterDataLayout user={user}>
-        <p className="p-4 text-sm text-bms-muted">Loading the stock catalog…</p>
+        <p className="p-4 text-sm text-ink-muted">Loading the stock catalog…</p>
       </MasterDataLayout>
     );
   }
@@ -129,7 +129,7 @@ export function DashboardTemplateStockViewPage({ user }: DashboardTemplateStockV
     return (
       <MasterDataLayout user={user}>
         <SectionCard title="Stock catalog">
-          <p className="rounded border border-red-200 bg-red-50 p-3 text-sm text-red-800">
+          <p className="rounded border border-critical-line bg-critical-wash p-3 text-sm text-critical-ink-strong">
             {apiErrorMessage(stockQ.error)}
           </p>
           <BackToAllTemplates />
@@ -145,7 +145,7 @@ export function DashboardTemplateStockViewPage({ user }: DashboardTemplateStockV
     return (
       <MasterDataLayout user={user}>
         <SectionCard title="Stock catalog">
-          <p className="rounded border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+          <p className="rounded border border-warning-line bg-warning-wash p-3 text-sm text-warning-ink">
             The stock catalog carries no entry with the code “{(code ?? "").slice(0, 64)}”. It
             may have been renamed, or the link may be older than the catalog.
           </p>
@@ -173,7 +173,7 @@ export function DashboardTemplateStockViewPage({ user }: DashboardTemplateStockV
           <div className="flex flex-wrap items-center gap-2">
             <Link
               to="/admin/dashboard-templates"
-              className="rounded border border-gray-200 px-3 py-1.5 text-xs font-semibold text-bms-muted"
+              className="rounded border border-line px-3 py-1.5 text-xs font-semibold text-ink-muted"
             >
               All templates
             </Link>
@@ -183,7 +183,7 @@ export function DashboardTemplateStockViewPage({ user }: DashboardTemplateStockV
                   aria-label="Import into organization"
                   value={importOrgId}
                   onChange={(event) => setImportOrgId(event.target.value)}
-                  className="rounded border border-gray-200 px-2 py-1 text-xs"
+                  className="rounded border border-line px-2 py-1 text-xs"
                 >
                   <option value="">Select an organization…</option>
                   {(orgsQ.data?.items ?? []).map((org) => (
@@ -202,7 +202,7 @@ export function DashboardTemplateStockViewPage({ user }: DashboardTemplateStockV
                     // The **resolved entry's** code, never `code` from the URL.
                     importM.mutate(entry.code);
                   }}
-                  className="rounded bg-bms-green px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-60"
+                  className="rounded bg-accent px-3 py-1.5 text-xs font-semibold text-on-accent disabled:opacity-60"
                 >
                   {importM.isPending ? "Importing…" : "Import"}
                 </button>
@@ -212,22 +212,22 @@ export function DashboardTemplateStockViewPage({ user }: DashboardTemplateStockV
         }
       />
 
-      <p className="rounded border border-sky-200 bg-sky-50 p-3 text-xs text-sky-900">
+      <p className="rounded border border-info-line bg-info-wash p-3 text-xs text-info-ink">
         This is repository data (ADR 0049 decision 3). It cannot be edited here — import it into
         an organization to author a draft of your own.
       </p>
 
-      {entry.description ? <p className="text-sm text-bms-muted">{entry.description}</p> : null}
+      {entry.description ? <p className="text-sm text-ink-muted">{entry.description}</p> : null}
 
       {importError ? (
-        <p className="rounded border border-red-200 bg-red-50 p-3 text-sm text-red-800">
+        <p className="rounded border border-critical-line bg-critical-wash p-3 text-sm text-critical-ink-strong">
           {importError}
         </p>
       ) : null}
 
       <SectionCard title="Canvas">
         {widgets.length === 0 ? (
-          <p className="text-sm text-bms-muted">This template has no widgets.</p>
+          <p className="text-sm text-ink-muted">This template has no widgets.</p>
         ) : (
           <div className="space-y-3">
             <DashboardCanvas tiles={widgets} renderTile={renderTemplateTile} />
@@ -252,7 +252,7 @@ function BackToAllTemplates() {
   return (
     <Link
       to="/admin/dashboard-templates"
-      className="mt-3 inline-block text-xs font-semibold text-bms-green hover:underline"
+      className="mt-3 inline-block text-xs font-semibold text-accent hover:underline"
     >
       Back to all templates
     </Link>

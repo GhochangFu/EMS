@@ -140,7 +140,7 @@ export function DashboardCanvas<T extends CanvasTile>({
                 type="button"
                 aria-label="Move widget"
                 title="Drag to move"
-                className="absolute left-1 top-1 z-10 cursor-move touch-none rounded border border-gray-300 bg-white/90 px-1 text-[10px] font-semibold leading-4 text-bms-muted"
+                className="absolute left-1 top-1 z-10 cursor-move touch-none rounded border border-line-strong bg-surface/90 px-1 text-[10px] font-semibold leading-4 text-ink-muted"
                 onPointerDown={(event) => beginDrag(tile, "move", event)}
                 onPointerMove={onHandleMove}
                 onPointerUp={endDrag}
@@ -153,7 +153,7 @@ export function DashboardCanvas<T extends CanvasTile>({
                 type="button"
                 aria-label="Resize widget"
                 title="Drag to resize"
-                className="absolute bottom-1 right-1 z-10 h-3 w-3 cursor-se-resize touch-none rounded-sm border border-gray-400 bg-white"
+                className="absolute bottom-1 right-1 z-10 h-3 w-3 cursor-se-resize touch-none rounded-sm border border-ink-hint bg-surface"
                 onPointerDown={(event) => beginDrag(tile, "resize", event)}
                 onPointerMove={onHandleMove}
                 onPointerUp={endDrag}

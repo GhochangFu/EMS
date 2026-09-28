@@ -66,7 +66,7 @@ function AssetImageThumbnail({ image }: { image: AssetImageDto }): JSX.Element {
   }
 
   return (
-    <div className="flex h-24 w-24 items-center justify-center rounded border bg-gray-50 text-[10px] text-bms-muted">
+    <div className="flex h-24 w-24 items-center justify-center rounded border bg-well text-[10px] text-ink-muted">
       {status === "loading" ? "Loading…" : "Image unavailable"}
     </div>
   );
@@ -87,14 +87,14 @@ function AssetImageCell({
   return (
     <li className="flex w-24 flex-col gap-1">
       <AssetImageThumbnail image={image} />
-      <span className="truncate text-[11px] text-bms-muted" title={image.caption ?? image.originalFilename}>
+      <span className="truncate text-[11px] text-ink-muted" title={image.caption ?? image.originalFilename}>
         {image.caption ?? image.originalFilename}
       </span>
-      <span className="text-[11px] text-bms-muted">{kilobytes(image.byteSize)}</span>
+      <span className="text-[11px] text-ink-muted">{kilobytes(image.byteSize)}</span>
       {onDelete ? (
         <button
           type="button"
-          className="text-left text-xs font-semibold text-bms-muted"
+          className="text-left text-xs font-semibold text-ink-muted"
           disabled={deleting}
           aria-busy={deleting}
           onClick={() => onDelete(image)}
@@ -114,7 +114,7 @@ export function AssetImageGallery({
   const query = useAssetImages(assetId);
 
   if (query.isPending) {
-    return <p className="text-xs text-bms-muted">Loading images...</p>;
+    return <p className="text-xs text-ink-muted">Loading images...</p>;
   }
 
   if (query.isError) {
@@ -123,11 +123,11 @@ export function AssetImageGallery({
     // `0` sends it down the generic arm, which is the right sentence for it.
     const status = query.error instanceof ApiError ? query.error.status : 0;
     const body = query.error instanceof Error ? query.error.message : "";
-    return <p className="text-xs text-bms-muted">{describeGalleryError(status, body)}</p>;
+    return <p className="text-xs text-ink-muted">{describeGalleryError(status, body)}</p>;
   }
 
   if (query.data.length === 0) {
-    return <p className="text-xs text-bms-muted">No images for this asset yet.</p>;
+    return <p className="text-xs text-ink-muted">No images for this asset yet.</p>;
   }
 
   return (

@@ -62,7 +62,7 @@ export function SiteDashboardView({ slug, organizationId }: SiteDashboardViewPro
       actions={
         <Link
           to={`/dashboards/${encodeURIComponent(slug)}?organizationId=${encodeURIComponent(organizationId)}`}
-          className="text-sm font-semibold text-bms-green hover:underline"
+          className="text-sm font-semibold text-accent hover:underline"
         >
           Open in Dashboards
         </Link>
@@ -71,18 +71,18 @@ export function SiteDashboardView({ slug, organizationId }: SiteDashboardViewPro
       {dashboardQ.data !== undefined ? (
         <DashboardLiveCanvas dashboard={dashboardQ.data} />
       ) : dashboardQ.isError ? (
-        <div role="alert" className="rounded border border-red-200 bg-red-50 p-3 text-sm text-red-800">
+        <div role="alert" className="rounded border border-critical-line bg-critical-wash p-3 text-sm text-critical-ink-strong">
           <p>{apiErrorMessage(dashboardQ.error)}</p>
           <button
             type="button"
             onClick={tryAgain}
-            className="mt-2 rounded border border-red-300 px-3 py-1 text-xs font-semibold text-red-800 hover:bg-red-100"
+            className="mt-2 rounded border border-critical-line-strong px-3 py-1 text-xs font-semibold text-critical-ink-strong hover:bg-critical-wash-strong"
           >
             Try again
           </button>
         </div>
       ) : (
-        <p role="status" className="text-sm text-bms-muted">
+        <p role="status" className="text-sm text-ink-muted">
           Loading dashboard…
         </p>
       )}

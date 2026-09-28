@@ -44,16 +44,16 @@ export function SustainabilityEntryPage({ user }: SustainabilityEntryPageProps) 
 
   if (listQ.isLoading) {
     return (
-      <AppShell user={user} kpiRibbon={<span className="text-bms-ink">Sustainability</span>}>
-        <p className="mx-auto max-w-[1200px] text-sm text-bms-muted">Opening Sustainability…</p>
+      <AppShell user={user} kpiRibbon={<span className="text-ink">Sustainability</span>}>
+        <p className="mx-auto max-w-[1200px] text-sm text-ink-muted">Opening Sustainability…</p>
       </AppShell>
     );
   }
 
   if (listQ.isError) {
     return (
-      <AppShell user={user} kpiRibbon={<span className="text-bms-ink">Sustainability</span>}>
-        <p className="mx-auto max-w-[1200px] rounded border border-red-200 bg-red-50 p-3 text-sm text-red-800">
+      <AppShell user={user} kpiRibbon={<span className="text-ink">Sustainability</span>}>
+        <p className="mx-auto max-w-[1200px] rounded border border-critical-line bg-critical-wash p-3 text-sm text-critical-ink-strong">
           {apiErrorMessage(listQ.error as Error)}
         </p>
       </AppShell>

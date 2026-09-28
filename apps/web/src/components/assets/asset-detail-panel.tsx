@@ -55,15 +55,15 @@ export function AssetDetailPanel({ asset, domainLabel, onClose }: AssetDetailPan
   ];
 
   return (
-    <aside className="fixed right-0 top-0 z-50 flex h-full w-[90%] max-w-[380px] flex-col border-l border-gray-200 bg-white shadow-lg">
-      <div className="flex items-start justify-between gap-2 border-b border-gray-200 px-3 py-2">
+    <aside className="fixed right-0 top-0 z-50 flex h-full w-[90%] max-w-[380px] flex-col border-l border-line bg-surface shadow-lg">
+      <div className="flex items-start justify-between gap-2 border-b border-line px-3 py-2">
         <div>
           <h2 className="font-condensed text-base font-bold">Asset · {asset.code}</h2>
-          <p className="text-xs text-bms-muted">{asset.name}</p>
+          <p className="text-xs text-ink-muted">{asset.name}</p>
         </div>
         <div className="flex shrink-0 items-center gap-2">
           <StatusPill label={activeLabel(asset.active)} tone={asset.active ? "ok" : "offline"} />
-          <button type="button" className="text-xs text-bms-muted" onClick={onClose}>
+          <button type="button" className="text-xs text-ink-muted" onClick={onClose}>
             Close
           </button>
         </div>
@@ -73,30 +73,30 @@ export function AssetDetailPanel({ asset, domainLabel, onClose }: AssetDetailPan
         <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-xs">
           {facts.map(([term, value]) => (
             <div key={term} className="contents">
-              <dt className="font-medium uppercase tracking-wide text-bms-muted">{term}</dt>
-              <dd className="text-bms-ink">{value}</dd>
+              <dt className="font-medium uppercase tracking-wide text-ink-muted">{term}</dt>
+              <dd className="text-ink">{value}</dd>
             </div>
           ))}
         </dl>
 
-        {healthQ.isLoading ? <p className="text-xs text-bms-muted">Loading health…</p> : null}
+        {healthQ.isLoading ? <p className="text-xs text-ink-muted">Loading health…</p> : null}
         {healthQ.isError ? (
-          <p className="rounded border border-red-200 bg-red-50 p-2 text-xs text-red-800">
+          <p className="rounded border border-critical-line bg-critical-wash p-2 text-xs text-critical-ink-strong">
             Health could not be read. {apiErrorMessage(healthQ.error as Error)}
           </p>
         ) : null}
         {healthQ.data ? <AssetHealthCard title="Health" data={healthQ.data} /> : null}
 
-        <section className="border-t border-gray-200 pt-3">
-          <h3 className="text-[11px] font-medium uppercase tracking-wide text-bms-muted">Dashboards</h3>
-          {dashboardsQ.isLoading ? <p className="mt-1 text-xs text-bms-muted">Loading dashboards…</p> : null}
+        <section className="border-t border-line pt-3">
+          <h3 className="text-[11px] font-medium uppercase tracking-wide text-ink-muted">Dashboards</h3>
+          {dashboardsQ.isLoading ? <p className="mt-1 text-xs text-ink-muted">Loading dashboards…</p> : null}
           {dashboardsQ.isError ? (
-            <p className="mt-1 rounded border border-red-200 bg-red-50 p-2 text-xs text-red-800">
+            <p className="mt-1 rounded border border-critical-line bg-critical-wash p-2 text-xs text-critical-ink-strong">
               {apiErrorMessage(dashboardsQ.error as Error)}
             </p>
           ) : null}
           {dashboardsQ.isSuccess && dashboards.length === 0 ? (
-            <p className="mt-1 text-xs text-bms-muted">{noDashboardsSentence(asset.templateId)}</p>
+            <p className="mt-1 text-xs text-ink-muted">{noDashboardsSentence(asset.templateId)}</p>
           ) : null}
           {dashboards.length > 0 ? (
             <ul className="mt-1 space-y-1 text-xs">
@@ -106,11 +106,11 @@ export function AssetDetailPanel({ asset, domainLabel, onClose }: AssetDetailPan
                       slug can live in two organizations, and the viewer reads the query. */}
                   <Link
                     to={`/dashboards/${dashboard.slug}?organizationId=${dashboard.organizationId}`}
-                    className="font-semibold text-bms-green hover:underline"
+                    className="font-semibold text-accent hover:underline"
                   >
                     {dashboard.name}
                   </Link>
-                  <span className="text-bms-muted">· {dashboard.widgetCount} widgets</span>
+                  <span className="text-ink-muted">· {dashboard.widgetCount} widgets</span>
                 </li>
               ))}
             </ul>

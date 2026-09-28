@@ -92,7 +92,7 @@ export function AssetGroupsAdminPage({ user }: AssetGroupsAdminPageProps) {
       />
 
       {error ? (
-        <div role="alert" className="mb-4 rounded border border-red-300 bg-red-50 p-3 text-sm text-red-800">
+        <div role="alert" className="mb-4 rounded border border-critical-line-strong bg-critical-wash p-3 text-sm text-critical-ink-strong">
           {error}
         </div>
       ) : null}
@@ -121,11 +121,11 @@ export function AssetGroupsAdminPage({ user }: AssetGroupsAdminPageProps) {
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,20rem)_minmax(0,1fr)]">
         <SectionCard title="Groups">
-          {groupsQ.isLoading ? <p className="text-sm text-slate-500">Loading groups…</p> : null}
+          {groupsQ.isLoading ? <p className="text-sm text-ink-faint">Loading groups…</p> : null}
           {!groupsQ.isLoading && groups.length === 0 ? (
-            <p className="text-sm text-slate-500">No asset groups in your scope.</p>
+            <p className="text-sm text-ink-faint">No asset groups in your scope.</p>
           ) : null}
-          <ul className="divide-y divide-slate-200">
+          <ul className="divide-y divide-line">
             {groups.map((group) => (
               <li key={group.id}>
                 <button
@@ -133,11 +133,11 @@ export function AssetGroupsAdminPage({ user }: AssetGroupsAdminPageProps) {
                   onClick={() => setSelectedGroupId(group.id)}
                   aria-current={group.id === selectedGroupId ? "true" : undefined}
                   className={`w-full px-2 py-2 text-left text-sm ${
-                    group.id === selectedGroupId ? "bg-slate-100 font-medium" : ""
+                    group.id === selectedGroupId ? "bg-canvas font-medium" : ""
                   }`}
                 >
                   <span className="block">{group.name}</span>
-                  <span className="block text-xs text-slate-500">
+                  <span className="block text-xs text-ink-faint">
                     {group.locationName ?? "—"} · {group.memberCount}{" "}
                     {group.memberCount === 1 ? "member" : "members"}
                   </span>
@@ -149,30 +149,30 @@ export function AssetGroupsAdminPage({ user }: AssetGroupsAdminPageProps) {
 
         <SectionCard title={selectedGroup ? `Members — ${selectedGroup.name}` : "Members"}>
           {selectedGroupId === null ? (
-            <p className="text-sm text-slate-500">Select a group to set member roles.</p>
+            <p className="text-sm text-ink-faint">Select a group to set member roles.</p>
           ) : null}
           {selectedGroupId !== null && membersQ.isLoading ? (
-            <p className="text-sm text-slate-500">Loading members…</p>
+            <p className="text-sm text-ink-faint">Loading members…</p>
           ) : null}
           {selectedGroupId !== null && !membersQ.isLoading && members.length === 0 ? (
-            <p className="text-sm text-slate-500">This group has no members.</p>
+            <p className="text-sm text-ink-faint">This group has no members.</p>
           ) : null}
 
           {members.length > 0 ? (
             <table className="w-full text-sm">
               <thead>
-                <tr className="text-left text-xs uppercase text-slate-500">
+                <tr className="text-left text-xs uppercase text-ink-faint">
                   <th className="py-2">Asset</th>
                   <th className="py-2">Role</th>
                   <th className="py-2">Also in this group</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-200">
+              <tbody className="divide-y divide-line">
                 {members.map((member) => (
                   <tr key={member.membershipId}>
                     <td className="py-2">
                       <span className="block">{member.assetName}</span>
-                      <span className="block text-xs text-slate-500">{member.assetCode}</span>
+                      <span className="block text-xs text-ink-faint">{member.assetCode}</span>
                     </td>
                     <td className="py-2">
                       <select
@@ -187,7 +187,7 @@ export function AssetGroupsAdminPage({ user }: AssetGroupsAdminPageProps) {
                             role: event.target.value === "" ? null : event.target.value,
                           })
                         }
-                        className="rounded border border-slate-300 px-2 py-1"
+                        className="rounded border border-line-strong px-2 py-1"
                       >
                         <option value="">No role</option>
                         {roles.map((role) => (
@@ -197,7 +197,7 @@ export function AssetGroupsAdminPage({ user }: AssetGroupsAdminPageProps) {
                         ))}
                       </select>
                     </td>
-                    <td className="py-2 text-xs text-slate-500">
+                    <td className="py-2 text-xs text-ink-faint">
                       {/*
                         ADR 0049 decision 6 ruled that an unresolved role imports
                         as a widget with zero bindings rendering "no data bound".

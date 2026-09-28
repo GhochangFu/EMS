@@ -33,14 +33,14 @@ export function AlarmSummaryCard({
   // tone exactly that silence. The compiler does not find these for you.
   const border =
     tone === "offline"
-      ? "after:bg-gray-400"
+      ? "after:bg-ink-hint"
       : tone === "critical"
-        ? "after:bg-red-600"
+        ? "after:bg-critical"
         : tone === "warning"
-          ? "after:bg-amber-500"
+          ? "after:bg-warning"
           : tone === "info"
-            ? "after:bg-sky-500"
-            : "after:bg-bms-green";
+            ? "after:bg-info"
+            : "after:bg-accent";
   const icon =
     tone === "offline"
       ? "?"
@@ -53,17 +53,17 @@ export function AlarmSummaryCard({
             : "o";
 
   return (
-    <div className={`relative overflow-hidden rounded-lg border border-gray-200 bg-white p-4 shadow-sm after:absolute after:inset-x-0 after:top-0 after:h-0.5 ${border}`}>
-      <div className="flex items-center gap-2 text-[10px] font-bold uppercase tracking-[0.18em] text-bms-muted">
-        <span className="grid h-6 w-6 place-items-center rounded border border-current bg-white/70 font-mono">
+    <div className={`relative overflow-hidden rounded-lg border border-line bg-surface p-4 shadow-sm after:absolute after:inset-x-0 after:top-0 after:h-0.5 ${border}`}>
+      <div className="flex items-center gap-2 text-[10px] font-bold uppercase tracking-[0.18em] text-ink-muted">
+        <span className="grid h-6 w-6 place-items-center rounded border border-current bg-surface/70 font-mono">
           {icon}
         </span>
         {label}
       </div>
       {value === 0 && emptyLabel ? (
-        <p className="mt-4 text-sm text-bms-muted">{emptyLabel}</p>
+        <p className="mt-4 text-sm text-ink-muted">{emptyLabel}</p>
       ) : (
-        <p className="mt-4 font-condensed text-3xl font-bold tabular-nums text-bms-ink">
+        <p className="mt-4 font-condensed text-3xl font-bold tabular-nums text-ink">
           {value}
         </p>
       )}

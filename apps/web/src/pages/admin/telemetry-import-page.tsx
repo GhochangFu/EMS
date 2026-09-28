@@ -77,7 +77,7 @@ export function TelemetryImportPage({ user }: TelemetryImportPageProps) {
         subtitle="Bulk-load hand-collected or third-party readings from a CSV or Excel file"
       />
       <SectionCard title="1. Choose a file" bodyClassName="p-4 space-y-3">
-        <p className="text-xs text-bms-muted">
+        <p className="text-xs text-ink-muted">
           Columns: <code className="font-mono">asset_code</code> or{" "}
           <code className="font-mono">asset_id</code>, <code className="font-mono">point_key</code>,{" "}
           <code className="font-mono">value</code>, <code className="font-mono">unit</code> (optional),{" "}
@@ -96,7 +96,7 @@ export function TelemetryImportPage({ user }: TelemetryImportPageProps) {
               setError(null);
             }}
           />
-          <label className="text-xs font-semibold text-bms-muted">
+          <label className="text-xs font-semibold text-ink-muted">
             Source kind
             <select
               className="mt-1 block rounded border px-3 py-1.5 text-sm"
@@ -109,7 +109,7 @@ export function TelemetryImportPage({ user }: TelemetryImportPageProps) {
               <option value="manual">Manual</option>
             </select>
           </label>
-          <label className="text-xs font-semibold text-bms-muted">
+          <label className="text-xs font-semibold text-ink-muted">
             On conflict
             <select
               className="mt-1 block rounded border px-3 py-1.5 text-sm"
@@ -124,7 +124,7 @@ export function TelemetryImportPage({ user }: TelemetryImportPageProps) {
           </label>
           <button
             type="button"
-            className="rounded bg-bms-green px-3 py-2 text-xs font-semibold text-white disabled:opacity-50"
+            className="rounded bg-accent px-3 py-2 text-xs font-semibold text-on-accent disabled:opacity-50"
             disabled={!file || previewMutation.isPending}
             aria-busy={previewMutation.isPending}
             onClick={() => previewMutation.mutate()}
@@ -134,30 +134,30 @@ export function TelemetryImportPage({ user }: TelemetryImportPageProps) {
           {file || preview || commitResult ? (
             <button
               type="button"
-              className="rounded border px-3 py-2 text-xs font-semibold text-bms-muted"
+              className="rounded border px-3 py-2 text-xs font-semibold text-ink-muted"
               onClick={reset}
             >
               Start over
             </button>
           ) : null}
         </div>
-        {error ? <div className="text-xs text-red-700">{error}</div> : null}
+        {error ? <div className="text-xs text-critical-ink">{error}</div> : null}
       </SectionCard>
 
       {preview ? (
         <SectionCard title="2. Preview" bodyClassName="p-4 space-y-3">
-          <p className="text-sm text-bms-ink">{summarizePreview(preview)}</p>
+          <p className="text-sm text-ink">{summarizePreview(preview)}</p>
           {preview.rejected.length > 0 ? (
             <table className="min-w-full text-sm">
               <thead>
-                <tr className="border-b text-left text-xs uppercase text-bms-muted">
+                <tr className="border-b text-left text-xs uppercase text-ink-muted">
                   <th className="px-2 py-2">Rows</th>
                   <th className="px-2 py-2">Reason</th>
                 </tr>
               </thead>
               <tbody>
                 {groupRejectionsByReason(preview.rejected).map((group) => (
-                  <tr key={group.reason} className="border-b border-gray-100">
+                  <tr key={group.reason} className="border-b border-well-deep">
                     <td className="px-2 py-2 font-mono">{group.rowNumbers.join(", ")}</td>
                     <td className="px-2 py-2">{group.reason}</td>
                   </tr>
@@ -167,7 +167,7 @@ export function TelemetryImportPage({ user }: TelemetryImportPageProps) {
           ) : null}
           <button
             type="button"
-            className="rounded bg-bms-green px-3 py-2 text-xs font-semibold text-white disabled:opacity-50"
+            className="rounded bg-accent px-3 py-2 text-xs font-semibold text-on-accent disabled:opacity-50"
             disabled={preview.acceptedCount === 0 || commitMutation.isPending || commitResult !== null}
             aria-busy={commitMutation.isPending}
             onClick={() => commitMutation.mutate()}
@@ -179,18 +179,18 @@ export function TelemetryImportPage({ user }: TelemetryImportPageProps) {
 
       {commitResult ? (
         <SectionCard title="3. Result" bodyClassName="p-4 space-y-3">
-          <p className="text-sm text-bms-ink">{summarizeCommit(commitResult)}</p>
+          <p className="text-sm text-ink">{summarizeCommit(commitResult)}</p>
           {commitResult.rejected.length > 0 ? (
             <table className="min-w-full text-sm">
               <thead>
-                <tr className="border-b text-left text-xs uppercase text-bms-muted">
+                <tr className="border-b text-left text-xs uppercase text-ink-muted">
                   <th className="px-2 py-2">Rows</th>
                   <th className="px-2 py-2">Reason</th>
                 </tr>
               </thead>
               <tbody>
                 {groupRejectionsByReason(commitResult.rejected).map((group) => (
-                  <tr key={group.reason} className="border-b border-gray-100">
+                  <tr key={group.reason} className="border-b border-well-deep">
                     <td className="px-2 py-2 font-mono">{group.rowNumbers.join(", ")}</td>
                     <td className="px-2 py-2">{group.reason}</td>
                   </tr>

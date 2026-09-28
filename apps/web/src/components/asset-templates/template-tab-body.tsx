@@ -138,7 +138,7 @@ export function TemplateTabBody({
   // as the docblock above promises.
   const unreachable: never = tab;
   return (
-    <p className="rounded border border-dashed border-gray-300 p-4 text-xs text-bms-muted">
+    <p className="rounded border border-dashed border-line-strong p-4 text-xs text-ink-muted">
       The {String(unreachable)} editor is not wired up yet.
     </p>
   );

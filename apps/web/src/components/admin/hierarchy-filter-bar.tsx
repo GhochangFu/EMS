@@ -97,7 +97,7 @@ export function HierarchyFilterBar({
     <div className="flex flex-wrap gap-3">
       {showOrg ? (
         <select
-          className="rounded border border-gray-200 px-3 py-1.5 text-xs"
+          className="rounded border border-line px-3 py-1.5 text-xs"
           value={effectiveOrgId}
           disabled={orgLocked}
           onChange={(event) => {
@@ -120,7 +120,7 @@ export function HierarchyFilterBar({
 
       {showLocation ? (
         <select
-          className="rounded border border-gray-200 px-3 py-1.5 text-xs"
+          className="rounded border border-line px-3 py-1.5 text-xs"
           value={selection.locationId ?? ""}
           disabled={!effectiveOrgId}
           onChange={(event) => {
@@ -143,7 +143,7 @@ export function HierarchyFilterBar({
 
       {showRtu ? (
         <select
-          className="rounded border border-gray-200 px-3 py-1.5 text-xs"
+          className="rounded border border-line px-3 py-1.5 text-xs"
           value={selection.rtuId ?? ""}
           disabled={!selection.locationId}
           onChange={(event) => {
@@ -166,7 +166,7 @@ export function HierarchyFilterBar({
 
       {showAsset ? (
         <select
-          className="rounded border border-gray-200 px-3 py-1.5 text-xs"
+          className="rounded border border-line px-3 py-1.5 text-xs"
           value={selection.assetId ?? ""}
           disabled={!isAssetLevelReady(showRtu, selection)}
           onChange={(event) => {

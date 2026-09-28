@@ -41,7 +41,7 @@ export function ControlRoomViewField({
     // OQ3: shown as it is, and not changeable — never the first option ("Generated"), which
     // is what a select with no matching option would display.
     return (
-      <label className="block text-xs font-semibold text-bms-muted sm:col-span-2">
+      <label className="block text-xs font-semibold text-ink-muted sm:col-span-2">
         Control Room view
         <select className="mt-1 w-full rounded border px-3 py-2 text-sm" value="builtin" disabled>
           <option value="builtin" disabled>
@@ -60,7 +60,7 @@ export function ControlRoomViewField({
       : null;
   return (
     <>
-      <label className="block text-xs font-semibold text-bms-muted sm:col-span-2">
+      <label className="block text-xs font-semibold text-ink-muted sm:col-span-2">
         Control Room view
         <select
           className="mt-1 w-full rounded border px-3 py-2 text-sm"
@@ -75,7 +75,7 @@ export function ControlRoomViewField({
         </select>
       </label>
       {value.kind === "dashboard" ? (
-        <label className="block text-xs font-semibold text-bms-muted sm:col-span-2">
+        <label className="block text-xs font-semibold text-ink-muted sm:col-span-2">
           Control Room dashboard
           <select
             className="mt-1 w-full rounded border px-3 py-2 text-sm"

@@ -38,7 +38,7 @@ export function DashboardLiveCanvas({ dashboard }: DashboardLiveCanvasProps) {
 
   if (tiles.length === 0) {
     return (
-      <p className="rounded border border-dashed border-gray-300 p-4 text-xs text-bms-muted">
+      <p className="rounded border border-dashed border-line-strong p-4 text-xs text-ink-muted">
         This dashboard has no widgets yet.
       </p>
     );

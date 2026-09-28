@@ -137,8 +137,8 @@ export function FormulaPreview({ expression, dialect, disabled = false }: Formul
   }
 
   return (
-    <div className="mt-2 rounded border border-dashed border-gray-200 p-2">
-      <span className="block text-[11px] font-semibold uppercase tracking-wide text-bms-muted">
+    <div className="mt-2 rounded border border-dashed border-line p-2">
+      <span className="block text-[11px] font-semibold uppercase tracking-wide text-ink-muted">
         Preview
       </span>
       {keys.length > 0 || crossRefs.length > 0 || paramRefs.length > 0 || windowReads.length > 0 ? (
@@ -199,7 +199,7 @@ export function FormulaPreview({ expression, dialect, disabled = false }: Formul
       <output
         aria-label="Preview result"
         className={`mt-1 block text-xs ${
-          preview.state === "ok" ? "font-semibold text-bms-ink" : "text-bms-muted"
+          preview.state === "ok" ? "font-semibold text-ink" : "text-ink-muted"
         }`}
       >
         {preview.state === "ok" ? `= ${preview.value}` : preview.message}
@@ -218,8 +218,8 @@ type SampleInputProps = {
 function SampleInput({ label, value, disabled, onChange }: SampleInputProps) {
   return (
     <label className="block space-y-0.5">
-      <span className="block text-[11px] text-bms-muted">
-        <code className="rounded bg-gray-100 px-1">{label}</code>
+      <span className="block text-[11px] text-ink-muted">
+        <code className="rounded bg-well-deep px-1">{label}</code>
       </span>
       <input
         type="number"
@@ -230,8 +230,8 @@ function SampleInput({ label, value, disabled, onChange }: SampleInputProps) {
         value={value}
         disabled={disabled}
         onChange={(event) => onChange(event.target.value)}
-        className={`w-28 rounded border border-gray-200 px-2 py-1 text-xs ${
-          disabled ? "bg-gray-50 text-bms-muted" : ""
+        className={`w-28 rounded border border-line px-2 py-1 text-xs ${
+          disabled ? "bg-well text-ink-muted" : ""
         }`}
       />
     </label>

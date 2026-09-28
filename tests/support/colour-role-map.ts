@@ -22,6 +22,13 @@
  * and lists `on-accent` (`asset-templates-page-tab-strip.tsx`'s `text-white/80` sits on
  * `bg-bms-green`).
  *
+ * `F3.65b` (plan `docs/plans/f3.65b-pages-on-roles.md` §3 D4, owner rulings OQ3/OQ4) adds two more
+ * merged overrides, both hand sites the codemod applies rather than a rule: `bg-bms-ink` →
+ * `chrome` (the two `report-schedules.tsx` / `reports-panel.tsx` dark buttons, ΔE 1.27) and
+ * `text-gray-500` → `neutral-ink` (the two `scoped-action-link.tsx` / `rules-panel.tsx` pills, ΔE
+ * 17.65 — steeper than `text-gray-500`'s usual `ink-faint`, because the owner picked the tree's
+ * standard neutral-pill role over the merge nearest in colour).
+ *
  * `text-violet-700` is not one of §2.3's 76 `.tsx` rows (§2.1 scopes that table to `.tsx`;
  * `lib/value-provenance.ts` is `.ts`) — it is `SHADE_ROLES`' 77th row, added so `roleFor` covers
  * the whole tree `webColourSourceFiles()` walks (M4). Until the owner's ruling of 2026-09-28
@@ -29,8 +36,8 @@
  * `configuration` markers it sits beside (`slate-500` / `sky-700`). The owner ruled it keeps its
  * own colour instead, as the 41st role `simulated-ink` — light Tailwind violet-700 `#6D28D9`
  * exact; dark `#A67DE8`, D3-derived (hue/sat kept, lightness raised in 0.5% steps) to clear 4.5:1
- * on sheet, paper and `well` (5.13 / 5.54 / 4.59) — `value-provenance.ts` itself is untouched
- * (`F3.65b` migrates it to the class).
+ * on sheet, paper and `well` (5.13 / 5.54 / 4.59). `F3.65a` left `value-provenance.ts` itself
+ * untouched; `F3.65b` migrated it to the class (`text-simulated-ink`).
  */
 
 export type ShadeKind = "exact" | "merged";
@@ -158,6 +165,8 @@ export const CLASS_OVERRIDES: Record<string, ClassOverride> = {
   "to-amber-400": { role: "warning", kind: "merged", deltaE: 10.57 },
   "border-amber-300": { role: "warning-line", kind: "merged", deltaE: 7.64 },
   "to-amber-300": { role: "warning", kind: "merged", deltaE: 16.37 },
+  "bg-bms-ink": { role: "chrome", kind: "merged", deltaE: 1.27 },
+  "text-gray-500": { role: "neutral-ink", kind: "merged", deltaE: 17.65 },
 };
 
 const COLOUR_UTILITY_PREFIX =

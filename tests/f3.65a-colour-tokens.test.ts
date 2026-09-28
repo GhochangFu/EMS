@@ -166,7 +166,13 @@ const ROLE_HEX: Record<string, { light: string; dark: string }> = {
  */
 const tailwindConfig = (await import(pathToFileURL(TAILWIND_CONFIG_PATH).href)).default as {
   darkMode: unknown;
-  theme: { extend: { colors: Record<string, unknown> } };
+  theme: {
+    extend: {
+      colors: Record<string, unknown>;
+      borderColor?: Record<string, unknown>;
+      ringOffsetColor?: Record<string, unknown>;
+    };
+  };
 };
 
 /**
@@ -251,6 +257,19 @@ describe("F3.65a: the token file (index.css) and the Tailwind mapping", () => {
     expect(literal).toEqual([]);
   });
 
+  // F3.65b review: Tailwind 3.4 preflight sets `border-color: theme('borderColor.DEFAULT')`
+  // (stock `#E5E7EB`) on every element, and `--tw-ring-offset-color` defaults to `#fff`, so a bare
+  // `border` / `divide-y` / `ring-offset-2` stayed light in dark. Both defaults now read a role;
+  // `line` and `surface` are exactly those two light values, so no light pixel moves. The ring
+  // offset default has no `<alpha-value>`: the ring plugin copies it into the variable unsubstituted.
+  it("T11 theme.extend.borderColor.DEFAULT reads --line", () => {
+    expect(tailwindConfig.theme.extend.borderColor?.DEFAULT).toBe("rgb(var(--line) / <alpha-value>)");
+  });
+
+  it("T11 theme.extend.ringOffsetColor.DEFAULT reads --surface, with no <alpha-value> placeholder", () => {
+    expect(tailwindConfig.theme.extend.ringOffsetColor?.DEFAULT).toBe("rgb(var(--surface))");
+  });
+
   it('T11 tailwind.config.js sets darkMode to ["selector", \'[data-theme="dark"]\']', () => {
     expect(tailwindConfig.darkMode).toEqual(["selector", '[data-theme="dark"]']);
   });
@@ -290,6 +309,16 @@ describe("F3.65a: the token file (index.css) and the Tailwind mapping", () => {
       }
     }
     expect(outside).toEqual([]);
+  });
+
+  // F3.65b review: `leaflet.css` paints the popup `background: white`, and `world-map.tsx`'s popup
+  // content uses role inks that turn light in dark (1.19:1). The rule lives outside the two token
+  // blocks (T14 is about role declarations only) and sets the background alone, so no light pixel
+  // moves. It wins on source order: `leaflet.css` bundles before `index.css`.
+  it("T15 index.css paints the Leaflet popup and its tip from --surface", () => {
+    const text = css().replace(/\/\*[\s\S]*?\*\//g, "");
+    const rule = /\.leaflet-popup-content-wrapper\s*,\s*\.leaflet-popup-tip\s*\{([^}]*)\}/.exec(text);
+    expect(rule?.[1] ?? "").toMatch(/(^|;|\s)background:\s*rgb\(var\(--surface\)\)\s*;/);
   });
 
   it("T13 index.css holds no # hex literal outside a comment", () => {

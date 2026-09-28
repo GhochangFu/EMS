@@ -42,7 +42,7 @@ export function DashboardViewerPage({ user }: DashboardViewerPageProps) {
   });
 
   return (
-    <AppShell user={user} kpiRibbon={<span className="text-bms-ink">{dashboardQ.data?.name ?? "Dashboard"}</span>}>
+    <AppShell user={user} kpiRibbon={<span className="text-ink">{dashboardQ.data?.name ?? "Dashboard"}</span>}>
       <div className="mx-auto max-w-[1400px] space-y-4 pb-8">
         <PageHeader
           eyebrow="Dashboards"
@@ -52,7 +52,7 @@ export function DashboardViewerPage({ user }: DashboardViewerPageProps) {
             dashboardQ.data && canAuthorDashboards(user.role) ? (
               <Link
                 to={`/admin/dashboards/${slug}${organizationId ? `?organizationId=${organizationId}` : ""}`}
-                className="rounded border border-gray-300 px-3 py-1.5 text-xs font-semibold text-bms-ink hover:bg-gray-50"
+                className="rounded border border-line-strong px-3 py-1.5 text-xs font-semibold text-ink hover:bg-well"
               >
                 Edit dashboard
               </Link>
@@ -60,9 +60,9 @@ export function DashboardViewerPage({ user }: DashboardViewerPageProps) {
           }
         />
 
-        {dashboardQ.isLoading ? <p className="text-sm text-bms-muted">Loading dashboard…</p> : null}
+        {dashboardQ.isLoading ? <p className="text-sm text-ink-muted">Loading dashboard…</p> : null}
         {dashboardQ.isError ? (
-          <p className="rounded border border-red-200 bg-red-50 p-3 text-sm text-red-800">
+          <p className="rounded border border-critical-line bg-critical-wash p-3 text-sm text-critical-ink-strong">
             {apiErrorMessage(dashboardQ.error as Error)}
           </p>
         ) : null}

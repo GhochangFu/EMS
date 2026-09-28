@@ -292,7 +292,7 @@ export function CracSchematic({ onSelectAsset }: CracSchematicProps) {
         x={250}
         y={105}
         textAnchor="middle"
-        className="fill-bms-ink font-condensed text-sm font-bold"
+        className="fill-ink font-condensed text-sm font-bold"
       >
         CRAC UNIT 101
       </text>

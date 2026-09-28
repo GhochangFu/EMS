@@ -121,13 +121,13 @@ export function PointsTab({ template, editable, onSaved, onDirtyChange }: Points
   return (
     <div className="space-y-3">
       {error ? (
-        <p className="rounded border border-red-200 bg-red-50 p-3 text-sm text-red-800">{error}</p>
+        <p className="rounded border border-critical-line bg-critical-wash p-3 text-sm text-critical-ink-strong">{error}</p>
       ) : null}
 
       {gridProblems.map((problem) => (
         <p
           key={problem.message}
-          className="rounded border border-red-200 bg-red-50 p-3 text-xs text-red-800"
+          className="rounded border border-critical-line bg-critical-wash p-3 text-xs text-critical-ink-strong"
         >
           {problem.message}
         </p>
@@ -135,7 +135,7 @@ export function PointsTab({ template, editable, onSaved, onDirtyChange }: Points
 
       <div className="overflow-x-auto">
         <table className="w-full min-w-[64rem] text-left text-xs">
-          <thead className="text-[11px] uppercase tracking-wide text-bms-muted">
+          <thead className="text-[11px] uppercase tracking-wide text-ink-muted">
             <tr>
               <th className="py-1 pr-2">Point key</th>
               <th className="py-1 pr-2">Label</th>
@@ -166,7 +166,7 @@ export function PointsTab({ template, editable, onSaved, onDirtyChange }: Points
               const keyIsKnown = catalog.some((entry) => entry.code === row.pointKey);
 
               return (
-                <tr key={index} className="border-t border-gray-100 align-top">
+                <tr key={index} className="border-t border-well-deep align-top">
                   <td className="py-1.5 pr-2">
                     <select
                       value={row.pointKey}
@@ -413,7 +413,7 @@ export function PointsTab({ template, editable, onSaved, onDirtyChange }: Points
                         onClick={() =>
                           setRows((current) => current.filter((_, position) => position !== index))
                         }
-                        className="rounded border border-red-200 px-2 py-1 text-[11px] font-semibold text-red-700"
+                        className="rounded border border-critical-line px-2 py-1 text-[11px] font-semibold text-critical-ink"
                       >
                         Remove
                       </button>
@@ -424,7 +424,7 @@ export function PointsTab({ template, editable, onSaved, onDirtyChange }: Points
             })}
             {rows.length === 0 ? (
               <tr>
-                <td colSpan={editable ? 14 : 13} className="py-4 text-center text-bms-muted">
+                <td colSpan={editable ? 14 : 13} className="py-4 text-center text-ink-muted">
                   This template declares no points yet.
                 </td>
               </tr>
@@ -437,7 +437,7 @@ export function PointsTab({ template, editable, onSaved, onDirtyChange }: Points
           naming another row ("already used by row 1") has to be readable
           alongside both. */}
       {problems.some((problem) => problem.row !== null) ? (
-        <ul className="space-y-1 rounded border border-red-200 bg-red-50 p-3 text-xs text-red-800">
+        <ul className="space-y-1 rounded border border-critical-line bg-critical-wash p-3 text-xs text-critical-ink-strong">
           {problems
             .filter((problem) => problem.row !== null)
             .map((problem, index) => (
@@ -454,7 +454,7 @@ export function PointsTab({ template, editable, onSaved, onDirtyChange }: Points
             type="button"
             disabled={rows.length >= MAX_TEMPLATE_POINTS}
             onClick={() => setRows((current) => [...current, blankPointRow(current)])}
-            className="rounded border border-gray-200 px-3 py-1.5 text-xs font-semibold text-bms-ink disabled:opacity-60"
+            className="rounded border border-line px-3 py-1.5 text-xs font-semibold text-ink disabled:opacity-60"
           >
             Add a point
           </button>
@@ -463,11 +463,11 @@ export function PointsTab({ template, editable, onSaved, onDirtyChange }: Points
             disabled={problems.length > 0 || !changed || saveM.isPending}
             aria-busy={saveM.isPending}
             onClick={() => saveM.mutate()}
-            className="rounded bg-bms-green px-4 py-1.5 text-xs font-semibold text-white disabled:opacity-60"
+            className="rounded bg-accent px-4 py-1.5 text-xs font-semibold text-on-accent disabled:opacity-60"
           >
             {saveM.isPending ? "Saving…" : "Save points"}
           </button>
-          <span className="text-[11px] text-bms-muted">
+          <span className="text-[11px] text-ink-muted">
             {problems.length > 0
               ? "Fix the problems above to save."
               : changed
@@ -481,8 +481,8 @@ export function PointsTab({ template, editable, onSaved, onDirtyChange }: Points
 }
 
 function cellClass(disabled: boolean, problem: { message: string } | undefined): string {
-  const tone = problem ? "border-red-300 bg-red-50" : "border-gray-200";
+  const tone = problem ? "border-critical-line-strong bg-critical-wash" : "border-line";
   return `w-full rounded border px-2 py-1 text-xs ${tone} ${
-    disabled ? "bg-gray-50 text-bms-muted" : ""
+    disabled ? "bg-well text-ink-muted" : ""
   }`;
 }

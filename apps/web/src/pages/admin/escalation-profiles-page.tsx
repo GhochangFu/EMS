@@ -288,16 +288,16 @@ export function EscalationProfilesPage({ user }: EscalationProfilesPageProps) {
       />
 
       {error ? (
-        <div role="alert" className="rounded border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">
+        <div role="alert" className="rounded border border-critical-line bg-critical-wash px-3 py-2 text-sm text-critical-ink-strong">
           {error}
         </div>
       ) : null}
 
       <SectionCard title="Profiles" bodyClassName="p-3 space-y-3">
-        {profilesQ.isLoading ? <p className="text-sm text-bms-muted">Loading profiles…</p> : null}
+        {profilesQ.isLoading ? <p className="text-sm text-ink-muted">Loading profiles…</p> : null}
         <table className="min-w-full text-sm">
           <thead>
-            <tr className="border-b text-left text-xs uppercase text-bms-muted">
+            <tr className="border-b text-left text-xs uppercase text-ink-muted">
               <th className="px-2 py-2">Code</th>
               <th className="px-2 py-2">Name</th>
               <th className="px-2 py-2">Organization</th>
@@ -317,7 +317,7 @@ export function EscalationProfilesPage({ user }: EscalationProfilesPageProps) {
                       .map((item) => severityLabel(item.severity))
                   : [];
               return (
-                <tr key={profile.id} className="border-b border-gray-100">
+                <tr key={profile.id} className="border-b border-well-deep">
                   <td className="px-2 py-2 font-mono">{profile.code}</td>
                   <td className="px-2 py-2">{profile.name}</td>
                   <td className="px-2 py-2">
@@ -329,7 +329,7 @@ export function EscalationProfilesPage({ user }: EscalationProfilesPageProps) {
                     <div className="flex gap-2">
                       <button
                         type="button"
-                        className="text-xs font-semibold text-bms-green"
+                        className="text-xs font-semibold text-accent"
                         onClick={() => {
                           setEditing(profile);
                           setForm(formFromProfile(profile));
@@ -340,7 +340,7 @@ export function EscalationProfilesPage({ user }: EscalationProfilesPageProps) {
                       </button>
                       <button
                         type="button"
-                        className="text-xs font-semibold text-red-700"
+                        className="text-xs font-semibold text-critical-ink"
                         onClick={() => deleteMutation.mutate(profile.id)}
                       >
                         Delete
@@ -352,7 +352,7 @@ export function EscalationProfilesPage({ user }: EscalationProfilesPageProps) {
             })}
             {!profilesQ.isLoading && profiles.length === 0 ? (
               <tr>
-                <td className="px-2 py-3 text-bms-muted" colSpan={6}>
+                <td className="px-2 py-3 text-ink-muted" colSpan={6}>
                   No escalation profiles yet. An unacknowledged alarm goes no further than the
                   message its rule already sent.
                 </td>
@@ -363,12 +363,12 @@ export function EscalationProfilesPage({ user }: EscalationProfilesPageProps) {
       </SectionCard>
 
       <SectionCard title="Severity map" bodyClassName="p-3 space-y-3">
-        <p className="text-xs text-bms-muted">
+        <p className="text-xs text-ink-muted">
           Which ladder an unacknowledged alarm climbs, by severity. A severity left on None never
           escalates.
         </p>
         {effectiveOrganizationId === "" ? (
-          <p className="text-sm text-bms-muted">
+          <p className="text-sm text-ink-muted">
             Choose an organization to see its severity map. The map belongs to one organization,
             and there is no fleet-wide one.
           </p>
@@ -377,7 +377,7 @@ export function EscalationProfilesPage({ user }: EscalationProfilesPageProps) {
             <div className="grid gap-3 sm:grid-cols-2">
               {severities.map((severity) => (
                 <label key={severity.code} className="text-sm">
-                  <span className="block text-xs font-semibold uppercase text-bms-muted">
+                  <span className="block text-xs font-semibold uppercase text-ink-muted">
                     {severity.label}
                   </span>
                   <select
@@ -399,7 +399,7 @@ export function EscalationProfilesPage({ user }: EscalationProfilesPageProps) {
             </div>
             <button
               type="button"
-              className="rounded bg-bms-green px-3 py-2 text-xs font-semibold text-white disabled:bg-gray-300"
+              className="rounded bg-accent px-3 py-2 text-xs font-semibold text-on-accent disabled:bg-line-strong"
               disabled={defaultsMutation.isPending || defaultsQ.isLoading}
               aria-busy={defaultsMutation.isPending}
               onClick={() => defaultsMutation.mutate()}
@@ -423,7 +423,7 @@ export function EscalationProfilesPage({ user }: EscalationProfilesPageProps) {
         >
           <div className="grid gap-3 sm:grid-cols-2">
             <label className="text-sm">
-              <span className="block text-xs font-semibold uppercase text-bms-muted">Code</span>
+              <span className="block text-xs font-semibold uppercase text-ink-muted">Code</span>
               <input
                 className="w-full rounded border px-3 py-1.5"
                 value={form.code}
@@ -432,7 +432,7 @@ export function EscalationProfilesPage({ user }: EscalationProfilesPageProps) {
               />
             </label>
             <label className="text-sm">
-              <span className="block text-xs font-semibold uppercase text-bms-muted">Name</span>
+              <span className="block text-xs font-semibold uppercase text-ink-muted">Name</span>
               <input
                 className="w-full rounded border px-3 py-1.5"
                 value={form.name}
@@ -443,11 +443,11 @@ export function EscalationProfilesPage({ user }: EscalationProfilesPageProps) {
                 reason: a profile cannot change organization, and the operator
                 must still see whose profile they are editing. */}
             <label className="text-sm">
-              <span className="block text-xs font-semibold uppercase text-bms-muted">
+              <span className="block text-xs font-semibold uppercase text-ink-muted">
                 Organization
               </span>
               <select
-                className="w-full rounded border px-3 py-1.5 disabled:bg-gray-50 disabled:text-bms-muted"
+                className="w-full rounded border px-3 py-1.5 disabled:bg-well disabled:text-ink-muted"
                 value={editing ? form.organizationId : effectiveOrganizationId}
                 disabled={editing !== null || organizationLocked}
                 onChange={(event) => setForm({ ...form, organizationId: event.target.value })}
@@ -476,9 +476,9 @@ export function EscalationProfilesPage({ user }: EscalationProfilesPageProps) {
           </div>
 
           <div className="space-y-2">
-            <p className="text-xs font-semibold uppercase text-bms-muted">Steps</p>
+            <p className="text-xs font-semibold uppercase text-ink-muted">Steps</p>
             {form.steps.length === 0 ? (
-              <p className="text-xs text-bms-muted">
+              <p className="text-xs text-ink-muted">
                 No steps yet. A profile with no ladder is legal — it escalates nothing until you
                 add one.
               </p>
@@ -486,12 +486,12 @@ export function EscalationProfilesPage({ user }: EscalationProfilesPageProps) {
             {form.steps.map((step, index) => (
               // A `fieldset` per rung: the legend names the step, so the group
               // is addressable by what it says rather than by where it sits.
-              <fieldset key={index} className="rounded border border-gray-200 px-3 py-2">
-                <legend className="px-1 text-xs font-semibold uppercase text-bms-muted">
+              <fieldset key={index} className="rounded border border-line px-3 py-2">
+                <legend className="px-1 text-xs font-semibold uppercase text-ink-muted">
                   Step {index + 1}
                 </legend>
                 <label className="text-sm">
-                  <span className="block text-xs font-semibold uppercase text-bms-muted">
+                  <span className="block text-xs font-semibold uppercase text-ink-muted">
                     After (minutes)
                   </span>
                   <input
@@ -504,11 +504,11 @@ export function EscalationProfilesPage({ user }: EscalationProfilesPageProps) {
                 {/* A sibling of the label, not a child: inside it the text would
                     join the field's accessible name. */}
                 {stepDelayInvalid(step) ? (
-                  <p className="mt-1 text-xs text-amber-900">{STEP_DELAY_MESSAGE}</p>
+                  <p className="mt-1 text-xs text-warning-ink">{STEP_DELAY_MESSAGE}</p>
                 ) : null}
-                <p className="mt-2 text-xs font-semibold uppercase text-bms-muted">Channels</p>
+                <p className="mt-2 text-xs font-semibold uppercase text-ink-muted">Channels</p>
                 {channels.length === 0 ? (
-                  <p className="mt-1 text-xs text-bms-muted">
+                  <p className="mt-1 text-xs text-ink-muted">
                     No channels you can use here. Create one under Admin → Notifications.
                   </p>
                 ) : null}
@@ -519,7 +519,7 @@ export function EscalationProfilesPage({ user }: EscalationProfilesPageProps) {
                       <label
                         key={channel.id}
                         htmlFor={inputId}
-                        className="flex items-center gap-2 text-xs text-bms-ink"
+                        className="flex items-center gap-2 text-xs text-ink"
                       >
                         <input
                           id={inputId}
@@ -540,7 +540,7 @@ export function EscalationProfilesPage({ user }: EscalationProfilesPageProps) {
                 </div>
                 <button
                   type="button"
-                  className="mt-2 text-xs font-semibold text-red-700"
+                  className="mt-2 text-xs font-semibold text-critical-ink"
                   onClick={() =>
                     setForm({ ...form, steps: form.steps.filter((_, i) => i !== index) })
                   }
@@ -564,12 +564,12 @@ export function EscalationProfilesPage({ user }: EscalationProfilesPageProps) {
               rule: a greyed-out submit that says nothing leaves the operator
               with no move to make. */}
           {organizationRefusal ? (
-            <p className="text-xs text-bms-muted">{organizationRefusal}</p>
+            <p className="text-xs text-ink-muted">{organizationRefusal}</p>
           ) : null}
           <div className="flex gap-2">
             <button
               type="submit"
-              className="rounded bg-bms-green px-3 py-2 text-xs font-semibold text-white disabled:bg-gray-300"
+              className="rounded bg-accent px-3 py-2 text-xs font-semibold text-on-accent disabled:bg-line-strong"
               disabled={cannotSave}
               aria-busy={saveMutation.isPending}
             >

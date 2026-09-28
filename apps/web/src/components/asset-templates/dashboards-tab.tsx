@@ -150,11 +150,11 @@ export function DashboardsTab({ template, editable, onSaved, onDirtyChange }: Da
   return (
     <div className="space-y-3">
       {error ? (
-        <p className="rounded border border-red-200 bg-red-50 p-3 text-sm text-red-800">{error}</p>
+        <p className="rounded border border-critical-line bg-critical-wash p-3 text-sm text-critical-ink-strong">{error}</p>
       ) : null}
 
       {blockedKeys.length > 0 ? (
-        <p className="rounded border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900">
+        <p className="rounded border border-warning-line bg-warning-wash p-3 text-xs text-warning-ink">
           Saving dashboards is blocked: this template holds content that cannot be written back.
           The banner above lists the keys. Editing here is safe — nothing is sent until they are
           removed.
@@ -164,7 +164,7 @@ export function DashboardsTab({ template, editable, onSaved, onDirtyChange }: Da
       {sectionProblems.map((problem) => (
         <p
           key={problem.message}
-          className="rounded border border-red-200 bg-red-50 p-3 text-xs text-red-800"
+          className="rounded border border-critical-line bg-critical-wash p-3 text-xs text-critical-ink-strong"
         >
           {problem.message}
         </p>
@@ -172,11 +172,11 @@ export function DashboardsTab({ template, editable, onSaved, onDirtyChange }: Da
 
       <div className="flex flex-wrap gap-4">
         <div className="w-48 shrink-0 space-y-2">
-          <span className="text-[11px] font-semibold uppercase tracking-wide text-bms-muted">
+          <span className="text-[11px] font-semibold uppercase tracking-wide text-ink-muted">
             Views
           </span>
           {rows.length === 0 ? (
-            <p className="rounded border border-dashed border-gray-300 p-3 text-xs text-bms-muted">
+            <p className="rounded border border-dashed border-line-strong p-3 text-xs text-ink-muted">
               This template has no dashboard views yet.
             </p>
           ) : null}
@@ -190,9 +190,9 @@ export function DashboardsTab({ template, editable, onSaved, onDirtyChange }: Da
                     onClick={() => setActiveIndex(index)}
                     className={`flex-1 truncate rounded border px-2 py-1 text-left text-xs ${
                       index === activeIndex
-                        ? "border-bms-green bg-bms-green/10 font-semibold"
-                        : "border-gray-200"
-                    } ${rowHasProblem ? "text-red-700" : ""}`}
+                        ? "border-accent bg-accent/10 font-semibold"
+                        : "border-line"
+                    } ${rowHasProblem ? "text-critical-ink" : ""}`}
                   >
                     {view.name.trim() === "" ? "(unnamed view)" : view.name}
                   </button>
@@ -201,7 +201,7 @@ export function DashboardsTab({ template, editable, onSaved, onDirtyChange }: Da
                       type="button"
                       onClick={() => removeView(index)}
                       aria-label={`Delete ${view.name || "this view"}`}
-                      className="rounded border border-red-200 px-1.5 py-1 text-[11px] font-semibold text-red-700"
+                      className="rounded border border-critical-line px-1.5 py-1 text-[11px] font-semibold text-critical-ink"
                     >
                       ×
                     </button>
@@ -211,20 +211,20 @@ export function DashboardsTab({ template, editable, onSaved, onDirtyChange }: Da
             })}
           </ul>
           {editable ? (
-            <div className="space-y-1 border-t border-gray-200 pt-2">
+            <div className="space-y-1 border-t border-line pt-2">
               <input
                 type="text"
                 value={newViewName}
                 placeholder="New view name"
                 disabled={rows.length >= MAX_DASHBOARD_VIEWS}
                 onChange={(event) => setNewViewName(event.target.value)}
-                className="w-full rounded border border-gray-200 px-2 py-1 text-xs"
+                className="w-full rounded border border-line px-2 py-1 text-xs"
               />
               <button
                 type="button"
                 disabled={newViewName.trim() === "" || rows.length >= MAX_DASHBOARD_VIEWS}
                 onClick={addView}
-                className="w-full rounded border border-gray-200 px-2 py-1 text-xs font-semibold text-bms-ink disabled:opacity-60"
+                className="w-full rounded border border-line px-2 py-1 text-xs font-semibold text-ink disabled:opacity-60"
               >
                 Add a view
               </button>
@@ -242,7 +242,7 @@ export function DashboardsTab({ template, editable, onSaved, onDirtyChange }: Da
               onChange={(patch) => updateView(activeIndex, patch)}
             />
           ) : (
-            <p className="rounded border border-dashed border-gray-300 p-4 text-xs text-bms-muted">
+            <p className="rounded border border-dashed border-line-strong p-4 text-xs text-ink-muted">
               {rows.length === 0
                 ? "Add a view to start authoring a dashboard."
                 : "Choose a view on the left."}
@@ -252,17 +252,17 @@ export function DashboardsTab({ template, editable, onSaved, onDirtyChange }: Da
       </div>
 
       {editable ? (
-        <div className="flex flex-wrap items-center gap-3 border-t border-gray-200 pt-3">
+        <div className="flex flex-wrap items-center gap-3 border-t border-line pt-3">
           <button
             type="button"
             disabled={blocked || !changed || saveM.isPending}
             aria-busy={saveM.isPending}
             onClick={() => saveM.mutate()}
-            className="rounded bg-bms-green px-4 py-1.5 text-xs font-semibold text-white disabled:opacity-60"
+            className="rounded bg-accent px-4 py-1.5 text-xs font-semibold text-on-accent disabled:opacity-60"
           >
             {saveM.isPending ? "Saving…" : "Save dashboards"}
           </button>
-          <span className="text-[11px] text-bms-muted">
+          <span className="text-[11px] text-ink-muted">
             {blockedKeys.length > 0
               ? "Blocked by unwritable content."
               : problems.length > 0

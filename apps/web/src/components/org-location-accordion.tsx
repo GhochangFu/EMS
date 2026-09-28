@@ -34,7 +34,7 @@ export function OrgLocationAccordion({ groups }: OrgLocationAccordionProps) {
 
   if (groups.length === 0) {
     return (
-      <div className="text-sm text-bms-muted">
+      <div className="text-sm text-ink-muted">
         No locations in this organization for your access scope.
       </div>
     );
@@ -50,26 +50,26 @@ export function OrgLocationAccordion({ groups }: OrgLocationAccordionProps) {
         return (
           <section
             key={group.organization.id}
-            className="rounded-lg border border-gray-200 bg-white"
+            className="rounded-lg border border-line bg-surface"
           >
             <button
               type="button"
-              className="flex w-full items-center justify-between gap-3 px-3 py-3 text-left hover:bg-gray-50"
+              className="flex w-full items-center justify-between gap-3 px-3 py-3 text-left hover:bg-well"
               aria-expanded={expanded}
               aria-controls={panelId}
               onClick={() => toggleOrg(group.organization.id)}
             >
               <div>
-                <div className="font-condensed text-sm font-bold text-bms-ink">
+                <div className="font-condensed text-sm font-bold text-ink">
                   {group.organization.code} · {group.organization.name}
                 </div>
-                <div className="mt-1 text-xs text-bms-muted">
+                <div className="mt-1 text-xs text-ink-muted">
                   {summary.locationCount} locations · {summary.totalKw.toFixed(1)} kW ·{" "}
                   {summary.openAlarms} alarms · {summary.freshLocationCount} live
                 </div>
               </div>
               <span
-                className={`text-sm font-semibold text-bms-muted transition-transform ${
+                className={`text-sm font-semibold text-ink-muted transition-transform ${
                   expanded ? "rotate-180" : ""
                 }`}
                 aria-hidden
@@ -78,7 +78,7 @@ export function OrgLocationAccordion({ groups }: OrgLocationAccordionProps) {
               </span>
             </button>
             {expanded ? (
-              <div id={panelId} className="border-t border-gray-100 bg-slate-50/60 p-3">
+              <div id={panelId} className="border-t border-well-deep bg-well/60 p-3">
                 <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
                   {group.locations.map((location) => (
                     <LocationKpiCard key={location.id} location={location} />

@@ -51,18 +51,18 @@ export function ControlRoomOrganizationPage({ user }: ControlRoomOrganizationPag
   return (
     <AppShell
       user={user}
-      kpiRibbon={<span className="text-bms-ink">Control Room · sites and active alarms</span>}
+      kpiRibbon={<span className="text-ink">Control Room · sites and active alarms</span>}
     >
       <div className="mx-auto max-w-[1200px] space-y-4 pb-8">
         {items !== undefined && target !== null ? (
           target.level === "empty" ? (
             <SectionCard title="No sites for this organization in your access scope" bodyClassName="p-4">
-              <p className="text-sm text-bms-muted">
+              <p className="text-sm text-ink-muted">
                 This organization holds no site you can read.
               </p>
               <Link
                 to="/control-room"
-                className="mt-2 inline-block text-sm font-semibold text-bms-green hover:underline"
+                className="mt-2 inline-block text-sm font-semibold text-accent hover:underline"
               >
                 Back to the Control Room
               </Link>
@@ -72,10 +72,10 @@ export function ControlRoomOrganizationPage({ user }: ControlRoomOrganizationPag
           )
         ) : locationQ.isError ? (
           <SectionCard title="Control Room unavailable" bodyClassName="p-4">
-            <p className="text-sm text-red-700">The site list could not be read. Try again later.</p>
+            <p className="text-sm text-critical-ink">The site list could not be read. Try again later.</p>
           </SectionCard>
         ) : (
-          <p role="status" className="text-sm text-bms-muted">
+          <p role="status" className="text-sm text-ink-muted">
             Loading Control Room…
           </p>
         )}

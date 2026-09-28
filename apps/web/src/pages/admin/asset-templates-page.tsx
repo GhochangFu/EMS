@@ -274,7 +274,7 @@ export function AssetTemplatesAdminPage({ user }: AssetTemplatesAdminPageProps) 
             <button
               type="button"
               onClick={() => setModalOpen(true)}
-              className="rounded bg-bms-green px-3 py-1.5 text-xs font-semibold text-white"
+              className="rounded bg-accent px-3 py-1.5 text-xs font-semibold text-on-accent"
             >
               New template
             </button>
@@ -306,7 +306,7 @@ export function AssetTemplatesAdminPage({ user }: AssetTemplatesAdminPageProps) 
               onChange={(event) => setSearch(event.target.value)}
               placeholder="Search code, name or asset type"
               aria-label="Search templates"
-              className="rounded border border-gray-200 px-2 py-1 text-xs"
+              className="rounded border border-line px-2 py-1 text-xs"
             />
             {/* `F2.21` part 2 — organization is the axis nothing addressed:
                 a global admin sees every organization here, and the code was
@@ -319,7 +319,7 @@ export function AssetTemplatesAdminPage({ user }: AssetTemplatesAdminPageProps) 
                 value={filters.organizationId}
                 onChange={(event) => setOrgFilter(event.target.value)}
                 aria-label="Filter by organization"
-                className="rounded border border-gray-200 px-2 py-1 text-xs"
+                className="rounded border border-line px-2 py-1 text-xs"
               >
                 <option value="">All organizations</option>
                 {organizationOptions.map((option) => (
@@ -334,7 +334,7 @@ export function AssetTemplatesAdminPage({ user }: AssetTemplatesAdminPageProps) 
                 value={filters.domain}
                 onChange={(event) => setDomainFilter(event.target.value)}
                 aria-label="Filter by domain"
-                className="rounded border border-gray-200 px-2 py-1 text-xs"
+                className="rounded border border-line px-2 py-1 text-xs"
               >
                 <option value="">All domains</option>
                 {domainOptions.map((option) => (
@@ -353,8 +353,8 @@ export function AssetTemplatesAdminPage({ user }: AssetTemplatesAdminPageProps) 
                   aria-pressed={status === option.value}
                   className={`rounded px-2 py-1 text-[11px] font-semibold ${
                     status === option.value
-                      ? "bg-bms-green text-white"
-                      : "bg-gray-100 text-bms-muted hover:text-bms-ink"
+                      ? "bg-accent text-on-accent"
+                      : "bg-well-deep text-ink-muted hover:text-ink"
                   }`}
                 >
                   {option.label}
@@ -364,14 +364,14 @@ export function AssetTemplatesAdminPage({ user }: AssetTemplatesAdminPageProps) 
           </div>
         }
       >
-        {listQ.isPending ? <p className="text-sm text-bms-muted">Loading templates…</p> : null}
+        {listQ.isPending ? <p className="text-sm text-ink-muted">Loading templates…</p> : null}
         {listQ.isError ? (
-          <p className="rounded border border-red-200 bg-red-50 p-3 text-sm text-red-800">
+          <p className="rounded border border-critical-line bg-critical-wash p-3 text-sm text-critical-ink-strong">
             {(listQ.error as Error).message}
           </p>
         ) : null}
         {!listQ.isPending && !listQ.isError && visibleGroups.length === 0 ? (
-          <p className="text-sm text-bms-muted">
+          <p className="text-sm text-ink-muted">
             No templates match this filter.
           </p>
         ) : null}
@@ -380,17 +380,17 @@ export function AssetTemplatesAdminPage({ user }: AssetTemplatesAdminPageProps) 
           {visibleGroups.map((group) => (
             <div
               key={`${group.organizationId}-${group.code}`}
-              className="rounded border border-gray-200"
+              className="rounded border border-line"
             >
-              <div className="flex flex-wrap items-center justify-between gap-2 border-b border-gray-100 bg-gray-50 px-3 py-2">
+              <div className="flex flex-wrap items-center justify-between gap-2 border-b border-well-deep bg-well px-3 py-2">
                 <div>
-                  <div className="font-condensed text-sm font-bold text-bms-ink">
+                  <div className="font-condensed text-sm font-bold text-ink">
                     {group.code}
-                    <span className="ml-2 font-sans text-xs font-normal text-bms-muted">
+                    <span className="ml-2 font-sans text-xs font-normal text-ink-muted">
                       {group.latest.name}
                     </span>
                   </div>
-                  <div className="text-[11px] text-bms-muted">
+                  <div className="text-[11px] text-ink-muted">
                     {/* `F2.21` — the vocabulary's label, not the bare code.
                         The header printed `hvac` while the new picker beside it
                         prints "HVAC", so filtering by "HVAC" left every row
@@ -401,11 +401,11 @@ export function AssetTemplatesAdminPage({ user }: AssetTemplatesAdminPageProps) 
                     {labelFor(vocabQ.data?.assetDomains, group.latest.domain)}
                   </div>
                 </div>
-                <div className="text-[11px] text-bms-muted">
+                <div className="text-[11px] text-ink-muted">
                   {group.versions.length} version{group.versions.length === 1 ? "" : "s"}
                 </div>
               </div>
-              <ul className="divide-y divide-gray-100">
+              <ul className="divide-y divide-well-deep">
                 {group.versions.map((version) => (
                   <li
                     key={version.id}
@@ -414,13 +414,13 @@ export function AssetTemplatesAdminPage({ user }: AssetTemplatesAdminPageProps) 
                     <div className="flex items-center gap-3">
                       <Link
                         to={`/admin/asset-templates/${version.id}`}
-                        className="text-sm font-semibold text-bms-green hover:underline"
+                        className="text-sm font-semibold text-accent hover:underline"
                       >
                         v{version.version}
                       </Link>
                       <StatusPill label={version.status} tone={statusTone(version.status)} />
                     </div>
-                    <div className="text-[11px] text-bms-muted">
+                    <div className="text-[11px] text-ink-muted">
                       {version.pointCount} point{version.pointCount === 1 ? "" : "s"}
                       {version.publishedAt
                         ? ` · published ${version.publishedAt.slice(0, 10)}`
@@ -449,7 +449,7 @@ export function AssetTemplatesAdminPage({ user }: AssetTemplatesAdminPageProps) 
               aria-label="Import into organization"
               value={importOrgId}
               onChange={(event) => setImportOrgId(event.target.value)}
-              className="rounded border border-gray-200 px-2 py-1 text-xs"
+              className="rounded border border-line px-2 py-1 text-xs"
             >
               <option value="">Select an organization…</option>
               {(orgsQ.data?.items ?? []).map((org) => (
@@ -461,18 +461,18 @@ export function AssetTemplatesAdminPage({ user }: AssetTemplatesAdminPageProps) 
           }
         >
           {importError ? (
-            <p className="mb-2 rounded border border-red-200 bg-red-50 p-2 text-xs text-red-800">
+            <p className="mb-2 rounded border border-critical-line bg-critical-wash p-2 text-xs text-critical-ink-strong">
               {importError}
             </p>
           ) : null}
-          {stockQ.isPending ? <p className="text-sm text-bms-muted">Loading the stock catalog…</p> : null}
+          {stockQ.isPending ? <p className="text-sm text-ink-muted">Loading the stock catalog…</p> : null}
           {stockQ.isError ? (
-            <p className="rounded border border-red-200 bg-red-50 p-3 text-sm text-red-800">
+            <p className="rounded border border-critical-line bg-critical-wash p-3 text-sm text-critical-ink-strong">
               {apiErrorMessage(stockQ.error)}
             </p>
           ) : null}
           {!stockQ.isPending && !stockQ.isError && stockRows.length === 0 ? (
-            <p className="text-sm text-bms-muted">The stock catalog is empty — nothing to import.</p>
+            <p className="text-sm text-ink-muted">The stock catalog is empty — nothing to import.</p>
           ) : null}
           {/* `F2.17` — the rows stay HERE and arrive at the accordion as a
               render prop. `tests/f2.14-stock-viewer-reachable.test.ts:87-94`
@@ -486,7 +486,7 @@ export function AssetTemplatesAdminPage({ user }: AssetTemplatesAdminPageProps) 
               return (
                 <li className="flex flex-wrap items-center justify-between gap-2 py-2">
                   <div>
-                    <div className="text-sm font-semibold text-bms-ink">{entry.name}</div>
+                    <div className="text-sm font-semibold text-ink">{entry.name}</div>
                     {/* `F2.21` — the label, for the same reason the Templates
                         header uses it, and because this row would otherwise be
                         the ONE place left printing a bare code. The browser pass
@@ -494,11 +494,11 @@ export function AssetTemplatesAdminPage({ user }: AssetTemplatesAdminPageProps) 
                         read "Electrical" while the row under it read
                         `· electrical ·`. Fixing the Templates side alone is what
                         made the two cards disagree, so it belongs to this row. */}
-                    <div className="text-[11px] text-bms-muted">
+                    <div className="text-[11px] text-ink-muted">
                       {entry.code} · {labelFor(vocabQ.data?.assetDomains, entry.domain)} · stock v
                       {entry.stockVersion}
                     </div>
-                    <div className="text-[11px] text-bms-muted">
+                    <div className="text-[11px] text-ink-muted">
                       {entry.assetType} · {entry.points.length} point{entry.points.length === 1 ? "" : "s"}
                     </div>
                   </div>
@@ -509,7 +509,7 @@ export function AssetTemplatesAdminPage({ user }: AssetTemplatesAdminPageProps) 
                     <Link
                       to={`/admin/asset-templates/stock/${entry.code}`}
                       aria-label={`View ${entry.name}`}
-                      className="rounded border border-gray-200 px-3 py-1.5 text-xs font-semibold text-bms-muted"
+                      className="rounded border border-line px-3 py-1.5 text-xs font-semibold text-ink-muted"
                     >
                       View
                     </Link>
@@ -522,7 +522,7 @@ export function AssetTemplatesAdminPage({ user }: AssetTemplatesAdminPageProps) 
                         setImportError(null);
                         importM.mutate(entry.code);
                       }}
-                      className="rounded border border-gray-200 px-3 py-1.5 text-xs font-semibold text-bms-ink disabled:opacity-60"
+                      className="rounded border border-line px-3 py-1.5 text-xs font-semibold text-ink disabled:opacity-60"
                     >
                       {importingThis ? "Importing…" : "Import"}
                     </button>
@@ -536,18 +536,18 @@ export function AssetTemplatesAdminPage({ user }: AssetTemplatesAdminPageProps) 
       ) : null}
 
       {modalOpen && mayAuthor ? (
-        <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/30 p-4">
+        <div className="fixed inset-0 z-40 flex items-center justify-center bg-scrim/30 p-4">
           <form
             onSubmit={submit}
-            className="w-full max-w-lg space-y-3 rounded-lg bg-white p-4 shadow-lg"
+            className="w-full max-w-lg space-y-3 rounded-lg bg-surface p-4 shadow-lg"
           >
-            <h2 className="font-condensed text-base font-bold text-bms-ink">New template</h2>
-            <p className="text-[11px] text-bms-muted">
+            <h2 className="font-condensed text-base font-bold text-ink">New template</h2>
+            <p className="text-[11px] text-ink-muted">
               A template is created as a draft at version 1. Points, calculations, KPIs and
               alarms are added on the next screen.
             </p>
 
-            <label className="block text-xs font-semibold text-bms-ink">
+            <label className="block text-xs font-semibold text-ink">
               Organization
               <select
                 required
@@ -555,7 +555,7 @@ export function AssetTemplatesAdminPage({ user }: AssetTemplatesAdminPageProps) 
                 onChange={(event) =>
                   setForm((current) => ({ ...current, organizationId: event.target.value }))
                 }
-                className="mt-1 w-full rounded border border-gray-200 px-2 py-1 text-xs font-normal"
+                className="mt-1 w-full rounded border border-line px-2 py-1 text-xs font-normal"
               >
                 <option value="">Select an organization…</option>
                 {(orgsQ.data?.items ?? []).map((org) => (
@@ -567,7 +567,7 @@ export function AssetTemplatesAdminPage({ user }: AssetTemplatesAdminPageProps) 
             </label>
 
             <div className="grid gap-3 sm:grid-cols-2">
-              <label className="block text-xs font-semibold text-bms-ink">
+              <label className="block text-xs font-semibold text-ink">
                 Code
                 <input
                   required
@@ -576,10 +576,10 @@ export function AssetTemplatesAdminPage({ user }: AssetTemplatesAdminPageProps) 
                     setForm((current) => ({ ...current, code: event.target.value }))
                   }
                   placeholder="CHILLER"
-                  className="mt-1 w-full rounded border border-gray-200 px-2 py-1 text-xs font-normal"
+                  className="mt-1 w-full rounded border border-line px-2 py-1 text-xs font-normal"
                 />
               </label>
-              <label className="block text-xs font-semibold text-bms-ink">
+              <label className="block text-xs font-semibold text-ink">
                 Name
                 <input
                   required
@@ -588,10 +588,10 @@ export function AssetTemplatesAdminPage({ user }: AssetTemplatesAdminPageProps) 
                     setForm((current) => ({ ...current, name: event.target.value }))
                   }
                   placeholder="Water-cooled chiller"
-                  className="mt-1 w-full rounded border border-gray-200 px-2 py-1 text-xs font-normal"
+                  className="mt-1 w-full rounded border border-line px-2 py-1 text-xs font-normal"
                 />
               </label>
-              <label className="block text-xs font-semibold text-bms-ink">
+              <label className="block text-xs font-semibold text-ink">
                 Asset type
                 <input
                   required
@@ -600,10 +600,10 @@ export function AssetTemplatesAdminPage({ user }: AssetTemplatesAdminPageProps) 
                     setForm((current) => ({ ...current, assetType: event.target.value }))
                   }
                   placeholder="chiller"
-                  className="mt-1 w-full rounded border border-gray-200 px-2 py-1 text-xs font-normal"
+                  className="mt-1 w-full rounded border border-line px-2 py-1 text-xs font-normal"
                 />
               </label>
-              <label className="block text-xs font-semibold text-bms-ink">
+              <label className="block text-xs font-semibold text-ink">
                 Domain
                 <select
                   required
@@ -611,7 +611,7 @@ export function AssetTemplatesAdminPage({ user }: AssetTemplatesAdminPageProps) 
                   onChange={(event) =>
                     setForm((current) => ({ ...current, domain: event.target.value }))
                   }
-                  className="mt-1 w-full rounded border border-gray-200 px-2 py-1 text-xs font-normal"
+                  className="mt-1 w-full rounded border border-line px-2 py-1 text-xs font-normal"
                 >
                   <option value="">Select a domain…</option>
                   {(vocabQ.data?.assetDomains ?? []).map((domain) => (
@@ -623,7 +623,7 @@ export function AssetTemplatesAdminPage({ user }: AssetTemplatesAdminPageProps) 
               </label>
             </div>
 
-            <label className="block text-xs font-semibold text-bms-ink">
+            <label className="block text-xs font-semibold text-ink">
               Description
               <textarea
                 value={form.description}
@@ -631,12 +631,12 @@ export function AssetTemplatesAdminPage({ user }: AssetTemplatesAdminPageProps) 
                   setForm((current) => ({ ...current, description: event.target.value }))
                 }
                 rows={2}
-                className="mt-1 w-full rounded border border-gray-200 px-2 py-1 text-xs font-normal"
+                className="mt-1 w-full rounded border border-line px-2 py-1 text-xs font-normal"
               />
             </label>
 
             {error ? (
-              <p className="rounded border border-red-200 bg-red-50 p-2 text-xs text-red-800">
+              <p className="rounded border border-critical-line bg-critical-wash p-2 text-xs text-critical-ink-strong">
                 {error}
               </p>
             ) : null}
@@ -648,7 +648,7 @@ export function AssetTemplatesAdminPage({ user }: AssetTemplatesAdminPageProps) 
                   setModalOpen(false);
                   setError(null);
                 }}
-                className="rounded border border-gray-200 px-3 py-1.5 text-xs font-semibold text-bms-muted"
+                className="rounded border border-line px-3 py-1.5 text-xs font-semibold text-ink-muted"
               >
                 Cancel
               </button>
@@ -656,7 +656,7 @@ export function AssetTemplatesAdminPage({ user }: AssetTemplatesAdminPageProps) 
                 type="submit"
                 disabled={createM.isPending}
                 aria-busy={createM.isPending}
-                className="rounded bg-bms-green px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-60"
+                className="rounded bg-accent px-3 py-1.5 text-xs font-semibold text-on-accent disabled:opacity-60"
               >
                 {createM.isPending ? "Creating…" : "Create draft"}
               </button>

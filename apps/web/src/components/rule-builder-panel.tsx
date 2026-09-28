@@ -88,7 +88,7 @@ const emptyForm: BuilderForm = {
 };
 
 const fieldClass =
-  "w-full rounded border border-gray-300 bg-white px-2 py-2 text-sm text-bms-ink shadow-sm focus:border-bms-green focus:outline-none";
+  "w-full rounded border border-line-strong bg-surface px-2 py-2 text-sm text-ink shadow-sm focus:border-focus focus:outline-none";
 
 /** Guided IF/THEN builder for the existing simple automation rule model. */
 export function RuleBuilderPanel({
@@ -191,19 +191,19 @@ export function RuleBuilderPanel({
   const canSubmit = !invalidReason && !clearHoldReason && !busy;
 
   return (
-    <section className="rounded border border-gray-200 bg-white">
-      <div className="flex items-start justify-between gap-3 border-b border-gray-200 px-4 py-3">
+    <section className="rounded border border-line bg-surface">
+      <div className="flex items-start justify-between gap-3 border-b border-line px-4 py-3">
         <div>
-          <h2 className="font-condensed text-lg font-bold text-bms-ink">
+          <h2 className="font-condensed text-lg font-bold text-ink">
             Guided IF/THEN Rule Builder
           </h2>
-          <p className="text-xs text-bms-muted">
+          <p className="text-xs text-ink-muted">
             Operator-created threshold and time-window rules only. No commands,
             breaker actions, schedulers, or real-source automation.
           </p>
         </div>
         <button
-          className="rounded border border-gray-300 px-3 py-1.5 text-xs font-semibold text-bms-muted"
+          className="rounded border border-line-strong px-3 py-1.5 text-xs font-semibold text-ink-muted"
           onClick={() => {
             // Start on a category the control actually offers. Hardcoding one
             // would put the form's state and its `<select>` out of step the
@@ -284,8 +284,8 @@ export function RuleBuilderPanel({
         </Field>
 
         {form.ruleType === "threshold" ? (
-          <div className="rounded border border-gray-200 bg-gray-50 p-3">
-            <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-bms-muted">
+          <div className="rounded border border-line bg-well p-3">
+            <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-ink-muted">
               IF latest telemetry matches
             </div>
             <div className="grid gap-3 sm:grid-cols-2">
@@ -356,19 +356,19 @@ export function RuleBuilderPanel({
                 {/* A sibling of the label, not a child: inside it the text would
                     join the field's accessible name. */}
                 {clearHoldReason ? (
-                  <p className="mt-1 text-xs text-amber-900">{clearHoldReason}</p>
+                  <p className="mt-1 text-xs text-warning-ink">{clearHoldReason}</p>
                 ) : null}
               </div>
             </div>
           </div>
         ) : (
-          <div className="rounded border border-gray-200 bg-gray-50 p-3">
-            <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-bms-muted">
+          <div className="rounded border border-line bg-well p-3">
+            <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-ink-muted">
               IF current time is inside window
             </div>
             <div className="flex flex-wrap gap-2">
               {dayOptions.map(([value, label]) => (
-                <label key={value} className="flex items-center gap-1 text-xs text-bms-muted">
+                <label key={value} className="flex items-center gap-1 text-xs text-ink-muted">
                   <input
                     type="checkbox"
                     checked={form.days.includes(value)}
@@ -404,8 +404,8 @@ export function RuleBuilderPanel({
           </div>
         )}
 
-        <div className="rounded border border-gray-200 bg-gray-50 p-3">
-          <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-bms-muted">
+        <div className="rounded border border-line bg-well p-3">
+          <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-ink-muted">
             THEN create an operator trace
           </div>
           <div className="grid gap-3 md:grid-cols-3">
@@ -475,12 +475,12 @@ export function RuleBuilderPanel({
         </div>
 
         {invalidReason ? (
-          <p className="rounded border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+          <p className="rounded border border-warning-line bg-warning-wash px-3 py-2 text-xs text-warning-ink">
             {invalidReason}
           </p>
         ) : null}
         {error ? (
-          <p className="rounded border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
+          <p className="rounded border border-critical-line bg-critical-wash px-3 py-2 text-xs text-critical-ink">
             {error}
           </p>
         ) : null}
@@ -488,7 +488,7 @@ export function RuleBuilderPanel({
 
         <div className="flex flex-wrap gap-2">
           <button
-            className="rounded border border-gray-300 px-3 py-2 text-xs font-semibold text-bms-muted disabled:opacity-50"
+            className="rounded border border-line-strong px-3 py-2 text-xs font-semibold text-ink-muted disabled:opacity-50"
             disabled={!canSubmit}
             aria-busy={previewM.isPending}
             onClick={() => previewM.mutate({ ...payload, id: form.id })}
@@ -496,7 +496,7 @@ export function RuleBuilderPanel({
             {previewM.isPending ? "Previewing..." : "Preview latest data"}
           </button>
           <button
-            className="rounded bg-gray-900 px-3 py-2 text-xs font-semibold text-white disabled:opacity-50"
+            className="rounded bg-chrome px-3 py-2 text-xs font-semibold text-on-dark disabled:opacity-50"
             disabled={!canSubmit}
             aria-busy={createM.isPending || updateM.isPending}
             onClick={() =>
@@ -515,7 +515,7 @@ export function RuleBuilderPanel({
                 : "Save draft"}
           </button>
           <button
-            className="rounded bg-bms-green px-3 py-2 text-xs font-semibold text-white disabled:opacity-50"
+            className="rounded bg-accent px-3 py-2 text-xs font-semibold text-on-accent disabled:opacity-50"
             disabled={!form.id || !canSubmit}
             aria-busy={publishM.isPending}
             onClick={() => form.id && publishM.mutate({ id: form.id })}
@@ -530,7 +530,7 @@ export function RuleBuilderPanel({
 
 function Field({ label, children }: { label: string; children: ReactNode }) {
   return (
-    <label className="block text-xs font-semibold text-bms-muted">
+    <label className="block text-xs font-semibold text-ink-muted">
       <span className="mb-1 block">{label}</span>
       {children}
     </label>
@@ -539,14 +539,14 @@ function Field({ label, children }: { label: string; children: ReactNode }) {
 
 function PreviewResult({ result }: { result: RulePreviewResult }) {
   return (
-    <div className="rounded border border-bms-green/20 bg-bms-green/5 p-3">
-      <div className="text-xs font-semibold uppercase tracking-wide text-bms-muted">
+    <div className="rounded border border-accent/20 bg-accent/5 p-3">
+      <div className="text-xs font-semibold uppercase tracking-wide text-ink-muted">
         Preview Result
       </div>
-      <p className="mt-1 text-sm font-semibold text-bms-ink">
+      <p className="mt-1 text-sm font-semibold text-ink">
         {result.status.replace("_", " ")} · {result.message}
       </p>
-      <pre className="mt-2 max-h-28 overflow-auto rounded bg-gray-950 p-2 text-[11px] text-gray-100">
+      <pre className="mt-2 max-h-28 overflow-auto rounded bg-chrome p-2 text-[11px] text-on-dark">
         {JSON.stringify(result.trace, null, 2)}
       </pre>
     </div>

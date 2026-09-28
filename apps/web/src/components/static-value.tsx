@@ -62,7 +62,7 @@ export function StaticTspan({ kind, children }: StaticTspanProps) {
     <tspan>
       <title>{PROVENANCE_TITLE[kind]}</title>
       {children}
-      {marker ? <tspan className="fill-slate-400 text-[7px]">{` ${marker}`}</tspan> : null}
+      {marker ? <tspan className="fill-ink-hint text-[7px]">{` ${marker}`}</tspan> : null}
     </tspan>
   );
 }

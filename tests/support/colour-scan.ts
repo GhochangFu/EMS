@@ -97,9 +97,10 @@ const ON_DARK_TEXT = /^(?:\S*:)?!?text-on-dark(?:\/\S+)?$/;
 /**
  * Every class string in `text`: a `"…"` or `'…'` literal on one line, and each backtick template
  * with its `${…}` holes blanked — the strings inside a hole are scanned as quoted literals, so the
- * two branches of a ternary are two strings, never one.
+ * two branches of a ternary are two strings, never one. `start` is the offset of the body's first
+ * character in `text`; pass comment-blanked text, as every caller here does.
  */
-function classStrings(text: string): { start: number; body: string }[] {
+export function classStrings(text: string): { start: number; body: string }[] {
   const out: { start: number; body: string }[] = [];
   for (const m of text.matchAll(/"[^"\n]*"|'[^'\n]*'/g)) out.push({ start: m.index + 1, body: m[0].slice(1, -1) });
   for (const m of text.matchAll(/`[^`]*`/g)) {
@@ -158,9 +159,18 @@ function matches(src: string, re: RegExp): string[] {
   return [...blankComments(src).matchAll(re)].map((m) => m[0]);
 }
 
+/**
+ * Every palette class in `src`, variants stripped, once per use, with its offset in `src`.
+ * `blankComments` replaces each comment character with a space (newlines kept), so an offset in
+ * the blanked text is the same offset in `src` — the `F3.65b` codemod splices on it.
+ */
+export function paletteClassMatches(src: string): { index: number; className: string }[] {
+  return [...blankComments(src).matchAll(PALETTE_CLASS)].map((m) => ({ index: m.index, className: m[0] }));
+}
+
 /** Every palette class in `src`, variants stripped, once per use. */
 export function paletteClasses(src: string): string[] {
-  return matches(src, PALETTE_CLASS);
+  return paletteClassMatches(src).map((m) => m.className);
 }
 
 /** Every hex colour literal in `src`, once per use. */

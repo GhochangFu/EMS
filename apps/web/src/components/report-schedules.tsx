@@ -273,23 +273,23 @@ export function ReportSchedules({ user }: ReportSchedulesProps): JSX.Element {
   };
 
   const rows = schedulesQ.data;
-  const inputClass = "rounded border border-gray-300 px-3 py-2 text-sm";
-  const labelClass = "text-xs font-medium text-bms-muted";
+  const inputClass = "rounded border border-line-strong px-3 py-2 text-sm";
+  const labelClass = "text-xs font-medium text-ink-muted";
 
   return (
-    <section className="rounded border border-gray-200 bg-white p-4">
-      <h2 className="font-condensed text-sm font-bold text-bms-ink">Schedules</h2>
-      {schedulesQ.isPending ? <p className="mt-2 text-sm text-bms-muted">Loading schedules…</p> : null}
+    <section className="rounded border border-line bg-surface p-4">
+      <h2 className="font-condensed text-sm font-bold text-ink">Schedules</h2>
+      {schedulesQ.isPending ? <p className="mt-2 text-sm text-ink-muted">Loading schedules…</p> : null}
       {schedulesQ.isError ? (
-        <p className="mt-2 text-sm text-red-700">{apiErrorMessage(schedulesQ.error)}</p>
+        <p className="mt-2 text-sm text-critical-ink">{apiErrorMessage(schedulesQ.error)}</p>
       ) : null}
       {rows !== undefined && rows.length === 0 ? (
-        <p className="mt-2 text-sm text-bms-muted">No schedules yet.</p>
+        <p className="mt-2 text-sm text-ink-muted">No schedules yet.</p>
       ) : null}
       {rows !== undefined && rows.length > 0 ? (
-        <div className="mt-3 overflow-hidden rounded border border-gray-200">
-          <table className="min-w-full divide-y divide-gray-200 text-sm">
-            <thead className="bg-gray-50 text-left text-xs uppercase tracking-wide text-bms-muted">
+        <div className="mt-3 overflow-hidden rounded border border-line">
+          <table className="min-w-full divide-y divide-line text-sm">
+            <thead className="bg-well text-left text-xs uppercase tracking-wide text-ink-muted">
               <tr>
                 <th className="px-3 py-2">Name</th>
                 <th className="px-3 py-2">Cadence</th>
@@ -302,26 +302,26 @@ export function ReportSchedules({ user }: ReportSchedulesProps): JSX.Element {
                 <th className="px-3 py-2 text-right">Actions</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-gray-200">
+            <tbody className="divide-y divide-line">
               {rows.map((row) => {
                 const deleting = deletingIds.includes(row.id);
                 return (
                   <tr key={row.id}>
-                    <td className="px-3 py-2 font-medium text-bms-ink">{row.name}</td>
-                    <td className="px-3 py-2 text-bms-muted">{cadenceLabel(row.cadence)}</td>
+                    <td className="px-3 py-2 font-medium text-ink">{row.name}</td>
+                    <td className="px-3 py-2 text-ink-muted">{cadenceLabel(row.cadence)}</td>
                     <td className="px-3 py-2 font-mono text-xs">{`${row.runAtLocal} ${row.timezone}`}</td>
-                    <td className="px-3 py-2 text-bms-muted">{nextRunLabel(row.nextRunAt)}</td>
-                    <td className="px-3 py-2 text-bms-muted">{row.formats.map(formatLabel).join(" · ")}</td>
-                    <td className="px-3 py-2 text-bms-muted">{locationsCell(row.locationIds.length)}</td>
+                    <td className="px-3 py-2 text-ink-muted">{nextRunLabel(row.nextRunAt)}</td>
+                    <td className="px-3 py-2 text-ink-muted">{row.formats.map(formatLabel).join(" · ")}</td>
+                    <td className="px-3 py-2 text-ink-muted">{locationsCell(row.locationIds.length)}</td>
                     <td className="px-3 py-2 font-mono text-xs">
                       {row.channelId === null ? "—" : (channelCodeById.get(row.channelId) ?? "Configured")}
                     </td>
-                    <td className="px-3 py-2 text-bms-muted">{row.enabled ? "Yes" : "No"}</td>
+                    <td className="px-3 py-2 text-ink-muted">{row.enabled ? "Yes" : "No"}</td>
                     <td className="px-3 py-2 text-right">
                       <div className="flex justify-end gap-3">
                         <button
                           type="button"
-                          className="text-xs font-semibold text-bms-green disabled:cursor-not-allowed disabled:text-gray-400"
+                          className="text-xs font-semibold text-accent disabled:cursor-not-allowed disabled:text-ink-hint"
                           disabled={deleting}
                           data-pending-bystander="deleting"
                           onClick={() => startEdit(row)}
@@ -330,7 +330,7 @@ export function ReportSchedules({ user }: ReportSchedulesProps): JSX.Element {
                         </button>
                         <button
                           type="button"
-                          className="text-xs text-bms-muted disabled:cursor-not-allowed"
+                          className="text-xs text-ink-muted disabled:cursor-not-allowed"
                           disabled={deleting}
                           aria-busy={deleting}
                           onClick={() => deleteM.mutate(row)}
@@ -346,10 +346,10 @@ export function ReportSchedules({ user }: ReportSchedulesProps): JSX.Element {
           </table>
         </div>
       ) : null}
-      {actionError !== null ? <p className="mt-2 text-xs text-red-700">{actionError}</p> : null}
+      {actionError !== null ? <p className="mt-2 text-xs text-critical-ink">{actionError}</p> : null}
 
-      <div className="mt-4 border-t border-gray-200 pt-4">
-        <h3 className="text-xs font-semibold uppercase tracking-wide text-bms-muted">
+      <div className="mt-4 border-t border-line pt-4">
+        <h3 className="text-xs font-semibold uppercase tracking-wide text-ink-muted">
           {editing !== null ? `Edit schedule: ${editing.name}` : "New schedule"}
         </h3>
         <div className="mt-2 grid gap-2 sm:grid-cols-2">
@@ -494,7 +494,7 @@ export function ReportSchedules({ user }: ReportSchedulesProps): JSX.Element {
             ) : (
               <>
                 <span className={labelClass}>Email channel</span>
-                <p className="py-2 text-sm text-bms-muted">{CHANNEL_SENTENCE}</p>
+                <p className="py-2 text-sm text-ink-muted">{CHANNEL_SENTENCE}</p>
               </>
             )}
           </div>
@@ -510,7 +510,7 @@ export function ReportSchedules({ user }: ReportSchedulesProps): JSX.Element {
         <div className="mt-3 flex items-center gap-3">
           <button
             type="button"
-            className="rounded bg-bms-ink px-3 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:bg-gray-300"
+            className="rounded bg-chrome px-3 py-2 text-sm font-semibold text-on-dark disabled:cursor-not-allowed disabled:bg-line-strong"
             disabled={blockedReason !== null}
             aria-busy={saveM.isPending}
             onClick={() => saveM.mutate()}
@@ -518,16 +518,16 @@ export function ReportSchedules({ user }: ReportSchedulesProps): JSX.Element {
             {saveM.isPending ? "Saving…" : "Save schedule"}
           </button>
           {editing !== null ? (
-            <button type="button" className="text-sm text-bms-muted" onClick={resetForm}>
+            <button type="button" className="text-sm text-ink-muted" onClick={resetForm}>
               Cancel
             </button>
           ) : null}
           {blockedReason !== null && !saveM.isPending ? (
-            <p className="text-xs text-bms-muted">{blockedReason}</p>
+            <p className="text-xs text-ink-muted">{blockedReason}</p>
           ) : null}
         </div>
         {outcome !== null ? (
-          <p className={`mt-2 text-xs ${outcome.tone === "saved" ? "text-bms-green" : "text-red-600"}`}>
+          <p className={`mt-2 text-xs ${outcome.tone === "saved" ? "text-accent" : "text-critical-ink-soft"}`}>
             {outcome.text}
           </p>
         ) : null}

@@ -178,12 +178,12 @@ export function ControlRoomSldContent() {
         <Meter label="kWh Today" value={n(kwhToday, 1)} unit="kWh" />
       </div>
 
-      <section className="rounded border border-gray-200 bg-white">
-        <div className="border-b border-gray-200 px-4 py-3">
-          <h2 className="font-condensed text-lg font-bold text-bms-ink">
+      <section className="rounded border border-line bg-surface">
+        <div className="border-b border-line px-4 py-3">
+          <h2 className="font-condensed text-lg font-bold text-ink">
             Detailed SLD
           </h2>
-          <p className="text-xs text-bms-muted">Live 2D rendering of mockup R.crSld</p>
+          <p className="text-xs text-ink-muted">Live 2D rendering of mockup R.crSld</p>
         </div>
         <div className="overflow-x-auto bg-[#FAFBFC] p-4">
           <CrSldSvg rules={rules} />
@@ -197,10 +197,10 @@ export function ControlRoomSldContent() {
 
 function Meter({ label, value, unit }: { label: string; value: string; unit: string }) {
   return (
-    <div className="rounded border border-gray-200 bg-white p-3">
-      <div className="text-xs uppercase tracking-wide text-bms-muted">{label}</div>
-      <div className="mt-1 font-condensed text-2xl font-bold text-bms-ink">
-        {value} {unit ? <span className="text-sm text-bms-muted">{unit}</span> : null}
+    <div className="rounded border border-line bg-surface p-3">
+      <div className="text-xs uppercase tracking-wide text-ink-muted">{label}</div>
+      <div className="mt-1 font-condensed text-2xl font-bold text-ink">
+        {value} {unit ? <span className="text-sm text-ink-muted">{unit}</span> : null}
       </div>
     </div>
   );
@@ -216,14 +216,14 @@ function CrSldSvg({ rules }: { rules: RuleListItem[] }) {
       </defs>
       <SldBox x={20} y={200} w={100} h={60} title="UTILITY" sub={<StaticTspan kind="nameplate">11 kV INCOMER</StaticTspan>} />
       <Flow x1={120} y1={230} x2={160} y2={230} />
-      <circle cx={180} cy={220} r={13} className="fill-white stroke-bms-green" strokeWidth={2} />
-      <circle cx={180} cy={240} r={13} className="fill-white stroke-bms-green" strokeWidth={2} />
-      <text x={180} y={200} textAnchor="middle" className="fill-bms-green font-mono text-[9px]"><StaticTspan kind="nameplate">XFMR 100 kVA</StaticTspan></text>
+      <circle cx={180} cy={220} r={13} className="fill-surface stroke-accent" strokeWidth={2} />
+      <circle cx={180} cy={240} r={13} className="fill-surface stroke-accent" strokeWidth={2} />
+      <text x={180} y={200} textAnchor="middle" className="fill-accent font-mono text-[9px]"><StaticTspan kind="nameplate">XFMR 100 kVA</StaticTspan></text>
       <Flow x1={200} y1={230} x2={240} y2={230} />
       <Breaker cx={260} cy={230} label="Q1" code="CR-Q1" rules={rules} />
       <Flow x1={274} y1={230} x2={320} y2={230} />
-      <rect x={320} y={80} width={6} height={320} rx={2} className="fill-bms-green" />
-      <text x={323} y={74} textAnchor="middle" className="fill-bms-green font-condensed text-[11px] font-bold"><StaticTspan kind="nameplate">MAIN BUS 415V</StaticTspan></text>
+      <rect x={320} y={80} width={6} height={320} rx={2} className="fill-accent" />
+      <text x={323} y={74} textAnchor="middle" className="fill-accent font-condensed text-[11px] font-bold"><StaticTspan kind="nameplate">MAIN BUS 415V</StaticTspan></text>
       {/* `F4.39`: the UPS boxes used to read `ONLINE · 30 kVA`. "ONLINE" was a
           literal, and it is not a claim telemetry supports anyway — for a UPS
           it means running on mains rather than on battery, which is a fact
@@ -234,8 +234,8 @@ function CrSldSvg({ rules }: { rules: RuleListItem[] }) {
       <LoadBranch y={240} breaker="Q10" code="CR-Q10" title="HVAC-1 (4 TR)" unitCode="CR-HVAC-1" role="LEAD" rules={rules} />
       <LoadBranch y={290} breaker="Q11" code="CR-Q11" title="HVAC-2 (4 TR)" unitCode="CR-HVAC-2" role="STANDBY" rules={rules} />
       <LoadBranch y={340} breaker="Q12" code="CR-Q12" title="CR LIGHTS / AUX" rules={rules} />
-      <rect x={690} y={80} width={6} height={200} rx={2} className="fill-bms-green" />
-      <text x={693} y={74} textAnchor="middle" className="fill-bms-green font-condensed text-[11px] font-bold"><StaticTspan kind="nameplate">UPS OUT BUS 230V</StaticTspan></text>
+      <rect x={690} y={80} width={6} height={200} rx={2} className="fill-accent" />
+      <text x={693} y={74} textAnchor="middle" className="fill-accent font-condensed text-[11px] font-bold"><StaticTspan kind="nameplate">UPS OUT BUS 230V</StaticTspan></text>
       <Pdu y={105} breaker="Q6" code="CR-Q6" title="NET RACK · PDU-A" loadCode="CR-NET-RACK-PDU-A" rules={rules} />
       <Pdu y={148} breaker="Q7" code="CR-Q7" title="NET RACK · PDU-B" loadCode="CR-NET-RACK-PDU-B" rules={rules} />
       <Pdu y={195} breaker="Q8" code="CR-Q8" title="VW SRV · PDU-A" loadCode="CR-VW-RACK-PDU-A" rules={rules} />
@@ -278,11 +278,11 @@ function SldBox({ x, y, w, h, title, sub, offline = false }: { x: number; y: num
         width={w}
         height={h}
         rx={6}
-        className={offline ? "fill-gray-200 stroke-gray-400" : "fill-white stroke-bms-green"}
+        className={offline ? "fill-line stroke-ink-hint" : "fill-surface stroke-accent"}
         strokeWidth={1.5}
       />
-      <text x={x + w / 2} y={y + h / 2 - 2} textAnchor="middle" className={`font-condensed text-[12px] font-bold ${offline ? "fill-gray-600" : "fill-bms-ink"}`}>{title}</text>
-      {sub ? <text x={x + w / 2} y={y + h / 2 + 13} textAnchor="middle" className={`font-mono text-[9px] ${offline ? "fill-gray-500" : "fill-bms-muted"}`}>{sub}</text> : null}
+      <text x={x + w / 2} y={y + h / 2 - 2} textAnchor="middle" className={`font-condensed text-[12px] font-bold ${offline ? "fill-ink-muted" : "fill-ink"}`}>{title}</text>
+      {sub ? <text x={x + w / 2} y={y + h / 2 + 13} textAnchor="middle" className={`font-mono text-[9px] ${offline ? "fill-ink-faint" : "fill-ink-muted"}`}>{sub}</text> : null}
     </g>
   );
 }
@@ -313,24 +313,24 @@ function Breaker({ cx, cy, label, code, rules }: { cx: number; cy: number; label
   const state = deriveBreakerRuleState(code, s, rules, Date.now());
   const circleClass =
     state.status === "offline"
-      ? "fill-gray-200 stroke-gray-400"
+      ? "fill-line stroke-ink-hint"
       : state.status === "open"
-        ? "fill-gray-100 stroke-gray-400"
+        ? "fill-well-deep stroke-ink-hint"
         : state.status === "critical"
-          ? "fill-red-50 stroke-red-600"
+          ? "fill-critical-wash stroke-critical"
           : state.status === "warning"
-            ? "fill-amber-50 stroke-amber-500"
-            : "fill-white stroke-bms-green";
+            ? "fill-warning-wash stroke-warning"
+            : "fill-surface stroke-accent";
   const textClass =
     state.status === "offline"
-      ? "fill-gray-500 font-mono text-[8px] font-bold"
+      ? "fill-ink-faint font-mono text-[8px] font-bold"
       : state.status === "open"
-        ? "fill-gray-500 font-mono text-[8px] font-bold"
+        ? "fill-ink-faint font-mono text-[8px] font-bold"
         : state.status === "critical"
-          ? "fill-red-700 font-mono text-[8px] font-bold"
+          ? "fill-critical-ink font-mono text-[8px] font-bold"
           : state.status === "warning"
-            ? "fill-amber-700 font-mono text-[8px] font-bold"
-            : "fill-bms-green font-mono text-[8px] font-bold";
+            ? "fill-warning-ink font-mono text-[8px] font-bold"
+            : "fill-accent font-mono text-[8px] font-bold";
   return (
     <g>
       <circle cx={cx} cy={cy} r={12} className={circleClass} strokeWidth={2} />
@@ -471,11 +471,11 @@ function Pdu({ y, breaker, code, title, loadCode, rules }: { y: number; breaker:
       <line x1={696} y1={y} x2={740} y2={y} stroke={stroke} strokeWidth={3} markerEnd={dark ? undefined : "url(#crArrow)"} />
       <Breaker cx={760} cy={y} label={breaker} code={code} rules={rules} />
       <line x1={770} y1={y} x2={810} y2={y} stroke={stroke} strokeWidth={3} markerEnd={dark ? undefined : "url(#crArrow)"} />
-      <rect x={810} y={y - 19} width={160} height={38} rx={6} className={dark ? "fill-gray-200 stroke-gray-400" : critical ? "fill-red-50 stroke-red-600" : warn ? "fill-amber-50 stroke-amber-500" : "fill-white stroke-bms-green"} />
-      <text x={890} y={y + 1} textAnchor="middle" className={dark ? "fill-gray-600 font-condensed text-[12px] font-bold" : critical ? "fill-red-800 font-condensed text-[12px] font-bold" : warn ? "fill-amber-900 font-condensed text-[12px] font-bold" : "fill-bms-ink font-condensed text-[12px] font-bold"}>{title}</text>
+      <rect x={810} y={y - 19} width={160} height={38} rx={6} className={dark ? "fill-line stroke-ink-hint" : critical ? "fill-critical-wash stroke-critical" : warn ? "fill-warning-wash stroke-warning" : "fill-surface stroke-accent"} />
+      <text x={890} y={y + 1} textAnchor="middle" className={dark ? "fill-ink-muted font-condensed text-[12px] font-bold" : critical ? "fill-critical-ink-strong font-condensed text-[12px] font-bold" : warn ? "fill-warning-ink font-condensed text-[12px] font-bold" : "fill-ink font-condensed text-[12px] font-bold"}>{title}</text>
       {/* Gated on the *load* asset's own freshness, not the breaker's: the two
           are different assets and either can die alone. */}
-      <text x={890} y={y + 13} textAnchor="middle" className="fill-bms-muted font-mono text-[9px]">{n(freshValue(s.rackKw, isStale(s.lastSeenMs, Date.now())), 2)} kW</text>
+      <text x={890} y={y + 13} textAnchor="middle" className="fill-ink-muted font-mono text-[9px]">{n(freshValue(s.rackKw, isStale(s.lastSeenMs, Date.now())), 2)} kW</text>
     </g>
   );
 }
@@ -505,9 +505,9 @@ function SldBreakerTable({ rules }: { rules: RuleListItem[] }) {
     breakerTableRow(row, slices[row.code], deriveBreakerRuleState(row.code, slices[row.code], rules, nowMs)),
   );
   return (
-    <section className="rounded border border-gray-200 bg-white">
-      <div className="border-b border-gray-200 px-4 py-3">
-        <h2 className="font-condensed text-lg font-bold text-bms-ink">
+    <section className="rounded border border-line bg-surface">
+      <div className="border-b border-line px-4 py-3">
+        <h2 className="font-condensed text-lg font-bold text-ink">
           Breakers · Status & Energy
         </h2>
       </div>

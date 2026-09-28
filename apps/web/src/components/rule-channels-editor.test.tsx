@@ -8,6 +8,8 @@ import {
   keepsTheOperatorsBoxesWhenTheSaveIsRefused,
   listsEveryChannelAndChecksTheJoinedOnes,
   mountsTheEditorOnlyWhenTheCardAsksForIt,
+  paintsTheDisabledKnobOnDark,
+  paintsTheEnabledKnobOnAccent,
   savesTheWholeSetAndInvalidatesTheJoinQuery,
   saysAJoinedChannelGetsNothingWhenTheActionIsNotNotify,
   saysNothingAboutHiddenChannelsWhenThereAreNone,
@@ -78,5 +80,20 @@ describe("F3.7 per-rule channel picker", () => {
   // renders `RulesPanel` under a `QueryClientProvider`.
   it("shows the server's refusal on the panel when Evaluate now is refused", async () => {
     await showsTheEvaluateRefusalWhereTheOperatorPressed();
+  });
+});
+
+describe("F3.65b rule enable toggle knob follows its track", () => {
+  afterEach(() => {
+    cleanup();
+    vi.restoreAllMocks();
+  });
+
+  it("paints the knob on-accent when the rule is enabled", async () => {
+    await paintsTheEnabledKnobOnAccent();
+  });
+
+  it("paints the knob on-dark when the rule is disabled", async () => {
+    await paintsTheDisabledKnobOnDark();
   });
 });

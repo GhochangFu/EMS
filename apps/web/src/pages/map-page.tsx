@@ -53,7 +53,7 @@ export function MapPage({ user }: MapPageProps) {
     <AppShell
       user={user}
       kpiRibbon={
-        <span className="text-bms-ink">
+        <span className="text-ink">
           World map · OpenStreetMap · live operational location status
         </span>
       }
@@ -66,13 +66,13 @@ export function MapPage({ user }: MapPageProps) {
         />
 
         {q.isLoading ? (
-          <p className="text-sm text-bms-muted">Loading map data…</p>
+          <p className="text-sm text-ink-muted">Loading map data…</p>
         ) : q.isError ? (
-          <p className="text-sm text-red-600">Could not load map sites.</p>
+          <p className="text-sm text-critical-ink-soft">Could not load map sites.</p>
         ) : !q.data?.length ? (
-          <p className="text-sm text-bms-muted">
+          <p className="text-sm text-ink-muted">
             No locations — run{" "}
-            <code className="rounded bg-gray-100 px-1 text-xs">pnpm db:seed</code>.
+            <code className="rounded bg-well-deep px-1 text-xs">pnpm db:seed</code>.
           </p>
         ) : (
           <SectionCard bodyClassName="p-0">

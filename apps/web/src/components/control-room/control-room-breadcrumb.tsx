@@ -19,16 +19,16 @@ export function ControlRoomBreadcrumb({ crumbs }: ControlRoomBreadcrumbProps) {
   }
 
   return (
-    <nav aria-label="Breadcrumb" className="flex flex-wrap items-center gap-1 text-xs text-bms-muted">
+    <nav aria-label="Breadcrumb" className="flex flex-wrap items-center gap-1 text-xs text-ink-muted">
       {crumbs.map((crumb, index) => (
         <span key={`${crumb.label}-${index}`} className="flex items-center gap-1">
           {index > 0 ? <span>/</span> : null}
           {crumb.to && index < crumbs.length - 1 ? (
-            <Link to={crumb.to} className="font-semibold text-bms-green hover:underline">
+            <Link to={crumb.to} className="font-semibold text-accent hover:underline">
               {crumb.label}
             </Link>
           ) : (
-            <span className="font-semibold text-bms-ink">{crumb.label}</span>
+            <span className="font-semibold text-ink">{crumb.label}</span>
           )}
         </span>
       ))}

@@ -143,7 +143,7 @@ export function DashboardTemplatesAdminPage({ user }: DashboardTemplatesAdminPag
             <button
               type="button"
               onClick={() => setModalOpen(true)}
-              className="rounded bg-bms-green px-3 py-1.5 text-xs font-semibold text-white"
+              className="rounded bg-accent px-3 py-1.5 text-xs font-semibold text-on-accent"
             >
               New template
             </button>
@@ -160,7 +160,7 @@ export function DashboardTemplatesAdminPage({ user }: DashboardTemplatesAdminPag
               aria-label="Filter by section"
               value={section}
               onChange={(event) => setSection(event.target.value)}
-              className="rounded border border-gray-200 px-2 py-1 text-xs"
+              className="rounded border border-line px-2 py-1 text-xs"
             >
               <option value="">All sections</option>
               {(vocabQ.data?.dashboardSections ?? []).map((row) => (
@@ -178,8 +178,8 @@ export function DashboardTemplatesAdminPage({ user }: DashboardTemplatesAdminPag
                   aria-pressed={status === option.value}
                   className={`rounded px-2 py-1 text-[11px] font-semibold ${
                     status === option.value
-                      ? "bg-bms-green text-white"
-                      : "bg-gray-100 text-bms-muted hover:text-bms-ink"
+                      ? "bg-accent text-on-accent"
+                      : "bg-well-deep text-ink-muted hover:text-ink"
                   }`}
                 >
                   {option.label}
@@ -189,27 +189,27 @@ export function DashboardTemplatesAdminPage({ user }: DashboardTemplatesAdminPag
           </div>
         }
       >
-        {listQ.isPending ? <p className="text-sm text-bms-muted">Loading templates…</p> : null}
+        {listQ.isPending ? <p className="text-sm text-ink-muted">Loading templates…</p> : null}
         {listQ.isError ? (
-          <p className="rounded border border-red-200 bg-red-50 p-3 text-sm text-red-800">
+          <p className="rounded border border-critical-line bg-critical-wash p-3 text-sm text-critical-ink-strong">
             {apiErrorMessage(listQ.error)}
           </p>
         ) : null}
         {!listQ.isPending && !listQ.isError && rows.length === 0 ? (
-          <p className="text-sm text-bms-muted">No templates match this filter.</p>
+          <p className="text-sm text-ink-muted">No templates match this filter.</p>
         ) : null}
 
-        <ul className="divide-y divide-gray-100">
+        <ul className="divide-y divide-well-deep">
           {rows.map((row) => (
             <li key={row.id} className="flex flex-wrap items-center justify-between gap-2 py-2">
               <div>
                 <Link
                   to={`/admin/dashboard-templates/${row.id}`}
-                  className="text-sm font-semibold text-bms-green hover:underline"
+                  className="text-sm font-semibold text-accent hover:underline"
                 >
                   {row.code} v{row.version}
                 </Link>
-                <div className="text-[11px] text-bms-muted">
+                <div className="text-[11px] text-ink-muted">
                   {row.name} · {row.section} · {row.widgetCount} widget
                   {row.widgetCount === 1 ? "" : "s"}
                 </div>
@@ -238,7 +238,7 @@ export function DashboardTemplatesAdminPage({ user }: DashboardTemplatesAdminPag
               aria-label="Import into organization"
               value={importOrgId}
               onChange={(event) => setImportOrgId(event.target.value)}
-              className="rounded border border-gray-200 px-2 py-1 text-xs"
+              className="rounded border border-line px-2 py-1 text-xs"
             >
               <option value="">Select an organization…</option>
               {(orgsQ.data?.items ?? []).map((org) => (
@@ -250,25 +250,25 @@ export function DashboardTemplatesAdminPage({ user }: DashboardTemplatesAdminPag
           ) : null
         }
       >
-        {stockQ.isPending ? <p className="text-sm text-bms-muted">Loading the stock catalog…</p> : null}
+        {stockQ.isPending ? <p className="text-sm text-ink-muted">Loading the stock catalog…</p> : null}
         {stockQ.isError ? (
-          <p className="rounded border border-red-200 bg-red-50 p-3 text-sm text-red-800">
+          <p className="rounded border border-critical-line bg-critical-wash p-3 text-sm text-critical-ink-strong">
             {apiErrorMessage(stockQ.error)}
           </p>
         ) : null}
         {importError ? (
-          <p className="mb-2 rounded border border-red-200 bg-red-50 p-2 text-xs text-red-800">
+          <p className="mb-2 rounded border border-critical-line bg-critical-wash p-2 text-xs text-critical-ink-strong">
             {importError}
           </p>
         ) : null}
-        <ul className="divide-y divide-gray-100">
+        <ul className="divide-y divide-well-deep">
           {stockRows.map((entry) => {
             const importingThis = importM.isPending && importM.variables === entry.code;
             return (
               <li key={entry.code} className="flex flex-wrap items-center justify-between gap-2 py-2">
                 <div>
-                  <div className="text-sm font-semibold text-bms-ink">{entry.name}</div>
-                  <div className="text-[11px] text-bms-muted">
+                  <div className="text-sm font-semibold text-ink">{entry.name}</div>
+                  <div className="text-[11px] text-ink-muted">
                     {entry.code} · {entry.section} · stock v{entry.stockVersion}
                   </div>
                 </div>
@@ -276,7 +276,7 @@ export function DashboardTemplatesAdminPage({ user }: DashboardTemplatesAdminPag
                   <Link
                     to={`/admin/dashboard-templates/stock/${entry.code}`}
                     aria-label={`View ${entry.name}`}
-                    className="rounded border border-gray-200 px-3 py-1.5 text-xs font-semibold text-bms-ink hover:underline"
+                    className="rounded border border-line px-3 py-1.5 text-xs font-semibold text-ink hover:underline"
                   >
                     View
                   </Link>
@@ -290,7 +290,7 @@ export function DashboardTemplatesAdminPage({ user }: DashboardTemplatesAdminPag
                         setImportError(null);
                         importM.mutate(entry.code);
                       }}
-                      className="rounded border border-gray-200 px-3 py-1.5 text-xs font-semibold text-bms-ink disabled:opacity-60"
+                      className="rounded border border-line px-3 py-1.5 text-xs font-semibold text-ink disabled:opacity-60"
                     >
                       {importingThis ? "Importing…" : "Import"}
                     </button>
@@ -303,18 +303,18 @@ export function DashboardTemplatesAdminPage({ user }: DashboardTemplatesAdminPag
       </SectionCard>
 
       {modalOpen && mayAuthor ? (
-        <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/30 p-4">
+        <div className="fixed inset-0 z-40 flex items-center justify-center bg-scrim/30 p-4">
           <form
             onSubmit={submit}
-            className="w-full max-w-lg space-y-3 rounded-lg bg-white p-4 shadow-lg"
+            className="w-full max-w-lg space-y-3 rounded-lg bg-surface p-4 shadow-lg"
           >
-            <h2 className="font-condensed text-base font-bold text-bms-ink">New template</h2>
-            <p className="text-[11px] text-bms-muted">
+            <h2 className="font-condensed text-base font-bold text-ink">New template</h2>
+            <p className="text-[11px] text-ink-muted">
               A template is created as a draft at version 1. Widgets are authored on the next
               screen.
             </p>
 
-            <label className="block text-xs font-semibold text-bms-ink">
+            <label className="block text-xs font-semibold text-ink">
               Organization
               <select
                 required
@@ -322,7 +322,7 @@ export function DashboardTemplatesAdminPage({ user }: DashboardTemplatesAdminPag
                 onChange={(event) =>
                   setForm((current) => ({ ...current, organizationId: event.target.value }))
                 }
-                className="mt-1 w-full rounded border border-gray-200 px-2 py-1 text-xs font-normal"
+                className="mt-1 w-full rounded border border-line px-2 py-1 text-xs font-normal"
               >
                 <option value="">Select an organization…</option>
                 {(orgsQ.data?.items ?? []).map((org) => (
@@ -334,7 +334,7 @@ export function DashboardTemplatesAdminPage({ user }: DashboardTemplatesAdminPag
             </label>
 
             <div className="grid gap-3 sm:grid-cols-2">
-              <label className="block text-xs font-semibold text-bms-ink">
+              <label className="block text-xs font-semibold text-ink">
                 Code
                 <input
                   required
@@ -343,10 +343,10 @@ export function DashboardTemplatesAdminPage({ user }: DashboardTemplatesAdminPag
                     setForm((current) => ({ ...current, code: event.target.value }))
                   }
                   placeholder="ELECTRICAL"
-                  className="mt-1 w-full rounded border border-gray-200 px-2 py-1 text-xs font-normal"
+                  className="mt-1 w-full rounded border border-line px-2 py-1 text-xs font-normal"
                 />
               </label>
-              <label className="block text-xs font-semibold text-bms-ink">
+              <label className="block text-xs font-semibold text-ink">
                 Name
                 <input
                   required
@@ -355,10 +355,10 @@ export function DashboardTemplatesAdminPage({ user }: DashboardTemplatesAdminPag
                     setForm((current) => ({ ...current, name: event.target.value }))
                   }
                   placeholder="Electrical overview"
-                  className="mt-1 w-full rounded border border-gray-200 px-2 py-1 text-xs font-normal"
+                  className="mt-1 w-full rounded border border-line px-2 py-1 text-xs font-normal"
                 />
               </label>
-              <label className="block text-xs font-semibold text-bms-ink">
+              <label className="block text-xs font-semibold text-ink">
                 Section
                 <select
                   required
@@ -366,7 +366,7 @@ export function DashboardTemplatesAdminPage({ user }: DashboardTemplatesAdminPag
                   onChange={(event) =>
                     setForm((current) => ({ ...current, section: event.target.value }))
                   }
-                  className="mt-1 w-full rounded border border-gray-200 px-2 py-1 text-xs font-normal"
+                  className="mt-1 w-full rounded border border-line px-2 py-1 text-xs font-normal"
                 >
                   <option value="">Select a section…</option>
                   {(vocabQ.data?.dashboardSections ?? []).map((row) => (
@@ -378,7 +378,7 @@ export function DashboardTemplatesAdminPage({ user }: DashboardTemplatesAdminPag
               </label>
             </div>
 
-            <label className="block text-xs font-semibold text-bms-ink">
+            <label className="block text-xs font-semibold text-ink">
               Description
               <textarea
                 value={form.description}
@@ -386,12 +386,12 @@ export function DashboardTemplatesAdminPage({ user }: DashboardTemplatesAdminPag
                   setForm((current) => ({ ...current, description: event.target.value }))
                 }
                 rows={2}
-                className="mt-1 w-full rounded border border-gray-200 px-2 py-1 text-xs font-normal"
+                className="mt-1 w-full rounded border border-line px-2 py-1 text-xs font-normal"
               />
             </label>
 
             {error ? (
-              <p className="rounded border border-red-200 bg-red-50 p-2 text-xs text-red-800">
+              <p className="rounded border border-critical-line bg-critical-wash p-2 text-xs text-critical-ink-strong">
                 {error}
               </p>
             ) : null}
@@ -403,7 +403,7 @@ export function DashboardTemplatesAdminPage({ user }: DashboardTemplatesAdminPag
                   setModalOpen(false);
                   setError(null);
                 }}
-                className="rounded border border-gray-200 px-3 py-1.5 text-xs font-semibold text-bms-muted"
+                className="rounded border border-line px-3 py-1.5 text-xs font-semibold text-ink-muted"
               >
                 Cancel
               </button>
@@ -411,7 +411,7 @@ export function DashboardTemplatesAdminPage({ user }: DashboardTemplatesAdminPag
                 type="submit"
                 disabled={createM.isPending}
                 aria-busy={createM.isPending}
-                className="rounded bg-bms-green px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-60"
+                className="rounded bg-accent px-3 py-1.5 text-xs font-semibold text-on-accent disabled:opacity-60"
               >
                 {createM.isPending ? "Creating…" : "Create draft"}
               </button>

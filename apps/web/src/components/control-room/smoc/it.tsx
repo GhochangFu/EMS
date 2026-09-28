@@ -46,13 +46,13 @@ function statusLabel(status: RackPowerStatus): string {
 function statusPillClass(status: RackPowerStatus): string {
   switch (status) {
     case "critical":
-      return "border-red-200 bg-red-100 text-red-800";
+      return "border-critical-line bg-critical-wash-strong text-critical-ink-strong";
     case "warning":
-      return "border-amber-200 bg-amber-100 text-amber-900";
+      return "border-warning-line bg-warning-wash-strong text-warning-ink";
     case "offline":
-      return "border-gray-200 bg-gray-100 text-gray-700";
+      return "border-line bg-well-deep text-neutral-ink";
     case "normal":
-      return "border-bms-green/20 bg-bms-green/10 text-bms-green";
+      return "border-accent/20 bg-accent/10 text-accent";
   }
 }
 
@@ -217,18 +217,18 @@ export function ControlRoomItContent() {
 
       <UpsSourceMap rules={rules} />
 
-      <section className="rounded border border-gray-200 bg-white">
-        <div className="border-b border-gray-200 px-4 py-3">
-          <h2 className="font-condensed text-lg font-bold text-bms-ink">
+      <section className="rounded border border-line bg-surface">
+        <div className="border-b border-line px-4 py-3">
+          <h2 className="font-condensed text-lg font-bold text-ink">
             Server Inventory
           </h2>
-          <p className="text-xs text-bms-muted">
+          <p className="text-xs text-ink-muted">
             Static rack metadata from the mockup, paired with live rack/PDU load.
           </p>
         </div>
         <div className="overflow-x-auto">
-          <table className="min-w-full divide-y divide-gray-200 text-sm">
-            <thead className="bg-gray-50 text-left text-xs uppercase tracking-wide text-bms-muted">
+          <table className="min-w-full divide-y divide-line text-sm">
+            <thead className="bg-well text-left text-xs uppercase tracking-wide text-ink-muted">
               <tr>
                 <th className="px-3 py-2">Rack</th>
                 <th className="px-3 py-2">Device</th>
@@ -237,15 +237,15 @@ export function ControlRoomItContent() {
                 <th className="px-3 py-2">State</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-gray-200">
+            <tbody className="divide-y divide-line">
               {CR_SERVERS.map((server) => (
                 <tr key={server.id}>
-                  <td className="px-3 py-2 text-bms-muted">{server.rack}</td>
-                  <td className="px-3 py-2 font-medium text-bms-ink">{server.id}</td>
+                  <td className="px-3 py-2 text-ink-muted">{server.rack}</td>
+                  <td className="px-3 py-2 font-medium text-ink">{server.id}</td>
                   <td className="px-3 py-2">{server.type}</td>
                   <td className="px-3 py-2 text-right font-mono">{server.watts}</td>
                   <td className="px-3 py-2">
-                    <span className="rounded-full border border-bms-green/20 bg-bms-green/10 px-2 py-0.5 text-[11px] font-semibold text-bms-green">
+                    <span className="rounded-full border border-accent/20 bg-accent/10 px-2 py-0.5 text-[11px] font-semibold text-accent">
                       ON
                     </span>
                   </td>
@@ -261,9 +261,9 @@ export function ControlRoomItContent() {
 
 function Summary({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded border border-gray-200 bg-white p-3">
-      <div className="text-xs uppercase tracking-wide text-bms-muted">{label}</div>
-      <div className="mt-1 font-condensed text-2xl font-bold text-bms-ink">
+    <div className="rounded border border-line bg-surface p-3">
+      <div className="text-xs uppercase tracking-wide text-ink-muted">{label}</div>
+      <div className="mt-1 font-condensed text-2xl font-bold text-ink">
         {value}
       </div>
     </div>
@@ -297,11 +297,11 @@ function RackCard({
   const rackState = mergeStatus([aState, bState, rackSelf]);
   const pct = rack.rackKw == null ? 0 : Math.min(100, (rack.rackKw / ratedKw) * 100);
   return (
-    <section className="rounded border border-gray-200 bg-white p-4">
+    <section className="rounded border border-line bg-surface p-4">
       <div className="flex items-start justify-between gap-3">
         <div>
-          <h2 className="font-condensed text-lg font-bold text-bms-ink">{title}</h2>
-          <p className="text-xs text-bms-muted">UPS source · {ups}</p>
+          <h2 className="font-condensed text-lg font-bold text-ink">{title}</h2>
+          <p className="text-xs text-ink-muted">UPS source · {ups}</p>
         </div>
         <span className={`rounded border px-2 py-1 text-xs font-semibold ${statusPillClass(rackState.status)}`}>
           {statusLabel(rackState.status)}
@@ -309,11 +309,11 @@ function RackCard({
       </div>
       <div className="mt-4">
         <div className="flex justify-between text-sm">
-          <span className="text-bms-muted">Load</span>
-          <span className="font-mono font-semibold text-bms-ink">{n(freshValue(rack.rackKw, rackSelf.stale), 2)} kW</span>
+          <span className="text-ink-muted">Load</span>
+          <span className="font-mono font-semibold text-ink">{n(freshValue(rack.rackKw, rackSelf.stale), 2)} kW</span>
         </div>
-        <div className="mt-2 h-2 rounded bg-gray-200">
-          <div className="h-2 rounded bg-bms-green" style={{ width: `${pct}%` }} />
+        <div className="mt-2 h-2 rounded bg-line">
+          <div className="h-2 rounded bg-accent" style={{ width: `${pct}%` }} />
         </div>
       </div>
       <div className="mt-4 grid gap-3 sm:grid-cols-2">
@@ -400,12 +400,12 @@ function UpsSourceMap({ rules }: { rules: RuleListItem[] }) {
   const vwStale = isStale(vw.lastSeenMs, mapNow);
 
   return (
-    <section className="rounded border border-gray-200 bg-white">
-      <div className="border-b border-gray-200 px-4 py-3">
-        <h2 className="font-condensed text-lg font-bold text-bms-ink">
+    <section className="rounded border border-line bg-surface">
+      <div className="border-b border-line px-4 py-3">
+        <h2 className="font-condensed text-lg font-bold text-ink">
           UPS Source Map
         </h2>
-        <p className="text-xs text-bms-muted">
+        <p className="text-xs text-ink-muted">
           Which rack draws from which UPS · colors follow enabled Rule Engine thresholds
         </p>
       </div>
@@ -441,12 +441,12 @@ function UpsSourceMap({ rules }: { rules: RuleListItem[] }) {
           <MapBox x={500} y={30} w={180} h={50} title="NETWORK RACK" sub={`${n(freshValue(net.rackKw, netStale), 2)} kW · ${n(freshValue(net.outletsUsed, netStale), 0)}/24 outlets`} status={netState.status} />
           <MapBox x={500} y={120} w={180} h={50} title="VW SERVER RACK" sub={`${n(freshValue(vw.rackKw, vwStale), 2)} kW · ${n(freshValue(vw.outletsUsed, vwStale), 0)}/24 outlets`} status={vwState.status} />
         </svg>
-        <div className="mt-3 grid gap-2 text-xs text-bms-muted sm:grid-cols-2">
+        <div className="mt-3 grid gap-2 text-xs text-ink-muted sm:grid-cols-2">
           {[netState, vwState]
             .map((state) => state.matchedRule)
             .filter((rule): rule is RuleListItem => Boolean(rule))
             .map((rule) => (
-              <div key={rule.id} className="rounded border border-amber-200 bg-amber-50 px-3 py-2 text-amber-900">
+              <div key={rule.id} className="rounded border border-warning-line bg-warning-wash px-3 py-2 text-warning-ink">
                 Active rule: {rule.name}
               </div>
             ))}
@@ -472,13 +472,13 @@ function mapStroke(status: RackPowerStatus): string {
 function mapBoxClasses(status: RackPowerStatus): { rect: string; text: string; sub: string } {
   switch (status) {
     case "critical":
-      return { rect: "fill-red-50 stroke-red-600", text: "fill-red-800", sub: "fill-red-700" };
+      return { rect: "fill-critical-wash stroke-critical", text: "fill-critical-ink-strong", sub: "fill-critical-ink" };
     case "warning":
-      return { rect: "fill-amber-50 stroke-amber-500", text: "fill-amber-900", sub: "fill-amber-700" };
+      return { rect: "fill-warning-wash stroke-warning", text: "fill-warning-ink", sub: "fill-warning-ink" };
     case "offline":
-      return { rect: "fill-gray-100 stroke-gray-400", text: "fill-gray-700", sub: "fill-gray-500" };
+      return { rect: "fill-well-deep stroke-ink-hint", text: "fill-neutral-ink", sub: "fill-ink-faint" };
     case "normal":
-      return { rect: "fill-white stroke-bms-green", text: "fill-[#1d3a8c]", sub: "fill-slate-600" };
+      return { rect: "fill-surface stroke-accent", text: "fill-[#1d3a8c]", sub: "fill-ink-muted" };
   }
 }
 
@@ -553,18 +553,18 @@ function PduBadge({
   util: number | null;
 }) {
   return (
-    <div className="rounded border border-gray-200 bg-gray-50 p-3">
+    <div className="rounded border border-line bg-well p-3">
       <div className="flex items-center justify-between gap-2">
-        <span className="font-semibold text-bms-ink">{label}</span>
+        <span className="font-semibold text-ink">{label}</span>
         <span className={`rounded-full border px-2 py-0.5 text-[11px] font-semibold ${statusPillClass(status.status)}`}>
           {statusLabel(status.status)}
         </span>
       </div>
-      <p className="mt-2 text-xs text-bms-muted">
+      <p className="mt-2 text-xs text-ink-muted">
         {code} · Utilisation {n(util, 0)}%
       </p>
       {status.matchedRule ? (
-        <p className="mt-1 text-xs font-medium text-amber-900">
+        <p className="mt-1 text-xs font-medium text-warning-ink">
           {status.matchedRule.name}
         </p>
       ) : null}
@@ -575,8 +575,8 @@ function PduBadge({
 function Row({ label, value }: { label: string; value: string }) {
   return (
     <div className="mt-2 flex justify-between gap-3">
-      <span className="text-bms-muted">{label}</span>
-      <span className="font-mono font-semibold text-bms-ink">{value}</span>
+      <span className="text-ink-muted">{label}</span>
+      <span className="font-mono font-semibold text-ink">{value}</span>
     </div>
   );
 }

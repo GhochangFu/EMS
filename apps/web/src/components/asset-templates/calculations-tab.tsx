@@ -141,7 +141,7 @@ export function CalculationsTab({
 
   if (derivedIndexes.length === 0) {
     return (
-      <p className="rounded border border-dashed border-gray-300 p-4 text-xs text-bms-muted">
+      <p className="rounded border border-dashed border-line-strong p-4 text-xs text-ink-muted">
         This template has no derived points. Add a point on the Points tab and set its kind to
         derived, then set its formula here.
       </p>
@@ -151,7 +151,7 @@ export function CalculationsTab({
   return (
     <div className="space-y-4">
       {error ? (
-        <p className="rounded border border-red-200 bg-red-50 p-3 text-sm text-red-800">{error}</p>
+        <p className="rounded border border-critical-line bg-critical-wash p-3 text-sm text-critical-ink-strong">{error}</p>
       ) : null}
 
       {derivedIndexes.map(({ row, index }) => {
@@ -193,17 +193,17 @@ export function CalculationsTab({
           problems.find((problem) => problem.field === field)?.message;
 
         return (
-          <section key={row.pointKey || index} className="rounded border border-gray-200 p-3">
+          <section key={row.pointKey || index} className="rounded border border-line p-3">
             <header className="mb-2 flex flex-wrap items-baseline gap-2">
-              <span className="text-xs font-semibold text-bms-ink">
+              <span className="text-xs font-semibold text-ink">
                 {row.pointKey || "(no point key)"}
               </span>
-              {row.label ? <span className="text-[11px] text-bms-muted">{row.label}</span> : null}
-              {row.unit ? <span className="text-[11px] text-bms-muted">· {row.unit}</span> : null}
+              {row.label ? <span className="text-[11px] text-ink-muted">{row.label}</span> : null}
+              {row.unit ? <span className="text-[11px] text-ink-muted">· {row.unit}</span> : null}
             </header>
 
             <label className="block space-y-1">
-              <span className="text-[11px] font-semibold uppercase tracking-wide text-bms-muted">
+              <span className="text-[11px] font-semibold uppercase tracking-wide text-ink-muted">
                 Grammar
               </span>
               <select
@@ -238,11 +238,11 @@ export function CalculationsTab({
               // The teaching ADR 0055 decision 6 buys: which reference form
               // answers which question. From `V2_REFERENCE_FORMS`, whose
               // examples the parser is proven to accept.
-              <ul className="mt-1 space-y-0.5 text-[11px] text-bms-muted">
+              <ul className="mt-1 space-y-0.5 text-[11px] text-ink-muted">
                 {V2_REFERENCE_FORMS.map((form) => (
                   <li key={form.form}>
                     <span className="font-semibold">{form.form}</span> — {form.answers}:{" "}
-                    <code className="rounded bg-gray-100 px-1">{form.example}</code>
+                    <code className="rounded bg-well-deep px-1">{form.example}</code>
                   </li>
                 ))}
                 {isV3 ? (
@@ -257,7 +257,7 @@ export function CalculationsTab({
             ) : null}
 
             <label className="mt-3 block space-y-1">
-              <span className="text-[11px] font-semibold uppercase tracking-wide text-bms-muted">
+              <span className="text-[11px] font-semibold uppercase tracking-wide text-ink-muted">
                 Formula
               </span>
               <FormulaEditorLazy
@@ -300,17 +300,17 @@ export function CalculationsTab({
               />
             </label>
             {validation.state === "error" ? (
-              <p className="mt-1 text-[11px] text-red-700">{validation.diagnostics[0].message}</p>
+              <p className="mt-1 text-[11px] text-critical-ink">{validation.diagnostics[0].message}</p>
             ) : null}
             {problemFor("formula") ? (
-              <p className="mt-1 text-[11px] text-red-700">{problemFor("formula")}</p>
+              <p className="mt-1 text-[11px] text-critical-ink">{problemFor("formula")}</p>
             ) : null}
             {readsCalendarWindow ? (
               // A hint, never a `PointGridProblem` (`E4.1b` plan design
               // decision 15): the template does not know its sites, so the
               // validator warns and cannot refuse. Muted, not red — the formula
               // is valid; the sweep skips per asset and counts the skip.
-              <p className="mt-1 text-[11px] text-bms-muted">{CALENDAR_WINDOW_WARNING}</p>
+              <p className="mt-1 text-[11px] text-ink-muted">{CALENDAR_WINDOW_WARNING}</p>
             ) : null}
             {/* ADR 0038 decision 5. Unconditional here, where the KPIs tab
                 gates on a checked dialect (decision 9): a derived formula is
@@ -321,7 +321,7 @@ export function CalculationsTab({
 
             <div className="mt-3 grid gap-3 md:grid-cols-2 lg:grid-cols-4">
               <label className="block space-y-1">
-                <span className="text-[11px] font-semibold uppercase tracking-wide text-bms-muted">
+                <span className="text-[11px] font-semibold uppercase tracking-wide text-ink-muted">
                   Runs
                 </span>
                 <select
@@ -360,10 +360,10 @@ export function CalculationsTab({
                   <option value="scheduled">on a schedule</option>
                 </select>
                 {problemFor("calcTrigger") ? (
-                  <span className="block text-[11px] text-red-700">{problemFor("calcTrigger")}</span>
+                  <span className="block text-[11px] text-critical-ink">{problemFor("calcTrigger")}</span>
                 ) : null}
                 {isV2 ? (
-                  <span className="block text-[11px] text-bms-muted">
+                  <span className="block text-[11px] text-ink-muted">
                     {isV3 ? V3_TRIGGER_LATENCY_HINT : V2_TRIGGER_LATENCY_HINT}
                   </span>
                 ) : null}
@@ -373,7 +373,7 @@ export function CalculationsTab({
                   would show a control the schema forbids a value in. */}
               {row.calcTrigger === "scheduled" ? (
                 <label className="block space-y-1">
-                  <span className="text-[11px] font-semibold uppercase tracking-wide text-bms-muted">
+                  <span className="text-[11px] font-semibold uppercase tracking-wide text-ink-muted">
                     Every (seconds)
                   </span>
                   <input
@@ -390,7 +390,7 @@ export function CalculationsTab({
                     className={fieldClass(!editable, problemFor("calcIntervalSeconds"))}
                   />
                   {problemFor("calcIntervalSeconds") ? (
-                    <span className="block text-[11px] text-red-700">
+                    <span className="block text-[11px] text-critical-ink">
                       {problemFor("calcIntervalSeconds")}
                     </span>
                   ) : null}
@@ -398,7 +398,7 @@ export function CalculationsTab({
               ) : null}
 
               <label className="block space-y-1">
-                <span className="text-[11px] font-semibold uppercase tracking-wide text-bms-muted">
+                <span className="text-[11px] font-semibold uppercase tracking-wide text-ink-muted">
                   Ignore inputs older than
                 </span>
                 <input
@@ -418,7 +418,7 @@ export function CalculationsTab({
                   className={fieldClass(!editable, problemFor("maxInputAgeSeconds"))}
                 />
                 {problemFor("maxInputAgeSeconds") ? (
-                  <span className="block text-[11px] text-red-700">
+                  <span className="block text-[11px] text-critical-ink">
                     {problemFor("maxInputAgeSeconds")}
                   </span>
                 ) : null}
@@ -430,7 +430,7 @@ export function CalculationsTab({
                   way to `v1`, so the field and its value leave together. */}
               {isV2 ? (
                 <label className="block space-y-1">
-                  <span className="text-[11px] font-semibold uppercase tracking-wide text-bms-muted">
+                  <span className="text-[11px] font-semibold uppercase tracking-wide text-ink-muted">
                     Minimum coverage
                   </span>
                   <input
@@ -450,11 +450,11 @@ export function CalculationsTab({
                     className={fieldClass(!editable, problemFor("minCoverageRatio"))}
                   />
                   {problemFor("minCoverageRatio") ? (
-                    <span className="block text-[11px] text-red-700">
+                    <span className="block text-[11px] text-critical-ink">
                       {problemFor("minCoverageRatio")}
                     </span>
                   ) : null}
-                  <span className="block text-[11px] text-bms-muted">{COVERAGE_RATIO_HINT}</span>
+                  <span className="block text-[11px] text-ink-muted">{COVERAGE_RATIO_HINT}</span>
                 </label>
               ) : null}
             </div>
@@ -469,11 +469,11 @@ export function CalculationsTab({
             disabled={blocked || !changed || saveM.isPending}
             aria-busy={saveM.isPending}
             onClick={() => saveM.mutate()}
-            className="rounded bg-bms-green px-4 py-1.5 text-xs font-semibold text-white disabled:opacity-60"
+            className="rounded bg-accent px-4 py-1.5 text-xs font-semibold text-on-accent disabled:opacity-60"
           >
             {saveM.isPending ? "Saving…" : "Save calculations"}
           </button>
-          <span className="text-[11px] text-bms-muted">
+          <span className="text-[11px] text-ink-muted">
             {blocked
               ? "Fix the problems above to save."
               : changed
@@ -487,8 +487,8 @@ export function CalculationsTab({
 }
 
 function fieldClass(disabled: boolean, problem: string | undefined): string {
-  const tone = problem ? "border-red-300 bg-red-50" : "border-gray-200";
+  const tone = problem ? "border-critical-line-strong bg-critical-wash" : "border-line";
   return `w-full rounded border px-2 py-1.5 text-xs ${tone} ${
-    disabled ? "bg-gray-50 text-bms-muted" : ""
+    disabled ? "bg-well text-ink-muted" : ""
   }`;
 }

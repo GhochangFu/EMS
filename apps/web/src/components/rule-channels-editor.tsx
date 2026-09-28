@@ -125,13 +125,13 @@ export function RuleChannelsEditor({
       : `This rule's action is ${action.type}, so joined channels receive nothing until it is notify.`;
 
   return (
-    <div className="mt-3 rounded border border-gray-200 bg-gray-50 p-3">
-      <h4 className="text-[11px] font-semibold uppercase tracking-wide text-bms-muted">
+    <div className="mt-3 rounded border border-line bg-well p-3">
+      <h4 className="text-[11px] font-semibold uppercase tracking-wide text-ink-muted">
         Notification channels
       </h4>
 
       {channelsQ.isPending ? (
-        <p className="mt-2 text-xs text-bms-muted">Loading channels...</p>
+        <p className="mt-2 text-xs text-ink-muted">Loading channels...</p>
       ) : null}
 
       {/*
@@ -140,23 +140,23 @@ export function RuleChannelsEditor({
         settled success only.
       */}
       {channelsQ.isError ? (
-        <p className="mt-2 text-xs text-red-700">Could not load notification channels.</p>
+        <p className="mt-2 text-xs text-critical-ink">Could not load notification channels.</p>
       ) : null}
 
       {joinedQ.isError ? (
-        <p className="mt-2 text-xs text-red-700">
+        <p className="mt-2 text-xs text-critical-ink">
           Could not load this rule&apos;s channels, so saving is disabled.
         </p>
       ) : null}
 
       {error ? (
-        <p role="alert" className="mt-2 text-xs text-red-700">
+        <p role="alert" className="mt-2 text-xs text-critical-ink">
           {error}
         </p>
       ) : null}
 
       {channelsQ.isSuccess && channels.length === 0 ? (
-        <p className="mt-2 text-xs text-bms-muted">
+        <p className="mt-2 text-xs text-ink-muted">
           No channels you can manage. Create one under Admin → Notification channels.
         </p>
       ) : null}
@@ -170,7 +170,7 @@ export function RuleChannelsEditor({
                 <label
                   key={channel.id}
                   htmlFor={inputId}
-                  className="flex items-center gap-2 text-xs text-bms-ink"
+                  className="flex items-center gap-2 text-xs text-ink"
                 >
                   <input
                     id={inputId}
@@ -185,14 +185,14 @@ export function RuleChannelsEditor({
           </div>
           <div className="mt-3 flex items-center gap-2">
             <button
-              className="rounded bg-bms-green px-2 py-1 text-[11px] font-semibold text-white disabled:cursor-not-allowed disabled:bg-gray-300"
+              className="rounded bg-accent px-2 py-1 text-[11px] font-semibold text-on-accent disabled:cursor-not-allowed disabled:bg-line-strong"
               disabled={cannotSave}
               aria-busy={saveM.isPending}
               onClick={() => saveM.mutate([...channelIds, ...hidden])}
             >
               {saveM.isPending ? "Saving..." : "Save"}
             </button>
-            <span className="text-[11px] text-bms-muted">{caption}</span>
+            <span className="text-[11px] text-ink-muted">{caption}</span>
           </div>
           {/*
             Inside this block on purpose: `channels` is also `[]` while the
@@ -200,7 +200,7 @@ export function RuleChannelsEditor({
             count as hidden and the count would be a lie in both states.
           */}
           {hidden.length > 0 ? (
-            <p className="mt-1 text-[11px] text-bms-muted">
+            <p className="mt-1 text-[11px] text-ink-muted">
               {hidden.length === 1
                 ? "1 joined channel outside your scope stays joined."
                 : `${hidden.length} joined channels outside your scope stay joined.`}

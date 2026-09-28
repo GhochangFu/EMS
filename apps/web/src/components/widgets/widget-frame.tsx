@@ -25,11 +25,11 @@ type WidgetFrameProps = {
  */
 export function WidgetFrame({ title, status, stale = false, children }: WidgetFrameProps) {
   return (
-    <div className="flex h-full flex-col rounded-lg border border-gray-200 bg-white p-3 shadow-sm">
+    <div className="flex h-full flex-col rounded-lg border border-line bg-surface p-3 shadow-sm">
       <div className="mb-2 flex items-center justify-between gap-2">
-        <h3 className="truncate text-[11px] font-medium uppercase tracking-wide text-bms-muted">{title}</h3>
+        <h3 className="truncate text-[11px] font-medium uppercase tracking-wide text-ink-muted">{title}</h3>
         {status === "ready" && stale ? (
-          <span className="shrink-0 rounded-full bg-amber-100 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-amber-800">
+          <span className="shrink-0 rounded-full bg-warning-wash-strong px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-warning-ink">
             Offline
           </span>
         ) : null}
@@ -50,13 +50,13 @@ export function WidgetFrame({ title, status, stale = false, children }: WidgetFr
 function renderBody(status: WidgetStatus, children: ReactNode): ReactNode {
   switch (status) {
     case "loading":
-      return <div className="flex flex-1 items-center justify-center text-sm text-bms-muted">Loading…</div>;
+      return <div className="flex flex-1 items-center justify-center text-sm text-ink-muted">Loading…</div>;
     case "error":
       return (
-        <div className="flex flex-1 items-center justify-center text-sm text-red-700">Could not load widget.</div>
+        <div className="flex flex-1 items-center justify-center text-sm text-critical-ink">Could not load widget.</div>
       );
     case "empty":
-      return <div className="flex flex-1 items-center justify-center text-sm text-bms-muted">No data bound.</div>;
+      return <div className="flex flex-1 items-center justify-center text-sm text-ink-muted">No data bound.</div>;
     case "ready":
       return children;
     default: {

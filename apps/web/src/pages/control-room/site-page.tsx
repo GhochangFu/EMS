@@ -20,7 +20,7 @@ type ControlRoomSitePageProps = {
   user: AuthUser;
 };
 
-const linkClass = "mt-2 inline-block text-sm font-semibold text-bms-green hover:underline";
+const linkClass = "mt-2 inline-block text-sm font-semibold text-accent hover:underline";
 
 /**
  * `F3.66` (ADR 0076 decisions 2 and 5) — `/control-room/site/:locationId`, the
@@ -85,7 +85,7 @@ export function ControlRoomSitePage({ user }: ControlRoomSitePageProps) {
   return (
     <AppShell
       user={user}
-      kpiRibbon={<span className="text-bms-ink">Control Room · site view</span>}
+      kpiRibbon={<span className="text-ink">Control Room · site view</span>}
     >
       <div className="mx-auto max-w-[1200px] space-y-4 pb-8">
         {items !== undefined ? (
@@ -101,7 +101,7 @@ export function ControlRoomSitePage({ user }: ControlRoomSitePageProps) {
                 // `tab` is null only for an unknown segment, which redirected above.
                 <SiteViewBody view={siteView.data} site={site} scope={scope} tab={tab ?? DEFAULT_SMOC_TAB} />
               ) : (
-                <p role="status" className="text-sm text-bms-muted">
+                <p role="status" className="text-sm text-ink-muted">
                   Loading the site view…
                 </p>
               )}
@@ -111,10 +111,10 @@ export function ControlRoomSitePage({ user }: ControlRoomSitePageProps) {
           )
         ) : locationQ.isError ? (
           <SectionCard title="Control Room unavailable" bodyClassName="p-4">
-            <p className="text-sm text-red-700">The site list could not be read. Try again later.</p>
+            <p className="text-sm text-critical-ink">The site list could not be read. Try again later.</p>
           </SectionCard>
         ) : (
-          <p role="status" className="text-sm text-bms-muted">
+          <p role="status" className="text-sm text-ink-muted">
             Loading Control Room…
           </p>
         )}
@@ -126,7 +126,7 @@ export function ControlRoomSitePage({ user }: ControlRoomSitePageProps) {
 function NotAvailableCard() {
   return (
     <SectionCard title="Site view unavailable" bodyClassName="p-4">
-      <p className="text-sm text-bms-muted">
+      <p className="text-sm text-ink-muted">
         This site is not available in your access scope.
       </p>
       <Link to="/control-room" className={linkClass}>
@@ -152,7 +152,7 @@ function SiteViewBody({ view, site, scope, tab }: SiteViewBodyProps) {
         <div
           role="status"
           data-testid="site-view-notice"
-          className="rounded border border-amber-300 bg-amber-50 px-4 py-2 text-sm text-amber-900"
+          className="rounded border border-warning-line bg-warning-wash px-4 py-2 text-sm text-warning-ink"
         >
           {notice}
         </div>

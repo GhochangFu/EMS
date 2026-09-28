@@ -95,6 +95,20 @@ export default {
         },
         "simulated-ink": "rgb(var(--simulated-ink) / <alpha-value>)",
       },
+      // F3.65b review: preflight's `border-color` on every element and the `--tw-ring-offset-color`
+      // default were stock literals (`#E5E7EB`, `#fff`), so a bare `border` / `divide-y` /
+      // `ring-offset-*` stayed light in dark. They now read `line` and `surface` — light values
+      // `#E5E7EB` and `#FFFFFF` exactly, so no light pixel moves. Held by the colour-tokens T11 cases.
+      // `ringOffsetColor.DEFAULT` carries no `<alpha-value>`: Tailwind 3.4's ring plugin copies it
+      // raw into `--tw-ring-offset-color` (measured: the placeholder reached the CSS unsubstituted,
+      // which would void every `ring-offset-*` shadow), while preflight substitutes it for
+      // `borderColor.DEFAULT` (`rgb(var(--line) / 1)`).
+      borderColor: {
+        DEFAULT: "rgb(var(--line) / <alpha-value>)",
+      },
+      ringOffsetColor: {
+        DEFAULT: "rgb(var(--surface))",
+      },
       fontFamily: {
         sans: [
           '"IBM Plex Sans"',

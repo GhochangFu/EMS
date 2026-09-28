@@ -51,7 +51,7 @@ export function DashboardsPage({ user }: DashboardsPageProps) {
   const rows = listQ.data?.items ?? [];
 
   return (
-    <AppShell user={user} kpiRibbon={<span className="text-bms-ink">Dashboards</span>}>
+    <AppShell user={user} kpiRibbon={<span className="text-ink">Dashboards</span>}>
       <div className="mx-auto max-w-[1200px] space-y-4 pb-8">
         <PageHeader
           eyebrow="Monitoring"
@@ -65,7 +65,7 @@ export function DashboardsPage({ user }: DashboardsPageProps) {
             canAuthorDashboards(user.role) ? (
               <Link
                 to="/admin/dashboards"
-                className="rounded border border-gray-300 px-3 py-1.5 text-xs font-semibold text-bms-ink hover:bg-gray-50"
+                className="rounded border border-line-strong px-3 py-1.5 text-xs font-semibold text-ink hover:bg-well"
               >
                 Manage dashboards
               </Link>
@@ -73,15 +73,15 @@ export function DashboardsPage({ user }: DashboardsPageProps) {
           }
         />
 
-        {listQ.isLoading ? <p className="text-sm text-bms-muted">Loading dashboards…</p> : null}
+        {listQ.isLoading ? <p className="text-sm text-ink-muted">Loading dashboards…</p> : null}
         {listQ.isError ? (
-          <p className="rounded border border-red-200 bg-red-50 p-3 text-sm text-red-800">
+          <p className="rounded border border-critical-line bg-critical-wash p-3 text-sm text-critical-ink-strong">
             {apiErrorMessage(listQ.error as Error)}
           </p>
         ) : null}
 
         {!listQ.isLoading && !listQ.isError && rows.length === 0 ? (
-          <p className="rounded border border-dashed border-gray-300 p-4 text-xs text-bms-muted">
+          <p className="rounded border border-dashed border-line-strong p-4 text-xs text-ink-muted">
             {/**
              * `E4.2` — a filtered, empty list is a DIFFERENT condition from an
              * empty unfiltered one, and the wording has to say which. "No
@@ -125,7 +125,7 @@ export function DashboardsPage({ user }: DashboardsPageProps) {
         {rows.length > 0 ? (
           <SectionCard bodyClassName="overflow-x-auto p-0">
             <table className="w-full min-w-[640px] text-left text-sm">
-              <thead className="border-b border-gray-100 bg-gray-50 text-[11px] font-semibold uppercase tracking-wide text-bms-muted">
+              <thead className="border-b border-well-deep bg-well text-[11px] font-semibold uppercase tracking-wide text-ink-muted">
                 <tr>
                   <th className="px-3 py-2">Name</th>
                   <th className="px-3 py-2">Scope</th>
@@ -135,9 +135,9 @@ export function DashboardsPage({ user }: DashboardsPageProps) {
               </thead>
               <tbody>
                 {rows.map((dashboard) => (
-                  <tr key={dashboard.id} className="border-b border-gray-100">
+                  <tr key={dashboard.id} className="border-b border-well-deep">
                     <td className="px-3 py-2 font-medium">{dashboard.name}</td>
-                    <td className="px-3 py-2 text-xs text-bms-muted">
+                    <td className="px-3 py-2 text-xs text-ink-muted">
                       {/* `F3.2` / ADR 0067 decision 7 and Q4 — the asset arm is
                           FIRST, because `dashboards_scope_check` allows at most
                           one of the three and an asset-scoped row is the
@@ -163,7 +163,7 @@ export function DashboardsPage({ user }: DashboardsPageProps) {
                     <td className="px-3 py-2 text-right">
                       <Link
                         to={`/dashboards/${dashboard.slug}?organizationId=${dashboard.organizationId}`}
-                        className="rounded border border-gray-300 px-2.5 py-1 text-xs font-semibold text-bms-ink hover:bg-gray-50"
+                        className="rounded border border-line-strong px-2.5 py-1 text-xs font-semibold text-ink hover:bg-well"
                       >
                         Open
                       </Link>

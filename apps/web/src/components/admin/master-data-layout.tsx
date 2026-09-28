@@ -17,9 +17,9 @@ export function MasterDataLayout({ user, children }: MasterDataLayoutProps) {
   const tabs = visibleMasterDataTabs(user.role);
 
   return (
-    <AppShell user={user} kpiRibbon={<span className="text-bms-ink">Administration · Master Data</span>}>
+    <AppShell user={user} kpiRibbon={<span className="text-ink">Administration · Master Data</span>}>
       <div className="mx-auto max-w-[1200px] space-y-4 pb-8">
-        <nav className="flex flex-wrap gap-1 border-b border-gray-200 pb-2">
+        <nav className="flex flex-wrap gap-1 border-b border-line pb-2">
           {tabs.map((tab) => {
             const active =
               location.pathname === tab.path ||
@@ -31,8 +31,8 @@ export function MasterDataLayout({ user, children }: MasterDataLayoutProps) {
                 to={tab.path}
                 className={`rounded px-3 py-1.5 text-xs font-semibold ${
                   active
-                    ? "bg-bms-green text-white"
-                    : "text-bms-muted hover:bg-gray-100 hover:text-bms-ink"
+                    ? "bg-accent text-on-accent"
+                    : "text-ink-muted hover:bg-well-deep hover:text-ink"
                 }`}
               >
                 {tab.label}

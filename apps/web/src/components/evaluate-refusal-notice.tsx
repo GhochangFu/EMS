@@ -38,7 +38,7 @@ export function EvaluateRefusalNotice({ error }: { error: unknown }) {
     return null;
   }
   return (
-    <p role="alert" className="px-4 pt-2 text-xs text-red-600">
+    <p role="alert" className="px-4 pt-2 text-xs text-critical-ink-soft">
       {apiErrorMessage(error)}
     </p>
   );

@@ -238,7 +238,7 @@ export function LocationsAdminPage({ user }: LocationsAdminPageProps) {
           canCreate ? (
             <button
               type="button"
-              className="rounded bg-bms-green px-3 py-2 text-xs font-semibold text-white"
+              className="rounded bg-accent px-3 py-2 text-xs font-semibold text-on-accent"
               onClick={openCreate}
             >
               Add location
@@ -256,7 +256,7 @@ export function LocationsAdminPage({ user }: LocationsAdminPageProps) {
             onNavigate={setSelection}
           />
           <input
-            className="rounded border border-gray-200 px-3 py-1.5 text-sm"
+            className="rounded border border-line px-3 py-1.5 text-sm"
             placeholder="Search"
             value={search}
             onChange={(event) => setSearch(event.target.value)}
@@ -264,7 +264,7 @@ export function LocationsAdminPage({ user }: LocationsAdminPageProps) {
         </div>
         <table className="min-w-full text-sm">
           <thead>
-            <tr className="border-b text-left text-xs uppercase text-bms-muted">
+            <tr className="border-b text-left text-xs uppercase text-ink-muted">
               <th className="px-2 py-2">Org</th>
               <th className="px-2 py-2">Code</th>
               <th className="px-2 py-2">Name</th>
@@ -278,12 +278,12 @@ export function LocationsAdminPage({ user }: LocationsAdminPageProps) {
             {filtered.map((item) => (
               <tr
                 key={item.id}
-                className="cursor-pointer border-b border-gray-100 hover:bg-gray-50"
+                className="cursor-pointer border-b border-well-deep hover:bg-well"
                 onClick={() => navigate(`/admin/locations/${item.id}/rtus`)}
               >
                 <td className="px-2 py-2">{item.organizationCode}</td>
                 <td className="px-2 py-2 font-mono">{item.code}</td>
-                <td className="px-2 py-2 font-semibold text-bms-green">{item.name}</td>
+                <td className="px-2 py-2 font-semibold text-accent">{item.name}</td>
                 <td className="px-2 py-2 font-mono text-xs">{item.slug}</td>
                 <td className="px-2 py-2 font-mono text-xs">{item.timezone ?? "—"}</td>
                 <td className="px-2 py-2">
@@ -296,14 +296,14 @@ export function LocationsAdminPage({ user }: LocationsAdminPageProps) {
                   <div className="flex gap-2">
                     <button
                       type="button"
-                      className="text-xs font-semibold text-bms-green"
+                      className="text-xs font-semibold text-accent"
                       onClick={() => openEdit(item)}
                     >
                       Edit
                     </button>
                     <button
                       type="button"
-                      className="text-xs font-semibold text-bms-muted"
+                      className="text-xs font-semibold text-ink-muted"
                       onClick={() => toggleMutation.mutate(item)}
                     >
                       {item.active ? "Deactivate" : "Reactivate"}
@@ -317,9 +317,9 @@ export function LocationsAdminPage({ user }: LocationsAdminPageProps) {
       </SectionCard>
 
       {modalOpen ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-scrim/40 p-4">
           <form
-            className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-lg border bg-white p-4"
+            className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-lg border bg-surface p-4"
             onSubmit={(event: FormEvent) => {
               event.preventDefault();
               saveMutation.mutate();
@@ -330,7 +330,7 @@ export function LocationsAdminPage({ user }: LocationsAdminPageProps) {
             </h2>
             <div className="mt-3 grid gap-3 sm:grid-cols-2">
               {!editing ? (
-                <label className="block text-xs font-semibold text-bms-muted sm:col-span-2">
+                <label className="block text-xs font-semibold text-ink-muted sm:col-span-2">
                   Organization
                   <select
                     className="mt-1 w-full rounded border px-3 py-2 text-sm"
@@ -350,7 +350,7 @@ export function LocationsAdminPage({ user }: LocationsAdminPageProps) {
                 </label>
               ) : null}
               {(["code", "slug", "name"] as const).map((field) => (
-                <label key={field} className="block text-xs font-semibold text-bms-muted">
+                <label key={field} className="block text-xs font-semibold text-ink-muted">
                   {field}
                   <input
                     className="mt-1 w-full rounded border px-3 py-2 text-sm"
@@ -360,7 +360,7 @@ export function LocationsAdminPage({ user }: LocationsAdminPageProps) {
                   />
                 </label>
               ))}
-              <label className="block text-xs font-semibold text-bms-muted">
+              <label className="block text-xs font-semibold text-ink-muted">
                 Type
                 <select
                   className="mt-1 w-full rounded border px-3 py-2 text-sm"
@@ -382,7 +382,7 @@ export function LocationsAdminPage({ user }: LocationsAdminPageProps) {
                   ))}
                 </select>
               </label>
-              <label className="block text-xs font-semibold text-bms-muted">
+              <label className="block text-xs font-semibold text-ink-muted">
                 Province
                 <input
                   className="mt-1 w-full rounded border px-3 py-2 text-sm"
@@ -390,7 +390,7 @@ export function LocationsAdminPage({ user }: LocationsAdminPageProps) {
                   onChange={(event) => setForm({ ...form, province: event.target.value })}
                 />
               </label>
-              <label className="block text-xs font-semibold text-bms-muted">
+              <label className="block text-xs font-semibold text-ink-muted">
                 Timezone (IANA)
                 <input
                   className="mt-1 w-full rounded border px-3 py-2 text-sm"
@@ -405,7 +405,7 @@ export function LocationsAdminPage({ user }: LocationsAdminPageProps) {
                   ))}
                 </datalist>
               </label>
-              <label className="block text-xs font-semibold text-bms-muted">
+              <label className="block text-xs font-semibold text-ink-muted">
                 Latitude
                 <input
                   className="mt-1 w-full rounded border px-3 py-2 text-sm"
@@ -414,7 +414,7 @@ export function LocationsAdminPage({ user }: LocationsAdminPageProps) {
                   onChange={(event) => setForm({ ...form, latitude: event.target.value })}
                 />
               </label>
-              <label className="block text-xs font-semibold text-bms-muted">
+              <label className="block text-xs font-semibold text-ink-muted">
                 Longitude
                 <input
                   className="mt-1 w-full rounded border px-3 py-2 text-sm"
@@ -435,7 +435,7 @@ export function LocationsAdminPage({ user }: LocationsAdminPageProps) {
                     canSetBuiltin={isGlobalAdmin(user.role)}
                   />
                 ) : (
-                  <div className="text-xs text-bms-muted sm:col-span-2">
+                  <div className="text-xs text-ink-muted sm:col-span-2">
                     {viewQ.isError
                       ? "The Control Room view could not be loaded."
                       : "Loading the Control Room view…"}
@@ -443,7 +443,7 @@ export function LocationsAdminPage({ user }: LocationsAdminPageProps) {
                 )
               ) : null}
             </div>
-            {error ? <div className="mt-2 text-xs text-red-700">{error}</div> : null}
+            {error ? <div className="mt-2 text-xs text-critical-ink">{error}</div> : null}
             <div className="mt-4 flex justify-end gap-2">
               <button
                 type="button"
@@ -454,7 +454,7 @@ export function LocationsAdminPage({ user }: LocationsAdminPageProps) {
               </button>
               <button
                 type="submit"
-                className="rounded bg-bms-green px-3 py-2 text-xs font-semibold text-white"
+                className="rounded bg-accent px-3 py-2 text-xs font-semibold text-on-accent"
               >
                 Save
               </button>

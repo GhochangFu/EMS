@@ -142,18 +142,18 @@ export function AssetImagesPanel({ asset, onClose }: AssetImagesPanelProps): JSX
   });
 
   return (
-    <aside className="fixed right-0 top-0 z-50 flex h-full w-[90%] max-w-[380px] flex-col border-l border-gray-200 bg-white shadow-lg">
-      <div className="flex items-start justify-between gap-2 border-b border-gray-200 px-3 py-2">
+    <aside className="fixed right-0 top-0 z-50 flex h-full w-[90%] max-w-[380px] flex-col border-l border-line bg-surface shadow-lg">
+      <div className="flex items-start justify-between gap-2 border-b border-line px-3 py-2">
         <div>
           <h2 className="font-condensed text-base font-bold">Images · {asset.code}</h2>
-          <p className="text-xs text-bms-muted">{asset.name}</p>
+          <p className="text-xs text-ink-muted">{asset.name}</p>
         </div>
         <div className="flex shrink-0 items-center gap-2">
           <StatusPill
             label={`${imageCount} / ${MAX_ASSET_IMAGES_PER_ASSET}`}
             tone={capReason !== null ? "warning" : "info"}
           />
-          <button type="button" className="text-xs text-bms-muted" onClick={onClose}>
+          <button type="button" className="text-xs text-ink-muted" onClick={onClose}>
             Close
           </button>
         </div>
@@ -167,13 +167,13 @@ export function AssetImagesPanel({ asset, onClose }: AssetImagesPanelProps): JSX
         />
 
         <form
-          className="space-y-2 border-t border-gray-200 pt-3"
+          className="space-y-2 border-t border-line pt-3"
           onSubmit={(event) => {
             event.preventDefault();
             uploadMutation.mutate();
           }}
         >
-          <label className="block text-xs font-semibold text-bms-muted">
+          <label className="block text-xs font-semibold text-ink-muted">
             Image file
             <input
               ref={fileInputRef}
@@ -190,7 +190,7 @@ export function AssetImagesPanel({ asset, onClose }: AssetImagesPanelProps): JSX
               }}
             />
           </label>
-          <label className="block text-xs font-semibold text-bms-muted">
+          <label className="block text-xs font-semibold text-ink-muted">
             Caption
             <input
               className="mt-1 w-full rounded border px-3 py-2 text-sm"
@@ -203,19 +203,19 @@ export function AssetImagesPanel({ asset, onClose }: AssetImagesPanelProps): JSX
           <div className="flex flex-wrap items-center gap-2">
             <button
               type="submit"
-              className="rounded bg-bms-green px-3 py-2 text-xs font-semibold text-white disabled:opacity-50"
+              className="rounded bg-accent px-3 py-2 text-xs font-semibold text-on-accent disabled:opacity-50"
               disabled={blockedReason !== null || uploadMutation.isPending}
               aria-busy={uploadMutation.isPending}
             >
               {uploadMutation.isPending ? "Uploading…" : "Upload"}
             </button>
             {blockedReason !== null ? (
-              <span className="text-xs text-bms-muted">{blockedReason}</span>
+              <span className="text-xs text-ink-muted">{blockedReason}</span>
             ) : null}
           </div>
         </form>
 
-        {error !== null ? <p className="text-xs text-red-700">{error}</p> : null}
+        {error !== null ? <p className="text-xs text-critical-ink">{error}</p> : null}
       </div>
     </aside>
   );

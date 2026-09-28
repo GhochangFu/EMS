@@ -15,7 +15,7 @@ export function RulesPage({ user }: RulesPageProps) {
     <AppShell
       user={user}
       kpiRibbon={
-        <span className="text-bms-ink">
+        <span className="text-ink">
           Operations · Rule Engine · simple thresholds and time-window traces
         </span>
       }

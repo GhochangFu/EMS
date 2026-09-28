@@ -112,3 +112,16 @@ body {
   margin: 0;
   min-height: 100vh;
 }
+
+/*
+ * F3.65b review — `leaflet.css` paints the map popup and its tip `background: white`, while the
+ * popup content in `components/world-map.tsx` uses role inks that turn light in dark. The
+ * background follows `surface` (`#FFFFFF` in light, so no light pixel moves); `color` is left to
+ * Leaflet. Same specificity as Leaflet's rule: it wins because `leaflet.css` (imported by
+ * `world-map.tsx`, reached through `./app`) bundles before this file (imported after `./app` in
+ * `main.tsx`). Plain CSS, not `@layer`, so Tailwind does not purge it.
+ */
+.leaflet-popup-content-wrapper,
+.leaflet-popup-tip {
+  background: rgb(var(--surface));
+}

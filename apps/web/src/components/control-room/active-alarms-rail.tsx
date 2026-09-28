@@ -25,14 +25,14 @@ const NO_IDS_NOTE: Record<AssetsStatus, string> = {
 function tabClass(selected: boolean): string {
   return `rounded border px-3 py-1.5 text-xs font-semibold ${
     selected
-      ? "border-bms-green bg-emerald-50 text-emerald-900"
-      : "border-gray-200 bg-white text-bms-ink"
+      ? "border-accent bg-ok-wash text-ok-ink"
+      : "border-line bg-surface text-ink"
   }`;
 }
 
 function RailNote({ text }: { text: string }) {
   return (
-    <div className="rounded border border-gray-200 bg-gray-50 p-3 text-sm text-bms-muted">
+    <div className="rounded border border-line bg-well p-3 text-sm text-ink-muted">
       {text}
     </div>
   );
@@ -98,7 +98,7 @@ export function ActiveAlarmsRail(props: ActiveAlarmsRailProps) {
     props.organizationId !== undefined || props.assetIds.length > 0 ? null : NO_IDS_NOTE[assetsStatus];
 
   return (
-    <section aria-label="Alarms" className="rounded border border-gray-200 bg-white p-4">
+    <section aria-label="Alarms" className="rounded border border-line bg-surface p-4">
       <div className="flex items-center justify-between gap-3">
         <div className="flex gap-2" role="tablist" aria-label="Alarms rail">
           <button type="button" role="tab" aria-selected={tab === "active"} className={tabClass(tab === "active")} onClick={() => setTab("active")}>
@@ -108,7 +108,7 @@ export function ActiveAlarmsRail(props: ActiveAlarmsRailProps) {
             Alarm Summary
           </button>
         </div>
-        <Link className="text-xs font-semibold text-bms-green hover:underline" to="/alarms">
+        <Link className="text-xs font-semibold text-accent hover:underline" to="/alarms">
           View All
         </Link>
       </div>
@@ -124,7 +124,7 @@ export function ActiveAlarmsRail(props: ActiveAlarmsRailProps) {
             <RailNote text="No active alarms" />
           ) : (
             <table className="w-full text-left text-xs">
-              <thead className="text-bms-muted">
+              <thead className="text-ink-muted">
                 <tr>
                   <th className="py-1 pr-2 font-semibold">Time</th>
                   <th className="py-1 pr-2 font-semibold">Asset</th>
@@ -134,12 +134,12 @@ export function ActiveAlarmsRail(props: ActiveAlarmsRailProps) {
               </thead>
               <tbody>
                 {rows.map((alarm) => (
-                  <tr key={alarm.id} className="border-t border-gray-100 align-top">
+                  <tr key={alarm.id} className="border-t border-well-deep align-top">
                     <td className="whitespace-nowrap py-1.5 pr-2 font-mono">
                       {new Date(alarm.raisedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
                     </td>
-                    <td className="py-1.5 pr-2 font-medium text-bms-ink">{alarm.assetCode}</td>
-                    <td className="py-1.5 pr-2 text-bms-ink">{alarm.message}</td>
+                    <td className="py-1.5 pr-2 font-medium text-ink">{alarm.assetCode}</td>
+                    <td className="py-1.5 pr-2 text-ink">{alarm.message}</td>
                     <td className="py-1.5">
                       <StatusPill label={alarm.severity} tone={alarmSeverityTone(alarm.severity, severities)} />
                     </td>
@@ -158,13 +158,13 @@ export function ActiveAlarmsRail(props: ActiveAlarmsRailProps) {
               {counts.map((row) => (
                 <li key={row.code} className="flex items-center justify-between gap-3">
                   <StatusPill label={row.label} tone={row.tone} />
-                  <span className="font-mono font-semibold text-bms-ink">{row.count}</span>
+                  <span className="font-mono font-semibold text-ink">{row.count}</span>
                 </li>
               ))}
             </ul>
-            <div className="mt-3 flex justify-between gap-3 border-t border-gray-100 pt-2">
-              <span className="text-bms-muted">Total</span>
-              <span data-testid="alarm-summary-total" className="font-mono font-semibold text-bms-ink">
+            <div className="mt-3 flex justify-between gap-3 border-t border-well-deep pt-2">
+              <span className="text-ink-muted">Total</span>
+              <span data-testid="alarm-summary-total" className="font-mono font-semibold text-ink">
                 {summary.data.total}
               </span>
             </div>

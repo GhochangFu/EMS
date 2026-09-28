@@ -72,13 +72,13 @@ function Gauge({ title, enabled, primary, stale, config }: GaugeProps) {
     <div role="group" aria-label={title}>
       {!enabled ? (
         <WidgetFrame title={title} status="ready">
-          <div className="flex flex-1 items-center justify-center text-sm text-bms-muted">
+          <div className="flex flex-1 items-center justify-center text-sm text-ink-muted">
             Outside your asset-group scope
           </div>
         </WidgetFrame>
       ) : primary === null ? (
         <WidgetFrame title={title} status="ready" stale={stale}>
-          <div className="flex flex-1 flex-col items-center justify-center gap-1 text-bms-muted">
+          <div className="flex flex-1 flex-col items-center justify-center gap-1 text-ink-muted">
             <span className="text-2xl font-semibold">—</span>
             {stale ? null : <span className="text-sm">No data</span>}
           </div>
@@ -136,8 +136,8 @@ export function KeyParameters({ ups1, ups2, batt1, batt2, main, nowMs, access }:
   ]);
 
   return (
-    <section className="rounded border border-gray-200 bg-white p-4">
-      <h2 className="font-condensed text-lg font-bold text-bms-ink">Key Parameters</h2>
+    <section className="rounded border border-line bg-surface p-4">
+      <h2 className="font-condensed text-lg font-bold text-ink">Key Parameters</h2>
       <div className="mt-4 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <Gauge
           title="UPS-1 Load"

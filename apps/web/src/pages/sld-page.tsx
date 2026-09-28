@@ -52,28 +52,28 @@ function SldDetailDrawer({
 
   return (
     <div
-      className="fixed inset-0 z-40 flex justify-end bg-black/20"
+      className="fixed inset-0 z-40 flex justify-end bg-scrim/20"
       role="presentation"
       onClick={onClose}
     >
       <aside
-        className="h-full w-full max-w-md border-l border-gray-200 bg-white shadow-xl"
+        className="h-full w-full max-w-md border-l border-line bg-surface shadow-xl"
         role="dialog"
         aria-label="Equipment detail"
         onClick={(e) => e.stopPropagation()}
         onKeyDown={(e) => e.stopPropagation()}
       >
-        <div className="flex items-start justify-between border-b border-gray-200 px-4 py-3">
+        <div className="flex items-start justify-between border-b border-line px-4 py-3">
           <div>
-            <h2 className="font-condensed text-lg font-bold text-bms-ink">
+            <h2 className="font-condensed text-lg font-bold text-ink">
               {meta?.name ?? "Equipment"}
             </h2>
-            <p className="font-mono text-xs text-bms-muted">{meta?.code ?? "—"}</p>
-            <p className="mt-1 text-xs text-bms-muted">{meta?.siteName}</p>
+            <p className="font-mono text-xs text-ink-muted">{meta?.code ?? "—"}</p>
+            <p className="mt-1 text-xs text-ink-muted">{meta?.siteName}</p>
           </div>
           <button
             type="button"
-            className="rounded px-2 py-1 text-sm text-bms-muted hover:bg-gray-100"
+            className="rounded px-2 py-1 text-sm text-ink-muted hover:bg-well-deep"
             onClick={onClose}
           >
             Close
@@ -81,50 +81,50 @@ function SldDetailDrawer({
         </div>
         <div className="space-y-4 px-4 py-4 text-sm">
           <div>
-            <span className="text-bms-muted">Status</span>
+            <span className="text-ink-muted">Status</span>
             <div className="mt-1 flex items-center gap-2">
               <span
                 className={`rounded-full px-2 py-0.5 text-xs font-bold uppercase ${
                   status === "running"
-                    ? "bg-emerald-100 text-emerald-900"
+                    ? "bg-ok-wash text-ok-ink"
                     : status === "fault"
-                      ? "bg-red-100 text-red-900"
-                      : "bg-gray-200 text-gray-700"
+                      ? "bg-critical-wash-strong text-critical-ink-strong"
+                      : "bg-well-deep text-neutral-ink"
                 }`}
               >
                 {statusLabel}
               </span>
-              {stale ? <span className="text-xs text-amber-700">Stale telemetry</span> : null}
+              {stale ? <span className="text-xs text-warning-ink">Stale telemetry</span> : null}
             </div>
           </div>
           <dl className="grid grid-cols-2 gap-3 font-mono text-xs">
             <div>
-              <dt className="text-bms-muted">kW</dt>
-              <dd className="font-semibold text-bms-ink">
+              <dt className="text-ink-muted">kW</dt>
+              <dd className="font-semibold text-ink">
                 {slice.kw != null ? slice.kw.toFixed(1) : "—"}
               </dd>
             </div>
             <div>
-              <dt className="text-bms-muted">Voltage L1</dt>
-              <dd className="font-semibold text-bms-ink">
+              <dt className="text-ink-muted">Voltage L1</dt>
+              <dd className="font-semibold text-ink">
                 {slice.voltage != null ? `${slice.voltage.toFixed(1)} V` : "—"}
               </dd>
             </div>
             <div>
-              <dt className="text-bms-muted">Current</dt>
-              <dd className="font-semibold text-bms-ink">
+              <dt className="text-ink-muted">Current</dt>
+              <dd className="font-semibold text-ink">
                 {slice.current != null ? `${slice.current.toFixed(0)} A` : "—"}
               </dd>
             </div>
             <div>
-              <dt className="text-bms-muted">Power factor</dt>
-              <dd className="font-semibold text-bms-ink">
+              <dt className="text-ink-muted">Power factor</dt>
+              <dd className="font-semibold text-ink">
                 {slice.pf != null ? slice.pf.toFixed(3) : "—"}
               </dd>
             </div>
             <div>
-              <dt className="text-bms-muted">Main breaker</dt>
-              <dd className="font-semibold text-bms-ink">
+              <dt className="text-ink-muted">Main breaker</dt>
+              <dd className="font-semibold text-ink">
                 {slice.breaker === null
                   ? "—"
                   : slice.breaker === 1
@@ -133,7 +133,7 @@ function SldDetailDrawer({
               </dd>
             </div>
           </dl>
-          <p className="text-xs text-bms-muted">
+          <p className="text-xs text-ink-muted">
             Read-only prototype view. Commanding is out of scope until production Phase 4.
           </p>
         </div>
@@ -157,7 +157,7 @@ function SldContent({
         subtitle="11 kV grid · 2 x 2 MVA · UPS + DG backup · live telemetry"
         actions={<StatusPill label="Live" />}
       />
-      <SectionCard className="mt-4" bodyClassName="overflow-x-auto bg-[#F7F8FA] p-4">
+      <SectionCard className="mt-4" bodyClassName="overflow-x-auto bg-well p-4">
         <ElectricalSldDiagram onSelectAsset={onSelect} />
       </SectionCard>
       <SldDetailDrawer assetId={selectedId} onClose={() => onSelect(undefined)} />
@@ -175,7 +175,7 @@ function SldUnavailable({ loading }: { loading: boolean }) {
         actions={<StatusPill label={loading ? "Checking" : "Unavailable"} tone="offline" />}
       />
       <SectionCard className="mt-4" bodyClassName="p-4">
-        <div className="rounded border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+        <div className="rounded border border-warning-line bg-warning-wash p-4 text-sm text-warning-ink">
           {loading
             ? "Checking schematic access for your assigned assets..."
             : "This Electrical SLD is not configured for your assigned location or asset group."}
@@ -200,10 +200,10 @@ export function SldPage({ user }: SldPageProps) {
       user={user}
       kpiRibbon={
         <div className="flex flex-wrap items-center gap-3">
-          <span className="rounded-full bg-emerald-100 px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-emerald-900">
+          <span className="rounded-full bg-ok-wash px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-ok-ink">
             Live
           </span>
-          <span className="text-bms-ink">Single-line diagram · telemetry-bound</span>
+          <span className="text-ink">Single-line diagram · telemetry-bound</span>
         </div>
       }
     >
