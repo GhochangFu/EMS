@@ -36,44 +36,44 @@ const ORGANIZATION_ADMIN_EMAIL = "phe-admin@bms.local";
 const SYNTHETIC_SUB = "00000000-0000-4000-8000-000000000007";
 
 const RUN = Date.now();
+/** A row of this family older than this is an earlier run's, never a live one's. */
+const STALE_AFTER = "30 minutes";
 
 /**
  * Reaps what an earlier run committed but never cleaned (the F4.16 shape, as
- * `locations.seed-key.integration.test.ts` does). Every fixture code ends in
- * its run's `Date.now()`, so a run is stale when that number is more than 30
- * minutes old. Children first; the session's audit row and the session last.
+ * `locations.seed-key.integration.test.ts` does): rows of this suite's family
+ * older than 30 minutes, which no live run can own. The anchors are the
+ * location, the session and the point key, each bounded by `created_at`; the
+ * RTU and the asset are reached through their location, never by a code
+ * pattern. Children first; the audit rows before the rows they name.
  */
 async function sweepStaleRuns(pool: pg.Pool): Promise<void> {
-  const cutoff = RUN - 30 * 60 * 1000;
   const staleLocations = `SELECT id FROM bms.locations
-    WHERE code LIKE 'F4170-SKO-LOC-%' AND substring(code from '([0-9]+)$')::bigint < $1`;
-  const staleAssets = `SELECT id FROM bms.assets
-    WHERE code LIKE 'F4170-SKO-AS-%' AND substring(code from '([0-9]+)$')::bigint < $1`;
-  const staleRtus = `SELECT id FROM bms.rtus
-    WHERE code LIKE 'F4170-SKO-RTU-%' AND substring(code from '([0-9]+)$')::bigint < $1`;
+    WHERE code LIKE 'F4170-SKO-LOC-%' AND created_at < now() - $1::interval`;
+  const staleAssets = `SELECT id FROM bms.assets WHERE location_id IN (${staleLocations})`;
+  const staleRtus = `SELECT id FROM bms.rtus WHERE location_id IN (${staleLocations})`;
   const staleSessions = `SELECT id FROM bms.onboarding_sessions
-    WHERE draft->'location'->>'code' LIKE 'F4170-SKO-LOC-%'
-      AND substring(draft->'location'->>'code' from '([0-9]+)$')::bigint < $1`;
+    WHERE draft->'location'->>'code' LIKE 'F4170-SKO-LOC-%' AND created_at < now() - $1::interval`;
+  const age = [STALE_AFTER];
   try {
     await pool.query(
       `DELETE FROM bms.audit_log
         WHERE (entity_type = 'location' AND entity_id IN (${staleLocations}))
            OR (entity_type = 'asset' AND entity_id IN (${staleAssets}))
            OR (entity_type = 'onboarding_session' AND entity_id IN (${staleSessions}))`,
-      [cutoff],
+      age,
     );
-    await pool.query(`DELETE FROM bms.asset_points WHERE asset_id IN (${staleAssets})`, [cutoff]);
-    await pool.query(`DELETE FROM bms.assets WHERE id IN (${staleAssets})`, [cutoff]);
-    await pool.query(`DELETE FROM bms.rtu_connection_configs WHERE rtu_id IN (${staleRtus})`, [cutoff]);
-    await pool.query(`DELETE FROM bms.rtus WHERE id IN (${staleRtus})`, [cutoff]);
+    await pool.query(`DELETE FROM bms.asset_points WHERE asset_id IN (${staleAssets})`, age);
+    await pool.query(`DELETE FROM bms.assets WHERE id IN (${staleAssets})`, age);
+    await pool.query(`DELETE FROM bms.rtu_connection_configs WHERE rtu_id IN (${staleRtus})`, age);
+    await pool.query(`DELETE FROM bms.rtus WHERE id IN (${staleRtus})`, age);
     // `_` is a LIKE wildcard, so the point key family escapes it.
     await pool.query(
-      `DELETE FROM bms.point_keys
-        WHERE code LIKE 'F4170\\_SKO\\_PK\\_%' AND substring(code from '([0-9]+)$')::bigint < $1`,
-      [cutoff],
+      `DELETE FROM bms.point_keys WHERE code LIKE 'F4170\_SKO\_PK\_%' AND created_at < now() - $1::interval`,
+      age,
     );
-    await pool.query(`DELETE FROM bms.locations WHERE id IN (${staleLocations})`, [cutoff]);
-    await pool.query(`DELETE FROM bms.onboarding_sessions WHERE id IN (${staleSessions})`, [cutoff]);
+    await pool.query(`DELETE FROM bms.locations WHERE id IN (${staleLocations})`, age);
+    await pool.query(`DELETE FROM bms.onboarding_sessions WHERE id IN (${staleSessions})`, age);
   } catch (err) {
     process.stderr.write(
       `[F4.170] could not sweep stale fixture rows: ${err instanceof Error ? err.message : String(err)}\n`,
