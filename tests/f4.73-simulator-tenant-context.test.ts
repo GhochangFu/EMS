@@ -90,42 +90,74 @@ describe("F4.73 — the simulator sets a tenant context before reading bms.asset
     expect(bodyOf("loadAssets")).toContain("assetLimit");
   });
 });
-
 /**
- * `F4.173` — the simulator pool survives an idle client that the server ends.
+ * `F4.173` — the simulator pool survives a client that the server ends, idle
+ * or checked out.
  *
- * `pg.Pool` emits `'error'` when Postgres ends an idle pooled client (a restart,
- * a failover, `pg_terminate_backend`); with no listener Node throws and the
- * simulator exits, and with no compose `restart:` it stays down. The api and
- * worker pools have a behavioural gate
- * (`apps/api/src/database/database-module-pools.integration.test.ts`); the
- * simulator cannot, because `main()` runs when `index.js` is imported, so on
+ * pg emits `'error'` on a client whose backend Postgres ends (a restart, a
+ * failover, `pg_terminate_backend`); with no listener Node throws and the
+ * simulator exits, and with no compose `restart:` it stays down. pg-pool
+ * re-emits an idle client's error on the pool, but removes that listener while
+ * the client is checked out — and the simulator checks clients out
+ * (`pool.connect()` for its tenant-scoped reads). So it needs the pool listener
+ * and a per-checkout client listener. The api and worker pools have a
+ * behavioural gate (`apps/api/src/database/database-module-pools.integration.test.ts`);
+ * the simulator cannot, because `main()` runs when `index.js` is imported, so on
  * this file's precedent the gate reads the source.
  *
- * **What this holds:** a listener is registered on the pool, it logs
- * `err.message` and not the error object (which carries the client and its
- * connection parameters, password included), and it does not exit. **What it
- * does not hold:** that the process survives at runtime and the next tick
- * writes — that is the `F4.173` stack check, which recreates Postgres under a
- * running simulator.
+ * **What this holds:** both listeners are registered, the checkout listener is
+ * removed on release, each logs `err.message` and not the error object (which
+ * carries the client and its connection parameters, password included), and
+ * neither exits. **What it does not hold:** that the process survives at
+ * runtime and the next tick writes — that is the `F4.173` stack check, which
+ * recreates Postgres under a running simulator.
  */
-describe("F4.173 — the simulator pool survives a server-ended idle client", () => {
-  /** The `pool.on("error", …)` handler's text, up to its closing `});`. */
-  function poolErrorHandler(): string {
-    const start = code.indexOf('pool.on("error"');
-    expect(start, 'pool.on("error", …) is missing from apps/sim/src/index.js').toBeGreaterThanOrEqual(0);
-    const end = code.indexOf("});", start);
-    expect(end, "the pool error handler has no closing });").toBeGreaterThan(start);
-    return code.slice(start, end);
+describe("F4.173 — the simulator pool survives a server-ended client", () => {
+  /** The text from `marker` up to the next `});` or `};`, whichever closes first. */
+  function blockAt(marker: string): string {
+    const start = code.indexOf(marker);
+    expect(start, `${marker} is missing from apps/sim/src/index.js`).toBeGreaterThanOrEqual(0);
+    const ends = ["});", "};"].map((close) => code.indexOf(close, start)).filter((i) => i > start);
+    expect(ends.length, `${marker} has no closing brace`).toBeGreaterThan(0);
+    return code.slice(start, Math.min(...ends));
   }
 
+  /** A handler's body: its text after the arrow, so the parameter list is not read as a use. */
+  function handlerBody(marker: string): string {
+    const block = blockAt(marker);
+    const arrow = block.indexOf("=>");
+    expect(arrow, `${marker} is not an arrow function`).toBeGreaterThan(0);
+    return block.slice(arrow + 2);
+  }
+
+  const POOL_HANDLER = 'pool.on("error"';
+  const CHECKOUT_HANDLER = "const onCheckedOutError =";
+
   it("registers an 'error' listener on the pool that logs the message", () => {
-    expect(poolErrorHandler()).toMatch(/console\.error\([^)]*\berr\.message\b/);
+    expect(handlerBody(POOL_HANDLER)).toMatch(/console\.error\([^)]*\berr\.message\b/);
   });
 
-  it("neither exits nor logs the error object from that listener", () => {
-    const handler = poolErrorHandler();
-    expect(handler).not.toMatch(/process\.exit/);
-    expect(handler).not.toMatch(/console\.error\([^)]*\berr\s*\)/);
+  it("gives a checked-out client its own listener that logs the message", () => {
+    expect(handlerBody(CHECKOUT_HANDLER)).toMatch(/console\.error\([^)]*\berr\.message\b/);
+  });
+
+  it("attaches that listener on acquire", () => {
+    expect(blockAt('pool.on("acquire"')).toMatch(/client\.on\("error",\s*onCheckedOutError\)/);
+  });
+
+  it("removes that listener on release", () => {
+    expect(blockAt('pool.on("release"')).toMatch(
+      /client\.removeListener\("error",\s*onCheckedOutError\)/,
+    );
+  });
+
+  it("neither exits nor uses the error object in either listener", () => {
+    for (const marker of [POOL_HANDLER, CHECKOUT_HANDLER]) {
+      const body = handlerBody(marker);
+      expect(body, marker).not.toMatch(/process\.exit/);
+      // Every `err` must be `err.message`: a bare `err` anywhere in the body —
+      // last argument, middle argument, `{ err }` — would log the object.
+      expect(body, marker).not.toMatch(/\berr\b(?!\.message\b)/);
+    }
   });
 });
