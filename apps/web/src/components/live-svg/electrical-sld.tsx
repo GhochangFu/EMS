@@ -46,14 +46,19 @@ function flowStrokeFor(status: LiveSvgStatus): string {
   return status === "running" ? STROKE_FLOW : STROKE_MUTED;
 }
 
-function fillFor(status: LiveSvgStatus): string {
+/**
+ * `F3.65c` review — a status *label* painted on the feeder panel's wash (`ok-wash` running,
+ * `well-deep` offline) reads its own `-ink` role: `accent` on `ok-wash` is 3.03 light (D7);
+ * `critical-ink` / `ink-muted` are the pairs already declared for a wash/well-deep label (§2.5).
+ */
+function textToneFor(status: LiveSvgStatus): string {
   if (status === "fault") {
-    return "fill-critical";
+    return "fill-critical-ink";
   }
   if (status === "offline") {
-    return "fill-ink-hint";
+    return "fill-ink-muted";
   }
-  return "fill-accent";
+  return "fill-accent-strong";
 }
 
 function flowDurationSec(kw: number | null): string {
@@ -203,7 +208,7 @@ function FeederBranch({
 }) {
   const { assetId, slice, status } = useSchematicTelemetryByCode(assetCode);
   const stroke = strokeFor(status);
-  const fillClass = fillFor(status);
+  const fillClass = textToneFor(status);
   const flow = flowStrokeFor(status);
   const dur = flowDurationSec(slice.kw);
   const showFlow = status === "running";
