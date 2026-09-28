@@ -12,7 +12,7 @@ import type { MimicLayoutsService } from "./mimic-layouts.service";
 
 /**
  * `F3.32c` U2 — what `MimicLayoutsService` does against a real database and
- * real row security (plan U2, C1–C11; C12–C13 from U7). Assertions live here;
+ * real row security (plan U2, C1–C11; C12–C17 from U7). Assertions live here;
  * `mimic-layouts.service.integration.test.ts` is the Vitest entry point
  * (ADR 0014) and owns the pools, the fixtures and the cleanup.
  *
@@ -36,6 +36,8 @@ export type Ctx = {
   track: (id: string) => void;
   /** Plants a committed ESKOM dashboard with one layout-arm mimic widget; returns the dashboard id. */
   plantReferencingWidget: (layoutId: string) => Promise<string>;
+  /** Commits a throwaway `bms.asset_roles` row, tracked for cleanup by code; returns the code. */
+  plantRole: (suffix: string) => Promise<string>;
 };
 
 /** Nodes deliberately listed out of display order, so C1 proves the service orders them. */
@@ -296,6 +298,74 @@ export async function assertUppercaseIdDeleteOfReferencedLayoutIs409(ctx: Ctx): 
   expect(err).toBeInstanceOf(ConflictException);
   expect((err as Error).message).toBe(MIMIC_LAYOUT_IN_USE_MESSAGE(1));
   expect(await childCounts(ctx, dto.id)).toEqual([5, 2]);
+}
+
+/**
+ * C14 — a PUT taking a slug another layout of the organization holds is a 409 with the slug
+ * sentence, not the stale one, and the layout keeps its version, name and nodes.
+ */
+export async function assertReplaceOntoATakenSlugIs409AndChangesNothing(ctx: Ctx): Promise<void> {
+  const taken = await create(ctx, "c14-taken");
+  const dto = await create(ctx, "c14");
+  const before = await nodeIds(ctx, dto.id);
+  const body = { ...putBody(layoutBody(ctx.eskomOrgId, dto.slug), 1), slug: taken.slug, name: "F3.32c c14 edit" };
+  const err = await rejection(ctx.service.replace(ctx.globalAdmin, dto.id, body));
+  expect(err).toBeInstanceOf(ConflictException);
+  expect((err as Error).message).toBe(`A layout with slug "${taken.slug}" already exists in this organization`);
+  expect((err as Error).message).not.toBe(MIMIC_LAYOUT_STALE_MESSAGE);
+  const after = await ctx.service.get(ctx.globalAdmin, dto.id);
+  expect({ version: after.version, name: after.name, slug: after.slug }).toEqual({
+    version: 1,
+    name: dto.name,
+    slug: dto.slug,
+  });
+  expect(await nodeIds(ctx, dto.id)).toEqual(before);
+}
+
+/** Sets a role's `active` flag behind the service's back. */
+const setRoleActive = async (ctx: Ctx, code: string, active: boolean): Promise<void> => {
+  await ctx.ownerPool.query(`UPDATE bms.asset_roles SET active = $2 WHERE code = $1`, [code, active]);
+};
+
+/** C15 — a create naming a retired role is a 400 that does not echo the code, and writes nothing. */
+export async function assertCreateWithARetiredRoleIs400(ctx: Ctx): Promise<void> {
+  const code = await ctx.plantRole("c15");
+  await setRoleActive(ctx, code, false);
+  const body = layoutBody(ctx.eskomOrgId, ctx.slug("c15"));
+  body.nodes = body.nodes.map((n) => (n.key === "pump" ? { ...n, roleCode: code } : n));
+  const err = await rejection(ctx.service.create(ctx.globalAdmin, body));
+  expect(err).toBeInstanceOf(BadRequestException);
+  expect((err as Error).message).toBe("Unknown asset role code");
+  expect(JSON.stringify((err as BadRequestException).getResponse())).not.toContain(code);
+  const none = await ctx.ownerPool.query(`SELECT id FROM bms.mimic_layouts WHERE slug = $1`, [body.slug]);
+  expect(none.rows).toEqual([]);
+}
+
+/** C16 — a PUT keeping a role the stored layout already carries saves after that role is retired. */
+export async function assertReplaceKeepingAStoredRetiredRoleSaves(ctx: Ctx): Promise<void> {
+  const code = await ctx.plantRole("c16");
+  const body = layoutBody(ctx.eskomOrgId, ctx.slug("c16"));
+  body.nodes = body.nodes.map((n) => (n.key === "pump" ? { ...n, roleCode: code } : n));
+  const dto = await ctx.service.create(ctx.globalAdmin, body);
+  ctx.track(dto.id);
+  await setRoleActive(ctx, code, false);
+  const saved = await ctx.service.replace(ctx.globalAdmin, dto.id, { ...putBody(body, 1), name: "F3.32c c16 re-save" });
+  expect(saved.version).toBe(2);
+  expect(saved.nodes.find((n) => n.key === "pump")?.roleCode).toBe(code);
+}
+
+/** C17 — a PUT adding a retired role the stored layout does not carry is a 400, and changes nothing. */
+export async function assertReplaceAddingARetiredRoleIs400(ctx: Ctx): Promise<void> {
+  const code = await ctx.plantRole("c17");
+  await setRoleActive(ctx, code, false);
+  const dto = await create(ctx, "c17");
+  const body = layoutBody(ctx.eskomOrgId, dto.slug);
+  const nodes = body.nodes.map((n) => (n.key === "pump" ? { ...n, roleCode: code } : n));
+  const err = await rejection(ctx.service.replace(ctx.globalAdmin, dto.id, { ...putBody(body, 1), nodes }));
+  expect(err).toBeInstanceOf(BadRequestException);
+  expect((err as Error).message).toBe("Unknown asset role code");
+  expect(JSON.stringify((err as BadRequestException).getResponse())).not.toContain(code);
+  expect((await ctx.service.get(ctx.globalAdmin, dto.id)).version).toBe(1);
 }
 
 /** C11 — an unknown role code is a 400 that does not echo the code, and writes nothing. */

@@ -9,7 +9,7 @@ import {
 import { and, asc, eq, inArray, sql } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 
-import { dashboardWidgets, mimicLayoutNodes, mimicLayoutPipes, mimicLayouts } from "@bms/db";
+import { assetRoles, dashboardWidgets, mimicLayoutNodes, mimicLayoutPipes, mimicLayouts } from "@bms/db";
 import type { BmsDb } from "@bms/db";
 import type {
   JwtPayload,
@@ -36,6 +36,9 @@ import type { CreateMimicLayoutBody, PutMimicLayoutBody } from "./mimic-layouts.
 
 type LayoutRow = typeof mimicLayouts.$inferSelect;
 type Executor = BmsDb | BmsTx;
+
+/** An unknown or retired role code: the class of error only, never the code. */
+const UNKNOWN_ROLE_MESSAGE = "Unknown asset role code";
 
 /** The roles that may draw, besides `admin` (ADR 0081 decision 3). */
 const AUTHOR_ROLES = new Set(["admin", "organization_admin"]);
@@ -126,6 +129,7 @@ export class MimicLayoutsService {
 
   async create(jwt: JwtPayload, body: CreateMimicLayoutBody): Promise<MimicLayoutDto> {
     const author = await this.assertCanAuthor(jwt, body.organizationId);
+    await this.assertRolesLive(body.nodes, new Set());
     return withTenant(this.tenantDb, body.organizationId, async (tx) => {
       const [layout] = await tx
         .insert(mimicLayouts)
@@ -157,6 +161,16 @@ export class MimicLayoutsService {
   async replace(jwt: JwtPayload, id: string, body: PutMimicLayoutBody): Promise<MimicLayoutDto> {
     const existing = await this.fetchReadable(jwt, id);
     await this.assertCanAuthor(jwt, existing.organizationId);
+    // A code the stored drawing already carries stays valid after it is retired, so a
+    // re-save of an unchanged layout never fails on it (the mapping-sheet retired-code rule).
+    const stored = await this.fleetDb
+      .selectDistinct({ roleCode: mimicLayoutNodes.roleCode })
+      .from(mimicLayoutNodes)
+      .where(eq(mimicLayoutNodes.layoutId, existing.id));
+    await this.assertRolesLive(
+      body.nodes,
+      new Set(stored.flatMap((row) => (row.roleCode === null ? [] : [row.roleCode]))),
+    );
     return withTenant(this.tenantDb, existing.organizationId, async (tx) => {
       const [layout] = await tx
         .update(mimicLayouts)
@@ -254,6 +268,29 @@ export class MimicLayoutsService {
       throw new ForbiddenException("Organization is outside your access scope");
     }
     return user.id;
+  }
+
+  /**
+   * Every role code the body's nodes name is an **active** `bms.asset_roles`
+   * row, except the codes in `kept`. The foreign key admits a retired role
+   * (`active = false`), so it cannot be the check. An unknown code and a
+   * retired one answer the same 400, and neither is echoed.
+   */
+  private async assertRolesLive(
+    nodes: Pick<CreateMimicLayoutBody, "nodes">["nodes"],
+    kept: ReadonlySet<string>,
+  ): Promise<void> {
+    const codes = [
+      ...new Set(nodes.flatMap((node) => (node.roleCode == null || kept.has(node.roleCode) ? [] : [node.roleCode]))),
+    ];
+    if (codes.length === 0) return;
+    const live = await this.fleetDb
+      .select({ code: assetRoles.code })
+      .from(assetRoles)
+      .where(and(inArray(assetRoles.code, codes), eq(assetRoles.active, true)));
+    if (live.length !== codes.length) {
+      throw new BadRequestException(UNKNOWN_ROLE_MESSAGE);
+    }
   }
 
   /** The layout, if the caller may read its organization; else 404. */
@@ -395,7 +432,7 @@ export class MimicLayoutsService {
     }
     if (constraint === "mimic_layout_nodes_role_code_fkey") {
       // No echo of the code: the message names the class of error only.
-      return new BadRequestException("Unknown asset role code");
+      return new BadRequestException(UNKNOWN_ROLE_MESSAGE);
     }
     return err;
   }

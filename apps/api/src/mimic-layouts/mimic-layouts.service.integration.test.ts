@@ -21,7 +21,7 @@ import { MimicLayoutsService } from "./mimic-layouts.service";
 
 /**
  * `F3.32c` U2 — Vitest entry point for `MimicLayoutsService` against a real
- * database (plan U2, C1–C11; C12–C13 from U7). Assertions live in the sibling `.spec`
+ * database (plan U2, C1–C11; C12–C17 from U7). Assertions live in the sibling `.spec`
  * (ADR 0014); this file owns the pools, the fixtures and the cleanup.
  *
  * **Cleanup deletes only rows this suite created, by id** — never a broad
@@ -46,6 +46,7 @@ describe.skipIf(!connectionString)("F3.32c — MimicLayoutsService against a liv
   let fleetDb: BmsDb;
   const layoutIds = new Set<string>();
   const dashboardIds: string[] = [];
+  const roleCodes: string[] = [];
   let ctx: Ctx;
 
   beforeAll(async () => {
@@ -105,6 +106,15 @@ describe.skipIf(!connectionString)("F3.32c — MimicLayoutsService against a liv
         );
         return dashboardId;
       },
+      plantRole: async (suffix) => {
+        const code = `f332c-${RUN}-role-${suffix}`;
+        await ownerPool.query(`INSERT INTO bms.asset_roles (code, label) VALUES ($1, $2)`, [
+          code,
+          `F3.32c ${suffix} role`,
+        ]);
+        roleCodes.push(code);
+        return code;
+      },
     };
   }, 60_000);
 
@@ -123,6 +133,10 @@ describe.skipIf(!connectionString)("F3.32c — MimicLayoutsService against a liv
       if (ids.length > 0) {
         await ownerPool.query(`DELETE FROM bms.audit_log WHERE entity_id = ANY($1::uuid[])`, [ids]);
         await ownerPool.query(`DELETE FROM bms.mimic_layouts WHERE id = ANY($1::uuid[])`, [ids]);
+      }
+      // After the layouts: their nodes reference these codes, and the nodes cascade with them.
+      if (roleCodes.length > 0) {
+        await ownerPool.query(`DELETE FROM bms.asset_roles WHERE code = ANY($1::text[])`, [roleCodes]);
       }
     }
     await Promise.all([ownerPool, tenantPool, authPool, fleetPool].filter(Boolean).map((p) => p.end()));
@@ -178,5 +192,21 @@ describe.skipIf(!connectionString)("F3.32c — MimicLayoutsService against a liv
 
   it("C13 deleting a referenced layout by its uppercase id is a 409", async () => {
     await spec.assertUppercaseIdDeleteOfReferencedLayoutIs409(ctx);
+  }, 60_000);
+
+  it("C14 a replace onto another layout's slug is a 409 with the slug sentence, and changes nothing", async () => {
+    await spec.assertReplaceOntoATakenSlugIs409AndChangesNothing(ctx);
+  }, 60_000);
+
+  it("C15 a create naming a retired role is a 400", async () => {
+    await spec.assertCreateWithARetiredRoleIs400(ctx);
+  }, 60_000);
+
+  it("C16 a replace keeping a stored role saves after the role is retired", async () => {
+    await spec.assertReplaceKeepingAStoredRetiredRoleSaves(ctx);
+  }, 60_000);
+
+  it("C17 a replace adding a retired role is a 400", async () => {
+    await spec.assertReplaceAddingARetiredRoleIs400(ctx);
   }, 60_000);
 });
