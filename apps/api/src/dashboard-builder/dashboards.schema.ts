@@ -23,7 +23,8 @@ import {
   valueTileConfigSchema,
   widgetPointRoleSchema,
   metricCatalogKeySchema,
-  mimicConfigSchema,
+  mimicLayoutConfigSchema,
+  mimicPresetConfigSchema,
   widgetTypeBindsNothing,
   widgetTypeSchema,
   METRIC_CATALOG,
@@ -82,6 +83,13 @@ export const SCOPE_REFUSAL_MESSAGE =
  */
 export const MIMIC_SCOPE_MESSAGE =
   "a plant mimic needs an asset group — it draws one asset per role, resolved from the group's members";
+
+/**
+ * `F3.32c` / ADR 0081 decision 5 — a layout-arm mimic must name a `bms.mimic_layouts` row of
+ * the dashboard's own organization. `DashboardsService.putWidgets` throws it for an unknown id
+ * and for another organization's id alike, so the 400 never confirms that a foreign id exists.
+ */
+export const MIMIC_LAYOUT_ORG_MESSAGE = "a plant mimic layout must belong to the dashboard's organization";
 
 /**
  * `!= null`, not `!== null`, on all three: every field is `.nullable().optional()`, so an
@@ -478,6 +486,32 @@ const radialGaugeWriteConfigSchema = z
   );
 
 /**
+ * `F3.32c` / ADR 0081 decision 5 — the `mimic` config's write form: a union on `source` of the
+ * two shared arms, each `.strict()` (plan D2; a `z.discriminatedUnion` has no `.strict()`).
+ *
+ * **Each arm is re-wrapped in THIS package's `z.object`, and its discriminator literal is rebuilt
+ * from the shared one's `.value`.** `z.discriminatedUnion` finds each arm's discriminator with an
+ * `instanceof ZodLiteral` check, and under Vitest `@bms/shared`'s CommonJS `dist` holds a second
+ * zod instance — so `[mimicPresetConfigSchema.strict(), …]` throws "A discriminator value for key
+ * `source` could not be extracted" at import. Spreading `.shape` keeps every other field the
+ * shared arm declares, so a field added there is not silently refused here.
+ */
+const mimicConfigWriteSchema = z.discriminatedUnion("source", [
+  z
+    .object({
+      ...mimicPresetConfigSchema.shape,
+      source: z.literal(mimicPresetConfigSchema.shape.source.value),
+    })
+    .strict(),
+  z
+    .object({
+      ...mimicLayoutConfigSchema.shape,
+      source: z.literal(mimicLayoutConfigSchema.shape.source.value),
+    })
+    .strict(),
+]);
+
+/**
  * The arms, one per widget type (six since `F3.32`). Each stays a plain `.strict()` `ZodObject` — never
  * wrapped in its own `.refine()`/`.superRefine()` — because `z.discriminatedUnion` accepts only
  * `ZodObject` arms; the cross-widget grid-fit check lives on the ARRAY field in
@@ -537,12 +571,16 @@ export const widgetWriteSchema = z.discriminatedUnion("widgetType", [
     .strict(),
   // `F3.32` / ADR 0079. Binds nothing — both fields are capped at zero by the shared
   // cardinality records, and `exactlyOneBindingKind` returns early on `widgetTypeBindsNothing`.
-  // `mimicConfigSchema` carries no `unit`/`decimals` (plan D8), so `.strict()` refuses them.
+  // Neither config arm carries `unit`/`decimals` (plan D8), so `.strict()` refuses them.
+  // `F3.32c` / ADR 0081 decision 5 — the config is a union on `source`; see
+  // `mimicConfigWriteSchema`. Whether a layout id names a layout of THIS dashboard's organization
+  // is a fact the body cannot see; `DashboardsService.putWidgets` answers it
+  // (`MIMIC_LAYOUT_ORG_MESSAGE`).
   z
     .object({
       ...widgetIdentityWriteFields,
       widgetType: z.literal("mimic"),
-      config: mimicConfigSchema.strict(),
+      config: mimicConfigWriteSchema,
       points: pointsFieldFor("mimic"),
       sources: sourcesFieldFor("mimic"),
     })

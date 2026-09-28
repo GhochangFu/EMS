@@ -235,6 +235,26 @@ describe("F3.32 v1 — the mimic-nodes read (U2)", () => {
     ).toBe(true);
   });
 
+  // `F3.32c` / ADR 0081 decision 6 — the layout statements run on `FLEET_POOL`, which bypasses
+  // RLS, so the organization predicate on each layout table IS the isolation (ADR 0043
+  // Amendment 3). Every alias the service gives a `bms.mimic_layout*` table must be filtered by
+  // `<alias>.organization_id = $n`.
+  it("the mimic-nodes service filters every bms.mimic_layout* table it reads by organization_id", () => {
+    const src = read(MIMIC_NODES_SERVICE_REL);
+    const reads = [...src.matchAll(/bms\.(mimic_layout\w*)\s+(?:AS\s+)?([a-z]\w*)/g)].map((match) => ({
+      table: match[1] as string,
+      alias: match[2] as string,
+    }));
+    expect(
+      [...new Set(reads.map((entry) => entry.table))].sort(),
+      "the resolver must read the layout, its nodes and its pipes (plan D9, statements 1b and 1c)",
+    ).toEqual(["mimic_layout_nodes", "mimic_layout_pipes", "mimic_layouts"]);
+    const unfiltered = reads.filter(
+      (entry) => !new RegExp(`\\b${entry.alias}\\.organization_id\\s*=\\s*\\$\\d`).test(src),
+    );
+    expect(unfiltered, "each alias must carry an organization_id = $n predicate").toEqual([]);
+  });
+
   it("the controller declares :id/mimic-nodes before :slug", () => {
     if (!exists(CONTROLLER_REL)) {
       throw new Error(`${CONTROLLER_REL} does not exist — this repository's own layout changed`);
