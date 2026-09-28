@@ -162,13 +162,13 @@ function statusLabel(status: BatteryStatus): string {
 function statusPillClass(status: BatteryStatus): string {
   switch (status) {
     case "critical":
-      return "border-red-200 bg-red-100 text-red-800";
+      return "border-critical-line bg-critical-wash-strong text-critical-ink-strong";
     case "warning":
-      return "border-amber-200 bg-amber-100 text-amber-900";
+      return "border-warning-line bg-warning-wash-strong text-warning-ink";
     case "offline":
-      return "border-gray-200 bg-gray-100 text-gray-700";
+      return "border-line bg-well-deep text-neutral-ink";
     case "normal":
-      return "border-bms-green/20 bg-bms-green/10 text-bms-green";
+      return "border-accent/20 bg-accent/10 text-accent";
   }
 }
 
@@ -205,15 +205,15 @@ function generateCells(
 
 function cellClass(status: BatteryStatus): string {
   if (status === "critical") {
-    return "border-red-300 bg-red-100 text-red-800";
+    return "border-critical-line-strong bg-critical-wash-strong text-critical-ink-strong";
   }
   if (status === "warning") {
-    return "border-amber-300 bg-amber-100 text-amber-900";
+    return "border-warning-line bg-warning-wash-strong text-warning-ink";
   }
   if (status === "offline") {
-    return "border-gray-300 bg-gray-100 text-gray-600";
+    return "border-line-strong bg-well-deep text-ink-muted";
   }
-  return "border-bms-green/20 bg-bms-green/10 text-bms-green";
+  return "border-accent/20 bg-accent/10 text-accent";
 }
 
 export function ControlRoomBatteryContent() {
@@ -332,9 +332,9 @@ export function ControlRoomBatteryContent() {
         <DetailCard title="Battery Alerts">
           {batteryAlerts(strings).map((alert) => (
             <div key={alert.label} className="flex items-start gap-2 text-sm">
-              <span className={`mt-1 h-2 w-2 rounded-full ${alert.status === "normal" ? "bg-bms-green" : alert.status === "critical" ? "bg-red-600" : "bg-amber-500"}`} />
-              <span className="flex-1 text-bms-ink">{alert.label}</span>
-              <span className="text-xs text-bms-muted">{alert.when}</span>
+              <span className={`mt-1 h-2 w-2 rounded-full ${alert.status === "normal" ? "bg-accent" : alert.status === "critical" ? "bg-critical" : "bg-warning"}`} />
+              <span className="flex-1 text-ink">{alert.label}</span>
+              <span className="text-xs text-ink-muted">{alert.when}</span>
             </div>
           ))}
         </DetailCard>
@@ -359,10 +359,10 @@ function BatteryStringCard({
   };
 }) {
   return (
-    <section className="rounded border border-gray-200 bg-white">
-      <div className="flex flex-col gap-2 border-b border-gray-200 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+    <section className="rounded border border-line bg-surface">
+      <div className="flex flex-col gap-2 border-b border-line px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h2 className="font-condensed text-lg font-bold text-bms-ink">{string.title}</h2>
+          <h2 className="font-condensed text-lg font-bold text-ink">{string.title}</h2>
           {/* Two defects on one line, both found in `F4.39`.
               1. `batteryV` and `backupMin` were rendered **ungated** — `n(...)`
                  with no `freshValue`, so this line held its last numbers while
@@ -375,7 +375,7 @@ function BatteryStringCard({
                  string temperature (ADR 0028 decision 4).
               3. And a third, found by the review: `backupMin` comes from the
                  **UPS**, so it takes `upsStale`, not the string's flag. */}
-          <p className="text-xs text-bms-muted">
+          <p className="text-xs text-ink-muted">
             {n(freshValue(string.slice.batteryV, string.state.stale), 1)} V ·{" "}
             {n(freshValue(string.slice.batteryTempC, string.state.stale), 1)} C · backup{" "}
             {n(freshValue(string.ups.backupMin, string.upsStale), 0)} min
@@ -383,7 +383,7 @@ function BatteryStringCard({
         </div>
         <div className="flex flex-wrap gap-2">
           {string.state.matchedRule ? (
-            <span className="rounded-full border border-amber-200 bg-amber-100 px-2 py-0.5 text-[11px] font-semibold text-amber-900">
+            <span className="rounded-full border border-warning-line bg-warning-wash-strong px-2 py-0.5 text-[11px] font-semibold text-warning-ink">
               {string.state.matchedRule.name}
             </span>
           ) : null}
@@ -399,7 +399,7 @@ function BatteryStringCard({
           correctly, which is exactly what made them convincing: they blank when
           the string dies and move when it reports. Wiring them needs an
           ingestion change, not a UI one (ADR 0028 consequences). */}
-      <div className="flex items-center justify-between border-t border-gray-100 px-4 pt-3 text-xs text-bms-muted">
+      <div className="flex items-center justify-between border-t border-well-deep px-4 pt-3 text-xs text-ink-muted">
         <span>Per-cell detail</span>
         <StaticValue kind="simulated">synthesized from the string reading</StaticValue>
       </div>
@@ -465,9 +465,9 @@ function batteryAlerts(
 
 function DetailCard({ title, children }: { title: string; children: ReactNode }) {
   return (
-    <section className="rounded border border-gray-200 bg-white">
-      <div className="border-b border-gray-200 px-4 py-3">
-        <h2 className="font-condensed text-lg font-bold text-bms-ink">{title}</h2>
+    <section className="rounded border border-line bg-surface">
+      <div className="border-b border-line px-4 py-3">
+        <h2 className="font-condensed text-lg font-bold text-ink">{title}</h2>
       </div>
       <div className="space-y-2 p-4">{children}</div>
     </section>
@@ -477,8 +477,8 @@ function DetailCard({ title, children }: { title: string; children: ReactNode })
 function Row({ label, value }: { label: string; value: ReactNode }) {
   return (
     <div className="flex justify-between gap-3 text-sm">
-      <span className="text-bms-muted">{label}</span>
-      <span className="font-mono font-semibold text-bms-ink">{value}</span>
+      <span className="text-ink-muted">{label}</span>
+      <span className="font-mono font-semibold text-ink">{value}</span>
     </div>
   );
 }

@@ -170,26 +170,26 @@ function statusLabel(status: EnvStatus): string {
 function statusPillClass(status: EnvStatus): string {
   switch (status) {
     case "critical":
-      return "border-red-200 bg-red-100 text-red-800";
+      return "border-critical-line bg-critical-wash-strong text-critical-ink-strong";
     case "warning":
-      return "border-amber-200 bg-amber-100 text-amber-900";
+      return "border-warning-line bg-warning-wash-strong text-warning-ink";
     case "offline":
-      return "border-gray-200 bg-gray-100 text-gray-700";
+      return "border-line bg-well-deep text-neutral-ink";
     case "normal":
-      return "border-bms-green/20 bg-bms-green/10 text-bms-green";
+      return "border-accent/20 bg-accent/10 text-accent";
   }
 }
 
 function tileClass(status: EnvStatus): string {
   switch (status) {
     case "critical":
-      return "border-red-200 bg-red-50";
+      return "border-critical-line bg-critical-wash";
     case "warning":
-      return "border-amber-200 bg-amber-50";
+      return "border-warning-line bg-warning-wash";
     case "offline":
-      return "border-gray-200 bg-gray-50";
+      return "border-line bg-well";
     case "normal":
-      return "border-bms-green/20 bg-bms-green/10";
+      return "border-accent/20 bg-accent/10";
   }
 }
 
@@ -347,18 +347,18 @@ export function ControlRoomEnvContent() {
         <KpiTile label="Zones Monitored" status="ready" value={String(zones.length)} hint="editable thresholds in Rule Engine" />
       </div>
 
-      <section className="rounded border border-gray-200 bg-white">
-        <div className="border-b border-gray-200 px-4 py-3">
-          <h2 className="font-condensed text-lg font-bold text-bms-ink">
+      <section className="rounded border border-line bg-surface">
+        <div className="border-b border-line px-4 py-3">
+          <h2 className="font-condensed text-lg font-bold text-ink">
             Zone Temperature & Humidity
           </h2>
-          <p className="text-xs text-bms-muted">Live readings · thresholds set per zone in Rule Engine</p>
+          <p className="text-xs text-ink-muted">Live readings · thresholds set per zone in Rule Engine</p>
         </div>
         <div className="grid gap-3 p-4 md:grid-cols-2 xl:grid-cols-3">
           {zones.map((zone) => (
             <div key={zone.code} className={`rounded border p-3 ${tileClass(zone.state.status)}`}>
               <div className="flex items-start justify-between gap-2">
-                <h3 className="font-semibold text-bms-ink">{zone.zone}</h3>
+                <h3 className="font-semibold text-ink">{zone.zone}</h3>
                 <span className={`rounded-full border px-2 py-0.5 text-[10px] font-semibold ${statusPillClass(zone.state.status)}`}>
                   {statusLabel(zone.state.status)}
                 </span>
@@ -375,21 +375,21 @@ export function ControlRoomEnvContent() {
                   unit="%"
                 />
               </div>
-              <p className="mt-2 text-xs text-bms-muted">Range {zone.range}</p>
+              <p className="mt-2 text-xs text-ink-muted">Range {zone.range}</p>
               {zone.state.matchedRule ? (
-                <p className="mt-2 text-xs text-amber-800">Matched rule: {zone.state.matchedRule.name}</p>
+                <p className="mt-2 text-xs text-warning-ink">Matched rule: {zone.state.matchedRule.name}</p>
               ) : null}
             </div>
           ))}
         </div>
       </section>
 
-      <section className="rounded border border-gray-200 bg-white">
-        <div className="border-b border-gray-200 px-4 py-3">
-          <h2 className="font-condensed text-lg font-bold text-bms-ink">Sensor Floorplan</h2>
-          <p className="text-xs text-bms-muted">Control room layout · simplified</p>
+      <section className="rounded border border-line bg-surface">
+        <div className="border-b border-line px-4 py-3">
+          <h2 className="font-condensed text-lg font-bold text-ink">Sensor Floorplan</h2>
+          <p className="text-xs text-ink-muted">Control room layout · simplified</p>
         </div>
-        <div className="bg-gray-50 p-4">
+        <div className="bg-well p-4">
           <FloorPlan zones={zones} leaks={leaks} smoke={smoke} />
         </div>
       </section>
@@ -429,12 +429,12 @@ export function ControlRoomEnvContent() {
 function Metric({ label, value, unit }: { label: string; value: string; unit: string }) {
   return (
     <div>
-      <div className="text-[10px] font-semibold uppercase tracking-wide text-bms-muted">
+      <div className="text-[10px] font-semibold uppercase tracking-wide text-ink-muted">
         {label}
       </div>
-      <div className="font-condensed text-2xl font-bold text-bms-ink">
+      <div className="font-condensed text-2xl font-bold text-ink">
         {value}
-        <span className="ml-1 text-sm font-normal text-bms-muted">{unit}</span>
+        <span className="ml-1 text-sm font-normal text-ink-muted">{unit}</span>
       </div>
     </div>
   );
@@ -448,23 +448,23 @@ function SensorTable({
   rows: Array<{ id: string; location: string; state: string; status: EnvStatus }>;
 }) {
   return (
-    <section className="rounded border border-gray-200 bg-white">
-      <div className="border-b border-gray-200 px-4 py-3">
-        <h2 className="font-condensed text-lg font-bold text-bms-ink">{title}</h2>
+    <section className="rounded border border-line bg-surface">
+      <div className="border-b border-line px-4 py-3">
+        <h2 className="font-condensed text-lg font-bold text-ink">{title}</h2>
       </div>
       <div className="overflow-x-auto">
-        <table className="min-w-full divide-y divide-gray-200 text-sm">
-          <thead className="bg-gray-50 text-xs uppercase tracking-wide text-bms-muted">
+        <table className="min-w-full divide-y divide-line text-sm">
+          <thead className="bg-well text-xs uppercase tracking-wide text-ink-muted">
             <tr>
               <th className="px-4 py-2 text-left">Sensor</th>
               <th className="px-4 py-2 text-left">Location</th>
               <th className="px-4 py-2 text-left">State</th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-gray-200">
+          <tbody className="divide-y divide-line">
             {rows.map((row) => (
               <tr key={row.id}>
-                <td className="px-4 py-3 font-semibold text-bms-ink">{row.id}</td>
+                <td className="px-4 py-3 font-semibold text-ink">{row.id}</td>
                 <td className="px-4 py-3">{row.location}</td>
                 <td className="px-4 py-3">
                   <span className={`rounded-full border px-2 py-0.5 text-[11px] font-semibold ${statusPillClass(row.status)}`}>
@@ -493,19 +493,19 @@ function FloorPlan({
     <svg className="h-auto w-full" viewBox="0 0 700 320">
       <rect x="20" y="20" width="660" height="280" rx="6" fill="#fff" stroke="#1d3a8c" strokeWidth="1.6" />
       <rect x="60" y="50" width="220" height="120" rx="4" fill="#eff6ff" stroke="#3b82f6" />
-      <text x="170" y="76" textAnchor="middle" className="fill-blue-900 font-condensed text-[13px] font-semibold">OPERATOR CONSOLE</text>
+      <text x="170" y="76" textAnchor="middle" className="fill-info-ink font-condensed text-[13px] font-semibold">OPERATOR CONSOLE</text>
       <rect x="300" y="50" width="180" height="60" rx="4" fill="#fef3c7" stroke="#d97706" />
-      <text x="390" y="84" textAnchor="middle" className="fill-amber-800 font-condensed text-[13px] font-semibold">VIDEOWALL</text>
+      <text x="390" y="84" textAnchor="middle" className="fill-warning-ink font-condensed text-[13px] font-semibold">VIDEOWALL</text>
       <rect x="500" y="50" width="160" height="220" rx="4" fill="#ecfeff" stroke="#0891b2" />
-      <text x="580" y="76" textAnchor="middle" className="fill-cyan-800 font-condensed text-[13px] font-semibold">RACK BAY</text>
+      <text x="580" y="76" textAnchor="middle" className="fill-info-ink font-condensed text-[13px] font-semibold">RACK BAY</text>
       <rect x="60" y="200" width="180" height="80" rx="4" fill="#fef2f2" stroke="#dc2626" />
-      <text x="150" y="228" textAnchor="middle" className="fill-red-800 font-condensed text-[13px] font-semibold">BATTERY ROOM</text>
+      <text x="150" y="228" textAnchor="middle" className="fill-critical-ink-strong font-condensed text-[13px] font-semibold">BATTERY ROOM</text>
       <rect x="260" y="200" width="200" height="80" rx="4" fill="#f3e8ff" stroke="#7e22ce" />
-      <text x="360" y="228" textAnchor="middle" className="fill-purple-900 font-condensed text-[13px] font-semibold">UPS ROOM</text>
+      <text x="360" y="228" textAnchor="middle" className="fill-ink font-condensed text-[13px] font-semibold">UPS ROOM</text>
       {zones.map((zone) => (
         <g key={zone.code}>
           <circle cx={zone.x} cy={zone.y} r="9" fill={markerFill(zone.state.status)} stroke="#fff" strokeWidth="1.5" />
-          <text x={zone.x} y={zone.y + 3} textAnchor="middle" className="fill-white font-mono text-[9px] font-bold">T</text>
+          <text x={zone.x} y={zone.y + 3} textAnchor="middle" className="fill-surface font-mono text-[9px] font-bold">T</text>
         </g>
       ))}
       {smoke.map((sensor, index) => {
@@ -518,7 +518,7 @@ function FloorPlan({
         return (
           <g key={sensor.code}>
             <rect x={coords[0] - 7} y={coords[1] - 7} width="14" height="14" rx="2" fill={markerFill(sensor.state.status)} stroke="#fff" strokeWidth="1.5" />
-            <text x={coords[0]} y={coords[1] + 3} textAnchor="middle" className="fill-white font-mono text-[9px] font-bold">S</text>
+            <text x={coords[0]} y={coords[1] + 3} textAnchor="middle" className="fill-surface font-mono text-[9px] font-bold">S</text>
           </g>
         );
       })}

@@ -163,13 +163,13 @@ function statusLabel(status: UpsStatus): string {
 function statusPillClass(status: UpsStatus): string {
   switch (status) {
     case "critical":
-      return "border-red-200 bg-red-100 text-red-800";
+      return "border-critical-line bg-critical-wash-strong text-critical-ink-strong";
     case "warning":
-      return "border-amber-200 bg-amber-100 text-amber-900";
+      return "border-warning-line bg-warning-wash-strong text-warning-ink";
     case "offline":
-      return "border-gray-200 bg-gray-100 text-gray-700";
+      return "border-line bg-well-deep text-neutral-ink";
     case "normal":
-      return "border-bms-green/20 bg-bms-green/10 text-bms-green";
+      return "border-accent/20 bg-accent/10 text-accent";
   }
 }
 
@@ -198,15 +198,15 @@ function stroke(status: UpsStatus): string {
 
 function boxClass(status: UpsStatus): string {
   if (status === "critical") {
-    return "fill-red-50 stroke-red-600";
+    return "fill-critical-wash stroke-critical";
   }
   if (status === "warning") {
-    return "fill-amber-50 stroke-amber-500";
+    return "fill-warning-wash stroke-warning";
   }
   if (status === "offline") {
-    return "fill-gray-100 stroke-gray-400";
+    return "fill-well-deep stroke-ink-hint";
   }
-  return "fill-white stroke-bms-green";
+  return "fill-surface stroke-accent";
 }
 
 function modeFor(slice: SchematicTelemetrySlice, status: UpsStatus): string {
@@ -292,14 +292,14 @@ export function ControlRoomUpsContent() {
         <KpiTile label="Worst Backup" status="ready" value={n(worstBackup, 0)} unit="min" tone={statusTone(overall.status)} />
       </div>
 
-      <div className="flex flex-wrap gap-2 rounded border border-gray-200 bg-white p-3">
+      <div className="flex flex-wrap gap-2 rounded border border-line bg-surface p-3">
         {units.map((unit) => (
           <button
             key={unit.code}
             className={`rounded border px-3 py-2 text-sm font-semibold ${
               tab === unit.code
-                ? "border-bms-green bg-bms-green text-white"
-                : "border-gray-200 bg-gray-50 text-bms-muted"
+                ? "border-accent bg-accent text-on-accent"
+                : "border-line bg-well text-ink-muted"
             }`}
             onClick={() => setTab(unit.code)}
           >
@@ -312,8 +312,8 @@ export function ControlRoomUpsContent() {
         <button
           className={`rounded border px-3 py-2 text-sm font-semibold ${
             tab === "combined"
-              ? "border-bms-green bg-bms-green text-white"
-              : "border-gray-200 bg-gray-50 text-bms-muted"
+              ? "border-accent bg-accent text-on-accent"
+              : "border-line bg-well text-ink-muted"
           }`}
           onClick={() => setTab("combined")}
         >
@@ -344,15 +344,15 @@ function CombinedSummary({
   }>;
 }) {
   return (
-    <section className="rounded border border-gray-200 bg-white">
-      <div className="border-b border-gray-200 px-4 py-3">
-        <h2 className="font-condensed text-lg font-bold text-bms-ink">
+    <section className="rounded border border-line bg-surface">
+      <div className="border-b border-line px-4 py-3">
+        <h2 className="font-condensed text-lg font-bold text-ink">
           All UPS Units
         </h2>
       </div>
       <div className="overflow-x-auto">
-        <table className="min-w-full divide-y divide-gray-200 text-sm">
-          <thead className="bg-gray-50 text-xs uppercase tracking-wide text-bms-muted">
+        <table className="min-w-full divide-y divide-line text-sm">
+          <thead className="bg-well text-xs uppercase tracking-wide text-ink-muted">
             <tr>
               <th className="px-4 py-2 text-left">UPS</th>
               <th className="px-4 py-2 text-left">Mode</th>
@@ -364,10 +364,10 @@ function CombinedSummary({
               <th className="px-4 py-2 text-left">Status</th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-gray-200">
+          <tbody className="divide-y divide-line">
             {units.map((unit) => (
               <tr key={unit.code}>
-                <td className="px-4 py-3 font-semibold text-bms-ink">{unit.label}</td>
+                <td className="px-4 py-3 font-semibold text-ink">{unit.label}</td>
                 {/* `offline` is a real statement (the asset stopped reporting);
                     `online`/`battery` is an inference from `backupMin < 15`,
                     and no point reports UPS operating mode — the same reason
@@ -430,16 +430,16 @@ function UnitDetail({
         <KpiTile label="Health" status="ready" value={n(freshValue(unit.slice.healthPct, unit.state.stale), 0)} unit="%" tone={statusTone(unit.state.status)} />
       </div>
 
-      <section className="rounded border border-gray-200 bg-white">
-        <div className="border-b border-gray-200 px-4 py-3">
-          <h2 className="font-condensed text-lg font-bold text-bms-ink">
+      <section className="rounded border border-line bg-surface">
+        <div className="border-b border-line px-4 py-3">
+          <h2 className="font-condensed text-lg font-bold text-ink">
             {unit.label} · Block Diagram
           </h2>
-          <p className="text-xs text-bms-muted">
+          <p className="text-xs text-ink-muted">
             Rectifier → battery → inverter → critical load
           </p>
         </div>
-        <div className="bg-gray-50 p-4">
+        <div className="bg-well p-4">
           <UpsBlockDiagram slice={unit.slice} battery={unit.battery} status={unit.state.status} />
         </div>
       </section>
@@ -467,13 +467,13 @@ function UnitDetail({
         </DetailCard>
       </div>
 
-      <section className="rounded border border-gray-200 bg-white p-4">
+      <section className="rounded border border-line bg-surface p-4">
         <div className="flex items-center justify-between gap-3">
           <div>
-            <h2 className="font-condensed text-lg font-bold text-bms-ink">
+            <h2 className="font-condensed text-lg font-bold text-ink">
               Recent Trend
             </h2>
-            <p className="text-xs text-bms-muted">Live load snapshot · simulator window</p>
+            <p className="text-xs text-ink-muted">Live load snapshot · simulator window</p>
           </div>
           {unit.state.matchedRule ? (
             <span className={`rounded-full border px-2 py-0.5 text-[11px] font-semibold ${statusPillClass(unit.state.status)}`}>
@@ -481,8 +481,8 @@ function UnitDetail({
             </span>
           ) : null}
         </div>
-        <div className="mt-4 h-28 rounded bg-gradient-to-r from-bms-green/10 via-bms-green/40 to-amber-300/50" />
-        <p className="mt-2 text-center font-mono text-[10px] text-bms-muted">
+        <div className="mt-4 h-28 rounded bg-gradient-to-r from-accent/10 via-accent/40 to-warning/50" />
+        <p className="mt-2 text-center font-mono text-[10px] text-ink-muted">
           Load trend placeholder uses live current value until historical charting is promoted.
         </p>
       </section>
@@ -529,7 +529,7 @@ function UpsBlockDiagram({
       <Block x={670} y={80} w={100} title="STATIC SW" sub={<StaticTspan kind="simulated">NORMAL</StaticTspan>} status={status} />
       <Flow x1={770} y1={110} x2={810} y2={110} color={line} />
       <Block x={810} y={80} w={80} title="LOAD" sub={`${n(freshValue(slice.loadPct, dark), 0)}%`} status={status} />
-      <text x="450" y="40" textAnchor="middle" className="fill-gray-400 font-mono text-[10px]">BYPASS LINE (auto)</text>
+      <text x="450" y="40" textAnchor="middle" className="fill-ink-hint font-mono text-[10px]">BYPASS LINE (auto)</text>
       <line x1="74" y1="60" x2="850" y2="60" stroke="#94a3b8" strokeWidth={1.4} strokeDasharray="5 5" />
     </svg>
   );
@@ -553,8 +553,8 @@ function Block({
   return (
     <g>
       <rect x={x} y={y} width={w} height={58} rx={6} className={boxClass(status)} />
-      <text x={x + w / 2} y={y + 24} textAnchor="middle" className="fill-bms-ink font-condensed text-[13px] font-bold">{title}</text>
-      <text x={x + w / 2} y={y + 42} textAnchor="middle" className="fill-bms-muted font-mono text-[10px]">{sub}</text>
+      <text x={x + w / 2} y={y + 24} textAnchor="middle" className="fill-ink font-condensed text-[13px] font-bold">{title}</text>
+      <text x={x + w / 2} y={y + 42} textAnchor="middle" className="fill-ink-muted font-mono text-[10px]">{sub}</text>
     </g>
   );
 }
@@ -577,9 +577,9 @@ function Flow({
 
 function DetailCard({ title, children }: { title: string; children: ReactNode }) {
   return (
-    <section className="rounded border border-gray-200 bg-white">
-      <div className="border-b border-gray-200 px-4 py-3">
-        <h2 className="font-condensed text-lg font-bold text-bms-ink">{title}</h2>
+    <section className="rounded border border-line bg-surface">
+      <div className="border-b border-line px-4 py-3">
+        <h2 className="font-condensed text-lg font-bold text-ink">{title}</h2>
       </div>
       <div className="space-y-2 p-4 text-sm">{children}</div>
     </section>
@@ -589,8 +589,8 @@ function DetailCard({ title, children }: { title: string; children: ReactNode })
 function Row({ label, value }: { label: string; value: ReactNode }) {
   return (
     <div className="flex justify-between gap-3">
-      <span className="text-bms-muted">{label}</span>
-      <span className="font-mono font-semibold text-bms-ink">{value}</span>
+      <span className="text-ink-muted">{label}</span>
+      <span className="font-mono font-semibold text-ink">{value}</span>
     </div>
   );
 }
