@@ -34,6 +34,7 @@ export * from "./health";
 export * from "./location-types";
 export * from "./mapping-sheet";
 export * from "./metric-catalog-values";
+export * from "./mimic";
 export type * from "./schema-types";
 export * from "./notifications";
 export * from "./onboarding";

@@ -8,6 +8,7 @@ import {
   widgetToneSchema,
   widgetTypeSchema,
   MAX_GAUGE_THRESHOLDS,
+  WIDGET_POINT_CARDINALITY,
   WIDGET_SOURCE_CARDINALITY,
 } from "@bms/shared";
 import type { TemplateAuthorableWidgetType } from "@bms/shared";
@@ -88,8 +89,12 @@ export function runVocabularyDerivationTests(): void {
  * everything, or nothing, would satisfy a one-sided check.
  */
 export function runTemplateWidgetTypeDerivationTests(): void {
+  // Two clauses since `F3.32` / ADR 0079, restated from the cardinality records rather than
+  // read from `isTemplateAuthorableWidgetType`, so this expectation is independent of the
+  // predicate it checks. `table` fails the first clause (a source is required); `mimic` fails
+  // the second (it binds no point, so a template has nothing to carry for it).
   const expected = widgetTypeSchema.options.filter(
-    (type) => WIDGET_SOURCE_CARDINALITY[type].min === 0,
+    (type) => WIDGET_SOURCE_CARDINALITY[type].min === 0 && WIDGET_POINT_CARDINALITY[type].max > 0,
   );
 
   assert(

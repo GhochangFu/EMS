@@ -38,7 +38,7 @@ function expectRejects(schema: SafeParseable, value: unknown, message: string): 
   assert(result.success === false, `${message} — expected a refusal, got success`);
 }
 
-function expectAccepts(schema: SafeParseable, value: unknown, message: string): void {
+export function expectAccepts(schema: SafeParseable, value: unknown, message: string): void {
   const result = schema.safeParse(value);
   assert(
     result.success === true,
@@ -48,7 +48,7 @@ function expectAccepts(schema: SafeParseable, value: unknown, message: string): 
 
 /** Asserts the schema refuses `value` with an issue whose `path` matches exactly, and whose
  * message contains every string in `messageIncludes`. */
-function expectRejectsAt(
+export function expectRejectsAt(
   schema: SafeParseable,
   value: unknown,
   path: (string | number)[],
@@ -76,7 +76,7 @@ const LOCATION_ID = "22222222-2222-4222-8222-222222222222";
 const GROUP_ID = "33333333-3333-4333-8333-333333333333";
 /** `F3.2` / ADR 0067 decision 1 — the third scope axis. */
 const ASSET_ID = "77777777-7777-4777-8777-777777777777";
-const POINT_A = "44444444-4444-4444-8444-444444444444";
+export const POINT_A = "44444444-4444-4444-8444-444444444444";
 const POINT_B = "55555555-5555-4555-8555-555555555555";
 const POINT_C = "66666666-6666-4666-8666-666666666666";
 

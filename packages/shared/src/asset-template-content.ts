@@ -206,6 +206,13 @@ export type TemplateMaintenancePlan = {
  * so whenever templates gain a way to carry a catalog binding, delete the `Exclude` and the
  * spec's derivation agrees again with no second ruling. A sixth type with a required source is
  * excluded by the same rule rather than by a new decision.
+ *
+ * **`mimic` is excluded too, by the rule's other half** (`F3.32`, ADR 0079). "Fully bound by
+ * point keys" needs a type that binds a point at all; a mimic binds nothing and resolves its
+ * nodes from the dashboard's **asset group**, which an asset template does not have. The
+ * runtime predicate is `isTemplateAuthorableWidgetType` in `contracts/dashboard-builder.ts` —
+ * a source minimum of zero AND a point maximum above zero — and the specs hold it to this
+ * `Exclude`.
  */
 export type TemplateDashboardWidget = {
   pointKeys: string[];
@@ -214,7 +221,7 @@ export type TemplateDashboardWidget = {
   gridY: number;
   gridW: number;
   gridH: number;
-} & Exclude<DashboardWidgetSpec, { widgetType: "table" }>;
+} & Exclude<DashboardWidgetSpec, { widgetType: "table" | "mimic" }>;
 
 /**
  * The widget types a template can author, derived from the exclusion above rather than listed.

@@ -2,9 +2,9 @@ import {
   GAUGE_RANGE_MESSAGE,
   MAX_GAUGE_THRESHOLDS,
   MAX_WIDGET_WINDOW_MINUTES,
-  WIDGET_SOURCE_CARDINALITY,
   chartSeriesKindSchema,
   gaugeRangeIsOrdered,
+  isTemplateAuthorableWidgetType,
   pointAggregateFunctionSchema,
   widgetIconSchema,
   widgetToneSchema,
@@ -54,22 +54,23 @@ export const WIDGET_TYPES: readonly WidgetType[] = widgetTypeSchema.options;
  * that requires one cannot be authored there — the whole argument is in
  * `TemplateDashboardWidget`'s docblock in `packages/shared/src/asset-template-content.ts`.
  *
- * **Derived from `WIDGET_SOURCE_CARDINALITY`, not from a literal `["radial_gauge", …]` list**,
- * so a sixth widget type joins or is excluded by its own cardinality rather than by whether
- * somebody remembered this line. The type predicate is what carries the runtime rule back into
- * the type system: `WIDGET_SOURCE_CARDINALITY` is `Record<WidgetType, { min: number }>`, so no
- * conditional type can read `min`, and `TemplateAuthorableWidgetType` states the same exclusion
- * at compile time.
+ * **Derived from the cardinality records, not from a literal `["radial_gauge", …]` list**, so
+ * a new widget type joins or is excluded by its own cardinality rather than by whether somebody
+ * remembered this line. Since `F3.32` / ADR 0079 the rule is two clauses —
+ * `isTemplateAuthorableWidgetType` in `@bms/shared`: a source minimum of zero (`table` fails)
+ * AND a point maximum above zero (`mimic` fails). The type predicate carries the runtime rule
+ * back into the type system, and `TemplateAuthorableWidgetType` states the same exclusion at
+ * compile time.
  *
  * **`runTemplateWidgetTypeDerivationTests` in this file's spec holds the two together.** An
  * earlier version of this sentence cited `tests/f3.35-table-widget-schema.test.ts`, which does
  * not mention either symbol — it compares `widgetTypeSchema` to migration `0055`. The
  * correctness review caught the citation and the gap behind it: with nothing holding the
- * compile-time `Exclude` to this runtime predicate, changing `min === 0` to `max === 0` here
+ * compile-time `Exclude` to this runtime predicate, changing the predicate's `min === 0` to `max === 0`
  * silently drops `value_tile` from the template authoring UI with a fully green suite.
  */
 export const TEMPLATE_WIDGET_TYPES: readonly TemplateAuthorableWidgetType[] = WIDGET_TYPES.filter(
-  (type): type is TemplateAuthorableWidgetType => WIDGET_SOURCE_CARDINALITY[type].min === 0,
+  isTemplateAuthorableWidgetType,
 );
 
 /** `chartSeriesKindSchema.options` from `@bms/shared` — never restated. */
