@@ -596,6 +596,20 @@
       "when": 1790426512357,
       "tag": "0085_location_types",
       "breakpoints": true
+    },
+    {
+      "idx": 86,
+      "version": "7",
+      "when": 1790579321836,
+      "tag": "0086_dashboard_widget_mimic_type",
+      "breakpoints": true
+    },
+    {
+      "idx": 87,
+      "version": "7",
+      "when": 1790579321837,
+      "tag": "0087_asset_roles_water_train",
+      "breakpoints": true
     }
   ]
 }

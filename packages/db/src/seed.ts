@@ -27,6 +27,7 @@ import {
 import { seedRuledPointCatalog } from "./ruled-point-catalog-seed";
 import { seedAssetTemplateHealth } from "./asset-template-health-seed";
 import { seedPueDemo, seedPueDemoRackKwPoints } from "./pue-demo-seed";
+import { seedWaterMimicDemo } from "./water-mimic-demo-seed";
 import { seedWaterPlantDemo } from "./water-plant-demo-seed";
 import { seedCalcParametersDemo } from "./calc-parameters-demo-seed";
 import {
@@ -298,6 +299,13 @@ async function main(): Promise<void> {
       // holds the order; `verifyHierarchySeed`'s four ESKOM water counts hold
       // the result.
       await seedWaterPlantDemo(pool, eskomOrgId);
+      // `F3.32` v1 / ADR 0079 decision 5 — the mimic demo group and dashboard,
+      // right after the water plant it reads: `seedWaterMimicDemo` looks up
+      // the five `WTR-` assets and the site's location id (backfilled above,
+      // in `seedAssetGroups`'s bracket), and this position is also before
+      // `seedAssetTemplateHealth` and `seedPueDemo` below to keep this row's
+      // additions grouped with the water-plant demo they extend.
+      await seedWaterMimicDemo(pool, eskomOrgId);
       // `F4.75` — after the catalog, because the templates declare the points
       // the call above writes. This is what gives a scored asset a *band*: the
       // score was demonstrable from `F4.69` on, but `bms.asset_templates` held

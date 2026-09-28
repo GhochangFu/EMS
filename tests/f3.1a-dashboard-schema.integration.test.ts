@@ -236,7 +236,7 @@ describe.skipIf(!has)("F3.1a — dashboard schema against a live database", () =
         run,
         `INSERT INTO bms.dashboard_widgets
            (organization_id, dashboard_id, widget_type, grid_x, grid_y, grid_w, grid_h)
-         VALUES ($1, $2, 'mimic', 0, 0, 2, 2)`,
+         VALUES ($1, $2, 'heatmap', 0, 0, 2, 2)`,
         [orgA, dashboardId],
         "dashboard_widgets_widget_type_check",
       );
