@@ -20,6 +20,10 @@ import {
   runMimicRowKeepsPresetTests,
   runMimicRoundTripTests,
   runMimicUneditedIsNoChangeTests,
+  runMimicOffAGroupHasTheScopeProblemTests,
+  runMimicOnAGroupHasNoScopeProblemTests,
+  runNonMimicHasNoScopeProblemTests,
+  runSummaryKeepsTheSelectedWidgetsScopeProblemTests,
 } from "./dashboard-builder-form.spec";
 
 /** Vitest entry point — see `apps/web/src/lib/admin-access.test.ts` (ADR 0014). */
@@ -98,5 +102,21 @@ describe("dashboard builder form", () => {
 
   it("F3.32: an unedited mimic is not a change", () => {
     runMimicUneditedIsNoChangeTests();
+  });
+
+  it("F3.32: a mimic off a group scope reports the scope problem, one per mimic", () => {
+    runMimicOffAGroupHasTheScopeProblemTests();
+  });
+
+  it("F3.32: a mimic on a group scope has no scope problem", () => {
+    runMimicOnAGroupHasNoScopeProblemTests();
+  });
+
+  it("F3.32: a widget that is not a mimic has no scope problem", () => {
+    runNonMimicHasNoScopeProblemTests();
+  });
+
+  it("F3.32: the summary keeps the selected widget's scope problem", () => {
+    runSummaryKeepsTheSelectedWidgetsScopeProblemTests();
   });
 });

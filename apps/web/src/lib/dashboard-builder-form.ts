@@ -298,8 +298,21 @@ export function unselectedDashboardBuilderProblems(
   problems: readonly DashboardBuilderProblem[],
   selected: number | null,
 ): DashboardBuilderProblem[] {
-  return problems.filter((problem) => selected === null || problem.widget !== selected);
+  return problems.filter(
+    (problem) => selected === null || problem.widget !== selected || problem.field === SCOPE_PROBLEM_FIELD,
+  );
 }
+
+/**
+ * `F3.32` review finding — the field of a problem about the widget's fit to the dashboard's
+ * SCOPE. `WidgetInspector` renders a problem only through its own fields, and the scope is a page
+ * field, so a scope problem on the selected widget would render nowhere; the summary keeps it
+ * whatever is selected (`unselectedDashboardBuilderProblems` above).
+ */
+export const SCOPE_PROBLEM_FIELD = "scope";
+
+/** The sentence `dashboardBuilderErrors` reports for a plant mimic on a non-group scope. */
+export const MIMIC_NEEDS_ASSET_GROUP_MESSAGE = "A plant mimic needs an asset-group scope.";
 
 /** A human-readable subject for a problem — "Dashboard" for a set-level one (`widget: null`),
  * or the widget's own title/catalog label otherwise, so a summary entry names what it is about
@@ -330,7 +343,10 @@ export function dashboardBuilderProblemSubject(
  * progress, per `WIDGET_POINT_CARDINALITY`'s own "min is an authoring rule and never a read
  * rule" comment.
  */
-export function dashboardBuilderErrors(rows: readonly DashboardWidgetRow[]): DashboardBuilderProblem[] {
+export function dashboardBuilderErrors(
+  rows: readonly DashboardWidgetRow[],
+  scopeKind: DashboardScopeValue["kind"],
+): DashboardBuilderProblem[] {
   const problems: DashboardBuilderProblem[] = [];
   const push = (widget: number | null, field: string, message: string): void => {
     problems.push({ widget, field, message });
@@ -395,6 +411,15 @@ export function dashboardBuilderErrors(rows: readonly DashboardWidgetRow[]): Das
     }
     if (row.points.length > 0 && row.sources.length > 0) {
       push(index, "points", bindingExclusiveMessage(label));
+    }
+
+    // `F3.32` review finding (ADR 0079 decision 4). `offerableWidgetTypes` hides the button on a
+    // non-group scope, but a mimic already on the canvas stays when the author switches scope
+    // away from the group. Without this problem Save stayed enabled, and the save sequence
+    // committed the dashboard (POST, or the PATCH of the new scope) before the widget PUT met the
+    // API's 400. `scopeKind` is REQUIRED, so neither page can call this without the live scope.
+    if (widgetTypeBindsNothing(row.widgetType) && scopeKind !== "assetGroup") {
+      push(index, SCOPE_PROBLEM_FIELD, MIMIC_NEEDS_ASSET_GROUP_MESSAGE);
     }
 
     if (row.gridW < DASHBOARD_GRID.minWidgetW || row.gridW > DASHBOARD_GRID.columns) {

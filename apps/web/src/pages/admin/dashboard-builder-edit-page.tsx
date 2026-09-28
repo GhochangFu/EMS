@@ -128,7 +128,7 @@ export function DashboardBuilderEditPage({ user }: DashboardBuilderEditPageProps
   });
   const assets: readonly ScopeAssetOption[] = (assetsQ.data ?? []).map((asset) => ({ id: asset.id, name: asset.name }));
 
-  const problems = dashboardBuilderErrors(rows);
+  const problems = dashboardBuilderErrors(rows, scope.kind);
   // Review finding — `WidgetInspector` (below) renders only the SELECTED widget's problems, so
   // a set-level problem or another widget's problem must surface somewhere else, or `Save`
   // disables with a reason nothing on the page shows.

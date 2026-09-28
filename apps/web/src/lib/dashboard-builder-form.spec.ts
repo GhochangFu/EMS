@@ -12,6 +12,8 @@ import {
   dashboardRowsFromDto,
   offerableWidgetTypes,
   unselectedDashboardBuilderProblems,
+  MIMIC_NEEDS_ASSET_GROUP_MESSAGE,
+  SCOPE_PROBLEM_FIELD,
   type DashboardWidgetRow,
 } from "./dashboard-builder-form";
 
@@ -238,13 +240,13 @@ export function runRemovingASourceClearsColumnsTests(): void {
 
 export function runDashboardBuilderErrorsTests(): void {
   const valid = dashboardRowsFromDto(dashboardDto([widgetDto()]));
-  assert(dashboardBuilderErrors(valid).length === 0, "a valid single-widget set reports no problems");
+  assert(dashboardBuilderErrors(valid, "organization").length === 0, "a valid single-widget set reports no problems");
 
   const tooManyWidgets: DashboardWidgetRow[] = Array.from({ length: MAX_DASHBOARD_WIDGETS + 1 }, () =>
     blankDashboardWidgetRow("value_tile"),
   );
   assert(
-    dashboardBuilderErrors(tooManyWidgets).some((p) => p.field === "widgets"),
+    dashboardBuilderErrors(tooManyWidgets, "organization").some((p) => p.field === "widgets"),
     "more than MAX_DASHBOARD_WIDGETS rows reports a widgets-level problem",
   );
 
@@ -254,7 +256,7 @@ export function runDashboardBuilderErrorsTests(): void {
   // neither, which is the state the *exactly one kind* rule refuses.
   const noBindings = [blankDashboardWidgetRow("value_tile")];
   assert(
-    dashboardBuilderErrors(noBindings).some((p) => p.field === "points"),
+    dashboardBuilderErrors(noBindings, "organization").some((p) => p.field === "points"),
     "a value_tile binding neither a point nor a metric reports a points problem",
   );
 
@@ -269,7 +271,7 @@ export function runDashboardBuilderErrorsTests(): void {
     },
   ];
   assert(
-    dashboardBuilderErrors(bothKinds).some((p) => p.field === "points"),
+    dashboardBuilderErrors(bothKinds, "organization").some((p) => p.field === "points"),
     "a value_tile binding both a point and a metric reports a points problem",
   );
 
@@ -283,7 +285,7 @@ export function runDashboardBuilderErrorsTests(): void {
     },
   ];
   assert(
-    dashboardBuilderErrors(metricOnly).every((p) => p.field !== "points"),
+    dashboardBuilderErrors(metricOnly, "organization").every((p) => p.field !== "points"),
     "a value_tile bound to a named metric alone is legal and reports no points problem",
   );
 
@@ -297,13 +299,13 @@ export function runDashboardBuilderErrorsTests(): void {
     },
   ];
   assert(
-    dashboardBuilderErrors(gaugeWithSource).some((p) => p.field === "points"),
+    dashboardBuilderErrors(gaugeWithSource, "organization").some((p) => p.field === "points"),
     "a radial_gauge binding a named metric reports a problem; only the tile takes one",
   );
 
   const tooWide: DashboardWidgetRow[] = [{ ...blankDashboardWidgetRow("value_tile"), gridX: 10, gridW: 5 }];
   assert(
-    dashboardBuilderErrors(tooWide).some((p) => p.field === "gridW"),
+    dashboardBuilderErrors(tooWide, "organization").some((p) => p.field === "gridW"),
     `a widget overhanging the ${DASHBOARD_GRID.columns}-column canvas reports a gridW problem`,
   );
 
@@ -313,7 +315,7 @@ export function runDashboardBuilderErrorsTests(): void {
   badConfig[0]!.config.min = "10";
   badConfig[0]!.config.max = "5";
   assert(
-    dashboardBuilderErrors(badConfig).some((p) => p.field === "max"),
+    dashboardBuilderErrors(badConfig, "organization").some((p) => p.field === "max"),
     "an inverted gauge range is caught through widgetConfigErrors, not restated here",
   );
 }
@@ -462,13 +464,13 @@ export function runBlankMimicRowTests(): void {
 
 /** A mimic binds nothing, so the "needs a point or a metric" rule does not apply to it. */
 export function runMimicHasNoBindingProblemTests(): void {
-  const problems = dashboardBuilderErrors([blankDashboardWidgetRow("mimic")]);
+  const problems = dashboardBuilderErrors([blankDashboardWidgetRow("mimic")], "assetGroup");
   assert(problems.length === 0, `a new mimic row has no problem — got ${JSON.stringify(problems)}`);
 }
 
 /** The positive twin: a value tile that binds nothing still gets the binding problem. */
 export function runUnboundTileStillHasBindingProblemTests(): void {
-  const problems = dashboardBuilderErrors([blankDashboardWidgetRow("value_tile")]);
+  const problems = dashboardBuilderErrors([blankDashboardWidgetRow("value_tile")], "organization");
   assert(
     problems.some((problem) => problem.field === "points"),
     `an unbound value tile still reports a points problem — got ${JSON.stringify(problems)}`,
@@ -514,4 +516,55 @@ export function runMimicRoundTripTests(): void {
 export function runMimicUneditedIsNoChangeTests(): void {
   const dto = dashboardDto([mimicDto()]);
   assert(!builderHasChanged(dashboardRowsFromDto(dto), dto), "an unedited mimic reports no change");
+}
+
+/** `F3.32` review finding — a mimic left on the canvas after the scope moves off the group
+ * reports the scope problem on every non-group kind. Mutation: drop the kind check (never fire)
+ * ⇒ red. */
+export function runMimicOffAGroupHasTheScopeProblemTests(): void {
+  const rows = [blankDashboardWidgetRow("mimic"), blankDashboardWidgetRow("mimic")];
+  for (const kind of ["organization", "location", "asset"] as const) {
+    const scoped = dashboardBuilderErrors(rows, kind).filter((problem) => problem.field === SCOPE_PROBLEM_FIELD);
+    assert(
+      JSON.stringify(scoped.map((problem) => [problem.widget, problem.message])) ===
+        JSON.stringify([
+          [0, MIMIC_NEEDS_ASSET_GROUP_MESSAGE],
+          [1, MIMIC_NEEDS_ASSET_GROUP_MESSAGE],
+        ]),
+      `a ${kind} dashboard reports the scope problem for each mimic — got ${JSON.stringify(scoped)}`,
+    );
+  }
+}
+
+/** The positive twin: on a group scope the mimic has no scope problem. Mutation: fire the
+ * problem on every kind ⇒ red. */
+export function runMimicOnAGroupHasNoScopeProblemTests(): void {
+  const problems = dashboardBuilderErrors([blankDashboardWidgetRow("mimic")], "assetGroup");
+  assert(
+    problems.every((problem) => problem.field !== SCOPE_PROBLEM_FIELD),
+    `a group dashboard's mimic has no scope problem — got ${JSON.stringify(problems)}`,
+  );
+}
+
+/** A widget that is not a mimic never reports the scope problem off a group. */
+export function runNonMimicHasNoScopeProblemTests(): void {
+  const problems = dashboardBuilderErrors([blankDashboardWidgetRow("value_tile")], "organization");
+  assert(
+    problems.every((problem) => problem.field !== SCOPE_PROBLEM_FIELD),
+    `a value tile has no scope problem — got ${JSON.stringify(problems)}`,
+  );
+}
+
+/** The summary keeps a scope problem on the SELECTED widget — `WidgetInspector` renders no scope
+ * field, so without this the problem shows nowhere. Mutation: drop the scope exemption ⇒ red. */
+export function runSummaryKeepsTheSelectedWidgetsScopeProblemTests(): void {
+  const problems = [
+    { widget: 0, field: SCOPE_PROBLEM_FIELD, message: MIMIC_NEEDS_ASSET_GROUP_MESSAGE },
+    { widget: 0, field: "points", message: "needs a point" },
+  ];
+  const summary = unselectedDashboardBuilderProblems(problems, 0);
+  assert(
+    JSON.stringify(summary) === JSON.stringify([problems[0]]),
+    `the summary keeps only the selected widget's scope problem — got ${JSON.stringify(summary)}`,
+  );
 }
