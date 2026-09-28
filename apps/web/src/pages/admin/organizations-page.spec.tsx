@@ -154,3 +154,44 @@ export async function editPrefillsTheCurrencyAndSendsIt(): Promise<void> {
   expect(id).toBe("22222222-2222-2222-2222-222222222222");
   expect(payload).toEqual({ name: "Rupee organization", currency: "USD" });
 }
+
+/** `F4.168` B1 arrange — the create form, filled, with `createAdminOrganization` held pending. */
+async function saveHeldPending(): Promise<HTMLElement> {
+  await userEvent.type(screen.getByLabelText("Code"), "e41c-new");
+  await userEvent.type(screen.getByLabelText("Name"), "New organization");
+  await userEvent.type(screen.getByLabelText("Currency (ISO 4217)"), "inr");
+  await userEvent.click(screen.getByRole("button", { name: "Save" }));
+  return screen.findByRole("button", { name: "Saving…" });
+}
+
+/** `F4.168` B1 — at idle, Save is named "Save" with `aria-busy="false"`. */
+export async function saveIsNamedSaveAndNotBusyAtIdle(): Promise<void> {
+  stubApi();
+  renderPage();
+  await openCreateForm();
+  expect(screen.getByRole("button", { name: "Save" })).toHaveAttribute("aria-busy", "false");
+}
+
+/**
+ * `F4.168` B1 — Save announces "Saving…", with `aria-busy="true"`, while
+ * `saveMutation` is pending. Held pending rather than resolved, per the
+ * F4.164 precedent.
+ */
+export async function saveAnnouncesSavingWhilePending(): Promise<void> {
+  stubApi();
+  vi.spyOn(api, "createAdminOrganization").mockReturnValue(new Promise(() => {}));
+  renderPage();
+  await openCreateForm();
+  const pending = await saveHeldPending();
+  expect(pending).toHaveAttribute("aria-busy", "true");
+}
+
+/** `F4.168` B1 — while `saveMutation` is pending, the idle name "Save" is gone. */
+export async function saveLosesItsIdleNameWhilePending(): Promise<void> {
+  stubApi();
+  vi.spyOn(api, "createAdminOrganization").mockReturnValue(new Promise(() => {}));
+  renderPage();
+  await openCreateForm();
+  await saveHeldPending();
+  expect(screen.queryByRole("button", { name: "Save" })).not.toBeInTheDocument();
+}

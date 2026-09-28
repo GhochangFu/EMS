@@ -50,7 +50,7 @@ still the only working credential path (ADR 0016 Amendment 3).
 | Variable | Default | Notes |
 | --- | --- | --- |
 | `DATABASE_URL` | — | Required. |
-| `INGEST_HOST_HEALTH_PORT` | `9103` | **Compose sets it to `9102`**, which is the port it publishes. The default is 9103 rather than 9102 for a historical reason: the ADR 0007 entry point bound 9102 as `INGEST_METRICS_PORT` and §6 commit 3 needed both processes up at once. That entry point is gone, but the separate default is kept so two hosts side by side still need only one variable set. |
+| `INGEST_HOST_HEALTH_PORT` | `9103` | **Compose sets it to `9102`** inside the container; since `F4.61` it is not published to the host (see *Reachability* below). The default is 9103 rather than 9102 for a historical reason: the ADR 0007 entry point bound 9102 as `INGEST_METRICS_PORT` and §6 commit 3 needed both processes up at once. That entry point is gone, but the separate default is kept so two hosts side by side still need only one variable set. |
 | `INGEST_RELOAD_MS` | `60000` | How often point mappings are refreshed. Matches what the ADR 0007 pilot did. |
 | `INGEST_STALE_AFTER_MS` | `300000` | Silence longer than this marks one RTU `stale` on the health endpoint (`F1.7`). Five minutes because the fleet was measured, not guessed: the nine live PHE RTUs publish every ~60 s (probe, 2026-08-22, 600 s window), so this is five missed cycles — a single dropped message can never raise it. Widen it for a protocol that polls far more slowly than MQTT pushes. |
 | `MQTT_HOST` / `MQTT_PORT` / `MQTT_USERNAME` / `MQTT_PASSWORD` | pilot-era | MQTT **only**, resolved by the host through `src/rtu-config.js`. No new adapter gets an environment fallback. |
@@ -118,6 +118,35 @@ is deferred to `F3.16` (ADR 0016 Amendment 4 decision 11). Identifiers
 (`rtuCode`, `endpointKey`, `sourceKey`, a skip's `rtu=` and `detail=`) outside
 the safe set `A-Za-z0-9._-:/` are percent-encoded as UTF-8 bytes, `%` included,
 so every record stays one line.
+
+**Reachability (`F4.61`, ADR 0016 Amendment 8).** The body names every enabled
+RTU and when each last reported, without authentication, so who may ask is
+narrowed at three boundaries. The handler (`refuseHealthRequest` in
+`apps/ingest/src/host/health-server.ts`) answers `GET /` and `GET /health`
+only, exactly — a query string or a trailing slash is another path — and only
+for exactly one loopback `Host`: `localhost`, `127.0.0.1` or `[::1]`, each with
+an optional `:port`, case-insensitive; a missing or repeated `Host` is refused.
+It checks the
+`Host` first, so a page rebound to `127.0.0.1` in an operator's browser is
+refused whatever else it sends. A refusal is `421` (host), `405` with
+`Allow: GET` (method) or `404` (path), each with a fixed one-line body
+(`refused: host`, `refused: method`, `refused: path`) that never carries the
+roster, never echoes what it refused, and never starts with `ingest-host` — a
+check matching that prefix cannot pass on a refusal. In compose, the `ingest`
+service sits on its own network `ingest`, shared with `postgres` only, so no
+other container can resolve it, and the port is **not published to the host**:
+on Docker Desktop a port on the host's `127.0.0.1` is reachable from every
+container through `host.docker.internal`. `tests/f4.61-ingest-network-isolation.test.ts`
+holds both. Read the page from inside the container — the image's busybox
+`wget` sends a loopback `Host`:
+
+```
+docker compose exec ingest wget -qO- http://127.0.0.1:9102/
+```
+
+`curl 127.0.0.1:9102` on the host no longer answers. A compose `healthcheck:`
+added later must call `http://127.0.0.1:9102/` from inside the container too —
+`http://ingest:9102/` sends a foreign `Host` and gets `421`.
 
 ```
 ingest-host degraded endpoints=1 rtus=3 stale=1 dark=1 skipped=0 notify=on uptime=39s

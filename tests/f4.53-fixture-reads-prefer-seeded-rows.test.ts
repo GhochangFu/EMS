@@ -92,10 +92,18 @@ import { repoRoot, stringLiterals, walk, withoutComments } from "./support/sourc
  *     `ORDER BY (code = 'ESKOM') DESC` (`alarms.service.rls.integration.test.ts`),
  *     or an outer read whose `LIMIT` falls after a named subquery, as in
  *     `WHERE organization_id = (SELECT … WHERE email = $1) LIMIT 1`.
- *   - `PREFERS_OLDEST` accepts any `created_at` within reach of the `ORDER BY`,
- *     including another alias's: an `ORDER BY o.code, l.created_at` join orders
- *     its organizations by code and still passes. It rejects `created_at DESC`
- *     (and the builder's `desc(x.createdAt)`), which resolves the NEWEST row.
+ *   - Until `F4.171` the rule accepted any `created_at` within 120 characters of
+ *     the `ORDER BY`, so `ORDER BY l.organization_id, l.created_at` passed while
+ *     sorting by a random uuid. It now demands that every `LIMIT` has its own
+ *     `ORDER BY` and that each leads with `created_at` or `MIN(created_at)`, not
+ *     `DESC` (`prefersOldest`). Still accepted: another alias's `created_at` in
+ *     that place; an inner `ORDER BY` with no outer one after it, as in
+ *     `ARRAY_AGG(… ORDER BY created_at)` or `ROW_NUMBER() OVER (ORDER BY
+ *     created_at)`; and, in the builder half, an inner `.orderBy(asc(x.createdAt))`
+ *     within the chain window of an outer `.orderBy(asc(x.code)).limit(1)`.
+ *     Rejected although correct (fail-closed): a read whose subquery on another
+ *     table carries its own non-`created_at` `ORDER BY … LIMIT`, and a quoted
+ *     `"created_at"`.
  *   - The scan walks `apps`, `packages` and `tests` spec files and
  *     `*.integration.test.ts` suites, plus the shared fixture helpers in
  *     `apps/api/src/testing/*.ts`. `fixtureLocation` in
@@ -129,11 +137,47 @@ describe("F4.53 — positional fixture reads resolve the oldest row", () => {
    */
   const NAMED_READ = /\b(?:code|id|email)\s*(?:=|\bIN\s*\(|=\s*ANY)/i;
   /**
-   * The fix: the oldest row, which is always a seeded one. The first
-   * `created_at` after `ORDER BY` must not be `DESC` — that resolves the
-   * NEWEST row, which is exactly the transient fixture this rule keeps out.
+   * The key list of each `ORDER BY` that a `LIMIT` follows with no other
+   * `ORDER BY` between them — the order that decides which row the `LIMIT`
+   * keeps. An `ORDER BY` inside `ARRAY_AGG(…)` is skipped when an outer one
+   * follows it, because the outer one is nearer the `LIMIT`.
    */
-  const PREFERS_OLDEST = /\bORDER\s+BY\b(?:(?!\bcreated_at\b)[\s\S]){0,120}\bcreated_at\b(?!\s+DESC\b)/i;
+  const ORDER_BEFORE_LIMIT = /\bORDER\s+BY\b((?:(?!\bORDER\s+BY\b|\bLIMIT\b)[\s\S])*)\bLIMIT\b/gi;
+  /**
+   * The fix: the oldest row, which is always a seeded one — so `created_at` must
+   * be the **leading** key (`F4.171`). A later `created_at` only breaks ties
+   * inside whatever leads, and `ORDER BY l.organization_id, l.created_at` sorts
+   * by a random uuid first: `rtus.telemetry-source` could adopt a temporary
+   * organization that `health-rollup` or `pue-ratio` had committed, and the
+   * rule passed it until then. `MIN(created_at)` leads a grouped read.
+   */
+  const LEADS_WITH_OLDEST = /^\s*(?:MIN\s*\(\s*(?:\w+\.)?created_at\s*\)|(?:\w+\.)?created_at\b)/i;
+  /**
+   * `DESC` anywhere in the leading key is refused — it resolves the NEWEST row,
+   * which is exactly the transient fixture this rule keeps out. Judged on the
+   * whole first key, not by a lookahead after `created_at`: that lookahead let
+   * `MIN(created_at) DESC` and `created_at::date DESC` through (`F4.171` review).
+   */
+  const DESCENDING = /\bDESC\b/i;
+  /**
+   * Every `LIMIT` in the text has its own `ORDER BY`, and each of those leads
+   * with the oldest row. Counting the `LIMIT`s matters: without it, an ordered
+   * subquery's `ORDER BY … LIMIT` covered an unordered `LIMIT` beside it
+   * (`F4.171` review).
+   */
+  function prefersOldest(sql: string): boolean {
+    const keyLists = [...sql.matchAll(ORDER_BEFORE_LIMIT)].map((m) => m[1] ?? "");
+    const limits = sql.match(/\bLIMIT\b/gi)?.length ?? 0;
+    return (
+      keyLists.length > 0 &&
+      keyLists.length === limits &&
+      keyLists.every(
+        (keys) => LEADS_WITH_OLDEST.test(keys) && !DESCENDING.test(keys.split(",")[0] ?? ""),
+      )
+    );
+  }
+  /** The builder spelling of the leading key: `.orderBy(asc(x.createdAt), …)`. */
+  const BUILDER_LEADS_WITH_OLDEST = /\.orderBy\s*\(\s*(?:asc\s*\(\s*)?(?:\w+\.)*createdAt\b/;
   /** The builder spelling of the same mistake: `desc(x.createdAt)`. */
   const BUILDER_NEWEST_FIRST = /\bdesc\s*\(\s*(?:\w+\.)*createdAt\b/;
   /**
@@ -205,7 +249,7 @@ describe("F4.53 — positional fixture reads resolve the oldest row", () => {
       POSITIONAL.test(sql) &&
       !NAMED_READ.test(sql) &&
       !PROJECTS_A_CONSTANT.test(sql) &&
-      !PREFERS_OLDEST.test(sql)
+      !prefersOldest(sql)
     );
   }
 
@@ -241,7 +285,7 @@ describe("F4.53 — positional fixture reads resolve the oldest row", () => {
       if (!/\.limit\s*\(/.test(chain)) continue;
       // A named read is out of scope here for the same reason it is there.
       if (/\bwhere\s*\(/.test(chain) && /\beq\s*\(/.test(chain)) continue;
-      if (/\.orderBy\s*\(/.test(chain) && /\bcreatedAt\b/.test(chain) && !BUILDER_NEWEST_FIRST.test(chain)) {
+      if (BUILDER_LEADS_WITH_OLDEST.test(chain) && !BUILDER_NEWEST_FIRST.test(chain)) {
         continue;
       }
       chains.push(chain.replace(/\s+/g, " ").trim());
@@ -462,6 +506,73 @@ describe("F4.53 — positional fixture reads resolve the oldest row", () => {
           "const other = await db.select().from(locations).orderBy(asc(locations.createdAt));",
       ),
     ).toHaveLength(1);
+  });
+
+  it("created_at must lead the ORDER BY, not follow another key (F4.171)", () => {
+    // The `rtus.telemetry-source` read that passed the old rule: `created_at`
+    // was present, but a random uuid sorted first.
+    const foreignLocation = (order: string): string =>
+      "await pool.query(`SELECT l.organization_id, l.id AS location_id FROM bms.locations l\n" +
+      `  WHERE l.organization_id <> $1 AND l.active = true ORDER BY ${order} LIMIT 1\`, [org]);`;
+    expect(offendingReads(foreignLocation("l.organization_id, l.created_at, l.code"))).toHaveLength(1);
+    // The join shape the old docblock named as a blind spot.
+    expect(offendingReads(foreignLocation("l.code, l.created_at"))).toHaveLength(1);
+    // The fix.
+    expect(offendingReads(foreignLocation("l.created_at, l.code"))).toEqual([]);
+
+    // An `ORDER BY created_at` inside the aggregate does not stand in for the
+    // outer one that the `LIMIT` obeys.
+    expect(
+      offendingReads(
+        "await pool.query(`SELECT organization_id, (ARRAY_AGG(code ORDER BY created_at, code))[1:2] AS codes\n" +
+          "   FROM bms.point_keys WHERE active = true\n" +
+          "  GROUP BY organization_id HAVING COUNT(*) >= 2\n" +
+          "  ORDER BY organization_id LIMIT 1`);",
+      ),
+    ).toHaveLength(1);
+
+    // `DESC` on the leading key, in the two spellings a lookahead let through.
+    expect(
+      offendingReads(
+        "await pool.query(`SELECT organization_id FROM bms.point_keys GROUP BY organization_id\n" +
+          "  ORDER BY MIN(created_at) DESC LIMIT 1`);",
+      ),
+    ).toHaveLength(1);
+    expect(
+      offendingReads(
+        "await pool.query(`SELECT id FROM bms.locations WHERE active = true ORDER BY created_at::date DESC, code LIMIT 1`);",
+      ),
+    ).toHaveLength(1);
+
+    // An ordered subquery does not cover an unordered `LIMIT` beside it —
+    // outer unordered, then inner unordered.
+    expect(
+      offendingReads(
+        "await pool.query(`SELECT id FROM bms.locations WHERE organization_id =\n" +
+          "  (SELECT id FROM bms.organizations ORDER BY created_at, code LIMIT 1) LIMIT 1`);",
+      ),
+    ).toHaveLength(1);
+    expect(
+      offendingReads(
+        "await pool.query(`SELECT id FROM bms.assets WHERE location_id IN\n" +
+          "  (SELECT id FROM bms.locations LIMIT 1) ORDER BY created_at LIMIT 1`);",
+      ),
+    ).toHaveLength(1);
+
+    // The builder spelling: `createdAt` present, but not first.
+    expect(
+      offendingReads(
+        "const [l] = await db.select({ id: locations.id }).from(locations)" +
+          ".orderBy(asc(locations.organizationId), asc(locations.createdAt)).limit(1);",
+      ),
+    ).toHaveLength(1);
+    // A bare column leads just as `asc(...)` does.
+    expect(
+      offendingReads(
+        "const [l] = await db.select({ id: locations.id }).from(locations)" +
+          ".orderBy(locations.createdAt, locations.code).limit(1);",
+      ),
+    ).toEqual([]);
   });
 
   it("a named subquery does not hide a positional one beside it", () => {

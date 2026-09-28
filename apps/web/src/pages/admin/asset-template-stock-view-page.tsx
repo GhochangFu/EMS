@@ -215,7 +215,7 @@ export function AssetTemplateStockViewPage({ user }: AssetTemplateStockViewPageP
             </select>
             <button
               type="button"
-              aria-label={`Import ${entry.name}`}
+              aria-label={importM.isPending ? `Importing ${entry.name}…` : `Import ${entry.name}`}
               disabled={importOrgId === "" || importM.isPending}
               aria-busy={importM.isPending}
               onClick={() => {

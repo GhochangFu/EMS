@@ -5220,7 +5220,7 @@ row now records `assetsMoved`, the count only.
 
 **Still open:** `F4.137` (no constraint makes `assets.rtu_id` respect the
 organization) and `F4.138` (the gate reads the location's organization while
-the write uses the RTU's). `F4.139` and `F4.140` closed 2026-09-16 (PR #461,
+the write uses the RTU's; closed 2026-09-27, PR #607). `F4.139` and `F4.140` closed 2026-09-16 (PR #461,
 next section).
 
 ### `F4.139` + `F4.140` — one `telemetrySource` predicate, four writers ✅ 2026-09-16
@@ -6490,3 +6490,78 @@ re-review, no open High or Medium.
 lowercase asset code with an edited ladder threshold stops `db:seed` with
 `23505`) and `F4.170` (the same unbounded pattern in `hierarchy-seed.ts`). No
 `chore(agents):` sentence is owed: AGENTS.md does not describe this seed.
+
+### `F4.138` — RTU writes refuse an organization that disagrees with the location's ✅ 2026-09-27
+
+PR #607, squash `83455f89`; plan `docs/plans/f4.138-rtus-tenant-agreement.md`.
+No ADR.
+
+`update`, `deactivate` and `reactivate` authorized through the location's
+organization but wrote under the RTU's own `organization_id`. A shared guard,
+called after the grant check, now refuses a mismatch with a 500 before the
+tenant transaction opens (ADR 0060 ruling 2). Drift is latent: 0 rows differ.
+
+Verified: unit and integration pairs, the drift made as `bms_fleet` under the
+real roles; nine mutations reddened their planned cases. CI green on the first
+run. Three reviews, one fixture finding fixed.
+
+**Cascade:** no row lists `F4.138` in *Depends*. No `chore(agents):` change
+owed.
+
+### `F4.168` — a button disabled while pending changes its name and carries `aria-busy` ✅ 2026-09-28
+
+PR #609, squash `dc7529e0`; plan `docs/plans/f4.168-pending-static-labels.md`.
+No ADR (owner ruling at step 2).
+
+The row named about 18 buttons from a text search. A parse keyed on the
+`disabled` expression found 34: buttons that went disabled while their action
+ran but kept a static name, three `F4.164` Import buttons whose `aria-label`
+did not change, and one dialog button the new gate found. Each now names its
+pending action ("Saving override…", "Deleting…") and carries `aria-busy` on
+its own flag; per-row buttons key on the mutation's variables, and two
+bystanders are declared with a marker.
+
+Verified: a `tests/` gate keyed on `disabled`, sharing the `F4.164` scanner;
+one jsdom spec per shape; CI green on the first run; the browser layer on the
+rebuilt web container. Two reviews; the code review's five false greens were
+fixed or listed as not covered.
+
+**Cascade:** no row lists `F4.168` in *Depends*. A `chore(agents):` §5 update
+for the wider rule follows separately.
+
+### `F4.171` — the `F4.53` rule demands `created_at` as the leading `ORDER BY` key ✅ 2026-09-28
+
+PR #610, squash `9f03a237`. Raised from the `F4.138` code review and built in
+the same PR. No ADR.
+
+The rule accepted `created_at` anywhere near the `ORDER BY`, so a fixture read
+that sorted by a random uuid first passed it. `rtus.telemetry-source` had one:
+it could adopt another suite's temporary organization and break that suite's
+teardown. Every `LIMIT` now needs its own `ORDER BY` led by `created_at`, not
+`DESC`; the one read is corrected.
+
+Verified: eight mutations reddened their targets; review found two old-rule
+false greens, both fixed. CI green on the first run.
+
+**Cascade:** no row lists `F4.171` in *Depends*. No `chore(agents):` change
+owed.
+
+### `F4.61` — the ingest health endpoint is reachable only from inside its container ✅ 2026-09-28
+
+PR #615, squash `2ebb8d5a`; plan `docs/plans/f4.61-ingest-health-network.md`.
+ADR 0016 Amendment 8.
+
+The health body names every enabled RTU without authentication, and every
+sibling container could read it. The handler now answers `GET /` and
+`/health` for exactly one loopback `Host` only; `ingest` shares a compose
+network with `postgres` alone; and the port is no longer published, because
+on Docker Desktop every container reached the loopback publication through
+`host.docker.internal`. Operators read it with `docker compose exec ingest
+wget -qO- http://127.0.0.1:9102/`.
+
+Verified: 38 mutations reddened their targets; the stack check measured the
+defect before and its absence after. CI green on the first run. Three reviews;
+the security review's finding became Decision 3.
+
+**Cascade:** no row lists `F4.61` in *Depends*. Raised `F4.173` (`api` and
+`worker` exit when Postgres restarts). No `chore(agents):` change owed.

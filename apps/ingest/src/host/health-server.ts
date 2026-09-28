@@ -11,6 +11,13 @@ import type { SupervisorHealth } from "./supervisor.js";
  * decision 11). So this stays the same shape as `index.js`'s one-line
  * response, with the per-endpoint detail `F3.16` will eventually read through
  * the API rather than by scraping this.
+ *
+ * Who may ask is decided before any of that (`F4.61`, ADR 0016 Amendment 8).
+ * The body names every enabled RTU and when each last spoke, unauthenticated,
+ * so the handler answers `GET /` and `GET /health` for a loopback `Host` only
+ * — the `Host` rule is what stops a rebound page in an operator's browser —
+ * and the compose network keeps every container but `postgres` from reaching
+ * it at all.
  */
 
 export type HealthSnapshot = {
@@ -283,13 +290,60 @@ export function renderHealth(snapshot: HealthSnapshot, now: Date): string {
   return `${lines.join("\n")}\n`;
 }
 
+/** A request the health endpoint will not answer, and the fixed reply it gets. */
+export type HealthRefusal = {
+  readonly status: 421 | 405 | 404;
+  readonly body: string;
+  readonly headers: Readonly<Record<string, string>>;
+};
+
+/** `localhost`, `127.0.0.1` or `[::1]`, each with an optional `:port`. Anchored
+ * at both ends, so `127.0.0.1.evil.example` and `evil.127.0.0.1` are foreign.
+ * No `g` flag: a global regex carries `lastIndex` from one `.test()` to the next. */
+const LOOPBACK_HOST = /^(?:localhost|127\.0\.0\.1|\[::1\])(?::\d{1,5})?$/i;
+
+/** Exact matches on `request.url`: `/?x=1` and `/health/` are other paths. */
+const HEALTH_PATHS: ReadonlySet<string> = new Set(["/", "/health"]);
+
+const ALLOWED_METHOD = "GET";
+
+/**
+ * Whether to refuse one request, before anything is rendered (`F4.61`).
+ *
+ * **Host first**, so the DNS-rebinding defence fires whatever else is wrong
+ * with the request; then method, then path. A missing `Host` is refused — an
+ * HTTP/1.0 client can omit it, and its absence proves nothing about who asked.
+ * The handler passes a repeated `Host` as missing, so it is refused the same way.
+ *
+ * Every refusal body is one fixed line. It never echoes the value it refused
+ * and never starts with `ingest-host`, so a liveness check matching that
+ * prefix cannot pass on a refusal, and the roster never leaves on one.
+ */
+export function refuseHealthRequest(request: {
+  readonly method: string | undefined;
+  readonly url: string | undefined;
+  readonly host: string | undefined;
+}): HealthRefusal | undefined {
+  if (request.host === undefined || !LOOPBACK_HOST.test(request.host)) {
+    return { status: 421, body: "refused: host\n", headers: {} };
+  }
+  if (request.method !== ALLOWED_METHOD) {
+    return { status: 405, body: "refused: method\n", headers: { allow: ALLOWED_METHOD } };
+  }
+  if (request.url === undefined || !HEALTH_PATHS.has(request.url)) {
+    return { status: 404, body: "refused: path\n", headers: {} };
+  }
+  return undefined;
+}
+
 export type HealthServer = {
+  /** The port the OS bound — not the argument, which is 0 in the tests. */
   readonly port: number;
   close(): Promise<void>;
 };
 
 /**
- * Serves `renderHealth` on `port`.
+ * Serves `renderHealth` on `port`, behind `refuseHealthRequest`.
  *
  * Binding failures reject rather than throwing asynchronously, so `main.ts` can
  * report "the health port is already taken" — the realistic mistake during the
@@ -299,7 +353,21 @@ export function startHealthServer(
   port: number,
   snapshot: () => HealthSnapshot,
 ): Promise<HealthServer> {
-  const server = http.createServer((_request, response) => {
+  const server = http.createServer((request, response) => {
+    // `host` reaches the gate as missing unless there is exactly one:
+    // `request.headers.host` keeps the first of two, so `Host: 127.0.0.1` then
+    // `Host: evil.example` would pass on the first (ADR 0016 Amendment 8).
+    const hosts = request.headersDistinct.host;
+    const refusal = refuseHealthRequest({
+      method: request.method,
+      url: request.url,
+      host: hosts?.length === 1 ? hosts[0] : undefined,
+    });
+    if (refusal !== undefined) {
+      response.writeHead(refusal.status, { "content-type": "text/plain", ...refusal.headers });
+      response.end(refusal.body);
+      return;
+    }
     let body: string;
     try {
       body = renderHealth(snapshot(), new Date());
@@ -316,8 +384,9 @@ export function startHealthServer(
     server.once("error", reject);
     server.listen(port, () => {
       server.removeListener("error", reject);
+      const address = server.address();
       resolve({
-        port,
+        port: typeof address === "object" && address !== null ? address.port : port,
         close: () =>
           new Promise<void>((done) => {
             server.close(() => {

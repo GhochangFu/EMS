@@ -246,18 +246,20 @@ export function AssetTemplateVersionsPage({ user }: Props) {
             <button
               type="button"
               disabled={busy || selected.length === 0}
+              aria-busy={previewM.isPending}
               onClick={() => previewM.mutate()}
               className="rounded border border-gray-200 px-3 py-1.5 text-xs font-semibold text-bms-muted disabled:opacity-60"
             >
-              Preview migration
+              {previewM.isPending ? "Previewing migration…" : "Preview migration"}
             </button>
             <button
               type="button"
               disabled={busy || !action.enabled}
+              aria-busy={migrateM.isPending}
               onClick={() => migrateM.mutate()}
               className="rounded bg-bms-green px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-60"
             >
-              Migrate
+              {migrateM.isPending ? "Migrating…" : "Migrate"}
             </button>
             {!action.enabled ? (
               <span className="text-xs text-bms-muted">{action.message}</span>

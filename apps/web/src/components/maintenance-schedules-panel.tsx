@@ -348,91 +348,103 @@ export function MaintenanceSchedulesPanel({
         </p>
       ) : (
         <section className="grid gap-3 xl:grid-cols-3">
-          {items.map((item) => (
-            <article
-              key={item.id}
-              className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm"
-            >
-              <div className="flex items-start justify-between gap-3">
-                <div>
-                  <div className="font-mono text-[10px] text-bms-muted">
-                    SCH-{item.id.slice(0, 8).toUpperCase()}
+          {items.map((item) => {
+            const deactivatingThis =
+              updateM.isPending && updateM.variables?.id === item.id;
+            const generatingThis =
+              convertM.isPending && convertM.variables?.id === item.id;
+            return (
+              <article
+                key={item.id}
+                className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm"
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <div className="font-mono text-[10px] text-bms-muted">
+                      SCH-{item.id.slice(0, 8).toUpperCase()}
+                    </div>
+                    <h2 className="mt-1 text-sm font-semibold text-bms-ink">
+                      {item.title}
+                    </h2>
                   </div>
-                  <h2 className="mt-1 text-sm font-semibold text-bms-ink">
-                    {item.title}
-                  </h2>
+                  <span
+                    className={`rounded border px-2 py-0.5 text-[10px] font-bold uppercase ${dueStateStyle(item)}`}
+                  >
+                    {dueLabel(item)}
+                  </span>
                 </div>
-                <span
-                  className={`rounded border px-2 py-0.5 text-[10px] font-bold uppercase ${dueStateStyle(item)}`}
-                >
-                  {dueLabel(item)}
-                </span>
-              </div>
-              <p className="mt-2 line-clamp-2 text-xs text-bms-muted">
-                {item.description ?? "No schedule description"}
-              </p>
-              <div className="mt-3 flex flex-wrap gap-1">
-                <span
-                  className={`rounded border px-2 py-0.5 text-[10px] font-bold uppercase ${categoryStyle(item.category)}`}
-                >
-                  {MAINTENANCE_CATEGORY_LABELS[item.category]}
-                </span>
-                <span
-                  className={`rounded border px-2 py-0.5 text-[10px] font-bold uppercase ${priorityStyle(item.priority)}`}
-                >
-                  {WORK_ORDER_PRIORITY_LABELS[item.priority]}
-                </span>
-                <span className="rounded border border-gray-200 bg-white px-2 py-0.5 text-[10px] font-semibold text-bms-muted">
-                  {MAINTENANCE_GENERATION_MODE_LABELS[item.generationMode]}
-                </span>
-              </div>
-              <div className="mt-3 grid gap-1 text-[11px] text-bms-muted">
-                <span>
-                  {item.assetCode} · {item.assetName} · {item.siteName}
-                </span>
-                <span>
-                  {item.intervalDays}d cycle · {item.estimatedMinutes} min
-                </span>
-                {item.ownerTeam ? <span>Owner: {item.ownerTeam}</span> : null}
-                {item.vendorName ? <span>Vendor: {item.vendorName}</span> : null}
-                {item.complianceRef ? (
-                  <span>Compliance: {item.complianceRef}</span>
-                ) : null}
-                {item.triggerSummary ? (
-                  <span>Trigger: {item.triggerSummary}</span>
-                ) : null}
-              </div>
-              <div className="mt-4 flex flex-wrap justify-end gap-2">
-                <button
-                  type="button"
-                  className="rounded border border-gray-300 px-3 py-1.5 text-xs font-semibold text-bms-ink hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
-                  disabled={updateM.isPending}
-                  onClick={() =>
-                    updateM.mutate({
-                      id: item.id,
-                      active: false,
-                      reason: `Deactivated ${item.title}`,
-                    })
-                  }
-                >
-                  Deactivate
-                </button>
-                <button
-                  type="button"
-                  className="rounded bg-bms-green px-3 py-1.5 text-xs font-semibold text-white hover:bg-bms-green-dark disabled:cursor-not-allowed disabled:opacity-50"
-                  disabled={Boolean(item.activeWorkOrderId) || convertM.isPending}
-                  onClick={() =>
-                    convertM.mutate({
-                      id: item.id,
-                      notes: `Generated WO from ${MAINTENANCE_CATEGORY_LABELS[item.category]}`,
-                    })
-                  }
-                >
-                  {item.activeWorkOrderId ? "WO already open" : "Generate WO"}
-                </button>
-              </div>
-            </article>
-          ))}
+                <p className="mt-2 line-clamp-2 text-xs text-bms-muted">
+                  {item.description ?? "No schedule description"}
+                </p>
+                <div className="mt-3 flex flex-wrap gap-1">
+                  <span
+                    className={`rounded border px-2 py-0.5 text-[10px] font-bold uppercase ${categoryStyle(item.category)}`}
+                  >
+                    {MAINTENANCE_CATEGORY_LABELS[item.category]}
+                  </span>
+                  <span
+                    className={`rounded border px-2 py-0.5 text-[10px] font-bold uppercase ${priorityStyle(item.priority)}`}
+                  >
+                    {WORK_ORDER_PRIORITY_LABELS[item.priority]}
+                  </span>
+                  <span className="rounded border border-gray-200 bg-white px-2 py-0.5 text-[10px] font-semibold text-bms-muted">
+                    {MAINTENANCE_GENERATION_MODE_LABELS[item.generationMode]}
+                  </span>
+                </div>
+                <div className="mt-3 grid gap-1 text-[11px] text-bms-muted">
+                  <span>
+                    {item.assetCode} · {item.assetName} · {item.siteName}
+                  </span>
+                  <span>
+                    {item.intervalDays}d cycle · {item.estimatedMinutes} min
+                  </span>
+                  {item.ownerTeam ? <span>Owner: {item.ownerTeam}</span> : null}
+                  {item.vendorName ? <span>Vendor: {item.vendorName}</span> : null}
+                  {item.complianceRef ? (
+                    <span>Compliance: {item.complianceRef}</span>
+                  ) : null}
+                  {item.triggerSummary ? (
+                    <span>Trigger: {item.triggerSummary}</span>
+                  ) : null}
+                </div>
+                <div className="mt-4 flex flex-wrap justify-end gap-2">
+                  <button
+                    type="button"
+                    className="rounded border border-gray-300 px-3 py-1.5 text-xs font-semibold text-bms-ink hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
+                    disabled={updateM.isPending}
+                    aria-busy={deactivatingThis}
+                    onClick={() =>
+                      updateM.mutate({
+                        id: item.id,
+                        active: false,
+                        reason: `Deactivated ${item.title}`,
+                      })
+                    }
+                  >
+                    {deactivatingThis ? "Deactivating…" : "Deactivate"}
+                  </button>
+                  <button
+                    type="button"
+                    className="rounded bg-bms-green px-3 py-1.5 text-xs font-semibold text-white hover:bg-bms-green-dark disabled:cursor-not-allowed disabled:opacity-50"
+                    disabled={Boolean(item.activeWorkOrderId) || convertM.isPending}
+                    aria-busy={generatingThis}
+                    onClick={() =>
+                      convertM.mutate({
+                        id: item.id,
+                        notes: `Generated WO from ${MAINTENANCE_CATEGORY_LABELS[item.category]}`,
+                      })
+                    }
+                  >
+                    {generatingThis
+                      ? "Generating WO…"
+                      : item.activeWorkOrderId
+                        ? "WO already open"
+                        : "Generate WO"}
+                  </button>
+                </div>
+              </article>
+            );
+          })}
         </section>
       )}
 

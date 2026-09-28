@@ -261,9 +261,10 @@ export function OnboardingChatPage({ user }: OnboardingChatPageProps) {
             type="button"
             onClick={() => fileInputRef.current?.click()}
             disabled={!session || uploadBusy}
+            aria-busy={uploadBusy}
             className="rounded border border-gray-200 px-3 py-1 text-xs font-semibold hover:bg-gray-50 disabled:opacity-50"
           >
-            Upload Excel
+            {uploadBusy ? "Uploading…" : "Upload Excel"}
           </button>
           <input
             ref={fileInputRef}
@@ -360,8 +361,9 @@ export function OnboardingChatPage({ user }: OnboardingChatPageProps) {
                   type="submit"
                   className="shrink-0 rounded bg-bms-green px-4 py-2 text-sm font-semibold text-white disabled:opacity-50"
                   disabled={!session || chatMutation.isPending || startMutation.isPending}
+                  aria-busy={chatMutation.isPending}
                 >
-                  Send
+                  {chatMutation.isPending ? "Sending…" : "Send"}
                 </button>
               </div>
             </form>
@@ -509,16 +511,18 @@ export function OnboardingChatPage({ user }: OnboardingChatPageProps) {
                     onClick={() => validateMutation.mutate()}
                     className="flex-1 rounded border border-gray-200 py-2 text-xs font-semibold"
                     disabled={!session || validateMutation.isPending}
+                    aria-busy={validateMutation.isPending}
                   >
-                    Validate
+                    {validateMutation.isPending ? "Validating…" : "Validate"}
                   </button>
                   <button
                     type="button"
                     onClick={() => commitMutation.mutate()}
                     className="flex-1 rounded bg-bms-green py-2 text-xs font-semibold text-white disabled:opacity-50"
                     disabled={!session || commitMutation.isPending}
+                    aria-busy={commitMutation.isPending}
                   >
-                    Commit
+                    {commitMutation.isPending ? "Committing…" : "Commit"}
                   </button>
                 </div>
               </aside>

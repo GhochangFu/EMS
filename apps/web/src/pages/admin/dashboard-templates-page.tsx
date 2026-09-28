@@ -262,39 +262,43 @@ export function DashboardTemplatesAdminPage({ user }: DashboardTemplatesAdminPag
           </p>
         ) : null}
         <ul className="divide-y divide-gray-100">
-          {stockRows.map((entry) => (
-            <li key={entry.code} className="flex flex-wrap items-center justify-between gap-2 py-2">
-              <div>
-                <div className="text-sm font-semibold text-bms-ink">{entry.name}</div>
-                <div className="text-[11px] text-bms-muted">
-                  {entry.code} · {entry.section} · stock v{entry.stockVersion}
+          {stockRows.map((entry) => {
+            const importingThis = importM.isPending && importM.variables === entry.code;
+            return (
+              <li key={entry.code} className="flex flex-wrap items-center justify-between gap-2 py-2">
+                <div>
+                  <div className="text-sm font-semibold text-bms-ink">{entry.name}</div>
+                  <div className="text-[11px] text-bms-muted">
+                    {entry.code} · {entry.section} · stock v{entry.stockVersion}
+                  </div>
                 </div>
-              </div>
-              <div className="flex items-center gap-2">
-                <Link
-                  to={`/admin/dashboard-templates/stock/${entry.code}`}
-                  aria-label={`View ${entry.name}`}
-                  className="rounded border border-gray-200 px-3 py-1.5 text-xs font-semibold text-bms-ink hover:underline"
-                >
-                  View
-                </Link>
-                {mayAuthor ? (
-                  <button
-                    type="button"
-                    aria-label={`Import ${entry.name}`}
-                    disabled={importOrgId === "" || importM.isPending}
-                    onClick={() => {
-                      setImportError(null);
-                      importM.mutate(entry.code);
-                    }}
-                    className="rounded border border-gray-200 px-3 py-1.5 text-xs font-semibold text-bms-ink disabled:opacity-60"
+                <div className="flex items-center gap-2">
+                  <Link
+                    to={`/admin/dashboard-templates/stock/${entry.code}`}
+                    aria-label={`View ${entry.name}`}
+                    className="rounded border border-gray-200 px-3 py-1.5 text-xs font-semibold text-bms-ink hover:underline"
                   >
-                    Import
-                  </button>
-                ) : null}
-              </div>
-            </li>
-          ))}
+                    View
+                  </Link>
+                  {mayAuthor ? (
+                    <button
+                      type="button"
+                      aria-label={importingThis ? `Importing ${entry.name}…` : `Import ${entry.name}`}
+                      disabled={importOrgId === "" || importM.isPending}
+                      aria-busy={importingThis}
+                      onClick={() => {
+                        setImportError(null);
+                        importM.mutate(entry.code);
+                      }}
+                      className="rounded border border-gray-200 px-3 py-1.5 text-xs font-semibold text-bms-ink disabled:opacity-60"
+                    >
+                      {importingThis ? "Importing…" : "Import"}
+                    </button>
+                  ) : null}
+                </div>
+              </li>
+            );
+          })}
         </ul>
       </SectionCard>
 
