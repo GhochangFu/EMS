@@ -152,7 +152,7 @@ export function DashboardTemplateDetailPage({ user }: DashboardTemplateDetailPag
   if (templateQ.isPending) {
     return (
       <MasterDataLayout user={user}>
-        <p className="p-4 text-sm text-bms-muted">Loading template…</p>
+        <p className="p-4 text-sm text-ink-muted">Loading template…</p>
       </MasterDataLayout>
     );
   }
@@ -161,12 +161,12 @@ export function DashboardTemplateDetailPage({ user }: DashboardTemplateDetailPag
     return (
       <MasterDataLayout user={user}>
         <SectionCard title="Dashboard template">
-          <p className="rounded border border-red-200 bg-red-50 p-3 text-sm text-red-800">
+          <p className="rounded border border-critical-line bg-critical-wash p-3 text-sm text-critical-ink-strong">
             {templateQ.error ? apiErrorMessage(templateQ.error) : "This template could not be loaded."}
           </p>
           <Link
             to="/admin/dashboard-templates"
-            className="mt-3 inline-block text-xs font-semibold text-bms-green hover:underline"
+            className="mt-3 inline-block text-xs font-semibold text-accent hover:underline"
           >
             Back to all templates
           </Link>
@@ -244,7 +244,7 @@ export function DashboardTemplateDetailPage({ user }: DashboardTemplateDetailPag
           <div className="flex flex-wrap gap-2">
             <Link
               to="/admin/dashboard-templates"
-              className="rounded border border-gray-200 px-3 py-1.5 text-xs font-semibold text-bms-muted"
+              className="rounded border border-line px-3 py-1.5 text-xs font-semibold text-ink-muted"
             >
               All templates
             </Link>
@@ -254,7 +254,7 @@ export function DashboardTemplateDetailPage({ user }: DashboardTemplateDetailPag
                 disabled={saveM.isPending}
                 aria-busy={saveM.isPending}
                 onClick={() => saveM.mutate()}
-                className="rounded bg-bms-green px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-60"
+                className="rounded bg-accent px-3 py-1.5 text-xs font-semibold text-on-accent disabled:opacity-60"
               >
                 {saveM.isPending ? "Saving…" : "Save canvas"}
               </button>
@@ -265,7 +265,7 @@ export function DashboardTemplateDetailPage({ user }: DashboardTemplateDetailPag
                 disabled={busy}
                 aria-busy={publishM.isPending}
                 onClick={() => publishM.mutate()}
-                className="rounded bg-bms-green px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-60"
+                className="rounded bg-accent px-3 py-1.5 text-xs font-semibold text-on-accent disabled:opacity-60"
               >
                 {publishM.isPending ? "Publishing…" : "Publish"}
               </button>
@@ -276,7 +276,7 @@ export function DashboardTemplateDetailPage({ user }: DashboardTemplateDetailPag
                 disabled={busy}
                 aria-busy={archiveM.isPending}
                 onClick={() => archiveM.mutate()}
-                className="rounded bg-bms-green px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-60"
+                className="rounded bg-accent px-3 py-1.5 text-xs font-semibold text-on-accent disabled:opacity-60"
               >
                 {archiveM.isPending ? "Archiving…" : "Archive"}
               </button>
@@ -287,7 +287,7 @@ export function DashboardTemplateDetailPage({ user }: DashboardTemplateDetailPag
                 disabled={busy}
                 aria-busy={draftM.isPending}
                 onClick={() => draftM.mutate()}
-                className="rounded border border-gray-200 px-3 py-1.5 text-xs font-semibold text-bms-ink disabled:opacity-60"
+                className="rounded border border-line px-3 py-1.5 text-xs font-semibold text-ink disabled:opacity-60"
               >
                 {draftM.isPending
                   ? template.status === "archived"
@@ -304,7 +304,7 @@ export function DashboardTemplateDetailPage({ user }: DashboardTemplateDetailPag
                 disabled={busy}
                 aria-busy={deleteM.isPending}
                 onClick={() => deleteM.mutate()}
-                className="rounded border border-red-200 px-3 py-1.5 text-xs font-semibold text-red-700 disabled:opacity-60"
+                className="rounded border border-critical-line px-3 py-1.5 text-xs font-semibold text-critical-ink disabled:opacity-60"
               >
                 {deleteM.isPending ? "Deleting draft…" : "Delete draft"}
               </button>
@@ -313,7 +313,7 @@ export function DashboardTemplateDetailPage({ user }: DashboardTemplateDetailPag
               <button
                 type="button"
                 onClick={() => setInstantiateOpen(true)}
-                className="rounded bg-bms-green px-3 py-1.5 text-xs font-semibold text-white"
+                className="rounded bg-accent px-3 py-1.5 text-xs font-semibold text-on-accent"
               >
                 Instantiate
               </button>
@@ -323,13 +323,13 @@ export function DashboardTemplateDetailPage({ user }: DashboardTemplateDetailPag
       />
 
       {actionError ? (
-        <p className="rounded border border-red-200 bg-red-50 p-3 text-sm text-red-800">
+        <p className="rounded border border-critical-line bg-critical-wash p-3 text-sm text-critical-ink-strong">
           {actionError}
         </p>
       ) : null}
 
       {!editable ? (
-        <p className="rounded border border-sky-200 bg-sky-50 p-3 text-xs text-sky-900">
+        <p className="rounded border border-info-line bg-info-wash p-3 text-xs text-info-ink">
           This version is read-only. ADR 0015 freezes a template once it is published, so that
           dashboards instantiated from it never change underneath.
         </p>
@@ -342,7 +342,7 @@ export function DashboardTemplateDetailPage({ user }: DashboardTemplateDetailPag
             <button
               type="button"
               onClick={addWidget}
-              className="rounded border border-gray-200 px-2 py-1 text-[11px] font-semibold text-bms-ink"
+              className="rounded border border-line px-2 py-1 text-[11px] font-semibold text-ink"
             >
               Add widget
             </button>
@@ -350,7 +350,7 @@ export function DashboardTemplateDetailPage({ user }: DashboardTemplateDetailPag
         }
       >
         {rows.length === 0 ? (
-          <p className="text-sm text-bms-muted">This template has no widgets yet.</p>
+          <p className="text-sm text-ink-muted">This template has no widgets yet.</p>
         ) : (
           <DashboardCanvas tiles={rows} renderTile={renderTemplateTile} />
         )}
@@ -439,9 +439,9 @@ function InstantiateDialog({
   const canSubmit = assetGroupId !== "" && isDashboardSlug(slug.trim()) && name.trim() !== "";
 
   return (
-    <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/30 p-4">
-      <div className="w-full max-w-2xl space-y-3 rounded-lg bg-white p-4 shadow-lg">
-        <h2 className="font-condensed text-base font-bold text-bms-ink">
+    <div className="fixed inset-0 z-40 flex items-center justify-center bg-scrim/30 p-4">
+      <div className="w-full max-w-2xl space-y-3 rounded-lg bg-surface p-4 shadow-lg">
+        <h2 className="font-condensed text-base font-bold text-ink">
           Instantiate {template.code} v{template.version}
         </h2>
 
@@ -449,13 +449,13 @@ function InstantiateDialog({
           <ResolutionReport result={result} />
         ) : (
           <>
-            <label className="block text-xs font-semibold text-bms-ink">
+            <label className="block text-xs font-semibold text-ink">
               Asset group
               <select
                 required
                 value={assetGroupId}
                 onChange={(event) => setAssetGroupId(event.target.value)}
-                className="mt-1 w-full rounded border border-gray-200 px-2 py-1 text-xs font-normal"
+                className="mt-1 w-full rounded border border-line px-2 py-1 text-xs font-normal"
               >
                 <option value="">Select an asset group…</option>
                 {/* `E4.2` / ADR 0072 decision 1 — see `bindsARole` above. */}
@@ -496,7 +496,7 @@ function InstantiateDialog({
                * it to the field instead.
                */}
               <div>
-                <label className="block text-xs font-semibold text-bms-ink">
+                <label className="block text-xs font-semibold text-ink">
                   Slug
                   <input
                     required
@@ -508,26 +508,26 @@ function InstantiateDialog({
                     maxLength={DASHBOARD_SLUG_MAX}
                     title={DASHBOARD_SLUG_HINT}
                     aria-describedby="instantiate-slug-hint"
-                    className="mt-1 w-full rounded border border-gray-200 px-2 py-1 text-xs font-normal"
+                    className="mt-1 w-full rounded border border-line px-2 py-1 text-xs font-normal"
                   />
                 </label>
-                <span id="instantiate-slug-hint" className="mt-1 block text-[11px] text-bms-muted">
+                <span id="instantiate-slug-hint" className="mt-1 block text-[11px] text-ink-muted">
                   {DASHBOARD_SLUG_HINT}
                 </span>
               </div>
-              <label className="block text-xs font-semibold text-bms-ink">
+              <label className="block text-xs font-semibold text-ink">
                 Name
                 <input
                   required
                   value={name}
                   onChange={(event) => setName(event.target.value)}
-                  className="mt-1 w-full rounded border border-gray-200 px-2 py-1 text-xs font-normal"
+                  className="mt-1 w-full rounded border border-line px-2 py-1 text-xs font-normal"
                 />
               </label>
             </div>
 
             {error ? (
-              <p className="rounded border border-red-200 bg-red-50 p-2 text-xs text-red-800">
+              <p className="rounded border border-critical-line bg-critical-wash p-2 text-xs text-critical-ink-strong">
                 {error}
               </p>
             ) : null}
@@ -538,7 +538,7 @@ function InstantiateDialog({
           <button
             type="button"
             onClick={onClose}
-            className="rounded border border-gray-200 px-3 py-1.5 text-xs font-semibold text-bms-muted"
+            className="rounded border border-line px-3 py-1.5 text-xs font-semibold text-ink-muted"
           >
             {result ? "Close" : "Cancel"}
           </button>
@@ -555,7 +555,7 @@ function InstantiateDialog({
                 setError(null);
                 instantiateM.mutate();
               }}
-              className="rounded bg-bms-green px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-60"
+              className="rounded bg-accent px-3 py-1.5 text-xs font-semibold text-on-accent disabled:opacity-60"
             >
               {instantiateM.isPending ? "Instantiating…" : "Instantiate"}
             </button>
@@ -611,12 +611,12 @@ function ResolutionReport({ result }: { result: InstantiateSectionTemplateRespon
 
   return (
     <div className="space-y-3">
-      <p className="rounded border border-green-200 bg-green-50 p-2 text-xs text-green-900">
+      <p className="rounded border border-accent/20 bg-ok-wash p-2 text-xs text-ok-ink">
         Created dashboard <strong>{result.dashboard.name}</strong>.
       </p>
 
       {needsAttention.length > 0 ? (
-        <div className="rounded border border-amber-200 bg-amber-50 p-2 text-xs text-amber-900">
+        <div className="rounded border border-warning-line bg-warning-wash p-2 text-xs text-warning-ink">
           <p className="font-semibold">
             {needsAttention.length} widget{needsAttention.length === 1 ? "" : "s"} need attention.
           </p>
@@ -625,14 +625,14 @@ function ResolutionReport({ result }: { result: InstantiateSectionTemplateRespon
 
       <table className="w-full text-xs">
         <thead>
-          <tr className="text-left text-[11px] uppercase text-bms-muted">
+          <tr className="text-left text-[11px] uppercase text-ink-muted">
             <th className="py-1">Widget</th>
             <th className="py-1">Matched members</th>
             <th className="py-1">Bound points</th>
             <th className="py-1">Outcome</th>
           </tr>
         </thead>
-        <tbody className="divide-y divide-gray-100">
+        <tbody className="divide-y divide-well-deep">
           {result.resolutions.map((resolution) => (
             <tr key={resolution.widgetKey}>
               <td className="py-1 font-semibold">{resolution.widgetKey}</td>

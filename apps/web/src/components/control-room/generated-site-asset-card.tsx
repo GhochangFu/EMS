@@ -47,12 +47,12 @@ export function GeneratedSiteAssetCard({
   return (
     <article
       aria-label={`${asset.code} ${asset.name}`}
-      className="rounded-lg border border-gray-200 bg-white p-3 shadow-sm"
+      className="rounded-lg border border-line bg-surface p-3 shadow-sm"
     >
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0">
-          <p className="font-condensed text-sm font-bold text-bms-ink">{asset.code}</p>
-          <p className="truncate text-[11px] text-bms-muted">{asset.name}</p>
+          <p className="font-condensed text-sm font-bold text-ink">{asset.code}</p>
+          <p className="truncate text-[11px] text-ink-muted">{asset.name}</p>
         </div>
         <span data-testid="asset-status">
           <StatusPill label={STATUS_LABEL[status]} tone={STATUS_TONE[status]} />
@@ -60,7 +60,7 @@ export function GeneratedSiteAssetCard({
       </div>
 
       {asset.points.length === 0 ? (
-        <p className="mt-2 text-[11px] text-bms-muted">No registered points.</p>
+        <p className="mt-2 text-[11px] text-ink-muted">No registered points.</p>
       ) : (
         <table aria-label={`${asset.code} points`} className="mt-2 w-full text-xs">
           <tbody>
@@ -68,17 +68,17 @@ export function GeneratedSiteAssetCard({
               const latest = readings.pointLatest(asset.id, point);
               const rowStale = latest !== null && isStale(latest.atMs, readings.nowMs);
               return (
-                <tr key={point.pointKey} className="border-t border-gray-100">
-                  <th scope="row" className="py-1 pr-2 text-left font-normal text-bms-muted">
+                <tr key={point.pointKey} className="border-t border-well-deep">
+                  <th scope="row" className="py-1 pr-2 text-left font-normal text-ink-muted">
                     {point.name ?? point.pointKey}
                   </th>
                   <td
                     data-testid="point-value"
-                    className={`py-1 text-right font-semibold tabular-nums text-bms-ink${rowStale ? " opacity-50" : ""}`}
+                    className={`py-1 text-right font-semibold tabular-nums text-ink${rowStale ? " opacity-50" : ""}`}
                   >
                     {formatPointValue(latest?.value ?? null)}
                   </td>
-                  <td className="py-1 pl-1 text-left text-[11px] text-bms-muted">
+                  <td className="py-1 pl-1 text-left text-[11px] text-ink-muted">
                     {latest === null ? "" : (point.unit ?? "")}
                   </td>
                 </tr>
@@ -92,7 +92,7 @@ export function GeneratedSiteAssetCard({
         <button
           type="button"
           aria-expanded={expanded}
-          className="mt-2 text-[11px] font-semibold text-bms-green"
+          className="mt-2 text-[11px] font-semibold text-accent"
           onClick={() => setExpanded((open) => !open)}
         >
           {expanded ? "Fewer points" : "All points"}

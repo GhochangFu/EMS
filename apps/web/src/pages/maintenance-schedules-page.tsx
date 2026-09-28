@@ -24,7 +24,7 @@ export function MaintenanceSchedulesPage({
     <AppShell
       user={user}
       kpiRibbon={
-        <span className="text-bms-ink">
+        <span className="text-ink">
           Operations · Maintenance schedules · generate work orders into Kanban
         </span>
       }
@@ -38,9 +38,9 @@ export function MaintenanceSchedulesPage({
         />
 
         {assetsQ.isLoading ? (
-          <p className="text-sm text-bms-muted">Loading assets...</p>
+          <p className="text-sm text-ink-muted">Loading assets...</p>
         ) : assetsQ.isError ? (
-          <p className="text-sm text-red-600">Could not load assets.</p>
+          <p className="text-sm text-critical-ink-soft">Could not load assets.</p>
         ) : (
           <MaintenanceSchedulesPanel assetOptions={assetsQ.data ?? []} />
         )}

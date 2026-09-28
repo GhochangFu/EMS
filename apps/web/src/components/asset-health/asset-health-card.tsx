@@ -31,14 +31,14 @@ export function AssetHealthCard({ title = "Asset Health", data }: AssetHealthCar
   const coverage = healthWindowCoverage(data.coveredBuckets, data.expectedBuckets);
 
   return (
-    <div className="flex h-full flex-col rounded-lg border border-gray-200 bg-white p-3 shadow-sm">
-      <h3 className="mb-2 text-[11px] font-medium uppercase tracking-wide text-bms-muted">{title}</h3>
+    <div className="flex h-full flex-col rounded-lg border border-line bg-surface p-3 shadow-sm">
+      <h3 className="mb-2 text-[11px] font-medium uppercase tracking-wide text-ink-muted">{title}</h3>
 
       <div className="flex items-baseline gap-2">
-        <span className="font-condensed text-3xl font-bold tabular-nums text-bms-ink">
+        <span className="font-condensed text-3xl font-bold tabular-nums text-ink">
           {formatHealthScorePercent(data.score)}
         </span>
-        <span className="text-xs text-bms-muted">
+        <span className="text-xs text-ink-muted">
           {hasScore
             ? healthBandDisplay(data.band)
             : "Not scorable — no tag on this asset carries an evaluatable rule"}
@@ -47,12 +47,12 @@ export function AssetHealthCard({ title = "Asset Health", data }: AssetHealthCar
 
       {data.scoredTags.length > 0 ? (
         <div className="mt-3">
-          <h4 className="text-[10px] font-semibold uppercase tracking-wide text-bms-muted">Scored tags</h4>
-          <ul className="mt-1 space-y-1 text-xs text-bms-ink">
+          <h4 className="text-[10px] font-semibold uppercase tracking-wide text-ink-muted">Scored tags</h4>
+          <ul className="mt-1 space-y-1 text-xs text-ink">
             {data.scoredTags.map((tag) => (
               <li key={tag.pointKey} className="flex items-center justify-between gap-2">
                 <span>{tag.pointKey}</span>
-                <span className="tabular-nums text-bms-muted">
+                <span className="tabular-nums text-ink-muted">
                   {formatHealthScorePercent(tag.score, 1)} · {tag.inRangeCount}/{tag.sampleCount} · weight{" "}
                   {tag.weight}
                   {tag.skippedRuleCount > 0 ? ` · ${tag.skippedRuleCount} rule(s) skipped` : ""}
@@ -65,10 +65,10 @@ export function AssetHealthCard({ title = "Asset Health", data }: AssetHealthCar
 
       {data.unscoredTags.length > 0 ? (
         <div className="mt-3">
-          <h4 className="text-[10px] font-semibold uppercase tracking-wide text-bms-muted">
+          <h4 className="text-[10px] font-semibold uppercase tracking-wide text-ink-muted">
             Unscored tags
           </h4>
-          <ul className="mt-1 space-y-1 text-xs text-bms-muted">
+          <ul className="mt-1 space-y-1 text-xs text-ink-muted">
             {data.unscoredTags.map((tag) => (
               <li key={tag.pointKey}>{unscoredTagMessage(tag)}</li>
             ))}
@@ -76,26 +76,26 @@ export function AssetHealthCard({ title = "Asset Health", data }: AssetHealthCar
         </div>
       ) : null}
 
-      <dl className="mt-3 flex flex-wrap items-baseline gap-x-4 gap-y-1 border-t border-gray-100 pt-2 text-[11px] text-bms-muted">
+      <dl className="mt-3 flex flex-wrap items-baseline gap-x-4 gap-y-1 border-t border-well-deep pt-2 text-[11px] text-ink-muted">
         <div className="flex items-baseline gap-1">
           <dt className="font-medium uppercase tracking-wide">Granularity</dt>
-          <dd className="text-bms-ink">{formatBucketWidth(data.bucketSeconds)}</dd>
+          <dd className="text-ink">{formatBucketWidth(data.bucketSeconds)}</dd>
         </div>
         <div className="flex items-baseline gap-1">
           <dt className="font-medium uppercase tracking-wide">Current to</dt>
-          <dd className="text-bms-ink">{formatHealthComputedAt(data.computedAt)}</dd>
+          <dd className="text-ink">{formatHealthComputedAt(data.computedAt)}</dd>
         </div>
         {/* `F4.72` — the pair, always shown. `computedAt` is the NEWEST instant
             read, so on its own it reports a half-covered window exactly as it
             reports a whole one (ADR 0050 Amendment 2 decision 1). */}
         <div className="flex items-baseline gap-1">
           <dt className="font-medium uppercase tracking-wide">Coverage</dt>
-          <dd className="tabular-nums text-bms-ink">{coverage.detail}</dd>
+          <dd className="tabular-nums text-ink">{coverage.detail}</dd>
         </div>
       </dl>
 
       {coverage.warning !== null ? (
-        <p className="mt-2 rounded border border-amber-200 bg-amber-50 px-2 py-1 text-[11px] leading-snug text-amber-900">
+        <p className="mt-2 rounded border border-warning-line bg-warning-wash px-2 py-1 text-[11px] leading-snug text-warning-ink">
           {coverage.warning}
         </p>
       ) : null}

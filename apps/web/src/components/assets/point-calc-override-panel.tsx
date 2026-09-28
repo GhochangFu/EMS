@@ -88,17 +88,17 @@ export function PointCalcOverridePanel({
   const isV3 = merged !== null && isParameterDialect(merged);
 
   return (
-    <div className="rounded border border-gray-200 p-3">
+    <div className="rounded border border-line p-3">
       <div className="flex items-center justify-between gap-2">
         <h3 className="text-sm font-semibold">
           {config.label ?? config.pointKey}
-          {config.unit ? <span className="text-bms-muted"> · {config.unit}</span> : null}
+          {config.unit ? <span className="text-ink-muted"> · {config.unit}</span> : null}
         </h3>
-        <span className="font-mono text-xs text-bms-muted">{config.pointKey}</span>
+        <span className="font-mono text-xs text-ink-muted">{config.pointKey}</span>
       </div>
 
       <table className="mt-2 w-full text-left text-xs">
-        <thead className="text-bms-muted">
+        <thead className="text-ink-muted">
           <tr>
             <th className="py-1 font-medium">Setting</th>
             <th className="py-1 font-medium">Template</th>
@@ -108,11 +108,11 @@ export function PointCalcOverridePanel({
         </thead>
         <tbody>
           {rows.map((row) => (
-            <tr key={row.field} className="border-t border-gray-100">
+            <tr key={row.field} className="border-t border-well-deep">
               <td className="py-1">{row.label}</td>
               <td className="py-1 font-mono">{row.templateValue}</td>
               <td className="py-1 font-mono">{row.effectiveValue}</td>
-              <td className="py-1 text-bms-muted">{ORIGIN_LABEL[row.origin]}</td>
+              <td className="py-1 text-ink-muted">{ORIGIN_LABEL[row.origin]}</td>
             </tr>
           ))}
           {/* `F2.22` item 4 — the template's ratio, read-only (ADR 0055
@@ -120,18 +120,18 @@ export function PointCalcOverridePanel({
               row: it has no override role and no merge, so "Template" and
               "In effect" are the same value by construction, and the Source
               column says why there is no field for it below. */}
-          <tr className="border-t border-gray-100">
+          <tr className="border-t border-well-deep">
             <td className="py-1">Minimum coverage</td>
             <td className="py-1 font-mono">{coverageRatioDisplay(config.minCoverageRatio)}</td>
             <td className="py-1 font-mono">{coverageRatioDisplay(config.minCoverageRatio)}</td>
-            <td className="py-1 text-bms-muted">from the template — not overridable per asset</td>
+            <td className="py-1 text-ink-muted">from the template — not overridable per asset</td>
           </tr>
         </tbody>
       </table>
 
       <div className="mt-3 grid gap-2 sm:grid-cols-2">
         <label className="text-xs sm:col-span-2">
-          <span className="text-bms-muted">Grammar</span>
+          <span className="text-ink-muted">Grammar</span>
           <select
             aria-label={`Grammar for ${config.pointKey}`}
             value={draft.formulaDialect}
@@ -141,7 +141,7 @@ export function PointCalcOverridePanel({
             // other column is a separate inherit-or-set choice and the
             // merged rules below say what the pair needs.
             onChange={(event) => set({ formulaDialect: event.target.value })}
-            className="mt-1 w-full rounded border border-gray-200 px-2 py-1"
+            className="mt-1 w-full rounded border border-line px-2 py-1"
           >
             <option value="">inherit ({config.template.formulaDialect ?? "not set"})</option>
             {dialectOptions().map((option) => (
@@ -152,14 +152,14 @@ export function PointCalcOverridePanel({
           </select>
         </label>
         <label className="text-xs sm:col-span-2">
-          <span className="text-bms-muted">Formula — leave empty to inherit</span>
+          <span className="text-ink-muted">Formula — leave empty to inherit</span>
           <input
             type="text"
             aria-label={`Formula for ${config.pointKey}`}
             value={draft.formula}
             disabled={busy}
             onChange={(event) => set({ formula: event.target.value })}
-            className="mt-1 w-full rounded border border-gray-200 px-2 py-1 font-mono"
+            className="mt-1 w-full rounded border border-line px-2 py-1 font-mono"
             placeholder={config.template.formula ?? ""}
           />
         </label>
@@ -169,11 +169,11 @@ export function PointCalcOverridePanel({
           // sibling of the label, as on the tab — a list inside a `<label>`
           // is flow content in phrasing content, and a click on an example
           // would focus the input.
-          <ul className="space-y-0.5 text-[11px] text-bms-muted sm:col-span-2">
+          <ul className="space-y-0.5 text-[11px] text-ink-muted sm:col-span-2">
             {V2_REFERENCE_FORMS.map((form) => (
               <li key={form.form}>
                 <span className="font-semibold">{form.form}</span> — {form.answers}:{" "}
-                <code className="rounded bg-gray-100 px-1">{form.example}</code>
+                <code className="rounded bg-well-deep px-1">{form.example}</code>
               </li>
             ))}
             {isV3 ? (
@@ -188,13 +188,13 @@ export function PointCalcOverridePanel({
           </ul>
         ) : null}
         <label className="text-xs">
-          <span className="text-bms-muted">Runs</span>
+          <span className="text-ink-muted">Runs</span>
           <select
             aria-label={`Runs for ${config.pointKey}`}
             value={draft.calcTrigger}
             disabled={busy}
             onChange={(event) => set({ calcTrigger: event.target.value })}
-            className="mt-1 w-full rounded border border-gray-200 px-2 py-1"
+            className="mt-1 w-full rounded border border-line px-2 py-1"
           >
             <option value="">inherit ({config.template.calcTrigger ?? "not set"})</option>
             {/* Disabled under a merged `v2`, not hidden (design decision 5):
@@ -207,19 +207,19 @@ export function PointCalcOverridePanel({
             ))}
           </select>
           {isV2 ? (
-            <span className="mt-1 block text-[11px] text-bms-muted">
+            <span className="mt-1 block text-[11px] text-ink-muted">
               {isV3 ? V3_TRIGGER_LATENCY_HINT : V2_TRIGGER_LATENCY_HINT}
             </span>
           ) : null}
         </label>
         <label className="text-xs">
-          <span className="text-bms-muted">Every (seconds)</span>
+          <span className="text-ink-muted">Every (seconds)</span>
           <input
             type="number"
             value={draft.calcIntervalSeconds}
             disabled={busy}
             onChange={(event) => set({ calcIntervalSeconds: event.target.value })}
-            className="mt-1 w-full rounded border border-gray-200 px-2 py-1"
+            className="mt-1 w-full rounded border border-line px-2 py-1"
             placeholder={
               config.template.calcIntervalSeconds === null
                 ? "inherit"
@@ -228,13 +228,13 @@ export function PointCalcOverridePanel({
           />
         </label>
         <label className="text-xs">
-          <span className="text-bms-muted">Inputs valid for (seconds)</span>
+          <span className="text-ink-muted">Inputs valid for (seconds)</span>
           <input
             type="number"
             value={draft.maxInputAgeSeconds}
             disabled={busy}
             onChange={(event) => set({ maxInputAgeSeconds: event.target.value })}
-            className="mt-1 w-full rounded border border-gray-200 px-2 py-1"
+            className="mt-1 w-full rounded border border-line px-2 py-1"
             placeholder={
               config.template.maxInputAgeSeconds === null
                 ? "inherit"
@@ -248,7 +248,7 @@ export function PointCalcOverridePanel({
         // D-1 while the author is still looking at both fields, rather than
         // from a 400 after Save. The API stays the authority; this is the same
         // sentence, earlier.
-        <ul className="mt-2 list-disc space-y-1 pl-4 text-xs text-red-700">
+        <ul className="mt-2 list-disc space-y-1 pl-4 text-xs text-critical-ink">
           {problems.map((problem) => (
             <li key={problem}>{problem}</li>
           ))}
@@ -261,7 +261,7 @@ export function PointCalcOverridePanel({
           disabled={busy || !canSubmit(draft, config)}
           aria-busy={saving}
           onClick={onSave}
-          className="rounded bg-bms-green px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-60"
+          className="rounded bg-accent px-3 py-1.5 text-xs font-semibold text-on-accent disabled:opacity-60"
         >
           {saving ? "Saving override…" : "Save override"}
         </button>
@@ -272,7 +272,7 @@ export function PointCalcOverridePanel({
           disabled={busy || !canClear(config)}
           aria-busy={clearing}
           onClick={onClear}
-          className="rounded border border-red-200 px-3 py-1.5 text-xs font-semibold text-red-700 disabled:opacity-60"
+          className="rounded border border-critical-line px-3 py-1.5 text-xs font-semibold text-critical-ink disabled:opacity-60"
         >
           {clearing ? "Clearing override…" : "Clear override"}
         </button>
@@ -281,7 +281,7 @@ export function PointCalcOverridePanel({
           disabled={busy}
           data-pending-bystander="busy"
           onClick={onCancel}
-          className="rounded border border-gray-200 px-3 py-1.5 text-xs font-semibold text-bms-muted disabled:opacity-60"
+          className="rounded border border-line px-3 py-1.5 text-xs font-semibold text-ink-muted disabled:opacity-60"
         >
           Close
         </button>

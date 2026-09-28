@@ -181,28 +181,28 @@ export function AlarmDetailsPanel({ alarmId, readOnly, onClose }: AlarmDetailsPa
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-scrim/40 p-4"
       role="dialog"
       aria-modal="true"
       aria-labelledby="alarm-details-title"
     >
-      <div className="w-full max-w-lg max-h-[90vh] overflow-y-auto rounded-lg bg-white p-6 shadow-xl">
+      <div className="w-full max-w-lg max-h-[90vh] overflow-y-auto rounded-lg bg-surface p-6 shadow-xl">
         <div className="flex items-start justify-between">
           <h2 id="alarm-details-title" className="font-condensed text-lg font-bold">
             Alarm details
           </h2>
           <button
             type="button"
-            className="text-sm text-bms-muted hover:text-bms-ink"
+            className="text-sm text-ink-muted hover:text-ink"
             onClick={onClose}
           >
             Close
           </button>
         </div>
 
-        {detailsQ.isLoading ? <p className="mt-4 text-sm text-bms-muted">Loading…</p> : null}
+        {detailsQ.isLoading ? <p className="mt-4 text-sm text-ink-muted">Loading…</p> : null}
         {detailsQ.isError ? (
-          <p className="mt-4 text-sm text-red-600" role="alert">
+          <p className="mt-4 text-sm text-critical-ink-soft" role="alert">
             {(detailsQ.error as Error).message}
           </p>
         ) : null}
@@ -212,17 +212,17 @@ export function AlarmDetailsPanel({ alarmId, readOnly, onClose }: AlarmDetailsPa
             <div className="flex items-center gap-2">
               <StatusPill label={details.severity} tone={alarmSeverityTone(details.severity, severities)} />
               <span className="font-medium">{details.assetCode}</span>
-              <span className="text-bms-muted">{details.assetName}</span>
+              <span className="text-ink-muted">{details.assetName}</span>
             </div>
-            <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs text-bms-muted">
+            <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs text-ink-muted">
               <div>
-                <span className="font-semibold text-bms-ink">Type</span> {details.assetDomain}
+                <span className="font-semibold text-ink">Type</span> {details.assetDomain}
               </div>
               <div>
-                <span className="font-semibold text-bms-ink">Location</span> {details.locationName}
+                <span className="font-semibold text-ink">Location</span> {details.locationName}
               </div>
               <div>
-                <span className="font-semibold text-bms-ink">Triggered</span>{" "}
+                <span className="font-semibold text-ink">Triggered</span>{" "}
                 {new Date(details.raisedAt).toLocaleString()}
               </div>
               {/*
@@ -234,26 +234,26 @@ export function AlarmDetailsPanel({ alarmId, readOnly, onClose }: AlarmDetailsPa
                 acknowledgement is outstanding.
               */}
               <div>
-                <span className="font-semibold text-bms-ink">State</span>{" "}
+                <span className="font-semibold text-ink">State</span>{" "}
                 {alarmStateLabel(alarmLifecycleState(details))}
               </div>
               {details.clearedAt ? (
                 <div>
-                  <span className="font-semibold text-bms-ink">Cleared</span>{" "}
+                  <span className="font-semibold text-ink">Cleared</span>{" "}
                   {new Date(details.clearedAt).toLocaleString()}
                 </div>
               ) : null}
             </div>
 
             {pairing ? (
-              <div className="rounded border border-gray-200 bg-gray-50 px-3 py-2 text-xs">
-                <span className="font-semibold text-bms-ink">Current value</span>{" "}
+              <div className="rounded border border-line bg-well px-3 py-2 text-xs">
+                <span className="font-semibold text-ink">Current value</span>{" "}
                 <span className="font-mono">{pairing.current}</span>
-                <span className="mx-2 text-bms-muted">vs threshold</span>
+                <span className="mx-2 text-ink-muted">vs threshold</span>
                 <span className="font-mono">{pairing.threshold}</span>
               </div>
             ) : (
-              <p className="text-xs text-bms-muted">No linked rule — no threshold to compare against.</p>
+              <p className="text-xs text-ink-muted">No linked rule — no threshold to compare against.</p>
             )}
 
             <p className="text-sm">{details.message}</p>
@@ -275,10 +275,10 @@ export function AlarmDetailsPanel({ alarmId, readOnly, onClose }: AlarmDetailsPa
             {details.classPhilosophy ? (
               <section
                 aria-label="Class philosophy"
-                className="rounded border border-sky-200 bg-sky-50/60 px-3 py-2"
+                className="rounded border border-info-line bg-info-wash/60 px-3 py-2"
               >
-                <h3 className="text-xs font-semibold text-bms-ink">Class philosophy</h3>
-                <p className="mt-0.5 text-[11px] text-bms-muted">
+                <h3 className="text-xs font-semibold text-ink">Class philosophy</h3>
+                <p className="mt-0.5 text-[11px] text-ink-muted">
                   Authored on {details.classPhilosophy.templateName} v
                   {details.classPhilosophy.templateVersion} — it describes this asset class,
                   not this alarm.
@@ -298,8 +298,8 @@ export function AlarmDetailsPanel({ alarmId, readOnly, onClose }: AlarmDetailsPa
                     .filter(([, value]) => value !== null)
                     .map(([label, value]) => (
                       <div key={label}>
-                        <dt className="font-semibold text-bms-ink">{label}</dt>
-                        <dd className="text-bms-muted">{value}</dd>
+                        <dt className="font-semibold text-ink">{label}</dt>
+                        <dd className="text-ink-muted">{value}</dd>
                       </div>
                     ))}
                 </dl>
@@ -310,44 +310,44 @@ export function AlarmDetailsPanel({ alarmId, readOnly, onClose }: AlarmDetailsPa
               details.enrichment ? (
                 <dl className="space-y-2 text-xs">
                   <div>
-                    <dt className="font-semibold text-bms-ink">Root cause</dt>
-                    <dd className="text-bms-muted">{details.enrichment.rootCause ?? "—"}</dd>
+                    <dt className="font-semibold text-ink">Root cause</dt>
+                    <dd className="text-ink-muted">{details.enrichment.rootCause ?? "—"}</dd>
                   </div>
                   <div>
-                    <dt className="font-semibold text-bms-ink">Impact</dt>
-                    <dd className="text-bms-muted">{details.enrichment.impact ?? "—"}</dd>
+                    <dt className="font-semibold text-ink">Impact</dt>
+                    <dd className="text-ink-muted">{details.enrichment.impact ?? "—"}</dd>
                   </div>
                   <div>
-                    <dt className="font-semibold text-bms-ink">Corrective actions</dt>
-                    <dd className="text-bms-muted">{details.enrichment.correctiveActions ?? "—"}</dd>
+                    <dt className="font-semibold text-ink">Corrective actions</dt>
+                    <dd className="text-ink-muted">{details.enrichment.correctiveActions ?? "—"}</dd>
                   </div>
                   <div>
-                    <dt className="font-semibold text-bms-ink">Energy impact</dt>
-                    <dd className="text-bms-muted">{details.enrichment.energyImpact ?? "—"}</dd>
+                    <dt className="font-semibold text-ink">Energy impact</dt>
+                    <dd className="text-ink-muted">{details.enrichment.energyImpact ?? "—"}</dd>
                   </div>
                   <div>
-                    <dt className="font-semibold text-bms-ink">Water impact</dt>
-                    <dd className="text-bms-muted">{details.enrichment.waterImpact ?? "—"}</dd>
+                    <dt className="font-semibold text-ink">Water impact</dt>
+                    <dd className="text-ink-muted">{details.enrichment.waterImpact ?? "—"}</dd>
                   </div>
                   <div>
-                    <dt className="font-semibold text-bms-ink">Production impact</dt>
-                    <dd className="text-bms-muted">{details.enrichment.productionImpact ?? "—"}</dd>
+                    <dt className="font-semibold text-ink">Production impact</dt>
+                    <dd className="text-ink-muted">{details.enrichment.productionImpact ?? "—"}</dd>
                   </div>
                   <div>
-                    <dt className="font-semibold text-bms-ink">ETR</dt>
-                    <dd className="text-bms-muted">
+                    <dt className="font-semibold text-ink">ETR</dt>
+                    <dd className="text-ink-muted">
                       {details.enrichment.etrAt ? new Date(details.enrichment.etrAt).toLocaleString() : "—"}
                     </dd>
                   </div>
                   <div>
-                    <dt className="font-semibold text-bms-ink">Skill</dt>
-                    <dd className="text-bms-muted">
+                    <dt className="font-semibold text-ink">Skill</dt>
+                    <dd className="text-ink-muted">
                       {alarmSkillLabel(details.enrichment.skillCode, skills) ?? "—"}
                     </dd>
                   </div>
                   <div>
-                    <dt className="font-semibold text-bms-ink">Affected assets</dt>
-                    <dd className="text-bms-muted">
+                    <dt className="font-semibold text-ink">Affected assets</dt>
+                    <dd className="text-ink-muted">
                       {details.enrichment.affectedAssets.length > 0
                         ? details.enrichment.affectedAssets.map((a) => a.assetCode).join(", ")
                         : "—"}
@@ -355,41 +355,41 @@ export function AlarmDetailsPanel({ alarmId, readOnly, onClose }: AlarmDetailsPa
                   </div>
                 </dl>
               ) : (
-                <p className="text-xs text-bms-muted">No enrichment recorded yet.</p>
+                <p className="text-xs text-ink-muted">No enrichment recorded yet.</p>
               )
             ) : (
-              <form className="space-y-3 border-t border-gray-100 pt-3" onSubmit={submit}>
+              <form className="space-y-3 border-t border-well-deep pt-3" onSubmit={submit}>
                 <div>
-                  <label className="text-xs font-medium text-bms-muted" htmlFor="root-cause">
+                  <label className="text-xs font-medium text-ink-muted" htmlFor="root-cause">
                     Root cause
                   </label>
                   <textarea
                     id="root-cause"
-                    className="mt-1 w-full rounded border border-gray-300 px-3 py-2 text-sm"
+                    className="mt-1 w-full rounded border border-line-strong px-3 py-2 text-sm"
                     rows={2}
                     value={form.rootCause}
                     onChange={(ev) => setForm((f) => ({ ...f, rootCause: ev.target.value }))}
                   />
                 </div>
                 <div>
-                  <label className="text-xs font-medium text-bms-muted" htmlFor="impact">
+                  <label className="text-xs font-medium text-ink-muted" htmlFor="impact">
                     Impact
                   </label>
                   <textarea
                     id="impact"
-                    className="mt-1 w-full rounded border border-gray-300 px-3 py-2 text-sm"
+                    className="mt-1 w-full rounded border border-line-strong px-3 py-2 text-sm"
                     rows={2}
                     value={form.impact}
                     onChange={(ev) => setForm((f) => ({ ...f, impact: ev.target.value }))}
                   />
                 </div>
                 <div>
-                  <label className="text-xs font-medium text-bms-muted" htmlFor="corrective-actions">
+                  <label className="text-xs font-medium text-ink-muted" htmlFor="corrective-actions">
                     Corrective actions
                   </label>
                   <textarea
                     id="corrective-actions"
-                    className="mt-1 w-full rounded border border-gray-300 px-3 py-2 text-sm"
+                    className="mt-1 w-full rounded border border-line-strong px-3 py-2 text-sm"
                     rows={2}
                     value={form.correctiveActions}
                     onChange={(ev) => setForm((f) => ({ ...f, correctiveActions: ev.target.value }))}
@@ -397,36 +397,36 @@ export function AlarmDetailsPanel({ alarmId, readOnly, onClose }: AlarmDetailsPa
                 </div>
                 <div className="grid grid-cols-3 gap-2">
                   <div>
-                    <label className="text-xs font-medium text-bms-muted" htmlFor="energy-impact">
+                    <label className="text-xs font-medium text-ink-muted" htmlFor="energy-impact">
                       Energy impact
                     </label>
                     <textarea
                       id="energy-impact"
-                      className="mt-1 w-full rounded border border-gray-300 px-3 py-2 text-sm"
+                      className="mt-1 w-full rounded border border-line-strong px-3 py-2 text-sm"
                       rows={2}
                       value={form.energyImpact}
                       onChange={(ev) => setForm((f) => ({ ...f, energyImpact: ev.target.value }))}
                     />
                   </div>
                   <div>
-                    <label className="text-xs font-medium text-bms-muted" htmlFor="water-impact">
+                    <label className="text-xs font-medium text-ink-muted" htmlFor="water-impact">
                       Water impact
                     </label>
                     <textarea
                       id="water-impact"
-                      className="mt-1 w-full rounded border border-gray-300 px-3 py-2 text-sm"
+                      className="mt-1 w-full rounded border border-line-strong px-3 py-2 text-sm"
                       rows={2}
                       value={form.waterImpact}
                       onChange={(ev) => setForm((f) => ({ ...f, waterImpact: ev.target.value }))}
                     />
                   </div>
                   <div>
-                    <label className="text-xs font-medium text-bms-muted" htmlFor="production-impact">
+                    <label className="text-xs font-medium text-ink-muted" htmlFor="production-impact">
                       Production impact
                     </label>
                     <textarea
                       id="production-impact"
-                      className="mt-1 w-full rounded border border-gray-300 px-3 py-2 text-sm"
+                      className="mt-1 w-full rounded border border-line-strong px-3 py-2 text-sm"
                       rows={2}
                       value={form.productionImpact}
                       onChange={(ev) => setForm((f) => ({ ...f, productionImpact: ev.target.value }))}
@@ -434,12 +434,12 @@ export function AlarmDetailsPanel({ alarmId, readOnly, onClose }: AlarmDetailsPa
                   </div>
                 </div>
                 <div>
-                  <label className="text-xs font-medium text-bms-muted" htmlFor="skill-code">
+                  <label className="text-xs font-medium text-ink-muted" htmlFor="skill-code">
                     Skill / trade
                   </label>
                   <select
                     id="skill-code"
-                    className="mt-1 w-full rounded border border-gray-300 px-3 py-2 text-sm"
+                    className="mt-1 w-full rounded border border-line-strong px-3 py-2 text-sm"
                     value={form.skillCode}
                     onChange={(ev) => setForm((f) => ({ ...f, skillCode: ev.target.value }))}
                   >
@@ -452,19 +452,19 @@ export function AlarmDetailsPanel({ alarmId, readOnly, onClose }: AlarmDetailsPa
                   </select>
                 </div>
                 <div>
-                  <label className="text-xs font-medium text-bms-muted" htmlFor="etr">
+                  <label className="text-xs font-medium text-ink-muted" htmlFor="etr">
                     ETR
                   </label>
                   <input
                     id="etr"
                     type="datetime-local"
-                    className="mt-1 w-full rounded border border-gray-300 px-3 py-2 text-sm"
+                    className="mt-1 w-full rounded border border-line-strong px-3 py-2 text-sm"
                     value={form.etrAt}
                     onChange={(ev) => setForm((f) => ({ ...f, etrAt: ev.target.value }))}
                   />
                 </div>
                 <div>
-                  <label className="text-xs font-medium text-bms-muted" htmlFor="affected-assets-search">
+                  <label className="text-xs font-medium text-ink-muted" htmlFor="affected-assets-search">
                     Affected assets
                   </label>
                   {form.affectedAssetIds.length > 0 ? (
@@ -474,12 +474,12 @@ export function AlarmDetailsPanel({ alarmId, readOnly, onClose }: AlarmDetailsPa
                         return (
                           <span
                             key={id}
-                            className="inline-flex items-center gap-1 rounded-full border border-gray-300 bg-gray-50 px-2 py-0.5 text-xs"
+                            className="inline-flex items-center gap-1 rounded-full border border-line-strong bg-well px-2 py-0.5 text-xs"
                           >
                             {asset?.code ?? id}
                             <button
                               type="button"
-                              className="text-bms-muted hover:text-red-600"
+                              className="text-ink-muted hover:text-critical-ink-soft"
                               aria-label={`Remove ${asset?.code ?? id}`}
                               onClick={() =>
                                 setForm((f) => ({
@@ -495,19 +495,19 @@ export function AlarmDetailsPanel({ alarmId, readOnly, onClose }: AlarmDetailsPa
                       })}
                     </div>
                   ) : (
-                    <p className="mt-1 text-xs text-bms-muted">None selected.</p>
+                    <p className="mt-1 text-xs text-ink-muted">None selected.</p>
                   )}
                   <input
                     id="affected-assets-search"
                     type="text"
-                    className="mt-2 w-full rounded border border-gray-300 px-3 py-2 text-sm"
+                    className="mt-2 w-full rounded border border-line-strong px-3 py-2 text-sm"
                     placeholder="Search assets by code, name or site…"
                     value={assetQuery}
                     onChange={(ev) => setAssetQuery(ev.target.value)}
                   />
-                  <div className="mt-1 max-h-32 overflow-y-auto rounded border border-gray-200">
+                  <div className="mt-1 max-h-32 overflow-y-auto rounded border border-line">
                     {assetsQ.isLoading ? (
-                      <p className="px-2 py-1 text-xs text-bms-muted">Loading assets…</p>
+                      <p className="px-2 py-1 text-xs text-ink-muted">Loading assets…</p>
                     ) : (
                       (() => {
                         const matches = filterAssetsByQuery(assets, assetQuery);
@@ -517,7 +517,7 @@ export function AlarmDetailsPanel({ alarmId, readOnly, onClose }: AlarmDetailsPa
                             {visible.map((asset) => (
                               <label
                                 key={asset.id}
-                                className="flex items-center gap-2 px-2 py-1 text-xs hover:bg-gray-50"
+                                className="flex items-center gap-2 px-2 py-1 text-xs hover:bg-well"
                               >
                                 <input
                                   type="checkbox"
@@ -530,14 +530,14 @@ export function AlarmDetailsPanel({ alarmId, readOnly, onClose }: AlarmDetailsPa
                                   }
                                 />
                                 <span className="font-medium">{asset.code}</span>
-                                <span className="text-bms-muted">{asset.name}</span>
+                                <span className="text-ink-muted">{asset.name}</span>
                               </label>
                             ))}
                             {visible.length === 0 ? (
-                              <p className="px-2 py-1 text-xs text-bms-muted">No matching assets.</p>
+                              <p className="px-2 py-1 text-xs text-ink-muted">No matching assets.</p>
                             ) : null}
                             {matches.length > visible.length ? (
-                              <p className="border-t border-gray-100 px-2 py-1 text-xs text-bms-muted">
+                              <p className="border-t border-well-deep px-2 py-1 text-xs text-ink-muted">
                                 {matches.length - visible.length} more match — refine your search
                               </p>
                             ) : null}
@@ -548,14 +548,14 @@ export function AlarmDetailsPanel({ alarmId, readOnly, onClose }: AlarmDetailsPa
                   </div>
                 </div>
                 {saveError ? (
-                  <p className="text-xs text-red-600" role="alert">
+                  <p className="text-xs text-critical-ink-soft" role="alert">
                     {saveError}
                   </p>
                 ) : null}
                 <div className="flex justify-end gap-2">
                   <button
                     type="button"
-                    className="rounded px-3 py-2 text-sm text-bms-muted hover:bg-gray-100"
+                    className="rounded px-3 py-2 text-sm text-ink-muted hover:bg-well-deep"
                     onClick={onClose}
                   >
                     Cancel
@@ -564,7 +564,7 @@ export function AlarmDetailsPanel({ alarmId, readOnly, onClose }: AlarmDetailsPa
                     type="submit"
                     disabled={saveM.isPending}
                     aria-busy={saveM.isPending}
-                    className="rounded bg-bms-green px-4 py-2 text-sm font-semibold text-white disabled:opacity-50"
+                    className="rounded bg-accent px-4 py-2 text-sm font-semibold text-on-accent disabled:opacity-50"
                   >
                     {saveM.isPending ? "Saving…" : "Save"}
                   </button>

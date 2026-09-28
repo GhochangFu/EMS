@@ -88,54 +88,56 @@ const kanbanColumns: KanbanColumn[] = [
 function statusStyle(status: WorkOrderStatus): string {
   switch (status) {
     case "closed":
-      return "border-gray-200 bg-gray-100 text-gray-700";
+      return "border-line bg-well-deep text-neutral-ink";
     case "resolved":
-      return "border-emerald-200 bg-emerald-100 text-emerald-800";
+      return "border-accent/20 bg-ok-wash text-ok-ink";
     case "in_progress":
-      return "border-sky-200 bg-sky-100 text-sky-800";
+      return "border-info-line bg-info-wash text-info-ink";
     case "assigned":
-      return "border-indigo-200 bg-indigo-100 text-indigo-800";
+      return "border-info-line bg-info-wash text-info-ink";
     case "open":
-      return "border-amber-200 bg-amber-100 text-amber-900";
+      return "border-warning-line bg-warning-wash-strong text-warning-ink";
   }
 }
 
-function priorityStyle(priority: WorkOrderPriority): string {
+/** Exported for `work-orders-page.spec.tsx` (F3.65b owner ruling R-f: high and medium differ). */
+export function priorityStyle(priority: WorkOrderPriority): string {
   switch (priority) {
     case "critical":
-      return "border-red-200 bg-red-100 text-red-800";
+      return "border-critical-line bg-critical-wash-strong text-critical-ink-strong";
     case "high":
-      return "border-orange-200 bg-orange-100 text-orange-800";
+      return "border-warning bg-warning-wash-strong text-warning-ink";
     case "medium":
-      return "border-amber-200 bg-amber-100 text-amber-900";
+      return "border-warning-line bg-warning-wash text-warning-ink";
     case "low":
-      return "border-gray-200 bg-gray-100 text-gray-700";
+      return "border-line bg-well-deep text-neutral-ink";
   }
 }
 
 function kpiToneStyle(tone?: KanbanColumn["kpiTone"]): string {
   switch (tone) {
     case "warning":
-      return "after:bg-amber-500";
+      return "after:bg-warning";
     case "info":
-      return "after:bg-sky-500";
+      return "after:bg-info";
     case "success":
-      return "after:bg-bms-green";
+      return "after:bg-accent";
     default:
-      return "after:bg-bms-green";
+      return "after:bg-accent";
   }
 }
 
-function priorityRailStyle(priority: WorkOrderPriority): string {
+/** Exported for `work-orders-page.spec.tsx` (F3.65b owner ruling R-f: high and medium differ). */
+export function priorityRailStyle(priority: WorkOrderPriority): string {
   switch (priority) {
     case "critical":
-      return "border-l-red-600";
+      return "border-l-critical";
     case "high":
-      return "border-l-orange-500";
+      return "border-l-warning";
     case "medium":
-      return "border-l-amber-500";
+      return "border-l-warning/50";
     case "low":
-      return "border-l-sky-500";
+      return "border-l-info";
   }
 }
 
@@ -498,7 +500,7 @@ export function WorkOrdersPage({ user }: WorkOrdersPageProps) {
     <AppShell
       user={user}
       kpiRibbon={
-        <span className="text-bms-ink">
+        <span className="text-ink">
           Operations · Maintenance Kanban · audited work-order state changes
         </span>
       }
@@ -512,19 +514,19 @@ export function WorkOrdersPage({ user }: WorkOrdersPageProps) {
             <>
             <button
               type="button"
-              className="rounded border border-gray-300 px-3 py-2 text-xs font-semibold text-bms-ink hover:bg-gray-50"
+              className="rounded border border-line-strong px-3 py-2 text-xs font-semibold text-ink hover:bg-well"
             >
               Filter
             </button>
             <button
               type="button"
-              className="rounded border border-gray-300 px-3 py-2 text-xs font-semibold text-bms-ink hover:bg-gray-50"
+              className="rounded border border-line-strong px-3 py-2 text-xs font-semibold text-ink hover:bg-well"
             >
               Export
             </button>
             <button
               type="button"
-              className="rounded bg-bms-green px-4 py-2 text-xs font-semibold text-white hover:bg-bms-green-dark"
+              className="rounded bg-accent px-4 py-2 text-xs font-semibold text-on-accent hover:bg-accent-strong"
               onClick={openCreate}
             >
               + New WO
@@ -537,18 +539,18 @@ export function WorkOrdersPage({ user }: WorkOrdersPageProps) {
           {kanbanColumns.map((column) => (
             <div
               key={column.key}
-              className={`relative overflow-hidden rounded-lg border border-gray-200 bg-white p-4 shadow-sm after:absolute after:inset-x-0 after:top-0 after:h-0.5 ${kpiToneStyle(column.kpiTone)}`}
+              className={`relative overflow-hidden rounded-lg border border-line bg-surface p-4 shadow-sm after:absolute after:inset-x-0 after:top-0 after:h-0.5 ${kpiToneStyle(column.kpiTone)}`}
             >
-              <div className="flex items-center gap-2 text-[10px] font-bold uppercase tracking-[0.14em] text-bms-muted">
-                <span className="grid h-6 w-6 place-items-center rounded bg-bms-green/10 text-bms-green">
+              <div className="flex items-center gap-2 text-[10px] font-bold uppercase tracking-[0.14em] text-ink-muted">
+                <span className="grid h-6 w-6 place-items-center rounded bg-accent/10 text-accent">
                   WO
                 </span>
                 {column.kpiLabel}
               </div>
-              <div className="mt-3 font-condensed text-2xl font-bold text-bms-ink">
+              <div className="mt-3 font-condensed text-2xl font-bold text-ink">
                 {rowsByStatus[column.key].length}
               </div>
-              <div className="mt-1 text-xs text-bms-muted">
+              <div className="mt-1 text-xs text-ink-muted">
                 {column.key === "closed"
                   ? "Completed in current list"
                   : "Active maintenance queue"}
@@ -557,11 +559,11 @@ export function WorkOrdersPage({ user }: WorkOrdersPageProps) {
           ))}
         </section>
 
-        <section className="grid gap-3 rounded-lg border border-gray-200 bg-white p-3 shadow-sm md:grid-cols-4">
-          <label className="text-xs font-medium text-bms-muted">
+        <section className="grid gap-3 rounded-lg border border-line bg-surface p-3 shadow-sm md:grid-cols-4">
+          <label className="text-xs font-medium text-ink-muted">
             Status
             <select
-              className="mt-1 w-full rounded border border-gray-300 bg-white px-2 py-2 text-sm text-bms-ink"
+              className="mt-1 w-full rounded border border-line-strong bg-surface px-2 py-2 text-sm text-ink"
               value={statusFilter}
               onChange={(ev) => setStatusFilter(ev.target.value as StatusFilter)}
             >
@@ -573,10 +575,10 @@ export function WorkOrdersPage({ user }: WorkOrdersPageProps) {
               ))}
             </select>
           </label>
-          <label className="text-xs font-medium text-bms-muted">
+          <label className="text-xs font-medium text-ink-muted">
             Asset
             <select
-              className="mt-1 w-full rounded border border-gray-300 bg-white px-2 py-2 text-sm text-bms-ink"
+              className="mt-1 w-full rounded border border-line-strong bg-surface px-2 py-2 text-sm text-ink"
               value={assetFilter}
               onChange={(ev) => setAssetFilter(ev.target.value)}
             >
@@ -588,10 +590,10 @@ export function WorkOrdersPage({ user }: WorkOrdersPageProps) {
               ))}
             </select>
           </label>
-          <label className="text-xs font-medium text-bms-muted">
+          <label className="text-xs font-medium text-ink-muted">
             Priority
             <select
-              className="mt-1 w-full rounded border border-gray-300 bg-white px-2 py-2 text-sm text-bms-ink"
+              className="mt-1 w-full rounded border border-line-strong bg-surface px-2 py-2 text-sm text-ink"
               value={priorityFilter}
               onChange={(ev) =>
                 setPriorityFilter(ev.target.value as PriorityFilter)
@@ -605,8 +607,8 @@ export function WorkOrdersPage({ user }: WorkOrdersPageProps) {
               ))}
             </select>
           </label>
-          <div className="rounded bg-bms-canvas px-3 py-2 text-xs text-bms-muted">
-            <div className="font-condensed text-lg font-bold text-bms-ink">
+          <div className="rounded bg-canvas px-3 py-2 text-xs text-ink-muted">
+            <div className="font-condensed text-lg font-bold text-ink">
               {filteredRows.length}
             </div>
             Matching work orders
@@ -614,16 +616,16 @@ export function WorkOrdersPage({ user }: WorkOrdersPageProps) {
         </section>
 
         {workOrdersQ.isLoading ? (
-          <p className="text-sm text-bms-muted">Loading work orders…</p>
+          <p className="text-sm text-ink-muted">Loading work orders…</p>
         ) : workOrdersQ.isError ? (
-          <p className="text-sm text-red-600">Could not load work orders.</p>
+          <p className="text-sm text-critical-ink-soft">Could not load work orders.</p>
         ) : (
           <div className="grid gap-3 xl:grid-cols-5">
             {kanbanColumns.map((column) => (
               <section
                 key={column.key}
-                className={`max-h-[60vh] overflow-auto rounded-lg bg-gray-200 p-2 transition ${
-                  dropTarget?.status === column.key ? "ring-2 ring-bms-green/40" : ""
+                className={`max-h-[60vh] overflow-auto rounded-lg bg-line p-2 transition ${
+                  dropTarget?.status === column.key ? "ring-2 ring-focus/40" : ""
                 }`}
                 onDragOver={(ev) =>
                   handleDragOver(
@@ -636,15 +638,15 @@ export function WorkOrdersPage({ user }: WorkOrdersPageProps) {
                   handleDrop(column.key, rowsByStatus[column.key].length)
                 }
               >
-                <div className="mb-2 flex items-center justify-between px-1 text-[11px] font-bold uppercase tracking-wide text-bms-muted">
+                <div className="mb-2 flex items-center justify-between px-1 text-[11px] font-bold uppercase tracking-wide text-ink-muted">
                   <span>{column.label}</span>
-                  <span className="rounded-full bg-white px-2 py-0.5 font-mono text-[10px] text-bms-muted">
+                  <span className="rounded-full bg-surface px-2 py-0.5 font-mono text-[10px] text-ink-muted">
                     {rowsByStatus[column.key].length}
                   </span>
                 </div>
                 <div className="space-y-2">
                   {rowsByStatus[column.key].length === 0 ? (
-                    <div className="rounded border border-dashed border-gray-300 bg-white/70 px-3 py-6 text-center text-xs text-bms-muted">
+                    <div className="rounded border border-dashed border-line-strong bg-surface/70 px-3 py-6 text-center text-xs text-ink-muted">
                       Drop work orders here
                     </div>
                   ) : (
@@ -652,12 +654,12 @@ export function WorkOrdersPage({ user }: WorkOrdersPageProps) {
                       <article
                         key={row.id}
                         draggable
-                        className={`cursor-grab rounded-md border border-gray-200 border-l-4 bg-white p-3 shadow-sm transition active:cursor-grabbing ${
+                        className={`cursor-grab rounded-md border border-line border-l-4 bg-surface p-3 shadow-sm transition active:cursor-grabbing ${
                           dragState?.id === row.id ? "opacity-50" : ""
                         } ${
                           dropTarget?.status === column.key &&
                           dropTarget.index === index
-                            ? "ring-2 ring-bms-green/50"
+                            ? "ring-2 ring-focus/50"
                             : ""
                         } ${priorityRailStyle(row.priority)}`}
                         onDragStart={(ev) => {
@@ -672,14 +674,14 @@ export function WorkOrdersPage({ user }: WorkOrdersPageProps) {
                         }}
                         onDragEnd={handleDragEnd}
                       >
-                        <div className="flex items-center justify-between gap-2 font-mono text-[10px] text-bms-muted">
+                        <div className="flex items-center justify-between gap-2 font-mono text-[10px] text-ink-muted">
                           <span>WO-{row.id.slice(0, 8).toUpperCase()}</span>
                           <span title="Drag to reorder">drag</span>
                         </div>
-                        <h2 className="mt-1 text-sm font-semibold text-bms-ink">
+                        <h2 className="mt-1 text-sm font-semibold text-ink">
                           {row.title}
                         </h2>
-                        <p className="mt-1 line-clamp-2 text-xs text-bms-muted">
+                        <p className="mt-1 line-clamp-2 text-xs text-ink-muted">
                           {row.description ?? "No description"}
                         </p>
                         <div className="mt-3 flex flex-wrap gap-1">
@@ -694,22 +696,22 @@ export function WorkOrdersPage({ user }: WorkOrdersPageProps) {
                             {statusLabels[row.status]}
                           </span>
                         </div>
-                        <div className="mt-3 flex items-center justify-between gap-2 font-mono text-[10px] text-bms-muted">
+                        <div className="mt-3 flex items-center justify-between gap-2 font-mono text-[10px] text-ink-muted">
                           <span>{row.assetCode}</span>
                           <span>{new Date(row.updatedAt).toLocaleDateString()}</span>
                         </div>
-                        <div className="mt-1 text-[10px] text-bms-muted">
+                        <div className="mt-1 text-[10px] text-ink-muted">
                           {row.assetName} · {row.siteName}
                         </div>
                         {row.alarmId ? (
-                          <div className="mt-2 rounded bg-bms-canvas px-2 py-1 font-mono text-[10px] text-bms-muted">
+                          <div className="mt-2 rounded bg-canvas px-2 py-1 font-mono text-[10px] text-ink-muted">
                             Alarm {row.alarmId.slice(0, 8)}
                           </div>
                         ) : null}
                         <div className="mt-3 flex justify-end gap-2">
                           <button
                             type="button"
-                            className="rounded border border-gray-300 px-2 py-1 text-[11px] font-semibold text-bms-ink hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
+                            className="rounded border border-line-strong px-2 py-1 text-[11px] font-semibold text-ink hover:bg-well disabled:cursor-not-allowed disabled:opacity-50"
                             onClick={() => openStatusEditor(row)}
                             disabled={row.status === "closed"}
                           >
@@ -717,7 +719,7 @@ export function WorkOrdersPage({ user }: WorkOrdersPageProps) {
                           </button>
                           <button
                             type="button"
-                            className="rounded bg-bms-green px-2 py-1 text-[11px] font-semibold text-white hover:bg-bms-green-dark disabled:cursor-not-allowed disabled:opacity-50"
+                            className="rounded bg-accent px-2 py-1 text-[11px] font-semibold text-on-accent hover:bg-accent-strong disabled:cursor-not-allowed disabled:opacity-50"
                             onClick={() => openClose(row)}
                             disabled={row.status === "closed"}
                           >
@@ -733,7 +735,7 @@ export function WorkOrdersPage({ user }: WorkOrdersPageProps) {
           </div>
         )}
         {dragError ? (
-          <p className="text-xs text-red-600" role="alert">
+          <p className="text-xs text-critical-ink-soft" role="alert">
             Kanban order was not saved: {dragError}
           </p>
         ) : null}
@@ -741,12 +743,12 @@ export function WorkOrdersPage({ user }: WorkOrdersPageProps) {
 
       {createOpen ? (
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-scrim/40 p-4"
           role="dialog"
           aria-modal="true"
           aria-labelledby="work-order-create-title"
         >
-          <div className="w-full max-w-lg rounded-lg bg-white p-6 shadow-xl">
+          <div className="w-full max-w-lg rounded-lg bg-surface p-6 shadow-xl">
             <h2
               id="work-order-create-title"
               className="font-condensed text-lg font-bold"
@@ -754,10 +756,10 @@ export function WorkOrdersPage({ user }: WorkOrdersPageProps) {
               Create work order
             </h2>
             <form className="mt-4 space-y-3" onSubmit={submitCreate}>
-              <label className="block text-xs font-medium text-bms-muted">
+              <label className="block text-xs font-medium text-ink-muted">
                 Asset
                 <select
-                  className="mt-1 w-full rounded border border-gray-300 bg-white px-3 py-2 text-sm text-bms-ink"
+                  className="mt-1 w-full rounded border border-line-strong bg-surface px-3 py-2 text-sm text-ink"
                   value={assetId}
                   onChange={(ev) => setAssetId(ev.target.value)}
                   required
@@ -772,10 +774,10 @@ export function WorkOrdersPage({ user }: WorkOrdersPageProps) {
                   ))}
                 </select>
               </label>
-              <label className="block text-xs font-medium text-bms-muted">
+              <label className="block text-xs font-medium text-ink-muted">
                 Title
                 <input
-                  className="mt-1 w-full rounded border border-gray-300 px-3 py-2 text-sm"
+                  className="mt-1 w-full rounded border border-line-strong px-3 py-2 text-sm"
                   value={title}
                   onChange={(ev) => setTitle(ev.target.value)}
                   minLength={3}
@@ -783,20 +785,20 @@ export function WorkOrdersPage({ user }: WorkOrdersPageProps) {
                   required
                 />
               </label>
-              <label className="block text-xs font-medium text-bms-muted">
+              <label className="block text-xs font-medium text-ink-muted">
                 Description
                 <textarea
-                  className="mt-1 w-full rounded border border-gray-300 px-3 py-2 text-sm"
+                  className="mt-1 w-full rounded border border-line-strong px-3 py-2 text-sm"
                   rows={3}
                   value={description}
                   onChange={(ev) => setDescription(ev.target.value)}
                   maxLength={4000}
                 />
               </label>
-              <label className="block text-xs font-medium text-bms-muted">
+              <label className="block text-xs font-medium text-ink-muted">
                 Priority
                 <select
-                  className="mt-1 w-full rounded border border-gray-300 bg-white px-3 py-2 text-sm"
+                  className="mt-1 w-full rounded border border-line-strong bg-surface px-3 py-2 text-sm"
                   value={priority}
                   onChange={(ev) => setPriority(ev.target.value as WorkOrderPriority)}
                 >
@@ -808,19 +810,19 @@ export function WorkOrdersPage({ user }: WorkOrdersPageProps) {
                 </select>
               </label>
               {alarmId ? (
-                <p className="rounded bg-bms-canvas px-3 py-2 font-mono text-[11px] text-bms-muted">
+                <p className="rounded bg-canvas px-3 py-2 font-mono text-[11px] text-ink-muted">
                   Linked alarm: {alarmId}
                 </p>
               ) : null}
               {createError ? (
-                <p className="text-xs text-red-600" role="alert">
+                <p className="text-xs text-critical-ink-soft" role="alert">
                   {createError}
                 </p>
               ) : null}
               <div className="flex justify-end gap-2">
                 <button
                   type="button"
-                  className="rounded px-3 py-2 text-sm text-bms-muted hover:bg-gray-100"
+                  className="rounded px-3 py-2 text-sm text-ink-muted hover:bg-well-deep"
                   onClick={closeCreate}
                 >
                   Cancel
@@ -834,7 +836,7 @@ export function WorkOrdersPage({ user }: WorkOrdersPageProps) {
                     assetsQ.isLoading
                   }
                   aria-busy={createM.isPending}
-                  className="rounded bg-bms-green px-4 py-2 text-sm font-semibold text-white disabled:opacity-50"
+                  className="rounded bg-accent px-4 py-2 text-sm font-semibold text-on-accent disabled:opacity-50"
                 >
                   {createM.isPending ? "Creating…" : "Create"}
                 </button>
@@ -846,24 +848,24 @@ export function WorkOrdersPage({ user }: WorkOrdersPageProps) {
 
       {editTarget ? (
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-scrim/40 p-4"
           role="dialog"
           aria-modal="true"
           aria-labelledby="work-order-status-title"
         >
-          <div className="w-full max-w-md rounded-lg bg-white p-6 shadow-xl">
+          <div className="w-full max-w-md rounded-lg bg-surface p-6 shadow-xl">
             <h2
               id="work-order-status-title"
               className="font-condensed text-lg font-bold"
             >
               Edit status
             </h2>
-            <p className="mt-1 text-xs text-bms-muted">{editTarget.title}</p>
+            <p className="mt-1 text-xs text-ink-muted">{editTarget.title}</p>
             <form className="mt-4 space-y-3" onSubmit={submitStatus}>
-              <label className="block text-xs font-medium text-bms-muted">
+              <label className="block text-xs font-medium text-ink-muted">
                 New status
                 <select
-                  className="mt-1 w-full rounded border border-gray-300 bg-white px-3 py-2 text-sm"
+                  className="mt-1 w-full rounded border border-line-strong bg-surface px-3 py-2 text-sm"
                   value={nextStatus}
                   onChange={(ev) => setNextStatus(ev.target.value as WorkOrderStatus)}
                 >
@@ -874,10 +876,10 @@ export function WorkOrdersPage({ user }: WorkOrdersPageProps) {
                   ))}
                 </select>
               </label>
-              <label className="block text-xs font-medium text-bms-muted">
+              <label className="block text-xs font-medium text-ink-muted">
                 Reason
                 <textarea
-                  className="mt-1 w-full rounded border border-gray-300 px-3 py-2 text-sm"
+                  className="mt-1 w-full rounded border border-line-strong px-3 py-2 text-sm"
                   rows={3}
                   value={statusReason}
                   onChange={(ev) => setStatusReason(ev.target.value)}
@@ -886,14 +888,14 @@ export function WorkOrdersPage({ user }: WorkOrdersPageProps) {
                 />
               </label>
               {statusError ? (
-                <p className="text-xs text-red-600" role="alert">
+                <p className="text-xs text-critical-ink-soft" role="alert">
                   {statusError}
                 </p>
               ) : null}
               <div className="flex justify-end gap-2">
                 <button
                   type="button"
-                  className="rounded px-3 py-2 text-sm text-bms-muted hover:bg-gray-100"
+                  className="rounded px-3 py-2 text-sm text-ink-muted hover:bg-well-deep"
                   onClick={() => setEditTarget(null)}
                 >
                   Cancel
@@ -902,7 +904,7 @@ export function WorkOrdersPage({ user }: WorkOrdersPageProps) {
                   type="submit"
                   disabled={statusM.isPending}
                   aria-busy={statusM.isPending}
-                  className="rounded bg-bms-green px-4 py-2 text-sm font-semibold text-white disabled:opacity-50"
+                  className="rounded bg-accent px-4 py-2 text-sm font-semibold text-on-accent disabled:opacity-50"
                 >
                   {statusM.isPending ? "Saving…" : "Save status"}
                 </button>
@@ -914,24 +916,24 @@ export function WorkOrdersPage({ user }: WorkOrdersPageProps) {
 
       {closeTarget ? (
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-scrim/40 p-4"
           role="dialog"
           aria-modal="true"
           aria-labelledby="work-order-close-title"
         >
-          <div className="w-full max-w-md rounded-lg bg-white p-6 shadow-xl">
+          <div className="w-full max-w-md rounded-lg bg-surface p-6 shadow-xl">
             <h2
               id="work-order-close-title"
               className="font-condensed text-lg font-bold"
             >
               Close work order
             </h2>
-            <p className="mt-1 text-xs text-bms-muted">{closeTarget.title}</p>
+            <p className="mt-1 text-xs text-ink-muted">{closeTarget.title}</p>
             <form className="mt-4 space-y-3" onSubmit={submitClose}>
-              <label className="block text-xs font-medium text-bms-muted">
+              <label className="block text-xs font-medium text-ink-muted">
                 Closure reason
                 <textarea
-                  className="mt-1 w-full rounded border border-gray-300 px-3 py-2 text-sm"
+                  className="mt-1 w-full rounded border border-line-strong px-3 py-2 text-sm"
                   rows={3}
                   value={closeReason}
                   onChange={(ev) => setCloseReason(ev.target.value)}
@@ -941,14 +943,14 @@ export function WorkOrdersPage({ user }: WorkOrdersPageProps) {
                 />
               </label>
               {closeError ? (
-                <p className="text-xs text-red-600" role="alert">
+                <p className="text-xs text-critical-ink-soft" role="alert">
                   {closeError}
                 </p>
               ) : null}
               <div className="flex justify-end gap-2">
                 <button
                   type="button"
-                  className="rounded px-3 py-2 text-sm text-bms-muted hover:bg-gray-100"
+                  className="rounded px-3 py-2 text-sm text-ink-muted hover:bg-well-deep"
                   onClick={() => {
                     setCloseTarget(null);
                     setCloseSortOrder(undefined);
@@ -960,7 +962,7 @@ export function WorkOrdersPage({ user }: WorkOrdersPageProps) {
                   type="submit"
                   disabled={closeM.isPending || closeReason.trim().length < 3}
                   aria-busy={closeM.isPending}
-                  className="rounded bg-bms-green px-4 py-2 text-sm font-semibold text-white disabled:opacity-50"
+                  className="rounded bg-accent px-4 py-2 text-sm font-semibold text-on-accent disabled:opacity-50"
                 >
                   {closeM.isPending ? "Closing…" : "Close work order"}
                 </button>

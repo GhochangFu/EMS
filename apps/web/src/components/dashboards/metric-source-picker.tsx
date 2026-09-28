@@ -38,7 +38,7 @@ export function MetricSourcePicker({ widgetType, bound, onAdd }: MetricSourcePic
   const isBound = (key: MetricCatalogKey): boolean => bound.includes(key);
 
   return (
-    <div className="space-y-1.5 rounded border border-dashed border-gray-300 p-2">
+    <div className="space-y-1.5 rounded border border-dashed border-line-strong p-2">
       <select
         aria-label="Add named metric"
         value=""
@@ -53,7 +53,7 @@ export function MetricSourcePicker({ widgetType, bound, onAdd }: MetricSourcePic
             onAdd(key);
           }
         }}
-        className="w-full rounded border border-gray-200 px-2 py-1 text-xs"
+        className="w-full rounded border border-line px-2 py-1 text-xs"
       >
         <option value="" disabled>
           Add a named metric…
@@ -74,7 +74,7 @@ export function MetricSourcePicker({ widgetType, bound, onAdd }: MetricSourcePic
           </option>
         ))}
       </select>
-      <p className="text-[11px] leading-snug text-bms-muted">
+      <p className="text-[11px] leading-snug text-ink-muted">
         A named metric is counted across this dashboard&rsquo;s own scope, not the whole
         organization.
       </p>

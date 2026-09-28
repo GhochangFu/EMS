@@ -157,7 +157,7 @@ export function LocationDashboardPage({ user }: LocationDashboardPageProps) {
     <AppShell
       user={user}
       kpiRibbon={
-        <span className="text-bms-ink">
+        <span className="text-ink">
           Location dashboard · {location?.name ?? "Loading"}
         </span>
       }
@@ -175,10 +175,10 @@ export function LocationDashboardPage({ user }: LocationDashboardPageProps) {
 
         {location ? (
           <div className="flex flex-wrap items-center gap-2">
-            <span className="rounded bg-slate-100 px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide text-slate-700">
+            <span className="rounded bg-canvas px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide text-neutral-ink">
               {location.organization.code}
             </span>
-            <span className="rounded bg-gray-100 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wide text-bms-muted">
+            <span className="rounded bg-well-deep px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wide text-ink-muted">
               {location.typeLabel}
             </span>
           </div>
@@ -186,10 +186,10 @@ export function LocationDashboardPage({ user }: LocationDashboardPageProps) {
 
         {q.isError ? (
           <SectionCard title="Access denied" bodyClassName="p-4">
-            <p className="text-sm text-bms-muted">
+            <p className="text-sm text-ink-muted">
               This location is not available in your assigned access scope.
             </p>
-            <Link className="mt-3 inline-block text-sm font-semibold text-bms-green" to="/">
+            <Link className="mt-3 inline-block text-sm font-semibold text-accent" to="/">
               Return to Main Dashboard
             </Link>
           </SectionCard>
@@ -242,8 +242,8 @@ export function LocationDashboardPage({ user }: LocationDashboardPageProps) {
                     type="button"
                     className={`rounded border px-3 py-1.5 text-xs font-semibold ${
                       rtuFilter === "all"
-                        ? "border-bms-green bg-emerald-50 text-emerald-900"
-                        : "border-gray-200 bg-white text-bms-ink"
+                        ? "border-accent bg-ok-wash text-ok-ink"
+                        : "border-line bg-surface text-ink"
                     }`}
                     onClick={() => {
                       setRtuFilter("all");
@@ -258,8 +258,8 @@ export function LocationDashboardPage({ user }: LocationDashboardPageProps) {
                       type="button"
                       className={`rounded border px-3 py-1.5 text-xs font-semibold ${
                         rtuFilter === rtu.id
-                          ? "border-bms-green bg-emerald-50 text-emerald-900"
-                          : "border-gray-200 bg-white text-bms-ink"
+                          ? "border-accent bg-ok-wash text-ok-ink"
+                          : "border-line bg-surface text-ink"
                       }`}
                       onClick={() => {
                         setRtuFilter(rtu.id);
@@ -274,15 +274,15 @@ export function LocationDashboardPage({ user }: LocationDashboardPageProps) {
                   {location.rtus.map((rtu) => (
                     <div
                       key={rtu.id}
-                      className="rounded-lg border border-gray-200 bg-white p-3 shadow-sm"
+                      className="rounded-lg border border-line bg-surface p-3 shadow-sm"
                     >
-                      <div className="font-semibold text-bms-ink">{rtu.displayName}</div>
-                      <div className="mt-1 text-[11px] uppercase tracking-wide text-bms-muted">
+                      <div className="font-semibold text-ink">{rtu.displayName}</div>
+                      <div className="mt-1 text-[11px] uppercase tracking-wide text-ink-muted">
                         {rtu.sourceType}
                         {rtu.domain ? ` · ${rtu.domain}` : ""}
                         {rtu.ingestEnabled ? " · ingest on" : ""}
                       </div>
-                      <div className="mt-2 font-mono text-sm text-bms-ink">
+                      <div className="mt-2 font-mono text-sm text-ink">
                         {rtu.freshAssetCount}/{rtu.assetCount} fresh
                       </div>
                     </div>
@@ -299,11 +299,11 @@ export function LocationDashboardPage({ user }: LocationDashboardPageProps) {
                   : "All scoped assets with telemetry, alarms, warnings, and work orders"
               }
               actions={
-                <div className="flex items-center gap-2 text-xs text-bms-muted">
+                <div className="flex items-center gap-2 text-xs text-ink-muted">
                   <label className="flex items-center gap-1">
                     Rows
                     <select
-                      className="rounded border border-gray-200 bg-white px-2 py-1 text-bms-ink"
+                      className="rounded border border-line bg-surface px-2 py-1 text-ink"
                       value={pageSize}
                       onChange={(event) => {
                         setPageSize(Number(event.target.value) as typeof pageSize);
@@ -319,7 +319,7 @@ export function LocationDashboardPage({ user }: LocationDashboardPageProps) {
                   </label>
                   <button
                     type="button"
-                    className="rounded border border-gray-200 px-2 py-1 font-semibold text-bms-ink disabled:cursor-not-allowed disabled:opacity-40"
+                    className="rounded border border-line px-2 py-1 font-semibold text-ink disabled:cursor-not-allowed disabled:opacity-40"
                     disabled={!assetPage || assetPage.page <= 1}
                     onClick={() => setPage((current) => Math.max(1, current - 1))}
                   >
@@ -330,7 +330,7 @@ export function LocationDashboardPage({ user }: LocationDashboardPageProps) {
                   </span>
                   <button
                     type="button"
-                    className="rounded border border-gray-200 px-2 py-1 font-semibold text-bms-ink disabled:cursor-not-allowed disabled:opacity-40"
+                    className="rounded border border-line px-2 py-1 font-semibold text-ink disabled:cursor-not-allowed disabled:opacity-40"
                     disabled={!assetPage || assetPage.page >= assetPage.totalPages}
                     onClick={() => setPage((current) => current + 1)}
                   >
@@ -341,17 +341,17 @@ export function LocationDashboardPage({ user }: LocationDashboardPageProps) {
               bodyClassName="p-0"
             >
               {location && location.assetCount === 0 ? (
-                <div className="p-4 text-sm text-bms-muted">
+                <div className="p-4 text-sm text-ink-muted">
                   No assets configured for this location yet.
                 </div>
               ) : location && location.assets.items.length === 0 ? (
-                <div className="p-4 text-sm text-bms-muted">
+                <div className="p-4 text-sm text-ink-muted">
                   No assets on this page. Use the pagination controls to move back.
                 </div>
               ) : (
                 <div className="overflow-hidden">
                   <table className="w-full text-left text-sm">
-                    <thead className="bg-gray-50 text-xs uppercase tracking-wide text-bms-muted">
+                    <thead className="bg-well text-xs uppercase tracking-wide text-ink-muted">
                       <tr>
                         {assetTableColumns.map((column) => (
                           <th
@@ -366,13 +366,13 @@ export function LocationDashboardPage({ user }: LocationDashboardPageProps) {
                     <tbody>
                       {(location?.assets.items ?? []).map((asset) => (
                         <Fragment key={asset.id}>
-                        <tr className="border-t border-gray-100">
+                        <tr className="border-t border-well-deep">
                           <td className="px-3 py-2">
-                            <div className="font-semibold text-bms-ink">{asset.name}</div>
-                            <div className="font-mono text-xs text-bms-muted">
+                            <div className="font-semibold text-ink">{asset.name}</div>
+                            <div className="font-mono text-xs text-ink-muted">
                               {asset.code}
                             </div>
-                            <div className="mt-1 text-[11px] uppercase tracking-wide text-bms-muted">
+                            <div className="mt-1 text-[11px] uppercase tracking-wide text-ink-muted">
                               {asset.domain}
                             </div>
                             <AssetImagesToggleButton
@@ -383,21 +383,21 @@ export function LocationDashboardPage({ user }: LocationDashboardPageProps) {
                               }
                             />
                           </td>
-                          <td className="px-3 py-2 text-xs text-bms-muted">
+                          <td className="px-3 py-2 text-xs text-ink-muted">
                             {asset.rtuDisplayName}
                           </td>
                           <td className="px-3 py-2">
                             {asset.telemetry.length === 0 ? (
-                              <span className="text-xs text-bms-muted">No telemetry points</span>
+                              <span className="text-xs text-ink-muted">No telemetry points</span>
                             ) : (
                               <div className="flex max-w-[420px] flex-wrap gap-1.5">
                                 {asset.telemetry.slice(0, 5).map((sample) => (
                                   <span
                                     key={sample.pointKey}
-                                    className="rounded border border-gray-200 bg-gray-50 px-2 py-1 font-mono text-[11px] text-bms-ink"
+                                    className="rounded border border-line bg-well px-2 py-1 font-mono text-[11px] text-ink"
                                     title={`${sample.pointKey} @ ${formatTime(sample.time)}`}
                                   >
-                                    <span className="font-sans text-bms-muted">
+                                    <span className="font-sans text-ink-muted">
                                       {telemetryLabel(sample.pointKey)}:
                                     </span>{" "}
                                     {formatTelemetryValue(sample)}
@@ -411,7 +411,7 @@ export function LocationDashboardPage({ user }: LocationDashboardPageProps) {
                               label={freshnessLabel(asset.freshness)}
                               tone={freshnessTone(asset.freshness)}
                             />
-                            <div className="mt-1 font-mono text-[11px] text-bms-muted">
+                            <div className="mt-1 font-mono text-[11px] text-ink-muted">
                               {formatTime(asset.latestTelemetryAt)}
                             </div>
                           </td>
@@ -434,18 +434,18 @@ export function LocationDashboardPage({ user }: LocationDashboardPageProps) {
                               ) : null}
                             </div>
                             {asset.latestAlarm ? (
-                              <div className="mt-1 max-w-[320px] truncate text-[11px] text-bms-muted">
+                              <div className="mt-1 max-w-[320px] truncate text-[11px] text-ink-muted">
                                 {asset.latestAlarm.message}
                               </div>
                             ) : null}
                           </td>
                           <td className="px-3 py-2 text-right font-mono">
                             {asset.openWorkOrderCount > 0 ? (
-                              <span className="font-semibold text-amber-700">
+                              <span className="font-semibold text-warning-ink">
                                 {asset.openWorkOrderCount}
                               </span>
                             ) : (
-                              <span className="text-bms-muted">0</span>
+                              <span className="text-ink-muted">0</span>
                             )}
                           </td>
                         </tr>
@@ -483,7 +483,7 @@ export function LocationDashboardPage({ user }: LocationDashboardPageProps) {
                 ].map(([label, path]) => (
                   <Link
                     key={path}
-                    className="rounded border border-gray-200 bg-white px-3 py-2 text-sm font-semibold text-bms-ink hover:border-bms-green"
+                    className="rounded border border-line bg-surface px-3 py-2 text-sm font-semibold text-ink hover:border-accent"
                     to={path}
                   >
                     {label}

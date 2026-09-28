@@ -38,11 +38,11 @@ import type { AssetDomainDto, BadgeTone, RuleCategoryDto } from "@bms/shared";
  * arrive unstyled: it must carry one of these five.
  */
 const TONE_CLASSES: Record<BadgeTone, string> = {
-  critical: "border-red-200 bg-red-50 text-red-700",
-  warning: "border-amber-200 bg-amber-50 text-amber-700",
-  positive: "border-bms-green/20 bg-bms-green/10 text-bms-green",
-  informational: "border-sky-200 bg-sky-50 text-sky-700",
-  neutral: "border-gray-200 bg-white text-bms-muted",
+  critical: "border-critical-line bg-critical-wash text-critical-ink",
+  warning: "border-warning-line bg-warning-wash text-warning-ink",
+  positive: "border-accent/20 bg-accent/10 text-accent",
+  informational: "border-info-line bg-info-wash text-info-ink",
+  neutral: "border-line bg-surface text-ink-muted",
 };
 
 /**

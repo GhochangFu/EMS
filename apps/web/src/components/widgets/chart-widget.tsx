@@ -100,17 +100,17 @@ function ChartFooter({
 }) {
   const format = { decimals: config.decimals, unit: config.unit };
   return (
-    <dl className="mt-2 flex flex-wrap items-baseline gap-x-4 gap-y-1 border-t border-gray-100 pt-2 text-[11px] text-bms-muted">
+    <dl className="mt-2 flex flex-wrap items-baseline gap-x-4 gap-y-1 border-t border-well-deep pt-2 text-[11px] text-ink-muted">
       <div className="flex items-baseline gap-1">
         <dt className="font-medium uppercase tracking-wide">Peak</dt>
-        <dd className="tabular-nums text-bms-ink">
+        <dd className="tabular-nums text-ink">
           {formatWidgetValue(stats?.max ?? null, format)}
           {stats?.peakAt ? (
             // A bucket START, not a sample time — the rollup relations keep no
             // sample timestamps. Rendered at the precision the bucket width
             // implies rather than to the second, which would be a claim the
             // data cannot support.
-            <span className="ml-1 font-normal text-bms-muted">
+            <span className="ml-1 font-normal text-ink-muted">
               · {peakLabel(stats.peakAt, bucketSeconds)}
             </span>
           ) : null}
@@ -118,11 +118,11 @@ function ChartFooter({
       </div>
       <div className="flex items-baseline gap-1">
         <dt className="font-medium uppercase tracking-wide">Average</dt>
-        <dd className="tabular-nums text-bms-ink">{formatWidgetValue(stats?.average ?? null, format)}</dd>
+        <dd className="tabular-nums text-ink">{formatWidgetValue(stats?.average ?? null, format)}</dd>
       </div>
       <div className="flex items-baseline gap-1">
         <dt className="font-medium uppercase tracking-wide">Granularity</dt>
-        <dd className="text-bms-ink">{formatBucketWidth(bucketSeconds)}</dd>
+        <dd className="text-ink">{formatBucketWidth(bucketSeconds)}</dd>
       </div>
     </dl>
   );

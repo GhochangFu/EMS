@@ -184,11 +184,11 @@ export function KpisTab({ template, editable, onSaved, onDirtyChange }: KpisTabP
   return (
     <div className="space-y-3">
       {error ? (
-        <p className="rounded border border-red-200 bg-red-50 p-3 text-sm text-red-800">{error}</p>
+        <p className="rounded border border-critical-line bg-critical-wash p-3 text-sm text-critical-ink-strong">{error}</p>
       ) : null}
 
       {blockedKeys.length > 0 ? (
-        <p className="rounded border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900">
+        <p className="rounded border border-warning-line bg-warning-wash p-3 text-xs text-warning-ink">
           Saving KPIs is blocked: this template holds content that cannot be written back. The
           banner above lists the keys. Editing here is safe — nothing is sent until they are
           removed.
@@ -198,14 +198,14 @@ export function KpisTab({ template, editable, onSaved, onDirtyChange }: KpisTabP
       {sectionProblems.map((problem) => (
         <p
           key={problem.message}
-          className="rounded border border-red-200 bg-red-50 p-3 text-xs text-red-800"
+          className="rounded border border-critical-line bg-critical-wash p-3 text-xs text-critical-ink-strong"
         >
           {problem.message}
         </p>
       ))}
 
       {rows.length === 0 ? (
-        <p className="rounded border border-dashed border-gray-300 p-4 text-xs text-bms-muted">
+        <p className="rounded border border-dashed border-line-strong p-4 text-xs text-ink-muted">
           This template declares no KPIs yet.
         </p>
       ) : null}
@@ -237,7 +237,7 @@ export function KpisTab({ template, editable, onSaved, onDirtyChange }: KpisTabP
         );
 
         return (
-          <section key={index} className="rounded border border-gray-200 p-3">
+          <section key={index} className="rounded border border-line p-3">
             <div className="grid gap-3 md:grid-cols-4">
               <Field label="Code" error={problemFor("code")}>
                 <input
@@ -290,7 +290,7 @@ export function KpisTab({ template, editable, onSaved, onDirtyChange }: KpisTabP
             </div>
 
             <label className="mt-3 block space-y-1">
-              <span className="text-[11px] font-semibold uppercase tracking-wide text-bms-muted">
+              <span className="text-[11px] font-semibold uppercase tracking-wide text-ink-muted">
                 Grammar
               </span>
               <select
@@ -325,11 +325,11 @@ export function KpisTab({ template, editable, onSaved, onDirtyChange }: KpisTabP
               // answers which question. From `V2_REFERENCE_FORMS`, whose
               // examples the parser is proven to accept — the same list the
               // Calculations tab renders, so the two tabs read as one surface.
-              <ul className="mt-1 space-y-0.5 text-[11px] text-bms-muted">
+              <ul className="mt-1 space-y-0.5 text-[11px] text-ink-muted">
                 {V2_REFERENCE_FORMS.map((form) => (
                   <li key={form.form}>
                     <span className="font-semibold">{form.form}</span> — {form.answers}:{" "}
-                    <code className="rounded bg-gray-100 px-1">{form.example}</code>
+                    <code className="rounded bg-well-deep px-1">{form.example}</code>
                   </li>
                 ))}
                 {CALC_DIALECTS.some((known) => known === kpi.dialect && isParameterDialect(known)) ? (
@@ -344,7 +344,7 @@ export function KpisTab({ template, editable, onSaved, onDirtyChange }: KpisTabP
             ) : null}
 
             <label className="mt-3 block space-y-1">
-              <span className="text-[11px] font-semibold uppercase tracking-wide text-bms-muted">
+              <span className="text-[11px] font-semibold uppercase tracking-wide text-ink-muted">
                 Expression
               </span>
               <FormulaEditorLazy
@@ -363,13 +363,13 @@ export function KpisTab({ template, editable, onSaved, onDirtyChange }: KpisTabP
 
             {/* Decision 9: no error under an unvalidated expression. */}
             {validated && live.state === "error" ? (
-              <p className="mt-1 text-[11px] text-red-700">{live.diagnostics[0].message}</p>
+              <p className="mt-1 text-[11px] text-critical-ink">{live.diagnostics[0].message}</p>
             ) : null}
             {problemFor("expression") ? (
-              <p className="mt-1 text-[11px] text-red-700">{problemFor("expression")}</p>
+              <p className="mt-1 text-[11px] text-critical-ink">{problemFor("expression")}</p>
             ) : null}
             {validationErrors[index] ? (
-              <p className="mt-1 text-[11px] text-red-700">{validationErrors[index]}</p>
+              <p className="mt-1 text-[11px] text-critical-ink">{validationErrors[index]}</p>
             ) : null}
             {/* Decision 9 again: an unvalidated expression shows no preview —
                 it is free text the parser has never met, and the panel would
@@ -381,7 +381,7 @@ export function KpisTab({ template, editable, onSaved, onDirtyChange }: KpisTabP
             ) : null}
 
             <div className="mt-2 flex flex-wrap items-center gap-3">
-              <span className="text-[11px] text-bms-muted">
+              <span className="text-[11px] text-ink-muted">
                 {validated
                   ? `Checked · reads ${keys.join(", ") || "nothing"}`
                   : "Not checked — this expression is stored as written."}
@@ -390,7 +390,7 @@ export function KpisTab({ template, editable, onSaved, onDirtyChange }: KpisTabP
                 <button
                   type="button"
                   onClick={() => applyDialect(index, grammar)}
-                  className="rounded border border-gray-200 px-3 py-1 text-[11px] font-semibold text-bms-ink"
+                  className="rounded border border-line px-3 py-1 text-[11px] font-semibold text-ink"
                 >
                   Validate this expression
                 </button>
@@ -414,7 +414,7 @@ export function KpisTab({ template, editable, onSaved, onDirtyChange }: KpisTabP
                     setValidationErrors({});
                     setValidateTargets({});
                   }}
-                  className="rounded border border-red-200 px-3 py-1 text-[11px] font-semibold text-red-700"
+                  className="rounded border border-critical-line px-3 py-1 text-[11px] font-semibold text-critical-ink"
                 >
                   Remove
                 </button>
@@ -446,7 +446,7 @@ export function KpisTab({ template, editable, onSaved, onDirtyChange }: KpisTabP
                 </select>
               </Field>
             ) : problemFor("pointKeys") ? (
-              <p className="mt-1 text-[11px] text-red-700">{problemFor("pointKeys")}</p>
+              <p className="mt-1 text-[11px] text-critical-ink">{problemFor("pointKeys")}</p>
             ) : null}
           </section>
         );
@@ -458,7 +458,7 @@ export function KpisTab({ template, editable, onSaved, onDirtyChange }: KpisTabP
             type="button"
             disabled={rows.length >= MAX_KPI_ENTRIES}
             onClick={() => setRows((current) => [...current, blankKpiRow()])}
-            className="rounded border border-gray-200 px-3 py-1.5 text-xs font-semibold text-bms-ink disabled:opacity-60"
+            className="rounded border border-line px-3 py-1.5 text-xs font-semibold text-ink disabled:opacity-60"
           >
             Add a KPI
           </button>
@@ -467,11 +467,11 @@ export function KpisTab({ template, editable, onSaved, onDirtyChange }: KpisTabP
             disabled={blocked || !changed || saveM.isPending}
             aria-busy={saveM.isPending}
             onClick={() => saveM.mutate()}
-            className="rounded bg-bms-green px-4 py-1.5 text-xs font-semibold text-white disabled:opacity-60"
+            className="rounded bg-accent px-4 py-1.5 text-xs font-semibold text-on-accent disabled:opacity-60"
           >
             {saveM.isPending ? "Saving…" : "Save KPIs"}
           </button>
-          <span className="text-[11px] text-bms-muted">
+          <span className="text-[11px] text-ink-muted">
             {blockedKeys.length > 0
               ? "Blocked by unwritable content."
               : problems.length > 0
@@ -487,8 +487,8 @@ export function KpisTab({ template, editable, onSaved, onDirtyChange }: KpisTabP
 }
 
 function fieldClass(disabled: boolean, problem: string | undefined): string {
-  const tone = problem ? "border-red-300 bg-red-50" : "border-gray-200";
+  const tone = problem ? "border-critical-line-strong bg-critical-wash" : "border-line";
   return `w-full rounded border px-2 py-1.5 text-xs ${tone} ${
-    disabled ? "bg-gray-50 text-bms-muted" : ""
+    disabled ? "bg-well text-ink-muted" : ""
   }`;
 }

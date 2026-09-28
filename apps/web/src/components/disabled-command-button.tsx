@@ -4,7 +4,7 @@ import type { ReactNode } from "react";
 export function DisabledCommandButton({ children }: { children: ReactNode }) {
   return (
     <button
-      className="cursor-not-allowed rounded border border-gray-300 bg-gray-100 px-3 py-1.5 text-xs font-semibold text-bms-muted opacity-70"
+      className="cursor-not-allowed rounded border border-line-strong bg-well-deep px-3 py-1.5 text-xs font-semibold text-ink-muted opacity-70"
       disabled
       type="button"
     >

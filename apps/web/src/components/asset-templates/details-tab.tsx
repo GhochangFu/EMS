@@ -136,7 +136,7 @@ export function DetailsTab({ template, editable, onSaved, onDirtyChange }: Detai
       }}
     >
       {error ? (
-        <p className="rounded border border-red-200 bg-red-50 p-3 text-sm text-red-800">{error}</p>
+        <p className="rounded border border-critical-line bg-critical-wash p-3 text-sm text-critical-ink-strong">{error}</p>
       ) : null}
 
       <div className="grid gap-4 md:grid-cols-2">
@@ -208,11 +208,11 @@ export function DetailsTab({ template, editable, onSaved, onDirtyChange }: Detai
             type="submit"
             disabled={blocked || !patch || saveM.isPending}
             aria-busy={saveM.isPending}
-            className="rounded bg-bms-green px-4 py-1.5 text-xs font-semibold text-white disabled:opacity-60"
+            className="rounded bg-accent px-4 py-1.5 text-xs font-semibold text-on-accent disabled:opacity-60"
           >
             {saveM.isPending ? "Saving…" : "Save details"}
           </button>
-          <span className="text-[11px] text-bms-muted">
+          <span className="text-[11px] text-ink-muted">
             {blocked
               ? "Fix the fields above to save."
               : patch
@@ -229,6 +229,6 @@ export function DetailsTab({ template, editable, onSaved, onDirtyChange }: Detai
 
 function inputClass(disabled: boolean, error: string | undefined): string {
   const base = "w-full rounded border px-2 py-1.5 text-xs";
-  const tone = error ? "border-red-300 bg-red-50" : "border-gray-200";
-  return `${base} ${tone} ${disabled ? "bg-gray-50 text-bms-muted" : ""}`;
+  const tone = error ? "border-critical-line-strong bg-critical-wash" : "border-line";
+  return `${base} ${tone} ${disabled ? "bg-well text-ink-muted" : ""}`;
 }

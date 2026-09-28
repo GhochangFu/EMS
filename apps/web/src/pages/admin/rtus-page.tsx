@@ -129,7 +129,7 @@ export function RtusAdminPage({ user }: RtusAdminPageProps) {
         actions={
           <button
             type="button"
-            className="rounded bg-bms-green px-3 py-2 text-xs font-semibold text-white"
+            className="rounded bg-accent px-3 py-2 text-xs font-semibold text-on-accent"
             onClick={() => {
               setEditing(null);
               setForm({
@@ -165,7 +165,7 @@ export function RtusAdminPage({ user }: RtusAdminPageProps) {
         </div>
         <table className="min-w-full text-sm">
           <thead>
-            <tr className="border-b text-left text-xs uppercase text-bms-muted">
+            <tr className="border-b text-left text-xs uppercase text-ink-muted">
               <th className="px-2 py-2">Location</th>
               <th className="px-2 py-2">Code</th>
               <th className="px-2 py-2">Name</th>
@@ -178,14 +178,14 @@ export function RtusAdminPage({ user }: RtusAdminPageProps) {
             {filtered.map((item) => (
               <tr
                 key={item.id}
-                className="cursor-pointer border-b border-gray-100 hover:bg-gray-50"
+                className="cursor-pointer border-b border-well-deep hover:bg-well"
                 onClick={() =>
                   navigate(`/admin/locations/${item.locationId}/rtus/${item.id}/assets`)
                 }
               >
                 <td className="px-2 py-2">{item.locationName}</td>
                 <td className="px-2 py-2 font-mono">{item.code}</td>
-                <td className="px-2 py-2 font-semibold text-bms-green">{item.displayName}</td>
+                <td className="px-2 py-2 font-semibold text-accent">{item.displayName}</td>
                 <td className="px-2 py-2">{item.sourceType}</td>
                 <td className="px-2 py-2">
                   <StatusPill
@@ -197,7 +197,7 @@ export function RtusAdminPage({ user }: RtusAdminPageProps) {
                   <div className="flex gap-2">
                     <button
                       type="button"
-                      className="text-xs font-semibold text-bms-green"
+                      className="text-xs font-semibold text-accent"
                       onClick={() => {
                         setEditing(item);
                         setForm({
@@ -215,7 +215,7 @@ export function RtusAdminPage({ user }: RtusAdminPageProps) {
                     </button>
                     <button
                       type="button"
-                      className="text-xs font-semibold text-bms-muted"
+                      className="text-xs font-semibold text-ink-muted"
                       onClick={() => toggleMutation.mutate(item)}
                     >
                       {item.active ? "Deactivate" : "Reactivate"}
@@ -229,9 +229,9 @@ export function RtusAdminPage({ user }: RtusAdminPageProps) {
       </SectionCard>
 
       {modalOpen ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-scrim/40 p-4">
           <form
-            className="w-full max-w-lg rounded-lg border bg-white p-4"
+            className="w-full max-w-lg rounded-lg border bg-surface p-4"
             onSubmit={(event: FormEvent) => {
               event.preventDefault();
               saveMutation.mutate();
@@ -242,7 +242,7 @@ export function RtusAdminPage({ user }: RtusAdminPageProps) {
             </h2>
             <div className="mt-3 grid gap-3 sm:grid-cols-2">
               {!editing ? (
-                <label className="block text-xs font-semibold text-bms-muted sm:col-span-2">
+                <label className="block text-xs font-semibold text-ink-muted sm:col-span-2">
                   Location
                   <select
                     className="mt-1 w-full rounded border px-3 py-2 text-sm"
@@ -261,7 +261,7 @@ export function RtusAdminPage({ user }: RtusAdminPageProps) {
                   </select>
                 </label>
               ) : null}
-              <label className="block text-xs font-semibold text-bms-muted">
+              <label className="block text-xs font-semibold text-ink-muted">
                 Code
                 <input
                   className="mt-1 w-full rounded border px-3 py-2 text-sm"
@@ -270,7 +270,7 @@ export function RtusAdminPage({ user }: RtusAdminPageProps) {
                   onChange={(event) => setForm({ ...form, code: event.target.value })}
                 />
               </label>
-              <label className="block text-xs font-semibold text-bms-muted">
+              <label className="block text-xs font-semibold text-ink-muted">
                 Display name
                 <input
                   className="mt-1 w-full rounded border px-3 py-2 text-sm"
@@ -279,7 +279,7 @@ export function RtusAdminPage({ user }: RtusAdminPageProps) {
                   onChange={(event) => setForm({ ...form, displayName: event.target.value })}
                 />
               </label>
-              <label className="block text-xs font-semibold text-bms-muted">
+              <label className="block text-xs font-semibold text-ink-muted">
                 Source type
                 <select
                   className="mt-1 w-full rounded border px-3 py-2 text-sm"
@@ -296,7 +296,7 @@ export function RtusAdminPage({ user }: RtusAdminPageProps) {
                   <option value="simulator">simulator</option>
                 </select>
               </label>
-              <label className="block text-xs font-semibold text-bms-muted">
+              <label className="block text-xs font-semibold text-ink-muted">
                 Domain
                 <input
                   className="mt-1 w-full rounded border px-3 py-2 text-sm"
@@ -304,7 +304,7 @@ export function RtusAdminPage({ user }: RtusAdminPageProps) {
                   onChange={(event) => setForm({ ...form, domain: event.target.value })}
                 />
               </label>
-              <label className="flex items-center gap-2 text-xs font-semibold text-bms-muted sm:col-span-2">
+              <label className="flex items-center gap-2 text-xs font-semibold text-ink-muted sm:col-span-2">
                 <input
                   type="checkbox"
                   checked={form.ingestEnabled}
@@ -315,7 +315,7 @@ export function RtusAdminPage({ user }: RtusAdminPageProps) {
                 Ingest enabled
               </label>
             </div>
-            {error ? <div className="mt-2 text-xs text-red-700">{error}</div> : null}
+            {error ? <div className="mt-2 text-xs text-critical-ink">{error}</div> : null}
             <div className="mt-4 flex justify-end gap-2">
               <button
                 type="button"
@@ -326,7 +326,7 @@ export function RtusAdminPage({ user }: RtusAdminPageProps) {
               </button>
               <button
                 type="submit"
-                className="rounded bg-bms-green px-3 py-2 text-xs font-semibold text-white"
+                className="rounded bg-accent px-3 py-2 text-xs font-semibold text-on-accent"
               >
                 Save
               </button>

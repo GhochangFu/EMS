@@ -32,12 +32,12 @@ export function Field({
 }) {
   return (
     <label className="block space-y-1">
-      <span className="text-[11px] font-semibold uppercase tracking-wide text-bms-muted">
+      <span className="text-[11px] font-semibold uppercase tracking-wide text-ink-muted">
         {label}
       </span>
       {children}
-      {error ? <span className="block text-[11px] text-red-700">{error}</span> : null}
-      {!error && hint ? <span className="block text-[11px] text-bms-muted">{hint}</span> : null}
+      {error ? <span className="block text-[11px] text-critical-ink">{error}</span> : null}
+      {!error && hint ? <span className="block text-[11px] text-ink-muted">{hint}</span> : null}
     </label>
   );
 }

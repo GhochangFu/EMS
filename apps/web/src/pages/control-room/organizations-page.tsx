@@ -41,7 +41,7 @@ export function ControlRoomOrganizationsPage({ user }: ControlRoomOrganizationsP
   return (
     <AppShell
       user={user}
-      kpiRibbon={<span className="text-bms-ink">Control Room · organizations in your access scope</span>}
+      kpiRibbon={<span className="text-ink">Control Room · organizations in your access scope</span>}
     >
       <div className="mx-auto max-w-[1200px] space-y-4 pb-8">
         <PageHeader
@@ -52,10 +52,10 @@ export function ControlRoomOrganizationsPage({ user }: ControlRoomOrganizationsP
         {items !== undefined ? (
           items.length === 0 ? (
             <SectionCard title="No sites in your access scope" bodyClassName="p-4">
-              <p className="text-sm text-bms-muted">
+              <p className="text-sm text-ink-muted">
                 Ask an administrator for access to a site.
               </p>
-              <Link to="/" className="mt-2 inline-block text-sm font-semibold text-bms-green hover:underline">
+              <Link to="/" className="mt-2 inline-block text-sm font-semibold text-accent hover:underline">
                 Back to the dashboard
               </Link>
             </SectionCard>
@@ -68,17 +68,17 @@ export function ControlRoomOrganizationsPage({ user }: ControlRoomOrganizationsP
                 <Link
                   key={card.organization.id}
                   to={`/control-room/org/${card.organization.id}`}
-                  className="block rounded-lg border border-gray-200 bg-white p-3 shadow-sm transition hover:border-bms-green hover:shadow-md"
+                  className="block rounded-lg border border-line bg-surface p-3 shadow-sm transition hover:border-accent hover:shadow-md"
                 >
                   <div className="flex items-start justify-between gap-3">
-                    <div className="font-condensed text-base font-bold text-bms-ink">
+                    <div className="font-condensed text-base font-bold text-ink">
                       {card.organization.name}
                     </div>
-                    <span className="rounded bg-slate-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-slate-700">
+                    <span className="rounded bg-canvas px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-neutral-ink">
                       {card.organization.code}
                     </span>
                   </div>
-                  <div className="mt-2 text-xs text-bms-muted">
+                  <div className="mt-2 text-xs text-ink-muted">
                     {`${card.siteCount} sites · ${card.sitesOnline} online · ${card.openAlarms} alarms`}
                   </div>
                 </Link>
@@ -87,10 +87,10 @@ export function ControlRoomOrganizationsPage({ user }: ControlRoomOrganizationsP
           )
         ) : locationQ.isError ? (
           <SectionCard title="Control Room unavailable" bodyClassName="p-4">
-            <p className="text-sm text-red-700">The site list could not be read. Try again later.</p>
+            <p className="text-sm text-critical-ink">The site list could not be read. Try again later.</p>
           </SectionCard>
         ) : (
-          <p role="status" className="text-sm text-bms-muted">
+          <p role="status" className="text-sm text-ink-muted">
             Loading Control Room…
           </p>
         )}

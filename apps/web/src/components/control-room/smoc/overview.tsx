@@ -206,18 +206,18 @@ function statusTone(status: CrStatus): "default" | "warning" | "critical" {
 function statusPillClass(status: CrStatus): string {
   switch (status) {
     case "critical":
-      return "border-red-200 bg-red-100 text-red-800";
+      return "border-critical-line bg-critical-wash-strong text-critical-ink-strong";
     case "warning":
-      return "border-amber-200 bg-amber-100 text-amber-900";
+      return "border-warning-line bg-warning-wash-strong text-warning-ink";
     case "open":
-      return "border-gray-200 bg-gray-100 text-gray-700";
+      return "border-line bg-well-deep text-neutral-ink";
     // Deliberately not the same muted grey as `open`: an open breaker is a
     // known plant state, a stale tile is an absence of knowledge, and an
     // operator must be able to tell them apart at a glance (ADR 0027).
     case "offline":
-      return "border-gray-300 bg-gray-200 text-gray-600";
+      return "border-line-strong bg-line text-ink-muted";
     case "normal":
-      return "border-bms-green/20 bg-bms-green/10 text-bms-green";
+      return "border-accent/20 bg-accent/10 text-accent";
   }
 }
 
@@ -240,7 +240,7 @@ function statusLabel(status: CrStatus): string {
 type SldViewMode = "diagram" | "list";
 
 function viewTabClass(selected: boolean): string {
-  return `rounded border px-3 py-1.5 text-xs font-semibold ${selected ? "border-bms-green bg-emerald-50 text-emerald-900" : "border-gray-200 bg-white text-bms-ink"}`;
+  return `rounded border px-3 py-1.5 text-xs font-semibold ${selected ? "border-accent bg-ok-wash text-ok-ink" : "border-line bg-surface text-ink"}`;
 }
 
 export function ControlRoomOverviewContent() {
@@ -460,13 +460,13 @@ export function ControlRoomOverviewContent() {
       <AssetClassStrip assetIds={alarmAssetIds} assetsStatus={telemetryCtx?.assetsStatus ?? "pending"} />
 
       <div className="grid gap-4 xl:grid-cols-[2fr_1fr]">
-        <section className="rounded border border-gray-200 bg-white p-4">
+        <section className="rounded border border-line bg-surface p-4">
           <div className="flex items-center justify-between gap-3">
             <div>
-              <h2 className="font-condensed text-lg font-bold text-bms-ink">
+              <h2 className="font-condensed text-lg font-bold text-ink">
                 Single Line Diagram · Power Flow
               </h2>
-              <p className="text-xs text-bms-muted">
+              <p className="text-xs text-ink-muted">
                 Utility → Main Panel → 2x30 kVA UPS → critical loads
               </p>
             </div>
@@ -560,18 +560,18 @@ function svgStroke(status: CrStatus): string {
 
 function svgBoxClass(status: CrStatus): string {
   if (status === "offline") {
-    return "fill-gray-200 stroke-gray-400";
+    return "fill-line stroke-ink-hint";
   }
   if (status === "critical") {
-    return "fill-red-50 stroke-red-600";
+    return "fill-critical-wash stroke-critical";
   }
   if (status === "warning") {
-    return "fill-amber-50 stroke-amber-500";
+    return "fill-warning-wash stroke-warning";
   }
   if (status === "open") {
-    return "fill-gray-100 stroke-gray-400";
+    return "fill-well-deep stroke-ink-hint";
   }
-  return "fill-white stroke-bms-green";
+  return "fill-surface stroke-accent";
 }
 
 function MiniSld({ rules }: { rules: RuleListItem[] }) {
@@ -600,22 +600,22 @@ function MiniSld({ rules }: { rules: RuleListItem[] }) {
     <svg className="mt-4 h-auto w-full" viewBox="0 0 720 240">
       <line x1="92" y1="120" x2="148" y2="120" stroke={svgStroke(q1State.status)} strokeWidth={3} />
       <rect x="14" y="92" width="78" height="56" rx="6" className={svgBoxClass(q1State.status)} />
-      <text x="53" y="118" textAnchor="middle" className="fill-bms-ink font-condensed text-[13px] font-bold">UTILITY</text>
-      <text x="53" y="134" textAnchor="middle" className="fill-bms-muted font-mono text-[10px]"><StaticTspan kind="nameplate">11 kV</StaticTspan></text>
+      <text x="53" y="118" textAnchor="middle" className="fill-ink font-condensed text-[13px] font-bold">UTILITY</text>
+      <text x="53" y="134" textAnchor="middle" className="fill-ink-muted font-mono text-[10px]"><StaticTspan kind="nameplate">11 kV</StaticTspan></text>
       <circle cx="170" cy="120" r="14" className={svgBoxClass(q1State.status)} strokeWidth={2} />
-      <text x="170" y="124" textAnchor="middle" className="fill-bms-green font-mono text-[9px] font-bold">Q1</text>
+      <text x="170" y="124" textAnchor="middle" className="fill-accent font-mono text-[9px] font-bold">Q1</text>
       <line x1="184" y1="120" x2="240" y2="120" stroke={svgStroke(q1State.status)} strokeWidth={3} />
       <rect x="240" y="50" width="6" height="146" rx="2" fill={svgStroke(mergeStatus([q4State, q5State, q6State, q8State, q9State]).status)} />
       <SldMiniBranch y={80} label="UPS-1" sub={`${n(ups1.loadPct, 0)}% · ${n(ups1.backupMin, 0)} min`} status={q4State.status} />
       <SldMiniBranch y={120} label="UPS-2" sub={`${n(ups2.loadPct, 0)}% · ${n(ups2.backupMin, 0)} min`} status={q5State.status} />
       <SldMiniBranch y={170} label="HVAC 1" sub={`${n(hvac1.kw, 2)} kW`} status={q10State.status} />
       <rect x="478" y="58" width="120" height="44" rx="5" className={svgBoxClass(netState.status)} />
-      <text x="538" y="84" textAnchor="middle" className="fill-bms-ink font-condensed text-[12px] font-bold">NETWORK RACK</text>
-      <text x="538" y="97" textAnchor="middle" className="fill-bms-muted font-mono text-[9px]">{n(netRack.rackKw, 2)} kW</text>
+      <text x="538" y="84" textAnchor="middle" className="fill-ink font-condensed text-[12px] font-bold">NETWORK RACK</text>
+      <text x="538" y="97" textAnchor="middle" className="fill-ink-muted font-mono text-[9px]">{n(netRack.rackKw, 2)} kW</text>
       <line x1="410" y1="80" x2="478" y2="80" stroke={svgStroke(netState.status)} strokeWidth={3} />
       <rect x="478" y="110" width="120" height="44" rx="5" className={svgBoxClass(vwState.status)} />
-      <text x="538" y="136" textAnchor="middle" className="fill-bms-ink font-condensed text-[12px] font-bold">VW SERVER</text>
-      <text x="538" y="149" textAnchor="middle" className="fill-bms-muted font-mono text-[9px]">{n(vwRack.rackKw, 2)} kW</text>
+      <text x="538" y="136" textAnchor="middle" className="fill-ink font-condensed text-[12px] font-bold">VW SERVER</text>
+      <text x="538" y="149" textAnchor="middle" className="fill-ink-muted font-mono text-[9px]">{n(vwRack.rackKw, 2)} kW</text>
       <line x1="410" y1="120" x2="478" y2="132" stroke={svgStroke(vwState.status)} strokeWidth={3} />
     </svg>
   );
@@ -636,8 +636,8 @@ function SldMiniBranch({
     <g>
       <line x1="246" y1={y} x2="320" y2={y} stroke={svgStroke(status)} strokeWidth={3} />
       <rect x="320" y={y - 22} width="90" height="44" rx="5" className={svgBoxClass(status)} />
-      <text x="365" y={y - 2} textAnchor="middle" className="fill-bms-ink font-condensed text-[13px] font-bold">{label}</text>
-      <text x="365" y={y + 12} textAnchor="middle" className="fill-bms-muted font-mono text-[9px]">{sub}</text>
+      <text x="365" y={y - 2} textAnchor="middle" className="fill-ink font-condensed text-[13px] font-bold">{label}</text>
+      <text x="365" y={y + 12} textAnchor="middle" className="fill-ink-muted font-mono text-[9px]">{sub}</text>
     </g>
   );
 }
@@ -658,23 +658,23 @@ function ModuleSummaryCard({
   secondary: string;
 }) {
   return (
-    <div className={`rounded border border-gray-200 bg-white p-4 ${enabled ? "" : "opacity-70"}`}>
+    <div className={`rounded border border-line bg-surface p-4 ${enabled ? "" : "opacity-70"}`}>
       <div className="flex items-start justify-between gap-3">
         <div>
-          <h3 className="font-semibold text-bms-ink">{title}</h3>
-          <p className="mt-1 text-xs text-bms-muted">
+          <h3 className="font-semibold text-ink">{title}</h3>
+          <p className="mt-1 text-xs text-ink-muted">
             {enabled ? secondary : "Outside your asset-group scope"}
           </p>
         </div>
-        <span className={`rounded-full border px-2 py-0.5 text-[10px] font-semibold ${enabled ? statusPillClass(status.status) : "border-gray-200 bg-gray-100 text-gray-600"}`}>
+        <span className={`rounded-full border px-2 py-0.5 text-[10px] font-semibold ${enabled ? statusPillClass(status.status) : "border-line bg-well-deep text-ink-muted"}`}>
           {enabled ? statusLabel(status.status) : "LOCKED"}
         </span>
       </div>
-      <div className="mt-3 font-condensed text-2xl font-bold text-bms-ink">
+      <div className="mt-3 font-condensed text-2xl font-bold text-ink">
         {enabled ? primary : "—"}
       </div>
       {enabled && status.matchedRule ? (
-        <p className="mt-2 text-xs font-medium text-amber-900">{status.matchedRule.name}</p>
+        <p className="mt-2 text-xs font-medium text-warning-ink">{status.matchedRule.name}</p>
       ) : null}
       <ScopedActionLink enabled={enabled} to={to} label="Detail" className="mt-3" />
     </div>
@@ -695,8 +695,8 @@ function CriticalSystemsSummary({
   environmentStatus: RuleState;
 }) {
   return (
-    <section className="rounded border border-gray-200 bg-white p-4">
-      <h2 className="font-condensed text-lg font-bold text-bms-ink">
+    <section className="rounded border border-line bg-surface p-4">
+      <h2 className="font-condensed text-lg font-bold text-ink">
         Critical Systems Summary
       </h2>
       <div className="mt-3 space-y-2 text-sm">
@@ -720,8 +720,8 @@ function StatusRow({
 }) {
   return (
     <div className="flex items-center justify-between gap-3">
-      <span className={enabled ? "text-bms-muted" : "text-gray-400"}>{label}</span>
-      <span className={`rounded-full border px-2 py-0.5 text-[11px] font-semibold ${enabled ? statusPillClass(status.status) : "border-gray-200 bg-gray-100 text-gray-600"}`}>
+      <span className={enabled ? "text-ink-muted" : "text-ink-hint"}>{label}</span>
+      <span className={`rounded-full border px-2 py-0.5 text-[11px] font-semibold ${enabled ? statusPillClass(status.status) : "border-line bg-well-deep text-ink-muted"}`}>
         {enabled ? statusLabel(status.status) : "LOCKED"}
       </span>
     </div>
@@ -744,9 +744,9 @@ function EnvironmentSnapshot({
   smokeCount: number;
 }) {
   return (
-    <section className="rounded border border-gray-200 bg-white p-4">
+    <section className="rounded border border-line bg-surface p-4">
       <div className="flex items-center justify-between gap-3">
-        <h2 className="font-condensed text-lg font-bold text-bms-ink">
+        <h2 className="font-condensed text-lg font-bold text-ink">
           Environment Snapshot
         </h2>
         <ScopedActionLink enabled={enabled} to={smocTabPath(locationId, "env")} label="Detail" />
@@ -758,9 +758,9 @@ function EnvironmentSnapshot({
         <Row label="Overall" value={enabled ? statusLabel(envStatus.status) : "Locked"} />
       </div>
       {!enabled ? (
-        <p className="mt-2 text-xs text-bms-muted">Outside your asset-group scope.</p>
+        <p className="mt-2 text-xs text-ink-muted">Outside your asset-group scope.</p>
       ) : envStatus.matchedRule ? (
-        <p className="mt-2 text-xs font-medium text-amber-900">{envStatus.matchedRule.name}</p>
+        <p className="mt-2 text-xs font-medium text-warning-ink">{envStatus.matchedRule.name}</p>
       ) : null}
     </section>
   );
@@ -790,9 +790,9 @@ function ItRackLoadSummary({
     deriveRuleState("CR-VW-RACK-PDU-B", vwB, rules, Date.now()),
   ]);
   return (
-    <section className="rounded border border-gray-200 bg-white p-4">
+    <section className="rounded border border-line bg-surface p-4">
       <div className="flex items-center justify-between gap-3">
-        <h2 className="font-condensed text-lg font-bold text-bms-ink">
+        <h2 className="font-condensed text-lg font-bold text-ink">
           IT Rack Load
         </h2>
         <ScopedActionLink enabled={enabled} to={smocTabPath(locationId, "it")} label="Detail" />
@@ -828,22 +828,22 @@ function RackLoadRow({
   return (
     <div>
       <div className="flex items-center justify-between gap-3 text-sm">
-        <span className="font-semibold text-bms-ink">{title}</span>
+        <span className="font-semibold text-ink">{title}</span>
         <span className={`rounded-full border px-2 py-0.5 text-[11px] font-semibold ${statusPillClass(status.status)}`}>
           {statusLabel(status.status)}
         </span>
       </div>
-      <div className="mt-2 h-2 rounded bg-gray-200">
-        <div className="h-2 rounded bg-bms-green" style={{ width: `${pct}%` }} />
+      <div className="mt-2 h-2 rounded bg-line">
+        <div className="h-2 rounded bg-accent" style={{ width: `${pct}%` }} />
       </div>
-      <div className="mt-2 grid grid-cols-2 gap-2 text-xs text-bms-muted">
+      <div className="mt-2 grid grid-cols-2 gap-2 text-xs text-ink-muted">
         <span>{n(load, 2)} kW / {rated.toFixed(1)} kW</span>
         <span className="text-right">{n(outlets, 0)}/24 outlets</span>
         <span>UPS source</span>
-        <span className="text-right font-mono text-bms-ink">{source}</span>
+        <span className="text-right font-mono text-ink">{source}</span>
       </div>
       {status.matchedRule ? (
-        <p className="mt-2 text-xs font-medium text-amber-900">{status.matchedRule.name}</p>
+        <p className="mt-2 text-xs font-medium text-warning-ink">{status.matchedRule.name}</p>
       ) : null}
     </div>
   );
@@ -864,8 +864,8 @@ function EnergySnapshot({
   const mainStale = isStale(main.lastSeenMs, Date.now());
   const kva = main.pf && !mainStale && totalLoad !== null ? totalLoad / main.pf : null;
   return (
-    <section className="rounded border border-gray-200 bg-white p-4">
-      <h2 className="font-condensed text-lg font-bold text-bms-ink">
+    <section className="rounded border border-line bg-surface p-4">
+      <h2 className="font-condensed text-lg font-bold text-ink">
         Energy Snapshot
       </h2>
       <div className="mt-3 space-y-2 text-sm">
@@ -875,8 +875,8 @@ function EnergySnapshot({
         <Row label="kWh Today" value={enabled ? `${n(freshValue(main.kwhToday, mainStale), 1)} kWh` : "—"} />
         <Row label="Frequency" value={enabled ? `${n(freshValue(main.frequencyHz, mainStale), 2)} Hz` : "—"} />
       </div>
-      <div className={`mt-3 h-10 rounded ${enabled ? "bg-gradient-to-r from-bms-green/20 via-bms-green to-amber-400" : "bg-gray-100"}`} />
-      <p className="mt-1 text-center font-mono text-[10px] text-bms-muted">
+      <div className={`mt-3 h-10 rounded ${enabled ? "bg-gradient-to-r from-accent/20 via-accent to-warning" : "bg-well-deep"}`} />
+      <p className="mt-1 text-center font-mono text-[10px] text-ink-muted">
         {enabled ? "Live CR load · current simulator window" : "Outside your asset-group scope"}
       </p>
     </section>
@@ -885,7 +885,7 @@ function EnergySnapshot({
 
 function ScopedUnavailable({ label }: { label: string }) {
   return (
-    <div className="mt-4 rounded border border-gray-200 bg-gray-50 p-4 text-sm text-bms-muted">
+    <div className="mt-4 rounded border border-line bg-well p-4 text-sm text-ink-muted">
       {label} is outside your assigned asset-group scope.
     </div>
   );
@@ -894,8 +894,8 @@ function ScopedUnavailable({ label }: { label: string }) {
 function Row({ label, value }: { label: string; value: string }) {
   return (
     <div className="flex justify-between gap-3">
-      <span className="text-bms-muted">{label}</span>
-      <span className="font-mono font-semibold text-bms-ink">{value}</span>
+      <span className="text-ink-muted">{label}</span>
+      <span className="font-mono font-semibold text-ink">{value}</span>
     </div>
   );
 }

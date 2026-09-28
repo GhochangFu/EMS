@@ -70,7 +70,7 @@ export function AssetsPage({ user }: AssetsPageProps) {
   const selected = selectedId === null ? null : rows.find((row) => row.id === selectedId) ?? null;
 
   return (
-    <AppShell user={user} kpiRibbon={<span className="text-bms-ink">Assets</span>}>
+    <AppShell user={user} kpiRibbon={<span className="text-ink">Assets</span>}>
       <div className="mx-auto max-w-[1200px] space-y-4 pb-8">
         <PageHeader
           eyebrow="Operations"
@@ -78,15 +78,15 @@ export function AssetsPage({ user }: AssetsPageProps) {
           subtitle="Every asset in your scope, with its gateway, telemetry source and default dashboards"
         />
 
-        {listQ.isLoading ? <p className="text-sm text-bms-muted">Loading assets…</p> : null}
+        {listQ.isLoading ? <p className="text-sm text-ink-muted">Loading assets…</p> : null}
         {listQ.isError ? (
-          <p className="rounded border border-red-200 bg-red-50 p-3 text-sm text-red-800">
+          <p className="rounded border border-critical-line bg-critical-wash p-3 text-sm text-critical-ink-strong">
             {apiErrorMessage(listQ.error as Error)}
           </p>
         ) : null}
 
         {!listQ.isLoading && !listQ.isError && rows.length === 0 ? (
-          <p className="rounded border border-dashed border-gray-300 p-4 text-xs text-bms-muted">
+          <p className="rounded border border-dashed border-line-strong p-4 text-xs text-ink-muted">
             No assets are readable in your current scope yet.
           </p>
         ) : null}
@@ -98,13 +98,13 @@ export function AssetsPage({ user }: AssetsPageProps) {
                 type="text"
                 aria-label="Filter by code or name"
                 placeholder="Filter by code or name"
-                className="w-64 rounded border border-gray-300 px-3 py-1.5 text-sm"
+                className="w-64 rounded border border-line-strong px-3 py-1.5 text-sm"
                 value={query}
                 onChange={(event) => setQuery(event.target.value)}
               />
               <select
                 aria-label="Domain"
-                className="rounded border border-gray-300 px-2 py-1.5 text-sm"
+                className="rounded border border-line-strong px-2 py-1.5 text-sm"
                 value={domain}
                 onChange={(event) => setDomain(event.target.value)}
               >
@@ -117,7 +117,7 @@ export function AssetsPage({ user }: AssetsPageProps) {
               </select>
               <select
                 aria-label="Site"
-                className="rounded border border-gray-300 px-2 py-1.5 text-sm"
+                className="rounded border border-line-strong px-2 py-1.5 text-sm"
                 value={site}
                 onChange={(event) => setSite(event.target.value)}
               >
@@ -128,14 +128,14 @@ export function AssetsPage({ user }: AssetsPageProps) {
                   </option>
                 ))}
               </select>
-              <span className="text-xs text-bms-muted">
+              <span className="text-xs text-ink-muted">
                 {filtered.length} of {rows.length}
               </span>
             </div>
 
             <SectionCard bodyClassName="overflow-x-auto p-0">
               <table className="w-full min-w-[760px] text-left text-sm">
-                <thead className="border-b border-gray-100 bg-gray-50 text-[11px] font-semibold uppercase tracking-wide text-bms-muted">
+                <thead className="border-b border-well-deep bg-well text-[11px] font-semibold uppercase tracking-wide text-ink-muted">
                   <tr>
                     <th className="px-3 py-2">Code</th>
                     <th className="px-3 py-2">Name</th>
@@ -149,7 +149,7 @@ export function AssetsPage({ user }: AssetsPageProps) {
                 <tbody>
                   {filtered.length === 0 ? (
                     <tr>
-                      <td colSpan={7} className="px-3 py-4 text-xs text-bms-muted">
+                      <td colSpan={7} className="px-3 py-4 text-xs text-ink-muted">
                         No assets match the current filters.
                       </td>
                     </tr>
@@ -157,19 +157,19 @@ export function AssetsPage({ user }: AssetsPageProps) {
                   {filtered.map((row) => (
                     <tr
                       key={row.id}
-                      className={`border-b border-gray-100 ${row.id === selectedId ? "bg-bms-canvas/80" : ""}`}
+                      className={`border-b border-well-deep ${row.id === selectedId ? "bg-canvas/80" : ""}`}
                     >
                       <td className="px-3 py-2 font-mono text-xs">
                         <button
                           type="button"
-                          className="font-semibold text-bms-green hover:underline"
+                          className="font-semibold text-accent hover:underline"
                           onClick={() => setSelectedId(row.id)}
                         >
                           {row.code}
                         </button>
                       </td>
                       <td className="px-3 py-2 font-medium">{row.name}</td>
-                      <td className="px-3 py-2 text-xs text-bms-muted">{row.siteName}</td>
+                      <td className="px-3 py-2 text-xs text-ink-muted">{row.siteName}</td>
                       <td className="px-3 py-2 text-xs">{domainLabel(row.domain, assetDomains)}</td>
                       <td className="px-3 py-2 text-xs">{row.rtuDisplayName ?? NONE}</td>
                       <td className="px-3 py-2 text-xs">{row.telemetrySource ?? NONE}</td>

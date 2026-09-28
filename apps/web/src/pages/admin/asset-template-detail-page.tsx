@@ -262,7 +262,7 @@ export function AssetTemplateDetailPage({ user }: AssetTemplateDetailPageProps) 
   if (templateQ.isPending) {
     return (
       <MasterDataLayout user={user}>
-        <p className="p-4 text-sm text-bms-muted">Loading template…</p>
+        <p className="p-4 text-sm text-ink-muted">Loading template…</p>
       </MasterDataLayout>
     );
   }
@@ -283,14 +283,14 @@ export function AssetTemplateDetailPage({ user }: AssetTemplateDetailPageProps) 
     return (
       <MasterDataLayout user={user}>
         <SectionCard title="Asset template">
-          <p className="rounded border border-red-200 bg-red-50 p-3 text-sm text-red-800">
+          <p className="rounded border border-critical-line bg-critical-wash p-3 text-sm text-critical-ink-strong">
             {templateQ.error
               ? apiErrorMessage(templateQ.error)
               : "This template could not be loaded."}
           </p>
           <Link
             to="/admin/asset-templates"
-            className="mt-3 inline-block text-xs font-semibold text-bms-green hover:underline"
+            className="mt-3 inline-block text-xs font-semibold text-accent hover:underline"
           >
             Back to all templates
           </Link>
@@ -407,7 +407,7 @@ export function AssetTemplateDetailPage({ user }: AssetTemplateDetailPageProps) 
           <div className="flex flex-wrap gap-2">
             <Link
               to="/admin/asset-templates"
-              className="rounded border border-gray-200 px-3 py-1.5 text-xs font-semibold text-bms-muted"
+              className="rounded border border-line px-3 py-1.5 text-xs font-semibold text-ink-muted"
             >
               All templates
             </Link>
@@ -420,7 +420,7 @@ export function AssetTemplateDetailPage({ user }: AssetTemplateDetailPageProps) 
                 sixth tab or when `F2.19` added the seventh. */}
             <Link
               to={`/admin/asset-templates/${template.id}/versions`}
-              className="rounded border border-gray-200 px-3 py-1.5 text-xs font-semibold text-bms-muted"
+              className="rounded border border-line px-3 py-1.5 text-xs font-semibold text-ink-muted"
             >
               Versions &amp; migration
             </Link>
@@ -440,7 +440,7 @@ export function AssetTemplateDetailPage({ user }: AssetTemplateDetailPageProps) 
                   setActionError(null);
                   defaultDashboardsM.mutate();
                 }}
-                className="rounded border border-bms-green px-3 py-1.5 text-xs font-semibold text-bms-green disabled:opacity-60"
+                className="rounded border border-accent px-3 py-1.5 text-xs font-semibold text-accent disabled:opacity-60"
               >
                 {defaultDashboardsM.isPending
                   ? "Creating default dashboards…"
@@ -456,8 +456,8 @@ export function AssetTemplateDetailPage({ user }: AssetTemplateDetailPageProps) 
                 onClick={() => runAction(action)}
                 className={`rounded px-3 py-1.5 text-xs font-semibold disabled:opacity-60 ${
                   action === "delete"
-                    ? "border border-red-200 text-red-700"
-                    : "bg-bms-green text-white"
+                    ? "border border-critical-line text-critical-ink"
+                    : "bg-accent text-on-accent"
                 }`}
               >
                 {actionPending[action]
@@ -470,7 +470,7 @@ export function AssetTemplateDetailPage({ user }: AssetTemplateDetailPageProps) 
       />
 
       {actionError ? (
-        <p className="rounded border border-red-200 bg-red-50 p-3 text-sm text-red-800">
+        <p className="rounded border border-critical-line bg-critical-wash p-3 text-sm text-critical-ink-strong">
           {actionError}
         </p>
       ) : null}
@@ -484,10 +484,10 @@ export function AssetTemplateDetailPage({ user }: AssetTemplateDetailPageProps) 
           inserted rows. */}
       {dashboardsReport ? (
         <SectionCard title="Default dashboards">
-          <p className="text-xs text-bms-muted">{backfillSummary(dashboardsReport)}</p>
+          <p className="text-xs text-ink-muted">{backfillSummary(dashboardsReport)}</p>
           <div className="mt-2 overflow-x-auto">
             <table className="w-full min-w-[520px] text-left text-xs">
-              <thead className="border-b border-gray-100 text-[11px] font-semibold uppercase tracking-wide text-bms-muted">
+              <thead className="border-b border-well-deep text-[11px] font-semibold uppercase tracking-wide text-ink-muted">
                 <tr>
                   <th className="py-1 pr-3">Asset</th>
                   <th className="py-1 pr-3">Outcome</th>
@@ -496,9 +496,9 @@ export function AssetTemplateDetailPage({ user }: AssetTemplateDetailPageProps) 
               </thead>
               <tbody>
                 {dashboardsReport.assets.map((asset) => (
-                  <tr key={asset.assetId} className="border-b border-gray-100 align-top">
+                  <tr key={asset.assetId} className="border-b border-well-deep align-top">
                     <td className="py-1 pr-3 font-medium">{asset.code}</td>
-                    <td className="py-1 pr-3 text-bms-muted">
+                    <td className="py-1 pr-3 text-ink-muted">
                       {/* Three arms, not two (ADR 0067 Q8). A binary ternary
                           rendered `skipped_slug_conflict` as "Already had one",
                           which is the one thing it does not mean: the asset has
@@ -514,7 +514,7 @@ export function AssetTemplateDetailPage({ user }: AssetTemplateDetailPageProps) 
                     </td>
                     <td className="py-1">
                       {asset.dashboards.length === 0 ? (
-                        <span className="text-bms-muted">—</span>
+                        <span className="text-ink-muted">—</span>
                       ) : (
                         <ul className="space-y-0.5">
                           {asset.dashboards.map((dashboard) => (
@@ -547,7 +547,7 @@ export function AssetTemplateDetailPage({ user }: AssetTemplateDetailPageProps) 
       ) : null}
 
       {!lifecycle.editable ? (
-        <p className="rounded border border-sky-200 bg-sky-50 p-3 text-xs text-sky-900">
+        <p className="rounded border border-info-line bg-info-wash p-3 text-xs text-info-ink">
           This version is read-only. ADR 0015 freezes a template once it is published, so that
           assets built from it never change underneath.{" "}
           {mayAuthor
@@ -563,14 +563,14 @@ export function AssetTemplateDetailPage({ user }: AssetTemplateDetailPageProps) 
           sees every field greyed with no explanation and no lifecycle button
           either, which reads as a broken page rather than as a boundary. */}
       {lifecycle.editable && !mayAuthor ? (
-        <p className="rounded border border-sky-200 bg-sky-50 p-3 text-xs text-sky-900">
+        <p className="rounded border border-info-line bg-info-wash p-3 text-xs text-info-ink">
           This is a draft, but your role does not author templates. You can read it and build
           assets from a published version. Ask a master-data administrator to change the model.
         </p>
       ) : null}
 
       {blockedKeys.length > 0 ? (
-        <div className="rounded border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900">
+        <div className="rounded border border-warning-line bg-warning-wash p-3 text-xs text-warning-ink">
           <p className="font-semibold">
             This template holds content that cannot be saved back.
           </p>
@@ -614,31 +614,31 @@ export function AssetTemplateDetailPage({ user }: AssetTemplateDetailPageProps) 
       </SectionCard>
 
       {pending && pendingDecision && !pendingDecision.allow ? (
-        <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/30 p-4">
+        <div className="fixed inset-0 z-40 flex items-center justify-center bg-scrim/30 p-4">
           <div
             role="alertdialog"
             aria-modal="true"
             aria-labelledby="tab-guard-title"
-            className="w-full max-w-md space-y-3 rounded bg-white p-4 shadow-lg"
+            className="w-full max-w-md space-y-3 rounded bg-surface p-4 shadow-lg"
           >
-            <h2 id="tab-guard-title" className="text-sm font-semibold text-bms-ink">
+            <h2 id="tab-guard-title" className="text-sm font-semibold text-ink">
               Unsaved changes
             </h2>
-            <p className="text-xs text-bms-muted">{pendingDecision.prompt}</p>
+            <p className="text-xs text-ink-muted">{pendingDecision.prompt}</p>
             <div className="flex justify-end gap-2">
               {/* Cancel first, and it is the plain-worded one. The destructive
                   choice sits on the right and names what it destroys. */}
               <button
                 type="button"
                 onClick={() => setPending(null)}
-                className="rounded border border-gray-200 px-3 py-1.5 text-xs font-semibold text-bms-muted"
+                className="rounded border border-line px-3 py-1.5 text-xs font-semibold text-ink-muted"
               >
                 {pendingDecision.cancelLabel}
               </button>
               <button
                 type="button"
                 onClick={confirmPending}
-                className="rounded bg-red-600 px-3 py-1.5 text-xs font-semibold text-white"
+                className="rounded bg-critical px-3 py-1.5 text-xs font-semibold text-on-dark"
               >
                 {pendingDecision.confirmLabel}
               </button>
@@ -735,19 +735,19 @@ function InstantiateDialog({
    */
   if (instantiateM.data) {
     return (
-      <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/30 p-4">
-        <div className="w-full max-w-2xl space-y-3 rounded-lg bg-white p-4 shadow-lg">
-          <h2 className="font-condensed text-base font-bold text-bms-ink">
+      <div className="fixed inset-0 z-40 flex items-center justify-center bg-scrim/30 p-4">
+        <div className="w-full max-w-2xl space-y-3 rounded-lg bg-surface p-4 shadow-lg">
+          <h2 className="font-condensed text-base font-bold text-ink">
             Instantiate {template.code} v{template.version}
           </h2>
-          <p className="rounded border border-green-200 bg-green-50 p-3 text-sm text-green-900">
+          <p className="rounded border border-accent/20 bg-ok-wash p-3 text-sm text-ok-ink">
             {instantiationSummary(instantiateM.data)}
           </p>
           <div className="flex justify-end">
             <button
               type="button"
               onClick={onClose}
-              className="rounded bg-bms-green px-3 py-1.5 text-xs font-semibold text-white"
+              className="rounded bg-accent px-3 py-1.5 text-xs font-semibold text-on-accent"
             >
               Close
             </button>
@@ -758,12 +758,12 @@ function InstantiateDialog({
   }
 
   return (
-    <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/30 p-4">
-      <div className="w-full max-w-2xl space-y-3 rounded-lg bg-white p-4 shadow-lg">
-        <h2 className="font-condensed text-base font-bold text-bms-ink">
+    <div className="fixed inset-0 z-40 flex items-center justify-center bg-scrim/30 p-4">
+      <div className="w-full max-w-2xl space-y-3 rounded-lg bg-surface p-4 shadow-lg">
+        <h2 className="font-condensed text-base font-bold text-ink">
           Instantiate {template.code} v{template.version}
         </h2>
-        <p className="text-[11px] text-bms-muted">
+        <p className="text-[11px] text-ink-muted">
           Each asset below is built with all {template.points.length} of this template&apos;s
           points. The whole batch succeeds or none of it does.
         </p>
@@ -777,7 +777,7 @@ function InstantiateDialog({
         />
 
         {patternsWithVariables.length > 0 ? (
-          <p className="text-[11px] text-bms-muted">
+          <p className="text-[11px] text-ink-muted">
             Pattern{patternsWithVariables.length > 1 ? "s" : ""}{" "}
             {patternsWithVariables.join(", ")} carry a variable — fill one value per asset below.
           </p>
@@ -797,7 +797,7 @@ function InstantiateDialog({
                 }
                 placeholder="Asset code"
                 aria-label={`Asset ${index + 1} code`}
-                className="w-1/3 rounded border border-gray-200 px-2 py-1 text-xs"
+                className="w-1/3 rounded border border-line px-2 py-1 text-xs"
               />
               <input
                 value={row.name}
@@ -810,7 +810,7 @@ function InstantiateDialog({
                 }
                 placeholder="Asset name (defaults to the code)"
                 aria-label={`Asset ${index + 1} name`}
-                className="flex-1 rounded border border-gray-200 px-2 py-1 text-xs"
+                className="flex-1 rounded border border-line px-2 py-1 text-xs"
               />
               {variables.map((variable) => (
                 <input
@@ -827,7 +827,7 @@ function InstantiateDialog({
                   }
                   placeholder={variable}
                   aria-label={`Asset ${index + 1} ${variable}`}
-                  className="w-24 rounded border border-gray-200 px-2 py-1 text-xs"
+                  className="w-24 rounded border border-line px-2 py-1 text-xs"
                 />
               ))}
             </div>
@@ -837,14 +837,14 @@ function InstantiateDialog({
             onClick={() =>
               setRows((current) => [...current, { code: "", name: "", vars: {} }])
             }
-            className="text-xs font-semibold text-bms-green hover:underline"
+            className="text-xs font-semibold text-accent hover:underline"
           >
             Add another asset
           </button>
         </div>
 
         {error ? (
-          <p className="rounded border border-red-200 bg-red-50 p-2 text-xs text-red-800">
+          <p className="rounded border border-critical-line bg-critical-wash p-2 text-xs text-critical-ink-strong">
             {error}
           </p>
         ) : null}
@@ -853,7 +853,7 @@ function InstantiateDialog({
           <button
             type="button"
             onClick={onClose}
-            className="rounded border border-gray-200 px-3 py-1.5 text-xs font-semibold text-bms-muted"
+            className="rounded border border-line px-3 py-1.5 text-xs font-semibold text-ink-muted"
           >
             Cancel
           </button>
@@ -867,7 +867,7 @@ function InstantiateDialog({
               setError(null);
               instantiateM.mutate();
             }}
-            className="rounded bg-bms-green px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-60"
+            className="rounded bg-accent px-3 py-1.5 text-xs font-semibold text-on-accent disabled:opacity-60"
           >
             {instantiateM.isPending ? "Building…" : `Build ${named} asset${named === 1 ? "" : "s"}`}
           </button>

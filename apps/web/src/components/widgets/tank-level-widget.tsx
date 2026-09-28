@@ -54,7 +54,7 @@ export function TankLevelWidget({ title, status, primary, stale, config }: TankL
           width={TANK_FILL_WIDTH + 4}
           height={TANK_FILL_MAX_HEIGHT}
           fill="none"
-          stroke="#8A94A6"
+          className="stroke-ink-hint"
           strokeWidth={2}
           rx={4}
         />
@@ -63,7 +63,7 @@ export function TankLevelWidget({ title, status, primary, stale, config }: TankL
           x={TANK_VIEW_W / 2}
           y={TANK_VIEW_H / 2}
           textAnchor="middle"
-          className="fill-bms-ink font-mono text-[14px] font-semibold"
+          className="fill-ink font-mono text-[14px] font-semibold"
         >
           {readout}
         </text>

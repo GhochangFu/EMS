@@ -48,7 +48,7 @@ export function GeneratedSiteView({ locationId }: { locationId: string }) {
   return (
     <div className="space-y-4">
       {kpiQuery.isError ? (
-        <p role="alert" className="text-sm text-red-600">
+        <p role="alert" className="text-sm text-critical-ink-soft">
           Could not load the site KPIs.
         </p>
       ) : null}
@@ -93,20 +93,20 @@ export function GeneratedSiteView({ locationId }: { locationId: string }) {
         />
       </div>
       {location?.scopeLabel === "partial" ? (
-        <p className="text-[11px] text-bms-muted">
+        <p className="text-[11px] text-ink-muted">
           Partial scope: these figures and panels cover only the assets in your asset groups.
         </p>
       ) : null}
 
       {viewQuery.isError ? (
-        <p role="alert" className="text-sm text-red-600">
+        <p role="alert" className="text-sm text-critical-ink-soft">
           Could not load the site view.
         </p>
       ) : view === undefined ? (
-        <p className="text-sm text-bms-muted">Loading the site view…</p>
+        <p className="text-sm text-ink-muted">Loading the site view…</p>
       ) : view.domains.length === 0 ? (
         <SectionCard bodyClassName="p-4">
-          <p className="text-sm text-bms-muted">No assets in your access scope at this site.</p>
+          <p className="text-sm text-ink-muted">No assets in your access scope at this site.</p>
         </SectionCard>
       ) : (
         view.domains.map((domain) => (

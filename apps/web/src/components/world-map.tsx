@@ -55,7 +55,7 @@ export function WorldMap({ sites }: WorldMapProps) {
     <MapContainer
       center={[-29, 24.5]}
       zoom={5}
-      className="z-0 h-[min(70vh,560px)] w-full rounded-lg border border-gray-800 shadow-inner"
+      className="z-0 h-[min(70vh,560px)] w-full rounded-lg border border-chrome shadow-inner"
       scrollWheelZoom
     >
       <TileLayer attribution={MAP_TILE.attribution} url={MAP_TILE.url} maxZoom={MAP_TILE.maxZoom} />
@@ -73,9 +73,9 @@ export function WorldMap({ sites }: WorldMapProps) {
           }}
         >
           <Popup>
-            <div className="min-w-[210px] text-bms-ink">
+            <div className="min-w-[210px] text-ink">
               <div className="font-condensed text-sm font-bold">{s.name}</div>
-              <div className="text-[10px] uppercase tracking-wide text-bms-muted">
+              <div className="text-[10px] uppercase tracking-wide text-ink-muted">
                 <span data-testid="site-kind">{s.kindLabel}</span>
                 {s.organization ? ` · ${s.organization.code}` : ""} ·{" "}
                 <span className="font-mono">{s.live.status}</span>
@@ -83,44 +83,44 @@ export function WorldMap({ sites }: WorldMapProps) {
               {s.kind === "eskom_station" ? (
                 <dl className="mt-2 grid gap-1 text-[11px]">
                   <div className="flex justify-between gap-2">
-                    <dt className="text-bms-muted">Capacity</dt>
+                    <dt className="text-ink-muted">Capacity</dt>
                     <dd className="font-mono">
                       {s.capacityMw != null ? s.capacityMw.toLocaleString() : "—"} MW
                     </dd>
                   </div>
                   <div className="flex justify-between gap-2">
-                    <dt className="text-bms-muted">Type</dt>
+                    <dt className="text-ink-muted">Type</dt>
                     <dd>{s.stationType ?? "—"}</dd>
                   </div>
                   <div className="flex justify-between gap-2">
-                    <dt className="text-bms-muted">Province</dt>
+                    <dt className="text-ink-muted">Province</dt>
                     <dd>{s.province ?? "—"}</dd>
                   </div>
                 </dl>
               ) : (
                 <dl className="mt-2 grid gap-1 text-[11px]">
                   <div className="flex justify-between gap-2">
-                    <dt className="text-bms-muted">Open alarms</dt>
+                    <dt className="text-ink-muted">Open alarms</dt>
                     <dd className="font-mono">{s.live.openAlarms}</dd>
                   </div>
                   <div className="flex justify-between gap-2">
-                    <dt className="text-bms-muted">Critical</dt>
+                    <dt className="text-ink-muted">Critical</dt>
                     <dd className="font-mono">{s.live.criticalAlarms}</dd>
                   </div>
                   <div className="flex justify-between gap-2">
-                    <dt className="text-bms-muted">Telemetry fresh</dt>
+                    <dt className="text-ink-muted">Telemetry fresh</dt>
                     <dd className="font-mono">
                       {s.live.assetsFresh}/{s.live.assetsTotal} assets
                     </dd>
                   </div>
                 </dl>
               )}
-              <div className="mt-2 flex flex-wrap gap-3 border-t border-gray-200 pt-2">
-                <Link className="text-xs font-semibold text-bms-green hover:underline" to="/alarms">
+              <div className="mt-2 flex flex-wrap gap-3 border-t border-line pt-2">
+                <Link className="text-xs font-semibold text-accent hover:underline" to="/alarms">
                   Alarm Centre →
                 </Link>
                 <Link
-                  className="text-xs font-semibold text-bms-green hover:underline"
+                  className="text-xs font-semibold text-accent hover:underline"
                   to={
                     s.canonicalLocationId
                       ? `/locations/${s.canonicalLocationId}/dashboard`

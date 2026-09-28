@@ -65,7 +65,7 @@ export function LocationTypesAdminPage({ user }: LocationTypesAdminPageProps) {
       {canManageLocationTypes(user.role) ? (
         <LocationTypesCatalog />
       ) : (
-        <p role="status" className="text-sm text-bms-muted">
+        <p role="status" className="text-sm text-ink-muted">
           Location types are managed by a global administrator.
         </p>
       )}
@@ -142,18 +142,18 @@ function LocationTypesCatalog() {
           <ActiveFilterBar value={activeFilter} onChange={setActiveFilter} />
           <button
             type="button"
-            className="rounded bg-bms-green px-3 py-2 text-xs font-semibold text-white"
+            className="rounded bg-accent px-3 py-2 text-xs font-semibold text-on-accent"
             onClick={openCreate}
           >
             Add location type
           </button>
         </div>
         {toggleMutation.error ? (
-          <div className="text-xs text-red-700">{toggleMutation.error.message}</div>
+          <div className="text-xs text-critical-ink">{toggleMutation.error.message}</div>
         ) : null}
         <table className="min-w-full text-sm">
           <thead>
-            <tr className="border-b text-left text-xs uppercase text-bms-muted">
+            <tr className="border-b text-left text-xs uppercase text-ink-muted">
               <th className="px-2 py-2">Code</th>
               <th className="px-2 py-2">Label</th>
               <th className="px-2 py-2">Sort order</th>
@@ -164,7 +164,7 @@ function LocationTypesCatalog() {
           </thead>
           <tbody>
             {filtered.map((item) => (
-              <tr key={item.code} className="border-b border-gray-100">
+              <tr key={item.code} className="border-b border-well-deep">
                 <td className="px-2 py-2 font-mono">{item.code}</td>
                 <td className="px-2 py-2">{item.label}</td>
                 <td className="px-2 py-2">{item.sortOrder}</td>
@@ -179,14 +179,14 @@ function LocationTypesCatalog() {
                   <div className="flex gap-2">
                     <button
                       type="button"
-                      className="text-xs font-semibold text-bms-green"
+                      className="text-xs font-semibold text-accent"
                       onClick={() => openEdit(item)}
                     >
                       Edit
                     </button>
                     <button
                       type="button"
-                      className="text-xs font-semibold text-bms-muted"
+                      className="text-xs font-semibold text-ink-muted"
                       onClick={() => toggleMutation.mutate(item)}
                     >
                       {item.active ? "Deactivate" : "Reactivate"}
@@ -200,9 +200,9 @@ function LocationTypesCatalog() {
       </SectionCard>
 
       {modalOpen ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-scrim/40 p-4">
           <form
-            className="w-full max-w-lg rounded-lg border bg-white p-4"
+            className="w-full max-w-lg rounded-lg border bg-surface p-4"
             onSubmit={(event: FormEvent) => {
               event.preventDefault();
               const sortOrder = parseSortOrder(form.sortOrder);
@@ -218,12 +218,12 @@ function LocationTypesCatalog() {
             </h2>
             <div className="mt-3 grid gap-3 sm:grid-cols-2">
               <div>
-                <label htmlFor="location-type-code" className="block text-xs font-semibold text-bms-muted">
+                <label htmlFor="location-type-code" className="block text-xs font-semibold text-ink-muted">
                   Code
                 </label>
                 <input
                   id="location-type-code"
-                  className="mt-1 w-full rounded border px-3 py-2 text-sm disabled:bg-gray-50"
+                  className="mt-1 w-full rounded border px-3 py-2 text-sm disabled:bg-well"
                   value={form.code}
                   disabled={Boolean(editing)}
                   required
@@ -231,12 +231,12 @@ function LocationTypesCatalog() {
                   aria-describedby="location-type-code-hint"
                   onChange={(event) => setForm({ ...form, code: event.target.value })}
                 />
-                <p id="location-type-code-hint" className="mt-1 text-xs text-bms-muted">
+                <p id="location-type-code-hint" className="mt-1 text-xs text-ink-muted">
                   Lower-case letters, digits and _, starting with a letter — like pump_station. It cannot
                   change after it is saved.
                 </p>
               </div>
-              <label className="block text-xs font-semibold text-bms-muted">
+              <label className="block text-xs font-semibold text-ink-muted">
                 Label
                 <input
                   className="mt-1 w-full rounded border px-3 py-2 text-sm"
@@ -247,7 +247,7 @@ function LocationTypesCatalog() {
                 />
               </label>
               <div className="sm:col-span-2">
-                <label htmlFor="location-type-sort-order" className="block text-xs font-semibold text-bms-muted">
+                <label htmlFor="location-type-sort-order" className="block text-xs font-semibold text-ink-muted">
                   Sort order
                 </label>
                 <input
@@ -259,12 +259,12 @@ function LocationTypesCatalog() {
                   value={form.sortOrder}
                   onChange={(event) => setForm({ ...form, sortOrder: event.target.value })}
                 />
-                <p id="location-type-sort-order-hint" className="mt-1 text-xs text-bms-muted">
+                <p id="location-type-sort-order-hint" className="mt-1 text-xs text-ink-muted">
                   Lower shows first in the locations form. Leave empty to keep the current value (0 for a new type).
                 </p>
               </div>
             </div>
-            {error ? <div className="mt-2 text-xs text-red-700">{error}</div> : null}
+            {error ? <div className="mt-2 text-xs text-critical-ink">{error}</div> : null}
             <div className="mt-4 flex justify-end gap-2">
               <button
                 type="button"
@@ -275,7 +275,7 @@ function LocationTypesCatalog() {
               </button>
               <button
                 type="submit"
-                className="rounded bg-bms-green px-3 py-2 text-xs font-semibold text-white"
+                className="rounded bg-accent px-3 py-2 text-xs font-semibold text-on-accent"
               >
                 Save
               </button>

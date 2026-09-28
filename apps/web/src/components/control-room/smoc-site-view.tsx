@@ -47,7 +47,7 @@ export function SmocSiteView({ locationId, tab, scope }: SmocSiteViewProps) {
       <nav
         aria-label="SMOC pages"
         data-testid="smoc-tabs"
-        className="flex flex-wrap gap-1 border-b border-gray-200 pb-2"
+        className="flex flex-wrap gap-1 border-b border-line pb-2"
       >
         {tabs.map((entry) => {
           const active = entry.key === tab;
@@ -57,7 +57,7 @@ export function SmocSiteView({ locationId, tab, scope }: SmocSiteViewProps) {
               to={smocTabPath(locationId, entry.key)}
               aria-current={active ? "page" : undefined}
               className={`rounded px-3 py-1.5 text-xs font-semibold ${
-                active ? "bg-bms-green text-white" : "text-bms-muted hover:bg-gray-100 hover:text-bms-ink"
+                active ? "bg-accent text-on-accent" : "text-ink-muted hover:bg-well-deep hover:text-ink"
               }`}
             >
               {entry.label}
@@ -71,7 +71,7 @@ export function SmocSiteView({ locationId, tab, scope }: SmocSiteViewProps) {
         </SchematicTelemetryProvider>
       ) : (
         <SectionCard title="Outside your asset-group scope" bodyClassName="p-4">
-          <p className="text-sm text-bms-muted">
+          <p className="text-sm text-ink-muted">
             This page is not part of the asset groups your access scope covers.
           </p>
         </SectionCard>

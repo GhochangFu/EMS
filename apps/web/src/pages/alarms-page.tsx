@@ -65,12 +65,12 @@ function alarmSubsystem(alarm: AlarmListItem): AlarmSubsystem {
  */
 function alarmStateToneClass(state: AlarmLifecycleState): string {
   if (state === "active") {
-    return "font-medium text-bms-ink";
+    return "font-medium text-ink";
   }
   if (state === "acknowledged") {
-    return "text-emerald-700";
+    return "text-ok-ink";
   }
-  return "text-bms-muted";
+  return "text-ink-muted";
 }
 
 function matchesAlarmSearch(alarm: AlarmListItem, query: string): boolean {
@@ -212,9 +212,9 @@ export function AlarmsPage({ user }: AlarmsPageProps) {
     <AppShell
       user={user}
       kpiRibbon={
-        <span className="text-bms-ink">
+        <span className="text-ink">
           Alarm Centre · live rows via WebSocket{" "}
-          <code className="text-[10px] text-bms-muted">/ws/alarms</code>
+          <code className="text-[10px] text-ink-muted">/ws/alarms</code>
         </span>
       }
     >
@@ -235,7 +235,7 @@ export function AlarmsPage({ user }: AlarmsPageProps) {
           all, under-reporting the board instead of mis-reporting it.
         */}
         {vocabQ.isError ? (
-          <p className="rounded border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-900">
+          <p className="rounded border border-warning-line bg-warning-wash px-3 py-2 text-xs font-semibold text-warning-ink">
             Severity classification is unavailable — the vocabulary could not be
             loaded, so the counts below are not a reading of the plant. The alarm
             list itself is unaffected; severities render in their stored form.
@@ -283,16 +283,16 @@ export function AlarmsPage({ user }: AlarmsPageProps) {
                   key={item.subsystem}
                   className="grid grid-cols-[96px_minmax(0,1fr)_72px] items-center gap-4 text-sm sm:grid-cols-[120px_minmax(0,1fr)_84px]"
                 >
-                  <div className="truncate font-semibold text-bms-ink">{item.subsystem}</div>
+                  <div className="truncate font-semibold text-ink">{item.subsystem}</div>
                   <div className="min-w-0">
-                    <div className="h-2 rounded-full bg-gray-100">
+                    <div className="h-2 rounded-full bg-well-deep">
                     <div
-                      className="h-2 rounded-full bg-bms-green"
+                      className="h-2 rounded-full bg-accent"
                       style={{ width: `${pct}%` }}
                     />
                     </div>
                   </div>
-                  <div className="whitespace-nowrap text-right font-mono font-semibold text-bms-ink">
+                  <div className="whitespace-nowrap text-right font-mono font-semibold text-ink">
                     {item.count} / {rows.length}
                   </div>
                 </div>
@@ -302,18 +302,18 @@ export function AlarmsPage({ user }: AlarmsPageProps) {
         </SectionCard>
 
         {listQ.isLoading ? (
-          <p className="text-sm text-bms-muted">Loading alarms…</p>
+          <p className="text-sm text-ink-muted">Loading alarms…</p>
         ) : listQ.isError ? (
-          <p className="text-sm text-red-600">Could not load alarms (auth?).</p>
+          <p className="text-sm text-critical-ink-soft">Could not load alarms (auth?).</p>
         ) : (
           <SectionCard
             title="Alarm Grid"
             subtitle={`${filteredRows.length} of ${rows.length} loaded alarms shown`}
             actions={
-              <label className="flex min-w-[260px] items-center gap-2 text-xs text-bms-muted">
+              <label className="flex min-w-[260px] items-center gap-2 text-xs text-ink-muted">
                 Search
                 <input
-                  className="w-full rounded border border-gray-300 bg-white px-3 py-1.5 text-sm text-bms-ink"
+                  className="w-full rounded border border-line-strong bg-surface px-3 py-1.5 text-sm text-ink"
                   placeholder="Asset, site, severity, subsystem..."
                   value={search}
                   onChange={(event) => setSearch(event.target.value)}
@@ -323,7 +323,7 @@ export function AlarmsPage({ user }: AlarmsPageProps) {
             bodyClassName="overflow-x-auto p-0"
           >
             <table className="w-full min-w-[720px] text-left text-sm">
-              <thead className="border-b border-gray-100 bg-gray-50 text-[11px] font-semibold uppercase tracking-wide text-bms-muted">
+              <thead className="border-b border-well-deep bg-well text-[11px] font-semibold uppercase tracking-wide text-ink-muted">
                 <tr>
                   <th className="px-3 py-2">Raised</th>
                   <th className="px-3 py-2">Severity</th>
@@ -339,7 +339,7 @@ export function AlarmsPage({ user }: AlarmsPageProps) {
                   <tr>
                     <td
                       colSpan={7}
-                      className="px-3 py-8 text-center text-bms-muted"
+                      className="px-3 py-8 text-center text-ink-muted"
                     >
                       No alarms yet. Start the simulator — voltage or demand rules
                       will raise rows within a few seconds.
@@ -349,7 +349,7 @@ export function AlarmsPage({ user }: AlarmsPageProps) {
                   <tr>
                     <td
                       colSpan={7}
-                      className="px-3 py-8 text-center text-bms-muted"
+                      className="px-3 py-8 text-center text-ink-muted"
                     >
                       No alarms match the current search.
                     </td>
@@ -367,8 +367,8 @@ export function AlarmsPage({ user }: AlarmsPageProps) {
                       */
                       className={
                         a.clearedAt
-                          ? "border-b border-gray-50 bg-gray-50/60 text-bms-muted"
-                          : "border-b border-gray-100"
+                          ? "border-b border-well bg-well/60 text-ink-muted"
+                          : "border-b border-well-deep"
                       }
                     >
                       <td className="whitespace-nowrap px-3 py-2 font-mono text-xs">
@@ -382,7 +382,7 @@ export function AlarmsPage({ user }: AlarmsPageProps) {
                       </td>
                       <td className="px-3 py-2">
                         <div className="font-medium">{a.assetCode}</div>
-                        <div className="text-xs text-bms-muted">{a.assetName}</div>
+                        <div className="text-xs text-ink-muted">{a.assetName}</div>
                       </td>
                       <td className="px-3 py-2 text-xs">{a.siteName}</td>
                       <td className="max-w-xs px-3 py-2 text-xs">{a.message}</td>
@@ -395,14 +395,14 @@ export function AlarmsPage({ user }: AlarmsPageProps) {
                         <div className="flex justify-end gap-2">
                           <button
                             type="button"
-                            className="rounded border border-gray-300 px-2.5 py-1 text-xs font-semibold text-bms-ink hover:bg-gray-50"
+                            className="rounded border border-line-strong px-2.5 py-1 text-xs font-semibold text-ink hover:bg-well"
                             onClick={() => setDetailsTargetId(a.id)}
                           >
                             Details
                           </button>
                           <button
                             type="button"
-                            className="rounded border border-gray-300 px-2.5 py-1 text-xs font-semibold text-bms-ink hover:bg-gray-50"
+                            className="rounded border border-line-strong px-2.5 py-1 text-xs font-semibold text-ink hover:bg-well"
                             onClick={() => startWorkOrder(a)}
                           >
                             Work order
@@ -418,7 +418,7 @@ export function AlarmsPage({ user }: AlarmsPageProps) {
                           {canAcknowledge(a) ? (
                           <button
                             type="button"
-                            className="rounded bg-bms-green px-2.5 py-1 text-xs font-semibold text-white hover:bg-bms-green-dark"
+                            className="rounded bg-accent px-2.5 py-1 text-xs font-semibold text-on-accent hover:bg-accent-strong"
                             onClick={() => {
                               setAckTarget(a);
                               setReason("");
@@ -441,7 +441,7 @@ export function AlarmsPage({ user }: AlarmsPageProps) {
         {listQ.hasNextPage ? (
           <button
             type="button"
-            className="text-sm font-medium text-bms-green hover:underline"
+            className="text-sm font-medium text-accent hover:underline"
             onClick={() => void listQ.fetchNextPage()}
             disabled={listQ.isFetchingNextPage}
             aria-busy={listQ.isFetchingNextPage}
@@ -453,24 +453,24 @@ export function AlarmsPage({ user }: AlarmsPageProps) {
 
       {ackTarget ? (
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-scrim/40 p-4"
           role="dialog"
           aria-modal="true"
           aria-labelledby="ack-title"
         >
-          <div className="w-full max-w-md rounded-lg bg-white p-6 shadow-xl">
+          <div className="w-full max-w-md rounded-lg bg-surface p-6 shadow-xl">
             <h2 id="ack-title" className="font-condensed text-lg font-bold">
               Acknowledge alarm
             </h2>
-            <p className="mt-1 text-xs text-bms-muted">{ackTarget.message}</p>
+            <p className="mt-1 text-xs text-ink-muted">{ackTarget.message}</p>
             <form className="mt-4 space-y-3" onSubmit={submitAck}>
               <div>
-                <label className="text-xs font-medium text-bms-muted" htmlFor="reason">
+                <label className="text-xs font-medium text-ink-muted" htmlFor="reason">
                   Reason (required)
                 </label>
                 <textarea
                   id="reason"
-                  className="mt-1 w-full rounded border border-gray-300 px-3 py-2 text-sm"
+                  className="mt-1 w-full rounded border border-line-strong px-3 py-2 text-sm"
                   rows={3}
                   value={reason}
                   onChange={(ev) => setReason(ev.target.value)}
@@ -480,14 +480,14 @@ export function AlarmsPage({ user }: AlarmsPageProps) {
                 />
               </div>
               {ackError ? (
-                <p className="text-xs text-red-600" role="alert">
+                <p className="text-xs text-critical-ink-soft" role="alert">
                   {ackError}
                 </p>
               ) : null}
               <div className="flex justify-end gap-2">
                 <button
                   type="button"
-                  className="rounded px-3 py-2 text-sm text-bms-muted hover:bg-gray-100"
+                  className="rounded px-3 py-2 text-sm text-ink-muted hover:bg-well-deep"
                   onClick={() => setAckTarget(null)}
                 >
                   Cancel
@@ -496,7 +496,7 @@ export function AlarmsPage({ user }: AlarmsPageProps) {
                   type="submit"
                   disabled={ackM.isPending || reason.trim().length < 3}
                   aria-busy={ackM.isPending}
-                  className="rounded bg-bms-green px-4 py-2 text-sm font-semibold text-white disabled:opacity-50"
+                  className="rounded bg-accent px-4 py-2 text-sm font-semibold text-on-accent disabled:opacity-50"
                 >
                   {ackM.isPending ? "Saving…" : "Confirm ack"}
                 </button>

@@ -175,19 +175,19 @@ export function DuplicateDashboardDialog({
     <div
       role="dialog"
       aria-label="Duplicate dashboard"
-      className="space-y-3 rounded border border-gray-200 bg-white p-4"
+      className="space-y-3 rounded border border-line bg-surface p-4"
     >
-      <h2 className="text-sm font-semibold text-bms-ink">Duplicate dashboard</h2>
+      <h2 className="text-sm font-semibold text-ink">Duplicate dashboard</h2>
 
-      <p className="rounded border border-amber-200 bg-amber-50 p-2 text-[11px] text-amber-900">
+      <p className="rounded border border-warning-line bg-warning-wash p-2 text-[11px] text-warning-ink">
         This copy keeps every point binding from the source dashboard. If you place it in a
         different location, retarget each binding manually afterwards — duplicating does not move
         or re-map them.
       </p>
 
-      {sourceQ.isLoading ? <p className="text-xs text-bms-muted">Loading the source dashboard…</p> : null}
+      {sourceQ.isLoading ? <p className="text-xs text-ink-muted">Loading the source dashboard…</p> : null}
       {sourceQ.isError ? (
-        <p className="rounded border border-red-200 bg-red-50 p-2 text-xs text-red-800">
+        <p className="rounded border border-critical-line bg-critical-wash p-2 text-xs text-critical-ink-strong">
           {apiErrorMessage(sourceQ.error)}
         </p>
       ) : null}
@@ -195,19 +195,19 @@ export function DuplicateDashboardDialog({
       {source ? (
         <>
           <label className="block space-y-1 text-xs">
-            <span className="font-semibold uppercase tracking-wide text-bms-muted">Name</span>
+            <span className="font-semibold uppercase tracking-wide text-ink-muted">Name</span>
             <input
               value={name}
               onChange={(event) => setName(event.target.value)}
-              className="w-full rounded border border-gray-200 px-2 py-1.5 text-xs"
+              className="w-full rounded border border-line px-2 py-1.5 text-xs"
             />
           </label>
           <label className="block space-y-1 text-xs">
-            <span className="font-semibold uppercase tracking-wide text-bms-muted">Slug</span>
+            <span className="font-semibold uppercase tracking-wide text-ink-muted">Slug</span>
             <input
               value={slug}
               onChange={(event) => setSlug(event.target.value)}
-              className="w-full rounded border border-gray-200 px-2 py-1.5 text-xs"
+              className="w-full rounded border border-line px-2 py-1.5 text-xs"
             />
           </label>
 
@@ -226,7 +226,7 @@ export function DuplicateDashboardDialog({
           />
 
           {widgetsFailure ? (
-            <div className="space-y-1 rounded border border-red-200 bg-red-50 p-2 text-xs text-red-800">
+            <div className="space-y-1 rounded border border-critical-line bg-critical-wash p-2 text-xs text-critical-ink-strong">
               <p>
                 &ldquo;{widgetsFailure.created.name}&rdquo; was created, but its widgets could not
                 be copied: {widgetsFailure.message}
@@ -241,7 +241,7 @@ export function DuplicateDashboardDialog({
             </div>
           ) : null}
           {otherFailure ? (
-            <p className="rounded border border-red-200 bg-red-50 p-2 text-xs text-red-800">{otherFailure}</p>
+            <p className="rounded border border-critical-line bg-critical-wash p-2 text-xs text-critical-ink-strong">{otherFailure}</p>
           ) : null}
 
           <div className="flex items-center gap-2 pt-2">
@@ -250,14 +250,14 @@ export function DuplicateDashboardDialog({
               disabled={blocked}
               aria-busy={duplicateM.isPending}
               onClick={() => duplicateM.mutate()}
-              className="rounded bg-bms-green px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-60"
+              className="rounded bg-accent px-3 py-1.5 text-xs font-semibold text-on-accent disabled:opacity-60"
             >
               {duplicateM.isPending ? "Duplicating…" : "Duplicate"}
             </button>
             <button
               type="button"
               onClick={onClose}
-              className="rounded border border-gray-300 px-3 py-1.5 text-xs font-semibold text-bms-ink"
+              className="rounded border border-line-strong px-3 py-1.5 text-xs font-semibold text-ink"
             >
               Cancel
             </button>

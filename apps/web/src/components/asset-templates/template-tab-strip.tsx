@@ -22,7 +22,7 @@ export function TemplateTabStrip({ active, onSelect }: TemplateTabStripProps) {
 
   return (
     <div className="space-y-1">
-      <nav className="flex flex-wrap gap-1 border-b border-gray-200 pb-2" role="tablist">
+      <nav className="flex flex-wrap gap-1 border-b border-line pb-2" role="tablist">
         {TEMPLATE_TABS.map((tab) => (
           <button
             key={tab.id}
@@ -32,15 +32,15 @@ export function TemplateTabStrip({ active, onSelect }: TemplateTabStripProps) {
             onClick={() => onSelect(tab.id)}
             className={`rounded px-3 py-1.5 text-xs font-semibold ${
               tab.id === active
-                ? "bg-bms-green text-white"
-                : "text-bms-muted hover:bg-gray-100 hover:text-bms-ink"
+                ? "bg-accent text-on-accent"
+                : "text-ink-muted hover:bg-well-deep hover:text-ink"
             }`}
           >
             {tab.label}
           </button>
         ))}
       </nav>
-      <p className="text-[11px] text-bms-muted">{current.hint}</p>
+      <p className="text-[11px] text-ink-muted">{current.hint}</p>
     </div>
   );
 }

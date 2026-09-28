@@ -133,11 +133,11 @@ export function AlarmsTab({ template, editable, onSaved, onDirtyChange }: Alarms
   return (
     <div className="space-y-3">
       {error ? (
-        <p className="rounded border border-red-200 bg-red-50 p-3 text-sm text-red-800">{error}</p>
+        <p className="rounded border border-critical-line bg-critical-wash p-3 text-sm text-critical-ink-strong">{error}</p>
       ) : null}
 
       {blockedKeys.length > 0 ? (
-        <p className="rounded border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900">
+        <p className="rounded border border-warning-line bg-warning-wash p-3 text-xs text-warning-ink">
           Saving alarms is blocked: this template holds content that cannot be written back. The
           banner above lists the keys.
         </p>
@@ -151,7 +151,7 @@ export function AlarmsTab({ template, editable, onSaved, onDirtyChange }: Alarms
           disabled and is owed a limit, and that saving this tab moves nothing
           already live — decision 1's republish semantics, which is the single
           most likely misreading now that a link between the two exists. */}
-      <p className="rounded border border-amber-200 bg-amber-50 p-3 text-[11px] text-amber-900">
+      <p className="rounded border border-warning-line bg-warning-wash p-3 text-[11px] text-warning-ink">
         These are the thresholds this asset class ships with, and the knowledge behind each one.
         <strong> Instantiating a published version creates one automation rule per alarm per
         asset</strong> — a row with a threshold arms at once, and a row without one is created
@@ -163,14 +163,14 @@ export function AlarmsTab({ template, editable, onSaved, onDirtyChange }: Alarms
       {sectionProblems.map((problem) => (
         <p
           key={problem.message}
-          className="rounded border border-red-200 bg-red-50 p-3 text-xs text-red-800"
+          className="rounded border border-critical-line bg-critical-wash p-3 text-xs text-critical-ink-strong"
         >
           {problem.message}
         </p>
       ))}
 
       {rows.length === 0 ? (
-        <p className="rounded border border-dashed border-gray-300 p-4 text-xs text-bms-muted">
+        <p className="rounded border border-dashed border-line-strong p-4 text-xs text-ink-muted">
           This template declares no alarms yet.
         </p>
       ) : null}
@@ -181,7 +181,7 @@ export function AlarmsTab({ template, editable, onSaved, onDirtyChange }: Alarms
           rowProblems.find((problem) => problem.field === field)?.message;
 
         return (
-          <section key={index} className="rounded border border-gray-200 p-3">
+          <section key={index} className="rounded border border-line p-3">
             <div className="grid gap-3 md:grid-cols-3">
               <Field label="Code" error={problemFor("code")}>
                 <input
@@ -259,7 +259,7 @@ export function AlarmsTab({ template, editable, onSaved, onDirtyChange }: Alarms
                     itself instead of showing an editable empty box. Choosing
                     an operator above is what makes this input reappear. */}
                 {alarm.operator === "" && alarm.thresholdValue === "" ? (
-                  <p className="w-full rounded border border-dashed border-gray-200 px-2 py-1.5 text-xs text-bms-muted">
+                  <p className="w-full rounded border border-dashed border-line px-2 py-1.5 text-xs text-ink-muted">
                     value set per site at commissioning
                   </p>
                 ) : (
@@ -330,10 +330,10 @@ export function AlarmsTab({ template, editable, onSaved, onDirtyChange }: Alarms
                 rowProblems.some((problem) => PHILOSOPHY_FIELDS.includes(problem.field))
               }
             >
-              <summary className="cursor-pointer text-[11px] font-semibold uppercase tracking-wide text-bms-muted">
+              <summary className="cursor-pointer text-[11px] font-semibold uppercase tracking-wide text-ink-muted">
                 Alarm philosophy
                 {rowProblems.some((problem) => PHILOSOPHY_FIELDS.includes(problem.field)) ? (
-                  <span className="ml-2 font-normal text-red-700">needs attention</span>
+                  <span className="ml-2 font-normal text-critical-ink">needs attention</span>
                 ) : null}
               </summary>
               <div className="mt-2 grid gap-3 md:grid-cols-2">
@@ -391,7 +391,7 @@ export function AlarmsTab({ template, editable, onSaved, onDirtyChange }: Alarms
                 onClick={() =>
                   setRows((current) => current.filter((_, position) => position !== index))
                 }
-                className="mt-3 rounded border border-red-200 px-3 py-1 text-[11px] font-semibold text-red-700"
+                className="mt-3 rounded border border-critical-line px-3 py-1 text-[11px] font-semibold text-critical-ink"
               >
                 Remove
               </button>
@@ -406,7 +406,7 @@ export function AlarmsTab({ template, editable, onSaved, onDirtyChange }: Alarms
             type="button"
             disabled={rows.length >= MAX_ALARM_ENTRIES}
             onClick={() => setRows((current) => [...current, blankAlarmRow()])}
-            className="rounded border border-gray-200 px-3 py-1.5 text-xs font-semibold text-bms-ink disabled:opacity-60"
+            className="rounded border border-line px-3 py-1.5 text-xs font-semibold text-ink disabled:opacity-60"
           >
             Add an alarm
           </button>
@@ -415,11 +415,11 @@ export function AlarmsTab({ template, editable, onSaved, onDirtyChange }: Alarms
             disabled={blocked || !changed || saveM.isPending}
             aria-busy={saveM.isPending}
             onClick={() => saveM.mutate()}
-            className="rounded bg-bms-green px-4 py-1.5 text-xs font-semibold text-white disabled:opacity-60"
+            className="rounded bg-accent px-4 py-1.5 text-xs font-semibold text-on-accent disabled:opacity-60"
           >
             {saveM.isPending ? "Saving…" : "Save alarms"}
           </button>
-          <span className="text-[11px] text-bms-muted">
+          <span className="text-[11px] text-ink-muted">
             {!vocabQ.isSuccess
               ? "Loading the severity, category and skill vocabularies…"
               : blockedKeys.length > 0
@@ -437,8 +437,8 @@ export function AlarmsTab({ template, editable, onSaved, onDirtyChange }: Alarms
 }
 
 function fieldClass(disabled: boolean, problem: string | undefined): string {
-  const tone = problem ? "border-red-300 bg-red-50" : "border-gray-200";
+  const tone = problem ? "border-critical-line-strong bg-critical-wash" : "border-line";
   return `w-full rounded border px-2 py-1.5 text-xs ${tone} ${
-    disabled ? "bg-gray-50 text-bms-muted" : ""
+    disabled ? "bg-well text-ink-muted" : ""
   }`;
 }

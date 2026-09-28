@@ -156,7 +156,7 @@ export async function pillToneComesFromTheVocabulary(): Promise<void> {
   renderRail({ items: [alarm(1, { severity: "high" })] });
   const pill = await screen.findByText("high");
   // The row can render before the vocabulary lands; until then the pill is grey.
-  await waitFor(() => expect(pill.className).toContain("bg-amber-100"));
+  await waitFor(() => expect(pill.className).toContain("bg-warning-wash-strong"));
 }
 
 /** The Alarm Summary tab lists every severity's count, most urgent first. */

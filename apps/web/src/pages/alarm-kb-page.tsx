@@ -75,7 +75,7 @@ export function AlarmKbPage({ user }: AlarmKbPageProps) {
     <AppShell
       user={user}
       kpiRibbon={
-        <span className="text-bms-ink">
+        <span className="text-ink">
           Alarm philosophy · what engineering decided about each asset class
         </span>
       }
@@ -88,9 +88,9 @@ export function AlarmKbPage({ user }: AlarmKbPageProps) {
         />
 
         {kbQ.isLoading ? (
-          <p className="text-sm text-bms-muted">Loading the knowledge base…</p>
+          <p className="text-sm text-ink-muted">Loading the knowledge base…</p>
         ) : kbQ.isError ? (
-          <p className="text-sm text-red-600" role="alert">
+          <p className="text-sm text-critical-ink-soft" role="alert">
             Could not load the alarm philosophy knowledge base.
           </p>
         ) : (
@@ -98,10 +98,10 @@ export function AlarmKbPage({ user }: AlarmKbPageProps) {
             title="Asset classes"
             subtitle={`${filtered.length} of ${classes.length} published classes shown`}
             actions={
-              <label className="flex min-w-[260px] items-center gap-2 text-xs text-bms-muted">
+              <label className="flex min-w-[260px] items-center gap-2 text-xs text-ink-muted">
                 Search
                 <input
-                  className="w-full rounded border border-gray-300 bg-white px-3 py-1.5 text-sm text-bms-ink"
+                  className="w-full rounded border border-line-strong bg-surface px-3 py-1.5 text-sm text-ink"
                   placeholder="Class, alarm code, cause, action…"
                   value={search}
                   onChange={(event) => setSearch(event.target.value)}
@@ -116,20 +116,20 @@ export function AlarmKbPage({ user }: AlarmKbPageProps) {
               fresh tenant is genuinely in that state.
             */}
             {classes.length === 0 ? (
-              <p className="text-sm text-bms-muted">
+              <p className="text-sm text-ink-muted">
                 No published asset class carries an alarm philosophy yet. Philosophy is authored on
                 a template&apos;s Alarms tab and appears here once that template version is
                 published.
               </p>
             ) : filtered.length === 0 ? (
-              <p className="text-sm text-bms-muted">
+              <p className="text-sm text-ink-muted">
                 No class matches this search.
               </p>
             ) : (
               <div className="space-y-6">
                 {byDomain.map((group) => (
                   <section key={group.domain} className="space-y-3">
-                    <h2 className="text-xs font-semibold uppercase tracking-wide text-bms-muted">
+                    <h2 className="text-xs font-semibold uppercase tracking-wide text-ink-muted">
                       {group.domain}
                     </h2>
                     <div className="grid gap-3 lg:grid-cols-2">
@@ -152,28 +152,28 @@ function ClassCard({ entry }: { entry: AlarmKbClass }) {
   return (
     <article
       aria-label={entry.templateName}
-      className="rounded border border-gray-200 bg-white p-3"
+      className="rounded border border-line bg-surface p-3"
     >
       <div className="flex flex-wrap items-baseline justify-between gap-2">
-        <h3 className="text-sm font-semibold text-bms-ink">{entry.templateName}</h3>
-        <span className="font-mono text-[11px] text-bms-muted">
+        <h3 className="text-sm font-semibold text-ink">{entry.templateName}</h3>
+        <span className="font-mono text-[11px] text-ink-muted">
           {entry.templateCode} v{entry.templateVersion}
         </span>
       </div>
       <ul className="mt-3 space-y-3">
         {entry.alarms.map((alarm) => (
-          <li key={alarm.alarmCode} className="border-t border-gray-100 pt-2 first:border-0 first:pt-0">
+          <li key={alarm.alarmCode} className="border-t border-well-deep pt-2 first:border-0 first:pt-0">
             <div className="flex flex-wrap items-baseline gap-2">
-              <span className="font-mono text-[11px] text-bms-muted">{alarm.alarmCode}</span>
+              <span className="font-mono text-[11px] text-ink-muted">{alarm.alarmCode}</span>
               {alarm.message ? (
-                <span className="text-xs font-medium text-bms-ink">{alarm.message}</span>
+                <span className="text-xs font-medium text-ink">{alarm.message}</span>
               ) : null}
             </div>
             <dl className="mt-1.5 space-y-1 text-xs">
               {philosophyLines(alarm).map(([label, value]) => (
                 <div key={label}>
-                  <dt className="font-semibold text-bms-ink">{label}</dt>
-                  <dd className="text-bms-muted">{value}</dd>
+                  <dt className="font-semibold text-ink">{label}</dt>
+                  <dd className="text-ink-muted">{value}</dd>
                 </div>
               ))}
             </dl>

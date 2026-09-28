@@ -127,32 +127,32 @@ export function ReportsPanel({ user }: ReportsPanelProps) {
   return (
     <div className="grid gap-4 xl:grid-cols-[360px_minmax(0,1fr)]">
       <section className="space-y-4">
-        <div className="rounded border border-gray-200 bg-white">
-          <div className="border-b border-gray-200 px-4 py-3">
-            <h2 className="font-condensed text-lg font-bold text-bms-ink">
+        <div className="rounded border border-line bg-surface">
+          <div className="border-b border-line px-4 py-3">
+            <h2 className="font-condensed text-lg font-bold text-ink">
               Report Templates
             </h2>
-            <p className="text-xs text-bms-muted">
+            <p className="text-xs text-ink-muted">
               Sprint E activates Energy Consumption only. XLSX is the
               recommended format.
             </p>
           </div>
-          <div className="divide-y divide-gray-200">
+          <div className="divide-y divide-line">
             {reportCards.map((card) => (
               <article
                 key={card.title}
-                className={`p-4 ${card.active ? "bg-bms-green/5" : "bg-white"}`}
+                className={`p-4 ${card.active ? "bg-accent/5" : "bg-surface"}`}
               >
                 <div className="flex items-start justify-between gap-3">
                   <div>
-                    <h3 className="font-semibold text-bms-ink">{card.title}</h3>
-                    <p className="mt-1 text-sm text-bms-muted">{card.description}</p>
+                    <h3 className="font-semibold text-ink">{card.title}</h3>
+                    <p className="mt-1 text-sm text-ink-muted">{card.description}</p>
                   </div>
                   <span
                     className={`rounded-full border px-2 py-0.5 text-[11px] font-semibold ${
                       card.active
-                        ? "border-bms-green/20 bg-bms-green/10 text-bms-green"
-                        : "border-gray-200 bg-gray-100 text-gray-600"
+                        ? "border-accent/20 bg-accent/10 text-accent"
+                        : "border-line bg-well-deep text-ink-muted"
                     }`}
                   >
                     {card.formats}
@@ -163,28 +163,28 @@ export function ReportsPanel({ user }: ReportsPanelProps) {
           </div>
         </div>
 
-        <div className="rounded border border-gray-200 bg-white p-4">
-          <h2 className="font-condensed text-lg font-bold text-bms-ink">
+        <div className="rounded border border-line bg-surface p-4">
+          <h2 className="font-condensed text-lg font-bold text-ink">
             Date Range
           </h2>
           <div className="mt-3 grid gap-3">
-            <label className="text-xs font-medium text-bms-muted" htmlFor="start">
+            <label className="text-xs font-medium text-ink-muted" htmlFor="start">
               Start date
             </label>
             <input
               id="start"
               type="date"
-              className="rounded border border-gray-300 px-3 py-2 text-sm"
+              className="rounded border border-line-strong px-3 py-2 text-sm"
               value={startDate}
               onChange={(e) => setStartDate(e.target.value)}
             />
-            <label className="text-xs font-medium text-bms-muted" htmlFor="end">
+            <label className="text-xs font-medium text-ink-muted" htmlFor="end">
               End date
             </label>
             <input
               id="end"
               type="date"
-              className="rounded border border-gray-300 px-3 py-2 text-sm"
+              className="rounded border border-line-strong px-3 py-2 text-sm"
               value={endDate}
               onChange={(e) => setEndDate(e.target.value)}
             />
@@ -196,7 +196,7 @@ export function ReportsPanel({ user }: ReportsPanelProps) {
             existing tooling reads.
           */}
           <button
-            className="mt-4 w-full rounded bg-bms-green px-3 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:bg-gray-300"
+            className="mt-4 w-full rounded bg-accent px-3 py-2 text-sm font-semibold text-on-accent disabled:cursor-not-allowed disabled:bg-line-strong"
             disabled={xlsxM.isPending || previewQ.isError || !preview}
             aria-busy={xlsxM.isPending}
             onClick={() => xlsxM.mutate()}
@@ -204,10 +204,10 @@ export function ReportsPanel({ user }: ReportsPanelProps) {
             {xlsxM.isPending ? "Preparing XLSX..." : "Export XLSX"}
           </button>
           {xlsxM.isError ? (
-            <p className="mt-2 text-xs text-red-600">XLSX export failed.</p>
+            <p className="mt-2 text-xs text-critical-ink-soft">XLSX export failed.</p>
           ) : null}
           <button
-            className="mt-2 w-full rounded border border-bms-green px-3 py-2 text-sm font-semibold text-bms-green disabled:cursor-not-allowed disabled:border-gray-300 disabled:text-gray-400"
+            className="mt-2 w-full rounded border border-accent px-3 py-2 text-sm font-semibold text-accent disabled:cursor-not-allowed disabled:border-line-strong disabled:text-ink-hint"
             disabled={csvM.isPending || previewQ.isError || !preview}
             aria-busy={csvM.isPending}
             onClick={() => csvM.mutate()}
@@ -215,10 +215,10 @@ export function ReportsPanel({ user }: ReportsPanelProps) {
             {csvM.isPending ? "Preparing CSV..." : "Export CSV"}
           </button>
           {csvM.isError ? (
-            <p className="mt-2 text-xs text-red-600">CSV export failed.</p>
+            <p className="mt-2 text-xs text-critical-ink-soft">CSV export failed.</p>
           ) : null}
           <button
-            className="mt-2 w-full rounded border border-bms-green px-3 py-2 text-sm font-semibold text-bms-green disabled:cursor-not-allowed disabled:border-gray-300 disabled:text-gray-400"
+            className="mt-2 w-full rounded border border-accent px-3 py-2 text-sm font-semibold text-accent disabled:cursor-not-allowed disabled:border-line-strong disabled:text-ink-hint"
             disabled={pdfM.isPending || previewQ.isError || !preview}
             aria-busy={pdfM.isPending}
             onClick={() => pdfM.mutate()}
@@ -226,7 +226,7 @@ export function ReportsPanel({ user }: ReportsPanelProps) {
             {pdfM.isPending ? "Preparing PDF..." : "Export PDF"}
           </button>
           {pdfM.isError ? (
-            <p className="mt-2 text-xs text-red-600">PDF export failed.</p>
+            <p className="mt-2 text-xs text-critical-ink-soft">PDF export failed.</p>
           ) : null}
           {canSave ? (
             <SaveToHistory
@@ -240,13 +240,13 @@ export function ReportsPanel({ user }: ReportsPanelProps) {
       </section>
 
       <section className="space-y-4">
-        <div className="rounded border border-gray-200 bg-white px-4 py-3">
+        <div className="rounded border border-line bg-surface px-4 py-3">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div>
-              <h2 className="font-condensed text-lg font-bold text-bms-ink">
+              <h2 className="font-condensed text-lg font-bold text-ink">
                 Energy Consumption Preview
               </h2>
-              <p className="text-xs text-bms-muted">
+              <p className="text-xs text-ink-muted">
                 {preview
                   ? `${preview.range.startDate} to ${preview.range.endDate} · generated ${new Date(
                       preview.generatedAt,
@@ -288,7 +288,7 @@ export function ReportsPanel({ user }: ReportsPanelProps) {
         </div>
 
         {previewQ.isError ? (
-          <p className="rounded border border-red-200 bg-red-50 p-4 text-sm text-red-700">
+          <p className="rounded border border-critical-line bg-critical-wash p-4 text-sm text-critical-ink">
             Could not load report preview. Check the date range and try again.
           </p>
         ) : null}
@@ -351,15 +351,15 @@ function SaveToHistory({ input, user, hasPreview, previewError }: SaveToHistoryP
   });
 
   return (
-    <div className="mt-4 border-t border-gray-200 pt-4">
-      <h3 className="text-xs font-semibold uppercase tracking-wide text-bms-muted">Save to history</h3>
+    <div className="mt-4 border-t border-line pt-4">
+      <h3 className="text-xs font-semibold uppercase tracking-wide text-ink-muted">Save to history</h3>
       <div className="mt-2 grid gap-2">
-        <label className="text-xs font-medium text-bms-muted" htmlFor="save-format">
+        <label className="text-xs font-medium text-ink-muted" htmlFor="save-format">
           Format
         </label>
         <select
           id="save-format"
-          className="rounded border border-gray-300 px-3 py-2 text-sm"
+          className="rounded border border-line-strong px-3 py-2 text-sm"
           value={format}
           onChange={(e) => setFormat(e.target.value as ReportFileFormat)}
         >
@@ -371,12 +371,12 @@ function SaveToHistory({ input, user, hasPreview, previewError }: SaveToHistoryP
         </select>
         {needsOrganization ? (
           <>
-            <label className="text-xs font-medium text-bms-muted" htmlFor="save-organization">
+            <label className="text-xs font-medium text-ink-muted" htmlFor="save-organization">
               Organization
             </label>
             <select
               id="save-organization"
-              className="rounded border border-gray-300 px-3 py-2 text-sm"
+              className="rounded border border-line-strong px-3 py-2 text-sm"
               value={organizationId ?? ""}
               onChange={(e) => setOrganizationId(e.target.value === "" ? undefined : e.target.value)}
             >
@@ -392,7 +392,7 @@ function SaveToHistory({ input, user, hasPreview, previewError }: SaveToHistoryP
       </div>
       <button
         type="button"
-        className="mt-3 w-full rounded bg-bms-ink px-3 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:bg-gray-300"
+        className="mt-3 w-full rounded bg-chrome px-3 py-2 text-sm font-semibold text-on-dark disabled:cursor-not-allowed disabled:bg-line-strong"
         disabled={blockedReason !== null}
         aria-busy={saveM.isPending}
         onClick={() => saveM.mutate()}
@@ -400,10 +400,10 @@ function SaveToHistory({ input, user, hasPreview, previewError }: SaveToHistoryP
         {saveM.isPending ? "Saving…" : "Save to history"}
       </button>
       {blockedReason !== null && !saveM.isPending ? (
-        <p className="mt-2 text-xs text-bms-muted">{blockedReason}</p>
+        <p className="mt-2 text-xs text-ink-muted">{blockedReason}</p>
       ) : null}
       {outcome !== null ? (
-        <p className={`mt-2 text-xs ${outcome.tone === "saved" ? "text-bms-green" : "text-red-600"}`}>
+        <p className={`mt-2 text-xs ${outcome.tone === "saved" ? "text-accent" : "text-critical-ink-soft"}`}>
           {outcome.text}
         </p>
       ) : null}
@@ -419,8 +419,8 @@ function PreviewDetails({ preview }: { preview: EnergyReportPreview }) {
 
   return (
     <>
-      <section className="rounded border border-gray-200 bg-white p-4">
-        <h2 className="font-condensed text-sm font-bold text-bms-ink">
+      <section className="rounded border border-line bg-surface p-4">
+        <h2 className="font-condensed text-sm font-bold text-ink">
           Source Mix Totals
         </h2>
         <div className="mt-3 grid gap-3 sm:grid-cols-3">
@@ -442,13 +442,13 @@ function PreviewDetails({ preview }: { preview: EnergyReportPreview }) {
         </div>
       </section>
 
-      <section className="rounded border border-gray-200 bg-white p-4">
-        <h2 className="font-condensed text-sm font-bold text-bms-ink">
+      <section className="rounded border border-line bg-surface p-4">
+        <h2 className="font-condensed text-sm font-bold text-ink">
           Top Consumers
         </h2>
-        <div className="mt-3 overflow-hidden rounded border border-gray-200">
-          <table className="min-w-full divide-y divide-gray-200 text-sm">
-            <thead className="bg-gray-50 text-left text-xs uppercase tracking-wide text-bms-muted">
+        <div className="mt-3 overflow-hidden rounded border border-line">
+          <table className="min-w-full divide-y divide-line text-sm">
+            <thead className="bg-well text-left text-xs uppercase tracking-wide text-ink-muted">
               <tr>
                 <th className="px-3 py-2">Asset</th>
                 <th className="px-3 py-2">Site</th>
@@ -456,7 +456,7 @@ function PreviewDetails({ preview }: { preview: EnergyReportPreview }) {
                 <th className="px-3 py-2 text-right">Est. kWh</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-gray-200">
+            <tbody className="divide-y divide-line">
               {preview.topConsumers.map((consumer) => (
                 <ConsumerRow key={consumer.assetId} consumer={consumer} />
               ))}
@@ -465,11 +465,11 @@ function PreviewDetails({ preview }: { preview: EnergyReportPreview }) {
         </div>
       </section>
 
-      <section className="rounded border border-gray-200 bg-white p-4">
-        <h2 className="font-condensed text-sm font-bold text-bms-ink">
+      <section className="rounded border border-line bg-surface p-4">
+        <h2 className="font-condensed text-sm font-bold text-ink">
           Sprint E Notes
         </h2>
-        <ul className="mt-2 list-disc space-y-1 pl-5 text-sm text-bms-muted">
+        <ul className="mt-2 list-disc space-y-1 pl-5 text-sm text-ink-muted">
           {preview.notes.map((note) => (
             <li key={note}>{note}</li>
           ))}
@@ -490,14 +490,14 @@ function SourcePill({
 }) {
   const pct = total > 0 ? (value / total) * 100 : 0;
   return (
-    <div className="rounded border border-gray-200 bg-gray-50 p-3">
-      <div className="text-xs uppercase tracking-wide text-bms-muted">{label}</div>
-      <div className="mt-1 font-condensed text-xl font-bold text-bms-ink">
+    <div className="rounded border border-line bg-well p-3">
+      <div className="text-xs uppercase tracking-wide text-ink-muted">{label}</div>
+      <div className="mt-1 font-condensed text-xl font-bold text-ink">
         {formatNumber(value)} kWh
       </div>
-      <div className="mt-2 h-1.5 rounded bg-gray-200">
+      <div className="mt-2 h-1.5 rounded bg-line">
         <div
-          className="h-1.5 rounded bg-bms-green"
+          className="h-1.5 rounded bg-accent"
           style={{ width: `${Math.min(100, pct)}%` }}
         />
       </div>
@@ -509,10 +509,10 @@ function ConsumerRow({ consumer }: { consumer: EnergyTopConsumer }) {
   return (
     <tr>
       <td className="px-3 py-2">
-        <div className="font-medium text-bms-ink">{consumer.code}</div>
-        <div className="text-xs text-bms-muted">{consumer.name}</div>
+        <div className="font-medium text-ink">{consumer.code}</div>
+        <div className="text-xs text-ink-muted">{consumer.name}</div>
       </td>
-      <td className="px-3 py-2 text-bms-muted">{consumer.siteName}</td>
+      <td className="px-3 py-2 text-ink-muted">{consumer.siteName}</td>
       <td className="px-3 py-2 text-right font-mono">
         {formatNumber(consumer.avgKw, 1)}
       </td>

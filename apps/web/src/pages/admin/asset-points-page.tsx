@@ -63,7 +63,7 @@ function CalcRuntimePill({ runtime }: { runtime: AssetPointCalcConfigDto["runtim
     return null;
   }
   const tone =
-    runtime?.lastOutcome === "skipped" ? "bg-red-100 text-red-800" : "bg-bms-green/10 text-bms-green";
+    runtime?.lastOutcome === "skipped" ? "bg-critical-wash-strong text-critical-ink-strong" : "bg-accent/10 text-accent";
   return <span className={`rounded px-2 py-0.5 font-semibold ${tone}`}>{label}</span>;
 }
 
@@ -352,13 +352,13 @@ export function AssetPointsAdminPage({ user }: AssetPointsAdminPageProps) {
                 organization and is always available. */}
             <Link
               to="/admin/point-keys"
-              className="rounded border border-gray-200 px-3 py-2 text-xs font-semibold text-bms-ink"
+              className="rounded border border-line px-3 py-2 text-xs font-semibold text-ink"
             >
               Manage catalog
             </Link>
             <button
               type="button"
-              className="rounded bg-bms-green px-3 py-2 text-xs font-semibold text-white"
+              className="rounded bg-accent px-3 py-2 text-xs font-semibold text-on-accent"
               onClick={() => {
                 setEditing(null);
                 setForm({
@@ -404,7 +404,7 @@ export function AssetPointsAdminPage({ user }: AssetPointsAdminPageProps) {
               dropped. */}
           <button
             type="button"
-            className="rounded border border-gray-200 px-3 py-1.5 text-xs font-semibold text-bms-ink disabled:opacity-50"
+            className="rounded border border-line px-3 py-1.5 text-xs font-semibold text-ink disabled:opacity-50"
             disabled={selectedRows.length === 0}
             onClick={() => setBulkOpen(true)}
           >
@@ -423,7 +423,7 @@ export function AssetPointsAdminPage({ user }: AssetPointsAdminPageProps) {
         ) : null}
         <table className="min-w-full text-sm">
           <thead>
-            <tr className="border-b text-left text-xs uppercase text-bms-muted">
+            <tr className="border-b text-left text-xs uppercase text-ink-muted">
               <th className="px-2 py-2">
                 <input
                   type="checkbox"
@@ -450,7 +450,7 @@ export function AssetPointsAdminPage({ user }: AssetPointsAdminPageProps) {
           </thead>
           <tbody>
             {filtered.map((item) => (
-              <tr key={item.id} className="border-b border-gray-100">
+              <tr key={item.id} className="border-b border-well-deep">
                 <td className="px-2 py-2">
                   <input
                     type="checkbox"
@@ -481,7 +481,7 @@ export function AssetPointsAdminPage({ user }: AssetPointsAdminPageProps) {
                   <div className="flex gap-2">
                     <button
                       type="button"
-                      className="text-xs font-semibold text-bms-green"
+                      className="text-xs font-semibold text-accent"
                       onClick={() => {
                         setEditing(item);
                         setForm({
@@ -499,7 +499,7 @@ export function AssetPointsAdminPage({ user }: AssetPointsAdminPageProps) {
                     </button>
                     <button
                       type="button"
-                      className="text-xs font-semibold text-bms-muted"
+                      className="text-xs font-semibold text-ink-muted"
                       onClick={() => toggleMutation.mutate(item)}
                     >
                       {item.active ? "Deactivate" : "Reactivate"}
@@ -510,7 +510,7 @@ export function AssetPointsAdminPage({ user }: AssetPointsAdminPageProps) {
             ))}
           </tbody>
         </table>
-        <p className="text-xs text-bms-muted">
+        <p className="text-xs text-ink-muted">
           Scale, Range and Quality show what each point stores. A dash means the point follows its
           asset template&apos;s default.
         </p>
@@ -534,11 +534,11 @@ export function AssetPointsAdminPage({ user }: AssetPointsAdminPageProps) {
           measured point has no calc configuration to override. */}
       {assetId && calcPoints.length > 0 ? (
         <SectionCard title="Calculated points" bodyClassName="p-3 space-y-3">
-          <p className="text-xs text-bms-muted">
+          <p className="text-xs text-ink-muted">
             These points are computed from this asset&apos;s template. An override changes one
             setting for this asset only; everything left empty keeps following the template.
           </p>
-          {overrideError ? <p className="text-xs text-red-700">{overrideError}</p> : null}
+          {overrideError ? <p className="text-xs text-critical-ink">{overrideError}</p> : null}
           {calcPoints.map((config) =>
             openPointKey === config.pointKey ? (
               <PointCalcOverridePanel
@@ -558,13 +558,13 @@ export function AssetPointsAdminPage({ user }: AssetPointsAdminPageProps) {
             ) : (
               <div
                 key={config.pointKey}
-                className="flex flex-wrap items-center justify-between gap-2 rounded border border-gray-200 px-3 py-2"
+                className="flex flex-wrap items-center justify-between gap-2 rounded border border-line px-3 py-2"
               >
                 <span className="text-sm">
                   {config.label ?? config.pointKey}{" "}
-                  <span className="font-mono text-xs text-bms-muted">{config.pointKey}</span>
+                  <span className="font-mono text-xs text-ink-muted">{config.pointKey}</span>
                 </span>
-                <span className="flex items-center gap-3 text-xs text-bms-muted">
+                <span className="flex items-center gap-3 text-xs text-ink-muted">
                   <span>
                     {config.effective.calcTrigger ?? "no trigger"}
                     {config.effective.calcIntervalSeconds === null
@@ -573,7 +573,7 @@ export function AssetPointsAdminPage({ user }: AssetPointsAdminPageProps) {
                   </span>
                   <CalcRuntimePill runtime={config.runtime} />
                   {hasAnyOverride(config) ? (
-                    <span className="rounded bg-amber-100 px-2 py-0.5 font-semibold text-amber-800">
+                    <span className="rounded bg-warning-wash-strong px-2 py-0.5 font-semibold text-warning-ink">
                       overridden
                     </span>
                   ) : (
@@ -589,7 +589,7 @@ export function AssetPointsAdminPage({ user }: AssetPointsAdminPageProps) {
                       setOpenPointKey(config.pointKey);
                       setOverrideError(null);
                     }}
-                    className="rounded border border-gray-200 px-3 py-1 font-semibold text-bms-ink"
+                    className="rounded border border-line px-3 py-1 font-semibold text-ink"
                   >
                     {hasAnyOverride(config) ? "Edit override" : "Override"}
                   </button>
@@ -601,9 +601,9 @@ export function AssetPointsAdminPage({ user }: AssetPointsAdminPageProps) {
       ) : null}
 
       {modalOpen ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-scrim/40 p-4">
           <form
-            className="w-full max-w-lg rounded-lg border bg-white p-4"
+            className="w-full max-w-lg rounded-lg border bg-surface p-4"
             onSubmit={(event: FormEvent) => {
               event.preventDefault();
               saveMutation.mutate();
@@ -613,7 +613,7 @@ export function AssetPointsAdminPage({ user }: AssetPointsAdminPageProps) {
               {editing ? "Edit mapping" : "Add mapping"}
             </h2>
             <div className="mt-3 grid gap-3">
-              <label className="block text-xs font-semibold text-bms-muted">
+              <label className="block text-xs font-semibold text-ink-muted">
                 Point key
                 <select
                   className="mt-1 w-full rounded border px-3 py-2 text-sm"
@@ -638,7 +638,7 @@ export function AssetPointsAdminPage({ user }: AssetPointsAdminPageProps) {
                   ))}
                 </select>
               </label>
-              <label className="block text-xs font-semibold text-bms-muted">
+              <label className="block text-xs font-semibold text-ink-muted">
                 Source data key
                 <input
                   className="mt-1 w-full rounded border px-3 py-2 text-sm"
@@ -647,7 +647,7 @@ export function AssetPointsAdminPage({ user }: AssetPointsAdminPageProps) {
                   onChange={(event) => setForm({ ...form, sourceDataKey: event.target.value })}
                 />
               </label>
-              <label className="block text-xs font-semibold text-bms-muted">
+              <label className="block text-xs font-semibold text-ink-muted">
                 Sensor code
                 <input
                   className="mt-1 w-full rounded border px-3 py-2 text-sm"
@@ -655,7 +655,7 @@ export function AssetPointsAdminPage({ user }: AssetPointsAdminPageProps) {
                   onChange={(event) => setForm({ ...form, sensorCode: event.target.value })}
                 />
               </label>
-              <label className="block text-xs font-semibold text-bms-muted">
+              <label className="block text-xs font-semibold text-ink-muted">
                 Unit
                 <input
                   className="mt-1 w-full rounded border px-3 py-2 text-sm"
@@ -667,12 +667,12 @@ export function AssetPointsAdminPage({ user }: AssetPointsAdminPageProps) {
                   five. Empty means "follow the template", which is an omitted
                   field on a create and an explicit `null` on an edit
                   (`metadataWriteFrom`). */}
-              <p className="text-[11px] text-bms-muted">
+              <p className="text-[11px] text-ink-muted">
                 Leave a field below empty to follow this asset&apos;s template default. Clearing one
                 on an existing mapping puts it back on the template.
               </p>
               <div className="grid grid-cols-2 gap-3">
-                <label className="block text-xs font-semibold text-bms-muted">
+                <label className="block text-xs font-semibold text-ink-muted">
                   Scale multiplier
                   <input
                     type="number"
@@ -683,7 +683,7 @@ export function AssetPointsAdminPage({ user }: AssetPointsAdminPageProps) {
                     onChange={(event) => setForm({ ...form, scaleMultiplier: event.target.value })}
                   />
                 </label>
-                <label className="block text-xs font-semibold text-bms-muted">
+                <label className="block text-xs font-semibold text-ink-muted">
                   Scale offset
                   <input
                     type="number"
@@ -694,7 +694,7 @@ export function AssetPointsAdminPage({ user }: AssetPointsAdminPageProps) {
                     onChange={(event) => setForm({ ...form, scaleOffset: event.target.value })}
                   />
                 </label>
-                <label className="block text-xs font-semibold text-bms-muted">
+                <label className="block text-xs font-semibold text-ink-muted">
                   Engineering minimum
                   <input
                     type="number"
@@ -705,7 +705,7 @@ export function AssetPointsAdminPage({ user }: AssetPointsAdminPageProps) {
                     onChange={(event) => setForm({ ...form, engMin: event.target.value })}
                   />
                 </label>
-                <label className="block text-xs font-semibold text-bms-muted">
+                <label className="block text-xs font-semibold text-ink-muted">
                   Engineering maximum
                   <input
                     type="number"
@@ -716,7 +716,7 @@ export function AssetPointsAdminPage({ user }: AssetPointsAdminPageProps) {
                     onChange={(event) => setForm({ ...form, engMax: event.target.value })}
                   />
                 </label>
-                <label className="block text-xs font-semibold text-bms-muted">
+                <label className="block text-xs font-semibold text-ink-muted">
                   Quality policy
                   <select
                     aria-label="Quality policy"
@@ -738,7 +738,7 @@ export function AssetPointsAdminPage({ user }: AssetPointsAdminPageProps) {
                 </label>
               </div>
             </div>
-            {error ? <div className="mt-2 text-xs text-red-700">{error}</div> : null}
+            {error ? <div className="mt-2 text-xs text-critical-ink">{error}</div> : null}
             <div className="mt-4 flex justify-end gap-2">
               <button
                 type="button"
@@ -749,7 +749,7 @@ export function AssetPointsAdminPage({ user }: AssetPointsAdminPageProps) {
               </button>
               <button
                 type="submit"
-                className="rounded bg-bms-green px-3 py-2 text-xs font-semibold text-white"
+                className="rounded bg-accent px-3 py-2 text-xs font-semibold text-on-accent"
               >
                 Save
               </button>
