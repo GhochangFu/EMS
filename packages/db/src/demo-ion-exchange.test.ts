@@ -4,7 +4,9 @@ import {
   assertAFullReadBackHasNoShortfall,
   assertAMissingRoledMemberIsNamed,
   assertAnExtraGrantIsAShortfall,
+  assertAnExtraWidgetIsNotAShortfall,
   assertEachCodeKeepsTheSimulatorWaterShape,
+  assertFewerWidgetsThanTheFloorIsAShortfall,
   assertIonxAssetCodeForRefusesAnUnexpectedSuffix,
   assertNoIonxCodeCollidesWithTheEskomDemoPlant,
   assertRoleMapIsTheRuledOne,
@@ -47,5 +49,13 @@ describe("F3.32 / ADR 0079 Amendment 1 — the Ion Exchange demo command's pure 
 
   it("an extra grant is a shortfall", () => {
     assertAnExtraGrantIsAShortfall();
+  });
+
+  it("an extra widget is not a shortfall (widgets is a floor)", () => {
+    assertAnExtraWidgetIsNotAShortfall();
+  });
+
+  it("fewer widgets than the floor is still a shortfall", () => {
+    assertFewerWidgetsThanTheFloorIsAShortfall();
   });
 });

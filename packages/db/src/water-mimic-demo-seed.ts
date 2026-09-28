@@ -220,13 +220,15 @@ export async function seedWaterMimicDemo(pool: pg.Pool, organizationId: string):
   const dashboards = row?.dashboards ?? -1;
   const widgets = row?.widgets ?? -1;
   const wantRoled = Object.keys(DEMO_MIMIC_ROLE_BY_ASSET_CODE).length;
-  if (groups !== 1 || roled !== wantRoled || dashboards !== 1 || widgets !== 1) {
+  // `widgets`: at least 1, not exactly 1 — an operator may add a second mimic widget to the demo
+  // dashboard, and the boot must not fail because of it (review).
+  if (groups !== 1 || roled !== wantRoled || dashboards !== 1 || widgets < 1) {
     throw new Error(
       `seedWaterMimicDemo: ${groups} of 1 demo group, ${roled} of ${wantRoled} demo assets roled, ` +
-        `${dashboards} of 1 demo dashboard, ${widgets} of 1 mimic widget. A FORCE-RLS write can drop ` +
-        "rows without raising, so each is read back rather than inferred from the statements " +
-        "completing. Check this runs inside the ESKOM tenant bracket, after seedAssetGroups and " +
-        "seedWaterPlantDemo.",
+        `${dashboards} of 1 demo dashboard, ${widgets} mimic widget(s) (want at least 1). A FORCE-RLS ` +
+        "write can drop rows without raising, so each is read back rather than inferred from the " +
+        "statements completing. Check this runs inside the ESKOM tenant bracket, after seedAssetGroups " +
+        "and seedWaterPlantDemo.",
     );
   }
 }

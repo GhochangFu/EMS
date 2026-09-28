@@ -20,7 +20,9 @@ import { assetStatus, type AssetStatus } from "./generated-site-view";
  *
  * **The live overlay is F3.68's, unchanged** (plan D2). `mimicViewFor` hands the assigned assets
  * to `useSiteLiveReadings` as a synthetic `GeneratedSiteViewDto`, so the clamp-once rule, the
- * one socket, the one tick and the shared `isStale` gate are reused rather than restated.
+ * one tick and the shared `isStale` gate are reused rather than restated. Each mimic widget opens
+ * its own socket alongside the dashboard's — `useSiteLiveReadings` is reused per widget, not the
+ * one connection.
  */
 
 /** A node's status. Precedence, highest first: `unassigned`, `alarm`, then freshness (plan D5). */

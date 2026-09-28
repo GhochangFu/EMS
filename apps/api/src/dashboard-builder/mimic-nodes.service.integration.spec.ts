@@ -171,6 +171,10 @@ async function seedTrain(client: pg.PoolClient): Promise<Train> {
 
   const prefix = `f332_${site.tag.slice(-8)}`;
   const keys = { unranked: `${prefix}_a`, r2: `${prefix}_b`, r1: `${prefix}_c`, r3: `${prefix}_d` };
+  // `bms.point_keys` is a global vocabulary keyed on `code` alone — creating the four rows once
+  // and binding them to BOTH the wtp asset and the shown `ro` member (below) is what lets a LIMIT
+  // wrongly moved to the OUTER query (across every asset's rows) be told apart from one correctly
+  // applied per asset inside the lateral: only the per-asset LIMIT leaves both assets at 3.
   for (const [code, rank] of [
     [keys.unranked, null],
     [keys.r2, 2],
@@ -181,24 +185,36 @@ async function seedTrain(client: pg.PoolClient): Promise<Train> {
       "INSERT INTO bms.point_keys (code, name, unit, headline_rank, active) VALUES ($1, $2, 'u', $3, true)",
       [code, `F3.32 ${code}`, rank],
     );
-    await client.query(
-      `INSERT INTO bms.asset_points (organization_id, asset_id, point_key, source_data_key, unit, active)
-       VALUES ($1, $2, $3, $4, NULL, true)`,
-      [site.organizationId, wtpId, code, `src_${code}`],
-    );
   }
-  for (const [key, ageSeconds] of [
-    [keys.r1, 10],
-    [keys.r2, 8 * 86_400],
-    [keys.r3, 6 * 86_400],
-    [keys.unranked, 10],
-  ] as const) {
-    await client.query(
-      `INSERT INTO telemetry.point_values (time, asset_id, point_key, value, unit)
-       VALUES (now() - make_interval(secs => $4), $1, $2, $3, 'u')`,
-      [wtpId, key, 42, ageSeconds],
-    );
+
+  /** Binds the four shared point keys to `assetId` and samples them the same way for each. */
+  async function attachRankedPoints(assetId: string): Promise<void> {
+    for (const code of [keys.unranked, keys.r2, keys.r1, keys.r3]) {
+      await client.query(
+        `INSERT INTO bms.asset_points (organization_id, asset_id, point_key, source_data_key, unit, active)
+         VALUES ($1, $2, $3, $4, NULL, true)`,
+        [site.organizationId, assetId, code, `src_${assetId}_${code}`],
+      );
+    }
+    for (const [key, ageSeconds] of [
+      [keys.r1, 10],
+      [keys.r2, 8 * 86_400],
+      [keys.r3, 6 * 86_400],
+      [keys.unranked, 10],
+    ] as const) {
+      await client.query(
+        `INSERT INTO telemetry.point_values (time, asset_id, point_key, value, unit)
+         VALUES (now() - make_interval(secs => $4), $1, $2, $3, 'u')`,
+        [assetId, key, 42, ageSeconds],
+      );
+    }
   }
+
+  await attachRankedPoints(wtpId);
+  // The shown `ro` member (`roEarlierId`) gets the same four points — the positive control M4c
+  // below reads against.
+  await attachRankedPoints(roEarlierId);
+
   await client.query(
     `INSERT INTO bms.alarms (organization_id, asset_id, severity, message, raised_at, cleared_at)
      VALUES ($1, $2, 'critical', 'F3.32 open alarm', now(), NULL),
@@ -292,6 +308,18 @@ export async function assertRoShowsTheFirstCode(client: pg.PoolClient): Promise<
   expect(nodeOf(dto, "ro").asset?.code).toBe(train.roEarlierCode);
 }
 
+/**
+ * M4c — both the `wtp` node and the `ro` node carry exactly three points, out of the four each
+ * asset owns. A LIMIT wrongly moved from the per-asset lateral to the OUTER query (across every
+ * shown asset's rows) would leave the combined result at three total, not three per asset — this
+ * reddens that mutation where M2 alone (wtp only) cannot.
+ */
+export async function assertWtpAndRoBothShowExactlyThreePoints(client: pg.PoolClient): Promise<void> {
+  const train = await seedTrain(client);
+  const dto = await readTrain(client, train);
+  expect([nodeOf(dto, "wtp").asset?.points.length, nodeOf(dto, "ro").asset?.points.length]).toEqual([3, 3]);
+}
+
 /** M5a — all eight preset nodes are answered, in the preset's declared order. */
 export async function assertAllEightNodesInPresetOrder(client: pg.PoolClient): Promise<void> {
   const dto = await readTrain(client, await seedTrain(client));
@@ -319,6 +347,17 @@ export async function assertReadableRoIsStillShown(client: pg.PoolClient): Promi
   const train = await seedTrain(client);
   const dto = await readTrain(client, train, [train.roLaterId, train.roEarlierId]);
   expect(nodeOf(dto, "ro").asset?.id).toBe(train.roEarlierId);
+}
+
+/**
+ * M6c — plan D6, "readable first, then counted": when the readable set holds only the earlier
+ * `ro` member, `memberCount` reads 1, not 2 — the filter runs BEFORE the `member_count` window
+ * function, not after.
+ */
+export async function assertReadableSetNarrowsMemberCountToOne(client: pg.PoolClient): Promise<void> {
+  const train = await seedTrain(client);
+  const dto = await readTrain(client, train, [train.roEarlierId]);
+  expect(nodeOf(dto, "ro").memberCount).toBe(1);
 }
 
 /** M7 — the full read costs three statements. */

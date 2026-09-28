@@ -73,3 +73,18 @@ export function assertAnExtraGrantIsAShortfall(): void {
     "otherGrants: 1 of 0",
   ]);
 }
+
+/**
+ * `widgets` is a floor, not an exact count (review) — an operator-added second mimic widget must
+ * not fail the post-condition.
+ */
+export function assertAnExtraWidgetIsNotAShortfall(): void {
+  const tenant: IonxTenantCounts = { ...IONX_EXPECTED, widgets: 2 };
+  expect(ionxShortfalls(tenant, COMPLETE_IDENTITY)).toEqual([]);
+}
+
+/** Fewer widgets than the floor is still a shortfall, named "at least". */
+export function assertFewerWidgetsThanTheFloorIsAShortfall(): void {
+  const tenant: IonxTenantCounts = { ...IONX_EXPECTED, widgets: 0 };
+  expect(ionxShortfalls(tenant, COMPLETE_IDENTITY)).toEqual(["widgets: 0 of at least 1"]);
+}

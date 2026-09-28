@@ -390,15 +390,6 @@ export class DashboardsService {
       throw new BadRequestException(SCOPE_REFUSAL_MESSAGE);
     }
 
-    // `F3.32` / ADR 0079 decision 4 — clearing the group out from under a STORED `mimic`
-    // widget would leave it with no members to resolve, so this must run BEFORE the write, not
-    // be left to render as "not assigned" everywhere. `fleetDb`, not `tx`: no transaction is open
-    // yet, and this read (like `fetchRowForWrite`) is pre-GUC — `bms_fleet`'s BYPASSRLS is what
-    // lets it see the row before `withTenant` sets `app.current_organization`.
-    if (nextAssetGroupId === null && (await this.hasMimicWidget(id))) {
-      throw new BadRequestException(MIMIC_SCOPE_MESSAGE);
-    }
-
     return withTenant(this.tenantDb, existing.organizationId, async (tx) => {
       await tx
         .update(dashboards)
@@ -786,21 +777,6 @@ export class DashboardsService {
         sortOrder: source.sortOrder,
       })),
     );
-  }
-
-  /**
-   * `F3.32` / ADR 0079 decision 4 — does this dashboard already store a `mimic` widget? Read on
-   * `fleetDb`, pre-GUC, the same way `fetchRowForWrite` is: `update()` calls this before it ever
-   * opens a tenant transaction, so there is no `app.current_organization` set yet for a
-   * `tenantDb` read to rely on.
-   */
-  private async hasMimicWidget(dashboardId: string): Promise<boolean> {
-    const rows = await this.fleetDb
-      .select({ id: dashboardWidgets.id })
-      .from(dashboardWidgets)
-      .where(and(eq(dashboardWidgets.dashboardId, dashboardId), eq(dashboardWidgets.widgetType, "mimic")))
-      .limit(1);
-    return rows.length > 0;
   }
 
   /**

@@ -106,11 +106,8 @@ describe("F3.32 v1 — migration 0086 widens the widget-type CHECK", () => {
   });
 
   it("widens the CHECK to exactly the contract's widget vocabulary", () => {
-    // Expected red until U0 lands `"mimic"` in `widgetTypeSchema`: this file's
-    // job is only to state that the two declarations must agree, and until U0
-    // lands, 0086 names six types (including `mimic`) while the contract names
-    // five — that mismatch is the drift this gate exists to catch, not a bug
-    // in this migration.
+    // This file's job is only to state that the migration's CHECK and the shared contract's
+    // `widgetTypeSchema` must agree — a drift gate, not a use of either value.
     const listed = checkedValues(MIGRATION_0086);
     const declared = widgetTypes();
 
@@ -182,10 +179,7 @@ describe("F3.32 v1 — migration 0087 seeds the seven `water_train` role codes",
     // if the export is renamed.
     const presetsRel = "packages/shared/src/mimic-presets.ts";
     if (!exists(presetsRel)) {
-      throw new Error(
-        `${presetsRel} does not exist yet — expected red until U0 lands the mimic vocabulary. ` +
-          "Do not delete this assertion; re-run once U0 merges.",
-      );
+      throw new Error(`${presetsRel} does not exist — this repository's own layout changed.`);
     }
     const presetSrc = read(presetsRel);
     const roleCodeMatches = [...presetSrc.matchAll(/roleCode:\s*"([a-z0-9_-]+)"/g)].map(
@@ -222,13 +216,10 @@ describe("F3.32 v1 — seed.ts calls seedWaterMimicDemo after seedWaterPlantDemo
   });
 });
 
-describe("F3.32 v1 — the mimic-nodes read (U2, expected red until it lands)", () => {
+describe("F3.32 v1 — the mimic-nodes read (U2)", () => {
   it("the mimic-nodes service interpolates GENERATED_LATEST_WINDOW_SQL once and MIMIC_HEADLINE_POINTS in its LIMIT", () => {
     if (!exists(MIMIC_NODES_SERVICE_REL)) {
-      throw new Error(
-        `${MIMIC_NODES_SERVICE_REL} does not exist yet — expected red until U2 lands. ` +
-          "Do not delete this assertion; re-run once U2 merges.",
-      );
+      throw new Error(`${MIMIC_NODES_SERVICE_REL} does not exist — this repository's own layout changed.`);
     }
     const src = read(MIMIC_NODES_SERVICE_REL);
     // Interpolation sites only, never import lines: an import names the constant too, so a
@@ -256,10 +247,7 @@ describe("F3.32 v1 — the mimic-nodes read (U2, expected red until it lands)", 
       src.search(new RegExp(`^[ \\t]*@Get\\("${route}"\\)`, "m"));
     const mimicAt = decoratorAt(":id/mimic-nodes");
     if (mimicAt === -1) {
-      throw new Error(
-        "no 'mimic-nodes' route found in dashboard-builder.controller.ts — expected red until " +
-          "U2 lands. Do not delete this assertion; re-run once U2 merges.",
-      );
+      throw new Error("no 'mimic-nodes' route found in dashboard-builder.controller.ts");
     }
     const slugAt = decoratorAt(":slug");
     expect(slugAt, "the controller must still declare @Get(\":slug\")").toBeGreaterThan(-1);

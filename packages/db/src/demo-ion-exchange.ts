@@ -140,10 +140,20 @@ export type IonxIdentityCounts = {
   otherGrants: number;
 };
 
-/** The mismatches between a read-back and {@link IONX_EXPECTED}, as `name: got of want`. */
+/**
+ * The mismatches between a read-back and {@link IONX_EXPECTED}, as `name: got of want`.
+ * `widgets` is a floor, not an exact count — an operator may add a second mimic widget to the
+ * demo dashboard, and the command's post-condition must not fail because of it (review).
+ */
 export function ionxShortfalls(tenant: IonxTenantCounts, identity: IonxIdentityCounts): string[] {
   const out: string[] = [];
   for (const key of Object.keys(IONX_EXPECTED) as (keyof typeof IONX_EXPECTED)[]) {
+    if (key === "widgets") {
+      if (tenant.widgets < IONX_EXPECTED.widgets) {
+        out.push(`widgets: ${tenant.widgets} of at least ${IONX_EXPECTED.widgets}`);
+      }
+      continue;
+    }
     if (tenant[key] !== IONX_EXPECTED[key]) {
       out.push(`${key}: ${tenant[key]} of ${IONX_EXPECTED[key]}`);
     }
@@ -289,10 +299,17 @@ VALUES ($1, $2, $3, $4, $5)
 ON CONFLICT (email) DO NOTHING
 `;
 
+/**
+ * Security review (Low): the `WHERE` names the exact row `USER_INSERT_SQL` just
+ * inserted-or-left-alone — organization AND role, not `email` alone. Without
+ * both, a pre-existing `ionx-admin@bms.local` homed in a DIFFERENT organization
+ * (or a different role in this one) would still match on email and be granted
+ * `IONX-DEMO` access it was never meant to have.
+ */
 const USER_ORG_GRANT_SQL = `
 INSERT INTO bms.user_organization_access (user_id, organization_id)
 SELECT u.id, $2 FROM bms.users u
-WHERE u.email = $1
+WHERE u.email = $1 AND u.organization_id = $2 AND u.role = $3
   AND NOT EXISTS (
     SELECT 1 FROM bms.user_organization_access uoa
     WHERE uoa.user_id = u.id AND uoa.organization_id = $2
@@ -434,7 +451,11 @@ export async function runIonExchangeDemo(pool: pg.Pool, superuserPool: pg.Pool):
     IONX_ADMIN_ROLE,
     organizationId,
   ]);
-  written += await count(superuserPool, USER_ORG_GRANT_SQL, [IONX_ADMIN_EMAIL, organizationId]);
+  written += await count(superuserPool, USER_ORG_GRANT_SQL, [
+    IONX_ADMIN_EMAIL,
+    organizationId,
+    IONX_ADMIN_ROLE,
+  ]);
   const idRes = await superuserPool.query<IonxIdentityCounts>(IDENTITY_VERIFY_SQL, [
     IONX_ADMIN_EMAIL,
     organizationId,

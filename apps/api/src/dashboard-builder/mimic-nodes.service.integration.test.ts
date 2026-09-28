@@ -13,11 +13,13 @@ import {
   assertNoMimicIsEmptyInOneStatement,
   assertOwningOrganizationReads,
   assertReadableRoIsStillShown,
+  assertReadableSetNarrowsMemberCountToOne,
   assertRoCountsTwoMembers,
   assertRoShowsTheFirstCode,
   assertSixDayOldSampleIsPresent,
   assertSixUnassignedNodesAreNull,
   assertUnreadableWtpIsUnassigned,
+  assertWtpAndRoBothShowExactlyThreePoints,
   assertWtpCountsOneOpenAlarm,
   assertWtpShowsTopThreeInRankOrder,
 } from "./mimic-nodes.service.integration.spec";
@@ -60,10 +62,20 @@ describe.skipIf(!connectionString)("F3.32 — MimicNodesService", () => {
   it("M3b a point sampled 6 days ago answers its value", rolledBack(assertSixDayOldSampleIsPresent), 60_000);
   it("M4a two ro members answer memberCount 2", rolledBack(assertRoCountsTwoMembers), 60_000);
   it("M4b the ro node shows the member with the first code", rolledBack(assertRoShowsTheFirstCode), 60_000);
+  it(
+    "M4c the wtp node and the ro node both show exactly three points",
+    rolledBack(assertWtpAndRoBothShowExactlyThreePoints),
+    60_000,
+  );
   it("M5a all eight nodes are answered in preset order", rolledBack(assertAllEightNodesInPresetOrder), 60_000);
   it("M5b the six roles no member carries answer null", rolledBack(assertSixUnassignedNodesAreNull), 60_000);
   it("M6a an unreadable wtp member reads Not assigned", rolledBack(assertUnreadableWtpIsUnassigned), 60_000);
   it("M6b the readable ro member is still shown", rolledBack(assertReadableRoIsStillShown), 60_000);
+  it(
+    "M6c a readable set holding only the earlier ro member narrows memberCount to 1",
+    rolledBack(assertReadableSetNarrowsMemberCountToOne),
+    60_000,
+  );
   it("M7 the full read is three statements", rolledBack(assertFullReadIsThreeStatements), 60_000);
   it(
     "M8 a group-less dashboard answers eight null nodes in one statement",

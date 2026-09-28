@@ -461,13 +461,7 @@ function selectChain(rows: unknown[]): SelectChain {
   return chain;
 }
 
-/**
- * `select()` with no argument is `fetchRowForWrite`'s row read, answered with `dashboardRow`.
- * `select({ ... })` with a column projection is `F3.32`'s `hasMimicWidget` read — answered
- * empty, since none of the fixtures this fake serves store a mimic widget. Without this
- * distinction `hasMimicWidget` would see `dashboardRow` itself as "a stored mimic widget" and
- * every existing `update()` test below would trip the new guard.
- */
+/** `select()` with no argument is `fetchRowForWrite`'s row read, answered with `dashboardRow`. */
 function fleetDbWithExistingRow(): BmsDb {
   return {
     select: (columns?: unknown) => selectChain(columns === undefined ? [dashboardRow] : []),
@@ -580,9 +574,13 @@ export async function runDashboardsServiceConflictTranslationTests(): Promise<vo
 }
 
 // ---------------------------------------------------------------------------
-// `F3.32` U3 — the write guards (ADR 0079 decision 4). `dashboardRow` above is
-// already `assetGroupId: null`, so it stands in for both "a group-less
-// dashboard" (putWidgets) and "clearing the group" (update).
+// `F3.32` U3 — the `putWidgets` write guard (ADR 0079 decision 4). `dashboardRow`
+// above is already `assetGroupId: null`, standing in for a group-less
+// dashboard. `update()` carried a matching guard for clearing the group out
+// from under a stored mimic widget; it was removed on review (plan §7): a
+// stored mimic on a group-less dashboard already reads as unassigned nodes
+// (U2), and decision 4 asks only that a mimic is not PLACED there, which this
+// guard alone already holds.
 // ---------------------------------------------------------------------------
 
 const MIMIC_WIDGET: WidgetWriteBody = {
@@ -637,38 +635,5 @@ export async function runMimicScopeGuardTests(): Promise<void> {
       calls() === 0,
       "putWidgets() must refuse the mimic widget BEFORE opening the tenant transaction",
     );
-  }
-
-  // -- update(): clearing the group out from under a STORED mimic widget is refused, and the
-  // row is left unchanged — proven the same way, by the transaction never opening.
-  {
-    const { db, calls } = countingRejectingTenantDb();
-    const fleetDb = {
-      select: (columns?: unknown) => {
-        // `fetchRowForWrite`'s `.select()` (no argument) answers the dashboard row;
-        // `hasMimicWidget`'s `.select({ id })` answers one stored mimic widget row.
-        const rows = columns === undefined ? [dashboardRow] : [{ id: WIDGET_A }];
-        return selectChain(rows);
-      },
-    } as unknown as BmsDb;
-    const service = new DashboardsService(db, fleetDb, fakeAccessControl(), fakeAudit());
-    let caught: unknown;
-    try {
-      await service.update(FAKE_JWT, DASHBOARD_ID, {
-        assetGroupId: null,
-      } as UpdateDashboardBody);
-    } catch (err) {
-      caught = err;
-    }
-    assert(
-      caught instanceof BadRequestException,
-      `update() must refuse clearing the group under a stored mimic widget, got ${String(caught)}`,
-    );
-    assert(
-      typeof (caught as BadRequestException).message === "string" &&
-        /plant mimic needs an asset group/.test((caught as BadRequestException).message),
-      `the refusal must name the scope problem, got: ${(caught as BadRequestException).message}`,
-    );
-    assert(calls() === 0, "update() must refuse the mimic scope conflict BEFORE opening the tenant transaction");
   }
 }
