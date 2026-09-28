@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useReducer, useState } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import type { MimicLayoutDto } from "@bms/shared";
+import { MIMIC_LAYOUT_STALE_MESSAGE } from "@bms/shared/contracts";
 
 import { fetchAdminOrganizations } from "../../api/admin/organizations";
 import { createMimicLayout, fetchMimicLayout, replaceMimicLayout } from "../../api/mimic-layouts";
@@ -28,12 +29,6 @@ import type { AuthUser } from "../../stores/auth-store";
 import { MIMIC_LAYOUTS_QUERY_KEY } from "./mimic-layouts-page";
 
 type MimicLayoutEditorPageProps = { user: AuthUser };
-
-/**
- * The API's `MIMIC_LAYOUT_STALE_MESSAGE` (`mimic-layouts.schema.ts`, frozen by plan §3). It is
- * restated, not imported: it lives in `apps/api`, which the web does not depend on.
- */
-export const STALE_SERVER_MESSAGE = "the layout changed since it was loaded; reload and apply the edit again";
 
 /** The sentence a stale save shows. */
 export const STALE_LAYOUT_BANNER = "This layout was changed by someone else since you opened it. Reload it and apply your edit again.";
@@ -100,6 +95,9 @@ function NewLayoutEditor() {
     mutationFn: (layout: EditorLayout) => createMimicLayout({ ...toWriteBody(layout), organizationId }),
     onSuccess: async (saved: MimicLayoutDto) => {
       await queryClient.invalidateQueries({ queryKey: MIMIC_LAYOUTS_QUERY_KEY });
+      // The saved layout IS its detail: cache it under the route this moves to, so the stored
+      // editor opens on it at once rather than on a second read.
+      queryClient.setQueryData(["mimic-layouts", saved.id], saved);
       void navigate(`/admin/mimic-layouts/${saved.id}`, { replace: true });
     },
   });
@@ -146,13 +144,16 @@ function StoredLayoutEditor({ layoutId }: { layoutId: string }) {
     onSuccess: async (saved: MimicLayoutDto) => {
       setVersion(saved.version);
       setStale(false);
+      // The detail cache takes the saved layout. Without it a reopened layout draws the
+      // pre-save DTO and takes ITS version, and the next PUT answers a false stale 409.
+      queryClient.setQueryData(["mimic-layouts", layoutId], saved);
       await queryClient.invalidateQueries({ queryKey: MIMIC_LAYOUTS_QUERY_KEY, exact: true });
     },
     onError: (cause: Error) => {
       // A PUT answers 409 for two reasons: a stale version, and a slug another layout of the
       // organization holds. Only the first needs a reload; the second is fixed by editing the
       // slug, so it is shown as an ordinary error and Save stays enabled.
-      if (cause instanceof ApiError && cause.status === 409 && apiErrorMessage(cause) === STALE_SERVER_MESSAGE) {
+      if (cause instanceof ApiError && cause.status === 409 && apiErrorMessage(cause) === MIMIC_LAYOUT_STALE_MESSAGE) {
         setStale(true);
       }
     },

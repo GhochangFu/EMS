@@ -14,7 +14,9 @@ import { OPERATIONAL } from "../../components/system-status-indicator.spec";
 import { ApiError } from "../../lib/api-error";
 import { fromPreset, toWriteBody } from "../../lib/mimic-editor";
 import type { AuthUser } from "../../stores/auth-store";
-import { MimicLayoutEditorPage, STALE_LAYOUT_BANNER, STALE_SERVER_MESSAGE } from "./mimic-layout-editor-page";
+import { MIMIC_LAYOUT_STALE_MESSAGE as STALE_SERVER_MESSAGE } from "@bms/shared/contracts";
+
+import { MimicLayoutEditorPage, STALE_LAYOUT_BANNER } from "./mimic-layout-editor-page";
 
 /**
  * `F3.32c` U6c — the mimic layout editor page, rendered: POST on a new layout with the
@@ -64,7 +66,7 @@ type Stubs = {
   replace: ReturnType<typeof vi.spyOn>;
 };
 
-function renderAt(path: string, as: AuthUser = user("organization_admin"), orgs = ORGS): Stubs {
+function stubAll(orgs: OrganizationsListResponse): Stubs {
   vi.spyOn(systemStatusApi, "fetchSystemStatus").mockResolvedValue(OPERATIONAL);
   vi.spyOn(vocabApi, "fetchVocabularies").mockResolvedValue({ assetRoles: [] } as unknown as VocabulariesResponse);
   vi.spyOn(orgApi, "fetchAdminOrganizations").mockResolvedValue(orgs);
@@ -72,8 +74,11 @@ function renderAt(path: string, as: AuthUser = user("organization_admin"), orgs 
   const fetchOne = vi.spyOn(api, "fetchMimicLayout").mockResolvedValue(storedDto(4));
   const create = vi.spyOn(api, "createMimicLayout").mockResolvedValue(storedDto(1));
   const replace = vi.spyOn(api, "replaceMimicLayout").mockResolvedValue(storedDto(5));
-  const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
-  render(
+  return { fetchOne, create, replace };
+}
+
+function mount(client: QueryClient, path: string, as: AuthUser): ReturnType<typeof render> {
+  return render(
     <QueryClientProvider client={client}>
       <MemoryRouter initialEntries={[path]}>
         <Routes>
@@ -84,7 +89,16 @@ function renderAt(path: string, as: AuthUser = user("organization_admin"), orgs 
       </MemoryRouter>
     </QueryClientProvider>,
   );
-  return { fetchOne, create, replace };
+}
+
+function newClient(): QueryClient {
+  return new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
+}
+
+function renderAt(path: string, as: AuthUser = user("organization_admin"), orgs = ORGS): Stubs {
+  const stubs = stubAll(orgs);
+  mount(newClient(), path, as);
+  return stubs;
 }
 
 async function save(): Promise<void> {
@@ -207,6 +221,59 @@ export async function aSlugConflictLeavesSaveEnabled(): Promise<void> {
   await save();
   await screen.findByText(SLUG_TAKEN);
   expect(screen.getByRole("button", { name: "Save" })).toBeEnabled();
+}
+
+/** The layout a save answers with: three nodes (the stored one has twelve), so the page can tell
+ * the saved drawing from the loaded one. */
+function savedDto(version: number): MimicLayoutDto {
+  const stored = storedDto(version);
+  return { ...stored, name: "Saved plant", nodes: stored.nodes.slice(0, 3), pipes: [] };
+}
+
+/**
+ * A stored layout saved once, the page left and opened again on the SAME QueryClient — what the
+ * browser does when the author goes back to the library and reopens the layout. After the save
+ * the server answers `fetchMimicLayout` with the saved layout, as the real API would.
+ */
+async function saveLeaveAndReopen(): Promise<Stubs> {
+  const stubs = stubAll(ORGS);
+  stubs.replace.mockResolvedValue(savedDto(5));
+  const client = newClient();
+  const as = user("organization_admin");
+  const first = mount(client, `/admin/mimic-layouts/${LAYOUT_ID}`, as);
+  await save();
+  await waitFor(() => expect(stubs.replace).toHaveBeenCalledTimes(1));
+  await waitFor(() => expect(screen.getByRole("button", { name: "Save" })).toBeEnabled());
+  stubs.fetchOne.mockResolvedValue(savedDto(5));
+  first.unmount();
+  mount(client, `/admin/mimic-layouts/${LAYOUT_ID}`, as);
+  return stubs;
+}
+
+/** E14 — reopened after a save, the editor draws the saved layout, not the one first loaded. */
+export async function aReopenedLayoutShowsTheSavedDrawing(): Promise<void> {
+  await saveLeaveAndReopen();
+  await waitFor(() => expect(screen.getAllByTestId("mimic-editor-hit")).toHaveLength(3));
+}
+
+/** E15 — reopened after a save, the next PUT carries the saved version (no false stale 409). */
+export async function aReopenedLayoutPutsWithTheSavedVersion(): Promise<void> {
+  const { replace } = await saveLeaveAndReopen();
+  await save();
+  await waitFor(() => expect(replace).toHaveBeenCalledTimes(2));
+  expect((replace.mock.calls[1]?.[1] as { version: number }).version).toBe(5);
+}
+
+/** E16 — a new layout's first save opens the saved layout at once: its detail is cached before
+ * the page moves to its route. `fetchMimicLayout` never answers here, so only the cache can
+ * draw it. */
+export async function aFirstSaveOpensTheSavedLayoutFromTheCache(): Promise<void> {
+  const { create, fetchOne } = stubAll(ORGS);
+  create.mockResolvedValue(savedDto(1));
+  fetchOne.mockReturnValue(new Promise<MimicLayoutDto>(() => {}));
+  mount(newClient(), "/admin/mimic-layouts/new", user("organization_admin"));
+  await save();
+  await waitFor(() => expect(screen.getAllByTestId("mimic-editor-hit")).toHaveLength(3));
 }
 
 /** E10 — a location_admin gets the status line and no read. */

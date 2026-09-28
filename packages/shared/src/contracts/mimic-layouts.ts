@@ -23,6 +23,13 @@ export const MIMIC_LAYOUT_BOUNDS = {
   maxPipes: 160,
 } as const;
 
+/**
+ * The 409 a `PUT` answers when it names a version the layout no longer has (ADR 0081 decision
+ * 2). Shared, not restated: the API throws it and the editor tells a stale 409 from a slug 409
+ * by it, so one copy is the only way the two cannot drift.
+ */
+export const MIMIC_LAYOUT_STALE_MESSAGE = "the layout changed since it was loaded; reload and apply the edit again";
+
 /** A node's key within its layout: what pipes and the resolver name it by. */
 export const MIMIC_LAYOUT_NODE_KEY = /^[a-z][a-z0-9_]{0,31}$/;
 

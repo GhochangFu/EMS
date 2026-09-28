@@ -4,6 +4,7 @@ import {
   MIMIC_LAYOUT_BOUNDS,
   MIMIC_LAYOUT_NODE_KEY,
   MIMIC_LAYOUT_SLUG,
+  MIMIC_LAYOUT_STALE_MESSAGE,
   mimicLayoutNodeKindSchema,
   mimicPanelToneSchema,
   mimicSymbolSchema,
@@ -25,9 +26,9 @@ import {
  * a constraint name.
  */
 
-/** A `PUT` names a version the layout no longer has (ADR 0081 decision 2). */
-export const MIMIC_LAYOUT_STALE_MESSAGE =
-  "the layout changed since it was loaded; reload and apply the edit again";
+/** A `PUT` names a version the layout no longer has (ADR 0081 decision 2). Defined in
+ * `@bms/shared` because the web editor matches it; re-exported so API imports stay here. */
+export { MIMIC_LAYOUT_STALE_MESSAGE };
 
 /** `DELETE` while a dashboard widget still names the layout (ADR 0081 decision 3). */
 export const MIMIC_LAYOUT_IN_USE_MESSAGE = (n: number): string =>

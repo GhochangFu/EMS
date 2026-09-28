@@ -11,6 +11,7 @@ import * as locationsApi from "../../api/admin/locations";
 import * as organizationsApi from "../../api/admin/organizations";
 import * as assetsApi from "../../api/assets";
 import * as dashboardsApi from "../../api/dashboards";
+import * as mimicLayoutsApi from "../../api/mimic-layouts";
 import { useAuthStore, type AuthUser } from "../../stores/auth-store";
 import { DashboardBuilderPage } from "./dashboard-builder-page";
 
@@ -84,6 +85,9 @@ function stubMasterData(): void {
   vi.spyOn(organizationsApi, "fetchAdminOrganizations").mockResolvedValue({ items: ORGANIZATIONS });
   vi.spyOn(locationsApi, "fetchAdminLocations").mockResolvedValue({ items: [LOCATION] });
   vi.spyOn(assetGroupsApi, "fetchAdminAssetGroups").mockResolvedValue({ items: [ASSET_GROUP] });
+  // `F3.32c` — `WidgetInspector` reads the layout library on every mount; unstubbed, the read
+  // reaches a local API on :4000, answers 401 and clears the session.
+  vi.spyOn(mimicLayoutsApi, "fetchMimicLayouts").mockResolvedValue({ items: [] });
 }
 
 function renderPage(user: AuthUser): void {

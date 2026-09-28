@@ -10,6 +10,7 @@ import * as assetGroupsApi from "../../api/admin/asset-groups";
 import * as locationsApi from "../../api/admin/locations";
 import * as assetsApi from "../../api/assets";
 import * as dashboardsApi from "../../api/dashboards";
+import * as mimicLayoutsApi from "../../api/mimic-layouts";
 import { useAuthStore, type AuthUser } from "../../stores/auth-store";
 import { DashboardBuilderEditPage } from "./dashboard-builder-edit-page";
 
@@ -178,6 +179,9 @@ function stubLoads({
   vi.spyOn(locationsApi, "fetchAdminLocations").mockResolvedValue({ items: [...locations] });
   vi.spyOn(assetGroupsApi, "fetchAdminAssetGroups").mockResolvedValue({ items: [...groups] });
   vi.spyOn(assetsApi, "fetchAssets").mockResolvedValue([...assets]);
+  // `F3.32c` — `WidgetInspector` reads the layout library on every mount; unstubbed, the read
+  // reaches a local API on :4000, answers 401 and clears the session.
+  vi.spyOn(mimicLayoutsApi, "fetchMimicLayouts").mockResolvedValue({ items: [] });
 }
 
 /** `/auth/me`'s scope for an `asset_group_admin` of this dashboard's organization —
