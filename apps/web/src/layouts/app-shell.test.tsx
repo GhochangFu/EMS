@@ -13,6 +13,7 @@ import {
   givesEveryRailItemAUniqueCode,
   hidesTheEntryFromANoneScope,
   hidesLocationTypesFromAnOrganizationAdmin,
+  hidesMimicLayoutsFromALocationAdmin,
   hidesTheEntryWhileTheScopeIsNull,
   highlightsTheEntryOnANestedPath,
   keepsOtherItemsExactMatch,
@@ -27,6 +28,7 @@ import {
   readsTheFullItemList,
   showsDsForDashboardsWhenCollapsed,
   showsLocationTypesToTheGlobalAdmin,
+  showsMimicLayoutsToAnOrganizationAdmin,
   showsOneEntryToALocationScope,
   showsTheFullLabelWhenExpanded,
   showsUniqueCodesWhenCollapsed,
@@ -87,6 +89,14 @@ describe("F3.66 Control Room sidebar entry", () => {
 
   it("S10 shows one Location Types entry to the global admin (F4.162)", () => {
     showsLocationTypesToTheGlobalAdmin();
+  });
+
+  it("M1 shows one Mimic Layouts entry to an organization_admin (F3.32c)", () => {
+    showsMimicLayoutsToAnOrganizationAdmin();
+  });
+
+  it("M2 hides the Mimic Layouts entry from a location_admin (F3.32c)", () => {
+    hidesMimicLayoutsFromALocationAdmin();
   });
 });
 

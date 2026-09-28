@@ -369,6 +369,27 @@ export function hidesLocationTypesFromAnOrganizationAdmin(): void {
   expect(within(sidebar()).queryAllByRole("link", { name: "Location Types" })).toHaveLength(0);
 }
 
+/**
+ * `F3.32c` (ADR 0081 decision 3) — an `organization_admin` has one *Mimic
+ * Layouts* entry, pointing at `/admin/mimic-layouts`.
+ */
+export function showsMimicLayoutsToAnOrganizationAdmin(): void {
+  renderShell(LOCATION, "/", "organization_admin");
+  const links = within(sidebar()).queryAllByRole("link", { name: "Mimic Layouts" });
+  expect(links).toHaveLength(1);
+  expect(links[0]).toHaveAttribute("href", "/admin/mimic-layouts");
+}
+
+/**
+ * `F3.32c` — a `location_admin` has no *Mimic Layouts* entry. *Asset Groups*
+ * is the positive control: the Administration group rendered for this role.
+ */
+export function hidesMimicLayoutsFromALocationAdmin(): void {
+  renderShell(LOCATION, "/", "location_admin");
+  expect(within(sidebar()).getByRole("link", { name: "Asset Groups" })).toBeInTheDocument();
+  expect(within(sidebar()).queryAllByRole("link", { name: "Mimic Layouts" })).toHaveLength(0);
+}
+
 /** `F4.162` S10 — the global `admin` has one, pointing at `/admin/location-types`. */
 export function showsLocationTypesToTheGlobalAdmin(): void {
   renderShell(GLOBAL, "/", "admin");
