@@ -6565,3 +6565,24 @@ the security review's finding became Decision 3.
 
 **Cascade:** no row lists `F4.61` in *Depends*. Raised `F4.173` (`api` and
 `worker` exit when Postgres restarts). No `chore(agents):` change owed.
+
+### `F3.65a` — colour role tokens, the stored theme choice, and the shell ✅ 2026-09-28
+
+PR #617, squash `12000ab3`; ADR 0078 (#614) and its Amendment 1; plan
+`docs/plans/f3.65a-colour-tokens.md` (Fable), twelve owner rulings.
+
+`apps/web` now names colours by role. Forty-one RGB-channel CSS variables sit
+under `:root` and `:root[data-theme="dark"]`, mapped in Tailwind so opacity
+modifiers keep working; an inline `index.html` script reads `bms.theme`
+before the first paint, and light stays the default. The shell and the login
+page moved onto role classes with two declared light changes. The other pages
+(`F3.65b`) and the charts, schematics and visible switch (`F3.65c`) follow.
+
+Verified: five `tests/` gates — tokens, contrast in both themes, the
+shade-to-role map, the exact per-file ratchet with hard zeros, the boot script
+— each new assertion shown red on its mutation; the browser layer on the
+rebuilt web container, 20/20 by exact values. Two reviews; the code review's
+five false greens and one wrong mapping rule were fixed test-first.
+
+**Cascade:** `F3.65b` is now startable (it depends on `F3.65a` alone). The
+`chore(agents):` §5 rule follows separately (#618).
