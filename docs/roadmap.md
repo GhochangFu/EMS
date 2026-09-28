@@ -6545,3 +6545,23 @@ false greens, both fixed. CI green on the first run.
 
 **Cascade:** no row lists `F4.171` in *Depends*. No `chore(agents):` change
 owed.
+
+### `F4.61` — the ingest health endpoint is reachable only from inside its container ✅ 2026-09-28
+
+PR #615, squash `2ebb8d5a`; plan `docs/plans/f4.61-ingest-health-network.md`.
+ADR 0016 Amendment 8.
+
+The health body names every enabled RTU without authentication, and every
+sibling container could read it. The handler now answers `GET /` and
+`/health` for exactly one loopback `Host` only; `ingest` shares a compose
+network with `postgres` alone; and the port is no longer published, because
+on Docker Desktop every container reached the loopback publication through
+`host.docker.internal`. Operators read it with `docker compose exec ingest
+wget -qO- http://127.0.0.1:9102/`.
+
+Verified: 38 mutations reddened their targets; the stack check measured the
+defect before and its absence after. CI green on the first run. Three reviews;
+the security review's finding became Decision 3.
+
+**Cascade:** no row lists `F4.61` in *Depends*. Raised `F4.173` (`api` and
+`worker` exit when Postgres restarts). No `chore(agents):` change owed.
