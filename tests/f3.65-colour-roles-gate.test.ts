@@ -263,12 +263,6 @@ describe("F3.65 colour scan — fixtures", () => {
  */
 const FLOOR: { file: string; palette: number; hex: number; func: number }[] = [
   { file: "components/asset-templates/formula-editor.tsx", palette: 0, hex: 13, func: 0 },
-  { file: "components/control-room/smoc/env.tsx", palette: 0, hex: 21, func: 0 },
-  { file: "components/control-room/smoc/hvac.tsx", palette: 0, hex: 5, func: 0 },
-  { file: "components/control-room/smoc/it.tsx", palette: 0, hex: 6, func: 0 },
-  { file: "components/control-room/smoc/overview.tsx", palette: 0, hex: 5, func: 0 },
-  { file: "components/control-room/smoc/sld.tsx", palette: 0, hex: 14, func: 0 },
-  { file: "components/control-room/smoc/ups.tsx", palette: 0, hex: 5, func: 0 },
   { file: "components/world-map.tsx", palette: 0, hex: 7, func: 0 },
   { file: "pages/login-page.tsx", palette: 0, hex: 5, func: 1 },
 ];

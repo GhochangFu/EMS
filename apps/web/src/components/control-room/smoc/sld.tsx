@@ -185,7 +185,7 @@ export function ControlRoomSldContent() {
           </h2>
           <p className="text-xs text-ink-muted">Live 2D rendering of mockup R.crSld</p>
         </div>
-        <div className="overflow-x-auto bg-[#FAFBFC] p-4">
+        <div className="overflow-x-auto bg-surface p-4">
           <CrSldSvg rules={rules} />
         </div>
       </section>
@@ -211,7 +211,7 @@ function CrSldSvg({ rules }: { rules: RuleListItem[] }) {
     <svg viewBox="0 0 1100 460" className="h-auto min-w-[1000px]">
       <defs>
         <marker id="crArrow" markerWidth="6" markerHeight="6" refX="5" refY="3" orient="auto">
-          <path d="M0,0 L6,3 L0,6 Z" fill="#039855" />
+          <path d="M0,0 L6,3 L0,6 Z" className="fill-accent" />
         </marker>
       </defs>
       <SldBox x={20} y={200} w={100} h={60} title="UTILITY" sub={<StaticTspan kind="nameplate">11 kV INCOMER</StaticTspan>} />
@@ -249,14 +249,14 @@ function CrSldSvg({ rules }: { rules: RuleListItem[] }) {
           were simply never read (ADR 0028 decision 1). */}
       <BatteryBox x={990} y={86} code="CR-BATT-1" title="BATT-1" />
       <BatteryBox x={990} y={130} code="CR-BATT-2" title="BATT-2" />
-      <line x1={570} y1={115} x2={990} y2={105} stroke="#94a3b8" strokeWidth={1.4} strokeDasharray="4 4" />
-      <line x1={570} y1={170} x2={990} y2={149} stroke="#94a3b8" strokeWidth={1.4} strokeDasharray="4 4" />
+      <line x1={570} y1={115} x2={990} y2={105} className="stroke-ink-hint" strokeWidth={1.4} strokeDasharray="4 4" />
+      <line x1={570} y1={170} x2={990} y2={149} className="stroke-ink-hint" strokeWidth={1.4} strokeDasharray="4 4" />
     </svg>
   );
 }
 
 function Flow({ x1, y1, x2, y2 }: { x1: number; y1: number; x2: number; y2: number }) {
-  return <line x1={x1} y1={y1} x2={x2} y2={y2} stroke="#039855" strokeWidth={3} markerEnd="url(#crArrow)" />;
+  return <line x1={x1} y1={y1} x2={x2} y2={y2} className="stroke-accent" strokeWidth={3} markerEnd="url(#crArrow)" />;
 }
 
 /**
@@ -419,21 +419,21 @@ function LoadBranch({ y, breaker, code, title, unitCode, role, rules }: { y: num
   // A dead feed is not a closed one: `!== "open"` used to make `offline` count
   // as closed, so the diagram drew a green energised arrow into it.
   const closed = state.status !== "open" && state.status !== "offline";
-  const stroke =
+  const strokeClass =
     state.status === "offline"
-      ? "#94a3b8"
+      ? "stroke-ink-hint"
       : state.status === "warning"
-        ? "#f59e0b"
+        ? "stroke-warning"
         : state.status === "critical"
-          ? "#dc2626"
+          ? "stroke-critical"
           : closed
-            ? "#039855"
-            : "#94a3b8";
+            ? "stroke-accent"
+            : "stroke-ink-hint";
   return (
     <g>
-      <line x1={326} y1={y} x2={380} y2={y} stroke={stroke} strokeWidth={3} />
+      <line x1={326} y1={y} x2={380} y2={y} className={strokeClass} strokeWidth={3} />
       <Breaker cx={400} cy={y} label={breaker} code={code} rules={rules} />
-      <line x1={411} y1={y} x2={450} y2={y} stroke={stroke} strokeWidth={3} markerEnd={closed ? "url(#crArrow)" : undefined} />
+      <line x1={411} y1={y} x2={450} y2={y} className={strokeClass} strokeWidth={3} markerEnd={closed ? "url(#crArrow)" : undefined} />
       <SldBox
         x={450}
         y={y - 18}
@@ -465,12 +465,12 @@ function Pdu({ y, breaker, code, title, loadCode, rules }: { y: number; breaker:
   const warn = state.status === "warning";
   const critical = state.status === "critical";
   const dark = state.status === "offline";
-  const stroke = dark ? "#94a3b8" : critical ? "#dc2626" : warn ? "#f59e0b" : "#039855";
+  const strokeClass = dark ? "stroke-ink-hint" : critical ? "stroke-critical" : warn ? "stroke-warning" : "stroke-accent";
   return (
     <g>
-      <line x1={696} y1={y} x2={740} y2={y} stroke={stroke} strokeWidth={3} markerEnd={dark ? undefined : "url(#crArrow)"} />
+      <line x1={696} y1={y} x2={740} y2={y} className={strokeClass} strokeWidth={3} markerEnd={dark ? undefined : "url(#crArrow)"} />
       <Breaker cx={760} cy={y} label={breaker} code={code} rules={rules} />
-      <line x1={770} y1={y} x2={810} y2={y} stroke={stroke} strokeWidth={3} markerEnd={dark ? undefined : "url(#crArrow)"} />
+      <line x1={770} y1={y} x2={810} y2={y} className={strokeClass} strokeWidth={3} markerEnd={dark ? undefined : "url(#crArrow)"} />
       <rect x={810} y={y - 19} width={160} height={38} rx={6} className={dark ? "fill-line stroke-ink-hint" : critical ? "fill-critical-wash stroke-critical" : warn ? "fill-warning-wash stroke-warning" : "fill-surface stroke-accent"} />
       <text x={890} y={y + 1} textAnchor="middle" className={dark ? "fill-ink-muted font-condensed text-[12px] font-bold" : critical ? "fill-critical-ink-strong font-condensed text-[12px] font-bold" : warn ? "fill-warning-ink font-condensed text-[12px] font-bold" : "fill-ink font-condensed text-[12px] font-bold"}>{title}</text>
       {/* Gated on the *load* asset's own freshness, not the breaker's: the two

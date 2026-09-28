@@ -134,6 +134,10 @@ const TEXT_PAIRS: Pair[] = [
   // F3.65c U4 — crac-schematic.tsx labels beside a `fill-well` panel (the fan hub, the compressor
   // bank frame).
   { fg: "info-ink", bg: "well" },
+  // F3.65c U6 — the six SMOC views' status pills, tiles and matched-rule notes sit on a `well`
+  // sensor-table header or the SMOC boards' offline `well` panels.
+  { fg: "warning-ink", bg: "well" },
+  { fg: "critical-ink-strong", bg: "well" },
 ];
 
 /**

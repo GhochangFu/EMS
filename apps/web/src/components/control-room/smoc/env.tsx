@@ -203,17 +203,22 @@ function statusTone(status: EnvStatus): "default" | "warning" | "critical" {
   return "default";
 }
 
+/** `F3.65c` — a whole literal fill class, not a hex (ADR 0078 decision 5). */
 function markerFill(status: EnvStatus): string {
   if (status === "critical") {
-    return "#dc2626";
+    return "fill-critical";
   }
   if (status === "warning") {
-    return "#f59e0b";
+    return "fill-warning";
   }
   if (status === "offline") {
-    return "#94a3b8";
+    return "fill-ink-hint";
   }
-  return "#22c55e";
+  return "fill-accent";
+}
+
+function leakFill(status: EnvStatus): string {
+  return status === "critical" ? "fill-critical" : "fill-info";
 }
 
 export function ControlRoomEnvContent() {
@@ -491,20 +496,20 @@ function FloorPlan({
 }) {
   return (
     <svg className="h-auto w-full" viewBox="0 0 700 320">
-      <rect x="20" y="20" width="660" height="280" rx="6" fill="#fff" stroke="#1d3a8c" strokeWidth="1.6" />
-      <rect x="60" y="50" width="220" height="120" rx="4" fill="#eff6ff" stroke="#3b82f6" />
+      <rect x="20" y="20" width="660" height="280" rx="6" className="fill-surface stroke-neutral-ink" strokeWidth="1.6" />
+      <rect x="60" y="50" width="220" height="120" rx="4" className="fill-info-wash stroke-info" />
       <text x="170" y="76" textAnchor="middle" className="fill-info-ink font-condensed text-[13px] font-semibold">OPERATOR CONSOLE</text>
-      <rect x="300" y="50" width="180" height="60" rx="4" fill="#fef3c7" stroke="#d97706" />
+      <rect x="300" y="50" width="180" height="60" rx="4" className="fill-warning-wash-strong stroke-warning" />
       <text x="390" y="84" textAnchor="middle" className="fill-warning-ink font-condensed text-[13px] font-semibold">VIDEOWALL</text>
-      <rect x="500" y="50" width="160" height="220" rx="4" fill="#ecfeff" stroke="#0891b2" />
+      <rect x="500" y="50" width="160" height="220" rx="4" className="fill-info-wash stroke-info" />
       <text x="580" y="76" textAnchor="middle" className="fill-info-ink font-condensed text-[13px] font-semibold">RACK BAY</text>
-      <rect x="60" y="200" width="180" height="80" rx="4" fill="#fef2f2" stroke="#dc2626" />
+      <rect x="60" y="200" width="180" height="80" rx="4" className="fill-critical-wash stroke-critical" />
       <text x="150" y="228" textAnchor="middle" className="fill-critical-ink-strong font-condensed text-[13px] font-semibold">BATTERY ROOM</text>
-      <rect x="260" y="200" width="200" height="80" rx="4" fill="#f3e8ff" stroke="#7e22ce" />
+      <rect x="260" y="200" width="200" height="80" rx="4" className="fill-well-deep stroke-ink-faint" />
       <text x="360" y="228" textAnchor="middle" className="fill-ink font-condensed text-[13px] font-semibold">UPS ROOM</text>
       {zones.map((zone) => (
         <g key={zone.code}>
-          <circle cx={zone.x} cy={zone.y} r="9" fill={markerFill(zone.state.status)} stroke="#fff" strokeWidth="1.5" />
+          <circle cx={zone.x} cy={zone.y} r="9" className={`${markerFill(zone.state.status)} stroke-surface`} strokeWidth="1.5" />
           <text x={zone.x} y={zone.y + 3} textAnchor="middle" className="fill-on-dark font-mono text-[9px] font-bold">T</text>
         </g>
       ))}
@@ -517,7 +522,7 @@ function FloorPlan({
         ][index];
         return (
           <g key={sensor.code}>
-            <rect x={coords[0] - 7} y={coords[1] - 7} width="14" height="14" rx="2" fill={markerFill(sensor.state.status)} stroke="#fff" strokeWidth="1.5" />
+            <rect x={coords[0] - 7} y={coords[1] - 7} width="14" height="14" rx="2" className={`${markerFill(sensor.state.status)} stroke-surface`} strokeWidth="1.5" />
             <text x={coords[0]} y={coords[1] + 3} textAnchor="middle" className="fill-on-dark font-mono text-[9px] font-bold">S</text>
           </g>
         );
@@ -529,13 +534,11 @@ function FloorPlan({
           [160, 280],
           [320, 280],
         ][index];
-        const fill = sensor.state.status === "critical" ? "#dc2626" : "#06b6d4";
         return (
           <polygon
             key={sensor.code}
             points={`${coords[0]},${coords[1] - 8} ${coords[0] + 10},${coords[1] + 6} ${coords[0] - 10},${coords[1] + 6}`}
-            fill={fill}
-            stroke="#fff"
+            className={`${leakFill(sensor.state.status)} stroke-surface`}
             strokeWidth="1.5"
           />
         );
