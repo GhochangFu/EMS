@@ -396,3 +396,41 @@ neither root; the `Worker`s close on `onModuleDestroy`, `tracing.ts` exits on
 `SIGTERM`. Every `GET /health` on either port waits out the 1.5 s race when
 Redis is down. `bullmq` 5.81.5's transitive set adds zero advisories to
 `pnpm audit --prod`.
+
+## Amendment 3 — a database section on `GET /health`, and `GET /health/ready` (2026-09-28)
+
+`F4.175`, raised by the `F4.173` security review. Before `F4.173` a Postgres
+outage crashed both processes, so the outage was visible as a dead process.
+`F4.173` put `'error'` listeners on every pool and client, the processes now
+stay up through an outage, and `GET /health` — which probed Redis and the
+object store only — answered `ok` for the whole of it.
+
+The owner ruled the shape on 2026-09-28, before any implementation code:
+
+1. **`GET /health` stays a liveness probe.** It gains a `database` section,
+   `{ reachable }`, from one `select 1` on the fleet pool raced against a 2 s
+   timeout. An unreachable database reads `degraded` and still answers 200 —
+   decision 10 and plan §15 ruling 1 stand: a probe that reads non-2xx here
+   makes an orchestrator restart a process that a restart cannot help.
+2. **`GET /health/ready` is new, on both processes** (`PORT` and
+   `WORKER_PORT`). HTTP 200 `{ "status": "ready", "database": { "reachable":
+   true } }` while the database answers, HTTP 503 `not_ready` while it does
+   not. Only the database decides it; the queue and the object store stay in
+   the liveness body.
+3. **No connection detail in either body.** The pg error is dropped; the
+   section carries one boolean.
+4. **No compose healthcheck changes.** `api` and `worker` declare none today;
+   whether a deploy wires `GET /health/ready` into one is a deploy decision.
+
+Contract: `databaseHealthSchema` and `readinessResponseSchema` in
+`packages/shared/src/contracts/health.ts`; `livenessResponseSchema.database`
+is optional, as `storage` is. Code: `apps/api/src/health/database-health.ts`
+(pure reader and verdicts) and `database-health.service.ts` (the fleet pool).
+
+**Recorded, not changed.** A pool with every client checked out waits for one
+and reads unreachable past the 2 s budget; for a readiness probe that is the
+truth. A server that accepts the TCP connection and never answers leaves the
+pool's pending connect open after the race is lost, as `queue-health.ts`
+records for Redis. `GET /health` runs the queue and database reads in parallel
+and the storage read after them, so an outage of all three answers inside
+3.5 s (2 s, then 1.5 s).
