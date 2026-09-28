@@ -2642,6 +2642,35 @@ health strip, the Key Parameters gauges and the footer ribbon) — read it
 before building a further reference-parity screen. The domain-first
 navigation IA gap that same document names (§3.3, `F3.29`) is still open.
 
+**Colours are role tokens** (**ADR 0078**, `F3.65a`, 2026-09-28). The
+vocabulary is the 41 roles in `apps/web/src/index.css` — RGB-channel CSS
+variables under `:root` (light) and `:root[data-theme="dark"]`, mapped in
+`apps/web/tailwind.config.js` as `rgb(var(--role) / <alpha-value>)`. A call
+site names a role (`bg-surface`, `text-ink-muted`, `border-critical-line`,
+`text-on-dark/70`), never a hue:
+
+- **No stock palette or `bms-*` class, hex literal, `rgb()`/`hsl()`/`oklch()`
+  literal, `dark:` variant, named colour or `prefers-color-scheme` in new
+  code.** A surface that needs a different treatment in dark gets a role, not
+  a `dark:` class. A new role needs a light value, a dark value and a
+  contrast pair in `tests/f3.65a-colour-contrast.test.ts`.
+- **Text on an opaque `bg-accent` fill is `text-on-accent`**, never
+  `text-on-dark`: the dark accent is `#3DCD58`, and white on it is 2.09:1.
+  White on chrome (header, footer, the green nav) is `on-dark`.
+- **An opacity modifier on a role class must be a Tailwind scale step**
+  (`/70`, `/60`) or an arbitrary `/[.72]`; `/72` emits no CSS.
+- **Changing a palette class, hex or colour literal in `apps/web/src` means
+  editing its row in the `FLOOR` table** of
+  `tests/f3.65-colour-roles-gate.test.ts`. The table is exact in both
+  directions, and its numbers may only fall; `F3.65b` migrates the pages and
+  `F3.65c` the charts and schematics, and the last sets it to zero. The
+  shade-to-role map a migration follows is `tests/support/colour-role-map.ts`.
+
+The theme is per browser: `localStorage["bms.theme"]`, read by the inline
+script in `apps/web/index.html` before the first paint. Only `"dark"` gives
+dark; light stays the default (ADR 0074). There is no visible switch until
+`F3.65c`.
+
 ---
 
 ## 6. Out of Scope for the Current Sprint
