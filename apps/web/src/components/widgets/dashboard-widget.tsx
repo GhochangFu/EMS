@@ -3,6 +3,7 @@ import type { DashboardWidgetDto, PointAggregateStats, RollupCoverage } from "@b
 import type { DatasetRow, WidgetSeries, WidgetStatus } from "../../lib/widget-catalog";
 import { widgetTitle } from "../../lib/widget-value";
 import { ChartWidget } from "./chart-widget";
+import { MimicWidget, NO_LIVE_READINGS, NO_MIMIC_NODES } from "./mimic-widget";
 import { RadialGaugeWidget } from "./radial-gauge-widget";
 import { TankLevelWidget } from "./tank-level-widget";
 import { TableWidget } from "./table-widget";
@@ -213,6 +214,19 @@ export function DashboardWidget({ widget, data, now }: DashboardWidgetProps) {
           columns={rowsData?.columns ?? NO_COLUMNS}
           rows={rowsData?.rows ?? NO_ROWS}
           truncated={rowsData?.truncated ?? false}
+        />
+      );
+    case "mimic":
+      // `F3.32` — this dispatcher has no node read: the live canvas branches to `MimicWidgetLive`
+      // before it gets here (`dashboard-widget-live.tsx`). Drawn here, the preset shows its
+      // topology with every node unresolved, rather than a blank card.
+      return (
+        <MimicWidget
+          title={title}
+          status={status}
+          preset={widget.config.preset}
+          nodes={NO_MIMIC_NODES}
+          readings={NO_LIVE_READINGS}
         />
       );
     default: {

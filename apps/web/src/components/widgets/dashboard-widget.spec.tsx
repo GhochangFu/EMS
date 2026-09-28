@@ -84,6 +84,9 @@ function sampleWidget(widgetType: WidgetType, title: string | null = "Feed pump 
       // "every column the bound dataset declares", so this is the smallest config its arm
       // accepts, exactly like the four above.
       return { ...IDENTITY, title, widgetType, config: {} };
+    case "mimic":
+      // `F3.32` — binds nothing; the preset is the whole config (ADR 0079 decision 3).
+      return { ...IDENTITY, title, widgetType, config: { source: "preset", preset: "water_train" } };
     default: {
       const unreachable: never = widgetType;
       return unreachable;
@@ -104,10 +107,11 @@ const WIDGET_TYPES = Object.keys(WIDGET_CATALOG) as WidgetType[];
 export function everyCatalogTypeDrawsItsTitle(): void {
   expect(
     WIDGET_TYPES.length,
-    "the catalog holds five widget types (ADR 0047 decision 2; `table` added by ADR 0048 " +
-      "decision 5, `F3.35` Stage B). A zero means the walk is broken and the loop below asserts " +
-      "nothing; a six means a type was added — widen this number and say so.",
-  ).toBe(5);
+    "the catalog holds six widget types (ADR 0047 decision 2; `table` added by ADR 0048 " +
+      "decision 5, `F3.35` Stage B; `mimic` by ADR 0079 decision 1, `F3.32`). A zero means the " +
+      "walk is broken and the loop below asserts nothing; a seven means a type was added — widen " +
+      "this number and say so.",
+  ).toBe(6);
 
   for (const widgetType of WIDGET_TYPES) {
     const { unmount } = render(<DashboardWidget widget={sampleWidget(widgetType)} data={READY_AT_750} />);
@@ -347,4 +351,17 @@ export function aValueTileWithFullCoverageRendersNoNote(): void {
     screen.queryByText(/of 6 assets/),
     "no coverage line at all, not merely not that wording",
   ).not.toBeInTheDocument();
+}
+
+/**
+ * `F3.32` — the dispatcher's `mimic` arm draws the preset, every node unresolved.
+ *
+ * `DashboardWidget` has no node read (the live canvas branches to `MimicWidgetLive` first), so
+ * this arm is the static drawing: eight nodes, all "Not assigned". An arm that returned `null`
+ * or an empty frame would still pass the title walk above; it would not pass this.
+ */
+export function aMimicDispatchedWithoutItsReadDrawsThePresetUnresolved(): void {
+  render(<DashboardWidget widget={sampleWidget("mimic")} data={READY_AT_750} />);
+  const statuses = screen.getAllByTestId("mimic-node").map((n) => n.getAttribute("data-status"));
+  expect(statuses).toEqual(Array(8).fill("unassigned"));
 }

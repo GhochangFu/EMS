@@ -50,6 +50,7 @@ export function DashboardLiveCanvas({ dashboard }: DashboardLiveCanvasProps) {
       renderTile={(tile) => (
         <DashboardWidgetLive
           widget={tile.widget}
+          dashboardId={dashboard.id}
           latestByRef={latestByRef}
           historyByRef={historyByRef}
           aggregateByKey={aggregateByKey}
