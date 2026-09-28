@@ -1,5 +1,5 @@
-import { DASHBOARD_GRID, METRIC_CATALOG } from "@bms/shared";
-import type { AssetPointPickerRow, MetricCatalogKey, UserRole, WidgetPointRole } from "@bms/shared";
+import { DASHBOARD_GRID, METRIC_CATALOG, MIMIC_PRESETS, mimicPresetSchema } from "@bms/shared";
+import type { AssetPointPickerRow, MetricCatalogKey, MimicPreset, UserRole, WidgetPointRole } from "@bms/shared";
 
 import { widgetRowAfterRemovingSource } from "../../lib/dashboard-builder-form";
 import type { DashboardBuilderProblem, DashboardWidgetRow } from "../../lib/dashboard-builder-form";
@@ -184,27 +184,51 @@ export function WidgetInspector({ row, problems, role, organizationId, onChange,
         </Field>
       </div>
 
-      <div className="grid gap-3 md:grid-cols-2">
-        <Field label="Unit" error={problemFor("unit")}>
-          <input
-            type="text"
-            value={row.config.unit}
-            placeholder="none"
-            onChange={(event) => updateConfig({ unit: event.target.value })}
+      {/*
+        `F3.32` / plan D8 — a mimic's config has no `unit` or `decimals`: it draws several
+        nodes, each with its own points and units, so one widget-level value would apply to
+        nothing and the API's `.strict()` would refuse it.
+      */}
+      {row.widgetType !== "mimic" ? (
+        <div className="grid gap-3 md:grid-cols-2">
+          <Field label="Unit" error={problemFor("unit")}>
+            <input
+              type="text"
+              value={row.config.unit}
+              placeholder="none"
+              onChange={(event) => updateConfig({ unit: event.target.value })}
+              className="w-full rounded border border-line px-2 py-1.5 text-xs"
+            />
+          </Field>
+          <Field label="Decimals" error={problemFor("decimals")}>
+            <input
+              type="text"
+              inputMode="numeric"
+              value={row.config.decimals}
+              placeholder="not set"
+              onChange={(event) => updateConfig({ decimals: event.target.value })}
+              className="w-full rounded border border-line px-2 py-1.5 text-xs"
+            />
+          </Field>
+        </div>
+      ) : null}
+
+      {row.widgetType === "mimic" ? (
+        <Field label="Preset" error={problemFor("preset")}>
+          <select
+            value={row.config.mimicPreset ?? ""}
+            onChange={(event) => updateConfig({ mimicPreset: event.target.value as MimicPreset })}
             className="w-full rounded border border-line px-2 py-1.5 text-xs"
-          />
+          >
+            {row.config.mimicPreset === undefined ? <option value="">Choose a plant drawing</option> : null}
+            {mimicPresetSchema.options.map((preset) => (
+              <option key={preset} value={preset}>
+                {MIMIC_PRESETS[preset].label}
+              </option>
+            ))}
+          </select>
         </Field>
-        <Field label="Decimals" error={problemFor("decimals")}>
-          <input
-            type="text"
-            inputMode="numeric"
-            value={row.config.decimals}
-            placeholder="not set"
-            onChange={(event) => updateConfig({ decimals: event.target.value })}
-            className="w-full rounded border border-line px-2 py-1.5 text-xs"
-          />
-        </Field>
-      </div>
+      ) : null}
 
       {row.widgetType === "radial_gauge" ? (
         <div className="space-y-2">
@@ -493,32 +517,39 @@ export function WidgetInspector({ row, problems, role, organizationId, onChange,
         </div>
       ) : null}
 
-      <Field label="Bound points" error={problemFor("points")}>
-        <ul className="space-y-1">
-          {row.points.map((point, index) => (
-            <li
-              key={`${point.pointId}-${index}`}
-              className="flex items-center justify-between rounded border border-well-deep px-2 py-1 text-xs"
-            >
-              <span>{point.label}</span>
-              <button type="button" onClick={() => removePoint(index)} aria-label={`Remove ${point.label}`} className="text-critical-ink">
-                ×
-              </button>
-            </li>
-          ))}
-        </ul>
-        {/*
-          `F3.35` Stage C — the picker disappears when a NAMED METRIC is bound, as well as at
-          the cardinality maximum. A widget binds points or a metric, never both
-          (`bindingExclusiveMessage`), so offering both pickers at once would let an author
-          build a state the form refuses on the very next render — an error they were invited
-          to make. `dashboardBuilderErrors` still enforces it, because a widget can arrive from
-          the server in that state; this only stops the form from producing one.
-        */}
-        {row.points.length < cardinality.max && row.sources.length === 0 ? (
-          <PointPicker role={role} organizationId={organizationId} onAdd={addPoint} />
-        ) : null}
-      </Field>
+      {/*
+        `F3.32` — absent, not empty, for a type that binds no point (the plant mimic resolves its
+        nodes from the dashboard's asset group), the way "Named metric" below is absent at
+        `sourceCardinality.max === 0`.
+      */}
+      {cardinality.max > 0 ? (
+        <Field label="Bound points" error={problemFor("points")}>
+          <ul className="space-y-1">
+            {row.points.map((point, index) => (
+              <li
+                key={`${point.pointId}-${index}`}
+                className="flex items-center justify-between rounded border border-well-deep px-2 py-1 text-xs"
+              >
+                <span>{point.label}</span>
+                <button type="button" onClick={() => removePoint(index)} aria-label={`Remove ${point.label}`} className="text-critical-ink">
+                  ×
+                </button>
+              </li>
+            ))}
+          </ul>
+          {/*
+            `F3.35` Stage C — the picker disappears when a NAMED METRIC is bound, as well as at
+            the cardinality maximum. A widget binds points or a metric, never both
+            (`bindingExclusiveMessage`), so offering both pickers at once would let an author
+            build a state the form refuses on the very next render — an error they were invited
+            to make. `dashboardBuilderErrors` still enforces it, because a widget can arrive from
+            the server in that state; this only stops the form from producing one.
+          */}
+          {row.points.length < cardinality.max && row.sources.length === 0 ? (
+            <PointPicker role={role} organizationId={organizationId} onAdd={addPoint} />
+          ) : null}
+        </Field>
+      ) : null}
 
       {/*
         Rendered only for a type that can bind one — a gauge, a tank and a chart draw a series

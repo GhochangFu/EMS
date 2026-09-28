@@ -22,11 +22,11 @@ import {
   buildPutWidgetsPayload,
   dashboardBuilderErrors,
   dashboardBuilderProblemSubject,
+  offerableWidgetTypes,
   unselectedDashboardBuilderProblems,
   type DashboardWidgetRow,
 } from "../../lib/dashboard-builder-form";
 import { WIDGET_CATALOG } from "../../lib/widget-catalog";
-import { WIDGET_TYPES } from "../../lib/widget-config-form";
 import { AppShell } from "../../layouts/app-shell";
 import { PageHeader } from "../../components/page-header";
 import { SectionCard } from "../../components/section-card";
@@ -211,7 +211,8 @@ export function DashboardBuilderPage({ user }: DashboardBuilderPageProps) {
           title="Widgets"
           actions={
             <div className="flex flex-wrap gap-2">
-              {WIDGET_TYPES.map((type) => (
+              {/* `F3.32` (ADR 0079 decision 4): a plant mimic is offered only on a group scope. */}
+              {offerableWidgetTypes(scope.kind).map((type) => (
                 <button
                   key={type}
                   type="button"

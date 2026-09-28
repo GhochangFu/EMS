@@ -3,6 +3,8 @@ import {
   bindingRequiredMessage,
   DASHBOARD_GRID,
   MAX_DASHBOARD_WIDGETS,
+  mimicPresetSchema,
+  widgetTypeBindsNothing,
 } from "@bms/shared";
 import type {
   DashboardDto,
@@ -14,11 +16,14 @@ import type {
   WidgetType,
 } from "@bms/shared";
 
+import type { DashboardScopeValue } from "./dashboard-scope";
 import { WIDGET_CATALOG } from "./widget-catalog";
 import {
   MAX_WIDGET_TITLE_LENGTH,
+  WIDGET_TYPES,
   blankConfigRow,
   buildChartConfig,
+  buildMimicConfig,
   buildTableConfig,
   buildGaugeConfig,
   buildTankConfig,
@@ -124,6 +129,13 @@ export type PutDashboardWidgetsPayload = {
  * `WIDGET_POINT_CARDINALITY`, per Amendment 2 §1). */
 export function blankDashboardWidgetRow(widgetType: WidgetType): DashboardWidgetRow {
   const { w, h } = WIDGET_CATALOG[widgetType].defaultSize;
+  const config = blankConfigRow();
+  if (widgetType === "mimic") {
+    // `F3.32` — v1 has one preset, so a new mimic starts on it rather than on a select the
+    // author must touch before the first save. `blankConfigRow` keeps `""` for the reason its
+    // own field comment gives.
+    config.mimicPreset = mimicPresetSchema.options[0];
+  }
   return {
     widgetType,
     title: "",
@@ -133,8 +145,24 @@ export function blankDashboardWidgetRow(widgetType: WidgetType): DashboardWidget
     gridH: h,
     points: [],
     sources: [],
-    config: blankConfigRow(),
+    config,
   };
+}
+
+/**
+ * The widget types the builder offers on a dashboard of this scope kind (`F3.32`, ADR 0079
+ * decision 6).
+ *
+ * A type that binds nothing — the plant mimic — resolves each node at read time from the
+ * dashboard's asset group by role, so it is offered only on an `assetGroup` dashboard; the API
+ * refuses it on every other scope with a 400. Derived from `widgetTypeBindsNothing` rather than
+ * the `"mimic"` literal, the way that predicate derives from the cardinality records.
+ *
+ * Takes the scope KIND from the form's live state, not the stored DTO, so switching an edited
+ * dashboard away from its group removes the button at once.
+ */
+export function offerableWidgetTypes(kind: DashboardScopeValue["kind"]): readonly WidgetType[] {
+  return WIDGET_TYPES.filter((type) => kind === "assetGroup" || !widgetTypeBindsNothing(type));
 }
 
 /** A display label for an already-bound point — `pointKey` alone, or `pointKey (unit)` when a
@@ -151,8 +179,13 @@ function pointBindingLabel(point: DashboardWidgetPointDto): string {
  * `switch` on `widget.widgetType` the same way `DashboardWidget`'s own dispatcher does. */
 function configRowFromDto(widget: DashboardWidgetDto): WidgetConfigRow {
   const row = blankConfigRow();
-  row.unit = widget.config.unit ?? "";
-  row.decimals = widget.config.decimals !== undefined ? String(widget.config.decimals) : "";
+  // `F3.32` / plan D8 — `mimicConfigSchema` carries neither field, so the generic read is guarded.
+  if ("unit" in widget.config) {
+    row.unit = widget.config.unit ?? "";
+  }
+  if ("decimals" in widget.config) {
+    row.decimals = widget.config.decimals !== undefined ? String(widget.config.decimals) : "";
+  }
 
   switch (widget.widgetType) {
     case "radial_gauge":
@@ -202,6 +235,18 @@ function configRowFromDto(widget: DashboardWidgetDto): WidgetConfigRow {
       // only the absent form back, so the round trip is stable rather than merely lossless.
       row.tableColumns = [...(widget.config.columns ?? [])];
       break;
+    case "mimic":
+      // `F3.32` — the same edit-and-resave reason as the two arms above. Without this arm the
+      // row holds no preset, `widgetConfigErrors` blocks the save, and the stored preset is lost to
+      // the form.
+      row.mimicPreset = widget.config.preset;
+      break;
+    default: {
+      // No arm may be forgotten: this switch has no compile-time exhaustiveness otherwise, and a
+      // missing arm is silent data loss on the next save rather than an error.
+      const unreachable: never = widget;
+      throw new Error(`Unhandled widget type ${JSON.stringify(unreachable)}`);
+    }
   }
   return row;
 }
@@ -342,7 +387,10 @@ export function dashboardBuilderErrors(rows: readonly DashboardWidgetRow[]): Das
     // The text comes from `@bms/shared`, not from here. `putDashboardWidgetsBodySchema` states
     // the same rule and answers a 400 with the same template, so an author who bypasses this
     // form reads one problem rather than two — see the messages' own docblock.
-    if (row.points.length === 0 && row.sources.length === 0) {
+    //
+    // `F3.32` — a type that binds nothing (the plant mimic, ADR 0079) is exempt, as it is from
+    // `exactlyOneBindingKind` on the API side: its empty arrays are its whole binding contract.
+    if (row.points.length === 0 && row.sources.length === 0 && !widgetTypeBindsNothing(row.widgetType)) {
       push(index, "points", bindingRequiredMessage(label));
     }
     if (row.points.length > 0 && row.sources.length > 0) {
@@ -439,6 +487,12 @@ export function buildPutWidgetsPayload(rows: readonly DashboardWidgetRow[]): Put
           return { ...identity, widgetType: "chart", config: buildChartConfig(row.config) };
         case "table":
           return { ...identity, widgetType: "table", config: buildTableConfig(row.config) };
+        case "mimic":
+          return { ...identity, widgetType: "mimic", config: buildMimicConfig(row.config) };
+        default: {
+          const unreachable: never = row.widgetType;
+          throw new Error(`Unhandled widget type ${JSON.stringify(unreachable)}`);
+        }
       }
     }),
   };

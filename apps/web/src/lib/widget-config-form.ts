@@ -14,6 +14,7 @@ import { CHART_SERIES, WIDGET_CATALOG } from "./widget-catalog";
 import type {
   ChartSeriesKind,
   DashboardWidgetSpec,
+  MimicPreset,
   PointAggregateFunction,
   TemplateAuthorableWidgetType,
   WidgetIcon,
@@ -224,6 +225,14 @@ export type WidgetConfigRow = {
   // also what an absent `columns` means in the stored config — see
   // `buildTableConfig` for why the two must not both be representable there.
   tableColumns: string[];
+  // mimic — `F3.32` (ADR 0079). Absent means "not chosen", and it is not the
+  // enum's first value: with one preset in v1, a default of `water_train` would
+  // make a stored preset and a forgotten read-back look the same.
+  // `blankDashboardWidgetRow("mimic")` chooses the preset for a new row.
+  // Optional rather than `MimicPreset | ""` because `template-dashboard-form.ts`
+  // builds this row as a literal, and a template can never hold a mimic
+  // (`isTemplateAuthorableWidgetType`), so absent is the true value there.
+  mimicPreset?: MimicPreset;
 };
 
 export function blankConfigRow(): WidgetConfigRow {
@@ -329,6 +338,10 @@ export function widgetConfigErrors(
     if (config.yAxisLabel.trim().length > MAX_Y_AXIS_LABEL_LENGTH) {
       push("yAxisLabel", `A y-axis label is at most ${MAX_Y_AXIS_LABEL_LENGTH} characters.`);
     }
+  } else if (widget.widgetType === "mimic") {
+    if (config.mimicPreset === undefined) {
+      push("preset", "Choose which plant drawing this mimic shows.");
+    }
   }
 
   return problems;
@@ -339,6 +352,7 @@ type TankConfig = Extract<DashboardWidgetSpec, { widgetType: "tank_level" }>["co
 type TileConfig = Extract<DashboardWidgetSpec, { widgetType: "value_tile" }>["config"];
 type ChartConfig = Extract<DashboardWidgetSpec, { widgetType: "chart" }>["config"];
 type TableConfig = Extract<DashboardWidgetSpec, { widgetType: "table" }>["config"];
+type MimicConfig = Extract<DashboardWidgetSpec, { widgetType: "mimic" }>["config"];
 
 /** `unit`/`decimals` are common to every arm's config and are added only when
  * set — every config schema is `.optional()` on both and `.strict()`, so a
@@ -475,4 +489,22 @@ export function buildTableConfig(config: WidgetConfigRow): TableConfig {
     out.columns = [...config.tableColumns];
   }
   return out;
+}
+
+/**
+ * The `mimic` config (`F3.32`, ADR 0079 decision 2).
+ *
+ * **No `buildCommonConfig` spread (plan D8).** `mimicConfigSchema` carries no `unit` or
+ * `decimals` — a mimic draws several nodes, each with its own units — and the write surface is
+ * `.strict()`, so a `unit` left on the flat row would be a 400 the author cannot see.
+ *
+ * **Throws on an unchosen preset rather than writing an absent one.** `widgetConfigErrors` refuses that
+ * row first and the builder's Save is disabled while it does, so this is reached only by a
+ * caller that skipped validation — and failing there is better than a payload the API refuses.
+ */
+export function buildMimicConfig(config: WidgetConfigRow): MimicConfig {
+  if (config.mimicPreset === undefined) {
+    throw new Error("A mimic widget has no preset chosen; validate the row before building its payload.");
+  }
+  return { source: "preset", preset: config.mimicPreset };
 }

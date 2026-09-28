@@ -163,6 +163,20 @@ export async function addingAWidgetSelectsItForEditing(): Promise<void> {
   expect(screen.getByText("Bound points")).toBeInTheDocument();
 }
 
+/** `F3.32` (ADR 0079 decision 4) — the create page offers "Plant mimic" only on a group scope.
+ * The Value tile button is the positive control that the widget buttons rendered at all. */
+export async function createPageOffersPlantMimicOnlyOnAGroupScope(): Promise<void> {
+  stubMasterData();
+  renderPage(asUser("admin"));
+
+  await screen.findByRole("radio", { name: "Organization-wide" });
+  expect(screen.getByRole("button", { name: /Value tile/i })).toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: /Plant mimic/i })).not.toBeInTheDocument();
+
+  await userEvent.click(screen.getByRole("radio", { name: "Asset group" }));
+  expect(await screen.findByRole("button", { name: /Plant mimic/i })).toBeInTheDocument();
+}
+
 /**
  * Review finding — `WidgetInspector` renders only the SELECTED widget's problems, so adding a
  * second widget (which `addWidget` auto-selects) hid the FIRST widget's own problem entirely:

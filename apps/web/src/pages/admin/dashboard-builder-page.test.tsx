@@ -14,6 +14,7 @@ import {
   assetGroupAdminsGroupListComesFromItsOwnScope,
   assetGroupAdminsWidgetInspectorOffersTheAssetChain,
   createIsDisabledUntilRequiredFieldsAreFilled,
+  createPageOffersPlantMimicOnlyOnAGroupScope,
   creatingWithAnAssetGroupSendsAssetGroupIdAndNoLocationId,
   locationAdminDoesNotFetchAssetGroups,
   locationAdminGetsNoAssetGroupOptionOnTheComposedPage,
@@ -44,6 +45,10 @@ describe("F3.1d dashboard builder page", () => {
 
   it("creating with an asset group sends assetGroupId and no locationId (F3.34)", async () => {
     await creatingWithAnAssetGroupSendsAssetGroupIdAndNoLocationId();
+  });
+
+  it("offers Plant mimic only on a group scope (F3.32)", async () => {
+    await createPageOffersPlantMimicOnlyOnAGroupScope();
   });
 
   it("selects a newly added widget for editing", async () => {

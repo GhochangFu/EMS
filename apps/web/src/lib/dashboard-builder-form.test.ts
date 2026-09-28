@@ -10,6 +10,16 @@ import {
   runRemovingASourceClearsColumnsTests,
   runTableColumnRoundTripTests,
   runUnselectedDashboardBuilderProblemsTests,
+  runOfferableOnAGroupTests,
+  runNotOfferableWithoutAGroupTests,
+  runOtherTypesStayOfferedTests,
+  runBlankMimicRowTests,
+  runMimicHasNoBindingProblemTests,
+  runUnboundTileStillHasBindingProblemTests,
+  runMimicPayloadHasNoUnitTests,
+  runMimicRowKeepsPresetTests,
+  runMimicRoundTripTests,
+  runMimicUneditedIsNoChangeTests,
 } from "./dashboard-builder-form.spec";
 
 /** Vitest entry point — see `apps/web/src/lib/admin-access.test.ts` (ADR 0014). */
@@ -48,5 +58,45 @@ describe("dashboard builder form", () => {
 
   it("names a problem's subject — Dashboard, or the widget's own title/catalog label", () => {
     runDashboardBuilderProblemSubjectTests();
+  });
+
+  it("F3.32: an asset-group dashboard offers the plant mimic", () => {
+    runOfferableOnAGroupTests();
+  });
+
+  it("F3.32: an organization, location or asset dashboard does not offer the plant mimic", () => {
+    runNotOfferableWithoutAGroupTests();
+  });
+
+  it("F3.32: the other five types stay offered on every scope kind", () => {
+    runOtherTypesStayOfferedTests();
+  });
+
+  it("F3.32: a new mimic row is 12x6 with the water_train preset", () => {
+    runBlankMimicRowTests();
+  });
+
+  it("F3.32: a mimic binds nothing and has no binding problem", () => {
+    runMimicHasNoBindingProblemTests();
+  });
+
+  it("F3.32: an unbound value tile still has the binding problem", () => {
+    runUnboundTileStillHasBindingProblemTests();
+  });
+
+  it("F3.32: a mimic payload carries no unit or decimals", () => {
+    runMimicPayloadHasNoUnitTests();
+  });
+
+  it("F3.32: a stored mimic reads back its preset", () => {
+    runMimicRowKeepsPresetTests();
+  });
+
+  it("F3.32: a stored mimic re-saves its own config", () => {
+    runMimicRoundTripTests();
+  });
+
+  it("F3.32: an unedited mimic is not a change", () => {
+    runMimicUneditedIsNoChangeTests();
   });
 });

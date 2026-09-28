@@ -10,6 +10,7 @@ import {
   dashboardBuilderErrors,
   dashboardBuilderProblemSubject,
   dashboardRowsFromDto,
+  offerableWidgetTypes,
   unselectedDashboardBuilderProblems,
   type DashboardWidgetRow,
 } from "./dashboard-builder-form";
@@ -405,4 +406,112 @@ export function runBuilderHasChangedTests(): void {
     builderHasChanged(reorderedChart, chartDto),
     "reordering a widget's points is a real change, not normalized away before comparing",
   );
+}
+
+// ---------------------------------------------------------------------------------------------
+// `F3.32` — the plant mimic (ADR 0079). One claim per function, so a mutation reddens the
+// assertion that owns it rather than the first one in a shared block.
+// ---------------------------------------------------------------------------------------------
+
+function mimicDto(): DashboardWidgetDto {
+  return widgetDto({
+    id: "mimic-1",
+    title: "Water train",
+    gridW: 12,
+    gridH: 6,
+    points: [],
+    sources: [],
+    widgetType: "mimic",
+    config: { source: "preset", preset: "water_train" },
+  });
+}
+
+/** An asset-group dashboard offers every type, the mimic included. */
+export function runOfferableOnAGroupTests(): void {
+  const offered = offerableWidgetTypes("assetGroup");
+  assert(offered.includes("mimic"), `a group dashboard offers the mimic — got ${JSON.stringify(offered)}`);
+}
+
+/** Every other scope kind drops the mimic — it resolves its nodes from the group's roles, and
+ * the API refuses it anywhere else (ADR 0079 decision 6). */
+export function runNotOfferableWithoutAGroupTests(): void {
+  for (const kind of ["organization", "location", "asset"] as const) {
+    const offered = offerableWidgetTypes(kind);
+    assert(!offered.includes("mimic"), `a ${kind} dashboard does not offer the mimic — got ${JSON.stringify(offered)}`);
+  }
+}
+
+/** The positive twin of the absence check: the other types survive the filter on every kind. */
+export function runOtherTypesStayOfferedTests(): void {
+  for (const kind of ["organization", "location", "asset", "assetGroup"] as const) {
+    const offered = offerableWidgetTypes(kind);
+    for (const type of ["radial_gauge", "tank_level", "value_tile", "chart", "table"] as const) {
+      assert(offered.includes(type), `a ${kind} dashboard still offers ${type} — got ${JSON.stringify(offered)}`);
+    }
+  }
+}
+
+/** A new mimic row is the catalog's 12×6 with the one preset chosen. */
+export function runBlankMimicRowTests(): void {
+  const row = blankDashboardWidgetRow("mimic");
+  assert(
+    row.gridW === 12 && row.gridH === 6 && row.config.mimicPreset === "water_train",
+    `a new mimic is 12×6 water_train — got ${row.gridW}×${row.gridH} ${JSON.stringify(row.config.mimicPreset)}`,
+  );
+}
+
+/** A mimic binds nothing, so the "needs a point or a metric" rule does not apply to it. */
+export function runMimicHasNoBindingProblemTests(): void {
+  const problems = dashboardBuilderErrors([blankDashboardWidgetRow("mimic")]);
+  assert(problems.length === 0, `a new mimic row has no problem — got ${JSON.stringify(problems)}`);
+}
+
+/** The positive twin: a value tile that binds nothing still gets the binding problem. */
+export function runUnboundTileStillHasBindingProblemTests(): void {
+  const problems = dashboardBuilderErrors([blankDashboardWidgetRow("value_tile")]);
+  assert(
+    problems.some((problem) => problem.field === "points"),
+    `an unbound value tile still reports a points problem — got ${JSON.stringify(problems)}`,
+  );
+}
+
+/** A mimic's payload config never carries `unit`, even when the flat row holds one (plan D8,
+ * the API's `.strict()` answers 400 for it). */
+export function runMimicPayloadHasNoUnitTests(): void {
+  const row = blankDashboardWidgetRow("mimic");
+  const withUnit = { ...row, config: { ...row.config, unit: "kW", decimals: "2" } };
+  const payload = buildPutWidgetsPayload([withUnit]);
+  const widget = payload.widgets[0]!;
+  assert(
+    widget.widgetType === "mimic" &&
+      JSON.stringify(Object.keys(widget.config).sort()) === JSON.stringify(["preset", "source"]),
+    `a mimic payload's config is exactly preset and source — got ${JSON.stringify(widget)}`,
+  );
+}
+
+/** Edit-and-resave keeps the stored preset. Without `case "mimic"` in `configRowFromDto` the row
+ * holds no preset and the preset is lost. */
+export function runMimicRowKeepsPresetTests(): void {
+  const rows = dashboardRowsFromDto(dashboardDto([mimicDto()]));
+  assert(
+    rows[0]!.config.mimicPreset === "water_train",
+    `a stored mimic reads back its preset — got ${JSON.stringify(rows[0]!.config.mimicPreset)}`,
+  );
+}
+
+/** The round trip, end to end: DTO → rows → payload writes back the stored config. */
+export function runMimicRoundTripTests(): void {
+  const payload = buildPutWidgetsPayload(dashboardRowsFromDto(dashboardDto([mimicDto()])));
+  const widget = payload.widgets[0]!;
+  assert(
+    JSON.stringify(widget.config) === JSON.stringify({ source: "preset", preset: "water_train" }) &&
+      widget.id === "mimic-1",
+    `a stored mimic re-saves its own config and id — got ${JSON.stringify(widget)}`,
+  );
+}
+
+/** A stored mimic, read and not edited, is not a change. */
+export function runMimicUneditedIsNoChangeTests(): void {
+  const dto = dashboardDto([mimicDto()]);
+  assert(!builderHasChanged(dashboardRowsFromDto(dto), dto), "an unedited mimic reports no change");
 }
