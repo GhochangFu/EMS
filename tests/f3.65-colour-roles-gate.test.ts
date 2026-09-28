@@ -262,7 +262,6 @@ describe("F3.65 colour scan — fixtures", () => {
  * `F3.65b` (R20 holds it); `F3.65c` empties the table.
  */
 const FLOOR: { file: string; palette: number; hex: number; func: number }[] = [
-  { file: "components/asset-templates/formula-editor.tsx", palette: 0, hex: 13, func: 0 },
   { file: "pages/login-page.tsx", palette: 0, hex: 5, func: 1 },
 ];
 

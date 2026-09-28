@@ -66,37 +66,42 @@ export type FormulaEditorProps = FormulaEditorRules & {
  *
  * An `EditorView.theme` rather than a rule in `index.css`: it ships inside this
  * lazy chunk, so a page that never opens the Calculations tab never downloads
- * it. The palette is `tailwind.config.js`'s `bms` scale, by value — a theme
- * object cannot carry a Tailwind class name.
+ * it. Every value is a role's `rgb(var(--role))` CSS string (ADR 0078 decision
+ * 5, plan D4) — a theme object cannot carry a Tailwind class name, so this is
+ * the one place in the tree that reads a role as a raw CSS string rather than
+ * a class. `.cm-calc-function`'s `simulated-ink` is a **hue reuse, not a
+ * semantic one** (OQ7): the role exists for simulated-value ink elsewhere in
+ * the app, and this token borrows its violet for the unrelated reason that
+ * `#7c3aed` was already that hue.
  */
 const calcTheme = EditorView.theme({
   "&": {
     fontSize: "13px",
-    border: "1px solid #e5e7eb",
+    border: "1px solid rgb(var(--line))",
     borderRadius: "0.25rem",
-    backgroundColor: "#ffffff",
+    backgroundColor: "rgb(var(--surface))",
   },
-  "&.cm-focused": { outline: "2px solid #00A651", outlineOffset: "-1px" },
+  "&.cm-focused": { outline: "2px solid rgb(var(--focus))", outlineOffset: "-1px" },
   ".cm-content": {
     fontFamily: '"IBM Plex Mono", ui-monospace, monospace',
     padding: "0.5rem 0.75rem",
-    caretColor: "#1A2230",
+    caretColor: "rgb(var(--ink))",
   },
-  ".cm-calc-ref": { color: "#007C3C", fontWeight: "600" },
-  ".cm-calc-number": { color: "#1D2430" },
-  ".cm-calc-function": { color: "#7c3aed" },
-  ".cm-calc-operator": { color: "#4A5464" },
-  ".cm-calc-punctuation": { color: "#4A5464" },
+  ".cm-calc-ref": { color: "rgb(var(--accent-strong))", fontWeight: "600" },
+  ".cm-calc-number": { color: "rgb(var(--ink))" },
+  ".cm-calc-function": { color: "rgb(var(--simulated-ink))" },
+  ".cm-calc-operator": { color: "rgb(var(--ink-muted))" },
+  ".cm-calc-punctuation": { color: "rgb(var(--ink-muted))" },
   // `bms-calc-v2` only (ADR 0055): a scope reads like a keyword, a string like
   // a literal. Neither is emitted under `v1`, so a `v1` formula never sees them.
-  ".cm-calc-scope": { color: "#B45309", fontWeight: "600" },
-  ".cm-calc-string": { color: "#0E7490" },
+  ".cm-calc-scope": { color: "rgb(var(--warning-ink))", fontWeight: "600" },
+  ".cm-calc-string": { color: "rgb(var(--info-ink))" },
   // `bms-calc-v3` only (ADR 0070): a `$key` parameter reads like a reference
   // to something stored, not a point — the ref green, italic.
-  ".cm-calc-param": { color: "#007C3C", fontStyle: "italic" },
+  ".cm-calc-param": { color: "rgb(var(--accent-strong))", fontStyle: "italic" },
   // `bms-calc-v3` only (ADR 0070 decision 5, `E4.1b`): a window literal reads
   // like a keyword — the scope amber, so `24h` and `@site` sit in one family.
-  ".cm-calc-window": { color: "#B45309", fontStyle: "italic" },
+  ".cm-calc-window": { color: "rgb(var(--warning-ink))", fontStyle: "italic" },
 });
 
 /**
