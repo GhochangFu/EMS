@@ -218,6 +218,22 @@ describe.skipIf(!ownerUrl)("F4.169/F4.170 addendum 2 — the seed changes only t
     });
   }, 60_000);
 
+  it("C3b: the cleanup's line prints an admin code as a JSON string, so a newline in it cannot forge a line", async () => {
+    const legacySlug = legacySlugs[0];
+    assert(legacySlug !== undefined, "the catalog must derive at least one legacy slug");
+    await inTransaction(phewbOrgId, async (pool) => {
+      // The admin API bounds a location code's length, not its characters.
+      const code = `F4169-${RUN_ID}-LEG\nseed: forged "line"`;
+      const locationId = await insertLocation(pool, phewbOrgId, code, legacySlug as string, "pump_station");
+      const lines: string[] = [];
+      await cleanupLegacyPheRtuLocations(pool, legacySlugs, (line) => lines.push(line));
+      const named = lines.filter((line) => line.includes(locationId));
+      assert(named.length === 1, "one line names the location");
+      // Mutation: the code printed raw carries the newline into the log.
+      expect(named[0], "the code is printed as JSON").toContain(JSON.stringify(code));
+    });
+  }, 60_000);
+
   it("C3: a location with a legacy slug, an RTU and an empty group is removed with both", async () => {
     const legacySlug = legacySlugs[0];
     assert(legacySlug !== undefined, "the catalog must derive at least one legacy slug");
@@ -406,7 +422,7 @@ describe.skipIf(!ownerUrl)("F4.169/F4.170 addendum 2 — the seed changes only t
       expect(await wholeRow(pool, holder), "the holder is unchanged: null key, name, meta, every column").toEqual(
         holderBefore,
       );
-      expect(holderBefore, "the holder carries no key").toMatchObject({ name: `F4.169 fixture F4169-${RUN_ID}-S4` });
+      expect(holderBefore, "the holder keeps the admin's name").toMatchObject({ name: `F4.169 fixture F4169-${RUN_ID}-S4` });
       expect((holderBefore as { meta: unknown }).meta, "the holder carries no meta").toBeNull();
       expect(await readLocation(pool, id), "RSMOC-WC keeps the admin's slug").toMatchObject({
         slug: renamed,

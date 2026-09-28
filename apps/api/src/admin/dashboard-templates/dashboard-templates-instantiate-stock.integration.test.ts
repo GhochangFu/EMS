@@ -188,8 +188,11 @@ describe.skipIf(!connectionString)(
 
       // F4.53: the OLDEST row is a seeded one, which predates every suite in the
       // run and is the only one no concurrent suite can delete underneath us.
+      // Then by code, not id: on a fresh database the inactive ESK-DECOMM-01
+      // shares created_at with the ten canonical rows (F4.170), and a random
+      // id could pick it; CSMOC-GP sorts first by code.
       const location = await ownerPool.query<{ id: string }>(
-        `SELECT id FROM bms.locations WHERE organization_id = $1 ORDER BY created_at, id LIMIT 1`,
+        `SELECT id FROM bms.locations WHERE organization_id = $1 ORDER BY created_at, code LIMIT 1`,
         [eskomOrgId],
       );
       const locationId = location.rows[0]?.id;

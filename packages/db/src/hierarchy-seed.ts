@@ -163,11 +163,13 @@ export async function ensureOrganizations(pool: pg.Pool): Promise<void> {
  * `pnpm db:seed` with `22001`, and every seeded RTU keeps its code, so the
  * `ON CONFLICT (location_id, code)` upsert still updates it in place.
  *
- * `skipLocationIds` are seed rows whose canonical code another row holds
- * (`locationIdsWithoutSeedCode`, owner ruling 17). Such a row still carries
- * an administrator's code, and an RTU written under it would be a second set
- * beside the seed's, kept after the code comes back; the seed already logged
- * the held code. Every other ESKOM location, an administrator's included,
+ * `skipLocationIds` (`locationIdsWithoutSeedCode`, owner ruling 17) are the
+ * seed rows whose canonical code another row holds, and the candidates of an
+ * ambiguous identity that do not carry its canonical code (addendum 4). Each
+ * still carries an administrator's code, and an RTU written under it would be
+ * a second set beside the seed's, kept after the code comes back; the
+ * location seed has already logged the held code or the ambiguity. Every
+ * other ESKOM location, an administrator's included,
  * gets its RTUs as before. `assignEskomAssetRtus` then finds no RTU under the
  * skipped row's code and leaves its assets' `rtu_id` and `telemetrySource`
  * as they are.
@@ -447,7 +449,7 @@ export async function cleanupLegacyPheRtuLocations(
   for (const location of doomed.rows) {
     log(
       `cleanupLegacyPheRtuLocations: deleting legacy PHE location ${location.slug} (${location.id}, ` +
-        `code ${location.code}) with its access grants, asset groups and RTUs`,
+        `code ${JSON.stringify(location.code)}) with its access grants, asset groups and RTUs`,
     );
   }
   await pool.query(`
