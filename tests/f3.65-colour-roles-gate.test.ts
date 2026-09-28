@@ -269,7 +269,6 @@ const FLOOR: { file: string; palette: number; hex: number; func: number }[] = [
   { file: "components/control-room/smoc/overview.tsx", palette: 0, hex: 5, func: 0 },
   { file: "components/control-room/smoc/sld.tsx", palette: 0, hex: 14, func: 0 },
   { file: "components/control-room/smoc/ups.tsx", palette: 0, hex: 5, func: 0 },
-  { file: "components/live-svg/electrical-sld.tsx", palette: 0, hex: 19, func: 0 },
   { file: "components/world-map.tsx", palette: 0, hex: 7, func: 0 },
   { file: "pages/login-page.tsx", palette: 0, hex: 5, func: 1 },
 ];

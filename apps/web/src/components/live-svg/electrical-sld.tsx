@@ -18,22 +18,42 @@ export type ElectricalSldDiagramProps = {
   onSelectAsset: (assetId: string | undefined) => void;
 };
 
-const GREEN = "#039855";
-const FLOW = "#3DCD58";
-const FLOW_BUS = "#7FE591";
-const FAULT = "#D92D20";
-const MUTED = "#94A3B8";
-const LABEL_MUTED = "#4A5464";
-const PANEL_FILL = "#D1FADF";
+/**
+ * `F3.65c` — role classes, not hex (ADR 0078 decision 5, plan D4/OQ2/OQ5/D7). `FLOW`/`FLOW_BUS`
+ * (the animated dashes and blink dots) read `accent-strong` per OQ5 — the line's own colour and
+ * the blink dot carry the status, so the dash on top is deliberately not the same role, and its
+ * contrast against `accent` is not a declared pair (§2.5).
+ */
+const STROKE_ACCENT = "stroke-accent";
+const STROKE_FAULT = "stroke-critical";
+const STROKE_MUTED = "stroke-ink-hint";
+const STROKE_FLOW = "stroke-accent-strong";
+const FILL_FLOW = "fill-accent-strong";
+const FILL_LABEL_MUTED = "fill-ink-muted";
+const FILL_PANEL = "fill-ok-wash";
 
 function strokeFor(status: LiveSvgStatus): string {
   if (status === "fault") {
-    return FAULT;
+    return STROKE_FAULT;
   }
   if (status === "offline") {
-    return MUTED;
+    return STROKE_MUTED;
   }
-  return GREEN;
+  return STROKE_ACCENT;
+}
+
+function flowStrokeFor(status: LiveSvgStatus): string {
+  return status === "running" ? STROKE_FLOW : STROKE_MUTED;
+}
+
+function fillFor(status: LiveSvgStatus): string {
+  if (status === "fault") {
+    return "fill-critical";
+  }
+  if (status === "offline") {
+    return "fill-ink-hint";
+  }
+  return "fill-accent";
 }
 
 function flowDurationSec(kw: number | null): string {
@@ -81,7 +101,7 @@ function TxPole({
   const { assetId, slice, status } = useSchematicTelemetryByCode(assetCode);
   const loadPct = txLoadPct(slice.kw);
   const stroke = strokeFor(status);
-  const flow = status === "running" ? FLOW : MUTED;
+  const flow = flowStrokeFor(status);
   const dur = flowDurationSec(slice.kw);
   const showFlow = status === "running";
 
@@ -105,17 +125,16 @@ function TxPole({
       >
         UTILITY 11kV
       </text>
-      <line x1={cx} y1={40} x2={cx} y2={80} stroke={stroke} strokeWidth={4} />
+      <line x1={cx} y1={40} x2={cx} y2={80} className={stroke} strokeWidth={4} />
       {showFlow ? (
         <line
           x1={cx}
           y1={40}
           x2={cx}
           y2={78}
-          stroke={flow}
+          className={`${flow} sld-flow`}
           strokeWidth={2.5}
           strokeLinecap="round"
-          className="sld-flow"
           style={
             {
               "--sld-flow-duration": dur,
@@ -123,10 +142,10 @@ function TxPole({
           }
         />
       ) : null}
-      <circle cx={cx - 10} cy={100} r={14} fill="#fff" stroke={stroke} strokeWidth={2} />
-      <circle cx={cx + 10} cy={100} r={14} fill="#fff" stroke={stroke} strokeWidth={2} />
+      <circle cx={cx - 10} cy={100} r={14} className={`fill-surface ${stroke}`} strokeWidth={2} />
+      <circle cx={cx + 10} cy={100} r={14} className={`fill-surface ${stroke}`} strokeWidth={2} />
       <g transform={`translate(${cx} 100)`} className={status === "running" ? "sld-spin" : ""}>
-        <line x1={-9} y1={0} x2={9} y2={0} stroke={stroke} strokeWidth={1.2} />
+        <line x1={-9} y1={0} x2={9} y2={0} className={stroke} strokeWidth={1.2} />
       </g>
       <text
         x={labelX}
@@ -140,22 +159,20 @@ function TxPole({
         x={labelX}
         y={150}
         textAnchor="middle"
-        className="font-mono text-[9px]"
-        fill={LABEL_MUTED}
+        className={`font-mono text-[9px] ${FILL_LABEL_MUTED}`}
       >
         11kV/415V · {loadPct}% load
       </text>
-      <line x1={cx} y1={155} x2={cx} y2={200} stroke={stroke} strokeWidth={4} />
+      <line x1={cx} y1={155} x2={cx} y2={200} className={stroke} strokeWidth={4} />
       {showFlow ? (
         <line
           x1={cx}
           y1={155}
           x2={cx}
           y2={198}
-          stroke={flow}
+          className={`${flow} sld-flow`}
           strokeWidth={2.5}
           strokeLinecap="round"
-          className="sld-flow"
           style={
             {
               "--sld-flow-duration": dur,
@@ -186,9 +203,11 @@ function FeederBranch({
 }) {
   const { assetId, slice, status } = useSchematicTelemetryByCode(assetCode);
   const stroke = strokeFor(status);
-  const flow = status === "running" ? FLOW : MUTED;
+  const fillClass = fillFor(status);
+  const flow = flowStrokeFor(status);
   const dur = flowDurationSec(slice.kw);
   const showFlow = status === "running";
+  const panelFillClass = status === "offline" ? "fill-well-deep" : FILL_PANEL;
 
   return (
     <g
@@ -202,17 +221,16 @@ function FeederBranch({
         }
       }}
     >
-      <line x1={x} y1={200} x2={x} y2={280} stroke={stroke} strokeWidth={3} />
+      <line x1={x} y1={200} x2={x} y2={280} className={stroke} strokeWidth={3} />
       {showFlow ? (
         <line
           x1={x}
           y1={200}
           x2={x}
           y2={278}
-          stroke={flow}
+          className={`${flow} sld-flow`}
           strokeWidth={2}
           strokeLinecap="round"
-          className="sld-flow"
           style={
             {
               "--sld-flow-duration": dur,
@@ -226,8 +244,7 @@ function FeederBranch({
         y={280}
         width={28}
         height={20}
-        fill="#fff"
-        stroke={stroke}
+        className={`fill-surface ${stroke}`}
         strokeWidth={2}
       />
       <line
@@ -235,23 +252,22 @@ function FeederBranch({
         y1={290}
         x2={x + 8}
         y2={283}
-        stroke={stroke}
+        className={stroke}
         strokeWidth={2}
       />
       {status === "running" ? (
-        <circle cx={x} cy={290} r={3} fill={FLOW} className="sld-blink" />
+        <circle cx={x} cy={290} r={3} className={`${FILL_FLOW} sld-blink`} />
       ) : null}
-      <line x1={x} y1={300} x2={x} y2={350} stroke={stroke} strokeWidth={3} />
+      <line x1={x} y1={300} x2={x} y2={350} className={stroke} strokeWidth={3} />
       {showFlow ? (
         <line
           x1={x}
           y1={300}
           x2={x}
           y2={348}
-          stroke={flow}
+          className={`${flow} sld-flow`}
           strokeWidth={2}
           strokeLinecap="round"
-          className="sld-flow"
           style={
             {
               "--sld-flow-duration": dur,
@@ -266,16 +282,14 @@ function FeederBranch({
         width={84}
         height={55}
         rx={4}
-        fill={status === "offline" ? "#F1F5F9" : PANEL_FILL}
-        stroke={stroke}
+        className={`${panelFillClass} ${stroke}`}
         strokeWidth={1.5}
       />
       <text
         x={x}
         y={368}
         textAnchor="middle"
-        className="font-mono text-[10px] font-bold"
-        fill={stroke}
+        className={`font-mono text-[10px] font-bold ${fillClass}`}
       >
         {feederCode}
       </text>
@@ -283,8 +297,7 @@ function FeederBranch({
         x={x}
         y={382}
         textAnchor="middle"
-        className="font-mono text-[9px]"
-        fill={stroke}
+        className={`font-mono text-[9px] ${fillClass}`}
       >
         {loadLabel}
       </text>
@@ -292,8 +305,7 @@ function FeederBranch({
         x={x}
         y={397}
         textAnchor="middle"
-        className="font-condensed text-[11px] font-bold"
-        fill={stroke}
+        className={`font-condensed text-[11px] font-bold ${fillClass}`}
       >
         {fmtKw(slice.kw)}
       </text>
@@ -319,9 +331,10 @@ export function ElectricalSldDiagram({ onSelectAsset }: ElectricalSldDiagramProp
 
   const ups = useSchematicTelemetryByCode(SLD_UPS_ASSET_CODE);
   const upsStroke = strokeFor(ups.status);
-  const upsFlow = ups.status === "running" ? FLOW : MUTED;
+  const upsFlow = flowStrokeFor(ups.status);
   const upsDur = flowDurationSec(ups.slice.kw);
   const upsShowFlow = ups.status === "running";
+  const upsPanelFillClass = ups.status === "offline" ? "fill-well-deep" : FILL_PANEL;
 
   return (
     <svg
@@ -344,15 +357,14 @@ export function ElectricalSldDiagram({ onSelectAsset }: ElectricalSldDiagramProp
         onSelectAsset={onSelectAsset}
       />
 
-      <line x1={50} y1={200} x2={850} y2={200} stroke={GREEN} strokeWidth={6} />
+      <line x1={50} y1={200} x2={850} y2={200} className="stroke-accent" strokeWidth={6} />
       <line
         x1={50}
         y1={200}
         x2={850}
         y2={200}
-        stroke={FLOW_BUS}
+        className="stroke-accent-strong sld-flow opacity-70"
         strokeWidth={2}
-        className="sld-flow opacity-70"
         style={
           {
             "--sld-flow-duration": flowDurationSec(totalKw),
@@ -363,7 +375,7 @@ export function ElectricalSldDiagram({ onSelectAsset }: ElectricalSldDiagramProp
         x={450}
         y={192}
         textAnchor="middle"
-        className="fill-[#007C3C] font-condensed text-[13px] font-bold"
+        className="fill-accent-strong font-condensed text-[13px] font-bold"
       >
         MAIN LV BUS · 415 V · {busMw} MW{staleNote}
       </text>
@@ -374,7 +386,7 @@ export function ElectricalSldDiagram({ onSelectAsset }: ElectricalSldDiagramProp
           y1={190}
           x2={470}
           y2={155}
-          stroke={MUTED}
+          className="stroke-ink-hint"
           strokeWidth={3}
           strokeDasharray="5 4"
         />
@@ -384,16 +396,14 @@ export function ElectricalSldDiagram({ onSelectAsset }: ElectricalSldDiagramProp
           width={80}
           height={36}
           rx={4}
-          fill="#F1F5F9"
-          stroke={MUTED}
+          className="fill-well-deep stroke-ink-hint"
           strokeWidth={1.5}
         />
         <text
           x={470}
           y={170}
           textAnchor="middle"
-          className="font-mono text-[10px] font-bold"
-          fill={LABEL_MUTED}
+          className={`font-mono text-[10px] font-bold ${FILL_LABEL_MUTED}`}
         >
           DG-01/02
         </text>
@@ -401,8 +411,7 @@ export function ElectricalSldDiagram({ onSelectAsset }: ElectricalSldDiagramProp
           x={470}
           y={183}
           textAnchor="middle"
-          className="font-mono text-[9px]"
-          fill={LABEL_MUTED}
+          className={`font-mono text-[9px] ${FILL_LABEL_MUTED}`}
         >
           2x1.5MVA STBY
         </text>
@@ -419,17 +428,16 @@ export function ElectricalSldDiagram({ onSelectAsset }: ElectricalSldDiagramProp
           }
         }}
       >
-        <line x1={290} y1={190} x2={290} y2={155} stroke={upsStroke} strokeWidth={3} />
+        <line x1={290} y1={190} x2={290} y2={155} className={upsStroke} strokeWidth={3} />
         {upsShowFlow ? (
           <line
             x1={290}
             y1={190}
             x2={290}
             y2={158}
-            stroke={upsFlow}
+            className={`${upsFlow} sld-flow`}
             strokeWidth={2}
             strokeLinecap="round"
-            className="sld-flow"
             style={
               {
                 "--sld-flow-duration": upsDur,
@@ -443,15 +451,14 @@ export function ElectricalSldDiagram({ onSelectAsset }: ElectricalSldDiagramProp
           width={100}
           height={36}
           rx={4}
-          fill={ups.status === "offline" ? "#F1F5F9" : PANEL_FILL}
-          stroke={upsStroke}
+          className={`${upsPanelFillClass} ${upsStroke}`}
           strokeWidth={1.5}
         />
         <text
           x={290}
           y={170}
           textAnchor="middle"
-          className="font-mono text-[10px] font-bold fill-[#007C3C]"
+          className="font-mono text-[10px] font-bold fill-accent-strong"
         >
           UPS-500 BANK
         </text>
@@ -459,12 +466,12 @@ export function ElectricalSldDiagram({ onSelectAsset }: ElectricalSldDiagramProp
           x={290}
           y={183}
           textAnchor="middle"
-          className="font-mono text-[9px] fill-[#007C3C]"
+          className="font-mono text-[9px] fill-accent-strong"
         >
           2,100 kVA · {upsLoadPct(ups.slice.kw)}%
         </text>
         {ups.status === "running" ? (
-          <circle cx={245} cy={160} r={3} fill={FLOW} className="sld-blink" />
+          <circle cx={245} cy={160} r={3} className={`${FILL_FLOW} sld-blink`} />
         ) : null}
       </g>
 
@@ -482,11 +489,11 @@ export function ElectricalSldDiagram({ onSelectAsset }: ElectricalSldDiagramProp
       ))}
 
       <g transform="translate(20 430)">
-        <rect width={860} height={40} fill="#F7F8FA" stroke="#D8DCE3" rx={4} />
-        <text x={20} y={18} className="font-mono text-[10px]" fill={LABEL_MUTED}>
+        <rect width={860} height={40} className="fill-well stroke-line-strong" rx={4} />
+        <text x={20} y={18} className={`font-mono text-[10px] ${FILL_LABEL_MUTED}`}>
           Total feeders from live telemetry · Main bus {busMw} MW{staleNote} · PUE indicative 1.42 · N+1
         </text>
-        <text x={20} y={32} className="font-mono text-[9px]" fill="#7A8494">
+        <text x={20} y={32} className="font-mono text-[9px] fill-ink-faint">
           Animated dashes show power flow; grey indicates stale or offline points (stop sim to
           verify).
         </text>
