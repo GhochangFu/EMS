@@ -37,15 +37,23 @@ function parseBlock(content: string): Map<string, Channels> {
 
 /**
  * The `:root { … }` (light) and `:root[data-theme="dark"] { … }` (dark) role blocks of
- * `index.css`: each `--name: R G B;` line as `name → [r, g, b]`. Throws on a malformed line, and
- * throws naming any role that is declared in one theme but not the other — a token file is
- * useless if a role has no value in one theme.
+ * `index.css`: each `--name: R G B;` line as `name → [r, g, b]`. Throws when either block is
+ * missing or appears twice — a second block would override the first in the browser while a
+ * first-match reader checked only the first. Throws on a malformed line, and throws naming any
+ * role that is declared in one theme but not the other — a token file is useless if a role has
+ * no value in one theme.
  */
 export function parseTokenBlocks(css: string): TokenBlocks {
-  const lightMatch = /:root\s*\{([^}]*)\}/.exec(css);
-  const darkMatch = /:root\[data-theme="dark"\]\s*\{([^}]*)\}/.exec(css);
-  if (!lightMatch) throw new Error('no ":root { … }" light block found');
-  if (!darkMatch) throw new Error('no \':root[data-theme="dark"] { … }\' dark block found');
+  const lightBlocks = [...css.matchAll(/:root\s*\{([^}]*)\}/g)];
+  const darkBlocks = [...css.matchAll(/:root\[data-theme="dark"\]\s*\{([^}]*)\}/g)];
+  if (lightBlocks.length === 0) throw new Error('no ":root { … }" light block found');
+  if (darkBlocks.length === 0) throw new Error(`no ':root[data-theme="dark"] { … }' dark block found`);
+  if (lightBlocks.length > 1) throw new Error(`found ${lightBlocks.length} ':root { … }' blocks; the token file holds one`);
+  if (darkBlocks.length > 1) {
+    throw new Error(`found ${darkBlocks.length} ':root[data-theme="dark"] { … }' blocks; the token file holds one`);
+  }
+  const [lightMatch] = lightBlocks;
+  const [darkMatch] = darkBlocks;
   const light = parseBlock(lightMatch[1]);
   const dark = parseBlock(darkMatch[1]);
   for (const role of light.keys()) {

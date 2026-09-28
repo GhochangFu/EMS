@@ -1,9 +1,10 @@
 import { readFileSync } from "node:fs";
-import { join } from "node:path";
+import { join, relative } from "node:path";
 
 import { describe, expect, it } from "vitest";
 
-import { repoRoot } from "./support/source-scan";
+import { blankComments } from "./support/pending-button-scan";
+import { repoRoot, walk } from "./support/source-scan";
 import { channelsToHex, contrastRatio, deltaE2000, parseTokenBlocks, resolveTailwindShade } from "./support/colour-tokens";
 
 /**
@@ -66,6 +67,36 @@ describe("F3.65a: colour maths support", () => {
 }
 `;
     expect(() => parseTokenBlocks(css)).toThrow(/malformed/);
+  });
+
+  it("T6 parseTokenBlocks throws on a second dark block rather than reading the first", () => {
+    const css = `
+:root {
+  --canvas: 242 244 247;
+}
+:root[data-theme="dark"] {
+  --canvas: 20 27 37;
+}
+:root[data-theme="dark"] {
+  --canvas: 185 28 28;
+}
+`;
+    expect(() => parseTokenBlocks(css)).toThrow(/2 ':root\[data-theme="dark"\]/);
+  });
+
+  it("T6 parseTokenBlocks throws on a second :root block rather than reading the first", () => {
+    const css = `
+:root {
+  --canvas: 242 244 247;
+}
+:root {
+  --canvas: 185 28 28;
+}
+:root[data-theme="dark"] {
+  --canvas: 20 27 37;
+}
+`;
+    expect(() => parseTokenBlocks(css)).toThrow(/2 ':root \{/);
   });
 });
 
@@ -185,6 +216,31 @@ describe("F3.65a: the token file (index.css) and the Tailwind mapping", () => {
     const darkBlock = /:root\[data-theme="dark"\]\s*\{([^}]*)\}/.exec(css());
     expect(darkBlock).not.toBeNull();
     expect(darkBlock![1]).toMatch(/color-scheme:\s*dark\s*;/);
+  });
+
+  // Independent of `parseTokenBlocks`, which throws on a second block: this case must still name
+  // the stray declaration when the token file is malformed. Role names come from `ROLE_HEX`.
+  it("T14 every --<role>: declaration in apps/web/src/**/*.css sits inside index.css's :root or dark block", () => {
+    const roles = new Set(Object.keys(ROLE_HEX));
+    const cssFiles = walk(join(repoRoot, "apps/web/src")).filter((f) => f.endsWith(".css"));
+    const outside: string[] = [];
+    for (const full of cssFiles) {
+      const text = blankComments(readFileSync(full, "utf8"));
+      const file = relative(repoRoot, full).split("\\").join("/");
+      const spans: [number, number][] = [];
+      if (file === "apps/web/src/index.css") {
+        for (const re of [/:root\s*\{[^}]*\}/, /:root\[data-theme="dark"\]\s*\{[^}]*\}/]) {
+          const m = re.exec(text);
+          if (m) spans.push([m.index, m.index + m[0].length]);
+        }
+      }
+      for (const m of text.matchAll(/(?<![\w-])--([a-z][a-z0-9-]*)\s*:/g)) {
+        if (!roles.has(m[1])) continue;
+        if (spans.some(([a, b]) => m.index >= a && m.index < b)) continue;
+        outside.push(`${file}:${text.slice(0, m.index).split("\n").length} --${m[1]}`);
+      }
+    }
+    expect(outside).toEqual([]);
   });
 
   it("T13 index.css holds no # hex literal outside a comment", () => {
