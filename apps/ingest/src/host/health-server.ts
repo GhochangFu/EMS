@@ -313,6 +313,7 @@ const ALLOWED_METHOD = "GET";
  * **Host first**, so the DNS-rebinding defence fires whatever else is wrong
  * with the request; then method, then path. A missing `Host` is refused — an
  * HTTP/1.0 client can omit it, and its absence proves nothing about who asked.
+ * The handler passes a repeated `Host` as missing, so it is refused the same way.
  *
  * Every refusal body is one fixed line. It never echoes the value it refused
  * and never starts with `ingest-host`, so a liveness check matching that
@@ -353,11 +354,14 @@ export function startHealthServer(
   snapshot: () => HealthSnapshot,
 ): Promise<HealthServer> {
   const server = http.createServer((request, response) => {
-    // `host` is passed raw: a missing header must reach the gate as missing.
+    // `host` reaches the gate as missing unless there is exactly one:
+    // `request.headers.host` keeps the first of two, so `Host: 127.0.0.1` then
+    // `Host: evil.example` would pass on the first (ADR 0016 Amendment 8).
+    const hosts = request.headersDistinct.host;
     const refusal = refuseHealthRequest({
       method: request.method,
       url: request.url,
-      host: request.headers.host,
+      host: hosts?.length === 1 ? hosts[0] : undefined,
     });
     if (refusal !== undefined) {
       response.writeHead(refusal.status, { "content-type": "text/plain", ...refusal.headers });

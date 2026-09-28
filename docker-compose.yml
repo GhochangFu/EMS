@@ -559,18 +559,18 @@ services:
     #
     # `INGEST_NOTIFY` is gone for the same reason: the host always notifies, so
     # no compose line is load-bearing for keeping the dashboards alive any more.
-    ports:
-      # Loopback only. The health body is plain text with no authentication,
-      # and since `F1.7` it names every enabled RTU, when each last reported
-      # and which are silent — remote unattended water stations, and a
-      # targeting signal rather than a status page. Two boundaries hold it
-      # off (ADR 0016 Amendment 8, `F4.61`): this publication is loopback on
-      # the host, and the `networks:` below keeps the container off
-      # `default`, so no other service but `postgres` shares a network with
-      # it — the handler also answers `GET /` and `/health` only, for a
-      # loopback `Host` (`apps/ingest/src/host/health-server.ts`). Every
-      # operator workflow in `docs/ingest-host.md` runs on the host itself.
-      - "127.0.0.1:9102:9102"
+    #
+    # No `ports:` (ADR 0016 Amendment 8, Decision 3, `F4.61`). The health body
+    # is plain text with no authentication, and since `F1.7` it names every
+    # enabled RTU, when each last reported and which are silent — remote
+    # unattended water stations, and a targeting signal rather than a status
+    # page. It was published on `127.0.0.1:9102`, and on Docker Desktop every
+    # container reaches that through `host.docker.internal` with any `Host` it
+    # likes. Read it from inside the container instead:
+    # `docker compose exec ingest wget -qO- http://127.0.0.1:9102/`. The
+    # handler answers `GET /` and `/health` only, for exactly one loopback
+    # `Host` (`apps/ingest/src/host/health-server.ts`).
+    #
     # `apps/ingest/Dockerfile` sets no `USER`, so the image runs as root and
     # this mount is writable without a `chown` step here. The first non-root
     # `USER` line will make start-up refuse loudly over an unwritable
@@ -582,7 +582,8 @@ services:
     # `postgres:5432` in-cluster plus the external PHE broker; nothing else
     # reaches ingest. Joining `ingest` alone (not `default`) is what makes
     # `GET http://ingest:9102/` unreachable from every container but `postgres`.
-    # `tests/f4.61-ingest-network-isolation.test.ts` holds this statically.
+    # `tests/f4.61-ingest-network-isolation.test.ts` holds this, and the
+    # absence of `ports:` above, statically.
     networks:
       - ingest
     depends_on:

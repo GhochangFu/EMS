@@ -11,6 +11,7 @@ import {
   runMethodRefusedTests,
   runMissingHostRefusedTests,
   runNoHostHeaderTests,
+  runRepeatedHostHeaderTests,
   runPathOverSocketTests,
   runPathRefusedTests,
   runRefusalBodyTests,
@@ -83,5 +84,9 @@ describe("health endpoint request gate over a socket (F4.61)", () => {
 
   it("refuses an HTTP/1.0 request with no Host", async () => {
     await runNoHostHeaderTests();
+  });
+
+  it("refuses a request with two Host headers, in either order", async () => {
+    await runRepeatedHostHeaderTests();
   });
 });

@@ -108,8 +108,8 @@ function probe(
 }
 
 /**
- * Raw bytes over `node:net`, for the request `http.request` will not send: one
- * with no `Host` at all. HTTP/1.0, because Node answers an HTTP/1.1 request
+ * Raw bytes over `node:net`, for the requests `http.request` will not send: one
+ * with no `Host` at all, and one with two. HTTP/1.0, because Node answers an HTTP/1.1 request
  * without `Host` with a 400 before the handler ever runs.
  */
 function rawProbe(port: number, text: string): Promise<string> {
@@ -175,6 +175,7 @@ export function runMissingHostRefusedTests(): void {
   assert(statusOf(gate("")) === 421, "an empty Host is refused 421");
 }
 
+/** Every method but `GET` is refused, and the refusal names the one it takes. */
 export function runMethodRefusedTests(): void {
   for (const method of ["POST", "PUT", "DELETE", "HEAD", "OPTIONS"]) {
     assert(statusOf(gate(LOOPBACK, method)) === 405, `${method} / is refused 405`);
@@ -228,7 +229,7 @@ export async function runBoundPortTests(): Promise<void> {
   });
 }
 
-/** The operator's `curl 127.0.0.1:9102` and ADR 0075's `/health` still work. */
+/** The operator's in-container `wget 127.0.0.1:9102` and ADR 0075's `/health` still work. */
 export async function runServedRequestTests(): Promise<void> {
   await withServer(async (server) => {
     const root = await probe(server.port, { method: "GET", path: "/", host: LOOPBACK });
@@ -250,6 +251,7 @@ export async function runForeignHostOverSocketTests(): Promise<void> {
   });
 }
 
+/** The method refusal as the handler writes it: the status and the `Allow` header. */
 export async function runMethodOverSocketTests(): Promise<void> {
   await withServer(async (server) => {
     const response = await probe(server.port, { method: "POST", path: "/", host: LOOPBACK });
@@ -258,6 +260,7 @@ export async function runMethodOverSocketTests(): Promise<void> {
   });
 }
 
+/** The path refusal as the handler writes it: the status and the exact body. */
 export async function runPathOverSocketTests(): Promise<void> {
   await withServer(async (server) => {
     const response = await probe(server.port, { method: "GET", path: "/nope", host: LOOPBACK });
@@ -272,5 +275,29 @@ export async function runNoHostHeaderTests(): Promise<void> {
     const reply = await rawProbe(server.port, "GET / HTTP/1.0\r\n\r\n");
     assert(reply.startsWith("HTTP/1.1 421"), `no Host is refused 421: ${JSON.stringify(reply.split("\r\n")[0])}`);
     assert(!reply.includes(SENTINEL), "a refusal never carries the roster");
+  });
+}
+
+/**
+ * Two `Host` headers are refused in either order. `request.headers.host` keeps
+ * the first, so without the handler's count a loopback first value would carry
+ * a foreign second one through (ADR 0016 Amendment 8, RFC 9112).
+ */
+export async function runRepeatedHostHeaderTests(): Promise<void> {
+  await withServer(async (server) => {
+    for (const [first, second] of [
+      [LOOPBACK, "evil.example"],
+      ["evil.example", LOOPBACK],
+    ] as const) {
+      const reply = await rawProbe(
+        server.port,
+        `GET / HTTP/1.1\r\nHost: ${first}\r\nHost: ${second}\r\nConnection: close\r\n\r\n`,
+      );
+      assert(
+        reply.startsWith("HTTP/1.1 421"),
+        `Host ${first} then ${second} is refused 421: ${JSON.stringify(reply.split("\r\n")[0])}`,
+      );
+      assert(!reply.includes(SENTINEL), "a refusal never carries the roster");
+    }
   });
 }
