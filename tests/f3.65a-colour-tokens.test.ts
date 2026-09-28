@@ -1,4 +1,5 @@
 import { readFileSync } from "node:fs";
+import { createRequire } from "node:module";
 import { join, relative } from "node:path";
 import { pathToFileURL } from "node:url";
 
@@ -167,8 +168,9 @@ const ROLE_HEX: Record<string, { light: string; dark: string }> = {
 const tailwindConfig = (await import(pathToFileURL(TAILWIND_CONFIG_PATH).href)).default as {
   darkMode: unknown;
   theme: {
+    colors: Record<string, unknown>;
     extend: {
-      colors: Record<string, unknown>;
+      colors?: Record<string, unknown>;
       borderColor?: Record<string, unknown>;
       ringOffsetColor?: Record<string, unknown>;
     };
@@ -176,14 +178,21 @@ const tailwindConfig = (await import(pathToFileURL(TAILWIND_CONFIG_PATH).href)).
 };
 
 /**
- * Every leaf of `theme.extend.colors` outside the kept `bms` block, keyed by the class stem
- * Tailwind builds from its path (`ink.muted` → `ink-muted`, `critical.ink.DEFAULT` →
- * `critical-ink`). A stem reached twice is kept under its first path and recorded as a clash.
+ * The three CSS keywords `theme.colors` keeps beside the roles once the stock palette is gone
+ * (`F3.65c` D9): `bg-transparent`, `border-current` and `fill-inherit`-style utilities still need
+ * a key. They are held to exact values by their own T11 case and skipped by the role cases.
+ */
+const COLOUR_KEYWORDS: Record<string, string> = { transparent: "transparent", current: "currentColor", inherit: "inherit" };
+
+/**
+ * Every leaf of `theme.colors` other than the three keywords, keyed by the class stem Tailwind
+ * builds from its path (`ink.muted` → `ink-muted`, `critical.ink.DEFAULT` → `critical-ink`). A
+ * stem reached twice is kept under its first path and recorded as a clash.
  */
 function flattenColours(node: Record<string, unknown>, path: string[] = []): Map<string, { path: string; value: unknown }> {
   const out = new Map<string, { path: string; value: unknown }>();
   for (const [key, value] of Object.entries(node)) {
-    if (path.length === 0 && key === "bms") continue;
+    if (path.length === 0 && key in COLOUR_KEYWORDS) continue;
     const next = [...path, key];
     if (value !== null && typeof value === "object") {
       for (const [stem, leaf] of flattenColours(value as Record<string, unknown>, next)) {
@@ -197,7 +206,10 @@ function flattenColours(node: Record<string, unknown>, path: string[] = []): Map
   return out;
 }
 
-const configColourLeaves = flattenColours(tailwindConfig.theme.extend.colors);
+const configColourLeaves = flattenColours(tailwindConfig.theme.colors);
+
+/** Tailwind's stock palette, from the installed package; only its keys are read (see T16c). */
+const stockColours = createRequire(join(repoRoot, "apps/web/package.json"))("tailwindcss/colors") as Record<string, unknown>;
 
 describe("F3.65a: the token file (index.css) and the Tailwind mapping", () => {
   const css = () => readFileSync(INDEX_CSS_PATH, "utf8");
@@ -239,7 +251,7 @@ describe("F3.65a: the token file (index.css) and the Tailwind mapping", () => {
     expect(mismatches).toEqual([]);
   });
 
-  it("T11 the role stems of theme.extend.colors (outside bms) are exactly the 41 roles", () => {
+  it("T11 the role stems of theme.colors (outside the three keywords) are exactly the 41 roles", () => {
     expect([...configColourLeaves.keys()].sort()).toEqual(Object.keys(ROLE_HEX).sort());
   });
 
@@ -250,11 +262,32 @@ describe("F3.65a: the token file (index.css) and the Tailwind mapping", () => {
     expect(wrong).toEqual([]);
   });
 
-  it("T11 no colour leaf outside the bms block holds a literal colour", () => {
+  it("T11 no colour leaf outside the three keywords holds a literal colour", () => {
     const literal = [...configColourLeaves.values()]
       .filter(({ value }) => typeof value !== "string" || !/^rgb\(var\(--[a-z][a-z0-9-]*\) \/ <alpha-value>\)$/.test(value))
       .map(({ path, value }) => `${path}: ${String(value)}`);
     expect(literal).toEqual([]);
+  });
+
+  it("T11 theme.colors keeps transparent, current and inherit at their CSS keywords", () => {
+    const kept = Object.fromEntries(Object.keys(COLOUR_KEYWORDS).map((k) => [k, tailwindConfig.theme.colors[k]]));
+    expect(kept).toEqual(COLOUR_KEYWORDS);
+  });
+
+  // F3.65c D9: the roles replace Tailwind's colours rather than extend them, so no stock family
+  // (`gray`, `red`, `white` …) and no `bms.*` shade can emit a class. T16a–c are one claim each.
+  it("T16a tailwind.config.js has no theme.extend.colors", () => {
+    expect(tailwindConfig.theme.extend.colors).toBeUndefined();
+  });
+
+  it("T16b theme.colors has no bms key", () => {
+    expect(Object.keys(tailwindConfig.theme.colors)).not.toContain("bms");
+  });
+
+  it("T16c theme.colors has no stock Tailwind colour family key", () => {
+    // `in` reads the key only: v3's deprecated families (`lightBlue` …) warn when their value is read.
+    const stock = Object.keys(tailwindConfig.theme.colors).filter((k) => !(k in COLOUR_KEYWORDS) && k in stockColours);
+    expect(stock).toEqual([]);
   });
 
   // F3.65b review: Tailwind 3.4 preflight sets `border-color: theme('borderColor.DEFAULT')`

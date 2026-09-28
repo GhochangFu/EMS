@@ -195,11 +195,10 @@ export function deltaE2000(hexA: string, hexB: string): number {
 }
 
 /**
- * The seven `bms.*` palette hex values from `apps/web/tailwind.config.js`. Kept as a local
- * constant rather than read from the config, because they leave `tailwind.config.js` in
- * `F3.65c` once the ratchet gate is at zero, at which point this constant is the historical
- * record — `resolveTailwindShade` still needs to resolve `bms-green` etc. for `tests/`
- * fixtures and the mapping table until then.
+ * The seven `bms.*` palette hex values `apps/web/tailwind.config.js` carried until `F3.65c` U11
+ * removed them with the stock palette. This constant is now their historical record, kept so
+ * `resolveTailwindShade` still resolves `bms-green` etc. for the `tests/` fixtures and the
+ * mapping table (the config is never read here; stock shades come from `tailwindcss/colors`).
  */
 const BMS_HEX: Record<string, string> = {
   "bms-green": "#00A651",
