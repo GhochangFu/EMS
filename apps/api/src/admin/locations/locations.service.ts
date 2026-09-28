@@ -22,6 +22,7 @@ import { FLEET_DRIZZLE, TENANT_DRIZZLE } from "../../database/database.tokens";
 import { withTenant } from "../../database/tenant-context";
 import { VocabulariesService } from "../../vocabularies/vocabularies.service";
 import { MasterDataAuditService } from "../master-data-audit.service";
+import { requestMetaForCreate, requestMetaForUpdate } from "./location-seed-key";
 import type { CreateLocationBody, UpdateLocationBody } from "./locations.schema";
 
 /**
@@ -159,7 +160,8 @@ export class LocationsAdminService {
           latitude: body.latitude,
           longitude: body.longitude,
           timezone: body.timezone ?? null,
-          meta: body.meta ?? null,
+          // Owner ruling 20: `meta.seedKey` is seed-owned; a request's is dropped.
+          meta: requestMetaForCreate(body.meta),
           active: true,
         })
         .returning();
@@ -224,7 +226,9 @@ export class LocationsAdminService {
           latitude: body.latitude ?? existing.latitude,
           longitude: body.longitude ?? existing.longitude,
           timezone: body.timezone !== undefined ? body.timezone : existing.timezone,
-          meta: body.meta !== undefined ? body.meta : existing.meta,
+          // Owner ruling 20: a `meta` that replaces the stored one keeps the
+          // stored `seedKey` and never takes one from the request.
+          meta: body.meta !== undefined ? requestMetaForUpdate(body.meta, existing.meta) : existing.meta,
           updatedAt: new Date(),
         })
         .where(eq(locations.id, id));

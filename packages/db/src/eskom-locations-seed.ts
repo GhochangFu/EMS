@@ -6,6 +6,7 @@ import { mapLocationRowsForInsert } from "./map-locations-seed";
 import { pheMapLocationRowsForInsert } from "./phe-map-seed";
 import { loadPheCatalog, type PheCatalogFile } from "./phe-pilot-seed";
 import { mapLocations } from "./schema/bms-schema";
+import { SEED_LOCATION_KEY } from "./seed-location-key";
 
 /**
  * Map-marker and canonical-location seeding, split out of `seed.ts` to keep it
@@ -119,13 +120,7 @@ export function eskomLocationCode(row: MapLocationSeedRow): string {
   return `${row.kind.replace("_campus", "").toUpperCase()}-${locationCode(row.slug, row.province)}`;
 }
 
-/**
- * The `bms.locations.meta` key that marks a row the seed owns (owner ruling
- * 16). Its value is the row's canonical slug, which is fixed by the seed's own
- * catalog: the seed finds its row by this key first, so an administrator's
- * edit of the row's slug or code no longer loses the row.
- */
-export const SEED_LOCATION_KEY = "seedKey";
+export { SEED_LOCATION_KEY };
 
 /** Enough of `pg.Pool` (or a checked-out client) to run one statement. */
 export type LocationQueryable = Pick<pg.Pool, "query">;
