@@ -144,6 +144,17 @@ const TEXT_PAIRS: Pair[] = [
   { fg: "on-dark", bg: "chrome", alpha: 0.85 },
   { fg: "on-dark", bg: "chrome", alpha: 0.85, wash: { tint: "on-dark", alpha: 0.1 } },
   { fg: "on-dark", bg: "chrome", wash: { tint: "on-dark", alpha: 0.15 } },
+  // F3.65c review — the formula editor's selection (`formula-editor.tsx` `CALC_THEME_SPEC`): the
+  // text over it is every token ink the editor paints (`ink`, `ink-muted`, `accent-strong`,
+  // `simulated-ink`, `warning-ink`, `info-ink`), on `info-wash` when focused and `well` when not.
+  // The pairs already declared above (`info-ink` on `info-wash`; `ink`, `ink-muted`,
+  // `simulated-ink`, `warning-ink`, `info-ink` on `well`) are not repeated.
+  { fg: "ink", bg: "info-wash" },
+  { fg: "ink-muted", bg: "info-wash" },
+  { fg: "accent-strong", bg: "info-wash" },
+  { fg: "simulated-ink", bg: "info-wash" },
+  { fg: "warning-ink", bg: "info-wash" },
+  { fg: "accent-strong", bg: "well" },
 ];
 
 /**
