@@ -209,3 +209,32 @@ pasted from the runbook.
 The seeded `ESKOM` demo group (decision 5) stays for development and tests.
 Admin screens for asset groups, memberships and user access remain out of
 scope; each is a later row.
+
+## Amendment 2 — the reference look, and an alarm callout at the unit (2026-09-28)
+
+After v1 merged (#629), the owner compared it with the client's reference —
+the SOW's pages 9–10 and Sheet 03 of
+`docs/ion-exchange-nexus-dashboard-2026-08-29.html` — and found it too plain.
+The reference draws each treatment train in a tinted panel, each unit as an
+illustrated symbol with its values under it, and an alarm callout **under the
+unit that raised it**.
+
+**Ruled by the owner on 2026-09-28, for the 30 Sep cutoff (row `F3.32b`):**
+
+1. **Same preset, same binding, same demo data.** `water_train` keeps its eight
+   nodes and roles; no migration.
+2. **The drawing** becomes grouped, tinted panels (treatment, utilities,
+   wastewater), an illustrated symbol per unit (a tank with its live fill
+   level, pump, clarifier, RO, softener, cooling tower, STP, ETP), flow arrows
+   along the pipes, and the values under each unit. Role colour tokens only
+   (ADR 0078).
+3. **Each node carries its most severe open alarm** — `topAlarm: { severity,
+   message, raisedAt } | null` on `mimicNodeSchema` — and the widget draws it as
+   a callout under that unit, in the severity's colour. Most severe first by the
+   severity vocabulary's rank, then newest.
+
+Options were: this; a second, unit-level preset with the reference's three
+trains (most units would read "Not assigned" on the five-asset demo plant
+unless about sixteen unit assets were seeded, which does not fit the cutoff);
+both, with the preset after the release. The unit-level preset stays open under
+`F3.32`.
