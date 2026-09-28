@@ -126,7 +126,7 @@ export async function aNullPercentRendersADashAndNoBand(): Promise<void> {
 export async function aRejectedReadRendersStatusUnavailableInRed(): Promise<void> {
   vi.spyOn(systemStatusApi, "fetchSystemStatus").mockRejectedValue(new Error("system/status 503"));
   renderIndicator();
-  expect(await screen.findByText("Status unavailable")).toHaveClass("text-red-400");
+  expect(await screen.findByText("Status unavailable")).toHaveClass("text-critical-on-dark");
 }
 
 /** Case 5b — a rejected read hides the percentage. */

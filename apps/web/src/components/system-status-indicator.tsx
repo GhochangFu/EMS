@@ -9,9 +9,9 @@ import {
 const BAND_LABEL: Record<SystemQualityBand, string> = { good: "Good", fair: "Fair", poor: "Poor" };
 
 const BAND_CLASS: Record<SystemQualityBand, string> = {
-  good: "text-bms-green",
-  fair: "text-amber-400",
-  poor: "text-red-400",
+  good: "text-accent",
+  fair: "text-warning-on-dark",
+  poor: "text-critical-on-dark",
 };
 
 function Dot({ className }: { className: string }) {
@@ -37,8 +37,8 @@ export function SystemStatusIndicator() {
   if (isError) {
     return (
       <span className="flex items-center gap-2">
-        <Dot className="bg-red-500" />
-        <span className="text-red-400">Status unavailable</span>
+        <Dot className="bg-critical" />
+        <span className="text-critical-on-dark">Status unavailable</span>
       </span>
     );
   }
@@ -46,7 +46,7 @@ export function SystemStatusIndicator() {
   if (!data) {
     return (
       <span className="flex items-center gap-2">
-        <Dot className="bg-white/40" />
+        <Dot className="bg-on-dark/40" />
         <span>Checking status…</span>
       </span>
     );
@@ -57,7 +57,7 @@ export function SystemStatusIndicator() {
 
   return (
     <span className="flex items-center gap-2" title={titleLine(data)}>
-      <Dot className={data.status === "operational" ? "bg-bms-green" : "bg-amber-400"} />
+      <Dot className={data.status === "operational" ? "bg-accent" : "bg-warning-on-dark"} />
       <span>{summaryLine(data)}</span>
       <span>
         {percent === null ? "Data quality —" : `Data quality ${percent.toFixed(1)} %`}

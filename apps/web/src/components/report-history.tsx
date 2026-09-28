@@ -83,21 +83,21 @@ export function ReportHistory(): JSX.Element {
   const files = filesQ.data;
 
   return (
-    <section className="rounded border border-gray-200 bg-white p-4">
-      <h2 className="font-condensed text-sm font-bold text-bms-ink">History</h2>
+    <section className="rounded border border-line bg-surface p-4">
+      <h2 className="font-condensed text-sm font-bold text-ink">History</h2>
       {filesQ.isPending ? (
-        <p className="mt-2 text-sm text-bms-muted">Loading report history…</p>
+        <p className="mt-2 text-sm text-ink-muted">Loading report history…</p>
       ) : null}
       {filesQ.isError ? (
-        <p className="mt-2 text-sm text-red-700">{listFailureSentence(filesQ.error)}</p>
+        <p className="mt-2 text-sm text-critical-ink">{listFailureSentence(filesQ.error)}</p>
       ) : null}
       {files !== undefined && files.length === 0 ? (
-        <p className="mt-2 text-sm text-bms-muted">No saved reports yet.</p>
+        <p className="mt-2 text-sm text-ink-muted">No saved reports yet.</p>
       ) : null}
       {files !== undefined && files.length > 0 ? (
-        <div className="mt-3 overflow-hidden rounded border border-gray-200">
-          <table className="min-w-full divide-y divide-gray-200 text-sm">
-            <thead className="bg-gray-50 text-left text-xs uppercase tracking-wide text-bms-muted">
+        <div className="mt-3 overflow-hidden rounded border border-line">
+          <table className="min-w-full divide-y divide-line text-sm">
+            <thead className="bg-well text-left text-xs uppercase tracking-wide text-ink-muted">
               <tr>
                 <th className="px-3 py-2">Filename</th>
                 <th className="px-3 py-2">Period</th>
@@ -108,31 +108,31 @@ export function ReportHistory(): JSX.Element {
                 <th className="px-3 py-2 text-right">Actions</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-gray-200">
+            <tbody className="divide-y divide-line">
               {files.map((file) => {
                 const deleting = deletingIds.includes(file.id);
                 return (
                   <tr key={file.id}>
-                    <td className="px-3 py-2 font-medium text-bms-ink">{file.filename}</td>
-                    <td className="px-3 py-2 text-bms-muted">{periodLabel(file)}</td>
-                    <td className="px-3 py-2 text-bms-muted">{formatLabel(file.format)}</td>
+                    <td className="px-3 py-2 font-medium text-ink">{file.filename}</td>
+                    <td className="px-3 py-2 text-ink-muted">{periodLabel(file)}</td>
+                    <td className="px-3 py-2 text-ink-muted">{formatLabel(file.format)}</td>
                     <td className="px-3 py-2 text-right font-mono">{formatBytes(file.byteSize)}</td>
-                    <td className="px-3 py-2 text-bms-muted">{originLabel(file)}</td>
-                    <td className="px-3 py-2 text-bms-muted">
+                    <td className="px-3 py-2 text-ink-muted">{originLabel(file)}</td>
+                    <td className="px-3 py-2 text-ink-muted">
                       {deliveryStatusLabel(file.deliveryStatus, file.scheduleId)}
                     </td>
                     <td className="px-3 py-2 text-right">
                       <div className="flex justify-end gap-3">
                         <button
                           type="button"
-                          className="text-xs font-semibold text-bms-green"
+                          className="text-xs font-semibold text-accent"
                           onClick={() => downloadMutation.mutate(file)}
                         >
                           Download
                         </button>
                         <button
                           type="button"
-                          className="text-xs text-bms-muted disabled:cursor-not-allowed"
+                          className="text-xs text-ink-muted disabled:cursor-not-allowed"
                           disabled={deleting}
                           aria-busy={deleting}
                           onClick={() => deleteMutation.mutate(file)}
@@ -148,7 +148,7 @@ export function ReportHistory(): JSX.Element {
           </table>
         </div>
       ) : null}
-      {actionError !== null ? <p className="mt-2 text-xs text-red-700">{actionError}</p> : null}
+      {actionError !== null ? <p className="mt-2 text-xs text-critical-ink">{actionError}</p> : null}
     </section>
   );
 }

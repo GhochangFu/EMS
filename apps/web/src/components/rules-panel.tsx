@@ -54,27 +54,27 @@ const ruleTypeLabels: Record<AutomationRuleType, string> = {
 function statusStyle(item: RuleExecutionItem): string {
   switch (item.status) {
     case "matched":
-      return "border-bms-green/20 bg-bms-green/10 text-bms-green";
+      return "border-accent/20 bg-accent/10 text-accent";
     case "not_matched":
-      return "border-gray-200 bg-gray-100 text-gray-700";
+      return "border-line bg-well-deep text-neutral-ink";
     case "skipped":
-      return "border-amber-200 bg-amber-100 text-amber-900";
+      return "border-warning-line bg-warning-wash-strong text-warning-ink";
     case "error":
-      return "border-red-200 bg-red-100 text-red-800";
+      return "border-critical-line bg-critical-wash-strong text-critical-ink-strong";
   }
 }
 
 function lifecycleStyle(rule: RuleListItem): string {
   if (rule.lifecycleStatus === "draft") {
-    return "border-amber-200 bg-amber-50 text-amber-900";
+    return "border-warning-line bg-warning-wash text-warning-ink";
   }
   if (rule.lifecycleStatus === "archived") {
-    return "border-gray-300 bg-gray-100 text-gray-500";
+    return "border-line-strong bg-well-deep text-neutral-ink";
   }
   if (rule.enabled) {
-    return "border-bms-green/20 bg-bms-green/10 text-bms-green";
+    return "border-accent/20 bg-accent/10 text-accent";
   }
-  return "border-gray-200 bg-gray-50 text-bms-muted";
+  return "border-line bg-well text-ink-muted";
 }
 
 function ruleSummary(rule: RuleListItem): string {
@@ -191,20 +191,20 @@ export function RulesPanel() {
           <Kpi label="Rule Types" value={`${thresholdCount}/${timeWindowCount}`} />
         </div>
 
-        <div className="rounded border border-gray-200 bg-white">
-          <div className="flex flex-col gap-3 border-b border-gray-200 px-4 py-3 lg:flex-row lg:items-center lg:justify-between">
+        <div className="rounded border border-line bg-surface">
+          <div className="flex flex-col gap-3 border-b border-line px-4 py-3 lg:flex-row lg:items-center lg:justify-between">
             <div>
-              <h2 className="font-condensed text-lg font-bold text-bms-ink">
+              <h2 className="font-condensed text-lg font-bold text-ink">
                 Active Rules ({activeCount}/{rules.length})
               </h2>
-              <p className="text-xs text-bms-muted">
+              <p className="text-xs text-ink-muted">
                 Simple threshold and time-window rules; simulator alarm
                 thresholds remain separate.
               </p>
             </div>
             <div className="flex flex-wrap items-center gap-2">
               <select
-                className="rounded border border-gray-300 bg-white px-2 py-1 text-xs"
+                className="rounded border border-line-strong bg-surface px-2 py-1 text-xs"
                 value={categoryFilter}
                 onChange={(e) => setCategoryFilter(e.target.value as RuleFilter)}
               >
@@ -216,7 +216,7 @@ export function RulesPanel() {
                 ))}
               </select>
               <select
-                className="rounded border border-gray-300 bg-white px-2 py-1 text-xs"
+                className="rounded border border-line-strong bg-surface px-2 py-1 text-xs"
                 value={statusFilter}
                 onChange={(e) => setStatusFilter(e.target.value as StatusFilter)}
               >
@@ -225,7 +225,7 @@ export function RulesPanel() {
                 <option value="disabled">Disabled</option>
               </select>
               <select
-                className="rounded border border-gray-300 bg-white px-2 py-1 text-xs"
+                className="rounded border border-line-strong bg-surface px-2 py-1 text-xs"
                 value={lifecycleFilter}
                 onChange={(e) =>
                   setLifecycleFilter(e.target.value as LifecycleFilter)
@@ -237,7 +237,7 @@ export function RulesPanel() {
                 <option value="archived">Archived</option>
               </select>
               <button
-                className="rounded bg-bms-green px-3 py-1.5 text-xs font-semibold text-white disabled:cursor-not-allowed disabled:bg-gray-300"
+                className="rounded bg-accent px-3 py-1.5 text-xs font-semibold text-on-accent disabled:cursor-not-allowed disabled:bg-line-strong"
                 disabled={evaluateM.isPending || activeCount === 0}
                 aria-busy={evaluateM.isPending}
                 onClick={() => evaluateM.mutate()}
@@ -258,13 +258,13 @@ export function RulesPanel() {
           <EvaluateRefusalNotice error={evaluateM.error} />
 
           {rulesQ.isLoading ? (
-            <p className="p-4 text-sm text-bms-muted">Loading rules...</p>
+            <p className="p-4 text-sm text-ink-muted">Loading rules...</p>
           ) : rulesQ.isError ? (
-            <p className="p-4 text-sm text-red-600">Could not load rules.</p>
+            <p className="p-4 text-sm text-critical-ink-soft">Could not load rules.</p>
           ) : filteredRules.length === 0 ? (
-            <p className="p-4 text-sm text-bms-muted">No rules match the filters.</p>
+            <p className="p-4 text-sm text-ink-muted">No rules match the filters.</p>
           ) : (
-            <div className="divide-y divide-gray-200">
+            <div className="divide-y divide-line">
               {filteredRules.map((rule) => (
                 <RuleCard
                   key={rule.id}
@@ -310,23 +310,23 @@ export function RulesPanel() {
           selectedRule={selectedRule}
           onClearSelected={() => setSelectedRule(null)}
         />
-        <section className="rounded border border-gray-200 bg-white">
-          <div className="border-b border-gray-200 px-4 py-3">
-            <h2 className="font-condensed text-lg font-bold text-bms-ink">
+        <section className="rounded border border-line bg-surface">
+          <div className="border-b border-line px-4 py-3">
+            <h2 className="font-condensed text-lg font-bold text-ink">
               Execution Log
             </h2>
-            <p className="text-xs text-bms-muted">Most recent rule evaluations.</p>
+            <p className="text-xs text-ink-muted">Most recent rule evaluations.</p>
           </div>
           {executionsQ.isLoading ? (
-            <p className="p-4 text-sm text-bms-muted">Loading executions...</p>
+            <p className="p-4 text-sm text-ink-muted">Loading executions...</p>
           ) : executionsQ.isError ? (
-            <p className="p-4 text-sm text-red-600">Could not load executions.</p>
+            <p className="p-4 text-sm text-critical-ink-soft">Could not load executions.</p>
           ) : (executionsQ.data?.items ?? []).length === 0 ? (
-            <p className="p-4 text-sm text-bms-muted">
+            <p className="p-4 text-sm text-ink-muted">
               No executions yet. Run Evaluate now to create a trace.
             </p>
           ) : (
-            <div className="divide-y divide-gray-200">
+            <div className="divide-y divide-line">
               {(executionsQ.data?.items ?? []).map((item) => (
                 <ExecutionRow key={item.id} item={item} />
               ))}
@@ -340,9 +340,9 @@ export function RulesPanel() {
 
 function Kpi({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded border border-gray-200 bg-white p-3">
-      <div className="text-xs uppercase tracking-wide text-bms-muted">{label}</div>
-      <div className="mt-1 font-condensed text-2xl font-bold text-bms-ink">
+    <div className="rounded border border-line bg-surface p-3">
+      <div className="text-xs uppercase tracking-wide text-ink-muted">{label}</div>
+      <div className="mt-1 font-condensed text-2xl font-bold text-ink">
         {value}
       </div>
     </div>
@@ -395,7 +395,7 @@ function RuleCard({
     <article className="flex items-start gap-3 px-4 py-3">
       <button
         className={`mt-1 h-5 w-10 rounded-full p-0.5 transition ${
-          rule.enabled ? "bg-bms-green" : "bg-gray-300"
+          rule.enabled ? "bg-accent" : "bg-line-strong"
         }`}
         disabled={toggleBusy || !canToggle}
         onClick={onToggle}
@@ -404,14 +404,14 @@ function RuleCard({
         aria-busy={toggling}
       >
         <span
-          className={`block h-4 w-4 rounded-full bg-white transition ${
+          className={`block h-4 w-4 rounded-full bg-on-dark transition ${
             rule.enabled ? "translate-x-5" : ""
           }`}
         />
       </button>
       <div className="min-w-0 flex-1">
         <div className="flex flex-wrap items-center gap-2">
-          <h3 className="font-semibold text-bms-ink">{rule.name}</h3>
+          <h3 className="font-semibold text-ink">{rule.name}</h3>
           <span
             className={`rounded-full border px-2 py-0.5 text-[11px] font-semibold ${toneClass(
               toneFor(ruleCategories, rule.category),
@@ -426,13 +426,13 @@ function RuleCard({
           */}
           {rule.assetDomain ? (
             <span
-              className="rounded-full border border-dashed border-gray-300 bg-white px-2 py-0.5 text-[11px] text-bms-muted"
+              className="rounded-full border border-dashed border-line-strong bg-surface px-2 py-0.5 text-[11px] text-ink-muted"
               title="Plant domain, from the asset this rule watches"
             >
               {labelFor(assetDomains, rule.assetDomain)}
             </span>
           ) : null}
-          <span className="rounded-full border border-gray-200 bg-gray-50 px-2 py-0.5 text-[11px] text-bms-muted">
+          <span className="rounded-full border border-line bg-well px-2 py-0.5 text-[11px] text-ink-muted">
             {ruleTypeLabels[rule.ruleType]}
           </span>
           <span
@@ -448,31 +448,31 @@ function RuleCard({
               : ""}
           </span>
         </div>
-        <p className="mt-1 text-sm text-bms-muted">{rule.description}</p>
-        <div className="mt-2 flex flex-wrap gap-2 text-xs text-bms-muted">
-          <span className="rounded bg-gray-100 px-2 py-1">{ruleSummary(rule)}</span>
-          <span className="rounded bg-gray-100 px-2 py-1">
+        <p className="mt-1 text-sm text-ink-muted">{rule.description}</p>
+        <div className="mt-2 flex flex-wrap gap-2 text-xs text-ink-muted">
+          <span className="rounded bg-well-deep px-2 py-1">{ruleSummary(rule)}</span>
+          <span className="rounded bg-well-deep px-2 py-1">
             Last run: {formatTime(rule.lastEvaluatedAt)}
           </span>
-          <span className="rounded bg-gray-100 px-2 py-1">
+          <span className="rounded bg-well-deep px-2 py-1">
             Action: {rule.action.type} · {rule.action.target}
           </span>
         </div>
         <div className="mt-3 flex flex-wrap gap-2">
           <button
-            className="rounded border border-gray-300 px-2 py-1 text-[11px] font-semibold text-bms-muted"
+            className="rounded border border-line-strong px-2 py-1 text-[11px] font-semibold text-ink-muted"
             onClick={onEdit}
           >
             Edit in builder
           </button>
           <button
-            className="rounded border border-gray-300 px-2 py-1 text-[11px] font-semibold text-bms-muted"
+            className="rounded border border-line-strong px-2 py-1 text-[11px] font-semibold text-ink-muted"
             onClick={() => setChannelsOpen((open) => !open)}
           >
             Channels
           </button>
           <button
-            className="rounded border border-gray-300 px-2 py-1 text-[11px] font-semibold text-bms-muted disabled:opacity-50"
+            className="rounded border border-line-strong px-2 py-1 text-[11px] font-semibold text-ink-muted disabled:opacity-50"
             disabled={duplicateBusy}
             aria-busy={duplicating}
             onClick={onDuplicate}
@@ -480,7 +480,7 @@ function RuleCard({
             {duplicating ? "Duplicating…" : "Duplicate"}
           </button>
           <button
-            className="rounded border border-red-200 px-2 py-1 text-[11px] font-semibold text-red-700 disabled:opacity-50"
+            className="rounded border border-critical-line px-2 py-1 text-[11px] font-semibold text-critical-ink disabled:opacity-50"
             disabled={archiveBusy || !canArchive}
             aria-busy={archiving}
             onClick={onArchive}
@@ -499,8 +499,8 @@ function ExecutionRow({ item }: { item: RuleExecutionItem }) {
     <article className="px-4 py-3">
       <div className="flex items-start justify-between gap-3">
         <div>
-          <h3 className="text-sm font-semibold text-bms-ink">{item.ruleName}</h3>
-          <p className="mt-0.5 text-xs text-bms-muted">{formatTime(item.evaluatedAt)}</p>
+          <h3 className="text-sm font-semibold text-ink">{item.ruleName}</h3>
+          <p className="mt-0.5 text-xs text-ink-muted">{formatTime(item.evaluatedAt)}</p>
         </div>
         <span
           className={`rounded-full border px-2 py-0.5 text-[11px] font-semibold ${statusStyle(
@@ -510,9 +510,9 @@ function ExecutionRow({ item }: { item: RuleExecutionItem }) {
           {item.status.replace("_", " ")}
         </span>
       </div>
-      <p className="mt-2 text-sm text-bms-muted">{item.message}</p>
+      <p className="mt-2 text-sm text-ink-muted">{item.message}</p>
       {item.trace ? (
-        <pre className="mt-2 max-h-28 overflow-auto rounded bg-gray-950 p-2 text-[11px] text-gray-100">
+        <pre className="mt-2 max-h-28 overflow-auto rounded bg-chrome p-2 text-[11px] text-on-dark">
           {JSON.stringify(item.trace, null, 2)}
         </pre>
       ) : null}

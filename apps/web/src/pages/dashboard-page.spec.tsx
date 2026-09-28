@@ -254,7 +254,7 @@ export async function theUnacknowledgedRowsLiteralIsGone(): Promise<void> {
 
 /**
  * OQ5: "N critical" renders on `KpiTile`'s note line — the amber
- * `text-amber-700` paragraph — not in the muted hint slot.
+ * `text-warning-ink` paragraph — not in the muted hint slot.
  */
 export async function theCriticalCountRendersInTheNote(): Promise<void> {
   stubDashboard(null, false, { alarmsOpen: 3, alarmsCritical: 2 });
@@ -262,7 +262,7 @@ export async function theCriticalCountRendersInTheNote(): Promise<void> {
 
   const tile = tileLabelled("Open alarms");
   const note = await within(tile).findByText("2 critical");
-  expect(note.className, "the critical count is not on the note line").toContain("text-amber-700");
+  expect(note.className, "the critical count is not on the note line").toContain("text-warning-ink");
 }
 
 /**

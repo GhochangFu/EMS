@@ -188,7 +188,7 @@ export function theTilesIconToneAndSubLineReachTheDom(): void {
   expect(container.querySelector("svg"), "a config icon name must become a real element").toBeTruthy();
   expect(screen.getByText("Since midnight"), "the author's sub-line must render").toBeTruthy();
   expect(
-    container.querySelector(".border-red-200"),
+    container.querySelector(".border-critical-line"),
     "a critical tone must reach KpiTile's own critical border, through the existing tone map",
   ).toBeTruthy();
 }

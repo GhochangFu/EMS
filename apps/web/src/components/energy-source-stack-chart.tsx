@@ -72,28 +72,28 @@ export function EnergySourceStackChart({ points, status }: Props) {
 
   if (status === "loading") {
     return (
-      <div className="flex h-[300px] items-center justify-center rounded-lg border border-gray-200 bg-white text-sm text-bms-muted">
+      <div className="flex h-[300px] items-center justify-center rounded-lg border border-line bg-surface text-sm text-ink-muted">
         Loading source mix…
       </div>
     );
   }
   if (status === "error") {
     return (
-      <div className="flex h-[300px] items-center justify-center rounded-lg border border-red-100 bg-red-50/50 text-sm text-red-700">
+      <div className="flex h-[300px] items-center justify-center rounded-lg border border-critical-wash-strong bg-critical-wash/50 text-sm text-critical-ink">
         Could not load source mix.
       </div>
     );
   }
   if (status === "empty" || points.length === 0) {
     return (
-      <div className="flex h-[300px] items-center justify-center rounded-lg border border-dashed border-gray-200 bg-white text-sm text-bms-muted">
+      <div className="flex h-[300px] items-center justify-center rounded-lg border border-dashed border-line bg-surface text-sm text-ink-muted">
         No telemetry in this window — run the simulator.
       </div>
     );
   }
 
   return (
-    <div className="rounded-lg border border-gray-200 bg-white p-2 shadow-sm">
+    <div className="rounded-lg border border-line bg-surface p-2 shadow-sm">
       <ReactECharts
         option={option}
         style={{ height: 300 }}

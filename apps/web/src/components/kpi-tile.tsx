@@ -33,52 +33,52 @@ export function KpiTile({
 }: KpiTileProps) {
   const toneBorder =
     tone === "critical"
-      ? "border-red-200"
+      ? "border-critical-line"
       : tone === "warning"
-        ? "border-amber-200"
-        : "border-gray-200";
+        ? "border-warning-line"
+        : "border-line";
   const toneBar =
     tone === "critical"
-      ? "after:bg-red-600"
+      ? "after:bg-critical"
       : tone === "warning"
-        ? "after:bg-amber-500"
-        : "after:bg-bms-green";
-  const staleRing = stale ? "ring-2 ring-amber-400/70 ring-offset-2" : "";
+        ? "after:bg-warning"
+        : "after:bg-accent";
+  const staleRing = stale ? "ring-2 ring-warning/70 ring-offset-2" : "";
 
   return (
     <div
-      className={`relative flex flex-col overflow-hidden rounded-lg border bg-white p-4 shadow-sm after:absolute after:left-0 after:right-0 after:top-0 after:h-0.5 ${toneBorder} ${toneBar} ${staleRing}`}
+      className={`relative flex flex-col overflow-hidden rounded-lg border bg-surface p-4 shadow-sm after:absolute after:left-0 after:right-0 after:top-0 after:h-0.5 ${toneBorder} ${toneBar} ${staleRing}`}
     >
       <div className="flex items-start justify-between gap-2">
-        <span className="text-[11px] font-medium uppercase tracking-wide text-bms-muted">
+        <span className="text-[11px] font-medium uppercase tracking-wide text-ink-muted">
           {label}
         </span>
-        {icon ? <span className="text-bms-green">{icon}</span> : null}
+        {icon ? <span className="text-accent">{icon}</span> : null}
       </div>
       {status === "loading" ? (
-        <div className="mt-3 h-9 w-24 animate-pulse rounded bg-gray-100" />
+        <div className="mt-3 h-9 w-24 animate-pulse rounded bg-well-deep" />
       ) : status === "error" ? (
-        <p role="alert" className="mt-3 text-sm text-red-600">
+        <p role="alert" className="mt-3 text-sm text-critical-ink-soft">
           Could not load
         </p>
       ) : status === "empty" ? (
-        <p className="mt-3 font-condensed text-2xl font-bold text-bms-muted">—</p>
+        <p className="mt-3 font-condensed text-2xl font-bold text-ink-muted">—</p>
       ) : (
-        <p className="mt-2 font-condensed text-2xl font-bold tabular-nums text-bms-ink">
+        <p className="mt-2 font-condensed text-2xl font-bold tabular-nums text-ink">
           {value}
           {unit ? (
-            <span className="ml-1 text-sm font-normal text-bms-muted">{unit}</span>
+            <span className="ml-1 text-sm font-normal text-ink-muted">{unit}</span>
           ) : null}
         </p>
       )}
       {hint ? (
-        <p className="mt-1 text-[11px] text-bms-muted">{hint}</p>
+        <p className="mt-1 text-[11px] text-ink-muted">{hint}</p>
       ) : null}
       {note ? (
-        <p className="mt-1 text-[11px] font-medium text-amber-700">{note}</p>
+        <p className="mt-1 text-[11px] font-medium text-warning-ink">{note}</p>
       ) : null}
       {stale ? (
-        <p className="mt-2 text-[10px] font-medium uppercase tracking-wide text-amber-700">
+        <p className="mt-2 text-[10px] font-medium uppercase tracking-wide text-warning-ink">
           Stale · no telemetry ~10s
         </p>
       ) : null}
