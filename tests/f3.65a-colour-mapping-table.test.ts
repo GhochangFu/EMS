@@ -50,6 +50,27 @@ describe("F3.65a colour mapping table", () => {
     expect(roleFor("text-violet-700")).toEqual({ role: "simulated-ink", kind: "exact" });
   });
 
+  // Fix B: `CLASS_OVERRIDES` used to key on the class with opacity stripped, so `bg-white/10` (a
+  // translucent layer on chrome) resolved to `surface` like an opaque `bg-white` panel, and there
+  // was no `border-white` / `ring-white` entry at all, so those fell through to `SHADE_ROLES`'
+  // `white` row (`surface`) too. §2.3's white row and D1: `bg-white` / `fill-white` stay
+  // `surface`; `text-white`, `border-white`, `ring-white` (with or without `/NN`) and any
+  // `bg-white/NN` are `on-dark`.
+  it("N1 roleFor(\"bg-white/10\") is on-dark, not surface — a translucent layer on chrome", () => {
+    expect(roleFor("bg-white/10").role).toBe("on-dark");
+  });
+
+  it("N2 roleFor(\"border-white/20\") is on-dark", () => {
+    expect(roleFor("border-white/20").role).toBe("on-dark");
+  });
+
+  it("N3 roleFor(\"ring-white/80\") is on-dark", () => {
+    expect(roleFor("ring-white/80").role).toBe("on-dark");
+  });
+
+  it("N4 roleFor(\"bg-white\") is still surface — the guard that the fix does not over-reach", () => {
+    expect(roleFor("bg-white").role).toBe("surface");
+  });
 
   it("M2 every exact row's role light token equals resolveTailwindShade(shade)", () => {
     const mismatches: string[] = [];

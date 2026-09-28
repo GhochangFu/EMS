@@ -13,7 +13,10 @@
  * `CLASS_OVERRIDES` is the class-level split: some shades resolve to a *different* role depending
  * on which Tailwind utility carries them (`text-white` → `on-dark`, not the shade's default
  * `surface`). Keys are the class with any `/NN` or `/[…]` opacity modifier stripped — the same
- * role serves every opacity step.
+ * role serves every opacity step **except** the `bg-white` family (Fix B, §2.3's white row):
+ * `bg-white`/`fill-white` stay `surface`, but `text-white`/`border-white`/`ring-white`/`bg-white/NN`
+ * are `on-dark` regardless of whether an opacity step is present — a translucent layer on chrome
+ * reads differently from an opaque white panel.
  *
  * `text-violet-700` is not one of §2.3's 76 `.tsx` rows (§2.1 scopes that table to `.tsx`;
  * `lib/value-provenance.ts` is `.ts`) — it is `SHADE_ROLES`' 77th row, added so `roleFor` covers
@@ -135,6 +138,8 @@ export type ClassOverride = { role: string; kind: ShadeKind; altRoles?: string[]
  */
 export const CLASS_OVERRIDES: Record<string, ClassOverride> = {
   "text-white": { role: "on-dark", kind: "exact", altRoles: ["on-accent"] },
+  "border-white": { role: "on-dark", kind: "exact" },
+  "ring-white": { role: "on-dark", kind: "exact" },
   "bg-white": { role: "surface", kind: "exact" },
   "fill-white": { role: "surface", kind: "exact" },
   "text-red-600": { role: "critical-ink-soft", kind: "exact" },
@@ -165,6 +170,10 @@ function stripOpacity(className: string): string {
  */
 export function roleFor(className: string): { role: string; kind: ShadeKind } {
   const stripped = stripOpacity(className);
+  // `bg-white/NN` (a translucent layer on chrome, e.g. `layouts/app-shell.tsx`'s hover states) is
+  // not the same thing `bg-white` (an opaque panel) is — Fix B, §2.3's white row. The opacity is
+  // visible only before stripping, so this check has to run before the stripped-key lookup below.
+  if (stripped === "bg-white" && stripped !== className) return { role: "on-dark", kind: "exact" };
   const override = CLASS_OVERRIDES[stripped];
   if (override) return { role: override.role, kind: override.kind };
   const m = COLOUR_UTILITY_PREFIX.exec(stripped);
