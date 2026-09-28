@@ -305,7 +305,7 @@ const FLOOR: { file: string; palette: number; hex: number; func: number }[] = [
   { file: "pages/dashboards-page.tsx", palette: 18, hex: 0, func: 0 },
   { file: "pages/energy-page.tsx", palette: 5, hex: 0, func: 0 },
   { file: "pages/location-dashboard-page.tsx", palette: 54, hex: 0, func: 0 },
-  { file: "pages/login-page.tsx", palette: 52, hex: 5, func: 1 },
+  { file: "pages/login-page.tsx", palette: 0, hex: 5, func: 1 },
   { file: "pages/maintenance-schedules-page.tsx", palette: 3, hex: 0, func: 0 },
   { file: "pages/map-page.tsx", palette: 5, hex: 0, func: 0 },
   { file: "pages/reports-page.tsx", palette: 1, hex: 0, func: 0 },
