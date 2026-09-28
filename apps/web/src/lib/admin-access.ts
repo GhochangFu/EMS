@@ -200,6 +200,20 @@ export function canManageLocationTypes(role: UserRole): boolean {
   return role === "admin";
 }
 
+/**
+ * Whether the role may draw, save and delete plant mimic layouts
+ * (`F3.32c`, ADR 0081 decision 3, plan D8).
+ *
+ * Mirrors `MimicLayoutsService.assertCanAuthor`, which refuses
+ * `location_admin` and `asset_group_admin` with a 403. **Deliberately its own
+ * predicate** although its body equals `canManageNotificationChannels` today
+ * (that predicate's own rule): the page reads it to fail closed, and a future
+ * change to either must not silently move the other.
+ */
+export function canManageMimicLayouts(role: UserRole): boolean {
+  return role === "admin" || role === "organization_admin";
+}
+
 /** Default admin landing route for a role. */
 export function defaultAdminRoute(role: UserRole): string {
   if (role === "admin" || role === "organization_admin") {
@@ -237,6 +251,11 @@ export const masterDataTabs = [
   // (create/edit/publish/archive) is hidden inside it by
   // `canAuthorTemplates`, exactly as the Asset Templates screen already does.
   { label: "Dashboard Templates", path: "/admin/dashboard-templates" },
+  // `F3.32c` (ADR 0081 decision 3). `orgAdminOnly`: every write route refuses
+  // a `location_admin` with a 403, and the page fails closed for it, so the
+  // tab would lead that role only to the page's status line. Any role READS
+  // the library (owner ruling OQ4) — through the dashboard builder, not here.
+  { label: "Mimic Layouts", path: "/admin/mimic-layouts", orgAdminOnly: true },
   { label: "Asset Points", path: "/admin/asset-points" },
   { label: "Manual Entry", path: "/admin/manual-readings" },
   { label: "Point Keys", path: "/admin/point-keys", catalogOnly: true },
@@ -286,6 +305,9 @@ export function visibleMasterDataTabs(role: UserRole) {
     }
     if ("notificationAdmin" in tab && tab.notificationAdmin) {
       return canManageNotificationChannels(role);
+    }
+    if ("orgAdminOnly" in tab && tab.orgAdminOnly) {
+      return canManageMimicLayouts(role);
     }
     return true;
   });

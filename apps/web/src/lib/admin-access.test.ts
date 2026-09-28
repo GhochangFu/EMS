@@ -5,6 +5,10 @@ import {
   runAssetGroupScopePredicateTests,
   runAssetTemplateTabTests,
   runCanManageLocationTypesTests,
+  runCanManageMimicLayoutsAdminsTest,
+  runCanManageMimicLayoutsOthersTest,
+  runMimicLayoutsTabHiddenFromLocationAdminTest,
+  runMimicLayoutsTabShownToOrganizationAdminTest,
   runDashboardAuthoringPredicateTests,
   runCalcParameterPredicateTests,
   runLocationScopePredicateTests,
@@ -53,5 +57,21 @@ describe("admin-access", () => {
 
   it("A2b hides the Location Types tab from organization_admin (F4.162)", () => {
     runLocationTypesTabHiddenFromOrganizationAdminTest();
+  });
+
+  it("canManageMimicLayouts admits admin and organization_admin (F3.32c)", () => {
+    runCanManageMimicLayoutsAdminsTest();
+  });
+
+  it("canManageMimicLayouts refuses every other role (F3.32c)", () => {
+    runCanManageMimicLayoutsOthersTest();
+  });
+
+  it("shows the Mimic Layouts tab to organization_admin (F3.32c)", () => {
+    runMimicLayoutsTabShownToOrganizationAdminTest();
+  });
+
+  it("hides the Mimic Layouts tab from location_admin (F3.32c)", () => {
+    runMimicLayoutsTabHiddenFromLocationAdminTest();
   });
 });
