@@ -74,6 +74,16 @@ export const SCOPE_REFUSAL_MESSAGE =
   "at most one of locationId, assetGroupId or assetId may be set — all null is organization-wide";
 
 /**
+ * `F3.32` / ADR 0079 decision 4 — a `mimic` widget's every node resolves against ONE asset
+ * group's members (`bms.asset_roles`), so a `mimic` widget with no group to resolve against
+ * would draw every node "not assigned". `DashboardsService.putWidgets`/`update` and
+ * `DashboardTemplatesInstantiateService.instantiate` throw this same sentence, imported rather
+ * than restated — the same reason `SCOPE_REFUSAL_MESSAGE` above is exported and not copied.
+ */
+export const MIMIC_SCOPE_MESSAGE =
+  "a plant mimic needs an asset group — it draws one asset per role, resolved from the group's members";
+
+/**
  * `!= null`, not `!== null`, on all three: every field is `.nullable().optional()`, so an
  * ABSENT field arrives as `undefined` — a strict `!== null` would count it as set and refuse a
  * body that names only one axis.

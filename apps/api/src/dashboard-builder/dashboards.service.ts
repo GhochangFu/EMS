@@ -31,7 +31,7 @@ import { withTenant, type BmsTx } from "../database/tenant-context";
 import { withOrganizationReadScope } from "../database/tenant-read-scope";
 import { assertBoundPointsInOrganization, resolveBoundPoints, type ResolvedBoundPoint } from "./dashboard-point-scope";
 import { resolveWidgetSources, type ResolvedWidgetSource } from "./dashboard-source-scope";
-import { SCOPE_REFUSAL_MESSAGE } from "./dashboards.schema";
+import { MIMIC_SCOPE_MESSAGE, SCOPE_REFUSAL_MESSAGE } from "./dashboards.schema";
 import {
   assertSourceParamsBalanceRolesActive,
   assertSourceParamsPointKeysActive,
@@ -390,6 +390,15 @@ export class DashboardsService {
       throw new BadRequestException(SCOPE_REFUSAL_MESSAGE);
     }
 
+    // `F3.32` / ADR 0079 decision 4 — clearing the group out from under a STORED `mimic`
+    // widget would leave it with no members to resolve, so this must run BEFORE the write, not
+    // be left to render as "not assigned" everywhere. `fleetDb`, not `tx`: no transaction is open
+    // yet, and this read (like `fetchRowForWrite`) is pre-GUC — `bms_fleet`'s BYPASSRLS is what
+    // lets it see the row before `withTenant` sets `app.current_organization`.
+    if (nextAssetGroupId === null && (await this.hasMimicWidget(id))) {
+      throw new BadRequestException(MIMIC_SCOPE_MESSAGE);
+    }
+
     return withTenant(this.tenantDb, existing.organizationId, async (tx) => {
       await tx
         .update(dashboards)
@@ -476,6 +485,15 @@ export class DashboardsService {
     };
     if (!(await this.accessControl.canManageDashboard(jwt, existing.organizationId, scope))) {
       throw new NotFoundException("Dashboard not found");
+    }
+
+    // `F3.32` / ADR 0079 decision 4 — refused BEFORE `withTenant` opens, exactly like every
+    // other guard on this route (`assertBoundPointsInOrganization` is the one exception, and
+    // only because it needs bindings the transaction has already read). A mimic widget on a
+    // location-, asset- or unscoped dashboard would resolve every node to nothing: the honest
+    // answer is a refusal, not a canvas that renders "not assigned" eight times.
+    if (existing.assetGroupId === null && body.widgets.some((widget) => widget.widgetType === "mimic")) {
+      throw new BadRequestException(MIMIC_SCOPE_MESSAGE);
     }
 
     return withTenant(this.tenantDb, existing.organizationId, async (tx) => {
@@ -768,6 +786,21 @@ export class DashboardsService {
         sortOrder: source.sortOrder,
       })),
     );
+  }
+
+  /**
+   * `F3.32` / ADR 0079 decision 4 — does this dashboard already store a `mimic` widget? Read on
+   * `fleetDb`, pre-GUC, the same way `fetchRowForWrite` is: `update()` calls this before it ever
+   * opens a tenant transaction, so there is no `app.current_organization` set yet for a
+   * `tenantDb` read to rely on.
+   */
+  private async hasMimicWidget(dashboardId: string): Promise<boolean> {
+    const rows = await this.fleetDb
+      .select({ id: dashboardWidgets.id })
+      .from(dashboardWidgets)
+      .where(and(eq(dashboardWidgets.dashboardId, dashboardId), eq(dashboardWidgets.widgetType, "mimic")))
+      .limit(1);
+    return rows.length > 0;
   }
 
   /**

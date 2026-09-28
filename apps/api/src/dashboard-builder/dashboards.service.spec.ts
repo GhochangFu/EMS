@@ -1,4 +1,4 @@
-import { ConflictException } from "@nestjs/common";
+import { BadRequestException, ConflictException } from "@nestjs/common";
 
 import {
   dashboardSummaryDtoSchema,
@@ -461,8 +461,17 @@ function selectChain(rows: unknown[]): SelectChain {
   return chain;
 }
 
+/**
+ * `select()` with no argument is `fetchRowForWrite`'s row read, answered with `dashboardRow`.
+ * `select({ ... })` with a column projection is `F3.32`'s `hasMimicWidget` read — answered
+ * empty, since none of the fixtures this fake serves store a mimic widget. Without this
+ * distinction `hasMimicWidget` would see `dashboardRow` itself as "a stored mimic widget" and
+ * every existing `update()` test below would trip the new guard.
+ */
 function fleetDbWithExistingRow(): BmsDb {
-  return { select: () => selectChain([dashboardRow]) } as unknown as BmsDb;
+  return {
+    select: (columns?: unknown) => selectChain(columns === undefined ? [dashboardRow] : []),
+  } as unknown as BmsDb;
 }
 
 const DUPLICATE_SLUG_ERROR = { code: "23505", constraint: "dashboards_organization_slug_key" };
@@ -567,5 +576,99 @@ export async function runDashboardsServiceConflictTranslationTests(): Promise<vo
       caught === UNRELATED_CONSTRAINT_ERROR,
       `update() must pass through an error whose constraint is not dashboards_organization_slug_key unchanged, got ${JSON.stringify(caught)}`,
     );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// `F3.32` U3 — the write guards (ADR 0079 decision 4). `dashboardRow` above is
+// already `assetGroupId: null`, so it stands in for both "a group-less
+// dashboard" (putWidgets) and "clearing the group" (update).
+// ---------------------------------------------------------------------------
+
+const MIMIC_WIDGET: WidgetWriteBody = {
+  gridX: 0,
+  gridY: 0,
+  gridW: 12,
+  gridH: 6,
+  widgetType: "mimic",
+  config: { source: "preset", preset: "water_train" },
+  points: [],
+  sources: [],
+} as unknown as WidgetWriteBody;
+
+/** `.transaction` counts its own calls rather than merely rejecting — a guard moved INSIDE the
+ * `withTenant` callback (the plan's stated mutation) still throws SOMETHING from this fake, but
+ * `calls()` catches it: the transaction must never open at all for a guard that is meant to run
+ * before it. */
+function countingRejectingTenantDb(): { db: BmsDb; calls: () => number } {
+  let count = 0;
+  const db = {
+    transaction: async () => {
+      count += 1;
+      throw new Error("F3.32: the transaction must never open for a refused mimic write");
+    },
+  } as unknown as BmsDb;
+  return { db, calls: () => count };
+}
+
+export async function runMimicScopeGuardTests(): Promise<void> {
+  // -- putWidgets(): a mimic widget on a group-less dashboard is refused BEFORE any transaction
+  {
+    const { db, calls } = countingRejectingTenantDb();
+    const service = new DashboardsService(db, fleetDbWithExistingRow(), fakeAccessControl(), fakeAudit());
+    let caught: unknown;
+    try {
+      await service.putWidgets(FAKE_JWT, DASHBOARD_ID, {
+        widgets: [MIMIC_WIDGET],
+      } as Parameters<DashboardsService["putWidgets"]>[2]);
+    } catch (err) {
+      caught = err;
+    }
+    assert(
+      caught instanceof BadRequestException,
+      `putWidgets() must refuse a mimic widget on a group-less dashboard with a 400, got ${String(caught)}`,
+    );
+    assert(
+      typeof (caught as BadRequestException).message === "string" &&
+        /plant mimic needs an asset group/.test((caught as BadRequestException).message),
+      `the refusal must name the scope problem, got: ${(caught as BadRequestException).message}`,
+    );
+    assert(
+      calls() === 0,
+      "putWidgets() must refuse the mimic widget BEFORE opening the tenant transaction",
+    );
+  }
+
+  // -- update(): clearing the group out from under a STORED mimic widget is refused, and the
+  // row is left unchanged — proven the same way, by the transaction never opening.
+  {
+    const { db, calls } = countingRejectingTenantDb();
+    const fleetDb = {
+      select: (columns?: unknown) => {
+        // `fetchRowForWrite`'s `.select()` (no argument) answers the dashboard row;
+        // `hasMimicWidget`'s `.select({ id })` answers one stored mimic widget row.
+        const rows = columns === undefined ? [dashboardRow] : [{ id: WIDGET_A }];
+        return selectChain(rows);
+      },
+    } as unknown as BmsDb;
+    const service = new DashboardsService(db, fleetDb, fakeAccessControl(), fakeAudit());
+    let caught: unknown;
+    try {
+      await service.update(FAKE_JWT, DASHBOARD_ID, {
+        assetGroupId: null,
+      } as UpdateDashboardBody);
+    } catch (err) {
+      caught = err;
+    }
+    assert(
+      caught instanceof BadRequestException,
+      `update() must refuse clearing the group under a stored mimic widget, got ${String(caught)}`,
+    );
+    assert(
+      typeof (caught as BadRequestException).message === "string" &&
+        /plant mimic needs an asset group/.test((caught as BadRequestException).message),
+      `the refusal must name the scope problem, got: ${(caught as BadRequestException).message}`,
+    );
+    assert(calls() === 0, "update() must refuse the mimic scope conflict BEFORE opening the tenant transaction");
   }
 }

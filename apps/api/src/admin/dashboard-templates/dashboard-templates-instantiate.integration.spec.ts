@@ -418,6 +418,78 @@ export async function assertBindingTemplateRefusesNullGroup(
  * negative assertion below states it, because one rejected promise cannot
  * otherwise say which of two guards threw.
  */
+/**
+ * `F3.32` / ADR 0079 decision 4 — a template holding a `mimic` widget refuses a null asset
+ * group, and the message names the MIMIC reason, not the role-bindings one.
+ *
+ * A `mimic` widget binds no role (`bindings: []`), so `assertBindingTemplateRefusesNullGroup`'s
+ * fixture cannot exercise this guard at all — the role-bindings check above it would never fire
+ * either, and a mimic-only template would sail through to an organization-wide dashboard whose
+ * nodes resolve against no group. The negative assertion on `/role bindings needs/` is the one
+ * that actually gates: it is what a fix that folded this into the WRONG guard, or dropped the
+ * mimic guard while leaving the (harmless-looking, unrelated) role-bindings one standing, would
+ * still pass on the positive assertion alone.
+ */
+export async function assertMimicTemplateRefusesNullGroup(
+  service: DashboardTemplatesInstantiateService,
+  ownerPool: pg.Pool,
+  actor: JwtPayload,
+  mimicTemplateId: string,
+  slug: string,
+): Promise<void> {
+  const rejection = await service
+    .instantiate(actor, mimicTemplateId, {
+      assetGroupId: null,
+      slug,
+      name: "F3.32 mimic null-group proof",
+    } as Parameters<DashboardTemplatesInstantiateService["instantiate"]>[2])
+    .then(
+      () => null,
+      (err: unknown) => err as Error,
+    );
+
+  expect(rejection, "a mimic template must refuse instantiation with no asset group").not.toBeNull();
+  expect(rejection?.message ?? "").toMatch(/plant mimic needs an asset group/i);
+  expect(
+    rejection?.message ?? "",
+    "the refusal must be the MIMIC scope guard, not the role-bindings one — a mimic widget " +
+      "binds no role, so that guard would never fire for this template at all.",
+  ).not.toMatch(/role bindings needs/i);
+
+  const landed = await ownerPool.query(`SELECT id FROM bms.dashboards WHERE slug = $1`, [slug]);
+  expect(landed.rowCount, "a refused instantiate must leave no dashboard behind").toBe(0);
+}
+
+/**
+ * The positive half: a template holding a `mimic` widget instantiates cleanly against a real
+ * group, and the widget lands `bound` — Amendment 2 decision 1's rule that a zero-binding
+ * widget is already `bound` extends to a widget that binds nothing BY DESIGN, same as a
+ * metric-catalog tile (`assertResolutionReportCoversEveryOutcome`'s `alarms-tile` case).
+ */
+export async function assertMimicTemplateInstantiatesWithGroup(
+  service: DashboardTemplatesInstantiateService,
+  actor: JwtPayload,
+  mimicTemplateId: string,
+  assetGroupId: string,
+  slug: string,
+): Promise<{ dashboardId: string }> {
+  const response = await service.instantiate(actor, mimicTemplateId, {
+    assetGroupId,
+    slug,
+    name: "F3.32 mimic with group proof",
+  } as Parameters<DashboardTemplatesInstantiateService["instantiate"]>[2]);
+
+  expect(response.dashboard.widgets.length, "the template's one mimic widget was written").toBe(1);
+  expect(response.dashboard.widgets[0]?.widgetType).toBe("mimic");
+  expect(response.resolutions.length).toBe(1);
+  expect(
+    response.resolutions[0]?.outcome,
+    "a mimic widget binds no role by design — that is success, not a shortfall.",
+  ).toBe("bound");
+
+  return { dashboardId: response.dashboard.id };
+}
+
 export async function assertLocationAdminCannotInstantiateOrganizationWide(
   service: DashboardTemplatesInstantiateService,
   actor: JwtPayload,
