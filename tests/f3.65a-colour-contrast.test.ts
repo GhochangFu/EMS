@@ -85,6 +85,8 @@ const TEXT_PAIRS: Pair[] = [
   { fg: "accent", bg: "canvas" },
   { fg: "accent", bg: "well" },
   { fg: "accent", bg: "surface", wash: { tint: "accent", alpha: 0.1 } },
+  // The app-shell wordmark and footer label (`text-accent` in `bg-chrome`): 4.88 light, 8.71 dark.
+  { fg: "accent", bg: "chrome" },
   { fg: "accent-strong", bg: "surface" },
   { fg: "critical-ink-soft", bg: "surface" },
   { fg: "critical-ink", bg: "surface" },
@@ -184,6 +186,14 @@ const ALLOWLIST: AllowlistEntry[] = [
     reason: "the brand green as text or under white text; ADR 0078 decision 2 keeps the light theme",
   },
   {
+    fg: "accent",
+    bg: "canvas",
+    theme: "light",
+    measured: 2.9,
+    threshold: 3,
+    reason: "the brand green as text or under white text; ADR 0078 decision 2 keeps the light theme",
+  },
+  {
     fg: "focus",
     bg: "canvas",
     theme: "light",
@@ -238,14 +248,15 @@ function samePair(a: Pair, b: Pair): boolean {
   return a.fg === b.fg && a.bg === b.bg && (a.alpha ?? null) === (b.alpha ?? null) && washEq;
 }
 
-function allowlistEntryFor(pair: Pair, theme: Theme): AllowlistEntry | undefined {
-  return ALLOWLIST.find((e) => e.theme === theme && samePair(e, pair));
+/** The entry for `pair` in `theme` at `threshold` — a 4.5:1 text entry never exempts the 3:1 UI pair. */
+function allowlistEntryFor(pair: Pair, theme: Theme, threshold: number): AllowlistEntry | undefined {
+  return ALLOWLIST.find((e) => e.theme === theme && e.threshold === threshold && samePair(e, pair));
 }
 
 function checkPairs(pairs: Pair[], threshold: number, theme: Theme, tokens: ReturnType<typeof loadTokens>) {
   const offenders: string[] = [];
   for (const pair of pairs) {
-    if (allowlistEntryFor(pair, theme)) continue;
+    if (allowlistEntryFor(pair, theme, threshold)) continue;
     const ratio = ratioOf(pair, theme, tokens);
     if (ratio < threshold) {
       offenders.push(`${pair.fg} on ${pair.bg}${pair.alpha != null ? `/${pair.alpha}` : ""} (${theme}): ${ratio.toFixed(2)} < ${threshold}`);
@@ -279,12 +290,25 @@ describe("F3.65a: every declared colour pair holds its contrast threshold in bot
   });
 
   it("C6 every allowlist entry's measured value equals the computed ratio to 2 dp", () => {
-    for (const entry of ALLOWLIST) {
-      expect(Number(ratioOf(entry, entry.theme, tokens).toFixed(2)), `${entry.fg} on ${entry.bg}`).toBeCloseTo(
-        entry.measured,
-        2,
-      );
+    const drifted = ALLOWLIST.map((e) => [e, Number(ratioOf(e, e.theme, tokens).toFixed(2))] as const)
+      .filter(([e, computed]) => computed !== e.measured)
+      .map(([e, computed]) => `${e.fg} on ${e.bg} (${e.theme}, ${e.threshold}): recorded ${e.measured}, computed ${computed}`);
+    expect(drifted).toEqual([]);
+  });
+
+  it("C8 an allowlist entry exempts a pair only at the entry's own threshold", () => {
+    const crossed: string[] = [];
+    for (const [pairs, threshold] of [[TEXT_PAIRS, 4.5], [UI_PAIRS, 3]] as const) {
+      for (const theme of ["light", "dark"] as const) {
+        for (const pair of pairs) {
+          const entry = allowlistEntryFor(pair, theme, threshold);
+          if (entry && entry.threshold !== threshold) {
+            crossed.push(`${pair.fg} on ${pair.bg} (${theme}, ${threshold}) exempted by the ${entry.threshold} entry`);
+          }
+        }
+      }
     }
+    expect(crossed).toEqual([]);
   });
 
   it("C7 every pair (TEXT_PAIRS, UI_PAIRS, ALLOWLIST) references only roles the token file defines", () => {
