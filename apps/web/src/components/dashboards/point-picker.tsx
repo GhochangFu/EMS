@@ -86,7 +86,7 @@ export function PointPicker({ role, organizationId, onAdd }: PointPickerProps) {
 
   if (organizationId === "") {
     return (
-      <p className="text-[11px] text-bms-muted">Choose the dashboard's scope before binding points.</p>
+      <p className="text-[11px] text-ink-muted">Choose the dashboard's scope before binding points.</p>
     );
   }
 
@@ -99,13 +99,13 @@ export function PointPicker({ role, organizationId, onAdd }: PointPickerProps) {
   const chosen = masterData ? locationId : assetId;
 
   return (
-    <div className="space-y-1.5 rounded border border-dashed border-gray-300 p-2">
+    <div className="space-y-1.5 rounded border border-dashed border-line-strong p-2">
       {masterData ? (
         <select
           aria-label="Location"
           value={locationId}
           onChange={(event) => setLocationId(event.target.value)}
-          className="w-full rounded border border-gray-200 px-2 py-1 text-xs"
+          className="w-full rounded border border-line px-2 py-1 text-xs"
         >
           <option value="">Choose a location…</option>
           {(locationsQ.data?.items ?? []).map((location) => (
@@ -119,7 +119,7 @@ export function PointPicker({ role, organizationId, onAdd }: PointPickerProps) {
           aria-label="Asset"
           value={assetId}
           onChange={(event) => setAssetId(event.target.value)}
-          className="w-full rounded border border-gray-200 px-2 py-1 text-xs"
+          className="w-full rounded border border-line px-2 py-1 text-xs"
         >
           <option value="">Choose an asset…</option>
           {(assetsQ.data ?? []).map((asset) => (
@@ -139,7 +139,7 @@ export function PointPicker({ role, organizationId, onAdd }: PointPickerProps) {
               onAdd(point);
             }
           }}
-          className="w-full rounded border border-gray-200 px-2 py-1 text-xs"
+          className="w-full rounded border border-line px-2 py-1 text-xs"
         >
           <option value="" disabled>
             {pointsQ.isLoading ? "Loading points…" : "Add a point…"}

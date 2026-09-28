@@ -180,18 +180,18 @@ export function DashboardScopeFields({
     const asset = assets.find((item) => item.id === value.assetId);
     return (
       <fieldset className="space-y-2">
-        <legend className="text-[11px] font-semibold uppercase tracking-wide text-bms-muted">Scope</legend>
-        <p className="text-xs text-bms-muted">
+        <legend className="text-[11px] font-semibold uppercase tracking-wide text-ink-muted">Scope</legend>
+        <p className="text-xs text-ink-muted">
           {`Scoped to asset ${asset?.name ?? value.assetId}. An asset-scoped dashboard keeps its scope; edit its widgets here.`}
         </p>
-        {error ? <p className="text-[11px] text-red-700">{error}</p> : null}
+        {error ? <p className="text-[11px] text-critical-ink">{error}</p> : null}
       </fieldset>
     );
   }
 
   return (
     <fieldset className="space-y-2">
-      <legend className="text-[11px] font-semibold uppercase tracking-wide text-bms-muted">Scope</legend>
+      <legend className="text-[11px] font-semibold uppercase tracking-wide text-ink-muted">Scope</legend>
       <div className="flex flex-wrap gap-4 text-xs">
         {canOrgWide ? (
           <label className="flex items-center gap-1.5">
@@ -250,7 +250,7 @@ export function DashboardScopeFields({
           <select
             value={value.organizationId}
             onChange={(event) => onChange({ kind: "organization", organizationId: event.target.value })}
-            className="w-full rounded border border-gray-200 px-2 py-1.5 text-xs"
+            className="w-full rounded border border-line px-2 py-1.5 text-xs"
           >
             <option value="" disabled>
               Choose an organization
@@ -276,7 +276,7 @@ export function DashboardScopeFields({
                 locationId: event.target.value,
               });
             }}
-            className="w-full rounded border border-gray-200 px-2 py-1.5 text-xs"
+            className="w-full rounded border border-line px-2 py-1.5 text-xs"
           >
             <option value="" disabled>
               Choose a location
@@ -303,7 +303,7 @@ export function DashboardScopeFields({
                 assetGroupId: event.target.value,
               });
             }}
-            className="w-full rounded border border-gray-200 px-2 py-1.5 text-xs"
+            className="w-full rounded border border-line px-2 py-1.5 text-xs"
           >
             <option value="" disabled>
               Choose an asset group
@@ -318,7 +318,7 @@ export function DashboardScopeFields({
         </Field>
       ) : null}
 
-      {error ? <p className="text-[11px] text-red-700">{error}</p> : null}
+      {error ? <p className="text-[11px] text-critical-ink">{error}</p> : null}
     </fieldset>
   );
 }

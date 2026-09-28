@@ -36,19 +36,19 @@ function n(value: number | null, digits: number): string {
 
 export function breakerStatusClass(status: BreakerVisualStatus): string {
   if (status === "open") {
-    return "border-gray-200 bg-gray-100 text-gray-700";
+    return "border-line bg-well-deep text-neutral-ink";
   }
   // A deliberately different grey from `open` — see BreakerVisualStatus.
   if (status === "offline") {
-    return "border-gray-300 bg-gray-200 text-gray-600";
+    return "border-line-strong bg-line text-ink-muted";
   }
   if (status === "critical") {
-    return "border-red-200 bg-red-100 text-red-800";
+    return "border-critical-line bg-critical-wash-strong text-critical-ink-strong";
   }
   if (status === "warning") {
-    return "border-amber-200 bg-amber-100 text-amber-900";
+    return "border-warning-line bg-warning-wash-strong text-warning-ink";
   }
-  return "border-bms-green/20 bg-bms-green/10 text-bms-green";
+  return "border-accent/20 bg-accent/10 text-accent";
 }
 
 /**
@@ -74,8 +74,8 @@ function breakerStatusLabel(status: BreakerVisualStatus): string {
 export function BreakerTable({ rows }: { rows: readonly BreakerTableRow[] }) {
   return (
     <div className="overflow-x-auto">
-      <table className="min-w-full divide-y divide-gray-200 text-sm">
-        <thead className="bg-gray-50 text-left text-xs uppercase tracking-wide text-bms-muted">
+      <table className="min-w-full divide-y divide-line text-sm">
+        <thead className="bg-well text-left text-xs uppercase tracking-wide text-ink-muted">
           <tr>
             <th className="px-3 py-2">Breaker</th>
             <th className="px-3 py-2">Position</th>
@@ -87,11 +87,11 @@ export function BreakerTable({ rows }: { rows: readonly BreakerTableRow[] }) {
             <th className="px-3 py-2">Trip Cause</th>
           </tr>
         </thead>
-        <tbody className="divide-y divide-gray-200">
+        <tbody className="divide-y divide-line">
           {rows.map((row) => (
             <tr key={row.code}>
-              <td className="px-3 py-2 font-medium text-bms-ink">{row.label}</td>
-              <td className="px-3 py-2 text-bms-muted">{row.position}</td>
+              <td className="px-3 py-2 font-medium text-ink">{row.label}</td>
+              <td className="px-3 py-2 text-ink-muted">{row.position}</td>
               <td className="px-3 py-2">{row.rating}</td>
               <td className="px-3 py-2">
                 <span className={`rounded-full border px-2 py-0.5 text-[11px] font-semibold ${breakerStatusClass(row.status)}`}>
@@ -101,7 +101,7 @@ export function BreakerTable({ rows }: { rows: readonly BreakerTableRow[] }) {
               <td className="px-3 py-2 text-right font-mono">{n(row.current, 1)}</td>
               <td className="px-3 py-2 text-right font-mono">{n(row.kw, 2)}</td>
               <td className="px-3 py-2 text-right font-mono">{n(row.kwhToday, 1)}</td>
-              <td className="px-3 py-2 text-bms-muted">{row.tripCause}</td>
+              <td className="px-3 py-2 text-ink-muted">{row.tripCause}</td>
             </tr>
           ))}
         </tbody>

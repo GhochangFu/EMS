@@ -13,8 +13,8 @@ export function ScopedActionLink({
 }) {
   const classes = `${className} inline-flex rounded px-3 py-1.5 text-xs font-semibold ${
     enabled
-      ? "bg-bms-green text-white"
-      : "cursor-not-allowed bg-gray-100 text-gray-500"
+      ? "bg-accent text-on-accent"
+      : "cursor-not-allowed bg-well-deep text-neutral-ink"
   }`;
   return enabled ? (
     <Link className={classes} to={to}>

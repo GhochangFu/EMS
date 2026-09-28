@@ -36,11 +36,11 @@ export function HealthSummarySection({ locationId }: HealthSummarySectionProps) 
       bodyClassName="p-3"
     >
       {query.isLoading ? (
-        <div className="text-sm text-bms-muted">Loading asset health...</div>
+        <div className="text-sm text-ink-muted">Loading asset health...</div>
       ) : query.isError ? (
-        <div className="text-sm text-red-700">Asset health unavailable.</div>
+        <div className="text-sm text-critical-ink">Asset health unavailable.</div>
       ) : query.data === undefined || query.data.assetCount === 0 ? (
-        <div className="text-sm text-bms-muted">
+        <div className="text-sm text-ink-muted">
           No assets in your access scope for this view.
         </div>
       ) : (

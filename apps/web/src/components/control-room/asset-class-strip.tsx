@@ -7,11 +7,11 @@ type PillTone = NonNullable<AssetRoleSummaryItem["worstSeverity"]>["tone"];
 
 /** The `StatusPill` palette, without its uppercase: the label prints verbatim (OQ6). */
 const TONE_CLASSES: Record<PillTone, string> = {
-  critical: "border-red-200 bg-red-50 text-red-800",
-  warning: "border-amber-200 bg-amber-50 text-amber-900",
-  info: "border-sky-200 bg-sky-50 text-sky-800",
-  offline: "border-gray-200 bg-gray-50 text-gray-700",
-  ok: "border-bms-green/20 bg-bms-green/10 text-bms-green",
+  critical: "border-critical-line bg-critical-wash text-critical-ink-strong",
+  warning: "border-warning-line bg-warning-wash text-warning-ink",
+  info: "border-info-line bg-info-wash text-info-ink",
+  offline: "border-line bg-well text-neutral-ink",
+  ok: "border-accent/20 bg-accent/10 text-accent",
 };
 
 /** What the strip says when it has no ids, by why it has none. */
@@ -40,7 +40,7 @@ export function assetClassText(item: AssetRoleSummaryItem): string {
 
 function StripNote({ text }: { text: string }) {
   return (
-    <div className="rounded border border-gray-200 bg-gray-50 px-3 py-2 text-sm text-bms-muted">
+    <div className="rounded border border-line bg-well px-3 py-2 text-sm text-ink-muted">
       {text}
     </div>
   );

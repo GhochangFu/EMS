@@ -101,7 +101,7 @@ function TxPole({
         x={labelX}
         y={30}
         textAnchor="middle"
-        className="fill-bms-ink font-condensed text-[13px] font-bold"
+        className="fill-ink font-condensed text-[13px] font-bold"
       >
         UTILITY 11kV
       </text>
@@ -132,7 +132,7 @@ function TxPole({
         x={labelX}
         y={138}
         textAnchor="middle"
-        className="font-mono text-[10px] fill-bms-ink"
+        className="font-mono text-[10px] fill-ink"
       >
         {labelLine1}
       </text>
@@ -326,7 +326,7 @@ export function ElectricalSldDiagram({ onSelectAsset }: ElectricalSldDiagramProp
   return (
     <svg
       viewBox="0 0 900 480"
-      className="h-auto min-w-[900px] w-full bg-white"
+      className="h-auto min-w-[900px] w-full bg-surface"
       aria-label="Electrical single-line diagram DC1"
     >
       <TxPole

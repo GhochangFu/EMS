@@ -23,8 +23,8 @@ export function ActiveFilterBar({ value, onChange }: ActiveFilterBarProps) {
           aria-selected={value === option.value}
           className={`rounded border px-3 py-1.5 text-xs font-semibold ${
             value === option.value
-              ? "border-bms-green bg-emerald-50 text-emerald-900"
-              : "border-gray-200 bg-white text-bms-ink"
+              ? "border-accent bg-ok-wash text-ok-ink"
+              : "border-line bg-surface text-ink"
           }`}
           onClick={() => onChange(option.value)}
         >

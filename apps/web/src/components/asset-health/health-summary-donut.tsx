@@ -85,15 +85,15 @@ export function HealthSummaryDonut({ title = "Asset Health", summary }: HealthSu
   );
 
   return (
-    <div className="flex h-full flex-col rounded-lg border border-gray-200 bg-white p-3 shadow-sm">
-      <h3 className="mb-2 text-[11px] font-medium uppercase tracking-wide text-bms-muted">{title}</h3>
+    <div className="flex h-full flex-col rounded-lg border border-line bg-surface p-3 shadow-sm">
+      <h3 className="mb-2 text-[11px] font-medium uppercase tracking-wide text-ink-muted">{title}</h3>
       {slices.length === 0 ? (
         <div
           className="flex flex-col items-center justify-center gap-1 px-4 text-center"
           style={{ height: 200 }}
         >
-          <p className="text-xs font-medium text-bms-ink">No band cut-points configured</p>
-          <p className="text-[11px] leading-snug text-bms-muted">
+          <p className="text-xs font-medium text-ink">No band cut-points configured</p>
+          <p className="text-[11px] leading-snug text-ink-muted">
             Bands come from an asset template&rsquo;s health tier. The figures below are real; only
             the slices are missing.
           </p>
@@ -101,7 +101,7 @@ export function HealthSummaryDonut({ title = "Asset Health", summary }: HealthSu
       ) : (
         <ReactECharts option={option} style={{ height: 200 }} notMerge lazyUpdate />
       )}
-      <dl className="mt-2 grid grid-cols-1 gap-y-1 text-xs text-bms-ink">
+      <dl className="mt-2 grid grid-cols-1 gap-y-1 text-xs text-ink">
         {slices.map((slice) => (
           <div key={slice.code} className="flex items-center justify-between gap-2">
             <dt>{slice.label}</dt>
@@ -111,10 +111,10 @@ export function HealthSummaryDonut({ title = "Asset Health", summary }: HealthSu
           </div>
         ))}
       </dl>
-      <dl className="mt-2 flex flex-wrap items-baseline gap-x-4 gap-y-1 border-t border-gray-100 pt-2 text-[11px] text-bms-muted">
+      <dl className="mt-2 flex flex-wrap items-baseline gap-x-4 gap-y-1 border-t border-well-deep pt-2 text-[11px] text-ink-muted">
         <div className="flex items-baseline gap-1">
           <dt className="font-medium uppercase tracking-wide">Scored</dt>
-          <dd className="tabular-nums text-bms-ink">
+          <dd className="tabular-nums text-ink">
             {summary.scoredAssetCount} / {summary.assetCount}
           </dd>
         </div>
@@ -122,32 +122,32 @@ export function HealthSummaryDonut({ title = "Asset Health", summary }: HealthSu
             unscored assets do not (ADR 0050 Amendment 1 decisions 3 and 7). */}
         <div className="flex items-baseline gap-1">
           <dt className="font-medium uppercase tracking-wide">Unbanded</dt>
-          <dd className="tabular-nums text-bms-ink">{summary.unbandedAssetCount}</dd>
+          <dd className="tabular-nums text-ink">{summary.unbandedAssetCount}</dd>
         </div>
         <div className="flex items-baseline gap-1">
           <dt className="font-medium uppercase tracking-wide">Unscored</dt>
-          <dd className="tabular-nums text-bms-ink">{summary.unscoredAssetCount}</dd>
+          <dd className="tabular-nums text-ink">{summary.unscoredAssetCount}</dd>
         </div>
         <div className="flex items-baseline gap-1">
           <dt className="font-medium uppercase tracking-wide">Mean score</dt>
-          <dd className="tabular-nums text-bms-ink">{formatHealthScorePercent(summary.score)}</dd>
+          <dd className="tabular-nums text-ink">{formatHealthScorePercent(summary.score)}</dd>
         </div>
         <div className="flex items-baseline gap-1">
           <dt className="font-medium uppercase tracking-wide">Granularity</dt>
-          <dd className="text-bms-ink">{formatBucketWidth(summary.bucketSeconds)}</dd>
+          <dd className="text-ink">{formatBucketWidth(summary.bucketSeconds)}</dd>
         </div>
         <div className="flex items-baseline gap-1">
           <dt className="font-medium uppercase tracking-wide">Current to</dt>
-          <dd className="text-bms-ink">{formatHealthComputedAt(summary.computedAt)}</dd>
+          <dd className="text-ink">{formatHealthComputedAt(summary.computedAt)}</dd>
         </div>
         <div className="flex items-baseline gap-1">
           <dt className="font-medium uppercase tracking-wide">Coverage</dt>
-          <dd className="tabular-nums text-bms-ink">{coverage.detail}</dd>
+          <dd className="tabular-nums text-ink">{coverage.detail}</dd>
         </div>
       </dl>
 
       {coverage.warning !== null ? (
-        <p className="mt-2 rounded border border-amber-200 bg-amber-50 px-2 py-1 text-[11px] leading-snug text-amber-900">
+        <p className="mt-2 rounded border border-warning-line bg-warning-wash px-2 py-1 text-[11px] leading-snug text-warning-ink">
           {coverage.warning}
         </p>
       ) : null}

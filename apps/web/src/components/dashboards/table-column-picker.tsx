@@ -54,11 +54,11 @@ export function TableColumnPicker({ catalogKey, chosen, onChange }: TableColumnP
   }
 
   return (
-    <div className="space-y-1.5 rounded border border-dashed border-gray-300 p-2">
-      <p className="text-[11px] font-medium text-bms-muted">Columns</p>
+    <div className="space-y-1.5 rounded border border-dashed border-line-strong p-2">
+      <p className="text-[11px] font-medium text-ink-muted">Columns</p>
 
       {chosen.length === 0 ? (
-        <p className="text-[11px] leading-snug text-bms-muted">
+        <p className="text-[11px] leading-snug text-ink-muted">
           Showing every column. Tick one or more to narrow the card.
         </p>
       ) : (
@@ -66,7 +66,7 @@ export function TableColumnPicker({ catalogKey, chosen, onChange }: TableColumnP
           {chosen.map((column, index) => (
             <li
               key={column}
-              className="flex items-center justify-between rounded border border-gray-100 px-2 py-1 text-xs"
+              className="flex items-center justify-between rounded border border-well-deep px-2 py-1 text-xs"
             >
               <span>{column}</span>
               <span className="flex items-center gap-1">
@@ -75,7 +75,7 @@ export function TableColumnPicker({ catalogKey, chosen, onChange }: TableColumnP
                   onClick={() => onChange(moveArrayItem(chosen, index, -1))}
                   disabled={index === 0}
                   aria-label={`Move ${column} earlier`}
-                  className="px-1 text-bms-muted disabled:opacity-30"
+                  className="px-1 text-ink-muted disabled:opacity-30"
                 >
                   ↑
                 </button>
@@ -84,7 +84,7 @@ export function TableColumnPicker({ catalogKey, chosen, onChange }: TableColumnP
                   onClick={() => onChange(moveArrayItem(chosen, index, 1))}
                   disabled={index === chosen.length - 1}
                   aria-label={`Move ${column} later`}
-                  className="px-1 text-bms-muted disabled:opacity-30"
+                  className="px-1 text-ink-muted disabled:opacity-30"
                 >
                   ↓
                 </button>

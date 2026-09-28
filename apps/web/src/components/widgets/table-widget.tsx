@@ -50,19 +50,19 @@ export function TableWidget({
         // answer is that nothing is showable. That happens when the bound dataset declares no
         // column the config still names — a released catalog change can do it to a stored
         // config — and saying so is what stops it reading as a broken card.
-        <p className="p-3 text-xs text-bms-muted">
+        <p className="p-3 text-xs text-ink-muted">
           No columns to show. Edit this widget and choose at least one.
         </p>
       ) : (
         <div className="h-full overflow-auto">
           <table className="w-full border-collapse text-left text-xs">
-            <thead className="sticky top-0 bg-white">
+            <thead className="sticky top-0 bg-surface">
               <tr>
                 {shown.map((column) => (
                   <th
                     key={column}
                     scope="col"
-                    className="whitespace-nowrap border-b border-gray-200 px-2 py-1.5 font-medium text-bms-muted"
+                    className="whitespace-nowrap border-b border-line px-2 py-1.5 font-medium text-ink-muted"
                   >
                     {metricCatalogColumnLabel(column)}
                   </th>
@@ -72,7 +72,7 @@ export function TableWidget({
             <tbody>
               {rows.length === 0 ? (
                 <tr>
-                  <td colSpan={shown.length} className="px-2 py-3 text-bms-muted">
+                  <td colSpan={shown.length} className="px-2 py-3 text-ink-muted">
                     Nothing to show right now.
                   </td>
                 </tr>
@@ -82,9 +82,9 @@ export function TableWidget({
                   // catalog declares presentation columns only — so there is no stable
                   // identity to key on. The list is replaced wholesale on every refresh and
                   // never reordered in place, which is the case where an index key is correct.
-                  <tr key={index} className="border-b border-gray-100 last:border-0">
+                  <tr key={index} className="border-b border-well-deep last:border-0">
                     {shown.map((column) => (
-                      <td key={column} className="whitespace-nowrap px-2 py-1.5 text-bms-ink">
+                      <td key={column} className="whitespace-nowrap px-2 py-1.5 text-ink">
                         {tableCellText(row[column])}
                       </td>
                     ))}
@@ -94,7 +94,7 @@ export function TableWidget({
             </tbody>
           </table>
           {truncated ? (
-            <p className="px-2 py-1.5 text-[11px] text-bms-muted">
+            <p className="px-2 py-1.5 text-[11px] text-ink-muted">
               Showing the first {rows.length} rows.
             </p>
           ) : null}
