@@ -9,11 +9,11 @@
  * both themes. The hex comment on each line is for review only; it is not read by code
  * (`tests/f3.65a-colour-tokens.test.ts` T13 asserts index.css itself holds no live hex literal).
  *
- * `:root` is the light theme, always the default regardless of `data-theme` (ADR 0078 decision 6
+ * `:root` is the light theme, always the default regardless of `data-theme` (ADR 0078 decision 4
  * / plan decision D6). `:root[data-theme="dark"]` is set on `<html>` by the inline script in
  * `index.html` before first paint. The 40 roles and their light/dark values are
  * `docs/plans/f3.65a-colour-tokens.md` §2.2, ADR 0078 Amendment 1 records the arithmetic. A 41st
- * role, `simulated-ink`, was added by owner ruling 2026-09-28 (Fix A) after the plan's gate — see
+ * role, `simulated-ink`, was added by owner ruling 2026-09-28 during the build — see
  * `tests/support/colour-role-map.ts`'s docblock for why and its derivation.
  */
 :root {

@@ -10,6 +10,11 @@ which it is not, and the owner ruled again on the corrected facts. **Q9 was
 added after the first draft**, which had assumed an answer to it. The owner
 reviewed and approved this written record on 2026-09-28.
 
+**Amendment 1** (`F3.65a`, 2026-09-28) records the plan gate: 41 roles, not
+"about 30", the adjusted and derived dark values, the light allowlist, and
+eleven owner rulings. Drafted with the `F3.65a` build; the owner reads it at
+the merge gate.
+
 Implements row `F3.65`, which [ADR 0074](./0074-domain-dashboard-parity.md)
 decision 1 (Q1, Q1b) created with its own ADR. Promotes nothing out of
 `AGENTS.md` §6. Splits `F3.65` into `F3.65a` → `F3.65b` → `F3.65c`, serial
@@ -241,3 +246,64 @@ added, so §9.4 is not engaged.
   (light canvas default, dark by the user switch, role tokens) in a
   `chore(agents):` PR; the TRINETRA design-system artifact's dark values
   replaced from the token file, on the owner's word.
+
+## Amendment 1 — the `F3.65a` plan gate (2026-09-28)
+
+The plan `docs/plans/f3.65a-colour-tokens.md` (on Fable, measured at
+`7fd51d35`) turned decisions 1–3 and 6 into data. The session re-computed
+sixteen of its ratios and colour differences before the gate; all matched.
+Ten plan questions (OQ1–OQ10) and one build question were put to the owner
+one at a time; all eleven were ruled as recommended.
+
+**1. 41 roles, not "about 30" (OQ1, and the build ruling).** Decision 2's own
+rule — every shade with 10 or more uses keeps its exact light value — gives
+28 exact anchors. Seven shades serve two purposes and split by utility
+(`white` three ways: `surface`, `on-dark`, `on-accent`; `bms-green-dark` two:
+`accent-strong`, `chrome-nav`; `red-600` two: `critical`,
+`critical-ink-soft`). `focus`, `scrim`, `chrome` and `chrome-nav` are
+surfaces the tree already paints; `critical-on-dark` and `warning-on-dark`
+hold the footer's status text, which sits on chrome in both themes (OQ3).
+That is 40. The 41st, **`simulated-ink`**, was ruled during the build: the
+provenance markers in `lib/value-provenance.ts` tell three kinds of value
+apart by colour (nameplate slate, configuration sky, simulated violet), and
+merging violet into `ink-faint` would have made simulated look like
+nameplate. Merges touch about 106 of 3,104 palette uses (3.4 %); the other
+96.6 % keep their light pixels. The mapping-table test records every shade,
+its role, and each merged shade's ΔE2000.
+
+**2. The Nexus value adjusted, and the values derived (decisions 3 and 6).**
+`ink-3` `#78849A` on the card is 4.25:1, so body-weight tertiary text gets a
+new dark value — `ink-faint` `#8791A5`, 5.05:1 on `sheet`. `#78849A` stays as
+`ink-hint`, a 3:1 role for placeholders and faint strokes. Every other dark
+value outside the Nexus block is derived by one rule: the light value's hue
+and saturation, lightness raised in 0.5 % steps until the pair passes on
+`sheet`, `paper` and the role's own dark wash. `simulated-ink` is `#A67DE8`
+(5.13 on `sheet`, 4.59 on the dark `well`, which is its binding pair). The
+three red text roles converge in dark (`#E76A6A`, `#E86A6A`, `#EC8585`) —
+the rule's literal result, accepted (OQ6). The full table is the plan's
+§2.2; the token file `apps/web/src/index.css` is the authority.
+
+**3. `on-accent` flips (OQ2).** White on the dark accent `#3DCD58` is 2.09:1,
+below even 3:1, so text on a green fill is white in light and `#0F1620` in
+dark (8.71:1). `on-dark` stays white: chrome, status fills and scrims are
+dark in both themes. `chrome-nav` stays `#007C3C` in both themes so the nav
+keeps 5.32:1 under white text.
+
+**4. The contrast test's allowlist.** Eleven light pairs fail today and are
+kept, each with its reason: the brand green as text or under white text
+(six pairs, 2.86–3.19:1, decision 2), status dots and bars on a light card
+(four pairs, 1.95–2.77:1, each duplicated by text), and a placeholder glyph
+(2.54:1, WCAG 1.4.3's inactive exception). **The dark allowlist is empty.**
+Hairlines and card borders are not declared as pairs: they are decorative
+boundaries and the focus ring is the state indicator (OQ5).
+
+**5. The gate (OQ7, OQ8).** Four counted kinds per file — palette classes,
+hex literals, colour-function literals, and the table-less hard zeros
+`dark:` and named colours — against an exact per-file floor measured at
+`7fd51d35` (305 files walked, 141 with findings: palette 3,104, hex 190,
+functions 2). `darkMode: ["selector", '[data-theme="dark"]']` is set
+defensively, so a stray `dark:` class can never follow the OS.
+
+**6. Smaller rulings.** The login hero's dark art (5 hex, 1 `rgba`) stays
+until `F3.65c` (OQ4); `info-ink` anchors on sky-800 `#075985` (OQ9);
+amber-700 merges into `warning-ink` at ΔE 15.2 (OQ10).
