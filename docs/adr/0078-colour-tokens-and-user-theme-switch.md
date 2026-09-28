@@ -437,7 +437,9 @@ The plan `docs/plans/f3.65c-charts-schematics-switch.md` (on Fable, measured at
 `88f6b8c6`) moved the last 188 hex literals and 2 colour functions in 16
 files to roles and made the switch visible. The gate is now at zero:
 `palette`, `hex` and `func` are hard zeros (R20, R21, R22), each failing by
-file (315 files walked, 0 rows, corrected from the plan's stale 310/305).
+file (317 files walked, 0 rows, corrected from the plan's stale 310/305;
+315 at U11, and 317 once `main` was merged in, which added
+`widgets/mimic-flow-dash.tsx` and `widgets/mimic-glyphs.tsx`).
 `FLOOR`, `floorDiff` and R11 are deleted; the `F3.65b` codemod and its test
 are gone; the stock palette and the `bms` block leave `tailwind.config.js`,
 leaving the 41 roles plus `transparent`/`current`/`inherit` in
@@ -462,8 +464,10 @@ build:** the roles are not held in store state. `vite dev` evaluates
 roles now come from `currentRoles()`, resolved lazily and cached per theme.
 jsdom gets the real tokens the same way the plan intended but not the
 mechanism it named: `node:fs` does not typecheck in `apps/web` (no `node`
-types), so `apps/web/vitest.config.ts` sets `test.css.include: [/index\.css/]`
-and `test-setup.ts` imports `./index.css?raw` — no new dependency.
+types), so `apps/web/vitest.config.ts` sets `test.css.include:
+[/src[\\/]index\.css(?:$|\?)/]` (anchored at review; the id carries the
+`?raw` query, so a bare `$` would match nothing) and `test-setup.ts` imports
+`./index.css?raw` — no new dependency.
 
 **2. Charts read one theme object.** `lib/chart-theme.ts`'s `echartsTheme`
 builds every ECharts chrome default (text, axes, tooltip, legend, gauge)
@@ -472,6 +476,14 @@ it as `theme`, and each option's series colours come from the same roles.
 `WIDGET_TONE_COLOR` is gone; `WIDGET_TONE_ROLE` maps a stored tone to a
 role, `WIDGET_TONE_FILL_CLASS` gives the tank widget a literal fill class,
 and `widgetToneColor(roles)` gives ECharts its stops.
+
+**The formula editor, fixed at review.** Nothing set CodeMirror's
+`EditorView.darkTheme` facet, so `@codemirror/view`'s `&light` base rules
+(black cursor, lilac selection, light-grey tooltip) stayed on a dark page;
+the facet is now a `Compartment` reconfigured on a toggle, and the editor's
+theme overrides the cursor (`ink`), the selection (`well`, focused
+`info-wash`) and the tooltips (`surface`, `ink`, `line-strong` border) at
+the base rules' own specificity.
 
 **3. Owner rulings OQ1–OQ8, all as recommended.** OQ1 the TRINETRA status
 quartet merges into `accent`/`info`/`warning`/`critical`; OQ2 the ok tint
@@ -517,7 +529,10 @@ flips `data-theme` and writes the key with no reload.
 **7. Contrast.** New pairs, from the contrast test's diff rather than the
 plan's estimate: text — `accent-strong` on `ok-wash`, `info-ink` on `well`,
 `warning-ink` and `critical-ink-strong` on `well`, `on-dark` on `chrome` at
-0.85 (the switch's idle label, bare and under its hover wash); UI —
+0.85 (the switch's idle label, bare and under its hover wash), and the
+formula editor's token inks over its selection (`ink`, `ink-muted`,
+`accent-strong`, `simulated-ink`, `warning-ink` on `info-wash`;
+`accent-strong` on `well`); UI —
 `warning-on-dark` on `surface` (the donut's Fair slice) and `on-dark` on
 `chrome` at 0.8 (the switch's focus ring, bare and under the pressed
 button's wash — the ring is inset, so a keyboard-focused pressed button

@@ -29,9 +29,11 @@ export default mergeConfig(
        * (`test-setup.ts` appends it to jsdom; `test-role-tokens.ts` parses its two role blocks).
        * With CSS processing off (Vitest's default) a `?raw` import of it is `""`, and `node:fs`
        * does not typecheck in `apps/web` (no `node` types). Every other stylesheet stays
-       * unprocessed.
+       * unprocessed. Anchored to `src/index.css` so no other `index.css` (a package's) matches;
+       * the id Vitest tests carries the `?raw` query, so the anchor ends at `$` or `?` — a bare
+       * `$` matches nothing and every theme spec reads empty tokens.
        */
-      css: { include: [/index\.css/] },
+      css: { include: [/src[\\/]index\.css(?:$|\?)/] },
     },
   }),
 );
