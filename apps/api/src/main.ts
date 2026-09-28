@@ -1,7 +1,7 @@
 import "./load-env";
 import "./observability/tracing";
 
-import { Logger, RequestMethod } from "@nestjs/common";
+import { Logger } from "@nestjs/common";
 import { NestFactory } from "@nestjs/core";
 import { type NestExpressApplication } from "@nestjs/platform-express";
 import { Logger as PinoLogger } from "nestjs-pino";
@@ -10,6 +10,7 @@ import { SwaggerModule } from "@nestjs/swagger";
 
 import { AppModule } from "./app.module";
 import { ZodErrorFilter } from "./common/zod-error.filter";
+import { GLOBAL_PREFIX, GLOBAL_PREFIX_OPTIONS } from "./global-prefix";
 import { areApiDocsEnabled } from "./openapi/api-docs-enabled";
 import { buildOpenApiDocument } from "./openapi/openapi-document";
 import { createSocketIoAdapter } from "./realtime/redis-io.adapter";
@@ -37,12 +38,7 @@ async function bootstrap(): Promise<void> {
   // not catch. Do not widen `@Catch(ZodError)`.
   app.useGlobalFilters(new ZodErrorFilter());
 
-  app.setGlobalPrefix("api/v1", {
-    exclude: [
-      { path: "health", method: RequestMethod.GET },
-      { path: "metrics", method: RequestMethod.GET },
-    ],
-  });
+  app.setGlobalPrefix(GLOBAL_PREFIX, GLOBAL_PREFIX_OPTIONS);
   app.enableCors({
     origin: ["http://localhost:5173", "http://127.0.0.1:5173"],
     credentials: true,
