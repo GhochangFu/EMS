@@ -2,6 +2,7 @@ import { z } from "zod";
 
 import { mimicPresetSchema } from "./dashboard-builder";
 import { generatedSiteAssetSchema } from "./generated-site-view";
+import { alarmSeverityCodeSchema, pillToneSchema } from "./operations";
 
 /**
  * `F3.32` / ADR 0079 — `GET /api/v1/dashboards/:id/mimic-nodes` (plan D1).
@@ -19,6 +20,23 @@ import { generatedSiteAssetSchema } from "./generated-site-view";
 export const MIMIC_HEADLINE_POINTS = 3;
 
 /**
+ * `F3.32b` (ADR 0079 Amendment 2) — the shown asset's most severe open alarm, drawn as a
+ * callout under the unit that raised it, as the client's reference does. Most severe first by
+ * the severity vocabulary's rank, then newest. `message` is the alarm's own stored text.
+ *
+ * `tone` and `label` are the severity's own `bms.alarm_severities` row, read in the same
+ * statement (ADR 0032 decision 9: behaviour is read from the vocabulary, never from a list of
+ * codes), so a level added by an `INSERT` draws in its declared colour with its declared name.
+ */
+export const mimicNodeAlarmSchema = z.object({
+  severity: alarmSeverityCodeSchema,
+  tone: pillToneSchema,
+  label: z.string(),
+  message: z.string(),
+  raisedAt: z.string(),
+});
+
+/**
  * One preset node, resolved.
  *
  * `asset` is `null` when no member of the group carries `roleCode`, or when the caller cannot
@@ -33,6 +51,8 @@ export const mimicNodeSchema = z.object({
   asset: generatedSiteAssetSchema.nullable(),
   memberCount: z.number().int().min(0),
   activeAlarms: z.number().int().min(0),
+  /** `null` when the node has no asset or the asset has no open alarm. */
+  topAlarm: mimicNodeAlarmSchema.nullable(),
 });
 
 /** One `mimic` widget and its nodes, in the preset's declared order. */

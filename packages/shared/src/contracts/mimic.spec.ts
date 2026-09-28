@@ -1,6 +1,7 @@
 import {
   MIMIC_HEADLINE_POINTS,
   dashboardMimicNodesResponseSchema,
+  mimicNodeAlarmSchema,
   mimicNodeSchema,
 } from "./mimic";
 
@@ -44,6 +45,13 @@ const assignedNode = {
   },
   memberCount: 2,
   activeAlarms: 1,
+  topAlarm: {
+    severity: "sev_high",
+    tone: "warning",
+    label: "High pressure",
+    message: "Inlet pressure above limit",
+    raisedAt: "2026-09-28T09:58:00.000Z",
+  },
 };
 
 const unassignedNode = {
@@ -53,6 +61,7 @@ const unassignedNode = {
   asset: null,
   memberCount: 0,
   activeAlarms: 0,
+  topAlarm: null,
 };
 
 const response = (preset: string, nodes: unknown[]) => ({
@@ -95,4 +104,17 @@ export function mimicHeadlinePointsIsThree(): void {
     MIMIC_HEADLINE_POINTS === 3,
     `a mimic node shows three headline points, got ${MIMIC_HEADLINE_POINTS}`,
   );
+}
+
+/** `F3.32b` — a top alarm carries its severity's tone from the vocabulary's closed tone set. */
+export function mimicNodeAlarmRefusesAToneOutsideTheToneSet(): void {
+  const result = mimicNodeAlarmSchema.safeParse({ ...assignedNode.topAlarm, tone: "purple" });
+  assert(!result.success, "a top alarm whose tone is not a pill tone must be refused");
+}
+
+/** `F3.32b` — a top alarm carries its severity's label: the widget draws it, never the code. */
+export function mimicNodeAlarmRefusesAMissingLabel(): void {
+  const { label: _dropped, ...withoutLabel } = assignedNode.topAlarm;
+  const result = mimicNodeAlarmSchema.safeParse(withoutLabel);
+  assert(!result.success, "a top alarm without its severity label must be refused");
 }

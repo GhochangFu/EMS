@@ -3,7 +3,17 @@ import { cleanup } from "@testing-library/react";
 import { afterEach, describe, it } from "vitest";
 
 import {
+  alarmedNodeDrawsOneCallout,
   alarmNodeIsAlarm,
+  everyNodeDrawsItsSymbol,
+  flowRunsFromFreshNodes,
+  staleNodesDoNotFlow,
+  longMessageIsCutWithFullTitle,
+  calloutTextIsClippedToItsBox,
+  accessibleNameNamesTheAlarmedUnit,
+  accessibleNameOfAQuietPlantNamesNoUnit,
+  panelsHoldTheirTrains,
+  quietNodesDrawNoCallout,
   assignedNodeShowsItsAssetCode,
   atMostThreeValueRows,
   badgeCountsTheOtherMembers,
@@ -45,5 +55,42 @@ describe("F3.32 U4 — MimicWidget", () => {
   });
   it("W7 loading draws no node", () => {
     loadingDrawsNoNodes();
+  });
+});
+
+describe("F3.32b — MimicWidget, the reference look (ADR 0079 Amendment 2)", () => {
+  afterEach(() => {
+    cleanup();
+  });
+
+  it("C1 a node with topAlarm draws one callout in its vocabulary tone and label", () => {
+    alarmedNodeDrawsOneCallout();
+  });
+  it("C2 a node without topAlarm draws no callout", () => {
+    quietNodesDrawNoCallout();
+  });
+  it("P1 three panels hold their trains' nodes", () => {
+    panelsHoldTheirTrains();
+  });
+  it("G1 every node draws its mapped symbol; the tank fills to its level", () => {
+    everyNodeDrawsItsSymbol();
+  });
+  it("C3 a 60-character message shows at most 21 characters, the full text in its title", () => {
+    longMessageIsCutWithFullTitle();
+  });
+  it("C4 the callout text is clipped to its box", () => {
+    calloutTextIsClippedToItsBox();
+  });
+  it("X1 the accessible name names the alarmed unit, its severity label and full message", () => {
+    accessibleNameNamesTheAlarmedUnit();
+  });
+  it("X2 a quiet plant's accessible name names no unit", () => {
+    accessibleNameOfAQuietPlantNamesNoUnit();
+  });
+  it("F1 the flow dash rides pipes out of a unit with fresh data, alarm included", () => {
+    flowRunsFromFreshNodes();
+  });
+  it("F2 an alarm unit with an old reading, and a stale unit, do not flow", () => {
+    staleNodesDoNotFlow();
   });
 });

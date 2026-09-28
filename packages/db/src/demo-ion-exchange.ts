@@ -11,7 +11,11 @@ import {
   DEMO_WATER_TEMPLATE_SQL,
   demoWaterTemplatePointsParams,
 } from "./water-plant-demo-seed";
-import { DEMO_MIMIC_ROLE_BY_ASSET_CODE, DEMO_MIMIC_WIDGET_CONFIG } from "./water-mimic-demo-seed";
+import {
+  DEMO_MIMIC_ROLE_BY_ASSET_CODE,
+  DEMO_MIMIC_WIDGET_CONFIG,
+  DEMO_MIMIC_WIDGET_RESIZE_SQL,
+} from "./water-mimic-demo-seed";
 
 /**
  * `F3.32` / ADR 0079 Amendment 1 — the Ion Exchange demo organization, made by
@@ -227,7 +231,7 @@ const DASHBOARD_ID_SQL = `SELECT id FROM bms.dashboards WHERE organization_id = 
 const WIDGET_INSERT_SQL = `
 INSERT INTO bms.dashboard_widgets
   (organization_id, dashboard_id, widget_type, grid_x, grid_y, grid_w, grid_h, config)
-SELECT $1, $2, 'mimic', 0, 0, 12, 6, $3::jsonb
+SELECT $1, $2, 'mimic', 0, 0, 12, 10, $3::jsonb
 WHERE NOT EXISTS (
   SELECT 1 FROM bms.dashboard_widgets WHERE dashboard_id = $2 AND widget_type = 'mimic'
 )
@@ -423,6 +427,8 @@ export async function runIonExchangeDemo(pool: pg.Pool, superuserPool: pg.Pool):
       `dashboard ${IONX_DASHBOARD_SLUG}`,
     );
     written += await count(pool, WIDGET_INSERT_SQL, [organizationId, dashboardId, JSON.stringify(IONX_WIDGET_CONFIG)]);
+    // `F3.32b`: a widget an earlier run wrote at 12 × 6 becomes 10 tall; any other size is left.
+    written += await count(pool, DEMO_MIMIC_WIDGET_RESIZE_SQL, [organizationId, dashboardId]);
 
     const res = await pool.query<IonxTenantCounts>(TENANT_VERIFY_SQL, [
       organizationId,

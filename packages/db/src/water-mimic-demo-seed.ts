@@ -132,11 +132,31 @@ const DASHBOARD_ID_SQL = `
 const WIDGET_INSERT_SQL = `
   INSERT INTO bms.dashboard_widgets
     (organization_id, dashboard_id, widget_type, grid_x, grid_y, grid_w, grid_h, config)
-  SELECT $1, $2, 'mimic', 0, 0, 12, 6, $3::jsonb
+  SELECT $1, $2, 'mimic', 0, 0, 12, 10, $3::jsonb
   WHERE NOT EXISTS (
     SELECT 1 FROM bms.dashboard_widgets
     WHERE dashboard_id = $2 AND widget_type = 'mimic'
   )
+`;
+
+/**
+ * `F3.32b` (ADR 0079 Amendment 2) — the seeded mimic widget is 10 rows tall, not 6. The insert
+ * above is `NOT EXISTS`-guarded, so a database an earlier seed wrote keeps its 12 × 6 widget.
+ * This moves ONLY that row: the named dashboard's mimic widget at exactly the shape the earlier
+ * seed wrote (x 0, y 0, 12 wide, 6 tall). Any other size or place is an operator's choice and is
+ * left alone. Idempotent: once the row is 10 tall the `WHERE` matches nothing. Shared with
+ * `demo-ion-exchange.ts`, which seeded the same shape. Params: `[organizationId, dashboardId]`.
+ */
+export const DEMO_MIMIC_WIDGET_RESIZE_SQL = `
+  UPDATE bms.dashboard_widgets
+  SET grid_h = 10, updated_at = now()
+  WHERE organization_id = $1
+    AND dashboard_id = $2
+    AND widget_type = 'mimic'
+    AND grid_x = 0
+    AND grid_y = 0
+    AND grid_w = 12
+    AND grid_h = 6
 `;
 
 /**
@@ -207,6 +227,7 @@ export async function seedWaterMimicDemo(pool: pg.Pool, organizationId: string):
   }
 
   await pool.query(WIDGET_INSERT_SQL, [organizationId, dashboardId, JSON.stringify(DEMO_MIMIC_WIDGET_CONFIG)]);
+  await pool.query(DEMO_MIMIC_WIDGET_RESIZE_SQL, [organizationId, dashboardId]);
 
   const check = await pool.query<VerifyRow>(VERIFY_SQL, [
     organizationId,

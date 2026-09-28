@@ -11,9 +11,21 @@ import {
 
 import {
   MIMIC_LAYOUTS,
+  MIMIC_NODE_GLYPHS,
   MIMIC_NODE_SIZE,
+  MIMIC_PANELS,
+  MIMIC_PIPE_Y,
+  MIMIC_SINK_W,
+  mimicAlarmTone,
+  mimicAriaLabel,
   mimicBadge,
+  mimicCalloutText,
+  mimicLevelFraction,
+  mimicLevelPoint,
+  mimicPanelBox,
+  pipeMidpoint,
   mimicNodePoints,
+  mimicNodeFlows,
   mimicNodeStatus,
   mimicViewFor,
   pipePath,
@@ -51,7 +63,7 @@ function asset(id: string, code: string, points: GeneratedSitePointDto[] = [poin
 }
 
 function node(key: string, a: GeneratedSiteAssetDto | null, activeAlarms = 0): MimicNodeDto {
-  return { key, label: key, roleCode: key, asset: a, memberCount: a === null ? 0 : 1, activeAlarms };
+  return { key, label: key, roleCode: key, asset: a, memberCount: a === null ? 0 : 1, activeAlarms, topAlarm: null };
 }
 
 function widget(nodes: MimicNodeDto[]): MimicWidgetNodesDto {
@@ -149,11 +161,11 @@ export function badgeCountsTheHiddenMembers(): void {
   expect(mimicBadge(0)).toBeNull();
 }
 
-/** M6a — a same-row pipe runs edge to edge at the box mid-height, in flow direction. */
+/** M6a — a same-row pipe runs edge to edge at the symbol's centre height, in flow direction. */
 export function sameRowPipeRunsEdgeToEdge(): void {
-  const { w, h } = MIMIC_NODE_SIZE;
-  expect(pipePath({ x: 0, y: 0 }, { x: 300, y: 0 })).toBe(`M${w} ${h / 2} H300`);
-  expect(pipePath({ x: 300, y: 0 }, { x: 0, y: 0 })).toBe(`M300 ${h / 2} H${w}`);
+  const { w } = MIMIC_NODE_SIZE;
+  expect(pipePath({ x: 0, y: 0 }, { x: 300, y: 0 })).toBe(`M${w} ${MIMIC_PIPE_Y} H300`);
+  expect(pipePath({ x: 300, y: 0 }, { x: 0, y: 0 })).toBe(`M300 ${MIMIC_PIPE_Y} H${w}`);
 }
 
 /** M6b — a cross-row pipe leaves the bottom centre and lands on the top centre. */
@@ -162,4 +174,137 @@ export function crossRowPipeLandsOnTheTopCentre(): void {
   const d = pipePath({ x: 0, y: 0 }, { x: 400, y: 300 });
   expect(d.startsWith(`M${w / 2} ${h} `)).toBe(true);
   expect(d.endsWith(`H${400 + w / 2} V300`)).toBe(true);
+}
+
+/** M7 — every preset node sits in exactly one panel, and every panel key names a preset node. */
+export function panelsPartitionThePresetNodes(): void {
+  for (const preset of Object.keys(MIMIC_PRESETS) as (keyof typeof MIMIC_PRESETS)[]) {
+    const inPanels: string[] = MIMIC_PANELS[preset].flatMap((p) => [...p.nodes]);
+    expect([...inPanels].sort(), preset).toEqual(MIMIC_PRESETS[preset].nodes.map((n) => n.key).sort());
+  }
+}
+
+/** M7b — the panel frames fit the viewBox and do not overlap one another. */
+export function panelFramesFitAndDoNotOverlap(): void {
+  const def = MIMIC_PRESETS.water_train;
+  const layout = MIMIC_LAYOUTS.water_train;
+  const [, , vw, vh] = layout.viewBox.split(" ").map(Number);
+  const boxes = MIMIC_PANELS.water_train.map((p) => {
+    const box = mimicPanelBox(
+      p.nodes.map((k) => layout.nodes[k]),
+      (p.nodes as readonly string[]).includes(def.sink.from) ? layout.sink : null,
+    );
+    expect(box, p.key).not.toBeNull();
+    return [p.key, box as NonNullable<typeof box>] as const;
+  });
+  for (const [key, b] of boxes) {
+    expect(b.x >= 0 && b.y >= 0 && b.x + b.w <= vw && b.y + b.h <= vh, key).toBe(true);
+  }
+  for (const [ka, a] of boxes) {
+    for (const [kb, b] of boxes) {
+      if (ka >= kb) continue;
+      const apart = a.x + a.w <= b.x || b.x + b.w <= a.x || a.y + a.h <= b.y || b.y + b.h <= a.y;
+      expect(apart, `${ka} overlaps ${kb}`).toBe(true);
+    }
+  }
+}
+
+/** M7c — the panel holding the sink's node widens to hold the sink symbol; no node, no frame. */
+export function panelBoxHoldsTheSink(): void {
+  const without = mimicPanelBox([{ x: 500, y: 100 }], null);
+  const withSink = mimicPanelBox([{ x: 500, y: 100 }], { x: 450, y: 186 });
+  expect(withSink?.x).toBe((without?.x ?? 0) - (500 - (450 - MIMIC_SINK_W)));
+  expect(mimicPanelBox([], null)).toBeNull();
+}
+
+/** M8 — the symbol map names every preset node and nothing else; intake and storage are tanks. */
+export function glyphMapCoversEveryPresetNode(): void {
+  for (const preset of Object.keys(MIMIC_PRESETS) as (keyof typeof MIMIC_PRESETS)[]) {
+    expect(Object.keys(MIMIC_NODE_GLYPHS[preset]).sort(), preset).toEqual(
+      MIMIC_PRESETS[preset].nodes.map((n) => n.key).sort(),
+    );
+  }
+  expect(MIMIC_NODE_GLYPHS.water_train.water_intake).toBe("tank");
+  expect(MIMIC_NODE_GLYPHS.water_train.water_storage).toBe("tank");
+  expect(MIMIC_NODE_GLYPHS.water_train.ro).toBe("membrane");
+}
+
+/** M9a — the level point is a `level` key in `%`; a level flag with unit "" is not one. */
+export function levelPointNeedsLevelAndPercent(): void {
+  const flag: GeneratedSitePointDto = { pointKey: "oil_level_low", name: null, unit: "", headlineRank: null, latest: null };
+  const pct: GeneratedSitePointDto = { pointKey: "clearwell_level_pct", name: null, unit: "%", headlineRank: null, latest: null };
+  const eff: GeneratedSitePointDto = { pointKey: "efficiency", name: "Efficiency", unit: "%", headlineRank: null, latest: null };
+  expect(mimicLevelPoint(asset(WTP_ID, "W", [flag, eff, pct]))?.pointKey).toBe("clearwell_level_pct");
+  expect(mimicLevelPoint(asset(WTP_ID, "W", [flag, eff]))).toBeNull();
+}
+
+/** M9b — the fill fraction is clamped to 0–1, and a missing or non-finite value is no fill. */
+export function levelFractionClamps(): void {
+  expect(mimicLevelFraction(42)).toBe(0.42);
+  expect(mimicLevelFraction(150)).toBe(1);
+  expect(mimicLevelFraction(-5)).toBe(0);
+  expect(mimicLevelFraction(Number.NaN)).toBeNull();
+  expect(mimicLevelFraction(null)).toBeNull();
+}
+
+/**
+ * M10 — the callout colour is the vocabulary TONE: the three the callout colours are
+ * themselves; a pill tone it has no colour for, and an unknown tone, draw neutral.
+ */
+export function severityToneFromTheVocabularyTone(): void {
+  expect(mimicAlarmTone("warning")).toBe("warning");
+  expect(mimicAlarmTone("critical")).toBe("critical");
+  expect(mimicAlarmTone("info")).toBe("info");
+  expect(mimicAlarmTone("offline")).toBe("neutral");
+  expect(mimicAlarmTone("sev9")).toBe("neutral");
+}
+
+/** M11 — a long callout line is cut with an ellipsis, by code point, never splitting a pair. */
+export function calloutTextIsCutByCodePoint(): void {
+  expect(mimicCalloutText("DO high", 10)).toBe("DO high");
+  expect(mimicCalloutText("abcdefghijkl", 10)).toBe("abcdefghi\u2026");
+  expect(mimicCalloutText("\u{1F600}\u{1F600}\u{1F600}\u{1F600}", 3)).toBe("\u{1F600}\u{1F600}\u2026");
+}
+
+/** M11b — the default cut: a 60-character line shows at most 20, the ellipsis included. */
+export function calloutTextDefaultCutIsTwenty(): void {
+  const shown = mimicCalloutText("x".repeat(60));
+  expect(Array.from(shown)).toHaveLength(20);
+  expect(shown.endsWith("…")).toBe(true);
+}
+
+/** M13a — an `alarm` node whose own reading is fresh keeps its outgoing pipe flowing. */
+export function alarmedFreshNodeFlows(): void {
+  expect(mimicNodeFlows("alarm", NOW - 1_000, NOW)).toBe(true);
+}
+
+/** M13b — an `alarm` node whose reading is old does not flow: the alarm alone is not data. */
+export function alarmedStaleNodeDoesNotFlow(): void {
+  expect(mimicNodeFlows("alarm", NOW - FRESH_MS - 1_000, NOW)).toBe(false);
+}
+
+/** M13c — `live` flows; `stale`, `none` and `unassigned` do not. */
+export function onlyFreshStatusesFlow(): void {
+  expect(
+    (["live", "stale", "none", "unassigned"] as const).map((s) => mimicNodeFlows(s, NOW - 1_000, NOW)),
+  ).toEqual([true, false, false, false]);
+}
+
+/** M14 — the accessible name lists every alarmed unit with its severity label and full message. */
+export function ariaLabelNamesEveryAlarmedUnit(): void {
+  expect(
+    mimicAriaLabel("Plant", "Water train", [
+      { unit: "WTP", severity: "High pressure", message: "Inlet pressure above limit" },
+      { unit: "RO", severity: "Critical", message: "Membrane fouled" },
+    ]),
+  ).toBe("Plant: Water train. Open alarms: WTP, High pressure: Inlet pressure above limit; RO, Critical: Membrane fouled");
+  expect(mimicAriaLabel("Plant", "Water train", [])).toBe("Plant: Water train");
+}
+
+/** M12 — a pump sits at the gap's midpoint on a same-row pipe, either direction; none across rows. */
+export function pumpSitsMidGap(): void {
+  const { w } = MIMIC_NODE_SIZE;
+  expect(pipeMidpoint({ x: 0, y: 10 }, { x: 300, y: 10 })).toEqual({ x: (w + 300) / 2, y: 10 + MIMIC_PIPE_Y });
+  expect(pipeMidpoint({ x: 300, y: 10 }, { x: 0, y: 10 })).toEqual({ x: (w + 300) / 2, y: 10 + MIMIC_PIPE_Y });
+  expect(pipeMidpoint({ x: 0, y: 0 }, { x: 0, y: 400 })).toBeNull();
 }

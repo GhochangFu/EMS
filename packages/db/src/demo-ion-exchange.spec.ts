@@ -8,12 +8,15 @@ import {
   IONX_ROLE_BY_ASSET_CODE,
   IONX_WIDGET_CONFIG,
   ionxAssetCodeFor,
+  runIonExchangeDemo,
   ionxShortfalls,
   type IonxIdentityCounts,
   type IonxTenantCounts,
 } from "./demo-ion-exchange";
 import { SEED_ORGANIZATION_CODES } from "./hierarchy-seed";
 import { DEMO_WATER_ASSET_CODES } from "./water-plant-demo-seed";
+import { DEMO_MIMIC_WIDGET_RESIZE_SQL } from "./water-mimic-demo-seed";
+import { recordingSeedPool } from "./water-mimic-demo-seed.spec";
 
 /** Vitest entry point lives in the sibling `.test.ts` (ADR 0014). */
 
@@ -101,4 +104,25 @@ export function assertFewerWidgetsThanTheFloorIsAShortfall(): void {
 export function assertIonxIsNotASeedOrganization(): void {
   expect(SEED_ORGANIZATION_CODES.length).toBeGreaterThan(0);
   expect(SEED_ORGANIZATION_CODES).not.toContain(IONX_ORG_CODE);
+}
+
+/**
+ * `F3.32b` — the command runs the shared resize once, for IONX-DEMO's own dashboard. The fake
+ * pool stops the run at the resize (so the identity half and its bcrypt never run) and the
+ * tenant bracket rolls back.
+ */
+export async function assertTheCommandResizesItsOwnDashboardsWidget(): Promise<void> {
+  const { pool, calls } = recordingSeedPool({ organization: "org-id", dashboard: "dashboard-id", other: "other-id" });
+  const stop = new Error("stop at the resize");
+  const recording = pool.query.bind(pool) as (sql: string, values?: unknown[]) => Promise<unknown>;
+  (pool as unknown as { query: unknown }).query = async (sql: string, values?: unknown[]) => {
+    const result = await recording(sql, values);
+    if (sql === DEMO_MIMIC_WIDGET_RESIZE_SQL) {
+      throw stop;
+    }
+    return result;
+  };
+  await expect(runIonExchangeDemo(pool, pool)).rejects.toBe(stop);
+  const resizes = calls.filter((c) => c.sql === DEMO_MIMIC_WIDGET_RESIZE_SQL);
+  expect(resizes.map((c) => c.values)).toEqual([["org-id", "dashboard-id"]]);
 }

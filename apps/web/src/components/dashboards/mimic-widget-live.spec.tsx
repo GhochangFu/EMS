@@ -106,6 +106,7 @@ function nodes(lastSeenAgoMs: number): MimicNodeDto[] {
     asset: n.key === "wtp" ? wtp(lastSeenAgoMs) : null,
     memberCount: n.key === "wtp" ? 1 : 0,
     activeAlarms: 0,
+    topAlarm: null,
   }));
 }
 
