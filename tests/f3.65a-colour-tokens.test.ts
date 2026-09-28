@@ -328,11 +328,16 @@ describe("F3.65a: the token file (index.css) and the Tailwind mapping", () => {
 
   // F3.65c U7 — the Leaflet popup close glyph is `leaflet.css`'s own `#757575` (`:hover`/`:focus`
   // `#585858`), a sibling of T15 for the same reason: outside the two token blocks, same
-  // specificity/source-order win over `leaflet.css`.
-  it("T17 index.css paints the Leaflet popup close button from --ink-faint, and --ink on hover/focus", () => {
+  // specificity/source-order win over `leaflet.css`. Split into T17a/T17b (F3.65c review): one
+  // `expect` per `it()`, so a broken base rule cannot hide a broken hover/focus rule behind it.
+  it("T17a index.css paints the Leaflet popup close button from --ink-faint", () => {
     const text = css().replace(/\/\*[\s\S]*?\*\//g, "");
     const base = /\.leaflet-container\s+a\.leaflet-popup-close-button\s*\{([^}]*)\}/.exec(text);
     expect(base?.[1] ?? "").toMatch(/(^|;|\s)color:\s*rgb\(var\(--ink-faint\)\)\s*;/);
+  });
+
+  it("T17b index.css paints the close button's hover/focus state from --ink", () => {
+    const text = css().replace(/\/\*[\s\S]*?\*\//g, "");
     const hover =
       /\.leaflet-container\s+a\.leaflet-popup-close-button:hover\s*,\s*\.leaflet-container\s+a\.leaflet-popup-close-button:focus\s*\{([^}]*)\}/.exec(
         text,
