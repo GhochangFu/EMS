@@ -218,7 +218,7 @@ const MIMIC_CONTENT = {
       title: "Water train",
       gridX: 0,
       gridY: 0,
-      gridW: 12,
+      gridW: DASHBOARD_GRID.columns,
       gridH: 6,
       bindings: [],
       sources: [],
