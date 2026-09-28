@@ -210,7 +210,10 @@ export class MimicLayoutsService {
           and(
             eq(dashboardWidgets.widgetType, "mimic"),
             sql`${dashboardWidgets.config}->>'source' = 'layout'`,
-            sql`${dashboardWidgets.config}->>'layoutId' = ${id}`,
+            // The database's own id, lowercase, against the stored text lowercased: a path id
+            // in uppercase is the same uuid, and a text compare with it would count zero. No
+            // `::uuid` cast, so a malformed stored value cannot fail the delete.
+            sql`lower(${dashboardWidgets.config}->>'layoutId') = ${locked.id}`,
           ),
         );
       if (Number(n) > 0) {

@@ -12,7 +12,7 @@ import type { MimicLayoutsService } from "./mimic-layouts.service";
 
 /**
  * `F3.32c` U2 — what `MimicLayoutsService` does against a real database and
- * real row security (plan U2, C1–C11; C12 from U7). Assertions live here;
+ * real row security (plan U2, C1–C11; C12–C13 from U7). Assertions live here;
  * `mimic-layouts.service.integration.test.ts` is the Vitest entry point
  * (ADR 0014) and owns the pools, the fixtures and the cleanup.
  *
@@ -280,6 +280,22 @@ export async function assertDeleteWaitsForAConcurrentWidgetSave(ctx: Ctx): Promi
   expect((outcome as Error).message).toBe(MIMIC_LAYOUT_IN_USE_MESSAGE(1));
   const still = await ctx.ownerPool.query(`SELECT 1 FROM bms.mimic_layouts WHERE id = $1`, [dto.id]);
   expect(still.rows).toHaveLength(1);
+}
+
+/**
+ * C13 — a DELETE by the uppercase form of a referenced layout's id is a 409, and the layout stays.
+ * The path id passes `z.string().uuid()` in either case; the in-use count must match it as the
+ * same uuid, not as different text.
+ */
+export async function assertUppercaseIdDeleteOfReferencedLayoutIs409(ctx: Ctx): Promise<void> {
+  const dto = await create(ctx, "c13");
+  await ctx.plantReferencingWidget(dto.id);
+  const upper = dto.id.toUpperCase();
+  expect(upper).not.toBe(dto.id);
+  const err = await rejection(ctx.service.remove(ctx.globalAdmin, upper));
+  expect(err).toBeInstanceOf(ConflictException);
+  expect((err as Error).message).toBe(MIMIC_LAYOUT_IN_USE_MESSAGE(1));
+  expect(await childCounts(ctx, dto.id)).toEqual([5, 2]);
 }
 
 /** C11 — an unknown role code is a 400 that does not echo the code, and writes nothing. */

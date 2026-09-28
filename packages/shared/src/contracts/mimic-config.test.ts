@@ -6,6 +6,7 @@ import {
   mimicConfigRefusesALayoutArmWithoutLayoutId,
   mimicConfigRefusesANonUuidLayoutId,
   mimicConfigRefusesAPresetSourceCarryingALayoutId,
+  mimicConfigRefusesAnUppercaseLayoutId,
   mimicPresetVocabularyIsWaterTrainAlone,
 } from "./mimic-config.spec";
 
@@ -25,6 +26,10 @@ describe("F3.32c — the mimic widget config, both arms (ADR 0081)", () => {
 
   it("refuses a layout arm whose layoutId is not a uuid", () => {
     mimicConfigRefusesANonUuidLayoutId();
+  });
+
+  it("refuses a layout arm whose layoutId is uppercase", () => {
+    mimicConfigRefusesAnUppercaseLayoutId();
   });
 
   it("refuses source preset carrying a layoutId and no preset", () => {

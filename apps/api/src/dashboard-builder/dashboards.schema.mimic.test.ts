@@ -4,6 +4,7 @@ import {
   acceptsTheLayoutArm,
   refusesALayoutArmCarryingAPreset,
   refusesALayoutArmWhoseIdIsNotAUuid,
+  refusesALayoutArmWhoseIdIsUppercase,
   refusesALayoutArmWithoutALayoutId,
   refusesAnUnknownSource,
   runDashboardsSchemaMimicSourceShapeTests,
@@ -28,6 +29,10 @@ describe("F3.32c — the mimic config's layout arm", () => {
 
   it("refuses a layout arm whose layoutId is not a uuid", () => {
     refusesALayoutArmWhoseIdIsNotAUuid();
+  });
+
+  it("refuses a layout arm whose layoutId is uppercase", () => {
+    refusesALayoutArmWhoseIdIsUppercase();
   });
 
   it("refuses a layout arm carrying a preset key (the layout arm is strict)", () => {

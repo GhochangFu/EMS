@@ -246,6 +246,40 @@ export async function runDashboardBuilderControllerTests(): Promise<void> {
 }
 
 /**
+ * `F3.32c` U7 — `PUT :id/widgets` naming a layout by an uppercase id is a 400 before the service:
+ * the id would be stored as sent, and the resolver keys layouts by the lowercase database id. The
+ * lowercase form of the same id reaching the service is the positive control.
+ */
+export async function putWidgetsRefusesAnUppercaseLayoutIdWith400(): Promise<void> {
+  const layoutId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+  const bodyFor = (id: string) => ({
+    widgets: [
+      {
+        widgetType: "mimic",
+        title: "Plant",
+        gridX: 0,
+        gridY: 0,
+        gridW: 12,
+        gridH: 6,
+        config: { source: "layout", layoutId: id },
+        points: [],
+      },
+    ],
+  });
+  const { controller, service } = controllerWith({});
+
+  await controller.putWidgets(ADMIN, DASHBOARD_ID, bodyFor(layoutId));
+  assert(service.putWidgets.calls === 1, "a lowercase layoutId must reach the service");
+
+  await rejects(
+    () => controller.putWidgets(ADMIN, DASHBOARD_ID, bodyFor(layoutId.toUpperCase())),
+    (e) => e instanceof BadRequestException,
+    "an uppercase layoutId",
+  );
+  assert(service.putWidgets.calls === 1, "an uppercase layoutId must never reach the service");
+}
+
+/**
  * `E4.2` U9 — the controller passes `section` through to the service.
  *
  * **Its own function with its own `it()`, because an optional parameter at an

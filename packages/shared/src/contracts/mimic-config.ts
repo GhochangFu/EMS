@@ -39,10 +39,17 @@ export const mimicPresetConfigSchema = z.object({
  * The layout arm (`F3.32c`, ADR 0081) — a drawing an organization admin stored as one
  * `bms.mimic_layouts` row. The widget holds the id only; the resolver reads the geometry.
  * Flat, for the same `.strict()` reason as the preset arm.
+ *
+ * **`layoutId` is lowercase, refused otherwise, never transformed.** `z.string().uuid()` accepts
+ * an uppercase uuid, and the id is stored as sent: the resolver keys layouts by the database's
+ * lowercase id, so an uppercase one would never render. A refusal keeps the field a plain string
+ * schema, which the write surface's `.shape` rebuild and the OpenAPI walkers need.
  */
+export const MIMIC_LAYOUT_ID_CASE_MESSAGE = "layoutId must be a lowercase uuid";
+
 export const mimicLayoutConfigSchema = z.object({
   source: z.literal("layout"),
-  layoutId: z.string().uuid(),
+  layoutId: z.string().uuid().regex(/^[0-9a-f-]+$/, MIMIC_LAYOUT_ID_CASE_MESSAGE),
 });
 
 /**

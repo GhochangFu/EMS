@@ -1,4 +1,4 @@
-import { mimicConfigSchema, mimicPresetSchema } from "./mimic-config";
+import { MIMIC_LAYOUT_ID_CASE_MESSAGE, mimicConfigSchema, mimicPresetSchema } from "./mimic-config";
 
 /**
  * `F3.32c` / ADR 0081 — the `mimic` widget config, both arms (plan D1, D2).
@@ -41,6 +41,23 @@ export function mimicConfigRefusesALayoutArmWithoutLayoutId(): void {
 export function mimicConfigRefusesANonUuidLayoutId(): void {
   const result = mimicConfigSchema.safeParse({ source: "layout", layoutId: "water-train" });
   assert(!result.success, "a layout arm whose layoutId is not a uuid must be refused");
+}
+
+/**
+ * An uppercase uuid is refused with the case sentence: it is stored as sent, and the resolver
+ * keys layouts by the database's lowercase id. The lowercase form of the same id is the positive
+ * control, so the refusal is the case alone.
+ */
+export function mimicConfigRefusesAnUppercaseLayoutId(): void {
+  const upper = LAYOUT_ID.replace(/4/g, "A");
+  const lower = mimicConfigSchema.safeParse({ source: "layout", layoutId: upper.toLowerCase() });
+  assert(lower.success, `the lowercase form must parse, got ${issuesOf(lower)}`);
+  const result = mimicConfigSchema.safeParse({ source: "layout", layoutId: upper });
+  assert(!result.success, "a layout arm whose layoutId is uppercase must be refused");
+  assert(
+    issuesOf(result).includes(MIMIC_LAYOUT_ID_CASE_MESSAGE),
+    `the refusal must carry the case sentence, got ${issuesOf(result)}`,
+  );
 }
 
 /**

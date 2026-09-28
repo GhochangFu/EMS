@@ -1,3 +1,5 @@
+import { MIMIC_LAYOUT_ID_CASE_MESSAGE } from "@bms/shared";
+
 import { expectAccepts, expectRejectsAt, POINT_A } from "./dashboards.schema.spec";
 
 import { putDashboardWidgetsBodySchema } from "./dashboards.schema";
@@ -79,6 +81,20 @@ export function refusesALayoutArmWhoseIdIsNotAUuid(): void {
     ["widgets", 0, "config", "layoutId"],
     ["uuid"],
     "a layout arm whose layoutId is not a uuid must be refused",
+  );
+}
+
+/**
+ * The write surface rebuilds the arm from `mimicLayoutConfigSchema.shape`, so it carries the shared
+ * lowercase rule: an uppercase `layoutId` is refused at that path with the case sentence.
+ */
+export function refusesALayoutArmWhoseIdIsUppercase(): void {
+  expectRejectsAt(
+    putDashboardWidgetsBodySchema,
+    { widgets: [{ ...validMimicWidget, config: { source: "layout", layoutId: LAYOUT_ID.replace(/4/g, "A") } }] },
+    ["widgets", 0, "config", "layoutId"],
+    [MIMIC_LAYOUT_ID_CASE_MESSAGE],
+    "a layout arm whose layoutId is uppercase must be refused",
   );
 }
 
