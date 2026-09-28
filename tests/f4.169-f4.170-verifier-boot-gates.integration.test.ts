@@ -87,6 +87,8 @@ type LadderCollisionSkip = AutomationRulesSeed.LadderCollisionSkip;
 /** Lowercase hex from `randomUUID`; the fixture codes carry it. */
 const runId = randomUUID().slice(0, 8);
 const RUN_ID = runId.toUpperCase();
+/** A second id, for the baseline's own collision, which `runSkips` must not match. */
+const PRE_ID = randomUUID().slice(0, 8).toUpperCase();
 
 /** The `actual` of the one check labelled `label`, or a failure naming it. */
 function actualOf(checks: readonly HierarchyCheck[], label: string): number {
@@ -227,14 +229,52 @@ describe.skipIf(!ownerUrl)("F4.169/F4.170 addendum — the boot gate after ordin
     return { bId, bCode: oldCode, skips };
   }
 
+  /** The uncovered count before any fixture, read both ways. */
+  type UncoveredBaseline = {
+    /** With the baseline seed's own skips exempted: what V2 and V4 compare against. */
+    exempted: number;
+    /** With nothing exempted: what V3 compares against. */
+    unexempted: number;
+  };
+
   /**
    * The uncovered count before any fixture. The ladder seed runs first, so a
    * live asset another suite committed without rules is covered before the
    * baseline, and the fixture's own seed cannot move the count under it.
+   *
+   * Read twice, because the later read differs in what it exempts: V2 and V4
+   * pass the fixture seed's skips, which include any collision the shared
+   * database already held, so their baseline exempts the baseline seed's
+   * skips too; V3 passes none, so its baseline exempts nothing. One baseline
+   * for all three was right only while the database held no other collision.
+   *
+   * So the baseline holds one: a rename-and-reuse pair of its own, coded
+   * without `runId` so `runSkips` does not see it, written before the
+   * baseline seed. The two readings then differ by exactly that one asset,
+   * which is checked, so swapping them in a case reddens it.
    */
-  async function uncoveredBaseline(tx: EskomTx): Promise<number> {
+  async function uncoveredBaseline(tx: EskomTx): Promise<UncoveredBaseline> {
+    const preOld = `F4169-PRE-${PRE_ID}-OLD`;
+    const preId = await tx.insertElectricalAsset(preOld);
     await tx.seed();
-    return actualOf(await readEskomChecks(tx.pool, eskomOrgId, { log: () => undefined }), UNCOVERED_ELECTRICAL_LABEL);
+    const renamed = await tx.pool.query(`UPDATE bms.assets SET code = $1 WHERE id = $2`, [
+      `F4169-PRE-${PRE_ID}-NEW`,
+      preId,
+    ]);
+    assert(renamed.rowCount === 1, "the rename must update the baseline's own asset A");
+    await tx.insertElectricalAsset(preOld);
+    const skips = await tx.seed();
+    const read = async (ladderCollisionSkips: readonly LadderCollisionSkip[]): Promise<number> =>
+      actualOf(
+        await readEskomChecks(tx.pool, eskomOrgId, { ladderCollisionSkips, log: () => undefined }),
+        UNCOVERED_ELECTRICAL_LABEL,
+      );
+    const baseline = { exempted: await read(skips), unexempted: await read([]) };
+    assert(
+      baseline.unexempted === baseline.exempted + 1,
+      `the baseline's own collision must be its one exemption, got ${JSON.stringify(baseline)}`,
+    );
+    return baseline;
   }
 
   it("V2: rename-and-reuse — the seed returns B as its one skip", async () => {
@@ -252,7 +292,7 @@ describe.skipIf(!ownerUrl)("F4.169/F4.170 addendum — the boot gate after ordin
       const { skips } = await renameAndReuse(tx);
       const checks = await readEskomChecks(tx.pool, eskomOrgId, { ladderCollisionSkips: skips, log: () => undefined });
       // Mutation: dropping the exemption filter counts B, and this reads +1.
-      expect(actualOf(checks, UNCOVERED_ELECTRICAL_LABEL), "B must be exempted, not counted").toBe(baseline);
+      expect(actualOf(checks, UNCOVERED_ELECTRICAL_LABEL), "B must be exempted, not counted").toBe(baseline.exempted);
     });
   }, 60_000);
 
@@ -275,7 +315,9 @@ describe.skipIf(!ownerUrl)("F4.169/F4.170 addendum — the boot gate after ordin
       // The `verify:hierarchy` CLI's call: no skips, so it fails closed.
       // Mutation: a default that exempts something reads the baseline here.
       const checks = await readEskomChecks(tx.pool, eskomOrgId);
-      expect(actualOf(checks, UNCOVERED_ELECTRICAL_LABEL), "B must count with no skips passed").toBe(baseline + 1);
+      expect(actualOf(checks, UNCOVERED_ELECTRICAL_LABEL), "B must count with no skips passed").toBe(
+        baseline.unexempted + 1,
+      );
     });
   }, 60_000);
 
@@ -290,7 +332,9 @@ describe.skipIf(!ownerUrl)("F4.169/F4.170 addendum — the boot gate after ordin
       const checks = await readEskomChecks(tx.pool, eskomOrgId, { ladderCollisionSkips: skips, log: () => undefined });
       // Mutation: exempting every uncovered asset whenever the list is
       // non-empty reads the baseline here.
-      expect(actualOf(checks, UNCOVERED_ELECTRICAL_LABEL), "C must count; only B is exempt").toBe(baseline + 1);
+      expect(actualOf(checks, UNCOVERED_ELECTRICAL_LABEL), "C must count; only B is exempt").toBe(
+        baseline.exempted + 1,
+      );
     });
   }, 60_000);
 
@@ -305,8 +349,18 @@ describe.skipIf(!ownerUrl)("F4.169/F4.170 addendum — the boot gate after ordin
    * Reads `label` from `pass`, runs `fixture`, reads it again — all inside one
    * `BEGIN` … `ROLLBACK` in the pass's tenant context (ESKOM for the global
    * pass, which needs none). The `ROLLBACK` is in a `finally`.
+   *
+   * `probeSql` is the whole-table count the check used to be, returning one
+   * row with `n`. It must rise by exactly 1 across the fixture, in the same
+   * transaction: an "unmoved" check is only evidence when the fixture is
+   * proved to have landed where the old count would have seen it.
    */
-  async function around(pass: Pass, label: string, fixture: (pool: SeedPool) => Promise<void>): Promise<Around> {
+  async function around(
+    pass: Pass,
+    label: string,
+    fixture: (pool: SeedPool) => Promise<void>,
+    probeSql: string,
+  ): Promise<Around> {
     if (!seedPool) throw new Error("pool not initialised");
     const pool = seedPool;
     const read = async (): Promise<HierarchyCheck> => {
@@ -320,13 +374,22 @@ describe.skipIf(!ownerUrl)("F4.169/F4.170 addendum — the boot gate after ordin
       assert(found.length === 1, `expected one ${pass} check labelled "${label}", found ${found.length}`);
       return found[0] as HierarchyCheck;
     };
+    const probe = async (): Promise<number> => {
+      const { rows } = await pool.query<{ n: number }>(probeSql);
+      return rows[0]?.n ?? Number.NaN;
+    };
     await pool.query("BEGIN");
     try {
       await pool.query("select set_config('app.current_organization', $1, true)", [
         pass === "phewb" ? phewbOrgId : eskomOrgId,
       ]);
       const before = await read();
+      const probeBefore = await probe();
       await fixture(pool);
+      // Mutation: a fixture that writes nothing leaves this unmoved.
+      expect(await probe(), `the fixture must add one row to what the old "${label}" count read`).toBe(
+        probeBefore + 1,
+      );
       const after = await read();
       return { before, after: after.actual };
     } finally {
@@ -395,6 +458,40 @@ describe.skipIf(!ownerUrl)("F4.169/F4.170 addendum — the boot gate after ordin
     ]);
   }
 
+  /**
+   * The whole-table count each check used to be, for {@link around}'s probe.
+   * Each reads in the pass's tenant context, so the policy already scopes it
+   * to that organization's rows.
+   */
+  const PROBE = {
+    eskomLocations: `SELECT COUNT(*)::int AS n FROM bms.locations l
+      JOIN bms.organizations o ON o.id = l.organization_id WHERE o.code = 'ESKOM'`,
+    eskomActiveLocations: `SELECT COUNT(*)::int AS n FROM bms.locations l
+      JOIN bms.organizations o ON o.id = l.organization_id WHERE o.code = 'ESKOM' AND l.active`,
+    itLoadMembers: `SELECT COUNT(*)::int AS n FROM bms.asset_group_members agm
+      JOIN bms.asset_groups ag ON ag.id = agm.asset_group_id WHERE ag.code = 'IT_LOAD'`,
+    itRackKw: `SELECT COUNT(*)::int AS n FROM bms.asset_points ap
+      JOIN bms.assets a ON a.id = ap.asset_id WHERE a.domain = 'it' AND ap.point_key = 'rack_kw'`,
+    organizations: `SELECT COUNT(*)::int AS n FROM bms.organizations`,
+    incomerPinned: `SELECT COUNT(*)::int AS n FROM bms.assets a
+      JOIN bms.asset_templates t ON t.id = a.template_id WHERE t.code = 'BASELINE-ELECTRICAL-INCOMER'`,
+    phewbLocations: `SELECT COUNT(*)::int AS n FROM bms.locations l
+      JOIN bms.organizations o ON o.id = l.organization_id WHERE o.code = 'PHEWB'`,
+    phewbRtus: `SELECT COUNT(*)::int AS n FROM bms.rtus r
+      JOIN bms.organizations o ON o.id = r.organization_id WHERE o.code = 'PHEWB'`,
+    pheAssets: `SELECT COUNT(*)::int AS n FROM bms.assets WHERE code LIKE 'PHE-%'`,
+    phePoints: `SELECT COUNT(*)::int AS n FROM bms.asset_points ap
+      JOIN bms.assets a ON a.id = ap.asset_id WHERE a.code LIKE 'PHE-%'`,
+    pheElecMembers: `SELECT COUNT(*)::int AS n FROM bms.asset_group_members agm
+      JOIN bms.asset_groups ag ON ag.id = agm.asset_group_id
+      JOIN bms.assets a ON a.id = agm.asset_id
+      WHERE ag.code = 'electrical' AND a.code LIKE 'PHE-%'`,
+    pheElecRoled: `SELECT COUNT(*)::int AS n FROM bms.asset_group_members agm
+      JOIN bms.asset_groups ag ON ag.id = agm.asset_group_id
+      JOIN bms.assets a ON a.id = agm.asset_id
+      WHERE ag.code = 'electrical' AND a.code LIKE 'PHE-%' AND agm.role IS NOT NULL`,
+  } as const;
+
   it("V1: an ESKOM location with a 64-code-point code, after ensureEskomDomainRtus, leaves the ESKOM location check unmoved", async () => {
     const { before, after } = await around("eskom", "ESKOM seed locations present", async (pool) => {
       // ensureEskomDomainRtus upserts an RTU at every ESKOM location; lock
@@ -416,7 +513,7 @@ describe.skipIf(!ownerUrl)("F4.169/F4.170 addendum — the boot gate after ordin
         "ESKOM location",
       );
       await ensureEskomDomainRtus(seedDb as SeedDb, pool);
-    });
+    }, PROBE.eskomLocations);
     assertSeeded(before);
     // Mutation: the count back on every ESKOM location reads +1.
     expect(after, "an admin location must not move the ESKOM location check").toBe(before.actual);
@@ -429,7 +526,7 @@ describe.skipIf(!ownerUrl)("F4.169/F4.170 addendum — the boot gate after ordin
         [eskomOrgId],
       );
       assert(updated.rowCount === 1, "ESK-DECOMM-01 must be seeded");
-    });
+    }, PROBE.eskomActiveLocations);
     assertSeeded(before);
     expect(after, "an active ESK-DECOMM-01 must fail the check").toBe(before.actual + 1);
   }, 60_000);
@@ -439,7 +536,7 @@ describe.skipIf(!ownerUrl)("F4.169/F4.170 addendum — the boot gate after ordin
       const assetId = await insertAsset(pool, eskomOrgId, rsmocWcId, `F4169-${RUN_ID}-IT`, "it");
       await insertManualPoint(pool, eskomOrgId, assetId, "rack_kw");
       await joinGroup(pool, rsmocWcId, "IT_LOAD", assetId, null);
-    });
+    }, PROBE.itLoadMembers);
     assertSeeded(before);
     // Mutation: the count back on every IT_LOAD member reads +1.
     expect(after, "an admin IT asset must not move the IT_LOAD check").toBe(before.actual);
@@ -450,7 +547,7 @@ describe.skipIf(!ownerUrl)("F4.169/F4.170 addendum — the boot gate after ordin
       const assetId = await insertAsset(pool, eskomOrgId, rsmocWcId, `F4169-${RUN_ID}-IT`, "it");
       await insertManualPoint(pool, eskomOrgId, assetId, "rack_kw");
       await joinGroup(pool, rsmocWcId, "IT_LOAD", assetId, null);
-    });
+    }, PROBE.itRackKw);
     assertSeeded(before);
     // Mutation: the count back on every ESKOM IT rack_kw row reads +1.
     expect(after, "an admin IT asset must not move the rack_kw check").toBe(before.actual);
@@ -465,7 +562,7 @@ describe.skipIf(!ownerUrl)("F4.169/F4.170 addendum — the boot gate after ordin
         [`F4169-${RUN_ID}`],
         "organization",
       );
-    });
+    }, PROBE.organizations);
     assertSeeded(before);
     // Mutation: the count back on every organization reads +1.
     expect(after, "an admin organization must not move the organization check").toBe(before.actual);
@@ -484,6 +581,7 @@ describe.skipIf(!ownerUrl)("F4.169/F4.170 addendum — the boot gate after ordin
         assert(!!templateId, "BASELINE-ELECTRICAL-INCOMER must be seeded");
         await insertAsset(pool, eskomOrgId, rsmocWcId, `F4169-${RUN_ID}-INC`, "electrical", templateId as string);
       },
+      PROBE.incomerPinned,
     );
     assertSeeded(before);
     // Mutation: the count back on every pinned ESKOM asset reads +1.
@@ -500,7 +598,7 @@ describe.skipIf(!ownerUrl)("F4.169/F4.170 addendum — the boot gate after ordin
         [phewbOrgId, `F4169-${RUN_ID}-PHE`, `f4169-${runId}-phe`],
         "PHEWB location",
       );
-    });
+    }, PROBE.phewbLocations);
     assertSeeded(before);
     // Mutation: the count back on every PHEWB location reads +1.
     expect(after, "an admin PHEWB location must not move the location check").toBe(before.actual);
@@ -520,7 +618,7 @@ describe.skipIf(!ownerUrl)("F4.169/F4.170 addendum — the boot gate after ordin
         [phewbOrgId, `F4169-${RUN_ID}-LEG`, legacySlug],
         "legacy PHEWB location",
       );
-    });
+    }, PROBE.phewbLocations);
     assertSeeded(before);
     expect(after, "a surviving legacy per-RTU location must fail the check").toBe(before.actual + 1);
   }, 60_000);
@@ -535,7 +633,7 @@ describe.skipIf(!ownerUrl)("F4.169/F4.170 addendum — the boot gate after ordin
         [pheStationId, `F4169-${RUN_ID}-RTU`, phewbOrgId],
         "PHEWB RTU",
       );
-    });
+    }, PROBE.phewbRtus);
     assertSeeded(before);
     // Mutation: the count back on every PHEWB RTU reads +1.
     expect(after, "an admin PHEWB RTU must not move the RTU check").toBe(before.actual);
@@ -549,28 +647,28 @@ describe.skipIf(!ownerUrl)("F4.169/F4.170 addendum — the boot gate after ordin
   }
 
   it("V7: an admin PHE- electrical asset leaves the PHE asset check unmoved", async () => {
-    const { before, after } = await around("phewb", "PHE catalog assets present", adminPheAsset);
+    const { before, after } = await around("phewb", "PHE catalog assets present", adminPheAsset, PROBE.pheAssets);
     assertSeeded(before);
     // Mutation: the count back on every PHE- asset reads +1.
     expect(after, "an admin PHE- asset must not move the asset check").toBe(before.actual);
   }, 60_000);
 
   it("V7: an admin PHE- asset's point leaves the PHE point check unmoved", async () => {
-    const { before, after } = await around("phewb", "PHE catalog asset_points present", adminPheAsset);
+    const { before, after } = await around("phewb", "PHE catalog asset_points present", adminPheAsset, PROBE.phePoints);
     assertSeeded(before);
     // Mutation: the count back on every PHE- asset's points reads +1.
     expect(after, "an admin PHE- point must not move the point check").toBe(before.actual);
   }, 60_000);
 
   it("V7: an admin PHE- asset's electrical membership leaves the member check unmoved", async () => {
-    const { before, after } = await around("phewb", "PHE catalog electrical group members", adminPheAsset);
+    const { before, after } = await around("phewb", "PHE catalog electrical group members", adminPheAsset, PROBE.pheElecMembers);
     assertSeeded(before);
     // Mutation: the count back on every PHE- electrical member reads +1.
     expect(after, "an admin PHE- member must not move the member check").toBe(before.actual);
   }, 60_000);
 
   it("V7: an admin PHE- asset's roled membership leaves the roled check unmoved", async () => {
-    const { before, after } = await around("phewb", "PHE catalog electrical members carrying a role", adminPheAsset);
+    const { before, after } = await around("phewb", "PHE catalog electrical members carrying a role", adminPheAsset, PROBE.pheElecRoled);
     assertSeeded(before);
     // Mutation: the count back on every roled PHE- electrical member reads +1.
     expect(after, "an admin PHE- roled member must not move the roled check").toBe(before.actual);
@@ -588,7 +686,7 @@ describe.skipIf(!ownerUrl)("F4.169/F4.170 addendum — the boot gate after ordin
       const assetId = asset.rows[0]?.id;
       assert(!!assetId, `${tsPoint?.assetCode} must be seeded`);
       await insertManualPoint(pool, phewbOrgId, assetId as string, tsPoint?.pointKey as string);
-    });
+    }, PROBE.phePoints);
     assertSeeded(before);
     expect(after, "a catalogued TS point must fail the check").toBe(before.actual + 1);
   }, 60_000);
@@ -743,7 +841,10 @@ describe.skipIf(!ownerUrl)("F4.169/F4.170 addendum — the boot gate after ordin
       await seedEskomAssets(db, pool, eskomSeedAssetCatalog(), eskomOrgId);
       const moved = (await wiringOf(pool, "RSMOC Western Cape")).filter((row) => row.location_id !== rsmocWcId);
       // Mutation: `ORDER BY l.created_at DESC` in resolveEskomSimRtuId picks
-      // the newer L2 and moves every RSMOC-WC catalog asset there.
+      // the newer L2 and moves every RSMOC-WC catalog asset there. What this
+      // case holds is the stated order: on main the query had no ORDER BY, so
+      // its LIMIT 1 pick was whatever the plan returned first, and that pick
+      // can pass or fail here; only a reversed order fails it every time.
       expect(moved.map((row) => row.code), "no RSMOC Western Cape asset may move off RSMOC-WC").toEqual([]);
     });
   }, 60_000);
