@@ -986,3 +986,15 @@ message — an alarm nobody can set a limit on.
   `electrical`, the same as for every catalogued code (Amendment 1).
 - The plan's first-draft claim that *"no new ADR is owed"* was wrong by this
   one code, and the plan's §12 says so.
+
+## Amendment 8 (2026-09-28, `F4.169`/`F4.170`, ADR 0080) — the environment-role count leaves the boot gate
+
+The Consequences sentence that `packages/db/src/verify-hierarchy-seed.ts` holds
+"**0** environment memberships carrying" a role is no longer true. An
+administrator may set a role on a PHE environment member through the asset-group
+picker, and the seed keeps an administrator's role, so that count stopped
+`db:seed` after an ordinary admin write. Owner ruling 10 (ADR 0080) moved the
+claim to `packages/db/src/asset-groups-seed.spec.ts`, which holds the seed's own
+rule: `demoRoleForAsset` gives no role to the twelve gateways. The two
+electrical counts (36 members, 36 carrying a role) stay in the boot gate as
+presence counts over the catalog's electrical codes.
