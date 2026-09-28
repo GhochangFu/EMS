@@ -444,7 +444,7 @@ describe.skipIf(!ownerUrl)(
       });
     }, 60_000);
 
-    // ── Owner ruling 15: guard 1 counts only a rule that can fire ────────────
+    // ── Owner rulings 15 and 18: guard 1 counts a published rule, enabled or not ──
 
     /** One ladder rule's condition tuple. */
     type LadderTuple = (typeof ESKOM_LADDER_RULES)[number];
@@ -503,15 +503,15 @@ describe.skipIf(!ownerUrl)(
 
         await tx.seed();
 
-        // Mutation: guard 1 without the published-and-enabled filter reads the
-        // five drafts as the ladder, and this reads no code at all.
+        // Mutation: guard 1 without the published filter reads the five
+        // drafts as the ladder, and this reads no code at all.
         expect(await ladderCodes(tx.pool, assetId), "the asset must get all five ladder rules").toEqual(
           expectedCodes(assetCode),
         );
       });
     }, 60_000);
 
-    it("I11: a disabled published rule with the DEMAND_HIGH tuple does not stand in for it", async () => {
+    it("I11: a disabled published rule with the DEMAND_HIGH tuple stands in for it (owner ruling 18)", async () => {
       await inRolledBackTransaction(async (tx) => {
         const assetCode = `f4169-${runId}-disabled`;
         const assetId = await tx.insertAsset(assetCode);
@@ -522,12 +522,18 @@ describe.skipIf(!ownerUrl)(
 
         await tx.seed();
 
-        // Mutation: a filter on the lifecycle alone counts the disabled rule,
-        // and DEMAND_HIGH is missing here.
-        expect(
-          await ladderCodes(tx.pool, assetId),
-          "a disabled rule cannot fire, so the ladder gets DEMAND_HIGH",
-        ).toContain(ladderRuleCode(assetCode, "DEMAND_HIGH"));
+        // Owner ruling 18 inverted this case: a published rule holds the
+        // condition whether or not it is enabled. Mutation: guard 1 back on
+        // `enabled` too (ruling 15) inserts DEMAND_HIGH here.
+        const codes = await ladderCodes(tx.pool, assetId);
+        expect(codes, "the published rule holds DEMAND_HIGH, so the ladder does not add it").not.toContain(
+          ladderRuleCode(assetCode, "DEMAND_HIGH"),
+        );
+        // Adjacent positive: the seed did run for this asset, and gave it the
+        // other four.
+        expect(codes, "the ladder's other four rules").toEqual(
+          expectedCodes(assetCode).filter((code) => code !== ladderRuleCode(assetCode, "DEMAND_HIGH")),
+        );
       });
     }, 60_000);
 
@@ -542,8 +548,8 @@ describe.skipIf(!ownerUrl)(
 
         await tx.seed();
 
-        // Mutation: a filter on `enabled` alone counts the archived rule, and
-        // DEMAND_HIGH is missing here.
+        // Mutation: a guard 1 that reads no lifecycle counts the archived
+        // rule, and DEMAND_HIGH is missing here.
         expect(
           await ladderCodes(tx.pool, assetId),
           "an archived rule cannot fire, so the ladder gets DEMAND_HIGH",

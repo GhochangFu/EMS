@@ -4,6 +4,7 @@ import { createRequire } from "node:module";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import type * as AccessFixturesSeed from "../packages/db/dist/access-fixtures-seed.js";
+import type * as AutomationRulesSeed from "../packages/db/dist/automation-rules-seed.js";
 import type * as DbClient from "../packages/db/dist/client.js";
 import type * as EskomLocationsSeed from "../packages/db/dist/eskom-locations-seed.js";
 import type * as HierarchySeed from "../packages/db/dist/hierarchy-seed.js";
@@ -31,9 +32,12 @@ const { assignEskomAssetRtus, DOMAIN_RTU_SUFFIX, ensureEskomDomainRtus, simRtuCo
 const { seedSiteControlRoomViews } = require_(
   "../packages/db/dist/site-control-room-views-seed.js",
 ) as typeof SiteControlRoomViewsSeed;
-const { readEskomChecks } = require_(
+const { readEskomChecks, UNCOVERED_ELECTRICAL_LABEL } = require_(
   "../packages/db/dist/verify-hierarchy-seed.js",
 ) as typeof VerifyHierarchySeed;
+const { ESKOM_LADDER_RULES, seedEskomLadderRules } = require_(
+  "../packages/db/dist/automation-rules-seed.js",
+) as typeof AutomationRulesSeed;
 const { mapLocationRowsForInsert } = require_("../packages/db/dist/map-locations-seed.js") as typeof MapLocationsSeed;
 const { pheMapLocationRowsForInsert } = require_("../packages/db/dist/phe-map-seed.js") as typeof PheMapSeed;
 const { createDb } = require_("../packages/db/dist/client.js") as typeof DbClient;
@@ -557,6 +561,93 @@ describe.skipIf(!ownerUrl)("F4.169/F4.170 addendum 3 — which row is a seed ide
       // Mutation: ensureEskomDomainRtus without the skip writes RTUs under
       // the admin's code.
       expect(await rtusUnder(pool, decomm as string, patched)).toBe(0);
+    });
+  }, 60_000);
+
+  // ── Section 3 / owner ruling 19: covered means what guard 1 means ────────
+
+  it("U19: an asset whose five ladder conditions are held by published, disabled operator rules is covered", async () => {
+    await inEskomTransaction(async (pool, db) => {
+      const host = await rsmocWcId(pool);
+      const before = actualOf(await readEskomChecks(pool, eskomOrgId, { log: () => undefined }), UNCOVERED_ELECTRICAL_LABEL);
+      const insertAsset = async (code: string): Promise<string> => {
+        const inserted = await pool.query<{ id: string }>(
+          `INSERT INTO bms.assets (organization_id, location_id, code, name, site_name, domain)
+           VALUES ($1, $2, $3, 'F4.169 fixture asset', 'F4.169 fixture', 'electrical')
+           RETURNING id`,
+          [eskomOrgId, host, code],
+        );
+        return inserted.rows[0]?.id as string;
+      };
+      const held = await insertAsset(`F4169-${RUN_ID}-HELD`);
+      for (const rule of ESKOM_LADDER_RULES) {
+        await pool.query(
+          `INSERT INTO bms.automation_rules
+             (organization_id, code, name, rule_type, asset_id, point_key, operator, threshold_value,
+              enabled, lifecycle_status)
+           VALUES ($1, $2, 'F4.169 fixture published disabled rule', 'threshold', $3, $4, $5, $6, false, 'published')`,
+          [eskomOrgId, `F4169_${RUN_ID}_OFF_${rule.suffix}`, held, rule.pointKey, rule.operator, rule.thresholdValue],
+        );
+      }
+      await seedEskomLadderRules(db, eskomOrgId, () => undefined);
+      const ladder = await pool.query<{ n: number }>(
+        `SELECT COUNT(*)::int AS n FROM bms.automation_rules WHERE asset_id = $1 AND source = 'simulator_threshold'`,
+        [held],
+      );
+      assert(ladder.rows[0]?.n === 0, "guard 1 must skip all five ladder rules on the held asset");
+      const checks = await readEskomChecks(pool, eskomOrgId, { log: () => undefined });
+      // Mutation: the check back on "no simulator_threshold rule" counts it (+1).
+      expect(actualOf(checks, UNCOVERED_ELECTRICAL_LABEL), "the held asset is covered").toBe(before);
+    });
+  }, 60_000);
+
+  it("U19: an asset with no rule and no collision still counts (the ESK-MANUAL-01 class)", async () => {
+    await inEskomTransaction(async (pool) => {
+      const host = await rsmocWcId(pool);
+      const before = actualOf(await readEskomChecks(pool, eskomOrgId, { log: () => undefined }), UNCOVERED_ELECTRICAL_LABEL);
+      await pool.query(
+        `INSERT INTO bms.assets (organization_id, location_id, code, name, site_name, domain)
+         VALUES ($1, $2, $3, 'F4.169 fixture bare asset', 'F4.169 fixture', 'electrical')`,
+        [eskomOrgId, host, `F4169-${RUN_ID}-BARE`],
+      );
+      const checks = await readEskomChecks(pool, eskomOrgId, { log: () => undefined });
+      // Mutation: a check that counts no asset reads the baseline.
+      expect(actualOf(checks, UNCOVERED_ELECTRICAL_LABEL)).toBe(before + 1);
+    });
+  }, 60_000);
+
+  it("U19: an asset that lost one condition to a draft-only hold counts", async () => {
+    await inEskomTransaction(async (pool) => {
+      const host = await rsmocWcId(pool);
+      const before = actualOf(await readEskomChecks(pool, eskomOrgId, { log: () => undefined }), UNCOVERED_ELECTRICAL_LABEL);
+      const inserted = await pool.query<{ id: string }>(
+        `INSERT INTO bms.assets (organization_id, location_id, code, name, site_name, domain)
+         VALUES ($1, $2, $3, 'F4.169 fixture four-rule asset', 'F4.169 fixture', 'electrical')
+         RETURNING id`,
+        [eskomOrgId, host, `F4169-${RUN_ID}-FOUR`],
+      );
+      const asset = inserted.rows[0]?.id as string;
+      // Four ladder rules by suffix, and the fifth condition held only by a draft.
+      const [first, ...rest] = ESKOM_LADDER_RULES;
+      assert(first !== undefined, "the ladder must have rules");
+      for (const rule of rest) {
+        await pool.query(
+          `INSERT INTO bms.automation_rules
+             (organization_id, code, name, rule_type, source, asset_id, point_key, operator, threshold_value)
+           VALUES ($1, $2, 'F4.169 fixture ladder rule', 'threshold', 'simulator_threshold', $3, $4, $5, $6)`,
+          [eskomOrgId, `F4169_${RUN_ID}_FOUR_${rule.suffix}`, asset, rule.pointKey, rule.operator, rule.thresholdValue],
+        );
+      }
+      await pool.query(
+        `INSERT INTO bms.automation_rules
+           (organization_id, code, name, rule_type, asset_id, point_key, operator, threshold_value, lifecycle_status)
+         VALUES ($1, $2, 'F4.169 fixture draft', 'threshold', $3, $4, $5, $6, 'draft')`,
+        [eskomOrgId, `F4169_${RUN_ID}_DRAFT_ONE`, asset, first.pointKey, first.operator, first.thresholdValue],
+      );
+      const checks = await readEskomChecks(pool, eskomOrgId, { log: () => undefined });
+      // Mutation: a covered test that also counts a draft, or one that reads
+      // "any simulator_threshold rule", reads the baseline.
+      expect(actualOf(checks, UNCOVERED_ELECTRICAL_LABEL)).toBe(before + 1);
     });
   }, 60_000);
 });

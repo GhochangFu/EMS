@@ -1,7 +1,7 @@
 import pg from "pg";
 
 import { PACK_ASSET_DOMAINS } from "./asset-domains-seed";
-import type { LadderCollisionSkip } from "./automation-rules-seed";
+import { type AssetRuleForLadder, type LadderCollisionSkip, ladderSuffixesNotHeld } from "./automation-rules-seed";
 import { findSeedLocation } from "./eskom-locations-seed";
 import { getOrganizationId } from "./hierarchy-seed";
 import { type HierarchyExpectations, hierarchyExpectations } from "./verify-hierarchy-expected";
@@ -247,20 +247,53 @@ export async function readEskomChecks(
   // (migration review, PR #100 -- the gap ESK-MANUAL-01 itself exposed). Read
   // as rows, not a count, so the assets `seedEskomLadderRules` reported as
   // collision skips can be exempted by id, and each exemption logged.
-  const uncovered = await pool.query<{ id: string; code: string }>(`
+  //
+  // Owner ruling 19: covered means what guard 1 and guard 2 mean
+  // (ladderSuffixesNotHeld): each of the five ladder conditions is held by a
+  // simulator_threshold rule with its suffix or by a published rule, enabled
+  // or not, of any source, with its tuple. An asset whose ladder rules the
+  // seed skipped because published operator rules hold the conditions is
+  // therefore covered; one with no rule at all (the ESK-MANUAL-01 class) is
+  // not.
+  const electrical = await pool.query<{ id: string; code: string }>(`
     SELECT a.id, a.code FROM bms.assets a
       INNER JOIN bms.locations l ON l.id = a.location_id
       INNER JOIN bms.organizations o ON o.id = l.organization_id
       WHERE o.code = 'ESKOM' AND a.domain = 'electrical'
-        AND NOT EXISTS (
-          SELECT 1 FROM bms.automation_rules r
-          WHERE r.asset_id = a.id AND r.source = 'simulator_threshold'
-        )
       ORDER BY a.code, a.id
   `);
+  const assetRules = await pool.query<{
+    asset_id: string;
+    code: string;
+    source: string;
+    lifecycle_status: string;
+    point_key: string | null;
+    operator: string | null;
+    threshold_value: number | null;
+  }>(
+    `SELECT asset_id, code, source, lifecycle_status, point_key, operator, threshold_value
+       FROM bms.automation_rules WHERE asset_id = ANY($1::uuid[])`,
+    [electrical.rows.map((asset) => asset.id)],
+  );
+  const rulesByAsset = new Map<string, AssetRuleForLadder[]>();
+  for (const rule of assetRules.rows) {
+    const list = rulesByAsset.get(rule.asset_id) ?? [];
+    list.push({
+      code: rule.code,
+      source: rule.source,
+      lifecycleStatus: rule.lifecycle_status,
+      pointKey: rule.point_key,
+      operator: rule.operator,
+      thresholdValue: rule.threshold_value,
+    });
+    rulesByAsset.set(rule.asset_id, list);
+  }
+  const uncovered = electrical.rows.filter(
+    (asset) => ladderSuffixesNotHeld(rulesByAsset.get(asset.id) ?? []).length > 0,
+  );
   const skippedIds = new Set(ladderCollisionSkips.map((skip) => skip.assetId));
   let uncoveredCount = 0;
-  for (const asset of uncovered.rows) {
+  for (const asset of uncovered) {
     if (skippedIds.has(asset.id)) {
       log(
         `verifyHierarchySeed: exempted ${asset.code} (${asset.id}) from "${UNCOVERED_ELECTRICAL_LABEL}": ` +

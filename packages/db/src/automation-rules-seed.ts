@@ -647,14 +647,57 @@ function conditionKey(
 export type LadderCollisionSkip = { readonly assetId: string; readonly assetCode: string };
 
 /**
+ * Guard 1's test: a rule with a ladder condition's tuple stands in for that
+ * ladder rule when it is published, enabled or not, of any source (owner
+ * ruling 18). A draft or an archived rule does not.
+ */
+export function standsInForLadderRule(lifecycleStatus: string): boolean {
+  return lifecycleStatus === "published";
+}
+
+/** One rule on an asset, as guards 1 and 2 and the boot gate read it. */
+export type AssetRuleForLadder = {
+  readonly code: string;
+  readonly source: string;
+  readonly lifecycleStatus: string;
+  readonly pointKey: string | null;
+  readonly operator: string | null;
+  readonly thresholdValue: number | null;
+};
+
+/**
+ * The ladder suffixes none of `assetRules` (one asset's rules) holds, by the
+ * definition {@link seedEskomLadderRules} skips a ladder rule on (owner
+ * ruling 19): a `simulator_threshold` rule whose code ends with the suffix
+ * (guard 2), or a rule that {@link standsInForLadderRule} with the
+ * condition's tuple (guard 1). The boot gate's uncovered-asset check counts
+ * an asset for which this is not empty.
+ */
+export function ladderSuffixesNotHeld(assetRules: readonly AssetRuleForLadder[]): LadderSuffix[] {
+  return ESKOM_LADDER_RULES.filter(
+    (rule) =>
+      !assetRules.some(
+        (held) =>
+          (held.source === "simulator_threshold" && ladderSuffixOf(held.code) === rule.suffix) ||
+          (standsInForLadderRule(held.lifecycleStatus) &&
+            held.pointKey === rule.pointKey &&
+            held.operator === rule.operator &&
+            held.thresholdValue === rule.thresholdValue),
+      ),
+  ).map((rule) => rule.suffix);
+}
+
+/**
  * Seeds the ESKOM ladder onto every electrical asset, skipping any of the
- * five rules wherever that asset already carries a published, enabled rule
- * with the same `(asset_id, point_key, operator, threshold_value)` condition
- * — `0033`'s own condition-tuple `NOT EXISTS` guard, for all five rules and
- * not just `DEMAND_HIGH`, less the rules that cannot fire (owner ruling 15).
- * That is what keeps `UPS-A`'s `demand_ceiling_notify` (seeded above by
- * `seedDemoRules`) from getting a duplicate `ESKOM_UPS_A_DEMAND_HIGH` beside
- * it.
+ * five rules wherever that asset already carries a published rule, enabled
+ * or not, with the same `(asset_id, point_key, operator, threshold_value)`
+ * condition — `0033`'s own condition-tuple `NOT EXISTS` guard, for all five
+ * rules and not just `DEMAND_HIGH`, less drafts and archived rules (owner
+ * rulings 15 and 18). That is what keeps `UPS-A`'s `demand_ceiling_notify`
+ * (seeded above by `seedDemoRules`) from getting a duplicate
+ * `ESKOM_UPS_A_DEMAND_HIGH` beside it — while that rule is published. An
+ * administrator who archives it, or edits its condition, gets the ladder's
+ * `ESKOM_UPS_A_DEMAND_HIGH` on the next boot.
  *
  * Code review and migration review, PR #100: an earlier draft keyed only
  * `DEMAND_HIGH` on the condition tuple and left the other four on
@@ -677,9 +720,10 @@ export type LadderCollisionSkip = { readonly assetId: string; readonly assetCode
  * runs three guards, in order, and never updates a stored code:
  *
  * 1. **Condition tuple** (above), first, for the `UPS-A`
- *    `demand_ceiling_notify` case. Only a rule that is published and enabled
- *    counts, of any source (owner ruling 15): five draft operator rules with
- *    the ladder's tuples used to leave an asset with no ladder rule at all.
+ *    `demand_ceiling_notify` case. Only a published rule counts, enabled or
+ *    not, of any source ({@link standsInForLadderRule}, owner ruling 18): five
+ *    draft operator rules with the ladder's tuples used to leave an asset with
+ *    no ladder rule at all.
  * 2. **Asset and suffix.** The asset already carries a
  *    `source = 'simulator_threshold'` rule whose code's `_`-delimited tail
  *    is this rule's suffix ({@link ladderSuffixOf}). `asset_id` keeps
@@ -711,14 +755,15 @@ export type LadderCollisionSkip = { readonly assetId: string; readonly assetCode
  *
  * The function returns one {@link LadderCollisionSkip} per asset that lost
  * at least one rule to guard 3. `seed.ts` hands the list to
- * `verifyHierarchySeed`, whose check for ESKOM electrical assets with no
- * `simulator_threshold` rule exempts exactly those assets, by id, and logs
- * one line for each asset it exempts, so a rename-and-reuse boots. An
- * uncovered asset that is not on the list — one with no collision — still
- * stops the boot, and the `verify:hierarchy` CLI, which passes no list,
- * fails on every uncovered asset. The check reads only assets with no ladder
- * rule at all: a victim that lost fewer than five is not in it, and the
- * `log` line is the only record of that loss.
+ * `verifyHierarchySeed`, whose uncovered-asset check exempts exactly those
+ * assets, by id, and logs one line for each asset it exempts, so a
+ * rename-and-reuse boots. The check counts an asset when any of the five
+ * ladder conditions is held by neither guard 1 nor guard 2
+ * ({@link ladderSuffixesNotHeld}, owner ruling 19), so a victim that lost
+ * even one rule to guard 3 is uncovered, and exempt only because it is on
+ * the list. An uncovered asset that is not on the list — one with no
+ * collision — still stops the boot, and the `verify:hierarchy` CLI, which
+ * passes no list, fails on every uncovered asset.
  *
  * One residual remains outside this function. `updateRule`
  * (`apps/api/src/rules/rules.service.ts`) accepts a new `code` for a
@@ -765,13 +810,12 @@ export async function seedEskomLadderRules(
       pointKey: automationRules.pointKey,
       operator: automationRules.operator,
       thresholdValue: automationRules.thresholdValue,
-      enabled: automationRules.enabled,
       lifecycleStatus: automationRules.lifecycleStatus,
     })
     .from(automationRules);
-  // Guard 1 counts a rule only while it can fire: published AND enabled, of
-  // any source (owner ruling 15). A draft, archived or disabled rule with a
-  // ladder tuple no longer stands in for the ladder rule.
+  // Guard 1 counts a published rule, enabled or not, of any source (owner
+  // ruling 18, which superseded the "enabled" half of ruling 15). A draft or
+  // archived rule with a ladder tuple does not stand in for the ladder rule.
   const existingConditions = new Set(
     existingRows
       .filter(
@@ -780,11 +824,9 @@ export async function seedEskomLadderRules(
           pointKey: string;
           operator: string;
           thresholdValue: number;
-          enabled: boolean;
           lifecycleStatus: string;
         } =>
-          row.enabled &&
-          row.lifecycleStatus === "published" &&
+          standsInForLadderRule(row.lifecycleStatus) &&
           row.assetId !== null &&
           row.pointKey !== null &&
           row.operator !== null &&
