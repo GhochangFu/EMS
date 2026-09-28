@@ -31,6 +31,9 @@ const RUN = randomUUID().slice(0, 8);
 
 const WATER_TRAIN_KEYS = MIMIC_PRESETS.water_train.nodes.map((node) => node.key);
 
+/** The wtp member's one open alarm: `critical`, raised an hour before the transaction's `now()`. */
+const OPEN_ALARM_MESSAGE = "F3.32 open alarm";
+
 interface Train {
   readonly organizationId: string;
   readonly dashboardId: string;
@@ -215,11 +218,13 @@ async function seedTrain(client: pg.PoolClient): Promise<Train> {
   // below reads against.
   await attachRankedPoints(roEarlierId);
 
+  // The cleared alarm is the NEWER of the two at the same severity (`F3.32b`), so a top-alarm
+  // read that forgets `cleared_at IS NULL` picks it rather than tying.
   await client.query(
     `INSERT INTO bms.alarms (organization_id, asset_id, severity, message, raised_at, cleared_at)
-     VALUES ($1, $2, 'critical', 'F3.32 open alarm', now(), NULL),
+     VALUES ($1, $2, 'critical', $3, now() - interval '1 hour', NULL),
             ($1, $2, 'critical', 'F3.32 cleared alarm', now(), now())`,
-    [site.organizationId, wtpId],
+    [site.organizationId, wtpId, OPEN_ALARM_MESSAGE],
   );
 
   const dashboardId = await seedDashboard(client, site, group.id);
@@ -399,6 +404,70 @@ export async function assertBadConfigWidgetIsSkipped(client: pg.PoolClient): Pro
   await seedMimicWidget(client, train.organizationId, train.dashboardId, { source: "preset", preset: "gas_train" }, 6);
   const dto = await readTrain(client, train);
   expect(dto.widgets.map((widget) => widget.preset)).toEqual(["water_train"]);
+}
+
+// ---------------------------------------------------------------- F3.32b top-alarm cases
+
+/**
+ * A1 — `F3.32b` (ADR 0079 Amendment 2 item 3): with a NEWER open `warning` beside the older open
+ * `critical`, the wtp node's top alarm is the `critical` one — severity rank first, `raised_at`
+ * second. An order by `raised_at` alone answers the warning.
+ */
+export async function assertTopAlarmIsTheMostSevere(client: pg.PoolClient): Promise<void> {
+  const train = await seedTrain(client);
+  await client.query(
+    `INSERT INTO bms.alarms (organization_id, asset_id, severity, message, raised_at, cleared_at)
+     VALUES ($1, $2, 'warning', 'F3.32b newer warning', now(), NULL)`,
+    [train.organizationId, train.wtpId],
+  );
+  const nowMs = await txNowMs(client);
+  const dto = await readTrain(client, train);
+  expect(nodeOf(dto, "wtp").topAlarm).toEqual({
+    severity: "critical",
+    message: OPEN_ALARM_MESSAGE,
+    raisedAt: new Date(nowMs - 3_600_000).toISOString(),
+  });
+}
+
+/**
+ * A2 — the fixture's cleared `critical` is newer than its open `critical`, so the top alarm is the
+ * open one only while `cleared_at IS NULL` holds.
+ */
+export async function assertClearedAlarmIsNeverTop(client: pg.PoolClient): Promise<void> {
+  const dto = await readTrain(client, await seedTrain(client));
+  expect(nodeOf(dto, "wtp").topAlarm?.message).toBe(OPEN_ALARM_MESSAGE);
+}
+
+/** A3 — the six roles no member carries answer `topAlarm: null`. */
+export async function assertUnassignedNodesHaveNoTopAlarm(client: pg.PoolClient): Promise<void> {
+  const dto = await readTrain(client, await seedTrain(client));
+  const unassigned = (dto.widgets[0]?.nodes ?? []).filter((node) => node.key !== "wtp" && node.key !== "ro");
+  expect(unassigned.map((node) => [node.key, node.topAlarm])).toEqual(
+    WATER_TRAIN_KEYS.filter((key) => key !== "wtp" && key !== "ro").map((key) => [key, null]),
+  );
+}
+
+/** A4 — the shown `ro` member is assigned but has no open alarm: `topAlarm: null`. */
+export async function assertAssignedNodeWithoutAlarmHasNoTopAlarm(client: pg.PoolClient): Promise<void> {
+  const dto = await readTrain(client, await seedTrain(client));
+  expect([nodeOf(dto, "ro").asset?.id !== undefined, nodeOf(dto, "ro").topAlarm]).toEqual([true, null]);
+}
+
+/**
+ * A5 — an open `critical` alarm stamped with ANOTHER organization but the wtp asset's id, and
+ * newer than the wtp's own, is never the top alarm: the lateral names `organization_id = $2`.
+ * (`bms.alarms` has a single-column asset FK, so the cross-tenant row is constructible.)
+ */
+export async function assertForeignOrganizationAlarmIsNeverTop(client: pg.PoolClient): Promise<void> {
+  const train = await seedTrain(client);
+  const foreign = await seedSite(client);
+  await client.query(
+    `INSERT INTO bms.alarms (organization_id, asset_id, severity, message, raised_at, cleared_at)
+     VALUES ($1, $2, 'critical', 'F3.32b foreign alarm', now(), NULL)`,
+    [foreign.organizationId, train.wtpId],
+  );
+  const dto = await readTrain(client, train);
+  expect(nodeOf(dto, "wtp").topAlarm?.message).toBe(OPEN_ALARM_MESSAGE);
 }
 
 // ---------------------------------------------------------------- forUser() cases
