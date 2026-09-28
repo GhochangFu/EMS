@@ -14,7 +14,7 @@ import { OPERATIONAL } from "../../components/system-status-indicator.spec";
 import { ApiError } from "../../lib/api-error";
 import { fromPreset, toWriteBody } from "../../lib/mimic-editor";
 import type { AuthUser } from "../../stores/auth-store";
-import { MimicLayoutEditorPage, STALE_LAYOUT_BANNER } from "./mimic-layout-editor-page";
+import { MimicLayoutEditorPage, STALE_LAYOUT_BANNER, STALE_SERVER_MESSAGE } from "./mimic-layout-editor-page";
 
 /**
  * `F3.32c` U6c — the mimic layout editor page, rendered: POST on a new layout with the
@@ -116,12 +116,19 @@ export async function saveWaitsForAnOrganization(): Promise<void> {
   expect(screen.getByRole("button", { name: "Save" })).toBeDisabled();
 }
 
-/** E4 — a stored layout PUTs with its id and the version it was loaded at. */
-export async function aStoredLayoutPutsWithItsVersion(): Promise<void> {
+/** E4a — a stored layout PUTs to its own id. */
+export async function aStoredLayoutPutsToItsId(): Promise<void> {
   const { replace } = renderAt(`/admin/mimic-layouts/${LAYOUT_ID}`);
   await save();
   await waitFor(() => expect(replace).toHaveBeenCalledTimes(1));
   expect(replace.mock.calls[0]?.[0]).toBe(LAYOUT_ID);
+}
+
+/** E4b — the PUT carries the version the layout was loaded at. */
+export async function aStoredLayoutPutsWithItsVersion(): Promise<void> {
+  const { replace } = renderAt(`/admin/mimic-layouts/${LAYOUT_ID}`);
+  await save();
+  await waitFor(() => expect(replace).toHaveBeenCalledTimes(1));
   expect((replace.mock.calls[0]?.[1] as { version: number }).version).toBe(4);
 }
 
@@ -138,7 +145,7 @@ export async function theNextSaveCarriesTheNewVersion(): Promise<void> {
 /** E6 — a 409 on save shows the Reload banner. */
 export async function aStaleSaveShowsTheReloadBanner(): Promise<void> {
   const { replace } = renderAt(`/admin/mimic-layouts/${LAYOUT_ID}`);
-  replace.mockRejectedValue(new ApiError(JSON.stringify({ message: "stale", statusCode: 409 }), 409));
+  replace.mockRejectedValue(new ApiError(JSON.stringify({ message: STALE_SERVER_MESSAGE, statusCode: 409 }), 409));
   await save();
   expect(await screen.findByText(STALE_LAYOUT_BANNER)).toBeInTheDocument();
 }
@@ -146,7 +153,7 @@ export async function aStaleSaveShowsTheReloadBanner(): Promise<void> {
 /** E7 — Reload reads the layout again and clears the banner. */
 export async function reloadReadsTheLayoutAgain(): Promise<void> {
   const { replace, fetchOne } = renderAt(`/admin/mimic-layouts/${LAYOUT_ID}`);
-  replace.mockRejectedValue(new ApiError(JSON.stringify({ message: "stale", statusCode: 409 }), 409));
+  replace.mockRejectedValue(new ApiError(JSON.stringify({ message: STALE_SERVER_MESSAGE, statusCode: 409 }), 409));
   await save();
   await userEvent.click(await screen.findByRole("button", { name: "Reload" }));
   await waitFor(() => expect(screen.queryByText(STALE_LAYOUT_BANNER)).toBeNull());
@@ -168,6 +175,38 @@ export async function ctrlZUndoesTheLastAdd(): Promise<void> {
   expect(screen.getAllByTestId("mimic-editor-hit")).toHaveLength(1);
   fireEvent.keyDown(window, { key: "z", ctrlKey: true });
   await waitFor(() => expect(screen.queryAllByTestId("mimic-editor-hit")).toHaveLength(0));
+}
+
+const SLUG_TAKEN = 'A layout with slug "stored-plant" already exists in this organization';
+
+function slugTaken(replace: Stubs["replace"]): void {
+  replace.mockRejectedValue(new ApiError(JSON.stringify({ message: SLUG_TAKEN, statusCode: 409 }), 409));
+}
+
+/** E11 — a slug 409 on PUT is an ordinary error: its sentence is shown. */
+export async function aSlugConflictShowsItsSentence(): Promise<void> {
+  const { replace } = renderAt(`/admin/mimic-layouts/${LAYOUT_ID}`);
+  slugTaken(replace);
+  await save();
+  expect((await screen.findByRole("alert")).textContent).toBe(SLUG_TAKEN);
+}
+
+/** E12 — a slug 409 shows no Reload banner. */
+export async function aSlugConflictShowsNoReloadBanner(): Promise<void> {
+  const { replace } = renderAt(`/admin/mimic-layouts/${LAYOUT_ID}`);
+  slugTaken(replace);
+  await save();
+  await screen.findByText(SLUG_TAKEN);
+  expect(screen.queryByText(STALE_LAYOUT_BANNER)).toBeNull();
+}
+
+/** E13 — after a slug 409, Save stays enabled: the author edits the slug and saves again. */
+export async function aSlugConflictLeavesSaveEnabled(): Promise<void> {
+  const { replace } = renderAt(`/admin/mimic-layouts/${LAYOUT_ID}`);
+  slugTaken(replace);
+  await save();
+  await screen.findByText(SLUG_TAKEN);
+  expect(screen.getByRole("button", { name: "Save" })).toBeEnabled();
 }
 
 /** E10 — a location_admin gets the status line and no read. */

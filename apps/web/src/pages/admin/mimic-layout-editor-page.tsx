@@ -29,7 +29,13 @@ import { MIMIC_LAYOUTS_QUERY_KEY } from "./mimic-layouts-page";
 
 type MimicLayoutEditorPageProps = { user: AuthUser };
 
-/** The sentence a stale save shows; the server's own is `MIMIC_LAYOUT_STALE_MESSAGE`. */
+/**
+ * The API's `MIMIC_LAYOUT_STALE_MESSAGE` (`mimic-layouts.schema.ts`, frozen by plan §3). It is
+ * restated, not imported: it lives in `apps/api`, which the web does not depend on.
+ */
+export const STALE_SERVER_MESSAGE = "the layout changed since it was loaded; reload and apply the edit again";
+
+/** The sentence a stale save shows. */
 export const STALE_LAYOUT_BANNER = "This layout was changed by someone else since you opened it. Reload it and apply your edit again.";
 
 /**
@@ -143,7 +149,10 @@ function StoredLayoutEditor({ layoutId }: { layoutId: string }) {
       await queryClient.invalidateQueries({ queryKey: MIMIC_LAYOUTS_QUERY_KEY, exact: true });
     },
     onError: (cause: Error) => {
-      if (cause instanceof ApiError && cause.status === 409) {
+      // A PUT answers 409 for two reasons: a stale version, and a slug another layout of the
+      // organization holds. Only the first needs a reload; the second is fixed by editing the
+      // slug, so it is shown as an ordinary error and Save stays enabled.
+      if (cause instanceof ApiError && cause.status === 409 && apiErrorMessage(cause) === STALE_SERVER_MESSAGE) {
         setStale(true);
       }
     },
