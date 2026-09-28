@@ -2,10 +2,11 @@
 
 ## Status
 
-Proposed — drafted on 2026-09-28, before any implementation code. The gate
-questions below go to the owner one at a time; each ruling is recorded under
-*Gate questions* as it lands. Nothing here is accepted until the owner approves
-this written record.
+Accepted — drafted on 2026-09-28, before any implementation code. Three gate
+questions and two open points were put to the owner one at a time; all five
+were ruled, and each ruling is recorded under *Gate questions* and
+*Consequences*. The owner reviewed and approved this written record on
+2026-09-28.
 
 Implements a first, narrow cut of row `F3.32` (plant / network mimic builder).
 The owner ruled the cut on 2026-09-28: **a fixed mimic widget, not a drawing
@@ -64,7 +65,7 @@ first option, and only one preset.
 
 ## Decision
 
-*Proposed. Each item is final only after its gate question is ruled.*
+
 
 1. **One new widget type, `mimic`.** `widgetTypeSchema` and
    `dashboard_widgets_widget_type_check` gain `mimic` together, in one change
