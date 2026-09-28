@@ -30,7 +30,8 @@ export type HostConfig = {
    * is gone; the default stays 9103 so a side-by-side run of two hosts (a future
    * `F1.10`/`E7.2` concern) still needs only one variable set.
    *
-   * The compose service sets this to 9102, which is the port it publishes.
+   * The compose service sets this to 9102 inside the container, and since
+   * `F4.61` publishes no port to the host (ADR 0016 Amendment 8, Decision 3).
    */
   readonly healthPort: number;
   /**
