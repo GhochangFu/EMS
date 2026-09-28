@@ -67,8 +67,9 @@ export type FormulaEditorProps = FormulaEditorRules & {
  * An `EditorView.theme` rather than a rule in `index.css`: it ships inside this
  * lazy chunk, so a page that never opens the Calculations tab never downloads
  * it. Every value is a role's `rgb(var(--role))` CSS string (ADR 0078 decision
- * 5, plan D4) — a theme object cannot carry a Tailwind class name, so this is
- * the one place in the tree that reads a role as a raw CSS string rather than
+ * 5, plan D4) — a theme object cannot carry a Tailwind class name, so this file
+ * joins `index.css`'s Leaflet rules, the login hero gradient and the CRAC
+ * gradient stops as a place that reads a role as a raw CSS string rather than
  * a class. `.cm-calc-function`'s `simulated-ink` is a **hue reuse, not a
  * semantic one** (OQ7): the role exists for simulated-value ink elsewhere in
  * the app, and this token borrows its violet for the unrelated reason that
