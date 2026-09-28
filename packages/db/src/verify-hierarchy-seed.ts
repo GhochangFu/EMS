@@ -205,8 +205,13 @@ export async function readGlobalChecks(
   return checks;
 }
 
-/** The label of the check that counts ESKOM electrical assets with no ladder rule. */
-export const UNCOVERED_ELECTRICAL_LABEL = "ESKOM electrical assets with no simulator_threshold rule";
+/**
+ * The label of the check that counts ESKOM electrical assets with a ladder
+ * condition no rule holds: neither a simulator_threshold rule with its suffix
+ * nor a published rule, enabled or not, with its tuple (owner ruling 19,
+ * {@link ladderSuffixesNotHeld}).
+ */
+export const UNCOVERED_ELECTRICAL_LABEL = "ESKOM electrical assets with a ladder condition no rule holds";
 
 export type EskomCheckOptions = {
   /**
@@ -477,10 +482,10 @@ export async function readEskomChecks(
   // silent no-op on a fresh database (it joins assets that only exist once
   // seed has already run, and seed runs after migrate). This is what would
   // have caught it — `automation-rules-seed.ts`'s `seedEskomLadderRules` is
-  // the seed-side source of truth now, so an asset with zero `simulator_
-  // threshold` rows here means it broke, not that a fresh database is merely
-  // missing a migration-only feature. A nonzero-total check alone would not
-  // have caught `ESK-MANUAL-01` being silently skipped — a total can stay
+  // the seed-side source of truth now, so an asset with a ladder condition
+  // that no rule holds here means it broke, not that a fresh database is
+  // merely missing a migration-only feature. A nonzero-total check alone would
+  // not have caught `ESK-MANUAL-01` being silently skipped — a total can stay
   // nonzero while one asset quietly loses all five of its rules.
   checks.push({ label: UNCOVERED_ELECTRICAL_LABEL, actual: uncoveredCount, wanted: 0, kind: "exact" });
   // `F2.8`. Presence counts over the ESKOM catalog's codes

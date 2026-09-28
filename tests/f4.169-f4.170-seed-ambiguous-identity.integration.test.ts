@@ -3,6 +3,7 @@ import { createRequire } from "node:module";
 
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
+import type * as AutomationRulesSeed from "../packages/db/dist/automation-rules-seed.js";
 import type * as DbClient from "../packages/db/dist/client.js";
 import type * as DemoUsersSeed from "../packages/db/dist/demo-users-seed.js";
 import type * as EskomLocationsSeed from "../packages/db/dist/eskom-locations-seed.js";
@@ -34,6 +35,9 @@ const { DOMAIN_RTU_SUFFIX, ensureEskomDomainRtus, simRtuCode } = require_(
 ) as typeof HierarchySeed;
 const { seedScopedDemoUsers } = require_("../packages/db/dist/demo-users-seed.js") as typeof DemoUsersSeed;
 const { readEskomChecks } = require_("../packages/db/dist/verify-hierarchy-seed.js") as typeof VerifyHierarchySeed;
+const { ESKOM_LADDER_RULES, seedEskomLadderRules } = require_(
+  "../packages/db/dist/automation-rules-seed.js",
+) as typeof AutomationRulesSeed;
 const { mapLocationRowsForInsert } = require_("../packages/db/dist/map-locations-seed.js") as typeof MapLocationsSeed;
 const { pheMapLocationRowsForInsert } = require_("../packages/db/dist/phe-map-seed.js") as typeof PheMapSeed;
 const { createDb } = require_("../packages/db/dist/client.js") as typeof DbClient;
@@ -41,7 +45,8 @@ const { createSeedPool } = require_("../packages/db/dist/seed-tenant.js") as typ
 
 /**
  * `F4.169` / `F4.170` addendum 4 section 3 — what the seed's later steps and
- * the boot gate do with an identity the location seed could not resolve.
+ * the boot gate do with an identity the location seed could not resolve, and
+ * the guard 1 log line (section 4).
  *
  * **No case calls `verifyHierarchySeed` or `withOrganization`** (both commit
  * on the seed pool's one connection). Each case is one `BEGIN`, the ESKOM GUC,
@@ -297,5 +302,56 @@ describe.skipIf(!ownerUrl)("F4.169/F4.170 addendum 4 — an ambiguous seed ident
       await client.query("ROLLBACK");
       client.release();
     }
+  }, 60_000);
+
+  // ── Guard 1's log line (section 4) ────────────────────────────────────────
+
+  /** An electrical asset at RSMOC-WC with the five ladder conditions held by published rules. */
+  async function heldAsset(pool: SeedPool, tag: string, enabled: boolean): Promise<string> {
+    const host = await keyedId(pool, "rsmoc-western-cape");
+    const inserted = await pool.query<{ id: string }>(
+      `INSERT INTO bms.assets (organization_id, location_id, code, name, site_name, domain)
+       VALUES ($1, $2, $3, 'F4.169 fixture asset', 'F4.169 fixture', 'electrical')
+       RETURNING id`,
+      [eskomOrgId, host, `F4169-${RUN_ID}-${tag}`],
+    );
+    const asset = inserted.rows[0]?.id as string;
+    for (const rule of ESKOM_LADDER_RULES) {
+      await pool.query(
+        `INSERT INTO bms.automation_rules
+           (organization_id, code, name, rule_type, asset_id, point_key, operator, threshold_value,
+            enabled, lifecycle_status)
+         VALUES ($1, $2, 'F4.169 fixture published rule', 'threshold', $3, $4, $5, $6, $7, 'published')`,
+        [eskomOrgId, `F4169_${RUN_ID}_${tag}_${rule.suffix}`, asset, rule.pointKey, rule.operator, rule.thresholdValue, enabled],
+      );
+    }
+    return asset;
+  }
+
+  it("G1-disabled: guard 1 logs one line per ladder rule it skips for a published, disabled rule", async () => {
+    await inEskomTransaction(async (pool, db) => {
+      const asset = await heldAsset(pool, "G1OFF", false);
+      const lines: string[] = [];
+      await seedEskomLadderRules(db, eskomOrgId, (line) => lines.push(line));
+      // Mutation "no log line": 0.
+      expect(lines.filter((line) => line.includes(asset)), "one line per skipped rule").toHaveLength(
+        ESKOM_LADDER_RULES.length,
+      );
+    });
+  }, 60_000);
+
+  it("G1-enabled: guard 1 logs nothing when an enabled published rule holds the condition", async () => {
+    await inEskomTransaction(async (pool, db) => {
+      const asset = await heldAsset(pool, "G1ON", true);
+      const lines: string[] = [];
+      await seedEskomLadderRules(db, eskomOrgId, (line) => lines.push(line));
+      const { rows } = await pool.query<{ n: number }>(
+        `SELECT COUNT(*)::int AS n FROM bms.automation_rules WHERE asset_id = $1 AND source = 'simulator_threshold'`,
+        [asset],
+      );
+      assert(rows[0]?.n === 0, "guard 1 must skip all five ladder rules on the held asset");
+      // Mutation "log on every guard 1 skip": five lines.
+      expect(lines.filter((line) => line.includes(asset))).toHaveLength(0);
+    });
   }, 60_000);
 });

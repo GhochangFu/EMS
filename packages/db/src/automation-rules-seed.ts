@@ -811,29 +811,27 @@ export async function seedEskomLadderRules(
       operator: automationRules.operator,
       thresholdValue: automationRules.thresholdValue,
       lifecycleStatus: automationRules.lifecycleStatus,
+      enabled: automationRules.enabled,
     })
     .from(automationRules);
   // Guard 1 counts a published rule, enabled or not, of any source (owner
   // ruling 18, which superseded the "enabled" half of ruling 15). A draft or
   // archived rule with a ladder tuple does not stand in for the ladder rule.
-  const existingConditions = new Set(
-    existingRows
-      .filter(
-        (row): row is {
-          assetId: string;
-          pointKey: string;
-          operator: string;
-          thresholdValue: number;
-          lifecycleStatus: string;
-        } =>
-          standsInForLadderRule(row.lifecycleStatus) &&
-          row.assetId !== null &&
-          row.pointKey !== null &&
-          row.operator !== null &&
-          row.thresholdValue !== null,
-      )
-      .map((row) => conditionKey(row.assetId, row.pointKey, row.operator, row.thresholdValue)),
-  );
+  // Each held condition maps to whether an enabled rule holds it, for the
+  // log line below.
+  const existingConditions = new Map<string, boolean>();
+  for (const row of existingRows) {
+    if (
+      standsInForLadderRule(row.lifecycleStatus) &&
+      row.assetId !== null &&
+      row.pointKey !== null &&
+      row.operator !== null &&
+      row.thresholdValue !== null
+    ) {
+      const key = conditionKey(row.assetId, row.pointKey, row.operator, row.thresholdValue);
+      existingConditions.set(key, (existingConditions.get(key) ?? false) || row.enabled);
+    }
+  }
 
   // `F4.169`: one read of the organization's rules, joined to their asset's
   // code for the collision warning. `automation_rules_org_code_idx` is
@@ -865,7 +863,16 @@ export async function seedEskomLadderRules(
   const collisionSkips = new Map<string, LadderCollisionSkip>();
   for (const asset of electricalAssets) {
     for (const rule of ESKOM_LADDER_RULES) {
-      if (existingConditions.has(conditionKey(asset.id, rule.pointKey, rule.operator, rule.thresholdValue))) {
+      const heldEnabled = existingConditions.get(conditionKey(asset.id, rule.pointKey, rule.operator, rule.thresholdValue));
+      if (heldEnabled !== undefined) {
+        // Addendum 4: a skip only a published, disabled rule causes is logged,
+        // since that asset raises no alarm on the condition until it is enabled.
+        if (!heldEnabled && !seededLadderRules.has(`${asset.id}::${rule.suffix}`)) {
+          log(
+            `seedEskomLadderRules: skipped ${ladderRuleCode(asset.code, rule.suffix)} for asset ${asset.code} ` +
+              `(${asset.id}): a published, disabled rule holds its condition`,
+          );
+        }
         continue;
       }
       if (seededLadderRules.has(`${asset.id}::${rule.suffix}`)) {
