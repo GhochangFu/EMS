@@ -6,7 +6,7 @@ import { describe, expect, it } from "vitest";
 import { CLASS_OVERRIDES, roleFor, SHADE_ROLES } from "./support/colour-role-map";
 import { webColourSourceFiles } from "./support/colour-scan";
 import { paletteClasses } from "./support/colour-scan";
-import { deltaE2000, parseTokenBlocks, resolveTailwindShade } from "./support/colour-tokens";
+import { blendOver, deltaE2000, parseTokenBlocks, resolveTailwindShade } from "./support/colour-tokens";
 import { repoRoot } from "./support/source-scan";
 
 /**
@@ -37,6 +37,13 @@ function roleLightHex(role: string): string {
   const [r, g, b] = channels;
   const to2 = (n: number) => n.toString(16).padStart(2, "0");
   return `#${to2(r)}${to2(g)}${to2(b)}`.toUpperCase();
+}
+
+/** The shade a palette class carries: `text-red-600` → `red-600`, `bg-bms-green-dark` → `bms-green-dark`. */
+function shadeOf(className: string): string {
+  const m = /^(?:bg|text|border(?:-[xytblrse])?|ring(?:-offset)?|fill|stroke|from|via|to)-(.+)$/.exec(className);
+  if (!m) throw new Error(`cannot read a shade from "${className}"`);
+  return m[1];
 }
 
 describe("F3.65a colour mapping table", () => {
@@ -96,11 +103,34 @@ describe("F3.65a colour mapping table", () => {
     const mismatches: string[] = [];
     for (const row of SHADE_ROLES) {
       if (row.kind !== "merged") continue;
-      const compareTo = row.compareHex ?? roleLightHex(row.role);
+      const compareTo = row.compareOver
+        ? blendOver(roleLightHex(row.role), roleLightHex(row.compareOver.over), row.compareOver.alpha)
+        : roleLightHex(row.role);
       const computed = Math.round(deltaE2000(row.hex, compareTo) * 100) / 100;
       if (computed !== row.deltaE) {
         mismatches.push(`${row.shade}: recorded ${row.deltaE}, computed ${computed}`);
       }
+    }
+    expect(mismatches).toEqual([]);
+  });
+
+  it("M2b every exact class override's role light token equals resolveTailwindShade(the class's shade)", () => {
+    const mismatches: string[] = [];
+    for (const [cls, override] of Object.entries(CLASS_OVERRIDES)) {
+      if (override.kind !== "exact") continue;
+      const expected = resolveTailwindShade(shadeOf(cls)).toUpperCase();
+      const actual = roleLightHex(override.role);
+      if (actual !== expected) mismatches.push(`${cls}: role "${override.role}" light is ${actual}, expected ${expected}`);
+    }
+    expect(mismatches).toEqual([]);
+  });
+
+  it("M3b every merged class override's recorded deltaE equals deltaE2000(the class's shade, role light hex) to 2dp", () => {
+    const mismatches: string[] = [];
+    for (const [cls, override] of Object.entries(CLASS_OVERRIDES)) {
+      if (override.kind !== "merged") continue;
+      const computed = Math.round(deltaE2000(resolveTailwindShade(shadeOf(cls)), roleLightHex(override.role)) * 100) / 100;
+      if (computed !== override.deltaE) mismatches.push(`${cls}: recorded ${override.deltaE}, computed ${computed}`);
     }
     expect(mismatches).toEqual([]);
   });

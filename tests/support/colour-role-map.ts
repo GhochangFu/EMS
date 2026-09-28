@@ -43,12 +43,13 @@ export type ShadeRoleRow = {
   deltaE?: number;
   altRoles?: string[];
   /**
-   * The hex a merged row's `deltaE` is measured against, when it is not the role's plain light
-   * value. `green-200`, `emerald-300` and `emerald-200` are used only as `<role>/20` opacity
-   * classes (§2.3's `` `accent/20` `` role text): their ΔE is against `accent` composited at 20%
-   * over `surface`, the colour actually rendered, not flat `accent`.
+   * What a merged row's `deltaE` is measured against, when it is not the role's plain light value.
+   * `green-200`, `emerald-300` and `emerald-200` are used only as `<role>/20` opacity classes
+   * (§2.3's `` `accent/20` `` role text): their ΔE is against `accent` composited at `alpha` over
+   * the `over` role's light value — the colour actually rendered, not flat `accent`. The test
+   * blends it from the real tokens (`blendOver`), so no composited hex is written down here.
    */
-  compareHex?: string;
+  compareOver?: { over: string; alpha: number };
 };
 
 export const SHADE_ROLES: ShadeRoleRow[] = [
@@ -107,7 +108,7 @@ export const SHADE_ROLES: ShadeRoleRow[] = [
   { shade: "gray-950", hex: "#030712", role: "chrome", kind: "merged", deltaE: 7.95 },
   { shade: "sky-100", hex: "#E0F2FE", role: "info-wash", kind: "merged", deltaE: 3.93 },
   { shade: "slate-200", hex: "#E2E8F0", role: "line", kind: "merged", deltaE: 2.23 },
-  { shade: "green-200", hex: "#BBF7D0", role: "accent", kind: "merged", deltaE: 8.1, compareHex: "#CCEDDC" },
+  { shade: "green-200", hex: "#BBF7D0", role: "accent", kind: "merged", deltaE: 8.1, compareOver: { over: "surface", alpha: 0.2 } },
   { shade: "green-50", hex: "#F0FDF4", role: "ok-wash", kind: "merged", deltaE: 1.48 },
   { shade: "green-900", hex: "#14532D", role: "ok-ink", kind: "merged", deltaE: 6.67 },
   { shade: "red-900", hex: "#7F1D1D", role: "critical-ink-strong", kind: "merged", deltaE: 5.44 },
@@ -116,7 +117,7 @@ export const SHADE_ROLES: ShadeRoleRow[] = [
   { shade: "purple-900", hex: "#581C87", role: "ink", kind: "merged", deltaE: 20.04 },
   { shade: "cyan-600", hex: "#0891B2", role: "info", kind: "merged", deltaE: 11.35 },
   { shade: "slate-600", hex: "#475569", role: "ink-muted", kind: "merged", deltaE: 1.85 },
-  { shade: "emerald-300", hex: "#6EE7B7", role: "accent", kind: "merged", deltaE: 14.54, compareHex: "#CCEDDC" },
+  { shade: "emerald-300", hex: "#6EE7B7", role: "accent", kind: "merged", deltaE: 14.54, compareOver: { over: "surface", alpha: 0.2 } },
   { shade: "orange-50", hex: "#FFF7ED", role: "warning-wash", kind: "merged", deltaE: 3.78 },
   { shade: "orange-700", hex: "#C2410C", role: "warning-ink", kind: "merged", deltaE: 15.63 },
   { shade: "slate-50", hex: "#F8FAFC", role: "well", kind: "merged", deltaE: 0.61 },
@@ -125,7 +126,7 @@ export const SHADE_ROLES: ShadeRoleRow[] = [
   { shade: "red-500", hex: "#EF4444", role: "critical", kind: "merged", deltaE: 7.64 },
   // §2.3 prints "≈ 2" for this row (its only inexact figure); computed CIEDE2000 is 1.96.
   { shade: "gray-800", hex: "#1F2937", role: "chrome", kind: "merged", deltaE: 1.96 },
-  { shade: "emerald-200", hex: "#A7F3D0", role: "accent", kind: "merged", deltaE: 9.14, compareHex: "#CCEDDC" },
+  { shade: "emerald-200", hex: "#A7F3D0", role: "accent", kind: "merged", deltaE: 9.14, compareOver: { over: "surface", alpha: 0.2 } },
   { shade: "indigo-200", hex: "#C7D2FE", role: "info-line", kind: "merged", deltaE: 14.0 },
   { shade: "indigo-100", hex: "#E0E7FF", role: "info-wash", kind: "merged", deltaE: 8.83 },
   { shade: "indigo-800", hex: "#3730A3", role: "info-ink", kind: "merged", deltaE: 17.73 },
@@ -134,7 +135,8 @@ export const SHADE_ROLES: ShadeRoleRow[] = [
   { shade: "violet-700", hex: "#6D28D9", role: "simulated-ink", kind: "exact" },
 ];
 
-export type ClassOverride = { role: string; kind: ShadeKind; altRoles?: string[] };
+/** `deltaE` is set on a merged override: CIEDE2000 from the class's shade to the role's light value. */
+export type ClassOverride = { role: string; kind: ShadeKind; deltaE?: number; altRoles?: string[] };
 
 /**
  * The class-level splits (§2.3 D1): a shade whose role depends on which utility carries it. Keys
@@ -147,15 +149,15 @@ export const CLASS_OVERRIDES: Record<string, ClassOverride> = {
   "bg-white": { role: "surface", kind: "exact", altRoles: ["on-dark"] },
   "fill-white": { role: "surface", kind: "exact" },
   "text-red-600": { role: "critical-ink-soft", kind: "exact" },
-  "text-gray-100": { role: "on-dark", kind: "merged" },
+  "text-gray-100": { role: "on-dark", kind: "merged", deltaE: 2.47 },
   "bg-bms-green-dark": { role: "accent-strong", kind: "exact", altRoles: ["chrome-nav"] },
   "ring-bms-green": { role: "focus", kind: "exact" },
   "text-amber-400": { role: "warning-on-dark", kind: "exact" },
   "bg-amber-400": { role: "warning-on-dark", kind: "exact" },
-  "ring-amber-400": { role: "warning", kind: "merged" },
-  "to-amber-400": { role: "warning", kind: "merged" },
-  "border-amber-300": { role: "warning-line", kind: "merged" },
-  "to-amber-300": { role: "warning", kind: "merged" },
+  "ring-amber-400": { role: "warning", kind: "merged", deltaE: 10.57 },
+  "to-amber-400": { role: "warning", kind: "merged", deltaE: 10.57 },
+  "border-amber-300": { role: "warning-line", kind: "merged", deltaE: 7.64 },
+  "to-amber-300": { role: "warning", kind: "merged", deltaE: 16.37 },
 };
 
 const COLOUR_UTILITY_PREFIX =
