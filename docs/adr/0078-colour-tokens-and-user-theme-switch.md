@@ -335,3 +335,54 @@ the classes emitted no CSS and the text showed at full white. They become
 `text-on-dark/70` and `text-on-dark/60`, so the hero paragraph and the stat
 labels now render at 70 % and 60 %. The gate now refuses an opacity
 modifier on a role class that is not a Tailwind opacity step.
+
+## Amendment 2 — the `F3.65b` migration (2026-09-28)
+
+The plan `docs/plans/f3.65b-pages-on-roles.md` (on Fable, measured at
+`349f26cb`) moved every stock-palette and `bms-*` colour class in
+`apps/web/src` to role classes: **2,997 uses in 137 files**, by a one-shot
+codemod `scripts/codemods/f3.65b-role-classes.ts`, driven by
+`tests/support/colour-role-map.ts` as the one mapping source, in six
+directory groups. `F3.65c` deletes the codemod.
+
+**1. The tallies.** Over the six groups: table rule 2,898 · `text-white →
+on-accent` (same class string as an opaque accent fill) 81 · `text-white →
+on-dark` 4 (on constant-dark fills: `rule-builder-panel.tsx:499`,
+`asset-template-detail-page.tsx:641`, `report-schedules.tsx:513`,
+`reports-panel.tsx:395`) · `focus` 1 · alpha target `border-accent/20` 4 ·
+hand table 9. **Merged shades applied: 110** — the 106 `F3.65a`-ruled
+merges plus 4 hand merges: `bg-bms-ink → bg-chrome` ×2 (ΔE 1.27) and
+`bg-gray-200 → bg-well-deep` ×2 (ΔE 2.94).
+
+**2. Owner rulings for `F3.65b`.** One PR. The two stray hex sites move in
+this row, no 42nd role: the tank-level outline `#8A94A6 → stroke-ink-hint`
+(ΔE 5.43) and the SLD board wrapper `bg-[#F7F8FA] → bg-well` (ΔE 0.66). The
+two `bg-bms-ink text-white` buttons become `bg-chrome text-on-dark` — a
+dark button in both themes. The two `bg-gray-100 text-gray-500` pills
+become `text-neutral-ink` (ΔE 17.65; `ink-faint` on `well-deep` was 4.32
+light / 4.04 dark). `palette` becomes a hard zero, gate case R20. The
+accent-button corollary `bg-accent text-on-accent hover:bg-accent-strong`
+is decision 2 applied (`on-accent` on `accent-strong` 5.32 light / 10.0
+dark).
+
+**3. A session decision beyond the plan's OQ4 pills.** The CRAC and SLD
+idle pills move `bg-gray-200 → bg-well-deep`, because `neutral-ink` on
+`line` is 4.15 in dark.
+
+**4. Contrast.** Three new declared pairs: `neutral-ink` on `canvas` 9.35
+light / 6.22 dark, `ink-muted` on `line` 6.18 / 5.38, `on-dark` at 0.4 over
+`chrome` (UI) 3.71 / 3.81. Two pairs are deliberately not declared, each
+with its reason in the contrast test's docblock: `ink-faint` on `line` in
+the SMOC offline boxes (an existing 3.50 failure in an 8 px SVG label that
+`F3.65c` recolours) and `critical-ink-soft` on `canvas` (no `text-red-600`
+shares a class string with a red wash). **The dark allowlist stays empty.**
+
+**5. `FLOOR` after `F3.65b`.** 305 files walked, 16 rows, palette 0 · hex
+188 · func 2 — all 16 are `F3.65c`'s files (the charts, the schematics, the
+formula editor, `WIDGET_TONE_COLOR`, the login hero).
+
+**6. What is not yet a defect.** Until `F3.65c` lands, the hex-coloured
+schematics and ECharts keep light colours on a dark surface — a known
+transient state, not a defect of this row, because the switch stays
+invisible until then (dark is reachable only via
+`localStorage["bms.theme"]`).
