@@ -105,6 +105,8 @@ function controllerWith(options: {
     service as unknown as ConstructorParameters<typeof DashboardBuilderController>[0],
     metricCatalog as unknown as ConstructorParameters<typeof DashboardBuilderController>[1],
     accessControl,
+    // `F3.32` — no case here reaches the mimic-nodes route; its own suite covers it.
+    {} as unknown as ConstructorParameters<typeof DashboardBuilderController>[3],
   );
   return { controller, service, metricCatalog };
 }

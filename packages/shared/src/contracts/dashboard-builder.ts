@@ -1,5 +1,7 @@
 import { z } from "zod";
 
+import type { TemplateAuthorableWidgetType } from "../asset-template-content";
+
 /**
  * `F3.1a` — the configurable-dashboard contract (ADR 0047).
  *
@@ -67,18 +69,19 @@ import { z } from "zod";
  */
 
 /**
- * The five widget types, closed (ADR 0047 decision 2; `"table"` added by ADR 0048 decision 5).
+ * The six widget types, closed (ADR 0047 decision 2; `"table"` added by ADR 0048 decision 5;
+ * `"mimic"` by ADR 0079 decision 1).
  *
- * **Two migrations declare this list, not one, and only the second is current.** `0050` froze
- * the original four in `dashboard_widgets_widget_type_check`; `F3.35` Stage B's `0055` drops
- * and re-adds that constraint with `table`. A committed migration is frozen by the pre-commit
- * hook, so `0050` still reads four and always will — which makes "match `0050`" the wrong
- * instruction and is why this sentence replaced it.
+ * **Three migrations declare this list, and only the last is current.** `0050` froze the
+ * original four in `dashboard_widgets_widget_type_check`; `F3.35` Stage B's `0055` dropped and
+ * re-added that constraint with `table`; `F3.32`'s `0086` does the same with `mimic`. A
+ * committed migration is frozen by the pre-commit hook, so `0050` still reads four and `0055`
+ * five, and always will.
  *
- * `tests/f3.35-table-widget-schema.test.ts` compares this enum against `0055`'s widened list,
- * and `tests/f3.1a-dashboard-schema.test.ts` keeps pinning `0050` to its historical four. Both
- * are correct at once: the first asks what the database enforces now, the second what that
- * migration froze then.
+ * `tests/f3.32-mimic-widget.test.ts` compares this enum against `0086`'s widened list;
+ * `tests/f3.35-table-widget-schema.test.ts` pins `0055` to its five and
+ * `tests/f3.1a-dashboard-schema.test.ts` pins `0050` to its four. All three are correct at
+ * once: the first asks what the database enforces now, the others what each migration froze.
  */
 export const widgetTypeSchema = z.enum([
   "radial_gauge",
@@ -86,6 +89,7 @@ export const widgetTypeSchema = z.enum([
   "value_tile",
   "chart",
   "table",
+  "mimic",
 ]);
 
 /**
@@ -359,6 +363,34 @@ export const tableConfigSchema = z.object({
 });
 
 /**
+ * The mimic presets, closed (`F3.32`, ADR 0079 decision 2). A preset is a drawing shipped in
+ * code — node positions, pipes and the role each node resolves — so a preset declared by data
+ * would name a picture nobody drew. v1 ships one. The definitions are `MIMIC_PRESETS` in
+ * `packages/shared/src/mimic-presets.ts`; the coordinates are the web renderer's.
+ */
+export const mimicPresetSchema = z.enum(["water_train"]);
+
+/**
+ * The `mimic` widget's config (`F3.32`, ADR 0079 decision 2).
+ *
+ * **No `commonConfigFields`, deliberately (plan D8).** A mimic draws several nodes, each with
+ * its own points and units, so one widget-level `unit` or `decimals` has nothing to apply to.
+ * Generic readers of those two fields guard with `"unit" in widget.config`.
+ *
+ * **`source` is a discriminator with one value today.** ADR 0079 decision 9 — the full mimic
+ * builder — adds a second arm beside this one, and this object then becomes one member of a
+ * `z.discriminatedUnion("source", …)`. A stored v1 widget already carries `source: "preset"`,
+ * so it never needs migrating.
+ *
+ * Flat, for the reason `valueTileConfigSchema`'s docblock gives: the write surface composes it
+ * with `.strict()`, and `.strict()` does not descend.
+ */
+export const mimicConfigSchema = z.object({
+  source: z.literal("preset"),
+  preset: mimicPresetSchema,
+});
+
+/**
  * Type and config as one value.
  *
  * **The discriminant is `widgetType`, which is the column, and it is stored once.**
@@ -373,6 +405,7 @@ export const dashboardWidgetSpecSchema = z.discriminatedUnion("widgetType", [
   z.object({ widgetType: z.literal("value_tile"), config: valueTileConfigSchema }),
   z.object({ widgetType: z.literal("chart"), config: chartConfigSchema }),
   z.object({ widgetType: z.literal("table"), config: tableConfigSchema }),
+  z.object({ widgetType: z.literal("mimic"), config: mimicConfigSchema }),
 ]);
 
 /**
@@ -438,6 +471,10 @@ export const WIDGET_POINT_CARDINALITY: Record<
   // `{min: 1, max: 1}` in `WIDGET_SOURCE_CARDINALITY` are the two halves of that one statement,
   // and together they make the exactly-one-binding-kind rule resolve to "a source, always".
   table: { min: 0, max: 0 },
+  // `F3.32` / ADR 0079. A mimic binds nothing: each node resolves at read time to the member of
+  // the dashboard's asset group carrying the node's role. `{0, 0}` here and in
+  // `WIDGET_SOURCE_CARDINALITY` is that statement, and `widgetTypeBindsNothing` names it.
+  mimic: { min: 0, max: 0 },
 };
 
 /**
@@ -468,7 +505,39 @@ export const WIDGET_SOURCE_CARDINALITY: Record<
   // bind a point INSTEAD of a metric, so its minimum is zero; a table has no second way to get
   // rows, so a table with no source is not a partially-authored widget but an empty card.
   table: { min: 1, max: 1 },
+  // `F3.32` — see `WIDGET_POINT_CARDINALITY.mimic`.
+  mimic: { min: 0, max: 0 },
 };
+
+/**
+ * A widget type that binds neither a point nor a catalog source (`F3.32`, ADR 0079).
+ *
+ * Derived from the two cardinality records rather than naming `"mimic"`, so the exception is a
+ * property of the numbers the write path already reads. `exactlyOneBindingKind` in
+ * `apps/api/src/dashboard-builder/dashboards.schema.ts` returns early on it — without that, a
+ * mimic's empty arrays read as "neither kind bound" and every save answers 400.
+ */
+export const widgetTypeBindsNothing = (type: z.infer<typeof widgetTypeSchema>): boolean =>
+  WIDGET_POINT_CARDINALITY[type].max === 0 && WIDGET_SOURCE_CARDINALITY[type].max === 0;
+
+/**
+ * A widget type an asset template can author: **fully bindable by point keys** (ADR 0048
+ * Amendment 1 ruling 1; the second clause is `F3.32`'s).
+ *
+ * Two clauses. A source minimum of zero, because a template has no way to carry a catalog
+ * source (`table` fails here). A point maximum above zero, because a template binds point keys
+ * and a type that binds nothing has nothing to carry — `mimic` fails here; it resolves from an
+ * asset group, and an asset template has none.
+ *
+ * A type predicate so the runtime rule carries back into the type system: the cardinality
+ * records are `Record<WidgetType, { min: number }>`, which no conditional type can read, so
+ * `TemplateAuthorableWidgetType`'s `Exclude` states the same rule at compile time and the
+ * specs hold the two together.
+ */
+export const isTemplateAuthorableWidgetType = (
+  type: z.infer<typeof widgetTypeSchema>,
+): type is TemplateAuthorableWidgetType =>
+  WIDGET_SOURCE_CARDINALITY[type].min === 0 && WIDGET_POINT_CARDINALITY[type].max > 0;
 
 /**
  * The two halves of the exactly-one-binding-kind rule, as message templates.
@@ -677,6 +746,8 @@ export const WIDGET_SOURCE_SHAPES: Record<
   // as well as `alarms.active` does, and would arrive at a renderer that draws rows with one
   // number and no columns. Refused here, on the write path, where the count is already refused.
   table: ["dataset"],
+  // `F3.32` — a mimic binds no catalog source.
+  mimic: [],
 };
 
 /**

@@ -30,6 +30,8 @@ import {
   assetGroupAdminOnItsOwnGroupSeesNoScopeReason,
   locationAdminOnAGroupDashboardIsAskedToChooseAScope,
   locationAdminOnAGroupDashboardSeesNoOutsideScopeReason,
+  movingAMimicDashboardOffItsGroupBlocksSave,
+  renamingAMimicDashboardOnItsGroupCanSave,
 } from "./dashboard-builder-edit-page.spec";
 
 /**
@@ -148,5 +150,13 @@ describe("F3.1d dashboard builder edit page", () => {
 
   it("a location_admin clamped onto an unchosen location sees no outside-scope line (F3.63 sweep, absence)", async () => {
     await locationAdminOnAGroupDashboardSeesNoOutsideScopeReason();
+  });
+
+  it("moving a mimic dashboard off its group blocks Save and says why (F3.32 review)", async () => {
+    await movingAMimicDashboardOffItsGroupBlocksSave();
+  });
+
+  it("renaming a mimic dashboard on its own group can save (F3.32 review, positive control)", async () => {
+    await renamingAMimicDashboardOnItsGroupCanSave();
   });
 });

@@ -38,6 +38,7 @@ import type * as He from "./contracts/health";
 import type * as Loc from "./contracts/location-types";
 import type * as Ms from "./contracts/mapping-sheet";
 import type * as Cv from "./contracts/metric-catalog-values";
+import type * as Mi from "./contracts/mimic";
 import type * as N from "./contracts/notifications";
 import type * as Ob from "./contracts/onboarding";
 import type * as Op from "./contracts/operations";
@@ -137,7 +138,7 @@ export type MapSiteLive = z.infer<typeof D.mapSiteLiveSchema>;
 export type MapSiteDto = z.infer<typeof D.mapSiteDtoSchema>;
 
 // --- Configurable dashboards (F3.1a, ADR 0047) ------------------------------
-/** The four widget types. Closed — a fifth ships a component, so it is a code change (§4.8). */
+/** The six widget types. Closed — a seventh ships a component, so it is a code change (§4.8). */
 export type WidgetType = z.infer<typeof Db.widgetTypeSchema>;
 /** The generic `chart` type's series: one component, four shapes (ADR 0047 decision 4). */
 export type ChartSeriesKind = z.infer<typeof Db.chartSeriesKindSchema>;
@@ -813,6 +814,15 @@ export type GeneratedSiteAssetDto = z.infer<typeof GSV.generatedSiteAssetSchema>
 export type GeneratedSiteDomainDto = z.infer<typeof GSV.generatedSiteDomainSchema>;
 export type GeneratedSiteViewDto = z.infer<typeof GSV.generatedSiteViewDtoSchema>;
 
+// `F3.32` / ADR 0079 — the fixed plant mimic widget: its preset vocabulary and config
+// (`contracts/dashboard-builder.ts`) and `GET /api/v1/dashboards/:id/mimic-nodes`
+// (`contracts/mimic.ts`). The preset topology is `./mimic-presets`, re-exported below.
+export type MimicPreset = z.infer<typeof Db.mimicPresetSchema>;
+export type MimicConfig = z.infer<typeof Db.mimicConfigSchema>;
+export type MimicNodeDto = z.infer<typeof Mi.mimicNodeSchema>;
+export type MimicWidgetNodesDto = z.infer<typeof Mi.mimicWidgetNodesSchema>;
+export type DashboardMimicNodesResponseDto = z.infer<typeof Mi.dashboardMimicNodesResponseSchema>;
+
 // ---------------------------------------------------------------------------
 // Re-exported sibling modules
 // ---------------------------------------------------------------------------
@@ -823,6 +833,9 @@ export type GeneratedSiteViewDto = z.infer<typeof GSV.generatedSiteViewDtoSchema
  * sit at the AGENTS.md §4.5 1000-line cap.
  */
 export type * from "./asset-template-content";
+
+/** `F3.32` / ADR 0079 — the mimic preset topology (plan D3). Code, not a contract. */
+export * from "./mimic-presets";
 
 /**
  * Ingest data contracts (ADR 0016 §8). Re-exported here, not only under the

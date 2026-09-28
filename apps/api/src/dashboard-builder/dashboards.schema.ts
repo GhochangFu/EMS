@@ -23,6 +23,8 @@ import {
   valueTileConfigSchema,
   widgetPointRoleSchema,
   metricCatalogKeySchema,
+  mimicConfigSchema,
+  widgetTypeBindsNothing,
   widgetTypeSchema,
   METRIC_CATALOG,
   columnNotDeclaredMessage,
@@ -70,6 +72,16 @@ import type { MetricCatalogKey } from "@bms/shared";
  */
 export const SCOPE_REFUSAL_MESSAGE =
   "at most one of locationId, assetGroupId or assetId may be set — all null is organization-wide";
+
+/**
+ * `F3.32` / ADR 0079 decision 4 — a `mimic` widget's every node resolves against ONE asset
+ * group's members (`bms.asset_roles`), so a `mimic` widget with no group to resolve against
+ * would draw every node "not assigned". `DashboardsService.putWidgets`/`update` and
+ * `DashboardTemplatesInstantiateService.instantiate` throw this same sentence, imported rather
+ * than restated — the same reason `SCOPE_REFUSAL_MESSAGE` above is exported and not copied.
+ */
+export const MIMIC_SCOPE_MESSAGE =
+  "a plant mimic needs an asset group — it draws one asset per role, resolved from the group's members";
 
 /**
  * `!= null`, not `!== null`, on all three: every field is `.nullable().optional()`, so an
@@ -466,7 +478,7 @@ const radialGaugeWriteConfigSchema = z
   );
 
 /**
- * The four arms, one per widget type. Each stays a plain `.strict()` `ZodObject` — never
+ * The arms, one per widget type (six since `F3.32`). Each stays a plain `.strict()` `ZodObject` — never
  * wrapped in its own `.refine()`/`.superRefine()` — because `z.discriminatedUnion` accepts only
  * `ZodObject` arms; the cross-widget grid-fit check lives on the ARRAY field in
  * `widgetsWriteFieldSchema` below instead of here, for exactly that reason.
@@ -523,6 +535,18 @@ export const widgetWriteSchema = z.discriminatedUnion("widgetType", [
       sources: sourcesFieldFor("table"),
     })
     .strict(),
+  // `F3.32` / ADR 0079. Binds nothing — both fields are capped at zero by the shared
+  // cardinality records, and `exactlyOneBindingKind` returns early on `widgetTypeBindsNothing`.
+  // `mimicConfigSchema` carries no `unit`/`decimals` (plan D8), so `.strict()` refuses them.
+  z
+    .object({
+      ...widgetIdentityWriteFields,
+      widgetType: z.literal("mimic"),
+      config: mimicConfigSchema.strict(),
+      points: pointsFieldFor("mimic"),
+      sources: sourcesFieldFor("mimic"),
+    })
+    .strict(),
 ]);
 
 const eachWidgetFitsTheGrid = (
@@ -568,10 +592,16 @@ const eachWidgetFitsTheGrid = (
  * as one problem.
  */
 const exactlyOneBindingKind = (
-  widgets: { widgetType: string; points: unknown[]; sources: unknown[] }[],
+  widgets: { widgetType: z.infer<typeof widgetTypeSchema>; points: unknown[]; sources: unknown[] }[],
   ctx: z.RefinementCtx,
 ): void => {
   widgets.forEach((widget, index) => {
+    // `F3.32` / ADR 0079 — a type that binds nothing has no kind to count. Its cardinality caps
+    // both arrays at zero already, so a stray binding is refused by `pointsFieldFor` /
+    // `sourcesFieldFor` rather than here.
+    if (widgetTypeBindsNothing(widget.widgetType)) {
+      return;
+    }
     if (widget.points.length === 0 && widget.sources.length === 0) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,

@@ -29,6 +29,7 @@ import {
 } from "./dashboards.schema";
 import { DashboardsService } from "./dashboards.service";
 import { MetricCatalogService } from "./metric-catalog.service";
+import { MimicNodesService } from "./mimic-nodes.service";
 
 const idParamSchema = z.string().uuid();
 
@@ -56,6 +57,7 @@ export class DashboardBuilderController {
     private readonly dashboards: DashboardsService,
     private readonly metricCatalog: MetricCatalogService,
     private readonly accessControl: AccessControlService,
+    private readonly mimicNodes: MimicNodesService,
   ) {}
 
   @Get()
@@ -84,6 +86,19 @@ export class DashboardBuilderController {
   @Get(":id/catalog-values")
   async catalogValues(@CurrentUser() user: JwtPayload, @Param("id") id: string) {
     return this.metricCatalog.catalogValues(user, parse(idParamSchema, id));
+  }
+
+  /**
+   * `F3.32` / ADR 0079 (plan D1) — every `mimic` widget on one dashboard, its preset nodes
+   * resolved against the dashboard's asset group at read time.
+   *
+   * **Declared BEFORE `@Get(":slug")`**, beside `catalog-values`, for the same reason
+   * (`tests/f3.32-mimic-widget.test.ts` holds the order). A read: no `assertOperationsWriteRole`;
+   * `readableOrganizationIds` and `readableAssetIds` gate it inside the service.
+   */
+  @Get(":id/mimic-nodes")
+  async mimicNodesFor(@CurrentUser() user: JwtPayload, @Param("id") id: string) {
+    return this.mimicNodes.forUser(user, parse(idParamSchema, id));
   }
 
   @Get(":slug")

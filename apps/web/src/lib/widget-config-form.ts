@@ -2,9 +2,9 @@ import {
   GAUGE_RANGE_MESSAGE,
   MAX_GAUGE_THRESHOLDS,
   MAX_WIDGET_WINDOW_MINUTES,
-  WIDGET_SOURCE_CARDINALITY,
   chartSeriesKindSchema,
   gaugeRangeIsOrdered,
+  isTemplateAuthorableWidgetType,
   pointAggregateFunctionSchema,
   widgetIconSchema,
   widgetToneSchema,
@@ -14,6 +14,7 @@ import { CHART_SERIES, WIDGET_CATALOG } from "./widget-catalog";
 import type {
   ChartSeriesKind,
   DashboardWidgetSpec,
+  MimicPreset,
   PointAggregateFunction,
   TemplateAuthorableWidgetType,
   WidgetIcon,
@@ -54,22 +55,23 @@ export const WIDGET_TYPES: readonly WidgetType[] = widgetTypeSchema.options;
  * that requires one cannot be authored there — the whole argument is in
  * `TemplateDashboardWidget`'s docblock in `packages/shared/src/asset-template-content.ts`.
  *
- * **Derived from `WIDGET_SOURCE_CARDINALITY`, not from a literal `["radial_gauge", …]` list**,
- * so a sixth widget type joins or is excluded by its own cardinality rather than by whether
- * somebody remembered this line. The type predicate is what carries the runtime rule back into
- * the type system: `WIDGET_SOURCE_CARDINALITY` is `Record<WidgetType, { min: number }>`, so no
- * conditional type can read `min`, and `TemplateAuthorableWidgetType` states the same exclusion
- * at compile time.
+ * **Derived from the cardinality records, not from a literal `["radial_gauge", …]` list**, so
+ * a new widget type joins or is excluded by its own cardinality rather than by whether somebody
+ * remembered this line. Since `F3.32` / ADR 0079 the rule is two clauses —
+ * `isTemplateAuthorableWidgetType` in `@bms/shared`: a source minimum of zero (`table` fails)
+ * AND a point maximum above zero (`mimic` fails). The type predicate carries the runtime rule
+ * back into the type system, and `TemplateAuthorableWidgetType` states the same exclusion at
+ * compile time.
  *
  * **`runTemplateWidgetTypeDerivationTests` in this file's spec holds the two together.** An
  * earlier version of this sentence cited `tests/f3.35-table-widget-schema.test.ts`, which does
  * not mention either symbol — it compares `widgetTypeSchema` to migration `0055`. The
  * correctness review caught the citation and the gap behind it: with nothing holding the
- * compile-time `Exclude` to this runtime predicate, changing `min === 0` to `max === 0` here
+ * compile-time `Exclude` to this runtime predicate, changing the predicate's `min === 0` to `max === 0`
  * silently drops `value_tile` from the template authoring UI with a fully green suite.
  */
 export const TEMPLATE_WIDGET_TYPES: readonly TemplateAuthorableWidgetType[] = WIDGET_TYPES.filter(
-  (type): type is TemplateAuthorableWidgetType => WIDGET_SOURCE_CARDINALITY[type].min === 0,
+  isTemplateAuthorableWidgetType,
 );
 
 /** `chartSeriesKindSchema.options` from `@bms/shared` — never restated. */
@@ -223,6 +225,14 @@ export type WidgetConfigRow = {
   // also what an absent `columns` means in the stored config — see
   // `buildTableConfig` for why the two must not both be representable there.
   tableColumns: string[];
+  // mimic — `F3.32` (ADR 0079). Absent means "not chosen", and it is not the
+  // enum's first value: with one preset in v1, a default of `water_train` would
+  // make a stored preset and a forgotten read-back look the same.
+  // `blankDashboardWidgetRow("mimic")` chooses the preset for a new row.
+  // Optional rather than `MimicPreset | ""` because `template-dashboard-form.ts`
+  // builds this row as a literal, and a template can never hold a mimic
+  // (`isTemplateAuthorableWidgetType`), so absent is the true value there.
+  mimicPreset?: MimicPreset;
 };
 
 export function blankConfigRow(): WidgetConfigRow {
@@ -328,6 +338,10 @@ export function widgetConfigErrors(
     if (config.yAxisLabel.trim().length > MAX_Y_AXIS_LABEL_LENGTH) {
       push("yAxisLabel", `A y-axis label is at most ${MAX_Y_AXIS_LABEL_LENGTH} characters.`);
     }
+  } else if (widget.widgetType === "mimic") {
+    if (config.mimicPreset === undefined) {
+      push("preset", "Choose which plant drawing this mimic shows.");
+    }
   }
 
   return problems;
@@ -338,6 +352,7 @@ type TankConfig = Extract<DashboardWidgetSpec, { widgetType: "tank_level" }>["co
 type TileConfig = Extract<DashboardWidgetSpec, { widgetType: "value_tile" }>["config"];
 type ChartConfig = Extract<DashboardWidgetSpec, { widgetType: "chart" }>["config"];
 type TableConfig = Extract<DashboardWidgetSpec, { widgetType: "table" }>["config"];
+type MimicConfig = Extract<DashboardWidgetSpec, { widgetType: "mimic" }>["config"];
 
 /** `unit`/`decimals` are common to every arm's config and are added only when
  * set — every config schema is `.optional()` on both and `.strict()`, so a
@@ -474,4 +489,22 @@ export function buildTableConfig(config: WidgetConfigRow): TableConfig {
     out.columns = [...config.tableColumns];
   }
   return out;
+}
+
+/**
+ * The `mimic` config (`F3.32`, ADR 0079 decision 2).
+ *
+ * **No `buildCommonConfig` spread (plan D8).** `mimicConfigSchema` carries no `unit` or
+ * `decimals` — a mimic draws several nodes, each with its own units — and the write surface is
+ * `.strict()`, so a `unit` left on the flat row would be a 400 the author cannot see.
+ *
+ * **Throws on an unchosen preset rather than writing an absent one.** `widgetConfigErrors` refuses that
+ * row first and the builder's Save is disabled while it does, so this is reached only by a
+ * caller that skipped validation — and failing there is better than a payload the API refuses.
+ */
+export function buildMimicConfig(config: WidgetConfigRow): MimicConfig {
+  if (config.mimicPreset === undefined) {
+    throw new Error("A mimic widget has no preset chosen; validate the row before building its payload.");
+  }
+  return { source: "preset", preset: config.mimicPreset };
 }

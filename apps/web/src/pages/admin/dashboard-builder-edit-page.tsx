@@ -26,11 +26,11 @@ import {
   dashboardBuilderErrors,
   dashboardBuilderProblemSubject,
   dashboardRowsFromDto,
+  offerableWidgetTypes,
   unselectedDashboardBuilderProblems,
   type DashboardWidgetRow,
 } from "../../lib/dashboard-builder-form";
 import { WIDGET_CATALOG } from "../../lib/widget-catalog";
-import { WIDGET_TYPES } from "../../lib/widget-config-form";
 import { AppShell } from "../../layouts/app-shell";
 import { PageHeader } from "../../components/page-header";
 import { SectionCard } from "../../components/section-card";
@@ -128,7 +128,7 @@ export function DashboardBuilderEditPage({ user }: DashboardBuilderEditPageProps
   });
   const assets: readonly ScopeAssetOption[] = (assetsQ.data ?? []).map((asset) => ({ id: asset.id, name: asset.name }));
 
-  const problems = dashboardBuilderErrors(rows);
+  const problems = dashboardBuilderErrors(rows, scope.kind);
   // Review finding — `WidgetInspector` (below) renders only the SELECTED widget's problems, so
   // a set-level problem or another widget's problem must surface somewhere else, or `Save`
   // disables with a reason nothing on the page shows.
@@ -301,7 +301,8 @@ export function DashboardBuilderEditPage({ user }: DashboardBuilderEditPageProps
               title="Widgets"
               actions={
                 <div className="flex flex-wrap gap-2">
-                  {WIDGET_TYPES.map((type) => (
+                  {/* `F3.32` — the live scope's kind, so a scope switch removes "Plant mimic" at once. */}
+                  {offerableWidgetTypes(scope.kind).map((type) => (
                     <button
                       key={type}
                       type="button"

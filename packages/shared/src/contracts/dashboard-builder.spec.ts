@@ -13,7 +13,10 @@ import {
   dashboardWidgetPointDtoSchema,
   dashboardWidgetSourceDtoSchema,
   dashboardWidgetSpecSchema,
+  isTemplateAuthorableWidgetType,
   metricCatalogKeySchema,
+  mimicConfigSchema,
+  mimicPresetSchema,
   pointAggregateFunctionSchema,
   radialGaugeConfigSchema,
   sustainabilityAggregateSchema,
@@ -21,6 +24,7 @@ import {
   waterBalancePeriodSchema,
   widgetIconSchema,
   widgetPointRoleSchema,
+  widgetTypeBindsNothing,
   widgetTypeSchema,
 } from "./dashboard-builder";
 import { metricCatalogValueDtoSchema } from "./metric-catalog-values";
@@ -57,15 +61,15 @@ export function runDashboardBuilderTests(): void {
   // over it.
   // -------------------------------------------------------------------------
   assert(
-    widgetTypeSchema.options.length === 5,
-    `the widget vocabulary is five types (ADR 0047 decision 4; ADR 0048 decision 5 added ` +
-      `"table"), got ${widgetTypeSchema.options.length}`,
+    widgetTypeSchema.options.length === 6,
+    `the widget vocabulary is six types (ADR 0047 decision 4; ADR 0048 decision 5 added ` +
+      `"table", ADR 0079 decision 1 added "mimic"), got ${widgetTypeSchema.options.length}`,
   );
   assert(
     JSON.stringify(widgetTypeSchema.options) ===
-      JSON.stringify(["radial_gauge", "tank_level", "value_tile", "chart", "table"]),
-    `widget types must match migration 0055's widened CHECK exactly — NOT 0050's, which froze ` +
-      `the original four and cannot be edited, got ${JSON.stringify(widgetTypeSchema.options)}`,
+      JSON.stringify(["radial_gauge", "tank_level", "value_tile", "chart", "table", "mimic"]),
+    `widget types must match migration 0086's widened CHECK exactly — NOT 0050's or 0055's, ` +
+      `which froze four and five and cannot be edited, got ${JSON.stringify(widgetTypeSchema.options)}`,
   );
 
   // Decision 4's generic type: one component, four series. This is the lever that keeps a
@@ -89,8 +93,44 @@ export function runDashboardBuilderTests(): void {
   // -------------------------------------------------------------------------
   expectRejects(
     dashboardWidgetSpecSchema,
-    { widgetType: "mimic", config: {} },
+    { widgetType: "heatmap", config: {} },
     "an undeclared widget type must be refused at the contract boundary",
+  );
+
+  // -------------------------------------------------------------------------
+  // `F3.32` / ADR 0079 — the sixth type. Its config names a preset, never a drawing: a
+  // preset outside the closed list is refused, and so is a config that names none.
+  // -------------------------------------------------------------------------
+  expectAccepts(
+    dashboardWidgetSpecSchema,
+    { widgetType: "mimic", config: { source: "preset", preset: "water_train" } },
+    "a mimic naming the water_train preset must parse",
+  );
+  expectRejects(
+    dashboardWidgetSpecSchema,
+    { widgetType: "mimic", config: { source: "preset", preset: "gas_train" } },
+    "a mimic naming a preset nobody has drawn must be refused",
+  );
+  expectRejects(
+    dashboardWidgetSpecSchema,
+    { widgetType: "mimic", config: {} },
+    "an empty mimic config must be refused — it names no drawing",
+  );
+  // The preset alone, without `source`: the only payload that isolates the discriminator, since
+  // `config: {}` above is refused by the missing preset whatever `source` says.
+  expectRejects(
+    dashboardWidgetSpecSchema,
+    { widgetType: "mimic", config: { preset: "water_train" } },
+    "a mimic config with no source must be refused — decision 9 discriminates on it",
+  );
+  assert(
+    JSON.stringify(mimicPresetSchema.options) === JSON.stringify(["water_train"]),
+    `the preset vocabulary is water_train alone (ADR 0079 decision 8), got ${JSON.stringify(mimicPresetSchema.options)}`,
+  );
+  expectRejects(
+    mimicConfigSchema,
+    { preset: "water_train" },
+    "mimicConfigSchema requires source — the discriminant decision 9 widens",
   );
 
   // -------------------------------------------------------------------------
@@ -348,7 +388,16 @@ export function runWidgetPointCardinalityTests(): void {
   // entire api suite green, because the only fixture touching it submitted a state the rule
   // ACCEPTS. A comment claiming a gate exists is worse than no comment, because it stops the
   // next reader looking. The cases exist now; this note stays as the reason they do.
+  //
+  // `F3.32` / ADR 0079 narrowed it by one named exception. A `mimic` binds neither kind: its
+  // nodes resolve at read time from the dashboard's asset group, so `{max: 0}` on both axes is
+  // its whole binding statement. `widgetTypeBindsNothing` is the predicate every surface reads
+  // for that exception, and the pin below keeps it to exactly one type — a second type reaching
+  // `{0, 0}` by accident is still the blank rectangle this loop exists to refuse.
   for (const widgetType of widgetTypeSchema.options) {
+    if (widgetTypeBindsNothing(widgetType)) {
+      continue;
+    }
     const bindable =
       WIDGET_POINT_CARDINALITY[widgetType].max + WIDGET_SOURCE_CARDINALITY[widgetType].max;
     assert(
@@ -356,6 +405,20 @@ export function runWidgetPointCardinalityTests(): void {
       `${widgetType} must be able to bind something, but allows 0 points and 0 sources`,
     );
   }
+  assert(
+    JSON.stringify(widgetTypeSchema.options.filter(widgetTypeBindsNothing)) ===
+      JSON.stringify(["mimic"]),
+    `exactly one widget type binds nothing (ADR 0079), got ` +
+      `${JSON.stringify(widgetTypeSchema.options.filter(widgetTypeBindsNothing))}`,
+  );
+  // The template predicate: bindable by point keys, which needs a source minimum of zero AND a
+  // point maximum above zero. `table` fails the first clause, `mimic` the second.
+  assert(
+    JSON.stringify(widgetTypeSchema.options.filter(isTemplateAuthorableWidgetType)) ===
+      JSON.stringify(["radial_gauge", "tank_level", "value_tile", "chart"]),
+    `template-authorable types are the four point-bound ones, got ` +
+      `${JSON.stringify(widgetTypeSchema.options.filter(isTemplateAuthorableWidgetType))}`,
+  );
 
   // The four values, pinned by name. Written against `MAX_WIDGET_POINTS` rather than against
   // `8`, so the pin does not become the third copy of that number.

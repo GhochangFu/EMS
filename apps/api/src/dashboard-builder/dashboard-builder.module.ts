@@ -7,6 +7,7 @@ import { DatabaseModule } from "../database/database.module";
 import { DashboardBuilderController } from "./dashboard-builder.controller";
 import { DashboardsService } from "./dashboards.service";
 import { MetricCatalogService } from "./metric-catalog.service";
+import { MimicNodesService } from "./mimic-nodes.service";
 
 /**
  * `F3.1b` — the dashboard read/write API (ADR 0047). Follows
@@ -31,6 +32,6 @@ import { MetricCatalogService } from "./metric-catalog.service";
 @Module({
   imports: [DatabaseModule, AuthModule, AssetHealthModule],
   controllers: [DashboardBuilderController],
-  providers: [DashboardsService, MetricCatalogService, MasterDataAuditService],
+  providers: [DashboardsService, MetricCatalogService, MasterDataAuditService, MimicNodesService],
 })
 export class DashboardBuilderModule {}

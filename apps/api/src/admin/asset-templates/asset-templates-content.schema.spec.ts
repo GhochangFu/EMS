@@ -1,6 +1,6 @@
 import {
   WIDGET_POINT_CARDINALITY,
-  WIDGET_SOURCE_CARDINALITY,
+  isTemplateAuthorableWidgetType,
   widgetTypeSchema,
 } from "@bms/shared";
 import type { TemplateAuthorableWidgetType } from "@bms/shared";
@@ -30,7 +30,7 @@ function parse(content: unknown): TemplateContentParsed {
   return result.data;
 }
 
-function rejects(content: unknown, message: string): void {
+export function rejects(content: unknown, message: string): void {
   assert(templateContentSchema.safeParse(content).success === false, message);
 }
 
@@ -483,9 +483,12 @@ export function runTemplateContentSchemaTests(): void {
   // is `Record<WidgetType, { min: number }>`, so `min` is `number` and no conditional type can
   // read it. `TemplateDashboardWidget`'s `Exclude` states the same rule at compile time; this
   // is what keeps the two agreeing when a sixth widget type arrives.
-  const templateAuthorable = widgetTypeSchema.options.filter(
-    (type) => WIDGET_SOURCE_CARDINALITY[type].min === 0,
-  );
+  //
+  // `F3.32` / ADR 0079 made the predicate two clauses: a source minimum of zero AND a point
+  // maximum above zero. The sixth type, `mimic`, binds nothing at all — it passes the first
+  // clause and has no point key to carry, so it is excluded by the second. The predicate is
+  // `isTemplateAuthorableWidgetType` in `@bms/shared`, read here rather than restated.
+  const templateAuthorable = widgetTypeSchema.options.filter(isTemplateAuthorableWidgetType);
   const armTypes = templateDashboardWidgetVariants.options.map(
     (option) => option.shape.widgetType.value,
   );
@@ -498,7 +501,7 @@ export function runTemplateContentSchemaTests(): void {
   assert(
     templateAuthorable.length > 0 && templateAuthorable.length < widgetTypeSchema.options.length,
     "the derivation must actually exclude something and keep something — if it excludes every " +
-      "type or none, WIDGET_SOURCE_CARDINALITY is not being read and this guard proves nothing",
+      "type or none, isTemplateAuthorableWidgetType is not reading the cardinality records and this guard proves nothing",
   );
   //
   // This block replaces two assertions that required `widgets` to be REFUSED.
@@ -543,7 +546,7 @@ export function runTemplateContentSchemaTests(): void {
       dashboards: {
         overview: {
           featured: ["A"],
-          widgets: [{ widgetType: "mimic", config: {}, pointKeys: ["A"], gridX: 0, gridY: 0, gridW: 2, gridH: 2 }],
+          widgets: [{ widgetType: "heatmap", config: {}, pointKeys: ["A"], gridX: 0, gridY: 0, gridW: 2, gridH: 2 }],
         },
       },
     },
@@ -760,9 +763,7 @@ export function runTemplateContentSchemaTests(): void {
   // carry one, and asserting that a template accepts a `table` would assert the opposite of
   // what this file decided. The derivation is the same one the arm check above uses, so the
   // two cannot disagree.
-  const templateAuthorableForLoop = widgetTypeSchema.options.filter(
-    (type): type is TemplateAuthorableWidgetType => WIDGET_SOURCE_CARDINALITY[type].min === 0,
-  );
+  const templateAuthorableForLoop = widgetTypeSchema.options.filter(isTemplateAuthorableWidgetType);
   let cardinalityLoopIterations = 0;
   for (const widgetType of templateAuthorableForLoop) {
     cardinalityLoopIterations += 1;
@@ -811,7 +812,7 @@ export function runTemplateContentSchemaTests(): void {
   // narrowing would be a convention that the runtime never enforced, and a template written by
   // hand would carry a widget no instantiated dashboard can bind.
   for (const widgetType of widgetTypeSchema.options) {
-    if (WIDGET_SOURCE_CARDINALITY[widgetType].min === 0) {
+    if (isTemplateAuthorableWidgetType(widgetType)) {
       continue;
     }
     rejects(
@@ -823,8 +824,8 @@ export function runTemplateContentSchemaTests(): void {
           },
         },
       },
-      `${widgetType} requires a catalog source, which a template cannot carry — it must be ` +
-        "refused here rather than instantiated into a card that can never render",
+      `${widgetType} cannot be bound by point keys, which is all a template carries — it must ` +
+        "be refused here rather than instantiated into a card that can never render",
     );
   }
 

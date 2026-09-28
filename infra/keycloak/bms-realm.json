@@ -125,6 +125,22 @@
       ]
     },
     {
+      "username": "ionx-admin@bms.local",
+      "email": "ionx-admin@bms.local",
+      "firstName": "Ion Exchange",
+      "lastName": "Demo Admin",
+      "enabled": true,
+      "emailVerified": true,
+      "realmRoles": ["organization_admin"],
+      "credentials": [
+        {
+          "type": "password",
+          "value": "admin123",
+          "temporary": false
+        }
+      ]
+    },
+    {
       "username": "operator@bms.local",
       "email": "operator@bms.local",
       "firstName": "BMS",

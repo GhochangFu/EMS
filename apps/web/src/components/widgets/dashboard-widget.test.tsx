@@ -17,6 +17,7 @@ import {
   everyCatalogTypeDrawsItsTitle,
   aValueTileWithAShortfallRendersTheCoverageNote,
   aValueTileWithFullCoverageRendersNoNote,
+  aMimicDispatchedWithoutItsReadDrawsThePresetUnresolved,
 } from "./dashboard-widget.spec";
 
 /**
@@ -76,6 +77,10 @@ describe("F3.1c widget rendering", () => {
 
   it("shows KpiTile's own stale note on a stale value tile", () => {
     aStaleReadyValueTileShowsKpiTilesOwnStaleNote();
+  });
+
+  it("F3.32 draws a mimic dispatched without its node read as the preset, every node unresolved", () => {
+    aMimicDispatchedWithoutItsReadDrawsThePresetUnresolved();
   });
 });
 

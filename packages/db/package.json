@@ -18,7 +18,8 @@
     "seed": "tsx src/seed.ts",
     "refresh-aggregates": "tsx src/refresh-aggregates.ts",
     "verify:hierarchy": "tsx src/verify-hierarchy-cli.ts",
-    "roles": "tsx src/roles.ts"
+    "roles": "tsx src/roles.ts",
+    "demo:ion-exchange": "tsx src/demo-ion-exchange-cli.ts"
   },
   "dependencies": {
     "@bms/shared": "workspace:*",

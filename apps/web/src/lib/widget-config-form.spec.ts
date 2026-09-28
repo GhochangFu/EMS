@@ -8,6 +8,7 @@ import {
   widgetToneSchema,
   widgetTypeSchema,
   MAX_GAUGE_THRESHOLDS,
+  WIDGET_POINT_CARDINALITY,
   WIDGET_SOURCE_CARDINALITY,
 } from "@bms/shared";
 import type { TemplateAuthorableWidgetType } from "@bms/shared";
@@ -28,6 +29,7 @@ import {
   blankConfigRow,
   buildChartConfig,
   buildGaugeConfig,
+  buildMimicConfig,
   buildTankConfig,
   buildTileConfig,
   widgetConfigErrors,
@@ -88,8 +90,12 @@ export function runVocabularyDerivationTests(): void {
  * everything, or nothing, would satisfy a one-sided check.
  */
 export function runTemplateWidgetTypeDerivationTests(): void {
+  // Two clauses since `F3.32` / ADR 0079, restated from the cardinality records rather than
+  // read from `isTemplateAuthorableWidgetType`, so this expectation is independent of the
+  // predicate it checks. `table` fails the first clause (a source is required); `mimic` fails
+  // the second (it binds no point, so a template has nothing to carry for it).
   const expected = widgetTypeSchema.options.filter(
-    (type) => WIDGET_SOURCE_CARDINALITY[type].min === 0,
+    (type) => WIDGET_SOURCE_CARDINALITY[type].min === 0 && WIDGET_POINT_CARDINALITY[type].max > 0,
   );
 
   assert(
@@ -245,4 +251,50 @@ export function runConfigBuilderTests(): void {
   assert(chartFull.windowMinutes === 60, "a set windowMinutes is sent as a number");
   assert(chartFull.stacked === true, "stacked is sent when true");
   assert(chartFull.yAxisLabel === "kW", "a set yAxisLabel is sent");
+}
+
+/** `F3.32` — a blank config row holds no preset. Absent is "not chosen", so a
+ * stored mimic's preset read back by `configRowFromDto` is distinguishable from the default: with
+ * the single-value enum defaulted instead, a round trip that forgets to read the preset still
+ * reads `water_train` and no assertion can tell. */
+export function runBlankConfigRowHoldsNoPresetTests(): void {
+  const row = blankConfigRow();
+  assert(row.mimicPreset === undefined, `a blank config row holds no preset — got ${JSON.stringify(row.mimicPreset)}`);
+}
+
+/** `F3.32` — a mimic with no preset chosen is a problem on the `preset` field. */
+export function runMimicPresetRequiredTests(): void {
+  const problems = widgetConfigErrors(0, 0, { widgetType: "mimic", config: blankConfigRow() });
+  assert(
+    problems.some((problem) => problem.field === "preset"),
+    `a mimic with no preset reports a preset problem — got ${JSON.stringify(problems)}`,
+  );
+}
+
+/** `F3.32` — the positive twin: a mimic with a preset and nothing else set has no problem. */
+export function runMimicWithPresetIsCleanTests(): void {
+  const problems = widgetConfigErrors(0, 0, {
+    widgetType: "mimic",
+    config: { ...blankConfigRow(), mimicPreset: "water_train" },
+  });
+  assert(problems.length === 0, `a mimic with a preset is clean — got ${JSON.stringify(problems)}`);
+}
+
+/** `F3.32` / plan D8 — the mimic config carries no `unit` or `decimals`, even when the flat row
+ * holds them (a type change cannot happen in the builder, but a row is one shape for all six). */
+export function runMimicConfigBuilderTests(): void {
+  const config = buildMimicConfig({ ...blankConfigRow(), mimicPreset: "water_train", unit: "kW", decimals: "2" });
+  assert(
+    JSON.stringify(Object.keys(config).sort()) === JSON.stringify(["preset", "source"]),
+    `a mimic config holds exactly preset and source — got ${JSON.stringify(config)}`,
+  );
+}
+
+/** `F3.32` — the two values the mimic config writes. */
+export function runMimicConfigValuesTests(): void {
+  const config = buildMimicConfig({ ...blankConfigRow(), mimicPreset: "water_train" });
+  assert(
+    config.source === "preset" && config.preset === "water_train",
+    `a mimic config is { source: "preset", preset } — got ${JSON.stringify(config)}`,
+  );
 }

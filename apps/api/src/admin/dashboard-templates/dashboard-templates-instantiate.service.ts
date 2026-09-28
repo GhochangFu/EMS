@@ -40,6 +40,7 @@ import { parseStoredContract } from "../../common/parse-stored-contract";
 import { FLEET_DRIZZLE, TENANT_DRIZZLE } from "../../database/database.tokens";
 import { withTenant } from "../../database/tenant-context";
 import { resolveBoundPoints } from "../../dashboard-builder/dashboard-point-scope";
+import { MIMIC_SCOPE_MESSAGE } from "../../dashboard-builder/dashboards.schema";
 import { MasterDataAuditService } from "../master-data-audit.service";
 import type { InstantiateSectionTemplateBody } from "./dashboard-templates.schema";
 import { DashboardTemplatesService } from "./dashboard-templates.service";
@@ -203,6 +204,21 @@ export class DashboardTemplatesInstantiateService {
      * the widgets below are planned from — so the guard cannot disagree with
      * what is about to be written.
      */
+    /**
+     * `F3.32` / ADR 0079 decision 4 — checked FIRST, and as its own guard rather than folded
+     * into the role-bindings one below. A `mimic` widget binds NO role at all (`widgetType`
+     * `mimic`'s `WIDGET_POINT_CARDINALITY`/`WIDGET_SOURCE_CARDINALITY` are both `{min:0,max:0}`,
+     * `F3.32` U0), so `content.widgets.some((w) => w.bindings.length > 0)` below would never see
+     * it — a mimic-only template would otherwise sail past the role-bindings guard and land
+     * organization-wide, where its nodes resolve against no group at all. The two guards throw
+     * different sentences on purpose: a caller who fixes "add an asset group" for the wrong
+     * reason still fixes it, but a test asserting on the WRONG message would never catch this
+     * guard being dropped.
+     */
+    if (body.assetGroupId === null && content.widgets.some((w) => w.widgetType === "mimic")) {
+      throw new BadRequestException(MIMIC_SCOPE_MESSAGE);
+    }
+
     if (body.assetGroupId === null && content.widgets.some((w) => w.bindings.length > 0)) {
       throw new BadRequestException("A template with role bindings needs an asset group");
     }

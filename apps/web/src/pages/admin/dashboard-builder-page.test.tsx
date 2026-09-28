@@ -5,6 +5,8 @@ import { cleanup } from "@testing-library/react";
 import { useAuthStore } from "../../stores/auth-store";
 import {
   addingAWidgetSelectsItForEditing,
+  aMimicLeftOnAnOrganizationScopeBlocksCreate,
+  aMimicOnAGroupScopeLeavesCreateEnabled,
   anUnselectedWidgetsProblemRendersInTheSummary,
   assetGroupAdminCreatesAGroupDashboardFromItsOwnScope,
   assetGroupAdminWithNoStoreScopeGetsAnEmptyGroupList,
@@ -14,6 +16,7 @@ import {
   assetGroupAdminsGroupListComesFromItsOwnScope,
   assetGroupAdminsWidgetInspectorOffersTheAssetChain,
   createIsDisabledUntilRequiredFieldsAreFilled,
+  createPageOffersPlantMimicOnlyOnAGroupScope,
   creatingWithAnAssetGroupSendsAssetGroupIdAndNoLocationId,
   locationAdminDoesNotFetchAssetGroups,
   locationAdminGetsNoAssetGroupOptionOnTheComposedPage,
@@ -44,6 +47,10 @@ describe("F3.1d dashboard builder page", () => {
 
   it("creating with an asset group sends assetGroupId and no locationId (F3.34)", async () => {
     await creatingWithAnAssetGroupSendsAssetGroupIdAndNoLocationId();
+  });
+
+  it("offers Plant mimic only on a group scope (F3.32)", async () => {
+    await createPageOffersPlantMimicOnlyOnAGroupScope();
   });
 
   it("selects a newly added widget for editing", async () => {
@@ -88,5 +95,13 @@ describe("F3.1d dashboard builder page", () => {
 
   it("an asset_group_admin with no store scope gets an empty group list, not a crash (F3.63)", async () => {
     await assetGroupAdminWithNoStoreScopeGetsAnEmptyGroupList();
+  });
+
+  it("a mimic left on an organization scope blocks Create and says why (F3.32 review)", async () => {
+    await aMimicLeftOnAnOrganizationScopeBlocksCreate();
+  });
+
+  it("a mimic on a group scope leaves Create enabled (F3.32 review, positive control)", async () => {
+    await aMimicOnAGroupScopeLeavesCreateEnabled();
   });
 });

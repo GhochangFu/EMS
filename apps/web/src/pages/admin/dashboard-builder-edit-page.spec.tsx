@@ -4,7 +4,7 @@ import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { expect, vi } from "vitest";
 
-import type { AdminAssetGroupDto, AssetListRow, DashboardDto, UserRole } from "@bms/shared";
+import type { AdminAssetGroupDto, AssetListRow, DashboardDto, DashboardWidgetDto, UserRole } from "@bms/shared";
 
 import * as assetGroupsApi from "../../api/admin/asset-groups";
 import * as locationsApi from "../../api/admin/locations";
@@ -632,4 +632,57 @@ export async function adminOnADashboardWhoseLocationIsAbsentFromTheActiveListCan
   await userEvent.type(screen.getByLabelText("Name"), " (renamed)");
 
   expect(screen.getByRole("button", { name: "Save dashboard" })).toBeEnabled();
+}
+
+/** `F3.32` — a group dashboard holding one plant mimic, the only scope a mimic saves on. */
+const MIMIC_WIDGET: DashboardWidgetDto = {
+  id: "mimic-1",
+  dashboardId: "dash-2",
+  organizationId: ORG_ID,
+  title: "Water train",
+  gridX: 0,
+  gridY: 0,
+  gridW: 12,
+  gridH: 6,
+  points: [],
+  sources: [],
+  widgetType: "mimic",
+  config: { source: "preset", preset: "water_train" },
+};
+const MIMIC_GROUP_DTO: DashboardDto = { ...GROUP_DTO, widgets: [MIMIC_WIDGET] };
+
+/**
+ * `F3.32` review finding (High) — moving a group dashboard that holds a mimic onto a location.
+ * Before the fix Save enabled, the PATCH committed the new scope and the widget PUT met a 400.
+ * The location is chosen and offered, so the scope problem is the only reason Save is disabled.
+ * Mutation: pass `"assetGroup"` instead of `scope.kind` to `dashboardBuilderErrors` ⇒ red.
+ */
+export async function movingAMimicDashboardOffItsGroupBlocksSave(): Promise<void> {
+  stubLoads({ dto: MIMIC_GROUP_DTO, groups: [GROUP] });
+  const updateSpy = stubSave();
+
+  renderPage(asUser("admin"));
+
+  await waitForPrefill("Asset group");
+  await userEvent.click(screen.getByRole("radio", { name: "Location" }));
+  await userEvent.selectOptions(await screen.findByRole("combobox", { name: "Location" }), "loc-1");
+
+  expect(screen.getByRole("button", { name: "Save dashboard" })).toBeDisabled();
+  expect(screen.getByText(/A plant mimic needs an asset-group scope./)).toBeInTheDocument();
+  expect(updateSpy).not.toHaveBeenCalled();
+}
+
+/** The positive control: the same mimic dashboard, renamed on its own group, can save. */
+export async function renamingAMimicDashboardOnItsGroupCanSave(): Promise<void> {
+  stubLoads({ dto: MIMIC_GROUP_DTO, groups: [GROUP] });
+  stubSave();
+
+  renderPage(asUser("admin"));
+
+  await waitForPrefill("Asset group");
+  await screen.findByRole("option", { name: "Hvac — Kolkata Works" });
+  await userEvent.type(screen.getByLabelText("Name"), " (renamed)");
+
+  expect(screen.getByRole("button", { name: "Save dashboard" })).toBeEnabled();
+  expect(screen.queryByText(/A plant mimic needs an asset-group scope./)).not.toBeInTheDocument();
 }

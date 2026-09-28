@@ -163,6 +163,20 @@ export async function addingAWidgetSelectsItForEditing(): Promise<void> {
   expect(screen.getByText("Bound points")).toBeInTheDocument();
 }
 
+/** `F3.32` (ADR 0079 decision 4) — the create page offers "Plant mimic" only on a group scope.
+ * The Value tile button is the positive control that the widget buttons rendered at all. */
+export async function createPageOffersPlantMimicOnlyOnAGroupScope(): Promise<void> {
+  stubMasterData();
+  renderPage(asUser("admin"));
+
+  await screen.findByRole("radio", { name: "Organization-wide" });
+  expect(screen.getByRole("button", { name: /Value tile/i })).toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: /Plant mimic/i })).not.toBeInTheDocument();
+
+  await userEvent.click(screen.getByRole("radio", { name: "Asset group" }));
+  expect(await screen.findByRole("button", { name: /Plant mimic/i })).toBeInTheDocument();
+}
+
 /**
  * Review finding — `WidgetInspector` renders only the SELECTED widget's problems, so adding a
  * second widget (which `addWidget` auto-selects) hid the FIRST widget's own problem entirely:
@@ -329,4 +343,43 @@ export async function assetGroupAdminWithNoStoreScopeGetsAnEmptyGroupList(): Pro
     .getAllByRole("option")
     .map((option) => (option as HTMLOptionElement).value);
   expect(values).toEqual([""]);
+}
+
+/**
+ * `F3.32` review finding (High) — a mimic added on a group scope stays on the canvas when the
+ * author switches to Organization-wide. Before the fix Create stayed enabled, the POST committed
+ * the dashboard and the widget PUT met a 400: an orphan dashboard. Every other field is filled
+ * and the organization is chosen, so the scope problem is the only reason left.
+ * Mutation: pass `"assetGroup"` instead of `scope.kind` to `dashboardBuilderErrors` ⇒ red.
+ */
+export async function aMimicLeftOnAnOrganizationScopeBlocksCreate(): Promise<void> {
+  stubMasterData();
+  renderPage(asUser("admin"));
+
+  await userEvent.type(await screen.findByLabelText("Name"), "Water train");
+  await userEvent.type(screen.getByLabelText("Slug"), "water-train");
+  await userEvent.click(screen.getByRole("radio", { name: "Asset group" }));
+  await userEvent.selectOptions(await screen.findByRole("combobox", { name: "Asset group" }), "grp-1");
+  await userEvent.click(await screen.findByRole("button", { name: /Plant mimic/i }));
+  await userEvent.click(screen.getByRole("radio", { name: "Organization-wide" }));
+  await userEvent.selectOptions(await screen.findByLabelText("Organization"), "org-1");
+
+  expect(screen.getByRole("button", { name: "Create dashboard" })).toBeDisabled();
+  expect(screen.getByText(/A plant mimic needs an asset-group scope./)).toBeInTheDocument();
+}
+
+/** The positive control: the same mimic on its group scope leaves Create enabled and shows no
+ * scope sentence, so the case above is red for the scope and nothing else. */
+export async function aMimicOnAGroupScopeLeavesCreateEnabled(): Promise<void> {
+  stubMasterData();
+  renderPage(asUser("admin"));
+
+  await userEvent.type(await screen.findByLabelText("Name"), "Water train");
+  await userEvent.type(screen.getByLabelText("Slug"), "water-train");
+  await userEvent.click(screen.getByRole("radio", { name: "Asset group" }));
+  await userEvent.selectOptions(await screen.findByRole("combobox", { name: "Asset group" }), "grp-1");
+  await userEvent.click(await screen.findByRole("button", { name: /Plant mimic/i }));
+
+  expect(screen.getByRole("button", { name: "Create dashboard" })).toBeEnabled();
+  expect(screen.queryByText(/A plant mimic needs an asset-group scope./)).not.toBeInTheDocument();
 }

@@ -483,7 +483,7 @@ services:
       DATABASE_URL: postgres://bms_owner:bms_owner_dev@postgres:5432/bms
       SIM_RATE_HZ: 0.2
       SIM_ASSET_COUNT: all
-      SIM_SITE_NAMES: RSMOC Western Cape,CSMOC Gauteng,RSMOC KwaZulu-Natal
+      SIM_SITE_NAMES: RSMOC Western Cape,CSMOC Gauteng,RSMOC KwaZulu-Natal,Ion Exchange Demo Plant
       SIM_METRICS_PORT: 9101
     ports:
       - "9101:9101"

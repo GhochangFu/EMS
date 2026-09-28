@@ -181,3 +181,31 @@ None. The SVG is hand-written; no drawing library is added.
   existing dashboard telemetry hook reads only bound points.
 - `F3.65b` / `F3.65c` edit the same web tree in the same days. The mimic
   change set rebases after each of them and re-runs CI before its merge.
+
+## Amendment 1 — the Ion Exchange demo organization is made by a command (2026-09-28)
+
+Open point 2 ruled that an administrator sets up the Ion Exchange test
+organization by hand in the admin screens. Writing the runbook (plan unit U6)
+found that two of its steps have no screen and no API:
+
+- **No route creates an asset group or a membership.** `admin/asset-groups`
+  answers `GET` only, and `admin/asset-group-members` answers only `PATCH`
+  (the role on an existing member). Every group and membership write is in
+  `packages/db/src/asset-groups-seed.ts`.
+- **No route creates a user or grants access to an organization.** The only
+  writer is `packages/db/src/demo-users-seed.ts`.
+
+**Ruled by the owner on 2026-09-28:** a one-off, idempotent command,
+`pnpm --filter @bms/db demo:ion-exchange`, **not** part of `db:seed`, run once
+on the demo host. It creates the organization `IONX-DEMO`, one site, the five
+`WTR-` water assets, the `demo-water-plant` group with the roles, a
+group-scoped dashboard with the mimic, and the login `ionx-admin@bms.local`
+with access to that organization only (a `bms.users` row and an entry in
+`infra/keycloak/bms-realm.json`). Options were: this command; rename the
+`ESKOM` organization on the demo host (a global admin would still see the other
+organizations, and no organization-scoped login exists for Ion Exchange); SQL
+pasted from the runbook.
+
+The seeded `ESKOM` demo group (decision 5) stays for development and tests.
+Admin screens for asset groups, memberships and user access remain out of
+scope; each is a later row.

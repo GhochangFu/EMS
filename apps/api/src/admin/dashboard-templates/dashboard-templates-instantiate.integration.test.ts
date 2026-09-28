@@ -23,6 +23,8 @@ import {
   assertDraftCannotBeInstantiated,
   assertForeignGroupIsRefusedAndLeavesNothing,
   assertLocationAdminCannotInstantiateOrganizationWide,
+  assertMimicTemplateInstantiatesWithGroup,
+  assertMimicTemplateRefusesNullGroup,
   assertOrganizationWideRowHasBothScopeColumnsNull,
   assertOrganizationWideSourceParamsSurvive,
   assertResolutionReportCoversEveryOutcome,
@@ -68,6 +70,10 @@ const ROLE_FREE_CODE = `e42-rolefree-tmpl-${RUN}`;
 const ORG_WIDE_SLUG = `e42-orgwide-${RUN}`;
 const ORG_WIDE_REFUSED_SLUG = `e42-orgwide-refused-${RUN}`;
 const ORG_WIDE_FORBIDDEN_SLUG = `e42-orgwide-forbidden-${RUN}`;
+/** `F3.32` U3 — the mimic template's own fixtures. */
+const MIMIC_CODE = `f332-mimic-tmpl-${RUN}`;
+const MIMIC_NULL_GROUP_SLUG = `f332-mimic-nullgroup-${RUN}`;
+const MIMIC_WITH_GROUP_SLUG = `f332-mimic-group-${RUN}`;
 
 /** Six widgets: one per outcome, plus the mixed-role regression case. */
 const TEMPLATE_CONTENT = {
@@ -199,6 +205,29 @@ const ROLE_FREE_CONTENT = {
 /** Ordered by `catalog_key`, which is what the read in the spec sorts on. */
 const ROLE_FREE_EXPECTED_PARAMS = [{}, { pointKey: "kwh_today", aggregate: "sum" }];
 
+/**
+ * `F3.32` / ADR 0079 — a section template holding ONE `mimic` widget. `bindings: []` because a
+ * mimic binds no role at all (`WIDGET_POINT_CARDINALITY.mimic` / `WIDGET_SOURCE_CARDINALITY.mimic`
+ * are both `{min:0,max:0}`), which is exactly what makes the role-bindings null-group guard blind
+ * to it and the dedicated mimic guard necessary.
+ */
+const MIMIC_CONTENT = {
+  widgets: [
+    {
+      key: "water-train",
+      title: "Water train",
+      gridX: 0,
+      gridY: 0,
+      gridW: DASHBOARD_GRID.columns,
+      gridH: 6,
+      bindings: [],
+      sources: [],
+      widgetType: "mimic",
+      config: { source: "preset", preset: "water_train" },
+    },
+  ],
+};
+
 describe.skipIf(!connectionString)(
   "F3.36 — section template instantiation and the Amendment 2 resolution report",
   () => {
@@ -215,6 +244,8 @@ describe.skipIf(!connectionString)(
     let firstChillerAssetId: string;
     let draftTemplateId: string;
     let roleFreeTemplateId: string;
+    /** `F3.32` U3 — the mimic-only template. */
+    let mimicTemplateId: string;
     /** Set by the first `E4.2` case and read by the two that assert on its row. */
     let organizationWideDashboardId: string;
 
@@ -412,6 +443,16 @@ describe.skipIf(!connectionString)(
       roleFreeTemplateId = roleFree.rows[0]?.id ?? "";
       templateIds.push(roleFreeTemplateId);
 
+      const mimic = await ownerPool.query<{ id: string }>(
+        `INSERT INTO bms.dashboard_templates
+           (organization_id, code, version, name, section, status, content, published_at)
+         VALUES ($1, $2, 1, 'F3.32 mimic fixture', 'water', 'published', $3, now())
+         RETURNING id`,
+        [eskomOrgId, MIMIC_CODE, JSON.stringify(MIMIC_CONTENT)],
+      );
+      mimicTemplateId = mimic.rows[0]?.id ?? "";
+      templateIds.push(mimicTemplateId);
+
       // The canvas is 12 columns wide; the fixture's widest row is gridX 9 + gridW 3.
       if (DASHBOARD_GRID.columns < 12) {
         throw new Error("F3.36: the fixture assumes a canvas at least as wide as it lays out");
@@ -435,6 +476,8 @@ describe.skipIf(!connectionString)(
           ORG_WIDE_SLUG,
           ORG_WIDE_REFUSED_SLUG,
           ORG_WIDE_FORBIDDEN_SLUG,
+          MIMIC_NULL_GROUP_SLUG,
+          MIMIC_WITH_GROUP_SLUG,
         ],
       ]);
       if (templateIds.length > 0) {
@@ -584,6 +627,31 @@ describe.skipIf(!connectionString)(
         publishedTemplateId,
         ORG_WIDE_REFUSED_SLUG,
       );
+    }, 60_000);
+
+    it("F3.32 — a template holding a mimic widget refuses a null asset group, naming the mimic reason", async () => {
+      const service = makeInstantiate();
+      const globalAdmin = jwtFor(SEEDED.globalAdmin, "admin");
+      await assertMimicTemplateRefusesNullGroup(
+        service,
+        ownerPool,
+        globalAdmin,
+        mimicTemplateId,
+        MIMIC_NULL_GROUP_SLUG,
+      );
+    }, 60_000);
+
+    it("F3.32 — a template holding a mimic widget instantiates against a real group as one bound widget", async () => {
+      const service = makeInstantiate();
+      const globalAdmin = jwtFor(SEEDED.globalAdmin, "admin");
+      const { dashboardId } = await assertMimicTemplateInstantiatesWithGroup(
+        service,
+        globalAdmin,
+        mimicTemplateId,
+        eskomGroupId,
+        MIMIC_WITH_GROUP_SLUG,
+      );
+      dashboardIds.push(dashboardId);
     }, 60_000);
 
     it("a location admin cannot instantiate an organization-wide dashboard", async () => {

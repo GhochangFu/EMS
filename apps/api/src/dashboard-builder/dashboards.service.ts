@@ -31,7 +31,7 @@ import { withTenant, type BmsTx } from "../database/tenant-context";
 import { withOrganizationReadScope } from "../database/tenant-read-scope";
 import { assertBoundPointsInOrganization, resolveBoundPoints, type ResolvedBoundPoint } from "./dashboard-point-scope";
 import { resolveWidgetSources, type ResolvedWidgetSource } from "./dashboard-source-scope";
-import { SCOPE_REFUSAL_MESSAGE } from "./dashboards.schema";
+import { MIMIC_SCOPE_MESSAGE, SCOPE_REFUSAL_MESSAGE } from "./dashboards.schema";
 import {
   assertSourceParamsBalanceRolesActive,
   assertSourceParamsPointKeysActive,
@@ -476,6 +476,15 @@ export class DashboardsService {
     };
     if (!(await this.accessControl.canManageDashboard(jwt, existing.organizationId, scope))) {
       throw new NotFoundException("Dashboard not found");
+    }
+
+    // `F3.32` / ADR 0079 decision 4 — refused BEFORE `withTenant` opens, exactly like every
+    // other guard on this route (`assertBoundPointsInOrganization` is the one exception, and
+    // only because it needs bindings the transaction has already read). A mimic widget on a
+    // location-, asset- or unscoped dashboard would resolve every node to nothing: the honest
+    // answer is a refusal, not a canvas that renders "not assigned" eight times.
+    if (existing.assetGroupId === null && body.widgets.some((widget) => widget.widgetType === "mimic")) {
+      throw new BadRequestException(MIMIC_SCOPE_MESSAGE);
     }
 
     return withTenant(this.tenantDb, existing.organizationId, async (tx) => {

@@ -102,13 +102,26 @@ describe("F3.35 Stage B — the table widget type", () => {
     ).toBe(true);
   });
 
-  it("widens the CHECK to exactly the contract's widget vocabulary", () => {
+  // `F3.32` / ADR 0079 widened the vocabulary again, in migration `0086`, so `0055` is now a
+  // frozen historical list exactly as `0050` is — and the "matches the contract" comparison
+  // moved to `tests/f3.32-mimic-widget.test.ts`, against `0086`. What this file still owns is
+  // what `0055` froze: ADR 0048's five, and no `mimic`.
+  it("0055 froze the vocabulary at ADR 0048's five", () => {
     const listed = checkedValues(MIGRATION_REL);
-    const declared = widgetTypes();
 
     expect(listed.length, "the parsed CHECK list must not be empty").toBeGreaterThan(0);
-    expect([...listed].sort()).toEqual([...declared].sort());
+    expect([...listed].sort()).toEqual(
+      ["chart", "radial_gauge", "table", "tank_level", "value_tile"],
+    );
     expect(listed, "`table` is the value this migration exists to admit").toContain("table");
+    expect(listed, "`mimic` belongs to 0086, never to the frozen 0055").not.toContain("mimic");
+  });
+
+  it("the contract still declares every type 0055 admits", () => {
+    const declared = widgetTypes();
+    for (const type of checkedValues(MIGRATION_REL)) {
+      expect(declared, `${type} was admitted by 0055 and must stay in the contract`).toContain(type);
+    }
   });
 
   it("drops the old constraint before adding the new one, or the widening is a silent no-op", () => {
