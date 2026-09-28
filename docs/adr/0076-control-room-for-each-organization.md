@@ -239,3 +239,11 @@ The generated read's latest-value lookup is bounded to a literal 7-day window
 (owner ruling, the same day): a point with no sample in 7 days shows "—". The
 unbounded form sorted the whole site history on every request (70 s for
 `RSMOC-WC` on the dev database).
+
+## Amendment 3 (2026-09-28, `F4.169`/`F4.170`, ADR 0080) — the seed sets RSMOC-WC's view on the resolved row
+
+Decision text "The seed sets `RSMOC-WC` to `builtin` / `smoc`" now reads: the seed
+sets the view on the row it resolved for the `RSMOC-WC` identity (ADR 0080
+decision 3), never on a row found by code. When that identity is ambiguous, the
+seed writes no view and logs one line; the verifier's view check then passes if
+any candidate row carries the view.

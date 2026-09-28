@@ -24,12 +24,15 @@ import {
  * (ADR 0014); this file owns the database lifecycle, on the
  * `locations.timezone.integration.test.ts` harness.
  *
- * **Cleanup is not optional here.** `verifyHierarchySeed` asserts
- * `count(*) FROM bms.organizations = 2` on every `db:seed`, and `compose up`'s
- * `migrate` service is what the `api` service waits on — one leaked fixture
- * organization stops the whole stack from starting (`pue-ratio`'s lesson).
- * Every row is registered the moment it exists and deleted in `afterAll`;
- * a stale sweep bounded by `created_at` reaps a run that died before it.
+ * **Cleanup is not optional here.** `verifyHierarchySeed` asserted
+ * `count(*) FROM bms.organizations = 2` on every `db:seed` until the
+ * `F4.169`/`F4.170` addendum, and `compose up`'s `migrate` service is what the
+ * `api` service waits on — one leaked fixture organization stopped the whole
+ * stack from starting (`pue-ratio`'s lesson). The gate now counts only the two
+ * seed organizations present, so a leaked row no longer stops the boot, but it
+ * is still a stray tenant on a shared database. Every row is registered the
+ * moment it exists and deleted in `afterAll`; a stale sweep bounded by
+ * `created_at` reaps a run that died before it.
  */
 const connectionString = requireIntegrationDb({
   item: "E4.1c",

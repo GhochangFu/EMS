@@ -77,11 +77,14 @@ const runId = randomUUID().slice(0, 8);
  * every one of the five suffixes (6–16 characters) overflows the 64-character
  * bound, so this exercises the hash-suffix cut on all five, not just one.
  *
- * The tail is lowercase on purpose. `upsertRuleByCode` upper-cases only its
- * stored side, so a code with a lowercase letter never matches by code, and
- * run 2 stays a no-op only through the condition-tuple guard. That keeps M3
- * (the guard removed) red on every run, not only when the random `runId`
- * happens to hold a letter.
+ * The tail is lowercase on purpose. Before `F4.169` the ladder seed fell back
+ * to `upsertRuleByCode`, which upper-cases only its stored side, so a code
+ * with a lowercase letter never matched by code and run 2 stayed a no-op only
+ * through the condition-tuple guard — M3 (the guard removed) was red on
+ * every run. Since `F4.169` the asset-and-suffix match also makes run 2 a
+ * no-op, so M3 alone no longer reddens this file; I7 in
+ * `tests/f4.169-ladder-rule-match-by-asset-and-suffix.integration.test.ts`
+ * is its gate now.
  */
 const FIXTURE_CODE = `F4129-${runId}-` + "x".repeat(45);
 
@@ -196,12 +199,12 @@ describe.skipIf(!ownerUrl)(
           expected,
         );
 
-        // Run 2 — the next boot's re-seed. The condition-tuple guard is what
-        // makes it a no-op. With that guard removed (M3), `upsertRuleByCode`
-        // misses the fixture's lowercase codes and inserts again, and
-        // Postgres throws 23505 on `automation_rules_org_code_idx` here. In a
-        // shared database run 1 can throw it first, on another suite's
-        // lowercase fixture code.
+        // Run 2 — the next boot's re-seed, a no-op through the
+        // condition-tuple guard and, since `F4.169`, the asset-and-suffix
+        // match as well. M3 (the condition-tuple guard removed) no longer
+        // reddens here: the second guard still skips all five rules. I7 in
+        // `tests/f4.169-ladder-rule-match-by-asset-and-suffix.integration.test.ts`
+        // is its gate now.
         await seedEskomLadderRules(db, eskomOrgId);
         const secondPass = await readRules();
         expect(secondPass, "run 2 must leave the same five rules run 1 wrote").toEqual(expected);

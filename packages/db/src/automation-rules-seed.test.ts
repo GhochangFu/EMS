@@ -4,16 +4,19 @@ import {
   assertAHyphenAndAnUnderscoreDiffer,
   assertALongNameIsCutToTheBound,
   assertANameOnTheBoundaryIsUnchanged,
+  assertANonLadderCodeHasNoSuffix,
   assertAnOverflowFillsTheBoundExactly,
   assertAShortCodeIsUnchanged,
   assertAShortNameIsUnchanged,
   assertEverySuffixStaysInsideTheBound,
+  assertNoSuffixIsTheTailOfAnother,
   assertOneBelowTheBoundaryFitsUnchanged,
   assertTheBoundaryFitsUnchanged,
   assertTheCutIsDeterministic,
   assertTheHashIsOfTheFullCode,
   assertTheNameCutNeverSplitsASurrogatePair,
   assertTheOverflowShape,
+  assertTheSuffixIsTheTail,
   assertTwoLongCodesWithACommonPrefixDiffer,
 } from "./automation-rules-seed.spec";
 
@@ -74,5 +77,19 @@ describe("F4.129 — ladderRuleName bounds the ESKOM ladder rule name to 255", (
 
   it("cuts by code point, never inside a surrogate pair", () => {
     assertTheNameCutNeverSplitsASurrogatePair();
+  });
+});
+
+describe("F4.169 — ladderSuffixOf names the ladder rule a stored code belongs to", () => {
+  it("reads the suffix from the code's _-delimited tail only", () => {
+    assertTheSuffixIsTheTail();
+  });
+
+  it("returns null for a code that is not a ladder code", () => {
+    assertANonLadderCodeHasNoSuffix();
+  });
+
+  it("holds no suffix that is the _-delimited tail of another", () => {
+    assertNoSuffixIsTheTailOfAnother();
   });
 });

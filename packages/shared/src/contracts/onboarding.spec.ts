@@ -515,3 +515,15 @@ export function assertSessionDtoCarriesTheStringBounds(): void {
       (overBound.success ? "it parsed" : JSON.stringify(overBound.error.issues)),
   );
 }
+
+/**
+ * `F4.170` (compliance review B1) — the shared draft location's `meta` says
+ * `seedKey` is seed-owned and ignored on commit, as the API's does.
+ */
+export function assertDraftLocationMetaDescribesTheSeedKey(): void {
+  const description = onboardingDraftLocationSchema.shape.meta.description;
+  assert(
+    typeof description === "string" && /seedKey.*seed-owned.*ignored/s.test(description),
+    `onboardingDraftLocationSchema.meta must say seedKey is seed-owned and ignored, got: ${JSON.stringify(description)}`,
+  );
+}

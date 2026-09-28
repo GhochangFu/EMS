@@ -2,6 +2,7 @@ import { describe, it } from "vitest";
 
 import {
   assertDraftArrayCapsAreEnforced,
+  assertDraftLocationMetaDescribesTheSeedKey,
   assertDraftLocationParsesWithoutType,
   assertDraftStringBoundsAreDeclaredOnce,
   assertDraftStringBoundsAreEnforced,
@@ -37,5 +38,11 @@ describe("F4.104 — the onboarding draft bounds the length of every string fiel
 describe("F4.157 — onboardingDraftLocationSchema.type becomes optional (ADR 0077 D4, OQ2)", () => {
   it("C4 — parses a draft location without type", () => {
     assertDraftLocationParsesWithoutType();
+  });
+});
+
+describe("F4.170 — onboardingDraftLocationSchema.meta says seedKey is seed-owned", () => {
+  it("D4 — the meta description", () => {
+    assertDraftLocationMetaDescribesTheSeedKey();
   });
 });

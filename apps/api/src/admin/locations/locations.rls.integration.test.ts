@@ -53,11 +53,14 @@ const GUARD_ASSET_FAMILY = "E71B-AS-GUARD-%";
  *
  * `work-orders.service.rls.integration.test.ts` calls this shape "the `F4.16`
  * shape" and carries the same sweep for the same reason: `db:seed`'s
- * `verifyHierarchySeed` counts PHEWB locations exactly, so one leaked fixture
- * row turns the seed red on any database that is not thrown away after the run.
- * CI never sees it — its database is fresh every job — and a developer database
- * accumulates. Five rows had by 2026-08-27, which is what made `db:seed` fail
- * with "PHEWB locations: expected 6, got 7".
+ * `verifyHierarchySeed` counted PHEWB locations exactly, so one leaked fixture
+ * row turned the seed red on any database that was not thrown away after the
+ * run. CI never saw it — its database is fresh every job — and a developer
+ * database accumulates. Five rows had by 2026-08-27, which is what made
+ * `db:seed` fail with "PHEWB locations: expected 6, got 7". Since the
+ * `F4.169`/`F4.170` addendum the gate counts only the six catalog PHE
+ * locations present, so a leaked row no longer stops the seed; the sweep
+ * stays, because a leaked row is still a stray location in every PHEWB list.
  *
  * Two leak paths, and neither is reachable from inside the failing process:
  * `svc.create` can commit the row and then throw before returning it (the audit

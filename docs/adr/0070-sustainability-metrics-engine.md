@@ -897,3 +897,12 @@ review: this paragraph first cited decision 7, which holds no such sentence.)
 4. **Proof.** `energy-cost.integration.spec.ts` D6 and D6′ replace the
    `E4.1c` D6 (the cost failed closed): with the orphan in scope, the total and
    the cost equal those without it. Each reddened when its own join was removed.
+
+## Amendment 6 (2026-09-28, `F4.169`/`F4.170`, ADR 0080) — "a re-seed re-asserts it" has one exception
+
+`timezone` and `latitude` stay seed-owned on the canonical ESKOM locations. Since
+ADR 0080 decision 3, the seed resolves each canonical location through a stable
+key, and when an identity is ambiguous (two rows claim it, and the oldest is not
+the one row keyed for it) the seed writes nothing for it and logs the
+candidates. In that state a re-seed does not re-assert `timezone` until an
+administrator resolves the rows.

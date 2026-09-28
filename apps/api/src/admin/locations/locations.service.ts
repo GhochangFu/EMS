@@ -22,6 +22,7 @@ import { FLEET_DRIZZLE, TENANT_DRIZZLE } from "../../database/database.tokens";
 import { withTenant } from "../../database/tenant-context";
 import { VocabulariesService } from "../../vocabularies/vocabularies.service";
 import { MasterDataAuditService } from "../master-data-audit.service";
+import { requestMetaForCreate, requestMetaForUpdate } from "./location-seed-key";
 import type { CreateLocationBody, UpdateLocationBody } from "./locations.schema";
 
 /**
@@ -159,7 +160,8 @@ export class LocationsAdminService {
           latitude: body.latitude,
           longitude: body.longitude,
           timezone: body.timezone ?? null,
-          meta: body.meta ?? null,
+          // Owner ruling 20: `meta.seedKey` is seed-owned; a request's is dropped.
+          meta: requestMetaForCreate(body.meta),
           active: true,
         })
         .returning();
@@ -173,7 +175,11 @@ export class LocationsAdminService {
           entityType: "location",
           entityId: row.id,
           organizationId: body.organizationId,
-          payload: body,
+          // `F4.170` (compliance review B2): the stored `meta`, not the
+          // caller's, as `assets.service.ts` does since `F4.139` — a request's
+          // `seedKey` is dropped, and the audit row must not read as though it
+          // landed.
+          payload: { ...body, meta: row.meta },
         },
         tx,
       );
@@ -212,7 +218,19 @@ export class LocationsAdminService {
     }
 
     await withTenant(this.tenantDb, existing.organizationId, async (tx) => {
-      await tx
+      // `F4.170` (security review Low-B): `meta` is read again here, locked,
+      // not taken from `existing`. `existing` is a fleet read made before this
+      // transaction, so a key the seed writes in between (a first keyed boot)
+      // would be written away by a `meta` built from it.
+      const [locked] = await tx
+        .select({ meta: locations.meta })
+        .from(locations)
+        .where(eq(locations.id, id))
+        .for("update");
+      if (!locked) {
+        throw new NotFoundException("Location not found");
+      }
+      const [written] = await tx
         .update(locations)
         .set({
           code: body.code ?? existing.code,
@@ -224,10 +242,13 @@ export class LocationsAdminService {
           latitude: body.latitude ?? existing.latitude,
           longitude: body.longitude ?? existing.longitude,
           timezone: body.timezone !== undefined ? body.timezone : existing.timezone,
-          meta: body.meta !== undefined ? body.meta : existing.meta,
+          // Owner ruling 20: a `meta` that replaces the stored one keeps the
+          // stored `seedKey` and never takes one from the request.
+          meta: body.meta !== undefined ? requestMetaForUpdate(body.meta, locked.meta) : locked.meta,
           updatedAt: new Date(),
         })
-        .where(eq(locations.id, id));
+        .where(eq(locations.id, id))
+        .returning({ meta: locations.meta });
 
       await this.audit.write(
         {
@@ -236,7 +257,10 @@ export class LocationsAdminService {
           entityType: "location",
           entityId: id,
           organizationId: existing.organizationId,
-          payload: body,
+          // `F4.170` (compliance review B2): a PATCH that sends `meta` is
+          // audited with the `meta` stored — the row's own `seedKey` included,
+          // the request's never — as the create is.
+          payload: body.meta !== undefined ? { ...body, meta: written?.meta ?? null } : body,
         },
         tx,
       );

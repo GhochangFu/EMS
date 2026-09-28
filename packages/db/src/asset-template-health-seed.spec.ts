@@ -93,11 +93,12 @@ export function assertNoAssetIsPinnedAcrossDomains(): void {
 /**
  * Every statement is bounded to one organization.
  *
- * Not a style point, and the precedent is a measured one: `verify-hierarchy-seed`
- * asserts PHE's `asset_points` count exactly, and `F4.69`'s row records that an
- * unbounded seed statement turns that verify red one step later, where the cause
- * is furthest from the effect. The same applies here — an unbounded pin would
- * give PHE's pilot assets an ESKOM template.
+ * Not a style point, and the precedent is a measured one: `F4.69`'s row records
+ * that an unbounded seed statement turned the hierarchy verify red one step
+ * later, when it asserted PHE's `asset_points` count exactly. Since `F4.170` it
+ * checks only that the catalog's points are present, so it no longer sees an
+ * extra row; these text gates are the guard. The same applies here — an
+ * unbounded pin would give PHE's pilot assets an ESKOM template.
  */
 export function assertEveryStatementIsBoundedToOneOrganization(): void {
   expect(HEALTH_TEMPLATE_SQL).toContain("a.organization_id = $1");

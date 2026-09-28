@@ -2,7 +2,8 @@ import { eq } from "drizzle-orm";
 import type pg from "pg";
 
 import type { BmsDb } from "./client";
-import { provinceCode } from "./eskom-locations-seed";
+import { type MapLocationSeedRow, provinceCode } from "./eskom-locations-seed";
+import { mapLocationRowsForInsert } from "./map-locations-seed";
 import { resolveEskomSimRtuId } from "./hierarchy-seed";
 import { assets } from "./schema/bms-schema";
 import { DEMO_WATER_PLANT_ASSETS } from "./water-plant-demo-seed";
@@ -75,6 +76,29 @@ export function demoAssetsForRsmoc(
       domain: "environment",
     },
   ];
+}
+
+/** The site the control-room demo assets sit at (`site_name`). */
+export const CONTROL_ROOM_SITE_NAME = "RSMOC Western Cape";
+
+/**
+ * The ESKOM asset catalog `seed.ts` seeds: {@link buildEskomAssetCatalog} at
+ * {@link CONTROL_ROOM_SITE_NAME}, with each RSMOC map row's demo assets.
+ * `seed.ts` passes its combined ESKOM + PHE map rows; the default is the ESKOM
+ * rows alone, which gives the same list, because no PHE map row is an `rsmoc`
+ * (they are `pump_station`); `verify-hierarchy-expected.spec.ts` holds that.
+ * `verify-hierarchy-expected.ts` derives the boot gate's incomer and IT codes
+ * from this list, over the same combined rows `seed.ts` passes.
+ */
+export function eskomSeedAssetCatalog(
+  mapLocationRows: readonly MapLocationSeedRow[] = mapLocationRowsForInsert(),
+): readonly EskomAssetSpec[] {
+  const rsmocDemoAssets = mapLocationRows.flatMap((row) =>
+    row.kind === "rsmoc" && row.siteName && row.province
+      ? demoAssetsForRsmoc(row.siteName, row.province)
+      : [],
+  );
+  return buildEskomAssetCatalog(CONTROL_ROOM_SITE_NAME, rsmocDemoAssets);
 }
 
 /** The full seeded asset list; order is significant, RSMOC assets stay last. */
@@ -339,6 +363,9 @@ export async function seedEskomAssets(
 ): Promise<SeededAsset[]> {
   const assetRows: SeededAsset[] = [];
   for (const a of catalog) {
+    // By site name, because a catalog entry has no location yet; the oldest
+    // location of that name wins (`resolveEskomSimRtuId`'s ORDER BY), so an
+    // admin location that shares a seeded name does not take the asset.
     const rtuId = await resolveEskomSimRtuId(pool, a.siteName, a.domain);
     // ADR 0018: assets.location_id is NOT NULL from migration 0023 onward, so
     // it must be supplied at insert time. This seed used to leave it null and

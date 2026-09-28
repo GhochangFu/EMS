@@ -25,7 +25,15 @@ export const createLocationBodySchema = z
     // E4.1b (ADR 0070 decision 6): an IANA zone name, validated against
     // pg_timezone_names by the service; `null` clears, absent leaves it.
     timezone: z.string().max(64).nullable().optional(),
-    meta: z.record(z.unknown()).optional(),
+    // `F4.170` owner ruling 20 (compliance review B1): the document says what
+    // the service does with the key, since the shape cannot.
+    meta: z
+      .record(z.unknown())
+      .optional()
+      .describe(
+        "Free-form location metadata. The `seedKey` key is seed-owned and ignored on write: a " +
+          "`seedKey` sent here is never stored, and an update that replaces `meta` keeps the stored one.",
+      ),
   })
   .strict();
 

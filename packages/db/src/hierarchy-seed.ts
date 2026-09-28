@@ -1,10 +1,12 @@
+import { createHash } from "node:crypto";
+
 import { eq } from "drizzle-orm";
 import type pg from "pg";
 
 import type { BmsDb } from "./client";
 import { locations } from "./schema/bms-schema";
 
-const DOMAIN_RTU_SUFFIX: Record<string, string> = {
+export const DOMAIN_RTU_SUFFIX: Record<string, string> = {
   electrical: "ELEC",
   hvac: "HVAC",
   it: "IT",
@@ -22,6 +24,85 @@ const DOMAIN_RTU_SUFFIX: Record<string, string> = {
   // Assets of the other domains are wired as before.
   water: "WATER",
 };
+
+/** `bms.rtus.code` is `varchar(64)` (`schema/bms-schema.ts`). */
+const RTU_CODE_MAX = 64;
+
+/** The hex digits kept from the location code's SHA-256, on overflow. */
+const SIM_RTU_HASH_WIDTH = 8;
+
+/** `bms.rtus.display_name` is `varchar(255)` (`schema/bms-schema.ts`). */
+const RTU_DISPLAY_NAME_MAX = 255;
+
+/**
+ * `F4.170` — the code for one ESKOM simulator RTU, bounded to `RTU_CODE_MAX`
+ * (64) characters whatever the location code's length.
+ *
+ * The unbounded template is `SIM-RTU-${locationCode}-${suffix}` —
+ * `8 + n + 1 + s` characters. The admin location schema accepts a 64-character
+ * code, so a location code of 51+ characters (with `WATER`) otherwise aborts
+ * `pnpm db:seed` with Postgres `22001 value too long`. The template is returned
+ * unchanged whenever it fits, so every code seeded before `F4.170` keeps its
+ * bytes and `ON CONFLICT (location_id, code)` still finds its row.
+ *
+ * On overflow the result is `SIM-RTU-<cut>-<hash>-<suffix>`: `<hash>` is the
+ * first `SIM_RTU_HASH_WIDTH` (8) hex digits of `sha256` of the full raw
+ * location code, uppercased, and `<cut>` is the location code cut to what the
+ * other parts leave — `46 - s` code points, so the result is exactly 64.
+ *
+ * The same shape as `ladderRuleCode` (`automation-rules-seed.ts`, `F4.129`),
+ * duplicated here on purpose rather than shared (owner ruling, 2026-09-27),
+ * with three differences:
+ *
+ * - **No fold.** The location code goes into the template as it is.
+ * - **The fit check and the cut count code points** (`Array.from`), not UTF-16
+ *   code units. `bms.locations.code` has no charset CHECK (migration `0070`
+ *   constrains only `assets.code` and `point_keys.code`), Postgres counts a
+ *   `varchar` length in characters, and a code-unit `slice()` can split a
+ *   surrogate pair (the `F4.104` lesson). A code-unit fit check would also cut
+ *   a fitting astral code and move its stored identity.
+ * - **Uppercase hex is for symmetry** with `ladderRuleCode` only; no compare
+ *   here depends on the case.
+ *
+ * The hash is of the full code because two long codes that agree up to the
+ * cut differ only in the tail the cut dropped.
+ */
+export function simRtuCode(locationCode: string, suffix: string): string {
+  const raw = `SIM-RTU-${locationCode}-${suffix}`;
+  if (Array.from(raw).length <= RTU_CODE_MAX) {
+    return raw;
+  }
+  const hash = createHash("sha256")
+    .update(locationCode)
+    .digest("hex")
+    .toUpperCase()
+    .slice(0, SIM_RTU_HASH_WIDTH);
+  // `SIM-RTU-` + `-` around the cut, then the hash, `-`, and the suffix.
+  const cutWidth =
+    RTU_CODE_MAX - "SIM-RTU--".length - SIM_RTU_HASH_WIDTH - "-".length - Array.from(suffix).length;
+  const cut = Array.from(locationCode).slice(0, cutWidth).join("");
+  return `SIM-RTU-${cut}-${hash}-${suffix}`;
+}
+
+/**
+ * `F4.170` — the display name for one ESKOM simulator RTU,
+ * `${locationName} ${DOMAIN} Simulator`, bounded to `RTU_DISPLAY_NAME_MAX`
+ * (255) characters. `bms.locations.name` is `varchar(255)` as well, so without
+ * the bound a location name of 234+ characters (with `ENVIRONMENT`) aborts
+ * `pnpm db:seed` with `22001`, the same failure as the code.
+ *
+ * The location name is cut, never the ` <DOMAIN> Simulator` tail, and the
+ * whole name is returned unchanged whenever it fits. No hash: display names
+ * are not unique. The fit check and the cut count code points, for the reason
+ * `simRtuCode` gives.
+ */
+export function simRtuDisplayName(locationName: string, domain: string): string {
+  const tail = ` ${domain.toUpperCase()} Simulator`;
+  const budget = RTU_DISPLAY_NAME_MAX - Array.from(tail).length;
+  const characters = Array.from(locationName);
+  const head = characters.length <= budget ? locationName : characters.slice(0, budget).join("");
+  return `${head}${tail}`;
+}
 
 /** Maps asset domain to simulator RTU domain column. */
 export function rtuDomainForAssetDomain(domain: string): string {
@@ -48,6 +129,14 @@ export async function getOrganizationId(
 }
 
 /**
+ * The organization codes {@link ensureOrganizations} writes. The statement
+ * keeps its own literal rows (`tests/e4.1c-organization-currency-schema.test.ts`
+ * reads them); `hierarchy-seed.spec.ts` holds that literal's codes equal to
+ * this list, and the boot gate counts these codes rather than every row.
+ */
+export const SEED_ORGANIZATION_CODES: readonly string[] = ["ESKOM", "PHEWB"];
+
+/**
  * Ensures ESKOM and PHEWB organization rows exist.
  *
  * E4.1c / ADR 0070 decision 7: the SEED owns `currency` — migration `0076`
@@ -64,8 +153,32 @@ export async function ensureOrganizations(pool: pg.Pool): Promise<void> {
   `);
 }
 
-/** Creates simulator RTUs per domain for each Eskom canonical location. */
-export async function ensureEskomDomainRtus(db: BmsDb, pool: pg.Pool): Promise<void> {
+/**
+ * Creates simulator RTUs per domain for each Eskom canonical location.
+ *
+ * `F4.170`: the code and display name come from {@link simRtuCode} and
+ * {@link simRtuDisplayName}, which return the pre-`F4.170` values unchanged
+ * whenever they fit `varchar(64)` / `varchar(255)`. A location created through
+ * the admin API with a long code or name therefore no longer aborts
+ * `pnpm db:seed` with `22001`, and every seeded RTU keeps its code, so the
+ * `ON CONFLICT (location_id, code)` upsert still updates it in place.
+ *
+ * `skipLocationIds` (`locationIdsWithoutSeedCode`, owner ruling 17) are the
+ * seed rows whose canonical code another row holds, and the candidates of an
+ * ambiguous identity that do not carry its canonical code (addendum 4). Each
+ * still carries an administrator's code, and an RTU written under it would be
+ * a second set beside the seed's, kept after the code comes back; the
+ * location seed has already logged the held code or the ambiguity. Every
+ * other ESKOM location, an administrator's included,
+ * gets its RTUs as before. `assignEskomAssetRtus` then finds no RTU under the
+ * skipped row's code and leaves its assets' `rtu_id` and `telemetrySource`
+ * as they are.
+ */
+export async function ensureEskomDomainRtus(
+  db: BmsDb,
+  pool: pg.Pool,
+  skipLocationIds: ReadonlySet<string>,
+): Promise<void> {
   const eskomOrgId = await getOrganizationId(pool, "ESKOM");
   const locRows = await db
     .select({
@@ -77,9 +190,12 @@ export async function ensureEskomDomainRtus(db: BmsDb, pool: pg.Pool): Promise<v
     .where(eq(locations.organizationId, eskomOrgId));
 
   for (const loc of locRows) {
+    if (skipLocationIds.has(loc.id)) {
+      continue;
+    }
     for (const [domain, suffix] of Object.entries(DOMAIN_RTU_SUFFIX)) {
-      const code = `SIM-RTU-${loc.code}-${suffix}`;
-      const displayName = `${loc.name} ${domain.toUpperCase()} Simulator`;
+      const code = simRtuCode(loc.code, suffix);
+      const displayName = simRtuDisplayName(loc.name, domain);
       await pool.query(
         `
         INSERT INTO bms.rtus (
@@ -99,7 +215,48 @@ export async function ensureEskomDomainRtus(db: BmsDb, pool: pg.Pool): Promise<v
   }
 }
 
-/** Resolves simulator RTU id for an Eskom asset by site name and domain. */
+/**
+ * Resolves the simulator RTU of one ESKOM location for an asset domain, or
+ * `null` when the domain has no simulator RTU or the location has none.
+ *
+ * Keyed on the location's id and the code {@link ensureEskomDomainRtus}
+ * writes there ({@link simRtuCode}), which `rtus_location_code_unique` makes
+ * unique, so the answer does not depend on row order. A second location with
+ * the same name (an admin may create one) cannot capture the asset.
+ */
+export async function resolveEskomSimRtuIdForLocation(
+  pool: pg.Pool,
+  locationId: string,
+  locationCode: string,
+  assetDomain: string,
+): Promise<string | null> {
+  const suffix = DOMAIN_RTU_SUFFIX[rtuDomainForAssetDomain(assetDomain)];
+  if (!suffix) {
+    return null;
+  }
+  const res = await pool.query<{ id: string }>(
+    `
+    SELECT r.id
+    FROM bms.rtus r
+    WHERE r.location_id = $1
+      AND r.code = $2
+      AND r.source_type = 'simulator'
+    `,
+    [locationId, simRtuCode(locationCode, suffix)],
+  );
+  return res.rows[0]?.id ?? null;
+}
+
+/**
+ * Resolves simulator RTU id for an Eskom asset by site name and domain.
+ *
+ * `seedEskomAssets` only, which has a catalog `site_name` and no location
+ * yet. A name is not unique — an admin may create a second location with a
+ * seeded location's name — so the oldest location of that name wins, and the
+ * order is stated rather than left to the plan: `ORDER BY l.created_at, l.id`.
+ * {@link assignEskomAssetRtus} resolves by location id instead
+ * ({@link resolveEskomSimRtuIdForLocation}).
+ */
 export async function resolveEskomSimRtuId(
   pool: pg.Pool,
   siteName: string,
@@ -120,6 +277,7 @@ export async function resolveEskomSimRtuId(
       AND o.code = 'ESKOM'
       AND r.domain = $2
       AND r.source_type = 'simulator'
+    ORDER BY l.created_at, l.id, r.created_at, r.id
     LIMIT 1
     `,
     [siteName, domain],
@@ -132,10 +290,14 @@ export async function resolveEskomSimRtuId(
 }
 
 /**
- * Wires every non-manual, non-`PHE-` ESKOM asset whose domain has a simulator
- * RTU at its `site_name` to that RTU, on every boot (an asset of a domain
- * with no `DOMAIN_RTU_SUFFIX` entry, such as `mechanical` or `facility`, or
- * one whose `site_name` matches no ESKOM location, is skipped silently). The
+ * Wires every non-manual, non-`PHE-` ESKOM asset whose own location carries
+ * its `site_name` to that location's simulator RTU for its domain, on every
+ * boot (an asset of a domain with no `DOMAIN_RTU_SUFFIX` entry, such as
+ * `mechanical` or `facility`, or one whose location's name is not its
+ * `site_name`, is skipped silently). The RTU is resolved by the location's id
+ * and the seed's own RTU code ({@link resolveEskomSimRtuIdForLocation}), never
+ * by name, so an admin location that shares a seeded location's name cannot
+ * capture the seeded assets. The
  * function overwrites an existing `rtu_id` and sets `meta.telemetrySource` to
  * `simulator`. A `water` asset is wired only
  * when its code starts with `WTR-` (owner ruling R3); any other water asset
@@ -146,14 +308,20 @@ export async function assignEskomAssetRtus(pool: pg.Pool): Promise<void> {
     id: string;
     site_name: string;
     domain: string;
-    location_id: string | null;
+    location_id: string;
+    location_code: string;
   }>(`
-    SELECT a.id, a.site_name, a.domain, a.location_id
+    SELECT a.id, a.site_name, a.domain, a.location_id, l.code AS location_code
     FROM bms.assets a
     INNER JOIN bms.locations l ON l.id = a.location_id
     INNER JOIN bms.organizations o ON o.id = l.organization_id
     WHERE o.code = 'ESKOM'
       AND a.code NOT LIKE 'PHE-%'
+      -- Owner ruling 8 (2026-09-28): an asset is wired only when its own
+      -- location carries its site_name, the set the name resolver wired
+      -- before. The RTU is then resolved by that location's id, so a second
+      -- location with the same name cannot capture the asset.
+      AND l.name = a.site_name
       -- ADR 0018 made a gateway-less asset legal, and F4.10 seeds one to prove
       -- the scope queries do not join through bms.rtus. Without this exemption
       -- the second db:seed would wire it and the fixture would silently stop
@@ -166,8 +334,11 @@ export async function assignEskomAssetRtus(pool: pg.Pool): Promise<void> {
   `);
 
   for (const row of rows.rows) {
-    const rtuId = await resolveEskomSimRtuId(pool, row.site_name, row.domain).catch(
-      () => null,
+    const rtuId = await resolveEskomSimRtuIdForLocation(
+      pool,
+      row.location_id,
+      row.location_code,
+      row.domain,
     );
     if (!rtuId) {
       continue;
@@ -243,43 +414,71 @@ export async function enforceHierarchyNotNull(pool: pg.Pool): Promise<void> {
 }
 
 /**
- * Removes legacy PHE locations that used one RTU per location slug.
+ * Removes the legacy PHE locations that held one RTU each.
+ *
+ * `legacySlugs` is `phePilotExpectedRows(catalog).legacyLocationSlugs`: the
+ * twelve slugs an earlier seed wrote, one per edge RTU (owner ruling 13, OQ1).
+ * Every statement matches `l.slug = ANY(...)` on that list and nothing else.
+ * It used to match a regular expression (`^phe-.+-(i|ii)$`) on a slug an
+ * administrator chooses freely, so an admin PHEWB location such as
+ * `phe-new-station-ii` lost its access grants, its asset groups and its RTUs
+ * on the next boot, and the boot then stopped with `23503` on its assets.
+ * After the first boot on a database this runs on, it deletes nothing. Each
+ * location it is about to delete is named on `log` first, one line each, so
+ * a deletion is never silent.
  *
  * **Must run inside a PHEWB tenant context** (`seed.ts` supplies one). All five
  * statements below join or target `bms.locations`, which carries `FORCE ROW
  * LEVEL SECURITY` since `E7.1a`. Without a context the role sees no location
  * rows, so every `DELETE` matches nothing, deletes nothing, and reports success
  * — the legacy rows would survive with no error anywhere. This is the one place
- * in the seed where a missing tenant context fails silently rather than loudly.
+ * in the seed where a missing tenant context fails silently rather than loudly;
+ * the boot gate's "PHEWB legacy per-RTU locations" count, which must be zero,
+ * reads the same list and catches it.
  */
-export async function cleanupLegacyPheRtuLocations(pool: pg.Pool): Promise<void> {
+export async function cleanupLegacyPheRtuLocations(
+  pool: pg.Pool,
+  legacySlugs: readonly string[],
+  log: (line: string) => void = (line) => console.error(line),
+): Promise<void> {
+  const slugs = [legacySlugs];
+  const doomed = await pool.query<{ id: string; slug: string; code: string }>(
+    `SELECT id, slug, code FROM bms.locations WHERE slug = ANY($1::varchar[]) ORDER BY slug, id`,
+    slugs,
+  );
+  for (const location of doomed.rows) {
+    log(
+      `cleanupLegacyPheRtuLocations: deleting legacy PHE location ${location.slug} (${location.id}, ` +
+        `code ${JSON.stringify(location.code)}) with its access grants, asset groups and RTUs`,
+    );
+  }
   await pool.query(`
     DELETE FROM bms.user_location_access ula
     USING bms.locations l
     WHERE ula.location_id = l.id
-      AND l.slug ~ '^phe-.+-(i|ii)$'
-  `);
+      AND l.slug = ANY($1::varchar[])
+  `, slugs);
   await pool.query(`
     DELETE FROM bms.asset_group_members agm
     USING bms.asset_groups ag, bms.locations l
     WHERE agm.asset_group_id = ag.id
       AND ag.location_id = l.id
-      AND l.slug ~ '^phe-.+-(i|ii)$'
-  `);
+      AND l.slug = ANY($1::varchar[])
+  `, slugs);
   await pool.query(`
     DELETE FROM bms.asset_groups ag
     USING bms.locations l
     WHERE ag.location_id = l.id
-      AND l.slug ~ '^phe-.+-(i|ii)$'
-  `);
+      AND l.slug = ANY($1::varchar[])
+  `, slugs);
   await pool.query(`
     DELETE FROM bms.rtus r
     USING bms.locations l
     WHERE r.location_id = l.id
-      AND l.slug ~ '^phe-.+-(i|ii)$'
-  `);
+      AND l.slug = ANY($1::varchar[])
+  `, slugs);
   await pool.query(`
     DELETE FROM bms.locations
-    WHERE slug ~ '^phe-.+-(i|ii)$'
-  `);
+    WHERE slug = ANY($1::varchar[])
+  `, slugs);
 }

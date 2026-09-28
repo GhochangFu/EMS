@@ -11,8 +11,16 @@ import {
   assertNoPheDeviceJoinsItLoad,
   assertOnlyElectricalAssetsTakeARole,
   assertTheGatewayTakesNoRole,
+  assertTheBackfillFillsOnlyANullLocation,
   assertTheRulingMapsEveryPheDevice,
+  assertTheSeedRolesNoPheEnvironmentDevice,
 } from "./asset-groups-seed.spec";
+
+describe("F4.169/F4.170 addendum — ruling 10: the seed roles no PHE environment device", () => {
+  it("gives none of the twelve PHE environment gateways a role", () => {
+    assertTheSeedRolesNoPheEnvironmentDevice();
+  });
+});
 
 describe("F3.41 — demoRoleForAsset carries the owner's meter/pump ruling", () => {
   it("maps PHE WB's 48 devices to 12 meters, 24 pumps and 12 unroled gateways", () => {
@@ -61,5 +69,11 @@ describe("E4.3 U11 — demoGroupCodesForAsset files a water asset under water", 
 
   it("gives a water asset no train role", () => {
     assertAWaterAssetTakesNoTrainRole();
+  });
+});
+
+describe("F4.169/F4.170 addendum 2 — ruling 14: the location backfill fills only a NULL location_id", () => {
+  it("matches a NULL location_id, never another location, and keeps the oldest-name order", () => {
+    assertTheBackfillFillsOnlyANullLocation();
   });
 });

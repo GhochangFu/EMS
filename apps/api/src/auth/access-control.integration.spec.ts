@@ -149,8 +149,8 @@ export async function assertFixturesPresent(pool: pg.Pool): Promise<void> {
   // These two states are what make the tripwires below mean anything, and the
   // rest of the seed produces neither: `assignEskomAssetRtus` wires every ESKOM
   // asset (a water asset only when its code starts with `WTR-`, E4.3 R3) and the PHE seed wires every PHE one, and every operational location
-  // is active. `seedAccessControlFixtures` adds one of each. Measured before it
-  // existed: 147 assets / 0 gateway-less, 16 locations / 0 inactive — so the
+  // is active. `seedAccessControlFixtures` adds the gateway-less asset, `seedDecommissionedLocation` the inactive
+  // location. Measured before they existed: 147 assets / 0 gateway-less, 16 locations / 0 inactive — so the
   // "gateway-less assets stay visible" loop never executed a single iteration
   // and `WHERE active = true` was indistinguishable from no predicate.
   if (Number(row2?.gatewayless ?? 0) === 0) {

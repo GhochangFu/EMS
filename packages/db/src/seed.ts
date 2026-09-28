@@ -4,7 +4,6 @@ import { resolve } from "node:path";
 import pg from "pg";
 
 import { createSeedPool, resolveSeedSuperuserUrl, withOrganization } from "./seed-tenant";
-import { mapLocationRowsForInsert } from "./map-locations-seed";
 import {
   assignEskomAssetRtus,
   ensureEskomDomainRtus,
@@ -13,15 +12,18 @@ import {
   getOrganizationId,
   cleanupLegacyPheRtuLocations,
 } from "./hierarchy-seed";
-import { seedAccessControlFixtures } from "./access-fixtures-seed";
+import { seedAccessControlFixtures, seedDecommissionedLocation } from "./access-fixtures-seed";
 import { seedAssetDomains } from "./asset-domains-seed";
 import { seedPointKeyCatalog } from "./point-keys-seed";
 import { seedPointKeyHeadlineRanks } from "./point-key-headline-ranks-seed";
-import { pheMapLocationRowsForInsert } from "./phe-map-seed";
-import { seedPheCatalog } from "./phe-pilot-seed";
+import { loadPheCatalog, phePilotExpectedRows, seedPheCatalog } from "./phe-pilot-seed";
 import { createDb } from "./client";
 import { backfillAssetLocations, seedAssetGroups } from "./asset-groups-seed";
-import { seedAutomationRules, seedEskomLadderRules } from "./automation-rules-seed";
+import {
+  type LadderCollisionSkip,
+  seedAutomationRules,
+  seedEskomLadderRules,
+} from "./automation-rules-seed";
 import { seedRuledPointCatalog } from "./ruled-point-catalog-seed";
 import { seedAssetTemplateHealth } from "./asset-template-health-seed";
 import { seedPueDemo, seedPueDemoRackKwPoints } from "./pue-demo-seed";
@@ -36,15 +38,14 @@ import {
   ensureAdminUser,
   seedPheOrganizationAdmin,
   seedScopedDemoUsers,
+  WC_ADMIN_LOCATION_KEY,
 } from "./demo-users-seed";
+import { eskomSeedAssetCatalog, seedEskomAssets } from "./eskom-assets-seed";
 import {
-  buildEskomAssetCatalog,
-  demoAssetsForRsmoc,
-  seedEskomAssets,
-} from "./eskom-assets-seed";
-import {
+  locationIdsWithoutSeedCode,
   renameLegacyCapeTownMapLocation,
   seedEskomLocations,
+  seedMapLocationRows,
   seedMapLocations,
 } from "./eskom-locations-seed";
 import { seedSiteControlRoomViews } from "./site-control-room-views-seed";
@@ -104,23 +105,29 @@ async function main(): Promise<void> {
   const pool = createSeedPool(databaseUrl);
   const db = createDb(pool);
 
-  // The identity connection (`bms_app` superuser). Only the three org-less
-  // `bms.users` seeders use it, and they run outside any `withOrganization`
-  // transaction, so it needs no `max: 1` and does not join the tenant dance.
+  // The identity connection (`bms_app` superuser). The three org-less
+  // `bms.users` seeders use it, outside any `withOrganization` transaction,
+  // and `seedEskomLocations` reads slug holders on it (owner ruling 16) —
+  // reads only, which never join the tenant transaction, so it needs no
+  // `max: 1`. `seedDecommissionedLocation` reads its slug holder there too.
   const superuserPool = new pg.Pool({
     connectionString: resolveSeedSuperuserUrl(databaseUrl, process.env),
   });
   const identityDb = createDb(superuserPool);
-  const controlRoomSiteName = "RSMOC Western Cape";
-  const mapLocationRows = [
-    ...mapLocationRowsForInsert(),
-    ...pheMapLocationRowsForInsert(),
-  ];
-  const rsmocDemoAssets = mapLocationRows.flatMap((row) =>
-    row.kind === "rsmoc" && row.siteName && row.province
-      ? demoAssetsForRsmoc(row.siteName, row.province)
-      : [],
-  );
+  // The PHE catalog is read once here, for the map rows and the legacy slugs.
+  const pheCatalog = loadPheCatalog();
+  // The same list `hierarchyExpectations` derives the boot gate's ESKOM
+  // location codes and asset catalog from.
+  const mapLocationRows = seedMapLocationRows(pheCatalog);
+  // Owner ruling 13: the legacy PHE cleanup deletes these twelve slugs and no
+  // other row, whatever slug an administrator gives a PHEWB location.
+  const legacyPheLocationSlugs = phePilotExpectedRows(pheCatalog).legacyLocationSlugs;
+  // Written by `seedEskomLadderRules` in the second ESKOM bracket, read by the
+  // verifier after every bracket has closed.
+  let ladderCollisionSkips: LadderCollisionSkip[] = [];
+  // The row seedEskomLocations resolved for RSMOC-WC, for the scoped demo
+  // users' grants after the groups exist (owner ruling 17); null when none.
+  let westernCapeId: string | null = null;
 
   try {
     // ── Pre-tenant ────────────────────────────────────────────────────────
@@ -140,13 +147,26 @@ async function main(): Promise<void> {
 
     // ── ESKOM ─────────────────────────────────────────────────────────────
     await withOrganization(pool, eskomOrgId, async () => {
-      await seedEskomLocations(db, mapLocationRows, eskomOrgId);
-      // F3.67 (ADR 0076 decision 6, OQ2): RSMOC-WC must exist first — the
-      // insert-if-absent below throws otherwise.
-      await seedSiteControlRoomViews(db, eskomOrgId);
-      await ensureEskomDomainRtus(db, pool);
+      // Owner ruling 16 (OQ2): the slug-holder pre-read runs on the superuser
+      // pool, so a location of any organization holding a canonical slug is
+      // seen and skipped with a log line rather than met as 23505.
+      const seedLocations = await seedEskomLocations(pool, superuserPool, mapLocationRows, eskomOrgId);
+      westernCapeId = seedLocations.get(WC_ADMIN_LOCATION_KEY)?.id ?? null;
+      // F4.10's inactive location, before the RTU step (addendum 3): restored
+      // later, a code PATCH on it left a second RTU set under the admin code.
+      const decommissionedLocation = await seedDecommissionedLocation(pool, superuserPool, eskomOrgId);
+      // F3.67 (ADR 0076 decision 6, OQ2), owner ruling 17: the view goes on
+      // the row seedEskomLocations resolved for RSMOC-WC, never one found by code.
+      await seedSiteControlRoomViews(db, eskomOrgId, seedLocations);
+      // Owner ruling 17: a seed row whose canonical code another row holds
+      // gets no RTU under the admin's code.
+      await ensureEskomDomainRtus(
+        db,
+        pool,
+        locationIdsWithoutSeedCode([...seedLocations.values(), decommissionedLocation]),
+      );
 
-      const eskomCatalog = buildEskomAssetCatalog(controlRoomSiteName, rsmocDemoAssets);
+      const eskomCatalog = eskomSeedAssetCatalog(mapLocationRows);
       const assetRows = await seedEskomAssets(db, pool, eskomCatalog, eskomOrgId);
 
       await seedDemoAlarms(db, assetRows, adminId, eskomOrgId);
@@ -188,20 +208,23 @@ async function main(): Promise<void> {
     // Identity: org-less users + grants on `identityDb`, after the groups the
     // scope grant references exist. Not wrapped in `withOrganization` — the rows
     // are org-less and the superuser bypasses the policy `0047` put on `users`.
-    await seedScopedDemoUsers(identityDb, eskomOrgId);
+    await seedScopedDemoUsers(identityDb, eskomOrgId, westernCapeId);
 
     // ── PHEWB ─────────────────────────────────────────────────────────────
     await withOrganization(pool, phewbOrgId, async () => {
       await seedPheCatalog(db, pool);
-      await cleanupLegacyPheRtuLocations(pool);
+      await cleanupLegacyPheRtuLocations(pool, legacyPheLocationSlugs);
       // `F3.41` — PHEWB's derivation pass, AFTER the catalog that creates the
       // locations and assets it derives from. All three calls moved, not two:
       // dropping `assignEskomAssetRtus` from this pass is probably harmless and
       // is certainly a second change, and keeping it makes this a pure
       // relocation, so the only thing that changed is *when* the pass runs.
       //
-      // `verifyHierarchySeed`'s three PHE membership counts are what hold this
+      // `verifyHierarchySeed`'s two PHE membership counts are what hold this
       // order — put these back above `seedPheCatalog` and it fails with 0 of 36.
+      // (The third, "no PHE environment member carries a role", moved to
+      // `asset-groups-seed.spec.ts` under owner ruling 10: it held the ruling,
+      // not the order.)
       await backfillAssetLocations(pool);
       // **`assignEskomAssetRtus` now runs AFTER the catalog that writes PHE's
       // own `rtu_id`, and cannot disturb it — but only because of a predicate
@@ -243,7 +266,7 @@ async function main(): Promise<void> {
       // After access fixtures, not inside seedAutomationRules: this needs every
       // ESKOM electrical asset to exist, including ESK-MANUAL-01, which the
       // call just above this one creates.
-      await seedEskomLadderRules(db, eskomOrgId);
+      ladderCollisionSkips = await seedEskomLadderRules(db, eskomOrgId);
       // `F4.69` — last inside this bracket, because it derives from the rules
       // every call above it writes. A catalog row for each published threshold
       // rule's point is what makes a tag scoreable (`E1.3`) and pickable
@@ -304,7 +327,9 @@ async function main(): Promise<void> {
     // ── Post-tenant ───────────────────────────────────────────────────────
     await enforceHierarchyNotNull(pool);
     const { verifyHierarchySeed } = await import("./verify-hierarchy-seed.js");
-    await verifyHierarchySeed(pool, { eskomOrgId, phewbOrgId });
+    // The ladder seed's collision skips, so the verifier exempts exactly those
+    // assets from its uncovered-asset check and logs each one.
+    await verifyHierarchySeed(pool, { eskomOrgId, phewbOrgId }, { ladderCollisionSkips });
   } finally {
     await pool.end();
     await superuserPool.end();

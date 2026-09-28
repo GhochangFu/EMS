@@ -18,9 +18,11 @@ import {
  * `randomUUID()`.
  *
  * **Every case rolls back** — `BEGIN` … `ROLLBACK` in a `finally`, never a
- * bare return: a case that merely returns COMMITS, and `verifyHierarchySeed`
- * asserts `count(*) FROM bms.organizations = 2` on every `db:seed`, so one
- * leaked organization stops the compose stack from starting.
+ * bare return: a case that merely returns COMMITS. `verifyHierarchySeed`
+ * asserted `count(*) FROM bms.organizations = 2` on every `db:seed` until the
+ * `F4.169`/`F4.170` addendum, so one leaked organization stopped the compose
+ * stack from starting; it now counts only the two seed organizations present,
+ * but a leaked row is still a stray tenant on a shared database.
  *
  * **Roles.** `bms.organizations` carries no RLS policy, so the owner would
  * see the rows here — but I5 still counts as `bms_fleet` and asserts

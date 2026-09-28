@@ -177,7 +177,14 @@ export const onboardingDraftLocationSchema = z.object({
   longitude: z.number(),
   province: z.string().max(ONBOARDING_DRAFT_STRING_MAX["location.province"]).optional(),
   capital: z.string().max(ONBOARDING_DRAFT_STRING_MAX["location.capital"]).optional(),
-  meta: z.record(z.unknown()).optional(),
+  // `F4.170` owner ruling 20 (compliance review B1).
+  meta: z
+    .record(z.unknown())
+    .optional()
+    .describe(
+      "Free-form location metadata. The `seedKey` key is seed-owned and ignored on write: the " +
+        "commit never stores a draft's `seedKey`.",
+    ),
 });
 
 export const onboardingDraftRtuSchema = z.object({

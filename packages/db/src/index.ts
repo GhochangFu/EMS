@@ -1,6 +1,8 @@
 export { createDb, type BmsDb, type BmsSchema } from "./client";
 export * from "./schema/index";
 export { refreshAggregatesFrom } from "./refresh-aggregates";
+/** Owner ruling 20: the admin location writes strip this key from a request. */
+export { SEED_LOCATION_KEY } from "./seed-location-key";
 /**
  * `F4.75` — exported so `apps/api` can parse the seeded literal with
  * `templateContentSchema`, the same schema `publish()` runs. `packages/db`

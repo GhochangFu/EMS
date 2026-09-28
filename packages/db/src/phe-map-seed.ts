@@ -1,29 +1,15 @@
-import { readFileSync } from "node:fs";
-import { resolve } from "node:path";
+import { loadPheCatalog, type PheCatalogFile, stationSlug } from "./phe-pilot-seed";
 
-type PheCatalogRow = {
-  StationId: number;
-  StationCode: string;
-  StationName: string;
-  Latitude: number;
-  Longitude: number;
-};
-
-type PheCatalogFile = {
-  rows: PheCatalogRow[];
-};
-
-function stationSlug(stationName: string): string {
-  return `phe-${stationName
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-|-$/g, "")}`;
-}
-
-/** Map marker rows for PHEWB pump-house stations. */
-export function pheMapLocationRowsForInsert() {
-  const raw = readFileSync(resolve(process.cwd(), "src/phe-catalog.json"), "utf8");
-  const catalog = JSON.parse(raw) as PheCatalogFile;
+/**
+ * Map marker rows for PHEWB pump-house stations.
+ *
+ * The catalog and the station slug come from `phe-pilot-seed.ts`, so this file
+ * and the seed that writes `bms.locations` cannot disagree on either. It used to
+ * keep its own copies, and read the file from `process.cwd()` alone, which
+ * worked only with `packages/db` as the working directory; `loadPheCatalog`
+ * tries both candidates. `seed.ts` passes the catalog it has already read.
+ */
+export function pheMapLocationRowsForInsert(catalog: PheCatalogFile = loadPheCatalog()) {
   const stationIds = [...new Set(catalog.rows.map((r) => r.StationId))];
 
   return stationIds.map((stationId) => {

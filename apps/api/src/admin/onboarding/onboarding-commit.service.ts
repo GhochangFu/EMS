@@ -29,6 +29,7 @@ import { FLEET_DRIZZLE, TENANT_DRIZZLE } from "../../database/database.tokens";
 import { withTenant } from "../../database/tenant-context";
 import { CredentialCryptoService } from "../../security/credential-crypto.service";
 import { VocabulariesService } from "../../vocabularies/vocabularies.service";
+import { requestMetaForCreate } from "../locations/location-seed-key";
 import { MasterDataAuditService } from "../master-data-audit.service";
 import { resolveTelemetrySource, withTelemetrySource, type TelemetrySource } from "../telemetry-source";
 import { translateCommitUniqueConflict } from "./onboarding-commit-conflict";
@@ -256,7 +257,8 @@ export class OnboardingCommitService {
           latitude: loc.latitude,
           longitude: loc.longitude,
           active: true,
-          meta: loc.meta ?? null,
+          // Owner ruling 20: `meta.seedKey` is seed-owned; a draft's is dropped.
+          meta: requestMetaForCreate(loc.meta),
           updatedAt: sql`now()`,
         })
         .returning();
