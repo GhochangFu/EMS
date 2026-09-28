@@ -12,7 +12,7 @@ reviewed and approved this written record on 2026-09-28.
 
 **Amendment 1** (`F3.65a`, 2026-09-28) records the plan gate: 41 roles, not
 "about 30", the adjusted and derived dark values, the light allowlist, and
-eleven owner rulings. Drafted with the `F3.65a` build; the owner reads it at
+twelve owner rulings. Drafted with the `F3.65a` build; the owner reads it at
 the merge gate.
 
 Implements row `F3.65`, which [ADR 0074](./0074-domain-dashboard-parity.md)
@@ -253,21 +253,32 @@ The plan `docs/plans/f3.65a-colour-tokens.md` (on Fable, measured at
 `7fd51d35`) turned decisions 1–3 and 6 into data. The session re-computed
 sixteen of its ratios and colour differences before the gate; all matched.
 Ten plan questions (OQ1–OQ10) and one build question were put to the owner
-one at a time; all eleven were ruled as recommended.
+one at a time; all eleven were ruled as recommended. A twelfth ruling came
+from the code review (§6).
 
-**1. 41 roles, not "about 30" (OQ1, and the build ruling).** Decision 2's own
-rule — every shade with 10 or more uses keeps its exact light value — gives
-28 exact anchors. Seven shades serve two purposes and split by utility
-(`white` three ways: `surface`, `on-dark`, `on-accent`; `bms-green-dark` two:
-`accent-strong`, `chrome-nav`; `red-600` two: `critical`,
-`critical-ink-soft`). `focus`, `scrim`, `chrome` and `chrome-nav` are
-surfaces the tree already paints; `critical-on-dark` and `warning-on-dark`
-hold the footer's status text, which sits on chrome in both themes (OQ3).
-That is 40. The 41st, **`simulated-ink`**, was ruled during the build: the
-provenance markers in `lib/value-provenance.ts` tell three kinds of value
-apart by colour (nameplate slate, configuration sky, simulated violet), and
-merging violet into `ink-faint` would have made simulated look like
-nameplate. Merges touch about 106 of 3,104 palette uses (3.4 %); the other
+**1. 41 roles, not "about 30" (OQ1, and the build ruling).** Each role is
+counted once:
+
+- **28 anchors.** Decision 2's own rule — every shade with 10 or more uses
+  keeps its exact light value — gives 28 shades, one role each (`white` →
+  `surface`, `red-600` → `critical`, `black` → `scrim`, and so on).
+- **5 split roles.** Three shades serve more than one purpose and split by
+  utility. `white` adds `on-dark` and `on-accent` beside its anchor
+  `surface`; `red-600` adds `critical-ink-soft` beside `critical`;
+  `bms-green-dark` (9 uses, so no anchor) gives `accent-strong` and
+  `chrome-nav`.
+- **3 anchors under 10 uses**, kept exact because their status needs its
+  own value: `ok-wash` (emerald-50, 9), `info` (sky-500, 3) and `info-ink`
+  (sky-800, 3, OQ9).
+- **4 extra roles** for a purpose no anchor covers: `focus`, `chrome`, and
+  `critical-on-dark` and `warning-on-dark`, which hold the footer's status
+  text on chrome in both themes (OQ3).
+
+That is 40, the list the plan gate ruled. The 41st, **`simulated-ink`**, was
+ruled during the build: the provenance markers in `lib/value-provenance.ts`
+tell three kinds of value apart by colour (nameplate slate, configuration
+sky, simulated violet), and merging violet into `ink-faint` would have made
+simulated look like nameplate. Merges touch about 106 of 3,104 palette uses (3.4 %); the other
 96.6 % keep their light pixels. The mapping-table test records every shade,
 its role, and each merged shade's ΔE2000.
 
@@ -289,21 +300,38 @@ dark (8.71:1). `on-dark` stays white: chrome, status fills and scrims are
 dark in both themes. `chrome-nav` stays `#007C3C` in both themes so the nav
 keeps 5.32:1 under white text.
 
-**4. The contrast test's allowlist.** Eleven light pairs fail today and are
-kept, each with its reason: the brand green as text or under white text
-(six pairs, 2.86–3.19:1, decision 2), status dots and bars on a light card
-(four pairs, 1.95–2.77:1, each duplicated by text), and a placeholder glyph
-(2.54:1, WCAG 1.4.3's inactive exception). **The dark allowlist is empty.**
+**4. The contrast test's allowlist.** Twelve light pairs fail today and are
+kept, each with its reason: the brand green as text, as a UI part or under
+white text (seven pairs, 2.86–3.19:1, decision 2), status dots and bars on a
+light card (four pairs, 1.95–2.77:1, each duplicated by text), and a
+placeholder glyph (2.54:1, WCAG 1.4.3's inactive exception). An entry
+exempts its pair only at its own threshold, so `accent` on `canvas` has one
+entry as text (4.5:1) and one as a UI part (3:1). **The dark allowlist is empty.**
 Hairlines and card borders are not declared as pairs: they are decorative
 boundaries and the focus ring is the state indicator (OQ5).
 
-**5. The gate (OQ7, OQ8).** Four counted kinds per file — palette classes,
-hex literals, colour-function literals, and the table-less hard zeros
-`dark:` and named colours — against an exact per-file floor measured at
-`7fd51d35` (305 files walked, 141 with findings: palette 3,104, hex 190,
-functions 2). `darkMode: ["selector", '[data-theme="dark"]']` is set
-defensively, so a stray `dark:` class can never follow the OS.
+**5. The gate (OQ7, OQ8).** Three counted kinds per file — palette classes,
+hex literals and colour-function literals (`rgb()`, `hsl()`, `oklch()`,
+`oklab()`, `lab()`, `lch()`, `hwb()`, `color-mix()`) — against an exact
+per-file floor measured at `7fd51d35` (305 files walked, 141 with findings:
+palette 3,104, hex 190, functions 2). Beside them, hard zeros with no table,
+each named by file and line: a `dark:` variant; an arbitrary variant aimed
+at `data-theme`; a named colour; `prefers-color-scheme` and `matchMedia(`,
+also in `apps/web/index.html`; `text-on-dark` in one class string with an
+opaque `bg-accent` or `bg-accent-strong` (2.09:1 in dark); and an opacity
+modifier on a role class that is not a Tailwind opacity step (§6). A role
+declared outside the two theme blocks of `index.css` fails the token test.
+`darkMode: ["selector", '[data-theme="dark"]']` is set defensively, so a
+stray `dark:` class can never follow the OS.
 
 **6. Smaller rulings.** The login hero's dark art (5 hex, 1 `rgba`) stays
 until `F3.65c` (OQ4); `info-ink` anchors on sky-800 `#075985` (OQ9);
 amber-700 merges into `warning-ink` at ΔE 15.2 (OQ10).
+
+**Owner ruling from the code review (2026-09-28): a light change on the
+login page.** `text-white/72` and `text-white/58` on the login hero were
+never rendered at those steps: Tailwind 3 has no 72 or 58 opacity step, so
+the classes emitted no CSS and the text showed at full white. They become
+`text-on-dark/70` and `text-on-dark/60`, so the hero paragraph and the stat
+labels now render at 70 % and 60 %. The gate now refuses an opacity
+modifier on a role class that is not a Tailwind opacity step.
