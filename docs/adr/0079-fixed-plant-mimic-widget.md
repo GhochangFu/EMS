@@ -146,10 +146,13 @@ None. The SVG is hand-written; no drawing library is added.
   shows empty nodes, until a second preset ships.
 - Two declarations of the widget vocabulary change in one change set; the
   migration and the contract ship together or not at all.
-- **Two points open for the owner before approval.** On the demo, three of
-  the eight nodes (intake, softener, storage) show "Not assigned": show them
-  or hide them? The demo plant sits under the `ESKOM` organization at "CSMOC
-  Gauteng", and the Ion Exchange audience sees those names.
+- **Open point 1 — ruled 2026-09-28: show the node dimmed, with "Not
+  assigned".** Options were: show dimmed; hide the node and its pipe; a
+  per-widget checkbox. The full process line stays visible and the picture
+  never changes shape, so the customer sees what is not yet connected.
+- **Open point 2 — open.** The demo plant sits under the `ESKOM`
+  organization at "CSMOC Gauteng", and the Ion Exchange audience sees those
+  names.
 - **Schedule risk:** the read-time node resolver is new API and web code; the
   existing dashboard telemetry hook reads only bound points.
 - `F3.65b` / `F3.65c` edit the same web tree in the same days. The mimic
