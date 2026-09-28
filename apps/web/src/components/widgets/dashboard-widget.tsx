@@ -1,5 +1,6 @@
 import type { DashboardWidgetDto, PointAggregateStats, RollupCoverage } from "@bms/shared";
 
+import { EMPTY_GEOMETRY, presetGeometry } from "../../lib/mimic-geometry";
 import type { DatasetRow, WidgetSeries, WidgetStatus } from "../../lib/widget-catalog";
 import { widgetTitle } from "../../lib/widget-value";
 import { ChartWidget } from "./chart-widget";
@@ -219,12 +220,13 @@ export function DashboardWidget({ widget, data, now }: DashboardWidgetProps) {
     case "mimic":
       // `F3.32` — this dispatcher has no node read: the live canvas branches to `MimicWidgetLive`
       // before it gets here (`dashboard-widget-live.tsx`). Drawn here, the preset shows its
-      // topology with every node unresolved, rather than a blank card.
+      // topology with every node unresolved, rather than a blank card. A layout (`F3.32c`) has
+      // its geometry only in the node read, so it draws the empty geometry.
       return (
         <MimicWidget
           title={title}
           status={status}
-          preset={widget.config.preset}
+          geometry={widget.config.source === "preset" ? presetGeometry(widget.config.preset) : EMPTY_GEOMETRY}
           nodes={NO_MIMIC_NODES}
           readings={NO_LIVE_READINGS}
         />

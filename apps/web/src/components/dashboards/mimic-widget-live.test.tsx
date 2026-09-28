@@ -4,6 +4,9 @@ import { afterEach, beforeEach, describe, it, vi } from "vitest";
 import {
   aFailedReadShowsTheErrorLine,
   aFailedRefetchKeepsTheLastDrawing,
+  aLayoutWidgetDrawsItsLayout,
+  aLayoutWidgetMissingFromTheResponseDrawsNothing,
+  theEntrySourceDecidesTheDrawing,
   aWidgetMissingFromTheResponseDrawsUnassigned,
   cleanupLive,
   foreignReadingChangesNothing,
@@ -50,5 +53,14 @@ describe("F3.32 U4 — MimicWidgetLive", () => {
   });
   it("LV8 a failed refetch keeps the last good drawing", async () => {
     await aFailedRefetchKeepsTheLastDrawing();
+  });
+  it("LV9 a layout widget draws its layout, the passive unit marked passive", async () => {
+    await aLayoutWidgetDrawsItsLayout();
+  });
+  it("LV10 the entry's source decides the drawing, not the widget's config", async () => {
+    await theEntrySourceDecidesTheDrawing();
+  });
+  it("LV11 a layout widget missing from the response draws nothing", async () => {
+    await aLayoutWidgetMissingFromTheResponseDrawsNothing();
   });
 });
