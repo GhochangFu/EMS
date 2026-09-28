@@ -231,13 +231,16 @@ describe("F3.32 v1 — the mimic-nodes read (U2, expected red until it lands)", 
       );
     }
     const src = read(MIMIC_NODES_SERVICE_REL);
+    // Interpolation sites only, never import lines: an import names the constant too, so a
+    // bare-name count or `includes` passes with the constant imported and unused (the U2
+    // report measured both gates passing on a literal `LIMIT 3` and a named import).
     expect(
-      (src.match(/GENERATED_LATEST_WINDOW_SQL/g) ?? []).length,
+      (src.match(/\$\{[\w.]*GENERATED_LATEST_WINDOW_SQL\}/g) ?? []).length,
       "must interpolate GENERATED_LATEST_WINDOW_SQL exactly once (F3.68's literal window, never a bound now() - $n)",
     ).toBe(1);
     expect(
-      src.includes("MIMIC_HEADLINE_POINTS"),
-      "must bound its top-N read by MIMIC_HEADLINE_POINTS, not a literal 3",
+      /LIMIT\s+\$\{[\w.]*MIMIC_HEADLINE_POINTS\}/.test(src),
+      "must bound its top-N read with LIMIT ${MIMIC_HEADLINE_POINTS}, not a literal 3",
     ).toBe(true);
   });
 
@@ -246,14 +249,19 @@ describe("F3.32 v1 — the mimic-nodes read (U2, expected red until it lands)", 
       throw new Error(`${CONTROLLER_REL} does not exist — this repository's own layout changed`);
     }
     const src = read(CONTROLLER_REL);
-    const mimicAt = src.indexOf("mimic-nodes");
+    // Decorators at the start of a line only. A bare `indexOf("mimic-nodes")` finds the import
+    // path above every route, and a bare `indexOf('@Get(":slug")')` finds the docblocks that
+    // name the ordering rule — either passes whatever the real order is.
+    const decoratorAt = (route: string): number =>
+      src.search(new RegExp(`^[ \\t]*@Get\\("${route}"\\)`, "m"));
+    const mimicAt = decoratorAt(":id/mimic-nodes");
     if (mimicAt === -1) {
       throw new Error(
         "no 'mimic-nodes' route found in dashboard-builder.controller.ts — expected red until " +
           "U2 lands. Do not delete this assertion; re-run once U2 merges.",
       );
     }
-    const slugAt = src.indexOf(`@Get(":slug")`);
+    const slugAt = decoratorAt(":slug");
     expect(slugAt, "the controller must still declare @Get(\":slug\")").toBeGreaterThan(-1);
     expect(
       mimicAt,
