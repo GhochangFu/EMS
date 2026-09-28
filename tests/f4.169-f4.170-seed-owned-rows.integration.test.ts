@@ -204,7 +204,7 @@ describe.skipIf(!ownerUrl)("F4.169/F4.170 addendum 2 — the seed changes only t
   it("C2: an admin PHEWB location whose slug ends -ii leaves the legacy zero count unmoved", async () => {
     await inTransaction(phewbOrgId, async (pool) => {
       const label = "PHEWB legacy per-RTU locations";
-      const before = actualOf(await readPhewbChecks(pool, phewbOrgId), label);
+      const before = actualOf(await readPhewbChecks(pool), label);
       await insertLocation(pool, phewbOrgId, `F4169-${RUN_ID}-NEW`, adminPheSlug, "pump_station");
       const probe = await pool.query<{ n: number }>(
         `SELECT COUNT(*)::int AS n FROM bms.locations WHERE slug = $1`,
@@ -212,7 +212,7 @@ describe.skipIf(!ownerUrl)("F4.169/F4.170 addendum 2 — the seed changes only t
       );
       assert(probe.rows[0]?.n === 1, "the admin location must be visible in PHEWB's context");
       // Mutation: the count back on the pattern reads +1.
-      expect(actualOf(await readPhewbChecks(pool, phewbOrgId), label), "the admin slug is not a legacy row").toBe(
+      expect(actualOf(await readPhewbChecks(pool), label), "the admin slug is not a legacy row").toBe(
         before,
       );
     });

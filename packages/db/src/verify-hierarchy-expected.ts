@@ -1,10 +1,14 @@
 import { DECOMMISSIONED_LOCATION_CODE } from "./access-fixtures-seed";
 import { demoRoleForAsset } from "./asset-groups-seed";
 import { eskomSeedAssetCatalog } from "./eskom-assets-seed";
-import { eskomCanonicalLocationRows, eskomLocationCode } from "./eskom-locations-seed";
+import { eskomCanonicalLocationRows, eskomLocationCode, seedMapLocationRows } from "./eskom-locations-seed";
 import { SEED_ORGANIZATION_CODES } from "./hierarchy-seed";
-import { mapLocationRowsForInsert } from "./map-locations-seed";
-import { loadPheCatalog, phePilotExpectedRows, type PhePilotExpectedRows } from "./phe-pilot-seed";
+import {
+  loadPheCatalog,
+  type PheCatalogFile,
+  phePilotExpectedRows,
+  type PhePilotExpectedRows,
+} from "./phe-pilot-seed";
 import { PUE_DEMO_INCOMER_ROLE } from "./pue-demo-seed";
 
 /**
@@ -35,13 +39,24 @@ export type HierarchyExpectations = {
   readonly phe: PhePilotExpectedRows;
 };
 
-/** The expectations for the repository's catalogs. Pure but for reading the PHE catalog file. */
-export function hierarchyExpectations(): HierarchyExpectations {
-  const eskomCatalog = eskomSeedAssetCatalog();
-  return {
+/**
+ * The expectations for the repository's catalogs, from the map rows `seed.ts`
+ * seeds ({@link seedMapLocationRows}) and one read of the PHE catalog.
+ *
+ * **Throws on an empty list.** A presence count's wanted number is its list's
+ * length, so an empty list wants 0 and the count passes whatever the database
+ * holds — a derivation that broke would turn its check off without a word.
+ * The legacy PHE slugs are in the set too: an empty list would also make the
+ * legacy cleanup delete nothing. The `TS` pairs are not, because a catalog
+ * with no `TS` sensor is a legitimate vendor export (see `seedPheCatalog`).
+ */
+export function hierarchyExpectations(pheCatalog: PheCatalogFile = loadPheCatalog()): HierarchyExpectations {
+  const mapLocationRows = seedMapLocationRows(pheCatalog);
+  const eskomCatalog = eskomSeedAssetCatalog(mapLocationRows);
+  const expected: HierarchyExpectations = {
     organizationCodes: SEED_ORGANIZATION_CODES,
     eskomLocationCodes: [
-      ...eskomCanonicalLocationRows(mapLocationRowsForInsert()).map(eskomLocationCode),
+      ...eskomCanonicalLocationRows(mapLocationRows).map(eskomLocationCode),
       DECOMMISSIONED_LOCATION_CODE,
     ],
     decommissionedLocationCode: DECOMMISSIONED_LOCATION_CODE,
@@ -49,6 +64,26 @@ export function hierarchyExpectations(): HierarchyExpectations {
       .filter((asset) => demoRoleForAsset(asset.code, asset.domain) === PUE_DEMO_INCOMER_ROLE)
       .map((asset) => asset.code),
     eskomItCodes: eskomCatalog.filter((asset) => asset.domain === "it").map((asset) => asset.code),
-    phe: phePilotExpectedRows(loadPheCatalog()),
+    phe: phePilotExpectedRows(pheCatalog),
   };
+  const lists: ReadonlyArray<readonly [string, readonly unknown[]]> = [
+    ["organizationCodes", expected.organizationCodes],
+    ["eskomLocationCodes", expected.eskomLocationCodes],
+    ["eskomIncomerCodes", expected.eskomIncomerCodes],
+    ["eskomItCodes", expected.eskomItCodes],
+    ["phe.locationCodes", expected.phe.locationCodes],
+    ["phe.externalRtuIds", expected.phe.externalRtuIds],
+    ["phe.assetCodes", expected.phe.assetCodes],
+    ["phe.points", expected.phe.points],
+    ["phe.electricalAssetCodes", expected.phe.electricalAssetCodes],
+    ["phe.legacyLocationSlugs", expected.phe.legacyLocationSlugs],
+  ];
+  const empty = lists.filter(([, list]) => list.length === 0).map(([name]) => name);
+  if (empty.length > 0) {
+    throw new Error(
+      `hierarchyExpectations: derived an empty list for ${empty.join(", ")}; ` +
+        "a presence count over an empty list wants 0 and passes on any database",
+    );
+  }
+  return expected;
 }

@@ -1,6 +1,8 @@
 import { describe, it } from "vitest";
 
 import {
+  assertAnEmptyDerivedListIsRefused,
+  assertCombinedAndEskomOnlyRowsAgree,
   assertElevenEskomLocations,
   assertFortyEightPheAssets,
   assertFourteenEskomItAssets,
@@ -57,5 +59,13 @@ describe("F4.169/F4.170 addendum — the boot gate's expectations derive from th
 
   it("derives twelve legacy per-RTU PHE slugs, none a station's", () => {
     assertTwelveLegacyPheSlugs();
+  });
+
+  it("gives the same ESKOM codes and asset catalog from the combined and the ESKOM-only map rows", () => {
+    assertCombinedAndEskomOnlyRowsAgree();
+  });
+
+  it("refuses an empty derived list, naming it", () => {
+    assertAnEmptyDerivedListIsRefused();
   });
 });

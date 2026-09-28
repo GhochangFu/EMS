@@ -1,5 +1,8 @@
 import { expect } from "vitest";
 
+import { eskomSeedAssetCatalog } from "./eskom-assets-seed";
+import { eskomCanonicalLocationRows, eskomLocationCode, seedMapLocationRows } from "./eskom-locations-seed";
+import { mapLocationRowsForInsert } from "./map-locations-seed";
 import { loadPheCatalog, stationSlug } from "./phe-pilot-seed";
 import { hierarchyExpectations } from "./verify-hierarchy-expected";
 
@@ -136,4 +139,45 @@ export function assertTwelveLegacyPheSlugs(): void {
     legacyLocationSlugs.filter((slug) => stationSlugs.has(slug)),
     "no legacy slug may be a station's slug, or the cleanup deletes a live station",
   ).toEqual([]);
+}
+
+/**
+ * The combined ESKOM + PHE map rows `seed.ts` seeds from and the ESKOM rows
+ * alone give the same canonical location codes and the same asset catalog:
+ * no PHE map row is a campus or centre kind. `eskomSeedAssetCatalog`'s
+ * default argument (the ESKOM rows alone) rests on this.
+ *
+ * Mutation: a PHE map row of kind `rsmoc` in a South African province adds
+ * demo assets to the combined side only. The kind alone does not: the PHEWB
+ * filter keeps the row out of the canonical locations, and West Bengal has
+ * no demo assets.
+ */
+export function assertCombinedAndEskomOnlyRowsAgree(): void {
+  const combined = seedMapLocationRows();
+  const eskomOnly = mapLocationRowsForInsert();
+  expect(combined.length, "the combined list carries the PHE rows too").toBeGreaterThan(eskomOnly.length);
+  expect(eskomCanonicalLocationRows(combined).map(eskomLocationCode)).toEqual(
+    eskomCanonicalLocationRows(eskomOnly).map(eskomLocationCode),
+  );
+  expect(eskomSeedAssetCatalog(combined)).toEqual(eskomSeedAssetCatalog(eskomOnly));
+}
+
+/**
+ * An empty derived list stops the derivation, naming the list: a presence
+ * count over it would want 0 and pass on any database.
+ *
+ * Mutation: removing the throw returns lists of length 0, and the gate's
+ * wanted numbers read 0.
+ */
+export function assertAnEmptyDerivedListIsRefused(): void {
+  const empty = { ...loadPheCatalog(), rows: [] };
+  expect(() => hierarchyExpectations(empty)).toThrow(/phe\.locationCodes/);
+  expect(() => hierarchyExpectations(empty)).toThrow(/phe\.legacyLocationSlugs/);
+  let message = "";
+  try {
+    hierarchyExpectations(empty);
+  } catch (err: unknown) {
+    message = err instanceof Error ? err.message : String(err);
+  }
+  expect(message, "only the empty lists are named").not.toContain("eskomLocationCodes");
 }

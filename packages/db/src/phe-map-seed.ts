@@ -1,4 +1,4 @@
-import { loadPheCatalog, stationSlug } from "./phe-pilot-seed";
+import { loadPheCatalog, type PheCatalogFile, stationSlug } from "./phe-pilot-seed";
 
 /**
  * Map marker rows for PHEWB pump-house stations.
@@ -7,10 +7,9 @@ import { loadPheCatalog, stationSlug } from "./phe-pilot-seed";
  * and the seed that writes `bms.locations` cannot disagree on either. It used to
  * keep its own copies, and read the file from `process.cwd()` alone, which
  * worked only with `packages/db` as the working directory; `loadPheCatalog`
- * tries both candidates.
+ * tries both candidates. `seed.ts` passes the catalog it has already read.
  */
-export function pheMapLocationRowsForInsert() {
-  const catalog = loadPheCatalog();
+export function pheMapLocationRowsForInsert(catalog: PheCatalogFile = loadPheCatalog()) {
   const stationIds = [...new Set(catalog.rows.map((r) => r.StationId))];
 
   return stationIds.map((stationId) => {

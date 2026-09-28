@@ -315,7 +315,7 @@ describe.skipIf(!ownerUrl)("F4.169/F4.170 addendum — the boot gate after ordin
           ? await readGlobalChecks(pool)
           : pass === "eskom"
             ? await readEskomChecks(pool, eskomOrgId, { log: () => undefined })
-            : await readPhewbChecks(pool, phewbOrgId);
+            : await readPhewbChecks(pool);
       const found = checks.filter((check) => check.label === label);
       assert(found.length === 1, `expected one ${pass} check labelled "${label}", found ${found.length}`);
       return found[0] as HierarchyCheck;

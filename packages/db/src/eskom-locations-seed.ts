@@ -2,8 +2,9 @@ import { eq } from "drizzle-orm";
 import type pg from "pg";
 
 import type { BmsDb } from "./client";
-import type { mapLocationRowsForInsert } from "./map-locations-seed";
-import type { pheMapLocationRowsForInsert } from "./phe-map-seed";
+import { mapLocationRowsForInsert } from "./map-locations-seed";
+import { pheMapLocationRowsForInsert } from "./phe-map-seed";
+import { loadPheCatalog, type PheCatalogFile } from "./phe-pilot-seed";
 import { mapLocations } from "./schema/bms-schema";
 
 /**
@@ -17,6 +18,16 @@ import { mapLocations } from "./schema/bms-schema";
 export type MapLocationSeedRow =
   | ReturnType<typeof mapLocationRowsForInsert>[number]
   | ReturnType<typeof pheMapLocationRowsForInsert>[number];
+
+/**
+ * The combined ESKOM + PHE map rows `seed.ts` seeds from — one list, so the
+ * boot gate's expectations (`hierarchyExpectations`) read the rows the seed
+ * writes rather than a second list built beside it. `pheCatalog` is the
+ * catalog the caller has read, so the file is read once.
+ */
+export function seedMapLocationRows(pheCatalog: PheCatalogFile = loadPheCatalog()): MapLocationSeedRow[] {
+  return [...mapLocationRowsForInsert(), ...pheMapLocationRowsForInsert(pheCatalog)];
+}
 
 const locationCodeByProvince = new Map([
   ["Eastern Cape", "EC"],

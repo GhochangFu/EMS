@@ -4,7 +4,6 @@ import { resolve } from "node:path";
 import pg from "pg";
 
 import { createSeedPool, resolveSeedSuperuserUrl, withOrganization } from "./seed-tenant";
-import { mapLocationRowsForInsert } from "./map-locations-seed";
 import {
   assignEskomAssetRtus,
   ensureEskomDomainRtus,
@@ -17,7 +16,6 @@ import { seedAccessControlFixtures } from "./access-fixtures-seed";
 import { seedAssetDomains } from "./asset-domains-seed";
 import { seedPointKeyCatalog } from "./point-keys-seed";
 import { seedPointKeyHeadlineRanks } from "./point-key-headline-ranks-seed";
-import { pheMapLocationRowsForInsert } from "./phe-map-seed";
 import { loadPheCatalog, phePilotExpectedRows, seedPheCatalog } from "./phe-pilot-seed";
 import { createDb } from "./client";
 import { backfillAssetLocations, seedAssetGroups } from "./asset-groups-seed";
@@ -45,6 +43,7 @@ import { eskomSeedAssetCatalog, seedEskomAssets } from "./eskom-assets-seed";
 import {
   renameLegacyCapeTownMapLocation,
   seedEskomLocations,
+  seedMapLocationRows,
   seedMapLocations,
 } from "./eskom-locations-seed";
 import { seedSiteControlRoomViews } from "./site-control-room-views-seed";
@@ -113,13 +112,13 @@ async function main(): Promise<void> {
     connectionString: resolveSeedSuperuserUrl(databaseUrl, process.env),
   });
   const identityDb = createDb(superuserPool);
-  const mapLocationRows = [
-    ...mapLocationRowsForInsert(),
-    ...pheMapLocationRowsForInsert(),
-  ];
+  // The PHE catalog is read once here, for the map rows and the legacy slugs.
+  const pheCatalog = loadPheCatalog();
+  // The same list `hierarchyExpectations` derives the boot gate's ESKOM
+  // location codes and asset catalog from.
+  const mapLocationRows = seedMapLocationRows(pheCatalog);
   // Owner ruling 13: the legacy PHE cleanup deletes these twelve slugs and no
   // other row, whatever slug an administrator gives a PHEWB location.
-  const pheCatalog = loadPheCatalog();
   const legacyPheLocationSlugs = phePilotExpectedRows(pheCatalog).legacyLocationSlugs;
   // Written by `seedEskomLadderRules` in the second ESKOM bracket, read by the
   // verifier after every bracket has closed.

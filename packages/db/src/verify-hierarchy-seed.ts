@@ -3,7 +3,7 @@ import pg from "pg";
 import { PACK_ASSET_DOMAINS } from "./asset-domains-seed";
 import type { LadderCollisionSkip } from "./automation-rules-seed";
 import { getOrganizationId } from "./hierarchy-seed";
-import { hierarchyExpectations } from "./verify-hierarchy-expected";
+import { type HierarchyExpectations, hierarchyExpectations } from "./verify-hierarchy-expected";
 import { withOrganization } from "./seed-tenant";
 import { DEMO_WATER_ASSET_CODES, DEMO_WATER_TEMPLATE_CODES } from "./water-plant-demo-seed";
 
@@ -71,12 +71,14 @@ export async function verifyHierarchySeed(
   const eskomOrgId = organizationIds?.eskomOrgId ?? (await getOrganizationId(pool, "ESKOM"));
   const phewbOrgId = organizationIds?.phewbOrgId ?? (await getOrganizationId(pool, "PHEWB"));
 
-  const checks: HierarchyCheck[] = [...(await readGlobalChecks(pool))];
+  // One derivation, one read of the PHE catalog, for all three passes.
+  const expected = hierarchyExpectations();
+  const checks: HierarchyCheck[] = [...(await readGlobalChecks(pool, expected))];
   await withOrganization(pool, eskomOrgId, async () => {
-    checks.push(...(await readEskomChecks(pool, eskomOrgId, options)));
+    checks.push(...(await readEskomChecks(pool, eskomOrgId, { ...options, expected })));
   });
   await withOrganization(pool, phewbOrgId, async () => {
-    checks.push(...(await readPhewbChecks(pool, phewbOrgId)));
+    checks.push(...(await readPhewbChecks(pool, expected)));
   });
 
   const errors = failingChecks(checks);
@@ -136,14 +138,16 @@ export function failingChecks(checks: readonly HierarchyCheck[]): string[] {
 /**
  * Pass 1 — the checks that need no tenant context.
  */
-export async function readGlobalChecks(pool: pg.Pool): Promise<HierarchyCheck[]> {
+export async function readGlobalChecks(
+  pool: pg.Pool,
+  expected: HierarchyExpectations = hierarchyExpectations(),
+): Promise<HierarchyCheck[]> {
   // ── Pass 1: no tenant context ─────────────────────────────────────────────
   // Only `bms.organizations` and `bms.asset_domains` live here — neither
   // carries a policy (`0047` left the global-vocabulary class unpoliced).
   // Everything else that used to live in this query touches a table `0047`
   // now policies, so it moved under a per-organization context below (see the
   // module header).
-  const expected = hierarchyExpectations();
   // The seed's organizations present, not every row: `POST
   // /admin/organizations` adds one, and the next boot re-seeds and runs this.
   const global = await pool.query<{ orgs: string; asset_domains: string }>(`
@@ -195,6 +199,8 @@ export type EskomCheckOptions = {
   readonly ladderCollisionSkips?: readonly LadderCollisionSkip[];
   /** Where each exemption line goes; `console.error` by default. */
   readonly log?: (line: string) => void;
+  /** The seed's rows; derived here when the caller has none. */
+  readonly expected?: HierarchyExpectations;
 };
 
 /**
@@ -206,7 +212,11 @@ export async function readEskomChecks(
   eskomOrgId: string,
   options: EskomCheckOptions = {},
 ): Promise<HierarchyCheck[]> {
-  const { ladderCollisionSkips = [], log = (line: string) => console.error(line) } = options;
+  const {
+    ladderCollisionSkips = [],
+    log = (line: string) => console.error(line),
+    expected = hierarchyExpectations(),
+  } = options;
   const checks: HierarchyCheck[] = [];
   const expect = (label: string, actual: string | undefined, wanted: number): void => {
     checks.push(exactCheck(label, actual, wanted));
@@ -245,7 +255,6 @@ export async function readEskomChecks(
   // (verify-hierarchy-expected.ts), as its own statement: the statement after
   // it keeps its parameter list, which tests/e4.3-demo-water-plant.test.ts
   // reads.
-  const expected = hierarchyExpectations();
   const presence = await pool.query<{
     eskom_locs: string;
     eskom_decomm_active: string;
@@ -464,10 +473,10 @@ export async function readEskomChecks(
  * Pass 3 — the PHEWB checks. The caller holds PHEWB's tenant context; this
  * function opens no transaction.
  */
-export async function readPhewbChecks(pool: pg.Pool, phewbOrgId: string): Promise<HierarchyCheck[]> {
-  // The caller names the context it holds; Pass 3's SQL filters on the
-  // organization's code, so the id itself is not read here.
-  void phewbOrgId;
+export async function readPhewbChecks(
+  pool: pg.Pool,
+  expected: HierarchyExpectations = hierarchyExpectations(),
+): Promise<HierarchyCheck[]> {
   const checks: HierarchyCheck[] = [];
   const expect = (label: string, actual: string | undefined, wanted: number): void => {
     checks.push(exactCheck(label, actual, wanted));
@@ -475,7 +484,7 @@ export async function readPhewbChecks(pool: pg.Pool, phewbOrgId: string): Promis
   // ── Pass 3: PHEWB ─────────────────────────────────────────────────────────
   // Every count an admin write can move reads the rows seedPheCatalog writes
   // for phe-catalog.json (phePilotExpectedRows), counted present.
-  const phe = hierarchyExpectations().phe;
+  const phe = expected.phe;
   const res = await pool.query<{
     phe_locs: string;
     phe_legacy_locs: string;
