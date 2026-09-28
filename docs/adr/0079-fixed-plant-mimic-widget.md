@@ -82,13 +82,22 @@ first option, and only one preset.
    unranked key falls back to the first by `point_key`, as `F3.68` does). If
    no member carries the role, the node shows "Not assigned". If two members
    carry it, the node shows the first by asset code and a count badge ("+1").
-   In a section template the same role resolves at instantiation, as every
-   ADR 0049 binding does.
+   **The role resolves at read time, not at write time.** The mimic writes no
+   `bms.dashboard_widget_points` rows; the widget fetches its nodes from a
+   group-scoped read (the shape of `F3.68`'s
+   `/api/v1/control-room/sites/:locationId/generated`) and subscribes to
+   `/ws/telemetry` for those points. So a role an operator changes later shows
+   on the next load, with no re-save. A section template copies the mimic
+   widget unchanged at instantiation; nothing resolves there. This differs from
+   ADR 0049 decision 4, whose bindings resolve at instantiation, because a
+   mimic carries no binding.
 4. **The widget is placed only on a dashboard scoped to one asset group, and
    in section templates** (Q2). The builder does not offer `mimic` on a
    location-, asset- or unscoped dashboard, and the API answers 400 on such a
-   write. The Control Room site view (`F3.69`) renders a group-scoped
-   dashboard already, so the mimic appears there with no change.
+   write. `POST /admin/dashboard-templates/:id/instantiate` accepts a null
+   `assetGroupId`; for a template that holds a mimic it answers 400 unless
+   `assetGroupId` is set. The Control Room site view (`F3.69`) renders a
+   group-scoped dashboard already, so the mimic appears there with no change.
 5. **Seven new role codes and a wired demo plant** (Q3). A new migration
    inserts `water_intake`, `wtp`, `ro`, `softener`, `water_storage`, `stp`
    and `etp` into `bms.asset_roles`. The `water_train` preset's cooling-tower
@@ -137,5 +146,11 @@ None. The SVG is hand-written; no drawing library is added.
   shows empty nodes, until a second preset ships.
 - Two declarations of the widget vocabulary change in one change set; the
   migration and the contract ship together or not at all.
+- **Two points open for the owner before approval.** On the demo, three of
+  the eight nodes (intake, softener, storage) show "Not assigned": show them
+  or hide them? The demo plant sits under the `ESKOM` organization at "CSMOC
+  Gauteng", and the Ion Exchange audience sees those names.
+- **Schedule risk:** the read-time node resolver is new API and web code; the
+  existing dashboard telemetry hook reads only bound points.
 - `F3.65b` / `F3.65c` edit the same web tree in the same days. The mimic
   change set rebases after each of them and re-runs CI before its merge.
