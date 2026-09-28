@@ -35,8 +35,8 @@ type ChartWidgetProps = {
  * read fresh on every render, so `[config, series, now]` never matches its
  * previous dependency list and `echarts-for-react`'s deep compare then calls
  * `setOption(..., { notMerge: true })` — a full replace at the parent's
- * render rate. Unlike `load-trend-chart.tsx:48`, which memoises on
- * `[points]` alone and reads no clock, this component's whole reason to take
+ * render rate. Unlike `load-trend-chart.tsx`, whose option memo depends on
+ * `[points, roles]` and reads no clock, this component's whole reason to take
  * `now` is `windowMinutes`' rolling window. Freezing `now` stops the window
  * rolling; bucketing samples into a coarser granularity invents a cadence
  * this row has no basis to choose. That decision belongs to `F3.1d`, which

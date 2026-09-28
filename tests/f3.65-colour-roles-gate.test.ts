@@ -262,7 +262,6 @@ describe("F3.65 colour scan — fixtures", () => {
  * `F3.65b` (R20 holds it); `F3.65c` empties the table.
  */
 const FLOOR: { file: string; palette: number; hex: number; func: number }[] = [
-  { file: "components/asset-health/health-summary-donut.tsx", palette: 0, hex: 5, func: 0 },
   { file: "components/asset-templates/formula-editor.tsx", palette: 0, hex: 13, func: 0 },
   { file: "components/control-room/smoc/env.tsx", palette: 0, hex: 21, func: 0 },
   { file: "components/control-room/smoc/hvac.tsx", palette: 0, hex: 5, func: 0 },
@@ -270,11 +269,8 @@ const FLOOR: { file: string; palette: number; hex: number; func: number }[] = [
   { file: "components/control-room/smoc/overview.tsx", palette: 0, hex: 5, func: 0 },
   { file: "components/control-room/smoc/sld.tsx", palette: 0, hex: 14, func: 0 },
   { file: "components/control-room/smoc/ups.tsx", palette: 0, hex: 5, func: 0 },
-  { file: "components/energy-source-stack-chart.tsx", palette: 0, hex: 9, func: 0 },
-  { file: "components/energy-top-bar-chart.tsx", palette: 0, hex: 6, func: 0 },
   { file: "components/live-svg/crac-schematic.tsx", palette: 0, hex: 58, func: 0 },
   { file: "components/live-svg/electrical-sld.tsx", palette: 0, hex: 19, func: 0 },
-  { file: "components/load-trend-chart.tsx", palette: 0, hex: 6, func: 1 },
   { file: "components/world-map.tsx", palette: 0, hex: 7, func: 0 },
   { file: "pages/login-page.tsx", palette: 0, hex: 5, func: 1 },
 ];

@@ -4,17 +4,26 @@ import { useMemo } from "react";
 
 import type { LoadTrendPoint } from "@bms/shared";
 
+import { useChartTheme } from "../lib/chart-theme";
+import { withAlpha } from "../lib/theme";
+
 type LoadTrendChartProps = {
   points: LoadTrendPoint[];
   status: "loading" | "error" | "empty" | "ready";
   stale?: boolean;
 };
 
+/**
+ * `F3.65c` — the line and its area are `accent` from the current roles; axis, label and tooltip
+ * colours come from the ECharts theme object (`lib/chart-theme.ts`), so a theme toggle repaints
+ * both (plan D2).
+ */
 export function LoadTrendChart({ points, status, stale }: LoadTrendChartProps) {
+  const { roles, theme } = useChartTheme();
   const option = useMemo<EChartsOption>(() => {
     const data = points.map((p) => [p.t, p.totalKw] as [string, number]);
     return {
-      color: ["#00A651"],
+      color: [roles.accent],
       grid: { left: 52, right: 20, top: 28, bottom: 36 },
       tooltip: {
         trigger: "axis",
@@ -22,15 +31,13 @@ export function LoadTrendChart({ points, status, stale }: LoadTrendChartProps) {
       },
       xAxis: {
         type: "time",
-        axisLabel: { color: "#4A5464", fontSize: 10 },
-        axisLine: { lineStyle: { color: "#D8DCE3" } },
+        axisLabel: { fontSize: 10 },
       },
       yAxis: {
         type: "value",
         name: "kW",
-        nameTextStyle: { color: "#7A8494", fontSize: 10 },
-        axisLabel: { color: "#4A5464", fontSize: 10 },
-        splitLine: { lineStyle: { color: "#EAECF0" } },
+        nameTextStyle: { fontSize: 10 },
+        axisLabel: { fontSize: 10 },
       },
       series: [
         {
@@ -38,14 +45,14 @@ export function LoadTrendChart({ points, status, stale }: LoadTrendChartProps) {
           showSymbol: false,
           smooth: true,
           areaStyle: {
-            color: "rgba(0, 166, 81, 0.12)",
+            color: withAlpha(roles.accent, 0.12),
           },
           lineStyle: { width: 2 },
           data,
         },
       ],
     };
-  }, [points]);
+  }, [points, roles]);
 
   if (status === "loading") {
     return (
@@ -75,6 +82,7 @@ export function LoadTrendChart({ points, status, stale }: LoadTrendChartProps) {
     >
       <ReactECharts
         option={option}
+        theme={theme}
         style={{ height: 280 }}
         notMerge
         lazyUpdate

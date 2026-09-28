@@ -156,6 +156,8 @@ const UI_PAIRS: Pair[] = [
   { fg: "info", bg: "surface" },
   { fg: "info", bg: "canvas" },
   { fg: "ink-hint", bg: "surface" },
+  // F3.65c OQ4: the health donut's Fair slice (`health-summary-donut.tsx`) on its `surface` card.
+  { fg: "warning-on-dark", bg: "surface" },
 ];
 
 /**
@@ -259,6 +261,15 @@ const ALLOWLIST: AllowlistEntry[] = [
     measured: 2.54,
     threshold: 3,
     reason: "placeholder / inactive; WCAG 1.4.3 inactive exception",
+  },
+  {
+    // F3.65c OQ4 — the health donut's Fair slice.
+    fg: "warning-on-dark",
+    bg: "surface",
+    theme: "light",
+    measured: 1.67,
+    threshold: 3,
+    reason: "status slices are named in the legend list; existing",
   },
   {
     fg: "on-dark",
