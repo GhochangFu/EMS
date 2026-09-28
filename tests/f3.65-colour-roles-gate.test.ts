@@ -143,8 +143,8 @@ describe("F3.65 colour scan — fixtures", () => {
     expect(colourFunctions(src)).toEqual(["oklch(", "oklab(", "lab(", "lch(", "hwb(", "color-mix("]);
   });
 
-  it("R3d label(, the lch( inside oklch( and oklch(var(--x)) are not extra colour functions", () => {
-    expect(colourFunctions("label(1); const c = 'oklch(0.5 0.1 20)'; const v = 'oklch(var(--x))';")).toEqual(["oklch("]);
+  it("R3d collab( (lab( after a letter) and oklch(var(--x)) are not colour functions; oklch(0.5 …) counts once", () => {
+    expect(colourFunctions("collab(1); const c = 'oklch(0.5 0.1 20)'; const v = 'oklch(var(--x))';")).toEqual(["oklch("]);
   });
 
   it("R4e an arbitrary variant on data-theme is a theme-variant finding", () => {
@@ -188,7 +188,7 @@ describe("F3.65 colour scan — fixtures", () => {
   });
 
   it("R4m the two branches of a ternary are separate class strings", () => {
-    const src = 'const c = `px-2 ${active ? "bg-accent text-on-accent" : "text-on-dark"}`;';
+    const src = 'const c = `px-2 ${active ? "p-1 bg-accent text-on-accent p-1" : "p-1 text-on-dark p-1"}`;';
     expect(colourFindings(src, "f.tsx")).toEqual([]);
   });
 
