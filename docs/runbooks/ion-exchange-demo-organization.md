@@ -16,7 +16,7 @@ the demo host.
 - The database is migrated and seeded (`roles → migrate → seed`). The command
   reads the fleet-wide point-key catalog the seed writes, and the mimic role
   codes `wtp`, `ro`, `stp`, `etp` from migration `0087`.
-- **The deployed build must include `F4.169`.** On `main` before it,
+- **The deployed build must include `F4.169`** (#627, on `main` since 2026-09-28). Before it,
   `verifyHierarchySeed` (`packages/db/src/verify-hierarchy-seed.ts`, Pass 1)
   requires **exactly 2** rows in `bms.organizations`. After this command there
   are 3, so every later `db:seed` — including the compose `migrate` service on

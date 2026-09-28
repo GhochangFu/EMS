@@ -1,6 +1,7 @@
 import { describe, it } from "vitest";
 
 import {
+  assertIonxIsNotASeedOrganization,
   assertAFullReadBackHasNoShortfall,
   assertAMissingRoledMemberIsNamed,
   assertAnExtraGrantIsAShortfall,
@@ -15,6 +16,10 @@ import {
 } from "./demo-ion-exchange.spec";
 
 describe("F3.32 / ADR 0079 Amendment 1 — the Ion Exchange demo command's pure parts", () => {
+  it("IONX-DEMO is not a seed organization, so the F4.169 boot gate never counts it", () => {
+    assertIonxIsNotASeedOrganization();
+  });
+
   it("no IONX asset code collides with the ESKOM demo plant", () => {
     assertNoIonxCodeCollidesWithTheEskomDemoPlant();
   });

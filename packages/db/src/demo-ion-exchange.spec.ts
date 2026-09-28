@@ -2,6 +2,7 @@ import { mimicConfigSchema } from "@bms/shared";
 import { expect } from "vitest";
 
 import {
+  IONX_ORG_CODE,
   IONX_ASSET_CODES,
   IONX_EXPECTED,
   IONX_ROLE_BY_ASSET_CODE,
@@ -11,6 +12,7 @@ import {
   type IonxIdentityCounts,
   type IonxTenantCounts,
 } from "./demo-ion-exchange";
+import { SEED_ORGANIZATION_CODES } from "./hierarchy-seed";
 import { DEMO_WATER_ASSET_CODES } from "./water-plant-demo-seed";
 
 /** Vitest entry point lives in the sibling `.test.ts` (ADR 0014). */
@@ -87,4 +89,16 @@ export function assertAnExtraWidgetIsNotAShortfall(): void {
 export function assertFewerWidgetsThanTheFloorIsAShortfall(): void {
   const tenant: IonxTenantCounts = { ...IONX_EXPECTED, widgets: 0 };
   expect(ionxShortfalls(tenant, COMPLETE_IDENTITY)).toEqual(["widgets: 0 of at least 1"]);
+}
+
+/**
+ * ADR 0079 Amendment 1 depends on `F4.169` (ADR 0080 decision 1): the boot gate counts only
+ * the seed's own organizations, so a third one does not stop `compose up`. The import of
+ * `SEED_ORGANIZATION_CODES` is the compile-time half — the command cannot build against a
+ * `main` without F4.169 — and this is the runtime half: IONX-DEMO is not a seed organization,
+ * so the gate never counts it.
+ */
+export function assertIonxIsNotASeedOrganization(): void {
+  expect(SEED_ORGANIZATION_CODES.length).toBeGreaterThan(0);
+  expect(SEED_ORGANIZATION_CODES).not.toContain(IONX_ORG_CODE);
 }
