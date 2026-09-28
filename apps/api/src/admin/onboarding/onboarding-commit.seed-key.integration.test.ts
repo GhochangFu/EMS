@@ -37,6 +37,50 @@ const SYNTHETIC_SUB = "00000000-0000-4000-8000-000000000007";
 
 const RUN = Date.now();
 
+/**
+ * Reaps what an earlier run committed but never cleaned (the F4.16 shape, as
+ * `locations.seed-key.integration.test.ts` does). Every fixture code ends in
+ * its run's `Date.now()`, so a run is stale when that number is more than 30
+ * minutes old. Children first; the session's audit row and the session last.
+ */
+async function sweepStaleRuns(pool: pg.Pool): Promise<void> {
+  const cutoff = RUN - 30 * 60 * 1000;
+  const staleLocations = `SELECT id FROM bms.locations
+    WHERE code LIKE 'F4170-SKO-LOC-%' AND substring(code from '([0-9]+)$')::bigint < $1`;
+  const staleAssets = `SELECT id FROM bms.assets
+    WHERE code LIKE 'F4170-SKO-AS-%' AND substring(code from '([0-9]+)$')::bigint < $1`;
+  const staleRtus = `SELECT id FROM bms.rtus
+    WHERE code LIKE 'F4170-SKO-RTU-%' AND substring(code from '([0-9]+)$')::bigint < $1`;
+  const staleSessions = `SELECT id FROM bms.onboarding_sessions
+    WHERE draft->'location'->>'code' LIKE 'F4170-SKO-LOC-%'
+      AND substring(draft->'location'->>'code' from '([0-9]+)$')::bigint < $1`;
+  try {
+    await pool.query(
+      `DELETE FROM bms.audit_log
+        WHERE (entity_type = 'location' AND entity_id IN (${staleLocations}))
+           OR (entity_type = 'asset' AND entity_id IN (${staleAssets}))
+           OR (entity_type = 'onboarding_session' AND entity_id IN (${staleSessions}))`,
+      [cutoff],
+    );
+    await pool.query(`DELETE FROM bms.asset_points WHERE asset_id IN (${staleAssets})`, [cutoff]);
+    await pool.query(`DELETE FROM bms.assets WHERE id IN (${staleAssets})`, [cutoff]);
+    await pool.query(`DELETE FROM bms.rtu_connection_configs WHERE rtu_id IN (${staleRtus})`, [cutoff]);
+    await pool.query(`DELETE FROM bms.rtus WHERE id IN (${staleRtus})`, [cutoff]);
+    // `_` is a LIKE wildcard, so the point key family escapes it.
+    await pool.query(
+      `DELETE FROM bms.point_keys
+        WHERE code LIKE 'F4170\\_SKO\\_PK\\_%' AND substring(code from '([0-9]+)$')::bigint < $1`,
+      [cutoff],
+    );
+    await pool.query(`DELETE FROM bms.locations WHERE id IN (${staleLocations})`, [cutoff]);
+    await pool.query(`DELETE FROM bms.onboarding_sessions WHERE id IN (${staleSessions})`, [cutoff]);
+  } catch (err) {
+    process.stderr.write(
+      `[F4.170] could not sweep stale fixture rows: ${err instanceof Error ? err.message : String(err)}\n`,
+    );
+  }
+}
+
 function draftFor(domain: string): OnboardingDraft {
   return {
     location: {
@@ -102,6 +146,8 @@ describe.skipIf(!connectionString)("F4.170 ruling 20 — the onboarding commit s
       "F4.170",
     );
 
+    await sweepStaleRuns(ownerPool);
+
     const org = await ownerPool.query<{ id: string }>(
       `SELECT uoa.organization_id AS id
          FROM bms.user_organization_access uoa
@@ -162,6 +208,11 @@ describe.skipIf(!connectionString)("F4.170 ruling 20 — the onboarding commit s
         await ownerPool.query(`DELETE FROM bms.locations WHERE id = $1`, [committed.locationId]);
       }
       if (sessionId) {
+        // The commit audits the session as well as the location and assets.
+        await ownerPool.query(
+          `DELETE FROM bms.audit_log WHERE entity_type = 'onboarding_session' AND entity_id = $1`,
+          [sessionId],
+        );
         await ownerPool.query(`DELETE FROM bms.onboarding_sessions WHERE id = $1`, [sessionId]);
       }
     }

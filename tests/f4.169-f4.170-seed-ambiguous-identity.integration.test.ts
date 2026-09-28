@@ -327,6 +327,49 @@ describe.skipIf(!ownerUrl)("F4.169/F4.170 addendum 4 — an ambiguous seed ident
     }
   }, 60_000);
 
+  it("U-null: seedScopedDemoUsers with no resolved RSMOC-WC row grants neither wc-admin nor wc-hvac-admin", async () => {
+    if (!superPool) throw new Error("pool not initialised");
+    const client = await superPool.connect();
+    try {
+      await client.query("BEGIN");
+      await client.query("SET LOCAL lock_timeout = '5s'");
+      const grants = async (): Promise<{ wcAdmin: number; wcHvacAdmin: number }> => {
+        const found = await client.query<{ wc_admin: number; wc_hvac_admin: number }>(
+          `SELECT (SELECT COUNT(*)::int FROM bms.user_location_access ula
+                     JOIN bms.users u ON u.id = ula.user_id
+                    WHERE u.email = 'wc-admin@bms.local') AS wc_admin,
+                  (SELECT COUNT(*)::int FROM bms.user_asset_group_access uaga
+                     JOIN bms.users u ON u.id = uaga.user_id
+                    WHERE u.email = 'wc-hvac-admin@bms.local') AS wc_hvac_admin`,
+        );
+        return { wcAdmin: found.rows[0]?.wc_admin ?? Number.NaN, wcHvacAdmin: found.rows[0]?.wc_hvac_admin ?? Number.NaN };
+      };
+      // The seeded grants exist, so a slug fallback would find its insert
+      // already done and add nothing: remove them first (rolled back), and
+      // prove there was something to remove.
+      const seeded = await grants();
+      assert(
+        seeded.wcAdmin > 0 && seeded.wcHvacAdmin > 0,
+        `both demo users must hold their seeded grant — run pnpm db:seed (got ${JSON.stringify(seeded)})`,
+      );
+      await client.query(
+        `DELETE FROM bms.user_location_access
+          WHERE user_id = (SELECT id FROM bms.users WHERE email = 'wc-admin@bms.local')`,
+      );
+      await client.query(
+        `DELETE FROM bms.user_asset_group_access
+          WHERE user_id = (SELECT id FROM bms.users WHERE email = 'wc-hvac-admin@bms.local')`,
+      );
+      await seedScopedDemoUsers(createDb(client as never), eskomOrgId, null);
+      // Mutation "fall back to the slug lookup on null": one grant each. One
+      // assertion on both, so a fallback for either user reddens it.
+      expect(await grants(), "no grant for either scoped demo user").toEqual({ wcAdmin: 0, wcHvacAdmin: 0 });
+    } finally {
+      await client.query("ROLLBACK");
+      client.release();
+    }
+  }, 60_000);
+
   // ── Guard 1's log line (section 4) ────────────────────────────────────────
 
   /**
