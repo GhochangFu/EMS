@@ -135,6 +135,9 @@ export function blankDashboardWidgetRow(widgetType: WidgetType): DashboardWidget
     // author must touch before the first save. `blankConfigRow` keeps `""` for the reason its
     // own field comment gives.
     config.mimicPreset = mimicPresetSchema.options[0];
+    // `F3.32c` (ADR 0081) — the source select defaults to Preset, keeping a freshly added mimic's
+    // behaviour unchanged from before the layout arm existed.
+    config.mimicSource = "preset";
   }
   return {
     widgetType,
@@ -237,9 +240,18 @@ function configRowFromDto(widget: DashboardWidgetDto): WidgetConfigRow {
       break;
     case "mimic":
       // `F3.32` — the same edit-and-resave reason as the two arms above. Without this arm the
-      // row holds no preset, `widgetConfigErrors` blocks the save, and the stored preset is lost to
-      // the form.
-      row.mimicPreset = widget.config.preset;
+      // row holds no preset/layout, `widgetConfigErrors` blocks the save, and the stored choice
+      // is lost to the form.
+      //
+      // `F3.32c` (ADR 0081) — `widget.config` is now a union on `source`; narrow it before
+      // reading either arm's own field, rather than reading `.preset` off the union type.
+      if (widget.config.source === "layout") {
+        row.mimicSource = "layout";
+        row.mimicLayoutId = widget.config.layoutId;
+      } else {
+        row.mimicSource = "preset";
+        row.mimicPreset = widget.config.preset;
+      }
       break;
     default: {
       // No arm may be forgotten: this switch has no compile-time exhaustiveness otherwise, and a

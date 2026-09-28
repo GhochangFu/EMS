@@ -298,3 +298,50 @@ export function runMimicConfigValuesTests(): void {
     `a mimic config is { source: "preset", preset } — got ${JSON.stringify(config)}`,
   );
 }
+
+// -------------------------------------------------------------------------------------------
+// `F3.32c` (ADR 0081, plan §4 U5) — the layout source arm.
+// -------------------------------------------------------------------------------------------
+
+/** A layout-source row with no layout chosen reports the problem on the `layout` field. */
+export function runMimicLayoutRequiredTests(): void {
+  const problems = widgetConfigErrors(0, 0, {
+    widgetType: "mimic",
+    config: { ...blankConfigRow(), mimicSource: "layout" },
+  });
+  assert(
+    problems.some((problem) => problem.field === "layout" && problem.message === "Choose a layout from the library."),
+    `a layout source with no layout reports the layout problem — got ${JSON.stringify(problems)}`,
+  );
+}
+
+/** The positive twin: a layout-source row with a layout chosen is clean, and it is NOT held to
+ * the preset check — `mimicPreset` stays unset. */
+export function runMimicWithLayoutIsCleanTests(): void {
+  const problems = widgetConfigErrors(0, 0, {
+    widgetType: "mimic",
+    config: { ...blankConfigRow(), mimicSource: "layout", mimicLayoutId: "layout-1" },
+  });
+  assert(problems.length === 0, `a mimic with a layout is clean — got ${JSON.stringify(problems)}`);
+}
+
+/** `buildMimicConfig` on the layout arm writes `{ source: "layout", layoutId }`. */
+export function runMimicLayoutConfigValuesTests(): void {
+  const config = buildMimicConfig({ ...blankConfigRow(), mimicSource: "layout", mimicLayoutId: "layout-1" });
+  assert(
+    config.source === "layout" && config.layoutId === "layout-1",
+    `a layout mimic config is { source: "layout", layoutId } — got ${JSON.stringify(config)}`,
+  );
+}
+
+/** `buildMimicConfig` throws on a layout source with no layout chosen — the same "validate
+ * first" contract the preset arm already holds. */
+export function runMimicLayoutConfigThrowsWithoutALayoutTests(): void {
+  let threw = false;
+  try {
+    buildMimicConfig({ ...blankConfigRow(), mimicSource: "layout" });
+  } catch {
+    threw = true;
+  }
+  assert(threw, "buildMimicConfig throws on a layout source with no layout chosen");
+}

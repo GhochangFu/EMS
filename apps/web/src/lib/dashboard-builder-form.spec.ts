@@ -518,6 +518,51 @@ export function runMimicUneditedIsNoChangeTests(): void {
   assert(!builderHasChanged(dashboardRowsFromDto(dto), dto), "an unedited mimic reports no change");
 }
 
+// -------------------------------------------------------------------------------------------
+// `F3.32c` (ADR 0081, plan §4 U5) — the layout source arm.
+// -------------------------------------------------------------------------------------------
+
+function layoutMimicDto(): DashboardWidgetDto {
+  return widgetDto({
+    id: "mimic-2",
+    title: "Line 2",
+    gridW: 12,
+    gridH: 6,
+    points: [],
+    sources: [],
+    widgetType: "mimic",
+    config: { source: "layout", layoutId: "layout-1" },
+  });
+}
+
+/** `configRowFromDto` narrows the union on `source`: a stored layout mimic reads back its
+ * `mimicSource` and `mimicLayoutId`, and carries no `mimicPreset`. Mutation: delete the
+ * `layoutId` read-back in `configRowFromDto`'s layout arm ⇒ red. */
+export function runMimicRowKeepsLayoutTests(): void {
+  const rows = dashboardRowsFromDto(dashboardDto([layoutMimicDto()]));
+  assert(
+    rows[0]!.config.mimicSource === "layout" && rows[0]!.config.mimicLayoutId === "layout-1",
+    `a stored layout mimic reads back its source and layoutId — got ${JSON.stringify(rows[0]!.config)}`,
+  );
+}
+
+/** The round trip, end to end: a stored layout mimic re-saves the same layout config. */
+export function runMimicLayoutRoundTripTests(): void {
+  const payload = buildPutWidgetsPayload(dashboardRowsFromDto(dashboardDto([layoutMimicDto()])));
+  const widget = payload.widgets[0]!;
+  assert(
+    JSON.stringify(widget.config) === JSON.stringify({ source: "layout", layoutId: "layout-1" }) &&
+      widget.id === "mimic-2",
+    `a stored layout mimic re-saves its own config and id — got ${JSON.stringify(widget)}`,
+  );
+}
+
+/** A stored layout mimic, read and not edited, is not a change. */
+export function runMimicLayoutUneditedIsNoChangeTests(): void {
+  const dto = dashboardDto([layoutMimicDto()]);
+  assert(!builderHasChanged(dashboardRowsFromDto(dto), dto), "an unedited layout mimic reports no change");
+}
+
 /** `F3.32` review finding — a mimic left on the canvas after the scope moves off the group
  * reports the scope problem on every non-group kind. Mutation: drop the kind check (never fire)
  * ⇒ red. */

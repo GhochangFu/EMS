@@ -233,6 +233,14 @@ export type WidgetConfigRow = {
   // builds this row as a literal, and a template can never hold a mimic
   // (`isTemplateAuthorableWidgetType`), so absent is the true value there.
   mimicPreset?: MimicPreset;
+  // mimic — `F3.32c` (ADR 0081). Which of the two config arms this row builds. Absent means
+  // "not chosen", the `mimicPreset` idiom above — but `blankDashboardWidgetRow("mimic")` sets it
+  // to `"preset"` the same way it defaults `mimicPreset`, so a fresh row is never in the absent
+  // state. `configRowFromDto` narrows the stored union on `source` and sets this alongside
+  // whichever of `mimicPreset`/`mimicLayoutId` the stored arm carries.
+  mimicSource?: "preset" | "layout";
+  // mimic — `F3.32c`. The chosen library layout's id, set only when `mimicSource === "layout"`.
+  mimicLayoutId?: string;
 };
 
 export function blankConfigRow(): WidgetConfigRow {
@@ -339,7 +347,14 @@ export function widgetConfigErrors(
       push("yAxisLabel", `A y-axis label is at most ${MAX_Y_AXIS_LABEL_LENGTH} characters.`);
     }
   } else if (widget.widgetType === "mimic") {
-    if (config.mimicPreset === undefined) {
+    // `F3.32c` — the source select decides which of the two checks applies. `mimicSource`
+    // defaults to `"preset"` on every row `blankDashboardWidgetRow` or `configRowFromDto`
+    // produces, so only `"layout"` needs a branch here.
+    if (config.mimicSource === "layout") {
+      if (config.mimicLayoutId === undefined) {
+        push("layout", "Choose a layout from the library.");
+      }
+    } else if (config.mimicPreset === undefined) {
       push("preset", "Choose which plant drawing this mimic shows.");
     }
   }
@@ -492,17 +507,24 @@ export function buildTableConfig(config: WidgetConfigRow): TableConfig {
 }
 
 /**
- * The `mimic` config (`F3.32`, ADR 0079 decision 2).
+ * The `mimic` config (`F3.32`, ADR 0079 decision 2; both arms since `F3.32c`, ADR 0081).
  *
  * **No `buildCommonConfig` spread (plan D8).** `mimicConfigSchema` carries no `unit` or
  * `decimals` — a mimic draws several nodes, each with its own units — and the write surface is
  * `.strict()`, so a `unit` left on the flat row would be a 400 the author cannot see.
  *
- * **Throws on an unchosen preset rather than writing an absent one.** `widgetConfigErrors` refuses that
- * row first and the builder's Save is disabled while it does, so this is reached only by a
- * caller that skipped validation — and failing there is better than a payload the API refuses.
+ * **Throws on an unchosen preset/layout rather than writing an absent one.** `widgetConfigErrors`
+ * refuses that row first and the builder's Save is disabled while it does, so this is reached
+ * only by a caller that skipped validation — and failing there is better than a payload the API
+ * refuses.
  */
 export function buildMimicConfig(config: WidgetConfigRow): MimicConfig {
+  if (config.mimicSource === "layout") {
+    if (config.mimicLayoutId === undefined) {
+      throw new Error("A mimic widget has no layout chosen; validate the row before building its payload.");
+    }
+    return { source: "layout", layoutId: config.mimicLayoutId };
+  }
   if (config.mimicPreset === undefined) {
     throw new Error("A mimic widget has no preset chosen; validate the row before building its payload.");
   }
