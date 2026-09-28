@@ -62,7 +62,7 @@ export function AssetImagesToggleButton({
     <button
       type="button"
       aria-expanded={open}
-      className="mt-1 text-[11px] font-semibold uppercase tracking-wide text-bms-muted hover:text-bms-ink"
+      className="mt-1 text-[11px] font-semibold uppercase tracking-wide text-ink-muted hover:text-ink"
       onClick={() => onToggle(assetId)}
     >
       Images
@@ -84,7 +84,7 @@ export function AssetImagesRow({ assetId, colSpan, open }: AssetImagesRowProps):
   }
 
   return (
-    <tr className="border-t border-gray-100 bg-gray-50/60">
+    <tr className="border-t border-well-deep bg-well/60">
       <td className="px-3 py-3" colSpan={colSpan}>
         <AssetImageGallery assetId={assetId} />
       </td>

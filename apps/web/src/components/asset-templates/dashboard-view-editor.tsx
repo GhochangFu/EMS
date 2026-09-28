@@ -76,15 +76,15 @@ function DashboardViewEditor({
           Save being blocked is the only thing between that and a destroyed
           stored view, so the block must be legible. */}
       {problemFor("name") ? (
-        <p className="rounded border border-red-200 bg-red-50 p-2 text-xs text-red-800">
+        <p className="rounded border border-critical-line bg-critical-wash p-2 text-xs text-critical-ink-strong">
           {problemFor("name")}
         </p>
       ) : null}
-      <section className="rounded border border-gray-200 p-3">
+      <section className="rounded border border-line p-3">
         <Field label="Featured points" error={problemFor("featured")}>
           <div className="space-y-1">
             {view.featured.length === 0 ? (
-              <p className="text-[11px] text-bms-muted">
+              <p className="text-[11px] text-ink-muted">
                 No points featured yet — a view needs at least one.
               </p>
             ) : null}
@@ -98,7 +98,7 @@ function DashboardViewEditor({
                         type="button"
                         disabled={index === 0}
                         onClick={() => moveFeatured(index, -1)}
-                        className="rounded border border-gray-200 px-1.5 py-0.5 text-[11px] disabled:opacity-40"
+                        className="rounded border border-line px-1.5 py-0.5 text-[11px] disabled:opacity-40"
                       >
                         ↑
                       </button>
@@ -106,14 +106,14 @@ function DashboardViewEditor({
                         type="button"
                         disabled={index === view.featured.length - 1}
                         onClick={() => moveFeatured(index, 1)}
-                        className="rounded border border-gray-200 px-1.5 py-0.5 text-[11px] disabled:opacity-40"
+                        className="rounded border border-line px-1.5 py-0.5 text-[11px] disabled:opacity-40"
                       >
                         ↓
                       </button>
                       <button
                         type="button"
                         onClick={() => removeFeatured(index)}
-                        className="rounded border border-red-200 px-1.5 py-0.5 text-[11px] font-semibold text-red-700"
+                        className="rounded border border-critical-line px-1.5 py-0.5 text-[11px] font-semibold text-critical-ink"
                       >
                         Remove
                       </button>
@@ -126,7 +126,7 @@ function DashboardViewEditor({
               <select
                 value=""
                 onChange={(event) => addFeatured(event.target.value)}
-                className="w-full rounded border border-gray-200 px-2 py-1 text-xs"
+                className="w-full rounded border border-line px-2 py-1 text-xs"
               >
                 <option value="">Feature a point…</option>
                 {remainingPointKeys.map((key) => (
@@ -141,11 +141,11 @@ function DashboardViewEditor({
       </section>
 
       <section className="space-y-3">
-        <span className="text-[11px] font-semibold uppercase tracking-wide text-bms-muted">
+        <span className="text-[11px] font-semibold uppercase tracking-wide text-ink-muted">
           Widgets
         </span>
         {view.widgets.length === 0 ? (
-          <p className="rounded border border-dashed border-gray-300 p-3 text-xs text-bms-muted">
+          <p className="rounded border border-dashed border-line-strong p-3 text-xs text-ink-muted">
             This view has no widgets yet.
           </p>
         ) : null}
@@ -170,7 +170,7 @@ function DashboardViewEditor({
                 key={widgetType}
                 type="button"
                 onClick={() => addWidget(widgetType)}
-                className="rounded border border-gray-200 px-3 py-1.5 text-xs font-semibold text-bms-ink"
+                className="rounded border border-line px-3 py-1.5 text-xs font-semibold text-ink"
               >
                 Add {WIDGET_TYPE_LABELS[widgetType]}
               </button>
@@ -178,7 +178,7 @@ function DashboardViewEditor({
           </div>
         ) : null}
         {problemFor("widgets") ? (
-          <p className="text-[11px] text-red-700">{problemFor("widgets")}</p>
+          <p className="text-[11px] text-critical-ink">{problemFor("widgets")}</p>
         ) : null}
       </section>
     </div>

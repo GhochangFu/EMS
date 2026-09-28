@@ -81,16 +81,16 @@ export function AssetPointBulkEditPanel({ ids, onApplied, onCancel }: AssetPoint
   }
 
   return (
-    <div className="space-y-3 rounded border border-bms-green/30 bg-bms-green/5 p-3">
+    <div className="space-y-3 rounded border border-accent/30 bg-accent/5 p-3">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <h3 className="font-condensed text-sm font-bold text-bms-ink">
+        <h3 className="font-condensed text-sm font-bold text-ink">
           Edit {ids.length === 1 ? "1 selected row" : `${ids.length} selected rows`}
         </h3>
-        <button type="button" className="text-xs font-semibold text-bms-muted" onClick={onCancel}>
+        <button type="button" className="text-xs font-semibold text-ink-muted" onClick={onCancel}>
           Cancel
         </button>
       </div>
-      <p className="text-xs text-bms-muted">
+      <p className="text-xs text-ink-muted">
         Tick a field to change it on every selected row. A ticked field left empty clears the stored
         value, so the row follows its template default again. Nothing is written unless every
         selected row accepts the change.
@@ -98,7 +98,7 @@ export function AssetPointBulkEditPanel({ ids, onApplied, onCancel }: AssetPoint
 
       <div className="grid gap-2 sm:grid-cols-2">
         {TYPED_FIELDS.map(({ field, label, numeric }) => (
-          <label key={field} className="flex items-center gap-2 text-xs font-semibold text-bms-muted">
+          <label key={field} className="flex items-center gap-2 text-xs font-semibold text-ink-muted">
             <input
               type="checkbox"
               aria-label={`Change ${label}`}
@@ -112,13 +112,13 @@ export function AssetPointBulkEditPanel({ ids, onApplied, onCancel }: AssetPoint
               aria-label={`New ${label}`}
               disabled={!draft[field].set}
               value={draft[field].value}
-              className="w-full rounded border px-2 py-1 text-sm disabled:bg-gray-100"
+              className="w-full rounded border px-2 py-1 text-sm disabled:bg-well-deep"
               onChange={(event) => setField(field, { set: true, value: event.target.value })}
             />
           </label>
         ))}
 
-        <label className="flex items-center gap-2 text-xs font-semibold text-bms-muted">
+        <label className="flex items-center gap-2 text-xs font-semibold text-ink-muted">
           <input
             type="checkbox"
             aria-label="Change quality policy"
@@ -132,7 +132,7 @@ export function AssetPointBulkEditPanel({ ids, onApplied, onCancel }: AssetPoint
             aria-label="New quality policy"
             disabled={!draft.qualityPolicy.set}
             value={draft.qualityPolicy.value}
-            className="w-full rounded border px-2 py-1 text-sm disabled:bg-gray-100"
+            className="w-full rounded border px-2 py-1 text-sm disabled:bg-well-deep"
             onChange={(event) =>
               setField("qualityPolicy", {
                 set: true,
@@ -151,7 +151,7 @@ export function AssetPointBulkEditPanel({ ids, onApplied, onCancel }: AssetPoint
           </select>
         </label>
 
-        <label className="flex items-center gap-2 text-xs font-semibold text-bms-muted">
+        <label className="flex items-center gap-2 text-xs font-semibold text-ink-muted">
           <input
             type="checkbox"
             aria-label="Change status"
@@ -163,7 +163,7 @@ export function AssetPointBulkEditPanel({ ids, onApplied, onCancel }: AssetPoint
             aria-label="New status"
             disabled={!draft.active.set}
             value={draft.active.value ? "active" : "inactive"}
-            className="w-full rounded border px-2 py-1 text-sm disabled:bg-gray-100"
+            className="w-full rounded border px-2 py-1 text-sm disabled:bg-well-deep"
             onChange={(event) => setField("active", { set: true, value: event.target.value === "active" })}
           >
             <option value="active">Active</option>
@@ -173,21 +173,21 @@ export function AssetPointBulkEditPanel({ ids, onApplied, onCancel }: AssetPoint
       </div>
 
       {problems.map((problem) => (
-        <p key={problem} className="text-xs text-red-700">
+        <p key={problem} className="text-xs text-critical-ink">
           {problem}
         </p>
       ))}
       {overTheCap ? (
-        <p className="text-xs text-red-700">
+        <p className="text-xs text-critical-ink">
           {ids.length} rows are selected and the cap is {MAX_ASSET_POINT_BULK_IDS} — narrow the
           filter, or clear part of the selection.
         </p>
       ) : null}
-      {error ? <p className="text-xs text-red-700">{error}</p> : null}
+      {error ? <p className="text-xs text-critical-ink">{error}</p> : null}
 
       <button
         type="button"
-        className="rounded bg-bms-green px-3 py-2 text-xs font-semibold text-white disabled:opacity-50"
+        className="rounded bg-accent px-3 py-2 text-xs font-semibold text-on-accent disabled:opacity-50"
         disabled={problems.length > 0 || overTheCap || ids.length === 0 || applyMutation.isPending}
         aria-busy={applyMutation.isPending}
         onClick={() => applyMutation.mutate()}

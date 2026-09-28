@@ -108,20 +108,20 @@ export function StockCatalogAccordion({ groups, renderEntry }: StockCatalogAccor
         return (
           <section
             key={group.domain}
-            className="rounded-lg border border-gray-200 bg-white"
+            className="rounded-lg border border-line bg-surface"
           >
             <button
               type="button"
-              className="flex w-full items-center justify-between gap-3 px-3 py-2 text-left hover:bg-gray-50"
+              className="flex w-full items-center justify-between gap-3 px-3 py-2 text-left hover:bg-well"
               aria-expanded={expanded}
               aria-controls={panelId}
               onClick={() => toggleDomain(group.domain)}
             >
-              <span className="font-condensed text-sm font-bold text-bms-ink">
+              <span className="font-condensed text-sm font-bold text-ink">
                 {`${group.label} · ${count} ${count === 1 ? "entry" : "entries"}`}
               </span>
               <span
-                className={`text-sm font-semibold text-bms-muted transition-transform ${
+                className={`text-sm font-semibold text-ink-muted transition-transform ${
                   expanded ? "rotate-180" : ""
                 }`}
                 aria-hidden
@@ -133,7 +133,7 @@ export function StockCatalogAccordion({ groups, renderEntry }: StockCatalogAccor
               <ul
                 id={panelId}
                 aria-label={`${group.label} entries`}
-                className="divide-y divide-gray-100 border-t border-gray-100 px-3"
+                className="divide-y divide-well-deep border-t border-well-deep px-3"
               >
                 {group.entries.map((entry) => (
                   <Fragment key={entry.code}>{renderEntry(entry)}</Fragment>

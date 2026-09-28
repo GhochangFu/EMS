@@ -136,11 +136,11 @@ export function MaintenanceTab({ template, editable, onSaved, onDirtyChange }: M
   return (
     <div className="space-y-3">
       {error ? (
-        <p className="rounded border border-red-200 bg-red-50 p-3 text-sm text-red-800">{error}</p>
+        <p className="rounded border border-critical-line bg-critical-wash p-3 text-sm text-critical-ink-strong">{error}</p>
       ) : null}
 
       {blockedKeys.length > 0 ? (
-        <p className="rounded border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900">
+        <p className="rounded border border-warning-line bg-warning-wash p-3 text-xs text-warning-ink">
           Saving maintenance is blocked: this template holds content that cannot be written back.
           The banner above lists the keys.
         </p>
@@ -149,7 +149,7 @@ export function MaintenanceTab({ template, editable, onSaved, onDirtyChange }: M
       {/* An instruction, not a disclaimer — `alarms-tab.tsx`'s reasoning, and
           the misreading is more consequential here: a plan that looks booked
           and is not is an inspection nobody attends. */}
-      <p className="rounded border border-amber-200 bg-amber-50 p-3 text-[11px] text-amber-900">
+      <p className="rounded border border-warning-line bg-warning-wash p-3 text-[11px] text-warning-ink">
         These are the maintenance plans this asset class ships with. They are stored on the template
         as a standard — <strong>nothing here schedules work</strong>. A plan becomes a schedule only
         once an asset of this class exists, through the Maintenance surface for that asset. Saving
@@ -159,14 +159,14 @@ export function MaintenanceTab({ template, editable, onSaved, onDirtyChange }: M
       {sectionProblems.map((problem) => (
         <p
           key={problem.message}
-          className="rounded border border-red-200 bg-red-50 p-3 text-xs text-red-800"
+          className="rounded border border-critical-line bg-critical-wash p-3 text-xs text-critical-ink-strong"
         >
           {problem.message}
         </p>
       ))}
 
       {rows.length === 0 ? (
-        <p className="rounded border border-dashed border-gray-300 p-4 text-xs text-bms-muted">
+        <p className="rounded border border-dashed border-line-strong p-4 text-xs text-ink-muted">
           This template declares no maintenance plans yet.
         </p>
       ) : null}
@@ -177,9 +177,9 @@ export function MaintenanceTab({ template, editable, onSaved, onDirtyChange }: M
           rowProblems.find((problem) => problem.field === field)?.message;
 
         return (
-          <section key={index} className="rounded border border-gray-200 p-3">
+          <section key={index} className="rounded border border-line p-3">
             <div className="mb-3 flex items-center gap-2">
-              <span className="text-[11px] font-semibold uppercase tracking-wide text-bms-muted">
+              <span className="text-[11px] font-semibold uppercase tracking-wide text-ink-muted">
                 Plan {index + 1}
               </span>
               {/* Rendered from the row, so it shows on a read-only version too.
@@ -187,7 +187,7 @@ export function MaintenanceTab({ template, editable, onSaved, onDirtyChange }: M
                   the catalog's plans are safety critical and a reader skimming
                   a long card must not have to open a field to find out. */}
               {plan.safetyCritical ? (
-                <span className="rounded border border-red-200 bg-red-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-red-800">
+                <span className="rounded border border-critical-line bg-critical-wash-strong px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-critical-ink-strong">
                   Safety critical
                 </span>
               ) : null}
@@ -301,7 +301,7 @@ export function MaintenanceTab({ template, editable, onSaved, onDirtyChange }: M
                   checked={plan.safetyCritical}
                   disabled={!editable}
                   onChange={(event) => update(index, { safetyCritical: event.target.checked })}
-                  className="h-4 w-4 rounded border-gray-300"
+                  className="h-4 w-4 rounded border-line-strong"
                 />
               </Field>
               <Field label="Owner team" error={problemFor("ownerTeam")}>
@@ -361,7 +361,7 @@ export function MaintenanceTab({ template, editable, onSaved, onDirtyChange }: M
                 onClick={() =>
                   setRows((current) => current.filter((_, position) => position !== index))
                 }
-                className="mt-3 rounded border border-red-200 px-3 py-1 text-[11px] font-semibold text-red-700"
+                className="mt-3 rounded border border-critical-line px-3 py-1 text-[11px] font-semibold text-critical-ink"
               >
                 Remove
               </button>
@@ -376,7 +376,7 @@ export function MaintenanceTab({ template, editable, onSaved, onDirtyChange }: M
             type="button"
             disabled={rows.length >= MAX_MAINTENANCE_ENTRIES}
             onClick={() => setRows((current) => [...current, blankMaintenanceRow()])}
-            className="rounded border border-gray-200 px-3 py-1.5 text-xs font-semibold text-bms-ink disabled:opacity-60"
+            className="rounded border border-line px-3 py-1.5 text-xs font-semibold text-ink disabled:opacity-60"
           >
             Add a plan
           </button>
@@ -385,11 +385,11 @@ export function MaintenanceTab({ template, editable, onSaved, onDirtyChange }: M
             disabled={blocked || !changed || saveM.isPending}
             aria-busy={saveM.isPending}
             onClick={() => saveM.mutate()}
-            className="rounded bg-bms-green px-4 py-1.5 text-xs font-semibold text-white disabled:opacity-60"
+            className="rounded bg-accent px-4 py-1.5 text-xs font-semibold text-on-accent disabled:opacity-60"
           >
             {saveM.isPending ? "Saving…" : "Save maintenance"}
           </button>
-          <span className="text-[11px] text-bms-muted">
+          <span className="text-[11px] text-ink-muted">
             {blockedKeys.length > 0
               ? "Blocked by unwritable content."
               : problems.length > 0
@@ -405,8 +405,8 @@ export function MaintenanceTab({ template, editable, onSaved, onDirtyChange }: M
 }
 
 function fieldClass(disabled: boolean, problem: string | undefined): string {
-  const tone = problem ? "border-red-300 bg-red-50" : "border-gray-200";
+  const tone = problem ? "border-critical-line-strong bg-critical-wash" : "border-line";
   return `w-full rounded border px-2 py-1.5 text-xs ${tone} ${
-    disabled ? "bg-gray-50 text-bms-muted" : ""
+    disabled ? "bg-well text-ink-muted" : ""
   }`;
 }
