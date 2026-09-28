@@ -59,14 +59,15 @@ const generationModes: MaintenanceGenerationMode[] = [
   "predictive",
 ];
 
-function priorityStyle(priority: WorkOrderPriority): string {
+/** Exported for `maintenance-schedules-panel.spec.tsx` (F3.65b owner ruling R-f: high and medium differ). */
+export function priorityStyle(priority: WorkOrderPriority): string {
   switch (priority) {
     case "critical":
       return "border-critical-line bg-critical-wash-strong text-critical-ink-strong";
     case "high":
-      return "border-warning-line bg-warning-wash-strong text-warning-ink";
+      return "border-warning bg-warning-wash-strong text-warning-ink";
     case "medium":
-      return "border-warning-line bg-warning-wash-strong text-warning-ink";
+      return "border-warning-line bg-warning-wash text-warning-ink";
     case "low":
       return "border-line bg-well-deep text-neutral-ink";
   }

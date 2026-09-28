@@ -100,14 +100,15 @@ function statusStyle(status: WorkOrderStatus): string {
   }
 }
 
-function priorityStyle(priority: WorkOrderPriority): string {
+/** Exported for `work-orders-page.spec.tsx` (F3.65b owner ruling R-f: high and medium differ). */
+export function priorityStyle(priority: WorkOrderPriority): string {
   switch (priority) {
     case "critical":
       return "border-critical-line bg-critical-wash-strong text-critical-ink-strong";
     case "high":
-      return "border-warning-line bg-warning-wash-strong text-warning-ink";
+      return "border-warning bg-warning-wash-strong text-warning-ink";
     case "medium":
-      return "border-warning-line bg-warning-wash-strong text-warning-ink";
+      return "border-warning-line bg-warning-wash text-warning-ink";
     case "low":
       return "border-line bg-well-deep text-neutral-ink";
   }
@@ -126,14 +127,15 @@ function kpiToneStyle(tone?: KanbanColumn["kpiTone"]): string {
   }
 }
 
-function priorityRailStyle(priority: WorkOrderPriority): string {
+/** Exported for `work-orders-page.spec.tsx` (F3.65b owner ruling R-f: high and medium differ). */
+export function priorityRailStyle(priority: WorkOrderPriority): string {
   switch (priority) {
     case "critical":
       return "border-l-critical";
     case "high":
       return "border-l-warning";
     case "medium":
-      return "border-l-warning";
+      return "border-l-warning/50";
     case "low":
       return "border-l-info";
   }
