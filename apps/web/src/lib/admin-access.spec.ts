@@ -7,6 +7,7 @@ import {
   canWriteOrganizationScopedCalcParameter,
   canCreateOrganizationWideDashboard,
   canManageLocationTypes,
+  canManageMimicLayouts,
   canManageNotificationChannels,
   masterDataTabs,
   visibleMasterDataTabs,
@@ -97,6 +98,9 @@ export function runAssetTemplateTabTests(): void {
         // `F3.36` Part F (ADR 0049) — ungated, like Asset Groups: authoring is
         // hidden inside the page by `canAuthorTemplates`, not by the tab.
         "/admin/dashboard-templates",
+        // `F3.32c` (ADR 0081 decision 3) — `orgAdminOnly`: the layout library
+        // is drawn by `admin` and `organization_admin` alone.
+        "/admin/mimic-layouts",
         "/admin/asset-points",
         "/admin/manual-readings",
         "/admin/point-keys",
@@ -137,8 +141,9 @@ export function runAssetTemplateTabTests(): void {
     // gate and `location_admin` stays at 10.
     // `E4.1a` added Calc Parameters the same ungated way: 10 -> 11 and
     // 14 -> 15. `F4.162` added Location Types as `globalAdminOnly`, so
-    // `admin` alone goes 15 -> 16.
-    const expected = role === "location_admin" ? 11 : role === "admin" ? 16 : 15;
+    // `admin` alone goes 15 -> 16. `F3.32c` added Mimic Layouts as
+    // `orgAdminOnly`: 16 -> 17 and 15 -> 16; `location_admin` stays at 11.
+    const expected = role === "location_admin" ? 11 : role === "admin" ? 17 : 16;
     assert(
       paths.length === expected,
       `${role} sees the wrong number of tabs — got ${paths.length}, expected ${expected}`,
@@ -354,4 +359,34 @@ export function runLocationTypesTabHiddenFromOrganizationAdminTest(): void {
   const paths = visibleMasterDataTabs("organization_admin").map((tab) => tab.path);
   assert(paths.includes("/admin/point-keys"), "organization_admin sees the Point Keys tab (control)");
   assert(!paths.includes(LOCATION_TYPES), "organization_admin must not see the Location Types tab");
+}
+
+const MIMIC_LAYOUTS = "/admin/mimic-layouts";
+
+/** `F3.32c` (ADR 0081 decision 3) — `admin` and `organization_admin` draw mimic layouts. */
+export function runCanManageMimicLayoutsAdminsTest(): void {
+  assert(
+    canManageMimicLayouts("admin") && canManageMimicLayouts("organization_admin"),
+    "admin and organization_admin manage mimic layouts",
+  );
+}
+
+/** `F3.32c` — no other role does (the API answers 403). */
+export function runCanManageMimicLayoutsOthersTest(): void {
+  for (const role of ["location_admin", "asset_group_admin", "operator", "viewer"] as const) {
+    assert(!canManageMimicLayouts(role), `${role} does not manage mimic layouts`);
+  }
+}
+
+/** `F3.32c` — an `organization_admin` sees the Mimic Layouts tab. */
+export function runMimicLayoutsTabShownToOrganizationAdminTest(): void {
+  const paths = visibleMasterDataTabs("organization_admin").map((tab) => tab.path);
+  assert(paths.includes(MIMIC_LAYOUTS), "organization_admin must see the Mimic Layouts tab");
+}
+
+/** `F3.32c` — a `location_admin` does not; Asset Groups is the positive control. */
+export function runMimicLayoutsTabHiddenFromLocationAdminTest(): void {
+  const paths = visibleMasterDataTabs("location_admin").map((tab) => tab.path);
+  assert(paths.includes("/admin/asset-groups"), "location_admin sees the Asset Groups tab (control)");
+  assert(!paths.includes(MIMIC_LAYOUTS), "location_admin must not see the Mimic Layouts tab");
 }

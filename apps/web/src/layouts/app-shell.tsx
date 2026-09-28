@@ -3,7 +3,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 
 import { isOidcEnabled, startOidcLogout } from "../api/oidc";
-import { isGlobalAdmin, isMasterDataAdmin, canWritePointKeys } from "../lib/admin-access";
+import { isGlobalAdmin, isMasterDataAdmin, canManageMimicLayouts, canWritePointKeys } from "../lib/admin-access";
 import { roleLabel } from "../lib/role-label";
 import { useAuthStore, type AuthUser } from "../stores/auth-store";
 import { StatusBarClock } from "../components/status-bar-clock";
@@ -65,6 +65,8 @@ const adminModuleGroup = {
     { label: "Assets", path: "/admin/assets", globalOnly: false },
     { label: "Asset Points", path: "/admin/asset-points", globalOnly: false },
     { label: "Asset Groups", path: "/admin/asset-groups" },
+    // `F3.32c` (ADR 0081 decision 3) — `admin` and `organization_admin` only, as the page is.
+    { label: "Mimic Layouts", path: "/admin/mimic-layouts", orgAdminOnly: true },
     { label: "Point Keys", path: "/admin/point-keys", catalogOnly: true },
     // `F4.162` (plan D7) — global `admin` only, as the page and its API are.
     { label: "Location Types", path: "/admin/location-types", globalOnly: true },
@@ -347,6 +349,9 @@ export function AppShell({ user, children, kpiRibbon }: AppShellProps) {
                     }
                     if ("globalOnly" in item && item.globalOnly) {
                       return isGlobalAdmin(user.role);
+                    }
+                    if ("orgAdminOnly" in item && item.orgAdminOnly) {
+                      return canManageMimicLayouts(user.role);
                     }
                     return true;
                   })
