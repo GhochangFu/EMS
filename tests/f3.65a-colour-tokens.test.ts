@@ -1,5 +1,6 @@
 import { readFileSync } from "node:fs";
 import { join, relative } from "node:path";
+import { pathToFileURL } from "node:url";
 
 import { describe, expect, it } from "vitest";
 
@@ -159,51 +160,99 @@ const ROLE_HEX: Record<string, { light: string; dark: string }> = {
   "simulated-ink": { light: "#6D28D9", dark: "#A67DE8" },
 };
 
+/**
+ * `apps/web/tailwind.config.js` itself, imported (it is an ES module; `apps/web/package.json` has
+ * `"type": "module"`), so T11 checks the object Tailwind reads rather than the file's text.
+ */
+const tailwindConfig = (await import(pathToFileURL(TAILWIND_CONFIG_PATH).href)).default as {
+  darkMode: unknown;
+  theme: { extend: { colors: Record<string, unknown> } };
+};
+
+/**
+ * Every leaf of `theme.extend.colors` outside the kept `bms` block, keyed by the class stem
+ * Tailwind builds from its path (`ink.muted` → `ink-muted`, `critical.ink.DEFAULT` →
+ * `critical-ink`). A stem reached twice is kept under its first path and recorded as a clash.
+ */
+function flattenColours(node: Record<string, unknown>, path: string[] = []): Map<string, { path: string; value: unknown }> {
+  const out = new Map<string, { path: string; value: unknown }>();
+  for (const [key, value] of Object.entries(node)) {
+    if (path.length === 0 && key === "bms") continue;
+    const next = [...path, key];
+    if (value !== null && typeof value === "object") {
+      for (const [stem, leaf] of flattenColours(value as Record<string, unknown>, next)) {
+        out.set(out.has(stem) ? `${stem} (clash: ${leaf.path})` : stem, leaf);
+      }
+      continue;
+    }
+    const stem = next.filter((k) => k !== "DEFAULT").join("-");
+    out.set(out.has(stem) ? `${stem} (clash: ${next.join(".")})` : stem, { path: next.join("."), value });
+  }
+  return out;
+}
+
+const configColourLeaves = flattenColours(tailwindConfig.theme.extend.colors);
+
 describe("F3.65a: the token file (index.css) and the Tailwind mapping", () => {
   const css = () => readFileSync(INDEX_CSS_PATH, "utf8");
-  const config = () => readFileSync(TAILWIND_CONFIG_PATH, "utf8");
 
-  it("T7 both blocks define exactly the 40 role names of §2.2 plus simulated-ink (41 total)", () => {
-    const { light, dark } = parseTokenBlocks(css());
-    const expected = Object.keys(ROLE_HEX).sort();
-    expect([...light.keys()].sort()).toEqual(expected);
-    expect([...dark.keys()].sort()).toEqual(expected);
+  it("T7 the light block defines exactly the 40 role names of §2.2 plus simulated-ink (41 total)", () => {
+    expect([...parseTokenBlocks(css()).light.keys()].sort()).toEqual(Object.keys(ROLE_HEX).sort());
+  });
+
+  it("T7 the dark block defines exactly the 40 role names of §2.2 plus simulated-ink (41 total)", () => {
+    expect([...parseTokenBlocks(css()).dark.keys()].sort()).toEqual(Object.keys(ROLE_HEX).sort());
   });
 
   it("T8 every declared channel value is an integer 0–255", () => {
     const { light, dark } = parseTokenBlocks(css());
-    for (const channels of [...light.values(), ...dark.values()]) {
-      for (const c of channels) {
-        expect(Number.isInteger(c)).toBe(true);
-        expect(c).toBeGreaterThanOrEqual(0);
-        expect(c).toBeLessThanOrEqual(255);
+    const bad: string[] = [];
+    for (const [theme, map] of [["light", light], ["dark", dark]] as const) {
+      for (const [role, channels] of map) {
+        if (!channels.every((c) => Number.isInteger(c) && c >= 0 && c <= 255)) bad.push(`${theme} ${role}: ${channels.join(" ")}`);
       }
     }
+    expect(bad).toEqual([]);
   });
 
   it("T9 every light value equals §2.2's light hex", () => {
     const { light } = parseTokenBlocks(css());
-    for (const [role, { light: hex }] of Object.entries(ROLE_HEX)) {
-      expect(channelsToHex(light.get(role)!).toLowerCase()).toBe(hex.toLowerCase());
-    }
+    const mismatches = Object.entries(ROLE_HEX)
+      .map(([role, { light: hex }]) => [role, hex, light.get(role)] as const)
+      .filter(([, hex, channels]) => !channels || channelsToHex(channels).toLowerCase() !== hex.toLowerCase())
+      .map(([role, hex, channels]) => `${role}: ${channels ? channelsToHex(channels) : "missing"}, expected ${hex}`);
+    expect(mismatches).toEqual([]);
   });
 
   it("T10 every dark value equals §2.2's dark hex", () => {
     const { dark } = parseTokenBlocks(css());
-    for (const [role, { dark: hex }] of Object.entries(ROLE_HEX)) {
-      expect(channelsToHex(dark.get(role)!).toLowerCase()).toBe(hex.toLowerCase());
-    }
+    const mismatches = Object.entries(ROLE_HEX)
+      .map(([role, { dark: hex }]) => [role, hex, dark.get(role)] as const)
+      .filter(([, hex, channels]) => !channels || channelsToHex(channels).toLowerCase() !== hex.toLowerCase())
+      .map(([role, hex, channels]) => `${role}: ${channels ? channelsToHex(channels) : "missing"}, expected ${hex}`);
+    expect(mismatches).toEqual([]);
   });
 
-  it("T11 tailwind.config.js maps every role through rgb(var(--role) / <alpha-value>)", () => {
-    const text = config();
-    for (const role of Object.keys(ROLE_HEX)) {
-      expect(text, `missing mapping for role "${role}"`).toContain(`rgb(var(--${role}) / <alpha-value>)`);
-    }
+  it("T11 the role stems of theme.extend.colors (outside bms) are exactly the 41 roles", () => {
+    expect([...configColourLeaves.keys()].sort()).toEqual(Object.keys(ROLE_HEX).sort());
   });
 
-  it('T11 tailwind.config.js sets darkMode: ["selector", \'[data-theme="dark"]\']', () => {
-    expect(config()).toContain('darkMode: ["selector", \'[data-theme="dark"]\']');
+  it("T11 each role stem maps to exactly its own rgb(var(--<role>) / <alpha-value>)", () => {
+    const wrong = [...configColourLeaves]
+      .filter(([stem, { value }]) => value !== `rgb(var(--${stem}) / <alpha-value>)`)
+      .map(([stem, { path, value }]) => `${path} (${stem}): ${String(value)}`);
+    expect(wrong).toEqual([]);
+  });
+
+  it("T11 no colour leaf outside the bms block holds a literal colour", () => {
+    const literal = [...configColourLeaves.values()]
+      .filter(({ value }) => typeof value !== "string" || !/^rgb\(var\(--[a-z][a-z0-9-]*\) \/ <alpha-value>\)$/.test(value))
+      .map(({ path, value }) => `${path}: ${String(value)}`);
+    expect(literal).toEqual([]);
+  });
+
+  it('T11 tailwind.config.js sets darkMode to ["selector", \'[data-theme="dark"]\']', () => {
+    expect(tailwindConfig.darkMode).toEqual(["selector", '[data-theme="dark"]']);
   });
 
   it("T12 :root carries color-scheme: light", () => {

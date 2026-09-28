@@ -22,9 +22,8 @@ export default {
         // F3.65a decision 2.2 — the 40 role tokens, plus a 41st, `simulated-ink` (owner ruling
         // 2026-09-28, Fix A, added after the plan's gate). Each value is `rgb(var(--role) / <alpha-value>)`
         // so `/NN` opacity utilities (`bg-accent/20`) keep working; the channel triplet itself lives
-        // in `apps/web/src/index.css`. Written as literal per-role strings (not through a shared
-        // helper call) so `tests/f3.65a-colour-tokens.test.ts` T11 can grep this file's text for
-        // every role's mapping.
+        // in `apps/web/src/index.css`. `tests/f3.65a-colour-tokens.test.ts` T11 imports this object
+        // and holds every leaf outside `bms` to exactly its own role's variable.
         canvas: "rgb(var(--canvas) / <alpha-value>)",
         surface: "rgb(var(--surface) / <alpha-value>)",
         well: {
