@@ -13,7 +13,10 @@ import {
   f5DonutSlicesAreTheOq4BandsCycling,
   f6AThemeToggleReRendersWithTheDarkAccent,
   f6AThemeToggleReRendersWithTheDarkTheme,
+  f7TogglePassesTheDarkThemeObject,
+  f7ToggleRepaintsTheOptionColour,
   resetRecorded,
+  TOGGLED_CHART_NAMES,
 } from "./charts-follow-theme.spec";
 
 /**
@@ -62,4 +65,14 @@ describe("F3.65c the charts follow the theme", () => {
   it("F6 a theme toggle re-renders EnergyTopBarChart with the dark theme object", () => {
     f6AThemeToggleReRendersWithTheDarkTheme();
   });
+
+  for (const chart of TOGGLED_CHART_NAMES) {
+    it(`F7 a light-to-dark toggle repaints ${chart}'s option colour with the dark role`, () => {
+      f7ToggleRepaintsTheOptionColour(chart);
+    });
+
+    it(`F7 a light-to-dark toggle passes ${chart} the dark theme object`, () => {
+      f7TogglePassesTheDarkThemeObject(chart);
+    });
+  }
 });
