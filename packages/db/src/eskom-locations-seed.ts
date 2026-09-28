@@ -403,7 +403,24 @@ export function locationIdsWithoutSeedCode(outcomes: Iterable<SeedLocationOutcom
  *   its code, and forges the key onto another row: the forged row is the only
  *   candidate and is adopted;
  * - two keyed canonical rows swap slugs: each keeps the other's slug, and the
- *   seed logs both on every boot and never repairs them.
+ *   seed logs both on every boot and never repairs them;
+ * - before the first keyed boot, a canonical row whose code (or slug) was
+ *   renamed while another row took it is ambiguous: nothing is written for
+ *   the identity, on every boot, until an administrator resolves it. The RTU
+ *   step skips the candidate without the canonical code (addendum 4);
+ * - name and coordinates are not written on an ambiguous identity either:
+ *   the oldest candidate can be the wrong row in a slug swap. So when an
+ *   ambiguous site's name was also changed, `seedEskomAssets`, which finds
+ *   its RTU by the catalog's site name, still throws, loudly (C4);
+ * - the slug holder is read on the superuser pool, a second connection that
+ *   cannot see this boot's uncommitted writes, so it can report a holder
+ *   whose slug an earlier write of the same boot already moved: the slug is
+ *   then skipped and logged, and written on the next boot. The same holds
+ *   for `seedDecommissionedLocation`'s read of `esk-decomm-01`.
+ *
+ * Owner ruling 20 closed the admin path to the key itself: the location POST,
+ * PATCH and the onboarding commit never write `meta.seedKey`, so a forged,
+ * moved or wiped key needs a direct database write.
  */
 export async function seedEskomLocations(
   pool: LocationQueryable,
