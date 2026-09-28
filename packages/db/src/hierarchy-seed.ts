@@ -396,51 +396,58 @@ export async function enforceHierarchyNotNull(pool: pg.Pool): Promise<void> {
 }
 
 /**
- * The slug of a legacy PHE location that held one RTU (`phe-<station>-i` or
- * `-ii`). {@link cleanupLegacyPheRtuLocations} deletes these, and the boot
- * gate counts the ones left, which must be zero.
- */
-export const LEGACY_PHE_RTU_LOCATION_SLUG_PATTERN = "^phe-.+-(i|ii)$";
-
-/**
- * Removes legacy PHE locations that used one RTU per location slug.
+ * Removes the legacy PHE locations that held one RTU each.
+ *
+ * `legacySlugs` is `phePilotExpectedRows(catalog).legacyLocationSlugs`: the
+ * twelve slugs an earlier seed wrote, one per edge RTU (owner ruling 13, OQ1).
+ * Every statement matches `l.slug = ANY(...)` on that list and nothing else.
+ * It used to match a regular expression (`^phe-.+-(i|ii)$`) on a slug an
+ * administrator chooses freely, so an admin PHEWB location such as
+ * `phe-new-station-ii` lost its access grants, its asset groups and its RTUs
+ * on the next boot, and the boot then stopped with `23503` on its assets.
+ * After the first boot on a database this runs on, it deletes nothing.
  *
  * **Must run inside a PHEWB tenant context** (`seed.ts` supplies one). All five
  * statements below join or target `bms.locations`, which carries `FORCE ROW
  * LEVEL SECURITY` since `E7.1a`. Without a context the role sees no location
  * rows, so every `DELETE` matches nothing, deletes nothing, and reports success
  * — the legacy rows would survive with no error anywhere. This is the one place
- * in the seed where a missing tenant context fails silently rather than loudly.
+ * in the seed where a missing tenant context fails silently rather than loudly;
+ * the boot gate's "PHEWB legacy per-RTU locations" count, which must be zero,
+ * reads the same list and catches it.
  */
-export async function cleanupLegacyPheRtuLocations(pool: pg.Pool): Promise<void> {
-  const pattern = [LEGACY_PHE_RTU_LOCATION_SLUG_PATTERN];
+export async function cleanupLegacyPheRtuLocations(
+  pool: pg.Pool,
+  legacySlugs: readonly string[],
+): Promise<void> {
+  const slugs = [legacySlugs];
   await pool.query(`
     DELETE FROM bms.user_location_access ula
     USING bms.locations l
     WHERE ula.location_id = l.id
-      AND l.slug ~ $1
-  `, pattern);
+      AND l.slug = ANY($1::varchar[])
+  `, slugs);
   await pool.query(`
     DELETE FROM bms.asset_group_members agm
     USING bms.asset_groups ag, bms.locations l
     WHERE agm.asset_group_id = ag.id
       AND ag.location_id = l.id
-      AND l.slug ~ $1
-  `, pattern);
+      AND l.slug = ANY($1::varchar[])
+  `, slugs);
   await pool.query(`
     DELETE FROM bms.asset_groups ag
     USING bms.locations l
     WHERE ag.location_id = l.id
-      AND l.slug ~ $1
-  `, pattern);
+      AND l.slug = ANY($1::varchar[])
+  `, slugs);
   await pool.query(`
     DELETE FROM bms.rtus r
     USING bms.locations l
     WHERE r.location_id = l.id
-      AND l.slug ~ $1
-  `, pattern);
+      AND l.slug = ANY($1::varchar[])
+  `, slugs);
   await pool.query(`
     DELETE FROM bms.locations
-    WHERE slug ~ $1
-  `, pattern);
+    WHERE slug = ANY($1::varchar[])
+  `, slugs);
 }

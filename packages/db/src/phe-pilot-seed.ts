@@ -91,7 +91,12 @@ export function deviceDomain(deviceCode: string, modelCode: string): string {
   return "electrical";
 }
 
-function stationSlug(stationName: string): string {
+/**
+ * The `bms.locations.slug` a PHE station takes. Exported so `phe-map-seed.ts`
+ * uses this one copy, and so {@link phePilotExpectedRows} can derive the
+ * legacy per-RTU slugs from the RTU display names with the same function.
+ */
+export function stationSlug(stationName: string): string {
   return `phe-${stationName
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, "-")
@@ -130,6 +135,15 @@ export type PhePilotExpectedRows = {
   readonly tsPoints: readonly PheAssetPoint[];
   /** The devices whose domain is `electrical`. */
   readonly electricalAssetCodes: readonly string[];
+  /**
+   * The slugs of the legacy one-RTU-per-location rows an earlier seed wrote:
+   * {@link stationSlug} of each edge RTU's display name (`<Station> I`,
+   * `<Station> II`), less any station slug, without duplicates. No generator
+   * of those rows survives in the repository, so this list is the only record
+   * of them; `cleanupLegacyPheRtuLocations` deletes exactly these slugs and
+   * the boot gate counts them, which must be zero (owner ruling 13, OQ1).
+   */
+  readonly legacyLocationSlugs: readonly string[];
 };
 
 /**
@@ -145,8 +159,12 @@ export function phePilotExpectedRows(catalog: PheCatalogFile): PhePilotExpectedR
   const domains = new Map<string, string>();
   const points = new Map<string, PheAssetPoint>();
   const tsPoints = new Map<string, PheAssetPoint>();
+  const stationSlugs = new Set<string>();
+  const rtuSlugs = new Set<string>();
   for (const row of catalog.rows) {
     locationCodes.add(pheLocationCode(row.StationCode));
+    stationSlugs.add(stationSlug(row.StationName));
+    rtuSlugs.add(stationSlug(row.RTUDisplayName));
     externalRtuIds.add(row.EdgeRTUId);
     const code = assetCode(row.DeviceCode);
     // The seed takes a device's domain from its first catalog row.
@@ -164,6 +182,7 @@ export function phePilotExpectedRows(catalog: PheCatalogFile): PhePilotExpectedR
     points: [...points.values()],
     tsPoints: [...tsPoints.values()],
     electricalAssetCodes: [...domains].filter(([, domain]) => domain === "electrical").map(([code]) => code),
+    legacyLocationSlugs: [...rtuSlugs].filter((slug) => !stationSlugs.has(slug)),
   };
 }
 

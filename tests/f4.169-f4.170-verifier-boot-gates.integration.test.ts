@@ -507,13 +507,17 @@ describe.skipIf(!ownerUrl)("F4.169/F4.170 addendum — the boot gate after ordin
   }, 60_000);
 
   it("P2: a legacy per-RTU PHEWB location moves its zero check (+1)", async () => {
+    // One of the twelve slugs the cleanup deletes (owner ruling 13); a slug
+    // that merely ends -ii is an admin's and is no longer counted.
+    const legacySlug = hierarchyExpectations().phe.legacyLocationSlugs[0];
+    assert(legacySlug !== undefined, "the PHE catalog must derive a legacy slug");
     const { before, after } = await around("phewb", "PHEWB legacy per-RTU locations", async (pool) => {
       await insertOne(
         pool,
         `INSERT INTO bms.locations (organization_id, code, slug, name, type, latitude, longitude)
          VALUES ($1, $2, $3, 'F4.169 fixture legacy location', 'pump_station', 0, 0)
          RETURNING id`,
-        [phewbOrgId, `F4169-${RUN_ID}-LEG`, `phe-f4169${runId}-ii`],
+        [phewbOrgId, `F4169-${RUN_ID}-LEG`, legacySlug],
         "legacy PHEWB location",
       );
     });

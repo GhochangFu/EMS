@@ -2,7 +2,7 @@ import pg from "pg";
 
 import { PACK_ASSET_DOMAINS } from "./asset-domains-seed";
 import type { LadderCollisionSkip } from "./automation-rules-seed";
-import { getOrganizationId, LEGACY_PHE_RTU_LOCATION_SLUG_PATTERN } from "./hierarchy-seed";
+import { getOrganizationId } from "./hierarchy-seed";
 import { hierarchyExpectations } from "./verify-hierarchy-expected";
 import { withOrganization } from "./seed-tenant";
 import { DEMO_WATER_ASSET_CODES, DEMO_WATER_TEMPLATE_CODES } from "./water-plant-demo-seed";
@@ -493,14 +493,16 @@ export async function readPhewbChecks(pool: pg.Pool, phewbOrgId: string): Promis
         INNER JOIN bms.organizations o ON o.id = l.organization_id
         WHERE o.code = 'PHEWB'
           AND l.code = ANY($1::varchar[])) AS phe_locs,
-      -- The one-RTU-per-location rows cleanupLegacyPheRtuLocations deletes.
-      -- The old exact location count was what caught a cleanup that ran
-      -- without a tenant context and deleted nothing; this zero count keeps
-      -- that, now that the location count reads only the catalog codes.
+      -- The one-RTU-per-location rows cleanupLegacyPheRtuLocations deletes,
+      -- by the same twelve slugs (owner ruling 13), never a pattern an admin
+      -- slug can match. The old exact location count was what caught a
+      -- cleanup that ran without a tenant context and deleted nothing; this
+      -- zero count keeps that, now that the location count reads only the
+      -- catalog codes.
       (SELECT COUNT(*)::text FROM bms.locations l
         INNER JOIN bms.organizations o ON o.id = l.organization_id
         WHERE o.code = 'PHEWB'
-          AND l.slug ~ $2) AS phe_legacy_locs,
+          AND l.slug = ANY($2::varchar[])) AS phe_legacy_locs,
       (SELECT COUNT(*)::text FROM bms.rtus r
         INNER JOIN bms.locations l ON l.id = r.location_id
         INNER JOIN bms.organizations o ON o.id = l.organization_id
@@ -555,7 +557,7 @@ export async function readPhewbChecks(pool: pg.Pool, phewbOrgId: string): Promis
           AND agm.role IS NOT NULL) AS phe_elec_roled
   `, [
     phe.locationCodes,
-    LEGACY_PHE_RTU_LOCATION_SLUG_PATTERN,
+    phe.legacyLocationSlugs,
     phe.externalRtuIds,
     phe.assetCodes,
     phe.points.map((point) => point.assetCode),

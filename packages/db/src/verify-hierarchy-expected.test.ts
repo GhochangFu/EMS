@@ -10,6 +10,7 @@ import {
   assertTsPointsAreDisjointFromThePoints,
   assertTwelvePheRtus,
   assertTwoHundredFiftyTwoPhePoints,
+  assertTwelveLegacyPheSlugs,
   assertTwoSeedOrganizations,
 } from "./verify-hierarchy-expected.spec";
 
@@ -52,5 +53,9 @@ describe("F4.169/F4.170 addendum — the boot gate's expectations derive from th
 
   it("derives thirty-six PHE electrical assets", () => {
     assertThirtySixPheElectricalAssets();
+  });
+
+  it("derives twelve legacy per-RTU PHE slugs, none a station's", () => {
+    assertTwelveLegacyPheSlugs();
   });
 });

@@ -1,5 +1,6 @@
 import { expect } from "vitest";
 
+import { loadPheCatalog, stationSlug } from "./phe-pilot-seed";
 import { hierarchyExpectations } from "./verify-hierarchy-expected";
 
 /** Vitest entry point lives in the sibling `.test.ts` (ADR 0014). */
@@ -107,4 +108,32 @@ export function assertThirtySixPheElectricalAssets(): void {
   const { electricalAssetCodes } = hierarchyExpectations().phe;
   expect(electricalAssetCodes, "36 PHE electrical devices (MFM, PUMP-M, PUMP-C)").toHaveLength(36);
   expect(distinct(electricalAssetCodes)).toBe(36);
+}
+
+/** The pattern `cleanupLegacyPheRtuLocations` matched before owner ruling 13. */
+const OLD_LEGACY_SLUG_PATTERN = /^phe-.+-(i|ii)$/;
+
+/**
+ * Twelve legacy per-RTU PHE slugs, one per edge RTU, each one the old pattern
+ * matched, and none a station's slug (owner ruling 13, OQ1).
+ *
+ * Mutations: deriving from the station name gives six station slugs, which
+ * the disjointness check rejects; dropping the station filter changes
+ * nothing here (the display names never equal a station name), so the length
+ * and the pattern are the claims that hold the derivation.
+ */
+export function assertTwelveLegacyPheSlugs(): void {
+  const { legacyLocationSlugs } = hierarchyExpectations().phe;
+  expect(legacyLocationSlugs, "one legacy slug per edge RTU").toHaveLength(12);
+  expect(distinct(legacyLocationSlugs), "the legacy slugs must be distinct").toBe(12);
+  expect(
+    legacyLocationSlugs.filter((slug) => !OLD_LEGACY_SLUG_PATTERN.test(slug)),
+    "every legacy slug is one the old pattern matched",
+  ).toEqual([]);
+  const stationSlugs = new Set(loadPheCatalog().rows.map((row) => stationSlug(row.StationName)));
+  expect(stationSlugs.size, "the catalog carries six stations").toBe(6);
+  expect(
+    legacyLocationSlugs.filter((slug) => stationSlugs.has(slug)),
+    "no legacy slug may be a station's slug, or the cleanup deletes a live station",
+  ).toEqual([]);
 }
