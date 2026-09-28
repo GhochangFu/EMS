@@ -153,13 +153,21 @@ export type SeedLocationCandidates = {
  * - No candidate: `id` is `null` and the caller inserts.
  * - One candidate row (it may be in K, S and C at once): adopted.
  * - More than one: the oldest by `(created_at, id)` is adopted when it is in
- *   K. `created_at` has no admin write path, so a key an administrator forges
- *   onto a newer row cannot outrank the row the seed wrote, and when two rows
- *   carry the key the older one wins.
+ *   K **and is the only row in K** (addendum 4). `created_at` has no admin
+ *   write path, so a key forged onto a newer row cannot outrank the row the
+ *   seed wrote. Two rows that carry the key are ambiguous, whatever their
+ *   age: rows written in one transaction share `created_at`, the tie falls
+ *   to a random `id`, and a forged key on the row that sorts first would
+ *   otherwise take the identity. The admin API cannot write the key at all
+ *   since owner ruling 20; this rule is what holds if one is there anyway.
  * - Otherwise `id` is `null` and `candidates` names them: the seed writes
  *   nothing for the identity and logs one line. Two unkeyed rows (a slug on
  *   one, the code on the other) cannot be told apart by any column the seed
  *   owns, and picking one would overwrite an administrator's row.
+ *
+ * Precedence, in short: the key restriction first (a row keyed for another
+ * identity is never a candidate, by slug or by code), then a single
+ * candidate, then the oldest-and-only keyed candidate, then nothing.
  *
  * `verify-hierarchy-seed.ts` reads the same candidates, so the boot gate and
  * the seed agree on which row is the identity's.
@@ -182,8 +190,13 @@ export async function findSeedLocation(
     [organizationId, identity.key, identity.slug, identity.code],
   );
   const oldest = found.rows[0];
+  const keyedCount = found.rows.filter((row) => row.keyed).length;
   const id =
-    oldest === undefined ? null : found.rows.length === 1 || oldest.keyed ? oldest.id : null;
+    oldest === undefined
+      ? null
+      : found.rows.length === 1 || (oldest.keyed && keyedCount === 1)
+        ? oldest.id
+        : null;
   return { id, candidates: found.rows.map((row) => row.id) };
 }
 
@@ -257,7 +270,7 @@ export function seedLocationSkipLines(identity: SeedLocationIdentity, claim: See
   if (claim.ambiguous) {
     return [
       `${where}: not written: locations ${claim.candidates.join(", ")} each claim it by key, slug or ` +
-        "code, and the oldest carries no key for it",
+        "code, and the oldest is not the one row keyed for it",
     ];
   }
   if (claim.id === null) {

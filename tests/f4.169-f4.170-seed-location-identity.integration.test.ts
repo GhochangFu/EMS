@@ -352,6 +352,65 @@ describe.skipIf(!ownerUrl)("F4.169/F4.170 addendum 3 — which row is a seed ide
     });
   }, 60_000);
 
+  it("(f′) an older row keyed for another identity holds B's code: it is no candidate for B, and B is adopted", async () => {
+    await inEskomTransaction(async (pool) => {
+      const rowB = fixtureRow("b");
+      const a = await insertLocation(pool, {
+        code: eskomLocationCode(rowB),
+        slug: `f4169-${runId}-fp-a`,
+        key: `f4169-${runId}-other-identity`,
+        createdAt: EARLY,
+      });
+      const b = await insertLocation(pool, {
+        code: `F4169-${RUN_ID}-FP-B`,
+        slug: rowB.slug,
+        key: rowB.slug,
+        createdAt: LATE,
+        name: "admin name on B",
+      });
+      const aBefore = await wholeRow(pool, a);
+      const { lines } = await seed(pool, [rowB]);
+      // Mutation "the key restriction on the slug fallback only": A becomes a
+      // candidate by code, the oldest, unkeyed for B, and B is not adopted.
+      expect(await nameOf(pool, b), "B is adopted: its name is the seed's").toBe(rowB.name);
+      expect(await wholeRow(pool, a), "A is not written").toEqual(aBefore);
+      expect(lines, "one line: B's code is held by A").toHaveLength(1);
+      expect(lines[0]).toContain(a);
+      expect(lines[0]).toContain("code");
+    });
+  }, 60_000);
+
+  it("(C2) two rows with one created_at, the first by id given the other's key: nothing adopted, nothing written", async () => {
+    await inEskomTransaction(async (pool) => {
+      const [rowA, rowB] = [fixtureRow("a"), fixtureRow("b")];
+      const inserted = [
+        await insertLocation(pool, { code: eskomLocationCode(rowA), slug: rowA.slug, key: rowA.slug, createdAt: EARLY }),
+        await insertLocation(pool, { code: eskomLocationCode(rowB), slug: rowB.slug, key: rowB.slug, createdAt: EARLY }),
+      ];
+      // The receiver must sort first by (created_at, id), or even the old rule
+      // adopts the key's owner and the case cannot redden: read the order back.
+      const { rows } = await pool.query<{ id: string }>(
+        `SELECT id FROM bms.locations WHERE id = ANY($1::uuid[]) ORDER BY created_at, id`,
+        [inserted],
+      );
+      const [receiver, owner] = [rows[0]?.id as string, rows[1]?.id as string];
+      const ownerRow = owner === inserted[0] ? rowA : rowB;
+      await pool.query(`UPDATE bms.locations SET meta = jsonb_set(meta, '{seedKey}', to_jsonb($2::text)) WHERE id = $1`, [
+        receiver,
+        ownerRow.slug,
+      ]);
+      const [receiverBefore, ownerBefore] = [await wholeRow(pool, receiver), await wholeRow(pool, owner)];
+      const { lines } = await seed(pool, [ownerRow]);
+      // Mutation "drop the only-keyed condition": the receiver is the oldest
+      // keyed candidate, is adopted, and takes the owner's name.
+      expect(await wholeRow(pool, receiver), "the receiver is not written").toEqual(receiverBefore);
+      expect(await wholeRow(pool, owner), "the owner is not written").toEqual(ownerBefore);
+      expect(lines, "one line").toHaveLength(1);
+      expect(lines[0]).toContain(receiver);
+      expect(lines[0]).toContain(owner);
+    });
+  }, 60_000);
+
   // ── Section 2 / owner ruling 17: later steps use the resolved rows ────────
 
   /** The real RSMOC-WC row's id, read in the caller's ESKOM context. */
