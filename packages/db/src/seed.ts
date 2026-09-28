@@ -12,7 +12,7 @@ import {
   getOrganizationId,
   cleanupLegacyPheRtuLocations,
 } from "./hierarchy-seed";
-import { seedAccessControlFixtures } from "./access-fixtures-seed";
+import { seedAccessControlFixtures, seedDecommissionedLocation } from "./access-fixtures-seed";
 import { seedAssetDomains } from "./asset-domains-seed";
 import { seedPointKeyCatalog } from "./point-keys-seed";
 import { seedPointKeyHeadlineRanks } from "./point-key-headline-ranks-seed";
@@ -41,6 +41,7 @@ import {
 } from "./demo-users-seed";
 import { eskomSeedAssetCatalog, seedEskomAssets } from "./eskom-assets-seed";
 import {
+  locationIdsWithoutSeedCode,
   renameLegacyCapeTownMapLocation,
   seedEskomLocations,
   seedMapLocationRows,
@@ -107,7 +108,7 @@ async function main(): Promise<void> {
   // `bms.users` seeders use it, outside any `withOrganization` transaction,
   // and `seedEskomLocations` reads slug holders on it (owner ruling 16) —
   // reads only, which never join the tenant transaction, so it needs no
-  // `max: 1`.
+  // `max: 1`. `seedDecommissionedLocation` reads its slug holder there too.
   const superuserPool = new pg.Pool({
     connectionString: resolveSeedSuperuserUrl(databaseUrl, process.env),
   });
@@ -145,11 +146,20 @@ async function main(): Promise<void> {
       // Owner ruling 16 (OQ2): the slug-holder pre-read runs on the superuser
       // pool, so a location of any organization holding a canonical slug is
       // seen and skipped with a log line rather than met as 23505.
-      await seedEskomLocations(pool, superuserPool, mapLocationRows, eskomOrgId);
-      // F3.67 (ADR 0076 decision 6, OQ2): RSMOC-WC must exist first — the
-      // insert-if-absent below throws otherwise.
-      await seedSiteControlRoomViews(db, eskomOrgId);
-      await ensureEskomDomainRtus(db, pool);
+      const seedLocations = await seedEskomLocations(pool, superuserPool, mapLocationRows, eskomOrgId);
+      // F4.10's inactive location, before the RTU step (addendum 3): restored
+      // later, a code PATCH on it left a second RTU set under the admin code.
+      const decommissionedLocation = await seedDecommissionedLocation(pool, superuserPool, eskomOrgId);
+      // F3.67 (ADR 0076 decision 6, OQ2), owner ruling 17: the view goes on
+      // the row seedEskomLocations resolved for RSMOC-WC, never one found by code.
+      await seedSiteControlRoomViews(db, eskomOrgId, seedLocations);
+      // Owner ruling 17: a seed row whose canonical code another row holds
+      // gets no RTU under the admin's code.
+      await ensureEskomDomainRtus(
+        db,
+        pool,
+        locationIdsWithoutSeedCode([...seedLocations.values(), decommissionedLocation]),
+      );
 
       const eskomCatalog = eskomSeedAssetCatalog(mapLocationRows);
       const assetRows = await seedEskomAssets(db, pool, eskomCatalog, eskomOrgId);

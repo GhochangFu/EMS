@@ -1,6 +1,14 @@
 import pg from "pg";
 
-import { resolveSeedLocation, SEED_LOCATION_KEY, seedLocationSkipLines } from "./eskom-locations-seed";
+import {
+  type LocationQueryable,
+  resolveSeedLocation,
+  SEED_LOCATION_KEY,
+  type SeedLocationIdentity,
+  seedLocationOutcome,
+  type SeedLocationOutcome,
+  seedLocationSkipLines,
+} from "./eskom-locations-seed";
 import { STOCK_POINT_KEY_CODES } from "./point-keys-seed";
 
 /**
@@ -59,42 +67,55 @@ export const MANUAL_ASSET_CODE = "ESK-MANUAL-01";
  */
 export const MANUAL_POINT_KEY = "backup_min";
 
-export async function seedAccessControlFixtures(pool: pg.Pool): Promise<void> {
-  const org = await pool.query<{ id: string }>(
-    `SELECT id FROM bms.organizations WHERE code = 'ESKOM' LIMIT 1`,
-  );
-  const organizationId = org.rows[0]?.id;
-  if (!organizationId) {
-    return;
-  }
+/** The identity `seedDecommissionedLocation` finds its row by (owner ruling 16). */
+export const DECOMMISSIONED_LOCATION_IDENTITY: SeedLocationIdentity = {
+  key: DECOMMISSIONED_LOCATION_SLUG,
+  slug: DECOMMISSIONED_LOCATION_SLUG,
+  code: DECOMMISSIONED_LOCATION_CODE,
+};
 
-  // An inactive location. Every read-scope branch filters it out; without one,
-  // `WHERE active = true` and no predicate at all return identical rows.
-  //
-  // Owner ruling 16 (OQ6): the seed owns this row's slug, code and `active`,
-  // found by its `meta.seedKey` the way `seedEskomLocations` finds the
-  // canonical rows, so an admin PATCH of any of the three is reverted on the
-  // same row. Name and type stay the admin's. It used to be an upsert on
-  // `(organization_id, code)`: a renamed code made it INSERT a second row with
-  // the slug the first still held, and the boot stopped with `23505`.
-  //
-  // The slug holder is read on `pool`, in ESKOM's context, not on the
-  // superuser pool `seedEskomLocations` gets: this function keeps its
-  // `(pool)` signature, which `asset-domains-seed.spec.ts` reads in
-  // `seed.ts`. A PHEWB row holding `esk-decomm-01` is therefore not seen, and
-  // the slug write meets `23505` — a residual that needs an ESKOM admin to
-  // rename this row's slug and a PHEWB admin to take it.
-  const identity = {
-    key: DECOMMISSIONED_LOCATION_SLUG,
-    slug: DECOMMISSIONED_LOCATION_SLUG,
-    code: DECOMMISSIONED_LOCATION_CODE,
-  };
-  const claim = await resolveSeedLocation(pool, pool, organizationId, identity);
+/**
+ * The inactive `F4.10` location. Every read-scope branch filters it out;
+ * without one, `WHERE active = true` and no predicate at all return identical
+ * rows.
+ *
+ * Owner ruling 16 (OQ6): the seed owns this row's slug, code and `active`,
+ * found by its `meta.seedKey` the way `seedEskomLocations` finds the canonical
+ * rows ({@link resolveSeedLocation}), so an admin PATCH of any of the three is
+ * restored on the same row unless another row now holds the value. Name and
+ * type stay the admin's. It used to be an upsert on `(organization_id, code)`:
+ * a renamed code made it INSERT a second row with the slug the first still
+ * held, and the boot stopped with `23505`.
+ *
+ * **It runs in the first ESKOM bracket, before `ensureEskomDomainRtus`**
+ * (addendum 3 section 2). That step writes RTUs under every ESKOM location's
+ * current code; while this row was restored in the last bracket, a code PATCH
+ * gave it a second RTU set under the admin's code on the next boot, and the
+ * set stayed after the code came back. The returned outcome joins the RTU
+ * step's skip set, so a code another row holds is skipped there too. A cold
+ * database therefore gives this row its simulator RTUs on the first boot, not
+ * the second.
+ *
+ * `slugReader` must see every organization: `seed.ts` passes its superuser
+ * pool (OQ2), so a PHEWB row holding `esk-decomm-01` is seen and skipped with
+ * a log line rather than met as `23505`.
+ */
+export async function seedDecommissionedLocation(
+  pool: LocationQueryable,
+  slugReader: LocationQueryable,
+  organizationId: string,
+  log: (line: string) => void = (line) => console.error(line),
+): Promise<SeedLocationOutcome> {
+  const identity = DECOMMISSIONED_LOCATION_IDENTITY;
+  const claim = await resolveSeedLocation(pool, slugReader, organizationId, identity);
   for (const line of seedLocationSkipLines(identity, claim)) {
-    console.error(line);
+    log(line);
   }
   const seedKey = JSON.stringify({ [SEED_LOCATION_KEY]: identity.key });
-  if (claim.id !== null) {
+  let insertedId: string | null = null;
+  if (claim.ambiguous) {
+    // Nothing is written; the line above names every candidate.
+  } else if (claim.id !== null) {
     await pool.query(
       `
       UPDATE bms.locations SET
@@ -107,15 +128,33 @@ export async function seedAccessControlFixtures(pool: pg.Pool): Promise<void> {
       [claim.id, claim.slugHolder === null, identity.slug, claim.codeHolder === null, identity.code, seedKey],
     );
   } else if (claim.slugHolder === null && claim.codeHolder === null) {
-    await pool.query(
+    const inserted = await pool.query<{ id: string }>(
       `
       INSERT INTO bms.locations
         (organization_id, code, slug, name, type, province, latitude, longitude, active, meta)
       VALUES ($1, $2, $3, 'Decommissioned Substation', 'smoc_campus',
               'Gauteng', -26.2041, 28.0473, false, $4::jsonb)
+      RETURNING id
       `,
       [organizationId, identity.code, identity.slug, seedKey],
     );
+    insertedId = inserted.rows[0]?.id ?? null;
+  }
+  return seedLocationOutcome(claim, insertedId);
+}
+
+/**
+ * The gateway-less `ESK-MANUAL-01` and its one manual point. The inactive
+ * location it is contrasted with is {@link seedDecommissionedLocation}'s,
+ * written earlier in the boot.
+ */
+export async function seedAccessControlFixtures(pool: pg.Pool): Promise<void> {
+  const org = await pool.query<{ id: string }>(
+    `SELECT id FROM bms.organizations WHERE code = 'ESKOM' LIMIT 1`,
+  );
+  const organizationId = org.rows[0]?.id;
+  if (!organizationId) {
+    return;
   }
 
   // A gateway-less asset in an ACTIVE location, so it is inside every scope

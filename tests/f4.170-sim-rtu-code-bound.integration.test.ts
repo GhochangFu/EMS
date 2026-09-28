@@ -194,7 +194,7 @@ describe.skipIf(!ownerUrl)(
         // rtus_location_code_unique against a live ESKOM RTU). A helper that
         // returns 65 characters is caught before BEGIN, by the bound
         // pre-assert on `expected` above.
-        await ensureEskomDomainRtus(db, pool);
+        await ensureEskomDomainRtus(db, pool, new Set());
         const firstPass = await readRtus();
         expect(
           withoutId(firstPass),
@@ -203,7 +203,7 @@ describe.skipIf(!ownerUrl)(
 
         // Run 2 — the next boot's re-seed. `ON CONFLICT (location_id, code)`
         // updates the five rows in place: same codes, same ids, no sixth row.
-        await ensureEskomDomainRtus(db, pool);
+        await ensureEskomDomainRtus(db, pool, new Set());
         const secondPass = await readRtus();
         expect(withoutId(secondPass), "run 2 must leave the same five RTUs run 1 wrote").toEqual(expected);
         expect(

@@ -34,7 +34,7 @@ const { readEskomChecks, readPhewbChecks } = require_(
 const { eskomCanonicalLocationRows, eskomLocationCode, resolveSeedLocation, seedEskomLocations } = require_(
   "../packages/db/dist/eskom-locations-seed.js",
 ) as typeof EskomLocationsSeed;
-const { DECOMMISSIONED_LOCATION_CODE, DECOMMISSIONED_LOCATION_SLUG, seedAccessControlFixtures } = require_(
+const { DECOMMISSIONED_LOCATION_CODE, DECOMMISSIONED_LOCATION_SLUG, seedDecommissionedLocation } = require_(
   "../packages/db/dist/access-fixtures-seed.js",
 ) as typeof AccessFixturesSeed;
 const { mapLocationRowsForInsert } = require_("../packages/db/dist/map-locations-seed.js") as typeof MapLocationsSeed;
@@ -270,6 +270,14 @@ describe.skipIf(!ownerUrl)("F4.169/F4.170 addendum 2 — the seed changes only t
   /** One location's identity columns. */
   type LocationRow = { id: string; slug: string; code: string; active: boolean; seed_key: string | null };
 
+  /** The whole row, as JSON: "unchanged" means every column, `meta` and `updated_at` included. */
+  async function wholeRow(pool: SeedPool, id: string): Promise<unknown> {
+    const { rows } = await pool.query<{ row: unknown }>(`SELECT to_jsonb(l) AS row FROM bms.locations l WHERE id = $1`, [
+      id,
+    ]);
+    return rows[0]?.row;
+  }
+
   async function readLocation(pool: SeedPool, id: string): Promise<LocationRow | undefined> {
     const { rows } = await pool.query<LocationRow>(
       `SELECT id, slug, code, active, meta->>'seedKey' AS seed_key FROM bms.locations WHERE id = $1`,
@@ -290,7 +298,7 @@ describe.skipIf(!ownerUrl)("F4.169/F4.170 addendum 2 — the seed changes only t
 
   /**
    * In ESKOM's context: runs `seedEskomLocations` and
-   * `seedAccessControlFixtures` once first, so every canonical row and
+   * `seedDecommissionedLocation` once first, so every canonical row and
    * ESK-DECOMM-01 carries its key (the steady state after the first boot,
    * whether or not the shared database has been re-seeded since this
    * change), then hands `body` a seed that collects its log lines. The slug reader is
@@ -308,7 +316,7 @@ describe.skipIf(!ownerUrl)("F4.169/F4.170 addendum 2 — the seed changes only t
       await seedEskomLocations(pool, pool, seedMapRows, eskomOrgId, () => undefined);
       // ESK-DECOMM-01 is stamped too, as every boot after this change leaves
       // it, so each case runs in the state a re-seeded database is in.
-      await seedAccessControlFixtures(pool);
+      await seedDecommissionedLocation(pool, pool, eskomOrgId, () => undefined);
       await body(pool, async () => {
         const lines: string[] = [];
         await seedEskomLocations(pool, pool, seedMapRows, eskomOrgId, (line) => lines.push(line));
@@ -383,9 +391,17 @@ describe.skipIf(!ownerUrl)("F4.169/F4.170 addendum 2 — the seed changes only t
       const renamed = `f4169-${runId}-s4`;
       await pool.query(`UPDATE bms.locations SET slug = $1 WHERE id = $2`, [renamed, id]);
       const holder = await insertLocation(pool, eskomOrgId, `F4169-${RUN_ID}-S4`, "rsmoc-western-cape", "rsmoc");
+      const holderBefore = await wholeRow(pool, holder);
       // Mutation: without the slug pre-read the UPDATE writes the held slug
       // and this throws 23505.
       const lines = await seed();
+      // Addendum 3: the holder is not a candidate the seed may write. Mutation
+      // "slug before key": the holder is adopted and rewritten.
+      expect(await wholeRow(pool, holder), "the holder is unchanged: null key, name, meta, every column").toEqual(
+        holderBefore,
+      );
+      expect(holderBefore, "the holder carries no key").toMatchObject({ name: `F4.169 fixture F4169-${RUN_ID}-S4` });
+      expect((holderBefore as { meta: unknown }).meta, "the holder carries no meta").toBeNull();
       expect(await readLocation(pool, id), "RSMOC-WC keeps the admin's slug").toMatchObject({
         slug: renamed,
         code: "RSMOC-WC",
@@ -424,14 +440,14 @@ describe.skipIf(!ownerUrl)("F4.169/F4.170 addendum 2 — the seed changes only t
     await inTransaction(eskomOrgId, async (pool) => {
       await pool.query("SET LOCAL lock_timeout = '5s'");
       // The first run stamps the key, as the first boot does.
-      await seedAccessControlFixtures(pool);
+      await seedDecommissionedLocation(pool, pool, eskomOrgId, () => undefined);
       const id = await eskomLocationId(pool, DECOMMISSIONED_LOCATION_CODE);
       await pool.query(`UPDATE bms.locations SET slug = $1, code = $2, active = true WHERE id = $3`, [
         `f4169-${runId}-s6`,
         `F4169-${RUN_ID}-S6`,
         id,
       ]);
-      await seedAccessControlFixtures(pool);
+      await seedDecommissionedLocation(pool, pool, eskomOrgId, () => undefined);
       // Mutation: the upsert back on (organization_id, code) inserts a second
       // row and leaves this one renamed and active.
       expect(await readLocation(pool, id), "ESK-DECOMM-01 is itself again, inactive").toEqual({

@@ -1,7 +1,14 @@
 import { DECOMMISSIONED_LOCATION_CODE } from "./access-fixtures-seed";
 import { demoRoleForAsset } from "./asset-groups-seed";
 import { eskomSeedAssetCatalog } from "./eskom-assets-seed";
-import { eskomCanonicalLocationRows, eskomLocationCode, seedMapLocationRows } from "./eskom-locations-seed";
+import {
+  eskomCanonicalLocationRows,
+  eskomLocationCode,
+  eskomSeedLocationIdentity,
+  type SeedLocationIdentity,
+  seedMapLocationRows,
+} from "./eskom-locations-seed";
+import { CONTROL_ROOM_VIEW_LOCATION_KEY } from "./site-control-room-views-seed";
 import { SEED_ORGANIZATION_CODES } from "./hierarchy-seed";
 import {
   loadPheCatalog,
@@ -31,6 +38,8 @@ export type HierarchyExpectations = {
   readonly eskomLocationCodes: readonly string[];
   /** The fixture location that must stay inactive. */
   readonly decommissionedLocationCode: string;
+  /** The identity whose row carries the seeded control room view (`RSMOC-WC`). */
+  readonly controlRoomViewLocation: SeedLocationIdentity;
   /** The catalog assets `seedPueDemo` pins to the incomer template. */
   readonly eskomIncomerCodes: readonly string[];
   /** The catalog's IT assets: each in `IT_LOAD`, each with a `rack_kw` row. */
@@ -53,6 +62,15 @@ export type HierarchyExpectations = {
 export function hierarchyExpectations(pheCatalog: PheCatalogFile = loadPheCatalog()): HierarchyExpectations {
   const mapLocationRows = seedMapLocationRows(pheCatalog);
   const eskomCatalog = eskomSeedAssetCatalog(mapLocationRows);
+  const viewRow = eskomCanonicalLocationRows(mapLocationRows).find(
+    (row) => eskomSeedLocationIdentity(row).key === CONTROL_ROOM_VIEW_LOCATION_KEY,
+  );
+  if (!viewRow) {
+    throw new Error(
+      `hierarchyExpectations: no canonical ESKOM location has the key ${CONTROL_ROOM_VIEW_LOCATION_KEY}, ` +
+        "which seedSiteControlRoomViews seeds the control room view on",
+    );
+  }
   const expected: HierarchyExpectations = {
     organizationCodes: SEED_ORGANIZATION_CODES,
     eskomLocationCodes: [
@@ -60,6 +78,7 @@ export function hierarchyExpectations(pheCatalog: PheCatalogFile = loadPheCatalo
       DECOMMISSIONED_LOCATION_CODE,
     ],
     decommissionedLocationCode: DECOMMISSIONED_LOCATION_CODE,
+    controlRoomViewLocation: eskomSeedLocationIdentity(viewRow),
     eskomIncomerCodes: eskomCatalog
       .filter((asset) => demoRoleForAsset(asset.code, asset.domain) === PUE_DEMO_INCOMER_ROLE)
       .map((asset) => asset.code),

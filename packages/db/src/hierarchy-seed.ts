@@ -162,8 +162,21 @@ export async function ensureOrganizations(pool: pg.Pool): Promise<void> {
  * the admin API with a long code or name therefore no longer aborts
  * `pnpm db:seed` with `22001`, and every seeded RTU keeps its code, so the
  * `ON CONFLICT (location_id, code)` upsert still updates it in place.
+ *
+ * `skipLocationIds` are seed rows whose canonical code another row holds
+ * (`locationIdsWithoutSeedCode`, owner ruling 17). Such a row still carries
+ * an administrator's code, and an RTU written under it would be a second set
+ * beside the seed's, kept after the code comes back; the seed already logged
+ * the held code. Every other ESKOM location, an administrator's included,
+ * gets its RTUs as before. `assignEskomAssetRtus` then finds no RTU under the
+ * skipped row's code and leaves its assets' `rtu_id` and `telemetrySource`
+ * as they are.
  */
-export async function ensureEskomDomainRtus(db: BmsDb, pool: pg.Pool): Promise<void> {
+export async function ensureEskomDomainRtus(
+  db: BmsDb,
+  pool: pg.Pool,
+  skipLocationIds: ReadonlySet<string>,
+): Promise<void> {
   const eskomOrgId = await getOrganizationId(pool, "ESKOM");
   const locRows = await db
     .select({
@@ -175,6 +188,9 @@ export async function ensureEskomDomainRtus(db: BmsDb, pool: pg.Pool): Promise<v
     .where(eq(locations.organizationId, eskomOrgId));
 
   for (const loc of locRows) {
+    if (skipLocationIds.has(loc.id)) {
+      continue;
+    }
     for (const [domain, suffix] of Object.entries(DOMAIN_RTU_SUFFIX)) {
       const code = simRtuCode(loc.code, suffix);
       const displayName = simRtuDisplayName(loc.name, domain);

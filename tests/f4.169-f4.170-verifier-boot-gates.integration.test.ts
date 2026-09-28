@@ -512,7 +512,7 @@ describe.skipIf(!ownerUrl)("F4.169/F4.170 addendum — the boot gate after ordin
         [eskomOrgId, code, `f4169-${runId}-v1`],
         "ESKOM location",
       );
-      await ensureEskomDomainRtus(seedDb as SeedDb, pool);
+      await ensureEskomDomainRtus(seedDb as SeedDb, pool, new Set());
     }, PROBE.eskomLocations);
     assertSeeded(before);
     // Mutation: the count back on every ESKOM location reads +1.
@@ -740,7 +740,7 @@ describe.skipIf(!ownerUrl)("F4.169/F4.170 addendum — the boot gate after ordin
       [eskomOrgId, `F4169-${RUN_ID}-L2`, `f4169-${runId}-l2`, createdAt],
       "second RSMOC Western Cape location",
     );
-    await ensureEskomDomainRtus(db, pool);
+    await ensureEskomDomainRtus(db, pool, new Set());
     const rtus = await pool.query(`SELECT id FROM bms.rtus WHERE location_id = $1`, [id]);
     assert(rtus.rowCount === 5, `L2 must carry five simulator RTUs, got ${rtus.rowCount}`);
     return id;

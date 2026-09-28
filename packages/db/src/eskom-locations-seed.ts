@@ -138,10 +138,67 @@ export type SeedLocationIdentity = {
   readonly code: string;
 };
 
-/** Where one seed-owned location stands before the seed writes it. */
-export type SeedLocationClaim = {
-  /** The row the seed owns, or `null` when there is none and it must be inserted. */
+/** The rows that claim one seed identity, and the one the seed adopts. */
+export type SeedLocationCandidates = {
+  /** The row the seed adopts, or `null` (none, or more than one and no rule picks one). */
   readonly id: string | null;
+  /** Every candidate row, oldest first by `(created_at, id)`. */
+  readonly candidates: readonly string[];
+};
+
+/**
+ * The rows of `organizationId` that claim `identity`, and the one the seed
+ * adopts (owner ruling 16, addendum 3 section 1). Read-only.
+ *
+ * A candidate is a row whose `meta.seedKey` is this key (K), or a row that has
+ * the canonical slug (S) or code (C) and whose key is NULL or this key. A row
+ * keyed for another identity is never a candidate, so a canonical row that
+ * holds a second identity's slug cannot be taken for it.
+ *
+ * - No candidate: `id` is `null` and the caller inserts.
+ * - One candidate row (it may be in K, S and C at once): adopted.
+ * - More than one: the oldest by `(created_at, id)` is adopted when it is in
+ *   K. `created_at` has no admin write path, so a key an administrator forges
+ *   onto a newer row cannot outrank the row the seed wrote, and when two rows
+ *   carry the key the older one wins.
+ * - Otherwise `id` is `null` and `candidates` names them: the seed writes
+ *   nothing for the identity and logs one line. Two unkeyed rows (a slug on
+ *   one, the code on the other) cannot be told apart by any column the seed
+ *   owns, and picking one would overwrite an administrator's row.
+ *
+ * `verify-hierarchy-seed.ts` reads the same candidates, so the boot gate and
+ * the seed agree on which row is the identity's.
+ */
+export async function findSeedLocation(
+  pool: LocationQueryable,
+  organizationId: string,
+  identity: SeedLocationIdentity,
+): Promise<SeedLocationCandidates> {
+  const found = await pool.query<{ id: string; keyed: boolean }>(
+    `
+    SELECT id, COALESCE(meta->>'${SEED_LOCATION_KEY}' = $2, false) AS keyed
+      FROM bms.locations
+     WHERE organization_id = $1
+       AND (meta->>'${SEED_LOCATION_KEY}' = $2
+            OR ((slug = $3 OR code = $4)
+                AND (meta->>'${SEED_LOCATION_KEY}' IS NULL OR meta->>'${SEED_LOCATION_KEY}' = $2)))
+     ORDER BY created_at, id
+    `,
+    [organizationId, identity.key, identity.slug, identity.code],
+  );
+  const oldest = found.rows[0];
+  const id =
+    oldest === undefined ? null : found.rows.length === 1 || oldest.keyed ? oldest.id : null;
+  return { id, candidates: found.rows.map((row) => row.id) };
+}
+
+/** Where one seed-owned location stands before the seed writes it. */
+export type SeedLocationClaim = SeedLocationCandidates & {
+  /**
+   * `true` when more than one row claims the identity and none is adopted:
+   * the seed writes nothing for it. The holders are then not read.
+   */
+  readonly ambiguous: boolean;
   /** Another row that holds the canonical slug (any organization), or `null`. */
   readonly slugHolder: string | null;
   /** Another row of the organization that holds the canonical code, or `null`. */
@@ -149,17 +206,14 @@ export type SeedLocationClaim = {
 };
 
 /**
- * Finds the row the seed owns for `identity`, and any other row that holds its
- * canonical slug or code — pre-read, so the write that follows never meets a
- * unique violation. A caught `23505` is not an option: the seed runs inside
- * `withOrganization`'s one transaction, which a failed statement aborts
- * (`25P02`).
+ * Finds the row the seed owns for `identity` ({@link findSeedLocation}), and
+ * any other row that holds its canonical slug or code. The holders are read
+ * before the write, and a held value is left out of it: a caught `23505` is
+ * not an option, because the seed runs inside `withOrganization`'s one
+ * transaction, which a failed statement aborts (`25P02`). The read and the
+ * write are not atomic against a concurrent admin write; the seed's single
+ * boot-time transaction is what it relies on.
  *
- * - **The row**: by `meta.seedKey`, then by the canonical slug, then by the
- *   canonical code, in `organizationId` and in the caller's tenant context. The
- *   slug and code steps adopt a row written before the key existed (the first
- *   boot of a live database), or one whose `meta` an administrator replaced;
- *   the write that follows stamps the key again.
  * - **The slug holder**: on `slugReader`. `bms.locations.slug` is unique across
  *   every organization, and under `FORCE ROW LEVEL SECURITY` the caller's
  *   context sees only its own rows, so `seed.ts` passes its superuser pool
@@ -173,22 +227,10 @@ export async function resolveSeedLocation(
   organizationId: string,
   identity: SeedLocationIdentity,
 ): Promise<SeedLocationClaim> {
-  const found = await pool.query<{ id: string }>(
-    `
-    SELECT id FROM bms.locations
-     WHERE organization_id = $1
-       AND (meta->>'${SEED_LOCATION_KEY}' = $2 OR slug = $3 OR code = $4)
-     ORDER BY CASE
-                WHEN meta->>'${SEED_LOCATION_KEY}' = $2 THEN 0
-                WHEN slug = $3 THEN 1
-                ELSE 2
-              END,
-              created_at, id
-     LIMIT 1
-    `,
-    [organizationId, identity.key, identity.slug, identity.code],
-  );
-  const id = found.rows[0]?.id ?? null;
+  const { id, candidates } = await findSeedLocation(pool, organizationId, identity);
+  if (id === null && candidates.length > 0) {
+    return { id, candidates, ambiguous: true, slugHolder: null, codeHolder: null };
+  }
   const slugHolder = await slugReader.query<{ id: string }>(
     `SELECT id FROM bms.locations WHERE slug = $1 AND id IS DISTINCT FROM $2::uuid`,
     [identity.slug, id],
@@ -200,6 +242,8 @@ export async function resolveSeedLocation(
   );
   return {
     id,
+    candidates,
+    ambiguous: false,
     slugHolder: slugHolder.rows[0]?.id ?? null,
     codeHolder: codeHolder.rows[0]?.id ?? null,
   };
@@ -210,10 +254,17 @@ export async function resolveSeedLocation(
  * seed's row and the row that holds the value. An INSERT cannot leave out a
  * NOT NULL column, so a held value on a row that does not exist yet means the
  * row is not inserted, and one line says so; the boot gate's presence count
- * then fails, which is the failure a missing canonical row should have.
+ * then fails, which is the failure a missing canonical row should have. An
+ * ambiguous claim is one line naming every candidate.
  */
 export function seedLocationSkipLines(identity: SeedLocationIdentity, claim: SeedLocationClaim): string[] {
   const where = `seed location ${identity.key}`;
+  if (claim.ambiguous) {
+    return [
+      `${where}: not written: locations ${claim.candidates.join(", ")} each claim it by key, slug or ` +
+        "code, and the oldest carries no key for it",
+    ];
+  }
   if (claim.id === null) {
     const holder = claim.slugHolder ?? claim.codeHolder;
     if (holder === null) {
@@ -237,20 +288,75 @@ export function eskomSeedLocationIdentity(row: MapLocationSeedRow): SeedLocation
   return { key: row.slug, slug: row.slug, code: eskomLocationCode(row) };
 }
 
+/** What the seed wrote for one identity (owner ruling 17). */
+export type SeedLocationOutcome = {
+  /** The row the seed adopted or inserted, or `null` when it wrote none. */
+  readonly id: string | null;
+  /** Whether that row carries the canonical code after the write. */
+  readonly codeWritten: boolean;
+};
+
+/** One {@link SeedLocationOutcome} per identity key. */
+export type SeedLocationOutcomes = ReadonlyMap<string, SeedLocationOutcome>;
+
 /**
- * Upserts the canonical `bms.locations` rows for Eskom campuses and centres.
+ * The outcome of a write for `claim`: the adopted row, with its code written
+ * unless another row holds it; the inserted row; or no row.
+ */
+export function seedLocationOutcome(claim: SeedLocationClaim, insertedId: string | null): SeedLocationOutcome {
+  if (claim.id !== null) {
+    return { id: claim.id, codeWritten: claim.codeHolder === null };
+  }
+  return { id: insertedId, codeWritten: insertedId !== null };
+}
+
+/**
+ * The seed rows whose canonical code was not written: another row holds it,
+ * so the row still carries an administrator's code. `ensureEskomDomainRtus`
+ * skips them (owner ruling 17) — its RTU codes derive from the location's
+ * code, so writing them would give the row a second, permanent RTU set under
+ * the administrator's code.
+ */
+export function locationIdsWithoutSeedCode(outcomes: Iterable<SeedLocationOutcome>): Set<string> {
+  const ids = new Set<string>();
+  for (const outcome of outcomes) {
+    if (outcome.id !== null && !outcome.codeWritten) {
+      ids.add(outcome.id);
+    }
+  }
+  return ids;
+}
+
+/**
+ * Upserts the canonical `bms.locations` rows for Eskom campuses and centres,
+ * and returns what it wrote for each, by key, for the steps that act on those
+ * rows (owner ruling 17: the control-room view and the simulator RTUs use
+ * the row resolved here, never a row found by code).
  *
  * **The seed owns each row's slug and code** (owner ruling 16). The row is
- * found by its `meta.seedKey` ({@link resolveSeedLocation}), so an
- * administrator who PATCHes a canonical location's slug or code has the value
- * reverted on the next boot, on the same row. It used to be found by slug
- * alone: a renamed slug made the seed INSERT a second row with the canonical
- * code, and the boot stopped with `23505`.
+ * found by its `meta.seedKey` ({@link findSeedLocation}), so an administrator
+ * who PATCHes a canonical location's slug or code has the value restored on
+ * the next boot, on the same row, unless another row now holds it. It used to
+ * be found by slug alone: a renamed slug made the seed INSERT a second row
+ * with the canonical code, and the boot stopped with `23505`.
  *
  * A canonical value another row holds is left as it is, with one log line
- * naming both rows, and the rest of the row is written. `slugReader` must see
- * every organization — `seed.ts` passes its superuser pool (OQ2). `pool` holds
- * ESKOM's tenant context. `meta` is written whole, as before, with the key.
+ * naming both rows, and the rest of the row is written. An identity more than
+ * one row claims, with no keyed row oldest, is not written at all, with one
+ * line naming every candidate. `slugReader` must see every organization —
+ * `seed.ts` passes its superuser pool (OQ2). `pool` holds ESKOM's tenant
+ * context. `meta` is written whole, as before, with the key.
+ *
+ * **Residuals** (recorded in `F4.172`), each a state no rule here can resolve
+ * without overwriting an administrator's row:
+ * - before the first keyed boot, an administrator renames both the slug and
+ *   the code of a canonical row and gives the canonical slug to another row:
+ *   that row is the only candidate and is adopted;
+ * - an administrator wipes a canonical row's key, renames both its slug and
+ *   its code, and forges the key onto another row: the forged row is the only
+ *   candidate and is adopted;
+ * - two keyed canonical rows swap slugs: each keeps the other's slug, and the
+ *   seed logs both on every boot and never repairs them.
  */
 export async function seedEskomLocations(
   pool: LocationQueryable,
@@ -258,7 +364,8 @@ export async function seedEskomLocations(
   mapLocationRows: readonly MapLocationSeedRow[],
   eskomOrgId: string,
   log: (line: string) => void = (line) => console.error(line),
-): Promise<void> {
+): Promise<Map<string, SeedLocationOutcome>> {
+  const outcomes = new Map<string, SeedLocationOutcome>();
   for (const row of eskomCanonicalLocationRows(mapLocationRows)) {
     const capital =
       typeof row.meta === "object" &&
@@ -278,15 +385,20 @@ export async function seedEskomLocations(
     // zone is a fact of the site, so a re-seed re-asserts it — unlike
     // `ingest_enabled` (F1.7), which an operator owns.
     const timezone = "Africa/Johannesburg";
-    if (claim.id !== null) {
+    let insertedId: string | null = null;
+    if (claim.ambiguous) {
+      // Nothing is written for this identity; the line above names every
+      // candidate.
+    } else if (claim.id !== null) {
+      // The row was found in `eskomOrgId`, so its organization is not written.
       await pool.query(
         `
         UPDATE bms.locations SET
           slug = CASE WHEN $2::boolean THEN $3 ELSE slug END,
           code = CASE WHEN $4::boolean THEN $5 ELSE code END,
-          organization_id = $6, name = $7, type = $8, province = $9, capital = $10,
-          latitude = $11, longitude = $12, timezone = $13, active = true,
-          meta = $14::jsonb, updated_at = now()
+          name = $6, type = $7, province = $8, capital = $9,
+          latitude = $10, longitude = $11, timezone = $12, active = true,
+          meta = $13::jsonb, updated_at = now()
         WHERE id = $1
         `,
         [
@@ -295,7 +407,6 @@ export async function seedEskomLocations(
           identity.slug,
           claim.codeHolder === null,
           identity.code,
-          eskomOrgId,
           row.name,
           row.kind,
           row.province,
@@ -307,12 +418,13 @@ export async function seedEskomLocations(
         ],
       );
     } else if (claim.slugHolder === null && claim.codeHolder === null) {
-      await pool.query(
+      const inserted = await pool.query<{ id: string }>(
         `
         INSERT INTO bms.locations
           (organization_id, code, slug, name, type, province, capital, latitude, longitude,
            timezone, active, meta)
         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, true, $11::jsonb)
+        RETURNING id
         `,
         [
           eskomOrgId,
@@ -328,8 +440,11 @@ export async function seedEskomLocations(
           meta,
         ],
       );
+      insertedId = inserted.rows[0]?.id ?? null;
     }
+    outcomes.set(identity.key, seedLocationOutcome(claim, insertedId));
   }
+  return outcomes;
 }
 
 /** Renames the pre-rebrand `smoc-cape-town` marker to `rsmoc-western-cape`. */

@@ -2,6 +2,7 @@ import pg from "pg";
 
 import { PACK_ASSET_DOMAINS } from "./asset-domains-seed";
 import type { LadderCollisionSkip } from "./automation-rules-seed";
+import { findSeedLocation } from "./eskom-locations-seed";
 import { getOrganizationId } from "./hierarchy-seed";
 import { type HierarchyExpectations, hierarchyExpectations } from "./verify-hierarchy-expected";
 import { withOrganization } from "./seed-tenant";
@@ -342,7 +343,6 @@ export async function readEskomChecks(
     eskom_water_assets_on_demo_templates: string;
     eskom_water_intake_assets: string;
     eskom_water_group_members: string;
-    eskom_rsmoc_wc_control_room_view: string;
   }>(`
     SELECT
       -- Whole-fleet invariants, ESKOM's half (the PHEWB pass has the other).
@@ -404,20 +404,27 @@ export async function readEskomChecks(
         INNER JOIN bms.organizations o ON o.id = ag.organization_id
         INNER JOIN bms.assets a ON a.id = agm.asset_id
         WHERE o.code = 'ESKOM' AND ag.code = 'water'
-          AND a.code = ANY($2::varchar[])) AS eskom_water_group_members,
-      -- F3.67 (ADR 0076 decision 6, owner ruling OQ2): the row must exist,
-      -- but the seed does not own its contents once written -- an admin may
-      -- have re-pointed RSMOC-WC at a dashboard or back to 'generated', and
-      -- a re-seed must not revert that. So this counts the row's presence,
-      -- of any kind, not only kind = 'builtin'.
-      --
-      -- NO BACKTICK MAY APPEAR IN THIS COMMENT (see the PHEWB pass).
-      (SELECT COUNT(*)::text FROM bms.site_control_room_views scrv
-        INNER JOIN bms.locations l ON l.id = scrv.location_id
-        INNER JOIN bms.organizations o ON o.id = l.organization_id
-        WHERE o.code = 'ESKOM' AND l.code = 'RSMOC-WC') AS eskom_rsmoc_wc_control_room_view
+          AND a.code = ANY($2::varchar[])) AS eskom_water_group_members
   `, [eskomOrgId, DEMO_WATER_ASSET_CODES, DEMO_WATER_TEMPLATE_CODES]);
   const row = res.rows[0];
+
+  // F3.67 (ADR 0076 decision 6, owner ruling OQ2): the view row must exist,
+  // but the seed does not own its contents once written: an admin may have
+  // re-pointed RSMOC-WC at a dashboard or back to 'generated', and a re-seed
+  // must not revert that. So this counts the row's presence, of any kind.
+  //
+  // Owner ruling 17: on the row the seed resolves for RSMOC-WC's identity,
+  // not on a row found by code (an admin location may hold the code). The
+  // candidates are the seed's own (findSeedLocation), oldest first. The
+  // oldest is the adopted row whenever the seed adopts one; when more than
+  // one row claims the identity and the seed adopts none, it is the row that
+  // carried the identity longest, which is where an earlier boot placed the
+  // view. No candidate reads 0.
+  const viewLocation = await findSeedLocation(pool, eskomOrgId, expected.controlRoomViewLocation);
+  const view = await pool.query<{ n: string }>(
+    `SELECT COUNT(*)::text AS n FROM bms.site_control_room_views WHERE location_id = $1::uuid`,
+    [viewLocation.candidates[0] ?? null],
+  );
   // The canonical locations plus the deliberately inactive ESK-DECOMM-01 that
   // F4.10 needs in order to tell `WHERE active = true` apart from no
   // predicate (11 today), counted present: an admin or onboarding location
@@ -481,7 +488,7 @@ export async function readEskomChecks(
   expect("ESKOM water group members", row?.eskom_water_group_members, 5);
   // F3.67 — RSMOC-WC always carries exactly one Control Room view row,
   // whatever kind an administrator has set it to (OQ2).
-  expect("ESKOM RSMOC-WC control room view row", row?.eskom_rsmoc_wc_control_room_view, 1);
+  expect("ESKOM RSMOC-WC control room view row", view.rows[0]?.n, 1);
   // `E4.1c` — a floor of one (see the SQL comment); `expect` is exact, so
   // the floor is written as its own check.
   checks.push({

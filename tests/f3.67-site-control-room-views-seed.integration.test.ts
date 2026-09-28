@@ -5,7 +5,10 @@ import { afterAll, beforeAll, describe, it } from "vitest";
 import { createDb } from "../packages/db/src/client.js";
 import { getOrganizationId } from "../packages/db/src/hierarchy-seed.js";
 import { createSeedPool, withOrganization } from "../packages/db/src/seed-tenant.js";
-import { seedSiteControlRoomViews } from "../packages/db/src/site-control-room-views-seed.js";
+import {
+  CONTROL_ROOM_VIEW_LOCATION_KEY,
+  seedSiteControlRoomViews,
+} from "../packages/db/src/site-control-room-views-seed.js";
 import {
   openIntegrationPool,
   requireIntegrationDb,
@@ -111,7 +114,10 @@ async function reseedView(): Promise<void> {
   const pool = seedPool;
   const db = seedDb;
   if (!pool || !db) throw new Error("seed pool not initialised");
-  await withOrganization(pool, eskomOrgId, () => seedSiteControlRoomViews(db, eskomOrgId));
+  // The outcome `seedEskomLocations` returns for RSMOC-WC on a healthy boot:
+  // its row, with its code (owner ruling 17 places the view on that row).
+  const seedLocations = new Map([[CONTROL_ROOM_VIEW_LOCATION_KEY, { id: rsmocWcId, codeWritten: true }]]);
+  await withOrganization(pool, eskomOrgId, () => seedSiteControlRoomViews(db, eskomOrgId, seedLocations));
 }
 
 /** Sets the row to what a fresh `pnpm db:seed` leaves, `builtin`/`smoc` — tests 2 and 3 start there. */
