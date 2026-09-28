@@ -1,4 +1,4 @@
-import { DECOMMISSIONED_LOCATION_CODE } from "./access-fixtures-seed";
+import { DECOMMISSIONED_LOCATION_CODE, DECOMMISSIONED_LOCATION_IDENTITY } from "./access-fixtures-seed";
 import { demoRoleForAsset } from "./asset-groups-seed";
 import { eskomSeedAssetCatalog } from "./eskom-assets-seed";
 import {
@@ -38,6 +38,8 @@ export type HierarchyExpectations = {
   readonly eskomLocationCodes: readonly string[];
   /** The fixture location that must stay inactive. */
   readonly decommissionedLocationCode: string;
+  /** Its seed identity: the inactive check reads the row resolved for it. */
+  readonly decommissionedLocation: SeedLocationIdentity;
   /** The identity whose row carries the seeded control room view (`RSMOC-WC`). */
   readonly controlRoomViewLocation: SeedLocationIdentity;
   /** The catalog assets `seedPueDemo` pins to the incomer template. */
@@ -78,6 +80,7 @@ export function hierarchyExpectations(pheCatalog: PheCatalogFile = loadPheCatalo
       DECOMMISSIONED_LOCATION_CODE,
     ],
     decommissionedLocationCode: DECOMMISSIONED_LOCATION_CODE,
+    decommissionedLocation: DECOMMISSIONED_LOCATION_IDENTITY,
     controlRoomViewLocation: eskomSeedLocationIdentity(viewRow),
     eskomIncomerCodes: eskomCatalog
       .filter((asset) => demoRoleForAsset(asset.code, asset.domain) === PUE_DEMO_INCOMER_ROLE)

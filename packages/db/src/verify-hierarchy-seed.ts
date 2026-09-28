@@ -310,7 +310,6 @@ export async function readEskomChecks(
   // reads.
   const presence = await pool.query<{
     eskom_locs: string;
-    eskom_decomm_active: string;
     eskom_incomers_on_pue_template: string;
     eskom_it_load_members: string;
     eskom_it_rack_kw_points: string;
@@ -320,13 +319,6 @@ export async function readEskomChecks(
         INNER JOIN bms.organizations o ON o.id = l.organization_id
         WHERE o.code = 'ESKOM'
           AND l.code = ANY($1::varchar[])) AS eskom_locs,
-      -- F4.10: the decommissioned fixture location must stay inactive, or
-      -- the read-scope active filter it exists to prove is untested again.
-      (SELECT COUNT(*)::text FROM bms.locations l
-        INNER JOIN bms.organizations o ON o.id = l.organization_id
-        WHERE o.code = 'ESKOM'
-          AND l.code = $2
-          AND l.active = true) AS eskom_decomm_active,
       -- F2.8. THE THREE COUNTS BELOW PROVE THE SEED ORDER FOR THE DEMO PUE,
       -- the same way the PHE membership counts in the PHEWB pass do for
       -- F3.41. seedPueDemo runs last in the ESKOM bracket and depends on
@@ -337,7 +329,7 @@ export async function readEskomChecks(
       -- developer database has been seeded many times and holds every row
       -- already; only a cold database (CI, or the scratch container plan
       -- section 8 asks for) can show a call that ran too early, and only
-      -- these counts read it. Each reads only the catalog codes ($3, $4), so
+      -- these counts read it. Each reads only the catalog codes ($2, $3), so
       -- an admin asset pinned to the incomer template, or an admin IT asset,
       -- cannot move it.
       --
@@ -346,23 +338,22 @@ export async function readEskomChecks(
         INNER JOIN bms.asset_templates t ON t.id = a.template_id
         INNER JOIN bms.organizations o ON o.id = a.organization_id
         WHERE o.code = 'ESKOM'
-          AND a.code = ANY($3::varchar[])
+          AND a.code = ANY($2::varchar[])
           AND t.code = 'BASELINE-ELECTRICAL-INCOMER') AS eskom_incomers_on_pue_template,
       (SELECT COUNT(*)::text FROM bms.asset_group_members agm
         INNER JOIN bms.asset_groups ag ON ag.id = agm.asset_group_id
         INNER JOIN bms.organizations o ON o.id = ag.organization_id
         INNER JOIN bms.assets a ON a.id = agm.asset_id
         WHERE o.code = 'ESKOM' AND ag.code = 'IT_LOAD'
-          AND a.code = ANY($4::varchar[])) AS eskom_it_load_members,
+          AND a.code = ANY($3::varchar[])) AS eskom_it_load_members,
       (SELECT COUNT(*)::text FROM bms.asset_points ap
         INNER JOIN bms.assets a ON a.id = ap.asset_id
         INNER JOIN bms.organizations o ON o.id = a.organization_id
         WHERE o.code = 'ESKOM' AND a.domain = 'it'
-          AND a.code = ANY($4::varchar[])
+          AND a.code = ANY($3::varchar[])
           AND ap.point_key = 'rack_kw') AS eskom_it_rack_kw_points
   `, [
     expected.eskomLocationCodes,
-    expected.decommissionedLocationCode,
     expected.eskomIncomerCodes,
     expected.eskomItCodes,
   ]);
@@ -446,17 +437,31 @@ export async function readEskomChecks(
   // re-pointed RSMOC-WC at a dashboard or back to 'generated', and a re-seed
   // must not revert that. So this counts the row's presence, of any kind.
   //
-  // Owner ruling 17: on the row the seed resolves for RSMOC-WC's identity,
-  // not on a row found by code (an admin location may hold the code). The
-  // candidates are the seed's own (findSeedLocation), oldest first. The
-  // oldest is the adopted row whenever the seed adopts one; when more than
-  // one row claims the identity and the seed adopts none, it is the row that
-  // carried the identity longest, which is where an earlier boot placed the
-  // view. No candidate reads 0.
+  // Owner ruling 17, addendum 4 section 3: on the row the seed resolves for
+  // RSMOC-WC's identity (findSeedLocation, the seed's own rule), never on a
+  // row found by code and never on the oldest candidate by position. When the
+  // identity is ambiguous, the seed writes nothing and no candidate is the
+  // seed's, so the check passes when any candidate carries the view: an
+  // earlier boot placed it on one of them. No candidate reads 0.
   const viewLocation = await findSeedLocation(pool, eskomOrgId, expected.controlRoomViewLocation);
-  const view = await pool.query<{ n: string }>(
-    `SELECT COUNT(*)::text AS n FROM bms.site_control_room_views WHERE location_id = $1::uuid`,
-    [viewLocation.candidates[0] ?? null],
+  const viewIds = viewLocation.id !== null ? [viewLocation.id] : viewLocation.candidates;
+  const views = await pool.query<{ n: string }>(
+    `SELECT COUNT(*)::text AS n FROM bms.site_control_room_views WHERE location_id = ANY($1::uuid[])`,
+    [viewIds],
+  );
+  const viewCount = views.rows[0]?.n;
+  const viewActual =
+    viewLocation.id !== null || viewCount === undefined ? viewCount : Number(viewCount) > 0 ? "1" : "0";
+  // F4.10: the decommissioned fixture location must stay inactive, or the
+  // read-scope active filter it exists to prove is untested again. Addendum 4
+  // section 3: the row resolved for its identity only, never a row found by
+  // code, so an active admin row that holds ESK-DECOMM-01 no longer stops the
+  // boot. An ambiguous identity has no resolved row and reads 0; the seed's
+  // line naming every candidate is the record.
+  const decommLocation = await findSeedLocation(pool, eskomOrgId, expected.decommissionedLocation);
+  const decomm = await pool.query<{ n: string }>(
+    `SELECT COUNT(*)::text AS n FROM bms.locations WHERE id = $1::uuid AND active = true`,
+    [decommLocation.id],
   );
   // The canonical locations plus the deliberately inactive ESK-DECOMM-01 that
   // F4.10 needs in order to tell `WHERE active = true` apart from no
@@ -465,7 +470,7 @@ export async function readEskomChecks(
   // the seed's row: an admin location holding a canonical code keeps it at
   // 11 (OQ3), and seedEskomLocations logs that instead.
   expect("ESKOM seed locations present", present?.eskom_locs, expected.eskomLocationCodes.length);
-  expect("ESKOM decommissioned fixture location active", present?.eskom_decomm_active, 0);
+  expect("ESKOM decommissioned fixture location active", decomm.rows[0]?.n, 0);
   expect("ESKOM assets without location_id", row?.orphan_assets, 0);
   expect("ESKOM asset/RTU location mismatch", row?.loc_mismatch, 0);
   // Migration review (F3.6): migration 0033's own seed of these rows is a
@@ -521,7 +526,7 @@ export async function readEskomChecks(
   expect("ESKOM water group members", row?.eskom_water_group_members, 5);
   // F3.67 — RSMOC-WC always carries exactly one Control Room view row,
   // whatever kind an administrator has set it to (OQ2).
-  expect("ESKOM RSMOC-WC control room view row", view.rows[0]?.n, 1);
+  expect("ESKOM RSMOC-WC control room view row", viewActual, 1);
   // `E4.1c` — a floor of one (see the SQL comment); `expect` is exact, so
   // the floor is written as its own check.
   checks.push({

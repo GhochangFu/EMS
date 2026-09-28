@@ -139,6 +139,12 @@ export type SeedLocationCandidates = {
   readonly id: string | null;
   /** Every candidate row, oldest first by `(created_at, id)`. */
   readonly candidates: readonly string[];
+  /**
+   * The candidates whose code, when read, is not the canonical code. When
+   * the identity is ambiguous these still carry an administrator's code, and
+   * the RTU step skips them (addendum 4 section 3).
+   */
+  readonly withoutCanonicalCode: readonly string[];
 };
 
 /**
@@ -177,9 +183,9 @@ export async function findSeedLocation(
   organizationId: string,
   identity: SeedLocationIdentity,
 ): Promise<SeedLocationCandidates> {
-  const found = await pool.query<{ id: string; keyed: boolean }>(
+  const found = await pool.query<{ id: string; keyed: boolean; code: string }>(
     `
-    SELECT id, COALESCE(meta->>'${SEED_LOCATION_KEY}' = $2, false) AS keyed
+    SELECT id, code, COALESCE(meta->>'${SEED_LOCATION_KEY}' = $2, false) AS keyed
       FROM bms.locations
      WHERE organization_id = $1
        AND (meta->>'${SEED_LOCATION_KEY}' = $2
@@ -197,7 +203,11 @@ export async function findSeedLocation(
       : found.rows.length === 1 || (oldest.keyed && keyedCount === 1)
         ? oldest.id
         : null;
-  return { id, candidates: found.rows.map((row) => row.id) };
+  return {
+    id,
+    candidates: found.rows.map((row) => row.id),
+    withoutCanonicalCode: found.rows.filter((row) => row.code !== identity.code).map((row) => row.id),
+  };
 }
 
 /** Where one seed-owned location stands before the seed writes it. */
@@ -235,9 +245,10 @@ export async function resolveSeedLocation(
   organizationId: string,
   identity: SeedLocationIdentity,
 ): Promise<SeedLocationClaim> {
-  const { id, candidates } = await findSeedLocation(pool, organizationId, identity);
+  const found = await findSeedLocation(pool, organizationId, identity);
+  const { id, candidates, withoutCanonicalCode } = found;
   if (id === null && candidates.length > 0) {
-    return { id, candidates, ambiguous: true, slugHolder: null, codeHolder: null };
+    return { ...found, ambiguous: true, slugHolder: null, codeHolder: null };
   }
   const slugHolder = await slugReader.query<{ id: string }>(
     `SELECT id FROM bms.locations WHERE slug = $1 AND id IS DISTINCT FROM $2::uuid`,
@@ -251,6 +262,7 @@ export async function resolveSeedLocation(
   return {
     id,
     candidates,
+    withoutCanonicalCode,
     ambiguous: false,
     slugHolder: slugHolder.rows[0]?.id ?? null,
     codeHolder: codeHolder.rows[0]?.id ?? null,
@@ -302,6 +314,12 @@ export type SeedLocationOutcome = {
   readonly id: string | null;
   /** Whether that row carries the canonical code after the write. */
   readonly codeWritten: boolean;
+  /**
+   * When the identity was ambiguous (no row written): the candidates that do
+   * not carry the canonical code. {@link seedLocationOutcome} always sets it;
+   * it is optional only so a caller's literal for a resolved row need not.
+   */
+  readonly ambiguousWithoutCode?: readonly string[];
 };
 
 /** One {@link SeedLocationOutcome} per identity key. */
@@ -312,10 +330,11 @@ export type SeedLocationOutcomes = ReadonlyMap<string, SeedLocationOutcome>;
  * unless another row holds it; the inserted row; or no row.
  */
 export function seedLocationOutcome(claim: SeedLocationClaim, insertedId: string | null): SeedLocationOutcome {
+  const ambiguousWithoutCode = claim.ambiguous ? claim.withoutCanonicalCode : [];
   if (claim.id !== null) {
-    return { id: claim.id, codeWritten: claim.codeHolder === null };
+    return { id: claim.id, codeWritten: claim.codeHolder === null, ambiguousWithoutCode };
   }
-  return { id: insertedId, codeWritten: insertedId !== null };
+  return { id: insertedId, codeWritten: insertedId !== null, ambiguousWithoutCode };
 }
 
 /**
@@ -324,13 +343,33 @@ export function seedLocationOutcome(claim: SeedLocationClaim, insertedId: string
  * skips them (owner ruling 17) — its RTU codes derive from the location's
  * code, so writing them would give the row a second, permanent RTU set under
  * the administrator's code.
+ *
+ * An ambiguous identity has no seed row, but each of its candidates that
+ * does not carry the canonical code is skipped too (addendum 4 section 3):
+ * before the first keyed boot, a canonical row whose code was renamed while
+ * another row took the code is one such candidate, and it would otherwise get
+ * a second RTU set under the renamed code. The candidate that carries the
+ * canonical code is not skipped: its RTUs are the seed's codes. Nor is a
+ * row another identity adopted with its code written: an unkeyed row can be
+ * one identity's candidate by slug and another's by code, and the codes were
+ * read before that write.
  */
 export function locationIdsWithoutSeedCode(outcomes: Iterable<SeedLocationOutcome>): Set<string> {
   const ids = new Set<string>();
+  const written = new Set<string>();
   for (const outcome of outcomes) {
+    if (outcome.id !== null && outcome.codeWritten) {
+      written.add(outcome.id);
+    }
     if (outcome.id !== null && !outcome.codeWritten) {
       ids.add(outcome.id);
     }
+    for (const id of outcome.ambiguousWithoutCode ?? []) {
+      ids.add(id);
+    }
+  }
+  for (const id of written) {
+    ids.delete(id);
   }
   return ids;
 }

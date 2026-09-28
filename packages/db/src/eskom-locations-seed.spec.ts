@@ -64,6 +64,7 @@ function claim(parts: Partial<SeedLocationClaim>): SeedLocationClaim {
   return {
     id,
     candidates: id === null ? [] : [id],
+    withoutCanonicalCode: [],
     ambiguous: false,
     slugHolder: null,
     codeHolder: null,
@@ -159,6 +160,20 @@ export function assertTheRtuStepRunsAfterTheSeedRowsAndSkipsTheirHeldCodes(): vo
   expect(bracket).toContain("seedSiteControlRoomViews(db, eskomOrgId, seedLocations)");
 }
 
+/**
+ * Addendum 4 section 3, owner ruling 17: `seed.ts` grants `wc-admin` the row
+ * `seedEskomLocations` resolved for RSMOC-WC, not a row found by slug. The
+ * integration case injects the id; only this reads the call `pnpm db:seed`
+ * makes.
+ *
+ * Mutation: passing no resolved id, or reading it from another key, fails here.
+ */
+export function assertTheDemoUsersGetTheResolvedWesternCapeRow(): void {
+  const seed = readSeedSource();
+  expect(seed).toContain("westernCapeId = seedLocations.get(WC_ADMIN_LOCATION_KEY)?.id ?? null;");
+  expect(seed).toContain("await seedScopedDemoUsers(identityDb, eskomOrgId, westernCapeId);");
+}
+
 /** A row whose held code was not written is skipped; an inserted or restored one is not. */
 export function assertOnlyARowWithoutItsCodeIsSkipped(): void {
   expect(
@@ -170,4 +185,28 @@ export function assertOnlyARowWithoutItsCodeIsSkipped(): void {
       ]),
     ],
   ).toEqual(["held"]);
+}
+
+/**
+ * Addendum 4 section 3: an ambiguous identity's candidates without the
+ * canonical code are skipped; a row another identity wrote its code on is not.
+ */
+export function assertAnAmbiguousIdentitysCandidatesWithoutTheCodeAreSkipped(): void {
+  expect(
+    [
+      ...locationIdsWithoutSeedCode([
+        { id: null, codeWritten: false, ambiguousWithoutCode: ["renamed", "also-renamed"] },
+        { id: "kept", codeWritten: true, ambiguousWithoutCode: [] },
+      ]),
+    ].sort(),
+  ).toEqual(["also-renamed", "renamed"]);
+  expect(
+    [
+      ...locationIdsWithoutSeedCode([
+        { id: null, codeWritten: false, ambiguousWithoutCode: ["other-identitys-row"] },
+        { id: "other-identitys-row", codeWritten: true },
+      ]),
+    ],
+    "a row another identity adopted with its code written gets its RTUs",
+  ).toEqual([]);
 }

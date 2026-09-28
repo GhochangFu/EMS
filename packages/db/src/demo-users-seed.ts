@@ -6,7 +6,6 @@ import type { BmsDb } from "./client";
 import { getOrganizationId } from "./hierarchy-seed";
 import {
   assetGroups,
-  locations,
   users,
   userAssetGroupAccess,
   userLocationAccess,
@@ -84,6 +83,9 @@ export async function ensureAdminUser(db: BmsDb): Promise<string> {
   return adminId;
 }
 
+/** The seed key (the canonical slug) of the location `wc-admin` is scoped to. */
+export const WC_ADMIN_LOCATION_KEY = "rsmoc-western-cape";
+
 /**
  * Creates the location- and asset-group-scoped demo logins and grants each the
  * one scope its role is meant to demonstrate.
@@ -95,10 +97,10 @@ export async function ensureAdminUser(db: BmsDb): Promise<string> {
  * org (owner of the Western Cape location and groups): it stamps each scoped
  * user's home org (Amendment 4 — `wc-admin` resolves there through
  * `user_location_access → locations.organization_id`, `wc-hvac-admin` through its
- * asset group's own `organization_id`) and scopes the `locations` lookup, which a
- * `BYPASSRLS`/superuser read no longer filters by org, so it names its org
- * explicitly rather than trusting a policy this connection bypasses. The grants
- * it writes,
+ * asset group's own `organization_id`). The Western Cape location is no longer
+ * looked up here: `westernCapeId` is the row `seedEskomLocations` resolved for
+ * RSMOC-WC (`seed.ts` passes it, owner ruling 17), or `null` when no row is the
+ * seed's. The grants it writes,
  * `user_location_access` and `user_asset_group_access`, carry no policy today, so
  * BYPASSRLS is transparent for them; were either ever policied, this path would
  * silently bypass it and would need revisiting.
@@ -106,6 +108,7 @@ export async function ensureAdminUser(db: BmsDb): Promise<string> {
 export async function seedScopedDemoUsers(
   db: BmsDb,
   organizationId: string,
+  westernCapeId: string | null,
 ): Promise<void> {
   const scopedUserIds = new Map<string, string>();
   for (const scopedUser of SCOPED_USERS) {
@@ -141,16 +144,12 @@ export async function seedScopedDemoUsers(
     }
   }
 
-  const [westernCape] = await db
-    .select({ id: locations.id })
-    .from(locations)
-    .where(
-      and(
-        eq(locations.slug, "rsmoc-western-cape"),
-        eq(locations.organizationId, organizationId),
-      ),
-    )
-    .limit(1);
+  // Owner ruling 17 (addendum 4 section 3): the row `seedEskomLocations`
+  // resolved for RSMOC-WC's identity, never a row found by slug: an admin
+  // location may hold `rsmoc-western-cape` while the seed's row keeps another
+  // slug. `null` (the identity was ambiguous, so no row is the seed's) grants
+  // nothing; the location seed's line names every candidate.
+  const westernCape = westernCapeId === null ? undefined : { id: westernCapeId };
   const wcAdminId = scopedUserIds.get("wc-admin@bms.local");
   if (westernCape && wcAdminId) {
     const existingAccess = await db

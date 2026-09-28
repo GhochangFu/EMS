@@ -3,10 +3,12 @@ import { describe, it } from "vitest";
 import {
   assertAHeldSlugIsOneLineNamingBothRows,
   assertAHeldValueWithNoRowIsNotInserted,
+  assertAnAmbiguousIdentitysCandidatesWithoutTheCodeAreSkipped,
   assertAnAmbiguousClaimIsOneLineNamingEveryCandidate,
   assertElevenDistinctSeedKeys,
   assertEveryCanonicalKeyIsItsSlug,
   assertOnlyARowWithoutItsCodeIsSkipped,
+  assertTheDemoUsersGetTheResolvedWesternCapeRow,
   assertTheRtuStepRunsAfterTheSeedRowsAndSkipsTheirHeldCodes,
   assertTheSeedReadsSlugHoldersAsTheSuperuser,
 } from "./eskom-locations-seed.spec";
@@ -44,5 +46,15 @@ describe("F4.169/F4.170 addendum 3 — ruling 17: later steps use the resolved r
 
   it("writes ESK-DECOMM-01 before the RTU step, which gets both outcomes' skip set", () => {
     assertTheRtuStepRunsAfterTheSeedRowsAndSkipsTheirHeldCodes();
+  });
+});
+
+describe("F4.169/F4.170 addendum 4 — an ambiguous identity's consumers", () => {
+  it("skips an ambiguous identity's candidates that lack the canonical code", () => {
+    assertAnAmbiguousIdentitysCandidatesWithoutTheCodeAreSkipped();
+  });
+
+  it("grants wc-admin the row seedEskomLocations resolved, in seed.ts", () => {
+    assertTheDemoUsersGetTheResolvedWesternCapeRow();
   });
 });

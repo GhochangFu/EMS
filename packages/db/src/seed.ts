@@ -38,6 +38,7 @@ import {
   ensureAdminUser,
   seedPheOrganizationAdmin,
   seedScopedDemoUsers,
+  WC_ADMIN_LOCATION_KEY,
 } from "./demo-users-seed";
 import { eskomSeedAssetCatalog, seedEskomAssets } from "./eskom-assets-seed";
 import {
@@ -124,6 +125,9 @@ async function main(): Promise<void> {
   // Written by `seedEskomLadderRules` in the second ESKOM bracket, read by the
   // verifier after every bracket has closed.
   let ladderCollisionSkips: LadderCollisionSkip[] = [];
+  // The row seedEskomLocations resolved for RSMOC-WC, for the scoped demo
+  // users' grants after the groups exist (owner ruling 17); null when none.
+  let westernCapeId: string | null = null;
 
   try {
     // ── Pre-tenant ────────────────────────────────────────────────────────
@@ -147,6 +151,7 @@ async function main(): Promise<void> {
       // pool, so a location of any organization holding a canonical slug is
       // seen and skipped with a log line rather than met as 23505.
       const seedLocations = await seedEskomLocations(pool, superuserPool, mapLocationRows, eskomOrgId);
+      westernCapeId = seedLocations.get(WC_ADMIN_LOCATION_KEY)?.id ?? null;
       // F4.10's inactive location, before the RTU step (addendum 3): restored
       // later, a code PATCH on it left a second RTU set under the admin code.
       const decommissionedLocation = await seedDecommissionedLocation(pool, superuserPool, eskomOrgId);
@@ -203,7 +208,7 @@ async function main(): Promise<void> {
     // Identity: org-less users + grants on `identityDb`, after the groups the
     // scope grant references exist. Not wrapped in `withOrganization` — the rows
     // are org-less and the superuser bypasses the policy `0047` put on `users`.
-    await seedScopedDemoUsers(identityDb, eskomOrgId);
+    await seedScopedDemoUsers(identityDb, eskomOrgId, westernCapeId);
 
     // ── PHEWB ─────────────────────────────────────────────────────────────
     await withOrganization(pool, phewbOrgId, async () => {
