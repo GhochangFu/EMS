@@ -228,19 +228,19 @@ export function OnboardingChatPage({ user }: OnboardingChatPageProps) {
   const messages: OnboardingChatMessage[] = session?.messages ?? [];
 
   return (
-    <AppShell user={user} kpiRibbon={<span className="text-bms-ink">Administration · AI Onboarding</span>}>
+    <AppShell user={user} kpiRibbon={<span className="text-ink">Administration · AI Onboarding</span>}>
       <div className="flex h-[calc(100vh-7rem)] flex-col">
-        <header className="flex flex-wrap items-center gap-3 border-b border-gray-200 px-4 py-2">
+        <header className="flex flex-wrap items-center gap-3 border-b border-line px-4 py-2">
           <Link
             to={`/admin/organizations/${orgId}/locations`}
-            className="text-xs font-semibold text-bms-muted hover:text-bms-ink"
+            className="text-xs font-semibold text-ink-muted hover:text-ink"
           >
             ← Back
           </Link>
-          <span className="text-sm font-semibold text-bms-ink">
+          <span className="text-sm font-semibold text-ink">
             Onboard location · {session?.organizationName ?? "…"}
           </span>
-          <span className="rounded bg-gray-100 px-2 py-0.5 text-xs font-semibold text-bms-muted">
+          <span className="rounded bg-well-deep px-2 py-0.5 text-xs font-semibold text-ink-muted">
             {PHASE_LABELS[session?.currentPhase ?? "location"] ?? "Location"}
           </span>
           <button
@@ -253,7 +253,7 @@ export function OnboardingChatPage({ user }: OnboardingChatPageProps) {
                 setChatError(apiErrorMessage(err)),
               );
             }}
-            className="rounded border border-gray-200 px-3 py-1 text-xs font-semibold hover:bg-gray-50"
+            className="rounded border border-line px-3 py-1 text-xs font-semibold hover:bg-well"
           >
             Excel template
           </button>
@@ -262,7 +262,7 @@ export function OnboardingChatPage({ user }: OnboardingChatPageProps) {
             onClick={() => fileInputRef.current?.click()}
             disabled={!session || uploadBusy}
             aria-busy={uploadBusy}
-            className="rounded border border-gray-200 px-3 py-1 text-xs font-semibold hover:bg-gray-50 disabled:opacity-50"
+            className="rounded border border-line px-3 py-1 text-xs font-semibold hover:bg-well disabled:opacity-50"
           >
             {uploadBusy ? "Uploading…" : "Upload Excel"}
           </button>
@@ -296,7 +296,7 @@ export function OnboardingChatPage({ user }: OnboardingChatPageProps) {
           <button
             type="button"
             onClick={() => (previewOpen ? closePreview() : setPreviewOpen(true))}
-            className="ml-auto rounded border border-gray-200 px-3 py-1 text-xs font-semibold hover:bg-gray-50"
+            className="ml-auto rounded border border-line px-3 py-1 text-xs font-semibold hover:bg-well"
           >
             Preview {previewOpen ? "◀" : "▶"}
           </button>
@@ -306,7 +306,7 @@ export function OnboardingChatPage({ user }: OnboardingChatPageProps) {
           <div className={`flex min-h-0 flex-1 flex-col ${previewOpen ? "lg:mr-[380px]" : ""}`}>
             <div ref={threadRef} className="flex-1 space-y-3 overflow-y-auto px-4 py-4">
               {startMutation.isPending && !session && (
-                <div className="text-xs text-bms-muted">Starting onboarding session…</div>
+                <div className="text-xs text-ink-muted">Starting onboarding session…</div>
               )}
               {messages.map((m) => (
                 <div
@@ -315,7 +315,7 @@ export function OnboardingChatPage({ user }: OnboardingChatPageProps) {
                 >
                   <span
                     className={`mb-0.5 px-1 text-[10px] font-semibold uppercase tracking-wide ${
-                      m.role === "user" ? "text-bms-green" : "text-bms-muted"
+                      m.role === "user" ? "text-accent" : "text-ink-muted"
                     }`}
                   >
                     {m.role === "user"
@@ -325,8 +325,8 @@ export function OnboardingChatPage({ user }: OnboardingChatPageProps) {
                   <div
                     className={`max-w-[85%] whitespace-pre-wrap rounded px-3 py-2 text-sm ${
                       m.role === "user"
-                        ? "bg-bms-green text-white"
-                        : "border border-gray-200 bg-white text-bms-ink"
+                        ? "bg-accent text-on-accent"
+                        : "border border-line bg-surface text-ink"
                     }`}
                   >
                     {m.content}
@@ -334,19 +334,19 @@ export function OnboardingChatPage({ user }: OnboardingChatPageProps) {
                 </div>
               ))}
               {chatMutation.isPending && (
-                <div className="text-xs text-bms-muted">Assistant is typing…</div>
+                <div className="text-xs text-ink-muted">Assistant is typing…</div>
               )}
               {chatError && (
                 <div
                   role="alert"
-                  className="rounded border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700"
+                  className="rounded border border-critical-line bg-critical-wash px-3 py-2 text-xs text-critical-ink"
                 >
                   {chatError}
                 </div>
               )}
             </div>
 
-            <form onSubmit={onSubmit} className="border-t border-gray-200 p-4">
+            <form onSubmit={onSubmit} className="border-t border-line p-4">
               <div className="flex items-end gap-2">
                 <textarea
                   value={input}
@@ -354,12 +354,12 @@ export function OnboardingChatPage({ user }: OnboardingChatPageProps) {
                   onKeyDown={onInputKeyDown}
                   placeholder="Type a message… (Shift+Enter for new line)"
                   rows={10}
-                  className="h-52 max-h-72 min-h-[8rem] flex-1 resize-y rounded border border-gray-200 px-3 py-2 text-sm"
+                  className="h-52 max-h-72 min-h-[8rem] flex-1 resize-y rounded border border-line px-3 py-2 text-sm"
                   disabled={!session || chatMutation.isPending || startMutation.isPending}
                 />
                 <button
                   type="submit"
-                  className="shrink-0 rounded bg-bms-green px-4 py-2 text-sm font-semibold text-white disabled:opacity-50"
+                  className="shrink-0 rounded bg-accent px-4 py-2 text-sm font-semibold text-on-accent disabled:opacity-50"
                   disabled={!session || chatMutation.isPending || startMutation.isPending}
                   aria-busy={chatMutation.isPending}
                 >
@@ -372,22 +372,22 @@ export function OnboardingChatPage({ user }: OnboardingChatPageProps) {
           {previewOpen && (
             <>
               <div
-                className="absolute inset-0 z-10 bg-black/20 lg:hidden"
+                className="absolute inset-0 z-10 bg-scrim/20 lg:hidden"
                 onClick={closePreview}
                 aria-hidden
               />
-              <aside className="absolute right-0 top-0 z-20 flex h-full w-[90%] max-w-[380px] flex-col border-l border-gray-200 bg-white shadow-lg lg:shadow-none">
-                <div className="flex items-center justify-between border-b border-gray-200 px-3 py-2">
-                  <span className="text-xs font-semibold uppercase tracking-wide text-bms-muted">
+              <aside className="absolute right-0 top-0 z-20 flex h-full w-[90%] max-w-[380px] flex-col border-l border-line bg-surface shadow-lg lg:shadow-none">
+                <div className="flex items-center justify-between border-b border-line px-3 py-2">
+                  <span className="text-xs font-semibold uppercase tracking-wide text-ink-muted">
                     Draft preview
                   </span>
-                  <button type="button" onClick={closePreview} className="text-xs text-bms-muted">
+                  <button type="button" onClick={closePreview} className="text-xs text-ink-muted">
                     ×
                   </button>
                 </div>
                 <div className="flex-1 space-y-3 overflow-y-auto p-3 text-xs">
                   <div>
-                    <div className="mb-1 font-semibold uppercase tracking-wide text-bms-muted">
+                    <div className="mb-1 font-semibold uppercase tracking-wide text-ink-muted">
                       Summary
                     </div>
                     <pre className="whitespace-pre-wrap break-words font-mono text-[11px]">
@@ -395,17 +395,17 @@ export function OnboardingChatPage({ user }: OnboardingChatPageProps) {
                     </pre>
                   </div>
                   <div>
-                    <div className="mb-1 font-semibold uppercase tracking-wide text-bms-muted">
+                    <div className="mb-1 font-semibold uppercase tracking-wide text-ink-muted">
                       Credentials
                     </div>
                     {(session?.draft?.rtus ?? []).length === 0 ? (
-                      <p className="text-[11px] text-bms-muted">
+                      <p className="text-[11px] text-ink-muted">
                         Add an RTU first, then set its credentials here.
                       </p>
                     ) : (
                       <ul className="space-y-2">
                         {(session?.draft?.rtus ?? []).map((rtu, index) => (
-                          <li key={rtu.code ?? index} className="rounded border border-gray-200 p-2">
+                          <li key={rtu.code ?? index} className="rounded border border-line p-2">
                             <div className="flex items-center justify-between gap-2">
                               <span className="font-mono text-[11px]">{rtu.code ?? `RTU ${index + 1}`}</span>
                               {rtu.credentialsSet ? (
@@ -436,14 +436,14 @@ export function OnboardingChatPage({ user }: OnboardingChatPageProps) {
                                 }}
                               >
                                 <input
-                                  className="w-full rounded border border-gray-200 px-2 py-1 text-[11px]"
+                                  className="w-full rounded border border-line px-2 py-1 text-[11px]"
                                   placeholder="Username"
                                   autoComplete="off"
                                   value={credUsername}
                                   onChange={(event) => setCredUsername(event.target.value)}
                                 />
                                 <input
-                                  className="w-full rounded border border-gray-200 px-2 py-1 text-[11px]"
+                                  className="w-full rounded border border-line px-2 py-1 text-[11px]"
                                   placeholder="Password"
                                   type="password"
                                   autoComplete="new-password"
@@ -457,7 +457,7 @@ export function OnboardingChatPage({ user }: OnboardingChatPageProps) {
                                     (!credUsername && !credPassword)
                                   }
                                   aria-busy={credentialsMutation.isPending}
-                                  className="w-full rounded bg-bms-green px-2 py-1 text-[11px] font-semibold text-white disabled:opacity-50"
+                                  className="w-full rounded bg-accent px-2 py-1 text-[11px] font-semibold text-on-accent disabled:opacity-50"
                                 >
                                   {credentialsMutation.isPending ? "Encrypting…" : "Save encrypted"}
                                 </button>
@@ -474,30 +474,30 @@ export function OnboardingChatPage({ user }: OnboardingChatPageProps) {
                       // message that should read as an aside.
                       <p
                         role="alert"
-                        className="mt-1 rounded border border-red-200 bg-red-50 px-3 py-2 text-[11px] text-red-700"
+                        className="mt-1 rounded border border-critical-line bg-critical-wash px-3 py-2 text-[11px] text-critical-ink"
                       >
                         {credError}
                       </p>
                     )}
-                    <p className="mt-1 text-[11px] text-bms-muted">
+                    <p className="mt-1 text-[11px] text-ink-muted">
                       Credentials are encrypted before storage and never sent to the assistant.
                       Do not type them into the chat — those messages are stored.
                     </p>
                   </div>
                   <div>
-                    <div className="mb-1 font-semibold uppercase tracking-wide text-bms-muted">
+                    <div className="mb-1 font-semibold uppercase tracking-wide text-ink-muted">
                       Validation
                     </div>
                     <pre
                       className={`whitespace-pre-wrap break-words font-mono text-[11px] ${
-                        validationErrors.length > 0 ? "text-red-700" : "text-bms-muted"
+                        validationErrors.length > 0 ? "text-critical-ink" : "text-ink-muted"
                       }`}
                     >
                       {formatOnboardingValidationErrors(validationErrors)}
                     </pre>
                   </div>
                   <div>
-                    <div className="mb-1 font-semibold uppercase tracking-wide text-bms-muted">
+                    <div className="mb-1 font-semibold uppercase tracking-wide text-ink-muted">
                       Output JSON
                     </div>
                     <pre className="whitespace-pre-wrap break-words font-mono text-[11px]">
@@ -505,11 +505,11 @@ export function OnboardingChatPage({ user }: OnboardingChatPageProps) {
                     </pre>
                   </div>
                 </div>
-                <div className="flex gap-2 border-t border-gray-200 p-3">
+                <div className="flex gap-2 border-t border-line p-3">
                   <button
                     type="button"
                     onClick={() => validateMutation.mutate()}
-                    className="flex-1 rounded border border-gray-200 py-2 text-xs font-semibold"
+                    className="flex-1 rounded border border-line py-2 text-xs font-semibold"
                     disabled={!session || validateMutation.isPending}
                     aria-busy={validateMutation.isPending}
                   >
@@ -518,7 +518,7 @@ export function OnboardingChatPage({ user }: OnboardingChatPageProps) {
                   <button
                     type="button"
                     onClick={() => commitMutation.mutate()}
-                    className="flex-1 rounded bg-bms-green py-2 text-xs font-semibold text-white disabled:opacity-50"
+                    className="flex-1 rounded bg-accent py-2 text-xs font-semibold text-on-accent disabled:opacity-50"
                     disabled={!session || commitMutation.isPending}
                     aria-busy={commitMutation.isPending}
                   >

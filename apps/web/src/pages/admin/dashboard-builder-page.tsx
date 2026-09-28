@@ -148,7 +148,7 @@ export function DashboardBuilderPage({ user }: DashboardBuilderPageProps) {
   const selectedRow = selected !== null ? rows[selected] : undefined;
 
   return (
-    <AppShell user={user} kpiRibbon={<span className="text-bms-ink">Dashboard builder</span>}>
+    <AppShell user={user} kpiRibbon={<span className="text-ink">Dashboard builder</span>}>
       <div className="mx-auto max-w-[1400px] space-y-4 pb-8">
         <PageHeader
           eyebrow="Admin"
@@ -156,16 +156,16 @@ export function DashboardBuilderPage({ user }: DashboardBuilderPageProps) {
           subtitle="Compose widgets on the 12-column canvas, bind points, and save"
         />
 
-        {error ? <p className="rounded border border-red-200 bg-red-50 p-3 text-sm text-red-800">{error}</p> : null}
+        {error ? <p className="rounded border border-critical-line bg-critical-wash p-3 text-sm text-critical-ink-strong">{error}</p> : null}
 
         <SectionCard title="Dashboard">
           <div className="grid gap-3 md:grid-cols-2">
             <label className="block space-y-1 text-xs">
-              <span className="font-semibold uppercase tracking-wide text-bms-muted">Name</span>
+              <span className="font-semibold uppercase tracking-wide text-ink-muted">Name</span>
               <input
                 value={name}
                 onChange={(event) => setName(event.target.value)}
-                className="w-full rounded border border-gray-200 px-2 py-1.5 text-xs"
+                className="w-full rounded border border-line px-2 py-1.5 text-xs"
               />
             </label>
             {/* The hint sits outside the `<label>` — see the instantiate
@@ -173,7 +173,7 @@ export function DashboardBuilderPage({ user }: DashboardBuilderPageProps) {
                 field's accessible name. */}
             <div className="space-y-1">
               <label className="block space-y-1 text-xs">
-                <span className="font-semibold uppercase tracking-wide text-bms-muted">Slug</span>
+                <span className="font-semibold uppercase tracking-wide text-ink-muted">Slug</span>
                 <input
                   value={slug}
                   onChange={(event) => setSlug(event.target.value)}
@@ -182,10 +182,10 @@ export function DashboardBuilderPage({ user }: DashboardBuilderPageProps) {
                   maxLength={DASHBOARD_SLUG_MAX}
                   title={DASHBOARD_SLUG_HINT}
                   aria-describedby="dashboard-slug-hint"
-                  className="w-full rounded border border-gray-200 px-2 py-1.5 text-xs"
+                  className="w-full rounded border border-line px-2 py-1.5 text-xs"
                 />
               </label>
-              <span id="dashboard-slug-hint" className="block text-[11px] text-bms-muted">
+              <span id="dashboard-slug-hint" className="block text-[11px] text-ink-muted">
                 {DASHBOARD_SLUG_HINT}
               </span>
             </div>
@@ -216,7 +216,7 @@ export function DashboardBuilderPage({ user }: DashboardBuilderPageProps) {
                   key={type}
                   type="button"
                   onClick={() => addWidget(type)}
-                  className="rounded border border-gray-200 px-2 py-1 text-[11px] font-semibold text-bms-ink"
+                  className="rounded border border-line px-2 py-1 text-[11px] font-semibold text-ink"
                 >
                   + {WIDGET_CATALOG[type].label}
                 </button>
@@ -225,7 +225,7 @@ export function DashboardBuilderPage({ user }: DashboardBuilderPageProps) {
           }
         >
           {rows.length === 0 ? (
-            <p className="rounded border border-dashed border-gray-300 p-4 text-xs text-bms-muted">
+            <p className="rounded border border-dashed border-line-strong p-4 text-xs text-ink-muted">
               Add a widget to start composing this dashboard.
             </p>
           ) : (
@@ -236,13 +236,13 @@ export function DashboardBuilderPage({ user }: DashboardBuilderPageProps) {
                   type="button"
                   onClick={() => setSelected(tile.index)}
                   className={`h-full w-full rounded border p-2 text-left text-xs ${
-                    tile.index === selected ? "border-bms-green bg-bms-green/10" : "border-gray-200 bg-white"
+                    tile.index === selected ? "border-accent bg-accent/10" : "border-line bg-surface"
                   }`}
                 >
                   <div className="font-semibold">
                     {tile.row.title.trim() || WIDGET_CATALOG[tile.row.widgetType].label}
                   </div>
-                  <div className="text-[10px] text-bms-muted">
+                  <div className="text-[10px] text-ink-muted">
                     {WIDGET_CATALOG[tile.row.widgetType].label} · {tile.row.points.length} point(s)
                   </div>
                 </button>
@@ -268,21 +268,21 @@ export function DashboardBuilderPage({ user }: DashboardBuilderPageProps) {
           />
         ) : null}
 
-        <div className="flex items-start gap-3 border-t border-gray-200 pt-3">
+        <div className="flex items-start gap-3 border-t border-line pt-3">
           <button
             type="button"
             disabled={blocked || saveM.isPending}
             aria-busy={saveM.isPending}
             onClick={() => saveM.mutate()}
-            className="rounded bg-bms-green px-4 py-1.5 text-xs font-semibold text-white disabled:opacity-60"
+            className="rounded bg-accent px-4 py-1.5 text-xs font-semibold text-on-accent disabled:opacity-60"
           >
             {saveM.isPending ? "Saving…" : "Create dashboard"}
           </button>
           {problems.length > 0 ? (
-            <div className="text-[11px] text-bms-muted">
+            <div className="text-[11px] text-ink-muted">
               <p>Fix the problems below to save.</p>
               {summaryProblems.length > 0 ? (
-                <ul className="mt-1 space-y-0.5 text-red-700">
+                <ul className="mt-1 space-y-0.5 text-critical-ink">
                   {summaryProblems.map((problem, index) => (
                     <li key={index}>
                       <span className="font-semibold">{dashboardBuilderProblemSubject(rows, problem)}:</span>{" "}

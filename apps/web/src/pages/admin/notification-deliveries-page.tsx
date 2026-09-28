@@ -123,7 +123,7 @@ export function NotificationDeliveriesPage({ user }: NotificationDeliveriesPageP
       <SectionCard title="Recent attempts" bodyClassName="p-3 space-y-3">
         <div className="flex flex-wrap items-center gap-2">
           <label className="text-sm">
-            <span className="mr-2 text-xs font-semibold uppercase text-bms-muted">Channel</span>
+            <span className="mr-2 text-xs font-semibold uppercase text-ink-muted">Channel</span>
             <select
               className="rounded border px-3 py-1.5 text-sm"
               value={channelFilter}
@@ -138,7 +138,7 @@ export function NotificationDeliveriesPage({ user }: NotificationDeliveriesPageP
             </select>
           </label>
           <label className="text-sm">
-            <span className="mr-2 text-xs font-semibold uppercase text-bms-muted">
+            <span className="mr-2 text-xs font-semibold uppercase text-ink-muted">
               Organization
             </span>
             <select
@@ -155,13 +155,13 @@ export function NotificationDeliveriesPage({ user }: NotificationDeliveriesPageP
             </select>
           </label>
           {deliveriesQ.isLoading ? (
-            <span className="text-sm text-bms-muted">Loading deliveries…</span>
+            <span className="text-sm text-ink-muted">Loading deliveries…</span>
           ) : null}
         </div>
 
         <table className="min-w-full text-sm">
           <thead>
-            <tr className="border-b text-left text-xs uppercase text-bms-muted">
+            <tr className="border-b text-left text-xs uppercase text-ink-muted">
               <th className="px-2 py-2">When</th>
               <th className="px-2 py-2">Organization</th>
               <th className="px-2 py-2">Channel</th>
@@ -173,7 +173,7 @@ export function NotificationDeliveriesPage({ user }: NotificationDeliveriesPageP
           </thead>
           <tbody>
             {items.map((item) => (
-              <tr key={item.id} className="border-b border-gray-100">
+              <tr key={item.id} className="border-b border-well-deep">
                 <td className="px-2 py-2 whitespace-nowrap">
                   {new Date(item.attemptedAt).toLocaleString()}
                 </td>
@@ -194,7 +194,7 @@ export function NotificationDeliveriesPage({ user }: NotificationDeliveriesPageP
             ))}
             {!deliveriesQ.isLoading && items.length === 0 ? (
               <tr>
-                <td className="px-2 py-3 text-bms-muted" colSpan={7}>
+                <td className="px-2 py-3 text-ink-muted" colSpan={7}>
                   No delivery attempts recorded yet. A rule marked notify writes a row here every
                   time it fires — including when it sends nothing.
                 </td>

@@ -253,7 +253,7 @@ export function CalcParametersAdminPage({ user }: CalcParametersAdminPageProps) 
           canWrite ? (
             <button
               type="button"
-              className="rounded bg-bms-green px-3 py-2 text-xs font-semibold text-white"
+              className="rounded bg-accent px-3 py-2 text-xs font-semibold text-on-accent"
               onClick={openCreate}
               disabled={organizationId === ""}
             >
@@ -264,7 +264,7 @@ export function CalcParametersAdminPage({ user }: CalcParametersAdminPageProps) 
       />
 
       {listError ? (
-        <div role="alert" className="mb-4 rounded border border-red-300 bg-red-50 p-3 text-sm text-red-800">
+        <div role="alert" className="mb-4 rounded border border-critical-line-strong bg-critical-wash p-3 text-sm text-critical-ink-strong">
           {listError}
         </div>
       ) : null}
@@ -272,10 +272,10 @@ export function CalcParametersAdminPage({ user }: CalcParametersAdminPageProps) 
       <SectionCard title="Parameter values" bodyClassName="p-3 space-y-3">
         {!orgLocked ? (
           <div className="flex flex-wrap gap-3">
-            <label className="text-xs font-semibold text-bms-muted">
+            <label className="text-xs font-semibold text-ink-muted">
               Organization
               <select
-                className="ml-2 rounded border border-gray-200 px-3 py-1.5 text-xs font-normal"
+                className="ml-2 rounded border border-line px-3 py-1.5 text-xs font-normal"
                 value={organizationId}
                 onChange={(event) => setSelectedOrgId(event.target.value)}
               >
@@ -289,19 +289,19 @@ export function CalcParametersAdminPage({ user }: CalcParametersAdminPageProps) 
           </div>
         ) : null}
 
-        {listQ.isLoading ? <p className="text-sm text-slate-500">Loading parameters…</p> : null}
+        {listQ.isLoading ? <p className="text-sm text-ink-faint">Loading parameters…</p> : null}
         {listQ.isError ? (
-          <p role="alert" className="text-sm text-red-700">
+          <p role="alert" className="text-sm text-critical-ink">
             {apiErrorMessage(listQ.error)}
           </p>
         ) : null}
         {organizationId !== "" && !listQ.isLoading && !listQ.isError && rows.length === 0 ? (
-          <p className="text-sm text-slate-500">No parameter values for this organization.</p>
+          <p className="text-sm text-ink-faint">No parameter values for this organization.</p>
         ) : null}
 
         <table className="min-w-full text-sm">
           <thead>
-            <tr className="border-b text-left text-xs uppercase text-bms-muted">
+            <tr className="border-b text-left text-xs uppercase text-ink-muted">
               <th className="px-2 py-2">Key</th>
               <th className="px-2 py-2">Scope</th>
               <th className="px-2 py-2">Value</th>
@@ -316,13 +316,13 @@ export function CalcParametersAdminPage({ user }: CalcParametersAdminPageProps) 
               const deletingThis =
                 deleteMutation.isPending && deleteMutation.variables?.id === row.id;
               return (
-                <tr key={row.id} className="border-b border-gray-100">
+                <tr key={row.id} className="border-b border-well-deep">
                   <td className="px-2 py-2">
                     <span className="block">
                       {key?.label ?? row.key}
-                      {key?.unit ? <span className="text-bms-muted"> ({key.unit})</span> : null}
+                      {key?.unit ? <span className="text-ink-muted"> ({key.unit})</span> : null}
                     </span>
-                    <code className="block text-xs text-bms-muted">{row.key}</code>
+                    <code className="block text-xs text-ink-muted">{row.key}</code>
                   </td>
                   <td className="px-2 py-2">{scopeLabel(row)}</td>
                   <td className="px-2 py-2 font-mono">{row.value}</td>
@@ -335,14 +335,14 @@ export function CalcParametersAdminPage({ user }: CalcParametersAdminPageProps) 
                       <div className="flex gap-2">
                         <button
                           type="button"
-                          className="text-xs font-semibold text-bms-green"
+                          className="text-xs font-semibold text-accent"
                           onClick={() => openEdit(row)}
                         >
                           Edit
                         </button>
                         <button
                           type="button"
-                          className="text-xs font-semibold text-red-700"
+                          className="text-xs font-semibold text-critical-ink"
                           disabled={deleteMutation.isPending}
                           aria-busy={deletingThis}
                           onClick={() => remove(row)}
@@ -351,7 +351,7 @@ export function CalcParametersAdminPage({ user }: CalcParametersAdminPageProps) 
                         </button>
                       </div>
                     ) : (
-                      <span className="text-xs text-bms-muted">Read only</span>
+                      <span className="text-xs text-ink-muted">Read only</span>
                     )}
                   </td>
                 </tr>
@@ -439,9 +439,9 @@ function CalcParameterForm({
     (form.scope === "asset" && form.assetId !== "");
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-scrim/40 p-4">
       <form
-        className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-lg border bg-white p-4"
+        className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-lg border bg-surface p-4"
         onSubmit={(event: FormEvent) => {
           event.preventDefault();
           onSubmit();
@@ -451,10 +451,10 @@ function CalcParameterForm({
           {editing ? "Edit parameter value" : "Add parameter value"}
         </h2>
         <div className="mt-3 grid gap-3 sm:grid-cols-2">
-          <label className="block text-xs font-semibold text-bms-muted sm:col-span-2">
+          <label className="block text-xs font-semibold text-ink-muted sm:col-span-2">
             Key
             <select
-              className="mt-1 w-full rounded border px-3 py-2 text-sm disabled:bg-gray-50"
+              className="mt-1 w-full rounded border px-3 py-2 text-sm disabled:bg-well"
               value={form.key}
               disabled={locked}
               required
@@ -470,7 +470,7 @@ function CalcParameterForm({
           </label>
 
           <fieldset className="sm:col-span-2">
-            <legend className="text-xs font-semibold text-bms-muted">Scope</legend>
+            <legend className="text-xs font-semibold text-ink-muted">Scope</legend>
             <div className="mt-1 flex flex-wrap gap-4">
               {scopeOptions.map((option) => (
                 <label key={option.value} className="flex items-center gap-1 text-sm">
@@ -489,14 +489,14 @@ function CalcParameterForm({
               ))}
             </div>
             {locked && editing ? (
-              <p className="mt-1 text-xs text-bms-muted">
+              <p className="mt-1 text-xs text-ink-muted">
                 {scopeLabel(editing)} — to move a value to another scope, delete it and add it again.
               </p>
             ) : null}
           </fieldset>
 
           {!locked && form.scope !== "organization" ? (
-            <label className="block text-xs font-semibold text-bms-muted">
+            <label className="block text-xs font-semibold text-ink-muted">
               Location
               <select
                 className="mt-1 w-full rounded border px-3 py-2 text-sm"
@@ -517,7 +517,7 @@ function CalcParameterForm({
           ) : null}
 
           {!locked && form.scope === "asset" ? (
-            <label className="block text-xs font-semibold text-bms-muted">
+            <label className="block text-xs font-semibold text-ink-muted">
               Asset
               <select
                 className="mt-1 w-full rounded border px-3 py-2 text-sm"
@@ -538,7 +538,7 @@ function CalcParameterForm({
             </label>
           ) : null}
 
-          <label className="block text-xs font-semibold text-bms-muted sm:col-span-2">
+          <label className="block text-xs font-semibold text-ink-muted sm:col-span-2">
             Value
             <input
               type="number"
@@ -549,7 +549,7 @@ function CalcParameterForm({
               onChange={(event) => setForm({ ...form, value: event.target.value })}
             />
           </label>
-          <label className="block text-xs font-semibold text-bms-muted">
+          <label className="block text-xs font-semibold text-ink-muted">
             Effective from
             <input
               type="datetime-local"
@@ -560,7 +560,7 @@ function CalcParameterForm({
             />
           </label>
           <div>
-            <label className="block text-xs font-semibold text-bms-muted">
+            <label className="block text-xs font-semibold text-ink-muted">
               Effective to
               <input
                 type="datetime-local"
@@ -569,11 +569,11 @@ function CalcParameterForm({
                 onChange={(event) => setForm({ ...form, effectiveTo: event.target.value })}
               />
             </label>
-            <p className="mt-1 text-[11px] text-bms-muted">Leave empty for an open-ended value.</p>
+            <p className="mt-1 text-[11px] text-ink-muted">Leave empty for an open-ended value.</p>
           </div>
         </div>
         {error ? (
-          <div role="alert" className="mt-2 text-xs text-red-700">
+          <div role="alert" className="mt-2 text-xs text-critical-ink">
             {error}
           </div>
         ) : null}
@@ -583,7 +583,7 @@ function CalcParameterForm({
           </button>
           <button
             type="submit"
-            className="rounded bg-bms-green px-3 py-2 text-xs font-semibold text-white disabled:opacity-50"
+            className="rounded bg-accent px-3 py-2 text-xs font-semibold text-on-accent disabled:opacity-50"
             disabled={pending || (!locked && !scopeReady)}
             aria-busy={pending}
           >

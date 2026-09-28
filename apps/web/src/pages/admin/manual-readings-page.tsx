@@ -102,7 +102,7 @@ export function ManualReadingsPage({ user }: ManualReadingsPageProps) {
             syncRoutes={false}
           />
 
-          <label className="block text-xs font-semibold text-bms-muted">
+          <label className="block text-xs font-semibold text-ink-muted">
             Point key
             <select
               className="mt-1 w-full rounded border px-3 py-2 text-sm"
@@ -121,20 +121,20 @@ export function ManualReadingsPage({ user }: ManualReadingsPageProps) {
                 </option>
               ))}
             </select>
-            {formErrors.pointKey ? <span className="mt-1 block text-red-700">{formErrors.pointKey}</span> : null}
+            {formErrors.pointKey ? <span className="mt-1 block text-critical-ink">{formErrors.pointKey}</span> : null}
           </label>
 
-          <label className="block text-xs font-semibold text-bms-muted">
+          <label className="block text-xs font-semibold text-ink-muted">
             Value
             <input
               className="mt-1 w-full rounded border px-3 py-2 text-sm"
               value={value}
               onChange={(event) => setValue(event.target.value)}
             />
-            {formErrors.value ? <span className="mt-1 block text-red-700">{formErrors.value}</span> : null}
+            {formErrors.value ? <span className="mt-1 block text-critical-ink">{formErrors.value}</span> : null}
           </label>
 
-          <label className="block text-xs font-semibold text-bms-muted">
+          <label className="block text-xs font-semibold text-ink-muted">
             Unit
             <input
               className="mt-1 w-full rounded border px-3 py-2 text-sm"
@@ -143,7 +143,7 @@ export function ManualReadingsPage({ user }: ManualReadingsPageProps) {
             />
           </label>
 
-          <label className="block text-xs font-semibold text-bms-muted">
+          <label className="block text-xs font-semibold text-ink-muted">
             Timestamp
             <input
               type="datetime-local"
@@ -151,10 +151,10 @@ export function ManualReadingsPage({ user }: ManualReadingsPageProps) {
               value={time}
               onChange={(event) => setTime(event.target.value)}
             />
-            {formErrors.time ? <span className="mt-1 block text-red-700">{formErrors.time}</span> : null}
+            {formErrors.time ? <span className="mt-1 block text-critical-ink">{formErrors.time}</span> : null}
           </label>
 
-          <label className="flex items-center gap-2 text-xs font-semibold text-bms-muted">
+          <label className="flex items-center gap-2 text-xs font-semibold text-ink-muted">
             <input
               type="checkbox"
               checked={overwrite}
@@ -163,13 +163,13 @@ export function ManualReadingsPage({ user }: ManualReadingsPageProps) {
             Overwrite an existing reading at this exact timestamp
           </label>
 
-          {formErrors.assetId ? <div className="text-xs text-red-700">{formErrors.assetId}</div> : null}
-          {submitError ? <div className="text-xs text-red-700">{submitError}</div> : null}
+          {formErrors.assetId ? <div className="text-xs text-critical-ink">{formErrors.assetId}</div> : null}
+          {submitError ? <div className="text-xs text-critical-ink">{submitError}</div> : null}
           {result ? (
-            <div className="text-xs text-bms-ink">
+            <div className="text-xs text-ink">
               {describeWriteOutcome(result)}
               {result.rejected.length > 0 ? (
-                <ul className="mt-1 list-disc pl-4 text-red-700">
+                <ul className="mt-1 list-disc pl-4 text-critical-ink">
                   {result.rejected.map((row, i) => (
                     <li key={i}>{row.reason}</li>
                   ))}
@@ -181,7 +181,7 @@ export function ManualReadingsPage({ user }: ManualReadingsPageProps) {
           <div>
             <button
               type="submit"
-              className="rounded bg-bms-green px-3 py-2 text-xs font-semibold text-white"
+              className="rounded bg-accent px-3 py-2 text-xs font-semibold text-on-accent"
               disabled={submitMutation.isPending}
               aria-busy={submitMutation.isPending}
             >

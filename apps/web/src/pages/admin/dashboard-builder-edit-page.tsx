@@ -239,35 +239,35 @@ export function DashboardBuilderEditPage({ user }: DashboardBuilderEditPageProps
   const selectedRow = selected !== null ? rows[selected] : undefined;
 
   return (
-    <AppShell user={user} kpiRibbon={<span className="text-bms-ink">{dto?.name ?? "Edit dashboard"}</span>}>
+    <AppShell user={user} kpiRibbon={<span className="text-ink">{dto?.name ?? "Edit dashboard"}</span>}>
       <div className="mx-auto max-w-[1400px] space-y-4 pb-8">
         <PageHeader eyebrow="Admin" title={dto?.name ?? "Edit dashboard"} subtitle={slug} />
 
         {dashboardQ.isError ? (
-          <p className="rounded border border-red-200 bg-red-50 p-3 text-sm text-red-800">
+          <p className="rounded border border-critical-line bg-critical-wash p-3 text-sm text-critical-ink-strong">
             {apiErrorMessage(dashboardQ.error as Error)}
           </p>
         ) : null}
-        {error ? <p className="rounded border border-red-200 bg-red-50 p-3 text-sm text-red-800">{error}</p> : null}
+        {error ? <p className="rounded border border-critical-line bg-critical-wash p-3 text-sm text-critical-ink-strong">{error}</p> : null}
 
         {dto ? (
           <>
             <SectionCard title="Dashboard">
               <div className="grid gap-3 md:grid-cols-2">
                 <label className="block space-y-1 text-xs">
-                  <span className="font-semibold uppercase tracking-wide text-bms-muted">Name</span>
+                  <span className="font-semibold uppercase tracking-wide text-ink-muted">Name</span>
                   <input
                     value={name}
                     onChange={(event) => setName(event.target.value)}
-                    className="w-full rounded border border-gray-200 px-2 py-1.5 text-xs"
+                    className="w-full rounded border border-line px-2 py-1.5 text-xs"
                   />
                 </label>
                 <label className="block space-y-1 text-xs">
-                  <span className="font-semibold uppercase tracking-wide text-bms-muted">Description</span>
+                  <span className="font-semibold uppercase tracking-wide text-ink-muted">Description</span>
                   <input
                     value={description}
                     onChange={(event) => setDescription(event.target.value)}
-                    className="w-full rounded border border-gray-200 px-2 py-1.5 text-xs"
+                    className="w-full rounded border border-line px-2 py-1.5 text-xs"
                   />
                 </label>
               </div>
@@ -282,15 +282,15 @@ export function DashboardBuilderEditPage({ user }: DashboardBuilderEditPageProps
                   assets={assets}
                 />
               </div>
-              <div className="mt-3 border-t border-gray-100 pt-3">
+              <div className="mt-3 border-t border-well-deep pt-3">
                 <button
                   type="button"
                   onClick={() => setDuplicating(true)}
-                  className="rounded border border-gray-300 px-3 py-1.5 text-xs font-semibold text-bms-ink hover:bg-gray-50"
+                  className="rounded border border-line-strong px-3 py-1.5 text-xs font-semibold text-ink hover:bg-well"
                 >
                   Duplicate this dashboard
                 </button>
-                <p className="mt-1 text-xs text-bms-muted">
+                <p className="mt-1 text-xs text-ink-muted">
                   Copies this dashboard into a scope you may already write to. The copy stays in this
                   organization.
                 </p>
@@ -306,7 +306,7 @@ export function DashboardBuilderEditPage({ user }: DashboardBuilderEditPageProps
                       key={type}
                       type="button"
                       onClick={() => addWidget(type)}
-                      className="rounded border border-gray-200 px-2 py-1 text-[11px] font-semibold text-bms-ink"
+                      className="rounded border border-line px-2 py-1 text-[11px] font-semibold text-ink"
                     >
                       + {WIDGET_CATALOG[type].label}
                     </button>
@@ -315,7 +315,7 @@ export function DashboardBuilderEditPage({ user }: DashboardBuilderEditPageProps
               }
             >
               {rows.length === 0 ? (
-                <p className="rounded border border-dashed border-gray-300 p-4 text-xs text-bms-muted">
+                <p className="rounded border border-dashed border-line-strong p-4 text-xs text-ink-muted">
                   Add a widget to start composing this dashboard.
                 </p>
               ) : (
@@ -326,13 +326,13 @@ export function DashboardBuilderEditPage({ user }: DashboardBuilderEditPageProps
                       type="button"
                       onClick={() => setSelected(tile.index)}
                       className={`h-full w-full rounded border p-2 text-left text-xs ${
-                        tile.index === selected ? "border-bms-green bg-bms-green/10" : "border-gray-200 bg-white"
+                        tile.index === selected ? "border-accent bg-accent/10" : "border-line bg-surface"
                       }`}
                     >
                       <div className="font-semibold">
                         {tile.row.title.trim() || WIDGET_CATALOG[tile.row.widgetType].label}
                       </div>
-                      <div className="text-[10px] text-bms-muted">
+                      <div className="text-[10px] text-ink-muted">
                         {WIDGET_CATALOG[tile.row.widgetType].label} · {tile.row.points.length} point(s)
                       </div>
                     </button>
@@ -358,20 +358,20 @@ export function DashboardBuilderEditPage({ user }: DashboardBuilderEditPageProps
               />
             ) : null}
 
-            <div className="flex items-start gap-3 border-t border-gray-200 pt-3">
+            <div className="flex items-start gap-3 border-t border-line pt-3">
               <button
                 type="button"
                 disabled={blocked || saveM.isPending}
                 aria-busy={saveM.isPending}
                 onClick={() => saveM.mutate()}
-                className="rounded bg-bms-green px-4 py-1.5 text-xs font-semibold text-white disabled:opacity-60"
+                className="rounded bg-accent px-4 py-1.5 text-xs font-semibold text-on-accent disabled:opacity-60"
               >
                 {saveM.isPending ? "Saving…" : "Save dashboard"}
               </button>
-              <div className="text-[11px] text-bms-muted">
+              <div className="text-[11px] text-ink-muted">
                 <p>{saveReason}</p>
                 {summaryProblems.length > 0 ? (
-                  <ul className="mt-1 space-y-0.5 text-red-700">
+                  <ul className="mt-1 space-y-0.5 text-critical-ink">
                     {summaryProblems.map((problem, index) => (
                       <li key={index}>
                         <span className="font-semibold">{dashboardBuilderProblemSubject(rows, problem)}:</span>{" "}

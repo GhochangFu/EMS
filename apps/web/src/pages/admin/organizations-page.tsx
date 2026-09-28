@@ -132,7 +132,7 @@ export function OrganizationsAdminPage({ user }: OrganizationsAdminPageProps) {
             canWrite ? (
               <button
                 type="button"
-                className="rounded bg-bms-green px-3 py-2 text-xs font-semibold text-white"
+                className="rounded bg-accent px-3 py-2 text-xs font-semibold text-on-accent"
                 onClick={openCreate}
               >
                 Add organization
@@ -144,21 +144,21 @@ export function OrganizationsAdminPage({ user }: OrganizationsAdminPageProps) {
           <div className="flex flex-wrap items-center justify-between gap-3">
             <ActiveFilterBar value={activeFilter} onChange={setActiveFilter} />
             <input
-              className="rounded border border-gray-200 px-3 py-1.5 text-sm"
+              className="rounded border border-line px-3 py-1.5 text-sm"
               placeholder="Search code or name"
               value={search}
               onChange={(event) => setSearch(event.target.value)}
             />
           </div>
           {listQ.isLoading ? (
-            <div className="text-sm text-bms-muted">Loading...</div>
+            <div className="text-sm text-ink-muted">Loading...</div>
           ) : listQ.isError ? (
-            <div className="text-sm text-red-700">Failed to load organizations.</div>
+            <div className="text-sm text-critical-ink">Failed to load organizations.</div>
           ) : (
             <div className="overflow-x-auto">
               <table className="min-w-full text-sm">
                 <thead>
-                  <tr className="border-b border-gray-200 text-left text-xs uppercase text-bms-muted">
+                  <tr className="border-b border-line text-left text-xs uppercase text-ink-muted">
                     <th className="px-2 py-2">Code</th>
                     <th className="px-2 py-2">Name</th>
                     <th className="px-2 py-2">Currency</th>
@@ -170,11 +170,11 @@ export function OrganizationsAdminPage({ user }: OrganizationsAdminPageProps) {
                   {filtered.map((item) => (
                     <tr
                       key={item.id}
-                      className="cursor-pointer border-b border-gray-100 hover:bg-gray-50"
+                      className="cursor-pointer border-b border-well-deep hover:bg-well"
                       onClick={() => navigate(`/admin/organizations/${item.id}/locations`)}
                     >
                       <td className="px-2 py-2 font-mono">{item.code}</td>
-                      <td className="px-2 py-2 font-semibold text-bms-green">{item.name}</td>
+                      <td className="px-2 py-2 font-semibold text-accent">{item.name}</td>
                       <td className="px-2 py-2 font-mono text-xs">{item.currency}</td>
                       <td className="px-2 py-2">
                         <StatusPill
@@ -187,7 +187,7 @@ export function OrganizationsAdminPage({ user }: OrganizationsAdminPageProps) {
                           {canOnboard && item.active ? (
                             <button
                               type="button"
-                              className="text-xs font-semibold text-bms-green"
+                              className="text-xs font-semibold text-accent"
                               onClick={() =>
                                 navigate(`/admin/organizations/${item.id}/onboarding`)
                               }
@@ -199,21 +199,21 @@ export function OrganizationsAdminPage({ user }: OrganizationsAdminPageProps) {
                             <>
                               <button
                                 type="button"
-                                className="text-xs font-semibold text-bms-green"
+                                className="text-xs font-semibold text-accent"
                                 onClick={() => openEdit(item)}
                               >
                                 Edit
                               </button>
                               <button
                                 type="button"
-                                className="text-xs font-semibold text-bms-muted"
+                                className="text-xs font-semibold text-ink-muted"
                                 onClick={() => toggleMutation.mutate(item)}
                               >
                                 {item.active ? "Deactivate" : "Reactivate"}
                               </button>
                             </>
                           ) : (
-                            <span className="text-xs text-bms-muted">View only</span>
+                            <span className="text-xs text-ink-muted">View only</span>
                           )}
                         </div>
                       </td>
@@ -226,38 +226,38 @@ export function OrganizationsAdminPage({ user }: OrganizationsAdminPageProps) {
         </SectionCard>
 
       {modalOpen ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-scrim/40 p-4">
           <form
-            className="w-full max-w-md rounded-lg border border-gray-200 bg-white p-4 shadow-lg"
+            className="w-full max-w-md rounded-lg border border-line bg-surface p-4 shadow-lg"
             onSubmit={handleSubmit}
           >
-            <h2 className="font-condensed text-lg font-bold text-bms-ink">
+            <h2 className="font-condensed text-lg font-bold text-ink">
               {editing ? "Edit organization" : "Add organization"}
             </h2>
             <div className="mt-3 space-y-3">
-              <label className="block text-xs font-semibold text-bms-muted">
+              <label className="block text-xs font-semibold text-ink-muted">
                 Code
                 <input
-                  className="mt-1 w-full rounded border border-gray-200 px-3 py-2 text-sm disabled:bg-gray-50"
+                  className="mt-1 w-full rounded border border-line px-3 py-2 text-sm disabled:bg-well"
                   value={code}
                   disabled={Boolean(editing)}
                   onChange={(event) => setCode(event.target.value.toUpperCase())}
                   required
                 />
               </label>
-              <label className="block text-xs font-semibold text-bms-muted">
+              <label className="block text-xs font-semibold text-ink-muted">
                 Name
                 <input
-                  className="mt-1 w-full rounded border border-gray-200 px-3 py-2 text-sm"
+                  className="mt-1 w-full rounded border border-line px-3 py-2 text-sm"
                   value={name}
                   onChange={(event) => setName(event.target.value)}
                   required
                 />
               </label>
-              <label className="block text-xs font-semibold text-bms-muted">
+              <label className="block text-xs font-semibold text-ink-muted">
                 Currency (ISO 4217)
                 <input
-                  className="mt-1 w-full rounded border border-gray-200 px-3 py-2 font-mono text-sm uppercase"
+                  className="mt-1 w-full rounded border border-line px-3 py-2 font-mono text-sm uppercase"
                   list="currency-list"
                   placeholder="INR"
                   maxLength={3}
@@ -271,19 +271,19 @@ export function OrganizationsAdminPage({ user }: OrganizationsAdminPageProps) {
                   ))}
                 </datalist>
               </label>
-              {error ? <div className="text-xs text-red-700">{error}</div> : null}
+              {error ? <div className="text-xs text-critical-ink">{error}</div> : null}
             </div>
             <div className="mt-4 flex justify-end gap-2">
               <button
                 type="button"
-                className="rounded border border-gray-200 px-3 py-2 text-xs"
+                className="rounded border border-line px-3 py-2 text-xs"
                 onClick={() => setModalOpen(false)}
               >
                 Cancel
               </button>
               <button
                 type="submit"
-                className="rounded bg-bms-green px-3 py-2 text-xs font-semibold text-white"
+                className="rounded bg-accent px-3 py-2 text-xs font-semibold text-on-accent"
                 disabled={saveMutation.isPending}
                 aria-busy={saveMutation.isPending}
               >

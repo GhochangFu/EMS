@@ -132,14 +132,14 @@ export function AssetTemplateVersionsPage({ user }: Props) {
   if (templateQ.isLoading || versionsQ.isLoading) {
     return (
       <MasterDataLayout user={user}>
-        <p className="text-sm text-bms-muted">Loading versions…</p>
+        <p className="text-sm text-ink-muted">Loading versions…</p>
       </MasterDataLayout>
     );
   }
   if (templateQ.error || versionsQ.error) {
     return (
       <MasterDataLayout user={user}>
-        <p className="text-sm text-red-700">
+        <p className="text-sm text-critical-ink">
           {apiErrorMessage((templateQ.error ?? versionsQ.error) as Error)}
         </p>
       </MasterDataLayout>
@@ -162,7 +162,7 @@ export function AssetTemplateVersionsPage({ user }: Props) {
         actions={
           <Link
             to={`/admin/asset-templates/${templateId ?? ""}`}
-            className="rounded border border-gray-200 px-3 py-1.5 text-xs font-semibold text-bms-muted"
+            className="rounded border border-line px-3 py-1.5 text-xs font-semibold text-ink-muted"
           >
             Back to template
           </Link>
@@ -170,13 +170,13 @@ export function AssetTemplateVersionsPage({ user }: Props) {
       />
 
       <SectionCard title="Versions">
-        <ul className="divide-y divide-gray-100">
+        <ul className="divide-y divide-well-deep">
           {versions.map((version) => (
             <li key={version.id} className="flex items-center justify-between gap-3 py-2">
               <span className="flex items-center gap-2 text-sm">
                 <StatusPill label={version.status} tone={statusTone(version.status)} />
                 <span>{versionSummaryLabel(version)}</span>
-                <span className="text-xs text-bms-muted">{version.pointCount} points</span>
+                <span className="text-xs text-ink-muted">{version.pointCount} points</span>
               </span>
               {isMigrationTarget(version) ? (
                 <button
@@ -187,15 +187,15 @@ export function AssetTemplateVersionsPage({ user }: Props) {
                   }}
                   className={`rounded px-3 py-1 text-xs font-semibold ${
                     targetId === version.id
-                      ? "bg-bms-green text-white"
-                      : "border border-gray-200 text-bms-muted"
+                      ? "bg-accent text-on-accent"
+                      : "border border-line text-ink-muted"
                   }`}
                 >
                   {targetId === version.id ? "Migration target" : "Migrate to this version"}
                 </button>
               ) : (
                 // Decision 1: publishing is what freezes the shape assets pin.
-                <span className="text-xs text-bms-muted">not a migration target</span>
+                <span className="text-xs text-ink-muted">not a migration target</span>
               )}
             </li>
           ))}
@@ -229,14 +229,14 @@ export function AssetTemplateVersionsPage({ user }: Props) {
                   {/* Decision 8: the view lists which assets sit on which
                       version. Without this the operator picks blind and the
                       server teaches them by refusing. */}
-                  <span className="text-xs text-bms-muted">
+                  <span className="text-xs text-ink-muted">
                     {asset.templateVersion === null ? "unpinned" : `v${asset.templateVersion}`}
                   </span>
                 </label>
               </li>
             ))}
             {candidates.length === 0 ? (
-              <li className="text-sm text-bms-muted">
+              <li className="text-sm text-ink-muted">
                 No assets are built from this template.
               </li>
             ) : null}
@@ -248,7 +248,7 @@ export function AssetTemplateVersionsPage({ user }: Props) {
               disabled={busy || selected.length === 0}
               aria-busy={previewM.isPending}
               onClick={() => previewM.mutate()}
-              className="rounded border border-gray-200 px-3 py-1.5 text-xs font-semibold text-bms-muted disabled:opacity-60"
+              className="rounded border border-line px-3 py-1.5 text-xs font-semibold text-ink-muted disabled:opacity-60"
             >
               {previewM.isPending ? "Previewing migration…" : "Preview migration"}
             </button>
@@ -257,12 +257,12 @@ export function AssetTemplateVersionsPage({ user }: Props) {
               disabled={busy || !action.enabled}
               aria-busy={migrateM.isPending}
               onClick={() => migrateM.mutate()}
-              className="rounded bg-bms-green px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-60"
+              className="rounded bg-accent px-3 py-1.5 text-xs font-semibold text-on-accent disabled:opacity-60"
             >
               {migrateM.isPending ? "Migrating…" : "Migrate"}
             </button>
             {!action.enabled ? (
-              <span className="text-xs text-bms-muted">{action.message}</span>
+              <span className="text-xs text-ink-muted">{action.message}</span>
             ) : null}
           </div>
         </SectionCard>
@@ -270,7 +270,7 @@ export function AssetTemplateVersionsPage({ user }: Props) {
 
       {error ? (
         <SectionCard>
-          <p className="text-sm text-red-700">{error}</p>
+          <p className="text-sm text-critical-ink">{error}</p>
         </SectionCard>
       ) : null}
 
@@ -292,11 +292,11 @@ export function AssetTemplateVersionsPage({ user }: Props) {
           }
         >
           {refusals.length > 0 ? (
-            <div className="rounded border border-red-200 bg-red-50 p-3">
-              <p className="text-xs font-semibold text-red-800">
+            <div className="rounded border border-critical-line bg-critical-wash p-3">
+              <p className="text-xs font-semibold text-critical-ink-strong">
                 This migration is refused. Nothing will be written.
               </p>
-              <ul className="mt-1 list-disc space-y-1 pl-4 text-xs text-red-800">
+              <ul className="mt-1 list-disc space-y-1 pl-4 text-xs text-critical-ink-strong">
                 {/* Verbatim from the API — it names the point key, the asset
                     code, the unresolved tokens or the two domain codes, and a
                     client-side sentence per reason would lose all of it. */}
@@ -315,18 +315,18 @@ export function AssetTemplateVersionsPage({ user }: Props) {
 
           {preview.deltas.map((delta) => (
             <div key={`${delta.fromVersion}-${delta.toVersion}`} className="mt-3">
-              <h3 className="text-xs font-semibold text-bms-muted">
+              <h3 className="text-xs font-semibold text-ink-muted">
                 v{delta.fromVersion} → v{delta.toVersion}
               </h3>
               <ul className="mt-1 space-y-1 text-sm">
                 {deltaLines(delta).map((line) => (
                   <li key={`${line.kind}-${line.pointKey}`}>
                     <span className="font-mono text-xs">{line.pointKey}</span>{" "}
-                    <span className="text-bms-muted">{line.detail}</span>
+                    <span className="text-ink-muted">{line.detail}</span>
                   </li>
                 ))}
                 {deltaLines(delta).length === 0 ? (
-                  <li className="text-bms-muted">No point changes between these versions.</li>
+                  <li className="text-ink-muted">No point changes between these versions.</li>
                 ) : null}
               </ul>
             </div>
@@ -343,7 +343,7 @@ export function AssetTemplateVersionsPage({ user }: Props) {
           }
         >
           {result.skippedPoints.length > 0 ? (
-            <ul className="mt-2 list-disc pl-4 text-xs text-bms-muted">
+            <ul className="mt-2 list-disc pl-4 text-xs text-ink-muted">
               {/* Reported rather than silent: "2 points added, 1 row created"
                   is otherwise indistinguishable from a bug. */}
               {result.skippedPoints.map((skipped) => (

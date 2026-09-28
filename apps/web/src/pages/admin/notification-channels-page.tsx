@@ -206,7 +206,7 @@ export function NotificationChannelsPage({ user }: NotificationChannelsPageProps
       {unready.length > 0 ? (
         <div
           role="status"
-          className="rounded border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900"
+          className="rounded border border-warning-line bg-warning-wash px-3 py-2 text-sm text-warning-ink"
         >
           {unready.map((item) => (
             <p key={item.kind}>
@@ -217,7 +217,7 @@ export function NotificationChannelsPage({ user }: NotificationChannelsPageProps
       ) : null}
 
       {error ? (
-        <div role="alert" className="rounded border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">
+        <div role="alert" className="rounded border border-critical-line bg-critical-wash px-3 py-2 text-sm text-critical-ink-strong">
           {error}
         </div>
       ) : null}
@@ -227,8 +227,8 @@ export function NotificationChannelsPage({ user }: NotificationChannelsPageProps
           role="status"
           className={`rounded border px-3 py-2 text-sm ${
             testResult.status === "sent"
-              ? "border-bms-green/30 bg-bms-green/10 text-bms-green"
-              : "border-amber-200 bg-amber-50 text-amber-900"
+              ? "border-accent/30 bg-accent/10 text-accent"
+              : "border-warning-line bg-warning-wash text-warning-ink"
           }`}
         >
           {testResultMessage(testResult)}
@@ -236,10 +236,10 @@ export function NotificationChannelsPage({ user }: NotificationChannelsPageProps
       ) : null}
 
       <SectionCard title="Channels" bodyClassName="p-3 space-y-3">
-        {channelsQ.isLoading ? <p className="text-sm text-bms-muted">Loading channels…</p> : null}
+        {channelsQ.isLoading ? <p className="text-sm text-ink-muted">Loading channels…</p> : null}
         <table className="min-w-full text-sm">
           <thead>
-            <tr className="border-b text-left text-xs uppercase text-bms-muted">
+            <tr className="border-b text-left text-xs uppercase text-ink-muted">
               <th className="px-2 py-2">Code</th>
               <th className="px-2 py-2">Name</th>
               {/* `E7.1d`. Shown to every role that reaches this screen, not
@@ -260,7 +260,7 @@ export function NotificationChannelsPage({ user }: NotificationChannelsPageProps
               const testingThis =
                 testMutation.isPending && testMutation.variables?.id === channel.id;
               return (
-                <tr key={channel.id} className="border-b border-gray-100">
+                <tr key={channel.id} className="border-b border-well-deep">
                   <td className="px-2 py-2 font-mono">{channel.code}</td>
                   <td className="px-2 py-2">{channel.name}</td>
                   <td className="px-2 py-2">
@@ -281,7 +281,7 @@ export function NotificationChannelsPage({ user }: NotificationChannelsPageProps
                     <div className="flex gap-2">
                       <button
                         type="button"
-                        className="text-xs font-semibold text-bms-green"
+                        className="text-xs font-semibold text-accent"
                         onClick={() => {
                           setEditing(channel);
                           setForm(formFromChannel(channel));
@@ -292,7 +292,7 @@ export function NotificationChannelsPage({ user }: NotificationChannelsPageProps
                       </button>
                       <button
                         type="button"
-                        className="text-xs font-semibold text-bms-green disabled:text-bms-muted"
+                        className="text-xs font-semibold text-accent disabled:text-ink-muted"
                         disabled={testMutation.isPending || testRefusal !== null}
                         aria-busy={testingThis}
                         // The reason travels with the disabled control. A button
@@ -305,14 +305,14 @@ export function NotificationChannelsPage({ user }: NotificationChannelsPageProps
                       </button>
                       <button
                         type="button"
-                        className="text-xs font-semibold text-red-700"
+                        className="text-xs font-semibold text-critical-ink"
                         onClick={() => deleteMutation.mutate(channel.id)}
                       >
                         Delete
                       </button>
                     </div>
                     {testRefusal ? (
-                      <p className="mt-1 max-w-[22rem] text-xs text-bms-muted">{testRefusal}</p>
+                      <p className="mt-1 max-w-[22rem] text-xs text-ink-muted">{testRefusal}</p>
                     ) : null}
                   </td>
                 </tr>
@@ -320,7 +320,7 @@ export function NotificationChannelsPage({ user }: NotificationChannelsPageProps
             })}
             {!channelsQ.isLoading && channels.length === 0 ? (
               <tr>
-                <td className="px-2 py-3 text-bms-muted" colSpan={8}>
+                <td className="px-2 py-3 text-ink-muted" colSpan={8}>
                   No channels yet. A rule marked notify with no channel sends nothing.
                 </td>
               </tr>
@@ -342,7 +342,7 @@ export function NotificationChannelsPage({ user }: NotificationChannelsPageProps
         >
           <div className="grid gap-3 sm:grid-cols-2">
             <label className="text-sm">
-              <span className="block text-xs font-semibold uppercase text-bms-muted">Code</span>
+              <span className="block text-xs font-semibold uppercase text-ink-muted">Code</span>
               <input
                 className="w-full rounded border px-3 py-1.5"
                 value={form.code}
@@ -351,7 +351,7 @@ export function NotificationChannelsPage({ user }: NotificationChannelsPageProps
               />
             </label>
             <label className="text-sm">
-              <span className="block text-xs font-semibold uppercase text-bms-muted">Name</span>
+              <span className="block text-xs font-semibold uppercase text-ink-muted">Name</span>
               <input
                 className="w-full rounded border px-3 py-1.5"
                 value={form.name}
@@ -365,11 +365,11 @@ export function NotificationChannelsPage({ user }: NotificationChannelsPageProps
                 exactly one organization — no choice to make, and hiding it
                 would hide the tenant too. */}
             <label className="text-sm">
-              <span className="block text-xs font-semibold uppercase text-bms-muted">
+              <span className="block text-xs font-semibold uppercase text-ink-muted">
                 Organization
               </span>
               <select
-                className="w-full rounded border px-3 py-1.5 disabled:bg-gray-50 disabled:text-bms-muted"
+                className="w-full rounded border px-3 py-1.5 disabled:bg-well disabled:text-ink-muted"
                 value={editing ? form.organizationId : effectiveOrganizationId}
                 disabled={editing !== null || organizationLocked}
                 onChange={(event) =>
@@ -407,7 +407,7 @@ export function NotificationChannelsPage({ user }: NotificationChannelsPageProps
               </select>
             </label>
             <label className="text-sm">
-              <span className="block text-xs font-semibold uppercase text-bms-muted">Kind</span>
+              <span className="block text-xs font-semibold uppercase text-ink-muted">Kind</span>
               <select
                 className="w-full rounded border px-3 py-1.5"
                 value={form.kind}
@@ -418,7 +418,7 @@ export function NotificationChannelsPage({ user }: NotificationChannelsPageProps
               </select>
             </label>
             <label className="text-sm">
-              <span className="block text-xs font-semibold uppercase text-bms-muted">
+              <span className="block text-xs font-semibold uppercase text-ink-muted">
                 {form.kind === "email" ? "Recipients (comma separated)" : "Webhook URL"}
               </span>
               <input
@@ -428,7 +428,7 @@ export function NotificationChannelsPage({ user }: NotificationChannelsPageProps
               />
             </label>
             <label className="text-sm">
-              <span className="block text-xs font-semibold uppercase text-bms-muted">
+              <span className="block text-xs font-semibold uppercase text-ink-muted">
                 {editing?.hasSecret ? "Secret (set — type to replace)" : "Secret (optional)"}
               </span>
               <input
@@ -452,12 +452,12 @@ export function NotificationChannelsPage({ user }: NotificationChannelsPageProps
               Send test refusal does. A submit button that is greyed out and
               says nothing leaves the operator with no move to make. */}
           {organizationRefusal ? (
-            <p className="text-xs text-bms-muted">{organizationRefusal}</p>
+            <p className="text-xs text-ink-muted">{organizationRefusal}</p>
           ) : null}
           <div className="flex gap-2">
             <button
               type="submit"
-              className="rounded bg-bms-green px-3 py-2 text-xs font-semibold text-white disabled:bg-gray-300"
+              className="rounded bg-accent px-3 py-2 text-xs font-semibold text-on-accent disabled:bg-line-strong"
               disabled={cannotSave}
               aria-busy={saveMutation.isPending}
             >
