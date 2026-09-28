@@ -24,6 +24,14 @@ export default mergeConfig(
       environment: "node",
       include: ["src/**/*.test.ts", "src/**/*.test.tsx"],
       setupFiles: ["./src/test-setup.ts"],
+      /**
+       * `F3.65c` — `index.css` only, so `import css from "./index.css?raw"` returns the file
+       * (`test-setup.ts` appends it to jsdom; `test-role-tokens.ts` parses its two role blocks).
+       * With CSS processing off (Vitest's default) a `?raw` import of it is `""`, and `node:fs`
+       * does not typecheck in `apps/web` (no `node` types). Every other stylesheet stays
+       * unprocessed.
+       */
+      css: { include: [/index\.css/] },
     },
   }),
 );
