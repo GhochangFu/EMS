@@ -174,8 +174,11 @@ const UI_PAIRS: Pair[] = [
   { fg: "ink-hint", bg: "surface" },
   // F3.65c OQ4: the health donut's Fair slice (`health-summary-donut.tsx`) on its `surface` card.
   { fg: "warning-on-dark", bg: "surface" },
-  // F3.65c U10 — the theme switch's focus ring (`focus-visible:ring-on-dark/80`) on `chrome`.
+  // F3.65c U10 — the theme switch's focus ring (`focus-visible:ring-on-dark/80`, inset: the group's
+  // `overflow-hidden` clips an outer ring) on an idle button's bare `chrome`, and on the pressed
+  // button's `on-dark/15` wash — a keyboard press leaves the focused button pressed.
   { fg: "on-dark", bg: "chrome", alpha: 0.8 },
+  { fg: "on-dark", bg: "chrome", alpha: 0.8, wash: { tint: "on-dark", alpha: 0.15 } },
 ];
 
 /**
