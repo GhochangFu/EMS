@@ -10,11 +10,17 @@ import {
   assertClearedAlarmIsNeverTop,
   assertEightDayOldSampleIsNull,
   assertForeignOrganizationAlarmIsNeverTop,
+  assertForeignLayoutWidgetIsSkippedWithOneWarning,
   assertForeignOrganizationIsNotFound,
   assertFullReadIsThreeStatements,
   assertGrouplessDashboardIsEightNullsInOneStatement,
+  assertLayoutReadIsFiveStatements,
+  assertLayoutUnitsResolveLikePresetNodes,
+  assertLayoutWidgetAnswersItsGeometry,
+  assertMixedWidgetsKeepGridOrder,
   assertNoMimicIsEmptyInOneStatement,
   assertOwningOrganizationReads,
+  assertPassiveUnitIsDrawnNotResolved,
   assertReadableRoIsStillShown,
   assertReadableSetNarrowsMemberCountToOne,
   assertRoCountsTwoMembers,
@@ -110,4 +116,18 @@ describe.skipIf(!connectionString)("F3.32 — MimicNodesService", () => {
   );
   it("M11a a foreign organization gets 404", rolledBack(assertForeignOrganizationIsNotFound), 60_000);
   it("M11b the owning organization reads the widget", rolledBack(assertOwningOrganizationReads), 60_000);
+  it("L1a a layout widget answers its geometry in z, y, x order", rolledBack(assertLayoutWidgetAnswersItsGeometry), 60_000);
+  it(
+    "L1b a layout's roled units resolve exactly as preset nodes",
+    rolledBack(assertLayoutUnitsResolveLikePresetNodes),
+    60_000,
+  );
+  it("L2 a passive unit is drawn but not resolved", rolledBack(assertPassiveUnitIsDrawnNotResolved), 60_000);
+  it("L3 a read with a layout widget is five statements", rolledBack(assertLayoutReadIsFiveStatements), 60_000);
+  it("L4 mixed preset and layout widgets keep grid order", rolledBack(assertMixedWidgetsKeepGridOrder), 60_000);
+  it(
+    "L5 another organization's layout is skipped with one warning",
+    rolledBack(assertForeignLayoutWidgetIsSkippedWithOneWarning),
+    60_000,
+  );
 });

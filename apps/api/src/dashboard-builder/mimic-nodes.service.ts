@@ -12,6 +12,8 @@ import {
   type GeneratedSiteAssetDto,
   type GeneratedSitePointDto,
   type JwtPayload,
+  type MimicLayoutGeometryDto,
+  type MimicLayoutNodeDto,
   type MimicNodeAlarmDto,
   type MimicNodeDto,
   type MimicPreset,
@@ -30,6 +32,40 @@ interface WidgetRow {
   widget_id: string | null;
   config: unknown;
 }
+
+/**
+ * Statement (1b)'s row (`F3.32c`): one layout, left-joined to one of its nodes (all node columns
+ * `null` for a layout with no node). `kind`, `symbol` and `tone` are closed by the table's CHECKs.
+ */
+interface LayoutNodeRow {
+  layout_id: string;
+  name: string;
+  canvas_w: number;
+  canvas_h: number;
+  key: string | null;
+  kind: string | null;
+  symbol: string | null;
+  label: string | null;
+  role_code: string | null;
+  tone: string | null;
+  x: number | null;
+  y: number | null;
+  w: number | null;
+  h: number | null;
+  z: number | null;
+}
+
+/** Statement (1c)'s row (`F3.32c`): one pipe of a layout, by its two ends' keys. */
+interface LayoutPipeRow {
+  layout_id: string;
+  from_key: string;
+  to_key: string;
+}
+
+/** A parsed mimic widget of statement (1), either arm, in statement (1)'s grid order. */
+type ParsedWidget =
+  | { source: "preset"; widgetId: string; preset: MimicPreset }
+  | { source: "layout"; widgetId: string; layoutId: string };
 
 /** Statement (2)'s row: the first readable member carrying one role, by asset code, and its top alarm. */
 interface MemberRow {
@@ -78,13 +114,19 @@ interface PointRow {
  * badge cannot confirm an asset the caller may not see. A role whose every member is
  * unreadable reads "Not assigned", exactly as a role no member carries.
  *
- * **The read.** At most three statements on `FLEET_POOL` (ADR 0043 Amendment 3: the `WHERE` is
- * the isolation control, so every statement names the organization explicitly):
+ * **The read.** Three statements for a dashboard of preset widgets, five when a widget names a
+ * layout (`F3.32c` plan D9), all on `FLEET_POOL` (ADR 0043 Amendment 3: the `WHERE` is the
+ * isolation control, so every statement names the organization explicitly):
  *
  * 1. The dashboard's `asset_group_id`, left-joined to its mimic widgets. A widget whose stored
  *    config no longer parses is skipped with one warning (field paths only), never thrown. No
  *    parsable mimic widget → `widgets: []`; no group → every node unassigned. Both end here.
- * 2. Per role the presets name, the first readable member by asset code, how many readable
+ *    1b. Only when a widget takes the layout arm (ADR 0081 decision 6): those layouts of THIS
+ *    organization, each left-joined to its nodes. A layout id with no row here — deleted, or
+ *    another organization's — skips its widget with one warning (ids only), never thrown.
+ *    1c. Only when (1b) found a layout: their pipes, each end named by its node's key.
+ * 2. Per role the presets and the layouts' roled units name, the first readable member by
+ *    asset code, how many readable
  *    members carry the role, and the shown asset's open-alarm count (`cleared_at IS NULL`,
  *    ADR 0057 decision 1). `F3.32b` (ADR 0079 Amendment 2 item 3) folds the shown asset's most
  *    severe open alarm into the same statement as a lateral: `bms.alarm_severities.rank DESC`
@@ -157,7 +199,7 @@ export class MimicNodesService {
       [dashboardId, organizationId],
     );
 
-    const widgets: { widgetId: string; preset: MimicPreset }[] = [];
+    const parsedWidgets: ParsedWidget[] = [];
     for (const row of widgetRows.rows) {
       if (row.widget_id === null) continue;
       const parsed = mimicConfigSchema.safeParse(row.config);
@@ -171,7 +213,29 @@ export class MimicNodesService {
         );
         continue;
       }
-      widgets.push({ widgetId: row.widget_id, preset: parsed.data.preset });
+      parsedWidgets.push({ widgetId: row.widget_id, ...parsed.data });
+    }
+
+    const layoutIds = [
+      ...new Set(parsedWidgets.flatMap((widget) => (widget.source === "layout" ? [widget.layoutId] : []))),
+    ];
+    const layouts =
+      layoutIds.length > 0
+        ? await this.readLayouts(organizationId, layoutIds)
+        : new Map<string, MimicLayoutGeometryDto>();
+
+    const widgets: ParsedWidget[] = [];
+    for (const widget of parsedWidgets) {
+      if (widget.source === "layout" && !layouts.has(widget.layoutId)) {
+        // Ids only (§4.3 / §9.6). Deleted, or another organization's: this read cannot tell,
+        // and must not — `FLEET_POOL` bypasses RLS, so the `WHERE` in (1b) is what hid it.
+        this.logger.warn(
+          "mimic widget names a layout this organization does not hold; widget skipped: " +
+            `dashboard ${dashboardId}, widget ${widget.widgetId}, layout ${widget.layoutId}`,
+        );
+        continue;
+      }
+      widgets.push(widget);
     }
     if (widgets.length === 0) {
       return { dashboardId, resolvedAt, widgets: [] };
@@ -179,7 +243,13 @@ export class MimicNodesService {
 
     const groupId = widgetRows.rows[0]?.asset_group_id ?? null;
     const roleCodes = [
-      ...new Set(widgets.flatMap((widget) => MIMIC_PRESETS[widget.preset].nodes.map((node) => node.roleCode))),
+      ...new Set(
+        widgets.flatMap((widget) =>
+          widget.source === "preset"
+            ? MIMIC_PRESETS[widget.preset].nodes.map((node) => node.roleCode)
+            : roledUnits(layouts.get(widget.layoutId)).map((node) => node.roleCode),
+        ),
+      ),
     ];
     const members = new Map<string, MemberRow>();
     const pointsByAsset = new Map<string, GeneratedSitePointDto[]>();
@@ -292,27 +362,139 @@ export class MimicNodesService {
       }
     }
 
+    // One resolution for both arms (ADR 0081 decision 6): a layout's unit resolves exactly as a
+    // preset node does, by its role code against the group's members.
+    const resolveNode = (node: { key: string; label: string; roleCode: string }): MimicNodeDto => {
+      const member = members.get(node.roleCode);
+      return {
+        key: node.key,
+        label: node.label,
+        roleCode: node.roleCode,
+        asset: member === undefined ? null : assetOf(member, pointsByAsset.get(member.asset_id) ?? [], nowMs),
+        memberCount: member === undefined ? 0 : Number(member.member_count),
+        activeAlarms: member === undefined ? 0 : Number(member.active_alarms),
+        topAlarm: member === undefined ? null : topAlarmOf(member),
+      };
+    };
+
     return {
       dashboardId,
       resolvedAt,
-      widgets: widgets.map(({ widgetId, preset }) => ({
-        widgetId,
-        preset,
-        nodes: MIMIC_PRESETS[preset].nodes.map((node): MimicNodeDto => {
-          const member = members.get(node.roleCode);
+      widgets: widgets.map((widget) => {
+        if (widget.source === "preset") {
           return {
-            key: node.key,
-            label: node.label,
-            roleCode: node.roleCode,
-            asset: member === undefined ? null : assetOf(member, pointsByAsset.get(member.asset_id) ?? [], nowMs),
-            memberCount: member === undefined ? 0 : Number(member.member_count),
-            activeAlarms: member === undefined ? 0 : Number(member.active_alarms),
-            topAlarm: member === undefined ? null : topAlarmOf(member),
+            source: "preset" as const,
+            widgetId: widget.widgetId,
+            preset: widget.preset,
+            nodes: MIMIC_PRESETS[widget.preset].nodes.map(resolveNode),
           };
-        }),
-      })),
+        }
+        // Present: `widgets` kept only the layout widgets whose layout (1b) found.
+        const layout = layouts.get(widget.layoutId) as MimicLayoutGeometryDto;
+        return {
+          source: "layout" as const,
+          widgetId: widget.widgetId,
+          layoutId: widget.layoutId,
+          layout,
+          // A passive unit (no role, plan D6), a panel and a label are drawn from `layout`
+          // alone; only a roled unit has a member to resolve.
+          nodes: roledUnits(layout).map(resolveNode),
+        };
+      }),
     };
   }
+
+  /**
+   * Statements (1b) and (1c) (`F3.32c`, plan D9): the named layouts THIS organization holds, as
+   * geometry keyed by layout id. Every table is filtered on `organization_id` — `FLEET_POOL`
+   * bypasses RLS, so these predicates are the isolation (ADR 0043 Amendment 3). Nodes in the
+   * table's index order (`z, y, x`, then `key` so a tie is stable); pipes by their ends' keys.
+   */
+  private async readLayouts(
+    organizationId: string,
+    layoutIds: readonly string[],
+  ): Promise<Map<string, MimicLayoutGeometryDto>> {
+    const nodeRows = await this.pool.query<LayoutNodeRow>(
+      `
+      SELECT l.id AS layout_id, l.name, l.canvas_w, l.canvas_h,
+             n.key, n.kind, n.symbol, n.label, n.role_code, n.tone, n.x, n.y, n.w, n.h, n.z
+      FROM bms.mimic_layouts l
+      LEFT JOIN bms.mimic_layout_nodes n
+        ON n.layout_id = l.id
+       AND n.organization_id = $2
+      WHERE l.id = ANY($1::uuid[]) AND l.organization_id = $2
+      ORDER BY l.id, n.z, n.y, n.x, n.key
+      `,
+      [layoutIds, organizationId],
+    );
+    const layouts = new Map<string, MimicLayoutGeometryDto>();
+    for (const row of nodeRows.rows) {
+      let layout = layouts.get(row.layout_id);
+      if (layout === undefined) {
+        layout = { name: row.name, canvasW: Number(row.canvas_w), canvasH: Number(row.canvas_h), nodes: [], pipes: [] };
+        layouts.set(row.layout_id, layout);
+      }
+      const node = layoutNodeOf(row);
+      if (node !== null) {
+        layout.nodes.push(node);
+      }
+    }
+    if (layouts.size === 0) {
+      return layouts;
+    }
+
+    const pipeRows = await this.pool.query<LayoutPipeRow>(
+      `
+      SELECT p.layout_id, f.key AS from_key, t.key AS to_key
+      FROM bms.mimic_layout_pipes p
+      INNER JOIN bms.mimic_layout_nodes f
+        ON f.id = p.from_node_id AND f.layout_id = p.layout_id AND f.organization_id = $2
+      INNER JOIN bms.mimic_layout_nodes t
+        ON t.id = p.to_node_id AND t.layout_id = p.layout_id AND t.organization_id = $2
+      WHERE p.layout_id = ANY($1::uuid[]) AND p.organization_id = $2
+      ORDER BY p.layout_id, f.key, t.key
+      `,
+      [[...layouts.keys()], organizationId],
+    );
+    for (const row of pipeRows.rows) {
+      layouts.get(row.layout_id)?.pipes.push({ fromKey: row.from_key, toKey: row.to_key });
+    }
+    return layouts;
+  }
+}
+
+/** A layout's units that carry a role, in the layout's node order — the nodes a read resolves. */
+function roledUnits(
+  layout: MimicLayoutGeometryDto | undefined,
+): { key: string; label: string; roleCode: string }[] {
+  return (layout?.nodes ?? []).flatMap((node) =>
+    node.kind === "unit" && node.roleCode !== null
+      ? [{ key: node.key, label: node.label, roleCode: node.roleCode }]
+      : [],
+  );
+}
+
+/**
+ * One (1b) row as a geometry node, or `null` for the all-`null` half of a node-less layout's
+ * LEFT JOIN. The casts restate the table's `_kind_check`, `_symbol_check` and `_tone_check`.
+ */
+function layoutNodeOf(row: LayoutNodeRow): MimicLayoutNodeDto | null {
+  if (row.key === null || row.kind === null || row.label === null) {
+    return null;
+  }
+  return {
+    key: row.key,
+    kind: row.kind as MimicLayoutNodeDto["kind"],
+    symbol: row.symbol as MimicLayoutNodeDto["symbol"],
+    label: row.label,
+    roleCode: row.role_code,
+    tone: row.tone as MimicLayoutNodeDto["tone"],
+    x: Number(row.x),
+    y: Number(row.y),
+    w: Number(row.w),
+    h: Number(row.h),
+    z: Number(row.z),
+  };
 }
 
 /** A shown member as F3.68's asset shape: freshness from its newest shown point's sample. */

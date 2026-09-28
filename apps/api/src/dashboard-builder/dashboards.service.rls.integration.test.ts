@@ -31,7 +31,9 @@ import {
   assertCrossTenantSlugReadIs404,
   assertFleetBranchExcludesAForeignOrganization,
   assertFleetBranchExcludesAnExplicitForeignOrganizationId,
+  assertForeignMimicLayoutIs400WithNoRow,
   assertForeignOrgIdUpdateIs404SameAsNonexistent,
+  assertOwnMimicLayoutSaves,
   assertLocationAdminCannotRehomeOrganizationWideDashboard,
   assertLocationAdminMayStillUpdateItsOwnLocationDashboard,
   assertLocationReaderMayReadItsSitesDashboardBySlug,
@@ -368,6 +370,39 @@ describe.skipIf(!connectionString)(
 
       await assertPutWidgetsDtoReflectsTheWrite(service, fleetDb, globalAdmin, created.id, eskomPointId);
     }, 60_000);
+
+    // `F3.32c` / ADR 0081 decision 5 — a PHEWB group dashboard (a mimic needs a group) naming an
+    // ESKOM layout is refused; naming a PHEWB layout saves. One dashboard per claim.
+    const mimicLayoutCase =
+      (slug: string, run: (service: DashboardsService, dashboardId: string) => Promise<void>) => async () => {
+        const accessControl = new AccessControlService(createDb(authPool), fleetDb);
+        const audit = new MasterDataAuditService(createDb(tenantPool), fleetDb);
+        const service = new DashboardsService(createDb(tenantPool), fleetDb, accessControl, audit);
+        const created = await service.create(jwtFor(SEEDED.globalAdmin, "admin"), {
+          organizationId: phewbOrgId,
+          slug,
+          name: "F3.32c layout mimic proof",
+          assetGroupId: phewbAssetGroupId,
+        } as Parameters<DashboardsService["create"]>[1]);
+        dashboardIds.push(created.id);
+        await run(service, created.id);
+      };
+
+    it(
+      "F3.32c PUT :id/widgets refuses another organization's mimic layout with 400 and writes no row",
+      mimicLayoutCase(`f332c-foreign-${RUN}`, (service, id) =>
+        assertForeignMimicLayoutIs400WithNoRow(service, fleetDb, jwtFor(SEEDED.globalAdmin, "admin"), id, eskomOrgId),
+      ),
+      60_000,
+    );
+
+    it(
+      "F3.32c PUT :id/widgets saves the dashboard's own mimic layout (positive control)",
+      mimicLayoutCase(`f332c-own-${RUN}`, (service, id) =>
+        assertOwnMimicLayoutSaves(service, fleetDb, jwtFor(SEEDED.globalAdmin, "admin"), id, phewbOrgId),
+      ),
+      60_000,
+    );
 
     it("a foreign-org dashboard id and a nonexistent id refuse update() with the SAME 404 body", async () => {
       const accessControl = new AccessControlService(createDb(authPool), fleetDb);

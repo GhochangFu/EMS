@@ -2,9 +2,12 @@ import { describe, it } from "vitest";
 
 import {
   acceptsAnInstantiateBodyWithANullAssetGroup,
+  acceptsAPatchBodyWhoseMimicNamesThePreset,
   acceptsAPatchBodyWhoseWidgetCarriesNeitherKind,
   acceptsAPatchBodyWhoseWidgetCarriesOnlyARoleBinding,
+  rejectsACreateBodyWhoseMimicNamesALayout,
   rejectsAPatchBodyWhoseChartWidgetCarriesAMetricSource,
+  rejectsAPatchBodyWhoseMimicNamesALayout,
   rejectsAPatchBodyWhoseWidgetCarriesBothKinds,
   stillRejectsAnInstantiateBodyWhoseAssetGroupIsNotAUuid,
   theInstantiateSlugTakesTheSameCharsetAsTheDashboardWriteDoor,
@@ -44,5 +47,20 @@ describe("E4.2 — the instantiate body takes a null asset group", () => {
 
   it("applies the same slug charset as POST /dashboards (E4.2 PR 2 security review)", () => {
     theInstantiateSlugTakesTheSameCharsetAsTheDashboardWriteDoor();
+  });
+});
+
+/** `F3.32c` / ADR 0081 decision 5 — a template holds a preset mimic only. */
+describe("F3.32c — a template body refuses a layout-arm mimic", () => {
+  it("rejects a PATCH body whose mimic names a layout", () => {
+    rejectsAPatchBodyWhoseMimicNamesALayout();
+  });
+
+  it("rejects a POST body whose mimic names a layout", () => {
+    rejectsACreateBodyWhoseMimicNamesALayout();
+  });
+
+  it("accepts a PATCH body whose mimic names the preset (positive control)", () => {
+    acceptsAPatchBodyWhoseMimicNamesThePreset();
   });
 });

@@ -35,6 +35,41 @@ import { z } from "zod";
  * 0049 decision 2) — never a second `z.enum`. */
 export const dashboardTemplateStatusQuerySchema = templateLifecycleStatusSchema;
 
+/**
+ * `F3.32c` / ADR 0081 decision 5 — a template holds a preset mimic only. A
+ * layout is one organization's row with a delete rule (`DELETE` answers 409
+ * while a widget refers to it); a template's layout reference has no such rule
+ * yet, and instantiating it into another organization would name a layout that
+ * organization cannot hold. ADR 0081 *Consequences* leaves that to a later stage.
+ */
+export const TEMPLATE_MIMIC_LAYOUT_MESSAGE =
+  "a dashboard template holds a preset mimic only; layouts in templates are a later stage";
+
+/**
+ * The template's content, with the layout-arm refusal. The shared
+ * `sectionTemplateContentSchema` takes both mimic arms because its widget spec
+ * is the dashboard's too, so the refusal is added HERE, on the field both
+ * `POST` and `PATCH` carry. The body objects stay plain `.strict()` objects.
+ */
+const templateContentWriteSchema = sectionTemplateContentSchema
+  .superRefine((content, ctx) => {
+    content.widgets.forEach((widget, index) => {
+      if (widget.widgetType === "mimic" && widget.config.source === "layout") {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["widgets", index, "config"],
+          message: TEMPLATE_MIMIC_LAYOUT_MESSAGE,
+        });
+      }
+    });
+  })
+  .describe(
+    "A template's canvas. A mimic widget must take the preset arm " +
+      '({ source: "preset" }); a layout arm answers 400 (ADR 0081 decision 5) — ' +
+      "a layout is one organization's row, and a template carries no layout " +
+      "reference in this stage.",
+  );
+
 export const listDashboardTemplatesQuerySchema = z
   .object({
     organizationId: z.string().uuid().optional(),
@@ -63,7 +98,7 @@ export const createDashboardTemplateBodySchema = z
     name: z.string().min(1).max(255),
     section: dashboardSectionCodeSchema,
     description: z.string().max(2000).nullish(),
-    content: sectionTemplateContentSchema.optional(),
+    content: templateContentWriteSchema.optional(),
   })
   .strict();
 
@@ -81,7 +116,7 @@ export const updateDashboardTemplateBodySchema = z
     name: z.string().min(1).max(255).optional(),
     section: dashboardSectionCodeSchema.optional(),
     description: z.string().max(2000).nullish(),
-    content: sectionTemplateContentSchema.optional(),
+    content: templateContentWriteSchema.optional(),
   })
   .strict();
 

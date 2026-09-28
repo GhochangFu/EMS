@@ -6,7 +6,7 @@ import type { BmsDb } from "@bms/db";
 import type { JwtPayload } from "@bms/shared";
 
 import type { CountingDb, CountingDbMethod } from "../testing/counting-db";
-import { putDashboardWidgetsBodySchema } from "./dashboards.schema";
+import { MIMIC_LAYOUT_ORG_MESSAGE, putDashboardWidgetsBodySchema } from "./dashboards.schema";
 import type { DashboardsService } from "./dashboards.service";
 
 /**
@@ -892,4 +892,90 @@ export async function assertListFiltersByAssetIdWithinScope(
     outOfScope.items.length,
     "an out-of-scope assetId answers [] on the tenant branch — never a throw (ruling 4)",
   ).toBe(0);
+}
+
+/**
+ * `F3.32c` / ADR 0081 decision 5 — a mimic widget naming a layout. The layout row is inserted on
+ * `fleetDb` (`bms_fleet`, BYPASSRLS) and deleted again in `finally`; the widget rows go with the
+ * caller's dashboard. Returns the widget rows the dashboard holds after the `PUT`, counted as
+ * `bms_fleet`, so a refusal and a save are read the same way.
+ */
+async function putOneLayoutMimic(
+  service: DashboardsService,
+  fleetDb: BmsDb,
+  actor: JwtPayload,
+  dashboardId: string,
+  layoutOrganizationId: string,
+): Promise<{ outcome: unknown; configs: unknown[]; layoutId: string }> {
+  const inserted = await fleetDb.execute(
+    sql`INSERT INTO bms.mimic_layouts (organization_id, name, slug, canvas_w, canvas_h)
+        VALUES (${layoutOrganizationId}, 'F3.32c fixture', ${`f332c-${dashboardId.slice(0, 8)}`}, 60, 40)
+        RETURNING id`,
+  );
+  const layoutId = (inserted.rows[0] as { id: string }).id;
+  try {
+    const body = putDashboardWidgetsBodySchema.parse({
+      widgets: [
+        {
+          widgetType: "mimic",
+          title: "Plant",
+          gridX: 0,
+          gridY: 0,
+          gridW: 12,
+          gridH: 6,
+          config: { source: "layout", layoutId },
+          points: [],
+        },
+      ],
+    });
+    const outcome = await service.putWidgets(actor, dashboardId, body).catch((error: unknown) => error);
+    const rows = await fleetDb.execute(
+      sql`SELECT config FROM bms.dashboard_widgets WHERE dashboard_id = ${dashboardId}`,
+    );
+    return { outcome, configs: rows.rows.map((row) => (row as { config: unknown }).config), layoutId };
+  } finally {
+    await fleetDb.execute(sql`DELETE FROM bms.mimic_layouts WHERE id = ${layoutId}`);
+  }
+}
+
+/** Another organization's layout on this dashboard: 400 `MIMIC_LAYOUT_ORG_MESSAGE`, and no row. */
+export async function assertForeignMimicLayoutIs400WithNoRow(
+  service: DashboardsService,
+  fleetDb: BmsDb,
+  actor: JwtPayload,
+  dashboardId: string,
+  foreignOrganizationId: string,
+): Promise<void> {
+  const { outcome, configs, layoutId } = await putOneLayoutMimic(
+    service,
+    fleetDb,
+    actor,
+    dashboardId,
+    foreignOrganizationId,
+  );
+  expect(outcome, "a foreign layout must answer 400 with the organization sentence").toMatchObject({
+    status: 400,
+    message: MIMIC_LAYOUT_ORG_MESSAGE,
+  });
+  expect(String((outcome as Error).message), "the 400 must not echo the layout id").not.toContain(layoutId);
+  expect(configs, "the refused PUT must write no widget row").toEqual([]);
+}
+
+/** The positive control: the dashboard's own layout saves, and the row names it. */
+export async function assertOwnMimicLayoutSaves(
+  service: DashboardsService,
+  fleetDb: BmsDb,
+  actor: JwtPayload,
+  dashboardId: string,
+  ownOrganizationId: string,
+): Promise<void> {
+  const { outcome, configs, layoutId } = await putOneLayoutMimic(
+    service,
+    fleetDb,
+    actor,
+    dashboardId,
+    ownOrganizationId,
+  );
+  expect(outcome, "the dashboard's own layout must save").toMatchObject({ id: dashboardId });
+  expect(configs).toEqual([{ source: "layout", layoutId }]);
 }
