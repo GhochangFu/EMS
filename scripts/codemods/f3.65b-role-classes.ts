@@ -25,7 +25,9 @@ import { repoRoot } from "../../tests/support/source-scan";
  * gates share one source of truth. On top of the table (D2):
  *  - `text-white` → `on-accent` iff its own class string holds an opaque `bg-bms-green`,
  *    `bg-bms-green-dark`, `bg-accent` or `bg-accent-strong` (any variant, no `/NN`); else `on-dark`,
- *    printed for review;
+ *    printed for review. `OPAQUE_ACCENT_FILL` accepts **any** variant prefix, so
+ *    `text-white hover:bg-bms-green` would also resolve to `on-accent` although the resting fill is
+ *    not the accent; no class string in the tree had that shape, and the codemod has run;
  *  - a `bms-green` class under a `focus:` / `focus-visible:` variant → `focus`;
  *  - a `SHADE_ROLES` row with `compareOver` → `<utility>-<role>/<alpha × 100>`;
  *  - a `HAND` entry wins over every rule, and fails the run if neither its `from` nor its `to` is on

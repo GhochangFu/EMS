@@ -66,7 +66,12 @@ import { repoRoot } from "./support/source-scan";
  *  - `matchMedia` reached through an alias or a computed key (`window["matchMedia"]`);
  *  - role misuse the R17 string check cannot see: a pair split across the branches of a ternary,
  *    across props, or between a parent and a child; `text-on-dark` on any other light fill; and a
- *    logo plate written `bg-surface` rather than `bg-on-dark` (it turns dark in the dark theme).
+ *    logo plate written `bg-surface` rather than `bg-on-dark` (it turns dark in the dark theme);
+ *  - third-party CSS imported from `node_modules` (Leaflet's own `leaflet.css`, whose popup
+ *    `background: white` `index.css` overrides by hand) — `node_modules` is never walked;
+ *  - Tailwind preflight's own defaults other than the border and ring-offset colours that
+ *    `tailwind.config.js` sets (for example the input placeholder colour, stock `gray-400`) — the
+ *    generated CSS is not scanned.
  *
  * **Known over-counts** (a finding with no colour; they fail loud, never silent): a fragment
  * such as `#bad-id` or `#add` reads as hex, because only a following hex digit ends a match; a

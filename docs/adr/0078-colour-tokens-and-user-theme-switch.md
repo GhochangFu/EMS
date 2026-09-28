@@ -375,14 +375,57 @@ light / 6.22 dark, `ink-muted` on `line` 6.18 / 5.38, `on-dark` at 0.4 over
 with its reason in the contrast test's docblock: `ink-faint` on `line` in
 the SMOC offline boxes (an existing 3.50 failure in an 8 px SVG label that
 `F3.65c` recolours) and `critical-ink-soft` on `canvas` (no `text-red-600`
-shares a class string with a red wash). **The dark allowlist stays empty.**
+shares a class string with a red wash). The review (§7) adds two UI pairs
+for the rule toggle knob — `on-accent` on `accent` 3.19 / 8.71 and `on-dark`
+on `line-strong` 1.47 / 9.02 — and one light allowlist entry for the second,
+the existing white knob on the gray track. **The dark allowlist stays
+empty.**
 
 **5. `FLOOR` after `F3.65b`.** 305 files walked, 16 rows, palette 0 · hex
 188 · func 2 — all 16 are `F3.65c`'s files (the charts, the schematics, the
 formula editor, `WIDGET_TONE_COLOR`, the login hero).
 
 **6. What is not yet a defect.** Until `F3.65c` lands, the hex-coloured
-schematics and ECharts keep light colours on a dark surface — a known
-transient state, not a defect of this row, because the switch stays
-invisible until then (dark is reachable only via
-`localStorage["bms.theme"]`).
+schematics and ECharts keep light colours on a dark surface, **and the
+reverse**: a role ink that turns light in dark still sits on a hex fill
+that stays light, or a hex ink stays dark on a role fill that turns dark
+(the §8 punch list). Both are a known transient state, not a defect of this
+row, because the switch stays invisible until then (dark is reachable only
+via `localStorage["bms.theme"]`).
+
+**7. Review fixes (2026-09-28).**
+- *Owner ruling R-f — priority split.* The migration had merged priority
+  `high` and `medium` onto one warning pill. They differ again with
+  existing roles: `high` is `border-warning bg-warning-wash-strong
+  text-warning-ink` with the card rail `border-l-warning`; `medium` is
+  `border-warning-line bg-warning-wash text-warning-ink` with the rail
+  `border-l-warning/50` (`work-orders-page.tsx`,
+  `maintenance-schedules-panel.tsx`). Status `assigned` and `in_progress`
+  keep one info pill — accepted, because the kanban column shows the status.
+- *Tailwind defaults.* `borderColor.DEFAULT` now reads `--line` (preflight's
+  `border-color` on every element) and `ringOffsetColor.DEFAULT` reads
+  `--surface` (the `--tw-ring-offset-color` default), so a bare `border`,
+  `divide-y` or `ring-offset-*` follows the theme. Light is exact (`#E5E7EB`,
+  `#FFFFFF`). The ring-offset value carries no `<alpha-value>`: the ring
+  plugin copies it into the variable unsubstituted. No bare `ring` without
+  a ring colour exists in `apps/web/src`, so `ringColor.DEFAULT` stays stock.
+- *Leaflet popup.* `index.css` sets `.leaflet-popup-content-wrapper` and
+  `.leaflet-popup-tip` `background: rgb(var(--surface))` — Leaflet's own
+  `white` put the popup's role inks at 1.19:1 in dark. Background only, so
+  light is exact; it wins on source order (`leaflet.css` bundles first).
+- *Rule toggle knob by state.* `bg-on-accent` on the enabled `accent` track
+  (white on the dark accent was 2.09:1), `bg-on-dark` on the disabled track;
+  both white in light.
+- *SMOC env marker letters.* The "T" / "S" letters on the hex marker fills
+  are `fill-on-dark` (white in both themes); `fill-surface` turned dark in
+  dark.
+
+**8. `F3.65c` punch list — role inks on hex light fills.** Each pair below
+must be recoloured together (the ink and its hex fill in one change),
+because only one half of it follows the theme today. Dark ratios:
+- `smoc/it.tsx:481` — the normal rack label `fill-[#1d3a8c]` on
+  `fill-surface`: 1.55 (10.31 light).
+- `smoc/env.tsx:496–504` — the five zone labels on their hex rects:
+  `fill-info-ink` on `#eff6ff` 2.92, `fill-warning-ink` on `#fef3c7` 2.19,
+  `fill-info-ink` on `#ecfeff` 3.05, `fill-critical-ink-strong` on
+  `#fef2f2` 2.32, `fill-ink` on `#f3e8ff` 1.01.

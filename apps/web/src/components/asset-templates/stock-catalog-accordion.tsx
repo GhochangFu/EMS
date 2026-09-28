@@ -26,7 +26,7 @@
  *    than a fragment — and the singular is real: one entry reads "1 entry".
  *
  * 3. **The panel is a `<ul>` of the caller's rows**, not a card grid, and it
- *    keeps `divide-y divide-gray-100` so the row separators the flat list had
+ *    keeps `divide-y divide-well-deep` so the row separators the flat list had
  *    survive the grouping. It carries `aria-label` so one group's rows can be
  *    addressed without counting lists — the templates card above renders
  *    `<ul>`s of its own.

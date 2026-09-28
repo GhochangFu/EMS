@@ -36,8 +36,8 @@
  * `configuration` markers it sits beside (`slate-500` / `sky-700`). The owner ruled it keeps its
  * own colour instead, as the 41st role `simulated-ink` — light Tailwind violet-700 `#6D28D9`
  * exact; dark `#A67DE8`, D3-derived (hue/sat kept, lightness raised in 0.5% steps) to clear 4.5:1
- * on sheet, paper and `well` (5.13 / 5.54 / 4.59) — `value-provenance.ts` itself is untouched
- * (`F3.65b` migrates it to the class).
+ * on sheet, paper and `well` (5.13 / 5.54 / 4.59). `F3.65a` left `value-provenance.ts` itself
+ * untouched; `F3.65b` migrated it to the class (`text-simulated-ink`).
  */
 
 export type ShadeKind = "exact" | "merged";
