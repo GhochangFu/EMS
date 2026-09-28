@@ -320,9 +320,12 @@ WHERE a.organization_id = $1
  * The post-condition. Zero-uncovered counts rather than totals (the migration
  * review of PR #100's rule — a total cannot tell "every asset got its row"
  * from "most did, one silently did not"), plus the derived-row count and one
- * anti-vacuity total. The absolute cardinalities — 9 incomers, 14 members, 14
- * rows — are `verifyHierarchySeed`'s, the boot gate, which is also the only
- * place the seed *order* is proved.
+ * anti-vacuity total. The cardinalities — the catalog's 9 incomers, 14 IT
+ * members, 14 rows — are `verifyHierarchySeed`'s, the boot gate, which is also
+ * the only place the seed *order* is proved. Those are presence counts over
+ * the catalog's codes, not totals: an extra asset pinned to the incomer
+ * template is in neither that gate nor this statement, and the pin's selector
+ * is held by `pue-demo-seed.spec.ts` alone.
  *
  * **Two predicates this statement deliberately does NOT carry, each of which
  * would turn `db:seed` red on a healthy database and stop the whole stack**

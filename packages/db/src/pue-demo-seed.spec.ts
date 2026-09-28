@@ -284,8 +284,10 @@ export function assertEveryStatementIsBoundedToOneOrganization(): void {
  * Zero-uncovered counts rather than totals (the migration review of PR #100's
  * rule): an IT asset with no `rack_kw` row, an IT asset outside `IT_LOAD`, and
  * an incomer still on the baseline are each a failure the statements cannot
- * report on their own. The absolute cardinalities (9 incomers, 14 members, 14
- * rows) live in `verify-hierarchy-seed.ts`, the boot gate.
+ * report on their own. The cardinalities (the catalog's 9 incomers, 14
+ * members, 14 rows) live in `verify-hierarchy-seed.ts`, the boot gate, as
+ * presence counts over the catalog's codes — neither there nor here is an
+ * extra pinned asset counted.
  */
 export function assertTheVerifyReadsBackEveryWrite(): void {
   expect(PUE_DEMO_VERIFY_SQL).toContain("AS it_assets_without_rack_kw");

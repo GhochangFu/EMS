@@ -86,8 +86,9 @@ export const CONTROL_ROOM_SITE_NAME = "RSMOC Western Cape";
  * {@link CONTROL_ROOM_SITE_NAME}, with each RSMOC map row's demo assets.
  * `seed.ts` passes its combined ESKOM + PHE map rows; the default is the ESKOM
  * rows alone, which gives the same list, because no PHE map row is an `rsmoc`
- * (they are `pump_station`). `verify-hierarchy-expected.ts` derives the
- * boot gate's incomer and IT codes from this list.
+ * (they are `pump_station`); `verify-hierarchy-expected.spec.ts` holds that.
+ * `verify-hierarchy-expected.ts` derives the boot gate's incomer and IT codes
+ * from this list, over the same combined rows `seed.ts` passes.
  */
 export function eskomSeedAssetCatalog(
   mapLocationRows: readonly MapLocationSeedRow[] = mapLocationRowsForInsert(),

@@ -21,9 +21,9 @@ const MIGRATION_0029_ASSET_DOMAINS = 5;
  * either widening the role or making the assertion vacuous.
  *
  * The split is not merely a workaround. Under a tenant context the ESKOM pass
- * cannot see PHEWB's rows *at all*, so `eskom_locs = 11` now means "11
- * locations visible to ESKOM's tenant context, all of which join ESKOM" rather
- * than "11 rows that happen to carry ESKOM's id". The `INNER JOIN
+ * cannot see PHEWB's rows *at all*, so the ESKOM location count means "the
+ * seed's location codes present in ESKOM's tenant context, each joining
+ * ESKOM" rather than "rows that happen to carry ESKOM's id". The `INNER JOIN
  * bms.organizations` in each pass is kept for exactly that reason: on its own
  * the policy proves the context filtered correctly, and on its own the join
  * proves the column is right; together they prove both, and a mismatch between
@@ -55,8 +55,27 @@ const MIGRATION_0029_ASSET_DOMAINS = 5;
  * DELETE for these tables) and the seed re-creates each one before this runs.
  *
  * What a presence count cannot see, a zero count states: the decommissioned
- * fixture location stays inactive, no legacy per-RTU PHE location survives
- * `cleanupLegacyPheRtuLocations`, and no `TS` point is catalogued. The counts
+ * fixture location stays inactive, none of the twelve legacy per-RTU PHE
+ * slugs survives `cleanupLegacyPheRtuLocations`, and no `TS` point is
+ * catalogued. Three things no count here sees, and what still guards each:
+ *
+ * - **Over-pinning.** An asset other than a catalog incomer pinned to the
+ *   incomer template is not counted. `pue-demo-seed.spec.ts` holds the pin's
+ *   selector (`PUE_DEMO_PIN_SQL` moves only an `incoming-supply` member off
+ *   the electrical baseline), and `PUE_DEMO_VERIFY_SQL` reads back at seed
+ *   time that no incomer stayed on the baseline — not that no other asset
+ *   moved.
+ * - **Extra members.** A non-catalog `IT_LOAD` member, and a role on a PHE
+ *   environment gateway, are not counted. `asset-groups-seed.spec.ts` holds
+ *   `demoGroupCodesForAsset` and `demoRoleForAsset` for the real catalogs —
+ *   a unit gate only; no boot gate reads either.
+ * - **Stale rows after a catalog re-key.** A row the seed wrote under a code
+ *   its catalog no longer derives is not in any list, so nothing counts it
+ *   and nothing removes it. No gate holds this.
+ *
+ * A presence count also counts a row by its code, whoever wrote it: an admin
+ * location holding a canonical ESKOM code is counted as that location (owner
+ * ruling 16, OQ3), and `seedEskomLocations`' log line is the record. The counts
  * no admin write can move stay exact: asset domains (no admin surface creates
  * one), the four water counts and the RSMOC-WC control-room view (each already
  * reads only seeded rows), and the zero counts for orphan and mismatched
@@ -402,7 +421,9 @@ export async function readEskomChecks(
   // The canonical locations plus the deliberately inactive ESK-DECOMM-01 that
   // F4.10 needs in order to tell `WHERE active = true` apart from no
   // predicate (11 today), counted present: an admin or onboarding location
-  // is not one of them, so it cannot move this count.
+  // is not one of them, so it cannot move this count. It counts a code, not
+  // the seed's row: an admin location holding a canonical code keeps it at
+  // 11 (OQ3), and seedEskomLocations logs that instead.
   expect("ESKOM seed locations present", present?.eskom_locs, expected.eskomLocationCodes.length);
   expect("ESKOM decommissioned fixture location active", present?.eskom_decomm_active, 0);
   expect("ESKOM assets without location_id", row?.orphan_assets, 0);
@@ -417,8 +438,11 @@ export async function readEskomChecks(
   // have caught `ESK-MANUAL-01` being silently skipped — a total can stay
   // nonzero while one asset quietly loses all five of its rules.
   checks.push({ label: UNCOVERED_ELECTRICAL_LABEL, actual: uncoveredCount, wanted: 0, kind: "exact" });
-  // `F2.8`. Fixed seed cardinalities read off the ESKOM catalog
-  // (`eskom-assets-seed.ts`, a repository file) — NOT lifetime counters.
+  // `F2.8`. Presence counts over the ESKOM catalog's codes
+  // (`eskom-assets-seed.ts`, a repository file) — NOT lifetime counters, and
+  // not totals: an extra asset pinned to the incomer template, or an extra
+  // IT_LOAD member, is not counted (see the module header for what guards
+  // each).
   // Nine incomers: one `*-CR-UTILITY*` asset per RSMOC site, each carrying
   // `role = 'incoming-supply'` from `demoRoleForAsset`; CSMOC Gauteng has
   // no incomer and the decommissioned substation's one asset has no role,
@@ -597,9 +621,10 @@ export async function readPhewbChecks(
   // 12 `meter` and 24 `pump`. A NULL here means `demoRoleForAsset` stopped
   // matching, or the group pass ran before the assets existed again. The
   // other half of the ruling — the 12 `PHE-AIRSP1051M-*` gateways stay
-  // unroled — is held by `asset-groups-seed.spec.ts` rather than here: an
-  // administrator may give a gateway a role through the picker, and that
-  // must not stop the next boot (owner ruling 10, 2026-09-28).
+  // unroled — is held by `asset-groups-seed.spec.ts`, a unit gate, rather
+  // than here: an administrator may give a gateway a role through the
+  // picker, and that must not stop the next boot (owner ruling 10,
+  // 2026-09-28). No boot gate reads a gateway's role.
   expect("PHE catalog electrical members carrying a role", row?.phe_elec_roled, phe.electricalAssetCodes.length);
   return checks;
 }
