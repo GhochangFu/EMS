@@ -19,7 +19,8 @@ export default {
           ink: "#1A2230",
           muted: "#4A5464",
         },
-        // F3.65a decision 2.2 — the 40 role tokens. Each value is `rgb(var(--role) / <alpha-value>)`
+        // F3.65a decision 2.2 — the 40 role tokens, plus a 41st, `simulated-ink` (owner ruling
+        // 2026-09-28, Fix A, added after the plan's gate). Each value is `rgb(var(--role) / <alpha-value>)`
         // so `/NN` opacity utilities (`bg-accent/20`) keep working; the channel triplet itself lives
         // in `apps/web/src/index.css`. Written as literal per-role strings (not through a shared
         // helper call) so `tests/f3.65a-colour-tokens.test.ts` T11 can grep this file's text for
@@ -92,6 +93,7 @@ export default {
           wash: "rgb(var(--info-wash) / <alpha-value>)",
           line: "rgb(var(--info-line) / <alpha-value>)",
         },
+        "simulated-ink": "rgb(var(--simulated-ink) / <alpha-value>)",
       },
       fontFamily: {
         sans: [

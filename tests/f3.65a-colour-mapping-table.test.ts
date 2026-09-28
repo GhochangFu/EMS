@@ -18,9 +18,14 @@ import { repoRoot } from "./support/source-scan";
  *
  * `roleFor` additionally resolves a class-level split (`CLASS_OVERRIDES`) — the same shade
  * carries a different role depending on the utility (`text-white` → `on-dark`, not the shade's
- * default `surface`) — and covers `text-violet-700`, which is not one of the 76 rows because
- * §2.1 scopes that count to `.tsx`; `lib/value-provenance.ts` is `.ts` and this row's M4 walks
- * the whole tree, so it still needs a resolution.
+ * default `surface`).
+ *
+ * `violet-700` (Fix A, owner ruling 2026-09-28) is a 77th `SHADE_ROLES` row rather than a
+ * `CLASS_OVERRIDES` entry: `lib/value-provenance.ts` is `.ts`, so §2.1's 76-shade count (scoped to
+ * `.tsx`) never counted it, but M4 walks the whole tree and needs a resolution for it. It used to
+ * be a `CLASS_OVERRIDES` entry mapping to `ink-faint`; the owner ruled it keeps its own colour as
+ * the 41st role, `simulated-ink`, so the override was removed in favour of an exact `SHADE_ROLES`
+ * row.
  */
 
 const css = readFileSync(join(repoRoot, "apps/web/src/index.css"), "utf8");
@@ -35,11 +40,16 @@ function roleLightHex(role: string): string {
 }
 
 describe("F3.65a colour mapping table", () => {
-  it("M1 the 76 shades of §2.3 are all present, no extras", () => {
-    expect(SHADE_ROLES).toHaveLength(76);
+  it("M1 the 76 shades of §2.3 plus violet-700 (lib/value-provenance.ts, owner ruling 2026-09-28) are all present, no extras", () => {
+    expect(SHADE_ROLES).toHaveLength(77);
     const shades = new Set(SHADE_ROLES.map((r) => r.shade));
-    expect(shades.size).toBe(76);
+    expect(shades.size).toBe(77);
   });
+
+  it("M1b roleFor(\"text-violet-700\") resolves to simulated-ink, not the old ink-faint override", () => {
+    expect(roleFor("text-violet-700")).toEqual({ role: "simulated-ink", kind: "exact" });
+  });
+
 
   it("M2 every exact row's role light token equals resolveTailwindShade(shade)", () => {
     const mismatches: string[] = [];

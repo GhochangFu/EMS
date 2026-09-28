@@ -13,10 +13,17 @@
  * `CLASS_OVERRIDES` is the class-level split: some shades resolve to a *different* role depending
  * on which Tailwind utility carries them (`text-white` → `on-dark`, not the shade's default
  * `surface`). Keys are the class with any `/NN` or `/[…]` opacity modifier stripped — the same
- * role serves every opacity step. `text-violet-700` is not one of §2.3's 76 rows (§2.1 scopes that
- * table to `.tsx`; `lib/value-provenance.ts` is `.ts`) — it is added here so `roleFor` covers the
- * whole tree `webColourSourceFiles()` walks (M4); mapped to `ink-faint`, the same weight as the
- * `nameplate` / `configuration` markers it sits beside.
+ * role serves every opacity step.
+ *
+ * `text-violet-700` is not one of §2.3's 76 `.tsx` rows (§2.1 scopes that table to `.tsx`;
+ * `lib/value-provenance.ts` is `.ts`) — it is `SHADE_ROLES`' 77th row, added so `roleFor` covers
+ * the whole tree `webColourSourceFiles()` walks (M4). Until Fix A (owner ruling 2026-09-28) it was
+ * a `CLASS_OVERRIDES` entry mapped to `ink-faint`, the same weight as the `nameplate` /
+ * `configuration` markers it sits beside (`slate-500` / `sky-700`). The owner ruled it keeps its
+ * own colour instead, as the 41st role `simulated-ink` — light Tailwind violet-700 `#6D28D9`
+ * exact; dark `#A67DE8`, D3-derived (hue/sat kept, lightness raised in 0.5% steps) to clear 4.5:1
+ * on sheet, paper and `well` (5.13 / 5.54 / 4.59) — `value-provenance.ts` itself is untouched
+ * (`F3.65b` migrates it to the class).
  */
 
 export type ShadeKind = "exact" | "merged";
@@ -115,6 +122,9 @@ export const SHADE_ROLES: ShadeRoleRow[] = [
   { shade: "indigo-200", hex: "#C7D2FE", role: "info-line", kind: "merged", deltaE: 14.0 },
   { shade: "indigo-100", hex: "#E0E7FF", role: "info-wash", kind: "merged", deltaE: 8.83 },
   { shade: "indigo-800", hex: "#3730A3", role: "info-ink", kind: "merged", deltaE: 17.73 },
+  // Fix A (owner ruling 2026-09-28): not one of §2.3's 76 `.tsx` shades — `lib/value-provenance.ts`
+  // is `.ts` (§2.1 scopes that table to `.tsx`). See the file docblock.
+  { shade: "violet-700", hex: "#6D28D9", role: "simulated-ink", kind: "exact" },
 ];
 
 export type ClassOverride = { role: string; kind: ShadeKind; altRoles?: string[] };
@@ -137,10 +147,6 @@ export const CLASS_OVERRIDES: Record<string, ClassOverride> = {
   "to-amber-400": { role: "warning", kind: "merged" },
   "border-amber-300": { role: "warning-line", kind: "merged" },
   "to-amber-300": { role: "warning", kind: "merged" },
-  // Not one of §2.3's 76 `.tsx` shades (§2.1 scopes that table to `.tsx`); `lib/value-provenance.ts`
-  // is `.ts` and uses it as the "simulated" provenance marker, the same weight as the
-  // `nameplate` / `configuration` markers beside it (`slate-500` / `sky-700`) → `ink-faint`.
-  "text-violet-700": { role: "ink-faint", kind: "merged" },
 };
 
 const COLOUR_UTILITY_PREFIX =

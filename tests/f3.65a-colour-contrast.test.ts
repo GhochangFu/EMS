@@ -109,6 +109,11 @@ const TEXT_PAIRS: Pair[] = [
   { fg: "on-accent", bg: "accent-strong" },
   { fg: "critical-on-dark", bg: "chrome" },
   { fg: "warning-on-dark", bg: "chrome" },
+  // Fix A (owner ruling 2026-09-28): the 41st role, `simulated-ink` — light is Tailwind
+  // violet-700 exact (7.10 / 6.80); dark is D3-derived, forced past the first sheet/paper-only
+  // stopping point (4.51 / 4.87, failing `well` at 4.04) to also clear `well` (5.13 / 5.54 / 4.59).
+  { fg: "simulated-ink", bg: "surface" },
+  { fg: "simulated-ink", bg: "well" },
 ];
 
 /**

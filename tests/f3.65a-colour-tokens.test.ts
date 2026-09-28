@@ -73,8 +73,10 @@ const INDEX_CSS_PATH = join(repoRoot, "apps/web/src/index.css");
 const TAILWIND_CONFIG_PATH = join(repoRoot, "apps/web/tailwind.config.js");
 
 /**
- * The 40 roles of `docs/plans/f3.65a-colour-tokens.md` §2.2, light and dark hex, exact. This is
- * the plan's table transcribed, not derived — T9/T10 are the check that `index.css` matches it.
+ * The 40 roles of `docs/plans/f3.65a-colour-tokens.md` §2.2, light and dark hex, exact, plus the
+ * 41st role `simulated-ink` (owner ruling 2026-09-28, Fix A, added after the plan's gate — see
+ * `tests/support/colour-role-map.ts`'s docblock for the derivation). This is the plan's table
+ * transcribed, not derived — T9/T10 are the check that `index.css` matches it.
  */
 const ROLE_HEX: Record<string, { light: string; dark: string }> = {
   canvas: { light: "#F2F4F7", dark: "#141B25" },
@@ -117,13 +119,19 @@ const ROLE_HEX: Record<string, { light: string; dark: string }> = {
   "info-ink": { light: "#075985", dark: "#0C98E3" },
   "info-wash": { light: "#F0F9FF", dark: "#152D37" },
   "info-line": { light: "#BAE6FD", dark: "#2E586B" },
+  // The 41st role (owner ruling, 2026-09-28, Fix A): the "simulated" provenance marker in
+  // `lib/value-provenance.ts` (`text-violet-700`) keeps its own colour rather than folding into
+  // `ink-faint`. Light is Tailwind violet-700 exact; dark is D3-derived (hue/sat kept, lightness
+  // raised in 0.5% steps) to clear 4.5:1 on sheet, paper and `well` (the declared pairs below) —
+  // 5.13 / 5.54 / 4.59.
+  "simulated-ink": { light: "#6D28D9", dark: "#A67DE8" },
 };
 
 describe("F3.65a: the token file (index.css) and the Tailwind mapping", () => {
   const css = () => readFileSync(INDEX_CSS_PATH, "utf8");
   const config = () => readFileSync(TAILWIND_CONFIG_PATH, "utf8");
 
-  it("T7 both blocks define exactly the 40 role names of §2.2", () => {
+  it("T7 both blocks define exactly the 41 role names of §2.2 plus simulated-ink", () => {
     const { light, dark } = parseTokenBlocks(css());
     const expected = Object.keys(ROLE_HEX).sort();
     expect([...light.keys()].sort()).toEqual(expected);
