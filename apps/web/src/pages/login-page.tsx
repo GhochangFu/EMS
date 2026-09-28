@@ -104,7 +104,13 @@ export function LoginPage() {
                 </p>
               </div>
               <div className="flex flex-col items-end gap-2">
-                <span className="rounded bg-scrim/40 px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide text-on-dark">
+                {/* Plan defect (F3.65c review): §2.4/OQ6 measured `scrim/0.4` "over chrome"
+                    (17.20), but this badge sits inside the right-hand card on `bg-surface`, not
+                    the hero. `scrim/0.4` over `surface` is 2.85 light — a plan-defect fix, not
+                    the plan's own call: `chrome` is constant-dark in both themes and its
+                    `on-dark` pair is already declared (§2.4's "TEXT_PAIRS" `on-dark` on `chrome`),
+                    so it reproduces the original `#003366` badge's always-dark pixel. */}
+                <span className="rounded bg-chrome px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide text-on-dark">
                   Euphoria Delivery
                 </span>
                 <span className="font-mono text-[10px] uppercase tracking-wide text-ink-muted">
