@@ -72,6 +72,14 @@ export function e7TheTooltipIsSurfaceInkAndLineStrong(): void {
   });
 }
 
+/** The base rule is `&light/&dark .cm-tooltip-autocomplete ul li[aria-selected]` (`#17c`/`#347`). */
+export function e9TheSelectedCompletionIsAccentStrongWithOnAccent(): void {
+  expect(CALC_THEME_SPEC[".cm-tooltip-autocomplete ul li[aria-selected]"]).toEqual({
+    background: "rgb(var(--accent-strong))",
+    color: "rgb(var(--on-accent))",
+  });
+}
+
 export function e8TheEditorTextIsInk(): void {
   expect(CALC_THEME_SPEC["&"]).toMatchObject({ color: "rgb(var(--ink))" });
 }

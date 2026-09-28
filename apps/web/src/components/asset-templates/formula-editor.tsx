@@ -81,8 +81,12 @@ export type FormulaEditorProps = FormulaEditorRules & {
  * **The base theme's light/dark rules** (`F3.65c` review). `@codemirror/view`
  * paints the drawn cursor, the selection and the tooltips from `&light` /
  * `&dark` base rules, chosen by the `EditorView.darkTheme` facet — which
- * `FormulaEditor` sets from the theme store. Those rules are overridden here as
- * well, so neither theme shows a library colour. An `EditorView.theme` cannot
+ * `FormulaEditor` sets from the theme store. The cursor, the selection, the
+ * tooltip surface and the highlighted completion are overridden here too, so
+ * those read roles in both themes. Still library colours: the disabled
+ * completion flash (`#777` / `#444`), the light `.cm-tooltip-section` divider
+ * (`#bbb`), and `@codemirror/lint`'s markers (the `#d11` diagnostic bar, the
+ * `#f11` underline). An `EditorView.theme` cannot
  * name `&light` / `&dark` (it throws "Unsupported selector"), so each rule
  * below repeats its base rule's selector shape at the same specificity, and
  * wins because a base theme mounts first (`Prec.lowest`). The focused
@@ -119,6 +123,12 @@ export const CALC_THEME_SPEC = {
     backgroundColor: "rgb(var(--surface))",
     color: "rgb(var(--ink))",
     border: "1px solid rgb(var(--line-strong))",
+  },
+  // `@codemirror/autocomplete`'s `&light` / `&dark` rule for the highlighted
+  // option (`#17c` / `#347` under white), at the same specificity.
+  ".cm-tooltip-autocomplete ul li[aria-selected]": {
+    background: "rgb(var(--accent-strong))",
+    color: "rgb(var(--on-accent))",
   },
   ".cm-calc-ref": { color: "rgb(var(--accent-strong))", fontWeight: "600" },
   ".cm-calc-number": { color: "rgb(var(--ink))" },

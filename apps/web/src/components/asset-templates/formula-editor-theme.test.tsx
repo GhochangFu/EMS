@@ -12,6 +12,7 @@ import {
   e6TheUnfocusedSelectionIsWell,
   e7TheTooltipIsSurfaceInkAndLineStrong,
   e8TheEditorTextIsInk,
+  e9TheSelectedCompletionIsAccentStrongWithOnAccent,
 } from "./formula-editor-theme.spec";
 
 /**
@@ -56,5 +57,9 @@ describe("F3.65c the formula editor follows the theme", () => {
 
   it("E8 the editor's own text is ink", () => {
     e8TheEditorTextIsInk();
+  });
+
+  it("E9 the selected completion row is accent-strong with on-accent text", () => {
+    e9TheSelectedCompletionIsAccentStrongWithOnAccent();
   });
 });

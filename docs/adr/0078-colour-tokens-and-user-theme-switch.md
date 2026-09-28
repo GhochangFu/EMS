@@ -482,8 +482,10 @@ and `widgetToneColor(roles)` gives ECharts its stops.
 (black cursor, lilac selection, light-grey tooltip) stayed on a dark page;
 the facet is now a `Compartment` reconfigured on a toggle, and the editor's
 theme overrides the cursor (`ink`), the selection (`well`, focused
-`info-wash`) and the tooltips (`surface`, `ink`, `line-strong` border) at
-the base rules' own specificity.
+`info-wash`), the tooltips (`surface`, `ink`, `line-strong` border) and the
+highlighted completion (`on-accent` on `accent-strong`) at the base rules'
+own specificity; the lint markers and the disabled-completion flash keep
+the library's colours.
 
 **3. Owner rulings OQ1–OQ8, all as recommended.** OQ1 the TRINETRA status
 quartet merges into `accent`/`info`/`warning`/`critical`; OQ2 the ok tint
