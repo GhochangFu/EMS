@@ -6611,3 +6611,18 @@ half, fixed in the same PR by owner ruling.
 (`/health` has no database probe), raised by the owner's ruling. Whether
 compose sets `restart:` stays an open owner question. No `chore(agents):`
 change owed.
+
+### `F4.175` — `/health` shows a Postgres outage; `/health/ready` answers 503 ✅ 2026-09-28
+
+PR #622, squash `2833a102`; ADR 0063 Amendment 3. No plan file.
+
+Since `F4.173` both processes stay up through a database outage, and `GET /health`
+probed only Redis and the object store, so it answered `ok` while Postgres was
+down. `GET /health` stays a liveness probe (always 200) and gains a `database`
+section that degrades the verdict. The new `GET /health/ready` answers 200 or
+503 from a bounded `select 1` on the fleet pool, unprefixed on both processes.
+The reviews found the route mounted under `/api/v1` on the API and a probe
+flood that could queue abandoned pings in the pool; both were fixed in the PR.
+
+**Cascade:** no row lists `F4.175` in *Depends*. The worker port binding is
+with the owner.
