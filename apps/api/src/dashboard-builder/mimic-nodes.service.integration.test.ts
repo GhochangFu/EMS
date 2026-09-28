@@ -21,6 +21,7 @@ import {
   assertRoShowsTheFirstCode,
   assertSixDayOldSampleIsPresent,
   assertSixUnassignedNodesAreNull,
+  assertTopAlarmCarriesTheVocabularyToneAndLabel,
   assertTopAlarmIsTheMostSevere,
   assertUnassignedNodesHaveNoTopAlarm,
   assertUnreadableWtpIsUnassigned,
@@ -100,6 +101,11 @@ describe.skipIf(!connectionString)("F3.32 — MimicNodesService", () => {
   it(
     "A5 another organization's alarm on the same asset id is never the top alarm",
     rolledBack(assertForeignOrganizationAlarmIsNeverTop),
+    60_000,
+  );
+  it(
+    "A6 a severity added by INSERT carries its vocabulary tone and label",
+    rolledBack(assertTopAlarmCarriesTheVocabularyToneAndLabel),
     60_000,
   );
   it("M11a a foreign organization gets 404", rolledBack(assertForeignOrganizationIsNotFound), 60_000);

@@ -209,21 +209,18 @@ export function mimicLevelFraction(value: number | null | undefined): number | n
   return Math.min(100, Math.max(0, value)) / 100;
 }
 
-/** The callout's colour, by severity tone. */
+/** The callout's colour. */
 export type MimicAlarmTone = "critical" | "warning" | "info" | "neutral";
 
 /**
- * Severity code → tone, over the seeded vocabulary (`0030_alarm_severity_vocabulary.sql`:
- * `info`, `warning`, `critical`). The widget has no vocabulary read of its own; a code this
- * build does not know draws neutral, never blank (the `F4.43` lesson in `vocabulary.ts`).
+ * The severity's vocabulary tone (`topAlarm.tone`, read from `bms.alarm_severities` by the
+ * server, ADR 0032 decision 9) → the callout's colour. The severity CODE plays no part, so a
+ * level added by an `INSERT` draws in its declared tone. A tone the callout has no colour for
+ * (`offline`, `ok`, or anything a newer server sends) draws neutral, never blank (the `F4.43`
+ * lesson in `vocabulary.ts`).
  */
-export function mimicAlarmTone(severity: string): MimicAlarmTone {
-  return severity === "critical" || severity === "warning" || severity === "info" ? severity : "neutral";
-}
-
-/** The severity's label: the seeded labels are the capitalised codes; an unknown code reads raw. */
-export function mimicAlarmSeverityLabel(severity: string): string {
-  return mimicAlarmTone(severity) === "neutral" ? severity : `${severity[0]?.toUpperCase() ?? ""}${severity.slice(1)}`;
+export function mimicAlarmTone(tone: string): MimicAlarmTone {
+  return tone === "critical" || tone === "warning" || tone === "info" ? tone : "neutral";
 }
 
 export const MIMIC_ALARM_CLASSES: Readonly<
@@ -235,11 +232,14 @@ export const MIMIC_ALARM_CLASSES: Readonly<
   neutral: { box: "fill-well stroke-line-strong", ink: "fill-ink-muted", icon: "stroke-ink-muted" },
 };
 
+/** The most characters a callout line shows, the ellipsis included (the box is 200 units wide). */
+export const MIMIC_CALLOUT_CHARS = 20;
+
 /**
  * A callout line cut to `max` characters with an ellipsis. Counts code points, not UTF-16 units,
  * so a cut never splits a surrogate pair; the full text stays in the callout's `<title>`.
  */
-export function mimicCalloutText(message: string, max = 26): string {
+export function mimicCalloutText(message: string, max = MIMIC_CALLOUT_CHARS): string {
   const chars = Array.from(message);
   return chars.length <= max ? message : `${chars.slice(0, max - 1).join("")}…`;
 }
@@ -287,6 +287,36 @@ export function mimicNodeStatus(
     return "alarm";
   }
   return assetStatus(lastSeenMs, nowMs);
+}
+
+/**
+ * Whether the pipe out of a node carries the moving dash (`F3.32b`, session ruling): the
+ * upstream unit's asset has fresh data. A `live` node does; an `alarm` node does when its own
+ * reading is fresh (an alarm is not a stopped plant); `stale`, `none` and `unassigned` do not.
+ * `lastSeenMs` is the same clamped instant `mimicNodeStatus` reads.
+ */
+export function mimicNodeFlows(status: MimicNodeStatus, lastSeenMs: number | null, nowMs: number): boolean {
+  if (status === "live") {
+    return true;
+  }
+  return status === "alarm" && assetStatus(lastSeenMs, nowMs) === "live";
+}
+
+/**
+ * The drawing's accessible name (`F3.32b`). The SVG is one `role="img"`, so its callouts are
+ * not in the accessibility tree: the name carries every unit with an open alarm — its label,
+ * its severity's vocabulary label and the FULL message (a screen reader has no hover).
+ */
+export function mimicAriaLabel(
+  title: string,
+  presetLabel: string,
+  alarmed: readonly { readonly unit: string; readonly severity: string; readonly message: string }[],
+): string {
+  const base = `${title}: ${presetLabel}`;
+  if (alarmed.length === 0) {
+    return base;
+  }
+  return `${base}. Open alarms: ${alarmed.map((a) => `${a.unit}, ${a.severity}: ${a.message}`).join("; ")}`;
 }
 
 /** The rows a node shows: the server's first `MIMIC_HEADLINE_POINTS`, never re-sorted. */

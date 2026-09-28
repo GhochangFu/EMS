@@ -16,8 +16,8 @@ import {
   MIMIC_PANELS,
   MIMIC_PIPE_Y,
   MIMIC_SINK_W,
-  mimicAlarmSeverityLabel,
   mimicAlarmTone,
+  mimicAriaLabel,
   mimicBadge,
   mimicCalloutText,
   mimicLevelFraction,
@@ -25,6 +25,7 @@ import {
   mimicPanelBox,
   pipeMidpoint,
   mimicNodePoints,
+  mimicNodeFlows,
   mimicNodeStatus,
   mimicViewFor,
   pipePath,
@@ -246,14 +247,16 @@ export function levelFractionClamps(): void {
   expect(mimicLevelFraction(null)).toBeNull();
 }
 
-/** M10 — a seeded severity is its own tone and capitalised label; an unknown code is neutral, raw. */
-export function severityToneAndLabel(): void {
+/**
+ * M10 — the callout colour is the vocabulary TONE: the three the callout colours are
+ * themselves; a pill tone it has no colour for, and an unknown tone, draw neutral.
+ */
+export function severityToneFromTheVocabularyTone(): void {
   expect(mimicAlarmTone("warning")).toBe("warning");
   expect(mimicAlarmTone("critical")).toBe("critical");
   expect(mimicAlarmTone("info")).toBe("info");
+  expect(mimicAlarmTone("offline")).toBe("neutral");
   expect(mimicAlarmTone("sev9")).toBe("neutral");
-  expect(mimicAlarmSeverityLabel("warning")).toBe("Warning");
-  expect(mimicAlarmSeverityLabel("sev9")).toBe("sev9");
 }
 
 /** M11 — a long callout line is cut with an ellipsis, by code point, never splitting a pair. */
@@ -261,6 +264,41 @@ export function calloutTextIsCutByCodePoint(): void {
   expect(mimicCalloutText("DO high", 10)).toBe("DO high");
   expect(mimicCalloutText("abcdefghijkl", 10)).toBe("abcdefghi\u2026");
   expect(mimicCalloutText("\u{1F600}\u{1F600}\u{1F600}\u{1F600}", 3)).toBe("\u{1F600}\u{1F600}\u2026");
+}
+
+/** M11b — the default cut: a 60-character line shows at most 20, the ellipsis included. */
+export function calloutTextDefaultCutIsTwenty(): void {
+  const shown = mimicCalloutText("x".repeat(60));
+  expect(Array.from(shown)).toHaveLength(20);
+  expect(shown.endsWith("…")).toBe(true);
+}
+
+/** M13a — an `alarm` node whose own reading is fresh keeps its outgoing pipe flowing. */
+export function alarmedFreshNodeFlows(): void {
+  expect(mimicNodeFlows("alarm", NOW - 1_000, NOW)).toBe(true);
+}
+
+/** M13b — an `alarm` node whose reading is old does not flow: the alarm alone is not data. */
+export function alarmedStaleNodeDoesNotFlow(): void {
+  expect(mimicNodeFlows("alarm", NOW - FRESH_MS - 1_000, NOW)).toBe(false);
+}
+
+/** M13c — `live` flows; `stale`, `none` and `unassigned` do not. */
+export function onlyFreshStatusesFlow(): void {
+  expect(
+    (["live", "stale", "none", "unassigned"] as const).map((s) => mimicNodeFlows(s, NOW - 1_000, NOW)),
+  ).toEqual([true, false, false, false]);
+}
+
+/** M14 — the accessible name lists every alarmed unit with its severity label and full message. */
+export function ariaLabelNamesEveryAlarmedUnit(): void {
+  expect(
+    mimicAriaLabel("Plant", "Water train", [
+      { unit: "WTP", severity: "High pressure", message: "Inlet pressure above limit" },
+      { unit: "RO", severity: "Critical", message: "Membrane fouled" },
+    ]),
+  ).toBe("Plant: Water train. Open alarms: WTP, High pressure: Inlet pressure above limit; RO, Critical: Membrane fouled");
+  expect(mimicAriaLabel("Plant", "Water train", [])).toBe("Plant: Water train");
 }
 
 /** M12 — a pump sits at the gap's midpoint on a same-row pipe, either direction; none across rows. */

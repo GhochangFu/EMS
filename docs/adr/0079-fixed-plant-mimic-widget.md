@@ -229,9 +229,17 @@ unit that raised it**.
    along the pipes, and the values under each unit. Role colour tokens only
    (ADR 0078).
 3. **Each node carries its most severe open alarm** — `topAlarm: { severity,
-   message, raisedAt } | null` on `mimicNodeSchema` — and the widget draws it as
-   a callout under that unit, in the severity's colour. Most severe first by the
-   severity vocabulary's rank, then newest.
+   tone, label, message, raisedAt } | null` on `mimicNodeSchema` — and the widget
+   draws it as a callout under that unit. Most severe first by the severity
+   vocabulary's rank, then newest. `tone` and `label` come from
+   `bms.alarm_severities` in the same read, never from a list in the web (ADR
+   0032 decision 9, found by the review); a tone the widget does not know draws
+   neutral with the server's label.
+4. **The flow along a pipe follows data freshness** (session ruling after the
+   review): it runs while the upstream unit reports fresh data, including a unit
+   in alarm, and stops when that unit is stale or not assigned.
+5. **The default size is 12 x 10**, and the seeds resize only their own seeded
+   mimic from 12 x 6: at six rows the drawing scaled text to about 7 px.
 
 Options were: this; a second, unit-level preset with the reference's three
 trains (most units would read "Not assigned" on the five-asset demo plant

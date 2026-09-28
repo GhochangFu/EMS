@@ -17,12 +17,13 @@ import {
   MIMIC_SINK_W,
   MIMIC_STATUS_LABEL,
   MIMIC_STATUS_STROKE,
-  mimicAlarmSeverityLabel,
   mimicAlarmTone,
+  mimicAriaLabel,
   mimicBadge,
   mimicCalloutText,
   mimicLevelFraction,
   mimicLevelPoint,
+  mimicNodeFlows,
   mimicNodePoints,
   mimicNodeStatus,
   mimicPanelBox,
@@ -36,6 +37,7 @@ import {
 } from "../../lib/mimic";
 import { isStale } from "../../lib/schematic-telemetry";
 import type { WidgetStatus } from "../../lib/widget-catalog";
+import { FlowDash } from "./mimic-flow-dash";
 import { MimicGlyph } from "./mimic-glyphs";
 import { WidgetFrame } from "./widget-frame";
 
@@ -64,9 +66,9 @@ const ROW_Y = [152, 170, 188] as const;
 /** The symbol's square inside the frame, centred on the pipe height. */
 const GLYPH_SIZE = 60;
 
-/** One flow dash period, in viewBox units: the animated offset runs over exactly one. */
-const FLOW_DASH = "6 10";
-const FLOW_PERIOD = 16;
+/** The callout's text column: right of the alert icon, clear of the box's right edge. */
+const CALLOUT_TEXT_X = 38;
+const CALLOUT_TEXT_PAD_R = 6;
 
 /**
  * `F3.32` U4, redrawn by `F3.32b` (ADR 0079 Amendment 2) — the fixed plant mimic.
@@ -78,17 +80,25 @@ const FLOW_PERIOD = 16;
  *
  * Each unit is a status frame round its label and illustrated symbol (`MIMIC_NODE_GLYPHS`), up
  * to three value rows under it, and — when the node carries `topAlarm` — an alarm callout under
- * those, in the severity's role colour. A pipe whose upstream node is `live` carries a moving
- * dash, hidden under `prefers-reduced-motion` by Tailwind's `motion-reduce:` variant (no
- * `matchMedia`, which the colour gate forbids).
+ * those, coloured by the severity's vocabulary tone and named by its vocabulary label (both
+ * from the server, ADR 0032 decision 9). The callout's text is cut to `MIMIC_CALLOUT_CHARS`
+ * and clipped to its box, the full message in its `<title>`. A pipe whose upstream unit has
+ * fresh data (`mimicNodeFlows`: `live`, or `alarm` with a fresh reading) carries a moving dash
+ * (`FlowDash`), hidden under `prefers-reduced-motion` by Tailwind's `motion-reduce:` variant
+ * (no `matchMedia`, which the colour gate forbids).
+ *
+ * **Accessibility.** The SVG stays one `role="img"`; its `aria-label` names every unit whose
+ * callout is drawn, with the severity label and the full message (`mimicAriaLabel`), because
+ * the callouts themselves are not in the accessibility tree.
  *
  * **Colours are ADR 0078 role classes only** — no hex, no palette class, no named colour, no
  * `dark:` (`tests/f3.65-colour-roles-gate.test.ts`).
  *
- * Marker ids come from `useId`, so two mimics on one dashboard do not share an arrowhead id.
+ * Marker and clip ids come from `useId`, so two mimics on one dashboard do not share one.
  */
 export function MimicWidget({ title, status, preset, nodes, readings }: MimicWidgetProps) {
-  const markerId = `mimic-arrow-${useId().replace(/:/g, "")}`;
+  const uid = useId().replace(/:/g, "");
+  const markerId = `mimic-arrow-${uid}`;
   const def = MIMIC_PRESETS[preset];
   const layout = MIMIC_LAYOUTS[preset];
   const at = layout.nodes as Readonly<Record<string, MimicPoint>>;
@@ -97,18 +107,38 @@ export function MimicWidget({ title, status, preset, nodes, readings }: MimicWid
   const byKey = new Map(nodes.map((n) => [n.key, n]));
   const sinkFrom = at[def.sink.from];
 
+  const lastSeenOf = new Map<string, number | null>(
+    def.nodes.map((presetNode) => {
+      const asset = byKey.get(presetNode.key)?.asset ?? null;
+      return [presetNode.key, asset === null ? null : readings.assetLastSeenMs(asset)];
+    }),
+  );
   const statusOf = new Map<string, MimicNodeStatus>(
     def.nodes.map((presetNode) => {
       const node = byKey.get(presetNode.key);
-      const asset = node?.asset ?? null;
       return [
         presetNode.key,
         mimicNodeStatus(
-          { asset, activeAlarms: node?.activeAlarms ?? 0 },
-          asset === null ? null : readings.assetLastSeenMs(asset),
+          { asset: node?.asset ?? null, activeAlarms: node?.activeAlarms ?? 0 },
+          lastSeenOf.get(presetNode.key) ?? null,
           readings.nowMs,
         ),
       ];
+    }),
+  );
+  const flows = (key: string): boolean =>
+    mimicNodeFlows(statusOf.get(key) ?? "unassigned", lastSeenOf.get(key) ?? null, readings.nowMs);
+  /** A node's drawn callout alarm: only an assigned node draws one. */
+  const calloutOf = (key: string) => {
+    const node = byKey.get(key);
+    return node === undefined || node.asset === null ? null : node.topAlarm;
+  };
+  const ariaLabel = mimicAriaLabel(
+    title,
+    def.label,
+    def.nodes.flatMap((presetNode) => {
+      const alarm = calloutOf(presetNode.key);
+      return alarm === null ? [] : [{ unit: presetNode.label, severity: alarm.label, message: alarm.message }];
     }),
   );
   const toneOf = new Map<string, MimicPanelTone>(panels.flatMap((p) => p.nodes.map((k) => [k, p.tone] as const)));
@@ -133,8 +163,9 @@ export function MimicWidget({ title, status, preset, nodes, readings }: MimicWid
         : mimicLevelFraction(readings.pointLatest(asset.id, levelPoint)?.value ?? null);
     const glyphClass =
       asset === null ? "stroke-ink-faint" : MIMIC_PANEL_CLASSES[toneOf.get(presetNode.key) ?? "neutral"].glyph;
-    const topAlarm = asset === null ? null : (node?.topAlarm ?? null);
-    const alarmTone = topAlarm === null ? null : mimicAlarmTone(topAlarm.severity);
+    const topAlarm = calloutOf(presetNode.key);
+    const alarmTone = topAlarm === null ? null : mimicAlarmTone(topAlarm.tone);
+    const clipId = `mimic-callout-${uid}-${presetNode.key}`;
     return (
       <g
         key={presetNode.key}
@@ -232,6 +263,14 @@ export function MimicWidget({ title, status, preset, nodes, readings }: MimicWid
               strokeWidth={1.5}
               className={MIMIC_ALARM_CLASSES[alarmTone].box}
             />
+            <clipPath id={clipId}>
+              <rect
+                x={pos.x + CALLOUT_TEXT_X}
+                y={pos.y + MIMIC_CALLOUT.y}
+                width={w - CALLOUT_TEXT_X - CALLOUT_TEXT_PAD_R}
+                height={MIMIC_CALLOUT.h}
+              />
+            </clipPath>
             <MimicGlyph
               kind="alert"
               x={pos.x + 9}
@@ -239,25 +278,27 @@ export function MimicWidget({ title, status, preset, nodes, readings }: MimicWid
               size={24}
               className={MIMIC_ALARM_CLASSES[alarmTone].icon}
             />
-            <text
-              data-testid="mimic-alarm-message"
-              x={pos.x + 42}
-              y={pos.y + MIMIC_CALLOUT.y + 20}
-              fontSize={12}
-              fontWeight={700}
-              className={MIMIC_ALARM_CLASSES[alarmTone].ink}
-            >
-              {mimicCalloutText(topAlarm.message)}
-            </text>
-            <text
-              data-testid="mimic-alarm-severity"
-              x={pos.x + 42}
-              y={pos.y + MIMIC_CALLOUT.y + 37}
-              fontSize={11}
-              className={MIMIC_ALARM_CLASSES[alarmTone].ink}
-            >
-              {mimicAlarmSeverityLabel(topAlarm.severity)}
-            </text>
+            <g data-testid="mimic-alarm-text" clipPath={`url(#${clipId})`}>
+              <text
+                data-testid="mimic-alarm-message"
+                x={pos.x + 42}
+                y={pos.y + MIMIC_CALLOUT.y + 20}
+                fontSize={12}
+                fontWeight={700}
+                className={MIMIC_ALARM_CLASSES[alarmTone].ink}
+              >
+                {mimicCalloutText(topAlarm.message)}
+              </text>
+              <text
+                data-testid="mimic-alarm-severity"
+                x={pos.x + 42}
+                y={pos.y + MIMIC_CALLOUT.y + 37}
+                fontSize={11}
+                className={MIMIC_ALARM_CLASSES[alarmTone].ink}
+              >
+                {mimicCalloutText(topAlarm.label)}
+              </text>
+            </g>
           </g>
         )}
       </g>
@@ -271,7 +312,7 @@ export function MimicWidget({ title, status, preset, nodes, readings }: MimicWid
           viewBox={layout.viewBox}
           preserveAspectRatio="xMidYMid meet"
           role="img"
-          aria-label={`${title}: ${def.label}`}
+          aria-label={ariaLabel}
           className="h-full w-full"
         >
           <defs>
@@ -320,7 +361,7 @@ export function MimicWidget({ title, status, preset, nodes, readings }: MimicWid
                   markerEnd={`url(#${markerId})`}
                   className="stroke-line-strong"
                 />
-                {statusOf.get(pipe.from) === "live" ? <FlowDash d={d} from={pipe.from} /> : null}
+                {flows(pipe.from) ? <FlowDash d={d} from={pipe.from} /> : null}
               </g>
             );
           })}
@@ -346,7 +387,7 @@ export function MimicWidget({ title, status, preset, nodes, readings }: MimicWid
                 markerEnd={`url(#${markerId})`}
                 className="stroke-line-strong"
               />
-              {statusOf.get(def.sink.from) === "live" ? (
+              {flows(def.sink.from) ? (
                 <FlowDash d={sinkPath(sinkFrom, layout.sink)} from={def.sink.from} />
               ) : null}
               <MimicGlyph
@@ -378,26 +419,5 @@ export function MimicWidget({ title, status, preset, nodes, readings }: MimicWid
         </svg>
       </div>
     </WidgetFrame>
-  );
-}
-
-/**
- * The moving dash over a pipe whose upstream node is live. SMIL, not a CSS keyframe, so no
- * stylesheet or Tailwind config changes; `motion-reduce:hidden` removes it for a person who asked
- * for reduced motion, leaving the plain pipe.
- */
-function FlowDash({ d, from }: { d: string; from: string }) {
-  return (
-    <path
-      data-testid="mimic-flow"
-      data-flow-from={from}
-      d={d}
-      fill="none"
-      strokeWidth={3}
-      strokeDasharray={FLOW_DASH}
-      className="stroke-accent motion-reduce:hidden"
-    >
-      <animate attributeName="stroke-dashoffset" from={FLOW_PERIOD} to={0} dur="1s" repeatCount="indefinite" />
-    </path>
   );
 }

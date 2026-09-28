@@ -40,8 +40,13 @@ interface MemberRow {
   domain: string;
   member_count: number;
   active_alarms: number;
-  /** The shown asset's most severe open alarm (`F3.32b`); all three `null` when it has none. */
+  /**
+   * The shown asset's most severe open alarm (`F3.32b`), with its severity's vocabulary tone and
+   * label; all five `null` when it has none.
+   */
   top_alarm_severity: string | null;
+  top_alarm_tone: string | null;
+  top_alarm_label: string | null;
   top_alarm_message: string | null;
   top_alarm_raised_at: Date | string | null;
 }
@@ -84,7 +89,9 @@ interface PointRow {
  *    ADR 0057 decision 1). `F3.32b` (ADR 0079 Amendment 2 item 3) folds the shown asset's most
  *    severe open alarm into the same statement as a lateral: `bms.alarm_severities.rank DESC`
  *    (a higher rank is more severe, ADR 0032), then `raised_at DESC`, then `id` so a tie is
- *    stable. Its `message` is the stored text the Alarm Centre already shows; it is never logged.
+ *    stable. The same join answers the severity's `tone` and `label`, so the widget draws a
+ *    level from its vocabulary row, never from a list of codes (ADR 0032 decision 9). Its
+ *    `message` is the stored text the Alarm Centre already shows; it is never logged.
  * 3. Each shown asset's top `MIMIC_HEADLINE_POINTS` active points, ordered by F3.68's rule
  *    (`headline_rank ASC NULLS LAST, point_key ASC`), the limit applied PER ASSET inside a
  *    lateral, each point's newest sample found by F3.68's bounded literal-window lateral —
@@ -195,6 +202,8 @@ export class MimicNodesService {
               AND al.cleared_at IS NULL
           ) AS active_alarms,
           ta.severity AS top_alarm_severity,
+          ta.tone AS top_alarm_tone,
+          ta.label AS top_alarm_label,
           ta.message AS top_alarm_message,
           ta.raised_at AS top_alarm_raised_at
         FROM bms.asset_group_members agm
@@ -203,7 +212,7 @@ export class MimicNodesService {
         INNER JOIN bms.assets a
           ON a.id = agm.asset_id AND a.organization_id = $2
         LEFT JOIN LATERAL (
-          SELECT al.severity, al.message, al.raised_at
+          SELECT al.severity, s.tone, s.label, al.message, al.raised_at
           FROM bms.alarms al
           INNER JOIN bms.alarm_severities s ON s.code = al.severity
           WHERE al.asset_id = a.id
@@ -325,13 +334,28 @@ function assetOf(member: MemberRow, points: GeneratedSitePointDto[], nowMs: numb
   };
 }
 
-/** The member's top alarm, or `null` when the lateral found none (or its row is incomplete). */
+/**
+ * The member's top alarm, or `null` when the lateral found none (or its row is incomplete). The
+ * tone is `alarm_severities_tone_check`'s closed set, so the cast restates the SQL `CHECK`.
+ */
 function topAlarmOf(member: MemberRow): MimicNodeAlarmDto | null {
   const raisedAt = toIsoString(member.top_alarm_raised_at);
-  if (member.top_alarm_severity === null || member.top_alarm_message === null || raisedAt === null) {
+  if (
+    member.top_alarm_severity === null ||
+    member.top_alarm_tone === null ||
+    member.top_alarm_label === null ||
+    member.top_alarm_message === null ||
+    raisedAt === null
+  ) {
     return null;
   }
-  return { severity: member.top_alarm_severity, message: member.top_alarm_message, raisedAt };
+  return {
+    severity: member.top_alarm_severity,
+    tone: member.top_alarm_tone as MimicNodeAlarmDto["tone"],
+    label: member.top_alarm_label,
+    message: member.top_alarm_message,
+    raisedAt,
+  };
 }
 
 function toIsoString(value: Date | string | null): string | null {

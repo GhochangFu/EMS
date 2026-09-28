@@ -424,6 +424,8 @@ export async function assertTopAlarmIsTheMostSevere(client: pg.PoolClient): Prom
   const dto = await readTrain(client, train);
   expect(nodeOf(dto, "wtp").topAlarm).toEqual({
     severity: "critical",
+    tone: "critical",
+    label: "Critical",
     message: OPEN_ALARM_MESSAGE,
     raisedAt: new Date(nowMs - 3_600_000).toISOString(),
   });
@@ -468,6 +470,28 @@ export async function assertForeignOrganizationAlarmIsNeverTop(client: pg.PoolCl
   );
   const dto = await readTrain(client, train);
   expect(nodeOf(dto, "wtp").topAlarm?.message).toBe(OPEN_ALARM_MESSAGE);
+}
+
+/**
+ * A6 — ADR 0032 decision 9: a severity level declared by an `INSERT` (code, tone and label all
+ * distinct, ranked above `critical`) is the top alarm, and the node carries the vocabulary row's
+ * tone and label — not the code, and not a tone derived from it. The vocabulary row is written
+ * inside the rolled-back transaction, like every fixture here.
+ */
+export async function assertTopAlarmCarriesTheVocabularyToneAndLabel(client: pg.PoolClient): Promise<void> {
+  const train = await seedTrain(client);
+  await client.query(
+    `INSERT INTO bms.alarm_severities (code, label, tone, rank)
+     VALUES ('f332b_sev_high', 'F3.32b High pressure', 'warning', 9032)`,
+  );
+  await client.query(
+    `INSERT INTO bms.alarms (organization_id, asset_id, severity, message, raised_at, cleared_at)
+     VALUES ($1, $2, 'f332b_sev_high', 'F3.32b vocabulary alarm', now(), NULL)`,
+    [train.organizationId, train.wtpId],
+  );
+  const dto = await readTrain(client, train);
+  const top = nodeOf(dto, "wtp").topAlarm;
+  expect([top?.severity, top?.tone, top?.label]).toEqual(["f332b_sev_high", "warning", "F3.32b High pressure"]);
 }
 
 // ---------------------------------------------------------------- forUser() cases

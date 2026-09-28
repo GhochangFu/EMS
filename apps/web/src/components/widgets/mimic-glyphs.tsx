@@ -103,6 +103,7 @@ type MimicGlyphProps = {
   level?: number | null;
 };
 
+/** One illustrated unit symbol, scaled into a `size` square at (`x`, `y`) in viewBox units. */
 export function MimicGlyph({ kind, x, y, size, className, level = null }: MimicGlyphProps) {
   return (
     <g

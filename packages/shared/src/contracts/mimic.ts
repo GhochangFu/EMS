@@ -2,7 +2,7 @@ import { z } from "zod";
 
 import { mimicPresetSchema } from "./dashboard-builder";
 import { generatedSiteAssetSchema } from "./generated-site-view";
-import { alarmSeverityCodeSchema } from "./operations";
+import { alarmSeverityCodeSchema, pillToneSchema } from "./operations";
 
 /**
  * `F3.32` / ADR 0079 — `GET /api/v1/dashboards/:id/mimic-nodes` (plan D1).
@@ -23,9 +23,15 @@ export const MIMIC_HEADLINE_POINTS = 3;
  * `F3.32b` (ADR 0079 Amendment 2) — the shown asset's most severe open alarm, drawn as a
  * callout under the unit that raised it, as the client's reference does. Most severe first by
  * the severity vocabulary's rank, then newest. `message` is the alarm's own stored text.
+ *
+ * `tone` and `label` are the severity's own `bms.alarm_severities` row, read in the same
+ * statement (ADR 0032 decision 9: behaviour is read from the vocabulary, never from a list of
+ * codes), so a level added by an `INSERT` draws in its declared colour with its declared name.
  */
 export const mimicNodeAlarmSchema = z.object({
   severity: alarmSeverityCodeSchema,
+  tone: pillToneSchema,
+  label: z.string(),
   message: z.string(),
   raisedAt: z.string(),
 });
