@@ -6647,3 +6647,31 @@ fixed test-first.
 
 **Cascade:** `F3.65c` is now startable (it depends on `F3.65b` alone), with the
 punch list its row records.
+
+### `F4.169` + `F4.170` — the stack boots after ordinary admin writes ✅ 2026-09-28
+
+PR #627, squash `bb441b02` (one PR by owner ruling); ADR 0080, with amendments
+to ADR 0051, 0070 and 0076; plans `docs/plans/f4.169-*`, `f4.170-*` and four
+`f4.169-f4.170-addendum-*` files; owner rulings 1–20.
+
+Both rows began as seed bugs that stopped `db:seed`: a lowercase asset code with
+an edited ladder threshold (`23505`), and a long location code or name
+(`22001`). The ladder seed now matches a seeded rule by asset and suffix, and the
+simulator RTU code and name are bounded. The stack check and four review rounds
+then found more admin-reachable boot stops on `main`, and the owner folded each
+in: the boot gate counts presence of the seeded sets, not totals; canonical ESKOM
+locations carry a seed-owned `meta.seedKey` that the admin API never writes, and
+the seed restores their slug and code; the seed no longer moves or deletes an
+admin's row by a free-text match.
+
+Verified: CI green (the first run failed one source scan, `e4.1b`, fixed in the
+PR); scratch-volume cold start and the first-boot window; the running stack with
+each admin state, every seed exit 0 and the hashes restored. The API over HTTP
+was not exercised (a shared-container rebuild and a human login); the service
+integration specs cover the write path.
+
+**Cascade:** no row lists `F4.169` or `F4.170` in *Depends*. `F3.32` (demo
+deploy 2026-10-01) needed the presence checks. Raised: `F4.172` (the recorded
+residuals) and `F4.174` (an admin `mechanical` asset stops the health seed).
+A `chore(agents):` sweep can refine `AGENTS.md` line 974 (hash-cut RTU codes and
+the `site_name` predicate).
