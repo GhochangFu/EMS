@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 import type { TemplateAuthorableWidgetType } from "../asset-template-content";
+import { mimicConfigSchema } from "./mimic-config";
 
 /**
  * `F3.1a` — the configurable-dashboard contract (ADR 0047).
@@ -363,32 +364,9 @@ export const tableConfigSchema = z.object({
 });
 
 /**
- * The mimic presets, closed (`F3.32`, ADR 0079 decision 2). A preset is a drawing shipped in
- * code — node positions, pipes and the role each node resolves — so a preset declared by data
- * would name a picture nobody drew. v1 ships one. The definitions are `MIMIC_PRESETS` in
- * `packages/shared/src/mimic-presets.ts`; the coordinates are the web renderer's.
+ * The `mimic` widget config (`F3.32`, ADR 0079; `F3.32c`, ADR 0081) lives in `./mimic-config`,
+ * which this file is too long to hold. Imported, not re-exported: `contracts/index.ts` exports it.
  */
-export const mimicPresetSchema = z.enum(["water_train"]);
-
-/**
- * The `mimic` widget's config (`F3.32`, ADR 0079 decision 2).
- *
- * **No `commonConfigFields`, deliberately (plan D8).** A mimic draws several nodes, each with
- * its own points and units, so one widget-level `unit` or `decimals` has nothing to apply to.
- * Generic readers of those two fields guard with `"unit" in widget.config`.
- *
- * **`source` is a discriminator with one value today.** ADR 0079 decision 9 — the full mimic
- * builder — adds a second arm beside this one, and this object then becomes one member of a
- * `z.discriminatedUnion("source", …)`. A stored v1 widget already carries `source: "preset"`,
- * so it never needs migrating.
- *
- * Flat, for the reason `valueTileConfigSchema`'s docblock gives: the write surface composes it
- * with `.strict()`, and `.strict()` does not descend.
- */
-export const mimicConfigSchema = z.object({
-  source: z.literal("preset"),
-  preset: mimicPresetSchema,
-});
 
 /**
  * Type and config as one value.

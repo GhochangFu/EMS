@@ -1,6 +1,6 @@
 import type { z } from "zod";
 
-import type { mimicPresetSchema } from "./contracts/dashboard-builder";
+import type { mimicPresetSchema } from "./contracts/mimic-config";
 
 /**
  * `F3.32` / ADR 0079 decision 2 — the fixed plant mimic presets (plan D3).

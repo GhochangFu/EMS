@@ -39,6 +39,8 @@ import type * as Loc from "./contracts/location-types";
 import type * as Ms from "./contracts/mapping-sheet";
 import type * as Cv from "./contracts/metric-catalog-values";
 import type * as Mi from "./contracts/mimic";
+import type * as Mc from "./contracts/mimic-config";
+import type * as Ml from "./contracts/mimic-layouts";
 import type * as N from "./contracts/notifications";
 import type * as Ob from "./contracts/onboarding";
 import type * as Op from "./contracts/operations";
@@ -814,11 +816,25 @@ export type GeneratedSiteAssetDto = z.infer<typeof GSV.generatedSiteAssetSchema>
 export type GeneratedSiteDomainDto = z.infer<typeof GSV.generatedSiteDomainSchema>;
 export type GeneratedSiteViewDto = z.infer<typeof GSV.generatedSiteViewDtoSchema>;
 
-// `F3.32` / ADR 0079 — the fixed plant mimic widget: its preset vocabulary and config
-// (`contracts/dashboard-builder.ts`) and `GET /api/v1/dashboards/:id/mimic-nodes`
-// (`contracts/mimic.ts`). The preset topology is `./mimic-presets`, re-exported below.
-export type MimicPreset = z.infer<typeof Db.mimicPresetSchema>;
-export type MimicConfig = z.infer<typeof Db.mimicConfigSchema>;
+// `F3.32` / ADR 0079 and `F3.32c` / ADR 0081 — the plant mimic widget: its config, both arms
+// (`contracts/mimic-config.ts`), the layout library (`contracts/mimic-layouts.ts`) and
+// `GET /api/v1/dashboards/:id/mimic-nodes` (`contracts/mimic.ts`). The preset topology is
+// `./mimic-presets`, re-exported below.
+export type MimicPreset = z.infer<typeof Mc.mimicPresetSchema>;
+export type MimicConfig = z.infer<typeof Mc.mimicConfigSchema>;
+export type MimicLayoutConfig = z.infer<typeof Mc.mimicLayoutConfigSchema>;
+export type MimicSymbol = z.infer<typeof Ml.mimicSymbolSchema>;
+export type MimicPanelTone = z.infer<typeof Ml.mimicPanelToneSchema>;
+export type MimicLayoutNodeKind = z.infer<typeof Ml.mimicLayoutNodeKindSchema>;
+export type MimicLayoutNodeDto = z.infer<typeof Ml.mimicLayoutNodeSchema>;
+export type MimicLayoutPipeDto = z.infer<typeof Ml.mimicLayoutPipeSchema>;
+export type MimicLayoutGeometryDto = z.infer<typeof Ml.mimicLayoutGeometrySchema>;
+export type MimicLayoutSummaryDto = z.infer<typeof Ml.mimicLayoutSummarySchema>;
+export type MimicLayoutDto = z.infer<typeof Ml.mimicLayoutDtoSchema>;
+export type MimicLayoutsListResponse = z.infer<typeof Ml.mimicLayoutsListResponseSchema>;
+export type MimicLayoutDeletedResponse = z.infer<typeof Ml.mimicLayoutDeletedResponseSchema>;
+export type MimicPresetWidgetNodesDto = z.infer<typeof Mi.mimicPresetWidgetNodesSchema>;
+export type MimicLayoutWidgetNodesDto = z.infer<typeof Mi.mimicLayoutWidgetNodesSchema>;
 export type MimicNodeDto = z.infer<typeof Mi.mimicNodeSchema>;
 /** `F3.32b` — a node's most severe open alarm, drawn as a callout under the unit. */
 export type MimicNodeAlarmDto = z.infer<typeof Mi.mimicNodeAlarmSchema>;

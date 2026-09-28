@@ -67,7 +67,7 @@ const unassignedNode = {
 const response = (preset: string, nodes: unknown[]) => ({
   dashboardId: DASHBOARD_ID,
   resolvedAt: "2026-09-28T10:00:05.000Z",
-  widgets: [{ widgetId: WIDGET_ID, preset, nodes }],
+  widgets: [{ source: "preset", widgetId: WIDGET_ID, preset, nodes }],
 });
 
 /** One assigned node and one unassigned node, under the one preset that exists. */
