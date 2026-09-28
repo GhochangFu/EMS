@@ -229,6 +229,29 @@ describe.skipIf(!ownerUrl)("F4.169/F4.170 addendum 4 — an ambiguous seed ident
     });
   }, 60_000);
 
+  it("V-ambiguous-two: when two candidates of the ambiguous identity each carry a view, the check still reads 1", async () => {
+    await inEskomTransaction(async (pool) => {
+      const c = await keyedId(pool, "rsmoc-western-cape");
+      const x = await insertLocation(pool, {
+        code: `F4169-${RUN_ID}-VT`,
+        slug: `f4169-${runId}-vt`,
+        key: "rsmoc-western-cape",
+        createdAt: EARLY,
+      });
+      // A copy of C's view row, so every CHECK the table holds is met.
+      const copied = await pool.query(
+        `INSERT INTO bms.site_control_room_views (location_id, organization_id, kind, dashboard_id, builtin_key)
+         SELECT $2, organization_id, kind, dashboard_id, builtin_key
+           FROM bms.site_control_room_views WHERE location_id = $1`,
+        [c, x],
+      );
+      assert(copied.rowCount === 1, "RSMOC-WC must carry its control room view — run pnpm db:seed.");
+      const checks = await readEskomChecks(pool, eskomOrgId, { log: () => undefined });
+      // Mutation "the raw count on an ambiguous identity": 2, and the boot stops.
+      expect(actualOf(checks, VIEW_LABEL)).toBe(1);
+    });
+  }, 60_000);
+
   /** ESK-DECOMM-01's code renamed, and an active admin row Y holding it. */
   async function decommHeldState(pool: SeedPool): Promise<string> {
     const decomm = await keyedId(pool, "esk-decomm-01");
@@ -306,8 +329,12 @@ describe.skipIf(!ownerUrl)("F4.169/F4.170 addendum 4 — an ambiguous seed ident
 
   // ── Guard 1's log line (section 4) ────────────────────────────────────────
 
-  /** An electrical asset at RSMOC-WC with the five ladder conditions held by published rules. */
-  async function heldAsset(pool: SeedPool, tag: string, enabled: boolean): Promise<string> {
+  /**
+   * An electrical asset at RSMOC-WC with the five ladder conditions held by
+   * published rules: operator rules, or its own `simulator_threshold` ladder
+   * rules (codes ending with the suffix, so guard 2 holds them too).
+   */
+  async function heldAsset(pool: SeedPool, tag: string, enabled: boolean, source = "operator_rule"): Promise<string> {
     const host = await keyedId(pool, "rsmoc-western-cape");
     const inserted = await pool.query<{ id: string }>(
       `INSERT INTO bms.assets (organization_id, location_id, code, name, site_name, domain)
@@ -320,9 +347,18 @@ describe.skipIf(!ownerUrl)("F4.169/F4.170 addendum 4 — an ambiguous seed ident
       await pool.query(
         `INSERT INTO bms.automation_rules
            (organization_id, code, name, rule_type, asset_id, point_key, operator, threshold_value,
-            enabled, lifecycle_status)
-         VALUES ($1, $2, 'F4.169 fixture published rule', 'threshold', $3, $4, $5, $6, $7, 'published')`,
-        [eskomOrgId, `F4169_${RUN_ID}_${tag}_${rule.suffix}`, asset, rule.pointKey, rule.operator, rule.thresholdValue, enabled],
+            enabled, lifecycle_status, source)
+         VALUES ($1, $2, 'F4.169 fixture published rule', 'threshold', $3, $4, $5, $6, $7, 'published', $8)`,
+        [
+          eskomOrgId,
+          `F4169_${RUN_ID}_${tag}_${rule.suffix}`,
+          asset,
+          rule.pointKey,
+          rule.operator,
+          rule.thresholdValue,
+          enabled,
+          source,
+        ],
       );
     }
     return asset;
@@ -351,6 +387,17 @@ describe.skipIf(!ownerUrl)("F4.169/F4.170 addendum 4 — an ambiguous seed ident
       );
       assert(rows[0]?.n === 0, "guard 1 must skip all five ladder rules on the held asset");
       // Mutation "log on every guard 1 skip": five lines.
+      expect(lines.filter((line) => line.includes(asset))).toHaveLength(0);
+    });
+  }, 60_000);
+
+  it("G1-own-ladder: an asset whose own ladder rules are published and disabled gets no line (guard 2 holds them too)", async () => {
+    await inEskomTransaction(async (pool, db) => {
+      const asset = await heldAsset(pool, "G1OWN", false, "simulator_threshold");
+      const lines: string[] = [];
+      await seedEskomLadderRules(db, eskomOrgId, (line) => lines.push(line));
+      // Mutation "drop the guard 2 clause from the log": five lines on every
+      // boot for a ladder rule an administrator disabled on purpose.
       expect(lines.filter((line) => line.includes(asset))).toHaveLength(0);
     });
   }, 60_000);
