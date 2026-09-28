@@ -481,8 +481,8 @@ and `widgetToneColor(roles)` gives ECharts its stops.
 `EditorView.darkTheme` facet, so `@codemirror/view`'s `&light` base rules
 (black cursor, lilac selection, light-grey tooltip) stayed on a dark page;
 the facet is now a `Compartment` reconfigured on a toggle, and the editor's
-theme overrides the cursor (`ink`), the selection (`well`, focused
-`info-wash`), the tooltips (`surface`, `ink`, `line-strong` border) and the
+theme overrides the cursor (`ink`), the selection (`info` at 0.15,
+focused or not — owner ruling 2026-09-29, so the selection is visible), the tooltips (`surface`, `ink`, `line-strong` border) and the
 highlighted completion (`on-accent` on `accent-strong`) at the base rules'
 own specificity; the lint markers and the disabled-completion flash keep
 the library's colours.
@@ -532,15 +532,17 @@ flips `data-theme` and writes the key with no reload.
 plan's estimate: text — `accent-strong` on `ok-wash`, `info-ink` on `well`,
 `warning-ink` and `critical-ink-strong` on `well`, `on-dark` on `chrome` at
 0.85 (the switch's idle label, bare and under its hover wash), and the
-formula editor's token inks over its selection (`ink`, `ink-muted`,
-`accent-strong`, `simulated-ink`, `warning-ink` on `info-wash`;
-`accent-strong` on `well`); UI —
+formula editor's six token inks on `surface` under its `info`/0.15
+selection; UI —
 `warning-on-dark` on `surface` (the donut's Fair slice) and `on-dark` on
 `chrome` at 0.8 (the switch's focus ring, bare and under the pressed
 button's wash — the ring is inset, so a keyboard-focused pressed button
 shows both). One light allowlist entry: the donut's `warning-on-dark` on
 `surface`, measured 1.67, reason "status slices are named in the legend
-list; existing" (ruled with OQ4). **The dark allowlist stays empty.**
+list; existing" (ruled with OQ4). **The dark allowlist was empty until the
+owner ruling of 2026-09-29**: two dark entries, `simulated-ink` (4.04) and
+`info-ink` (3.98) under the formula editor's `info`/0.15 selection, reason
+"transient selected state; unselected text keeps 4.5".
 
 **8. What remains outside the gate.** Tailwind preflight's `::placeholder`
 colour (stock `#9ca3af`, an unchanged pixel), third-party CSS

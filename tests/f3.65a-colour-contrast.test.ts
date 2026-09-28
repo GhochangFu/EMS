@@ -41,7 +41,8 @@ import { blendOver, contrastRatio, parseTokenBlocks, type Channels, channelsToHe
  * `gray-200` is already 3.50, an existing failure in an 8 px SVG label that `F3.65c` recolours
  * with the rest of the schematic; and `critical-ink-soft` on `canvas` (4.38 light) — no
  * `text-red-600` shares a string with a red wash (grep: 0), so F3.65a's stance holds. **The dark
- * allowlist stays empty.**
+ * allowlist stayed empty until the owner ruling of 2026-09-29**, which added two entries for the
+ * formula editor's selected state (see `ALLOWLIST`).
  */
 
 const TOKENS_PATH = join(repoRoot, "apps/web/src/index.css");
@@ -144,17 +145,16 @@ const TEXT_PAIRS: Pair[] = [
   { fg: "on-dark", bg: "chrome", alpha: 0.85 },
   { fg: "on-dark", bg: "chrome", alpha: 0.85, wash: { tint: "on-dark", alpha: 0.1 } },
   { fg: "on-dark", bg: "chrome", wash: { tint: "on-dark", alpha: 0.15 } },
-  // F3.65c review — the formula editor's selection (`formula-editor.tsx` `CALC_THEME_SPEC`): the
-  // text over it is every token ink the editor paints (`ink`, `ink-muted`, `accent-strong`,
-  // `simulated-ink`, `warning-ink`, `info-ink`), on `info-wash` when focused and `well` when not.
-  // The pairs already declared above (`info-ink` on `info-wash`; `ink`, `ink-muted`,
-  // `simulated-ink`, `warning-ink`, `info-ink` on `well`) are not repeated.
-  { fg: "ink", bg: "info-wash" },
-  { fg: "ink-muted", bg: "info-wash" },
-  { fg: "accent-strong", bg: "info-wash" },
-  { fg: "simulated-ink", bg: "info-wash" },
-  { fg: "warning-ink", bg: "info-wash" },
-  { fg: "accent-strong", bg: "well" },
+  // F3.65c review, owner ruling 2026-09-29 — the formula editor's selection
+  // (`formula-editor.tsx` `CALC_THEME_SPEC`), focused or not, is `info` at 0.15 on the `surface`
+  // editor. The text over it is every token ink the editor paints. Dark `simulated-ink` and
+  // `info-ink` fall under 4.5 there and are allowlisted below.
+  { fg: "ink", bg: "surface", wash: { tint: "info", alpha: 0.15 } },
+  { fg: "ink-muted", bg: "surface", wash: { tint: "info", alpha: 0.15 } },
+  { fg: "accent-strong", bg: "surface", wash: { tint: "info", alpha: 0.15 } },
+  { fg: "simulated-ink", bg: "surface", wash: { tint: "info", alpha: 0.15 } },
+  { fg: "warning-ink", bg: "surface", wash: { tint: "info", alpha: 0.15 } },
+  { fg: "info-ink", bg: "surface", wash: { tint: "info", alpha: 0.15 } },
 ];
 
 /**
@@ -193,8 +193,10 @@ const UI_PAIRS: Pair[] = [
 ];
 
 /**
- * The light allowlist, exact — §2.4 "Light allowlist (exact, with reason)". Dark allowlist is
- * empty: every declared pair clears its threshold in dark with the values §2.2 sets.
+ * The light allowlist, exact — §2.4 "Light allowlist (exact, with reason)". The dark allowlist
+ * was empty until the owner ruling of 2026-09-29: its two entries are the formula editor's token
+ * inks `simulated-ink` and `info-ink` over the `info`/0.15 selection, a transient selected state.
+ * Every other declared pair clears its threshold in dark with the values §2.2 sets.
  */
 const ALLOWLIST: AllowlistEntry[] = [
   {
@@ -310,6 +312,26 @@ const ALLOWLIST: AllowlistEntry[] = [
     measured: 1.47,
     threshold: 3,
     reason: "the disabled rule toggle's white knob on its gray track; existing pixel — the knob's position and the button's label carry the state",
+  },
+  {
+    // F3.65c owner ruling 2026-09-29 — a DARK entry, the first: the formula editor's selection.
+    fg: "simulated-ink",
+    bg: "surface",
+    wash: { tint: "info", alpha: 0.15 },
+    theme: "dark",
+    measured: 4.04,
+    threshold: 4.5,
+    reason: "transient selected state; unselected text keeps 4.5",
+  },
+  {
+    // F3.65c owner ruling 2026-09-29 — a DARK entry, the first: the formula editor's selection.
+    fg: "info-ink",
+    bg: "surface",
+    wash: { tint: "info", alpha: 0.15 },
+    theme: "dark",
+    measured: 3.98,
+    threshold: 4.5,
+    reason: "transient selected state; unselected text keeps 4.5",
   },
 ];
 

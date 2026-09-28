@@ -54,14 +54,14 @@ export function e4TheDrawnCursorIsInk(): void {
   expect(CALC_THEME_SPEC[".cm-cursor, .cm-dropCursor"]).toEqual({ borderLeftColor: "rgb(var(--ink))" });
 }
 
-export function e5TheFocusedSelectionIsInfoWash(): void {
+export function e5TheFocusedSelectionIsInfoAtFifteenPercent(): void {
   expect(
     CALC_THEME_SPEC["&.cm-focused > .cm-scroller > .cm-selectionLayer .cm-selectionBackground"],
-  ).toEqual({ background: "rgb(var(--info-wash))" });
+  ).toEqual({ background: "rgb(var(--info) / 0.15)" });
 }
 
-export function e6TheUnfocusedSelectionIsWell(): void {
-  expect(CALC_THEME_SPEC[".cm-selectionBackground"]).toEqual({ background: "rgb(var(--well))" });
+export function e6TheUnfocusedSelectionIsInfoAtFifteenPercent(): void {
+  expect(CALC_THEME_SPEC[".cm-selectionBackground"]).toEqual({ background: "rgb(var(--info) / 0.15)" });
 }
 
 export function e7TheTooltipIsSurfaceInkAndLineStrong(): void {

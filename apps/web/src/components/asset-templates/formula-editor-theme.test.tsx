@@ -8,8 +8,8 @@ import {
   e2MountedInLightTheFacetIsLight,
   e3ALightToDarkToggleAfterMountFlipsTheFacet,
   e4TheDrawnCursorIsInk,
-  e5TheFocusedSelectionIsInfoWash,
-  e6TheUnfocusedSelectionIsWell,
+  e5TheFocusedSelectionIsInfoAtFifteenPercent,
+  e6TheUnfocusedSelectionIsInfoAtFifteenPercent,
   e7TheTooltipIsSurfaceInkAndLineStrong,
   e8TheEditorTextIsInk,
   e9TheSelectedCompletionIsAccentStrongWithOnAccent,
@@ -43,12 +43,12 @@ describe("F3.65c the formula editor follows the theme", () => {
     e4TheDrawnCursorIsInk();
   });
 
-  it("E5 the focused selection, at the base rule's own selector, is info-wash", () => {
-    e5TheFocusedSelectionIsInfoWash();
+  it("E5 the focused selection, at the base rule's own selector, is info at 0.15 (owner ruling 2026-09-29)", () => {
+    e5TheFocusedSelectionIsInfoAtFifteenPercent();
   });
 
-  it("E6 the unfocused selection is well", () => {
-    e6TheUnfocusedSelectionIsWell();
+  it("E6 the unfocused selection is info at 0.15 (owner ruling 2026-09-29)", () => {
+    e6TheUnfocusedSelectionIsInfoAtFifteenPercent();
   });
 
   it("E7 the completion and lint tooltip is surface, ink, line-strong border", () => {

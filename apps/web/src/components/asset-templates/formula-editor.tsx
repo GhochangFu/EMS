@@ -91,9 +91,12 @@ export type FormulaEditorProps = FormulaEditorRules & {
  * below repeats its base rule's selector shape at the same specificity, and
  * wins because a base theme mounts first (`Prec.lowest`). The focused
  * selection key is therefore the base rule's whole `> .cm-scroller >
- * .cm-selectionLayer` chain; a shorter selector would lose. `info-wash` and
- * `well` are the selection backgrounds on which every token ink above clears
- * 4.5:1 in dark as well as light (`tests/f3.65a-colour-contrast.test.ts`).
+ * .cm-selectionLayer` chain; a shorter selector would lose. The selection,
+ * focused or not, is `info` at 0.15 (owner ruling 2026-09-29: a visible
+ * selection over 4.5 for every token ink). In dark, `simulated-ink` and
+ * `info-ink` fall under 4.5 while selected; both are allowlisted in
+ * `tests/f3.65a-colour-contrast.test.ts` as a transient selected state, and
+ * unselected text keeps 4.5.
  * There is no `caretColor`: `drawSelection` (in `minimalSetup`) sets
  * `.cm-content { caretColor: transparent !important }` and draws `.cm-cursor`
  * instead, so a caret colour here would have no effect.
@@ -112,9 +115,9 @@ export const CALC_THEME_SPEC = {
     padding: "0.5rem 0.75rem",
   },
   ".cm-cursor, .cm-dropCursor": { borderLeftColor: "rgb(var(--ink))" },
-  ".cm-selectionBackground": { background: "rgb(var(--well))" },
+  ".cm-selectionBackground": { background: "rgb(var(--info) / 0.15)" },
   "&.cm-focused > .cm-scroller > .cm-selectionLayer .cm-selectionBackground": {
-    background: "rgb(var(--info-wash))",
+    background: "rgb(var(--info) / 0.15)",
   },
   // The completion popup, its info panel and the lint message are each a
   // `.cm-tooltip` mounted inside the editor (no tooltip `parent` is set), so
