@@ -6675,3 +6675,23 @@ deploy 2026-10-01) needed the presence checks. Raised: `F4.172` (the recorded
 residuals) and `F4.174` (an admin `mechanical` asset stops the health seed).
 A `chore(agents):` sweep can refine `AGENTS.md` line 974 (hash-cut RTU codes and
 the `site_name` predicate).
+
+### `F3.32a` — a fixed plant mimic widget and the Ion Exchange demo organization ✅ 2026-09-28
+
+PR #629, squash `fa0fc794`; ADR 0079 (#623) with Amendment 1; plan
+`docs/plans/f3.32-fixed-plant-mimic-widget.md` (Fable).
+
+The first stage of the `F3.32` mimic builder, for the first stable version due
+2026-10-02. A `mimic` widget type draws one fixed preset, the water train; each
+node finds its asset by membership role at read time and shows live values, a
+status colour and "Not assigned" when no member carries the role. The builder
+offers it only on an asset-group dashboard. A one-off command,
+`demo:ion-exchange`, creates the Ion Exchange demo organization with its own
+plant, group, mimic dashboard and login.
+
+Verified: CI green, a scratch cold start with the command and a re-seed, and
+9 of 9 browser checks on the rebuilt stack. Four reviews; the High (a mimic left
+after a scope switch) and the other findings were fixed in the PR.
+
+**Cascade:** `F3.32` stays open for the drawing builder (ADR 0079 decisions
+8–9). No row lists `F3.32a` in *Depends*.
