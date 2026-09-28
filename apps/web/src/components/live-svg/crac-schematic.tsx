@@ -15,7 +15,7 @@ export type CracSchematicProps = {
 };
 
 /**
- * `F3.65c` — role classes, not hex (ADR 0078 decision 5, plan D4–D7). `strokeFor`/`fillFor`
+ * `F3.65c` — role classes, not hex (ADR 0078 decision 5, plan D4–D7). `strokeFor`/`textToneFor`
  * return whole literal class strings; a box fill/tone pair is computed per component since each
  * one's fill depends on a different local condition (`trip`, `warn`, `pumpRun`) that `status`
  * alone does not carry.
@@ -24,10 +24,16 @@ const STROKE_OK = "stroke-accent";
 const STROKE_MUTED = "stroke-ink-hint";
 const STROKE_FAULT = "stroke-critical";
 const STROKE_WARN = "stroke-warning";
-const FILL_OK = "fill-accent";
-const FILL_MUTED = "fill-ink-hint";
-const FILL_FAULT = "fill-critical";
-const FILL_WARN = "fill-warning";
+/**
+ * `F3.65c` review — a status *label* painted on a status-tone wash (`ok-wash`,
+ * `critical-wash-strong`, `well-deep`) reads its own `-ink` role, never the
+ * plain `accent`/`critical`/`ink-hint` a stroke uses: `accent` on `ok-wash` is
+ * 3.03 light (D7); `critical-ink` / `ink-muted` on their washes are the
+ * declared pairs (§2.5) that already exist for exactly this case.
+ */
+const TEXT_OK = "fill-accent-strong";
+const TEXT_MUTED = "fill-ink-muted";
+const TEXT_FAULT = "fill-critical-ink";
 
 function cToF(c: number | null): string {
   if (c == null || Number.isNaN(c)) {
@@ -53,14 +59,15 @@ function strokeFor(status: LiveSvgStatus): string {
   return STROKE_OK;
 }
 
-function fillFor(status: LiveSvgStatus): string {
+/** A status *label*'s ink, for text sitting on a wash/well-deep tone (see `TEXT_OK` above). */
+function textToneFor(status: LiveSvgStatus): string {
   if (status === "fault") {
-    return FILL_FAULT;
+    return TEXT_FAULT;
   }
   if (status === "offline") {
-    return FILL_MUTED;
+    return TEXT_MUTED;
   }
-  return FILL_OK;
+  return TEXT_OK;
 }
 
 function flowDur(flowLps: number | null): string {
@@ -161,7 +168,8 @@ function CompressorCell({
   const mode = trip ? "TRIP" : status === "running" ? "ON" : "OFF";
   const boxFillClass = trip ? "fill-critical-wash-strong" : status === "running" ? "fill-ok-wash" : "fill-well-deep";
   const toneStrokeClass = trip ? STROKE_FAULT : status === "running" ? STROKE_OK : STROKE_MUTED;
-  const toneFillClass = trip ? FILL_FAULT : status === "running" ? FILL_OK : FILL_MUTED;
+  // The label ink (D7): a status wash needs its own `-ink` role, not the plain stroke tone.
+  const toneTextClass = trip ? TEXT_FAULT : status === "running" ? TEXT_OK : TEXT_MUTED;
   const bx = 260 + col * 80;
   const by = 160 + row * 60;
 
@@ -186,15 +194,15 @@ function CompressorCell({
         className={`${boxFillClass} ${toneStrokeClass}`}
         strokeWidth={1.5}
       />
-      <circle cx={bx + 12} cy={by + 14} r={6} className={toneFillClass} />
+      <circle cx={bx + 12} cy={by + 14} r={6} className={toneTextClass} />
       <text
         x={bx + 24}
         y={by + 10}
-        className={`font-mono text-[10px] font-bold ${toneFillClass}`}
+        className={`font-mono text-[10px] font-bold ${toneTextClass}`}
       >
         {label}
       </text>
-      <text x={bx + 24} y={by + 24} className={`font-mono text-[9px] ${toneFillClass}`}>
+      <text x={bx + 24} y={by + 24} className={`font-mono text-[9px] ${toneTextClass}`}>
         {mode}
       </text>
     </g>
@@ -217,7 +225,8 @@ function ZoneTile({
   const numF = slice.supplyAirTempC != null ? slice.supplyAirTempC * (9 / 5) + 32 : null;
   const warn = numF != null && numF > 72;
   const toneStrokeClass = warn ? STROKE_WARN : strokeFor(status);
-  const toneFillClass = warn ? FILL_WARN : fillFor(status);
+  // The label ink (D7): "fill-warning-ink" matches the pattern already used for FILTERS/RET AIR.
+  const toneTextClass = warn ? "fill-warning-ink" : textToneFor(status);
   const boxFillClass = warn ? "fill-warning-wash-strong" : status === "running" ? "fill-ok-wash" : "fill-well-deep";
 
   return (
@@ -245,7 +254,7 @@ function ZoneTile({
         x={x + 50}
         y={372}
         textAnchor="middle"
-        className={`font-mono text-[10px] font-bold ${toneFillClass}`}
+        className={`font-mono text-[10px] font-bold ${toneTextClass}`}
       >
         {zoneLabel}
       </text>
@@ -253,7 +262,7 @@ function ZoneTile({
         x={x + 50}
         y={392}
         textAnchor="middle"
-        className={`font-condensed text-base font-bold ${toneFillClass}`}
+        className={`font-condensed text-base font-bold ${toneTextClass}`}
       >
         {tempF.replace("°F", "F")}
       </text>
@@ -270,7 +279,9 @@ export function CracSchematic({ onSelectAsset }: CracSchematicProps) {
   const plant = useCracAggregates();
 
   const pStroke = strokeFor(primary.status);
-  const pFill = fillFor(primary.status);
+  // The SUP AIR box is always `fill-ok-wash` (D7) whatever its status, so its label
+  // always needs an `-ink` tone, not the stroke's plain role.
+  const pTextTone = textToneFor(primary.status);
   const fanSpin =
     primary.status === "running" && (primary.slice.fanRpm ?? 0) > 50 ? "crac-spin" : "";
   const chwSupF = cToF(primary.slice.chwSupplyTempC);
@@ -406,7 +417,7 @@ export function CracSchematic({ onSelectAsset }: CracSchematicProps) {
           x={160}
           y={362}
           textAnchor="middle"
-          className="font-mono text-[10px] font-semibold"
+          className="fill-ink font-mono text-[10px] font-semibold"
         >
           EC FAN ·{" "}
           {primary.slice.fanSpeedPct != null
@@ -427,7 +438,7 @@ export function CracSchematic({ onSelectAsset }: CracSchematicProps) {
           x={160}
           y={386}
           textAnchor="middle"
-          className={`font-mono text-[10px] font-semibold ${pFill}`}
+          className={`font-mono text-[10px] font-semibold ${pTextTone}`}
         >
           SUP AIR · {cToF(primary.slice.supplyAirTempC).replace("°F", "F")}
         </text>
@@ -446,7 +457,7 @@ export function CracSchematic({ onSelectAsset }: CracSchematicProps) {
         x={325}
         y={143}
         textAnchor="middle"
-        className="font-mono text-[10px] font-bold"
+        className="fill-ink font-mono text-[10px] font-bold"
       >
         COMPRESSOR BANK
       </text>
@@ -528,7 +539,7 @@ export function CracSchematic({ onSelectAsset }: CracSchematicProps) {
         x={930}
         y={142}
         textAnchor="middle"
-        className="font-condensed text-[11px] font-bold"
+        className="fill-ink font-condensed text-[11px] font-bold"
       >
         PRIMARY PUMPS
       </text>
@@ -640,7 +651,7 @@ export function CracSchematic({ onSelectAsset }: CracSchematicProps) {
         inlet
       </text>
 
-      <text x={560} y={345} className="font-condensed text-xs font-bold">
+      <text x={560} y={345} className="fill-ink font-condensed text-xs font-bold">
         ZONES SERVED
       </text>
       <ZoneTile code="CH-CRAC-101" zoneLabel="DH101-A" x={560} onSelectAsset={onSelectAsset} />
