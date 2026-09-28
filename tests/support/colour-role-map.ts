@@ -1,7 +1,8 @@
 /*
  * `F3.65a` — the shade-to-role mapping table (plan `docs/plans/f3.65a-colour-tokens.md` §2.3, U5).
  *
- * `SHADE_ROLES` is the 76 distinct shades of `apps/web/src/**\/*.tsx` (§2.1), each carrying the
+ * `SHADE_ROLES` is the 76 distinct shades of `apps/web/src/**\/*.tsx` (§2.1) plus `violet-700`
+ * (`lib/value-provenance.ts`, `.ts`, Fix A) — 77 rows — each carrying the
  * role its uses were folded into. `kind: "exact"` means the role's *light* token value is
  * Tailwind's resolved value for that shade; `kind: "merged"` means the shade was folded into the
  * nearest role of its purpose, and `deltaE` records the CIEDE2000 colour difference between the
