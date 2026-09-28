@@ -65,11 +65,16 @@ export function parseTokenBlocks(css: string): TokenBlocks {
   return { light, dark };
 }
 
+/** `[r, g, b]` (each 0–255) as a lowercase `#rrggbb` string: `[0, 166, 81]` → `"#00a651"`. */
 export function channelsToHex([r, g, b]: Channels): string {
   const to2 = (n: number) => n.toString(16).padStart(2, "0");
   return `#${to2(r)}${to2(g)}${to2(b)}`;
 }
 
+/**
+ * A six-digit `#RRGGBB` string (either case, `#` optional) as `[r, g, b]`. Three- and eight-digit
+ * forms are not handled; every caller passes a token value or a Tailwind six-digit shade.
+ */
 export function hexToChannels(hex: string): Channels {
   const h = hex.replace("#", "");
   return [parseInt(h.slice(0, 2), 16), parseInt(h.slice(2, 4), 16), parseInt(h.slice(4, 6), 16)];

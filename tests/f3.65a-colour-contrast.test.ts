@@ -16,24 +16,17 @@ import { blendOver, contrastRatio, parseTokenBlocks, type Channels, channelsToHe
  * tint over its `bg` before measuring `fg` against that tint (the OK-pill background, `accent/10`
  * over `surface`).
  *
- * **`critical-ink-soft` (`text-red-600`) is declared on `surface` only.** The tree carries 24
- * `text-red-600` sites; every one of them sits directly on a plain surface (a `<p>` inside a
- * white card or list row) — none sits inside a `bg-red-50` / `bg-red-100` wash. §2.4's note is
- * therefore read literally: the wash rows for this role are "for the record", not declared.
+ * **`critical-ink-soft` (`text-red-600`) is declared on `surface` only.** The tree carries 29
+ * `text-red-600` uses (one of them `hover:`), mostly error and alert `<p>` lines; none carries a
+ * red wash on its own element. Their ancestors were not checked site by site, so a use inside a
+ * `bg-red-50` / `bg-red-100` wash, or straight on the page canvas (4.38 light, under 4.5), is
+ * not excluded: `F3.65b` declares that pair when its migration meets one. §2.4's wash ratios for
+ * this role are "for the record", not declared.
  *
  * **`ink-faint` on `canvas` (4.32 light) is deliberately absent** — its 12 uses sit inside cards,
  * never directly on the page canvas (§2.4). `line` / `line-strong` on `surface`, and each
  * `*-line` role on its own wash, are decorative boundaries under WCAG 1.4.11's exemption (a
  * boundary that is not the sole indicator of a state) and are not declared either (OQ5).
- *
- * **Known plan/measurement disagreement, reported rather than silently changed:** §2.4 prints
- * `critical` on `chrome` as **3.23 in both themes**. Measured here against the real dark `chrome`
- * (`#0F1620`, darker than light `chrome`), the ratio is **3.76**, not 3.23 — `critical` is
- * unchanged between themes while `chrome` gets darker, so the dark ratio should be *higher* than
- * light's 3.23, matching the pattern of the `surface` and `canvas` columns of the same row (which
- * both rise from light to dark). This does not change any assertion below: 3.76 clears 3:1 as
- * easily as 3.23 does, so the pair needs no allowlist entry either way — flagged for the plan
- * gate, not worked around here.
  */
 
 const TOKENS_PATH = join(repoRoot, "apps/web/src/index.css");
@@ -111,7 +104,7 @@ const TEXT_PAIRS: Pair[] = [
   { fg: "on-accent", bg: "accent-strong" },
   { fg: "critical-on-dark", bg: "chrome" },
   { fg: "warning-on-dark", bg: "chrome" },
-  // Fix A (owner ruling 2026-09-28): the 41st role, `simulated-ink` — light is Tailwind
+  // ADR 0078 Amendment 1 §1 (owner ruling 2026-09-28): the 41st role, `simulated-ink` — light is Tailwind
   // violet-700 exact (7.10 / 6.80); dark is D3-derived, forced past the first sheet/paper-only
   // stopping point (4.51 / 4.87, failing `well` at 4.04) to also clear `well` (5.13 / 5.54 / 4.59).
   { fg: "simulated-ink", bg: "surface" },

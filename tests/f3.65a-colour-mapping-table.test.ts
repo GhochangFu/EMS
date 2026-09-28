@@ -4,8 +4,7 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
 import { CLASS_OVERRIDES, roleFor, SHADE_ROLES } from "./support/colour-role-map";
-import { webColourSourceFiles } from "./support/colour-scan";
-import { paletteClasses } from "./support/colour-scan";
+import { paletteClasses, webColourSourceFiles } from "./support/colour-scan";
 import { blendOver, deltaE2000, parseTokenBlocks, resolveTailwindShade } from "./support/colour-tokens";
 import { repoRoot } from "./support/source-scan";
 
@@ -20,9 +19,9 @@ import { repoRoot } from "./support/source-scan";
  * carries a different role depending on the utility (`text-white` → `on-dark`, not the shade's
  * default `surface`).
  *
- * `violet-700` (Fix A, owner ruling 2026-09-28) is a 77th `SHADE_ROLES` row rather than a
- * `CLASS_OVERRIDES` entry: `lib/value-provenance.ts` is `.ts`, so §2.1's 76-shade count (scoped to
- * `.tsx`) never counted it, but M4 walks the whole tree and needs a resolution for it. It used to
+ * `violet-700` (ADR 0078 Amendment 1 §1, owner ruling 2026-09-28) is a 77th `SHADE_ROLES` row
+ * rather than a `CLASS_OVERRIDES` entry: `lib/value-provenance.ts` is `.ts`, so §2.1's 76-shade
+ * count (scoped to `.tsx`) never counted it, but M4 walks the whole tree and needs a resolution for it. It used to
  * be a `CLASS_OVERRIDES` entry mapping to `ink-faint`; the owner ruled it keeps its own colour as
  * the 41st role, `simulated-ink`, so the override was removed in favour of an exact `SHADE_ROLES`
  * row.

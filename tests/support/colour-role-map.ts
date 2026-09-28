@@ -2,7 +2,7 @@
  * `F3.65a` — the shade-to-role mapping table (plan `docs/plans/f3.65a-colour-tokens.md` §2.3, U5).
  *
  * `SHADE_ROLES` is the 76 distinct shades of `apps/web/src/**\/*.tsx` (§2.1) plus `violet-700`
- * (`lib/value-provenance.ts`, `.ts`, Fix A) — 77 rows — each carrying the
+ * (`lib/value-provenance.ts`, `.ts`, ADR 0078 Amendment 1 §1) — 77 rows — each carrying the
  * role its uses were folded into. `kind: "exact"` means the role's *light* token value is
  * Tailwind's resolved value for that shade; `kind: "merged"` means the shade was folded into the
  * nearest role of its purpose, and `deltaE` records the CIEDE2000 colour difference between the
@@ -24,8 +24,8 @@
  *
  * `text-violet-700` is not one of §2.3's 76 `.tsx` rows (§2.1 scopes that table to `.tsx`;
  * `lib/value-provenance.ts` is `.ts`) — it is `SHADE_ROLES`' 77th row, added so `roleFor` covers
- * the whole tree `webColourSourceFiles()` walks (M4). Until Fix A (owner ruling 2026-09-28) it was
- * a `CLASS_OVERRIDES` entry mapped to `ink-faint`, the same weight as the `nameplate` /
+ * the whole tree `webColourSourceFiles()` walks (M4). Until the owner's ruling of 2026-09-28
+ * (ADR 0078 Amendment 1 §1) it was a `CLASS_OVERRIDES` entry mapped to `ink-faint`, the same weight as the `nameplate` /
  * `configuration` markers it sits beside (`slate-500` / `sky-700`). The owner ruled it keeps its
  * own colour instead, as the 41st role `simulated-ink` — light Tailwind violet-700 `#6D28D9`
  * exact; dark `#A67DE8`, D3-derived (hue/sat kept, lightness raised in 0.5% steps) to clear 4.5:1
@@ -130,8 +130,8 @@ export const SHADE_ROLES: ShadeRoleRow[] = [
   { shade: "indigo-200", hex: "#C7D2FE", role: "info-line", kind: "merged", deltaE: 14.0 },
   { shade: "indigo-100", hex: "#E0E7FF", role: "info-wash", kind: "merged", deltaE: 8.83 },
   { shade: "indigo-800", hex: "#3730A3", role: "info-ink", kind: "merged", deltaE: 17.73 },
-  // Fix A (owner ruling 2026-09-28): not one of §2.3's 76 `.tsx` shades — `lib/value-provenance.ts`
-  // is `.ts` (§2.1 scopes that table to `.tsx`). See the file docblock.
+  // ADR 0078 Amendment 1 §1 (owner ruling 2026-09-28): not one of §2.3's 76 `.tsx` shades —
+  // `lib/value-provenance.ts` is `.ts` (§2.1 scopes that table to `.tsx`). See the file docblock.
   { shade: "violet-700", hex: "#6D28D9", role: "simulated-ink", kind: "exact" },
 ];
 

@@ -8,12 +8,12 @@ import { repoRoot } from "./support/source-scan";
 
 /**
  * `F3.65a` — the theme boot script (plan `docs/plans/f3.65a-colour-tokens.md` §4 U6, ADR 0078
- * decision 6 / plan D6). `apps/web/index.html` gets a plain inline `<script>` (no `type`, so it
+ * decision 4 / plan D6). `apps/web/index.html` gets a plain inline `<script>` (no `type`, so it
  * runs synchronously before the module script and before first paint) that reads
  * `localStorage["bms.theme"]` and sets `data-theme` on `<html>` to `"dark"` only for the exact
  * value `"dark"`, `"light"` for everything else (missing key, any other string, or a throwing
- * storage). No `prefers-color-scheme` / `matchMedia` — ADR 0078 decision 6 is an explicit switch,
- * not the OS preference (plan §1 "No visible switch").
+ * storage). No `prefers-color-scheme` / `matchMedia` — ADR 0078 decision 4 is an explicit choice,
+ * not the OS preference, with no `prefers-color-scheme` listener (plan §1 "Out of scope").
  *
  * The script's text is extracted from the real `index.html` and run with `node:vm` in a minimal
  * sandbox rather than parsed — the assertion is on what the script *does*, not on its source text

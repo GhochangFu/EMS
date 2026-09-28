@@ -106,8 +106,8 @@ const TAILWIND_CONFIG_PATH = join(repoRoot, "apps/web/tailwind.config.js");
 
 /**
  * The 40 roles of `docs/plans/f3.65a-colour-tokens.md` §2.2, light and dark hex, exact, plus the
- * 41st role `simulated-ink` (owner ruling 2026-09-28, Fix A, added after the plan's gate — see
- * `tests/support/colour-role-map.ts`'s docblock for the derivation). The 40 §2.2 rows are the
+ * 41st role `simulated-ink` (owner ruling 2026-09-28, ADR 0078 Amendment 1 §1, added after the
+ * plan's gate — see `tests/support/colour-role-map.ts`'s docblock for the derivation). The 40 §2.2 rows are the
  * plan's table transcribed, not derived; `simulated-ink` is not in the plan and is derived here.
  * T9/T10 are the check that `index.css` matches this table.
  */
@@ -152,9 +152,9 @@ const ROLE_HEX: Record<string, { light: string; dark: string }> = {
   "info-ink": { light: "#075985", dark: "#0C98E3" },
   "info-wash": { light: "#F0F9FF", dark: "#152D37" },
   "info-line": { light: "#BAE6FD", dark: "#2E586B" },
-  // The 41st role (owner ruling, 2026-09-28, Fix A): the "simulated" provenance marker in
-  // `lib/value-provenance.ts` (`text-violet-700`) keeps its own colour rather than folding into
-  // `ink-faint`. Light is Tailwind violet-700 exact; dark is D3-derived (hue/sat kept, lightness
+  // The 41st role (owner ruling 2026-09-28, ADR 0078 Amendment 1 §1): the "simulated"
+  // provenance marker in `lib/value-provenance.ts` (`text-violet-700`) keeps its own colour
+  // rather than folding into `ink-faint`. Light is Tailwind violet-700 exact; dark is D3-derived (hue/sat kept, lightness
   // raised in 0.5% steps) to clear 4.5:1 on sheet, paper and `well` (the declared pairs below) —
   // 5.13 / 5.54 / 4.59.
   "simulated-ink": { light: "#6D28D9", dark: "#A67DE8" },

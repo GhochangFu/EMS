@@ -1,15 +1,15 @@
 /** @type {import('tailwindcss').Config} */
 export default {
   content: ["./index.html", "./src/**/*.{js,ts,jsx,tsx}"],
-  // F3.65a decision D5 (ADR 0078 OQ8): a selector-driven dark mode, never `prefers-color-scheme`,
-  // so a stray `dark:` class can never follow the OS setting — the gate in
-  // `tests/f3.65-colour-roles-gate.test.ts` forbids the class itself (0 today).
+  // `docs/plans/f3.65a-colour-tokens.md` §3 D5 (plan OQ8): a selector-driven dark mode, never
+  // `prefers-color-scheme`, so a stray `dark:` class can never follow the OS setting — the gate
+  // in `tests/f3.65-colour-roles-gate.test.ts` forbids the class itself (0 today).
   darkMode: ["selector", '[data-theme="dark"]'],
   theme: {
     extend: {
       colors: {
         // F3.65c deletes `bms` once the ratchet gate (tests/f3.65-colour-roles-gate.test.ts) is at
-        // zero; kept here until then (ADR 0078 decision D8).
+        // zero; kept here until then (plan §3 D8).
         bms: {
           green: "#00A651",
           "green-light": "#3DCD58",
@@ -19,9 +19,10 @@ export default {
           ink: "#1A2230",
           muted: "#4A5464",
         },
-        // F3.65a decision 2.2 — the 40 role tokens, plus a 41st, `simulated-ink` (owner ruling
-        // 2026-09-28, Fix A, added after the plan's gate). Each value is `rgb(var(--role) / <alpha-value>)`
-        // so `/NN` opacity utilities (`bg-accent/20`) keep working; the channel triplet itself lives
+        // Plan §2.2 — the 40 role tokens, plus a 41st, `simulated-ink` (owner ruling 2026-09-28,
+        // ADR 0078 Amendment 1 §1, added after the plan's gate). Each value is
+        // `rgb(var(--role) / <alpha-value>)` so `/NN` opacity utilities (`bg-accent/20`) keep
+        // working; the channel triplet itself lives
         // in `apps/web/src/index.css`. `tests/f3.65a-colour-tokens.test.ts` T11 imports this object
         // and holds every leaf outside `bms` to exactly its own role's variable.
         canvas: "rgb(var(--canvas) / <alpha-value>)",
