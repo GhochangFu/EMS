@@ -57,6 +57,22 @@ const NOTIFY_CHANNEL = "bms_telemetry";
 const MAX_NOTIFY_UTF8_BYTES = 7000;
 
 const pool = new pg.Pool({ connectionString: databaseUrl });
+// F4.173: a restarted Postgres ends pooled clients, and with no listener Node
+// throws and the simulator exits. pg-pool re-emits an idle client's error on
+// the pool but not a checked-out one's, so a checked-out client gets its own
+// listener until release. Log the message only and keep ticking.
+pool.on("error", (err) => {
+  console.error("[sim] postgres pool error:", err.message);
+});
+const onCheckedOutError = (err) => {
+  console.error("[sim] postgres checked-out client error:", err.message);
+};
+pool.on("acquire", (client) => {
+  client.on("error", onCheckedOutError);
+});
+pool.on("release", (_err, client) => {
+  client.removeListener("error", onCheckedOutError);
+});
 
 const metricsRegistry = new promClient.Registry();
 metricsRegistry.setDefaultLabels({ service: "bms-sim" });
