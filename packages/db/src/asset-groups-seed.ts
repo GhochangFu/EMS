@@ -9,17 +9,21 @@ import type pg from "pg";
  */
 
 /**
- * Points every asset at the location whose name matches its site name.
+ * The statement {@link backfillAssetLocations} runs. Exported so
+ * `asset-groups-seed.spec.ts` can hold its text: the one branch that matters
+ * (`location_id IS NULL`) cannot be reached by an integration test, because
+ * `bms.assets.location_id` is NOT NULL.
+ *
+ * It fills a NULL `location_id` and never moves an asset that has one (owner
+ * ruling 14). It used to also match `a.location_id <> l.id`, so an admin
+ * asset at one location whose free-text `site_name` named another was moved
+ * there on every boot, and its asset-group membership went with it.
  *
  * A location name is not unique — an admin may create a second location with
  * a seeded location's name — so only the OLDEST location of each name is a
- * candidate (`DISTINCT ON (name) … ORDER BY name, created_at, id`). Joined to
- * every location of a name instead, the UPDATE matched the newer one for an
- * asset already at the older (`location_id <> l.id` holds only for it) and
- * moved every seeded asset of that site to the admin's location.
+ * candidate (`DISTINCT ON (name) … ORDER BY name, created_at, id`).
  */
-export async function backfillAssetLocations(pool: pg.Pool): Promise<void> {
-  await pool.query(`
+export const BACKFILL_ASSET_LOCATIONS_SQL = `
     UPDATE bms.assets AS a
     SET location_id = l.id
     FROM (
@@ -28,8 +32,22 @@ export async function backfillAssetLocations(pool: pg.Pool): Promise<void> {
       ORDER BY name, created_at, id
     ) AS l
     WHERE a.site_name = l.name
-      AND (a.location_id IS NULL OR a.location_id <> l.id)
-  `);
+      AND a.location_id IS NULL
+  `;
+
+/**
+ * Points every asset with no location at the location whose name matches its
+ * site name.
+ *
+ * **A no-op after the first boot, and kept** (owner ruling 14, OQ4). Every
+ * asset INSERT in the seed sets `location_id`, the column is NOT NULL, and
+ * `enforceHierarchyNotNull` re-applies that at the end of every seed, so no
+ * row it could fill survives a boot. It stays for a database on which the
+ * column is still nullable and a row has no location, where it is the step
+ * that lets `enforceHierarchyNotNull` pass.
+ */
+export async function backfillAssetLocations(pool: pg.Pool): Promise<void> {
+  await pool.query(BACKFILL_ASSET_LOCATIONS_SQL);
 }
 
 /**

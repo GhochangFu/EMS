@@ -748,16 +748,29 @@ describe.skipIf(!ownerUrl)("F4.169/F4.170 addendum — the boot gate after ordin
     });
   }, 60_000);
 
-  it("R5: backfillAssetLocations with a newer same-name location keeps every asset at the canonical location", async () => {
-    await inEskomSeedTransaction(async (pool, db) => {
-      await insertSecondWesternCape(pool, db, null);
-      const before = await wiringOf(pool, "RSMOC Western Cape");
-      assert(before.length > 0, "RSMOC-WC must carry seeded assets");
+  // R5 (a same-name location did not capture the backfill) held vacuously once
+  // the backfill fills only a NULL location_id (owner ruling 14, OQ7); L1
+  // replaces it.
+  it("L1: backfillAssetLocations leaves an admin asset whose site_name names another location where it is", async () => {
+    await inEskomSeedTransaction(async (pool) => {
+      const csmoc = await pool.query<{ id: string }>(
+        `SELECT id FROM bms.locations WHERE organization_id = $1 AND code = 'CSMOC-GP'`,
+        [eskomOrgId],
+      );
+      const csmocId = csmoc.rows[0]?.id;
+      assert(!!csmocId, "CSMOC-GP must be seeded");
+      const code = `F4169-${RUN_ID}-L1`;
+      await pool.query(
+        `INSERT INTO bms.assets (organization_id, location_id, code, name, site_name, domain)
+         VALUES ($1, $2, $3, 'F4.169 fixture admin asset', 'RSMOC Western Cape', 'electrical')`,
+        [eskomOrgId, csmocId, code],
+      );
       await backfillAssetLocations(pool);
-      const moved = (await wiringOf(pool, "RSMOC Western Cape")).filter((row) => row.location_id !== rsmocWcId);
-      // Mutation: joining every location of the name (no DISTINCT ON
-      // subquery) matches L2 for each asset already at RSMOC-WC and moves it.
-      expect(moved.map((row) => row.code), "no RSMOC Western Cape asset may move off RSMOC-WC").toEqual([]);
+      const after = await pool.query<{ location_id: string }>(`SELECT location_id FROM bms.assets WHERE code = $1`, [
+        code,
+      ]);
+      // Mutation: restoring `OR a.location_id <> l.id` moves it to RSMOC-WC.
+      expect(after.rows, "the admin asset must stay at CSMOC-GP").toEqual([{ location_id: csmocId }]);
     });
   }, 60_000);
 });

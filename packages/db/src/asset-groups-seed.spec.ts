@@ -1,6 +1,11 @@
 import { expect } from "vitest";
 
-import { demoGroupCodesForAsset, demoGroupName, demoRoleForAsset } from "./asset-groups-seed";
+import {
+  BACKFILL_ASSET_LOCATIONS_SQL,
+  demoGroupCodesForAsset,
+  demoGroupName,
+  demoRoleForAsset,
+} from "./asset-groups-seed";
 import { assetCode, deviceDomain, loadPheCatalog } from "./phe-pilot-seed";
 
 /** Vitest entry point lives in the sibling `.test.ts` (ADR 0014). */
@@ -254,4 +259,26 @@ export function assertTheSeedRolesNoPheEnvironmentDevice(): void {
     [...environment].filter((code) => demoRoleForAsset(code, "environment") !== null),
     "the seed must give no PHE environment device a role",
   ).toEqual([]);
+}
+
+/**
+ * `F4.169` / `F4.170` addendum 2, owner ruling 14 — the location backfill
+ * fills a NULL `location_id` and never moves an asset that has one.
+ *
+ * A text gate, not an integration case, for the NULL branch: the column is
+ * NOT NULL, so no test can hold a row for it to fill. The integration suite
+ * (boot-gates L1) holds the other half — an admin asset whose `site_name`
+ * names another location stays where it is.
+ *
+ * Mutations: restoring `OR a.location_id <> l.id` fails the `<>` check;
+ * dropping `IS NULL` fails the first; dropping the `DISTINCT ON` ordering
+ * fails the last.
+ */
+export function assertTheBackfillFillsOnlyANullLocation(): void {
+  const sql = BACKFILL_ASSET_LOCATIONS_SQL.replace(/\s+/g, " ");
+  expect(sql, "the backfill must fill only a NULL location_id").toContain("AND a.location_id IS NULL");
+  expect(sql, "the backfill must not move an asset that has a location").not.toContain("<>");
+  expect(sql, "only the oldest location of a name is a candidate").toContain(
+    "SELECT DISTINCT ON (name) id, name FROM bms.locations ORDER BY name, created_at, id",
+  );
 }
