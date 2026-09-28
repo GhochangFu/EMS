@@ -150,9 +150,21 @@ None. The SVG is hand-written; no drawing library is added.
   assigned".** Options were: show dimmed; hide the node and its pipe; a
   per-widget checkbox. The full process line stays visible and the picture
   never changes shape, so the customer sees what is not yet connected.
-- **Open point 2 — open.** The demo plant sits under the `ESKOM`
-  organization at "CSMOC Gauteng", and the Ion Exchange audience sees those
-  names.
+- **Open point 2 — ruled 2026-09-28: the customer demo runs in its own
+  organization, set up by hand.** The seeded demo plant sits under `ESKOM` at
+  "CSMOC Gauteng"; it stays there for development and tests (decision 5). The
+  mimic is code, not data, so any organization can use it. For the Ion
+  Exchange demo, an administrator creates an Ion Exchange test organization on
+  the demo host in the admin screens: a site, five water assets from the stock
+  water templates with `WTR-<CLASS>-NN` codes (the only codes the simulator
+  gives water flows, in any organization; it reads assets once at start, so it
+  restarts after), an asset group with the roles, and a group dashboard with
+  the mimic. A login scoped to that organization never sees `ESKOM` or `PHE`.
+  The steps are proved on the local stack before the cutoff and written as a
+  runbook. Options were: this; seed the new organization; both. A seed would
+  have to re-state the `ESKOM`-bound water seed and its post-conditions.
+  Section templates are per organization, so a template authored in `ESKOM`
+  does not carry over; the widget is added in the builder.
 - **Schedule risk:** the read-time node resolver is new API and web code; the
   existing dashboard telemetry hook reads only bound points.
 - `F3.65b` / `F3.65c` edit the same web tree in the same days. The mimic
