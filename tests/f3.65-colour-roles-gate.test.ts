@@ -262,7 +262,7 @@ describe("F3.65 colour scan — fixtures", () => {
  * `F3.65b` (R20 holds it); `F3.65c` empties the table.
  */
 const FLOOR: { file: string; palette: number; hex: number; func: number }[] = [
-  { file: "pages/login-page.tsx", palette: 0, hex: 5, func: 1 },
+
 ];
 
 function floorDiff(): string[] {
