@@ -444,6 +444,172 @@ describe.skipIf(!ownerUrl)(
       });
     }, 60_000);
 
+    // ── Owner ruling 15: guard 1 counts only a rule that can fire ────────────
+
+    /** One ladder rule's condition tuple. */
+    type LadderTuple = (typeof ESKOM_LADDER_RULES)[number];
+
+    /** A rule on `assetId` with `rule`'s condition tuple, in the given state. */
+    async function insertTupleRule(
+      pool: SeedPool,
+      assetId: string,
+      code: string,
+      rule: LadderTuple,
+      state: { enabled: boolean; lifecycleStatus: "draft" | "published" | "archived" },
+    ): Promise<void> {
+      await pool.query(
+        `INSERT INTO bms.automation_rules
+           (organization_id, code, name, rule_type, asset_id, point_key, operator, threshold_value,
+            enabled, lifecycle_status)
+         VALUES ($1, $2, 'F4.169 fixture tuple rule', 'threshold', $3, $4, $5, $6, $7, $8)`,
+        [
+          eskomOrgId,
+          code,
+          assetId,
+          rule.pointKey,
+          rule.operator,
+          rule.thresholdValue,
+          state.enabled,
+          state.lifecycleStatus,
+        ],
+      );
+    }
+
+    /** The ladder (`simulator_threshold`) codes on `assetId`, sorted by code unit. */
+    async function ladderCodes(pool: SeedPool, assetId: string): Promise<string[]> {
+      const { rows } = await pool.query<{ code: string }>(
+        `SELECT code FROM bms.automation_rules WHERE asset_id = $1 AND source = 'simulator_threshold'`,
+        [assetId],
+      );
+      return rows.map((row) => row.code).sort();
+    }
+
+    function ladderRule(suffix: string): LadderTuple {
+      const rule = ESKOM_LADDER_RULES.find((candidate) => candidate.suffix === suffix);
+      assert(!!rule, `ESKOM_LADDER_RULES must hold ${suffix}`);
+      return rule as LadderTuple;
+    }
+
+    it("I10: five draft operator rules with the ladder tuples do not stand in for the ladder", async () => {
+      await inRolledBackTransaction(async (tx) => {
+        const assetCode = `f4169-${runId}-drafts`;
+        const assetId = await tx.insertAsset(assetCode);
+        for (const rule of ESKOM_LADDER_RULES) {
+          await insertTupleRule(tx.pool, assetId, `F4169_${RUN_ID}_DRAFT_${rule.suffix}`, rule, {
+            enabled: true,
+            lifecycleStatus: "draft",
+          });
+        }
+
+        await tx.seed();
+
+        // Mutation: guard 1 without the published-and-enabled filter reads the
+        // five drafts as the ladder, and this reads no code at all.
+        expect(await ladderCodes(tx.pool, assetId), "the asset must get all five ladder rules").toEqual(
+          expectedCodes(assetCode),
+        );
+      });
+    }, 60_000);
+
+    it("I11: a disabled published rule with the DEMAND_HIGH tuple does not stand in for it", async () => {
+      await inRolledBackTransaction(async (tx) => {
+        const assetCode = `f4169-${runId}-disabled`;
+        const assetId = await tx.insertAsset(assetCode);
+        await insertTupleRule(tx.pool, assetId, `F4169_${RUN_ID}_OFF_DEMAND`, ladderRule("DEMAND_HIGH"), {
+          enabled: false,
+          lifecycleStatus: "published",
+        });
+
+        await tx.seed();
+
+        // Mutation: a filter on the lifecycle alone counts the disabled rule,
+        // and DEMAND_HIGH is missing here.
+        expect(
+          await ladderCodes(tx.pool, assetId),
+          "a disabled rule cannot fire, so the ladder gets DEMAND_HIGH",
+        ).toContain(ladderRuleCode(assetCode, "DEMAND_HIGH"));
+      });
+    }, 60_000);
+
+    it("I12: an enabled archived rule with the DEMAND_HIGH tuple does not stand in for it", async () => {
+      await inRolledBackTransaction(async (tx) => {
+        const assetCode = `f4169-${runId}-archived`;
+        const assetId = await tx.insertAsset(assetCode);
+        await insertTupleRule(tx.pool, assetId, `F4169_${RUN_ID}_ARCH_DEMAND`, ladderRule("DEMAND_HIGH"), {
+          enabled: true,
+          lifecycleStatus: "archived",
+        });
+
+        await tx.seed();
+
+        // Mutation: a filter on `enabled` alone counts the archived rule, and
+        // DEMAND_HIGH is missing here.
+        expect(
+          await ladderCodes(tx.pool, assetId),
+          "an archived rule cannot fire, so the ladder gets DEMAND_HIGH",
+        ).toContain(ladderRuleCode(assetCode, "DEMAND_HIGH"));
+      });
+    }, 60_000);
+
+    it("I13: UPS-A's published, enabled demand_ceiling_notify still keeps the ladder's DEMAND_HIGH off UPS-A", async () => {
+      await inRolledBackTransaction(async (tx) => {
+        const demandHigh = ladderRule("DEMAND_HIGH");
+        const ups = await tx.pool.query<{ id: string }>(
+          `SELECT id FROM bms.assets WHERE code = 'UPS-A' AND domain = 'electrical'`,
+        );
+        const upsId = ups.rows[0]?.id;
+        assert(!!upsId, "F4.169: UPS-A is not seeded as an electrical asset — run pnpm db:seed.");
+        const demand = await tx.pool.query<{ ok: boolean }>(
+          `SELECT (enabled AND lifecycle_status = 'published'
+                   AND point_key = $2 AND operator = $3 AND threshold_value = $4) AS ok
+             FROM bms.automation_rules WHERE asset_id = $1 AND code = 'demand_ceiling_notify'`,
+          [upsId, demandHigh.pointKey, demandHigh.operator, demandHigh.thresholdValue],
+        );
+        assert(
+          demand.rows.length === 1 && demand.rows[0]?.ok === true,
+          "UPS-A's demand_ceiling_notify must be seeded published, enabled, with the DEMAND_HIGH tuple",
+        );
+        const ladderDemand = ladderRuleCode("UPS-A", "DEMAND_HIGH");
+        assert(
+          !(await ladderCodes(tx.pool, upsId as string)).includes(ladderDemand),
+          `${ladderDemand} must not exist before the seed, or this case is vacuous`,
+        );
+
+        await tx.seed();
+
+        // Mutation: dropping guard 1 inserts it here.
+        expect(await ladderCodes(tx.pool, upsId as string), `${ladderDemand} must not be seeded`).not.toContain(
+          ladderDemand,
+        );
+      });
+    }, 60_000);
+
+    it("I14: a disabled seeded _PF_LOW under a renamed asset's old code still stands in for PF_LOW", async () => {
+      await inRolledBackTransaction(async (tx) => {
+        // Renamed first, so the disabled rule's code is not the one the seed
+        // now computes: guard 3 cannot hold it, and only guard 2 decides.
+        const oldCode = `F4169-${RUN_ID}-PFOLD`;
+        const newCode = `F4169-${RUN_ID}-PFNEW`;
+        const assetId = await tx.insertAsset(oldCode);
+        await tx.seed();
+        const renamed = await tx.pool.query(`UPDATE bms.assets SET code = $1 WHERE id = $2`, [newCode, assetId]);
+        assert(renamed.rowCount === 1, "the rename must update the fixture asset");
+        const disabled = await tx.pool.query(
+          `UPDATE bms.automation_rules SET enabled = false WHERE asset_id = $1 AND code = $2`,
+          [assetId, ladderRuleCode(oldCode, "PF_LOW")],
+        );
+        assert(disabled.rowCount === 1, "the fixture must disable the seeded _PF_LOW rule");
+
+        await tx.seed();
+
+        // Mutation: guard 2 counting only enabled rules inserts a second
+        // PF_LOW under the new code, and this reads 6.
+        expect(await ladderCodes(tx.pool, assetId), "the asset keeps exactly its five seeded rules").toEqual(
+          expectedCodes(oldCode),
+        );
+      });
+    }, 60_000);
+
     it("I6: the control-room seeders still normalise a stray-case code rather than duplicate it", async () => {
       await inRolledBackTransaction(async (tx) => {
         const asset = await tx.pool.query<{ id: string }>(

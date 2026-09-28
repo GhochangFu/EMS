@@ -648,12 +648,13 @@ export type LadderCollisionSkip = { readonly assetId: string; readonly assetCode
 
 /**
  * Seeds the ESKOM ladder onto every electrical asset, skipping any of the
- * five rules wherever that asset already carries a rule with the same
- * `(asset_id, point_key, operator, threshold_value)` condition — matching
- * `0033`'s own condition-tuple `NOT EXISTS` guard exactly, not just for
- * `DEMAND_HIGH`. That is what keeps `UPS-A`'s `demand_ceiling_notify`
- * (seeded above by `seedDemoRules`) from getting a duplicate
- * `ESKOM_UPS_A_DEMAND_HIGH` beside it.
+ * five rules wherever that asset already carries a published, enabled rule
+ * with the same `(asset_id, point_key, operator, threshold_value)` condition
+ * — `0033`'s own condition-tuple `NOT EXISTS` guard, for all five rules and
+ * not just `DEMAND_HIGH`, less the rules that cannot fire (owner ruling 15).
+ * That is what keeps `UPS-A`'s `demand_ceiling_notify` (seeded above by
+ * `seedDemoRules`) from getting a duplicate `ESKOM_UPS_A_DEMAND_HIGH` beside
+ * it.
  *
  * Code review and migration review, PR #100: an earlier draft keyed only
  * `DEMAND_HIGH` on the condition tuple and left the other four on
@@ -676,7 +677,9 @@ export type LadderCollisionSkip = { readonly assetId: string; readonly assetCode
  * runs three guards, in order, and never updates a stored code:
  *
  * 1. **Condition tuple** (above), first, for the `UPS-A`
- *    `demand_ceiling_notify` case.
+ *    `demand_ceiling_notify` case. Only a rule that is published and enabled
+ *    counts, of any source (owner ruling 15): five draft operator rules with
+ *    the ladder's tuples used to leave an asset with no ladder rule at all.
  * 2. **Asset and suffix.** The asset already carries a
  *    `source = 'simulator_threshold'` rule whose code's `_`-delimited tail
  *    is this rule's suffix ({@link ladderSuffixOf}). `asset_id` keeps
@@ -762,8 +765,13 @@ export async function seedEskomLadderRules(
       pointKey: automationRules.pointKey,
       operator: automationRules.operator,
       thresholdValue: automationRules.thresholdValue,
+      enabled: automationRules.enabled,
+      lifecycleStatus: automationRules.lifecycleStatus,
     })
     .from(automationRules);
+  // Guard 1 counts a rule only while it can fire: published AND enabled, of
+  // any source (owner ruling 15). A draft, archived or disabled rule with a
+  // ladder tuple no longer stands in for the ladder rule.
   const existingConditions = new Set(
     existingRows
       .filter(
@@ -772,7 +780,11 @@ export async function seedEskomLadderRules(
           pointKey: string;
           operator: string;
           thresholdValue: number;
+          enabled: boolean;
+          lifecycleStatus: string;
         } =>
+          row.enabled &&
+          row.lifecycleStatus === "published" &&
           row.assetId !== null &&
           row.pointKey !== null &&
           row.operator !== null &&
