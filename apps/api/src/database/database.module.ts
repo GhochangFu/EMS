@@ -17,19 +17,36 @@ const urls = (): ReturnType<typeof resolveDatabaseUrls> => resolveDatabaseUrls(p
 const logger = new Logger("DatabaseModule");
 
 /**
- * `F4.173` — one pool, with the `'error'` listener every pool needs. pg-pool
- * emits `'error'` when the server ends a client that sits idle in the pool (a
- * Postgres restart, a failover, `pg_terminate_backend`, an idle-timeout proxy);
- * with no listener Node throws and the process exits, and this module is
- * imported by both the api and the worker. The event is routine, so it is
- * logged and nothing else: the pool has already dropped the client, and the
- * next query opens a fresh one. Only `err.message` is logged — the error object
+ * `F4.173` — one pool, with the `'error'` listeners every pool needs. pg emits
+ * `'error'` on a client whose backend the server ends (a Postgres restart, a
+ * failover, `pg_terminate_backend`, an idle-timeout proxy); with no listener
+ * Node throws and the process exits, and this module is imported by both the
+ * api and the worker.
+ *
+ * Two listeners, because pg-pool covers only half of a client's life. While a
+ * client is idle, pg-pool listens on it and re-emits on the pool, so the pool
+ * listener catches it. When the client is checked out (`pool.connect()`, which
+ * every drizzle `transaction()` and so every `withTenant` uses), pg-pool
+ * removes that listener until release, so the client gets its own for exactly
+ * that span. The event is routine, so it is logged and nothing else: the dead
+ * client is dropped on release, and the next query opens a fresh one.
+ *
+ * Only `err.message` is logged, as the only argument — the error object
  * carries the client, whose connection parameters include the password.
  */
 function createPool(name: "auth" | "tenant" | "fleet", connectionString: string): pg.Pool {
   const pool = new pg.Pool({ connectionString });
   pool.on("error", (err: Error) => {
     logger.error(`${name} pool: idle client error: ${err.message}`);
+  });
+  const onCheckedOutError = (err: Error): void => {
+    logger.error(`${name} pool: checked-out client error: ${err.message}`);
+  };
+  pool.on("acquire", (client: pg.PoolClient) => {
+    client.on("error", onCheckedOutError);
+  });
+  pool.on("release", (_err: Error | undefined, client: pg.PoolClient) => {
+    client.removeListener("error", onCheckedOutError);
   });
   return pool;
 }

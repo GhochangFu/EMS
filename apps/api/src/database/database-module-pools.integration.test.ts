@@ -4,8 +4,11 @@ import type pg from "pg";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, it, vi, type MockInstance } from "vitest";
 
 import {
+  assertCheckedOutClientLossIsLoggedForPool,
+  assertCheckoutLeavesNoListenerBehind,
   assertIdleClientLossIsLoggedForPool,
   assertPoolServesTheNextQuery,
+  assertPoolServesTheNextQueryAfterACheckout,
 } from "./database-module-pools.integration.spec";
 import { DatabaseModule } from "./database.module";
 import { AUTH_POOL, FLEET_POOL, TENANT_POOL } from "./database.tokens";
@@ -30,9 +33,9 @@ import { asRole } from "../testing/role-urls";
 
 const connectionString = requireIntegrationDb({
   item: "F4.173",
-  label: "DatabaseModule pools against a server-ended idle client",
+  label: "DatabaseModule pools against a server-ended client",
   because:
-    "a pg.Pool with no 'error' listener throws when Postgres ends an idle client. No other " +
+    "a pg client with no 'error' listener throws when Postgres ends its backend. No other " +
     "suite boots DatabaseModule, so this is the only gate that api and worker survive a restart.",
   connection: "owner",
 });
@@ -46,7 +49,7 @@ const ROLE_ENV = [
 type PoolName = (typeof ROLE_ENV)[number][0];
 
 describe.skipIf(!connectionString)(
-  "F4.173 — DatabaseModule pools against a server-ended idle client",
+  "F4.173 — DatabaseModule pools against a server-ended client",
   () => {
     const saved = new Map<string, string | undefined>();
     const urls = {} as Record<PoolName, string>;
@@ -100,6 +103,18 @@ describe.skipIf(!connectionString)(
 
       it(`${name} pool serves the next query after an idle client was ended`, async () => {
         await assertPoolServesTheNextQuery(name, pools[name], urls[name], spy);
+      });
+
+      it(`${name} pool logs a checked-out client's loss with the pool name and the reason`, async () => {
+        await assertCheckedOutClientLossIsLoggedForPool(name, pools[name], urls[name], spy);
+      });
+
+      it(`${name} pool serves the next query after a checked-out client was ended`, async () => {
+        await assertPoolServesTheNextQueryAfterACheckout(name, pools[name], urls[name], spy);
+      });
+
+      it(`${name} pool leaves no error listener behind after a checkout`, async () => {
+        await assertCheckoutLeavesNoListenerBehind(pools[name]);
       });
     }
   },
