@@ -207,8 +207,8 @@ export function roleOpacityModifiers(
   return [...blankComments(src).matchAll(re)].map((m) => ({ index: m.index, className: m[0], modifier: m[1] }));
 }
 
-/** One file's counted kinds — the shape of a `FLOOR` row. */
-export type ColourFloorRow = { file: string; palette: number; hex: number; func: number };
+/** One file's counted kinds; R20–R22 hold each at zero. */
+export type ColourCountRow = { file: string; palette: number; hex: number; func: number };
 
 /**
  * `file:line label` for every hard-zero finding in `src` (see the file docblock for the six
@@ -240,11 +240,11 @@ export function colourFindings(src: string, file: string): string[] {
  * every colour in it. `rows` holds only files with a non-zero count, sorted by repo-relative path.
  */
 export function scanColourFiles(files: string[]): {
-  rows: ColourFloorRow[];
+  rows: ColourCountRow[];
   findings: string[];
   walked: number;
 } {
-  const rows: ColourFloorRow[] = [];
+  const rows: ColourCountRow[] = [];
   const findings: string[] = [];
   for (const full of files) {
     const src = readFileSync(full, "utf8");
