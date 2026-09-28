@@ -266,6 +266,7 @@ function LayoutEditor({ initial, saving, saveError, stale, canSave, onSave, orga
           <button
             type="button"
             disabled={saving || stale || !canSave}
+            aria-busy={saving}
             onClick={() => onSave(state.layout)}
             className="rounded bg-accent px-3 py-2 text-xs font-semibold text-on-accent disabled:opacity-50"
           >

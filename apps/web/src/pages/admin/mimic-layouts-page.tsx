@@ -161,10 +161,11 @@ function LayoutRow({ item, confirming, deleting, onAskDelete, onCancelDelete, on
               <button
                 type="button"
                 disabled={deleting}
+                aria-busy={deleting}
                 onClick={onConfirmDelete}
                 className="text-xs font-semibold text-critical-ink"
               >
-                Confirm delete
+                {deleting ? "Deleting…" : "Confirm delete"}
               </button>
               <button type="button" onClick={onCancelDelete} className="text-xs font-semibold text-ink-muted">
                 Cancel
