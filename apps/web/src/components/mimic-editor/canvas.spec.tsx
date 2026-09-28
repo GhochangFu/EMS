@@ -117,6 +117,49 @@ export function pipeModeOutlinesTheStart(): void {
   expect(screen.getByTestId("mimic-editor-pipe-start")).toHaveAttribute("x", "290");
 }
 
+/**
+ * A drag of `ro` 50 px right that the browser cancels. jsdom measures every element 0 × 0, so
+ * the container is given the canvas's own pixel size (10 px per cell) — without it no `preview`
+ * is ever dispatched and a cancel test holds whether or not the cancel reverts. The dispatched
+ * actions are folded through the real reducer so the box and the history can be read.
+ */
+function cancelledDrag(): { before: EditorState; after: EditorState; actions: EditorAction[] } {
+  const before = presetState();
+  vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockReturnValue({
+    width: before.layout.canvasW * 10,
+    height: before.layout.canvasH * 10,
+  } as DOMRect);
+  const { dispatch } = renderCanvas(before);
+  fireEvent.pointerDown(hit("ro"), { clientX: 100, clientY: 100, pointerId: 1 });
+  fireEvent.pointerMove(hit("ro"), { clientX: 150, clientY: 100, pointerId: 1 });
+  fireEvent.pointerCancel(hit("ro"), { pointerId: 1 });
+  const actions = dispatch.mock.calls.map(([action]) => action);
+  return { before, after: actions.reduce(editorReducer, before), actions };
+}
+
+function roBox(state: EditorState): { x: number; y: number; w: number; h: number } | undefined {
+  const node = state.layout.nodes.find((n) => n.key === "ro");
+  return node === undefined ? undefined : { x: node.x, y: node.y, w: node.w, h: node.h };
+}
+
+/** C14 — the anchor for C15/C16: the drag really moved the node before it was cancelled. */
+export function aCancelledDragHadPreviewed(): void {
+  const { actions } = cancelledDrag();
+  expect(actions).toContainEqual({ type: "preview", key: "ro", box: { x: 58, y: 4, w: 20, h: 25 } });
+}
+
+/** C15 — a cancelled drag puts the node back at its pre-drag box. */
+export function aCancelledDragRevertsTheBox(): void {
+  const { before, after } = cancelledDrag();
+  expect(roBox(after)).toEqual(roBox(before));
+}
+
+/** C16 — a cancelled drag pushes nothing onto the undo stack. */
+export function aCancelledDragPushesNoHistory(): void {
+  const { before, after } = cancelledDrag();
+  expect(after.past.length).toBe(before.past.length);
+}
+
 /** C13 — the canvas draws the layout through `MimicScene`: a passive unit is `passive`. */
 export function drawsThroughMimicScene(): void {
   const { view } = renderCanvas(presetState());

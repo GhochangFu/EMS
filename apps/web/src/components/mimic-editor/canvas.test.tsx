@@ -14,8 +14,8 @@ describe("F3.32c mimic editor canvas", () => {
   const cases = Object.entries(spec);
 
   it("has its claims", () => {
-    if (cases.length < 13) {
-      throw new Error(`expected at least 13 claims, found ${cases.length}`);
+    if (cases.length < 16) {
+      throw new Error(`expected at least 16 claims, found ${cases.length}`);
     }
   });
 

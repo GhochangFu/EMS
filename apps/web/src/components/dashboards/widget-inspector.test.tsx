@@ -15,12 +15,15 @@ import {
   aValueTileShowsTheBoundPointsField,
   aValueTileShowsTheDecimalsField,
   aValueTileShowsTheUnitField,
+  anUnlistedStoredLayoutStaysSelected,
   choosingALayoutWritesItToTheConfig,
   choosingAPresetWritesItToTheConfig,
   choosingLayoutSourceWritesItToTheConfig,
   stubFetch,
   stubMimicLayouts,
   theLayoutSelectListsLibraryNames,
+  theLayoutSelectListsTheDashboardsOrganizationsLayout,
+  theLayoutSelectOmitsAnotherOrganizationsLayout,
   thePresetOptionReadsThePresetLabel,
   thePresetProblemRendersUnderThePreset,
 } from "./widget-inspector.spec";
@@ -113,5 +116,17 @@ describe("F3.32 widget inspector — the plant mimic", () => {
 
   it("F3.32c: a layout source with no layout chosen reports the layout problem", () => {
     aLayoutSourceWithNoLayoutReportsTheProblem();
+  });
+
+  it("F3.32c: the Layout select lists the dashboard's organization's layout (the control for the next case)", async () => {
+    await theLayoutSelectListsTheDashboardsOrganizationsLayout();
+  });
+
+  it("F3.32c: the Layout select omits another organization's layout", async () => {
+    await theLayoutSelectOmitsAnotherOrganizationsLayout();
+  });
+
+  it("F3.32c: a stored layout id the list does not hold stays the select's value", async () => {
+    await anUnlistedStoredLayoutStaysSelected();
   });
 });

@@ -66,8 +66,11 @@ export function WidgetInspector({ row, problems, role, organizationId, onChange,
     .find((key) => METRIC_CATALOG[key].shape === "dataset");
   // `F3.32c` (ADR 0081) — called unconditionally (rules of hooks), like every other hook this
   // component reads regardless of `row.widgetType`; the library select below is the only reader.
+  // A global admin's `list()` holds every organization's layouts; a widget may name only its
+  // dashboard's organization's (the API answers 400 otherwise), so the others are not offered.
   const layoutsQuery = useMimicLayouts();
-  const layouts = layoutsQuery.data?.items ?? [];
+  const layouts = (layoutsQuery.data?.items ?? []).filter((layout) => layout.organizationId === organizationId);
+  const storedLayoutId = row.config.mimicLayoutId;
   const mimicSource = row.config.mimicSource ?? "preset";
 
   function updateConfig(patch: Partial<WidgetConfigRow>): void {
@@ -260,7 +263,12 @@ export function WidgetInspector({ row, problems, role, organizationId, onChange,
             onChange={(event) => updateConfig({ mimicLayoutId: event.target.value || undefined })}
             className="w-full rounded border border-line px-2 py-1.5 text-xs"
           >
-            {row.config.mimicLayoutId === undefined ? <option value="">Choose a layout</option> : null}
+            {storedLayoutId === undefined ? <option value="">Choose a layout</option> : null}
+            {/* A stored id the list does not hold (still loading, failed, or not this
+                organization's) keeps its own option, so the select never shows another name. */}
+            {storedLayoutId !== undefined && !layouts.some((layout) => layout.id === storedLayoutId) ? (
+              <option value={storedLayoutId}>{storedLayoutId}</option>
+            ) : null}
             {layouts.map((layout) => (
               <option key={layout.id} value={layout.id}>
                 {layout.name}

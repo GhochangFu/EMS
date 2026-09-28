@@ -207,6 +207,35 @@ export async function theLayoutSelectListsLibraryNames(): Promise<void> {
   expect(screen.getByRole("option", { name: "Water train B" })).not.toBeNull();
 }
 
+/** The anchor for the case below: the dashboard's own organization's layout is listed. */
+export async function theLayoutSelectListsTheDashboardsOrganizationsLayout(): Promise<void> {
+  stubMimicLayouts({
+    items: [libraryLayout({ id: "layout-own", name: "Own plant" }), libraryLayout({ id: "layout-foreign", organizationId: "org-2", name: "Foreign plant" })],
+  });
+  renderInspector(layoutRow());
+  expect(await screen.findByRole("option", { name: "Own plant" })).not.toBeNull();
+}
+
+/** A global admin's `list()` holds every organization's layouts; the select offers only the
+ * dashboard's organization's — a foreign one would be refused with a 400 on save. */
+export async function theLayoutSelectOmitsAnotherOrganizationsLayout(): Promise<void> {
+  stubMimicLayouts({
+    items: [libraryLayout({ id: "layout-own", name: "Own plant" }), libraryLayout({ id: "layout-foreign", organizationId: "org-2", name: "Foreign plant" })],
+  });
+  renderInspector(layoutRow());
+  await screen.findByRole("option", { name: "Own plant" });
+  expect(screen.queryByRole("option", { name: "Foreign plant" })).toBeNull();
+}
+
+/** A stored `mimicLayoutId` the list does not hold stays the select's value — the browser does
+ * not fall back to the first layout's name (the Role select's rule, `mimic-editor/inspector.tsx`). */
+export async function anUnlistedStoredLayoutStaysSelected(): Promise<void> {
+  stubMimicLayouts({ items: [libraryLayout({ id: "layout-other", name: "Other plant" })] });
+  renderInspector(layoutRow({ mimicLayoutId: "layout-gone" }));
+  await screen.findByRole("option", { name: "Other plant" });
+  expect((screen.getByRole("combobox", { name: /^Layout/ }) as HTMLSelectElement).value).toBe("layout-gone");
+}
+
 /** Choosing a library layout writes its id to `mimicLayoutId`. */
 export async function choosingALayoutWritesItToTheConfig(): Promise<void> {
   stubMimicLayouts({ items: [libraryLayout({ id: "layout-a", name: "Water train A" })] });

@@ -144,6 +144,16 @@ export function MimicEditorCanvas({ state, dispatch, pipeMode }: MimicEditorCanv
     }
   }
 
+  /** A cancelled drag (the browser took the pointer) keeps nothing: a `set-box` at the drag's
+   * origin restores the pre-drag layout and pushes no history (the reducer's no-movement arm). */
+  function cancelDrag(): void {
+    const current = drag.current;
+    drag.current = null;
+    if (current !== null) {
+      dispatch({ type: "set-box", key: current.key, box: current.origin });
+    }
+  }
+
   const selectedNode = selected === null ? undefined : layout.nodes.find((n) => n.key === selected);
   const pipeStart = pipeFrom === null ? undefined : layout.nodes.find((n) => n.key === pipeFrom);
 
@@ -187,7 +197,7 @@ export function MimicEditorCanvas({ state, dispatch, pipeMode }: MimicEditorCanv
               onPointerDown={(event) => beginDrag(node, "move", event)}
               onPointerMove={onPointerMove}
               onPointerUp={endDrag}
-              onPointerCancel={endDrag}
+              onPointerCancel={cancelDrag}
             />
           ))}
           {pipeStart !== undefined ? (
@@ -230,7 +240,7 @@ export function MimicEditorCanvas({ state, dispatch, pipeMode }: MimicEditorCanv
                   onPointerDown={(event) => beginDrag(selectedNode, "resize", event)}
                   onPointerMove={onPointerMove}
                   onPointerUp={endDrag}
-                  onPointerCancel={endDrag}
+                  onPointerCancel={cancelDrag}
                 />
               ) : null}
             </>
