@@ -6626,3 +6626,24 @@ flood that could queue abandoned pings in the pool; both were fixed in the PR.
 
 **Cascade:** no row lists `F4.175` in *Depends*. The worker port binding is
 with the owner.
+
+### `F3.65b` — every page and component on role tokens ✅ 2026-09-28
+
+PR #625, squash `d8cb4dd0`; ADR 0078 Amendment 2; plan
+`docs/plans/f3.65b-pages-on-roles.md` (Fable), seven owner rulings.
+
+Every stock-palette and `bms-*` colour class in `apps/web/src` — 2,997 uses
+in 137 files — now names a role, so the whole SPA follows `data-theme` apart
+from the charts and schematics. A one-shot codemod driven by the shade-to-role
+table did the rewrite in six directory groups; 110 sites took a merged shade,
+each listed with its colour distance. Palette is a hard zero from here (R20).
+
+Verified: the codemod's own fixtures; the colour gates, including R20 and the
+new contrast pairs, each new assertion shown red on its mutation; the browser
+layer on the rebuilt web container in light and dark by exact values. Two
+reviews; the code review's priority collision went to the owner, and its
+default-border, ring-offset, map-popup, knob and marker-letter defects were
+fixed test-first.
+
+**Cascade:** `F3.65c` is now startable (it depends on `F3.65b` alone), with the
+punch list its row records.
