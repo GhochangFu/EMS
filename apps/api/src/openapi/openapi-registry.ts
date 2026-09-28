@@ -37,6 +37,10 @@ import {
 } from "../admin/locations/locations.schema";
 import { putSiteControlRoomViewBodySchema } from "../control-room/site-control-room-view.schema";
 import {
+  createMimicLayoutBodySchema,
+  putMimicLayoutBodySchema,
+} from "../mimic-layouts/mimic-layouts.schema";
+import {
   chatBodySchema,
   createSessionBodySchema,
   patchDraftBodySchema,
@@ -278,6 +282,9 @@ export const REQUEST_SCHEMAS: Record<string, ZodTypeAny> = {
   MaintenanceController_createSchedule: createMaintenanceScheduleBodySchema,
   MaintenanceController_listSchedules: listMaintenanceQuerySchema,
   MaintenanceController_updateSchedule: updateMaintenanceScheduleBodySchema,
+  // `F3.32c` (ADR 0081 decision 3) — the mimic layout library's two write bodies.
+  MimicLayoutsController_create: createMimicLayoutBodySchema,
+  MimicLayoutsController_replace: putMimicLayoutBodySchema,
   ManualReadingsController_create: manualReadingsBodySchema,
   NotificationsController_createChannel: createNotificationChannelBodySchema,
   NotificationsController_listDeliveries: listDeliveriesQuerySchema,

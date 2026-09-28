@@ -39,6 +39,10 @@ import {
 } from "../admin/locations/locations.schema";
 import { putSiteControlRoomViewBodySchema } from "../control-room/site-control-room-view.schema";
 import {
+  createMimicLayoutBodySchema,
+  putMimicLayoutBodySchema,
+} from "../mimic-layouts/mimic-layouts.schema";
+import {
   chatBodySchema,
   createSessionBodySchema,
   patchDraftBodySchema,
@@ -266,6 +270,10 @@ export const BODY_SCHEMAS: Record<string, ZodTypeAny> = {
   // `builtinKey` are closed vocabularies with no `z.record` escape, and a PUT
   // states the whole kind — a stray field silently dropped is exactly the
   // pair rule going unchecked.
+  // `F3.32c` (ADR 0081 decision 3). `.strict()` at every level: a layout is an
+  // authoring shape with no `z.record` escape, so an unknown key is a typo.
+  createMimicLayoutBodySchema,
+  putMimicLayoutBodySchema,
   putSiteControlRoomViewBodySchema,
   // `E2.4` (ADR 0058 decision 8). `.strict()`: the body names rule ids and
   // nothing else — a `{ all: true }` silently dropped and answered 200 would

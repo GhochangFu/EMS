@@ -329,6 +329,11 @@ export const STRICTNESS_LEDGER: Record<string, LedgerEntry> = {
   // 400, not believe they scoped a fleet-wide type.
   createLocationTypeBodySchema: STRICT(CALLER_ERROR),
   createMaintenanceScheduleBodySchema: STRICT(CALLER_ERROR),
+  // `F3.32c` (ADR 0081 decision 3) — a layout is an authoring shape with no
+  // `z.record` escape: an unknown key on the body, a node or a pipe is a typo.
+  createMimicLayoutBodySchema: STRICT(CALLER_ERROR),
+  "createMimicLayoutBodySchema/nodes[]": STRICT(CALLER_ERROR),
+  "createMimicLayoutBodySchema/pipes[]": STRICT(CALLER_ERROR),
   createNotificationChannelBodySchema: STRICT(CALLER_ERROR),
   createOrganizationBodySchema: STRICT(CALLER_ERROR),
   createPointKeyBodySchema: STRICT(CALLER_ERROR),
@@ -374,6 +379,11 @@ export const STRICTNESS_LEDGER: Record<string, LedgerEntry> = {
   // silently dropping one from a PUT that "states the whole kind" would read
   // as accepted while the pair rule it was meant to satisfy went unchecked.
   putSiteControlRoomViewBodySchema: STRICT(CALLER_ERROR),
+  // `F3.32c` (ADR 0081 decision 3) — a layout is an authoring shape with no
+  // `z.record` escape: an unknown key on the body, a node or a pipe is a typo.
+  putMimicLayoutBodySchema: STRICT(CALLER_ERROR),
+  "putMimicLayoutBodySchema/nodes[]": STRICT(CALLER_ERROR),
+  "putMimicLayoutBodySchema/pipes[]": STRICT(CALLER_ERROR),
   // `E2.4` (ADR 0058 decision 8) — the body names rule ids and nothing else.
   reapplySeededRulesBodySchema: STRICT(CALLER_ERROR),
   reorderWorkOrdersBodySchema: STRICT(CALLER_ERROR),
