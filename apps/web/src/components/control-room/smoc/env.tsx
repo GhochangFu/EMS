@@ -505,7 +505,7 @@ function FloorPlan({
       {zones.map((zone) => (
         <g key={zone.code}>
           <circle cx={zone.x} cy={zone.y} r="9" fill={markerFill(zone.state.status)} stroke="#fff" strokeWidth="1.5" />
-          <text x={zone.x} y={zone.y + 3} textAnchor="middle" className="fill-surface font-mono text-[9px] font-bold">T</text>
+          <text x={zone.x} y={zone.y + 3} textAnchor="middle" className="fill-on-dark font-mono text-[9px] font-bold">T</text>
         </g>
       ))}
       {smoke.map((sensor, index) => {
@@ -518,7 +518,7 @@ function FloorPlan({
         return (
           <g key={sensor.code}>
             <rect x={coords[0] - 7} y={coords[1] - 7} width="14" height="14" rx="2" fill={markerFill(sensor.state.status)} stroke="#fff" strokeWidth="1.5" />
-            <text x={coords[0]} y={coords[1] + 3} textAnchor="middle" className="fill-surface font-mono text-[9px] font-bold">S</text>
+            <text x={coords[0]} y={coords[1] + 3} textAnchor="middle" className="fill-on-dark font-mono text-[9px] font-bold">S</text>
           </g>
         );
       })}

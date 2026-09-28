@@ -406,6 +406,43 @@ export async function showsTheEvaluateRefusalWhereTheOperatorPressed(): Promise<
 }
 
 /**
+ * `F3.65b` review — the enable toggle's knob follows the track. On the
+ * enabled `bg-accent` track it is `bg-on-accent` (white in light, dark ink in
+ * dark, where white on the light accent is 2.09:1); on the disabled
+ * `bg-line-strong` track it stays `bg-on-dark`. Both are white in light.
+ * Rendered through `RulesPanel` because this file already stubs its queries.
+ */
+async function renderToggleKnob(enabled: boolean): Promise<Element | null> {
+  stubApi();
+  vi.spyOn(rulesApi, "fetchRules").mockResolvedValue({ items: [{ ...notifyRule, enabled }] });
+  vi.spyOn(rulesApi, "fetchRuleExecutions").mockResolvedValue({ items: [] });
+  vi.spyOn(rulesApi, "fetchRuleBuilderCatalog").mockResolvedValue({ assets: [] });
+  vi.spyOn(vocabApi, "fetchVocabularies").mockResolvedValue(emptyVocabularies);
+
+  const queryClient = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
+  render(
+    <QueryClientProvider client={queryClient}>
+      <RulesPanel />
+    </QueryClientProvider>,
+  );
+
+  const toggle = await screen.findByRole("button", { name: enabled ? "Disable rule" : "Enable rule" });
+  return toggle.firstElementChild;
+}
+
+export async function paintsTheEnabledKnobOnAccent(): Promise<void> {
+  const knob = await renderToggleKnob(true);
+  expect(knob).toHaveClass("bg-on-accent");
+}
+
+export async function paintsTheDisabledKnobOnDark(): Promise<void> {
+  const knob = await renderToggleKnob(false);
+  expect(knob).toHaveClass("bg-on-dark");
+}
+
+/**
  * The editor mounts on the press and not before. Measured reason: 289 enabled
  * rules are live on this database, and a card that mounted the editor eagerly
  * would issue 289 `GET /rules/:id/notifications` to paint the list.

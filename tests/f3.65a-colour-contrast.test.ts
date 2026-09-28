@@ -30,7 +30,10 @@ import { blendOver, contrastRatio, parseTokenBlocks, type Channels, channelsToHe
  *
  * `F3.65b` (plan §2.5) adds three pairs the migration creates: `neutral-ink` on `canvas` (the
  * `bg-slate-100 text-slate-700` org-code chips), `ink-muted` on `line` (the `bg-gray-200
- * text-gray-600` pills), and `on-dark` at 0.4 on `chrome` (the footer loading dot).
+ * text-gray-600` pills), and `on-dark` at 0.4 on `chrome` (the footer loading dot). Its review
+ * adds two UI pairs for the rules-panel toggle knob — `on-accent` on `accent` and `on-dark` on
+ * `line-strong` — and one light allowlist entry for the second (1.47, the existing white knob on
+ * the gray track).
  *
  * Two pairs the same migration produces are declared not to hold, for a reason rather than an
  * allowlist entry: `ink-faint` on `line` in the SMOC schematics' offline boxes
@@ -140,6 +143,11 @@ const UI_PAIRS: Pair[] = [
   { fg: "on-dark", bg: "chrome-nav", alpha: 0.7 },
   // F3.65b §2.5: the footer loading dot (`bg-white/40` → `bg-on-dark/40`) on the chrome footer.
   { fg: "on-dark", bg: "chrome", alpha: 0.4 },
+  // F3.65b review: the rules-panel enable toggle's knob on its track (`rules-panel.tsx:407`) —
+  // `on-accent` on the enabled `accent` track (3.19 light / 8.71 dark), `on-dark` on the disabled
+  // `line-strong` track (9.02 dark; 1.47 light, allowlisted below).
+  { fg: "on-accent", bg: "accent" },
+  { fg: "on-dark", bg: "line-strong" },
   { fg: "critical", bg: "surface" },
   { fg: "critical", bg: "canvas" },
   { fg: "critical", bg: "chrome" },
@@ -251,6 +259,14 @@ const ALLOWLIST: AllowlistEntry[] = [
     measured: 2.54,
     threshold: 3,
     reason: "placeholder / inactive; WCAG 1.4.3 inactive exception",
+  },
+  {
+    fg: "on-dark",
+    bg: "line-strong",
+    theme: "light",
+    measured: 1.47,
+    threshold: 3,
+    reason: "the disabled rule toggle's white knob on its gray track; existing pixel — the knob's position and the button's label carry the state",
   },
 ];
 

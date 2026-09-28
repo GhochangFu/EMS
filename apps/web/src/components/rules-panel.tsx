@@ -404,7 +404,7 @@ function RuleCard({
         aria-busy={toggling}
       >
         <span
-          className={`block h-4 w-4 rounded-full bg-on-dark transition ${
+          className={`block h-4 w-4 rounded-full ${rule.enabled ? "bg-on-accent" : "bg-on-dark"} transition ${
             rule.enabled ? "translate-x-5" : ""
           }`}
         />

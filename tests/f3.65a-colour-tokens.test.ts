@@ -311,6 +311,16 @@ describe("F3.65a: the token file (index.css) and the Tailwind mapping", () => {
     expect(outside).toEqual([]);
   });
 
+  // F3.65b review: `leaflet.css` paints the popup `background: white`, and `world-map.tsx`'s popup
+  // content uses role inks that turn light in dark (1.19:1). The rule lives outside the two token
+  // blocks (T14 is about role declarations only) and sets the background alone, so no light pixel
+  // moves. It wins on source order: `leaflet.css` bundles before `index.css`.
+  it("T15 index.css paints the Leaflet popup and its tip from --surface", () => {
+    const text = css().replace(/\/\*[\s\S]*?\*\//g, "");
+    const rule = /\.leaflet-popup-content-wrapper\s*,\s*\.leaflet-popup-tip\s*\{([^}]*)\}/.exec(text);
+    expect(rule?.[1] ?? "").toMatch(/(^|;|\s)background:\s*rgb\(var\(--surface\)\)\s*;/);
+  });
+
   it("T13 index.css holds no # hex literal outside a comment", () => {
     const withoutComments = css().replace(/\/\*[\s\S]*?\*\//g, "");
     expect(withoutComments).not.toMatch(/#[0-9a-fA-F]{3,8}\b/);
