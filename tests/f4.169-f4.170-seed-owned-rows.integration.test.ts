@@ -245,7 +245,13 @@ describe.skipIf(!ownerUrl)("F4.169/F4.170 addendum 2 — the seed changes only t
         [locationId, phewbOrgId],
         "legacy group",
       );
-      await cleanupLegacyPheRtuLocations(pool, legacySlugs);
+      const lines: string[] = [];
+      await cleanupLegacyPheRtuLocations(pool, legacySlugs, (line) => lines.push(line));
+      // Addendum 3: a deletion is never silent. Mutation: no log line.
+      expect(
+        lines.filter((line) => line.includes(locationId)),
+        "one line names the location before it is deleted",
+      ).toHaveLength(1);
       const left = await pool.query<{ locations: number; rtus: number; groups: number }>(
         `SELECT
            (SELECT COUNT(*)::int FROM bms.locations WHERE id = $1) AS locations,

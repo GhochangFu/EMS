@@ -421,7 +421,9 @@ export async function enforceHierarchyNotNull(pool: pg.Pool): Promise<void> {
  * administrator chooses freely, so an admin PHEWB location such as
  * `phe-new-station-ii` lost its access grants, its asset groups and its RTUs
  * on the next boot, and the boot then stopped with `23503` on its assets.
- * After the first boot on a database this runs on, it deletes nothing.
+ * After the first boot on a database this runs on, it deletes nothing. Each
+ * location it is about to delete is named on `log` first, one line each, so
+ * a deletion is never silent.
  *
  * **Must run inside a PHEWB tenant context** (`seed.ts` supplies one). All five
  * statements below join or target `bms.locations`, which carries `FORCE ROW
@@ -435,8 +437,19 @@ export async function enforceHierarchyNotNull(pool: pg.Pool): Promise<void> {
 export async function cleanupLegacyPheRtuLocations(
   pool: pg.Pool,
   legacySlugs: readonly string[],
+  log: (line: string) => void = (line) => console.error(line),
 ): Promise<void> {
   const slugs = [legacySlugs];
+  const doomed = await pool.query<{ id: string; slug: string; code: string }>(
+    `SELECT id, slug, code FROM bms.locations WHERE slug = ANY($1::varchar[]) ORDER BY slug, id`,
+    slugs,
+  );
+  for (const location of doomed.rows) {
+    log(
+      `cleanupLegacyPheRtuLocations: deleting legacy PHE location ${location.slug} (${location.id}, ` +
+        `code ${location.code}) with its access grants, asset groups and RTUs`,
+    );
+  }
   await pool.query(`
     DELETE FROM bms.user_location_access ula
     USING bms.locations l
