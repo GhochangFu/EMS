@@ -257,6 +257,10 @@ export type QueueDepth = z.infer<typeof He.queueDepthSchema>;
 export type QueueHealth = z.infer<typeof He.queueHealthSchema>;
 /** `GET /health` on the API and on the worker. `degraded` still answers 200. */
 export type LivenessResponse = z.infer<typeof He.livenessResponseSchema>;
+/** `F4.175` (ADR 0063 Amendment 3) — the `database` section of `GET /health` and the evidence of `GET /health/ready`. */
+export type DatabaseHealth = z.infer<typeof He.databaseHealthSchema>;
+/** `F4.175` — `GET /health/ready`: 200 `ready` while the database answers, 503 `not_ready` while it does not. */
+export type ReadinessResponse = z.infer<typeof He.readinessResponseSchema>;
 /** `F3.11` (ADR 0064 decision 8) — the last completed rule sweep as the worker wrote it; `lastRuleSweep` on `GET /health`. Counts only. */
 export type RuleSweepSummary = z.infer<typeof He.ruleSweepSummarySchema>;
 /** `F3.3` (ADR 0066) — the `storage` section of `GET /health`, absent on the worker. */

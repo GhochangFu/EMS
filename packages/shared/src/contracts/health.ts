@@ -309,6 +309,22 @@ export const storageHealthSchema = z
   .strict();
 
 /**
+ * The `database` section of the liveness body and the whole of the readiness
+ * body's evidence (`F4.175`, ADR 0063 Amendment 3).
+ *
+ * `reachable` is one bounded `select 1` on the fleet pool, answered inside the
+ * health timeout. There is no `configured` field: both processes refuse to boot
+ * without a database URL, so an unconfigured database is not a state either
+ * process can report. No host, role, error text or latency is carried — a
+ * probe body is not a place for connection detail.
+ */
+export const databaseHealthSchema = z
+  .object({
+    reachable: z.boolean(),
+  })
+  .strict();
+
+/**
  * `GET /health` on both processes. `degraded` still answers HTTP 200 (plan
  * §15 ruling 1): the route is a liveness probe, and a dead worker is not a
  * reason for an orchestrator to restart a process that serves traffic.
@@ -320,11 +336,33 @@ export const storageHealthSchema = z
  * required: a process whose `HealthController` resolves no
  * `StorageHealthService` (the `@Optional()` injection) still answers, and
  * the key's absence — never `{ configured: false, ... }` — is what says so.
+ *
+ * `database` (`F4.175`, ADR 0063 Amendment 3) is optional for the same
+ * reason: `livenessFrom` builds the queue half of the body before the
+ * controller adds it. An unreachable database reads `degraded` and still
+ * answers 200 — the non-200 for a database outage is `GET /health/ready`'s.
  */
 export const livenessResponseSchema = z
   .object({
     status: z.enum(["ok", "degraded"]),
     queue: queueHealthSchema,
     storage: storageHealthSchema.optional(),
+    database: databaseHealthSchema.optional(),
+  })
+  .strict();
+
+/**
+ * `GET /health/ready` on both processes (`F4.175`, ADR 0063 Amendment 3).
+ *
+ * A **readiness** probe, the counterpart `GET /health` refuses to be: HTTP 200
+ * with `ready` while the database answers, HTTP 503 with `not_ready` while it
+ * does not. Only the database decides it. The queue and the object store stay
+ * in the liveness body, where a dead worker or bucket degrades the verdict
+ * without taking the process out of rotation.
+ */
+export const readinessResponseSchema = z
+  .object({
+    status: z.enum(["ready", "not_ready"]),
+    database: databaseHealthSchema,
   })
   .strict();
