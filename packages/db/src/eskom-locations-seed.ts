@@ -458,7 +458,16 @@ export async function seedEskomLocations(
     // Seed-owned like `latitude` (ruled 2026-09-19 at the PR 1 review): the
     // zone is a fact of the site, so a re-seed re-asserts it — unlike
     // `ingest_enabled` (F1.7), which an operator owns.
-    const timezone = "Africa/Johannesburg";
+    const values = {
+      name: row.name,
+      type: row.kind,
+      province: row.province,
+      capital,
+      latitude: row.latitude,
+      longitude: row.longitude,
+      timezone: "Africa/Johannesburg",
+      meta,
+    };
     let insertedId: string | null = null;
     if (claim.ambiguous) {
       // Nothing is written for this identity; the line above names every
@@ -481,14 +490,14 @@ export async function seedEskomLocations(
           identity.slug,
           claim.codeHolder === null,
           identity.code,
-          row.name,
-          row.kind,
-          row.province,
-          capital,
-          row.latitude,
-          row.longitude,
-          timezone,
-          meta,
+          values.name,
+          values.type,
+          values.province,
+          values.capital,
+          values.latitude,
+          values.longitude,
+          values.timezone,
+          values.meta,
         ],
       );
     } else if (claim.slugHolder === null && claim.codeHolder === null) {
@@ -504,14 +513,14 @@ export async function seedEskomLocations(
           eskomOrgId,
           identity.code,
           identity.slug,
-          row.name,
-          row.kind,
-          row.province,
-          capital,
-          row.latitude,
-          row.longitude,
-          timezone,
-          meta,
+          values.name,
+          values.type,
+          values.province,
+          values.capital,
+          values.latitude,
+          values.longitude,
+          values.timezone,
+          values.meta,
         ],
       );
       insertedId = inserted.rows[0]?.id ?? null;
