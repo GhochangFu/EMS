@@ -183,17 +183,30 @@ function statusTone(status: UpsStatus): "default" | "warning" | "critical" {
   return "default";
 }
 
-function stroke(status: UpsStatus): string {
+function strokeClassFor(status: UpsStatus): string {
   if (status === "critical") {
-    return "#dc2626";
+    return "stroke-critical";
   }
   if (status === "warning") {
-    return "#f59e0b";
+    return "stroke-warning";
   }
   if (status === "offline") {
-    return "#94a3b8";
+    return "stroke-ink-hint";
   }
-  return "#039855";
+  return "stroke-accent";
+}
+
+function fillClassFor(status: UpsStatus): string {
+  if (status === "critical") {
+    return "fill-critical";
+  }
+  if (status === "warning") {
+    return "fill-warning";
+  }
+  if (status === "offline") {
+    return "fill-ink-hint";
+  }
+  return "fill-accent";
 }
 
 function boxClass(status: UpsStatus): string {
@@ -499,7 +512,8 @@ function UpsBlockDiagram({
   battery: SchematicTelemetrySlice;
   status: UpsStatus;
 }) {
-  const line = stroke(status);
+  const lineStroke = strokeClassFor(status);
+  const lineFill = fillClassFor(status);
   const dark = status === "offline";
   const battV = slice.batteryV ?? battery.batteryV;
   const battTemp = slice.batteryTempC ?? battery.batteryTempC;
@@ -507,30 +521,30 @@ function UpsBlockDiagram({
     <svg className="h-auto w-full" viewBox="0 0 900 240">
       <defs>
         <marker id="upsArrow" markerWidth="6" markerHeight="6" refX="5" refY="3" orient="auto">
-          <path d="M0,0 L6,3 L0,6 Z" fill={line} />
+          <path d="M0,0 L6,3 L0,6 Z" className={lineFill} />
         </marker>
       </defs>
       {/* ADR 0027 decision 3: these SVG labels are the same readings as the
           detail rows and were the last place showing frozen numbers. */}
       <Block x={14} y={80} title="AC INPUT" sub={`${n(freshValue(slice.outputVoltageV, dark), 1)} V`} status={status} />
-      <Flow x1={134} y1={110} x2={178} y2={110} color={line} />
+      <Flow x1={134} y1={110} x2={178} y2={110} colorClass={lineStroke} />
       <Block x={178} y={80} title="RECTIFIER" sub="AC -> DC" status={status} />
-      <Flow x1={298} y1={110} x2={342} y2={110} color={line} />
+      <Flow x1={298} y1={110} x2={342} y2={110} colorClass={lineStroke} />
       <Block x={342} y={80} title="DC BUS" sub={`${n(freshValue(battV, dark), 0)} V`} status={status} />
-      <line x1="402" y1="138" x2="402" y2="170" stroke={line} strokeWidth={2} strokeDasharray="4 3" />
+      <line x1="402" y1="138" x2="402" y2="170" className={lineStroke} strokeWidth={2} strokeDasharray="4 3" />
       <Block x={342} y={170} title="BATTERY" sub={`${n(freshValue(battV, dark), 1)} V · ${n(freshValue(battTemp, dark), 1)} C`} status={status} />
-      <Flow x1={462} y1={110} x2={506} y2={110} color={line} />
+      <Flow x1={462} y1={110} x2={506} y2={110} colorClass={lineStroke} />
       <Block x={506} y={80} title="INVERTER" sub="DC -> AC" status={status} />
-      <Flow x1={626} y1={110} x2={670} y2={110} color={line} />
+      <Flow x1={626} y1={110} x2={670} y2={110} colorClass={lineStroke} />
       {/* `F4.39`: `NORMAL` sits in a row where every other sub-line is a live
           reading, and it is a claim about switch position that no point
           reports. The block's colour still comes from real status; the word is
           marked so it is not read as a fourth measurement. */}
       <Block x={670} y={80} w={100} title="STATIC SW" sub={<StaticTspan kind="simulated">NORMAL</StaticTspan>} status={status} />
-      <Flow x1={770} y1={110} x2={810} y2={110} color={line} />
+      <Flow x1={770} y1={110} x2={810} y2={110} colorClass={lineStroke} />
       <Block x={810} y={80} w={80} title="LOAD" sub={`${n(freshValue(slice.loadPct, dark), 0)}%`} status={status} />
       <text x="450" y="40" textAnchor="middle" className="fill-ink-hint font-mono text-[10px]">BYPASS LINE (auto)</text>
-      <line x1="74" y1="60" x2="850" y2="60" stroke="#94a3b8" strokeWidth={1.4} strokeDasharray="5 5" />
+      <line x1="74" y1="60" x2="850" y2="60" className="stroke-ink-hint" strokeWidth={1.4} strokeDasharray="5 5" />
     </svg>
   );
 }
@@ -564,15 +578,15 @@ function Flow({
   y1,
   x2,
   y2,
-  color,
+  colorClass,
 }: {
   x1: number;
   y1: number;
   x2: number;
   y2: number;
-  color: string;
+  colorClass: string;
 }) {
-  return <line x1={x1} y1={y1} x2={x2} y2={y2} stroke={color} strokeWidth={3} markerEnd="url(#upsArrow)" />;
+  return <line x1={x1} y1={y1} x2={x2} y2={y2} className={colorClass} strokeWidth={3} markerEnd="url(#upsArrow)" />;
 }
 
 function DetailCard({ title, children }: { title: string; children: ReactNode }) {

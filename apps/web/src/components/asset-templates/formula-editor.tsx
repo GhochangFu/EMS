@@ -21,10 +21,12 @@
  *
  * **Nothing in this file answers a question.** Every rule lives in
  * `src/lib/formula-editor-rules.ts` and `src/lib/calc-decorations.ts`, under
- * test. That split is not tidiness: `apps/web`'s Vitest project runs
- * `environment: "node"` over `src/**\/*.test.ts`, so a `.tsx` is unreachable by
- * any test here, and the coverage gate does not look above `src/lib`. Logic
- * left in this file would be invisible to both.
+ * test. The split predates ADR 0042's jsdom component tests, when a `.tsx` was
+ * unreachable by any test here; the coverage gate still does not look above
+ * `src/lib`, so logic left in this file stays outside it. The one thing a spec
+ * does check here is the theme (`formula-editor-theme.spec.tsx`, `F3.65c`): the
+ * `EditorView.darkTheme` facet through `editorIsDark`, and the rules of
+ * `CALC_THEME_SPEC` by selector.
  */
 import { autocompletion, type CompletionContext, type CompletionResult } from "@codemirror/autocomplete";
 import { forceLinting, linter, type Diagnostic } from "@codemirror/lint";
@@ -51,6 +53,7 @@ import {
   validateEditorFormula,
   type FormulaEditorRules,
 } from "../../lib/formula-editor-rules";
+import { useTheme, useThemeStore } from "../../stores/theme-store";
 
 /** The rules for the surface, plus the field's own controlled-input props. */
 export type FormulaEditorProps = FormulaEditorRules & {
@@ -66,38 +69,101 @@ export type FormulaEditorProps = FormulaEditorRules & {
  *
  * An `EditorView.theme` rather than a rule in `index.css`: it ships inside this
  * lazy chunk, so a page that never opens the Calculations tab never downloads
- * it. The palette is `tailwind.config.js`'s `bms` scale, by value — a theme
- * object cannot carry a Tailwind class name.
+ * it. Every value is a role's `rgb(var(--role))` CSS string (ADR 0078 decision
+ * 5, plan D4) — a theme object cannot carry a Tailwind class name, so this file
+ * joins `index.css`'s Leaflet rules, the login hero gradient and the CRAC
+ * gradient stops as a place that reads a role as a raw CSS string rather than
+ * a class. `.cm-calc-function`'s `simulated-ink` is a **hue reuse, not a
+ * semantic one** (OQ7): the role exists for simulated-value ink elsewhere in
+ * the app, and this token borrows its violet for the unrelated reason that
+ * `#7c3aed` was already that hue.
+ *
+ * **The base theme's light/dark rules** (`F3.65c` review). `@codemirror/view`
+ * paints the drawn cursor, the selection and the tooltips from `&light` /
+ * `&dark` base rules, chosen by the `EditorView.darkTheme` facet — which
+ * `FormulaEditor` sets from the theme store. The cursor, the selection, the
+ * tooltip surface and the highlighted completion are overridden here too, so
+ * those read roles in both themes. Still library colours: the disabled
+ * completion flash (`#777` / `#444`), the light `.cm-tooltip-section` divider
+ * (`#bbb`), and `@codemirror/lint`'s markers (the `#d11` diagnostic bar, the
+ * `#f11` underline). An `EditorView.theme` cannot
+ * name `&light` / `&dark` (it throws "Unsupported selector"), so each rule
+ * below repeats its base rule's selector shape at the same specificity, and
+ * wins because a base theme mounts first (`Prec.lowest`). The focused
+ * selection key is therefore the base rule's whole `> .cm-scroller >
+ * .cm-selectionLayer` chain; a shorter selector would lose. The selection,
+ * focused or not, is `info` at 0.15 (owner ruling 2026-09-29: a visible
+ * selection over 4.5 for every token ink). In dark, `simulated-ink` and
+ * `info-ink` fall under 4.5 while selected; both are allowlisted in
+ * `tests/f3.65a-colour-contrast.test.ts` as a transient selected state, and
+ * unselected text keeps 4.5.
+ * There is no `caretColor`: `drawSelection` (in `minimalSetup`) sets
+ * `.cm-content { caretColor: transparent !important }` and draws `.cm-cursor`
+ * instead, so a caret colour here would have no effect.
  */
-const calcTheme = EditorView.theme({
+export const CALC_THEME_SPEC = {
   "&": {
     fontSize: "13px",
-    border: "1px solid #e5e7eb",
+    border: "1px solid rgb(var(--line))",
     borderRadius: "0.25rem",
-    backgroundColor: "#ffffff",
+    backgroundColor: "rgb(var(--surface))",
+    color: "rgb(var(--ink))",
   },
-  "&.cm-focused": { outline: "2px solid #00A651", outlineOffset: "-1px" },
+  "&.cm-focused": { outline: "2px solid rgb(var(--focus))", outlineOffset: "-1px" },
   ".cm-content": {
     fontFamily: '"IBM Plex Mono", ui-monospace, monospace',
     padding: "0.5rem 0.75rem",
-    caretColor: "#1A2230",
   },
-  ".cm-calc-ref": { color: "#007C3C", fontWeight: "600" },
-  ".cm-calc-number": { color: "#1D2430" },
-  ".cm-calc-function": { color: "#7c3aed" },
-  ".cm-calc-operator": { color: "#4A5464" },
-  ".cm-calc-punctuation": { color: "#4A5464" },
+  ".cm-cursor, .cm-dropCursor": { borderLeftColor: "rgb(var(--ink))" },
+  ".cm-selectionBackground": { background: "rgb(var(--info) / 0.15)" },
+  "&.cm-focused > .cm-scroller > .cm-selectionLayer .cm-selectionBackground": {
+    background: "rgb(var(--info) / 0.15)",
+  },
+  // The completion popup, its info panel and the lint message are each a
+  // `.cm-tooltip` mounted inside the editor (no tooltip `parent` is set), so
+  // this theme's prefix reaches them.
+  ".cm-tooltip": {
+    backgroundColor: "rgb(var(--surface))",
+    color: "rgb(var(--ink))",
+    border: "1px solid rgb(var(--line-strong))",
+  },
+  // `@codemirror/autocomplete`'s `&light` / `&dark` rule for the highlighted
+  // option (`#17c` / `#347` under white), at the same specificity.
+  ".cm-tooltip-autocomplete ul li[aria-selected]": {
+    background: "rgb(var(--accent-strong))",
+    color: "rgb(var(--on-accent))",
+  },
+  ".cm-calc-ref": { color: "rgb(var(--accent-strong))", fontWeight: "600" },
+  ".cm-calc-number": { color: "rgb(var(--ink))" },
+  ".cm-calc-function": { color: "rgb(var(--simulated-ink))" },
+  ".cm-calc-operator": { color: "rgb(var(--ink-muted))" },
+  ".cm-calc-punctuation": { color: "rgb(var(--ink-muted))" },
   // `bms-calc-v2` only (ADR 0055): a scope reads like a keyword, a string like
   // a literal. Neither is emitted under `v1`, so a `v1` formula never sees them.
-  ".cm-calc-scope": { color: "#B45309", fontWeight: "600" },
-  ".cm-calc-string": { color: "#0E7490" },
+  ".cm-calc-scope": { color: "rgb(var(--warning-ink))", fontWeight: "600" },
+  ".cm-calc-string": { color: "rgb(var(--info-ink))" },
   // `bms-calc-v3` only (ADR 0070): a `$key` parameter reads like a reference
   // to something stored, not a point — the ref green, italic.
-  ".cm-calc-param": { color: "#007C3C", fontStyle: "italic" },
+  ".cm-calc-param": { color: "rgb(var(--accent-strong))", fontStyle: "italic" },
   // `bms-calc-v3` only (ADR 0070 decision 5, `E4.1b`): a window literal reads
   // like a keyword — the scope amber, so `24h` and `@site` sit in one family.
-  ".cm-calc-window": { color: "#B45309", fontStyle: "italic" },
-});
+  ".cm-calc-window": { color: "rgb(var(--warning-ink))", fontStyle: "italic" },
+};
+
+const calcTheme = EditorView.theme(CALC_THEME_SPEC);
+
+/**
+ * Whether the editor at `dom` applies CodeMirror's `&dark` base rules — the
+ * `EditorView.darkTheme` facet. Exported for `formula-editor-theme.spec.tsx`,
+ * which may not import CodeMirror itself (`tests/adr-0038-formula-editor.test.ts`).
+ */
+export function editorIsDark(dom: HTMLElement): boolean {
+  const view = EditorView.findFromDOM(dom);
+  if (view === null) {
+    throw new Error("no CodeMirror editor at this element");
+  }
+  return view.state.facet(EditorView.darkTheme);
+}
 
 /**
  * Keeps the field to one line.
@@ -144,12 +210,17 @@ const singleLine: Extension[] = [
  * Every extension reads the **current** props through `propsRef` rather than
  * closing over a snapshot. The alternative is a `Compartment` per prop and a
  * reconfigure on every keystroke; this way the editor is created once and the
- * only compartment is the one that has to be one — `editable`, which changes
- * the editor's own behaviour rather than a callback's answer.
+ * only compartments are the two that have to be — `editable`, which changes
+ * the editor's own behaviour rather than a callback's answer, and `darkMode`
+ * (`F3.65c`), the `EditorView.darkTheme` facet that picks CodeMirror's light
+ * or dark base rules. `dark` is the theme at creation; a toggle after that
+ * reconfigures `darkMode`.
  */
 function buildExtensions(
   propsRef: { current: FormulaEditorProps },
   editable: Compartment,
+  darkMode: Compartment,
+  dark: boolean,
 ): Extension[] {
   const highlight = ViewPlugin.fromClass(
     class {
@@ -267,6 +338,7 @@ function buildExtensions(
     calcTheme,
     EditorView.lineWrapping,
     editable.of(EditorView.editable.of(true)),
+    darkMode.of(EditorView.darkTheme.of(dark)),
     EditorView.updateListener.of((update) => {
       if (update.docChanged) {
         propsRef.current.onChange(update.state.doc.toString());
@@ -290,6 +362,12 @@ export function FormulaEditor(props: FormulaEditorProps) {
     editableRef.current = new Compartment();
   }
   const editable = editableRef.current;
+  const darkModeRef = useRef<Compartment | null>(null);
+  if (darkModeRef.current === null) {
+    darkModeRef.current = new Compartment();
+  }
+  const darkMode = darkModeRef.current;
+  const theme = useTheme();
 
   // No dependency array: every extension reads props through this ref, so it
   // must be current before the next keystroke reaches a callback. The first
@@ -307,7 +385,15 @@ export function FormulaEditor(props: FormulaEditorProps) {
     }
     const view = new EditorView({
       doc: propsRef.current.value,
-      extensions: buildExtensions(propsRef, editable),
+      // The theme at creation comes from the store, not from `theme`: a
+      // dependency on `theme` would recreate the view on a toggle and drop the
+      // undo history. The effect below carries a toggle in.
+      extensions: buildExtensions(
+        propsRef,
+        editable,
+        darkMode,
+        useThemeStore.getState().theme === "dark",
+      ),
       parent: host,
     });
     viewRef.current = view;
@@ -315,7 +401,7 @@ export function FormulaEditor(props: FormulaEditorProps) {
       view.destroy();
       viewRef.current = null;
     };
-  }, [editable]);
+  }, [editable, darkMode]);
 
   // Push an external change in — a reset, or a draft loaded after mount. The
   // guard is what stops the editor fighting its own `onChange`: without it,
@@ -334,6 +420,14 @@ export function FormulaEditor(props: FormulaEditorProps) {
       effects: editable.reconfigure(EditorView.editable.of(props.readOnly !== true)),
     });
   }, [editable, props.readOnly]);
+
+  // `F3.65c` — a theme toggle moves CodeMirror's base rules between `&light`
+  // and `&dark` without recreating the view.
+  useEffect(() => {
+    viewRef.current?.dispatch({
+      effects: darkMode.reconfigure(EditorView.darkTheme.of(theme === "dark")),
+    });
+  }, [darkMode, theme]);
 
   // `linter()` re-runs on a document change. The rules also depend on props —
   // adding a sibling point resolves a reference without the text moving — so a

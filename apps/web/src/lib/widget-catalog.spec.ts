@@ -2,7 +2,16 @@ import { expect } from "vitest";
 
 import { WIDGET_POINT_CARDINALITY } from "@bms/shared";
 
-import { CHART_SERIES, WIDGET_CATALOG, WIDGET_TONE_COLOR } from "./widget-catalog";
+import { ROLE_TOKENS, fromTokenMap } from "../test-role-tokens";
+import { resolveRoles } from "./theme";
+import {
+  CHART_SERIES,
+  WIDGET_CATALOG,
+  WIDGET_TONE_FILL_CLASS,
+  WIDGET_TONE_ROLE,
+  widgetToneColor,
+  type WidgetTone,
+} from "./widget-catalog";
 
 /**
  * `F3.1c` Task 4 — the widget catalog (ADR 0047, Amendment 2 §1 and §4).
@@ -73,14 +82,30 @@ export function areaSeriesIsLineWithAreaStyle(): void {
 }
 
 /**
- * Pinned to `TRINETRA.html:12`'s literal hexes, not merely "looks like a
- * colour" — a shape-only `/^#[0-9A-Fa-f]{6}$/` check leaves `ok` and
- * `critical` free to swap, which is a green suite and a healthy gauge band
- * (or a healthy tank fill) rendering red.
+ * `F3.65c` (ADR 0078 decision 5, owner ruling OQ1) — a tone names a role, not a hex. Pinned
+ * literally rather than "is some role": a shape-only check leaves `ok` and `critical` free to
+ * swap, which is a green suite and a healthy gauge band (or a healthy tank fill) rendering red.
  */
-export function toneColorsMatchTheMockupPaletteExactly(): void {
-  expect(WIDGET_TONE_COLOR.ok, "TRINETRA.html:12 --sc").toBe("#039855");
-  expect(WIDGET_TONE_COLOR.info, "TRINETRA.html:12 --in").toBe("#1570EF");
-  expect(WIDGET_TONE_COLOR.warning, "TRINETRA.html:12 --wn").toBe("#DC6803");
-  expect(WIDGET_TONE_COLOR.critical, "TRINETRA.html:12 --cr").toBe("#D92D20");
+export function toneRolesAreTheStatusQuartet(): void {
+  expect(WIDGET_TONE_ROLE).toEqual({ ok: "accent", info: "info", warning: "warning", critical: "critical" });
+}
+
+/**
+ * The tank's fill class is `fill-` + the tone's role, for every tone — one source, two
+ * spellings (Tailwind needs the literal class string, so the class map cannot be built).
+ */
+export function toneFillClassesAreTheToneRoles(): void {
+  const derived = Object.fromEntries(
+    (Object.keys(WIDGET_TONE_ROLE) as WidgetTone[]).map((tone) => [tone, `fill-${WIDGET_TONE_ROLE[tone]}`]),
+  );
+  expect(WIDGET_TONE_FILL_CLASS).toEqual(derived);
+}
+
+/** ECharts' colour for a tone is the resolved value of the tone's role. */
+export function toneColoursAreTheResolvedToneRoles(): void {
+  const roles = resolveRoles(fromTokenMap(ROLE_TOKENS.light));
+  const derived = Object.fromEntries(
+    (Object.keys(WIDGET_TONE_ROLE) as WidgetTone[]).map((tone) => [tone, roles[WIDGET_TONE_ROLE[tone]]]),
+  );
+  expect(widgetToneColor(roles)).toEqual(derived);
 }

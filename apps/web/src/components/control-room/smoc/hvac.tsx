@@ -400,28 +400,29 @@ function HvacDiagram({
    */
   running: boolean | null;
 }) {
-  const airStroke = running ? "#06b6d4" : "#94a3b8";
+  const airStrokeClass = running ? "stroke-info" : "stroke-ink-hint";
+  const airFillClass = running ? "fill-info" : "fill-ink-hint";
   return (
     <svg className="h-auto w-full" viewBox="0 0 600 200">
       <defs>
         <marker id={`airArrow-${label}`} markerWidth="6" markerHeight="6" refX="5" refY="3" orient="auto">
-          <path d="M0,0 L6,3 L0,6 Z" fill={airStroke} />
+          <path d="M0,0 L6,3 L0,6 Z" className={airFillClass} />
         </marker>
       </defs>
       <rect x="40" y="60" width="200" height="80" rx="8" className={unitBoxClass(status)} />
       <text x="140" y="86" textAnchor="middle" className="fill-ink font-condensed text-[13px] font-bold">INDOOR UNIT</text>
       <text x="140" y="102" textAnchor="middle" className="fill-ink-muted font-mono text-[10px]">{label} · 4 TR</text>
-      <circle cx="100" cy="120" r="14" fill="none" stroke={airStroke} strokeWidth="1.6" />
-      <line x1="86" y1="120" x2="114" y2="120" stroke={airStroke} strokeWidth="1.6" />
-      <line x1="100" y1="106" x2="100" y2="134" stroke={airStroke} strokeWidth="1.6" />
+      <circle cx="100" cy="120" r="14" fill="none" className={airStrokeClass} strokeWidth="1.6" />
+      <line x1="86" y1="120" x2="114" y2="120" className={airStrokeClass} strokeWidth="1.6" />
+      <line x1="100" y1="106" x2="100" y2="134" className={airStrokeClass} strokeWidth="1.6" />
       <text x="100" y="160" textAnchor="middle" className="fill-ink-muted font-mono text-[9px]">FAN {n(freshValue(slice.fanSpeedPct, status === "offline"), 0)}%</text>
       <rect x="160" y="106" width="60" height="28" rx="4" className={status === "offline" ? "fill-line stroke-ink-hint" : slice.compressorOk === 0 ? "fill-critical-wash-strong stroke-critical" : "fill-ok-wash stroke-accent"} />
       <text x="190" y="124" textAnchor="middle" className="fill-accent font-mono text-[10px] font-bold">COMP</text>
-      <line x1="240" y1="80" x2="320" y2="80" stroke="#f97316" strokeWidth="3" markerEnd={`url(#airArrow-${label})`} strokeDasharray={running ? "0" : "4 3"} />
+      <line x1="240" y1="80" x2="320" y2="80" className="stroke-warning" strokeWidth="3" markerEnd={`url(#airArrow-${label})`} strokeDasharray={running ? "0" : "4 3"} />
       <text x="280" y="74" textAnchor="middle" className="fill-warning font-mono text-[9px]">RETURN {n(freshValue(slice.returnAirTempC, status === "offline"), 1)}C</text>
-      <line x1="320" y1="120" x2="240" y2="120" stroke={airStroke} strokeWidth="3" markerEnd={`url(#airArrow-${label})`} strokeDasharray={running ? "0" : "4 3"} />
+      <line x1="320" y1="120" x2="240" y2="120" className={airStrokeClass} strokeWidth="3" markerEnd={`url(#airArrow-${label})`} strokeDasharray={running ? "0" : "4 3"} />
       <text x="280" y="138" textAnchor="middle" className="fill-info font-mono text-[9px]">SUPPLY {n(freshValue(slice.supplyAirTempC, status === "offline"), 1)}C</text>
-      <rect x="320" y="60" width="240" height="80" rx="8" fill="#fafbfc" stroke="#cbd5e1" strokeDasharray="4 3" strokeWidth="1.4" />
+      <rect x="320" y="60" width="240" height="80" rx="8" className="fill-well stroke-line-strong" strokeDasharray="4 3" strokeWidth="1.4" />
       <text x="440" y="92" textAnchor="middle" className="fill-ink font-condensed text-[14px] font-bold">CONTROL ROOM</text>
       {/* The same setpoint as the `Setpoint` metric below, inside the diagram.
           Found on the deployed page — a census that reads component props

@@ -5,7 +5,9 @@ import { CircleMarker, MapContainer, Popup, TileLayer, useMap } from "react-leaf
 
 import "leaflet/dist/leaflet.css";
 
+import type { RoleName } from "../lib/theme";
 import { isOperationalSite, MAP_TILE, siteBounds } from "../lib/map-site";
+import { useThemeRoles } from "../stores/theme-store";
 
 /**
  * `F4.163` — opens the map on the caller's own sites, once. The sites query
@@ -29,20 +31,25 @@ function FitToSites({ sites }: { sites: MapSiteDto[] }) {
   return null;
 }
 
-function markerColor(site: MapSiteDto): string {
+/**
+ * `F3.65c` — the marker fill role, not a hex (ADR 0078 decision 5, plan D4).
+ * `nominal` reads `accent-strong` per OQ5, the same call the electrical-SLD
+ * flow dashes make for the mockup's second, brighter green.
+ */
+function markerRole(site: MapSiteDto): RoleName {
   switch (site.live.status) {
     case "healthy":
-      return "#00A651";
+      return "accent";
     case "warning":
-      return "#DC6803";
+      return "warning";
     case "critical":
-      return "#D92D20";
+      return "critical";
     case "offline":
-      return "#7A8494";
+      return "ink-faint";
     case "nominal":
-      return "#3DCD58";
+      return "accent-strong";
     default:
-      return "#4A5464";
+      return "ink-muted";
   }
 }
 
@@ -51,6 +58,7 @@ type WorldMapProps = {
 };
 
 export function WorldMap({ sites }: WorldMapProps) {
+  const roles = useThemeRoles();
   return (
     <MapContainer
       center={[-29, 24.5]}
@@ -66,9 +74,9 @@ export function WorldMap({ sites }: WorldMapProps) {
           center={[s.latitude, s.longitude]}
           radius={isOperationalSite(s) ? 12 : 7}
           pathOptions={{
-            color: "#1D2430",
+            color: roles.chrome,
             weight: 2,
-            fillColor: markerColor(s),
+            fillColor: roles[markerRole(s)],
             fillOpacity: 0.92,
           }}
         >

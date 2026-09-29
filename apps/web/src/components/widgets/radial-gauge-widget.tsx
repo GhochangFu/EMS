@@ -2,6 +2,7 @@ import type { EChartsOption } from "echarts";
 import ReactECharts from "echarts-for-react";
 import { useMemo } from "react";
 
+import { useChartTheme } from "../../lib/chart-theme";
 import type { RadialGaugeConfig, WidgetStatus } from "../../lib/widget-catalog";
 import { buildRadialGaugeOption } from "../../lib/widget-echarts-option";
 import { WidgetFrame } from "./widget-frame";
@@ -23,16 +24,20 @@ type RadialGaugeWidgetProps = {
  * points, ADR 0047 Amendment 1) pins the needle at `config.min` rather than
  * feeding ECharts a `NaN` — the empty state proper is `WidgetData.status ===
  * "empty"`, which `WidgetFrame` renders instead of this branch.
+ *
+ * `F3.65c` — the band stops and the theme object both come from the current roles, so a theme
+ * toggle re-inits the gauge with the new palette (plan D1/D2).
  */
 export function RadialGaugeWidget({ title, status, primary, stale, config }: RadialGaugeWidgetProps) {
+  const { roles, theme } = useChartTheme();
   const option = useMemo<EChartsOption>(
-    () => buildRadialGaugeOption(config, primary ?? config.min),
-    [config, primary],
+    () => buildRadialGaugeOption(config, primary ?? config.min, roles),
+    [config, primary, roles],
   );
 
   return (
     <WidgetFrame title={title} status={status} stale={stale}>
-      <ReactECharts option={option} style={{ height: 220 }} notMerge lazyUpdate />
+      <ReactECharts option={option} theme={theme} style={{ height: 220 }} notMerge lazyUpdate />
     </WidgetFrame>
   );
 }

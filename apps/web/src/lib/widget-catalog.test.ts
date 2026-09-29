@@ -6,7 +6,9 @@ import {
   catalogDefaultSizesFitTheGrid,
   catalogLabelsAreNonEmpty,
   chartSeriesLabelsArePinned,
-  toneColorsMatchTheMockupPaletteExactly,
+  toneColoursAreTheResolvedToneRoles,
+  toneFillClassesAreTheToneRoles,
+  toneRolesAreTheStatusQuartet,
 } from "./widget-catalog.spec";
 
 /** Vitest entry point — see `apps/web/src/lib/admin-access.test.ts` (ADR 0014). */
@@ -31,7 +33,15 @@ describe("widget-catalog", () => {
     areaSeriesIsLineWithAreaStyle();
   });
 
-  it("matches every widget tone to the mockup palette exactly", () => {
-    toneColorsMatchTheMockupPaletteExactly();
+  it("maps every widget tone to its status role (OQ1)", () => {
+    toneRolesAreTheStatusQuartet();
+  });
+
+  it("gives every tone the fill class of its role", () => {
+    toneFillClassesAreTheToneRoles();
+  });
+
+  it("resolves every tone colour from its role", () => {
+    toneColoursAreTheResolvedToneRoles();
   });
 });

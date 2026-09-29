@@ -8,6 +8,7 @@ import { roleLabel } from "../lib/role-label";
 import { useAuthStore, type AuthUser } from "../stores/auth-store";
 import { StatusBarClock } from "../components/status-bar-clock";
 import { SystemStatusIndicator } from "../components/system-status-indicator";
+import { ThemeSwitch } from "../components/theme-switch";
 import trinetraLogoUrl from "../assets/trinetra-logo.jpeg";
 
 const topNav = [
@@ -220,6 +221,7 @@ export function AppShell({ user, children, kpiRibbon }: AppShellProps) {
               {roleLabel(user.role)} · {locationScopeLabel}
             </div>
           </div>
+          <ThemeSwitch />
           <button
             type="button"
             className="rounded border border-on-dark/20 px-3 py-1.5 text-xs font-semibold text-on-dark/85 transition hover:border-on-dark/40 hover:bg-on-dark/10 hover:text-on-dark"

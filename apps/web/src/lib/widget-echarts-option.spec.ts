@@ -1,8 +1,13 @@
 import { expect } from "vitest";
 
 import type { ChartConfig, RadialGaugeConfig, WidgetSeries } from "./widget-catalog";
-import { WIDGET_TONE_COLOR } from "./widget-catalog";
+import { ROLE_TOKENS, fromTokenMap } from "../test-role-tokens";
+import { seriesPalette } from "./chart-theme";
+import { resolveRoles } from "./theme";
 import { buildChartOption, buildRadialGaugeOption } from "./widget-echarts-option";
+
+/** `F3.65c` — the light roles from the real `index.css`; a band stop is a resolved role (OQ1). */
+const roles = resolveRoles(fromTokenMap(ROLE_TOKENS.light));
 
 /**
  * `F3.1c` Task 2 — `widget-echarts-option.ts`'s gauge builder (ADR 0047).
@@ -39,7 +44,7 @@ function asGauge(option: unknown): GaugeOptionShape {
 }
 
 export function gaugePutsMinMaxOnTheSeriesAndValueInData(): void {
-  const option = asGauge(buildRadialGaugeOption({ min: 0, max: 100 }, 42));
+  const option = asGauge(buildRadialGaugeOption({ min: 0, max: 100 }, 42, roles));
   const series = option.series[0];
   expect(
     series.min,
@@ -58,7 +63,7 @@ export function gaugeThresholdsBecomeAscendingFractionsEndingAtOne(): void {
       { value: 80, tone: "critical" },
     ],
   };
-  const stops = asGauge(buildRadialGaugeOption(config, 50)).series[0].axisLine.lineStyle.color;
+  const stops = asGauge(buildRadialGaugeOption(config, 50, roles)).series[0].axisLine.lineStyle.color;
 
   // Each ECharts stop paints the segment ENDING at its fraction. A
   // threshold means "at or above this value, the tone begins" (the
@@ -67,10 +72,10 @@ export function gaugeThresholdsBecomeAscendingFractionsEndingAtOne(): void {
   // the bug this pins: a healthy reading would sit on an elevated band.
   expect(stops[0], "the band before the first threshold must be the base ok tone, not the threshold's own").toEqual([
     0.6,
-    WIDGET_TONE_COLOR.ok,
+    roles.accent,
   ]);
-  expect(stops[1]).toEqual([0.8, WIDGET_TONE_COLOR.warning]);
-  expect(stops[2]).toEqual([1, WIDGET_TONE_COLOR.critical]);
+  expect(stops[1]).toEqual([0.8, roles.warning]);
+  expect(stops[2]).toEqual([1, roles.critical]);
   const last = stops.at(-1);
   expect(
     last?.[0],
@@ -95,7 +100,7 @@ export function gaugeMinOffsetIsSubtractedNotIgnored(): void {
     max: 8,
     thresholds: [{ value: 7.5, tone: "warning" }],
   };
-  const option = asGauge(buildRadialGaugeOption(config, 7));
+  const option = asGauge(buildRadialGaugeOption(config, 7, roles));
   const series = option.series[0];
 
   expect(series.min, "a hardcoded series.min=0 would pass every other fixture in this file").toBe(6);
@@ -105,8 +110,8 @@ export function gaugeMinOffsetIsSubtractedNotIgnored(): void {
   expect(
     stops[0],
     "(7.5 - 6) / 2 = 0.75; the un-offset (7.5 / 2 = 3.75, clamped to 1) is the defect this pins",
-  ).toEqual([0.75, WIDGET_TONE_COLOR.ok]);
-  expect(stops[1]).toEqual([1, WIDGET_TONE_COLOR.warning]);
+  ).toEqual([0.75, roles.accent]);
+  expect(stops[1]).toEqual([1, roles.warning]);
 }
 
 export function gaugeThresholdsAreSortedRegardlessOfStorageOrder(): void {
@@ -128,9 +133,9 @@ export function gaugeThresholdsAreSortedRegardlessOfStorageOrder(): void {
   };
 
   expect(
-    asGauge(buildRadialGaugeOption(outOfOrder, 50)).series[0].axisLine.lineStyle.color,
+    asGauge(buildRadialGaugeOption(outOfOrder, 50, roles)).series[0].axisLine.lineStyle.color,
     "gaugeThresholdSchema imposes no ordering, so the store can hold [80,60] — unsorted stops make ECharts drop the arc silently",
-  ).toEqual(asGauge(buildRadialGaugeOption(ordered, 50)).series[0].axisLine.lineStyle.color);
+  ).toEqual(asGauge(buildRadialGaugeOption(ordered, 50, roles)).series[0].axisLine.lineStyle.color);
 }
 
 export function gaugeThresholdOutsideRangeIsClampedNotDropped(): void {
@@ -143,7 +148,7 @@ export function gaugeThresholdOutsideRangeIsClampedNotDropped(): void {
     max: 8,
     thresholds: [{ value: 2, tone: "warning" }],
   };
-  const stops = asGauge(buildRadialGaugeOption(config, 7)).series[0].axisLine.lineStyle.color;
+  const stops = asGauge(buildRadialGaugeOption(config, 7, roles)).series[0].axisLine.lineStyle.color;
   expect(stops.length, "a threshold outside [min,max] must still produce a stop, not vanish").toBeGreaterThan(0);
   expect(stops[0][0]).toBe(0);
 }
@@ -156,7 +161,7 @@ export function gaugeThresholdOutsideRangeIsClampedNotDropped(): void {
  */
 export function gaugeDetailFormatsTheReadingWithUnitAndDecimals(): void {
   const config: RadialGaugeConfig = { min: 0, max: 14, unit: "pH", decimals: 1 };
-  const formatter = asGauge(buildRadialGaugeOption(config, 7.126)).series[0].detail.formatter;
+  const formatter = asGauge(buildRadialGaugeOption(config, 7.126, roles)).series[0].detail.formatter;
   expect(formatter(7.126), "the raw ECharts default renders the unformatted float on the gauge face").toBe("7.1 pH");
 }
 
@@ -173,7 +178,7 @@ export function gaugeDetailFormatsTheReadingWithUnitAndDecimals(): void {
  * comment.
  */
 export function gaugeReadoutClearsTheDialAndTheAxisIsNotOverLabelled(): void {
-  const series = asGauge(buildRadialGaugeOption({ min: 6, max: 12, unit: "bar", decimals: 1 }, 7.5)).series[0];
+  const series = asGauge(buildRadialGaugeOption({ min: 6, max: 12, unit: "bar", decimals: 1 }, 7.5, roles)).series[0];
 
   const offsetY = series.detail.offsetCenter[1];
   expect(
@@ -192,10 +197,10 @@ export function gaugeReadoutClearsTheDialAndTheAxisIsNotOverLabelled(): void {
 export function gaugeNeedleValueIsClampedIntoRange(): void {
   const config: RadialGaugeConfig = { min: 0, max: 100 };
   expect(
-    asGauge(buildRadialGaugeOption(config, 150)).series[0].data[0].value,
+    asGauge(buildRadialGaugeOption(config, 150, roles)).series[0].data[0].value,
     "a reading above max must not send the needle outside the widget box",
   ).toBe(100);
-  expect(asGauge(buildRadialGaugeOption(config, -10)).series[0].data[0].value).toBe(0);
+  expect(asGauge(buildRadialGaugeOption(config, -10, roles)).series[0].data[0].value).toBe(0);
 }
 
 /**
@@ -238,7 +243,7 @@ function threeChartSeries(): readonly WidgetSeries[] {
 
 export function chartLineSeriesHasNoAreaStyle(): void {
   const config: ChartConfig = { series: "line" };
-  const option = asChart(buildChartOption(config, oneChartSeries(), CHART_NOW));
+  const option = asChart(buildChartOption(config, oneChartSeries(), CHART_NOW, roles));
   const out = option.series[0];
   expect(out.type).toBe("line");
   expect(out.areaStyle, "'line' must not carry areaStyle, or it silently renders filled").toBeUndefined();
@@ -260,14 +265,14 @@ export function chartLineSeriesHasNoAreaStyle(): void {
 /** This is decision 4's entire payload. `area` is not an ECharts series type — it is `line` plus `areaStyle`. */
 export function chartAreaSeriesIsLineWithAreaStyle(): void {
   const config: ChartConfig = { series: "area" };
-  const out = asChart(buildChartOption(config, oneChartSeries(), CHART_NOW)).series[0];
+  const out = asChart(buildChartOption(config, oneChartSeries(), CHART_NOW, roles)).series[0];
   expect(out.type, "'area' is not an ECharts series type — it is line + areaStyle").toBe("line");
   expect(out.areaStyle).toBeDefined();
 }
 
 export function chartBarAndScatterMapDirectly(): void {
-  expect(asChart(buildChartOption({ series: "bar" }, oneChartSeries(), CHART_NOW)).series[0].type).toBe("bar");
-  expect(asChart(buildChartOption({ series: "scatter" }, oneChartSeries(), CHART_NOW)).series[0].type).toBe(
+  expect(asChart(buildChartOption({ series: "bar" }, oneChartSeries(), CHART_NOW, roles)).series[0].type).toBe("bar");
+  expect(asChart(buildChartOption({ series: "scatter" }, oneChartSeries(), CHART_NOW, roles)).series[0].type).toBe(
     "scatter",
   );
 }
@@ -279,33 +284,33 @@ export function chartBarAndScatterMapDirectly(): void {
  * builds below.
  */
 export function chartStackedSetsStackOnEverySeriesAbsentSetsNone(): void {
-  const stacked = asChart(buildChartOption({ series: "line", stacked: true }, threeChartSeries(), CHART_NOW)).series;
+  const stacked = asChart(buildChartOption({ series: "line", stacked: true }, threeChartSeries(), CHART_NOW, roles)).series;
   expect(stacked).toHaveLength(3);
   for (const s of stacked) {
     expect(s.stack, `${s.name}: overlapping series read as one wrong total without a shared stack key`).toBeDefined();
   }
 
-  const unstacked = asChart(buildChartOption({ series: "line" }, threeChartSeries(), CHART_NOW)).series;
+  const unstacked = asChart(buildChartOption({ series: "line" }, threeChartSeries(), CHART_NOW, roles)).series;
   for (const s of unstacked) {
     expect(s.stack).toBeUndefined();
   }
 }
 
 export function chartYAxisLabelSetsNameAbsentOmitsIt(): void {
-  const labelled = asChart(buildChartOption({ series: "line", yAxisLabel: "kW" }, oneChartSeries(), CHART_NOW));
+  const labelled = asChart(buildChartOption({ series: "line", yAxisLabel: "kW" }, oneChartSeries(), CHART_NOW, roles));
   expect(labelled.yAxis.name).toBe("kW");
 
-  const unlabelled = asChart(buildChartOption({ series: "line" }, oneChartSeries(), CHART_NOW));
+  const unlabelled = asChart(buildChartOption({ series: "line" }, oneChartSeries(), CHART_NOW, roles));
   expect(unlabelled.yAxis.name, "a configured label must not silently vanish").toBeUndefined();
 }
 
 export function chartWindowMinutesSetsTheXAxisLowerBoundRelativeToNow(): void {
   const withWindow = asChart(
-    buildChartOption({ series: "line", windowMinutes: 60 }, oneChartSeries(), CHART_NOW),
+    buildChartOption({ series: "line", windowMinutes: 60 }, oneChartSeries(), CHART_NOW, roles),
   );
   expect(withWindow.xAxis.min).toBe(new Date(CHART_NOW - 60 * 60_000).toISOString());
 
-  const defaulted = asChart(buildChartOption({ series: "line" }, oneChartSeries(), CHART_NOW));
+  const defaulted = asChart(buildChartOption({ series: "line" }, oneChartSeries(), CHART_NOW, roles));
   expect(
     defaulted.xAxis.min,
     "absent windowMinutes must fall back to the documented day, not 'all data' — a widget configured for a day must not show a year",
@@ -313,7 +318,7 @@ export function chartWindowMinutesSetsTheXAxisLowerBoundRelativeToNow(): void {
 }
 
 export function chartNSeriesProduceNEntriesOrderedBySortOrder(): void {
-  const out = asChart(buildChartOption({ series: "line" }, threeChartSeries(), CHART_NOW)).series;
+  const out = asChart(buildChartOption({ series: "line" }, threeChartSeries(), CHART_NOW, roles)).series;
   expect(out.map((s) => s.name)).toEqual(["first", "second", "third"]);
 }
 
@@ -332,7 +337,7 @@ export function chartNSeriesProduceNEntriesOrderedBySortOrder(): void {
  * labels the wrong colour.
  */
 export function chartLegendNamesEverySeriesInOrderWhenThereIsMoreThanOne(): void {
-  const option = asChart(buildChartOption({ series: "line" }, threeChartSeries(), CHART_NOW));
+  const option = asChart(buildChartOption({ series: "line" }, threeChartSeries(), CHART_NOW, roles));
   expect(
     option.legend,
     "series[].name draws nothing without a legend component — five lines in one colour order with no key",
@@ -352,9 +357,18 @@ export function chartLegendNamesEverySeriesInOrderWhenThereIsMoreThanOne(): void
  * legend costs a row of a tile that is only a few grid cells tall.
  */
 export function chartSingleSeriesGetsNoLegend(): void {
-  const option = asChart(buildChartOption({ series: "line" }, oneChartSeries(), CHART_NOW));
+  const option = asChart(buildChartOption({ series: "line" }, oneChartSeries(), CHART_NOW, roles));
   expect(
     option.legend,
     "a one-series legend repeats the widget title and eats the plot's height",
   ).toBeUndefined();
+}
+
+/**
+ * `F3.65c` (plan D1) — the generic chart carries its series colours from the roles, the same
+ * palette the ECharts theme holds, so a toggle changes both together.
+ */
+export function chartSeriesColoursAreTheRolePalette(): void {
+  const option = buildChartOption({ series: "line" }, threeChartSeries(), CHART_NOW, roles) as { color?: unknown };
+  expect(option.color).toEqual(seriesPalette(roles));
 }

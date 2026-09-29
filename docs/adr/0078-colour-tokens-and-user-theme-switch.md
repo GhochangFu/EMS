@@ -430,3 +430,122 @@ because only one half of it follows the theme today. Dark ratios:
   `fill-info-ink` on `#ecfeff` 3.05, `fill-critical-ink-strong` on
   `#fef2f2` 2.32, `fill-ink` on `#f3e8ff` 1.01.
 - `world-map.tsx` — Leaflet's popup close button keeps its stock grey  (`.leaflet-popup-close-button`) on the popup, which now paints from  `surface`; not measured in `F3.65b`.
+
+## Amendment 3 — the `F3.65c` build: charts, schematics and the switch (2026-09-28)
+
+The plan `docs/plans/f3.65c-charts-schematics-switch.md` (on Fable, measured at
+`88f6b8c6`) moved the last 188 hex literals and 2 colour functions in 16
+files to roles and made the switch visible. The gate is now at zero:
+`palette`, `hex` and `func` are hard zeros (R20, R21, R22), each failing by
+file (317 files walked, 0 rows, corrected from the plan's stale 310/305;
+315 at U11, and 317 once `main` was merged in, which added
+`widgets/mimic-flow-dash.tsx` and `widgets/mimic-glyphs.tsx`).
+`FLOOR`, `floorDiff` and R11 are deleted; the `F3.65b` codemod and its test
+are gone; the stock palette and the `bms` block leave `tailwind.config.js`,
+leaving the 41 roles plus `transparent`/`current`/`inherit` in
+`theme.colors`. The built `dist/assets/index-*.css` was byte-identical
+before and after that removal — no rule changed, only unused definitions
+were dropped.
+
+**1. One resolver, one store.** `apps/web/src/lib/theme.ts`'s `resolveRoles`
+reads the 41 `--role` custom properties off `<html>` and throws naming the
+role on an empty, malformed or out-of-range value — a chart that silently
+painted ECharts' light defaults on a dark card was the failure this row
+removes. `stores/theme-store.ts` holds `{ theme, setTheme }`; `setTheme`
+sets `data-theme` first, then writes `"light"` or `"dark"` to
+`bms.theme` inside a `try`/`catch`, so a throwing store still flips the
+page — **choosing Light writes `"light"`**, it does not clear the key. This
+store is the only reader of `bms.theme`; the boot script in `index.html`
+stays the only reader on page load (`app-shell.tsx`'s separate
+`localStorage` key, the collapsed rail, is unrelated). **Amended at
+build:** the roles are not held in store state. `vite dev` evaluates
+`main.tsx`'s `./app` (and the store) before `index.css` injects its
+`<style>`, so a resolve at store creation would throw on empty properties;
+roles now come from `currentRoles()`, resolved lazily and cached per theme.
+jsdom gets the real tokens the same way the plan intended but not the
+mechanism it named: `node:fs` does not typecheck in `apps/web` (no `node`
+types), so `apps/web/vitest.config.ts` sets `test.css.include:
+[/src[\\/]index\.css(?:$|\?)/]` (anchored at review; the id carries the
+`?raw` query, so a bare `$` would match nothing) and `test-setup.ts` imports
+`./index.css?raw` — no new dependency.
+
+**2. Charts read one theme object.** `lib/chart-theme.ts`'s `echartsTheme`
+builds every ECharts chrome default (text, axes, tooltip, legend, gauge)
+from the resolved roles; each of the six `<ReactECharts>` call sites passes
+it as `theme`, and each option's series colours come from the same roles.
+`WIDGET_TONE_COLOR` is gone; `WIDGET_TONE_ROLE` maps a stored tone to a
+role, `WIDGET_TONE_FILL_CLASS` gives the tank widget a literal fill class,
+and `widgetToneColor(roles)` gives ECharts its stops.
+
+**The formula editor, fixed at review.** Nothing set CodeMirror's
+`EditorView.darkTheme` facet, so `@codemirror/view`'s `&light` base rules
+(black cursor, lilac selection, light-grey tooltip) stayed on a dark page;
+the facet is now a `Compartment` reconfigured on a toggle, and the editor's
+theme overrides the cursor (`ink`), the selection (`info` at 0.15,
+focused or not — owner ruling 2026-09-29, so the selection is visible), the tooltips (`surface`, `ink`, `line-strong` border) and the
+highlighted completion (`on-accent` on `accent-strong`) at the base rules'
+own specificity; the lint markers and the disabled-completion flash keep
+the library's colours.
+
+**3. Owner rulings OQ1–OQ8, all as recommended.** OQ1 the TRINETRA status
+quartet merges into `accent`/`info`/`warning`/`critical`; OQ2 the ok tint
+becomes `ok-wash`; OQ3 the CRAC pipes recolour semantically, supply `info`
+return `warning`; OQ4 the health donut's five bands are `accent`,
+`accent-strong`, `warning-on-dark`, `warning`, `critical`; OQ5 the SLD flow
+dashes and the world-map `nominal` marker become `accent-strong`; OQ6 the
+login hero moves to `chrome`/`chrome-nav`/`accent`; OQ7 the formula
+"function" token reuses `simulated-ink` as a hue, not a semantic match;
+OQ8 one PR. The plan's §2.4 lists every merged hex with its ΔE2000; this
+amendment does not repeat the table.
+
+**One deviation from OQ6, found at review.** The plan measured the login
+badge's `scrim/40` wash "over `chrome`" at 18.16/19.47, but the badge sits
+in the card on `bg-surface`, not the dark hero — a plan-defect
+mismeasurement. `scrim/40` on `surface` is 2.85:1 in light, well under 4.5.
+The badge now reads `bg-chrome text-on-dark` (constant-dark in both
+themes, reproducing the original `#003366` chip's always-dark pixel); its
+`on-dark` on `chrome` pair was already declared, so no new contrast entry
+was needed. The owner has not yet reviewed this specific change; it is
+flagged for the merge gate.
+
+**4. Flagged calls that stood, one broadened at review.** The schematic
+boards paint `surface`, not `well` (D5); halos are `stroke-surface` (D6).
+D7 ("green text on an ok tint takes an `-ink` role, not the plain status
+role") was applied at the one site the plan named, then broadened during
+review to every status label painted on a tinted cell in the CRAC and SLD
+schematics — the compressor cells, zone tiles, the SUP AIR label and the
+feeder branch's code/load/kW text all read `accent-strong`,
+`critical-ink` or `ink-muted` instead of the stroke-only tone.
+
+**5. The Amendment 2 §8 punch list is closed.** The `it.tsx` rack label,
+the five `env.tsx` zone labels (each ink recoloured with its fill in the
+same change), and the Leaflet popup close button (now `ink-faint` at rest,
+`ink` on hover/focus, asserted as two claims, T17a and T17b, after a review
+split found the combined assertion untestable).
+
+**6. The switch.** A `role="group"` labelled "Theme" holding "Light" and
+"Dark" buttons with `aria-pressed`, in the header's user area between the
+user block and Logout, painted on `chrome` with `on-dark` inks. A click
+flips `data-theme` and writes the key with no reload.
+
+**7. Contrast.** New pairs, from the contrast test's diff rather than the
+plan's estimate: text — `accent-strong` on `ok-wash`, `info-ink` on `well`,
+`warning-ink` and `critical-ink-strong` on `well`, `on-dark` on `chrome` at
+0.85 (the switch's idle label, bare and under its hover wash), and the
+formula editor's six token inks on `surface` under its `info`/0.15
+selection; UI —
+`warning-on-dark` on `surface` (the donut's Fair slice) and `on-dark` on
+`chrome` at 0.8 (the switch's focus ring, bare and under the pressed
+button's wash — the ring is inset, so a keyboard-focused pressed button
+shows both). One light allowlist entry: the donut's `warning-on-dark` on
+`surface`, measured 1.67, reason "status slices are named in the legend
+list; existing" (ruled with OQ4). **The dark allowlist was empty until the
+owner ruling of 2026-09-29**: two dark entries, `simulated-ink` (4.04) and
+`info-ink` (3.98) under the formula editor's `info`/0.15 selection, reason
+"transient selected state; unselected text keeps 4.5".
+
+**8. What remains outside the gate.** Tailwind preflight's `::placeholder`
+colour (stock `#9ca3af`, an unchanged pixel), third-party CSS
+(`leaflet.css`), and a class name built by string concatenation — the
+scanner needs a literal class and D4's status functions were written to
+return whole literal strings for exactly this reason.

@@ -4,17 +4,24 @@ import { useMemo } from "react";
 
 import type { EnergyTopConsumer } from "@bms/shared";
 
+import { useChartTheme } from "../lib/chart-theme";
+
 type Props = {
   consumers: EnergyTopConsumer[];
   status: "loading" | "error" | "empty" | "ready";
 };
 
+/**
+ * `F3.65c` — the bars are `info` from the current roles; the axis, label, tooltip and
+ * axis-pointer shadow colours come from the ECharts theme object (plan D2).
+ */
 export function EnergyTopBarChart({ consumers, status }: Props) {
+  const { roles, theme } = useChartTheme();
   const option = useMemo<EChartsOption>(() => {
     const labels = consumers.map((c) => `${c.code} · ${c.name.slice(0, 18)}`);
     const values = consumers.map((c) => c.estimatedKwh);
     return {
-      color: ["#1570EF"],
+      color: [roles.info],
       grid: { left: 140, right: 28, top: 16, bottom: 24 },
       tooltip: {
         trigger: "axis",
@@ -24,15 +31,13 @@ export function EnergyTopBarChart({ consumers, status }: Props) {
       xAxis: {
         type: "value",
         name: "kWh (est.)",
-        nameTextStyle: { color: "#7A8494", fontSize: 10 },
-        axisLabel: { color: "#4A5464", fontSize: 10 },
-        splitLine: { lineStyle: { color: "#EAECF0" } },
+        nameTextStyle: { fontSize: 10 },
+        axisLabel: { fontSize: 10 },
       },
       yAxis: {
         type: "category",
         data: labels,
-        axisLabel: { color: "#4A5464", fontSize: 10 },
-        axisLine: { lineStyle: { color: "#D8DCE3" } },
+        axisLabel: { fontSize: 10 },
       },
       series: [
         {
@@ -42,7 +47,7 @@ export function EnergyTopBarChart({ consumers, status }: Props) {
         },
       ],
     };
-  }, [consumers]);
+  }, [consumers, roles]);
 
   if (status === "loading") {
     return (
@@ -70,6 +75,7 @@ export function EnergyTopBarChart({ consumers, status }: Props) {
     <div className="rounded-lg border border-line bg-surface p-2 shadow-sm">
       <ReactECharts
         option={option}
+        theme={theme}
         style={{ height: Math.max(280, consumers.length * 36 + 80) }}
         notMerge
         lazyUpdate

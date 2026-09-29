@@ -6,7 +6,9 @@ import { useAuthStore } from "../stores/auth-store";
 import {
   describesTheLockedSettingsReason,
   doesNotReadAssets,
+  drawsTheIdleThemeButtonAtEightyFive,
   drawsTheLockedSettingsAtThreeToOne,
+  drawsThePressedThemeButtonOnTheWash,
   dropsTheControlRoom2dGroup,
   givesAnOperatorNoSettingsLink,
   givesAnOrganizationAdminTheSettingsLink,
@@ -25,6 +27,8 @@ import {
   namesTheExpandedLinkByItsLabel,
   namesDashboardAndDashboardsApartWhenCollapsed,
   placesTheEntryDirectlyAfterAlarmCentre,
+  placesTheSwitchAfterTheUserBlock,
+  placesTheSwitchBeforeLogout,
   readsTheFullItemList,
   showsDsForDashboardsWhenCollapsed,
   showsLocationTypesToTheGlobalAdmin,
@@ -165,5 +169,23 @@ describe("F4.164 collapsed rail", () => {
 
   it("L9 names the expanded Dashboards link exactly Dashboards", () => {
     namesTheExpandedLinkByItsLabel();
+  });
+});
+
+describe("F3.65c the theme switch in the header", () => {
+  it("S15a places the Theme group after the user block", () => {
+    placesTheSwitchAfterTheUserBlock();
+  });
+
+  it("S15b places the Theme group before the Logout button", () => {
+    placesTheSwitchBeforeLogout();
+  });
+
+  it("S16a draws the pressed button in bg-on-dark/15 text-on-dark", () => {
+    drawsThePressedThemeButtonOnTheWash();
+  });
+
+  it("S16b draws the idle button in text-on-dark/85", () => {
+    drawsTheIdleThemeButtonAtEightyFive();
   });
 });

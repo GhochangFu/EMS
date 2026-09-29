@@ -12,6 +12,25 @@
 import "@testing-library/jest-dom/vitest";
 import { configure } from "@testing-library/react";
 
+import indexCss from "./index.css?raw";
+
+/**
+ * `F3.65c` — jsdom gets the real role tokens (plan D3, amended at build). The text of
+ * `index.css` is appended in one `<style>`, so `getComputedStyle(<html>)` returns each
+ * `--role` as `"R G B"` and follows `data-theme` exactly as the browser does; without it
+ * every custom property reads `""` and `lib/theme.ts`'s resolver throws. jsdom drops the
+ * `@tailwind` at-rules and keeps the two `:root` blocks.
+ *
+ * The text arrives through `?raw` because `node:fs` does not typecheck in `apps/web`;
+ * `vitest.config.ts` includes `index.css` in `test.css` so the import is the file, not `""`.
+ * Guarded: the setup also runs for the `node`-environment files, which have no `document`.
+ */
+if (typeof document !== "undefined") {
+  const style = document.createElement("style");
+  style.textContent = indexCss;
+  document.head.appendChild(style);
+}
+
 /**
  * `F4.90` — the `findBy*` timeout, raised from testing-library's 1000 ms
  * default because **1000 ms is not a ceiling this project clears comfortably.**

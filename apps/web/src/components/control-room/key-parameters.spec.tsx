@@ -2,7 +2,8 @@ import { render, screen, within } from "@testing-library/react";
 import { expect, vi } from "vitest";
 
 import { emptySlice, type SchematicTelemetrySlice } from "../../lib/schematic-telemetry";
-import { WIDGET_TONE_COLOR, type WidgetTone } from "../../lib/widget-catalog";
+import { widgetToneColor, type WidgetTone } from "../../lib/widget-catalog";
+import { currentRoles } from "../../stores/theme-store";
 import { KeyParameters } from "./key-parameters";
 
 /**
@@ -67,9 +68,12 @@ function needleOf(title: string): number | null {
   return needle === undefined ? null : Number(needle);
 }
 
-const TONE_BY_COLOR = new Map(
-  (Object.entries(WIDGET_TONE_COLOR) as [WidgetTone, string][]).map(([tone, color]) => [color, tone]),
-);
+/** `F3.65c` — a band's colour is its tone's resolved role in the current (jsdom, D3) theme. */
+function toneByColor(): Map<string, WidgetTone> {
+  return new Map(
+    (Object.entries(widgetToneColor(currentRoles())) as [WidgetTone, string][]).map(([tone, color]) => [color, tone]),
+  );
+}
 
 /**
  * The tone painted at each arc fraction. An ECharts colour stop paints the
@@ -80,7 +84,7 @@ function bandTonesAt(title: string, fractions: number[]): (WidgetTone | undefine
   const stops = JSON.parse(dialOf(title)?.dataset.bands ?? "[]") as [number, string][];
   return fractions.map((fraction) => {
     const stop = stops.find(([end]) => end > fraction);
-    return stop ? TONE_BY_COLOR.get(stop[1]) : undefined;
+    return stop ? toneByColor().get(stop[1]) : undefined;
   });
 }
 

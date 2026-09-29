@@ -4,19 +4,26 @@ import { useMemo } from "react";
 
 import type { EnergySourceMixPoint } from "@bms/shared";
 
+import { useChartTheme } from "../lib/chart-theme";
+
 type Props = {
   points: EnergySourceMixPoint[];
   status: "loading" | "error" | "empty" | "ready";
 };
 
+/**
+ * `F3.65c` — Grid `ink-faint`, DG `warning`, Solar `accent` from the current roles; the axis,
+ * legend and tooltip colours come from the ECharts theme object (plan D2).
+ */
 export function EnergySourceStackChart({ points, status }: Props) {
+  const { roles, theme } = useChartTheme();
   const option = useMemo<EChartsOption>(() => {
     return {
-      color: ["#64748B", "#F59E0B", "#00A651"],
+      color: [roles["ink-faint"], roles.warning, roles.accent],
       legend: {
         data: ["Grid", "DG (nominal)", "Solar"],
         bottom: 0,
-        textStyle: { fontSize: 11, color: "#4A5464" },
+        textStyle: { fontSize: 11 },
       },
       grid: { left: 52, right: 20, top: 28, bottom: 56 },
       tooltip: {
@@ -25,15 +32,13 @@ export function EnergySourceStackChart({ points, status }: Props) {
       },
       xAxis: {
         type: "time",
-        axisLabel: { color: "#4A5464", fontSize: 10 },
-        axisLine: { lineStyle: { color: "#D8DCE3" } },
+        axisLabel: { fontSize: 10 },
       },
       yAxis: {
         type: "value",
         name: "kW",
-        nameTextStyle: { color: "#7A8494", fontSize: 10 },
-        axisLabel: { color: "#4A5464", fontSize: 10 },
-        splitLine: { lineStyle: { color: "#EAECF0" } },
+        nameTextStyle: { fontSize: 10 },
+        axisLabel: { fontSize: 10 },
       },
       series: [
         {
@@ -68,7 +73,7 @@ export function EnergySourceStackChart({ points, status }: Props) {
         },
       ],
     };
-  }, [points]);
+  }, [points, roles]);
 
   if (status === "loading") {
     return (
@@ -96,6 +101,7 @@ export function EnergySourceStackChart({ points, status }: Props) {
     <div className="rounded-lg border border-line bg-surface p-2 shadow-sm">
       <ReactECharts
         option={option}
+        theme={theme}
         style={{ height: 300 }}
         notMerge
         lazyUpdate

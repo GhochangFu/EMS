@@ -9,6 +9,7 @@ import * as assetsApi from "../api/assets";
 import * as systemStatusApi from "../api/system-status";
 import { OPERATIONAL } from "../components/system-status-indicator.spec";
 import { useAuthStore, type AuthUser } from "../stores/auth-store";
+import { useThemeStore } from "../stores/theme-store";
 import {
   AppShell,
   COLLAPSED_LABEL_OVERRIDES,
@@ -396,4 +397,51 @@ export function showsLocationTypesToTheGlobalAdmin(): void {
   const links = within(sidebar()).queryAllByRole("link", { name: "Location Types" });
   expect(links).toHaveLength(1);
   expect(links[0]).toHaveAttribute("href", "/admin/location-types");
+}
+
+/**
+ * `F3.65c` U10 — the Light / Dark switch sits in the header's user area, between the user block
+ * and the Logout button, and paints with the `on-dark` shapes `tests/f3.65a-colour-contrast.test.ts`
+ * declares on `chrome` (constant-dark in both themes, so never `ink`).
+ */
+function header(): HTMLElement {
+  return screen.getByRole("banner");
+}
+
+function themeGroup(): HTMLElement {
+  return within(header()).getByRole("group", { name: "Theme" });
+}
+
+function follows(a: Node, b: Node): boolean {
+  return (a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0;
+}
+
+/** S15a — the switch follows the user block in the header. */
+export function placesTheSwitchAfterTheUserBlock(): void {
+  renderShell(GLOBAL, "/", "operator");
+  const userName = within(header()).getByText("operator", { selector: "div" });
+  expect(follows(userName, themeGroup())).toBe(true);
+}
+
+/** S15b — the switch precedes the Logout button in the header. */
+export function placesTheSwitchBeforeLogout(): void {
+  renderShell(GLOBAL, "/", "operator");
+  const logout = within(header()).getByRole("button", { name: "Logout" });
+  expect(follows(themeGroup(), logout)).toBe(true);
+}
+
+/** S16a — the pressed button carries the `on-dark` on an `on-dark/15` wash pair. */
+export function drawsThePressedThemeButtonOnTheWash(): void {
+  useThemeStore.setState({ theme: "light" });
+  renderShell(GLOBAL, "/", "operator");
+  const classes = within(themeGroup()).getByRole("button", { name: "Light" }).classList;
+  expect([classes.contains("bg-on-dark/15"), classes.contains("text-on-dark")]).toEqual([true, true]);
+}
+
+/** S16b — the idle button carries `text-on-dark/85`, the Logout button's declared shape. */
+export function drawsTheIdleThemeButtonAtEightyFive(): void {
+  useThemeStore.setState({ theme: "light" });
+  renderShell(GLOBAL, "/", "operator");
+  const classes = within(themeGroup()).getByRole("button", { name: "Dark" }).classList;
+  expect(classes.contains("text-on-dark/85")).toBe(true);
 }
