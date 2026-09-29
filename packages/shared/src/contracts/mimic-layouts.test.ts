@@ -4,7 +4,7 @@ import {
   mimicLayoutCellIsTen,
   mimicLayoutGeometryParsesAPanelWithANullSymbol,
   mimicPanelTonesAreThree,
-  mimicSymbolsAreTheTwelveInOrder,
+  mimicSymbolsAreTheTwentyNineInOrder,
   mimicWidgetNodesParsesTheLayoutArm,
   mimicWidgetNodesParsesThePresetArm,
   mimicWidgetNodesRefusesALayoutArmWithoutLayout,
@@ -12,8 +12,8 @@ import {
 
 /** Vitest entry point — assertions live in the sibling `.spec` (ADR 0014). */
 describe("F3.32c — the mimic layout contracts (ADR 0081)", () => {
-  it("declares the twelve symbols in order", () => {
-    mimicSymbolsAreTheTwelveInOrder();
+  it("declares the twenty-nine symbols in order", () => {
+    mimicSymbolsAreTheTwentyNineInOrder();
   });
 
   it("declares three panel tones", () => {

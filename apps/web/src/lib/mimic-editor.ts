@@ -11,6 +11,7 @@ import {
 
 import type { MimicLayoutWriteBody, MimicLayoutWriteNode } from "../api/mimic-layouts";
 import { MIMIC_LAYOUTS, MIMIC_NODE_GLYPHS, MIMIC_NODE_SIZE, MIMIC_PANELS } from "./mimic";
+import { symbolLabel } from "./mimic-symbols";
 
 /**
  * `F3.32c` U6 / ADR 0081 decision 7 — the mimic layout editor's state, as a pure reducer with
@@ -146,10 +147,8 @@ export function nextNodeKey(nodes: readonly EditorNode[], prefix: string): strin
   return `${prefix}_${max + 1}`;
 }
 
-/** A symbol's default label: `clarifier` → `Clarifier`. */
-export function symbolLabel(symbol: MimicSymbol): string {
-  return `${symbol.charAt(0).toUpperCase()}${symbol.slice(1)}`;
-}
+/** A symbol's label — the table in `mimic-symbols.ts` (ADR 0082), re-exported for existing callers. */
+export { symbolLabel };
 
 function boxOf(node: EditorNode): Box {
   return { x: node.x, y: node.y, w: node.w, h: node.h };

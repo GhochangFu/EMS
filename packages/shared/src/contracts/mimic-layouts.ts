@@ -42,7 +42,8 @@ export const mimicLayoutNodeKindSchema = z.enum(["unit", "panel", "label"]);
 /**
  * The closed symbol set a unit draws with (plan D12). Closed because a symbol is an SVG glyph in
  * code — the same §4.8 test `widgetTypeSchema` applies. `bms.mimic_layout_nodes_symbol_check`
- * restates this list in this order.
+ * restates this list in this order (migration `0089`, ADR 0082: twelve water and general symbols,
+ * then seventeen for the other asset domains).
  */
 export const mimicSymbolSchema = z.enum([
   "tank",
@@ -57,6 +58,25 @@ export const mimicSymbolSchema = z.enum([
   "valve",
   "filter",
   "unit",
+  // ADR 0082 decision 1 — appended, never reordered: 0088's CHECK holds the first twelve, 0089's
+  // all twenty-nine, in this order.
+  "transformer",
+  "breaker",
+  "switchboard",
+  "generator",
+  "meter",
+  "motor",
+  "ups",
+  "battery",
+  "rack",
+  "chiller",
+  "ahu",
+  "fan",
+  "compressor",
+  "boiler",
+  "sensor",
+  "lamp",
+  "lift",
 ]);
 
 /** A panel's tint — a colour role, never a colour value (F3.65 R14/R20). */
