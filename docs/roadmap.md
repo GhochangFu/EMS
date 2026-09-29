@@ -6706,3 +6706,25 @@ fresh data, and an alarm callout under the unit that raised it, coloured from
 the severity vocabulary. The owner reviewed it on the rebuilt stack.
 
 **Cascade:** the unit-level preset stays open under `F3.32`.
+
+### `F3.65c` — charts and schematics follow the theme; the switch ✅ 2026-09-29
+
+PR #636, squash `4ca20b09`; ADR 0078 Amendment 3; plan
+`docs/plans/f3.65c-charts-schematics-switch.md` (Fable), nine owner rulings.
+
+The last hex colours in `apps/web` — charts, the CRAC, SLD and SMOC schematics,
+the world map, the formula editor and the login hero — now read the 41 roles,
+through one resolver and one theme store, and repaint on a theme change without
+a reload. A sun / moon switch in the header's user area writes `bms.theme`.
+The colour gate is at zero: palette, hex and colour functions are hard zeros by
+file, and the stock palette and the `bms` block are gone from the Tailwind
+config.
+
+Verified: the colour gates and every chart, map and editor toggle spec, each
+new assertion shown red on its mutation; the browser layer in light and dark on
+the rebuilt web container (the formula editor held by its unit specs). Two
+reviews; the code review's CodeMirror dark-theme blocker and five ungated chart
+toggles were fixed test-first.
+
+**Cascade:** `F3.65` is complete. A `chore(agents):` PR brings AGENTS.md §5 up
+to date.
