@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { expect, vi } from "vitest";
@@ -297,6 +297,33 @@ export async function aFirstSaveOpensTheSavedLayoutFromTheCache(): Promise<void>
   mount(newClient(), "/admin/mimic-layouts/new", user("organization_admin"));
   await save();
   await waitFor(() => expect(screen.getAllByTestId("mimic-editor-hit")).toHaveLength(3));
+}
+
+/** E17 — a new layout's POST carries `symbolLibraries: ["core"]` (ADR 0084 decision 8). */
+export async function aNewLayoutPostsTheCoreLibrary(): Promise<void> {
+  const { create } = renderAt("/admin/mimic-layouts/new");
+  await save();
+  await waitFor(() => expect(create).toHaveBeenCalledTimes(1));
+  expect((create.mock.calls[0]?.[0] as { symbolLibraries: unknown }).symbolLibraries).toEqual(["core"]);
+}
+
+/** E18 — the palette offers the stored layout's libraries: one tab each. */
+export async function thePaletteOffersTheLayoutsLibraries(): Promise<void> {
+  const stubs = stubAll(ORGS);
+  stubs.fetchOne.mockResolvedValue({ ...storedDto(4), symbolLibraries: ["core", "mdi"] });
+  mount(newClient(), `/admin/mimic-layouts/${LAYOUT_ID}`, user("organization_admin"));
+  const tablist = await screen.findByRole("tablist");
+  expect(within(tablist).getAllByRole("tab").map((t) => t.textContent)).toEqual(["Core", "Material Design Icons"]);
+}
+
+/** E19 — checking a library in the inspector adds its palette tab. */
+export async function checkingALibraryAddsItsTab(): Promise<void> {
+  renderAt("/admin/mimic-layouts/new");
+  // Positive control for the absent tablist: the core palette is drawn.
+  await screen.findByRole("button", { name: "Add Tank unit" });
+  expect(screen.queryByRole("tablist")).toBeNull();
+  await userEvent.click(screen.getByRole("checkbox", { name: "Library Tabler Icons" }));
+  expect(within(screen.getByRole("tablist")).getAllByRole("tab").map((t) => t.textContent)).toEqual(["Core", "Tabler Icons"]);
 }
 
 /** E10 — a location_admin gets the status line and no read. */
