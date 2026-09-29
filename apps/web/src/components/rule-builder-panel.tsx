@@ -88,7 +88,7 @@ const emptyForm: BuilderForm = {
 };
 
 const fieldClass =
-  "w-full rounded border border-line-strong bg-surface px-2 py-2 text-sm text-ink shadow-sm focus:border-focus focus:outline-none";
+  "surface-field w-full px-2 py-2 text-sm text-ink focus:border-focus focus:outline-none";
 
 /** Guided IF/THEN builder for the existing simple automation rule model. */
 export function RuleBuilderPanel({
@@ -191,7 +191,7 @@ export function RuleBuilderPanel({
   const canSubmit = !invalidReason && !clearHoldReason && !busy;
 
   return (
-    <section className="rounded border border-line bg-surface">
+    <section className="surface-raised">
       <div className="flex items-start justify-between gap-3 border-b border-line px-4 py-3">
         <div>
           <h2 className="font-condensed text-lg font-bold text-ink">
@@ -203,7 +203,7 @@ export function RuleBuilderPanel({
           </p>
         </div>
         <button
-          className="rounded border border-line-strong px-3 py-1.5 text-xs font-semibold text-ink-muted"
+          className="surface-button px-3 py-1.5"
           onClick={() => {
             // Start on a category the control actually offers. Hardcoding one
             // would put the form's state and its `<select>` out of step the
@@ -284,7 +284,7 @@ export function RuleBuilderPanel({
         </Field>
 
         {form.ruleType === "threshold" ? (
-          <div className="rounded border border-line bg-well p-3">
+          <div className="surface-pressed p-3">
             <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-ink-muted">
               IF latest telemetry matches
             </div>
@@ -362,7 +362,7 @@ export function RuleBuilderPanel({
             </div>
           </div>
         ) : (
-          <div className="rounded border border-line bg-well p-3">
+          <div className="surface-pressed p-3">
             <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-ink-muted">
               IF current time is inside window
             </div>
@@ -404,7 +404,7 @@ export function RuleBuilderPanel({
           </div>
         )}
 
-        <div className="rounded border border-line bg-well p-3">
+        <div className="surface-pressed p-3">
           <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-ink-muted">
             THEN create an operator trace
           </div>
@@ -488,7 +488,7 @@ export function RuleBuilderPanel({
 
         <div className="flex flex-wrap gap-2">
           <button
-            className="rounded border border-line-strong px-3 py-2 text-xs font-semibold text-ink-muted disabled:opacity-50"
+            className="surface-button px-3 py-2 disabled:opacity-50"
             disabled={!canSubmit}
             aria-busy={previewM.isPending}
             onClick={() => previewM.mutate({ ...payload, id: form.id })}
@@ -515,7 +515,7 @@ export function RuleBuilderPanel({
                 : "Save draft"}
           </button>
           <button
-            className="rounded bg-accent px-3 py-2 text-xs font-semibold text-on-accent disabled:opacity-50"
+            className="surface-button-primary bg-accent px-3 py-2 text-xs font-semibold text-on-accent disabled:opacity-50"
             disabled={!form.id || !canSubmit}
             aria-busy={publishM.isPending}
             onClick={() => form.id && publishM.mutate({ id: form.id })}

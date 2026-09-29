@@ -285,7 +285,7 @@ export function AlarmsPage({ user }: AlarmsPageProps) {
                 >
                   <div className="truncate font-semibold text-ink">{item.subsystem}</div>
                   <div className="min-w-0">
-                    <div className="h-2 rounded-full bg-well-deep">
+                    <div className="h-2 rounded-full surface-pressed-sm">
                     <div
                       className="h-2 rounded-full bg-accent"
                       style={{ width: `${pct}%` }}
@@ -304,7 +304,7 @@ export function AlarmsPage({ user }: AlarmsPageProps) {
         {listQ.isLoading ? (
           <p className="text-sm text-ink-muted">Loading alarms…</p>
         ) : listQ.isError ? (
-          <p className="text-sm text-critical-ink-soft">Could not load alarms (auth?).</p>
+          <p className="text-sm text-critical-ink">Could not load alarms (auth?).</p>
         ) : (
           <SectionCard
             title="Alarm Grid"
@@ -313,14 +313,14 @@ export function AlarmsPage({ user }: AlarmsPageProps) {
               <label className="flex min-w-[260px] items-center gap-2 text-xs text-ink-muted">
                 Search
                 <input
-                  className="w-full rounded border border-line-strong bg-surface px-3 py-1.5 text-sm text-ink"
+                  className="surface-field w-full px-3 py-1.5 text-sm text-ink"
                   placeholder="Asset, site, severity, subsystem..."
                   value={search}
                   onChange={(event) => setSearch(event.target.value)}
                 />
               </label>
             }
-            bodyClassName="overflow-x-auto p-0"
+            bodyClassName="surface-table overflow-x-auto p-0"
           >
             <table className="w-full min-w-[720px] text-left text-sm">
               <thead className="border-b border-well-deep bg-well text-[11px] font-semibold uppercase tracking-wide text-ink-muted">
@@ -395,14 +395,14 @@ export function AlarmsPage({ user }: AlarmsPageProps) {
                         <div className="flex justify-end gap-2">
                           <button
                             type="button"
-                            className="rounded border border-line-strong px-2.5 py-1 text-xs font-semibold text-ink hover:bg-well"
+                            className="surface-button px-2.5 py-1"
                             onClick={() => setDetailsTargetId(a.id)}
                           >
                             Details
                           </button>
                           <button
                             type="button"
-                            className="rounded border border-line-strong px-2.5 py-1 text-xs font-semibold text-ink hover:bg-well"
+                            className="surface-button px-2.5 py-1"
                             onClick={() => startWorkOrder(a)}
                           >
                             Work order
@@ -418,7 +418,7 @@ export function AlarmsPage({ user }: AlarmsPageProps) {
                           {canAcknowledge(a) ? (
                           <button
                             type="button"
-                            className="rounded bg-accent px-2.5 py-1 text-xs font-semibold text-on-accent hover:bg-accent-strong"
+                            className="surface-button-primary bg-accent px-2.5 py-1 text-xs font-semibold text-on-accent hover:bg-accent-strong"
                             onClick={() => {
                               setAckTarget(a);
                               setReason("");
@@ -441,7 +441,7 @@ export function AlarmsPage({ user }: AlarmsPageProps) {
         {listQ.hasNextPage ? (
           <button
             type="button"
-            className="text-sm font-medium text-accent hover:underline"
+            className="text-sm font-medium text-accent-strong hover:underline"
             onClick={() => void listQ.fetchNextPage()}
             disabled={listQ.isFetchingNextPage}
             aria-busy={listQ.isFetchingNextPage}
@@ -458,7 +458,7 @@ export function AlarmsPage({ user }: AlarmsPageProps) {
           aria-modal="true"
           aria-labelledby="ack-title"
         >
-          <div className="w-full max-w-md rounded-lg bg-surface p-6 shadow-xl">
+          <div className="w-full max-w-md surface-dialog p-6">
             <h2 id="ack-title" className="font-condensed text-lg font-bold">
               Acknowledge alarm
             </h2>
@@ -470,7 +470,7 @@ export function AlarmsPage({ user }: AlarmsPageProps) {
                 </label>
                 <textarea
                   id="reason"
-                  className="mt-1 w-full rounded border border-line-strong px-3 py-2 text-sm"
+                  className="mt-1 surface-field w-full px-3 py-2 text-sm"
                   rows={3}
                   value={reason}
                   onChange={(ev) => setReason(ev.target.value)}
@@ -480,14 +480,14 @@ export function AlarmsPage({ user }: AlarmsPageProps) {
                 />
               </div>
               {ackError ? (
-                <p className="text-xs text-critical-ink-soft" role="alert">
+                <p className="text-xs text-critical-ink" role="alert">
                   {ackError}
                 </p>
               ) : null}
               <div className="flex justify-end gap-2">
                 <button
                   type="button"
-                  className="rounded px-3 py-2 text-sm text-ink-muted hover:bg-well-deep"
+                  className="surface-button px-3 py-2"
                   onClick={() => setAckTarget(null)}
                 >
                   Cancel
@@ -496,7 +496,7 @@ export function AlarmsPage({ user }: AlarmsPageProps) {
                   type="submit"
                   disabled={ackM.isPending || reason.trim().length < 3}
                   aria-busy={ackM.isPending}
-                  className="rounded bg-accent px-4 py-2 text-sm font-semibold text-on-accent disabled:opacity-50"
+                  className="surface-button-primary bg-accent px-4 py-2 text-sm font-semibold text-on-accent disabled:opacity-50"
                 >
                   {ackM.isPending ? "Saving…" : "Confirm ack"}
                 </button>

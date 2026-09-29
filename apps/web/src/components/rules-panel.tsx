@@ -54,7 +54,7 @@ const ruleTypeLabels: Record<AutomationRuleType, string> = {
 function statusStyle(item: RuleExecutionItem): string {
   switch (item.status) {
     case "matched":
-      return "border-accent/20 bg-accent/10 text-accent";
+      return "border-accent/20 bg-accent/10 text-accent-strong";
     case "not_matched":
       return "border-line bg-well-deep text-neutral-ink";
     case "skipped":
@@ -72,7 +72,7 @@ function lifecycleStyle(rule: RuleListItem): string {
     return "border-line-strong bg-well-deep text-neutral-ink";
   }
   if (rule.enabled) {
-    return "border-accent/20 bg-accent/10 text-accent";
+    return "border-accent/20 bg-accent/10 text-accent-strong";
   }
   return "border-line bg-well text-ink-muted";
 }
@@ -191,7 +191,7 @@ export function RulesPanel() {
           <Kpi label="Rule Types" value={`${thresholdCount}/${timeWindowCount}`} />
         </div>
 
-        <div className="rounded border border-line bg-surface">
+        <div className="surface-raised">
           <div className="flex flex-col gap-3 border-b border-line px-4 py-3 lg:flex-row lg:items-center lg:justify-between">
             <div>
               <h2 className="font-condensed text-lg font-bold text-ink">
@@ -204,7 +204,7 @@ export function RulesPanel() {
             </div>
             <div className="flex flex-wrap items-center gap-2">
               <select
-                className="rounded border border-line-strong bg-surface px-2 py-1 text-xs"
+                className="surface-field px-2 py-1 text-xs"
                 value={categoryFilter}
                 onChange={(e) => setCategoryFilter(e.target.value as RuleFilter)}
               >
@@ -216,7 +216,7 @@ export function RulesPanel() {
                 ))}
               </select>
               <select
-                className="rounded border border-line-strong bg-surface px-2 py-1 text-xs"
+                className="surface-field px-2 py-1 text-xs"
                 value={statusFilter}
                 onChange={(e) => setStatusFilter(e.target.value as StatusFilter)}
               >
@@ -225,7 +225,7 @@ export function RulesPanel() {
                 <option value="disabled">Disabled</option>
               </select>
               <select
-                className="rounded border border-line-strong bg-surface px-2 py-1 text-xs"
+                className="surface-field px-2 py-1 text-xs"
                 value={lifecycleFilter}
                 onChange={(e) =>
                   setLifecycleFilter(e.target.value as LifecycleFilter)
@@ -237,7 +237,7 @@ export function RulesPanel() {
                 <option value="archived">Archived</option>
               </select>
               <button
-                className="rounded bg-accent px-3 py-1.5 text-xs font-semibold text-on-accent disabled:cursor-not-allowed disabled:bg-line-strong"
+                className="surface-button-primary bg-accent px-3 py-1.5 text-xs font-semibold text-on-accent disabled:cursor-not-allowed disabled:bg-line-strong"
                 disabled={evaluateM.isPending || activeCount === 0}
                 aria-busy={evaluateM.isPending}
                 onClick={() => evaluateM.mutate()}
@@ -260,7 +260,7 @@ export function RulesPanel() {
           {rulesQ.isLoading ? (
             <p className="p-4 text-sm text-ink-muted">Loading rules...</p>
           ) : rulesQ.isError ? (
-            <p className="p-4 text-sm text-critical-ink-soft">Could not load rules.</p>
+            <p className="p-4 text-sm text-critical-ink">Could not load rules.</p>
           ) : filteredRules.length === 0 ? (
             <p className="p-4 text-sm text-ink-muted">No rules match the filters.</p>
           ) : (
@@ -310,7 +310,7 @@ export function RulesPanel() {
           selectedRule={selectedRule}
           onClearSelected={() => setSelectedRule(null)}
         />
-        <section className="rounded border border-line bg-surface">
+        <section className="surface-raised">
           <div className="border-b border-line px-4 py-3">
             <h2 className="font-condensed text-lg font-bold text-ink">
               Execution Log
@@ -320,7 +320,7 @@ export function RulesPanel() {
           {executionsQ.isLoading ? (
             <p className="p-4 text-sm text-ink-muted">Loading executions...</p>
           ) : executionsQ.isError ? (
-            <p className="p-4 text-sm text-critical-ink-soft">Could not load executions.</p>
+            <p className="p-4 text-sm text-critical-ink">Could not load executions.</p>
           ) : (executionsQ.data?.items ?? []).length === 0 ? (
             <p className="p-4 text-sm text-ink-muted">
               No executions yet. Run Evaluate now to create a trace.
@@ -340,7 +340,7 @@ export function RulesPanel() {
 
 function Kpi({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded border border-line bg-surface p-3">
+    <div className="surface-raised-sm p-3">
       <div className="text-xs uppercase tracking-wide text-ink-muted">{label}</div>
       <div className="mt-1 font-condensed text-2xl font-bold text-ink">
         {value}
@@ -413,7 +413,7 @@ function RuleCard({
         <div className="flex flex-wrap items-center gap-2">
           <h3 className="font-semibold text-ink">{rule.name}</h3>
           <span
-            className={`rounded-full border px-2 py-0.5 text-[11px] font-semibold ${toneClass(
+            className={`surface-pill rounded-full border px-2 py-0.5 text-[11px] font-semibold ${toneClass(
               toneFor(ruleCategories, rule.category),
             )}`}
           >
@@ -426,17 +426,17 @@ function RuleCard({
           */}
           {rule.assetDomain ? (
             <span
-              className="rounded-full border border-dashed border-line-strong bg-surface px-2 py-0.5 text-[11px] text-ink-muted"
+              className="rounded-full border border-dashed border-ink-faint px-2 py-0.5 text-[11px] text-ink-muted"
               title="Plant domain, from the asset this rule watches"
             >
               {labelFor(assetDomains, rule.assetDomain)}
             </span>
           ) : null}
-          <span className="rounded-full border border-line bg-well px-2 py-0.5 text-[11px] text-ink-muted">
+          <span className="surface-pressed-sm rounded-full px-2 py-0.5 text-[11px] text-ink-muted">
             {ruleTypeLabels[rule.ruleType]}
           </span>
           <span
-            className={`rounded-full border px-2 py-0.5 text-[11px] font-semibold ${lifecycleStyle(
+            className={`surface-pill rounded-full border px-2 py-0.5 text-[11px] font-semibold ${lifecycleStyle(
               rule,
             )}`}
           >
@@ -450,29 +450,29 @@ function RuleCard({
         </div>
         <p className="mt-1 text-sm text-ink-muted">{rule.description}</p>
         <div className="mt-2 flex flex-wrap gap-2 text-xs text-ink-muted">
-          <span className="rounded bg-well-deep px-2 py-1">{ruleSummary(rule)}</span>
-          <span className="rounded bg-well-deep px-2 py-1">
+          <span className="surface-pressed-sm px-2 py-1">{ruleSummary(rule)}</span>
+          <span className="surface-pressed-sm px-2 py-1">
             Last run: {formatTime(rule.lastEvaluatedAt)}
           </span>
-          <span className="rounded bg-well-deep px-2 py-1">
+          <span className="surface-pressed-sm px-2 py-1">
             Action: {rule.action.type} · {rule.action.target}
           </span>
         </div>
         <div className="mt-3 flex flex-wrap gap-2">
           <button
-            className="rounded border border-line-strong px-2 py-1 text-[11px] font-semibold text-ink-muted"
+            className="surface-button px-2 py-1"
             onClick={onEdit}
           >
             Edit in builder
           </button>
           <button
-            className="rounded border border-line-strong px-2 py-1 text-[11px] font-semibold text-ink-muted"
+            className="surface-button px-2 py-1"
             onClick={() => setChannelsOpen((open) => !open)}
           >
             Channels
           </button>
           <button
-            className="rounded border border-line-strong px-2 py-1 text-[11px] font-semibold text-ink-muted disabled:opacity-50"
+            className="surface-button px-2 py-1 disabled:opacity-50"
             disabled={duplicateBusy}
             aria-busy={duplicating}
             onClick={onDuplicate}
@@ -480,7 +480,7 @@ function RuleCard({
             {duplicating ? "Duplicating…" : "Duplicate"}
           </button>
           <button
-            className="rounded border border-critical-line px-2 py-1 text-[11px] font-semibold text-critical-ink disabled:opacity-50"
+            className="surface-button px-2 py-1 text-critical-ink disabled:opacity-50"
             disabled={archiveBusy || !canArchive}
             aria-busy={archiving}
             onClick={onArchive}
@@ -503,7 +503,7 @@ function ExecutionRow({ item }: { item: RuleExecutionItem }) {
           <p className="mt-0.5 text-xs text-ink-muted">{formatTime(item.evaluatedAt)}</p>
         </div>
         <span
-          className={`rounded-full border px-2 py-0.5 text-[11px] font-semibold ${statusStyle(
+          className={`surface-pill rounded-full border px-2 py-0.5 text-[11px] font-semibold ${statusStyle(
             item,
           )}`}
         >

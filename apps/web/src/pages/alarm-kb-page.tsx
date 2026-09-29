@@ -90,7 +90,7 @@ export function AlarmKbPage({ user }: AlarmKbPageProps) {
         {kbQ.isLoading ? (
           <p className="text-sm text-ink-muted">Loading the knowledge base…</p>
         ) : kbQ.isError ? (
-          <p className="text-sm text-critical-ink-soft" role="alert">
+          <p className="text-sm text-critical-ink" role="alert">
             Could not load the alarm philosophy knowledge base.
           </p>
         ) : (
@@ -101,7 +101,7 @@ export function AlarmKbPage({ user }: AlarmKbPageProps) {
               <label className="flex min-w-[260px] items-center gap-2 text-xs text-ink-muted">
                 Search
                 <input
-                  className="w-full rounded border border-line-strong bg-surface px-3 py-1.5 text-sm text-ink"
+                  className="surface-field w-full px-3 py-1.5 text-sm text-ink"
                   placeholder="Class, alarm code, cause, action…"
                   value={search}
                   onChange={(event) => setSearch(event.target.value)}
@@ -152,7 +152,7 @@ function ClassCard({ entry }: { entry: AlarmKbClass }) {
   return (
     <article
       aria-label={entry.templateName}
-      className="rounded border border-line bg-surface p-3"
+      className="surface-raised-sm p-3"
     >
       <div className="flex flex-wrap items-baseline justify-between gap-2">
         <h3 className="text-sm font-semibold text-ink">{entry.templateName}</h3>

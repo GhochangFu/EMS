@@ -125,7 +125,7 @@ export function RuleChannelsEditor({
       : `This rule's action is ${action.type}, so joined channels receive nothing until it is notify.`;
 
   return (
-    <div className="mt-3 rounded border border-line bg-well p-3">
+    <div className="mt-3 surface-pressed p-3">
       <h4 className="text-[11px] font-semibold uppercase tracking-wide text-ink-muted">
         Notification channels
       </h4>
@@ -185,7 +185,7 @@ export function RuleChannelsEditor({
           </div>
           <div className="mt-3 flex items-center gap-2">
             <button
-              className="rounded bg-accent px-2 py-1 text-[11px] font-semibold text-on-accent disabled:cursor-not-allowed disabled:bg-line-strong"
+              className="surface-button-primary bg-accent px-2 py-1 text-[11px] font-semibold text-on-accent disabled:cursor-not-allowed disabled:bg-line-strong"
               disabled={cannotSave}
               aria-busy={saveM.isPending}
               onClick={() => saveM.mutate([...channelIds, ...hidden])}
