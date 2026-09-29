@@ -20,7 +20,7 @@ type ControlRoomSitePageProps = {
   user: AuthUser;
 };
 
-const linkClass = "mt-2 inline-block text-sm font-semibold text-accent hover:underline";
+const linkClass = "mt-2 inline-block text-sm font-semibold text-accent-strong hover:underline";
 
 /**
  * `F3.66` (ADR 0076 decisions 2 and 5) — `/control-room/site/:locationId`, the

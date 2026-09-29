@@ -11,10 +11,10 @@ export function ScopedActionLink({
   label: string;
   className?: string;
 }) {
-  const classes = `${className} inline-flex rounded px-3 py-1.5 text-xs font-semibold ${
+  const classes = `${className} inline-flex px-3 py-1.5 text-xs font-semibold ${
     enabled
-      ? "bg-accent text-on-accent"
-      : "cursor-not-allowed bg-well-deep text-neutral-ink"
+      ? "surface-button-primary bg-accent text-on-accent"
+      : "cursor-not-allowed surface-button-locked"
   }`;
   return enabled ? (
     <Link className={classes} to={to}>

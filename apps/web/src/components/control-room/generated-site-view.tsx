@@ -48,7 +48,7 @@ export function GeneratedSiteView({ locationId }: { locationId: string }) {
   return (
     <div className="space-y-4">
       {kpiQuery.isError ? (
-        <p role="alert" className="text-sm text-critical-ink-soft">
+        <p role="alert" className="text-sm text-critical-ink">
           Could not load the site KPIs.
         </p>
       ) : null}
@@ -99,7 +99,7 @@ export function GeneratedSiteView({ locationId }: { locationId: string }) {
       ) : null}
 
       {viewQuery.isError ? (
-        <p role="alert" className="text-sm text-critical-ink-soft">
+        <p role="alert" className="text-sm text-critical-ink">
           Could not load the site view.
         </p>
       ) : view === undefined ? (

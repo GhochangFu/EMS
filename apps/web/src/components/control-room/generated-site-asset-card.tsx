@@ -47,7 +47,7 @@ export function GeneratedSiteAssetCard({
   return (
     <article
       aria-label={`${asset.code} ${asset.name}`}
-      className="rounded-lg border border-line bg-surface p-3 shadow-sm"
+      className="surface-raised p-3"
     >
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0">
@@ -92,7 +92,7 @@ export function GeneratedSiteAssetCard({
         <button
           type="button"
           aria-expanded={expanded}
-          className="mt-2 text-[11px] font-semibold text-accent"
+          className="mt-2 text-[11px] font-semibold text-accent-strong"
           onClick={() => setExpanded((open) => !open)}
         >
           {expanded ? "Fewer points" : "All points"}

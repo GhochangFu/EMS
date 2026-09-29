@@ -62,7 +62,7 @@ export function SiteDashboardView({ slug, organizationId }: SiteDashboardViewPro
       actions={
         <Link
           to={`/dashboards/${encodeURIComponent(slug)}?organizationId=${encodeURIComponent(organizationId)}`}
-          className="text-sm font-semibold text-accent hover:underline"
+          className="text-sm font-semibold text-accent-strong hover:underline"
         >
           Open in Dashboards
         </Link>
@@ -76,7 +76,7 @@ export function SiteDashboardView({ slug, organizationId }: SiteDashboardViewPro
           <button
             type="button"
             onClick={tryAgain}
-            className="mt-2 rounded border border-critical-line-strong px-3 py-1 text-xs font-semibold text-critical-ink-strong hover:bg-critical-wash-strong"
+            className="surface-button mt-2 border border-critical-line-strong px-3 py-1 text-critical-ink-strong hover:bg-critical-wash-strong"
           >
             Try again
           </button>

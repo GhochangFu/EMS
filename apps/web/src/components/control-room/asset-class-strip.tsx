@@ -11,7 +11,7 @@ const TONE_CLASSES: Record<PillTone, string> = {
   warning: "border-warning-line bg-warning-wash text-warning-ink",
   info: "border-info-line bg-info-wash text-info-ink",
   offline: "border-line bg-well text-neutral-ink",
-  ok: "border-accent/20 bg-accent/10 text-accent",
+  ok: "border-accent/20 bg-accent/10 text-accent-strong",
 };
 
 /** What the strip says when it has no ids, by why it has none. */
@@ -40,7 +40,7 @@ export function assetClassText(item: AssetRoleSummaryItem): string {
 
 function StripNote({ text }: { text: string }) {
   return (
-    <div className="rounded border border-line bg-well px-3 py-2 text-sm text-ink-muted">
+    <div className="surface-pressed px-3 py-2 text-sm text-ink-muted">
       {text}
     </div>
   );
@@ -84,7 +84,7 @@ export function AssetClassStrip({
         {summary.data.items.map((item) => (
           <li
             key={item.code}
-            className={`rounded border px-3 py-1.5 text-xs font-semibold ${TONE_CLASSES[item.worstSeverity?.tone ?? "ok"]}`}
+            className={`surface-pill rounded border px-3 py-1.5 text-xs font-semibold ${TONE_CLASSES[item.worstSeverity?.tone ?? "ok"]}`}
           >
             {assetClassText(item)}
           </li>

@@ -52,7 +52,7 @@ function statusPillClass(status: RackPowerStatus): string {
     case "offline":
       return "border-line bg-well-deep text-neutral-ink";
     case "normal":
-      return "border-accent/20 bg-accent/10 text-accent";
+      return "border-accent/20 bg-accent/10 text-accent-strong";
   }
 }
 
@@ -217,7 +217,7 @@ export function ControlRoomItContent() {
 
       <UpsSourceMap rules={rules} />
 
-      <section className="rounded border border-line bg-surface">
+      <section className="surface-raised">
         <div className="border-b border-line px-4 py-3">
           <h2 className="font-condensed text-lg font-bold text-ink">
             Server Inventory
@@ -226,7 +226,7 @@ export function ControlRoomItContent() {
             Static rack metadata from the mockup, paired with live rack/PDU load.
           </p>
         </div>
-        <div className="overflow-x-auto">
+        <div className="surface-table overflow-x-auto">
           <table className="min-w-full divide-y divide-line text-sm">
             <thead className="bg-well text-left text-xs uppercase tracking-wide text-ink-muted">
               <tr>
@@ -245,7 +245,7 @@ export function ControlRoomItContent() {
                   <td className="px-3 py-2">{server.type}</td>
                   <td className="px-3 py-2 text-right font-mono">{server.watts}</td>
                   <td className="px-3 py-2">
-                    <span className="rounded-full border border-accent/20 bg-accent/10 px-2 py-0.5 text-[11px] font-semibold text-accent">
+                    <span className="surface-pill rounded-full border border-accent/20 bg-accent/10 px-2 py-0.5 text-[11px] font-semibold text-accent-strong">
                       ON
                     </span>
                   </td>
@@ -261,7 +261,7 @@ export function ControlRoomItContent() {
 
 function Summary({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded border border-line bg-surface p-3">
+    <div className="surface-raised-sm p-3">
       <div className="text-xs uppercase tracking-wide text-ink-muted">{label}</div>
       <div className="mt-1 font-condensed text-2xl font-bold text-ink">
         {value}
@@ -297,13 +297,13 @@ function RackCard({
   const rackState = mergeStatus([aState, bState, rackSelf]);
   const pct = rack.rackKw == null ? 0 : Math.min(100, (rack.rackKw / ratedKw) * 100);
   return (
-    <section className="rounded border border-line bg-surface p-4">
+    <section className="surface-raised p-4">
       <div className="flex items-start justify-between gap-3">
         <div>
           <h2 className="font-condensed text-lg font-bold text-ink">{title}</h2>
           <p className="text-xs text-ink-muted">UPS source · {ups}</p>
         </div>
-        <span className={`rounded border px-2 py-1 text-xs font-semibold ${statusPillClass(rackState.status)}`}>
+        <span className={`surface-pill rounded border px-2 py-1 text-xs font-semibold ${statusPillClass(rackState.status)}`}>
           {statusLabel(rackState.status)}
         </span>
       </div>
@@ -312,7 +312,7 @@ function RackCard({
           <span className="text-ink-muted">Load</span>
           <span className="font-mono font-semibold text-ink">{n(freshValue(rack.rackKw, rackSelf.stale), 2)} kW</span>
         </div>
-        <div className="mt-2 h-2 rounded bg-line">
+        <div className="mt-2 h-2 surface-pressed-sm">
           <div className="h-2 rounded bg-accent" style={{ width: `${pct}%` }} />
         </div>
       </div>
@@ -400,7 +400,7 @@ function UpsSourceMap({ rules }: { rules: RuleListItem[] }) {
   const vwStale = isStale(vw.lastSeenMs, mapNow);
 
   return (
-    <section className="rounded border border-line bg-surface">
+    <section className="surface-raised">
       <div className="border-b border-line px-4 py-3">
         <h2 className="font-condensed text-lg font-bold text-ink">
           UPS Source Map
@@ -409,7 +409,7 @@ function UpsSourceMap({ rules }: { rules: RuleListItem[] }) {
           Which rack draws from which UPS · colors follow enabled Rule Engine thresholds
         </p>
       </div>
-      <div className="overflow-x-auto p-4">
+      <div className="surface-table overflow-x-auto p-4">
         <svg viewBox="0 0 700 200" className="h-auto min-w-[700px]">
           <defs>
             <marker id="itArrow" markerWidth="6" markerHeight="6" refX="5" refY="3" orient="auto">
@@ -553,10 +553,10 @@ function PduBadge({
   util: number | null;
 }) {
   return (
-    <div className="rounded border border-line bg-well p-3">
+    <div className="surface-pressed p-3">
       <div className="flex items-center justify-between gap-2">
         <span className="font-semibold text-ink">{label}</span>
-        <span className={`rounded-full border px-2 py-0.5 text-[11px] font-semibold ${statusPillClass(status.status)}`}>
+        <span className={`surface-pill rounded-full border px-2 py-0.5 text-[11px] font-semibold ${statusPillClass(status.status)}`}>
           {statusLabel(status.status)}
         </span>
       </div>

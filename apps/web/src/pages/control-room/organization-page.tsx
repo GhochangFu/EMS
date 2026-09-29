@@ -62,7 +62,7 @@ export function ControlRoomOrganizationPage({ user }: ControlRoomOrganizationPag
               </p>
               <Link
                 to="/control-room"
-                className="mt-2 inline-block text-sm font-semibold text-accent hover:underline"
+                className="mt-2 inline-block text-sm font-semibold text-accent-strong hover:underline"
               >
                 Back to the Control Room
               </Link>

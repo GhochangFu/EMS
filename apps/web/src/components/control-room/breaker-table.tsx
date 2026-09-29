@@ -48,7 +48,7 @@ export function breakerStatusClass(status: BreakerVisualStatus): string {
   if (status === "warning") {
     return "border-warning-line bg-warning-wash-strong text-warning-ink";
   }
-  return "border-accent/20 bg-accent/10 text-accent";
+  return "border-accent/20 bg-accent/10 text-accent-strong";
 }
 
 /**
@@ -73,7 +73,7 @@ function breakerStatusLabel(status: BreakerVisualStatus): string {
 
 export function BreakerTable({ rows }: { rows: readonly BreakerTableRow[] }) {
   return (
-    <div className="overflow-x-auto">
+    <div className="surface-table overflow-x-auto">
       <table className="min-w-full divide-y divide-line text-sm">
         <thead className="bg-well text-left text-xs uppercase tracking-wide text-ink-muted">
           <tr>
@@ -94,7 +94,7 @@ export function BreakerTable({ rows }: { rows: readonly BreakerTableRow[] }) {
               <td className="px-3 py-2 text-ink-muted">{row.position}</td>
               <td className="px-3 py-2">{row.rating}</td>
               <td className="px-3 py-2">
-                <span className={`rounded-full border px-2 py-0.5 text-[11px] font-semibold ${breakerStatusClass(row.status)}`}>
+                <span className={`surface-pill rounded-full border px-2 py-0.5 text-[11px] font-semibold ${breakerStatusClass(row.status)}`}>
                   {breakerStatusLabel(row.status)}
                 </span>
               </td>

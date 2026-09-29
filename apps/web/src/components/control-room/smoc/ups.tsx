@@ -169,7 +169,7 @@ function statusPillClass(status: UpsStatus): string {
     case "offline":
       return "border-line bg-well-deep text-neutral-ink";
     case "normal":
-      return "border-accent/20 bg-accent/10 text-accent";
+      return "border-accent/20 bg-accent/10 text-accent-strong";
   }
 }
 
@@ -305,29 +305,21 @@ export function ControlRoomUpsContent() {
         <KpiTile label="Worst Backup" status="ready" value={n(worstBackup, 0)} unit="min" tone={statusTone(overall.status)} />
       </div>
 
-      <div className="flex flex-wrap gap-2 rounded border border-line bg-surface p-3">
+      <div className="surface-raised flex flex-wrap gap-2 p-3">
         {units.map((unit) => (
           <button
             key={unit.code}
-            className={`rounded border px-3 py-2 text-sm font-semibold ${
-              tab === unit.code
-                ? "border-accent bg-accent text-on-accent"
-                : "border-line bg-well text-ink-muted"
-            }`}
+            className={`surface-tab px-3 py-2 text-sm ${tab === unit.code ? "surface-tab-selected" : ""}`}
             onClick={() => setTab(unit.code)}
           >
             {unit.label} · {unit.capacityKva} kVA
-            <span className={`ml-2 rounded-full border px-2 py-0.5 text-[10px] ${statusPillClass(unit.state.status)}`}>
+            <span className={`ml-2 surface-pill rounded-full border px-2 py-0.5 text-[10px] ${statusPillClass(unit.state.status)}`}>
               {statusLabel(unit.state.status)}
             </span>
           </button>
         ))}
         <button
-          className={`rounded border px-3 py-2 text-sm font-semibold ${
-            tab === "combined"
-              ? "border-accent bg-accent text-on-accent"
-              : "border-line bg-well text-ink-muted"
-          }`}
+          className={`surface-tab px-3 py-2 text-sm ${tab === "combined" ? "surface-tab-selected" : ""}`}
           onClick={() => setTab("combined")}
         >
           Combined Summary
@@ -357,13 +349,13 @@ function CombinedSummary({
   }>;
 }) {
   return (
-    <section className="rounded border border-line bg-surface">
+    <section className="surface-raised">
       <div className="border-b border-line px-4 py-3">
         <h2 className="font-condensed text-lg font-bold text-ink">
           All UPS Units
         </h2>
       </div>
-      <div className="overflow-x-auto">
+      <div className="surface-table overflow-x-auto">
         <table className="min-w-full divide-y divide-line text-sm">
           <thead className="bg-well text-xs uppercase tracking-wide text-ink-muted">
             <tr>
@@ -407,7 +399,7 @@ function CombinedSummary({
                 <td className="px-4 py-3">{n(freshValue(unit.slice.backupMin, unit.state.stale), 0)} min</td>
                 <td className="px-4 py-3">{n(freshValue(unit.slice.healthPct, unit.state.stale), 0)}%</td>
                 <td className="px-4 py-3">
-                  <span className={`rounded-full border px-2 py-0.5 text-[11px] font-semibold ${statusPillClass(unit.state.status)}`}>
+                  <span className={`surface-pill rounded-full border px-2 py-0.5 text-[11px] font-semibold ${statusPillClass(unit.state.status)}`}>
                     {statusLabel(unit.state.status)}
                   </span>
                 </td>
@@ -443,7 +435,7 @@ function UnitDetail({
         <KpiTile label="Health" status="ready" value={n(freshValue(unit.slice.healthPct, unit.state.stale), 0)} unit="%" tone={statusTone(unit.state.status)} />
       </div>
 
-      <section className="rounded border border-line bg-surface">
+      <section className="surface-raised">
         <div className="border-b border-line px-4 py-3">
           <h2 className="font-condensed text-lg font-bold text-ink">
             {unit.label} · Block Diagram
@@ -452,7 +444,7 @@ function UnitDetail({
             Rectifier → battery → inverter → critical load
           </p>
         </div>
-        <div className="bg-well p-4">
+        <div className="surface-pressed p-4">
           <UpsBlockDiagram slice={unit.slice} battery={unit.battery} status={unit.state.status} />
         </div>
       </section>
@@ -480,7 +472,7 @@ function UnitDetail({
         </DetailCard>
       </div>
 
-      <section className="rounded border border-line bg-surface p-4">
+      <section className="surface-raised p-4">
         <div className="flex items-center justify-between gap-3">
           <div>
             <h2 className="font-condensed text-lg font-bold text-ink">
@@ -489,7 +481,7 @@ function UnitDetail({
             <p className="text-xs text-ink-muted">Live load snapshot · simulator window</p>
           </div>
           {unit.state.matchedRule ? (
-            <span className={`rounded-full border px-2 py-0.5 text-[11px] font-semibold ${statusPillClass(unit.state.status)}`}>
+            <span className={`surface-pill rounded-full border px-2 py-0.5 text-[11px] font-semibold ${statusPillClass(unit.state.status)}`}>
               {unit.state.matchedRule.name}
             </span>
           ) : null}
@@ -591,7 +583,7 @@ function Flow({
 
 function DetailCard({ title, children }: { title: string; children: ReactNode }) {
   return (
-    <section className="rounded border border-line bg-surface">
+    <section className="surface-raised">
       <div className="border-b border-line px-4 py-3">
         <h2 className="font-condensed text-lg font-bold text-ink">{title}</h2>
       </div>
