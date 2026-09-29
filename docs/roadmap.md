@@ -6728,6 +6728,25 @@ findings were fixed in the PR.
 **Cascade:** `F3.32` stays open for network mimics, layouts in templates, KPI
 overlays and the unit-level reference preset (ADR 0081 decision 10).
 
+### `F3.32d` — mimic symbols and presets for every asset domain ✅ 2026-09-29
+
+PR #641, squash `92bbaf97`; ADR 0082 (#640); plan
+`docs/plans/f3.32d-mimic-domain-presets.md` (Fable).
+
+The mimic editor was water-only. It now has 29 symbols in eight palette groups
+(electrical, IT and UPS, HVAC, mechanical, environment and facility added), and
+six new presets — one per asset domain — that a dashboard widget can show and
+the layout library can start from. Migration `0089` widens the symbol CHECK and
+adds 18 role codes. The water train draws exactly as before.
+
+Verified: CI green on the first run, a scratch cold start, three reviews with
+their findings fixed, and seven browser checks on the rebuilt stack; the owner
+reviewed the six drawings.
+
+**Cascade:** raises `F3.32e` (an administered symbol library, ADR first).
+`F3.32` stays open for network mimics, layouts in templates, KPI overlays and
+the unit-level reference preset.
+
 ### `F3.65c` — charts and schematics follow the theme; the switch ✅ 2026-09-29
 
 PR #636, squash `4ca20b09`; ADR 0078 Amendment 3; plan
