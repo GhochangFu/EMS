@@ -165,7 +165,7 @@ export function DashboardBuilderPage({ user }: DashboardBuilderPageProps) {
               <input
                 value={name}
                 onChange={(event) => setName(event.target.value)}
-                className="w-full rounded border border-line px-2 py-1.5 text-xs"
+                className="w-full surface-field px-2 py-1.5 text-xs"
               />
             </label>
             {/* The hint sits outside the `<label>` — see the instantiate
@@ -182,7 +182,7 @@ export function DashboardBuilderPage({ user }: DashboardBuilderPageProps) {
                   maxLength={DASHBOARD_SLUG_MAX}
                   title={DASHBOARD_SLUG_HINT}
                   aria-describedby="dashboard-slug-hint"
-                  className="w-full rounded border border-line px-2 py-1.5 text-xs"
+                  className="w-full surface-field px-2 py-1.5 text-xs"
                 />
               </label>
               <span id="dashboard-slug-hint" className="block text-[11px] text-ink-muted">
@@ -217,7 +217,7 @@ export function DashboardBuilderPage({ user }: DashboardBuilderPageProps) {
                   key={type}
                   type="button"
                   onClick={() => addWidget(type)}
-                  className="rounded border border-line px-2 py-1 text-[11px] font-semibold text-ink"
+                  className="surface-button px-2 py-1"
                 >
                   + {WIDGET_CATALOG[type].label}
                 </button>
@@ -236,8 +236,8 @@ export function DashboardBuilderPage({ user }: DashboardBuilderPageProps) {
                 <button
                   type="button"
                   onClick={() => setSelected(tile.index)}
-                  className={`h-full w-full rounded border p-2 text-left text-xs ${
-                    tile.index === selected ? "border-accent bg-accent/10" : "border-line bg-surface"
+                  className={`h-full w-full p-2 text-left text-xs ${
+                    tile.index === selected ? "border-accent bg-accent/10" : "surface-raised-sm"
                   }`}
                 >
                   <div className="font-semibold">

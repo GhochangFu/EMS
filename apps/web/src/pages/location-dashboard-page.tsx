@@ -189,7 +189,7 @@ export function LocationDashboardPage({ user }: LocationDashboardPageProps) {
             <p className="text-sm text-ink-muted">
               This location is not available in your assigned access scope.
             </p>
-            <Link className="mt-3 inline-block text-sm font-semibold text-accent" to="/">
+            <Link className="mt-3 inline-block text-sm font-semibold text-accent-strong" to="/">
               Return to Main Dashboard
             </Link>
           </SectionCard>
@@ -240,10 +240,8 @@ export function LocationDashboardPage({ user }: LocationDashboardPageProps) {
                 <div className="mb-3 flex flex-wrap gap-2">
                   <button
                     type="button"
-                    className={`rounded border px-3 py-1.5 text-xs font-semibold ${
-                      rtuFilter === "all"
-                        ? "border-accent bg-ok-wash text-ok-ink"
-                        : "border-line bg-surface text-ink"
+                    className={`surface-tab px-3 py-1.5 ${
+                      rtuFilter === "all" ? "surface-tab-selected" : ""
                     }`}
                     onClick={() => {
                       setRtuFilter("all");
@@ -256,10 +254,8 @@ export function LocationDashboardPage({ user }: LocationDashboardPageProps) {
                     <button
                       key={rtu.id}
                       type="button"
-                      className={`rounded border px-3 py-1.5 text-xs font-semibold ${
-                        rtuFilter === rtu.id
-                          ? "border-accent bg-ok-wash text-ok-ink"
-                          : "border-line bg-surface text-ink"
+                      className={`surface-tab px-3 py-1.5 ${
+                        rtuFilter === rtu.id ? "surface-tab-selected" : ""
                       }`}
                       onClick={() => {
                         setRtuFilter(rtu.id);
@@ -274,7 +270,7 @@ export function LocationDashboardPage({ user }: LocationDashboardPageProps) {
                   {location.rtus.map((rtu) => (
                     <div
                       key={rtu.id}
-                      className="rounded-lg border border-line bg-surface p-3 shadow-sm"
+                      className="surface-raised p-3"
                     >
                       <div className="font-semibold text-ink">{rtu.displayName}</div>
                       <div className="mt-1 text-[11px] uppercase tracking-wide text-ink-muted">
@@ -303,7 +299,7 @@ export function LocationDashboardPage({ user }: LocationDashboardPageProps) {
                   <label className="flex items-center gap-1">
                     Rows
                     <select
-                      className="rounded border border-line bg-surface px-2 py-1 text-ink"
+                      className="surface-field px-2 py-1 text-ink"
                       value={pageSize}
                       onChange={(event) => {
                         setPageSize(Number(event.target.value) as typeof pageSize);
@@ -319,7 +315,7 @@ export function LocationDashboardPage({ user }: LocationDashboardPageProps) {
                   </label>
                   <button
                     type="button"
-                    className="rounded border border-line px-2 py-1 font-semibold text-ink disabled:cursor-not-allowed disabled:opacity-40"
+                    className="surface-button px-2 py-1 disabled:cursor-not-allowed disabled:opacity-40"
                     disabled={!assetPage || assetPage.page <= 1}
                     onClick={() => setPage((current) => Math.max(1, current - 1))}
                   >
@@ -330,7 +326,7 @@ export function LocationDashboardPage({ user }: LocationDashboardPageProps) {
                   </span>
                   <button
                     type="button"
-                    className="rounded border border-line px-2 py-1 font-semibold text-ink disabled:cursor-not-allowed disabled:opacity-40"
+                    className="surface-button px-2 py-1 disabled:cursor-not-allowed disabled:opacity-40"
                     disabled={!assetPage || assetPage.page >= assetPage.totalPages}
                     onClick={() => setPage((current) => current + 1)}
                   >
@@ -349,7 +345,7 @@ export function LocationDashboardPage({ user }: LocationDashboardPageProps) {
                   No assets on this page. Use the pagination controls to move back.
                 </div>
               ) : (
-                <div className="overflow-hidden">
+                <div className="overflow-hidden surface-table">
                   <table className="w-full text-left text-sm">
                     <thead className="bg-well text-xs uppercase tracking-wide text-ink-muted">
                       <tr>
@@ -394,7 +390,7 @@ export function LocationDashboardPage({ user }: LocationDashboardPageProps) {
                                 {asset.telemetry.slice(0, 5).map((sample) => (
                                   <span
                                     key={sample.pointKey}
-                                    className="rounded border border-line bg-well px-2 py-1 font-mono text-[11px] text-ink"
+                                    className="surface-pressed-sm px-2 py-1 font-mono text-[11px] text-ink"
                                     title={`${sample.pointKey} @ ${formatTime(sample.time)}`}
                                   >
                                     <span className="font-sans text-ink-muted">
@@ -483,7 +479,7 @@ export function LocationDashboardPage({ user }: LocationDashboardPageProps) {
                 ].map(([label, path]) => (
                   <Link
                     key={path}
-                    className="rounded border border-line bg-surface px-3 py-2 text-sm font-semibold text-ink hover:border-accent"
+                    className="surface-button px-3 py-2 hover:border-accent"
                     to={path}
                   >
                     {label}

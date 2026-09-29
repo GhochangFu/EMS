@@ -54,7 +54,7 @@ export function TableWidget({
           No columns to show. Edit this widget and choose at least one.
         </p>
       ) : (
-        <div className="h-full overflow-auto">
+        <div className="h-full overflow-auto surface-table">
           <table className="w-full border-collapse text-left text-xs">
             <thead className="sticky top-0 bg-surface">
               <tr>

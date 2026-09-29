@@ -24,7 +24,7 @@ export function ChartSeriesPicker({ value, onChange, disabled }: ChartSeriesPick
       value={value}
       disabled={disabled}
       onChange={(event) => onChange(event.target.value as ChartSeriesKind)}
-      className="w-full rounded border border-line px-2 py-1.5 text-xs"
+      className="w-full surface-field px-2 py-1.5 text-xs"
     >
       {CHART_SERIES_OPTIONS.map((option) => (
         <option key={option.value} value={option.value}>

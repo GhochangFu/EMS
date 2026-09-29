@@ -64,7 +64,7 @@ export function WidgetEditor({
   const sourceCardinality = WIDGET_CATALOG[row.widgetType].sources;
 
   return (
-    <section className="space-y-2 rounded border border-line p-3">
+    <section className="space-y-2 surface-raised-sm p-3">
       <div className="flex items-center justify-between">
         <span className="text-[11px] font-semibold uppercase tracking-wide text-ink-muted">
           {row.key}
@@ -87,7 +87,7 @@ export function WidgetEditor({
           disabled={!editable}
           value={row.title ?? ""}
           onChange={(event) => onChange({ title: event.target.value || null })}
-          className="mt-1 w-full rounded border border-line px-2 py-1 text-xs font-normal disabled:bg-well"
+          className="mt-1 w-full surface-field px-2 py-1 text-xs font-normal disabled:opacity-60"
         />
       </label>
 
@@ -101,7 +101,7 @@ export function WidgetEditor({
             max={DASHBOARD_GRID.columns - 1}
             value={row.gridX}
             onChange={(event) => onChange({ gridX: Number(event.target.value) })}
-            className="mt-1 w-full rounded border border-line px-2 py-1 text-xs disabled:bg-well"
+            className="mt-1 w-full surface-field px-2 py-1 text-xs disabled:opacity-60"
           />
         </label>
         <label className="block text-[11px] font-semibold text-ink">
@@ -112,7 +112,7 @@ export function WidgetEditor({
             min={0}
             value={row.gridY}
             onChange={(event) => onChange({ gridY: Number(event.target.value) })}
-            className="mt-1 w-full rounded border border-line px-2 py-1 text-xs disabled:bg-well"
+            className="mt-1 w-full surface-field px-2 py-1 text-xs disabled:opacity-60"
           />
         </label>
         <label className="block text-[11px] font-semibold text-ink">
@@ -124,7 +124,7 @@ export function WidgetEditor({
             max={DASHBOARD_GRID.columns}
             value={row.gridW}
             onChange={(event) => onChange({ gridW: Number(event.target.value) })}
-            className="mt-1 w-full rounded border border-line px-2 py-1 text-xs disabled:bg-well"
+            className="mt-1 w-full surface-field px-2 py-1 text-xs disabled:opacity-60"
           />
         </label>
         <label className="block text-[11px] font-semibold text-ink">
@@ -136,7 +136,7 @@ export function WidgetEditor({
             max={DASHBOARD_GRID.maxWidgetH}
             value={row.gridH}
             onChange={(event) => onChange({ gridH: Number(event.target.value) })}
-            className="mt-1 w-full rounded border border-line px-2 py-1 text-xs disabled:bg-well"
+            className="mt-1 w-full surface-field px-2 py-1 text-xs disabled:opacity-60"
           />
         </label>
       </div>
@@ -257,7 +257,7 @@ export function WidgetEditor({
 /** The five-line tile preview `DashboardCanvas` draws for one widget. */
 export function renderTemplateTile(tile: SectionTemplateWidgetInput) {
   return (
-    <div className="h-full rounded border border-line bg-surface p-1 text-[10px] text-ink-muted">
+    <div className="h-full surface-raised-sm p-1 text-[10px] text-ink-muted">
       {tile.title ?? tile.key}
     </div>
   );

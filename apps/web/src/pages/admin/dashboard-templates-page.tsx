@@ -160,7 +160,7 @@ export function DashboardTemplatesAdminPage({ user }: DashboardTemplatesAdminPag
               aria-label="Filter by section"
               value={section}
               onChange={(event) => setSection(event.target.value)}
-              className="rounded border border-line px-2 py-1 text-xs"
+              className="surface-field px-2 py-1 text-xs"
             >
               <option value="">All sections</option>
               {(vocabQ.data?.dashboardSections ?? []).map((row) => (
@@ -169,17 +169,15 @@ export function DashboardTemplatesAdminPage({ user }: DashboardTemplatesAdminPag
                 </option>
               ))}
             </select>
-            <div className="flex gap-1">
+            <div className="flex gap-1 surface-segment">
               {STATUS_FILTERS.map((option) => (
                 <button
                   key={option.value}
                   type="button"
                   onClick={() => setStatus(option.value)}
                   aria-pressed={status === option.value}
-                  className={`rounded px-2 py-1 text-[11px] font-semibold ${
-                    status === option.value
-                      ? "bg-accent text-on-accent"
-                      : "bg-well-deep text-ink-muted hover:text-ink"
+                  className={`surface-segment-item px-2 py-1 ${
+                    status === option.value ? "surface-segment-item-selected" : ""
                   }`}
                 >
                   {option.label}
@@ -205,7 +203,7 @@ export function DashboardTemplatesAdminPage({ user }: DashboardTemplatesAdminPag
               <div>
                 <Link
                   to={`/admin/dashboard-templates/${row.id}`}
-                  className="text-sm font-semibold text-accent hover:underline"
+                  className="text-sm font-semibold text-accent-strong hover:underline"
                 >
                   {row.code} v{row.version}
                 </Link>
@@ -238,7 +236,7 @@ export function DashboardTemplatesAdminPage({ user }: DashboardTemplatesAdminPag
               aria-label="Import into organization"
               value={importOrgId}
               onChange={(event) => setImportOrgId(event.target.value)}
-              className="rounded border border-line px-2 py-1 text-xs"
+              className="surface-field px-2 py-1 text-xs"
             >
               <option value="">Select an organization…</option>
               {(orgsQ.data?.items ?? []).map((org) => (
@@ -276,7 +274,7 @@ export function DashboardTemplatesAdminPage({ user }: DashboardTemplatesAdminPag
                   <Link
                     to={`/admin/dashboard-templates/stock/${entry.code}`}
                     aria-label={`View ${entry.name}`}
-                    className="rounded border border-line px-3 py-1.5 text-xs font-semibold text-ink hover:underline"
+                    className="surface-button px-3 py-1.5 hover:underline"
                   >
                     View
                   </Link>
@@ -290,7 +288,7 @@ export function DashboardTemplatesAdminPage({ user }: DashboardTemplatesAdminPag
                         setImportError(null);
                         importM.mutate(entry.code);
                       }}
-                      className="rounded border border-line px-3 py-1.5 text-xs font-semibold text-ink disabled:opacity-60"
+                      className="surface-button px-3 py-1.5 disabled:opacity-60"
                     >
                       {importingThis ? "Importing…" : "Import"}
                     </button>
@@ -306,7 +304,7 @@ export function DashboardTemplatesAdminPage({ user }: DashboardTemplatesAdminPag
         <div className="fixed inset-0 z-40 flex items-center justify-center bg-scrim/30 p-4">
           <form
             onSubmit={submit}
-            className="w-full max-w-lg space-y-3 rounded-lg bg-surface p-4 shadow-lg"
+            className="w-full max-w-lg space-y-3 surface-dialog p-4"
           >
             <h2 className="font-condensed text-base font-bold text-ink">New template</h2>
             <p className="text-[11px] text-ink-muted">
@@ -322,7 +320,7 @@ export function DashboardTemplatesAdminPage({ user }: DashboardTemplatesAdminPag
                 onChange={(event) =>
                   setForm((current) => ({ ...current, organizationId: event.target.value }))
                 }
-                className="mt-1 w-full rounded border border-line px-2 py-1 text-xs font-normal"
+                className="mt-1 w-full surface-field px-2 py-1 text-xs font-normal"
               >
                 <option value="">Select an organization…</option>
                 {(orgsQ.data?.items ?? []).map((org) => (
@@ -343,7 +341,7 @@ export function DashboardTemplatesAdminPage({ user }: DashboardTemplatesAdminPag
                     setForm((current) => ({ ...current, code: event.target.value }))
                   }
                   placeholder="ELECTRICAL"
-                  className="mt-1 w-full rounded border border-line px-2 py-1 text-xs font-normal"
+                  className="mt-1 w-full surface-field px-2 py-1 text-xs font-normal"
                 />
               </label>
               <label className="block text-xs font-semibold text-ink">
@@ -355,7 +353,7 @@ export function DashboardTemplatesAdminPage({ user }: DashboardTemplatesAdminPag
                     setForm((current) => ({ ...current, name: event.target.value }))
                   }
                   placeholder="Electrical overview"
-                  className="mt-1 w-full rounded border border-line px-2 py-1 text-xs font-normal"
+                  className="mt-1 w-full surface-field px-2 py-1 text-xs font-normal"
                 />
               </label>
               <label className="block text-xs font-semibold text-ink">
@@ -366,7 +364,7 @@ export function DashboardTemplatesAdminPage({ user }: DashboardTemplatesAdminPag
                   onChange={(event) =>
                     setForm((current) => ({ ...current, section: event.target.value }))
                   }
-                  className="mt-1 w-full rounded border border-line px-2 py-1 text-xs font-normal"
+                  className="mt-1 w-full surface-field px-2 py-1 text-xs font-normal"
                 >
                   <option value="">Select a section…</option>
                   {(vocabQ.data?.dashboardSections ?? []).map((row) => (
@@ -386,7 +384,7 @@ export function DashboardTemplatesAdminPage({ user }: DashboardTemplatesAdminPag
                   setForm((current) => ({ ...current, description: event.target.value }))
                 }
                 rows={2}
-                className="mt-1 w-full rounded border border-line px-2 py-1 text-xs font-normal"
+                className="mt-1 w-full surface-field px-2 py-1 text-xs font-normal"
               />
             </label>
 
@@ -403,7 +401,7 @@ export function DashboardTemplatesAdminPage({ user }: DashboardTemplatesAdminPag
                   setModalOpen(false);
                   setError(null);
                 }}
-                className="rounded border border-line px-3 py-1.5 text-xs font-semibold text-ink-muted"
+                className="surface-button px-3 py-1.5"
               >
                 Cancel
               </button>

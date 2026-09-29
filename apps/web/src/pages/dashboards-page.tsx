@@ -65,7 +65,7 @@ export function DashboardsPage({ user }: DashboardsPageProps) {
             canAuthorDashboards(user.role) ? (
               <Link
                 to="/admin/dashboards"
-                className="rounded border border-line-strong px-3 py-1.5 text-xs font-semibold text-ink hover:bg-well"
+                className="surface-button px-3 py-1.5"
               >
                 Manage dashboards
               </Link>
@@ -163,7 +163,7 @@ export function DashboardsPage({ user }: DashboardsPageProps) {
                     <td className="px-3 py-2 text-right">
                       <Link
                         to={`/dashboards/${dashboard.slug}?organizationId=${dashboard.organizationId}`}
-                        className="rounded border border-line-strong px-2.5 py-1 text-xs font-semibold text-ink hover:bg-well"
+                        className="surface-button px-2.5 py-1"
                       >
                         Open
                       </Link>

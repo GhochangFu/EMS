@@ -175,7 +175,7 @@ export function DuplicateDashboardDialog({
     <div
       role="dialog"
       aria-label="Duplicate dashboard"
-      className="space-y-3 rounded border border-line bg-surface p-4"
+      className="space-y-3 surface-dialog p-4"
     >
       <h2 className="text-sm font-semibold text-ink">Duplicate dashboard</h2>
 
@@ -199,7 +199,7 @@ export function DuplicateDashboardDialog({
             <input
               value={name}
               onChange={(event) => setName(event.target.value)}
-              className="w-full rounded border border-line px-2 py-1.5 text-xs"
+              className="w-full surface-field px-2 py-1.5 text-xs"
             />
           </label>
           <label className="block space-y-1 text-xs">
@@ -207,7 +207,7 @@ export function DuplicateDashboardDialog({
             <input
               value={slug}
               onChange={(event) => setSlug(event.target.value)}
-              className="w-full rounded border border-line px-2 py-1.5 text-xs"
+              className="w-full surface-field px-2 py-1.5 text-xs"
             />
           </label>
 
@@ -257,7 +257,7 @@ export function DuplicateDashboardDialog({
             <button
               type="button"
               onClick={onClose}
-              className="rounded border border-line-strong px-3 py-1.5 text-xs font-semibold text-ink"
+              className="surface-button px-3 py-1.5"
             >
               Cancel
             </button>

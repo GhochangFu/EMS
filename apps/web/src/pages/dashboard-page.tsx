@@ -102,7 +102,7 @@ export function DashboardPage({ user }: DashboardPageProps) {
       kpiRibbon={
         <div className="flex flex-wrap items-center gap-3">
           <span
-            className={`rounded-full px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wide ${
+            className={`rounded-full surface-pill px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wide ${
               stale
                 ? "bg-warning-wash-strong text-warning-ink"
                 : "bg-ok-wash text-ok-ink"
@@ -200,10 +200,8 @@ export function DashboardPage({ user }: DashboardPageProps) {
                     type="button"
                     role="tab"
                     aria-selected={orgFilter === "all"}
-                    className={`rounded border px-3 py-1.5 text-xs font-semibold ${
-                      orgFilter === "all"
-                        ? "border-accent bg-ok-wash text-ok-ink"
-                        : "border-line bg-surface text-ink"
+                    className={`surface-tab px-3 py-1.5 ${
+                      orgFilter === "all" ? "surface-tab-selected" : ""
                     }`}
                     onClick={() => setOrgFilter("all")}
                   >
@@ -215,10 +213,8 @@ export function DashboardPage({ user }: DashboardPageProps) {
                       type="button"
                       role="tab"
                       aria-selected={orgFilter === organization.code}
-                      className={`rounded border px-3 py-1.5 text-xs font-semibold ${
-                        orgFilter === organization.code
-                          ? "border-accent bg-ok-wash text-ok-ink"
-                          : "border-line bg-surface text-ink"
+                      className={`surface-tab px-3 py-1.5 ${
+                        orgFilter === organization.code ? "surface-tab-selected" : ""
                       }`}
                       onClick={() => setOrgFilter(organization.code)}
                     >
