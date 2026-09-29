@@ -181,7 +181,7 @@ export function AlarmsTab({ template, editable, onSaved, onDirtyChange }: Alarms
           rowProblems.find((problem) => problem.field === field)?.message;
 
         return (
-          <section key={index} className="rounded border border-line p-3">
+          <section key={index} className="surface-raised-sm p-3">
             <div className="grid gap-3 md:grid-cols-3">
               <Field label="Code" error={problemFor("code")}>
                 <input
@@ -391,7 +391,7 @@ export function AlarmsTab({ template, editable, onSaved, onDirtyChange }: Alarms
                 onClick={() =>
                   setRows((current) => current.filter((_, position) => position !== index))
                 }
-                className="mt-3 rounded border border-critical-line px-3 py-1 text-[11px] font-semibold text-critical-ink"
+                className="mt-3 surface-button border border-critical-line px-3 py-1 text-critical-ink"
               >
                 Remove
               </button>
@@ -406,7 +406,7 @@ export function AlarmsTab({ template, editable, onSaved, onDirtyChange }: Alarms
             type="button"
             disabled={rows.length >= MAX_ALARM_ENTRIES}
             onClick={() => setRows((current) => [...current, blankAlarmRow()])}
-            className="rounded border border-line px-3 py-1.5 text-xs font-semibold text-ink disabled:opacity-60"
+            className="surface-button px-3 py-1.5 disabled:opacity-60"
           >
             Add an alarm
           </button>
@@ -415,7 +415,7 @@ export function AlarmsTab({ template, editable, onSaved, onDirtyChange }: Alarms
             disabled={blocked || !changed || saveM.isPending}
             aria-busy={saveM.isPending}
             onClick={() => saveM.mutate()}
-            className="rounded bg-accent px-4 py-1.5 text-xs font-semibold text-on-accent disabled:opacity-60"
+            className="surface-button-primary bg-accent px-4 py-1.5 text-xs font-semibold text-on-accent disabled:opacity-60"
           >
             {saveM.isPending ? "Saving…" : "Save alarms"}
           </button>
@@ -437,8 +437,8 @@ export function AlarmsTab({ template, editable, onSaved, onDirtyChange }: Alarms
 }
 
 function fieldClass(disabled: boolean, problem: string | undefined): string {
-  const tone = problem ? "border-critical-line-strong bg-critical-wash" : "border-line";
-  return `w-full rounded border px-2 py-1.5 text-xs ${tone} ${
-    disabled ? "bg-well text-ink-muted" : ""
+  const tone = problem ? "border-critical-line-strong bg-critical-wash" : "";
+  return `w-full surface-field px-2 py-1.5 text-xs ${tone} ${
+    disabled ? "text-ink-muted opacity-70" : ""
   }`;
 }

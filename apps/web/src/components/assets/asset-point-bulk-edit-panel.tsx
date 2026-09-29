@@ -112,7 +112,7 @@ export function AssetPointBulkEditPanel({ ids, onApplied, onCancel }: AssetPoint
               aria-label={`New ${label}`}
               disabled={!draft[field].set}
               value={draft[field].value}
-              className="w-full rounded border px-2 py-1 text-sm disabled:bg-well-deep"
+              className="w-full surface-field px-2 py-1 text-sm disabled:opacity-60"
               onChange={(event) => setField(field, { set: true, value: event.target.value })}
             />
           </label>
@@ -132,7 +132,7 @@ export function AssetPointBulkEditPanel({ ids, onApplied, onCancel }: AssetPoint
             aria-label="New quality policy"
             disabled={!draft.qualityPolicy.set}
             value={draft.qualityPolicy.value}
-            className="w-full rounded border px-2 py-1 text-sm disabled:bg-well-deep"
+            className="w-full surface-field px-2 py-1 text-sm disabled:opacity-60"
             onChange={(event) =>
               setField("qualityPolicy", {
                 set: true,
@@ -163,7 +163,7 @@ export function AssetPointBulkEditPanel({ ids, onApplied, onCancel }: AssetPoint
             aria-label="New status"
             disabled={!draft.active.set}
             value={draft.active.value ? "active" : "inactive"}
-            className="w-full rounded border px-2 py-1 text-sm disabled:bg-well-deep"
+            className="w-full surface-field px-2 py-1 text-sm disabled:opacity-60"
             onChange={(event) => setField("active", { set: true, value: event.target.value === "active" })}
           >
             <option value="active">Active</option>
@@ -187,7 +187,7 @@ export function AssetPointBulkEditPanel({ ids, onApplied, onCancel }: AssetPoint
 
       <button
         type="button"
-        className="rounded bg-accent px-3 py-2 text-xs font-semibold text-on-accent disabled:opacity-50"
+        className="surface-button-primary bg-accent px-3 py-2 text-xs font-semibold text-on-accent disabled:opacity-50"
         disabled={problems.length > 0 || overTheCap || ids.length === 0 || applyMutation.isPending}
         aria-busy={applyMutation.isPending}
         onClick={() => applyMutation.mutate()}

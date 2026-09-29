@@ -55,7 +55,7 @@ export function AssetDetailPanel({ asset, domainLabel, onClose }: AssetDetailPan
   ];
 
   return (
-    <aside className="fixed right-0 top-0 z-50 flex h-full w-[90%] max-w-[380px] flex-col border-l border-line bg-surface shadow-lg">
+    <aside className="fixed right-0 top-0 z-50 flex h-full w-[90%] max-w-[380px] flex-col surface-dialog">
       <div className="flex items-start justify-between gap-2 border-b border-line px-3 py-2">
         <div>
           <h2 className="font-condensed text-base font-bold">Asset · {asset.code}</h2>
@@ -106,7 +106,7 @@ export function AssetDetailPanel({ asset, domainLabel, onClose }: AssetDetailPan
                       slug can live in two organizations, and the viewer reads the query. */}
                   <Link
                     to={`/dashboards/${dashboard.slug}?organizationId=${dashboard.organizationId}`}
-                    className="font-semibold text-accent hover:underline"
+                    className="font-semibold text-accent-strong hover:underline"
                   >
                     {dashboard.name}
                   </Link>

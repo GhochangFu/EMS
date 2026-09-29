@@ -98,13 +98,13 @@ export function AssetsPage({ user }: AssetsPageProps) {
                 type="text"
                 aria-label="Filter by code or name"
                 placeholder="Filter by code or name"
-                className="w-64 rounded border border-line-strong px-3 py-1.5 text-sm"
+                className="w-64 surface-field px-3 py-1.5 text-sm"
                 value={query}
                 onChange={(event) => setQuery(event.target.value)}
               />
               <select
                 aria-label="Domain"
-                className="rounded border border-line-strong px-2 py-1.5 text-sm"
+                className="surface-field px-2 py-1.5 text-sm"
                 value={domain}
                 onChange={(event) => setDomain(event.target.value)}
               >
@@ -117,7 +117,7 @@ export function AssetsPage({ user }: AssetsPageProps) {
               </select>
               <select
                 aria-label="Site"
-                className="rounded border border-line-strong px-2 py-1.5 text-sm"
+                className="surface-field px-2 py-1.5 text-sm"
                 value={site}
                 onChange={(event) => setSite(event.target.value)}
               >
@@ -133,7 +133,7 @@ export function AssetsPage({ user }: AssetsPageProps) {
               </span>
             </div>
 
-            <SectionCard bodyClassName="overflow-x-auto p-0">
+            <SectionCard bodyClassName="surface-table overflow-x-auto p-0">
               <table className="w-full min-w-[760px] text-left text-sm">
                 <thead className="border-b border-well-deep bg-well text-[11px] font-semibold uppercase tracking-wide text-ink-muted">
                   <tr>
@@ -162,7 +162,7 @@ export function AssetsPage({ user }: AssetsPageProps) {
                       <td className="px-3 py-2 font-mono text-xs">
                         <button
                           type="button"
-                          className="font-semibold text-accent hover:underline"
+                          className="font-semibold text-accent-strong hover:underline"
                           onClick={() => setSelectedId(row.id)}
                         >
                           {row.code}

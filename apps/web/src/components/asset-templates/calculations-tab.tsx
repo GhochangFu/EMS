@@ -193,7 +193,7 @@ export function CalculationsTab({
           problems.find((problem) => problem.field === field)?.message;
 
         return (
-          <section key={row.pointKey || index} className="rounded border border-line p-3">
+          <section key={row.pointKey || index} className="surface-raised-sm p-3">
             <header className="mb-2 flex flex-wrap items-baseline gap-2">
               <span className="text-xs font-semibold text-ink">
                 {row.pointKey || "(no point key)"}
@@ -469,7 +469,7 @@ export function CalculationsTab({
             disabled={blocked || !changed || saveM.isPending}
             aria-busy={saveM.isPending}
             onClick={() => saveM.mutate()}
-            className="rounded bg-accent px-4 py-1.5 text-xs font-semibold text-on-accent disabled:opacity-60"
+            className="surface-button-primary bg-accent px-4 py-1.5 text-xs font-semibold text-on-accent disabled:opacity-60"
           >
             {saveM.isPending ? "Saving…" : "Save calculations"}
           </button>
@@ -487,8 +487,8 @@ export function CalculationsTab({
 }
 
 function fieldClass(disabled: boolean, problem: string | undefined): string {
-  const tone = problem ? "border-critical-line-strong bg-critical-wash" : "border-line";
-  return `w-full rounded border px-2 py-1.5 text-xs ${tone} ${
-    disabled ? "bg-well text-ink-muted" : ""
+  const tone = problem ? "border-critical-line-strong bg-critical-wash" : "";
+  return `w-full surface-field px-2 py-1.5 text-xs ${tone} ${
+    disabled ? "text-ink-muted opacity-70" : ""
   }`;
 }

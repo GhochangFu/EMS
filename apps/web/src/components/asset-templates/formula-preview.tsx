@@ -230,8 +230,8 @@ function SampleInput({ label, value, disabled, onChange }: SampleInputProps) {
         value={value}
         disabled={disabled}
         onChange={(event) => onChange(event.target.value)}
-        className={`w-28 rounded border border-line px-2 py-1 text-xs ${
-          disabled ? "bg-well text-ink-muted" : ""
+        className={`w-28 surface-field px-2 py-1 text-xs ${
+          disabled ? "text-ink-muted opacity-70" : ""
         }`}
       />
     </label>

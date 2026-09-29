@@ -42,7 +42,7 @@ const FormulaEditorImpl = lazy(async () => {
 function FormulaEditorSkeleton() {
   return (
     <div
-      className="h-[38px] animate-pulse rounded border border-line bg-well"
+      className="h-[38px] animate-pulse surface-pressed"
       role="status"
       aria-label="Loading the formula editor"
     />

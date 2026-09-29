@@ -129,7 +129,7 @@ export function MappingSheetPanel({ locationId }: MappingSheetPanelProps) {
       <div className="flex flex-wrap items-center gap-3">
         <button
           type="button"
-          className="rounded border border-line px-3 py-2 text-xs font-semibold text-ink disabled:opacity-50"
+          className="surface-button px-3 py-2 disabled:opacity-50"
           disabled={!locationId || downloadMutation.isPending}
           aria-busy={downloadMutation.isPending}
           onClick={() => downloadMutation.mutate()}
@@ -149,7 +149,7 @@ export function MappingSheetPanel({ locationId }: MappingSheetPanelProps) {
         </label>
         <button
           type="button"
-          className="rounded bg-accent px-3 py-2 text-xs font-semibold text-on-accent disabled:opacity-50"
+          className="surface-button-primary bg-accent px-3 py-2 text-xs font-semibold text-on-accent disabled:opacity-50"
           disabled={!locationId || !file || previewMutation.isPending}
           aria-busy={previewMutation.isPending}
           onClick={() => previewMutation.mutate()}
@@ -158,7 +158,7 @@ export function MappingSheetPanel({ locationId }: MappingSheetPanelProps) {
         </button>
         <button
           type="button"
-          className="rounded bg-accent px-3 py-2 text-xs font-semibold text-on-accent disabled:opacity-50"
+          className="surface-button-primary bg-accent px-3 py-2 text-xs font-semibold text-on-accent disabled:opacity-50"
           disabled={!canCommit}
           aria-busy={commitMutation.isPending}
           onClick={() => commitMutation.mutate()}
@@ -255,7 +255,7 @@ export function MappingSheetPanel({ locationId }: MappingSheetPanelProps) {
       ) : null}
 
       {commitResult ? (
-        <div className="space-y-2 rounded border border-line bg-well p-3">
+        <div className="space-y-2 surface-pressed p-3">
           <p className="text-sm font-semibold text-ink">{summarizeMappingCommit(commitResult)}</p>
           {commitResult.skipped.length > 0 ? (
             <MappingSheetProblems errors={commitResult.skipped} />
