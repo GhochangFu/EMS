@@ -19,7 +19,7 @@ Each slice has its own migration: `0091` (slice 1), `0092` (slice 2), `0093` (sl
 **A slice that is not merged by the end of 2026-09-30 is held**, and the v1
 release ships without it; the slices merged before the cutoff ship.
 
-Slice 1 implementation notes (2026-09-29): migration `0091_mimic_lucide_licence`; gates `tests/f3.32f-carried-fixes.test.ts` and its `.integration` twin; the palette filter of decision 5 lands with decision 7's endpoint in slice 3 (plan ruling R1).
+Slice 1 implementation notes (2026-09-29): migration `0091_mimic_lucide_licence`; gates `tests/f3.32f-carried-fixes.test.ts` and its `.integration` twin; the palette filter of decision 5 lands with decision 7's endpoint in slice 3 (plan ruling R1). The unit-symbol exemption is by symbol key, not by unit: a re-save may place a new unit with a symbol the stored layout already uses, even when that symbol or its library is retired; any other symbol must be active and in a live library (plan ruling R7, owner-accepted 2026-09-29).
 
 Builds on [ADR 0084](./0084-mimic-symbol-libraries.md) and delivers its
 decision 10. Amends ADR 0084 decisions 3 (the foreign key is no longer the only
