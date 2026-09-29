@@ -1,5 +1,5 @@
-import { MIMIC_LAYOUT_BOUNDS, MIMIC_LAYOUT_NODE_KEY, mimicPresetSchema } from "@bms/shared/contracts";
-import { MIMIC_PRESETS, type MimicLayoutDto, type MimicSymbol } from "@bms/shared";
+import { MIMIC_LAYOUT_BOUNDS, MIMIC_LAYOUT_NODE_KEY, mimicPresetSchema, mimicSymbolSchema } from "@bms/shared/contracts";
+import { MIMIC_PRESETS, libraryOfSymbol, type MimicLayoutDto, type MimicPreset, type MimicSymbol } from "@bms/shared";
 
 import { MIMIC_PANELS } from "./mimic";
 import {
@@ -242,10 +242,93 @@ export function runEmptyLayoutChoosesCore(): void {
   assert(libraries.length === 1 && libraries[0] === "core", `a new layout chooses ["core"], got ${JSON.stringify(libraries)}`);
 }
 
-export function runEveryPresetChoosesCore(): void {
+/**
+ * `F3.32g` — each starter chooses `core` and the libraries its glyphs draw from, in registry
+ * order. Literal per preset, so a glyph swap that adds or drops a library reddens its line.
+ */
+const PRESET_LIBRARIES: Readonly<Record<MimicPreset, readonly string[]>> = {
+  water_train: ["core"],
+  electrical_distribution: ["core", "mdi"],
+  hvac_chiller_plant: ["core", "lucide"],
+  it_power_cooling: ["core", "tabler", "lucide"],
+  compressed_air: ["core", "lucide", "mdi"],
+  environment_monitoring: ["core", "lucide", "mdi"],
+  facility_services: ["core", "tabler", "lucide", "mdi"],
+};
+
+export function runEveryPresetChoosesCoreAndItsGlyphLibraries(): void {
   for (const preset of mimicPresetSchema.options) {
     const libraries = fromPreset(preset).symbolLibraries;
-    assert(libraries.length === 1 && libraries[0] === "core", `${preset} chooses ["core"], got ${JSON.stringify(libraries)}`);
+    assert(
+      JSON.stringify(libraries) === JSON.stringify(PRESET_LIBRARIES[preset]),
+      `${preset} chooses ${JSON.stringify(PRESET_LIBRARIES[preset])}, got ${JSON.stringify(libraries)}`,
+    );
+  }
+}
+
+/** `F3.32g` — the API's refine: every starter unit's library is one the starter chose. */
+export function runEveryStarterUnitDrawsFromAChosenLibrary(): void {
+  for (const preset of mimicPresetSchema.options) {
+    const layout = fromPreset(preset);
+    for (const node of layout.nodes) {
+      if (node.symbol === null) continue;
+      assert(
+        layout.symbolLibraries.includes(libraryOfSymbol(node.symbol)),
+        `${preset}.${node.key} draws ${node.symbol}, outside ${JSON.stringify(layout.symbolLibraries)}`,
+      );
+    }
+  }
+}
+
+/** `F3.32g` — every starter glyph is a key of the closed symbol set the API and the FK hold. */
+export function runEveryStarterGlyphIsAKnownSymbol(): void {
+  for (const preset of mimicPresetSchema.options) {
+    for (const node of fromPreset(preset).nodes) {
+      if (node.symbol === null) continue;
+      assert(mimicSymbolSchema.safeParse(node.symbol).success, `${preset}.${node.key}: ${node.symbol} is not a mimic symbol`);
+    }
+  }
+}
+
+/** `F3.32g` — water_train keeps its core glyphs, so its tanks keep the live level fill. */
+export function runWaterTrainKeepsItsTanks(): void {
+  const tanks = fromPreset("water_train")
+    .nodes.filter((n) => n.symbol === "tank")
+    .map((n) => n.key);
+  assert(JSON.stringify(tanks) === '["water_intake","water_storage"]', `water_train tanks, got ${JSON.stringify(tanks)}`);
+}
+
+/**
+ * `F3.32g` — the owner-approved table, literal: every swapped starter unit draws its library
+ * glyph. A swap reverted to its core glyph reddens its line here, even when the preset still
+ * chooses the same libraries through another unit.
+ */
+const APPROVED_GLYPHS: Readonly<Record<string, string>> = {
+  "electrical_distribution.incoming": "mdi:transmission-tower-import",
+  "hvac_chiller_plant.ahu_fcu": "lucide:fan",
+  "it_power_cooling.utility_feed": "lucide:plug-zap",
+  "it_power_cooling.pdu": "tabler:plug-connected",
+  "it_power_cooling.crac": "tabler:air-conditioning",
+  "compressed_air.dryer": "lucide:wind",
+  "compressed_air.receiver": "mdi:gas-cylinder",
+  "compressed_air.header": "lucide:gauge",
+  "environment_monitoring.ambient": "lucide:thermometer-sun",
+  "environment_monitoring.indoor_air": "mdi:molecule-co2",
+  "environment_monitoring.stack": "lucide:factory",
+  "environment_monitoring.effluent": "lucide:droplets",
+  "facility_services.main_meter": "mdi:meter-electric",
+  "facility_services.lighting": "lucide:lightbulb",
+  "facility_services.lifts": "tabler:elevator",
+  "facility_services.fire_pumps": "tabler:fire-hydrant",
+  "facility_services.utilities": "lucide:cog",
+};
+
+export function runEveryApprovedSwapReachesTheStarter(): void {
+  assert(Object.keys(APPROVED_GLYPHS).length === 17, "the owner approved 17 swaps");
+  for (const [at, symbol] of Object.entries(APPROVED_GLYPHS)) {
+    const [preset, key] = at.split(".") as [MimicPreset, string];
+    const node = fromPreset(preset).nodes.find((n) => n.key === key);
+    assert(node?.symbol === symbol, `${at} draws ${symbol}, got ${String(node?.symbol)}`);
   }
 }
 

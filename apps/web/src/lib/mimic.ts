@@ -337,7 +337,16 @@ export function mimicPanelBox(
  */
 export type MimicGlyphKind = MimicSymbol | "alert";
 
-/** Node key → its symbol. Typed like `MIMIC_LAYOUTS`: a missing node key is a compile error. */
+/**
+ * Node key → its symbol. Typed like `MIMIC_LAYOUTS`: a missing node key is a compile error.
+ *
+ * `F3.32g` (owner ruling 2026-09-29) — 17 units of the six domain presets draw a library glyph
+ * (ADR 0084) where it names the equipment more closely than the core one. Line glyphs (Tabler,
+ * Lucide) first, to match the core drawings; MDI only where no line glyph fits. `water_train`
+ * keeps its core glyphs, so its tanks keep the live level fill (`mimic-scene.tsx` fills `tank`
+ * only). `compressed_air.receiver` leaves `tank`: its role carries a pressure, not a `%` level,
+ * so it had no fill to lose. "Start from" chooses every library these name (`fromPreset`).
+ */
 export const MIMIC_NODE_GLYPHS: {
   readonly [P in MimicPreset]: { readonly [key in NodeKeyOf<P>]: MimicSymbol };
 } = {
@@ -352,7 +361,7 @@ export const MIMIC_NODE_GLYPHS: {
     etp: "dosing",
   },
   electrical_distribution: {
-    incoming: "meter",
+    incoming: "mdi:transmission-tower-import",
     ht_panel: "breaker",
     transformer: "transformer",
     lt_panel: "switchboard",
@@ -365,34 +374,34 @@ export const MIMIC_NODE_GLYPHS: {
     chiller: "chiller",
     primary_pumps: "pump",
     secondary_pumps: "pump",
-    ahu_fcu: "ahu",
+    ahu_fcu: "lucide:fan",
   },
   it_power_cooling: {
-    utility_feed: "switchboard",
+    utility_feed: "lucide:plug-zap",
     ups: "ups",
     battery: "battery",
-    pdu: "breaker",
+    pdu: "tabler:plug-connected",
     it_racks: "rack",
-    crac: "ahu",
+    crac: "tabler:air-conditioning",
   },
   compressed_air: {
     compressor: "compressor",
-    dryer: "filter",
-    receiver: "tank",
-    header: "valve",
+    dryer: "lucide:wind",
+    receiver: "mdi:gas-cylinder",
+    header: "lucide:gauge",
   },
   environment_monitoring: {
-    ambient: "sensor",
-    indoor_air: "sensor",
-    stack: "tower",
-    effluent: "discharge",
+    ambient: "lucide:thermometer-sun",
+    indoor_air: "mdi:molecule-co2",
+    stack: "lucide:factory",
+    effluent: "lucide:droplets",
   },
   facility_services: {
-    main_meter: "meter",
-    lighting: "lamp",
-    lifts: "lift",
-    fire_pumps: "pump",
-    utilities: "unit",
+    main_meter: "mdi:meter-electric",
+    lighting: "lucide:lightbulb",
+    lifts: "tabler:elevator",
+    fire_pumps: "tabler:fire-hydrant",
+    utilities: "lucide:cog",
   },
 };
 
