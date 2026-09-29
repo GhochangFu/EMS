@@ -476,7 +476,8 @@ function roledUnits(
 
 /**
  * One (1b) row as a geometry node, or `null` for the all-`null` half of a node-less layout's
- * LEFT JOIN. The casts restate the table's `_kind_check`, `_symbol_check` and `_tone_check`.
+ * LEFT JOIN. The casts restate the table's `_kind_check` and `_tone_check`, and its
+ * `mimic_layout_nodes_symbol_fkey` to `bms.mimic_symbols` (migration `0090`).
  */
 function layoutNodeOf(row: LayoutNodeRow): MimicLayoutNodeDto | null {
   if (row.key === null || row.kind === null || row.label === null) {

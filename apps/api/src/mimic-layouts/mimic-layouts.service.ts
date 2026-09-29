@@ -9,7 +9,14 @@ import {
 import { and, asc, eq, inArray, sql } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 
-import { assetRoles, dashboardWidgets, mimicLayoutNodes, mimicLayoutPipes, mimicLayouts } from "@bms/db";
+import {
+  assetRoles,
+  dashboardWidgets,
+  mimicLayoutNodes,
+  mimicLayoutPipes,
+  mimicLayouts,
+  mimicSymbolLibraries,
+} from "@bms/db";
 import type { BmsDb } from "@bms/db";
 import type {
   JwtPayload,
@@ -40,6 +47,12 @@ type Executor = BmsDb | BmsTx;
 
 /** An unknown or retired role code: the class of error only, never the code. */
 const UNKNOWN_ROLE_MESSAGE = "Unknown asset role code";
+
+/** A library code with no active `bms.mimic_symbol_libraries` row (`F3.32e`, plan D7). */
+const UNKNOWN_LIBRARY_MESSAGE = "Unknown symbol library";
+
+/** A unit symbol with no `bms.mimic_symbols` row: the class of error only, never the key. */
+const UNKNOWN_SYMBOL_MESSAGE = "Unknown mimic symbol";
 
 /** The roles that may draw, besides `admin` (ADR 0081 decision 3). */
 const AUTHOR_ROLES = new Set(["admin", "organization_admin"]);
@@ -131,6 +144,7 @@ export class MimicLayoutsService {
 
   async create(jwt: JwtPayload, body: CreateMimicLayoutBody): Promise<MimicLayoutDto> {
     const author = await this.assertCanAuthor(jwt, body.organizationId);
+    await this.assertLibrariesLive(body.symbolLibraries);
     await this.assertRolesLive(body.nodes, new Set());
     return withTenant(this.tenantDb, body.organizationId, async (tx) => {
       const [layout] = await tx
@@ -141,6 +155,7 @@ export class MimicLayoutsService {
           slug: body.slug,
           canvasW: body.canvasW,
           canvasH: body.canvasH,
+          symbolLibraries: body.symbolLibraries,
           createdBy: author,
         })
         .returning();
@@ -163,6 +178,7 @@ export class MimicLayoutsService {
   async replace(jwt: JwtPayload, id: string, body: PutMimicLayoutBody): Promise<MimicLayoutDto> {
     const existing = await this.fetchReadable(jwt, id);
     await this.assertCanAuthor(jwt, existing.organizationId);
+    await this.assertLibrariesLive(body.symbolLibraries);
     // A code the stored drawing already carries stays valid after it is retired, so a
     // re-save of an unchanged layout never fails on it (the mapping-sheet retired-code rule).
     const stored = await this.fleetDb
@@ -181,6 +197,7 @@ export class MimicLayoutsService {
           slug: body.slug,
           canvasW: body.canvasW,
           canvasH: body.canvasH,
+          symbolLibraries: body.symbolLibraries,
           version: sql`${mimicLayouts.version} + 1`,
           updatedAt: new Date(),
         })
@@ -292,6 +309,24 @@ export class MimicLayoutsService {
       .where(and(inArray(assetRoles.code, codes), eq(assetRoles.active, true)));
     if (live.length !== codes.length) {
       throw new BadRequestException(UNKNOWN_ROLE_MESSAGE);
+    }
+  }
+
+  /**
+   * Every library the body chose is an **active** `bms.mimic_symbol_libraries` row (`F3.32e`,
+   * plan D7), checked before any write. The Zod enum admits every code the contract names, so a
+   * retired library reaches here. `bms_fleet` may read the lookup table. The codes are made
+   * unique first, because a body that skipped the schema may repeat one.
+   */
+  private async assertLibrariesLive(symbolLibraries: readonly string[]): Promise<void> {
+    const codes = [...new Set(symbolLibraries)];
+    if (codes.length === 0) return;
+    const live = await this.fleetDb
+      .select({ code: mimicSymbolLibraries.code })
+      .from(mimicSymbolLibraries)
+      .where(and(inArray(mimicSymbolLibraries.code, codes), eq(mimicSymbolLibraries.active, true)));
+    if (live.length !== codes.length) {
+      throw new BadRequestException(UNKNOWN_LIBRARY_MESSAGE);
     }
   }
 
@@ -424,7 +459,7 @@ export class MimicLayoutsService {
 
   /**
    * Maps a database refusal by its **constraint name** — never by its detail,
-   * which row security suppresses. Only the two named cases are the caller's;
+   * which row security suppresses. Only the three named cases are the caller's;
    * every other error is rethrown unchanged.
    */
   static translateWriteError(err: unknown, slug: string): unknown {
@@ -436,6 +471,10 @@ export class MimicLayoutsService {
     if (constraint === "mimic_layout_nodes_role_code_fkey") {
       // No echo of the code: the message names the class of error only.
       return new BadRequestException(UNKNOWN_ROLE_MESSAGE);
+    }
+    if (constraint === "mimic_layout_nodes_symbol_fkey") {
+      // `F3.32e` migration `0090`: the symbol names a `bms.mimic_symbols` row. No echo of the key.
+      return new BadRequestException(UNKNOWN_SYMBOL_MESSAGE);
     }
     return err;
   }

@@ -183,3 +183,70 @@ export function refusesAPutBodyWithVersionZero(): void {
 export function refusesAPutBodyThatNamesAnOrganization(): void {
   refusedAt({ ...validCreateBody(), version: 1 }, [""], putMimicLayoutBodySchema);
 }
+
+// `F3.32e` U2 — the layout's chosen symbol libraries (ADR 0084 decision 8, plan D7).
+
+/** A body whose first unit draws `symbol`, with `symbolLibraries` set, or left out when `undefined`. */
+const withLibraries = (symbolLibraries: unknown, symbol = "tank"): Body => {
+  const body = withNode(0, { symbol });
+  if (symbolLibraries !== undefined) body.symbolLibraries = symbolLibraries;
+  return body;
+};
+
+export function defaultsAnAbsentLibraryListToCore(): void {
+  const result = createMimicLayoutBodySchema.safeParse(validCreateBody());
+  expect(result.success && result.data.symbolLibraries).toEqual(["core"]);
+}
+
+export function defaultsAnAbsentLibraryListToCoreOnAPut(): void {
+  const { organizationId: _drop, ...rest } = validCreateBody();
+  const result = putMimicLayoutBodySchema.safeParse({ ...rest, version: 1 });
+  expect(result.success && result.data.symbolLibraries).toEqual(["core"]);
+}
+
+export function refusesALibraryListedTwice(): void {
+  refusedAt(withLibraries(["core", "core"]), ["symbolLibraries.1"]);
+}
+
+export function refusesAnEmptyLibraryList(): void {
+  refusedAt(withLibraries([]), ["symbolLibraries"]);
+}
+
+export function refusesAnUnknownLibraryCode(): void {
+  refusedAt(withLibraries(["core", "fontawesome"]), ["symbolLibraries.1"]);
+}
+
+export function refusesAUnitFromALibraryTheLayoutDidNotChoose(): void {
+  const issues = issuesOf(createMimicLayoutBodySchema, withLibraries(["core"], "tabler:bolt"));
+  expect(issues.map((i) => i.path.join("."))).toEqual(["nodes.0.symbol"]);
+  expect(issues[0]?.message).toBe(
+    'Symbol "tabler:bolt" belongs to the Tabler Icons library, which this layout did not choose',
+  );
+}
+
+export function refusesAPutUnitFromALibraryTheLayoutDidNotChoose(): void {
+  const { organizationId: _drop, ...rest } = withLibraries(["core", "tabler"], "mdi:heat-pump");
+  const issues = issuesOf(putMimicLayoutBodySchema, { ...rest, version: 2 });
+  expect(issues.map((i) => i.path.join("."))).toEqual(["nodes.0.symbol"]);
+  expect(issues[0]?.message).toBe(
+    'Symbol "mdi:heat-pump" belongs to the Material Design Icons library, which this layout did not choose',
+  );
+}
+
+export function acceptsAUnitFromAChosenLibrary(): void {
+  const result = createMimicLayoutBodySchema.safeParse(withLibraries(["core", "tabler"], "tabler:bolt"));
+  expect(result.success ? [] : result.error.issues).toEqual([]);
+  expect(result.success && result.data.symbolLibraries).toEqual(["core", "tabler"]);
+}
+
+export function acceptsALayoutWithoutCore(): void {
+  // R3: core is not mandatory. Every unit of this body draws an MDI glyph.
+  const body = validCreateBody();
+  body.symbolLibraries = ["mdi"];
+  body.nodes = body.nodes.map((n) => (n.kind === "unit" ? { ...n, symbol: "mdi:heat-pump" } : n));
+  expect(issuesOf(createMimicLayoutBodySchema, body)).toEqual([]);
+}
+
+export function refusesAKeyInNoLibrary(): void {
+  refusedAt(withLibraries(["core", "tabler"], "nope:x"), ["nodes.0.symbol"]);
+}

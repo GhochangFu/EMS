@@ -17,11 +17,12 @@ import {
 import { asRole } from "../testing/role-urls";
 import * as spec from "./mimic-layouts.service.integration.spec";
 import type { Ctx } from "./mimic-layouts.service.integration.spec";
+import { MimicLayoutsController } from "./mimic-layouts.controller";
 import { MimicLayoutsService } from "./mimic-layouts.service";
 
 /**
  * `F3.32c` U2 — Vitest entry point for `MimicLayoutsService` against a real
- * database (plan U2, C1–C11; C12–C17 from U7). Assertions live in the sibling `.spec`
+ * database (plan U2, C1–C11; C12–C17 from U7; C18–C23 from `F3.32e` U2). Assertions live in the sibling `.spec`
  * (ADR 0014); this file owns the pools, the fixtures and the cleanup.
  *
  * **Cleanup deletes only rows this suite created, by id** — never a broad
@@ -79,8 +80,10 @@ describe.skipIf(!connectionString)("F3.32c — MimicLayoutsService against a liv
     const accessControl = new AccessControlService(createDb(authPool), fleetDb);
     const audit = new MasterDataAuditService(tenantDb, fleetDb);
 
+    const service = new MimicLayoutsService(fleetDb, tenantDb, accessControl, audit);
     ctx = {
-      service: new MimicLayoutsService(fleetDb, tenantDb, accessControl, audit),
+      service,
+      controller: new MimicLayoutsController(service),
       ownerPool,
       eskomOrgId,
       phewbOrgId,
@@ -208,5 +211,29 @@ describe.skipIf(!connectionString)("F3.32c — MimicLayoutsService against a liv
 
   it("C17 a replace adding a retired role is a 400", async () => {
     await spec.assertReplaceAddingARetiredRoleIs400(ctx);
+  }, 60_000);
+
+  it("C18 F3.32e a create stores the chosen libraries, and the DTO and the list carry them", async () => {
+    await spec.assertCreateStoresTheChosenLibraries(ctx);
+  }, 60_000);
+
+  it("C19 F3.32e a POST body without symbolLibraries stores core", async () => {
+    await spec.assertAnAbsentLibraryListStoresCore(ctx);
+  }, 60_000);
+
+  it("C20 F3.32e a PUT dropping a library a unit still uses is a 400", async () => {
+    await spec.assertReplaceDroppingAUsedLibraryIs400(ctx);
+  }, 60_000);
+
+  it("C21 F3.32e a PUT dropping a library with its unit saves", async () => {
+    await spec.assertReplaceDroppingAnUnusedLibrarySaves(ctx);
+  }, 60_000);
+
+  it("C22 F3.32e a create choosing an inactive library is a 400", async () => {
+    await spec.assertAnInactiveLibraryIs400(ctx);
+  }, 60_000);
+
+  it("C23 F3.32e an unknown symbol is a 400 that does not echo the key", async () => {
+    await spec.assertAnUnknownSymbolIs400WithoutTheKey(ctx);
   }, 60_000);
 });
