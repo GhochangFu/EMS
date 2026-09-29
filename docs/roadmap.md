@@ -6822,3 +6822,24 @@ green was fixed test-first.
 **Cascade:** none. A `chore(agents):` PR records the on-screen name in
 AGENTS.md and CLAUDE.md. Demo host: an existing Keycloak realm keeps
 "TRINETRA" until an admin edits its display name.
+
+### `F3.71` — a neumorphic surface style beside the flat one ✅ 2026-09-29
+
+PR #652, squash `ff0708f1`; ADR 0085 with Amendment 1 (owner-ruled at the
+start gate after an approved Control Room prototype); plan
+`docs/plans/f3.71-neumorphic-surface-style.md` (Fable).
+
+A user chooses **Neumorphic** or **Flat** beside Light / Dark; the choice lives
+in the browser and applies before first paint, neumorphic by default. The
+colour palette is unchanged: depth comes from soft shadow pairs built from the
+existing roles. Every screen names its surfaces through one vocabulary, so Flat
+keeps the look the app had before. The chrome stays flat, and schematics, maps
+and charts keep their own drawing.
+
+Verified: new gates for the boot script, the shadow tokens, the vocabulary and
+flat parity, each shown red by its mutation; the full suite; the rebuilt web
+image in the browser in all four combinations; two reviews. The owner reviewed
+the running app and tuned the shadow strength.
+
+**Cascade:** none. A `chore(agents):` PR records the surface style in
+AGENTS.md §5 beside `ESKOM_SMOC.html`.
