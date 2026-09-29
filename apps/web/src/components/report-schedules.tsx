@@ -273,11 +273,11 @@ export function ReportSchedules({ user }: ReportSchedulesProps): JSX.Element {
   };
 
   const rows = schedulesQ.data;
-  const inputClass = "rounded border border-line-strong px-3 py-2 text-sm";
+  const inputClass = "surface-field px-3 py-2 text-sm";
   const labelClass = "text-xs font-medium text-ink-muted";
 
   return (
-    <section className="rounded border border-line bg-surface p-4">
+    <section className="surface-raised p-4">
       <h2 className="font-condensed text-sm font-bold text-ink">Schedules</h2>
       {schedulesQ.isPending ? <p className="mt-2 text-sm text-ink-muted">Loading schedules…</p> : null}
       {schedulesQ.isError ? (
@@ -287,7 +287,7 @@ export function ReportSchedules({ user }: ReportSchedulesProps): JSX.Element {
         <p className="mt-2 text-sm text-ink-muted">No schedules yet.</p>
       ) : null}
       {rows !== undefined && rows.length > 0 ? (
-        <div className="mt-3 overflow-hidden rounded border border-line">
+        <div className="mt-3 overflow-hidden surface-table">
           <table className="min-w-full divide-y divide-line text-sm">
             <thead className="bg-well text-left text-xs uppercase tracking-wide text-ink-muted">
               <tr>
@@ -321,7 +321,7 @@ export function ReportSchedules({ user }: ReportSchedulesProps): JSX.Element {
                       <div className="flex justify-end gap-3">
                         <button
                           type="button"
-                          className="text-xs font-semibold text-accent disabled:cursor-not-allowed disabled:text-ink-hint"
+                          className="text-xs font-semibold text-accent-strong disabled:cursor-not-allowed disabled:text-ink-hint"
                           disabled={deleting}
                           data-pending-bystander="deleting"
                           onClick={() => startEdit(row)}
@@ -510,7 +510,7 @@ export function ReportSchedules({ user }: ReportSchedulesProps): JSX.Element {
         <div className="mt-3 flex items-center gap-3">
           <button
             type="button"
-            className="rounded bg-chrome px-3 py-2 text-sm font-semibold text-on-dark disabled:cursor-not-allowed disabled:bg-line-strong"
+            className="surface-button-primary bg-chrome px-3 py-2 text-sm font-semibold text-on-dark disabled:cursor-not-allowed disabled:bg-line-strong"
             disabled={blockedReason !== null}
             aria-busy={saveM.isPending}
             onClick={() => saveM.mutate()}
@@ -527,7 +527,7 @@ export function ReportSchedules({ user }: ReportSchedulesProps): JSX.Element {
           ) : null}
         </div>
         {outcome !== null ? (
-          <p className={`mt-2 text-xs ${outcome.tone === "saved" ? "text-accent" : "text-critical-ink-soft"}`}>
+          <p className={`mt-2 text-xs ${outcome.tone === "saved" ? "text-accent-strong" : "text-critical-ink"}`}>
             {outcome.text}
           </p>
         ) : null}

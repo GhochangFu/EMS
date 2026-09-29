@@ -99,7 +99,7 @@ export function EnergyPage({ user }: EnergyPageProps) {
             </label>
             <select
               id="energy-window"
-              className="rounded border border-line-strong bg-surface px-2 py-1.5 text-sm"
+              className="surface-field px-2 py-1.5 text-sm"
               value={energyWindow}
               onChange={(e) => setEnergyWindow(e.target.value)}
             >

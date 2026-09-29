@@ -56,7 +56,7 @@ export function LoadTrendChart({ points, status, stale }: LoadTrendChartProps) {
 
   if (status === "loading") {
     return (
-      <div className="flex h-[280px] items-center justify-center rounded-lg border border-line bg-surface text-sm text-ink-muted">
+      <div className="flex h-[280px] items-center justify-center surface-raised text-sm text-ink-muted">
         Loading trend…
       </div>
     );
@@ -70,7 +70,7 @@ export function LoadTrendChart({ points, status, stale }: LoadTrendChartProps) {
   }
   if (status === "empty" || points.length === 0) {
     return (
-      <div className="flex h-[280px] items-center justify-center rounded-lg border border-dashed border-line bg-surface text-sm text-ink-muted">
+      <div className="flex h-[280px] items-center justify-center surface-raised text-sm text-ink-muted">
         No kW history yet — start the simulator.
       </div>
     );
@@ -78,7 +78,7 @@ export function LoadTrendChart({ points, status, stale }: LoadTrendChartProps) {
 
   return (
     <div
-      className={`rounded-lg border bg-surface p-2 shadow-sm ${stale ? "ring-2 ring-warning/60" : "border-line"}`}
+      className={`surface-raised p-2 ${stale ? "ring-2 ring-warning/60" : ""}`}
     >
       <ReactECharts
         option={option}

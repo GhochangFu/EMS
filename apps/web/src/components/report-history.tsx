@@ -83,7 +83,7 @@ export function ReportHistory(): JSX.Element {
   const files = filesQ.data;
 
   return (
-    <section className="rounded border border-line bg-surface p-4">
+    <section className="surface-raised p-4">
       <h2 className="font-condensed text-sm font-bold text-ink">History</h2>
       {filesQ.isPending ? (
         <p className="mt-2 text-sm text-ink-muted">Loading report history…</p>
@@ -95,7 +95,7 @@ export function ReportHistory(): JSX.Element {
         <p className="mt-2 text-sm text-ink-muted">No saved reports yet.</p>
       ) : null}
       {files !== undefined && files.length > 0 ? (
-        <div className="mt-3 overflow-hidden rounded border border-line">
+        <div className="mt-3 overflow-hidden surface-table">
           <table className="min-w-full divide-y divide-line text-sm">
             <thead className="bg-well text-left text-xs uppercase tracking-wide text-ink-muted">
               <tr>
@@ -125,7 +125,7 @@ export function ReportHistory(): JSX.Element {
                       <div className="flex justify-end gap-3">
                         <button
                           type="button"
-                          className="text-xs font-semibold text-accent"
+                          className="text-xs font-semibold text-accent-strong"
                           onClick={() => downloadMutation.mutate(file)}
                         >
                           Download
