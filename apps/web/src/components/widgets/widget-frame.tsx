@@ -25,7 +25,7 @@ type WidgetFrameProps = {
  */
 export function WidgetFrame({ title, status, stale = false, children }: WidgetFrameProps) {
   return (
-    <div className="flex h-full flex-col rounded-lg border border-line bg-surface p-3 shadow-sm">
+    <div className="surface-raised flex h-full flex-col p-3">
       <div className="mb-2 flex items-center justify-between gap-2">
         <h3 className="truncate text-[11px] font-medium uppercase tracking-wide text-ink-muted">{title}</h3>
         {status === "ready" && stale ? (

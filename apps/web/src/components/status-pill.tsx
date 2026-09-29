@@ -14,10 +14,10 @@ export function StatusPill({ label, tone = "ok" }: StatusPillProps) {
           ? "border-line bg-well-deep text-neutral-ink"
           : tone === "info"
             ? "border-info-line bg-info-wash text-info-ink"
-            : "border-accent/20 bg-accent/10 text-accent";
+            : "border-accent/20 bg-accent/10 text-ok-ink";
 
   return (
-    <span className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10.5px] font-semibold uppercase ${cls}`}>
+    <span className={`surface-pill inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10.5px] font-semibold uppercase ${cls}`}>
       <span className="h-1.5 w-1.5 rounded-full bg-current" />
       {label}
     </span>

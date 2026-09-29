@@ -108,6 +108,307 @@
   --simulated-ink: 166 125 232; /* #A67DE8 */
 }
 
+/*
+ * F3.71 — the neumorphic surface style's shadow tokens (ADR 0085 decision 2, plan
+ * `docs/plans/f3.71-neumorphic-surface-style.md` §2). Each shadow pairs a dark shade down-right
+ * with a light one up-left, both composed only of role variables — light: `ink` and `surface`;
+ * dark: `scrim` and `line-strong`, plus a 1px `line-strong` highlight edge on raised shapes. No
+ * role is added and no colour literal appears (`tests/f3.71-surface-gates.test.ts` T1–T3).
+ *
+ * Keyed `:not([data-surface="flat"])`, not `[data-surface="neumorphic"]`, so a page whose boot
+ * script never ran (a Content-Security-Policy that blocks it) still gets the default style. Under
+ * Flat the tokens are undefined, so a `box-shadow: var(--shadow-*)` computes to `none`. These
+ * blocks are not the role blocks above: the token parser in `tests/support/colour-tokens.ts`
+ * reads only the bare root selector and the dark-theme one, each followed by its opening brace
+ * (this comment must not spell either, or the parser counts a second block).
+ */
+:root:not([data-surface="flat"]) {
+  --shadow-raised: 8px 8px 18px rgb(var(--ink) / 0.15), -8px -8px 18px rgb(var(--surface) / 0.9);
+  --shadow-raised-sm: 4px 4px 9px rgb(var(--ink) / 0.15), -4px -4px 9px rgb(var(--surface) / 0.9);
+  --shadow-pressed: inset 5px 5px 11px rgb(var(--ink) / 0.15), inset -5px -5px 11px rgb(var(--surface) / 0.9);
+  --shadow-pressed-sm: inset 2px 2px 5px rgb(var(--ink) / 0.15), inset -2px -2px 5px rgb(var(--surface) / 0.9);
+  --shadow-pill: 2px 2px 5px rgb(var(--ink) / 0.15), -2px -2px 5px rgb(var(--surface) / 0.9);
+}
+
+:root[data-theme="dark"]:not([data-surface="flat"]) {
+  --shadow-raised: 8px 8px 18px rgb(var(--scrim) / 0.55), -8px -8px 18px rgb(var(--line-strong) / 0.32),
+    inset 1px 1px 0 rgb(var(--line-strong) / 0.5);
+  --shadow-raised-sm: 4px 4px 9px rgb(var(--scrim) / 0.55), -4px -4px 9px rgb(var(--line-strong) / 0.32),
+    inset 1px 1px 0 rgb(var(--line-strong) / 0.5);
+  --shadow-pressed: inset 5px 5px 11px rgb(var(--scrim) / 0.55), inset -5px -5px 11px rgb(var(--line-strong) / 0.32);
+  --shadow-pressed-sm: inset 2px 2px 5px rgb(var(--scrim) / 0.55), inset -2px -2px 5px rgb(var(--line-strong) / 0.32);
+  --shadow-pill: 2px 2px 5px rgb(var(--scrim) / 0.55), -2px -2px 5px rgb(var(--line-strong) / 0.32);
+}
+
+/*
+ * F3.71 — the surface vocabulary (ADR 0085 decisions 3–5, plan §2). A call site names what a
+ * shape is (`surface-raised`, `surface-field`), never its colours; the rule decides how it looks
+ * in each style.
+ *
+ *  - The base rule is the neumorphic shape: a `canvas` ground, no border, a shadow token.
+ *  - The `:where([data-surface="flat"])` rule after it is the flat shape, written with `@apply`
+ *    and today's utility strings, so Flat looks like the app before F3.71. `:where()` keeps it at
+ *    one class of specificity: it wins over the base rule by source order, and a call-site
+ *    utility still wins over both (utilities come after components).
+ *  - Base rules set `border-width`, not the `border` shorthand, so a flat `@apply border` keeps
+ *    preflight's solid style.
+ *
+ * `tests/f3.71-surface-gates.test.ts` V4/V5 hold that every class used has both rules and every
+ * class defined is used; V3 that no call site mixes a `surface-*` class with the colour utilities
+ * it replaces.
+ */
+@layer components {
+  /* Cards, sections, KPI tiles, page headers, widget frames, the capability footer. */
+  .surface-raised {
+    border-width: 0;
+    border-radius: 18px;
+    background-color: rgb(var(--canvas));
+    box-shadow: var(--shadow-raised);
+  }
+  :where([data-surface="flat"]) .surface-raised {
+    @apply rounded-lg border border-line bg-surface shadow-sm;
+  }
+
+  /* A small card or chip inside a card. */
+  .surface-raised-sm {
+    border-width: 0;
+    border-radius: 12px;
+    background-color: rgb(var(--canvas));
+    box-shadow: var(--shadow-raised-sm);
+  }
+  :where([data-surface="flat"]) .surface-raised-sm {
+    @apply rounded border border-line bg-surface;
+  }
+
+  /* A well; the frame around a schematic, a map, a mimic scene or a chart (their drawing stays). */
+  .surface-pressed {
+    border-width: 0;
+    border-radius: 14px;
+    background-color: rgb(var(--canvas));
+    box-shadow: var(--shadow-pressed);
+  }
+  :where([data-surface="flat"]) .surface-pressed {
+    @apply rounded border border-line bg-well;
+  }
+
+  /* A progress track, a gauge dial. */
+  .surface-pressed-sm {
+    border-width: 0;
+    border-radius: 10px;
+    background-color: rgb(var(--canvas));
+    box-shadow: var(--shadow-pressed-sm);
+  }
+  :where([data-surface="flat"]) .surface-pressed-sm {
+    @apply rounded bg-well-deep;
+  }
+
+  /*
+   * An input, select or text area. Pressed, with a 1px `ink-faint` edge: 4.32:1 light and 5.46:1
+   * dark on `canvas`, so the control's boundary meets WCAG 1.4.11 (ADR 0085 decision 4).
+   */
+  .surface-field {
+    border: 1px solid rgb(var(--ink-faint));
+    border-radius: 10px;
+    background-color: rgb(var(--canvas));
+    box-shadow: var(--shadow-pressed-sm);
+  }
+  :where([data-surface="flat"]) .surface-field {
+    @apply rounded border border-line bg-surface;
+  }
+
+  /* A secondary button or a link drawn as one. */
+  .surface-button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.375rem;
+    min-height: 32px;
+    border-width: 0;
+    border-radius: 12px;
+    background-color: rgb(var(--canvas));
+    box-shadow: var(--shadow-raised-sm);
+    color: rgb(var(--accent-strong));
+    font-size: 0.75rem;
+    line-height: 1rem;
+    font-weight: 600;
+  }
+  .surface-button:hover {
+    color: rgb(var(--ink));
+  }
+  .surface-button:active {
+    box-shadow: var(--shadow-pressed-sm);
+  }
+  :where([data-surface="flat"]) .surface-button {
+    @apply min-h-0 rounded border border-line text-xs font-semibold text-ink-muted hover:text-ink;
+  }
+
+  /* A primary button: the call site keeps its `bg-accent` fill and `text-on-accent` ink. */
+  .surface-button-primary {
+    border-radius: 12px;
+    box-shadow: var(--shadow-raised-sm);
+  }
+  .surface-button-primary:active {
+    box-shadow: var(--shadow-pressed-sm);
+  }
+  :where([data-surface="flat"]) .surface-button-primary {
+    @apply rounded;
+  }
+
+  /* A command the user cannot run (`DisabledCommandButton`). */
+  .surface-button-locked {
+    border: 1px dashed rgb(var(--line-strong));
+    border-radius: 12px;
+    background-color: transparent;
+    color: rgb(var(--ink-hint));
+  }
+  :where([data-surface="flat"]) .surface-button-locked {
+    @apply rounded border border-solid border-line-strong bg-well-deep text-ink-muted opacity-70;
+  }
+
+  /* A tab in a tab strip, and the selected one. */
+  .surface-tab {
+    border-width: 0;
+    border-radius: 10px;
+    background-color: transparent;
+    color: rgb(var(--ink-muted));
+  }
+  .surface-tab:hover {
+    color: rgb(var(--ink));
+  }
+  :where([data-surface="flat"]) .surface-tab {
+    @apply rounded border border-line bg-surface text-ink;
+  }
+  .surface-tab-selected {
+    background-color: rgb(var(--canvas));
+    box-shadow: var(--shadow-pressed-sm);
+    color: rgb(var(--accent-strong));
+    font-weight: 600;
+  }
+  :where([data-surface="flat"]) .surface-tab-selected {
+    @apply border-accent bg-ok-wash text-ok-ink;
+  }
+
+  /* A sidebar link, and the selected one. */
+  .surface-nav-item {
+    margin-inline: 8px;
+    border-width: 0;
+    border-radius: 10px;
+    color: rgb(var(--ink-muted));
+  }
+  .surface-nav-item:hover {
+    color: rgb(var(--ink));
+  }
+  :where([data-surface="flat"]) .surface-nav-item {
+    @apply mx-0 rounded-none border-l-2 border-transparent text-ink-muted hover:bg-canvas;
+  }
+  .surface-nav-item-selected {
+    background-color: rgb(var(--canvas));
+    box-shadow: var(--shadow-pressed-sm);
+    color: rgb(var(--accent-strong));
+    font-weight: 600;
+  }
+  :where([data-surface="flat"]) .surface-nav-item-selected {
+    @apply border-accent bg-canvas/80 font-semibold text-ink;
+  }
+
+  /* The module sidebar: a floating raised panel (plan OQ5, the approved prototype). */
+  .surface-sidebar {
+    align-self: flex-start;
+    margin: 20px 0 20px 20px;
+    border-width: 0;
+    border-radius: 18px;
+    background-color: rgb(var(--canvas));
+    box-shadow: var(--shadow-raised);
+  }
+  :where([data-surface="flat"]) .surface-sidebar {
+    @apply m-0 self-stretch rounded-none border-r border-line bg-surface;
+  }
+
+  /* The KPI ribbon under the chrome: a full-width raised strip (plan OQ4). */
+  .surface-ribbon {
+    border-width: 0;
+    background-color: rgb(var(--canvas));
+    box-shadow: var(--shadow-raised-sm);
+  }
+  :where([data-surface="flat"]) .surface-ribbon {
+    @apply border-b border-line bg-surface shadow-sm;
+  }
+
+  /* The KPI tile's tone bar (with `surface-raised`); the bar's colour stays at the call site. */
+  .surface-kpi::after {
+    content: "";
+    left: 18px;
+    right: 18px;
+    top: 0;
+    height: 3px;
+    border-radius: 9999px;
+  }
+  :where([data-surface="flat"]) .surface-kpi::after {
+    left: 0;
+    right: 0;
+    height: 2px;
+    border-radius: 0;
+  }
+
+  /* A status pill: its wash, ink and border are content and stay at the call site. */
+  .surface-pill {
+    box-shadow: var(--shadow-pill);
+  }
+  :where([data-surface="flat"]) .surface-pill {
+  }
+
+  /* The frame of a table: the rows sit in a pressed well. */
+  .surface-table {
+    border-radius: 14px;
+    background-color: rgb(var(--canvas));
+    box-shadow: var(--shadow-pressed);
+    padding: 4px;
+  }
+  :where([data-surface="flat"]) .surface-table {
+  }
+
+  /* A dialog panel or a drawer. */
+  .surface-dialog {
+    border-width: 0;
+    border-radius: 18px;
+    background-color: rgb(var(--canvas));
+    box-shadow: var(--shadow-raised);
+  }
+  :where([data-surface="flat"]) .surface-dialog {
+    @apply rounded-lg bg-surface shadow-xl;
+  }
+
+  /* A segmented filter: the pressed track, an idle item, the selected item. */
+  .surface-segment {
+    border-radius: 10px;
+    background-color: rgb(var(--canvas));
+    box-shadow: var(--shadow-pressed-sm);
+    padding: 2px;
+  }
+  :where([data-surface="flat"]) .surface-segment {
+  }
+  .surface-segment-item {
+    border-radius: 10px;
+    background-color: transparent;
+    color: rgb(var(--ink-muted));
+  }
+  .surface-segment-item:hover {
+    color: rgb(var(--ink));
+  }
+  :where([data-surface="flat"]) .surface-segment-item {
+    @apply rounded bg-well-deep text-ink-muted hover:text-ink;
+  }
+  .surface-segment-item-selected {
+    background-color: rgb(var(--canvas));
+    box-shadow: var(--shadow-raised-sm);
+    color: rgb(var(--accent-strong));
+    font-weight: 600;
+  }
+  :where([data-surface="flat"]) .surface-segment-item-selected {
+    @apply bg-accent text-on-accent;
+  }
+}
+
 body {
   margin: 0;
   min-height: 100vh;
