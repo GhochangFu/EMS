@@ -8,6 +8,7 @@ import {
   assertASampleInsideTheWindowIsReturned,
   assertASampleOutsideTheWindowIsOmitted,
   assertAnUnsampledPairIsAbsent,
+  assertARepeatedPairAnswersOnce,
   assertOnlyTheNamedAssetsAndKeysAreRead,
   assertTheLatestOfTwoIsChosen,
 } from "./points-latest.integration.spec";
@@ -54,4 +55,6 @@ describe.skipIf(!connectionString)("F4.176 — latest point values against Postg
   it("leaves an unsampled pair absent beside a sampled one", run(assertAnUnsampledPairIsAbsent));
 
   it("reads only the named assets and keys", run(assertOnlyTheNamedAssetsAndKeysAreRead));
+
+  it("answers a repeated pair once", run(assertARepeatedPairAnswersOnce));
 });

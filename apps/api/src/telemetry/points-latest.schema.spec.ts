@@ -172,3 +172,19 @@ export function assertAnUnknownKeyIsRefused(): void {
   const result = parse(ids(1), keys(1), "&bogus=1");
   assert(result.success === false, "an unknown query key must be refused");
 }
+
+/**
+ * A NUL byte (or any control character) in a key is a 400 here. Postgres
+ * refuses 0x00 in `text`, so unchecked it would be a 500. A key with ordinary
+ * punctuation still parses.
+ */
+export function assertAControlCharacterInAKeyIsRefused(): void {
+  for (const bad of ["%00", "kw%00", "k%0Aw", "%7F"]) {
+    const result = pointsLatestQuerySchema.safeParse(
+      apiQueryParser(`assetIds=${ids(1)[0]}&pointKeys=${bad}`),
+    );
+    assert(result.success === false, `pointKeys=${bad} must be refused`);
+  }
+  const ok = parse(ids(1), ["supply_air_temp_c", "pdu-a.status"]);
+  assert(ok.success === true, `ordinary keys must parse: ${issues(ok)}`);
+}

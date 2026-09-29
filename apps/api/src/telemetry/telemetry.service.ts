@@ -293,16 +293,24 @@ export class TelemetryService {
    * key) pair with a sample in the last `windowMinutes`, in one statement. A
    * pair with no sample in the window is absent from the result.
    *
+   * **One index probe per requested pair (`LATERAL … LIMIT 1`), not a
+   * `DISTINCT ON` over the window.** A `DISTINCT ON` reads and sorts every
+   * sample in the window, so its cost grows with the window and the sample
+   * rate: over 60 minutes of the SMOC set (171,081 rows) it sorted to disk in
+   * 0.8–2.6 s, and the index-ordered variant took 14.7 s cold. The probe's cost
+   * is bounded by the pair count instead (at most 50 × 64): 62–109 ms for the
+   * same 60 minutes, 161 ms for 15 minutes, 84 ms when the window is empty.
+   * Raised by the `F4.176` security review (L1); measured 2026-09-30.
+   *
    * **The lower bound is a bound `timestamptz` computed here, not
    * `now() - $n`.** node-pg sends an unnamed statement, which Postgres plans at
-   * Bind with the value known, so the bound is a constant at plan time and the
-   * old chunks are excluded while planning. `now()` is only STABLE, so
-   * `now() - …` is excluded at executor startup after every chunk was planned
-   * — measured 350 ms of planning for the SMOC set (ADR 0074 Amendment 1
-   * item 6 records the same trap). Measured 2026-09-30 with this statement
-   * prepared and the SMOC set bound (43 assets × 34 keys): 4–12 ms planning,
-   * no startup exclusion, and 73–92 ms execution for 277 pairs over a
-   * 15-minute window of real samples.
+   * Bind with the value known, so the old chunks are excluded while planning.
+   * `now()` is only STABLE, so `now() - …` plans every chunk first (350 ms for
+   * the SMOC set; ADR 0074 Amendment 1 item 6 records the same trap). Measured:
+   * 2–12 ms planning.
+   *
+   * **Duplicate ids and keys are dropped before the query**, because the cross
+   * join would answer a repeated pair twice.
    *
    * **`TENANT_POOL`, like `pointValuesAt`** — the controller's scope guard is
    * the only containment, since `telemetry.point_values` has no RLS.
@@ -320,14 +328,19 @@ export class TelemetryService {
       value: number | string;
       unit: string | null;
     }>(
-      `SELECT DISTINCT ON (pv.asset_id, pv.point_key)
-              pv.time, pv.asset_id, pv.point_key, pv.value, pv.unit
-       FROM telemetry.point_values pv
-       WHERE pv.asset_id = ANY($1::uuid[])
-         AND pv.point_key = ANY($2::text[])
-         AND pv.time > $3::timestamptz
-       ORDER BY pv.asset_id, pv.point_key, pv.time DESC`,
-      [assetIds, pointKeys, since.toISOString()],
+      `SELECT s.time, a.asset_id, k.point_key, s.value, s.unit
+       FROM unnest($1::uuid[]) AS a(asset_id)
+       CROSS JOIN unnest($2::text[]) AS k(point_key)
+       CROSS JOIN LATERAL (
+         SELECT pv.time, pv.value, pv.unit
+         FROM telemetry.point_values pv
+         WHERE pv.asset_id = a.asset_id
+           AND pv.point_key = k.point_key
+           AND pv.time > $3::timestamptz
+         ORDER BY pv.time DESC
+         LIMIT 1
+       ) s`,
+      [[...new Set(assetIds)], [...new Set(pointKeys)], since.toISOString()],
     );
     return result.rows.map((row) => ({
       time: new Date(row.time).toISOString(),

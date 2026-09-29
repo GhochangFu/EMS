@@ -130,7 +130,9 @@ export const DEFAULT_LATEST_WINDOW_MINUTES = 15;
  *
  * **Each asset id is a UUID here, not in the controller.** Unchecked, a
  * non-UUID reaches the `::uuid[]` cast and is a 500 where the caller made an
- * ordinary mistake. A point key is bounded by its column, `varchar(128)`.
+ * ordinary mistake. A point key is bounded by its column, `varchar(128)`, and
+ * may not carry a control character: Postgres refuses a NUL byte in `text`
+ * (22021), so `?pointKeys=%00` would otherwise be a 500 (security review L2).
  */
 export const pointsLatestQuerySchema = z
   .object({
@@ -140,7 +142,16 @@ export const pointsLatestQuerySchema = z
     ),
     pointKeys: z.preprocess(
       foldRepeatedQueryValue,
-      z.array(z.string().min(1).max(128)).min(1).max(MAX_LATEST_POINT_KEYS),
+      z
+        .array(
+          z
+            .string()
+            .min(1)
+            .max(128)
+            .regex(/^[^\u0000-\u001f\u007f]+$/, "a point key may not contain a control character"),
+        )
+        .min(1)
+        .max(MAX_LATEST_POINT_KEYS),
     ),
     windowMinutes: z.coerce
       .number()

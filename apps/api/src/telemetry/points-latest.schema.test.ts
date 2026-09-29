@@ -1,6 +1,7 @@
 import { describe, it } from "vitest";
 
 import {
+  assertAControlCharacterInAKeyIsRefused,
   assertAKeyLongerThanTheColumnIsRefused,
   assertANonUuidIdIsRefused,
   assertAnAbsentWindowDefaultsToFifteen,
@@ -57,6 +58,10 @@ describe("F4.176 — pointsLatestQuerySchema (ADR 0074 Amendment 2)", () => {
 
   it("refuses a point key longer than the column", () => {
     assertAKeyLongerThanTheColumnIsRefused();
+  });
+
+  it("refuses a control character in a point key", () => {
+    assertAControlCharacterInAKeyIsRefused();
   });
 
   it("defaults an absent window to 15 minutes", () => {

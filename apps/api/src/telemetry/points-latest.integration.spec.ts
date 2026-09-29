@@ -122,3 +122,18 @@ export async function assertOnlyTheNamedAssetsAndKeysAreRead(client: pg.PoolClie
     `only the named asset's named key must be returned, got ${JSON.stringify(got)}`,
   );
 }
+
+/**
+ * A repeated id and a repeated key answer the pair once. The query crosses the
+ * two lists, so without the de-duplication this pair would come back four
+ * times.
+ */
+export async function assertARepeatedPairAnswersOnce(client: pg.PoolClient): Promise<void> {
+  const s = await seedAsset(client);
+  await insertSample(client, s.assetId, "kw", minutesBefore(s.now, 5), 9);
+  const got = await serviceOn(client).latestPointValues([s.assetId, s.assetId], ["kw", "kw"], 15);
+  assert(
+    got.length === 1 && got[0]?.value === 9,
+    `a repeated pair must be answered once, got ${JSON.stringify(got)}`,
+  );
+}
