@@ -22,7 +22,7 @@ import { MimicLayoutsService } from "./mimic-layouts.service";
 
 /**
  * `F3.32c` U2 — Vitest entry point for `MimicLayoutsService` against a real
- * database (plan U2, C1–C11; C12–C17 from U7; C18–C23 from `F3.32e` U2). Assertions live in the sibling `.spec`
+ * database (plan U2, C1–C11; C12–C17 from U7; C18–C23 from `F3.32e` U2; C24–C29 from `F3.32f` slice 1). Assertions live in the sibling `.spec`
  * (ADR 0014); this file owns the pools, the fixtures and the cleanup.
  *
  * **Cleanup deletes only rows this suite created, by id** — never a broad
@@ -239,5 +239,45 @@ describe.skipIf(!connectionString)("F3.32c — MimicLayoutsService against a liv
 
   it("C23 F3.32e an unknown symbol is a 400 that does not echo the key", async () => {
     await spec.assertAnUnknownSymbolIs400WithoutTheKey(ctx);
+  }, 60_000);
+
+  it("C24 F3.32f a create drawing a retired symbol is a 400 that does not echo the key", async () => {
+    await spec.assertCreateWithARetiredSymbolIs400(ctx);
+  }, 60_000);
+
+  it("C25 F3.32f a PUT of the unchanged body saves after a stored symbol is retired", async () => {
+    await spec.assertReplaceKeepingAStoredRetiredSymbolSaves(ctx);
+  }, 60_000);
+
+  it("C25b F3.32f a PUT adding a second unit with a stored retired symbol saves", async () => {
+    await spec.assertReplaceAddingAStoredRetiredSymbolAgainSaves(ctx);
+  }, 60_000);
+
+  it("C25b F3.32f a PUT adding a retired symbol the layout never stored is a 400", async () => {
+    await spec.assertReplaceAddingARetiredSymbolIs400(ctx);
+  }, 60_000);
+
+  it("C26 F3.32f a read still carries a stored retired symbol", async () => {
+    await spec.assertAReadCarriesAStoredRetiredSymbol(ctx);
+  }, 60_000);
+
+  it("C27 F3.32f a PUT of the unchanged body saves after a stored library is retired", async () => {
+    await spec.assertReplaceKeepingAStoredRetiredLibrarySaves(ctx);
+  }, 60_000);
+
+  it("C27b F3.32f a PUT adding a unit from a stored retired library is a 400", async () => {
+    await spec.assertReplaceAddingAUnitFromAStoredRetiredLibraryIs400(ctx);
+  }, 60_000);
+
+  it("C28 F3.32f the list drops an unknown stored library code and parses", async () => {
+    await spec.assertTheListDropsAnUnknownStoredLibrary(ctx);
+  }, 60_000);
+
+  it("C29 F3.32f a read drops an unknown stored library code and parses", async () => {
+    await spec.assertAReadDropsAnUnknownStoredLibrary(ctx);
+  }, 60_000);
+
+  it("C29 F3.32f the dropped library code is logged once with the layout id", async () => {
+    await spec.assertADroppedLibraryCodeIsLogged(ctx);
   }, 60_000);
 });

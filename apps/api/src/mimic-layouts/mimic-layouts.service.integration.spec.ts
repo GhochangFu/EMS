@@ -1,9 +1,10 @@
 import { randomUUID } from "node:crypto";
 
-import { BadRequestException, ConflictException, ForbiddenException, NotFoundException } from "@nestjs/common";
+import { BadRequestException, ConflictException, ForbiddenException, Logger, NotFoundException } from "@nestjs/common";
 import type pg from "pg";
-import { expect } from "vitest";
+import { expect, vi } from "vitest";
 
+import { mimicLayoutDtoSchema, mimicLayoutsListResponseSchema } from "@bms/shared";
 import type { JwtPayload, MimicLayoutDto } from "@bms/shared";
 
 import { MIMIC_LAYOUT_IN_USE_MESSAGE, MIMIC_LAYOUT_STALE_MESSAGE } from "./mimic-layouts.schema";
@@ -14,7 +15,8 @@ import type { MimicLayoutsService } from "./mimic-layouts.service";
 /**
  * `F3.32c` U2 — what `MimicLayoutsService` does against a real database and
  * real row security (plan U2, C1–C11; C12–C17 from U7; C18–C23 from `F3.32e` U2,
- * the chosen symbol libraries). Assertions live here;
+ * the chosen symbol libraries; C24–C29 from `F3.32f` slice 1, the retired symbol and library
+ * exemptions and the read guard on a stored library code). Assertions live here;
  * `mimic-layouts.service.integration.test.ts` is the Vitest entry point
  * (ADR 0014) and owns the pools, the fixtures and the cleanup.
  *
@@ -511,7 +513,8 @@ export async function assertReplaceChoosingAnInactiveLibraryIs400(ctx: Ctx): Pro
 /**
  * C23 — a unit symbol no `bms.mimic_symbols` row holds is a 400 `"Unknown mimic symbol"` that
  * does not echo the key, and writes nothing. The Zod enum refuses such a key first, so only a
- * cast body reaches the foreign key `mimic_layout_nodes_symbol_fkey`.
+ * cast body reaches the service; since `F3.32f` its `assertSymbolsLive` refuses it before any
+ * write, and the foreign key `mimic_layout_nodes_symbol_fkey` stays behind it as the backstop.
  */
 export async function assertAnUnknownSymbolIs400WithoutTheKey(ctx: Ctx): Promise<void> {
   const base = layoutBody(ctx.eskomOrgId, ctx.slug("c23"));
@@ -525,4 +528,222 @@ export async function assertAnUnknownSymbolIs400WithoutTheKey(ctx: Ctx): Promise
   expect((err as Error).message).toBe("Unknown mimic symbol");
   expect(JSON.stringify((err as BadRequestException).getResponse())).not.toContain("no-such-icon");
   await noLayoutWithSlug(ctx, base.slug);
+}
+
+// `F3.32f` slice 1 — a retired symbol, a retired library, and an unknown stored library code
+// (ADR 0086 decisions 5 and 10). Every `active` flip runs on `ownerPool` and is restored in
+// `finally`; another suite shares the database, so each window is short.
+
+const retire = async (ctx: Ctx, key: string): Promise<void> => {
+  await ctx.ownerPool.query(`UPDATE bms.mimic_symbols SET active = false WHERE key = $1`, [key]);
+};
+
+const reinstate = async (ctx: Ctx, key: string): Promise<void> => {
+  await ctx.ownerPool.query(`UPDATE bms.mimic_symbols SET active = true WHERE key = $1`, [key]);
+};
+
+/** The fixture body with `core` + `tabler` chosen, and the outlet drawn as `tabler:bolt` when `bolt`. */
+const tablerBody = (organizationId: string, slug: string, bolt = true): CreateMimicLayoutBody => {
+  const body = layoutBody(organizationId, slug);
+  return {
+    ...body,
+    symbolLibraries: ["core", "tabler"],
+    nodes: bolt
+      ? body.nodes.map((n) => (n.key === "outlet" ? { ...n, symbol: "tabler:bolt" as const } : n))
+      : body.nodes,
+  };
+};
+
+/** The body with a second unit drawn as `tabler:bolt`. */
+const withSecondBolt = (body: PutMimicLayoutBody): PutMimicLayoutBody => ({
+  ...body,
+  nodes: [
+    ...body.nodes,
+    { key: "bolt2", kind: "unit", symbol: "tabler:bolt", label: "Bolt 2", x: 80, y: 10, w: 10, h: 10, z: 1 },
+  ],
+});
+
+/** A committed layout drawing `tabler:bolt`, created while the symbol is active. */
+const createBoltLayout = async (ctx: Ctx, suffix: string): Promise<[MimicLayoutDto, CreateMimicLayoutBody]> => {
+  const body = tablerBody(ctx.eskomOrgId, ctx.slug(suffix));
+  const dto = await ctx.service.create(ctx.globalAdmin, body);
+  ctx.track(dto.id);
+  return [dto, body];
+};
+
+/**
+ * C24 — a create drawing a retired symbol is a 400 `"Unknown mimic symbol"` that does not echo
+ * the key, and writes nothing. The foreign key admits a retired row, so only the service refuses.
+ */
+export async function assertCreateWithARetiredSymbolIs400(ctx: Ctx): Promise<void> {
+  const body = tablerBody(ctx.eskomOrgId, ctx.slug("c24"));
+  try {
+    await retire(ctx, "tabler:bolt");
+    const err = await rejection(ctx.service.create(ctx.globalAdmin, body));
+    expect(err).toBeInstanceOf(BadRequestException);
+    expect((err as Error).message).toBe("Unknown mimic symbol");
+    expect(JSON.stringify((err as BadRequestException).getResponse())).not.toContain("tabler:bolt");
+  } finally {
+    await reinstate(ctx, "tabler:bolt");
+  }
+  await noLayoutWithSlug(ctx, body.slug);
+}
+
+/** C25 — a PUT of the unchanged body saves after a symbol the layout stores is retired. */
+export async function assertReplaceKeepingAStoredRetiredSymbolSaves(ctx: Ctx): Promise<void> {
+  const [dto, body] = await createBoltLayout(ctx, "c25");
+  try {
+    await retire(ctx, "tabler:bolt");
+    const saved = await ctx.service.replace(ctx.globalAdmin, dto.id, putBody(body, 1));
+    expect(saved.version).toBe(2);
+  } finally {
+    await reinstate(ctx, "tabler:bolt");
+  }
+}
+
+/** C25b — a PUT adding a second unit with a retired symbol the layout already stores saves. */
+export async function assertReplaceAddingAStoredRetiredSymbolAgainSaves(ctx: Ctx): Promise<void> {
+  const [dto, body] = await createBoltLayout(ctx, "c25b1");
+  try {
+    await retire(ctx, "tabler:bolt");
+    const saved = await ctx.service.replace(ctx.globalAdmin, dto.id, withSecondBolt(putBody(body, 1)));
+    expect(saved.version).toBe(2);
+    expect(saved.nodes.filter((n) => n.symbol === "tabler:bolt")).toHaveLength(2);
+  } finally {
+    await reinstate(ctx, "tabler:bolt");
+  }
+}
+
+/** C25b — a PUT adding a retired symbol to a layout that never stored it is a 400, and changes nothing. */
+export async function assertReplaceAddingARetiredSymbolIs400(ctx: Ctx): Promise<void> {
+  const body = tablerBody(ctx.eskomOrgId, ctx.slug("c25b2"), false);
+  const dto = await ctx.service.create(ctx.globalAdmin, body);
+  ctx.track(dto.id);
+  try {
+    await retire(ctx, "tabler:bolt");
+    const err = await rejection(ctx.service.replace(ctx.globalAdmin, dto.id, withSecondBolt(putBody(body, 1))));
+    expect(err).toBeInstanceOf(BadRequestException);
+    expect((err as Error).message).toBe("Unknown mimic symbol");
+  } finally {
+    await reinstate(ctx, "tabler:bolt");
+  }
+  expect((await ctx.service.get(ctx.globalAdmin, dto.id)).version).toBe(1);
+}
+
+/** C26 — a read of a layout whose stored symbol is retired still carries it: the canvas draws it. */
+export async function assertAReadCarriesAStoredRetiredSymbol(ctx: Ctx): Promise<void> {
+  const [dto] = await createBoltLayout(ctx, "c26");
+  try {
+    await retire(ctx, "tabler:bolt");
+    const read = await ctx.service.get(ctx.globalAdmin, dto.id);
+    expect(read.nodes.find((n) => n.key === "outlet")?.symbol).toBe("tabler:bolt");
+  } finally {
+    await reinstate(ctx, "tabler:bolt");
+  }
+}
+
+/**
+ * C27 — a PUT of the unchanged body saves after a library the layout stores is retired (C22b,
+ * a PUT adding a retired library, stays the negative control).
+ */
+export async function assertReplaceKeepingAStoredRetiredLibrarySaves(ctx: Ctx): Promise<void> {
+  const body: CreateMimicLayoutBody = {
+    ...layoutBody(ctx.eskomOrgId, ctx.slug("c27")),
+    symbolLibraries: ["core", "lucide"],
+  };
+  const dto = await ctx.service.create(ctx.globalAdmin, body);
+  ctx.track(dto.id);
+  try {
+    await ctx.ownerPool.query(`UPDATE bms.mimic_symbol_libraries SET active = false WHERE code = 'lucide'`);
+    const saved = await ctx.service.replace(ctx.globalAdmin, dto.id, putBody(body, 1));
+    expect(saved.version).toBe(2);
+    expect(saved.symbolLibraries).toEqual(["core", "lucide"]);
+  } finally {
+    await ctx.ownerPool.query(`UPDATE bms.mimic_symbol_libraries SET active = true WHERE code = 'lucide'`);
+  }
+}
+
+/**
+ * C27b — a PUT adding a new unit drawn from a library the layout stores but that is now retired
+ * is a 400 and changes nothing. Retiring a library flips only its row, so every symbol in it stays
+ * active; the stored-library exemption must not carry a symbol the layout does not yet draw.
+ */
+export async function assertReplaceAddingAUnitFromAStoredRetiredLibraryIs400(ctx: Ctx): Promise<void> {
+  const body: CreateMimicLayoutBody = {
+    ...layoutBody(ctx.eskomOrgId, ctx.slug("c27b")),
+    symbolLibraries: ["core", "lucide"],
+  };
+  const dto = await ctx.service.create(ctx.globalAdmin, body);
+  ctx.track(dto.id);
+  const put = putBody(body, 1);
+  const withLucide: PutMimicLayoutBody = {
+    ...put,
+    nodes: [
+      ...put.nodes,
+      { key: "fan", kind: "unit", symbol: "lucide:activity", label: "Fan", x: 80, y: 10, w: 10, h: 10, z: 1 },
+    ],
+  };
+  try {
+    await ctx.ownerPool.query(`UPDATE bms.mimic_symbol_libraries SET active = false WHERE code = 'lucide'`);
+    const err = await rejection(ctx.service.replace(ctx.globalAdmin, dto.id, withLucide));
+    expect(err).toBeInstanceOf(BadRequestException);
+    expect((err as Error).message).toBe("Unknown mimic symbol");
+    expect(JSON.stringify((err as BadRequestException).getResponse())).not.toContain("lucide:activity");
+  } finally {
+    await ctx.ownerPool.query(`UPDATE bms.mimic_symbol_libraries SET active = true WHERE code = 'lucide'`);
+  }
+  expect((await ctx.service.get(ctx.globalAdmin, dto.id)).version).toBe(1);
+  // The positive control: with the library live again, the same body saves.
+  const saved = await ctx.service.replace(ctx.globalAdmin, dto.id, withLucide);
+  expect(saved.nodes.find((n) => n.key === "fan")?.symbol).toBe("lucide:activity");
+}
+
+/** A committed layout whose stored `symbol_libraries` is planted as `{core,bogus}`. */
+const plantBogusLibrary = async (ctx: Ctx, suffix: string): Promise<MimicLayoutDto> => {
+  const dto = await create(ctx, suffix);
+  await ctx.ownerPool.query(`UPDATE bms.mimic_layouts SET symbol_libraries = '{core,bogus}' WHERE id = $1`, [dto.id]);
+  return dto;
+};
+
+const restoreCore = async (ctx: Ctx, id: string): Promise<void> => {
+  await ctx.ownerPool.query(`UPDATE bms.mimic_layouts SET symbol_libraries = '{core}' WHERE id = $1`, [id]);
+};
+
+/** C28 — the list drops a stored library code the contract cannot carry, and still parses. */
+export async function assertTheListDropsAnUnknownStoredLibrary(ctx: Ctx): Promise<void> {
+  const dto = await plantBogusLibrary(ctx, "c28");
+  try {
+    const list = await ctx.service.list(ctx.globalAdmin);
+    expect(list.items.find((i) => i.id === dto.id)?.symbolLibraries).toEqual(["core"]);
+    expect(mimicLayoutsListResponseSchema.safeParse(list).success).toBe(true);
+  } finally {
+    await restoreCore(ctx, dto.id);
+  }
+}
+
+/** C29 — a read drops the unknown stored code and parses. */
+export async function assertAReadDropsAnUnknownStoredLibrary(ctx: Ctx): Promise<void> {
+  const dto = await plantBogusLibrary(ctx, "c29");
+  try {
+    const read = await ctx.service.get(ctx.globalAdmin, dto.id);
+    expect(read.symbolLibraries).toEqual(["core"]);
+    expect(mimicLayoutDtoSchema.safeParse(read).success).toBe(true);
+  } finally {
+    await restoreCore(ctx, dto.id);
+  }
+}
+
+/** C29 — the read that drops a code logs one warning naming the layout and the code. */
+export async function assertADroppedLibraryCodeIsLogged(ctx: Ctx): Promise<void> {
+  const dto = await plantBogusLibrary(ctx, "c29w");
+  const warn = vi.spyOn(Logger.prototype, "warn").mockImplementation(() => undefined);
+  try {
+    await ctx.service.get(ctx.globalAdmin, dto.id);
+    const mine = warn.mock.calls.filter(([message]) => String(message).includes(dto.id));
+    expect(mine).toHaveLength(1);
+    expect(String(mine[0]?.[0])).toContain("bogus");
+  } finally {
+    warn.mockRestore();
+    await restoreCore(ctx, dto.id);
+  }
 }

@@ -90,6 +90,10 @@ function LibraryNotice({ library }: { library: MimicSymbolLibrary }) {
   return (
     <div className="space-y-1 text-[10px] text-ink-muted">
       <p>{`${library.label} — ${library.licence}`}</p>
+      {/* A plain anchor in a new tab: the editor holds unsaved state, and the palette renders outside a Router. */}
+      <a href="/attributions" target="_blank" rel="noopener noreferrer" className="underline">
+        Attributions
+      </a>
       {library.code !== "core" ? (
         <details data-testid="mimic-palette-licence">
           <summary className="cursor-pointer">Licence notice</summary>
