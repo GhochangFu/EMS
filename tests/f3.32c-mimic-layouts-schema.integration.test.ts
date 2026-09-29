@@ -43,7 +43,7 @@ const ROLE = "pump";
 
 const CONSTRAINTS = [
   "mimic_layout_nodes_kind_check",
-  "mimic_layout_nodes_symbol_check",
+  "mimic_layout_nodes_symbol_fkey",
   "mimic_layout_nodes_tone_check",
   "mimic_layout_nodes_kind_fields_check",
   "mimic_layout_nodes_box_check",
@@ -268,10 +268,20 @@ describe.skipIf(!has)("F3.32c — bms.mimic_layouts, _nodes, _pipes against a li
     });
   });
 
-  it("I5 refuses an unknown symbol, naming _symbol_check", async () => {
+  // Since 0090 (F3.32e, ADR 0084 decision 3) the symbol is a foreign key to bms.mimic_symbols,
+  // not a CHECK: an unknown symbol is a 23503 naming _symbol_fkey.
+  it("I5 refuses an unknown symbol, naming _symbol_fkey", async () => {
     await inTx(async (run) => {
       const layout = await newLayout(run, orgA, "i5");
-      await refuses(run, INSERT_NODE, nodeParams(orgA, layout, "u", { symbol: "reactor" }), "mimic_layout_nodes_symbol_check");
+      await refuses(run, INSERT_NODE, nodeParams(orgA, layout, "u", { symbol: "reactor" }), "mimic_layout_nodes_symbol_fkey");
+    });
+  });
+
+  it("I5b refuses an unknown symbol with 23503, a foreign-key violation", async () => {
+    await inTx(async (run) => {
+      const layout = await newLayout(run, orgA, "i5b");
+      const { code, message } = await probe(run, INSERT_NODE, nodeParams(orgA, layout, "u", { symbol: "reactor" }));
+      expect(code, message).toBe("23503");
     });
   });
 
