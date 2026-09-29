@@ -631,6 +631,13 @@
       "when": 1790672932525,
       "tag": "0090_mimic_symbol_libraries",
       "breakpoints": true
+    },
+    {
+      "idx": 91,
+      "version": "7",
+      "when": 1790704939002,
+      "tag": "0091_mimic_lucide_licence",
+      "breakpoints": true
     }
   ]
 }

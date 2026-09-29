@@ -191,7 +191,8 @@ const LIBRARIES = [
     label: "Lucide",
     source: "lucide-static",
     pinned: "1.48.0",
-    licenceName: "ISC",
+    // Migration 0090 carries the earlier label "ISC"; 0091 corrects it (F3.32f / ADR 0086 decision 10).
+    licenceName: "ISC and MIT",
     attributionUrl: "https://lucide.dev",
     style: "stroke",
     load: lucideSource,

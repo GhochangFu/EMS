@@ -33,6 +33,7 @@ export function registryIsTheFourLibrariesWithTheirStyles(): void {
   const styles = MIMIC_SYMBOL_LIBRARIES.map((l) => l.style);
   assert(JSON.stringify(styles) === JSON.stringify(["stroke", "stroke", "stroke", "fill"]), `styles: ${JSON.stringify(styles)}`);
   assert(mimicSymbolLibrary("mdi").licence === "Apache 2.0", "mdi licence");
+  assert(mimicSymbolLibrary("lucide").licence === "ISC and MIT", "lucide licence");
 }
 
 /** No library label names the product (ADR 0084 decision 4 as amended, ADR 0083). */

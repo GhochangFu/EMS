@@ -9,6 +9,8 @@ const repoRoot = fileURLToPath(new URL("..", import.meta.url));
 const read = (rel: string): string => readFileSync(join(repoRoot, rel), "utf8");
 
 const MIGRATION_REL = "packages/db/drizzle/0090_mimic_symbol_libraries.sql";
+/** F3.32f / ADR 0086 decision 10: 0090 is frozen, so 0091 corrects the Lucide licence label. */
+const MIGRATION_0091_REL = "packages/db/drizzle/0091_mimic_lucide_licence.sql";
 const JOURNAL_REL = "packages/db/drizzle/meta/_journal.json";
 const CONTRACT_REL = "packages/shared/src/contracts/mimic-layouts.ts";
 const SHARED_REGISTRY_REL = "packages/shared/src/mimic-symbol-libraries/index.ts";
@@ -111,6 +113,29 @@ const libraryRows = (sql: string): LibraryRow[] => {
   });
 };
 
+/** The `UPDATE bms.mimic_symbol_libraries SET licence = '<x>' WHERE code = '<code>';` lines of a
+ * later migration. Fails closed: it throws when it parses none, and when a code is not a 0090
+ * library row, so an overlay that matches nothing cannot pass as "no change". */
+const licenceUpdates = (sql: string): Array<{ code: string; licence: string }> => {
+  const known = new Set(libraryRows(migration()).map((r) => r.code));
+  const updates = [
+    ...sql.matchAll(/^\s*UPDATE bms\.mimic_symbol_libraries SET licence = '([^']*)' WHERE code = '([^']*)';\s*$/gm),
+  ].map((m) => ({ code: m[2] as string, licence: m[1] as string }));
+  if (updates.length === 0) throw new Error("0091: no licence UPDATE parsed");
+  for (const u of updates) {
+    if (!known.has(u.code)) throw new Error(`0091: '${u.code}' is not a 0090 library row`);
+  }
+  return updates;
+};
+
+/** 0090's library rows with 0091's licence UPDATEs applied — what a migrated database holds. */
+const effectiveLibraryRows = (): LibraryRow[] => {
+  const updates = licenceUpdates(sqlOnly(read(MIGRATION_0091_REL)));
+  return libraryRows(migration()).map((row) =>
+    updates.reduce<LibraryRow>((r, u) => (u.code === r.code ? { ...r, licence: u.licence } : r), row),
+  );
+};
+
 /** A shared module's `<PREFIX>_SYMBOL_KEYS = [` block, one key per line; fails closed. */
 const sharedKeys = (source: string, prefix: string): string[] => {
   const block = sliceBetween(source, `export const ${prefix}_SYMBOL_KEYS = [`, "] as const;", `${prefix} keys`);
@@ -200,6 +225,9 @@ const setDiff = (a: readonly string[], b: readonly string[]): string[] => {
  * `F3.32e` — the static half of migration `0090` (ADR 0084 decisions 1–4 and 8, plan D5, U1),
  * and the three-way gate between its rows, the shared generated modules and the web generated
  * modules. The live half is `tests/f3.32e-mimic-symbol-libraries.integration.test.ts`.
+ * It reads 0090 and 0091: 0090 is frozen, so the registry claim compares 0090's library rows
+ * with 0091's licence UPDATEs applied (F3.32f / ADR 0086 decision 10); 0091 itself is gated by
+ * `tests/f3.32f-carried-fixes.test.ts`.
  * Assertions inline, no `.spec` sibling (§4.6).
  */
 describe("F3.32e — migration 0090: the symbol libraries", () => {
@@ -386,7 +414,7 @@ describe("F3.32e — migration 0090: the symbol libraries", () => {
       expect(libraryRows(migration()).map((r) => r.code)).toEqual(codes);
     });
 
-    it("the library rows equal the shared MIMIC_SYMBOL_LIBRARIES registry", () => {
+    it("the library rows, with 0091's licence UPDATEs applied, equal the shared MIMIC_SYMBOL_LIBRARIES registry", () => {
       const source = read(SHARED_REGISTRY_REL);
       const block = sliceBetween(source, "export const MIMIC_SYMBOL_LIBRARIES", "\n];", "registry");
       const registry = [
@@ -404,7 +432,7 @@ describe("F3.32e — migration 0090: the symbol libraries", () => {
         sortOrder: Number(m[8]),
       }));
       expect(registry).toHaveLength(4);
-      expect(libraryRows(migration())).toEqual(registry);
+      expect(effectiveLibraryRows()).toEqual(registry);
     });
 
     it("parses every mimic_symbols row: 29 core plus the three curated counts", () => {

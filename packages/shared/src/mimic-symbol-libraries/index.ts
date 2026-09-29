@@ -57,7 +57,7 @@ export const MIMIC_SYMBOL_LIBRARIES: readonly MimicSymbolLibrary[] = [
     label: "Lucide",
     source: "lucide-static",
     version: "1.48.0",
-    licence: "ISC",
+    licence: "ISC and MIT",
     attributionUrl: "https://lucide.dev",
     style: "stroke",
     sortOrder: 30,
