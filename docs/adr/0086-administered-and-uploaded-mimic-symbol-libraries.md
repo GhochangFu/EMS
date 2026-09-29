@@ -69,7 +69,15 @@ that we read, and not safe for a file that a user uploads.
    cannot collide with a global key: a global library code matches
    `^[a-z][a-z0-9]*$` (`0090`). The same string goes on the wire in a node's
    `symbol` and in `symbolLibraries` (`org.plant`), so the web and the
-   contract keep one field.
+   contract keep one field. **The contract widens** (amends ADR 0084
+   decision 7): a node's `symbol` accepts a static key or a key that matches
+   `^org\.[a-z][a-z0-9]*:[a-z0-9][a-z0-9-]*$`; `symbolLibraries` accepts a
+   static code or `org.<code>`; `libraryOfSymbol` resolves both. Whether an
+   `org.` key exists in the caller's organization is the service's check, then
+   the composite foreign key's (decision 3). CHECKs hold the organization
+   library `code` to `^[a-z][a-z0-9]*$` with at most 27 characters, so
+   `org.<code>` fits `varchar(32)`, and the whole symbol key to 64
+   characters.
 3. **A unit references exactly one symbol table.** `mimic_layout_nodes` gains
    `org_symbol_key varchar(64)`, with a composite foreign key
    `(organization_id, org_symbol_key)` to
@@ -113,6 +121,9 @@ that we read, and not safe for a file that a user uploads.
      `transform` is pushed down, decision 9). `title`, `desc` and `metadata` are dropped. Any other element
      (`script`, `style`, `use`, `image`, `foreignObject`, `a`, `text`, a
      gradient, a filter) refuses the file with a 400 that names the element.
+     Editor metadata is dropped, not refused: `sodipodi:*` and `inkscape:*`
+     elements and attributes, an empty `defs`, and `metadata`. A `style`
+     element or a `script` still refuses the file.
      Kept attributes are the geometry list of decision 5 only; every other
      attribute is dropped, so no event handler, `style`, `href`, `class` or
      colour survives. A numeric attribute must be a number; `d` and `points`
@@ -123,14 +134,28 @@ that we read, and not safe for a file that a user uploads.
      records the upload with the file's SHA-256.
    - **How it draws:** through the same `createElement` path as the vendored
      glyphs (never `innerHTML`, never an SVG string), in the library's style
-     with the role's colour class (ADR 0078). "Themeable only when
+     with the role's colour class (ADR 0078).
+   - **The stored shapes are checked again on the way out.** A row can reach
+     the table by a path other than this upload (a `bms_fleet` write, a later
+     migration). So the response contract (ADR 0030, Zod) limits `tag` to the
+     seven shape elements, attribute keys to the geometry list plus
+     `transform`, and each value to its grammar; the renderer copies only the
+     allowlisted keys into props and never spreads a stored object. "Themeable only when
      stroke-only" becomes: no uploaded colour is kept, so every uploaded symbol
      takes the role's colour.
 7. **The library API.** A new `mimic-symbol-libraries` module:
-   - `GET /api/v1/mimic-symbol-libraries` — the global libraries with this
-     organization's switch, and this organization's libraries with their
-     symbols (shapes included). The editor and the renderer read organization
-     symbols from here; the global symbols stay in the static bundle.
+   - `GET /api/v1/mimic-symbol-libraries` — for authors: the global
+     libraries with this organization's switch and the keys of inactive
+     global symbols (the bundle does not know them), and this organization's
+     libraries with their symbols (shapes included). The editor reads
+     organization symbols from here; the global symbols stay in the static
+     bundle.
+   - **A layout read embeds the organization symbols it uses.** The layout
+     `GET` (and so every dashboard mimic widget, which operators see) returns
+     `orgSymbols`: the key, label, style, `view_box` and shapes of each `org.`
+     symbol in the layout. A viewer needs no library endpoint, and a
+     published dashboard never draws the fallback glyph for an uploaded
+     symbol.
    - `POST`, `PATCH` for organization libraries (label, licence, attribution,
      active); `PATCH /:id/symbols/:symbolId` (label, group, active);
      `PUT /settings/:libraryCode` for the switch.
@@ -161,7 +186,9 @@ that we read, and not safe for a file that a user uploads.
    - **`wmpid` — Wikimedia Commons P&ID symbols**, the public-domain and CC0
      files of `Category:P&ID symbols` (about 424 of 483; the 58 CC BY-SA files
      and the GPL file are excluded — share-alike cannot go into a closed
-     bundle). About 150 curated. Commons has no release, so the curation list
+     bundle). The library holds the curated PD and CC0 files that pass the
+     converter; the PR states the count (Commons answered HTTP 429 during the
+     research, so only a few files were sampled). Commons has no release, so the curation list
      pins each file by its `sha1` and `timestamp`, and the generator refuses a
      file whose bytes differ. Each file's author and licence template are
      recorded and shown, although public domain asks for no attribution. A
