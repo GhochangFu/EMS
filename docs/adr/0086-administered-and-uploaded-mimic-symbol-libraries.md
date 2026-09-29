@@ -2,17 +2,28 @@
 
 ## Status
 
-Proposed — drafted on 2026-09-29, before any implementation code.
+Accepted — drafted on 2026-09-29, before any implementation code. The owner
+approved this written record on 2026-09-29, and ruled draw.io in at the
+v29.3.2 pin (decision 9).
 
-The owner ruled on 2026-09-29: "Do the full row", to be built in one day. The
-release condition of `F3.32c`–`F3.32g` applies: **if this work is not merged by
-the end of 2026-09-30, the whole branch is held and the release ships `F3.32g`
-as it is.**
+The owner ruled on 2026-09-29: "Do the full row", to be built in one day. **The
+release rule is per slice.** The row is built as three pull requests, each
+merged on its own when it is green and verified:
+
+1. the carried review fixes and the attributions page (decisions 5, 8, 10);
+2. the QElectroTech, Commons and draw.io libraries (decision 9);
+3. the organization libraries, the switch and SVG upload (decisions 1–4, 6, 7).
+
+Each slice has its own migration: `0091` (slice 1), `0092` (slice 2), `0093` (slice 3). They merge in that order; if a slice is held, the next merged slice takes its number.
+
+**A slice that is not merged by the end of 2026-09-30 is held**, and the v1
+release ships without it; the slices merged before the cutoff ship.
 
 Builds on [ADR 0084](./0084-mimic-symbol-libraries.md) and delivers its
 decision 10. Amends ADR 0084 decisions 3 (the foreign key is no longer the only
 symbol reference), 5 (path data can also be stored data, for an uploaded
-symbol) and 8 (a layout can choose an organization library). Promotes nothing
+symbol; `transform` joins the attribute list), 7 (the contract accepts
+organization keys) and 8 (a layout can choose an organization library). Promotes nothing
 out of `AGENTS.md` §6.
 
 ## Context
@@ -48,7 +59,7 @@ that we read, and not safe for a file that a user uploads.
 
 ## Decision
 
-1. **Two organization tables, beside the global ones.** Migration `0091`
+1. **Two organization tables, beside the global ones.** Migration `0093`
    creates, in the `bms.mimic_layouts` shape (`organization_id NOT NULL`,
    `ENABLE` and `FORCE ROW LEVEL SECURITY`, the strict `tenant_isolation`
    policy of `0088` in `USING` and `WITH CHECK`, no `NULL` disjunct, privileges
@@ -83,11 +94,11 @@ that we read, and not safe for a file that a user uploads.
    `(organization_id, org_symbol_key)` to
    `bms.mimic_org_symbols (organization_id, key)`, no `ON DELETE`. A unit has
    either `symbol` (the `0090` foreign key to the global table) or
-   `org_symbol_key`, never both and never neither; `0091` replaces
+   `org_symbol_key`, never both and never neither; `0093` replaces
    `mimic_layout_nodes_kind_fields_check` to say so. The service maps an
    `org.` key on the wire to `org_symbol_key` and back. The composite key is
    what stops a cross-organization reference — not the policy.
-4. **The administrator switch.** Migration `0091` creates
+4. **The administrator switch.** Migration `0093` creates
    `bms.mimic_library_settings` — `organization_id`, `library_code`
    (a foreign key to the global `bms.mimic_symbol_libraries`), `enabled`,
    `updated_by`, `updated_at`; primary key `(organization_id, library_code)`;
@@ -168,7 +179,7 @@ that we read, and not safe for a file that a user uploads.
    for a source with per-file credits, each file's author and licence.
 9. **Third-party sources** (licence research of 2026-09-29, primary sources
    quoted in the PR). Each new source is a global library in the `0090`
-   shape: a row in `bms.mimic_symbol_libraries` (migration `0091`), a
+   shape: a row in `bms.mimic_symbol_libraries` (migration `0092`), a
    curation list, and generated modules from `generate.mjs`.
    - **`qet` — QElectroTech elements**, pinned at
      `qelectrotech/qelectrotech-elements@3b12bc579b99932e3fe307ea1e44b8c1c6d1d5c9`
