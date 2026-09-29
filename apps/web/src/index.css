@@ -123,22 +123,22 @@
  * (this comment must not spell either, or the parser counts a second block).
  */
 :root:not([data-surface="flat"]) {
-  --shadow-raised: 6px 6px 14px rgb(var(--ink) / 0.14), -6px -6px 14px rgb(var(--surface) / 0.85);
-  --shadow-raised-sm: 3px 3px 7px rgb(var(--ink) / 0.14), -3px -3px 7px rgb(var(--surface) / 0.85);
-  --shadow-pressed: inset 4px 4px 9px rgb(var(--ink) / 0.14), inset -4px -4px 9px rgb(var(--surface) / 0.85);
+  --shadow-raised: 7px 7px 16px rgb(var(--ink) / 0.16), -7px -7px 16px rgb(var(--surface) / 0.9);
+  --shadow-raised-sm: 4px 4px 8px rgb(var(--ink) / 0.16), -4px -4px 8px rgb(var(--surface) / 0.9);
+  --shadow-pressed: inset 4px 4px 10px rgb(var(--ink) / 0.16), inset -4px -4px 10px rgb(var(--surface) / 0.9);
   --shadow-pressed-sm: inset 2px 2px 5px rgb(var(--ink) / 0.15), inset -2px -2px 5px rgb(var(--surface) / 0.9);
   --shadow-pill: 2px 2px 5px rgb(var(--ink) / 0.15), -2px -2px 5px rgb(var(--surface) / 0.9);
   --shadow-ribbon: 0 4px 9px -2px rgb(var(--ink) / 0.15), inset 0 1px 0 rgb(var(--surface) / 0.9);
 }
 
 :root[data-theme="dark"]:not([data-surface="flat"]) {
-  --shadow-raised: 5px 5px 12px rgb(var(--scrim) / 0.5), -4px -4px 10px rgb(var(--line-strong) / 0.18),
-    inset 1px 1px 0 rgb(var(--line-strong) / 0.35);
-  --shadow-raised-sm: 3px 3px 7px rgb(var(--scrim) / 0.5), -2px -2px 6px rgb(var(--line-strong) / 0.18),
-    inset 1px 1px 0 rgb(var(--line-strong) / 0.35);
-  --shadow-pressed: inset 4px 4px 9px rgb(var(--scrim) / 0.5), inset -3px -3px 8px rgb(var(--line-strong) / 0.18);
-  --shadow-pressed-sm: inset 2px 2px 5px rgb(var(--scrim) / 0.5), inset -2px -2px 4px rgb(var(--line-strong) / 0.18);
-  --shadow-pill: 2px 2px 4px rgb(var(--scrim) / 0.5), -1px -1px 3px rgb(var(--line-strong) / 0.18);
+  --shadow-raised: 7px 7px 15px rgb(var(--scrim) / 0.6), -5px -5px 12px rgb(var(--line-strong) / 0.24),
+    inset 1px 1px 0 rgb(var(--line-strong) / 0.4);
+  --shadow-raised-sm: 4px 4px 8px rgb(var(--scrim) / 0.6), -3px -3px 7px rgb(var(--line-strong) / 0.24),
+    inset 1px 1px 0 rgb(var(--line-strong) / 0.4);
+  --shadow-pressed: inset 4px 4px 10px rgb(var(--scrim) / 0.6), inset -3px -3px 9px rgb(var(--line-strong) / 0.24);
+  --shadow-pressed-sm: inset 2px 2px 5px rgb(var(--scrim) / 0.6), inset -2px -2px 5px rgb(var(--line-strong) / 0.24);
+  --shadow-pill: 2px 2px 5px rgb(var(--scrim) / 0.6), -1px -1px 4px rgb(var(--line-strong) / 0.24);
   --shadow-ribbon: 0 4px 9px -2px rgb(var(--scrim) / 0.55), inset 0 1px 0 rgb(var(--line-strong) / 0.5);
 }
 
