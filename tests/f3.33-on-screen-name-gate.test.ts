@@ -56,8 +56,15 @@ function rel(full: string): string {
   return relative(repoRoot, full).split("\\").join("/");
 }
 
+/** Read once per run: N1, N3, N5 and N8 scan the same files, and a walk per case timed out under load. */
+const sources = new Map<string, string>();
 function read(file: string): string {
-  return readFileSync(join(repoRoot, file), "utf8");
+  let src = sources.get(file);
+  if (src === undefined) {
+    src = readFileSync(join(repoRoot, file), "utf8");
+    sources.set(file, src);
+  }
+  return src;
 }
 
 /** `<!-- -->` blanked for `.html`, then JS comments blanked; newlines kept so lines hold. */
@@ -73,16 +80,21 @@ function nameHits(src: string, file: string, allow: readonly string[] = ALLOWED)
   return [...text.matchAll(OLD_NAME)].map((m) => `${file}:${text.slice(0, m.index).split("\n").length}`);
 }
 
-/** Every web source file the gate scans, repo-relative. */
+let webList: string[] | undefined;
+let apiList: string[] | undefined;
+
+/** Every web source file the gate scans, repo-relative; walked once per run. */
 function webFiles(): string[] {
-  return webColourSourceFiles().map(rel);
+  webList ??= webColourSourceFiles().map(rel);
+  return webList;
 }
 
-/** Every api source file the gate scans, repo-relative. */
+/** Every api source file the gate scans, repo-relative; walked once per run. */
 function apiFiles(): string[] {
-  return walk(join(repoRoot, "apps/api/src"))
+  apiList ??= walk(join(repoRoot, "apps/api/src"))
     .filter((f) => /\.ts$/.test(f) && !/\.(spec|test)\.ts$/.test(f) && !/[\\/]src[\\/]testing[\\/]/.test(f))
     .map(rel);
+  return apiList;
 }
 
 function hitsIn(files: string[], allow: readonly string[] = ALLOWED): string[] {
