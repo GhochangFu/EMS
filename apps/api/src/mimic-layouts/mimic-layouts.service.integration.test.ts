@@ -233,6 +233,10 @@ describe.skipIf(!connectionString)("F3.32c — MimicLayoutsService against a liv
     await spec.assertAnInactiveLibraryIs400(ctx);
   }, 60_000);
 
+  it("C22b F3.32e a PUT choosing an inactive library is a 400 and changes nothing", async () => {
+    await spec.assertReplaceChoosingAnInactiveLibraryIs400(ctx);
+  }, 60_000);
+
   it("C23 F3.32e an unknown symbol is a 400 that does not echo the key", async () => {
     await spec.assertAnUnknownSymbolIs400WithoutTheKey(ctx);
   }, 60_000);

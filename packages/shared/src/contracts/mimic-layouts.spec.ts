@@ -117,6 +117,15 @@ export function mimicSymbolSchemaIsCoreThenEachLibraryInRegistryOrder(): void {
   assert(new Set(expected).size === expected.length, "a symbol key repeats");
 }
 
+/** A refused symbol answers one short message, not the 438-option list (security review L3). */
+export function mimicSymbolRefusalIsShort(): void {
+  const parsed = mimicSymbolSchema.safeParse("nope:x");
+  assert(!parsed.success, "nope:x parsed");
+  const message = parsed.error?.issues[0]?.message ?? "";
+  assert(message === "Unknown mimic symbol", `message: ${message.slice(0, 80)}`);
+  assert(mimicSymbolSchema.safeParse("mdi:heat-pump").success, "a known library key must still parse");
+}
+
 /** A library key names its library and fits `mimic_layout_nodes.symbol`'s varchar(64). */
 export function everyLibraryKeyNamesItsLibraryAndFitsSixtyFour(): void {
   const byLibrary = { tabler: TABLER_SYMBOL_KEYS, lucide: LUCIDE_SYMBOL_KEYS, mdi: MDI_SYMBOL_KEYS };

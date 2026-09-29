@@ -10,6 +10,7 @@ import {
   mimicLayoutDtoRefusesAnUnknownLibraryCode,
   mimicLayoutGeometryParsesAPanelWithANullSymbol,
   mimicPanelTonesAreThree,
+  mimicSymbolRefusalIsShort,
   mimicSymbolSchemaIsCoreThenEachLibraryInRegistryOrder,
   mimicWidgetNodesParsesTheLayoutArm,
   mimicWidgetNodesParsesThePresetArm,
@@ -24,6 +25,10 @@ describe("F3.32c — the mimic layout contracts (ADR 0081)", () => {
 
   it("unions the core symbols, then each library's keys in registry order (F3.32e)", () => {
     mimicSymbolSchemaIsCoreThenEachLibraryInRegistryOrder();
+  });
+
+  it("refuses an unknown symbol with one short message (F3.32e)", () => {
+    mimicSymbolRefusalIsShort();
   });
 
   it("names each library key by its library, within 64 characters (F3.32e)", () => {

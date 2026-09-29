@@ -3,6 +3,7 @@ import { cleanup } from "@testing-library/react";
 import { afterEach, describe, it } from "vitest";
 
 import {
+  anInheritedPropertyNameFallsBackToUnit,
   anUnknownKeyFallsBackToUnitAndDoesNotThrow,
   anUnmappedGlyphClassFallsBackToFillInkMuted,
   childrenDrawInsideTheSvgLast,
@@ -70,6 +71,9 @@ describe("F3.32c U4 — MimicScene, a stored layout", () => {
   });
   it("S13 an unknown key falls back to unit and does not throw", () => {
     anUnknownKeyFallsBackToUnitAndDoesNotThrow();
+  });
+  it("S13b a key naming an inherited property draws the unit fallback", () => {
+    anInheritedPropertyNameFallsBackToUnit();
   });
   it("S14 a stroke library glyph has no fill and no shape colour", () => {
     strokeLibraryGlyphHasNoFillAndNoShapeColour();

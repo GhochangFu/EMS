@@ -6,8 +6,10 @@ import type { TablerSymbolKey } from "@bms/shared";
 
 import type { MimicShape } from "./shapes";
 
-/** The Tabler Icons licence, verbatim from the release; the palette shows it. */
-export const TABLER_LICENCE_NOTICE = `MIT License
+/** A line recording the conversion, then the Tabler Icons licence verbatim from the release; the palette shows it. */
+export const TABLER_LICENCE_NOTICE = `Converted by scripts/mimic-symbols/generate.mjs from the icon files of @tabler/icons 3.48.0 into shape arrays of their geometry; the drawings are otherwise unchanged.
+
+MIT License
 
 Copyright (c) 2020-2026 Paweł Kuna
 

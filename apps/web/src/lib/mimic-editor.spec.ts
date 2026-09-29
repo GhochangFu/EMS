@@ -307,6 +307,37 @@ export function runUpdateLayoutDropsAnUnusedLibrary(): void {
   assert(JSON.stringify(after.layout.symbolLibraries) === '["core"]', "an unused library is dropped");
 }
 
+/**
+ * Two libraries in use, one dropped: refused. Holds `every` in the refusal — with `some`, the
+ * still-used `tabler` would let the used `mdi` go, and the API would refuse the save.
+ */
+export function runUpdateLayoutRefusesDroppingOneOfTwoUsedLibraries(): void {
+  const s = run(
+    initialEditorState(),
+    { type: "update-layout", patch: { symbolLibraries: ["core", "tabler", "mdi"] } },
+    { type: "add-unit", symbol: "tabler:bolt" },
+    { type: "add-unit", symbol: "mdi:heat-pump" },
+  );
+  assert(JSON.stringify(s.layout.symbolLibraries) === '["core","tabler","mdi"]', "precondition: three chosen");
+  assert(s.layout.nodes.some((n) => n.symbol === "tabler:bolt"), "precondition: a unit uses Tabler");
+  assert(s.layout.nodes.some((n) => n.symbol === "mdi:heat-pump"), "precondition: a unit uses MDI");
+  const after = run(s, { type: "update-layout", patch: { symbolLibraries: ["core", "tabler"] } });
+  assert(after === s, "dropping MDI while a unit uses it is refused, although Tabler stays");
+}
+
+/** Three symbols with the same name from three libraries get unique, valid keys. */
+export function runSameNamedSymbolsFromThreeLibrariesGetUniqueKeys(): void {
+  const s = run(
+    initialEditorState(),
+    { type: "update-layout", patch: { symbolLibraries: ["core", "tabler", "mdi"] } },
+    { type: "add-unit", symbol: "filter" },
+    { type: "add-unit", symbol: "tabler:filter" },
+    { type: "add-unit", symbol: "mdi:filter" },
+  );
+  const keys = s.layout.nodes.map((n) => n.key);
+  assert(JSON.stringify(keys) === '["filter_1","filter_2","filter_3"]', `keys: ${JSON.stringify(keys)}`);
+}
+
 export function runUpdateLayoutMayDropCore(): void {
   const s = run(initialEditorState(), { type: "update-layout", patch: { symbolLibraries: ["mdi"] } });
   assert(JSON.stringify(s.layout.symbolLibraries) === '["mdi"]', "core is not mandatory (ruling R3)");

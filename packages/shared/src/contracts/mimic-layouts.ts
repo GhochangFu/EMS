@@ -112,14 +112,13 @@ export type MimicSymbolGroupCode = (typeof MIMIC_SYMBOL_GROUP_CODES)[number];
  * `<library>:<name>`. An unknown key is a 400 here, before it reaches
  * `mimic_layout_nodes_symbol_fkey`. The library keys are generated
  * (`scripts/mimic-symbols/generate.mjs`) and `tests/f3.32e-mimic-symbol-libraries.test.ts` compares
- * them with migration `0090`'s rows.
+ * them with migration `0090`'s rows. The refusal message is short: Zod's default lists every
+ * option, about 7 KB for each refused symbol.
  */
-export const mimicSymbolSchema = z.enum([
-  ...mimicCoreSymbolSchema.options,
-  ...TABLER_SYMBOL_KEYS,
-  ...LUCIDE_SYMBOL_KEYS,
-  ...MDI_SYMBOL_KEYS,
-]);
+export const mimicSymbolSchema = z.enum(
+  [...mimicCoreSymbolSchema.options, ...TABLER_SYMBOL_KEYS, ...LUCIDE_SYMBOL_KEYS, ...MDI_SYMBOL_KEYS],
+  { errorMap: () => ({ message: "Unknown mimic symbol" }) },
+);
 
 /** A panel's tint — a colour role, never a colour value (F3.65 R14/R20). */
 export const mimicPanelToneSchema = z.enum(["info", "neutral", "accent"]);

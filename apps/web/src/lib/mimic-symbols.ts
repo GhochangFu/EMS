@@ -81,7 +81,7 @@ export const MIMIC_SYMBOL_GROUPS: readonly MimicSymbolGroup[] = [
  * label (`mdi:heat-pump` → `Heat pump`, ADR 0084). A key no table knows answers itself.
  */
 export function symbolLabel(symbol: MimicSymbol): string {
-  if (symbol in MIMIC_CORE_SYMBOL_LABELS) return MIMIC_CORE_SYMBOL_LABELS[symbol as MimicCoreSymbol];
+  if (Object.prototype.hasOwnProperty.call(MIMIC_CORE_SYMBOL_LABELS, symbol)) return MIMIC_CORE_SYMBOL_LABELS[symbol as MimicCoreSymbol];
   return symbolLibraryLabel(symbol) ?? symbol;
 }
 

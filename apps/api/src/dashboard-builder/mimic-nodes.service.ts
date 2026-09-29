@@ -35,7 +35,8 @@ interface WidgetRow {
 
 /**
  * Statement (1b)'s row (`F3.32c`): one layout, left-joined to one of its nodes (all node columns
- * `null` for a layout with no node). `kind`, `symbol` and `tone` are closed by the table's CHECKs.
+ * `null` for a layout with no node). `kind` and `tone` are closed by the table's CHECKs, `symbol` by
+ * `mimic_layout_nodes_symbol_fkey` to `bms.mimic_symbols` (migration `0090`).
  */
 interface LayoutNodeRow {
   layout_id: string;

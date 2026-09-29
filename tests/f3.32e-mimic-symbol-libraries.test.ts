@@ -1,3 +1,4 @@
+import { spawnSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -566,5 +567,27 @@ describe("F3.32e — migration 0090: the symbol libraries", () => {
         expect(colourHits(block)).toEqual([]);
       });
     }
+  });
+});
+
+/**
+ * The generator is outside every `tsc` project and nothing imports it, so a syntax error in it
+ * would stay green until the next regeneration (code review M1). `node --check` parses it.
+ * The MDI notice carries the Apache 2.0 text the release names only by URL (security review M1).
+ */
+describe("F3.32e — the generator and the licence notices", () => {
+  it("scripts/mimic-symbols/generate.mjs parses", () => {
+    const result = spawnSync(process.execPath, ["--check", join(repoRoot, "scripts/mimic-symbols/generate.mjs")], {
+      encoding: "utf8",
+    });
+    expect(result.stderr).toBe("");
+    expect(result.status).toBe(0);
+  });
+
+  it("the MDI notice ships the Apache 2.0 licence text and a conversion line", () => {
+    const module = read(`${WEB_DIR}/mdi.generated.ts`);
+    expect(module).toContain("TERMS AND CONDITIONS FOR USE, REPRODUCTION, AND DISTRIBUTION");
+    expect(module).toContain("Pictogrammers Free License");
+    expect(module).toContain("Converted by scripts/mimic-symbols/generate.mjs");
   });
 });

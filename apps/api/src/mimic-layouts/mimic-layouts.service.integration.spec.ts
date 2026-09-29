@@ -467,8 +467,8 @@ export async function assertReplaceDroppingAnUnusedLibrarySaves(ctx: Ctx): Promi
 
 /**
  * C22 — a create choosing a library that is not active is a 400 `"Unknown symbol library"`,
- * and writes nothing. The flag is flipped on the superuser pool (`bms_tenant` may only read the
- * table) and restored in `finally`; another suite shares the database, so the window is short.
+ * and writes nothing. The flag is flipped on `ownerPool` (the `bms_fleet` role, which keeps UPDATE;
+ * `bms_tenant` may only read the table) and restored in `finally`; another suite shares the database, so the window is short.
  */
 export async function assertAnInactiveLibraryIs400(ctx: Ctx): Promise<void> {
   const body: CreateMimicLayoutBody = {
@@ -484,6 +484,28 @@ export async function assertAnInactiveLibraryIs400(ctx: Ctx): Promise<void> {
   } finally {
     await ctx.ownerPool.query(`UPDATE bms.mimic_symbol_libraries SET active = true WHERE code = 'lucide'`);
   }
+}
+
+/**
+ * C22b — a PUT choosing a library that is not active is a 400 `"Unknown symbol library"`, and
+ * the layout keeps its version and its libraries (the `replace` call of `assertLibrariesLive`).
+ */
+export async function assertReplaceChoosingAnInactiveLibraryIs400(ctx: Ctx): Promise<void> {
+  const body = layoutBody(ctx.eskomOrgId, ctx.slug("c22b"));
+  const dto = await ctx.service.create(ctx.globalAdmin, body);
+  ctx.track(dto.id);
+  try {
+    await ctx.ownerPool.query(`UPDATE bms.mimic_symbol_libraries SET active = false WHERE code = 'lucide'`);
+    const err = await rejection(
+      ctx.service.replace(ctx.globalAdmin, dto.id, { ...putBody(body, 1), symbolLibraries: ["core", "lucide"] }),
+    );
+    expect(err).toBeInstanceOf(BadRequestException);
+    expect((err as Error).message).toBe("Unknown symbol library");
+  } finally {
+    await ctx.ownerPool.query(`UPDATE bms.mimic_symbol_libraries SET active = true WHERE code = 'lucide'`);
+  }
+  expect((await ctx.service.get(ctx.globalAdmin, dto.id)).version).toBe(1);
+  expect(await storedLibraries(ctx, dto.id)).toEqual(["core"]);
 }
 
 /**

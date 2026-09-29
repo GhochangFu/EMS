@@ -236,6 +236,21 @@ export function anUnknownKeyFallsBackToUnitAndDoesNotThrow(): void {
   expect(glyph.getAttribute("data-glyph-fallback")).toBe("true");
 }
 
+/**
+ * S13b — a key that names an inherited object property (`constructor`) is not a core symbol: it
+ * draws the marked `unit` fallback, never a function as a child.
+ */
+export function anInheritedPropertyNameFallsBackToUnit(): void {
+  render(
+    <svg>
+      <MimicGlyph kind={"constructor" as MimicGlyphKind} x={0} y={0} size={24} className="stroke-ink" />
+    </svg>,
+  );
+  const glyph = screen.getByTestId("mimic-glyph");
+  expect(glyph.getAttribute("data-glyph-fallback")).toBe("true");
+  expect(glyph.children.length).toBeGreaterThan(0);
+}
+
 /** S14 — a stroke library glyph draws like a core glyph: `fill="none"`, no colour on a shape. */
 export function strokeLibraryGlyphHasNoFillAndNoShapeColour(): void {
   for (const kind of ["tabler:bolt", "lucide:factory"] as const) {

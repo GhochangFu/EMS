@@ -178,6 +178,7 @@ const LIBRARIES = [
     type: "TablerSymbolKey",
     label: "Tabler Icons",
     source: "@tabler/icons",
+    pinned: "3.48.0",
     licenceName: "MIT",
     attributionUrl: "https://tabler.io/icons",
     style: "stroke",
@@ -189,6 +190,7 @@ const LIBRARIES = [
     type: "LucideSymbolKey",
     label: "Lucide",
     source: "lucide-static",
+    pinned: "1.48.0",
     licenceName: "ISC",
     attributionUrl: "https://lucide.dev",
     style: "stroke",
@@ -200,15 +202,23 @@ const LIBRARIES = [
     type: "MdiSymbolKey",
     label: "Material Design Icons",
     source: "@mdi/svg",
+    pinned: "7.4.47",
     licenceName: "Apache 2.0",
+    // Apache 2.0 section 4(a): recipients get a copy of the licence itself. The release's LICENSE
+    // names it by URL only, so the text vendored from apache.org follows it. The release has no
+    // NOTICE file (section 4(d)).
+    extraLicence: "Apache-2.0.txt",
     attributionUrl: "https://pictogrammers.com/library/mdi/",
     style: "fill",
     load: mdiSource,
   },
 ];
 
+const NAME = /^[a-z0-9][a-z0-9-]*$/;
+
 function build(lib, dir) {
   const source = lib.load(dir);
+  if (source.version !== lib.pinned) fail(`${lib.source} is ${source.version}, but ADR 0084 pins ${lib.pinned}`);
   const curation = readJson(join(ROOT, "scripts", "mimic-symbols", "curation", `${lib.code}.json`));
   const entries = [];
   const seen = new Set();
@@ -217,6 +227,8 @@ function build(lib, dir) {
   for (const [group, names] of Object.entries(curation)) {
     if (!GROUPS.includes(group)) fail(`${lib.code} curation has unknown group ${group}`);
     for (const name of names) {
+      // Checked before the name reaches a file path or a generated string literal.
+      if (typeof name !== "string" || !NAME.test(name)) fail(`${lib.code} curation name ${JSON.stringify(name)} is not a-z, 0-9 and -`);
       const key = `${lib.code}:${name}`;
       if (key.length > MAX_KEY) fail(`${key} is longer than ${MAX_KEY}`);
       if (seen.has(key)) fail(`${key} is listed twice`);
@@ -231,7 +243,14 @@ function build(lib, dir) {
       entries.push({ key, label, group, shapes });
     }
   }
-  return { ...lib, version: source.version, licence: source.licence, entries };
+  // Apache 2.0 section 4(b) asks for a notice on a changed file; the same line serves all three.
+  const changed =
+    `Converted by scripts/mimic-symbols/generate.mjs from the icon files of ${lib.source} ${source.version} ` +
+    "into shape arrays of their geometry; the drawings are otherwise unchanged.";
+  const extra = lib.extraLicence
+    ? "\n\n" + readFileSync(join(ROOT, "scripts", "mimic-symbols", "licences", lib.extraLicence), "utf8").trim()
+    : "";
+  return { ...lib, version: source.version, licence: `${changed}\n\n${source.licence.trim()}${extra}`, entries };
 }
 
 const HEADER = (lib) =>
@@ -283,7 +302,7 @@ function webModule(lib) {
     "",
     'import type { MimicShape } from "./shapes";',
     "",
-    `/** The ${lib.label} licence, verbatim from the release; the palette shows it. */`,
+    `/** A line recording the conversion, then the ${lib.label} licence verbatim from the release${lib.extraLicence ? " and the full licence text it names" : ""}; the palette shows it. */`,
     `export const ${lib.constant}_LICENCE_NOTICE = ${templateLiteral(lib.licence.trim())};`,
     "",
     `/** Each ${lib.label} key's shape elements, geometry attributes only (ADR 0084 decision 5). */`,

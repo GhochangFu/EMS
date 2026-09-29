@@ -267,7 +267,7 @@ type MimicGlyphProps = {
 export function MimicGlyph({ kind, x, y, size, className, level = null }: MimicGlyphProps) {
   const transform = `translate(${x} ${y}) scale(${size / 24})`;
 
-  if (kind in PATHS) {
+  if (Object.prototype.hasOwnProperty.call(PATHS, kind)) {
     return (
       <g
         data-testid="mimic-glyph"

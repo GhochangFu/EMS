@@ -6,8 +6,10 @@ import type { LucideSymbolKey } from "@bms/shared";
 
 import type { MimicShape } from "./shapes";
 
-/** The Lucide licence, verbatim from the release; the palette shows it. */
-export const LUCIDE_LICENCE_NOTICE = `ISC License
+/** A line recording the conversion, then the Lucide licence verbatim from the release; the palette shows it. */
+export const LUCIDE_LICENCE_NOTICE = `Converted by scripts/mimic-symbols/generate.mjs from the icon files of lucide-static 1.48.0 into shape arrays of their geometry; the drawings are otherwise unchanged.
+
+ISC License
 
 Copyright (c) 2026 Lucide Icons and Contributors
 
