@@ -40,7 +40,7 @@ import type { AssetDomainDto, BadgeTone, RuleCategoryDto } from "@bms/shared";
 const TONE_CLASSES: Record<BadgeTone, string> = {
   critical: "border-critical-line bg-critical-wash text-critical-ink",
   warning: "border-warning-line bg-warning-wash text-warning-ink",
-  positive: "border-accent/20 bg-accent/10 text-accent",
+  positive: "border-accent/20 bg-accent/10 text-accent-strong",
   informational: "border-info-line bg-info-wash text-info-ink",
   neutral: "border-line bg-surface text-ink-muted",
 };

@@ -70,7 +70,7 @@ export const PROVENANCE_TITLE: Record<ValueProvenance, string> = {
 export const PROVENANCE_CLASS: Record<ValueProvenance, string> = {
   measured: "",
   derived: "",
-  nameplate: "text-ink-faint",
+  nameplate: "text-ink-muted",
   configuration: "text-info-ink",
   simulated: "text-simulated-ink",
 };

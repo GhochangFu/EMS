@@ -43,12 +43,12 @@ export function AuthCallbackPage() {
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-chrome px-4">
-      <div className="w-full max-w-md rounded-lg border border-on-dark/10 bg-surface p-8 shadow-xl">
+      <div className="w-full max-w-md surface-raised p-8">
         <h1 className="font-condensed text-2xl font-bold text-ink">
           Completing sign in
         </h1>
         {error ? (
-          <p className="mt-4 text-sm text-critical-ink-soft" role="alert">
+          <p className="mt-4 text-sm text-critical-ink" role="alert">
             {error}
           </p>
         ) : (

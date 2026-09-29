@@ -86,10 +86,10 @@ export function LoginPage() {
         </section>
 
         <section className="flex items-center justify-center bg-canvas p-6 text-ink sm:p-8">
-          <div className="w-full max-w-md rounded-2xl border border-line bg-surface p-7 shadow-xl">
+          <div className="w-full max-w-md surface-raised p-7">
             <div className="mb-7 flex items-center justify-between gap-3">
               <div>
-                <div className="font-condensed text-[11px] font-bold uppercase tracking-[0.18em] text-accent">
+                <div className="font-condensed text-[11px] font-bold uppercase tracking-[0.18em] text-accent-strong">
                   Secure access
                 </div>
                 <h2 className="mt-2 font-condensed text-3xl font-bold text-ink">
@@ -123,7 +123,7 @@ export function LoginPage() {
             ) : null}
             <button
               type="button"
-              className="w-full rounded bg-accent py-3 text-sm font-semibold text-on-accent shadow-sm transition hover:bg-accent-strong"
+              className="w-full surface-button-primary bg-accent py-3 text-sm font-semibold text-on-accent transition hover:bg-accent-strong"
               onClick={() => void onOidcLogin()}
             >
               Sign in securely with Keycloak
@@ -143,7 +143,7 @@ export function LoginPage() {
                 name="email"
                 type="email"
                 autoComplete="username"
-                className="mt-1.5 w-full rounded border border-line-strong bg-surface px-3 py-2.5 text-sm outline-none transition ring-focus focus:border-focus focus:ring-1"
+                className="mt-1.5 w-full surface-field px-3 py-2.5 text-sm outline-none transition ring-focus focus:border-focus focus:ring-1"
                 value={email}
                 onChange={(ev) => setEmail(ev.target.value)}
                 required
@@ -161,7 +161,7 @@ export function LoginPage() {
                 name="password"
                 type="password"
                 autoComplete="current-password"
-                className="mt-1.5 w-full rounded border border-line-strong bg-surface px-3 py-2.5 text-sm outline-none transition ring-focus focus:border-focus focus:ring-1"
+                className="mt-1.5 w-full surface-field px-3 py-2.5 text-sm outline-none transition ring-focus focus:border-focus focus:ring-1"
                 value={password}
                 onChange={(ev) => setPassword(ev.target.value)}
                 required
@@ -175,7 +175,7 @@ export function LoginPage() {
                 {["NEXUS Admin", "IBMS Operator", "Energy Manager"].map((role) => (
                   <span
                     key={role}
-                    className="rounded-full border border-line bg-well px-2 py-1 text-center font-semibold text-ink-muted"
+                    className="surface-raised-sm rounded-full px-2 py-1 text-center font-semibold text-ink-muted"
                   >
                     {role}
                   </span>
@@ -191,7 +191,7 @@ export function LoginPage() {
               type="submit"
               disabled={mutation.isPending}
               aria-busy={mutation.isPending}
-              className="w-full rounded bg-accent py-3 text-sm font-semibold text-on-accent shadow-sm transition hover:bg-accent-strong disabled:opacity-60"
+              className="w-full surface-button-primary bg-accent py-3 text-sm font-semibold text-on-accent transition hover:bg-accent-strong disabled:opacity-60"
             >
               {mutation.isPending ? "Signing in..." : "Sign in securely"}
             </button>
