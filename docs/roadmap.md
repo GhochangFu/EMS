@@ -6707,6 +6707,27 @@ the severity vocabulary. The owner reviewed it on the rebuilt stack.
 
 **Cascade:** the unit-level preset stays open under `F3.32`.
 
+### `F3.32c` — the mimic layout builder ✅ 2026-09-29
+
+PR #635, squash `1c118873`; ADR 0081 (#634); plan
+`docs/plans/f3.32c-mimic-layout-builder.md` (Fable), five gate rulings and seven
+plan points.
+
+An organization admin draws a plant on `/admin/mimic-layouts` — symbols, panels,
+labels and pipes, with move, resize, undo and redo — or starts from the Water
+train preset. The layout is stored in three tenant tables (migration `0088`),
+and a dashboard's `mimic` widget can now name a layout instead of the preset.
+Each unit finds its asset by membership role, as the preset does, so one layout
+serves many plants.
+
+Verified: CI green twice (again after `F3.65c` merged), mutations on every
+guard, a scratch cold start, and eight browser checks on the rebuilt stack. Four
+reviews; the High (a reopened layout showed its pre-save drawing) and the other
+findings were fixed in the PR.
+
+**Cascade:** `F3.32` stays open for network mimics, layouts in templates, KPI
+overlays and the unit-level reference preset (ADR 0081 decision 10).
+
 ### `F3.65c` — charts and schematics follow the theme; the switch ✅ 2026-09-29
 
 PR #636, squash `4ca20b09`; ADR 0078 Amendment 3; plan
