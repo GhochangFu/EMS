@@ -11,8 +11,8 @@ describe("mimic editor reducer (F3.32c U6a)", () => {
   const cases = Object.entries(spec).filter(([name]) => name.startsWith("run"));
 
   it("has its claims", () => {
-    if (cases.length < 60) {
-      throw new Error(`expected at least 60 run* claims, found ${cases.length}`);
+    if (cases.length < 98) {
+      throw new Error(`expected at least 98 run* claims, found ${cases.length}`);
     }
   });
 

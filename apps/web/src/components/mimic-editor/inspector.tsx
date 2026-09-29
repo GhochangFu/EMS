@@ -1,16 +1,30 @@
 import { useQuery } from "@tanstack/react-query";
 import { useEffect, useState, type KeyboardEvent } from "react";
 import { mimicPanelToneSchema } from "@bms/shared/contracts";
-import type { MimicPanelTone, MimicSymbol } from "@bms/shared";
+import {
+  MIMIC_SYMBOL_LIBRARIES,
+  libraryOfSymbol,
+  mimicSymbolLibrary,
+  type MimicPanelTone,
+  type MimicSymbol,
+  type MimicSymbolLibraryCode,
+} from "@bms/shared";
 
 import { fetchVocabularies, vocabulariesQueryKey } from "../../api/vocabularies";
-import type { EditorLayout, EditorLayoutPatch, EditorNode, EditorNodePatch } from "../../lib/mimic-editor";
-import { MIMIC_SYMBOL_GROUPS, symbolLabel } from "../../lib/mimic-symbols";
+import {
+  librariesInUse,
+  type EditorLayout,
+  type EditorLayoutPatch,
+  type EditorNode,
+  type EditorNodePatch,
+} from "../../lib/mimic-editor";
+import { librarySymbolGroups, symbolLabel } from "../../lib/mimic-symbols";
 
 /**
  * `F3.32c` U6b (ADR 0081 decision 7), `F3.32d` U3 (ADR 0082 decision 2) — the editor's inspector:
- * the layout's name, slug and canvas size, then the selected node's label, symbol (29 symbols in
- * eight groups, matching the palette) and role (a unit), tone (a panel) and its box in cells.
+ * the layout's name, slug, canvas size and symbol libraries (`F3.32e`, ADR 0084), then the
+ * selected node's label, symbol (the chosen libraries' symbols in their groups, matching the
+ * palette) and role (a unit), tone (a panel) and its box in cells.
  *
  * **Every field commits on blur or Enter, never per keystroke.** A per-keystroke dispatch would
  * push one history entry per character, and a canvas width typed as `1`, `12`, `126` would be
@@ -142,9 +156,10 @@ export function MimicEditorInspector({
             }}
           />
         </div>
+        <LibraryBoxes layout={layout} onLayoutChange={onLayoutChange} />
       </fieldset>
       {selected ? (
-        <NodeFields key={selected.key} node={selected} onNodeChange={onNodeChange} />
+        <NodeFields key={selected.key} node={selected} libraries={layout.symbolLibraries} onNodeChange={onNodeChange} />
       ) : (
         <p className="text-xs text-ink-muted">Select a unit, panel or label to edit it.</p>
       )}
@@ -152,11 +167,95 @@ export function MimicEditorInspector({
   );
 }
 
+/**
+ * "Symbol libraries" (ADR 0084 decision 8, rulings R3/R4): one check box per registry library.
+ * A chosen library a unit uses is disabled and names its units — the reducer would refuse the
+ * drop anyway; the hint says why. A change reports the whole list in registry order.
+ */
+function LibraryBoxes({
+  layout,
+  onLayoutChange,
+}: {
+  layout: EditorLayout;
+  onLayoutChange: (patch: EditorLayoutPatch) => void;
+}) {
+  const inUse = librariesInUse(layout);
+  function toggle(code: MimicSymbolLibraryCode, on: boolean): void {
+    const next = MIMIC_SYMBOL_LIBRARIES.map((library) => library.code).filter((c) =>
+      c === code ? on : layout.symbolLibraries.includes(c),
+    );
+    onLayoutChange({ symbolLibraries: next });
+  }
+  return (
+    <div className="space-y-1">
+      <p className={LABEL}>Symbol libraries</p>
+      {MIMIC_SYMBOL_LIBRARIES.map((library) => {
+        const checked = layout.symbolLibraries.includes(library.code);
+        const users = inUse.get(library.code);
+        const locked = checked && users !== undefined;
+        return (
+          <div key={library.code}>
+            <label className="flex items-center gap-2 text-xs text-ink">
+              <input
+                type="checkbox"
+                aria-label={`Library ${library.label}`}
+                checked={checked}
+                disabled={locked}
+                onChange={(event) => toggle(library.code, event.target.checked)}
+              />
+              {library.label}
+            </label>
+            {locked ? (
+              <p className="ml-5 text-[10px] text-ink-muted">{`${library.label} is used by: ${users.join(", ")}`}</p>
+            ) : null}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+/**
+ * The Symbol select's options: one `optgroup` per chosen library × non-empty group — core groups
+ * keep their plain label, another library's read `${library} · ${group}` — and, for a unit whose
+ * library is not chosen, one leading option outside every group so the select still shows it.
+ */
+function SymbolOptions({ symbol, libraries }: { symbol: MimicSymbol; libraries: readonly MimicSymbolLibraryCode[] }) {
+  const own = libraryOfSymbol(symbol);
+  return (
+    <>
+      {libraries.includes(own) ? null : (
+        <option value={symbol}>
+          {own === "core" ? symbolLabel(symbol) : `${symbolLabel(symbol)} (${mimicSymbolLibrary(own).label})`}
+        </option>
+      )}
+      {MIMIC_SYMBOL_LIBRARIES.filter((library) => libraries.includes(library.code)).flatMap((library) =>
+        librarySymbolGroups(library.code)
+          .filter((group) => group.symbols.length > 0)
+          .map((group) => (
+            <optgroup
+              key={`${library.code}:${group.key}`}
+              label={library.code === "core" ? group.label : `${library.label} · ${group.label}`}
+            >
+              {group.symbols.map((s) => (
+                <option key={s} value={s}>
+                  {symbolLabel(s)}
+                </option>
+              ))}
+            </optgroup>
+          )),
+      )}
+    </>
+  );
+}
+
 function NodeFields({
   node,
+  libraries,
   onNodeChange,
 }: {
   node: EditorNode;
+  libraries: readonly MimicSymbolLibraryCode[];
   onNodeChange: (key: string, patch: EditorNodePatch) => void;
 }) {
   const vocabQ = useQuery({ queryKey: vocabulariesQueryKey, queryFn: fetchVocabularies });
@@ -179,15 +278,7 @@ function NodeFields({
               onChange={(event) => change({ symbol: event.target.value as MimicSymbol })}
               className={FIELD}
             >
-              {MIMIC_SYMBOL_GROUPS.map((group) => (
-                <optgroup key={group.key} label={group.label}>
-                  {group.symbols.map((symbol) => (
-                    <option key={symbol} value={symbol}>
-                      {symbolLabel(symbol)}
-                    </option>
-                  ))}
-                </optgroup>
-              ))}
+              <SymbolOptions symbol={node.symbol ?? "unit"} libraries={libraries} />
             </select>
           </label>
           <label className={LABEL}>
