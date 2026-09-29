@@ -2,7 +2,8 @@
 
 ## Status
 
-Proposed — drafted on 2026-09-29, before any implementation code.
+Accepted — drafted on 2026-09-29, before any implementation code. The owner
+approved this written record on 2026-09-29.
 
 The owner ruled the scope on 2026-09-29, after a review of the `F3.32c`
 editor: "Glyphs + Grouped Pallete + All Asset Grpup Starters (not only
