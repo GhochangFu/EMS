@@ -202,13 +202,16 @@ describe("F3.32c — bms.mimic_layouts, _nodes, _pipes schema (migration 0088)",
     );
   });
 
-  it("_symbol_check lists mimicSymbolSchema's members, in order, from the shared source", () => {
-    const symbols = enumMembersFromSource(read(CONTRACT_REL), "mimicSymbolSchema");
-    // Positive control: the source parse found the twelve symbols of plan D12.
-    expect(symbols).toHaveLength(12);
+  it("_symbol_check lists the first twelve of mimicSymbolSchema's members, in order, from the shared source", () => {
+    // 0088 is frozen at the twelve symbols of plan D12. ADR 0082 appends to the
+    // enum and 0089 restates all of it (`tests/f3.32d-mimic-domain-symbols-and-roles.test.ts`),
+    // so 0088's list is the enum's literal prefix, never the whole enum.
+    const prefix = enumMembersFromSource(read(CONTRACT_REL), "mimicSymbolSchema").slice(0, 12);
+    // Positive control: the source parse found at least the twelve symbols of plan D12.
+    expect(prefix).toHaveLength(12);
     const check = constraintText(sqlOnly(read(MIGRATION_REL)), "mimic_layout_nodes_symbol_check");
     const listed = [...check.matchAll(/'([a-z_]+)'/g)].map((m) => m[1]);
-    expect(listed).toEqual(symbols);
+    expect(listed).toEqual(prefix);
   });
 
   it("_tone_check and _kind_check list the shared enums' members, in order", () => {
