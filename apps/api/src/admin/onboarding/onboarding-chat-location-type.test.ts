@@ -33,6 +33,7 @@ import {
   assertOpenAiPatchLosesAnInactiveType,
   assertOpenAiTurnValidatesTheMergedDraft,
   assertOpenAiPromptListsTheActiveCodes,
+  assertOpenAiSystemPromptNamesIonsiteNexus,
   assertStoredInactiveTypeIsAskedFor,
   assertStoredInactiveTypeIsNotPatched,
   assertStoredTypeIsNotAskedFor,
@@ -167,6 +168,10 @@ describe("OnboardingChatService.handleTurn — the location type (F4.157), OpenA
 
   it("names the active codes in the system prompt", async () => {
     await assertOpenAiPromptListsTheActiveCodes(captured);
+  });
+
+  it("names IONSiTE NEXUS, not TRINETRA, in the system prompt (F3.33)", async () => {
+    await assertOpenAiSystemPromptNamesIonsiteNexus(captured);
   });
 });
 

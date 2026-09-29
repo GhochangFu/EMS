@@ -114,7 +114,7 @@ export async function assertTheBodyEndsWithTheNoUrlSentence(): Promise<void> {
   const h = harness();
   await h.service.finish(renderedOutcome());
   const lines = (h.email.messages[0]?.body ?? "").split("\n");
-  assert(lines[4] === "Open Reports & Analytics in TRINETRA to download the files." && lines.length === 5, `got ${JSON.stringify(lines)}`);
+  assert(lines[4] === "Open Reports & Analytics in IONSiTE NEXUS to download the files." && lines.length === 5, `got ${JSON.stringify(lines)}`);
 }
 
 export async function assertTheBodyCarriesTheHistoryUrlWhenSet(): Promise<void> {

@@ -9,7 +9,7 @@ import { useAuthStore, type AuthUser } from "../stores/auth-store";
 import { StatusBarClock } from "../components/status-bar-clock";
 import { SystemStatusIndicator } from "../components/system-status-indicator";
 import { ThemeSwitch } from "../components/theme-switch";
-import trinetraLogoUrl from "../assets/trinetra-logo.jpeg";
+import { Wordmark } from "../components/wordmark";
 
 const topNav = [
   { label: "Overview", to: "/" },
@@ -202,16 +202,9 @@ export function AppShell({ user, children, kpiRibbon }: AppShellProps) {
     <div className="flex min-h-screen flex-col bg-canvas text-ink">
       <header className="flex h-12 shrink-0 items-center justify-between bg-chrome px-4 text-sm text-on-dark">
         <div className="flex items-center gap-3">
-          <img
-            src={trinetraLogoUrl}
-            alt="TRINETRA"
-            className="h-7 rounded bg-on-dark px-2 py-1"
-          />
-          <span className="font-condensed text-lg font-bold tracking-tight text-accent">
-            TRINETRA
-          </span>
+          <Wordmark variant="header" />
           <span className="hidden text-on-dark/70 sm:inline">
-            Intelligent Building Management System
+            Integrated Building, Energy, Water & Utility Management Platform
           </span>
         </div>
         <div className="flex items-center gap-3">
@@ -396,7 +389,7 @@ export function AppShell({ user, children, kpiRibbon }: AppShellProps) {
 
       <footer className="flex h-8 shrink-0 items-center justify-between bg-chrome px-4 text-xs text-on-dark/70">
         <span className="flex items-center gap-2">
-          <span>TRINETRA · telemetry-driven</span>
+          <span>IONSiTE NEXUS · telemetry-driven</span>
           <StatusBarClock />
           <SystemStatusIndicator />
         </span>
