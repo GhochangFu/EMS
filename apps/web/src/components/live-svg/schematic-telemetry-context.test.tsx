@@ -3,10 +3,13 @@ import { cleanup } from "@testing-library/react";
 import { afterEach, describe, it, vi } from "vitest";
 
 import {
+  aDriftedBatchLeavesTheOtherBatchApplied,
+  aFailedBatchLeavesTheOtherBatchApplied,
   aMountBatchesTheLatestReadByFifty,
   aMountReadsNoPerPointRecent,
   aReturnedReadingReachesItsSlice,
   anAbsentPairLeavesItsFieldEmpty,
+  hydrationKeepsTheNewestSampleAsLastSeen,
 } from "./schematic-telemetry-context.spec";
 
 /**
@@ -25,6 +28,8 @@ describe("F4.176 — the schematic provider's hydration reads (ADR 0074 Amendmen
   afterEach(() => {
     cleanup();
     vi.unstubAllGlobals();
+    vi.unstubAllEnvs();
+    vi.restoreAllMocks();
   });
 
   it("reads no per-point /recent on mount", async () => {
@@ -41,5 +46,17 @@ describe("F4.176 — the schematic provider's hydration reads (ADR 0074 Amendmen
 
   it("leaves a pair absent from the response empty", async () => {
     await anAbsentPairLeavesItsFieldEmpty();
+  });
+
+  it("applies the other batch when one batch fails", async () => {
+    await aFailedBatchLeavesTheOtherBatchApplied();
+  });
+
+  it("applies the other batch when one batch drifts in a production build", async () => {
+    await aDriftedBatchLeavesTheOtherBatchApplied();
+  });
+
+  it("keeps the newest sample as the asset's last-seen time", async () => {
+    await hydrationKeepsTheNewestSampleAsLastSeen();
   });
 });

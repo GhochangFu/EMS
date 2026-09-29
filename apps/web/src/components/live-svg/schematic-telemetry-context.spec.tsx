@@ -58,11 +58,18 @@ function assetRow(code: string) {
 type Harness = { urls: string[]; latestItems: TelemetryReading[] };
 
 /**
+ * How the stub answers the one `/points/latest` batch that names A51 (the
+ * second batch): as the others, with a 500, or with a 200 whose body has no
+ * `items` — contract drift, which a production build logs and passes on.
+ */
+type SecondBatch = "ok" | "fails" | "drifts";
+
+/**
  * Records every URL and answers it: `/assets` with the rows, `/points/latest`
  * with `latestItems`, and anything else — `/recent` included — with `[]`,
  * which `/recent`'s schema accepts. Nothing reaches the real network.
  */
-function stubNetwork(latestItems: TelemetryReading[]): Harness {
+function stubNetwork(latestItems: TelemetryReading[], secondBatch: SecondBatch = "ok"): Harness {
   const harness: Harness = { urls: [], latestItems };
   vi.stubGlobal("fetch", async (input: string | URL) => {
     const url = String(input);
@@ -71,6 +78,12 @@ function stubNetwork(latestItems: TelemetryReading[]): Harness {
       return new Response(JSON.stringify(CODES.map(assetRow)), { status: 200 });
     }
     if (url.includes("/api/v1/telemetry/points/latest")) {
+      if (url.includes(idOf("A51")) && secondBatch === "fails") {
+        return new Response("boom", { status: 500 });
+      }
+      if (url.includes(idOf("A51")) && secondBatch === "drifts") {
+        return new Response(JSON.stringify({}), { status: 200 });
+      }
       return new Response(JSON.stringify({ items: harness.latestItems }), { status: 200 });
     }
     return new Response(JSON.stringify([]), { status: 200 });
@@ -79,8 +92,13 @@ function stubNetwork(latestItems: TelemetryReading[]): Harness {
 }
 
 function Consumer({ code }: { code: string }) {
-  const { slice } = useSchematicTelemetryByCode(code);
-  return <span data-testid={code}>{slice.kw === null ? "empty" : String(slice.kw)}</span>;
+  const { slice, stale } = useSchematicTelemetryByCode(code);
+  return (
+    <>
+      <span data-testid={code}>{slice.kw === null ? "empty" : String(slice.kw)}</span>
+      <span data-testid={`${code}-stale`}>{stale ? "stale" : "fresh"}</span>
+    </>
+  );
 }
 
 function renderProvider(): void {
@@ -173,4 +191,56 @@ export async function anAbsentPairLeavesItsFieldEmpty(): Promise<void> {
   renderProvider();
   await waitForHydration();
   expect(screen.getByTestId("A2").textContent).toBe("empty");
+}
+
+/**
+ * One batch answers 500 → the other batch still lands. A1 is in the first
+ * batch (ids 1–50), A51 in the failing second. Without the per-batch catch,
+ * `Promise.all` rejects and nothing hydrates.
+ */
+export async function aFailedBatchLeavesTheOtherBatchApplied(): Promise<void> {
+  stubNetwork([a1Reading()], "fails");
+  renderProvider();
+  await waitForHydration();
+  expect(screen.getByTestId("A1").textContent).toBe("42");
+}
+
+/**
+ * One batch answers 200 with no `items` in a **production** build, where
+ * `checkResponse` logs the drift and returns the body unchanged → the other
+ * batch still lands. The env is stubbed because under vitest `DEV` is true and
+ * the drift would throw, which is the failed-batch case above, not this one.
+ */
+export async function aDriftedBatchLeavesTheOtherBatchApplied(): Promise<void> {
+  vi.stubEnv("DEV", false);
+  vi.stubEnv("MODE", "production");
+  vi.spyOn(console, "error").mockImplementation(() => undefined);
+  stubNetwork([a1Reading()], "drifts");
+  renderProvider();
+  await waitForHydration();
+  expect(screen.getByTestId("A1").textContent).toBe("42");
+}
+
+/**
+ * `lastSeenMs` is the newest sample of the asset, whatever order the readings
+ * arrive in. `applyReading` keeps the last reading applied, so a 60-second-old
+ * `voltage_l1_v` answered after a fresh `kw` would mark the asset stale
+ * (`FRESH_MS` is 25 s) and drop it from the total until its next socket push.
+ * The stale reading is deliberately LAST in the answer.
+ */
+export async function hydrationKeepsTheNewestSampleAsLastSeen(): Promise<void> {
+  const now = Date.now();
+  stubNetwork([
+    a1Reading(),
+    {
+      time: new Date(now - 60_000).toISOString(),
+      assetId: idOf("A1"),
+      pointKey: "voltage_l1_v",
+      value: 230,
+      unit: "V",
+    },
+  ]);
+  renderProvider();
+  await waitForHydration();
+  expect(screen.getByTestId("A1-stale").textContent).toBe("fresh");
 }

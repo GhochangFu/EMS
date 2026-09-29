@@ -163,7 +163,14 @@ export function SchematicTelemetryProvider({
    *
    * A pair absent from the answer leaves its field empty, as a `/recent` read
    * with no rows did. A failed batch leaves its assets empty and the other
-   * batches applied; the socket supplies every later reading either way.
+   * batches applied; the socket supplies every later reading either way. **A
+   * drifted body counts as failed**: a production build's `checkResponse` logs
+   * the drift and returns the body unchanged, so `items` is checked here.
+   *
+   * **Readings are applied oldest first.** `applyReading` keeps the last
+   * reading's time as `lastSeenMs`, so the newest sample must come last — in
+   * answer order, a 60-second-old key applied after a fresh one would mark a
+   * live asset stale until its next socket push.
    */
   useEffect(() => {
     if (trackedIds.length === 0) {
@@ -179,10 +186,9 @@ export function SchematicTelemetryProvider({
       }
       const answers = await Promise.all(
         batches.map((ids) =>
-          fetchPointsLatest(ids, keysMemo).then(
-            (res) => res.items,
-            () => [] /* leave this batch empty */,
-          ),
+          fetchPointsLatest(ids, keysMemo)
+            .then((res): TelemetryReading[] => (Array.isArray(res.items) ? res.items : []))
+            .catch((): TelemetryReading[] => [] /* leave this batch empty */),
         ),
       );
 
@@ -191,7 +197,10 @@ export function SchematicTelemetryProvider({
         next[id] = emptySlice();
       }
       const nowMs = Date.now();
-      for (const reading of answers.flat()) {
+      const oldestFirst = answers
+        .flat()
+        .sort((a, b) => Date.parse(a.time) - Date.parse(b.time));
+      for (const reading of oldestFirst) {
         const slice = next[reading.assetId];
         if (slice) {
           next[reading.assetId] = applyReading(slice, reading, nowMs);

@@ -9,7 +9,9 @@ import {
   assertASampleOutsideTheWindowIsOmitted,
   assertAnUnsampledPairIsAbsent,
   assertARepeatedPairAnswersOnce,
+  assertASixtyMinuteWindowReachesBack,
   assertOnlyTheNamedAssetsAndKeysAreRead,
+  assertTheFifteenMinuteEdgeIsTight,
   assertTheLatestOfTwoIsChosen,
 } from "./points-latest.integration.spec";
 
@@ -57,4 +59,8 @@ describe.skipIf(!connectionString)("F4.176 — latest point values against Postg
   it("reads only the named assets and keys", run(assertOnlyTheNamedAssetsAndKeysAreRead));
 
   it("answers a repeated pair once", run(assertARepeatedPairAnswersOnce));
+
+  it("reaches back 60 minutes when asked", run(assertASixtyMinuteWindowReachesBack));
+
+  it("leaves out a T−16m sample at the 15-minute default", run(assertTheFifteenMinuteEdgeIsTight));
 });

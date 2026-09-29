@@ -137,3 +137,33 @@ export async function assertARepeatedPairAnswersOnce(client: pg.PoolClient): Pro
     `a repeated pair must be answered once, got ${JSON.stringify(got)}`,
   );
 }
+
+/**
+ * `windowMinutes` reaches the SQL: with 60, a T−30m sample is returned. A
+ * service that ignored its argument and read 15 minutes answers nothing.
+ */
+export async function assertASixtyMinuteWindowReachesBack(client: pg.PoolClient): Promise<void> {
+  const s = await seedAsset(client);
+  await insertSample(client, s.assetId, "kw", minutesBefore(s.now, 30), 3);
+  const got = await serviceOn(client).latestPointValues([s.assetId], ["kw"], 60);
+  assert(
+    got.length === 1 && got[0]?.value === 3,
+    `a T−30m sample must be returned for a 60-minute window, got ${JSON.stringify(got)}`,
+  );
+}
+
+/**
+ * The 15-minute window is tight: a T−16m sample is left out, beside a T−14m
+ * sample on another key that is returned. A window widened by any factor
+ * (`windowMinutes * 2`) answers both.
+ */
+export async function assertTheFifteenMinuteEdgeIsTight(client: pg.PoolClient): Promise<void> {
+  const s = await seedAsset(client);
+  await insertSample(client, s.assetId, "kw", minutesBefore(s.now, 16), 1);
+  await insertSample(client, s.assetId, "pf", minutesBefore(s.now, 14), 2);
+  const got = await serviceOn(client).latestPointValues([s.assetId], ["kw", "pf"], 15);
+  assert(
+    got.length === 1 && got[0]?.pointKey === "pf",
+    `only the T−14m pf sample must be returned, got ${JSON.stringify(got)}`,
+  );
+}
