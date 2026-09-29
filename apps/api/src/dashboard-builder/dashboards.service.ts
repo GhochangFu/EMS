@@ -15,6 +15,7 @@ import {
   dashboardWidgetPoints,
   dashboardWidgetSources,
   dashboardWidgets,
+  mimicLayouts,
 } from "@bms/db";
 import type { BmsDb } from "@bms/db";
 import type {
@@ -31,7 +32,7 @@ import { withTenant, type BmsTx } from "../database/tenant-context";
 import { withOrganizationReadScope } from "../database/tenant-read-scope";
 import { assertBoundPointsInOrganization, resolveBoundPoints, type ResolvedBoundPoint } from "./dashboard-point-scope";
 import { resolveWidgetSources, type ResolvedWidgetSource } from "./dashboard-source-scope";
-import { MIMIC_SCOPE_MESSAGE, SCOPE_REFUSAL_MESSAGE } from "./dashboards.schema";
+import { MIMIC_LAYOUT_ORG_MESSAGE, MIMIC_SCOPE_MESSAGE, SCOPE_REFUSAL_MESSAGE } from "./dashboards.schema";
 import {
   assertSourceParamsBalanceRolesActive,
   assertSourceParamsPointKeysActive,
@@ -479,8 +480,10 @@ export class DashboardsService {
     }
 
     // `F3.32` / ADR 0079 decision 4 — refused BEFORE `withTenant` opens, exactly like every
-    // other guard on this route (`assertBoundPointsInOrganization` is the one exception, and
-    // only because it needs bindings the transaction has already read). A mimic widget on a
+    // other body-only guard on this route. Two guards run inside the transaction instead,
+    // because each reads rows: `assertBoundPointsInOrganization` (the bound points) and
+    // `F3.32c`'s `assertMimicLayoutsInOrganization` (the named layouts, read under the tenant
+    // GUC so RLS is a second layer beneath its explicit organization predicate). A mimic widget on a
     // location-, asset- or unscoped dashboard would resolve every node to nothing: the honest
     // answer is a refusal, not a canvas that renders "not assigned" eight times.
     if (existing.assetGroupId === null && body.widgets.some((widget) => widget.widgetType === "mimic")) {
@@ -551,6 +554,7 @@ export class DashboardsService {
       // Task 5's guard — before any insert, and never echoes a foreign id back.
       const allPointIds = body.widgets.flatMap((widget) => widget.points.map((point) => point.pointId));
       await assertBoundPointsInOrganization(tx, existing.organizationId, allPointIds);
+      await assertMimicLayoutsInOrganization(tx, existing.organizationId, body.widgets);
 
       const diff = diffWidgets(forDiff, body.widgets);
 
@@ -856,5 +860,46 @@ export class DashboardsService {
         ),
       ),
     };
+  }
+}
+
+/**
+ * `F3.32c` / ADR 0081 decision 5 — every layout a layout-arm `mimic` widget names must be a
+ * `bms.mimic_layouts` row of the dashboard's organization. Run inside `putWidgets`' transaction,
+ * before any delete or insert, beside `assertBoundPointsInOrganization` and in its shape.
+ *
+ * The explicit `organization_id` predicate is the check, not RLS alone: `tx` is a tenant
+ * transaction today, and the predicate keeps it one if the handle ever changes. An unknown id and
+ * another organization's id answer the SAME sentence, and neither is echoed, so the 400 never
+ * confirms that a foreign layout exists.
+ *
+ * **`FOR KEY SHARE` holds each named layout until the save commits.** It conflicts with the
+ * `FOR UPDATE` `MimicLayoutsService.remove` takes before its in-use count, so a delete waits for
+ * this save and then counts its widget; a delete already in flight makes this read wait, then
+ * find no row. It does not conflict with the non-key `UPDATE` a layout replace runs, so an edit
+ * of the drawing never blocks a dashboard save.
+ */
+async function assertMimicLayoutsInOrganization(
+  tx: BmsTx,
+  organizationId: string,
+  widgets: PutDashboardWidgetsBody["widgets"],
+): Promise<void> {
+  const layoutIds = [
+    ...new Set(
+      widgets.flatMap((widget) =>
+        widget.widgetType === "mimic" && widget.config.source === "layout" ? [widget.config.layoutId] : [],
+      ),
+    ),
+  ];
+  if (layoutIds.length === 0) {
+    return;
+  }
+  const rows = await tx
+    .select({ id: mimicLayouts.id })
+    .from(mimicLayouts)
+    .where(and(inArray(mimicLayouts.id, layoutIds), eq(mimicLayouts.organizationId, organizationId)))
+    .for("key share");
+  if (rows.length !== layoutIds.length) {
+    throw new BadRequestException(MIMIC_LAYOUT_ORG_MESSAGE);
   }
 }

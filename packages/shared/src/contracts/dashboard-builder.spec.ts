@@ -15,8 +15,6 @@ import {
   dashboardWidgetSpecSchema,
   isTemplateAuthorableWidgetType,
   metricCatalogKeySchema,
-  mimicConfigSchema,
-  mimicPresetSchema,
   pointAggregateFunctionSchema,
   radialGaugeConfigSchema,
   sustainabilityAggregateSchema,
@@ -27,6 +25,7 @@ import {
   widgetTypeBindsNothing,
   widgetTypeSchema,
 } from "./dashboard-builder";
+import { mimicConfigSchema, mimicPresetSchema } from "./mimic-config";
 import { metricCatalogValueDtoSchema } from "./metric-catalog-values";
 
 function assert(condition: boolean, message: string): void {

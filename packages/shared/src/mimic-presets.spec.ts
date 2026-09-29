@@ -1,4 +1,4 @@
-import { mimicPresetSchema } from "./contracts/dashboard-builder";
+import { mimicPresetSchema } from "./contracts/mimic-config";
 import { MIMIC_PRESETS } from "./mimic-presets";
 
 /**

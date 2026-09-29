@@ -3,6 +3,7 @@ import type { AssetPointPickerRow, MetricCatalogKey, MimicPreset, UserRole, Widg
 
 import { widgetRowAfterRemovingSource } from "../../lib/dashboard-builder-form";
 import type { DashboardBuilderProblem, DashboardWidgetRow } from "../../lib/dashboard-builder-form";
+import { useMimicLayouts } from "../../hooks/use-mimic-layouts";
 import { metricCatalogLabel } from "../../lib/metric-catalog";
 import { WIDGET_CATALOG } from "../../lib/widget-catalog";
 import {
@@ -63,6 +64,14 @@ export function WidgetInspector({ row, problems, role, organizationId, onChange,
   const boundDataset = row.sources
     .map((source) => source.catalogKey)
     .find((key) => METRIC_CATALOG[key].shape === "dataset");
+  // `F3.32c` (ADR 0081) — called unconditionally (rules of hooks), like every other hook this
+  // component reads regardless of `row.widgetType`; the library select below is the only reader.
+  // A global admin's `list()` holds every organization's layouts; a widget may name only its
+  // dashboard's organization's (the API answers 400 otherwise), so the others are not offered.
+  const layoutsQuery = useMimicLayouts();
+  const layouts = (layoutsQuery.data?.items ?? []).filter((layout) => layout.organizationId === organizationId);
+  const storedLayoutId = row.config.mimicLayoutId;
+  const mimicSource = row.config.mimicSource ?? "preset";
 
   function updateConfig(patch: Partial<WidgetConfigRow>): void {
     onChange({ config: { ...row.config, ...patch } });
@@ -214,6 +223,19 @@ export function WidgetInspector({ row, problems, role, organizationId, onChange,
       ) : null}
 
       {row.widgetType === "mimic" ? (
+        <Field label="Source">
+          <select
+            value={mimicSource}
+            onChange={(event) => updateConfig({ mimicSource: event.target.value as "preset" | "layout" })}
+            className="w-full rounded border border-line px-2 py-1.5 text-xs"
+          >
+            <option value="preset">Preset</option>
+            <option value="layout">Layout</option>
+          </select>
+        </Field>
+      ) : null}
+
+      {row.widgetType === "mimic" && mimicSource === "preset" ? (
         <Field label="Preset" error={problemFor("preset")}>
           <select
             value={row.config.mimicPreset ?? ""}
@@ -224,6 +246,32 @@ export function WidgetInspector({ row, problems, role, organizationId, onChange,
             {mimicPresetSchema.options.map((preset) => (
               <option key={preset} value={preset}>
                 {MIMIC_PRESETS[preset].label}
+              </option>
+            ))}
+          </select>
+        </Field>
+      ) : null}
+
+      {/*
+        `F3.32c` (ADR 0081) — the organization's layout library, read through `useMimicLayouts`.
+        Shown only when the author has chosen this source, hiding the Preset select above.
+      */}
+      {row.widgetType === "mimic" && mimicSource === "layout" ? (
+        <Field label="Layout" error={problemFor("layout")}>
+          <select
+            value={row.config.mimicLayoutId ?? ""}
+            onChange={(event) => updateConfig({ mimicLayoutId: event.target.value || undefined })}
+            className="w-full rounded border border-line px-2 py-1.5 text-xs"
+          >
+            {storedLayoutId === undefined ? <option value="">Choose a layout</option> : null}
+            {/* A stored id the list does not hold (still loading, failed, or not this
+                organization's) keeps its own option, so the select never shows another name. */}
+            {storedLayoutId !== undefined && !layouts.some((layout) => layout.id === storedLayoutId) ? (
+              <option value={storedLayoutId}>{storedLayoutId}</option>
+            ) : null}
+            {layouts.map((layout) => (
+              <option key={layout.id} value={layout.id}>
+                {layout.name}
               </option>
             ))}
           </select>

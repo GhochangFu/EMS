@@ -1,7 +1,8 @@
 import { z } from "zod";
 
-import { mimicPresetSchema } from "./dashboard-builder";
 import { generatedSiteAssetSchema } from "./generated-site-view";
+import { mimicPresetSchema } from "./mimic-config";
+import { mimicLayoutGeometrySchema } from "./mimic-layouts";
 import { alarmSeverityCodeSchema, pillToneSchema } from "./operations";
 
 /**
@@ -55,12 +56,32 @@ export const mimicNodeSchema = z.object({
   topAlarm: mimicNodeAlarmSchema.nullable(),
 });
 
-/** One `mimic` widget and its nodes, in the preset's declared order. */
-export const mimicWidgetNodesSchema = z.object({
+/** One preset `mimic` widget and its nodes, in the preset's declared order. */
+export const mimicPresetWidgetNodesSchema = z.object({
+  source: z.literal("preset"),
   widgetId: z.string().uuid(),
   preset: mimicPresetSchema,
   nodes: z.array(mimicNodeSchema),
 });
+
+/**
+ * `F3.32c` / ADR 0081 — one layout `mimic` widget: the layout's geometry, and every unit that
+ * carries a role resolved exactly as a preset node is (plan D9). A passive unit (no role) is in
+ * `layout.nodes` and absent from `nodes` (plan D6).
+ */
+export const mimicLayoutWidgetNodesSchema = z.object({
+  source: z.literal("layout"),
+  widgetId: z.string().uuid(),
+  layoutId: z.string().uuid(),
+  layout: mimicLayoutGeometrySchema,
+  nodes: z.array(mimicNodeSchema),
+});
+
+/** One `mimic` widget and its nodes — a union on `source`, as the widget's config is (plan D3). */
+export const mimicWidgetNodesSchema = z.discriminatedUnion("source", [
+  mimicPresetWidgetNodesSchema,
+  mimicLayoutWidgetNodesSchema,
+]);
 
 /** The whole response: every mimic widget on one dashboard. */
 export const dashboardMimicNodesResponseSchema = z.object({

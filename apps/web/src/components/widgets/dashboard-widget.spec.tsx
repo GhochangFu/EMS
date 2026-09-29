@@ -365,3 +365,19 @@ export function aMimicDispatchedWithoutItsReadDrawsThePresetUnresolved(): void {
   const statuses = screen.getAllByTestId("mimic-node").map((n) => n.getAttribute("data-status"));
   expect(statuses).toEqual(Array(8).fill("unassigned"));
 }
+
+/**
+ * `F3.32c` — a layout `mimic` dispatched without its read draws the frame and an empty drawing:
+ * the layout's geometry arrives only with the node read. It must not throw.
+ */
+export function aLayoutMimicDispatchedWithoutItsReadDrawsNothing(): void {
+  const widget: DashboardWidgetDto = {
+    ...IDENTITY,
+    title: "Plant B",
+    widgetType: "mimic",
+    config: { source: "layout", layoutId: "55555555-5555-4555-8555-555555555555" },
+  };
+  render(<DashboardWidget widget={widget} data={READY_AT_750} />);
+  expect(screen.getByRole("img", { name: "Plant B: Plant mimic" })).toBeInTheDocument();
+  expect(screen.queryAllByTestId("mimic-node")).toHaveLength(0);
+}

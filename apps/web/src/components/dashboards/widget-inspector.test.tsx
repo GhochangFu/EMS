@@ -3,16 +3,27 @@ import { afterEach, beforeEach, describe, it, vi } from "vitest";
 import { cleanup } from "@testing-library/react";
 
 import {
+  aLayoutSourceRowHidesThePresetSelect,
+  aLayoutSourceRowShowsTheLayoutSelect,
+  aLayoutSourceWithNoLayoutReportsTheProblem,
   aMimicHidesTheBoundPointsField,
   aMimicHidesTheDecimalsField,
   aMimicHidesTheUnitField,
+  aMimicShowsTheSourceSelectDefaultingToPreset,
   aMimicShowsThePresetSelectOnItsPreset,
   aValueTileHasNoPresetField,
   aValueTileShowsTheBoundPointsField,
   aValueTileShowsTheDecimalsField,
   aValueTileShowsTheUnitField,
+  anUnlistedStoredLayoutStaysSelected,
+  choosingALayoutWritesItToTheConfig,
   choosingAPresetWritesItToTheConfig,
+  choosingLayoutSourceWritesItToTheConfig,
   stubFetch,
+  stubMimicLayouts,
+  theLayoutSelectListsLibraryNames,
+  theLayoutSelectListsTheDashboardsOrganizationsLayout,
+  theLayoutSelectOmitsAnotherOrganizationsLayout,
   thePresetOptionReadsThePresetLabel,
   thePresetProblemRendersUnderThePreset,
 } from "./widget-inspector.spec";
@@ -24,6 +35,9 @@ import {
 describe("F3.32 widget inspector — the plant mimic", () => {
   beforeEach(() => {
     stubFetch();
+    // `F3.32c` — `WidgetInspector` calls `useMimicLayouts` unconditionally (rules of hooks), so
+    // every case needs a resolved mock, not only the ones asserting on the Layout select.
+    stubMimicLayouts();
   });
 
   afterEach(() => {
@@ -74,5 +88,45 @@ describe("F3.32 widget inspector — the plant mimic", () => {
 
   it("a preset problem renders under the Preset field", () => {
     thePresetProblemRendersUnderThePreset();
+  });
+
+  it("F3.32c: a new mimic row shows the Source select, defaulting to Preset", () => {
+    aMimicShowsTheSourceSelectDefaultingToPreset();
+  });
+
+  it("F3.32c: choosing Layout in the Source select writes mimicSource to the config", async () => {
+    await choosingLayoutSourceWritesItToTheConfig();
+  });
+
+  it("F3.32c: a layout-source row hides the Preset select", () => {
+    aLayoutSourceRowHidesThePresetSelect();
+  });
+
+  it("F3.32c: a layout-source row shows the Layout select", () => {
+    aLayoutSourceRowShowsTheLayoutSelect();
+  });
+
+  it("F3.32c: the Layout select lists the organization's library by name", async () => {
+    await theLayoutSelectListsLibraryNames();
+  });
+
+  it("F3.32c: choosing a library layout writes its id to mimicLayoutId", async () => {
+    await choosingALayoutWritesItToTheConfig();
+  });
+
+  it("F3.32c: a layout source with no layout chosen reports the layout problem", () => {
+    aLayoutSourceWithNoLayoutReportsTheProblem();
+  });
+
+  it("F3.32c: the Layout select lists the dashboard's organization's layout (the control for the next case)", async () => {
+    await theLayoutSelectListsTheDashboardsOrganizationsLayout();
+  });
+
+  it("F3.32c: the Layout select omits another organization's layout", async () => {
+    await theLayoutSelectOmitsAnotherOrganizationsLayout();
+  });
+
+  it("F3.32c: a stored layout id the list does not hold stays the select's value", async () => {
+    await anUnlistedStoredLayoutStaysSelected();
   });
 });

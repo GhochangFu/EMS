@@ -2,6 +2,7 @@ import { describe, it } from "vitest";
 
 import {
   listForwardsTheSectionQueryToTheService,
+  putWidgetsRefusesAnUppercaseLayoutIdWith400,
   runDashboardBuilderControllerTests,
 } from "./dashboard-builder.controller.spec";
 
@@ -13,5 +14,9 @@ describe("F3.1b — DashboardBuilderController (stubbed service)", () => {
 
   it("forwards ?section= to the service (E4.2)", async () => {
     await listForwardsTheSectionQueryToTheService();
+  });
+
+  it("refuses an uppercase mimic layoutId with 400 before the service (F3.32c)", async () => {
+    await putWidgetsRefusesAnUppercaseLayoutIdWith400();
   });
 });

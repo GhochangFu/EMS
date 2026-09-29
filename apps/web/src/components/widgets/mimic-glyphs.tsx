@@ -9,7 +9,9 @@ import type { MimicGlyphKind } from "../../lib/mimic";
  * `docs/ion-exchange-nexus-dashboard-2026-08-29.html` (our own mock): `g-tank`, `g-pump`,
  * `g-clarify`, `g-aerate`, `g-dose`, `g-discharge`, `g-alert`, and `g-filter` for the softener's
  * resin vessel. The RO membrane and the cooling tower have no symbol there and are drawn here in
- * the same 24-unit grid and stroke.
+ * the same 24-unit grid and stroke, as are `F3.32c`'s layout-only `valve`, `filter` and the
+ * generic `unit` (ADR 0081, plan D12). `PATHS` is keyed by `MimicGlyphKind`, so a symbol the
+ * shared contract adds without a path here is a compile error.
  *
  * Paths are inlined, never `<symbol>`/`<use>`: two mimics on one dashboard must not share an id.
  * The stroke colour is the caller's role class on the wrapping `<g>` — the paths inherit it, so
@@ -75,6 +77,25 @@ const PATHS: Readonly<Record<MimicGlyphKind, ReactNode>> = {
       <path d="M3 7h9a4 4 0 0 1 4 4v3" />
       <path d="m12.5 10.5 3.5 4 3.5-4" />
       <path d="M4 18h16" />
+    </>
+  ),
+  valve: (
+    <>
+      <path d="M3.5 8.5v7l8.5-3.5zM20.5 8.5v7L12 12z" />
+      <path d="M12 12V6M9 6h6" />
+    </>
+  ),
+  filter: (
+    <>
+      <rect x="5.5" y="3" width="13" height="18" rx="2.5" />
+      <path d="M5.5 9h13M5.5 15h13" />
+      <path d="M9 12h.01M12 12h.01M15 12h.01" />
+    </>
+  ),
+  unit: (
+    <>
+      <rect x="3.5" y="5.5" width="17" height="13" rx="2.5" />
+      <path d="M3.5 10h17" />
     </>
   ),
   alert: (

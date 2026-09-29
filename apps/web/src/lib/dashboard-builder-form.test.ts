@@ -20,6 +20,9 @@ import {
   runMimicRowKeepsPresetTests,
   runMimicRoundTripTests,
   runMimicUneditedIsNoChangeTests,
+  runMimicRowKeepsLayoutTests,
+  runMimicLayoutRoundTripTests,
+  runMimicLayoutUneditedIsNoChangeTests,
   runMimicOffAGroupHasTheScopeProblemTests,
   runMimicOnAGroupHasNoScopeProblemTests,
   runNonMimicHasNoScopeProblemTests,
@@ -102,6 +105,18 @@ describe("dashboard builder form", () => {
 
   it("F3.32: an unedited mimic is not a change", () => {
     runMimicUneditedIsNoChangeTests();
+  });
+
+  it("F3.32c: a stored layout mimic reads back its source and layoutId", () => {
+    runMimicRowKeepsLayoutTests();
+  });
+
+  it("F3.32c: a stored layout mimic re-saves its own config", () => {
+    runMimicLayoutRoundTripTests();
+  });
+
+  it("F3.32c: an unedited layout mimic is not a change", () => {
+    runMimicLayoutUneditedIsNoChangeTests();
   });
 
   it("F3.32: a mimic off a group scope reports the scope problem, one per mimic", () => {

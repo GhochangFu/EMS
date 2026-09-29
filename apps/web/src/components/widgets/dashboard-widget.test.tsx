@@ -18,6 +18,7 @@ import {
   aValueTileWithAShortfallRendersTheCoverageNote,
   aValueTileWithFullCoverageRendersNoNote,
   aMimicDispatchedWithoutItsReadDrawsThePresetUnresolved,
+  aLayoutMimicDispatchedWithoutItsReadDrawsNothing,
 } from "./dashboard-widget.spec";
 
 /**
@@ -81,6 +82,10 @@ describe("F3.1c widget rendering", () => {
 
   it("F3.32 draws a mimic dispatched without its node read as the preset, every node unresolved", () => {
     aMimicDispatchedWithoutItsReadDrawsThePresetUnresolved();
+  });
+
+  it("F3.32c draws a layout mimic dispatched without its node read as an empty drawing, without throwing", () => {
+    aLayoutMimicDispatchedWithoutItsReadDrawsNothing();
   });
 });
 

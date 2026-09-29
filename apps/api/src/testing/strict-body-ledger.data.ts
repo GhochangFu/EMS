@@ -293,7 +293,8 @@ export const STRICTNESS_LEDGER: Record<string, LedgerEntry> = {
   "createDashboardTemplateBodySchema/content/widgets[]&right|4": { strict: false, because: SECTION_TEMPLATE_CONTENT },
   "createDashboardTemplateBodySchema/content/widgets[]&right|4/config": { strict: false, because: SECTION_TEMPLATE_CONTENT },
   "createDashboardTemplateBodySchema/content/widgets[]&right|5": { strict: false, because: SECTION_TEMPLATE_CONTENT },
-  "createDashboardTemplateBodySchema/content/widgets[]&right|5/config": { strict: false, because: SECTION_TEMPLATE_CONTENT },
+  "createDashboardTemplateBodySchema/content/widgets[]&right|5/config|0": { strict: false, because: SECTION_TEMPLATE_CONTENT },
+  "createDashboardTemplateBodySchema/content/widgets[]&right|5/config|1": { strict: false, because: SECTION_TEMPLATE_CONTENT },
   importStockTemplateBodySchema: STRICT(CALLER_ERROR),
   instantiateSectionTemplateBodySchema: STRICT(CALLER_ERROR),
   updateDashboardTemplateBodySchema: STRICT(CALLER_ERROR),
@@ -313,7 +314,8 @@ export const STRICTNESS_LEDGER: Record<string, LedgerEntry> = {
   "updateDashboardTemplateBodySchema/content/widgets[]&right|4": { strict: false, because: SECTION_TEMPLATE_CONTENT },
   "updateDashboardTemplateBodySchema/content/widgets[]&right|4/config": { strict: false, because: SECTION_TEMPLATE_CONTENT },
   "updateDashboardTemplateBodySchema/content/widgets[]&right|5": { strict: false, because: SECTION_TEMPLATE_CONTENT },
-  "updateDashboardTemplateBodySchema/content/widgets[]&right|5/config": { strict: false, because: SECTION_TEMPLATE_CONTENT },
+  "updateDashboardTemplateBodySchema/content/widgets[]&right|5/config|0": { strict: false, because: SECTION_TEMPLATE_CONTENT },
+  "updateDashboardTemplateBodySchema/content/widgets[]&right|5/config|1": { strict: false, because: SECTION_TEMPLATE_CONTENT },
   // `F3.10` (ADR 0057 decision 7, plan D15). One producer — the
   // `/admin/escalation-profiles` page — so Amendment 3's "how many producers
   // share this object?" has one answer, and the nested nodes carry their own
@@ -329,6 +331,11 @@ export const STRICTNESS_LEDGER: Record<string, LedgerEntry> = {
   // 400, not believe they scoped a fleet-wide type.
   createLocationTypeBodySchema: STRICT(CALLER_ERROR),
   createMaintenanceScheduleBodySchema: STRICT(CALLER_ERROR),
+  // `F3.32c` (ADR 0081 decision 3) — a layout is an authoring shape with no
+  // `z.record` escape: an unknown key on the body, a node or a pipe is a typo.
+  createMimicLayoutBodySchema: STRICT(CALLER_ERROR),
+  "createMimicLayoutBodySchema/nodes[]": STRICT(CALLER_ERROR),
+  "createMimicLayoutBodySchema/pipes[]": STRICT(CALLER_ERROR),
   createNotificationChannelBodySchema: STRICT(CALLER_ERROR),
   createOrganizationBodySchema: STRICT(CALLER_ERROR),
   createPointKeyBodySchema: STRICT(CALLER_ERROR),
@@ -367,13 +374,19 @@ export const STRICTNESS_LEDGER: Record<string, LedgerEntry> = {
   "putDashboardWidgetsBodySchema/widgets[]|4": STRICT(DASHBOARD_WIDGET_ARM),
   "putDashboardWidgetsBodySchema/widgets[]|4/config": STRICT(DASHBOARD_WIDGET_WRITE_CONFIG),
   "putDashboardWidgetsBodySchema/widgets[]|5": STRICT(DASHBOARD_WIDGET_ARM),
-  "putDashboardWidgetsBodySchema/widgets[]|5/config": STRICT(DASHBOARD_WIDGET_WRITE_CONFIG),
+  "putDashboardWidgetsBodySchema/widgets[]|5/config|0": STRICT(DASHBOARD_WIDGET_WRITE_CONFIG),
+  "putDashboardWidgetsBodySchema/widgets[]|5/config|1": STRICT(DASHBOARD_WIDGET_WRITE_CONFIG),
   // `F3.67` U4 (ADR 0076 decision 5, plan D4). `kind` and `builtinKey` are
   // vocabularies with no `z.record` escape hatch, and `dashboardId` is a
   // single id — an unknown key here has nowhere legitimate to land, and
   // silently dropping one from a PUT that "states the whole kind" would read
   // as accepted while the pair rule it was meant to satisfy went unchecked.
   putSiteControlRoomViewBodySchema: STRICT(CALLER_ERROR),
+  // `F3.32c` (ADR 0081 decision 3) — a layout is an authoring shape with no
+  // `z.record` escape: an unknown key on the body, a node or a pipe is a typo.
+  putMimicLayoutBodySchema: STRICT(CALLER_ERROR),
+  "putMimicLayoutBodySchema/nodes[]": STRICT(CALLER_ERROR),
+  "putMimicLayoutBodySchema/pipes[]": STRICT(CALLER_ERROR),
   // `E2.4` (ADR 0058 decision 8) — the body names rule ids and nothing else.
   reapplySeededRulesBodySchema: STRICT(CALLER_ERROR),
   reorderWorkOrdersBodySchema: STRICT(CALLER_ERROR),

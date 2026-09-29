@@ -1,3 +1,5 @@
+import { MIMIC_LAYOUT_ID_CASE_MESSAGE } from "@bms/shared";
+
 import { expectAccepts, expectRejectsAt, POINT_A } from "./dashboards.schema.spec";
 
 import { putDashboardWidgetsBodySchema } from "./dashboards.schema";
@@ -42,5 +44,81 @@ export function runDashboardsSchemaMimicSourceShapeTests(): void {
     ["widgets", 0, "config"],
     ["unit"],
     "a mimic config is strict and declares no unit (D8) — a unit is an unrecognized key",
+  );
+}
+
+// ---------------------------------------------------------------- F3.32c — the layout arm
+
+const LAYOUT_ID = "44444444-4444-4444-8444-444444444444";
+
+const layoutMimicWidget = { ...validMimicWidget, config: { source: "layout" as const, layoutId: LAYOUT_ID } };
+
+/** `F3.32c` / ADR 0081 decision 5 — the layout arm parses: a uuid, nothing else. */
+export function acceptsTheLayoutArm(): void {
+  expectAccepts(
+    putDashboardWidgetsBodySchema,
+    { widgets: [layoutMimicWidget] },
+    "a mimic naming a layout by uuid must parse",
+  );
+}
+
+/** A layout arm with no `layoutId` names nothing to draw. */
+export function refusesALayoutArmWithoutALayoutId(): void {
+  expectRejectsAt(
+    putDashboardWidgetsBodySchema,
+    { widgets: [{ ...validMimicWidget, config: { source: "layout" } }] },
+    ["widgets", 0, "config", "layoutId"],
+    ["Required"],
+    "a layout arm without layoutId must be refused",
+  );
+}
+
+/** A `layoutId` that is not a uuid is refused before any SQL sees it. */
+export function refusesALayoutArmWhoseIdIsNotAUuid(): void {
+  expectRejectsAt(
+    putDashboardWidgetsBodySchema,
+    { widgets: [{ ...validMimicWidget, config: { source: "layout", layoutId: "water_train" } }] },
+    ["widgets", 0, "config", "layoutId"],
+    ["uuid"],
+    "a layout arm whose layoutId is not a uuid must be refused",
+  );
+}
+
+/**
+ * The write surface rebuilds the arm from `mimicLayoutConfigSchema.shape`, so it carries the shared
+ * lowercase rule: an uppercase `layoutId` is refused at that path with the case sentence.
+ */
+export function refusesALayoutArmWhoseIdIsUppercase(): void {
+  expectRejectsAt(
+    putDashboardWidgetsBodySchema,
+    { widgets: [{ ...validMimicWidget, config: { source: "layout", layoutId: LAYOUT_ID.replace(/4/g, "A") } }] },
+    ["widgets", 0, "config", "layoutId"],
+    [MIMIC_LAYOUT_ID_CASE_MESSAGE],
+    "a layout arm whose layoutId is uppercase must be refused",
+  );
+}
+
+/**
+ * The layout arm is strict too. The preset arm's `unit` case above cannot tell this: an arm left
+ * non-strict would strip `preset` here and store a config the read never asked for.
+ */
+export function refusesALayoutArmCarryingAPreset(): void {
+  expectRejectsAt(
+    putDashboardWidgetsBodySchema,
+    { widgets: [{ ...layoutMimicWidget, config: { ...layoutMimicWidget.config, preset: "water_train" } }] },
+    ["widgets", 0, "config"],
+    ["preset"],
+    "a layout arm carrying a preset key must be refused as an unrecognized key",
+  );
+}
+
+/** A `source` neither arm declares is refused on the discriminator. */
+export function refusesAnUnknownSource(): void {
+  expectRejectsAt(
+    putDashboardWidgetsBodySchema,
+    { widgets: [{ ...validMimicWidget, config: { source: "network", layoutId: LAYOUT_ID } }] },
+    ["widgets", 0, "config", "source"],
+    ["discriminator"],
+    "a mimic config whose source is neither preset nor layout must be refused",
   );
 }

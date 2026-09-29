@@ -1,5 +1,7 @@
 import {
+  createDashboardTemplateBodySchema,
   instantiateSectionTemplateBodySchema,
+  TEMPLATE_MIMIC_LAYOUT_MESSAGE,
   updateDashboardTemplateBodySchema,
 } from "./dashboard-templates.schema";
 
@@ -200,5 +202,56 @@ export function theInstantiateSlugTakesTheSameCharsetAsTheDashboardWriteDoor(): 
     instantiateSectionTemplateBodySchema,
     { assetGroupId: null, slug: "enterprise-sustainability-2026", name: "Sustainability" },
     "an instantiate body whose slug is lowercase letters, digits and hyphens",
+  );
+}
+
+// ---------------------------------------------------------------- F3.32c
+
+const LAYOUT_ID = "8f1d2c3b-4a5e-4f60-9a7b-1c2d3e4f5a6b";
+const ORGANIZATION_ID = "0b7c6d5e-4f3a-4b2c-8d1e-9f0a1b2c3d4e";
+
+function mimic(config: unknown): unknown {
+  return widget({ widgetType: "mimic", gridW: 12, gridH: 6, config });
+}
+
+/**
+ * `F3.32c` / ADR 0081 decision 5 — a template holds a preset mimic only. The
+ * shared `dashboardWidgetSpecSchema` takes both config arms (it is the
+ * dashboard's contract too), so the refusal is this package's: on `content`,
+ * which both `POST` and `PATCH` carry.
+ */
+export function rejectsAPatchBodyWhoseMimicNamesALayout(): void {
+  expectRejectsAt(
+    updateDashboardTemplateBodySchema,
+    { content: { widgets: [mimic({ source: "layout", layoutId: LAYOUT_ID })] } },
+    ["content", "widgets", 0, "config"],
+    new RegExp(TEMPLATE_MIMIC_LAYOUT_MESSAGE),
+    "a PATCH body whose one mimic widget names a layout",
+  );
+}
+
+/** The `POST` door, the same refusal — a draft is created with its content. */
+export function rejectsACreateBodyWhoseMimicNamesALayout(): void {
+  expectRejectsAt(
+    createDashboardTemplateBodySchema,
+    {
+      organizationId: ORGANIZATION_ID,
+      code: "plant",
+      name: "Plant",
+      section: "water",
+      content: { widgets: [mimic({ source: "layout", layoutId: LAYOUT_ID })] },
+    },
+    ["content", "widgets", 0, "config"],
+    new RegExp(TEMPLATE_MIMIC_LAYOUT_MESSAGE),
+    "a POST body whose one mimic widget names a layout",
+  );
+}
+
+/** The positive control: the same body with the preset arm parses. */
+export function acceptsAPatchBodyWhoseMimicNamesThePreset(): void {
+  expectAccepts(
+    updateDashboardTemplateBodySchema,
+    { content: { widgets: [mimic({ source: "preset", preset: "water_train" })] } },
+    "a PATCH body whose one mimic widget names the water_train preset",
   );
 }

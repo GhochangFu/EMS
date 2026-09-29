@@ -12,6 +12,10 @@ import {
   runMimicConfigValuesTests,
   runMimicPresetRequiredTests,
   runMimicWithPresetIsCleanTests,
+  runMimicLayoutRequiredTests,
+  runMimicWithLayoutIsCleanTests,
+  runMimicLayoutConfigValuesTests,
+  runMimicLayoutConfigThrowsWithoutALayoutTests,
 } from "./widget-config-form.spec";
 
 /** Vitest entry point — see `apps/web/src/lib/admin-access.test.ts` (ADR 0014). */
@@ -58,5 +62,21 @@ describe("widget config form", () => {
 
   it("F3.32: a mimic config writes source preset and the chosen preset", () => {
     runMimicConfigValuesTests();
+  });
+
+  it("F3.32c: a layout source with no layout reports the layout problem", () => {
+    runMimicLayoutRequiredTests();
+  });
+
+  it("F3.32c: a layout source with a layout chosen has no config problem", () => {
+    runMimicWithLayoutIsCleanTests();
+  });
+
+  it("F3.32c: a layout mimic config writes source layout and the chosen layoutId", () => {
+    runMimicLayoutConfigValuesTests();
+  });
+
+  it("F3.32c: buildMimicConfig throws on a layout source with no layout chosen", () => {
+    runMimicLayoutConfigThrowsWithoutALayoutTests();
   });
 });

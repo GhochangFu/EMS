@@ -47,6 +47,8 @@ import { OnboardingChatPage } from "./pages/admin/onboarding-chat-page";
 import { AssetGroupsAdminPage } from "./pages/admin/asset-groups-page";
 import { CalcParametersAdminPage } from "./pages/admin/calc-parameters-page";
 import { LocationTypesAdminPage } from "./pages/admin/location-types-page";
+import { MimicLayoutEditorPage } from "./pages/admin/mimic-layout-editor-page";
+import { MimicLayoutsPage } from "./pages/admin/mimic-layouts-page";
 import { PointKeysAdminPage } from "./pages/admin/point-keys-page";
 import { RtusAdminPage } from "./pages/admin/rtus-page";
 import { TelemetryImportPage } from "./pages/admin/telemetry-import-page";
@@ -721,6 +723,43 @@ export function App() {
           accessToken && user ? (
             <AdminRoute user={user}>
               <LocationTypesAdminPage user={user} />
+            </AdminRoute>
+          ) : (
+            <Navigate to="/login" replace />
+          )
+        }
+      />
+      {/* `F3.32c` (ADR 0081 decision 3) — each page fails closed for a role that cannot draw. */}
+      <Route
+        path="/admin/mimic-layouts"
+        element={
+          accessToken && user ? (
+            <AdminRoute user={user}>
+              <MimicLayoutsPage user={user} />
+            </AdminRoute>
+          ) : (
+            <Navigate to="/login" replace />
+          )
+        }
+      />
+      <Route
+        path="/admin/mimic-layouts/new"
+        element={
+          accessToken && user ? (
+            <AdminRoute user={user}>
+              <MimicLayoutEditorPage user={user} />
+            </AdminRoute>
+          ) : (
+            <Navigate to="/login" replace />
+          )
+        }
+      />
+      <Route
+        path="/admin/mimic-layouts/:layoutId"
+        element={
+          accessToken && user ? (
+            <AdminRoute user={user}>
+              <MimicLayoutEditorPage user={user} />
             </AdminRoute>
           ) : (
             <Navigate to="/login" replace />

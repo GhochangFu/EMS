@@ -11,6 +11,7 @@ import {
 import type { SiteLiveReadings } from "../../hooks/use-site-live-readings";
 import type { WidgetStatus } from "../../lib/widget-catalog";
 import { MIMIC_NODE_GLYPHS } from "../../lib/mimic";
+import { presetGeometry } from "../../lib/mimic-geometry";
 import { FRESH_MS } from "../../lib/schematic-telemetry";
 import { MimicWidget } from "./mimic-widget";
 
@@ -108,7 +109,13 @@ function renderMimic(
   readings: SiteLiveReadings = READINGS,
 ): void {
   render(
-    <MimicWidget title="Demo water plant" status={status} preset="water_train" nodes={nodes(wtpAlarm)} readings={readings} />,
+    <MimicWidget
+      title="Demo water plant"
+      status={status}
+      geometry={presetGeometry("water_train")}
+      nodes={nodes(wtpAlarm)}
+      readings={readings}
+    />,
   );
 }
 

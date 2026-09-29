@@ -1,11 +1,18 @@
 import { randomUUID } from "node:crypto";
 
-import { NotFoundException } from "@nestjs/common";
+import { Logger, NotFoundException } from "@nestjs/common";
 import type pg from "pg";
-import { expect } from "vitest";
+import { expect, vi } from "vitest";
 
 import { createDb } from "@bms/db";
-import { MIMIC_PRESETS, type DashboardMimicNodesResponseDto, type JwtPayload, type MimicNodeDto } from "@bms/shared";
+import {
+  MIMIC_PRESETS,
+  type DashboardMimicNodesResponseDto,
+  type JwtPayload,
+  type MimicLayoutNodeDto,
+  type MimicLayoutWidgetNodesDto,
+  type MimicNodeDto,
+} from "@bms/shared";
 
 import type { AccessControlService } from "../auth/access-control.service";
 import { countingClient } from "../control-room/generated-site-view.integration.spec";
@@ -258,6 +265,11 @@ async function readTrain(
   );
 }
 
+/** A widget's preset name, or its layout id — one comparable value for either arm (`F3.32c`). */
+function presetOrLayoutOf(widget: DashboardMimicNodesResponseDto["widgets"][number]): string {
+  return widget.source === "preset" ? widget.preset : widget.layoutId;
+}
+
 function nodeOf(dto: DashboardMimicNodesResponseDto, key: string): MimicNodeDto {
   const node = dto.widgets[0]?.nodes.find((candidate) => candidate.key === key);
   if (!node) throw new Error(`node ${key} is absent from the mimic-nodes answer`);
@@ -403,7 +415,7 @@ export async function assertBadConfigWidgetIsSkipped(client: pg.PoolClient): Pro
   const train = await seedTrain(client);
   await seedMimicWidget(client, train.organizationId, train.dashboardId, { source: "preset", preset: "gas_train" }, 6);
   const dto = await readTrain(client, train);
-  expect(dto.widgets.map((widget) => widget.preset)).toEqual(["water_train"]);
+  expect(dto.widgets.map(presetOrLayoutOf)).toEqual(["water_train"]);
 }
 
 // ---------------------------------------------------------------- F3.32b top-alarm cases
@@ -519,5 +531,173 @@ export async function assertForeignOrganizationIsNotFound(client: pg.PoolClient)
 export async function assertOwningOrganizationReads(client: pg.PoolClient): Promise<void> {
   const train = await seedTrain(client);
   const dto = await authorizedService(client, [train.organizationId]).forUser(JWT, train.dashboardId);
-  expect(dto.widgets.map((widget) => widget.preset)).toEqual(["water_train"]);
+  expect(dto.widgets.map(presetOrLayoutOf)).toEqual(["water_train"]);
+}
+
+// ---------------------------------------------------------------- F3.32c layout cases
+
+/**
+ * The stored layout, in the order `read()` must answer it (`z, y, x`, then `key`). Inserted in
+ * REVERSE (below), so neither insertion order nor key order is the answer. `d` is a passive unit
+ * (no role, plan D6); `p` a panel; `t` a label. Every box is inside a 60 × 40 canvas.
+ */
+const LAYOUT_NODES: readonly MimicLayoutNodeDto[] = [
+  { key: "p", kind: "panel", symbol: null, label: "Pretreatment", roleCode: null, tone: "info", x: 0, y: 0, w: 60, h: 40, z: 0 },
+  { key: "a", kind: "unit", symbol: "tank", label: "WTP", roleCode: "wtp", tone: null, x: 5, y: 10, w: 8, h: 8, z: 1 },
+  { key: "b", kind: "unit", symbol: "membrane", label: "RO", roleCode: "ro", tone: null, x: 30, y: 10, w: 8, h: 8, z: 1 },
+  { key: "d", kind: "unit", symbol: "discharge", label: "Discharge", roleCode: null, tone: null, x: 45, y: 25, w: 6, h: 6, z: 1 },
+  { key: "t", kind: "label", symbol: null, label: "Plant", roleCode: null, tone: null, x: 2, y: 2, w: 20, h: 3, z: 2 },
+];
+
+/** The pipes by key, in `read()`'s order; inserted reversed. */
+const LAYOUT_PIPES = [
+  { fromKey: "a", toKey: "b" },
+  { fromKey: "b", toKey: "d" },
+] as const;
+
+/** Inserts `LAYOUT_NODES` and `LAYOUT_PIPES` as one layout of `organizationId`; answers its id. */
+async function seedLayout(client: pg.PoolClient, organizationId: string): Promise<string> {
+  const layout = await one<{ id: string }>(
+    client,
+    `INSERT INTO bms.mimic_layouts (organization_id, name, slug, canvas_w, canvas_h)
+     VALUES ($1, 'F3.32c fixture plant', $2, 60, 40) RETURNING id`,
+    [organizationId, `f332c-${randomUUID().slice(0, 8)}`],
+    "the layout",
+  );
+  const idByKey = new Map<string, string>();
+  for (const node of [...LAYOUT_NODES].reverse()) {
+    const row = await one<{ id: string }>(
+      client,
+      `INSERT INTO bms.mimic_layout_nodes
+         (organization_id, layout_id, key, kind, symbol, label, role_code, tone, x, y, w, h, z)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13) RETURNING id`,
+      [
+        organizationId,
+        layout.id,
+        node.key,
+        node.kind,
+        node.symbol,
+        node.label,
+        node.roleCode,
+        node.tone,
+        node.x,
+        node.y,
+        node.w,
+        node.h,
+        node.z,
+      ],
+      `layout node ${node.key}`,
+    );
+    idByKey.set(node.key, row.id);
+  }
+  for (const pipe of [...LAYOUT_PIPES].reverse()) {
+    await client.query(
+      `INSERT INTO bms.mimic_layout_pipes (organization_id, layout_id, from_node_id, to_node_id)
+       VALUES ($1, $2, $3, $4)`,
+      [organizationId, layout.id, idByKey.get(pipe.fromKey), idByKey.get(pipe.toKey)],
+    );
+  }
+  return layout.id;
+}
+
+/** The water train fixture plus one layout widget below its preset widget (grid y 6). */
+async function seedTrainWithLayout(
+  client: pg.PoolClient,
+): Promise<{ train: Train; layoutId: string; widgetId: string }> {
+  const train = await seedTrain(client);
+  const layoutId = await seedLayout(client, train.organizationId);
+  const widgetId = await seedMimicWidget(
+    client,
+    train.organizationId,
+    train.dashboardId,
+    { source: "layout", layoutId },
+    6,
+  );
+  return { train, layoutId, widgetId };
+}
+
+function layoutWidgetOf(dto: DashboardMimicNodesResponseDto): MimicLayoutWidgetNodesDto {
+  const widget = dto.widgets.find((candidate) => candidate.source === "layout");
+  if (widget === undefined || widget.source !== "layout") {
+    throw new Error("no layout widget in the mimic-nodes answer");
+  }
+  return widget;
+}
+
+/** L1a — a layout widget answers its id and its geometry: nodes in `z, y, x` order, pipes by key. */
+export async function assertLayoutWidgetAnswersItsGeometry(client: pg.PoolClient): Promise<void> {
+  const { train, layoutId, widgetId } = await seedTrainWithLayout(client);
+  const widget = layoutWidgetOf(await readTrain(client, train));
+  expect({ widgetId: widget.widgetId, layoutId: widget.layoutId, layout: widget.layout }).toEqual({
+    widgetId,
+    layoutId,
+    layout: { name: "F3.32c fixture plant", canvasW: 60, canvasH: 40, nodes: LAYOUT_NODES, pipes: LAYOUT_PIPES },
+  });
+}
+
+/**
+ * L1b — each roled unit resolves exactly as a preset node: `a` (wtp) to the wtp member with its
+ * one open alarm; `b` (ro) to the first-by-code of two members.
+ */
+export async function assertLayoutUnitsResolveLikePresetNodes(client: pg.PoolClient): Promise<void> {
+  const { train } = await seedTrainWithLayout(client);
+  const widget = layoutWidgetOf(await readTrain(client, train));
+  expect(
+    widget.nodes.map((node) => [node.key, node.roleCode, node.asset?.id, node.memberCount, node.activeAlarms]),
+  ).toEqual([
+    ["a", "wtp", train.wtpId, 1, 1],
+    ["b", "ro", train.roEarlierId, 2, 0],
+  ]);
+}
+
+/** L2 — the passive unit `d` is drawn (in `layout.nodes`) but not resolved (absent from `nodes`). */
+export async function assertPassiveUnitIsDrawnNotResolved(client: pg.PoolClient): Promise<void> {
+  const { train } = await seedTrainWithLayout(client);
+  const widget = layoutWidgetOf(await readTrain(client, train));
+  expect({
+    drawn: widget.layout.nodes.some((node) => node.key === "d"),
+    resolved: widget.nodes.some((node) => node.key === "d"),
+  }).toEqual({ drawn: true, resolved: false });
+}
+
+/** L3 — a dashboard holding a layout widget costs five statements (M7's three, plus 1b and 1c). */
+export async function assertLayoutReadIsFiveStatements(client: pg.PoolClient): Promise<void> {
+  const { train } = await seedTrainWithLayout(client);
+  const nowMs = await txNowMs(client);
+  const counting = countingClient(client);
+  await readService(counting.pool).read(train.organizationId, train.dashboardId, null, nowMs);
+  expect(counting.count()).toBe(5);
+}
+
+/**
+ * L4 — mixed widgets answer in grid order, not grouped by arm: preset (y 0), layout (y 6),
+ * preset (y 12).
+ */
+export async function assertMixedWidgetsKeepGridOrder(client: pg.PoolClient): Promise<void> {
+  const { train, layoutId } = await seedTrainWithLayout(client);
+  await seedMimicWidget(client, train.organizationId, train.dashboardId, { source: "preset", preset: "water_train" }, 12);
+  const dto = await readTrain(client, train);
+  expect(dto.widgets.map(presetOrLayoutOf)).toEqual(["water_train", layoutId, "water_train"]);
+}
+
+/**
+ * L5 — a widget naming ANOTHER organization's layout is skipped with one warning, and the preset
+ * widget still answers. `FLEET_POOL` bypasses RLS, so only (1b)'s organization predicate hides it.
+ */
+export async function assertForeignLayoutWidgetIsSkippedWithOneWarning(client: pg.PoolClient): Promise<void> {
+  const train = await seedTrain(client);
+  const foreign = await seedSite(client);
+  const foreignLayoutId = await seedLayout(client, foreign.organizationId);
+  await seedMimicWidget(client, train.organizationId, train.dashboardId, { source: "layout", layoutId: foreignLayoutId }, 6);
+  const warn = vi.spyOn(Logger.prototype, "warn").mockImplementation(() => undefined);
+  try {
+    const dto = await readTrain(client, train);
+    const layoutWarnings = warn.mock.calls.filter((call) => String(call[0]).includes(foreignLayoutId));
+    expect({ widgets: dto.widgets.map(presetOrLayoutOf), warnings: layoutWarnings.length }).toEqual({
+      widgets: ["water_train"],
+      warnings: 1,
+    });
+  } finally {
+    warn.mockRestore();
+  }
 }
