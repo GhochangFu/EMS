@@ -77,10 +77,14 @@ and an uploaded SVG is an XSS surface. Neither fits before the cutoff.
 
    | Code | Label | Licence | Style | Set |
    |---|---|---|---|---|
-   | `core` | TRINETRA Core | ours | stroke | the 29 existing symbols |
+   | `core` | Core | ours | stroke | the 29 existing symbols |
    | `tabler` | Tabler Icons | MIT | stroke | about 150 curated outline icons |
    | `lucide` | Lucide | ISC | stroke | about 100 curated outline icons |
    | `mdi` | Material Design Icons | Apache 2.0 | fill | about 150 curated industrial icons |
+
+   **Amended 2026-09-29 (`F3.32e` plan ruling R7):** the core library is
+   labelled "Core", not "TRINETRA Core" — ADR 0083 replaces the product
+   name on screen, so no library label names the product.
 
    Each curated set is a checked-in list of names, chosen for plant and
    building use and sorted into the eight `F3.32d` palette groups (Water,
