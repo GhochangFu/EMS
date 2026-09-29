@@ -4,6 +4,7 @@ import {
   ForbiddenException,
   Inject,
   Injectable,
+  Logger,
   NotFoundException,
 } from "@nestjs/common";
 import { and, asc, eq, inArray, sql } from "drizzle-orm";
@@ -16,6 +17,7 @@ import {
   mimicLayoutPipes,
   mimicLayouts,
   mimicSymbolLibraries,
+  mimicSymbols,
 } from "@bms/db";
 import type { BmsDb } from "@bms/db";
 import type {
@@ -41,6 +43,7 @@ import {
   MIMIC_LAYOUT_STALE_MESSAGE,
 } from "./mimic-layouts.schema";
 import type { CreateMimicLayoutBody, PutMimicLayoutBody } from "./mimic-layouts.schema";
+import { KNOWN_LIBRARY_CODES, splitLibraryCodes } from "./mimic-library-codes";
 
 type LayoutRow = typeof mimicLayouts.$inferSelect;
 type Executor = BmsDb | BmsTx;
@@ -51,7 +54,10 @@ const UNKNOWN_ROLE_MESSAGE = "Unknown asset role code";
 /** A library code with no active `bms.mimic_symbol_libraries` row (`F3.32e`, plan D7). */
 const UNKNOWN_LIBRARY_MESSAGE = "Unknown symbol library";
 
-/** A unit symbol with no `bms.mimic_symbols` row: the class of error only, never the key. */
+/**
+ * A unit symbol with no `bms.mimic_symbols` row, or an inactive one (`F3.32f`, ADR 0086
+ * decision 5): the class of error only, never the key.
+ */
 const UNKNOWN_SYMBOL_MESSAGE = "Unknown mimic symbol";
 
 /** The roles that may draw, besides `admin` (ADR 0081 decision 3). */
@@ -79,9 +85,16 @@ const AUTHOR_ROLES = new Set(["admin", "organization_admin"]);
  *
  * **The audit row is written inside the mutation's transaction**, after the
  * mutation proved it wrote, so a refused write leaves no history.
+ *
+ * **A save refuses a retired role, library or symbol, except one the stored layout
+ * already carries** (`F3.32f`, ADR 0086 decision 5, the mapping-sheet retired-code rule):
+ * the foreign keys admit an inactive row, so the service checks `active` before any write,
+ * and a re-save of an unchanged layout never fails on a code retired after it was drawn.
  */
 @Injectable()
 export class MimicLayoutsService {
+  private readonly logger = new Logger(MimicLayoutsService.name);
+
   constructor(
     @Inject(FLEET_DRIZZLE) private readonly fleetDb: BmsDb,
     @Inject(TENANT_DRIZZLE) private readonly tenantDb: BmsDb,
@@ -131,7 +144,7 @@ export class MimicLayoutsService {
         canvasH: layout.canvasH,
         version: layout.version,
         unitCount: unitsByLayout.get(layout.id) ?? 0,
-        symbolLibraries: layout.symbolLibraries as MimicSymbolLibraryCode[],
+        symbolLibraries: this.readLibraries(layout),
         updatedAt: layout.updatedAt.toISOString(),
       })),
     };
@@ -144,8 +157,9 @@ export class MimicLayoutsService {
 
   async create(jwt: JwtPayload, body: CreateMimicLayoutBody): Promise<MimicLayoutDto> {
     const author = await this.assertCanAuthor(jwt, body.organizationId);
-    await this.assertLibrariesLive(body.symbolLibraries);
+    await this.assertLibrariesLive(body.symbolLibraries, new Set());
     await this.assertRolesLive(body.nodes, new Set());
+    await this.assertSymbolsLive(body.nodes, new Set());
     return withTenant(this.tenantDb, body.organizationId, async (tx) => {
       const [layout] = await tx
         .insert(mimicLayouts)
@@ -178,17 +192,17 @@ export class MimicLayoutsService {
   async replace(jwt: JwtPayload, id: string, body: PutMimicLayoutBody): Promise<MimicLayoutDto> {
     const existing = await this.fetchReadable(jwt, id);
     await this.assertCanAuthor(jwt, existing.organizationId);
-    await this.assertLibrariesLive(body.symbolLibraries);
     // A code the stored drawing already carries stays valid after it is retired, so a
     // re-save of an unchanged layout never fails on it (the mapping-sheet retired-code rule).
+    await this.assertLibrariesLive(body.symbolLibraries, new Set(existing.symbolLibraries));
     const stored = await this.fleetDb
-      .selectDistinct({ roleCode: mimicLayoutNodes.roleCode })
+      .selectDistinct({ roleCode: mimicLayoutNodes.roleCode, symbol: mimicLayoutNodes.symbol })
       .from(mimicLayoutNodes)
       .where(eq(mimicLayoutNodes.layoutId, existing.id));
-    await this.assertRolesLive(
-      body.nodes,
-      new Set(stored.flatMap((row) => (row.roleCode === null ? [] : [row.roleCode]))),
-    );
+    const keptRoles = new Set(stored.flatMap((row) => (row.roleCode === null ? [] : [row.roleCode])));
+    const keptSymbols = new Set(stored.flatMap((row) => (row.symbol === null ? [] : [row.symbol])));
+    await this.assertRolesLive(body.nodes, keptRoles);
+    await this.assertSymbolsLive(body.nodes, keptSymbols);
     return withTenant(this.tenantDb, existing.organizationId, async (tx) => {
       const [layout] = await tx
         .update(mimicLayouts)
@@ -317,17 +331,70 @@ export class MimicLayoutsService {
    * plan D7), checked before any write. The Zod enum admits every code the contract names, so a
    * retired library reaches here. `bms_fleet` may read the lookup table. The codes are made
    * unique first, because a body that skipped the schema may repeat one.
+   *
+   * A code in `kept` — one the stored layout already chose — is exempt (`F3.32f`, ADR 0086
+   * decision 5), so an unchanged layout re-saves after its library is retired.
    */
-  private async assertLibrariesLive(symbolLibraries: readonly string[]): Promise<void> {
-    const codes = [...new Set(symbolLibraries)];
+  private async assertLibrariesLive(
+    symbolLibraries: readonly string[],
+    kept: ReadonlySet<string>,
+  ): Promise<void> {
+    const codes = [...new Set(symbolLibraries)].filter((code) => !kept.has(code));
     if (codes.length === 0) return;
+    const live = await this.liveLibraryCodes(codes);
+    if (live.size !== codes.length) {
+      throw new BadRequestException(UNKNOWN_LIBRARY_MESSAGE);
+    }
+  }
+
+  /**
+   * The codes of `codes` that name an **active** `bms.mimic_symbol_libraries` row. The slice-3
+   * seam (ADR 0086): slice 3 LEFT JOINs the per-organization switch here and adds an
+   * `organizationId` argument at the two call sites, so it changes this query, not the callers'
+   * structure.
+   */
+  private async liveLibraryCodes(codes: string[]): Promise<Set<string>> {
     const live = await this.fleetDb
       .select({ code: mimicSymbolLibraries.code })
       .from(mimicSymbolLibraries)
       .where(and(inArray(mimicSymbolLibraries.code, codes), eq(mimicSymbolLibraries.active, true)));
+    return new Set(live.map((row) => row.code));
+  }
+
+  /**
+   * Every unit symbol the body draws is an **active** `bms.mimic_symbols` row, except the keys in
+   * `kept` — the symbols the stored layout already draws (`F3.32f`, ADR 0086 decision 5). The
+   * foreign key admits a retired symbol, so it cannot be the check. An unknown key and a retired
+   * one answer the same 400 as the foreign key's, and neither is echoed.
+   */
+  private async assertSymbolsLive(
+    nodes: Pick<CreateMimicLayoutBody, "nodes">["nodes"],
+    kept: ReadonlySet<string>,
+  ): Promise<void> {
+    const codes = [
+      ...new Set(nodes.flatMap((node) => (node.symbol == null || kept.has(node.symbol) ? [] : [node.symbol]))),
+    ];
+    if (codes.length === 0) return;
+    const live = await this.fleetDb
+      .select({ key: mimicSymbols.key })
+      .from(mimicSymbols)
+      .where(and(inArray(mimicSymbols.key, codes), eq(mimicSymbols.active, true)));
     if (live.length !== codes.length) {
-      throw new BadRequestException(UNKNOWN_LIBRARY_MESSAGE);
+      throw new BadRequestException(UNKNOWN_SYMBOL_MESSAGE);
     }
+  }
+
+  /**
+   * The stored library codes the response contract can carry (`F3.32f`, ADR 0086 decision 10).
+   * An unknown stored code is dropped with a warning rather than cast through, so one bad row
+   * no longer fails the whole list at the contract parse; the write path already refuses one.
+   */
+  private readLibraries(layout: LayoutRow): MimicSymbolLibraryCode[] {
+    const { kept, dropped } = splitLibraryCodes(layout.symbolLibraries, KNOWN_LIBRARY_CODES);
+    if (dropped.length > 0) {
+      this.logger.warn(`mimic layout ${layout.id}: dropped unknown symbol library code(s): ${dropped.join(", ")}`);
+    }
+    return kept;
   }
 
   /** The layout, if the caller may read its organization; else 404. */
@@ -435,7 +502,7 @@ export class MimicLayoutsService {
       canvasW: layout.canvasW,
       canvasH: layout.canvasH,
       version: layout.version,
-      symbolLibraries: layout.symbolLibraries as MimicSymbolLibraryCode[],
+      symbolLibraries: this.readLibraries(layout),
       nodes: nodes.map(
         (node): MimicLayoutNodeDto => ({
           key: node.key,
