@@ -2628,10 +2628,10 @@ lists what they do not cover.
 
 **The canvas-colour question is resolved** (**ADR 0074**, `F3.28`,
 2026-09-24): the light canvas above stays the default, and it is not open for
-reconsideration inside a feature row. A user-selectable dark theme is wanted
-and is its own row with its own ADR, `F3.65` — the colour-token layer, where
-the choice is stored, and the dark palette. `F3.28` built no `dark:` class and
-no token layer of its own, so `F3.65` inherits no partial scheme to unwind.
+reconsideration inside a feature row. The user-selectable dark theme shipped as
+its own row with its own ADR, `F3.65` (ADR 0078, closed 2026-09-29 in `F3.65a`,
+`F3.65b`, `F3.65c`) — the colour-token layer, the stored choice, the dark
+palette and the switch; see *Colours are role tokens* below.
 This closes the `docs/BACKLOG.md` §5 *Reference layout language* gate that
 `docs/ux/ion-exchange-reference-alignment.md` §3.3 recorded as blocking
 `F3.28`; that document's mapping in §3.2 records the other seven parity
@@ -2642,34 +2642,47 @@ health strip, the Key Parameters gauges and the footer ribbon) — read it
 before building a further reference-parity screen. The domain-first
 navigation IA gap that same document names (§3.3, `F3.29`) is still open.
 
-**Colours are role tokens** (**ADR 0078**, `F3.65a`, 2026-09-28). The
-vocabulary is the 41 roles in `apps/web/src/index.css` — RGB-channel CSS
+**Colours are role tokens** (**ADR 0078**, `F3.65a`–`F3.65c`, 2026-09-28/29).
+The vocabulary is the 41 roles in `apps/web/src/index.css` — RGB-channel CSS
 variables under `:root` (light) and `:root[data-theme="dark"]`, mapped in
-`apps/web/tailwind.config.js` as `rgb(var(--role) / <alpha-value>)`. A call
-site names a role (`bg-surface`, `text-ink-muted`, `border-critical-line`,
-`text-on-dark/70`), never a hue:
+`apps/web/tailwind.config.js` as `rgb(var(--role) / <alpha-value>)`. The
+Tailwind `colors` hold only the roles plus `transparent`, `current` and
+`inherit` — the stock palette and `bms.*` are gone, so a stock class emits no
+CSS. A call site names a role (`bg-surface`, `text-ink-muted`,
+`border-critical-line`, `text-on-dark/70`), never a hue:
 
 - **No stock palette or `bms-*` class, hex literal, `rgb()`/`hsl()`/`oklch()`
-  literal, `dark:` variant, named colour or `prefers-color-scheme` in new
-  code.** A surface that needs a different treatment in dark gets a role, not
-  a `dark:` class. A new role needs a light value, a dark value and a
-  contrast pair in `tests/f3.65a-colour-contrast.test.ts`.
+  literal, `dark:` variant, named colour or `prefers-color-scheme` anywhere in
+  `apps/web/src`.** Palette, hex and colour functions are hard zeros, each
+  named by file (R20, R21, R22 in `tests/f3.65-colour-roles-gate.test.ts`). A
+  surface that needs a different treatment in dark gets a role, not a `dark:`
+  class. A new role needs a light value, a dark value and a contrast pair in
+  `tests/f3.65a-colour-contrast.test.ts`; the dark allowlist there holds only
+  the formula editor's selected-text pairs.
 - **Text on an opaque `bg-accent` fill is `text-on-accent`**, never
   `text-on-dark`: the dark accent is `#3DCD58`, and white on it is 2.09:1.
   White on chrome (header, footer, the green nav) is `on-dark`.
 - **An opacity modifier on a role class must be a Tailwind scale step**
   (`/70`, `/60`) or an arbitrary `/[.72]`; `/72` emits no CSS.
-- **Changing a palette class, hex or colour literal in `apps/web/src` means
-  editing its row in the `FLOOR` table** of
-  `tests/f3.65-colour-roles-gate.test.ts`. The table is exact in both
-  directions, and its numbers may only fall; `F3.65b` migrates the pages and
-  `F3.65c` the charts and schematics, and the last sets it to zero. The
-  shade-to-role map a migration follows is `tests/support/colour-role-map.ts`.
+- **JSX-owned SVG paints with `fill-*` / `stroke-*` role classes**, never a
+  `var()` in a presentation attribute. A status helper returns a **whole
+  literal class string** (`"stroke-critical"`), never one built by
+  concatenation — Tailwind's scanner and the gate both read literals only.
+- **Canvas and library colours read the roles through one resolver**,
+  `resolveRoles` in `apps/web/src/lib/theme.ts`, reached through the store
+  (`useThemeRoles()` or `currentRoles()` in `apps/web/src/stores/theme-store.ts`). ECharts takes the theme object from
+  `lib/chart-theme.ts` and sets its series colours from the roles; Leaflet
+  `pathOptions` and the CodeMirror theme read roles too. No other file calls
+  `getComputedStyle(document.documentElement)` (gate G3 in
+  `tests/f3.65c-theme-gates.test.ts`). A memo over colours must depend on the
+  roles, or it keeps the old theme after a switch.
 
 The theme is per browser: `localStorage["bms.theme"]`, read by the inline
 script in `apps/web/index.html` before the first paint. Only `"dark"` gives
-dark; light stays the default (ADR 0074). There is no visible switch until
-`F3.65c`.
+dark; light stays the default (ADR 0074). The switch is the sun / moon
+**Theme** group in the header's user area (`components/theme-switch.tsx`): it
+calls the store's `setTheme`, which sets `data-theme` without a reload and
+writes `"light"` or `"dark"`. There is no "System" choice and no `matchMedia`.
 
 ---
 
