@@ -158,15 +158,20 @@ export function everySymbolDrawsAGlyph(): void {
   }
 }
 
-/** S10 — no two symbols draw the same markup (29 distinct `renderToStaticMarkup` strings). */
+/**
+ * S10 — no two symbols draw the same markup (29 distinct `renderToStaticMarkup` strings), by
+ * their drawn contents alone: `data-glyph` names the kind on every glyph's wrapper, so it is
+ * stripped first or the check would trivially pass without comparing a single path.
+ */
 export function noTwoSymbolsDrawTheSameMarkup(): void {
   const markup = mimicSymbolSchema.options.map((kind) =>
     renderToStaticMarkup(
       <svg>
         <MimicGlyph kind={kind} x={0} y={0} size={24} className="stroke-ink" />
       </svg>,
-    ),
+    ).replace(/ data-glyph="[^"]*"/, ""),
   );
+  expect(markup.some((m) => m.includes("data-glyph"))).toBe(false);
   expect(new Set(markup).size).toBe(mimicSymbolSchema.options.length);
 }
 
@@ -179,6 +184,7 @@ export function everyGlyphNamesNoColour(): void {
       </svg>,
     );
     const paths = container.querySelectorAll("path, circle, rect, ellipse, polyline, polygon, line");
+    expect(paths.length, `${kind} draws no shape`).toBeGreaterThan(0);
     for (const el of Array.from(paths)) {
       const fill = el.getAttribute("fill");
       const stroke = el.getAttribute("stroke");

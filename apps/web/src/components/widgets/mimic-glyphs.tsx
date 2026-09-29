@@ -11,9 +11,10 @@ import type { MimicGlyphKind } from "../../lib/mimic";
  * resin vessel. The RO membrane and the cooling tower have no symbol there and are drawn here in
  * the same 24-unit grid and stroke, as are `F3.32c`'s layout-only `valve`, `filter` and the
  * generic `unit` (ADR 0081, plan D12). `F3.32d` (ADR 0082) appends seventeen glyphs for the
- * electrical, HVAC and UPS/battery domains plus `sensor` and `lift` — drawn fresh, by the plan's
- * glyph brief, in the same grid and stroke. `PATHS` is keyed by `MimicGlyphKind`, so a symbol the
- * shared contract adds without a path here is a compile error.
+ * electrical, HVAC/water-adjacent, UPS/battery, environmental and lift domains (`transformer`
+ * through `lift`) — drawn fresh, by the plan's glyph brief, in the same grid and stroke. `PATHS`
+ * is keyed by `MimicGlyphKind`, so a symbol the shared contract adds without a path here is a
+ * compile error.
  *
  * Paths are inlined, never `<symbol>`/`<use>`: two mimics on one dashboard must not share an id.
  * The stroke colour is the caller's role class on the wrapping `<g>` — the paths inherit it, so
@@ -106,7 +107,7 @@ const PATHS: Readonly<Record<MimicGlyphKind, ReactNode>> = {
       <path d="M12 10v4.5M12 17.4h.01" />
     </>
   ),
-  // ADR 0082 — the seventeen electrical, HVAC, UPS/battery, environmental and lift glyphs.
+  // ADR 0082 — the seventeen glyphs for the other asset domains (`transformer` through `lift`).
   transformer: (
     <>
       <circle cx="9" cy="10" r="5.5" />
@@ -153,7 +154,7 @@ const PATHS: Readonly<Record<MimicGlyphKind, ReactNode>> = {
     <>
       <rect x="4" y="3" width="16" height="18" rx="2" />
       <polyline points="13,6 8,13 11.5,13 10,18 16,10 12.5,10" />
-      <path d="M8 20.5h8" />
+      <path d="M8 19h8" />
     </>
   ),
   battery: (
@@ -166,7 +167,7 @@ const PATHS: Readonly<Record<MimicGlyphKind, ReactNode>> = {
   rack: (
     <>
       <rect x="6" y="2.5" width="12" height="19" rx="1" />
-      <path d="M6 6.5h12M6 11h12M6 15.5h12M6 20h12" />
+      <path d="M6 6.5h12M6 10.5h12M6 14.5h12M6 18.5h12" />
     </>
   ),
   chiller: (
