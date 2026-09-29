@@ -5,6 +5,7 @@ import { fetchCurrentUser } from "./api/login";
 import { AlarmKbPage } from "./pages/alarm-kb-page";
 import { AlarmsPage } from "./pages/alarms-page";
 import { AssetsPage } from "./pages/assets-page";
+import { AttributionsPage } from "./pages/attributions-page";
 import { DashboardPage } from "./pages/dashboard-page";
 import { DashboardsPage } from "./pages/dashboards-page";
 import { SustainabilityEntryPage } from "./pages/sustainability-entry-page";
@@ -160,6 +161,17 @@ export function App() {
         screen is exactly why the operator and the technician could not before.
         `tests/e2.2-alarm-kb-route-gate.test.ts` holds the API half of that.
       */}
+      {/* ADR 0086 decision 8 — every signed-in user */}
+      <Route
+        path="/attributions"
+        element={
+          accessToken && user ? (
+            <AttributionsPage user={user} />
+          ) : (
+            <Navigate to="/login" replace />
+          )
+        }
+      />
       <Route
         path="/alarm-kb"
         element={

@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, waitFor } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { expect, vi } from "vitest";
 
@@ -71,4 +71,37 @@ export async function theMeEffectKeepsTheStoredIdToken(): Promise<void> {
   });
   expect(fetchCurrentUser).toHaveBeenCalledWith(accessToken);
   expect(useAuthStore.getState().oidcIdToken).toBe(ID_TOKEN);
+}
+
+/**
+ * A1 (`F3.32f` slice 1, ADR 0086 decision 8) — `/attributions` is a plain authenticated route: a
+ * signed-in viewer reaches the page.
+ */
+export async function aViewerReachesTheAttributionsPage(): Promise<void> {
+  const viewer: AuthUser = {
+    ...USER,
+    id: "22222222-2222-4222-8222-222222222222",
+    email: "viewer@bms.local",
+    displayName: "Viewer",
+    role: "viewer",
+  };
+  const accessToken = unexpiredAccessToken();
+  const fetchCurrentUser = vi.spyOn(loginApi, "fetchCurrentUser").mockResolvedValue({ user: viewer, scope: SCOPE });
+  // AppShell's status indicator fetches; an unstubbed fetch would reach the real API on :4000.
+  vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response("{}", { status: 200 })));
+  useAuthStore.setState({ accessToken, oidcIdToken: ID_TOKEN, user: viewer, scope: null });
+
+  render(
+    <QueryClientProvider client={new QueryClient()}>
+      <MemoryRouter initialEntries={["/attributions"]}>
+        <App />
+      </MemoryRouter>
+    </QueryClientProvider>,
+  );
+
+  // Positive control: the session held, so the route did not bounce to /login.
+  await waitFor(() => {
+    expect(fetchCurrentUser).toHaveBeenCalled();
+  });
+  expect(await screen.findByRole("heading", { name: "Attributions" })).toBeInTheDocument();
 }

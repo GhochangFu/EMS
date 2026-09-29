@@ -267,3 +267,23 @@ export function aSingleNonCoreLibraryShowsItsTab(): void {
   renderPalette({ libraries: ["mdi"] });
   expect(within(screen.getByRole("tablist")).getAllByRole("tab").map((t) => t.textContent)).toEqual(["Material Design Icons"]);
 }
+
+// ---- the attributions link (F3.32f slice 1, ADR 0086 decision 8) ------------------------------
+
+/** P28 — a vendored library's tab links to /attributions in a new tab (the editor holds unsaved state). */
+export async function aVendoredTabLinksToTheAttributionsPage(): Promise<void> {
+  renderPalette({ libraries: ["core", "lucide"] });
+  await userEvent.click(screen.getByRole("tab", { name: "Lucide" }));
+  expect(screen.getByText("Lucide — ISC and MIT")).toBeInTheDocument();
+  const link = screen.getByRole("link", { name: "Attributions" });
+  expect(link).toHaveAttribute("href", "/attributions");
+  expect(link).toHaveAttribute("target", "_blank");
+  expect(link.getAttribute("rel")).toContain("noopener");
+}
+
+/** P29 — a core-only palette shows no Attributions link (positive control: the core palette rendered). */
+export function aCoreOnlyPaletteShowsNoAttributionsLink(): void {
+  renderPalette({ libraries: ["core"] });
+  expect(screen.getByRole("button", { name: "Add Tank unit" })).toBeInTheDocument();
+  expect(screen.queryByRole("link", { name: "Attributions" })).toBeNull();
+}

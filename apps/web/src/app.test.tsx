@@ -3,7 +3,7 @@ import { afterEach, describe, it, vi } from "vitest";
 import { cleanup } from "@testing-library/react";
 
 import { useAuthStore } from "./stores/auth-store";
-import { theMeEffectKeepsTheStoredIdToken } from "./app.spec";
+import { aViewerReachesTheAttributionsPage, theMeEffectKeepsTheStoredIdToken } from "./app.spec";
 
 /**
  * Vitest entry point — assertions live in the sibling `.spec` (ADR 0014), and
@@ -14,11 +14,16 @@ describe("F4.156 App /me effect", () => {
   afterEach(() => {
     cleanup();
     vi.restoreAllMocks();
+    vi.unstubAllGlobals();
     useAuthStore.getState().clearSession();
     localStorage.clear();
   });
 
   it("M1 keeps the stored OIDC id token when /me re-sets the session", async () => {
     await theMeEffectKeepsTheStoredIdToken();
+  });
+
+  it("A1 a signed-in viewer reaches /attributions", async () => {
+    await aViewerReachesTheAttributionsPage();
   });
 });
