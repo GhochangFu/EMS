@@ -311,6 +311,18 @@ export async function assertOpenAiPromptListsTheActiveCodes(captured: OpenAiCapt
   }
 }
 
+/** `F3.33` (ADR 0083, OQ6) — the system prompt names `IONSiTE NEXUS`, not `TRINETRA`. */
+export async function assertOpenAiSystemPromptNamesIonsiteNexus(captured: OpenAiCapture): Promise<void> {
+  await openAiTurn(captured, replyWithLocationType("pump_station"));
+  const request = captured.requests[0] as { messages?: { content?: string }[] } | undefined;
+  const system = request?.messages?.[0]?.content ?? "";
+  assert(
+    system.startsWith("You are an IONSiTE NEXUS BMS onboarding assistant for organization "),
+    `got ${JSON.stringify(system.slice(0, 90))}`,
+  );
+  assert(!/trinetra/i.test(system), "the system prompt still names the old product");
+}
+
 // ---------------------------------------------------------------------------
 // F4.157 review — a stored type. Each case starts from a stored draft, takes
 // the first phase from `inferPhase` as `PATCH :id/draft` does, and stores each

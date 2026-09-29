@@ -338,6 +338,32 @@ export function serviceWith(options: {
   );
 }
 
+/** `F3.33` (ADR 0083) — a test notification's subject names `IONSiTE NEXUS` and the channel code. */
+export async function assertTheTestNotificationSubjectNamesIonsiteNexus(): Promise<void> {
+  const { db } = fakeDb();
+  const webhook = fakeTransport("webhook", () => Promise.resolve({ status: "sent", error: null }));
+  const service = serviceWith({ db, channels: [], webhook: webhook.transport });
+  await service.sendTest(channelRow({ organizationId: ORG_ID }));
+  assert(webhook.sent.length === 1, "the org-scoped test reached the transport");
+  assert(
+    webhook.sent[0]?.subject === "IONSiTE NEXUS test notification (ops-webhook)",
+    `got ${JSON.stringify(webhook.sent[0]?.subject)}`,
+  );
+}
+
+/** `F3.33` (ADR 0083) — a test notification's body names `IONSiTE NEXUS`. */
+export async function assertTheTestNotificationBodyNamesIonsiteNexus(): Promise<void> {
+  const { db } = fakeDb();
+  const webhook = fakeTransport("webhook", () => Promise.resolve({ status: "sent", error: null }));
+  const service = serviceWith({ db, channels: [], webhook: webhook.transport });
+  await service.sendTest(channelRow({ organizationId: ORG_ID }));
+  assert(
+    webhook.sent[0]?.body ===
+      "This is a test notification from IONSiTE NEXUS. If you are reading it, this channel works.",
+    `got ${JSON.stringify(webhook.sent[0]?.body)}`,
+  );
+}
+
 /**
  * `F3.8` U6 — dedupe, the hourly ceiling, and the promise `dispatch` always
  * keeps. `F3.10` U2's event cases (the explicit-channel entry point, the two

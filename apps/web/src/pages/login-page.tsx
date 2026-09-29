@@ -6,7 +6,7 @@ import { fetchCurrentUser, loginRequest } from "../api/login";
 import { isOidcEnabled, startOidcLogin } from "../api/oidc";
 import { landingRouteForScope } from "../lib/landing-route";
 import { useAuthStore } from "../stores/auth-store";
-import trinetraLogoUrl from "../assets/trinetra-logo.jpeg";
+import { Wordmark } from "../components/wordmark";
 
 export function LoginPage() {
   const navigate = useNavigate();
@@ -52,14 +52,10 @@ export function LoginPage() {
           <div className="absolute bottom-12 left-10 h-24 w-24 rounded-full border border-on-dark/10 bg-on-dark/5" />
           <div className="relative">
             <div className="flex justify-center">
-              <img
-                src={trinetraLogoUrl}
-                alt="TRINETRA"
-                className="w-full max-w-[560px] rounded-lg bg-on-dark px-5 py-3 shadow-xl"
-              />
+              <Wordmark variant="hero" />
             </div>
             <h1 className="mt-8 max-w-xl font-condensed text-4xl font-bold leading-tight tracking-tight sm:text-5xl">
-              Intelligent <span className="text-accent">Building Management</span> · Smart insight, always on.
+              Integrated <span className="text-accent">Building, Energy, Water &amp; Utility</span> Management · Smart insight, always on.
             </h1>
             <p className="mt-4 max-w-lg text-sm leading-6 text-on-dark/70">
               Unified enterprise EMS for power, HVAC, water, utilities, alarms,
@@ -97,10 +93,10 @@ export function LoginPage() {
                   Secure access
                 </div>
                 <h2 className="mt-2 font-condensed text-3xl font-bold text-ink">
-                  Sign in to TRINETRA
+                  Sign in to IONSiTE NEXUS
                 </h2>
                 <p className="mt-1 text-sm text-ink-muted">
-                  Enterprise SSO and local pilot access for the Intelligent Building Management System.
+                  Enterprise SSO and local pilot access for the Integrated Building, Energy, Water &amp; Utility Management Platform.
                 </p>
               </div>
               <div className="flex flex-col items-end gap-2">
@@ -176,7 +172,7 @@ export function LoginPage() {
                 Access profile
               </div>
               <div className="grid grid-cols-2 gap-2 text-xs sm:grid-cols-3">
-                {["TRINETRA Admin", "IBMS Operator", "Energy Manager"].map((role) => (
+                {["NEXUS Admin", "IBMS Operator", "Energy Manager"].map((role) => (
                   <span
                     key={role}
                     className="rounded-full border border-line bg-well px-2 py-1 text-center font-semibold text-ink-muted"
@@ -202,7 +198,7 @@ export function LoginPage() {
           </form>
         )}
             <div className="mt-6 border-t border-well-deep pt-4 text-center text-[11px] leading-5 text-ink-muted">
-              TRINETRA v0.1<br />
+              IONSiTE NEXUS v0.1<br />
               Powered By:{" "}
               <b className="text-ink">Euphoria Infotech India Limited</b>
             </div>

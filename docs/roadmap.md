@@ -6768,3 +6768,25 @@ toggles were fixed test-first.
 
 **Cascade:** `F3.65` is complete. A `chore(agents):` PR brings AGENTS.md §5 up
 to date.
+
+### `F3.33` — IONSiTE NEXUS replaces TRINETRA on screen ✅ 2026-09-29
+
+PR #644, squash `cbac533d`; ADR 0083 (four gate questions, owner-ruled);
+plan `docs/plans/f3.33-ionsite-nexus-rebrand.md` (Fable).
+
+The product reads **IONSiTE NEXUS** wherever a user sees its name — the web
+shell, the login page, the tab title, report mails, test notifications, the
+API documentation and the onboarding assistant — with a two-line text wordmark
+in the theme's roles in place of the TRINETRA logo image, and the client's own
+descriptor as the tagline. Contracts (the webhook signature header), internal
+identifiers and repository documents keep their names. A repository gate fails
+if the old name comes back to a user-visible source.
+
+Verified: the gate and every changed string held by a spec, each shown red
+first; the full suite; the API titles served by the rebuilt container; the
+browser in both themes. Two reviews; the code review's comment-stripper false
+green was fixed test-first.
+
+**Cascade:** none. A `chore(agents):` PR records the on-screen name in
+AGENTS.md and CLAUDE.md. Demo host: an existing Keycloak realm keeps
+"TRINETRA" until an admin edits its display name.

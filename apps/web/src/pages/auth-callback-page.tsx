@@ -53,7 +53,7 @@ export function AuthCallbackPage() {
           </p>
         ) : (
           <p className="mt-4 text-sm text-ink-muted">
-            Please wait while Keycloak returns you to TRINETRA.
+            Please wait while Keycloak returns you to IONSiTE NEXUS.
           </p>
         )}
       </div>

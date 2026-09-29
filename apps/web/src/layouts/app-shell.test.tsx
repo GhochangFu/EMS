@@ -5,6 +5,7 @@ import { cleanup } from "@testing-library/react";
 import { useAuthStore } from "../stores/auth-store";
 import {
   describesTheLockedSettingsReason,
+  drawsNoImgElementInTheHeader,
   doesNotReadAssets,
   drawsTheIdleThemeButtonAtEightyFive,
   drawsTheLockedSettingsAtThreeToOne,
@@ -29,11 +30,15 @@ import {
   placesTheEntryDirectlyAfterAlarmCentre,
   placesTheSwitchAfterTheUserBlock,
   placesTheSwitchBeforeLogout,
+  readsNoTrinetraInTheShell,
   readsTheFullItemList,
   showsDsForDashboardsWhenCollapsed,
   showsLocationTypesToTheGlobalAdmin,
   showsMimicLayoutsToAnOrganizationAdmin,
   showsOneEntryToALocationScope,
+  showsTheDescriptorInTheHeader,
+  showsTheNameInTheFooter,
+  showsTheWordmarkInTheHeader,
   showsTheFullLabelWhenExpanded,
   showsUniqueCodesWhenCollapsed,
 } from "./app-shell.spec";
@@ -187,5 +192,27 @@ describe("F3.65c the theme switch in the header", () => {
 
   it("S16b draws the idle button in text-on-dark/85", () => {
     drawsTheIdleThemeButtonAtEightyFive();
+  });
+});
+
+describe("F3.33 the IONSiTE NEXUS wordmark in the shell", () => {
+  it("B1 shows the wordmark in the header as a named image", () => {
+    showsTheWordmarkInTheHeader();
+  });
+
+  it("B2 draws no img element in the header", () => {
+    drawsNoImgElementInTheHeader();
+  });
+
+  it("B3 shows the descriptor in the header", () => {
+    showsTheDescriptorInTheHeader();
+  });
+
+  it("B4 shows IONSiTE NEXUS in the footer", () => {
+    showsTheNameInTheFooter();
+  });
+
+  it("B5 reads no TRINETRA in the shell", () => {
+    readsNoTrinetraInTheShell();
   });
 });
