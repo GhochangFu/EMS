@@ -41,11 +41,12 @@ raise it, not to work around it silently.
 ## What this project is
 
 A real-time enterprise monitoring platform (BMS/EMS) for electrical, HVAC,
-UPS/battery, water and environmental telemetry across sites. Product brand
-**TRINETRA**, powered by Euphoria Infotech India Limited. Per **ADR 0013** this
-repository is the **Enterprise EMS product line for Ion Exchange (India)
-Ltd.**, forked from the Eskom SMOC engagement (earlier branding: Eskom SMOC /
-InfraPulse). Internal identifiers (`smoc_campus`, org code `ESKOM`, seed demo
+UPS/battery, water and environmental telemetry across sites. On screen the
+product is **IONSiTE NEXUS** (**ADR 0083**; TRINETRA stays the internal name in
+code, contracts and docs), powered by Euphoria Infotech India Limited. Per
+**ADR 0013** this repository is the **Enterprise EMS product line for Ion
+Exchange (India) Ltd.**, forked from the Eskom SMOC engagement (earlier
+branding: Eskom SMOC / InfraPulse). Internal identifiers (`smoc_campus`, org code `ESKOM`, seed demo
 data, `ESKOM_SMOC.html` mockups) intentionally keep their Eskom-era names —
 display-layer branding only was changed. The live pending-feature backlog is
 `docs/BACKLOG.md`.

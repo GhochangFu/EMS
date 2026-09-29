@@ -788,7 +788,15 @@
 > site-wide AI copilot, EMQX, and the **non-MQTT**
 > protocol adapters remain deferred — the framework, the host and the MQTT
 > adapter are promoted; each further protocol still needs its own ADR (§9.4).
-> **Product brand:** TRINETRA. Powered by Euphoria Infotech India Limited.
+> **Product brand:** on screen the product is **IONSiTE NEXUS** (**ADR 0083**,
+> `F3.33`) — the header, login, tab title, report mails, notifications, API
+> docs and the realm display name; a two-line text wordmark
+> (`components/wordmark.tsx`) stands in until the client supplies a logo.
+> TRINETRA stays the platform's internal name in code identifiers, contracts
+> (`x-trinetra-signature`) and repository documents. Any new user-visible
+> string says IONSiTE NEXUS; `tests/f3.33-on-screen-name-gate.test.ts` fails on
+> TRINETRA in `apps/web/src`, `apps/web/index.html` or `apps/api/src` outside
+> comments. Powered by Euphoria Infotech India Limited.
 > **Product line:** Enterprise EMS for Ion Exchange (India) Ltd. per
 > **ADR 0013** — forked from the Eskom SMOC engagement (earlier branding:
 > Eskom SMOC / InfraPulse). Eskom-era internal identifiers, seed demo data,
@@ -1014,7 +1022,7 @@ bms/
 ├── CLAUDE.md                  ← pointer to this file for AI agents
 ├── README.md
 ├── ESKOM_SMOC.html            ← UX reference (do not edit)
-├── TRINETRA.html              ← UX reference, current branding (do not edit)
+├── TRINETRA.html              ← UX reference, pre-ADR 0083 branding (do not edit)
 ├── package.json               ← pnpm workspace root
 ├── pnpm-workspace.yaml
 ├── vitest.config.ts           ← root test config + coverage ratchet (ADR 0014)
