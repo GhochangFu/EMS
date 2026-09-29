@@ -190,7 +190,7 @@ export function DashboardsTab({ template, editable, onSaved, onDirtyChange }: Da
                     onClick={() => setActiveIndex(index)}
                     className={`flex-1 truncate px-2 py-1 text-left surface-tab ${
                       index === activeIndex ? "surface-tab-selected" : ""
-                      } ${rowHasProblem ? "text-critical-ink" : ""}`}
+                    } ${rowHasProblem ? "text-critical-ink" : ""}`}
                   >
                     {view.name.trim() === "" ? "(unnamed view)" : view.name}
                   </button>

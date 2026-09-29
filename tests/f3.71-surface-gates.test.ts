@@ -77,6 +77,13 @@ describe("F3.71 the surface boot script", () => {
     expect(Object.keys(runBoot(() => storing({}))).sort()).toEqual(["data-surface", "data-theme"]);
   });
 
+  it("S1b the boot script comes before the module script, so it runs before first paint", () => {
+    const tags = [...INDEX_HTML.matchAll(/<script([^>]*)>/g)];
+    const plain = tags.findIndex((m) => !/\btype\s*=/.test(m[1]));
+    const module = tags.findIndex((m) => /\btype\s*=\s*"module"/.test(m[1]));
+    expect(plain !== -1 && module !== -1 && plain < module).toBe(true);
+  });
+
   it('S2 "flat" sets data-surface="flat"', () => {
     expect(surfaceFor("flat")).toBe("flat");
   });
@@ -241,19 +248,102 @@ function classTokenSets(): { at: string; tokens: string[] }[] {
   );
 }
 
-/** The `surface-*` classes `index.css` defines, split by scope. */
-function definedClasses(): { base: Set<string>; flat: Set<string> } {
-  const css = cssWithoutComments(INDEX_CSS);
-  const base = new Set<string>();
-  const flat = new Set<string>();
-  for (const m of css.matchAll(/([^{}]*)\{/g)) {
-    for (const selector of m[1].split(",")) {
-      const s = selector.trim();
-      const isFlat = s.startsWith(FLAT_SCOPE);
-      for (const c of s.matchAll(/\.(surface-[a-z]+(?:-[a-z]+)*)/g)) (isFlat ? flat : base).add(c[1]);
+type CssRule = { selector: string; flat: boolean; body: string };
+
+/** Every innermost rule of `index.css` whose selector names a `surface-*` class, flat scope stripped. */
+function surfaceRules(): CssRule[] {
+  const out: CssRule[] = [];
+  for (const m of cssWithoutComments(INDEX_CSS).matchAll(/([^{}]*)\{([^{}]*)\}/g)) {
+    for (const raw of m[1].split(",")) {
+      const s = raw.trim();
+      const flat = s.startsWith(FLAT_SCOPE);
+      const selector = flat ? s.slice(FLAT_SCOPE.length).trim() : s;
+      if (selector.startsWith(".surface-")) out.push({ selector, flat, body: m[2] });
     }
   }
+  return out;
+}
+
+/**
+ * The `surface-*` classes `index.css` defines, split by scope. A class counts only from a rule on
+ * the class itself or its `::after` / `::before` — not from a `:where(:hover)` state rule, so
+ * deleting a class's real rule cannot hide behind its hover rule.
+ */
+function definedClasses(): { base: Set<string>; flat: Set<string> } {
+  const base = new Set<string>();
+  const flat = new Set<string>();
+  for (const { selector, flat: isFlat } of surfaceRules()) {
+    const m = /^\.(surface-[a-z]+(?:-[a-z]+)*)(?:::(?:after|before))?$/.exec(selector);
+    if (m) (isFlat ? flat : base).add(m[1]);
+  }
   return { base, flat };
+}
+
+/** The plain declarations of a rule body, by property; `@apply` lines are not declarations. */
+function properties(body: string): Set<string> {
+  return new Set([...body.matchAll(/(?:^|;|\s)([a-z-]+)\s*:[^;]*;/g)].map((m) => m[1]));
+}
+
+/** The utilities a rule body applies. */
+function applied(body: string): string[] {
+  return [...body.matchAll(/@apply\s+([^;]*);/g)].flatMap((m) => m[1].split(/\s+/).filter(Boolean));
+}
+
+/**
+ * Which applied utility resets a base property. `box-shadow` needs none: its tokens are undefined
+ * under Flat, so it computes to `none`. `justify-content`, `align-items`, `gap` and `line-height`
+ * ride on `display` and `font-size`.
+ */
+const RESETS: Record<string, RegExp> = {
+  "border-radius": /^rounded(?:-|$)/,
+  "background-color": /^bg-/,
+  padding: /^p[xytblr]?-/,
+  margin: /^m[xytblr]?-/,
+  "margin-inline": /^m[xytblr]?-/,
+  display: /^(?:block|inline-block|inline|flex|inline-flex|grid|hidden)$/,
+  color: /^text-(?!xs$|sm$|base$|lg$|xl$|\[)/,
+  "border-width": /^border(?:-[trblxy])?(?:-\d)?$/,
+  border: /^border(?:-[trblxy])?(?:-\d)?$/,
+  "align-self": /^self-/,
+  "min-height": /^min-h-/,
+  "font-size": /^text-(?:xs|sm|base|lg|xl|\[)/,
+  "font-weight": /^font-(?:normal|medium|semibold|bold)$/,
+};
+const RIDES_ALONG = new Set(["box-shadow", "justify-content", "align-items", "gap", "line-height"]);
+
+/** Base properties a flat rule deliberately leaves to the base rule, with the reason. Exact. */
+const SAME_IN_BOTH: Record<string, Record<string, string>> = {
+  ".surface-tab": {
+    "font-size": "tabs are text-xs in both styles, as before F3.71",
+    "font-weight": "tabs are font-semibold in both styles, as before F3.71",
+  },
+  ".surface-tab:where(:hover)": { color: "a flat idle tab is already ink; its hover stays ink" },
+  ".surface-tab-selected": { "font-weight": "a selected tab is font-semibold in both styles" },
+  ".surface-segment-item": {
+    "font-size": "segment items are text-xs in both styles, as before F3.71",
+    "font-weight": "segment items are font-semibold in both styles, as before F3.71",
+  },
+  ".surface-segment-item-selected": { "font-weight": "a selected item is font-semibold in both styles" },
+  ".surface-dialog": { "border-width": "flat dialogs had no border before F3.71 either" },
+  ".surface-pressed-sm": { "border-width": "flat tracks and dials had no border before F3.71 either" },
+  ".surface-kpi::after": { content: "the tone bar exists in both styles", top: "the bar sits on the top edge in both styles" },
+};
+
+/** `selector property` for every base property its flat twin neither declares nor resets. */
+function flatLeaks(rules: CssRule[]): string[] {
+  const leaks: string[] = [];
+  for (const base of rules.filter((r) => !r.flat)) {
+    const flat = rules.find((r) => r.flat && r.selector === base.selector);
+    const covered = flat ? properties(flat.body) : new Set<string>();
+    const utilities = flat ? applied(flat.body) : [];
+    for (const prop of properties(base.body)) {
+      if (RIDES_ALONG.has(prop) || covered.has(prop) || SAME_IN_BOTH[base.selector]?.[prop]) continue;
+      const reset = RESETS[prop];
+      if (reset && utilities.some((u) => reset.test(u))) continue;
+      leaks.push(`${base.selector} ${prop}`);
+    }
+  }
+  return leaks.sort();
 }
 
 function usedClasses(): Set<string> {
@@ -293,6 +383,35 @@ describe("F3.71 the surface vocabulary", () => {
 
   it("V5 the vocabulary is not empty (the scan is live)", () => {
     expect(definedClasses().base.size).toBeGreaterThan(0);
+  });
+
+  it("V7 every flat rule resets each property its neumorphic rule sets (Flat looks like before F3.71)", () => {
+    expect(flatLeaks(surfaceRules())).toEqual([]);
+  });
+
+  it("V7 every SAME_IN_BOTH entry names a property its base rule still sets (the list cannot go stale)", () => {
+    const rules = surfaceRules();
+    const stale = Object.entries(SAME_IN_BOTH).flatMap(([selector, props]) =>
+      Object.keys(props)
+        .filter((prop) => !rules.some((r) => !r.flat && r.selector === selector && properties(r.body).has(prop)))
+        .map((prop) => `${selector} ${prop}`),
+    );
+    expect(stale).toEqual([]);
+  });
+
+  it("V8 every surface-* state rule is :where(:state), so a call-site tone utility still wins", () => {
+    const bare = surfaceRules()
+      .filter(({ selector }) => /(?<!:where\():(?:hover|active|focus(?:-visible|-within)?)\b/.test(selector))
+      .map(({ selector, flat }) => `${flat ? "flat " : ""}${selector}`);
+    expect(bare).toEqual([]);
+  });
+
+  it("V7 the scan is live: an empty flat rule leaks its base rule's radius", () => {
+    const rules: CssRule[] = [
+      { selector: ".surface-x", flat: false, body: " border-radius: 14px; box-shadow: var(--shadow-pressed); " },
+      { selector: ".surface-x", flat: true, body: " " },
+    ];
+    expect(flatLeaks(rules)).toEqual([".surface-x border-radius"]);
   });
 
   it("V6 the chrome — the shell's header, nav and footer — carries no surface-* class", () => {

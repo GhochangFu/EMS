@@ -454,7 +454,7 @@ function CalcParameterForm({
           <label className="block text-xs font-semibold text-ink-muted sm:col-span-2">
             Key
             <select
-              className="mt-1 surface-field w-full px-3 py-2 text-sm"
+              className="mt-1 surface-field w-full px-3 py-2 text-sm disabled:opacity-60"
               value={form.key}
               disabled={locked}
               required

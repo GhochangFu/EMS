@@ -207,7 +207,7 @@ export function ReportsPanel({ user }: ReportsPanelProps) {
             <p className="mt-2 text-xs text-critical-ink">XLSX export failed.</p>
           ) : null}
           <button
-            className="mt-2 w-full surface-button px-3 py-2 disabled:cursor-not-allowed disabled:text-ink-hint"
+            className="mt-2 w-full surface-button border-accent px-3 py-2 text-sm text-accent-strong disabled:cursor-not-allowed disabled:border-transparent disabled:text-ink-hint"
             disabled={csvM.isPending || previewQ.isError || !preview}
             aria-busy={csvM.isPending}
             onClick={() => csvM.mutate()}
@@ -218,7 +218,7 @@ export function ReportsPanel({ user }: ReportsPanelProps) {
             <p className="mt-2 text-xs text-critical-ink">CSV export failed.</p>
           ) : null}
           <button
-            className="mt-2 w-full surface-button px-3 py-2 disabled:cursor-not-allowed disabled:text-ink-hint"
+            className="mt-2 w-full surface-button border-accent px-3 py-2 text-sm text-accent-strong disabled:cursor-not-allowed disabled:border-transparent disabled:text-ink-hint"
             disabled={pdfM.isPending || previewQ.isError || !preview}
             aria-busy={pdfM.isPending}
             onClick={() => pdfM.mutate()}

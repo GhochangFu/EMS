@@ -151,7 +151,11 @@
  *    one class of specificity: it wins over the base rule by source order, and a call-site
  *    utility still wins over both (utilities come after components).
  *  - Base rules set `border-width`, not the `border` shorthand, so a flat `@apply border` keeps
- *    preflight's solid style.
+ *    preflight's solid style. A flat rule resets every property its base rule sets but the
+ *    shadow (`tests/f3.71-surface-gates.test.ts` V7).
+ *  - State rules are `:where(:hover)` / `:where(:active)`: Tailwind's `@layer` is not a native
+ *    cascade layer, so a bare `:hover` (two classes of specificity) would beat a call-site tone
+ *    utility such as `text-critical-ink` (one class).
  *
  * `tests/f3.71-surface-gates.test.ts` V4/V5 hold that every class used has both rules and every
  * class defined is used; V3 that no call site mixes a `surface-*` class with the colour utilities
@@ -232,14 +236,17 @@
     line-height: 1rem;
     font-weight: 600;
   }
-  .surface-button:hover {
+  .surface-button:where(:hover) {
     color: rgb(var(--ink));
   }
-  .surface-button:active {
+  .surface-button:where(:active) {
     box-shadow: var(--shadow-pressed-sm);
   }
   :where([data-surface="flat"]) .surface-button {
-    @apply min-h-0 rounded border border-line text-xs font-semibold text-ink-muted hover:text-ink;
+    @apply inline-block min-h-0 rounded border border-line bg-transparent text-xs font-semibold text-ink-muted;
+  }
+  :where([data-surface="flat"]) .surface-button:where(:hover) {
+    @apply text-ink;
   }
 
   /* A primary button: the call site keeps its `bg-accent` fill and `text-on-accent` ink. */
@@ -247,7 +254,7 @@
     border-radius: 12px;
     box-shadow: var(--shadow-raised-sm);
   }
-  .surface-button-primary:active {
+  .surface-button-primary:where(:active) {
     box-shadow: var(--shadow-pressed-sm);
   }
   :where([data-surface="flat"]) .surface-button-primary {
@@ -271,8 +278,11 @@
     border-radius: 10px;
     background-color: transparent;
     color: rgb(var(--ink-muted));
+    font-size: 0.75rem;
+    line-height: 1rem;
+    font-weight: 600;
   }
-  .surface-tab:hover {
+  .surface-tab:where(:hover) {
     color: rgb(var(--ink));
   }
   :where([data-surface="flat"]) .surface-tab {
@@ -295,11 +305,14 @@
     border-radius: 10px;
     color: rgb(var(--ink-muted));
   }
-  .surface-nav-item:hover {
+  .surface-nav-item:where(:hover) {
     color: rgb(var(--ink));
   }
   :where([data-surface="flat"]) .surface-nav-item {
-    @apply mx-0 rounded-none border-l-2 border-transparent text-ink-muted hover:bg-canvas;
+    @apply mx-0 rounded-none border-l-2 border-transparent text-ink-muted;
+  }
+  :where([data-surface="flat"]) .surface-nav-item:where(:hover) {
+    @apply bg-canvas text-ink-muted;
   }
   .surface-nav-item-selected {
     background-color: rgb(var(--canvas));
@@ -365,6 +378,7 @@
     padding: 4px;
   }
   :where([data-surface="flat"]) .surface-table {
+    @apply rounded-none bg-transparent p-0;
   }
 
   /* A dialog panel or a drawer. */
@@ -386,17 +400,24 @@
     padding: 2px;
   }
   :where([data-surface="flat"]) .surface-segment {
+    @apply rounded-none bg-transparent p-0;
   }
   .surface-segment-item {
     border-radius: 10px;
     background-color: transparent;
     color: rgb(var(--ink-muted));
+    font-size: 0.75rem;
+    line-height: 1rem;
+    font-weight: 600;
   }
-  .surface-segment-item:hover {
+  .surface-segment-item:where(:hover) {
     color: rgb(var(--ink));
   }
   :where([data-surface="flat"]) .surface-segment-item {
-    @apply rounded bg-well-deep text-ink-muted hover:text-ink;
+    @apply rounded bg-well-deep text-ink-muted;
+  }
+  :where([data-surface="flat"]) .surface-segment-item:where(:hover) {
+    @apply text-ink;
   }
   .surface-segment-item-selected {
     background-color: rgb(var(--canvas));

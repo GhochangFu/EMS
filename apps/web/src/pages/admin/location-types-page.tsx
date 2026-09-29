@@ -223,7 +223,7 @@ function LocationTypesCatalog() {
                 </label>
                 <input
                   id="location-type-code"
-                  className="mt-1 surface-field w-full px-3 py-2 text-sm"
+                  className="mt-1 surface-field w-full px-3 py-2 text-sm disabled:opacity-60"
                   value={form.code}
                   disabled={Boolean(editing)}
                   required

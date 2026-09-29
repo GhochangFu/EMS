@@ -187,7 +187,7 @@ export function AssetTemplateVersionsPage({ user }: Props) {
                   }}
                   className={`px-3 py-1 ${
                     targetId === version.id
-                      ? "surface-button-primary bg-accent text-on-accent"
+                      ? "surface-button-primary bg-accent text-xs font-semibold text-on-accent"
                       : "surface-button"
                   }`}
                 >

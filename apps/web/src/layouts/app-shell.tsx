@@ -293,7 +293,7 @@ export function AppShell({ user, children, kpiRibbon }: AppShellProps) {
             )}
             <button
               type="button"
-              className="surface-button px-2 py-1 font-mono transition"
+              className="surface-button px-2 py-1 font-mono transition hover:border-accent"
               aria-label={sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
               title={sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
               onClick={toggleSidebar}
