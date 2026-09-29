@@ -369,3 +369,59 @@ a point the decisions did not settle.
    `worstSeverity { code, label, tone, rank } | null`, one field more than
    decision 6 named — added so the strip can colour a role without a second
    lookup.
+
+## Amendment 2 (2026-09-29) — a batched latest-value read (`F4.176`)
+
+Drafted at the §10 gate before any implementation code. The owner ruled
+four questions, one at a time, each as recommended: the approach, the record
+(an amendment here, because decision 5 owns the batched point read), the
+scope rule and the bounds below. **Accepted by the owner on 2026-09-30**, to
+land in the `F4.176` pull request as its first commit.
+
+**Context.** `SchematicTelemetryProvider`
+(`apps/web/src/components/live-svg/schematic-telemetry-context.tsx`) hydrates
+each tracked asset from `GET /telemetry/points/:ref/recent?window=15m`, once
+per (asset, point key) pair, and then prefetches every pair again into a
+TanStack key that nothing reads. The SMOC site view crosses 43 asset codes
+with 34 point keys: 1,462 refs, two reads each, on every mount. The browser
+refuses most of the concurrent half (`net::ERR_INSUFFICIENT_RESOURCES`). The
+decision 5 read is not the fix: it has no lower time bound, so a ref with no
+sample scans every chunk. Measured on the stack, 50 empty refs cost 1.0 s of
+planning and 0.6 s of execution, and this page needs about 30 such calls.
+
+**Decisions.**
+
+1. **A new read, `GET /api/v1/telemetry/points/latest`.** For a list of asset
+   ids and a list of point keys, it returns the latest sample of each
+   (asset, point key) pair that has one inside the window. A pair with no
+   sample in the window is absent from the answer, not a row of nulls. One
+   statement answers the whole request. Measured with the proposed shape over
+   a real 15-minute window of the Control Room assets: 277 pairs in 0.19 s.
+2. **Bounds.** `assetIds`: 1–50 UUIDs. `pointKeys`: 1–64. `windowMinutes`:
+   an integer 1–60, default 15 (the provider's current `/recent` window). A
+   caller with more assets splits the list into requests of 50.
+3. **The window's lower bound must let the planner exclude chunks.** Build it
+   so that it is a constant at plan time, not `now() - $1` (Amendment 1
+   item 6). The plan measures the chosen form.
+4. **Scope: 403 for the whole request** if any asset id is outside the
+   caller's readable assets, the answer decision 5's read and `aggregate`
+   give. The check runs before the read. `telemetry.point_values` carries no
+   Row Level Security, so this guard is the only containment.
+5. **The provider uses the new read and drops the prefetch.** The prefetch
+   filled `["telemetry","recent",ref]`, which nothing reads. The per-point
+   `/recent` read stays for its other callers.
+
+**Consequences.**
+
+- **No schema change, no migration, no dependency.** Nothing under §9.4
+  moves.
+- **Contract change** (ADR 0030): a query schema and a response schema in
+  `packages/shared/src/contracts/`, and the route in the OpenAPI registry.
+- **A load of the SMOC view issues ⌈43 / 50⌉ = 1 telemetry read** instead of
+  2,924. `sld-page` and `crac-page` use the same provider and get the same
+  bound.
+- **Behaviour kept:** a pair with no sample in the last 15 minutes leaves the
+  slice field empty, as the `/recent` hydration did. The socket still
+  supplies every later reading.
+- **Found, not changed:** `useTelemetryLive`
+  (`apps/web/src/hooks/use-telemetry-live.ts`) has no importer.
