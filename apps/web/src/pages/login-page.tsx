@@ -45,9 +45,9 @@ export function LoginPage() {
   }
 
   return (
-    <div className="min-h-screen bg-[#07111f] px-4 py-8 text-on-dark">
+    <div className="min-h-screen bg-chrome px-4 py-8 text-on-dark">
       <div className="mx-auto grid min-h-[calc(100vh-4rem)] w-full max-w-6xl overflow-hidden rounded-2xl border border-on-dark/10 bg-on-dark/5 shadow-2xl lg:grid-cols-[1.12fr_0.88fr]">
-        <section className="relative flex flex-col justify-between overflow-hidden bg-[radial-gradient(circle_at_top_left,_rgba(0,166,81,0.34),_transparent_32%),linear-gradient(135deg,#0b1a2f_0%,#101827_54%,#05351f_100%)] p-8 lg:p-10">
+        <section className="relative flex flex-col justify-between overflow-hidden bg-[radial-gradient(circle_at_top_left,_rgb(var(--accent)_/_0.34),_transparent_32%),linear-gradient(135deg,rgb(var(--chrome))_0%,rgb(var(--chrome))_54%,rgb(var(--chrome-nav)_/_0.35)_100%)] p-8 lg:p-10">
           <div className="absolute right-8 top-8 h-36 w-36 rounded-full border border-accent/30 bg-accent/10 blur-sm" />
           <div className="absolute bottom-12 left-10 h-24 w-24 rounded-full border border-on-dark/10 bg-on-dark/5" />
           <div className="relative">
@@ -104,7 +104,13 @@ export function LoginPage() {
                 </p>
               </div>
               <div className="flex flex-col items-end gap-2">
-                <span className="rounded bg-[#003366] px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide text-on-dark">
+                {/* Plan defect (F3.65c review): §2.4/OQ6 measured `scrim/0.4` "over chrome"
+                    (17.20), but this badge sits inside the right-hand card on `bg-surface`, not
+                    the hero. `scrim/0.4` over `surface` is 2.85 light — a plan-defect fix, not
+                    the plan's own call: `chrome` is constant-dark in both themes and its
+                    `on-dark` pair is already declared (§2.4's "TEXT_PAIRS" `on-dark` on `chrome`),
+                    so it reproduces the original `#003366` badge's always-dark pixel. */}
+                <span className="rounded bg-chrome px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide text-on-dark">
                   Euphoria Delivery
                 </span>
                 <span className="font-mono text-[10px] uppercase tracking-wide text-ink-muted">

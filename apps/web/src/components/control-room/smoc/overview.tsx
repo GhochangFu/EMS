@@ -544,18 +544,31 @@ function svgStroke(status: CrStatus): string {
   // Ahead of every other arm: the default below is the *healthy* colour, so an
   // unnamed status draws as an energised green path.
   if (status === "offline") {
-    return "#94a3b8";
+    return "stroke-ink-hint";
   }
   if (status === "critical") {
-    return "#dc2626";
+    return "stroke-critical";
   }
   if (status === "warning") {
-    return "#f59e0b";
+    return "stroke-warning";
   }
   if (status === "open") {
-    return "#94a3b8";
+    return "stroke-ink-hint";
   }
-  return "#039855";
+  return "stroke-accent";
+}
+
+function svgFill(status: CrStatus): string {
+  if (status === "offline" || status === "open") {
+    return "fill-ink-hint";
+  }
+  if (status === "critical") {
+    return "fill-critical";
+  }
+  if (status === "warning") {
+    return "fill-warning";
+  }
+  return "fill-accent";
 }
 
 function svgBoxClass(status: CrStatus): string {
@@ -598,25 +611,25 @@ function MiniSld({ rules }: { rules: RuleListItem[] }) {
   const vwState = mergeStatus([q8State, q9State]);
   return (
     <svg className="mt-4 h-auto w-full" viewBox="0 0 720 240">
-      <line x1="92" y1="120" x2="148" y2="120" stroke={svgStroke(q1State.status)} strokeWidth={3} />
+      <line x1="92" y1="120" x2="148" y2="120" className={svgStroke(q1State.status)} strokeWidth={3} />
       <rect x="14" y="92" width="78" height="56" rx="6" className={svgBoxClass(q1State.status)} />
       <text x="53" y="118" textAnchor="middle" className="fill-ink font-condensed text-[13px] font-bold">UTILITY</text>
       <text x="53" y="134" textAnchor="middle" className="fill-ink-muted font-mono text-[10px]"><StaticTspan kind="nameplate">11 kV</StaticTspan></text>
       <circle cx="170" cy="120" r="14" className={svgBoxClass(q1State.status)} strokeWidth={2} />
       <text x="170" y="124" textAnchor="middle" className="fill-accent font-mono text-[9px] font-bold">Q1</text>
-      <line x1="184" y1="120" x2="240" y2="120" stroke={svgStroke(q1State.status)} strokeWidth={3} />
-      <rect x="240" y="50" width="6" height="146" rx="2" fill={svgStroke(mergeStatus([q4State, q5State, q6State, q8State, q9State]).status)} />
+      <line x1="184" y1="120" x2="240" y2="120" className={svgStroke(q1State.status)} strokeWidth={3} />
+      <rect x="240" y="50" width="6" height="146" rx="2" className={svgFill(mergeStatus([q4State, q5State, q6State, q8State, q9State]).status)} />
       <SldMiniBranch y={80} label="UPS-1" sub={`${n(ups1.loadPct, 0)}% · ${n(ups1.backupMin, 0)} min`} status={q4State.status} />
       <SldMiniBranch y={120} label="UPS-2" sub={`${n(ups2.loadPct, 0)}% · ${n(ups2.backupMin, 0)} min`} status={q5State.status} />
       <SldMiniBranch y={170} label="HVAC 1" sub={`${n(hvac1.kw, 2)} kW`} status={q10State.status} />
       <rect x="478" y="58" width="120" height="44" rx="5" className={svgBoxClass(netState.status)} />
       <text x="538" y="84" textAnchor="middle" className="fill-ink font-condensed text-[12px] font-bold">NETWORK RACK</text>
       <text x="538" y="97" textAnchor="middle" className="fill-ink-muted font-mono text-[9px]">{n(netRack.rackKw, 2)} kW</text>
-      <line x1="410" y1="80" x2="478" y2="80" stroke={svgStroke(netState.status)} strokeWidth={3} />
+      <line x1="410" y1="80" x2="478" y2="80" className={svgStroke(netState.status)} strokeWidth={3} />
       <rect x="478" y="110" width="120" height="44" rx="5" className={svgBoxClass(vwState.status)} />
       <text x="538" y="136" textAnchor="middle" className="fill-ink font-condensed text-[12px] font-bold">VW SERVER</text>
       <text x="538" y="149" textAnchor="middle" className="fill-ink-muted font-mono text-[9px]">{n(vwRack.rackKw, 2)} kW</text>
-      <line x1="410" y1="120" x2="478" y2="132" stroke={svgStroke(vwState.status)} strokeWidth={3} />
+      <line x1="410" y1="120" x2="478" y2="132" className={svgStroke(vwState.status)} strokeWidth={3} />
     </svg>
   );
 }
@@ -634,7 +647,7 @@ function SldMiniBranch({
 }) {
   return (
     <g>
-      <line x1="246" y1={y} x2="320" y2={y} stroke={svgStroke(status)} strokeWidth={3} />
+      <line x1="246" y1={y} x2="320" y2={y} className={svgStroke(status)} strokeWidth={3} />
       <rect x="320" y={y - 22} width="90" height="44" rx="5" className={svgBoxClass(status)} />
       <text x="365" y={y - 2} textAnchor="middle" className="fill-ink font-condensed text-[13px] font-bold">{label}</text>
       <text x="365" y={y + 12} textAnchor="middle" className="fill-ink-muted font-mono text-[9px]">{sub}</text>

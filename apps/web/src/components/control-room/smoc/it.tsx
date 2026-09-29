@@ -413,7 +413,7 @@ function UpsSourceMap({ rules }: { rules: RuleListItem[] }) {
         <svg viewBox="0 0 700 200" className="h-auto min-w-[700px]">
           <defs>
             <marker id="itArrow" markerWidth="6" markerHeight="6" refX="5" refY="3" orient="auto">
-              <path d="M0,0 L6,3 L0,6 Z" fill="#039855" />
+              <path d="M0,0 L6,3 L0,6 Z" className="fill-accent" />
             </marker>
           </defs>
           {/* ADR 0027 decision 3 — these SVG labels sit inside boxes whose
@@ -459,13 +459,13 @@ function UpsSourceMap({ rules }: { rules: RuleListItem[] }) {
 function mapStroke(status: RackPowerStatus): string {
   switch (status) {
     case "critical":
-      return "#dc2626";
+      return "stroke-critical";
     case "warning":
-      return "#f59e0b";
+      return "stroke-warning";
     case "offline":
-      return "#94a3b8";
+      return "stroke-ink-hint";
     case "normal":
-      return "#039855";
+      return "stroke-accent";
   }
 }
 
@@ -478,7 +478,7 @@ function mapBoxClasses(status: RackPowerStatus): { rect: string; text: string; s
     case "offline":
       return { rect: "fill-well-deep stroke-ink-hint", text: "fill-neutral-ink", sub: "fill-ink-faint" };
     case "normal":
-      return { rect: "fill-surface stroke-accent", text: "fill-[#1d3a8c]", sub: "fill-ink-muted" };
+      return { rect: "fill-surface stroke-accent", text: "fill-ink", sub: "fill-ink-muted" };
   }
 }
 
@@ -501,7 +501,7 @@ function MapLine({
       y1={y1}
       x2={x2}
       y2={y2}
-      stroke={mapStroke(status)}
+      className={mapStroke(status)}
       strokeWidth={status === "offline" ? 1.5 : 2.5}
       fill="none"
       strokeDasharray={status === "offline" ? "4 4" : undefined}

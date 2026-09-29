@@ -8,6 +8,7 @@ import type {
 import { WIDGET_POINT_CARDINALITY, WIDGET_SOURCE_CARDINALITY } from "@bms/shared";
 
 import type { KpiTileStatus } from "../components/kpi-tile";
+import type { RoleName, Roles } from "./theme";
 
 /**
  * `F3.1c` — the dashboard widget catalog (ADR 0047, Amendment 2 §1).
@@ -78,19 +79,38 @@ export type WidgetSeries = {
 };
 
 /**
- * Hex, not a Tailwind class — `axisLine.lineStyle.color` and an SVG `fill`
- * both need a colour value, not a class name. Sourced from `TRINETRA.html:12`
- * (`--sc`, `--in`, `--wn`, `--cr`), matching §5's palette rule and the same
- * four hexes already in use for this semantic — `energy-top-bar-chart.tsx:17`
- * and `crac-schematic.tsx:354,361` for `info`, `crac-schematic.tsx:17-19` for
- * the other three.
+ * `F3.65c` (ADR 0078 decision 5, owner ruling OQ1) — a tone names a role, never a hex. The
+ * TRINETRA status quartet this used to hold merged into the app's status roles, so a gauge band
+ * and a tank fill follow the theme like everything else.
  */
-export const WIDGET_TONE_COLOR: Readonly<Record<WidgetTone, string>> = {
-  ok: "#039855",
-  info: "#1570EF",
-  warning: "#DC6803",
-  critical: "#D92D20",
+export const WIDGET_TONE_ROLE: Readonly<Record<WidgetTone, RoleName>> = {
+  ok: "accent",
+  info: "info",
+  warning: "warning",
+  critical: "critical",
 };
+
+/**
+ * The tank fill's class per tone — `fill-` + `WIDGET_TONE_ROLE[tone]`, written out because
+ * Tailwind emits only a class it finds as a literal (`widget-catalog.spec.ts` holds the two maps
+ * to one source).
+ */
+export const WIDGET_TONE_FILL_CLASS: Readonly<Record<WidgetTone, string>> = {
+  ok: "fill-accent",
+  info: "fill-info",
+  warning: "fill-warning",
+  critical: "fill-critical",
+};
+
+/** Each tone's resolved colour, for ECharts (a gauge's band stops cannot take a class). */
+export function widgetToneColor(roles: Roles): Readonly<Record<WidgetTone, string>> {
+  return {
+    ok: roles[WIDGET_TONE_ROLE.ok],
+    info: roles[WIDGET_TONE_ROLE.info],
+    warning: roles[WIDGET_TONE_ROLE.warning],
+    critical: roles[WIDGET_TONE_ROLE.critical],
+  };
+}
 
 type WidgetCatalogEntry = {
   readonly label: string;

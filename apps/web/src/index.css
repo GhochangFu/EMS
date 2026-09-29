@@ -125,3 +125,17 @@ body {
 .leaflet-popup-tip {
   background: rgb(var(--surface));
 }
+
+/*
+ * F3.65c U7 — the popup close glyph is `leaflet.css`'s own `#757575` (`:hover`/`:focus` `#585858`),
+ * a light pixel on a `surface` popup that stays white in dark. Same reasoning and specificity as
+ * the rule above.
+ */
+.leaflet-container a.leaflet-popup-close-button {
+  color: rgb(var(--ink-faint));
+}
+
+.leaflet-container a.leaflet-popup-close-button:hover,
+.leaflet-container a.leaflet-popup-close-button:focus {
+  color: rgb(var(--ink));
+}

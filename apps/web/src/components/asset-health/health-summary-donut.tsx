@@ -10,6 +10,8 @@ import {
   healthDonutSlices,
   healthWindowCoverage,
 } from "../../lib/asset-health-view";
+import { useChartTheme } from "../../lib/chart-theme";
+import type { RoleName } from "../../lib/theme";
 import { formatBucketWidth } from "../../lib/widget-value";
 
 type HealthSummaryDonutProps = {
@@ -19,8 +21,12 @@ type HealthSummaryDonutProps = {
 
 /** Excellent → Critical, the client's own five names (ADR 0050 Context). A
  * summary whose template names a different band vocabulary still gets a
- * colour, cycling rather than running out. */
-const SLICE_COLORS = ["#16a34a", "#65a30d", "#eab308", "#f97316", "#dc2626"];
+ * colour, cycling rather than running out.
+ *
+ * `F3.65c` (owner ruling OQ4) — five roles, resolved for the current theme. The Fair slice's
+ * `warning-on-dark` is under 3:1 on a light `surface`, a declared light allowlist entry in
+ * `tests/f3.65a-colour-contrast.test.ts`: every slice is named in the legend list below. */
+const SLICE_ROLES: readonly RoleName[] = ["accent", "accent-strong", "warning-on-dark", "warning", "critical"];
 
 /**
  * `E1.3` Unit 8 — the plant/enterprise donut (ADR 0050 Amendment 1 decision
@@ -64,6 +70,7 @@ export function HealthSummaryDonut({ title = "Asset Health", summary }: HealthSu
   // a whole one, so neither sentence may replace the other.
   const coverage = healthWindowCoverage(summary.coveredBuckets, summary.expectedBuckets);
 
+  const { roles, theme } = useChartTheme();
   const option = useMemo<EChartsOption>(
     () => ({
       tooltip: { trigger: "item" },
@@ -76,12 +83,12 @@ export function HealthSummaryDonut({ title = "Asset Health", summary }: HealthSu
           data: slices.map((slice, i) => ({
             name: slice.label,
             value: slice.count,
-            itemStyle: { color: SLICE_COLORS[i % SLICE_COLORS.length] },
+            itemStyle: { color: roles[SLICE_ROLES[i % SLICE_ROLES.length]] },
           })),
         },
       ],
     }),
-    [slices],
+    [slices, roles],
   );
 
   return (
@@ -99,7 +106,7 @@ export function HealthSummaryDonut({ title = "Asset Health", summary }: HealthSu
           </p>
         </div>
       ) : (
-        <ReactECharts option={option} style={{ height: 200 }} notMerge lazyUpdate />
+        <ReactECharts option={option} theme={theme} style={{ height: 200 }} notMerge lazyUpdate />
       )}
       <dl className="mt-2 grid grid-cols-1 gap-y-1 text-xs text-ink">
         {slices.map((slice) => (

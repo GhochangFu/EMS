@@ -1,6 +1,8 @@
 import type { EChartsOption } from "echarts";
 
-import { CHART_SERIES, WIDGET_TONE_COLOR, type ChartConfig, type RadialGaugeConfig, type WidgetSeries } from "./widget-catalog";
+import { seriesPalette } from "./chart-theme";
+import type { Roles } from "./theme";
+import { CHART_SERIES, widgetToneColor, type ChartConfig, type RadialGaugeConfig, type WidgetSeries } from "./widget-catalog";
 import { formatWidgetValue } from "./widget-value";
 
 function clamp(value: number, lo: number, hi: number): number {
@@ -15,9 +17,14 @@ function clamp(value: number, lo: number, hi: number): number {
  * `gaugeRangeIsOrdered` on the contract side (`packages/shared/src/
  * contracts/dashboard-builder.ts`) — relied on rather than re-checked here,
  * so this file does not carry a second copy of that rule.
+ *
+ * `roles` is required, not optional (`F3.65c`): the band stops are the tones' resolved roles for
+ * the current theme, and an optional parameter at this adapter would let a caller fall back to a
+ * default no compiler or fake would notice.
  */
-export function buildRadialGaugeOption(config: RadialGaugeConfig, value: number): EChartsOption {
+export function buildRadialGaugeOption(config: RadialGaugeConfig, value: number, roles: Roles): EChartsOption {
   const { min, max, thresholds = [] } = config;
+  const toneColor = widgetToneColor(roles);
   const range = max - min;
   const clampedValue = clamp(value, min, max);
 
@@ -43,7 +50,7 @@ export function buildRadialGaugeOption(config: RadialGaugeConfig, value: number)
   const sortedThresholds = [...thresholds].sort((a, b) => a.value - b.value);
   const bandStops: [number, string][] = sortedThresholds.map((t, i) => [
     clamp((t.value - min) / range, 0, 1),
-    WIDGET_TONE_COLOR[i === 0 ? "ok" : sortedThresholds[i - 1].tone],
+    toneColor[i === 0 ? "ok" : sortedThresholds[i - 1].tone],
   ]);
 
   // The last stop must reach 1: ECharts leaves everything past the final
@@ -52,8 +59,8 @@ export function buildRadialGaugeOption(config: RadialGaugeConfig, value: number)
   // left short.
   const colorStops: [number, string][] =
     sortedThresholds.length === 0
-      ? [[1, WIDGET_TONE_COLOR.ok]]
-      : [...bandStops, [1, WIDGET_TONE_COLOR[sortedThresholds[sortedThresholds.length - 1].tone]]];
+      ? [[1, toneColor.ok]]
+      : [...bandStops, [1, toneColor[sortedThresholds[sortedThresholds.length - 1].tone]]];
 
   return {
     series: [
@@ -108,8 +115,16 @@ const DEFAULT_WINDOW_MINUTES = 1_440;
  * (the same rule `tests/repo-invariants.test.ts` holds against
  * `schematic-telemetry-context.tsx`, there in the opposite direction: the
  * clock read belongs in the component that calls this, at render, not here).
+ *
+ * `roles` (`F3.65c`, required for the same reason as the gauge's) gives the series colours, the
+ * same palette `echartsTheme` holds, so a theme toggle changes the option and the theme together.
  */
-export function buildChartOption(config: ChartConfig, series: readonly WidgetSeries[], now: number): EChartsOption {
+export function buildChartOption(
+  config: ChartConfig,
+  series: readonly WidgetSeries[],
+  now: number,
+  roles: Roles,
+): EChartsOption {
   const seriesShape = CHART_SERIES[config.series];
   const windowMinutes = config.windowMinutes ?? DEFAULT_WINDOW_MINUTES;
   const xAxisMin = new Date(now - windowMinutes * 60_000).toISOString();
@@ -120,6 +135,7 @@ export function buildChartOption(config: ChartConfig, series: readonly WidgetSer
   const ordered = [...series].sort((a, b) => a.sortOrder - b.sortOrder);
 
   return {
+    color: seriesPalette(roles),
     xAxis: { type: "time", min: xAxisMin },
     yAxis: {
       type: "value",

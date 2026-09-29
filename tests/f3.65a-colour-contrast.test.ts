@@ -41,7 +41,8 @@ import { blendOver, contrastRatio, parseTokenBlocks, type Channels, channelsToHe
  * `gray-200` is already 3.50, an existing failure in an 8 px SVG label that `F3.65c` recolours
  * with the rest of the schematic; and `critical-ink-soft` on `canvas` (4.38 light) — no
  * `text-red-600` shares a string with a red wash (grep: 0), so F3.65a's stance holds. **The dark
- * allowlist stays empty.**
+ * allowlist stayed empty until the owner ruling of 2026-09-29**, which added two entries for the
+ * formula editor's selected state (see `ALLOWLIST`).
  */
 
 const TOKENS_PATH = join(repoRoot, "apps/web/src/index.css");
@@ -128,6 +129,32 @@ const TEXT_PAIRS: Pair[] = [
   // stopping point (4.51 / 4.87, failing `well` at 4.04) to also clear `well` (5.13 / 5.54 / 4.59).
   { fg: "simulated-ink", bg: "surface" },
   { fg: "simulated-ink", bg: "well" },
+  // F3.65c U4 — green text on the ok tint (D7): crac-schematic.tsx's chiller "Load … kW" label,
+  // electrical-sld's UPS labels (already `#007C3C`, U5).
+  { fg: "accent-strong", bg: "ok-wash" },
+  // F3.65c U4 — crac-schematic.tsx labels beside a `fill-well` panel (the fan hub, the compressor
+  // bank frame).
+  { fg: "info-ink", bg: "well" },
+  // F3.65c U6 — the six SMOC views' status pills, tiles and matched-rule notes sit on a `well`
+  // sensor-table header or the SMOC boards' offline `well` panels.
+  { fg: "warning-ink", bg: "well" },
+  { fg: "critical-ink-strong", bg: "well" },
+  // F3.65c U10 — the header's Light / Dark switch (`components/theme-switch.tsx`) on `chrome`: the
+  // idle label at 0.85 (also the Logout button's `text-on-dark/85`, undeclared until now), the idle
+  // label under its `hover:bg-on-dark/10` wash, and the pressed label on its `bg-on-dark/15` wash.
+  { fg: "on-dark", bg: "chrome", alpha: 0.85 },
+  { fg: "on-dark", bg: "chrome", alpha: 0.85, wash: { tint: "on-dark", alpha: 0.1 } },
+  { fg: "on-dark", bg: "chrome", wash: { tint: "on-dark", alpha: 0.15 } },
+  // F3.65c review, owner ruling 2026-09-29 — the formula editor's selection
+  // (`formula-editor.tsx` `CALC_THEME_SPEC`), focused or not, is `info` at 0.15 on the `surface`
+  // editor. The text over it is every token ink the editor paints. Dark `simulated-ink` and
+  // `info-ink` fall under 4.5 there and are allowlisted below.
+  { fg: "ink", bg: "surface", wash: { tint: "info", alpha: 0.15 } },
+  { fg: "ink-muted", bg: "surface", wash: { tint: "info", alpha: 0.15 } },
+  { fg: "accent-strong", bg: "surface", wash: { tint: "info", alpha: 0.15 } },
+  { fg: "simulated-ink", bg: "surface", wash: { tint: "info", alpha: 0.15 } },
+  { fg: "warning-ink", bg: "surface", wash: { tint: "info", alpha: 0.15 } },
+  { fg: "info-ink", bg: "surface", wash: { tint: "info", alpha: 0.15 } },
 ];
 
 /**
@@ -156,11 +183,20 @@ const UI_PAIRS: Pair[] = [
   { fg: "info", bg: "surface" },
   { fg: "info", bg: "canvas" },
   { fg: "ink-hint", bg: "surface" },
+  // F3.65c OQ4: the health donut's Fair slice (`health-summary-donut.tsx`) on its `surface` card.
+  { fg: "warning-on-dark", bg: "surface" },
+  // F3.65c U10 — the theme switch's focus ring (`focus-visible:ring-on-dark/80`, inset: the group's
+  // `overflow-hidden` clips an outer ring) on an idle button's bare `chrome`, and on the pressed
+  // button's `on-dark/15` wash — a keyboard press leaves the focused button pressed.
+  { fg: "on-dark", bg: "chrome", alpha: 0.8 },
+  { fg: "on-dark", bg: "chrome", alpha: 0.8, wash: { tint: "on-dark", alpha: 0.15 } },
 ];
 
 /**
- * The light allowlist, exact — §2.4 "Light allowlist (exact, with reason)". Dark allowlist is
- * empty: every declared pair clears its threshold in dark with the values §2.2 sets.
+ * The light allowlist, exact — §2.4 "Light allowlist (exact, with reason)". The dark allowlist
+ * was empty until the owner ruling of 2026-09-29: its two entries are the formula editor's token
+ * inks `simulated-ink` and `info-ink` over the `info`/0.15 selection, a transient selected state.
+ * Every other declared pair clears its threshold in dark with the values §2.2 sets.
  */
 const ALLOWLIST: AllowlistEntry[] = [
   {
@@ -261,12 +297,41 @@ const ALLOWLIST: AllowlistEntry[] = [
     reason: "placeholder / inactive; WCAG 1.4.3 inactive exception",
   },
   {
+    // F3.65c OQ4 — the health donut's Fair slice.
+    fg: "warning-on-dark",
+    bg: "surface",
+    theme: "light",
+    measured: 1.67,
+    threshold: 3,
+    reason: "status slices are named in the legend list; existing",
+  },
+  {
     fg: "on-dark",
     bg: "line-strong",
     theme: "light",
     measured: 1.47,
     threshold: 3,
     reason: "the disabled rule toggle's white knob on its gray track; existing pixel — the knob's position and the button's label carry the state",
+  },
+  {
+    // F3.65c owner ruling 2026-09-29 — a DARK entry, the first: the formula editor's selection.
+    fg: "simulated-ink",
+    bg: "surface",
+    wash: { tint: "info", alpha: 0.15 },
+    theme: "dark",
+    measured: 4.04,
+    threshold: 4.5,
+    reason: "transient selected state; unselected text keeps 4.5",
+  },
+  {
+    // F3.65c owner ruling 2026-09-29 — a DARK entry, the first: the formula editor's selection.
+    fg: "info-ink",
+    bg: "surface",
+    wash: { tint: "info", alpha: 0.15 },
+    theme: "dark",
+    measured: 3.98,
+    threshold: 4.5,
+    reason: "transient selected state; unselected text keeps 4.5",
   },
 ];
 
