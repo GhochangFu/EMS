@@ -2692,6 +2692,41 @@ dark; light stays the default (ADR 0074). The switch is the sun / moon
 calls the store's `setTheme`, which sets `data-theme` without a reload and
 writes `"light"` or `"dark"`. There is no "System" choice and no `matchMedia`.
 
+**Surfaces are named, not spelled** (**ADR 0085**, `F3.71`, 2026-09-29). The
+app has two surface styles, chosen per browser beside the theme: **Neumorphic**
+(the default — shapes raised from or pressed into the `canvas` by soft shadow
+pairs) and **Flat** (the `ESKOM_SMOC.html` look). A call site names what a
+shape is with one of the `surface-*` classes in `apps/web/src/index.css`
+(`surface-raised` for a card, `surface-pressed` for a well or a drawing's frame,
+`surface-field` for every input / select / textarea, `surface-button`,
+`surface-button-primary`, `surface-tab`, `surface-segment`, `surface-table`,
+`surface-dialog`, `surface-pill` …) and never spells a surface as colour
+utilities:
+
+- **No `bg-surface` + `border-line` card and no `rounded border` field** in a
+  class string (V1, `tests/f3.71-surface-card-ratchet.test.ts`, exact with its
+  allowlist), and **no `surface-*` class beside** `bg-surface`, `bg-well`,
+  `bg-well-deep`, `border-line`, `border-line-strong` or a `shadow-*` — a
+  `disabled:bg-well` included; use `disabled:opacity-60` (V3). Tone utilities
+  (`border-critical-line`, `text-warning-ink`, `after:bg-*`) are content and stay.
+- **A new `surface-*` class has a neumorphic base rule and a
+  `:where([data-surface="flat"])` rule** that resets every property the base
+  rule sets (V4, V7), its state rules are `:where(:hover)` so a call-site tone
+  still wins (V8), and it is used (V5) — all in
+  `tests/f3.71-surface-gates.test.ts`, with the boot-script and token cases.
+- **Shadows are tokens** (`--shadow-raised` …) built from role variables only,
+  in their own `index.css` blocks keyed on `:not([data-surface="flat"])`; no new
+  colour role. The chrome (header, green nav, footer) stays flat in both styles;
+  schematics, maps, the mimic scene and charts keep their own drawing inside a
+  `surface-pressed` frame. Text on the neumorphic card ground (`canvas`) uses
+  `ink-muted`, `critical-ink` and `accent-strong`, not `ink-faint`,
+  `critical-ink-soft` or bare `accent`.
+
+The choice is `localStorage["bms.surface"]`, read by the same inline script as
+the theme: only `"flat"` gives Flat. The **Surface** group beside the theme
+switch (`components/surface-switch.tsx`, over the shared `PreferenceSwitch`)
+writes it and sets `data-surface` without a reload.
+
 ---
 
 ## 6. Out of Scope for the Current Sprint
