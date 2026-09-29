@@ -123,8 +123,17 @@ export function runDashboardBuilderTests(): void {
     "a mimic config with no source must be refused — decision 9 discriminates on it",
   );
   assert(
-    JSON.stringify(mimicPresetSchema.options) === JSON.stringify(["water_train"]),
-    `the preset vocabulary is water_train alone (ADR 0079 decision 8), got ${JSON.stringify(mimicPresetSchema.options)}`,
+    JSON.stringify(mimicPresetSchema.options) ===
+      JSON.stringify([
+        "water_train",
+        "electrical_distribution",
+        "hvac_chiller_plant",
+        "it_power_cooling",
+        "compressed_air",
+        "environment_monitoring",
+        "facility_services",
+      ]),
+    `the preset vocabulary is ADR 0082's seven, water_train first, got ${JSON.stringify(mimicPresetSchema.options)}`,
   );
   expectRejects(
     mimicConfigSchema,

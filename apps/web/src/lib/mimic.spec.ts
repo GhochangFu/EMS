@@ -1,11 +1,13 @@
 import { expect } from "vitest";
 
-import { MIMIC_HEADLINE_POINTS } from "@bms/shared/contracts";
+import { MIMIC_HEADLINE_POINTS, mimicPresetSchema } from "@bms/shared/contracts";
 import {
   MIMIC_PRESETS,
   type GeneratedSiteAssetDto,
   type GeneratedSitePointDto,
   type MimicNodeDto,
+  type MimicPreset,
+  type MimicPresetDef,
   type MimicWidgetNodesDto,
 } from "@bms/shared";
 
@@ -29,6 +31,10 @@ import {
   mimicNodeStatus,
   mimicViewFor,
   pipePath,
+  slotAt,
+  slotViewBox,
+  type MimicPanel,
+  type MimicPoint,
 } from "./mimic";
 import { FRESH_MS } from "./schematic-telemetry";
 
@@ -133,23 +139,111 @@ export function layoutKeysMatchPresetKeys(): void {
   }
 }
 
-/** M4b — every node box lies inside the viewBox, and no two boxes overlap. */
+/** Every preset, in enum order (`F3.32d`: the loops below cover all seven, ADR 0082). */
+const PRESETS = mimicPresetSchema.options;
+
+/** A preset's node corners, widened: the layouts are a mapped type keyed per preset. */
+function nodesOf(preset: MimicPreset): Readonly<Record<string, MimicPoint>> {
+  return MIMIC_LAYOUTS[preset].nodes as Readonly<Record<string, MimicPoint>>;
+}
+
+/** M4b — in every preset, every node box lies inside the viewBox, and no two boxes overlap. */
 export function nodesFitAndDoNotOverlap(): void {
-  const layout = MIMIC_LAYOUTS.water_train;
-  const [, , vw, vh] = layout.viewBox.split(" ").map(Number);
-  const boxes = Object.entries(layout.nodes);
-  for (const [key, at] of boxes) {
-    expect(at.x >= 0 && at.y >= 0 && at.x + MIMIC_NODE_SIZE.w <= vw && at.y + MIMIC_NODE_SIZE.h <= vh, key).toBe(true);
+  for (const preset of PRESETS) {
+    const [, , vw = 0, vh = 0] = MIMIC_LAYOUTS[preset].viewBox.split(" ").map(Number);
+    const boxes = Object.entries(nodesOf(preset));
+    for (const [key, at] of boxes) {
+      expect(
+        at.x >= 0 && at.y >= 0 && at.x + MIMIC_NODE_SIZE.w <= vw && at.y + MIMIC_NODE_SIZE.h <= vh,
+        `${preset}.${key}`,
+      ).toBe(true);
+    }
+    for (const [ka, a] of boxes) {
+      for (const [kb, b] of boxes) {
+        if (ka >= kb) continue;
+        const apart =
+          a.x + MIMIC_NODE_SIZE.w <= b.x ||
+          b.x + MIMIC_NODE_SIZE.w <= a.x ||
+          a.y + MIMIC_NODE_SIZE.h <= b.y ||
+          b.y + MIMIC_NODE_SIZE.h <= a.y;
+        expect(apart, `${preset}: ${ka} overlaps ${kb}`).toBe(true);
+      }
+    }
   }
-  for (const [ka, a] of boxes) {
-    for (const [kb, b] of boxes) {
-      if (ka >= kb) continue;
-      const apart =
-        a.x + MIMIC_NODE_SIZE.w <= b.x ||
-        b.x + MIMIC_NODE_SIZE.w <= a.x ||
-        a.y + MIMIC_NODE_SIZE.h <= b.y ||
-        b.y + MIMIC_NODE_SIZE.h <= a.y;
-      expect(apart, `${ka} overlaps ${kb}`).toBe(true);
+}
+
+/** M4c — the slot rule: column 4, row 1 is the 1020, 410 corner `water_train`'s storage and tower use. */
+export function slotAtIsTheWaterTrainPitch(): void {
+  expect(slotAt(4, 1)).toEqual({ x: 1020, y: 410 });
+  expect(slotAt(0, 0)).toEqual({ x: 40, y: 44 });
+}
+
+/** M4d — the slot rule's 5 × 2 viewBox is `water_train`'s literal one. */
+export function slotViewBoxIsTheWaterTrainViewBox(): void {
+  expect(slotViewBox(5, 2)).toBe(MIMIC_LAYOUTS.water_train.viewBox);
+  expect(slotViewBox(4, 1)).toBe("0 0 1015 314");
+}
+
+/** The axis-aligned segments of an `M x y` path built from `H` and `V` steps only. */
+function segmentsOf(d: string): { x0: number; y0: number; x1: number; y1: number }[] {
+  const tokens = d.match(/[MHV]\s*-?[\d.]+(?:\s+-?[\d.]+)?/g) ?? [];
+  const out: { x0: number; y0: number; x1: number; y1: number }[] = [];
+  let x = Number.NaN;
+  let y = Number.NaN;
+  for (const token of tokens) {
+    const cmd = token[0];
+    const values = token.slice(1).trim().split(/\s+/).map(Number);
+    if (cmd === "M") {
+      [x = Number.NaN, y = Number.NaN] = values;
+    } else if (cmd === "H") {
+      const nx = values[0] ?? Number.NaN;
+      out.push({ x0: x, y0: y, x1: nx, y1: y });
+      x = nx;
+    } else if (cmd === "V") {
+      const ny = values[0] ?? Number.NaN;
+      out.push({ x0: x, y0: y, x1: x, y1: ny });
+      y = ny;
+    }
+  }
+  return out;
+}
+
+/** Whether a segment enters the open interior of a 200 × 250 slot at `at`. */
+function entersSlot(s: { x0: number; y0: number; x1: number; y1: number }, at: MimicPoint): boolean {
+  const { w, h } = MIMIC_NODE_SIZE;
+  const [xa, xb] = [Math.min(s.x0, s.x1), Math.max(s.x0, s.x1)];
+  const [ya, yb] = [Math.min(s.y0, s.y1), Math.max(s.y0, s.y1)];
+  return xa < at.x + w && xb > at.x && ya < at.y + h && yb > at.y;
+}
+
+/** The slots other than its two ends that a pipe's path enters. */
+function thirdSlotsCrossed(d: string, ends: readonly string[], nodes: Readonly<Record<string, MimicPoint>>): string[] {
+  const segments = segmentsOf(d);
+  if (segments.length === 0 || segments.some((s) => [s.x0, s.y0, s.x1, s.y1].some((v) => !Number.isFinite(v)))) {
+    return [`unparsed path ${d}`];
+  }
+  return Object.entries(nodes)
+    .filter(([key, at]) => !ends.includes(key) && segments.some((s) => entersSlot(s, at)))
+    .map(([key]) => key);
+}
+
+/**
+ * M15 — in every preset, no pipe runs through a third unit's slot (plan §3 drawing check). The
+ * positive control first: a pipe from column 0 to column 2 must be seen crossing column 1, so a
+ * checker that parses nothing cannot pass.
+ */
+export function pipesCrossNoThirdSlot(): void {
+  const control = { a: slotAt(0, 0), b: slotAt(1, 0), c: slotAt(2, 0) };
+  expect(thirdSlotsCrossed(pipePath(control.a, control.c), ["a", "c"], control)).toEqual(["b"]);
+  for (const preset of PRESETS) {
+    const nodes = nodesOf(preset);
+    const def: MimicPresetDef = MIMIC_PRESETS[preset];
+    for (const pipe of def.pipes) {
+      const from = nodes[pipe.from];
+      const to = nodes[pipe.to];
+      expect(from !== undefined && to !== undefined, `${preset}: ${pipe.from} → ${pipe.to} has both ends`).toBe(true);
+      const crossed = thirdSlotsCrossed(pipePath(from as MimicPoint, to as MimicPoint), [pipe.from, pipe.to], nodes);
+      expect(crossed, `${preset}: ${pipe.from} → ${pipe.to}`).toEqual([]);
     }
   }
 }
@@ -184,27 +278,35 @@ export function panelsPartitionThePresetNodes(): void {
   }
 }
 
-/** M7b — the panel frames fit the viewBox and do not overlap one another. */
+/**
+ * M7b — in every preset, the panel frames fit the viewBox and do not overlap one another. The
+ * sink widens its panel only where the preset has one (ADR 0082 decision 3: `sink` is optional).
+ */
 export function panelFramesFitAndDoNotOverlap(): void {
-  const def = MIMIC_PRESETS.water_train;
-  const layout = MIMIC_LAYOUTS.water_train;
-  const [, , vw, vh] = layout.viewBox.split(" ").map(Number);
-  const boxes = MIMIC_PANELS.water_train.map((p) => {
-    const box = mimicPanelBox(
-      p.nodes.map((k) => layout.nodes[k]),
-      (p.nodes as readonly string[]).includes(def.sink.from) ? layout.sink : null,
-    );
-    expect(box, p.key).not.toBeNull();
-    return [p.key, box as NonNullable<typeof box>] as const;
-  });
-  for (const [key, b] of boxes) {
-    expect(b.x >= 0 && b.y >= 0 && b.x + b.w <= vw && b.y + b.h <= vh, key).toBe(true);
-  }
-  for (const [ka, a] of boxes) {
-    for (const [kb, b] of boxes) {
-      if (ka >= kb) continue;
-      const apart = a.x + a.w <= b.x || b.x + b.w <= a.x || a.y + a.h <= b.y || b.y + b.h <= a.y;
-      expect(apart, `${ka} overlaps ${kb}`).toBe(true);
+  for (const preset of PRESETS) {
+    const def: MimicPresetDef = MIMIC_PRESETS[preset];
+    const layout = MIMIC_LAYOUTS[preset];
+    const nodes = nodesOf(preset);
+    const [, , vw = 0, vh = 0] = layout.viewBox.split(" ").map(Number);
+    const panels: readonly MimicPanel[] = MIMIC_PANELS[preset];
+    const boxes = panels.map((p) => {
+      const holdsSink = def.sink !== undefined && p.nodes.includes(def.sink.from);
+      const box = mimicPanelBox(
+        p.nodes.map((k) => nodes[k] as MimicPoint),
+        holdsSink ? (layout.sink ?? null) : null,
+      );
+      expect(box, `${preset}.${p.key}`).not.toBeNull();
+      return [p.key, box as NonNullable<typeof box>] as const;
+    });
+    for (const [key, b] of boxes) {
+      expect(b.x >= 0 && b.y >= 0 && b.x + b.w <= vw && b.y + b.h <= vh, `${preset}.${key}`).toBe(true);
+    }
+    for (const [ka, a] of boxes) {
+      for (const [kb, b] of boxes) {
+        if (ka >= kb) continue;
+        const apart = a.x + a.w <= b.x || b.x + b.w <= a.x || a.y + a.h <= b.y || b.y + b.h <= a.y;
+        expect(apart, `${preset}: ${ka} overlaps ${kb}`).toBe(true);
+      }
     }
   }
 }

@@ -70,10 +70,22 @@ export function mimicConfigRefusesAPresetSourceCarryingALayoutId(): void {
   assert(!result.success, "source preset with a layoutId and no preset must be refused");
 }
 
-/** The preset vocabulary is unchanged by the move: `water_train` alone. */
-export function mimicPresetVocabularyIsWaterTrainAlone(): void {
+/**
+ * The preset vocabulary is the seven of ADR 0082 decision 3, `water_train` first: the dashboard
+ * builder's default preset is `options[0]`, so a reorder would change what a new widget draws.
+ */
+export function mimicPresetVocabularyIsTheSevenDomainPresets(): void {
+  const expected = [
+    "water_train",
+    "electrical_distribution",
+    "hvac_chiller_plant",
+    "it_power_cooling",
+    "compressed_air",
+    "environment_monitoring",
+    "facility_services",
+  ];
   assert(
-    JSON.stringify(mimicPresetSchema.options) === JSON.stringify(["water_train"]),
-    `the preset vocabulary is water_train alone, got ${JSON.stringify(mimicPresetSchema.options)}`,
+    JSON.stringify(mimicPresetSchema.options) === JSON.stringify(expected),
+    `the preset vocabulary is ADR 0082's seven, water_train first, got ${JSON.stringify(mimicPresetSchema.options)}`,
   );
 }

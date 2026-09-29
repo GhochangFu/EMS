@@ -2,7 +2,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useReducer, useState } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import type { MimicLayoutDto } from "@bms/shared";
-import { MIMIC_LAYOUT_STALE_MESSAGE } from "@bms/shared/contracts";
+import { MIMIC_LAYOUT_STALE_MESSAGE, mimicPresetSchema } from "@bms/shared/contracts";
 
 import { fetchAdminOrganizations } from "../../api/admin/organizations";
 import { createMimicLayout, fetchMimicLayout, replaceMimicLayout } from "../../api/mimic-layouts";
@@ -36,8 +36,9 @@ export const STALE_LAYOUT_BANNER = "This layout was changed by someone else sinc
 /**
  * `F3.32c` U6c (ADR 0081 decisions 2, 3, 7) — the mimic layout editor.
  *
- * `/admin/mimic-layouts/new` draws a new layout (blank, or the preset copy with
- * `?preset=water_train`, decision 4) and saves it with `POST` and the owning `organizationId`
+ * `/admin/mimic-layouts/new` draws a new layout (blank, or the preset copy with `?preset=<p>`,
+ * decision 4 — any of the seven presets since ADR 0082 decision 5; an unknown `p` is blank) and
+ * saves it with `POST` and the owning `organizationId`
  * (owner ruling OQ3), then moves to the saved layout's route. `/admin/mimic-layouts/:layoutId`
  * loads a stored layout and saves it with `PUT` and the `version` it was loaded at (decision 2):
  * a 409 means another save came first, and the page shows a Reload banner rather than a raw
@@ -75,7 +76,9 @@ function NewLayoutEditor() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [organizationId, setOrganizationId] = useState("");
-  const initial = searchParams.get("preset") === "water_train" ? fromPreset("water_train") : emptyEditorLayout();
+  // Any preset of the closed enum starts from its copy; an absent or unknown one is blank (plan D9).
+  const preset = mimicPresetSchema.safeParse(searchParams.get("preset"));
+  const initial = preset.success ? fromPreset(preset.data) : emptyEditorLayout();
 
   const orgsQ = useQuery({
     queryKey: ["admin", "organizations", "true"],

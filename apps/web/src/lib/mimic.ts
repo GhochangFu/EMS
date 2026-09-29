@@ -20,6 +20,9 @@ import { assetStatus, type AssetStatus } from "./generated-site-view";
  * `MIMIC_PRESETS` in `packages/shared`, because the API answers nodes in its order. Where a node
  * sits on the canvas is presentation, and lives here (plan D3).
  *
+ * `F3.32d` / ADR 0082 decision 3 adds six domain presets. Their coordinates follow one slot rule
+ * (`MIMIC_SLOT_GRID`, `slotAt`, `slotViewBox`); `water_train` keeps its literal table.
+ *
  * **The live overlay is F3.68's, unchanged** (plan D2). `mimicViewFor` hands the assigned assets
  * to `useSiteLiveReadings` as a synthetic `GeneratedSiteViewDto`, so the clamp-once rule, the
  * one tick and the shared `isStale` gate are reused rather than restated. Each mimic widget opens
@@ -56,17 +59,49 @@ type NodeKeyOf<P extends MimicPreset> = (typeof MIMIC_PRESETS)[P]["nodes"][numbe
 type MimicLayout<K extends string> = {
   readonly viewBox: string;
   readonly nodes: { readonly [key in K]: MimicPoint };
-  /** Where the sink pipe ends; the sink symbol and label are drawn just past it. */
-  readonly sink: MimicPoint;
+  /**
+   * Where the sink pipe ends; the sink symbol and label are drawn just past it. Optional, as
+   * the preset's `sink` is (ADR 0082 decision 3): only `water_train` has one.
+   */
+  readonly sink?: MimicPoint;
   /** Pipes that carry a drawn pump at their midpoint — decoration, not a node (ruling 1). */
   readonly pumps: readonly { readonly from: K; readonly to: K }[];
 };
+
+/**
+ * The slot rule every preset but `water_train` is placed by (`F3.32d`, ADR 0082, plan D3): column
+ * `c` at `x0 + colPitch·c`, row `r` at `y0 + rowPitch·r`. It is `water_train`'s own pitch — its
+ * top row and its tower sit on it — so the seven drawings share one rhythm.
+ */
+export const MIMIC_SLOT_GRID = { x0: 40, y0: 44, colPitch: 245, rowPitch: 366 } as const;
+
+/** Room right of the last column and below the last row: `water_train`'s 1260 × 680 margins. */
+const SLOT_MARGIN = { right: 40, bottom: 20 } as const;
+
+/** The top-left corner of the slot at column `col`, row `row`. */
+export function slotAt(col: number, row: number): MimicPoint {
+  return {
+    x: MIMIC_SLOT_GRID.x0 + MIMIC_SLOT_GRID.colPitch * col,
+    y: MIMIC_SLOT_GRID.y0 + MIMIC_SLOT_GRID.rowPitch * row,
+  };
+}
+
+/** The viewBox round `cols` × `rows` slots; `slotViewBox(5, 2)` is `water_train`'s "0 0 1260 680". */
+export function slotViewBox(cols: number, rows: number): string {
+  const last = slotAt(cols - 1, rows - 1);
+  const width = last.x + MIMIC_NODE_SIZE.w + SLOT_MARGIN.right;
+  const height = last.y + MIMIC_NODE_SIZE.h + SLOT_MARGIN.bottom;
+  return `0 0 ${width} ${height}`;
+}
 
 /**
  * `water_train` — the treatment chain across the top, left to right; storage feeds the cooling
  * tower straight down and the STP → ETP chain back along the bottom row, ending in the
  * Discharge sink (owner ruling 1: a drawn sink, not a node). The rows are 116 apart so the
  * storage → STP leg runs in the gap between the panels, clear of both.
+ *
+ * Literal, not `slotAt`: its bottom row is shifted off the slot grid (STP 765, ETP 510) to leave
+ * room for the sink, and the `F3.32b` drawing is pinned pixel for pixel in `mimic-geometry.spec.ts`.
  */
 const WATER_TRAIN_LAYOUT = {
   viewBox: "0 0 1260 680",
@@ -84,9 +119,94 @@ const WATER_TRAIN_LAYOUT = {
   pumps: [{ from: "water_intake", to: "wtp" }],
 } as const satisfies MimicLayout<NodeKeyOf<"water_train">>;
 
+/**
+ * The six domain presets (ADR 0082 decision 3, plan §3), placed by `slotAt`. None has a sink or
+ * a drawn pump. Every same-row pipe joins adjacent columns and every cross-row pipe runs its
+ * horizontal leg in the gap between the rows, so no pipe crosses a third unit (`mimic.spec.ts`
+ * M15).
+ */
+const ELECTRICAL_DISTRIBUTION_LAYOUT = {
+  viewBox: slotViewBox(5, 2),
+  nodes: {
+    incoming: slotAt(0, 0),
+    ht_panel: slotAt(1, 0),
+    transformer: slotAt(2, 0),
+    lt_panel: slotAt(3, 0),
+    mcc: slotAt(4, 0),
+    dg_set: slotAt(2, 1),
+    ups: slotAt(4, 1),
+  },
+  pumps: [],
+} as const satisfies MimicLayout<NodeKeyOf<"electrical_distribution">>;
+
+const HVAC_CHILLER_PLANT_LAYOUT = {
+  viewBox: slotViewBox(5, 1),
+  nodes: {
+    cooling_tower: slotAt(0, 0),
+    chiller: slotAt(1, 0),
+    primary_pumps: slotAt(2, 0),
+    secondary_pumps: slotAt(3, 0),
+    ahu_fcu: slotAt(4, 0),
+  },
+  pumps: [],
+} as const satisfies MimicLayout<NodeKeyOf<"hvac_chiller_plant">>;
+
+const IT_POWER_COOLING_LAYOUT = {
+  viewBox: slotViewBox(4, 2),
+  nodes: {
+    utility_feed: slotAt(0, 0),
+    ups: slotAt(1, 0),
+    battery: slotAt(1, 1),
+    pdu: slotAt(2, 0),
+    it_racks: slotAt(3, 0),
+    crac: slotAt(3, 1),
+  },
+  pumps: [],
+} as const satisfies MimicLayout<NodeKeyOf<"it_power_cooling">>;
+
+const COMPRESSED_AIR_LAYOUT = {
+  viewBox: slotViewBox(4, 1),
+  nodes: {
+    compressor: slotAt(0, 0),
+    dryer: slotAt(1, 0),
+    receiver: slotAt(2, 0),
+    header: slotAt(3, 0),
+  },
+  pumps: [],
+} as const satisfies MimicLayout<NodeKeyOf<"compressed_air">>;
+
+const ENVIRONMENT_MONITORING_LAYOUT = {
+  viewBox: slotViewBox(4, 1),
+  nodes: {
+    ambient: slotAt(0, 0),
+    indoor_air: slotAt(1, 0),
+    stack: slotAt(2, 0),
+    effluent: slotAt(3, 0),
+  },
+  pumps: [],
+} as const satisfies MimicLayout<NodeKeyOf<"environment_monitoring">>;
+
+const FACILITY_SERVICES_LAYOUT = {
+  viewBox: slotViewBox(4, 2),
+  nodes: {
+    main_meter: slotAt(1, 0),
+    lighting: slotAt(0, 1),
+    lifts: slotAt(1, 1),
+    fire_pumps: slotAt(2, 1),
+    utilities: slotAt(3, 1),
+  },
+  pumps: [],
+} as const satisfies MimicLayout<NodeKeyOf<"facility_services">>;
+
 /** One layout per preset — a missing preset or node key is a compile error here. */
 export const MIMIC_LAYOUTS: { readonly [P in MimicPreset]: MimicLayout<NodeKeyOf<P>> } = {
   water_train: WATER_TRAIN_LAYOUT,
+  electrical_distribution: ELECTRICAL_DISTRIBUTION_LAYOUT,
+  hvac_chiller_plant: HVAC_CHILLER_PLANT_LAYOUT,
+  it_power_cooling: IT_POWER_COOLING_LAYOUT,
+  compressed_air: COMPRESSED_AIR_LAYOUT,
+  environment_monitoring: ENVIRONMENT_MONITORING_LAYOUT,
+  facility_services: FACILITY_SERVICES_LAYOUT,
 };
 
 /**
@@ -118,6 +238,35 @@ export const MIMIC_PANELS: { readonly [P in MimicPreset]: readonly MimicPanel<No
     },
     { key: "utilities", label: "Utilities", tone: "neutral", nodes: ["cooling_tower"] },
     { key: "wastewater", label: "Wastewater", tone: "accent", nodes: ["stp", "etp"] },
+  ],
+  electrical_distribution: [
+    { key: "supply", label: "Supply", tone: "info", nodes: ["incoming", "ht_panel", "transformer"] },
+    { key: "distribution", label: "Distribution", tone: "neutral", nodes: ["lt_panel", "mcc"] },
+    { key: "standby", label: "Standby and UPS", tone: "accent", nodes: ["dg_set", "ups"] },
+  ],
+  hvac_chiller_plant: [
+    { key: "plant", label: "Chiller plant", tone: "info", nodes: ["cooling_tower", "chiller", "primary_pumps"] },
+    { key: "distribution", label: "Distribution", tone: "neutral", nodes: ["secondary_pumps", "ahu_fcu"] },
+  ],
+  it_power_cooling: [
+    { key: "power", label: "Power", tone: "info", nodes: ["utility_feed", "ups", "battery", "pdu"] },
+    { key: "white_space", label: "White space", tone: "accent", nodes: ["it_racks", "crac"] },
+  ],
+  compressed_air: [
+    {
+      key: "compressed_air",
+      label: "Compressed air",
+      tone: "info",
+      nodes: ["compressor", "dryer", "receiver", "header"],
+    },
+  ],
+  environment_monitoring: [
+    { key: "air", label: "Air", tone: "info", nodes: ["ambient", "indoor_air", "stack"] },
+    { key: "water", label: "Water", tone: "accent", nodes: ["effluent"] },
+  ],
+  facility_services: [
+    { key: "metering", label: "Metering", tone: "info", nodes: ["main_meter"] },
+    { key: "services", label: "Services", tone: "neutral", nodes: ["lighting", "lifts", "fire_pumps", "utilities"] },
   ],
 };
 
@@ -185,6 +334,49 @@ export const MIMIC_NODE_GLYPHS: {
     cooling_tower: "tower",
     stp: "aeration",
     etp: "dosing",
+  },
+  electrical_distribution: {
+    incoming: "meter",
+    ht_panel: "breaker",
+    transformer: "transformer",
+    lt_panel: "switchboard",
+    mcc: "motor",
+    dg_set: "generator",
+    ups: "ups",
+  },
+  hvac_chiller_plant: {
+    cooling_tower: "tower",
+    chiller: "chiller",
+    primary_pumps: "pump",
+    secondary_pumps: "pump",
+    ahu_fcu: "ahu",
+  },
+  it_power_cooling: {
+    utility_feed: "switchboard",
+    ups: "ups",
+    battery: "battery",
+    pdu: "breaker",
+    it_racks: "rack",
+    crac: "ahu",
+  },
+  compressed_air: {
+    compressor: "compressor",
+    dryer: "filter",
+    receiver: "tank",
+    header: "valve",
+  },
+  environment_monitoring: {
+    ambient: "sensor",
+    indoor_air: "sensor",
+    stack: "tower",
+    effluent: "discharge",
+  },
+  facility_services: {
+    main_meter: "meter",
+    lighting: "lamp",
+    lifts: "lift",
+    fire_pumps: "pump",
+    utilities: "unit",
   },
 };
 
