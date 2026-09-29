@@ -1,21 +1,16 @@
 import { useQuery } from "@tanstack/react-query";
 import { useEffect, useState, type KeyboardEvent } from "react";
-import { mimicPanelToneSchema, mimicSymbolSchema } from "@bms/shared/contracts";
+import { mimicPanelToneSchema } from "@bms/shared/contracts";
 import type { MimicPanelTone, MimicSymbol } from "@bms/shared";
 
 import { fetchVocabularies, vocabulariesQueryKey } from "../../api/vocabularies";
-import {
-  symbolLabel,
-  type EditorLayout,
-  type EditorLayoutPatch,
-  type EditorNode,
-  type EditorNodePatch,
-} from "../../lib/mimic-editor";
+import type { EditorLayout, EditorLayoutPatch, EditorNode, EditorNodePatch } from "../../lib/mimic-editor";
+import { MIMIC_SYMBOL_GROUPS, symbolLabel } from "../../lib/mimic-symbols";
 
 /**
- * `F3.32c` U6b (ADR 0081 decision 7) — the editor's inspector: the layout's name, slug and
- * canvas size, then the selected node's label, symbol and role (a unit), tone (a panel) and its
- * box in cells.
+ * `F3.32c` U6b (ADR 0081 decision 7), `F3.32d` U3 (ADR 0082 decision 2) — the editor's inspector:
+ * the layout's name, slug and canvas size, then the selected node's label, symbol (29 symbols in
+ * eight groups, matching the palette) and role (a unit), tone (a panel) and its box in cells.
  *
  * **Every field commits on blur or Enter, never per keystroke.** A per-keystroke dispatch would
  * push one history entry per character, and a canvas width typed as `1`, `12`, `126` would be
@@ -184,10 +179,14 @@ function NodeFields({
               onChange={(event) => change({ symbol: event.target.value as MimicSymbol })}
               className={FIELD}
             >
-              {mimicSymbolSchema.options.map((symbol) => (
-                <option key={symbol} value={symbol}>
-                  {symbolLabel(symbol)}
-                </option>
+              {MIMIC_SYMBOL_GROUPS.map((group) => (
+                <optgroup key={group.key} label={group.label}>
+                  {group.symbols.map((symbol) => (
+                    <option key={symbol} value={symbol}>
+                      {symbolLabel(symbol)}
+                    </option>
+                  ))}
+                </optgroup>
               ))}
             </select>
           </label>
