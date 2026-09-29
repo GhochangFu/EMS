@@ -8,11 +8,13 @@ import type { JwtPayload, MimicLayoutDto } from "@bms/shared";
 
 import { MIMIC_LAYOUT_IN_USE_MESSAGE, MIMIC_LAYOUT_STALE_MESSAGE } from "./mimic-layouts.schema";
 import type { CreateMimicLayoutBody, PutMimicLayoutBody } from "./mimic-layouts.schema";
+import type { MimicLayoutsController } from "./mimic-layouts.controller";
 import type { MimicLayoutsService } from "./mimic-layouts.service";
 
 /**
  * `F3.32c` U2 — what `MimicLayoutsService` does against a real database and
- * real row security (plan U2, C1–C11; C12–C17 from U7). Assertions live here;
+ * real row security (plan U2, C1–C11; C12–C17 from U7; C18–C23 from `F3.32e` U2,
+ * the chosen symbol libraries). Assertions live here;
  * `mimic-layouts.service.integration.test.ts` is the Vitest entry point
  * (ADR 0014) and owns the pools, the fixtures and the cleanup.
  *
@@ -38,6 +40,8 @@ export type Ctx = {
   plantReferencingWidget: (layoutId: string) => Promise<string>;
   /** Commits a throwaway `bms.asset_roles` row, tracked for cleanup by code; returns the code. */
   plantRole: (suffix: string) => Promise<string>;
+  /** The controller over `service`: a raw body goes through the real Zod parse and its 400. */
+  controller: MimicLayoutsController;
 };
 
 /** Nodes deliberately listed out of display order, so C1 proves the service orders them. */
@@ -47,6 +51,7 @@ export const layoutBody = (organizationId: string, slug: string): CreateMimicLay
   slug,
   canvasW: 120,
   canvasH: 80,
+  symbolLibraries: ["core"],
   nodes: [
     { key: "outlet", kind: "unit", symbol: "discharge", label: "Outlet", x: 60, y: 10, w: 10, h: 10 },
     { key: "zone", kind: "panel", label: "Zone", tone: "info", x: 0, y: 0, w: 100, h: 40, z: 0 },
@@ -379,4 +384,145 @@ export async function assertUnknownRoleIs400WithoutTheCode(ctx: Ctx): Promise<vo
   expect(JSON.stringify((err as BadRequestException).getResponse())).not.toContain(code);
   const none = await ctx.ownerPool.query(`SELECT id FROM bms.mimic_layouts WHERE slug = $1`, [body.slug]);
   expect(none.rows).toEqual([]);
+}
+
+// `F3.32e` U2 — the chosen symbol libraries (ADR 0084 decision 8, plan D7).
+
+/** The stored `symbol_libraries` of a layout, read behind the service's back. */
+const storedLibraries = async (ctx: Ctx, layoutId: string): Promise<string[] | undefined> =>
+  (
+    await ctx.ownerPool.query<{ symbol_libraries: string[] }>(
+      `SELECT symbol_libraries FROM bms.mimic_layouts WHERE id = $1`,
+      [layoutId],
+    )
+  ).rows[0]?.symbol_libraries;
+
+/** The fixture body with the pump drawn as an MDI heat pump, and `core` + `mdi` chosen. */
+const mdiBody = (organizationId: string, slug: string): CreateMimicLayoutBody => {
+  const body = layoutBody(organizationId, slug);
+  return {
+    ...body,
+    symbolLibraries: ["core", "mdi"],
+    nodes: body.nodes.map((n) => (n.key === "pump" ? { ...n, symbol: "mdi:heat-pump" } : n)),
+  };
+};
+
+/** No layout carries `slug`; a row a broken guard wrote is tracked for cleanup first. */
+const noLayoutWithSlug = async (ctx: Ctx, slug: string): Promise<void> => {
+  const none = await ctx.ownerPool.query<{ id: string }>(`SELECT id FROM bms.mimic_layouts WHERE slug = $1`, [slug]);
+  for (const row of none.rows) ctx.track(row.id);
+  expect(none.rows).toEqual([]);
+};
+
+/** C18 — a create choosing `core` + `mdi` with an MDI unit stores both; the DTO and the list carry them. */
+export async function assertCreateStoresTheChosenLibraries(ctx: Ctx): Promise<void> {
+  const dto = await ctx.service.create(ctx.globalAdmin, mdiBody(ctx.eskomOrgId, ctx.slug("c18")));
+  ctx.track(dto.id);
+  expect(dto.symbolLibraries).toEqual(["core", "mdi"]);
+  expect(dto.nodes.find((n) => n.key === "pump")?.symbol).toBe("mdi:heat-pump");
+  expect(await storedLibraries(ctx, dto.id)).toEqual(["core", "mdi"]);
+  const { items } = await ctx.service.list(ctx.globalAdmin);
+  expect(items.find((i) => i.id === dto.id)?.symbolLibraries).toEqual(["core", "mdi"]);
+}
+
+/** C19 — a POST body without `symbolLibraries` stores `{core}` (ruling R2). */
+export async function assertAnAbsentLibraryListStoresCore(ctx: Ctx): Promise<void> {
+  const { symbolLibraries: _drop, ...raw } = layoutBody(ctx.eskomOrgId, ctx.slug("c19"));
+  const dto = await ctx.controller.create(raw, ctx.globalAdmin);
+  ctx.track(dto.id);
+  expect(dto.symbolLibraries).toEqual(["core"]);
+  expect(await storedLibraries(ctx, dto.id)).toEqual(["core"]);
+}
+
+/** C20 — a PUT dropping `mdi` while a unit still draws an MDI glyph is a 400, and changes nothing. */
+export async function assertReplaceDroppingAUsedLibraryIs400(ctx: Ctx): Promise<void> {
+  const body = mdiBody(ctx.eskomOrgId, ctx.slug("c20"));
+  const dto = await ctx.service.create(ctx.globalAdmin, body);
+  ctx.track(dto.id);
+  const raw = { ...putBody(body, 1), symbolLibraries: ["core"] };
+  const err = await rejection(ctx.controller.replace(dto.id, raw, ctx.globalAdmin));
+  expect(err).toBeInstanceOf(BadRequestException);
+  expect(JSON.stringify((err as BadRequestException).getResponse())).toContain(
+    "belongs to the Material Design Icons library, which this layout did not choose",
+  );
+  expect((await ctx.service.get(ctx.globalAdmin, dto.id)).version).toBe(1);
+  expect(await storedLibraries(ctx, dto.id)).toEqual(["core", "mdi"]);
+}
+
+/** C21 — a PUT dropping `mdi` together with its unit saves, and the stored row reads `{core}` (R4). */
+export async function assertReplaceDroppingAnUnusedLibrarySaves(ctx: Ctx): Promise<void> {
+  const body = mdiBody(ctx.eskomOrgId, ctx.slug("c21"));
+  const dto = await ctx.service.create(ctx.globalAdmin, body);
+  ctx.track(dto.id);
+  const nodes = body.nodes.map((n) => (n.key === "pump" ? { ...n, symbol: "pump" as const } : n));
+  const saved = await ctx.service.replace(ctx.globalAdmin, dto.id, {
+    ...putBody(body, 1),
+    nodes,
+    symbolLibraries: ["core"],
+  });
+  expect(saved.version).toBe(2);
+  expect(saved.symbolLibraries).toEqual(["core"]);
+  expect(await storedLibraries(ctx, dto.id)).toEqual(["core"]);
+}
+
+/**
+ * C22 — a create choosing a library that is not active is a 400 `"Unknown symbol library"`,
+ * and writes nothing. The flag is flipped on `ownerPool` (the `bms_fleet` role, which keeps UPDATE;
+ * `bms_tenant` may only read the table) and restored in `finally`; another suite shares the database, so the window is short.
+ */
+export async function assertAnInactiveLibraryIs400(ctx: Ctx): Promise<void> {
+  const body: CreateMimicLayoutBody = {
+    ...layoutBody(ctx.eskomOrgId, ctx.slug("c22")),
+    symbolLibraries: ["core", "lucide"],
+  };
+  try {
+    await ctx.ownerPool.query(`UPDATE bms.mimic_symbol_libraries SET active = false WHERE code = 'lucide'`);
+    const err = await rejection(ctx.service.create(ctx.globalAdmin, body));
+    expect(err).toBeInstanceOf(BadRequestException);
+    expect((err as Error).message).toBe("Unknown symbol library");
+    await noLayoutWithSlug(ctx, body.slug);
+  } finally {
+    await ctx.ownerPool.query(`UPDATE bms.mimic_symbol_libraries SET active = true WHERE code = 'lucide'`);
+  }
+}
+
+/**
+ * C22b — a PUT choosing a library that is not active is a 400 `"Unknown symbol library"`, and
+ * the layout keeps its version and its libraries (the `replace` call of `assertLibrariesLive`).
+ */
+export async function assertReplaceChoosingAnInactiveLibraryIs400(ctx: Ctx): Promise<void> {
+  const body = layoutBody(ctx.eskomOrgId, ctx.slug("c22b"));
+  const dto = await ctx.service.create(ctx.globalAdmin, body);
+  ctx.track(dto.id);
+  try {
+    await ctx.ownerPool.query(`UPDATE bms.mimic_symbol_libraries SET active = false WHERE code = 'lucide'`);
+    const err = await rejection(
+      ctx.service.replace(ctx.globalAdmin, dto.id, { ...putBody(body, 1), symbolLibraries: ["core", "lucide"] }),
+    );
+    expect(err).toBeInstanceOf(BadRequestException);
+    expect((err as Error).message).toBe("Unknown symbol library");
+  } finally {
+    await ctx.ownerPool.query(`UPDATE bms.mimic_symbol_libraries SET active = true WHERE code = 'lucide'`);
+  }
+  expect((await ctx.service.get(ctx.globalAdmin, dto.id)).version).toBe(1);
+  expect(await storedLibraries(ctx, dto.id)).toEqual(["core"]);
+}
+
+/**
+ * C23 — a unit symbol no `bms.mimic_symbols` row holds is a 400 `"Unknown mimic symbol"` that
+ * does not echo the key, and writes nothing. The Zod enum refuses such a key first, so only a
+ * cast body reaches the foreign key `mimic_layout_nodes_symbol_fkey`.
+ */
+export async function assertAnUnknownSymbolIs400WithoutTheKey(ctx: Ctx): Promise<void> {
+  const base = layoutBody(ctx.eskomOrgId, ctx.slug("c23"));
+  const body = {
+    ...base,
+    symbolLibraries: ["core", "tabler"],
+    nodes: base.nodes.map((n) => (n.key === "outlet" ? { ...n, symbol: "tabler:no-such-icon" } : n)),
+  } as unknown as CreateMimicLayoutBody;
+  const err = await rejection(ctx.service.create(ctx.globalAdmin, body));
+  expect(err).toBeInstanceOf(BadRequestException);
+  expect((err as Error).message).toBe("Unknown mimic symbol");
+  expect(JSON.stringify((err as BadRequestException).getResponse())).not.toContain("no-such-icon");
+  await noLayoutWithSlug(ctx, base.slug);
 }

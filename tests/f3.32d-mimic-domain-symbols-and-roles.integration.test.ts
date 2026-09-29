@@ -1,4 +1,7 @@
 import { randomUUID } from "node:crypto";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
@@ -21,6 +24,10 @@ import {
  * writes layouts as. The first case proves the new `bms.asset_roles` rows are
  * present, active and readable by that role — not that the `SET ROLE` bracket
  * is needed for it (the table has no RLS; `0041`'s grants decide visibility).
+ *
+ * Since `0090` (F3.32e, ADR 0084 decision 3) the symbol rule is the foreign key
+ * `mimic_layout_nodes_symbol_fkey` to `bms.mimic_symbols`, not a CHECK: the
+ * symbol cases assert that key and the 29 core rows it points at.
  */
 const connectionString = process.env.DATABASE_URL;
 
@@ -28,13 +35,23 @@ requireIntegrationDb({
   item: "F3.32d",
   label: "mimic domain symbols and role codes tests",
   because:
-    "the symbol CHECK and the role_code foreign key are things Postgres enforces, and the " +
+    "the symbol and role_code foreign keys are things Postgres enforces, and the " +
     "eighteen role codes are rows only a migrated database holds, so a green run without a " +
     "database asserts nothing about any of them.",
 });
 
 const RUN = randomUUID().slice(0, 8);
 const has = connectionString !== undefined && connectionString !== "";
+
+/** The 29 core keys, read from `mimicCoreSymbolSchema`'s source text (never `@bms/shared`,
+ * which resolves to `dist`). */
+const CORE_KEYS: string[] = (() => {
+  const repoRoot = fileURLToPath(new URL("..", import.meta.url));
+  const source = readFileSync(join(repoRoot, "packages/shared/src/contracts/mimic-layouts.ts"), "utf8");
+  const start = source.indexOf("export const mimicCoreSymbolSchema = z.enum([");
+  if (start < 0) throw new Error("no mimicCoreSymbolSchema");
+  return [...source.slice(start, source.indexOf("]);", start)).matchAll(/"([a-z0-9-]+)"/g)].map((m) => m[1] as string);
+})();
 
 const NEW_SYMBOLS = [
   "transformer", "breaker", "switchboard", "generator", "meter", "motor",
@@ -135,7 +152,7 @@ describe.skipIf(!has)("F3.32d — migration 0089 against a live database", () =>
     });
   });
 
-  it("_symbol_check accepts 'lift' (positive control for the refusal below)", async () => {
+  it("_symbol_fkey accepts 'lift' (positive control for the refusal below)", async () => {
     await inTx(async (run, org, layout) => {
       const { code, message } = await probe(run, INSERT_UNIT, [org, layout, "lift", "lift", "Lift", null]);
       expect(message, `'lift' must be accepted (code ${code})`).toBe("");
@@ -146,7 +163,7 @@ describe.skipIf(!has)("F3.32d — migration 0089 against a live database", () =>
     });
   });
 
-  it("_symbol_check accepts every one of the seventeen new symbols", async () => {
+  it("_symbol_fkey accepts every one of the seventeen new symbols", async () => {
     await inTx(async (run, org, layout) => {
       for (const symbol of NEW_SYMBOLS) {
         const { message } = await probe(run, INSERT_UNIT, [org, layout, `s_${symbol}`, symbol, symbol, null]);
@@ -155,11 +172,11 @@ describe.skipIf(!has)("F3.32d — migration 0089 against a live database", () =>
     });
   });
 
-  it("_symbol_check refuses 'panel' with 23514, naming the constraint", async () => {
+  it("_symbol_fkey refuses 'panel' with 23503, naming the foreign key", async () => {
     await inTx(async (run, org, layout) => {
       const { code, message } = await probe(run, INSERT_UNIT, [org, layout, "panel_sym", "panel", "Panel", null]);
-      expect(code, message).toBe("23514");
-      expect(message).toContain("mimic_layout_nodes_symbol_check");
+      expect(code, message).toBe("23503");
+      expect(message).toContain("mimic_layout_nodes_symbol_fkey");
       expect(message).not.toContain("mimic_layout_nodes_kind_fields_check");
     });
   });
@@ -179,14 +196,14 @@ describe.skipIf(!has)("F3.32d — migration 0089 against a live database", () =>
     });
   });
 
-  it("the stored constraint lists twenty-nine symbols", async () => {
-    const def = await client.query(
-      `SELECT pg_get_constraintdef(oid) AS def FROM pg_constraint
-        WHERE conrelid = 'bms.mimic_layout_nodes'::regclass AND conname = 'mimic_layout_nodes_symbol_check'`,
-    );
-    expect(def.rows).toHaveLength(1);
-    const listed = [...String(def.rows[0]?.def).matchAll(/'([a-z_]+)'::/g)].map((m) => m[1]);
-    expect(listed).toHaveLength(29);
-    expect(listed.slice(12)).toEqual([...NEW_SYMBOLS]);
+  it("bms.mimic_symbols' core rows, by sort_order, are the 29 mimicCoreSymbolSchema keys in order", async () => {
+    expect(CORE_KEYS).toHaveLength(29);
+    const rows = await client.query(`SELECT key FROM bms.mimic_symbols WHERE library_code = 'core' ORDER BY sort_order`);
+    expect(rows.rows.map((r) => r.key)).toEqual(CORE_KEYS);
+  });
+
+  it("the seventeen F3.32d symbols are core keys 13 to 29", async () => {
+    const rows = await client.query(`SELECT key FROM bms.mimic_symbols WHERE library_code = 'core' ORDER BY sort_order`);
+    expect(rows.rows.map((r) => r.key).slice(12)).toEqual([...NEW_SYMBOLS]);
   });
 });

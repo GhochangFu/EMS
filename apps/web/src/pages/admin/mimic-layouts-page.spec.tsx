@@ -36,6 +36,7 @@ const LIST: MimicLayoutsListResponse = {
       canvasH: 68,
       version: 3,
       unitCount: 9,
+      symbolLibraries: ["core"],
       updatedAt: new Date(0).toISOString(),
     },
   ],

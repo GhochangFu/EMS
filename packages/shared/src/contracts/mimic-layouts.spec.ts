@@ -1,8 +1,15 @@
+import { LUCIDE_SYMBOL_KEYS } from "../mimic-symbol-libraries/lucide.generated";
+import { MDI_SYMBOL_KEYS } from "../mimic-symbol-libraries/mdi.generated";
+import { TABLER_SYMBOL_KEYS } from "../mimic-symbol-libraries/tabler.generated";
 import { mimicWidgetNodesSchema } from "./mimic";
 import {
   MIMIC_LAYOUT_BOUNDS,
+  MIMIC_SYMBOL_GROUP_CODES,
+  mimicCoreSymbolSchema,
+  mimicLayoutDtoSchema,
   mimicLayoutGeometrySchema,
   mimicPanelToneSchema,
+  mimicSymbolLibraryCodeSchema,
   mimicSymbolSchema,
 } from "./mimic-layouts";
 
@@ -63,8 +70,8 @@ const geometry = {
   pipes: [],
 };
 
-/** The closed symbol set, in the order the database CHECK restates it (plan D12, ADR 0082). */
-export function mimicSymbolsAreTheTwentyNineInOrder(): void {
+/** The core symbol set, in the order migration 0090's core rows restate it (plan D12, ADR 0082). */
+export function mimicCoreSymbolsAreTheTwentyNineInOrder(): void {
   const expected = [
     "tank",
     "clarifier",
@@ -97,8 +104,83 @@ export function mimicSymbolsAreTheTwentyNineInOrder(): void {
     "lift",
   ];
   assert(
-    JSON.stringify(mimicSymbolSchema.options) === JSON.stringify(expected),
-    `the symbol set must be the twenty-nine in order, got ${JSON.stringify(mimicSymbolSchema.options)}`,
+    JSON.stringify(mimicCoreSymbolSchema.options) === JSON.stringify(expected),
+    `the core set must be the twenty-nine in order, got ${JSON.stringify(mimicCoreSymbolSchema.options)}`,
+  );
+}
+
+/** `F3.32e` / ADR 0084 — every symbol is the core set, then each library's keys in registry order. */
+export function mimicSymbolSchemaIsCoreThenEachLibraryInRegistryOrder(): void {
+  const expected = [...mimicCoreSymbolSchema.options, ...TABLER_SYMBOL_KEYS, ...LUCIDE_SYMBOL_KEYS, ...MDI_SYMBOL_KEYS];
+  assert(expected.length >= 29 + 300, `only ${expected.length} symbols`);
+  assert(JSON.stringify(mimicSymbolSchema.options) === JSON.stringify(expected), "the symbol union is out of order");
+  assert(new Set(expected).size === expected.length, "a symbol key repeats");
+}
+
+/** A refused symbol answers one short message, not the 438-option list (security review L3). */
+export function mimicSymbolRefusalIsShort(): void {
+  const parsed = mimicSymbolSchema.safeParse("nope:x");
+  assert(!parsed.success, "nope:x parsed");
+  const message = parsed.error?.issues[0]?.message ?? "";
+  assert(message === "Unknown mimic symbol", `message: ${message.slice(0, 80)}`);
+  assert(mimicSymbolSchema.safeParse("mdi:heat-pump").success, "a known library key must still parse");
+}
+
+/** A library key names its library and fits `mimic_layout_nodes.symbol`'s varchar(64). */
+export function everyLibraryKeyNamesItsLibraryAndFitsSixtyFour(): void {
+  const byLibrary = { tabler: TABLER_SYMBOL_KEYS, lucide: LUCIDE_SYMBOL_KEYS, mdi: MDI_SYMBOL_KEYS };
+  for (const [code, keys] of Object.entries(byLibrary)) {
+    assert(keys.length >= 100, `${code} has ${keys.length} keys`);
+    for (const key of keys) {
+      assert(key.startsWith(`${code}:`), `${key} does not name ${code}`);
+      assert(key.length <= 64, `${key} is longer than 64`);
+    }
+  }
+  for (const key of mimicCoreSymbolSchema.options) {
+    assert(!key.includes(":"), `core key ${key} has a colon`);
+  }
+}
+
+/** The four libraries of ADR 0084 decision 4, in palette order. */
+export function libraryCodesAreTheFour(): void {
+  const codes = mimicSymbolLibraryCodeSchema.options;
+  assert(JSON.stringify(codes) === JSON.stringify(["core", "tabler", "lucide", "mdi"]), `codes: ${JSON.stringify(codes)}`);
+}
+
+/** The eight palette groups of ADR 0082 decision 2, in order. */
+export function groupCodesAreTheEight(): void {
+  const expected = ["water", "electrical", "it_ups", "hvac", "mechanical", "environment", "facility", "general"];
+  assert(JSON.stringify(MIMIC_SYMBOL_GROUP_CODES) === JSON.stringify(expected), "group codes changed");
+}
+
+const storedLayout = {
+  id: "11111111-1111-4111-8111-111111111111",
+  organizationId: "22222222-2222-4222-8222-222222222222",
+  name: "Plant",
+  slug: "plant",
+  canvasW: 120,
+  canvasH: 80,
+  version: 1,
+  nodes: [],
+  pipes: [],
+  createdAt: "2026-09-29T00:00:00.000Z",
+  updatedAt: "2026-09-29T00:00:00.000Z",
+};
+
+/** A layout DTO carries its chosen libraries (ADR 0084 decision 8). */
+export function mimicLayoutDtoParsesSymbolLibraries(): void {
+  const parsed = mimicLayoutDtoSchema.safeParse({ ...storedLayout, symbolLibraries: ["core", "mdi"] });
+  assert(parsed.success, `a DTO with symbolLibraries must parse: ${JSON.stringify(parsed.error?.issues)}`);
+  assert(JSON.stringify(parsed.data?.symbolLibraries) === '["core","mdi"]', "symbolLibraries did not survive the parse");
+}
+
+/** A DTO naming a library the registry lacks does not parse. */
+export function mimicLayoutDtoRefusesAnUnknownLibraryCode(): void {
+  const parsed = mimicLayoutDtoSchema.safeParse({ ...storedLayout, symbolLibraries: ["core", "zzz"] });
+  assert(!parsed.success, "a DTO naming library zzz parsed");
+  assert(
+    parsed.error?.issues.some((issue) => issue.path.join(".") === "symbolLibraries.1") ?? false,
+    `the refusal must point at symbolLibraries.1: ${JSON.stringify(parsed.error?.issues)}`,
   );
 }
 

@@ -279,6 +279,21 @@ export const MIMIC_PANEL_CLASSES: Readonly<
   accent: { frame: "fill-accent/5 stroke-accent/20", title: "fill-ok-ink", glyph: "stroke-accent" },
 };
 
+/**
+ * `F3.32e` / ADR 0084 decision 6 — a `fill`-style library glyph (`mdi:*`) draws with no stroke
+ * and the matching fill class of the same role, so colour stays with the role token (ADR 0078)
+ * across both draw styles. Literal strings, not a template, so Tailwind's class scanner emits
+ * every one of them; an unmapped stroke class falls back to `fill-ink-muted`.
+ */
+export const MIMIC_GLYPH_FILL_CLASS: Readonly<Record<string, string>> = {
+  "stroke-info": "fill-info",
+  "stroke-ink-muted": "fill-ink-muted",
+  "stroke-accent": "fill-accent",
+  "stroke-ink-faint": "fill-ink-faint",
+  "stroke-ink": "fill-ink",
+  "stroke-line-strong": "fill-line-strong",
+};
+
 /** Room round a panel's nodes: the side and bottom padding, and the title band above them. */
 const PANEL_PAD = 16;
 const PANEL_TITLE = 34;
@@ -316,8 +331,9 @@ export function mimicPanelBox(
 
 /**
  * The illustrated symbols `mimic-glyphs.tsx` draws: every unit symbol of the closed shared set
- * (`mimicSymbolSchema`, `F3.32c` plan D12), plus the callout's `alert`. A symbol added to the
- * contract without a path is a compile error in `mimic-glyphs.tsx`.
+ * (`mimicSymbolSchema`, `F3.32c` plan D12; since `F3.32e` also every library key, ADR 0084), plus
+ * the callout's `alert`. A core symbol added to the contract without a path is a compile error
+ * in `mimic-glyphs.tsx`; a library key draws its vendored shapes.
  */
 export type MimicGlyphKind = MimicSymbol | "alert";
 

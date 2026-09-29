@@ -624,6 +624,13 @@
       "when": 1790651638794,
       "tag": "0089_mimic_domain_symbols_and_roles",
       "breakpoints": true
+    },
+    {
+      "idx": 90,
+      "version": "7",
+      "when": 1790672932525,
+      "tag": "0090_mimic_symbol_libraries",
+      "breakpoints": true
     }
   ]
 }

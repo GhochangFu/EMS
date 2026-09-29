@@ -63,6 +63,13 @@ and an uploaded SVG is an XSS surface. Neither fits before the cutoff.
    It inserts one row per library and one row per symbol, in the `0087` idiom
    (`SET ROLE bms_owner`, bare `ON CONFLICT DO NOTHING`, a `DO $$`
    self-check).
+
+   **Amended 2026-09-29 (owner ruling after the migration review):**
+   `bms_tenant` loses `INSERT`, `UPDATE` and `DELETE` on both tables — they
+   are fleet-wide master data, the line `0059` drew for `bms.point_keys` and
+   `0085` for `bms.location_types`. `bms_fleet` keeps its privileges. The
+   `ALTER`s on the two FORCE-RLS layout tables run as the migrator's
+   superuser, after `RESET ROLE`, so the foreign key validates every row.
 2. **A symbol key names its library.** A core key stays bare (`tank`,
    `transformer`), so every stored layout, preset and widget keeps its value.
    Every other key is `<library>:<name>` (`tabler:bolt`, `lucide:factory`,
@@ -77,10 +84,14 @@ and an uploaded SVG is an XSS surface. Neither fits before the cutoff.
 
    | Code | Label | Licence | Style | Set |
    |---|---|---|---|---|
-   | `core` | TRINETRA Core | ours | stroke | the 29 existing symbols |
+   | `core` | Core | ours | stroke | the 29 existing symbols |
    | `tabler` | Tabler Icons | MIT | stroke | about 150 curated outline icons |
    | `lucide` | Lucide | ISC | stroke | about 100 curated outline icons |
    | `mdi` | Material Design Icons | Apache 2.0 | fill | about 150 curated industrial icons |
+
+   **Amended 2026-09-29 (`F3.32e` plan ruling R7):** the core library is
+   labelled "Core", not "TRINETRA Core" — ADR 0083 replaces the product
+   name on screen, so no library label names the product.
 
    Each curated set is a checked-in list of names, chosen for plant and
    building use and sorted into the eight `F3.32d` palette groups (Water,
