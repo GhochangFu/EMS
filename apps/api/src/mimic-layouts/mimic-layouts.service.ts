@@ -32,6 +32,7 @@ import type {
   MimicSymbolLibraryCode,
   MimicLayoutNodeKind,
 } from "@bms/shared";
+import { libraryOfSymbol } from "@bms/shared";
 
 import { MasterDataAuditService } from "../admin/master-data-audit.service";
 import { AccessControlService } from "../auth/access-control.service";
@@ -366,6 +367,11 @@ export class MimicLayoutsService {
    * `kept` — the symbols the stored layout already draws (`F3.32f`, ADR 0086 decision 5). The
    * foreign key admits a retired symbol, so it cannot be the check. An unknown key and a retired
    * one answer the same 400 as the foreign key's, and neither is echoed.
+   *
+   * A symbol not in `kept` must also come from a live library: retiring a library flips only
+   * its row, so its symbols stay active, and the layout's stored-library exemption would
+   * otherwise carry a newly placed unit (ADR 0086 decision 5). This goes through
+   * `liveLibraryCodes`, so slice 3's per-organization switch binds new units too.
    */
   private async assertSymbolsLive(
     nodes: Pick<CreateMimicLayoutBody, "nodes">["nodes"],
@@ -380,6 +386,11 @@ export class MimicLayoutsService {
       .from(mimicSymbols)
       .where(and(inArray(mimicSymbols.key, codes), eq(mimicSymbols.active, true)));
     if (live.length !== codes.length) {
+      throw new BadRequestException(UNKNOWN_SYMBOL_MESSAGE);
+    }
+    const libraries = [...new Set(codes.map((code) => libraryOfSymbol(code)))];
+    const liveLibraries = await this.liveLibraryCodes(libraries);
+    if (liveLibraries.size !== libraries.length) {
       throw new BadRequestException(UNKNOWN_SYMBOL_MESSAGE);
     }
   }

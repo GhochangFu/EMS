@@ -663,6 +663,41 @@ export async function assertReplaceKeepingAStoredRetiredLibrarySaves(ctx: Ctx): 
   }
 }
 
+/**
+ * C27b — a PUT adding a new unit drawn from a library the layout stores but that is now retired
+ * is a 400 and changes nothing. Retiring a library flips only its row, so every symbol in it stays
+ * active; the stored-library exemption must not carry a symbol the layout does not yet draw.
+ */
+export async function assertReplaceAddingAUnitFromAStoredRetiredLibraryIs400(ctx: Ctx): Promise<void> {
+  const body: CreateMimicLayoutBody = {
+    ...layoutBody(ctx.eskomOrgId, ctx.slug("c27b")),
+    symbolLibraries: ["core", "lucide"],
+  };
+  const dto = await ctx.service.create(ctx.globalAdmin, body);
+  ctx.track(dto.id);
+  const put = putBody(body, 1);
+  const withLucide: PutMimicLayoutBody = {
+    ...put,
+    nodes: [
+      ...put.nodes,
+      { key: "fan", kind: "unit", symbol: "lucide:activity", label: "Fan", x: 80, y: 10, w: 10, h: 10, z: 1 },
+    ],
+  };
+  try {
+    await ctx.ownerPool.query(`UPDATE bms.mimic_symbol_libraries SET active = false WHERE code = 'lucide'`);
+    const err = await rejection(ctx.service.replace(ctx.globalAdmin, dto.id, withLucide));
+    expect(err).toBeInstanceOf(BadRequestException);
+    expect((err as Error).message).toBe("Unknown mimic symbol");
+    expect(JSON.stringify((err as BadRequestException).getResponse())).not.toContain("lucide:activity");
+  } finally {
+    await ctx.ownerPool.query(`UPDATE bms.mimic_symbol_libraries SET active = true WHERE code = 'lucide'`);
+  }
+  expect((await ctx.service.get(ctx.globalAdmin, dto.id)).version).toBe(1);
+  // The positive control: with the library live again, the same body saves.
+  const saved = await ctx.service.replace(ctx.globalAdmin, dto.id, withLucide);
+  expect(saved.nodes.find((n) => n.key === "fan")?.symbol).toBe("lucide:activity");
+}
+
 /** A committed layout whose stored `symbol_libraries` is planted as `{core,bogus}`. */
 const plantBogusLibrary = async (ctx: Ctx, suffix: string): Promise<MimicLayoutDto> => {
   const dto = await create(ctx, suffix);

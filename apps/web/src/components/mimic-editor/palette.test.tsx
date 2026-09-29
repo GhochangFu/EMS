@@ -14,8 +14,8 @@ describe("F3.32c mimic editor palette", () => {
   const cases = Object.entries(spec);
 
   it("has its claims", () => {
-    if (cases.length < 29) {
-      throw new Error(`expected at least 29 claims, found ${cases.length}`);
+    if (cases.length < 33) {
+      throw new Error(`expected at least 33 claims, found ${cases.length}`);
     }
   });
 

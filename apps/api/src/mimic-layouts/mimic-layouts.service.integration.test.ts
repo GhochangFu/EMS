@@ -265,6 +265,10 @@ describe.skipIf(!connectionString)("F3.32c — MimicLayoutsService against a liv
     await spec.assertReplaceKeepingAStoredRetiredLibrarySaves(ctx);
   }, 60_000);
 
+  it("C27b F3.32f a PUT adding a unit from a stored retired library is a 400", async () => {
+    await spec.assertReplaceAddingAUnitFromAStoredRetiredLibraryIs400(ctx);
+  }, 60_000);
+
   it("C28 F3.32f the list drops an unknown stored library code and parses", async () => {
     await spec.assertTheListDropsAnUnknownStoredLibrary(ctx);
   }, 60_000);

@@ -5,7 +5,8 @@ import { expect, vi } from "vitest";
 
 import type { AttributionEntry } from "../lib/attributions";
 import type { AuthUser } from "../stores/auth-store";
-import { AttributionsList, AttributionsPage } from "./attributions-page";
+import { AttributionsList } from "../components/attributions-list";
+import { AttributionsPage } from "./attributions-page";
 
 /**
  * `F3.32f` slice 1 (ADR 0086 decision 8) — the attributions page. `attributions-page.test.tsx`
