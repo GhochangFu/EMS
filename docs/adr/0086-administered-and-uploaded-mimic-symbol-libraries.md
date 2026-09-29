@@ -195,12 +195,25 @@ that we read, and not safe for a file that a user uploads.
      file under a threshold-of-originality template (`PD-shape`,
      `PD-textlogo`, `PD-ineligible`) is labelled as such. Label
      `Public domain / CC0`.
-   - **draw.io stencils — not used.** At v31.5.3 neither the README nor
-     `stencils/LICENSE` grants a licence for the stencils; they only restrict
-     use in Atlassian products. The CC BY 4.0 text of v29.3.2 names "icons",
-     not stencils, and third-party origin is not identified per set. The P&ID
-     coverage comes from Commons instead. A later ADR can add draw.io after a
-     legal check.
+   - **`drawio` — draw.io stencils, pinned at v29.3.2**
+     (`jgraph/drawio@48b181339578e11da7052ebf5b1fba8499418b77`, 2026-01-17).
+     **Owner ruling 2026-09-29, with the risk stated:** at v31.5.3 neither the
+     README nor `stencils/LICENSE` grants a licence for the stencils (they
+     only forbid use in Atlassian products); the v29.3.2 README said "The
+     JGraph provided icons and diagram templates are licensed under the CC BY
+     4.0. Additional terms may also apply where the icons are originally
+     defined by a third-party copyright holder". The owner chose to rely on
+     that text at that pin, knowing that it names "icons", not stencils, and
+     that third-party origin is not stated per set. Only the `pid` and
+     `electrical` stencil sets at that commit are used; every vendor set
+     (`aws*`, `azure`, `cisco*`, `gcp*`, `ibm*`, `atlassian`, `salesforce`,
+     `office`, `kubernetes`, and the others) is excluded. The generator reads
+     the mxGraph stencil XML itself: `path` (`move`, `line`, `quad`, `curve`,
+     `arc`, `close`), `rect`, `roundrect` and `ellipse` map to shapes; text and
+     connection points are dropped. Style `stroke`. Label `CC BY 4.0`,
+     attribution "JGraph Ltd, draw.io", with the pin and the quoted README
+     text on the attributions page. The Atlassian-products restriction is
+     recorded; this product is not one.
    - **`transform` joins the attribute list** (amends ADR 0084 decision 5).
      Commons files are Inkscape output with nested transforms. A shape can
      carry `transform` whose value matches a strict grammar (`matrix`,
@@ -249,5 +262,5 @@ dependency of `apps/api`. No other package.
 - The generator fetches Commons files over the network at generation time
   only, with a pause between requests (Commons answered HTTP 429 during the
   research). The build and CI never fetch them.
-- The main web chunk grows again by about 270 more vendored symbols; the PR
+- The main web chunk grows again by the vendored QElectroTech, Commons and draw.io symbols; the PR
   states the measured growth.
