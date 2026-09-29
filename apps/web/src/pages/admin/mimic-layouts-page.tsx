@@ -90,7 +90,7 @@ function MimicLayoutLibrary() {
                 setStartFrom(chosen.data);
               }
             }}
-            className="rounded border border-line bg-surface px-2 py-2 text-xs text-ink"
+            className="surface-field px-2 py-2 text-xs text-ink"
           >
             {mimicPresetSchema.options.map((preset) => (
               <option key={preset} value={preset}>
@@ -101,13 +101,13 @@ function MimicLayoutLibrary() {
         </label>
         <Link
           to={`/admin/mimic-layouts/new?preset=${startFrom}`}
-          className="rounded border border-line px-3 py-2 text-xs font-semibold text-ink"
+          className="surface-button px-3 py-2"
         >
           Start
         </Link>
         <Link
           to="/admin/mimic-layouts/new"
-          className="rounded bg-accent px-3 py-2 text-xs font-semibold text-on-accent"
+          className="surface-button-primary bg-accent px-3 py-2 text-xs font-semibold text-on-accent"
         >
           New layout
         </Link>
@@ -180,7 +180,7 @@ function LayoutRow({ item, confirming, deleting, onAskDelete, onCancelDelete, on
       <td className="px-2 py-2">{item.version}</td>
       <td className="px-2 py-2">
         <div className="flex flex-wrap gap-2">
-          <Link to={`/admin/mimic-layouts/${item.id}`} className="text-xs font-semibold text-accent">
+          <Link to={`/admin/mimic-layouts/${item.id}`} className="text-xs font-semibold text-accent-strong">
             Open
           </Link>
           {confirming ? (

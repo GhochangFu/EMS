@@ -129,7 +129,7 @@ export function RtusAdminPage({ user }: RtusAdminPageProps) {
         actions={
           <button
             type="button"
-            className="rounded bg-accent px-3 py-2 text-xs font-semibold text-on-accent"
+            className="surface-button-primary bg-accent px-3 py-2 text-xs font-semibold text-on-accent"
             onClick={() => {
               setEditing(null);
               setForm({
@@ -157,7 +157,7 @@ export function RtusAdminPage({ user }: RtusAdminPageProps) {
             onNavigate={setSelection}
           />
           <input
-            className="rounded border px-3 py-1.5 text-sm"
+            className="surface-field px-3 py-1.5 text-sm"
             placeholder="Search"
             value={search}
             onChange={(event) => setSearch(event.target.value)}
@@ -185,7 +185,7 @@ export function RtusAdminPage({ user }: RtusAdminPageProps) {
               >
                 <td className="px-2 py-2">{item.locationName}</td>
                 <td className="px-2 py-2 font-mono">{item.code}</td>
-                <td className="px-2 py-2 font-semibold text-accent">{item.displayName}</td>
+                <td className="px-2 py-2 font-semibold text-accent-strong">{item.displayName}</td>
                 <td className="px-2 py-2">{item.sourceType}</td>
                 <td className="px-2 py-2">
                   <StatusPill
@@ -197,7 +197,7 @@ export function RtusAdminPage({ user }: RtusAdminPageProps) {
                   <div className="flex gap-2">
                     <button
                       type="button"
-                      className="text-xs font-semibold text-accent"
+                      className="text-xs font-semibold text-accent-strong"
                       onClick={() => {
                         setEditing(item);
                         setForm({
@@ -231,7 +231,7 @@ export function RtusAdminPage({ user }: RtusAdminPageProps) {
       {modalOpen ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-scrim/40 p-4">
           <form
-            className="w-full max-w-lg rounded-lg border bg-surface p-4"
+            className="w-full max-w-lg surface-dialog p-4"
             onSubmit={(event: FormEvent) => {
               event.preventDefault();
               saveMutation.mutate();
@@ -245,7 +245,7 @@ export function RtusAdminPage({ user }: RtusAdminPageProps) {
                 <label className="block text-xs font-semibold text-ink-muted sm:col-span-2">
                   Location
                   <select
-                    className="mt-1 w-full rounded border px-3 py-2 text-sm"
+                    className="mt-1 w-full surface-field px-3 py-2 text-sm"
                     value={form.locationId}
                     required
                     onChange={(event) =>
@@ -264,7 +264,7 @@ export function RtusAdminPage({ user }: RtusAdminPageProps) {
               <label className="block text-xs font-semibold text-ink-muted">
                 Code
                 <input
-                  className="mt-1 w-full rounded border px-3 py-2 text-sm"
+                  className="mt-1 w-full surface-field px-3 py-2 text-sm"
                   value={form.code}
                   required
                   onChange={(event) => setForm({ ...form, code: event.target.value })}
@@ -273,7 +273,7 @@ export function RtusAdminPage({ user }: RtusAdminPageProps) {
               <label className="block text-xs font-semibold text-ink-muted">
                 Display name
                 <input
-                  className="mt-1 w-full rounded border px-3 py-2 text-sm"
+                  className="mt-1 w-full surface-field px-3 py-2 text-sm"
                   value={form.displayName}
                   required
                   onChange={(event) => setForm({ ...form, displayName: event.target.value })}
@@ -282,7 +282,7 @@ export function RtusAdminPage({ user }: RtusAdminPageProps) {
               <label className="block text-xs font-semibold text-ink-muted">
                 Source type
                 <select
-                  className="mt-1 w-full rounded border px-3 py-2 text-sm"
+                  className="mt-1 w-full surface-field px-3 py-2 text-sm"
                   value={form.sourceType}
                   onChange={(event) =>
                     setForm({
@@ -299,7 +299,7 @@ export function RtusAdminPage({ user }: RtusAdminPageProps) {
               <label className="block text-xs font-semibold text-ink-muted">
                 Domain
                 <input
-                  className="mt-1 w-full rounded border px-3 py-2 text-sm"
+                  className="mt-1 w-full surface-field px-3 py-2 text-sm"
                   value={form.domain}
                   onChange={(event) => setForm({ ...form, domain: event.target.value })}
                 />
@@ -319,14 +319,14 @@ export function RtusAdminPage({ user }: RtusAdminPageProps) {
             <div className="mt-4 flex justify-end gap-2">
               <button
                 type="button"
-                className="rounded border px-3 py-2 text-xs"
+                className="surface-button px-3 py-2"
                 onClick={() => setModalOpen(false)}
               >
                 Cancel
               </button>
               <button
                 type="submit"
-                className="rounded bg-accent px-3 py-2 text-xs font-semibold text-on-accent"
+                className="surface-button-primary bg-accent px-3 py-2 text-xs font-semibold text-on-accent"
               >
                 Save
               </button>

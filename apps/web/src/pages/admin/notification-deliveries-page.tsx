@@ -125,7 +125,7 @@ export function NotificationDeliveriesPage({ user }: NotificationDeliveriesPageP
           <label className="text-sm">
             <span className="mr-2 text-xs font-semibold uppercase text-ink-muted">Channel</span>
             <select
-              className="rounded border px-3 py-1.5 text-sm"
+              className="surface-field px-3 py-1.5 text-sm"
               value={channelFilter}
               onChange={(event) => setChannelFilter(event.target.value)}
             >
@@ -142,7 +142,7 @@ export function NotificationDeliveriesPage({ user }: NotificationDeliveriesPageP
               Organization
             </span>
             <select
-              className="rounded border px-3 py-1.5 text-sm"
+              className="surface-field px-3 py-1.5 text-sm"
               value={organizationFilter}
               onChange={(event) => setOrganizationFilter(event.target.value)}
             >
