@@ -18,8 +18,9 @@ import {
  * that is always rolled back — nothing commits. The fixture organization is
  * written by the superuser inside that transaction, so the suite needs no seed.
  * The probes then run as `bms_tenant` under the tenant GUC: the role the API
- * writes layouts as, and the role for which `0089`'s `SET ROLE bms_owner`
- * bracket has to make the new `bms.asset_roles` rows visible.
+ * writes layouts as. The first case proves the new `bms.asset_roles` rows are
+ * present, active and readable by that role — not that the `SET ROLE` bracket
+ * is needed for it (the table has no RLS; `0041`'s grants decide visibility).
  */
 const connectionString = process.env.DATABASE_URL;
 

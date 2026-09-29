@@ -64,11 +64,15 @@ const checkedValues = (migrationRel: string): string[] => {
     .filter(Boolean);
 };
 
-/** Codes named inside `INSERT INTO bms.asset_roles ... VALUES (...)` blocks, by `('code',`. */
+/**
+ * Codes named inside `INSERT INTO bms.asset_roles ... ON CONFLICT DO NOTHING` blocks, by
+ * `('code',`. Bounded to those blocks: `0089` also holds a CHECK list `IN ('tank', ...`, and an
+ * unbounded scan would count `tank` as a seeded role code.
+ */
 const insertedRoleCodes = (migrationRel: string): string[] => {
   const sql = read(migrationRel);
-  const matches = [...sql.matchAll(/\(\s*'([a-z0-9_-]+)'\s*,/g)];
-  return matches.map((m) => m[1]!);
+  const blocks = [...sql.matchAll(/INSERT INTO bms\.asset_roles[\s\S]*?ON CONFLICT DO NOTHING/g)].map((m) => m[0]);
+  return blocks.flatMap((block) => [...block.matchAll(/\(\s*'([a-z0-9_-]+)'\s*,/g)].map((m) => m[1]!));
 };
 
 describe("F3.32 v1 — migration 0086 widens the widget-type CHECK", () => {
