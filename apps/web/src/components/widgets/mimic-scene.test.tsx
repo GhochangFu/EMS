@@ -3,16 +3,23 @@ import { cleanup } from "@testing-library/react";
 import { afterEach, describe, it } from "vitest";
 
 import {
+  anUnknownKeyFallsBackToUnitAndDoesNotThrow,
+  anUnmappedGlyphClassFallsBackToFillInkMuted,
   childrenDrawInsideTheSvgLast,
   drawingIsNamedByTheLayout,
   drawsEveryUnitWithItsSymbol,
   drawsPanelLabelAndPipes,
   everyGlyphNamesNoColour,
+  everyLibraryKeyDrawsAGlyphWithNoFallback,
+  everyLibraryShapeUsesWhitelistedTagsAndAttrs,
+  everyPanelGlyphClassDrawsItsFillRole,
   everySymbolDrawsAGlyph,
+  fillLibraryGlyphHasNoStrokeAndTheFillClass,
   noTwoSymbolsDrawTheSameMarkup,
   passiveUnitDrawsNoStatus,
   resolvedUnitShowsItsAsset,
   roledUnitWithoutEntryIsNotAssigned,
+  strokeLibraryGlyphHasNoFillAndNoShapeColour,
   unitsDrawAtTheirScale,
 } from "./mimic-scene.spec";
 
@@ -57,5 +64,26 @@ describe("F3.32c U4 — MimicScene, a stored layout", () => {
   });
   it("S11 every glyph names no colour", () => {
     everyGlyphNamesNoColour();
+  });
+  it("S12 every library key draws a glyph with no fallback", () => {
+    everyLibraryKeyDrawsAGlyphWithNoFallback();
+  });
+  it("S13 an unknown key falls back to unit and does not throw", () => {
+    anUnknownKeyFallsBackToUnitAndDoesNotThrow();
+  });
+  it("S14 a stroke library glyph has no fill and no shape colour", () => {
+    strokeLibraryGlyphHasNoFillAndNoShapeColour();
+  });
+  it("S15 a fill library glyph has no stroke and the fill class", () => {
+    fillLibraryGlyphHasNoStrokeAndTheFillClass();
+  });
+  it("S16a every panel glyph class draws its fill role", () => {
+    everyPanelGlyphClassDrawsItsFillRole();
+  });
+  it("S16b an unmapped glyph class falls back to fill-ink-muted", () => {
+    anUnmappedGlyphClassFallsBackToFillInkMuted();
+  });
+  it("S17 every library shape uses whitelisted tags and attrs", () => {
+    everyLibraryShapeUsesWhitelistedTagsAndAttrs();
   });
 });

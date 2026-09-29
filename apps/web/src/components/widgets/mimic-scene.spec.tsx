@@ -3,15 +3,25 @@ import type { ReactElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { expect } from "vitest";
 
-import { mimicCoreSymbolSchema } from "@bms/shared/contracts";
+import { mimicCoreSymbolSchema, mimicSymbolSchema } from "@bms/shared/contracts";
 import type { GeneratedSiteAssetDto, MimicNodeDto } from "@bms/shared";
 
 import type { SiteLiveReadings } from "../../hooks/use-site-live-readings";
 import { layoutGeometry } from "../../lib/mimic-geometry";
 import { LAYOUT } from "../../lib/mimic-geometry.spec";
+import { MIMIC_PANEL_CLASSES, type MimicGlyphKind } from "../../lib/mimic";
 import { MimicGlyph } from "./mimic-glyphs";
 import { MimicScene } from "./mimic-scene";
+import { MIMIC_SHAPE_ATTRS, MIMIC_SHAPE_TAGS, librarySymbolShapes } from "./mimic-symbol-libraries";
 import { NO_LIVE_READINGS } from "./mimic-widget";
+
+/** Every library key, core keys excluded, in shared-registry order (D1: core, then each library). */
+const LIBRARY_KEYS = mimicSymbolSchema.options.filter(
+  (key) => !(mimicCoreSymbolSchema.options as readonly string[]).includes(key),
+);
+
+/** A CSS selector matching every whitelisted shape element (D8, ADR 0084 decision 5). */
+const SHAPE_SELECTOR = MIMIC_SHAPE_TAGS.join(", ");
 
 /**
  * `F3.32c` U4 — what `MimicScene` draws for a stored layout (ADR 0081, plan D10, D6).
@@ -193,5 +203,118 @@ export function everyGlyphNamesNoColour(): void {
       expect(el.getAttribute("class"), `${kind} className on shape`).toBeNull();
     }
     cleanup();
+  }
+}
+
+/** S12 — every library key (`tabler:*`, `lucide:*`, `mdi:*`) draws at least one shape, no fallback. */
+export function everyLibraryKeyDrawsAGlyphWithNoFallback(): void {
+  render(
+    <svg>
+      {LIBRARY_KEYS.map((kind) => (
+        <MimicGlyph key={kind} kind={kind as MimicGlyphKind} x={0} y={0} size={24} className="stroke-ink" />
+      ))}
+    </svg>,
+  );
+  const glyphs = screen.getAllByTestId("mimic-glyph");
+  expect(glyphs).toHaveLength(LIBRARY_KEYS.length);
+  for (const g of glyphs) {
+    expect(g.getAttribute("data-glyph-fallback"), g.getAttribute("data-glyph") ?? "").toBeNull();
+    expect(g.childElementCount, g.getAttribute("data-glyph") ?? "").toBeGreaterThan(0);
+  }
+}
+
+/** S13 — an unknown key draws the `unit` fallback, marked, and never throws. */
+export function anUnknownKeyFallsBackToUnitAndDoesNotThrow(): void {
+  expect(() =>
+    render(
+      <svg>
+        <MimicGlyph kind={"nope:missing" as MimicGlyphKind} x={0} y={0} size={24} className="stroke-ink" />
+      </svg>,
+    ),
+  ).not.toThrow();
+  const glyph = screen.getByTestId("mimic-glyph");
+  expect(glyph.getAttribute("data-glyph-fallback")).toBe("true");
+}
+
+/** S14 — a stroke library glyph draws like a core glyph: `fill="none"`, no colour on a shape. */
+export function strokeLibraryGlyphHasNoFillAndNoShapeColour(): void {
+  for (const kind of ["tabler:bolt", "lucide:factory"] as const) {
+    render(
+      <svg>
+        <MimicGlyph kind={kind} x={0} y={0} size={24} className="stroke-accent" />
+      </svg>,
+    );
+    const glyph = screen.getByTestId("mimic-glyph");
+    expect(glyph.getAttribute("fill"), kind).toBe("none");
+    expect(glyph.getAttribute("class"), kind).toBe("stroke-accent");
+    const shapes = glyph.querySelectorAll(SHAPE_SELECTOR);
+    expect(shapes.length, kind).toBeGreaterThan(0);
+    for (const shape of Array.from(shapes)) {
+      expect(shape.getAttribute("fill"), `${kind} shape fill`).toBeNull();
+      expect(shape.getAttribute("stroke"), `${kind} shape stroke`).toBeNull();
+      expect(shape.getAttribute("class"), `${kind} shape class`).toBeNull();
+    }
+    cleanup();
+  }
+}
+
+/** S15 — a fill library glyph draws with no stroke, the matching fill class, no `fill="none"`, no shape colour. */
+export function fillLibraryGlyphHasNoStrokeAndTheFillClass(): void {
+  render(
+    <svg>
+      <MimicGlyph kind="mdi:heat-pump" x={0} y={0} size={24} className="stroke-info" />
+    </svg>,
+  );
+  const glyph = screen.getByTestId("mimic-glyph");
+  expect(glyph.getAttribute("stroke")).toBe("none");
+  expect(glyph.getAttribute("data-glyph-style")).toBe("fill");
+  expect(glyph.getAttribute("class")).toBe("fill-info");
+  expect(glyph.getAttribute("stroke-width")).toBeNull();
+  expect(glyph.getAttribute("fill")).toBeNull();
+  const shapes = glyph.querySelectorAll(SHAPE_SELECTOR);
+  expect(shapes.length).toBeGreaterThan(0);
+  for (const shape of Array.from(shapes)) {
+    expect(shape.getAttribute("fill"), "shape fill").toBeNull();
+    expect(shape.getAttribute("stroke"), "shape stroke").toBeNull();
+    expect(shape.getAttribute("class"), "shape class").toBeNull();
+  }
+}
+
+/** S16a — every panel glyph class, plus `stroke-ink-faint`, draws with the same role's fill class. */
+export function everyPanelGlyphClassDrawsItsFillRole(): void {
+  const strokeClasses = [...Object.values(MIMIC_PANEL_CLASSES).map((c) => c.glyph), "stroke-ink-faint"];
+  for (const strokeClass of strokeClasses) {
+    render(
+      <svg>
+        <MimicGlyph kind="mdi:heat-pump" x={0} y={0} size={24} className={strokeClass} />
+      </svg>,
+    );
+    const role = strokeClass.replace(/^stroke-/, "");
+    expect(screen.getByTestId("mimic-glyph").getAttribute("class"), strokeClass).toBe(`fill-${role}`);
+    cleanup();
+  }
+}
+
+/** S16b — a class with no fill counterpart falls back to `fill-ink-muted`. */
+export function anUnmappedGlyphClassFallsBackToFillInkMuted(): void {
+  render(
+    <svg>
+      <MimicGlyph kind="mdi:heat-pump" x={0} y={0} size={24} className="stroke-something-unmapped" />
+    </svg>,
+  );
+  expect(screen.getByTestId("mimic-glyph").getAttribute("class")).toBe("fill-ink-muted");
+}
+
+/** S17 — every library shape's tag and attribute names are the whitelisted geometry set. */
+export function everyLibraryShapeUsesWhitelistedTagsAndAttrs(): void {
+  for (const key of LIBRARY_KEYS) {
+    const result = librarySymbolShapes(key);
+    expect(result, key).not.toBeNull();
+    for (const [tag, attrs] of result!.shapes) {
+      expect((MIMIC_SHAPE_TAGS as readonly string[]).includes(tag), `${key} tag ${tag}`).toBe(true);
+      for (const attr of Object.keys(attrs)) {
+        expect((MIMIC_SHAPE_ATTRS as readonly string[]).includes(attr), `${key} attr ${attr}`).toBe(true);
+      }
+    }
   }
 }
