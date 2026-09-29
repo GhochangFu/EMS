@@ -334,3 +334,15 @@ export async function sitesOnlineWearsNoIcon(): Promise<void> {
   expect(iconPathOf(tileLabelled("PUE")), "no icon rendered anywhere — the check is vacuous").not.toBeNull();
   expect(iconPathOf(sites)).toBeNull();
 }
+
+/**
+ * `F3.33` U5 (ADR 0083) — the dashboard title reads `IONSiTE NEXUS`. The literal appears twice
+ * on screen, in the KPI ribbon and in the page header, so a rename of one site leaves the count at 1.
+ */
+export async function theDashboardTitleReadsIonsiteNexusTwice(): Promise<void> {
+  stubDashboard(1.42);
+  renderPage();
+
+  await ribbonSettled();
+  expect(screen.getAllByText("Executive Summary · IONSiTE NEXUS Operating Dashboard")).toHaveLength(2);
+}

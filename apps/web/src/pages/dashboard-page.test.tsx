@@ -16,6 +16,7 @@ import {
   sitesOnlineHintReadsTheFreshnessWindow,
   sitesOnlineWearsNoIcon,
   theCriticalCountRendersInTheNote,
+  theDashboardTitleReadsIonsiteNexusTwice,
   theUnacknowledgedRowsLiteralIsGone,
   totalLoadWearsTheBoltIcon,
 } from "./dashboard-page.spec";
@@ -103,5 +104,16 @@ describe("F3.30 Sites online hint reads the freshness window (ADR 0075 decision 
 
   it("reads 'Sites with fresh telemetry (~25s)'", async () => {
     await sitesOnlineHintReadsTheFreshnessWindow();
+  });
+});
+
+describe("F3.33 the dashboard title reads IONSiTE NEXUS", () => {
+  afterEach(() => {
+    cleanup();
+    vi.restoreAllMocks();
+  });
+
+  it("D1 reads the title twice, in the ribbon and the page header", async () => {
+    await theDashboardTitleReadsIonsiteNexusTwice();
   });
 });

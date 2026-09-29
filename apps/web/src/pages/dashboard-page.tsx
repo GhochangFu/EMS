@@ -23,6 +23,8 @@ import { HealthSummarySection } from "../components/asset-health/health-summary-
 import { PageHeader } from "../components/page-header";
 import { SectionCard } from "../components/section-card";
 
+const DASHBOARD_TITLE = "Executive Summary · IONSiTE NEXUS Operating Dashboard";
+
 type DashboardPageProps = {
   user: AuthUser;
 };
@@ -109,7 +111,7 @@ export function DashboardPage({ user }: DashboardPageProps) {
             {stale ? "Stale" : "Live"}
           </span>
           <span className="text-ink">
-            Executive Summary · TRINETRA Operating Dashboard
+            {DASHBOARD_TITLE}
           </span>
           <span className="hidden text-ink-muted sm:inline">
             · Total load & alarms from telemetry + DB
@@ -120,7 +122,7 @@ export function DashboardPage({ user }: DashboardPageProps) {
       <div className="mx-auto max-w-[1200px] space-y-4 pb-8">
         <PageHeader
           eyebrow="R.dash"
-          title="Executive Summary · TRINETRA Operating Dashboard"
+          title={DASHBOARD_TITLE}
           subtitle="Live operational overview · KPI ribbon · telemetry trend"
         />
 
