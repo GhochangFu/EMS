@@ -298,18 +298,37 @@ export function runWaterTrainKeepsItsTanks(): void {
   assert(JSON.stringify(tanks) === '["water_intake","water_storage"]', `water_train tanks, got ${JSON.stringify(tanks)}`);
 }
 
-/** `F3.32g` — a library glyph from the owner's table reaches the starter unchanged. */
-export function runFacilityStarterDrawsTheLibraryGlyphs(): void {
-  const symbols = Object.fromEntries(fromPreset("facility_services").nodes.map((n) => [n.key, n.symbol]));
-  const expected = {
-    main_meter: "mdi:meter-electric",
-    lighting: "lucide:lightbulb",
-    lifts: "tabler:elevator",
-    fire_pumps: "tabler:fire-hydrant",
-    utilities: "lucide:cog",
-  };
-  for (const [key, symbol] of Object.entries(expected)) {
-    assert(symbols[key] === symbol, `facility_services.${key} draws ${symbol}, got ${String(symbols[key])}`);
+/**
+ * `F3.32g` — the owner-approved table, literal: every swapped starter unit draws its library
+ * glyph. A swap reverted to its core glyph reddens its line here, even when the preset still
+ * chooses the same libraries through another unit.
+ */
+const APPROVED_GLYPHS: Readonly<Record<string, string>> = {
+  "electrical_distribution.incoming": "mdi:transmission-tower-import",
+  "hvac_chiller_plant.ahu_fcu": "lucide:fan",
+  "it_power_cooling.utility_feed": "lucide:plug-zap",
+  "it_power_cooling.pdu": "tabler:plug-connected",
+  "it_power_cooling.crac": "tabler:air-conditioning",
+  "compressed_air.dryer": "lucide:wind",
+  "compressed_air.receiver": "mdi:gas-cylinder",
+  "compressed_air.header": "lucide:gauge",
+  "environment_monitoring.ambient": "lucide:thermometer-sun",
+  "environment_monitoring.indoor_air": "mdi:molecule-co2",
+  "environment_monitoring.stack": "lucide:factory",
+  "environment_monitoring.effluent": "lucide:droplets",
+  "facility_services.main_meter": "mdi:meter-electric",
+  "facility_services.lighting": "lucide:lightbulb",
+  "facility_services.lifts": "tabler:elevator",
+  "facility_services.fire_pumps": "tabler:fire-hydrant",
+  "facility_services.utilities": "lucide:cog",
+};
+
+export function runEveryApprovedSwapReachesTheStarter(): void {
+  assert(Object.keys(APPROVED_GLYPHS).length === 17, "the owner approved 17 swaps");
+  for (const [at, symbol] of Object.entries(APPROVED_GLYPHS)) {
+    const [preset, key] = at.split(".") as [MimicPreset, string];
+    const node = fromPreset(preset).nodes.find((n) => n.key === key);
+    assert(node?.symbol === symbol, `${at} draws ${symbol}, got ${String(node?.symbol)}`);
   }
 }
 

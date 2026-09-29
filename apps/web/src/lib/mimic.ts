@@ -344,7 +344,8 @@ export type MimicGlyphKind = MimicSymbol | "alert";
  * (ADR 0084) where it names the equipment more closely than the core one. Line glyphs (Tabler,
  * Lucide) first, to match the core drawings; MDI only where no line glyph fits. `water_train`
  * keeps its core glyphs, so its tanks keep the live level fill (`mimic-scene.tsx` fills `tank`
- * only). "Start from" chooses every library these name (`fromPreset`).
+ * only). `compressed_air.receiver` leaves `tank`: its role carries a pressure, not a `%` level,
+ * so it had no fill to lose. "Start from" chooses every library these name (`fromPreset`).
  */
 export const MIMIC_NODE_GLYPHS: {
   readonly [P in MimicPreset]: { readonly [key in NodeKeyOf<P>]: MimicSymbol };
