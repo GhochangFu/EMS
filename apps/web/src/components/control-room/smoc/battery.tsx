@@ -168,7 +168,7 @@ function statusPillClass(status: BatteryStatus): string {
     case "offline":
       return "border-line bg-well-deep text-neutral-ink";
     case "normal":
-      return "border-accent/20 bg-accent/10 text-accent";
+      return "border-accent/20 bg-accent/10 text-accent-strong";
   }
 }
 
@@ -213,7 +213,7 @@ function cellClass(status: BatteryStatus): string {
   if (status === "offline") {
     return "border-line-strong bg-well-deep text-ink-muted";
   }
-  return "border-accent/20 bg-accent/10 text-accent";
+  return "border-accent/20 bg-accent/10 text-accent-strong";
 }
 
 export function ControlRoomBatteryContent() {
@@ -359,7 +359,7 @@ function BatteryStringCard({
   };
 }) {
   return (
-    <section className="rounded border border-line bg-surface">
+    <section className="surface-raised">
       <div className="flex flex-col gap-2 border-b border-line px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h2 className="font-condensed text-lg font-bold text-ink">{string.title}</h2>
@@ -383,11 +383,11 @@ function BatteryStringCard({
         </div>
         <div className="flex flex-wrap gap-2">
           {string.state.matchedRule ? (
-            <span className="rounded-full border border-warning-line bg-warning-wash-strong px-2 py-0.5 text-[11px] font-semibold text-warning-ink">
+            <span className="surface-pill rounded-full border border-warning-line bg-warning-wash-strong px-2 py-0.5 text-[11px] font-semibold text-warning-ink">
               {string.state.matchedRule.name}
             </span>
           ) : null}
-          <span className={`rounded-full border px-2 py-0.5 text-[11px] font-semibold ${statusPillClass(string.state.status)}`}>
+          <span className={`surface-pill rounded-full border px-2 py-0.5 text-[11px] font-semibold ${statusPillClass(string.state.status)}`}>
             {statusLabel(string.state.status)}
           </span>
         </div>
@@ -465,7 +465,7 @@ function batteryAlerts(
 
 function DetailCard({ title, children }: { title: string; children: ReactNode }) {
   return (
-    <section className="rounded border border-line bg-surface">
+    <section className="surface-raised">
       <div className="border-b border-line px-4 py-3">
         <h2 className="font-condensed text-lg font-bold text-ink">{title}</h2>
       </div>

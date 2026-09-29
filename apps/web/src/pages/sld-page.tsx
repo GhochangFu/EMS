@@ -57,7 +57,7 @@ function SldDetailDrawer({
       onClick={onClose}
     >
       <aside
-        className="h-full w-full max-w-md border-l border-line bg-surface shadow-xl"
+        className="surface-dialog h-full w-full max-w-md"
         role="dialog"
         aria-label="Equipment detail"
         onClick={(e) => e.stopPropagation()}
@@ -73,7 +73,7 @@ function SldDetailDrawer({
           </div>
           <button
             type="button"
-            className="rounded px-2 py-1 text-sm text-ink-muted hover:bg-well-deep"
+            className="surface-button px-2 py-1 text-sm"
             onClick={onClose}
           >
             Close
@@ -157,7 +157,7 @@ function SldContent({
         subtitle="11 kV grid · 2 x 2 MVA · UPS + DG backup · live telemetry"
         actions={<StatusPill label="Live" />}
       />
-      <SectionCard className="mt-4" bodyClassName="overflow-x-auto bg-well p-4">
+      <SectionCard className="mt-4" bodyClassName="surface-pressed overflow-x-auto p-4">
         <ElectricalSldDiagram onSelectAsset={onSelect} />
       </SectionCard>
       <SldDetailDrawer assetId={selectedId} onClose={() => onSelect(undefined)} />

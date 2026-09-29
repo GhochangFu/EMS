@@ -176,7 +176,7 @@ function statusPillClass(status: EnvStatus): string {
     case "offline":
       return "border-line bg-well-deep text-neutral-ink";
     case "normal":
-      return "border-accent/20 bg-accent/10 text-accent";
+      return "border-accent/20 bg-accent/10 text-accent-strong";
   }
 }
 
@@ -352,7 +352,7 @@ export function ControlRoomEnvContent() {
         <KpiTile label="Zones Monitored" status="ready" value={String(zones.length)} hint="editable thresholds in Rule Engine" />
       </div>
 
-      <section className="rounded border border-line bg-surface">
+      <section className="surface-raised">
         <div className="border-b border-line px-4 py-3">
           <h2 className="font-condensed text-lg font-bold text-ink">
             Zone Temperature & Humidity
@@ -364,7 +364,7 @@ export function ControlRoomEnvContent() {
             <div key={zone.code} className={`rounded border p-3 ${tileClass(zone.state.status)}`}>
               <div className="flex items-start justify-between gap-2">
                 <h3 className="font-semibold text-ink">{zone.zone}</h3>
-                <span className={`rounded-full border px-2 py-0.5 text-[10px] font-semibold ${statusPillClass(zone.state.status)}`}>
+                <span className={`surface-pill rounded-full border px-2 py-0.5 text-[10px] font-semibold ${statusPillClass(zone.state.status)}`}>
                   {statusLabel(zone.state.status)}
                 </span>
               </div>
@@ -389,12 +389,12 @@ export function ControlRoomEnvContent() {
         </div>
       </section>
 
-      <section className="rounded border border-line bg-surface">
+      <section className="surface-raised">
         <div className="border-b border-line px-4 py-3">
           <h2 className="font-condensed text-lg font-bold text-ink">Sensor Floorplan</h2>
           <p className="text-xs text-ink-muted">Control room layout · simplified</p>
         </div>
-        <div className="bg-well p-4">
+        <div className="surface-pressed p-4">
           <FloorPlan zones={zones} leaks={leaks} smoke={smoke} />
         </div>
       </section>
@@ -453,11 +453,11 @@ function SensorTable({
   rows: Array<{ id: string; location: string; state: string; status: EnvStatus }>;
 }) {
   return (
-    <section className="rounded border border-line bg-surface">
+    <section className="surface-raised">
       <div className="border-b border-line px-4 py-3">
         <h2 className="font-condensed text-lg font-bold text-ink">{title}</h2>
       </div>
-      <div className="overflow-x-auto">
+      <div className="surface-table overflow-x-auto">
         <table className="min-w-full divide-y divide-line text-sm">
           <thead className="bg-well text-xs uppercase tracking-wide text-ink-muted">
             <tr>
@@ -472,7 +472,7 @@ function SensorTable({
                 <td className="px-4 py-3 font-semibold text-ink">{row.id}</td>
                 <td className="px-4 py-3">{row.location}</td>
                 <td className="px-4 py-3">
-                  <span className={`rounded-full border px-2 py-0.5 text-[11px] font-semibold ${statusPillClass(row.status)}`}>
+                  <span className={`surface-pill rounded-full border px-2 py-0.5 text-[11px] font-semibold ${statusPillClass(row.status)}`}>
                     {row.state}
                   </span>
                 </td>

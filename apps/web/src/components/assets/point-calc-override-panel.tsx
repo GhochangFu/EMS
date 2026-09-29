@@ -88,7 +88,7 @@ export function PointCalcOverridePanel({
   const isV3 = merged !== null && isParameterDialect(merged);
 
   return (
-    <div className="rounded border border-line p-3">
+    <div className="surface-raised-sm p-3">
       <div className="flex items-center justify-between gap-2">
         <h3 className="text-sm font-semibold">
           {config.label ?? config.pointKey}
@@ -141,7 +141,7 @@ export function PointCalcOverridePanel({
             // other column is a separate inherit-or-set choice and the
             // merged rules below say what the pair needs.
             onChange={(event) => set({ formulaDialect: event.target.value })}
-            className="mt-1 w-full rounded border border-line px-2 py-1"
+            className="mt-1 w-full surface-field px-2 py-1"
           >
             <option value="">inherit ({config.template.formulaDialect ?? "not set"})</option>
             {dialectOptions().map((option) => (
@@ -159,7 +159,7 @@ export function PointCalcOverridePanel({
             value={draft.formula}
             disabled={busy}
             onChange={(event) => set({ formula: event.target.value })}
-            className="mt-1 w-full rounded border border-line px-2 py-1 font-mono"
+            className="mt-1 w-full surface-field px-2 py-1 font-mono"
             placeholder={config.template.formula ?? ""}
           />
         </label>
@@ -194,7 +194,7 @@ export function PointCalcOverridePanel({
             value={draft.calcTrigger}
             disabled={busy}
             onChange={(event) => set({ calcTrigger: event.target.value })}
-            className="mt-1 w-full rounded border border-line px-2 py-1"
+            className="mt-1 w-full surface-field px-2 py-1"
           >
             <option value="">inherit ({config.template.calcTrigger ?? "not set"})</option>
             {/* Disabled under a merged `v2`, not hidden (design decision 5):
@@ -219,7 +219,7 @@ export function PointCalcOverridePanel({
             value={draft.calcIntervalSeconds}
             disabled={busy}
             onChange={(event) => set({ calcIntervalSeconds: event.target.value })}
-            className="mt-1 w-full rounded border border-line px-2 py-1"
+            className="mt-1 w-full surface-field px-2 py-1"
             placeholder={
               config.template.calcIntervalSeconds === null
                 ? "inherit"
@@ -234,7 +234,7 @@ export function PointCalcOverridePanel({
             value={draft.maxInputAgeSeconds}
             disabled={busy}
             onChange={(event) => set({ maxInputAgeSeconds: event.target.value })}
-            className="mt-1 w-full rounded border border-line px-2 py-1"
+            className="mt-1 w-full surface-field px-2 py-1"
             placeholder={
               config.template.maxInputAgeSeconds === null
                 ? "inherit"
@@ -261,7 +261,7 @@ export function PointCalcOverridePanel({
           disabled={busy || !canSubmit(draft, config)}
           aria-busy={saving}
           onClick={onSave}
-          className="rounded bg-accent px-3 py-1.5 text-xs font-semibold text-on-accent disabled:opacity-60"
+          className="surface-button-primary bg-accent px-3 py-1.5 text-xs font-semibold text-on-accent disabled:opacity-60"
         >
           {saving ? "Saving override…" : "Save override"}
         </button>
@@ -272,7 +272,7 @@ export function PointCalcOverridePanel({
           disabled={busy || !canClear(config)}
           aria-busy={clearing}
           onClick={onClear}
-          className="rounded border border-critical-line px-3 py-1.5 text-xs font-semibold text-critical-ink disabled:opacity-60"
+          className="surface-button border border-critical-line px-3 py-1.5 text-critical-ink disabled:opacity-60"
         >
           {clearing ? "Clearing override…" : "Clear override"}
         </button>
@@ -281,7 +281,7 @@ export function PointCalcOverridePanel({
           disabled={busy}
           data-pending-bystander="busy"
           onClick={onCancel}
-          className="rounded border border-line px-3 py-1.5 text-xs font-semibold text-ink-muted disabled:opacity-60"
+          className="surface-button px-3 py-1.5 disabled:opacity-60"
         >
           Close
         </button>

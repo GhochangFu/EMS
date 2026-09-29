@@ -99,7 +99,7 @@ export function TelemetryImportPage({ user }: TelemetryImportPageProps) {
           <label className="text-xs font-semibold text-ink-muted">
             Source kind
             <select
-              className="mt-1 block rounded border px-3 py-1.5 text-sm"
+              className="mt-1 block surface-field px-3 py-1.5 text-sm"
               value={sourceKind}
               onChange={(event) =>
                 setSourceKind(event.target.value as TelemetryImportRequestOptions["sourceKind"])
@@ -112,7 +112,7 @@ export function TelemetryImportPage({ user }: TelemetryImportPageProps) {
           <label className="text-xs font-semibold text-ink-muted">
             On conflict
             <select
-              className="mt-1 block rounded border px-3 py-1.5 text-sm"
+              className="mt-1 block surface-field px-3 py-1.5 text-sm"
               value={conflictPolicy}
               onChange={(event) =>
                 setConflictPolicy(event.target.value as TelemetryImportRequestOptions["conflictPolicy"])
@@ -124,7 +124,7 @@ export function TelemetryImportPage({ user }: TelemetryImportPageProps) {
           </label>
           <button
             type="button"
-            className="rounded bg-accent px-3 py-2 text-xs font-semibold text-on-accent disabled:opacity-50"
+            className="surface-button-primary bg-accent px-3 py-2 text-xs font-semibold text-on-accent disabled:opacity-50"
             disabled={!file || previewMutation.isPending}
             aria-busy={previewMutation.isPending}
             onClick={() => previewMutation.mutate()}
@@ -134,7 +134,7 @@ export function TelemetryImportPage({ user }: TelemetryImportPageProps) {
           {file || preview || commitResult ? (
             <button
               type="button"
-              className="rounded border px-3 py-2 text-xs font-semibold text-ink-muted"
+              className="surface-button px-3 py-2"
               onClick={reset}
             >
               Start over
@@ -167,7 +167,7 @@ export function TelemetryImportPage({ user }: TelemetryImportPageProps) {
           ) : null}
           <button
             type="button"
-            className="rounded bg-accent px-3 py-2 text-xs font-semibold text-on-accent disabled:opacity-50"
+            className="surface-button-primary bg-accent px-3 py-2 text-xs font-semibold text-on-accent disabled:opacity-50"
             disabled={preview.acceptedCount === 0 || commitMutation.isPending || commitResult !== null}
             aria-busy={commitMutation.isPending}
             onClick={() => commitMutation.mutate()}

@@ -52,10 +52,8 @@ export function AssetTemplatesPageTabStrip({
               role="tab"
               aria-selected={tab.id === active}
               onClick={() => onSelect(tab.id)}
-              className={`rounded px-3 py-1.5 text-xs font-semibold ${
-                tab.id === active
-                  ? "bg-accent text-on-accent"
-                  : "text-ink-muted hover:bg-well-deep hover:text-ink"
+              className={`px-3 py-1.5 surface-tab ${
+                tab.id === active ? "surface-tab-selected" : ""
               }`}
             >
               {tab.label}

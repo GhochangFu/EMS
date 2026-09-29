@@ -18,8 +18,8 @@ export function LocationKpiCard({ location, to }: LocationKpiCardProps) {
   return (
     <Link
       to={to ?? `/locations/${location.id}/dashboard`}
-      className={`relative z-0 block w-full min-w-0 rounded-lg border bg-surface p-3 shadow-sm transition hover:z-10 hover:border-accent hover:shadow-md ${
-        hasLiveTelemetry ? "border-accent/20" : "border-line"
+      className={`relative z-0 block w-full min-w-0 surface-raised p-3 transition hover:z-10 hover:border-accent ${
+        hasLiveTelemetry ? "border-accent/20" : ""
       }`}
     >
       <div className="flex items-start justify-between gap-3">
@@ -40,7 +40,7 @@ export function LocationKpiCard({ location, to }: LocationKpiCardProps) {
             {location.rtuCount} RTUs · {location.assetCount} assets
           </span>
           <span
-            className={`rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide ${
+            className={`rounded-full surface-pill px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide ${
               hasLiveTelemetry
                 ? "bg-ok-wash text-ok-ink"
                 : "bg-well-deep text-ink-muted"

@@ -8,6 +8,7 @@ import { roleLabel } from "../lib/role-label";
 import { useAuthStore, type AuthUser } from "../stores/auth-store";
 import { StatusBarClock } from "../components/status-bar-clock";
 import { SystemStatusIndicator } from "../components/system-status-indicator";
+import { SurfaceSwitch } from "../components/surface-switch";
 import { ThemeSwitch } from "../components/theme-switch";
 import { Wordmark } from "../components/wordmark";
 
@@ -190,6 +191,16 @@ export function AppShell({ user, children, kpiRibbon }: AppShellProps) {
     void navigate("/login", { replace: true });
   }
 
+  /** A module link is selected on its own path, and on a nested path under it when it says so. */
+  function isModuleSelected(m: { readonly path: string; readonly nested?: boolean }): boolean {
+    return location.pathname === m.path || (m.nested === true && location.pathname.startsWith(`${m.path}/`));
+  }
+
+  /** An admin link is selected on its path; every one but the hub also under it. */
+  function isAdminSelected(path: string): boolean {
+    return location.pathname === path || (path !== "/admin" && location.pathname.startsWith(path));
+  }
+
   function toggleSidebar(): void {
     setSidebarCollapsed((current) => {
       const next = !current;
@@ -215,6 +226,7 @@ export function AppShell({ user, children, kpiRibbon }: AppShellProps) {
             </div>
           </div>
           <ThemeSwitch />
+          <SurfaceSwitch />
           <button
             type="button"
             className="rounded border border-on-dark/20 px-3 py-1.5 text-xs font-semibold text-on-dark/85 transition hover:border-on-dark/40 hover:bg-on-dark/10 hover:text-on-dark"
@@ -269,7 +281,7 @@ export function AppShell({ user, children, kpiRibbon }: AppShellProps) {
 
       <div className="flex min-h-0 flex-1">
         <aside
-          className={`shrink-0 border-r border-line bg-surface py-3 text-sm transition-[width] duration-200 ${
+          className={`surface-sidebar shrink-0 py-3 text-sm transition-[width] duration-200 ${
             sidebarCollapsed ? "w-16" : "w-60"
           }`}
         >
@@ -281,7 +293,7 @@ export function AppShell({ user, children, kpiRibbon }: AppShellProps) {
             )}
             <button
               type="button"
-              className="rounded border border-line bg-surface px-2 py-1 font-mono text-xs font-semibold text-ink-muted transition hover:border-accent hover:bg-canvas hover:text-ink"
+              className="surface-button px-2 py-1 font-mono transition hover:border-accent"
               aria-label={sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
               title={sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
               onClick={toggleSidebar}
@@ -312,12 +324,8 @@ export function AppShell({ user, children, kpiRibbon }: AppShellProps) {
                         title={m.label}
                         // F4.164 — WCAG 2.5.3: a collapsed name carries the visible code; expanded, the label is the name.
                         aria-label={sidebarCollapsed ? `${m.label} (${collapsedLabel(m)})` : undefined}
-                        className={`block w-full border-l-2 hover:bg-canvas ${
-                          location.pathname === m.path ||
-                          ("nested" in m && m.nested && location.pathname.startsWith(`${m.path}/`))
-                            ? "border-accent bg-canvas/80 font-semibold text-ink"
-                            : "border-transparent text-ink-muted"
-                        } ${sidebarCollapsed ? "px-2 py-2 text-center font-condensed text-xs font-bold" : "px-3 py-1.5"}`}
+                        aria-current={isModuleSelected(m) ? "page" : undefined}
+                        className={`surface-nav-item block ${isModuleSelected(m) ? "surface-nav-item-selected" : ""} ${sidebarCollapsed ? "px-2 py-2 text-center font-condensed text-xs font-bold" : "px-3 py-1.5"}`}
                       >
                         {sidebarCollapsed ? collapsedLabel(m) : m.label}
                       </Link>
@@ -356,12 +364,8 @@ export function AppShell({ user, children, kpiRibbon }: AppShellProps) {
                         to={item.path}
                         title={item.label}
                         aria-label={sidebarCollapsed ? `${item.label} (${collapsedLabel(item)})` : undefined}
-                        className={`block w-full border-l-2 hover:bg-canvas ${
-                          location.pathname === item.path ||
-                          (item.path !== "/admin" && location.pathname.startsWith(`${item.path}`))
-                            ? "border-accent bg-canvas/80 font-semibold text-ink"
-                            : "border-transparent text-ink-muted"
-                        } ${sidebarCollapsed ? "px-2 py-2 text-center font-condensed text-xs font-bold" : "px-3 py-1.5"}`}
+                        aria-current={isAdminSelected(item.path) ? "page" : undefined}
+                        className={`surface-nav-item block ${isAdminSelected(item.path) ? "surface-nav-item-selected" : ""} ${sidebarCollapsed ? "px-2 py-2 text-center font-condensed text-xs font-bold" : "px-3 py-1.5"}`}
                       >
                         {sidebarCollapsed ? collapsedLabel(item) : item.label}
                       </Link>
@@ -373,7 +377,7 @@ export function AppShell({ user, children, kpiRibbon }: AppShellProps) {
         </aside>
 
         <main className="flex min-w-0 flex-1 flex-col">
-          <section className="flex min-h-14 shrink-0 items-center border-b border-line bg-surface px-4 py-2 text-xs text-ink-muted shadow-sm">
+          <section className="surface-ribbon flex min-h-14 shrink-0 items-center px-4 py-2 text-xs text-ink-muted">
             <div className="flex w-full flex-wrap items-center gap-3">
               {kpiRibbon}
               {scope?.kind === "asset_group" ? (

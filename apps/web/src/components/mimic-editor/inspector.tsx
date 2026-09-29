@@ -50,7 +50,7 @@ export type MimicEditorInspectorProps = {
   organization?: InspectorOrganization;
 };
 
-const FIELD = "mt-1 w-full rounded border border-line px-2 py-1 text-xs font-normal";
+const FIELD = "mt-1 w-full surface-field px-2 py-1 text-xs font-normal";
 const LABEL = "block text-xs font-semibold text-ink-muted";
 
 type DraftFieldProps = {

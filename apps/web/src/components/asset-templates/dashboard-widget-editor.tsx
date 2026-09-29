@@ -36,7 +36,7 @@ function WidgetEditor({
   }
 
   return (
-    <section className="rounded border border-line p-3">
+    <section className="surface-raised-sm p-3">
       <div className="flex items-center justify-between">
         <span className="text-[11px] font-semibold uppercase tracking-wide text-ink-muted">
           {WIDGET_TYPE_LABELS[widget.widgetType]}
@@ -45,7 +45,7 @@ function WidgetEditor({
           <button
             type="button"
             onClick={onRemove}
-            className="rounded border border-critical-line px-2 py-0.5 text-[11px] font-semibold text-critical-ink"
+            className="surface-button border border-critical-line px-2 py-0.5 text-critical-ink"
           >
             Remove
           </button>
@@ -60,7 +60,7 @@ function WidgetEditor({
             disabled={!editable}
             placeholder="optional"
             onChange={(event) => onChange({ title: event.target.value })}
-            className="w-full rounded border border-line px-2 py-1.5 text-xs"
+            className="w-full surface-field px-2 py-1.5 text-xs"
           />
         </Field>
         <Field label="Points bound" error={problemFor("pointKeys")}>
@@ -72,7 +72,7 @@ function WidgetEditor({
             onChange={(event) =>
               onChange({ pointKeys: [...event.target.selectedOptions].map((option) => option.value) })
             }
-            className="w-full rounded border border-line px-2 py-1.5 text-xs"
+            className="w-full surface-field px-2 py-1.5 text-xs"
           >
             {declaredPointKeys.map((key) => (
               <option key={key} value={key}>
@@ -90,7 +90,7 @@ function WidgetEditor({
             value={widget.gridX}
             disabled={!editable}
             onChange={(event) => onChange({ gridX: Number(event.target.value) })}
-            className="w-full rounded border border-line px-2 py-1.5 text-xs"
+            className="w-full surface-field px-2 py-1.5 text-xs"
           />
         </Field>
         <Field label="gridY" error={problemFor("gridY")}>
@@ -99,7 +99,7 @@ function WidgetEditor({
             value={widget.gridY}
             disabled={!editable}
             onChange={(event) => onChange({ gridY: Number(event.target.value) })}
-            className="w-full rounded border border-line px-2 py-1.5 text-xs"
+            className="w-full surface-field px-2 py-1.5 text-xs"
           />
         </Field>
         <Field label="gridW" error={problemFor("gridW")}>
@@ -108,7 +108,7 @@ function WidgetEditor({
             value={widget.gridW}
             disabled={!editable}
             onChange={(event) => onChange({ gridW: Number(event.target.value) })}
-            className="w-full rounded border border-line px-2 py-1.5 text-xs"
+            className="w-full surface-field px-2 py-1.5 text-xs"
           />
         </Field>
         <Field label="gridH" error={problemFor("gridH")}>
@@ -117,7 +117,7 @@ function WidgetEditor({
             value={widget.gridH}
             disabled={!editable}
             onChange={(event) => onChange({ gridH: Number(event.target.value) })}
-            className="w-full rounded border border-line px-2 py-1.5 text-xs"
+            className="w-full surface-field px-2 py-1.5 text-xs"
           />
         </Field>
       </div>
@@ -130,7 +130,7 @@ function WidgetEditor({
             disabled={!editable}
             placeholder="none"
             onChange={(event) => updateConfig({ unit: event.target.value })}
-            className="w-full rounded border border-line px-2 py-1.5 text-xs"
+            className="w-full surface-field px-2 py-1.5 text-xs"
           />
         </Field>
         <Field label="Decimals" error={problemFor("decimals")}>
@@ -141,7 +141,7 @@ function WidgetEditor({
             disabled={!editable}
             placeholder="not set"
             onChange={(event) => updateConfig({ decimals: event.target.value })}
-            className="w-full rounded border border-line px-2 py-1.5 text-xs"
+            className="w-full surface-field px-2 py-1.5 text-xs"
           />
         </Field>
       </div>
@@ -156,7 +156,7 @@ function WidgetEditor({
                 value={widget.config.min}
                 disabled={!editable}
                 onChange={(event) => updateConfig({ min: event.target.value })}
-                className="w-full rounded border border-line px-2 py-1.5 text-xs"
+                className="w-full surface-field px-2 py-1.5 text-xs"
               />
             </Field>
             <Field label="Maximum" error={problemFor("max")}>
@@ -166,7 +166,7 @@ function WidgetEditor({
                 value={widget.config.max}
                 disabled={!editable}
                 onChange={(event) => updateConfig({ max: event.target.value })}
-                className="w-full rounded border border-line px-2 py-1.5 text-xs"
+                className="w-full surface-field px-2 py-1.5 text-xs"
               />
             </Field>
           </div>
@@ -187,7 +187,7 @@ function WidgetEditor({
                         ),
                       })
                     }
-                    className="w-24 rounded border border-line px-2 py-1 text-xs"
+                    className="w-24 surface-field px-2 py-1 text-xs"
                   />
                   <select
                     value={threshold.tone}
@@ -201,7 +201,7 @@ function WidgetEditor({
                         ),
                       })
                     }
-                    className="rounded border border-line px-2 py-1 text-xs"
+                    className="surface-field px-2 py-1 text-xs"
                   >
                     {WIDGET_TONES.map((tone) => (
                       <option key={tone} value={tone}>
@@ -217,7 +217,7 @@ function WidgetEditor({
                           thresholds: widget.config.thresholds.filter((_, position) => position !== index),
                         })
                       }
-                      className="rounded border border-critical-line px-2 py-0.5 text-[11px] font-semibold text-critical-ink"
+                      className="surface-button border border-critical-line px-2 py-0.5 text-critical-ink"
                     >
                       Remove
                     </button>
@@ -232,7 +232,7 @@ function WidgetEditor({
                       thresholds: [...widget.config.thresholds, { value: "", tone: "ok" }],
                     })
                   }
-                  className="rounded border border-line px-2 py-1 text-[11px] font-semibold text-ink"
+                  className="surface-button px-2 py-1"
                 >
                   Add a threshold band
                 </button>
@@ -251,7 +251,7 @@ function WidgetEditor({
               value={widget.config.fullScale}
               disabled={!editable}
               onChange={(event) => updateConfig({ fullScale: event.target.value })}
-              className="w-full rounded border border-line px-2 py-1.5 text-xs"
+              className="w-full surface-field px-2 py-1.5 text-xs"
             />
           </Field>
           <Field label="Fill tone">
@@ -261,7 +261,7 @@ function WidgetEditor({
               onChange={(event) =>
                 updateConfig({ fillTone: event.target.value as WidgetConfigRow["fillTone"] })
               }
-              className="w-full rounded border border-line px-2 py-1.5 text-xs"
+              className="w-full surface-field px-2 py-1.5 text-xs"
             >
               <option value="">not set</option>
               {WIDGET_TONES.map((tone) => (
@@ -300,7 +300,7 @@ function WidgetEditor({
                 onChange={(event) =>
                   updateConfig({ aggregate: event.target.value as WidgetConfigRow["aggregate"] })
                 }
-                className="w-full rounded border border-line px-2 py-1.5 text-xs"
+                className="w-full surface-field px-2 py-1.5 text-xs"
               >
                 <option value="">Latest reading</option>
                 {AGGREGATE_FUNCTIONS.map((fn) => (
@@ -319,7 +319,7 @@ function WidgetEditor({
                   disabled={!editable}
                   placeholder="1440 (default)"
                   onChange={(event) => updateConfig({ windowMinutes: event.target.value })}
-                  className="w-full rounded border border-line px-2 py-1.5 text-xs"
+                  className="w-full surface-field px-2 py-1.5 text-xs"
                 />
               </Field>
             ) : null}
@@ -345,7 +345,7 @@ function WidgetEditor({
                 onChange={(event) =>
                   updateConfig({ icon: event.target.value as WidgetConfigRow["icon"] })
                 }
-                className="w-full rounded border border-line px-2 py-1.5 text-xs"
+                className="w-full surface-field px-2 py-1.5 text-xs"
               >
                 <option value="">No icon</option>
                 {WIDGET_ICONS.map((icon) => (
@@ -362,7 +362,7 @@ function WidgetEditor({
                 onChange={(event) =>
                   updateConfig({ tone: event.target.value as WidgetConfigRow["tone"] })
                 }
-                className="w-full rounded border border-line px-2 py-1.5 text-xs"
+                className="w-full surface-field px-2 py-1.5 text-xs"
               >
                 <option value="">Default</option>
                 {WIDGET_TONES.map((tone) => (
@@ -382,7 +382,7 @@ function WidgetEditor({
                 disabled={!editable}
                 placeholder="e.g. Since midnight"
                 onChange={(event) => updateConfig({ hint: event.target.value })}
-                className="w-full rounded border border-line px-2 py-1.5 text-xs"
+                className="w-full surface-field px-2 py-1.5 text-xs"
               />
             </Field>
           )}
@@ -398,7 +398,7 @@ function WidgetEditor({
               onChange={(event) =>
                 updateConfig({ series: event.target.value as WidgetConfigRow["series"] })
               }
-              className="w-full rounded border border-line px-2 py-1.5 text-xs"
+              className="w-full surface-field px-2 py-1.5 text-xs"
             >
               {CHART_SERIES_OPTIONS.map((option) => (
                 <option key={option.value} value={option.value}>
@@ -416,7 +416,7 @@ function WidgetEditor({
                 disabled={!editable}
                 placeholder="1440 (default)"
                 onChange={(event) => updateConfig({ windowMinutes: event.target.value })}
-                className="w-full rounded border border-line px-2 py-1.5 text-xs"
+                className="w-full surface-field px-2 py-1.5 text-xs"
               />
             </Field>
             <Field label="Y-axis label" error={problemFor("yAxisLabel")}>
@@ -425,7 +425,7 @@ function WidgetEditor({
                 value={widget.config.yAxisLabel}
                 disabled={!editable}
                 onChange={(event) => updateConfig({ yAxisLabel: event.target.value })}
-                className="w-full rounded border border-line px-2 py-1.5 text-xs"
+                className="w-full surface-field px-2 py-1.5 text-xs"
               />
             </Field>
           </div>
@@ -438,7 +438,7 @@ function WidgetEditor({
                   chartAggregate: event.target.value as WidgetConfigRow["chartAggregate"],
                 })
               }
-              className="w-full rounded border border-line px-2 py-1.5 text-xs"
+              className="w-full surface-field px-2 py-1.5 text-xs"
             >
               <option value="">Every reading</option>
               {AGGREGATE_FUNCTIONS.map((fn) => (

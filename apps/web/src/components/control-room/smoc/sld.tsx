@@ -178,14 +178,14 @@ export function ControlRoomSldContent() {
         <Meter label="kWh Today" value={n(kwhToday, 1)} unit="kWh" />
       </div>
 
-      <section className="rounded border border-line bg-surface">
+      <section className="surface-raised">
         <div className="border-b border-line px-4 py-3">
           <h2 className="font-condensed text-lg font-bold text-ink">
             Detailed SLD
           </h2>
           <p className="text-xs text-ink-muted">Live 2D rendering of mockup R.crSld</p>
         </div>
-        <div className="overflow-x-auto bg-surface p-4">
+        <div className="surface-pressed overflow-x-auto p-4">
           <CrSldSvg rules={rules} />
         </div>
       </section>
@@ -197,7 +197,7 @@ export function ControlRoomSldContent() {
 
 function Meter({ label, value, unit }: { label: string; value: string; unit: string }) {
   return (
-    <div className="rounded border border-line bg-surface p-3">
+    <div className="surface-raised-sm p-3">
       <div className="text-xs uppercase tracking-wide text-ink-muted">{label}</div>
       <div className="mt-1 font-condensed text-2xl font-bold text-ink">
         {value} {unit ? <span className="text-sm text-ink-muted">{unit}</span> : null}
@@ -505,7 +505,7 @@ function SldBreakerTable({ rules }: { rules: RuleListItem[] }) {
     breakerTableRow(row, slices[row.code], deriveBreakerRuleState(row.code, slices[row.code], rules, nowMs)),
   );
   return (
-    <section className="rounded border border-line bg-surface">
+    <section className="surface-raised">
       <div className="border-b border-line px-4 py-3">
         <h2 className="font-condensed text-lg font-bold text-ink">
           Breakers · Status & Energy

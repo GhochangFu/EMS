@@ -108,11 +108,11 @@ export function StockCatalogAccordion({ groups, renderEntry }: StockCatalogAccor
         return (
           <section
             key={group.domain}
-            className="rounded-lg border border-line bg-surface"
+            className="surface-raised-sm"
           >
             <button
               type="button"
-              className="flex w-full items-center justify-between gap-3 px-3 py-2 text-left hover:bg-well"
+              className="flex w-full items-center justify-between gap-3 px-3 py-2 text-left hover:text-ink"
               aria-expanded={expanded}
               aria-controls={panelId}
               onClick={() => toggleDomain(group.domain)}

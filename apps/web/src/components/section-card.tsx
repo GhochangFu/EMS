@@ -19,7 +19,7 @@ export function SectionCard({
   bodyClassName = "p-4",
 }: SectionCardProps) {
   return (
-    <section className={`rounded-lg border border-line bg-surface shadow-sm ${className}`}>
+    <section className={`surface-raised ${className}`}>
       {title || subtitle || actions ? (
         <div className="flex items-center justify-between gap-3 border-b border-well-deep px-4 py-3">
           <div>

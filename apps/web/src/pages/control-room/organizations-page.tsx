@@ -55,7 +55,7 @@ export function ControlRoomOrganizationsPage({ user }: ControlRoomOrganizationsP
               <p className="text-sm text-ink-muted">
                 Ask an administrator for access to a site.
               </p>
-              <Link to="/" className="mt-2 inline-block text-sm font-semibold text-accent hover:underline">
+              <Link to="/" className="mt-2 inline-block text-sm font-semibold text-accent-strong hover:underline">
                 Back to the dashboard
               </Link>
             </SectionCard>
@@ -68,7 +68,7 @@ export function ControlRoomOrganizationsPage({ user }: ControlRoomOrganizationsP
                 <Link
                   key={card.organization.id}
                   to={`/control-room/org/${card.organization.id}`}
-                  className="block rounded-lg border border-line bg-surface p-3 shadow-sm transition hover:border-accent hover:shadow-md"
+                  className="block surface-raised p-3 transition hover:text-accent-strong"
                 >
                   <div className="flex items-start justify-between gap-3">
                     <div className="font-condensed text-base font-bold text-ink">

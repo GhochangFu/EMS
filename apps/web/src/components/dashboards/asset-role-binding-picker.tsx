@@ -48,7 +48,7 @@ export function AssetRoleBindingPicker({ onAdd }: AssetRoleBindingPickerProps) {
           aria-label="Asset role"
           value={assetRoleCode}
           onChange={(event) => setAssetRoleCode(event.target.value)}
-          className="mt-1 rounded border border-line px-2 py-1 text-xs font-normal"
+          className="mt-1 surface-field px-2 py-1 text-xs font-normal"
         >
           <option value="">Select a role…</option>
           {roles.map((role) => (
@@ -66,14 +66,14 @@ export function AssetRoleBindingPicker({ onAdd }: AssetRoleBindingPickerProps) {
           value={pointKey}
           onChange={(event) => setPointKey(event.target.value)}
           placeholder="kW"
-          className="mt-1 w-full rounded border border-line px-2 py-1 text-xs font-normal"
+          className="mt-1 w-full surface-field px-2 py-1 text-xs font-normal"
         />
       </label>
       <button
         type="button"
         onClick={add}
         disabled={assetRoleCode === "" || pointKey.trim() === ""}
-        className="rounded border border-line px-2 py-1 text-[11px] font-semibold text-ink disabled:opacity-60"
+        className="surface-button px-2 py-1 disabled:opacity-60"
       >
         Add binding
       </button>

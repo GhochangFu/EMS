@@ -160,7 +160,7 @@ function statusPillClass(status: HvacStatus): string {
     case "offline":
       return "border-line bg-well-deep text-neutral-ink";
     case "normal":
-      return "border-accent/20 bg-accent/10 text-accent";
+      return "border-accent/20 bg-accent/10 text-accent-strong";
   }
 }
 
@@ -304,7 +304,7 @@ export function ControlRoomHvacContent() {
                   <StaticValue kind="simulated">{`${unit.runHours.toLocaleString()} h`}</StaticValue>
                 }
               />
-              <div className="h-2 rounded-full bg-well-deep">
+              <div className="h-2 surface-pressed-sm rounded-full">
                 <div
                   className="h-2 rounded-full bg-line-strong"
                   style={{ width: `${Math.min(100, unit.runHours / 200)}%` }}
@@ -336,7 +336,7 @@ function HvacUnitCard({
   // as "idle" and `READY`, which for the STANDBY unit is its normal reading.
   const running = unit.state.status === "offline" ? null : isHvacRunning(unit.slice.fanSpeedPct);
   return (
-    <section className="rounded border border-line bg-surface">
+    <section className="surface-raised">
       <div className="flex flex-col gap-2 border-b border-line px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h2 className="font-condensed text-lg font-bold text-ink">
@@ -344,7 +344,7 @@ function HvacUnitCard({
           </h2>
           <p className="text-xs text-ink-muted">{running == null ? STALE_VALUE : running ? "cooling" : "idle"} · {unit.code}</p>
         </div>
-        <span className={`rounded-full border px-2 py-0.5 text-[11px] font-semibold ${statusPillClass(unit.state.status)}`}>
+        <span className={`surface-pill rounded-full border px-2 py-0.5 text-[11px] font-semibold ${statusPillClass(unit.state.status)}`}>
           {statusLabel(unit.state.status)}
         </span>
       </div>
@@ -435,7 +435,7 @@ function HvacDiagram({
 
 function DetailCard({ title, children }: { title: string; children: ReactNode }) {
   return (
-    <section className="rounded border border-line bg-surface p-4">
+    <section className="surface-raised p-4">
       <h2 className="font-condensed text-lg font-bold text-ink">{title}</h2>
       <div className="mt-3 space-y-2">{children}</div>
     </section>

@@ -40,7 +40,7 @@ export function MaintenanceSchedulesPage({
         {assetsQ.isLoading ? (
           <p className="text-sm text-ink-muted">Loading assets...</p>
         ) : assetsQ.isError ? (
-          <p className="text-sm text-critical-ink-soft">Could not load assets.</p>
+          <p className="text-sm text-critical-ink">Could not load assets.</p>
         ) : (
           <MaintenanceSchedulesPanel assetOptions={assetsQ.data ?? []} />
         )}

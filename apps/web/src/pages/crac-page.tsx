@@ -61,7 +61,7 @@ function CracDetailDrawer({
       onClick={onClose}
     >
       <aside
-        className="h-full w-full max-w-md border-l border-line bg-surface shadow-xl"
+        className="surface-dialog h-full w-full max-w-md"
         role="dialog"
         aria-label="CRAC detail"
         onClick={(e) => e.stopPropagation()}
@@ -77,7 +77,7 @@ function CracDetailDrawer({
           </div>
           <button
             type="button"
-            className="rounded px-2 py-1 text-sm text-ink-muted hover:bg-well-deep"
+            className="surface-button px-2 py-1 text-sm"
             onClick={onClose}
           >
             Close
@@ -180,7 +180,7 @@ function CracContent({
         subtitle="DH101 hall · four CRAC units · chilled-water loop"
         actions={<StatusPill label="Live" />}
       />
-      <SectionCard bodyClassName="overflow-x-auto p-4">
+      <SectionCard bodyClassName="surface-pressed overflow-x-auto p-4">
         <CracSchematic onSelectAsset={onSelect} />
       </SectionCard>
       <CracDetailDrawer assetId={selectedId} onClose={() => onSelect(undefined)} />

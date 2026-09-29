@@ -136,7 +136,7 @@ export function KeyParameters({ ups1, ups2, batt1, batt2, main, nowMs, access }:
   ]);
 
   return (
-    <section className="rounded border border-line bg-surface p-4">
+    <section className="surface-raised p-4">
       <h2 className="font-condensed text-lg font-bold text-ink">Key Parameters</h2>
       <div className="mt-4 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <Gauge

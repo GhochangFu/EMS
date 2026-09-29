@@ -290,7 +290,7 @@ export function AssetTemplateDetailPage({ user }: AssetTemplateDetailPageProps) 
           </p>
           <Link
             to="/admin/asset-templates"
-            className="mt-3 inline-block text-xs font-semibold text-accent hover:underline"
+            className="mt-3 inline-block text-xs font-semibold text-accent-strong hover:underline"
           >
             Back to all templates
           </Link>
@@ -407,7 +407,7 @@ export function AssetTemplateDetailPage({ user }: AssetTemplateDetailPageProps) 
           <div className="flex flex-wrap gap-2">
             <Link
               to="/admin/asset-templates"
-              className="rounded border border-line px-3 py-1.5 text-xs font-semibold text-ink-muted"
+              className="surface-button px-3 py-1.5"
             >
               All templates
             </Link>
@@ -420,7 +420,7 @@ export function AssetTemplateDetailPage({ user }: AssetTemplateDetailPageProps) 
                 sixth tab or when `F2.19` added the seventh. */}
             <Link
               to={`/admin/asset-templates/${template.id}/versions`}
-              className="rounded border border-line px-3 py-1.5 text-xs font-semibold text-ink-muted"
+              className="surface-button px-3 py-1.5"
             >
               Versions &amp; migration
             </Link>
@@ -440,7 +440,7 @@ export function AssetTemplateDetailPage({ user }: AssetTemplateDetailPageProps) 
                   setActionError(null);
                   defaultDashboardsM.mutate();
                 }}
-                className="rounded border border-accent px-3 py-1.5 text-xs font-semibold text-accent disabled:opacity-60"
+                className="surface-button border border-accent px-3 py-1.5 text-accent-strong disabled:opacity-60"
               >
                 {defaultDashboardsM.isPending
                   ? "Creating default dashboards…"
@@ -454,10 +454,10 @@ export function AssetTemplateDetailPage({ user }: AssetTemplateDetailPageProps) 
                 disabled={busy}
                 aria-busy={actionPending[action]}
                 onClick={() => runAction(action)}
-                className={`rounded px-3 py-1.5 text-xs font-semibold disabled:opacity-60 ${
+                className={`px-3 py-1.5 disabled:opacity-60 ${
                   action === "delete"
-                    ? "border border-critical-line text-critical-ink"
-                    : "bg-accent text-on-accent"
+                    ? "surface-button border border-critical-line text-critical-ink"
+                    : "surface-button-primary bg-accent text-xs font-semibold text-on-accent"
                 }`}
               >
                 {actionPending[action]
@@ -485,7 +485,7 @@ export function AssetTemplateDetailPage({ user }: AssetTemplateDetailPageProps) 
       {dashboardsReport ? (
         <SectionCard title="Default dashboards">
           <p className="text-xs text-ink-muted">{backfillSummary(dashboardsReport)}</p>
-          <div className="mt-2 overflow-x-auto">
+          <div className="mt-2 surface-table overflow-x-auto">
             <table className="w-full min-w-[520px] text-left text-xs">
               <thead className="border-b border-well-deep text-[11px] font-semibold uppercase tracking-wide text-ink-muted">
                 <tr>
@@ -619,7 +619,7 @@ export function AssetTemplateDetailPage({ user }: AssetTemplateDetailPageProps) 
             role="alertdialog"
             aria-modal="true"
             aria-labelledby="tab-guard-title"
-            className="w-full max-w-md space-y-3 rounded bg-surface p-4 shadow-lg"
+            className="w-full max-w-md space-y-3 surface-dialog p-4"
           >
             <h2 id="tab-guard-title" className="text-sm font-semibold text-ink">
               Unsaved changes
@@ -631,7 +631,7 @@ export function AssetTemplateDetailPage({ user }: AssetTemplateDetailPageProps) 
               <button
                 type="button"
                 onClick={() => setPending(null)}
-                className="rounded border border-line px-3 py-1.5 text-xs font-semibold text-ink-muted"
+                className="surface-button px-3 py-1.5"
               >
                 {pendingDecision.cancelLabel}
               </button>
@@ -736,7 +736,7 @@ function InstantiateDialog({
   if (instantiateM.data) {
     return (
       <div className="fixed inset-0 z-40 flex items-center justify-center bg-scrim/30 p-4">
-        <div className="w-full max-w-2xl space-y-3 rounded-lg bg-surface p-4 shadow-lg">
+        <div className="w-full max-w-2xl space-y-3 surface-dialog p-4">
           <h2 className="font-condensed text-base font-bold text-ink">
             Instantiate {template.code} v{template.version}
           </h2>
@@ -747,7 +747,7 @@ function InstantiateDialog({
             <button
               type="button"
               onClick={onClose}
-              className="rounded bg-accent px-3 py-1.5 text-xs font-semibold text-on-accent"
+              className="surface-button-primary bg-accent px-3 py-1.5 text-xs font-semibold text-on-accent"
             >
               Close
             </button>
@@ -759,7 +759,7 @@ function InstantiateDialog({
 
   return (
     <div className="fixed inset-0 z-40 flex items-center justify-center bg-scrim/30 p-4">
-      <div className="w-full max-w-2xl space-y-3 rounded-lg bg-surface p-4 shadow-lg">
+      <div className="w-full max-w-2xl space-y-3 surface-dialog p-4">
         <h2 className="font-condensed text-base font-bold text-ink">
           Instantiate {template.code} v{template.version}
         </h2>
@@ -797,7 +797,7 @@ function InstantiateDialog({
                 }
                 placeholder="Asset code"
                 aria-label={`Asset ${index + 1} code`}
-                className="w-1/3 rounded border border-line px-2 py-1 text-xs"
+                className="w-1/3 surface-field px-2 py-1 text-xs"
               />
               <input
                 value={row.name}
@@ -810,7 +810,7 @@ function InstantiateDialog({
                 }
                 placeholder="Asset name (defaults to the code)"
                 aria-label={`Asset ${index + 1} name`}
-                className="flex-1 rounded border border-line px-2 py-1 text-xs"
+                className="flex-1 surface-field px-2 py-1 text-xs"
               />
               {variables.map((variable) => (
                 <input
@@ -827,7 +827,7 @@ function InstantiateDialog({
                   }
                   placeholder={variable}
                   aria-label={`Asset ${index + 1} ${variable}`}
-                  className="w-24 rounded border border-line px-2 py-1 text-xs"
+                  className="w-24 surface-field px-2 py-1 text-xs"
                 />
               ))}
             </div>
@@ -837,7 +837,7 @@ function InstantiateDialog({
             onClick={() =>
               setRows((current) => [...current, { code: "", name: "", vars: {} }])
             }
-            className="text-xs font-semibold text-accent hover:underline"
+            className="text-xs font-semibold text-accent-strong hover:underline"
           >
             Add another asset
           </button>
@@ -853,7 +853,7 @@ function InstantiateDialog({
           <button
             type="button"
             onClick={onClose}
-            className="rounded border border-line px-3 py-1.5 text-xs font-semibold text-ink-muted"
+            className="surface-button px-3 py-1.5"
           >
             Cancel
           </button>
@@ -867,7 +867,7 @@ function InstantiateDialog({
               setError(null);
               instantiateM.mutate();
             }}
-            className="rounded bg-accent px-3 py-1.5 text-xs font-semibold text-on-accent disabled:opacity-60"
+            className="surface-button-primary bg-accent px-3 py-1.5 text-xs font-semibold text-on-accent disabled:opacity-60"
           >
             {instantiateM.isPending ? "Building…" : `Build ${named} asset${named === 1 ? "" : "s"}`}
           </button>

@@ -36,7 +36,7 @@ export function KpiTile({
       ? "border-critical-line"
       : tone === "warning"
         ? "border-warning-line"
-        : "border-line";
+        : "";
   const toneBar =
     tone === "critical"
       ? "after:bg-critical"
@@ -47,7 +47,7 @@ export function KpiTile({
 
   return (
     <div
-      className={`relative flex flex-col overflow-hidden rounded-lg border bg-surface p-4 shadow-sm after:absolute after:left-0 after:right-0 after:top-0 after:h-0.5 ${toneBorder} ${toneBar} ${staleRing}`}
+      className={`surface-raised surface-kpi relative flex flex-col overflow-hidden p-4 after:absolute ${toneBorder} ${toneBar} ${staleRing}`}
     >
       <div className="flex items-start justify-between gap-2">
         <span className="text-[11px] font-medium uppercase tracking-wide text-ink-muted">
@@ -58,7 +58,7 @@ export function KpiTile({
       {status === "loading" ? (
         <div className="mt-3 h-9 w-24 animate-pulse rounded bg-well-deep" />
       ) : status === "error" ? (
-        <p role="alert" className="mt-3 text-sm text-critical-ink-soft">
+        <p role="alert" className="mt-3 text-sm text-critical-ink">
           Could not load
         </p>
       ) : status === "empty" ? (

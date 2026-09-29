@@ -17,7 +17,7 @@ export function QuickDrilldown({
   };
 }) {
   return (
-    <section className="rounded border border-line bg-surface p-4">
+    <section className="surface-raised p-4">
       <h2 className="font-condensed text-lg font-bold text-ink">
         Quick Drilldown
       </h2>
@@ -29,7 +29,7 @@ export function QuickDrilldown({
         <DrilldownItem enabled={access.hvac} to={smocTabPath(locationId, "hvac")} label="HVAC System" />
         <DrilldownItem enabled={access.environment} to={smocTabPath(locationId, "env")} label="Environment" />
         {["Security", "Trends"].map((label) => (
-          <span key={label} className="cursor-not-allowed rounded border border-line p-3 text-ink-muted">
+          <span key={label} className="cursor-not-allowed surface-pressed-sm p-3 text-ink-muted">
             {label} · deferred
           </span>
         ))}
@@ -48,8 +48,8 @@ function DrilldownItem({
   label: string;
 }) {
   const classes = enabled
-    ? "rounded border border-accent/30 bg-accent/10 p-3 font-semibold text-accent hover:bg-accent/15"
-    : "cursor-not-allowed rounded border border-line bg-well p-3 font-semibold text-ink-hint";
+    ? "surface-raised-sm p-3 font-semibold text-accent-strong"
+    : "cursor-not-allowed surface-pressed p-3 font-semibold text-ink-hint";
   return enabled ? (
     <Link className={classes} to={to}>
       {label}

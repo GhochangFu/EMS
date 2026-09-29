@@ -142,7 +142,7 @@ export function AssetImagesPanel({ asset, onClose }: AssetImagesPanelProps): JSX
   });
 
   return (
-    <aside className="fixed right-0 top-0 z-50 flex h-full w-[90%] max-w-[380px] flex-col border-l border-line bg-surface shadow-lg">
+    <aside className="fixed right-0 top-0 z-50 flex h-full w-[90%] max-w-[380px] flex-col surface-dialog">
       <div className="flex items-start justify-between gap-2 border-b border-line px-3 py-2">
         <div>
           <h2 className="font-condensed text-base font-bold">Images · {asset.code}</h2>
@@ -193,7 +193,7 @@ export function AssetImagesPanel({ asset, onClose }: AssetImagesPanelProps): JSX
           <label className="block text-xs font-semibold text-ink-muted">
             Caption
             <input
-              className="mt-1 w-full rounded border px-3 py-2 text-sm"
+              className="mt-1 w-full surface-field px-3 py-2 text-sm"
               aria-label="Caption"
               maxLength={MAX_ASSET_IMAGE_CAPTION_CHARS}
               value={caption}
@@ -203,7 +203,7 @@ export function AssetImagesPanel({ asset, onClose }: AssetImagesPanelProps): JSX
           <div className="flex flex-wrap items-center gap-2">
             <button
               type="submit"
-              className="rounded bg-accent px-3 py-2 text-xs font-semibold text-on-accent disabled:opacity-50"
+              className="surface-button-primary bg-accent px-3 py-2 text-xs font-semibold text-on-accent disabled:opacity-50"
               disabled={blockedReason !== null || uploadMutation.isPending}
               aria-busy={uploadMutation.isPending}
             >

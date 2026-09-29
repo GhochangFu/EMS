@@ -51,7 +51,7 @@ export function EnergyTopBarChart({ consumers, status }: Props) {
 
   if (status === "loading") {
     return (
-      <div className="flex h-[320px] items-center justify-center rounded-lg border border-line bg-surface text-sm text-ink-muted">
+      <div className="flex h-[320px] items-center justify-center surface-raised text-sm text-ink-muted">
         Loading top consumers…
       </div>
     );
@@ -65,14 +65,14 @@ export function EnergyTopBarChart({ consumers, status }: Props) {
   }
   if (status === "empty" || consumers.length === 0) {
     return (
-      <div className="flex h-[320px] items-center justify-center rounded-lg border border-dashed border-line bg-surface text-sm text-ink-muted">
+      <div className="flex h-[320px] items-center justify-center surface-raised text-sm text-ink-muted">
         No consumer data in this window.
       </div>
     );
   }
 
   return (
-    <div className="rounded-lg border border-line bg-surface p-2 shadow-sm">
+    <div className="surface-raised p-2">
       <ReactECharts
         option={option}
         theme={theme}

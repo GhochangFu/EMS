@@ -50,11 +50,11 @@ export function OrgLocationAccordion({ groups }: OrgLocationAccordionProps) {
         return (
           <section
             key={group.organization.id}
-            className="rounded-lg border border-line bg-surface"
+            className="surface-raised"
           >
             <button
               type="button"
-              className="flex w-full items-center justify-between gap-3 px-3 py-3 text-left hover:bg-well"
+              className="flex w-full items-center justify-between gap-3 px-3 py-3 text-left hover:text-ink"
               aria-expanded={expanded}
               aria-controls={panelId}
               onClick={() => toggleOrg(group.organization.id)}

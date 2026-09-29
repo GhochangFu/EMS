@@ -196,7 +196,7 @@ export function AssetTemplateStockViewPage({ user }: AssetTemplateStockViewPageP
           <div className="flex flex-wrap items-center gap-2">
             <Link
               to="/admin/asset-templates"
-              className="rounded border border-line px-3 py-1.5 text-xs font-semibold text-ink-muted"
+              className="surface-button px-3 py-1.5"
             >
               Back to all templates
             </Link>
@@ -204,7 +204,7 @@ export function AssetTemplateStockViewPage({ user }: AssetTemplateStockViewPageP
               aria-label="Import into organization"
               value={importOrgId}
               onChange={(event) => setImportOrgId(event.target.value)}
-              className="rounded border border-line px-2 py-1 text-xs"
+              className="surface-field px-2 py-1 text-xs"
             >
               <option value="">Select an organization…</option>
               {(orgsQ.data?.items ?? []).map((org) => (
@@ -223,7 +223,7 @@ export function AssetTemplateStockViewPage({ user }: AssetTemplateStockViewPageP
                 // The **resolved entry's** code, never `code` from the URL.
                 importM.mutate(entry.code);
               }}
-              className="rounded bg-accent px-3 py-1.5 text-xs font-semibold text-on-accent disabled:opacity-60"
+              className="surface-button-primary bg-accent px-3 py-1.5 text-xs font-semibold text-on-accent disabled:opacity-60"
             >
               {importM.isPending ? "Importing…" : "Import"}
             </button>
@@ -263,7 +263,7 @@ function BackToAllTemplates() {
   return (
     <Link
       to="/admin/asset-templates"
-      className="mt-3 inline-block text-xs font-semibold text-accent hover:underline"
+      className="mt-3 inline-block text-xs font-semibold text-accent-strong hover:underline"
     >
       Back to all templates
     </Link>

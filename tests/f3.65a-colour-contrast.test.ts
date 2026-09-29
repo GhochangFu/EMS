@@ -23,7 +23,10 @@ import { blendOver, contrastRatio, parseTokenBlocks, type Channels, channelsToHe
  * not excluded: `F3.65b` declares that pair when its migration meets one. §2.4's wash ratios for
  * this role are "for the record", not declared.
  *
- * **`ink-faint` on `canvas` (4.32 light) is deliberately absent** — its 12 uses sit inside cards,
+ * **`ink-faint` on `canvas` (4.32 light) is deliberately absent as a text pair** — its 12 uses sat
+ * inside cards; `F3.71` (plan OQ2) moves them to `ink-muted` because its neumorphic cards paint
+ * `canvas`, and declares `ink-faint` on `canvas` as a UI pair only (the form field's edge). Before
+ * `F3.71` its 12 uses sat inside cards,
  * never directly on the page canvas (§2.4). `line` / `line-strong` on `surface`, and each
  * `*-line` role on its own wash, are decorative boundaries under WCAG 1.4.11's exemption (a
  * boundary that is not the sole indicator of a state) and are not declared either (OQ5).
@@ -155,6 +158,17 @@ const TEXT_PAIRS: Pair[] = [
   { fg: "simulated-ink", bg: "surface", wash: { tint: "info", alpha: 0.15 } },
   { fg: "warning-ink", bg: "surface", wash: { tint: "info", alpha: 0.15 } },
   { fg: "info-ink", bg: "surface", wash: { tint: "info", alpha: 0.15 } },
+  // F3.71 (ADR 0085 decision 3, plan OQ2) — a neumorphic card paints `canvas`, not `surface`: the
+  // selected tab, sidebar link and button labels (`accent-strong`), the OK pill's `ok-ink` on its
+  // `accent`/0.1 wash over `canvas` (owner ruling 2026-09-29: `accent-strong` there is 4.34
+  // light), and the inks the sweeps move there — `critical-ink` for the retired
+  // `critical-ink-soft` text, the status inks of the cards' notes.
+  { fg: "accent-strong", bg: "canvas" },
+  { fg: "ok-ink", bg: "canvas", wash: { tint: "accent", alpha: 0.1 } },
+  { fg: "critical-ink", bg: "canvas" },
+  { fg: "warning-ink", bg: "canvas" },
+  { fg: "info-ink", bg: "canvas" },
+  { fg: "ok-ink", bg: "canvas" },
 ];
 
 /**
@@ -190,6 +204,9 @@ const UI_PAIRS: Pair[] = [
   // button's `on-dark/15` wash — a keyboard press leaves the focused button pressed.
   { fg: "on-dark", bg: "chrome", alpha: 0.8 },
   { fg: "on-dark", bg: "chrome", alpha: 0.8, wash: { tint: "on-dark", alpha: 0.15 } },
+  // F3.71 (ADR 0085 decision 4) — a neumorphic form field's 1px `ink-faint` edge on `canvas`: the
+  // control's boundary, so WCAG 1.4.11 applies (4.32 light, 5.46 dark).
+  { fg: "ink-faint", bg: "canvas" },
 ];
 
 /**

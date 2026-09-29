@@ -237,7 +237,7 @@ export function KpisTab({ template, editable, onSaved, onDirtyChange }: KpisTabP
         );
 
         return (
-          <section key={index} className="rounded border border-line p-3">
+          <section key={index} className="surface-raised-sm p-3">
             <div className="grid gap-3 md:grid-cols-4">
               <Field label="Code" error={problemFor("code")}>
                 <input
@@ -390,7 +390,7 @@ export function KpisTab({ template, editable, onSaved, onDirtyChange }: KpisTabP
                 <button
                   type="button"
                   onClick={() => applyDialect(index, grammar)}
-                  className="rounded border border-line px-3 py-1 text-[11px] font-semibold text-ink"
+                  className="surface-button px-3 py-1"
                 >
                   Validate this expression
                 </button>
@@ -414,7 +414,7 @@ export function KpisTab({ template, editable, onSaved, onDirtyChange }: KpisTabP
                     setValidationErrors({});
                     setValidateTargets({});
                   }}
-                  className="rounded border border-critical-line px-3 py-1 text-[11px] font-semibold text-critical-ink"
+                  className="surface-button border border-critical-line px-3 py-1 text-critical-ink"
                 >
                   Remove
                 </button>
@@ -458,7 +458,7 @@ export function KpisTab({ template, editable, onSaved, onDirtyChange }: KpisTabP
             type="button"
             disabled={rows.length >= MAX_KPI_ENTRIES}
             onClick={() => setRows((current) => [...current, blankKpiRow()])}
-            className="rounded border border-line px-3 py-1.5 text-xs font-semibold text-ink disabled:opacity-60"
+            className="surface-button px-3 py-1.5 disabled:opacity-60"
           >
             Add a KPI
           </button>
@@ -467,7 +467,7 @@ export function KpisTab({ template, editable, onSaved, onDirtyChange }: KpisTabP
             disabled={blocked || !changed || saveM.isPending}
             aria-busy={saveM.isPending}
             onClick={() => saveM.mutate()}
-            className="rounded bg-accent px-4 py-1.5 text-xs font-semibold text-on-accent disabled:opacity-60"
+            className="surface-button-primary bg-accent px-4 py-1.5 text-xs font-semibold text-on-accent disabled:opacity-60"
           >
             {saveM.isPending ? "Saving…" : "Save KPIs"}
           </button>
@@ -487,8 +487,8 @@ export function KpisTab({ template, editable, onSaved, onDirtyChange }: KpisTabP
 }
 
 function fieldClass(disabled: boolean, problem: string | undefined): string {
-  const tone = problem ? "border-critical-line-strong bg-critical-wash" : "border-line";
-  return `w-full rounded border px-2 py-1.5 text-xs ${tone} ${
-    disabled ? "bg-well text-ink-muted" : ""
+  const tone = problem ? "border-critical-line-strong bg-critical-wash" : "";
+  return `w-full surface-field px-2 py-1.5 text-xs ${tone} ${
+    disabled ? "text-ink-muted opacity-70" : ""
   }`;
 }

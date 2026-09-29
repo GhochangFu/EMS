@@ -259,7 +259,7 @@ export function DashboardBuilderEditPage({ user }: DashboardBuilderEditPageProps
                   <input
                     value={name}
                     onChange={(event) => setName(event.target.value)}
-                    className="w-full rounded border border-line px-2 py-1.5 text-xs"
+                    className="w-full surface-field px-2 py-1.5 text-xs"
                   />
                 </label>
                 <label className="block space-y-1 text-xs">
@@ -267,7 +267,7 @@ export function DashboardBuilderEditPage({ user }: DashboardBuilderEditPageProps
                   <input
                     value={description}
                     onChange={(event) => setDescription(event.target.value)}
-                    className="w-full rounded border border-line px-2 py-1.5 text-xs"
+                    className="w-full surface-field px-2 py-1.5 text-xs"
                   />
                 </label>
               </div>
@@ -286,7 +286,7 @@ export function DashboardBuilderEditPage({ user }: DashboardBuilderEditPageProps
                 <button
                   type="button"
                   onClick={() => setDuplicating(true)}
-                  className="rounded border border-line-strong px-3 py-1.5 text-xs font-semibold text-ink hover:bg-well"
+                  className="surface-button px-3 py-1.5"
                 >
                   Duplicate this dashboard
                 </button>
@@ -307,7 +307,7 @@ export function DashboardBuilderEditPage({ user }: DashboardBuilderEditPageProps
                       key={type}
                       type="button"
                       onClick={() => addWidget(type)}
-                      className="rounded border border-line px-2 py-1 text-[11px] font-semibold text-ink"
+                      className="surface-button px-2 py-1"
                     >
                       + {WIDGET_CATALOG[type].label}
                     </button>
@@ -326,8 +326,8 @@ export function DashboardBuilderEditPage({ user }: DashboardBuilderEditPageProps
                     <button
                       type="button"
                       onClick={() => setSelected(tile.index)}
-                      className={`h-full w-full rounded border p-2 text-left text-xs ${
-                        tile.index === selected ? "border-accent bg-accent/10" : "border-line bg-surface"
+                      className={`h-full w-full p-2 text-left text-xs ${
+                        tile.index === selected ? "border-accent bg-accent/10" : "surface-raised-sm"
                       }`}
                     >
                       <div className="font-semibold">

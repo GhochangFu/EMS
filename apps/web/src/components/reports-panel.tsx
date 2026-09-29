@@ -127,7 +127,7 @@ export function ReportsPanel({ user }: ReportsPanelProps) {
   return (
     <div className="grid gap-4 xl:grid-cols-[360px_minmax(0,1fr)]">
       <section className="space-y-4">
-        <div className="rounded border border-line bg-surface">
+        <div className="surface-raised">
           <div className="border-b border-line px-4 py-3">
             <h2 className="font-condensed text-lg font-bold text-ink">
               Report Templates
@@ -141,7 +141,7 @@ export function ReportsPanel({ user }: ReportsPanelProps) {
             {reportCards.map((card) => (
               <article
                 key={card.title}
-                className={`p-4 ${card.active ? "bg-accent/5" : "bg-surface"}`}
+                className={`p-4 ${card.active ? "bg-accent/5" : ""}`}
               >
                 <div className="flex items-start justify-between gap-3">
                   <div>
@@ -149,10 +149,10 @@ export function ReportsPanel({ user }: ReportsPanelProps) {
                     <p className="mt-1 text-sm text-ink-muted">{card.description}</p>
                   </div>
                   <span
-                    className={`rounded-full border px-2 py-0.5 text-[11px] font-semibold ${
+                    className={`surface-pill rounded-full border px-2 py-0.5 text-[11px] font-semibold ${
                       card.active
-                        ? "border-accent/20 bg-accent/10 text-accent"
-                        : "border-line bg-well-deep text-ink-muted"
+                        ? "border-accent/20 bg-accent/10 text-accent-strong"
+                        : "text-ink-muted"
                     }`}
                   >
                     {card.formats}
@@ -163,7 +163,7 @@ export function ReportsPanel({ user }: ReportsPanelProps) {
           </div>
         </div>
 
-        <div className="rounded border border-line bg-surface p-4">
+        <div className="surface-raised p-4">
           <h2 className="font-condensed text-lg font-bold text-ink">
             Date Range
           </h2>
@@ -174,7 +174,7 @@ export function ReportsPanel({ user }: ReportsPanelProps) {
             <input
               id="start"
               type="date"
-              className="rounded border border-line-strong px-3 py-2 text-sm"
+              className="surface-field px-3 py-2 text-sm"
               value={startDate}
               onChange={(e) => setStartDate(e.target.value)}
             />
@@ -184,7 +184,7 @@ export function ReportsPanel({ user }: ReportsPanelProps) {
             <input
               id="end"
               type="date"
-              className="rounded border border-line-strong px-3 py-2 text-sm"
+              className="surface-field px-3 py-2 text-sm"
               value={endDate}
               onChange={(e) => setEndDate(e.target.value)}
             />
@@ -196,7 +196,7 @@ export function ReportsPanel({ user }: ReportsPanelProps) {
             existing tooling reads.
           */}
           <button
-            className="mt-4 w-full rounded bg-accent px-3 py-2 text-sm font-semibold text-on-accent disabled:cursor-not-allowed disabled:bg-line-strong"
+            className="mt-4 w-full surface-button-primary bg-accent px-3 py-2 text-sm font-semibold text-on-accent disabled:cursor-not-allowed disabled:bg-line-strong"
             disabled={xlsxM.isPending || previewQ.isError || !preview}
             aria-busy={xlsxM.isPending}
             onClick={() => xlsxM.mutate()}
@@ -204,10 +204,10 @@ export function ReportsPanel({ user }: ReportsPanelProps) {
             {xlsxM.isPending ? "Preparing XLSX..." : "Export XLSX"}
           </button>
           {xlsxM.isError ? (
-            <p className="mt-2 text-xs text-critical-ink-soft">XLSX export failed.</p>
+            <p className="mt-2 text-xs text-critical-ink">XLSX export failed.</p>
           ) : null}
           <button
-            className="mt-2 w-full rounded border border-accent px-3 py-2 text-sm font-semibold text-accent disabled:cursor-not-allowed disabled:border-line-strong disabled:text-ink-hint"
+            className="mt-2 w-full surface-button border-accent px-3 py-2 text-sm text-accent-strong disabled:cursor-not-allowed disabled:border-transparent disabled:text-ink-hint"
             disabled={csvM.isPending || previewQ.isError || !preview}
             aria-busy={csvM.isPending}
             onClick={() => csvM.mutate()}
@@ -215,10 +215,10 @@ export function ReportsPanel({ user }: ReportsPanelProps) {
             {csvM.isPending ? "Preparing CSV..." : "Export CSV"}
           </button>
           {csvM.isError ? (
-            <p className="mt-2 text-xs text-critical-ink-soft">CSV export failed.</p>
+            <p className="mt-2 text-xs text-critical-ink">CSV export failed.</p>
           ) : null}
           <button
-            className="mt-2 w-full rounded border border-accent px-3 py-2 text-sm font-semibold text-accent disabled:cursor-not-allowed disabled:border-line-strong disabled:text-ink-hint"
+            className="mt-2 w-full surface-button border-accent px-3 py-2 text-sm text-accent-strong disabled:cursor-not-allowed disabled:border-transparent disabled:text-ink-hint"
             disabled={pdfM.isPending || previewQ.isError || !preview}
             aria-busy={pdfM.isPending}
             onClick={() => pdfM.mutate()}
@@ -226,7 +226,7 @@ export function ReportsPanel({ user }: ReportsPanelProps) {
             {pdfM.isPending ? "Preparing PDF..." : "Export PDF"}
           </button>
           {pdfM.isError ? (
-            <p className="mt-2 text-xs text-critical-ink-soft">PDF export failed.</p>
+            <p className="mt-2 text-xs text-critical-ink">PDF export failed.</p>
           ) : null}
           {canSave ? (
             <SaveToHistory
@@ -240,7 +240,7 @@ export function ReportsPanel({ user }: ReportsPanelProps) {
       </section>
 
       <section className="space-y-4">
-        <div className="rounded border border-line bg-surface px-4 py-3">
+        <div className="surface-raised px-4 py-3">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div>
               <h2 className="font-condensed text-lg font-bold text-ink">
@@ -359,7 +359,7 @@ function SaveToHistory({ input, user, hasPreview, previewError }: SaveToHistoryP
         </label>
         <select
           id="save-format"
-          className="rounded border border-line-strong px-3 py-2 text-sm"
+          className="surface-field px-3 py-2 text-sm"
           value={format}
           onChange={(e) => setFormat(e.target.value as ReportFileFormat)}
         >
@@ -376,7 +376,7 @@ function SaveToHistory({ input, user, hasPreview, previewError }: SaveToHistoryP
             </label>
             <select
               id="save-organization"
-              className="rounded border border-line-strong px-3 py-2 text-sm"
+              className="surface-field px-3 py-2 text-sm"
               value={organizationId ?? ""}
               onChange={(e) => setOrganizationId(e.target.value === "" ? undefined : e.target.value)}
             >
@@ -392,7 +392,7 @@ function SaveToHistory({ input, user, hasPreview, previewError }: SaveToHistoryP
       </div>
       <button
         type="button"
-        className="mt-3 w-full rounded bg-chrome px-3 py-2 text-sm font-semibold text-on-dark disabled:cursor-not-allowed disabled:bg-line-strong"
+        className="mt-3 w-full surface-button-primary bg-chrome px-3 py-2 text-sm font-semibold text-on-dark disabled:cursor-not-allowed disabled:bg-line-strong"
         disabled={blockedReason !== null}
         aria-busy={saveM.isPending}
         onClick={() => saveM.mutate()}
@@ -403,7 +403,7 @@ function SaveToHistory({ input, user, hasPreview, previewError }: SaveToHistoryP
         <p className="mt-2 text-xs text-ink-muted">{blockedReason}</p>
       ) : null}
       {outcome !== null ? (
-        <p className={`mt-2 text-xs ${outcome.tone === "saved" ? "text-accent" : "text-critical-ink-soft"}`}>
+        <p className={`mt-2 text-xs ${outcome.tone === "saved" ? "text-accent-strong" : "text-critical-ink"}`}>
           {outcome.text}
         </p>
       ) : null}
@@ -419,7 +419,7 @@ function PreviewDetails({ preview }: { preview: EnergyReportPreview }) {
 
   return (
     <>
-      <section className="rounded border border-line bg-surface p-4">
+      <section className="surface-raised p-4">
         <h2 className="font-condensed text-sm font-bold text-ink">
           Source Mix Totals
         </h2>
@@ -442,11 +442,11 @@ function PreviewDetails({ preview }: { preview: EnergyReportPreview }) {
         </div>
       </section>
 
-      <section className="rounded border border-line bg-surface p-4">
+      <section className="surface-raised p-4">
         <h2 className="font-condensed text-sm font-bold text-ink">
           Top Consumers
         </h2>
-        <div className="mt-3 overflow-hidden rounded border border-line">
+        <div className="mt-3 overflow-hidden surface-table">
           <table className="min-w-full divide-y divide-line text-sm">
             <thead className="bg-well text-left text-xs uppercase tracking-wide text-ink-muted">
               <tr>
@@ -465,7 +465,7 @@ function PreviewDetails({ preview }: { preview: EnergyReportPreview }) {
         </div>
       </section>
 
-      <section className="rounded border border-line bg-surface p-4">
+      <section className="surface-raised p-4">
         <h2 className="font-condensed text-sm font-bold text-ink">
           Sprint E Notes
         </h2>
@@ -490,12 +490,12 @@ function SourcePill({
 }) {
   const pct = total > 0 ? (value / total) * 100 : 0;
   return (
-    <div className="rounded border border-line bg-well p-3">
+    <div className="surface-pressed p-3">
       <div className="text-xs uppercase tracking-wide text-ink-muted">{label}</div>
       <div className="mt-1 font-condensed text-xl font-bold text-ink">
         {formatNumber(value)} kWh
       </div>
-      <div className="mt-2 h-1.5 rounded bg-line">
+      <div className="mt-2 h-1.5 surface-pressed-sm">
         <div
           className="h-1.5 rounded bg-accent"
           style={{ width: `${Math.min(100, pct)}%` }}

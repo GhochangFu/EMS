@@ -208,7 +208,7 @@ export function DetailsTab({ template, editable, onSaved, onDirtyChange }: Detai
             type="submit"
             disabled={blocked || !patch || saveM.isPending}
             aria-busy={saveM.isPending}
-            className="rounded bg-accent px-4 py-1.5 text-xs font-semibold text-on-accent disabled:opacity-60"
+            className="surface-button-primary bg-accent px-4 py-1.5 text-xs font-semibold text-on-accent disabled:opacity-60"
           >
             {saveM.isPending ? "Saving…" : "Save details"}
           </button>
@@ -228,7 +228,7 @@ export function DetailsTab({ template, editable, onSaved, onDirtyChange }: Detai
 }
 
 function inputClass(disabled: boolean, error: string | undefined): string {
-  const base = "w-full rounded border px-2 py-1.5 text-xs";
-  const tone = error ? "border-critical-line-strong bg-critical-wash" : "border-line";
-  return `${base} ${tone} ${disabled ? "bg-well text-ink-muted" : ""}`;
+  const base = "w-full surface-field px-2 py-1.5 text-xs";
+  const tone = error ? "border-critical-line-strong bg-critical-wash" : "";
+  return `${base} ${tone} ${disabled ? "text-ink-muted opacity-70" : ""}`;
 }

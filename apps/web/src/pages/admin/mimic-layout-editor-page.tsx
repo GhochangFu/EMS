@@ -191,7 +191,7 @@ function StoredLayoutEditor({ layoutId }: { layoutId: string }) {
           <button
             type="button"
             onClick={() => void reload()}
-            className="rounded bg-accent px-3 py-1 text-xs font-semibold text-on-accent"
+            className="surface-button-primary bg-accent px-3 py-1 text-xs font-semibold text-on-accent"
           >
             Reload
           </button>
@@ -264,7 +264,7 @@ function LayoutEditor({ initial, saving, saveError, stale, canSave, onSave, orga
       </SectionCard>
       <SectionCard title={state.layout.name} bodyClassName="p-3 space-y-3">
         <div className="flex flex-wrap items-center justify-between gap-2">
-          <Link to="/admin/mimic-layouts" className="text-xs font-semibold text-accent">
+          <Link to="/admin/mimic-layouts" className="text-xs font-semibold text-accent-strong">
             Back to the library
           </Link>
           <button
@@ -272,7 +272,7 @@ function LayoutEditor({ initial, saving, saveError, stale, canSave, onSave, orga
             disabled={saving || stale || !canSave}
             aria-busy={saving}
             onClick={() => onSave(state.layout)}
-            className="rounded bg-accent px-3 py-2 text-xs font-semibold text-on-accent disabled:opacity-50"
+            className="surface-button-primary bg-accent px-3 py-2 text-xs font-semibold text-on-accent disabled:opacity-50"
           >
             {saving ? "Saving…" : "Save"}
           </button>

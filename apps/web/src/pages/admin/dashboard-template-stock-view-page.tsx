@@ -173,7 +173,7 @@ export function DashboardTemplateStockViewPage({ user }: DashboardTemplateStockV
           <div className="flex flex-wrap items-center gap-2">
             <Link
               to="/admin/dashboard-templates"
-              className="rounded border border-line px-3 py-1.5 text-xs font-semibold text-ink-muted"
+              className="surface-button px-3 py-1.5"
             >
               All templates
             </Link>
@@ -183,7 +183,7 @@ export function DashboardTemplateStockViewPage({ user }: DashboardTemplateStockV
                   aria-label="Import into organization"
                   value={importOrgId}
                   onChange={(event) => setImportOrgId(event.target.value)}
-                  className="rounded border border-line px-2 py-1 text-xs"
+                  className="surface-field px-2 py-1 text-xs"
                 >
                   <option value="">Select an organization…</option>
                   {(orgsQ.data?.items ?? []).map((org) => (
@@ -252,7 +252,7 @@ function BackToAllTemplates() {
   return (
     <Link
       to="/admin/dashboard-templates"
-      className="mt-3 inline-block text-xs font-semibold text-accent hover:underline"
+      className="mt-3 inline-block text-xs font-semibold text-accent-strong hover:underline"
     >
       Back to all templates
     </Link>

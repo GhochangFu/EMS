@@ -162,7 +162,7 @@ export function AssetTemplateVersionsPage({ user }: Props) {
         actions={
           <Link
             to={`/admin/asset-templates/${templateId ?? ""}`}
-            className="rounded border border-line px-3 py-1.5 text-xs font-semibold text-ink-muted"
+            className="surface-button px-3 py-1.5"
           >
             Back to template
           </Link>
@@ -185,10 +185,10 @@ export function AssetTemplateVersionsPage({ user }: Props) {
                     setTargetId(version.id);
                     reset();
                   }}
-                  className={`rounded px-3 py-1 text-xs font-semibold ${
+                  className={`px-3 py-1 ${
                     targetId === version.id
-                      ? "bg-accent text-on-accent"
-                      : "border border-line text-ink-muted"
+                      ? "surface-button-primary bg-accent text-xs font-semibold text-on-accent"
+                      : "surface-button"
                   }`}
                 >
                   {targetId === version.id ? "Migration target" : "Migrate to this version"}
@@ -248,7 +248,7 @@ export function AssetTemplateVersionsPage({ user }: Props) {
               disabled={busy || selected.length === 0}
               aria-busy={previewM.isPending}
               onClick={() => previewM.mutate()}
-              className="rounded border border-line px-3 py-1.5 text-xs font-semibold text-ink-muted disabled:opacity-60"
+              className="surface-button px-3 py-1.5 disabled:opacity-60"
             >
               {previewM.isPending ? "Previewing migration…" : "Preview migration"}
             </button>
@@ -257,7 +257,7 @@ export function AssetTemplateVersionsPage({ user }: Props) {
               disabled={busy || !action.enabled}
               aria-busy={migrateM.isPending}
               onClick={() => migrateM.mutate()}
-              className="rounded bg-accent px-3 py-1.5 text-xs font-semibold text-on-accent disabled:opacity-60"
+              className="surface-button-primary bg-accent px-3 py-1.5 text-xs font-semibold text-on-accent disabled:opacity-60"
             >
               {migrateM.isPending ? "Migrating…" : "Migrate"}
             </button>

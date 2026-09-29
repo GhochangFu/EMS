@@ -142,7 +142,7 @@ function LocationTypesCatalog() {
           <ActiveFilterBar value={activeFilter} onChange={setActiveFilter} />
           <button
             type="button"
-            className="rounded bg-accent px-3 py-2 text-xs font-semibold text-on-accent"
+            className="surface-button-primary bg-accent px-3 py-2 text-xs font-semibold text-on-accent"
             onClick={openCreate}
           >
             Add location type
@@ -179,7 +179,7 @@ function LocationTypesCatalog() {
                   <div className="flex gap-2">
                     <button
                       type="button"
-                      className="text-xs font-semibold text-accent"
+                      className="text-xs font-semibold text-accent-strong"
                       onClick={() => openEdit(item)}
                     >
                       Edit
@@ -202,7 +202,7 @@ function LocationTypesCatalog() {
       {modalOpen ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-scrim/40 p-4">
           <form
-            className="w-full max-w-lg rounded-lg border bg-surface p-4"
+            className="w-full max-w-lg surface-dialog p-4"
             onSubmit={(event: FormEvent) => {
               event.preventDefault();
               const sortOrder = parseSortOrder(form.sortOrder);
@@ -223,7 +223,7 @@ function LocationTypesCatalog() {
                 </label>
                 <input
                   id="location-type-code"
-                  className="mt-1 w-full rounded border px-3 py-2 text-sm disabled:bg-well"
+                  className="mt-1 surface-field w-full px-3 py-2 text-sm disabled:opacity-60"
                   value={form.code}
                   disabled={Boolean(editing)}
                   required
@@ -239,7 +239,7 @@ function LocationTypesCatalog() {
               <label className="block text-xs font-semibold text-ink-muted">
                 Label
                 <input
-                  className="mt-1 w-full rounded border px-3 py-2 text-sm"
+                  className="mt-1 w-full surface-field px-3 py-2 text-sm"
                   value={form.label}
                   required
                   maxLength={128}
@@ -255,7 +255,7 @@ function LocationTypesCatalog() {
                   type="text"
                   inputMode="numeric"
                   aria-describedby="location-type-sort-order-hint"
-                  className="mt-1 w-full rounded border px-3 py-2 text-sm"
+                  className="mt-1 w-full surface-field px-3 py-2 text-sm"
                   value={form.sortOrder}
                   onChange={(event) => setForm({ ...form, sortOrder: event.target.value })}
                 />
@@ -268,14 +268,14 @@ function LocationTypesCatalog() {
             <div className="mt-4 flex justify-end gap-2">
               <button
                 type="button"
-                className="rounded border px-3 py-2 text-xs"
+                className="surface-button px-3 py-2"
                 onClick={() => setModalOpen(false)}
               >
                 Cancel
               </button>
               <button
                 type="submit"
-                className="rounded bg-accent px-3 py-2 text-xs font-semibold text-on-accent"
+                className="surface-button-primary bg-accent px-3 py-2 text-xs font-semibold text-on-accent"
               >
                 Save
               </button>

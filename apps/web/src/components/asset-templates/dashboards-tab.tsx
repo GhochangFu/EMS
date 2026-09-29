@@ -188,10 +188,8 @@ export function DashboardsTab({ template, editable, onSaved, onDirtyChange }: Da
                   <button
                     type="button"
                     onClick={() => setActiveIndex(index)}
-                    className={`flex-1 truncate rounded border px-2 py-1 text-left text-xs ${
-                      index === activeIndex
-                        ? "border-accent bg-accent/10 font-semibold"
-                        : "border-line"
+                    className={`flex-1 truncate px-2 py-1 text-left surface-tab ${
+                      index === activeIndex ? "surface-tab-selected" : ""
                     } ${rowHasProblem ? "text-critical-ink" : ""}`}
                   >
                     {view.name.trim() === "" ? "(unnamed view)" : view.name}
@@ -201,7 +199,7 @@ export function DashboardsTab({ template, editable, onSaved, onDirtyChange }: Da
                       type="button"
                       onClick={() => removeView(index)}
                       aria-label={`Delete ${view.name || "this view"}`}
-                      className="rounded border border-critical-line px-1.5 py-1 text-[11px] font-semibold text-critical-ink"
+                      className="surface-button border border-critical-line px-1.5 py-1 text-critical-ink"
                     >
                       ×
                     </button>
@@ -218,13 +216,13 @@ export function DashboardsTab({ template, editable, onSaved, onDirtyChange }: Da
                 placeholder="New view name"
                 disabled={rows.length >= MAX_DASHBOARD_VIEWS}
                 onChange={(event) => setNewViewName(event.target.value)}
-                className="w-full rounded border border-line px-2 py-1 text-xs"
+                className="w-full surface-field px-2 py-1 text-xs"
               />
               <button
                 type="button"
                 disabled={newViewName.trim() === "" || rows.length >= MAX_DASHBOARD_VIEWS}
                 onClick={addView}
-                className="w-full rounded border border-line px-2 py-1 text-xs font-semibold text-ink disabled:opacity-60"
+                className="w-full surface-button px-2 py-1 disabled:opacity-60"
               >
                 Add a view
               </button>
@@ -258,7 +256,7 @@ export function DashboardsTab({ template, editable, onSaved, onDirtyChange }: Da
             disabled={blocked || !changed || saveM.isPending}
             aria-busy={saveM.isPending}
             onClick={() => saveM.mutate()}
-            className="rounded bg-accent px-4 py-1.5 text-xs font-semibold text-on-accent disabled:opacity-60"
+            className="surface-button-primary bg-accent px-4 py-1.5 text-xs font-semibold text-on-accent disabled:opacity-60"
           >
             {saveM.isPending ? "Saving…" : "Save dashboards"}
           </button>

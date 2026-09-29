@@ -145,7 +145,7 @@ export function PointKeysAdminPage({ user }: PointKeysAdminPageProps) {
           canWrite ? (
             <button
               type="button"
-              className="rounded bg-accent px-3 py-2 text-xs font-semibold text-on-accent"
+              className="surface-button-primary bg-accent px-3 py-2 text-xs font-semibold text-on-accent"
               onClick={openCreate}
             >
               Add point key
@@ -157,7 +157,7 @@ export function PointKeysAdminPage({ user }: PointKeysAdminPageProps) {
         <div className="flex flex-wrap gap-3">
           <ActiveFilterBar value={activeFilter} onChange={setActiveFilter} />
           <input
-            className="rounded border px-3 py-1.5 text-sm"
+            className="surface-field px-3 py-1.5 text-sm"
             placeholder="Search"
             value={search}
             onChange={(event) => setSearch(event.target.value)}
@@ -194,7 +194,7 @@ export function PointKeysAdminPage({ user }: PointKeysAdminPageProps) {
                     <div className="flex gap-2">
                       <button
                         type="button"
-                        className="text-xs font-semibold text-accent"
+                        className="text-xs font-semibold text-accent-strong"
                         onClick={() => {
                           setEditing(item);
                           setForm({
@@ -233,7 +233,7 @@ export function PointKeysAdminPage({ user }: PointKeysAdminPageProps) {
       {modalOpen && canWrite ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-scrim/40 p-4">
           <form
-            className="w-full max-w-lg rounded-lg border bg-surface p-4"
+            className="w-full max-w-lg surface-dialog p-4"
             onSubmit={(event: FormEvent) => {
               event.preventDefault();
               const headlineRank = parseHeadlineRank(form.headlineRank);
@@ -251,7 +251,7 @@ export function PointKeysAdminPage({ user }: PointKeysAdminPageProps) {
               <label className="block text-xs font-semibold text-ink-muted">
                 Code
                 <input
-                  className="mt-1 w-full rounded border px-3 py-2 text-sm disabled:bg-well"
+                  className="mt-1 w-full surface-field px-3 py-2 text-sm disabled:opacity-60"
                   value={form.code}
                   disabled={Boolean(editing)}
                   required
@@ -261,7 +261,7 @@ export function PointKeysAdminPage({ user }: PointKeysAdminPageProps) {
               <label className="block text-xs font-semibold text-ink-muted">
                 Name
                 <input
-                  className="mt-1 w-full rounded border px-3 py-2 text-sm"
+                  className="mt-1 w-full surface-field px-3 py-2 text-sm"
                   value={form.name}
                   required
                   onChange={(event) => setForm({ ...form, name: event.target.value })}
@@ -270,7 +270,7 @@ export function PointKeysAdminPage({ user }: PointKeysAdminPageProps) {
               <label className="block text-xs font-semibold text-ink-muted">
                 Domain
                 <input
-                  className="mt-1 w-full rounded border px-3 py-2 text-sm"
+                  className="mt-1 w-full surface-field px-3 py-2 text-sm"
                   value={form.domain}
                   onChange={(event) => setForm({ ...form, domain: event.target.value })}
                 />
@@ -278,7 +278,7 @@ export function PointKeysAdminPage({ user }: PointKeysAdminPageProps) {
               <label className="block text-xs font-semibold text-ink-muted">
                 Unit
                 <input
-                  className="mt-1 w-full rounded border px-3 py-2 text-sm"
+                  className="mt-1 w-full surface-field px-3 py-2 text-sm"
                   value={form.unit}
                   onChange={(event) => setForm({ ...form, unit: event.target.value })}
                 />
@@ -295,7 +295,7 @@ export function PointKeysAdminPage({ user }: PointKeysAdminPageProps) {
                   type="text"
                   inputMode="numeric"
                   aria-describedby="point-key-headline-rank-hint"
-                  className="mt-1 w-full rounded border px-3 py-2 text-sm"
+                  className="mt-1 w-full surface-field px-3 py-2 text-sm"
                   value={form.headlineRank}
                   onChange={(event) => setForm({ ...form, headlineRank: event.target.value })}
                 />
@@ -307,7 +307,7 @@ export function PointKeysAdminPage({ user }: PointKeysAdminPageProps) {
               <label className="block text-xs font-semibold text-ink-muted sm:col-span-2">
                 Description
                 <textarea
-                  className="mt-1 w-full rounded border px-3 py-2 text-sm"
+                  className="mt-1 w-full surface-field px-3 py-2 text-sm"
                   value={form.description}
                   rows={3}
                   onChange={(event) => setForm({ ...form, description: event.target.value })}
@@ -318,14 +318,14 @@ export function PointKeysAdminPage({ user }: PointKeysAdminPageProps) {
             <div className="mt-4 flex justify-end gap-2">
               <button
                 type="button"
-                className="rounded border px-3 py-2 text-xs"
+                className="surface-button px-3 py-2"
                 onClick={() => setModalOpen(false)}
               >
                 Cancel
               </button>
               <button
                 type="submit"
-                className="rounded bg-accent px-3 py-2 text-xs font-semibold text-on-accent"
+                className="surface-button-primary bg-accent px-3 py-2 text-xs font-semibold text-on-accent"
               >
                 Save
               </button>

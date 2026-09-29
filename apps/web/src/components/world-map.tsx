@@ -63,7 +63,7 @@ export function WorldMap({ sites }: WorldMapProps) {
     <MapContainer
       center={[-29, 24.5]}
       zoom={5}
-      className="z-0 h-[min(70vh,560px)] w-full rounded-lg border border-chrome shadow-inner"
+      className="z-0 h-[min(70vh,560px)] w-full surface-pressed"
       scrollWheelZoom
     >
       <TileLayer attribution={MAP_TILE.attribution} url={MAP_TILE.url} maxZoom={MAP_TILE.maxZoom} />
@@ -124,11 +124,11 @@ export function WorldMap({ sites }: WorldMapProps) {
                 </dl>
               )}
               <div className="mt-2 flex flex-wrap gap-3 border-t border-line pt-2">
-                <Link className="text-xs font-semibold text-accent hover:underline" to="/alarms">
+                <Link className="text-xs font-semibold text-accent-strong hover:underline" to="/alarms">
                   Alarm Centre →
                 </Link>
                 <Link
-                  className="text-xs font-semibold text-accent hover:underline"
+                  className="text-xs font-semibold text-accent-strong hover:underline"
                   to={
                     s.canonicalLocationId
                       ? `/locations/${s.canonicalLocationId}/dashboard`

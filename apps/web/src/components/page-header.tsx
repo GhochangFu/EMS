@@ -10,10 +10,10 @@ type PageHeaderProps = {
 /** Shared page header aligned with the ESKOM_SMOC.html `.ph` pattern. */
 export function PageHeader({ title, subtitle, eyebrow, actions }: PageHeaderProps) {
   return (
-    <header className="flex flex-col gap-3 border-b border-line bg-surface px-5 py-3 sm:flex-row sm:items-end sm:justify-between">
+    <header className="surface-raised flex flex-col gap-3 px-5 py-3 sm:flex-row sm:items-end sm:justify-between">
       <div>
         {eyebrow ? (
-          <div className="font-mono text-[10px] font-semibold uppercase tracking-[0.18em] text-accent">
+          <div className="font-mono text-[10px] font-semibold uppercase tracking-[0.18em] text-accent-strong">
             {eyebrow}
           </div>
         ) : null}

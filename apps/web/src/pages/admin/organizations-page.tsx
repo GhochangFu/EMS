@@ -132,7 +132,7 @@ export function OrganizationsAdminPage({ user }: OrganizationsAdminPageProps) {
             canWrite ? (
               <button
                 type="button"
-                className="rounded bg-accent px-3 py-2 text-xs font-semibold text-on-accent"
+                className="surface-button-primary bg-accent px-3 py-2 text-xs font-semibold text-on-accent"
                 onClick={openCreate}
               >
                 Add organization
@@ -144,7 +144,7 @@ export function OrganizationsAdminPage({ user }: OrganizationsAdminPageProps) {
           <div className="flex flex-wrap items-center justify-between gap-3">
             <ActiveFilterBar value={activeFilter} onChange={setActiveFilter} />
             <input
-              className="rounded border border-line px-3 py-1.5 text-sm"
+              className="surface-field px-3 py-1.5 text-sm"
               placeholder="Search code or name"
               value={search}
               onChange={(event) => setSearch(event.target.value)}
@@ -155,7 +155,7 @@ export function OrganizationsAdminPage({ user }: OrganizationsAdminPageProps) {
           ) : listQ.isError ? (
             <div className="text-sm text-critical-ink">Failed to load organizations.</div>
           ) : (
-            <div className="overflow-x-auto">
+            <div className="surface-table overflow-x-auto">
               <table className="min-w-full text-sm">
                 <thead>
                   <tr className="border-b border-line text-left text-xs uppercase text-ink-muted">
@@ -174,7 +174,7 @@ export function OrganizationsAdminPage({ user }: OrganizationsAdminPageProps) {
                       onClick={() => navigate(`/admin/organizations/${item.id}/locations`)}
                     >
                       <td className="px-2 py-2 font-mono">{item.code}</td>
-                      <td className="px-2 py-2 font-semibold text-accent">{item.name}</td>
+                      <td className="px-2 py-2 font-semibold text-accent-strong">{item.name}</td>
                       <td className="px-2 py-2 font-mono text-xs">{item.currency}</td>
                       <td className="px-2 py-2">
                         <StatusPill
@@ -187,7 +187,7 @@ export function OrganizationsAdminPage({ user }: OrganizationsAdminPageProps) {
                           {canOnboard && item.active ? (
                             <button
                               type="button"
-                              className="text-xs font-semibold text-accent"
+                              className="text-xs font-semibold text-accent-strong"
                               onClick={() =>
                                 navigate(`/admin/organizations/${item.id}/onboarding`)
                               }
@@ -199,7 +199,7 @@ export function OrganizationsAdminPage({ user }: OrganizationsAdminPageProps) {
                             <>
                               <button
                                 type="button"
-                                className="text-xs font-semibold text-accent"
+                                className="text-xs font-semibold text-accent-strong"
                                 onClick={() => openEdit(item)}
                               >
                                 Edit
@@ -228,7 +228,7 @@ export function OrganizationsAdminPage({ user }: OrganizationsAdminPageProps) {
       {modalOpen ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-scrim/40 p-4">
           <form
-            className="w-full max-w-md rounded-lg border border-line bg-surface p-4 shadow-lg"
+            className="w-full max-w-md surface-dialog p-4"
             onSubmit={handleSubmit}
           >
             <h2 className="font-condensed text-lg font-bold text-ink">
@@ -238,7 +238,7 @@ export function OrganizationsAdminPage({ user }: OrganizationsAdminPageProps) {
               <label className="block text-xs font-semibold text-ink-muted">
                 Code
                 <input
-                  className="mt-1 w-full rounded border border-line px-3 py-2 text-sm disabled:bg-well"
+                  className="mt-1 w-full surface-field px-3 py-2 text-sm disabled:opacity-60"
                   value={code}
                   disabled={Boolean(editing)}
                   onChange={(event) => setCode(event.target.value.toUpperCase())}
@@ -248,7 +248,7 @@ export function OrganizationsAdminPage({ user }: OrganizationsAdminPageProps) {
               <label className="block text-xs font-semibold text-ink-muted">
                 Name
                 <input
-                  className="mt-1 w-full rounded border border-line px-3 py-2 text-sm"
+                  className="mt-1 w-full surface-field px-3 py-2 text-sm"
                   value={name}
                   onChange={(event) => setName(event.target.value)}
                   required
@@ -257,7 +257,7 @@ export function OrganizationsAdminPage({ user }: OrganizationsAdminPageProps) {
               <label className="block text-xs font-semibold text-ink-muted">
                 Currency (ISO 4217)
                 <input
-                  className="mt-1 w-full rounded border border-line px-3 py-2 font-mono text-sm uppercase"
+                  className="mt-1 w-full surface-field px-3 py-2 font-mono text-sm uppercase"
                   list="currency-list"
                   placeholder="INR"
                   maxLength={3}
@@ -276,14 +276,14 @@ export function OrganizationsAdminPage({ user }: OrganizationsAdminPageProps) {
             <div className="mt-4 flex justify-end gap-2">
               <button
                 type="button"
-                className="rounded border border-line px-3 py-2 text-xs"
+                className="surface-button px-3 py-2"
                 onClick={() => setModalOpen(false)}
               >
                 Cancel
               </button>
               <button
                 type="submit"
-                className="rounded bg-accent px-3 py-2 text-xs font-semibold text-on-accent"
+                className="surface-button-primary bg-accent px-3 py-2 text-xs font-semibold text-on-accent"
                 disabled={saveMutation.isPending}
                 aria-busy={saveMutation.isPending}
               >

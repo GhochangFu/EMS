@@ -66,7 +66,7 @@ function AssetImageThumbnail({ image }: { image: AssetImageDto }): JSX.Element {
   }
 
   return (
-    <div className="flex h-24 w-24 items-center justify-center rounded border bg-well text-[10px] text-ink-muted">
+    <div className="flex h-24 w-24 items-center justify-center surface-pressed text-[10px] text-ink-muted">
       {status === "loading" ? "Loading…" : "Image unavailable"}
     </div>
   );

@@ -68,11 +68,11 @@ export function MapPage({ user }: MapPageProps) {
         {q.isLoading ? (
           <p className="text-sm text-ink-muted">Loading map data…</p>
         ) : q.isError ? (
-          <p className="text-sm text-critical-ink-soft">Could not load map sites.</p>
+          <p className="text-sm text-critical-ink">Could not load map sites.</p>
         ) : !q.data?.length ? (
           <p className="text-sm text-ink-muted">
             No locations — run{" "}
-            <code className="rounded bg-well-deep px-1 text-xs">pnpm db:seed</code>.
+            <code className="surface-pressed-sm px-1 text-xs">pnpm db:seed</code>.
           </p>
         ) : (
           <SectionCard bodyClassName="p-0">

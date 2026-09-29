@@ -514,19 +514,19 @@ export function WorkOrdersPage({ user }: WorkOrdersPageProps) {
             <>
             <button
               type="button"
-              className="rounded border border-line-strong px-3 py-2 text-xs font-semibold text-ink hover:bg-well"
+              className="surface-button px-3 py-2 text-xs font-semibold"
             >
               Filter
             </button>
             <button
               type="button"
-              className="rounded border border-line-strong px-3 py-2 text-xs font-semibold text-ink hover:bg-well"
+              className="surface-button px-3 py-2 text-xs font-semibold"
             >
               Export
             </button>
             <button
               type="button"
-              className="rounded bg-accent px-4 py-2 text-xs font-semibold text-on-accent hover:bg-accent-strong"
+              className="surface-button-primary bg-accent px-4 py-2 text-xs font-semibold text-on-accent hover:bg-accent-strong"
               onClick={openCreate}
             >
               + New WO
@@ -539,7 +539,7 @@ export function WorkOrdersPage({ user }: WorkOrdersPageProps) {
           {kanbanColumns.map((column) => (
             <div
               key={column.key}
-              className={`relative overflow-hidden rounded-lg border border-line bg-surface p-4 shadow-sm after:absolute after:inset-x-0 after:top-0 after:h-0.5 ${kpiToneStyle(column.kpiTone)}`}
+              className={`relative overflow-hidden surface-raised surface-kpi p-4 after:absolute ${kpiToneStyle(column.kpiTone)}`}
             >
               <div className="flex items-center gap-2 text-[10px] font-bold uppercase tracking-[0.14em] text-ink-muted">
                 <span className="grid h-6 w-6 place-items-center rounded bg-accent/10 text-accent">
@@ -559,11 +559,11 @@ export function WorkOrdersPage({ user }: WorkOrdersPageProps) {
           ))}
         </section>
 
-        <section className="grid gap-3 rounded-lg border border-line bg-surface p-3 shadow-sm md:grid-cols-4">
+        <section className="grid gap-3 surface-raised p-3 md:grid-cols-4">
           <label className="text-xs font-medium text-ink-muted">
             Status
             <select
-              className="mt-1 w-full rounded border border-line-strong bg-surface px-2 py-2 text-sm text-ink"
+              className="mt-1 w-full surface-field px-2 py-2 text-sm text-ink"
               value={statusFilter}
               onChange={(ev) => setStatusFilter(ev.target.value as StatusFilter)}
             >
@@ -578,7 +578,7 @@ export function WorkOrdersPage({ user }: WorkOrdersPageProps) {
           <label className="text-xs font-medium text-ink-muted">
             Asset
             <select
-              className="mt-1 w-full rounded border border-line-strong bg-surface px-2 py-2 text-sm text-ink"
+              className="mt-1 w-full surface-field px-2 py-2 text-sm text-ink"
               value={assetFilter}
               onChange={(ev) => setAssetFilter(ev.target.value)}
             >
@@ -593,7 +593,7 @@ export function WorkOrdersPage({ user }: WorkOrdersPageProps) {
           <label className="text-xs font-medium text-ink-muted">
             Priority
             <select
-              className="mt-1 w-full rounded border border-line-strong bg-surface px-2 py-2 text-sm text-ink"
+              className="mt-1 w-full surface-field px-2 py-2 text-sm text-ink"
               value={priorityFilter}
               onChange={(ev) =>
                 setPriorityFilter(ev.target.value as PriorityFilter)
@@ -618,7 +618,7 @@ export function WorkOrdersPage({ user }: WorkOrdersPageProps) {
         {workOrdersQ.isLoading ? (
           <p className="text-sm text-ink-muted">Loading work orders…</p>
         ) : workOrdersQ.isError ? (
-          <p className="text-sm text-critical-ink-soft">Could not load work orders.</p>
+          <p className="text-sm text-critical-ink">Could not load work orders.</p>
         ) : (
           <div className="grid gap-3 xl:grid-cols-5">
             {kanbanColumns.map((column) => (
@@ -646,7 +646,7 @@ export function WorkOrdersPage({ user }: WorkOrdersPageProps) {
                 </div>
                 <div className="space-y-2">
                   {rowsByStatus[column.key].length === 0 ? (
-                    <div className="rounded border border-dashed border-line-strong bg-surface/70 px-3 py-6 text-center text-xs text-ink-muted">
+                    <div className="surface-pressed-sm px-3 py-6 text-center text-xs text-ink-muted">
                       Drop work orders here
                     </div>
                   ) : (
@@ -654,7 +654,7 @@ export function WorkOrdersPage({ user }: WorkOrdersPageProps) {
                       <article
                         key={row.id}
                         draggable
-                        className={`cursor-grab rounded-md border border-line border-l-4 bg-surface p-3 shadow-sm transition active:cursor-grabbing ${
+                        className={`cursor-grab surface-raised-sm border-l-4 p-3 transition active:cursor-grabbing ${
                           dragState?.id === row.id ? "opacity-50" : ""
                         } ${
                           dropTarget?.status === column.key &&
@@ -711,7 +711,7 @@ export function WorkOrdersPage({ user }: WorkOrdersPageProps) {
                         <div className="mt-3 flex justify-end gap-2">
                           <button
                             type="button"
-                            className="rounded border border-line-strong px-2 py-1 text-[11px] font-semibold text-ink hover:bg-well disabled:cursor-not-allowed disabled:opacity-50"
+                            className="surface-button px-2 py-1 text-[11px] font-semibold disabled:cursor-not-allowed disabled:opacity-50"
                             onClick={() => openStatusEditor(row)}
                             disabled={row.status === "closed"}
                           >
@@ -719,7 +719,7 @@ export function WorkOrdersPage({ user }: WorkOrdersPageProps) {
                           </button>
                           <button
                             type="button"
-                            className="rounded bg-accent px-2 py-1 text-[11px] font-semibold text-on-accent hover:bg-accent-strong disabled:cursor-not-allowed disabled:opacity-50"
+                            className="surface-button-primary bg-accent px-2 py-1 text-[11px] font-semibold text-on-accent hover:bg-accent-strong disabled:cursor-not-allowed disabled:opacity-50"
                             onClick={() => openClose(row)}
                             disabled={row.status === "closed"}
                           >
@@ -735,7 +735,7 @@ export function WorkOrdersPage({ user }: WorkOrdersPageProps) {
           </div>
         )}
         {dragError ? (
-          <p className="text-xs text-critical-ink-soft" role="alert">
+          <p className="text-xs text-critical-ink" role="alert">
             Kanban order was not saved: {dragError}
           </p>
         ) : null}
@@ -748,7 +748,7 @@ export function WorkOrdersPage({ user }: WorkOrdersPageProps) {
           aria-modal="true"
           aria-labelledby="work-order-create-title"
         >
-          <div className="w-full max-w-lg rounded-lg bg-surface p-6 shadow-xl">
+          <div className="w-full max-w-lg surface-dialog p-6">
             <h2
               id="work-order-create-title"
               className="font-condensed text-lg font-bold"
@@ -759,7 +759,7 @@ export function WorkOrdersPage({ user }: WorkOrdersPageProps) {
               <label className="block text-xs font-medium text-ink-muted">
                 Asset
                 <select
-                  className="mt-1 w-full rounded border border-line-strong bg-surface px-3 py-2 text-sm text-ink"
+                  className="mt-1 w-full surface-field px-3 py-2 text-sm text-ink"
                   value={assetId}
                   onChange={(ev) => setAssetId(ev.target.value)}
                   required
@@ -777,7 +777,7 @@ export function WorkOrdersPage({ user }: WorkOrdersPageProps) {
               <label className="block text-xs font-medium text-ink-muted">
                 Title
                 <input
-                  className="mt-1 w-full rounded border border-line-strong px-3 py-2 text-sm"
+                  className="mt-1 w-full surface-field px-3 py-2 text-sm"
                   value={title}
                   onChange={(ev) => setTitle(ev.target.value)}
                   minLength={3}
@@ -788,7 +788,7 @@ export function WorkOrdersPage({ user }: WorkOrdersPageProps) {
               <label className="block text-xs font-medium text-ink-muted">
                 Description
                 <textarea
-                  className="mt-1 w-full rounded border border-line-strong px-3 py-2 text-sm"
+                  className="mt-1 w-full surface-field px-3 py-2 text-sm"
                   rows={3}
                   value={description}
                   onChange={(ev) => setDescription(ev.target.value)}
@@ -798,7 +798,7 @@ export function WorkOrdersPage({ user }: WorkOrdersPageProps) {
               <label className="block text-xs font-medium text-ink-muted">
                 Priority
                 <select
-                  className="mt-1 w-full rounded border border-line-strong bg-surface px-3 py-2 text-sm"
+                  className="mt-1 w-full surface-field px-3 py-2 text-sm"
                   value={priority}
                   onChange={(ev) => setPriority(ev.target.value as WorkOrderPriority)}
                 >
@@ -815,14 +815,14 @@ export function WorkOrdersPage({ user }: WorkOrdersPageProps) {
                 </p>
               ) : null}
               {createError ? (
-                <p className="text-xs text-critical-ink-soft" role="alert">
+                <p className="text-xs text-critical-ink" role="alert">
                   {createError}
                 </p>
               ) : null}
               <div className="flex justify-end gap-2">
                 <button
                   type="button"
-                  className="rounded px-3 py-2 text-sm text-ink-muted hover:bg-well-deep"
+                  className="surface-button px-3 py-2"
                   onClick={closeCreate}
                 >
                   Cancel
@@ -836,7 +836,7 @@ export function WorkOrdersPage({ user }: WorkOrdersPageProps) {
                     assetsQ.isLoading
                   }
                   aria-busy={createM.isPending}
-                  className="rounded bg-accent px-4 py-2 text-sm font-semibold text-on-accent disabled:opacity-50"
+                  className="surface-button-primary bg-accent px-4 py-2 text-sm font-semibold text-on-accent disabled:opacity-50"
                 >
                   {createM.isPending ? "Creating…" : "Create"}
                 </button>
@@ -853,7 +853,7 @@ export function WorkOrdersPage({ user }: WorkOrdersPageProps) {
           aria-modal="true"
           aria-labelledby="work-order-status-title"
         >
-          <div className="w-full max-w-md rounded-lg bg-surface p-6 shadow-xl">
+          <div className="w-full max-w-md surface-dialog p-6">
             <h2
               id="work-order-status-title"
               className="font-condensed text-lg font-bold"
@@ -865,7 +865,7 @@ export function WorkOrdersPage({ user }: WorkOrdersPageProps) {
               <label className="block text-xs font-medium text-ink-muted">
                 New status
                 <select
-                  className="mt-1 w-full rounded border border-line-strong bg-surface px-3 py-2 text-sm"
+                  className="mt-1 w-full surface-field px-3 py-2 text-sm"
                   value={nextStatus}
                   onChange={(ev) => setNextStatus(ev.target.value as WorkOrderStatus)}
                 >
@@ -879,7 +879,7 @@ export function WorkOrdersPage({ user }: WorkOrdersPageProps) {
               <label className="block text-xs font-medium text-ink-muted">
                 Reason
                 <textarea
-                  className="mt-1 w-full rounded border border-line-strong px-3 py-2 text-sm"
+                  className="mt-1 w-full surface-field px-3 py-2 text-sm"
                   rows={3}
                   value={statusReason}
                   onChange={(ev) => setStatusReason(ev.target.value)}
@@ -888,14 +888,14 @@ export function WorkOrdersPage({ user }: WorkOrdersPageProps) {
                 />
               </label>
               {statusError ? (
-                <p className="text-xs text-critical-ink-soft" role="alert">
+                <p className="text-xs text-critical-ink" role="alert">
                   {statusError}
                 </p>
               ) : null}
               <div className="flex justify-end gap-2">
                 <button
                   type="button"
-                  className="rounded px-3 py-2 text-sm text-ink-muted hover:bg-well-deep"
+                  className="surface-button px-3 py-2"
                   onClick={() => setEditTarget(null)}
                 >
                   Cancel
@@ -904,7 +904,7 @@ export function WorkOrdersPage({ user }: WorkOrdersPageProps) {
                   type="submit"
                   disabled={statusM.isPending}
                   aria-busy={statusM.isPending}
-                  className="rounded bg-accent px-4 py-2 text-sm font-semibold text-on-accent disabled:opacity-50"
+                  className="surface-button-primary bg-accent px-4 py-2 text-sm font-semibold text-on-accent disabled:opacity-50"
                 >
                   {statusM.isPending ? "Saving…" : "Save status"}
                 </button>
@@ -921,7 +921,7 @@ export function WorkOrdersPage({ user }: WorkOrdersPageProps) {
           aria-modal="true"
           aria-labelledby="work-order-close-title"
         >
-          <div className="w-full max-w-md rounded-lg bg-surface p-6 shadow-xl">
+          <div className="w-full max-w-md surface-dialog p-6">
             <h2
               id="work-order-close-title"
               className="font-condensed text-lg font-bold"
@@ -933,7 +933,7 @@ export function WorkOrdersPage({ user }: WorkOrdersPageProps) {
               <label className="block text-xs font-medium text-ink-muted">
                 Closure reason
                 <textarea
-                  className="mt-1 w-full rounded border border-line-strong px-3 py-2 text-sm"
+                  className="mt-1 w-full surface-field px-3 py-2 text-sm"
                   rows={3}
                   value={closeReason}
                   onChange={(ev) => setCloseReason(ev.target.value)}
@@ -943,14 +943,14 @@ export function WorkOrdersPage({ user }: WorkOrdersPageProps) {
                 />
               </label>
               {closeError ? (
-                <p className="text-xs text-critical-ink-soft" role="alert">
+                <p className="text-xs text-critical-ink" role="alert">
                   {closeError}
                 </p>
               ) : null}
               <div className="flex justify-end gap-2">
                 <button
                   type="button"
-                  className="rounded px-3 py-2 text-sm text-ink-muted hover:bg-well-deep"
+                  className="surface-button px-3 py-2"
                   onClick={() => {
                     setCloseTarget(null);
                     setCloseSortOrder(undefined);
@@ -962,7 +962,7 @@ export function WorkOrdersPage({ user }: WorkOrdersPageProps) {
                   type="submit"
                   disabled={closeM.isPending || closeReason.trim().length < 3}
                   aria-busy={closeM.isPending}
-                  className="rounded bg-accent px-4 py-2 text-sm font-semibold text-on-accent disabled:opacity-50"
+                  className="surface-button-primary bg-accent px-4 py-2 text-sm font-semibold text-on-accent disabled:opacity-50"
                 >
                   {closeM.isPending ? "Closing…" : "Close work order"}
                 </button>

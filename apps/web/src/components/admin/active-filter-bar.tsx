@@ -21,10 +21,8 @@ export function ActiveFilterBar({ value, onChange }: ActiveFilterBarProps) {
           type="button"
           role="tab"
           aria-selected={value === option.value}
-          className={`rounded border px-3 py-1.5 text-xs font-semibold ${
-            value === option.value
-              ? "border-accent bg-ok-wash text-ok-ink"
-              : "border-line bg-surface text-ink"
+          className={`surface-tab px-3 py-1.5 text-xs font-semibold ${
+            value === option.value ? "surface-tab-selected" : ""
           }`}
           onClick={() => onChange(option.value)}
         >

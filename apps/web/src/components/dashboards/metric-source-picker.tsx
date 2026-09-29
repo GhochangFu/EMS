@@ -53,7 +53,7 @@ export function MetricSourcePicker({ widgetType, bound, onAdd }: MetricSourcePic
             onAdd(key);
           }
         }}
-        className="w-full rounded border border-line px-2 py-1 text-xs"
+        className="w-full surface-field px-2 py-1 text-xs"
       >
         <option value="" disabled>
           Add a named metric…

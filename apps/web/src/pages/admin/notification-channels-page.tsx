@@ -227,7 +227,7 @@ export function NotificationChannelsPage({ user }: NotificationChannelsPageProps
           role="status"
           className={`rounded border px-3 py-2 text-sm ${
             testResult.status === "sent"
-              ? "border-accent/30 bg-accent/10 text-accent"
+              ? "border-accent/30 bg-accent/10 text-accent-strong"
               : "border-warning-line bg-warning-wash text-warning-ink"
           }`}
         >
@@ -281,7 +281,7 @@ export function NotificationChannelsPage({ user }: NotificationChannelsPageProps
                     <div className="flex gap-2">
                       <button
                         type="button"
-                        className="text-xs font-semibold text-accent"
+                        className="text-xs font-semibold text-accent-strong"
                         onClick={() => {
                           setEditing(channel);
                           setForm(formFromChannel(channel));
@@ -292,7 +292,7 @@ export function NotificationChannelsPage({ user }: NotificationChannelsPageProps
                       </button>
                       <button
                         type="button"
-                        className="text-xs font-semibold text-accent disabled:text-ink-muted"
+                        className="text-xs font-semibold text-accent-strong disabled:text-ink-muted"
                         disabled={testMutation.isPending || testRefusal !== null}
                         aria-busy={testingThis}
                         // The reason travels with the disabled control. A button
@@ -344,7 +344,7 @@ export function NotificationChannelsPage({ user }: NotificationChannelsPageProps
             <label className="text-sm">
               <span className="block text-xs font-semibold uppercase text-ink-muted">Code</span>
               <input
-                className="w-full rounded border px-3 py-1.5"
+                className="w-full surface-field px-3 py-1.5"
                 value={form.code}
                 disabled={editing !== null}
                 onChange={(event) => setForm({ ...form, code: event.target.value })}
@@ -353,7 +353,7 @@ export function NotificationChannelsPage({ user }: NotificationChannelsPageProps
             <label className="text-sm">
               <span className="block text-xs font-semibold uppercase text-ink-muted">Name</span>
               <input
-                className="w-full rounded border px-3 py-1.5"
+                className="w-full surface-field px-3 py-1.5"
                 value={form.name}
                 onChange={(event) => setForm({ ...form, name: event.target.value })}
               />
@@ -369,7 +369,7 @@ export function NotificationChannelsPage({ user }: NotificationChannelsPageProps
                 Organization
               </span>
               <select
-                className="w-full rounded border px-3 py-1.5 disabled:bg-well disabled:text-ink-muted"
+                className="w-full surface-field px-3 py-1.5 disabled:opacity-60 disabled:text-ink-muted"
                 value={editing ? form.organizationId : effectiveOrganizationId}
                 disabled={editing !== null || organizationLocked}
                 onChange={(event) =>
@@ -409,7 +409,7 @@ export function NotificationChannelsPage({ user }: NotificationChannelsPageProps
             <label className="text-sm">
               <span className="block text-xs font-semibold uppercase text-ink-muted">Kind</span>
               <select
-                className="w-full rounded border px-3 py-1.5"
+                className="w-full surface-field px-3 py-1.5"
                 value={form.kind}
                 onChange={(event) => setForm({ ...form, kind: event.target.value })}
               >
@@ -422,7 +422,7 @@ export function NotificationChannelsPage({ user }: NotificationChannelsPageProps
                 {form.kind === "email" ? "Recipients (comma separated)" : "Webhook URL"}
               </span>
               <input
-                className="w-full rounded border px-3 py-1.5"
+                className="w-full surface-field px-3 py-1.5"
                 value={form.target}
                 onChange={(event) => setForm({ ...form, target: event.target.value })}
               />
@@ -433,7 +433,7 @@ export function NotificationChannelsPage({ user }: NotificationChannelsPageProps
               </span>
               <input
                 type="password"
-                className="w-full rounded border px-3 py-1.5"
+                className="w-full surface-field px-3 py-1.5"
                 value={form.secret}
                 placeholder={editing?.hasSecret ? "•••••••• stored" : ""}
                 onChange={(event) => setForm({ ...form, secret: event.target.value })}
@@ -457,7 +457,7 @@ export function NotificationChannelsPage({ user }: NotificationChannelsPageProps
           <div className="flex gap-2">
             <button
               type="submit"
-              className="rounded bg-accent px-3 py-2 text-xs font-semibold text-on-accent disabled:bg-line-strong"
+              className="surface-button-primary bg-accent px-3 py-2 text-xs font-semibold text-on-accent disabled:bg-line-strong"
               disabled={cannotSave}
               aria-busy={saveMutation.isPending}
             >
@@ -466,7 +466,7 @@ export function NotificationChannelsPage({ user }: NotificationChannelsPageProps
             {editing ? (
               <button
                 type="button"
-                className="rounded border px-3 py-2 text-xs font-semibold"
+                className="surface-button px-3 py-2"
                 onClick={() => {
                   setEditing(null);
                   setForm(blankChannelForm());

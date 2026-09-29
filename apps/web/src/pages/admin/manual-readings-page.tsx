@@ -105,7 +105,7 @@ export function ManualReadingsPage({ user }: ManualReadingsPageProps) {
           <label className="block text-xs font-semibold text-ink-muted">
             Point key
             <select
-              className="mt-1 w-full rounded border px-3 py-2 text-sm"
+              className="mt-1 w-full surface-field px-3 py-2 text-sm"
               value={pointKey}
               disabled={!selection.assetId}
               onChange={(event) => {
@@ -127,7 +127,7 @@ export function ManualReadingsPage({ user }: ManualReadingsPageProps) {
           <label className="block text-xs font-semibold text-ink-muted">
             Value
             <input
-              className="mt-1 w-full rounded border px-3 py-2 text-sm"
+              className="mt-1 w-full surface-field px-3 py-2 text-sm"
               value={value}
               onChange={(event) => setValue(event.target.value)}
             />
@@ -137,7 +137,7 @@ export function ManualReadingsPage({ user }: ManualReadingsPageProps) {
           <label className="block text-xs font-semibold text-ink-muted">
             Unit
             <input
-              className="mt-1 w-full rounded border px-3 py-2 text-sm"
+              className="mt-1 w-full surface-field px-3 py-2 text-sm"
               value={unit}
               onChange={(event) => setUnit(event.target.value)}
             />
@@ -147,7 +147,7 @@ export function ManualReadingsPage({ user }: ManualReadingsPageProps) {
             Timestamp
             <input
               type="datetime-local"
-              className="mt-1 w-full rounded border px-3 py-2 text-sm"
+              className="mt-1 w-full surface-field px-3 py-2 text-sm"
               value={time}
               onChange={(event) => setTime(event.target.value)}
             />
@@ -181,7 +181,7 @@ export function ManualReadingsPage({ user }: ManualReadingsPageProps) {
           <div>
             <button
               type="submit"
-              className="rounded bg-accent px-3 py-2 text-xs font-semibold text-on-accent"
+              className="surface-button-primary bg-accent px-3 py-2 text-xs font-semibold text-on-accent"
               disabled={submitMutation.isPending}
               aria-busy={submitMutation.isPending}
             >

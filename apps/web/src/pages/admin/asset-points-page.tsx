@@ -63,7 +63,7 @@ function CalcRuntimePill({ runtime }: { runtime: AssetPointCalcConfigDto["runtim
     return null;
   }
   const tone =
-    runtime?.lastOutcome === "skipped" ? "bg-critical-wash-strong text-critical-ink-strong" : "bg-accent/10 text-accent";
+    runtime?.lastOutcome === "skipped" ? "bg-critical-wash-strong text-critical-ink-strong" : "bg-accent/10 text-accent-strong";
   return <span className={`rounded px-2 py-0.5 font-semibold ${tone}`}>{label}</span>;
 }
 
@@ -352,13 +352,13 @@ export function AssetPointsAdminPage({ user }: AssetPointsAdminPageProps) {
                 organization and is always available. */}
             <Link
               to="/admin/point-keys"
-              className="rounded border border-line px-3 py-2 text-xs font-semibold text-ink"
+              className="surface-button px-3 py-2"
             >
               Manage catalog
             </Link>
             <button
               type="button"
-              className="rounded bg-accent px-3 py-2 text-xs font-semibold text-on-accent"
+              className="surface-button-primary bg-accent px-3 py-2 text-xs font-semibold text-on-accent"
               onClick={() => {
                 setEditing(null);
                 setForm({
@@ -394,7 +394,7 @@ export function AssetPointsAdminPage({ user }: AssetPointsAdminPageProps) {
             syncRoutes={false}
           />
           <input
-            className="rounded border px-3 py-1.5 text-sm"
+            className="surface-field px-3 py-1.5 text-sm"
             placeholder="Search"
             value={search}
             onChange={(event) => setSearch(event.target.value)}
@@ -404,7 +404,7 @@ export function AssetPointsAdminPage({ user }: AssetPointsAdminPageProps) {
               dropped. */}
           <button
             type="button"
-            className="rounded border border-line px-3 py-1.5 text-xs font-semibold text-ink disabled:opacity-50"
+            className="surface-button px-3 py-1.5 disabled:opacity-50"
             disabled={selectedRows.length === 0}
             onClick={() => setBulkOpen(true)}
           >
@@ -481,7 +481,7 @@ export function AssetPointsAdminPage({ user }: AssetPointsAdminPageProps) {
                   <div className="flex gap-2">
                     <button
                       type="button"
-                      className="text-xs font-semibold text-accent"
+                      className="text-xs font-semibold text-accent-strong"
                       onClick={() => {
                         setEditing(item);
                         setForm({
@@ -558,7 +558,7 @@ export function AssetPointsAdminPage({ user }: AssetPointsAdminPageProps) {
             ) : (
               <div
                 key={config.pointKey}
-                className="flex flex-wrap items-center justify-between gap-2 rounded border border-line px-3 py-2"
+                className="flex flex-wrap items-center justify-between gap-2 surface-raised-sm px-3 py-2"
               >
                 <span className="text-sm">
                   {config.label ?? config.pointKey}{" "}
@@ -589,7 +589,7 @@ export function AssetPointsAdminPage({ user }: AssetPointsAdminPageProps) {
                       setOpenPointKey(config.pointKey);
                       setOverrideError(null);
                     }}
-                    className="rounded border border-line px-3 py-1 font-semibold text-ink"
+                    className="surface-button px-3 py-1"
                   >
                     {hasAnyOverride(config) ? "Edit override" : "Override"}
                   </button>
@@ -603,7 +603,7 @@ export function AssetPointsAdminPage({ user }: AssetPointsAdminPageProps) {
       {modalOpen ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-scrim/40 p-4">
           <form
-            className="w-full max-w-lg rounded-lg border bg-surface p-4"
+            className="w-full max-w-lg surface-dialog p-4"
             onSubmit={(event: FormEvent) => {
               event.preventDefault();
               saveMutation.mutate();
@@ -616,7 +616,7 @@ export function AssetPointsAdminPage({ user }: AssetPointsAdminPageProps) {
               <label className="block text-xs font-semibold text-ink-muted">
                 Point key
                 <select
-                  className="mt-1 w-full rounded border px-3 py-2 text-sm"
+                  className="mt-1 w-full surface-field px-3 py-2 text-sm"
                   value={form.pointKey}
                   required
                   onChange={(event) => {
@@ -641,7 +641,7 @@ export function AssetPointsAdminPage({ user }: AssetPointsAdminPageProps) {
               <label className="block text-xs font-semibold text-ink-muted">
                 Source data key
                 <input
-                  className="mt-1 w-full rounded border px-3 py-2 text-sm"
+                  className="mt-1 w-full surface-field px-3 py-2 text-sm"
                   value={form.sourceDataKey}
                   required
                   onChange={(event) => setForm({ ...form, sourceDataKey: event.target.value })}
@@ -650,7 +650,7 @@ export function AssetPointsAdminPage({ user }: AssetPointsAdminPageProps) {
               <label className="block text-xs font-semibold text-ink-muted">
                 Sensor code
                 <input
-                  className="mt-1 w-full rounded border px-3 py-2 text-sm"
+                  className="mt-1 w-full surface-field px-3 py-2 text-sm"
                   value={form.sensorCode}
                   onChange={(event) => setForm({ ...form, sensorCode: event.target.value })}
                 />
@@ -658,7 +658,7 @@ export function AssetPointsAdminPage({ user }: AssetPointsAdminPageProps) {
               <label className="block text-xs font-semibold text-ink-muted">
                 Unit
                 <input
-                  className="mt-1 w-full rounded border px-3 py-2 text-sm"
+                  className="mt-1 w-full surface-field px-3 py-2 text-sm"
                   value={form.unit}
                   onChange={(event) => setForm({ ...form, unit: event.target.value })}
                 />
@@ -678,7 +678,7 @@ export function AssetPointsAdminPage({ user }: AssetPointsAdminPageProps) {
                     type="number"
                     step="any"
                     aria-label="Scale multiplier"
-                    className="mt-1 w-full rounded border px-3 py-2 text-sm"
+                    className="mt-1 w-full surface-field px-3 py-2 text-sm"
                     value={form.scaleMultiplier}
                     onChange={(event) => setForm({ ...form, scaleMultiplier: event.target.value })}
                   />
@@ -689,7 +689,7 @@ export function AssetPointsAdminPage({ user }: AssetPointsAdminPageProps) {
                     type="number"
                     step="any"
                     aria-label="Scale offset"
-                    className="mt-1 w-full rounded border px-3 py-2 text-sm"
+                    className="mt-1 w-full surface-field px-3 py-2 text-sm"
                     value={form.scaleOffset}
                     onChange={(event) => setForm({ ...form, scaleOffset: event.target.value })}
                   />
@@ -700,7 +700,7 @@ export function AssetPointsAdminPage({ user }: AssetPointsAdminPageProps) {
                     type="number"
                     step="any"
                     aria-label="Engineering minimum"
-                    className="mt-1 w-full rounded border px-3 py-2 text-sm"
+                    className="mt-1 w-full surface-field px-3 py-2 text-sm"
                     value={form.engMin}
                     onChange={(event) => setForm({ ...form, engMin: event.target.value })}
                   />
@@ -711,7 +711,7 @@ export function AssetPointsAdminPage({ user }: AssetPointsAdminPageProps) {
                     type="number"
                     step="any"
                     aria-label="Engineering maximum"
-                    className="mt-1 w-full rounded border px-3 py-2 text-sm"
+                    className="mt-1 w-full surface-field px-3 py-2 text-sm"
                     value={form.engMax}
                     onChange={(event) => setForm({ ...form, engMax: event.target.value })}
                   />
@@ -720,7 +720,7 @@ export function AssetPointsAdminPage({ user }: AssetPointsAdminPageProps) {
                   Quality policy
                   <select
                     aria-label="Quality policy"
-                    className="mt-1 w-full rounded border px-3 py-2 text-sm"
+                    className="mt-1 w-full surface-field px-3 py-2 text-sm"
                     value={form.qualityPolicy}
                     onChange={(event) =>
                       setForm({ ...form, qualityPolicy: event.target.value as QualityPolicy | "" })
@@ -742,14 +742,14 @@ export function AssetPointsAdminPage({ user }: AssetPointsAdminPageProps) {
             <div className="mt-4 flex justify-end gap-2">
               <button
                 type="button"
-                className="rounded border px-3 py-2 text-xs"
+                className="surface-button px-3 py-2"
                 onClick={() => setModalOpen(false)}
               >
                 Cancel
               </button>
               <button
                 type="submit"
-                className="rounded bg-accent px-3 py-2 text-xs font-semibold text-on-accent"
+                className="surface-button-primary bg-accent px-3 py-2 text-xs font-semibold text-on-accent"
               >
                 Save
               </button>

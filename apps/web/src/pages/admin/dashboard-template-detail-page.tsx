@@ -166,7 +166,7 @@ export function DashboardTemplateDetailPage({ user }: DashboardTemplateDetailPag
           </p>
           <Link
             to="/admin/dashboard-templates"
-            className="mt-3 inline-block text-xs font-semibold text-accent hover:underline"
+            className="mt-3 inline-block text-xs font-semibold text-accent-strong hover:underline"
           >
             Back to all templates
           </Link>
@@ -244,7 +244,7 @@ export function DashboardTemplateDetailPage({ user }: DashboardTemplateDetailPag
           <div className="flex flex-wrap gap-2">
             <Link
               to="/admin/dashboard-templates"
-              className="rounded border border-line px-3 py-1.5 text-xs font-semibold text-ink-muted"
+              className="surface-button px-3 py-1.5"
             >
               All templates
             </Link>
@@ -287,7 +287,7 @@ export function DashboardTemplateDetailPage({ user }: DashboardTemplateDetailPag
                 disabled={busy}
                 aria-busy={draftM.isPending}
                 onClick={() => draftM.mutate()}
-                className="rounded border border-line px-3 py-1.5 text-xs font-semibold text-ink disabled:opacity-60"
+                className="surface-button px-3 py-1.5 disabled:opacity-60"
               >
                 {draftM.isPending
                   ? template.status === "archived"
@@ -342,7 +342,7 @@ export function DashboardTemplateDetailPage({ user }: DashboardTemplateDetailPag
             <button
               type="button"
               onClick={addWidget}
-              className="rounded border border-line px-2 py-1 text-[11px] font-semibold text-ink"
+              className="surface-button px-2 py-1"
             >
               Add widget
             </button>
@@ -440,7 +440,7 @@ function InstantiateDialog({
 
   return (
     <div className="fixed inset-0 z-40 flex items-center justify-center bg-scrim/30 p-4">
-      <div className="w-full max-w-2xl space-y-3 rounded-lg bg-surface p-4 shadow-lg">
+      <div className="w-full max-w-2xl space-y-3 surface-dialog p-4">
         <h2 className="font-condensed text-base font-bold text-ink">
           Instantiate {template.code} v{template.version}
         </h2>
@@ -455,7 +455,7 @@ function InstantiateDialog({
                 required
                 value={assetGroupId}
                 onChange={(event) => setAssetGroupId(event.target.value)}
-                className="mt-1 w-full rounded border border-line px-2 py-1 text-xs font-normal"
+                className="mt-1 w-full surface-field px-2 py-1 text-xs font-normal"
               >
                 <option value="">Select an asset group…</option>
                 {/* `E4.2` / ADR 0072 decision 1 — see `bindsARole` above. */}
@@ -508,7 +508,7 @@ function InstantiateDialog({
                     maxLength={DASHBOARD_SLUG_MAX}
                     title={DASHBOARD_SLUG_HINT}
                     aria-describedby="instantiate-slug-hint"
-                    className="mt-1 w-full rounded border border-line px-2 py-1 text-xs font-normal"
+                    className="mt-1 w-full surface-field px-2 py-1 text-xs font-normal"
                   />
                 </label>
                 <span id="instantiate-slug-hint" className="mt-1 block text-[11px] text-ink-muted">
@@ -521,7 +521,7 @@ function InstantiateDialog({
                   required
                   value={name}
                   onChange={(event) => setName(event.target.value)}
-                  className="mt-1 w-full rounded border border-line px-2 py-1 text-xs font-normal"
+                  className="mt-1 w-full surface-field px-2 py-1 text-xs font-normal"
                 />
               </label>
             </div>
@@ -538,7 +538,7 @@ function InstantiateDialog({
           <button
             type="button"
             onClick={onClose}
-            className="rounded border border-line px-3 py-1.5 text-xs font-semibold text-ink-muted"
+            className="surface-button px-3 py-1.5"
           >
             {result ? "Close" : "Cancel"}
           </button>

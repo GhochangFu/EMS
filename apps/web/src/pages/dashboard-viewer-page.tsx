@@ -52,7 +52,7 @@ export function DashboardViewerPage({ user }: DashboardViewerPageProps) {
             dashboardQ.data && canAuthorDashboards(user.role) ? (
               <Link
                 to={`/admin/dashboards/${slug}${organizationId ? `?organizationId=${organizationId}` : ""}`}
-                className="rounded border border-line-strong px-3 py-1.5 text-xs font-semibold text-ink hover:bg-well"
+                className="surface-button px-3 py-1.5"
               >
                 Edit dashboard
               </Link>

@@ -250,7 +250,7 @@ export function DashboardScopeFields({
           <select
             value={value.organizationId}
             onChange={(event) => onChange({ kind: "organization", organizationId: event.target.value })}
-            className="w-full rounded border border-line px-2 py-1.5 text-xs"
+            className="w-full surface-field px-2 py-1.5 text-xs"
           >
             <option value="" disabled>
               Choose an organization
@@ -276,7 +276,7 @@ export function DashboardScopeFields({
                 locationId: event.target.value,
               });
             }}
-            className="w-full rounded border border-line px-2 py-1.5 text-xs"
+            className="w-full surface-field px-2 py-1.5 text-xs"
           >
             <option value="" disabled>
               Choose a location
@@ -303,7 +303,7 @@ export function DashboardScopeFields({
                 assetGroupId: event.target.value,
               });
             }}
-            className="w-full rounded border border-line px-2 py-1.5 text-xs"
+            className="w-full surface-field px-2 py-1.5 text-xs"
           >
             <option value="" disabled>
               Choose an asset group

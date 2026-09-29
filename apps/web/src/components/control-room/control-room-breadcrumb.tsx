@@ -24,7 +24,7 @@ export function ControlRoomBreadcrumb({ crumbs }: ControlRoomBreadcrumbProps) {
         <span key={`${crumb.label}-${index}`} className="flex items-center gap-1">
           {index > 0 ? <span>/</span> : null}
           {crumb.to && index < crumbs.length - 1 ? (
-            <Link to={crumb.to} className="font-semibold text-accent hover:underline">
+            <Link to={crumb.to} className="font-semibold text-accent-strong hover:underline">
               {crumb.label}
             </Link>
           ) : (

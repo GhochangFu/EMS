@@ -23,16 +23,12 @@ const NO_IDS_NOTE: Record<AssetsStatus, string> = {
 };
 
 function tabClass(selected: boolean): string {
-  return `rounded border px-3 py-1.5 text-xs font-semibold ${
-    selected
-      ? "border-accent bg-ok-wash text-ok-ink"
-      : "border-line bg-surface text-ink"
-  }`;
+  return `surface-segment-item px-3 py-1.5 ${selected ? "surface-segment-item-selected" : ""}`;
 }
 
 function RailNote({ text }: { text: string }) {
   return (
-    <div className="rounded border border-line bg-well p-3 text-sm text-ink-muted">
+    <div className="surface-pressed p-3 text-sm text-ink-muted">
       {text}
     </div>
   );
@@ -98,9 +94,9 @@ export function ActiveAlarmsRail(props: ActiveAlarmsRailProps) {
     props.organizationId !== undefined || props.assetIds.length > 0 ? null : NO_IDS_NOTE[assetsStatus];
 
   return (
-    <section aria-label="Alarms" className="rounded border border-line bg-surface p-4">
+    <section aria-label="Alarms" className="surface-raised p-4">
       <div className="flex items-center justify-between gap-3">
-        <div className="flex gap-2" role="tablist" aria-label="Alarms rail">
+        <div className="surface-segment flex gap-2" role="tablist" aria-label="Alarms rail">
           <button type="button" role="tab" aria-selected={tab === "active"} className={tabClass(tab === "active")} onClick={() => setTab("active")}>
             Active Alarms
           </button>
@@ -108,7 +104,7 @@ export function ActiveAlarmsRail(props: ActiveAlarmsRailProps) {
             Alarm Summary
           </button>
         </div>
-        <Link className="text-xs font-semibold text-accent hover:underline" to="/alarms">
+        <Link className="text-xs font-semibold text-accent-strong hover:underline" to="/alarms">
           View All
         </Link>
       </div>

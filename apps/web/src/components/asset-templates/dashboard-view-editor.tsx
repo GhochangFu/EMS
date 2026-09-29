@@ -80,7 +80,7 @@ function DashboardViewEditor({
           {problemFor("name")}
         </p>
       ) : null}
-      <section className="rounded border border-line p-3">
+      <section className="surface-raised-sm p-3">
         <Field label="Featured points" error={problemFor("featured")}>
           <div className="space-y-1">
             {view.featured.length === 0 ? (
@@ -98,7 +98,7 @@ function DashboardViewEditor({
                         type="button"
                         disabled={index === 0}
                         onClick={() => moveFeatured(index, -1)}
-                        className="rounded border border-line px-1.5 py-0.5 text-[11px] disabled:opacity-40"
+                        className="surface-button px-1.5 py-0.5 disabled:opacity-40"
                       >
                         ↑
                       </button>
@@ -106,14 +106,14 @@ function DashboardViewEditor({
                         type="button"
                         disabled={index === view.featured.length - 1}
                         onClick={() => moveFeatured(index, 1)}
-                        className="rounded border border-line px-1.5 py-0.5 text-[11px] disabled:opacity-40"
+                        className="surface-button px-1.5 py-0.5 disabled:opacity-40"
                       >
                         ↓
                       </button>
                       <button
                         type="button"
                         onClick={() => removeFeatured(index)}
-                        className="rounded border border-critical-line px-1.5 py-0.5 text-[11px] font-semibold text-critical-ink"
+                        className="surface-button border border-critical-line px-1.5 py-0.5 text-critical-ink"
                       >
                         Remove
                       </button>
@@ -126,7 +126,7 @@ function DashboardViewEditor({
               <select
                 value=""
                 onChange={(event) => addFeatured(event.target.value)}
-                className="w-full rounded border border-line px-2 py-1 text-xs"
+                className="w-full surface-field px-2 py-1 text-xs"
               >
                 <option value="">Feature a point…</option>
                 {remainingPointKeys.map((key) => (
@@ -170,7 +170,7 @@ function DashboardViewEditor({
                 key={widgetType}
                 type="button"
                 onClick={() => addWidget(widgetType)}
-                className="rounded border border-line px-3 py-1.5 text-xs font-semibold text-ink"
+                className="surface-button px-3 py-1.5"
               >
                 Add {WIDGET_TYPE_LABELS[widgetType]}
               </button>

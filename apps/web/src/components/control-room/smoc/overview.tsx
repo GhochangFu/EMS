@@ -217,7 +217,7 @@ function statusPillClass(status: CrStatus): string {
     case "offline":
       return "border-line-strong bg-line text-ink-muted";
     case "normal":
-      return "border-accent/20 bg-accent/10 text-accent";
+      return "border-accent/20 bg-accent/10 text-accent-strong";
   }
 }
 
@@ -240,7 +240,7 @@ function statusLabel(status: CrStatus): string {
 type SldViewMode = "diagram" | "list";
 
 function viewTabClass(selected: boolean): string {
-  return `rounded border px-3 py-1.5 text-xs font-semibold ${selected ? "border-accent bg-ok-wash text-ok-ink" : "border-line bg-surface text-ink"}`;
+  return `surface-segment-item px-3 py-1.5 ${selected ? "surface-segment-item-selected" : ""}`;
 }
 
 export function ControlRoomOverviewContent() {
@@ -460,7 +460,7 @@ export function ControlRoomOverviewContent() {
       <AssetClassStrip assetIds={alarmAssetIds} assetsStatus={telemetryCtx?.assetsStatus ?? "pending"} />
 
       <div className="grid gap-4 xl:grid-cols-[2fr_1fr]">
-        <section className="rounded border border-line bg-surface p-4">
+        <section className="surface-raised p-4">
           <div className="flex items-center justify-between gap-3">
             <div>
               <h2 className="font-condensed text-lg font-bold text-ink">
@@ -471,7 +471,7 @@ export function ControlRoomOverviewContent() {
               </p>
             </div>
             <div className="flex items-center gap-2">
-              <div className="flex gap-2" role="tablist" aria-label="SLD view">
+              <div className="surface-segment flex gap-2" role="tablist" aria-label="SLD view">
                 {(["diagram", "list"] as const).map((mode) => (
                   <button key={mode} type="button" role="tab" aria-selected={viewMode === mode} className={viewTabClass(viewMode === mode)} onClick={() => setViewMode(mode)}>
                     {mode === "diagram" ? "Diagram" : "List"}
@@ -671,7 +671,7 @@ function ModuleSummaryCard({
   secondary: string;
 }) {
   return (
-    <div className={`rounded border border-line bg-surface p-4 ${enabled ? "" : "opacity-70"}`}>
+    <div className={`surface-raised p-4 ${enabled ? "" : "opacity-70"}`}>
       <div className="flex items-start justify-between gap-3">
         <div>
           <h3 className="font-semibold text-ink">{title}</h3>
@@ -679,7 +679,7 @@ function ModuleSummaryCard({
             {enabled ? secondary : "Outside your asset-group scope"}
           </p>
         </div>
-        <span className={`rounded-full border px-2 py-0.5 text-[10px] font-semibold ${enabled ? statusPillClass(status.status) : "border-line bg-well-deep text-ink-muted"}`}>
+        <span className={`surface-pill rounded-full border px-2 py-0.5 text-[10px] font-semibold ${enabled ? statusPillClass(status.status) : "border-line bg-well-deep text-ink-muted"}`}>
           {enabled ? statusLabel(status.status) : "LOCKED"}
         </span>
       </div>
@@ -708,7 +708,7 @@ function CriticalSystemsSummary({
   environmentStatus: RuleState;
 }) {
   return (
-    <section className="rounded border border-line bg-surface p-4">
+    <section className="surface-raised p-4">
       <h2 className="font-condensed text-lg font-bold text-ink">
         Critical Systems Summary
       </h2>
@@ -734,7 +734,7 @@ function StatusRow({
   return (
     <div className="flex items-center justify-between gap-3">
       <span className={enabled ? "text-ink-muted" : "text-ink-hint"}>{label}</span>
-      <span className={`rounded-full border px-2 py-0.5 text-[11px] font-semibold ${enabled ? statusPillClass(status.status) : "border-line bg-well-deep text-ink-muted"}`}>
+      <span className={`surface-pill rounded-full border px-2 py-0.5 text-[11px] font-semibold ${enabled ? statusPillClass(status.status) : "border-line bg-well-deep text-ink-muted"}`}>
         {enabled ? statusLabel(status.status) : "LOCKED"}
       </span>
     </div>
@@ -757,7 +757,7 @@ function EnvironmentSnapshot({
   smokeCount: number;
 }) {
   return (
-    <section className="rounded border border-line bg-surface p-4">
+    <section className="surface-raised p-4">
       <div className="flex items-center justify-between gap-3">
         <h2 className="font-condensed text-lg font-bold text-ink">
           Environment Snapshot
@@ -803,7 +803,7 @@ function ItRackLoadSummary({
     deriveRuleState("CR-VW-RACK-PDU-B", vwB, rules, Date.now()),
   ]);
   return (
-    <section className="rounded border border-line bg-surface p-4">
+    <section className="surface-raised p-4">
       <div className="flex items-center justify-between gap-3">
         <h2 className="font-condensed text-lg font-bold text-ink">
           IT Rack Load
@@ -842,11 +842,11 @@ function RackLoadRow({
     <div>
       <div className="flex items-center justify-between gap-3 text-sm">
         <span className="font-semibold text-ink">{title}</span>
-        <span className={`rounded-full border px-2 py-0.5 text-[11px] font-semibold ${statusPillClass(status.status)}`}>
+        <span className={`surface-pill rounded-full border px-2 py-0.5 text-[11px] font-semibold ${statusPillClass(status.status)}`}>
           {statusLabel(status.status)}
         </span>
       </div>
-      <div className="mt-2 h-2 rounded bg-line">
+      <div className="mt-2 h-2 surface-pressed-sm">
         <div className="h-2 rounded bg-accent" style={{ width: `${pct}%` }} />
       </div>
       <div className="mt-2 grid grid-cols-2 gap-2 text-xs text-ink-muted">
@@ -877,7 +877,7 @@ function EnergySnapshot({
   const mainStale = isStale(main.lastSeenMs, Date.now());
   const kva = main.pf && !mainStale && totalLoad !== null ? totalLoad / main.pf : null;
   return (
-    <section className="rounded border border-line bg-surface p-4">
+    <section className="surface-raised p-4">
       <h2 className="font-condensed text-lg font-bold text-ink">
         Energy Snapshot
       </h2>
@@ -898,7 +898,7 @@ function EnergySnapshot({
 
 function ScopedUnavailable({ label }: { label: string }) {
   return (
-    <div className="mt-4 rounded border border-line bg-well p-4 text-sm text-ink-muted">
+    <div className="mt-4 surface-pressed p-4 text-sm text-ink-muted">
       {label} is outside your assigned asset-group scope.
     </div>
   );

@@ -145,7 +145,8 @@ export async function doesNotReadAssets(): Promise<void> {
 export function highlightsTheEntryOnANestedPath(): void {
   renderShell(GLOBAL, "/control-room/org/x");
   const [link] = entries();
-  expect(link?.classList.contains("border-accent")).toBe(true);
+  // `F3.71` (plan OQ6) — the selection is `aria-current="page"`, not a colour class.
+  expect(link?.getAttribute("aria-current")).toBe("page");
 }
 
 /** S7 — OQ4: the entry is the item directly after *Alarm Centre*. */
@@ -163,7 +164,8 @@ export function placesTheEntryDirectlyAfterAlarmCentre(): void {
 export function keepsOtherItemsExactMatch(): void {
   renderShell(GLOBAL, "/dashboards/plant-overview");
   const dashboards = within(sidebar()).getByRole("link", { name: "Dashboards" });
-  expect(dashboards.classList.contains("border-transparent")).toBe(true);
+  // `F3.71` (plan OQ6) — an unselected link carries no `aria-current`, not a colour class.
+  expect(dashboards.getAttribute("aria-current")).toBeNull();
 }
 
 /**

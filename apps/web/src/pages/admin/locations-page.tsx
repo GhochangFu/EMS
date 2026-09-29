@@ -238,7 +238,7 @@ export function LocationsAdminPage({ user }: LocationsAdminPageProps) {
           canCreate ? (
             <button
               type="button"
-              className="rounded bg-accent px-3 py-2 text-xs font-semibold text-on-accent"
+              className="surface-button-primary bg-accent px-3 py-2 text-xs font-semibold text-on-accent"
               onClick={openCreate}
             >
               Add location
@@ -256,7 +256,7 @@ export function LocationsAdminPage({ user }: LocationsAdminPageProps) {
             onNavigate={setSelection}
           />
           <input
-            className="rounded border border-line px-3 py-1.5 text-sm"
+            className="surface-field px-3 py-1.5 text-sm"
             placeholder="Search"
             value={search}
             onChange={(event) => setSearch(event.target.value)}
@@ -283,7 +283,7 @@ export function LocationsAdminPage({ user }: LocationsAdminPageProps) {
               >
                 <td className="px-2 py-2">{item.organizationCode}</td>
                 <td className="px-2 py-2 font-mono">{item.code}</td>
-                <td className="px-2 py-2 font-semibold text-accent">{item.name}</td>
+                <td className="px-2 py-2 font-semibold text-accent-strong">{item.name}</td>
                 <td className="px-2 py-2 font-mono text-xs">{item.slug}</td>
                 <td className="px-2 py-2 font-mono text-xs">{item.timezone ?? "—"}</td>
                 <td className="px-2 py-2">
@@ -296,7 +296,7 @@ export function LocationsAdminPage({ user }: LocationsAdminPageProps) {
                   <div className="flex gap-2">
                     <button
                       type="button"
-                      className="text-xs font-semibold text-accent"
+                      className="text-xs font-semibold text-accent-strong"
                       onClick={() => openEdit(item)}
                     >
                       Edit
@@ -319,7 +319,7 @@ export function LocationsAdminPage({ user }: LocationsAdminPageProps) {
       {modalOpen ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-scrim/40 p-4">
           <form
-            className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-lg border bg-surface p-4"
+            className="max-h-[90vh] w-full max-w-lg overflow-y-auto surface-dialog p-4"
             onSubmit={(event: FormEvent) => {
               event.preventDefault();
               saveMutation.mutate();
@@ -333,7 +333,7 @@ export function LocationsAdminPage({ user }: LocationsAdminPageProps) {
                 <label className="block text-xs font-semibold text-ink-muted sm:col-span-2">
                   Organization
                   <select
-                    className="mt-1 w-full rounded border px-3 py-2 text-sm"
+                    className="mt-1 w-full surface-field px-3 py-2 text-sm"
                     value={form.organizationId}
                     required
                     onChange={(event) =>
@@ -353,7 +353,7 @@ export function LocationsAdminPage({ user }: LocationsAdminPageProps) {
                 <label key={field} className="block text-xs font-semibold text-ink-muted">
                   {field}
                   <input
-                    className="mt-1 w-full rounded border px-3 py-2 text-sm"
+                    className="mt-1 w-full surface-field px-3 py-2 text-sm"
                     value={form[field]}
                     required
                     onChange={(event) => setForm({ ...form, [field]: event.target.value })}
@@ -363,7 +363,7 @@ export function LocationsAdminPage({ user }: LocationsAdminPageProps) {
               <label className="block text-xs font-semibold text-ink-muted">
                 Type
                 <select
-                  className="mt-1 w-full rounded border px-3 py-2 text-sm"
+                  className="mt-1 w-full surface-field px-3 py-2 text-sm"
                   value={resolvedType}
                   disabled={types.length === 0}
                   onChange={(event) => setForm({ ...form, type: event.target.value })}
@@ -385,7 +385,7 @@ export function LocationsAdminPage({ user }: LocationsAdminPageProps) {
               <label className="block text-xs font-semibold text-ink-muted">
                 Province
                 <input
-                  className="mt-1 w-full rounded border px-3 py-2 text-sm"
+                  className="mt-1 w-full surface-field px-3 py-2 text-sm"
                   value={form.province}
                   onChange={(event) => setForm({ ...form, province: event.target.value })}
                 />
@@ -393,7 +393,7 @@ export function LocationsAdminPage({ user }: LocationsAdminPageProps) {
               <label className="block text-xs font-semibold text-ink-muted">
                 Timezone (IANA)
                 <input
-                  className="mt-1 w-full rounded border px-3 py-2 text-sm"
+                  className="mt-1 w-full surface-field px-3 py-2 text-sm"
                   list="tz-list"
                   placeholder="Asia/Kolkata"
                   value={form.timezone}
@@ -408,7 +408,7 @@ export function LocationsAdminPage({ user }: LocationsAdminPageProps) {
               <label className="block text-xs font-semibold text-ink-muted">
                 Latitude
                 <input
-                  className="mt-1 w-full rounded border px-3 py-2 text-sm"
+                  className="mt-1 w-full surface-field px-3 py-2 text-sm"
                   value={form.latitude}
                   required
                   onChange={(event) => setForm({ ...form, latitude: event.target.value })}
@@ -417,7 +417,7 @@ export function LocationsAdminPage({ user }: LocationsAdminPageProps) {
               <label className="block text-xs font-semibold text-ink-muted">
                 Longitude
                 <input
-                  className="mt-1 w-full rounded border px-3 py-2 text-sm"
+                  className="mt-1 w-full surface-field px-3 py-2 text-sm"
                   value={form.longitude}
                   required
                   onChange={(event) => setForm({ ...form, longitude: event.target.value })}
@@ -447,14 +447,14 @@ export function LocationsAdminPage({ user }: LocationsAdminPageProps) {
             <div className="mt-4 flex justify-end gap-2">
               <button
                 type="button"
-                className="rounded border px-3 py-2 text-xs"
+                className="surface-button px-3 py-2"
                 onClick={() => setModalOpen(false)}
               >
                 Cancel
               </button>
               <button
                 type="submit"
-                className="rounded bg-accent px-3 py-2 text-xs font-semibold text-on-accent"
+                className="surface-button-primary bg-accent px-3 py-2 text-xs font-semibold text-on-accent"
               >
                 Save
               </button>

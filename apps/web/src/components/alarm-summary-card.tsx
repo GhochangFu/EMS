@@ -53,9 +53,9 @@ export function AlarmSummaryCard({
             : "o";
 
   return (
-    <div className={`relative overflow-hidden rounded-lg border border-line bg-surface p-4 shadow-sm after:absolute after:inset-x-0 after:top-0 after:h-0.5 ${border}`}>
+    <div className={`surface-raised surface-kpi relative overflow-hidden p-4 after:absolute ${border}`}>
       <div className="flex items-center gap-2 text-[10px] font-bold uppercase tracking-[0.18em] text-ink-muted">
-        <span className="grid h-6 w-6 place-items-center rounded border border-current bg-surface/70 font-mono">
+        <span className="grid h-6 w-6 place-items-center surface-raised-sm font-mono">
           {icon}
         </span>
         {label}

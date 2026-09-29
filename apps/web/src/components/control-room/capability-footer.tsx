@@ -18,7 +18,7 @@ export function CapabilityFooter() {
   return (
     <div
       aria-label="Capability footer"
-      className="flex flex-wrap items-center justify-center gap-x-6 gap-y-2 rounded border border-line bg-surface px-4 py-3 text-xs font-medium text-ink-muted"
+      className="flex flex-wrap items-center justify-center gap-x-6 gap-y-2 surface-raised px-4 py-3 text-xs font-medium text-ink-muted"
     >
       {CAPABILITY_ITEMS.map((item) => (
         <span key={item}>{item}</span>

@@ -77,7 +77,7 @@ function dueStateStyle(item: MaintenanceScheduleItem): string {
   if (item.dueState === "overdue") {
     return "border-critical-line bg-critical-wash text-critical-ink";
   }
-  return "border-accent/20 bg-accent/10 text-accent";
+  return "border-accent/20 bg-accent/10 text-accent-strong";
 }
 
 function categoryStyle(category: MaintenanceScheduleCategory): string {
@@ -90,7 +90,7 @@ function categoryStyle(category: MaintenanceScheduleCategory): string {
     case "runtime_based":
       return "border-info-line bg-info-wash text-info-ink";
     case "energy_optimization":
-      return "border-accent/20 bg-accent/10 text-accent";
+      return "border-accent/20 bg-accent/10 text-accent-strong";
     default:
       return "border-line bg-surface text-ink-muted";
   }
@@ -252,11 +252,11 @@ export function MaintenanceSchedulesPanel({
       <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         {[
           ["Overdue", overdueCount, "border-critical-line bg-critical-wash text-critical-ink"],
-          ["Upcoming", upcomingCount, "border-accent/20 bg-accent/10 text-accent"],
+          ["Upcoming", upcomingCount, "border-accent/20 bg-accent/10 text-accent-strong"],
           ["WO generated", generatedCount, "border-info-line bg-info-wash text-info-ink"],
           ["Safety-critical", safetyCount, "border-warning-line bg-warning-wash text-warning-ink"],
         ].map(([label, value, tone]) => (
-          <div key={label} className="rounded-lg border border-line bg-surface p-4 shadow-sm">
+          <div key={label} className="surface-raised p-4">
             <div className={`inline-flex rounded border px-2 py-1 text-[10px] font-bold uppercase ${tone}`}>
               {label}
             </div>
@@ -268,11 +268,11 @@ export function MaintenanceSchedulesPanel({
         ))}
       </section>
 
-      <section className="grid gap-3 rounded-lg border border-line bg-surface p-3 shadow-sm lg:grid-cols-5">
+      <section className="grid gap-3 surface-raised p-3 lg:grid-cols-5">
         <label className="text-xs font-medium text-ink-muted">
           Asset
           <select
-            className="mt-1 w-full rounded border border-line-strong bg-surface px-2 py-2 text-sm text-ink"
+            className="mt-1 w-full surface-field px-2 py-2 text-sm text-ink"
             value={assetFilter}
             onChange={(ev) => setAssetFilter(ev.target.value)}
           >
@@ -287,7 +287,7 @@ export function MaintenanceSchedulesPanel({
         <label className="text-xs font-medium text-ink-muted">
           Category
           <select
-            className="mt-1 w-full rounded border border-line-strong bg-surface px-2 py-2 text-sm text-ink"
+            className="mt-1 w-full surface-field px-2 py-2 text-sm text-ink"
             value={categoryFilter}
             onChange={(ev) =>
               setCategoryFilter(ev.target.value as CategoryFilter)
@@ -304,7 +304,7 @@ export function MaintenanceSchedulesPanel({
         <label className="text-xs font-medium text-ink-muted">
           Due state
           <select
-            className="mt-1 w-full rounded border border-line-strong bg-surface px-2 py-2 text-sm text-ink"
+            className="mt-1 w-full surface-field px-2 py-2 text-sm text-ink"
             value={dueFilter}
             onChange={(ev) => setDueFilter(ev.target.value as DueFilter)}
           >
@@ -316,7 +316,7 @@ export function MaintenanceSchedulesPanel({
         <label className="text-xs font-medium text-ink-muted">
           Priority
           <select
-            className="mt-1 w-full rounded border border-line-strong bg-surface px-2 py-2 text-sm text-ink"
+            className="mt-1 w-full surface-field px-2 py-2 text-sm text-ink"
             value={priorityFilter}
             onChange={(ev) =>
               setPriorityFilter(ev.target.value as PriorityFilter)
@@ -332,7 +332,7 @@ export function MaintenanceSchedulesPanel({
         </label>
         <button
           type="button"
-          className="self-end rounded bg-accent px-4 py-2 text-sm font-semibold text-on-accent hover:bg-accent-strong"
+          className="self-end surface-button-primary bg-accent px-4 py-2 text-sm font-semibold text-on-accent hover:bg-accent-strong"
           onClick={openCreate}
         >
           + New Schedule
@@ -342,9 +342,9 @@ export function MaintenanceSchedulesPanel({
       {schedulesQ.isLoading ? (
         <p className="text-sm text-ink-muted">Loading maintenance schedules...</p>
       ) : schedulesQ.isError ? (
-        <p className="text-sm text-critical-ink-soft">Could not load schedules.</p>
+        <p className="text-sm text-critical-ink">Could not load schedules.</p>
       ) : items.length === 0 ? (
-        <p className="rounded border border-dashed border-line-strong bg-surface px-3 py-8 text-center text-sm text-ink-muted">
+        <p className="surface-pressed px-3 py-8 text-center text-sm text-ink-muted">
           No maintenance schedules match this filter.
         </p>
       ) : (
@@ -357,7 +357,7 @@ export function MaintenanceSchedulesPanel({
             return (
               <article
                 key={item.id}
-                className="rounded-lg border border-line bg-surface p-4 shadow-sm"
+                className="surface-raised p-4"
               >
                 <div className="flex items-start justify-between gap-3">
                   <div>
@@ -388,7 +388,7 @@ export function MaintenanceSchedulesPanel({
                   >
                     {WORK_ORDER_PRIORITY_LABELS[item.priority]}
                   </span>
-                  <span className="rounded border border-line bg-surface px-2 py-0.5 text-[10px] font-semibold text-ink-muted">
+                  <span className="surface-raised-sm px-2 py-0.5 text-[10px] font-semibold text-ink-muted">
                     {MAINTENANCE_GENERATION_MODE_LABELS[item.generationMode]}
                   </span>
                 </div>
@@ -411,7 +411,7 @@ export function MaintenanceSchedulesPanel({
                 <div className="mt-4 flex flex-wrap justify-end gap-2">
                   <button
                     type="button"
-                    className="rounded border border-line-strong px-3 py-1.5 text-xs font-semibold text-ink hover:bg-well disabled:cursor-not-allowed disabled:opacity-50"
+                    className="surface-button px-3 py-1.5 text-xs font-semibold disabled:cursor-not-allowed disabled:opacity-50"
                     disabled={updateM.isPending}
                     aria-busy={deactivatingThis}
                     onClick={() =>
@@ -426,7 +426,7 @@ export function MaintenanceSchedulesPanel({
                   </button>
                   <button
                     type="button"
-                    className="rounded bg-accent px-3 py-1.5 text-xs font-semibold text-on-accent hover:bg-accent-strong disabled:cursor-not-allowed disabled:opacity-50"
+                    className="surface-button-primary bg-accent px-3 py-1.5 text-xs font-semibold text-on-accent hover:bg-accent-strong disabled:cursor-not-allowed disabled:opacity-50"
                     disabled={Boolean(item.activeWorkOrderId) || convertM.isPending}
                     aria-busy={generatingThis}
                     onClick={() =>
@@ -450,12 +450,12 @@ export function MaintenanceSchedulesPanel({
       )}
 
       {convertM.isError ? (
-        <p className="text-xs text-critical-ink-soft" role="alert">
+        <p className="text-xs text-critical-ink" role="alert">
           Could not generate work order: {convertM.error.message}
         </p>
       ) : null}
       {updateM.isError ? (
-        <p className="text-xs text-critical-ink-soft" role="alert">
+        <p className="text-xs text-critical-ink" role="alert">
           Could not update schedule: {updateM.error.message}
         </p>
       ) : null}
@@ -467,7 +467,7 @@ export function MaintenanceSchedulesPanel({
           aria-modal="true"
           aria-labelledby="schedule-create-title"
         >
-          <div className="max-h-[90vh] w-full max-w-3xl overflow-auto rounded-lg bg-surface p-6 shadow-xl">
+          <div className="max-h-[90vh] w-full max-w-3xl overflow-auto surface-dialog p-6">
             <h2
               id="schedule-create-title"
               className="font-condensed text-lg font-bold text-ink"
@@ -479,7 +479,7 @@ export function MaintenanceSchedulesPanel({
                 <label className="block text-xs font-medium text-ink-muted">
                   Asset
                   <select
-                    className="mt-1 w-full rounded border border-line-strong bg-surface px-3 py-2 text-sm text-ink"
+                    className="mt-1 w-full surface-field px-3 py-2 text-sm text-ink"
                     value={templateAssetId}
                     onChange={(ev) => setTemplateAssetId(ev.target.value)}
                     required
@@ -497,7 +497,7 @@ export function MaintenanceSchedulesPanel({
                 <label className="block text-xs font-medium text-ink-muted">
                   Category
                   <select
-                    className="mt-1 w-full rounded border border-line-strong bg-surface px-3 py-2 text-sm text-ink"
+                    className="mt-1 w-full surface-field px-3 py-2 text-sm text-ink"
                     value={templateCategory}
                     onChange={(ev) =>
                       setTemplateCategory(
@@ -516,7 +516,7 @@ export function MaintenanceSchedulesPanel({
               <label className="block text-xs font-medium text-ink-muted">
                 Schedule title
                 <input
-                  className="mt-1 w-full rounded border border-line-strong px-3 py-2 text-sm text-ink"
+                  className="mt-1 w-full surface-field px-3 py-2 text-sm text-ink"
                   value={templateTitle}
                   onChange={(ev) => setTemplateTitle(ev.target.value)}
                   maxLength={255}
@@ -526,7 +526,7 @@ export function MaintenanceSchedulesPanel({
               <label className="block text-xs font-medium text-ink-muted">
                 Description
                 <textarea
-                  className="mt-1 min-h-20 w-full rounded border border-line-strong px-3 py-2 text-sm text-ink"
+                  className="mt-1 min-h-20 w-full surface-field px-3 py-2 text-sm text-ink"
                   value={templateDescription}
                   onChange={(ev) => setTemplateDescription(ev.target.value)}
                   maxLength={4000}
@@ -536,7 +536,7 @@ export function MaintenanceSchedulesPanel({
                 <label className="block text-xs font-medium text-ink-muted">
                   Generation mode
                   <select
-                    className="mt-1 w-full rounded border border-line-strong bg-surface px-3 py-2 text-sm text-ink"
+                    className="mt-1 w-full surface-field px-3 py-2 text-sm text-ink"
                     value={generationMode}
                     onChange={(ev) =>
                       setGenerationMode(
@@ -554,7 +554,7 @@ export function MaintenanceSchedulesPanel({
                 <label className="block text-xs font-medium text-ink-muted">
                   Priority
                   <select
-                    className="mt-1 w-full rounded border border-line-strong bg-surface px-3 py-2 text-sm text-ink"
+                    className="mt-1 w-full surface-field px-3 py-2 text-sm text-ink"
                     value={templatePriority}
                     onChange={(ev) =>
                       setTemplatePriority(ev.target.value as WorkOrderPriority)
@@ -571,7 +571,7 @@ export function MaintenanceSchedulesPanel({
                   First due date
                   <input
                     type="date"
-                    className="mt-1 w-full rounded border border-line-strong px-3 py-2 text-sm text-ink"
+                    className="mt-1 w-full surface-field px-3 py-2 text-sm text-ink"
                     value={firstDueDate}
                     onChange={(ev) => setFirstDueDate(ev.target.value)}
                     required
@@ -583,7 +583,7 @@ export function MaintenanceSchedulesPanel({
                     type="number"
                     min={1}
                     max={730}
-                    className="mt-1 w-full rounded border border-line-strong px-3 py-2 text-sm text-ink"
+                    className="mt-1 w-full surface-field px-3 py-2 text-sm text-ink"
                     value={intervalDays}
                     onChange={(ev) => setIntervalDays(Number(ev.target.value))}
                     required
@@ -595,7 +595,7 @@ export function MaintenanceSchedulesPanel({
                     type="number"
                     min={5}
                     max={1440}
-                    className="mt-1 w-full rounded border border-line-strong px-3 py-2 text-sm text-ink"
+                    className="mt-1 w-full surface-field px-3 py-2 text-sm text-ink"
                     value={estimatedMinutes}
                     onChange={(ev) =>
                       setEstimatedMinutes(Number(ev.target.value))
@@ -603,7 +603,7 @@ export function MaintenanceSchedulesPanel({
                     required
                   />
                 </label>
-                <label className="flex items-end gap-2 rounded border border-line px-3 py-2 text-xs font-medium text-ink-muted">
+                <label className="flex items-end gap-2 surface-raised-sm px-3 py-2 text-xs font-medium text-ink-muted">
                   <input
                     type="checkbox"
                     checked={safetyCritical}
@@ -616,7 +616,7 @@ export function MaintenanceSchedulesPanel({
                 <label className="block text-xs font-medium text-ink-muted">
                   Owner team
                   <input
-                    className="mt-1 w-full rounded border border-line-strong px-3 py-2 text-sm text-ink"
+                    className="mt-1 w-full surface-field px-3 py-2 text-sm text-ink"
                     value={ownerTeam}
                     onChange={(ev) => setOwnerTeam(ev.target.value)}
                     maxLength={128}
@@ -625,7 +625,7 @@ export function MaintenanceSchedulesPanel({
                 <label className="block text-xs font-medium text-ink-muted">
                   Vendor / AMC
                   <input
-                    className="mt-1 w-full rounded border border-line-strong px-3 py-2 text-sm text-ink"
+                    className="mt-1 w-full surface-field px-3 py-2 text-sm text-ink"
                     value={vendorName}
                     onChange={(ev) => setVendorName(ev.target.value)}
                     maxLength={128}
@@ -634,7 +634,7 @@ export function MaintenanceSchedulesPanel({
                 <label className="block text-xs font-medium text-ink-muted">
                   Compliance ref
                   <input
-                    className="mt-1 w-full rounded border border-line-strong px-3 py-2 text-sm text-ink"
+                    className="mt-1 w-full surface-field px-3 py-2 text-sm text-ink"
                     value={complianceRef}
                     onChange={(ev) => setComplianceRef(ev.target.value)}
                     maxLength={128}
@@ -644,7 +644,7 @@ export function MaintenanceSchedulesPanel({
               <label className="block text-xs font-medium text-ink-muted">
                 Trigger summary
                 <textarea
-                  className="mt-1 min-h-16 w-full rounded border border-line-strong px-3 py-2 text-sm text-ink"
+                  className="mt-1 min-h-16 w-full surface-field px-3 py-2 text-sm text-ink"
                   value={triggerSummary}
                   onChange={(ev) => setTriggerSummary(ev.target.value)}
                   maxLength={2000}
@@ -652,14 +652,14 @@ export function MaintenanceSchedulesPanel({
                 />
               </label>
               {createError ? (
-                <p className="text-xs text-critical-ink-soft" role="alert">
+                <p className="text-xs text-critical-ink" role="alert">
                   {createError}
                 </p>
               ) : null}
               <div className="flex justify-end gap-2 pt-2">
                 <button
                   type="button"
-                  className="rounded border border-line-strong px-3 py-2 text-sm font-semibold text-ink hover:bg-well"
+                  className="surface-button px-3 py-2 text-sm font-semibold"
                   onClick={() => {
                     setCreateOpen(false);
                     setCreateError(null);
@@ -669,7 +669,7 @@ export function MaintenanceSchedulesPanel({
                 </button>
                 <button
                   type="submit"
-                  className="rounded bg-accent px-4 py-2 text-sm font-semibold text-on-accent hover:bg-accent-strong disabled:cursor-not-allowed disabled:opacity-50"
+                  className="surface-button-primary bg-accent px-4 py-2 text-sm font-semibold text-on-accent hover:bg-accent-strong disabled:cursor-not-allowed disabled:opacity-50"
                   disabled={createM.isPending || filteredAssetOptions.length === 0}
                   aria-busy={createM.isPending}
                 >

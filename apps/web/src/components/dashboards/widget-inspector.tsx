@@ -126,7 +126,7 @@ export function WidgetInspector({ row, problems, role, organizationId, onChange,
   }
 
   return (
-    <section className="space-y-3 rounded border border-line p-3">
+    <section className="surface-raised-sm space-y-3 p-3">
       <div className="flex items-center justify-between">
         <span className="text-[11px] font-semibold uppercase tracking-wide text-ink-muted">
           {WIDGET_CATALOG[row.widgetType].label}
@@ -134,7 +134,7 @@ export function WidgetInspector({ row, problems, role, organizationId, onChange,
         <button
           type="button"
           onClick={onRemove}
-          className="rounded border border-critical-line px-2 py-0.5 text-[11px] font-semibold text-critical-ink"
+          className="surface-button border-critical-line px-2 py-0.5 text-[11px] text-critical-ink"
         >
           Remove
         </button>
@@ -147,7 +147,7 @@ export function WidgetInspector({ row, problems, role, organizationId, onChange,
           maxLength={MAX_WIDGET_TITLE_LENGTH}
           placeholder={WIDGET_CATALOG[row.widgetType].label}
           onChange={(event) => onChange({ title: event.target.value })}
-          className="w-full rounded border border-line px-2 py-1.5 text-xs"
+          className="surface-field w-full px-2 py-1.5 text-xs"
         />
       </Field>
 
@@ -159,7 +159,7 @@ export function WidgetInspector({ row, problems, role, organizationId, onChange,
             max={DASHBOARD_GRID.columns - 1}
             value={row.gridX}
             onChange={(event) => onChange({ gridX: Number(event.target.value) })}
-            className="w-full rounded border border-line px-2 py-1.5 text-xs"
+            className="surface-field w-full px-2 py-1.5 text-xs"
           />
         </Field>
         <Field label="gridY" error={problemFor("gridY")}>
@@ -168,7 +168,7 @@ export function WidgetInspector({ row, problems, role, organizationId, onChange,
             min={0}
             value={row.gridY}
             onChange={(event) => onChange({ gridY: Number(event.target.value) })}
-            className="w-full rounded border border-line px-2 py-1.5 text-xs"
+            className="surface-field w-full px-2 py-1.5 text-xs"
           />
         </Field>
         <Field label="gridW" error={problemFor("gridW")}>
@@ -178,7 +178,7 @@ export function WidgetInspector({ row, problems, role, organizationId, onChange,
             max={DASHBOARD_GRID.columns}
             value={row.gridW}
             onChange={(event) => onChange({ gridW: Number(event.target.value) })}
-            className="w-full rounded border border-line px-2 py-1.5 text-xs"
+            className="surface-field w-full px-2 py-1.5 text-xs"
           />
         </Field>
         <Field label="gridH" error={problemFor("gridH")}>
@@ -188,7 +188,7 @@ export function WidgetInspector({ row, problems, role, organizationId, onChange,
             max={DASHBOARD_GRID.maxWidgetH}
             value={row.gridH}
             onChange={(event) => onChange({ gridH: Number(event.target.value) })}
-            className="w-full rounded border border-line px-2 py-1.5 text-xs"
+            className="surface-field w-full px-2 py-1.5 text-xs"
           />
         </Field>
       </div>
@@ -206,7 +206,7 @@ export function WidgetInspector({ row, problems, role, organizationId, onChange,
               value={row.config.unit}
               placeholder="none"
               onChange={(event) => updateConfig({ unit: event.target.value })}
-              className="w-full rounded border border-line px-2 py-1.5 text-xs"
+              className="surface-field w-full px-2 py-1.5 text-xs"
             />
           </Field>
           <Field label="Decimals" error={problemFor("decimals")}>
@@ -216,7 +216,7 @@ export function WidgetInspector({ row, problems, role, organizationId, onChange,
               value={row.config.decimals}
               placeholder="not set"
               onChange={(event) => updateConfig({ decimals: event.target.value })}
-              className="w-full rounded border border-line px-2 py-1.5 text-xs"
+              className="surface-field w-full px-2 py-1.5 text-xs"
             />
           </Field>
         </div>
@@ -227,7 +227,7 @@ export function WidgetInspector({ row, problems, role, organizationId, onChange,
           <select
             value={mimicSource}
             onChange={(event) => updateConfig({ mimicSource: event.target.value as "preset" | "layout" })}
-            className="w-full rounded border border-line px-2 py-1.5 text-xs"
+            className="surface-field w-full px-2 py-1.5 text-xs"
           >
             <option value="preset">Preset</option>
             <option value="layout">Layout</option>
@@ -240,7 +240,7 @@ export function WidgetInspector({ row, problems, role, organizationId, onChange,
           <select
             value={row.config.mimicPreset ?? ""}
             onChange={(event) => updateConfig({ mimicPreset: event.target.value as MimicPreset })}
-            className="w-full rounded border border-line px-2 py-1.5 text-xs"
+            className="surface-field w-full px-2 py-1.5 text-xs"
           >
             {row.config.mimicPreset === undefined ? <option value="">Choose a plant drawing</option> : null}
             {mimicPresetSchema.options.map((preset) => (
@@ -261,7 +261,7 @@ export function WidgetInspector({ row, problems, role, organizationId, onChange,
           <select
             value={row.config.mimicLayoutId ?? ""}
             onChange={(event) => updateConfig({ mimicLayoutId: event.target.value || undefined })}
-            className="w-full rounded border border-line px-2 py-1.5 text-xs"
+            className="surface-field w-full px-2 py-1.5 text-xs"
           >
             {storedLayoutId === undefined ? <option value="">Choose a layout</option> : null}
             {/* A stored id the list does not hold (still loading, failed, or not this
@@ -287,7 +287,7 @@ export function WidgetInspector({ row, problems, role, organizationId, onChange,
                 inputMode="decimal"
                 value={row.config.min}
                 onChange={(event) => updateConfig({ min: event.target.value })}
-                className="w-full rounded border border-line px-2 py-1.5 text-xs"
+                className="surface-field w-full px-2 py-1.5 text-xs"
               />
             </Field>
             <Field label="Maximum" error={problemFor("max")}>
@@ -296,7 +296,7 @@ export function WidgetInspector({ row, problems, role, organizationId, onChange,
                 inputMode="decimal"
                 value={row.config.max}
                 onChange={(event) => updateConfig({ max: event.target.value })}
-                className="w-full rounded border border-line px-2 py-1.5 text-xs"
+                className="surface-field w-full px-2 py-1.5 text-xs"
               />
             </Field>
           </div>
@@ -316,7 +316,7 @@ export function WidgetInspector({ row, problems, role, organizationId, onChange,
                         ),
                       })
                     }
-                    className="w-24 rounded border border-line px-2 py-1 text-xs"
+                    className="surface-field w-24 px-2 py-1 text-xs"
                   />
                   <select
                     value={threshold.tone}
@@ -329,7 +329,7 @@ export function WidgetInspector({ row, problems, role, organizationId, onChange,
                         ),
                       })
                     }
-                    className="rounded border border-line px-2 py-1 text-xs"
+                    className="surface-field px-2 py-1 text-xs"
                   >
                     {WIDGET_TONES.map((tone) => (
                       <option key={tone} value={tone}>
@@ -344,7 +344,7 @@ export function WidgetInspector({ row, problems, role, organizationId, onChange,
                         thresholds: row.config.thresholds.filter((_, position) => position !== index),
                       })
                     }
-                    className="rounded border border-critical-line px-2 py-0.5 text-[11px] font-semibold text-critical-ink"
+                    className="surface-button border-critical-line px-2 py-0.5 text-[11px] text-critical-ink"
                   >
                     Remove
                   </button>
@@ -355,7 +355,7 @@ export function WidgetInspector({ row, problems, role, organizationId, onChange,
                 onClick={() =>
                   updateConfig({ thresholds: [...row.config.thresholds, { value: "", tone: "ok" }] })
                 }
-                className="rounded border border-line px-2 py-1 text-[11px] font-semibold text-ink"
+                className="surface-button px-2 py-1 text-[11px]"
               >
                 Add a threshold band
               </button>
@@ -372,14 +372,14 @@ export function WidgetInspector({ row, problems, role, organizationId, onChange,
               inputMode="decimal"
               value={row.config.fullScale}
               onChange={(event) => updateConfig({ fullScale: event.target.value })}
-              className="w-full rounded border border-line px-2 py-1.5 text-xs"
+              className="surface-field w-full px-2 py-1.5 text-xs"
             />
           </Field>
           <Field label="Fill tone">
             <select
               value={row.config.fillTone}
               onChange={(event) => updateConfig({ fillTone: event.target.value as WidgetConfigRow["fillTone"] })}
-              className="w-full rounded border border-line px-2 py-1.5 text-xs"
+              className="surface-field w-full px-2 py-1.5 text-xs"
             >
               <option value="">not set</option>
               {WIDGET_TONES.map((tone) => (
@@ -417,7 +417,7 @@ export function WidgetInspector({ row, problems, role, organizationId, onChange,
                 onChange={(event) =>
                   updateConfig({ aggregate: event.target.value as WidgetConfigRow["aggregate"] })
                 }
-                className="w-full rounded border border-line px-2 py-1.5 text-xs"
+                className="surface-field w-full px-2 py-1.5 text-xs"
               >
                 <option value="">Latest reading</option>
                 {AGGREGATE_FUNCTIONS.map((fn) => (
@@ -435,7 +435,7 @@ export function WidgetInspector({ row, problems, role, organizationId, onChange,
                   value={row.config.windowMinutes}
                   placeholder="1440 (default)"
                   onChange={(event) => updateConfig({ windowMinutes: event.target.value })}
-                  className="w-full rounded border border-line px-2 py-1.5 text-xs"
+                  className="surface-field w-full px-2 py-1.5 text-xs"
                 />
               </Field>
             ) : null}
@@ -459,7 +459,7 @@ export function WidgetInspector({ row, problems, role, organizationId, onChange,
                 onChange={(event) =>
                   updateConfig({ icon: event.target.value as WidgetConfigRow["icon"] })
                 }
-                className="w-full rounded border border-line px-2 py-1.5 text-xs"
+                className="surface-field w-full px-2 py-1.5 text-xs"
               >
                 <option value="">No icon</option>
                 {WIDGET_ICONS.map((icon) => (
@@ -475,7 +475,7 @@ export function WidgetInspector({ row, problems, role, organizationId, onChange,
                 onChange={(event) =>
                   updateConfig({ tone: event.target.value as WidgetConfigRow["tone"] })
                 }
-                className="w-full rounded border border-line px-2 py-1.5 text-xs"
+                className="surface-field w-full px-2 py-1.5 text-xs"
               >
                 <option value="">Default</option>
                 {WIDGET_TONES.map((tone) => (
@@ -496,7 +496,7 @@ export function WidgetInspector({ row, problems, role, organizationId, onChange,
                 value={row.config.hint}
                 placeholder="e.g. Since midnight"
                 onChange={(event) => updateConfig({ hint: event.target.value })}
-                className="w-full rounded border border-line px-2 py-1.5 text-xs"
+                className="surface-field w-full px-2 py-1.5 text-xs"
               />
             </Field>
           )}
@@ -516,7 +516,7 @@ export function WidgetInspector({ row, problems, role, organizationId, onChange,
                 value={row.config.windowMinutes}
                 placeholder="1440 (default)"
                 onChange={(event) => updateConfig({ windowMinutes: event.target.value })}
-                className="w-full rounded border border-line px-2 py-1.5 text-xs"
+                className="surface-field w-full px-2 py-1.5 text-xs"
               />
             </Field>
             <Field label="Y-axis label" error={problemFor("yAxisLabel")}>
@@ -524,7 +524,7 @@ export function WidgetInspector({ row, problems, role, organizationId, onChange,
                 type="text"
                 value={row.config.yAxisLabel}
                 onChange={(event) => updateConfig({ yAxisLabel: event.target.value })}
-                className="w-full rounded border border-line px-2 py-1.5 text-xs"
+                className="surface-field w-full px-2 py-1.5 text-xs"
               />
             </Field>
           </div>
@@ -536,7 +536,7 @@ export function WidgetInspector({ row, problems, role, organizationId, onChange,
                   chartAggregate: event.target.value as WidgetConfigRow["chartAggregate"],
                 })
               }
-              className="w-full rounded border border-line px-2 py-1.5 text-xs"
+              className="surface-field w-full px-2 py-1.5 text-xs"
             >
               <option value="">Every reading</option>
               {AGGREGATE_FUNCTIONS.map((fn) => (
@@ -576,7 +576,7 @@ export function WidgetInspector({ row, problems, role, organizationId, onChange,
             {row.points.map((point, index) => (
               <li
                 key={`${point.pointId}-${index}`}
-                className="flex items-center justify-between rounded border border-well-deep px-2 py-1 text-xs"
+                className="surface-raised-sm flex items-center justify-between px-2 py-1 text-xs"
               >
                 <span>{point.label}</span>
                 <button type="button" onClick={() => removePoint(index)} aria-label={`Remove ${point.label}`} className="text-critical-ink">
@@ -616,7 +616,7 @@ export function WidgetInspector({ row, problems, role, organizationId, onChange,
             {row.sources.map((source, index) => (
               <li
                 key={`${source.catalogKey}-${index}`}
-                className="flex items-center justify-between rounded border border-well-deep px-2 py-1 text-xs"
+                className="surface-raised-sm flex items-center justify-between px-2 py-1 text-xs"
               >
                 <span>{metricCatalogLabel(source.catalogKey)}</span>
                 <button

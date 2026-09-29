@@ -92,7 +92,7 @@ export function HealthSummaryDonut({ title = "Asset Health", summary }: HealthSu
   );
 
   return (
-    <div className="flex h-full flex-col rounded-lg border border-line bg-surface p-3 shadow-sm">
+    <div className="flex h-full flex-col surface-raised p-3">
       <h3 className="mb-2 text-[11px] font-medium uppercase tracking-wide text-ink-muted">{title}</h3>
       {slices.length === 0 ? (
         <div

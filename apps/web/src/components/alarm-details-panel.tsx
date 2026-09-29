@@ -186,7 +186,7 @@ export function AlarmDetailsPanel({ alarmId, readOnly, onClose }: AlarmDetailsPa
       aria-modal="true"
       aria-labelledby="alarm-details-title"
     >
-      <div className="w-full max-w-lg max-h-[90vh] overflow-y-auto rounded-lg bg-surface p-6 shadow-xl">
+      <div className="w-full max-w-lg max-h-[90vh] overflow-y-auto surface-dialog p-6">
         <div className="flex items-start justify-between">
           <h2 id="alarm-details-title" className="font-condensed text-lg font-bold">
             Alarm details
@@ -202,7 +202,7 @@ export function AlarmDetailsPanel({ alarmId, readOnly, onClose }: AlarmDetailsPa
 
         {detailsQ.isLoading ? <p className="mt-4 text-sm text-ink-muted">Loading…</p> : null}
         {detailsQ.isError ? (
-          <p className="mt-4 text-sm text-critical-ink-soft" role="alert">
+          <p className="mt-4 text-sm text-critical-ink" role="alert">
             {(detailsQ.error as Error).message}
           </p>
         ) : null}
@@ -246,7 +246,7 @@ export function AlarmDetailsPanel({ alarmId, readOnly, onClose }: AlarmDetailsPa
             </div>
 
             {pairing ? (
-              <div className="rounded border border-line bg-well px-3 py-2 text-xs">
+              <div className="surface-pressed px-3 py-2 text-xs">
                 <span className="font-semibold text-ink">Current value</span>{" "}
                 <span className="font-mono">{pairing.current}</span>
                 <span className="mx-2 text-ink-muted">vs threshold</span>
@@ -365,7 +365,7 @@ export function AlarmDetailsPanel({ alarmId, readOnly, onClose }: AlarmDetailsPa
                   </label>
                   <textarea
                     id="root-cause"
-                    className="mt-1 w-full rounded border border-line-strong px-3 py-2 text-sm"
+                    className="mt-1 surface-field w-full px-3 py-2 text-sm"
                     rows={2}
                     value={form.rootCause}
                     onChange={(ev) => setForm((f) => ({ ...f, rootCause: ev.target.value }))}
@@ -377,7 +377,7 @@ export function AlarmDetailsPanel({ alarmId, readOnly, onClose }: AlarmDetailsPa
                   </label>
                   <textarea
                     id="impact"
-                    className="mt-1 w-full rounded border border-line-strong px-3 py-2 text-sm"
+                    className="mt-1 surface-field w-full px-3 py-2 text-sm"
                     rows={2}
                     value={form.impact}
                     onChange={(ev) => setForm((f) => ({ ...f, impact: ev.target.value }))}
@@ -389,7 +389,7 @@ export function AlarmDetailsPanel({ alarmId, readOnly, onClose }: AlarmDetailsPa
                   </label>
                   <textarea
                     id="corrective-actions"
-                    className="mt-1 w-full rounded border border-line-strong px-3 py-2 text-sm"
+                    className="mt-1 surface-field w-full px-3 py-2 text-sm"
                     rows={2}
                     value={form.correctiveActions}
                     onChange={(ev) => setForm((f) => ({ ...f, correctiveActions: ev.target.value }))}
@@ -402,7 +402,7 @@ export function AlarmDetailsPanel({ alarmId, readOnly, onClose }: AlarmDetailsPa
                     </label>
                     <textarea
                       id="energy-impact"
-                      className="mt-1 w-full rounded border border-line-strong px-3 py-2 text-sm"
+                      className="mt-1 surface-field w-full px-3 py-2 text-sm"
                       rows={2}
                       value={form.energyImpact}
                       onChange={(ev) => setForm((f) => ({ ...f, energyImpact: ev.target.value }))}
@@ -414,7 +414,7 @@ export function AlarmDetailsPanel({ alarmId, readOnly, onClose }: AlarmDetailsPa
                     </label>
                     <textarea
                       id="water-impact"
-                      className="mt-1 w-full rounded border border-line-strong px-3 py-2 text-sm"
+                      className="mt-1 surface-field w-full px-3 py-2 text-sm"
                       rows={2}
                       value={form.waterImpact}
                       onChange={(ev) => setForm((f) => ({ ...f, waterImpact: ev.target.value }))}
@@ -426,7 +426,7 @@ export function AlarmDetailsPanel({ alarmId, readOnly, onClose }: AlarmDetailsPa
                     </label>
                     <textarea
                       id="production-impact"
-                      className="mt-1 w-full rounded border border-line-strong px-3 py-2 text-sm"
+                      className="mt-1 surface-field w-full px-3 py-2 text-sm"
                       rows={2}
                       value={form.productionImpact}
                       onChange={(ev) => setForm((f) => ({ ...f, productionImpact: ev.target.value }))}
@@ -439,7 +439,7 @@ export function AlarmDetailsPanel({ alarmId, readOnly, onClose }: AlarmDetailsPa
                   </label>
                   <select
                     id="skill-code"
-                    className="mt-1 w-full rounded border border-line-strong px-3 py-2 text-sm"
+                    className="mt-1 surface-field w-full px-3 py-2 text-sm"
                     value={form.skillCode}
                     onChange={(ev) => setForm((f) => ({ ...f, skillCode: ev.target.value }))}
                   >
@@ -458,7 +458,7 @@ export function AlarmDetailsPanel({ alarmId, readOnly, onClose }: AlarmDetailsPa
                   <input
                     id="etr"
                     type="datetime-local"
-                    className="mt-1 w-full rounded border border-line-strong px-3 py-2 text-sm"
+                    className="mt-1 surface-field w-full px-3 py-2 text-sm"
                     value={form.etrAt}
                     onChange={(ev) => setForm((f) => ({ ...f, etrAt: ev.target.value }))}
                   />
@@ -474,12 +474,12 @@ export function AlarmDetailsPanel({ alarmId, readOnly, onClose }: AlarmDetailsPa
                         return (
                           <span
                             key={id}
-                            className="inline-flex items-center gap-1 rounded-full border border-line-strong bg-well px-2 py-0.5 text-xs"
+                            className="inline-flex items-center gap-1 surface-pressed-sm rounded-full px-2 py-0.5 text-xs"
                           >
                             {asset?.code ?? id}
                             <button
                               type="button"
-                              className="text-ink-muted hover:text-critical-ink-soft"
+                              className="text-ink-muted hover:text-critical-ink"
                               aria-label={`Remove ${asset?.code ?? id}`}
                               onClick={() =>
                                 setForm((f) => ({
@@ -500,12 +500,12 @@ export function AlarmDetailsPanel({ alarmId, readOnly, onClose }: AlarmDetailsPa
                   <input
                     id="affected-assets-search"
                     type="text"
-                    className="mt-2 w-full rounded border border-line-strong px-3 py-2 text-sm"
+                    className="mt-2 surface-field w-full px-3 py-2 text-sm"
                     placeholder="Search assets by code, name or site…"
                     value={assetQuery}
                     onChange={(ev) => setAssetQuery(ev.target.value)}
                   />
-                  <div className="mt-1 max-h-32 overflow-y-auto rounded border border-line">
+                  <div className="mt-1 max-h-32 overflow-y-auto surface-pressed">
                     {assetsQ.isLoading ? (
                       <p className="px-2 py-1 text-xs text-ink-muted">Loading assets…</p>
                     ) : (
@@ -548,14 +548,14 @@ export function AlarmDetailsPanel({ alarmId, readOnly, onClose }: AlarmDetailsPa
                   </div>
                 </div>
                 {saveError ? (
-                  <p className="text-xs text-critical-ink-soft" role="alert">
+                  <p className="text-xs text-critical-ink" role="alert">
                     {saveError}
                   </p>
                 ) : null}
                 <div className="flex justify-end gap-2">
                   <button
                     type="button"
-                    className="rounded px-3 py-2 text-sm text-ink-muted hover:bg-well-deep"
+                    className="surface-button px-3 py-2"
                     onClick={onClose}
                   >
                     Cancel
@@ -564,7 +564,7 @@ export function AlarmDetailsPanel({ alarmId, readOnly, onClose }: AlarmDetailsPa
                     type="submit"
                     disabled={saveM.isPending}
                     aria-busy={saveM.isPending}
-                    className="rounded bg-accent px-4 py-2 text-sm font-semibold text-on-accent disabled:opacity-50"
+                    className="surface-button-primary bg-accent px-4 py-2 text-sm font-semibold text-on-accent disabled:opacity-50"
                   >
                     {saveM.isPending ? "Saving…" : "Save"}
                   </button>
