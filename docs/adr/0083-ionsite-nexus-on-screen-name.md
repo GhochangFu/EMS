@@ -40,6 +40,9 @@ not as a logo that could be lifted.
    The spelling is exactly `IONSiTE NEXUS` (lower-case *i*). "Powered by
    Euphoria Infotech India Limited" stays, and so does every existing mention
    of Ion Exchange (India) Ltd. as the client. TRINETRA does not co-present.
+   One owner-ruled exception at the plan gate: the login page's decorative role
+   pill "TRINETRA Admin" becomes **"NEXUS Admin"** — a role label, not the
+   product name, so the exact-spelling rule does not apply to it.
 2. **The wordmark is text, not an image.** "IONSiTE" in bold in the ink of its
    surface (`on-dark` on `chrome`), "NEXUS" in `accent` — modelled on the SOW
    screens' two-line lettering, drawn from the ADR 0078 roles so it follows the
@@ -50,7 +53,9 @@ not as a logo that could be lifted.
 3. **The tagline is the client's own descriptor**: *Integrated Building,
    Energy, Water & Utility Management Platform* replaces "Intelligent Building
    Management System" in the header, and the login headline is built from the
-   same words.
+   same words. At the plan gate the owner kept the headline's old tail:
+   *Integrated Building, Energy, Water & Utility Management · Smart insight,
+   always on.*
 4. **Scope: all user-visible text.**
    - `apps/web` — the header, the footer, the login page, the auth callback
      page, the dashboard title, and the document `<title>` in
