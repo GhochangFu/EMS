@@ -25,7 +25,7 @@ import { repoRoot } from "./support/source-scan";
  *    a `surface-*` token with the colour utilities it replaces; every used `surface-*` class has a
  *    neumorphic and a flat rule, every defined one is used; the chrome carries none.
  *
- * `V1` (the spelled-out card pattern) is in `f3.71-surface-card-ratchet.test.ts`.
+ * `V1` (no spelled-out card or field is left) is in `f3.71-surface-card-ratchet.test.ts`.
  */
 
 const INDEX_HTML = readFileSync(join(repoRoot, "apps/web/index.html"), "utf8");
@@ -256,26 +256,6 @@ function definedClasses(): { base: Set<string>; flat: Set<string> } {
   return { base, flat };
 }
 
-/**
- * The classes the foundation defines for the sweeps to adopt (plan §5): no call site uses them
- * until a sweep does. Each merged sweep deletes the names it now uses — the second V5 case fails
- * when a used name stays here — and the list is empty, then deleted, at U-close.
- */
-const SWEEP_PENDING = new Set([
-  "surface-button-primary",
-  "surface-dialog",
-  "surface-field",
-  "surface-pressed",
-  "surface-pressed-sm",
-  "surface-raised-sm",
-  "surface-segment",
-  "surface-segment-item",
-  "surface-segment-item-selected",
-  "surface-tab",
-  "surface-tab-selected",
-  "surface-table",
-]);
-
 function usedClasses(): Set<string> {
   return new Set(classTokenSets().flatMap(({ tokens }) => tokens.filter((t) => SURFACE_TOKEN.test(t))));
 }
@@ -308,14 +288,7 @@ describe("F3.71 the surface vocabulary", () => {
   it("V5 every surface-* class index.css defines is used in the tree", () => {
     const { base, flat } = definedClasses();
     const used = usedClasses();
-    expect(
-      [...new Set([...base, ...flat])].filter((c) => !used.has(c) && !SWEEP_PENDING.has(c)).sort(),
-    ).toEqual([]);
-  });
-
-  it("V5 every SWEEP_PENDING class is still unused (the list only shrinks)", () => {
-    const used = usedClasses();
-    expect([...SWEEP_PENDING].filter((c) => used.has(c)).sort()).toEqual([]);
+    expect([...new Set([...base, ...flat])].filter((c) => !used.has(c)).sort()).toEqual([]);
   });
 
   it("V5 the vocabulary is not empty (the scan is live)", () => {
