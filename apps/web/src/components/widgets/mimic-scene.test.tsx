@@ -7,7 +7,9 @@ import {
   drawingIsNamedByTheLayout,
   drawsEveryUnitWithItsSymbol,
   drawsPanelLabelAndPipes,
+  everyGlyphNamesNoColour,
   everySymbolDrawsAGlyph,
+  noTwoSymbolsDrawTheSameMarkup,
   passiveUnitDrawsNoStatus,
   resolvedUnitShowsItsAsset,
   roledUnitWithoutEntryIsNotAssigned,
@@ -49,5 +51,11 @@ describe("F3.32c U4 — MimicScene, a stored layout", () => {
   });
   it("S9 every shared symbol draws a non-empty glyph", () => {
     everySymbolDrawsAGlyph();
+  });
+  it("S10 no two symbols draw the same markup", () => {
+    noTwoSymbolsDrawTheSameMarkup();
+  });
+  it("S11 every glyph names no colour", () => {
+    everyGlyphNamesNoColour();
   });
 });

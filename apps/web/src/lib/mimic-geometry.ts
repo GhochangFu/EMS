@@ -5,6 +5,7 @@ import {
   type MimicLayoutNodeDto,
   type MimicPanelTone,
   type MimicPreset,
+  type MimicPresetDef,
   type MimicSymbol,
 } from "@bms/shared";
 
@@ -170,10 +171,17 @@ function viewBoxSize(viewBox: string): { width: number; height: number } {
   return { width, height };
 }
 
+/**
+ * A preset's drawing. `sink` is optional on both the preset and its layout (`F3.32d`, ADR 0082
+ * decision 3): a preset without one draws no sink and widens no panel, and `water_train`, which
+ * has one, draws exactly as before.
+ */
 function buildPresetGeometry(preset: MimicPreset): MimicGeometry {
-  const def = MIMIC_PRESETS[preset];
+  const def: MimicPresetDef = MIMIC_PRESETS[preset];
   const layout = MIMIC_LAYOUTS[preset];
   const at = layout.nodes as Readonly<Record<string, MimicPoint>>;
+  const sinkAt = def.sink !== undefined && layout.sink !== undefined ? layout.sink : null;
+  const sinkFromKey = sinkAt === null ? null : (def.sink?.from ?? null);
   const glyphs = MIMIC_NODE_GLYPHS[preset] as Readonly<Record<string, MimicSymbol>>;
   const presetPanels = MIMIC_PANELS[preset];
   const panelOf = new Map<string, { key: string; tone: MimicPanelTone }>(
@@ -202,7 +210,7 @@ function buildPresetGeometry(preset: MimicPreset): MimicGeometry {
   const panels = presetPanels.flatMap((p): MimicGeometryPanel[] => {
     const box = mimicPanelBox(
       p.nodes.flatMap((k) => (at[k] === undefined ? [] : [at[k] as MimicPoint])),
-      (p.nodes as readonly string[]).includes(def.sink.from) ? layout.sink : null,
+      sinkFromKey !== null && (p.nodes as readonly string[]).includes(sinkFromKey) ? sinkAt : null,
     );
     return box === null ? [] : [{ key: p.key, label: p.label, tone: p.tone, box }];
   });
@@ -220,11 +228,11 @@ function buildPresetGeometry(preset: MimicPreset): MimicGeometry {
     return mid === null ? [] : [{ from: p.from, to: p.to, at: mid }];
   });
 
-  const sinkFrom = at[def.sink.from];
+  const sinkFrom = sinkFromKey === null ? undefined : at[sinkFromKey];
   const sink: MimicGeometrySink | null =
-    sinkFrom === undefined
+    sinkFrom === undefined || sinkAt === null || def.sink === undefined
       ? null
-      : { from: def.sink.from, label: def.sink.label, at: layout.sink, d: sinkPath(sinkFrom, layout.sink) };
+      : { from: def.sink.from, label: def.sink.label, at: sinkAt, d: sinkPath(sinkFrom, sinkAt) };
 
   return {
     label: def.label,

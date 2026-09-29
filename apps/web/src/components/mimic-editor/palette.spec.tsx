@@ -1,11 +1,15 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { mimicSymbolSchema } from "@bms/shared/contracts";
 import { expect, vi } from "vitest";
 
+import { MIMIC_SYMBOL_GROUPS, symbolLabel } from "../../lib/mimic-symbols";
 import { MimicEditorPalette, type MimicEditorPaletteProps } from "./palette";
 
-/** `F3.32c` U6b — the editor palette. `palette.test.tsx` is the Vitest entry. */
+/**
+ * `F3.32c` U6b, `F3.32d` U3 (ADR 0082 decision 2) — the editor palette, now grouped into eight
+ * headings over 29 symbols. `palette.test.tsx` is the Vitest entry.
+ */
 
 function renderPalette(overrides: Partial<MimicEditorPaletteProps> = {}): MimicEditorPaletteProps {
   const props: MimicEditorPaletteProps = {
@@ -26,18 +30,50 @@ function renderPalette(overrides: Partial<MimicEditorPaletteProps> = {}): MimicE
   return props;
 }
 
-/** P1 — one glyph button per symbol, in the contract's order. */
-export function offersTheTwelveSymbolsInOrder(): void {
+/** P1 — one glyph button per symbol, in group order (General last), named by `symbolLabel`. */
+export function offersTheTwentyNineSymbolsInGroupOrder(): void {
   renderPalette();
   const names = screen.getAllByRole("button", { name: /^Add .* unit$/ }).map((b) => b.getAttribute("aria-label"));
-  expect(names).toEqual(mimicSymbolSchema.options.map((s) => `Add ${s.charAt(0).toUpperCase()}${s.slice(1)} unit`));
+  const expected = MIMIC_SYMBOL_GROUPS.flatMap((group) => group.symbols.map((s) => `Add ${symbolLabel(s)} unit`));
+  expect(names).toEqual(expected);
+  expect(names).toHaveLength(mimicSymbolSchema.options.length);
 }
 
-/** P2 — each glyph button draws its glyph. */
-export function eachSymbolButtonDrawsItsGlyph(): void {
+/** P1b — eight group headings, in `MIMIC_SYMBOL_GROUPS` order, General last. */
+export function offersEightGroupHeadingsInOrder(): void {
+  renderPalette();
+  const headings = screen.getAllByTestId("mimic-palette-group").map((section) => within(section).getByRole("heading").textContent);
+  expect(headings).toEqual(MIMIC_SYMBOL_GROUPS.map((group) => group.label));
+  expect(headings.at(-1)).toBe("General");
+}
+
+/** P1c — every symbol appears exactly once across the groups. */
+export function everySymbolAppearsExactlyOnce(): void {
+  renderPalette();
+  const names = screen.getAllByRole("button", { name: /^Add .* unit$/ }).map((b) => b.getAttribute("aria-label"));
+  expect(new Set(names).size).toBe(names.length);
+  expect(names.length).toBe(mimicSymbolSchema.options.length);
+}
+
+/** P2 — each glyph button draws its glyph, in group order. */
+export function eachSymbolButtonDrawsItsGlyphInGroupOrder(): void {
   renderPalette();
   const glyphs = screen.getAllByTestId("mimic-glyph").map((g) => g.getAttribute("data-glyph"));
-  expect(glyphs).toEqual([...mimicSymbolSchema.options]);
+  expect(glyphs).toEqual(MIMIC_SYMBOL_GROUPS.flatMap((group) => [...group.symbols]));
+}
+
+/** P2b — Transformer adds a unit of that symbol (ADR 0082 decision 1, the new Electrical group). */
+export async function transformerAddsThatUnit(): Promise<void> {
+  const props = renderPalette();
+  await userEvent.click(screen.getByRole("button", { name: "Add Transformer unit" }));
+  expect(props.onAddUnit).toHaveBeenCalledWith("transformer");
+}
+
+/** P2c — UPS adds a unit of that symbol (ADR 0082 decision 1, the new IT and UPS group). */
+export async function upsAddsThatUnit(): Promise<void> {
+  const props = renderPalette();
+  await userEvent.click(screen.getByRole("button", { name: "Add UPS unit" }));
+  expect(props.onAddUnit).toHaveBeenCalledWith("ups");
 }
 
 /** P3 — a glyph button adds a unit of that symbol. */

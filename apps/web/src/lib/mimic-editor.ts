@@ -6,11 +6,13 @@ import {
   type MimicLayoutPipeDto,
   type MimicPanelTone,
   type MimicPreset,
+  type MimicPresetDef,
   type MimicSymbol,
 } from "@bms/shared";
 
 import type { MimicLayoutWriteBody, MimicLayoutWriteNode } from "../api/mimic-layouts";
 import { MIMIC_LAYOUTS, MIMIC_NODE_GLYPHS, MIMIC_NODE_SIZE, MIMIC_PANELS } from "./mimic";
+import { symbolLabel } from "./mimic-symbols";
 
 /**
  * `F3.32c` U6 / ADR 0081 decision 7 — the mimic layout editor's state, as a pure reducer with
@@ -146,10 +148,8 @@ export function nextNodeKey(nodes: readonly EditorNode[], prefix: string): strin
   return `${prefix}_${max + 1}`;
 }
 
-/** A symbol's default label: `clarifier` → `Clarifier`. */
-export function symbolLabel(symbol: MimicSymbol): string {
-  return `${symbol.charAt(0).toUpperCase()}${symbol.slice(1)}`;
-}
+/** A symbol's label — the table in `mimic-symbols.ts` (ADR 0082), re-exported for existing callers. */
+export { symbolLabel };
 
 function boxOf(node: EditorNode): Box {
   return { x: node.x, y: node.y, w: node.w, h: node.h };
@@ -426,26 +426,35 @@ function panelAround(members: readonly Box[]): Box {
 }
 
 /**
- * "Start from Water train" (ADR 0081 decision 4): the preset's eight roled units at the web's
- * coordinates rounded to the grid, the Discharge sink as a passive unit (`roleCode: null`, plan
- * D6) one unit-pitch left of ETP on ETP's row, the three panels drawn round their members, and
- * the preset's seven pipes plus ETP → Discharge.
+ * "Start from" a preset (ADR 0081 decision 4, generalised by ADR 0082 decision 5 to all seven
+ * presets): the preset's roled units at the web's coordinates rounded to the grid, the panels
+ * drawn round their members, and the preset's pipes.
  *
- * The sink is not placed at its preset tip (px 450): a unit-sized box there overlaps ETP.
+ * A preset with a sink (`water_train` alone) adds it as a passive unit (`roleCode: null`, plan
+ * D6) one unit-pitch left of its upstream unit on that unit's row, inside that unit's panel, and
+ * one more pipe into it. The sink is not placed at its preset tip (px 450): a unit-sized box
+ * there overlaps ETP. A preset without a sink copies its nodes, panels and pipes only.
  */
 export function fromPreset(preset: MimicPreset): EditorLayout {
-  const def = MIMIC_PRESETS[preset];
+  const def: MimicPresetDef = MIMIC_PRESETS[preset];
   const coords = MIMIC_LAYOUTS[preset];
-  const glyphs = MIMIC_NODE_GLYPHS[preset];
+  const nodesAt = coords.nodes as Readonly<Record<string, { readonly x: number; readonly y: number }>>;
+  const glyphs = MIMIC_NODE_GLYPHS[preset] as Readonly<Record<string, MimicSymbol>>;
   const size = MIMIC_EDITOR_DEFAULT_BOX.unit;
   const [, , viewW, viewH] = coords.viewBox.split(" ").map(Number);
 
   const units: EditorNode[] = def.nodes.map((node) => {
-    const at = coords.nodes[node.key];
+    const at = nodesAt[node.key];
+    const symbol = glyphs[node.key];
+    // The web tables are mapped over the preset's node keys, so this cannot happen short of a
+    // cast gap — and a starter at (0, 0) drawn as a box would hide one.
+    if (at === undefined || symbol === undefined) {
+      throw new Error(`preset ${preset}: node ${node.key} has no web position or glyph`);
+    }
     return {
       key: node.key,
       kind: "unit",
-      symbol: glyphs[node.key] as MimicSymbol,
+      symbol,
       label: node.label,
       roleCode: node.roleCode,
       tone: null,
@@ -456,14 +465,15 @@ export function fromPreset(preset: MimicPreset): EditorLayout {
     };
   });
 
-  const upstream = units.find((unit) => unit.key === def.sink.from);
+  const sinkDef = def.sink;
+  const upstream = sinkDef === undefined ? undefined : units.find((unit) => unit.key === sinkDef.from);
   const sinkKey = "discharge";
-  if (upstream !== undefined) {
+  if (upstream !== undefined && sinkDef !== undefined) {
     units.push({
       key: sinkKey,
       kind: "unit",
       symbol: "discharge",
-      label: def.sink.label,
+      label: sinkDef.label,
       roleCode: null,
       tone: null,
       x: upstream.x - (size.w + 4),

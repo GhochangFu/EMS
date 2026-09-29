@@ -2,6 +2,12 @@ import { describe, it } from "vitest";
 
 import {
   crossRowPipeRunsBetweenTheScaledSlots,
+  domainPresetsAreNamedByTheirLabel,
+  domainPresetsDrawEveryNode,
+  domainPresetsDrawEveryPipe,
+  domainPresetsDrawNoPump,
+  domainPresetsDrawNoSink,
+  domainPresetsDrawTheirGlyphs,
   emptyGeometryHoldsNothing,
   layoutPipesJoinUnitsOnly,
   layoutScalesByTheCell,
@@ -48,5 +54,23 @@ describe("F3.32c U4 — mimic geometry", () => {
   });
   it("G11 the empty geometry draws nothing", () => {
     emptyGeometryHoldsNothing();
+  });
+  it("G12 each domain preset draws one unit per preset node", () => {
+    domainPresetsDrawEveryNode();
+  });
+  it("G13 each domain preset draws every preset pipe", () => {
+    domainPresetsDrawEveryPipe();
+  });
+  it("G14 a domain preset has no sink", () => {
+    domainPresetsDrawNoSink();
+  });
+  it("G15 a domain preset draws no pump", () => {
+    domainPresetsDrawNoPump();
+  });
+  it("G16 a domain preset is named by its label", () => {
+    domainPresetsAreNamedByTheirLabel();
+  });
+  it("G17 a domain preset's units draw their glyphs", () => {
+    domainPresetsDrawTheirGlyphs();
   });
 });

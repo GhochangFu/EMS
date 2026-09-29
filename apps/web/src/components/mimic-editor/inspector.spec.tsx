@@ -6,11 +6,13 @@ import { expect, vi } from "vitest";
 
 import * as vocabApi from "../../api/vocabularies";
 import { fromPreset, type EditorNode } from "../../lib/mimic-editor";
+import { MIMIC_SYMBOL_GROUPS } from "../../lib/mimic-symbols";
 import { MimicEditorInspector, type MimicEditorInspectorProps } from "./inspector";
 
 /**
- * `F3.32c` U6b — the editor inspector. `fetchVocabularies` is stubbed (an unstubbed read reaches
- * a local API on `:4000`). `inspector.test.tsx` is the Vitest entry.
+ * `F3.32c` U6b, `F3.32d` U3 (ADR 0082 decision 2) — the editor inspector. `fetchVocabularies` is
+ * stubbed (an unstubbed read reaches a local API on `:4000`). `inspector.test.tsx` is the Vitest
+ * entry.
  */
 
 const VOCAB = {
@@ -78,6 +80,33 @@ export async function symbolChangesTheSymbol(): Promise<void> {
   const props = renderInspector("ro");
   await userEvent.selectOptions(screen.getByRole("combobox", { name: "Symbol" }), "filter");
   expect(props.onNodeChange).toHaveBeenCalledWith("ro", { symbol: "filter" });
+}
+
+/** N4b — the Symbol select has eight `optgroup`s, labelled in `MIMIC_SYMBOL_GROUPS` order. */
+export function symbolSelectHasEightGroupsInOrder(): void {
+  renderInspector("ro");
+  const select = screen.getByRole("combobox", { name: "Symbol" });
+  const groups = select.querySelectorAll("optgroup");
+  expect(Array.from(groups).map((g) => g.getAttribute("label"))).toEqual(MIMIC_SYMBOL_GROUPS.map((g) => g.label));
+  // Each group holds its own symbols: eight empty groups with the options after them fail here.
+  expect(Array.from(groups).map((g) => Array.from(g.querySelectorAll("option")).map((o) => o.value))).toEqual(
+    MIMIC_SYMBOL_GROUPS.map((g) => [...g.symbols]),
+  );
+}
+
+/** N4c — the option for `ups` reads "UPS". */
+export function upsOptionReadsUps(): void {
+  renderInspector("ro");
+  const select = screen.getByRole("combobox", { name: "Symbol" });
+  expect(within(select).getByRole("option", { name: "UPS" })).toHaveValue("ups");
+}
+
+/** N4d — choosing UPS reports `{ symbol: "ups" }`. */
+export async function choosingUpsReportsUps(): Promise<void> {
+  const props = renderInspector("ro");
+  const select = screen.getByRole("combobox", { name: "Symbol" });
+  await userEvent.selectOptions(select, "ups");
+  expect(props.onNodeChange).toHaveBeenCalledWith("ro", { symbol: "ups" });
 }
 
 /** N5 — a panel has a Tone select and no Role. */
