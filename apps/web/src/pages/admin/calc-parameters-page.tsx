@@ -253,7 +253,7 @@ export function CalcParametersAdminPage({ user }: CalcParametersAdminPageProps) 
           canWrite ? (
             <button
               type="button"
-              className="rounded bg-accent px-3 py-2 text-xs font-semibold text-on-accent"
+              className="surface-button-primary bg-accent px-3 py-2 text-xs font-semibold text-on-accent"
               onClick={openCreate}
               disabled={organizationId === ""}
             >
@@ -275,7 +275,7 @@ export function CalcParametersAdminPage({ user }: CalcParametersAdminPageProps) 
             <label className="text-xs font-semibold text-ink-muted">
               Organization
               <select
-                className="ml-2 rounded border border-line px-3 py-1.5 text-xs font-normal"
+                className="ml-2 surface-field px-3 py-1.5 text-xs font-normal"
                 value={organizationId}
                 onChange={(event) => setSelectedOrgId(event.target.value)}
               >
@@ -289,14 +289,14 @@ export function CalcParametersAdminPage({ user }: CalcParametersAdminPageProps) 
           </div>
         ) : null}
 
-        {listQ.isLoading ? <p className="text-sm text-ink-faint">Loading parameters…</p> : null}
+        {listQ.isLoading ? <p className="text-sm text-ink-muted">Loading parameters…</p> : null}
         {listQ.isError ? (
           <p role="alert" className="text-sm text-critical-ink">
             {apiErrorMessage(listQ.error)}
           </p>
         ) : null}
         {organizationId !== "" && !listQ.isLoading && !listQ.isError && rows.length === 0 ? (
-          <p className="text-sm text-ink-faint">No parameter values for this organization.</p>
+          <p className="text-sm text-ink-muted">No parameter values for this organization.</p>
         ) : null}
 
         <table className="min-w-full text-sm">
@@ -335,7 +335,7 @@ export function CalcParametersAdminPage({ user }: CalcParametersAdminPageProps) 
                       <div className="flex gap-2">
                         <button
                           type="button"
-                          className="text-xs font-semibold text-accent"
+                          className="text-xs font-semibold text-accent-strong"
                           onClick={() => openEdit(row)}
                         >
                           Edit
@@ -441,7 +441,7 @@ function CalcParameterForm({
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-scrim/40 p-4">
       <form
-        className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-lg border bg-surface p-4"
+        className="max-h-[90vh] w-full max-w-lg overflow-y-auto surface-dialog p-4"
         onSubmit={(event: FormEvent) => {
           event.preventDefault();
           onSubmit();
@@ -454,7 +454,7 @@ function CalcParameterForm({
           <label className="block text-xs font-semibold text-ink-muted sm:col-span-2">
             Key
             <select
-              className="mt-1 w-full rounded border px-3 py-2 text-sm disabled:bg-well"
+              className="mt-1 surface-field w-full px-3 py-2 text-sm"
               value={form.key}
               disabled={locked}
               required
@@ -499,7 +499,7 @@ function CalcParameterForm({
             <label className="block text-xs font-semibold text-ink-muted">
               Location
               <select
-                className="mt-1 w-full rounded border px-3 py-2 text-sm"
+                className="mt-1 w-full surface-field px-3 py-2 text-sm"
                 value={form.locationId}
                 required
                 onChange={(event) =>
@@ -520,7 +520,7 @@ function CalcParameterForm({
             <label className="block text-xs font-semibold text-ink-muted">
               Asset
               <select
-                className="mt-1 w-full rounded border px-3 py-2 text-sm"
+                className="mt-1 w-full surface-field px-3 py-2 text-sm"
                 value={form.assetId}
                 required
                 disabled={form.locationId === ""}
@@ -543,7 +543,7 @@ function CalcParameterForm({
             <input
               type="number"
               step="any"
-              className="mt-1 w-full rounded border px-3 py-2 text-sm"
+              className="mt-1 w-full surface-field px-3 py-2 text-sm"
               value={form.value}
               required
               onChange={(event) => setForm({ ...form, value: event.target.value })}
@@ -553,7 +553,7 @@ function CalcParameterForm({
             Effective from
             <input
               type="datetime-local"
-              className="mt-1 w-full rounded border px-3 py-2 text-sm"
+              className="mt-1 w-full surface-field px-3 py-2 text-sm"
               value={form.effectiveFrom}
               required
               onChange={(event) => setForm({ ...form, effectiveFrom: event.target.value })}
@@ -564,7 +564,7 @@ function CalcParameterForm({
               Effective to
               <input
                 type="datetime-local"
-                className="mt-1 w-full rounded border px-3 py-2 text-sm"
+                className="mt-1 w-full surface-field px-3 py-2 text-sm"
                 value={form.effectiveTo}
                 onChange={(event) => setForm({ ...form, effectiveTo: event.target.value })}
               />
@@ -578,12 +578,12 @@ function CalcParameterForm({
           </div>
         ) : null}
         <div className="mt-4 flex justify-end gap-2">
-          <button type="button" className="rounded border px-3 py-2 text-xs" onClick={onCancel}>
+          <button type="button" className="surface-button px-3 py-2" onClick={onCancel}>
             Cancel
           </button>
           <button
             type="submit"
-            className="rounded bg-accent px-3 py-2 text-xs font-semibold text-on-accent disabled:opacity-50"
+            className="surface-button-primary bg-accent px-3 py-2 text-xs font-semibold text-on-accent disabled:opacity-50"
             disabled={pending || (!locked && !scopeReady)}
             aria-busy={pending}
           >

@@ -43,7 +43,7 @@ export function ControlRoomViewField({
     return (
       <label className="block text-xs font-semibold text-ink-muted sm:col-span-2">
         Control Room view
-        <select className="mt-1 w-full rounded border px-3 py-2 text-sm" value="builtin" disabled>
+        <select className="mt-1 surface-field w-full px-3 py-2 text-sm" value="builtin" disabled>
           <option value="builtin" disabled>
             Built-in (SMOC)
           </option>
@@ -63,7 +63,7 @@ export function ControlRoomViewField({
       <label className="block text-xs font-semibold text-ink-muted sm:col-span-2">
         Control Room view
         <select
-          className="mt-1 w-full rounded border px-3 py-2 text-sm"
+          className="mt-1 surface-field w-full px-3 py-2 text-sm"
           value={value.kind}
           onChange={(event) =>
             onChange({ kind: event.target.value as SiteControlRoomViewKind, dashboardId: null })
@@ -78,7 +78,7 @@ export function ControlRoomViewField({
         <label className="block text-xs font-semibold text-ink-muted sm:col-span-2">
           Control Room dashboard
           <select
-            className="mt-1 w-full rounded border px-3 py-2 text-sm"
+            className="mt-1 surface-field w-full px-3 py-2 text-sm"
             value={value.dashboardId ?? ""}
             required={touched}
             onChange={(event) =>

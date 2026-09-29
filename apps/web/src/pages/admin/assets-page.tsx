@@ -183,7 +183,7 @@ export function AssetsAdminPage({ user }: AssetsAdminPageProps) {
         actions={
           <button
             type="button"
-            className="rounded bg-accent px-3 py-2 text-xs font-semibold text-on-accent"
+            className="surface-button-primary bg-accent px-3 py-2 text-xs font-semibold text-on-accent"
             onClick={() => {
               setEditing(null);
               setForm({
@@ -212,7 +212,7 @@ export function AssetsAdminPage({ user }: AssetsAdminPageProps) {
             onNavigate={setSelection}
           />
           <input
-            className="rounded border px-3 py-1.5 text-sm"
+            className="surface-field px-3 py-1.5 text-sm"
             placeholder="Search"
             value={search}
             onChange={(event) => setSearch(event.target.value)}
@@ -239,7 +239,7 @@ export function AssetsAdminPage({ user }: AssetsAdminPageProps) {
                 onClick={() => navigate(`/admin/assets/${item.id}/points`)}
               >
                 <td className="px-2 py-2 font-mono">{item.code}</td>
-                <td className="px-2 py-2 font-semibold text-accent">{item.name}</td>
+                <td className="px-2 py-2 font-semibold text-accent-strong">{item.name}</td>
                 <td className="px-2 py-2">{item.locationName}</td>
                 <td className="px-2 py-2">{item.rtuDisplayName}</td>
                 <td className="px-2 py-2">{item.domain}</td>
@@ -254,7 +254,7 @@ export function AssetsAdminPage({ user }: AssetsAdminPageProps) {
                   <div className="flex gap-2">
                     <button
                       type="button"
-                      className="text-xs font-semibold text-accent"
+                      className="text-xs font-semibold text-accent-strong"
                       onClick={() => {
                         setEditing(item);
                         setForm({
@@ -280,7 +280,7 @@ export function AssetsAdminPage({ user }: AssetsAdminPageProps) {
                     */}
                     <button
                       type="button"
-                      className="text-xs font-semibold text-accent"
+                      className="text-xs font-semibold text-accent-strong"
                       onClick={() => setImagesFor(item)}
                     >
                       Images
@@ -307,7 +307,7 @@ export function AssetsAdminPage({ user }: AssetsAdminPageProps) {
       {modalOpen ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-scrim/40 p-4">
           <form
-            className="w-full max-w-lg rounded-lg border bg-surface p-4"
+            className="w-full max-w-lg surface-dialog p-4"
             onSubmit={(event: FormEvent) => {
               event.preventDefault();
               saveMutation.mutate();
@@ -320,7 +320,7 @@ export function AssetsAdminPage({ user }: AssetsAdminPageProps) {
               <label className="block text-xs font-semibold text-ink-muted">
                 Code
                 <input
-                  className="mt-1 w-full rounded border px-3 py-2 text-sm"
+                  className="mt-1 w-full surface-field px-3 py-2 text-sm"
                   value={form.code}
                   required
                   onChange={(event) => setForm({ ...form, code: event.target.value })}
@@ -329,7 +329,7 @@ export function AssetsAdminPage({ user }: AssetsAdminPageProps) {
               <label className="block text-xs font-semibold text-ink-muted">
                 Name
                 <input
-                  className="mt-1 w-full rounded border px-3 py-2 text-sm"
+                  className="mt-1 w-full surface-field px-3 py-2 text-sm"
                   value={form.name}
                   required
                   onChange={(event) => setForm({ ...form, name: event.target.value })}
@@ -338,7 +338,7 @@ export function AssetsAdminPage({ user }: AssetsAdminPageProps) {
               <label className="block text-xs font-semibold text-ink-muted sm:col-span-2">
                 Site name
                 <input
-                  className="mt-1 w-full rounded border px-3 py-2 text-sm"
+                  className="mt-1 w-full surface-field px-3 py-2 text-sm"
                   value={form.siteName}
                   required
                   onChange={(event) => setForm({ ...form, siteName: event.target.value })}
@@ -347,7 +347,7 @@ export function AssetsAdminPage({ user }: AssetsAdminPageProps) {
               <label className="block text-xs font-semibold text-ink-muted sm:col-span-2">
                 Location
                 <select
-                  className="mt-1 w-full rounded border px-3 py-2 text-sm"
+                  className="mt-1 w-full surface-field px-3 py-2 text-sm"
                   value={form.locationId}
                   required
                   onChange={(event) =>
@@ -365,7 +365,7 @@ export function AssetsAdminPage({ user }: AssetsAdminPageProps) {
               <label className="block text-xs font-semibold text-ink-muted sm:col-span-2">
                 RTU
                 <select
-                  className="mt-1 w-full rounded border px-3 py-2 text-sm"
+                  className="mt-1 w-full surface-field px-3 py-2 text-sm"
                   value={form.rtuId}
                   onChange={(event) => setForm({ ...form, rtuId: event.target.value })}
                 >
@@ -392,7 +392,7 @@ export function AssetsAdminPage({ user }: AssetsAdminPageProps) {
                   not render as broken, it renders as the wrong value.
                 */}
                 <select
-                  className="mt-1 w-full rounded border px-3 py-2 text-sm"
+                  className="mt-1 w-full surface-field px-3 py-2 text-sm"
                   value={form.domain}
                   required
                   onChange={(event) => setForm({ ...form, domain: event.target.value })}
@@ -415,7 +415,7 @@ export function AssetsAdminPage({ user }: AssetsAdminPageProps) {
                   which the save handler sends as null.
                 */}
                 <select
-                  className="mt-1 w-full rounded border px-3 py-2 text-sm"
+                  className="mt-1 w-full surface-field px-3 py-2 text-sm"
                   value={form.waterBalanceRole}
                   onChange={(event) => setForm({ ...form, waterBalanceRole: event.target.value })}
                 >
@@ -435,14 +435,14 @@ export function AssetsAdminPage({ user }: AssetsAdminPageProps) {
             <div className="mt-4 flex justify-end gap-2">
               <button
                 type="button"
-                className="rounded border px-3 py-2 text-xs"
+                className="surface-button px-3 py-2"
                 onClick={() => setModalOpen(false)}
               >
                 Cancel
               </button>
               <button
                 type="submit"
-                className="rounded bg-accent px-3 py-2 text-xs font-semibold text-on-accent"
+                className="surface-button-primary bg-accent px-3 py-2 text-xs font-semibold text-on-accent"
               >
                 Save
               </button>

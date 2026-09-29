@@ -329,7 +329,7 @@ export function EscalationProfilesPage({ user }: EscalationProfilesPageProps) {
                     <div className="flex gap-2">
                       <button
                         type="button"
-                        className="text-xs font-semibold text-accent"
+                        className="text-xs font-semibold text-accent-strong"
                         onClick={() => {
                           setEditing(profile);
                           setForm(formFromProfile(profile));
@@ -381,7 +381,7 @@ export function EscalationProfilesPage({ user }: EscalationProfilesPageProps) {
                     {severity.label}
                   </span>
                   <select
-                    className="w-full rounded border px-3 py-1.5"
+                    className="w-full surface-field px-3 py-1.5"
                     value={severityMap[severity.code] ?? ""}
                     onChange={(event) =>
                       setSeverityMap({ ...severityMap, [severity.code]: event.target.value })
@@ -399,7 +399,7 @@ export function EscalationProfilesPage({ user }: EscalationProfilesPageProps) {
             </div>
             <button
               type="button"
-              className="rounded bg-accent px-3 py-2 text-xs font-semibold text-on-accent disabled:bg-line-strong"
+              className="surface-button-primary bg-accent px-3 py-2 text-xs font-semibold text-on-accent disabled:bg-line-strong"
               disabled={defaultsMutation.isPending || defaultsQ.isLoading}
               aria-busy={defaultsMutation.isPending}
               onClick={() => defaultsMutation.mutate()}
@@ -425,7 +425,7 @@ export function EscalationProfilesPage({ user }: EscalationProfilesPageProps) {
             <label className="text-sm">
               <span className="block text-xs font-semibold uppercase text-ink-muted">Code</span>
               <input
-                className="w-full rounded border px-3 py-1.5"
+                className="w-full surface-field px-3 py-1.5"
                 value={form.code}
                 disabled={editing !== null}
                 onChange={(event) => setForm({ ...form, code: event.target.value })}
@@ -434,7 +434,7 @@ export function EscalationProfilesPage({ user }: EscalationProfilesPageProps) {
             <label className="text-sm">
               <span className="block text-xs font-semibold uppercase text-ink-muted">Name</span>
               <input
-                className="w-full rounded border px-3 py-1.5"
+                className="w-full surface-field px-3 py-1.5"
                 value={form.name}
                 onChange={(event) => setForm({ ...form, name: event.target.value })}
               />
@@ -447,7 +447,7 @@ export function EscalationProfilesPage({ user }: EscalationProfilesPageProps) {
                 Organization
               </span>
               <select
-                className="w-full rounded border px-3 py-1.5 disabled:bg-well disabled:text-ink-muted"
+                className="w-full surface-field px-3 py-1.5 disabled:text-ink-muted"
                 value={editing ? form.organizationId : effectiveOrganizationId}
                 disabled={editing !== null || organizationLocked}
                 onChange={(event) => setForm({ ...form, organizationId: event.target.value })}
@@ -486,7 +486,7 @@ export function EscalationProfilesPage({ user }: EscalationProfilesPageProps) {
             {form.steps.map((step, index) => (
               // A `fieldset` per rung: the legend names the step, so the group
               // is addressable by what it says rather than by where it sits.
-              <fieldset key={index} className="rounded border border-line px-3 py-2">
+              <fieldset key={index} className="surface-raised-sm px-3 py-2">
                 <legend className="px-1 text-xs font-semibold uppercase text-ink-muted">
                   Step {index + 1}
                 </legend>
@@ -495,7 +495,7 @@ export function EscalationProfilesPage({ user }: EscalationProfilesPageProps) {
                     After (minutes)
                   </span>
                   <input
-                    className="w-40 rounded border px-3 py-1.5"
+                    className="w-40 surface-field px-3 py-1.5"
                     inputMode="numeric"
                     value={step.afterMinutes}
                     onChange={(event) => updateStep(index, { afterMinutes: event.target.value })}
@@ -551,7 +551,7 @@ export function EscalationProfilesPage({ user }: EscalationProfilesPageProps) {
             ))}
             <button
               type="button"
-              className="rounded border px-3 py-1.5 text-xs font-semibold"
+              className="surface-button px-3 py-1.5"
               onClick={() =>
                 setForm({ ...form, steps: [...form.steps, { afterMinutes: "", channelIds: [] }] })
               }
@@ -569,7 +569,7 @@ export function EscalationProfilesPage({ user }: EscalationProfilesPageProps) {
           <div className="flex gap-2">
             <button
               type="submit"
-              className="rounded bg-accent px-3 py-2 text-xs font-semibold text-on-accent disabled:bg-line-strong"
+              className="surface-button-primary bg-accent px-3 py-2 text-xs font-semibold text-on-accent disabled:bg-line-strong"
               disabled={cannotSave}
               aria-busy={saveMutation.isPending}
             >
@@ -578,7 +578,7 @@ export function EscalationProfilesPage({ user }: EscalationProfilesPageProps) {
             {editing ? (
               <button
                 type="button"
-                className="rounded border px-3 py-2 text-xs font-semibold"
+                className="surface-button px-3 py-2"
                 onClick={() => {
                   setEditing(null);
                   setForm(blankProfileForm());

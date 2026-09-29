@@ -29,10 +29,8 @@ export function MasterDataLayout({ user, children }: MasterDataLayoutProps) {
               <Link
                 key={tab.path}
                 to={tab.path}
-                className={`rounded px-3 py-1.5 text-xs font-semibold ${
-                  active
-                    ? "bg-accent text-on-accent"
-                    : "text-ink-muted hover:bg-well-deep hover:text-ink"
+                className={`surface-tab px-3 py-1.5 text-xs font-semibold ${
+                  active ? "surface-tab-selected" : ""
                 }`}
               >
                 {tab.label}
