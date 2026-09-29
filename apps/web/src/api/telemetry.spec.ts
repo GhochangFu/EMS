@@ -2,7 +2,7 @@ import { expect, vi } from "vitest";
 
 import { encodePointRef } from "@bms/shared";
 
-import { fetchPointValuesAt } from "./telemetry";
+import { fetchPointValuesAt, fetchPointsLatest } from "./telemetry";
 
 /**
  * `F3.28` task 2.6 — what `fetchPointValuesAt` puts on the wire, and that it
@@ -90,4 +90,56 @@ export async function parsesTheResponseThroughTheSharedSchema(): Promise<void> {
 export async function throwsOnANon2xxResponse(): Promise<void> {
   vi.stubGlobal("fetch", async () => new Response("nope", { status: 403 }));
   await expect(fetchPointValuesAt([REF_A], AT)).rejects.toThrow();
+}
+
+// ---------------------------------------------------------------------------
+// `F4.176` (ADR 0074 Amendment 2) — `fetchPointsLatest`.
+// ---------------------------------------------------------------------------
+
+const LATEST_RESPONSE = {
+  items: [{ time: AT, assetId: ASSET_A, pointKey: "kw", value: 42, unit: "kW" }],
+};
+
+/** The read goes to the latest-value path. */
+export async function latestHitsTheLatestPath(): Promise<void> {
+  const seen = captureUrl(LATEST_RESPONSE);
+  await fetchPointsLatest([ASSET_A], ["kw"]);
+  expect(`${seen().origin}${seen().pathname}`).toBe(`${BASE}/api/v1/telemetry/points/latest`);
+}
+
+/** One `assetIds` per id and one `pointKeys` per key, in the order given. */
+export async function latestSendsOneParameterPerIdAndKey(): Promise<void> {
+  const seen = captureUrl(LATEST_RESPONSE);
+  await fetchPointsLatest([ASSET_B, ASSET_A], ["pf", "kw"]);
+  const url = seen();
+  expect(url.searchParams.getAll("assetIds")).toEqual([ASSET_B, ASSET_A]);
+  expect(url.searchParams.getAll("pointKeys")).toEqual(["pf", "kw"]);
+}
+
+/** The window is 15 minutes unless the caller names another. */
+export async function latestSendsTheWindow(): Promise<void> {
+  const seen = captureUrl(LATEST_RESPONSE);
+  await fetchPointsLatest([ASSET_A], ["kw"]);
+  expect(seen().searchParams.get("windowMinutes")).toBe("15");
+  const again = captureUrl(LATEST_RESPONSE);
+  await fetchPointsLatest([ASSET_A], ["kw"], 60);
+  expect(again().searchParams.get("windowMinutes")).toBe("60");
+}
+
+/** The response parses through the shared schema and comes back unchanged. */
+export async function latestParsesTheResponse(): Promise<void> {
+  captureUrl(LATEST_RESPONSE);
+  expect(await fetchPointsLatest([ASSET_A], ["kw"])).toEqual(LATEST_RESPONSE);
+}
+
+/** A body without `items` fails the shared schema rather than reaching the caller. */
+export async function latestRefusesABodyWithoutItems(): Promise<void> {
+  captureUrl([]);
+  await expect(fetchPointsLatest([ASSET_A], ["kw"])).rejects.toThrow();
+}
+
+/** A non-2xx response throws. */
+export async function latestThrowsOnANon2xxResponse(): Promise<void> {
+  vi.stubGlobal("fetch", async () => new Response("nope", { status: 403 }));
+  await expect(fetchPointsLatest([ASSET_A], ["kw"])).rejects.toThrow();
 }

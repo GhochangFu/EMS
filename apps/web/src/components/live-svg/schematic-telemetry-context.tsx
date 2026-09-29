@@ -1,9 +1,5 @@
-import {
-  ELECTRICAL_POINT_KEYS,
-  encodePointRef,
-  type TelemetryReading,
-} from "@bms/shared";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { ELECTRICAL_POINT_KEYS, type TelemetryReading } from "@bms/shared";
+import { useQuery } from "@tanstack/react-query";
 import {
   createContext,
   useCallback,
@@ -14,7 +10,7 @@ import {
 } from "react";
 import { io, type Socket } from "socket.io-client";
 
-import { fetchTelemetryRecent } from "../../api/telemetry";
+import { fetchPointsLatest } from "../../api/telemetry";
 import { fetchAssets } from "../../api/assets";
 import {
   applyReading,
@@ -79,6 +75,12 @@ type Ctx = {
 
 const SchematicTelemetryContext = createContext<Ctx | null>(null);
 
+/**
+ * Assets per hydration read — the API's `MAX_LATEST_ASSET_IDS`
+ * (`apps/api/src/telemetry/telemetry.schema.ts`). A larger batch is a 400.
+ */
+const HYDRATE_BATCH_ASSETS = 50;
+
 type ProviderProps = {
   /** Asset codes to follow (must exist in `GET /api/v1/assets`). */
   assetCodes: readonly string[];
@@ -96,7 +98,6 @@ export function SchematicTelemetryProvider({
   pointKeys = [...ELECTRICAL_POINT_KEYS],
   children,
 }: ProviderProps) {
-  const qc = useQueryClient();
   const assetsQ = useQuery({
     queryKey: ["assets"],
     queryFn: () => fetchAssets(),
@@ -151,7 +152,26 @@ export function SchematicTelemetryProvider({
     };
   }, []);
 
-  /** Hydrate latest values from REST when asset list is ready. */
+  /**
+   * Hydrate the latest values from REST once the asset list is ready.
+   *
+   * **One batched read per 50 tracked assets** (`F4.176`, ADR 0074 Amendment 2)
+   * — `GET /telemetry/points/latest` answers every (asset, point key) pair
+   * that has a sample in the last 15 minutes. Before it, this loop read
+   * `/recent` once per pair and a second effect prefetched every pair again:
+   * 2,924 requests on the SMOC view, most refused by the browser.
+   *
+   * A pair absent from the answer leaves its field empty, as a `/recent` read
+   * with no rows did. A failed batch leaves its assets empty and the other
+   * batches applied; the socket supplies every later reading either way. **A
+   * drifted body counts as failed**: a production build's `checkResponse` logs
+   * the drift and returns the body unchanged, so `items` is checked here.
+   *
+   * **Readings are applied oldest first.** `applyReading` keeps the last
+   * reading's time as `lastSeenMs`, so the newest sample must come last — in
+   * answer order, a 60-second-old key applied after a fresh one would mark a
+   * live asset stale until its next socket push.
+   */
   useEffect(() => {
     if (trackedIds.length === 0) {
       return;
@@ -160,23 +180,31 @@ export function SchematicTelemetryProvider({
     let cancelled = false;
 
     (async () => {
-      const next: Record<string, SchematicTelemetrySlice> = {};
+      const batches: string[][] = [];
+      for (let i = 0; i < trackedIds.length; i += HYDRATE_BATCH_ASSETS) {
+        batches.push(trackedIds.slice(i, i + HYDRATE_BATCH_ASSETS));
+      }
+      const answers = await Promise.all(
+        batches.map((ids) =>
+          fetchPointsLatest(ids, keysMemo)
+            .then((res): TelemetryReading[] => (Array.isArray(res.items) ? res.items : []))
+            .catch((): TelemetryReading[] => [] /* leave this batch empty */),
+        ),
+      );
 
+      const next: Record<string, SchematicTelemetrySlice> = {};
       for (const id of trackedIds) {
-        let slice = emptySlice();
-        for (const pointKey of keysMemo) {
-          const ref = encodePointRef(id, pointKey);
-          try {
-            const rows = await fetchTelemetryRecent(ref, "15m");
-            const latest = rows[0];
-            if (latest) {
-              slice = applyReading(slice, latest, Date.now());
-            }
-          } catch {
-            /* leave partial */
-          }
+        next[id] = emptySlice();
+      }
+      const nowMs = Date.now();
+      const oldestFirst = answers
+        .flat()
+        .sort((a, b) => Date.parse(a.time) - Date.parse(b.time));
+      for (const reading of oldestFirst) {
+        const slice = next[reading.assetId];
+        if (slice) {
+          next[reading.assetId] = applyReading(slice, reading, nowMs);
         }
-        next[id] = slice;
       }
 
       if (!cancelled) {
@@ -278,18 +306,6 @@ export function SchematicTelemetryProvider({
     }),
     [idByCode, assetsStatus, assetMetaById, byAssetId, totalKw, staleAssets, staleTick],
   );
-
-  useEffect(() => {
-    for (const id of trackedIds) {
-      for (const pk of keysMemo) {
-        const ref = encodePointRef(id, pk);
-        void qc.prefetchQuery({
-          queryKey: ["telemetry", "recent", ref],
-          queryFn: () => fetchTelemetryRecent(ref, "15m"),
-        });
-      }
-    }
-  }, [qc, trackedIds, keysMemo.join("|")]);
 
   return (
     <SchematicTelemetryContext.Provider value={value}>

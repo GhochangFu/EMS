@@ -9,6 +9,7 @@ import {
   pointAggregateResponseSchema,
   pointAggregateStatsSchema,
   pointValuesAtInstantResponseSchema,
+  pointsLatestResponseSchema,
 } from "./envelopes";
 // The whole module as a record, for the "old name is gone" assertion. A static
 // namespace import rather than `await import("./envelopes")`: `typecheck:tests`
@@ -379,6 +380,41 @@ export function pointValuesAtInstantRequiresPointRefAndAt(): void {
     pointValuesAtInstantResponseSchema,
     { at: "2026-09-24T10:00:00.000Z", items: [{ time: null, value: null, unit: null }] },
     "an item with no `pointRef` must be refused",
+  );
+}
+
+/**
+ * `F4.176` — `pointsLatestResponseSchema` (ADR 0074 Amendment 2 decision 1):
+ * one reading per (asset, point key) pair that has a sample in the window, as
+ * `{ items }`. `unit` is nullable as on every reading.
+ */
+export function pointsLatestAcceptsAReadingList(): void {
+  expectAccepts(
+    pointsLatestResponseSchema,
+    {
+      items: [
+        { time: "2026-09-30T10:00:00.000Z", assetId: "00000000-0000-4000-8000-000000000001", pointKey: "kw", value: 42, unit: "kW" },
+        { time: "2026-09-30T10:00:05.000Z", assetId: "00000000-0000-4000-8000-000000000001", pointKey: "pf", value: 0.97, unit: null },
+      ],
+    },
+    "a list of readings, one with a null unit, must parse",
+  );
+}
+
+/**
+ * A pair with no sample in the window is **absent**, never a row of nulls
+ * (Amendment 2 decision 1) — the difference from the at-instant item. A null
+ * `value` is therefore refused.
+ */
+export function pointsLatestRefusesANullValue(): void {
+  expectRejects(
+    pointsLatestResponseSchema,
+    {
+      items: [
+        { time: "2026-09-30T10:00:00.000Z", assetId: "00000000-0000-4000-8000-000000000001", pointKey: "kw", value: null, unit: null },
+      ],
+    },
+    "an item with a null value must be refused — an unsampled pair is absent",
   );
 }
 

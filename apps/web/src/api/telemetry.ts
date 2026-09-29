@@ -1,12 +1,14 @@
 import {
   pointAggregateResponseSchema,
   pointValuesAtInstantResponseSchema,
+  pointsLatestResponseSchema,
   recentTelemetryResponseSchema,
 } from "@bms/shared/contracts";
 import type {
   PointAggregateFunction,
   PointAggregateResponse,
   PointValuesAtInstantResponse,
+  PointsLatestResponse,
   TelemetryReading,
 } from "@bms/shared";
 
@@ -28,6 +30,36 @@ export async function fetchTelemetryRecent(
     throw new Error(`telemetry ${res.status}`);
   }
   return checkResponse(recentTelemetryResponseSchema, await res.json(), "telemetry/points/:id/recent");
+}
+
+/**
+ * `GET /api/v1/telemetry/points/latest` (`F4.176`, ADR 0074 Amendment 2) —
+ * the latest sample of each (asset, point key) pair inside the last
+ * `windowMinutes`, for up to `MAX_LATEST_ASSET_IDS` (50) assets per call. A pair
+ * with no sample in the window is absent from `items`.
+ *
+ * Asset ids are UUIDs and point keys are plain identifiers, so each is sent
+ * once through `URLSearchParams` with no extra encoding — unlike `refs` above,
+ * which carry the `::` separator.
+ */
+export async function fetchPointsLatest(
+  assetIds: readonly string[],
+  pointKeys: readonly string[],
+  windowMinutes = 15,
+): Promise<PointsLatestResponse> {
+  const query = new URLSearchParams();
+  for (const id of assetIds) {
+    query.append("assetIds", id);
+  }
+  for (const key of pointKeys) {
+    query.append("pointKeys", key);
+  }
+  query.set("windowMinutes", String(windowMinutes));
+  const res = await fetch(`${base}/api/v1/telemetry/points/latest?${query.toString()}`, withAuth());
+  if (!res.ok) {
+    throw new Error(`telemetry latest ${res.status}`);
+  }
+  return checkResponse(pointsLatestResponseSchema, await res.json(), "telemetry/points/latest");
 }
 
 /**

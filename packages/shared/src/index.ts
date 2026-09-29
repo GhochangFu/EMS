@@ -282,6 +282,8 @@ export type PointAggregateResponse = z.infer<typeof E.pointAggregateResponseSche
 export type PointValuesAtInstantItem = z.infer<typeof E.pointValuesAtInstantItemSchema>;
 /** `GET /telemetry/points/at-instant` (`F3.28`, ADR 0074 decision 2). */
 export type PointValuesAtInstantResponse = z.infer<typeof E.pointValuesAtInstantResponseSchema>;
+/** `GET /telemetry/points/latest` (`F4.176`, ADR 0074 Amendment 2). */
+export type PointsLatestResponse = z.infer<typeof E.pointsLatestResponseSchema>;
 
 /** Builds the REST path segment for `GET .../points/:pointRef/recent`. */
 export function encodePointRef(assetId: string, pointKey: string): string {

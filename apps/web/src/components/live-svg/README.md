@@ -5,7 +5,7 @@
 Wraps a schematic screen (SLD, CRAC loop) and:
 
 - Loads `GET /api/v1/assets` to map **asset codes** → UUIDs.
-- Hydrates recent points per `pointKeys` (defaults to `ELECTRICAL_POINT_KEYS` from `@bms/shared`).
+- Hydrates the latest value of each (asset, `pointKeys`) pair from `GET /api/v1/telemetry/points/latest`, in batches of 50 assets (`F4.176`; `pointKeys` defaults to `ELECTRICAL_POINT_KEYS` from `@bms/shared`).
 - Subscribes once to Socket.IO `/ws/telemetry` and merges readings for those UUIDs.
 
 For the electrical SLD, pass only `assetCodes` (see `sld-bindings.ts`). For CRAC, pass `assetCodes` from `crac-bindings.ts` and `pointKeys={[...HVAC_POINT_KEYS]}`.

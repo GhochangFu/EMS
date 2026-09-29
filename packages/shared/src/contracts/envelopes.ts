@@ -386,6 +386,15 @@ export const pointValuesAtInstantResponseSchema = z.object({
   items: z.array(pointValuesAtInstantItemSchema),
 });
 
+/**
+ * `GET /telemetry/points/latest` (`F4.176`, ADR 0074 Amendment 2) — the latest
+ * sample of each requested (asset, point key) pair **inside the window**. A
+ * pair with no sample there is absent from `items`, not a row of nulls: the
+ * reader applies what it gets and leaves the rest empty, as the per-point
+ * `/recent` hydration did.
+ */
+export const pointsLatestResponseSchema = itemsOf(telemetryReadingSchema);
+
 export const energySourceMixResponseSchema = z.object({
   points: z.array(energySourceMixPointSchema),
 });
