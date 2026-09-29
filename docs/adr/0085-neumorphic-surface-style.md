@@ -203,3 +203,11 @@ into this branch; the V1 gate keeps only the two neutral pill tones.
 sets (a code review found empty and partial flat rules that leaked radius, fill and padding into
 Flat). V8: surface state rules are `:where(:hover)` / `:where(:active)`, because Tailwind's
 `@layer` is not a native cascade layer and a bare `:hover` beat call-site tone utilities.
+
+**Shadow values, owner-tuned on the running app.** Two review rounds on the shared stack set the
+strength: the plan's 8px/18px filled the gap under a page header, 5–6px/12–14px read too weak, and
+the owner approved a live preview of the middle — raised `7px 7px 16px` `ink`/0.16 with a
+`surface`/0.9 light shade (light); `7px 7px 15px` `scrim`/0.6, a `line-strong`/0.24 light shade and
+a `line-strong`/0.4 inset highlight (dark); the small, pressed and pill tokens in proportion. The
+KPI ribbon under the chrome casts its shadow down only (`--shadow-ribbon`): the up-left light
+shade of a raised shape fell across the green `chrome-nav` bar.
