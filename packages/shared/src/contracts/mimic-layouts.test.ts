@@ -1,10 +1,17 @@
 import { describe, it } from "vitest";
 
 import {
+  everyLibraryKeyNamesItsLibraryAndFitsSixtyFour,
+  groupCodesAreTheEight,
+  libraryCodesAreTheFour,
+  mimicCoreSymbolsAreTheTwentyNineInOrder,
   mimicLayoutCellIsTen,
+  mimicLayoutDtoParsesSymbolLibraries,
+  mimicLayoutDtoRefusesAnUnknownLibraryCode,
   mimicLayoutGeometryParsesAPanelWithANullSymbol,
   mimicPanelTonesAreThree,
-  mimicSymbolsAreTheTwentyNineInOrder,
+  mimicSymbolRefusalIsShort,
+  mimicSymbolSchemaIsCoreThenEachLibraryInRegistryOrder,
   mimicWidgetNodesParsesTheLayoutArm,
   mimicWidgetNodesParsesThePresetArm,
   mimicWidgetNodesRefusesALayoutArmWithoutLayout,
@@ -12,8 +19,36 @@ import {
 
 /** Vitest entry point — assertions live in the sibling `.spec` (ADR 0014). */
 describe("F3.32c — the mimic layout contracts (ADR 0081)", () => {
-  it("declares the twenty-nine symbols in order", () => {
-    mimicSymbolsAreTheTwentyNineInOrder();
+  it("declares the twenty-nine core symbols in order", () => {
+    mimicCoreSymbolsAreTheTwentyNineInOrder();
+  });
+
+  it("unions the core symbols, then each library's keys in registry order (F3.32e)", () => {
+    mimicSymbolSchemaIsCoreThenEachLibraryInRegistryOrder();
+  });
+
+  it("refuses an unknown symbol with one short message (F3.32e)", () => {
+    mimicSymbolRefusalIsShort();
+  });
+
+  it("names each library key by its library, within 64 characters (F3.32e)", () => {
+    everyLibraryKeyNamesItsLibraryAndFitsSixtyFour();
+  });
+
+  it("declares the four symbol libraries (F3.32e)", () => {
+    libraryCodesAreTheFour();
+  });
+
+  it("declares the eight palette groups (F3.32e)", () => {
+    groupCodesAreTheEight();
+  });
+
+  it("parses a layout DTO's symbol libraries (F3.32e)", () => {
+    mimicLayoutDtoParsesSymbolLibraries();
+  });
+
+  it("refuses a layout DTO naming an unknown library (F3.32e)", () => {
+    mimicLayoutDtoRefusesAnUnknownLibraryCode();
   });
 
   it("declares three panel tones", () => {

@@ -6,7 +6,10 @@ import {
   MIMIC_LAYOUT_SLUG,
   MIMIC_LAYOUT_STALE_MESSAGE,
   mimicLayoutNodeKindSchema,
+  libraryOfSymbol,
   mimicPanelToneSchema,
+  mimicSymbolLibrary,
+  mimicSymbolLibraryCodeSchema,
   mimicSymbolSchema,
 } from "@bms/shared";
 
@@ -91,21 +94,41 @@ const layoutFields = {
   canvasH: z.number().int().min(canvasH.min).max(canvasH.max),
   nodes: z.array(mimicLayoutWriteNodeSchema).max(maxNodes),
   pipes: z.array(mimicLayoutWritePipeSchema).max(maxPipes),
+  /**
+   * `F3.32e` / ADR 0084 decision 8 — the libraries the layout draws from. An absent list is
+   * `["core"]` (plan ruling R2); `core` is not mandatory (R3). Migration `0090`'s cardinality
+   * CHECK restates `.min(1)`.
+   */
+  symbolLibraries: z.array(mimicSymbolLibraryCodeSchema).min(1).default(["core"]),
 };
 
 type LayoutBody = {
   canvasW: number;
   canvasH: number;
-  nodes: Array<{ key: string; kind: string; x: number; y: number; w: number; h: number }>;
+  symbolLibraries: readonly string[];
+  nodes: Array<{ key: string; kind: string; symbol?: string | null; x: number; y: number; w: number; h: number }>;
   pipes: Array<{ fromKey: string; toKey: string }>;
 };
 
 /**
  * The whole-body rules: unique keys, pipe ends that are unit keys of this
- * body, no pipe from a unit to itself, no pipe twice, and every node inside
- * the layout's own canvas.
+ * body, no pipe from a unit to itself, no pipe twice, every node inside
+ * the layout's own canvas, no library listed twice, and every unit's symbol
+ * from a library the layout chose (`F3.32e`, ADR 0084 decision 8).
  */
 function refineLayoutBody(body: LayoutBody, ctx: z.RefinementCtx): void {
+  body.symbolLibraries.forEach((code, index) => {
+    if (body.symbolLibraries.indexOf(code) !== index) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["symbolLibraries", index],
+        message: `Library "${code}" is listed twice`,
+      });
+    }
+  });
+  // An empty list is already refused by `.min(1)`, and Zod still runs this refine on it: checking
+  // the units against no library would add an issue on every unit for that one mistake.
+  const chosen = new Set(body.symbolLibraries);
   const kinds = new Map<string, string>();
   body.nodes.forEach((node, index) => {
     if (kinds.has(node.key)) {
@@ -116,6 +139,16 @@ function refineLayoutBody(body: LayoutBody, ctx: z.RefinementCtx): void {
       });
     }
     kinds.set(node.key, node.kind);
+    if (node.kind === "unit" && node.symbol != null && chosen.size > 0) {
+      const library = libraryOfSymbol(node.symbol);
+      if (!chosen.has(library)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["nodes", index, "symbol"],
+          message: `Symbol "${node.symbol}" belongs to the ${mimicSymbolLibrary(library).label} library, which this layout did not choose`,
+        });
+      }
+    }
     if (node.x + node.w > body.canvasW || node.y + node.h > body.canvasH) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
@@ -157,7 +190,8 @@ function refineLayoutBody(body: LayoutBody, ctx: z.RefinementCtx): void {
 
 const LAYOUT_BODY_RULES =
   "Node keys are unique; every node lies inside canvasW x canvasH; a pipe joins two " +
-  "different unit keys of this body, and appears once.";
+  "different unit keys of this body, and appears once; symbolLibraries names each library " +
+  "once, and every unit's symbol belongs to one of them.";
 
 /** `POST /api/v1/mimic-layouts`. `organizationId` names the owner (owner ruling OQ3). */
 export const createMimicLayoutBodySchema = z

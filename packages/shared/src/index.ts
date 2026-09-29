@@ -824,6 +824,8 @@ export type MimicPreset = z.infer<typeof Mc.mimicPresetSchema>;
 export type MimicConfig = z.infer<typeof Mc.mimicConfigSchema>;
 export type MimicLayoutConfig = z.infer<typeof Mc.mimicLayoutConfigSchema>;
 export type MimicSymbol = z.infer<typeof Ml.mimicSymbolSchema>;
+export type MimicCoreSymbol = z.infer<typeof Ml.mimicCoreSymbolSchema>;
+export type MimicSymbolLibraryCode = z.infer<typeof Ml.mimicSymbolLibraryCodeSchema>;
 export type MimicPanelTone = z.infer<typeof Ml.mimicPanelToneSchema>;
 export type MimicLayoutNodeKind = z.infer<typeof Ml.mimicLayoutNodeKindSchema>;
 export type MimicLayoutNodeDto = z.infer<typeof Ml.mimicLayoutNodeSchema>;
@@ -854,6 +856,12 @@ export type * from "./asset-template-content";
 
 /** `F3.32` / ADR 0079 — the mimic preset topology (plan D3). Code, not a contract. */
 export * from "./mimic-presets";
+
+/**
+ * `F3.32e` / ADR 0084 — the preloaded symbol libraries: the registry and the generated keys,
+ * labels and groups (no path data). Code, not a contract, like the presets above.
+ */
+export * from "./mimic-symbol-libraries";
 
 /**
  * Ingest data contracts (ADR 0016 §8). Re-exported here, not only under the

@@ -259,6 +259,7 @@ function LayoutEditor({ initial, saving, saveError, stale, canSave, onSave, orga
           onRedo={() => dispatch({ type: "redo" })}
           canDelete={selected !== null}
           onDelete={() => dispatch({ type: "delete" })}
+          libraries={state.layout.symbolLibraries}
         />
       </SectionCard>
       <SectionCard title={state.layout.name} bodyClassName="p-3 space-y-3">

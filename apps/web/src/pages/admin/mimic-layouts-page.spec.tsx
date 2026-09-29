@@ -36,6 +36,7 @@ const LIST: MimicLayoutsListResponse = {
       canvasH: 68,
       version: 3,
       unitCount: 9,
+      symbolLibraries: ["core"],
       updatedAt: new Date(0).toISOString(),
     },
   ],
@@ -110,6 +111,50 @@ export async function startFollowsTheChosenPreset(): Promise<void> {
   renderPage(user("admin"));
   await userEvent.selectOptions(await screen.findByRole("combobox", { name: "Start from" }), "compressed_air");
   expect(screen.getByRole("link", { name: "Start" })).toHaveAttribute("href", "/admin/mimic-layouts/new?preset=compressed_air");
+}
+
+function preview(): HTMLElement {
+  return screen.getByTestId("mimic-preset-preview");
+}
+
+/** L9 — `F3.32g`: before Start, the preview draws the default Water train starter. */
+export async function previewDrawsTheDefaultPreset(): Promise<void> {
+  renderPage(user("admin"));
+  await screen.findByRole("combobox", { name: "Start from" });
+  expect(preview()).toHaveAttribute("data-preset", "water_train");
+  expect(within(preview()).getByRole("img", { name: /^Water train preview: / })).toBeInTheDocument();
+  // The starter's 8 roled units plus the Discharge sink, as a passive unit.
+  expect(within(preview()).getAllByTestId("mimic-node")).toHaveLength(9);
+  expect(within(preview()).getByTestId("mimic-preset-preview-counts")).toHaveTextContent("9 units · 8 pipes");
+  expect(within(preview()).getByTestId("mimic-preset-preview-libraries")).toHaveTextContent(/^Core$/);
+}
+
+/** L10 — `F3.32g`: the preview follows the select, and draws the chosen preset's library glyphs. */
+export async function previewFollowsTheSelect(): Promise<void> {
+  renderPage(user("admin"));
+  await userEvent.selectOptions(await screen.findByRole("combobox", { name: "Start from" }), "facility_services");
+  expect(preview()).toHaveAttribute("data-preset", "facility_services");
+  expect(within(preview()).getAllByTestId("mimic-node")).toHaveLength(5);
+  expect(within(preview()).getByTestId("mimic-preset-preview-libraries")).toHaveTextContent(
+    /^Core, Tabler Icons, Lucide, Material Design Icons$/,
+  );
+  const drawn = [...preview().querySelectorAll("[data-glyph]")].map((g) => g.getAttribute("data-glyph"));
+  expect(drawn).toEqual(
+    expect.arrayContaining(["mdi:meter-electric", "lucide:lightbulb", "tabler:elevator", "tabler:fire-hydrant", "lucide:cog"]),
+  );
+}
+
+/** L11 — `F3.32g`: no preset's preview draws the unknown-symbol fallback. */
+export async function noPresetPreviewDrawsTheFallback(): Promise<void> {
+  renderPage(user("admin"));
+  const select = await screen.findByRole("combobox", { name: "Start from" });
+  for (const option of within(select).getAllByRole("option")) {
+    const value = option.getAttribute("value") ?? "";
+    await userEvent.selectOptions(select, value);
+    expect(preview()).toHaveAttribute("data-preset", value);
+    expect(preview().querySelectorAll("[data-glyph]").length, value).toBeGreaterThan(0);
+    expect(preview().querySelectorAll('[data-glyph-fallback="true"]'), value).toHaveLength(0);
+  }
 }
 
 /** L8 — an empty library names no one preset: it points at the Start from choice. */

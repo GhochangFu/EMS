@@ -1,6 +1,7 @@
 import { MIMIC_LAYOUT_BOUNDS } from "@bms/shared/contracts";
 import {
   MIMIC_PRESETS,
+  MIMIC_SYMBOL_LIBRARIES,
   type MimicLayoutDto,
   type MimicLayoutNodeDto,
   type MimicLayoutPipeDto,
@@ -8,6 +9,8 @@ import {
   type MimicPreset,
   type MimicPresetDef,
   type MimicSymbol,
+  type MimicSymbolLibraryCode,
+  libraryOfSymbol,
 } from "@bms/shared";
 
 import type { MimicLayoutWriteBody, MimicLayoutWriteNode } from "../api/mimic-layouts";
@@ -40,6 +43,8 @@ export type EditorLayout = {
   readonly canvasH: number;
   readonly nodes: readonly EditorNode[];
   readonly pipes: readonly EditorPipe[];
+  /** The libraries the palette offers (ADR 0084 decision 8): never empty; `core` is not mandatory. */
+  readonly symbolLibraries: readonly MimicSymbolLibraryCode[];
 };
 
 export type EditorState = {
@@ -69,6 +74,7 @@ export type EditorLayoutPatch = {
   readonly slug?: string;
   readonly canvasW?: number;
   readonly canvasH?: number;
+  readonly symbolLibraries?: readonly MimicSymbolLibraryCode[];
 };
 
 export type EditorAction =
@@ -103,7 +109,7 @@ const NEW_NODE_AT = { x: 2, y: 2 } as const;
 
 /** A new, empty layout: the smallest name the API takes, a canvas the size of the preset's. */
 export function emptyEditorLayout(): EditorLayout {
-  return { name: "New plant", slug: "new-plant", canvasW: 126, canvasH: 68, nodes: [], pipes: [] };
+  return { name: "New plant", slug: "new-plant", canvasW: 126, canvasH: 68, nodes: [], pipes: [], symbolLibraries: ["core"] };
 }
 
 export function initialEditorState(layout: EditorLayout = emptyEditorLayout()): EditorState {
@@ -119,6 +125,7 @@ export function layoutFromDto(dto: MimicLayoutDto): EditorLayout {
     canvasH: dto.canvasH,
     nodes: dto.nodes,
     pipes: dto.pipes,
+    symbolLibraries: dto.symbolLibraries,
   };
 }
 
@@ -146,6 +153,21 @@ export function nextNodeKey(nodes: readonly EditorNode[], prefix: string): strin
     }
   }
   return `${prefix}_${max + 1}`;
+}
+
+/**
+ * The key prefix of a new unit of `symbol`: the symbol itself for a core key (`tank_1`), the
+ * name after the colon with `-` → `_` for a library key (`mdi:heat-pump` → `heat_pump_1`) —
+ * `MIMIC_LAYOUT_NODE_KEY` admits neither `:` nor `-`. Cut to 24 characters so the suffix fits
+ * the 32-character key; a name that does not start with a letter falls back to `unit`.
+ */
+export function unitKeyPrefix(symbol: MimicSymbol): string {
+  const name = symbol
+    .slice(symbol.indexOf(":") + 1)
+    .replace(/[^a-z0-9]+/g, "_")
+    .slice(0, 24)
+    .replace(/_+$/, "");
+  return /^[a-z]/.test(name) ? name : "unit";
 }
 
 /** A symbol's label — the table in `mimic-symbols.ts` (ADR 0082), re-exported for existing callers. */
@@ -203,7 +225,33 @@ function inBounds(value: number, range: { readonly min: number; readonly max: nu
   return Number.isInteger(value) && value >= range.min && value <= range.max;
 }
 
+/**
+ * The libraries the layout's units use, each with the unit keys that use it (ADR 0084
+ * decision 9): a library in this map cannot be dropped, and the inspector disables its box.
+ */
+export function librariesInUse(layout: EditorLayout): ReadonlyMap<MimicSymbolLibraryCode, readonly string[]> {
+  const used = new Map<MimicSymbolLibraryCode, string[]>();
+  for (const node of layout.nodes) {
+    if (node.kind === "unit" && node.symbol !== null) {
+      const code = libraryOfSymbol(node.symbol);
+      used.set(code, [...(used.get(code) ?? []), node.key]);
+    }
+  }
+  return used;
+}
+
+/** A library list the layout may take: not empty, and keeping every library a unit uses. */
+function librariesAllowed(layout: EditorLayout, next: readonly MimicSymbolLibraryCode[]): boolean {
+  if (next.length === 0) {
+    return false;
+  }
+  return [...librariesInUse(layout).keys()].every((code) => next.includes(code));
+}
+
 function updateLayout(state: EditorState, patch: EditorLayoutPatch): EditorState {
+  if (patch.symbolLibraries !== undefined && !librariesAllowed(state.layout, patch.symbolLibraries)) {
+    return state;
+  }
   const canvasW = patch.canvasW ?? state.layout.canvasW;
   const canvasH = patch.canvasH ?? state.layout.canvasH;
   if (!inBounds(canvasW, MIMIC_LAYOUT_BOUNDS.canvasW) || !inBounds(canvasH, MIMIC_LAYOUT_BOUNDS.canvasH)) {
@@ -341,7 +389,7 @@ export function editorReducer(state: EditorState, action: EditorAction): EditorS
     case "add-unit":
       return addNode(
         state,
-        newNode(state, "unit", action.symbol, { symbol: action.symbol, label: symbolLabel(action.symbol), tone: null }),
+        newNode(state, "unit", unitKeyPrefix(action.symbol), { symbol: action.symbol, label: symbolLabel(action.symbol), tone: null }),
       );
     case "add-panel":
       return addNode(state, newNode(state, "panel", "panel", { symbol: null, label: "Panel", tone: "info" }));
@@ -401,6 +449,7 @@ export function toWriteBody(layout: EditorLayout): MimicLayoutWriteBody {
       return out;
     }),
     pipes: layout.pipes.map((pipe) => ({ fromKey: pipe.fromKey, toKey: pipe.toKey })),
+    symbolLibraries: [...layout.symbolLibraries],
   };
 }
 
@@ -425,6 +474,17 @@ function panelAround(members: readonly Box[]): Box {
   };
 }
 
+/** `core`, then each library a unit draws from, in `MIMIC_SYMBOL_LIBRARIES` order. */
+function presetLibraries(units: readonly EditorNode[]): MimicSymbolLibraryCode[] {
+  const used = new Set<MimicSymbolLibraryCode>(["core"]);
+  for (const unit of units) {
+    if (unit.symbol !== null) {
+      used.add(libraryOfSymbol(unit.symbol));
+    }
+  }
+  return MIMIC_SYMBOL_LIBRARIES.map((library) => library.code).filter((code) => used.has(code));
+}
+
 /**
  * "Start from" a preset (ADR 0081 decision 4, generalised by ADR 0082 decision 5 to all seven
  * presets): the preset's roled units at the web's coordinates rounded to the grid, the panels
@@ -434,6 +494,10 @@ function panelAround(members: readonly Box[]): Box {
  * D6) one unit-pitch left of its upstream unit on that unit's row, inside that unit's panel, and
  * one more pipe into it. The sink is not placed at its preset tip (px 450): a unit-sized box
  * there overlaps ETP. A preset without a sink copies its nodes, panels and pipes only.
+ *
+ * The copy chooses `core` and every library its units draw from (`F3.32g`), in registry order —
+ * a preset glyph is a library key since then, and the API refuses a unit whose library the
+ * layout did not choose (ADR 0084 decision 8).
  */
 export function fromPreset(preset: MimicPreset): EditorLayout {
   const def: MimicPresetDef = MIMIC_PRESETS[preset];
@@ -513,6 +577,7 @@ export function fromPreset(preset: MimicPreset): EditorLayout {
     canvasH: toCell(viewH ?? 0),
     nodes: [...panels, ...units],
     pipes,
+    symbolLibraries: presetLibraries(units),
   };
 }
 

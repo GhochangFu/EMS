@@ -5,8 +5,8 @@ import type { VocabulariesResponse } from "@bms/shared";
 import { expect, vi } from "vitest";
 
 import * as vocabApi from "../../api/vocabularies";
-import { fromPreset, type EditorNode } from "../../lib/mimic-editor";
-import { MIMIC_SYMBOL_GROUPS } from "../../lib/mimic-symbols";
+import { editorReducer, fromPreset, initialEditorState, type EditorLayout, type EditorNode } from "../../lib/mimic-editor";
+import { MIMIC_SYMBOL_GROUPS, librarySymbolGroups } from "../../lib/mimic-symbols";
 import { MimicEditorInspector, type MimicEditorInspectorProps } from "./inspector";
 
 /**
@@ -163,4 +163,92 @@ export function organizationListsItsOptions(): void {
     organization: { options: [{ id: "o1", label: "ION — Ion Exchange" }], value: "", onChange: vi.fn() },
   });
   expect(screen.getByRole("option", { name: "ION — Ion Exchange" })).toBeInTheDocument();
+}
+
+// ---- symbol libraries (F3.32e, ADR 0084 decisions 8 and 9) ----------------------------------
+
+/** A layout choosing core and MDI with one MDI unit, `heat_pump_1`, selected. */
+function mdiLayout(): EditorLayout {
+  const s = [
+    { type: "update-layout", patch: { symbolLibraries: ["core", "mdi"] } },
+    { type: "add-unit", symbol: "mdi:heat-pump" },
+  ] as const;
+  return s.reduce(editorReducer, initialEditorState()).layout;
+}
+
+function renderWith(l: EditorLayout, selectedKey: string | null = null) {
+  const selected = selectedKey === null ? null : (l.nodes.find((n) => n.key === selectedKey) ?? null);
+  return renderInspector(null, { layout: l, selected });
+}
+
+/** N12 — one check box per library, in registry order. */
+export function fourLibraryBoxesInRegistryOrder(): void {
+  renderInspector(null);
+  const boxes = screen.getAllByRole("checkbox", { name: /^Library / }).map((b) => b.getAttribute("aria-label"));
+  expect(boxes).toEqual(["Library Core", "Library Tabler Icons", "Library Lucide", "Library Material Design Icons"]);
+}
+
+/** N13 — a core-only layout has Core checked and the other three unchecked. */
+export function coreIsCheckedOnACoreLayout(): void {
+  renderInspector(null);
+  const checked = screen.getAllByRole("checkbox", { name: /^Library / }).map((b) => (b as HTMLInputElement).checked);
+  expect(checked).toEqual([true, false, false, false]);
+}
+
+/** N14 — checking Tabler reports the list with Tabler added, in registry order. */
+export async function checkingTablerAddsIt(): Promise<void> {
+  const props = renderInspector(null);
+  await userEvent.click(screen.getByRole("checkbox", { name: "Library Tabler Icons" }));
+  expect(props.onLayoutChange).toHaveBeenCalledWith({ symbolLibraries: ["core", "tabler"] });
+}
+
+/** N15 — unchecking an unused library reports the list without it. */
+export async function uncheckingAnUnusedLibraryDropsIt(): Promise<void> {
+  const props = renderWith({ ...layout, symbolLibraries: ["core", "tabler"] });
+  await userEvent.click(screen.getByRole("checkbox", { name: "Library Tabler Icons" }));
+  expect(props.onLayoutChange).toHaveBeenCalledWith({ symbolLibraries: ["core"] });
+}
+
+/** N16 — a library a unit uses is disabled; an unused one beside it is not. */
+export function aUsedLibraryBoxIsDisabled(): void {
+  renderWith(mdiLayout());
+  // Positive control: an unused library stays enabled.
+  expect(screen.getByRole("checkbox", { name: "Library Tabler Icons" })).toBeEnabled();
+  expect(screen.getByRole("checkbox", { name: "Library Material Design Icons" })).toBeDisabled();
+}
+
+/** N17 — a used library names the units that use it. */
+export function aUsedLibraryNamesItsUnits(): void {
+  renderWith(mdiLayout());
+  expect(screen.getByText("Material Design Icons is used by: heat_pump_1")).toBeInTheDocument();
+}
+
+/** N18 — the Symbol select adds one `optgroup` per chosen library's non-empty group. */
+export function symbolSelectGroupsEachChosenLibrary(): void {
+  renderWith(mdiLayout(), "heat_pump_1");
+  const select = screen.getByRole("combobox", { name: "Symbol" });
+  const labels = Array.from(select.querySelectorAll("optgroup")).map((g) => g.getAttribute("label"));
+  const mdi = librarySymbolGroups("mdi")
+    .filter((g) => g.symbols.length > 0)
+    .map((g) => `Material Design Icons · ${g.label}`);
+  expect(labels).toEqual([...MIMIC_SYMBOL_GROUPS.map((g) => g.label), ...mdi]);
+}
+
+/** N19 — a unit whose library is not chosen shows its symbol as one leading option. */
+export function anUnchosenLibraryUnitShowsALeadingOption(): void {
+  const l = mdiLayout();
+  renderWith({ ...l, symbolLibraries: ["core"] }, "heat_pump_1");
+  const select = screen.getByRole("combobox", { name: "Symbol" });
+  expect(select).toHaveValue("mdi:heat-pump");
+  const first = select.firstElementChild;
+  expect(first?.tagName).toBe("OPTION");
+  expect(first?.textContent).toBe("Heat pump (Material Design Icons)");
+}
+
+/** N20 — a unit whose library IS chosen gets no leading option (the control for N19). */
+export function aChosenLibraryUnitHasNoLeadingOption(): void {
+  renderWith(mdiLayout(), "heat_pump_1");
+  const select = screen.getByRole("combobox", { name: "Symbol" });
+  expect(select).toHaveValue("mdi:heat-pump");
+  expect(select.firstElementChild?.tagName).toBe("OPTGROUP");
 }

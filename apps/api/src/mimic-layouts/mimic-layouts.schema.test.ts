@@ -30,4 +30,16 @@ describe("F3.32c — the mimic layout write bodies", () => {
   it("refuses a PUT body without a version", () => spec.refusesAPutBodyWithoutAVersion());
   it("refuses a PUT body with version 0", () => spec.refusesAPutBodyWithVersionZero());
   it("refuses a PUT body that names an organization", () => spec.refusesAPutBodyThatNamesAnOrganization());
+  it("F3.32e defaults an absent library list to core", () => spec.defaultsAnAbsentLibraryListToCore());
+  it("F3.32e defaults an absent library list to core on a PUT", () => spec.defaultsAnAbsentLibraryListToCoreOnAPut());
+  it("F3.32e refuses a library listed twice", () => spec.refusesALibraryListedTwice());
+  it("F3.32e refuses an empty library list", () => spec.refusesAnEmptyLibraryList());
+  it("F3.32e refuses an unknown library code", () => spec.refusesAnUnknownLibraryCode());
+  it("F3.32e refuses a unit from a library the layout did not choose", () =>
+    spec.refusesAUnitFromALibraryTheLayoutDidNotChoose());
+  it("F3.32e refuses a PUT unit from a library the layout did not choose", () =>
+    spec.refusesAPutUnitFromALibraryTheLayoutDidNotChoose());
+  it("F3.32e accepts a unit from a chosen library", () => spec.acceptsAUnitFromAChosenLibrary());
+  it("F3.32e accepts a layout without core", () => spec.acceptsALayoutWithoutCore());
+  it("F3.32e refuses a key in no library", () => spec.refusesAKeyInNoLibrary());
 });

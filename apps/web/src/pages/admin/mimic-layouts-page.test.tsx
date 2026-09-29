@@ -9,7 +9,10 @@ import {
   failsClosedForALocationAdmin,
   listsEachLayoutWithItsUnitCount,
   newLinksToTheNewRoute,
+  noPresetPreviewDrawsTheFallback,
   openLinksToTheEditor,
+  previewDrawsTheDefaultPreset,
+  previewFollowsTheSelect,
   startDefaultsToWaterTrain,
   startFollowsTheChosenPreset,
   startFromListsTheSevenPresets,
@@ -40,6 +43,18 @@ describe("F3.32c mimic layouts page", () => {
 
   it("L3c choosing Compressed air points Start at it", async () => {
     await startFollowsTheChosenPreset();
+  });
+
+  it("L9 F3.32g the preview draws the default Water train starter", async () => {
+    await previewDrawsTheDefaultPreset();
+  });
+
+  it("L10 F3.32g the preview follows the select and draws library glyphs", async () => {
+    await previewFollowsTheSelect();
+  });
+
+  it("L11 F3.32g no preset preview draws the unknown-symbol fallback", async () => {
+    await noPresetPreviewDrawsTheFallback();
   });
 
   it("L8 an empty library points at any preset", async () => {

@@ -14,8 +14,8 @@ describe("F3.32c mimic editor inspector", () => {
   const cases = Object.entries(spec);
 
   it("has its claims", () => {
-    if (cases.length < 11) {
-      throw new Error(`expected at least 11 claims, found ${cases.length}`);
+    if (cases.length < 23) {
+      throw new Error(`expected at least 23 claims, found ${cases.length}`);
     }
   });
 

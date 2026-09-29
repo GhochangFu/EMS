@@ -1,6 +1,8 @@
-import type { ReactNode } from "react";
+import type { MimicCoreSymbol } from "@bms/shared";
+import { createElement, type ReactNode } from "react";
 
-import type { MimicGlyphKind } from "../../lib/mimic";
+import { MIMIC_GLYPH_FILL_CLASS, type MimicGlyphKind } from "../../lib/mimic";
+import { librarySymbolShapes } from "./mimic-symbol-libraries";
 
 /**
  * `F3.32b` (ADR 0079 Amendment 2) — the plant mimic's illustrated symbols.
@@ -13,15 +15,26 @@ import type { MimicGlyphKind } from "../../lib/mimic";
  * generic `unit` (ADR 0081, plan D12). `F3.32d` (ADR 0082) appends seventeen glyphs for the
  * electrical, HVAC/water-adjacent, UPS/battery, environmental and lift domains (`transformer`
  * through `lift`) — drawn fresh, by the plan's glyph brief, in the same grid and stroke. `PATHS`
- * is keyed by `MimicGlyphKind`, so a symbol the shared contract adds without a path here is a
- * compile error.
+ * is keyed by the core set only (`MimicCoreSymbol | "alert"`); it never grows to cover a library
+ * key.
+ *
+ * `F3.32e` (ADR 0084 decisions 5 and 6) draws every other `MimicGlyphKind` — a library key
+ * (`<library>:<name>`) — from `librarySymbolShapes(kind)`'s vendored shape list, never from
+ * `innerHTML` or an SVG string: each shape is one `createElement(tag, { ...attrs })`, geometry
+ * only (ADR 0084 decision 5's whitelist). A key no library has (a stale or malformed value)
+ * draws the `unit` fallback, marked `data-glyph-fallback="true"`, and never throws. A `stroke`
+ * library (`tabler`, `lucide`) draws inside the same wrapper as a core glyph: no fill, the
+ * caller's stroke role class, the shapes inheriting it. A `fill` library (`mdi`) draws with no
+ * stroke and the *matching fill class of the same role* (`MIMIC_GLYPH_FILL_CLASS`, ADR 0078) —
+ * colour stays with the role token across both draw styles, so this file still names no colour
+ * of its own.
  *
  * Paths are inlined, never `<symbol>`/`<use>`: two mimics on one dashboard must not share an id.
  * The stroke colour is the caller's role class on the wrapping `<g>` — the paths inherit it, so
  * this file names no colour at all (`tests/f3.65-colour-roles-gate.test.ts`).
  */
 
-const PATHS: Readonly<Record<MimicGlyphKind, ReactNode>> = {
+const PATHS: Readonly<Record<MimicCoreSymbol | "alert", ReactNode>> = {
   tank: (
     <>
       <path d="M4 6.5v11c0 1.9 3.6 3.5 8 3.5s8-1.6 8-3.5v-11" />
@@ -252,28 +265,87 @@ type MimicGlyphProps = {
 
 /** One illustrated unit symbol, scaled into a `size` square at (`x`, `y`) in viewBox units. */
 export function MimicGlyph({ kind, x, y, size, className, level = null }: MimicGlyphProps) {
+  const transform = `translate(${x} ${y}) scale(${size / 24})`;
+
+  if (Object.prototype.hasOwnProperty.call(PATHS, kind)) {
+    return (
+      <g
+        data-testid="mimic-glyph"
+        data-glyph={kind}
+        aria-hidden="true"
+        transform={transform}
+        fill="none"
+        strokeWidth={1.5}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        className={className}
+      >
+        {kind === "tank" && level !== null ? (
+          <path
+            data-testid="mimic-tank-level"
+            data-level={Math.round(level * 100)}
+            d={tankFillPath(level)}
+            stroke="none"
+            className="fill-info/30"
+          />
+        ) : null}
+        {PATHS[kind as keyof typeof PATHS]}
+      </g>
+    );
+  }
+
+  const library = librarySymbolShapes(kind);
+
+  if (library === null) {
+    return (
+      <g
+        data-testid="mimic-glyph"
+        data-glyph={kind}
+        data-glyph-fallback="true"
+        aria-hidden="true"
+        transform={transform}
+        fill="none"
+        strokeWidth={1.5}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        className={className}
+      >
+        {PATHS.unit}
+      </g>
+    );
+  }
+
+  const shapes = library.shapes.map(([tag, attrs], i) => createElement(tag, { key: i, ...attrs }));
+
+  if (library.style === "stroke") {
+    return (
+      <g
+        data-testid="mimic-glyph"
+        data-glyph={kind}
+        aria-hidden="true"
+        transform={transform}
+        fill="none"
+        strokeWidth={1.5}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        className={className}
+      >
+        {shapes}
+      </g>
+    );
+  }
+
   return (
     <g
       data-testid="mimic-glyph"
       data-glyph={kind}
+      data-glyph-style="fill"
       aria-hidden="true"
-      transform={`translate(${x} ${y}) scale(${size / 24})`}
-      fill="none"
-      strokeWidth={1.5}
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      className={className}
+      transform={transform}
+      stroke="none"
+      className={MIMIC_GLYPH_FILL_CLASS[className] ?? "fill-ink-muted"}
     >
-      {kind === "tank" && level !== null ? (
-        <path
-          data-testid="mimic-tank-level"
-          data-level={Math.round(level * 100)}
-          d={tankFillPath(level)}
-          stroke="none"
-          className="fill-info/30"
-        />
-      ) : null}
-      {PATHS[kind]}
+      {shapes}
     </g>
   );
 }

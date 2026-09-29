@@ -12,6 +12,7 @@ import {
 } from "@bms/shared";
 
 import {
+  MIMIC_GLYPH_FILL_CLASS,
   MIMIC_LAYOUTS,
   MIMIC_NODE_GLYPHS,
   MIMIC_NODE_SIZE,
@@ -409,4 +410,17 @@ export function pumpSitsMidGap(): void {
   expect(pipeMidpoint({ x: 0, y: 10 }, { x: 300, y: 10 })).toEqual({ x: (w + 300) / 2, y: 10 + MIMIC_PIPE_Y });
   expect(pipeMidpoint({ x: 300, y: 10 }, { x: 0, y: 10 })).toEqual({ x: (w + 300) / 2, y: 10 + MIMIC_PIPE_Y });
   expect(pipeMidpoint({ x: 0, y: 0 }, { x: 0, y: 400 })).toBeNull();
+}
+
+/**
+ * M16 — `MIMIC_GLYPH_FILL_CLASS` (ADR 0084 decision 6) is a literal role map: every key is a
+ * `stroke-*` role class, every value is `fill-*` of the SAME role, so a fill glyph never drifts
+ * to a different role than its caller's stroke class names.
+ */
+export function glyphFillClassMapKeepsTheSameRolePerEntry(): void {
+  for (const [strokeClass, fillClass] of Object.entries(MIMIC_GLYPH_FILL_CLASS)) {
+    expect(strokeClass, strokeClass).toMatch(/^stroke-[a-z-]+$/);
+    expect(fillClass, strokeClass).toMatch(/^fill-[a-z-]+$/);
+    expect(fillClass, strokeClass).toBe(`fill-${strokeClass.replace(/^stroke-/, "")}`);
+  }
 }

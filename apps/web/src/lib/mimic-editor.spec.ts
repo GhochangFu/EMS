@@ -1,15 +1,19 @@
-import { MIMIC_LAYOUT_BOUNDS, MIMIC_LAYOUT_NODE_KEY, mimicPresetSchema } from "@bms/shared/contracts";
-import { MIMIC_PRESETS } from "@bms/shared";
+import { MIMIC_LAYOUT_BOUNDS, MIMIC_LAYOUT_NODE_KEY, mimicPresetSchema, mimicSymbolSchema } from "@bms/shared/contracts";
+import { MIMIC_PRESETS, libraryOfSymbol, type MimicLayoutDto, type MimicPreset, type MimicSymbol } from "@bms/shared";
 
 import { MIMIC_PANELS } from "./mimic";
 import {
   clampBox,
   editorReducer,
+  emptyEditorLayout,
   fromPreset,
   initialEditorState,
   keyboardAction,
+  layoutFromDto,
+  librariesInUse,
   nextNodeKey,
   toWriteBody,
+  unitKeyPrefix,
   type EditorAction,
   type EditorKeyEvent,
   type EditorLayout,
@@ -220,6 +224,228 @@ export function runUpdateLayoutRefusesAShrinkThatStrandsANode(): void {
   const s = run(twoTanksAndAPanel(), { type: "set-box", key: "tank_1", box: { x: 100, y: 2, w: 20, h: 25 } });
   const after = run(s, { type: "update-layout", patch: { canvasW: 60 } });
   assert(after === s, "a shrink that leaves a node outside the canvas is refused");
+}
+
+// ---- symbol libraries (F3.32e, ADR 0084 decisions 8 and 9) ----------------------------------
+
+/** A layout choosing core and MDI, holding one MDI unit (`heat_pump_1`). */
+function withAnMdiUnit(): EditorState {
+  return run(
+    initialEditorState(),
+    { type: "update-layout", patch: { symbolLibraries: ["core", "mdi"] } },
+    { type: "add-unit", symbol: "mdi:heat-pump" },
+  );
+}
+
+export function runEmptyLayoutChoosesCore(): void {
+  const libraries = emptyEditorLayout().symbolLibraries;
+  assert(libraries.length === 1 && libraries[0] === "core", `a new layout chooses ["core"], got ${JSON.stringify(libraries)}`);
+}
+
+/**
+ * `F3.32g` — each starter chooses `core` and the libraries its glyphs draw from, in registry
+ * order. Literal per preset, so a glyph swap that adds or drops a library reddens its line.
+ */
+const PRESET_LIBRARIES: Readonly<Record<MimicPreset, readonly string[]>> = {
+  water_train: ["core"],
+  electrical_distribution: ["core", "mdi"],
+  hvac_chiller_plant: ["core", "lucide"],
+  it_power_cooling: ["core", "tabler", "lucide"],
+  compressed_air: ["core", "lucide", "mdi"],
+  environment_monitoring: ["core", "lucide", "mdi"],
+  facility_services: ["core", "tabler", "lucide", "mdi"],
+};
+
+export function runEveryPresetChoosesCoreAndItsGlyphLibraries(): void {
+  for (const preset of mimicPresetSchema.options) {
+    const libraries = fromPreset(preset).symbolLibraries;
+    assert(
+      JSON.stringify(libraries) === JSON.stringify(PRESET_LIBRARIES[preset]),
+      `${preset} chooses ${JSON.stringify(PRESET_LIBRARIES[preset])}, got ${JSON.stringify(libraries)}`,
+    );
+  }
+}
+
+/** `F3.32g` — the API's refine: every starter unit's library is one the starter chose. */
+export function runEveryStarterUnitDrawsFromAChosenLibrary(): void {
+  for (const preset of mimicPresetSchema.options) {
+    const layout = fromPreset(preset);
+    for (const node of layout.nodes) {
+      if (node.symbol === null) continue;
+      assert(
+        layout.symbolLibraries.includes(libraryOfSymbol(node.symbol)),
+        `${preset}.${node.key} draws ${node.symbol}, outside ${JSON.stringify(layout.symbolLibraries)}`,
+      );
+    }
+  }
+}
+
+/** `F3.32g` — every starter glyph is a key of the closed symbol set the API and the FK hold. */
+export function runEveryStarterGlyphIsAKnownSymbol(): void {
+  for (const preset of mimicPresetSchema.options) {
+    for (const node of fromPreset(preset).nodes) {
+      if (node.symbol === null) continue;
+      assert(mimicSymbolSchema.safeParse(node.symbol).success, `${preset}.${node.key}: ${node.symbol} is not a mimic symbol`);
+    }
+  }
+}
+
+/** `F3.32g` — water_train keeps its core glyphs, so its tanks keep the live level fill. */
+export function runWaterTrainKeepsItsTanks(): void {
+  const tanks = fromPreset("water_train")
+    .nodes.filter((n) => n.symbol === "tank")
+    .map((n) => n.key);
+  assert(JSON.stringify(tanks) === '["water_intake","water_storage"]', `water_train tanks, got ${JSON.stringify(tanks)}`);
+}
+
+/**
+ * `F3.32g` — the owner-approved table, literal: every swapped starter unit draws its library
+ * glyph. A swap reverted to its core glyph reddens its line here, even when the preset still
+ * chooses the same libraries through another unit.
+ */
+const APPROVED_GLYPHS: Readonly<Record<string, string>> = {
+  "electrical_distribution.incoming": "mdi:transmission-tower-import",
+  "hvac_chiller_plant.ahu_fcu": "lucide:fan",
+  "it_power_cooling.utility_feed": "lucide:plug-zap",
+  "it_power_cooling.pdu": "tabler:plug-connected",
+  "it_power_cooling.crac": "tabler:air-conditioning",
+  "compressed_air.dryer": "lucide:wind",
+  "compressed_air.receiver": "mdi:gas-cylinder",
+  "compressed_air.header": "lucide:gauge",
+  "environment_monitoring.ambient": "lucide:thermometer-sun",
+  "environment_monitoring.indoor_air": "mdi:molecule-co2",
+  "environment_monitoring.stack": "lucide:factory",
+  "environment_monitoring.effluent": "lucide:droplets",
+  "facility_services.main_meter": "mdi:meter-electric",
+  "facility_services.lighting": "lucide:lightbulb",
+  "facility_services.lifts": "tabler:elevator",
+  "facility_services.fire_pumps": "tabler:fire-hydrant",
+  "facility_services.utilities": "lucide:cog",
+};
+
+export function runEveryApprovedSwapReachesTheStarter(): void {
+  assert(Object.keys(APPROVED_GLYPHS).length === 17, "the owner approved 17 swaps");
+  for (const [at, symbol] of Object.entries(APPROVED_GLYPHS)) {
+    const [preset, key] = at.split(".") as [MimicPreset, string];
+    const node = fromPreset(preset).nodes.find((n) => n.key === key);
+    assert(node?.symbol === symbol, `${at} draws ${symbol}, got ${String(node?.symbol)}`);
+  }
+}
+
+export function runLayoutFromDtoCopiesTheLibraries(): void {
+  const layout = fromPreset("water_train");
+  const dto: MimicLayoutDto = {
+    id: "11111111-1111-4111-8111-111111111111",
+    organizationId: "22222222-2222-4222-8222-222222222222",
+    name: layout.name,
+    slug: layout.slug,
+    canvasW: layout.canvasW,
+    canvasH: layout.canvasH,
+    version: 1,
+    symbolLibraries: ["tabler", "mdi"],
+    nodes: [...layout.nodes],
+    pipes: [...layout.pipes],
+    createdAt: new Date(0).toISOString(),
+    updatedAt: new Date(0).toISOString(),
+  };
+  const libraries = layoutFromDto(dto).symbolLibraries;
+  assert(JSON.stringify(libraries) === '["tabler","mdi"]', `layoutFromDto copies the libraries, got ${JSON.stringify(libraries)}`);
+}
+
+export function runWriteBodyCarriesTheLibraries(): void {
+  const body = toWriteBody({ ...emptyEditorLayout(), symbolLibraries: ["core", "lucide"] });
+  assert(JSON.stringify(body.symbolLibraries) === '["core","lucide"]', `the write body carries the libraries, got ${JSON.stringify(body.symbolLibraries)}`);
+}
+
+export function runUpdateLayoutSetsTheLibraries(): void {
+  const s = run(initialEditorState(), { type: "update-layout", patch: { symbolLibraries: ["core", "tabler"] } });
+  assert(JSON.stringify(s.layout.symbolLibraries) === '["core","tabler"]', "update-layout sets the libraries");
+}
+
+export function runUpdateLayoutLibrariesPushHistory(): void {
+  const s = initialEditorState();
+  const after = run(s, { type: "update-layout", patch: { symbolLibraries: ["core", "tabler"] } });
+  assert(after.past.length === s.past.length + 1, "a library change is one history entry");
+}
+
+export function runUpdateLayoutRefusesNoLibraries(): void {
+  const s = initialEditorState();
+  const after = run(s, { type: "update-layout", patch: { symbolLibraries: [] } });
+  assert(after === s, "an empty library list is refused");
+}
+
+export function runUpdateLayoutRefusesDroppingAUsedLibrary(): void {
+  const s = withAnMdiUnit();
+  // Preconditions: MDI is chosen and a unit uses it — without them the refusal proves nothing.
+  assert(s.layout.symbolLibraries.includes("mdi"), "precondition: MDI is chosen");
+  assert(s.layout.nodes.some((n) => n.symbol === "mdi:heat-pump"), "precondition: a unit uses MDI");
+  const after = run(s, { type: "update-layout", patch: { symbolLibraries: ["core"] } });
+  assert(after === s, "dropping a library a unit uses is refused");
+}
+
+/** The positive control for the refusal above: the same drop, with no MDI unit, applies. */
+export function runUpdateLayoutDropsAnUnusedLibrary(): void {
+  const s = run(initialEditorState(), { type: "update-layout", patch: { symbolLibraries: ["core", "mdi"] } });
+  const after = run(s, { type: "update-layout", patch: { symbolLibraries: ["core"] } });
+  assert(JSON.stringify(after.layout.symbolLibraries) === '["core"]', "an unused library is dropped");
+}
+
+/**
+ * Two libraries in use, one dropped: refused. Holds `every` in the refusal — with `some`, the
+ * still-used `tabler` would let the used `mdi` go, and the API would refuse the save.
+ */
+export function runUpdateLayoutRefusesDroppingOneOfTwoUsedLibraries(): void {
+  const s = run(
+    initialEditorState(),
+    { type: "update-layout", patch: { symbolLibraries: ["core", "tabler", "mdi"] } },
+    { type: "add-unit", symbol: "tabler:bolt" },
+    { type: "add-unit", symbol: "mdi:heat-pump" },
+  );
+  assert(JSON.stringify(s.layout.symbolLibraries) === '["core","tabler","mdi"]', "precondition: three chosen");
+  assert(s.layout.nodes.some((n) => n.symbol === "tabler:bolt"), "precondition: a unit uses Tabler");
+  assert(s.layout.nodes.some((n) => n.symbol === "mdi:heat-pump"), "precondition: a unit uses MDI");
+  const after = run(s, { type: "update-layout", patch: { symbolLibraries: ["core", "tabler"] } });
+  assert(after === s, "dropping MDI while a unit uses it is refused, although Tabler stays");
+}
+
+/** Three symbols with the same name from three libraries get unique, valid keys. */
+export function runSameNamedSymbolsFromThreeLibrariesGetUniqueKeys(): void {
+  const s = run(
+    initialEditorState(),
+    { type: "update-layout", patch: { symbolLibraries: ["core", "tabler", "mdi"] } },
+    { type: "add-unit", symbol: "filter" },
+    { type: "add-unit", symbol: "tabler:filter" },
+    { type: "add-unit", symbol: "mdi:filter" },
+  );
+  const keys = s.layout.nodes.map((n) => n.key);
+  assert(JSON.stringify(keys) === '["filter_1","filter_2","filter_3"]', `keys: ${JSON.stringify(keys)}`);
+}
+
+export function runUpdateLayoutMayDropCore(): void {
+  const s = run(initialEditorState(), { type: "update-layout", patch: { symbolLibraries: ["mdi"] } });
+  assert(JSON.stringify(s.layout.symbolLibraries) === '["mdi"]', "core is not mandatory (ruling R3)");
+}
+
+export function runAddUnitLabelsALibrarySymbol(): void {
+  const n = node(withAnMdiUnit(), "heat_pump_1");
+  assert(n.label === "Heat pump" && n.symbol === "mdi:heat-pump", `mdi:heat-pump adds "Heat pump", got ${n.label}`);
+}
+
+export function runALibraryUnitKeyMatchesTheContract(): void {
+  const s = run(initialEditorState(), { type: "add-unit", symbol: "mdi:heat-pump" }, { type: "add-unit", symbol: "tabler:bolt" });
+  for (const n of s.layout.nodes) {
+    assert(MIMIC_LAYOUT_NODE_KEY.test(n.key), `a library unit's key ${n.key} matches MIMIC_LAYOUT_NODE_KEY`);
+  }
+  assert(s.layout.nodes.length === 2, "both units were added");
+}
+
+export function runUnitKeyPrefixFallsBackForANonLetterName(): void {
+  assert(unitKeyPrefix("mdi:1-thing" as MimicSymbol) === "unit", "a name that starts with a digit falls back to unit");
+}
+
+export function runLibrariesInUseNamesTheUnits(): void {
+  const used = librariesInUse(withAnMdiUnit().layout);
+  assert(JSON.stringify(used.get("mdi")) === '["heat_pump_1"]', `MDI is used by heat_pump_1, got ${JSON.stringify(used.get("mdi"))}`);
 }
 
 // ---- delete -------------------------------------------------------------------------------

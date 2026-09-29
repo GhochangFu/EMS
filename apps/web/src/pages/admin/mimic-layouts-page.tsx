@@ -6,6 +6,7 @@ import { mimicPresetSchema } from "@bms/shared/contracts";
 
 import { deleteMimicLayout, fetchMimicLayouts } from "../../api/mimic-layouts";
 import { MasterDataLayout } from "../../components/admin/master-data-layout";
+import { PresetPreview } from "../../components/mimic-editor/preset-preview";
 import { PageHeader } from "../../components/page-header";
 import { SectionCard } from "../../components/section-card";
 import { canManageMimicLayouts } from "../../lib/admin-access";
@@ -25,6 +26,10 @@ export const MIMIC_LAYOUTS_QUERY_KEY = ["mimic-layouts"] as const;
  * `mimicPresetSchema.options` labelled by `MIMIC_PRESETS`, opening on `water_train`, and a Start
  * link to the new-layout route with the chosen preset. A link, not a button: it navigates and
  * writes nothing, so it has no pending state.
+ *
+ * **A preview draws the chosen preset** (`F3.32g`, owner ruling 2026-09-29) under the select:
+ * the starter Start opens, with its unit and pipe counts and its libraries. It follows the
+ * select, and mounts no query.
  *
  * **It fails closed at the page**, as `location-types-page.tsx` does. The tab and the rail entry
  * are hidden from every role but `admin` and `organization_admin`, but a typed URL still reaches
@@ -112,6 +117,7 @@ function MimicLayoutLibrary() {
           New layout
         </Link>
       </div>
+      <PresetPreview preset={startFrom} />
       {error !== null ? (
         <p role="alert" className="text-xs text-critical-ink">
           {error}
