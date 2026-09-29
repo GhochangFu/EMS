@@ -37,8 +37,9 @@ export type MimicEditorPaletteProps = {
   libraries: readonly MimicSymbolLibraryCode[];
 };
 
-const BUTTON = "rounded border border-line bg-surface px-2 py-1 text-xs font-semibold text-ink hover:bg-well disabled:opacity-50";
-const SELECTED_TAB = "rounded bg-accent px-2 py-1 text-xs font-semibold text-on-accent";
+const BUTTON = "surface-button px-2 py-1 disabled:opacity-50";
+const TAB = "surface-tab px-2 py-1 text-xs";
+const SELECTED_TAB = "surface-tab surface-tab-selected px-2 py-1 text-xs";
 
 type SymbolButtonProps = {
   symbol: MimicSymbol;
@@ -54,7 +55,7 @@ function SymbolButton({ symbol, name, onAddUnit }: SymbolButtonProps) {
       title={label}
       aria-label={name}
       onClick={() => onAddUnit(symbol)}
-      className="flex flex-col items-center rounded border border-line bg-surface p-1 text-[10px] text-ink-muted hover:bg-well"
+      className="surface-raised-sm flex flex-col items-center p-1 text-[10px] text-ink-muted hover:text-ink"
     >
       <svg viewBox="0 0 24 24" className="h-6 w-6" aria-hidden="true">
         <MimicGlyph kind={symbol} x={0} y={0} size={24} className="stroke-ink-muted" />
@@ -181,7 +182,7 @@ export function MimicEditorPalette(props: MimicEditorPaletteProps) {
               aria-selected={library.code === active.code}
               aria-controls={`${idBase}-panel`}
               onClick={() => setTab(library.code)}
-              className={library.code === active.code ? SELECTED_TAB : BUTTON}
+              className={library.code === active.code ? SELECTED_TAB : TAB}
             >
               {library.label}
             </button>
@@ -203,7 +204,7 @@ export function MimicEditorPalette(props: MimicEditorPaletteProps) {
         placeholder="Search symbols"
         value={query}
         onChange={(event) => setQuery(event.target.value)}
-        className="w-full rounded border border-line px-2 py-1 text-xs"
+        className="surface-field w-full px-2 py-1 text-xs"
       />
       <div className="space-y-2">{symbols()}</div>
       <div className="flex flex-wrap gap-1">
@@ -217,7 +218,7 @@ export function MimicEditorPalette(props: MimicEditorPaletteProps) {
           type="button"
           aria-pressed={props.pipeMode}
           onClick={props.onTogglePipeMode}
-          className={props.pipeMode ? "rounded bg-accent px-2 py-1 text-xs font-semibold text-on-accent" : BUTTON}
+          className={props.pipeMode ? "surface-button-primary bg-accent px-2 py-1 text-xs font-semibold text-on-accent" : BUTTON}
         >
           Pipe mode
         </button>

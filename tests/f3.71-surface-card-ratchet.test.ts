@@ -11,21 +11,10 @@ import { surfaceCardCounts, surfaceCardFindings } from "./support/surface-card-s
  * The sweeps ran against a per-file floor (334 findings in 84 files at the foundation commit);
  * the floor is gone and V1 is exact: every file holds none, except the `KEPT` sites, each with
  * its reason. A kept count that no longer matches its file fails too, so the list cannot go stale.
+ * The mimic editor files waited for `F3.32e` (plan unit D); they were converted after it merged.
  */
 
 const KEPT: Record<string, { count: number; reason: string }> = {
-  "apps/web/src/components/dashboards/widget-inspector.tsx": {
-    count: 24,
-    reason: "F3.32e (ADR 0084) edits this file in flight; converted after it merges (plan unit D)",
-  },
-  "apps/web/src/components/mimic-editor/canvas.tsx": {
-    count: 1,
-    reason: "F3.32e (ADR 0084) edits the mimic editor in flight; plan unit D",
-  },
-  "apps/web/src/components/mimic-editor/palette.tsx": {
-    count: 2,
-    reason: "F3.32e (ADR 0084) edits this file in flight; plan unit D",
-  },
   "apps/web/src/components/maintenance-schedules-panel.tsx": {
     count: 1,
     reason: "the neutral status-pill tone string (border-line bg-surface text-ink-muted), not a card",

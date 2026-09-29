@@ -162,7 +162,7 @@ export function MimicEditorCanvas({ state, dispatch, pipeMode }: MimicEditorCanv
       ref={containerRef}
       data-testid="mimic-editor-canvas"
       data-pipe-mode={pipeMode ? "true" : "false"}
-      className="relative w-full rounded border border-line bg-surface"
+      className="surface-pressed relative w-full"
       style={{ aspectRatio: `${layout.canvasW} / ${layout.canvasH}` }}
     >
       <MimicScene title="Layout editor" geometry={geometry} nodes={[]} readings={NO_READINGS}>

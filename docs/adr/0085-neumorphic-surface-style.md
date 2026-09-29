@@ -193,9 +193,11 @@ in the neumorphic style; the flat style keeps today's inks (`ok-ink` on `ok-wash
 `ink` for a sidebar link, `on-accent` for a segmented item).
 
 **Decision 7, measured.** `pages/admin/mimic-layouts-page.tsx` was converted with the admin sweep:
-`F3.32e` edits only its spec (one line), not the page. The files still waiting for `F3.32e`
-(plan unit D) are `components/dashboards/widget-inspector.tsx` and
-`components/mimic-editor/{canvas,palette,inspector}.tsx`; the V1 gate allowlists their counts.
+`F3.32e` edits only its spec (one line), not the page. The files that waited for `F3.32e`
+(plan unit D: `components/dashboards/widget-inspector.tsx`,
+`components/mimic-editor/{canvas,palette,inspector,preset-preview}.tsx`,
+`pages/admin/mimic-layout-editor-page.tsx`) were converted after `F3.32e` and `F3.32g` merged
+into this branch; the V1 gate keeps only the two neutral pill tones.
 
 **Gates added beyond decision 6.** V7: every flat rule resets each property its neumorphic rule
 sets (a code review found empty and partial flat rules that leaked radius, fill and padding into

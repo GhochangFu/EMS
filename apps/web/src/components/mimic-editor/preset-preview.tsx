@@ -45,7 +45,7 @@ export function PresetPreview({ preset }: PresetPreviewProps) {
   return (
     <figure data-testid="mimic-preset-preview" data-preset={preset} className="max-w-4xl space-y-2">
       <div
-        className="w-full rounded border border-line bg-surface"
+        className="surface-pressed w-full"
         style={{ aspectRatio: `${layout.canvasW} / ${layout.canvasH}` }}
       >
         <MimicScene title={`${MIMIC_PRESETS[preset].label} preview`} geometry={geometry} nodes={[]} readings={NO_READINGS} />
