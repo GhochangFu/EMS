@@ -773,9 +773,9 @@ export class NotificationsService {
     let result: DeliveryResult;
     try {
       result = await transport.send({
-        subject: `TRINETRA test notification (${channel.code})`,
+        subject: `IONSiTE NEXUS test notification (${channel.code})`,
         body:
-          "This is a test notification from TRINETRA. If you are reading it, this channel works.",
+          "This is a test notification from IONSiTE NEXUS. If you are reading it, this channel works.",
         ruleId: null,
         ruleCode: null,
         alarmId: null,

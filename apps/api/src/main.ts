@@ -67,7 +67,7 @@ async function bootstrap(): Promise<void> {
     const { document } = buildOpenApiDocument(app);
     SwaggerModule.setup("docs", app, document, {
       useGlobalPrefix: true,
-      customSiteTitle: "TRINETRA EMS API",
+      customSiteTitle: "IONSiTE NEXUS EMS API",
     });
     Logger.log(
       "OpenAPI docs at /api/v1/docs (UNAUTHENTICATED — set API_DOCS_ENABLED=false to disable)",
