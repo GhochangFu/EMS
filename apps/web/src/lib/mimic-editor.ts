@@ -444,11 +444,17 @@ export function fromPreset(preset: MimicPreset): EditorLayout {
   const [, , viewW, viewH] = coords.viewBox.split(" ").map(Number);
 
   const units: EditorNode[] = def.nodes.map((node) => {
-    const at = nodesAt[node.key] ?? { x: 0, y: 0 };
+    const at = nodesAt[node.key];
+    const symbol = glyphs[node.key];
+    // The web tables are mapped over the preset's node keys, so this cannot happen short of a
+    // cast gap — and a starter at (0, 0) drawn as a box would hide one.
+    if (at === undefined || symbol === undefined) {
+      throw new Error(`preset ${preset}: node ${node.key} has no web position or glyph`);
+    }
     return {
       key: node.key,
       kind: "unit",
-      symbol: glyphs[node.key] ?? "unit",
+      symbol,
       label: node.label,
       roleCode: node.roleCode,
       tone: null,

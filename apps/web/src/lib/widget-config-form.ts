@@ -226,7 +226,7 @@ export type WidgetConfigRow = {
   // `buildTableConfig` for why the two must not both be representable there.
   tableColumns: string[];
   // mimic — `F3.32` (ADR 0079). Absent means "not chosen", and it is not the
-  // enum's first value: with one preset in v1, a default of `water_train` would
+  // enum's first value: a default of `water_train` (the first of seven presets) would
   // make a stored preset and a forgotten read-back look the same.
   // `blankDashboardWidgetRow("mimic")` chooses the preset for a new row.
   // Optional rather than `MimicPreset | ""` because `template-dashboard-form.ts`

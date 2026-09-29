@@ -242,7 +242,7 @@ export const MIMIC_PANELS: { readonly [P in MimicPreset]: readonly MimicPanel<No
   electrical_distribution: [
     { key: "supply", label: "Supply", tone: "info", nodes: ["incoming", "ht_panel", "transformer"] },
     { key: "distribution", label: "Distribution", tone: "neutral", nodes: ["lt_panel", "mcc"] },
-    { key: "standby", label: "Standby and UPS", tone: "accent", nodes: ["dg_set", "ups"] },
+    { key: "standby", label: "Standby", tone: "accent", nodes: ["dg_set", "ups"] },
   ],
   hvac_chiller_plant: [
     { key: "plant", label: "Chiller plant", tone: "info", nodes: ["cooling_tower", "chiller", "primary_pumps"] },

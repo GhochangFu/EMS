@@ -88,6 +88,10 @@ export function symbolSelectHasEightGroupsInOrder(): void {
   const select = screen.getByRole("combobox", { name: "Symbol" });
   const groups = select.querySelectorAll("optgroup");
   expect(Array.from(groups).map((g) => g.getAttribute("label"))).toEqual(MIMIC_SYMBOL_GROUPS.map((g) => g.label));
+  // Each group holds its own symbols: eight empty groups with the options after them fail here.
+  expect(Array.from(groups).map((g) => Array.from(g.querySelectorAll("option")).map((o) => o.value))).toEqual(
+    MIMIC_SYMBOL_GROUPS.map((g) => [...g.symbols]),
+  );
 }
 
 /** N4c — the option for `ups` reads "UPS". */

@@ -52,11 +52,21 @@ export function runGroupsPartitionTheSymbols(): void {
   }
 }
 
-/** The existing symbols go where decision 2 puts them. */
-export function runExistingSymbolsKeepTheirGroups(): void {
-  const byKey = new Map(MIMIC_SYMBOL_GROUPS.map((g) => [g.key, g.symbols] as const));
-  const water = ["tank", "clarifier", "membrane", "vessel", "aeration", "dosing", "discharge", "filter"];
-  assert(JSON.stringify(byKey.get("water")) === JSON.stringify(water), `water: ${JSON.stringify(byKey.get("water"))}`);
-  assert(JSON.stringify(byKey.get("hvac")) === JSON.stringify(["tower", "chiller", "ahu", "fan"]), "hvac group");
-  assert(JSON.stringify(byKey.get("general")) === JSON.stringify(["pump", "valve", "unit"]), "general group");
+/**
+ * Every group holds the symbols ADR 0082 decisions 1 and 2 give it, in order. Pinned literally:
+ * the partition claim above stays green when a symbol moves between groups.
+ */
+export function runEveryGroupHoldsItsSymbols(): void {
+  const expected: Record<string, readonly string[]> = {
+    water: ["tank", "clarifier", "membrane", "vessel", "aeration", "dosing", "discharge", "filter"],
+    electrical: ["transformer", "breaker", "switchboard", "generator", "meter", "motor"],
+    it_ups: ["ups", "battery", "rack"],
+    hvac: ["tower", "chiller", "ahu", "fan"],
+    mechanical: ["compressor", "boiler"],
+    environment: ["sensor"],
+    facility: ["lamp", "lift"],
+    general: ["pump", "valve", "unit"],
+  };
+  const actual = Object.fromEntries(MIMIC_SYMBOL_GROUPS.map((g) => [g.key, g.symbols]));
+  assert(JSON.stringify(actual) === JSON.stringify(expected), `groups: ${JSON.stringify(actual)}`);
 }

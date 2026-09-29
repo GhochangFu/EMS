@@ -443,6 +443,20 @@ export function runDomainPresetsAreSix(): void {
   assert(DOMAIN_PRESETS.length === 6, `six domain presets, got ${DOMAIN_PRESETS.length}`);
 }
 
+/**
+ * A starter's panel keys become stored node keys beside its unit keys, and the API refuses a
+ * duplicate or a malformed key with a 400 — so every copied key is unique and a layout node key.
+ */
+export function runDomainPresetKeysAreUniqueLayoutKeys(): void {
+  for (const p of DOMAIN_PRESETS) {
+    const keys = fromPreset(p).nodes.map((n) => n.key);
+    assert(new Set(keys).size === keys.length, `${p}: node keys repeat: ${JSON.stringify(keys)}`);
+    for (const key of keys) {
+      assert(MIMIC_LAYOUT_NODE_KEY.test(key), `${p}: key ${key} is not a layout node key`);
+    }
+  }
+}
+
 export function runDomainPresetNodesAreInsideTheCanvas(): void {
   for (const p of DOMAIN_PRESETS) {
     const l = fromPreset(p);
