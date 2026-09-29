@@ -11,6 +11,7 @@ const SIZES = {
   hero: "text-5xl leading-none sm:text-6xl",
 } as const;
 
+/** The product name as a two-line text logo, announced once as "IONSiTE NEXUS"; `header` or `hero` size. */
 export function Wordmark({ variant }: { variant: keyof typeof SIZES }) {
   return (
     <span

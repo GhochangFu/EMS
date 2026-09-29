@@ -1,10 +1,10 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join, relative } from "node:path";
 
+import * as ts from "typescript";
 import { describe, expect, it } from "vitest";
 
 import { webColourSourceFiles } from "./support/colour-scan";
-import { blankComments } from "./support/pending-button-scan";
 import { repoRoot, walk } from "./support/source-scan";
 
 /**
@@ -12,8 +12,11 @@ import { repoRoot, walk } from "./support/source-scan";
  * `docs/plans/f3.33-ionsite-nexus-rebrand.md` U1). `IONSiTE NEXUS` replaces `TRINETRA` wherever a
  * user reads the product name (decision 1); this file fails when the old name comes back.
  *
- * **Scanned** (decision 4, OQ5), comments blanked first (`blankComments`; an `.html` file has its
- * `<!-- -->` comments blanked too), every `/trinetra/gi` match reported as `file:line`:
+ * **Scanned** (decision 4, OQ5), comments blanked first — by the TypeScript parser for `.ts` /
+ * `.tsx`, so a `//` or `/*` inside a string, a template or JSX text stays text (the shared
+ * `blankComments` regex blanked those and could hide a real hit); `<!-- -->` and each `<script>`
+ * body's comments for `.html`; `/* *\/` for `.css` — then every `/trinetra/gi` match reported as
+ * `file:line`:
  *  - every `.ts` / `.tsx` / `.css` file under `apps/web/src`, minus specs, tests and
  *    `test-setup.ts` (`webColourSourceFiles()`) — N1;
  *  - `apps/web/index.html` — N2b, and its `<title>` text — N2a;
@@ -30,8 +33,9 @@ import { repoRoot, walk } from "./support/source-scan";
  * **Spelling** (N8): every `/ion\s?site\s*nexus/gi` match in the scanned sources is exactly
  * `IONSiTE NEXUS`, and there is at least one.
  *
- * **Liveness** of the scanner itself: N5 (the regex finds the two allowlisted sites), N6 (comments
- * do not count), N7 (the match is case-insensitive), N9 (the walkers reach the real trees).
+ * **Liveness** of the scanner itself: N5 (the regex finds the two allowlisted sites), N6 and N6f
+ * (comments do not count), N6b–N6e, N6g, N6h (comment markers inside strings, JSX text and HTML
+ * attributes are text), N7 (the match is case-insensitive), N9 (the walkers reach the real trees).
  *
  * **Not covered.**
  *  - The realm JSON is not text-scanned as a whole; only `displayName` is checked.
@@ -67,10 +71,63 @@ function read(file: string): string {
   return src;
 }
 
-/** `<!-- -->` blanked for `.html`, then JS comments blanked; newlines kept so lines hold. */
+/** Every non-newline character in `[start, end)` becomes a space, so lines hold. */
+function blank(src: string, ranges: readonly (readonly [number, number])[]): string {
+  const chars = src.split(""); // UTF-16 units: the parser's offsets are code-unit offsets
+  for (const [start, end] of ranges) for (let i = start; i < end; i++) if (chars[i] !== "\n") chars[i] = " ";
+  return chars.join("");
+}
+
+/**
+ * The comment ranges of a TS / TSX source, from the parser rather than a regex: a `//` or `/*`
+ * inside a string, a template or JSX text is not a comment (the shared `blankComments` blanks
+ * those too, and hid a real hit). The leading and trailing trivia of every node and token is
+ * read; a range that starts inside JSX text is JSX text, not a comment.
+ */
+function scriptCommentRanges(src: string, file: string): [number, number][] {
+  const kind = file.endsWith(".tsx") ? ts.ScriptKind.TSX : ts.ScriptKind.TS;
+  const sf = ts.createSourceFile(file, src, ts.ScriptTarget.Latest, false, kind);
+  const jsxText: [number, number][] = [];
+  const found = new Map<number, number>();
+  const add = (ranges: ts.CommentRange[] | undefined) => ranges?.forEach((r) => found.set(r.pos, r.end));
+  const visit = (node: ts.Node): void => {
+    if (node.kind === ts.SyntaxKind.JsxText) jsxText.push([node.pos, node.end]);
+    add(ts.getLeadingCommentRanges(src, node.pos));
+    add(ts.getTrailingCommentRanges(src, node.end));
+    node.getChildren(sf).forEach(visit);
+  };
+  visit(sf);
+  return [...found].filter(([pos]) => !jsxText.some(([start, end]) => pos >= start && pos < end));
+}
+
+/** Comments blanked, newlines kept so lines hold: CSS `/* *\/`, HTML `<!-- -->` plus each `<script>` body's comments, TS / TSX by the parser. */
+function stripComments(src: string, file: string): string {
+  if (file.endsWith(".css")) return src.replace(/\/\*[\s\S]*?\*\//g, (c) => c.replace(/[^\n]/g, " "));
+  if (!file.endsWith(".html")) return blank(src, scriptCommentRanges(src, file));
+  const html = src.replace(/<!--[\s\S]*?-->/g, (c) => c.replace(/[^\n]/g, " "));
+  return html.replace(/(<script\b[^>]*>)([\s\S]*?)(<\/script>)/gi, (_m, open: string, body: string, close: string) =>
+    open + blank(body, scriptCommentRanges(body, "script.ts")) + close,
+  );
+}
+
+/** Stripped once per file per run (N1, N3, N5 and N8 read the same files); fixtures are not cached. */
+const stripped = new Map<string, string>();
 function withoutComments(src: string, file: string): string {
-  const html = file.endsWith(".html") ? src.replace(/<!--[\s\S]*?-->/g, (c) => c.replace(/[^\n]/g, " ")) : src;
-  return blankComments(html);
+  // Blanking only removes matches, so a file that spells neither name needs no parse — which
+  // keeps the ~700-file walk inside the default timeout.
+  if (!/trinetra|ion\s?site\s*nexus/i.test(src)) return src;
+  if (!sources.has(file)) return stripComments(src, file);
+  let text = stripped.get(file);
+  if (text === undefined) {
+    text = stripComments(src, file);
+    stripped.set(file, text);
+  }
+  return text;
+}
+
+/** A scanned file's text with its comments blanked. */
+function live(file: string): string {
+  return withoutComments(read(file), file);
 }
 
 /** `file:line` of every old-name match in `src` outside comments and the allowed literals. */
@@ -140,6 +197,36 @@ describe("F3.33 the on-screen name gate", () => {
     expect(nameHits("// TRINETRA\n/* Trinetra */\n", "x.ts")).toEqual([]);
   });
 
+  it("N6b a // inside a string is not a comment", () => {
+    expect(nameHits('const s = "a // TRINETRA";', "x.ts")).toEqual(["x.ts:1"]);
+  });
+
+  it("N6c a // inside JSX text is not a comment", () => {
+    expect(nameHits("const e = <p>Energy // TRINETRA</p>;", "x.tsx")).toEqual(["x.tsx:1"]);
+  });
+
+  it("N6h JSX text that starts with // is not a comment", () => {
+    expect(nameHits("const e = <p>// TRINETRA</p>;", "x.tsx")).toEqual(["x.tsx:1"]);
+  });
+
+  it("N6d a /* ... */ pair spread over string literals is not a comment", () => {
+    expect(nameHits('const a = " /*";\nconst b = "TRINETRA";\nconst c = "*/ ";\n', "x.ts")).toEqual(["x.ts:2"]);
+  });
+
+  it("N6e a // inside an HTML attribute is not a comment", () => {
+    expect(nameHits('<meta name="application-name" content="Ops // TRINETRA" />', "x.html")).toEqual(["x.html:1"]);
+  });
+
+  it("N6f JSX, script and HTML comments are blanked", () => {
+    const tsx = "const e = <p>{/* TRINETRA */}ok</p>; // TRINETRA\n";
+    const html = "<!-- TRINETRA -->\n<script>\n  // TRINETRA\n  const t = 1; /* TRINETRA */\n</script>\n";
+    expect([...nameHits(tsx, "x.tsx"), ...nameHits(html, "x.html")]).toEqual([]);
+  });
+
+  it("N6g a name in a script string inside HTML is a hit", () => {
+    expect(nameHits('<script>\n  const t = "// TRINETRA";\n</script>\n', "x.html")).toEqual(["x.html:2"]);
+  });
+
   it("N7 the match is case-insensitive", () => {
     expect(nameHits('const s = "Trinetra";', "x.ts")).toEqual(["x.ts:1"]);
   });
@@ -156,11 +243,11 @@ describe("F3.33 the on-screen name gate", () => {
   });
 
   it("N10a the OpenAPI document title is IONSiTE NEXUS Enterprise EMS API", () => {
-    expect(read("apps/api/src/openapi/openapi-document.ts")).toContain('.setTitle("IONSiTE NEXUS Enterprise EMS API")');
+    expect(live("apps/api/src/openapi/openapi-document.ts")).toContain('.setTitle("IONSiTE NEXUS Enterprise EMS API")');
   });
 
   it("N10b the Swagger site title is IONSiTE NEXUS EMS API", () => {
-    expect(read("apps/api/src/main.ts")).toContain('customSiteTitle: "IONSiTE NEXUS EMS API"');
+    expect(live("apps/api/src/main.ts")).toContain('customSiteTitle: "IONSiTE NEXUS EMS API"');
   });
 
   it("N11 the TRINETRA logo image is deleted", () => {
