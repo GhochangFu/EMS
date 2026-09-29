@@ -6728,6 +6728,21 @@ findings were fixed in the PR.
 **Cascade:** `F3.32` stays open for network mimics, layouts in templates, KPI
 overlays and the unit-level reference preset (ADR 0081 decision 10).
 
+### `F3.32g` — mimic preset preview and library glyphs in the presets ✅ 2026-09-29
+
+PR #649, squash `f0ef958f`; owner rulings 2026-09-29 (in v1, no ADR).
+
+The layout library now draws the chosen "Start from" preset under the select, before
+Start: the starter itself, with its unit and pipe counts and its libraries. Seventeen
+units of the six domain presets draw a Tabler, Lucide or Material Design Icons glyph
+from the owner-approved table; the water train keeps its core glyphs and its tanks
+keep the live level fill. A started preset chooses every library its glyphs use, so
+its first save passes the API. Web only: no migration and no API change.
+
+Verified: CI green on the first run, a code review with its finding fixed, and a
+browser run on the rebuilt web image (all seven previews, and a started preset saved
+and redrawn).
+
 ### `F3.32e` — preloaded mimic symbol libraries ✅ 2026-09-29
 
 PR #647, squash `e35ff776`; ADR 0084 (#643); plan
