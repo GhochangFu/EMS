@@ -23,6 +23,7 @@ import {
   badgeCountsTheHiddenMembers,
   crossRowPipeLandsOnTheTopCentre,
   freshNodeIsLive,
+  glyphFillClassMapKeepsTheSameRolePerEntry,
   layoutKeysMatchPresetKeys,
   noWidgetIsNoView,
   nodesFitAndDoNotOverlap,
@@ -128,5 +129,8 @@ describe("F3.32 U4 — the plant mimic's pure half", () => {
   });
   it("M14 the accessible name lists every alarmed unit", () => {
     ariaLabelNamesEveryAlarmedUnit();
+  });
+  it("M16 the glyph fill class map keeps the same role per entry", () => {
+    glyphFillClassMapKeepsTheSameRolePerEntry();
   });
 });

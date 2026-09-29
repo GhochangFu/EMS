@@ -279,6 +279,21 @@ export const MIMIC_PANEL_CLASSES: Readonly<
   accent: { frame: "fill-accent/5 stroke-accent/20", title: "fill-ok-ink", glyph: "stroke-accent" },
 };
 
+/**
+ * `F3.32e` / ADR 0084 decision 6 — a `fill`-style library glyph (`mdi:*`) draws with no stroke
+ * and the matching fill class of the same role, so colour stays with the role token (ADR 0078)
+ * across both draw styles. Literal strings, not a template, so Tailwind's class scanner emits
+ * every one of them; an unmapped stroke class falls back to `fill-ink-muted`.
+ */
+export const MIMIC_GLYPH_FILL_CLASS: Readonly<Record<string, string>> = {
+  "stroke-info": "fill-info",
+  "stroke-ink-muted": "fill-ink-muted",
+  "stroke-accent": "fill-accent",
+  "stroke-ink-faint": "fill-ink-faint",
+  "stroke-ink": "fill-ink",
+  "stroke-line-strong": "fill-line-strong",
+};
+
 /** Room round a panel's nodes: the side and bottom padding, and the title band above them. */
 const PANEL_PAD = 16;
 const PANEL_TITLE = 34;
