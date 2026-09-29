@@ -445,3 +445,41 @@ export function drawsTheIdleThemeButtonAtEightyFive(): void {
   const classes = within(themeGroup()).getByRole("button", { name: "Dark" }).classList;
   expect(classes.contains("text-on-dark/85")).toBe(true);
 }
+
+/**
+ * `F3.33` U3 (ADR 0083) — the header carries the `IONSiTE NEXUS` text wordmark and the client's
+ * descriptor; the footer reads `IONSiTE NEXUS · telemetry-driven`; no `TRINETRA` is on screen.
+ */
+const DESCRIPTOR = "Integrated Building, Energy, Water & Utility Management Platform";
+
+/** B1 — the header holds the wordmark as a named image. */
+export function showsTheWordmarkInTheHeader(): void {
+  renderShell(GLOBAL, "/", "operator");
+  expect(within(header()).getByRole("img", { name: "IONSiTE NEXUS" })).toBeTruthy();
+}
+
+/** B2 — the header has no `<img>` element; B1's lookup is the positive control. */
+export function drawsNoImgElementInTheHeader(): void {
+  renderShell(GLOBAL, "/", "operator");
+  expect(within(header()).getByRole("img", { name: "IONSiTE NEXUS" })).toBeTruthy();
+  expect(header().querySelector("img")).toBeNull();
+}
+
+/** B3 — the header reads the descriptor. */
+export function showsTheDescriptorInTheHeader(): void {
+  renderShell(GLOBAL, "/", "operator");
+  expect(within(header()).getByText(DESCRIPTOR)).toBeTruthy();
+}
+
+/** B4 — the footer reads `IONSiTE NEXUS · telemetry-driven`. */
+export function showsTheNameInTheFooter(): void {
+  renderShell(GLOBAL, "/", "operator");
+  expect(within(screen.getByRole("contentinfo")).getByText("IONSiTE NEXUS · telemetry-driven")).toBeTruthy();
+}
+
+/** B5 — no text node reads TRINETRA; B1's lookup is the positive control. */
+export function readsNoTrinetraInTheShell(): void {
+  renderShell(GLOBAL, "/", "operator");
+  expect(within(header()).getByRole("img", { name: "IONSiTE NEXUS" })).toBeTruthy();
+  expect(screen.queryByText(/trinetra/i)).toBeNull();
+}
