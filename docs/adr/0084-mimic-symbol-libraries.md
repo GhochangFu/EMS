@@ -63,6 +63,13 @@ and an uploaded SVG is an XSS surface. Neither fits before the cutoff.
    It inserts one row per library and one row per symbol, in the `0087` idiom
    (`SET ROLE bms_owner`, bare `ON CONFLICT DO NOTHING`, a `DO $$`
    self-check).
+
+   **Amended 2026-09-29 (owner ruling after the migration review):**
+   `bms_tenant` loses `INSERT`, `UPDATE` and `DELETE` on both tables — they
+   are fleet-wide master data, the line `0059` drew for `bms.point_keys` and
+   `0085` for `bms.location_types`. `bms_fleet` keeps its privileges. The
+   `ALTER`s on the two FORCE-RLS layout tables run as the migrator's
+   superuser, after `RESET ROLE`, so the foreign key validates every row.
 2. **A symbol key names its library.** A core key stays bare (`tank`,
    `transformer`), so every stored layout, preset and widget keeps its value.
    Every other key is `<library>:<name>` (`tabler:bolt`, `lucide:factory`,

@@ -317,7 +317,9 @@ function migration(libs) {
 --    \`bms.mimic_symbol_libraries\` holds one row per library with its source, version, licence
 --    and draw style; \`bms.mimic_symbols\` one row per symbol key with its label and palette
 --    group. A core key is bare; every other key is \`<library>:<name>\` (decision 2), and
---    \`mimic_symbols_key_names_library_check\` holds that.
+--    \`mimic_symbols_key_names_library_check\` holds that with a regular expression, not a LIKE
+--    (an \`_\` in a library code would be a wildcard); \`mimic_symbol_libraries_code_check\`
+--    keeps a library code to lower-case letters and digits.
 --
 -- 2. THE ROWS are the 29 core symbols (ADR 0082, in \`mimicCoreSymbolSchema\`'s order) and the
 --    curated keys of \`scripts/mimic-symbols/curation/*.json\`, in curation order.
@@ -329,15 +331,25 @@ function migration(libs) {
 --    existing core values validate. \`0088\` and \`0089\` are frozen, so this file drops
 --    \`mimic_layout_nodes_symbol_check\` (IF EXISTS) and widens \`symbol\` to varchar(64). The
 --    foreign key has no ON DELETE: a symbol in use cannot be removed, only made inactive. The
---    ADD carries no IF-NOT-EXISTS guard: a failed ADD is a real fault and must abort.
+--    ADD follows a DROP IF EXISTS of the same name, so a replay re-adds it (AGENTS.md §4.4); a
+--    failed ADD is a real fault and aborts the migration.
 --
 -- 4. A LAYOUT CHOOSES ITS LIBRARIES (decision 8): \`mimic_layouts.symbol_libraries\`, default
 --    \`{core}\`, at least one member. An existing layout reads as \`{core}\` and draws as before.
 --
--- SET ROLE bms_owner: \`pnpm db:migrate\` connects as the superuser, so the tables are created as
--- bms_owner and \`0041\`'s default privileges grant them; bms_owner also owns the two altered
--- tables. No GRANT, no policy. The \`DO $$\` block asserts the effect, per the 0059/0060/0087
--- idiom, so a silent ON CONFLICT no-op cannot pass as success.
+-- 5. BMS_TENANT CANNOT WRITE THE LIBRARIES (owner ruling 2026-09-29, ADR 0084 decision 1 as
+--    amended). \`0041\`'s default privileges grant every verb to \`bms_tenant\`; the libraries are
+--    fleet-wide master data, the line \`0059\` drew for \`bms.point_keys\` and \`0085\` for
+--    \`bms.location_types\`. The REVOKE runs as the grantor (\`bms_owner\`): a superuser issuing
+--    it removes nothing and reports success (\`0059\`'s header). \`bms_fleet\` keeps its verbs.
+--
+-- WHO RUNS WHAT. The CREATEs, the INSERTs and the REVOKE run inside \`SET ROLE bms_owner\`, so
+-- \`0041\`'s default privileges apply to the new tables and the REVOKE has its grantor. The ALTERs
+-- on the two FORCE-RLS tables run after \`RESET ROLE\`, as the migrator's superuser: under
+-- \`SET ROLE bms_owner\` with no \`app.current_organization\` a validation scan could see zero
+-- rows and pass without checking one (\`0057\`/\`0085\`'s headers). The ALTERs change no owner.
+-- No policy. The \`DO $$\` block asserts the effect, per the 0059/0060/0085/0087 idiom, so a
+-- silent IF-NOT-EXISTS or ON CONFLICT no-op cannot pass as success.
 
 SET ROLE bms_owner;
 
@@ -352,6 +364,7 @@ CREATE TABLE IF NOT EXISTS bms.mimic_symbol_libraries (
   sort_order integer NOT NULL DEFAULT 100,
   active boolean NOT NULL DEFAULT true,
   created_at timestamptz NOT NULL DEFAULT now(),
+  CONSTRAINT mimic_symbol_libraries_code_check CHECK (code ~ '^[a-z][a-z0-9]*$'),
   CONSTRAINT mimic_symbol_libraries_style_check CHECK (style IN ('stroke', 'fill'))
 );
 
@@ -365,7 +378,9 @@ CREATE TABLE IF NOT EXISTS bms.mimic_symbols (
   created_at timestamptz NOT NULL DEFAULT now(),
   CONSTRAINT mimic_symbols_group_code_check CHECK (group_code IN (${GROUPS.map(sql).join(", ")})),
   CONSTRAINT mimic_symbols_key_names_library_check CHECK (
-    (library_code = 'core' AND position(':' in key) = 0) OR key LIKE library_code || ':%'
+    CASE WHEN library_code = 'core' THEN key ~ '^[a-z][a-z0-9-]*$'
+         ELSE starts_with(key, library_code || ':') AND key ~ '^[a-z][a-z0-9]*:[a-z0-9][a-z0-9-]*$'
+    END
   )
 );
 
@@ -379,9 +394,15 @@ INSERT INTO bms.mimic_symbols (key, library_code, label, group_code, sort_order)
 ${symbolRows.map((r) => `  (${r.slice(0, 4).map(sql).join(", ")}, ${r[4]})`).join(",\n")}
 ON CONFLICT DO NOTHING;
 
+REVOKE INSERT, UPDATE, DELETE ON bms.mimic_symbol_libraries, bms.mimic_symbols FROM bms_tenant;
+
+RESET ROLE;
+
 ALTER TABLE bms.mimic_layout_nodes DROP CONSTRAINT IF EXISTS mimic_layout_nodes_symbol_check;
 
 ALTER TABLE bms.mimic_layout_nodes ALTER COLUMN symbol TYPE varchar(64);
+
+ALTER TABLE bms.mimic_layout_nodes DROP CONSTRAINT IF EXISTS mimic_layout_nodes_symbol_fkey;
 
 ALTER TABLE bms.mimic_layout_nodes
   ADD CONSTRAINT mimic_layout_nodes_symbol_fkey FOREIGN KEY (symbol) REFERENCES bms.mimic_symbols(key);
@@ -405,29 +426,38 @@ ${counts
   END IF;`,
   )
   .join("\n")}
-  IF NOT EXISTS (
+  -- A CHECK on symbol that survived the name-exact DROP (renamed by hand) would refuse every
+  -- library key at save time.
+  IF EXISTS (
     SELECT 1 FROM pg_constraint
      WHERE conrelid = 'bms.mimic_layout_nodes'::regclass
-       AND conname = 'mimic_layout_nodes_symbol_fkey'
-       AND contype = 'f'
+       AND contype = 'c'
+       AND pg_get_constraintdef(oid) LIKE '%symbol%IN%'
   ) THEN
-    RAISE EXCEPTION 'migration 0090: bms.mimic_layout_nodes has no mimic_layout_nodes_symbol_fkey';
+    RAISE EXCEPTION 'migration 0090: a CHECK on bms.mimic_layout_nodes.symbol still lists symbols';
   END IF;
-  IF (
-    SELECT character_maximum_length FROM information_schema.columns
-     WHERE table_schema = 'bms' AND table_name = 'mimic_layout_nodes' AND column_name = 'symbol'
-  ) IS DISTINCT FROM 64 THEN
-    RAISE EXCEPTION 'migration 0090: bms.mimic_layout_nodes.symbol is not varchar(64)';
-  END IF;
+  -- ADD COLUMN IF NOT EXISTS is silent when a column of that name already exists.
   IF NOT EXISTS (
     SELECT 1 FROM information_schema.columns
      WHERE table_schema = 'bms' AND table_name = 'mimic_layouts' AND column_name = 'symbol_libraries'
+       AND udt_name = '_varchar' AND is_nullable = 'NO'
   ) THEN
-    RAISE EXCEPTION 'migration 0090: bms.mimic_layouts has no symbol_libraries column';
+    RAISE EXCEPTION 'migration 0090: bms.mimic_layouts.symbol_libraries is not a NOT NULL varchar array';
+  END IF;
+  -- has_table_privilege follows role membership, so a privilege bms_tenant inherits from another
+  -- role is caught here rather than surviving a REVOKE that looked complete (the 0085 shape).
+  IF has_table_privilege('bms_tenant', 'bms.mimic_symbol_libraries', 'INSERT')
+     OR has_table_privilege('bms_tenant', 'bms.mimic_symbol_libraries', 'UPDATE')
+     OR has_table_privilege('bms_tenant', 'bms.mimic_symbol_libraries', 'DELETE')
+     OR has_table_privilege('bms_tenant', 'bms.mimic_symbols', 'INSERT')
+     OR has_table_privilege('bms_tenant', 'bms.mimic_symbols', 'UPDATE')
+     OR has_table_privilege('bms_tenant', 'bms.mimic_symbols', 'DELETE') THEN
+    RAISE EXCEPTION 'migration 0090: bms_tenant still holds INSERT, UPDATE or DELETE on a symbol library table';
+  END IF;
+  IF NOT has_table_privilege('bms_tenant', 'bms.mimic_symbols', 'SELECT') THEN
+    RAISE EXCEPTION 'migration 0090: bms_tenant cannot read bms.mimic_symbols';
   END IF;
 END $$;
-
-RESET ROLE;
 `;
 }
 
