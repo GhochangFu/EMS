@@ -63,8 +63,8 @@ const geometry = {
   pipes: [],
 };
 
-/** The closed symbol set, in the order the database CHECK restates it (plan D12). */
-export function mimicSymbolsAreTheTwelveInOrder(): void {
+/** The closed symbol set, in the order the database CHECK restates it (plan D12, ADR 0082). */
+export function mimicSymbolsAreTheTwentyNineInOrder(): void {
   const expected = [
     "tank",
     "clarifier",
@@ -78,10 +78,27 @@ export function mimicSymbolsAreTheTwelveInOrder(): void {
     "valve",
     "filter",
     "unit",
+    "transformer",
+    "breaker",
+    "switchboard",
+    "generator",
+    "meter",
+    "motor",
+    "ups",
+    "battery",
+    "rack",
+    "chiller",
+    "ahu",
+    "fan",
+    "compressor",
+    "boiler",
+    "sensor",
+    "lamp",
+    "lift",
   ];
   assert(
     JSON.stringify(mimicSymbolSchema.options) === JSON.stringify(expected),
-    `the symbol set must be the twelve in order, got ${JSON.stringify(mimicSymbolSchema.options)}`,
+    `the symbol set must be the twenty-nine in order, got ${JSON.stringify(mimicSymbolSchema.options)}`,
   );
 }
 

@@ -1,7 +1,8 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { Link } from "react-router-dom";
-import type { MimicLayoutSummaryDto } from "@bms/shared";
+import { MIMIC_PRESETS, type MimicLayoutSummaryDto, type MimicPreset } from "@bms/shared";
+import { mimicPresetSchema } from "@bms/shared/contracts";
 
 import { deleteMimicLayout, fetchMimicLayouts } from "../../api/mimic-layouts";
 import { MasterDataLayout } from "../../components/admin/master-data-layout";
@@ -18,7 +19,12 @@ export const MIMIC_LAYOUTS_QUERY_KEY = ["mimic-layouts"] as const;
 
 /**
  * `F3.32c` U6c (ADR 0081 decision 3) — the organization's plant mimic layout library: the list,
- * New, "Start from Water train" (decision 4), Open and Delete.
+ * New, "Start from" (decision 4), Open and Delete.
+ *
+ * **"Start from" offers every preset** (`F3.32d`, ADR 0082 decision 5, plan D8): a select over
+ * `mimicPresetSchema.options` labelled by `MIMIC_PRESETS`, opening on `water_train`, and a Start
+ * link to the new-layout route with the chosen preset. A link, not a button: it navigates and
+ * writes nothing, so it has no pending state.
  *
  * **It fails closed at the page**, as `location-types-page.tsx` does. The tab and the rail entry
  * are hidden from every role but `admin` and `organization_admin`, but a typed URL still reaches
@@ -51,6 +57,7 @@ function MimicLayoutLibrary() {
   const queryClient = useQueryClient();
   const [confirming, setConfirming] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [startFrom, setStartFrom] = useState<MimicPreset>(mimicPresetSchema.options[0]);
 
   const listQ = useQuery({ queryKey: MIMIC_LAYOUTS_QUERY_KEY, queryFn: fetchMimicLayouts });
 
@@ -72,11 +79,31 @@ function MimicLayoutLibrary() {
   return (
     <SectionCard title="Layout library" bodyClassName="p-3 space-y-3">
       <div className="flex flex-wrap items-center justify-end gap-2">
+        <label className="flex items-center gap-2 text-xs font-semibold text-ink-muted">
+          Start from
+          <select
+            aria-label="Start from"
+            value={startFrom}
+            onChange={(event) => {
+              const chosen = mimicPresetSchema.safeParse(event.target.value);
+              if (chosen.success) {
+                setStartFrom(chosen.data);
+              }
+            }}
+            className="rounded border border-line bg-surface px-2 py-2 text-xs text-ink"
+          >
+            {mimicPresetSchema.options.map((preset) => (
+              <option key={preset} value={preset}>
+                {MIMIC_PRESETS[preset].label}
+              </option>
+            ))}
+          </select>
+        </label>
         <Link
-          to="/admin/mimic-layouts/new?preset=water_train"
+          to={`/admin/mimic-layouts/new?preset=${startFrom}`}
           className="rounded border border-line px-3 py-2 text-xs font-semibold text-ink"
         >
-          Start from Water train
+          Start
         </Link>
         <Link
           to="/admin/mimic-layouts/new"
@@ -96,7 +123,7 @@ function MimicLayoutLibrary() {
         </p>
       ) : null}
       {listQ.isSuccess && items.length === 0 ? (
-        <p className="text-sm text-ink-muted">No layouts yet. Start from Water train, or draw a new one.</p>
+        <p className="text-sm text-ink-muted">No layouts yet. Start from a preset, or draw a new one.</p>
       ) : null}
       {items.length > 0 ? (
         <table className="min-w-full text-sm">

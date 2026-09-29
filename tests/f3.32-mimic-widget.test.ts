@@ -14,6 +14,7 @@ const MIGRATION_0055 = "packages/db/drizzle/0055_dashboard_widget_table_type.sql
 const MIGRATION_0050 = "packages/db/drizzle/0050_configurable_dashboard_tables.sql";
 const MIGRATION_0051 = "packages/db/drizzle/0051_asset_role_vocabulary.sql";
 const MIGRATION_0060 = "packages/db/drizzle/0060_asset_role_estate_shapes.sql";
+const MIGRATION_0089 = "packages/db/drizzle/0089_mimic_domain_symbols_and_roles.sql";
 const CONTRACT_REL = "packages/shared/src/contracts/dashboard-builder.ts";
 const JOURNAL_REL = "packages/db/drizzle/meta/_journal.json";
 const CONSTRAINT = "dashboard_widgets_widget_type_check";
@@ -63,11 +64,15 @@ const checkedValues = (migrationRel: string): string[] => {
     .filter(Boolean);
 };
 
-/** Codes named inside `INSERT INTO bms.asset_roles ... VALUES (...)` blocks, by `('code',`. */
+/**
+ * Codes named inside `INSERT INTO bms.asset_roles ... ON CONFLICT DO NOTHING` blocks, by
+ * `('code',`. Bounded to those blocks: `0089` also holds a CHECK list `IN ('tank', ...`, and an
+ * unbounded scan would count `tank` as a seeded role code.
+ */
 const insertedRoleCodes = (migrationRel: string): string[] => {
   const sql = read(migrationRel);
-  const matches = [...sql.matchAll(/\(\s*'([a-z0-9_-]+)'\s*,/g)];
-  return matches.map((m) => m[1]!);
+  const blocks = [...sql.matchAll(/INSERT INTO bms\.asset_roles[\s\S]*?ON CONFLICT DO NOTHING/g)].map((m) => m[0]);
+  return blocks.flatMap((block) => [...block.matchAll(/\(\s*'([a-z0-9_-]+)'\s*,/g)].map((m) => m[1]!));
 };
 
 describe("F3.32 v1 — migration 0086 widens the widget-type CHECK", () => {
@@ -190,7 +195,9 @@ describe("F3.32 v1 — migration 0087 seeds the seven `water_train` role codes",
     const seededHere = insertedRoleCodes(MIGRATION_0087);
     const seeded0051 = insertedRoleCodes(MIGRATION_0051);
     const seeded0060 = insertedRoleCodes(MIGRATION_0060);
-    const known = new Set([...seededHere, ...seeded0051, ...seeded0060]);
+    // ADR 0082 decision 4: 0089 inserts the eighteen role codes the six new presets name.
+    const seeded0089 = insertedRoleCodes(MIGRATION_0089);
+    const known = new Set([...seededHere, ...seeded0051, ...seeded0060, ...seeded0089]);
 
     for (const roleCode of roleCodeMatches) {
       expect(known.has(roleCode), `preset roleCode '${roleCode}' must be seeded somewhere`).toBe(

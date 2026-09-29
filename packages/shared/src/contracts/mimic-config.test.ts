@@ -7,7 +7,7 @@ import {
   mimicConfigRefusesANonUuidLayoutId,
   mimicConfigRefusesAPresetSourceCarryingALayoutId,
   mimicConfigRefusesAnUppercaseLayoutId,
-  mimicPresetVocabularyIsWaterTrainAlone,
+  mimicPresetVocabularyIsTheSevenDomainPresets,
 } from "./mimic-config.spec";
 
 /** Vitest entry point — assertions live in the sibling `.spec` (ADR 0014). */
@@ -36,7 +36,7 @@ describe("F3.32c — the mimic widget config, both arms (ADR 0081)", () => {
     mimicConfigRefusesAPresetSourceCarryingALayoutId();
   });
 
-  it("keeps the preset vocabulary at water_train alone", () => {
-    mimicPresetVocabularyIsWaterTrainAlone();
+  it("keeps the preset vocabulary at the seven domain presets, water_train first (ADR 0082)", () => {
+    mimicPresetVocabularyIsTheSevenDomainPresets();
   });
 });
