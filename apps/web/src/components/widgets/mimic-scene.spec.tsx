@@ -1,5 +1,6 @@
-import { render, screen, within } from "@testing-library/react";
+import { cleanup, render, screen, within } from "@testing-library/react";
 import type { ReactElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
 import { expect } from "vitest";
 
 import { mimicSymbolSchema } from "@bms/shared/contracts";
@@ -154,5 +155,37 @@ export function everySymbolDrawsAGlyph(): void {
   expect(glyphs.map((g) => g.getAttribute("data-glyph"))).toEqual([...mimicSymbolSchema.options]);
   for (const g of glyphs) {
     expect(g.childElementCount, g.getAttribute("data-glyph") ?? "").toBeGreaterThan(0);
+  }
+}
+
+/** S10 — no two symbols draw the same markup (29 distinct `renderToStaticMarkup` strings). */
+export function noTwoSymbolsDrawTheSameMarkup(): void {
+  const markup = mimicSymbolSchema.options.map((kind) =>
+    renderToStaticMarkup(
+      <svg>
+        <MimicGlyph kind={kind} x={0} y={0} size={24} className="stroke-ink" />
+      </svg>,
+    ),
+  );
+  expect(new Set(markup).size).toBe(mimicSymbolSchema.options.length);
+}
+
+/** S11 — every glyph names no colour: no `fill`/`stroke` other than `none`, no `className` on paths. */
+export function everyGlyphNamesNoColour(): void {
+  for (const kind of mimicSymbolSchema.options) {
+    const { container } = render(
+      <svg>
+        <MimicGlyph kind={kind} x={0} y={0} size={24} className="stroke-ink" />
+      </svg>,
+    );
+    const paths = container.querySelectorAll("path, circle, rect, ellipse, polyline, polygon, line");
+    for (const el of Array.from(paths)) {
+      const fill = el.getAttribute("fill");
+      const stroke = el.getAttribute("stroke");
+      expect(fill === null || fill === "none", `${kind} fill=${fill}`).toBe(true);
+      expect(stroke === null || stroke === "none", `${kind} stroke=${stroke}`).toBe(true);
+      expect(el.getAttribute("class"), `${kind} className on shape`).toBeNull();
+    }
+    cleanup();
   }
 }

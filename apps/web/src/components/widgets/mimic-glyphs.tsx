@@ -10,7 +10,9 @@ import type { MimicGlyphKind } from "../../lib/mimic";
  * `g-clarify`, `g-aerate`, `g-dose`, `g-discharge`, `g-alert`, and `g-filter` for the softener's
  * resin vessel. The RO membrane and the cooling tower have no symbol there and are drawn here in
  * the same 24-unit grid and stroke, as are `F3.32c`'s layout-only `valve`, `filter` and the
- * generic `unit` (ADR 0081, plan D12). `PATHS` is keyed by `MimicGlyphKind`, so a symbol the
+ * generic `unit` (ADR 0081, plan D12). `F3.32d` (ADR 0082) appends seventeen glyphs for the
+ * electrical, HVAC and UPS/battery domains plus `sensor` and `lift` — drawn fresh, by the plan's
+ * glyph brief, in the same grid and stroke. `PATHS` is keyed by `MimicGlyphKind`, so a symbol the
  * shared contract adds without a path here is a compile error.
  *
  * Paths are inlined, never `<symbol>`/`<use>`: two mimics on one dashboard must not share an id.
@@ -102,6 +104,129 @@ const PATHS: Readonly<Record<MimicGlyphKind, ReactNode>> = {
     <>
       <path d="M12 3.5 21.5 20h-19z" />
       <path d="M12 10v4.5M12 17.4h.01" />
+    </>
+  ),
+  // ADR 0082 — the seventeen electrical, HVAC, UPS/battery, environmental and lift glyphs.
+  transformer: (
+    <>
+      <circle cx="9" cy="10" r="5.5" />
+      <circle cx="15" cy="14" r="5.5" />
+      <path d="M9 4.5v-2M15 19.5v2" />
+    </>
+  ),
+  breaker: (
+    <>
+      <rect x="5" y="5" width="14" height="14" />
+      <path d="M8 16 16 8" />
+      <path d="M12 2.5v2.5M12 19v2.5" />
+    </>
+  ),
+  switchboard: (
+    <>
+      <rect x="6" y="2.5" width="12" height="19" rx="1.5" />
+      <path d="M9.5 7h.01M14.5 7h.01M9.5 12h.01M14.5 12h.01M9.5 17h.01M14.5 17h.01" />
+    </>
+  ),
+  generator: (
+    <>
+      <circle cx="12" cy="11" r="7" />
+      <path d="M15.2 8.3a4.2 4.2 0 1 0 0 7.4M15.6 11.6h-2.3" />
+      <path d="M6 21h12" />
+    </>
+  ),
+  meter: (
+    <>
+      <rect x="4" y="4" width="16" height="16" rx="3" />
+      <path d="M7.5 15a6 6 0 0 1 9 0" />
+      <path d="M12 15 15 10" />
+      <path d="M12 15h.01" />
+    </>
+  ),
+  motor: (
+    <>
+      <circle cx="11" cy="12" r="7.5" />
+      <polyline points="7,15 7,9 11,14 15,9 15,15" />
+      <path d="M18.5 12h3.5" />
+    </>
+  ),
+  ups: (
+    <>
+      <rect x="4" y="3" width="16" height="18" rx="2" />
+      <polyline points="13,6 8,13 11.5,13 10,18 16,10 12.5,10" />
+      <path d="M8 20.5h8" />
+    </>
+  ),
+  battery: (
+    <>
+      <rect x="4" y="7" width="15" height="10" rx="1.5" />
+      <path d="M19 10v4" />
+      <path d="M8 9.5v5M12 9.5v5" />
+    </>
+  ),
+  rack: (
+    <>
+      <rect x="6" y="2.5" width="12" height="19" rx="1" />
+      <path d="M6 6.5h12M6 11h12M6 15.5h12M6 20h12" />
+    </>
+  ),
+  chiller: (
+    <>
+      <rect x="3" y="6" width="12" height="12" rx="1.5" />
+      <path d="M5 9l2 2 2-2 2 2 2-2" />
+      <path d="M19 6v12M15.5 12h7M16.5 8.5l5 7M21.5 8.5l-5 7" />
+    </>
+  ),
+  ahu: (
+    <>
+      <rect x="2.5" y="4" width="19" height="16" rx="1.5" />
+      <path d="M12 4v16" />
+      <circle cx="7.5" cy="12" r="3.5" />
+      <path d="M7.5 8.5v7M4.3 9.7l6.4 4.6M4.3 14.3l6.4-4.6" />
+      <path d="M14.5 8h5M14.5 12h5M14.5 16h5" />
+    </>
+  ),
+  fan: (
+    <>
+      <circle cx="12" cy="12" r="8.5" />
+      <path d="M12 12c1-4 4-6 7-5" />
+      <path d="M12 12c-4-1-6-4-5-7" />
+      <path d="M12 12c-1 4-4 6-7 5" />
+      <path d="M12 12h.01" />
+    </>
+  ),
+  compressor: (
+    <>
+      <rect x="3" y="8" width="12" height="8" rx="4" />
+      <path d="M15 12h4M19 9v6" />
+    </>
+  ),
+  boiler: (
+    <>
+      <rect x="6" y="5" width="12" height="16" rx="6" />
+      <path d="M9.5 16a3 3 0 0 0 5 0" />
+      <path d="M15 5v-2.5" />
+    </>
+  ),
+  sensor: (
+    <>
+      <path d="M12 21v-4" />
+      <path d="M12 15h.01" />
+      <path d="M8.8 11.5a5 5 0 0 1 6.4 0" />
+      <path d="M6.5 8.3a9 9 0 0 1 11 0" />
+    </>
+  ),
+  lamp: (
+    <>
+      <circle cx="12" cy="9" r="6" />
+      <path d="M9.5 15h5M10 18h4" />
+      <path d="M4 4l2 2M20 4l-2 2" />
+    </>
+  ),
+  lift: (
+    <>
+      <rect x="4" y="3" width="16" height="18" rx="2" />
+      <path d="M9 15V7M9 7l-2.5 2.5M9 7l2.5 2.5" />
+      <path d="M16 9v8M16 17l-2.5-2.5M16 17l2.5-2.5" />
     </>
   ),
 };
