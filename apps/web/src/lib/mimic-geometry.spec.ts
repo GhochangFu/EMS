@@ -1,5 +1,6 @@
 import { expect } from "vitest";
 
+import { mimicPresetSchema } from "@bms/shared/contracts";
 import { MIMIC_PRESETS, type MimicLayoutGeometryDto, type MimicLayoutNodeDto } from "@bms/shared";
 
 import { MIMIC_NODE_GLYPHS, MIMIC_NODE_SIZE, pipePath } from "./mimic";
@@ -181,6 +182,56 @@ export function layoutPipesJoinUnitsOnly(): void {
   ]);
   expect(g.pumps).toEqual([]);
   expect(g.sink).toBeNull();
+}
+
+/** The six presets of `F3.32d` (ADR 0082 decision 3) — every preset but `water_train`. */
+const DOMAIN_PRESETS = mimicPresetSchema.options.filter((p) => p !== "water_train");
+
+/** G12 — each domain preset draws one unit per preset node, in preset order. */
+export function domainPresetsDrawEveryNode(): void {
+  expect(DOMAIN_PRESETS).toHaveLength(6);
+  for (const p of DOMAIN_PRESETS) {
+    expect(presetGeometry(p).units.map((u) => u.key), p).toEqual(MIMIC_PRESETS[p].nodes.map((n) => n.key));
+  }
+}
+
+/** G13 — each domain preset draws every preset pipe; `environment_monitoring` draws none. */
+export function domainPresetsDrawEveryPipe(): void {
+  for (const p of DOMAIN_PRESETS) {
+    expect(presetGeometry(p).pipes, p).toHaveLength(MIMIC_PRESETS[p].pipes.length);
+  }
+  expect(presetGeometry("environment_monitoring").pipes).toEqual([]);
+}
+
+/** G14 — a domain preset has no sink (ADR 0082 decision 3: only `water_train` has one). */
+export function domainPresetsDrawNoSink(): void {
+  for (const p of DOMAIN_PRESETS) {
+    expect(presetGeometry(p).sink, p).toBeNull();
+  }
+}
+
+/** G15 — a domain preset draws no pump (plan D3: `pumps: []`). */
+export function domainPresetsDrawNoPump(): void {
+  for (const p of DOMAIN_PRESETS) {
+    expect(presetGeometry(p).pumps, p).toEqual([]);
+  }
+}
+
+/** G16 — a domain preset's drawing is named by the preset's label. */
+export function domainPresetsAreNamedByTheirLabel(): void {
+  for (const p of DOMAIN_PRESETS) {
+    expect(presetGeometry(p).label, p).toBe(MIMIC_PRESETS[p].label);
+  }
+}
+
+/** G17 — a domain preset's units draw the symbols `MIMIC_NODE_GLYPHS` names for them. */
+export function domainPresetsDrawTheirGlyphs(): void {
+  for (const p of DOMAIN_PRESETS) {
+    const glyphs = MIMIC_NODE_GLYPHS[p] as Readonly<Record<string, string>>;
+    for (const u of presetGeometry(p).units) {
+      expect(u.symbol, `${p}.${u.key}`).toBe(glyphs[u.key]);
+    }
+  }
 }
 
 /** G11 — the empty geometry draws nothing. */

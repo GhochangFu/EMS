@@ -43,9 +43,12 @@ const LIST: MimicLayoutsListResponse = {
 
 const IN_USE = "2 dashboard widget(s) still use this layout";
 
-function renderPage(as: AuthUser): { list: ReturnType<typeof vi.spyOn>; remove: ReturnType<typeof vi.spyOn> } {
+function renderPage(
+  as: AuthUser,
+  listed: MimicLayoutsListResponse = LIST,
+): { list: ReturnType<typeof vi.spyOn>; remove: ReturnType<typeof vi.spyOn> } {
   vi.spyOn(systemStatusApi, "fetchSystemStatus").mockResolvedValue(OPERATIONAL);
-  const list = vi.spyOn(api, "fetchMimicLayouts").mockResolvedValue(LIST);
+  const list = vi.spyOn(api, "fetchMimicLayouts").mockResolvedValue(listed);
   const remove = vi
     .spyOn(api, "deleteMimicLayout")
     .mockRejectedValue(new ApiError(JSON.stringify({ message: IN_USE, error: "Conflict", statusCode: 409 }), 409));
@@ -80,11 +83,39 @@ export async function openLinksToTheEditor(): Promise<void> {
   expect(link).toHaveAttribute("href", `/admin/mimic-layouts/${LAYOUT_ID}`);
 }
 
-/** L3 — "Start from Water train" opens the new-layout route with the preset. */
-export async function startFromWaterTrainLinksToTheNewRouteWithThePreset(): Promise<void> {
+/** L3a — "Start from" lists the seven presets by label, in enum order (ADR 0082 decision 5). */
+export async function startFromListsTheSevenPresets(): Promise<void> {
   renderPage(user("admin"));
-  const link = await screen.findByRole("link", { name: "Start from Water train" });
-  expect(link).toHaveAttribute("href", "/admin/mimic-layouts/new?preset=water_train");
+  const select = await screen.findByRole("combobox", { name: "Start from" });
+  expect(within(select).getAllByRole("option").map((o) => o.textContent)).toEqual([
+    "Water train",
+    "Electrical distribution",
+    "HVAC chiller plant",
+    "IT power and cooling",
+    "Compressed air",
+    "Environment monitoring",
+    "Facility services",
+  ]);
+}
+
+/** L3b — "Start from" opens on Water train, and Start opens the new route with that preset. */
+export async function startDefaultsToWaterTrain(): Promise<void> {
+  renderPage(user("admin"));
+  expect(await screen.findByRole("combobox", { name: "Start from" })).toHaveValue("water_train");
+  expect(screen.getByRole("link", { name: "Start" })).toHaveAttribute("href", "/admin/mimic-layouts/new?preset=water_train");
+}
+
+/** L3c — choosing Compressed air points Start at that preset. */
+export async function startFollowsTheChosenPreset(): Promise<void> {
+  renderPage(user("admin"));
+  await userEvent.selectOptions(await screen.findByRole("combobox", { name: "Start from" }), "compressed_air");
+  expect(screen.getByRole("link", { name: "Start" })).toHaveAttribute("href", "/admin/mimic-layouts/new?preset=compressed_air");
+}
+
+/** L8 — an empty library names no one preset: it points at the Start from choice. */
+export async function anEmptyLibraryPointsAtAnyPreset(): Promise<void> {
+  renderPage(user("admin"), { items: [] });
+  expect(await screen.findByText("No layouts yet. Start from a preset, or draw a new one.")).toBeInTheDocument();
 }
 
 /** L4 — New opens the blank new-layout route. */

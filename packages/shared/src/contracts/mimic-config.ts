@@ -14,14 +14,25 @@ import { z } from "zod";
 /**
  * The mimic presets, closed (`F3.32`, ADR 0079 decision 2). A preset is a drawing shipped in
  * code — node positions, pipes and the role each node resolves — so a preset declared by data
- * would name a picture nobody drew. v1 ships one. The definitions are `MIMIC_PRESETS` in
+ * would name a picture nobody drew. The definitions are `MIMIC_PRESETS` in
  * `packages/shared/src/mimic-presets.ts`; the coordinates are the web renderer's.
+ *
+ * `F3.32d` / ADR 0082 decision 3: one preset per asset domain. `water_train` stays FIRST — the
+ * dashboard builder's default preset is `options[0]`, and every stored widget names it.
  */
-export const mimicPresetSchema = z.enum(["water_train"]);
+export const mimicPresetSchema = z.enum([
+  "water_train",
+  "electrical_distribution",
+  "hvac_chiller_plant",
+  "it_power_cooling",
+  "compressed_air",
+  "environment_monitoring",
+  "facility_services",
+]);
 
 /**
- * The preset arm (`F3.32`, ADR 0079 decision 2) — unchanged since v1, so a stored widget with
- * `source: "preset"` never needs migrating.
+ * The preset arm (`F3.32`, ADR 0079 decision 2) — its shape unchanged since v1, so a stored
+ * widget with `source: "preset"` never needs migrating; ADR 0082 only widens the enum.
  *
  * **No `commonConfigFields`, deliberately (F3.32 plan D8).** A mimic draws several nodes, each
  * with its own points and units, so one widget-level `unit` or `decimals` has nothing to apply

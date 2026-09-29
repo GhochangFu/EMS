@@ -1,5 +1,7 @@
-import { MIMIC_LAYOUT_NODE_KEY } from "@bms/shared/contracts";
+import { MIMIC_LAYOUT_BOUNDS, MIMIC_LAYOUT_NODE_KEY, mimicPresetSchema } from "@bms/shared/contracts";
+import { MIMIC_PRESETS } from "@bms/shared";
 
+import { MIMIC_PANELS } from "./mimic";
 import {
   clampBox,
   editorReducer,
@@ -430,6 +432,111 @@ export function runPresetUnitsDoNotOverlap(): void {
     units.slice(i + 1).some((b) => a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h),
   );
   assert(!overlaps, "no two units of the copy overlap");
+}
+
+// ---- fromPreset, the six domain presets (F3.32d, ADR 0082 decision 5) ---------------------
+
+/** Every preset but `water_train`: none has a sink, so each copy is its nodes, panels and pipes. */
+const DOMAIN_PRESETS = mimicPresetSchema.options.filter((p) => p !== "water_train");
+
+export function runDomainPresetsAreSix(): void {
+  assert(DOMAIN_PRESETS.length === 6, `six domain presets, got ${DOMAIN_PRESETS.length}`);
+}
+
+export function runDomainPresetNodesAreInsideTheCanvas(): void {
+  for (const p of DOMAIN_PRESETS) {
+    const l = fromPreset(p);
+    assert(
+      l.nodes.every((n) => n.x >= 0 && n.y >= 0 && n.x + n.w <= l.canvasW && n.y + n.h <= l.canvasH),
+      `${p}: every node, panels included, lies inside the canvas`,
+    );
+  }
+}
+
+export function runDomainPresetUnitsDoNotOverlap(): void {
+  for (const p of DOMAIN_PRESETS) {
+    const units = fromPreset(p).nodes.filter((n) => n.kind === "unit");
+    const overlaps = units.some((a, i) =>
+      units.slice(i + 1).some((b) => a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h),
+    );
+    assert(!overlaps, `${p}: no two units of the copy overlap`);
+  }
+}
+
+export function runDomainPresetRoledUnitsAreThePresetNodes(): void {
+  for (const p of DOMAIN_PRESETS) {
+    const roled = fromPreset(p).nodes.filter((n) => n.kind === "unit" && n.roleCode !== null);
+    const want = MIMIC_PRESETS[p].nodes.length;
+    assert(roled.length === want, `${p}: ${want} roled units, got ${roled.length}`);
+  }
+}
+
+export function runDomainPresetHasNoDischarge(): void {
+  for (const p of DOMAIN_PRESETS) {
+    assert(!fromPreset(p).nodes.some((n) => n.key === "discharge"), `${p}: no sink, so no discharge unit`);
+  }
+}
+
+export function runDomainPresetPipesAreThePresetPipes(): void {
+  for (const p of DOMAIN_PRESETS) {
+    const got = fromPreset(p).pipes.length;
+    const want = MIMIC_PRESETS[p].pipes.length;
+    assert(got === want, `${p}: ${want} pipes and no sink pipe, got ${got}`);
+  }
+}
+
+export function runEnvironmentMonitoringCopyHasNoPipes(): void {
+  const got = fromPreset("environment_monitoring").pipes.length;
+  assert(got === 0, `environment_monitoring copies no pipe, got ${got}`);
+}
+
+export function runDomainPresetPanelsAreThePresetPanels(): void {
+  for (const p of DOMAIN_PRESETS) {
+    const got = fromPreset(p).nodes.filter((n) => n.kind === "panel").length;
+    const want = MIMIC_PANELS[p].length;
+    assert(got === want, `${p}: ${want} panels, got ${got}`);
+  }
+}
+
+export function runDomainPresetPanelsDrawUnderUnits(): void {
+  for (const p of DOMAIN_PRESETS) {
+    const l = fromPreset(p);
+    const panelZ = Math.max(...l.nodes.filter((n) => n.kind === "panel").map((n) => n.z));
+    const unitZ = Math.min(...l.nodes.filter((n) => n.kind === "unit").map((n) => n.z));
+    assert(panelZ < unitZ, `${p}: every panel's z is below every unit's z`);
+  }
+}
+
+export function runDomainPresetSlugIsThePresetKey(): void {
+  for (const p of DOMAIN_PRESETS) {
+    const slug = fromPreset(p).slug;
+    assert(slug === p.replace(/_/g, "-"), `${p}: slug is the hyphenated key, got ${slug}`);
+  }
+}
+
+export function runDomainPresetCanvasMeetsTheBounds(): void {
+  for (const p of DOMAIN_PRESETS) {
+    const l = fromPreset(p);
+    assert(
+      l.canvasW >= MIMIC_LAYOUT_BOUNDS.canvasW.min &&
+        l.canvasW <= MIMIC_LAYOUT_BOUNDS.canvasW.max &&
+        l.canvasH >= MIMIC_LAYOUT_BOUNDS.canvasH.min &&
+        l.canvasH <= MIMIC_LAYOUT_BOUNDS.canvasH.max,
+      `${p}: canvas ${l.canvasW} × ${l.canvasH} lies inside the bounds`,
+    );
+  }
+}
+
+export function runDomainPresetNameIsThePresetLabel(): void {
+  for (const p of DOMAIN_PRESETS) {
+    const name = fromPreset(p).name;
+    assert(name === MIMIC_PRESETS[p].label, `${p}: name is the preset label, got ${name}`);
+  }
+}
+
+export function runCompressedAirCanvasIsFourSlotsByOne(): void {
+  const l = fromPreset("compressed_air");
+  assert(l.canvasW === 102 && l.canvasH === 31, `canvas 102 × 31, got ${l.canvasW} × ${l.canvasH}`);
 }
 
 // ---- keyboardAction -----------------------------------------------------------------------

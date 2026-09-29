@@ -12,7 +12,7 @@ import * as systemStatusApi from "../../api/system-status";
 import * as vocabApi from "../../api/vocabularies";
 import { OPERATIONAL } from "../../components/system-status-indicator.spec";
 import { ApiError } from "../../lib/api-error";
-import { fromPreset, toWriteBody } from "../../lib/mimic-editor";
+import { emptyEditorLayout, fromPreset, toWriteBody } from "../../lib/mimic-editor";
 import type { AuthUser } from "../../stores/auth-store";
 import { MIMIC_LAYOUT_STALE_MESSAGE as STALE_SERVER_MESSAGE } from "@bms/shared/contracts";
 
@@ -107,12 +107,34 @@ async function save(): Promise<void> {
   await userEvent.click(button);
 }
 
-/** E1 — "Start from Water train" POSTs the preset copy with the organization and no version. */
+/** E1 — Start from Water train POSTs the preset copy with the organization and no version. */
 export async function aNewPresetLayoutPostsWithTheOrganization(): Promise<void> {
   const { create } = renderAt("/admin/mimic-layouts/new?preset=water_train");
   await save();
   await waitFor(() => expect(create).toHaveBeenCalledTimes(1));
   expect(create).toHaveBeenCalledWith({ ...toWriteBody(fromPreset("water_train")), organizationId: ORG_ID });
+}
+
+/** E1b — `?preset=compressed_air` POSTs that preset's copy (ADR 0082 decision 5, plan D9). */
+export async function aDomainPresetLayoutPostsItsCopy(): Promise<void> {
+  const { create } = renderAt("/admin/mimic-layouts/new?preset=compressed_air");
+  await save();
+  await waitFor(() => expect(create).toHaveBeenCalledTimes(1));
+  expect(create).toHaveBeenCalledWith({ ...toWriteBody(fromPreset("compressed_air")), organizationId: ORG_ID });
+}
+
+/** E1c — an unknown `?preset=` is the blank layout, never a crash. */
+export async function anUnknownPresetPostsTheBlankLayout(): Promise<void> {
+  const { create } = renderAt("/admin/mimic-layouts/new?preset=bogus");
+  await save();
+  await waitFor(() => expect(create).toHaveBeenCalledTimes(1));
+  expect(create).toHaveBeenCalledWith({ ...toWriteBody(emptyEditorLayout()), organizationId: ORG_ID });
+}
+
+/** E1d — the canvas card is titled by the preset's label. */
+export async function aDomainPresetLayoutIsTitledByItsLabel(): Promise<void> {
+  renderAt("/admin/mimic-layouts/new?preset=compressed_air");
+  expect(await screen.findByRole("heading", { name: "Compressed air" })).toBeInTheDocument();
 }
 
 /** E2 — a new layout never PUTs. */

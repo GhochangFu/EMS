@@ -9,7 +9,10 @@ import {
   panelBoxHoldsTheSink,
   panelFramesFitAndDoNotOverlap,
   panelsPartitionThePresetNodes,
+  pipesCrossNoThirdSlot,
   pumpSitsMidGap,
+  slotAtIsTheWaterTrainPitch,
+  slotViewBoxIsTheWaterTrainViewBox,
   severityToneFromTheVocabularyTone,
   calloutTextDefaultCutIsTwenty,
   alarmedFreshNodeFlows,
@@ -63,8 +66,17 @@ describe("F3.32 U4 — the plant mimic's pure half", () => {
   it("M4a layout keys equal preset keys", () => {
     layoutKeysMatchPresetKeys();
   });
-  it("M4b nodes fit the viewBox and do not overlap", () => {
+  it("M4b in every preset, nodes fit the viewBox and do not overlap", () => {
     nodesFitAndDoNotOverlap();
+  });
+  it("M4c slotAt(4, 1) is the 1020, 410 corner", () => {
+    slotAtIsTheWaterTrainPitch();
+  });
+  it("M4d slotViewBox(5, 2) is water_train's viewBox", () => {
+    slotViewBoxIsTheWaterTrainViewBox();
+  });
+  it("M15 in every preset, no pipe crosses a third slot", () => {
+    pipesCrossNoThirdSlot();
   });
   it("M5 the badge counts the hidden members", () => {
     badgeCountsTheHiddenMembers();
@@ -78,7 +90,7 @@ describe("F3.32 U4 — the plant mimic's pure half", () => {
   it("M7 every preset node sits in exactly one panel", () => {
     panelsPartitionThePresetNodes();
   });
-  it("M7b panel frames fit the viewBox and do not overlap", () => {
+  it("M7b in every preset, panel frames fit the viewBox and do not overlap", () => {
     panelFramesFitAndDoNotOverlap();
   });
   it("M7c the sink's panel holds the sink; no node, no frame", () => {

@@ -4,12 +4,15 @@ import { cleanup } from "@testing-library/react";
 
 import {
   aRefusedDeleteShowsTheServersSentence,
+  anEmptyLibraryPointsAtAnyPreset,
   confirmDeleteCallsTheApiWithTheId,
   failsClosedForALocationAdmin,
   listsEachLayoutWithItsUnitCount,
   newLinksToTheNewRoute,
   openLinksToTheEditor,
-  startFromWaterTrainLinksToTheNewRouteWithThePreset,
+  startDefaultsToWaterTrain,
+  startFollowsTheChosenPreset,
+  startFromListsTheSevenPresets,
 } from "./mimic-layouts-page.spec";
 
 /** Vitest entry point — assertions live in the sibling `.spec` (ADR 0014, ADR 0042 decision 2). */
@@ -27,8 +30,20 @@ describe("F3.32c mimic layouts page", () => {
     await openLinksToTheEditor();
   });
 
-  it("L3 Start from Water train opens the new route with the preset", async () => {
-    await startFromWaterTrainLinksToTheNewRouteWithThePreset();
+  it("L3a Start from lists the seven presets by label", async () => {
+    await startFromListsTheSevenPresets();
+  });
+
+  it("L3b Start from opens on Water train and Start links to it", async () => {
+    await startDefaultsToWaterTrain();
+  });
+
+  it("L3c choosing Compressed air points Start at it", async () => {
+    await startFollowsTheChosenPreset();
+  });
+
+  it("L8 an empty library points at any preset", async () => {
+    await anEmptyLibraryPointsAtAnyPreset();
   });
 
   it("L4 New opens the new route", async () => {
