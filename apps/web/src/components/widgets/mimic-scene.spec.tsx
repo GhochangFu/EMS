@@ -3,7 +3,7 @@ import type { ReactElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { expect } from "vitest";
 
-import { mimicSymbolSchema } from "@bms/shared/contracts";
+import { mimicCoreSymbolSchema } from "@bms/shared/contracts";
 import type { GeneratedSiteAssetDto, MimicNodeDto } from "@bms/shared";
 
 import type { SiteLiveReadings } from "../../hooks/use-site-live-readings";
@@ -146,13 +146,13 @@ export function childrenDrawInsideTheSvgLast(): void {
 export function everySymbolDrawsAGlyph(): void {
   render(
     <svg>
-      {mimicSymbolSchema.options.map((kind) => (
+      {mimicCoreSymbolSchema.options.map((kind) => (
         <MimicGlyph key={kind} kind={kind} x={0} y={0} size={24} className="stroke-ink" />
       ))}
     </svg>,
   );
   const glyphs = screen.getAllByTestId("mimic-glyph");
-  expect(glyphs.map((g) => g.getAttribute("data-glyph"))).toEqual([...mimicSymbolSchema.options]);
+  expect(glyphs.map((g) => g.getAttribute("data-glyph"))).toEqual([...mimicCoreSymbolSchema.options]);
   for (const g of glyphs) {
     expect(g.childElementCount, g.getAttribute("data-glyph") ?? "").toBeGreaterThan(0);
   }
@@ -164,7 +164,7 @@ export function everySymbolDrawsAGlyph(): void {
  * stripped first or the check would trivially pass without comparing a single path.
  */
 export function noTwoSymbolsDrawTheSameMarkup(): void {
-  const markup = mimicSymbolSchema.options.map((kind) =>
+  const markup = mimicCoreSymbolSchema.options.map((kind) =>
     renderToStaticMarkup(
       <svg>
         <MimicGlyph kind={kind} x={0} y={0} size={24} className="stroke-ink" />
@@ -172,12 +172,12 @@ export function noTwoSymbolsDrawTheSameMarkup(): void {
     ).replace(/ data-glyph="[^"]*"/, ""),
   );
   expect(markup.some((m) => m.includes("data-glyph"))).toBe(false);
-  expect(new Set(markup).size).toBe(mimicSymbolSchema.options.length);
+  expect(new Set(markup).size).toBe(mimicCoreSymbolSchema.options.length);
 }
 
 /** S11 — every glyph names no colour: no `fill`/`stroke` other than `none`, no `className` on paths. */
 export function everyGlyphNamesNoColour(): void {
-  for (const kind of mimicSymbolSchema.options) {
+  for (const kind of mimicCoreSymbolSchema.options) {
     const { container } = render(
       <svg>
         <MimicGlyph kind={kind} x={0} y={0} size={24} className="stroke-ink" />

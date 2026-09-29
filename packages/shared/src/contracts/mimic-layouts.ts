@@ -1,5 +1,9 @@
 import { z } from "zod";
 
+import { LUCIDE_SYMBOL_KEYS } from "../mimic-symbol-libraries/lucide.generated";
+import { MDI_SYMBOL_KEYS } from "../mimic-symbol-libraries/mdi.generated";
+import { TABLER_SYMBOL_KEYS } from "../mimic-symbol-libraries/tabler.generated";
+
 /**
  * `F3.32c` / ADR 0081 — the mimic layout library (`/api/v1/mimic-layouts`) response contracts
  * and the bounds every write surface and the database restate (plan D3, D4, D5).
@@ -40,12 +44,12 @@ export const MIMIC_LAYOUT_SLUG = /^[a-z0-9][a-z0-9-]{0,62}$/;
 export const mimicLayoutNodeKindSchema = z.enum(["unit", "panel", "label"]);
 
 /**
- * The closed symbol set a unit draws with (plan D12). Closed because a symbol is an SVG glyph in
- * code — the same §4.8 test `widgetTypeSchema` applies. `bms.mimic_layout_nodes_symbol_check`
- * restates this list in this order (migration `0089`, ADR 0082: twelve water and general symbols,
- * then seventeen for the other asset domains).
+ * The core library's symbols (plan D12), each an SVG glyph drawn in code. Migration `0089`'s
+ * `mimic_layout_nodes_symbol_check` restated this list in this order (ADR 0082: twelve water and
+ * general symbols, then seventeen for the other asset domains); since `F3.32e` (ADR 0084)
+ * migration `0090` holds them as the `core` rows of `bms.mimic_symbols`, in this order.
  */
-export const mimicSymbolSchema = z.enum([
+export const mimicCoreSymbolSchema = z.enum([
   "tank",
   "clarifier",
   "membrane",
@@ -77,6 +81,44 @@ export const mimicSymbolSchema = z.enum([
   "sensor",
   "lamp",
   "lift",
+]);
+
+/**
+ * `F3.32e` / ADR 0084 decision 4 — the four preloaded symbol libraries, in palette order. The
+ * rows of `bms.mimic_symbol_libraries` (migration `0090`) restate them.
+ */
+export const mimicSymbolLibraryCodeSchema = z.enum(["core", "tabler", "lucide", "mdi"]);
+
+/**
+ * The eight palette groups (ADR 0082 decision 2), in order. `mimic_symbols_group_code_check`
+ * (migration `0090`) restates them; every library symbol belongs to one.
+ */
+export const MIMIC_SYMBOL_GROUP_CODES = [
+  "water",
+  "electrical",
+  "it_ups",
+  "hvac",
+  "mechanical",
+  "environment",
+  "facility",
+  "general",
+] as const;
+
+export type MimicSymbolGroupCode = (typeof MIMIC_SYMBOL_GROUP_CODES)[number];
+
+/**
+ * Every symbol a unit can draw with: the core keys, then each library's curated keys in library
+ * order (ADR 0084 decisions 2 and 7). A core key is bare, every other key is
+ * `<library>:<name>`. An unknown key is a 400 here, before it reaches
+ * `mimic_layout_nodes_symbol_fkey`. The library keys are generated
+ * (`scripts/mimic-symbols/generate.mjs`) and `tests/f3.32e-mimic-symbol-libraries.test.ts` compares
+ * them with migration `0090`'s rows.
+ */
+export const mimicSymbolSchema = z.enum([
+  ...mimicCoreSymbolSchema.options,
+  ...TABLER_SYMBOL_KEYS,
+  ...LUCIDE_SYMBOL_KEYS,
+  ...MDI_SYMBOL_KEYS,
 ]);
 
 /** A panel's tint — a colour role, never a colour value (F3.65 R14/R20). */
@@ -126,6 +168,7 @@ export const mimicLayoutSummarySchema = z.object({
   canvasH: z.number().int(),
   version: z.number().int(),
   unitCount: z.number().int(),
+  symbolLibraries: z.array(mimicSymbolLibraryCodeSchema),
   updatedAt: z.string(),
 });
 
@@ -138,6 +181,7 @@ export const mimicLayoutDtoSchema = z.object({
   canvasW: z.number().int(),
   canvasH: z.number().int(),
   version: z.number().int(),
+  symbolLibraries: z.array(mimicSymbolLibraryCodeSchema),
   nodes: z.array(mimicLayoutNodeSchema),
   pipes: z.array(mimicLayoutPipeSchema),
   createdAt: z.string(),

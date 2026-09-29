@@ -20,6 +20,7 @@ import type {
   MimicLayoutsListResponse,
   MimicPanelTone,
   MimicSymbol,
+  MimicSymbolLibraryCode,
   MimicLayoutNodeKind,
 } from "@bms/shared";
 
@@ -117,6 +118,7 @@ export class MimicLayoutsService {
         canvasH: layout.canvasH,
         version: layout.version,
         unitCount: unitsByLayout.get(layout.id) ?? 0,
+        symbolLibraries: layout.symbolLibraries as MimicSymbolLibraryCode[],
         updatedAt: layout.updatedAt.toISOString(),
       })),
     };
@@ -398,6 +400,7 @@ export class MimicLayoutsService {
       canvasW: layout.canvasW,
       canvasH: layout.canvasH,
       version: layout.version,
+      symbolLibraries: layout.symbolLibraries as MimicSymbolLibraryCode[],
       nodes: nodes.map(
         (node): MimicLayoutNodeDto => ({
           key: node.key,

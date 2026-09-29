@@ -1,6 +1,6 @@
 import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { mimicSymbolSchema } from "@bms/shared/contracts";
+import { mimicCoreSymbolSchema } from "@bms/shared/contracts";
 import { expect, vi } from "vitest";
 
 import { MIMIC_SYMBOL_GROUPS, symbolLabel } from "../../lib/mimic-symbols";
@@ -36,7 +36,7 @@ export function offersTheTwentyNineSymbolsInGroupOrder(): void {
   const names = screen.getAllByRole("button", { name: /^Add .* unit$/ }).map((b) => b.getAttribute("aria-label"));
   const expected = MIMIC_SYMBOL_GROUPS.flatMap((group) => group.symbols.map((s) => `Add ${symbolLabel(s)} unit`));
   expect(names).toEqual(expected);
-  expect(names).toHaveLength(mimicSymbolSchema.options.length);
+  expect(names).toHaveLength(mimicCoreSymbolSchema.options.length);
 }
 
 /** P1b — eight group headings, in `MIMIC_SYMBOL_GROUPS` order, General last. */
@@ -52,7 +52,7 @@ export function everySymbolAppearsExactlyOnce(): void {
   renderPalette();
   const names = screen.getAllByRole("button", { name: /^Add .* unit$/ }).map((b) => b.getAttribute("aria-label"));
   expect(new Set(names).size).toBe(names.length);
-  expect(names.length).toBe(mimicSymbolSchema.options.length);
+  expect(names.length).toBe(mimicCoreSymbolSchema.options.length);
 }
 
 /** P2 — each glyph button draws its glyph, in group order. */

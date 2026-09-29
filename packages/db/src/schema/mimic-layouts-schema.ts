@@ -1,4 +1,5 @@
 import {
+  boolean,
   foreignKey,
   index,
   integer,
@@ -9,6 +10,43 @@ import {
 } from "drizzle-orm/pg-core";
 
 import { assetRoles, bmsSchema, organizations, users } from "./bms-schema";
+
+/**
+ * `F3.32e` / ADR 0084 decision 1 — the preloaded symbol libraries, migration `0090`. Global
+ * lookup tables in the `bms.asset_roles` shape: no organization, no row security. The style and
+ * group CHECKs and the key-names-its-library CHECK are the migration's, not mirrored here.
+ */
+export const mimicSymbolLibraries = bmsSchema.table("mimic_symbol_libraries", {
+  code: varchar("code", { length: 32 }).primaryKey(),
+  label: varchar("label", { length: 64 }).notNull(),
+  source: varchar("source", { length: 120 }).notNull(),
+  version: varchar("version", { length: 32 }).notNull(),
+  licence: varchar("licence", { length: 64 }).notNull(),
+  attributionUrl: varchar("attribution_url", { length: 255 }).notNull(),
+  style: varchar("style", { length: 8 }).notNull(),
+  sortOrder: integer("sort_order").notNull().default(100),
+  active: boolean("active").notNull().default(true),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+/** One symbol a unit can draw: a bare core key, or `<library>:<name>` (ADR 0084 decision 2). */
+export const mimicSymbols = bmsSchema.table(
+  "mimic_symbols",
+  {
+    key: varchar("key", { length: 64 }).primaryKey(),
+    libraryCode: varchar("library_code", { length: 32 })
+      .notNull()
+      .references(() => mimicSymbolLibraries.code),
+    label: varchar("label", { length: 64 }).notNull(),
+    groupCode: varchar("group_code", { length: 16 }).notNull(),
+    sortOrder: integer("sort_order").notNull().default(100),
+    active: boolean("active").notNull().default(true),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    libraryIdx: index("mimic_symbols_library_idx").on(t.libraryCode, t.groupCode, t.sortOrder),
+  }),
+);
 
 /**
  * The mimic layout library — `F3.32c`, migration `0088`, ADR 0081 decision 1.
@@ -39,6 +77,9 @@ export const mimicLayouts = bmsSchema.table(
     // Optimistic concurrency (ADR 0081 decision 2): a save names the version it
     // loaded, and the update increments it.
     version: integer("version").notNull().default(1),
+    // `F3.32e` / ADR 0084 decision 8 — the libraries the layout draws from (migration `0090`).
+    // At least one member is `mimic_layouts_symbol_libraries_check`'s, not mirrored here.
+    symbolLibraries: varchar("symbol_libraries", { length: 32 }).array().notNull().default(["core"]),
     createdBy: uuid("created_by").references(() => users.id),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
@@ -68,7 +109,8 @@ export const mimicLayoutNodes = bmsSchema.table(
       .references(() => mimicLayouts.id, { onDelete: "cascade" }),
     key: varchar("key", { length: 32 }).notNull(),
     kind: varchar("kind", { length: 16 }).notNull(),
-    symbol: varchar("symbol", { length: 32 }),
+    // `F3.32e` / ADR 0084 decision 3 — a foreign key to `mimic_symbols` replaced 0089's CHECK.
+    symbol: varchar("symbol", { length: 64 }).references(() => mimicSymbols.key),
     label: varchar("label", { length: 64 }).notNull(),
     roleCode: varchar("role_code", { length: 64 }).references(() => assetRoles.code),
     tone: varchar("tone", { length: 16 }),

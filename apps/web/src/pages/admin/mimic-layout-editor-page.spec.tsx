@@ -53,6 +53,7 @@ function storedDto(version: number): MimicLayoutDto {
     canvasW: layout.canvasW,
     canvasH: layout.canvasH,
     version,
+    symbolLibraries: ["core"],
     nodes: [...layout.nodes],
     pipes: [...layout.pipes],
     createdAt: new Date(0).toISOString(),

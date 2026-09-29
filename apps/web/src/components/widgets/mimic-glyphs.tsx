@@ -1,3 +1,4 @@
+import type { MimicCoreSymbol } from "@bms/shared";
 import type { ReactNode } from "react";
 
 import type { MimicGlyphKind } from "../../lib/mimic";
@@ -21,7 +22,7 @@ import type { MimicGlyphKind } from "../../lib/mimic";
  * this file names no colour at all (`tests/f3.65-colour-roles-gate.test.ts`).
  */
 
-const PATHS: Readonly<Record<MimicGlyphKind, ReactNode>> = {
+const PATHS: Readonly<Record<MimicCoreSymbol | "alert", ReactNode>> = {
   tank: (
     <>
       <path d="M4 6.5v11c0 1.9 3.6 3.5 8 3.5s8-1.6 8-3.5v-11" />
@@ -273,7 +274,7 @@ export function MimicGlyph({ kind, x, y, size, className, level = null }: MimicG
           className="fill-info/30"
         />
       ) : null}
-      {PATHS[kind]}
+      {kind in PATHS ? PATHS[kind as keyof typeof PATHS] : PATHS.unit}
     </g>
   );
 }

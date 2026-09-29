@@ -165,8 +165,8 @@ describe("F3.32d — migration 0089: the symbol CHECK restated and eighteen role
     expect(sql).not.toMatch(/ADD\s+CONSTRAINT\s+IF\s+NOT\s+EXISTS/i);
   });
 
-  it("_symbol_check lists every mimicSymbolSchema member, in order, from the shared source", () => {
-    const symbols = enumMembersFromSource(read(CONTRACT_REL), "mimicSymbolSchema");
+  it("_symbol_check lists every mimicCoreSymbolSchema member, in order, from the shared source", () => {
+    const symbols = enumMembersFromSource(read(CONTRACT_REL), "mimicCoreSymbolSchema");
     // Positive control: the source parse found the twenty-nine symbols of ADR 0082 decision 1.
     expect(symbols).toHaveLength(29);
     const check = addedSymbolCheck(sqlOnly(read(MIGRATION_REL)));

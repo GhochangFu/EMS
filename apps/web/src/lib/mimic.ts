@@ -316,8 +316,9 @@ export function mimicPanelBox(
 
 /**
  * The illustrated symbols `mimic-glyphs.tsx` draws: every unit symbol of the closed shared set
- * (`mimicSymbolSchema`, `F3.32c` plan D12), plus the callout's `alert`. A symbol added to the
- * contract without a path is a compile error in `mimic-glyphs.tsx`.
+ * (`mimicSymbolSchema`, `F3.32c` plan D12; since `F3.32e` also every library key, ADR 0084), plus
+ * the callout's `alert`. A core symbol added to the contract without a path is a compile error
+ * in `mimic-glyphs.tsx`; a library key draws its vendored shapes.
  */
 export type MimicGlyphKind = MimicSymbol | "alert";
 

@@ -51,7 +51,9 @@ export function stubMimicLayouts(response: MimicLayoutsListResponse = EMPTY_LAYO
   mimicLayoutsMocks.fetchMimicLayouts.mockResolvedValue(response);
 }
 
-function libraryLayout(overrides: Partial<MimicLayoutsListResponse["items"][number]> = {}) {
+function libraryLayout(
+  overrides: Partial<MimicLayoutsListResponse["items"][number]> = {},
+): MimicLayoutsListResponse["items"][number] {
   return {
     id: "77777777-7777-4777-8777-777777777777",
     organizationId: "org-1",
@@ -61,6 +63,7 @@ function libraryLayout(overrides: Partial<MimicLayoutsListResponse["items"][numb
     canvasH: 60,
     version: 1,
     unitCount: 8,
+    symbolLibraries: ["core"],
     updatedAt: "2026-09-01T00:00:00.000Z",
     ...overrides,
   };
