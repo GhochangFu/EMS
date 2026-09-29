@@ -7,6 +7,7 @@ implementation code. Four gate questions were put to the owner one at a time
 and are recorded under *Gate questions*. **Q2 was asked twice**: at the first
 asking the owner told us to search the project documents for an IONSiTE NEXUS
 logo before choosing, and the question was put again on what the search found.
+The owner reviewed and approved this written record on 2026-09-29.
 
 ## Context
 
