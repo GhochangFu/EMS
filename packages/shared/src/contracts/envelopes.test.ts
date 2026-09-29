@@ -12,6 +12,8 @@ import {
   deliveryEventIsRequiredOnEveryRow,
   pointValuesAtInstantAcceptsASampledAndAnUnsampledRef,
   pointValuesAtInstantRequiresPointRefAndAt,
+  pointsLatestAcceptsAReadingList,
+  pointsLatestRefusesANullValue,
   runNotificationDeliveryStatusEnvelopeTests,
   runPointAggregateBucketSecondsTests,
   runPointAggregateEmptyWindowTests,
@@ -75,6 +77,16 @@ describe("F3.28 — pointValuesAtInstantResponseSchema (ADR 0074 decision 2)", (
 
   it("requires `at` on the response and `pointRef` on every item", () => {
     pointValuesAtInstantRequiresPointRefAndAt();
+  });
+});
+
+describe("F4.176 — pointsLatestResponseSchema (ADR 0074 Amendment 2)", () => {
+  it("accepts a list of readings", () => {
+    pointsLatestAcceptsAReadingList();
+  });
+
+  it("refuses a null value — an unsampled pair is absent, not a row of nulls", () => {
+    pointsLatestRefusesANullValue();
   });
 });
 
