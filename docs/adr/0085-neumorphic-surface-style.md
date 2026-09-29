@@ -167,3 +167,37 @@ configuration.
 | Q2 | What do form fields look like? | Pressed plus a hairline (recommended) · pressed only | **Pressed plus a hairline** — decision 4 |
 | Q3 | Which hairline? (asked again after the measurement) | `ink-faint`, meets 3:1 (recommended) · `line-strong`, a lighter look below 3:1 | **`ink-faint`** — decision 4 |
 | Q4 | Which style before the user chooses? | Neumorphic (recommended) · Flat | **Neumorphic** — decision 1 |
+
+## Amendment 1 — the plan gate and the build (`F3.71`, 2026-09-29)
+
+**Plan-gate rulings** (plan `docs/plans/f3.71-neumorphic-surface-style.md` §0; OQ1–OQ4 by the
+owner, OQ5–OQ8 from the approved prototype):
+
+| # | Question | Ruling |
+|---|---|---|
+| OQ1 | One recipe per part moves some Flat pixels | **Accept.** Spelled-out cards gain `rounded-lg shadow-sm`; tab strips that were a green fill (`bg-accent`) take the outline chip (`border-accent bg-ok-wash text-ok-ink`) and segmented filters that were chips take the green fill; `bg-line` tracks become `bg-well-deep`; the page header becomes a card; three report tables lose their hairline frame (the flat `surface-table` is frameless) |
+| OQ2 | `ink-faint` (4.32) and `critical-ink-soft` (4.38) text on `canvas` | **Recolour in both styles:** `ink-muted`, `critical-ink`; bare `text-accent` text becomes `accent-strong` |
+| OQ3 | Primary buttons | **Raised** (`surface-button-primary`; the `bg-accent` fill stays) |
+| OQ4 | The KPI ribbon under the chrome | **A raised full-width strip** |
+| OQ5 | The sidebar | a floating raised panel, as in the prototype |
+| OQ6 | The selected sidebar link | `aria-current="page"` (a spec asserted a colour class) |
+| OQ7 | The switch glyphs | Material Icons `layers` / `crop_square` |
+| OQ8 | Schematic node shadows | none (decision 3) |
+
+**The OK pill's ink (owner ruling at build).** Decision 3's `accent-strong` measured **4.34:1**
+light on the OK pill's `accent`/0.1 wash over `canvas`, under 4.5. The owner ruled `ok-ink`
+(`status-pill.tsx`); the contrast test declares the pair.
+
+**Decision 3, per style.** The selected tab, sidebar link and segmented item are `accent-strong`
+in the neumorphic style; the flat style keeps today's inks (`ok-ink` on `ok-wash` for a tab,
+`ink` for a sidebar link, `on-accent` for a segmented item).
+
+**Decision 7, measured.** `pages/admin/mimic-layouts-page.tsx` was converted with the admin sweep:
+`F3.32e` edits only its spec (one line), not the page. The files still waiting for `F3.32e`
+(plan unit D) are `components/dashboards/widget-inspector.tsx` and
+`components/mimic-editor/{canvas,palette,inspector}.tsx`; the V1 gate allowlists their counts.
+
+**Gates added beyond decision 6.** V7: every flat rule resets each property its neumorphic rule
+sets (a code review found empty and partial flat rules that leaked radius, fill and padding into
+Flat). V8: surface state rules are `:where(:hover)` / `:where(:active)`, because Tailwind's
+`@layer` is not a native cascade layer and a bare `:hover` beat call-site tone utilities.
