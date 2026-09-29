@@ -1,6 +1,7 @@
 import { MIMIC_LAYOUT_BOUNDS } from "@bms/shared/contracts";
 import {
   MIMIC_PRESETS,
+  MIMIC_SYMBOL_LIBRARIES,
   type MimicLayoutDto,
   type MimicLayoutNodeDto,
   type MimicLayoutPipeDto,
@@ -473,6 +474,17 @@ function panelAround(members: readonly Box[]): Box {
   };
 }
 
+/** `core`, then each library a unit draws from, in `MIMIC_SYMBOL_LIBRARIES` order. */
+function presetLibraries(units: readonly EditorNode[]): MimicSymbolLibraryCode[] {
+  const used = new Set<MimicSymbolLibraryCode>(["core"]);
+  for (const unit of units) {
+    if (unit.symbol !== null) {
+      used.add(libraryOfSymbol(unit.symbol));
+    }
+  }
+  return MIMIC_SYMBOL_LIBRARIES.map((library) => library.code).filter((code) => used.has(code));
+}
+
 /**
  * "Start from" a preset (ADR 0081 decision 4, generalised by ADR 0082 decision 5 to all seven
  * presets): the preset's roled units at the web's coordinates rounded to the grid, the panels
@@ -482,6 +494,10 @@ function panelAround(members: readonly Box[]): Box {
  * D6) one unit-pitch left of its upstream unit on that unit's row, inside that unit's panel, and
  * one more pipe into it. The sink is not placed at its preset tip (px 450): a unit-sized box
  * there overlaps ETP. A preset without a sink copies its nodes, panels and pipes only.
+ *
+ * The copy chooses `core` and every library its units draw from (`F3.32g`), in registry order —
+ * a preset glyph is a library key since then, and the API refuses a unit whose library the
+ * layout did not choose (ADR 0084 decision 8).
  */
 export function fromPreset(preset: MimicPreset): EditorLayout {
   const def: MimicPresetDef = MIMIC_PRESETS[preset];
@@ -561,7 +577,7 @@ export function fromPreset(preset: MimicPreset): EditorLayout {
     canvasH: toCell(viewH ?? 0),
     nodes: [...panels, ...units],
     pipes,
-    symbolLibraries: ["core"],
+    symbolLibraries: presetLibraries(units),
   };
 }
 
