@@ -11,13 +11,18 @@ import {
   decodePointRefParam,
   type JwtPayload,
   type PointValuesAtInstantResponse,
+  type PointsLatestResponse,
 } from "@bms/shared";
 import { z } from "zod";
 
 import { AccessControlService } from "../auth/access-control.service";
 import { CurrentUser } from "../auth/current-user.decorator";
 import { JwtAuthGuard } from "../auth/jwt-auth.guard";
-import { pointAggregateQuerySchema, pointValuesAtQuerySchema } from "./telemetry.schema";
+import {
+  pointAggregateQuerySchema,
+  pointsLatestQuerySchema,
+  pointValuesAtQuerySchema,
+} from "./telemetry.schema";
 import { TelemetryService } from "./telemetry.service";
 
 const assetIdSchema = z.string().uuid();
@@ -95,6 +100,38 @@ export class TelemetryController {
         unit: values[i]?.unit ?? null,
       })),
     };
+  }
+
+  /**
+   * `F4.176` (ADR 0074 Amendment 2) — the latest sample of each (asset, point
+   * key) pair inside the last `windowMinutes`, for up to `MAX_LATEST_ASSET_IDS`
+   * assets in one call. A pair with no sample in the window is absent.
+   *
+   * **Declared before the `points/:pointRef/...` routes**, like `atInstant`.
+   *
+   * The order of refusals is `atInstant`'s: the query contract (400, UUID shape
+   * included), then the scope — 403 for the whole request if any one id is
+   * foreign, resolved once through `readableAssetIds` — and only then the read.
+   * `telemetry.point_values` carries no Row Level Security, so this guard is the
+   * only containment, and a guard that throws after reading has already read.
+   */
+  @Get("points/latest")
+  async latest(
+    @CurrentUser() user: JwtPayload,
+    @Query() query: Record<string, unknown>,
+  ): Promise<PointsLatestResponse> {
+    const parsed = pointsLatestQuerySchema.safeParse(query);
+    if (!parsed.success) {
+      throw new BadRequestException(parsed.error.issues[0]?.message ?? "Invalid query");
+    }
+    const { assetIds, pointKeys, windowMinutes } = parsed.data;
+
+    const readable = await this.accessControl.readableAssetIds(user);
+    if (readable !== null && assetIds.some((id) => !readable.includes(id))) {
+      throw new ForbiddenException("Asset is outside your access scope");
+    }
+
+    return { items: await this.telemetry.latestPointValues(assetIds, pointKeys, windowMinutes) };
   }
 
   /** Historical window for charts and TanStack Query seed data. */

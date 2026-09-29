@@ -382,3 +382,126 @@ export async function assertAtInstantHandsTheDecodedPairsToTheService(): Promise
   });
   assert(got === expected, `expected ${expected}, got ${got}`);
 }
+
+// ---------------------------------------------------------------------------
+// `F4.176` (ADR 0074 Amendment 2) — `GET /telemetry/points/latest`.
+// ---------------------------------------------------------------------------
+
+type LatestCall = { assetIds: readonly string[]; pointKeys: readonly string[]; windowMinutes: number };
+
+/**
+ * The fake service answers one reading per asset id, its value derived from
+ * that id, so a swapped or dropped id changes the response rather than leaving
+ * it looking right.
+ */
+function latestStubs(readable: string[] | null) {
+  const calls: LatestCall[] = [];
+  const service = {
+    latestPointValues: async (
+      assetIds: readonly string[],
+      pointKeys: readonly string[],
+      windowMinutes: number,
+    ) => {
+      calls.push({ assetIds, pointKeys, windowMinutes });
+      return assetIds.map((assetId) => ({
+        time: AT,
+        assetId,
+        pointKey: pointKeys[0] ?? "kw",
+        value: assetId === ASSET_ID ? 101 : 202,
+        unit: "kW",
+      }));
+    },
+  } as unknown as TelemetryService;
+  const access = {
+    readableAssetIds: async () => readable,
+  } as unknown as AccessControlService;
+  return { controller: new TelemetryController(service, access), calls };
+}
+
+/**
+ * One of two ids is foreign → 403 for the whole request. The in-scope id is
+ * FIRST, so a guard that only checks `assetIds[0]` lets this through.
+ */
+export async function assertLatestRefusesWhenOneIdIsForeign(): Promise<void> {
+  const { controller } = latestStubs([ASSET_ID]);
+  await rejects(
+    () => controller.latest(USER, { assetIds: [ASSET_ID, FOREIGN_ASSET_ID], pointKeys: ["kw"] }),
+    (err) =>
+      err instanceof ForbiddenException && err.message === "Asset is outside your access scope",
+    "a request naming one foreign id must be refused whole with the aggregate's 403",
+  );
+}
+
+/**
+ * **The read must not happen.** The call count is its own claim so the
+ * guard-after-read mutation reddens THIS case.
+ */
+export async function assertLatestRefusalRunsBeforeTheRead(): Promise<void> {
+  const { controller, calls } = latestStubs([ASSET_ID]);
+  try {
+    await controller.latest(USER, { assetIds: [ASSET_ID, FOREIGN_ASSET_ID], pointKeys: ["kw"] });
+  } catch {
+    // The 403 itself is the case above.
+  }
+  assert(
+    calls.length === 0,
+    `the service was called ${calls.length} time(s) despite the refusal; the guard must run before the read`,
+  );
+}
+
+/** 51 valid ids → 400 from the bound, and no read. An admin, so no scope guard fired. */
+export async function assertLatestRefusesMoreThanFiftyIds(): Promise<void> {
+  const { controller, calls } = latestStubs(null);
+  const assetIds = Array.from(
+    { length: 51 },
+    (_, i) => `00000000-0000-4000-8000-${String(i + 1).padStart(12, "0")}`,
+  );
+  await rejects(
+    () => controller.latest(USER, { assetIds, pointKeys: ["kw"] }),
+    (err) => err instanceof BadRequestException && err.message.includes("50"),
+    "51 ids must be refused by the MAX_LATEST_ASSET_IDS bound",
+  );
+  assert(calls.length === 0, "an over-bound request must not reach the service");
+}
+
+/** An unrestricted admin (`readableAssetIds` → null) reads any asset. */
+export async function assertLatestAdminPasses(): Promise<void> {
+  const { controller, calls } = latestStubs(null);
+  const result = await controller.latest(USER, { assetIds: [FOREIGN_ASSET_ID], pointKeys: ["kw"] });
+  assert(calls.length === 1, `an admin must be read, got ${calls.length} read(s)`);
+  assert(result.items.length === 1, "an admin must get the service's items");
+}
+
+/**
+ * The parsed query reaches the service — both lists in order and the default
+ * window of 15 — and the response is `{ items }` exactly as the service
+ * answered.
+ */
+export async function assertLatestHandsTheParsedQueryToTheService(): Promise<void> {
+  const { controller, calls } = latestStubs([ASSET_ID, FOREIGN_ASSET_ID]);
+  const result = await controller.latest(USER, {
+    assetIds: [FOREIGN_ASSET_ID, ASSET_ID],
+    pointKeys: ["pf", "kw"],
+  });
+  const gotCall = JSON.stringify(calls[0]);
+  const expectedCall = JSON.stringify({
+    assetIds: [FOREIGN_ASSET_ID, ASSET_ID],
+    pointKeys: ["pf", "kw"],
+    windowMinutes: 15,
+  });
+  assert(gotCall === expectedCall, `expected the service call ${expectedCall}, got ${gotCall}`);
+  const expected = JSON.stringify({
+    items: [
+      { time: AT, assetId: FOREIGN_ASSET_ID, pointKey: "pf", value: 202, unit: "kW" },
+      { time: AT, assetId: ASSET_ID, pointKey: "pf", value: 101, unit: "kW" },
+    ],
+  });
+  assert(JSON.stringify(result) === expected, `expected ${expected}, got ${JSON.stringify(result)}`);
+}
+
+/** An explicit window reaches the service as a number. */
+export async function assertLatestPassesAnExplicitWindow(): Promise<void> {
+  const { controller, calls } = latestStubs(null);
+  await controller.latest(USER, { assetIds: [ASSET_ID], pointKeys: ["kw"], windowMinutes: "60" });
+  assert(calls[0]?.windowMinutes === 60, `expected windowMinutes 60, got ${calls[0]?.windowMinutes}`);
+}

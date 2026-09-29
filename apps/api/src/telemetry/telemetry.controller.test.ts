@@ -13,6 +13,12 @@ import {
   assertAtInstantRefusalRunsBeforeTheRead,
   assertAtInstantRefusesMoreThanFiftyRefs,
   assertAtInstantRefusesWhenOneRefIsForeign,
+  assertLatestAdminPasses,
+  assertLatestHandsTheParsedQueryToTheService,
+  assertLatestPassesAnExplicitWindow,
+  assertLatestRefusalRunsBeforeTheRead,
+  assertLatestRefusesMoreThanFiftyIds,
+  assertLatestRefusesWhenOneIdIsForeign,
   assertQueryBoundsAreEnforced,
   assertTheCompareFlagReadsItsOwnNegative,
   assertTheDefaultsAreATileRequest,
@@ -82,5 +88,31 @@ describe("F3.28 — the at-instant endpoint (ADR 0074 decision 2)", () => {
 
   it("hands the decoded pairs and the parsed instant to the service", async () => {
     await assertAtInstantHandsTheDecodedPairsToTheService();
+  });
+});
+
+describe("F4.176 — the latest-value endpoint (ADR 0074 Amendment 2)", () => {
+  it("refuses the whole request when one asset id is foreign", async () => {
+    await assertLatestRefusesWhenOneIdIsForeign();
+  });
+
+  it("refuses before the read, not after it", async () => {
+    await assertLatestRefusalRunsBeforeTheRead();
+  });
+
+  it("answers 51 asset ids with a 400 and no read", async () => {
+    await assertLatestRefusesMoreThanFiftyIds();
+  });
+
+  it("lets an unrestricted admin read any asset", async () => {
+    await assertLatestAdminPasses();
+  });
+
+  it("hands the parsed lists and the default window to the service and returns { items }", async () => {
+    await assertLatestHandsTheParsedQueryToTheService();
+  });
+
+  it("hands an explicit window to the service as a number", async () => {
+    await assertLatestPassesAnExplicitWindow();
   });
 });

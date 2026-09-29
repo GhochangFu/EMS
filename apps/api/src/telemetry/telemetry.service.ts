@@ -289,6 +289,56 @@ export class TelemetryService {
   }
 
   /**
+   * `F4.176` (ADR 0074 Amendment 2) — the latest sample of each (asset, point
+   * key) pair with a sample in the last `windowMinutes`, in one statement. A
+   * pair with no sample in the window is absent from the result.
+   *
+   * **The lower bound is a bound `timestamptz` computed here, not
+   * `now() - $n`.** node-pg sends an unnamed statement, which Postgres plans at
+   * Bind with the value known, so the bound is a constant at plan time and the
+   * old chunks are excluded while planning. `now()` is only STABLE, so
+   * `now() - …` is excluded at executor startup after every chunk was planned
+   * — measured 350 ms of planning for the SMOC set (ADR 0074 Amendment 1
+   * item 6 records the same trap). Measured 2026-09-30 with this statement
+   * prepared and the SMOC set bound (43 assets × 34 keys): 4–12 ms planning,
+   * no startup exclusion, and 73–92 ms execution for 277 pairs over a
+   * 15-minute window of real samples.
+   *
+   * **`TENANT_POOL`, like `pointValuesAt`** — the controller's scope guard is
+   * the only containment, since `telemetry.point_values` has no RLS.
+   */
+  async latestPointValues(
+    assetIds: readonly string[],
+    pointKeys: readonly string[],
+    windowMinutes: number,
+  ): Promise<TelemetryReading[]> {
+    const since = new Date(Date.now() - windowMinutes * 60_000);
+    const result = await this.pool.query<{
+      time: Date;
+      asset_id: string;
+      point_key: string;
+      value: number | string;
+      unit: string | null;
+    }>(
+      `SELECT DISTINCT ON (pv.asset_id, pv.point_key)
+              pv.time, pv.asset_id, pv.point_key, pv.value, pv.unit
+       FROM telemetry.point_values pv
+       WHERE pv.asset_id = ANY($1::uuid[])
+         AND pv.point_key = ANY($2::text[])
+         AND pv.time > $3::timestamptz
+       ORDER BY pv.asset_id, pv.point_key, pv.time DESC`,
+      [assetIds, pointKeys, since.toISOString()],
+    );
+    return result.rows.map((row) => ({
+      time: new Date(row.time).toISOString(),
+      assetId: row.asset_id,
+      pointKey: row.point_key,
+      value: Number(row.value),
+      unit: row.unit,
+    }));
+  }
+
+  /**
    * Postgres renders a `timestamptz` inside `to_jsonb` as `+00:00`, not `Z`, and
    * a `bigint` as a JSON number. Both are normalised here so the response
    * matches `pointAggregateStatsSchema` rather than nearly matching it.

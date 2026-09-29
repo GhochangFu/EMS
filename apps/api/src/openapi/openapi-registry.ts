@@ -76,7 +76,11 @@ import {
   assetHealthQuerySchema,
   healthSummaryQuerySchema,
 } from "../asset-health/asset-health.schema";
-import { pointAggregateQuerySchema, pointValuesAtQuerySchema } from "../telemetry/telemetry.schema";
+import {
+  pointAggregateQuerySchema,
+  pointsLatestQuerySchema,
+  pointValuesAtQuerySchema,
+} from "../telemetry/telemetry.schema";
 import {
   createEscalationProfileBodySchema,
   escalationDefaultsQuerySchema,
@@ -331,6 +335,9 @@ export const REQUEST_SCHEMAS: Record<string, ZodTypeAny> = {
   // for the `F4.20` reason every entry here exists: an undocumented `refs`
   // bound is exactly the omission that finding is about.
   TelemetryController_atInstant: pointValuesAtQuerySchema,
+  // `F4.176` (ADR 0074 Amendment 2) — the batched latest-value read: bounded
+  // `assetIds` and `pointKeys` arrays and a bounded `windowMinutes`, no body.
+  TelemetryController_latest: pointsLatestQuerySchema,
   WorkOrdersController_close: closeWorkOrderBodySchema,
   WorkOrdersController_create: createWorkOrderBodySchema,
   WorkOrdersController_reorder: reorderWorkOrdersBodySchema,
