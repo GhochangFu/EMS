@@ -3,8 +3,11 @@ import { useQuery } from "@tanstack/react-query";
 import { Link, Navigate, useParams } from "react-router-dom";
 
 import { fetchLocationKpis } from "../../api/locations";
+import { HealthSummarySection } from "../../components/asset-health/health-summary-section";
 import { ActiveAlarmsRail } from "../../components/control-room/active-alarms-rail";
 import { ControlRoomBreadcrumb } from "../../components/control-room/control-room-breadcrumb";
+import { OrganizationLoadTrend } from "../../components/control-room/organization-load-trend";
+import { ScopedDashboardsList } from "../../components/control-room/scoped-dashboards-list";
 import { LocationKpiCard } from "../../components/location-kpi-card";
 import { PageHeader } from "../../components/page-header";
 import { SectionCard } from "../../components/section-card";
@@ -38,6 +41,10 @@ type ControlRoomOrganizationPageProps = {
  * An organization with one readable site skips to it; an id outside the KPI
  * list shows the empty card and no other organization's sites. Nothing is
  * decided while the read is pending (D1).
+ *
+ * `F3.72` (plan D3) — under the site grid: Asset health, the load trend and the
+ * library dashboards, each read by `organizationId`. They render only with the
+ * overview, so the empty card and the pending read send none of those reads.
  */
 export function ControlRoomOrganizationPage({
   user,
@@ -116,15 +123,14 @@ function OrganizationOverview({ items, organizationId }: OrganizationOverviewPro
       <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_320px]">
         <div data-testid="control-room-sites" className="grid content-start gap-3 md:grid-cols-2">
           {sites.map((location) => (
-            <LocationKpiCard
-              key={location.id}
-              location={location}
-              to={`/control-room/site/${location.id}`}
-            />
+            <LocationKpiCard key={location.id} location={location} />
           ))}
         </div>
         <ActiveAlarmsRail organizationId={organizationId} />
       </div>
+      <HealthSummarySection organizationId={organizationId} />
+      <OrganizationLoadTrend organizationId={organizationId} />
+      <ScopedDashboardsList organizationId={organizationId} />
     </>
   );
 }

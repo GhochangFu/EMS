@@ -2,6 +2,11 @@
 import { afterEach, describe, it } from "vitest";
 
 import {
+  aPendingKpiReadRendersNoPanels,
+  anUnreadableOrganizationRendersNoPanels,
+  theDashboardsListReadsByTheOrganizationId,
+  theHealthSectionReadsByTheOrganizationId,
+  theTrendReadsByTheOrganizationId,
   anUnreadableOrganizationRendersNoRail,
   anUnreadableOrganizationShowsNoOtherSites,
   aPendingKpiReadShowsOnlyTheLoadingLine,
@@ -73,5 +78,25 @@ describe("F3.66 U3 ControlRoomOrganizationPage", () => {
 
   it("G7 reads the organizationId prop over the route parameter (F3.72 D1)", async () => {
     await theOrganizationIdPropOverridesTheRoute();
+  });
+
+  it("P1 gives Asset health the organization id (F3.72 D3)", async () => {
+    await theHealthSectionReadsByTheOrganizationId();
+  });
+
+  it("P2 gives the load trend the organization id (F3.72 D3)", async () => {
+    await theTrendReadsByTheOrganizationId();
+  });
+
+  it("P3 gives the dashboards list the organization id (F3.72 D3)", async () => {
+    await theDashboardsListReadsByTheOrganizationId();
+  });
+
+  it("P4 renders no panel for an organization outside the list (F3.72 D3)", async () => {
+    await anUnreadableOrganizationRendersNoPanels();
+  });
+
+  it("P5 renders no panel while the KPI read is pending (F3.72 D3)", async () => {
+    await aPendingKpiReadRendersNoPanels();
   });
 });
