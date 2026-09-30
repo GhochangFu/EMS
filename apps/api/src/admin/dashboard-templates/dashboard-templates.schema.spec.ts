@@ -1,5 +1,7 @@
 import { ASSET_GROUP_TEMPLATE_TABS_MESSAGE, SITE_TEMPLATE_TOP_LEVEL_MESSAGE } from "@bms/shared";
 
+import { TAB_TARGET_UNKNOWN_MESSAGE } from "../../dashboard-builder/dashboards.schema";
+
 import {
   createDashboardTemplateBodySchema,
   instantiateSectionTemplateBodySchema,
@@ -393,4 +395,61 @@ export function theTargetBodyRuleRefusesEachMismatch(): void {
   );
   assert(templateTargetBodyMessage("site", site) === null, "a site body on a site template is legal");
   assert(templateTargetBodyMessage("asset_group", group) === null, "a group body on a group template is legal");
+}
+
+/** A module summary card linking to `targetTabKey`. */
+function card(targetTabKey: string, key = "card"): unknown {
+  return widget({ key, widgetType: "module_summary_card", config: { targetTabKey } });
+}
+
+/**
+ * `F3.73` — a template's module card names one of its own tabs, the rule `PUT :id/widgets`
+ * holds (`tabRulesHold`). An asset-group template has no tabs, so its top-level card is refused:
+ * instantiated, it would be a card linking nowhere that the builder then refuses to save.
+ */
+export function rejectsAnAssetGroupTemplateWithATopLevelModuleCard(): void {
+  expectRejectsAt(
+    createDashboardTemplateBodySchema,
+    createBody({ target: "asset_group", content: { widgets: [card("ups")] } }),
+    ["content", "widgets", 0, "config", "targetTabKey"],
+    new RegExp(TAB_TARGET_UNKNOWN_MESSAGE),
+    "an asset-group create body with a top-level module card",
+  );
+}
+
+/** A site template's card naming a tab the template does not hold is refused. */
+export function rejectsASiteTemplateCardNamingAMissingTab(): void {
+  expectRejectsAt(
+    createDashboardTemplateBodySchema,
+    createBody({
+      target: "site",
+      content: { widgets: [], tabs: [siteTab({ key: "overview", domain: null, widgets: [card("ups")] }), siteTab()] },
+    }),
+    ["content", "tabs", 0, "widgets", 0, "config", "targetTabKey"],
+    new RegExp(TAB_TARGET_UNKNOWN_MESSAGE),
+    "a site create body whose card names a missing tab",
+  );
+}
+
+/** The rule reaches the PATCH body too, through the one declaration. */
+export function rejectsAPatchCardNamingAMissingTab(): void {
+  expectRejectsAt(
+    updateDashboardTemplateBodySchema,
+    { content: { widgets: [], tabs: [siteTab({ widgets: [card("ups")] })] } },
+    ["content", "tabs", 0, "widgets", 0, "config", "targetTabKey"],
+    new RegExp(TAB_TARGET_UNKNOWN_MESSAGE),
+    "a PATCH body whose card names a missing tab",
+  );
+}
+
+/** The positive control: a site template's card naming its own `sld` tab parses. */
+export function acceptsASiteTemplateCardNamingItsOwnTab(): void {
+  expectAccepts(
+    createDashboardTemplateBodySchema,
+    createBody({
+      target: "site",
+      content: { widgets: [], tabs: [siteTab({ key: "overview", domain: null, widgets: [card("sld")] }), siteTab()] },
+    }),
+    "a site create body whose card names its own sld tab",
+  );
 }

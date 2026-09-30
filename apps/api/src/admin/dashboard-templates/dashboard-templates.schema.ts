@@ -8,6 +8,8 @@ import {
 import type { DashboardTemplateTarget } from "@bms/shared";
 import { z } from "zod";
 
+import { TAB_TARGET_UNKNOWN_MESSAGE } from "../../dashboard-builder/dashboards.schema";
+
 /**
  * Write contracts for the section dashboard template admin surface — `F3.36`,
  * [ADR 0049](../../../../../docs/adr/0049-section-dashboard-templates.md).
@@ -58,18 +60,27 @@ const templateContentWriteSchema = sectionTemplateContentSchema
   .superRefine((content, ctx) => {
     // `F3.73` — the tabs are walked too: a site template holds every widget in a tab, so a
     // loop over `content.widgets` alone would let a layout arm through on every site template.
-    const refuseLayout = (
-      widget: (typeof content.widgets)[number],
-      path: (string | number)[],
-    ): void => {
+    // A module card must name one of the content's own tabs — `tabRulesHold`'s rule on
+    // `PUT :id/widgets`, which the instantiate path never runs. An asset-group template has no
+    // tabs, so its card is always refused: instantiated, it would link nowhere, and the builder
+    // would then refuse every save of that dashboard until the card was deleted.
+    const tabKeys = new Set(content.tabs.map((tab) => tab.key));
+    const refuse = (widget: (typeof content.widgets)[number], path: (string | number)[]): void => {
       if (widget.widgetType === "mimic" && widget.config.source === "layout") {
         ctx.addIssue({ code: z.ZodIssueCode.custom, path, message: TEMPLATE_MIMIC_LAYOUT_MESSAGE });
       }
+      if (widget.widgetType === "module_summary_card" && !tabKeys.has(widget.config.targetTabKey)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: [...path, "targetTabKey"],
+          message: TAB_TARGET_UNKNOWN_MESSAGE,
+        });
+      }
     };
-    content.widgets.forEach((widget, index) => refuseLayout(widget, ["widgets", index, "config"]));
+    content.widgets.forEach((widget, index) => refuse(widget, ["widgets", index, "config"]));
     content.tabs.forEach((tab, tabIndex) =>
       tab.widgets.forEach((widget, index) =>
-        refuseLayout(widget, ["tabs", tabIndex, "widgets", index, "config"]),
+        refuse(widget, ["tabs", tabIndex, "widgets", index, "config"]),
       ),
     );
   })
@@ -77,7 +88,8 @@ const templateContentWriteSchema = sectionTemplateContentSchema
     "A template's canvas. A mimic widget, top-level or in a tab, must take the preset arm " +
       '({ source: "preset" }); a layout arm answers 400 (ADR 0081 decision 5) — ' +
       "a layout is one organization's row, and a template carries no layout " +
-      "reference in this stage.",
+      "reference in this stage. A module_summary_card's config.targetTabKey must name one of " +
+      "content.tabs, so an asset-group template holds none.",
   );
 
 /**

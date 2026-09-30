@@ -93,6 +93,7 @@ import {
   putDashboardWidgetsBodySchema,
   updateDashboardBodySchema,
 } from "../dashboard-builder/dashboards.schema";
+import { siteWidgetsQuerySchema } from "../dashboard-builder/site-widgets.schema";
 import {
   convertMaintenanceBodySchema,
   createMaintenanceScheduleBodySchema,
@@ -386,6 +387,10 @@ export const QUERY_SCHEMAS: Record<string, ZodTypeAny> = {
   // 0074 Amendment 2) — `.strict()`, no body, no ledger entry, the same
   // precedent.
   pointsLatestQuerySchema,
+  // 24 -> 25: `F3.73` registered `siteWidgetsQuerySchema`
+  // (`GET /dashboards/:id/site-widgets?tab=`, plan D9) — `.strict()`, no body,
+  // no ledger entry, the same precedent.
+  siteWidgetsQuerySchema,
   mappingSheetQuerySchema,
   // `E4.1a`: `GET /admin/calc-parameters?organizationId=&key=` — `.strict()`,
   // no ledger entry, the `mappingSheetQuerySchema` precedent.
@@ -891,6 +896,10 @@ export function testEveryRegisteredSchemaIsUnderAudit(): void {
   // (`GET /dashboard/load-trend?window=&organizationId=`): a GET with no body, the
   // narrowing-only `organizationId` documented for the same `F4.20` reason as `locationId`.
   //
+  // 24 -> 25: `F3.73` registered `siteWidgetsQuerySchema`
+  // (`GET /dashboards/:id/site-widgets?tab=`, plan D9): one optional tab key,
+  // `.strict()`, no body — the `mappingSheetQuerySchema` precedent.
+  //
   // Note that `healthSummaryQuerySchema` is `assetHealthQuerySchema.extend(...)`
   // — legal here, since the ADR 0030 combinator ban applies inside
   // `packages/shared/src/contracts/`, not to an `apps/api` query schema. The
@@ -900,7 +909,7 @@ export function testEveryRegisteredSchemaIsUnderAudit(): void {
     "QUERY_SCHEMAS is the deliberately-excluded list, not an escape hatch. If a genuinely " +
       "new query schema was registered, widen this number and say so; if a BODY schema was " +
       "put here to quiet the assertion below, put it in BODY_SCHEMAS and decide it.",
-  ).toBe(24);
+  ).toBe(25);
 
   const missing = Object.entries(REQUEST_SCHEMAS)
     .filter(([, schema]) => !known.has(schema))

@@ -30,6 +30,8 @@ import {
 import { DashboardsService } from "./dashboards.service";
 import { MetricCatalogService } from "./metric-catalog.service";
 import { MimicNodesService } from "./mimic-nodes.service";
+import { siteWidgetsQuerySchema } from "./site-widgets.schema";
+import { SiteWidgetsService } from "./site-widgets.service";
 
 const idParamSchema = z.string().uuid();
 
@@ -58,6 +60,7 @@ export class DashboardBuilderController {
     private readonly metricCatalog: MetricCatalogService,
     private readonly accessControl: AccessControlService,
     private readonly mimicNodes: MimicNodesService,
+    private readonly siteWidgets: SiteWidgetsService,
   ) {}
 
   @Get()
@@ -102,6 +105,23 @@ export class DashboardBuilderController {
   @Get(":id/mimic-nodes")
   async mimicNodesFor(@CurrentUser() user: JwtPayload, @Param("id") id: string) {
     return this.mimicNodes.forUser(user, parse(idParamSchema, id));
+  }
+
+  /**
+   * `F3.73` (plan D9, Task 3.4) — what the five site widgets on one dashboard tab draw: the tab's
+   * alarm rail and summary, its role summary, and every group tab's status (ruling Q6a).
+   *
+   * **Declared BEFORE `@Get(":slug")`**, beside `mimic-nodes`, for the same reason
+   * (`tests/f3.32-mimic-widget.test.ts` and `dashboard-builder.controller.spec.ts` hold the
+   * order). Both the id and the query are parsed before the service runs, so a malformed `tab` is
+   * a 400 that costs no read. A read: no `assertOperationsWriteRole`; `readableOrganizationIds`
+   * and `readableAssetIds` gate it inside the service.
+   */
+  @Get(":id/site-widgets")
+  async siteWidgetsFor(@CurrentUser() user: JwtPayload, @Param("id") id: string, @Query() query: unknown) {
+    const dashboardId = parse(idParamSchema, id);
+    const { tab } = parse(siteWidgetsQuerySchema, query);
+    return this.siteWidgets.forUser(user, dashboardId, tab);
   }
 
   @Get(":slug")

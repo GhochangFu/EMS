@@ -54,6 +54,7 @@ import type * as PM from "./contracts/point-metadata";
 import type * as Rp from "./contracts/reports";
 import type * as SR from "./contracts/seeded-rules";
 import type * as SC from "./contracts/site-control-room-views";
+import type * as SW from "./contracts/site-widgets";
 import type * as Ss from "./contracts/system-status";
 import type * as Te from "./contracts/telemetry-entry";
 import type * as Ti from "./contracts/telemetry-import";
@@ -163,6 +164,10 @@ export type DashboardDto = z.infer<typeof Dd.dashboardDtoSchema>;
 export type DashboardSummaryDto = z.infer<typeof Dd.dashboardSummaryDtoSchema>;
 /** One tab of a dashboard (`F3.73`, plan D1). */
 export type DashboardTabDto = z.infer<typeof Dtab.dashboardTabDtoSchema>;
+/** `GET /dashboards/:id/site-widgets` — what the five site widgets draw (`F3.73`, plan D9). */
+export type SiteWidgetsResponse = z.infer<typeof SW.siteWidgetsResponseSchema>;
+/** One group tab's status in that response; null `status` means outside the caller's scope. */
+export type SiteWidgetTab = z.infer<typeof SW.siteWidgetTabSchema>;
 
 // --- F3.36 — section dashboard templates (ADR 0049 + Amendments 1, 2) -------
 /**

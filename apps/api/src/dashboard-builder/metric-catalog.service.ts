@@ -1,5 +1,5 @@
 import { Inject, Injectable, Logger, NotFoundException } from "@nestjs/common";
-import { and, asc, desc, eq, inArray, isNull, notInArray, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNull, notInArray, sql, type SQL } from "drizzle-orm";
 
 import {
   alarms,
@@ -26,6 +26,7 @@ import { AssetHealthService } from "../asset-health/asset-health.service";
 import { AccessControlService } from "../auth/access-control.service";
 import { FLEET_DRIZZLE, TENANT_DRIZZLE } from "../database/database.tokens";
 import { withTenant, type BmsTx } from "../database/tenant-context";
+import { LIVE_ASSETS_CTE_SQL } from "../telemetry/telemetry-freshness";
 import {
   resolveAssetScope,
   scopeKeyFor,
@@ -49,18 +50,20 @@ import { waterBalanceRow } from "./water-balance";
 /**
  * What a resolver may reach for beyond the transaction.
  *
- * Passed explicitly rather than bound as `this`. Seven of the eight entries need nothing here,
+ * Passed explicitly rather than bound as `this`. Nine of the ten entries need nothing here,
  * and a `this`-bound map would have to be cast to reach the service's injected dependency — a cast
  * on the one path that calls another module's service.
  */
 type ResolverDeps = { readonly health: AssetHealthService };
 
 /**
- * How the catalog's entries resolve: four are SQL here, one delegates, two roll up a point key,
- * and one (`water.balance`, `E4.3`) folds three role-filtered roll-ups into a row per site.
+ * How the catalog's entries resolve: six are SQL here (the four Stage C reads and the two
+ * `F3.73` asset reads), one delegates, two roll up a point key, and one (`water.balance`,
+ * `E4.3`) folds three role-filtered roll-ups into a row per site.
  *
  * `params` is the binding's stored `params` AFTER `METRIC_CATALOG_PARAMS_WRITE[key]` has
- * parsed it (`E4.2`): `{}` for the five Stage C entries, `{ pointKey, aggregate }` and an
+ * parsed it (`E4.2`): `{}` for the five Stage C entries and the two `F3.73` asset entries,
+ * `{ pointKey, aggregate }` and an
  * optional `balanceRole` (`E4.3`) for the two sustainability entries, and `{ period }` for
  * `water.balance`. Positional and required
  * rather than optional, so a resolver that reads a field cannot compile against a call that
@@ -89,8 +92,9 @@ type WaterBalanceParams = { readonly period: WaterBalancePeriod };
 /**
  * `F3.35` Stage C — resolving a dashboard's named catalog bindings (ADR 0048 decisions 1 and 2).
  *
- * **Seven entries are SQL written here (four Stage C reads, the two `E4.2` roll-ups and the
- * `E4.3` water balance, whose statements live in `sustainability-rollup.ts`); one is a service
+ * **Nine entries are SQL written here (four Stage C reads, the two `F3.73` asset reads, the two
+ * `E4.2` roll-ups and the `E4.3` water balance, whose statements live in
+ * `sustainability-rollup.ts`); one is a service
  * call, and the asymmetry is
  * deliberate.**
  * `assets.health.score` delegates to `AssetHealthService.summary(...).score` — `E1.3` and ADR
@@ -444,6 +448,33 @@ const openWorkOrderWhere = (organizationId: string, scope: readonly string[]) =>
     scopedTo(workOrders.assetId, scope),
   );
 
+/**
+ * `F3.73` (ruling Q6a/Q6b) — the active assets in `scope`, LEFT JOINed to the shared `live` CTE:
+ * an asset with no row in `live` has no sample of any point inside the live window, and is
+ * offline. The one place this file names the CTE, so the two entries that read it cannot
+ * drift apart and `tests/f3.28-offline-bound-single-source.test.ts` counts one site here.
+ *
+ * `a.active` is required: a retired asset is neither live nor offline — it is absent, as it is
+ * from the role summary's `offlineCount` (`asset-role-summary.service.ts`). The scope's
+ * location and group arms do not filter on it, so this does. The organization predicate is
+ * explicit for the reason the file docblock states.
+ */
+const inScopeAssetsWithLiveness = (
+  organizationId: string,
+  scope: readonly string[],
+  select: SQL,
+  tail: SQL,
+): SQL => sql`
+  WITH ${sql.raw(LIVE_ASSETS_CTE_SQL)}
+  SELECT ${select}
+    FROM bms.assets a
+    LEFT JOIN live ON live.asset_id = a.id
+   WHERE a.id = ANY(${sql.param([...scope])}::uuid[])
+     AND a.organization_id = ${organizationId}
+     AND a.active
+   ${tail}
+`;
+
 /** Exported for `metric-catalog.service.spec.ts`'s no-database claims only; the service is the API. */
 export const RESOLVERS: Record<MetricCatalogKey, Resolver> = {
   "alarms.active.count": async function (tx, organizationId, scope) {
@@ -693,5 +724,66 @@ export const RESOLVERS: Record<MetricCatalogKey, Resolver> = {
       }),
     }));
     return datasetValue("water.balance", rows, capped.truncated);
+  },
+
+  /**
+   * `F3.73` (ruling Q6b correction) — the active assets in scope with no sample inside the live
+   * window. The same site or group scope as `alarms.active.count`, and the same offline test as
+   * the role summary (ruling Q6a): `live.asset_id IS NULL`. Uncapped — it is a count.
+   */
+  "assets.offline.count": async (tx, organizationId, scope) => {
+    if (scopeIsEmpty(scope)) return metricValue("assets.offline.count", 0, null);
+    const result = await tx.execute<{ n: number }>(
+      inScopeAssetsWithLiveness(
+        organizationId,
+        scope,
+        sql`count(*)::int AS n`,
+        sql`AND live.asset_id IS NULL`,
+      ),
+    );
+    return metricValue("assets.offline.count", result.rows[0]?.n ?? 0, null);
+  },
+
+  /**
+   * `F3.73` — one row per active asset in scope, in `code` order: `status` is `live` or
+   * `offline` by the same test as `assets.offline.count`, and `activeAlarms` counts the asset's
+   * uncleared alarms (ADR 0057 decision 1). No `role` column: the `Resolver` signature carries
+   * asset ids only, and a role is a group membership (plan D3). Capped like its siblings.
+   */
+  "assets.list": async (tx, organizationId, scope) => {
+    if (scopeIsEmpty(scope)) return datasetValue("assets.list", [], false);
+    // The alarm subquery carries its own organization predicate, for the reason `alarms.active`
+    // states: `bms.alarms`' policy has no parent-asset leg.
+    const result = await tx.execute<{
+      code: string;
+      name: string;
+      offline: boolean;
+      active_alarms: number;
+    }>(
+      inScopeAssetsWithLiveness(
+        organizationId,
+        scope,
+        sql`a.code,
+            a.name,
+            (live.asset_id IS NULL) AS offline,
+            (SELECT count(*)::int
+               FROM bms.alarms al
+              WHERE al.asset_id = a.id
+                AND al.organization_id = ${organizationId}
+                AND al.cleared_at IS NULL) AS active_alarms`,
+        sql`ORDER BY a.code LIMIT ${MAX_DATASET_ROWS + 1}`,
+      ),
+    );
+    const capped = capRows(result.rows);
+    return datasetValue(
+      "assets.list",
+      capped.rows.map((row) => ({
+        code: row.code,
+        name: row.name,
+        status: row.offline ? "offline" : "live",
+        activeAlarms: row.active_alarms,
+      })),
+      capped.truncated,
+    );
   },
 };

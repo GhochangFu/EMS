@@ -112,6 +112,7 @@ import {
   putDashboardWidgetsBodySchema,
   updateDashboardBodySchema,
 } from "../dashboard-builder/dashboards.schema";
+import { siteWidgetsQuerySchema } from "../dashboard-builder/site-widgets.schema";
 import {
   convertMaintenanceBodySchema,
   createMaintenanceScheduleBodySchema,
@@ -261,6 +262,8 @@ export const REQUEST_SCHEMAS: Record<string, ZodTypeAny> = {
   DashboardBuilderController_getBySlug: getDashboardQuerySchema,
   DashboardBuilderController_list: listDashboardsQuerySchema,
   DashboardBuilderController_putWidgets: putDashboardWidgetsBodySchema,
+  // `F3.73` (plan D9) — the site-widgets read's one query parameter, `tab`.
+  DashboardBuilderController_siteWidgetsFor: siteWidgetsQuerySchema,
   DashboardBuilderController_update: updateDashboardBodySchema,
   DashboardController_energyTopConsumers: locationDashboardQuerySchema,
   // `F3.72` — `GET /dashboard/load-trend`: `window` plus the narrowing-only `organizationId`.

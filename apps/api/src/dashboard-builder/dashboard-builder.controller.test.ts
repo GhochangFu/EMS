@@ -6,6 +6,9 @@ import {
   listRefusesAMalformedLocationIdWith400,
   putWidgetsRefusesAnUppercaseLayoutIdWith400,
   runDashboardBuilderControllerTests,
+  siteWidgetsForwardsTheTabToTheService,
+  siteWidgetsRefusesAMalformedQueryWith400,
+  siteWidgetsRouteIsDeclaredBeforeSlug,
 } from "./dashboard-builder.controller.spec";
 
 /** Vitest entry point — assertions live in the sibling `.spec` (ADR 0014). */
@@ -28,5 +31,17 @@ describe("F3.1b — DashboardBuilderController (stubbed service)", () => {
 
   it("refuses an uppercase mimic layoutId with 400 before the service (F3.32c)", async () => {
     await putWidgetsRefusesAnUppercaseLayoutIdWith400();
+  });
+
+  it("declares GET :id/site-widgets before :slug (F3.73)", () => {
+    siteWidgetsRouteIsDeclaredBeforeSlug();
+  });
+
+  it("forwards ?tab= to the site-widgets service, and an absent one as undefined (F3.73)", async () => {
+    await siteWidgetsForwardsTheTabToTheService();
+  });
+
+  it("refuses a malformed site-widgets request with 400 before the service (F3.73)", async () => {
+    await siteWidgetsRefusesAMalformedQueryWith400();
   });
 });

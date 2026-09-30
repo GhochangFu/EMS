@@ -57,15 +57,29 @@ export function runDashboardBuilderTests(): void {
   // over it.
   // -------------------------------------------------------------------------
   assert(
-    widgetTypeSchema.options.length === 6,
-    `the widget vocabulary is six types (ADR 0047 decision 4; ADR 0048 decision 5 added ` +
-      `"table", ADR 0079 decision 1 added "mimic"), got ${widgetTypeSchema.options.length}`,
+    widgetTypeSchema.options.length === 11,
+    `the widget vocabulary is eleven types (ADR 0047 decision 4; ADR 0048 decision 5 added ` +
+      `"table", ADR 0079 decision 1 added "mimic", F3.73 added the five site widgets), got ` +
+      `${widgetTypeSchema.options.length}`,
   );
   assert(
     JSON.stringify(widgetTypeSchema.options) ===
-      JSON.stringify(["radial_gauge", "tank_level", "value_tile", "chart", "table", "mimic"]),
-    `widget types must match migration 0086's widened CHECK exactly — NOT 0050's or 0055's, ` +
-      `which froze four and five and cannot be edited, got ${JSON.stringify(widgetTypeSchema.options)}`,
+      JSON.stringify([
+        "radial_gauge",
+        "tank_level",
+        "value_tile",
+        "chart",
+        "table",
+        "mimic",
+        "active_alarms_rail",
+        "state_legend",
+        "asset_class_strip",
+        "module_summary_card",
+        "critical_systems_list",
+      ]),
+    `widget types must match migration 0096's widened CHECK exactly — NOT 0050's, 0055's or ` +
+      `0086's, which froze four, five and six and cannot be edited, got ` +
+      `${JSON.stringify(widgetTypeSchema.options)}`,
   );
 
   // Decision 4's generic type: one component, four series. This is the lever that keeps a
@@ -350,10 +364,19 @@ export function runWidgetPointCardinalityTests(): void {
       `${widgetType} must be able to bind something, but allows 0 points and 0 sources`,
     );
   }
+  // `F3.73` widened the exception from one type to six: the five site widgets read the
+  // site-widgets endpoint, so they bind neither a point nor a catalog source.
   assert(
     JSON.stringify(widgetTypeSchema.options.filter(widgetTypeBindsNothing)) ===
-      JSON.stringify(["mimic"]),
-    `exactly one widget type binds nothing (ADR 0079), got ` +
+      JSON.stringify([
+        "mimic",
+        "active_alarms_rail",
+        "state_legend",
+        "asset_class_strip",
+        "module_summary_card",
+        "critical_systems_list",
+      ]),
+    `exactly six widget types bind nothing (ADR 0079 + F3.73), got ` +
       `${JSON.stringify(widgetTypeSchema.options.filter(widgetTypeBindsNothing))}`,
   );
   // The template predicate: bindable by point keys, which needs a source minimum of zero AND a

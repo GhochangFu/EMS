@@ -1,3 +1,5 @@
+import "reflect-metadata";
+
 import { BadRequestException, ForbiddenException, NotFoundException } from "@nestjs/common";
 
 import type { DashboardDto, JwtPayload } from "@bms/shared";
@@ -73,6 +75,8 @@ function callCounter(resolveWith: unknown = dto) {
 function controllerWith(options: {
   service?: Partial<ServiceStub>;
   writeRoleRejects?: boolean;
+  /** `F3.73` — the site-widgets service stub; `{}` for every case that never reaches it. */
+  siteWidgets?: { forUser: (...args: unknown[]) => Promise<unknown> };
 }): {
   controller: DashboardBuilderController;
   service: ServiceStub;
@@ -110,6 +114,7 @@ function controllerWith(options: {
     accessControl,
     // `F3.32` — no case here reaches the mimic-nodes route; its own suite covers it.
     {} as unknown as ConstructorParameters<typeof DashboardBuilderController>[3],
+    (options.siteWidgets ?? {}) as unknown as ConstructorParameters<typeof DashboardBuilderController>[4],
   );
   return { controller, service, metricCatalog };
 }
@@ -364,4 +369,79 @@ export async function listRefusesAMalformedLocationIdWith400(): Promise<void> {
     "a non-uuid locationId must be a 400, not a 500",
   );
   assert(seen.length === 0, "a malformed locationId must not reach the service");
+}
+
+/**
+ * `F3.73` (plan D9, Task 3.4) — `GET :id/site-widgets` exists, and Nest registers it before
+ * `:slug`. Nest scans a controller's prototype in declaration order and reads each handler's
+ * `path` metadata, so this asks the two things Nest itself asks: which method carries the path,
+ * and whether it comes before the `:slug` handler.
+ */
+export function siteWidgetsRouteIsDeclaredBeforeSlug(): void {
+  const proto = DashboardBuilderController.prototype as unknown as Record<string, unknown>;
+  const paths = Object.getOwnPropertyNames(proto)
+    .filter((name) => name !== "constructor" && typeof proto[name] === "function")
+    .map((name) => Reflect.getMetadata("path", proto[name] as object) as string | undefined);
+  const siteAt = paths.indexOf(":id/site-widgets");
+  const slugAt = paths.indexOf(":slug");
+  assert(siteAt > -1, `no handler carries the ':id/site-widgets' path; got ${JSON.stringify(paths)}`);
+  assert(slugAt > -1, "control: the ':slug' handler must still exist");
+  assert(siteAt < slugAt, `':id/site-widgets' (at ${siteAt}) must be declared before ':slug' (at ${slugAt})`);
+}
+
+const SITE_WIDGETS_ANSWER = { dashboardId: DASHBOARD_ID };
+
+function siteWidgetsRecorder(): { seen: unknown[][]; stub: { forUser: (...args: unknown[]) => Promise<unknown> } } {
+  const seen: unknown[][] = [];
+  return {
+    seen,
+    stub: {
+      forUser: (...args: unknown[]) => {
+        seen.push(args);
+        return Promise.resolve(SITE_WIDGETS_ANSWER);
+      },
+    },
+  };
+}
+
+/**
+ * The `tab` query reaches the service as its third argument, and an absent one as `undefined`.
+ * An optional trailing parameter at an adapter is invisible to tsc, so only the recorded
+ * argument list can say it is wired.
+ */
+export async function siteWidgetsForwardsTheTabToTheService(): Promise<void> {
+  const { seen, stub } = siteWidgetsRecorder();
+  const { controller } = controllerWith({ siteWidgets: stub });
+
+  const answer = await controller.siteWidgetsFor(VIEWER, DASHBOARD_ID, { tab: "sld" });
+  assert(answer === SITE_WIDGETS_ANSWER, "the controller must return the service's answer");
+  assert(
+    seen[0]?.[1] === DASHBOARD_ID && seen[0]?.[2] === "sld",
+    `forUser() must receive the id and the tab key; got ${JSON.stringify(seen[0])}`,
+  );
+
+  await controller.siteWidgetsFor(VIEWER, DASHBOARD_ID, {});
+  assert(
+    seen.length === 2 && seen[1]?.[2] === undefined,
+    `an omitted tab must reach the service as undefined; got ${JSON.stringify(seen[1])}`,
+  );
+}
+
+/** A malformed `tab`, an unknown query key or a non-uuid id is a 400 before the service. */
+export async function siteWidgetsRefusesAMalformedQueryWith400(): Promise<void> {
+  const { seen, stub } = siteWidgetsRecorder();
+  const { controller } = controllerWith({ siteWidgets: stub });
+
+  for (const [id, query, why] of [
+    [DASHBOARD_ID, { tab: "Not A Key" }, "a tab key outside the tab-key rule"],
+    [DASHBOARD_ID, { tab: "sld", extra: "1" }, "an unknown query key"],
+    ["not-a-uuid", { tab: "sld" }, "a non-uuid dashboard id"],
+  ] as const) {
+    await rejects(
+      () => controller.siteWidgetsFor(VIEWER, id, query),
+      (e) => e instanceof BadRequestException,
+      why,
+    );
+  }
+  assert(seen.length === 0, `a malformed request must not reach the service; it ran ${seen.length} time(s)`);
 }
