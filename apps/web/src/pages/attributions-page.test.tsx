@@ -4,12 +4,15 @@ import { cleanup } from "@testing-library/react";
 
 import {
   aCreditRendersOneListItem,
+  aLibraryWithCreditsListsOneRowPerKey,
+  aLibraryWithoutCreditsShowsNoTable,
   aNoticeIsTextNotMarkup,
+  aQetRowSaysTheSymbolIsAnAdaptation,
   coreHasNoLinkAndNoNotice,
-  fourEntriesRender,
   lucideShowsItsVersionAndLicence,
   lucideSourceLinkOpensSafely,
   mdiShowsItsNotice,
+  sevenEntriesRender,
   theHeadingRenders,
 } from "./attributions-page.spec";
 
@@ -24,8 +27,8 @@ describe("F3.32f the attributions page", () => {
   it("T1 renders the Attributions heading", () => {
     theHeadingRenders();
   });
-  it("T2 renders four entries", () => {
-    fourEntriesRender();
+  it("T2 renders seven entries", () => {
+    sevenEntriesRender();
   });
   it("T3 Lucide shows its version and licence", () => {
     lucideShowsItsVersionAndLicence();
@@ -44,5 +47,14 @@ describe("F3.32f the attributions page", () => {
   });
   it("T8 a credit renders one list item", () => {
     aCreditRendersOneListItem();
+  });
+  it("T9 a library with credits lists one row per key", () => {
+    aLibraryWithCreditsListsOneRowPerKey();
+  });
+  it("T10 a library without credits shows no table", () => {
+    aLibraryWithoutCreditsShowsNoTable();
+  });
+  it("T11 a QElectroTech row says the symbol is an adaptation", () => {
+    aQetRowSaysTheSymbolIsAnAdaptation();
   });
 });

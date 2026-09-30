@@ -1,0 +1,1904 @@
+{
+  "water": [
+    {
+      "name": "container-tank-cistern",
+      "title": "File:Container, tank, cistern - ISO 10628-2.svg",
+      "url": "https://upload.wikimedia.org/wikipedia/commons/2/27/Container%2C_tank%2C_cistern_-_ISO_10628-2.svg",
+      "sha1": "ab4cba1b453385b2080ef7c49e3c10413cef5dac",
+      "timestamp": "2023-10-02T16:57:34Z",
+      "author": "ChemSim",
+      "licence": "Public domain",
+      "templates": [
+        "PD-user"
+      ]
+    },
+    {
+      "name": "closed-tank-with-conical-bottom",
+      "title": "File:Closed tank with conical bottom - ISO 10628-2.svg",
+      "url": "https://upload.wikimedia.org/wikipedia/commons/b/b0/Closed_tank_with_conical_bottom_-_ISO_10628-2.svg",
+      "sha1": "a3789b6a0333a721c11b0aa029bc11389feecd69",
+      "timestamp": "2023-10-02T17:25:36Z",
+      "author": "ChemSim",
+      "licence": "Public domain",
+      "templates": [
+        "PD-user"
+      ]
+    },
+    {
+      "name": "tank-vessel",
+      "title": "File:Tank, vessel - ISO 10628-2.svg",
+      "url": "https://upload.wikimedia.org/wikipedia/commons/0/03/Tank%2C_vessel_-_ISO_10628-2.svg",
+      "sha1": "41dbf7b4abfe11f23fe2b044a7fcbd182f560d51",
+      "timestamp": "2023-10-02T16:54:55Z",
+      "author": "ChemSim",
+      "licence": "Public domain",
+      "templates": [
+        "PD-user"
+      ]
+    },
+    {
+      "name": "tank-with-conical-roof-and-flat-bottom",
+      "title": "File:Tank with conical roof and flat bottom - ISO 10628-2.svg",
+      "url": "https://upload.wikimedia.org/wikipedia/commons/7/75/Tank_with_conical_roof_and_flat_bottom_-_ISO_10628-2.svg",
+      "sha1": "a27886c709c5f4c2f545aa2d99a46e90f3dc6d32",
+      "timestamp": "2023-10-02T17:02:11Z",
+      "author": "ChemSim",
+      "licence": "Public domain",
+      "templates": [
+        "PD-user"
+      ]
+    },
+    {
+      "name": "tank-vessel-with-dished-ends",
+      "title": "File:Tank, vessel with dished ends - ISO 10628-2.svg",
+      "url": "https://upload.wikimedia.org/wikipedia/commons/3/3f/Tank%2C_vessel_with_dished_ends_-_ISO_10628-2.svg",
+      "sha1": "563a8f57baff8a141f5e45fd61a3298cddae5bda",
+      "timestamp": "2023-10-02T17:09:43Z",
+      "author": "ChemSim",
+      "licence": "Public domain",
+      "templates": [
+        "PD-user"
+      ]
+    },
+    {
+      "name": "vessel-with-dished-roof-and-conical-bottom",
+      "title": "File:Vessel with dished roof and conical bottom - ISO 10628-2.svg",
+      "url": "https://upload.wikimedia.org/wikipedia/commons/b/b5/Vessel_with_dished_roof_and_conical_bottom_-_ISO_10628-2.svg",
+      "sha1": "f0bca8b59f2407d6bd4abe8f0827558af18e89c3",
+      "timestamp": "2023-10-02T17:27:34Z",
+      "author": "ChemSim",
+      "licence": "Public domain",
+      "templates": [
+        "PD-user"
+      ]
+    },
+    {
+      "name": "vessel-with-conical-roof-and-bottom",
+      "title": "File:Vessel with conical roof and bottom - ISO 10628-2.svg",
+      "url": "https://upload.wikimedia.org/wikipedia/commons/2/2b/Vessel_with_conical_roof_and_bottom_-_ISO_10628-2.svg",
+      "sha1": "2050a6460c16938e426c36cd1f6e913502e0d407",
+      "timestamp": "2023-10-02T17:28:59Z",
+      "author": "ChemSim",
+      "licence": "Public domain",
+      "templates": [
+        "PD-user"
+      ]
+    },
+    {
+      "name": "vessel-with-dished-ends-and-support-legs",
+      "title": "File:Vessel with dished ends and support legs - ISO 10628-2.svg",
+      "url": "https://upload.wikimedia.org/wikipedia/commons/1/13/Vessel_with_dished_ends_and_support_legs_-_ISO_10628-2.svg",
+      "sha1": "79cb6c87feef3dd83a4e1e68f207339b480a32ba",
+      "timestamp": "2023-10-02T17:42:16Z",
+      "author": "ChemSim",
+      "licence": "Public domain",
+      "templates": [
+        "PD-user"
+      ]
+    },
+    {
+      "name": "vessel-with-dished-ends-and-heating-or-cooling",
+      "title": "File:Vessel with dished ends and heating or cooling - ISO 10628-2.svg",
+      "url": "https://upload.wikimedia.org/wikipedia/commons/5/57/Vessel_with_dished_ends_and_heating_or_cooling_-_ISO_10628-2.svg",
+      "sha1": "4e26f6a4c1235ebfc5f61dc7456bfd5e72715951",
+      "timestamp": "2023-10-02T17:50:08Z",
+      "author": "ChemSim",
+      "licence": "Public domain",
+      "templates": [
+        "PD-user"
+      ]
+    },
+    {
+      "name": "vessel-with-dished-ends-and-electrical-heating",
+      "title": "File:Vessel with dished ends and electrical heating - ISO 10628-2.svg",
+      "url": "https://upload.wikimedia.org/wikipedia/commons/6/6d/Vessel_with_dished_ends_and_electrical_heating_-_ISO_10628-2.svg",
+      "sha1": "35696cea96fceb999bd6132b9f5a232d64555d0c",
+      "timestamp": "2023-10-02T17:52:24Z",
+      "author": "ChemSim",
+      "licence": "Public domain",
+      "templates": [
+        "PD-user"
+      ]
+    },
+    {
+      "name": "vessel-with-dished-bottom-and-surface-indication",
+      "title": "File:Vessel with dished bottom and surface indication - ISO 10628-2.svg",
+      "url": "https://upload.wikimedia.org/wikipedia/commons/e/e1/Vessel_with_dished_bottom_and_surface_indication_-_ISO_10628-2.svg",
+      "sha1": "b1196de414e325d790a2a2119f659761d7c72977",
+      "timestamp": "2023-10-02T17:57:39Z",
+      "author": "ChemSim",
+      "licence": "Public domain",
+      "templates": [
+        "PD-user"
+      ]
+    },
+    {
+      "name": "vessel-with-full-tube-heating-or-cooling-coil",
+      "title": "File:Vessel with full-tube heating or cooling coil - ISO 10628-2.svg",
+      "url": "https://upload.wikimedia.org/wikipedia/commons/d/db/Vessel_with_full-tube_heating_or_cooling_coil_-_ISO_10628-2.svg",
+      "sha1": "c282d5936b3d70f5a20ac9117dc0e4e7855558fe",
+      "timestamp": "2023-10-02T18:01:37Z",
+      "author": "ChemSim",
+      "licence": "Public domain",
+      "templates": [
+        "PD-user"
+      ]
+    },
+    {
+      "name": "jacketed-vessel-with-agitator",
+      "title": "File:Jacketed vessel with dished ends and agitator driven by electric motor - ISO 10628-2.svg",
+      "url": "https://upload.wikimedia.org/wikipedia/commons/e/ea/Jacketed_vessel_with_dished_ends_and_agitator_driven_by_electric_motor_-_ISO_10628-2.svg",
+      "sha1": "d71fcbaaa41ef77ed6ef657da41af46cf73773cb",
+      "timestamp": "2023-10-02T18:05:34Z",
+      "author": "ChemSim",
+      "licence": "Public domain",
+      "templates": [
+        "PD-user"
+      ]
+    },
+    {
+      "name": "spherical-vessel",
+      "title": "File:Spherical vessel - ISO 10628-2.svg",
+      "url": "https://upload.wikimedia.org/wikipedia/commons/7/71/Spherical_vessel_-_ISO_10628-2.svg",
+      "sha1": "e82140e45ea34f26bcaac1e611700f1d8a3ce6a9",
+      "timestamp": "2023-10-02T17:17:57Z",
+      "author": "ChemSim",
+      "licence": "Public domain",
+      "templates": [
+        "PD-user"
+      ]
+    },
+    {
+      "name": "pressurized-vessel-horizontal",
+      "title": "File:Pressurized vessel horizontal.svg",
+      "url": "https://upload.wikimedia.org/wikipedia/commons/0/00/Pressurized_vessel_horizontal.svg",
+      "sha1": "d2e232c6653b5e2717c3f046164c9bed9f528148",
+      "timestamp": "2007-09-18T15:38:53Z",
+      "author": "Snipre",
+      "licence": "Public domain",
+      "templates": [
+        "PD-self"
+      ]
+    },
+    {
+      "name": "knock-out-drum",
+      "title": "File:Knock-out drum.svg",
+      "url": "https://upload.wikimedia.org/wikipedia/commons/b/bd/Knock-out_drum.svg",
+      "sha1": "069a5c5969ea2cf22471e6d1c1c7063864353fcd",
+      "timestamp": "2014-05-15T12:11:25Z",
+      "author": "Kopiersperre",
+      "licence": "Public domain",
+      "templates": [
+        "PD-self"
+      ]
+    },
+    {
+      "name": "barrel-drum",
+      "title": "File:Barrel, drum - ISO 10628-2.svg",
+      "url": "https://upload.wikimedia.org/wikipedia/commons/2/22/Barrel%2C_drum_-_ISO_10628-2.svg",
+      "sha1": "67b5253d7a82295fb4b5b610b7fe1ba5dfbe8eaa",
+      "timestamp": "2023-10-02T17:34:01Z",
+      "author": "ChemSim",
+      "licence": "Public domain",
+      "templates": [
+        "PD-user"
+      ]
+    },
+    {
+      "name": "liquid-filter-general",
+      "title": "File:Liquid filter (general) - ISO 10628-2.svg",
+      "url": "https://upload.wikimedia.org/wikipedia/commons/8/8b/Liquid_filter_%28general%29_-_ISO_10628-2.svg",
+      "sha1": "38a84819e2dbc65623612735a18557927af05289",
+      "timestamp": "2023-10-03T12:36:37Z",
+      "author": "ChemSim",
+      "licence": "Public domain",
+      "templates": [
+        "PD-user"
+      ]
+    },
+    {
+      "name": "liquid-filter-cartridge-type",
+      "title": "File:Liquid filter, bag, candle or cartridge type - ISO 10628-2.svg",
+      "url": "https://upload.wikimedia.org/wikipedia/commons/9/94/Liquid_filter%2C_bag%2C_candle_or_cartridge_type_-_ISO_10628-2.svg",
+      "sha1": "f402584dd0b08444ecf45a14ee9cc91b2a1628e7",
+      "timestamp": "2023-10-03T12:39:02Z",
+      "author": "ChemSim",
+      "licence": "Public domain",
+      "templates": [
+        "PD-user"
+      ]
+    },
+    {
+      "name": "rotary-drum-filter",
+      "title": "File:Liquid rotary filter, drum or disc type - ISO 10628-2.svg",
+      "url": "https://upload.wikimedia.org/wikipedia/commons/4/47/Liquid_rotary_filter%2C_drum_or_disc_type_-_ISO_10628-2.svg",
+      "sha1": "50e1c78d575f9a8a08f39a5b4682a4289e3f2d14",
+      "timestamp": "2023-10-03T12:46:22Z",
+      "author": "ChemSim",
+      "licence": "Public domain",
+      "templates": [
+        "PD-user"
+      ]
+    },
+    {
+      "name": "belt-filter",
+      "title": "File:Liquid filter, belt or roll type - ISO 10628-2.svg",
+      "url": "https://upload.wikimedia.org/wikipedia/commons/9/9f/Liquid_filter%2C_belt_or_roll_type_-_ISO_10628-2.svg",
+      "sha1": "1c5e92552c946d9e4dfd157933de05652430b4c5",
+      "timestamp": "2023-10-03T12:49:43Z",
+      "author": "ChemSim",
+      "licence": "Public domain",
+      "templates": [
+        "PD-user"
+      ]
+    },
+    {
+      "name": "fixed-bed-filter",
+      "title": "File:Liquid bed filter fixed type - ISO 10628-2.svg",
+      "url": "https://upload.wikimedia.org/wikipedia/commons/5/59/Liquid_bed_filter_fixed_type_-_ISO_10628-2.svg",
+      "sha1": "32eaba824934557bd06c07347e76afbf5e353d1d",
+      "timestamp": "2023-10-03T12:42:03Z",
+      "author": "ChemSim",
+      "licence": "Public domain",
+      "templates": [
+        "PD-user"
+      ]
+    },
+    {
+      "name": "filter",
+      "title": "File:Filter-symbol.svg",
+      "url": "https://upload.wikimedia.org/wikipedia/commons/5/5a/Filter-symbol.svg",
+      "sha1": "fbfeb2c11074dbcc2255b6c7667120f928bf3cdd",
+      "timestamp": "2016-10-23T08:30:29Z",
+      "author": "Londenp",
+      "licence": "Public domain",
+      "templates": [
+        "PD-self"
+      ]
+    },
+    {
+      "name": "suction-filter",
+      "title": "File:Suction filter - ISO 10628-2.svg",
+      "url": "https://upload.wikimedia.org/wikipedia/commons/0/01/Suction_filter_-_ISO_10628-2.svg",
+      "sha1": "9063b2428e9ac24f4d1eb64cdf9f97ebe51017f4",
+      "timestamp": "2023-10-03T12:44:48Z",
+      "author": "ChemSim",
+      "licence": "Public domain",
+      "templates": [
+        "PD-user"
+      ]
+    },
+    {
+      "name": "strainer",
+      "title": "File:Strainer (ISO 10628-2).svg",
+      "url": "https://upload.wikimedia.org/wikipedia/commons/b/b8/Strainer_%28ISO_10628-2%29.svg",
+      "sha1": "0e9e925ab3fe98d26c2db273d29658f447b39d85",
+      "timestamp": "2023-10-08T15:54:24Z",
+      "author": "ChemSim",
+      "licence": "Public domain",
+      "templates": [
+        "PD-user"
+      ]
+    },
+    {
+      "name": "screen-general",
+      "title": "File:Screening device, sieve, strainer (general) - ISO 10628-2.svg",
+      "url": "https://upload.wikimedia.org/wikipedia/commons/2/27/Screening_device%2C_sieve%2C_strainer_%28general%29_-_ISO_10628-2.svg",
+      "sha1": "673cc343df1d9a9c1c691ef0b168292af1f24f1d",
+      "timestamp": "2023-10-03T13:22:23Z",
+      "author": "ChemSim",
+      "licence": "Public domain",
+      "templates": [
+        "PD-user"
+      ]
+    },
+    {
+      "name": "screen-coarse-rake",
+      "title": "File:Screening device, coarse rake type - ISO 10628-2.svg",
+      "url": "https://upload.wikimedia.org/wikipedia/commons/3/30/Screening_device%2C_coarse_rake_type_-_ISO_10628-2.svg",
+      "sha1": "d1f3b4381d9fa04b1ef9fa4158cef5ac4986a4e8",
+      "timestamp": "2023-10-03T13:27:07Z",
+      "author": "ChemSim",
+      "licence": "Public domain",
+      "templates": [
+        "PD-user"
+      ]
+    },
+    {
+      "name": "settling-chamber",
+      "title": "File:Gravity separator, settling chamber - ISO 10628-2.svg",
+      "url": "https://upload.wikimedia.org/wikipedia/commons/b/b6/Gravity_separator%2C_settling_chamber_-_ISO_10628-2.svg",
+      "sha1": "ee3eb329acc6fc1805427da2674c6676b24db9b7",
+      "timestamp": "2023-10-03T14:07:49Z",
+      "author": "ChemSim",
+      "licence": "Public domain",
+      "templates": [
+        "PD-user"
+      ]
+    },
+    {
+      "name": "waste-water-solidifier-open",
+      "title": "File:Solidifier for waste water treatment plant open type - ISO 10628-2.svg",
+      "url": "https://upload.wikimedia.org/wikipedia/commons/d/d5/Solidifier_for_waste_water_treatment_plant_open_type_-_ISO_10628-2.svg",
+      "sha1": "1638139d9786ef6651f78a92a83c3ffb120a882f",
+      "timestamp": "2023-10-03T14:33:17Z",
+      "author": "ChemSim",
+      "licence": "Public domain",
+      "templates": [
+        "PD-user"
+      ]
+    },
+    {
+      "name": "in-line-static-mixer",
+      "title": "File:In-line static mixer (ISO 10628-2).svg",
+      "url": "https://upload.wikimedia.org/wikipedia/commons/2/25/In-line_static_mixer_%28ISO_10628-2%29.svg",
+      "sha1": "e1f924aad40d438bd674d17f5c295146de9c33fd",
+      "timestamp": "2023-10-12T08:22:03Z",
+      "author": "ChemSim",
+      "licence": "Public domain",
+      "templates": [
+        "PD-user"
+      ]
+    },
+    {
+      "name": "in-line-rotary-mixer",
+      "title": "File:In-line rotary mixer (ISO 10628-2).svg",
+      "url": "https://upload.wikimedia.org/wikipedia/commons/f/f7/In-line_rotary_mixer_%28ISO_10628-2%29.svg",
+      "sha1": "cd8937a25453261f59c88df6467897f150f450cc",
+      "timestamp": "2023-10-12T08:26:18Z",
+      "author": "ChemSim",
+      "licence": "Public domain",
+      "templates": [
+        "PD-user"
+      ]
+    },
+    {
+      "name": "agitator-general",
+      "title": "File:Agitator (general), stirrer (general) (ISO 10628-2).svg",
+      "url": "https://upload.wikimedia.org/wikipedia/commons/3/32/Agitator_%28general%29%2C_stirrer_%28general%29_%28ISO_10628-2%29.svg",
+      "sha1": "67e48299d48c11cc1ed55e14890d2f5e5333b140",
+      "timestamp": "2023-10-06T09:23:35Z",
+      "author": "ChemSim",
+      "licence": "Public domain",
+      "templates": [
+        "PD-user"
+      ]
+    },
+    {
+      "name": "agitator-turbine-type",
+      "title": "File:Agitator, turbine type (ISO 10628-2).svg",
+      "url": "https://upload.wikimedia.org/wikipedia/commons/1/1f/Agitator%2C_turbine_type_%28ISO_10628-2%29.svg",
+      "sha1": "06af36631e81bf575777e82eac90e59e2a956914",
+      "timestamp": "2023-10-06T07:02:07Z",
+      "author": "ChemSim",
+      "licence": "Public domain",
+      "templates": [
+        "PD-user"
+      ]
+    },
+    {
+      "name": "agitator-propeller-type",
+      "title": "File:Agitator, propeller type (ISO 10628-2).svg",
+      "url": "https://upload.wikimedia.org/wikipedia/commons/8/8c/Agitator%2C_propeller_type_%28ISO_10628-2%29.svg",
+      "sha1": "27618bdc10599f85a50f45af4177ff4b863e6b3b",
+      "timestamp": "2023-10-06T07:24:56Z",
+      "author": "ChemSim",
+      "licence": "Public domain",
+      "templates": [
+        "PD-user"
+      ]
+    },
+    {
+      "name": "agitator-paddle-type",
+      "title": "File:Agitator, flat blade paddle type (ISO 10628-2).svg",
+      "url": "https://upload.wikimedia.org/wikipedia/commons/b/b0/Agitator%2C_flat_blade_paddle_type_%28ISO_10628-2%29.svg",
+      "sha1": "f618fb085faca4be2ea75286d0cfd5318ca15ca3",
+      "timestamp": "2023-10-06T09:09:58Z",
+      "author": "ChemSim",
+      "licence": "Public domain",
+      "templates": [
+        "PD-user"
+      ]
+    },
+    {
+      "name": "spray-nozzle",
+      "title": "File:Spray nozzle (ISO 10628-2).svg",
+      "url": "https://upload.wikimedia.org/wikipedia/commons/5/5e/Spray_nozzle_%28ISO_10628-2%29.svg",
+      "sha1": "f745e9f0a4a429c1952e55e28fdb0d9b25e28b77",
+      "timestamp": "2023-10-10T09:32:16Z",
+      "author": "ChemSim",
+      "licence": "Public domain",
+      "templates": [
+        "PD-user"
+      ]
+    }
+  ],
+  "electrical": [
+    {
+      "name": "breaker",
+      "title": "File:Breaker.svg",
+      "url": "https://upload.wikimedia.org/wikipedia/commons/8/88/Breaker.svg",
+      "sha1": "e37bda7e04bf5b1cb06cf1f8f86fca72118b582e",
+      "timestamp": "2014-05-15T13:03:58Z",
+      "author": "Kopiersperre",
+      "licence": "Public domain",
+      "templates": [
+        "PD-self"
+      ]
+    },
+    {
+      "name": "diode",
+      "title": "File:Diode01.svg",
+      "url": "https://upload.wikimedia.org/wikipedia/commons/c/cc/Diode01.svg",
+      "sha1": "b517cc916d51af274163a6324cdd78a83122c243",
+      "timestamp": "2013-07-04T08:26:18Z",
+      "author": "Knutux (PD-self); file revised by Citypeek and Pyfisch",
+      "licence": "Public domain",
+      "templates": [
+        "PD-self"
+      ]
+    },
+    {
+      "name": "electric-motor",
+      "title": "File:Electric motor (general) (ISO 10628-2).svg",
+      "url": "https://upload.wikimedia.org/wikipedia/commons/6/6c/Electric_motor_%28general%29_%28ISO_10628-2%29.svg",
+      "sha1": "15916ebcc523f986ba86a5af462269897cdbbf1f",
+      "timestamp": "2023-10-10T08:51:16Z",
+      "author": "ChemSim",
+      "licence": "Public domain",
+      "templates": [
+        "PD-user"
+      ]
+    },
+    {
+      "name": "electric-motor-ac",
+      "title": "File:Electric motor, AC (ISO 10628-2).svg",
+      "url": "https://upload.wikimedia.org/wikipedia/commons/3/3a/Electric_motor%2C_AC_%28ISO_10628-2%29.svg",
+      "sha1": "4f842b8eb2fc4c9c39f9e0d45941590e3b025f82",
+      "timestamp": "2023-10-10T08:49:33Z",
+      "author": "ChemSim",
+      "licence": "Public domain",
+      "templates": [
+        "PD-user"
+      ]
+    },
+    {
+      "name": "electric-motor-dc",
+      "title": "File:Electric motor, DC (ISO 10628-2).svg",
+      "url": "https://upload.wikimedia.org/wikipedia/commons/4/4a/Electric_motor%2C_DC_%28ISO_10628-2%29.svg",
+      "sha1": "6ae7e23d277eb15d305f1fa336ea98c8464e93b6",
+      "timestamp": "2023-10-10T08:33:18Z",
+      "author": "ChemSim",
+      "licence": "Public domain",
+      "templates": [
+        "PD-user"
+      ]
+    },
+    {
+      "name": "generator",
+      "title": "File:Generator (general) (ISO 10628-2).svg",
+      "url": "https://upload.wikimedia.org/wikipedia/commons/8/84/Generator_%28general%29_%28ISO_10628-2%29.svg",
+      "sha1": "4473d0207b75b4a6c011f54f8c0fc960736fb3dc",
+      "timestamp": "2023-10-10T09:02:02Z",
+      "author": "ChemSim",
+      "licence": "Public domain",
+      "templates": [
+        "PD-user"
+      ]
+    },
+    {
+      "name": "generator-ac",
+      "title": "File:Generator, AC (ISO 10628-2).svg",
+      "url": "https://upload.wikimedia.org/wikipedia/commons/5/53/Generator%2C_AC_%28ISO_10628-2%29.svg",
+      "sha1": "e8705b8b71cf4e99a27242eea17a29067bd874db",
+      "timestamp": "2023-10-10T09:00:30Z",
+      "author": "ChemSim",
+      "licence": "Public domain",
+      "templates": [
+        "PD-user"
+      ]
+    },
+    {
+      "name": "generator-dc",
+      "title": "File:Generator, DC (ISO 10628-2).svg",
+      "url": "https://upload.wikimedia.org/wikipedia/commons/6/6f/Generator%2C_DC_%28ISO_10628-2%29.svg",
+      "sha1": "21c4dc2d1094df56ad8e2b1105e14d8c81ef7fd8",
+      "timestamp": "2023-10-10T08:57:21Z",
+      "author": "ChemSim",
+      "licence": "Public domain",
+      "templates": [
+        "PD-user"
+      ]
+    }
+  ],
+  "hvac": [
+    {
+      "name": "heat-exchanger-no-cross",
+      "title": "File:Heat exchanger no cross.svg",
+      "url": "https://upload.wikimedia.org/wikipedia/commons/c/c7/Heat_exchanger_no_cross.svg",
+      "sha1": "a0de1818a8dfc442dbe54348977a2bd08968bf8e",
+      "timestamp": "2007-09-18T15:45:44Z",
+      "author": "Snipre",
+      "licence": "Public domain",
+      "templates": [
+        "PD-self"
+      ]
+    },
+    {
+      "name": "plate-heat-exchanger",
+      "title": "File:Plate heat exchanger.svg",
+      "url": "https://upload.wikimedia.org/wikipedia/commons/7/77/Plate_heat_exchanger.svg",
+      "sha1": "1e0389cb0ab19c734511690c3ef981602a40617d",
+      "timestamp": "2007-09-20T09:54:35Z",
+      "author": "Snipre",
+      "licence": "Public domain",
+      "templates": [
+        "PD-self"
+      ]
+    },
+    {
+      "name": "double-pipe-heat-exchanger",
+      "title": "File:Double pipe heat exchanger.svg",
+      "url": "https://upload.wikimedia.org/wikipedia/commons/5/50/Double_pipe_heat_exchanger.svg",
+      "sha1": "a641b0e4abbb158dd5fba3845f6f43d0c045f95b",
+      "timestamp": "2007-09-20T15:12:46Z",
+      "author": "Snipre",
+      "licence": "Public domain",
+      "templates": [
+        "PD-self"
+      ]
+    },
+    {
+      "name": "u-shaped-tubes-heat-exchanger",
+      "title": "File:U shaped tubes heat exchanger.svg",
+      "url": "https://upload.wikimedia.org/wikipedia/commons/3/3c/U_shaped_tubes_heat_exchanger.svg",
+      "sha1": "49e4238ef9f10a20f5dbb8e220f281e3841dc44a",
+      "timestamp": "2007-09-20T09:58:41Z",
+      "author": "Snipre",
+      "licence": "Public domain",
+      "templates": [
+        "PD-self"
+      ]
+    },
+    {
+      "name": "spiral-heat-exchanger",
+      "title": "File:Spiral heat exchanger symbol.svg",
+      "url": "https://upload.wikimedia.org/wikipedia/commons/3/3f/Spiral_heat_exchanger_symbol.svg",
+      "sha1": "e08003c2fe71ca63905000d49e7967360808ca23",
+      "timestamp": "2007-09-20T09:56:49Z",
+      "author": "Snipre",
+      "licence": "Public domain",
+      "templates": [
+        "PD-self"
+      ]
+    },
+    {
+      "name": "condenser",
+      "title": "File:Heat exchanger (general), condenser - ISO 10628-2.svg",
+      "url": "https://upload.wikimedia.org/wikipedia/commons/0/07/Heat_exchanger_%28general%29%2C_condenser_-_ISO_10628-2.svg",
+      "sha1": "8cc0cd342f94226372392282d26a7dfea4b927bf",
+      "timestamp": "2023-10-03T10:20:22Z",
+      "author": "ChemSim",
+      "licence": "Public domain",
+      "templates": [
+        "PD-user"
+      ]
+    },
+    {
+      "name": "finned-tube-heat-exchanger",
+      "title": "File:Heat exchanger with finned tube - ISO 10628-2.svg",
+      "url": "https://upload.wikimedia.org/wikipedia/commons/3/3d/Heat_exchanger_with_finned_tube_-_ISO_10628-2.svg",
+      "sha1": "85ed82534bbd7f3fcd8745bd5facfa6adceb26fe",
+      "timestamp": "2023-10-03T10:38:16Z",
+      "author": "ChemSim",
+      "licence": "Public domain",
+      "templates": [
+        "PD-user"
+      ]
+    },
+    {
+      "name": "finned-tube-heat-exchanger-with-fan",
+      "title": "File:Heat exchanger with finned tube and fan - ISO 10628-2.svg",
+      "url": "https://upload.wikimedia.org/wikipedia/commons/c/c6/Heat_exchanger_with_finned_tube_and_fan_-_ISO_10628-2.svg",
+      "sha1": "32ed7cfe57db3446f0a984ad3a3f73ce179b7141",
+      "timestamp": "2023-10-03T10:41:10Z",
+      "author": "ChemSim",
+      "licence": "Public domain",
+      "templates": [
+        "PD-user"
+      ]
+    },
+    {
+      "name": "floating-head-heat-exchanger",
+      "title": "File:Heat exchanger of floating head type - ISO 10628-2.svg",
+      "url": "https://upload.wikimedia.org/wikipedia/commons/c/c9/Heat_exchanger_of_floating_head_type_-_ISO_10628-2.svg",
+      "sha1": "eb3c165db954640549b63c3dd77e17f3519c4187",
+      "timestamp": "2023-10-03T10:26:50Z",
+      "author": "ChemSim",
+      "licence": "Public domain",
+      "templates": [
+        "PD-user"
+      ]
+    },
+    {
+      "name": "tube-bundle-heat-exchanger",
+      "title": "File:Tube bundle, heat exchanger with U-shaped tubes - ISO 10628-2.svg",
+      "url": "https://upload.wikimedia.org/wikipedia/commons/5/5f/Tube_bundle%2C_heat_exchanger_with_U-shaped_tubes_-_ISO_10628-2.svg",
+      "sha1": "763f539a3e66ceddf013434734017dc9ecab0707",
+      "timestamp": "2023-10-03T10:49:35Z",
+      "author": "ChemSim",
+      "licence": "Public domain",
+      "templates": [
+        "PD-user"
+      ]
+    },
+    {
+      "name": "air-cooler",
+      "title": "File:Air cooler.svg",
+      "url": "https://upload.wikimedia.org/wikipedia/commons/7/77/Air_cooler.svg",
+      "sha1": "1fbb5ef8459a24aa450bfb62469aa70bffb84087",
+      "timestamp": "2014-05-01T20:27:17Z",
+      "author": "Kopiersperre",
+      "licence": "Public domain",
+      "templates": [
+        "PD-self"
+      ]
+    },
+    {
+      "name": "cooler",
+      "title": "File:Cooler-symbol.svg",
+      "url": "https://upload.wikimedia.org/wikipedia/commons/0/09/Cooler-symbol.svg",
+      "sha1": "7b5ecbf767a41ec9bae5eb03dfdcac43da37b7dc",
+      "timestamp": "2007-10-02T10:55:17Z",
+      "author": "Londenp",
+      "licence": "Public domain",
+      "templates": [
+        "PD-self"
+      ]
+    },
+    {
+      "name": "heater",
+      "title": "File:Heater-symbol.svg",
+      "url": "https://upload.wikimedia.org/wikipedia/commons/0/07/Heater-symbol.svg",
+      "sha1": "24f7a5029f3fb7cf26e11d5e30ffff6cdd0f18d9",
+      "timestamp": "2007-10-02T10:44:36Z",
+      "author": "Londenp",
+      "licence": "Public domain",
+      "templates": [
+        "PD-self"
+      ]
+    },
+    {
+      "name": "electric-heater",
+      "title": "File:Electric heater - ISO 10628-2.svg",
+      "url": "https://upload.wikimedia.org/wikipedia/commons/d/db/Electric_heater_-_ISO_10628-2.svg",
+      "sha1": "9f7488d882169ae1d474d0f49864c01161cd1f16",
+      "timestamp": "2023-10-03T10:46:03Z",
+      "author": "ChemSim",
+      "licence": "Public domain",
+      "templates": [
+        "PD-user"
+      ]
+    },
+    {
+      "name": "cooling-tower",
+      "title": "File:Cooling tower.svg",
+      "url": "https://upload.wikimedia.org/wikipedia/commons/b/b1/Cooling_tower.svg",
+      "sha1": "e49a86f2f2ca063f554ee7576ec2c5b0c14e84b1",
+      "timestamp": "2007-09-20T09:50:28Z",
+      "author": "Snipre",
+      "licence": "Public domain",
+      "templates": [
+        "PD-self"
+      ]
+    },
+    {
+      "name": "wet-cooling-tower",
+      "title": "File:Wet cooling tower.svg",
+      "url": "https://upload.wikimedia.org/wikipedia/commons/0/0a/Wet_cooling_tower.svg",
+      "sha1": "e1e0a516d5ab95160b70535dbdf39f55180e3a4e",
+      "timestamp": "2014-05-01T20:32:08Z",
+      "author": "Kopiersperre",
+      "licence": "Public domain",
+      "templates": [
+        "PD-self"
+      ]
+    },
+    {
+      "name": "cooling-tower-general",
+      "title": "File:Cooling tower (general) - ISO 10628-2.svg",
+      "url": "https://upload.wikimedia.org/wikipedia/commons/2/2a/Cooling_tower_%28general%29_-_ISO_10628-2.svg",
+      "sha1": "c6676b959880666425fccc2abac2ae49b8f5e0ca",
+      "timestamp": "2023-10-03T11:18:00Z",
+      "author": "ChemSim",
+      "licence": "Public domain",
+      "templates": [
+        "PD-user"
+      ]
+    },
+    {
+      "name": "dry-cooling-tower-forced-draught",
+      "title": "File:Cooling tower, dry with forced draught - ISO 10628-2.svg",
+      "url": "https://upload.wikimedia.org/wikipedia/commons/f/f7/Cooling_tower%2C_dry_with_forced_draught_-_ISO_10628-2.svg",
+      "sha1": "a84116ea787f9f9fdb0a436f58fd80859d61d962",
+      "timestamp": "2023-10-03T11:27:53Z",
+      "author": "ChemSim",
+      "licence": "Public domain",
+      "templates": [
+        "PD-user"
+      ]
+    },
+    {
+      "name": "wet-cooling-tower-forced-draught",
+      "title": "File:Cooling tower, wet with forced draught - ISO 10628-2.svg",
+      "url": "https://upload.wikimedia.org/wikipedia/commons/a/ae/Cooling_tower%2C_wet_with_forced_draught_-_ISO_10628-2.svg",
+      "sha1": "e9c8d7200798f11a5a51fd3954a86b301c53db53",
+      "timestamp": "2023-10-03T11:33:13Z",
+      "author": "ChemSim",
+      "licence": "Public domain",
+      "templates": [
+        "PD-user"
+      ]
+    },
+    {
+      "name": "axial-fan",
+      "title": "File:Axial fan.svg",
+      "url": "https://upload.wikimedia.org/wikipedia/commons/5/50/Axial_fan.svg",
+      "sha1": "629fcae41baa0c1f7aa237e72bf46dfaa1d52dab",
+      "timestamp": "2007-09-20T09:48:47Z",
+      "author": "Snipre",
+      "licence": "Public domain",
+      "templates": [
+        "PD-self"
+      ]
+    },
+    {
+      "name": "radial-fan",
+      "title": "File:Radial fan.svg",
+      "url": "https://upload.wikimedia.org/wikipedia/commons/c/c7/Radial_fan.svg",
+      "sha1": "8252f978951a20ce7c813253011d9788e27d4f92",
+      "timestamp": "2007-09-20T09:55:26Z",
+      "author": "Snipre",
+      "licence": "Public domain",
+      "templates": [
+        "PD-self"
+      ]
+    },
+    {
+      "name": "fan",
+      "title": "File:Fan.svg",
+      "url": "https://upload.wikimedia.org/wikipedia/commons/7/7a/Fan.svg",
+      "sha1": "9bf917cc0083ef1877bc8681494f0a048681820f",
+      "timestamp": "2007-09-18T15:42:30Z",
+      "author": "Snipre",
+      "licence": "Public domain",
+      "templates": [
+        "PD-self"
+      ]
+    },
+    {
+      "name": "back-draft-damper",
+      "title": "File:Back draft damper.svg",
+      "url": "https://upload.wikimedia.org/wikipedia/commons/a/a6/Back_draft_damper.svg",
+      "sha1": "beb281c95f312d7f147368bb7c1887cbc99b524f",
+      "timestamp": "2014-01-08T09:34:32Z",
+      "author": "Snipre",
+      "licence": "Public domain",
+      "templates": [
+        "PD-self"
+      ]
+    },
+    {
+      "name": "fire-damper",
+      "title": "File:Brandschutzklappe.svg",
+      "url": "https://upload.wikimedia.org/wikipedia/commons/9/92/Brandschutzklappe.svg",
+      "sha1": "9b96e1c90240d5a35ff04dd208e3c6c9ae7b352a",
+      "timestamp": "2014-01-11T00:22:54Z",
+      "author": "BentaxGermany",
+      "licence": "Public domain",
+      "templates": [
+        "PD-textlogo"
+      ]
+    },
+    {
+      "name": "smoke-damper",
+      "title": "File:Rauchschutzklappe.svg",
+      "url": "https://upload.wikimedia.org/wikipedia/commons/0/02/Rauchschutzklappe.svg",
+      "sha1": "e184db48e783c08359775219d5644616dee535a8",
+      "timestamp": "2014-01-11T00:02:18Z",
+      "author": "BentaxGermany",
+      "licence": "Public domain",
+      "templates": [
+        "PD-textlogo"
+      ]
+    },
+    {
+      "name": "louvre-damper",
+      "title": "File:Jalousieklappe.svg",
+      "url": "https://upload.wikimedia.org/wikipedia/commons/5/57/Jalousieklappe.svg",
+      "sha1": "6b0171d3759d2a3732f7af4652854ac7588efec6",
+      "timestamp": "2014-01-11T21:54:46Z",
+      "author": "BentaxGermany",
+      "licence": "Public domain",
+      "templates": [
+        "PD-textlogo"
+      ]
+    },
+    {
+      "name": "throttle-damper",
+      "title": "File:Drosselklappe Symbol.svg",
+      "url": "https://upload.wikimedia.org/wikipedia/commons/9/99/Drosselklappe_Symbol.svg",
+      "sha1": "0685a4136e5264a1dda5b184763ba40ed88c73b1",
+      "timestamp": "2014-01-09T15:51:47Z",
+      "author": "BentaxGermany",
+      "licence": "Public domain",
+      "templates": [
+        "PD-textlogo"
+      ]
+    },
+    {
+      "name": "air-filter",
+      "title": "File:Luftfilter.svg",
+      "url": "https://upload.wikimedia.org/wikipedia/commons/7/78/Luftfilter.svg",
+      "sha1": "ffd92475f19f55e6263d569b169cddd01056a8ab",
+      "timestamp": "2014-01-11T21:02:56Z",
+      "author": "BentaxGermany",
+      "licence": "Public domain",
+      "templates": [
+        "PD-textlogo"
+      ]
+    },
+    {
+      "name": "air-humidifier",
+      "title": "File:Luftbefeuchter Symbol.svg",
+      "url": "https://upload.wikimedia.org/wikipedia/commons/9/9a/Luftbefeuchter_Symbol.svg",
+      "sha1": "d6913670e8c6849b67c3569ebb7e03a511fae970",
+      "timestamp": "2014-01-13T10:48:41Z",
+      "author": "BentaxGermany",
+      "licence": "Public domain",
+      "templates": [
+        "PD-textlogo"
+      ]
+    },
+    {
+      "name": "air-heater",
+      "title": "File:Lufterwärmer.svg",
+      "url": "https://upload.wikimedia.org/wikipedia/commons/e/e4/Lufterw%C3%A4rmer.svg",
+      "sha1": "7635d412d506c62997a5cd69187a8f82d48776e9",
+      "timestamp": "2014-01-13T12:58:42Z",
+      "author": "BentaxGermany",
+      "licence": "Public domain",
+      "templates": [
+        "PD-textlogo"
+      ]
+    },
+    {
+      "name": "air-cooling-coil",
+      "title": "File:Luftkühler.svg",
+      "url": "https://upload.wikimedia.org/wikipedia/commons/b/be/Luftk%C3%BChler.svg",
+      "sha1": "d37d8c99d5b84d83a171e06dec3af105c620011c",
+      "timestamp": "2014-01-13T13:04:50Z",
+      "author": "BentaxGermany",
+      "licence": "Public domain",
+      "templates": [
+        "PD-textlogo"
+      ]
+    },
+    {
+      "name": "air-mixing-chamber",
+      "title": "File:Luftmischkammer.svg",
+      "url": "https://upload.wikimedia.org/wikipedia/commons/3/39/Luftmischkammer.svg",
+      "sha1": "0d791334774aae6f1fb3999768387637539a7bfd",
+      "timestamp": "2014-01-13T11:59:56Z",
+      "author": "BentaxGermany",
+      "licence": "Public domain",
+      "templates": [
+        "PD-textlogo"
+      ]
+    },
+    {
+      "name": "supply-air-outlet",
+      "title": "File:Zuluftdurchlass.svg",
+      "url": "https://upload.wikimedia.org/wikipedia/commons/a/ad/Zuluftdurchlass.svg",
+      "sha1": "9363f2181c47d0184cb4b85aaf862a9a15986dcc",
+      "timestamp": "2014-01-09T13:34:10Z",
+      "author": "BentaxGermany",
+      "licence": "Public domain",
+      "templates": [
+        "PD-textlogo",
+        "PD-shape"
+      ]
+    },
+    {
+      "name": "constant-air-volume-controller",
+      "title": "File:Regler für konstanten Luftvolumenstrom.svg",
+      "url": "https://upload.wikimedia.org/wikipedia/commons/9/9c/Regler_f%C3%BCr_konstanten_Luftvolumenstrom.svg",
+      "sha1": "fb5cde61c5b44f2fdab29a709f9e0a622c85d51d",
+      "timestamp": "2014-01-11T01:06:45Z",
+      "author": "BentaxGermany",
+      "licence": "Public domain",
+      "templates": [
+        "PD-textlogo"
+      ]
+    },
+    {
+      "name": "variable-air-volume-controller",
+      "title": "File:Regler für variablen Luftvolumenstrom.svg",
+      "url": "https://upload.wikimedia.org/wikipedia/commons/1/1a/Regler_f%C3%BCr_variablen_Luftvolumenstrom.svg",
+      "sha1": "5d7bb4dc89438243663d49157f31f487b9772616",
+      "timestamp": "2014-01-11T02:10:45Z",
+      "author": "BentaxGermany",
+      "licence": "Public domain",
+      "templates": [
+        "PD-textlogo"
+      ]
+    },
+    {
+      "name": "rigid-air-duct",
+      "title": "File:Starre Luftleitungen.svg",
+      "url": "https://upload.wikimedia.org/wikipedia/commons/4/47/Starre_Luftleitungen.svg",
+      "sha1": "f05e03ffd8a07b1f353c7a569499cb0be59b284f",
+      "timestamp": "2014-01-09T14:05:14Z",
+      "author": "BentaxGermany",
+      "licence": "Public domain",
+      "templates": [
+        "PD-textlogo"
+      ]
+    }
+  ],
+  "mechanical": [
+    {
+      "name": "compressor",
+      "title": "File:Symbol Compressor.svg",
+      "url": "https://upload.wikimedia.org/wikipedia/commons/5/56/Symbol_Compressor.svg",
+      "sha1": "8713296cbc823bd26fb628f7051b97da2d9e573a",
+      "timestamp": "2008-05-30T18:03:11Z",
+      "author": "MovGP0",
+      "licence": "Public domain",
+      "templates": [
+        "PD-shape"
+      ]
+    },
+    {
+      "name": "vacuum-pump-or-compressor",
+      "title": "File:Vacuum Pump or Compressor.svg",
+      "url": "https://upload.wikimedia.org/wikipedia/commons/a/a6/Vacuum_Pump_or_Compressor.svg",
+      "sha1": "fb045149c69b042557bf3ce48370adbc9ab157e6",
+      "timestamp": "2007-09-20T09:59:29Z",
+      "author": "Snipre",
+      "licence": "Public domain",
+      "templates": [
+        "PD-self"
+      ]
+    },
+    {
+      "name": "turbo-compressor",
+      "title": "File:P&ID Turbo Compressor Symbol.svg",
+      "url": "https://upload.wikimedia.org/wikipedia/commons/2/28/P%26ID_Turbo_Compressor_Symbol.svg",
+      "sha1": "0d9795b9cec7124694008154ff18649bb4cbcc91",
+      "timestamp": "2021-03-30T20:03:14Z",
+      "author": "ChemSim",
+      "licence": "Public domain",
+      "templates": [
+        "PD-chem"
+      ]
+    },
+    {
+      "name": "piston-compressor",
+      "title": "File:P&ID Piston Compressor Symbol.svg",
+      "url": "https://upload.wikimedia.org/wikipedia/commons/3/3a/P%26ID_Piston_Compressor_Symbol.svg",
+      "sha1": "d0533ed84f1a0c006b1d3f2aa21b675159b3a8ac",
+      "timestamp": "2021-04-01T14:28:53Z",
+      "author": "ChemSim",
+      "licence": "Public domain",
+      "templates": [
+        "PD-chem"
+      ]
+    },
+    {
+      "name": "compressor-general",
+      "title": "File:Compressor, vacuum pump (general) (ISO 10628-2).svg",
+      "url": "https://upload.wikimedia.org/wikipedia/commons/0/05/Compressor%2C_vacuum_pump_%28general%29_%28ISO_10628-2%29.svg",
+      "sha1": "16014ed168b0cc9ce4d6e3d36df41c55197cc485",
+      "timestamp": "2023-10-11T10:11:50Z",
+      "author": "ChemSim",
+      "licence": "Public domain",
+      "templates": [
+        "PD-user"
+      ]
+    },
+    {
+      "name": "compressor-centrifugal",
+      "title": "File:Compressor, centrifugal type (ISO 10628-2).svg",
+      "url": "https://upload.wikimedia.org/wikipedia/commons/d/d9/Compressor%2C_centrifugal_type_%28ISO_10628-2%29.svg",
+      "sha1": "3e93393510a45e116521857f5d14c98a5d51968d",
+      "timestamp": "2023-10-11T10:09:46Z",
+      "author": "ChemSim",
+      "licence": "Public domain",
+      "templates": [
+        "PD-user"
+      ]
+    },
+    {
+      "name": "compressor-screw",
+      "title": "File:Compressor, screw type (ISO 10628-2).svg",
+      "url": "https://upload.wikimedia.org/wikipedia/commons/4/43/Compressor%2C_screw_type_%28ISO_10628-2%29.svg",
+      "sha1": "74e17959115d98314c0b435811298d9c910b3e33",
+      "timestamp": "2023-10-11T08:05:31Z",
+      "author": "ChemSim",
+      "licence": "Public domain",
+      "templates": [
+        "PD-user"
+      ]
+    },
+    {
+      "name": "compressor-turbo",
+      "title": "File:Compressor, vacuum pump, turbo type (ISO 10628-2).svg",
+      "url": "https://upload.wikimedia.org/wikipedia/commons/b/b5/Compressor%2C_vacuum_pump%2C_turbo_type_%28ISO_10628-2%29.svg",
+      "sha1": "46957860a3dea37f1ec99cdb27cc9e622792479d",
+      "timestamp": "2023-10-11T09:48:03Z",
+      "author": "ChemSim",
+      "licence": "Public domain",
+      "templates": [
+        "PD-user"
+      ]
+    },
+    {
+      "name": "compressor-reciprocating-piston",
+      "title": "File:Compressor, vacuum pump, reciprocating piston type (ISO 10628-2).svg",
+      "url": "https://upload.wikimedia.org/wikipedia/commons/a/aa/Compressor%2C_vacuum_pump%2C_reciprocating_piston_type_%28ISO_10628-2%29.svg",
+      "sha1": "f00c90743fb8e3dc074fbbf0b20738a4b801e9f6",
+      "timestamp": "2023-10-11T10:03:40Z",
+      "author": "ChemSim",
+      "licence": "Public domain",
+      "templates": [
+        "PD-user"
+      ]
+    },
+    {
+      "name": "dryer",
+      "title": "File:Dryer.svg",
+      "url": "https://upload.wikimedia.org/wikipedia/commons/6/68/Dryer.svg",
+      "sha1": "601b1f9cb8b643dadc74c89fa9abf3c069667b71",
+      "timestamp": "2007-09-21T15:11:13Z",
+      "author": "Snipre",
+      "licence": "Public domain",
+      "templates": [
+        "PD-self"
+      ]
+    },
+    {
+      "name": "drier-general",
+      "title": "File:Drier (general) (ISO 10628-2).svg",
+      "url": "https://upload.wikimedia.org/wikipedia/commons/c/c9/Drier_%28general%29_%28ISO_10628-2%29.svg",
+      "sha1": "87faac1e12b57504da9bd2cbb991ef3440410c84",
+      "timestamp": "2023-10-13T08:52:58Z",
+      "author": "ChemSim",
+      "licence": "Public domain",
+      "templates": [
+        "PD-user"
+      ]
+    },
+    {
+      "name": "turbine",
+      "title": "File:Turbine (general) (ISO 10628-2).svg",
+      "url": "https://upload.wikimedia.org/wikipedia/commons/6/6a/Turbine_%28general%29_%28ISO_10628-2%29.svg",
+      "sha1": "094ec0543551e57602292410e4d5f88dac9e339c",
+      "timestamp": "2023-10-10T09:14:57Z",
+      "author": "ChemSim",
+      "licence": "Public domain",
+      "templates": [
+        "PD-user"
+      ]
+    },
+    {
+      "name": "boiler-with-dome",
+      "title": "File:Boiler with dome - ISO 10628-2.svg",
+      "url": "https://upload.wikimedia.org/wikipedia/commons/4/45/Boiler_with_dome_-_ISO_10628-2.svg",
+      "sha1": "54343849cbdc6d8dc7404a3ec33444d7e08db35c",
+      "timestamp": "2023-10-03T10:59:01Z",
+      "author": "ChemSim",
+      "licence": "Public domain",
+      "templates": [
+        "PD-user"
+      ]
+    },
+    {
+      "name": "steam-generator",
+      "title": "File:Steam generator with hot liquid as generating media - ISO 10628-2.svg",
+      "url": "https://upload.wikimedia.org/wikipedia/commons/a/aa/Steam_generator_with_hot_liquid_as_generating_media_-_ISO_10628-2.svg",
+      "sha1": "46b99aa5ad17ea9cb5b3a2fea28084372cf3f839",
+      "timestamp": "2023-10-03T11:01:36Z",
+      "author": "ChemSim",
+      "licence": "Public domain",
+      "templates": [
+        "PD-user"
+      ]
+    },
+    {
+      "name": "furnace",
+      "title": "File:Furnace.svg",
+      "url": "https://upload.wikimedia.org/wikipedia/commons/8/88/Furnace.svg",
+      "sha1": "b8f22237c6be479383d613b2ece1502cf642c198",
+      "timestamp": "2007-09-18T16:13:59Z",
+      "author": "Snipre",
+      "licence": "Public domain",
+      "templates": [
+        "PD-self"
+      ]
+    },
+    {
+      "name": "gearbox",
+      "title": "File:Gear (ISO 10628-2).svg",
+      "url": "https://upload.wikimedia.org/wikipedia/commons/f/f4/Gear_%28ISO_10628-2%29.svg",
+      "sha1": "b2ec066156ae380f35cca411e92309285f01eb0c",
+      "timestamp": "2023-10-10T09:10:39Z",
+      "author": "ChemSim",
+      "licence": "Public domain",
+      "templates": [
+        "PD-user"
+      ]
+    },
+    {
+      "name": "centrifuge",
+      "title": "File:Centrifuge with solid shell (ISO 10628-2).svg",
+      "url": "https://upload.wikimedia.org/wikipedia/commons/0/0d/Centrifuge_with_solid_shell_%28ISO_10628-2%29.svg",
+      "sha1": "12c902debc70466b18c4e895a1f18dcde4ad7e3c",
+      "timestamp": "2023-10-13T10:53:48Z",
+      "author": "ChemSim",
+      "licence": "Public domain",
+      "templates": [
+        "PD-user"
+      ]
+    },
+    {
+      "name": "cyclone-separator",
+      "title": "File:Separator, cyclone type - ISO 10628-2.svg",
+      "url": "https://upload.wikimedia.org/wikipedia/commons/0/09/Separator%2C_cyclone_type_-_ISO_10628-2.svg",
+      "sha1": "6e9a4c53643516dc409f2307d98156ecf324d9b3",
+      "timestamp": "2023-10-03T14:27:16Z",
+      "author": "ChemSim",
+      "licence": "Public domain",
+      "templates": [
+        "PD-user"
+      ]
+    }
+  ],
+  "environment": [
+    {
+      "name": "sensor-probe",
+      "title": "File:Messfühler.svg",
+      "url": "https://upload.wikimedia.org/wikipedia/commons/b/b1/Messf%C3%BChler.svg",
+      "sha1": "7586d9dec45d6c34452dccf4583078e54c92dbd5",
+      "timestamp": "2014-01-13T13:12:05Z",
+      "author": "BentaxGermany",
+      "licence": "Public domain",
+      "templates": [
+        "PD-textlogo"
+      ]
+    },
+    {
+      "name": "controller",
+      "title": "File:Regler.svg",
+      "url": "https://upload.wikimedia.org/wikipedia/commons/9/90/Regler.svg",
+      "sha1": "7cc691244a5b5a4f3ee9cb51ba9f2144ecd693b8",
+      "timestamp": "2014-01-13T13:20:17Z",
+      "author": "BentaxGermany",
+      "licence": "Public domain",
+      "templates": [
+        "PD-textlogo"
+      ]
+    },
+    {
+      "name": "orifice-plate",
+      "title": "File:Orifice plate (ISO 10628-2).svg",
+      "url": "https://upload.wikimedia.org/wikipedia/commons/3/35/Orifice_plate_%28ISO_10628-2%29.svg",
+      "sha1": "04efe819a527dd4655ac2169a7a2784ceb188ffc",
+      "timestamp": "2023-10-08T15:48:24Z",
+      "author": "ChemSim",
+      "licence": "Public domain",
+      "templates": [
+        "PD-user"
+      ]
+    },
+    {
+      "name": "gas-filter",
+      "title": "File:Gas filter (general) - ISO 10628-2.svg",
+      "url": "https://upload.wikimedia.org/wikipedia/commons/4/42/Gas_filter_%28general%29_-_ISO_10628-2.svg",
+      "sha1": "0ccee8222d9420674d0c1267b9e98b149f19f977",
+      "timestamp": "2023-10-03T13:00:41Z",
+      "author": "ChemSim",
+      "licence": "Public domain",
+      "templates": [
+        "PD-user"
+      ]
+    },
+    {
+      "name": "bag-filter",
+      "title": "File:Gas filter, bag, candle or cartridge type - ISO 10628-2.svg",
+      "url": "https://upload.wikimedia.org/wikipedia/commons/4/49/Gas_filter%2C_bag%2C_candle_or_cartridge_type_-_ISO_10628-2.svg",
+      "sha1": "69dd36dccfb35c8248fa78857f29aea7de18085e",
+      "timestamp": "2023-10-03T13:02:19Z",
+      "author": "ChemSim",
+      "licence": "Public domain",
+      "templates": [
+        "PD-user"
+      ]
+    },
+    {
+      "name": "wet-scrubber",
+      "title": "File:Separator, scrubber wet type - ISO 10628-2.svg",
+      "url": "https://upload.wikimedia.org/wikipedia/commons/9/9c/Separator%2C_scrubber_wet_type_-_ISO_10628-2.svg",
+      "sha1": "54752f3ed7d82688fcb6badc609a29a5e57f627e",
+      "timestamp": "2023-10-03T14:09:23Z",
+      "author": "ChemSim",
+      "licence": "Public domain",
+      "templates": [
+        "PD-user"
+      ]
+    },
+    {
+      "name": "electrostatic-precipitator",
+      "title": "File:Separator, precipitator electrostatic type - ISO 10628-2.svg",
+      "url": "https://upload.wikimedia.org/wikipedia/commons/7/70/Separator%2C_precipitator_electrostatic_type_-_ISO_10628-2.svg",
+      "sha1": "4d0057f1b1b6dd8281a8cf543fe3c5c9e37d7a5a",
+      "timestamp": "2023-10-03T14:20:15Z",
+      "author": "ChemSim",
+      "licence": "Public domain",
+      "templates": [
+        "PD-user"
+      ]
+    },
+    {
+      "name": "stack",
+      "title": "File:Stack, chimney - ISO 10628-2.svg",
+      "url": "https://upload.wikimedia.org/wikipedia/commons/7/7c/Stack%2C_chimney_-_ISO_10628-2.svg",
+      "sha1": "1b816c6e0a9063502fd7f32de51607901464181e",
+      "timestamp": "2023-10-03T11:09:18Z",
+      "author": "ChemSim",
+      "licence": "Public domain",
+      "templates": [
+        "PD-user"
+      ]
+    },
+    {
+      "name": "gas-flare",
+      "title": "File:Gas flare - ISO 10628-2.svg",
+      "url": "https://upload.wikimedia.org/wikipedia/commons/e/e5/Gas_flare_-_ISO_10628-2.svg",
+      "sha1": "43513ee67378a9627bba03d4daec016080115bf8",
+      "timestamp": "2023-10-03T11:10:29Z",
+      "author": "ChemSim",
+      "licence": "Public domain",
+      "templates": [
+        "PD-user"
+      ]
+    },
+    {
+      "name": "vent-to-atmosphere",
+      "title": "File:Vent (outlet to atmosphere for steam or gas) (ISO 10628-2).svg",
+      "url": "https://upload.wikimedia.org/wikipedia/commons/f/f9/Vent_%28outlet_to_atmosphere_for_steam_or_gas%29_%28ISO_10628-2%29.svg",
+      "sha1": "de01176a300d8cb83355d7dead9860f8b1c6d731",
+      "timestamp": "2023-10-08T10:16:18Z",
+      "author": "ChemSim",
+      "licence": "Public domain",
+      "templates": [
+        "PD-user"
+      ]
+    },
+    {
+      "name": "dust-trap",
+      "title": "File:Dust trap.svg",
+      "url": "https://upload.wikimedia.org/wikipedia/commons/b/b1/Dust_trap.svg",
+      "sha1": "ca3e473077267c3d9e3a86c4c465e5d6e01fdab1",
+      "timestamp": "2007-09-20T15:13:55Z",
+      "author": "Snipre",
+      "licence": "Public domain",
+      "templates": [
+        "PD-self"
+      ]
+    },
+    {
+      "name": "silencer",
+      "title": "File:Silencer (ISO 10628-2).svg",
+      "url": "https://upload.wikimedia.org/wikipedia/commons/6/61/Silencer_%28ISO_10628-2%29.svg",
+      "sha1": "bdbcbca00bd220a52a356fa73fe1c15fc0b8de6e",
+      "timestamp": "2023-10-08T16:02:12Z",
+      "author": "ChemSim",
+      "licence": "Public domain",
+      "templates": [
+        "PD-user"
+      ]
+    }
+  ],
+  "facility": [
+    {
+      "name": "lift",
+      "title": "File:Lift (ISO 10628-2).svg",
+      "url": "https://upload.wikimedia.org/wikipedia/commons/4/40/Lift_%28ISO_10628-2%29.svg",
+      "sha1": "0088905023020c14ad252385b03c067214251a44",
+      "timestamp": "2023-10-14T08:23:11Z",
+      "author": "ChemSim",
+      "licence": "Public domain",
+      "templates": [
+        "PD-user"
+      ]
+    },
+    {
+      "name": "crane",
+      "title": "File:Crane (ISO 10628-2).svg",
+      "url": "https://upload.wikimedia.org/wikipedia/commons/8/83/Crane_%28ISO_10628-2%29.svg",
+      "sha1": "392b209dfb33a60312c8538e41a510d820f328d6",
+      "timestamp": "2023-10-14T08:28:34Z",
+      "author": "ChemSim",
+      "licence": "Public domain",
+      "templates": [
+        "PD-user"
+      ]
+    }
+  ],
+  "general": [
+    {
+      "name": "pump",
+      "title": "File:Pump.svg",
+      "url": "https://upload.wikimedia.org/wikipedia/commons/9/94/Pump.svg",
+      "sha1": "60775d10788d51d58175233aa32630c3cf2ad8dc",
+      "timestamp": "2014-01-31T10:30:19Z",
+      "author": "Snipre",
+      "licence": "Public domain",
+      "templates": [
+        "PD-self"
+      ]
+    },
+    {
+      "name": "pump-centrifugal",
+      "title": "File:Pump, centrifugal type (ISO 10628-2).svg",
+      "url": "https://upload.wikimedia.org/wikipedia/commons/4/47/Pump%2C_centrifugal_type_%28ISO_10628-2%29.svg",
+      "sha1": "8ce3a62a1503e741a88a4dcd0cb9540a1dad78c4",
+      "timestamp": "2023-10-11T12:44:33Z",
+      "author": "ChemSim",
+      "licence": "Public domain",
+      "templates": [
+        "PD-user"
+      ]
+    },
+    {
+      "name": "pump-diaphragm",
+      "title": "File:Pump, diaphragm type (ISO 10628-2).svg",
+      "url": "https://upload.wikimedia.org/wikipedia/commons/7/7f/Pump%2C_diaphragm_type_%28ISO_10628-2%29.svg",
+      "sha1": "7964dca62c5bc2880e779edb325b42667f040b50",
+      "timestamp": "2023-10-11T10:54:54Z",
+      "author": "ChemSim",
+      "licence": "Public domain",
+      "templates": [
+        "PD-user"
+      ]
+    },
+    {
+      "name": "pump-reciprocating-piston",
+      "title": "File:Pump, reciprocating piston type (ISO 10628-2).svg",
+      "url": "https://upload.wikimedia.org/wikipedia/commons/b/b8/Pump%2C_reciprocating_piston_type_%28ISO_10628-2%29.svg",
+      "sha1": "a184f6ef269d625192ea2a8397236614e9b65e47",
+      "timestamp": "2023-10-11T10:59:56Z",
+      "author": "ChemSim",
+      "licence": "Public domain",
+      "templates": [
+        "PD-user"
+      ]
+    },
+    {
+      "name": "pump-progressive-cavity",
+      "title": "File:Pump, progressive cavity type (ISO 10628-2).svg",
+      "url": "https://upload.wikimedia.org/wikipedia/commons/6/6b/Pump%2C_progressive_cavity_type_%28ISO_10628-2%29.svg",
+      "sha1": "01d84973a960619f07b706a32183415f1fc74f32",
+      "timestamp": "2023-10-11T11:07:40Z",
+      "author": "ChemSim",
+      "licence": "Public domain",
+      "templates": [
+        "PD-user"
+      ]
+    },
+    {
+      "name": "pump-screw",
+      "title": "File:Pump, screw type (ISO 10628-2).svg",
+      "url": "https://upload.wikimedia.org/wikipedia/commons/3/34/Pump%2C_screw_type_%28ISO_10628-2%29.svg",
+      "sha1": "47bca0354a0a4d717053d9dceb1149c644f66e14",
+      "timestamp": "2023-10-11T12:28:28Z",
+      "author": "ChemSim",
+      "licence": "Public domain",
+      "templates": [
+        "PD-user"
+      ]
+    },
+    {
+      "name": "pump-gear",
+      "title": "File:Pump, gear type (ISO 10628-2).svg",
+      "url": "https://upload.wikimedia.org/wikipedia/commons/d/dd/Pump%2C_gear_type_%28ISO_10628-2%29.svg",
+      "sha1": "47c9178afdb8a6ef3347a56c8435e81154591bf6",
+      "timestamp": "2023-10-11T12:39:21Z",
+      "author": "ChemSim",
+      "licence": "Public domain",
+      "templates": [
+        "PD-user"
+      ]
+    },
+    {
+      "name": "pump-liquid-general",
+      "title": "File:Pump, liquid type (general) (ISO 10628-2).svg",
+      "url": "https://upload.wikimedia.org/wikipedia/commons/8/80/Pump%2C_liquid_type_%28general%29_%28ISO_10628-2%29.svg",
+      "sha1": "50a1a41537e67195bc842287c11271c8e8a995a6",
+      "timestamp": "2023-10-11T12:46:09Z",
+      "author": "ChemSim",
+      "licence": "Public domain",
+      "templates": [
+        "PD-user"
+      ]
+    },
+    {
+      "name": "ejector-pump",
+      "title": "File:Jet pump, liquid type ejector pump (ISO 10628-2).svg",
+      "url": "https://upload.wikimedia.org/wikipedia/commons/6/67/Jet_pump%2C_liquid_type_ejector_pump_%28ISO_10628-2%29.svg",
+      "sha1": "c288c6449481ef4b5457e4416c151d2a2d86ef54",
+      "timestamp": "2023-10-11T10:49:04Z",
+      "author": "ChemSim",
+      "licence": "Public domain",
+      "templates": [
+        "PD-user"
+      ]
+    },
+    {
+      "name": "ball-valve",
+      "title": "File:Ball valve.svg",
+      "url": "https://upload.wikimedia.org/wikipedia/commons/b/be/Ball_valve.svg",
+      "sha1": "dd19d3283f498b5180d2ccb8b50dd6e57015f0d7",
+      "timestamp": "2014-01-08T10:04:46Z",
+      "author": "Snipre",
+      "licence": "Public domain",
+      "templates": [
+        "PD-self"
+      ]
+    },
+    {
+      "name": "butterfly-valve",
+      "title": "File:Butterfly valve.svg",
+      "url": "https://upload.wikimedia.org/wikipedia/commons/a/ae/Butterfly_valve.svg",
+      "sha1": "39df0b87adb085ad3cb80de25f1536dc008dc169",
+      "timestamp": "2012-03-02T16:10:13Z",
+      "author": "Snipre",
+      "licence": "Public domain",
+      "templates": [
+        "PD-self"
+      ]
+    },
+    {
+      "name": "check-valve",
+      "title": "File:Check Valve.svg",
+      "url": "https://upload.wikimedia.org/wikipedia/commons/a/a1/Check_Valve.svg",
+      "sha1": "63232d8673f7ef5308e6e0656c664ffdd5536450",
+      "timestamp": "2014-05-02T18:41:17Z",
+      "author": "Original: Micerinos Vector: Gregors",
+      "licence": "Public domain",
+      "templates": [
+        "self",
+        "PD-self"
+      ]
+    },
+    {
+      "name": "control-valve",
+      "title": "File:Control valve.svg",
+      "url": "https://upload.wikimedia.org/wikipedia/commons/7/71/Control_valve.svg",
+      "sha1": "f8110f257b03adce3af413274f397d3819928aeb",
+      "timestamp": "2007-09-21T15:48:01Z",
+      "author": "Snipre",
+      "licence": "Public domain",
+      "templates": [
+        "PD-self"
+      ]
+    },
+    {
+      "name": "diaphragm-valve",
+      "title": "File:Diaphragm valve.svg",
+      "url": "https://upload.wikimedia.org/wikipedia/commons/3/3f/Diaphragm_valve.svg",
+      "sha1": "e029ce5732f645112c32363cb5006cb48a41b850",
+      "timestamp": "2007-09-20T15:11:52Z",
+      "author": "Snipre",
+      "licence": "Public domain",
+      "templates": [
+        "PD-self"
+      ]
+    },
+    {
+      "name": "globe-valve",
+      "title": "File:Globe valve.svg",
+      "url": "https://upload.wikimedia.org/wikipedia/commons/c/c4/Globe_valve.svg",
+      "sha1": "51d9524df4a1771a5c20be5ae6904614480a03c9",
+      "timestamp": "2014-01-08T10:03:39Z",
+      "author": "Snipre",
+      "licence": "Public domain",
+      "templates": [
+        "PD-self"
+      ]
+    },
+    {
+      "name": "gate-valve",
+      "title": "File:Gate valve.svg",
+      "url": "https://upload.wikimedia.org/wikipedia/commons/8/80/Gate_valve.svg",
+      "sha1": "d08eba299542054d8c30bdd6b169cd89d72341e1",
+      "timestamp": "2014-05-15T13:10:45Z",
+      "author": "Kopiersperre",
+      "licence": "Public domain",
+      "templates": [
+        "PD-self"
+      ]
+    },
+    {
+      "name": "needle-valve",
+      "title": "File:Needle valve.svg",
+      "url": "https://upload.wikimedia.org/wikipedia/commons/a/af/Needle_valve.svg",
+      "sha1": "0a5e4cc0f80d376c713bf8b98e58102fa61133c0",
+      "timestamp": "2019-06-16T15:33:13Z",
+      "author": "Snipre",
+      "licence": "Public domain",
+      "templates": [
+        "PD-self"
+      ]
+    },
+    {
+      "name": "motor-operated-valve",
+      "title": "File:Motor operated valve.svg",
+      "url": "https://upload.wikimedia.org/wikipedia/commons/c/cd/Motor_operated_valve.svg",
+      "sha1": "908d3cd6383f38d8b5802d4f7b8516661d733d8f",
+      "timestamp": "2024-08-21T18:03:49Z",
+      "author": "Struthious Bandersnatch",
+      "licence": "Public domain",
+      "templates": [
+        "PD-self",
+        "self",
+        "Cc-zero"
+      ]
+    },
+    {
+      "name": "pressure-reducing-valve",
+      "title": "File:Pressure reducing valve.svg",
+      "url": "https://upload.wikimedia.org/wikipedia/commons/7/7e/Pressure_reducing_valve.svg",
+      "sha1": "1180f97ace6ea4c31bc8fa39b266eaa2525a3478",
+      "timestamp": "2007-09-18T15:50:10Z",
+      "author": "Snipre",
+      "licence": "Public domain",
+      "templates": [
+        "PD-self"
+      ]
+    },
+    {
+      "name": "steam-trap",
+      "title": "File:Steam trap.svg",
+      "url": "https://upload.wikimedia.org/wikipedia/commons/b/bf/Steam_trap.svg",
+      "sha1": "54a094779ef7acb825f350bb18bdfe8ea87d8f99",
+      "timestamp": "2007-09-20T15:19:00Z",
+      "author": "Snipre",
+      "licence": "Public domain",
+      "templates": [
+        "PD-self"
+      ]
+    },
+    {
+      "name": "three-way-valve",
+      "title": "File:Valve3.svg",
+      "url": "https://upload.wikimedia.org/wikipedia/commons/5/51/Valve3.svg",
+      "sha1": "40a966cdd19f823adf7b9af5d38c50ba457edd6d",
+      "timestamp": "2018-10-14T18:26:59Z",
+      "author": "Sarang",
+      "licence": "Public domain",
+      "templates": [
+        "PD-ineligible"
+      ]
+    },
+    {
+      "name": "valve-general",
+      "title": "File:Valve (general) - ISO 10628-2.svg",
+      "url": "https://upload.wikimedia.org/wikipedia/commons/2/22/Valve_%28general%29_-_ISO_10628-2.svg",
+      "sha1": "68c68279f66dc9d5add29d135bd70fab516d1d12",
+      "timestamp": "2023-10-02T13:41:18Z",
+      "author": "ChemSim",
+      "licence": "Public domain",
+      "templates": [
+        "PD-user"
+      ]
+    },
+    {
+      "name": "valve-angle",
+      "title": "File:Valve, angle type (general) - ISO 10628-2.svg",
+      "url": "https://upload.wikimedia.org/wikipedia/commons/6/63/Valve%2C_angle_type_%28general%29_-_ISO_10628-2.svg",
+      "sha1": "eb69da71dea5aa18695b05203be2f50f7ee85d0b",
+      "timestamp": "2023-10-02T13:41:46Z",
+      "author": "ChemSim",
+      "licence": "Public domain",
+      "templates": [
+        "PD-user"
+      ]
+    },
+    {
+      "name": "valve-globe-type",
+      "title": "File:Valve, globe type - ISO 10628-2.svg",
+      "url": "https://upload.wikimedia.org/wikipedia/commons/9/9c/Valve%2C_globe_type_-_ISO_10628-2.svg",
+      "sha1": "0acb63b03e2fd52bfb3d0b7a866848a78b3ac008",
+      "timestamp": "2023-10-02T13:51:27Z",
+      "author": "ChemSim",
+      "licence": "Public domain",
+      "templates": [
+        "PD-user"
+      ]
+    },
+    {
+      "name": "valve-ball-type",
+      "title": "File:Valve, ball type - ISO 10628-2.svg",
+      "url": "https://upload.wikimedia.org/wikipedia/commons/c/c3/Valve%2C_ball_type_-_ISO_10628-2.svg",
+      "sha1": "848f184d53675af2940a6847ac10d99294f8262e",
+      "timestamp": "2023-10-02T14:07:30Z",
+      "author": "ChemSim",
+      "licence": "Public domain",
+      "templates": [
+        "PD-user"
+      ]
+    },
+    {
+      "name": "valve-gate-type",
+      "title": "File:Valve, gate type - ISO 10628-2.svg",
+      "url": "https://upload.wikimedia.org/wikipedia/commons/d/de/Valve%2C_gate_type_-_ISO_10628-2.svg",
+      "sha1": "e8094aec8d309435fa4b56257a53affeda2eafc8",
+      "timestamp": "2023-10-02T14:18:54Z",
+      "author": "ChemSim",
+      "licence": "Public domain",
+      "templates": [
+        "PD-user"
+      ]
+    },
+    {
+      "name": "valve-butterfly-form-1",
+      "title": "File:Valve, butterfly type (form 1) - ISO 10628-2.svg",
+      "url": "https://upload.wikimedia.org/wikipedia/commons/6/65/Valve%2C_butterfly_type_%28form_1%29_-_ISO_10628-2.svg",
+      "sha1": "e033194ab9615f9e11f8f9fc71657674a659b9fa",
+      "timestamp": "2023-10-02T14:22:47Z",
+      "author": "ChemSim",
+      "licence": "Public domain",
+      "templates": [
+        "PD-user"
+      ]
+    },
+    {
+      "name": "valve-control-continuous",
+      "title": "File:Valve, control type, continuously operated - ISO 10628-2.svg",
+      "url": "https://upload.wikimedia.org/wikipedia/commons/8/8c/Valve%2C_control_type%2C_continuously_operated_-_ISO_10628-2.svg",
+      "sha1": "a801e7e3897c4d4950c4a42779f7a67f8984b39e",
+      "timestamp": "2023-10-02T16:32:12Z",
+      "author": "ChemSim",
+      "licence": "Public domain",
+      "templates": [
+        "PD-user"
+      ]
+    },
+    {
+      "name": "valve-three-way-general",
+      "title": "File:Valve, three way type (general) - ISO 10628-2.svg",
+      "url": "https://upload.wikimedia.org/wikipedia/commons/c/c0/Valve%2C_three_way_type_%28general%29_-_ISO_10628-2.svg",
+      "sha1": "978884697c72d948327420f3ac615bba095c38a8",
+      "timestamp": "2023-10-02T13:45:55Z",
+      "author": "ChemSim",
+      "licence": "Public domain",
+      "templates": [
+        "PD-user"
+      ]
+    },
+    {
+      "name": "check-valve-general",
+      "title": "File:Check valve (general) (ISO 10628-2).svg",
+      "url": "https://upload.wikimedia.org/wikipedia/commons/0/03/Check_valve_%28general%29_%28ISO_10628-2%29.svg",
+      "sha1": "1b2be9a27e15e2f3560b067ef0105cf48cb3660f",
+      "timestamp": "2023-10-10T08:11:00Z",
+      "author": "ChemSim",
+      "licence": "Public domain",
+      "templates": [
+        "PD-user"
+      ]
+    },
+    {
+      "name": "swing-check-valve-form-1",
+      "title": "File:Swing check valve (form 1) (ISO 10628-2).svg",
+      "url": "https://upload.wikimedia.org/wikipedia/commons/7/7e/Swing_check_valve_%28form_1%29_%28ISO_10628-2%29.svg",
+      "sha1": "321d719d298afd496db7db78d04c2e1b5fcf8283",
+      "timestamp": "2023-10-10T08:01:12Z",
+      "author": "ChemSim",
+      "licence": "Public domain",
+      "templates": [
+        "PD-user"
+      ]
+    },
+    {
+      "name": "safety-valve-globe",
+      "title": "File:Safety valve, spring loaded, globe type (ISO 10628-2).svg",
+      "url": "https://upload.wikimedia.org/wikipedia/commons/0/01/Safety_valve%2C_spring_loaded%2C_globe_type_%28ISO_10628-2%29.svg",
+      "sha1": "6b5fd024f80e598aec9badae85567f600bd1d0e6",
+      "timestamp": "2023-10-08T17:40:20Z",
+      "author": "ChemSim",
+      "licence": "Public domain",
+      "templates": [
+        "PD-user"
+      ]
+    },
+    {
+      "name": "breather-valve",
+      "title": "File:Breather valve (ISO 10628-2).svg",
+      "url": "https://upload.wikimedia.org/wikipedia/commons/a/a1/Breather_valve_%28ISO_10628-2%29.svg",
+      "sha1": "8c9e9aa408907d3e27db3879d2fcb8123cb777bc",
+      "timestamp": "2023-10-08T16:26:35Z",
+      "author": "ChemSim",
+      "licence": "Public domain",
+      "templates": [
+        "PD-user"
+      ]
+    },
+    {
+      "name": "actuator-manual",
+      "title": "File:Actuator (manual) (DIN 2429).svg",
+      "url": "https://upload.wikimedia.org/wikipedia/commons/1/1b/Actuator_%28manual%29_%28DIN_2429%29.svg",
+      "sha1": "5151c7c1fc64b01baf8ef8da0f8222515fec8f8b",
+      "timestamp": "2023-10-20T14:24:35Z",
+      "author": "Chem Sim 2001",
+      "licence": "Public domain",
+      "templates": [
+        "PD-user"
+      ]
+    },
+    {
+      "name": "actuator-diaphragm",
+      "title": "File:Actuator (diaphragm) (DIN 2429).svg",
+      "url": "https://upload.wikimedia.org/wikipedia/commons/d/d9/Actuator_%28diaphragm%29_%28DIN_2429%29.svg",
+      "sha1": "c6247d1ade12cec5fd731569588c3bbba083b77e",
+      "timestamp": "2023-10-20T14:29:28Z",
+      "author": "Chem Sim 2001",
+      "licence": "Public domain",
+      "templates": [
+        "PD-user"
+      ]
+    },
+    {
+      "name": "actuator-motor",
+      "title": "File:Actuator (motor) (DIN 2429).svg",
+      "url": "https://upload.wikimedia.org/wikipedia/commons/e/e8/Actuator_%28motor%29_%28DIN_2429%29.svg",
+      "sha1": "eb727c5a28008aedc1b14e143eba3bf86342c446",
+      "timestamp": "2023-10-20T14:34:44Z",
+      "author": "Chem Sim 2001",
+      "licence": "Public domain",
+      "templates": [
+        "PD-user"
+      ]
+    },
+    {
+      "name": "actuator-general",
+      "title": "File:Actuator (general) (DIN 2429).svg",
+      "url": "https://upload.wikimedia.org/wikipedia/commons/7/7e/Actuator_%28general%29_%28DIN_2429%29.svg",
+      "sha1": "f2635a3bbc584579cb235ff78884c34ee6d413b3",
+      "timestamp": "2023-10-20T14:38:51Z",
+      "author": "Chem Sim 2001",
+      "licence": "Public domain",
+      "templates": [
+        "PD-user"
+      ]
+    },
+    {
+      "name": "pipe",
+      "title": "File:Pipe.svg",
+      "url": "https://upload.wikimedia.org/wikipedia/commons/2/2e/Pipe.svg",
+      "sha1": "a4bcf014c06e7cc9246a0f1b6ddb47c854178a4b",
+      "timestamp": "2007-09-18T15:47:17Z",
+      "author": "Snipre",
+      "licence": "Public domain",
+      "templates": [
+        "PD-self"
+      ]
+    },
+    {
+      "name": "pipeline",
+      "title": "File:Pipeline (ISO 10628-2).svg",
+      "url": "https://upload.wikimedia.org/wikipedia/commons/4/4a/Pipeline_%28ISO_10628-2%29.svg",
+      "sha1": "182b74e38aab714f3afd9d2a63276e1e1676de98",
+      "timestamp": "2023-10-08T08:15:26Z",
+      "author": "ChemSim",
+      "licence": "Public domain",
+      "templates": [
+        "PD-user"
+      ]
+    },
+    {
+      "name": "insulated-pipe",
+      "title": "File:Insulated pipe.svg",
+      "url": "https://upload.wikimedia.org/wikipedia/commons/d/d9/Insulated_pipe.svg",
+      "sha1": "24214bb49b798f1747c02b01e96f80efe9d6467f",
+      "timestamp": "2007-09-18T15:47:57Z",
+      "author": "Snipre",
+      "licence": "Public domain",
+      "templates": [
+        "PD-self"
+      ]
+    },
+    {
+      "name": "reducer",
+      "title": "File:Reducer (ISO 10628-2).svg",
+      "url": "https://upload.wikimedia.org/wikipedia/commons/1/1d/Reducer_%28ISO_10628-2%29.svg",
+      "sha1": "245b081469c2be052568cf26359fda7308af567e",
+      "timestamp": "2023-10-08T10:00:04Z",
+      "author": "ChemSim",
+      "licence": "Public domain",
+      "templates": [
+        "PD-user"
+      ]
+    },
+    {
+      "name": "flanged-connection",
+      "title": "File:Flanged connection (ISO 10628-2).svg",
+      "url": "https://upload.wikimedia.org/wikipedia/commons/a/a1/Flanged_connection_%28ISO_10628-2%29.svg",
+      "sha1": "8340d4dd8d703dda0af2a1d27c586351b783539e",
+      "timestamp": "2023-10-08T10:03:32Z",
+      "author": "ChemSim",
+      "licence": "Public domain",
+      "templates": [
+        "PD-user"
+      ]
+    },
+    {
+      "name": "rupture-disc",
+      "title": "File:Rupture disc (ISO 10628-2).svg",
+      "url": "https://upload.wikimedia.org/wikipedia/commons/9/9d/Rupture_disc_%28ISO_10628-2%29.svg",
+      "sha1": "551733ca5cbb4e46dbe02b970ed329d0fbaebc99",
+      "timestamp": "2023-10-08T16:58:34Z",
+      "author": "ChemSim",
+      "licence": "Public domain",
+      "templates": [
+        "PD-user"
+      ]
+    },
+    {
+      "name": "viewing-glass",
+      "title": "File:Viewing glass.svg",
+      "url": "https://upload.wikimedia.org/wikipedia/commons/4/4a/Viewing_glass.svg",
+      "sha1": "60a8473e0eded0f6e806be6a56114c8f5c62f577",
+      "timestamp": "2007-09-18T16:11:52Z",
+      "author": "Snipre",
+      "licence": "Public domain",
+      "templates": [
+        "PD-self"
+      ]
+    },
+    {
+      "name": "gas-bottle",
+      "title": "File:Gas bottle.svg",
+      "url": "https://upload.wikimedia.org/wikipedia/commons/b/b3/Gas_bottle.svg",
+      "sha1": "03ddc34c1d3d9116aba9e0881fd2dab06a2b347c",
+      "timestamp": "2007-09-21T15:12:21Z",
+      "author": "Snipre",
+      "licence": "Public domain",
+      "templates": [
+        "PD-self"
+      ]
+    }
+  ]
+}

@@ -1,7 +1,7 @@
 import { cleanup, render, screen, within } from "@testing-library/react";
 import type { ReactElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { expect } from "vitest";
+import { expect, vi } from "vitest";
 
 import { mimicCoreSymbolSchema, mimicSymbolSchema } from "@bms/shared/contracts";
 import type { GeneratedSiteAssetDto, MimicNodeDto } from "@bms/shared";
@@ -10,10 +10,46 @@ import type { SiteLiveReadings } from "../../hooks/use-site-live-readings";
 import { layoutGeometry } from "../../lib/mimic-geometry";
 import { LAYOUT } from "../../lib/mimic-geometry.spec";
 import { MIMIC_PANEL_CLASSES, type MimicGlyphKind } from "../../lib/mimic";
-import { MimicGlyph } from "./mimic-glyphs";
+import { MimicGlyph, matrixScale } from "./mimic-glyphs";
 import { MimicScene } from "./mimic-scene";
 import { MIMIC_SHAPE_ATTRS, MIMIC_SHAPE_TAGS, librarySymbolShapes } from "./mimic-symbol-libraries";
 import { NO_LIVE_READINGS } from "./mimic-widget";
+
+/** S21 — the click spy the hostile stub shapes carry; hoisted so the `vi.mock` factory can read it. */
+const HOSTILE = vi.hoisted(() => ({ click: vi.fn() }));
+
+// S18 — a stubbed key whose one shape carries a fixed identity-matrix `transform`, independent of
+// the vendored wmpid transforms. S21 — three stubbed keys whose shape objects also carry keys
+// outside the whitelist, one per render site: stroke, stroke with a transform, and fill.
+vi.mock("./mimic-symbol-libraries", async (importOriginal) => {
+  const original = await importOriginal<typeof import("./mimic-symbol-libraries")>();
+  const hostile = (extra: Record<string, string>) => [
+    [
+      "path",
+      {
+        d: "M0 0 L10 10",
+        ...extra,
+        style: { display: "none" },
+        dangerouslySetInnerHTML: { __html: '<circle data-planted="1"></circle>' },
+        onClick: HOSTILE.click,
+        href: "#planted",
+      },
+    ],
+  ];
+  const stubs: Record<string, { style: "stroke" | "fill"; shapes: unknown }> = {
+    "wmpid:test": { style: "stroke", shapes: [["path", { d: "M0 0 L10 10", transform: "matrix(1,0,0,1,2,3)" }]] },
+    "wmpid:hostile": { style: "stroke", shapes: hostile({}) },
+    "wmpid:hostile-transformed": { style: "stroke", shapes: hostile({ transform: "matrix(1,0,0,1,2,3)" }) },
+    "mdi:hostile": { style: "fill", shapes: hostile({}) },
+  };
+  return {
+    ...original,
+    librarySymbolShapes: (key: string) =>
+      Object.prototype.hasOwnProperty.call(stubs, key)
+        ? (stubs[key] as ReturnType<typeof original.librarySymbolShapes>)
+        : original.librarySymbolShapes(key),
+  };
+});
 
 /** Every library key, core keys excluded, in shared-registry order (D1: core, then each library). */
 const LIBRARY_KEYS = mimicSymbolSchema.options.filter(
@@ -332,4 +368,125 @@ export function everyLibraryShapeUsesWhitelistedTagsAndAttrs(): void {
       }
     }
   }
+}
+
+/** S18 — a shape carrying a `transform` renders it verbatim, with no attribute outside the whitelist. */
+export function aShapeCarryingATransformRendersItVerbatim(): void {
+  render(
+    <svg>
+      <MimicGlyph kind={"wmpid:test" as MimicGlyphKind} x={0} y={0} size={24} className="stroke-ink" />
+    </svg>,
+  );
+  const glyph = screen.getByTestId("mimic-glyph");
+  expect(glyph.getAttribute("data-glyph-fallback")).toBeNull();
+  const path = glyph.querySelector("path");
+  expect(path).not.toBeNull();
+  expect(path?.getAttribute("transform")).toBe("matrix(1,0,0,1,2,3)");
+  for (const name of path?.getAttributeNames() ?? []) {
+    expect((MIMIC_SHAPE_ATTRS as readonly string[]).includes(name), `attribute ${name}`).toBe(true);
+  }
+}
+
+/** The vendored library keys that hold at least one shape carrying a `transform`, in registry order. */
+function keysWithATransformedShape(): string[] {
+  return LIBRARY_KEYS.filter((key) => librarySymbolShapes(key)?.shapes.some(([, attrs]) => "transform" in attrs));
+}
+
+/** S20a — every vendored `transform` is one `matrix(...)`, the only form `matrixScale` reads (positive control: >= 1). */
+export function everyVendoredTransformIsOneMatrix(): void {
+  const keys = keysWithATransformedShape();
+  expect(keys.length, "keys holding a transformed shape").toBeGreaterThan(0);
+  for (const key of keys) {
+    for (const [, attrs] of librarySymbolShapes(key)!.shapes) {
+      const transform = (attrs as { transform?: string }).transform;
+      if (transform === undefined) continue;
+      expect(transform, key).toMatch(/^matrix\([^()]*\)$/);
+    }
+  }
+}
+
+/** S20b — `matrixScale` is the square root of |ad − bc|, and 1 for a degenerate or unreadable transform. */
+export function matrixScaleReadsTheLinearPart(): void {
+  expect(matrixScale("matrix(0,0.5,0.5,0,3,4)")).toBeCloseTo(0.5, 10);
+  expect(matrixScale("matrix(2 0 0 0.5 0 0)")).toBeCloseTo(1, 10);
+  expect(matrixScale("matrix(0,0,0,0,0,0)")).toBe(1);
+  expect(matrixScale("rotate(30)")).toBe(1);
+  expect(matrixScale(undefined)).toBe(1);
+}
+
+/**
+ * S20c — a transformed shape of a stroke library draws its stroke at the glyph's 1.5 units: its
+ * wrapper `g` divides the width by the matrix scale. A baked sibling sits directly under the glyph.
+ */
+export function aTransformedShapeKeepsTheGlyphStrokeWidth(): void {
+  const key = keysWithATransformedShape().find((k) =>
+    librarySymbolShapes(k)!.shapes.some(([, attrs]) => !("transform" in attrs)),
+  );
+  expect(key, "a key holding a transformed and a baked shape").toBeDefined();
+  const { shapes, style } = librarySymbolShapes(key!)!;
+  expect(style).toBe("stroke");
+  render(
+    <svg>
+      <MimicGlyph kind={key as MimicGlyphKind} x={0} y={0} size={24} className="stroke-ink" />
+    </svg>,
+  );
+  const glyph = screen.getByTestId("mimic-glyph");
+  const all = [...glyph.querySelectorAll(SHAPE_SELECTOR)];
+  const transformed = all.filter((el) => el.hasAttribute("transform"));
+  const baked = all.filter((el) => !el.hasAttribute("transform"));
+  expect(transformed.length).toBe(shapes.filter(([, attrs]) => "transform" in attrs).length);
+  expect(baked.length).toBeGreaterThan(0);
+  for (const el of transformed) {
+    const wrapper = el.parentElement!;
+    expect(wrapper.tagName.toLowerCase()).toBe("g");
+    expect(wrapper).not.toBe(glyph);
+    const scale = matrixScale(el.getAttribute("transform") ?? undefined);
+    expect(scale).toBeLessThan(1);
+    expect(Number(wrapper.getAttribute("stroke-width"))).toBeCloseTo(1.5 / scale, 3);
+  }
+  for (const el of baked) {
+    expect(el.parentElement).toBe(glyph);
+    expect(el.hasAttribute("stroke-width")).toBe(false);
+  }
+}
+
+/**
+ * S21 — ADR 0086 decision 6: the renderer copies only the whitelisted keys into props. A stubbed
+ * shape object also carrying `style`, `dangerouslySetInnerHTML`, `onClick` and `href` draws its
+ * path with `d` (and its `transform`) and none of the four. One claim per render site, so a
+ * mutation that restores one spread reddens that claim alone.
+ */
+function aStoredShapeObjectIsNeverSpread(kind: string, transform: string | null): void {
+  HOSTILE.click.mockClear();
+  render(
+    <svg>
+      <MimicGlyph kind={kind as MimicGlyphKind} x={0} y={0} size={24} className="stroke-ink" />
+    </svg>,
+  );
+  const glyph = screen.getByTestId("mimic-glyph");
+  expect(glyph.getAttribute("data-glyph-fallback")).toBeNull();
+  const path = glyph.querySelector("path");
+  expect(path?.getAttribute("d")).toBe("M0 0 L10 10");
+  expect(path?.getAttribute("transform") ?? null).toBe(transform);
+  expect(path?.hasAttribute("style")).toBe(false);
+  expect(path?.hasAttribute("href")).toBe(false);
+  expect(path?.innerHTML).toBe("");
+  expect(glyph.querySelector("[data-planted]")).toBeNull();
+  path?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+  expect(HOSTILE.click).not.toHaveBeenCalled();
+}
+
+/** S21a — the stroke site, a shape with no transform. */
+export function strokeShapeIsNotSpread(): void {
+  aStoredShapeObjectIsNeverSpread("wmpid:hostile", null);
+}
+
+/** S21b — the stroke site, a shape inside its stroke-width wrapper. */
+export function transformedStrokeShapeIsNotSpread(): void {
+  aStoredShapeObjectIsNeverSpread("wmpid:hostile-transformed", "matrix(1,0,0,1,2,3)");
+}
+
+/** S21c — the fill site. */
+export function fillShapeIsNotSpread(): void {
+  aStoredShapeObjectIsNeverSpread("mdi:hostile", null);
 }

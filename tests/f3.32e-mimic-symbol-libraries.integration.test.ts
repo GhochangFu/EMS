@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -28,7 +28,7 @@ requireIntegrationDb({
   item: "F3.32e",
   label: "mimic symbol libraries tests",
   because:
-    "the symbol foreign key, the symbol_libraries CHECK, the bms_tenant REVOKE and the 438 " +
+    "the symbol foreign key, the symbol_libraries CHECK, the bms_tenant REVOKE and the " +
     "library rows are things only a migrated database holds or enforces, so a green run " +
     "without a database asserts nothing about any of them.",
 });
@@ -271,4 +271,82 @@ describe.skipIf(!has)("F3.32e — migration 0090 against a live database", () =>
       expect(rows.rows[0]?.ok).toBe(true);
     });
   }
+
+  // F3.32f slice 2 / ADR 0086 decision 9 — nested here to reuse inTx, probe and INSERT_UNIT.
+  describe("F3.32f slice 2 — migration 0092: qet, wmpid and drawio", () => {
+    // The counts are restated, not imported: the static twin ties these literals to the generated
+    // modules, so a curation change that forgets the migration reddens there, and a migration that
+    // lost rows reddens here.
+    const LIBRARIES_0092 = { qet: 137, wmpid: 157, drawio: 131 } as const;
+    const SEVEN = ["core", "tabler", "lucide", "mdi", "qet", "wmpid", "drawio"] as const;
+
+    // Named codes, not a count of every row: a later slice's library must not redden this (F4.157).
+    // No `active` filter, for the reason above: mimic-layouts.service.integration.spec.ts retires
+    // lucide for committed windows. 0092's DO $$ block and the static twin hold "active".
+    it("the tenant reads the seven libraries, in sort order", async () => {
+      await inTx(async (run) => {
+        expect((await run("SELECT current_user AS u")).rows[0]?.u).toBe("bms_tenant");
+        const rows = await run(
+          `SELECT code FROM bms.mimic_symbol_libraries WHERE code = ANY($1::text[]) ORDER BY sort_order`,
+          [[...SEVEN]],
+        );
+        expect(rows.rows.map((r) => r.code)).toEqual([...SEVEN]);
+      });
+    });
+
+    for (const [code, count] of Object.entries(LIBRARIES_0092)) {
+      it(`the tenant reads ${count} ${code} symbols`, async () => {
+        await inTx(async (run) => {
+          const rows = await run(
+            `SELECT count(*)::int AS n FROM bms.mimic_symbols WHERE library_code = $1`,
+            [code],
+          );
+          expect(rows.rows[0]?.n).toBe(count);
+        });
+      });
+    }
+
+    for (const code of Object.keys(LIBRARIES_0092)) {
+      it(`a unit with the first ${code}: symbol is written (23503 would mean a missing row)`, async () => {
+        await inTx(async (run, org, layout) => {
+          const first = (
+            await run(`SELECT key FROM bms.mimic_symbols WHERE library_code = $1 ORDER BY sort_order LIMIT 1`, [code])
+          ).rows[0]?.key as string;
+          expect(first).toMatch(new RegExp(`^${code}:`));
+          const { code: err, message } = await probe(run, INSERT_UNIT, [org, layout, "u", first, first]);
+          expect(message, `insert of '${first}' (code ${err})`).toBe("");
+        });
+      });
+    }
+
+    it("symbol_libraries = '{core,qet}' is accepted", async () => {
+      await inTx(async (run, _org, layout) => {
+        await run(`UPDATE bms.mimic_layouts SET symbol_libraries = '{core,qet}' WHERE id = $1`, [layout]);
+        const rows = await run(`SELECT symbol_libraries::text[] AS libs FROM bms.mimic_layouts WHERE id = $1`, [layout]);
+        expect(rows.rows).toEqual([{ libs: ["core", "qet"] }]);
+      });
+    });
+
+    it("the tenant's INSERT into bms.mimic_symbols is refused: permission denied, 42501", async () => {
+      await inTx(async (run) => {
+        const { code, message } = await probe(
+          run,
+          `INSERT INTO bms.mimic_symbols (key, library_code, label, group_code, sort_order)
+           VALUES ($1, 'qet', 'x', 'general', 9990)`,
+          [`qet:f332f-${RUN}`],
+        );
+        expect(code, message).toBe("42501");
+        expect(message).toContain("permission denied for table mimic_symbols");
+      });
+    });
+
+    // The migration-verified-against-draft-bytes check: drizzle stores sha256 of the file's text, in
+    // drizzle.__drizzle_migrations (the tests/f3.32f-carried-fixes.integration.test.ts precedent).
+    it("drizzle.__drizzle_migrations holds 0092 by the sha256 of the file's bytes (superuser read)", async () => {
+      const file = join(repoRoot, "packages/db/drizzle/0092_mimic_third_party_symbol_libraries.sql");
+      const hash = createHash("sha256").update(readFileSync(file).toString()).digest("hex");
+      const rows = await client.query("SELECT hash FROM drizzle.__drizzle_migrations WHERE hash = $1", [hash]);
+      expect(rows.rows, `no applied migration has hash ${hash}`).toHaveLength(1);
+    });
+  });
 });

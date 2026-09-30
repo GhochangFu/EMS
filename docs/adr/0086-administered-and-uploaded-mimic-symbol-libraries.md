@@ -21,6 +21,8 @@ release ships without it; the slices merged before the cutoff ship.
 
 Slice 1 implementation notes (2026-09-29): migration `0091_mimic_lucide_licence`; gates `tests/f3.32f-carried-fixes.test.ts` and its `.integration` twin; the palette filter of decision 5 lands with decision 7's endpoint in slice 3 (plan ruling R1). The unit-symbol exemption is by symbol key, not by unit: a re-save may place a new unit with a symbol the stored layout already uses, even when that symbol or its library is retired; any other symbol must be active and in a live library (plan ruling R7, owner-accepted 2026-09-29).
 
+Slice 2 implementation notes (2026-09-30): the shape grammar with `transform` is `packages/shared/src/contracts/mimic-shapes.ts`; the converter building blocks (`scripts/mimic-symbols/lib/`) are gated by `tests/f3.32f-mimic-symbol-converters.test.ts`, listed in the root `typecheck:tests` script.
+
 Builds on [ADR 0084](./0084-mimic-symbol-libraries.md) and delivers its
 decision 10. Amends ADR 0084 decisions 3 (the foreign key is no longer the only
 symbol reference), 5 (path data can also be stored data, for an uploaded

@@ -1,8 +1,11 @@
 import { z } from "zod";
 
+import { DRAWIO_SYMBOL_KEYS } from "../mimic-symbol-libraries/drawio.generated";
 import { LUCIDE_SYMBOL_KEYS } from "../mimic-symbol-libraries/lucide.generated";
 import { MDI_SYMBOL_KEYS } from "../mimic-symbol-libraries/mdi.generated";
+import { QET_SYMBOL_KEYS } from "../mimic-symbol-libraries/qet.generated";
 import { TABLER_SYMBOL_KEYS } from "../mimic-symbol-libraries/tabler.generated";
+import { WMPID_SYMBOL_KEYS } from "../mimic-symbol-libraries/wmpid.generated";
 
 /**
  * `F3.32c` / ADR 0081 — the mimic layout library (`/api/v1/mimic-layouts`) response contracts
@@ -84,10 +87,11 @@ export const mimicCoreSymbolSchema = z.enum([
 ]);
 
 /**
- * `F3.32e` / ADR 0084 decision 4 — the four preloaded symbol libraries, in palette order. The
- * rows of `bms.mimic_symbol_libraries` (migration `0090`) restate them.
+ * `F3.32e` / ADR 0084 decision 4 — the four preloaded symbol libraries, then (`F3.32f` / ADR 0086
+ * decision 9) QElectroTech, Wikimedia Commons P&ID and draw.io, in palette order. The rows of
+ * `bms.mimic_symbol_libraries` restate them: migration `0090` the first four, `0092` the other three.
  */
-export const mimicSymbolLibraryCodeSchema = z.enum(["core", "tabler", "lucide", "mdi"]);
+export const mimicSymbolLibraryCodeSchema = z.enum(["core", "tabler", "lucide", "mdi", "qet", "wmpid", "drawio"]);
 
 /**
  * The eight palette groups (ADR 0082 decision 2), in order. `mimic_symbols_group_code_check`
@@ -116,7 +120,15 @@ export type MimicSymbolGroupCode = (typeof MIMIC_SYMBOL_GROUP_CODES)[number];
  * option, about 7 KB for each refused symbol.
  */
 export const mimicSymbolSchema = z.enum(
-  [...mimicCoreSymbolSchema.options, ...TABLER_SYMBOL_KEYS, ...LUCIDE_SYMBOL_KEYS, ...MDI_SYMBOL_KEYS],
+  [
+    ...mimicCoreSymbolSchema.options,
+    ...TABLER_SYMBOL_KEYS,
+    ...LUCIDE_SYMBOL_KEYS,
+    ...MDI_SYMBOL_KEYS,
+    ...QET_SYMBOL_KEYS,
+    ...WMPID_SYMBOL_KEYS,
+    ...DRAWIO_SYMBOL_KEYS,
+  ],
   { errorMap: () => ({ message: "Unknown mimic symbol" }) },
 );
 

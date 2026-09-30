@@ -1,6 +1,9 @@
+import { DRAWIO_SYMBOL_KEYS } from "../mimic-symbol-libraries/drawio.generated";
 import { LUCIDE_SYMBOL_KEYS } from "../mimic-symbol-libraries/lucide.generated";
 import { MDI_SYMBOL_KEYS } from "../mimic-symbol-libraries/mdi.generated";
+import { QET_SYMBOL_KEYS } from "../mimic-symbol-libraries/qet.generated";
 import { TABLER_SYMBOL_KEYS } from "../mimic-symbol-libraries/tabler.generated";
+import { WMPID_SYMBOL_KEYS } from "../mimic-symbol-libraries/wmpid.generated";
 import { mimicWidgetNodesSchema } from "./mimic";
 import {
   MIMIC_LAYOUT_BOUNDS,
@@ -111,7 +114,15 @@ export function mimicCoreSymbolsAreTheTwentyNineInOrder(): void {
 
 /** `F3.32e` / ADR 0084 — every symbol is the core set, then each library's keys in registry order. */
 export function mimicSymbolSchemaIsCoreThenEachLibraryInRegistryOrder(): void {
-  const expected = [...mimicCoreSymbolSchema.options, ...TABLER_SYMBOL_KEYS, ...LUCIDE_SYMBOL_KEYS, ...MDI_SYMBOL_KEYS];
+  const expected = [
+    ...mimicCoreSymbolSchema.options,
+    ...TABLER_SYMBOL_KEYS,
+    ...LUCIDE_SYMBOL_KEYS,
+    ...MDI_SYMBOL_KEYS,
+    ...QET_SYMBOL_KEYS,
+    ...WMPID_SYMBOL_KEYS,
+    ...DRAWIO_SYMBOL_KEYS,
+  ];
   assert(expected.length >= 29 + 300, `only ${expected.length} symbols`);
   assert(JSON.stringify(mimicSymbolSchema.options) === JSON.stringify(expected), "the symbol union is out of order");
   assert(new Set(expected).size === expected.length, "a symbol key repeats");
@@ -128,9 +139,19 @@ export function mimicSymbolRefusalIsShort(): void {
 
 /** A library key names its library and fits `mimic_layout_nodes.symbol`'s varchar(64). */
 export function everyLibraryKeyNamesItsLibraryAndFitsSixtyFour(): void {
-  const byLibrary = { tabler: TABLER_SYMBOL_KEYS, lucide: LUCIDE_SYMBOL_KEYS, mdi: MDI_SYMBOL_KEYS };
+  // F3.32f: the 0090 libraries hold at least 100 keys each; the slice 2 libraries' counts are
+  // gated with migration 0092, so here they only name their library.
+  const floors = new Set(["tabler", "lucide", "mdi"]);
+  const byLibrary = {
+    tabler: TABLER_SYMBOL_KEYS,
+    lucide: LUCIDE_SYMBOL_KEYS,
+    mdi: MDI_SYMBOL_KEYS,
+    qet: QET_SYMBOL_KEYS,
+    wmpid: WMPID_SYMBOL_KEYS,
+    drawio: DRAWIO_SYMBOL_KEYS,
+  };
   for (const [code, keys] of Object.entries(byLibrary)) {
-    assert(keys.length >= 100, `${code} has ${keys.length} keys`);
+    if (floors.has(code)) assert(keys.length >= 100, `${code} has ${keys.length} keys`);
     for (const key of keys) {
       assert(key.startsWith(`${code}:`), `${key} does not name ${code}`);
       assert(key.length <= 64, `${key} is longer than 64`);
@@ -141,10 +162,12 @@ export function everyLibraryKeyNamesItsLibraryAndFitsSixtyFour(): void {
   }
 }
 
-/** The four libraries of ADR 0084 decision 4, in palette order. */
-export function libraryCodesAreTheFour(): void {
+/** The four libraries of ADR 0084 decision 4, then the three of ADR 0086 decision 9, in palette
+ * order. Mutation: drop "drawio" from `mimicSymbolLibraryCodeSchema` → this claim reddens. */
+export function libraryCodesAreTheSevenInPaletteOrder(): void {
   const codes = mimicSymbolLibraryCodeSchema.options;
-  assert(JSON.stringify(codes) === JSON.stringify(["core", "tabler", "lucide", "mdi"]), `codes: ${JSON.stringify(codes)}`);
+  const expected = ["core", "tabler", "lucide", "mdi", "qet", "wmpid", "drawio"];
+  assert(JSON.stringify(codes) === JSON.stringify(expected), `codes: ${JSON.stringify(codes)}`);
 }
 
 /** The eight palette groups of ADR 0082 decision 2, in order. */

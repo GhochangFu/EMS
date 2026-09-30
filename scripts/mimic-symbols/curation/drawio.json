@@ -1,0 +1,673 @@
+{
+  "water": [
+    {
+      "name": "tank",
+      "set": "pid/vessels",
+      "shape": "Tank"
+    },
+    {
+      "name": "tank-conical-bottom",
+      "set": "pid/vessels",
+      "shape": "Tank (Conical Bottom)"
+    },
+    {
+      "name": "tank-conical-roof",
+      "set": "pid/vessels",
+      "shape": "Tank (Conical Roof)"
+    },
+    {
+      "name": "tank-dished-roof",
+      "set": "pid/vessels",
+      "shape": "Tank (Dished Roof)"
+    },
+    {
+      "name": "tank-floating-roof",
+      "set": "pid/vessels",
+      "shape": "Tank (Floating Roof)"
+    },
+    {
+      "name": "concrete-tank",
+      "set": "pid/vessels",
+      "shape": "Concrete Tank"
+    },
+    {
+      "name": "double-concrete-tank",
+      "set": "pid/vessels",
+      "shape": "Double Concrete Tank"
+    },
+    {
+      "name": "settling-tank",
+      "set": "pid/vessels",
+      "shape": "Settling Tank"
+    },
+    {
+      "name": "container-tank-cistern",
+      "set": "pid/vessels",
+      "shape": "Container, Tank, Cistern"
+    },
+    {
+      "name": "pressurized-vessel",
+      "set": "pid/vessels",
+      "shape": "Pressurized Vessel"
+    },
+    {
+      "name": "storage-sphere",
+      "set": "pid/vessels",
+      "shape": "Storage Sphere"
+    },
+    {
+      "name": "vessel-dome",
+      "set": "pid/vessels",
+      "shape": "Vessel (Dome)"
+    },
+    {
+      "name": "filter",
+      "set": "pid/filters",
+      "shape": "Filter"
+    },
+    {
+      "name": "liquid-filter",
+      "set": "pid/filters",
+      "shape": "Liquid Filter"
+    },
+    {
+      "name": "liquid-filter-ion-exchanger",
+      "set": "pid/filters",
+      "shape": "Liquid Filter (Ion Exchanger)"
+    },
+    {
+      "name": "liquid-filter-bag-candle-cartridge",
+      "set": "pid/filters",
+      "shape": "Liquid Filter (Bag, Candle, Cartridge)"
+    },
+    {
+      "name": "liquid-filter-fixed-bed",
+      "set": "pid/filters",
+      "shape": "Liquid Filter (Fixed Bed)"
+    },
+    {
+      "name": "press-filter",
+      "set": "pid/filters",
+      "shape": "Press Filter"
+    },
+    {
+      "name": "submersible-pump",
+      "set": "pid/pumps",
+      "shape": "Submersible Pump"
+    },
+    {
+      "name": "sump-pump",
+      "set": "pid/pumps",
+      "shape": "Sump Pump"
+    },
+    {
+      "name": "knife-valve",
+      "set": "pid/valves",
+      "shape": "Knife Valve"
+    },
+    {
+      "name": "pinch-valve",
+      "set": "pid/valves",
+      "shape": "Pinch Valve"
+    },
+    {
+      "name": "screening-device-sieve-strainer-coarse-rake",
+      "set": "pid/misc",
+      "shape": "Screening Device, Sieve, Strainer (Coarse Rake)"
+    },
+    {
+      "name": "centrifuge-decanter-screw-solid-shell",
+      "set": "pid/centrifuges",
+      "shape": "Centrifuge, Decanter (Screw, Solid Shell)"
+    }
+  ],
+  "general": [
+    {
+      "name": "centrifugal-pump-1",
+      "set": "pid/pumps",
+      "shape": "Centrifugal Pump 1"
+    },
+    {
+      "name": "centrifugal-pump-2",
+      "set": "pid/pumps",
+      "shape": "Centrifugal Pump 2"
+    },
+    {
+      "name": "feed-pump",
+      "set": "pid/pumps",
+      "shape": "Feed Pump"
+    },
+    {
+      "name": "gear-pump",
+      "set": "pid/pumps",
+      "shape": "Gear Pump"
+    },
+    {
+      "name": "peristaltic",
+      "set": "pid/pumps",
+      "shape": "Peristaltic"
+    },
+    {
+      "name": "screw-pump",
+      "set": "pid/pumps",
+      "shape": "Screw Pump"
+    },
+    {
+      "name": "vacuum-pump",
+      "set": "pid/pumps",
+      "shape": "Vacuum Pump"
+    },
+    {
+      "name": "vertical-pump",
+      "set": "pid/pumps",
+      "shape": "Vertical Pump"
+    },
+    {
+      "name": "diaphragm",
+      "set": "pid/pumps_din",
+      "shape": "Diaphragm"
+    },
+    {
+      "name": "eccentric-worm",
+      "set": "pid/pumps_din",
+      "shape": "Eccentric Worm"
+    },
+    {
+      "name": "reciprocating",
+      "set": "pid/pumps_din",
+      "shape": "Reciprocating"
+    },
+    {
+      "name": "pump-positive-displacement",
+      "set": "pid/pumps_iso",
+      "shape": "Pump (Positive Displacement)"
+    },
+    {
+      "name": "pump-progressive-cavity",
+      "set": "pid/pumps_iso",
+      "shape": "Pump (Progressive Cavity)"
+    },
+    {
+      "name": "ball-valve",
+      "set": "pid/valves",
+      "shape": "Ball Valve"
+    },
+    {
+      "name": "butterfly-valve-1",
+      "set": "pid/valves",
+      "shape": "Butterfly Valve 1"
+    },
+    {
+      "name": "check-valve-1",
+      "set": "pid/valves",
+      "shape": "Check Valve 1"
+    },
+    {
+      "name": "check-valve-2",
+      "set": "pid/valves",
+      "shape": "Check Valve 2"
+    },
+    {
+      "name": "gate-valve",
+      "set": "pid/valves",
+      "shape": "Gate Valve"
+    },
+    {
+      "name": "manual-operated-valve",
+      "set": "pid/valves",
+      "shape": "Manual Operated Valve"
+    },
+    {
+      "name": "three-way-valve",
+      "set": "pid/valves",
+      "shape": "Three-Way Valve"
+    },
+    {
+      "name": "relief-prv",
+      "set": "pid/valves",
+      "shape": "Relief PRV"
+    },
+    {
+      "name": "safety-psv-1",
+      "set": "pid/valves",
+      "shape": "Safety PSV 1"
+    },
+    {
+      "name": "diverter-valve",
+      "set": "pid/piping",
+      "shape": "Diverter Valve"
+    },
+    {
+      "name": "rotary-valve",
+      "set": "pid/piping",
+      "shape": "Rotary Valve"
+    },
+    {
+      "name": "y-type-strainer",
+      "set": "pid/piping",
+      "shape": "Y-Type Strainer"
+    }
+  ],
+  "hvac": [
+    {
+      "name": "condenser",
+      "set": "pid/heat_exchangers",
+      "shape": "Condenser"
+    },
+    {
+      "name": "double-pipe-heat-exchanger",
+      "set": "pid/heat_exchangers",
+      "shape": "Double Pipe Heat Exchanger"
+    },
+    {
+      "name": "electric-heater",
+      "set": "pid/heat_exchangers",
+      "shape": "Electric Heater"
+    },
+    {
+      "name": "heater",
+      "set": "pid/heat_exchangers",
+      "shape": "Heater"
+    },
+    {
+      "name": "heat-exchanger-finned-tubes-fan",
+      "set": "pid/heat_exchangers",
+      "shape": "Heat Exchanger (Finned Tubes, Fan)"
+    },
+    {
+      "name": "plate-and-frame-heat-exchanger",
+      "set": "pid/heat_exchangers",
+      "shape": "Plate and Frame Heat Exchanger"
+    },
+    {
+      "name": "shell-and-tube-heat-exchanger-1",
+      "set": "pid/heat_exchangers",
+      "shape": "Shell and Tube Heat Exchanger 1"
+    },
+    {
+      "name": "spiral-heat-exchanger",
+      "set": "pid/heat_exchangers",
+      "shape": "Spiral Heat Exchanger"
+    },
+    {
+      "name": "chiller",
+      "set": "pid/misc",
+      "shape": "Chiller"
+    },
+    {
+      "name": "cooling-tower",
+      "set": "pid/misc",
+      "shape": "Cooling Tower"
+    },
+    {
+      "name": "cooling-tower-wet-induced-draught",
+      "set": "pid/misc",
+      "shape": "Cooling Tower (Wet, Induced Draught)"
+    },
+    {
+      "name": "cooler",
+      "set": "pid/misc",
+      "shape": "Cooler"
+    },
+    {
+      "name": "fan",
+      "set": "pid/misc",
+      "shape": "Fan"
+    },
+    {
+      "name": "forced-flow-air-cooler",
+      "set": "pid/misc",
+      "shape": "Forced Flow Air Cooler"
+    },
+    {
+      "name": "air-filter",
+      "set": "pid/misc",
+      "shape": "Air Filter"
+    }
+  ],
+  "mechanical": [
+    {
+      "name": "ac-air-compressor",
+      "set": "pid/compressors",
+      "shape": "AC Air Compressor"
+    },
+    {
+      "name": "centrifugal-compressor",
+      "set": "pid/compressors",
+      "shape": "Centrifugal Compressor"
+    },
+    {
+      "name": "compressor",
+      "set": "pid/compressors",
+      "shape": "Compressor"
+    },
+    {
+      "name": "reciprocating-compressor",
+      "set": "pid/compressors",
+      "shape": "Reciprocating Compressor"
+    },
+    {
+      "name": "compressor-screw",
+      "set": "pid/compressors_iso",
+      "shape": "Compressor (Screw)"
+    },
+    {
+      "name": "compressor-rotary",
+      "set": "pid/compressors_iso",
+      "shape": "Compressor (Rotary)"
+    },
+    {
+      "name": "compressor-diaphragm",
+      "set": "pid/compressors_iso",
+      "shape": "Compressor (Diaphragm)"
+    },
+    {
+      "name": "compressor-turbo",
+      "set": "pid/compressors_iso",
+      "shape": "Compressor (Turbo)"
+    },
+    {
+      "name": "gas-blower",
+      "set": "pid/pumps",
+      "shape": "Gas Blower"
+    },
+    {
+      "name": "agitator-stirrer",
+      "set": "pid/agitators",
+      "shape": "Agitator, Stirrer"
+    },
+    {
+      "name": "agitator-anchor",
+      "set": "pid/agitators",
+      "shape": "Agitator (Anchor)"
+    },
+    {
+      "name": "agitator-propeller",
+      "set": "pid/agitators",
+      "shape": "Agitator (Propeller)"
+    },
+    {
+      "name": "agitator-turbine",
+      "set": "pid/agitators",
+      "shape": "Agitator (Turbine)"
+    },
+    {
+      "name": "in-line-static-mixer",
+      "set": "pid/mixers",
+      "shape": "In-Line Static Mixer"
+    },
+    {
+      "name": "in-line-rotary-mixer",
+      "set": "pid/mixers",
+      "shape": "In-Line Rotary Mixer"
+    },
+    {
+      "name": "boiler-dome",
+      "set": "pid/misc",
+      "shape": "Boiler (Dome)"
+    },
+    {
+      "name": "firing-system-burner",
+      "set": "pid/misc",
+      "shape": "Firing System, Burner"
+    },
+    {
+      "name": "turbine",
+      "set": "pid/engines",
+      "shape": "Turbine"
+    }
+  ],
+  "environment": [
+    {
+      "name": "coriolis",
+      "set": "pid/flow_sensors",
+      "shape": "Coriolis"
+    },
+    {
+      "name": "magnetic",
+      "set": "pid/flow_sensors",
+      "shape": "Magnetic"
+    },
+    {
+      "name": "pitot-tube",
+      "set": "pid/flow_sensors",
+      "shape": "Pitot Tube"
+    },
+    {
+      "name": "rotameter",
+      "set": "pid/flow_sensors",
+      "shape": "Rotameter"
+    },
+    {
+      "name": "ultrasonic",
+      "set": "pid/flow_sensors",
+      "shape": "Ultrasonic"
+    },
+    {
+      "name": "venturi",
+      "set": "pid/flow_sensors",
+      "shape": "Venturi"
+    },
+    {
+      "name": "vortex",
+      "set": "pid/flow_sensors",
+      "shape": "Vortex"
+    },
+    {
+      "name": "weir",
+      "set": "pid/flow_sensors",
+      "shape": "Weir"
+    },
+    {
+      "name": "stack-chimney",
+      "set": "pid/misc",
+      "shape": "Stack, Chimney"
+    },
+    {
+      "name": "gas-flare",
+      "set": "pid/misc",
+      "shape": "Gas Flare"
+    },
+    {
+      "name": "cyclone",
+      "set": "pid/misc",
+      "shape": "Cyclone"
+    },
+    {
+      "name": "spray-scrubber",
+      "set": "pid/separators",
+      "shape": "Spray Scrubber"
+    },
+    {
+      "name": "separator-electrostatic-precipitator",
+      "set": "pid/separators",
+      "shape": "Separator (Electrostatic Precipitator)"
+    },
+    {
+      "name": "thermocouple",
+      "set": "electrical/miscellaneous",
+      "shape": "Thermocouple"
+    },
+    {
+      "name": "thermistor-1",
+      "set": "electrical/miscellaneous",
+      "shape": "Thermistor 1"
+    }
+  ],
+  "electrical": [
+    {
+      "name": "electric-motor-ac",
+      "set": "pid/engines",
+      "shape": "Electric Motor (AC)"
+    },
+    {
+      "name": "electric-motor-dc",
+      "set": "pid/engines",
+      "shape": "Electric Motor (DC)"
+    },
+    {
+      "name": "transformer",
+      "set": "electrical/inductors",
+      "shape": "Transformer"
+    },
+    {
+      "name": "transformer-1",
+      "set": "electrical/inductors",
+      "shape": "Transformer 1"
+    },
+    {
+      "name": "current-transformer-2",
+      "set": "electrical/inductors",
+      "shape": "Current Transformer 2"
+    },
+    {
+      "name": "potential-transformer",
+      "set": "electrical/inductors",
+      "shape": "Potential Transformer"
+    },
+    {
+      "name": "adjustable-transformer",
+      "set": "electrical/inductors",
+      "shape": "Adjustable Transformer"
+    },
+    {
+      "name": "circuit-breaker",
+      "set": "electrical/electro-mechanical",
+      "shape": "Circuit Breaker"
+    },
+    {
+      "name": "isolator",
+      "set": "electrical/electro-mechanical",
+      "shape": "Isolator"
+    },
+    {
+      "name": "fuse",
+      "set": "electrical/electro-mechanical",
+      "shape": "Fuse"
+    },
+    {
+      "name": "switch-disconnector",
+      "set": "electrical/electro-mechanical",
+      "shape": "Switch Disconnector"
+    },
+    {
+      "name": "dpdt",
+      "set": "electrical/electro-mechanical",
+      "shape": "DPDT"
+    },
+    {
+      "name": "relay",
+      "set": "electrical/electro-mechanical",
+      "shape": "Relay"
+    },
+    {
+      "name": "relay-coil",
+      "set": "electrical/electro-mechanical",
+      "shape": "Relay Coil"
+    },
+    {
+      "name": "pushbutton-make",
+      "set": "electrical/electro-mechanical",
+      "shape": "Pushbutton Make"
+    },
+    {
+      "name": "pressure-actuated",
+      "set": "electrical/electro-mechanical",
+      "shape": "Pressure Actuated"
+    },
+    {
+      "name": "temperature-actuated",
+      "set": "electrical/electro-mechanical",
+      "shape": "Temperature Actuated"
+    },
+    {
+      "name": "flow-actuated",
+      "set": "electrical/electro-mechanical",
+      "shape": "Flow Actuated"
+    },
+    {
+      "name": "proximity-limit-switch",
+      "set": "electrical/electro-mechanical",
+      "shape": "Proximity Limit Switch"
+    },
+    {
+      "name": "motor-2",
+      "set": "electrical/electro-mechanical",
+      "shape": "Motor 2"
+    },
+    {
+      "name": "line-cable",
+      "set": "electrical/transmission",
+      "shape": "Line Cable"
+    },
+    {
+      "name": "cable-group",
+      "set": "electrical/transmission",
+      "shape": "Cable Group"
+    },
+    {
+      "name": "ampermeter",
+      "set": "electrical/instruments",
+      "shape": "Ampermeter"
+    },
+    {
+      "name": "galvanometer",
+      "set": "electrical/instruments",
+      "shape": "Galvanometer"
+    },
+    {
+      "name": "oscilloscope",
+      "set": "electrical/instruments",
+      "shape": "Oscilloscope"
+    },
+    {
+      "name": "surge-protector-2",
+      "set": "electrical/miscellaneous",
+      "shape": "Surge Protector 2"
+    },
+    {
+      "name": "terminal-board",
+      "set": "electrical/miscellaneous",
+      "shape": "Terminal Board"
+    }
+  ],
+  "it_ups": [
+    {
+      "name": "monocell-battery",
+      "set": "electrical/miscellaneous",
+      "shape": "Monocell Battery"
+    },
+    {
+      "name": "multicell-battery",
+      "set": "electrical/miscellaneous",
+      "shape": "Multicell Battery"
+    }
+  ],
+  "facility": [
+    {
+      "name": "light-bulb",
+      "set": "electrical/miscellaneous",
+      "shape": "Light Bulb"
+    },
+    {
+      "name": "lamp-1",
+      "set": "electrical/miscellaneous",
+      "shape": "Lamp 1"
+    },
+    {
+      "name": "bell",
+      "set": "electrical/electro-mechanical",
+      "shape": "Bell"
+    },
+    {
+      "name": "buzzer",
+      "set": "electrical/electro-mechanical",
+      "shape": "Buzzer"
+    },
+    {
+      "name": "lift",
+      "set": "pid/misc",
+      "shape": "Lift"
+    }
+  ]
+}

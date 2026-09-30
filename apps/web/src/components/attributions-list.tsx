@@ -32,6 +32,51 @@ export function AttributionsList({ entries }: { entries: readonly AttributionEnt
                 ))}
               </ul>
             ) : null}
+            {entry.symbolCredits.length > 0 ? (
+              <details className="mt-2">
+                <summary className="cursor-pointer text-sm text-ink-muted">Per-file credits ({entry.symbolCredits.length})</summary>
+                <table aria-label={`${entry.name} per-file credits`} className="mt-2 w-full text-xs">
+                  <thead>
+                    <tr className="text-left text-ink">
+                      <th>Key</th>
+                      <th>Author</th>
+                      <th>Source</th>
+                      <th>Licence</th>
+                      <th>Pin</th>
+                      <th>Adaptation</th>
+                    </tr>
+                  </thead>
+                  <tbody className="text-ink-muted">
+                    {entry.symbolCredits.map((credit) => (
+                      <tr key={credit.key} className="border-t border-line">
+                        <td>{credit.key}</td>
+                        <td>{credit.author}</td>
+                        <td>
+                          {/^https:\/\//.test(credit.source) ? (
+                            <a href={credit.source} target="_blank" rel="noopener noreferrer" className="underline">
+                              {credit.source}
+                            </a>
+                          ) : (
+                            credit.source
+                          )}
+                        </td>
+                        <td>
+                          {/^https:\/\//.test(credit.licenceUrl) ? (
+                            <a href={credit.licenceUrl} target="_blank" rel="noopener noreferrer" className="underline">
+                              {credit.licence}
+                            </a>
+                          ) : (
+                            credit.licence
+                          )}
+                        </td>
+                        <td className="font-mono">{credit.pin}</td>
+                        <td>{credit.adaptation}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </details>
+            ) : null}
           </section>
         );
       })}

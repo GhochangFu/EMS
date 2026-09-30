@@ -3,7 +3,7 @@ import { describe, it } from "vitest";
 import {
   everyLibraryKeyNamesItsLibraryAndFitsSixtyFour,
   groupCodesAreTheEight,
-  libraryCodesAreTheFour,
+  libraryCodesAreTheSevenInPaletteOrder,
   mimicCoreSymbolsAreTheTwentyNineInOrder,
   mimicLayoutCellIsTen,
   mimicLayoutDtoParsesSymbolLibraries,
@@ -35,8 +35,8 @@ describe("F3.32c — the mimic layout contracts (ADR 0081)", () => {
     everyLibraryKeyNamesItsLibraryAndFitsSixtyFour();
   });
 
-  it("declares the four symbol libraries (F3.32e)", () => {
-    libraryCodesAreTheFour();
+  it("declares the seven symbol libraries in palette order (F3.32e, F3.32f)", () => {
+    libraryCodesAreTheSevenInPaletteOrder();
   });
 
   it("declares the eight palette groups (F3.32e)", () => {

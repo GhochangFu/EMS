@@ -1,44 +1,73 @@
 #!/usr/bin/env node
 /**
- * `F3.32e` / ADR 0084 decisions 4 and 5 — vendors the curated mimic symbol libraries.
+ * `F3.32e` / ADR 0084 decisions 4 and 5, and `F3.32f` / ADR 0086 decision 9 — vendors the
+ * curated mimic symbol libraries.
  *
- * Run by hand, with the extracted npm packages of each pinned source release:
+ * Run by hand, with the extracted sources of each pinned release:
  *
  *   node scripts/mimic-symbols/generate.mjs \
  *     --tabler <dir of @tabler/icons 3.48.0> \
  *     --lucide <dir of lucide-static 1.48.0> \
- *     --mdi <dir of @mdi/svg 7.4.47> [--migration]
+ *     --mdi <dir of @mdi/svg 7.4.47> \
+ *     --qet <dir from fetch-sources.mjs qet> \
+ *     --wmpid <dir from fetch-sources.mjs wmpid> \
+ *     --drawio <dir from fetch-sources.mjs drawio> \
+ *     [--only <code>[,<code>]] [--report] [--sql-rows <code>] [--migration]
  *
- * It reads `scripts/mimic-symbols/curation/<library>.json` (group → icon names) and writes, per
- * library, two modules:
+ * - `--only` builds and writes only the named libraries; only their directory flags are required.
+ * - `--report` collects every refusal instead of stopping at the first, prints them grouped by
+ *   library and writes nothing; it exits 1 when it found a refusal.
+ * - `--sql-rows <code>` builds that one library and prints its `bms.mimic_symbols` VALUES lines
+ *   (`sort_order` = 10 × position) for a hand-written migration; it writes nothing.
+ * - `--migration` writes `packages/db/drizzle/0090_mimic_symbol_libraries.sql` and its journal
+ *   entry from the three `0090` libraries — only when that file does not exist yet: a committed
+ *   migration is frozen, so a later curation change is a new migration, written by hand.
+ *
+ * It reads `scripts/mimic-symbols/curation/<library>.json` and writes, per library:
  *
  * - `packages/shared/src/mimic-symbol-libraries/<library>.generated.ts` — the keys, labels and
  *   groups (no path data), which the contract's `mimicSymbolSchema` and the registry read;
  * - `apps/web/src/components/widgets/mimic-symbol-libraries/<library>.generated.ts` — the
- *   licence notice and each key's shape elements, which `MimicGlyph` draws as React elements.
+ *   licence notice and each key's shape elements, which `MimicGlyph` draws as React elements;
+ * - for a source with per-file credits (`qet`, `wmpid`, `drawio`),
+ *   `apps/web/src/components/widgets/mimic-symbol-libraries/<library>.credits.generated.ts`.
  *
- * With `--migration` it also writes `packages/db/drizzle/0090_mimic_symbol_libraries.sql` and its
- * journal entry — only when that file does not exist yet: a committed migration is frozen, so a
- * later curation change is a new migration, written by hand.
+ * Curation entries are names (`tabler`, `lucide`, `mdi`: `{ "<group>": ["<name>"] }`) or objects
+ * (`qet`, `wmpid`, `drawio`: `{ "<group>": [{ "name": "<name>", …source fields }] }`, see
+ * `sources/*.mjs`).
  *
- * It refuses, naming the icon, anything decision 4 leaves out: an unknown name; an element or an
- * attribute outside the geometry lists below; a Tabler `-filled` variant; a Lucide node with a
- * `fill`; an MDI icon that is deprecated or tagged "Brand / Logo"; a key over 64 characters; an
- * unknown group; a name listed twice; two icons of one library with the same label or the same
- * path data. The generator has no dependency beyond Node.
+ * It refuses, naming the symbol, anything decision 4 leaves out: an unknown name; an element or an
+ * attribute outside the geometry lists (`lib/grammar.mjs`); a value outside its attribute's grammar
+ * (a number, path data, a points list, or a `transform` outside `MIMIC_TRANSFORM_RE`); more than
+ * 200 shapes; a Tabler `-filled` variant; a Lucide node with a `fill`; an MDI icon that is
+ * deprecated or tagged "Brand / Logo"; a key over 64 characters; a key the colour scan would read
+ * (`fill`, `stroke`, `style`, `class`); a label over 64 characters; an unknown group; a name listed
+ * twice; two symbols of one library with the same label or the same shapes; a release that is not
+ * the pinned one. The generator has no dependency beyond Node.
  */
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..");
+import {
+  ATTRS,
+  COLOUR_WORD,
+  GROUPS,
+  MAX_KEY,
+  MAX_LABEL,
+  NAME,
+  Refusal,
+  checkNodes,
+  fail,
+  labelOf,
+} from "./lib/grammar.mjs";
+import { LIBRARY as DRAWIO } from "./sources/drawio.mjs";
+import { LIBRARY as QET } from "./sources/qet.mjs";
+import { LIBRARY as WMPID } from "./sources/wmpid.mjs";
 
-const GROUPS = ["water", "electrical", "it_ups", "hvac", "mechanical", "environment", "facility", "general"];
-const TAGS = new Set(["path", "circle", "ellipse", "rect", "line", "polyline", "polygon"]);
-const ATTRS = ["d", "cx", "cy", "r", "rx", "ry", "x", "y", "width", "height", "x1", "y1", "x2", "y2", "points"];
-const ATTR_SET = new Set(ATTRS);
-const UPPER = new Set(["ups", "hvac", "cpu", "ac", "dc", "co2", "ev", "lan", "pc", "it", "dg", "pdu", "led", "usb", "iot", "tv"]);
-const MAX_KEY = 64;
+const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..");
+const SHARED_DIR = join(ROOT, "packages", "shared", "src", "mimic-symbol-libraries");
+const WEB_DIR = join(ROOT, "apps", "web", "src", "components", "widgets", "mimic-symbol-libraries");
 
 /**
  * The 29 core symbols (ADR 0082), their labels and groups, in `mimicCoreSymbolSchema`'s order —
@@ -77,50 +106,8 @@ const CORE = [
   ["lift", "Lift", "facility"],
 ];
 
-function fail(message) {
-  console.error(`generate: ${message}`);
-  process.exit(1);
-}
-
-function args() {
-  const out = {};
-  const argv = process.argv.slice(2);
-  for (let i = 0; i < argv.length; i += 1) {
-    const flag = argv[i];
-    if (flag === "--migration") out.migration = true;
-    else if (["--tabler", "--lucide", "--mdi"].includes(flag)) out[flag.slice(2)] = argv[++i];
-    else fail(`unknown argument ${flag}`);
-  }
-  for (const lib of ["tabler", "lucide", "mdi"]) {
-    if (!out[lib] || !existsSync(out[lib])) fail(`--${lib} <dir> is required and must exist`);
-  }
-  return out;
-}
-
 function readJson(path) {
   return JSON.parse(readFileSync(path, "utf8"));
-}
-
-function labelOf(name) {
-  const words = name.split("-").map((w) => (UPPER.has(w) ? w.toUpperCase() : w));
-  const text = words.join(" ");
-  return text.charAt(0).toUpperCase() + text.slice(1);
-}
-
-/** Checks one icon's nodes against the element and attribute lists; returns them normalised. */
-function checkNodes(lib, name, nodes) {
-  if (!Array.isArray(nodes) || nodes.length === 0) fail(`${lib}:${name} has no shape elements`);
-  return nodes.map(([tag, attrs]) => {
-    if (!TAGS.has(tag)) fail(`${lib}:${name} has element <${tag}>, outside the permitted list`);
-    const clean = {};
-    for (const [attr, value] of Object.entries(attrs)) {
-      if (attr === "key") continue; // Lucide's React key, not an SVG attribute
-      if (!ATTR_SET.has(attr)) fail(`${lib}:${name} has attribute ${attr}, outside the geometry list`);
-      if (!/^[0-9a-zA-Z .,\-]*$/.test(String(value))) fail(`${lib}:${name} ${attr} has an unexpected character`);
-      clean[attr] = String(value);
-    }
-    return [tag, clean];
-  });
 }
 
 function tablerSource(dir) {
@@ -131,7 +118,7 @@ function tablerSource(dir) {
     shapes(name) {
       if (name.endsWith("-filled")) fail(`tabler:${name} is a filled variant`);
       if (!nodes[name]) fail(`tabler:${name} does not exist in the release`);
-      return checkNodes("tabler", name, nodes[name]);
+      return checkNodes(`tabler:${name}`, nodes[name]);
     },
   };
 }
@@ -144,7 +131,7 @@ function lucideSource(dir) {
     shapes(name) {
       if (!nodes[name]) fail(`lucide:${name} does not exist in the release`);
       if (nodes[name].some(([, attrs]) => "fill" in attrs)) fail(`lucide:${name} carries a fill`);
-      return checkNodes("lucide", name, nodes[name]);
+      return checkNodes(`lucide:${name}`, nodes[name]);
     },
   };
 }
@@ -166,11 +153,16 @@ function mdiSource(dir) {
         for (const [, attr, value] of body.matchAll(/([\w-]+)="([^"]*)"/g)) attrs[attr] = value;
         return [tag, attrs];
       });
-      return checkNodes("mdi", name, nodes);
+      return checkNodes(`mdi:${name}`, nodes);
     },
   };
 }
 
+/**
+ * The libraries in registry order. A descriptor's `load(dir)` answers `{ version, licence,
+ * conversion?, shapes(entry), credit?(entry) }`; `entryShape` says whether a curation entry is a
+ * name (`string`) or an object with a `name` (`object`).
+ */
 const LIBRARIES = [
   {
     code: "tabler",
@@ -182,6 +174,7 @@ const LIBRARIES = [
     licenceName: "MIT",
     attributionUrl: "https://tabler.io/icons",
     style: "stroke",
+    entryShape: "string",
     load: tablerSource,
   },
   {
@@ -195,6 +188,7 @@ const LIBRARIES = [
     licenceName: "ISC and MIT",
     attributionUrl: "https://lucide.dev",
     style: "stroke",
+    entryShape: "string",
     load: lucideSource,
   },
   {
@@ -211,47 +205,90 @@ const LIBRARIES = [
     extraLicence: "Apache-2.0.txt",
     attributionUrl: "https://pictogrammers.com/library/mdi/",
     style: "fill",
+    entryShape: "string",
     load: mdiSource,
   },
+  QET,
+  WMPID,
+  DRAWIO,
 ];
 
-const NAME = /^[a-z0-9][a-z0-9-]*$/;
+/** The libraries migration 0090 holds; `--migration` writes from these only. */
+const MIGRATION_0090_CODES = ["tabler", "lucide", "mdi"];
 
-function build(lib, dir) {
+const CREDIT_FIELDS = ["author", "source", "licence", "licenceUrl", "pin", "adaptation"];
+
+/** A source's credit for one entry, checked: six non-empty strings (the last, `adaptation`, says how
+ * the file was changed — CC BY 3.0 §4(b), CC BY 4.0 §3(a)(1)(B)), an https licence URL. */
+function checkCredit(key, credit) {
+  if (!credit || typeof credit !== "object") fail(`${key} has no credit`);
+  for (const field of CREDIT_FIELDS) {
+    if (typeof credit[field] !== "string" || credit[field].trim() === "") fail(`${key} credit has no ${field}`);
+  }
+  if (!credit.licenceUrl.startsWith("https://")) fail(`${key} credit licenceUrl is not https`);
+  return Object.fromEntries(CREDIT_FIELDS.map((field) => [field, credit[field]]));
+}
+
+/**
+ * Reads one library's curation through its source. `collect`, when given, receives each refusal
+ * and the build goes on (`--report`); otherwise the first refusal stops it.
+ */
+function build(lib, dir, collect = null) {
   const source = lib.load(dir);
-  if (source.version !== lib.pinned) fail(`${lib.source} is ${source.version}, but ADR 0084 pins ${lib.pinned}`);
+  if (source.version !== lib.pinned) fail(`${lib.source} is ${source.version}, but the ADR pins ${lib.pinned}`);
   const curation = readJson(join(ROOT, "scripts", "mimic-symbols", "curation", `${lib.code}.json`));
   const entries = [];
   const seen = new Set();
   const labels = new Set();
   const paths = new Map();
-  for (const [group, names] of Object.entries(curation)) {
+  for (const [group, list] of Object.entries(curation)) {
     if (!GROUPS.includes(group)) fail(`${lib.code} curation has unknown group ${group}`);
-    for (const name of names) {
-      // Checked before the name reaches a file path or a generated string literal.
-      if (typeof name !== "string" || !NAME.test(name)) fail(`${lib.code} curation name ${JSON.stringify(name)} is not a-z, 0-9 and -`);
-      const key = `${lib.code}:${name}`;
-      if (key.length > MAX_KEY) fail(`${key} is longer than ${MAX_KEY}`);
-      if (seen.has(key)) fail(`${key} is listed twice`);
-      seen.add(key);
-      const label = labelOf(name);
-      if (labels.has(label)) fail(`${key}: label "${label}" repeats in ${lib.code}`);
-      labels.add(label);
-      const shapes = source.shapes(name);
-      const signature = JSON.stringify(shapes);
-      if (paths.has(signature)) fail(`${key} draws the same shapes as ${paths.get(signature)}`);
-      paths.set(signature, key);
-      entries.push({ key, label, group, shapes });
+    if (!Array.isArray(list)) fail(`${lib.code} curation group ${group} is not a list`);
+    for (const item of list) {
+      try {
+        const name = lib.entryShape === "object" ? item?.name : item;
+        if (lib.entryShape === "object" && (item === null || typeof item !== "object" || Array.isArray(item))) {
+          fail(`${lib.code} curation entry ${JSON.stringify(item)} is not an object`);
+        }
+        // Checked before the name reaches a file path or a generated string literal.
+        if (typeof name !== "string" || !NAME.test(name)) fail(`${lib.code} curation name ${JSON.stringify(name)} is not a-z, 0-9 and -`);
+        const key = `${lib.code}:${name}`;
+        if (key.length > MAX_KEY) fail(`${key} is longer than ${MAX_KEY}`);
+        if (COLOUR_WORD.test(key)) fail(`${key} names fill, stroke, style or class, which the colour scan refuses`);
+        if (seen.has(key)) fail(`${key} is listed twice`);
+        seen.add(key);
+        const label = labelOf(name);
+        if (label.length > MAX_LABEL) fail(`${key}: label "${label}" is longer than ${MAX_LABEL}`);
+        if (labels.has(label)) fail(`${key}: label "${label}" repeats in ${lib.code}`);
+        labels.add(label);
+        const shapes = checkNodes(key, source.shapes(item));
+        const signature = JSON.stringify(shapes);
+        if (paths.has(signature)) fail(`${key} draws the same shapes as ${paths.get(signature)}`);
+        paths.set(signature, key);
+        const credit = typeof source.credit === "function" ? checkCredit(key, source.credit(item)) : null;
+        entries.push({ key, label, group, shapes, credit });
+      } catch (error) {
+        const message = error instanceof Refusal ? error.message : `${lib.code}:${item?.name ?? item}: ${error.message}`;
+        if (!collect) fail(message);
+        collect(message);
+      }
     }
   }
-  // Apache 2.0 section 4(b) asks for a notice on a changed file; the same line serves all three.
+  // Apache 2.0 section 4(b) asks for a notice on a changed file; the same line serves every library.
   const changed =
+    source.conversion ??
     `Converted by scripts/mimic-symbols/generate.mjs from the icon files of ${lib.source} ${source.version} ` +
-    "into shape arrays of their geometry; the drawings are otherwise unchanged.";
+      "into shape arrays of their geometry; the drawings are otherwise unchanged.";
   const extra = lib.extraLicence
     ? "\n\n" + readFileSync(join(ROOT, "scripts", "mimic-symbols", "licences", lib.extraLicence), "utf8").trim()
     : "";
-  return { ...lib, version: source.version, licence: `${changed}\n\n${source.licence.trim()}${extra}`, entries };
+  return {
+    ...lib,
+    version: source.version,
+    licence: `${changed}\n\n${source.licence.trim()}${extra}`,
+    hasCredits: typeof source.credit === "function",
+    entries,
+  };
 }
 
 const HEADER = (lib) =>
@@ -259,7 +296,7 @@ const HEADER = (lib) =>
   `// ${lib.label} — ${lib.licenceName}. The full licence notice is \`${lib.constant}_LICENCE_NOTICE\` in\n` +
   `// apps/web/src/components/widgets/mimic-symbol-libraries/${lib.code}.generated.ts (ADR 0084 decision 5).\n`;
 
-function sharedModule(lib) {
+export function sharedModule(lib) {
   const lines = [
     HEADER(lib),
     'import type { MimicSymbolGroupCode } from "../contracts/mimic-layouts";',
@@ -296,7 +333,7 @@ function shapeLiteral(shapes) {
   return `[${parts.join(", ")}]`;
 }
 
-function webModule(lib) {
+export function webModule(lib) {
   const lines = [
     HEADER(lib),
     `import type { ${lib.type} } from "@bms/shared";`,
@@ -309,6 +346,25 @@ function webModule(lib) {
     `/** Each ${lib.label} key's shape elements, geometry attributes only (ADR 0084 decision 5). */`,
     `export const ${lib.constant}_SHAPES: Readonly<Record<${lib.type}, readonly MimicShape[]>> = {`,
     ...lib.entries.map((e) => `  "${e.key}": ${shapeLiteral(e.shapes)},`),
+    "};",
+    "",
+  ];
+  return lines.join("\n");
+}
+
+export function creditsModule(lib) {
+  const lines = [
+    HEADER(lib),
+    `import type { ${lib.type} } from "@bms/shared";`,
+    "",
+    'import type { MimicSymbolCredit } from "./credits";',
+    "",
+    `/** Each ${lib.label} key's author, source file, licence, pin and adaptation; the attributions page lists them (ADR 0086 decision 9). */`,
+    `export const ${lib.constant}_SYMBOL_CREDITS: Readonly<Record<${lib.type}, MimicSymbolCredit>> = {`,
+    ...lib.entries.map(
+      (e) =>
+        `  "${e.key}": { ${CREDIT_FIELDS.map((field) => `${field}: ${JSON.stringify(e.credit[field])}`).join(", ")} },`,
+    ),
     "};",
     "",
   ];
@@ -500,14 +556,93 @@ function writeMigration(libs) {
   console.log(`generate: wrote ${tag}.sql, journal when ${when}`);
 }
 
-const opts = args();
-const libs = LIBRARIES.map((lib) => build(lib, opts[lib.code]));
-for (const lib of libs) {
-  writeFileSync(join(ROOT, "packages", "shared", "src", "mimic-symbol-libraries", `${lib.code}.generated.ts`), sharedModule(lib));
-  writeFileSync(
-    join(ROOT, "apps", "web", "src", "components", "widgets", "mimic-symbol-libraries", `${lib.code}.generated.ts`),
-    webModule(lib),
-  );
-  console.log(`generate: ${lib.code} ${lib.version} — ${lib.entries.length} symbols`);
+/** One library's `bms.mimic_symbols` VALUES lines, `sort_order` = 10 × position, for a hand-written
+ * migration; the last line has no comma, so the block pastes in front of `ON CONFLICT`. */
+function sqlRows(lib) {
+  return lib.entries
+    .map((e, i, all) => `  (${[e.key, lib.code, e.label, e.group].map(sql).join(", ")}, ${(i + 1) * 10})${i < all.length - 1 ? "," : ""}`)
+    .join("\n");
 }
-if (opts.migration) writeMigration(libs);
+
+const DIR_FLAGS = LIBRARIES.map((l) => `--${l.code}`);
+
+function args(argv) {
+  const out = { dirs: {}, migration: false, report: false, only: null, sqlRows: null };
+  for (let i = 0; i < argv.length; i += 1) {
+    const flag = argv[i];
+    if (flag === "--migration") out.migration = true;
+    else if (flag === "--report") out.report = true;
+    else if (flag === "--only") out.only = String(argv[++i] ?? "").split(",").filter((c) => c !== "");
+    else if (flag === "--sql-rows") out.sqlRows = argv[++i];
+    else if (DIR_FLAGS.includes(flag)) out.dirs[flag.slice(2)] = argv[++i];
+    else fail(`unknown argument ${flag}`);
+  }
+  const known = LIBRARIES.map((l) => l.code);
+  if (out.only !== null && out.sqlRows !== null) fail("--only and --sql-rows cannot be combined");
+  if (out.sqlRows !== null && !known.includes(out.sqlRows)) fail(`--sql-rows names unknown library ${out.sqlRows}`);
+  if (out.only !== null) {
+    if (out.only.length === 0) fail("--only needs at least one library code");
+    for (const code of out.only) if (!known.includes(code)) fail(`--only names unknown library ${code}`);
+  }
+  out.codes = out.sqlRows !== null ? [out.sqlRows] : (out.only ?? known);
+  for (const code of out.codes) {
+    if (!out.dirs[code] || !existsSync(out.dirs[code])) fail(`--${code} <dir> is required and must exist`);
+  }
+  if (out.migration) {
+    if (out.report || out.sqlRows !== null) fail("--migration cannot be combined with --report or --sql-rows");
+    for (const code of MIGRATION_0090_CODES) if (!out.codes.includes(code)) fail(`--migration needs --${code}`);
+  }
+  return out;
+}
+
+function main() {
+  const opts = args(process.argv.slice(2));
+  const selected = LIBRARIES.filter((l) => opts.codes.includes(l.code));
+  const refusals = new Map();
+  const collect = (code) => (message) => {
+    if (!refusals.has(code)) refusals.set(code, []);
+    refusals.get(code).push(message);
+  };
+  const libs = [];
+  for (const lib of selected) {
+    if (!opts.report) {
+      libs.push(build(lib, opts.dirs[lib.code]));
+      continue;
+    }
+    try {
+      libs.push(build(lib, opts.dirs[lib.code], collect(lib.code)));
+    } catch (error) {
+      collect(lib.code)(error instanceof Refusal ? error.message : `${lib.code}: ${error.message}`);
+    }
+  }
+  if (opts.report) {
+    for (const lib of selected) {
+      const list = refusals.get(lib.code) ?? [];
+      console.log(`generate: ${lib.code} — ${list.length} refusal(s)`);
+      for (const message of list) console.log(`  - ${message}`);
+    }
+    process.exitCode = refusals.size > 0 ? 1 : 0;
+    return;
+  }
+  if (opts.sqlRows !== null) {
+    process.stdout.write(`${sqlRows(libs[0])}\n`);
+    return;
+  }
+  for (const lib of libs) {
+    writeFileSync(join(SHARED_DIR, `${lib.code}.generated.ts`), sharedModule(lib));
+    writeFileSync(join(WEB_DIR, `${lib.code}.generated.ts`), webModule(lib));
+    if (lib.hasCredits) writeFileSync(join(WEB_DIR, `${lib.code}.credits.generated.ts`), creditsModule(lib));
+    console.log(`generate: ${lib.code} ${lib.version} — ${lib.entries.length} symbols`);
+  }
+  if (opts.migration) writeMigration(libs.filter((l) => MIGRATION_0090_CODES.includes(l.code)));
+}
+
+/** Run as a script only: the emitters above can be imported without running the CLI. */
+if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToPath(import.meta.url))) {
+  try {
+    main();
+  } catch (error) {
+    console.error(`generate: ${error instanceof Refusal ? error.message : error.stack}`);
+    process.exit(1);
+  }
+}

@@ -6,7 +6,15 @@ import { expect, vi } from "vitest";
 import type { AttributionEntry } from "../lib/attributions";
 import type { AuthUser } from "../stores/auth-store";
 import { AttributionsList } from "../components/attributions-list";
+import { MIMIC_LIBRARY_CREDITS, libraryCredits } from "../components/widgets/mimic-symbol-libraries/credits";
 import { AttributionsPage } from "./attributions-page";
+
+// Slice 2 (plan U5) — the per-file credits come from `libraryCredits`; the mock defaults to the real
+// one so T1–T8 read the vendored modules, and the credits claims set an implementation.
+vi.mock("../components/widgets/mimic-symbol-libraries/credits", async (importOriginal) => {
+  const original = await importOriginal<typeof import("../components/widgets/mimic-symbol-libraries/credits")>();
+  return { ...original, libraryCredits: vi.fn(original.libraryCredits) };
+});
 
 /**
  * `F3.32f` slice 1 (ADR 0086 decision 8) — the attributions page. `attributions-page.test.tsx`
@@ -47,9 +55,9 @@ export function theHeadingRenders(): void {
 }
 
 /** T2 — one section per library. */
-export function fourEntriesRender(): void {
+export function sevenEntriesRender(): void {
   renderPage();
-  expect(screen.getAllByTestId("attribution-entry")).toHaveLength(4);
+  expect(screen.getAllByTestId("attribution-entry")).toHaveLength(7);
 }
 
 /** T3 — Lucide's heading and licence line. */
@@ -95,6 +103,7 @@ export function aNoticeIsTextNotMarkup(): void {
     sourceUrl: null,
     notice: "<b>x</b>",
     credits: [],
+    symbolCredits: [],
   };
   const { container } = render(<AttributionsList entries={[entry]} />);
   expect(container.querySelector("pre")?.textContent).toBe("<b>x</b>");
@@ -111,6 +120,7 @@ export function aCreditRendersOneListItem(): void {
     sourceUrl: null,
     notice: null,
     credits: [{ file: "pump.svg", author: "A. Author", licence: "CC-BY 4.0" }],
+    symbolCredits: [],
   };
   const { container } = render(<AttributionsList entries={[entry]} />);
   const items = container.querySelectorAll("li");
@@ -118,4 +128,78 @@ export function aCreditRendersOneListItem(): void {
   expect(items[0]?.textContent).toContain("pump.svg");
   expect(items[0]?.textContent).toContain("A. Author");
   expect(items[0]?.textContent).toContain("CC-BY 4.0");
+}
+
+const CC_BY_3 = "https://creativecommons.org/licenses/by/3.0/";
+
+/** Two QElectroTech credits (one relative source path, one https URL); Tabler has none. */
+function stubTwoQetCredits(): void {
+  vi.mocked(libraryCredits).mockImplementation((code) =>
+    code === "qet"
+      ? [
+          { key: "qet:a", author: "A", source: "p/a.elmt", licence: "CC BY 3.0", licenceUrl: CC_BY_3, pin: "abc", adaptation: "Adapted: a" },
+          { key: "qet:b", author: "B", source: "https://example.org/b.elmt", licence: "CC BY 3.0", licenceUrl: "", pin: "abc", adaptation: "Adapted: b" },
+        ]
+      : [],
+  );
+}
+
+/** T9 — a library with credits lists one row per key, a link only for an https source. */
+export function aLibraryWithCreditsListsOneRowPerKey(): void {
+  stubTwoQetCredits();
+  renderPage();
+  const qet = entryNamed(/^QElectroTech/);
+  const details = qet.querySelector("details:has(table)");
+  expect(details?.querySelector("summary")?.textContent).toBe("Per-file credits (2)");
+  const table = within(qet).getByRole("table", { name: "QElectroTech per-file credits" });
+  const rows = within(table).getAllByRole("row");
+  expect(rows).toHaveLength(3); // header + two credits
+  const first = rows[1] as HTMLElement;
+  expect(within(first).getByRole("cell", { name: "A" })).toBeInTheDocument();
+  expect(within(first).getByRole("link", { name: "CC BY 3.0" })).toHaveAttribute("href", CC_BY_3);
+  // A relative source path is text, not a link.
+  expect(within(first).getByText("p/a.elmt")).toBeInTheDocument();
+  expect(within(first).queryByRole("link", { name: "p/a.elmt" })).toBeNull();
+  // An https source is a link.
+  const second = rows[2] as HTMLElement;
+  expect(within(second).getByRole("link", { name: "https://example.org/b.elmt" })).toHaveAttribute(
+    "href",
+    "https://example.org/b.elmt",
+  );
+  // A credit without a licence URL shows the licence as text.
+  expect(within(second).queryByRole("link", { name: "CC BY 3.0" })).toBeNull();
+  expect(within(second).getByText("CC BY 3.0")).toBeInTheDocument();
+}
+
+/**
+ * T11 — ADR 0086 decision 9: a vendored QElectroTech row says the symbol is an adaptation (CC BY
+ * 3.0 §4(b)), beside its author. Reads the generated credits, not a stub.
+ */
+export function aQetRowSaysTheSymbolIsAnAdaptation(): void {
+  // Only the QElectroTech credits, and a direct row lookup: a role query over every library's
+  // 425 rows runs past the 5 s timeout on a loaded machine.
+  vi.mocked(libraryCredits).mockImplementation((code) =>
+    code === "qet" ? Object.entries(MIMIC_LIBRARY_CREDITS.qet ?? {}).map(([key, credit]) => ({ key, ...credit })) : [],
+  );
+  renderPage();
+  const table = within(entryNamed(/^QElectroTech/)).getByRole("table", { name: "QElectroTech per-file credits" });
+  const head = table.querySelector("thead") as HTMLElement;
+  expect(within(head).getByRole("columnheader", { name: "Adaptation" })).toBeInTheDocument();
+  const row = [...table.querySelectorAll("tbody tr")].find((tr) => tr.firstElementChild?.textContent === "qet:circulating-pump");
+  const cells = [...(row?.children ?? [])].map((td) => td.textContent);
+  expect(cells[1]).toBe("Rafael Ferrando");
+  expect(cells[5]).toBe(
+    "Adapted: converted to geometry, scaled into a 24-unit box; texts, terminals, line-end markers, fills and line styles removed.",
+  );
+}
+
+/** T10 — a library without credits (Tabler) shows no table. */
+export function aLibraryWithoutCreditsShowsNoTable(): void {
+  stubTwoQetCredits();
+  renderPage();
+  // Positive control: the QElectroTech section does have its table.
+  expect(within(entryNamed(/^QElectroTech/)).getByRole("table")).toBeInTheDocument();
+  const tabler = entryNamed(/^Tabler/);
+  expect(tabler.querySelector("table")).toBeNull();
+  expect(within(tabler).queryByText(/Per-file credits/)).toBeNull();
 }

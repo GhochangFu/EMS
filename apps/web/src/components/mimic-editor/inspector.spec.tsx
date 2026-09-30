@@ -182,17 +182,25 @@ function renderWith(l: EditorLayout, selectedKey: string | null = null) {
 }
 
 /** N12 — one check box per library, in registry order. */
-export function fourLibraryBoxesInRegistryOrder(): void {
+export function sevenLibraryBoxesInRegistryOrder(): void {
   renderInspector(null);
   const boxes = screen.getAllByRole("checkbox", { name: /^Library / }).map((b) => b.getAttribute("aria-label"));
-  expect(boxes).toEqual(["Library Core", "Library Tabler Icons", "Library Lucide", "Library Material Design Icons"]);
+  expect(boxes).toEqual([
+    "Library Core",
+    "Library Tabler Icons",
+    "Library Lucide",
+    "Library Material Design Icons",
+    "Library QElectroTech",
+    "Library Wikimedia Commons P&ID",
+    "Library draw.io",
+  ]);
 }
 
-/** N13 — a core-only layout has Core checked and the other three unchecked. */
+/** N13 — a core-only layout has Core checked and the other six unchecked. */
 export function coreIsCheckedOnACoreLayout(): void {
   renderInspector(null);
   const checked = screen.getAllByRole("checkbox", { name: /^Library / }).map((b) => (b as HTMLInputElement).checked);
-  expect(checked).toEqual([true, false, false, false]);
+  expect(checked).toEqual([true, false, false, false, false, false, false]);
 }
 
 /** N14 — checking Tabler reports the list with Tabler added, in registry order. */
