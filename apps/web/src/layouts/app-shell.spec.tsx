@@ -308,11 +308,12 @@ export function givesEveryRailItemAUniqueCode(): void {
 
 /**
  * L2 — the gate reads the full list, hidden ones included: 24 items since
- * `F3.72` removed *Dashboard* (25 before it). The floor stays 23 — the
- * removal did not take the list below it.
+ * `F3.72` removed *Dashboard* (25 before it). `F3.76` replaced the eleven
+ * Administration entries with the hub and five areas: 20 items, and the floor
+ * moved from 23 to 20.
  */
 export function readsTheFullItemList(): void {
-  expect(collapsedRailEntries().length).toBeGreaterThanOrEqual(23);
+  expect(collapsedRailEntries().length).toBeGreaterThanOrEqual(20);
 }
 
 /** L3 — every override key is the path of some rail item (a renamed key is dead). */
@@ -400,43 +401,67 @@ export function namesTheExpandedLinkByItsLabel(): void {
 }
 
 /**
- * `F4.162` S9 (plan D7) — an `organization_admin` has no *Location Types*
- * entry. *Asset Groups* is the positive control: the Administration group
- * rendered for this role.
+ * `F3.76` — the Administration group is the hub plus one entry per Master Data
+ * area the role sees. Each entry is read as "<name> <href>", so a wrong link
+ * fails with the name next to it. The per-screen entries (*Location Types*,
+ * *Mimic Layouts* and the rest) moved into the area tabs; their role gates are
+ * held by `master-data-areas.spec.ts` and `admin-access.spec.ts`.
  */
-export function hidesLocationTypesFromAnOrganizationAdmin(): void {
-  renderShell(GLOBAL);
-  expect(within(sidebar()).getByRole("link", { name: "Asset Groups" })).toBeInTheDocument();
-  expect(within(sidebar()).queryAllByRole("link", { name: "Location Types" })).toHaveLength(0);
+function adminEntries(): string[] {
+  return within(sidebar())
+    .getAllByRole("link")
+    .filter((link) => (link.getAttribute("href") ?? "").startsWith("/admin"))
+    .map((link) => `${link.textContent ?? ""} ${link.getAttribute("href") ?? ""}`);
 }
 
-/**
- * `F3.32c` (ADR 0081 decision 3) — an `organization_admin` has one *Mimic
- * Layouts* entry, pointing at `/admin/mimic-layouts`.
- */
-export function showsMimicLayoutsToAnOrganizationAdmin(): void {
+/** S9 — an `organization_admin` has the hub and all five areas. */
+export function showsTheHubAndFiveAreasToAnOrganizationAdmin(): void {
   renderShell(LOCATION, "/", "organization_admin");
-  const links = within(sidebar()).queryAllByRole("link", { name: "Mimic Layouts" });
-  expect(links).toHaveLength(1);
-  expect(links[0]).toHaveAttribute("href", "/admin/mimic-layouts");
+  expect(adminEntries()).toEqual([
+    "Master Data Hub /admin",
+    "Sites & Equipment /admin/organizations",
+    "Reference Data /admin/asset-groups",
+    "Templates & Visuals /admin/asset-templates",
+    "Data Input /admin/manual-readings",
+    "Notifications /admin/notification-channels",
+  ]);
 }
 
-/**
- * `F3.32c` — a `location_admin` has no *Mimic Layouts* entry. *Asset Groups*
- * is the positive control: the Administration group rendered for this role.
- */
-export function hidesMimicLayoutsFromALocationAdmin(): void {
+/** S10 — a `location_admin` has no Notifications entry: it sees no tab of that area. */
+export function hidesTheNotificationsEntryFromALocationAdmin(): void {
   renderShell(LOCATION, "/", "location_admin");
-  expect(within(sidebar()).getByRole("link", { name: "Asset Groups" })).toBeInTheDocument();
-  expect(within(sidebar()).queryAllByRole("link", { name: "Mimic Layouts" })).toHaveLength(0);
+  expect(adminEntries()).toEqual([
+    "Master Data Hub /admin",
+    "Sites & Equipment /admin/organizations",
+    "Reference Data /admin/asset-groups",
+    "Templates & Visuals /admin/asset-templates",
+    "Data Input /admin/manual-readings",
+  ]);
 }
 
-/** `F4.162` S10 — the global `admin` has one, pointing at `/admin/location-types`. */
-export function showsLocationTypesToTheGlobalAdmin(): void {
-  renderShell(GLOBAL, "/", "admin");
-  const links = within(sidebar()).queryAllByRole("link", { name: "Location Types" });
-  expect(links).toHaveLength(1);
-  expect(links[0]).toHaveAttribute("href", "/admin/location-types");
+function currentAdminEntries(): string[] {
+  return within(sidebar())
+    .getAllByRole("link")
+    .filter((link) => link.getAttribute("aria-current") === "page")
+    .map((link) => link.textContent ?? "");
+}
+
+/** M1 — on a drill-down to an RTU's assets, the Sites & Equipment entry is the one selected. */
+export function selectsTheAreaOfADrillDown(): void {
+  renderShell(GLOBAL, "/admin/locations/l1/rtus/r1/assets", "admin");
+  expect(currentAdminEntries()).toEqual(["Sites & Equipment"]);
+}
+
+/** M2 — on `/admin` the hub is the one selected, and no area is. */
+export function selectsTheHubOnTheHubPath(): void {
+  renderShell(GLOBAL, "/admin", "admin");
+  expect(currentAdminEntries()).toEqual(["Master Data Hub"]);
+}
+
+/** M3 — `/admin/` (trailing slash) selects the hub too, as React Router routes it there. */
+export function selectsTheHubWithATrailingSlash(): void {
+  renderShell(GLOBAL, "/admin/", "admin");
+  expect(currentAdminEntries()).toEqual(["Master Data Hub"]);
 }
 
 /**

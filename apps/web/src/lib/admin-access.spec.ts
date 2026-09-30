@@ -89,36 +89,40 @@ export function runAssetTemplateTabTests(): void {
   assert(
     masterDataTabs.map((tab) => tab.path).join(" ") ===
       [
+        // `F3.76` — the list is ordered area by area. Sites & Equipment: the
+        // whole drill-down chain.
         "/admin/organizations",
         "/admin/locations",
         "/admin/rtus",
         "/admin/assets",
-        // `F3.37` (ADR 0049 decision 5) — the role a member plays in its group.
-        "/admin/asset-groups",
-        TEMPLATES,
-        // `F3.36` Part F (ADR 0049) — ungated, like Asset Groups: authoring is
-        // hidden inside the page by `canAuthorTemplates`, not by the tab.
-        "/admin/dashboard-templates",
-        // `F3.32c` (ADR 0081 decision 3) — `orgAdminOnly`: the layout library
-        // is drawn by `admin` and `organization_admin` alone.
-        "/admin/mimic-layouts",
         "/admin/asset-points",
-        "/admin/manual-readings",
-        "/admin/point-keys",
-        // `F4.162` (plan D7) — the first `globalAdminOnly` tab.
-        "/admin/location-types",
-        // `E4.1a` (ADR 0070 decision 2) — ungated, like Asset Groups: the
-        // organization scope is hidden inside the form by
+        // Reference Data. `F3.37` (ADR 0049 decision 5) — Asset Groups;
+        // `F4.162` (plan D7) — Location Types, the first `globalAdminOnly`
+        // tab; `E4.1a` (ADR 0070 decision 2) — Calc Parameters, ungated like
+        // Asset Groups: the organization scope is hidden inside the form by
         // `canWriteOrganizationScopedCalcParameter`, not by the tab.
+        "/admin/asset-groups",
+        "/admin/point-keys",
+        "/admin/location-types",
         "/admin/calc-parameters",
+        // Templates & Visuals. `F3.36` Part F (ADR 0049) — ungated, like Asset
+        // Groups: authoring is hidden inside the page by `canAuthorTemplates`,
+        // not by the tab. `F3.32c` (ADR 0081 decision 3) — Mimic Layouts is
+        // `orgAdminOnly`. `F3.76` gave Symbol Libraries (`F3.32f`) its tab.
+        TEMPLATES,
+        "/admin/dashboard-templates",
+        "/admin/mimic-layouts",
+        "/admin/mimic-symbol-libraries",
+        // Data Input.
+        "/admin/manual-readings",
         "/admin/telemetry/import",
-        // `F3.8` (ADR 0041 decision 10). This list is asserted whole on
-        // purpose, so adding a tab fails here until the expectation is updated
-        // deliberately — which is what happened.
+        // Notifications. `F3.8` (ADR 0041 decision 10) and `F3.10` (ADR 0057
+        // decision 11). This list is asserted whole on purpose, so adding a tab
+        // fails here until the expectation is updated deliberately — which is
+        // what happened.
         "/admin/notification-channels",
-        "/admin/notification-deliveries",
-        // `F3.10` (ADR 0057 decision 11) — the third `notificationAdmin` tab.
         "/admin/escalation-profiles",
+        "/admin/notification-deliveries",
       ].join(" "),
     `master data tabs changed — got ${masterDataTabs.map((tab) => tab.path).join(" ")}`,
   );
@@ -144,7 +148,9 @@ export function runAssetTemplateTabTests(): void {
     // 14 -> 15. `F4.162` added Location Types as `globalAdminOnly`, so
     // `admin` alone goes 15 -> 16. `F3.32c` added Mimic Layouts as
     // `orgAdminOnly`: 16 -> 17 and 15 -> 16; `location_admin` stays at 11.
-    const expected = role === "location_admin" ? 11 : role === "admin" ? 17 : 16;
+    // `F3.76` gave Symbol Libraries a tab, gated like Mimic Layouts: 17 -> 18
+    // and 16 -> 17; `location_admin` stays at 11.
+    const expected = role === "location_admin" ? 11 : role === "admin" ? 18 : 17;
     assert(
       paths.length === expected,
       `${role} sees the wrong number of tabs — got ${paths.length}, expected ${expected}`,
@@ -199,13 +205,13 @@ export function runNotificationTabTests(): void {
 
   for (const role of ["admin", "organization_admin"] as const) {
     const paths = visibleMasterDataTabs(role).map((tab) => tab.path);
-    assert(paths.includes(CHANNELS), `${role} must see the Notifications tab`);
+    assert(paths.includes(CHANNELS), `${role} must see the Channels tab`);
     assert(paths.includes(DELIVERIES), `${role} must see the Deliveries tab`);
     assert(paths.includes(ESCALATION), `${role} must see the Escalation tab`);
   }
   for (const role of ["location_admin"] as const) {
     const paths = visibleMasterDataTabs(role).map((tab) => tab.path);
-    assert(!paths.includes(CHANNELS), `${role} must not see the Notifications tab`);
+    assert(!paths.includes(CHANNELS), `${role} must not see the Channels tab`);
     assert(!paths.includes(DELIVERIES), `${role} must not see the Deliveries tab`);
     assert(!paths.includes(ESCALATION), `${role} must not see the Escalation tab`);
   }
@@ -217,7 +223,8 @@ export function runNotificationTabTests(): void {
     .filter((tab) => "notificationAdmin" in tab && tab.notificationAdmin)
     .map((tab) => tab.path);
   assert(
-    gated.join(",") === `${CHANNELS},${DELIVERIES},${ESCALATION}`,
+    // `F3.76` ordered the Notifications area Channels, Escalation, Deliveries.
+    gated.join(",") === `${CHANNELS},${ESCALATION},${DELIVERIES}`,
     `only the two F3.8 tabs and F3.10's are notificationAdmin — got ${gated.join(",")}`,
   );
 }

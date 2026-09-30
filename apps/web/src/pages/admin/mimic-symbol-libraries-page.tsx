@@ -52,8 +52,8 @@ function groupLabel(code: MimicSymbolGroupCode): string {
  * organization's switch for each global library, and its own libraries — create, retire and
  * reactivate one, upload an SVG per symbol, and file or retire each symbol.
  *
- * **It fails closed at the page.** The nav entry is shown to `admin` and `organization_admin`
- * only, but a typed URL reaches this route through `AdminRoute`, which admits every master-data
+ * **It fails closed at the page.** The tab is shown to `admin` and `organization_admin` only
+ * (the sidebar reaches it through its Templates & Visuals area, `F3.76`), but a typed URL reaches this route through `AdminRoute`, which admits every master-data
  * role. For those roles the page renders one status line and mounts no query.
  *
  * Nothing here is deleted (decision 7): `active = false` retires a library or a symbol, and a

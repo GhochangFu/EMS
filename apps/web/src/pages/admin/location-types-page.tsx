@@ -47,8 +47,8 @@ function parseSortOrder(text: string): number | undefined | "invalid" {
  * `F4.162` (ADR 0077 Amendment 1, plan D7) — the global-admin screen for the
  * location-type vocabulary, `bms.location_types`.
  *
- * **It fails closed at the page.** The tab and the sidebar entry are hidden
- * from every role but `admin`, but a typed URL still reaches this route
+ * **It fails closed at the page.** The tab is hidden from every role but
+ * `admin` (the sidebar reaches it only through its Reference Data area, `F3.76`), but a typed URL still reaches this route
  * through `AdminRoute`, which admits every master-data role. For those roles
  * the page renders one status line and mounts no query: the catalog component
  * below is never rendered, so its read never starts (the API would answer

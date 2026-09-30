@@ -646,7 +646,7 @@ export function runCalendarWarningTests(): void {
     `the warning names the timezone_unset skip — got ${CALENDAR_WINDOW_WARNING}`,
   );
   assert(
-    CALENDAR_WINDOW_WARNING.includes("Admin → Locations"),
+    CALENDAR_WINDOW_WARNING.includes("Administration → Sites & Equipment → Locations"),
     `the warning says where the timezone is set — got ${CALENDAR_WINDOW_WARNING}`,
   );
   assert(!/[$]\w|[{]\w/.test(CALENDAR_WINDOW_WARNING), "the warning echoes no $key or {ref} fragment");

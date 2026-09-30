@@ -509,7 +509,7 @@ export function EscalationProfilesPage({ user }: EscalationProfilesPageProps) {
                 <p className="mt-2 text-xs font-semibold uppercase text-ink-muted">Channels</p>
                 {channels.length === 0 ? (
                   <p className="mt-1 text-xs text-ink-muted">
-                    No channels you can use here. Create one under Admin → Notifications.
+                    No channels you can use here. Create one under Administration → Notifications → Channels.
                   </p>
                 ) : null}
                 <div className="mt-1 space-y-1">

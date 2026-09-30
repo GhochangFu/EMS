@@ -31,8 +31,8 @@ export const MIMIC_LAYOUTS_QUERY_KEY = ["mimic-layouts"] as const;
  * the starter Start opens, with its unit and pipe counts and its libraries. It follows the
  * select, and mounts no query.
  *
- * **It fails closed at the page**, as `location-types-page.tsx` does. The tab and the rail entry
- * are hidden from every role but `admin` and `organization_admin`, but a typed URL still reaches
+ * **It fails closed at the page**, as `location-types-page.tsx` does. The tab is hidden from every
+ * role but `admin` and `organization_admin` (the sidebar reaches it only through its area, `F3.76`), but a typed URL still reaches
  * this route through `AdminRoute`, which admits every master-data role. For those roles the page
  * renders one status line and mounts no query.
  *

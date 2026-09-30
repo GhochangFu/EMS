@@ -223,7 +223,10 @@ export function canManageSymbolLibraries(role: UserRole): boolean {
   return role === "admin" || role === "organization_admin";
 }
 
-/** Default admin landing route for a role. */
+/**
+ * Where `AdminRoute` sends a master-data role it refuses. Not the landing page:
+ * `/admin` renders the Master Data Hub since `F3.76`.
+ */
 export function defaultAdminRoute(role: UserRole): string {
   if (role === "admin" || role === "organization_admin") {
     return "/admin/organizations";
@@ -236,50 +239,94 @@ export function canAccessOnboarding(role: UserRole): boolean {
   return canCreateLocations(role);
 }
 
-/** Master data horizontal tab definitions. */
+/**
+ * `F3.76` — the five areas of the Master Data Hub, in display order. Each tab
+ * below names its area; the order of `masterDataTabs` is area by area, so an
+ * area's first tab is its landing screen.
+ */
+export const masterDataAreas = [
+  {
+    id: "sites",
+    label: "Sites & Equipment",
+    description: "The site hierarchy: organization, location, RTU, asset and point.",
+  },
+  {
+    id: "reference",
+    label: "Reference Data",
+    description: "Shared lists and constants that other screens use.",
+  },
+  {
+    id: "templates",
+    label: "Templates & Visuals",
+    description: "Reusable asset and dashboard templates, mimic layouts and symbols.",
+  },
+  {
+    id: "data-input",
+    label: "Data Input",
+    description: "Readings that do not come from an RTU.",
+  },
+  {
+    id: "notifications",
+    label: "Notifications",
+    description: "Where alarms go and how they escalate.",
+  },
+] as const;
+
+export type MasterDataAreaId = (typeof masterDataAreas)[number]["id"];
+
+/**
+ * Master data tab definitions, grouped by area (`F3.76`). A tab's gate is its
+ * own; an area shows to a role when at least one of its tabs does.
+ */
 export const masterDataTabs = [
-  { label: "Organizations", path: "/admin/organizations" },
-  { label: "Locations", path: "/admin/locations" },
-  { label: "RTUs", path: "/admin/rtus" },
-  { label: "Assets", path: "/admin/assets" },
+  // `F3.76` — the whole drill-down chain (organization → location → RTU →
+  // asset → point) is one area, so a drill-down never leaves it.
+  { label: "Organizations", path: "/admin/organizations", area: "sites" },
+  { label: "Locations", path: "/admin/locations", area: "sites" },
+  { label: "RTUs", path: "/admin/rtus", area: "sites" },
+  { label: "Assets", path: "/admin/assets", area: "sites" },
+  { label: "Asset Points", path: "/admin/asset-points", area: "sites" },
   // `F3.37` (ADR 0049 decision 5). Not `catalogOnly` and not `globalAdminOnly`:
   // the API gates it on `requireMasterDataUser` plus a per-group
   // `canManageLocation` check, which is exactly the set of roles this tab list
   // is already filtered to. A `location_admin` sees its own location's groups
   // and is refused the rest by the server, so hiding the tab would take the
   // page from a role that can legitimately use it.
-  { label: "Asset Groups", path: "/admin/asset-groups" },
-  // ADR 0038 decision 10: deliberately **not** `catalogOnly`. A location admin
-  // cannot author a template but can instantiate one, and this page is the only
-  // route to Instantiate. Marking it `catalogOnly` would hide the page from the
-  // one role ADR 0015 §7 exists to serve. The authoring controls inside are
-  // hidden separately by `canAuthorTemplates`.
-  { label: "Asset Templates", path: "/admin/asset-templates" },
-  // `F3.36` Part F (ADR 0049). Ungated, like Asset Groups above: every
-  // master-data role that reaches this list may reach the page. Authoring
-  // (create/edit/publish/archive) is hidden inside it by
-  // `canAuthorTemplates`, exactly as the Asset Templates screen already does.
-  { label: "Dashboard Templates", path: "/admin/dashboard-templates" },
-  // `F3.32c` (ADR 0081 decision 3). `orgAdminOnly`: every write route refuses
-  // a `location_admin` with a 403, and the page fails closed for it, so the
-  // tab would lead that role only to the page's status line. Any role READS
-  // the library (owner ruling OQ4) — through the dashboard builder, not here.
-  { label: "Mimic Layouts", path: "/admin/mimic-layouts", orgAdminOnly: true },
-  { label: "Asset Points", path: "/admin/asset-points" },
-  { label: "Manual Entry", path: "/admin/manual-readings" },
-  { label: "Point Keys", path: "/admin/point-keys", catalogOnly: true },
+  { label: "Asset Groups", path: "/admin/asset-groups", area: "reference" },
+  { label: "Point Keys", path: "/admin/point-keys", catalogOnly: true, area: "reference" },
   // `F4.162` (ADR 0077 Amendment 1, plan D7). The first `globalAdminOnly` tab:
   // every route behind the page refuses a caller that is not the global
   // `admin`, the read included, so a tab shown to anyone else would lead only
   // to the page's status line.
-  { label: "Location Types", path: "/admin/location-types", globalAdminOnly: true },
+  { label: "Location Types", path: "/admin/location-types", globalAdminOnly: true, area: "reference" },
   // `E4.1a` (ADR 0070 decision 2). Ungated, like Asset Groups above: the API
   // gates a write by the row's scope, so a `location_admin` writes location
   // and asset scope for its own location and is refused the rest by the
   // server. The organization option is hidden inside the form by
   // `canWriteOrganizationScopedCalcParameter`, never by the tab.
-  { label: "Calc Parameters", path: "/admin/calc-parameters" },
-  { label: "Import Telemetry", path: "/admin/telemetry/import" },
+  { label: "Calc Parameters", path: "/admin/calc-parameters", area: "reference" },
+  // ADR 0038 decision 10: deliberately **not** `catalogOnly`. A location admin
+  // cannot author a template but can instantiate one, and this page is the only
+  // route to Instantiate. Marking it `catalogOnly` would hide the page from the
+  // one role ADR 0015 §7 exists to serve. The authoring controls inside are
+  // hidden separately by `canAuthorTemplates`.
+  { label: "Asset Templates", path: "/admin/asset-templates", area: "templates" },
+  // `F3.36` Part F (ADR 0049). Ungated, like Asset Groups above: every
+  // master-data role that reaches this list may reach the page. Authoring
+  // (create/edit/publish/archive) is hidden inside it by
+  // `canAuthorTemplates`, exactly as the Asset Templates screen already does.
+  { label: "Dashboard Templates", path: "/admin/dashboard-templates", area: "templates" },
+  // `F3.32c` (ADR 0081 decision 3). `orgAdminOnly`: every write route refuses
+  // a `location_admin` with a 403, and the page fails closed for it, so the
+  // tab would lead that role only to the page's status line. Any role READS
+  // the library (owner ruling OQ4) — through the dashboard builder, not here.
+  { label: "Mimic Layouts", path: "/admin/mimic-layouts", orgAdminOnly: true, area: "templates" },
+  // `F3.32f` slice 3 (ADR 0086 decisions 4 and 7) — the page had a sidebar
+  // entry and no tab until `F3.76`. Its own flag, read through
+  // `canManageSymbolLibraries`, for the reason that predicate is its own.
+  { label: "Symbol Libraries", path: "/admin/mimic-symbol-libraries", symbolLibraryAdmin: true, area: "templates" },
+  { label: "Manual Entry", path: "/admin/manual-readings", area: "data-input" },
+  { label: "Import Telemetry", path: "/admin/telemetry/import", area: "data-input" },
   // `F3.8` (ADR 0041 decision 10), re-gated by `E7.1d` (ADR 0043
   // Consequences). These were `globalAdminOnly` while every channel route ran
   // through `assertAdminRole` and a tab shown to an `organization_admin` would
@@ -289,20 +336,34 @@ export const masterDataTabs = [
   // Still NOT `catalogOnly`. That flag now answers "may READ the fleet-wide
   // point-key catalog" (`F3.39`); the bodies were identical until this row and
   // are not any more.
-  { label: "Notifications", path: "/admin/notification-channels", notificationAdmin: true },
-  { label: "Deliveries", path: "/admin/notification-deliveries", notificationAdmin: true },
+  //
+  // `F3.76` renamed the first one from "Notifications" to "Channels": the area
+  // is called Notifications.
+  { label: "Channels", path: "/admin/notification-channels", notificationAdmin: true, area: "notifications" },
   // `F3.10` (ADR 0057 decision 11, plan ruling Q6). The third `notificationAdmin`
   // tab, and it takes that flag rather than `globalAdminOnly` for the same
-  // reason the two above it did: `EscalationProfilesService` gates every route
+  // reason the two around it did: `EscalationProfilesService` gates every route
   // on `canManageNotificationChannel`, so an `organization_admin` administers
   // its own profiles and would not meet a 403. A profile binds channels, so the
   // two screens must be reachable by exactly the same set of roles — one of
   // them hidden would leave a ladder pointing at channels its owner cannot see.
-  { label: "Escalation", path: "/admin/escalation-profiles", notificationAdmin: true },
-] as const;
+  { label: "Escalation", path: "/admin/escalation-profiles", notificationAdmin: true, area: "notifications" },
+  { label: "Deliveries", path: "/admin/notification-deliveries", notificationAdmin: true, area: "notifications" },
+] as const satisfies readonly {
+  label: string;
+  path: string;
+  area: MasterDataAreaId;
+  catalogOnly?: true;
+  globalAdminOnly?: true;
+  notificationAdmin?: true;
+  orgAdminOnly?: true;
+  symbolLibraryAdmin?: true;
+}[];
+
+export type MasterDataTab = (typeof masterDataTabs)[number];
 
 /** Returns tabs visible for the given role. */
-export function visibleMasterDataTabs(role: UserRole) {
+export function visibleMasterDataTabs(role: UserRole): MasterDataTab[] {
   return masterDataTabs.filter((tab) => {
     if ("catalogOnly" in tab && tab.catalogOnly) {
       // `F3.39`: a READ gate. See `canReadPointKeyCatalog` for why this stopped
@@ -318,6 +379,72 @@ export function visibleMasterDataTabs(role: UserRole) {
     if ("orgAdminOnly" in tab && tab.orgAdminOnly) {
       return canManageMimicLayouts(role);
     }
+    if ("symbolLibraryAdmin" in tab && tab.symbolLibraryAdmin) {
+      return canManageSymbolLibraries(role);
+    }
     return true;
   });
+}
+
+export type VisibleMasterDataArea = {
+  id: MasterDataAreaId;
+  label: string;
+  description: string;
+  /** The area's first visible tab: where its entry links. */
+  path: string;
+  tabs: MasterDataTab[];
+};
+
+/**
+ * `F3.76` — the areas a role sees, each with its visible tabs. An area with no
+ * visible tab is left out, so a `location_admin` sees no Notifications area.
+ */
+export function visibleMasterDataAreas(role: UserRole): VisibleMasterDataArea[] {
+  const tabs = visibleMasterDataTabs(role);
+  return masterDataAreas.flatMap((area) => {
+    const own = tabs.filter((tab) => tab.area === area.id);
+    const first = own[0];
+    return first ? [{ ...area, path: first.path, tabs: own }] : [];
+  });
+}
+
+/**
+ * `F3.76` — a pathname as React Router matches it: case-insensitive, and a
+ * trailing slash ignored.
+ */
+export function normalizeAdminPath(pathname: string): string {
+  return pathname.toLowerCase().replace(/\/+$/, "") || "/";
+}
+
+/**
+ * `F3.76` — the drill-down routes, each selecting its DEEPEST level: the tab
+ * whose table the page shows. A prefix match would select the first level of
+ * the URL instead (`/admin/locations/:id/rtus/:rtuId/assets` selected
+ * *Locations* before `F3.76`).
+ */
+const drillDownTabs: readonly { pattern: RegExp; tab: string }[] = [
+  { pattern: /^\/admin\/organizations\/[^/]+\/locations\/?$/, tab: "/admin/locations" },
+  { pattern: /^\/admin\/locations\/[^/]+\/rtus\/?$/, tab: "/admin/rtus" },
+  { pattern: /^\/admin\/locations\/[^/]+\/rtus\/[^/]+\/assets\/?$/, tab: "/admin/assets" },
+  { pattern: /^\/admin\/assets\/[^/]+\/points\/?$/, tab: "/admin/asset-points" },
+];
+
+/**
+ * `F3.76` — the tab (and so the area) a pathname selects: a drill-down route
+ * first, then the tab whose path equals it or is a whole-segment prefix of it
+ * (`/admin/assets` does not select `/admin/asset-points`). `null` for a path
+ * outside the hub (`/admin` itself, the dashboard builder). The pathname is
+ * normalized first, as React Router matches it.
+ */
+export function masterDataTabForPath(rawPathname: string): MasterDataTab | null {
+  const pathname = normalizeAdminPath(rawPathname);
+  const drill = drillDownTabs.find((rule) => rule.pattern.test(pathname));
+  const target = drill?.tab;
+  return (
+    masterDataTabs.find((tab) =>
+      target !== undefined
+        ? tab.path === target
+        : pathname === tab.path || pathname.startsWith(`${tab.path}/`),
+    ) ?? null
+  );
 }
