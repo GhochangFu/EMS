@@ -19,6 +19,7 @@ import type { LocationListFixtures } from "./dashboards-list-location.integratio
 import {
   assertLocationFilterExcludesOtherLocationsAndOrgWideRows,
   assertLocationFilterIsAndedWithTheOrganizationScope,
+  assertMisStampedGroupDoesNotAdmitAnotherOrganizationsDashboard,
   assertLocationFilterReturnsSiteAndGroupScopedRows,
   assertUnfilteredListIsUnchanged,
   assertUnknownLocationAnswersEmpty,
@@ -103,11 +104,15 @@ describe.skipIf(!connectionString)("F3.72 — GET /dashboards?locationId=", () =
       locationIds.push(id);
       return id;
     };
-    const group = async (locationId: string, tag: string): Promise<string> => {
+    const group = async (
+      locationId: string,
+      tag: string,
+      groupOrganizationId: string = eskom,
+    ): Promise<string> => {
       const row = await ownerPool.query<{ id: string }>(
         `INSERT INTO bms.asset_groups (organization_id, location_id, code, name)
          VALUES ($1, $2, $3, $4) RETURNING id`,
-        [eskom, locationId, `f372-g${tag}-${RUN}`, `F3.72 group ${tag}`],
+        [groupOrganizationId, locationId, `f372-g${tag}-${RUN}`, `F3.72 group ${tag}`],
       );
       const id = row.rows[0]?.id ?? "";
       groupIds.push(id);
@@ -132,6 +137,10 @@ describe.skipIf(!connectionString)("F3.72 — GET /dashboards?locationId=", () =
     const locationBId = await location("b");
     const groupA = await group(locationAId, "a");
     const groupB = await group(locationBId, "b");
+    // A MIS-STAMPED group: PHEWB's, hung on ESKOM's location A. Nothing in the database forbids
+    // it (a plain FK on `asset_group_id`), so only the service's organization predicate stops
+    // the ESKOM dashboard pointing at it from being admitted on the fleet branch.
+    const groupMisStamped = await group(locationAId, "x", other);
 
     fixtures = {
       locationAId,
@@ -143,6 +152,7 @@ describe.skipIf(!connectionString)("F3.72 — GET /dashboards?locationId=", () =
       siteScopedBDashboardId: await dashboard("site-b", locationBId, null),
       groupScopedBDashboardId: await dashboard("group-b", null, groupB),
       organizationWideDashboardId: await dashboard("org-wide", null, null),
+      misStampedGroupDashboardId: await dashboard("mis-stamped", null, groupMisStamped),
     };
   }, 60_000);
 
@@ -188,6 +198,14 @@ describe.skipIf(!connectionString)("F3.72 — GET /dashboards?locationId=", () =
   it("returns both kinds and excludes the others on the fleet branch", async () => {
     await assertLocationFilterReturnsSiteAndGroupScopedRows(service, fleetActor(), fixtures);
     await assertLocationFilterExcludesOtherLocationsAndOrgWideRows(
+      service,
+      fleetActor(),
+      fixtures,
+    );
+  }, 60_000);
+
+  it("does not admit a dashboard through a group of another organization (fleet branch)", async () => {
+    await assertMisStampedGroupDoesNotAdmitAnotherOrganizationsDashboard(
       service,
       fleetActor(),
       fixtures,

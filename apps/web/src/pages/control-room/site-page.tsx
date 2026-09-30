@@ -63,7 +63,7 @@ const linkClass = "mt-2 inline-block text-sm font-semibold text-accent-strong ho
  * view on any other site renders the generated view, as `generated` does,
  * and its tab URLs redirect like a non-`builtin` site's. A site outside the
  * KPI list does not show the tabs either; its tab URL redirects to the bare
- * the path, which shows the not-available card.
+ * path, which shows the not-available card.
  *
  * `F3.72` (ADR 0087, plan D4) — the page owns a two-entry strip above the
  * body: **Site view** (the bare path; current for every segment but

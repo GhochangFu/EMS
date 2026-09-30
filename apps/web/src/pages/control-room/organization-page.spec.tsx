@@ -93,7 +93,7 @@ vi.mock("../../components/control-room/scoped-dashboards-list", () => ({
 
 const PANELS = ["health-panel", "trend-panel", "dashboards-panel"] as const;
 
-const ORG_ESKOM ={ id: "org-eskom", code: "ESKOM", name: "Eskom" };
+const ORG_ESKOM = { id: "org-eskom", code: "ESKOM", name: "Eskom" };
 const ORG_PHE = { id: "org-phe", code: "PHEWB", name: "PHE West Bengal" };
 
 function stubReads(items: LocationKpiSummary[]): void {

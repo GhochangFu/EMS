@@ -6,6 +6,7 @@ import {
   anEmptyTrendShowsTheEmptyState,
   cleanupTrend,
   readsTheTrendForTheOrganization,
+  theKeyCarriesTheOrganizationId,
 } from "./organization-load-trend.spec";
 
 /**
@@ -27,5 +28,9 @@ describe("F3.72 U4 OrganizationLoadTrend", () => {
 
   it("shows the error state for a failed read", async () => {
     await aFailedReadShowsTheErrorState();
+  });
+
+  it("keeps the estate's cached trend out of the card: the key carries the organization", async () => {
+    await theKeyCarriesTheOrganizationId();
   });
 });

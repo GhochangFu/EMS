@@ -25,9 +25,11 @@ per [`local-setup.md`](./local-setup.md). Three terminals: `api` (:4000),
    **All** selected, locations group in accordion sections per org
    (default expanded) with section totals; pick a single org for a flat
    grid of that org's cards only.
-4. Click a location KPI card to open `/locations/:locationId/dashboard`;
-   scoped users land directly on their assigned location when they have
-   only one location.
+4. Click a location KPI card to open its Control Room site view
+   (`/control-room/site/:locationId`); the asset table is its **Assets & RTUs**
+   tab (`/control-room/site/:locationId/assets`). The old address
+   `/locations/:locationId/dashboard` redirects to that tab. A user who holds
+   one organization or one site sees that level directly at `/` (F3.72).
 5. PHEWB stations appear as location cards with org badge `PHEWB` and RTU
    counts; open **Bhutnirghat** (`phe-bhutnirghat`) to see two RTUs (I and II)
    with live MQTT on RTU I only when ingest is running.

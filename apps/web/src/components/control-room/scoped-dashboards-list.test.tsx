@@ -10,6 +10,7 @@ import {
   eachRowOpensTheViewerWithItsOrganization,
   readsTheListByTheOrganizationId,
   theEstateReadsWithNoOrganization,
+  theKeyCarriesTheLocationId,
 } from "./scoped-dashboards-list.spec";
 
 /**
@@ -32,6 +33,10 @@ describe("F3.72 U1 ScopedDashboardsList (D7)", () => {
 
   it("reads a site's list by its location id", async () => {
     await aSiteReadsByItsLocationId();
+  });
+
+  it("keeps a site's list apart from its organization's: the key carries the location", async () => {
+    await theKeyCarriesTheLocationId();
   });
 
   it("opens each row in the viewer with the row's own organization", async () => {

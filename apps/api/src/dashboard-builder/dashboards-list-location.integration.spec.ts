@@ -31,6 +31,8 @@ export interface LocationListFixtures {
   readonly groupScopedBDashboardId: string;
   /** Organization-wide: no location, no group. */
   readonly organizationWideDashboardId: string;
+  /** An ESKOM dashboard whose `asset_group_id` is a PHEWB group hung on location A. */
+  readonly misStampedGroupDashboardId: string;
 }
 
 async function ids(
@@ -105,4 +107,24 @@ export async function assertUnknownLocationAnswersEmpty(
 ): Promise<void> {
   const got = await ids(service, actor, undefined, "00000000-0000-4000-8000-00000000f372");
   expect(got).toEqual([]);
+}
+
+/**
+ * The service's `asset_groups.organization_id = dashboards.organization_id` predicate: on the
+ * FLEET branch (`BYPASSRLS`) nothing else stops a group of another organization, hung on this
+ * location, from admitting a dashboard that points at it. The group's location IS A and the
+ * dashboard is readable to this actor, so only that predicate excludes the row.
+ */
+export async function assertMisStampedGroupDoesNotAdmitAnotherOrganizationsDashboard(
+  service: DashboardsService,
+  actor: JwtPayload,
+  f: LocationListFixtures,
+): Promise<void> {
+  const got = await ids(service, actor, undefined, f.locationAId);
+  expect(got).not.toContain(f.misStampedGroupDashboardId);
+  // The adjacent positive controls: the row is readable unfiltered, and the honest rows show.
+  expect((await service.list(actor)).items.map((item) => item.id)).toContain(
+    f.misStampedGroupDashboardId,
+  );
+  expect(got).toContain(f.groupScopedADashboardId);
 }

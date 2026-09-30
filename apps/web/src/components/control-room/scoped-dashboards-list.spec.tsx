@@ -151,6 +151,38 @@ export async function aPendingReadShowsTheLoadingLine(): Promise<void> {
   expect(screen.queryByText("No dashboards for this scope.")).toBeNull();
 }
 
+/**
+ * The key carries `locationId`: on ONE `QueryClient`, the organization's list and a site's list
+ * are two cache entries. With the location out of the key the site would show the
+ * organization's cached rows at once (a mount refetch would still make the call, so the call
+ * count alone cannot gate it): the site's read is held pending, so its loading line must show
+ * and the organization's row must not.
+ */
+export async function theKeyCarriesTheLocationId(): Promise<void> {
+  const spy = vi
+    .spyOn(dashboardsApi, "fetchDashboards")
+    .mockResolvedValueOnce(TWO_ORGS)
+    .mockReturnValueOnce(new Promise(() => undefined));
+  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  const tree = (props: { organizationId?: string; locationId?: string }) => (
+    <QueryClientProvider client={queryClient}>
+      <MemoryRouter>
+        <ScopedDashboardsList {...props} />
+      </MemoryRouter>
+    </QueryClientProvider>
+  );
+  const { rerender } = render(tree({ organizationId: ORG_ID }));
+  expect(await screen.findByText("Site A Overview")).toBeInTheDocument();
+
+  rerender(tree({ organizationId: ORG_ID, locationId: LOCATION_ID }));
+
+  expect(await screen.findByText("Loading dashboards…")).toBeInTheDocument();
+  expect(screen.queryByText("Site A Overview"), "the organization's rows reached the site").toBeNull();
+  expect(spy).toHaveBeenCalledTimes(2);
+  expect(spy.mock.calls[0]).toEqual([ORG_ID, undefined, undefined, undefined]);
+  expect(spy.mock.calls[1]).toEqual([ORG_ID, undefined, undefined, LOCATION_ID]);
+}
+
 export function cleanupList(): void {
   cleanup();
   vi.restoreAllMocks();
