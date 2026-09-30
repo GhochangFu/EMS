@@ -392,3 +392,34 @@ export async function readableAssetIdsInOrganizationIntersects(
     );
   }
 }
+
+/**
+ * `F3.72` security review L1 — the organization id may now be a raw request
+ * value (`?organizationId=` on `/asset-health/summary` and
+ * `/dashboard/load-trend`). A caller asking for an organization it does not
+ * hold gets `[]`, while the same caller's own organization still answers a
+ * non-empty set (the positive control, so an implementation that always
+ * answers `[]` fails here). `phe-admin` asking for ESKOM is the mirror case
+ * from the other tenant.
+ */
+export async function aForeignOrganizationAnswersEmpty(
+  svc: AccessControlService,
+  fx: ReportFileFixtures,
+): Promise<void> {
+  const own = await svc.readableAssetIdsInOrganization(wcAdmin(), fx.eskomId);
+  if (own.length === 0) {
+    throw new Error("wc-admin: its own organization answered no asset — the positive control is void");
+  }
+  const foreign = await svc.readableAssetIdsInOrganization(wcAdmin(), fx.phewbId);
+  if (foreign.length !== 0) {
+    throw new Error(`wc-admin: PHEWB leaked ${foreign.length} asset ids`);
+  }
+  const pheOwn = await svc.readableAssetIdsInOrganization(pheAdmin(), fx.phewbId);
+  if (pheOwn.length === 0) {
+    throw new Error("phe-admin: its own organization answered no asset — the positive control is void");
+  }
+  const pheForeign = await svc.readableAssetIdsInOrganization(pheAdmin(), fx.eskomId);
+  if (pheForeign.length !== 0) {
+    throw new Error(`phe-admin: ESKOM leaked ${pheForeign.length} asset ids`);
+  }
+}

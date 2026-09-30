@@ -18,6 +18,7 @@ import {
   readScopeKindsPerRole,
   readScopeRefusesAssetGroupAdmin,
   readableAssetIdsInOrganizationIntersects,
+  aForeignOrganizationAnswersEmpty,
   viewerIsRefused,
   type ReportFileFixtures,
 } from "./report-file-access.integration.spec";
@@ -111,6 +112,10 @@ describe.skipIf(!connectionString)("F3.5a — report file read scope against a r
   describe("readableAssetIdsInOrganization", () => {
     it("readableAssetIdsInOrganizationIntersects", async () => {
       await readableAssetIdsInOrganizationIntersects(svc, pool as pg.Pool, fx);
+    });
+
+    it("aForeignOrganizationAnswersEmpty", async () => {
+      await aForeignOrganizationAnswersEmpty(svc, fx);
     });
   });
 });

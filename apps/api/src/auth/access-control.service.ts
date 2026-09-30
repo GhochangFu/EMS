@@ -313,24 +313,33 @@ export class AccessControlService {
    * `null` therefore means "all of the organization's assets", never "all".
    *
    * The organization's assets are read on `fleetDb` because this service runs
-   * before any tenant GUC is set; the `organization_id` filter is the
-   * isolation control (ADR 0043 Amendment 2/3), and the caller has already
-   * proven the actor holds that organization (the save path's R-4 step).
+   * before any tenant GUC is set (ADR 0043 Amendment 2/3).
+   *
+   * **`organizationId` may be a raw request value** (`F3.72`: the
+   * `?organizationId=` filter on `/asset-health/summary` and
+   * `/dashboard/load-trend`), so the isolation control is the intersection
+   * with `readableAssetIds`, and it is applied **in SQL**: a caller that is not
+   * a global admin reads only its own readable ids of that organization, and a
+   * caller with no readable asset reads nothing. An organization the caller
+   * does not hold therefore answers `[]` without a fleet-wide read of that
+   * organization's rows.
    */
   async readableAssetIdsInOrganization(jwt: JwtPayload, organizationId: string): Promise<string[]> {
     const readable = await this.readableAssetIds(jwt);
-    // fleetDb: organization-bounded read (Amendment 2/3); the id is one the caller resolved
-    // from the actor's own grants, never a raw request value.
+    if (readable !== null && readable.length === 0) {
+      return [];
+    }
+    // fleetDb: organization-bounded read (Amendment 2/3), and for any caller but a global admin
+    // also bounded to the caller's readable ids, because `organizationId` may come from the request.
     const rows = await this.fleetDb
       .select({ id: assets.id })
       .from(assets)
-      .where(eq(assets.organizationId, organizationId));
-    const inOrganization = rows.map((row) => row.id);
-    if (readable === null) {
-      return inOrganization;
-    }
-    const allowed = new Set(readable);
-    return inOrganization.filter((id) => allowed.has(id));
+      .where(
+        readable === null
+          ? eq(assets.organizationId, organizationId)
+          : and(eq(assets.organizationId, organizationId), inArray(assets.id, readable)),
+      );
+    return rows.map((row) => row.id);
   }
 
   /**
