@@ -11,7 +11,8 @@ import {
 
 import { inactiveGlobalSymbolKeys, liveLibrarySymbolGroups, orgLibrarySymbolGroups, symbolLabel } from "../../lib/mimic-symbols";
 import { MimicGlyph } from "../widgets/mimic-glyphs";
-import { MIMIC_LIBRARY_NOTICES } from "../widgets/mimic-symbol-libraries";
+import { mimicLibraryNotice } from "../widgets/mimic-symbol-libraries";
+import { useLazyLibraries } from "../widgets/mimic-symbol-libraries/use-lazy-libraries";
 
 /**
  * `F3.32c` U6b (ADR 0081 decision 7), `F3.32d` U3 (ADR 0082 decision 2), `F3.32e` (ADR 0084
@@ -178,11 +179,13 @@ function LibraryGroups({ tab, onAddUnit }: { tab: PaletteTab; onAddUnit: (symbol
 
 /**
  * The active tab's library line and its notice: a vendored library's licence notice, or an
- * organization library's attribution text when it has one. `MIMIC_LIBRARY_NOTICES` is read for a
- * static code only.
+ * organization library's attribution text when it has one. `mimicLibraryNotice` is read for a
+ * static code only; a lazy library's notice (`F3.32h`) shows once its module loads.
  */
 function LibraryNotice({ tab }: { tab: PaletteTab }) {
-  const notice = tab.kind === "org" ? tab.library.attribution : tab.library.code === "core" ? "" : MIMIC_LIBRARY_NOTICES[tab.library.code];
+  useLazyLibraries(tab.kind === "org" ? [] : [tab.library.code]);
+  const notice =
+    tab.kind === "org" ? tab.library.attribution : tab.library.code === "core" ? "" : (mimicLibraryNotice(tab.library.code) ?? "");
   return (
     <div className="space-y-1 text-[10px] text-ink-muted">
       <p>{`${tab.label} — ${tab.library.licence}`}</p>
