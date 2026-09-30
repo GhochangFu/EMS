@@ -3,7 +3,13 @@ import { useQueryClient } from "@tanstack/react-query";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 
 import { isOidcEnabled, startOidcLogout } from "../api/oidc";
-import { isGlobalAdmin, isMasterDataAdmin, canManageMimicLayouts, canWritePointKeys } from "../lib/admin-access";
+import {
+  isMasterDataAdmin,
+  masterDataAreas,
+  masterDataTabForPath,
+  masterDataTabs,
+  visibleMasterDataAreas,
+} from "../lib/admin-access";
 import { roleLabel } from "../lib/role-label";
 import { useAuthStore, type AuthUser } from "../stores/auth-store";
 import { StatusBarClock } from "../components/status-bar-clock";
@@ -58,23 +64,21 @@ const moduleGroups = [
   },
 ] as const;
 
+/**
+ * `F3.76` — the Administration group is the hub plus one entry per master-data
+ * area. An area's `path` here is its first tab for the global `admin`; the
+ * rendered link goes to the first tab the role sees, and an area the role sees
+ * no tab of has no entry.
+ */
 const adminModuleGroup = {
   title: "Administration",
   items: [
-    { label: "Master Data Hub", path: "/admin", globalOnly: false },
-    { label: "Organizations", path: "/admin/organizations", globalOnly: false },
-    { label: "Locations", path: "/admin/locations", globalOnly: false },
-    { label: "RTUs", path: "/admin/rtus", globalOnly: false },
-    { label: "Assets", path: "/admin/assets", globalOnly: false },
-    { label: "Asset Points", path: "/admin/asset-points", globalOnly: false },
-    { label: "Asset Groups", path: "/admin/asset-groups" },
-    // `F3.32c` (ADR 0081 decision 3) — `admin` and `organization_admin` only, as the page is.
-    { label: "Mimic Layouts", path: "/admin/mimic-layouts", orgAdminOnly: true },
-    // `F3.32f` slice 3 (ADR 0086 decisions 4 and 7) — the same two roles, as the page is.
-    { label: "Symbol Libraries", path: "/admin/mimic-symbol-libraries", orgAdminOnly: true },
-    { label: "Point Keys", path: "/admin/point-keys", catalogOnly: true },
-    // `F4.162` (plan D7) — global `admin` only, as the page and its API are.
-    { label: "Location Types", path: "/admin/location-types", globalOnly: true },
+    { label: "Master Data Hub", path: "/admin" },
+    ...masterDataAreas.map((area) => ({
+      label: area.label,
+      path: masterDataTabs.find((tab) => tab.area === area.id)?.path ?? "/admin",
+      area: area.id,
+    })),
   ],
 } as const;
 
@@ -91,9 +95,6 @@ const temporarilyHiddenModulePaths = new Set(["/sld", "/crac"]);
  */
 export const COLLAPSED_LABEL_OVERRIDES: Readonly<Record<string, string>> = {
   "/dashboards": "DS",
-  "/admin/rtus": "RTU",
-  "/admin/assets": "AS",
-  "/admin/asset-points": "PT",
 };
 
 /**
@@ -212,10 +213,14 @@ export function AppShell({ user, children, kpiRibbon }: AppShellProps) {
     );
   }
 
-  /** An admin link is selected on its path; every one but the hub also under it. */
-  function isAdminSelected(path: string): boolean {
-    return location.pathname === path || (path !== "/admin" && location.pathname.startsWith(path));
+  /** `F3.76` — the hub is selected on `/admin`; an area on every path whose tab is in it. */
+  const selectedAdminArea = masterDataTabForPath(location.pathname)?.area ?? null;
+  function isAdminSelected(item: { readonly path: string; readonly area?: string }): boolean {
+    return item.area === undefined ? location.pathname === item.path : item.area === selectedAdminArea;
   }
+  const visibleAreaPaths = new Map(
+    visibleMasterDataAreas(user.role).map((area) => [area.id as string, area.path]),
+  );
 
   function toggleSidebar(): void {
     setSidebarCollapsed((current) => {
@@ -362,26 +367,15 @@ export function AppShell({ user, children, kpiRibbon }: AppShellProps) {
               )}
               <ul className="space-y-0.5">
                 {adminModuleGroup.items
-                  .filter((item) => {
-                    if ("catalogOnly" in item && item.catalogOnly) {
-                      return canWritePointKeys(user.role);
-                    }
-                    if ("globalOnly" in item && item.globalOnly) {
-                      return isGlobalAdmin(user.role);
-                    }
-                    if ("orgAdminOnly" in item && item.orgAdminOnly) {
-                      return canManageMimicLayouts(user.role);
-                    }
-                    return true;
-                  })
+                  .filter((item) => !("area" in item) || visibleAreaPaths.has(item.area))
                   .map((item) => (
                     <li key={item.path}>
                       <Link
-                        to={item.path}
+                        to={"area" in item ? (visibleAreaPaths.get(item.area) ?? item.path) : item.path}
                         title={item.label}
                         aria-label={sidebarCollapsed ? `${item.label} (${collapsedLabel(item)})` : undefined}
-                        aria-current={isAdminSelected(item.path) ? "page" : undefined}
-                        className={`surface-nav-item block ${isAdminSelected(item.path) ? "surface-nav-item-selected" : ""} ${sidebarCollapsed ? "px-2 py-2 text-center font-condensed text-xs font-bold" : "px-3 py-1.5"}`}
+                        aria-current={isAdminSelected(item) ? "page" : undefined}
+                        className={`surface-nav-item block ${isAdminSelected(item) ? "surface-nav-item-selected" : ""} ${sidebarCollapsed ? "px-2 py-2 text-center font-condensed text-xs font-bold" : "px-3 py-1.5"}`}
                       >
                         {sidebarCollapsed ? collapsedLabel(item) : item.label}
                       </Link>

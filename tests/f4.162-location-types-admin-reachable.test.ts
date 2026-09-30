@@ -60,11 +60,16 @@ function count(source: string, needle: string): number {
   return source.split(needle).length - 1;
 }
 
-/** The `masterDataTabs` literal, up to its `] as const;`. */
+/** The `masterDataTabs` literal, up to its `] as const` (`satisfies` follows it since `F3.76`). */
 function tabsOf(source: string): string {
   const tabsAt = source.indexOf("export const masterDataTabs");
-  return source.slice(tabsAt, source.indexOf("] as const;", tabsAt));
+  return source.slice(tabsAt, source.indexOf("] as const", tabsAt));
 }
+
+/** `F3.76` — each tab names its Master Data area; Location Types is in Reference Data. */
+const TAB_RE = new RegExp(
+  `\\{ label: "Location Types", path: "${ROUTE}", globalAdminOnly: true, area: "reference" \\}`,
+);
 
 /** The `adminModuleGroup` literal, up to its `} as const;`. */
 function adminGroupOf(source: string): string {
@@ -104,26 +109,23 @@ describe("F4.162 — the Location Types admin surface is reachable and gated", (
     const tabs = tabsOf(access);
     expect(tabs.length).toBeGreaterThan(0);
     expect(count(tabs, `path: "${ROUTE}"`)).toBe(1);
-    expect(tabs).toMatch(
-      new RegExp(`\\{ label: "Location Types", path: "${ROUTE}", globalAdminOnly: true \\}`),
-    );
+    expect(tabs).toMatch(TAB_RE);
   });
 
   it("positive control — the tab scan fails with the flag dropped", () => {
     const mutated = access.replace(`path: "${ROUTE}", globalAdminOnly: true`, `path: "${ROUTE}"`);
     expect(mutated).not.toBe(access);
-    expect(tabsOf(mutated)).not.toMatch(
-      new RegExp(`\\{ label: "Location Types", path: "${ROUTE}", globalAdminOnly: true \\}`),
-    );
+    expect(tabsOf(mutated)).not.toMatch(TAB_RE);
   });
 
-  it("the sidebar's adminModuleGroup carries the path once, with globalOnly: true", () => {
+  // `F3.76` — the sidebar has one entry per Master Data area, built from
+  // `masterDataAreas`, and no per-screen entry: the Reference Data entry and
+  // its Location Types tab reach the page.
+  it("the sidebar's adminModuleGroup builds its entries from masterDataAreas, with no entry for the path (F3.76)", () => {
     const group = adminGroupOf(shell);
     expect(group.length).toBeGreaterThan(0);
-    expect(count(group, `path: "${ROUTE}"`)).toBe(1);
-    expect(group).toMatch(
-      new RegExp(`\\{ label: "Location Types", path: "${ROUTE}", globalOnly: true \\}`),
-    );
+    expect(group).toContain("...masterDataAreas.map(");
+    expect(count(group, `path: "${ROUTE}"`)).toBe(0);
   });
 
   it("the page renders MasterDataLayout", () => {

@@ -12,7 +12,13 @@ const shellPath = join(repoRoot, "apps/web/src/layouts/app-shell.tsx");
 const ROUTE = "/admin/mimic-symbol-libraries";
 const PAGE = "MimicSymbolLibrariesPage";
 const PAGE_MODULE = "./pages/admin/mimic-symbol-libraries-page";
-const NAV_ITEM = `{ label: "Symbol Libraries", path: "${ROUTE}", orgAdminOnly: true }`;
+/**
+ * `F3.76` — the sidebar entry became a tab of the Templates & Visuals area, gated by its own
+ * `symbolLibraryAdmin` flag, which `visibleMasterDataTabs` reads through `canManageSymbolLibraries`.
+ */
+const TAB_ITEM = `{ label: "Symbol Libraries", path: "${ROUTE}", symbolLibraryAdmin: true, area: "templates" }`;
+const TAB_GATE_RE =
+  /if \("symbolLibraryAdmin" in tab && tab\.symbolLibraryAdmin\) \{\s*return canManageSymbolLibraries\(role\);/;
 
 /**
  * `F3.32f` slice 3 unit U1 (ADR 0086 decisions 1 and 4, plan D10) — the Symbol Libraries admin
@@ -67,6 +73,12 @@ function count(source: string, needle: string): number {
 function adminGroupOf(source: string): string {
   const groupAt = source.indexOf("const adminModuleGroup");
   return groupAt < 0 ? "" : source.slice(groupAt, source.indexOf("} as const;", groupAt));
+}
+
+/** The `masterDataTabs` literal, up to its `] as const` (`satisfies` follows it). */
+function tabsOf(source: string): string {
+  const tabsAt = source.indexOf("export const masterDataTabs");
+  return tabsAt < 0 ? "" : source.slice(tabsAt, source.indexOf("] as const", tabsAt));
 }
 
 const IMPORT_RE = new RegExp(`import \\{[^}]*\\b${PAGE}\\b[^}]*\\} from "${PAGE_MODULE.replace(/[.]/g, "\\.")}"`);
@@ -124,26 +136,42 @@ describe("F3.32f — the Symbol Libraries admin surface is reachable and gated",
     expect(`import { ${PAGE} } from "${PAGE_MODULE}";`).toMatch(IMPORT_RE);
   });
 
-  it("the sidebar's adminModuleGroup carries the path once, labelled Symbol Libraries, with orgAdminOnly: true", () => {
-    const group = adminGroupOf(shell);
-    expect(group.length).toBeGreaterThan(0);
-    expect(count(group, `path: "${ROUTE}"`)).toBe(1);
-    expect(group).toContain(NAV_ITEM);
+  it("masterDataTabs carries the path once, as a Templates & Visuals tab with symbolLibraryAdmin: true (F3.76)", () => {
+    const tabs = tabsOf(access);
+    expect(tabs.length).toBeGreaterThan(0);
+    expect(count(tabs, `path: "${ROUTE}"`)).toBe(1);
+    expect(tabs).toContain(TAB_ITEM);
   });
 
-  it("the Symbol Libraries nav item follows Mimic Layouts (plan D10)", () => {
+  it("visibleMasterDataTabs gates the symbolLibraryAdmin flag with canManageSymbolLibraries (F3.76)", () => {
+    expect(access).toMatch(TAB_GATE_RE);
+  });
+
+  it("the sidebar has no per-screen entry for the path: the Templates & Visuals area entry reaches it (F3.76)", () => {
     const group = adminGroupOf(shell);
-    const layoutsAt = group.indexOf(`path: "/admin/mimic-layouts"`);
+    expect(group).toContain("...masterDataAreas.map(");
+    expect(count(group, `path: "${ROUTE}"`)).toBe(0);
+  });
+
+  it("the Symbol Libraries tab follows Mimic Layouts (plan D10)", () => {
+    const tabs = tabsOf(access);
+    const layoutsAt = tabs.indexOf(`path: "/admin/mimic-layouts"`);
     expect(layoutsAt).toBeGreaterThan(-1);
-    expect(group.indexOf(NAV_ITEM)).toBeGreaterThan(layoutsAt);
+    expect(tabs.indexOf(TAB_ITEM)).toBeGreaterThan(layoutsAt);
   });
 
-  it("positive control — the nav scan fails with the flag dropped", () => {
-    const planted = `const adminModuleGroup = {\n  items: [\n    ${NAV_ITEM},\n  ],\n} as const;`;
-    expect(adminGroupOf(planted)).toContain(NAV_ITEM);
-    const mutated = planted.replace(", orgAdminOnly: true", "");
+  it("positive control — the tab scan fails with the flag dropped", () => {
+    const planted = `export const masterDataTabs = [\n  ${TAB_ITEM},\n] as const satisfies readonly Tab[];`;
+    expect(tabsOf(planted)).toContain(TAB_ITEM);
+    const mutated = planted.replace(", symbolLibraryAdmin: true", "");
     expect(mutated).not.toBe(planted);
-    expect(adminGroupOf(mutated)).not.toContain(NAV_ITEM);
+    expect(tabsOf(mutated)).not.toContain(TAB_ITEM);
+  });
+
+  it("positive control — the gate scan fails on another predicate", () => {
+    const planted = `if ("symbolLibraryAdmin" in tab && tab.symbolLibraryAdmin) {\n      return canManageSymbolLibraries(role);`;
+    expect(planted).toMatch(TAB_GATE_RE);
+    expect(planted.replace("canManageSymbolLibraries", "canManageMimicLayouts")).not.toMatch(TAB_GATE_RE);
   });
 
   it("admin-access.ts exports canManageSymbolLibraries(role: UserRole): boolean", () => {

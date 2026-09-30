@@ -91,7 +91,7 @@ describe("E4.1a — the calc-parameters admin surface is reachable and gated", (
   it("masterDataTabs carries the path, once", () => {
     const tabsAt = access.indexOf("export const masterDataTabs");
     expect(tabsAt).toBeGreaterThan(-1);
-    const tabs = access.slice(tabsAt, access.indexOf("] as const;", tabsAt));
+    const tabs = access.slice(tabsAt, access.indexOf("] as const", tabsAt));
     expect(count(tabs, `path: "${ROUTE}"`)).toBe(1);
   });
 
@@ -99,7 +99,7 @@ describe("E4.1a — the calc-parameters admin surface is reachable and gated", (
     const mutated = access.replace(`path: "${ROUTE}"`, `path: "${ROUTE}-x"`);
     expect(mutated).not.toBe(access);
     const tabsAt = mutated.indexOf("export const masterDataTabs");
-    const tabs = mutated.slice(tabsAt, mutated.indexOf("] as const;", tabsAt));
+    const tabs = mutated.slice(tabsAt, mutated.indexOf("] as const", tabsAt));
     expect(count(tabs, `path: "${ROUTE}"`)).toBe(0);
   });
 

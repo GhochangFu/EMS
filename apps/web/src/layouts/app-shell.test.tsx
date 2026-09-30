@@ -15,8 +15,7 @@ import {
   givesAnOrganizationAdminTheSettingsLink,
   givesEveryRailItemAUniqueCode,
   hidesTheEntryFromANoneScope,
-  hidesLocationTypesFromAnOrganizationAdmin,
-  hidesMimicLayoutsFromALocationAdmin,
+  hidesTheNotificationsEntryFromALocationAdmin,
   hidesTheEntryWhileTheScopeIsNull,
   doesNotHighlightTheEntryElsewhere,
   hasNoDashboardEntry,
@@ -36,8 +35,9 @@ import {
   readsNoTrinetraInTheShell,
   readsTheFullItemList,
   showsDsForDashboardsWhenCollapsed,
-  showsLocationTypesToTheGlobalAdmin,
-  showsMimicLayoutsToAnOrganizationAdmin,
+  selectsTheAreaOfADrillDown,
+  selectsTheHubOnTheHubPath,
+  showsTheHubAndFiveAreasToAnOrganizationAdmin,
   showsOneEntryToALocationScope,
   showsTheDescriptorInTheHeader,
   showsTheNameInTheFooter,
@@ -95,20 +95,20 @@ describe("F3.66 Control Room sidebar entry", () => {
     keepsOtherItemsExactMatch();
   });
 
-  it("S9 hides the Location Types entry from an organization_admin (F4.162)", () => {
-    hidesLocationTypesFromAnOrganizationAdmin();
+  it("S9 shows the hub and the five Master Data areas to an organization_admin (F3.76)", () => {
+    showsTheHubAndFiveAreasToAnOrganizationAdmin();
   });
 
-  it("S10 shows one Location Types entry to the global admin (F4.162)", () => {
-    showsLocationTypesToTheGlobalAdmin();
+  it("S10 hides the Notifications area entry from a location_admin (F3.76)", () => {
+    hidesTheNotificationsEntryFromALocationAdmin();
   });
 
-  it("M1 shows one Mimic Layouts entry to an organization_admin (F3.32c)", () => {
-    showsMimicLayoutsToAnOrganizationAdmin();
+  it("M1 selects the Sites & Equipment entry on a drill-down (F3.76)", () => {
+    selectsTheAreaOfADrillDown();
   });
 
-  it("M2 hides the Mimic Layouts entry from a location_admin (F3.32c)", () => {
-    hidesMimicLayoutsFromALocationAdmin();
+  it("M2 selects the hub entry on /admin only (F3.76)", () => {
+    selectsTheHubOnTheHubPath();
   });
 });
 
