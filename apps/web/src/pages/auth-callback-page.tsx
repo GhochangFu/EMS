@@ -3,7 +3,6 @@ import { useNavigate } from "react-router-dom";
 
 import { completeOidcLogin } from "../api/oidc";
 import { fetchCurrentUser } from "../api/login";
-import { landingRouteForScope } from "../lib/landing-route";
 import { useAuthStore } from "../stores/auth-store";
 
 export function AuthCallbackPage() {
@@ -25,7 +24,8 @@ export function AuthCallbackPage() {
             current.scope,
             session.idToken,
           );
-          void navigate(landingRouteForScope(current.scope), { replace: true });
+          // `F3.72` (plan D1) — `/` renders the caller's Control Room entry level.
+          void navigate("/", { replace: true });
         }
       } catch (err) {
         if (!cancelled) {

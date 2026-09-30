@@ -9,8 +9,8 @@ import { LocationKpiCard } from "./location-kpi-card";
 /**
  * `F3.66` U3, plan decision D4 — `LocationKpiCard`'s optional `to`. An
  * optional prop at an adapter is invisible to tsc, so both halves are asserted
- * on the rendered `href`: the default keeps `/` and the accordion on the
- * location dashboard, and `to` re-links the card for the Control Room.
+ * on the rendered `href`: the default links to the Control Room site view
+ * (`F3.72` OQ7), and `to` re-links the card to any other target.
  *
  * Assertions live here; `location-kpi-card.test.tsx` is the Vitest entry point
  * and carries the `@vitest-environment jsdom` docblock (ADR 0014, ADR 0042
@@ -38,24 +38,28 @@ function cardLink(): HTMLElement {
   return screen.getByText("Western Cape Campus").closest("a") as HTMLElement;
 }
 
-/** K1 — with no `to`, the card links to the location dashboard. */
-export function theDefaultLinksToTheLocationDashboard(): void {
+/** K1 (`F3.72` OQ7) — with no `to`, the card links to the Control Room site view. */
+export function theDefaultLinksToTheControlRoomSite(): void {
   render(
     <MemoryRouter>
       <LocationKpiCard location={LOCATION} />
     </MemoryRouter>,
   );
-  expect(cardLink().getAttribute("href")).toBe("/locations/loc-1/dashboard");
+  expect(cardLink().getAttribute("href")).toBe("/control-room/site/loc-1");
 }
 
-/** K2 — `to` replaces the link target. */
+/**
+ * K2 — `to` replaces the link target. The target differs from the default on
+ * purpose: since OQ7 the default is the site view, so a `to` equal to it would
+ * pass with a card that ignores the prop.
+ */
 export function toReplacesTheLinkTarget(): void {
   render(
     <MemoryRouter>
-      <LocationKpiCard location={LOCATION} to="/control-room/site/loc-1" />
+      <LocationKpiCard location={LOCATION} to="/elsewhere/loc-1" />
     </MemoryRouter>,
   );
-  expect(cardLink().getAttribute("href")).toBe("/control-room/site/loc-1");
+  expect(cardLink().getAttribute("href")).toBe("/elsewhere/loc-1");
 }
 
 /** K4 (F4.157 U8) — with no province, the card falls back to typeLabel, not the raw code. */

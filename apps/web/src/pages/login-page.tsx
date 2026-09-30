@@ -4,7 +4,6 @@ import { useNavigate } from "react-router-dom";
 
 import { fetchCurrentUser, loginRequest } from "../api/login";
 import { isOidcEnabled, startOidcLogin } from "../api/oidc";
-import { landingRouteForScope } from "../lib/landing-route";
 import { useAuthStore } from "../stores/auth-store";
 import { Wordmark } from "../components/wordmark";
 
@@ -22,7 +21,8 @@ export function LoginPage() {
       const current = await fetchCurrentUser(data.accessToken);
       // Local login has no OIDC id token.
       setSession(data.accessToken, current.user, current.scope, null);
-      void navigate(landingRouteForScope(current.scope), { replace: true });
+      // `F3.72` (plan D1) — `/` renders the caller's Control Room entry level.
+      void navigate("/", { replace: true });
     },
     onError: (err: Error) => {
       setFormError(err.message);

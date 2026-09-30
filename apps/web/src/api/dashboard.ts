@@ -17,11 +17,17 @@ export async function fetchDashboardKpis(): Promise<DashboardKpis> {
   return checkResponse(dashboardKpisSchema, await res.json(), "dashboard/kpis");
 }
 
+/**
+ * `GET /dashboard/load-trend`. `organizationId` (`F3.72`, plan D3/D8, OQ1) narrows the trend to
+ * that organization's readable assets; without it the read covers the whole readable set.
+ */
 export async function fetchLoadTrend(
   window = "60m",
+  organizationId?: string,
 ): Promise<{ points: LoadTrendPoint[] }> {
+  const organization = organizationId ? `&organizationId=${encodeURIComponent(organizationId)}` : "";
   const res = await fetch(
-    `${base}/api/v1/dashboard/load-trend?window=${encodeURIComponent(window)}`,
+    `${base}/api/v1/dashboard/load-trend?window=${encodeURIComponent(window)}${organization}`,
     withAuth(),
   );
   if (!res.ok) {

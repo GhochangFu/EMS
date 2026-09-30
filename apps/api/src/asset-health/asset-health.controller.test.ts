@@ -3,9 +3,12 @@ import { describe, it } from "vitest";
 import {
   assertADeniedAssetNeverReachesTheService,
   assertAMalformedForAssetQueryIsABadRequest,
+  assertAMalformedOrganizationIdIsABadRequest,
   assertAMalformedSummaryQueryIsABadRequestBeforeAccessControl,
   assertAnUnrestrictedScopeStaysNull,
   assertLocationIdIsPassedThroughOrUndefined,
+  assertNoOrganizationIdReadsTheReadableSet,
+  assertOrganizationIdNarrowsThroughTheIntersection,
   assertTheReadableScopeFlowsThroughByReference,
 } from "./asset-health.controller.spec";
 
@@ -33,5 +36,17 @@ describe("asset-health.controller", () => {
 
   it("passes locationId through when valid, and undefined when absent", async () => {
     await assertLocationIdIsPassedThroughOrUndefined();
+  });
+
+  it("narrows through readableAssetIdsInOrganization when organizationId is present", async () => {
+    await assertOrganizationIdNarrowsThroughTheIntersection();
+  });
+
+  it("reads the readable set unchanged when organizationId is absent", async () => {
+    await assertNoOrganizationIdReadsTheReadableSet();
+  });
+
+  it("answers a malformed organizationId with 400 before any access-control read", async () => {
+    await assertAMalformedOrganizationIdIsABadRequest();
   });
 });

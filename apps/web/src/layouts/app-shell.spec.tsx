@@ -169,6 +169,36 @@ export function keepsOtherItemsExactMatch(): void {
 }
 
 /**
+ * `F3.72` S17 (ADR 0087 decision 1, plan D6) — the Control Room entry
+ * replaces *Dashboard*: no sidebar link is named "Dashboard". *Dashboards*
+ * (the library, a different item) is the positive control: an exact-name
+ * query that finds it proves the lookup can see a sidebar link at all.
+ */
+export function hasNoDashboardEntry(): void {
+  renderShell(GLOBAL, "/", "admin");
+  expect(within(sidebar()).getByRole("link", { name: "Dashboards" })).toBeInTheDocument();
+  expect(within(sidebar()).queryAllByRole("link", { name: "Dashboard" })).toHaveLength(0);
+  expect(sidebar().querySelectorAll('a[href="/"]')).toHaveLength(0);
+}
+
+/**
+ * S18 — plan D6: `/` renders the caller's Control Room entry level, so the
+ * entry is `aria-current` there too. At `/alarms` it is not — the negative
+ * half, so a link that is always current reddens.
+ */
+export function highlightsTheEntryOnTheRoot(): void {
+  renderShell(GLOBAL, "/");
+  expect(entries()[0]?.getAttribute("aria-current")).toBe("page");
+}
+
+/** S18b — the negative half of S18: at `/alarms` the entry carries no `aria-current`. */
+export function doesNotHighlightTheEntryElsewhere(): void {
+  renderShell(GLOBAL, "/alarms");
+  expect(entries()).toHaveLength(1);
+  expect(entries()[0]?.getAttribute("aria-current")).toBeNull();
+}
+
+/**
  * `F4.164` U2 — the locked top-nav Settings entry. For a role that is not a
  * master-data administrator it is a focusable `button` with
  * `aria-disabled="true"`, an accessible description holding
@@ -276,7 +306,11 @@ export function givesEveryRailItemAUniqueCode(): void {
   expect(duplicates, `duplicate collapsed codes:\n${duplicates.join("\n")}`).toEqual([]);
 }
 
-/** L2 — the gate reads the full list: 23 items today, hidden ones included. */
+/**
+ * L2 — the gate reads the full list, hidden ones included: 24 items since
+ * `F3.72` removed *Dashboard* (25 before it). The floor stays 23 — the
+ * removal did not take the list below it.
+ */
 export function readsTheFullItemList(): void {
   expect(collapsedRailEntries().length).toBeGreaterThanOrEqual(23);
 }
@@ -298,13 +332,17 @@ export function labelsEveryCollapsedLinkWithItsTitleAndCode(): void {
   );
 }
 
-/** L5 — collapsed, "Dashboard (D)" and "Dashboards (DS)" each name exactly one link. */
-export function namesDashboardAndDashboardsApartWhenCollapsed(): void {
+/**
+ * L5 — collapsed, "Dashboards (DS)" names exactly one link and "Dashboard (D)"
+ * names none: `F3.72` removed *Dashboard* (plan D6). *Dashboards* keeps its
+ * `DS` code, so the collapsed rail does not change under its users.
+ */
+export function namesDashboardsAndNoDashboardWhenCollapsed(): void {
   renderCollapsedShell();
   expect({
     Dashboard: within(sidebar()).queryAllByRole("link", { name: "Dashboard (D)" }).length,
     Dashboards: within(sidebar()).queryAllByRole("link", { name: "Dashboards (DS)" }).length,
-  }).toEqual({ Dashboard: 1, Dashboards: 1 });
+  }).toEqual({ Dashboard: 0, Dashboards: 1 });
 }
 
 /** L6a — collapsed, the visible codes are unique. */

@@ -3,6 +3,8 @@ import { afterEach, describe, it, vi } from "vitest";
 import {
   fetchDashboardsSendsAllThreeKeysInOrder,
   fetchDashboardsSendsAssetIdAlone,
+  fetchDashboardsSendsLocationIdAlone,
+  fetchDashboardsSendsOrganizationIdThenLocationId,
   fetchDashboardsSendsNoQueryWhenUnfiltered,
   fetchDashboardsSendsOrganizationIdThenAssetId,
   fetchDashboardsSendsSectionAlone,
@@ -37,5 +39,13 @@ describe("F3.31 dashboards web client — assetId reaches the wire", () => {
 
   it("sends all three keys in the helper insertion order (E4.2)", async () => {
     await fetchDashboardsSendsAllThreeKeysInOrder();
+  });
+
+  it("sends ?locationId= alone when only the location is given (F3.72)", async () => {
+    await fetchDashboardsSendsLocationIdAlone();
+  });
+
+  it("sends ?organizationId=&locationId= in that order when both are given (F3.72)", async () => {
+    await fetchDashboardsSendsOrganizationIdThenLocationId();
   });
 });

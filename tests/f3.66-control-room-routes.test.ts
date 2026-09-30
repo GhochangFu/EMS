@@ -16,6 +16,12 @@ const appShellPath = join(repoRoot, "apps/web/src/layouts/app-shell.tsx");
  * `<ControlRoom…Page` use is a violation — so a new `ControlRoom…Page` name
  * fails here until a gate claims it. `tests/f3.70-smoc-site-view.test.ts`
  * owns the seven `/cr-*` redirect routes.
+ *
+ * `F3.72` (ADR 0087, plan D1/D9) — `/` renders the entry level through
+ * `ControlRoomOrganizationsPage` with `entry`, **unwrapped** (the guard sends a
+ * `none` scope to `/`, so wrapping `/` would loop). The sweep claims `/` as an
+ * unwrapped route for that one page only; `tests/f3.72-control-room-entry.test.ts`
+ * owns the shape of the `/` route itself.
  */
 function withoutComments(source: string): string {
   return source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^[ \t]*\/\/.*$/gm, "");
@@ -83,6 +89,20 @@ function scopeWrappedRange(
   return { start: start + open + OPEN.length, end: start + close };
 }
 
+/** `F3.72` — the one route that renders a scope page unwrapped, and the one page it may render. */
+const ENTRY_PATH = "/";
+const ENTRY_PAGE = "ControlRoomOrganizationsPage";
+
+/** The absolute range of the `/` route's block, or `null` when there is no `/` route. */
+function entryRouteRange(source: string): { readonly start: number; readonly end: number } | null {
+  const match = pathRegExp(ENTRY_PATH).exec(source);
+  if (!match) {
+    return null;
+  }
+  const start = source.lastIndexOf("<Route", match.index);
+  return { start, end: nextBoundary(source, match.index + match[0].length) };
+}
+
 /** True when the route's element is wrapped in `<ControlRoomScopeRoute>`. */
 function isScopeWrapped(source: string, path: string): boolean {
   return scopeWrappedRange(source, path) !== null;
@@ -107,15 +127,21 @@ function controlRoomPageUses(source: string): { readonly name: string; readonly 
  * Every `<ControlRoom…Page` use that fails the page-side sweep: a use of one of
  * the three scope pages outside a wrapped `/control-room*` route, or a use of
  * any other name — the seven SMOC pages included, since `F3.70` U5a. A new
- * `ControlRoom…Page` therefore fails closed until a gate claims it.
+ * `ControlRoom…Page` therefore fails closed until a gate claims it. Since
+ * `F3.72`, `ControlRoomOrganizationsPage` is also covered inside the `/`
+ * route's block; the other two scope pages are not.
  */
 function pageSweepViolations(source: string): string[] {
   const covered = CONTROL_ROOM_PATHS.flatMap((path) => {
     const range = scopeWrappedRange(source, path);
     return range === null ? [] : [range];
   });
+  const entry = entryRouteRange(source);
   return controlRoomPageUses(source)
     .filter(({ name, at }) => {
+      if (name === ENTRY_PAGE && entry !== null && at >= entry.start && at < entry.end) {
+        return false;
+      }
       if ((SCOPE_PAGES as readonly string[]).includes(name)) {
         return !covered.some((range) => at >= range.start && at < range.end);
       }
@@ -154,12 +180,40 @@ describe("F3.66 — the three /control-room* routes are wrapped in ControlRoomSc
     expect(isScopeWrapped(beside, CONTROL_ROOM_PATHS[2])).toBe(false);
   });
 
-  /** The sweep must not pass on an empty enumeration: it finds each scope page once. */
-  it("page sweep — enumerates each of the three scope pages exactly once", () => {
+  /**
+   * The sweep must not pass on an empty enumeration. Each scope page appears
+   * once, except `ControlRoomOrganizationsPage`: twice since `F3.72` — once
+   * wrapped at `/control-room`, once bare at `/`.
+   */
+  it("page sweep — enumerates the organizations page twice and the other two scope pages once", () => {
     const names = controlRoomPageUses(app)
       .map((use) => use.name)
       .filter((name) => (SCOPE_PAGES as readonly string[]).includes(name));
-    expect([...names].sort()).toEqual([...SCOPE_PAGES].sort());
+    expect([...names].sort()).toEqual([...SCOPE_PAGES, ENTRY_PAGE].sort());
+  });
+
+  it("the / route is claimed: it exists and holds the organizations page, unwrapped", () => {
+    const entry = entryRouteRange(app);
+    expect(entry, 'no <Route path="/"> in app.tsx').not.toBeNull();
+    const block = app.slice(entry?.start ?? 0, entry?.end ?? 0);
+    expect(componentTags(block)).toContain(ENTRY_PAGE);
+    expect(block).not.toContain("ControlRoomScopeRoute");
+  });
+
+  it("positive control — a third, bare use of ControlRoomOrganizationsPage is caught", () => {
+    const extra = `<Route path="/organizations-copy" element={<ControlRoomOrganizationsPage user={user} />} />`;
+    const withCopy = app.replace("</Routes>", () => `${extra}\n</Routes>`);
+    expect(withCopy).not.toBe(app);
+    expect(pageSweepViolations(withCopy)).toEqual([ENTRY_PAGE]);
+  });
+
+  it("positive control — ControlRoomSitePage on the / route is caught", () => {
+    const onRoot = app.replace(
+      /<ControlRoomOrganizationsPage\s+user=\{user\}\s+entry\s*\/>/,
+      () => "<ControlRoomSitePage user={user} />",
+    );
+    expect(onRoot).not.toBe(app);
+    expect(pageSweepViolations(onRoot)).toEqual(["ControlRoomSitePage"]);
   });
 
   it("page sweep — every ControlRoom…Page use is a wrapped scope page", () => {

@@ -3,6 +3,7 @@ import { describe, it } from "vitest";
 import {
   runP1,
   runP2,
+  runP2b,
   runP3,
   runP4,
   runP5,
@@ -26,6 +27,10 @@ describe("smoc-pages", () => {
 
   it("P2 — smocTabPath builds the :tab URL, encoding the locationId", () => {
     runP2();
+  });
+
+  it("P2b — siteAssetsPath builds the Assets & RTUs URL; the key is no SMOC tab (F3.72 D4)", () => {
+    runP2b();
   });
 
   it("P3 — an undefined tab param resolves to the overview tab", () => {

@@ -186,6 +186,13 @@ export const listDashboardsQuerySchema = z.object({
   organizationId: z.string().uuid().optional(),
   assetId: z.string().uuid().optional(),
   /**
+   * `F3.72` (plan D8, OQ6) — the dashboards of one location: those whose
+   * `location_id` is it, plus those whose `asset_group_id` is a group of it. ANDed with the
+   * organization scope like `assetId`, so it narrows and never widens: an unknown or unreadable
+   * id answers `[]`, never 403 (ADR 0068 ruling 4).
+   */
+  locationId: z.string().uuid().optional(),
+  /**
    * `E4.2` / ADR 0072 decision 1 — the dashboards of one section, which is what
    * the *Sustainability* sidebar entry opens.
    *

@@ -78,6 +78,33 @@ vi.mock("../../components/control-room/site-dashboard-view", () => ({
 }));
 
 /**
+ * `F3.72` U3 (plan D4/D5) — the Assets & RTUs tab hosts `SiteAssetsView`,
+ * which owns its own read and states (its own suite). This suite asserts
+ * only which `locationId` the page hands it.
+ */
+vi.mock("../../components/control-room/site-assets-view", () => ({
+  SiteAssetsView: ({ locationId }: { locationId: string }) => (
+    <div data-testid="site-assets-view" data-location-id={locationId} />
+  ),
+}));
+
+/**
+ * `F3.72` U3 (plan D7) — the Site view entry lists the site's dashboards
+ * through `ScopedDashboardsList` (its own suite). The mock records both
+ * props and renders no link, so V7b/V13b's `/dashboards/` absence checks and
+ * `cleanupPage`'s network check are not disturbed by its read.
+ */
+vi.mock("../../components/control-room/scoped-dashboards-list", () => ({
+  ScopedDashboardsList: ({ organizationId, locationId }: { organizationId?: string; locationId?: string }) => (
+    <div
+      data-testid="scoped-dashboards-list"
+      data-organization-id={organizationId ?? ""}
+      data-location-id={locationId ?? ""}
+    />
+  ),
+}));
+
+/**
  * `F3.66` U4 — `/control-room/site/:locationId`, the site view host (ADR 0076
  * decisions 2 and 5), rows V1a–V16 of the plan's U4 table; `F3.70` U4
  * rewrote V5/V6 for the `:tab?` param and added V17–V20 (OQ5, D5).
@@ -651,6 +678,184 @@ export async function aPendingKpiReadDoesNotRedirectATab(): Promise<void> {
   });
   expect(screen.getByText("Loading Control Room…")).toBeInTheDocument();
   expect(pathname()).toBe("/control-room/site/a1/sld");
+}
+
+/**
+ * `F3.72` U1 (plan D1) — the `locationId` prop overrides the route parameter,
+ * so `/` can render the site in place. The route names b1 and the prop names
+ * a1: the resolve read and the body both take a1. Every other case passes no
+ * prop, which is the control that the parameter is still read.
+ */
+export async function theLocationIdPropOverridesTheRoute(): Promise<void> {
+  stubReads(TWO_ORGS, view("a1"));
+  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  render(
+    <QueryClientProvider client={queryClient}>
+      <MemoryRouter initialEntries={["/control-room/site/b1"]}>
+        <Routes>
+          <Route
+            path="/control-room/site/:locationId/:tab?"
+            element={<ControlRoomSitePage user={USER} locationId="a1" />}
+          />
+        </Routes>
+      </MemoryRouter>
+    </QueryClientProvider>,
+  );
+
+  const mount = await screen.findByTestId("generated-site-view");
+  expect(mount.getAttribute("data-location-id")).toBe("a1");
+  expect(vi.mocked(controlRoomApi.fetchResolvedSiteControlRoomView).mock.calls[0]).toEqual(["a1"]);
+}
+
+/**
+ * `F3.72` U3 (plan D4) — the Assets & RTUs tab. `assets` is not a SMOC tab
+ * key, so before U3 the D5 redirect sent it to the bare path; now it renders
+ * `SiteAssetsView` for every view kind. The redirect cases V17–V21c above
+ * stay as the regression control that every other segment still redirects.
+ */
+
+/** The page's two-entry strip, by its label — the shell's sidebar holds links of its own. */
+async function siteStrip(): Promise<HTMLElement> {
+  return screen.findByRole("navigation", { name: "Site sections" });
+}
+
+/** A1 — `/assets` on a `generated` site hosts `SiteAssetsView` with the page's `locationId`. */
+export async function theAssetsTabHostsTheAssetsView(): Promise<void> {
+  stubReads(TWO_ORGS, view("a1"));
+  renderAt("a1", undefined, "assets");
+
+  const mount = await screen.findByTestId("site-assets-view");
+  expect(mount.getAttribute("data-location-id")).toBe("a1");
+}
+
+/** A2 — `/assets` on a `generated` site stays at the tab URL and mounts no generated view (after A1). */
+export async function theAssetsTabDoesNotRedirectOnAGeneratedSite(): Promise<void> {
+  stubReads(TWO_ORGS, view("a1"));
+  renderAt("a1", undefined, "assets");
+
+  expect(await screen.findByTestId("site-assets-view")).toBeInTheDocument();
+  expect(pathname()).toBe("/control-room/site/a1/assets");
+  expect(screen.queryByTestId("generated-site-view")).toBeNull();
+}
+
+/** A3 — `/assets` on the SMOC site stays at the tab URL and mounts no SMOC view. */
+export async function theAssetsTabDoesNotRedirectOnTheSmocSite(): Promise<void> {
+  stubReads(SMOC_SITES, SMOC_VIEW);
+  renderAt("s1", undefined, "assets");
+
+  const mount = await screen.findByTestId("site-assets-view");
+  expect(mount.getAttribute("data-location-id")).toBe("s1");
+  expect(pathname()).toBe("/control-room/site/s1/assets");
+  expect(screen.queryByTestId("smoc-site-view")).toBeNull();
+}
+
+/** A4 — `/assets` on a `dashboard` site hosts the assets view and no dashboard view. */
+export async function theAssetsTabOnADashboardSiteHostsNoDashboardView(): Promise<void> {
+  stubReads(
+    PHE_SITES,
+    view("p1", {
+      kind: "dashboard",
+      dashboardId: "d1",
+      dashboardSlug: "phe-lotapata",
+    }),
+  );
+  renderAt("p1", undefined, "assets");
+
+  expect(await screen.findByTestId("site-assets-view")).toBeInTheDocument();
+  expect(pathname()).toBe("/control-room/site/p1/assets");
+  expect(screen.queryByTestId("site-dashboard-view")).toBeNull();
+}
+
+/** A5 — at the bare path the strip links to the tab, and "Site view" is the current entry (OQ5). */
+export async function theStripLinksToTheAssetsTab(): Promise<void> {
+  stubReads(TWO_ORGS, view("a1"));
+  renderAt("a1");
+
+  const strip = await siteStrip();
+  const assets = within(strip).getByRole("link", { name: "Assets & RTUs" });
+  const siteView = within(strip).getByRole("link", { name: "Site view" });
+  expect([assets.getAttribute("href"), assets.getAttribute("aria-current")]).toEqual([
+    "/control-room/site/a1/assets",
+    null,
+  ]);
+  expect(siteView.getAttribute("aria-current")).toBe("page");
+}
+
+/** A6 — at `/assets` the strip links back to the bare path, and "Assets & RTUs" is current. */
+export async function theStripLinksBackToTheSiteView(): Promise<void> {
+  stubReads(TWO_ORGS, view("a1"));
+  renderAt("a1", undefined, "assets");
+
+  const strip = await siteStrip();
+  const siteView = within(strip).getByRole("link", { name: "Site view" });
+  const assets = within(strip).getByRole("link", { name: "Assets & RTUs" });
+  expect([siteView.getAttribute("href"), siteView.getAttribute("aria-current")]).toEqual([
+    "/control-room/site/a1",
+    null,
+  ]);
+  expect(assets.getAttribute("aria-current")).toBe("page");
+}
+
+/** A7 — on a SMOC tab (`/hvac`) "Site view" is the current entry: every non-`assets` segment is (OQ5). */
+export async function theSiteViewEntryIsCurrentOnASmocTab(): Promise<void> {
+  stubReads(SMOC_SITES, SMOC_VIEW);
+  renderAt("s1", undefined, "hvac");
+
+  expect(await screen.findByTestId("smoc-site-view")).toBeInTheDocument();
+  const strip = await siteStrip();
+  expect([
+    within(strip).getByRole("link", { name: "Site view" }).getAttribute("aria-current"),
+    within(strip).getByRole("link", { name: "Assets & RTUs" }).getAttribute("aria-current"),
+  ]).toEqual(["page", null]);
+}
+
+/**
+ * A8 — a rejected resolve read with `/assets` shows the not-available card at
+ * the tab URL, and no assets view once the card shows. That the view never
+ * mounts before the resolve read answers is A9's claim, not this one's.
+ */
+export async function aRejectedReadWithTheAssetsTabShowsTheNotAvailableCard(): Promise<void> {
+  stubReads(TWO_ORGS, "reject");
+  renderAt("a1", undefined, "assets");
+
+  const card = sectionOf(await screen.findByText(/not available in your access scope/));
+  expect(within(card).getByRole("link").getAttribute("href")).toBe("/control-room");
+  expect(pathname()).toBe("/control-room/site/a1/assets");
+  expect(screen.queryByTestId("site-assets-view")).toBeNull();
+}
+
+/** A9 — while the resolve read is pending, `/assets` shows the loading line and mounts no assets view. */
+export async function aPendingResolveReadMountsNoAssetsView(): Promise<void> {
+  stubReads(TWO_ORGS, view("a1"));
+  const resolve = vi
+    .spyOn(controlRoomApi, "fetchResolvedSiteControlRoomView")
+    .mockImplementation(() => new Promise(() => undefined));
+  renderAt("a1", undefined, "assets");
+
+  await waitFor(() => expect(resolve).toHaveBeenCalled());
+  expect(await screen.findByText("Loading the site view…")).toBeInTheDocument();
+  expect(screen.queryByTestId("site-assets-view")).toBeNull();
+}
+
+/** A10 — the Site view entry lists the site's dashboards by its `locationId` and organization (D7, OQ6). */
+export async function theSiteViewEntryListsTheSiteDashboards(): Promise<void> {
+  stubReads(TWO_ORGS, view("a1"));
+  renderAt("a1");
+
+  const list = await screen.findByTestId("scoped-dashboards-list");
+  expect([list.getAttribute("data-location-id"), list.getAttribute("data-organization-id")]).toEqual([
+    "a1",
+    ORG_A.id,
+  ]);
+}
+
+/** A11 — the Assets & RTUs tab lists no dashboards (after A1's positive control). */
+export async function theAssetsTabListsNoDashboards(): Promise<void> {
+  stubReads(TWO_ORGS, view("a1"));
+  renderAt("a1", undefined, "assets");
+
+  expect(await screen.findByTestId("site-assets-view")).toBeInTheDocument();
+  expect(screen.queryByTestId("scoped-dashboards-list")).toBeNull();
 }
 
 export function cleanupPage(): void {

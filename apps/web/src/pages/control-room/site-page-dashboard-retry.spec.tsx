@@ -99,6 +99,8 @@ function stubReads(...resolveAnswers: ResolvedSiteControlRoomViewDto[]): {
   resolve.mockResolvedValue(resolveAnswers[resolveAnswers.length - 1]);
 
   const dashboard = vi.spyOn(dashboardsApi, "fetchDashboard").mockRejectedValue(notFound());
+  // `F3.72` (plan D7) — the Site view entry lists the site's dashboards under the body.
+  vi.spyOn(dashboardsApi, "fetchDashboards").mockResolvedValue({ items: [] });
 
   return { resolve: resolve as unknown as Mock, dashboard: dashboard as unknown as Mock };
 }

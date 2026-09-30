@@ -7,10 +7,14 @@ import {
   anEmptyScopeShowsTheNoSitesCard,
   aPendingReadDecidesNothing,
   cleanupPage,
-  eachOrganizationCardLinksToItsLevel,
+  entryDecidesNothingWhilePending,
+  entryRendersTheEstateForManyOrganizations,
+  entryRendersTheOrganizationInPlace,
+  entryRendersTheSiteInPlace,
+  entryShowsTheNoSitesCardWithoutABackLink,
   oneOrganizationSkipsToIt,
   oneSiteSkipsToTheSite,
-  theCardReadsSitesOnlineAndAlarms,
+  theOrganizationsLevelRendersTheEstate,
 } from "./organizations-page.spec";
 
 /**
@@ -23,12 +27,8 @@ describe("F3.66 U3 ControlRoomOrganizationsPage", () => {
     cleanupPage();
   });
 
-  it("O1 links each organization card to its organization level", async () => {
-    await eachOrganizationCardLinksToItsLevel();
-  });
-
-  it("O2 reads '2 sites · 1 online · 3 alarms' on the A card", async () => {
-    await theCardReadsSitesOnlineAndAlarms();
+  it("O1 renders the estate for two organizations (F3.72 D1)", async () => {
+    await theOrganizationsLevelRendersTheEstate();
   });
 
   it("O3 skips to the organization when there is one", async () => {
@@ -39,7 +39,7 @@ describe("F3.66 U3 ControlRoomOrganizationsPage", () => {
     await oneSiteSkipsToTheSite();
   });
 
-  it("O5a shows the no-sites card with a link to /", async () => {
+  it("O5a shows the no-sites card with no link in it (F3.72)", async () => {
     await anEmptyScopeShowsTheNoSitesCard();
   });
 
@@ -53,5 +53,31 @@ describe("F3.66 U3 ControlRoomOrganizationsPage", () => {
 
   it("E1 shows the unavailable card when the read fails", async () => {
     await aFailedReadShowsTheUnavailableCard();
+  });
+});
+
+describe("F3.72 D1 ControlRoomOrganizationsPage entry (at /, in place)", () => {
+  afterEach(() => {
+    cleanupPage();
+  });
+
+  it("renders the organization level in place, the URL staying /", async () => {
+    await entryRendersTheOrganizationInPlace();
+  });
+
+  it("renders the site level in place, the URL staying /", async () => {
+    await entryRendersTheSiteInPlace();
+  });
+
+  it("renders the estate for many organizations", async () => {
+    await entryRendersTheEstateForManyOrganizations();
+  });
+
+  it("shows the no-sites card without a link back to itself", async () => {
+    await entryShowsTheNoSitesCardWithoutABackLink();
+  });
+
+  it("decides nothing while the read is pending", async () => {
+    await entryDecidesNothingWhilePending();
   });
 });

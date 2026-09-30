@@ -1,26 +1,28 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { MemoryRouter, Route, Routes } from "react-router-dom";
+import { MemoryRouter } from "react-router-dom";
 import { expect, vi } from "vitest";
 
 import { locationDashboardDtoSchema } from "@bms/shared/contracts";
 import type { LocationDashboardDto } from "@bms/shared";
 
-import * as assetImagesApi from "../api/asset-images";
-import * as locationsApi from "../api/locations";
-import type { AuthUser } from "../stores/auth-store";
-import { LocationDashboardPage } from "./location-dashboard-page";
+import * as assetImagesApi from "../../api/asset-images";
+import * as locationsApi from "../../api/locations";
+import { SiteAssetsView } from "./site-assets-view";
 
 /**
- * `F3.4` Unit 9 — the reader's "Images" toggle on the location dashboard's
- * asset table (owner ruling Q-1, option A). The first spec this page has had.
+ * `F3.4` Unit 9 — the reader's "Images" toggle on the site's asset table
+ * (owner ruling Q-1, option A). `F3.72` (plan D5) moved these cases here
+ * from the deleted `pages/location-dashboard-page.spec.tsx` with the body
+ * they test; the view renders without the page's shell and header, so it is
+ * rendered bare with its `locationId` prop.
  *
- * Assertions live here; `location-dashboard-page.test.tsx` is the Vitest entry
+ * Assertions live here; `site-assets-view.test.tsx` is the Vitest entry
  * point and carries `@vitest-environment jsdom` (ADR 0014 / ADR 0042
  * decision 2).
  *
- * Scope is the **wiring**: that the page renders the toggle in the asset cell
+ * Scope is the **wiring**: that the view renders the toggle in the asset cell
  * and opens the gallery for *that* row's asset. Every claim about the toggle
  * itself — laziness, the second press, the absent Delete — belongs to
  * `components/assets/asset-images-row-toggle.spec.tsx`, and repeating it here
@@ -34,13 +36,6 @@ import { LocationDashboardPage } from "./location-dashboard-page";
 const LOCATION_ID = "99999999-9999-4999-8999-999999999999";
 const FIRST_ASSET_ID = "11111111-1111-4111-8111-111111111111";
 const SECOND_ASSET_ID = "33333333-3333-4333-8333-333333333333";
-
-const user: AuthUser = {
-  id: "u1",
-  email: "wc-hvac-admin@bms.local",
-  displayName: "HVAC admin",
-  role: "operator",
-} as unknown as AuthUser;
 
 function assetRow(id: string, code: string, name: string) {
   return {
@@ -110,17 +105,12 @@ function stubApi(): ReturnType<typeof vi.spyOn> {
   return list;
 }
 
-function renderPage(): void {
+function renderView(): void {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   render(
     <QueryClientProvider client={queryClient}>
-      <MemoryRouter initialEntries={[`/locations/${LOCATION_ID}`]}>
-        <Routes>
-          <Route
-            path="/locations/:locationId"
-            element={<LocationDashboardPage user={user} />}
-          />
-        </Routes>
+      <MemoryRouter>
+        <SiteAssetsView locationId={LOCATION_ID} />
       </MemoryRouter>
     </QueryClientProvider>,
   );
@@ -136,7 +126,7 @@ function renderPage(): void {
 export async function pressingImagesOnARowMountsThatAssetsGallery(): Promise<void> {
   const list = stubApi();
 
-  renderPage();
+  renderView();
 
   const toggles = await screen.findAllByRole("button", { name: "Images" });
   expect(toggles).toHaveLength(2);
@@ -150,13 +140,33 @@ export async function pressingImagesOnARowMountsThatAssetsGallery(): Promise<voi
   expect(list).toHaveBeenCalledWith(SECOND_ASSET_ID);
 }
 
-/** K5 (F4.157 U8) — the header chip shows the typeLabel text, not the raw code. */
+/**
+ * K5 (F4.157 U8) — the header chip shows the typeLabel text, not the raw code.
+ * It waits on the chip itself: the site name it waited on lived in the moved
+ * page's `PageHeader`, which the view does not render.
+ */
 export async function theHeaderChipShowsTheTypeLabel(): Promise<void> {
   stubApi();
 
-  renderPage();
+  renderView();
 
-  await screen.findByText("Western Cape Campus");
-  expect(screen.getByText("SMOC campus")).toBeInTheDocument();
+  expect(await screen.findByText("SMOC campus")).toBeInTheDocument();
   expect(screen.queryByText("smoc_campus")).not.toBeInTheDocument();
+}
+
+/**
+ * `F3.72` (OQ8) — a rejected read shows the Access denied card, and its one
+ * link is "Back to the Control Room" to `/control-room`: the old
+ * "Return to Main Dashboard" to `/` pointed at a page the section replaced.
+ */
+export async function theAccessDeniedCardLinksToTheControlRoom(): Promise<void> {
+  vi.spyOn(locationsApi, "fetchLocationDashboard").mockRejectedValue(new Error("dashboard/locations 404"));
+
+  renderView();
+
+  const title = await screen.findByText("Access denied");
+  const card = title.closest("section");
+  expect(card, "the Access denied title is not inside a SectionCard").not.toBeNull();
+  const link = within(card as HTMLElement).getByRole("link");
+  expect([link.textContent, link.getAttribute("href")]).toEqual(["Back to the Control Room", "/control-room"]);
 }

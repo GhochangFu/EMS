@@ -6,9 +6,10 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { and, asc, eq, inArray, sql } from "drizzle-orm";
+import { and, asc, eq, inArray, or, sql } from "drizzle-orm";
 
 import {
+  assetGroups,
   assets,
   dashboards,
   dashboardTemplates,
@@ -113,6 +114,7 @@ export class DashboardsService {
     organizationId?: string,
     assetId?: string,
     section?: string,
+    locationId?: string,
   ): Promise<{ items: DashboardSummaryDto[] }> {
     const orgIds = await this.accessControl.readableOrganizationIds(jwt);
     return withOrganizationReadScope(
@@ -132,6 +134,27 @@ export class DashboardsService {
         // within the read scope and cannot widen it: an out-of-scope id answers `[]`, never 403.
         if (assetId) {
           conditions.push(eq(dashboards.assetId, assetId));
+        }
+        /**
+         * `F3.72` (plan D8, OQ6) — the dashboards of one location: `location_id` is it, OR
+         * `asset_group_id` is a group of it (`bms.asset_groups.location_id`). ANDed beside the
+         * organization conditions, so it narrows within the read scope and cannot widen it: an
+         * unknown or unreadable id answers `[]`, never 403. The group subquery is also scoped
+         * to the dashboard's own organization, so on the FLEET branch (`BYPASSRLS`) a group of
+         * another organization cannot admit the row.
+         */
+        if (locationId) {
+          conditions.push(
+            or(
+              eq(dashboards.locationId, locationId),
+              inArray(
+                dashboards.assetGroupId,
+                sql`(SELECT ${assetGroups.id} FROM ${assetGroups}
+                      WHERE ${assetGroups.locationId} = ${locationId}
+                        AND ${assetGroups.organizationId} = ${dashboards.organizationId})`,
+              ),
+            ),
+          );
         }
         /**
          * `E4.2` / ADR 0072 decision 1 — the dashboards of one section.

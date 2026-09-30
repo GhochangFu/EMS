@@ -66,16 +66,19 @@ export class AssetHealthController {
   /**
    * The plant and enterprise donut.
    *
-   * **The scope comes from `readableAssetIds`, never from a parameter.** A
-   * caller cannot name the organization they want counted; they get the assets
-   * they can already read, optionally narrowed to one location. That keeps the
-   * boundary an authorization question rather than an input-validation one —
-   * there is no id here to forge.
+   * **The scope always comes from the caller's readable set.** They get the
+   * assets they can already read, optionally narrowed to one location.
    *
-   * `locationId` narrows and cannot widen: an unreadable location simply
-   * intersects to nothing and returns an empty donut, which is the correct
-   * answer and not an error. Answering 403 instead would confirm the location
-   * exists.
+   * `F3.72` (the `F3.66` rule): an optional `organizationId` narrows the same
+   * way. When present, `readableAssetIdsInOrganization` replaces
+   * `readableAssetIds` — it is that readable set intersected with the
+   * organization's assets, so it can only shrink the scope. Nothing here may
+   * use `organizationId` in place of the readable set.
+   *
+   * `locationId` and `organizationId` narrow and cannot widen: an unreadable
+   * one simply intersects to nothing and returns an empty donut, which is the
+   * correct answer and not an error. Answering 403 instead would confirm the
+   * id exists.
    */
   @Get("summary")
   async summary(@CurrentUser() user: JwtPayload, @Query() query: Record<string, unknown>) {
@@ -84,7 +87,9 @@ export class AssetHealthController {
       throw new BadRequestException(parsed.error.issues[0]?.message ?? "Invalid query");
     }
 
-    const assetIds = await this.accessControl.readableAssetIds(user);
+    const assetIds = parsed.data.organizationId
+      ? await this.accessControl.readableAssetIdsInOrganization(user, parsed.data.organizationId)
+      : await this.accessControl.readableAssetIds(user);
     return this.health.summary(
       assetIds,
       parsed.data.locationId,

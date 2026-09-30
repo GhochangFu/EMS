@@ -104,7 +104,7 @@ import { alarmListQuerySchema, alarmSummaryQuerySchema } from "../alarms/alarm-l
 import { alarmEnrichmentUpsertBodySchema } from "../alarms/enrichment.schema";
 import { assetRoleSummaryQuerySchema } from "../assets/assets.schema";
 import { loginBodySchema } from "../auth/login.schema";
-import { locationDashboardQuerySchema } from "../dashboard/dashboard.schema";
+import { loadTrendQuerySchema, locationDashboardQuerySchema } from "../dashboard/dashboard.schema";
 import {
   createDashboardBodySchema,
   getDashboardQuerySchema,
@@ -263,6 +263,8 @@ export const REQUEST_SCHEMAS: Record<string, ZodTypeAny> = {
   DashboardBuilderController_putWidgets: putDashboardWidgetsBodySchema,
   DashboardBuilderController_update: updateDashboardBodySchema,
   DashboardController_energyTopConsumers: locationDashboardQuerySchema,
+  // `F3.72` — `GET /dashboard/load-trend`: `window` plus the narrowing-only `organizationId`.
+  DashboardController_loadTrend: loadTrendQuerySchema,
   // `F3.10` (ADR 0057 decision 7). Four operations across the two controllers
   // in `escalation-profiles.controller.ts`; the keys are Nest's own
   // `ControllerClass_handlerName`, copied from the classes and methods rather

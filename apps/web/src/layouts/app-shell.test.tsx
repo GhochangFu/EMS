@@ -18,7 +18,10 @@ import {
   hidesLocationTypesFromAnOrganizationAdmin,
   hidesMimicLayoutsFromALocationAdmin,
   hidesTheEntryWhileTheScopeIsNull,
+  doesNotHighlightTheEntryElsewhere,
+  hasNoDashboardEntry,
   highlightsTheEntryOnANestedPath,
+  highlightsTheEntryOnTheRoot,
   keepsOtherItemsExactMatch,
   keysEveryOverrideByARealPath,
   keepsTheVisibleCodeInEveryCollapsedName,
@@ -26,7 +29,7 @@ import {
   letsTheLockedSettingsTakeFocus,
   locksSettingsAsAnAriaDisabledButton,
   namesTheExpandedLinkByItsLabel,
-  namesDashboardAndDashboardsApartWhenCollapsed,
+  namesDashboardsAndNoDashboardWhenCollapsed,
   placesTheEntryDirectlyAfterAlarmCentre,
   placesTheSwitchAfterTheUserBlock,
   placesTheSwitchBeforeLogout,
@@ -109,6 +112,20 @@ describe("F3.66 Control Room sidebar entry", () => {
   });
 });
 
+describe("F3.72 the Control Room entry replaces Dashboard (plan D6)", () => {
+  it("S17 has no Dashboard entry; Dashboards is the positive control", () => {
+    hasNoDashboardEntry();
+  });
+
+  it("S18 highlights the Control Room entry on /", () => {
+    highlightsTheEntryOnTheRoot();
+  });
+
+  it("S18b does not highlight the Control Room entry on /alarms", () => {
+    doesNotHighlightTheEntryElsewhere();
+  });
+});
+
 describe("F4.164 locked Settings entry", () => {
   it("S9 is a button named Settings with aria-disabled=true", () => {
     locksSettingsAsAnAriaDisabledButton();
@@ -152,8 +169,8 @@ describe("F4.164 collapsed rail", () => {
     labelsEveryCollapsedLinkWithItsTitleAndCode();
   });
 
-  it("L5 names Dashboard (D) and Dashboards (DS) apart when collapsed", () => {
-    namesDashboardAndDashboardsApartWhenCollapsed();
+  it("L5 names Dashboards (DS) and no Dashboard (D) when collapsed", () => {
+    namesDashboardsAndNoDashboardWhenCollapsed();
   });
 
   it("L6a shows unique codes when collapsed", () => {

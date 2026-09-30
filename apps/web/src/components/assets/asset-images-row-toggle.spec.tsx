@@ -23,8 +23,8 @@ import { AssetImagesRow, AssetImagesToggleButton } from "./asset-images-row-togg
  * `<tr>` from inside one of its cells: the button goes in the asset row's first
  * cell, the gallery row is a second `<tr>` after it. The open id is therefore
  * the parent's state, and the harness below reproduces exactly the three lines
- * `location-dashboard-page.tsx` uses to hold it. That the **page** wires those
- * three lines is asserted in `pages/location-dashboard-page.spec.tsx`; this
+ * `components/control-room/site-assets-view.tsx` uses to hold it. That the **view** wires
+ * those three lines is asserted in `components/control-room/site-assets-view.spec.tsx`; this
  * file would pass on a page that never rendered either export.
  *
  * ## Laziness is the claim, and it is measured as a delta

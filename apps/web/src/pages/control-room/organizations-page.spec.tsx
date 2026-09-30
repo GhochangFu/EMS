@@ -1,6 +1,6 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { cleanup, render, screen, within } from "@testing-library/react";
-import { MemoryRouter, Route, Routes, useParams } from "react-router-dom";
+import { MemoryRouter, Route, Routes, useLocation, useParams } from "react-router-dom";
 import { expect, vi } from "vitest";
 
 import { locationKpiSummarySchema } from "@bms/shared/contracts";
@@ -11,7 +11,10 @@ import * as locationsApi from "../../api/locations";
 import * as systemStatusApi from "../../api/system-status";
 import { OPERATIONAL } from "../../components/system-status-indicator.spec";
 import type { AuthUser } from "../../stores/auth-store";
+import * as dashboardPage from "../dashboard-page";
+import * as organizationPage from "./organization-page";
 import { ControlRoomOrganizationsPage } from "./organizations-page";
+import * as sitePage from "./site-page";
 
 /**
  * `F3.66` U3 — `/control-room`, the organization list (ADR 0076 decision 2),
@@ -28,8 +31,8 @@ import { ControlRoomOrganizationsPage } from "./organizations-page";
  * fixtures here are exported for `organization-page.spec.tsx`.
  *
  * Every link and label query is scoped to its own container: the shell's
- * sidebar holds a link to `/`, so an unscoped "a link to `/`" passes with no
- * empty card at all.
+ * sidebar and top navigation hold links of their own (the top-nav Overview
+ * links to `/`), so an unscoped link query can pass with no empty card at all.
  */
 
 export const ORG_A = { id: "org-a", code: "AAA", name: "Alpha Utilities" };
@@ -90,12 +93,39 @@ function LandedOnSite() {
   return <p>landed on site {locationId}</p>;
 }
 
-function renderPage(): void {
+/** Where the router is, so "the URL stays `/`" (OQ2) is observable. */
+function PathnameProbe() {
+  return <span data-testid="pathname">{useLocation().pathname}</span>;
+}
+
+/**
+ * `F3.72` (plan D1) — stand-ins for the three levels the page renders in
+ * place. Each is spied inside the case that needs it, never `vi.mock`ed at
+ * module level: this spec's fixtures are imported by four sibling specs, and
+ * a module mock here would replace the real pages there too. Each stand-in
+ * prints the id it received, so a case proves the id arrived.
+ */
+function stubLevels(): void {
+  vi.spyOn(dashboardPage, "DashboardPage").mockImplementation(({ user }) => (
+    <p>estate for {user.email}</p>
+  ));
+  vi.spyOn(organizationPage, "ControlRoomOrganizationPage").mockImplementation(({ organizationId }) => (
+    <p>organization level {organizationId ?? "(no id)"}</p>
+  ));
+  vi.spyOn(sitePage, "ControlRoomSitePage").mockImplementation(({ locationId }) => (
+    <p>site level {locationId ?? "(no id)"}</p>
+  ));
+}
+
+function renderPage(opts: { entry?: boolean } = {}): void {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  const entry = opts.entry === true;
   render(
     <QueryClientProvider client={queryClient}>
-      <MemoryRouter initialEntries={["/control-room"]}>
+      <MemoryRouter initialEntries={[entry ? "/" : "/control-room"]}>
+        <PathnameProbe />
         <Routes>
+          <Route path="/" element={entry ? <ControlRoomOrganizationsPage user={USER} entry /> : <p>root</p>} />
           <Route path="/control-room" element={<ControlRoomOrganizationsPage user={USER} />} />
           <Route path="/control-room/org/:organizationId" element={<LandedOnOrg />} />
           <Route path="/control-room/site/:locationId" element={<LandedOnSite />} />
@@ -105,44 +135,28 @@ function renderPage(): void {
   );
 }
 
-/**
- * Org A: two sites, one fresh, alarms 1 + 2, and asset counts 5 and 7 — so no
- * wrong source (`assetCount`, the site count) can print `1 online` by accident.
- * Org B: one site with a different line.
- */
-const TWO_ORGS: LocationKpiSummary[] = [
-  site({ id: "a1", name: "Alpha One", organization: ORG_A, assetCount: 5, freshAssetCount: 2, openAlarms: 1 }),
-  site({ id: "a2", name: "Alpha Two", organization: ORG_A, assetCount: 7, freshAssetCount: 0, openAlarms: 2 }),
-  site({ id: "b1", name: "Beta One", organization: ORG_B, assetCount: 4, freshAssetCount: 0, openAlarms: 0 }),
+const TWO_ORGANIZATIONS = (): LocationKpiSummary[] => [
+  site({ id: "a1", name: "Alpha One", organization: ORG_A }),
+  site({ id: "b1", name: "Beta One", organization: ORG_B }),
 ];
 
-async function orgCardLink(organizationId: string): Promise<HTMLElement> {
-  const main = await screen.findByTestId("control-room-organizations");
-  const link = main.querySelector<HTMLElement>(`a[href="/control-room/org/${organizationId}"]`);
-  expect(link, `no card links to /control-room/org/${organizationId}`).not.toBeNull();
-  return link as HTMLElement;
-}
-
-/** O1 — one card link per organization, to its organization level. */
-export async function eachOrganizationCardLinksToItsLevel(): Promise<void> {
+/**
+ * O1 — `F3.72` (plan D1): two organizations at `/control-room` render the
+ * estate (`DashboardPage`), which holds the organization cards
+ * (`dashboard-page.spec.tsx` asserts them). The page returns the estate
+ * **instead of** its own shell: no sidebar and no "Choose an organization"
+ * header of its own around the stand-in, which renders neither.
+ */
+export async function theOrganizationsLevelRendersTheEstate(): Promise<void> {
   stubShell();
-  stubLocations(TWO_ORGS);
+  stubLevels();
+  stubLocations(TWO_ORGANIZATIONS());
   renderPage();
 
-  const main = await screen.findByTestId("control-room-organizations");
-  await within(main).findByText("Alpha Utilities");
-  const hrefs = Array.from(main.querySelectorAll("a")).map((a) => a.getAttribute("href"));
-  expect(hrefs).toEqual(["/control-room/org/org-a", "/control-room/org/org-b"]);
-}
-
-/** O2 — the A card reads its site count, sites online and alarms. */
-export async function theCardReadsSitesOnlineAndAlarms(): Promise<void> {
-  stubShell();
-  stubLocations(TWO_ORGS);
-  renderPage();
-
-  const card = await orgCardLink("org-a");
-  expect(within(card).getByText("2 sites · 1 online · 3 alarms")).toBeInTheDocument();
+  expect(await screen.findByText("estate for admin@bms.local")).toBeInTheDocument();
+  expect(screen.queryByText("Choose an organization to open its sites")).toBeNull();
+  expect(screen.queryByRole("complementary")).toBeNull();
+  expect(screen.queryByText(/landed on/)).toBeNull();
 }
 
 /** O3 — one organization with two sites skips to the organization level. */
@@ -166,17 +180,21 @@ export async function oneSiteSkipsToTheSite(): Promise<void> {
   expect(await screen.findByText("landed on site a1")).toBeInTheDocument();
 }
 
-/** O5a — no readable site: the OQ3 card, with its own link to `/`. */
+/**
+ * O5a — no readable site: the OQ3 card, and no link in it. `F3.72` removed
+ * its "Back to the dashboard" link to `/`: `/` now renders this same card
+ * for an empty scope. The card's text is the positive control.
+ */
 export async function anEmptyScopeShowsTheNoSitesCard(): Promise<void> {
   stubShell();
   stubLocations([]);
   renderPage();
 
-  const text = await screen.findByText(/No sites in your access scope/);
+  const text = await screen.findByText("Ask an administrator for access to a site.");
   const card = text.closest("section");
   expect(card, "the empty text is not inside a SectionCard").not.toBeNull();
-  const link = within(card as HTMLElement).getByRole("link");
-  expect(link.getAttribute("href")).toBe("/");
+  expect(within(card as HTMLElement).getByText("No sites in your access scope")).toBeInTheDocument();
+  expect(within(card as HTMLElement).queryAllByRole("link")).toHaveLength(0);
 }
 
 /** O5b — after the empty card renders, nothing redirected. */
@@ -198,6 +216,83 @@ export async function aPendingReadDecidesNothing(): Promise<void> {
   const status = await screen.findByRole("status");
   expect(status.textContent).toBe("Loading Control Room…");
   expect(screen.queryByText(/landed on/)).toBeNull();
+}
+
+// ---------------------------------------------------------------------------
+// `F3.72` (plan D1, OQ2) — `entry`: at `/` the page renders the caller's
+// entry level in place. The URL stays `/`; nothing redirects.
+// ---------------------------------------------------------------------------
+
+/** One organization with two sites: the organization level, with its id, at `/`. */
+export async function entryRendersTheOrganizationInPlace(): Promise<void> {
+  stubShell();
+  stubLevels();
+  stubLocations([
+    site({ id: "a1", name: "Alpha One", organization: ORG_A }),
+    site({ id: "a2", name: "Alpha Two", organization: ORG_A }),
+  ]);
+  renderPage({ entry: true });
+
+  expect(await screen.findByText("organization level org-a")).toBeInTheDocument();
+  expect(screen.getByTestId("pathname").textContent).toBe("/");
+  expect(screen.queryByText(/landed on/)).toBeNull();
+  expect(screen.queryByRole("complementary")).toBeNull();
+}
+
+/** One site: the site level, with its id, at `/`. */
+export async function entryRendersTheSiteInPlace(): Promise<void> {
+  stubShell();
+  stubLevels();
+  stubLocations([site({ id: "a1", name: "Alpha One", organization: ORG_A })]);
+  renderPage({ entry: true });
+
+  expect(await screen.findByText("site level a1")).toBeInTheDocument();
+  expect(screen.getByTestId("pathname").textContent).toBe("/");
+  expect(screen.queryByText(/landed on/)).toBeNull();
+  expect(screen.queryByRole("complementary")).toBeNull();
+}
+
+/** Two organizations: the estate, at `/`, with no shell of the page's own around it. */
+export async function entryRendersTheEstateForManyOrganizations(): Promise<void> {
+  stubShell();
+  stubLevels();
+  stubLocations(TWO_ORGANIZATIONS());
+  renderPage({ entry: true });
+
+  expect(await screen.findByText("estate for admin@bms.local")).toBeInTheDocument();
+  expect(screen.getByTestId("pathname").textContent).toBe("/");
+  expect(screen.queryByRole("complementary")).toBeNull();
+}
+
+/**
+ * No readable site: the no-sites card, **without** the "Back to the
+ * dashboard" link — at `/` it would link to itself. The card's own text is
+ * the positive control that the card rendered.
+ */
+export async function entryShowsTheNoSitesCardWithoutABackLink(): Promise<void> {
+  stubShell();
+  stubLevels();
+  stubLocations([]);
+  renderPage({ entry: true });
+
+  const text = await screen.findByText("Ask an administrator for access to a site.");
+  const card = text.closest("section");
+  expect(card, "the empty text is not inside a SectionCard").not.toBeNull();
+  expect(within(card as HTMLElement).getByText("No sites in your access scope")).toBeInTheDocument();
+  expect(within(card as HTMLElement).queryAllByRole("link")).toHaveLength(0);
+  expect(screen.getByTestId("pathname").textContent).toBe("/");
+}
+
+/** While the read is pending: the status line, and no level rendered (D1). */
+export async function entryDecidesNothingWhilePending(): Promise<void> {
+  stubShell();
+  stubLevels();
+  vi.spyOn(locationsApi, "fetchLocationKpis").mockReturnValue(new Promise(() => undefined));
+  renderPage({ entry: true });
+
+  const status = await screen.findByRole("status");
+  expect(status.textContent).toBe("Loading Control Room…");
+  expect(screen.queryByText(/estate for|organization level|site level|landed on/)).toBeNull();
 }
 
 /** E1 — a failed first read shows the unavailable card, not the loading line. */

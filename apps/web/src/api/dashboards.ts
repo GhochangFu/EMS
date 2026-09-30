@@ -99,8 +99,12 @@ export async function fetchDashboards(
   /** `E4.2` / ADR 0072 decision 1 — one dashboard section, as the Sustainability
    * entry opens it. An unknown code answers `{ items: [] }`, never a 400. */
   section?: string,
+  /** `F3.72` (plan D7/D8, OQ6) — one site: the dashboards scoped to that location or to one of
+   * its asset groups. Narrows within the read scope; an unknown or unreadable id answers
+   * `{ items: [] }`, never a 403. Appended last, so the existing keys keep their order. */
+  locationId?: string,
 ): Promise<DashboardsListResponse> {
-  const path = `/dashboards${queryString({ organizationId, assetId, section })}`;
+  const path = `/dashboards${queryString({ organizationId, assetId, section, locationId })}`;
   return dashboardsFetch(path, dashboardsListResponseSchema, "dashboards");
 }
 

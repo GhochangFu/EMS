@@ -13,7 +13,7 @@ import { ZodError } from "zod";
 import { AccessControlService } from "../auth/access-control.service";
 import { CurrentUser } from "../auth/current-user.decorator";
 import { JwtAuthGuard } from "../auth/jwt-auth.guard";
-import { locationDashboardQuerySchema } from "./dashboard.schema";
+import { loadTrendQuerySchema, locationDashboardQuerySchema } from "./dashboard.schema";
 import { DashboardService } from "./dashboard.service";
 
 @Controller("dashboard")
@@ -70,8 +70,15 @@ export class DashboardController {
   }
 
   @Get("load-trend")
-  async loadTrend(@CurrentUser() user: JwtPayload, @Query("window") window?: string) {
-    return this.dashboard.loadTrend(window, await this.accessControl.readableAssetIds(user));
+  async loadTrend(@CurrentUser() user: JwtPayload, @Query() query: unknown) {
+    // `F3.72` — parsed before access control, so a malformed id costs no scope read. When
+    // `organizationId` is present the intersected set replaces the readable set; it never
+    // stands in for it (the `F3.66` rule), so an unreadable organization answers empty.
+    const { window, organizationId } = this.parseLoadTrendQuery(query);
+    const assetIds = organizationId
+      ? await this.accessControl.readableAssetIdsInOrganization(user, organizationId)
+      : await this.accessControl.readableAssetIds(user);
+    return this.dashboard.loadTrend(window, assetIds);
   }
 
   /** Sprint 8 — Energy Centre (aggregations from electrical `kw` telemetry). */
@@ -96,6 +103,17 @@ export class DashboardController {
     return this.accessControl
       .readableAssetIds(user)
       .then((assetIds) => this.dashboard.energyTopConsumers(window, lim, assetIds));
+  }
+
+  private parseLoadTrendQuery(query: unknown) {
+    try {
+      return loadTrendQuerySchema.parse(query);
+    } catch (err) {
+      if (err instanceof ZodError) {
+        throw new BadRequestException(err.flatten());
+      }
+      throw err;
+    }
   }
 
   private parseLocationDashboardQuery(query: unknown) {

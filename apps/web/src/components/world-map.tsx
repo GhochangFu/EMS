@@ -5,6 +5,7 @@ import { CircleMarker, MapContainer, Popup, TileLayer, useMap } from "react-leaf
 
 import "leaflet/dist/leaflet.css";
 
+import { siteAssetsPath } from "../lib/smoc-pages";
 import type { RoleName } from "../lib/theme";
 import { isOperationalSite, MAP_TILE, siteBounds } from "../lib/map-site";
 import { useThemeRoles } from "../stores/theme-store";
@@ -130,9 +131,8 @@ export function WorldMap({ sites }: WorldMapProps) {
                 <Link
                   className="text-xs font-semibold text-accent-strong hover:underline"
                   to={
-                    s.canonicalLocationId
-                      ? `/locations/${s.canonicalLocationId}/dashboard`
-                      : "/"
+                    // `F3.72` (OQ9) — straight to the site's Assets & RTUs tab.
+                    s.canonicalLocationId ? siteAssetsPath(s.canonicalLocationId) : "/"
                   }
                 >
                   Dashboard →

@@ -314,3 +314,51 @@ export async function listForwardsTheSectionQueryToTheService(): Promise<void> {
     `an omitted section must reach the service as undefined; got ${JSON.stringify(seen[1])}`,
   );
 }
+
+/**
+ * `F3.72` U0 — the controller passes `locationId` through as the FIFTH `list()`
+ * argument. An optional trailing parameter at an adapter is invisible to tsc,
+ * so only the recorded argument list can say it is wired. The malformed case
+ * is the 400 before the service is called.
+ */
+export async function listForwardsTheLocationIdQueryToTheService(): Promise<void> {
+  const seen: unknown[][] = [];
+  const list = (...args: unknown[]) => {
+    seen.push(args);
+    return Promise.resolve({ items: [] });
+  };
+  const { controller } = controllerWith({
+    service: { list: list as unknown as ServiceStub["list"] },
+  });
+
+  const locationId = "33333333-3333-4333-8333-333333333333";
+  await controller.list(ADMIN, { locationId });
+  assert(
+    seen[0]?.[4] === locationId,
+    `list() must receive the locationId as its fifth argument; got ${JSON.stringify(seen[0])}`,
+  );
+
+  await controller.list(ADMIN, {});
+  assert(
+    seen[1]?.[4] === undefined,
+    `an omitted locationId must reach the service as undefined; got ${JSON.stringify(seen[1])}`,
+  );
+}
+
+export async function listRefusesAMalformedLocationIdWith400(): Promise<void> {
+  const seen: unknown[][] = [];
+  const list = (...args: unknown[]) => {
+    seen.push(args);
+    return Promise.resolve({ items: [] });
+  };
+  const { controller } = controllerWith({
+    service: { list: list as unknown as ServiceStub["list"] },
+  });
+
+  await rejects(
+    () => controller.list(ADMIN, { locationId: "not-a-uuid" }),
+    (e) => e instanceof BadRequestException,
+    "a non-uuid locationId must be a 400, not a 500",
+  );
+  assert(seen.length === 0, "a malformed locationId must not reach the service");
+}

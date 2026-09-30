@@ -48,6 +48,51 @@ vi.mock("../../components/control-room/active-alarms-rail", () => ({
   ),
 }));
 
+/*
+ * `F3.72` U4 (plan D3) — the three organization level panels are stand-ins that print the
+ * props the page passes (an absent prop is an absent attribute). Their own reads are gated by
+ * their own specs; this spec claims only the scope the page hands them.
+ */
+vi.mock("../../components/asset-health/health-summary-section", () => ({
+  HealthSummarySection: ({
+    organizationId,
+    locationId,
+  }: {
+    organizationId?: string;
+    locationId?: string;
+  }) => (
+    <div
+      data-testid="health-panel"
+      data-organization-id={organizationId}
+      data-location-id={locationId}
+    />
+  ),
+}));
+
+vi.mock("../../components/control-room/organization-load-trend", () => ({
+  OrganizationLoadTrend: ({ organizationId }: { organizationId: string }) => (
+    <div data-testid="trend-panel" data-organization-id={organizationId} />
+  ),
+}));
+
+vi.mock("../../components/control-room/scoped-dashboards-list", () => ({
+  ScopedDashboardsList: ({
+    organizationId,
+    locationId,
+  }: {
+    organizationId?: string;
+    locationId?: string;
+  }) => (
+    <div
+      data-testid="dashboards-panel"
+      data-organization-id={organizationId}
+      data-location-id={locationId}
+    />
+  ),
+}));
+
+const PANELS = ["health-panel", "trend-panel", "dashboards-panel"] as const;
+
 const ORG_ESKOM = { id: "org-eskom", code: "ESKOM", name: "Eskom" };
 const ORG_PHE = { id: "org-phe", code: "PHEWB", name: "PHE West Bengal" };
 
@@ -244,6 +289,100 @@ export async function anUnreadableOrganizationRendersNoRail(): Promise<void> {
 
   expect(await screen.findByText(/No sites for this organization/)).toBeInTheDocument();
   expect(screen.queryByTestId("alarms-rail")).toBeNull();
+}
+
+/**
+ * `F3.72` U1 (plan D1) — the `organizationId` prop overrides the route
+ * parameter, so `/` can render the level in place. The route names org B and
+ * the prop names org A: the page must show A's sites and scope the rail to A.
+ * The other cases, which pass no prop, are the control that the parameter is
+ * still read.
+ */
+export async function theOrganizationIdPropOverridesTheRoute(): Promise<void> {
+  stubReads(TWO_ORGS);
+  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  render(
+    <QueryClientProvider client={queryClient}>
+      <MemoryRouter initialEntries={[`/control-room/org/${ORG_B.id}`]}>
+        <Routes>
+          <Route
+            path="/control-room/org/:organizationId"
+            element={<ControlRoomOrganizationPage user={USER} organizationId={ORG_A.id} />}
+          />
+          <Route path="/control-room/site/:locationId" element={<LandedOnSite />} />
+        </Routes>
+      </MemoryRouter>
+    </QueryClientProvider>,
+  );
+
+  const grid = await siteGrid();
+  const hrefs = Array.from(grid.querySelectorAll("a")).map((a) => a.getAttribute("href"));
+  expect(hrefs).toEqual(["/control-room/site/a1", "/control-room/site/a2"]);
+  expect(screen.getByTestId("alarms-rail").dataset.organizationId).toBe(ORG_A.id);
+}
+
+/** P1 — `F3.72` D3: Asset health reads by the organization id, and by no site. */
+export async function theHealthSectionReadsByTheOrganizationId(): Promise<void> {
+  stubReads(TWO_ORGS);
+  renderAt(ORG_A.id);
+
+  await siteGrid();
+  const panel = screen.getByTestId("health-panel");
+  expect(panel.dataset.organizationId).toBe(ORG_A.id);
+  expect(panel.hasAttribute("data-location-id"), "the organization level names no site").toBe(false);
+}
+
+/** P2 — `F3.72` D3: the load trend reads by the organization id. */
+export async function theTrendReadsByTheOrganizationId(): Promise<void> {
+  stubReads(TWO_ORGS);
+  renderAt(ORG_A.id);
+
+  await siteGrid();
+  expect(screen.getByTestId("trend-panel").dataset.organizationId).toBe(ORG_A.id);
+}
+
+/** P3 — `F3.72` D3: the dashboards list reads by the organization id, and by no site. */
+export async function theDashboardsListReadsByTheOrganizationId(): Promise<void> {
+  stubReads(TWO_ORGS);
+  renderAt(ORG_A.id);
+
+  await siteGrid();
+  const panel = screen.getByTestId("dashboards-panel");
+  expect(panel.dataset.organizationId).toBe(ORG_A.id);
+  expect(panel.hasAttribute("data-location-id"), "the organization level names no site").toBe(false);
+}
+
+/**
+ * P4 — `F3.72` D3: an organization outside the list renders none of the three panels, so no
+ * read goes out for it. The empty card is the control that the page decided; P1–P3 are the
+ * control that a readable organization gets its panels.
+ */
+export async function anUnreadableOrganizationRendersNoPanels(): Promise<void> {
+  stubReads([
+    site({ id: "p1", name: "PHE One", organization: ORG_PHE }),
+    site({ id: "p2", name: "PHE Two", organization: ORG_PHE }),
+  ]);
+  renderAt(ORG_ESKOM.id);
+
+  expect(await screen.findByText(/No sites for this organization/)).toBeInTheDocument();
+  for (const testId of PANELS) {
+    expect(screen.queryByTestId(testId), `${testId} must not render`).toBeNull();
+  }
+}
+
+/** P5 — `F3.72` D3 with D1: while the KPI read is pending, no panel renders. */
+export async function aPendingKpiReadRendersNoPanels(): Promise<void> {
+  stubReads(TWO_ORGS);
+  const kpis = vi
+    .spyOn(locationsApi, "fetchLocationKpis")
+    .mockImplementation(() => new Promise(() => undefined));
+  renderAt(ORG_A.id);
+
+  await waitFor(() => expect(kpis).toHaveBeenCalled());
+  expect(screen.getByText("Loading Control Room…")).toBeInTheDocument();
+  for (const testId of PANELS) {
+    expect(screen.queryByTestId(testId), `${testId} must not render`).toBeNull();
+  }
 }
 
 export function cleanupPage(): void {

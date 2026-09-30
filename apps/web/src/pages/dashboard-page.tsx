@@ -18,12 +18,20 @@ import { KpiTile } from "../components/kpi-tile";
 import { WidgetIconGlyph } from "../components/widget-icon";
 import { LoadTrendChart } from "../components/load-trend-chart";
 import { LocationKpiCard } from "../components/location-kpi-card";
+import { OrganizationCardGrid } from "../components/control-room/organization-card-grid";
+import { ScopedDashboardsList } from "../components/control-room/scoped-dashboards-list";
 import { OrgLocationAccordion } from "../components/org-location-accordion";
 import { HealthSummarySection } from "../components/asset-health/health-summary-section";
 import { PageHeader } from "../components/page-header";
 import { SectionCard } from "../components/section-card";
 
-const DASHBOARD_TITLE = "Executive Summary · IONSiTE NEXUS Operating Dashboard";
+/**
+ * `F3.72` (ADR 0087 decisions 1–3, plan D2, OQ4) — this page is the Control
+ * Room's estate level: `/` renders it through `ControlRoomOrganizationsPage`
+ * with `entry`, and `/control-room` renders it for a caller with more than
+ * one organization. The file and the component keep their names.
+ */
+const DASHBOARD_TITLE = "Control Room · Estate";
 
 type DashboardPageProps = {
   user: AuthUser;
@@ -60,7 +68,7 @@ export function DashboardPage({ user }: DashboardPageProps) {
 
   const locationSubtitle =
     orgFilter === "all"
-      ? "Click a location to open its scoped dashboard"
+      ? "Click a location to open its Control Room site"
       : `Showing ${orgFilter} locations only`;
 
   const kpi = kpiQuery.data;
@@ -114,16 +122,16 @@ export function DashboardPage({ user }: DashboardPageProps) {
             {DASHBOARD_TITLE}
           </span>
           <span className="hidden text-ink-muted sm:inline">
-            · Total load & alarms from telemetry + DB
+            · Organizations and sites in your access scope
           </span>
         </div>
       }
     >
       <div className="mx-auto max-w-[1200px] space-y-4 pb-8">
         <PageHeader
-          eyebrow="R.dash"
+          eyebrow="Control Room"
           title={DASHBOARD_TITLE}
-          subtitle="Live operational overview · KPI ribbon · telemetry trend"
+          subtitle="Choose an organization or a site · live KPIs · asset health · load trend"
         />
 
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
@@ -178,6 +186,23 @@ export function DashboardPage({ user }: DashboardPageProps) {
             stale={stale && pueProps.status === "ready"}
           />
         </div>
+
+        {/*
+          `F3.72` (plan D2) — one card per readable organization, from the same
+          `["dashboard","locations"]` read the location section below uses.
+          Each card opens that organization's Control Room level.
+        */}
+        <SectionCard title="Organizations" bodyClassName="p-3">
+          {locationQ.isLoading ? (
+            <div className="text-sm text-ink-muted">Loading organizations...</div>
+          ) : locationQ.isError ? (
+            <div className="text-sm text-critical-ink">Organizations unavailable.</div>
+          ) : locationItems.length === 0 ? (
+            <div className="text-sm text-ink-muted">No organizations in your access scope.</div>
+          ) : (
+            <OrganizationCardGrid items={locationItems} />
+          )}
+        </SectionCard>
 
         <SectionCard
           title="Location performance"
@@ -253,6 +278,9 @@ export function DashboardPage({ user }: DashboardPageProps) {
               stale={stale && trendStatus === "ready"}
             />
         </SectionCard>
+
+        {/* `F3.72` (plan D7) — no filter: the library dashboards of the whole read scope. */}
+        <ScopedDashboardsList />
       </div>
     </AppShell>
   );
