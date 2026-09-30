@@ -21,13 +21,17 @@ import {
   canTransition,
   dashboardTemplateDtoSchema,
   draftRequiredMessage,
+  MAX_DASHBOARD_TABS,
   MAX_DASHBOARD_WIDGETS,
   METRIC_CATALOG,
   sectionTemplateContentSchema,
+  templateTargetContentMessage,
+  templateWidgets,
 } from "@bms/shared";
 import type {
   DashboardTemplateDto,
   DashboardTemplateSummaryDto,
+  DashboardTemplateTarget,
   JwtPayload,
   SectionTemplateContent,
   TemplateDraftRequiredVerb,
@@ -49,6 +53,7 @@ import { FLEET_DRIZZLE, TENANT_DRIZZLE } from "../../database/database.tokens";
 import { withTenant } from "../../database/tenant-context";
 import { VocabulariesService } from "../../vocabularies/vocabularies.service";
 import { MasterDataAuditService } from "../master-data-audit.service";
+import { SITE_TEMPLATE_PATCH_TABS_MESSAGE } from "./dashboard-templates.schema";
 import type {
   CreateDashboardTemplateBody,
   ListDashboardTemplatesQuery,
@@ -162,6 +167,7 @@ export class DashboardTemplatesService {
     // A draft may be incomplete, so only the shape is checked here. The whole
     // stored object is re-proved at publish — see `publish`.
     this.assertContentFits(content);
+    this.assertContentFitsTarget(body.target, content);
 
     const createdBy = await this.resolveCreatedBy(jwt);
 
@@ -192,6 +198,7 @@ export class DashboardTemplatesService {
           version: next,
           name: body.name,
           section: body.section,
+          target: body.target,
           description: body.description ?? null,
           status: "draft",
           content,
@@ -232,8 +239,21 @@ export class DashboardTemplatesService {
     if (body.section !== undefined) {
       await this.assertSection(body.section);
     }
-    if (body.content !== undefined) {
-      this.assertContentFits(body.content);
+    // `F3.73` — the PATCH content schema leaves an omitted `tabs` undefined; everything below
+    // the refusal reads the stored shape, where an asset-group template's tabs are `[]`.
+    const content: SectionTemplateContent | undefined =
+      body.content === undefined
+        ? undefined
+        : { widgets: body.content.widgets, tabs: body.content.tabs ?? [] };
+    if (content !== undefined) {
+      this.assertContentFits(content);
+      // `F3.73` plan D4 — the PATCH body carries no target, so the stored row's decides.
+      this.assertContentFitsTarget(template.target as DashboardTemplateTarget, content);
+      // An omitted `tabs` is not a clear: refused, so a `{ widgets }`-only client cannot wipe
+      // a site draft's tabs at 200. The builder sends the stored tabs back.
+      if (template.target === "site" && body.content?.tabs === undefined) {
+        throw new BadRequestException(SITE_TEMPLATE_PATCH_TABS_MESSAGE);
+      }
     }
 
     const updated = await withTenant(this.tenantDb, template.organizationId, async (tx) => {
@@ -243,7 +263,7 @@ export class DashboardTemplatesService {
           ...(body.name !== undefined ? { name: body.name } : {}),
           ...(body.section !== undefined ? { section: body.section } : {}),
           ...(body.description !== undefined ? { description: body.description ?? null } : {}),
-          ...(body.content !== undefined ? { content: body.content } : {}),
+          ...(content !== undefined ? { content } : {}),
           updatedAt: new Date(),
         })
         .where(eq(dashboardTemplates.id, id))
@@ -297,15 +317,28 @@ export class DashboardTemplatesService {
       template.content,
       "dashboard_templates.publish.content",
     );
-    if (content.widgets.length === 0) {
+    // `F3.73` — every widget, the tabs' included (`templateWidgets`). A site template's
+    // top-level list is empty by rule, so counting `content.widgets` would refuse every one,
+    // and walking it below would publish tab widgets with no role, source or params check.
+    const widgets = templateWidgets(content);
+    if (widgets.length === 0) {
       throw new BadRequestException(
         "A template with no widgets would instantiate an empty dashboard",
       );
     }
     this.assertContentFits(content);
+    this.assertContentFitsTarget(template.target as DashboardTemplateTarget, content);
     await this.assertSection(template.section);
 
-    for (const widget of content.widgets) {
+    // `F3.73` plan D4 — a tab's domain is a live `bms.asset_domains` code, or null for the
+    // Overview. Publish is where it is proved: the copy action picks each tab's group by it.
+    for (const tab of content.tabs) {
+      if (tab.domain !== null) {
+        await this.vocabularies.assertAssetDomain(tab.domain);
+      }
+    }
+
+    for (const widget of widgets) {
       for (const binding of widget.bindings) {
         await this.vocabularies.assertAssetRole(binding.assetRoleCode);
       }
@@ -348,14 +381,14 @@ export class DashboardTemplatesService {
     // Publish stays strict (post-merge sweep M1): a new version must not introduce a retired value.
     await assertSourceParamsPointKeysActive(
       this.fleetDb,
-      content.widgets.flatMap((widget) => widget.sources),
+      widgets.flatMap((widget) => widget.sources),
       [],
     );
     // `E4.3` — the balance role, likewise (ADR 0073 decision 2): instantiation copies `params`
     // verbatim, so a role that is not live must stop here or never.
     await assertSourceParamsBalanceRolesActive(
       this.fleetDb,
-      content.widgets.flatMap((widget) => widget.sources),
+      widgets.flatMap((widget) => widget.sources),
       [],
     );
 
@@ -461,6 +494,9 @@ export class DashboardTemplatesService {
           version: next,
           name: template.name,
           section: template.section,
+          // `F3.73` — carried forward like the content it shapes. Omitted, the column default
+          // would turn a draft of a site template into an asset-group one holding tabs.
+          target: template.target,
           description: template.description,
           status: "draft",
           content: template.content,
@@ -661,12 +697,29 @@ export class DashboardTemplatesService {
     return err;
   }
 
-  /** The widget cap, which no row-level `CHECK` can see. */
+  /** The widget cap, which no row-level `CHECK` can see. Since `F3.73` it bounds each canvas —
+   * the top-level one and every tab's — and the tab count (plan D2). */
   private assertContentFits(content: SectionTemplateContent): void {
-    if (content.widgets.length > MAX_DASHBOARD_WIDGETS) {
+    const canvases = [content.widgets, ...content.tabs.map((tab) => tab.widgets)];
+    if (canvases.some((canvas) => canvas.length > MAX_DASHBOARD_WIDGETS)) {
       throw new BadRequestException(
-        `A dashboard template holds at most ${MAX_DASHBOARD_WIDGETS} widgets`,
+        `A dashboard template holds at most ${MAX_DASHBOARD_WIDGETS} widgets on each canvas`,
       );
+    }
+    if (content.tabs.length > MAX_DASHBOARD_TABS) {
+      throw new BadRequestException(`A dashboard template holds at most ${MAX_DASHBOARD_TABS} tabs`);
+    }
+  }
+
+  /**
+   * `F3.73` plan D4 — the target rule, from the shared function the create body applies too.
+   * `publish` and the instantiate service re-check it from the stored row, because a write only
+   * validates what it carries.
+   */
+  assertContentFitsTarget(target: DashboardTemplateTarget, content: SectionTemplateContent): void {
+    const message = templateTargetContentMessage(target, content);
+    if (message !== null) {
+      throw new BadRequestException(message);
     }
   }
 
@@ -699,6 +752,7 @@ export class DashboardTemplatesService {
       version: template.version,
       name: template.name,
       section: template.section,
+      target: template.target,
       description: template.description,
       status: template.status,
       content: parseStoredContract(
@@ -730,13 +784,15 @@ export class DashboardTemplatesService {
       version: template.version,
       name: template.name,
       section: template.section,
+      target: template.target as DashboardTemplateTarget,
       description: template.description,
       status: template.status as TemplateLifecycleStatus,
       publishedAt: template.publishedAt?.toISOString() ?? null,
       archivedAt: template.archivedAt?.toISOString() ?? null,
       stockCode: template.stockCode,
       stockVersion: template.stockVersion,
-      widgetCount: content.widgets.length,
+      // `F3.73` — the tabs' widgets count: a site template's top-level list is empty by rule.
+      widgetCount: templateWidgets(content).length,
       createdAt: template.createdAt.toISOString(),
       updatedAt: template.updatedAt.toISOString(),
     };

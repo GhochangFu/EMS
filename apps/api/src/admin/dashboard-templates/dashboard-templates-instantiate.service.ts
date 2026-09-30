@@ -5,6 +5,8 @@ import {
   Inject,
   Injectable,
   NotFoundException,
+  NotImplementedException,
+  Optional,
 } from "@nestjs/common";
 import { and, asc, eq } from "drizzle-orm";
 
@@ -21,15 +23,16 @@ import {
 import type { BmsDb } from "@bms/db";
 import {
   dashboardDtoSchema,
+  planTemplateWidget,
   sectionTemplateContentSchema,
-  WIDGET_POINT_CARDINALITY,
+  templateWidgets,
 } from "@bms/shared";
 import type {
+  DashboardTemplateTarget,
+  GroupMember,
   InstantiateSectionTemplateResponse,
   JwtPayload,
-  SectionTemplateWidget,
-  TemplateWidgetResolutionDto,
-  TemplateWidgetResolutionOutcome,
+  SectionTemplateContent,
 } from "@bms/shared";
 
 import { AccessControlService } from "../../auth/access-control.service";
@@ -42,7 +45,12 @@ import { withTenant } from "../../database/tenant-context";
 import { resolveBoundPoints } from "../../dashboard-builder/dashboard-point-scope";
 import { MIMIC_SCOPE_MESSAGE } from "../../dashboard-builder/dashboards.schema";
 import { MasterDataAuditService } from "../master-data-audit.service";
-import type { InstantiateSectionTemplateBody } from "./dashboard-templates.schema";
+import { templateTargetBodyMessage } from "./dashboard-templates.schema";
+import type {
+  InstantiateGroupTemplateBody,
+  InstantiateSectionTemplateBody,
+  InstantiateSiteTemplateBody,
+} from "./dashboard-templates.schema";
 import { DashboardTemplatesService } from "./dashboard-templates.service";
 
 /**
@@ -99,21 +107,43 @@ import { DashboardTemplatesService } from "./dashboard-templates.service";
  * no member resolution, `sources` copied verbatim as before. Everything above
  * still describes the asset-group arm, which is unchanged — the second arm has
  * no role to resolve, so it has no report to get wrong.
+ *
+ * ---
+ *
+ * **`F3.73` (ruling Q3a, plan D6) GAVE IT A THIRD: THE SITE ARM.** A template
+ * whose `target` is `site` takes `{ locationId, tabGroups? }` and is copied onto
+ * that location by the site-layout copy action, which owns the group picking,
+ * the tabs and the site view row. This service only routes to it, through ONE
+ * optional seam (`SITE_TEMPLATE_ARM`): the copy action arrives in PR4, and
+ * until it is provided the arm answers 501 `SITE_ARM_NOT_WIRED_MESSAGE`. The
+ * per-widget plan (`planTemplateWidget`) moved to `@bms/shared` for the same
+ * reason — the copy action and the seed plan widgets with it too.
  */
 
-interface ResolvedMemberPoint {
-  readonly pointId: string;
-  /** The asset's `code`, which is what Amendment 2 decision 2's tie-break sorts
-   * on. It held a uuid until the `F3.36` correctness review; see
-   * `loadMembersByRole`. */
-  readonly assetCode: string;
-}
+/** `F3.73` plan Task 2.2 — the answer while no site arm is provided (PR4 wires it). */
+export const SITE_ARM_NOT_WIRED_MESSAGE =
+  "Instantiating a site template is not available yet: the site-layout copy action is not wired";
 
-/** One member of the target group, carrying the column the tie-break needs. */
-interface GroupMember {
-  readonly assetId: string;
-  readonly code: string;
-}
+/**
+ * The seam the site-layout copy action fills (plan D6, PR4). A Nest token rather than a
+ * constructor type, because a function type carries no runtime token: without it the module
+ * fails at boot while `tsc` stays green.
+ */
+export const SITE_TEMPLATE_ARM = Symbol("SITE_TEMPLATE_ARM");
+
+/** What the site arm answers. PR4 names its contract (plan D6); this seam only passes it on. */
+export type SiteTemplateArmResult = object;
+
+/**
+ * The site arm: copy one published site template onto one location. It is called after this
+ * service has proved readability, authorship, the published status, the body/target fit and
+ * the stored content's target fit; the location and dashboard permissions are its own (D6).
+ */
+export type SiteTemplateArm = (
+  jwt: JwtPayload,
+  template: { readonly id: string; readonly organizationId: string },
+  body: InstantiateSiteTemplateBody,
+) => Promise<SiteTemplateArmResult>;
 
 @Injectable()
 export class DashboardTemplatesInstantiateService {
@@ -123,13 +153,22 @@ export class DashboardTemplatesInstantiateService {
     private readonly accessControl: AccessControlService,
     private readonly audit: MasterDataAuditService,
     private readonly templates: DashboardTemplatesService,
+    @Optional() @Inject(SITE_TEMPLATE_ARM) private readonly siteArm?: SiteTemplateArm,
   ) {}
 
-  async instantiate(
+  /**
+   * The checks both arms share, in this order: readability, the published status, and the
+   * body/target fit. The controller picks the arm by the body's shape; this is what refuses a
+   * body whose arm is not the stored template's.
+   */
+  private async loadPublished(
     jwt: JwtPayload,
     templateId: string,
     body: InstantiateSectionTemplateBody,
-  ): Promise<InstantiateSectionTemplateResponse> {
+  ): Promise<{
+    template: Awaited<ReturnType<DashboardTemplatesService["fetchRow"]>>;
+    target: DashboardTemplateTarget;
+  }> {
     const template = await this.templates.fetchRow(templateId);
     // READABILITY, not authorship — ADR 0015 Amendment 1B, restated in
     // `AccessControlService.canManageTemplate`'s own docblock: *"This method is
@@ -147,6 +186,36 @@ export class DashboardTemplatesInstantiateService {
         `Only a published template can be instantiated; this one is ${template.status}`,
       );
     }
+
+    // `F3.73` plan D6 — which arm a template takes is its stored `target`; the body must match.
+    // After readability, so a caller who may not read the template learns nothing of its target.
+    const target = template.target as DashboardTemplateTarget;
+    const mismatch = templateTargetBodyMessage(target, body);
+    if (mismatch !== null) {
+      throw new BadRequestException(mismatch);
+    }
+    return { template, target };
+  }
+
+  /**
+   * The pinned version's stored `content`, parsed. One call site for both arms, so one
+   * `StoredContractContext` literal still names which parse raised a 500 (`F4.108`).
+   */
+  private parseContent(stored: unknown): SectionTemplateContent {
+    return parseStoredContract(
+      sectionTemplateContentSchema,
+      stored,
+      "dashboard_templates_instantiate.instantiate.content",
+    );
+  }
+
+  /** The asset-group arm (and `E4.2`'s organization-wide case of it). */
+  async instantiate(
+    jwt: JwtPayload,
+    templateId: string,
+    body: InstantiateGroupTemplateBody,
+  ): Promise<InstantiateSectionTemplateResponse> {
+    const { template, target } = await this.loadPublished(jwt, templateId, body);
 
     /**
      * **The organization-wide arm — `E4.2`, ADR 0072 decision 1.**
@@ -181,11 +250,10 @@ export class DashboardTemplatesInstantiateService {
       await this.assertGroupTargetIsWritable(jwt, template.organizationId, body.assetGroupId);
     }
 
-    const content = parseStoredContract(
-      sectionTemplateContentSchema,
-      template.content,
-      "dashboard_templates_instantiate.instantiate.content",
-    );
+    const content = this.parseContent(template.content);
+    // `F3.73` — re-proved from the stored row: an asset-group template holds no tabs, so the
+    // top-level list below is every widget it has.
+    this.templates.assertContentFitsTarget(target, content);
     if (content.widgets.length === 0) {
       throw new BadRequestException("This template has no widgets to instantiate");
     }
@@ -225,7 +293,7 @@ export class DashboardTemplatesInstantiateService {
 
     // Both maps are empty on the organization-wide arm: there is no group to
     // read members from, and with no bindings there is no point to look up.
-    // `planWidget` still runs for every widget — Amendment 2 decision 1 wants a
+    // `planTemplateWidget` still runs for every widget — Amendment 2 decision 1 wants a
     // resolution entry per widget, and a zero-binding widget is already `bound`.
     const members =
       body.assetGroupId === null
@@ -236,8 +304,9 @@ export class DashboardTemplatesInstantiateService {
         ? new Map<string, string>()
         : await this.loadActivePoints(template.organizationId);
 
+    // `F3.73` — the plan moved to `@bms/shared` (`template-instantiation.ts`), byte for byte.
     const plans = content.widgets.map((widget) =>
-      this.planWidget(widget, members, pointsByAsset),
+      planTemplateWidget(widget, members, pointsByAsset),
     );
 
     const created = await withTenant(this.tenantDb, template.organizationId, async (tx) => {
@@ -335,6 +404,35 @@ export class DashboardTemplatesInstantiateService {
       dashboard,
       resolutions: plans.map((plan) => plan.resolution),
     };
+  }
+
+  /**
+   * The site arm — `F3.73` ruling Q3a, plan D6.
+   *
+   * **Authorship, not only readability.** The group arm deploys a published template into the
+   * caller's own scope and asks readability plus a check on the target. The plan gives the
+   * site arm `assertCanAuthor` before delegating: a copy writes a whole tabbed layout and its
+   * site view row, and the per-site notice action (plan D6) is the location admin's door.
+   *
+   * The stored content is re-proved against the target here, so the seam never receives a
+   * site template holding top-level widgets or no widget at all.
+   */
+  async instantiateSite(
+    jwt: JwtPayload,
+    templateId: string,
+    body: InstantiateSiteTemplateBody,
+  ): Promise<SiteTemplateArmResult> {
+    const { template, target } = await this.loadPublished(jwt, templateId, body);
+    await this.templates.assertCanAuthor(jwt, template.organizationId);
+    const content = this.parseContent(template.content);
+    this.templates.assertContentFitsTarget(target, content);
+    if (templateWidgets(content).length === 0) {
+      throw new BadRequestException("This template has no widgets to instantiate");
+    }
+    if (this.siteArm === undefined) {
+      throw new NotImplementedException(SITE_ARM_NOT_WIRED_MESSAGE);
+    }
+    return this.siteArm(jwt, { id: template.id, organizationId: template.organizationId }, body);
   }
 
   /**
@@ -447,141 +545,6 @@ export class DashboardTemplatesInstantiateService {
       byKey.set(`${row.assetId}::${row.pointKey}`, row.id);
     }
     return byKey;
-  }
-
-  /**
-   * Resolve one widget's bindings, and say what became of them.
-   *
-   * **PER BINDING, then combined — and that is a correction.** The first version
-   * summed across bindings and decided the outcome from the sums, which reported
-   * a widget as `bound` when one of its roles matched nothing at all: a chart
-   * binding `chiller/kVA` (three members, all resolving) and `cooling-tower/kW`
-   * (no such member) summed to `matched 3, bound 3` and read as complete. That
-   * is precisely the silent success Amendment 2 decision 1 exists to prevent,
-   * and the widget then never appeared in the list decision 6 calls *"a page
-   * that can list exactly which ones need it"*. Found by the `F3.36` correctness
-   * review.
-   *
-   * Two further defects had the same root and are fixed here:
-   *
-   * - **`matchedMembers` double-counted.** Two bindings naming one role over
-   *   three members reported six. The DTO says *"how many asset-group members
-   *   the widget's roles matched"*, so it is the size of the UNION.
-   * - **The tie-break was per binding.** Ordering was binding index first and
-   *   `assets.code` second, so a `max = 1` widget naming two roles bound the
-   *   first *binding's* first member. Amendment 2 decision 2 says the first
-   *   member by `assets.code`, full stop — so the candidates are sorted
-   *   globally before the cap is applied.
-   */
-  private planWidget(
-    widget: SectionTemplateWidget,
-    membersByRole: Map<string, GroupMember[]>,
-    pointsByAsset: Map<string, string>,
-  ): {
-    widget: SectionTemplateWidget;
-    points: ResolvedMemberPoint[];
-    pointRole: string;
-    resolution: TemplateWidgetResolutionDto;
-  } {
-    const cap = WIDGET_POINT_CARDINALITY[widget.widgetType].max;
-    const assetRoleCodes = widget.bindings.map((binding) => binding.assetRoleCode);
-
-    const matchedAssetIds = new Set<string>();
-    const candidates: ResolvedMemberPoint[] = [];
-    const seenPointIds = new Set<string>();
-    /** Did EVERY binding resolve every member it matched? */
-    let everyBindingWhole = true;
-
-    for (const binding of widget.bindings) {
-      const members = membersByRole.get(binding.assetRoleCode) ?? [];
-      let resolvedForThisBinding = 0;
-
-      for (const member of members) {
-        matchedAssetIds.add(member.assetId);
-        const pointId = pointsByAsset.get(`${member.assetId}::${binding.pointKey}`);
-        if (!pointId) continue;
-        resolvedForThisBinding += 1;
-        // Two bindings can name the same (role, pointKey) pair, which would
-        // insert one point twice and violate
-        // `dashboard_widget_points_widget_point_role_key` — a 500 carrying a
-        // constraint name. The contract refuses the duplicate at authoring
-        // time; this makes the resolver idempotent regardless.
-        if (seenPointIds.has(pointId)) continue;
-        seenPointIds.add(pointId);
-        candidates.push({ pointId, assetCode: member.code });
-      }
-
-      // A binding that matched members but resolved fewer points is short; a
-      // binding that matched nothing at all is short by everything.
-      if (resolvedForThisBinding < members.length || members.length === 0) {
-        everyBindingWhole = false;
-      }
-    }
-
-    // Amendment 2 decision 2's tie-break, applied to the whole candidate set
-    // rather than within a binding. `assets.code` is NOT NULL UNIQUE, so this
-    // is a total order and "the first" is a deterministic answer.
-    candidates.sort((a, b) => a.assetCode.localeCompare(b.assetCode));
-    const points = candidates.slice(0, cap);
-
-    return {
-      widget,
-      points,
-      pointRole: widget.bindings[0]?.pointRole ?? "primary",
-      resolution: {
-        widgetKey: widget.key,
-        assetRoleCodes,
-        matchedMembers: matchedAssetIds.size,
-        boundPoints: points.length,
-        outcome: this.outcomeOf({
-          roleCount: assetRoleCodes.length,
-          matchedMembers: matchedAssetIds.size,
-          candidates: candidates.length,
-          boundPoints: points.length,
-          everyBindingWhole,
-        }),
-      },
-    };
-  }
-
-  /**
-   * The four outcomes of Amendment 2, in the order they are decided.
-   *
-   * A widget with no role bindings at all — a metric-catalog tile, which four of
-   * Sheet 04's five Electrical KPI tiles are — is `bound`, not `unresolved`. It
-   * asked for no role and got none, which is success; reporting it as a
-   * shortfall would put an amber flag beside every correctly-bound tile and
-   * teach the reader to ignore the report.
-   */
-  private outcomeOf(counts: {
-    roleCount: number;
-    matchedMembers: number;
-    candidates: number;
-    boundPoints: number;
-    /** False when ANY binding matched no members, or matched more members than
-     * it could resolve points for. This is the input the summed version did not
-     * have, and its absence is what let a widget with one dead role report
-     * `bound`. */
-    everyBindingWhole: boolean;
-  }): TemplateWidgetResolutionOutcome {
-    // Asked for no role, got none. Success, and flagging it would put an amber
-    // marker beside every correctly-bound metric tile.
-    if (counts.roleCount === 0) return "bound";
-
-    // No role matched anything at all.
-    if (counts.matchedMembers === 0) return "unresolved";
-
-    // The cap dropped points that HAD resolved. Ranked above `partial` because
-    // the administrator's remedy differs: the widget cannot hold them all, so
-    // the fix is another widget rather than another point. `matchedMembers` and
-    // `boundPoints` still show the size of the gap either way.
-    if (counts.boundPoints < counts.candidates) return "truncated";
-
-    // Some binding came up short — either it matched members that carry no such
-    // point, or it matched nothing while a sibling binding did.
-    if (!counts.everyBindingWhole) return "partial";
-
-    return "bound";
   }
 
   /** The created dashboard with its widgets, read back so the response carries

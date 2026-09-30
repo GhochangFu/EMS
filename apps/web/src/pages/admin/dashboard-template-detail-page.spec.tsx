@@ -6,7 +6,9 @@ import { expect, vi } from "vitest";
 
 import * as api from "../../api/admin/dashboard-templates";
 import * as groupsApi from "../../api/admin/asset-groups";
+import * as systemStatusApi from "../../api/system-status";
 import * as vocabApi from "../../api/vocabularies";
+import { OPERATIONAL } from "../../components/system-status-indicator.spec";
 import type { AuthUser } from "../../stores/auth-store";
 import { DashboardTemplateDetailPage } from "./dashboard-template-detail-page";
 
@@ -101,6 +103,8 @@ const VOCABULARIES = {
 };
 
 function stubApi(overrides: Partial<Record<string, unknown>> = {}): void {
+  // The layout's status read: unstubbed, it reaches a live API on :4000, whose 401 clears the session.
+  vi.spyOn(systemStatusApi, "fetchSystemStatus").mockResolvedValue(OPERATIONAL);
   vi.spyOn(groupsApi, "fetchAdminAssetGroups").mockResolvedValue(GROUPS as never);
   vi.spyOn(vocabApi, "fetchVocabularies").mockResolvedValue(VOCABULARIES as never);
   for (const [name, impl] of Object.entries(overrides)) {
@@ -428,4 +432,48 @@ export async function deleteDraftKeepsItsNameWhilePublishPends(): Promise<void> 
 export async function deleteDraftIsDisabledWhilePublishPends(): Promise<void> {
   await publishHeldPending();
   expect(screen.getByRole("button", { name: "Delete draft" })).toBeDisabled();
+}
+
+/** `F3.73` — a site-target draft: every widget sits in a tab, and the top-level canvas is empty. */
+function siteDraftTemplate() {
+  const tile = { ...publishedTemplate().content.widgets[0], bindings: [], key: "o1" };
+  return {
+    ...draftTemplate(),
+    section: "site",
+    target: "site",
+    content: {
+      widgets: [],
+      tabs: [
+        { key: "overview", label: "Overview", sortOrder: 0, domain: null, widgets: [tile] },
+        { key: "sld", label: "SLD", sortOrder: 1, domain: "electrical", widgets: [{ ...tile, key: "s1" }] },
+      ],
+    },
+  };
+}
+
+/**
+ * `F3.73` review — Save canvas on a site draft sends the stored tabs back. The builder edits
+ * the top-level canvas only; before this, its `{ widgets }` PATCH read as "clear every tab"
+ * and wiped the draft at 200. The server now refuses an omitted `tabs` on a site template,
+ * so this is also what keeps Save working there.
+ */
+export async function saveCanvasSendsTheStoredTabsBack(): Promise<void> {
+  const calls: unknown[] = [];
+  stubApi({
+    fetchAdminDashboardTemplate: () => Promise.resolve(siteDraftTemplate()),
+    updateAdminDashboardTemplate: (_id: string, input: unknown) => {
+      calls.push(input);
+      return Promise.resolve(siteDraftTemplate());
+    },
+  });
+  renderPage();
+
+  await userEvent.click(await screen.findByRole("button", { name: "Save canvas" }));
+
+  await waitFor(() => {
+    expect(calls).toHaveLength(1);
+  });
+  expect((calls[0] as { content: { tabs?: unknown } }).content.tabs).toEqual(
+    siteDraftTemplate().content.tabs,
+  );
 }

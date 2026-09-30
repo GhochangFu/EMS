@@ -121,6 +121,9 @@ export class DashboardTemplatesStockService {
           version: next,
           name: entry.name,
           section: entry.section,
+          // `F3.73` ruling Q3a — the entry's own target, never the column default: a site
+          // entry imported as `asset_group` would hold tabs its target refuses.
+          target: entry.target,
           description: entry.description,
           status: "draft",
           // From the catalog module. Never from another organization's row —

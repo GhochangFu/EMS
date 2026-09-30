@@ -1,8 +1,11 @@
 import {
   dashboardSectionCodeSchema,
+  dashboardTemplateTargetSchema,
   sectionTemplateContentSchema,
   templateLifecycleStatusSchema,
+  templateTargetContentMessage,
 } from "@bms/shared";
+import type { DashboardTemplateTarget } from "@bms/shared";
 import { z } from "zod";
 
 /**
@@ -53,21 +56,48 @@ export const TEMPLATE_MIMIC_LAYOUT_MESSAGE =
  */
 const templateContentWriteSchema = sectionTemplateContentSchema
   .superRefine((content, ctx) => {
-    content.widgets.forEach((widget, index) => {
+    // `F3.73` — the tabs are walked too: a site template holds every widget in a tab, so a
+    // loop over `content.widgets` alone would let a layout arm through on every site template.
+    const refuseLayout = (
+      widget: (typeof content.widgets)[number],
+      path: (string | number)[],
+    ): void => {
       if (widget.widgetType === "mimic" && widget.config.source === "layout") {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          path: ["widgets", index, "config"],
-          message: TEMPLATE_MIMIC_LAYOUT_MESSAGE,
-        });
+        ctx.addIssue({ code: z.ZodIssueCode.custom, path, message: TEMPLATE_MIMIC_LAYOUT_MESSAGE });
       }
-    });
+    };
+    content.widgets.forEach((widget, index) => refuseLayout(widget, ["widgets", index, "config"]));
+    content.tabs.forEach((tab, tabIndex) =>
+      tab.widgets.forEach((widget, index) =>
+        refuseLayout(widget, ["tabs", tabIndex, "widgets", index, "config"]),
+      ),
+    );
   })
   .describe(
-    "A template's canvas. A mimic widget must take the preset arm " +
+    "A template's canvas. A mimic widget, top-level or in a tab, must take the preset arm " +
       '({ source: "preset" }); a layout arm answers 400 (ADR 0081 decision 5) — ' +
       "a layout is one organization's row, and a template carries no layout " +
       "reference in this stage.",
+  );
+
+/**
+ * `F3.73` — the `PATCH` body's content: every rule of `templateContentWriteSchema`, but
+ * `tabs` has **no default**, so the parsed body still says whether the caller sent it. The
+ * service refuses an omitted `tabs` on a site template (`SITE_TEMPLATE_PATCH_TABS_MESSAGE`);
+ * `POST` keeps the default, because a create has no stored tabs to lose.
+ */
+const templateContentShape = sectionTemplateContentSchema.innerType();
+const templateContentPatchSchema = templateContentShape
+  .extend({ tabs: templateContentShape.shape.tabs.removeDefault().optional() })
+  .superRefine((content, ctx) => {
+    // The key and layout rules, from the one declaration rather than restated.
+    const checked = templateContentWriteSchema.safeParse(content);
+    if (!checked.success) checked.error.issues.forEach((issue) => ctx.addIssue(issue));
+  })
+  .describe(
+    "A template's canvas, as a PATCH carries it. The rules of the create body's content, and " +
+      "one more: on a site template content.tabs is required, because an omitted key cannot " +
+      "be told from a cleared one.",
   );
 
 export const listDashboardTemplatesQuerySchema = z
@@ -97,10 +127,31 @@ export const createDashboardTemplateBodySchema = z
     code: z.string().min(1).max(64),
     name: z.string().min(1).max(255),
     section: dashboardSectionCodeSchema,
+    /** `F3.73` ruling Q3a. Set once, here: the `PATCH` body carries no `target`, because a
+     * template's target decides which content shape its versions hold. */
+    target: dashboardTemplateTargetSchema.default("asset_group"),
     description: z.string().max(2000).nullish(),
     content: templateContentWriteSchema.optional(),
   })
-  .strict();
+  .strict()
+  // `F3.73` plan D4 — the target rule, on the one body that carries both halves of it. A
+  // `PATCH` carries content only, so the service checks it against the stored row's target.
+  .superRefine((body, ctx) => {
+    if (body.content === undefined) return;
+    const message = templateTargetContentMessage(body.target, body.content);
+    if (message !== null) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["content", body.target === "site" ? "widgets" : "tabs"],
+        message,
+      });
+    }
+  })
+  .describe(
+    "Create a draft template. One rule the document cannot express: a site-target template " +
+      "holds its widgets in content.tabs and its top-level content.widgets must be empty; an " +
+      "asset-group template holds no tabs.",
+  );
 
 /**
  * Patch a draft template.
@@ -116,7 +167,7 @@ export const updateDashboardTemplateBodySchema = z
     name: z.string().min(1).max(255).optional(),
     section: dashboardSectionCodeSchema.optional(),
     description: z.string().max(2000).nullish(),
-    content: templateContentWriteSchema.optional(),
+    content: templateContentPatchSchema.optional(),
   })
   .strict();
 
@@ -142,7 +193,7 @@ export const updateDashboardTemplateBodySchema = z
  * version, which a request schema cannot see. `section` is validated the same
  * way and for the same reason.
  */
-export const instantiateSectionTemplateBodySchema = z
+const instantiateGroupTemplateBodySchema = z
   .object({
     assetGroupId: z.string().uuid().nullable(),
     /**
@@ -165,6 +216,63 @@ export const instantiateSectionTemplateBodySchema = z
   })
   .strict();
 
+/**
+ * Instantiate a published SITE template onto one location — `F3.73` ruling Q3a, plan D6.
+ *
+ * No slug and no name: the copy action names its dashboard `site-layout-<location slug>`, so
+ * one site holds one copy. `tabGroups` is the per-tab group choice (`tabKey → assetGroupId`)
+ * an administrator makes when a site holds two untaken groups of one domain; the keys take
+ * `dashboard_tabs.tab_key`'s shape.
+ */
+const instantiateSiteTemplateBodySchema = z
+  .object({
+    locationId: z.string().uuid(),
+    tabGroups: z.record(z.string().regex(/^[a-z0-9-]{1,64}$/), z.string().uuid()).optional(),
+  })
+  .strict();
+
+/**
+ * The instantiate body — one arm per template target (`F3.73` ruling Q3a).
+ *
+ * **A plain `z.union`, and each arm stays `.strict()`.** Neither arm carries a literal a
+ * `discriminatedUnion` could key on, and a body naming both a group and a location must be
+ * refused rather than read as either: each strict arm refuses the other arm's key. Zod 3
+ * answers with the first arm that failed on a check rather than on a missing key, so a
+ * malformed group body still answers at `assetGroupId` or `slug`, not as an opaque
+ * `invalid_union` — the `E4.2` cases in the sibling spec hold that.
+ *
+ * **Which arm a template takes is the stored row's `target`, which no request schema can
+ * see** — `templateTargetBodyMessage` below, which the service applies.
+ */
+export const instantiateSectionTemplateBodySchema = z.union([
+  instantiateGroupTemplateBodySchema,
+  instantiateSiteTemplateBodySchema,
+]);
+
+/**
+ * `F3.73` — a `PATCH` of a site template's content must carry `content.tabs`. The shared
+ * content schema defaults `tabs` to `[]` for content stored before `F3.73`, so an omitted key
+ * would otherwise read as "clear every tab" (`F3.37`'s finding, one level down) and a
+ * `{ widgets }`-only client would wipe a site draft at 200.
+ */
+export const SITE_TEMPLATE_PATCH_TABS_MESSAGE =
+  "a site template's content holds its widgets in tabs; a PATCH of its content must carry " +
+  "content.tabs — send the stored tabs back to keep them, or [] to clear them";
+
+/** `F3.73` plan D6 — a body arm that does not fit the template's target. */
+export const TEMPLATE_TARGET_BODY_MESSAGE =
+  "This template's target does not take this body: a site template takes " +
+  "{ locationId, tabGroups? }, an asset-group template takes { assetGroupId, slug, name }";
+
+/** `null` when the body arm fits the template's target, else `TEMPLATE_TARGET_BODY_MESSAGE`. */
+export function templateTargetBodyMessage(
+  target: DashboardTemplateTarget,
+  body: InstantiateSectionTemplateBody,
+): string | null {
+  const siteBody = "locationId" in body;
+  return siteBody === (target === "site") ? null : TEMPLATE_TARGET_BODY_MESSAGE;
+}
+
 /** Import one stock catalog entry into the caller's organization. */
 export const importStockTemplateBodySchema = z
   .object({
@@ -178,4 +286,8 @@ export type UpdateDashboardTemplateBody = z.infer<typeof updateDashboardTemplate
 export type InstantiateSectionTemplateBody = z.infer<
   typeof instantiateSectionTemplateBodySchema
 >;
+/** The group arm — a null `assetGroupId` is `E4.2`'s organization-wide case. */
+export type InstantiateGroupTemplateBody = z.infer<typeof instantiateGroupTemplateBodySchema>;
+/** The site arm (`F3.73` plan D6). */
+export type InstantiateSiteTemplateBody = z.infer<typeof instantiateSiteTemplateBodySchema>;
 export type ImportStockTemplateBody = z.infer<typeof importStockTemplateBodySchema>;

@@ -278,6 +278,9 @@ export const STRICTNESS_LEDGER: Record<string, LedgerEntry> = {
   createDashboardBodySchema: STRICT(CALLER_ERROR),
   createDashboardTemplateBodySchema: STRICT(CALLER_ERROR),
   "createDashboardTemplateBodySchema/content": { strict: false, because: SECTION_TEMPLATE_CONTENT },
+  // `F3.73` plan D4 — a site template's tab. Part of the stored `content` like its widgets, so
+  // the same decision; its widgets reuse the widget schema, which the walk has already met.
+  "createDashboardTemplateBodySchema/content/tabs[]": { strict: false, because: SECTION_TEMPLATE_CONTENT },
   "createDashboardTemplateBodySchema/content/widgets[]&left": { strict: false, because: SECTION_TEMPLATE_CONTENT },
   "createDashboardTemplateBodySchema/content/widgets[]&left/bindings[]": { strict: false, because: SECTION_TEMPLATE_CONTENT },
   "createDashboardTemplateBodySchema/content/widgets[]&left/sources[]": { strict: false, because: SECTION_TEMPLATE_CONTENT },
@@ -296,9 +299,14 @@ export const STRICTNESS_LEDGER: Record<string, LedgerEntry> = {
   "createDashboardTemplateBodySchema/content/widgets[]&right|5/config|0": { strict: false, because: SECTION_TEMPLATE_CONTENT },
   "createDashboardTemplateBodySchema/content/widgets[]&right|5/config|1": { strict: false, because: SECTION_TEMPLATE_CONTENT },
   importStockTemplateBodySchema: STRICT(CALLER_ERROR),
-  instantiateSectionTemplateBodySchema: STRICT(CALLER_ERROR),
+  // `F3.73` ruling Q3a — the body became a union of two strict arms: `|0` the asset-group arm
+  // (unchanged), `|1` the site arm `{ locationId, tabGroups? }`. Strict on both, so a body naming
+  // both a group and a location is refused rather than read as either.
+  "instantiateSectionTemplateBodySchema|0": STRICT(CALLER_ERROR),
+  "instantiateSectionTemplateBodySchema|1": STRICT(CALLER_ERROR),
   updateDashboardTemplateBodySchema: STRICT(CALLER_ERROR),
   "updateDashboardTemplateBodySchema/content": { strict: false, because: SECTION_TEMPLATE_CONTENT },
+  "updateDashboardTemplateBodySchema/content/tabs[]": { strict: false, because: SECTION_TEMPLATE_CONTENT },
   "updateDashboardTemplateBodySchema/content/widgets[]&left": { strict: false, because: SECTION_TEMPLATE_CONTENT },
   "updateDashboardTemplateBodySchema/content/widgets[]&left/bindings[]": { strict: false, because: SECTION_TEMPLATE_CONTENT },
   "updateDashboardTemplateBodySchema/content/widgets[]&left/sources[]": { strict: false, because: SECTION_TEMPLATE_CONTENT },

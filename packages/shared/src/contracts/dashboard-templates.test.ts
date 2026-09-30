@@ -2,6 +2,15 @@ import { describe, it } from "vitest";
 
 import {
   acceptsATableWithNoSourceAndNoColumns,
+  acceptsATabWithANullDomainAndWidgets,
+  oldContentWithoutTabsParses,
+  rejectsATabOverTheWidgetCap,
+  rejectsATopLevelKeyEqualToATabWidgetKey,
+  rejectsTwoTabsSharingATabKey,
+  rejectsTwoTabsSharingAWidgetKey,
+  targetDefaultsToAssetGroup,
+  templateWidgetsYieldsTopLevelThenTabWidgets,
+  theTargetRuleNamesEachMismatch,
   acceptsAWidgetCarryingEitherKindAlone,
   acceptsAWidgetCarryingNeitherKind,
   acceptsDeclaredColumnsOfTheBoundDataset,
@@ -76,5 +85,43 @@ describe("F3.61 Amendment 1 — a template widget's sources fit its shape, its c
 
   it("case 13: the widget schema's description names the shape, cap and columns rules", () => {
     widgetSchemaDescribesShapeCapAndColumnsRules();
+  });
+});
+
+describe("F3.73 — the site target and content tabs (plan D4)", () => {
+  it("content written before tabs existed still parses, as no tabs", () => {
+    oldContentWithoutTabsParses();
+  });
+
+  it("target defaults to asset_group on every template DTO", () => {
+    targetDefaultsToAssetGroup();
+  });
+
+  it("accepts an Overview tab (domain null) holding widgets", () => {
+    acceptsATabWithANullDomainAndWidgets();
+  });
+
+  it("refuses two tabs whose widgets share one key", () => {
+    rejectsTwoTabsSharingAWidgetKey();
+  });
+
+  it("refuses a top-level widget key equal to a tab widget key", () => {
+    rejectsATopLevelKeyEqualToATabWidgetKey();
+  });
+
+  it("refuses two tabs sharing one tab key", () => {
+    rejectsTwoTabsSharingATabKey();
+  });
+
+  it("caps the widgets per tab at MAX_DASHBOARD_WIDGETS", () => {
+    rejectsATabOverTheWidgetCap();
+  });
+
+  it("templateWidgets yields the top-level widgets, then every tab's", () => {
+    templateWidgetsYieldsTopLevelThenTabWidgets();
+  });
+
+  it("the target rule names each mismatch and accepts each legal shape", () => {
+    theTargetRuleNamesEachMismatch();
   });
 });

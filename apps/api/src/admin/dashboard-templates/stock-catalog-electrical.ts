@@ -83,11 +83,13 @@ export const ELECTRICAL_STOCK_TEMPLATES = [
     code: "electrical-overview",
     name: "Electrical Overview",
     section: "electrical",
+    target: "asset_group",
     description:
       "Incoming supply, transformers, HT/LT panels and MCCs, the same canvas Sheet 02 draws " +
       "for the Electrical train.",
     stockVersion: 1,
     content: {
+      tabs: [],
       widgets: [
         {
           key: "alarms-tile",
@@ -279,11 +281,13 @@ export const ELECTRICAL_STOCK_TEMPLATES = [
     code: "electrical-metered-pumping",
     name: "Electrical — Metered Pumping",
     section: "electrical",
+    target: "asset_group",
     description:
       "A metered pumping station: multifunction meters and mains/dosing pumps, the shape a " +
       "village water supply runs rather than a substation train.",
     stockVersion: 1,
     content: {
+      tabs: [],
       widgets: [
         {
           key: "alarms-tile",

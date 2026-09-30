@@ -184,11 +184,13 @@ export class DashboardTemplatesController {
     @CurrentUser() user: JwtPayload,
   ) {
     try {
-      return await this.instantiate.instantiate(
-        user,
-        idParamSchema.parse(id),
-        instantiateSectionTemplateBodySchema.parse(body),
-      );
+      const templateId = idParamSchema.parse(id);
+      const parsed = instantiateSectionTemplateBodySchema.parse(body);
+      // `F3.73` ruling Q3a — the body's arm picks the method; each refuses a template whose
+      // stored `target` is the other arm's (`TEMPLATE_TARGET_BODY_MESSAGE`).
+      return "locationId" in parsed
+        ? await this.instantiate.instantiateSite(user, templateId, parsed)
+        : await this.instantiate.instantiate(user, templateId, parsed);
     } catch (err) {
       if (err instanceof ZodError) {
         throw new BadRequestException(err.flatten());

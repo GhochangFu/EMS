@@ -1,7 +1,11 @@
+import { ASSET_GROUP_TEMPLATE_TABS_MESSAGE, SITE_TEMPLATE_TOP_LEVEL_MESSAGE } from "@bms/shared";
+
 import {
   createDashboardTemplateBodySchema,
   instantiateSectionTemplateBodySchema,
   TEMPLATE_MIMIC_LAYOUT_MESSAGE,
+  TEMPLATE_TARGET_BODY_MESSAGE,
+  templateTargetBodyMessage,
   updateDashboardTemplateBodySchema,
 } from "./dashboard-templates.schema";
 
@@ -254,4 +258,139 @@ export function acceptsAPatchBodyWhoseMimicNamesThePreset(): void {
     { content: { widgets: [mimic({ source: "preset", preset: "water_train" })] } },
     "a PATCH body whose one mimic widget names the water_train preset",
   );
+}
+
+// ---------------------------------------------------------------- F3.73
+
+const LOCATION_ID = "5a4b3c2d-1e0f-4a9b-8c7d-6e5f4a3b2c1d";
+const GROUP_ID = "1c2d3e4f-5a6b-4c7d-8e9f-0a1b2c3d4e5f";
+
+function siteTab(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+  return { key: "sld", label: "SLD", sortOrder: 1, domain: "electrical", widgets: [widget()], ...overrides };
+}
+
+function createBody(overrides: Record<string, unknown>): unknown {
+  return { organizationId: ORGANIZATION_ID, code: "site", name: "Site", section: "site", ...overrides };
+}
+
+/** `F3.73` plan D4 — a site template holds its widgets in tabs; top-level widgets are refused. */
+export function rejectsASiteCreateBodyWithTopLevelWidgets(): void {
+  expectRejectsAt(
+    createDashboardTemplateBodySchema,
+    createBody({ target: "site", content: { widgets: [widget()], tabs: [siteTab({ widgets: [] })] } }),
+    ["content", "widgets"],
+    new RegExp(SITE_TEMPLATE_TOP_LEVEL_MESSAGE),
+    "a site-target create body with a top-level widget",
+  );
+}
+
+/** `F3.73` plan D4 — an asset-group template is one canvas; tabs are refused. */
+export function rejectsAnAssetGroupCreateBodyWithTabs(): void {
+  expectRejectsAt(
+    createDashboardTemplateBodySchema,
+    createBody({ target: "asset_group", content: { widgets: [], tabs: [siteTab()] } }),
+    ["content", "tabs"],
+    new RegExp(ASSET_GROUP_TEMPLATE_TABS_MESSAGE),
+    "an asset-group create body with a tab",
+  );
+}
+
+/** The positive control, and the default: a site body with tabs only parses; no target reads
+ * as `asset_group`. */
+export function acceptsASiteCreateBodyWithTabsAndDefaultsTheTarget(): void {
+  expectAccepts(
+    createDashboardTemplateBodySchema,
+    createBody({ target: "site", content: { widgets: [], tabs: [siteTab()] } }),
+    "a site-target create body whose widgets are all in tabs",
+  );
+  const parsed = createDashboardTemplateBodySchema.parse(createBody({}));
+  assert(parsed.target === "asset_group", `an omitted target must read asset_group, got ${parsed.target}`);
+}
+
+/** `F3.32c`'s layout-arm refusal reaches tab widgets too — the same door, one level down. */
+export function rejectsALayoutMimicInsideATab(): void {
+  expectRejectsAt(
+    updateDashboardTemplateBodySchema,
+    { content: { tabs: [siteTab({ widgets: [mimic({ source: "layout", layoutId: LAYOUT_ID })] })] } },
+    ["content", "tabs", 0, "widgets", 0, "config"],
+    new RegExp(TEMPLATE_MIMIC_LAYOUT_MESSAGE),
+    "a PATCH body whose tab holds a mimic naming a layout",
+  );
+}
+
+/**
+ * A `PATCH` that omits `content.tabs` parses with `tabs` still undefined, and one that sends
+ * `[]` parses as `[]`: the service needs the difference to refuse an omission on a site
+ * template. The create body keeps its default, because a create has no stored tabs to lose.
+ */
+export function aPatchBodyKeepsAnOmittedTabsUndefined(): void {
+  const omitted = updateDashboardTemplateBodySchema.parse({ content: { widgets: [] } });
+  assert(omitted.content?.tabs === undefined, "an omitted PATCH content.tabs must stay undefined");
+  const cleared = updateDashboardTemplateBodySchema.parse({ content: { widgets: [], tabs: [] } });
+  assert(
+    Array.isArray(cleared.content?.tabs) && cleared.content.tabs.length === 0,
+    "a PATCH content.tabs of [] must parse as []",
+  );
+  const created = createDashboardTemplateBodySchema.parse(createBody({ content: { widgets: [] } }));
+  assert(Array.isArray(created.content?.tabs), "a create body's omitted content.tabs must default to []");
+}
+
+/** The PATCH content keeps the shared key rule: a key shared across tabs is refused there too. */
+export function rejectsAPatchBodyWithADuplicateKeyAcrossTabs(): void {
+  expectRejectsAt(
+    updateDashboardTemplateBodySchema,
+    {
+      content: {
+        widgets: [],
+        tabs: [
+          siteTab({ key: "a", widgets: [widget({ key: "same" })] }),
+          siteTab({ key: "b", widgets: [widget({ key: "same" })] }),
+        ],
+      },
+    },
+    ["content", "tabs", 1, "widgets", 0, "key"],
+    /duplicate widget key/,
+    "a PATCH body whose two tabs share one widget key",
+  );
+}
+
+/** The site arm of instantiate: a location and an optional per-tab group choice. */
+export function acceptsASiteInstantiateBody(): void {
+  expectAccepts(
+    instantiateSectionTemplateBodySchema,
+    { locationId: LOCATION_ID, tabGroups: { sld: GROUP_ID } },
+    "a site instantiate body with a tab group choice",
+  );
+  expectAccepts(instantiateSectionTemplateBodySchema, { locationId: LOCATION_ID }, "a site body with no choice");
+}
+
+/** A body naming both arms is neither: each arm is `.strict()`, so the other arm's keys refuse it. */
+export function rejectsAnInstantiateBodyNamingBothArms(): void {
+  const result = instantiateSectionTemplateBodySchema.safeParse({
+    assetGroupId: GROUP_ID,
+    slug: "valid-slug",
+    name: "x",
+    locationId: LOCATION_ID,
+  });
+  assert(result.success === false, "a body naming both a group and a location must be refused");
+}
+
+/**
+ * The body/target rule, which no schema can hold because the target is the stored row's: a
+ * site body on a group template and a group body on a site template both answer
+ * `TEMPLATE_TARGET_BODY_MESSAGE`, and a matching pair answers nothing.
+ */
+export function theTargetBodyRuleRefusesEachMismatch(): void {
+  const site = instantiateSectionTemplateBodySchema.parse({ locationId: LOCATION_ID });
+  const group = instantiateSectionTemplateBodySchema.parse({ assetGroupId: GROUP_ID, slug: "ok-slug", name: "x" });
+  assert(
+    templateTargetBodyMessage("asset_group", site) === TEMPLATE_TARGET_BODY_MESSAGE,
+    "a site body on an asset-group template must be refused",
+  );
+  assert(
+    templateTargetBodyMessage("site", group) === TEMPLATE_TARGET_BODY_MESSAGE,
+    "a group body on a site template must be refused",
+  );
+  assert(templateTargetBodyMessage("site", site) === null, "a site body on a site template is legal");
+  assert(templateTargetBodyMessage("asset_group", group) === null, "a group body on a group template is legal");
 }
