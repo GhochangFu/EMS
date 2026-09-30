@@ -1,0 +1,212 @@
+# ADR 0087 — One Control Room section and the SMOC standard site template (`F3.72`–`F3.75`)
+
+## Status
+
+Accepted — drafted on 2026-09-30 from an owner review of the three dashboard
+sections and a clickable layout demo. Eleven scope questions were put to the
+owner one at a time; all were ruled, and each ruling is recorded under *Gate
+questions*. The owner approved this written record on 2026-09-30.
+
+Creates rows `F3.72`–`F3.75`. Amends [ADR 0076](./0076-control-room-for-each-organization.md)
+gate question 8 and decisions 1, 8 and 9, [ADR 0079](./0079-fixed-plant-mimic-widget.md)
+decision 4 and [ADR 0081](./0081-mimic-layout-builder.md) decision 10 (see
+*Amended records*). Promotes nothing out of `AGENTS.md` §6. `F3.72` ships in
+the first stable version (gate question 9); `F3.73`–`F3.75` start after it.
+
+## Context
+
+**The owner's observation.** The product has three places that show
+dashboards, and a user cannot tell which one to open first:
+
+- `/` (`DashboardPage`) — every organization together: estate KPI tiles,
+  location cards grouped by organization, Asset health and the 60-minute load
+  trend. A location card opens `/locations/:id/dashboard`
+  (`LocationDashboardPage`): KPI tiles, the RTU list and filter, the asset
+  table with pages, the image gallery, work orders and module links.
+- `/control-room` → `/control-room/org/:id` → `/control-room/site/:id`
+  (ADR 0076) — no estate level. The same `LocationKpiCard` opens the site view
+  here (`to` is overridden), so one site has two different drill-downs. The
+  site view is `generated`, one `dashboard`, or `builtin` (the seven SMOC
+  pages, `RSMOC-WC` only).
+- `/dashboards` — the library and the builder (ADR 0047).
+
+**The owner's target for the site level.** The SMOC layout of `RSMOC-WC`
+(Overview plus one tab for each area) is the operations layout for every site
+of every organization, made through the custom dashboard module.
+
+**What the code can do today (measured 2026-09-30 at `e46d04cb`).**
+
+- A site shows **one** dashboard (ADR 0076 decision 8). A dashboard has no
+  tabs.
+- The SMOC pages are hand-written React under
+  `apps/web/src/components/control-room/smoc/` (about 4,100 lines), bound to
+  about 40 literal `CR-*` asset codes of `ESKOM`
+  (`components/live-svg/control-room-bindings.ts`).
+- The builder has six widget types (`widgetTypeSchema`: `radial_gauge`,
+  `tank_level`, `value_tile`, `chart`, `table`, `mimic`). The SMOC Overview
+  also uses parts that are not widgets: `ActiveAlarmsRail`, `StateLegend`,
+  `AssetClassStrip`, `ModuleSummaryCard`, `CriticalSystemsSummary`.
+- A section template instantiates against **one asset group** (ADR 0049). No
+  template targets a site (ADR 0076 decision 8 deferred it).
+- The electrical mimic draws a distribution train (ADR 0082), but live breaker
+  state, energised paths and bus topology are out of scope (ADR 0081 decision
+  10, ADR 0082 decision 7).
+- A `mimic` widget is refused on a dashboard that is not scoped to an asset
+  group (`DashboardsService.putWidgets`, `MIMIC_SCOPE_MESSAGE`).
+
+## Gate questions
+
+Scope, 2026-09-30, after the owner reviewed the layout demo:
+
+1. **One section or three?** **Ruled: one section** with drill-down:
+   estate, then organization, then site. `/dashboards` stays as the library
+   and the builder.
+2. **What does the site level look like?** **Ruled: the SMOC layout, for
+   every site**, made through the custom dashboard module.
+3. **Delivery.** Options: three phases; one build; two phases. **Ruled:
+   three phases** (`F3.73` is decisions 4–7, `F3.74` is decision 8, `F3.75`
+   is decision 9).
+4. **Can an admin change the layout of one site?** Options: a copy for each
+   site; a locked standard; a locked standard plus extra tabs. **Ruled: a copy
+   for each site** that an admin can edit. A later change to the template does
+   not overwrite an edited copy (the ADR 0049 instance rule).
+5. **When does `RSMOC-WC` move onto the template?** Options: after parity; in
+   phase 1; never. **Ruled: after parity** (phase 3). Until then it keeps its
+   hand-written pages.
+6. **The name of the menu entry.** Options: Control Room; Operations;
+   Dashboard. **Ruled: "Control Room".**
+7. **A user with one organization skips the estate level.** Options: move the
+   estate panels down; no skip at estate; keep as is. **Ruled: keep the skip,
+   and the organization level also shows Asset health and the load trend** for
+   that organization.
+
+Four more, the same day, after the draft found that a site-scoped dashboard
+cannot hold a mimic (ADR 0079 decision 4). The demo had tagged the domain-tab
+mimic as existing; that tag was wrong, and the owner was told before this
+question:
+
+8. **How does a mimic work on the site dashboard?** Options: each tab binds
+   one asset group; each mimic widget names a group; no mimic on the site
+   dashboard. **Ruled: each domain tab binds one asset group** of the site
+   (decision 5).
+9. **When does `F3.72` ship?** Options: after the first stable version; in
+   it. **Ruled: in the first stable version** (merge cutoff 2026-09-30).
+10. **Is the critical-systems list in phase 1?** **Ruled: yes** (decision 6).
+11. **What does `/` do?** Options: show the user's Control Room entry level;
+    redirect to `/control-room`. **Ruled: `/` shows the entry level**
+    (decision 2).
+
+## Decision
+
+### The section (`F3.72`)
+
+1. **One menu entry, "Control Room"**, with four levels. The "Dashboard" menu
+   entry is removed.
+   - **Estate** — the content of `/` today: the estate KPI tiles, one card
+     for each organization, Asset health and the load trend. This level is the
+     entry for a user whose scope holds more than one organization.
+   - **Organization** — ADR 0076 decision 2, plus Asset health and the load
+     trend for that organization (gate question 7).
+   - **Site** — the site view. It gains an **"Assets & RTUs"** tab that holds
+     the content of `/locations/:id/dashboard` without change.
+   - The level-skip rule of ADR 0076 decision 2 stays.
+2. **The old addresses keep working.** `/locations/:id/dashboard` redirects to
+   the site's "Assets & RTUs" tab. `/` shows the user's Control Room entry
+   level (estate, organization or site, by the level-skip rule) without a
+   redirect, so the login landing does not change (gate question 11).
+3. **Each level lists the dashboards for its scope** from the library, with a
+   link to open each in `/dashboards`. The library itself does not change.
+
+### The SMOC standard site template (`F3.73`, phase 1)
+
+4. **A dashboard can have tabs.** The site view renders one dashboard with its
+   tabs. The standard tab set is **Overview, then one tab for each asset
+   domain present at the site** (for example `PHEWB`: SLD and ENV;
+   `IONX-DEMO`: SLD, Water and ENV). "Assets & RTUs" (decision 1) is a fixed
+   tab of the site view, beside the dashboard's tabs. It is not a dashboard
+   tab and not a widget.
+5. **A site template, "SMOC standard".** It makes one tabbed dashboard for a
+   site, scoped to that site, bound through asset-group membership roles and
+   point keys, never through asset ids or `CR-*` codes (ADR 0049 decision 4).
+   The dashboard is a **copy for the site** that an admin can edit in the
+   builder; it carries the template stamp, and a later template version does
+   not overwrite an edited copy (gate question 4). **Each domain tab binds one
+   asset group of the site** (gate question 8), and the widgets on that tab
+   resolve their roles through that group. A `mimic` is therefore allowed on a
+   tab that binds a group, and the template carries the mimic layout it names.
+6. **New widget types**, extracted from the SMOC Overview and bound to roles:
+   the active alarms rail, the state legend, the asset-class strip, the module
+   summary card (it opens a tab of the same dashboard) and the critical-systems
+   list (gate question 10). `widgetType` stays a closed vocabulary (ADR 0047 decision 2), so each
+   type widens `dashboard_widgets_widget_type_check` in a migration.
+7. **The generated view stays as the fail-safe** (ADR 0076 decision 5): a site
+   with no copy, or whose copy is removed, shows the generated view with a
+   notice, never an empty page.
+
+### Later phases
+
+8. **`F3.74` (phase 2) — live breaker state on the electrical mimic**:
+   breaker state, energised paths and bus topology, which ADR 0081 decision 10
+   and ADR 0082 decision 7 left out. This row needs its own ADR before build.
+9. **`F3.75` (phase 3) — `RSMOC-WC` onto the template**, only when the
+   template shows everything the seven SMOC pages show today (gate question
+   5). Then the hand-written SMOC pages and the `builtin` view kind are
+   removed; the `/cr-*` redirects stay.
+
+### Amended records
+
+10. This record amends:
+    - **ADR 0079 decision 4** (a mimic only on a dashboard scoped to one asset
+      group): a mimic is also allowed on a dashboard tab that binds one asset
+      group (decision 5).
+    - **ADR 0081 decision 10** (no layouts in dashboard templates): the site
+      template may name a mimic layout (decision 5).
+
+    And ADR 0076:
+    - **Gate question 8** ("reuse their reads; both pages stay"): `/` and
+      `/locations/:id/dashboard` become levels of the Control Room
+      (decisions 1 and 2).
+    - **Decision 1**: the Control Room entry also replaces the "Dashboard"
+      entry.
+    - **Decision 8** (one dashboard, no site target for templates): a site
+      shows one **tabbed** dashboard, and the site template is in scope
+      (decisions 4 and 5).
+    - **Decision 9** (built-in SMOC): the `builtin` kind is retired in phase 3
+      (decision 9).
+
+### Design questions for the step-3 plan
+
+11. Not decided here; each plan puts them to the owner:
+    - How tabs are stored (a column on `bms.dashboard_widgets`, or a new
+      `bms.dashboard_tabs` table), and how a tab stores its asset group.
+    - How a template names a mimic layout, and how the copy gets a layout
+      for its own organization (a layout is a tenant row, ADR 0081).
+    - How the site template is stored (a target on `bms.dashboard_templates`,
+      or a new table), and whether its content can name several asset groups.
+    - When the copy is made: at site creation, by a backfill for the existing
+      sites, by an admin action, or all three.
+    - How a site view row points at the copy (`bms.site_control_room_views`
+      `kind = 'dashboard'`, or a new kind).
+    - The exact content of the Overview tab and of each domain tab.
+
+## Consequences
+
+- **One place to start.** A user opens "Control Room" and drills down. The
+  library stays for authors and for dashboards that are not a site layout.
+- **Schema changes** in `F3.73` (tabs, the site template, the widened
+  `widgetType` CHECK) go through `migration-reviewer` and `security-reviewer`
+  (tenant isolation on each new table, ADR 0043/0045).
+- **`F3.72` needs no schema change** and ships in the first stable version,
+  before `F3.73`. Until
+  `F3.73` lands, a non-SMOC site keeps its generated or dashboard view.
+- **Two implementations of the SMOC layout exist until phase 3**: the
+  hand-written pages for `RSMOC-WC` and the template for every other site.
+- **Open elsewhere:** the "Domain-first navigation IA" decision
+  (`docs/BACKLOG.md`, raised 2026-08-16) also touches the sidebar. This record
+  does not settle it.
+- **`chore(agents):` owed** after `F3.72` lands: `AGENTS.md` names `/` as the
+  dashboard and the Control Room as a separate entry. That sweep is a separate
+  PR (§9.10).
+- **Reference:** the owner-reviewed layout demo is the canvas artifact
+  "Unified Operations Demo" (version 3, 2026-09-30). Its menu label
+  "Operations" is superseded by gate question 6.
