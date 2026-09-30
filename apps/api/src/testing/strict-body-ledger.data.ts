@@ -359,6 +359,10 @@ export const STRICTNESS_LEDGER: Record<string, LedgerEntry> = {
   "patchDraftBodySchema/draft/pointKeys[]": { strict: false, because: THREE_PRODUCERS },
   "patchDraftBodySchema/draft/rtus[]": { strict: false, because: THREE_PRODUCERS },
   putDashboardWidgetsBodySchema: STRICT(CALLER_ERROR),
+  // `F3.73` (plan D2). A tab is an authoring shape with no `z.record` escape, and the key a
+  // client would try is `locationId`, which the service stamps from the dashboard: stripped
+  // and answered 200, it would read as accepted.
+  "putDashboardWidgetsBodySchema/tabs[]": STRICT(CALLER_ERROR),
   "putDashboardWidgetsBodySchema/widgets[]|0": STRICT(DASHBOARD_WIDGET_ARM),
   "putDashboardWidgetsBodySchema/widgets[]|0/config": STRICT(DASHBOARD_WIDGET_WRITE_CONFIG),
   "putDashboardWidgetsBodySchema/widgets[]|0/config/thresholds[]": STRICT(DASHBOARD_WIDGET_WRITE_CONFIG),

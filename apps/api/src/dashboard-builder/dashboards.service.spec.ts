@@ -34,6 +34,8 @@ const POINT_A = "44444444-4444-4444-8444-444444444444";
 const ASSET_A = "55555555-5555-4555-8555-555555555555";
 /** `F3.2` — the asset-template version a default dashboard is stamped with. */
 const ASSET_TEMPLATE_A = "99999999-9999-4999-8999-999999999999";
+/** `F3.73` — `diffWidgets`' tab map for a dashboard without tabs. */
+const NO_TABS: ReadonlyMap<string, string> = new Map();
 
 const dashboardRow = {
   id: DASHBOARD_ID,
@@ -58,6 +60,8 @@ const widgetRow = {
   id: WIDGET_A,
   organizationId: ORG_ID,
   dashboardId: DASHBOARD_ID,
+  // `F3.73` (plan D1) — the legacy single canvas.
+  tabId: null,
   widgetType: "chart",
   title: "Load",
   gridX: 0,
@@ -173,6 +177,7 @@ export function runDashboardsServiceUnitTests(): void {
   const stored: StoredWidgetForDiff[] = [
     {
       id: WIDGET_A,
+      tabId: null,
       widgetType: "chart",
       title: "Load",
       gridX: 0,
@@ -187,6 +192,7 @@ export function runDashboardsServiceUnitTests(): void {
     },
     {
       id: WIDGET_B,
+      tabId: null,
       widgetType: "value_tile",
       title: "Total kW",
       gridX: 6,
@@ -199,6 +205,7 @@ export function runDashboardsServiceUnitTests(): void {
     },
     {
       id: WIDGET_C,
+      tabId: null,
       widgetType: "value_tile",
       title: "Retiring",
       gridX: 9,
@@ -246,7 +253,8 @@ export function runDashboardsServiceUnitTests(): void {
     points: [{ pointId: POINT_A, role: "primary", sortOrder: 0 }],
   } as WidgetWriteBody;
 
-  const diff = diffWidgets(stored, [unchangedSubmission, changedSubmission, newSubmission]);
+  // `F3.73` — no tabs: every widget sits on the legacy canvas, so the key -> id map is empty.
+  const diff = diffWidgets(stored, [unchangedSubmission, changedSubmission, newSubmission], NO_TABS);
 
   assert(
     diff.updates.length === 1 && diff.updates[0]?.id === WIDGET_B,
@@ -279,6 +287,7 @@ export function runDashboardsServiceUnitTests(): void {
   const sourceStored: StoredWidgetForDiff[] = [
     {
       id: WIDGET_B,
+      tabId: null,
       widgetType: "value_tile",
       title: "Alarms",
       gridX: 6,
@@ -304,7 +313,7 @@ export function runDashboardsServiceUnitTests(): void {
     sources: [{ catalogKey: "workorders.open.count", params: {}, sortOrder: 0 }],
   } as unknown as WidgetWriteBody;
 
-  const reboundDiff = diffWidgets(sourceStored, [rebound]);
+  const reboundDiff = diffWidgets(sourceStored, [rebound], NO_TABS);
   assert(
     reboundDiff.updates.length === 1 && reboundDiff.updates[0]?.id === WIDGET_B,
     "a widget whose only change is its catalog binding must be an UPDATE, not unchanged — " +
@@ -332,7 +341,7 @@ export function runDashboardsServiceUnitTests(): void {
     ],
   } as unknown as WidgetWriteBody;
 
-  const reorderedDiff = diffWidgets(reorderedStored, [reorderedSubmission]);
+  const reorderedDiff = diffWidgets(reorderedStored, [reorderedSubmission], NO_TABS);
   assert(
     reorderedDiff.unchangedIds.length === 1 && reorderedDiff.updates.length === 0,
     "the same catalog bindings in a different array order must be UNCHANGED — " +
@@ -351,7 +360,7 @@ export function runDashboardsServiceUnitTests(): void {
       ...(rebound as unknown as Record<string, unknown>),
       sources: [{ catalogKey: "alarms.active.count", params: { severity: "critical" }, sortOrder: 0 }],
     } as unknown as WidgetWriteBody,
-  ]);
+  ], NO_TABS);
   assert(
     paramsChanged.updates.length === 1,
     "a change to a binding's params must be an UPDATE — " +
@@ -384,7 +393,7 @@ export function runDashboardsServiceUnitTests(): void {
         { catalogKey: "alarms.active.count", params: { beta: 2, alpha: 1 }, sortOrder: 0 },
       ],
     } as unknown as WidgetWriteBody,
-  ]);
+  ], NO_TABS);
   assert(
     keysReordered.updates.length === 0 && keysReordered.unchangedIds.length === 1,
     "the same params with their KEYS in a different order must be UNCHANGED — jsonb does not " +
@@ -401,7 +410,7 @@ export function runDashboardsServiceUnitTests(): void {
         { catalogKey: "alarms.active.count", params: { alpha: 1, beta: 99 }, sortOrder: 0 },
       ],
     } as unknown as WidgetWriteBody,
-  ]);
+  ], NO_TABS);
   assert(
     valueChanged.updates.length === 1,
     "a different VALUE under the same keys must still be an UPDATE",

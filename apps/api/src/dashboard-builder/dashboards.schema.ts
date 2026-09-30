@@ -7,6 +7,7 @@ import {
   CATALOG_CODE_MESSAGE,
   CATALOG_CODE_PATTERN,
   dashboardSectionCodeSchema,
+  dashboardTabKeySchema,
   sustainabilityAggregateSchema,
   waterBalancePeriodSchema,
   waterBalanceRoleCodeSchema,
@@ -17,6 +18,7 @@ import {
   gaugeThresholdSchema,
   DASHBOARD_GRID,
   GAUGE_RANGE_MESSAGE,
+  MAX_DASHBOARD_TABS,
   MAX_DASHBOARD_WIDGETS,
   MAX_GAUGE_THRESHOLDS,
   tankLevelConfigSchema,
@@ -90,6 +92,31 @@ export const MIMIC_SCOPE_MESSAGE =
  * and for another organization's id alike, so the 400 never confirms that a foreign id exists.
  */
 export const MIMIC_LAYOUT_ORG_MESSAGE = "a plant mimic layout must belong to the dashboard's organization";
+
+/**
+ * `F3.73` (plan D2) — the tab refusals of `PUT :id/widgets`. The first three are the body's own
+ * rules (`tabRulesHold` below); the last three are `DashboardsService`'s, exported here for the
+ * reason `MIMIC_SCOPE_MESSAGE` is: one sentence per rule, imported rather than restated.
+ */
+export const TAB_KEY_UNKNOWN_MESSAGE = "a widget's tabKey must name one of the tabs in this request";
+export const TAB_KEY_REQUIRED_MESSAGE = "a dashboard with tabs needs a tabKey on every widget";
+export const DUPLICATE_TAB_KEY_MESSAGE =
+  "two tabs may not share one key (dashboard_tabs_dashboard_id_tab_key_key)";
+/** Two body tabs naming one stored `id` would both write the same row, so the second silently
+ * wins and the PUT answers 200 with one tab fewer than it was sent. The id is never echoed. */
+export const DUPLICATE_TAB_ID_MESSAGE = "two tabs may not name one stored tab id";
+/** A tab's group is a group AT the dashboard's site: an organization-wide, group- or asset-scoped
+ * dashboard has no site, and a group of another site or organization is not one of its groups.
+ * One sentence for every case, so the 400 never confirms that a foreign group id exists. */
+export const TAB_GROUP_SCOPE_MESSAGE =
+  "a tab's asset group must be a group at this dashboard's site — only a site dashboard carries group tabs";
+/** A tab `id` that is not one of this dashboard's stored tabs. The id is never echoed. */
+export const TAB_ID_UNKNOWN_MESSAGE = "a tab id must name one of this dashboard's own tabs — omit it to add a tab";
+/** `dashboard_tabs_dashboard_id_location_id_fkey` refused a scope change of a dashboard whose
+ * tabs bind groups at its current site (ruling Q1: the same-location rule lives in the database). */
+export const TAB_LOCATION_MOVE_MESSAGE =
+  "this dashboard has tabs bound to asset groups at its site, so it cannot leave that site — " +
+  "clear the tabs' asset groups first";
 
 /**
  * `!= null`, not `!== null`, on all three: every field is `.nullable().optional()`, so an
@@ -461,6 +488,9 @@ const widgetIdentityWriteFields = {
   // replace (D2) — a client omits it to create a new widget, and DashboardsService keys the
   // sync diff on it.
   id: z.string().uuid().optional(),
+  // `F3.73` (plan D2) — the tab this widget sits on, by key: a new tab has no id yet. Whether
+  // the key names a tab of the request is `tabRulesHold`'s check on the body.
+  tabKey: z.string().min(1).max(64).optional(),
   title: z.string().max(255).nullable().optional(),
   gridX: z.number().int().min(0).max(DASHBOARD_GRID.columns - 1),
   gridY: z.number().int().min(0),
@@ -745,9 +775,17 @@ const eachTableColumnIsDeclared = (
   });
 };
 
+/**
+ * `F3.73` (plan D2) — the array bound is the whole-body ceiling, `MAX_DASHBOARD_TABS` full tabs.
+ * The real cap, `MAX_DASHBOARD_WIDGETS` per tab (and on the legacy canvas), needs each widget's
+ * `tabKey` beside the tab list, so `tabRulesHold` on the body checks it; this bound only refuses
+ * an oversized array with a 400 at `widgets`. It does not save the parse work: a Zod 3 array
+ * `.max()` marks the result dirty rather than aborting it, so every element is still parsed and
+ * the `.superRefine` below and the body's `tabRulesHold` still run on the dirty result.
+ */
 const widgetsWriteFieldSchema = z
   .array(widgetWriteSchema)
-  .max(MAX_DASHBOARD_WIDGETS)
+  .max(MAX_DASHBOARD_WIDGETS * MAX_DASHBOARD_TABS)
   // ONE `.superRefine` calling two rules, not two chained calls. ADR 0029 decision 10 requires a
   // `.describe()` IMMEDIATELY after a refinement, and only the last link of a chain can have one
   // — so chaining would leave the grid rule undocumented in the generated document while the API
@@ -758,7 +796,8 @@ const widgetsWriteFieldSchema = z
     eachTableColumnIsDeclared(widgets, ctx);
   })
   .describe(
-    `At most ${MAX_DASHBOARD_WIDGETS} widgets. Each must fit inside the ${DASHBOARD_GRID.columns}-column ` +
+    `At most ${MAX_DASHBOARD_WIDGETS} widgets on each tab, or on the canvas of a dashboard ` +
+      `without tabs. Each must fit inside the ${DASHBOARD_GRID.columns}-column ` +
       `canvas (gridX + gridW <= ${DASHBOARD_GRID.columns}), the same bound ` +
       "dashboard_widgets_grid_bounds_check enforces in SQL — this gives a 400 naming the field " +
       "rather than a 500 carrying a constraint name. Each widget must also bind exactly one " +
@@ -770,11 +809,118 @@ const widgetsWriteFieldSchema = z
       "cells rather than fail.",
   );
 
-export const putDashboardWidgetsBodySchema = z
+/**
+ * `F3.73` (plan D1, D2) — one tab on the write side. `id` keeps a stored tab (the service refuses
+ * an id that is not one of this dashboard's tabs); a tab without one is new. `assetGroupId` null
+ * is the Overview tab. There is no `locationId`: a group tab's location is the dashboard's, which
+ * the service stamps, so `.strict()` refuses a caller who names one.
+ */
+const tabWriteSchema = z
   .object({
-    widgets: widgetsWriteFieldSchema,
+    id: z.string().uuid().optional(),
+    // `.describe()` AFTER the shared refinement (ADR 0029 decision 10): the document emits
+    // nothing for the reserved-key refusal, so without this line it would promise that
+    // `assets` is accepted.
+    key: dashboardTabKeySchema.describe(
+      "Lowercase letters, digits and hyphens, 1 to 64 characters. `assets` is reserved: it is " +
+        "the site page's own Assets & RTUs segment.",
+    ),
+    label: z.string().min(1).max(128),
+    sortOrder: z.number().int().min(0).default(0),
+    assetGroupId: z.string().uuid().nullable().optional(),
   })
   .strict();
 
+const tabsWriteFieldSchema = z
+  .array(tabWriteSchema)
+  .max(MAX_DASHBOARD_TABS)
+  .superRefine((tabs, ctx) => {
+    const seen = new Set<string>();
+    const seenIds = new Set<string>();
+    tabs.forEach((tab, index) => {
+      if (seen.has(tab.key)) {
+        ctx.addIssue({ code: z.ZodIssueCode.custom, path: [index, "key"], message: DUPLICATE_TAB_KEY_MESSAGE });
+      }
+      seen.add(tab.key);
+      if (tab.id !== undefined) {
+        if (seenIds.has(tab.id)) {
+          ctx.addIssue({ code: z.ZodIssueCode.custom, path: [index, "id"], message: DUPLICATE_TAB_ID_MESSAGE });
+        }
+        seenIds.add(tab.id);
+      }
+    });
+  })
+  .describe(
+    `At most ${MAX_DASHBOARD_TABS} tabs, each key unique on the dashboard (lowercase letters, ` +
+      "digits and hyphens; `assets` is reserved for the site page), and each `id` named at most " +
+      "once. A tab with an `id` keeps that " +
+      "stored tab; a tab without one is added; a stored tab the list omits is deleted with its " +
+      "widgets. `assetGroupId` must be a group at the dashboard's site; null is an Overview tab.",
+  );
+
+/**
+ * The rules that read `tabs` and `widgets` together, so they sit on the body (plan D2).
+ *
+ * - With tabs, every widget names one of them by `tabKey`.
+ * - With `tabs` absent or `[]`, no widget names a tab: that is the single legacy canvas. An
+ *   absent list and an empty one mean the same thing — the PUT replaces the whole set, so a
+ *   dashboard saved without tabs loses its stored tabs.
+ * - `MAX_DASHBOARD_WIDGETS` holds per tab, and on the legacy canvas.
+ */
+const tabRulesHold = (
+  body: { tabs?: readonly { key: string }[]; widgets: readonly { tabKey?: string }[] },
+  ctx: z.RefinementCtx,
+): void => {
+  const keys = new Set((body.tabs ?? []).map((tab) => tab.key));
+  const counts = new Map<string, number>();
+  body.widgets.forEach((widget, index) => {
+    if (keys.size > 0 && widget.tabKey === undefined) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["widgets", index, "tabKey"],
+        message: TAB_KEY_REQUIRED_MESSAGE,
+      });
+      return;
+    }
+    if (widget.tabKey !== undefined && !keys.has(widget.tabKey)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["widgets", index, "tabKey"],
+        message: TAB_KEY_UNKNOWN_MESSAGE,
+      });
+      return;
+    }
+    const canvas = widget.tabKey ?? "";
+    counts.set(canvas, (counts.get(canvas) ?? 0) + 1);
+  });
+  for (const [canvas, count] of counts) {
+    if (count > MAX_DASHBOARD_WIDGETS) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["widgets"],
+        message:
+          canvas === ""
+            ? `a dashboard without tabs holds at most ${MAX_DASHBOARD_WIDGETS} widgets`
+            : `the tab "${canvas}" holds at most ${MAX_DASHBOARD_WIDGETS} widgets`,
+      });
+    }
+  }
+};
+
+export const putDashboardWidgetsBodySchema = z
+  .object({
+    tabs: tabsWriteFieldSchema.optional(),
+    widgets: widgetsWriteFieldSchema,
+  })
+  .strict()
+  .superRefine(tabRulesHold)
+  .describe(
+    "The whole widget set, and since F3.73 the whole tab set, written in one transaction. With " +
+      "tabs, every widget names one of them by tabKey; with tabs absent or empty, no widget " +
+      `names one (the single canvas). At most ${MAX_DASHBOARD_WIDGETS} widgets per tab, and on ` +
+      "the single canvas.",
+  );
+
+export type TabWriteBody = z.infer<typeof tabWriteSchema>;
 export type WidgetWriteBody = z.infer<typeof widgetWriteSchema>;
 export type PutDashboardWidgetsBody = z.infer<typeof putDashboardWidgetsBodySchema>;

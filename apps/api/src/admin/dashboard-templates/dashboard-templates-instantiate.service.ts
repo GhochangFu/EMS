@@ -632,6 +632,7 @@ export class DashboardTemplatesInstantiateService {
         id: widget.id,
         dashboardId: widget.dashboardId,
         organizationId: widget.organizationId,
+        tabId: widget.tabId,
         title: widget.title,
         gridX: widget.gridX,
         gridY: widget.gridY,
@@ -663,8 +664,13 @@ export class DashboardTemplatesInstantiateService {
       assetGroupId: row.assetGroupId,
       assetId: row.assetId,
       assetTemplateId: row.assetTemplateId,
+      templateId: row.templateId,
       createdAt: row.createdAt.toISOString(),
       updatedAt: row.updatedAt.toISOString(),
+      // `F3.73` (plan D1) — empty by construction: this instantiation writes no tab, and the
+      // dashboard it read back was created in the same call. The parse below takes `unknown`,
+      // so an omitted key here compiles and answers 500 from every instantiation.
+      tabs: [],
       widgets,
     };
     return parseStoredContract(
