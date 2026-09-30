@@ -103,9 +103,39 @@ function widgetDto(): DashboardWidgetDto {
     // `F3.35` Stage C. Required by the DTO; the `as DashboardWidgetDto` cast below hides
     // an omission from the compiler, so a missing key surfaces as a TypeError at run time.
     sources: [],
+    tabId: null,
     widgetType: "value_tile",
     config: { unit: "kW", decimals: 1 },
   } as DashboardWidgetDto;
+}
+
+const TAB_UPS: DashboardDto["tabs"][number] = {
+  id: "tab-ups-id",
+  dashboardId: "source-dash-id",
+  organizationId: SOURCE_ORG,
+  key: "ups",
+  label: "UPS",
+  sortOrder: 0,
+  assetGroupId: "grp-1",
+};
+
+/** A tabbed source: one tile and one plant mimic, both on a group-bound tab. */
+function tabbedSource(): DashboardDto {
+  return {
+    ...SOURCE,
+    tabs: [TAB_UPS],
+    widgets: [
+      { ...widgetDto(), tabId: TAB_UPS.id },
+      {
+        ...widgetDto(),
+        id: "widget-mimic",
+        tabId: TAB_UPS.id,
+        widgetType: "mimic",
+        points: [],
+        config: { source: "preset", preset: "water_train" },
+      } as DashboardWidgetDto,
+    ],
+  };
 }
 
 const SOURCE: DashboardDto = {
@@ -120,6 +150,8 @@ const SOURCE: DashboardDto = {
   assetTemplateId: null,
   createdAt: "2026-01-01T00:00:00Z",
   updatedAt: "2026-01-01T00:00:00Z",
+  templateId: null,
+  tabs: [],
   widgets: [widgetDto()],
 };
 
@@ -372,6 +404,44 @@ export async function duplicatesAndNavigatesIntoTheNewDashboardsBuilder(): Promi
   expect(widgetsArg?.widgets.every((widget) => !("id" in widget))).toBe(true);
   expect(deleteSpy).not.toHaveBeenCalled();
   expect(onClose).toHaveBeenCalled();
+}
+
+/** `F3.73` D11b — the PUT body carries the source's tabs (ids dropped) and each widget's
+ * `tabKey`. Mutation: drop `tabs` from the payload ⇒ red. */
+export async function thePutBodyCarriesTheSourceTabs(): Promise<void> {
+  stubLoads({ source: tabbedSource() });
+  vi.spyOn(dashboardsApi, "createDashboard").mockResolvedValue({ ...SOURCE, id: "new-dash-id", slug: "feed-pumps-copy" });
+  const putSpy = vi.spyOn(dashboardsApi, "putDashboardWidgets").mockResolvedValue({ ...SOURCE, id: "new-dash-id" });
+
+  renderDialog("admin");
+  await screen.findByDisplayValue("Feed pumps (copy)");
+  await userEvent.click(screen.getByRole("button", { name: "Duplicate" }));
+  await screen.findByText(/landed on \/admin\/dashboards\/feed-pumps-copy/);
+
+  const body = putSpy.mock.calls[0]?.[1];
+  expect(body?.tabs).toEqual([{ key: "ups", label: "UPS", sortOrder: 0, assetGroupId: "grp-1" }]);
+  expect(body?.widgets.map((widget) => widget.tabKey)).toEqual(["ups", "ups"]);
+  // A same-location copy keeps the mimic, and says nothing about dropping one.
+  expect(screen.queryByText(/mimic widgets? dropped/)).not.toBeInTheDocument();
+}
+
+/** `F3.73` D11b — moving the copy off the source's location drops the group-tab mimic and the
+ * dialog says how many, before the author commits. */
+export async function aCrossLocationCopyReportsTheDroppedMimics(): Promise<void> {
+  stubLoads({ source: tabbedSource() });
+  vi.spyOn(dashboardsApi, "createDashboard").mockResolvedValue({ ...SOURCE, id: "new-dash-id", slug: "feed-pumps-copy" });
+  const putSpy = vi.spyOn(dashboardsApi, "putDashboardWidgets").mockResolvedValue({ ...SOURCE, id: "new-dash-id" });
+
+  renderDialog("admin");
+  await screen.findByDisplayValue("Feed pumps (copy)");
+  await userEvent.click(screen.getByRole("radio", { name: "Organization-wide" }));
+
+  expect(await screen.findByText(/1 mimic widget dropped/)).toBeInTheDocument();
+  await userEvent.click(screen.getByRole("button", { name: "Duplicate" }));
+  await screen.findByText(/landed on \/admin\/dashboards\/feed-pumps-copy/);
+  const body = putSpy.mock.calls[0]?.[1];
+  expect(body?.widgets).toHaveLength(1);
+  expect(body?.tabs[0]?.assetGroupId).toBeNull();
 }
 
 /**

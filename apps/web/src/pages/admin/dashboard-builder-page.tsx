@@ -85,7 +85,8 @@ export function DashboardBuilderPage({ user }: DashboardBuilderPageProps) {
   // DECIDES this dashboard's organization.
   const { locations, assetGroups } = useDashboardScopeOptions({ role: user.role });
 
-  const problems = dashboardBuilderErrors(rows, scope.kind);
+  // A new dashboard has no tabs yet (F3.73 PR1): the PUT below sends [] too.
+  const problems = dashboardBuilderErrors(rows, scope.kind, []);
   // Review finding — `WidgetInspector` (below) renders only the SELECTED widget's problems, so
   // a set-level problem or another widget's problem must surface somewhere else, or `Save`
   // disables with a reason nothing on the page shows.
@@ -108,7 +109,7 @@ export function DashboardBuilderPage({ user }: DashboardBuilderPageProps) {
         ...scopeColumns(scope),
       };
       const created = await createDashboard(body);
-      await putDashboardWidgets(created.id, buildPutWidgetsPayload(rows));
+      await putDashboardWidgets(created.id, buildPutWidgetsPayload(rows, []));
       return created;
     },
     onSuccess: (created) => {

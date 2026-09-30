@@ -169,6 +169,18 @@ export function DuplicateDashboardDialog({
 
   // Chosen AND authorised — one helper with the edit page; see the docblock above.
   const scopeChosen = isScopeChosen(scope) && isScopeAuthorised(role, scope, { locations, assetGroups });
+  // `F3.73` D11b — how many tab mimics the copy will leave out, shown before the author commits
+  // rather than after the dialog has closed. Same pure function the mutation sends, so the line
+  // and the request cannot disagree.
+  const droppedMimics =
+    source && scopeChosen
+      ? duplicatePayload(source, {
+          organizationId: source.organizationId,
+          scope: scopeColumns(scope),
+          slug: slug.trim(),
+          name: name.trim(),
+        }).droppedMimics
+      : 0;
   const blocked = !source || name.trim() === "" || slug.trim() === "" || !scopeChosen || duplicateM.isPending;
 
   return (
@@ -224,6 +236,13 @@ export function DuplicateDashboardDialog({
             // This state type cannot hold the `asset` kind, so there is never an asset to name.
             assets={[]}
           />
+
+          {droppedMimics > 0 ? (
+            <p role="status" className="rounded border border-warning-line bg-warning-wash p-2 text-[11px] text-warning-ink">
+              {droppedMimics} mimic widget{droppedMimics === 1 ? "" : "s"} dropped: their tab&rsquo;s
+              asset group belongs to the source location, so the copy keeps that tab as a plain canvas.
+            </p>
+          ) : null}
 
           {widgetsFailure ? (
             <div className="space-y-1 rounded border border-critical-line bg-critical-wash p-2 text-xs text-critical-ink-strong">

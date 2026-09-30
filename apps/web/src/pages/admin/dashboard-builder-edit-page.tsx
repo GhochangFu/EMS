@@ -22,6 +22,7 @@ import {
 import {
   blankDashboardWidgetRow,
   buildPutWidgetsPayload,
+  tabWritesFromDto,
   builderHasChanged,
   dashboardBuilderErrors,
   dashboardBuilderProblemSubject,
@@ -128,7 +129,8 @@ export function DashboardBuilderEditPage({ user }: DashboardBuilderEditPageProps
   });
   const assets: readonly ScopeAssetOption[] = (assetsQ.data ?? []).map((asset) => ({ id: asset.id, name: asset.name }));
 
-  const problems = dashboardBuilderErrors(rows, scope.kind);
+  // F3.73 — the stored tabs: the per-tab cap and a mimic on a group-bound tab read them.
+  const problems = dashboardBuilderErrors(rows, scope.kind, dto?.tabs ?? []);
   // Review finding — `WidgetInspector` (below) renders only the SELECTED widget's problems, so
   // a set-level problem or another widget's problem must surface somewhere else, or `Save`
   // disables with a reason nothing on the page shows.
@@ -200,7 +202,7 @@ export function DashboardBuilderEditPage({ user }: DashboardBuilderEditPageProps
         ...scopePatch(scope),
       };
       const updated = await updateDashboard(dto.id, body);
-      return putDashboardWidgets(updated.id, buildPutWidgetsPayload(rows));
+      return putDashboardWidgets(updated.id, buildPutWidgetsPayload(rows, tabWritesFromDto(dto.tabs)));
     },
     onSuccess: (next) => {
       setError(null);

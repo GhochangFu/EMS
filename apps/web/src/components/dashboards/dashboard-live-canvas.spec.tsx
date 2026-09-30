@@ -70,6 +70,7 @@ function widget(bound: boolean): DashboardWidgetDto {
     gridH: 4,
     points: bound ? [point()] : [],
     sources: [],
+    tabId: null,
     widgetType: "value_tile",
     config: { unit: "kWh", decimals: 2 },
   } as DashboardWidgetDto;
@@ -88,6 +89,8 @@ function dashboard(widgets: DashboardWidgetDto[]): DashboardDto {
     assetTemplateId: null,
     createdAt: "2026-01-01T00:00:00Z",
     updatedAt: "2026-01-01T00:00:00Z",
+    templateId: null,
+    tabs: [],
     widgets,
   };
 }

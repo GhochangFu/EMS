@@ -54,6 +54,8 @@ const DTO: DashboardDto = {
   assetTemplateId: null,
   createdAt: "2026-01-01T00:00:00Z",
   updatedAt: "2026-01-01T00:00:00Z",
+  templateId: null,
+  tabs: [],
   widgets: [],
 };
 
@@ -84,6 +86,7 @@ const DTO_WITH_WIDGET: DashboardDto = {
         },
       ],
       sources: [],
+      tabId: null,
       widgetType: "value_tile",
       config: { unit: "kWh", decimals: 2 },
     } as DashboardDto["widgets"][number],

@@ -55,6 +55,7 @@ const IDENTITY = {
   gridW: 3,
   gridH: 2,
   points: [],
+  tabId: null,
 };
 
 const POINT: DashboardWidgetPointDto = {
@@ -472,6 +473,8 @@ export function runCatalogGateTests(): void {
       assetTemplateId: null,
       createdAt: new Date(0).toISOString(),
       updatedAt: new Date(0).toISOString(),
+      templateId: null,
+      tabs: [],
       widgets,
     }) as DashboardDto;
 

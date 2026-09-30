@@ -18,6 +18,8 @@ import {
   locationAdminGetsNoOrganizationWideOption,
   prefillsNameAndSlugSkippingATakenCandidate,
   showsTheBindingsCarryOverWarning,
+  aCrossLocationCopyReportsTheDroppedMimics,
+  thePutBodyCarriesTheSourceTabs,
   theGroupListIsTheSourcesOrganizationOnly,
   widgetCopyFailureRendersInlineWithoutDeletingTheHalfMadeCopy,
 } from "./duplicate-dashboard-dialog.spec";
@@ -74,6 +76,14 @@ describe("F3.1d Unit 9 — DuplicateDashboardDialog", () => {
 
   it("creates, replaces widgets with every source id dropped, and navigates into the new builder", async () => {
     await duplicatesAndNavigatesIntoTheNewDashboardsBuilder();
+  });
+
+  it("F3.73: the PUT body carries the source tabs, ids dropped", async () => {
+    await thePutBodyCarriesTheSourceTabs();
+  });
+
+  it("F3.73: a cross-location copy says how many tab mimics it drops", async () => {
+    await aCrossLocationCopyReportsTheDroppedMimics();
   });
 
   it("on a widget-copy failure renders the error inline and never deletes the half-made copy", async () => {

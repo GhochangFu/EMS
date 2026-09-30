@@ -32,6 +32,7 @@ import {
   locationAdminOnAGroupDashboardSeesNoOutsideScopeReason,
   movingAMimicDashboardOffItsGroupBlocksSave,
   renamingAMimicDashboardOnItsGroupCanSave,
+  renamingATabbedDashboardReSendsItsTabs,
 } from "./dashboard-builder-edit-page.spec";
 
 /**
@@ -158,5 +159,9 @@ describe("F3.1d dashboard builder edit page", () => {
 
   it("renaming a mimic dashboard on its own group can save (F3.32 review, positive control)", async () => {
     await renamingAMimicDashboardOnItsGroupCanSave();
+  });
+
+  it("F3.73: renaming a tabbed dashboard re-sends its stored tabs and each widget's tabKey", async () => {
+    await renamingATabbedDashboardReSendsItsTabs();
   });
 });

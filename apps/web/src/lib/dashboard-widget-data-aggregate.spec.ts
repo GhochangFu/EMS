@@ -43,6 +43,7 @@ const IDENTITY = {
   // `F3.35` Stage C — the second binding array. Empty here: these fixtures
   // exercise Stage A's aggregation, which is a point-bound path.
   sources: [],
+  tabId: null,
 };
 
 const ASSET = "66666666-6666-4666-8666-666666666666";
@@ -355,6 +356,8 @@ export function runAggregateRequestListTests(): void {
     assetTemplateId: null,
     createdAt: new Date(0).toISOString(),
     updatedAt: new Date(0).toISOString(),
+    templateId: null,
+    tabs: [],
     widgets,
   });
 
