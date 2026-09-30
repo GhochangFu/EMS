@@ -8,6 +8,7 @@ import {
   smallint,
   text,
   timestamp,
+  unique,
   uuid,
   varchar,
 } from "drizzle-orm/pg-core";
@@ -339,7 +340,12 @@ export const assetGroups = bmsSchema.table("asset_groups", {
   createdAt: timestamp("created_at", { withTimezone: true })
     .notNull()
     .defaultNow(),
-});
+}, (t) => ({
+  // F3.73, migration 0094 — never refuses a row (`id` is the primary key); it exists only as
+  // the target of `dashboard_tabs_asset_group_id_location_id_fkey`, which pins a dashboard
+  // tab's group to its dashboard's site.
+  idLocationUnique: unique("asset_groups_id_location_key").on(t.id, t.locationId),
+}));
 
 export const assetGroupMembers = bmsSchema.table("asset_group_members", {
   id: uuid("id").primaryKey().defaultRandom(),
