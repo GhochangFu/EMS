@@ -14,6 +14,7 @@ import {
   assertCallerScopeIntersects,
   assertDatasetShapeAndClamp,
   assertDeletedWidgetDropsItsBinding,
+  assertGroupTabNarrowsItsTile,
   assertHealthScoreDelegates,
   assertUnnarrowedScopeStaysInsideTheOrganization,
   assertLocationScopeNarrowsTheCount,
@@ -86,6 +87,16 @@ describe.skipIf(!connectionString)("F3.35 Stage C — the metric catalog resolve
   // The acknowledged-but-uncleared alarm on A counts under ADR 0057 decision 1; the
   // cleared-but-unacknowledged one does not — so A's active total is ALARMS_AT_A + 1, not + 2.
   const ACTIVE_AT_A = ALARMS_AT_A + 1;
+
+  // `F3.73` Task 2.4 — site C: C1 in the tab's group, C2 outside it.
+  let assetC1 = "";
+  let assetC2 = "";
+  let groupId = "";
+  let tabbedDashboardId = "";
+  let groupWidgetId = "";
+  let overviewWidgetId = "";
+  const ALARMS_AT_C1 = 1;
+  const ALARMS_AT_C2 = 2;
 
   beforeAll(async () => {
     const url = connectionString as string;
@@ -242,6 +253,77 @@ describe.skipIf(!connectionString)("F3.35 Stage C — the metric catalog resolve
     const deletable = await mkDashboard("deletable", "alarms.active.count", null);
     deletableDashboardId = deletable.dashboardId;
     deletableWidgetId = deletable.widgetId;
+
+    // `F3.73` Task 2.4 — a THIRD site of its own, so no earlier assertion's numbers move. C1 is
+    // a member of the tab's group, C2 is not; both sit at site C and carry different counts.
+    const locC = await superuserPool.query<{ id: string }>(
+      `INSERT INTO bms.locations (organization_id, code, slug, name, type, latitude, longitude)
+       VALUES ($1, $2, $3, $4, 'csmoc', 0, 0) RETURNING id`,
+      [orgId, `F373C-${RUN}`, `f373c-${RUN}`, `F3.73 site C ${RUN}`],
+    );
+    const locationC = locC.rows[0]?.id as string;
+    locationIds.push(locationC);
+    assetC1 = await mkAsset(locationC, "C1");
+    assetC2 = await mkAsset(locationC, "C2");
+    for (const [assetId, count] of [
+      [assetC1, ALARMS_AT_C1],
+      [assetC2, ALARMS_AT_C2],
+    ] as const) {
+      for (let i = 0; i < count; i += 1) {
+        await superuserPool.query(
+          `INSERT INTO bms.alarms (organization_id, asset_id, severity, message, raised_at)
+           VALUES ($1, $2, $3, $4, now())`,
+          [orgId, assetId, severityCode, `F3.73 ${assetId} ${i} ${RUN}`],
+        );
+      }
+    }
+    const group = await superuserPool.query<{ id: string }>(
+      `INSERT INTO bms.asset_groups (organization_id, location_id, code, name)
+       VALUES ($1, $2, $3, $4) RETURNING id`,
+      [orgId, locationC, `f373-grp-${RUN}`, `F3.73 group ${RUN}`],
+    );
+    groupId = group.rows[0]?.id as string;
+    await superuserPool.query(
+      `INSERT INTO bms.asset_group_members (asset_group_id, asset_id) VALUES ($1, $2)`,
+      [groupId, assetC1],
+    );
+
+    const tabbed = await superuserPool.query<{ id: string }>(
+      `INSERT INTO bms.dashboards (organization_id, slug, name, location_id)
+       VALUES ($1, $2, $3, $4) RETURNING id`,
+      [orgId, `f373-tabbed-${RUN}`, `F3.73 tabbed ${RUN}`, locationC],
+    );
+    tabbedDashboardId = tabbed.rows[0]?.id as string;
+    dashboardIds.push(tabbedDashboardId);
+    // The Overview stores `location_id` NULL (plan D1); the group tab carries the site.
+    const overviewTab = await superuserPool.query<{ id: string }>(
+      `INSERT INTO bms.dashboard_tabs (organization_id, dashboard_id, tab_key, label, sort_order)
+       VALUES ($1, $2, 'overview', 'Overview', 0) RETURNING id`,
+      [orgId, tabbedDashboardId],
+    );
+    const groupTab = await superuserPool.query<{ id: string }>(
+      `INSERT INTO bms.dashboard_tabs
+         (organization_id, dashboard_id, location_id, asset_group_id, tab_key, label, sort_order)
+       VALUES ($1, $2, $3, $4, 'sld', 'SLD', 1) RETURNING id`,
+      [orgId, tabbedDashboardId, locationC, groupId],
+    );
+    const mkTabTile = async (tabId: string): Promise<string> => {
+      const widget = await superuserPool.query<{ id: string }>(
+        `INSERT INTO bms.dashboard_widgets
+           (organization_id, dashboard_id, tab_id, widget_type, grid_x, grid_y, grid_w, grid_h)
+         VALUES ($1, $2, $3, 'value_tile', 0, 0, 3, 2) RETURNING id`,
+        [orgId, tabbedDashboardId, tabId],
+      );
+      const widgetId = widget.rows[0]?.id as string;
+      await superuserPool.query(
+        `INSERT INTO bms.dashboard_widget_sources (organization_id, widget_id, catalog_key)
+         VALUES ($1, $2, 'alarms.active.count')`,
+        [orgId, widgetId],
+      );
+      return widgetId;
+    };
+    overviewWidgetId = await mkTabTile(overviewTab.rows[0]?.id as string);
+    groupWidgetId = await mkTabTile(groupTab.rows[0]?.id as string);
   }, 60_000);
 
   afterAll(async () => {
@@ -252,7 +334,15 @@ describe.skipIf(!connectionString)("F3.35 Stage C — the metric catalog resolve
     for (const id of dashboardIds.filter(Boolean)) {
       await superuserPool.query(`DELETE FROM bms.dashboards WHERE id = $1`, [id]);
     }
-    const fixtureAssets = [assetA, assetB].filter(Boolean);
+    // The group AFTER the dashboards: a tab's group FK is ON DELETE RESTRICT (migration 0094),
+    // and the dashboard's delete cascades its tabs. Members first — their FK has no action.
+    if (groupId) {
+      await superuserPool.query(`DELETE FROM bms.asset_group_members WHERE asset_group_id = $1`, [
+        groupId,
+      ]);
+      await superuserPool.query(`DELETE FROM bms.asset_groups WHERE id = $1`, [groupId]);
+    }
+    const fixtureAssets = [assetA, assetB, assetC1, assetC2].filter(Boolean);
     if (fixtureAssets.length > 0) {
       await superuserPool.query(`DELETE FROM bms.alarms WHERE asset_id = ANY($1::uuid[])`, [
         fixtureAssets,
@@ -283,6 +373,19 @@ describe.skipIf(!connectionString)("F3.35 Stage C — the metric catalog resolve
       [assetA, assetB],
       ACTIVE_AT_A,
       ACTIVE_AT_A + ALARMS_AT_B,
+    );
+  });
+
+  it("counts a group tab's tile over its group and the Overview tile over the site (F3.73)", async () => {
+    await assertGroupTabNarrowsItsTile(
+      service,
+      orgId,
+      tabbedDashboardId,
+      groupWidgetId,
+      overviewWidgetId,
+      [assetC1, assetC2],
+      ALARMS_AT_C1,
+      ALARMS_AT_C1 + ALARMS_AT_C2,
     );
   });
 

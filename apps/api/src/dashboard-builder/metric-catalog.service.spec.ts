@@ -3,7 +3,8 @@ import { METRIC_CATALOG } from "@bms/shared";
 
 import { AssetHealthService } from "../asset-health/asset-health.service";
 import type { BmsTx } from "../database/tenant-context";
-import { RESOLVERS } from "./metric-catalog.service";
+import { scopeKeyFor } from "./dashboard-scope-assets";
+import { planResolves, RESOLVERS } from "./metric-catalog.service";
 
 /**
  * `E4.2` PR 1 sweep — the catalog's resolvers, pure claims (no database). Assertions live
@@ -109,6 +110,87 @@ export async function byLocationOnAnEmptyScopeBuildsNoSql(): Promise<void> {
     { shape: resolved.shape, rows: resolved.shape === "dataset" ? resolved.rows : undefined },
     { shape: "dataset", rows: [] },
     "sustainability.by_location over []",
+  );
+}
+
+/**
+ * `F3.73` Task 2.4 — the dedupe key carries the widget's SCOPE (ADR 0087, plan D3).
+ *
+ * Two tiles binding `alarms.active.count` on two tabs that bind two different asset groups are
+ * two different numbers, so they must be two resolves; before F3.73 the key was
+ * `(catalogKey, params)` alone and the second tile silently showed the first tab's count.
+ */
+const TAB_SITE = "00000000-0000-4000-8000-00000000c001";
+const GROUP_ONE = "00000000-0000-4000-8000-00000000a001";
+const GROUP_TWO = "00000000-0000-4000-8000-00000000a002";
+const siteScope = { locationId: TAB_SITE, assetGroupId: null, assetId: null };
+const groupScope = (assetGroupId: string) => ({ locationId: null, assetGroupId, assetId: null });
+
+const countSource = (id: string, widgetId: string) => ({
+  id,
+  widgetId,
+  catalogKey: "alarms.active.count",
+  params: {},
+});
+
+const plannedScopeKeys = (
+  scopes: Record<string, { locationId: string | null; assetGroupId: string | null; assetId: null }>,
+  sources: ReturnType<typeof countSource>[],
+): string[] => {
+  const plan = planResolves(
+    sources,
+    (widgetId) => scopes[widgetId] ?? siteScope,
+    () => {
+      throw new Error("no binding in this fixture fails its write schema");
+    },
+  );
+  const keys = [...plan.resolves.values()].map((resolve) => resolve.scopeKey);
+  // Every source maps to a planned resolve — a dropped source would pass a count claim.
+  assert(
+    sources.every((source) => plan.resolves.has(plan.resolveKeyOf.get(source.id) ?? "")),
+    "every source must map to a planned resolve",
+  );
+  return keys;
+};
+
+/** Same key on two tabs bound to two different groups: two resolves, one per group scope. */
+export function sameKeyOnTwoGroupTabsIsTwoResolves(): void {
+  const keys = plannedScopeKeys(
+    { w1: groupScope(GROUP_ONE), w2: groupScope(GROUP_TWO) },
+    [countSource("s1", "w1"), countSource("s2", "w2")],
+  );
+  same(keys, [`group:${GROUP_ONE}`, `group:${GROUP_TWO}`], "planned scope keys, two group tabs");
+}
+
+/** Same key twice on ONE tab (one group scope): still one resolve (the `E4.2` dedupe holds). */
+export function sameKeyOnOneTabIsOneResolve(): void {
+  const keys = plannedScopeKeys(
+    { w1: groupScope(GROUP_ONE), w2: groupScope(GROUP_ONE) },
+    [countSource("s1", "w1"), countSource("s2", "w2")],
+  );
+  same(keys, [`group:${GROUP_ONE}`], "planned scope keys, one group tab");
+}
+
+/** An Overview tile (the dashboard's site scope) beside a group tile: two resolves. */
+export function overviewAndGroupTabAreTwoResolves(): void {
+  const keys = plannedScopeKeys(
+    { w1: siteScope, w2: groupScope(GROUP_ONE) },
+    [countSource("s1", "w1"), countSource("s2", "w2")],
+  );
+  same(keys, [`location:${TAB_SITE}`, `group:${GROUP_ONE}`], "planned scope keys, overview + group");
+}
+
+/** `scopeKeyFor` follows `resolveAssetScope`'s arm order: asset, location, group, organization. */
+export function scopeKeyFollowsTheResolverArmOrder(): void {
+  same(
+    [
+      scopeKeyFor({ assetId: "a", locationId: "l", assetGroupId: "g" }),
+      scopeKeyFor({ assetId: null, locationId: "l", assetGroupId: "g" }),
+      scopeKeyFor({ assetId: null, locationId: null, assetGroupId: "g" }),
+      scopeKeyFor({ assetId: null, locationId: null, assetGroupId: null }),
+    ],
+    ["asset:a", "location:l", "group:g", "organization"],
+    "scope keys by arm",
   );
 }
 
