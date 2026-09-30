@@ -26,6 +26,8 @@ export * from "./asset-images";
 export * from "./auth";
 export * from "./dashboard";
 export * from "./dashboard-builder";
+export * from "./dashboard-dto";
+export * from "./dashboard-tabs";
 export * from "./dashboard-templates";
 export * from "./envelopes";
 export * from "./escalation";

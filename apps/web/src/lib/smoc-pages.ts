@@ -1,4 +1,4 @@
-import type { AccessibleScope } from "@bms/shared";
+import { SITE_ASSETS_TAB, type AccessibleScope } from "@bms/shared";
 
 import { canAccessControlRoomArea, type ControlRoomArea } from "./control-room-access";
 
@@ -53,9 +53,11 @@ export function smocTabPath(locationId: string, tab: SmocTabKey): string {
 /**
  * `F3.72` (plan D4) — the site page's second entry, **Assets & RTUs**: the
  * `:tab` segment that renders `SiteAssetsView` for every view kind. It
- * collides with none of the seven SMOC tab keys.
+ * collides with none of the seven SMOC tab keys. `F3.73` moved the
+ * declaration to `@bms/shared` (the dashboard tab key schema refuses it); the
+ * re-export keeps this file's importers unchanged.
  */
-export const SITE_ASSETS_TAB = "assets";
+export { SITE_ASSETS_TAB };
 
 /** The URL of one site's Assets & RTUs tab, encoded for the router path segment. */
 export function siteAssetsPath(locationId: string): string {
