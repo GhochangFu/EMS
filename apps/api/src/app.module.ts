@@ -17,6 +17,7 @@ import { pinoHttpOptions } from "./logger.options";
 import { MaintenanceModule } from "./maintenance/maintenance.module";
 import { MapModule } from "./map/map.module";
 import { MimicLayoutsModule } from "./mimic-layouts/mimic-layouts.module";
+import { MimicSymbolLibrariesModule } from "./mimic-symbol-libraries/mimic-symbol-libraries.module";
 import { NotificationsModule } from "./notifications/notifications.module";
 import { ObservabilityModule } from "./observability/observability.module";
 import { QueueModule } from "./queue/queue.module";
@@ -44,6 +45,7 @@ import { WorkOrdersModule } from "./work-orders/work-orders.module";
     DashboardModule,
     DashboardBuilderModule,
     MimicLayoutsModule,
+    MimicSymbolLibrariesModule,
     ControlRoomModule,
     AlarmKbModule,
     AlarmsModule,

@@ -50,6 +50,7 @@ import { CalcParametersAdminPage } from "./pages/admin/calc-parameters-page";
 import { LocationTypesAdminPage } from "./pages/admin/location-types-page";
 import { MimicLayoutEditorPage } from "./pages/admin/mimic-layout-editor-page";
 import { MimicLayoutsPage } from "./pages/admin/mimic-layouts-page";
+import { MimicSymbolLibrariesPage } from "./pages/admin/mimic-symbol-libraries-page";
 import { PointKeysAdminPage } from "./pages/admin/point-keys-page";
 import { RtusAdminPage } from "./pages/admin/rtus-page";
 import { TelemetryImportPage } from "./pages/admin/telemetry-import-page";
@@ -772,6 +773,19 @@ export function App() {
           accessToken && user ? (
             <AdminRoute user={user}>
               <MimicLayoutEditorPage user={user} />
+            </AdminRoute>
+          ) : (
+            <Navigate to="/login" replace />
+          )
+        }
+      />
+      {/* `F3.32f` slice 3 (ADR 0086 decisions 4 and 7) — the page fails closed for a role that cannot manage libraries. */}
+      <Route
+        path="/admin/mimic-symbol-libraries"
+        element={
+          accessToken && user ? (
+            <AdminRoute user={user}>
+              <MimicSymbolLibrariesPage user={user} />
             </AdminRoute>
           ) : (
             <Navigate to="/login" replace />

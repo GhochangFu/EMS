@@ -42,4 +42,11 @@ describe("F3.32c — the mimic layout write bodies", () => {
   it("F3.32e accepts a unit from a chosen library", () => spec.acceptsAUnitFromAChosenLibrary());
   it("F3.32e accepts a layout without core", () => spec.acceptsALayoutWithoutCore());
   it("F3.32e refuses a key in no library", () => spec.refusesAKeyInNoLibrary());
+  it("F3.32f accepts an org symbol from a chosen org library", () => spec.acceptsAnOrgSymbolFromAChosenOrgLibrary());
+  it("F3.32f refuses an org symbol from an org library the layout did not choose", () =>
+    spec.refusesAnOrgSymbolFromAnOrgLibraryTheLayoutDidNotChoose());
+  it("F3.32f refuses an org library listed twice", () => spec.refusesAnOrgLibraryListedTwice());
+  it("F3.32f refuses an org symbol key with an uppercase code", () => spec.refusesAnOrgSymbolKeyWithAnUppercaseCode());
+  it("F3.32f refuses an org library key with an uppercase code", () =>
+    spec.refusesAnOrgLibraryKeyWithAnUppercaseCode());
 });

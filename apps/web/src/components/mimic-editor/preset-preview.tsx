@@ -1,4 +1,4 @@
-import { MIMIC_PRESETS, mimicSymbolLibrary, type MimicPreset } from "@bms/shared";
+import { MIMIC_PRESETS, isOrgLibraryKey, mimicSymbolLibrary, type MimicPreset } from "@bms/shared";
 import { useMemo } from "react";
 
 import type { SiteLiveReadings } from "../../hooks/use-site-live-readings";
@@ -36,11 +36,12 @@ export function PresetPreview({ preset }: PresetPreviewProps) {
         canvasH: layout.canvasH,
         nodes: [...layout.nodes],
         pipes: [...layout.pipes],
+        orgSymbols: [],
       }),
     [layout],
   );
   const units = layout.nodes.filter((node) => node.kind === "unit");
-  const libraries = layout.symbolLibraries.map((code) => mimicSymbolLibrary(code).label).join(", ");
+  const libraries = layout.symbolLibraries.map((code) => (isOrgLibraryKey(code) ? code : mimicSymbolLibrary(code).label)).join(", ");
 
   return (
     <figure data-testid="mimic-preset-preview" data-preset={preset} className="max-w-4xl space-y-2">

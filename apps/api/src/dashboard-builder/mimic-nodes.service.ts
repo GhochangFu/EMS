@@ -20,6 +20,7 @@ import {
 } from "@bms/shared";
 
 import { AccessControlService } from "../auth/access-control.service";
+import { orgSymbolsOf, type OrgSymbolRow } from "../mimic-layouts/mimic-org-symbols";
 // A namespace import, so the window constant's name appears in this file once: at the one
 // place it is interpolated (`tests/f3.32-mimic-widget.test.ts` counts it in the raw text).
 import * as generatedSiteView from "../control-room/generated-site-view.service";
@@ -36,7 +37,8 @@ interface WidgetRow {
 /**
  * Statement (1b)'s row (`F3.32c`): one layout, left-joined to one of its nodes (all node columns
  * `null` for a layout with no node). `kind` and `tone` are closed by the table's CHECKs, `symbol` by
- * `mimic_layout_nodes_symbol_fkey` to `bms.mimic_symbols` (migration `0090`).
+ * `mimic_layout_nodes_symbol_fkey` to `bms.mimic_symbols` (migration `0090`), `org_symbol_key` by
+ * the composite `mimic_layout_nodes_org_symbol_fkey` (migration `0093`); a unit has one of the two.
  */
 interface LayoutNodeRow {
   layout_id: string;
@@ -46,6 +48,7 @@ interface LayoutNodeRow {
   key: string | null;
   kind: string | null;
   symbol: string | null;
+  org_symbol_key: string | null;
   label: string | null;
   role_code: string | null;
   tone: string | null;
@@ -54,6 +57,23 @@ interface LayoutNodeRow {
   w: number | null;
   h: number | null;
   z: number | null;
+}
+
+/** Statement (1d)'s row (`F3.32f` slice 3): one organization symbol a layout's units draw. */
+interface LayoutOrgSymbolRow {
+  layout_id: string;
+  id: string;
+  library_id: string;
+  key: string;
+  label: string;
+  group_code: string;
+  style: string;
+  view_box: number[];
+  shapes: unknown;
+  active: boolean;
+  source_filename: string;
+  sha256: string;
+  updated_at: Date | string;
 }
 
 /** Statement (1c)'s row (`F3.32c`): one pipe of a layout, by its two ends' keys. */
@@ -418,7 +438,7 @@ export class MimicNodesService {
     const nodeRows = await this.pool.query<LayoutNodeRow>(
       `
       SELECT l.id AS layout_id, l.name, l.canvas_w, l.canvas_h,
-             n.key, n.kind, n.symbol, n.label, n.role_code, n.tone, n.x, n.y, n.w, n.h, n.z
+             n.key, n.kind, n.symbol, n.org_symbol_key, n.label, n.role_code, n.tone, n.x, n.y, n.w, n.h, n.z
       FROM bms.mimic_layouts l
       LEFT JOIN bms.mimic_layout_nodes n
         ON n.layout_id = l.id
@@ -432,7 +452,14 @@ export class MimicNodesService {
     for (const row of nodeRows.rows) {
       let layout = layouts.get(row.layout_id);
       if (layout === undefined) {
-        layout = { name: row.name, canvasW: Number(row.canvas_w), canvasH: Number(row.canvas_h), nodes: [], pipes: [] };
+        layout = {
+          name: row.name,
+          canvasW: Number(row.canvas_w),
+          canvasH: Number(row.canvas_h),
+          nodes: [],
+          pipes: [],
+          orgSymbols: [],
+        };
         layouts.set(row.layout_id, layout);
       }
       const node = layoutNodeOf(row);
@@ -459,6 +486,56 @@ export class MimicNodesService {
     );
     for (const row of pipeRows.rows) {
       layouts.get(row.layout_id)?.pipes.push({ fromKey: row.from_key, toKey: row.to_key });
+    }
+
+    // Statement (1d) (`F3.32f` slice 3, ADR 0086 decision 7): the organization symbols the units
+    // draw, retired ones included, so a published dashboard never draws the fallback for an
+    // uploaded symbol. Only when a unit names one, so a layout of global symbols keeps its two
+    // statements. Every table carries `organization_id = $2` — the fleet pool bypasses RLS — and
+    // each row is re-checked by the response contract (`orgSymbolsOf`).
+    if (nodeRows.rows.some((row) => row.org_symbol_key !== null)) {
+      const symbolRows = await this.pool.query<LayoutOrgSymbolRow>(
+        `
+        SELECT un.layout_id, s.id, s.library_id, s.key, s.label, s.group_code, sl.style,
+               s.view_box, s.shapes, s.active, s.source_filename, s.sha256, s.updated_at
+        FROM (
+          SELECT DISTINCT un.layout_id, un.org_symbol_key
+          FROM bms.mimic_layout_nodes un
+          WHERE un.layout_id = ANY($1::uuid[]) AND un.organization_id = $2 AND un.org_symbol_key IS NOT NULL
+        ) un
+        INNER JOIN bms.mimic_org_symbols s
+          ON s.key = un.org_symbol_key AND s.organization_id = $2
+        INNER JOIN bms.mimic_org_symbol_libraries sl
+          ON sl.id = s.library_id AND sl.organization_id = $2
+        ORDER BY un.layout_id, s.key
+        `,
+        [[...layouts.keys()], organizationId],
+      );
+      const byLayout = new Map<string, OrgSymbolRow[]>();
+      for (const row of symbolRows.rows) {
+        const list = byLayout.get(row.layout_id) ?? [];
+        list.push({
+          id: row.id,
+          libraryId: row.library_id,
+          key: row.key,
+          label: row.label,
+          groupCode: row.group_code,
+          style: row.style,
+          viewBox: row.view_box,
+          shapes: row.shapes,
+          active: row.active,
+          sourceFilename: row.source_filename,
+          sha256: row.sha256,
+          updatedAt: row.updated_at,
+        });
+        byLayout.set(row.layout_id, list);
+      }
+      for (const [layoutId, rows] of byLayout) {
+        const layout = layouts.get(layoutId);
+        if (layout !== undefined) {
+          layout.orgSymbols = orgSymbolsOf(rows, (message) => this.logger.warn(message));
+        }
+      }
     }
     return layouts;
   }
@@ -487,7 +564,7 @@ function layoutNodeOf(row: LayoutNodeRow): MimicLayoutNodeDto | null {
   return {
     key: row.key,
     kind: row.kind as MimicLayoutNodeDto["kind"],
-    symbol: row.symbol as MimicLayoutNodeDto["symbol"],
+    symbol: (row.symbol ?? row.org_symbol_key) as MimicLayoutNodeDto["symbol"],
     label: row.label,
     roleCode: row.role_code,
     tone: row.tone as MimicLayoutNodeDto["tone"],

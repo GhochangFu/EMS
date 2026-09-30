@@ -6,7 +6,8 @@ import { expect, vi } from "vitest";
 
 import * as vocabApi from "../../api/vocabularies";
 import { editorReducer, fromPreset, initialEditorState, type EditorLayout, type EditorNode } from "../../lib/mimic-editor";
-import { MIMIC_SYMBOL_GROUPS, librarySymbolGroups } from "../../lib/mimic-symbols";
+import { MIMIC_SYMBOL_GROUPS, librarySymbolGroups, symbolLabel } from "../../lib/mimic-symbols";
+import { orgCatalogFixture } from "../../lib/mimic-symbols.spec";
 import { MimicEditorInspector, type MimicEditorInspectorProps } from "./inspector";
 
 /**
@@ -37,6 +38,9 @@ function renderInspector(selectedKey: string | null, overrides: Partial<MimicEdi
     selected: selectedKey === null ? null : nodeOf(selectedKey),
     onLayoutChange: vi.fn(),
     onNodeChange: vi.fn(),
+    catalog: null,
+    // A stored layout by default: what it chooses is what was stored (the kept exemption's set).
+    storedLibraries: (overrides.layout ?? layout).symbolLibraries,
     ...overrides,
   };
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -171,7 +175,7 @@ export function organizationListsItsOptions(): void {
 function mdiLayout(): EditorLayout {
   const s = [
     { type: "update-layout", patch: { symbolLibraries: ["core", "mdi"] } },
-    { type: "add-unit", symbol: "mdi:heat-pump" },
+    { type: "add-unit", symbol: "mdi:heat-pump", label: symbolLabel("mdi:heat-pump") },
   ] as const;
   return s.reduce(editorReducer, initialEditorState()).layout;
 }
@@ -259,4 +263,190 @@ export function aChosenLibraryUnitHasNoLeadingOption(): void {
   const select = screen.getByRole("combobox", { name: "Symbol" });
   expect(select).toHaveValue("mdi:heat-pump");
   expect(select.firstElementChild?.tagName).toBe("OPTGROUP");
+}
+
+// ---- organization libraries (F3.32f slice 3, ADR 0086 decisions 4, 7; plan D9) -----------------
+
+/** A layout choosing core and Plant, with `inlet_1` (active) and `old_pump_1` (a retired symbol). */
+function plantLayout(libraries: EditorLayout["symbolLibraries"] = ["core", "org.plant"]): EditorLayout {
+  const s = [
+    { type: "update-layout", patch: { symbolLibraries: libraries } },
+    { type: "add-unit", symbol: "org.plant:inlet", label: "Inlet screen" },
+    { type: "add-unit", symbol: "org.plant:old-pump", label: "Old pump" },
+  ] as const;
+  return s.reduce(editorReducer, initialEditorState()).layout;
+}
+
+function renderWithCatalog(l: EditorLayout, selectedKey: string | null = null) {
+  const selected = selectedKey === null ? null : (l.nodes.find((n) => n.key === selectedKey) ?? null);
+  return renderInspector(null, { layout: l, selected, catalog: orgCatalogFixture() });
+}
+
+function libraryBoxNames(): (string | null)[] {
+  return screen.getAllByRole("checkbox", { name: /^Library / }).map((b) => b.getAttribute("aria-label"));
+}
+
+/** N21 — with the catalog: one box per enabled global library, then one per active org library. */
+export function oneBoxPerEnabledGlobalAndActiveOrgLibrary(): void {
+  renderWithCatalog(layout);
+  expect(libraryBoxNames()).toEqual(["Library Core", "Library Lucide", "Library Material Design Icons", "Library Plant"]);
+}
+
+/** N22 — a chosen library the organization turned off is checked and disabled. */
+export function aChosenDisabledLibraryIsCheckedAndDisabled(): void {
+  renderWithCatalog({ ...layout, symbolLibraries: ["core", "tabler"] });
+  const box = screen.getByRole("checkbox", { name: "Library Tabler Icons" });
+  expect(box).toBeChecked();
+  expect(box).toBeDisabled();
+}
+
+/** N23 — a chosen library the organization turned off says so. */
+export function aChosenDisabledLibraryShowsTheRetiredHint(): void {
+  renderWithCatalog({ ...layout, symbolLibraries: ["core", "tabler"] });
+  expect(screen.getByText("Tabler Icons is retired")).toBeInTheDocument();
+}
+
+/** N24 — a chosen retired org library is checked and disabled with the hint. */
+export function aChosenRetiredOrgLibraryIsCheckedAndDisabled(): void {
+  renderWithCatalog({ ...layout, symbolLibraries: ["core", "org.legacy"] });
+  const box = screen.getByRole("checkbox", { name: "Library Legacy" });
+  expect(box).toBeChecked();
+  expect(box).toBeDisabled();
+  expect(screen.getByText("Legacy is retired")).toBeInTheDocument();
+}
+
+/** N25 — checking Plant reports the list with `org.plant` after the static codes. */
+export async function checkingPlantAddsTheOrgLibrary(): Promise<void> {
+  const props = renderWithCatalog({ ...layout, symbolLibraries: ["core", "lucide"] });
+  await userEvent.click(screen.getByRole("checkbox", { name: "Library Plant" }));
+  expect(props.onLayoutChange).toHaveBeenCalledWith({ symbolLibraries: ["core", "lucide", "org.plant"] });
+}
+
+/** N26 — unchecking a static library keeps the chosen org library. */
+export async function uncheckingAStaticLibraryKeepsTheOrgLibrary(): Promise<void> {
+  const props = renderWithCatalog({ ...layout, symbolLibraries: ["core", "lucide", "org.plant"] });
+  await userEvent.click(screen.getByRole("checkbox", { name: "Library Lucide" }));
+  expect(props.onLayoutChange).toHaveBeenCalledWith({ symbolLibraries: ["core", "org.plant"] });
+}
+
+/** N27 — an org library in use is disabled and names its units. */
+export function aUsedOrgLibraryNamesItsUnits(): void {
+  renderWithCatalog(plantLayout());
+  expect(screen.getByRole("checkbox", { name: "Library Plant" })).toBeDisabled();
+  expect(screen.getByText("Plant is used by: inlet_1, old_pump_1")).toBeInTheDocument();
+}
+
+/** N28 — the Symbol select has a `Plant · Water` optgroup holding the active symbol. */
+export function theSymbolSelectHasAPlantWaterOptgroup(): void {
+  renderWithCatalog(plantLayout(), "inlet_1");
+  const group = screen.getByRole("combobox", { name: "Symbol" }).querySelector('optgroup[label="Plant · Water"]');
+  expect(group).not.toBeNull();
+  expect(Array.from(group?.querySelectorAll("option") ?? []).map((o) => o.textContent)).toEqual(["Inlet screen"]);
+}
+
+/** N29 — an org unit's select shows its own symbol by its catalog label. */
+export function anOrgUnitShowsItsLabelInTheSelect(): void {
+  renderWithCatalog(plantLayout(), "inlet_1");
+  const select = screen.getByRole("combobox", { name: "Symbol" }) as HTMLSelectElement;
+  expect(select).toHaveValue("org.plant:inlet");
+  expect(select.selectedOptions[0]?.textContent).toBe("Inlet screen");
+}
+
+/** N30 — a unit on a retired org symbol keeps it as one leading option. */
+export function aRetiredOrgSymbolIsKeptAsALeadingOption(): void {
+  renderWithCatalog(plantLayout(), "old_pump_1");
+  const select = screen.getByRole("combobox", { name: "Symbol" });
+  expect(select).toHaveValue("org.plant:old-pump");
+  expect(select.firstElementChild?.tagName).toBe("OPTION");
+  expect(select.firstElementChild?.textContent).toBe("Old pump (Plant)");
+}
+
+/** N31 — without the catalog an org unit still renders its select, on its own key (never throws). */
+export function withoutTheCatalogAnOrgUnitRenders(): void {
+  const l = plantLayout();
+  renderInspector(null, { layout: l, selected: l.nodes[0] ?? null, catalog: null });
+  expect(screen.getByRole("combobox", { name: "Symbol" })).toHaveValue("org.plant:inlet");
+}
+
+// ---- review fixes: what a save would refuse is neither offered nor trapped ----------------------
+
+/** A layout choosing core and `libraries`, with one core unit selected. */
+function withLibraries(libraries: EditorLayout["symbolLibraries"]): EditorLayout {
+  const s = [
+    { type: "update-layout", patch: { symbolLibraries: libraries } },
+    { type: "add-unit", symbol: "pump", label: "Pump" },
+  ] as const;
+  return s.reduce(editorReducer, initialEditorState()).layout;
+}
+
+function symbolGroupLabels(): (string | null)[] {
+  return Array.from(screen.getByRole("combobox", { name: "Symbol" }).querySelectorAll("optgroup")).map((g) =>
+    g.getAttribute("label"),
+  );
+}
+
+function symbolValues(): string[] {
+  return Array.from(screen.getByRole("combobox", { name: "Symbol" }).querySelectorAll("option")).map((o) => o.value);
+}
+
+/** N32 — a chosen library the organization turned off lists no optgroup (the palette hides its tab). */
+export function aDisabledChosenLibraryHasNoOptgroup(): void {
+  const l = withLibraries(["core", "tabler", "lucide"]);
+  renderInspector(null, { layout: l, selected: l.nodes[0] ?? null, catalog: orgCatalogFixture() });
+  // Positive control: the live Lucide still lists.
+  expect(symbolGroupLabels().some((label) => label?.startsWith("Lucide · "))).toBe(true);
+  expect(symbolGroupLabels().filter((label) => label?.startsWith("Tabler Icons · "))).toEqual([]);
+}
+
+/** N33 — ADR 0086 decision 5: a retired global symbol is not offered in the Symbol select. */
+export function aRetiredGlobalSymbolIsNotOffered(): void {
+  const catalog = orgCatalogFixture();
+  const retiring = { ...catalog, global: catalog.global.map((g) => (g.code === "mdi" ? { ...g, inactiveSymbolKeys: ["mdi:water-pump"] } : g)) };
+  const l = withLibraries(["core", "mdi"]);
+  renderInspector(null, { layout: l, selected: l.nodes[0] ?? null, catalog: retiring });
+  // Positive control: another mdi symbol is still offered.
+  expect(symbolValues().some((v) => v.startsWith("mdi:"))).toBe(true);
+  expect(symbolValues()).not.toContain("mdi:water-pump");
+}
+
+/** N34 — a unit already on a retired global symbol keeps it as the leading option. */
+export function aUnitOnARetiredGlobalSymbolKeepsIt(): void {
+  const catalog = orgCatalogFixture();
+  const retiring = { ...catalog, global: catalog.global.map((g) => (g.code === "mdi" ? { ...g, inactiveSymbolKeys: ["mdi:water-pump"] } : g)) };
+  const s = [
+    { type: "update-layout", patch: { symbolLibraries: ["core", "mdi"] } },
+    { type: "add-unit", symbol: "mdi:water-pump", label: "Water pump" },
+  ] as const;
+  const l = s.reduce(editorReducer, initialEditorState()).layout;
+  renderInspector(null, { layout: l, selected: l.nodes[0] ?? null, catalog: retiring });
+  const select = screen.getByRole("combobox", { name: "Symbol" });
+  expect(select).toHaveValue("mdi:water-pump");
+  expect(select.firstElementChild?.tagName).toBe("OPTION");
+}
+
+/** N35 — on a new layout a chosen, switched-off library is not locked: the save would refuse it. */
+export async function aNewLayoutCanUncheckADisabledLibrary(): Promise<void> {
+  const props = renderInspector(null, {
+    layout: { ...layout, symbolLibraries: ["core", "tabler"] },
+    catalog: orgCatalogFixture(),
+    storedLibraries: [],
+  });
+  const box = screen.getByRole("checkbox", { name: "Library Tabler Icons" });
+  expect(box).toBeChecked();
+  expect(box).toBeEnabled();
+  await userEvent.click(box);
+  expect(props.onLayoutChange).toHaveBeenCalledWith({ symbolLibraries: ["core"] });
+}
+
+/** N36 — on a new layout an `org.` key the new organization does not hold can be unchecked. */
+export async function aNewLayoutCanUncheckAnUnknownOrgLibrary(): Promise<void> {
+  const props = renderInspector(null, {
+    layout: { ...layout, symbolLibraries: ["core", "org.other"] },
+    catalog: orgCatalogFixture(),
+    storedLibraries: [],
+  });
+  const box = screen.getByRole("checkbox", { name: "Library org.other" });
+  expect(box).toBeEnabled();
+  await userEvent.click(box);
+  expect(props.onLayoutChange).toHaveBeenCalledWith({ symbolLibraries: ["core"] });
 }

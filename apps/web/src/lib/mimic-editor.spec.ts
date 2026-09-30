@@ -12,6 +12,7 @@ import {
   layoutFromDto,
   librariesInUse,
   nextNodeKey,
+  symbolLabel,
   toWriteBody,
   unitKeyPrefix,
   type EditorAction,
@@ -46,7 +47,7 @@ function node(state: EditorState, key: string): EditorNode {
 
 /** Two tanks and a panel on the default canvas; tank_1 is selected. */
 function twoTanksAndAPanel(): EditorState {
-  const s = run(initialEditorState(), { type: "add-unit", symbol: "tank" }, { type: "add-unit", symbol: "tank" }, {
+  const s = run(initialEditorState(), { type: "add-unit", symbol: "tank", label: symbolLabel("tank") }, { type: "add-unit", symbol: "tank", label: symbolLabel("tank") }, {
     type: "add-panel",
   });
   return run(s, { type: "select", key: "tank_1" });
@@ -59,13 +60,13 @@ function key(k: string, extra: Partial<EditorKeyEvent> = {}): EditorKeyEvent {
 // ---- add ----------------------------------------------------------------------------------
 
 export function runAddUnitAddsAUnitWithItsSymbol(): void {
-  const s = run(initialEditorState(), { type: "add-unit", symbol: "clarifier" });
+  const s = run(initialEditorState(), { type: "add-unit", symbol: "clarifier", label: symbolLabel("clarifier") });
   const n = node(s, "clarifier_1");
   assert(n.kind === "unit" && n.symbol === "clarifier" && n.roleCode === null, "add-unit adds a passive unit of the symbol");
 }
 
 export function runAddUnitSelectsTheNewNode(): void {
-  const s = run(initialEditorState(), { type: "add-unit", symbol: "pump" });
+  const s = run(initialEditorState(), { type: "add-unit", symbol: "pump", label: symbolLabel("pump") });
   assert(s.selected === "pump_1", `the new unit is selected, got ${String(s.selected)}`);
 }
 
@@ -82,13 +83,13 @@ export function runAddLabelAddsANonEmptyLabel(): void {
 }
 
 export function runNewKeysFollowTheHighestSuffix(): void {
-  let s = run(initialEditorState(), ...Array.from({ length: 3 }, () => ({ type: "add-unit", symbol: "tank" }) as const));
-  s = run(s, { type: "delete", key: "tank_2" }, { type: "add-unit", symbol: "tank" });
+  let s = run(initialEditorState(), ...Array.from({ length: 3 }, () => ({ type: "add-unit", symbol: "tank", label: symbolLabel("tank") }) as const));
+  s = run(s, { type: "delete", key: "tank_2" }, { type: "add-unit", symbol: "tank", label: symbolLabel("tank") });
   assert(s.layout.nodes.some((n) => n.key === "tank_4"), "after deleting tank_2 the next tank is tank_4");
 }
 
 export function runNewKeysMatchTheContractPattern(): void {
-  const s = run(initialEditorState(), { type: "add-unit", symbol: "discharge" }, { type: "add-panel" }, { type: "add-label" });
+  const s = run(initialEditorState(), { type: "add-unit", symbol: "discharge", label: symbolLabel("discharge") }, { type: "add-panel" }, { type: "add-label" });
   assert(s.layout.nodes.every((n) => MIMIC_LAYOUT_NODE_KEY.test(n.key)), "every generated key matches MIMIC_LAYOUT_NODE_KEY");
 }
 
@@ -233,7 +234,7 @@ function withAnMdiUnit(): EditorState {
   return run(
     initialEditorState(),
     { type: "update-layout", patch: { symbolLibraries: ["core", "mdi"] } },
-    { type: "add-unit", symbol: "mdi:heat-pump" },
+    { type: "add-unit", symbol: "mdi:heat-pump", label: symbolLabel("mdi:heat-pump") },
   );
 }
 
@@ -345,6 +346,7 @@ export function runLayoutFromDtoCopiesTheLibraries(): void {
     symbolLibraries: ["tabler", "mdi"],
     nodes: [...layout.nodes],
     pipes: [...layout.pipes],
+    orgSymbols: [],
     createdAt: new Date(0).toISOString(),
     updatedAt: new Date(0).toISOString(),
   };
@@ -398,8 +400,8 @@ export function runUpdateLayoutRefusesDroppingOneOfTwoUsedLibraries(): void {
   const s = run(
     initialEditorState(),
     { type: "update-layout", patch: { symbolLibraries: ["core", "tabler", "mdi"] } },
-    { type: "add-unit", symbol: "tabler:bolt" },
-    { type: "add-unit", symbol: "mdi:heat-pump" },
+    { type: "add-unit", symbol: "tabler:bolt", label: symbolLabel("tabler:bolt") },
+    { type: "add-unit", symbol: "mdi:heat-pump", label: symbolLabel("mdi:heat-pump") },
   );
   assert(JSON.stringify(s.layout.symbolLibraries) === '["core","tabler","mdi"]', "precondition: three chosen");
   assert(s.layout.nodes.some((n) => n.symbol === "tabler:bolt"), "precondition: a unit uses Tabler");
@@ -413,9 +415,9 @@ export function runSameNamedSymbolsFromThreeLibrariesGetUniqueKeys(): void {
   const s = run(
     initialEditorState(),
     { type: "update-layout", patch: { symbolLibraries: ["core", "tabler", "mdi"] } },
-    { type: "add-unit", symbol: "filter" },
-    { type: "add-unit", symbol: "tabler:filter" },
-    { type: "add-unit", symbol: "mdi:filter" },
+    { type: "add-unit", symbol: "filter", label: symbolLabel("filter") },
+    { type: "add-unit", symbol: "tabler:filter", label: symbolLabel("tabler:filter") },
+    { type: "add-unit", symbol: "mdi:filter", label: symbolLabel("mdi:filter") },
   );
   const keys = s.layout.nodes.map((n) => n.key);
   assert(JSON.stringify(keys) === '["filter_1","filter_2","filter_3"]', `keys: ${JSON.stringify(keys)}`);
@@ -432,7 +434,7 @@ export function runAddUnitLabelsALibrarySymbol(): void {
 }
 
 export function runALibraryUnitKeyMatchesTheContract(): void {
-  const s = run(initialEditorState(), { type: "add-unit", symbol: "mdi:heat-pump" }, { type: "add-unit", symbol: "tabler:bolt" });
+  const s = run(initialEditorState(), { type: "add-unit", symbol: "mdi:heat-pump", label: symbolLabel("mdi:heat-pump") }, { type: "add-unit", symbol: "tabler:bolt", label: symbolLabel("tabler:bolt") });
   for (const n of s.layout.nodes) {
     assert(MIMIC_LAYOUT_NODE_KEY.test(n.key), `a library unit's key ${n.key} matches MIMIC_LAYOUT_NODE_KEY`);
   }
@@ -463,7 +465,7 @@ export function runDeleteRemovesItsPipes(): void {
 export function runDeleteKeepsOtherPipes(): void {
   const s = run(
     twoTanksAndAPanel(),
-    { type: "add-unit", symbol: "tank" },
+    { type: "add-unit", symbol: "tank", label: symbolLabel("tank") },
     { type: "add-pipe", fromKey: "tank_1", toKey: "tank_2" },
     { type: "add-pipe", fromKey: "tank_2", toKey: "tank_3" },
     { type: "delete", key: "tank_3" },
@@ -530,7 +532,7 @@ export function runAnEditClearsTheFuture(): void {
 }
 
 export function runUndoThatRemovesTheSelectionClearsIt(): void {
-  const s = run(initialEditorState(), { type: "add-unit", symbol: "tank" }, { type: "undo" });
+  const s = run(initialEditorState(), { type: "add-unit", symbol: "tank", label: symbolLabel("tank") }, { type: "undo" });
   assert(s.selected === null, "undoing the add of the selected node clears the selection");
 }
 
@@ -841,4 +843,52 @@ export function runCtrlZInATextareaIsNull(): void {
 
 export function runOtherKeysAreNull(): void {
   assert(keyboardAction(key("a"), twoTanksAndAPanel()) === null, "an unmapped key does nothing");
+}
+
+// ---- organization symbols (F3.32f slice 3, ADR 0086 decision 2, plan D9) --------------------
+
+/** A layout choosing core and `org.plant`, with one organization unit (`inlet_1`). */
+function withAnOrgUnit(): EditorState {
+  return run(
+    initialEditorState(),
+    { type: "update-layout", patch: { symbolLibraries: ["core", "org.plant"] } },
+    { type: "add-unit", symbol: "org.plant:inlet", label: "Inlet screen" },
+  );
+}
+
+export function runAddUnitLabelsAnOrgSymbolWithTheGivenLabel(): void {
+  const n = withAnOrgUnit().layout.nodes[0];
+  assert(n?.label === "Inlet screen", `org.plant:inlet adds "Inlet screen", got ${String(n?.label)}`);
+}
+
+export function runAnOrgUnitIsKeyedByItsName(): void {
+  const n = withAnOrgUnit().layout.nodes[0];
+  assert(n?.key === "inlet_1", `org.plant:inlet is keyed inlet_1, got ${String(n?.key)}`);
+}
+
+export function runLibrariesInUseMapsAnOrgLibraryToItsUnit(): void {
+  const used = librariesInUse(withAnOrgUnit().layout);
+  assert(
+    JSON.stringify(used.get("org.plant")) === '["inlet_1"]',
+    `org.plant is used by inlet_1, got ${JSON.stringify(used.get("org.plant"))}`,
+  );
+}
+
+export function runDroppingAUsedOrgLibraryIsANoOp(): void {
+  const before = withAnOrgUnit();
+  const after = run(before, { type: "update-layout", patch: { symbolLibraries: ["core"] } });
+  assert(after === before, "dropping org.plant while inlet_1 uses it changes nothing");
+}
+
+export function runToWriteBodySendsTheOrgKeyInSymbol(): void {
+  const body = toWriteBody(withAnOrgUnit().layout);
+  assert(body.nodes[0]?.symbol === "org.plant:inlet", `the node's symbol is the org key, got ${String(body.nodes[0]?.symbol)}`);
+}
+
+export function runToWriteBodySendsTheOrgLibraryInSymbolLibraries(): void {
+  const body = toWriteBody(withAnOrgUnit().layout);
+  assert(
+    JSON.stringify(body.symbolLibraries) === '["core","org.plant"]',
+    `symbolLibraries names org.plant, got ${JSON.stringify(body.symbolLibraries)}`,
+  );
 }

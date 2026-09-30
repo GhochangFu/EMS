@@ -3,6 +3,7 @@ import {
   MIMIC_PRESETS,
   type MimicLayoutGeometryDto,
   type MimicLayoutNodeDto,
+  type MimicOrgSymbolDto,
   type MimicPanelTone,
   type MimicPreset,
   type MimicPresetDef,
@@ -91,6 +92,11 @@ export type MimicGeometry = {
   readonly pipes: readonly MimicGeometryPipe[];
   readonly pumps: readonly MimicGeometryPump[];
   readonly sink: MimicGeometrySink | null;
+  /**
+   * `F3.32f` slice 3 (ADR 0086 decision 7): the organization symbols a unit may draw, by key —
+   * a stored layout's embedded `orgSymbols`; a preset has none.
+   */
+  readonly orgSymbols: readonly MimicOrgSymbolDto[];
 };
 
 /** Nothing to draw: a layout widget before its geometry is resolved. */
@@ -105,6 +111,7 @@ export const EMPTY_GEOMETRY: MimicGeometry = {
   pipes: [],
   pumps: [],
   sink: null,
+  orgSymbols: [],
 };
 
 /**
@@ -244,6 +251,7 @@ function buildPresetGeometry(preset: MimicPreset): MimicGeometry {
     pipes,
     pumps,
     sink,
+    orgSymbols: [],
   };
 }
 
@@ -329,5 +337,6 @@ export function layoutGeometry(layout: MimicLayoutGeometryDto): MimicGeometry {
     pipes,
     pumps: [],
     sink: null,
+    orgSymbols: layout.orgSymbols,
   };
 }

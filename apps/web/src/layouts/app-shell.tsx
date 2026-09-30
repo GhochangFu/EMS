@@ -69,6 +69,8 @@ const adminModuleGroup = {
     { label: "Asset Groups", path: "/admin/asset-groups" },
     // `F3.32c` (ADR 0081 decision 3) — `admin` and `organization_admin` only, as the page is.
     { label: "Mimic Layouts", path: "/admin/mimic-layouts", orgAdminOnly: true },
+    // `F3.32f` slice 3 (ADR 0086 decisions 4 and 7) — the same two roles, as the page is.
+    { label: "Symbol Libraries", path: "/admin/mimic-symbol-libraries", orgAdminOnly: true },
     { label: "Point Keys", path: "/admin/point-keys", catalogOnly: true },
     // `F4.162` (plan D7) — global `admin` only, as the page and its API are.
     { label: "Location Types", path: "/admin/location-types", globalOnly: true },

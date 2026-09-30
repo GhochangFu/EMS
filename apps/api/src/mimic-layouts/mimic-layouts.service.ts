@@ -15,7 +15,10 @@ import {
   dashboardWidgets,
   mimicLayoutNodes,
   mimicLayoutPipes,
+  mimicLibrarySettings,
   mimicLayouts,
+  mimicOrgSymbolLibraries,
+  mimicOrgSymbols,
   mimicSymbolLibraries,
   mimicSymbols,
 } from "@bms/db";
@@ -28,11 +31,12 @@ import type {
   MimicLayoutPipeDto,
   MimicLayoutsListResponse,
   MimicPanelTone,
+  MimicOrgSymbolDto,
   MimicSymbol,
-  MimicSymbolLibraryCode,
+  MimicSymbolLibrarySelection,
   MimicLayoutNodeKind,
 } from "@bms/shared";
-import { libraryOfSymbol } from "@bms/shared";
+import { isOrgLibraryKey, isOrgSymbolKey, libraryOfSymbol } from "@bms/shared";
 
 import { MasterDataAuditService } from "../admin/master-data-audit.service";
 import { AccessControlService } from "../auth/access-control.service";
@@ -45,6 +49,7 @@ import {
 } from "./mimic-layouts.schema";
 import type { CreateMimicLayoutBody, PutMimicLayoutBody } from "./mimic-layouts.schema";
 import { KNOWN_LIBRARY_CODES, splitLibraryCodes } from "./mimic-library-codes";
+import { orgSymbolsOf } from "./mimic-org-symbols";
 
 type LayoutRow = typeof mimicLayouts.$inferSelect;
 type Executor = BmsDb | BmsTx;
@@ -135,6 +140,7 @@ export class MimicLayoutsService {
             )
             .groupBy(mimicLayoutNodes.layoutId);
     const unitsByLayout = new Map(counts.map((row) => [row.layoutId, Number(row.n)]));
+    const orgLibraries = await this.orgLibraryKeysOf(this.fleetDb, [...new Set(rows.map((row) => row.organizationId))]);
     return {
       items: rows.map((layout) => ({
         id: layout.id,
@@ -145,7 +151,7 @@ export class MimicLayoutsService {
         canvasH: layout.canvasH,
         version: layout.version,
         unitCount: unitsByLayout.get(layout.id) ?? 0,
-        symbolLibraries: this.readLibraries(layout),
+        symbolLibraries: this.readLibraries(layout, orgLibraries.get(layout.organizationId)),
         updatedAt: layout.updatedAt.toISOString(),
       })),
     };
@@ -158,9 +164,9 @@ export class MimicLayoutsService {
 
   async create(jwt: JwtPayload, body: CreateMimicLayoutBody): Promise<MimicLayoutDto> {
     const author = await this.assertCanAuthor(jwt, body.organizationId);
-    await this.assertLibrariesLive(body.symbolLibraries, new Set());
+    await this.assertLibrariesLive(body.symbolLibraries, new Set(), body.organizationId);
     await this.assertRolesLive(body.nodes, new Set());
-    await this.assertSymbolsLive(body.nodes, new Set());
+    await this.assertSymbolsLive(body.nodes, new Set(), body.organizationId);
     return withTenant(this.tenantDb, body.organizationId, async (tx) => {
       const [layout] = await tx
         .insert(mimicLayouts)
@@ -195,15 +201,20 @@ export class MimicLayoutsService {
     await this.assertCanAuthor(jwt, existing.organizationId);
     // A code the stored drawing already carries stays valid after it is retired, so a
     // re-save of an unchanged layout never fails on it (the mapping-sheet retired-code rule).
-    await this.assertLibrariesLive(body.symbolLibraries, new Set(existing.symbolLibraries));
+    await this.assertLibrariesLive(body.symbolLibraries, new Set(existing.symbolLibraries), existing.organizationId);
     const stored = await this.fleetDb
-      .selectDistinct({ roleCode: mimicLayoutNodes.roleCode, symbol: mimicLayoutNodes.symbol })
+      .selectDistinct({
+        roleCode: mimicLayoutNodes.roleCode,
+        symbol: mimicLayoutNodes.symbol,
+        orgSymbolKey: mimicLayoutNodes.orgSymbolKey,
+      })
       .from(mimicLayoutNodes)
       .where(eq(mimicLayoutNodes.layoutId, existing.id));
     const keptRoles = new Set(stored.flatMap((row) => (row.roleCode === null ? [] : [row.roleCode])));
-    const keptSymbols = new Set(stored.flatMap((row) => (row.symbol === null ? [] : [row.symbol])));
+    // `F3.32f` slice 3: an organization unit stores its key in `org_symbol_key`, with `symbol` null.
+    const keptSymbols = new Set(stored.flatMap((row) => [row.symbol, row.orgSymbolKey].filter((key): key is string => key !== null)));
     await this.assertRolesLive(body.nodes, keptRoles);
-    await this.assertSymbolsLive(body.nodes, keptSymbols);
+    await this.assertSymbolsLive(body.nodes, keptSymbols, existing.organizationId);
     return withTenant(this.tenantDb, existing.organizationId, async (tx) => {
       const [layout] = await tx
         .update(mimicLayouts)
@@ -334,32 +345,68 @@ export class MimicLayoutsService {
    * unique first, because a body that skipped the schema may repeat one.
    *
    * A code in `kept` — one the stored layout already chose — is exempt (`F3.32f`, ADR 0086
-   * decision 5), so an unchanged layout re-saves after its library is retired.
+   * decision 5), so an unchanged layout re-saves after its library is retired or disabled.
    */
   private async assertLibrariesLive(
     symbolLibraries: readonly string[],
     kept: ReadonlySet<string>,
+    organizationId: string,
   ): Promise<void> {
     const codes = [...new Set(symbolLibraries)].filter((code) => !kept.has(code));
     if (codes.length === 0) return;
-    const live = await this.liveLibraryCodes(codes);
+    const live = await this.liveLibraryCodes(codes, organizationId);
     if (live.size !== codes.length) {
       throw new BadRequestException(UNKNOWN_LIBRARY_MESSAGE);
     }
   }
 
   /**
-   * The codes of `codes` that name an **active** `bms.mimic_symbol_libraries` row. The slice-3
-   * seam (ADR 0086): slice 3 LEFT JOINs the per-organization switch here and adds an
-   * `organizationId` argument at the two call sites, so it changes this query, not the callers'
-   * structure.
+   * The codes of `codes` a new unit may draw from in `organizationId` (`F3.32f` slice 3, ADR 0086
+   * decisions 4 and 5, plan D6): a global code whose `bms.mimic_symbol_libraries` row is active
+   * **and** that the organization did not switch off (`bms.mimic_library_settings.enabled =
+   * false`; no row means enabled), or `org.<code>` naming an **active** library **of that
+   * organization**. The fleet pool bypasses row security, so the `organization_id` predicate on
+   * both organization tables is the isolation: without it, another organization's `org.plant`
+   * would count as live.
    */
-  private async liveLibraryCodes(codes: string[]): Promise<Set<string>> {
-    const live = await this.fleetDb
-      .select({ code: mimicSymbolLibraries.code })
-      .from(mimicSymbolLibraries)
-      .where(and(inArray(mimicSymbolLibraries.code, codes), eq(mimicSymbolLibraries.active, true)));
-    return new Set(live.map((row) => row.code));
+  private async liveLibraryCodes(codes: readonly string[], organizationId: string): Promise<Set<string>> {
+    const global = codes.filter((code) => !isOrgLibraryKey(code));
+    const org = codes.filter((code) => isOrgLibraryKey(code)).map((code) => code.slice("org.".length));
+    const live = new Set<string>();
+    if (global.length > 0) {
+      const rows = await this.fleetDb
+        .select({ code: mimicSymbolLibraries.code })
+        .from(mimicSymbolLibraries)
+        .leftJoin(
+          mimicLibrarySettings,
+          and(
+            eq(mimicLibrarySettings.libraryCode, mimicSymbolLibraries.code),
+            eq(mimicLibrarySettings.organizationId, organizationId),
+          ),
+        )
+        .where(
+          and(
+            inArray(mimicSymbolLibraries.code, global),
+            eq(mimicSymbolLibraries.active, true),
+            sql`coalesce(${mimicLibrarySettings.enabled}, true)`,
+          ),
+        );
+      for (const row of rows) live.add(row.code);
+    }
+    if (org.length > 0) {
+      const rows = await this.fleetDb
+        .select({ code: mimicOrgSymbolLibraries.code })
+        .from(mimicOrgSymbolLibraries)
+        .where(
+          and(
+            eq(mimicOrgSymbolLibraries.organizationId, organizationId),
+            inArray(mimicOrgSymbolLibraries.code, org),
+            eq(mimicOrgSymbolLibraries.active, true),
+          ),
+        );
+      for (const row of rows) live.add(`org.${row.code}`);
+    }
+    return live;
   }
 
   /**
@@ -372,40 +419,126 @@ export class MimicLayoutsService {
    * its row, so its symbols stay active, and the layout's stored-library exemption would
    * otherwise carry a newly placed unit (ADR 0086 decision 5). This goes through
    * `liveLibraryCodes`, so slice 3's per-organization switch binds new units too.
+   *
+   * `F3.32f` slice 3: an `org.<code>:<name>` key must be an **active** `bms.mimic_org_symbols`
+   * row **of the layout's organization** — the `organization_id` predicate is the isolation on
+   * the fleet pool, ahead of the composite foreign key that would refuse it at the insert.
    */
   private async assertSymbolsLive(
     nodes: Pick<CreateMimicLayoutBody, "nodes">["nodes"],
     kept: ReadonlySet<string>,
+    organizationId: string,
   ): Promise<void> {
     const codes = [
       ...new Set(nodes.flatMap((node) => (node.symbol == null || kept.has(node.symbol) ? [] : [node.symbol]))),
     ];
     if (codes.length === 0) return;
-    const live = await this.fleetDb
-      .select({ key: mimicSymbols.key })
-      .from(mimicSymbols)
-      .where(and(inArray(mimicSymbols.key, codes), eq(mimicSymbols.active, true)));
-    if (live.length !== codes.length) {
+    const staticKeys = codes.filter((code) => !isOrgSymbolKey(code));
+    const orgKeys = codes.filter((code) => isOrgSymbolKey(code));
+    const live =
+      staticKeys.length === 0
+        ? []
+        : await this.fleetDb
+            .select({ key: mimicSymbols.key })
+            .from(mimicSymbols)
+            .where(and(inArray(mimicSymbols.key, staticKeys), eq(mimicSymbols.active, true)));
+    const liveOrg =
+      orgKeys.length === 0
+        ? []
+        : await this.fleetDb
+            .select({ key: mimicOrgSymbols.key })
+            .from(mimicOrgSymbols)
+            .where(
+              and(
+                eq(mimicOrgSymbols.organizationId, organizationId),
+                inArray(mimicOrgSymbols.key, orgKeys),
+                eq(mimicOrgSymbols.active, true),
+              ),
+            );
+    if (live.length !== staticKeys.length || liveOrg.length !== orgKeys.length) {
       throw new BadRequestException(UNKNOWN_SYMBOL_MESSAGE);
     }
     const libraries = [...new Set(codes.map((code) => libraryOfSymbol(code)))];
-    const liveLibraries = await this.liveLibraryCodes(libraries);
+    const liveLibraries = await this.liveLibraryCodes(libraries, organizationId);
     if (liveLibraries.size !== libraries.length) {
       throw new BadRequestException(UNKNOWN_SYMBOL_MESSAGE);
     }
   }
 
   /**
-   * The stored library codes the response contract can carry (`F3.32f`, ADR 0086 decision 10).
-   * An unknown stored code is dropped with a warning rather than cast through, so one bad row
-   * no longer fails the whole list at the contract parse; the write path already refuses one.
+   * The stored library codes the response contract can carry (`F3.32f`, ADR 0086 decision 10):
+   * a global code, or `org.<code>` naming one of the layout organization's own libraries
+   * (`orgLibraries`, retired ones included — a stored drawing keeps its choice). Any other stored
+   * code is dropped with a warning rather than cast through, so one bad row no longer fails the
+   * whole list at the contract parse; the write path already refuses one.
    */
-  private readLibraries(layout: LayoutRow): MimicSymbolLibraryCode[] {
-    const { kept, dropped } = splitLibraryCodes(layout.symbolLibraries, KNOWN_LIBRARY_CODES);
+  private readLibraries(layout: LayoutRow, orgLibraries: ReadonlySet<string> = new Set()): MimicSymbolLibrarySelection[] {
+    const known = orgLibraries.size === 0 ? KNOWN_LIBRARY_CODES : new Set([...KNOWN_LIBRARY_CODES, ...orgLibraries]);
+    const { kept, dropped } = splitLibraryCodes(layout.symbolLibraries, known);
     if (dropped.length > 0) {
       this.logger.warn(`mimic layout ${layout.id}: dropped unknown symbol library code(s): ${dropped.join(", ")}`);
     }
     return kept;
+  }
+
+  /**
+   * `F3.32f` slice 3: each organization's own libraries as `org.<code>`, by organization —
+   * what `readLibraries` may keep beside the global codes. Every row is filtered by
+   * organization, so the fleet pool's bypass reads nothing else.
+   */
+  private async orgLibraryKeysOf(db: Executor, organizationIds: readonly string[]): Promise<Map<string, Set<string>>> {
+    const byOrganization = new Map<string, Set<string>>();
+    if (organizationIds.length === 0) return byOrganization;
+    const rows = await db
+      .select({ organizationId: mimicOrgSymbolLibraries.organizationId, code: mimicOrgSymbolLibraries.code })
+      .from(mimicOrgSymbolLibraries)
+      .where(inArray(mimicOrgSymbolLibraries.organizationId, [...organizationIds]));
+    for (const row of rows) {
+      const keys = byOrganization.get(row.organizationId) ?? new Set<string>();
+      keys.add(`org.${row.code}`);
+      byOrganization.set(row.organizationId, keys);
+    }
+    return byOrganization;
+  }
+
+  /**
+   * `F3.32f` slice 3 (ADR 0086 decision 7, plan D6): the organization symbols the layout's units
+   * draw, retired ones included (a stored drawing still draws), once each, by key. Both tables
+   * are filtered by the layout's organization and the library is joined on the organization too,
+   * so a fleet-pool read reaches no other organization's row. Each row is re-checked by the
+   * response contract (`orgSymbolsOf`).
+   */
+  private async readOrgSymbols(db: Executor, layout: LayoutRow): Promise<MimicOrgSymbolDto[]> {
+    const used = db
+      .selectDistinct({ key: mimicLayoutNodes.orgSymbolKey })
+      .from(mimicLayoutNodes)
+      .where(and(eq(mimicLayoutNodes.layoutId, layout.id), eq(mimicLayoutNodes.organizationId, layout.organizationId)));
+    const rows = await db
+      .select({
+        id: mimicOrgSymbols.id,
+        libraryId: mimicOrgSymbols.libraryId,
+        key: mimicOrgSymbols.key,
+        label: mimicOrgSymbols.label,
+        groupCode: mimicOrgSymbols.groupCode,
+        style: mimicOrgSymbolLibraries.style,
+        viewBox: mimicOrgSymbols.viewBox,
+        shapes: mimicOrgSymbols.shapes,
+        active: mimicOrgSymbols.active,
+        sourceFilename: mimicOrgSymbols.sourceFilename,
+        sha256: mimicOrgSymbols.sha256,
+        updatedAt: mimicOrgSymbols.updatedAt,
+      })
+      .from(mimicOrgSymbols)
+      .innerJoin(
+        mimicOrgSymbolLibraries,
+        and(
+          eq(mimicOrgSymbolLibraries.id, mimicOrgSymbols.libraryId),
+          eq(mimicOrgSymbolLibraries.organizationId, layout.organizationId),
+        ),
+      )
+      .where(and(eq(mimicOrgSymbols.organizationId, layout.organizationId), inArray(mimicOrgSymbols.key, used)))
+      .orderBy(asc(mimicOrgSymbols.key));
+    return orgSymbolsOf(rows, (message) => this.logger.warn(message));
   }
 
   /** The layout, if the caller may read its organization; else 404. */
@@ -433,7 +566,10 @@ export class MimicLayoutsService {
           layoutId: layout.id,
           key: node.key,
           kind: node.kind,
-          symbol: node.symbol ?? null,
+          // `F3.32f` slice 3 (ADR 0086 decision 3): an organization key goes to `org_symbol_key`,
+          // whose composite foreign key names the layout's own organization.
+          symbol: node.symbol == null || isOrgSymbolKey(node.symbol) ? null : node.symbol,
+          orgSymbolKey: node.symbol != null && isOrgSymbolKey(node.symbol) ? node.symbol : null,
           label: node.label,
           roleCode: node.roleCode ?? null,
           tone: node.tone ?? null,
@@ -505,6 +641,8 @@ export class MimicLayoutsService {
       .innerJoin(to, eq(to.id, mimicLayoutPipes.toNodeId))
       .where(eq(mimicLayoutPipes.layoutId, layout.id))
       .orderBy(asc(from.key), asc(to.key));
+    const orgLibraries = await this.orgLibraryKeysOf(db, [layout.organizationId]);
+    const orgSymbols = await this.readOrgSymbols(db, layout);
     return {
       id: layout.id,
       organizationId: layout.organizationId,
@@ -513,12 +651,13 @@ export class MimicLayoutsService {
       canvasW: layout.canvasW,
       canvasH: layout.canvasH,
       version: layout.version,
-      symbolLibraries: this.readLibraries(layout),
+      symbolLibraries: this.readLibraries(layout, orgLibraries.get(layout.organizationId)),
       nodes: nodes.map(
         (node): MimicLayoutNodeDto => ({
           key: node.key,
           kind: node.kind as MimicLayoutNodeKind,
-          symbol: (node.symbol ?? null) as MimicSymbol | null,
+          // `F3.32f` slice 3 (ADR 0086 decision 3): a unit holds exactly one of the two columns.
+          symbol: (node.symbol ?? node.orgSymbolKey ?? null) as MimicSymbol | null,
           label: node.label,
           roleCode: node.roleCode ?? null,
           tone: (node.tone ?? null) as MimicPanelTone | null,
@@ -530,6 +669,7 @@ export class MimicLayoutsService {
         }),
       ),
       pipes: pipes.map((pipe): MimicLayoutPipeDto => ({ fromKey: pipe.fromKey, toKey: pipe.toKey })),
+      orgSymbols,
       createdAt: layout.createdAt.toISOString(),
       updatedAt: layout.updatedAt.toISOString(),
     };
@@ -537,7 +677,7 @@ export class MimicLayoutsService {
 
   /**
    * Maps a database refusal by its **constraint name** — never by its detail,
-   * which row security suppresses. Only the three named cases are the caller's;
+   * which row security suppresses. Only the named cases are the caller's;
    * every other error is rethrown unchanged.
    */
   static translateWriteError(err: unknown, slug: string): unknown {
@@ -552,6 +692,10 @@ export class MimicLayoutsService {
     }
     if (constraint === "mimic_layout_nodes_symbol_fkey") {
       // `F3.32e` migration `0090`: the symbol names a `bms.mimic_symbols` row. No echo of the key.
+      return new BadRequestException(UNKNOWN_SYMBOL_MESSAGE);
+    }
+    if (constraint === "mimic_layout_nodes_org_symbol_fkey") {
+      // `F3.32f` migration `0093`: no such symbol in the layout's organization. No echo of the key.
       return new BadRequestException(UNKNOWN_SYMBOL_MESSAGE);
     }
     return err;

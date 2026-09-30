@@ -9,7 +9,7 @@ import {
   type MimicPreset,
   type MimicPresetDef,
   type MimicSymbol,
-  type MimicSymbolLibraryCode,
+  type MimicSymbolLibrarySelection,
   libraryOfSymbol,
 } from "@bms/shared";
 
@@ -44,7 +44,7 @@ export type EditorLayout = {
   readonly nodes: readonly EditorNode[];
   readonly pipes: readonly EditorPipe[];
   /** The libraries the palette offers (ADR 0084 decision 8): never empty; `core` is not mandatory. */
-  readonly symbolLibraries: readonly MimicSymbolLibraryCode[];
+  readonly symbolLibraries: readonly MimicSymbolLibrarySelection[];
 };
 
 export type EditorState = {
@@ -74,11 +74,13 @@ export type EditorLayoutPatch = {
   readonly slug?: string;
   readonly canvasW?: number;
   readonly canvasH?: number;
-  readonly symbolLibraries?: readonly MimicSymbolLibraryCode[];
+  readonly symbolLibraries?: readonly MimicSymbolLibrarySelection[];
 };
 
 export type EditorAction =
-  | { readonly type: "add-unit"; readonly symbol: MimicSymbol }
+  // `label` is the caller's (`F3.32f` slice 3): an organization symbol's label lives in the
+  // catalog the page read, which this pure reducer does not hold; a static one is `symbolLabel`.
+  | { readonly type: "add-unit"; readonly symbol: MimicSymbol; readonly label: string }
   | { readonly type: "add-panel" }
   | { readonly type: "add-label" }
   | { readonly type: "preview"; readonly key: string; readonly box: Box }
@@ -157,7 +159,8 @@ export function nextNodeKey(nodes: readonly EditorNode[], prefix: string): strin
 
 /**
  * The key prefix of a new unit of `symbol`: the symbol itself for a core key (`tank_1`), the
- * name after the colon with `-` → `_` for a library key (`mdi:heat-pump` → `heat_pump_1`) —
+ * name after the colon with `-` → `_` for a library key (`mdi:heat-pump` → `heat_pump_1`) and
+ * an organization key alike (`org.plant:inlet` → `inlet_1`) —
  * `MIMIC_LAYOUT_NODE_KEY` admits neither `:` nor `-`. Cut to 24 characters so the suffix fits
  * the 32-character key; a name that does not start with a letter falls back to `unit`.
  */
@@ -229,8 +232,8 @@ function inBounds(value: number, range: { readonly min: number; readonly max: nu
  * The libraries the layout's units use, each with the unit keys that use it (ADR 0084
  * decision 9): a library in this map cannot be dropped, and the inspector disables its box.
  */
-export function librariesInUse(layout: EditorLayout): ReadonlyMap<MimicSymbolLibraryCode, readonly string[]> {
-  const used = new Map<MimicSymbolLibraryCode, string[]>();
+export function librariesInUse(layout: EditorLayout): ReadonlyMap<MimicSymbolLibrarySelection, readonly string[]> {
+  const used = new Map<MimicSymbolLibrarySelection, string[]>();
   for (const node of layout.nodes) {
     if (node.kind === "unit" && node.symbol !== null) {
       const code = libraryOfSymbol(node.symbol);
@@ -241,7 +244,7 @@ export function librariesInUse(layout: EditorLayout): ReadonlyMap<MimicSymbolLib
 }
 
 /** A library list the layout may take: not empty, and keeping every library a unit uses. */
-function librariesAllowed(layout: EditorLayout, next: readonly MimicSymbolLibraryCode[]): boolean {
+function librariesAllowed(layout: EditorLayout, next: readonly MimicSymbolLibrarySelection[]): boolean {
   if (next.length === 0) {
     return false;
   }
@@ -389,7 +392,7 @@ export function editorReducer(state: EditorState, action: EditorAction): EditorS
     case "add-unit":
       return addNode(
         state,
-        newNode(state, "unit", unitKeyPrefix(action.symbol), { symbol: action.symbol, label: symbolLabel(action.symbol), tone: null }),
+        newNode(state, "unit", unitKeyPrefix(action.symbol), { symbol: action.symbol, label: action.label, tone: null }),
       );
     case "add-panel":
       return addNode(state, newNode(state, "panel", "panel", { symbol: null, label: "Panel", tone: "info" }));
@@ -475,8 +478,8 @@ function panelAround(members: readonly Box[]): Box {
 }
 
 /** `core`, then each library a unit draws from, in `MIMIC_SYMBOL_LIBRARIES` order. */
-function presetLibraries(units: readonly EditorNode[]): MimicSymbolLibraryCode[] {
-  const used = new Set<MimicSymbolLibraryCode>(["core"]);
+function presetLibraries(units: readonly EditorNode[]): MimicSymbolLibrarySelection[] {
+  const used = new Set<MimicSymbolLibrarySelection>(["core"]);
   for (const unit of units) {
     if (unit.symbol !== null) {
       used.add(libraryOfSymbol(unit.symbol));

@@ -154,6 +154,7 @@ function layoutResponse(widgetId: string): DashboardMimicNodesResponseDto {
           canvasH: 40,
           nodes: [layoutNode("feed", "tank", "wtp", 2), layoutNode("drain", "discharge", null, 40)],
           pipes: [{ fromKey: "feed", toKey: "drain" }],
+          orgSymbols: [],
         },
         nodes: [
           { key: "feed", label: "feed", roleCode: "wtp", asset: wtp(1_000), memberCount: 1, activeAlarms: 0, topAlarm: null },

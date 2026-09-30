@@ -336,6 +336,8 @@ export const STRICTNESS_LEDGER: Record<string, LedgerEntry> = {
   createMimicLayoutBodySchema: STRICT(CALLER_ERROR),
   "createMimicLayoutBodySchema/nodes[]": STRICT(CALLER_ERROR),
   "createMimicLayoutBodySchema/pipes[]": STRICT(CALLER_ERROR),
+  // `F3.32f` slice 3 (ADR 0086 decisions 4, 6, 7): closed authoring shapes, no `z.record` escape.
+  createMimicOrgSymbolLibraryBodySchema: STRICT(CALLER_ERROR),
   createNotificationChannelBodySchema: STRICT(CALLER_ERROR),
   createOrganizationBodySchema: STRICT(CALLER_ERROR),
   createPointKeyBodySchema: STRICT(CALLER_ERROR),
@@ -387,6 +389,7 @@ export const STRICTNESS_LEDGER: Record<string, LedgerEntry> = {
   putMimicLayoutBodySchema: STRICT(CALLER_ERROR),
   "putMimicLayoutBodySchema/nodes[]": STRICT(CALLER_ERROR),
   "putMimicLayoutBodySchema/pipes[]": STRICT(CALLER_ERROR),
+  putMimicLibrarySettingBodySchema: STRICT(CALLER_ERROR),
   // `E2.4` (ADR 0058 decision 8) — the body names rule ids and nothing else.
   reapplySeededRulesBodySchema: STRICT(CALLER_ERROR),
   reorderWorkOrdersBodySchema: STRICT(CALLER_ERROR),
@@ -492,6 +495,8 @@ export const STRICTNESS_LEDGER: Record<string, LedgerEntry> = {
   // `F4.162`. `code` is the primary key; a PATCH naming it is a 400.
   updateLocationTypeBodySchema: STRICT(CALLER_ERROR),
   updateMaintenanceScheduleBodySchema: STRICT(CALLER_ERROR),
+  updateMimicOrgSymbolBodySchema: STRICT(CALLER_ERROR),
+  updateMimicOrgSymbolLibraryBodySchema: STRICT(CALLER_ERROR),
   updateNotificationChannelBodySchema: STRICT(
     "The node E7.1f was raised for. `PATCH {\"name\":\"x\",\"organizationId\":\"<other>\"}` " +
       "answered 200 with the tenancy unchanged. Containment was never in doubt — " +

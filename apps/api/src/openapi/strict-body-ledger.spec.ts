@@ -43,6 +43,12 @@ import {
   putMimicLayoutBodySchema,
 } from "../mimic-layouts/mimic-layouts.schema";
 import {
+  createMimicOrgSymbolLibraryBodySchema,
+  putMimicLibrarySettingBodySchema,
+  updateMimicOrgSymbolBodySchema,
+  updateMimicOrgSymbolLibraryBodySchema,
+} from "../mimic-symbol-libraries/mimic-symbol-libraries.schema";
+import {
   chatBodySchema,
   createSessionBodySchema,
   patchDraftBodySchema,
@@ -279,6 +285,12 @@ export const BODY_SCHEMAS: Record<string, ZodTypeAny> = {
   createMimicLayoutBodySchema,
   putMimicLayoutBodySchema,
   putSiteControlRoomViewBodySchema,
+  // `F3.32f` slice 3 (ADR 0086 decisions 4, 6, 7). `.strict()`: a library, a symbol patch and the
+  // switch are closed authoring shapes with no `z.record` escape, so an unknown key is a typo.
+  createMimicOrgSymbolLibraryBodySchema,
+  updateMimicOrgSymbolLibraryBodySchema,
+  updateMimicOrgSymbolBodySchema,
+  putMimicLibrarySettingBodySchema,
   // `E2.4` (ADR 0058 decision 8). `.strict()`: the body names rule ids and
   // nothing else — a `{ all: true }` silently dropped and answered 200 would
   // read as the republish-moves-live-rules outcome decision 1 refuses.

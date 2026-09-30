@@ -1,8 +1,8 @@
-import type { MimicCoreSymbol } from "@bms/shared";
+import { MIMIC_SHAPE_ATTRS, type MimicCoreSymbol, type MimicOrgSymbolDto, type MimicShape } from "@bms/shared";
 import { createElement, type ReactNode } from "react";
 
 import { MIMIC_GLYPH_FILL_CLASS, type MimicGlyphKind } from "../../lib/mimic";
-import { MIMIC_SHAPE_ATTRS, librarySymbolShapes } from "./mimic-symbol-libraries";
+import { librarySymbolShapes } from "./mimic-symbol-libraries";
 
 /**
  * `F3.32b` (ADR 0079 Amendment 2) — the plant mimic's illustrated symbols.
@@ -283,19 +283,26 @@ export function shapeProps(attrs: object): Record<string, string> {
   return props;
 }
 
+/** `props` plus a React `key`, copied key by key (no spread — the G7 gate). */
+function keyed(props: Record<string, string>, key: number): Record<string, string | number> {
+  const out: Record<string, string | number> = { key };
+  for (const name of Object.keys(props)) out[name] = props[name]!;
+  return out;
+}
+
 /**
  * A stroke library's shapes. SVG scales a stroke by its element's own transform, so a shape the
  * generator could not bake (F3.32f slice 2: `wmpid` keeps `matrix(...)` for a rotation or skew)
  * sits in a `g` whose width divides by the matrix scale — its stroke then draws at the glyph's.
  */
-function strokeShapes(shapes: NonNullable<ReturnType<typeof librarySymbolShapes>>["shapes"]): ReactNode[] {
+function strokeShapes(shapes: readonly MimicShape[], baseWidth: number): ReactNode[] {
   return shapes.map(([tag, attrs], i) => {
     const props = shapeProps(attrs);
     const transform = props.transform;
-    if (transform === undefined) return createElement(tag, { key: i, ...props });
+    if (transform === undefined) return createElement(tag, keyed(props, i));
     return createElement(
       "g",
-      { key: i, strokeWidth: GLYPH_STROKE_WIDTH / matrixScale(transform) },
+      { key: i, strokeWidth: baseWidth / matrixScale(transform) },
       createElement(tag, props),
     );
   });
@@ -311,10 +318,17 @@ type MimicGlyphProps = {
   className: string;
   /** A tank's live fill, 0–1; `null` draws the tank empty. Ignored for any other kind. */
   level?: number | null;
+  /**
+   * `F3.32f` slice 3 (ADR 0086 decisions 6 and 7): the organization symbol an `org.` kind draws,
+   * from the layout's embedded `orgSymbols`; `null` or absent for every other kind. An `org.` kind
+   * with no symbol draws the `unit` fallback. Its shapes are drawn as a vendored library's are, by
+   * `shapeProps`, inside a wrapper scaled and centred by the symbol's own `viewBox`.
+   */
+  orgSymbol?: MimicOrgSymbolDto | null;
 };
 
 /** One illustrated unit symbol, scaled into a `size` square at (`x`, `y`) in viewBox units. */
-export function MimicGlyph({ kind, x, y, size, className, level = null }: MimicGlyphProps) {
+export function MimicGlyph({ kind, x, y, size, className, level = null, orgSymbol = null }: MimicGlyphProps) {
   const transform = `translate(${x} ${y}) scale(${size / 24})`;
 
   if (Object.prototype.hasOwnProperty.call(PATHS, kind)) {
@@ -344,7 +358,8 @@ export function MimicGlyph({ kind, x, y, size, className, level = null }: MimicG
     );
   }
 
-  const library = librarySymbolShapes(kind);
+  const org = kind.startsWith("org.") && orgSymbol !== null && orgSymbol.key === kind ? orgSymbol : null;
+  const library = org === null ? librarySymbolShapes(kind) : { style: org.style, shapes: org.shapes };
 
   if (library === null) {
     return (
@@ -365,33 +380,45 @@ export function MimicGlyph({ kind, x, y, size, className, level = null }: MimicG
     );
   }
 
+  let drawTransform = transform;
+  let strokeWidth = GLYPH_STROKE_WIDTH;
+  if (org !== null) {
+    const [vx, vy, vw, vh] = org.viewBox;
+    const side = Math.max(vw, vh);
+    drawTransform = `translate(${x} ${y}) scale(${size / side}) translate(${-vx + (side - vw) / 2} ${-vy + (side - vh) / 2})`;
+    strokeWidth = (1.5 * side) / 24;
+  }
+  const source = org === null ? undefined : "org";
+
   if (library.style === "stroke") {
     return (
       <g
         data-testid="mimic-glyph"
         data-glyph={kind}
+        data-glyph-source={source}
         aria-hidden="true"
-        transform={transform}
+        transform={drawTransform}
         fill="none"
-        strokeWidth={GLYPH_STROKE_WIDTH}
+        strokeWidth={strokeWidth}
         strokeLinecap="round"
         strokeLinejoin="round"
         className={className}
       >
-        {strokeShapes(library.shapes)}
+        {strokeShapes(library.shapes, strokeWidth)}
       </g>
     );
   }
 
-  const shapes = library.shapes.map(([tag, attrs], i) => createElement(tag, { key: i, ...shapeProps(attrs) }));
+  const shapes = library.shapes.map(([tag, attrs], i) => createElement(tag, keyed(shapeProps(attrs), i)));
 
   return (
     <g
       data-testid="mimic-glyph"
       data-glyph={kind}
       data-glyph-style="fill"
+      data-glyph-source={source}
       aria-hidden="true"
-      transform={transform}
+      transform={drawTransform}
       stroke="none"
       className={MIMIC_GLYPH_FILL_CLASS[className] ?? "fill-ink-muted"}
     >

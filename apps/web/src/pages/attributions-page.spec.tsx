@@ -3,7 +3,10 @@ import { render, screen, within } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { expect, vi } from "vitest";
 
+import type { MimicSymbolLibrariesResponse } from "@bms/shared";
+
 import type { AttributionEntry } from "../lib/attributions";
+import { orgCatalogFixture } from "../lib/mimic-symbols.spec";
 import type { AuthUser } from "../stores/auth-store";
 import { AttributionsList } from "../components/attributions-list";
 import { MIMIC_LIBRARY_CREDITS, libraryCredits } from "../components/widgets/mimic-symbol-libraries/credits";
@@ -46,6 +49,67 @@ function entryNamed(name: RegExp): HTMLElement {
     throw new Error(`no attribution entry matches ${String(name)}`);
   }
   return section;
+}
+
+/** Serves `catalog` for the symbol-library read and `{}` for every other fetch. */
+function renderPageWithCatalog(catalog: MimicSymbolLibrariesResponse): ReturnType<typeof vi.fn> {
+  const fetchMock = vi.fn((input: RequestInfo | URL) => {
+    const url = String(input);
+    const body = url.includes("/api/v1/mimic-symbol-libraries") ? catalog : {};
+    return Promise.resolve(new Response(JSON.stringify(body), { status: 200 }));
+  });
+  vi.stubGlobal("fetch", fetchMock);
+  render(
+    <MemoryRouter>
+      <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+        <AttributionsPage user={viewer} />
+      </QueryClientProvider>
+    </MemoryRouter>,
+  );
+  return fetchMock;
+}
+
+/** T9 — the organization section names each library, its licence and its attribution. */
+export async function theOrgSectionListsEachLibrary(): Promise<void> {
+  renderPageWithCatalog(orgCatalogFixture());
+  const section = await screen.findByRole("region", { name: "Your organization's libraries" });
+  const plant = (await within(section).findAllByTestId("attribution-org-entry")).find(
+    (el) => el.querySelector("h3")?.textContent === "Plant",
+  );
+  expect(plant).toBeDefined();
+  expect(plant?.textContent).toContain("Licence: CC BY 4.0");
+  expect(plant?.querySelector("pre")?.textContent).toBe("Drawn by the plant team");
+}
+
+/** T10 — every organization library is listed, retired ones too (their drawings still draw). */
+export async function theOrgSectionListsEveryLibrary(): Promise<void> {
+  renderPageWithCatalog(orgCatalogFixture());
+  const section = await screen.findByRole("region", { name: "Your organization's libraries" });
+  const names = (await within(section).findAllByTestId("attribution-org-entry")).map((el) => el.querySelector("h3")?.textContent);
+  expect(names).toEqual(["Plant", "Legacy"]);
+}
+
+/** T11 — no organization library: the section says so. */
+export async function theOrgSectionSaysWhenThereIsNone(): Promise<void> {
+  renderPageWithCatalog({ global: [], organization: [] });
+  const section = screen.getByRole("region", { name: "Your organization's libraries" });
+  expect(await within(section).findByText("No organization library")).toBeInTheDocument();
+}
+
+/** T12 — the catalog is read with no organization: every organization the caller reads. */
+export async function theCatalogIsReadUnscoped(): Promise<void> {
+  const fetchMock = renderPageWithCatalog(orgCatalogFixture());
+  await screen.findAllByTestId("attribution-org-entry");
+  const urls = fetchMock.mock.calls.map(([input]) => String(input)).filter((u) => u.includes("/mimic-symbol-libraries"));
+  expect(urls).toHaveLength(1);
+  expect(urls[0]?.endsWith("/api/v1/mimic-symbol-libraries")).toBe(true);
+}
+
+/** T13 — the organization section leaves the global list at seven entries. */
+export async function theOrgSectionIsNotAGlobalEntry(): Promise<void> {
+  renderPageWithCatalog(orgCatalogFixture());
+  await screen.findAllByTestId("attribution-org-entry");
+  expect(screen.getAllByTestId("attribution-entry")).toHaveLength(7);
 }
 
 /** T1 — the page names itself. */

@@ -1,7 +1,12 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useEffect, useReducer, useState } from "react";
+import { useEffect, useMemo, useReducer, useState } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
-import type { MimicLayoutDto } from "@bms/shared";
+import type {
+  MimicLayoutDto,
+  MimicOrgSymbolDto,
+  MimicSymbolLibrariesResponse,
+  MimicSymbolLibrarySelection,
+} from "@bms/shared";
 import { MIMIC_LAYOUT_STALE_MESSAGE, mimicPresetSchema } from "@bms/shared/contracts";
 
 import { fetchAdminOrganizations } from "../../api/admin/organizations";
@@ -12,9 +17,11 @@ import { MimicEditorInspector } from "../../components/mimic-editor/inspector";
 import { MimicEditorPalette } from "../../components/mimic-editor/palette";
 import { PageHeader } from "../../components/page-header";
 import { SectionCard } from "../../components/section-card";
+import { useMimicSymbolLibraries } from "../../hooks/use-mimic-symbol-libraries";
 import { canManageMimicLayouts } from "../../lib/admin-access";
 import { ApiError } from "../../lib/api-error";
 import { apiErrorMessage } from "../../lib/api-error-message";
+import { catalogOrgSymbols } from "../../lib/mimic-symbols";
 import {
   editorReducer,
   emptyEditorLayout,
@@ -94,6 +101,11 @@ function NewLayoutEditor() {
     }
   }, [organizations, organizationId]);
 
+  // The catalog of the chosen organization; no read starts until one is chosen.
+  const catalogQ = useMimicSymbolLibraries(organizationId === "" ? undefined : organizationId, {
+    enabled: organizationId !== "",
+  });
+
   const saveM = useMutation({
     mutationFn: (layout: EditorLayout) => createMimicLayout({ ...toWriteBody(layout), organizationId }),
     onSuccess: async (saved: MimicLayoutDto) => {
@@ -113,6 +125,9 @@ function NewLayoutEditor() {
       stale={false}
       canSave={organizationId !== ""}
       onSave={(layout) => saveM.mutate(layout)}
+      catalog={catalogQ.data ?? null}
+      storedOrgSymbols={NO_ORG_SYMBOLS}
+      storedLibraries={NO_LIBRARIES}
       organization={{
         options: organizations.map((org) => ({ id: org.id, label: `${org.code} — ${org.name}` })),
         value: organizationId,
@@ -133,6 +148,10 @@ function StoredLayoutEditor({ layoutId }: { layoutId: string }) {
     queryFn: () => fetchMimicLayout(layoutId),
     refetchOnWindowFocus: false,
   });
+
+  // The catalog of the layout's own organization, read once the layout is (before any early return).
+  const layoutOrganizationId = layoutQ.data?.organizationId;
+  const catalogQ = useMimicSymbolLibraries(layoutOrganizationId, { enabled: layoutOrganizationId !== undefined });
 
   // The version is taken at the FIRST load and at an explicit Reload only. A background refetch
   // that adopted a newer version would let the next PUT overwrite another author's save.
@@ -205,10 +224,19 @@ function StoredLayoutEditor({ layoutId }: { layoutId: string }) {
         stale={stale}
         canSave={version !== null}
         onSave={(layout) => saveM.mutate(layout)}
+        catalog={catalogQ.data ?? null}
+        storedOrgSymbols={layoutQ.data.orgSymbols}
+        storedLibraries={layoutQ.data.symbolLibraries}
       />
     </>
   );
 }
+
+/** A new layout embeds no organization symbol. */
+const NO_ORG_SYMBOLS: readonly MimicOrgSymbolDto[] = [];
+
+/** A new layout has no stored libraries, so the kept exemption covers none (review fix). */
+const NO_LIBRARIES: readonly MimicSymbolLibrarySelection[] = [];
 
 type LayoutEditorProps = {
   initial: EditorLayout;
@@ -218,11 +246,45 @@ type LayoutEditorProps = {
   canSave: boolean;
   onSave: (layout: EditorLayout) => void;
   organization?: Parameters<typeof MimicEditorInspector>[0]["organization"];
+  /** The organization's catalog, or `null` while it loads: the static tabs show meanwhile (R13). */
+  catalog: MimicSymbolLibrariesResponse | null;
+  /** The stored layout's embedded `orgSymbols` — its retired symbols included. */
+  storedOrgSymbols: readonly MimicOrgSymbolDto[];
+  /** The stored layout's `symbolLibraries`: the only non-live ones the inspector locks. */
+  storedLibraries: readonly MimicSymbolLibrarySelection[];
 };
 
-function LayoutEditor({ initial, saving, saveError, stale, canSave, onSave, organization }: LayoutEditorProps) {
+/**
+ * What the canvas draws organization units from: the stored layout's embedded symbols, then the
+ * catalog's by key (the catalog is the fresher copy). A unit whose key neither holds draws the
+ * fallback glyph.
+ */
+function mergeOrgSymbols(
+  stored: readonly MimicOrgSymbolDto[],
+  catalog: MimicSymbolLibrariesResponse | null,
+): readonly MimicOrgSymbolDto[] {
+  const byKey = new Map<string, MimicOrgSymbolDto>();
+  for (const symbol of stored) byKey.set(symbol.key, symbol);
+  for (const symbol of catalogOrgSymbols(catalog)) byKey.set(symbol.key, symbol);
+  return [...byKey.values()];
+}
+
+function LayoutEditor({
+  initial,
+  saving,
+  saveError,
+  stale,
+  canSave,
+  onSave,
+  organization,
+  catalog,
+  storedOrgSymbols,
+  storedLibraries,
+}: LayoutEditorProps) {
   const [state, dispatch] = useReducer(editorReducer, initial, initialEditorState);
   const [pipeMode, setPipeMode] = useState(false);
+  // Memoised: a new array each render would re-run the canvas's own geometry memo every time.
+  const orgSymbols = useMemo(() => mergeOrgSymbols(storedOrgSymbols, catalog), [storedOrgSymbols, catalog]);
 
   // Keyboard (ADR 0081 decision 7). `keyboardAction` yields to inputs, selects and textareas,
   // so typing in the inspector never moves a node.
@@ -248,7 +310,7 @@ function LayoutEditor({ initial, saving, saveError, stale, canSave, onSave, orga
     <div className="grid gap-3 lg:grid-cols-[14rem_minmax(0,1fr)_16rem]">
       <SectionCard title="Palette" bodyClassName="p-3">
         <MimicEditorPalette
-          onAddUnit={(symbol) => dispatch({ type: "add-unit", symbol })}
+          onAddUnit={(symbol, label) => dispatch({ type: "add-unit", symbol, label })}
           onAddPanel={() => dispatch({ type: "add-panel" })}
           onAddLabel={() => dispatch({ type: "add-label" })}
           pipeMode={pipeMode}
@@ -260,6 +322,7 @@ function LayoutEditor({ initial, saving, saveError, stale, canSave, onSave, orga
           canDelete={selected !== null}
           onDelete={() => dispatch({ type: "delete" })}
           libraries={state.layout.symbolLibraries}
+          catalog={catalog}
         />
       </SectionCard>
       <SectionCard title={state.layout.name} bodyClassName="p-3 space-y-3">
@@ -282,7 +345,7 @@ function LayoutEditor({ initial, saving, saveError, stale, canSave, onSave, orga
             {saveError}
           </p>
         ) : null}
-        <MimicEditorCanvas state={state} dispatch={dispatch} pipeMode={pipeMode} />
+        <MimicEditorCanvas state={state} dispatch={dispatch} pipeMode={pipeMode} orgSymbols={orgSymbols} />
       </SectionCard>
       <SectionCard title="Inspector" bodyClassName="p-3">
         <MimicEditorInspector
@@ -291,6 +354,8 @@ function LayoutEditor({ initial, saving, saveError, stale, canSave, onSave, orga
           onLayoutChange={(patch) => dispatch({ type: "update-layout", patch })}
           onNodeChange={(key, patch) => dispatch({ type: "update-node", key, patch })}
           organization={organization}
+          catalog={catalog}
+          storedLibraries={storedLibraries}
         />
       </SectionCard>
     </div>

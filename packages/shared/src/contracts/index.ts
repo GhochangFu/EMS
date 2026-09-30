@@ -38,6 +38,8 @@ export * from "./mimic";
 export * from "./mimic-config";
 export * from "./mimic-layouts";
 export * from "./mimic-shapes";
+export * from "./mimic-symbol-libraries";
+export * from "./mimic-symbol-library-catalog";
 export type * from "./schema-types";
 export * from "./notifications";
 export * from "./onboarding";

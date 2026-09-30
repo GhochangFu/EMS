@@ -6,6 +6,14 @@ import { MDI_SYMBOL_KEYS } from "../mimic-symbol-libraries/mdi.generated";
 import { QET_SYMBOL_KEYS } from "../mimic-symbol-libraries/qet.generated";
 import { TABLER_SYMBOL_KEYS } from "../mimic-symbol-libraries/tabler.generated";
 import { WMPID_SYMBOL_KEYS } from "../mimic-symbol-libraries/wmpid.generated";
+import { mimicShapeSchema } from "./mimic-shapes";
+import {
+  MAX_MIMIC_SYMBOL_SHAPES,
+  mimicOrgLibraryKeySchema,
+  mimicOrgSymbolKeySchema,
+  mimicSymbolStyleSchema,
+  mimicViewBoxSchema,
+} from "./mimic-symbol-libraries";
 
 /**
  * `F3.32c` / ADR 0081 — the mimic layout library (`/api/v1/mimic-layouts`) response contracts
@@ -111,7 +119,7 @@ export const MIMIC_SYMBOL_GROUP_CODES = [
 export type MimicSymbolGroupCode = (typeof MIMIC_SYMBOL_GROUP_CODES)[number];
 
 /**
- * Every symbol a unit can draw with: the core keys, then each library's curated keys in library
+ * Every static symbol a unit can draw with: the core keys, then each library's curated keys in library
  * order (ADR 0084 decisions 2 and 7). A core key is bare, every other key is
  * `<library>:<name>`. An unknown key is a 400 here, before it reaches
  * `mimic_layout_nodes_symbol_fkey`. The library keys are generated
@@ -119,7 +127,7 @@ export type MimicSymbolGroupCode = (typeof MIMIC_SYMBOL_GROUP_CODES)[number];
  * them with migration `0090`'s rows. The refusal message is short: Zod's default lists every
  * option, about 7 KB for each refused symbol.
  */
-export const mimicSymbolSchema = z.enum(
+export const mimicStaticSymbolSchema = z.enum(
   [
     ...mimicCoreSymbolSchema.options,
     ...TABLER_SYMBOL_KEYS,
@@ -131,6 +139,42 @@ export const mimicSymbolSchema = z.enum(
   ],
   { errorMap: () => ({ message: "Unknown mimic symbol" }) },
 );
+
+/**
+ * `F3.32f` slice 3 / ADR 0086 decision 2 (amends ADR 0084 decision 7) — a unit's symbol is a
+ * static key or an organization key, `org.<code>:<name>`. Whether an organization key exists in
+ * the caller's organization is the service's check, then the composite foreign key's. The
+ * refusal stays one short message.
+ */
+export const mimicSymbolSchema = z.union([mimicStaticSymbolSchema, mimicOrgSymbolKeySchema], {
+  errorMap: () => ({ message: "Unknown mimic symbol" }),
+});
+
+/** A layout's chosen library: a static code, or `org.<code>` for an organization library. */
+export const mimicSymbolLibrarySelectionSchema = z.union([mimicSymbolLibraryCodeSchema, mimicOrgLibraryKeySchema], {
+  errorMap: () => ({ message: "Unknown symbol library" }),
+});
+
+/**
+ * One organization symbol as stored and served (ADR 0086 decisions 6 and 7): its geometry, re-checked
+ * on the way out by `mimicShapeSchema` — seven tags, the attribute list, each value in its
+ * grammar — because a row can reach the table by a path other than the upload. `style` is its
+ * library's. A layout read embeds the ones its units draw, retired ones included.
+ */
+export const mimicOrgSymbolDtoSchema = z.object({
+  id: z.string().uuid(),
+  libraryId: z.string().uuid(),
+  key: mimicOrgSymbolKeySchema,
+  label: z.string(),
+  group: z.enum(MIMIC_SYMBOL_GROUP_CODES),
+  style: mimicSymbolStyleSchema,
+  viewBox: mimicViewBoxSchema,
+  shapes: z.array(mimicShapeSchema).max(MAX_MIMIC_SYMBOL_SHAPES),
+  active: z.boolean(),
+  sourceFilename: z.string(),
+  sha256: z.string().regex(/^[0-9a-f]{64}$/),
+  updatedAt: z.string(),
+});
 
 /** A panel's tint — a colour role, never a colour value (F3.65 R14/R20). */
 export const mimicPanelToneSchema = z.enum(["info", "neutral", "accent"]);
@@ -167,6 +211,8 @@ export const mimicLayoutGeometrySchema = z.object({
   canvasH: z.number().int(),
   nodes: z.array(mimicLayoutNodeSchema),
   pipes: z.array(mimicLayoutPipeSchema),
+  /** The organization symbols the units draw (`F3.32f` slice 3); `[]` when none. */
+  orgSymbols: z.array(mimicOrgSymbolDtoSchema),
 });
 
 /** One row of `GET /api/v1/mimic-layouts`. `unitCount` counts `kind = 'unit'` nodes. */
@@ -179,7 +225,7 @@ export const mimicLayoutSummarySchema = z.object({
   canvasH: z.number().int(),
   version: z.number().int(),
   unitCount: z.number().int(),
-  symbolLibraries: z.array(mimicSymbolLibraryCodeSchema),
+  symbolLibraries: z.array(mimicSymbolLibrarySelectionSchema),
   updatedAt: z.string(),
 });
 
@@ -192,9 +238,10 @@ export const mimicLayoutDtoSchema = z.object({
   canvasW: z.number().int(),
   canvasH: z.number().int(),
   version: z.number().int(),
-  symbolLibraries: z.array(mimicSymbolLibraryCodeSchema),
+  symbolLibraries: z.array(mimicSymbolLibrarySelectionSchema),
   nodes: z.array(mimicLayoutNodeSchema),
   pipes: z.array(mimicLayoutPipeSchema),
+  orgSymbols: z.array(mimicOrgSymbolDtoSchema),
   createdAt: z.string(),
   updatedAt: z.string(),
 });

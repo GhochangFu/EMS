@@ -9,9 +9,11 @@ import {
   domainPresetsDrawNoSink,
   domainPresetsDrawTheirGlyphs,
   emptyGeometryHoldsNothing,
+  layoutCarriesItsOrgSymbols,
   layoutPipesJoinUnitsOnly,
   layoutScalesByTheCell,
   layoutUnitsTakeTheirPanel,
+  presetCarriesNoOrgSymbols,
   presetPanelsAreTheF332bFrames,
   presetPipesPumpAndSinkAreTheF332bDrawing,
   presetUnitsAreTheF332bSlots,
@@ -72,5 +74,11 @@ describe("F3.32c U4 — mimic geometry", () => {
   });
   it("G17 a domain preset's units draw their glyphs", () => {
     domainPresetsDrawTheirGlyphs();
+  });
+  it("G18 a layout carries the organization symbols it embeds (F3.32f slice 3)", () => {
+    layoutCarriesItsOrgSymbols();
+  });
+  it("G19 a preset carries no organization symbol (F3.32f slice 3)", () => {
+    presetCarriesNoOrgSymbols();
   });
 });

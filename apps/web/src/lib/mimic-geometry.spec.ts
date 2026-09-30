@@ -1,7 +1,7 @@
 import { expect } from "vitest";
 
 import { mimicPresetSchema } from "@bms/shared/contracts";
-import { MIMIC_PRESETS, type MimicLayoutGeometryDto, type MimicLayoutNodeDto } from "@bms/shared";
+import { MIMIC_PRESETS, type MimicLayoutGeometryDto, type MimicLayoutNodeDto, type MimicOrgSymbolDto } from "@bms/shared";
 
 import { MIMIC_NODE_GLYPHS, MIMIC_NODE_SIZE, pipePath } from "./mimic";
 import {
@@ -148,6 +148,23 @@ export const LAYOUT: MimicLayoutGeometryDto = {
     { fromKey: "tank_a", toKey: "title" },
     { fromKey: "ghost", toKey: "out" },
   ],
+  orgSymbols: [],
+};
+
+/** `F3.32f` slice 3 — one organization symbol as a layout read embeds it (ADR 0086 decision 7). */
+export const ORG_SYMBOL: MimicOrgSymbolDto = {
+  id: "55555555-5555-4555-8555-555555555555",
+  libraryId: "66666666-6666-4666-8666-666666666666",
+  key: "org.plant:inlet",
+  label: "Inlet screen",
+  group: "water",
+  style: "stroke",
+  viewBox: [0, 0, 100, 50],
+  shapes: [["rect", { x: "10", y: "10", width: "80", height: "30" }]],
+  active: true,
+  sourceFilename: "inlet.svg",
+  sha256: "c".repeat(64),
+  updatedAt: "2026-09-30T00:00:00.000Z",
 };
 
 /** G8 — grid units × cell: the viewBox and every box are ten times the stored grid values. */
@@ -244,4 +261,16 @@ export function emptyGeometryHoldsNothing(): void {
     EMPTY_GEOMETRY.pumps.length,
   ]).toEqual([0, 0, 0, 0, 0]);
   expect(EMPTY_GEOMETRY.sink).toBeNull();
+  expect(EMPTY_GEOMETRY.orgSymbols).toEqual([]);
+}
+
+/** G18 — `F3.32f` slice 3: a layout's drawing carries the organization symbols it embeds. */
+export function layoutCarriesItsOrgSymbols(): void {
+  const g = layoutGeometry({ ...LAYOUT, orgSymbols: [ORG_SYMBOL] });
+  expect(g.orgSymbols).toEqual([ORG_SYMBOL]);
+}
+
+/** G19 — a preset draws no organization symbol. */
+export function presetCarriesNoOrgSymbols(): void {
+  expect(presetGeometry("water_train").orgSymbols).toEqual([]);
 }
