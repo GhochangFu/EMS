@@ -124,8 +124,8 @@ type WidgetCatalogEntry = {
 };
 
 /**
- * The six widget types, closed (ADR 0047 decision 2; `table` by ADR 0048 decision 5; `mimic` by
- * ADR 0079 decision 1). Label,
+ * The eleven widget types, closed (ADR 0047 decision 2; `table` by ADR 0048 decision 5; `mimic` by
+ * ADR 0079 decision 1; the five site widgets by `F3.73`). Label,
  * icon and default size are presentation and belong here; `points` and `sources` are validation
  * rules and are imported rather than restated (Amendment 2 §1).
  */
@@ -181,6 +181,50 @@ export const WIDGET_CATALOG: Readonly<Record<WidgetType, WidgetCatalogEntry>> = 
     defaultSize: { w: 12, h: 10 },
     points: WIDGET_POINT_CARDINALITY.mimic,
     sources: WIDGET_SOURCE_CARDINALITY.mimic,
+  },
+  // `F3.73` — the five site widgets. Each binds nothing (`{0, 0}` from `@bms/shared`): they draw
+  // the site-widgets read for their tab, so an author places and sizes them and binds no point.
+  // The default sizes are the plan's: a full-width strip for the legend and the class strip, a
+  // tall narrow rail, a small card, a list.
+  active_alarms_rail: {
+    label: "Active alarms rail",
+    // A bell: the alarm list beside the canvas, read at 24px.
+    iconPath: "M12 22a2 2 0 0 0 2-2h-4a2 2 0 0 0 2 2Zm6-6V11a6 6 0 0 0-4.5-5.8V4.5a1.5 1.5 0 0 0-3 0v.7A6 6 0 0 0 6 11v5l-2 2v1h16v-1l-2-2Z",
+    defaultSize: { w: 4, h: 6 },
+    points: WIDGET_POINT_CARDINALITY.active_alarms_rail,
+    sources: WIDGET_SOURCE_CARDINALITY.active_alarms_rail,
+  },
+  state_legend: {
+    label: "State legend",
+    // Three swatches with their labels — a legend.
+    iconPath: "M3 5h4v4H3V5Zm6 1h12v2H9V6Zm-6 5h4v4H3v-4Zm6 1h12v2H9v-2Zm-6 5h4v4H3v-4Zm6 1h12v2H9v-2Z",
+    defaultSize: { w: 12, h: 1 },
+    points: WIDGET_POINT_CARDINALITY.state_legend,
+    sources: WIDGET_SOURCE_CARDINALITY.state_legend,
+  },
+  asset_class_strip: {
+    label: "Asset class strip",
+    // A row of four cells, the strip itself.
+    iconPath: "M2 8h4v8H2V8Zm5 0h4v8H7V8Zm5 0h4v8h-4V8Zm5 0h4v8h-4V8Z",
+    defaultSize: { w: 12, h: 1 },
+    points: WIDGET_POINT_CARDINALITY.asset_class_strip,
+    sources: WIDGET_SOURCE_CARDINALITY.asset_class_strip,
+  },
+  module_summary_card: {
+    label: "Module summary card",
+    // A card with a header bar and an arrow out — it opens the tab it names.
+    iconPath: "M3 4h18v16H3V4Zm2 2v2h14V6H5Zm0 4v8h14v-8H5Zm9 2 3 2-3 2v-1.5H8v-1h6V12Z",
+    defaultSize: { w: 3, h: 3 },
+    points: WIDGET_POINT_CARDINALITY.module_summary_card,
+    sources: WIDGET_SOURCE_CARDINALITY.module_summary_card,
+  },
+  critical_systems_list: {
+    label: "Critical systems list",
+    // Three status dots with their rows — one row per group tab.
+    iconPath: "M3 5h3v3H3V5Zm5 .5h13v2H8v-2ZM3 10.5h3v3H3v-3Zm5 .5h13v2H8v-2ZM3 16h3v3H3v-3Zm5 .5h13v2H8v-2Z",
+    defaultSize: { w: 4, h: 4 },
+    points: WIDGET_POINT_CARDINALITY.critical_systems_list,
+    sources: WIDGET_SOURCE_CARDINALITY.critical_systems_list,
   },
 };
 

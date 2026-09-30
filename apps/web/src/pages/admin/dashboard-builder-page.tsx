@@ -265,6 +265,7 @@ export function DashboardBuilderPage({ user }: DashboardBuilderPageProps) {
             role={user.role}
             problems={problems.filter((problem) => problem.widget === selected)}
             organizationId={scope.organizationId}
+            tabs={[]}
             onChange={(patch) => updateWidget(selected, patch)}
             onRemove={() => removeWidget(selected)}
           />

@@ -3,6 +3,17 @@ import { afterEach, beforeEach, describe, it, vi } from "vitest";
 import { cleanup } from "@testing-library/react";
 
 import {
+  aModuleCardOffersTheDashboardsTabs,
+  aModuleCardOnADashboardWithNoTabsIsDisabledWithAHint,
+  aNonModuleCardHasNoTabSelect,
+  aRailRowsProblemRendersUnderTheRows,
+  aRailShowsItsRowsAtTheDefault,
+  aSiteWidgetHidesUnitDecimalsAndBoundPoints,
+  aStoredTabKeyTheDashboardNoLongerHasStaysSelected,
+  aTabProblemRendersUnderTheSelect,
+  choosingATabWritesItsKeyToTheConfig,
+  editingTheRailRowsWritesThemToTheConfig,
+  untickingSummaryWritesItToTheConfig,
   aLayoutSourceRowHidesThePresetSelect,
   aLayoutSourceRowShowsTheLayoutSelect,
   aLayoutSourceWithNoLayoutReportsTheProblem,
@@ -128,5 +139,60 @@ describe("F3.32 widget inspector — the plant mimic", () => {
 
   it("F3.32c: a stored layout id the list does not hold stays the select's value", async () => {
     await anUnlistedStoredLayoutStaysSelected();
+  });
+});
+
+describe("F3.73 widget inspector — the site widgets", () => {
+  beforeEach(() => {
+    stubFetch();
+    stubMimicLayouts();
+  });
+
+  afterEach(() => {
+    cleanup();
+  });
+
+  it("hides Unit, Decimals and both binding fields for each of the five", () => {
+    aSiteWidgetHidesUnitDecimalsAndBoundPoints();
+  });
+
+  it("shows the rail's Rows at the default of 8", () => {
+    aRailShowsItsRowsAtTheDefault();
+  });
+
+  it("writes an edited Rows value to railRows", async () => {
+    await editingTheRailRowsWritesThemToTheConfig();
+  });
+
+  it("writes the Alarm Summary checkbox to railShowSummary", async () => {
+    await untickingSummaryWritesItToTheConfig();
+  });
+
+  it("renders a railRows problem under the Rows field", () => {
+    aRailRowsProblemRendersUnderTheRows();
+  });
+
+  it("offers a module card the dashboard's tabs", () => {
+    aModuleCardOffersTheDashboardsTabs();
+  });
+
+  it("writes the chosen tab's key to targetTabKey", async () => {
+    await choosingATabWritesItsKeyToTheConfig();
+  });
+
+  it("disables the tab select with a hint when the dashboard has no tabs", () => {
+    aModuleCardOnADashboardWithNoTabsIsDisabledWithAHint();
+  });
+
+  it("keeps a stored tab key the dashboard no longer has as the select's value", () => {
+    aStoredTabKeyTheDashboardNoLongerHasStaysSelected();
+  });
+
+  it("renders a targetTabKey problem under the tab select", () => {
+    aTabProblemRendersUnderTheSelect();
+  });
+
+  it("offers no tab select on a value tile (the control for the module card cases)", () => {
+    aNonModuleCardHasNoTabSelect();
   });
 });

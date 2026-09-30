@@ -1,4 +1,11 @@
-import { DASHBOARD_GRID, METRIC_CATALOG, MIMIC_PRESETS, mimicPresetSchema } from "@bms/shared";
+import {
+  DASHBOARD_GRID,
+  MAX_SITE_ALARM_ROWS,
+  METRIC_CATALOG,
+  MIMIC_PRESETS,
+  mimicPresetSchema,
+  widgetTypeBindsNothing,
+} from "@bms/shared";
 import type { AssetPointPickerRow, MetricCatalogKey, MimicPreset, UserRole, WidgetPointRole } from "@bms/shared";
 
 import { widgetRowAfterRemovingSource } from "../../lib/dashboard-builder-form";
@@ -31,6 +38,10 @@ type WidgetInspectorProps = {
    * silently rendering the master-data chain to an `asset_group_admin`. */
   role: UserRole;
   organizationId: string;
+  /** `F3.73` — the dashboard's tabs, for a module summary card's target select. Required, so a
+   * host that forgets it fails `tsc` rather than silently disabling the select; `[]` is a
+   * dashboard with no tabs (a new one, or a legacy canvas), where the select says so. */
+  tabs: readonly { readonly key: string; readonly label: string }[];
   onChange: (patch: Partial<DashboardWidgetRow>) => void;
   onRemove: () => void;
 };
@@ -53,7 +64,7 @@ type WidgetInspectorProps = {
  * mix of both roles, so a role selector would only ever offer one correct
  * answer — not a control worth adding.
  */
-export function WidgetInspector({ row, problems, role, organizationId, onChange, onRemove }: WidgetInspectorProps) {
+export function WidgetInspector({ row, problems, role, organizationId, tabs, onChange, onRemove }: WidgetInspectorProps) {
   const problemFor = (field: string): string | undefined =>
     problems.find((problem) => problem.field === field)?.message;
   const cardinality = WIDGET_CATALOG[row.widgetType].points;
@@ -196,9 +207,10 @@ export function WidgetInspector({ row, problems, role, organizationId, onChange,
       {/*
         `F3.32` / plan D8 — a mimic's config has no `unit` or `decimals`: it draws several
         nodes, each with its own points and units, so one widget-level value would apply to
-        nothing and the API's `.strict()` would refuse it.
+        nothing and the API's `.strict()` would refuse it. `F3.73`: the five site widgets
+        likewise — a type that binds nothing has no value to format.
       */}
-      {row.widgetType !== "mimic" ? (
+      {!widgetTypeBindsNothing(row.widgetType) ? (
         <div className="grid gap-3 md:grid-cols-2">
           <Field label="Unit" error={problemFor("unit")}>
             <input
@@ -275,6 +287,60 @@ export function WidgetInspector({ row, problems, role, organizationId, onChange,
               </option>
             ))}
           </select>
+        </Field>
+      ) : null}
+
+      {row.widgetType === "active_alarms_rail" ? (
+        <div className="grid gap-3 md:grid-cols-2">
+          <Field label="Rows" error={problemFor("railRows")}>
+            <input
+              type="text"
+              inputMode="numeric"
+              value={row.config.railRows ?? ""}
+              placeholder={`1 to ${MAX_SITE_ALARM_ROWS}`}
+              onChange={(event) => updateConfig({ railRows: event.target.value })}
+              className="surface-field w-full px-2 py-1.5 text-xs"
+            />
+          </Field>
+          <label className="flex items-center gap-2 text-xs text-ink">
+            <input
+              type="checkbox"
+              checked={row.config.railShowSummary ?? true}
+              onChange={(event) => updateConfig({ railShowSummary: event.target.checked })}
+            />
+            Show the Alarm Summary tab
+          </label>
+        </div>
+      ) : null}
+
+      {/*
+        `F3.73` — the card's target is one of THIS dashboard's tabs (the API refuses any other key).
+        A dashboard with no tabs offers none, so the select is disabled with the reason beside it;
+        the tab editor is PR5's, and a tab added there appears here on the next render.
+      */}
+      {row.widgetType === "module_summary_card" ? (
+        <Field label="Links to tab" error={problemFor("targetTabKey")}>
+          <select
+            value={row.config.targetTabKey ?? ""}
+            disabled={tabs.length === 0}
+            onChange={(event) => updateConfig({ targetTabKey: event.target.value || undefined })}
+            className="surface-field w-full px-2 py-1.5 text-xs"
+          >
+            {row.config.targetTabKey === undefined ? <option value="">Choose a tab</option> : null}
+            {/* A stored key the dashboard no longer has keeps its own option, so the select never
+                shows another tab's name; the API refuses the save until the author re-chooses. */}
+            {row.config.targetTabKey !== undefined && !tabs.some((tab) => tab.key === row.config.targetTabKey) ? (
+              <option value={row.config.targetTabKey}>{row.config.targetTabKey}</option>
+            ) : null}
+            {tabs.map((tab) => (
+              <option key={tab.key} value={tab.key}>
+                {tab.label}
+              </option>
+            ))}
+          </select>
+          {tabs.length === 0 ? (
+            <p className="mt-1 text-[11px] text-ink-muted">This dashboard has no tabs yet, so there is nothing to link to.</p>
+          ) : null}
         </Field>
       ) : null}
 

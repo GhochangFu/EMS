@@ -1,0 +1,285 @@
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { cleanup, render, screen, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import type { ReactElement } from "react";
+import { MemoryRouter } from "react-router-dom";
+import { expect, vi } from "vitest";
+
+import type { AlarmListItem, AlarmSeverityDto, AssetRoleSummaryItem, SiteWidgetTab, SiteWidgetsResponse } from "@bms/shared";
+
+import { ActiveAlarmsRailWidget } from "./active-alarms-rail-widget";
+import { AssetClassStripWidget } from "./asset-class-strip-widget";
+import { CriticalSystemsListWidget } from "./critical-systems-list-widget";
+import { ModuleSummaryCardWidget } from "./module-summary-card-widget";
+import { StateLegendWidget } from "./state-legend-widget";
+
+/**
+ * `F3.73` (plan Task 3.5) — the five site widgets, presentation only. Each renders from a fixture
+ * response; nothing here reads. `StateLegend` reads the severity vocabulary through a module mock
+ * (an unmocked fetch would reach the real API on :4000), and the router is a `MemoryRouter`.
+ *
+ * Every absence sits beside a positive control in the same fixture, so a missing string is a
+ * decision about the widget rather than a render that produced nothing.
+ */
+
+vi.mock("../../api/vocabularies", () => ({
+  vocabulariesQueryKey: ["vocabularies"],
+  fetchVocabularies: () => Promise.resolve({ alarmSeverities: [] }),
+}));
+
+const SEVERITIES: AlarmSeverityDto[] = [
+  { code: "warning", label: "Warning", tone: "warning", rank: 20, active: true },
+  { code: "critical", label: "Critical", tone: "critical", rank: 40, active: true },
+];
+
+const SITE_PATH = "/control-room/site/loc-1";
+
+function alarm(id: string, assetCode: string, message: string): AlarmListItem {
+  return {
+    id,
+    assetId: `asset-${id}`,
+    ruleKey: null,
+    ruleId: null,
+    severity: "critical",
+    message,
+    raisedAt: "2026-09-30T10:15:00.000Z",
+    acknowledgedAt: null,
+    acknowledgedBy: null,
+    clearedAt: null,
+    assetCode,
+    assetName: assetCode,
+    siteName: "Site",
+  };
+}
+
+const ROLE: AssetRoleSummaryItem = {
+  code: "ups",
+  label: "UPS",
+  count: 4,
+  worstSeverity: { code: "critical", label: "Critical", tone: "critical", rank: 40 },
+  worstCount: 2,
+  offlineCount: 1,
+};
+
+function tab(tabKey: string, label: string, status: SiteWidgetTab["status"]): SiteWidgetTab {
+  return { tabKey, label, assetGroupId: "22222222-2222-4222-8222-222222222222", status };
+}
+
+const UPS_TAB = tab("ups", "UPS Monitoring", {
+  worstSeverity: "critical",
+  tone: "critical",
+  activeAlarms: 3,
+  offlineAssets: 1,
+  assets: 6,
+});
+const HVAC_TAB = tab("hvac", "HVAC System", {
+  worstSeverity: null,
+  tone: "ok",
+  activeAlarms: 0,
+  offlineAssets: 0,
+  assets: 9,
+});
+const HIDDEN_TAB = tab("env", "Environment", null);
+
+function response(overrides: Partial<SiteWidgetsResponse> = {}): SiteWidgetsResponse {
+  return {
+    dashboardId: "11111111-1111-4111-8111-111111111111",
+    tabKey: null,
+    resolvedAt: "2026-09-30T10:20:00.000Z",
+    scope: { assetCount: 15 },
+    alarms: {
+      active: [alarm("a1", "UPS-01", "Bypass open"), alarm("a2", "UPS-02", "Fan failure"), alarm("a3", "HVAC-01", "High temp")],
+      summary: [
+        { code: "warning", label: "Warning", tone: "warning", rank: 20, count: 2 },
+        { code: "critical", label: "Critical", tone: "critical", rank: 40, count: 3 },
+      ],
+    },
+    roles: [ROLE],
+    tabs: [UPS_TAB, HVAC_TAB, HIDDEN_TAB],
+    ...overrides,
+  };
+}
+
+function wrap(ui: ReactElement): ReactElement {
+  return (
+    <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+      <MemoryRouter>{ui}</MemoryRouter>
+    </QueryClientProvider>
+  );
+}
+
+export function cleanupWidgets(): void {
+  cleanup();
+}
+
+const COMMON = { title: "Widget", status: "ready" as const, severities: SEVERITIES };
+
+// ---------------------------------------------------------------------------------- rail
+
+export function theRailListsTheActiveAlarmsOfItsTab(): void {
+  render(wrap(<ActiveAlarmsRailWidget {...COMMON} data={response()} config={{ rows: 8, showSummary: true }} />));
+  expect(screen.getByText("UPS-01")).toBeInTheDocument();
+  expect(screen.getByText("Bypass open")).toBeInTheDocument();
+  expect(screen.getByText("HVAC-01")).toBeInTheDocument();
+}
+
+/** `rows` caps the list: two rows of three alarms, with the third absent beside the two present. */
+export function theRailDrawsAtMostItsConfiguredRows(): void {
+  render(wrap(<ActiveAlarmsRailWidget {...COMMON} data={response()} config={{ rows: 2, showSummary: true }} />));
+  expect(screen.getByText("UPS-01")).toBeInTheDocument();
+  expect(screen.getByText("UPS-02")).toBeInTheDocument();
+  expect(screen.queryByText("HVAC-01")).toBeNull();
+}
+
+/** The summary tab totals the per-severity counts (2 + 3) and lists the most urgent first. */
+export async function theRailSummaryTabShowsTheTotal(): Promise<void> {
+  render(wrap(<ActiveAlarmsRailWidget {...COMMON} data={response()} config={{ rows: 8, showSummary: true }} />));
+  await userEvent.click(screen.getByRole("tab", { name: "Alarm Summary" }));
+  expect(screen.getByTestId("alarm-summary-total").textContent).toBe("5");
+  const items = within(screen.getByRole("list", { name: "Active alarms by severity" })).getAllByRole("listitem");
+  expect(items.map((item) => item.textContent)).toEqual(["Critical3", "Warning2"]);
+}
+
+export function theRailHidesTheSummaryTabWhenConfiguredOff(): void {
+  render(wrap(<ActiveAlarmsRailWidget {...COMMON} data={response()} config={{ rows: 8, showSummary: false }} />));
+  expect(screen.getByRole("tab", { name: "Active Alarms" })).toBeInTheDocument();
+  expect(screen.queryByRole("tab", { name: "Alarm Summary" })).toBeNull();
+}
+
+/** Turning the summary off while it is the selected tab falls back to the alarms, not a blank panel. */
+export async function aRailOnTheSummaryTabFallsBackWhenTheSummaryIsTurnedOff(): Promise<void> {
+  const widget = (showSummary: boolean) =>
+    wrap(<ActiveAlarmsRailWidget {...COMMON} data={response()} config={{ rows: 8, showSummary }} />);
+  const { rerender } = render(widget(true));
+  await userEvent.click(screen.getByRole("tab", { name: "Alarm Summary" }));
+  expect(screen.queryByText("UPS-01")).toBeNull();
+  rerender(widget(false));
+  expect(screen.getByText("UPS-01")).toBeInTheDocument();
+}
+
+export function theRailSaysSoWhenNoAlarmIsActive(): void {
+  render(
+    wrap(
+      <ActiveAlarmsRailWidget
+        {...COMMON}
+        data={response({ alarms: { active: [], summary: [] } })}
+        config={{ rows: 8, showSummary: true }}
+      />,
+    ),
+  );
+  expect(screen.getByText("No active alarms")).toBeInTheDocument();
+}
+
+// ---------------------------------------------------------------------------------- legend, strip
+
+export async function theLegendNamesNormalAndOffline(): Promise<void> {
+  render(wrap(<StateLegendWidget title="Legend" status="ready" />));
+  expect(await screen.findByText("Normal")).toBeInTheDocument();
+  expect(screen.getByText("Offline")).toBeInTheDocument();
+}
+
+export function theStripDrawsOnePillPerRole(): void {
+  render(wrap(<AssetClassStripWidget title="Classes" status="ready" data={response()} />));
+  expect(screen.getByText("UPS 4 · 2 Critical · 1 Offline")).toBeInTheDocument();
+}
+
+export function theStripSaysSoWhenNoRoleIsInScope(): void {
+  render(wrap(<AssetClassStripWidget title="Classes" status="ready" data={response({ roles: [] })} />));
+  expect(screen.getByText("No asset classes in scope")).toBeInTheDocument();
+}
+
+// ---------------------------------------------------------------------------------- module card
+
+function card(data: SiteWidgetsResponse, targetTabKey: string, sitePath: string | null = SITE_PATH): void {
+  render(wrap(<ModuleSummaryCardWidget {...COMMON} data={data} config={{ targetTabKey }} sitePath={sitePath} />));
+}
+
+export function theCardShowsItsTabsStatusAndCounts(): void {
+  card(response(), "ups");
+  expect(screen.getByText("Critical")).toBeInTheDocument();
+  expect(screen.getByText("3 alarms · 1 offline · 6 assets")).toBeInTheDocument();
+}
+
+/**
+ * The link names the tab the CONFIG chose. Two configs, two targets: a card that hardcoded
+ * `overview` — or the first tab — would give one of them the wrong href.
+ */
+export function theCardLinksToItsTargetTab(): void {
+  card(response(), "ups");
+  expect(screen.getByRole("link", { name: "Open UPS Monitoring" }).getAttribute("href")).toBe(`${SITE_PATH}/ups`);
+  cleanup();
+  card(response(), "hvac");
+  expect(screen.getByRole("link", { name: "Open HVAC System" }).getAttribute("href")).toBe(`${SITE_PATH}/hvac`);
+}
+
+/** A card off the site page has no site path, so it draws its numbers and no link. */
+export function theCardDrawsNoLinkOffTheSitePage(): void {
+  card(response(), "ups", null);
+  expect(screen.getByText("3 alarms · 1 offline · 6 assets")).toBeInTheDocument();
+  expect(screen.queryByRole("link")).toBeNull();
+}
+
+/** A healthy tab reads "Normal" — not a blank pill — beside the critical one above. */
+export function aCardOnAHealthyTabReadsNormal(): void {
+  card(response(), "hvac");
+  expect(screen.getByText("Normal")).toBeInTheDocument();
+  expect(screen.getByText("0 alarms · 0 offline · 9 assets")).toBeInTheDocument();
+}
+
+/** A tab the caller cannot read says so — never a zero that would read as healthy. */
+export function aCardOnAnUnreadableTabSaysOutsideScope(): void {
+  card(response(), "env");
+  expect(screen.getByText("Outside scope")).toBeInTheDocument();
+  expect(screen.queryByText(/alarms ·/)).toBeNull();
+}
+
+/** A target the read does not list (a tab since deleted) also says so, and still links by key. */
+export function aCardOnAnUnlistedTabSaysOutsideScope(): void {
+  card(response(), "gone");
+  expect(screen.getByText("Outside scope")).toBeInTheDocument();
+}
+
+// ---------------------------------------------------------------------------------- list
+
+export function theListShowsOneRowPerGroupTab(): void {
+  render(wrap(<CriticalSystemsListWidget {...COMMON} data={response()} sitePath={SITE_PATH} />));
+  const rows = within(screen.getByRole("list", { name: "Critical systems" })).getAllByRole("listitem");
+  expect(rows).toHaveLength(3);
+  expect(within(rows[0]).getByText("3 alarms · 1 offline · 6 assets")).toBeInTheDocument();
+  expect(within(rows[0]).getByText("Critical")).toBeInTheDocument();
+  expect(within(rows[1]).getByText("Normal")).toBeInTheDocument();
+}
+
+/** The positive control is the first two rows above; this one is the row with no status. */
+export function theListShowsOutsideScopeForATabWithNoStatus(): void {
+  render(wrap(<CriticalSystemsListWidget {...COMMON} data={response()} sitePath={SITE_PATH} />));
+  const rows = within(screen.getByRole("list", { name: "Critical systems" })).getAllByRole("listitem");
+  expect(within(rows[2]).getByText("Outside scope")).toBeInTheDocument();
+  expect(within(rows[0]).queryByText("Outside scope")).toBeNull();
+}
+
+export function theListLinksEachRowToItsTab(): void {
+  render(wrap(<CriticalSystemsListWidget {...COMMON} data={response()} sitePath={SITE_PATH} />));
+  expect(screen.getByRole("link", { name: "UPS Monitoring" }).getAttribute("href")).toBe(`${SITE_PATH}/ups`);
+  expect(screen.getByRole("link", { name: "HVAC System" }).getAttribute("href")).toBe(`${SITE_PATH}/hvac`);
+}
+
+export function theListSaysSoWhenTheDashboardHasNoGroupTab(): void {
+  render(wrap(<CriticalSystemsListWidget {...COMMON} data={response({ tabs: [] })} sitePath={SITE_PATH} />));
+  expect(screen.getByText("No system tabs")).toBeInTheDocument();
+}
+
+// ---------------------------------------------------------------------------------- frame
+
+/** Not ready: the frame's placeholder replaces every body — the same rule as the other types. */
+export function aLoadingSiteWidgetDrawsThePlaceholderNotItsBody(): void {
+  render(wrap(<CriticalSystemsListWidget {...COMMON} status="loading" data={undefined} sitePath={SITE_PATH} />));
+  expect(screen.getByText("Loading…")).toBeInTheDocument();
+  expect(screen.queryByText("No system tabs")).toBeNull();
+}
+
+export function aFailedSiteWidgetDrawsTheErrorLine(): void {
+  render(wrap(<ModuleSummaryCardWidget {...COMMON} status="error" data={undefined} config={{ targetTabKey: "ups" }} sitePath={SITE_PATH} />));
+  expect(screen.getByText("Could not load widget.")).toBeInTheDocument();
+  expect(screen.queryByText("Outside scope")).toBeNull();
+}

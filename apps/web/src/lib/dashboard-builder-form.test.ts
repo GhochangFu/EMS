@@ -1,6 +1,10 @@
 import { describe, it } from "vitest";
 
 import {
+  runBlankRailRowTests,
+  runSiteWidgetsHaveNoScopeOrBindingProblemTests,
+  runSiteWidgetsOfferedOnEveryScopeTests,
+  runSiteWidgetsRoundTripTests,
   runBlankDashboardWidgetRowTests,
   runBuildPutWidgetsPayloadTests,
   runBuilderHasChangedTests,
@@ -163,5 +167,21 @@ describe("dashboard builder form", () => {
 
   it("F3.73: a widget with no tab on a tabbed dashboard is flagged", () => {
     runWidgetOffEveryTabIsFlaggedTests();
+  });
+
+  it("F3.73: the five site widgets are offered on every scope kind", () => {
+    runSiteWidgetsOfferedOnEveryScopeTests();
+  });
+
+  it("F3.73: a site widget on a location dashboard has no scope or binding problem", () => {
+    runSiteWidgetsHaveNoScopeOrBindingProblemTests();
+  });
+
+  it("F3.73: a new rail starts on the contract defaults", () => {
+    runBlankRailRowTests();
+  });
+
+  it("F3.73: stored site widgets re-save their own config and an unedited set is no change", () => {
+    runSiteWidgetsRoundTripTests();
   });
 });

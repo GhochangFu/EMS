@@ -1,4 +1,4 @@
-import type { DashboardWidgetDto, PointAggregateStats, RollupCoverage } from "@bms/shared";
+import type { AlarmSeverityDto, DashboardWidgetDto, PointAggregateStats, RollupCoverage } from "@bms/shared";
 
 import { EMPTY_GEOMETRY, presetGeometry } from "../../lib/mimic-geometry";
 import type { DatasetRow, WidgetSeries, WidgetStatus } from "../../lib/widget-catalog";
@@ -6,6 +6,11 @@ import { widgetTitle } from "../../lib/widget-value";
 import { ChartWidget } from "./chart-widget";
 import { MimicWidget, NO_LIVE_READINGS, NO_MIMIC_NODES } from "./mimic-widget";
 import { RadialGaugeWidget } from "./radial-gauge-widget";
+import { ActiveAlarmsRailWidget } from "./active-alarms-rail-widget";
+import { AssetClassStripWidget } from "./asset-class-strip-widget";
+import { CriticalSystemsListWidget } from "./critical-systems-list-widget";
+import { ModuleSummaryCardWidget } from "./module-summary-card-widget";
+import { StateLegendWidget } from "./state-legend-widget";
 import { TankLevelWidget } from "./tank-level-widget";
 import { TableWidget } from "./table-widget";
 import { ValueTileWidget } from "./value-tile-widget";
@@ -140,6 +145,7 @@ const NO_SERIES: readonly WidgetSeries[] = [];
 // reference, which defeats the memoisation of any child that compares props by identity.
 const NO_COLUMNS: readonly string[] = [];
 const NO_ROWS: readonly DatasetRow[] = [];
+const NO_SEVERITIES: readonly AlarmSeverityDto[] = [];
 
 /**
  * The exhaustive dispatcher (ADR 0047 decision 2). Two compiler gates, not
@@ -230,6 +236,33 @@ export function DashboardWidget({ widget, data, now }: DashboardWidgetProps) {
           nodes={NO_MIMIC_NODES}
           readings={NO_LIVE_READINGS}
         />
+      );
+    // `F3.73` — the five site widgets bind nothing and read one response, which this dispatcher
+    // does not have: the live canvas branches to `SiteWidgetLive` before it gets here
+    // (`dashboard-widget-live.tsx`). Drawn here they show their empty state, no link and no
+    // vocabulary, rather than a blank card.
+    case "active_alarms_rail":
+      return (
+        <ActiveAlarmsRailWidget title={title} status={status} data={undefined} severities={NO_SEVERITIES} config={widget.config} />
+      );
+    case "state_legend":
+      return <StateLegendWidget title={title} status={status} />;
+    case "asset_class_strip":
+      return <AssetClassStripWidget title={title} status={status} data={undefined} />;
+    case "module_summary_card":
+      return (
+        <ModuleSummaryCardWidget
+          title={title}
+          status={status}
+          data={undefined}
+          severities={NO_SEVERITIES}
+          config={widget.config}
+          sitePath={null}
+        />
+      );
+    case "critical_systems_list":
+      return (
+        <CriticalSystemsListWidget title={title} status={status} data={undefined} severities={NO_SEVERITIES} sitePath={null} />
       );
     default: {
       const unreachable: never = widget;

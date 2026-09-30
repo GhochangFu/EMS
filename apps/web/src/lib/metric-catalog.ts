@@ -81,6 +81,16 @@ export const METRIC_CATALOG_PRESENTATION: Readonly<
       "Intake, reuse, discharge and consumed-or-lost water per site for one period, for each " +
       "site with an asset in the intake, reuse or discharge role.",
   },
+  // `F3.73` (plan D9). Live or offline is the same 25 s test as the class strip's Offline count
+  // (`LIVE_ASSETS_CTE_SQL`), so the label says "no recent data", not a number of seconds.
+  "assets.offline.count": {
+    label: "Offline assets",
+    description: "How many active assets in scope have sent no recent data.",
+  },
+  "assets.list": {
+    label: "Asset list",
+    description: "The active assets in scope, one row each, with live or offline and active alarms.",
+  },
 };
 
 /** The label alone — the common read, and the one a picker option and an inline error share. */
@@ -155,6 +165,10 @@ export const METRIC_CATALOG_COLUMN_LABELS: Readonly<Record<string, string>> = {
   reuse: "Reuse (KL)",
   discharge: "Discharge (KL)",
   consumed: "Consumed or lost (KL)",
+  // `F3.73` — `assets.list`. `status` is shared with the work-order list above.
+  code: "Asset ID",
+  name: "Asset",
+  activeAlarms: "Active alarms",
 };
 
 /**

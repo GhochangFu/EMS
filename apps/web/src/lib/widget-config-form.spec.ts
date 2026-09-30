@@ -29,7 +29,9 @@ import {
   blankConfigRow,
   buildChartConfig,
   buildGaugeConfig,
+  buildActiveAlarmsRailConfig,
   buildMimicConfig,
+  buildModuleSummaryCardConfig,
   buildTankConfig,
   buildTileConfig,
   widgetConfigErrors,
@@ -344,4 +346,63 @@ export function runMimicLayoutConfigThrowsWithoutALayoutTests(): void {
     threw = true;
   }
   assert(threw, "buildMimicConfig throws on a layout source with no layout chosen");
+}
+
+// -------------------------------------------------------------------------------------------
+// `F3.73` (plan Task 3.5) — the five site widgets' config surface.
+// -------------------------------------------------------------------------------------------
+
+/** A module summary card with no tab chosen is a problem on `targetTabKey`; with one, it is clean.
+ * Mutation: drop the required check => the first assert reddens. */
+export function runModuleCardTargetTabRequiredTests(): void {
+  const problems = widgetConfigErrors(0, 0, { widgetType: "module_summary_card", config: blankConfigRow() });
+  assert(
+    problems.some((problem) => problem.field === "targetTabKey"),
+    `a module card with no tab reports a targetTabKey problem — got ${JSON.stringify(problems)}`,
+  );
+  const clean = widgetConfigErrors(0, 0, {
+    widgetType: "module_summary_card",
+    config: { ...blankConfigRow(), targetTabKey: "ups" },
+  });
+  assert(clean.length === 0, `a module card with a tab is clean — got ${JSON.stringify(clean)}`);
+}
+
+/** The rail's rows is an integer 1..20; blank is the default and is not a problem. */
+export function runRailRowsBoundsTests(): void {
+  const problemsFor = (railRows: string | undefined) =>
+    widgetConfigErrors(0, 0, { widgetType: "active_alarms_rail", config: { ...blankConfigRow(), railRows } });
+  for (const bad of ["0", "21", "2.5", "abc", "-1"]) {
+    assert(problemsFor(bad).some((p) => p.field === "railRows"), `rows "${bad}" is refused`);
+  }
+  for (const good of ["1", "8", "20", "", undefined]) {
+    assert(problemsFor(good).length === 0, `rows ${JSON.stringify(good)} is accepted`);
+  }
+}
+
+/** The rail writes exactly `{ rows, showSummary }` — no unit, no decimals — and a blank rows writes
+ * the default 8. */
+export function runRailConfigValuesTests(): void {
+  const set = buildActiveAlarmsRailConfig({
+    ...blankConfigRow(),
+    railRows: "5",
+    railShowSummary: false,
+    unit: "kW",
+    decimals: "2",
+  });
+  assert(JSON.stringify(set) === JSON.stringify({ rows: 5, showSummary: false }), `got ${JSON.stringify(set)}`);
+  const blank = buildActiveAlarmsRailConfig(blankConfigRow());
+  assert(JSON.stringify(blank) === JSON.stringify({ rows: 8, showSummary: true }), `got ${JSON.stringify(blank)}`);
+}
+
+/** The card writes exactly `{ targetTabKey }` and throws on an unchosen tab (validate first). */
+export function runModuleCardConfigTests(): void {
+  const config = buildModuleSummaryCardConfig({ ...blankConfigRow(), targetTabKey: "hvac", unit: "kW" });
+  assert(JSON.stringify(config) === JSON.stringify({ targetTabKey: "hvac" }), `got ${JSON.stringify(config)}`);
+  let threw = false;
+  try {
+    buildModuleSummaryCardConfig(blankConfigRow());
+  } catch {
+    threw = true;
+  }
+  assert(threw, "buildModuleSummaryCardConfig throws on an unchosen tab");
 }

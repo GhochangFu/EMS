@@ -1,6 +1,7 @@
 import {
   GAUGE_RANGE_MESSAGE,
   MAX_GAUGE_THRESHOLDS,
+  MAX_SITE_ALARM_ROWS,
   MAX_WIDGET_WINDOW_MINUTES,
   chartSeriesKindSchema,
   gaugeRangeIsOrdered,
@@ -241,6 +242,15 @@ export type WidgetConfigRow = {
   mimicSource?: "preset" | "layout";
   // mimic — `F3.32c`. The chosen library layout's id, set only when `mimicSource === "layout"`.
   mimicLayoutId?: string;
+  // active_alarms_rail — `F3.73` (plan D9). Optional, the mimic idiom above, because
+  // `template-dashboard-form.ts` builds this row as a literal and a template can never hold a site
+  // widget. Absent `railRows` reads as the contract's default (8) and absent `railShowSummary` as true;
+  // `blankDashboardWidgetRow` and `configRowFromDto` set both for a rail.
+  railRows?: string;
+  railShowSummary?: boolean;
+  // module_summary_card — `F3.73`. The tab the card links to. Absent is "not chosen": there is no
+  // default, because any key would name a tab the author never picked.
+  targetTabKey?: string;
 };
 
 export function blankConfigRow(): WidgetConfigRow {
@@ -346,6 +356,22 @@ export function widgetConfigErrors(
     if (config.yAxisLabel.trim().length > MAX_Y_AXIS_LABEL_LENGTH) {
       push("yAxisLabel", `A y-axis label is at most ${MAX_Y_AXIS_LABEL_LENGTH} characters.`);
     }
+  } else if (widget.widgetType === "active_alarms_rail") {
+    // `F3.73` — `rows` is an integer 1..`MAX_SITE_ALARM_ROWS`; blank means the default, which
+    // `buildActiveAlarmsRailConfig` writes, so only a typed value is checked.
+    const raw = (config.railRows ?? "").trim();
+    if (raw !== "") {
+      const rows = Number(raw);
+      if (!Number.isInteger(rows) || rows < 1 || rows > MAX_SITE_ALARM_ROWS) {
+        push("railRows", `The rail shows an integer from 1 to ${MAX_SITE_ALARM_ROWS} alarms.`);
+      }
+    }
+  } else if (widget.widgetType === "module_summary_card") {
+    // `F3.73` — the key is required; that it names a tab of THIS dashboard is the API's rule
+    // (`tabRulesHold`) and the inspector's select, which offers only the dashboard's own tabs.
+    if ((config.targetTabKey ?? "") === "") {
+      push("targetTabKey", "Choose the tab this card links to.");
+    }
   } else if (widget.widgetType === "mimic") {
     // `F3.32c` — the source select decides which of the two checks applies. `mimicSource`
     // defaults to `"preset"` on every row `blankDashboardWidgetRow` or `configRowFromDto`
@@ -368,6 +394,8 @@ type TileConfig = Extract<DashboardWidgetSpec, { widgetType: "value_tile" }>["co
 type ChartConfig = Extract<DashboardWidgetSpec, { widgetType: "chart" }>["config"];
 type TableConfig = Extract<DashboardWidgetSpec, { widgetType: "table" }>["config"];
 type MimicConfig = Extract<DashboardWidgetSpec, { widgetType: "mimic" }>["config"];
+type ActiveAlarmsRailConfig = Extract<DashboardWidgetSpec, { widgetType: "active_alarms_rail" }>["config"];
+type ModuleSummaryCardConfig = Extract<DashboardWidgetSpec, { widgetType: "module_summary_card" }>["config"];
 
 /** `unit`/`decimals` are common to every arm's config and are added only when
  * set — every config schema is `.optional()` on both and `.strict()`, so a
@@ -529,4 +557,28 @@ export function buildMimicConfig(config: WidgetConfigRow): MimicConfig {
     throw new Error("A mimic widget has no preset chosen; validate the row before building its payload.");
   }
   return { source: "preset", preset: config.mimicPreset };
+}
+
+/** The default `activeAlarmsRailConfigSchema.rows`, for a row that never set one. */
+const DEFAULT_RAIL_ROWS = 8;
+
+/**
+ * The `active_alarms_rail` config (`F3.73`). **No `buildCommonConfig` spread**, the mimic's rule:
+ * the config schema is `.strict()` with no `unit` or `decimals`. A blank or unparseable `railRows`
+ * writes the default rather than `NaN`, which the strict schema refuses.
+ */
+export function buildActiveAlarmsRailConfig(config: WidgetConfigRow): ActiveAlarmsRailConfig {
+  const rows = parseWindowMinutes(config.railRows ?? "") ?? DEFAULT_RAIL_ROWS;
+  return { rows, showSummary: config.railShowSummary ?? true };
+}
+
+/**
+ * The `module_summary_card` config (`F3.73`). **Throws on an unchosen tab** rather than writing an
+ * absent key, the `buildMimicConfig` rule: `widgetConfigErrors` refuses that row first.
+ */
+export function buildModuleSummaryCardConfig(config: WidgetConfigRow): ModuleSummaryCardConfig {
+  if (config.targetTabKey === undefined || config.targetTabKey === "") {
+    throw new Error("A module summary card has no tab chosen; validate the row before building its payload.");
+  }
+  return { targetTabKey: config.targetTabKey };
 }
