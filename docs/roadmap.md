@@ -6728,6 +6728,25 @@ findings were fixed in the PR.
 **Cascade:** `F3.32` stays open for network mimics, layouts in templates, KPI
 overlays and the unit-level reference preset (ADR 0081 decision 10).
 
+### `F3.32h` — the `qet`, `wmpid` and `drawio` shape modules load on first use ✅ 2026-09-30
+
+PR #664, squash `f14f814f`; the owner ruled it into v1 on 2026-09-30. No ADR: slice-2
+ruling R12 of `F3.32f` names the design.
+
+- The three third-party libraries and their per-file credits leave the main chunk:
+  847,813 → 780,230 B gzip; `qet` 27,951 B, `wmpid` 17,284 B, credits 15,416 B and
+  `drawio` 8,452 B load on first use.
+- A glyph loads its own library and draws the `unit` outline (`data-glyph-loading`)
+  until the load lands; the palette notice and `/attributions` read the notices through
+  the store. The hook sits in each glyph, not in the scene and the palette (a deviation
+  from R12 that covers every draw site).
+- `chunk-split.spec.ts` fails on any static import of a lazy module.
+
+Verified: CI green first run, reviews fixed, browser B1–B5 PASS.
+
+**Cascade:** discharges the `F3.32f` bundle follow-up; raises `F4.181` (a tab open
+across a redeploy cannot load a removed chunk).
+
 ### `F3.32f` — administered and uploaded mimic symbol libraries ✅ 2026-09-30
 
 ADR 0086 (#651, squash `8b9fd8b5`); the owner ruled the full row into v1, released
@@ -6753,8 +6772,9 @@ Verified: CI green on each PR, cold starts on scratch databases, integration thr
 (B1–B11 all PASS).
 
 **Cascade:** raises `F3.32h` (lazy-load the three shape modules) and `F4.177`–`F4.180`.
-Owner items outside code: customer terms must not restrict the QElectroTech symbols
-(CC BY 3.0 §4(a)); confirm the Wikimedia fetch User-Agent contact.
+Owner items outside code, settled 2026-09-30: customer terms do not restrict the
+QElectroTech symbols (CC BY 3.0 §4(a)), and the Wikimedia fetch User-Agent contact
+`https://www.euphoriainfotech.com` is correct.
 
 ### `F3.32g` — mimic preset preview and library glyphs in the presets ✅ 2026-09-29
 
