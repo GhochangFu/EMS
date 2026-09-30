@@ -68,7 +68,7 @@ export function DashboardPage({ user }: DashboardPageProps) {
 
   const locationSubtitle =
     orgFilter === "all"
-      ? "Click a location to open its scoped dashboard"
+      ? "Click a location to open its Control Room site"
       : `Showing ${orgFilter} locations only`;
 
   const kpi = kpiQuery.data;

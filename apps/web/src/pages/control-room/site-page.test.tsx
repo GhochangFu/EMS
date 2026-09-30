@@ -38,6 +38,17 @@ import {
   theBreadcrumbNamesEveryLevel,
   theHeaderNamesTheSite,
   theLocationIdPropOverridesTheRoute,
+  aPendingResolveReadMountsNoAssetsView,
+  aRejectedReadWithTheAssetsTabShowsTheNotAvailableCard,
+  theAssetsTabDoesNotRedirectOnAGeneratedSite,
+  theAssetsTabDoesNotRedirectOnTheSmocSite,
+  theAssetsTabHostsTheAssetsView,
+  theAssetsTabListsNoDashboards,
+  theAssetsTabOnADashboardSiteHostsNoDashboardView,
+  theSiteViewEntryIsCurrentOnASmocTab,
+  theSiteViewEntryListsTheSiteDashboards,
+  theStripLinksBackToTheSiteView,
+  theStripLinksToTheAssetsTab,
 } from "./site-page.spec";
 
 /**
@@ -188,5 +199,49 @@ describe("F3.66 U4 ControlRoomSitePage", () => {
 
   it("V23 reads the locationId prop over the route parameter (F3.72 D1)", async () => {
     await theLocationIdPropOverridesTheRoute();
+  });
+
+  it("A1 hosts SiteAssetsView with the page's locationId at /assets (F3.72 D4)", async () => {
+    await theAssetsTabHostsTheAssetsView();
+  });
+
+  it("A2 does not redirect /assets on a generated site", async () => {
+    await theAssetsTabDoesNotRedirectOnAGeneratedSite();
+  });
+
+  it("A3 does not redirect /assets on the SMOC site and mounts no SMOC view", async () => {
+    await theAssetsTabDoesNotRedirectOnTheSmocSite();
+  });
+
+  it("A4 hosts no dashboard view at /assets on a dashboard site", async () => {
+    await theAssetsTabOnADashboardSiteHostsNoDashboardView();
+  });
+
+  it("A5 links the strip to the Assets & RTUs tab, Site view current at the bare path", async () => {
+    await theStripLinksToTheAssetsTab();
+  });
+
+  it("A6 links the strip back to the Site view, Assets & RTUs current at /assets", async () => {
+    await theStripLinksBackToTheSiteView();
+  });
+
+  it("A7 marks Site view current on a SMOC tab (OQ5)", async () => {
+    await theSiteViewEntryIsCurrentOnASmocTab();
+  });
+
+  it("A8 shows the not-available card at /assets for a rejected resolve read", async () => {
+    await aRejectedReadWithTheAssetsTabShowsTheNotAvailableCard();
+  });
+
+  it("A9 mounts no assets view while the resolve read is pending", async () => {
+    await aPendingResolveReadMountsNoAssetsView();
+  });
+
+  it("A10 lists the site's dashboards on the Site view entry (D7)", async () => {
+    await theSiteViewEntryListsTheSiteDashboards();
+  });
+
+  it("A11 lists no dashboards on the Assets & RTUs tab", async () => {
+    await theAssetsTabListsNoDashboards();
   });
 });

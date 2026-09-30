@@ -154,6 +154,57 @@ describe("F3.72 E2 — the one-location landing redirect is gone", () => {
   });
 });
 
+/**
+ * E4's reasons against the old location dashboard route, empty when it holds:
+ * one `/locations/:locationId/dashboard` route whose element is
+ * `<LocationDashboardRedirect />` wrapped in `ControlRoomScopeRoute`, and no
+ * `LocationDashboardPage` anywhere in `app.tsx` (plan D5).
+ */
+function oldLocationRouteViolations(source: string): string[] {
+  const blocks = routeBlocks(source, "/locations/:locationId/dashboard");
+  if (blocks.length !== 1) {
+    return [`expected one <Route path="/locations/:locationId/dashboard">, found ${blocks.length}`];
+  }
+  const [block] = blocks;
+  const reasons: string[] = [];
+  if (!/<ControlRoomScopeRoute>\s*<LocationDashboardRedirect\s*\/>\s*<\/ControlRoomScopeRoute>/.test(block)) {
+    reasons.push("the old route does not render <LocationDashboardRedirect /> inside ControlRoomScopeRoute");
+  }
+  if (/\bLocationDashboardPage\b/.test(source)) {
+    reasons.push("app.tsx names LocationDashboardPage");
+  }
+  return reasons;
+}
+
+describe("F3.72 E4 — the old location dashboard address redirects to the Assets & RTUs tab", () => {
+  it("the old route renders <LocationDashboardRedirect /> inside ControlRoomScopeRoute; no LocationDashboardPage", () => {
+    expect(oldLocationRouteViolations(app)).toEqual([]);
+  });
+
+  it("positive control — a copy with the redirect unwrapped is caught", () => {
+    const unwrapped = app.replace(
+      /<ControlRoomScopeRoute>\s*(<LocationDashboardRedirect\s*\/>)\s*<\/ControlRoomScopeRoute>/,
+      (_match, redirect: string) => redirect,
+    );
+    expect(unwrapped).not.toBe(app);
+    expect(oldLocationRouteViolations(unwrapped)).toEqual([
+      "the old route does not render <LocationDashboardRedirect /> inside ControlRoomScopeRoute",
+    ]);
+  });
+
+  it("positive control — a copy that renders LocationDashboardPage again is caught", () => {
+    const restored = app.replace(
+      /<LocationDashboardRedirect\s*\/>/,
+      () => "<LocationDashboardPage user={user} />",
+    );
+    expect(restored).not.toBe(app);
+    expect(oldLocationRouteViolations(restored)).toEqual([
+      "the old route does not render <LocationDashboardRedirect /> inside ControlRoomScopeRoute",
+      "app.tsx names LocationDashboardPage",
+    ]);
+  });
+});
+
 describe("F3.72 E3 — the sidebar has no Dashboard item on /", () => {
   it("app-shell.tsx declares no `path: \"/\"` item, and still declares /control-room", () => {
     expect(appShell).toMatch(/\bpath:\s*["'`]\/control-room["'`]/);

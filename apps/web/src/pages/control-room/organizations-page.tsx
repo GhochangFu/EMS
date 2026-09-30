@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { Link, Navigate } from "react-router-dom";
+import { Navigate } from "react-router-dom";
 
 import { fetchLocationKpis } from "../../api/locations";
 import { PageHeader } from "../../components/page-header";
@@ -83,12 +83,6 @@ export function ControlRoomOrganizationsPage({ user, entry = false }: ControlRoo
             <p className="text-sm text-ink-muted">
               Ask an administrator for access to a site.
             </p>
-            {/* At `/` (`entry`) the link would point at this very page. */}
-            {entry ? null : (
-              <Link to="/" className="mt-2 inline-block text-sm font-semibold text-accent-strong hover:underline">
-                Back to the dashboard
-              </Link>
-            )}
           </SectionCard>
         ) : locationQ.isError ? (
           <SectionCard title="Control Room unavailable" bodyClassName="p-4">

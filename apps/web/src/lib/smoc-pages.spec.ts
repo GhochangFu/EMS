@@ -5,6 +5,8 @@ import {
   DEFAULT_SMOC_TAB,
   findSmocSite,
   isSmocSite,
+  SITE_ASSETS_TAB,
+  siteAssetsPath,
   smocTabFromParam,
   smocTabPath,
   SMOC_TABS,
@@ -59,6 +61,21 @@ export function runP2(): void {
   assert(
     smocTabPath("rsmoc wc", "hvac") === "/control-room/site/rsmoc%20wc/hvac",
     "smocTabPath must encode the locationId and append the tab key",
+  );
+}
+
+/**
+ * `P2b` (`F3.72` D4) — `siteAssetsPath` builds the Assets & RTUs URL, encoding the location
+ * id, and its key collides with none of the seven SMOC tab keys.
+ */
+export function runP2b(): void {
+  assert(
+    siteAssetsPath("rsmoc wc") === "/control-room/site/rsmoc%20wc/assets",
+    "siteAssetsPath must encode the locationId and append the assets key",
+  );
+  assert(
+    !SMOC_TABS.some((tab) => String(tab.key) === SITE_ASSETS_TAB) && smocTabFromParam(SITE_ASSETS_TAB) === null,
+    "the assets key must not be a SMOC tab key",
   );
 }
 

@@ -180,17 +180,21 @@ export async function oneSiteSkipsToTheSite(): Promise<void> {
   expect(await screen.findByText("landed on site a1")).toBeInTheDocument();
 }
 
-/** O5a — no readable site: the OQ3 card, with its own link to `/`. */
+/**
+ * O5a — no readable site: the OQ3 card, and no link in it. `F3.72` removed
+ * its "Back to the dashboard" link to `/`: `/` now renders this same card
+ * for an empty scope. The card's text is the positive control.
+ */
 export async function anEmptyScopeShowsTheNoSitesCard(): Promise<void> {
   stubShell();
   stubLocations([]);
   renderPage();
 
-  const text = await screen.findByText(/No sites in your access scope/);
+  const text = await screen.findByText("Ask an administrator for access to a site.");
   const card = text.closest("section");
   expect(card, "the empty text is not inside a SectionCard").not.toBeNull();
-  const link = within(card as HTMLElement).getByRole("link");
-  expect(link.getAttribute("href")).toBe("/");
+  expect(within(card as HTMLElement).getByText("No sites in your access scope")).toBeInTheDocument();
+  expect(within(card as HTMLElement).queryAllByRole("link")).toHaveLength(0);
 }
 
 /** O5b — after the empty card renders, nothing redirected. */

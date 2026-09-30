@@ -9,7 +9,6 @@ import { AttributionsPage } from "./pages/attributions-page";
 import { DashboardsPage } from "./pages/dashboards-page";
 import { SustainabilityEntryPage } from "./pages/sustainability-entry-page";
 import { DashboardViewerPage } from "./pages/dashboard-viewer-page";
-import { LocationDashboardPage } from "./pages/location-dashboard-page";
 import { MapPage } from "./pages/map-page";
 import { CracPage } from "./pages/crac-page";
 import { EnergyPage } from "./pages/energy-page";
@@ -23,6 +22,7 @@ import { ControlRoomOrganizationPage } from "./pages/control-room/organization-p
 import { ControlRoomSitePage } from "./pages/control-room/site-page";
 import { AdminRoute } from "./components/admin-route";
 import { ControlRoomScopeRoute } from "./components/control-room-scope-route";
+import { LocationDashboardRedirect } from "./components/location-dashboard-redirect";
 import { SmocLegacyRedirect } from "./components/smoc-legacy-redirect";
 import { DashboardAuthorRoute } from "./components/dashboard-author-route";
 import { AdminHubPage } from "./pages/admin/admin-hub-page";
@@ -139,11 +139,17 @@ export function App() {
           )
         }
       />
+      {/* `F3.72` (ADR 0087, plan D5) — the old location dashboard address
+          redirects to the site's Assets & RTUs tab, where its body moved;
+          behind the same guard as the site route.
+          `tests/f3.72-control-room-entry.test.ts` E4 keeps that shape. */}
       <Route
         path="/locations/:locationId/dashboard"
         element={
           accessToken && user ? (
-            <LocationDashboardPage user={user} />
+            <ControlRoomScopeRoute>
+              <LocationDashboardRedirect />
+            </ControlRoomScopeRoute>
           ) : (
             <Navigate to="/login" replace />
           )

@@ -55,7 +55,7 @@ const checks = [
   },
   {
     file: "src/layouts/app-shell.tsx",
-    expected: ['{ label: "Control Room", path: "/control-room", nested: true }'],
+    expected: ['{ label: "Control Room", path: "/control-room", nested: true, alsoAt: "/" }'],
     forbidden: ['label: "CR ·', 'path: "/cr-'],
   },
   {

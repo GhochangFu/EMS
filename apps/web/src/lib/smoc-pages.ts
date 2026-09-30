@@ -50,6 +50,18 @@ export function smocTabPath(locationId: string, tab: SmocTabKey): string {
   return `/control-room/site/${encodeURIComponent(locationId)}/${tab}`;
 }
 
+/**
+ * `F3.72` (plan D4) — the site page's second entry, **Assets & RTUs**: the
+ * `:tab` segment that renders `SiteAssetsView` for every view kind. It
+ * collides with none of the seven SMOC tab keys.
+ */
+export const SITE_ASSETS_TAB = "assets";
+
+/** The URL of one site's Assets & RTUs tab, encoded for the router path segment. */
+export function siteAssetsPath(locationId: string): string {
+  return `/control-room/site/${encodeURIComponent(locationId)}/${SITE_ASSETS_TAB}`;
+}
+
 /** Reads the optional `:tab` route param (D2): missing → `overview`, unknown → `null`. */
 export function smocTabFromParam(param: string | undefined): SmocTabKey | null {
   if (param === undefined) {

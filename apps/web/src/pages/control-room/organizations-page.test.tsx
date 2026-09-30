@@ -39,7 +39,7 @@ describe("F3.66 U3 ControlRoomOrganizationsPage", () => {
     await oneSiteSkipsToTheSite();
   });
 
-  it("O5a shows the no-sites card with a link to /", async () => {
+  it("O5a shows the no-sites card with no link in it (F3.72)", async () => {
     await anEmptyScopeShowsTheNoSitesCard();
   });
 

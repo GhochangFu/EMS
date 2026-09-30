@@ -6,6 +6,8 @@ import { fetchResolvedSiteControlRoomView } from "../../api/control-room";
 import { fetchLocationKpis } from "../../api/locations";
 import { ControlRoomBreadcrumb } from "../../components/control-room/control-room-breadcrumb";
 import { GeneratedSiteView } from "../../components/control-room/generated-site-view";
+import { ScopedDashboardsList } from "../../components/control-room/scoped-dashboards-list";
+import { SiteAssetsView } from "../../components/control-room/site-assets-view";
 import { SiteDashboardView } from "../../components/control-room/site-dashboard-view";
 import { SmocSiteView } from "../../components/control-room/smoc-site-view";
 import { PageHeader } from "../../components/page-header";
@@ -13,7 +15,14 @@ import { SectionCard } from "../../components/section-card";
 import { AppShell } from "../../layouts/app-shell";
 import { controlRoomCrumbs } from "../../lib/control-room-levels";
 import { siteViewNoticeText } from "../../lib/site-view-notice";
-import { DEFAULT_SMOC_TAB, isSmocSite, smocTabFromParam, type SmocTabKey } from "../../lib/smoc-pages";
+import {
+  DEFAULT_SMOC_TAB,
+  isSmocSite,
+  SITE_ASSETS_TAB,
+  siteAssetsPath,
+  smocTabFromParam,
+  type SmocTabKey,
+} from "../../lib/smoc-pages";
 import { useAuthStore, type AuthUser } from "../../stores/auth-store";
 
 type ControlRoomSitePageProps = {
@@ -54,12 +63,23 @@ const linkClass = "mt-2 inline-block text-sm font-semibold text-accent-strong ho
  * view on any other site renders the generated view, as `generated` does,
  * and its tab URLs redirect like a non-`builtin` site's. A site outside the
  * KPI list does not show the tabs either; its tab URL redirects to the bare
- * path, which shows the not-available card.
+ * the path, which shows the not-available card.
+ *
+ * `F3.72` (ADR 0087, plan D4) — the page owns a two-entry strip above the
+ * body: **Site view** (the bare path; current for every segment but
+ * `assets`, OQ5) and **Assets & RTUs** (`/assets`, `SITE_ASSETS_TAB`). The
+ * `assets` segment is exempt from the D5 redirect and renders
+ * `SiteAssetsView` for every view kind, once the resolve read has answered —
+ * a rejected read still shows the not-available card, so the tab never reads
+ * a site outside the scope. The SMOC seven-tab strip stays inside
+ * `SmocSiteView` under Site view, and the Site view entry lists the site's
+ * dashboards (`ScopedDashboardsList`, D7) under the body.
  */
 export function ControlRoomSitePage({ user, locationId: locationIdProp }: ControlRoomSitePageProps) {
   const params = useParams();
   const locationId = locationIdProp ?? params.locationId ?? "";
   const tabParam = params.tab;
+  const onAssetsTab = tabParam === SITE_ASSETS_TAB;
   const tab = smocTabFromParam(tabParam);
   const scope = useAuthStore((state) => state.scope);
   const locationQ = useQuery({
@@ -85,6 +105,7 @@ export function ControlRoomSitePage({ user, locationId: locationIdProp }: Contro
     items !== undefined &&
     siteView.data !== undefined &&
     tabParam !== undefined &&
+    !onAssetsTab &&
     (!showsSmocTabs || tab === null)
   ) {
     return <Navigate to={`/control-room/site/${encodeURIComponent(locationId)}`} replace />;
@@ -105,13 +126,19 @@ export function ControlRoomSitePage({ user, locationId: locationIdProp }: Contro
                 title={site.name}
                 subtitle={`${site.organization.name} · ${site.organization.code}`}
               />
-              {siteView.data !== undefined ? (
-                // `tab` is null only for an unknown segment, which redirected above.
-                <SiteViewBody view={siteView.data} site={site} scope={scope} tab={tab ?? DEFAULT_SMOC_TAB} />
-              ) : (
+              <SiteSectionStrip locationId={site.id} onAssetsTab={onAssetsTab} />
+              {siteView.data === undefined ? (
                 <p role="status" className="text-sm text-ink-muted">
                   Loading the site view…
                 </p>
+              ) : onAssetsTab ? (
+                <SiteAssetsView locationId={site.id} />
+              ) : (
+                <>
+                  {/* `tab` is null only for an unknown segment, which redirected above. */}
+                  <SiteViewBody view={siteView.data} site={site} scope={scope} tab={tab ?? DEFAULT_SMOC_TAB} />
+                  <ScopedDashboardsList locationId={site.id} organizationId={site.organization.id} />
+                </>
               )}
             </>
           ) : (
@@ -128,6 +155,31 @@ export function ControlRoomSitePage({ user, locationId: locationIdProp }: Contro
         )}
       </div>
     </AppShell>
+  );
+}
+
+/**
+ * `F3.72` (plan D4, OQ5) — the site's two entries. "Site view" is current for
+ * the bare path and every SMOC tab segment; "Assets & RTUs" only at `/assets`.
+ */
+function SiteSectionStrip({ locationId, onAssetsTab }: { locationId: string; onAssetsTab: boolean }) {
+  const entries = [
+    { label: "Site view", to: `/control-room/site/${encodeURIComponent(locationId)}`, active: !onAssetsTab },
+    { label: "Assets & RTUs", to: siteAssetsPath(locationId), active: onAssetsTab },
+  ];
+  return (
+    <nav aria-label="Site sections" className="flex flex-wrap gap-1 border-b border-line pb-2">
+      {entries.map((entry) => (
+        <Link
+          key={entry.label}
+          to={entry.to}
+          aria-current={entry.active ? "page" : undefined}
+          className={`surface-tab px-3 py-1.5 ${entry.active ? "surface-tab-selected" : ""}`}
+        >
+          {entry.label}
+        </Link>
+      ))}
+    </nav>
   );
 }
 
