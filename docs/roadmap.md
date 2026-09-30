@@ -6959,3 +6959,24 @@ B1–B9 PASS.
 
 **Cascade:** no row lists `F3.76` in *Depends*. No `chore(agents):` change
 owed.
+
+### `F4.182` — the RTU dialog sets the device ID ✅ 2026-09-30
+
+PR #671, squash `2a84b6ac`; raised the same day by the v1 user guide as item
+PO-1, and the owner ruled it into v1. No ADR: ADR 0016 §3 already names
+`rtus.rtu_code` the routing key, and the API already accepted it.
+
+- The Add and Edit RTU dialogs have a "Device ID (dev_id)" field, and the RTU
+  list has a "Device ID" column. The ingest host matches each MQTT payload's
+  `dev_id` against this value.
+- The value is trimmed. An edit sends it only when it changed, so an Edit
+  never turns a NULL into `''`. A duplicate shows the `F4.60` 409 sentence.
+- The ingest host reads device IDs only at start, so a restart is still
+  needed after a device ID is set. The v1 guide states this step.
+
+Verified: CI green first run, reviews fixed, 4 mutations killed, browser
+B1–B7 PASS.
+
+**Cascade:** no row lists `F4.182` in *Depends*. No `chore(agents):` change
+owed. Not in this row: a device-ID column in the onboarding workbook and the
+rule-based chat, and an MQTT topic field on the dialog.
