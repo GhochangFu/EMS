@@ -2,7 +2,7 @@ import type { MimicCoreSymbol } from "@bms/shared";
 import { createElement, type ReactNode } from "react";
 
 import { MIMIC_GLYPH_FILL_CLASS, type MimicGlyphKind } from "../../lib/mimic";
-import { librarySymbolShapes } from "./mimic-symbol-libraries";
+import { MIMIC_SHAPE_ATTRS, librarySymbolShapes } from "./mimic-symbol-libraries";
 
 /**
  * `F3.32b` (ADR 0079 Amendment 2) — the plant mimic's illustrated symbols.
@@ -20,8 +20,8 @@ import { librarySymbolShapes } from "./mimic-symbol-libraries";
  *
  * `F3.32e` (ADR 0084 decisions 5 and 6) draws every other `MimicGlyphKind` — a library key
  * (`<library>:<name>`) — from `librarySymbolShapes(kind)`'s vendored shape list, never from
- * `innerHTML` or an SVG string: each shape is one `createElement(tag, { ...attrs })`, geometry
- * only (ADR 0084 decision 5's whitelist). A key no library has (a stale or malformed value)
+ * `innerHTML` or an SVG string: each shape is one `createElement(tag, shapeProps(attrs))`,
+ * geometry only (ADR 0084 decision 5's whitelist, copied key by key — ADR 0086 decision 6). A key no library has (a stale or malformed value)
  * draws the `unit` fallback, marked `data-glyph-fallback="true"`, and never throws. A `stroke`
  * library (`tabler`, `lucide`) draws inside the same wrapper as a core glyph: no fill, the
  * caller's stroke role class, the shapes inheriting it. A `fill` library (`mdi`) draws with no
@@ -251,6 +251,56 @@ function tankFillPath(fraction: number): string {
   return `M4.75 ${top} H19.25 V17.5 c0 1.5 -3.2 2.8 -7.25 2.8 s-7.25 -1.3 -7.25 -2.8 Z`;
 }
 
+/** The glyph's stroke width in its 24-unit grid. */
+const GLYPH_STROKE_WIDTH = 1.5;
+
+/**
+ * The linear scale of an SVG `matrix(a b c d e f)`: the square root of |ad − bc|. Anything else —
+ * no transform, another form, a degenerate or unreadable matrix — reads as 1 (no compensation).
+ */
+export function matrixScale(transform: string | undefined): number {
+  const match = /^matrix\(([^()]*)\)$/.exec(transform ?? "");
+  if (match === null) return 1;
+  const n = match[1]!.trim().split(/[\s,]+/).map(Number);
+  if (n.length !== 6) return 1;
+  const scale = Math.sqrt(Math.abs(n[0]! * n[3]! - n[1]! * n[2]!));
+  return Number.isFinite(scale) && scale > 0 ? scale : 1;
+}
+
+/**
+ * ADR 0086 decision 6 — the props of one shape element: a new object holding only the own,
+ * string-valued keys `MIMIC_SHAPE_ATTRS` lists. A stored attribute object is never spread into
+ * props, so a key outside the list (`style`, `dangerouslySetInnerHTML`, an `on*` handler, `href`)
+ * never reaches React, whichever path wrote the object.
+ */
+export function shapeProps(attrs: object): Record<string, string> {
+  const props: Record<string, string> = {};
+  for (const name of MIMIC_SHAPE_ATTRS) {
+    if (!Object.prototype.hasOwnProperty.call(attrs, name)) continue;
+    const value: unknown = (attrs as Record<string, unknown>)[name];
+    if (typeof value === "string") props[name] = value;
+  }
+  return props;
+}
+
+/**
+ * A stroke library's shapes. SVG scales a stroke by its element's own transform, so a shape the
+ * generator could not bake (F3.32f slice 2: `wmpid` keeps `matrix(...)` for a rotation or skew)
+ * sits in a `g` whose width divides by the matrix scale — its stroke then draws at the glyph's.
+ */
+function strokeShapes(shapes: NonNullable<ReturnType<typeof librarySymbolShapes>>["shapes"]): ReactNode[] {
+  return shapes.map(([tag, attrs], i) => {
+    const props = shapeProps(attrs);
+    const transform = props.transform;
+    if (transform === undefined) return createElement(tag, { key: i, ...props });
+    return createElement(
+      "g",
+      { key: i, strokeWidth: GLYPH_STROKE_WIDTH / matrixScale(transform) },
+      createElement(tag, props),
+    );
+  });
+}
+
 type MimicGlyphProps = {
   kind: MimicGlyphKind;
   /** Top-left corner and edge length of the square the symbol fills, in viewBox units. */
@@ -315,8 +365,6 @@ export function MimicGlyph({ kind, x, y, size, className, level = null }: MimicG
     );
   }
 
-  const shapes = library.shapes.map(([tag, attrs], i) => createElement(tag, { key: i, ...attrs }));
-
   if (library.style === "stroke") {
     return (
       <g
@@ -325,15 +373,17 @@ export function MimicGlyph({ kind, x, y, size, className, level = null }: MimicG
         aria-hidden="true"
         transform={transform}
         fill="none"
-        strokeWidth={1.5}
+        strokeWidth={GLYPH_STROKE_WIDTH}
         strokeLinecap="round"
         strokeLinejoin="round"
         className={className}
       >
-        {shapes}
+        {strokeShapes(library.shapes)}
       </g>
     );
   }
+
+  const shapes = library.shapes.map(([tag, attrs], i) => createElement(tag, { key: i, ...shapeProps(attrs) }));
 
   return (
     <g

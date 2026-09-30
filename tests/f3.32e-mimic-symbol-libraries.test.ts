@@ -1,9 +1,12 @@
 import { spawnSync } from "node:child_process";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { describe, expect, it } from "vitest";
+
+// The shared source, never `@bms/shared` (which resolves to `dist`): a source edit reaches it.
+import { MIMIC_TRANSFORM_RE } from "../packages/shared/src/contracts/mimic-shapes";
 
 const repoRoot = fileURLToPath(new URL("..", import.meta.url));
 const read = (rel: string): string => readFileSync(join(repoRoot, rel), "utf8");
@@ -16,7 +19,8 @@ const CONTRACT_REL = "packages/shared/src/contracts/mimic-layouts.ts";
 const SHARED_REGISTRY_REL = "packages/shared/src/mimic-symbol-libraries/index.ts";
 const SHARED_DIR = "packages/shared/src/mimic-symbol-libraries";
 const WEB_DIR = "apps/web/src/components/widgets/mimic-symbol-libraries";
-const WEB_SHAPES_REL = `${WEB_DIR}/shapes.ts`;
+/** F3.32f / ADR 0086 decision 9: the tag and attribute lists moved to the shared shape grammar. */
+const WEB_SHAPES_REL = "packages/shared/src/contracts/mimic-shapes.ts";
 const WEB_LABELS_REL = "apps/web/src/lib/mimic-symbols.ts";
 const TAG = "0090_mimic_symbol_libraries";
 /** 0089's `when` — the F4.94 class: a stamp not above the last applied one is skipped. */
@@ -32,6 +36,18 @@ const LIBRARIES = [
   { code: "lucide", prefix: "LUCIDE", count: 126 },
   { code: "mdi", prefix: "MDI", count: 160 },
 ] as const;
+
+/** F3.32f slice 2 / ADR 0086 decision 9: the three third-party libraries migration 0092 inserts.
+ * Declared here, not in the 0092 block, because the whitelist loops below read it at collection
+ * time. Literal counts, for the same reason as `LIBRARIES`. */
+const LIBRARIES_0092 = [
+  { code: "qet", prefix: "QET", count: 137 },
+  { code: "wmpid", prefix: "WMPID", count: 157 },
+  { code: "drawio", prefix: "DRAWIO", count: 131 },
+] as const;
+
+/** Every library with a generated web shapes module: 0090's three and 0092's three. */
+const SHAPE_LIBRARIES = [...LIBRARIES, ...LIBRARIES_0092] as const;
 
 /** Strip `--` comment lines before a scan — a raw scan is satisfied by a comment quoting the
  * statement it explains (the `f3.1a` lesson). 0090's header names most of its statements. */
@@ -134,6 +150,19 @@ const effectiveLibraryRows = (): LibraryRow[] => {
   return libraryRows(migration()).map((row) =>
     updates.reduce<LibraryRow>((r, u) => (u.code === r.code ? { ...r, licence: u.licence } : r), row),
   );
+};
+
+/** The shared registry's entries, parsed from source (0090's rows are entries 1–4, 0092's 5–7). */
+const registryEntries = (): LibraryRow[] => {
+  const block = sliceBetween(read(SHARED_REGISTRY_REL), "export const MIMIC_SYMBOL_LIBRARIES", "\n];", "registry");
+  return [
+    ...block.matchAll(
+      /code: "([^"]*)",\s*label: "([^"]*)",\s*source: "([^"]*)",\s*version: "([^"]*)",\s*licence: "([^"]*)",\s*attributionUrl: "([^"]*)",\s*style: "([^"]*)",\s*sortOrder: (\d+),/g,
+    ),
+  ].map(([, code, label, source, version, licence, attributionUrl, style, sortOrder]) => ({
+    ...{ code: code!, label: label!, source: source!, version: version!, licence: licence! },
+    ...{ attributionUrl: attributionUrl!, style: style!, sortOrder: Number(sortOrder) },
+  }));
 };
 
 /** A shared module's `<PREFIX>_SYMBOL_KEYS = [` block, one key per line; fails closed. */
@@ -408,31 +437,19 @@ describe("F3.32e — migration 0090: the symbol libraries", () => {
   });
 
   describe("the rows", () => {
-    it("inserts the four library codes of mimicSymbolLibraryCodeSchema, in order", () => {
+    // F3.32f / ADR 0086 decision 9: the contract names seven codes; 0090 holds the first four and
+    // migration 0092 the other three.
+    it("inserts the first four library codes of mimicSymbolLibraryCodeSchema, in order", () => {
       const codes = listMembersFromSource(read(CONTRACT_REL), "export const mimicSymbolLibraryCodeSchema = z.enum([");
-      expect(codes).toEqual(["core", "tabler", "lucide", "mdi"]);
-      expect(libraryRows(migration()).map((r) => r.code)).toEqual(codes);
+      expect(codes).toEqual(["core", "tabler", "lucide", "mdi", "qet", "wmpid", "drawio"]);
+      expect(libraryRows(migration()).map((r) => r.code)).toEqual(codes.slice(0, 4));
     });
 
-    it("the library rows, with 0091's licence UPDATEs applied, equal the shared MIMIC_SYMBOL_LIBRARIES registry", () => {
-      const source = read(SHARED_REGISTRY_REL);
-      const block = sliceBetween(source, "export const MIMIC_SYMBOL_LIBRARIES", "\n];", "registry");
-      const registry = [
-        ...block.matchAll(
-          /code: "([^"]*)",\s*label: "([^"]*)",\s*source: "([^"]*)",\s*version: "([^"]*)",\s*licence: "([^"]*)",\s*attributionUrl: "([^"]*)",\s*style: "([^"]*)",\s*sortOrder: (\d+),/g,
-        ),
-      ].map((m) => ({
-        code: m[1],
-        label: m[2],
-        source: m[3],
-        version: m[4],
-        licence: m[5],
-        attributionUrl: m[6],
-        style: m[7],
-        sortOrder: Number(m[8]),
-      }));
-      expect(registry).toHaveLength(4);
-      expect(effectiveLibraryRows()).toEqual(registry);
+    it("the library rows, with 0091's licence UPDATEs applied, equal the registry's first four entries", () => {
+      const registry = registryEntries();
+      // Seven parsed entries, so an entry whose fields the expression misses is loud, not skipped.
+      expect(registry).toHaveLength(7);
+      expect(effectiveLibraryRows()).toEqual(registry.slice(0, 4));
     });
 
     it("parses every mimic_symbols row: 29 core plus the three curated counts", () => {
@@ -545,7 +562,7 @@ describe("F3.32e — migration 0090: the symbol libraries", () => {
     const shapeAttrs = (): string[] =>
       listMembersFromSource(read(WEB_SHAPES_REL), "export const MIMIC_SHAPE_ATTRS = [");
     const allShapes = (): Array<{ key: string; tag: string; attrs: string }> =>
-      LIBRARIES.flatMap(({ prefix }) =>
+      SHAPE_LIBRARIES.flatMap(({ prefix }) =>
         webShapeEntries(webShapesBlock(web(prefix), prefix), prefix).flatMap((e) =>
           shapesOf(e.body).map((s) => ({ key: e.key, ...s })),
         ),
@@ -558,7 +575,7 @@ describe("F3.32e — migration 0090: the symbol libraries", () => {
     });
 
     it("every key has at least one shape, and every shape of an entry is parsed", () => {
-      for (const { prefix } of LIBRARIES) {
+      for (const { prefix } of SHAPE_LIBRARIES) {
         for (const e of webShapeEntries(webShapesBlock(web(prefix), prefix), prefix)) {
           const shapes = shapesOf(e.body);
           expect(shapes.length, `'${e.key}' shapes`).toBeGreaterThan(0);
@@ -588,7 +605,7 @@ describe("F3.32e — migration 0090: the symbol libraries", () => {
       );
     });
 
-    for (const { prefix } of LIBRARIES) {
+    for (const { prefix } of SHAPE_LIBRARIES) {
       it(`${prefix}_SHAPES carries no colour, class, style, reference or markup`, () => {
         const block = webShapesBlock(web(prefix), prefix);
         expect(block).toContain('d: "');
@@ -612,10 +629,370 @@ describe("F3.32e — the generator and the licence notices", () => {
     expect(result.status).toBe(0);
   });
 
+  // F3.32f / ADR 0086 decision 9: the generator is split into lib/ and sources/ modules, plus the
+  // fetch and curate scripts; none is in a tsc project. Mutation: add a syntax error to
+  // lib/geometry.mjs, and this claim reddens.
+  it("every .mjs under scripts/mimic-symbols parses (at least seven files)", () => {
+    const dir = join(repoRoot, "scripts/mimic-symbols");
+    const files = readdirSync(dir, { recursive: true, encoding: "utf8" })
+      .filter((rel) => rel.endsWith(".mjs"))
+      .map((rel) => join(dir, rel));
+    expect(files.length).toBeGreaterThanOrEqual(7);
+    const failed = files
+      .map((file) => ({ file, result: spawnSync(process.execPath, ["--check", file], { encoding: "utf8" }) }))
+      .filter(({ result }) => result.status !== 0 || result.stderr !== "")
+      .map(({ file, result }) => `${file}: ${result.stderr}`);
+    expect(failed).toEqual([]);
+  });
+
   it("the MDI notice ships the Apache 2.0 licence text and a conversion line", () => {
     const module = read(`${WEB_DIR}/mdi.generated.ts`);
     expect(module).toContain("TERMS AND CONDITIONS FOR USE, REPRODUCTION, AND DISTRIBUTION");
     expect(module).toContain("Pictogrammers Free License");
     expect(module).toContain("Converted by scripts/mimic-symbols/generate.mjs");
+  });
+});
+
+const MIGRATION_0092_REL = "packages/db/drizzle/0092_mimic_third_party_symbol_libraries.sql";
+const TAG_0092 = "0092_mimic_third_party_symbol_libraries";
+const QET_PIN = "3b12bc579b99932e3fe307ea1e44b8c1c6d1d5c9";
+const DRAWIO_PIN = "48b181339578e11da7052ebf5b1fba8499418b77";
+
+const migration0092 = (): string => sqlOnly(read(MIGRATION_0092_REL));
+
+type Credit = { key: string; author: string; source: string; licence: string; licenceUrl: string; pin: string; adaptation: string };
+
+/** A web credits module's `<PREFIX>_SYMBOL_CREDITS` entries, read after its `> = {`; fails closed:
+ * every line up to the closing `};` must parse, so an entry the regex misses cannot pass as absent. */
+const creditEntries = (prefix: string): Credit[] => {
+  const source = read(`${WEB_DIR}/${prefix.toLowerCase()}.credits.generated.ts`);
+  const decl = source.indexOf(`export const ${prefix}_SYMBOL_CREDITS`);
+  if (decl < 0) throw new Error(`no ${prefix}_SYMBOL_CREDITS`);
+  const block = sliceBetween(source.slice(decl), "> = {", "\n};", `${prefix} credits`);
+  const str = '"((?:[^"\\\\]|\\\\.)*)"';
+  const re = new RegExp(
+    `^\\s*("[^"]+"): \\{ author: ${str}, source: ${str}, licence: ${str}, licenceUrl: ${str}, pin: ${str}, adaptation: ${str} \\},$`,
+  );
+  return block
+    .split("\n")
+    .slice(1, -1)
+    .map((line) => {
+      const m = re.exec(line);
+      if (!m) throw new Error(`${prefix}_SYMBOL_CREDITS: unparsed line: ${line.slice(0, 160)}`);
+      const [, key, author, source, licence, licenceUrl, pin, adaptation] = m as unknown as string[];
+      return { key: JSON.parse(key!) as string, author: author!, source: source!, licence: licence!, licenceUrl: licenceUrl!, pin: pin!, adaptation: adaptation! };
+    });
+};
+
+/** Every `transform: "…"` value in a web shapes block. */
+const transformValues = (prefix: string): string[] =>
+  [...webShapesBlock(web(prefix), prefix).matchAll(/\btransform: "([^"]*)"/g)].map((m) => m[1] as string);
+
+/**
+ * `F3.32f` slice 2 / ADR 0086 decision 9 — the static half of migration `0092`: the rows of the
+ * three third-party libraries, the three-way gate between them and the shared and web generated
+ * modules, the per-file credits, the transform grammar and the two CC BY notices. The live half is
+ * the 0092 block of `tests/f3.32e-mimic-symbol-libraries.integration.test.ts`.
+ * Assertions inline, no `.spec` sibling (§4.6).
+ *
+ * Mutations run and recorded: delete one middle wmpid row from 0092 → seven claims redden, among
+ * them "parses 157 keys on every side", "every shared key is a 0092 key", the curation order, the
+ * sort_order and "each per-library count literal equals the parsed row count"; change the qet
+ * DO $$ literal 137 → 136 → only "each per-library count literal equals the parsed row count".
+ */
+describe("F3.32f slice 2 — migration 0092: the third-party libraries", () => {
+  it("is not scanning an empty or misnamed file", () => {
+    expect(existsSync(join(repoRoot, MIGRATION_0092_REL)), `${MIGRATION_0092_REL} must exist`).toBe(true);
+    expect(migration0092()).toContain("INSERT INTO bms.mimic_symbols (");
+  });
+
+  describe("the journal entry", () => {
+    type Entry = { idx: number; version: string; when: number; tag: string; breakpoints: boolean };
+    const entries = (): Entry[] => (JSON.parse(read(JOURNAL_REL)) as { entries: Entry[] }).entries;
+    const at = (): number => entries().findIndex((e) => e.tag === TAG_0092);
+
+    it("registers 0092 at idx 92, version 7, breakpoints true", () => {
+      const entry = entries()[at()];
+      expect(entry, "migration 0092 must have a journal entry, or drizzle never runs it").toBeDefined();
+      expect(entry?.idx).toBe(92);
+      expect(entry?.version).toBe("7");
+      expect(entry?.breakpoints).toBe(true);
+    });
+
+    // The F4.94 class: a stamp not above the last applied one is skipped. The previous entry is
+    // read from the journal, so a renumbering (plan R13) needs no literal here.
+    it("stamps when strictly after the previous journal entry", () => {
+      const i = at();
+      expect(i).toBeGreaterThan(0);
+      expect(entries()[i]!.when).toBeGreaterThan(entries()[i - 1]!.when);
+    });
+
+    it("stamps when not ahead of the clock", () => {
+      expect(entries()[at()]?.when as number).toBeLessThanOrEqual(Date.now());
+    });
+  });
+
+  describe("the role bracket", () => {
+    it("has exactly one SET ROLE bms_owner; and one RESET ROLE;", () => {
+      const sql = migration0092();
+      expect(countOf(sql, "SET ROLE bms_owner;")).toBe(1);
+      expect(countOf(sql, "RESET ROLE;")).toBe(1);
+    });
+
+    it("runs both INSERTs inside the bracket, then the DO $$ block", () => {
+      const sql = migration0092();
+      const order = [
+        "SET ROLE bms_owner;",
+        "INSERT INTO bms.mimic_symbol_libraries (",
+        "INSERT INTO bms.mimic_symbols (",
+        "RESET ROLE;",
+        "DO $$",
+      ].map((needle) => [needle, sql.indexOf(needle)] as const);
+      for (const [needle, i] of order) expect(i, `${needle} must be present`).toBeGreaterThan(-1);
+      for (let i = 1; i < order.length; i += 1) {
+        expect(order[i]![1], `${order[i]![0]} must follow ${order[i - 1]![0]}`).toBeGreaterThan(order[i - 1]![1]);
+      }
+    });
+
+    it("ends the file with END $$;", () => {
+      expect(migration0092().trimEnd().endsWith("END $$;")).toBe(true);
+    });
+  });
+
+  it("the statement scan reads statements (positive control: it finds INSERT)", () => {
+    expect(migration0092()).toMatch(/\bINSERT\b/);
+  });
+
+  for (const [name, re] of [
+    ["CREATE", /\bCREATE\b/i],
+    ["ALTER", /\bALTER\b/i],
+    ["GRANT", /\bGRANT\b/i],
+    ["REVOKE", /\bREVOKE\b/i],
+    ["POLICY", /POLICY/i],
+    ["ROW LEVEL SECURITY", /ROW LEVEL SECURITY/i],
+  ] as const) {
+    it(`issues no ${name}`, () => {
+      expect(migration0092()).not.toMatch(re);
+    });
+  }
+
+  it("inserts both tables with a bare ON CONFLICT DO NOTHING", () => {
+    const sql = migration0092();
+    expect(countOf(sql, "ON CONFLICT DO NOTHING;")).toBe(2);
+    expect(sql).not.toMatch(/ON CONFLICT\s*\(/);
+  });
+
+  describe("the library rows", () => {
+    it("are qet, wmpid and drawio, in that order", () => {
+      expect(libraryRows(migration0092()).map((r) => r.code)).toEqual(["qet", "wmpid", "drawio"]);
+    });
+
+    it("have sort_order 50, 60 and 70", () => {
+      expect(libraryRows(migration0092()).map((r) => r.sortOrder)).toEqual([50, 60, 70]);
+    });
+
+    it("draw with the stroke style", () => {
+      expect(libraryRows(migration0092()).map((r) => r.style)).toEqual(["stroke", "stroke", "stroke"]);
+    });
+
+    it("equal the registry's entries 5 to 7", () => {
+      const registry = registryEntries();
+      // Seven parsed entries, so an entry whose fields the expression misses is loud, not skipped.
+      expect(registry).toHaveLength(7);
+      expect(libraryRows(migration0092())).toEqual(registry.slice(4, 7));
+    });
+  });
+
+  describe("the symbol rows", () => {
+    it("parses every row: the three curated counts (positive control)", () => {
+      expect(symbolRows(migration0092())).toHaveLength(LIBRARIES_0092.reduce((n, l) => n + l.count, 0));
+    });
+
+    it("every row's library is one of the three", () => {
+      const codes = new Set<string>(LIBRARIES_0092.map((l) => l.code));
+      expect(symbolRows(migration0092()).filter((r) => !codes.has(r.library)).map((r) => r.key)).toEqual([]);
+    });
+
+    it("every key satisfies 0090's key-names CHECK expressions for its library", () => {
+      const bad = symbolRows(migration0092()).filter(
+        (r) => !(r.key.startsWith(`${r.library}:`) && /^[a-z][a-z0-9]*:[a-z0-9][a-z0-9-]*$/.test(r.key)),
+      );
+      expect(bad.map((r) => `${r.library}: ${r.key}`)).toEqual([]);
+    });
+
+    it("every row's sort_order is ten times its position within its library", () => {
+      const seen = new Map<string, number>();
+      const bad: string[] = [];
+      for (const r of symbolRows(migration0092())) {
+        const position = (seen.get(r.library) ?? 0) + 1;
+        seen.set(r.library, position);
+        if (r.sort !== position * 10) bad.push(`${r.key}: ${r.sort} at position ${position}`);
+      }
+      expect(seen.size).toBe(3);
+      expect(bad).toEqual([]);
+    });
+
+    it("no label is over 64 characters", () => {
+      expect(symbolRows(migration0092()).filter((r) => r.label.length > 64).map((r) => r.key)).toEqual([]);
+    });
+
+    it("no key is over 64 characters", () => {
+      expect(symbolRows(migration0092()).filter((r) => r.key.length > 64).map((r) => r.key)).toEqual([]);
+    });
+
+    it("no key repeats within 0092", () => {
+      const keys = symbolRows(migration0092()).map((r) => r.key);
+      expect(new Set(keys).size).toBe(keys.length);
+    });
+
+    it("no key repeats a 0090 key", () => {
+      const earlier = new Set(symbolRows(migration()).map((r) => r.key));
+      expect(earlier.size).toBeGreaterThan(400);
+      expect(symbolRows(migration0092()).filter((r) => earlier.has(r.key)).map((r) => r.key)).toEqual([]);
+    });
+
+    it("0091 inserts no symbol row, so there is no 0091 key to repeat", () => {
+      const sql = sqlOnly(read(MIGRATION_0091_REL));
+      expect(sql).toContain("UPDATE bms.mimic_symbol_libraries");
+      expect(sql).not.toContain("INSERT INTO bms.mimic_symbols");
+    });
+  });
+
+  describe("the DO $$ self-check", () => {
+    it("the active-library count literal is 7", () => {
+      const m = /FROM bms\.mimic_symbol_libraries WHERE active\) <> (\d+)/.exec(doBlock(migration0092()));
+      expect(m, "the DO $$ block must count active libraries").not.toBeNull();
+      expect(Number(m?.[1])).toBe(7);
+    });
+
+    it("names exactly qet, wmpid and drawio in its per-library counts", () => {
+      expect([...doLibraryCounts(migration0092()).keys()].sort()).toEqual(["drawio", "qet", "wmpid"]);
+    });
+
+    it("each per-library count literal equals the parsed row count", () => {
+      const rows = symbolRows(migration0092());
+      const counts = Object.fromEntries(doLibraryCounts(migration0092()));
+      const parsed = Object.fromEntries(
+        LIBRARIES_0092.map(({ code }) => [code, rows.filter((r) => r.library === code).length]),
+      );
+      expect(counts).toEqual(parsed);
+    });
+
+    it("asserts bms_tenant holds no INSERT and does hold SELECT on bms.mimic_symbols", () => {
+      const block = doBlock(migration0092());
+      expect(block).toContain("IF has_table_privilege('bms_tenant', 'bms.mimic_symbols', 'INSERT') THEN");
+      expect(block).toContain("IF NOT has_table_privilege('bms_tenant', 'bms.mimic_symbols', 'SELECT') THEN");
+    });
+  });
+
+  describe.each(LIBRARIES_0092)("the three-way gate — $code", ({ code, prefix, count }) => {
+    const migrationKeys = (): string[] =>
+      symbolRows(migration0092())
+        .filter((r) => r.library === code)
+        .map((r) => r.key);
+    const webKeys = (): string[] => webShapeEntries(webShapesBlock(web(prefix), prefix), prefix).map((e) => e.key);
+
+    it(`parses ${count} keys on every side (positive control, at least 100)`, () => {
+      expect(count).toBeGreaterThanOrEqual(100);
+      expect(migrationKeys()).toHaveLength(count);
+      expect(sharedKeys(shared(prefix), prefix)).toHaveLength(count);
+      expect(webKeys()).toHaveLength(count);
+    });
+
+    it("every 0092 key is a shared key", () => {
+      expect(setDiff(migrationKeys(), sharedKeys(shared(prefix), prefix))).toEqual([]);
+    });
+
+    it("every shared key is a 0092 key", () => {
+      expect(setDiff(sharedKeys(shared(prefix), prefix), migrationKeys())).toEqual([]);
+    });
+
+    it("every shared key is a web shape key", () => {
+      expect(setDiff(sharedKeys(shared(prefix), prefix), webKeys())).toEqual([]);
+    });
+
+    it("every web shape key is a shared key", () => {
+      expect(setDiff(webKeys(), sharedKeys(shared(prefix), prefix))).toEqual([]);
+    });
+
+    it("0092 lists the keys in the shared curation order", () => {
+      expect(migrationKeys()).toEqual(sharedKeys(shared(prefix), prefix));
+    });
+
+    it("the INSERT's labels and groups equal the shared META entries", () => {
+      const meta = sharedMeta(shared(prefix), prefix);
+      expect(meta).toHaveLength(count);
+      const rows = symbolRows(migration0092()).filter((r) => r.library === code);
+      expect(rows.map((r) => [r.key, r.label, r.group])).toEqual(meta.map((m) => [m.key, m.label, m.group]));
+    });
+
+    it("every credit key is a shared key", () => {
+      expect(creditEntries(prefix).length).toBe(count);
+      expect(setDiff(creditEntries(prefix).map((c) => c.key), sharedKeys(shared(prefix), prefix))).toEqual([]);
+    });
+
+    it("every shared key has a credit", () => {
+      expect(setDiff(sharedKeys(shared(prefix), prefix), creditEntries(prefix).map((c) => c.key))).toEqual([]);
+    });
+
+    it("every credit has a known author, a source, licence and pin, and an adaptation note", () => {
+      const bad = creditEntries(prefix)
+        .filter((c) => [c.author, c.source, c.licence, c.pin, c.adaptation].some((v) => v.trim() === "") || /^unknown$/i.test(c.author))
+        .map((c) => c.key);
+      expect(bad).toEqual([]);
+    });
+
+    it("every transform value matches MIMIC_TRANSFORM_RE", () => {
+      expect(transformValues(prefix).filter((t) => !MIMIC_TRANSFORM_RE.test(t))).toEqual([]);
+    });
+  });
+
+  describe("the credit pins", () => {
+    it("every wmpid pin is a sha1 and an ISO timestamp", () => {
+      const credits = creditEntries("WMPID");
+      expect(credits.length).toBeGreaterThanOrEqual(100);
+      const bad = credits.filter((c) => !/^[0-9a-f]{40}@\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/.test(c.pin));
+      expect(bad.map((c) => `${c.key}: ${c.pin}`)).toEqual([]);
+    });
+
+    for (const [prefix, pin] of [["QET", QET_PIN], ["DRAWIO", DRAWIO_PIN]] as const) {
+      it(`every ${prefix} pin is the ADR's pinned commit ${pin}`, () => {
+        const credits = creditEntries(prefix);
+        expect(credits.length).toBeGreaterThanOrEqual(100);
+        expect(credits.filter((c) => c.pin !== pin).map((c) => `${c.key}: ${c.pin}`)).toEqual([]);
+      });
+    }
+  });
+
+  describe("the transform grammar", () => {
+    it("finds transform values in wmpid.generated.ts (positive control for the per-library claims)", () => {
+      const values = transformValues("WMPID");
+      expect(values.length, `wmpid transform count ${values.length}`).toBeGreaterThan(0);
+    });
+
+    it("MIMIC_TRANSFORM_RE refuses a planted bad value and accepts a planted good one", () => {
+      expect(MIMIC_TRANSFORM_RE.test("matrix(0,0.5,-0.5,0,12,-1.7)")).toBe(true);
+      expect(MIMIC_TRANSFORM_RE.test("url(javascript:alert(1))")).toBe(false);
+    });
+  });
+
+  describe("the CC BY notices", () => {
+    it("the drawio notice carries the README's CC BY 4.0 grant", () => {
+      expect(read(`${WEB_DIR}/drawio.generated.ts`)).toContain("licensed under the CC BY 4.0");
+    });
+
+    it("the drawio notice carries the pinned commit", () => {
+      expect(read(`${WEB_DIR}/drawio.generated.ts`)).toContain(DRAWIO_PIN);
+    });
+
+    it("the qet notice links the CC BY 3.0 licence", () => {
+      expect(read(`${WEB_DIR}/qet.generated.ts`)).toContain("creativecommons.org/licenses/by/3.0");
+    });
+
+    it("the qet notice carries ELEMENTS.LICENSE's first paragraph", () => {
+      expect(read(`${WEB_DIR}/qet.generated.ts`)).toContain(
+        "The elements collection provided along with QElectroTech is provided as is and",
+      );
+    });
   });
 });

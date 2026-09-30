@@ -8,9 +8,17 @@ import { globalLibraryAttributions } from "./attributions";
  * `attributions.test.ts` is the Vitest entry.
  */
 
-/** A1 — one entry per library, in the registry's palette order. */
-export function listsTheFourLibrariesInOrder(): void {
-  expect(globalLibraryAttributions({}).map((entry) => entry.code)).toEqual(["core", "tabler", "lucide", "mdi"]);
+/** A1 — one entry per library, in the registry's palette order (seven since F3.32f slice 2). */
+export function listsTheSevenLibrariesInOrder(): void {
+  expect(globalLibraryAttributions({}).map((entry) => entry.code)).toEqual([
+    "core",
+    "tabler",
+    "lucide",
+    "mdi",
+    "qet",
+    "wmpid",
+    "drawio",
+  ]);
 }
 
 /** A2 — core has no source link, no notice and no credits. */

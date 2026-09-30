@@ -3,6 +3,8 @@ import { cleanup } from "@testing-library/react";
 import { afterEach, describe, it } from "vitest";
 
 import {
+  aShapeCarryingATransformRendersItVerbatim,
+  aTransformedShapeKeepsTheGlyphStrokeWidth,
   anInheritedPropertyNameFallsBackToUnit,
   anUnknownKeyFallsBackToUnitAndDoesNotThrow,
   anUnmappedGlyphClassFallsBackToFillInkMuted,
@@ -15,12 +17,17 @@ import {
   everyLibraryShapeUsesWhitelistedTagsAndAttrs,
   everyPanelGlyphClassDrawsItsFillRole,
   everySymbolDrawsAGlyph,
+  everyVendoredTransformIsOneMatrix,
+  fillShapeIsNotSpread,
   fillLibraryGlyphHasNoStrokeAndTheFillClass,
+  matrixScaleReadsTheLinearPart,
   noTwoSymbolsDrawTheSameMarkup,
   passiveUnitDrawsNoStatus,
   resolvedUnitShowsItsAsset,
   roledUnitWithoutEntryIsNotAssigned,
   strokeLibraryGlyphHasNoFillAndNoShapeColour,
+  strokeShapeIsNotSpread,
+  transformedStrokeShapeIsNotSpread,
   unitsDrawAtTheirScale,
 } from "./mimic-scene.spec";
 
@@ -89,5 +96,26 @@ describe("F3.32c U4 — MimicScene, a stored layout", () => {
   });
   it("S17 every library shape uses whitelisted tags and attrs", () => {
     everyLibraryShapeUsesWhitelistedTagsAndAttrs();
+  });
+  it("S18 a shape carrying a transform renders it verbatim", () => {
+    aShapeCarryingATransformRendersItVerbatim();
+  });
+  it("S20a every vendored transform is one matrix", () => {
+    everyVendoredTransformIsOneMatrix();
+  });
+  it("S20b matrixScale reads the linear part", () => {
+    matrixScaleReadsTheLinearPart();
+  });
+  it("S20c a transformed shape keeps the glyph stroke width", () => {
+    aTransformedShapeKeepsTheGlyphStrokeWidth();
+  });
+  it("S21a a stroke shape object is never spread into props", () => {
+    strokeShapeIsNotSpread();
+  });
+  it("S21b a transformed stroke shape object is never spread into props", () => {
+    transformedStrokeShapeIsNotSpread();
+  });
+  it("S21c a fill shape object is never spread into props", () => {
+    fillShapeIsNotSpread();
   });
 });

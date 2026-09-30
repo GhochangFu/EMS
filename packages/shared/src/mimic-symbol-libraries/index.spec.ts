@@ -26,14 +26,33 @@ export function libraryOfSymbolReadsThePrefix(): void {
   assert(libraryOfSymbol("lucide:factory") === "lucide", `lucide:factory → ${libraryOfSymbol("lucide:factory")}`);
 }
 
-/** The registry holds every contract code, in contract order, with the decision 4 styles. */
-export function registryIsTheFourLibrariesWithTheirStyles(): void {
+/** The registry holds every contract code, in contract order, with the decision 4 and ADR 0086
+ * decision 9 styles. */
+export function registryIsTheSevenLibrariesWithTheirStyles(): void {
   const codes = MIMIC_SYMBOL_LIBRARIES.map((l) => l.code);
   assert(JSON.stringify(codes) === JSON.stringify(mimicSymbolLibraryCodeSchema.options), `codes: ${JSON.stringify(codes)}`);
   const styles = MIMIC_SYMBOL_LIBRARIES.map((l) => l.style);
-  assert(JSON.stringify(styles) === JSON.stringify(["stroke", "stroke", "stroke", "fill"]), `styles: ${JSON.stringify(styles)}`);
+  assert(JSON.stringify(styles) === JSON.stringify(["stroke", "stroke", "stroke", "fill", "stroke", "stroke", "stroke"]), `styles: ${JSON.stringify(styles)}`);
   assert(mimicSymbolLibrary("mdi").licence === "Apache 2.0", "mdi licence");
   assert(mimicSymbolLibrary("lucide").licence === "ISC and MIT", "lucide licence");
+}
+
+/** F3.32f: a prefix is a library when the registry holds it (ADR 0086 decision 9). Mutation:
+ * restore the hard-coded tabler/lucide/mdi check in `libraryOfSymbol` → this claim reddens. */
+export function libraryOfSymbolReadsARegisteredNewPrefix(): void {
+  assert(libraryOfSymbol("qet:x") === "qet", `qet:x → ${libraryOfSymbol("qet:x")}`);
+}
+
+/** F3.32f: a prefix the registry does not hold reads as core, as a bare key does. Mutation:
+ * return the prefix unchecked in `libraryOfSymbol` → this claim reddens. */
+export function libraryOfSymbolReadsAnUnknownPrefixAsCore(): void {
+  assert(libraryOfSymbol("nope:x") === "core", `nope:x → ${libraryOfSymbol("nope:x")}`);
+}
+
+/** F3.32f: the Commons library carries its licence label (ADR 0086 decision 9). Mutation: drop
+ * the wmpid registry entry → this claim reddens. */
+export function wmpidLicenceIsPublicDomainOrCc0(): void {
+  assert(mimicSymbolLibrary("wmpid").licence === "Public domain / CC0", `wmpid licence: ${mimicSymbolLibrary("wmpid").licence}`);
 }
 
 /** No library label names the product (ADR 0084 decision 4 as amended, ADR 0083). */

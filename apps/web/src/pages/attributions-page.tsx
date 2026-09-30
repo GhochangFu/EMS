@@ -1,6 +1,6 @@
 import { AttributionsList } from "../components/attributions-list";
 import { PageHeader } from "../components/page-header";
-import { MIMIC_LIBRARY_NOTICES } from "../components/widgets/mimic-symbol-libraries";
+import { MIMIC_LIBRARY_NOTICES, libraryCredits } from "../components/widgets/mimic-symbol-libraries";
 import { AppShell } from "../layouts/app-shell";
 import { globalLibraryAttributions } from "../lib/attributions";
 import type { AuthUser } from "../stores/auth-store";
@@ -18,7 +18,7 @@ export function AttributionsPage({ user }: { user: AuthUser }) {
         title="Attributions"
         subtitle="The symbol libraries this product draws with — versions, licences and notices"
       />
-      <AttributionsList entries={globalLibraryAttributions(MIMIC_LIBRARY_NOTICES)} />
+      <AttributionsList entries={globalLibraryAttributions(MIMIC_LIBRARY_NOTICES, libraryCredits)} />
     </AppShell>
   );
 }

@@ -41,6 +41,7 @@ import type * as Cv from "./contracts/metric-catalog-values";
 import type * as Mi from "./contracts/mimic";
 import type * as Mc from "./contracts/mimic-config";
 import type * as Ml from "./contracts/mimic-layouts";
+import type * as Mshape from "./contracts/mimic-shapes";
 import type * as N from "./contracts/notifications";
 import type * as Ob from "./contracts/onboarding";
 import type * as Op from "./contracts/operations";
@@ -828,6 +829,10 @@ export type MimicLayoutConfig = z.infer<typeof Mc.mimicLayoutConfigSchema>;
 export type MimicSymbol = z.infer<typeof Ml.mimicSymbolSchema>;
 export type MimicCoreSymbol = z.infer<typeof Ml.mimicCoreSymbolSchema>;
 export type MimicSymbolLibraryCode = z.infer<typeof Ml.mimicSymbolLibraryCodeSchema>;
+/** `F3.32f` / ADR 0086 decision 9 — one library glyph element (`contracts/mimic-shapes.ts`). */
+export type MimicShape = z.infer<typeof Mshape.mimicShapeSchema>;
+export type MimicShapeTag = z.infer<typeof Mshape.mimicShapeTagSchema>;
+export type MimicShapeAttr = z.infer<typeof Mshape.mimicShapeAttrSchema>;
 export type MimicPanelTone = z.infer<typeof Ml.mimicPanelToneSchema>;
 export type MimicLayoutNodeKind = z.infer<typeof Ml.mimicLayoutNodeKindSchema>;
 export type MimicLayoutNodeDto = z.infer<typeof Ml.mimicLayoutNodeSchema>;

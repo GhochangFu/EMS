@@ -638,6 +638,13 @@
       "when": 1790704939002,
       "tag": "0091_mimic_lucide_licence",
       "breakpoints": true
+    },
+    {
+      "idx": 92,
+      "version": "7",
+      "when": 1790722103205,
+      "tag": "0092_mimic_third_party_symbol_libraries",
+      "breakpoints": true
     }
   ]
 }
