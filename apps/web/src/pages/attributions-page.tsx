@@ -1,11 +1,17 @@
 import type { MimicOrgSymbolLibraryDto } from "@bms/shared";
+import { useEffect, useState } from "react";
 
 import { AttributionsList } from "../components/attributions-list";
 import { PageHeader } from "../components/page-header";
-import { MIMIC_LIBRARY_NOTICES, libraryCredits } from "../components/widgets/mimic-symbol-libraries";
+import {
+  LAZY_MIMIC_LIBRARY_CODES,
+  ensureLibraryShapes,
+  loadLibraryCredits,
+  mimicLibraryNotices,
+} from "../components/widgets/mimic-symbol-libraries";
 import { useMimicSymbolLibraries } from "../hooks/use-mimic-symbol-libraries";
 import { AppShell } from "../layouts/app-shell";
-import { globalLibraryAttributions } from "../lib/attributions";
+import { globalLibraryAttributions, type AttributionEntry } from "../lib/attributions";
 import type { AuthUser } from "../stores/auth-store";
 
 /**
@@ -25,9 +31,43 @@ export function AttributionsPage({ user }: { user: AuthUser }) {
         title="Attributions"
         subtitle="The symbol libraries this product draws with — versions, licences and notices"
       />
-      <AttributionsList entries={globalLibraryAttributions(MIMIC_LIBRARY_NOTICES, libraryCredits)} />
+      <GlobalLibraries />
       <OrganizationLibraries />
     </AppShell>
+  );
+}
+
+/**
+ * `F3.32h` — the preloaded libraries. The `qet`, `wmpid` and `drawio` notices and every per-file
+ * credit load on first use, so the list waits for them; a failed load shows what did load and says so.
+ */
+function GlobalLibraries() {
+  const [state, setState] = useState<{ entries: readonly AttributionEntry[]; complete: boolean } | null>(null);
+  useEffect(() => {
+    let live = true;
+    Promise.all([ensureLibraryShapes(LAZY_MIMIC_LIBRARY_CODES), loadLibraryCredits()])
+      .then(([, credits]) => {
+        const notices = mimicLibraryNotices();
+        const complete = LAZY_MIMIC_LIBRARY_CODES.every((code) => notices[code] !== undefined);
+        if (live) setState({ entries: globalLibraryAttributions(notices, credits), complete });
+      })
+      .catch(() => {
+        if (live) setState({ entries: globalLibraryAttributions(mimicLibraryNotices()), complete: false });
+      });
+    return () => {
+      live = false;
+    };
+  }, []);
+  if (state === null) return <p className="text-sm text-ink-muted">Loading the library notices…</p>;
+  return (
+    <>
+      {state.complete ? null : (
+        <p role="alert" className="text-sm text-ink-muted">
+          Some library notices or credits did not load. Reload the page to try again.
+        </p>
+      )}
+      <AttributionsList entries={state.entries} />
+    </>
   );
 }
 

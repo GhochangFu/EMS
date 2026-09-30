@@ -1,8 +1,9 @@
-import { MIMIC_SHAPE_ATTRS, type MimicCoreSymbol, type MimicOrgSymbolDto, type MimicShape } from "@bms/shared";
+import { MIMIC_SHAPE_ATTRS, libraryOfSymbol, type MimicCoreSymbol, type MimicOrgSymbolDto, type MimicShape } from "@bms/shared";
 import { createElement, type ReactNode } from "react";
 
 import { MIMIC_GLYPH_FILL_CLASS, type MimicGlyphKind } from "../../lib/mimic";
-import { librarySymbolShapes } from "./mimic-symbol-libraries";
+import { lazyLibraryState, librarySymbolShapes } from "./mimic-symbol-libraries";
+import { useLazyLibraries } from "./mimic-symbol-libraries/use-lazy-libraries";
 
 /**
  * `F3.32b` (ADR 0079 Amendment 2) — the plant mimic's illustrated symbols.
@@ -329,6 +330,8 @@ type MimicGlyphProps = {
 
 /** One illustrated unit symbol, scaled into a `size` square at (`x`, `y`) in viewBox units. */
 export function MimicGlyph({ kind, x, y, size, className, level = null, orgSymbol = null }: MimicGlyphProps) {
+  // `F3.32h`: a `qet`, `wmpid` or `drawio` key loads its library on first draw and redraws here.
+  useLazyLibraries([libraryOfSymbol(kind)]);
   const transform = `translate(${x} ${y}) scale(${size / 24})`;
 
   if (Object.prototype.hasOwnProperty.call(PATHS, kind)) {
@@ -362,18 +365,22 @@ export function MimicGlyph({ kind, x, y, size, className, level = null, orgSymbo
   const library = org === null ? librarySymbolShapes(kind) : { style: org.style, shapes: org.shapes };
 
   if (library === null) {
+    // A key whose lazy library is still loading draws the `unit` outline as a skeleton, marked
+    // apart from a stale key's fallback; a failed load draws the fallback, and a later mount retries.
+    const loading = org === null && lazyLibraryState(kind) === "loading";
     return (
       <g
         data-testid="mimic-glyph"
         data-glyph={kind}
-        data-glyph-fallback="true"
+        data-glyph-fallback={loading ? undefined : "true"}
+        data-glyph-loading={loading ? "true" : undefined}
         aria-hidden="true"
         transform={transform}
         fill="none"
         strokeWidth={1.5}
         strokeLinecap="round"
         strokeLinejoin="round"
-        className={className}
+        className={loading ? `${className} animate-pulse` : className}
       >
         {PATHS.unit}
       </g>

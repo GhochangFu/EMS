@@ -12,6 +12,7 @@ import {
   lucideShowsItsVersionAndLicence,
   lucideSourceLinkOpensSafely,
   mdiShowsItsNotice,
+  aLazyNoticeLoadsAndNoAlertShows,
   sevenEntriesRender,
   theCatalogIsReadUnscoped,
   theHeadingRenders,
@@ -29,23 +30,26 @@ describe("F3.32f the attributions page", () => {
     vi.restoreAllMocks();
   });
 
-  it("T1 renders the Attributions heading", () => {
-    theHeadingRenders();
+  it("T1 renders the Attributions heading", async () => {
+    await theHeadingRenders();
   });
-  it("T2 renders seven entries", () => {
-    sevenEntriesRender();
+  it("T2 renders seven entries", async () => {
+    await sevenEntriesRender();
   });
-  it("T3 Lucide shows its version and licence", () => {
-    lucideShowsItsVersionAndLicence();
+  it("T3 Lucide shows its version and licence", async () => {
+    await lucideShowsItsVersionAndLicence();
   });
-  it("T4 Lucide's Source link opens safely", () => {
-    lucideSourceLinkOpensSafely();
+  it("T4 Lucide's Source link opens safely", async () => {
+    await lucideSourceLinkOpensSafely();
   });
-  it("T5 Core has no link and no notice", () => {
-    coreHasNoLinkAndNoNotice();
+  it("T5 Core has no link and no notice", async () => {
+    await coreHasNoLinkAndNoNotice();
   });
-  it("T6 MDI shows its notice", () => {
-    mdiShowsItsNotice();
+  it("T6 MDI shows its notice", async () => {
+    await mdiShowsItsNotice();
+  });
+  it("T6b a lazy library's notice loads and no alert shows", async () => {
+    await aLazyNoticeLoadsAndNoAlertShows();
   });
   it("T7 a notice is text, not markup", () => {
     aNoticeIsTextNotMarkup();
@@ -53,14 +57,14 @@ describe("F3.32f the attributions page", () => {
   it("T8 a credit renders one list item", () => {
     aCreditRendersOneListItem();
   });
-  it("T9 a library with credits lists one row per key", () => {
-    aLibraryWithCreditsListsOneRowPerKey();
+  it("T9 a library with credits lists one row per key", async () => {
+    await aLibraryWithCreditsListsOneRowPerKey();
   });
-  it("T10 a library without credits shows no table", () => {
-    aLibraryWithoutCreditsShowsNoTable();
+  it("T10 a library without credits shows no table", async () => {
+    await aLibraryWithoutCreditsShowsNoTable();
   });
-  it("T11 a QElectroTech row says the symbol is an adaptation", () => {
-    aQetRowSaysTheSymbolIsAnAdaptation();
+  it("T11 a QElectroTech row says the symbol is an adaptation", async () => {
+    await aQetRowSaysTheSymbolIsAnAdaptation();
   });
   it("T12 the organization section names each library, its licence and attribution", async () => {
     await theOrgSectionListsEachLibrary();

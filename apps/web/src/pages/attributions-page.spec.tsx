@@ -31,7 +31,9 @@ const viewer = {
   role: "viewer",
 } as unknown as AuthUser;
 
-function renderPage(): void {
+/** Renders the page and waits for the global list: since `F3.32h` the lazy libraries' notices and
+ * the per-file credits load after the first paint, so the heading renders before the entries do. */
+async function renderPage(): Promise<void> {
   // AppShell's status indicator fetches; an unstubbed fetch would reach the real API on :4000.
   vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response("{}", { status: 200 })));
   render(
@@ -41,6 +43,8 @@ function renderPage(): void {
       </QueryClientProvider>
     </MemoryRouter>,
   );
+  // The first load transforms the three lazy shape modules (about 240 KB of source).
+  await screen.findAllByTestId("attribution-entry", {}, { timeout: 5000 });
 }
 
 function entryNamed(name: RegExp): HTMLElement {
@@ -109,32 +113,32 @@ export async function theCatalogIsReadUnscoped(): Promise<void> {
 export async function theOrgSectionIsNotAGlobalEntry(): Promise<void> {
   renderPageWithCatalog(orgCatalogFixture());
   await screen.findAllByTestId("attribution-org-entry");
-  expect(screen.getAllByTestId("attribution-entry")).toHaveLength(7);
+  expect(await screen.findAllByTestId("attribution-entry")).toHaveLength(7);
 }
 
 /** T1 — the page names itself. */
-export function theHeadingRenders(): void {
-  renderPage();
+export async function theHeadingRenders(): Promise<void> {
+  await renderPage();
   expect(screen.getByRole("heading", { name: "Attributions" })).toBeInTheDocument();
 }
 
 /** T2 — one section per library. */
-export function sevenEntriesRender(): void {
-  renderPage();
+export async function sevenEntriesRender(): Promise<void> {
+  await renderPage();
   expect(screen.getAllByTestId("attribution-entry")).toHaveLength(7);
 }
 
 /** T3 — Lucide's heading and licence line. */
-export function lucideShowsItsVersionAndLicence(): void {
-  renderPage();
+export async function lucideShowsItsVersionAndLicence(): Promise<void> {
+  await renderPage();
   const lucide = entryNamed(/^Lucide/);
   expect(within(lucide).getByRole("heading").textContent).toBe("Lucide 1.48.0");
   expect(within(lucide).getByText("Licence: ISC and MIT")).toBeInTheDocument();
 }
 
 /** T4 — Lucide's Source link opens its site in a new tab, safely. */
-export function lucideSourceLinkOpensSafely(): void {
-  renderPage();
+export async function lucideSourceLinkOpensSafely(): Promise<void> {
+  await renderPage();
   const link = within(entryNamed(/^Lucide/)).getByRole("link", { name: "Source" });
   expect(link).toHaveAttribute("href", "https://lucide.dev");
   expect(link).toHaveAttribute("target", "_blank");
@@ -142,8 +146,8 @@ export function lucideSourceLinkOpensSafely(): void {
 }
 
 /** T5 — Core has no link and no notice. */
-export function coreHasNoLinkAndNoNotice(): void {
-  renderPage();
+export async function coreHasNoLinkAndNoNotice(): Promise<void> {
+  await renderPage();
   const core = entryNamed(/^Core/);
   // Positive control: the Core section rendered its licence.
   expect(within(core).getByText("Licence: Own drawings")).toBeInTheDocument();
@@ -152,9 +156,17 @@ export function coreHasNoLinkAndNoNotice(): void {
 }
 
 /** T6 — the MDI notice is shown. */
-export function mdiShowsItsNotice(): void {
-  renderPage();
+export async function mdiShowsItsNotice(): Promise<void> {
+  await renderPage();
   expect(entryNamed(/^Material Design Icons/).querySelector("pre")?.textContent).toContain("Pictogrammers Free License");
+}
+
+/** T6b — `F3.32h`: a lazy library's notice loads with the page, and no load alert shows. */
+export async function aLazyNoticeLoadsAndNoAlertShows(): Promise<void> {
+  await renderPage();
+  expect(entryNamed(/^QElectroTech/).querySelector("pre")?.textContent).toContain("Creative Commons Attribution 3.0 License");
+  expect(entryNamed(/^draw.io/).querySelector("pre")?.textContent).toContain("Converted by scripts/mimic-symbols/generate.mjs");
+  expect(screen.queryByRole("alert")).toBeNull();
 }
 
 /** T7 — a notice is text, never markup. */
@@ -209,9 +221,9 @@ function stubTwoQetCredits(): void {
 }
 
 /** T9 — a library with credits lists one row per key, a link only for an https source. */
-export function aLibraryWithCreditsListsOneRowPerKey(): void {
+export async function aLibraryWithCreditsListsOneRowPerKey(): Promise<void> {
   stubTwoQetCredits();
-  renderPage();
+  await renderPage();
   const qet = entryNamed(/^QElectroTech/);
   const details = qet.querySelector("details:has(table)");
   expect(details?.querySelector("summary")?.textContent).toBe("Per-file credits (2)");
@@ -239,13 +251,13 @@ export function aLibraryWithCreditsListsOneRowPerKey(): void {
  * T11 — ADR 0086 decision 9: a vendored QElectroTech row says the symbol is an adaptation (CC BY
  * 3.0 §4(b)), beside its author. Reads the generated credits, not a stub.
  */
-export function aQetRowSaysTheSymbolIsAnAdaptation(): void {
+export async function aQetRowSaysTheSymbolIsAnAdaptation(): Promise<void> {
   // Only the QElectroTech credits, and a direct row lookup: a role query over every library's
   // 425 rows runs past the 5 s timeout on a loaded machine.
   vi.mocked(libraryCredits).mockImplementation((code) =>
     code === "qet" ? Object.entries(MIMIC_LIBRARY_CREDITS.qet ?? {}).map(([key, credit]) => ({ key, ...credit })) : [],
   );
-  renderPage();
+  await renderPage();
   const table = within(entryNamed(/^QElectroTech/)).getByRole("table", { name: "QElectroTech per-file credits" });
   const head = table.querySelector("thead") as HTMLElement;
   expect(within(head).getByRole("columnheader", { name: "Adaptation" })).toBeInTheDocument();
@@ -258,9 +270,9 @@ export function aQetRowSaysTheSymbolIsAnAdaptation(): void {
 }
 
 /** T10 — a library without credits (Tabler) shows no table. */
-export function aLibraryWithoutCreditsShowsNoTable(): void {
+export async function aLibraryWithoutCreditsShowsNoTable(): Promise<void> {
   stubTwoQetCredits();
-  renderPage();
+  await renderPage();
   // Positive control: the QElectroTech section does have its table.
   expect(within(entryNamed(/^QElectroTech/)).getByRole("table")).toBeInTheDocument();
   const tabler = entryNamed(/^Tabler/);

@@ -255,6 +255,8 @@ export function everyLibraryKeyDrawsAGlyphWithNoFallback(): void {
   expect(glyphs).toHaveLength(LIBRARY_KEYS.length);
   for (const g of glyphs) {
     expect(g.getAttribute("data-glyph-fallback"), g.getAttribute("data-glyph") ?? "").toBeNull();
+    // `F3.32h`: the loading skeleton also has no fallback marker and draws the `unit` outline.
+    expect(g.getAttribute("data-glyph-loading"), g.getAttribute("data-glyph") ?? "").toBeNull();
     expect(g.childElementCount, g.getAttribute("data-glyph") ?? "").toBeGreaterThan(0);
   }
 }

@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { cleanup } from "@testing-library/react";
-import { afterEach, describe, it } from "vitest";
+import { beforeAll, afterEach, describe, it } from "vitest";
 
 import {
   aShapeCarryingATransformRendersItVerbatim,
@@ -32,6 +32,10 @@ import {
   transformedStrokeShapeIsNotSpread,
   unitsDrawAtTheirScale,
 } from "./mimic-scene.spec";
+import { LAZY_MIMIC_LIBRARY_CODES, ensureLibraryShapes } from "./mimic-symbol-libraries";
+
+// `F3.32h`: `qet`, `wmpid` and `drawio` load on first use; these claims read them synchronously.
+beforeAll(() => ensureLibraryShapes(LAZY_MIMIC_LIBRARY_CODES));
 
 /**
  * Vitest entry point — assertions live in the sibling `.spec` (ADR 0014), and the jsdom docblock
