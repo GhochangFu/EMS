@@ -6894,3 +6894,27 @@ reads, and `/sld` and `/crac` still show live values.
 
 **Cascade:** no row lists `F4.176` in *Depends*. Three residuals are recorded
 in ADR 0074 Amendment 3, without a row. No `chore(agents):` change owed.
+
+### `F3.72` — one Control Room section: the estate level, `/` as the entry level, the Assets & RTUs site tab ✅ 2026-09-30
+
+PR #663, squash `4d1721e4`; ADR 0087 decisions 1–3 (#660); plan
+`docs/plans/f3.72-control-room-section.md` (Fable; owner rulings OQ1–OQ9 and
+the step-5 landing ruling). In v1 by owner ruling.
+
+The "Dashboard" menu entry is gone: "Control Room" holds the estate (the old
+`/` content plus organization cards), the organization level (now with Asset
+health, the load trend and its dashboards) and the site. `/` renders the
+user's entry level in place, so a user with one organization or one site
+sees that level at once. The site view gains an "Assets & RTUs" tab with the
+old location page, and `/locations/:id/dashboard` redirects to it. Each level
+lists the library dashboards for its scope. Three optional API filters narrow
+the caller's readable set; an unreadable id answers empty, never 403.
+
+Verified: new cases red→green in every unit; the code review's three
+false-green gaps closed by mutation-red cases; the security review's L1
+fixed and L2 tested on the real database; the browser run as `admin`,
+`phe-admin` and `wc-hvac-admin` on images built from the branch.
+
+**Cascade:** `F3.73` (the SMOC standard site template) lists `F3.72` and is
+now unblocked, after the first stable version. Owed: the `chore(agents):`
+sweep (AGENTS.md names `/` as the dashboard).
