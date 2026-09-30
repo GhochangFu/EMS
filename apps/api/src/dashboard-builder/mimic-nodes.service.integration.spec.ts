@@ -128,13 +128,14 @@ async function seedMimicWidget(
   dashboardId: string,
   config: unknown = { source: "preset", preset: "water_train" },
   gridY = 0,
+  tabId: string | null = null,
 ): Promise<string> {
   const widget = await one<{ id: string }>(
     client,
     `INSERT INTO bms.dashboard_widgets
-       (organization_id, dashboard_id, widget_type, grid_x, grid_y, grid_w, grid_h, config)
-     VALUES ($1, $2, 'mimic', 0, $4, 12, 6, $3::jsonb) RETURNING id`,
-    [organizationId, dashboardId, JSON.stringify(config), gridY],
+       (organization_id, dashboard_id, widget_type, grid_x, grid_y, grid_w, grid_h, config, tab_id)
+     VALUES ($1, $2, 'mimic', 0, $4, 12, 6, $3::jsonb, $5) RETURNING id`,
+    [organizationId, dashboardId, JSON.stringify(config), gridY, tabId],
     "the mimic widget",
   );
   return widget.id;
@@ -700,4 +701,153 @@ export async function assertForeignLayoutWidgetIsSkippedWithOneWarning(client: p
   } finally {
     warn.mockRestore();
   }
+}
+
+// ---------------------------------------------------------------- F3.73 per-tab cases
+
+/**
+ * `F3.73` (plan D3, task 2.3) fixture: a site-scoped dashboard (`location_id` set, no group) with
+ * two groups at that site, each holding its own `wtp` member. Tabs are added per case.
+ */
+interface TabbedSite {
+  readonly organizationId: string;
+  readonly locationId: string;
+  readonly dashboardId: string;
+  readonly groupA: string;
+  readonly groupB: string;
+  readonly wtpA: string;
+  readonly wtpB: string;
+}
+
+async function seedTabbedSite(client: pg.PoolClient): Promise<TabbedSite> {
+  const site = await seedSite(client);
+  const groupOf = async (suffix: string): Promise<{ groupId: string; wtpId: string }> => {
+    const group = await one<{ id: string }>(
+      client,
+      `INSERT INTO bms.asset_groups (location_id, code, name, description, organization_id)
+       VALUES ($1, $2, $3, NULL, $4) RETURNING id`,
+      [site.locationId, `${site.tag}-${suffix}`.toLowerCase(), `F3.73 group ${suffix}`, site.organizationId],
+      `group ${suffix}`,
+    );
+    const wtpId = await seedAsset(client, site, `${site.tag}-WTP-${suffix}`);
+    await client.query("INSERT INTO bms.asset_group_members (asset_group_id, asset_id, role) VALUES ($1, $2, 'wtp')", [
+      group.id,
+      wtpId,
+    ]);
+    return { groupId: group.id, wtpId };
+  };
+  const a = await groupOf("A");
+  const b = await groupOf("B");
+  const dashboard = await one<{ id: string }>(
+    client,
+    `INSERT INTO bms.dashboards (organization_id, slug, name, location_id)
+     VALUES ($1, $2, 'F3.73 tabbed mimic fixture', $3) RETURNING id`,
+    [site.organizationId, `${site.tag}-tabs`.toLowerCase(), site.locationId],
+    "the site dashboard",
+  );
+  return {
+    organizationId: site.organizationId,
+    locationId: site.locationId,
+    dashboardId: dashboard.id,
+    groupA: a.groupId,
+    groupB: b.groupId,
+    wtpA: a.wtpId,
+    wtpB: b.wtpId,
+  };
+}
+
+/**
+ * One tab of the fixture dashboard. `groupId: null` is an Overview (`location_id NULL`, plan D1).
+ * `stampOrganizationId` overrides the tab's own `organization_id` — the cross-org fixture; the
+ * fleet pool bypasses RLS, so only the read's predicate can tell the row apart.
+ */
+async function seedTab(
+  client: pg.PoolClient,
+  site: TabbedSite,
+  key: string,
+  groupId: string | null,
+  stampOrganizationId: string = site.organizationId,
+): Promise<string> {
+  const tab = await one<{ id: string }>(
+    client,
+    `INSERT INTO bms.dashboard_tabs (organization_id, dashboard_id, location_id, asset_group_id, tab_key, label)
+     VALUES ($1, $2, $3, $4, $5, $5) RETURNING id`,
+    [stampOrganizationId, site.dashboardId, groupId === null ? null : site.locationId, groupId, key],
+    `tab ${key}`,
+  );
+  return tab.id;
+}
+
+async function readTabbedSite(client: pg.PoolClient, site: TabbedSite): Promise<DashboardMimicNodesResponseDto> {
+  return readService(client as unknown as pg.Pool).read(site.organizationId, site.dashboardId, null, await txNowMs(client));
+}
+
+/** Each widget's `wtp` node's asset id, in the answer's (grid) order. */
+function wtpAssetIds(dto: DashboardMimicNodesResponseDto): (string | null)[] {
+  return dto.widgets.map((widget) => widget.nodes.find((node) => node.key === "wtp")?.asset?.id ?? null);
+}
+
+/**
+ * T1 — two tabs on two groups: each tab's mimic resolves ITS tab's group, never the first
+ * widget's. A read that takes one group for the dashboard answers group A for both.
+ */
+export async function assertEachTabMimicResolvesItsOwnGroup(client: pg.PoolClient): Promise<void> {
+  const site = await seedTabbedSite(client);
+  const tabA = await seedTab(client, site, "sld", site.groupA);
+  const tabB = await seedTab(client, site, "ups", site.groupB);
+  await seedMimicWidget(client, site.organizationId, site.dashboardId, undefined, 0, tabA);
+  await seedMimicWidget(client, site.organizationId, site.dashboardId, undefined, 6, tabB);
+  expect(wtpAssetIds(await readTabbedSite(client, site))).toEqual([site.wtpA, site.wtpB]);
+}
+
+/** T1b — two groups still cost three statements: members and points are each ONE read. */
+export async function assertTwoTabGroupsAreThreeStatements(client: pg.PoolClient): Promise<void> {
+  const site = await seedTabbedSite(client);
+  await seedMimicWidget(client, site.organizationId, site.dashboardId, undefined, 0, await seedTab(client, site, "sld", site.groupA));
+  await seedMimicWidget(client, site.organizationId, site.dashboardId, undefined, 6, await seedTab(client, site, "ups", site.groupB));
+  const nowMs = await txNowMs(client);
+  const counting = countingClient(client);
+  await readService(counting.pool).read(site.organizationId, site.dashboardId, null, nowMs);
+  expect(counting.count()).toBe(3);
+}
+
+/**
+ * T2 — a mimic on the Overview tab (no group, on a site dashboard with no group) answers every
+ * node unassigned and does not throw; the group tab's mimic on the same dashboard still resolves.
+ */
+export async function assertOverviewTabMimicIsUnassignedForThatWidgetOnly(client: pg.PoolClient): Promise<void> {
+  const site = await seedTabbedSite(client);
+  const overview = await seedTab(client, site, "overview", null);
+  const tabA = await seedTab(client, site, "sld", site.groupA);
+  await seedMimicWidget(client, site.organizationId, site.dashboardId, undefined, 0, overview);
+  await seedMimicWidget(client, site.organizationId, site.dashboardId, undefined, 6, tabA);
+  const dto = await readTabbedSite(client, site);
+  expect({
+    overview: dto.widgets[0]?.nodes.map((node) => [node.key, node.asset, node.memberCount]),
+    sld: wtpAssetIds(dto)[1],
+  }).toEqual({ overview: WATER_TRAIN_KEYS.map((key) => [key, null, 0]), sld: site.wtpA });
+}
+
+/**
+ * T3 — the organization predicate on the tab join (ADR 0043 Amendment 3). A tab stamped with
+ * ANOTHER organization's id but hung on this dashboard and bound to this organization's group is
+ * written through the fleet pool (it bypasses RLS, and nothing ties a tab's organization to its
+ * dashboard's), and it exists. Its widget resolves as "no group" — every node unassigned — while
+ * the honestly stamped tab on the SAME group, the positive control, resolves the member.
+ */
+export async function assertForeignStampedTabResolvesAsNoGroup(client: pg.PoolClient): Promise<void> {
+  const site = await seedTabbedSite(client);
+  const foreign = await seedSite(client);
+  const stamped = await seedTab(client, site, "stamped", site.groupA, foreign.organizationId);
+  const honest = await seedTab(client, site, "sld", site.groupA);
+  const { rows } = await client.query<{ n: number }>(
+    "SELECT count(*)::int AS n FROM bms.dashboard_tabs WHERE id = $1 AND organization_id = $2",
+    [stamped, foreign.organizationId],
+  );
+  await seedMimicWidget(client, site.organizationId, site.dashboardId, undefined, 0, stamped);
+  await seedMimicWidget(client, site.organizationId, site.dashboardId, undefined, 6, honest);
+  expect({ stampedRowExists: rows[0]?.n, wtp: wtpAssetIds(await readTabbedSite(client, site)) }).toEqual({
+    stampedRowExists: 1,
+    wtp: [null, site.wtpA],
+  });
 }
