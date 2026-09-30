@@ -22,12 +22,13 @@ const moduleGroups = [
   {
     title: "Operations",
     items: [
-      { label: "Dashboard", path: "/" },
       { label: "Alarm Centre", path: "/alarms" },
       // `F3.66` (ADR 0076 decision 1, OQ4) — one entry replaces the seven-item
       // *Control Room 2D* group. `nested`: it highlights for every
       // level under `/control-room/` too (plan D9); every other item is exact-match.
-      { label: "Control Room", path: "/control-room", nested: true },
+      // `F3.72` (ADR 0087 decision 1, plan D6) — it replaces *Dashboard* too, and
+      // `alsoAt` highlights it on `/`, which renders the caller's entry level.
+      { label: "Control Room", path: "/control-room", nested: true, alsoAt: "/" },
       { label: "Alarm Philosophy", path: "/alarm-kb" },
       { label: "Dashboards", path: "/dashboards" },
       // `E4.2` / ADR 0072 decision 1 — the reference sidebar carries
@@ -85,6 +86,8 @@ const temporarilyHiddenModulePaths = new Set(["/sld", "/crac"]);
  * collision the later item in rail order (Operations, Maintenance,
  * Automation, then Administration) takes the override, and the earlier item
  * keeps its derived letters. `collapsedRailEntries()` is the uniqueness gate.
+ * `/dashboards` kept `DS` when `F3.72` removed the *Dashboard* item it
+ * collided with, so the collapsed rail does not change under its users.
  */
 export const COLLAPSED_LABEL_OVERRIDES: Readonly<Record<string, string>> = {
   "/dashboards": "DS",
@@ -193,9 +196,20 @@ export function AppShell({ user, children, kpiRibbon }: AppShellProps) {
     void navigate("/login", { replace: true });
   }
 
-  /** A module link is selected on its own path, and on a nested path under it when it says so. */
-  function isModuleSelected(m: { readonly path: string; readonly nested?: boolean }): boolean {
-    return location.pathname === m.path || (m.nested === true && location.pathname.startsWith(`${m.path}/`));
+  /**
+   * A module link is selected on its own path, on a nested path under it when it says so, and on
+   * its `alsoAt` path (`F3.72` — the Control Room entry on `/`).
+   */
+  function isModuleSelected(m: {
+    readonly path: string;
+    readonly nested?: boolean;
+    readonly alsoAt?: string;
+  }): boolean {
+    return (
+      location.pathname === m.path ||
+      (m.nested === true && location.pathname.startsWith(`${m.path}/`)) ||
+      (m.alsoAt !== undefined && location.pathname === m.alsoAt)
+    );
   }
 
   /** An admin link is selected on its path; every one but the hub also under it. */

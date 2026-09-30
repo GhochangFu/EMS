@@ -3,13 +3,21 @@ import { render, screen, within } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { expect, vi } from "vitest";
 
-import type { DashboardKpis, HealthSummaryResponse, UserRole } from "@bms/shared";
+import type {
+  DashboardKpis,
+  DashboardSummaryDto,
+  HealthSummaryResponse,
+  LocationKpiSummary,
+  UserRole,
+} from "@bms/shared";
 
 import * as assetHealthApi from "../api/asset-health";
+import * as dashboardsApi from "../api/dashboards";
 import * as locationsApi from "../api/locations";
 import * as executiveDashboard from "../hooks/use-executive-dashboard";
 import { WIDGET_ICON_PATH } from "../lib/widget-catalog";
 import type { AuthUser } from "../stores/auth-store";
+import { ORG_A, ORG_B, site } from "./control-room/organizations-page.spec";
 import { DashboardPage } from "./dashboard-page";
 
 /**
@@ -68,6 +76,8 @@ function stubDashboard(
   pueEstimate: number | null,
   stale = false,
   overrides: Partial<DashboardKpis> = {},
+  locations: LocationKpiSummary[] = [],
+  dashboards: DashboardSummaryDto[] = [],
 ): void {
   vi.spyOn(executiveDashboard, "useExecutiveDashboard").mockReturnValue({
     kpiQuery: { data: kpis(pueEstimate, overrides), isLoading: false, isError: false },
@@ -76,7 +86,9 @@ function stubDashboard(
     displayTotalKw: 1447.3,
     chartPoints: [],
   } as unknown as ReturnType<typeof executiveDashboard.useExecutiveDashboard>);
-  vi.spyOn(locationsApi, "fetchLocationKpis").mockResolvedValue({ items: [] });
+  vi.spyOn(locationsApi, "fetchLocationKpis").mockResolvedValue({ items: locations });
+  // `F3.72` (plan D2) — the estate's "Dashboards" section reads the library list.
+  vi.spyOn(dashboardsApi, "fetchDashboards").mockResolvedValue({ items: dashboards });
   // `HealthSummarySection` is a child with its own query. Stubbed to an empty
   // scope so the page paints without a request leaving the test process.
   vi.spyOn(assetHealthApi, "fetchHealthSummary").mockResolvedValue({
@@ -335,14 +347,110 @@ export async function sitesOnlineWearsNoIcon(): Promise<void> {
   expect(iconPathOf(sites)).toBeNull();
 }
 
+// ---------------------------------------------------------------------------
+// `F3.72` (ADR 0087 decisions 1–3, plan D2) — `/` is the Control Room's
+// estate level: the organization cards, the location accordion kept by OQ3,
+// and the library dashboards of the whole read scope.
+// ---------------------------------------------------------------------------
+
+const TWO_ORGANIZATIONS = [
+  site({ id: "a1", name: "Alpha One", organization: ORG_A }),
+  site({ id: "a2", name: "Alpha Two", organization: ORG_A }),
+  site({ id: "b1", name: "Beta One", organization: ORG_B }),
+];
+
+/** The `SectionCard` whose `h2` reads `title`. */
+function sectionTitled(title: string): HTMLElement {
+  const heading = screen.getByRole("heading", { level: 2, name: title });
+  const section = heading.closest("section");
+  expect(section, `no SectionCard is titled ${JSON.stringify(title)}`).not.toBeNull();
+  return section as HTMLElement;
+}
+
 /**
- * `F3.33` U5 (ADR 0083) — the dashboard title reads `IONSiTE NEXUS`. The literal appears twice
- * on screen, in the KPI ribbon and in the page header, so a rename of one site leaves the count at 1.
+ * One card per organization, inside an "Organizations" section, each opening
+ * that organization's Control Room level. Three sites of two organizations
+ * give two cards, so a grid of one card per site reddens.
  */
-export async function theDashboardTitleReadsIonsiteNexusTwice(): Promise<void> {
+export async function theEstateShowsOneCardPerOrganization(): Promise<void> {
+  stubDashboard(1.42, false, {}, TWO_ORGANIZATIONS);
+  renderPage();
+
+  const grid = await screen.findByTestId("control-room-organizations");
+  expect(within(sectionTitled("Organizations")).getByTestId("control-room-organizations")).toBe(grid);
+  const hrefs = Array.from(grid.querySelectorAll("a")).map((a) => a.getAttribute("href"));
+  expect(hrefs).toEqual(["/control-room/org/org-a", "/control-room/org/org-b"]);
+}
+
+/**
+ * OQ3 — the "Location performance" section stays: its organization filter
+ * tabs, and the accordion whose location cards open the Control Room site
+ * view (OQ7, `LocationKpiCard`'s default). A regression control: it held
+ * before this row too, and it must still hold beside the new cards.
+ */
+export async function theEstateKeepsTheLocationAccordion(): Promise<void> {
+  stubDashboard(1.42, false, {}, TWO_ORGANIZATIONS);
+  renderPage();
+
+  const tabs = await screen.findByRole("tablist", { name: "Filter locations by organization" });
+  const section = sectionTitled("Location performance");
+  expect(section.contains(tabs), "the filter tabs left the Location performance section").toBe(true);
+  expect(within(tabs).getAllByRole("tab").map((tab) => tab.textContent)).toEqual(["All", "AAA", "BBB"]);
+  const siteHrefs = Array.from(section.querySelectorAll('a[href^="/control-room/site/"]')).map((a) =>
+    a.getAttribute("href"),
+  );
+  expect(siteHrefs).toEqual([
+    "/control-room/site/a1",
+    "/control-room/site/a2",
+    "/control-room/site/b1",
+  ]);
+}
+
+/**
+ * OQ4 — the title reads "Control Room · Estate" twice, in the KPI ribbon and
+ * in the page header, under the "Control Room" eyebrow. The old title is gone.
+ */
+export async function theEstateTitleIsControlRoomEstate(): Promise<void> {
   stubDashboard(1.42);
   renderPage();
 
   await ribbonSettled();
-  expect(screen.getAllByText("Executive Summary · IONSiTE NEXUS Operating Dashboard")).toHaveLength(2);
+  expect(screen.getAllByText("Control Room · Estate")).toHaveLength(2);
+  const heading = screen.getByRole("heading", { level: 1, name: "Control Room · Estate" });
+  expect(within(heading.parentElement as HTMLElement).getByText("Control Room")).toBeInTheDocument();
+  expect(screen.queryByText(/Executive Summary/)).toBeNull();
+}
+
+/**
+ * D7 — the estate lists the library dashboards of the whole read scope: the
+ * list is read with no organization and no location, and each row opens the
+ * viewer.
+ */
+export async function theEstateListsTheDashboards(): Promise<void> {
+  stubDashboard(1.42, false, {}, [], [
+    {
+      id: "11111111-1111-4111-8111-111111111111",
+      organizationId: "22222222-2222-4222-8222-222222222222",
+      slug: "plant-overview",
+      name: "Plant Overview",
+      description: null,
+      locationId: null,
+      assetGroupId: null,
+      assetId: null,
+      assetTemplateId: null,
+      assetCode: null,
+      createdAt: new Date(0).toISOString(),
+      updatedAt: new Date(0).toISOString(),
+      widgetCount: 1,
+    },
+  ]);
+  renderPage();
+
+  expect(await screen.findByText("Plant Overview")).toBeInTheDocument();
+  const section = sectionTitled("Dashboards");
+  expect(within(section).getByRole("link", { name: /Open/ })).toHaveAttribute(
+    "href",
+    "/dashboards/plant-overview?organizationId=22222222-2222-4222-8222-222222222222",
+  );
+  expect(dashboardsApi.fetchDashboards).toHaveBeenCalledWith(undefined, undefined, undefined, undefined);
 }

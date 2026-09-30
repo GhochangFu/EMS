@@ -6,7 +6,6 @@ import { AlarmKbPage } from "./pages/alarm-kb-page";
 import { AlarmsPage } from "./pages/alarms-page";
 import { AssetsPage } from "./pages/assets-page";
 import { AttributionsPage } from "./pages/attributions-page";
-import { DashboardPage } from "./pages/dashboard-page";
 import { DashboardsPage } from "./pages/dashboards-page";
 import { SustainabilityEntryPage } from "./pages/sustainability-entry-page";
 import { DashboardViewerPage } from "./pages/dashboard-viewer-page";
@@ -125,11 +124,16 @@ export function App() {
     <Routes>
       <Route path="/login" element={<LoginPage />} />
       <Route path="/auth/callback" element={<AuthCallbackPage />} />
+      {/* `F3.72` (ADR 0087, plan D1, OQ2) — `/` renders the caller's Control
+          Room entry level in place; the URL stays `/`. Not wrapped in
+          `ControlRoomScopeRoute`: that guard sends a `none` scope to `/`, so it
+          would loop. The page shows a `none` scope the no-sites card itself.
+          `tests/f3.72-control-room-entry.test.ts` keeps that shape. */}
       <Route
         path="/"
         element={
           accessToken && user ? (
-            <DashboardPage user={user} />
+            <ControlRoomOrganizationsPage user={user} entry />
           ) : (
             <Navigate to="/login" replace />
           )

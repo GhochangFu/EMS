@@ -16,7 +16,10 @@ import {
   sitesOnlineHintReadsTheFreshnessWindow,
   sitesOnlineWearsNoIcon,
   theCriticalCountRendersInTheNote,
-  theDashboardTitleReadsIonsiteNexusTwice,
+  theEstateKeepsTheLocationAccordion,
+  theEstateListsTheDashboards,
+  theEstateShowsOneCardPerOrganization,
+  theEstateTitleIsControlRoomEstate,
   theUnacknowledgedRowsLiteralIsGone,
   totalLoadWearsTheBoltIcon,
 } from "./dashboard-page.spec";
@@ -107,13 +110,25 @@ describe("F3.30 Sites online hint reads the freshness window (ADR 0075 decision 
   });
 });
 
-describe("F3.33 the dashboard title reads IONSiTE NEXUS", () => {
+describe("F3.72 the Control Room estate (ADR 0087, plan D2)", () => {
   afterEach(() => {
     cleanup();
     vi.restoreAllMocks();
   });
 
-  it("D1 reads the title twice, in the ribbon and the page header", async () => {
-    await theDashboardTitleReadsIonsiteNexusTwice();
+  it("shows one card per organization in the Organizations section", async () => {
+    await theEstateShowsOneCardPerOrganization();
+  });
+
+  it("keeps the location filter tabs and accordion, linking to the site view (OQ3, OQ7)", async () => {
+    await theEstateKeepsTheLocationAccordion();
+  });
+
+  it("reads 'Control Room · Estate' twice, under the Control Room eyebrow (OQ4)", async () => {
+    await theEstateTitleIsControlRoomEstate();
+  });
+
+  it("lists the library dashboards of the whole read scope", async () => {
+    await theEstateListsTheDashboards();
   });
 });
