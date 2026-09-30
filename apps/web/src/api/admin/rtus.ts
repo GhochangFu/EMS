@@ -33,6 +33,7 @@ export async function createAdminRtu(
     sourceType: AdminRtuDto["sourceType"];
     domain?: string;
     externalRtuId?: number;
+    rtuCode?: string;
     mqttTopic?: string;
     ingestEnabled?: boolean;
   },
@@ -51,6 +52,9 @@ export async function updateAdminRtu(
     displayName: string;
     sourceType: AdminRtuDto["sourceType"];
     domain: string;
+    // `""` clears the column: the PATCH body is optional-but-not-nullable
+    // (`rtus.schema.ts`, `F4.60`), so omit the key to leave it unchanged.
+    rtuCode: string;
     ingestEnabled: boolean;
   }>,
 ): Promise<AdminRtuDto> {

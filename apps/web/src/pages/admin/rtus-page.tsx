@@ -21,6 +21,7 @@ import { MasterDataLayout } from "../../components/admin/master-data-layout";
 import { PageHeader } from "../../components/page-header";
 import { SectionCard } from "../../components/section-card";
 import { StatusPill } from "../../components/status-pill";
+import { apiErrorMessage } from "../../lib/api-error-message";
 import type { AuthUser } from "../../stores/auth-store";
 
 type RtusAdminPageProps = { user: AuthUser };
@@ -41,6 +42,7 @@ export function RtusAdminPage({ user }: RtusAdminPageProps) {
     displayName: "",
     sourceType: "catalog" as AdminRtuDto["sourceType"],
     domain: "",
+    rtuCode: "",
     ingestEnabled: false,
   });
   const [error, setError] = useState<string | null>(null);
@@ -85,12 +87,19 @@ export function RtusAdminPage({ user }: RtusAdminPageProps) {
 
   const saveMutation = useMutation({
     mutationFn: async () => {
+      // `rtus.rtu_code` is the device key the ingest host matches each MQTT
+      // payload's `dev_id` against (ADR 0016 §3), so a pasted space would
+      // route nothing, silently. `F4.182`: an edit sends it only when it
+      // changed, because `""` clears the column and a restated blank would
+      // turn a seeded NULL into `""` (`F4.143`).
+      const rtuCode = form.rtuCode.trim();
       if (editing) {
         return updateAdminRtu(editing.id, {
           code: form.code,
           displayName: form.displayName,
           sourceType: form.sourceType,
           domain: form.domain || undefined,
+          ...(rtuCode === (editing.rtuCode ?? "") ? {} : { rtuCode }),
           ingestEnabled: form.ingestEnabled,
         });
       }
@@ -100,6 +109,7 @@ export function RtusAdminPage({ user }: RtusAdminPageProps) {
         displayName: form.displayName,
         sourceType: form.sourceType,
         domain: form.domain || undefined,
+        ...(rtuCode === "" ? {} : { rtuCode }),
         ingestEnabled: form.ingestEnabled,
       });
     },
@@ -109,7 +119,7 @@ export function RtusAdminPage({ user }: RtusAdminPageProps) {
       setError(null);
       await queryClient.invalidateQueries({ queryKey: ["admin", "rtus"] });
     },
-    onError: (err: Error) => setError(err.message),
+    onError: (err: Error) => setError(apiErrorMessage(err)),
   });
 
   const toggleMutation = useMutation({
@@ -138,6 +148,7 @@ export function RtusAdminPage({ user }: RtusAdminPageProps) {
                 displayName: "",
                 sourceType: "catalog",
                 domain: "",
+                rtuCode: "",
                 ingestEnabled: false,
               });
               setModalOpen(true);
@@ -170,6 +181,7 @@ export function RtusAdminPage({ user }: RtusAdminPageProps) {
               <th className="px-2 py-2">Code</th>
               <th className="px-2 py-2">Name</th>
               <th className="px-2 py-2">Source</th>
+              <th className="px-2 py-2">Device ID</th>
               <th className="px-2 py-2">Status</th>
               <th className="px-2 py-2">Actions</th>
             </tr>
@@ -187,6 +199,7 @@ export function RtusAdminPage({ user }: RtusAdminPageProps) {
                 <td className="px-2 py-2 font-mono">{item.code}</td>
                 <td className="px-2 py-2 font-semibold text-accent-strong">{item.displayName}</td>
                 <td className="px-2 py-2">{item.sourceType}</td>
+                <td className="px-2 py-2 font-mono">{item.rtuCode || "—"}</td>
                 <td className="px-2 py-2">
                   <StatusPill
                     label={item.active ? "Active" : "Inactive"}
@@ -206,6 +219,7 @@ export function RtusAdminPage({ user }: RtusAdminPageProps) {
                           displayName: item.displayName,
                           sourceType: item.sourceType,
                           domain: item.domain ?? "",
+                          rtuCode: item.rtuCode ?? "",
                           ingestEnabled: item.ingestEnabled,
                         });
                         setModalOpen(true);
@@ -302,6 +316,17 @@ export function RtusAdminPage({ user }: RtusAdminPageProps) {
                   className="mt-1 w-full surface-field px-3 py-2 text-sm"
                   value={form.domain}
                   onChange={(event) => setForm({ ...form, domain: event.target.value })}
+                />
+              </label>
+              <label className="block text-xs font-semibold text-ink-muted sm:col-span-2">
+                Device ID (dev_id)
+                <input
+                  className="mt-1 w-full surface-field px-3 py-2 font-mono text-sm"
+                  value={form.rtuCode}
+                  maxLength={64}
+                  autoComplete="off"
+                  spellCheck={false}
+                  onChange={(event) => setForm({ ...form, rtuCode: event.target.value })}
                 />
               </label>
               <label className="flex items-center gap-2 text-xs font-semibold text-ink-muted sm:col-span-2">
