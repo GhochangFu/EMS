@@ -337,6 +337,9 @@ export const assetGroups = bmsSchema.table("asset_groups", {
   code: varchar("code", { length: 64 }).notNull(),
   name: varchar("name", { length: 255 }).notNull(),
   description: text("description"),
+  // F3.73, migration 0095: the asset domain this group belongs to. Nullable — a group nobody has
+  // classified carries none, and a default would be a claim.
+  domain: varchar("domain", { length: 64 }).references(() => assetDomains.code),
   createdAt: timestamp("created_at", { withTimezone: true })
     .notNull()
     .defaultNow(),

@@ -659,6 +659,13 @@
       "when": 1790768303628,
       "tag": "0094_dashboard_tabs",
       "breakpoints": true
+    },
+    {
+      "idx": 95,
+      "version": "7",
+      "when": 1790781215345,
+      "tag": "0095_site_template_target_and_group_domain",
+      "breakpoints": true
     }
   ]
 }

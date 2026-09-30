@@ -136,6 +136,9 @@ export const dashboardTemplates = bmsSchema.table("dashboard_templates", {
   // SQL has no imports, exactly as `f3.1d` records for the grid bounds.
   status: varchar("status", { length: 32 }).notNull().default("draft"),
   content: jsonb("content").notNull().default({}),
+  // F3.73, migration 0095: what the template instantiates onto. The value list is
+  // `dashboardTemplateTargetSchema`; the SQL CHECK `dashboard_templates_target_check` restates it.
+  target: varchar("target", { length: 32 }).notNull().default("asset_group"),
   publishedAt: timestamp("published_at", { withTimezone: true }),
   archivedAt: timestamp("archived_at", { withTimezone: true }),
   stockCode: varchar("stock_code", { length: 64 }),
