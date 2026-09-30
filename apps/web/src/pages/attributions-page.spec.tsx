@@ -43,7 +43,8 @@ async function renderPage(): Promise<void> {
       </QueryClientProvider>
     </MemoryRouter>,
   );
-  await screen.findAllByTestId("attribution-entry");
+  // The first load transforms the three lazy shape modules (about 240 KB of source).
+  await screen.findAllByTestId("attribution-entry", {}, { timeout: 5000 });
 }
 
 function entryNamed(name: RegExp): HTMLElement {
@@ -158,6 +159,14 @@ export async function coreHasNoLinkAndNoNotice(): Promise<void> {
 export async function mdiShowsItsNotice(): Promise<void> {
   await renderPage();
   expect(entryNamed(/^Material Design Icons/).querySelector("pre")?.textContent).toContain("Pictogrammers Free License");
+}
+
+/** T6b — `F3.32h`: a lazy library's notice loads with the page, and no load alert shows. */
+export async function aLazyNoticeLoadsAndNoAlertShows(): Promise<void> {
+  await renderPage();
+  expect(entryNamed(/^QElectroTech/).querySelector("pre")?.textContent).toContain("Creative Commons Attribution 3.0 License");
+  expect(entryNamed(/^draw.io/).querySelector("pre")?.textContent).toContain("Converted by scripts/mimic-symbols/generate.mjs");
+  expect(screen.queryByRole("alert")).toBeNull();
 }
 
 /** T7 — a notice is text, never markup. */

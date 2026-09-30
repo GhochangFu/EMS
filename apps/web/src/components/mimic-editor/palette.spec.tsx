@@ -202,6 +202,18 @@ export async function theMdiTabHoldsTheNoticeInDetails(): Promise<void> {
   expect(details.querySelector("pre")?.textContent).toContain("Apache 2.0 (https://www.apache.org/licenses/LICENSE-2.0)");
 }
 
+/**
+ * P18b — `F3.32h`: a lazy library's tab shows its licence notice once the library loads. The
+ * notice is not in the main chunk, so `LibraryNotice` must load it and redraw; the grid's glyphs
+ * redraw only themselves.
+ */
+export async function aLazyLibraryTabShowsItsNoticeOnceLoaded(): Promise<void> {
+  renderPalette({ libraries: ["core", "qet"] });
+  await userEvent.click(screen.getByRole("tab", { name: "QElectroTech" }));
+  const details = await screen.findByTestId("mimic-palette-licence", {}, { timeout: 5000 });
+  expect(details.querySelector("pre")?.textContent).toContain("Creative Commons Attribution 3.0 License");
+}
+
 /** P19 — the core tab shows its line and no `<details>` (no notice to show). */
 export function theCoreTabShowsNoDetails(): void {
   renderPalette({ libraries: THREE });

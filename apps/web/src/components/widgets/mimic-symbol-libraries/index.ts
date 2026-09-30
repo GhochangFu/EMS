@@ -45,19 +45,28 @@ const LAZY_LOADERS = {
     import("./drawio.generated").then((m): LazyLibraryModule => ({ shapes: m.DRAWIO_SHAPES, notice: m.DRAWIO_LICENCE_NOTICE })),
 } as const satisfies Partial<Record<MimicSymbolLibraryCode, () => Promise<LazyLibraryModule>>>;
 
+/** A library code whose shapes and notice load on first use. */
 export type LazyMimicLibraryCode = keyof typeof LAZY_LOADERS;
 
+/** Every lazy library code, in `LAZY_LOADERS` order — what a caller passes to load them all. */
 export const LAZY_MIMIC_LIBRARY_CODES = Object.keys(LAZY_LOADERS) as readonly LazyMimicLibraryCode[];
 
+/** Whether `code` names a lazy library; own keys only, so `constructor` or `__proto__` is not one. */
 export function isLazyMimicLibrary(code: string): code is LazyMimicLibraryCode {
   return Object.prototype.hasOwnProperty.call(LAZY_LOADERS, code);
 }
 
-const NOTICES = new Map<MimicSymbolLibraryCode, string>([
-  ["tabler", TABLER_LICENCE_NOTICE],
-  ["lucide", LUCIDE_LICENCE_NOTICE],
-  ["mdi", MDI_LICENCE_NOTICE],
-]);
+/** The static libraries' notices. Typed over every non-core code no lazy loader carries, so a new
+ * library code with neither a loader nor a notice here is a compile error. */
+const STATIC_NOTICES = {
+  tabler: TABLER_LICENCE_NOTICE,
+  lucide: LUCIDE_LICENCE_NOTICE,
+  mdi: MDI_LICENCE_NOTICE,
+} as const satisfies Record<Exclude<MimicSymbolLibraryCode, "core" | LazyMimicLibraryCode>, string>;
+
+const NOTICES = new Map<MimicSymbolLibraryCode, string>(
+  Object.entries(STATIC_NOTICES) as Array<[MimicSymbolLibraryCode, string]>,
+);
 
 const loaded = new Set<LazyMimicLibraryCode>();
 const failed = new Set<LazyMimicLibraryCode>();
@@ -71,7 +80,8 @@ function publish(): void {
 }
 
 /** Loads each lazy library of `codes` once; a code that is static, loaded or unknown is a no-op.
- * A failed load (a stale chunk after a redeploy) is recorded, and the next call retries it. */
+ * A failed load is recorded as `"failed"`, and the next call tries again: that recovers from a
+ * transient network error, but not from a chunk a redeploy removed — that needs a page reload. */
 export function ensureLibraryShapes(codes: Iterable<string>): Promise<void> {
   const pending: Promise<void>[] = [];
   for (const code of codes) {

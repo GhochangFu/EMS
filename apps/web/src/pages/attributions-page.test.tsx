@@ -12,6 +12,7 @@ import {
   lucideShowsItsVersionAndLicence,
   lucideSourceLinkOpensSafely,
   mdiShowsItsNotice,
+  aLazyNoticeLoadsAndNoAlertShows,
   sevenEntriesRender,
   theCatalogIsReadUnscoped,
   theHeadingRenders,
@@ -46,6 +47,9 @@ describe("F3.32f the attributions page", () => {
   });
   it("T6 MDI shows its notice", async () => {
     await mdiShowsItsNotice();
+  });
+  it("T6b a lazy library's notice loads and no alert shows", async () => {
+    await aLazyNoticeLoadsAndNoAlertShows();
   });
   it("T7 a notice is text, not markup", () => {
     aNoticeIsTextNotMarkup();

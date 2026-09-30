@@ -1,5 +1,5 @@
 import { render, screen, waitFor } from "@testing-library/react";
-import { librarySymbolEntries, type MimicSymbolLibraryCode } from "@bms/shared";
+import { MIMIC_SYMBOL_LIBRARIES, librarySymbolEntries, type MimicSymbolLibraryCode } from "@bms/shared";
 import { expect, vi } from "vitest";
 
 import type { MimicGlyphKind } from "../../../lib/mimic";
@@ -58,6 +58,16 @@ export async function aLazyNoticeArrivesWithItsLoad(): Promise<void> {
   expect(store.mimicLibraryNotice("drawio")).toBeNull();
   await store.ensureLibraryShapes(["drawio"]);
   expect(store.mimicLibraryNotice("drawio")).toContain("Converted by scripts/mimic-symbols/generate.mjs");
+}
+
+/** L4b — once every lazy library loaded, every non-core library has a notice (the runtime half of
+ * the compile-time check on `STATIC_NOTICES`). */
+export async function everyNonCoreLibraryHasANoticeAfterTheLoad(): Promise<void> {
+  const store = await freshStore();
+  await store.ensureLibraryShapes(store.LAZY_MIMIC_LIBRARY_CODES);
+  const codes = MIMIC_SYMBOL_LIBRARIES.map((l) => l.code).filter((c): c is Exclude<MimicSymbolLibraryCode, "core"> => c !== "core");
+  expect(codes.length).toBe(6);
+  for (const code of codes) expect(store.mimicLibraryNotice(code)?.length ?? 0, code).toBeGreaterThan(0);
 }
 
 /** L5 — a failed load (a stale chunk) is "failed", and the next call retries and loads. */

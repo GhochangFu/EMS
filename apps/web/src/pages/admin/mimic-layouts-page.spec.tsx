@@ -154,6 +154,8 @@ export async function noPresetPreviewDrawsTheFallback(): Promise<void> {
     expect(preview()).toHaveAttribute("data-preset", value);
     expect(preview().querySelectorAll("[data-glyph]").length, value).toBeGreaterThan(0);
     expect(preview().querySelectorAll('[data-glyph-fallback="true"]'), value).toHaveLength(0);
+    // `F3.32h`: a preset on a lazy library draws skeletons until it loads; none may stay.
+    await waitFor(() => expect(preview().querySelectorAll('[data-glyph-loading="true"]'), value).toHaveLength(0));
   }
 }
 
