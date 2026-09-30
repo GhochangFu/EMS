@@ -6843,3 +6843,26 @@ the running app and tuned the shadow strength.
 
 **Cascade:** none. A `chore(agents):` PR records the surface style in
 AGENTS.md §5 beside `ESKOM_SMOC.html`.
+
+### `F4.176` — the Control Room site view stops firing ~2,900 `/recent` reads per load ✅ 2026-09-30
+
+PR #657, squash `6ef449cc`; ADR 0074 Amendments 2 (owner-accepted, first
+commit of the PR) and 3 (closure); plan
+`docs/plans/f4.176-schematic-latest-read.md` (Fable). In v1 by owner ruling.
+
+The schematic provider read `/recent` once per asset and point key, twice, so
+the SMOC site view made 2,924 requests on each load and the browser refused
+most of them. A new batched read, `GET /telemetry/points/latest`, answers the
+latest sample of each pair in the window, with one index probe per pair; the
+provider now makes one request for every 50 assets. The reviews replaced a
+`DISTINCT ON` that grew with the window (up to 14.7 s cold) with the per-pair
+probe (62–109 ms), refused control characters in a key, and made a failed or
+drifted batch leave the others applied.
+
+Verified: every gate shown red by its mutation; the integration suite against
+Postgres; the full suite; the rebuilt API over HTTP; the browser with the
+simulator running — one SMOC load made 0 `/recent` and 1 `/points/latest`
+reads, and `/sld` and `/crac` still show live values.
+
+**Cascade:** no row lists `F4.176` in *Depends*. Three residuals are recorded
+in ADR 0074 Amendment 3, without a row. No `chore(agents):` change owed.
