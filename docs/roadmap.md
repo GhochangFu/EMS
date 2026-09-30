@@ -6728,6 +6728,34 @@ findings were fixed in the PR.
 **Cascade:** `F3.32` stays open for network mimics, layouts in templates, KPI
 overlays and the unit-level reference preset (ADR 0081 decision 10).
 
+### `F3.32f` — administered and uploaded mimic symbol libraries ✅ 2026-09-30
+
+ADR 0086 (#651, squash `8b9fd8b5`); the owner ruled the full row into v1, released
+per slice; draw.io is in at the v29.3.2 pin with the licence risk accepted by the owner.
+
+- **Slice 1** — PR #656, squash `272b4be6`: migration `0091` (the Lucide label reads
+  "ISC and MIT"); the API refuses an inactive symbol or a symbol from a retired
+  library, except what the stored layout already uses; unknown library codes are
+  dropped on read; the `/attributions` page.
+- **Slice 2** — PR #659, squash `54ed14f0`: migration `0092`; libraries `qet`
+  (QElectroTech, 137, CC BY 3.0), `wmpid` (Wikimedia Commons P&ID, 157, public domain
+  / CC0 only) and `drawio` (131, v29.3.2, CC BY 4.0); the shape grammar moved to
+  `packages/shared/src/contracts/mimic-shapes.ts` with a strict, linear transform;
+  per-file credits on `/attributions`; main chunk +77 KB gzip.
+- **Slice 3** — PR #661, squash `02acf501`: migration `0093` — organization libraries,
+  symbols and settings (FORCE RLS); the `mimic-symbol-libraries` API with a
+  per-organization switch and SVG upload parsed with `saxes` (DOCTYPE, entities, PI,
+  CDATA, script and style refused); organization symbols embedded in the layout read;
+  the Symbol Libraries admin page.
+
+Verified: CI green on each PR, cold starts on scratch databases, integration through
+`0093`, a security review whose two ReDoS blockers were fixed, and a browser run
+(B1–B11 all PASS).
+
+**Cascade:** raises `F3.32h` (lazy-load the three shape modules) and `F4.177`–`F4.180`.
+Owner items outside code: customer terms must not restrict the QElectroTech symbols
+(CC BY 3.0 §4(a)); confirm the Wikimedia fetch User-Agent contact.
+
 ### `F3.32g` — mimic preset preview and library glyphs in the presets ✅ 2026-09-29
 
 PR #649, squash `f0ef958f`; owner rulings 2026-09-29 (in v1, no ADR).
