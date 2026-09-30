@@ -425,3 +425,37 @@ planning and 0.6 s of execution, and this page needs about 30 such calls.
   supplies every later reading.
 - **Found, not changed:** `useTelemetryLive`
   (`apps/web/src/hooks/use-telemetry-live.ts`) has no importer.
+
+## Amendment 3 (2026-09-30) — `F4.176` closure: what the build and its reviews settled
+
+Written at the row's closure. Amendment 2 is left as written; this records
+where PR #657 (squash `6ef449cc`) and its reviews narrowed or settled a point
+Amendment 2 did not.
+
+1. **The read is one index probe per requested pair.** Amendment 2 decision 1
+   measured a `DISTINCT ON` over the window. The security review found that
+   its cost grows with the rows in the window: over 60 minutes of the SMOC set
+   (171,081 rows) it sorted to disk in 0.8–2.6 s, and the index-ordered variant
+   took 14.7 s cold. The shipped statement crosses the requested ids and keys
+   and reads each pair with `ORDER BY time DESC LIMIT 1` above the window
+   floor: 62–109 ms for 60 minutes, 161 ms for 15. Its cost is bounded by the
+   pair count, at most 50 × 64. Duplicate ids and keys are dropped first.
+2. **Decision 3's floor is a bound `timestamptz` computed in the service.** It
+   is a constant at plan time, so chunks are excluded while planning (2–12 ms,
+   against 350 ms for `now() - interval`).
+3. **Two narrower input bounds than decision 2 states.** A point key is 1–128
+   characters, the width of `telemetry.point_values.point_key`. A point key
+   with a control character is refused: Postgres refuses a NUL byte in `text`,
+   so it was a 500 where the caller made an ordinary mistake. Both answer 400.
+4. **Decision 4's premise is structural.** `GET /assets` returns only
+   `readableAssetIds(user)`, and the new read checks every id against the same
+   function. Every id the provider sends is one the guard accepts, so the
+   whole-request 403 cannot fire for it.
+5. **Accepted without a new row**, each recorded in the `F4.176` row:
+   - Hydration replaces a socket reading that arrived during its one round
+     trip. This predates the row, and the window is now one request instead
+     of up to 1,462 serial ones.
+   - The provider's batch size (50) is a hand copy of `MAX_LATEST_ASSET_IDS`.
+   - The client does not check the 64-key cap. `CR_POINT_KEYS` has 34 keys; a
+     65th would be a 400 that the batch catch absorbs, and hydration would go
+     empty without an error.
