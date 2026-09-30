@@ -170,7 +170,7 @@ export const V3_WINDOW_HELP =
  */
 export const CALENDAR_WINDOW_WARNING =
   "This formula uses a calendar window. It is evaluated in the zone of each asset's location; " +
-  "at a location with no timezone (Admin → Locations) it writes nothing and counts timezone_unset.";
+  "at a location with no timezone (Administration → Sites & Equipment → Locations) it writes nothing and counts timezone_unset.";
 
 /**
  * The dialect `<select>`'s options, from `CALC_DIALECTS` and in its order.

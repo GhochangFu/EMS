@@ -458,6 +458,12 @@ export function selectsTheHubOnTheHubPath(): void {
   expect(currentAdminEntries()).toEqual(["Master Data Hub"]);
 }
 
+/** M3 — `/admin/` (trailing slash) selects the hub too, as React Router routes it there. */
+export function selectsTheHubWithATrailingSlash(): void {
+  renderShell(GLOBAL, "/admin/", "admin");
+  expect(currentAdminEntries()).toEqual(["Master Data Hub"]);
+}
+
 /**
  * `F3.65c` U10 — the Light / Dark switch sits in the header's user area, between the user block
  * and the Logout button, and paints with the `on-dark` shapes `tests/f3.65a-colour-contrast.test.ts`

@@ -8,6 +8,7 @@ import {
   masterDataAreas,
   masterDataTabForPath,
   masterDataTabs,
+  normalizeAdminPath,
   visibleMasterDataAreas,
 } from "../lib/admin-access";
 import { roleLabel } from "../lib/role-label";
@@ -66,9 +67,9 @@ const moduleGroups = [
 
 /**
  * `F3.76` — the Administration group is the hub plus one entry per master-data
- * area. An area's `path` here is its first tab for the global `admin`; the
- * rendered link goes to the first tab the role sees, and an area the role sees
- * no tab of has no entry.
+ * area, linked to the area's first tab. Every master-data role sees that tab
+ * whenever it sees the area (`master-data-areas.spec.ts` A5b holds this). An
+ * area the role sees no tab of has no entry.
  */
 const adminModuleGroup = {
   title: "Administration",
@@ -216,11 +217,11 @@ export function AppShell({ user, children, kpiRibbon }: AppShellProps) {
   /** `F3.76` — the hub is selected on `/admin`; an area on every path whose tab is in it. */
   const selectedAdminArea = masterDataTabForPath(location.pathname)?.area ?? null;
   function isAdminSelected(item: { readonly path: string; readonly area?: string }): boolean {
-    return item.area === undefined ? location.pathname === item.path : item.area === selectedAdminArea;
+    return item.area === undefined
+      ? normalizeAdminPath(location.pathname) === item.path
+      : item.area === selectedAdminArea;
   }
-  const visibleAreaPaths = new Map(
-    visibleMasterDataAreas(user.role).map((area) => [area.id as string, area.path]),
-  );
+  const visibleAreas = new Set<string>(visibleMasterDataAreas(user.role).map((area) => area.id));
 
   function toggleSidebar(): void {
     setSidebarCollapsed((current) => {
@@ -367,11 +368,11 @@ export function AppShell({ user, children, kpiRibbon }: AppShellProps) {
               )}
               <ul className="space-y-0.5">
                 {adminModuleGroup.items
-                  .filter((item) => !("area" in item) || visibleAreaPaths.has(item.area))
+                  .filter((item) => !("area" in item) || visibleAreas.has(item.area))
                   .map((item) => (
                     <li key={item.path}>
                       <Link
-                        to={"area" in item ? (visibleAreaPaths.get(item.area) ?? item.path) : item.path}
+                        to={item.path}
                         title={item.label}
                         aria-label={sidebarCollapsed ? `${item.label} (${collapsedLabel(item)})` : undefined}
                         aria-current={isAdminSelected(item) ? "page" : undefined}

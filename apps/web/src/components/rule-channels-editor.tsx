@@ -157,7 +157,7 @@ export function RuleChannelsEditor({
 
       {channelsQ.isSuccess && channels.length === 0 ? (
         <p className="mt-2 text-xs text-ink-muted">
-          No channels you can manage. Create one under Admin → Notification channels.
+          No channels you can manage. Create one under Administration → Notifications → Channels.
         </p>
       ) : null}
 

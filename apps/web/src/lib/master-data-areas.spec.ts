@@ -81,6 +81,21 @@ export function linksEachAreaToItsFirstVisibleTab(): void {
 }
 
 /**
+ * A5b — for every master-data role, an area's first visible tab is the area's
+ * first tab. The sidebar links each area there (`app-shell.tsx`), so a gate
+ * added to a first tab must fail here rather than send a role to a refusal.
+ */
+export function firstTabOfEveryAreaIsVisibleWithTheArea(): void {
+  const firstTab = (id: string) => masterDataTabs.find((tab) => tab.area === id)?.path;
+  const mismatches = (["admin", "organization_admin", "location_admin"] as const).flatMap((role) =>
+    visibleMasterDataAreas(role)
+      .filter((area) => area.path !== firstTab(area.id))
+      .map((area) => `${role}: ${area.id} opens at ${area.path}`),
+  );
+  expect(mismatches).toEqual([]);
+}
+
+/**
  * A6 — Symbol Libraries (`F3.32f`, ADR 0086 decision 7) is a tab for the two
  * roles that manage libraries, and not for a `location_admin`.
  */
@@ -119,6 +134,8 @@ export function selectsTheTabOfEachRoute(): void {
     "/admin/mimic-symbol-libraries": "/admin/mimic-symbol-libraries",
     "/admin/telemetry/import": "/admin/telemetry/import",
     "/admin/escalation-profiles": "/admin/escalation-profiles",
+    "/admin/locations/l1/rtus/": "/admin/rtus",
+    "/admin/Assets/A1/Points": "/admin/asset-points",
     "/admin/assets-archive": null,
     "/admin/dashboards": null,
     "/admin/dashboards/plant-a": null,

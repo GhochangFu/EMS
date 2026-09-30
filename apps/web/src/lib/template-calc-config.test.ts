@@ -76,7 +76,7 @@ describe("template calc config", () => {
     runV3WindowHelpNamesTheSparseRefusalTests();
   });
 
-  it("names timezone_unset and Admin → Locations in the calendar warning", () => {
+  it("names timezone_unset and Administration → Sites & Equipment → Locations in the calendar warning", () => {
     runCalendarWarningTests();
   });
 });

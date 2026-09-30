@@ -1,6 +1,7 @@
 import { describe, it } from "vitest";
 
 import {
+  firstTabOfEveryAreaIsVisibleWithTheArea,
   gatesTheSymbolLibrariesTab,
   givesEveryAdminRouteAnArea,
   groupsEveryTabIntoItsArea,
@@ -41,6 +42,10 @@ describe("F3.76 master data areas", () => {
 
   it("A5 links each area to its first visible tab", () => {
     linksEachAreaToItsFirstVisibleTab();
+  });
+
+  it("A5b opens every area at its first tab, for every master-data role", () => {
+    firstTabOfEveryAreaIsVisibleWithTheArea();
   });
 
   it("A6 gates the Symbol Libraries tab like the page", () => {

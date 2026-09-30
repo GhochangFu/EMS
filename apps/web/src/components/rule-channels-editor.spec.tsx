@@ -184,7 +184,7 @@ export async function saysThereAreNoChannelsRatherThanShowingAnEmptyList(): Prom
 
   expect(
     await screen.findByText(
-      "No channels you can manage. Create one under Admin → Notification channels.",
+      "No channels you can manage. Create one under Administration → Notifications → Channels.",
     ),
   ).toBeInTheDocument();
   expect(screen.queryByRole("button", { name: "Save" })).not.toBeInTheDocument();
@@ -202,7 +202,7 @@ export async function saysTheChannelListFailedRatherThanClaimingThereAreNone(): 
   expect(await screen.findByText(/could not load notification channels/i)).toBeInTheDocument();
   expect(
     screen.queryByText(
-      "No channels you can manage. Create one under Admin → Notification channels.",
+      "No channels you can manage. Create one under Administration → Notifications → Channels.",
     ),
   ).not.toBeInTheDocument();
 }

@@ -3,7 +3,7 @@ import { afterEach, describe, it, vi } from "vitest";
 import { cleanup } from "@testing-library/react";
 
 import {
-  adminSeesBothAssetsLinks,
+  adminSeesTheOperatorAssetsLinkAndTheSitesArea,
   clickingARowOpensThePanelForThatRow,
   anEmptyFilterResultSaysSo,
   columnsMapToTheRow,
@@ -30,8 +30,8 @@ describe("F3.31 assets browser page", () => {
     await viewerSeesAssetsUnderOperations();
   });
 
-  it("P1 — shows an admin both Assets links", async () => {
-    await adminSeesBothAssetsLinks();
+  it("P1 — shows an admin the operator Assets link and the Sites & Equipment area (F3.76)", async () => {
+    await adminSeesTheOperatorAssetsLinkAndTheSitesArea();
   });
 
   it("P2 — a row click opens the panel for that row", async () => {

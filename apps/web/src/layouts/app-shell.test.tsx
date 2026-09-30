@@ -37,6 +37,7 @@ import {
   showsDsForDashboardsWhenCollapsed,
   selectsTheAreaOfADrillDown,
   selectsTheHubOnTheHubPath,
+  selectsTheHubWithATrailingSlash,
   showsTheHubAndFiveAreasToAnOrganizationAdmin,
   showsOneEntryToALocationScope,
   showsTheDescriptorInTheHeader,
@@ -109,6 +110,10 @@ describe("F3.66 Control Room sidebar entry", () => {
 
   it("M2 selects the hub entry on /admin only (F3.76)", () => {
     selectsTheHubOnTheHubPath();
+  });
+
+  it("M3 selects the hub entry on /admin/ too (F3.76)", () => {
+    selectsTheHubWithATrailingSlash();
   });
 });
 

@@ -223,7 +223,10 @@ export function canManageSymbolLibraries(role: UserRole): boolean {
   return role === "admin" || role === "organization_admin";
 }
 
-/** Default admin landing route for a role. */
+/**
+ * Where `AdminRoute` sends a master-data role it refuses. Not the landing page:
+ * `/admin` renders the Master Data Hub since `F3.76`.
+ */
 export function defaultAdminRoute(role: UserRole): string {
   if (role === "admin" || role === "organization_admin") {
     return "/admin/organizations";
@@ -406,6 +409,14 @@ export function visibleMasterDataAreas(role: UserRole): VisibleMasterDataArea[] 
 }
 
 /**
+ * `F3.76` — a pathname as React Router matches it: case-insensitive, and a
+ * trailing slash ignored.
+ */
+export function normalizeAdminPath(pathname: string): string {
+  return pathname.toLowerCase().replace(/\/+$/, "") || "/";
+}
+
+/**
  * `F3.76` — the drill-down routes, each selecting its DEEPEST level: the tab
  * whose table the page shows. A prefix match would select the first level of
  * the URL instead (`/admin/locations/:id/rtus/:rtuId/assets` selected
@@ -422,9 +433,11 @@ const drillDownTabs: readonly { pattern: RegExp; tab: string }[] = [
  * `F3.76` — the tab (and so the area) a pathname selects: a drill-down route
  * first, then the tab whose path equals it or is a whole-segment prefix of it
  * (`/admin/assets` does not select `/admin/asset-points`). `null` for a path
- * outside the hub (`/admin` itself, the dashboard builder).
+ * outside the hub (`/admin` itself, the dashboard builder). The pathname is
+ * normalized first, as React Router matches it.
  */
-export function masterDataTabForPath(pathname: string): MasterDataTab | null {
+export function masterDataTabForPath(rawPathname: string): MasterDataTab | null {
+  const pathname = normalizeAdminPath(rawPathname);
   const drill = drillDownTabs.find((rule) => rule.pattern.test(pathname));
   const target = drill?.tab;
   return (

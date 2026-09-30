@@ -177,6 +177,11 @@ function precedes(a: Element, b: Element): boolean {
  * The group label is a plain `<div>`, not a heading, and the page's own
  * eyebrow also reads "Operations" — so the label is located inside the
  * sidebar `<aside>` the link lives in, never by a page-wide text query.
+ *
+ * `F3.76` — the admin's per-screen "Assets" sidebar entry became the Assets
+ * tab of the Sites & Equipment area, so an admin's sidebar holds one "Assets"
+ * link (this one) and a "Sites & Equipment" entry that reaches `/admin/assets`
+ * through its tab (`master-data-layout.spec.tsx` T2).
  */
 export async function viewerSeesAssetsUnderOperations(): Promise<void> {
   stubApi();
@@ -194,13 +199,16 @@ export async function viewerSeesAssetsUnderOperations(): Promise<void> {
   expect(precedes(link, maintenance)).toBe(true);
 }
 
-export async function adminSeesBothAssetsLinks(): Promise<void> {
+export async function adminSeesTheOperatorAssetsLinkAndTheSitesArea(): Promise<void> {
   stubApi();
   renderPage(asUser("admin"));
 
   const links = await screen.findAllByRole("link", { name: "Assets" });
-  expect(links.some((l) => l.getAttribute("href") === "/asset-browser")).toBe(true);
-  expect(links.some((l) => l.getAttribute("href") === "/admin/assets")).toBe(true);
+  expect(links.map((l) => l.getAttribute("href"))).toEqual(["/asset-browser"]);
+  expect(screen.getByRole("link", { name: "Sites & Equipment" })).toHaveAttribute(
+    "href",
+    "/admin/organizations",
+  );
 }
 
 /** P2 (owed guard 3a) — clicking the second row opens the panel for THAT row. */
