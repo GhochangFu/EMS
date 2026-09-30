@@ -99,7 +99,7 @@ export function RtusAdminPage({ user }: RtusAdminPageProps) {
           displayName: form.displayName,
           sourceType: form.sourceType,
           domain: form.domain || undefined,
-          ...(rtuCode === (editing.rtuCode ?? "") ? {} : { rtuCode }),
+          ...(rtuCode === (editing.rtuCode ?? "").trim() ? {} : { rtuCode }),
           ingestEnabled: form.ingestEnabled,
         });
       }
