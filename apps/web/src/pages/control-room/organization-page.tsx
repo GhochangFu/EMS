@@ -19,6 +19,11 @@ import type { AuthUser } from "../../stores/auth-store";
 
 type ControlRoomOrganizationPageProps = {
   user: AuthUser;
+  /**
+   * `F3.72` (plan D1) — overrides the `:organizationId` route parameter, so
+   * `/` can render this level in place. Omit it on the routed page.
+   */
+  organizationId?: string;
 };
 
 /**
@@ -34,8 +39,12 @@ type ControlRoomOrganizationPageProps = {
  * list shows the empty card and no other organization's sites. Nothing is
  * decided while the read is pending (D1).
  */
-export function ControlRoomOrganizationPage({ user }: ControlRoomOrganizationPageProps) {
-  const { organizationId = "" } = useParams();
+export function ControlRoomOrganizationPage({
+  user,
+  organizationId: organizationIdProp,
+}: ControlRoomOrganizationPageProps) {
+  const params = useParams();
+  const organizationId = organizationIdProp ?? params.organizationId ?? "";
   const locationQ = useQuery({
     queryKey: ["dashboard", "locations"],
     queryFn: fetchLocationKpis,

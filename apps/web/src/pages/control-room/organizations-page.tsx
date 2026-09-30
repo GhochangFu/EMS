@@ -2,10 +2,11 @@ import { useQuery } from "@tanstack/react-query";
 import { Link, Navigate } from "react-router-dom";
 
 import { fetchLocationKpis } from "../../api/locations";
+import { OrganizationCardGrid } from "../../components/control-room/organization-card-grid";
 import { PageHeader } from "../../components/page-header";
 import { SectionCard } from "../../components/section-card";
 import { AppShell } from "../../layouts/app-shell";
-import { controlRoomEntryTarget, organizationCards } from "../../lib/control-room-levels";
+import { controlRoomEntryTarget } from "../../lib/control-room-levels";
 import type { AuthUser } from "../../stores/auth-store";
 
 type ControlRoomOrganizationsPageProps = {
@@ -60,30 +61,7 @@ export function ControlRoomOrganizationsPage({ user }: ControlRoomOrganizationsP
               </Link>
             </SectionCard>
           ) : (
-            <div
-              data-testid="control-room-organizations"
-              className="grid gap-3 md:grid-cols-2 xl:grid-cols-3"
-            >
-              {organizationCards(items).map((card) => (
-                <Link
-                  key={card.organization.id}
-                  to={`/control-room/org/${card.organization.id}`}
-                  className="block surface-raised p-3 transition hover:text-accent-strong"
-                >
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="font-condensed text-base font-bold text-ink">
-                      {card.organization.name}
-                    </div>
-                    <span className="rounded bg-canvas px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-neutral-ink">
-                      {card.organization.code}
-                    </span>
-                  </div>
-                  <div className="mt-2 text-xs text-ink-muted">
-                    {`${card.siteCount} sites · ${card.sitesOnline} online · ${card.openAlarms} alarms`}
-                  </div>
-                </Link>
-              ))}
-            </div>
+            <OrganizationCardGrid items={items} />
           )
         ) : locationQ.isError ? (
           <SectionCard title="Control Room unavailable" bodyClassName="p-4">

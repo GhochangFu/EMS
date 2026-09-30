@@ -83,3 +83,22 @@ export async function fetchDashboardsSendsAllThreeKeysInOrder(): Promise<void> {
     `${BASE}/api/v1/dashboards?organizationId=${ORG_ID}&assetId=${ASSET_ID}&section=sustainability`,
   );
 }
+
+const LOCATION_ID = "33333333-3333-4333-8333-333333333333";
+
+/**
+ * `F3.72` U1 (plan D7, OQ6) — `locationId` reaches the wire. The fourth optional argument is
+ * the same trap again: only the captured URL says it is wired.
+ */
+export async function fetchDashboardsSendsLocationIdAlone(): Promise<void> {
+  const seen = captureUrl();
+  await fetchDashboards(undefined, undefined, undefined, LOCATION_ID);
+  expect(seen()).toBe(`${BASE}/api/v1/dashboards?locationId=${LOCATION_ID}`);
+}
+
+/** `organizationId` then `locationId` — the organization first, the location appended last. */
+export async function fetchDashboardsSendsOrganizationIdThenLocationId(): Promise<void> {
+  const seen = captureUrl();
+  await fetchDashboards(ORG_ID, undefined, undefined, LOCATION_ID);
+  expect(seen()).toBe(`${BASE}/api/v1/dashboards?organizationId=${ORG_ID}&locationId=${LOCATION_ID}`);
+}

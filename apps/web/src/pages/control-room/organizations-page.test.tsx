@@ -7,10 +7,9 @@ import {
   anEmptyScopeShowsTheNoSitesCard,
   aPendingReadDecidesNothing,
   cleanupPage,
-  eachOrganizationCardLinksToItsLevel,
   oneOrganizationSkipsToIt,
   oneSiteSkipsToTheSite,
-  theCardReadsSitesOnlineAndAlarms,
+  twoOrganizationsRenderTheCardGrid,
 } from "./organizations-page.spec";
 
 /**
@@ -23,12 +22,8 @@ describe("F3.66 U3 ControlRoomOrganizationsPage", () => {
     cleanupPage();
   });
 
-  it("O1 links each organization card to its organization level", async () => {
-    await eachOrganizationCardLinksToItsLevel();
-  });
-
-  it("O2 reads '2 sites · 1 online · 3 alarms' on the A card", async () => {
-    await theCardReadsSitesOnlineAndAlarms();
+  it("O1 renders the organization card grid for two organizations", async () => {
+    await twoOrganizationsRenderTheCardGrid();
   });
 
   it("O3 skips to the organization when there is one", async () => {

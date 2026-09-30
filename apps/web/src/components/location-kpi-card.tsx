@@ -4,9 +4,9 @@ import { Link } from "react-router-dom";
 type LocationKpiCardProps = {
   location: LocationKpiSummary;
   /**
-   * `F3.66` (plan D4) — where the card links. Defaults to the location
-   * dashboard, which `/` and the accordion keep; the Control Room organization
-   * overview passes `/control-room/site/:id`.
+   * `F3.66` (plan D4) — where the card links. Defaults to the Control Room
+   * site view (`F3.72` OQ7), which the estate accordion and the organization
+   * overview both open; pass `to` only for another target.
    */
   to?: string;
 };
@@ -17,7 +17,7 @@ export function LocationKpiCard({ location, to }: LocationKpiCardProps) {
 
   return (
     <Link
-      to={to ?? `/locations/${location.id}/dashboard`}
+      to={to ?? `/control-room/site/${location.id}`}
       className={`relative z-0 block w-full min-w-0 surface-raised p-3 transition hover:z-10 hover:border-accent ${
         hasLiveTelemetry ? "border-accent/20" : ""
       }`}

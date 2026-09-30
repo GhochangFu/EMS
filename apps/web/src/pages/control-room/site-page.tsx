@@ -18,6 +18,12 @@ import { useAuthStore, type AuthUser } from "../../stores/auth-store";
 
 type ControlRoomSitePageProps = {
   user: AuthUser;
+  /**
+   * `F3.72` (plan D1) — overrides the `:locationId` route parameter, so `/`
+   * can render the site in place. Omit it on the routed page. The `:tab`
+   * segment is still read from the route.
+   */
+  locationId?: string;
 };
 
 const linkClass = "mt-2 inline-block text-sm font-semibold text-accent-strong hover:underline";
@@ -50,8 +56,10 @@ const linkClass = "mt-2 inline-block text-sm font-semibold text-accent-strong ho
  * KPI list does not show the tabs either; its tab URL redirects to the bare
  * path, which shows the not-available card.
  */
-export function ControlRoomSitePage({ user }: ControlRoomSitePageProps) {
-  const { locationId = "", tab: tabParam } = useParams();
+export function ControlRoomSitePage({ user, locationId: locationIdProp }: ControlRoomSitePageProps) {
+  const params = useParams();
+  const locationId = locationIdProp ?? params.locationId ?? "";
+  const tabParam = params.tab;
   const tab = smocTabFromParam(tabParam);
   const scope = useAuthStore((state) => state.scope);
   const locationQ = useQuery({

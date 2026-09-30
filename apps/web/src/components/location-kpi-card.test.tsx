@@ -4,7 +4,7 @@ import { afterEach, describe, it } from "vitest";
 import {
   cleanupCard,
   fallsBackToTheTypeLabelNotTheRawCode,
-  theDefaultLinksToTheLocationDashboard,
+  theDefaultLinksToTheControlRoomSite,
   toReplacesTheLinkTarget,
 } from "./location-kpi-card.spec";
 
@@ -18,8 +18,8 @@ describe("F3.66 U3 LocationKpiCard link target (D4)", () => {
     cleanupCard();
   });
 
-  it("K1 links to the location dashboard by default", () => {
-    theDefaultLinksToTheLocationDashboard();
+  it("K1 links to the Control Room site view by default (F3.72 OQ7)", () => {
+    theDefaultLinksToTheControlRoomSite();
   });
 
   it("K2 links to `to` when it is given", () => {

@@ -653,6 +653,33 @@ export async function aPendingKpiReadDoesNotRedirectATab(): Promise<void> {
   expect(pathname()).toBe("/control-room/site/a1/sld");
 }
 
+/**
+ * `F3.72` U1 (plan D1) — the `locationId` prop overrides the route parameter,
+ * so `/` can render the site in place. The route names b1 and the prop names
+ * a1: the resolve read and the body both take a1. Every other case passes no
+ * prop, which is the control that the parameter is still read.
+ */
+export async function theLocationIdPropOverridesTheRoute(): Promise<void> {
+  stubReads(TWO_ORGS, view("a1"));
+  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  render(
+    <QueryClientProvider client={queryClient}>
+      <MemoryRouter initialEntries={["/control-room/site/b1"]}>
+        <Routes>
+          <Route
+            path="/control-room/site/:locationId/:tab?"
+            element={<ControlRoomSitePage user={USER} locationId="a1" />}
+          />
+        </Routes>
+      </MemoryRouter>
+    </QueryClientProvider>,
+  );
+
+  const mount = await screen.findByTestId("generated-site-view");
+  expect(mount.getAttribute("data-location-id")).toBe("a1");
+  expect(vi.mocked(controlRoomApi.fetchResolvedSiteControlRoomView).mock.calls[0]).toEqual(["a1"]);
+}
+
 export function cleanupPage(): void {
   cleanup();
   mounts.generated.length = 0;

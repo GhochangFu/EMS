@@ -37,6 +37,7 @@ import {
   noNoticeRendersNoBanner,
   theBreadcrumbNamesEveryLevel,
   theHeaderNamesTheSite,
+  theLocationIdPropOverridesTheRoute,
 } from "./site-page.spec";
 
 /**
@@ -183,5 +184,9 @@ describe("F3.66 U4 ControlRoomSitePage", () => {
 
   it("V22 does not redirect a tab URL while the KPI read is pending", async () => {
     await aPendingKpiReadDoesNotRedirectATab();
+  });
+
+  it("V23 reads the locationId prop over the route parameter (F3.72 D1)", async () => {
+    await theLocationIdPropOverridesTheRoute();
   });
 });

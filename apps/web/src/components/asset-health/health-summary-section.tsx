@@ -4,8 +4,10 @@ import { useHealthSummary } from "../../hooks/use-asset-health";
 import { HealthSummaryDonut } from "./health-summary-donut";
 
 type HealthSummarySectionProps = {
-  /** Omit for the enterprise donut; pass a location id for the plant donut. */
+  /** Omit both for the enterprise donut; pass a location id for the plant donut. */
   locationId?: string;
+  /** `F3.72` (plan D3) — the Control Room organization level's donut. */
+  organizationId?: string;
 };
 
 /**
@@ -26,8 +28,8 @@ type HealthSummarySectionProps = {
  * shell that collapsed either into "no data" before rendering would undo
  * Amendment 1 decision 3 without touching the component that implements it.
  */
-export function HealthSummarySection({ locationId }: HealthSummarySectionProps) {
-  const query = useHealthSummary(locationId);
+export function HealthSummarySection({ locationId, organizationId }: HealthSummarySectionProps) {
+  const query = useHealthSummary({ locationId, organizationId });
 
   return (
     <SectionCard

@@ -246,6 +246,36 @@ export async function anUnreadableOrganizationRendersNoRail(): Promise<void> {
   expect(screen.queryByTestId("alarms-rail")).toBeNull();
 }
 
+/**
+ * `F3.72` U1 (plan D1) — the `organizationId` prop overrides the route
+ * parameter, so `/` can render the level in place. The route names org B and
+ * the prop names org A: the page must show A's sites and scope the rail to A.
+ * The other cases, which pass no prop, are the control that the parameter is
+ * still read.
+ */
+export async function theOrganizationIdPropOverridesTheRoute(): Promise<void> {
+  stubReads(TWO_ORGS);
+  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  render(
+    <QueryClientProvider client={queryClient}>
+      <MemoryRouter initialEntries={[`/control-room/org/${ORG_B.id}`]}>
+        <Routes>
+          <Route
+            path="/control-room/org/:organizationId"
+            element={<ControlRoomOrganizationPage user={USER} organizationId={ORG_A.id} />}
+          />
+          <Route path="/control-room/site/:locationId" element={<LandedOnSite />} />
+        </Routes>
+      </MemoryRouter>
+    </QueryClientProvider>,
+  );
+
+  const grid = await siteGrid();
+  const hrefs = Array.from(grid.querySelectorAll("a")).map((a) => a.getAttribute("href"));
+  expect(hrefs).toEqual(["/control-room/site/a1", "/control-room/site/a2"]);
+  expect(screen.getByTestId("alarms-rail").dataset.organizationId).toBe(ORG_A.id);
+}
+
 export function cleanupPage(): void {
   cleanup();
   vi.restoreAllMocks();

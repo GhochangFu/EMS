@@ -106,43 +106,22 @@ function renderPage(): void {
 }
 
 /**
- * Org A: two sites, one fresh, alarms 1 + 2, and asset counts 5 and 7 — so no
- * wrong source (`assetCount`, the site count) can print `1 online` by accident.
- * Org B: one site with a different line.
+ * O1 — two organizations render the card grid, one card per organization. The
+ * card content and links (the old O1 and O2) moved to
+ * `components/control-room/organization-card-grid.spec.tsx` with the grid
+ * (`F3.72` U1); this case holds only that the page hands its items to the grid.
  */
-const TWO_ORGS: LocationKpiSummary[] = [
-  site({ id: "a1", name: "Alpha One", organization: ORG_A, assetCount: 5, freshAssetCount: 2, openAlarms: 1 }),
-  site({ id: "a2", name: "Alpha Two", organization: ORG_A, assetCount: 7, freshAssetCount: 0, openAlarms: 2 }),
-  site({ id: "b1", name: "Beta One", organization: ORG_B, assetCount: 4, freshAssetCount: 0, openAlarms: 0 }),
-];
-
-async function orgCardLink(organizationId: string): Promise<HTMLElement> {
-  const main = await screen.findByTestId("control-room-organizations");
-  const link = main.querySelector<HTMLElement>(`a[href="/control-room/org/${organizationId}"]`);
-  expect(link, `no card links to /control-room/org/${organizationId}`).not.toBeNull();
-  return link as HTMLElement;
-}
-
-/** O1 — one card link per organization, to its organization level. */
-export async function eachOrganizationCardLinksToItsLevel(): Promise<void> {
+export async function twoOrganizationsRenderTheCardGrid(): Promise<void> {
   stubShell();
-  stubLocations(TWO_ORGS);
+  stubLocations([
+    site({ id: "a1", name: "Alpha One", organization: ORG_A }),
+    site({ id: "b1", name: "Beta One", organization: ORG_B }),
+  ]);
   renderPage();
 
-  const main = await screen.findByTestId("control-room-organizations");
-  await within(main).findByText("Alpha Utilities");
-  const hrefs = Array.from(main.querySelectorAll("a")).map((a) => a.getAttribute("href"));
+  const grid = await screen.findByTestId("control-room-organizations");
+  const hrefs = Array.from(grid.querySelectorAll("a")).map((a) => a.getAttribute("href"));
   expect(hrefs).toEqual(["/control-room/org/org-a", "/control-room/org/org-b"]);
-}
-
-/** O2 — the A card reads its site count, sites online and alarms. */
-export async function theCardReadsSitesOnlineAndAlarms(): Promise<void> {
-  stubShell();
-  stubLocations(TWO_ORGS);
-  renderPage();
-
-  const card = await orgCardLink("org-a");
-  expect(within(card).getByText("2 sites · 1 online · 3 alarms")).toBeInTheDocument();
 }
 
 /** O3 — one organization with two sites skips to the organization level. */

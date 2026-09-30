@@ -11,6 +11,7 @@ import {
   oneSiteSkipsToTheSite,
   siteCardsLinkToTheSiteLevel,
   theBreadcrumbNamesTheRootAndTheOrganization,
+  theOrganizationIdPropOverridesTheRoute,
   thePageMakesNoAssetsRead,
   theRailIsSentNoAssetIds,
   theRailReadsByTheOrganizationId,
@@ -68,5 +69,9 @@ describe("F3.66 U3 ControlRoomOrganizationPage", () => {
 
   it("G6 renders no alarms rail for an organization outside the list", async () => {
     await anUnreadableOrganizationRendersNoRail();
+  });
+
+  it("G7 reads the organizationId prop over the route parameter (F3.72 D1)", async () => {
+    await theOrganizationIdPropOverridesTheRoute();
   });
 });
