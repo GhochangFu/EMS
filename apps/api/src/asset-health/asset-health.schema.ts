@@ -33,14 +33,20 @@ export type AssetHealthQuery = z.infer<typeof assetHealthQuerySchema>;
  * The summary adds an optional location filter — the plant tier of
  * `asset → plant → enterprise`. Omitting it is the enterprise donut.
  *
- * **There is no `organizationId` parameter, deliberately.** The caller's
- * readable scope decides which assets are counted, and a parameter would invite
- * a caller to name an organization they cannot read — which the guard would
- * then have to refuse, turning an authorization boundary into an input
- * validation problem.
+ * **`organizationId` is optional and narrows only (`F3.72`, the `F3.66`
+ * rule).** When present, the controller swaps the readable set for
+ * `readableAssetIdsInOrganization(user, organizationId)`, which is the
+ * caller's readable set ANDed with that organization's assets — never in place
+ * of it. An organization the caller cannot read therefore intersects to
+ * nothing and answers an empty donut, not a 403 (a 403 would confirm the
+ * organization exists). The earlier "no `organizationId`" rule guarded against
+ * turning authorization into input validation; the intersection removes that
+ * risk, because the id can only ever shrink the scope. A malformed id is a 400
+ * before access control runs.
  */
 export const healthSummaryQuerySchema = assetHealthQuerySchema.extend({
   locationId: z.string().uuid().optional(),
+  organizationId: z.string().uuid().optional(),
 });
 
 export type HealthSummaryQuery = z.infer<typeof healthSummaryQuerySchema>;

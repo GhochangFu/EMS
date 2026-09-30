@@ -1,7 +1,9 @@
 import { describe, it } from "vitest";
 
 import {
+  listForwardsTheLocationIdQueryToTheService,
   listForwardsTheSectionQueryToTheService,
+  listRefusesAMalformedLocationIdWith400,
   putWidgetsRefusesAnUppercaseLayoutIdWith400,
   runDashboardBuilderControllerTests,
 } from "./dashboard-builder.controller.spec";
@@ -14,6 +16,14 @@ describe("F3.1b — DashboardBuilderController (stubbed service)", () => {
 
   it("forwards ?section= to the service (E4.2)", async () => {
     await listForwardsTheSectionQueryToTheService();
+  });
+
+  it("forwards ?locationId= to the service as the fifth argument (F3.72)", async () => {
+    await listForwardsTheLocationIdQueryToTheService();
+  });
+
+  it("refuses a malformed ?locationId= with 400 before the service (F3.72)", async () => {
+    await listRefusesAMalformedLocationIdWith400();
   });
 
   it("refuses an uppercase mimic layoutId with 400 before the service (F3.32c)", async () => {

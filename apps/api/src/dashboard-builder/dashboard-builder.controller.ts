@@ -62,8 +62,11 @@ export class DashboardBuilderController {
 
   @Get()
   async list(@CurrentUser() user: JwtPayload, @Query() query: unknown) {
-    const { organizationId, assetId, section } = parse(listDashboardsQuerySchema, query);
-    return this.dashboards.list(user, organizationId, assetId, section);
+    const { organizationId, assetId, section, locationId } = parse(
+      listDashboardsQuerySchema,
+      query,
+    );
+    return this.dashboards.list(user, organizationId, assetId, section, locationId);
   }
 
   /**

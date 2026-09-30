@@ -38,6 +38,7 @@ async function rejects(
 const USER: JwtPayload = { sub: "u1", email: "op@bms.local", name: "Operator", role: "viewer" };
 const ASSET_ID = "88888888-8888-4888-8888-888888888888";
 const LOCATION_ID = "99999999-9999-4999-8999-999999999999";
+const ORGANIZATION_ID = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
 
 const FOR_ASSET_RESPONSE: AssetHealthResponse = {
   assetId: ASSET_ID,
@@ -88,8 +89,13 @@ function serviceStub() {
   return { service, forAssetCalls, summaryCalls };
 }
 
-function accessStub(opts: { canReadAsset?: boolean; readableAssetIds?: readonly string[] | null }) {
+function accessStub(opts: {
+  canReadAsset?: boolean;
+  readableAssetIds?: readonly string[] | null;
+  inOrganization?: readonly string[];
+}) {
   const canReadAssetCalls: string[] = [];
+  const inOrganizationCalls: { user: JwtPayload; organizationId: string }[] = [];
   const readableAssetIdsCalls: number[] = [];
   const access = {
     canReadAsset: async (_user: JwtPayload, assetId: string) => {
@@ -100,8 +106,12 @@ function accessStub(opts: { canReadAsset?: boolean; readableAssetIds?: readonly 
       readableAssetIdsCalls.push(1);
       return opts.readableAssetIds ?? null;
     },
+    readableAssetIdsInOrganization: async (user: JwtPayload, organizationId: string) => {
+      inOrganizationCalls.push({ user, organizationId });
+      return opts.inOrganization ?? [];
+    },
   } as unknown as AccessControlService;
-  return { access, canReadAssetCalls, readableAssetIdsCalls };
+  return { access, canReadAssetCalls, readableAssetIdsCalls, inOrganizationCalls };
 }
 
 /**
@@ -232,5 +242,68 @@ export async function assertLocationIdIsPassedThroughOrUndefined(): Promise<void
   assert(
     summaryCalls[1]?.locationId === undefined,
     `an absent locationId must reach the service as undefined, got ${String(summaryCalls[1]?.locationId)}`,
+  );
+}
+
+/**
+ * `F3.72` U0 — `organizationId` narrows through the F3.66 rule: when present,
+ * `readableAssetIdsInOrganization(user, organizationId)` (which already
+ * intersects the caller's readable set) replaces `readableAssetIds(user)`, and
+ * the latter is not called. The scope reaches `summary()` by reference.
+ */
+export async function assertOrganizationIdNarrowsThroughTheIntersection(): Promise<void> {
+  const narrowed = ["x"];
+  const { service, summaryCalls } = serviceStub();
+  const { access, readableAssetIdsCalls, inOrganizationCalls } = accessStub({
+    readableAssetIds: SCOPE,
+    inOrganization: narrowed,
+  });
+  const controller = new AssetHealthController(service, access);
+
+  await controller.summary(USER, { organizationId: ORGANIZATION_ID });
+  assert(
+    inOrganizationCalls.length === 1 &&
+      inOrganizationCalls[0]?.user === USER &&
+      inOrganizationCalls[0]?.organizationId === ORGANIZATION_ID,
+    `readableAssetIdsInOrganization must be called once with (user, organizationId); got ${JSON.stringify(inOrganizationCalls)}`,
+  );
+  assert(
+    summaryCalls[0]?.assetIds === narrowed,
+    "the organization-narrowed set must reach summary() by reference",
+  );
+  assert(
+    readableAssetIdsCalls.length === 0,
+    "readableAssetIds must not be called when organizationId is present",
+  );
+}
+
+/** The adjacent control: no `organizationId` leaves the readable-set path unchanged. */
+export async function assertNoOrganizationIdReadsTheReadableSet(): Promise<void> {
+  const { service, summaryCalls } = serviceStub();
+  const { access, inOrganizationCalls } = accessStub({ readableAssetIds: SCOPE });
+  const controller = new AssetHealthController(service, access);
+
+  await controller.summary(USER, {});
+  assert(summaryCalls[0]?.assetIds === SCOPE, "the readable set must reach summary() unchanged");
+  assert(
+    inOrganizationCalls.length === 0,
+    "readableAssetIdsInOrganization must not be called without organizationId",
+  );
+}
+
+export async function assertAMalformedOrganizationIdIsABadRequest(): Promise<void> {
+  const { service, summaryCalls } = serviceStub();
+  const { access, readableAssetIdsCalls, inOrganizationCalls } = accessStub({});
+  const controller = new AssetHealthController(service, access);
+
+  await rejects(
+    () => controller.summary(USER, { organizationId: "not-a-uuid" }),
+    (err) => err instanceof BadRequestException,
+    "a non-uuid organizationId must be a 400, not a 500",
+  );
+  assert(summaryCalls.length === 0, "a malformed query must not reach the service");
+  assert(
+    readableAssetIdsCalls.length === 0 && inOrganizationCalls.length === 0,
+    "a malformed organizationId must be refused before any access-control read",
   );
 }

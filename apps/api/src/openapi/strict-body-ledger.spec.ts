@@ -85,7 +85,7 @@ import { alarmListQuerySchema, alarmSummaryQuerySchema } from "../alarms/alarm-l
 import { alarmEnrichmentUpsertBodySchema } from "../alarms/enrichment.schema";
 import { assetRoleSummaryQuerySchema } from "../assets/assets.schema";
 import { loginBodySchema } from "../auth/login.schema";
-import { locationDashboardQuerySchema } from "../dashboard/dashboard.schema";
+import { loadTrendQuerySchema, locationDashboardQuerySchema } from "../dashboard/dashboard.schema";
 import {
   createDashboardBodySchema,
   getDashboardQuerySchema,
@@ -405,6 +405,7 @@ export const QUERY_SCHEMAS: Record<string, ZodTypeAny> = {
   listMaintenanceQuerySchema,
   listRuleExecutionsQuerySchema,
   locationDashboardQuerySchema,
+  loadTrendQuerySchema,
   healthSummaryQuerySchema,
   pointAggregateQuerySchema,
   templateStatusQuerySchema,
@@ -886,6 +887,10 @@ export function testEveryRegisteredSchemaIsUnderAudit(): void {
   // arrays and a bounded `windowMinutes`, `.strict()`, no body — the same
   // precedent.
   //
+  // 23 -> 24: `F3.72` registered `loadTrendQuerySchema`
+  // (`GET /dashboard/load-trend?window=&organizationId=`): a GET with no body, the
+  // narrowing-only `organizationId` documented for the same `F4.20` reason as `locationId`.
+  //
   // Note that `healthSummaryQuerySchema` is `assetHealthQuerySchema.extend(...)`
   // — legal here, since the ADR 0030 combinator ban applies inside
   // `packages/shared/src/contracts/`, not to an `apps/api` query schema. The
@@ -895,7 +900,7 @@ export function testEveryRegisteredSchemaIsUnderAudit(): void {
     "QUERY_SCHEMAS is the deliberately-excluded list, not an escape hatch. If a genuinely " +
       "new query schema was registered, widen this number and say so; if a BODY schema was " +
       "put here to quiet the assertion below, put it in BODY_SCHEMAS and decide it.",
-  ).toBe(23);
+  ).toBe(24);
 
   const missing = Object.entries(REQUEST_SCHEMAS)
     .filter(([, schema]) => !known.has(schema))
