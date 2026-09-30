@@ -49,7 +49,13 @@ const MIGRATION_REL = "packages/db/drizzle/0054_dashboard_widget_sources.sql";
  * in its own turn and still lists seven; the EFFECTIVE vocabulary is the one this later file
  * declares, in the `0055` / `0050` pattern `tests/f3.35-table-widget-schema.test.ts` records.
  */
-const WIDENING_MIGRATION_REL = "packages/db/drizzle/0081_dashboard_widget_sources_water_balance_key.sql";
+const WIDENING_MIGRATION_REL = "packages/db/drizzle/0096_site_widget_types_and_assets_catalog.sql";
+/**
+ * `E4.3`'s widening (the water balance key), now frozen in its turn at eight: `F3.73` widened
+ * the CHECK again in `0096`, so the effective list is that later file's.
+ */
+const WATER_WIDENING_MIGRATION_REL =
+  "packages/db/drizzle/0081_dashboard_widget_sources_water_balance_key.sql";
 /**
  * `E4.2`'s own widening (ADR 0072 decision 2 — the two sustainability entries), now frozen in
  * its turn. Kept as its own constant so the frozen-seven pin below reads as clearly as `0054`'s
@@ -90,7 +96,7 @@ const catalogKeys = (): string[] => {
     throw new Error(
       `could not find metricCatalogKeySchema's z.enum([...]) in ${CONTRACT_REL}. If it was ` +
         "renamed or reshaped, fix this parser — do not delete the assertion, because the " +
-        "effective CHECK (migration 0081) and that enum are two declarations of one vocabulary.",
+        "effective CHECK (migration 0096) and that enum are two declarations of one vocabulary.",
     );
   }
   const keys = (block[1] ?? "")
@@ -331,8 +337,8 @@ describe("F3.35 Stage C — bms.dashboard_widget_sources (migration 0054)", () =
   });
 
   it("closes catalog_key to exactly the keys the shared enum declares", () => {
-    // `E4.3`: the effective CHECK is the widened one in `0081`, not `0054`'s or `0079`'s frozen
-    // lists. Both frozen lists are pinned separately below so the three cannot be confused.
+    // `F3.73`: the effective CHECK is the widened one in `0096`, not `0054`'s, `0079`'s or
+    // `0081`'s frozen lists. Both frozen lists are pinned separately below so the three cannot be confused.
     const migration = read(WIDENING_MIGRATION_REL);
     const keys = catalogKeys();
 
@@ -365,7 +371,7 @@ describe("F3.35 Stage C — bms.dashboard_widget_sources (migration 0054)", () =
     }
   });
 
-  it("keeps 0054's frozen CHECK at the original five, and 0081 widens by DROP then ADD", () => {
+  it("keeps 0054's frozen CHECK at the original five, and 0096 widens by DROP then ADD", () => {
     // `0054` is frozen: its list must still be Stage C's five, or someone edited a committed
     // migration instead of writing the next one.
     const frozen =
@@ -382,14 +388,14 @@ describe("F3.35 Stage C — bms.dashboard_widget_sources (migration 0054)", () =
       "workorders.open.count",
     ]);
 
-    // The constraint EXISTS before `0081` runs, so an `IF NOT EXISTS` guard on the ADD would
+    // The constraint EXISTS before `0096` runs, so an `IF NOT EXISTS` guard on the ADD would
     // find it and skip the widening while reporting success — `0055`'s header records the
     // trap. DROP IF EXISTS then ADD is what widens, and the order matters.
     const sql = sqlOnly(read(WIDENING_MIGRATION_REL));
     const dropAt = sql.indexOf("DROP CONSTRAINT IF EXISTS dashboard_widget_sources_catalog_key_check");
     const addAt = sql.indexOf("ADD CONSTRAINT dashboard_widget_sources_catalog_key_check");
-    expect(dropAt, "0081 must DROP the existing constraint").toBeGreaterThan(-1);
-    expect(addAt, "0081 must ADD the widened constraint").toBeGreaterThan(-1);
+    expect(dropAt, "0096 must DROP the existing constraint").toBeGreaterThan(-1);
+    expect(addAt, "0096 must ADD the widened constraint").toBeGreaterThan(-1);
     expect(dropAt, "the DROP must come before the ADD").toBeLessThan(addAt);
     expect(/ADD CONSTRAINT[\s\S]*IF NOT EXISTS/.test(sql)).toBe(false);
   });
@@ -398,6 +404,7 @@ describe("F3.35 Stage C — bms.dashboard_widget_sources (migration 0054)", () =
   // pattern one generation on. Pinned separately from the `0081`-is-effective assertion above
   // so the two widenings cannot be confused with each other.
   it("keeps 0079's frozen CHECK at exactly seven, before 0081 widens it to eight", () => {
+    // (0081's own eight are pinned by the next test; 0096 makes ten.)
     const frozen =
       /CONSTRAINT dashboard_widget_sources_catalog_key_check\s+CHECK \(catalog_key IN \(([^)]*)\)\)/.exec(
         sqlOnly(read(PREVIOUS_WIDENING_MIGRATION_REL)),
@@ -414,8 +421,26 @@ describe("F3.35 Stage C — bms.dashboard_widget_sources (migration 0054)", () =
     ]);
   });
 
+  it("keeps 0081's frozen CHECK at exactly eight, before 0096 widens it to ten", () => {
+    const frozen =
+      /CONSTRAINT dashboard_widget_sources_catalog_key_check\s+CHECK \(catalog_key IN \(([^)]*)\)\)/.exec(
+        sqlOnly(read(WATER_WIDENING_MIGRATION_REL)),
+      );
+    expect(frozen, "0081's CHECK must still be readable").not.toBeNull();
+    expect(inListValues(frozen?.[1])).toEqual([
+      "alarms.active",
+      "alarms.active.count",
+      "assets.health.score",
+      "sustainability.by_location",
+      "sustainability.total",
+      "water.balance",
+      "workorders.open",
+      "workorders.open.count",
+    ]);
+  });
+
   it("journals 0081 after 0080, and the journal stays strictly increasing", () => {
-    expect(existsSync(join(repoRoot, WIDENING_MIGRATION_REL))).toBe(true);
+    expect(existsSync(join(repoRoot, WATER_WIDENING_MIGRATION_REL))).toBe(true);
     const journal = JSON.parse(read(JOURNAL_REL)) as {
       entries: { idx: number; tag: string; when: number }[];
     };

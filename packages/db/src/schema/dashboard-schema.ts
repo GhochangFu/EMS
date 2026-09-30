@@ -305,7 +305,10 @@ export const dashboardTabs = bmsSchema.table(
  * draw a blank rectangle in front of an operator with nothing in the console, the log or the
  * network tab. That is the `F4.43` failure through the opposite door, and worse, because an
  * unstyled badge is still legible. `dashboard_widgets_widget_type_check` (migration `0050`)
- * holds the four: `radial_gauge`, `tank_level`, `value_tile`, `chart`.
+ * held the four: `radial_gauge`, `tank_level`, `value_tile`, `chart`. `0055` added `table`,
+ * `0086` added `mimic`, and `0096` (F3.73) added the five site widgets — `active_alarms_rail`,
+ * `state_legend`, `asset_class_strip`, `module_summary_card`, `critical_systems_list` — for
+ * eleven in all; `tests/f3.73-site-widget-types.test.ts` compares the list to `widgetTypeSchema`.
  *
  * **Grid position is on the row, not in `config`.** ADR 0047 decision 3 reserves `config` for
  * options the *renderer alone* consumes; position is read by the builder, by ordering and by

@@ -9,7 +9,8 @@ const read = (rel: string): string => readFileSync(join(repoRoot, rel), "utf8");
 const exists = (rel: string): boolean => existsSync(join(repoRoot, rel));
 
 const MIGRATION_0086 = "packages/db/drizzle/0086_dashboard_widget_mimic_type.sql";
-const MIGRATION_0087 = "packages/db/drizzle/0087_asset_roles_water_train.sql";
+const MIGRATION_0096 = "packages/db/drizzle/0096_site_widget_types_and_assets_catalog.sql";
+const MIGRATION_0087 ="packages/db/drizzle/0087_asset_roles_water_train.sql";
 const MIGRATION_0055 = "packages/db/drizzle/0055_dashboard_widget_table_type.sql";
 const MIGRATION_0050 = "packages/db/drizzle/0050_configurable_dashboard_tables.sql";
 const MIGRATION_0051 = "packages/db/drizzle/0051_asset_role_vocabulary.sql";
@@ -110,15 +111,25 @@ describe("F3.32 v1 — migration 0086 widens the widget-type CHECK", () => {
     ).toBe(true);
   });
 
-  it("widens the CHECK to exactly the contract's widget vocabulary", () => {
+  it("widens the CHECK to six, `mimic` being the value this migration exists to admit", () => {
+    // `F3.73` moved the effective CHECK to `0096` (next test); `0086` is frozen at its six,
+    // the move this file made for `0055`.
+    const listed = checkedValues(MIGRATION_0086);
+    expect([...listed].sort()).toEqual(
+      ["chart", "mimic", "radial_gauge", "table", "tank_level", "value_tile"],
+    );
+    expect(listed, "`mimic` is the value this migration exists to admit").toContain("mimic");
+  });
+
+  it("the effective CHECK (0096) is exactly the contract's widget vocabulary", () => {
     // This file's job is only to state that the migration's CHECK and the shared contract's
     // `widgetTypeSchema` must agree — a drift gate, not a use of either value.
-    const listed = checkedValues(MIGRATION_0086);
+    const listed = checkedValues(MIGRATION_0096);
     const declared = widgetTypes();
 
     expect(listed.length, "the parsed CHECK list must not be empty").toBeGreaterThan(0);
     expect([...listed].sort()).toEqual([...declared].sort());
-    expect(listed, "`mimic` is the value this migration exists to admit").toContain("mimic");
+    expect(listed, "0096 keeps `mimic`").toContain("mimic");
   });
 
   it("drops the old constraint before adding the new one, or the widening is a silent no-op", () => {
@@ -290,6 +301,25 @@ describe("F3.32 v1 — the mimic-nodes read (U2)", () => {
     expect(
       mimicAt,
       "the mimic-nodes route must be declared before :slug, or NestJS's route-order matching " +
+        "swallows it into the :slug param",
+    ).toBeLessThan(slugAt);
+  });
+
+  // `F3.73` (plan D9, Task 3.4) — the site-widgets read sits beside mimic-nodes, and the same
+  // route-order rule binds it.
+  it("the controller declares :id/site-widgets before :slug", () => {
+    const src = read(CONTROLLER_REL);
+    const decoratorAt = (route: string): number =>
+      src.search(new RegExp(`^[ \\t]*@Get\\("${route}"\\)`, "m"));
+    const siteAt = decoratorAt(":id/site-widgets");
+    if (siteAt === -1) {
+      throw new Error("no 'site-widgets' route found in dashboard-builder.controller.ts");
+    }
+    const slugAt = decoratorAt(":slug");
+    expect(slugAt, "the controller must still declare @Get(\":slug\")").toBeGreaterThan(-1);
+    expect(
+      siteAt,
+      "the site-widgets route must be declared before :slug, or NestJS's route-order matching " +
         "swallows it into the :slug param",
     ).toBeLessThan(slugAt);
   });

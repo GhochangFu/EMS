@@ -55,6 +55,10 @@ const FRESHNESS_SITES: ReadonlyArray<{ readonly file: string; readonly count: nu
   { file: "apps/api/src/dashboard/dashboard.service.ts", count: 3 },
   // `sitesLive`'s comm-status count.
   { file: "apps/api/src/map/map.service.ts", count: 1 },
+  // `F3.73` — `assets.offline.count` and `assets.list`, through one shared helper.
+  { file: "apps/api/src/dashboard-builder/metric-catalog.service.ts", count: 1 },
+  // `F3.73` (plan D9, ruling Q6a) — the site-widgets read's per-tab offline count.
+  { file: "apps/api/src/dashboard-builder/site-widgets.service.ts", count: 1 },
 ];
 
 describe("F3.28 — the offline bound has one source (ADR 0074, OQ1)", () => {
