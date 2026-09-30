@@ -6938,3 +6938,24 @@ fixed and L2 tested on the real database; the browser run as `admin`,
 **Cascade:** `F3.73` (the SMOC standard site template) lists `F3.72` and is
 now unblocked, after the first stable version. Owed: the `chore(agents):`
 sweep (AGENTS.md names `/` as the dashboard).
+
+### `F3.76` — the Master Data Hub in five areas ✅ 2026-09-30
+
+PR #668, squash `427adf8d`; the owner ruled it into v1 on 2026-09-30, with no
+ADR (navigation only). Proposal canvas:
+https://claude.ai/artifact/ChtpKCXjEpT5bfrovDP25h.
+
+- The seventeen Master Data tabs are five areas: Sites & Equipment,
+  Reference Data, Templates & Visuals, Data Input and Notifications. The page
+  shows the area tabs and the selected area's sub-tabs; the sidebar shows
+  the hub and one entry per area.
+- `/admin` is a landing page with one card per area the role sees.
+- A drill-down selects the level whose table it shows. Symbol Libraries has
+  a tab; the Notifications tab is called Channels.
+- Every tab keeps its own role gate; a `location_admin` sees four areas.
+
+Verified: CI green first run, reviews fixed, 13 mutations killed, browser
+B1–B9 PASS.
+
+**Cascade:** no row lists `F3.76` in *Depends*. No `chore(agents):` change
+owed.
