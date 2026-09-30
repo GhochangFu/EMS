@@ -10,8 +10,8 @@ describe("mimic symbol labels and groups (F3.32d, F3.32e)", () => {
   const cases = Object.entries(spec).filter(([name]) => name.startsWith("run"));
 
   it("has its claims", () => {
-    if (cases.length !== 9) {
-      throw new Error(`expected 9 run* claims, found ${cases.length}`);
+    if (cases.length !== 12) {
+      throw new Error(`expected 12 run* claims, found ${cases.length}`);
     }
   });
 

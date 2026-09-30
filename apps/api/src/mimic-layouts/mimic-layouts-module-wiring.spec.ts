@@ -9,6 +9,9 @@ import { AccessControlModule } from "../auth/access-control.module";
 import { AuthModule } from "../auth/auth.module";
 import { DatabaseModule } from "../database/database.module";
 import { FLEET_DRIZZLE, TENANT_DRIZZLE } from "../database/database.tokens";
+import { MimicSymbolLibrariesController } from "../mimic-symbol-libraries/mimic-symbol-libraries.controller";
+import { MimicSymbolLibrariesModule } from "../mimic-symbol-libraries/mimic-symbol-libraries.module";
+import { MimicSymbolLibrariesService } from "../mimic-symbol-libraries/mimic-symbol-libraries.service";
 import { repoRoot } from "../testing/repo-root";
 import { MimicLayoutsController } from "./mimic-layouts.controller";
 import { MimicLayoutsModule } from "./mimic-layouts.module";
@@ -104,4 +107,73 @@ export function assertServiceDepsResolve(): void {
   const classes = classTypedParams("mimic-layouts.service.ts", "MimicLayoutsService");
   expect(classes).toEqual(["AccessControlService", "MasterDataAuditService"]);
   expect(classes.filter((cls) => !byName.has(cls)), "classes Nest would fail to resolve at boot").toEqual([]);
+}
+
+/**
+ * `F3.32f` slice 3 U2 — the sibling `MimicSymbolLibrariesModule`: its members, its place in
+ * `AppModule`'s import list (from text, as above), and its service's `@Inject` tokens and
+ * class-typed parameters resolving inside it. Nothing is exported (plan D5).
+ */
+function symbolLibrariesResolvable(): { byIdentity: Set<Token>; byName: Set<string> } {
+  const byIdentity = new Set<Token>();
+  for (const entry of moduleList(MimicSymbolLibrariesModule, "providers")) byIdentity.add(tokenOf(entry));
+  for (const imported of [...moduleList(MimicSymbolLibrariesModule, "imports"), AccessControlModule, DatabaseModule]) {
+    for (const entry of moduleList(imported as object, "exports")) byIdentity.add(tokenOf(entry));
+  }
+  return { byIdentity, byName: new Set([...byIdentity].map(nameOf)) };
+}
+
+export function assertSymbolLibrariesModuleDeclaresItsMembers(): void {
+  expect(moduleList(MimicSymbolLibrariesModule, "controllers")).toEqual([MimicSymbolLibrariesController]);
+  expect(moduleList(MimicSymbolLibrariesModule, "providers").map(tokenOf)).toEqual(
+    expect.arrayContaining([MimicSymbolLibrariesService, MasterDataAuditService]),
+  );
+  expect(moduleList(MimicSymbolLibrariesModule, "imports")).toEqual(expect.arrayContaining([DatabaseModule, AuthModule]));
+  expect(moduleList(MimicSymbolLibrariesModule, "exports")).toEqual([]);
+}
+
+export function assertAppModuleImportsTheSymbolLibrariesModule(): void {
+  const src = readFileSync(join(repoRoot(), "apps/api/src/app.module.ts"), "utf8");
+  expect(src).toContain(
+    'import { MimicSymbolLibrariesModule } from "./mimic-symbol-libraries/mimic-symbol-libraries.module";',
+  );
+  const imports = /imports:\s*\[([\s\S]*?)\]/.exec(src)?.[1] ?? "";
+  expect(imports).toContain("DashboardBuilderModule,");
+  expect(imports.split(/[\s,]+/)).toContain("MimicSymbolLibrariesModule");
+}
+
+export function assertSymbolLibrariesServiceDepsResolve(): void {
+  const { byIdentity, byName } = symbolLibrariesResolvable();
+  const tokens = (
+    (Reflect.getMetadata(SELF_DECLARED_DEPS_METADATA, MimicSymbolLibrariesService) as { param: Token }[] | undefined) ??
+    []
+  ).map((d) => d.param);
+  expect(tokens).toEqual(expect.arrayContaining([FLEET_DRIZZLE, TENANT_DRIZZLE]));
+  expect(tokens.filter((t) => !byIdentity.has(t)).map(nameOf), "@Inject tokens Nest would fail to resolve").toEqual([]);
+  const src = readFileSync(
+    join(repoRoot(), "apps/api/src/mimic-symbol-libraries/mimic-symbol-libraries.service.ts"),
+    "utf8",
+  );
+  const classAt = src.indexOf("export class MimicSymbolLibrariesService ");
+  const ctorAt = src.indexOf("constructor(", classAt);
+  const params = src.slice(ctorAt, src.indexOf(") {}", ctorAt));
+  // An `@Inject(TOKEN)` parameter is resolved by its token above, not by its type.
+  const classes = params
+    .split("\n")
+    .filter((line) => !line.includes("@Inject("))
+    .flatMap((line) => /private readonly \w+: ([A-Z]\w*)/.exec(line)?.slice(1, 2) ?? []);
+  expect(classes).toEqual(["AccessControlService", "MasterDataAuditService"]);
+  expect(classes.filter((cls) => !byName.has(cls)), "classes Nest would fail to resolve at boot").toEqual([]);
+}
+
+export function assertSymbolLibrariesControllerDepsResolve(): void {
+  const src = readFileSync(
+    join(repoRoot(), "apps/api/src/mimic-symbol-libraries/mimic-symbol-libraries.controller.ts"),
+    "utf8",
+  );
+  const ctorAt = src.indexOf("constructor(", src.indexOf("export class MimicSymbolLibrariesController "));
+  const params = src.slice(ctorAt, src.indexOf(") {}", ctorAt));
+  const classes = [...params.matchAll(/private readonly \w+: ([A-Z]\w*)/g)].map((m) => m[1] as string);
+  expect(classes).toEqual(["MimicSymbolLibrariesService"]);
+  expect(classes.filter((cls) => !symbolLibrariesResolvable().byName.has(cls))).toEqual([]);
 }

@@ -23,6 +23,10 @@ Slice 1 implementation notes (2026-09-29): migration `0091_mimic_lucide_licence`
 
 Slice 2 implementation notes (2026-09-30): the shape grammar with `transform` is `packages/shared/src/contracts/mimic-shapes.ts`; the converter building blocks (`scripts/mimic-symbols/lib/`) are gated by `tests/f3.32f-mimic-symbol-converters.test.ts`, listed in the root `typecheck:tests` script.
 
+Slice 3 implementation notes (2026-09-30): migration `0093` is gated by `tests/f3.32f-org-symbol-libraries.test.ts` and its `.integration` twin (the composite-key proof of decision 3), and the admin route by `tests/f3.32f-symbol-libraries-admin-reachable.test.ts`; all three are listed in the root `typecheck:tests` script.
+
+Slice 3 implementation notes (2026-09-30): `saxes` 6.0.0 was added to `apps/api/package.json` as a direct dependency (Dependencies below).
+
 Builds on [ADR 0084](./0084-mimic-symbol-libraries.md) and delivers its
 decision 10. Amends ADR 0084 decisions 3 (the foreign key is no longer the only
 symbol reference), 5 (path data can also be stored data, for an uploaded

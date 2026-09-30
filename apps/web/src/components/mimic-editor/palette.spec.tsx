@@ -4,6 +4,8 @@ import { mimicCoreSymbolSchema } from "@bms/shared/contracts";
 import { expect, vi } from "vitest";
 
 import { MIMIC_SYMBOL_GROUPS, librarySymbolGroups, symbolLabel } from "../../lib/mimic-symbols";
+import { orgCatalogFixture } from "../../lib/mimic-symbols.spec";
+import * as glyphs from "../widgets/mimic-glyphs";
 import { MimicEditorPalette, type MimicEditorPaletteProps } from "./palette";
 
 /**
@@ -25,6 +27,7 @@ function renderPalette(overrides: Partial<MimicEditorPaletteProps> = {}): MimicE
     canDelete: true,
     onDelete: vi.fn(),
     libraries: ["core"],
+    catalog: null,
     ...overrides,
   };
   render(<MimicEditorPalette {...props} />);
@@ -67,21 +70,21 @@ export function eachSymbolButtonDrawsItsGlyphInGroupOrder(): void {
 export async function transformerAddsThatUnit(): Promise<void> {
   const props = renderPalette();
   await userEvent.click(screen.getByRole("button", { name: "Add Transformer unit" }));
-  expect(props.onAddUnit).toHaveBeenCalledWith("transformer");
+  expect(props.onAddUnit).toHaveBeenCalledWith("transformer", "Transformer");
 }
 
 /** P2c — UPS adds a unit of that symbol (ADR 0082 decision 1, the new IT and UPS group). */
 export async function upsAddsThatUnit(): Promise<void> {
   const props = renderPalette();
   await userEvent.click(screen.getByRole("button", { name: "Add UPS unit" }));
-  expect(props.onAddUnit).toHaveBeenCalledWith("ups");
+  expect(props.onAddUnit).toHaveBeenCalledWith("ups", "UPS");
 }
 
 /** P3 — a glyph button adds a unit of that symbol. */
 export async function aSymbolButtonAddsThatUnit(): Promise<void> {
   const props = renderPalette();
   await userEvent.click(screen.getByRole("button", { name: "Add Valve unit" }));
-  expect(props.onAddUnit).toHaveBeenCalledWith("valve");
+  expect(props.onAddUnit).toHaveBeenCalledWith("valve", "Valve");
 }
 
 /** P4 — Panel adds a panel. */
@@ -235,7 +238,7 @@ export async function aSearchResultAddsItsUnit(): Promise<void> {
   const props = renderPalette({ libraries: THREE });
   await search("pump");
   await userEvent.click(screen.getByRole("button", { name: "Add Water pump unit from Material Design Icons" }));
-  expect(props.onAddUnit).toHaveBeenCalledWith("mdi:water-pump");
+  expect(props.onAddUnit).toHaveBeenCalledWith("mdi:water-pump", symbolLabel("mdi:water-pump"));
 }
 
 /** P24 — clearing the search restores the tabs. */
@@ -286,4 +289,118 @@ export function aCoreOnlyPaletteShowsNoAttributionsLink(): void {
   renderPalette({ libraries: ["core"] });
   expect(screen.getByRole("button", { name: "Add Tank unit" })).toBeInTheDocument();
   expect(screen.queryByRole("link", { name: "Attributions" })).toBeNull();
+}
+
+// ---- organization libraries (F3.32f slice 3, ADR 0086 decisions 4, 7; plan D9) -----------------
+
+function tabNames(): (string | null)[] {
+  return within(screen.getByRole("tablist")).getAllByRole("tab").map((t) => t.textContent);
+}
+
+async function openPlant(overrides: Partial<MimicEditorPaletteProps> = {}): Promise<MimicEditorPaletteProps> {
+  const props = renderPalette({ libraries: ["core", "org.plant"], catalog: orgCatalogFixture(), ...overrides });
+  await userEvent.click(screen.getByRole("tab", { name: "Plant" }));
+  return props;
+}
+
+/** P30 — with the catalog, `["core", "org.plant"]` shows two tabs: Core, then Plant. */
+export function anOrgLibraryIsATab(): void {
+  renderPalette({ libraries: ["core", "org.plant"], catalog: orgCatalogFixture() });
+  expect(tabNames()).toEqual(["Core", "Plant"]);
+}
+
+/** P31 — a chosen retired org library gets no tab (the active Plant is the positive control). */
+export function aRetiredOrgLibraryGetsNoTab(): void {
+  renderPalette({ libraries: ["core", "org.plant", "org.legacy"], catalog: orgCatalogFixture() });
+  expect(tabNames()).toEqual(["Core", "Plant"]);
+}
+
+/** P32 — a chosen global library the organization turned off gets no tab. */
+export function aDisabledGlobalLibraryGetsNoTab(): void {
+  renderPalette({ libraries: ["core", "tabler", "org.plant"], catalog: orgCatalogFixture() });
+  expect(tabNames()).toEqual(["Core", "Plant"]);
+}
+
+/** P33 — while the catalog loads the static tabs show and no org tab does (ruling R13). */
+export function withoutTheCatalogTheStaticTabsShow(): void {
+  renderPalette({ libraries: ["core", "tabler", "org.plant"], catalog: null });
+  expect(tabNames()).toEqual(["Core", "Tabler Icons"]);
+}
+
+/** P34 — the Plant tab offers its active symbol. */
+export async function thePlantTabOffersItsActiveSymbol(): Promise<void> {
+  await openPlant();
+  expect(screen.getByRole("button", { name: "Add Inlet screen unit" })).toBeInTheDocument();
+}
+
+/** P35 — the Plant tab does not offer its retired symbol (positive control: the active one). */
+export async function thePlantTabOmitsItsRetiredSymbol(): Promise<void> {
+  await openPlant();
+  expect(screen.getByRole("button", { name: "Add Inlet screen unit" })).toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "Add Old pump unit" })).toBeNull();
+}
+
+/** P36 — the Plant tab names its library and licence. */
+export async function thePlantTabShowsItsLicenceLine(): Promise<void> {
+  await openPlant();
+  expect(screen.getByText("Plant — CC BY 4.0")).toBeInTheDocument();
+}
+
+/** P37 — the Plant tab shows its attribution text in a `<details>`. */
+export async function thePlantTabShowsItsAttributionInDetails(): Promise<void> {
+  await openPlant();
+  const details = screen.getByTestId("mimic-palette-licence");
+  expect(details.querySelector("summary")?.textContent).toBe("Licence notice");
+  expect(details.querySelector("pre")?.textContent).toBe("Drawn by the plant team");
+}
+
+/** P38 — a search finds an org symbol and names its library. */
+export async function aSearchFindsAnOrgSymbol(): Promise<void> {
+  renderPalette({ libraries: ["core", "org.plant"], catalog: orgCatalogFixture() });
+  await search("inlet");
+  expect(screen.getByRole("button", { name: "Add Inlet screen unit from Plant" })).toBeInTheDocument();
+}
+
+/** P39 — an org symbol adds its unit with the catalog label. */
+export async function anOrgSymbolAddsItsUnitWithItsLabel(): Promise<void> {
+  const props = await openPlant();
+  await userEvent.click(screen.getByRole("button", { name: "Add Inlet screen unit" }));
+  expect(props.onAddUnit).toHaveBeenCalledWith("org.plant:inlet", "Inlet screen");
+}
+
+/** P40 — an org symbol's glyph is handed its stored symbol. */
+export async function anOrgGlyphReceivesItsOrgSymbol(): Promise<void> {
+  const spy = vi.spyOn(glyphs, "MimicGlyph");
+  await openPlant();
+  const orgCalls = spy.mock.calls.filter(([props]) => props.kind === "org.plant:inlet");
+  expect(orgCalls.length).toBeGreaterThan(0);
+  expect(orgCalls.every(([props]) => props.orgSymbol?.key === "org.plant:inlet")).toBe(true);
+}
+
+/** `orgCatalogFixture` with `mdi:water-pump` retired in `bms.mimic_symbols` (decision 7). */
+function catalogRetiringWaterPump(): NonNullable<MimicEditorPaletteProps["catalog"]> {
+  const catalog = orgCatalogFixture();
+  return {
+    ...catalog,
+    global: catalog.global.map((g) => (g.code === "mdi" ? { ...g, inactiveSymbolKeys: ["mdi:water-pump"] } : g)),
+  };
+}
+
+/** P41 — ADR 0086 decision 5: the mdi tab does not offer a retired global symbol. */
+export async function theMdiTabOmitsARetiredGlobalSymbol(): Promise<void> {
+  renderPalette({ libraries: ["core", "mdi"], catalog: catalogRetiringWaterPump() });
+  await userEvent.click(screen.getByRole("tab", { name: "Material Design Icons" }));
+  const offered = librarySymbolGroups("mdi").flatMap((g) => g.symbols).filter((s) => s !== "mdi:water-pump");
+  // Positive control: every other mdi symbol is still offered.
+  expect(screen.getByRole("button", { name: `Add ${symbolLabel(offered[0] ?? "unit")} unit` })).toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: `Add ${symbolLabel("mdi:water-pump")} unit` })).toBeNull();
+}
+
+/** P42 — ADR 0086 decision 5: a search does not find a retired global symbol. */
+export async function aSearchOmitsARetiredGlobalSymbol(): Promise<void> {
+  renderPalette({ libraries: ["core", "mdi"], catalog: catalogRetiringWaterPump() });
+  await search("pump");
+  // Positive control: the core Pump still matches.
+  expect(screen.getByRole("button", { name: "Add Pump unit" })).toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "Add Water pump unit from Material Design Icons" })).toBeNull();
 }

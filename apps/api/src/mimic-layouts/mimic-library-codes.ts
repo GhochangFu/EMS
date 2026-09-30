@@ -1,10 +1,10 @@
 import { mimicSymbolLibraryCodeSchema } from "@bms/shared";
-import type { MimicSymbolLibraryCode } from "@bms/shared";
+import type { MimicSymbolLibrarySelection } from "@bms/shared";
 
 /**
- * The library codes a response can carry: the contract enum (`F3.32f`, ADR 0086 decision 10).
- * Slice 3 unions the organization's `org.<code>` set per layout, so the caller passes the set
- * rather than this module reading the contract itself.
+ * The global library codes a response can carry: the contract enum (`F3.32f`, ADR 0086 decision
+ * 10). The service unions the organization's `org.<code>` set per layout, so the caller passes
+ * the set rather than this module reading the contract itself.
  */
 export const KNOWN_LIBRARY_CODES: ReadonlySet<string> = new Set(mimicSymbolLibraryCodeSchema.options);
 
@@ -16,12 +16,12 @@ export const KNOWN_LIBRARY_CODES: ReadonlySet<string> = new Set(mimicSymbolLibra
 export function splitLibraryCodes(
   stored: readonly string[],
   known: ReadonlySet<string>,
-): { kept: MimicSymbolLibraryCode[]; dropped: string[] } {
-  const kept: MimicSymbolLibraryCode[] = [];
+): { kept: MimicSymbolLibrarySelection[]; dropped: string[] } {
+  const kept: MimicSymbolLibrarySelection[] = [];
   const dropped: string[] = [];
   for (const code of stored) {
     if (known.has(code)) {
-      kept.push(code as MimicSymbolLibraryCode);
+      kept.push(code as MimicSymbolLibrarySelection);
     } else {
       dropped.push(code);
     }

@@ -6,7 +6,9 @@ import {
   aShapeCarryingATransformRendersItVerbatim,
   aTransformedShapeKeepsTheGlyphStrokeWidth,
   anInheritedPropertyNameFallsBackToUnit,
+  anOrgKeyWithNoMatchDrawsTheFallback,
   anUnknownKeyFallsBackToUnitAndDoesNotThrow,
+  aUnitMatchingAnOrgSymbolReceivesIt,
   anUnmappedGlyphClassFallsBackToFillInkMuted,
   childrenDrawInsideTheSvgLast,
   drawingIsNamedByTheLayout,
@@ -117,5 +119,11 @@ describe("F3.32c U4 — MimicScene, a stored layout", () => {
   });
   it("S21c a fill shape object is never spread into props", () => {
     fillShapeIsNotSpread();
+  });
+  it("S22 a unit matching an orgSymbols entry hands it to its glyph, passive and roled (F3.32f slice 3)", () => {
+    aUnitMatchingAnOrgSymbolReceivesIt();
+  });
+  it("S23 an org key with no embedded symbol draws the fallback and does not throw (F3.32f slice 3)", () => {
+    anOrgKeyWithNoMatchDrawsTheFallback();
   });
 });

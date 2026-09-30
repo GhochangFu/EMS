@@ -214,6 +214,15 @@ export function canManageMimicLayouts(role: UserRole): boolean {
   return role === "admin" || role === "organization_admin";
 }
 
+/**
+ * `F3.32f` slice 3 (ADR 0086 decisions 4 and 7) — `admin` (any organization) and
+ * `organization_admin` (its own) create and retire organization symbol libraries, upload their
+ * symbols and switch a global library off for the organization. The API refuses every other role.
+ */
+export function canManageSymbolLibraries(role: UserRole): boolean {
+  return role === "admin" || role === "organization_admin";
+}
+
 /** Default admin landing route for a role. */
 export function defaultAdminRoute(role: UserRole): string {
   if (role === "admin" || role === "organization_admin") {

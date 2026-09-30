@@ -13,8 +13,10 @@ import {
   mimicLayoutGeometrySchema,
   mimicPanelToneSchema,
   mimicSymbolLibraryCodeSchema,
+  mimicStaticSymbolSchema,
   mimicSymbolSchema,
 } from "./mimic-layouts";
+import { validOrgSymbol } from "./mimic-symbol-libraries.spec";
 
 /**
  * `F3.32c` / ADR 0081 — the layout library contracts and the `mimic-nodes` union on `source`
@@ -71,6 +73,7 @@ const geometry = {
   canvasH: 80,
   nodes: [panelNode, unitNode],
   pipes: [],
+  orgSymbols: [],
 };
 
 /** The core symbol set, in the order migration 0090's core rows restate it (plan D12, ADR 0082). */
@@ -112,7 +115,7 @@ export function mimicCoreSymbolsAreTheTwentyNineInOrder(): void {
   );
 }
 
-/** `F3.32e` / ADR 0084 — every symbol is the core set, then each library's keys in registry order. */
+/** `F3.32e` / ADR 0084 — every static symbol is the core set, then each library's keys in registry order. */
 export function mimicSymbolSchemaIsCoreThenEachLibraryInRegistryOrder(): void {
   const expected = [
     ...mimicCoreSymbolSchema.options,
@@ -124,7 +127,7 @@ export function mimicSymbolSchemaIsCoreThenEachLibraryInRegistryOrder(): void {
     ...DRAWIO_SYMBOL_KEYS,
   ];
   assert(expected.length >= 29 + 300, `only ${expected.length} symbols`);
-  assert(JSON.stringify(mimicSymbolSchema.options) === JSON.stringify(expected), "the symbol union is out of order");
+  assert(JSON.stringify(mimicStaticSymbolSchema.options) === JSON.stringify(expected), "the static symbol list is out of order");
   assert(new Set(expected).size === expected.length, "a symbol key repeats");
 }
 
@@ -186,6 +189,7 @@ const storedLayout = {
   version: 1,
   nodes: [],
   pipes: [],
+  orgSymbols: [],
   createdAt: "2026-09-29T00:00:00.000Z",
   updatedAt: "2026-09-29T00:00:00.000Z",
 };
@@ -258,4 +262,46 @@ export function mimicWidgetNodesRefusesALayoutArmWithoutLayout(): void {
     nodes: [],
   });
   assert(!result.success, "a layout widget arm without its layout geometry must be refused");
+}
+
+/** `F3.32f` slice 3 / ADR 0086 decision 2 — a node's symbol accepts an organization key. */
+export function mimicSymbolSchemaAcceptsAnOrgKey(): void {
+  const parsed = mimicSymbolSchema.safeParse("org.plant:inlet");
+  assert(parsed.success, `org.plant:inlet refused: ${issuesOf(parsed)}`);
+  assert(mimicSymbolSchema.safeParse("tank").success, "a core key must still parse");
+}
+
+/** A library key with no name is not a symbol, and the refusal stays one short message. */
+export function mimicSymbolSchemaRefusesOrgPlantWithNoName(): void {
+  const parsed = mimicSymbolSchema.safeParse("org.plant");
+  assert(!parsed.success, "org.plant parsed as a symbol");
+  const message = parsed.error?.issues[0]?.message ?? "";
+  assert(message === "Unknown mimic symbol", `message: ${message.slice(0, 80)}`);
+}
+
+/** A layout DTO embeds the organization symbols its units draw (decision 7). */
+export function layoutDtoParsesOrgSymbols(): void {
+  const parsed = mimicLayoutDtoSchema.safeParse({
+    ...storedLayout,
+    symbolLibraries: ["core", "org.plant"],
+    orgSymbols: [validOrgSymbol],
+  });
+  assert(parsed.success, `a DTO with orgSymbols must parse: ${issuesOf(parsed)}`);
+  assert(parsed.data?.orgSymbols[0]?.key === "org.plant:inlet-screen", "orgSymbols did not survive the parse");
+}
+
+/** `orgSymbols` is required: a DTO or a geometry without it does not parse (none is `[]`). */
+export function layoutDtoRefusesAnAbsentOrgSymbols(): void {
+  const parsed = mimicLayoutDtoSchema.safeParse({ ...storedLayout, symbolLibraries: ["core"], orgSymbols: undefined });
+  assert(!parsed.success, "a DTO without orgSymbols parsed");
+  const geometryParsed = mimicLayoutGeometrySchema.safeParse({ ...geometry, orgSymbols: undefined });
+  assert(!geometryParsed.success, "a geometry without orgSymbols parsed");
+}
+
+/** `symbolLibraries` accepts `org.<code>` beside the static codes, and not a symbol key. */
+export function symbolLibrariesAcceptsOrgPlant(): void {
+  const parsed = mimicLayoutDtoSchema.safeParse({ ...storedLayout, symbolLibraries: ["core", "org.plant"] });
+  assert(parsed.success, `symbolLibraries ["core","org.plant"] refused: ${issuesOf(parsed)}`);
+  const symbolKey = mimicLayoutDtoSchema.safeParse({ ...storedLayout, symbolLibraries: ["core", "org.plant:inlet"] });
+  assert(!symbolKey.success, "a symbol key parsed as a library selection");
 }

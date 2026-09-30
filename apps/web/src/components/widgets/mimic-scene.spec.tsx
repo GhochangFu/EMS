@@ -3,12 +3,12 @@ import type { ReactElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { expect, vi } from "vitest";
 
-import { mimicCoreSymbolSchema, mimicSymbolSchema } from "@bms/shared/contracts";
-import type { GeneratedSiteAssetDto, MimicNodeDto } from "@bms/shared";
+import { mimicCoreSymbolSchema, mimicStaticSymbolSchema } from "@bms/shared/contracts";
+import type { GeneratedSiteAssetDto, MimicLayoutNodeDto, MimicNodeDto, MimicSymbol } from "@bms/shared";
 
 import type { SiteLiveReadings } from "../../hooks/use-site-live-readings";
 import { layoutGeometry } from "../../lib/mimic-geometry";
-import { LAYOUT } from "../../lib/mimic-geometry.spec";
+import { LAYOUT, ORG_SYMBOL } from "../../lib/mimic-geometry.spec";
 import { MIMIC_PANEL_CLASSES, type MimicGlyphKind } from "../../lib/mimic";
 import { MimicGlyph, matrixScale } from "./mimic-glyphs";
 import { MimicScene } from "./mimic-scene";
@@ -52,7 +52,7 @@ vi.mock("./mimic-symbol-libraries", async (importOriginal) => {
 });
 
 /** Every library key, core keys excluded, in shared-registry order (D1: core, then each library). */
-const LIBRARY_KEYS = mimicSymbolSchema.options.filter(
+const LIBRARY_KEYS = mimicStaticSymbolSchema.options.filter(
   (key) => !(mimicCoreSymbolSchema.options as readonly string[]).includes(key),
 );
 
@@ -354,6 +354,68 @@ export function anUnmappedGlyphClassFallsBackToFillInkMuted(): void {
     </svg>,
   );
   expect(screen.getByTestId("mimic-glyph").getAttribute("class")).toBe("fill-ink-muted");
+}
+
+/**
+ * `F3.32f` slice 3 (ADR 0086 decision 7, plan D8) — a layout whose units draw organization
+ * symbols: `org_passive` (no role) and `org_roled` both name `ORG_SYMBOL`; `org_missing` names a
+ * key the layout did not embed.
+ */
+function renderOrgScene(): void {
+  const node = (key: string, x: number, roleCode: string | null, symbol: string): MimicLayoutNodeDto => ({
+    key,
+    kind: "unit",
+    symbol: symbol as MimicSymbol,
+    label: key,
+    roleCode,
+    tone: null,
+    x,
+    y: 5,
+    w: 20,
+    h: 25,
+    z: 0,
+  });
+  const geometry = layoutGeometry({
+    name: "Org plant",
+    canvasW: 120,
+    canvasH: 60,
+    nodes: [
+      node("org_passive", 5, null, ORG_SYMBOL.key),
+      node("org_roled", 35, "water_intake", ORG_SYMBOL.key),
+      node("org_missing", 65, null, "org.plant:missing"),
+    ],
+    pipes: [],
+    orgSymbols: [ORG_SYMBOL],
+  });
+  render(<MimicScene title="Org plant" geometry={geometry} nodes={[]} readings={NO_LIVE_READINGS} />);
+}
+
+function glyphOf(key: string): HTMLElement {
+  return within(unitEl(key)).getAllByTestId("mimic-glyph")[0] as HTMLElement;
+}
+
+/**
+ * S18 — a unit whose key matches an `orgSymbols` entry draws that symbol's shapes, at both unit
+ * call sites (passive and roled). Mutation: drop `orgSymbol=` at either call site → this claim reddens.
+ */
+export function aUnitMatchingAnOrgSymbolReceivesIt(): void {
+  renderOrgScene();
+  expect(
+    ["org_passive", "org_roled"].map((key) => {
+      const glyph = glyphOf(key);
+      return [key, glyph.getAttribute("data-glyph-source"), glyph.getAttribute("data-glyph-fallback"), glyph.querySelectorAll("rect").length];
+    }),
+  ).toEqual([
+    ["org_passive", "org", null, ORG_SYMBOL.shapes.length],
+    ["org_roled", "org", null, ORG_SYMBOL.shapes.length],
+  ]);
+}
+
+/** S19 — an organization key the layout did not embed draws the marked fallback and nothing of an org symbol. */
+export function anOrgKeyWithNoMatchDrawsTheFallback(): void {
+  expect(() => renderOrgScene()).not.toThrow();
+  const glyph = glyphOf("org_missing");
+  expect([glyph.getAttribute("data-glyph-fallback"), glyph.getAttribute("data-glyph-source")]).toEqual(["true", null]);
 }
 
 /** S17 — every library shape's tag and attribute names are the whitelisted geometry set. */

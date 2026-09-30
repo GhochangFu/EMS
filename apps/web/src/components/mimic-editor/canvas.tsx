@@ -1,4 +1,5 @@
 import { MIMIC_LAYOUT_BOUNDS } from "@bms/shared/contracts";
+import type { MimicOrgSymbolDto } from "@bms/shared";
 import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 
 import type { SiteLiveReadings } from "../../hooks/use-site-live-readings";
@@ -30,7 +31,14 @@ export type MimicEditorCanvasProps = {
   state: EditorState;
   dispatch: (action: EditorAction) => void;
   pipeMode: boolean;
+  /**
+   * `F3.32f` slice 3 (ADR 0086 decision 7): the organization symbols the units may draw — the
+   * stored layout's `orgSymbols` and the catalog's, which the page supplies. None by default.
+   */
+  orgSymbols?: readonly MimicOrgSymbolDto[];
 };
+
+const NO_ORG_SYMBOLS: readonly MimicOrgSymbolDto[] = [];
 
 /** The editor draws no live data: every roled unit reads as "Not assigned". */
 const NO_READINGS: SiteLiveReadings = {
@@ -55,7 +63,7 @@ function boxOf(node: EditorNode): Box {
   return { x: node.x, y: node.y, w: node.w, h: node.h };
 }
 
-export function MimicEditorCanvas({ state, dispatch, pipeMode }: MimicEditorCanvasProps) {
+export function MimicEditorCanvas({ state, dispatch, pipeMode, orgSymbols = NO_ORG_SYMBOLS }: MimicEditorCanvasProps) {
   const { layout, selected } = state;
   const { cell } = MIMIC_LAYOUT_BOUNDS;
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -76,8 +84,9 @@ export function MimicEditorCanvas({ state, dispatch, pipeMode }: MimicEditorCanv
         canvasH: layout.canvasH,
         nodes: [...layout.nodes],
         pipes: [...layout.pipes],
+        orgSymbols: [...orgSymbols],
       }),
-    [layout],
+    [layout, orgSymbols],
   );
 
   /** Nodes in drawing order, so a unit's hit rect sits above its panel's. */

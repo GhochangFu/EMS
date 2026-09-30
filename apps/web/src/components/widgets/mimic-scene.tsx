@@ -76,6 +76,8 @@ export function MimicScene({ title, geometry, nodes, readings, children }: Mimic
   const uid = useId().replace(/:/g, "");
   const markerId = `mimic-arrow-${uid}`;
   const byKey = new Map(nodes.map((n) => [n.key, n]));
+  // `F3.32f` slice 3 (plan D8): the embedded organization symbols by key, once per drawing.
+  const orgSymbolOf = new Map(geometry.orgSymbols.map((symbol) => [symbol.key as string, symbol]));
   const roled = geometry.units.filter((u) => u.roleCode !== null);
 
   const lastSeenOf = new Map<string, number | null>(
@@ -135,6 +137,7 @@ export function MimicScene({ title, geometry, nodes, readings, children }: Mimic
           y={MIMIC_PIPE_Y - GLYPH_SIZE / 2}
           size={GLYPH_SIZE}
           className={MIMIC_PANEL_CLASSES[unit.tone].glyph}
+          orgSymbol={orgSymbolOf.get(unit.symbol) ?? null}
         />
       </g>
     );
@@ -220,6 +223,7 @@ export function MimicScene({ title, geometry, nodes, readings, children }: Mimic
           size={GLYPH_SIZE}
           className={glyphClass}
           level={level}
+          orgSymbol={orgSymbolOf.get(unit.symbol) ?? null}
         />
         {asset === null
           ? null

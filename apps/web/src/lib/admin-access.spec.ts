@@ -8,6 +8,7 @@ import {
   canCreateOrganizationWideDashboard,
   canManageLocationTypes,
   canManageMimicLayouts,
+  canManageSymbolLibraries,
   canManageNotificationChannels,
   masterDataTabs,
   visibleMasterDataTabs,
@@ -375,6 +376,21 @@ export function runCanManageMimicLayoutsAdminsTest(): void {
 export function runCanManageMimicLayoutsOthersTest(): void {
   for (const role of ["location_admin", "asset_group_admin", "operator", "viewer"] as const) {
     assert(!canManageMimicLayouts(role), `${role} does not manage mimic layouts`);
+  }
+}
+
+/** `F3.32f` slice 3 (ADR 0086 decision 7) — `admin` and `organization_admin` manage symbol libraries. */
+export function runCanManageSymbolLibrariesAdminsTest(): void {
+  assert(
+    canManageSymbolLibraries("admin") && canManageSymbolLibraries("organization_admin"),
+    "admin and organization_admin manage symbol libraries",
+  );
+}
+
+/** `F3.32f` slice 3 — no other role does (the API answers 403). */
+export function runCanManageSymbolLibrariesOthersTest(): void {
+  for (const role of ["location_admin", "asset_group_admin", "operator", "viewer"] as const) {
+    assert(!canManageSymbolLibraries(role), `${role} does not manage symbol libraries`);
   }
 }
 

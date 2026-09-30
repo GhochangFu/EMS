@@ -1,13 +1,20 @@
 import {
   boolean,
+  char,
+  doublePrecision,
   foreignKey,
   index,
   integer,
+  jsonb,
+  primaryKey,
+  text,
   timestamp,
   unique,
   uuid,
   varchar,
 } from "drizzle-orm/pg-core";
+
+import type { MimicShape } from "@bms/shared";
 
 import { assetRoles, bmsSchema, organizations, users } from "./bms-schema";
 
@@ -45,6 +52,95 @@ export const mimicSymbols = bmsSchema.table(
   },
   (t) => ({
     libraryIdx: index("mimic_symbols_library_idx").on(t.libraryCode, t.groupCode, t.sortOrder),
+  }),
+);
+
+/**
+ * `F3.32f` slice 3 / ADR 0086 decision 1 — an organization's own symbol library, migration
+ * `0093`. A tenant table under `FORCE ROW LEVEL SECURITY` in the `mimic_layouts` shape, beside the
+ * global tables above. `UNIQUE (organization_id, id)` is the target of the symbols' composite
+ * foreign key. The code and style CHECKs are the migration's, not mirrored here.
+ */
+export const mimicOrgSymbolLibraries = bmsSchema.table(
+  "mimic_org_symbol_libraries",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    organizationId: uuid("organization_id")
+      .notNull()
+      .references(() => organizations.id),
+    code: varchar("code", { length: 32 }).notNull(),
+    label: varchar("label", { length: 64 }).notNull(),
+    style: varchar("style", { length: 8 }).notNull(),
+    licence: varchar("licence", { length: 64 }).notNull(),
+    attribution: text("attribution").notNull().default(""),
+    sourceUrl: varchar("source_url", { length: 255 }),
+    active: boolean("active").notNull().default(true),
+    createdBy: uuid("created_by").references(() => users.id),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    organizationCodeUnique: unique("mimic_org_symbol_libraries_organization_code_key").on(t.organizationId, t.code),
+    organizationIdUnique: unique("mimic_org_symbol_libraries_organization_id_key").on(t.organizationId, t.id),
+  }),
+);
+
+/**
+ * One uploaded symbol (ADR 0086 decisions 1 and 6): geometry only — the view box and the parsed
+ * `[tag, attrs]` list — never the raw file. `key` is `org.<code>:<name>`. The composite foreign
+ * key keeps a symbol in its own organization's library; the key, group, view box, shapes and
+ * sha256 CHECKs are the migration's. A read re-checks each row through `mimicOrgSymbolDtoSchema`.
+ */
+export const mimicOrgSymbols = bmsSchema.table(
+  "mimic_org_symbols",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    organizationId: uuid("organization_id")
+      .notNull()
+      .references(() => organizations.id),
+    libraryId: uuid("library_id").notNull(),
+    key: varchar("key", { length: 64 }).notNull(),
+    label: varchar("label", { length: 64 }).notNull(),
+    groupCode: varchar("group_code", { length: 16 }).notNull(),
+    viewBox: doublePrecision("view_box").array().notNull(),
+    shapes: jsonb("shapes").$type<MimicShape[]>().notNull(),
+    sourceFilename: varchar("source_filename", { length: 255 }).notNull(),
+    sha256: char("sha256", { length: 64 }).notNull(),
+    active: boolean("active").notNull().default(true),
+    createdBy: uuid("created_by").references(() => users.id),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    organizationKeyUnique: unique("mimic_org_symbols_organization_key_key").on(t.organizationId, t.key),
+    libraryFk: foreignKey({
+      name: "mimic_org_symbols_library_fkey",
+      columns: [t.organizationId, t.libraryId],
+      foreignColumns: [mimicOrgSymbolLibraries.organizationId, mimicOrgSymbolLibraries.id],
+    }),
+    libraryIdx: index("mimic_org_symbols_library_idx").on(t.libraryId, t.groupCode, t.key),
+  }),
+);
+
+/**
+ * The per-organization switch for a global library (ADR 0086 decision 4). No row means enabled;
+ * `mimic_library_settings_core_check` (the migration's) refuses a disabled `core`.
+ */
+export const mimicLibrarySettings = bmsSchema.table(
+  "mimic_library_settings",
+  {
+    organizationId: uuid("organization_id")
+      .notNull()
+      .references(() => organizations.id),
+    libraryCode: varchar("library_code", { length: 32 })
+      .notNull()
+      .references(() => mimicSymbolLibraries.code),
+    enabled: boolean("enabled").notNull().default(true),
+    updatedBy: uuid("updated_by").references(() => users.id),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    pk: primaryKey({ name: "mimic_library_settings_pkey", columns: [t.organizationId, t.libraryCode] }),
   }),
 );
 
@@ -111,6 +207,9 @@ export const mimicLayoutNodes = bmsSchema.table(
     kind: varchar("kind", { length: 16 }).notNull(),
     // `F3.32e` / ADR 0084 decision 3 — a foreign key to `mimic_symbols` replaced 0089's CHECK.
     symbol: varchar("symbol", { length: 64 }).references(() => mimicSymbols.key),
+    // `F3.32f` slice 3 / ADR 0086 decision 3 — an organization symbol instead (migration `0093`);
+    // a unit has exactly one of the two, `mimic_layout_nodes_kind_fields_check`'s rule.
+    orgSymbolKey: varchar("org_symbol_key", { length: 64 }),
     label: varchar("label", { length: 64 }).notNull(),
     roleCode: varchar("role_code", { length: 64 }).references(() => assetRoles.code),
     tone: varchar("tone", { length: 16 }),
@@ -129,6 +228,12 @@ export const mimicLayoutNodes = bmsSchema.table(
       t.kind,
     ),
     layoutIdx: index("mimic_layout_nodes_layout_idx").on(t.layoutId, t.z, t.y, t.x),
+    // The organization is in the key: a foreign key check does not apply row security.
+    orgSymbolFk: foreignKey({
+      name: "mimic_layout_nodes_org_symbol_fkey",
+      columns: [t.organizationId, t.orgSymbolKey],
+      foreignColumns: [mimicOrgSymbols.organizationId, mimicOrgSymbols.key],
+    }),
   }),
 );
 

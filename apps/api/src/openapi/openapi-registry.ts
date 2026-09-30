@@ -41,6 +41,12 @@ import {
   putMimicLayoutBodySchema,
 } from "../mimic-layouts/mimic-layouts.schema";
 import {
+  createMimicOrgSymbolLibraryBodySchema,
+  putMimicLibrarySettingBodySchema,
+  updateMimicOrgSymbolBodySchema,
+  updateMimicOrgSymbolLibraryBodySchema,
+} from "../mimic-symbol-libraries/mimic-symbol-libraries.schema";
+import {
   chatBodySchema,
   createSessionBodySchema,
   patchDraftBodySchema,
@@ -289,6 +295,12 @@ export const REQUEST_SCHEMAS: Record<string, ZodTypeAny> = {
   // `F3.32c` (ADR 0081 decision 3) — the mimic layout library's two write bodies.
   MimicLayoutsController_create: createMimicLayoutBodySchema,
   MimicLayoutsController_replace: putMimicLayoutBodySchema,
+  // `F3.32f` slice 3 (ADR 0086 decisions 4, 6, 7) — the four JSON bodies. `_list` (a query) and
+  // `_uploadSymbol` (multipart: the generator hard-codes application/json) are deliberately absent.
+  MimicSymbolLibrariesController_create: createMimicOrgSymbolLibraryBodySchema,
+  MimicSymbolLibrariesController_update: updateMimicOrgSymbolLibraryBodySchema,
+  MimicSymbolLibrariesController_updateSymbol: updateMimicOrgSymbolBodySchema,
+  MimicSymbolLibrariesController_putSetting: putMimicLibrarySettingBodySchema,
   ManualReadingsController_create: manualReadingsBodySchema,
   NotificationsController_createChannel: createNotificationChannelBodySchema,
   NotificationsController_listDeliveries: listDeliveriesQuerySchema,

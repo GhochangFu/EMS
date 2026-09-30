@@ -250,3 +250,33 @@ export function acceptsALayoutWithoutCore(): void {
 export function refusesAKeyInNoLibrary(): void {
   refusedAt(withLibraries(["core", "tabler"], "nope:x"), ["nodes.0.symbol"]);
 }
+
+// `F3.32f` slice 3 U2 — organization libraries and symbols in a write body (ADR 0086 decision 2).
+
+export function acceptsAnOrgSymbolFromAChosenOrgLibrary(): void {
+  const result = createMimicLayoutBodySchema.safeParse(withLibraries(["core", "org.plant"], "org.plant:inlet"));
+  expect(result.success ? [] : result.error.issues).toEqual([]);
+  expect(result.success && result.data.symbolLibraries).toEqual(["core", "org.plant"]);
+  expect(result.success && result.data.nodes[0]?.symbol).toBe("org.plant:inlet");
+}
+
+export function refusesAnOrgSymbolFromAnOrgLibraryTheLayoutDidNotChoose(): void {
+  const issues = issuesOf(createMimicLayoutBodySchema, withLibraries(["core"], "org.plant:inlet"));
+  expect(issues.map((i) => i.path.join("."))).toEqual(["nodes.0.symbol"]);
+  expect(issues[0]?.message).toBe(
+    'Symbol "org.plant:inlet" belongs to the org.plant library, which this layout did not choose',
+  );
+}
+
+export function refusesAnOrgLibraryListedTwice(): void {
+  // `core` too: the fixture's other units draw core symbols.
+  refusedAt(withLibraries(["core", "org.plant", "org.plant"], "org.plant:inlet"), ["symbolLibraries.2"]);
+}
+
+export function refusesAnOrgSymbolKeyWithAnUppercaseCode(): void {
+  refusedAt(withLibraries(["core", "org.plant"], "org.Plant:x"), ["nodes.0.symbol"]);
+}
+
+export function refusesAnOrgLibraryKeyWithAnUppercaseCode(): void {
+  refusedAt(withLibraries(["core", "org.Plant"]), ["symbolLibraries.1"]);
+}

@@ -7,6 +7,8 @@ import {
   runCanManageLocationTypesTests,
   runCanManageMimicLayoutsAdminsTest,
   runCanManageMimicLayoutsOthersTest,
+  runCanManageSymbolLibrariesAdminsTest,
+  runCanManageSymbolLibrariesOthersTest,
   runMimicLayoutsTabHiddenFromLocationAdminTest,
   runMimicLayoutsTabShownToOrganizationAdminTest,
   runDashboardAuthoringPredicateTests,
@@ -65,6 +67,14 @@ describe("admin-access", () => {
 
   it("canManageMimicLayouts refuses every other role (F3.32c)", () => {
     runCanManageMimicLayoutsOthersTest();
+  });
+
+  it("canManageSymbolLibraries admits admin and organization_admin (F3.32f)", () => {
+    runCanManageSymbolLibrariesAdminsTest();
+  });
+
+  it("canManageSymbolLibraries refuses every other role (F3.32f)", () => {
+    runCanManageSymbolLibrariesOthersTest();
   });
 
   it("shows the Mimic Layouts tab to organization_admin (F3.32c)", () => {

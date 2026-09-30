@@ -1,5 +1,7 @@
 import { MIMIC_SYMBOL_GROUP_CODES, mimicSymbolLibraryCodeSchema } from "../contracts/mimic-layouts";
 import {
+  isOrgLibraryKey,
+  isOrgSymbolKey,
   libraryOfSymbol,
   librarySymbolEntries,
   MIMIC_SYMBOL_LIBRARIES,
@@ -83,4 +85,21 @@ export function symbolLibraryLabelReadsTheGeneratedLabel(): void {
   assert(symbolLibraryLabel("mdi:heat-pump") === "Heat pump", `mdi:heat-pump → ${symbolLibraryLabel("mdi:heat-pump")}`);
   assert(symbolLibraryLabel("mdi:molecule-co2") === "Molecule CO2", `co2 → ${symbolLibraryLabel("mdi:molecule-co2")}`);
   assert(symbolLibraryLabel("tank") === null, "a core key must have no library label");
+}
+
+/** F3.32f slice 3: an organization key names its organization library, `org.<code>` (ADR 0086
+ * decision 2). Mutation: delete the `org.` branch of `libraryOfSymbol` → this claim reddens. */
+export function libraryOfSymbolAnswersTheOrgLibraryKey(): void {
+  assert(libraryOfSymbol("org.plant:inlet") === "org.plant", `org.plant:inlet → ${libraryOfSymbol("org.plant:inlet")}`);
+  assert(libraryOfSymbol("org.Plant:inlet") === "core", `a malformed org key → ${libraryOfSymbol("org.Plant:inlet")}`);
+}
+
+/** F3.32f slice 3: the two predicates tell an organization symbol key from its library key. */
+export function isOrgSymbolKeyAndIsOrgLibraryKeyTellTheTwoApart(): void {
+  assert(isOrgSymbolKey("org.plant:inlet"), "org.plant:inlet is an organization symbol key");
+  assert(!isOrgSymbolKey("org.plant"), "org.plant is not a symbol key");
+  assert(!isOrgSymbolKey("mdi:heat-pump"), "mdi:heat-pump is not an organization key");
+  assert(isOrgLibraryKey("org.plant"), "org.plant is an organization library key");
+  assert(!isOrgLibraryKey("org.plant:inlet"), "a symbol key is not a library key");
+  assert(!isOrgLibraryKey("core"), "core is not an organization library key");
 }

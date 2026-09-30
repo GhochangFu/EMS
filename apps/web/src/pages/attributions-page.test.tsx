@@ -13,7 +13,12 @@ import {
   lucideSourceLinkOpensSafely,
   mdiShowsItsNotice,
   sevenEntriesRender,
+  theCatalogIsReadUnscoped,
   theHeadingRenders,
+  theOrgSectionIsNotAGlobalEntry,
+  theOrgSectionListsEachLibrary,
+  theOrgSectionListsEveryLibrary,
+  theOrgSectionSaysWhenThereIsNone,
 } from "./attributions-page.spec";
 
 /** Vitest entry point — assertions live in the sibling `.spec` (ADR 0014); jsdom opts in here (ADR 0042). */
@@ -56,5 +61,20 @@ describe("F3.32f the attributions page", () => {
   });
   it("T11 a QElectroTech row says the symbol is an adaptation", () => {
     aQetRowSaysTheSymbolIsAnAdaptation();
+  });
+  it("T12 the organization section names each library, its licence and attribution", async () => {
+    await theOrgSectionListsEachLibrary();
+  });
+  it("T13 the organization section lists every library, retired ones too", async () => {
+    await theOrgSectionListsEveryLibrary();
+  });
+  it("T14 the organization section says when there is none", async () => {
+    await theOrgSectionSaysWhenThereIsNone();
+  });
+  it("T15 the catalog is read with no organization", async () => {
+    await theCatalogIsReadUnscoped();
+  });
+  it("T16 the organization section is not a global entry", async () => {
+    await theOrgSectionIsNotAGlobalEntry();
   });
 });

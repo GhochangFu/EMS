@@ -4,10 +4,19 @@ import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { expect, vi } from "vitest";
 
-import type { MimicLayoutDto, OrganizationsListResponse, VocabulariesResponse } from "@bms/shared";
+import {
+  MIMIC_SYMBOL_LIBRARIES,
+  type MimicLayoutDto,
+  type MimicSymbolLibrariesResponse,
+  type OrganizationsListResponse,
+  type VocabulariesResponse,
+} from "@bms/shared";
 
 import * as orgApi from "../../api/admin/organizations";
 import * as api from "../../api/mimic-layouts";
+import * as librariesApi from "../../api/mimic-symbol-libraries";
+import * as canvasModule from "../../components/mimic-editor/canvas";
+import { orgCatalogFixture, orgSymbolFixture } from "../../lib/mimic-symbols.spec";
 import * as systemStatusApi from "../../api/system-status";
 import * as vocabApi from "../../api/vocabularies";
 import { OPERATIONAL } from "../../components/system-status-indicator.spec";
@@ -56,6 +65,7 @@ function storedDto(version: number): MimicLayoutDto {
     symbolLibraries: ["core"],
     nodes: [...layout.nodes],
     pipes: [...layout.pipes],
+    orgSymbols: [],
     createdAt: new Date(0).toISOString(),
     updatedAt: new Date(0).toISOString(),
   };
@@ -65,17 +75,35 @@ type Stubs = {
   fetchOne: ReturnType<typeof vi.spyOn>;
   create: ReturnType<typeof vi.spyOn>;
   replace: ReturnType<typeof vi.spyOn>;
+  catalog: ReturnType<typeof vi.spyOn>;
 };
+
+/** Every static library enabled for the organization, and no organization library. */
+function allEnabledCatalog(): MimicSymbolLibrariesResponse {
+  return {
+    global: MIMIC_SYMBOL_LIBRARIES.map((library) => ({
+      code: library.code,
+      label: library.label,
+      style: library.style,
+      licence: library.licence,
+      active: true,
+      enabled: true,
+      inactiveSymbolKeys: [],
+    })),
+    organization: [],
+  };
+}
 
 function stubAll(orgs: OrganizationsListResponse): Stubs {
   vi.spyOn(systemStatusApi, "fetchSystemStatus").mockResolvedValue(OPERATIONAL);
+  const catalog = vi.spyOn(librariesApi, "fetchMimicSymbolLibraries").mockResolvedValue(allEnabledCatalog());
   vi.spyOn(vocabApi, "fetchVocabularies").mockResolvedValue({ assetRoles: [] } as unknown as VocabulariesResponse);
   vi.spyOn(orgApi, "fetchAdminOrganizations").mockResolvedValue(orgs);
   vi.spyOn(api, "fetchMimicLayouts").mockResolvedValue({ items: [] });
   const fetchOne = vi.spyOn(api, "fetchMimicLayout").mockResolvedValue(storedDto(4));
   const create = vi.spyOn(api, "createMimicLayout").mockResolvedValue(storedDto(1));
   const replace = vi.spyOn(api, "replaceMimicLayout").mockResolvedValue(storedDto(5));
-  return { fetchOne, create, replace };
+  return { fetchOne, create, replace, catalog };
 }
 
 function mount(client: QueryClient, path: string, as: AuthUser): ReturnType<typeof render> {
@@ -324,6 +352,64 @@ export async function checkingALibraryAddsItsTab(): Promise<void> {
   expect(screen.queryByRole("tablist")).toBeNull();
   await userEvent.click(screen.getByRole("checkbox", { name: "Library Tabler Icons" }));
   expect(within(screen.getByRole("tablist")).getAllByRole("tab").map((t) => t.textContent)).toEqual(["Core", "Tabler Icons"]);
+}
+
+// ---- organization libraries (F3.32f slice 3, plan D9, ruling R13) ----------------------------
+
+/** The canvas's `orgSymbols` keys, from its last render. */
+function canvasOrgSymbolKeys(spy: ReturnType<typeof vi.spyOn>): string[] {
+  const last = spy.mock.calls.at(-1)?.[0] as { orgSymbols?: readonly { key: string }[] } | undefined;
+  return (last?.orgSymbols ?? []).map((s) => s.key).sort();
+}
+
+/** E20 — a stored layout reads the catalog of its own organization. */
+export async function aStoredLayoutReadsItsOrganizationsCatalog(): Promise<void> {
+  const { catalog } = renderAt(`/admin/mimic-layouts/${LAYOUT_ID}`);
+  await waitFor(() => expect(catalog).toHaveBeenCalledWith(ORG_ID));
+}
+
+/** E21 — a new layout reads the catalog of the chosen organization, never an unscoped one. */
+export async function aNewLayoutReadsTheChosenOrganizationsCatalog(): Promise<void> {
+  const { catalog } = renderAt("/admin/mimic-layouts/new");
+  await waitFor(() => expect(catalog).toHaveBeenCalledWith(ORG_ID));
+  expect(catalog).not.toHaveBeenCalledWith(undefined);
+}
+
+/** E22 — with two organizations and none chosen, no catalog read starts. */
+export async function aNewLayoutWithNoOrganizationReadsNoCatalog(): Promise<void> {
+  const { catalog } = renderAt("/admin/mimic-layouts/new", user("admin"), TWO_ORGS);
+  // Positive control: the organization select rendered with both options.
+  expect(await screen.findByRole("option", { name: "PHE — PHE" })).toBeInTheDocument();
+  expect(catalog).not.toHaveBeenCalled();
+}
+
+/** E23 — the catalog's org symbols reach the canvas. */
+export async function theCatalogsOrgSymbolsReachTheCanvas(): Promise<void> {
+  const spy = vi.spyOn(canvasModule, "MimicEditorCanvas");
+  const stubs = stubAll(ORGS);
+  stubs.catalog.mockResolvedValue(orgCatalogFixture());
+  mount(newClient(), `/admin/mimic-layouts/${LAYOUT_ID}`, user("organization_admin"));
+  await waitFor(() => expect(canvasOrgSymbolKeys(spy)).toContain("org.plant:inlet"));
+}
+
+/** E24 — the stored layout's embedded org symbols reach the canvas beside the catalog's. */
+export async function theLayoutsEmbeddedOrgSymbolsReachTheCanvas(): Promise<void> {
+  const spy = vi.spyOn(canvasModule, "MimicEditorCanvas");
+  const stubs = stubAll(ORGS);
+  stubs.catalog.mockResolvedValue(orgCatalogFixture());
+  stubs.fetchOne.mockResolvedValue({ ...storedDto(4), orgSymbols: [orgSymbolFixture("org.gone:valve", "Gone valve")] });
+  mount(newClient(), `/admin/mimic-layouts/${LAYOUT_ID}`, user("organization_admin"));
+  await waitFor(() => expect(canvasOrgSymbolKeys(spy)).toContain("org.plant:inlet"));
+  expect(canvasOrgSymbolKeys(spy)).toContain("org.gone:valve");
+}
+
+/** E25 — the palette offers an org library the layout chose, once the catalog is read. */
+export async function thePaletteOffersAChosenOrgLibrary(): Promise<void> {
+  const stubs = stubAll(ORGS);
+  stubs.catalog.mockResolvedValue(orgCatalogFixture());
+  stubs.fetchOne.mockResolvedValue({ ...storedDto(4), symbolLibraries: ["core", "org.plant"] });
+  mount(newClient(), `/admin/mimic-layouts/${LAYOUT_ID}`, user("organization_admin"));
+  expect(await screen.findByRole("tab", { name: "Plant" })).toBeInTheDocument();
 }
 
 /** E10 — a location_admin gets the status line and no read. */

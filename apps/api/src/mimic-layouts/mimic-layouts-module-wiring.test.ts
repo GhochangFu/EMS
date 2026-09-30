@@ -19,4 +19,20 @@ describe("F3.32c — MimicLayoutsModule wiring", () => {
   it("MimicLayoutsService's dependencies resolve inside the module", () => {
     spec.assertServiceDepsResolve();
   });
+
+  it("F3.32f MimicSymbolLibrariesModule declares its members, imports Database and Auth, exports nothing", () => {
+    spec.assertSymbolLibrariesModuleDeclaresItsMembers();
+  });
+
+  it("F3.32f AppModule imports MimicSymbolLibrariesModule", () => {
+    spec.assertAppModuleImportsTheSymbolLibrariesModule();
+  });
+
+  it("F3.32f MimicSymbolLibrariesService's dependencies resolve inside its module", () => {
+    spec.assertSymbolLibrariesServiceDepsResolve();
+  });
+
+  it("F3.32f MimicSymbolLibrariesController's dependencies resolve inside its module", () => {
+    spec.assertSymbolLibrariesControllerDepsResolve();
+  });
 });

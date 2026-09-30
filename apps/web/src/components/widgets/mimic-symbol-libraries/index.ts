@@ -1,4 +1,4 @@
-import { libraryOfSymbol, mimicSymbolLibrary, type MimicSymbolLibraryCode } from "@bms/shared";
+import { isOrgLibraryKey, libraryOfSymbol, mimicSymbolLibrary, type MimicSymbolLibraryCode } from "@bms/shared";
 
 import { DRAWIO_LICENCE_NOTICE, DRAWIO_SHAPES } from "./drawio.generated";
 import { LUCIDE_LICENCE_NOTICE, LUCIDE_SHAPES } from "./lucide.generated";
@@ -38,7 +38,11 @@ export function librarySymbolShapes(
 ): { readonly style: "stroke" | "fill"; readonly shapes: readonly MimicShape[] } | null {
   const shapes = SHAPES.get(key);
   if (!shapes) return null;
-  return { style: mimicSymbolLibrary(libraryOfSymbol(key)).style, shapes };
+  // Only vendored keys are in `SHAPES`, so `library` is a static code; an organization key
+  // (`F3.32f` slice 3) never reaches `mimicSymbolLibrary`.
+  const library = libraryOfSymbol(key);
+  if (isOrgLibraryKey(library)) return null;
+  return { style: mimicSymbolLibrary(library).style, shapes };
 }
 
 /** Each non-core library's licence notice, verbatim; the palette shows it (decision 9). */

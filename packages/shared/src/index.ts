@@ -42,6 +42,8 @@ import type * as Mi from "./contracts/mimic";
 import type * as Mc from "./contracts/mimic-config";
 import type * as Ml from "./contracts/mimic-layouts";
 import type * as Mshape from "./contracts/mimic-shapes";
+import type * as Msl from "./contracts/mimic-symbol-libraries";
+import type * as Mslc from "./contracts/mimic-symbol-library-catalog";
 import type * as N from "./contracts/notifications";
 import type * as Ob from "./contracts/onboarding";
 import type * as Op from "./contracts/operations";
@@ -829,6 +831,19 @@ export type MimicLayoutConfig = z.infer<typeof Mc.mimicLayoutConfigSchema>;
 export type MimicSymbol = z.infer<typeof Ml.mimicSymbolSchema>;
 export type MimicCoreSymbol = z.infer<typeof Ml.mimicCoreSymbolSchema>;
 export type MimicSymbolLibraryCode = z.infer<typeof Ml.mimicSymbolLibraryCodeSchema>;
+/** `F3.32f` slice 3 / ADR 0086 decision 2 — the static keys alone, and the organization keys. */
+export type MimicStaticSymbol = z.infer<typeof Ml.mimicStaticSymbolSchema>;
+export type MimicOrgSymbolKey = z.infer<typeof Msl.mimicOrgSymbolKeySchema>;
+export type MimicOrgLibraryKey = z.infer<typeof Msl.mimicOrgLibraryKeySchema>;
+/** A layout's chosen library: a static code or `org.<code>`. */
+export type MimicSymbolLibrarySelection = z.infer<typeof Ml.mimicSymbolLibrarySelectionSchema>;
+export type MimicSymbolStyle = z.infer<typeof Msl.mimicSymbolStyleSchema>;
+export type MimicViewBox = z.infer<typeof Msl.mimicViewBoxSchema>;
+export type MimicOrgSymbolDto = z.infer<typeof Ml.mimicOrgSymbolDtoSchema>;
+export type MimicOrgSymbolLibraryDto = z.infer<typeof Mslc.mimicOrgSymbolLibraryDtoSchema>;
+export type MimicGlobalLibraryStatusDto = z.infer<typeof Mslc.mimicGlobalLibraryStatusDtoSchema>;
+export type MimicLibrarySettingDto = z.infer<typeof Mslc.mimicLibrarySettingDtoSchema>;
+export type MimicSymbolLibrariesResponse = z.infer<typeof Mslc.mimicSymbolLibrariesResponseSchema>;
 /** `F3.32f` / ADR 0086 decision 9 — one library glyph element (`contracts/mimic-shapes.ts`). */
 export type MimicShape = z.infer<typeof Mshape.mimicShapeSchema>;
 export type MimicShapeTag = z.infer<typeof Mshape.mimicShapeTagSchema>;

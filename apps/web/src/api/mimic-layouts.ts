@@ -11,7 +11,7 @@ import type {
   MimicLayoutsListResponse,
   MimicPanelTone,
   MimicSymbol,
-  MimicSymbolLibraryCode,
+  MimicSymbolLibrarySelection,
 } from "@bms/shared";
 
 import { ApiError } from "../lib/api-error";
@@ -59,7 +59,7 @@ export type MimicLayoutWriteBody = {
   nodes: MimicLayoutWriteNode[];
   pipes: MimicLayoutWritePipe[];
   /** The libraries the layout chooses (ADR 0084 decision 8); the API reads an absent list as `["core"]`. */
-  symbolLibraries: MimicSymbolLibraryCode[];
+  symbolLibraries: MimicSymbolLibrarySelection[];
 };
 
 /** What `POST /mimic-layouts` takes: the write body plus the owning organization (OQ3). */

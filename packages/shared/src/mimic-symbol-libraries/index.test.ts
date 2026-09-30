@@ -7,8 +7,8 @@ describe("F3.32e — the mimic symbol library registry (ADR 0084)", () => {
   const cases = Object.entries(spec);
 
   it("has its claims", () => {
-    if (cases.length !== 8) {
-      throw new Error(`expected 8 claims, found ${cases.length}`);
+    if (cases.length !== 10) {
+      throw new Error(`expected 10 claims, found ${cases.length}`);
     }
   });
 

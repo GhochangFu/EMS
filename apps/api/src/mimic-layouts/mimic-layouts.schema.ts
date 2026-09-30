@@ -5,11 +5,12 @@ import {
   MIMIC_LAYOUT_NODE_KEY,
   MIMIC_LAYOUT_SLUG,
   MIMIC_LAYOUT_STALE_MESSAGE,
+  isOrgLibraryKey,
   mimicLayoutNodeKindSchema,
   libraryOfSymbol,
   mimicPanelToneSchema,
   mimicSymbolLibrary,
-  mimicSymbolLibraryCodeSchema,
+  mimicSymbolLibrarySelectionSchema,
   mimicSymbolSchema,
 } from "@bms/shared";
 
@@ -97,9 +98,10 @@ const layoutFields = {
   /**
    * `F3.32e` / ADR 0084 decision 8 — the libraries the layout draws from. An absent list is
    * `["core"]` (plan ruling R2); `core` is not mandatory (R3). Migration `0090`'s cardinality
-   * CHECK restates `.min(1)`.
+   * CHECK restates `.min(1)`. `F3.32f` slice 3 (ADR 0086 decision 2): a selection is a global code
+   * or `org.<code>`; whether that organization library exists is the service's check.
    */
-  symbolLibraries: z.array(mimicSymbolLibraryCodeSchema).min(1).default(["core"]),
+  symbolLibraries: z.array(mimicSymbolLibrarySelectionSchema).min(1).default(["core"]),
 };
 
 type LayoutBody = {
@@ -142,10 +144,13 @@ function refineLayoutBody(body: LayoutBody, ctx: z.RefinementCtx): void {
     if (node.kind === "unit" && node.symbol != null && chosen.size > 0) {
       const library = libraryOfSymbol(node.symbol);
       if (!chosen.has(library)) {
+        // `F3.32f` slice 3: an organization key answers `org.<code>`, which the static registry
+        // does not hold; the message names it as it stands.
+        const libraryName = isOrgLibraryKey(library) ? library : mimicSymbolLibrary(library).label;
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
           path: ["nodes", index, "symbol"],
-          message: `Symbol "${node.symbol}" belongs to the ${mimicSymbolLibrary(library).label} library, which this layout did not choose`,
+          message: `Symbol "${node.symbol}" belongs to the ${libraryName} library, which this layout did not choose`,
         });
       }
     }

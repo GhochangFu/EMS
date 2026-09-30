@@ -631,7 +631,7 @@ export async function assertLayoutWidgetAnswersItsGeometry(client: pg.PoolClient
   expect({ widgetId: widget.widgetId, layoutId: widget.layoutId, layout: widget.layout }).toEqual({
     widgetId,
     layoutId,
-    layout: { name: "F3.32c fixture plant", canvasW: 60, canvasH: 40, nodes: LAYOUT_NODES, pipes: LAYOUT_PIPES },
+    layout: { name: "F3.32c fixture plant", canvasW: 60, canvasH: 40, nodes: LAYOUT_NODES, pipes: LAYOUT_PIPES, orgSymbols: [] },
   });
 }
 

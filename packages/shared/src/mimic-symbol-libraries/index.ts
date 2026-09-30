@@ -1,6 +1,7 @@
 import type { z } from "zod";
 
-import type { MimicSymbolGroupCode, mimicSymbolLibraryCodeSchema, mimicSymbolSchema } from "../contracts/mimic-layouts";
+import type { MimicSymbolGroupCode, mimicStaticSymbolSchema, mimicSymbolLibraryCodeSchema } from "../contracts/mimic-layouts";
+import { MIMIC_ORG_LIBRARY_KEY, MIMIC_ORG_SYMBOL_KEY } from "../contracts/mimic-symbol-libraries";
 import { DRAWIO_SYMBOL_KEYS, DRAWIO_SYMBOL_META } from "./drawio.generated";
 import { LUCIDE_SYMBOL_KEYS, LUCIDE_SYMBOL_META } from "./lucide.generated";
 import { MDI_SYMBOL_KEYS, MDI_SYMBOL_META } from "./mdi.generated";
@@ -19,7 +20,18 @@ import { WMPID_SYMBOL_KEYS, WMPID_SYMBOL_META } from "./wmpid.generated";
  */
 
 type LibraryCode = z.infer<typeof mimicSymbolLibraryCodeSchema>;
-type SymbolKey = z.infer<typeof mimicSymbolSchema>;
+type SymbolKey = z.infer<typeof mimicStaticSymbolSchema>;
+type OrgLibraryKey = `org.${string}`;
+
+/** `F3.32f` slice 3 (ADR 0086 decision 2): `org.<code>:<name>`, an organization library's symbol. */
+export function isOrgSymbolKey(key: string): key is `org.${string}:${string}` {
+  return key.length <= 64 && MIMIC_ORG_SYMBOL_KEY.test(key);
+}
+
+/** `F3.32f` slice 3: `org.<code>`, an organization library as a layout chooses it. */
+export function isOrgLibraryKey(code: string): code is OrgLibraryKey {
+  return MIMIC_ORG_LIBRARY_KEY.test(code);
+}
 
 /** One library: what the palette tab names, and how its glyphs draw (decision 6). */
 export type MimicSymbolLibrary = {
@@ -141,9 +153,12 @@ const LABELS: ReadonlyMap<string, string> = new Map(
 
 /**
  * The library a key belongs to: the part before `:` when the registry holds that code, else `core`
- * — a bare key, or a prefix no library has (decision 2; registry-driven since `F3.32f`).
+ * — a bare key, or a prefix no library has (decision 2; registry-driven since `F3.32f`). An
+ * organization key answers its organization library, `org.<code>` (`F3.32f` slice 3); never pass
+ * that answer to `mimicSymbolLibrary`, which knows the static registry only.
  */
-export function libraryOfSymbol(key: string): LibraryCode {
+export function libraryOfSymbol(key: string): LibraryCode | OrgLibraryKey {
+  if (isOrgSymbolKey(key)) return key.slice(0, key.indexOf(":")) as OrgLibraryKey;
   const colon = key.indexOf(":");
   if (colon < 0) return "core";
   const prefix = key.slice(0, colon);

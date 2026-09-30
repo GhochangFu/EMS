@@ -3,6 +3,8 @@ import { describe, it } from "vitest";
 import {
   everyLibraryKeyNamesItsLibraryAndFitsSixtyFour,
   groupCodesAreTheEight,
+  layoutDtoParsesOrgSymbols,
+  layoutDtoRefusesAnAbsentOrgSymbols,
   libraryCodesAreTheSevenInPaletteOrder,
   mimicCoreSymbolsAreTheTwentyNineInOrder,
   mimicLayoutCellIsTen,
@@ -11,10 +13,13 @@ import {
   mimicLayoutGeometryParsesAPanelWithANullSymbol,
   mimicPanelTonesAreThree,
   mimicSymbolRefusalIsShort,
+  mimicSymbolSchemaAcceptsAnOrgKey,
   mimicSymbolSchemaIsCoreThenEachLibraryInRegistryOrder,
+  mimicSymbolSchemaRefusesOrgPlantWithNoName,
   mimicWidgetNodesParsesTheLayoutArm,
   mimicWidgetNodesParsesThePresetArm,
   mimicWidgetNodesRefusesALayoutArmWithoutLayout,
+  symbolLibrariesAcceptsOrgPlant,
 } from "./mimic-layouts.spec";
 
 /** Vitest entry point — assertions live in the sibling `.spec` (ADR 0014). */
@@ -73,5 +78,25 @@ describe("F3.32c — the mimic layout contracts (ADR 0081)", () => {
 
   it("refuses a layout widget arm without its layout", () => {
     mimicWidgetNodesRefusesALayoutArmWithoutLayout();
+  });
+
+  it("accepts an organization key as a node symbol (F3.32f slice 3)", () => {
+    mimicSymbolSchemaAcceptsAnOrgKey();
+  });
+
+  it("refuses an organization library key as a symbol, with the short message (F3.32f slice 3)", () => {
+    mimicSymbolSchemaRefusesOrgPlantWithNoName();
+  });
+
+  it("parses a layout DTO embedding orgSymbols (F3.32f slice 3)", () => {
+    layoutDtoParsesOrgSymbols();
+  });
+
+  it("refuses a layout DTO or a geometry without orgSymbols (F3.32f slice 3)", () => {
+    layoutDtoRefusesAnAbsentOrgSymbols();
+  });
+
+  it("accepts org.plant in symbolLibraries, and not a symbol key (F3.32f slice 3)", () => {
+    symbolLibrariesAcceptsOrgPlant();
   });
 });
