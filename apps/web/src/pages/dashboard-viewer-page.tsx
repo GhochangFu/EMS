@@ -1,4 +1,4 @@
-import { useCallback, useMemo } from "react";
+import { useCallback, useMemo, useRef } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link, useParams, useSearchParams } from "react-router-dom";
 
@@ -89,8 +89,9 @@ const TAB_PARAM = "tab";
  *
  * `F3.73` critique fix — the selection is in the URL as `?tab=<key>`, beside `organizationId`, so a
  * reload, a shared link and Back keep it. A missing or unknown key opens the first tab by
- * `sortOrder`, and the first load writes nothing. A click pushes a history entry; an arrow-key move
- * replaces it, so Back leaves a run of key presses in one step. The module cards and the
+ * `sortOrder`, and the first load writes nothing. A click pushes a history entry, and so does the
+ * first arrow-key move of a run; the later moves of the run replace it, so one Back undoes the
+ * whole run and lands on the tab it started from. The module cards and the
  * critical-systems rows link to their tab here too (`SiteTabHrefContext`).
  *
  * The widget titles are `h3` (`WidgetFrame`), so the canvas carries the `h2` between them and the
@@ -103,14 +104,17 @@ function ViewerCanvas({ dashboard }: { dashboard: DashboardDto }) {
   const selectedKey = searchParams.get(TAB_PARAM);
   const selected = tabs.find((tab) => tab.key === selectedKey) ?? tabs[0];
 
+  const lastVia = useRef<"pointer" | "keyboard">("pointer");
   function selectTab(key: string, via: "pointer" | "keyboard"): void {
+    const replace = via === "keyboard" && lastVia.current === "keyboard";
+    lastVia.current = via;
     setSearchParams(
       (current) => {
         const next = new URLSearchParams(current);
         next.set(TAB_PARAM, key);
         return next;
       },
-      { replace: via === "keyboard" },
+      { replace },
     );
   }
   const tabHref = useCallback(

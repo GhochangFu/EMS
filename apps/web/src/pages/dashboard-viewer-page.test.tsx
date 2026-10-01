@@ -80,7 +80,7 @@ describe("F3.1d dashboard viewer page", () => {
     await backReturnsToThePreviousTab();
   });
 
-  it("F3.73 critique: an arrow-key move replaces the history entry", async () => {
+  it("F3.73 critique: a run of arrow-key moves is one history entry", async () => {
     await anArrowKeyMoveReplacesTheHistoryEntry();
   });
 

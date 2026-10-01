@@ -1,6 +1,7 @@
 import { useId, useRef, type KeyboardEvent, type ReactNode } from "react";
 
 import type { TabWritePayload } from "../../lib/dashboard-builder-form";
+import { FOCUS_OUTLINE_CLASS } from "../../lib/focus-classes";
 
 type DashboardTabStripProps = {
   tabs: readonly TabWritePayload[];
@@ -10,13 +11,6 @@ type DashboardTabStripProps = {
   /** The selected tab's content, drawn inside the `tabpanel` every tab controls. */
   children: ReactNode;
 };
-
-/**
- * The project's `--focus` token as a keyboard-focus outline. An outline, not a `ring`: a ring is a
- * `box-shadow`, and the selected tab's pressed `box-shadow` (`.surface-tab-selected`) competes with it.
- */
-export const TAB_FOCUS_CLASS =
-  "focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus";
 
 /**
  * `F3.73` (plan D11) — the strip above the builder's canvas and the dashboard viewer's canvas;
@@ -76,7 +70,7 @@ export function DashboardTabStrip({ tabs, selectedKey, onSelect, children }: Das
             tabIndex={index === focusableIndex ? 0 : -1}
             onClick={() => onSelect(tab.key, "pointer")}
             onKeyDown={(event) => onKeyDown(event, index)}
-            className={`px-3 py-1.5 surface-tab ${TAB_FOCUS_CLASS} ${index === selectedIndex ? "surface-tab-selected" : ""}`}
+            className={`px-3 py-1.5 surface-tab ${FOCUS_OUTLINE_CLASS} ${index === selectedIndex ? "surface-tab-selected" : ""}`}
           >
             {tab.label.trim() || tab.key}
           </button>
@@ -87,7 +81,7 @@ export function DashboardTabStrip({ tabs, selectedKey, onSelect, children }: Das
         id={panelId}
         aria-labelledby={tabId(focusableIndex)}
         tabIndex={0}
-        className={`rounded ${TAB_FOCUS_CLASS}`}
+        className={`rounded ${FOCUS_OUTLINE_CLASS}`}
       >
         {children}
       </div>

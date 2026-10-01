@@ -335,9 +335,10 @@ export async function aModuleCardInTheViewerOpensItsTab(): Promise<void> {
 }
 
 /**
- * An arrow-key move replaces the history entry: open on HVAC, click Power (one entry), press
- * ArrowRight back to HVAC (replaced), and Back returns to the first HVAC, not to Power. Mutation:
- * push on a key move => Back lands on Power => red.
+ * A run of arrow-key moves is one history entry: open on HVAC, click Power (an entry), then
+ * ArrowRight to HVAC (the run's entry) and ArrowLeft to Power (replaced). One Back lands on Power,
+ * where the run started. Mutations: push every key move => Back lands on HVAC => red; replace
+ * every key move (the first one too) => Back lands on the opening HVAC => red.
  */
 export async function anArrowKeyMoveReplacesTheHistoryEntry(): Promise<void> {
   stubLiveCanvas();
@@ -349,12 +350,14 @@ export async function anArrowKeyMoveReplacesTheHistoryEntry(): Promise<void> {
   await screen.findByText("Power tile");
   await userEvent.keyboard("{ArrowRight}");
   await screen.findByText("HVAC tile");
-  expect(searchParams().get("tab")).toBe("hvac");
+  await userEvent.keyboard("{ArrowLeft}");
+  await screen.findByText("Power tile");
+  expect(searchParams().get("tab")).toBe("power");
   await userEvent.click(screen.getByRole("button", { name: "Probe back" }));
 
-  expect(await screen.findByText("HVAC tile")).toBeInTheDocument();
-  expect(screen.getByRole("tab", { name: "HVAC" })).toHaveAttribute("aria-selected", "true");
-  expect(screen.queryByText("Power tile")).toBeNull();
+  expect(await screen.findByText("Power tile")).toBeInTheDocument();
+  expect(searchParams().get("tab")).toBe("power");
+  expect(screen.queryByText("HVAC tile")).toBeNull();
 }
 
 /** The widget titles are `h3`; the tab panel carries the `h2` between them and the page's `h1`,

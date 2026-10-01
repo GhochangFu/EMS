@@ -1,5 +1,7 @@
 import { Link } from "react-router-dom";
 
+import { FOCUS_OUTLINE_CLASS } from "../../lib/focus-classes";
+
 import {
   SITE_WIDGET_BODY_CLASS,
   tabCountsText,
@@ -9,7 +11,6 @@ import {
   type SiteWidgetCommon,
 } from "./site-widget-parts";
 import { WidgetFrame } from "./widget-frame";
-import { TAB_FOCUS_CLASS } from "../dashboards/dashboard-tab-strip";
 
 /**
  * `F3.73` (plan D9) — one domain tab's card: status pill and "n alarms · m offline · k assets",
@@ -43,7 +44,7 @@ export function ModuleSummaryCardWidget({
           )}
           {tabHref !== null ? (
             <Link
-              className={`rounded text-xs font-semibold text-accent-strong hover:underline ${TAB_FOCUS_CLASS}`}
+              className={`rounded text-xs font-semibold text-accent-strong hover:underline ${FOCUS_OUTLINE_CLASS}`}
               to={tabHref(config.targetTabKey)}
             >
               Open {label}

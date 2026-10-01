@@ -363,7 +363,7 @@ are unchanged.
 ## Amendment 2 (2026-10-01, `F3.73`) — a copy leaves out a tile that binds nothing
 
 An Impeccable design critique of the merged `F3.73` layout (`main`
-`6d4d0505`) found role value tiles that show only a dash on every seeded site:
+`6d4d0505`) found role value tiles that show only a dash on a seeded site:
 a tile whose role has no member at the site, or whose members carry none of its
 point keys (for example *Cooling kW* on a site with no CRAC). The owner asked
 for every implementation finding to be fixed, and on 2026-10-01 ruled that the
@@ -381,14 +381,15 @@ are otherwise unchanged.
 - **Reported, never silent.** The `201` body of
   `POST /admin/locations/:id/site-layout` (and each `made[]` entry of
   `apply-to-sites`) carries `omittedTiles: { tabKey, widgetKey }[]` beside
-  `droppedCards`, and the audit row records the same list. ADR 0049 Amendment 2
+  `droppedCards`, and the audit row records the same tiles as `tabKey/widgetKey`
+  strings. The seed writes no audit row; its return value (`made[]`) lists them. ADR 0049 Amendment 2
   decision 1 (a per-widget report) is kept: a tile left out is named in the
   answer, not lost.
 - **ADR 0049 decision 6 is narrowed, not reversed.** Instantiating a
   `target = 'dashboard'` template still imports a widget with zero bindings.
   Only a site-layout copy (the three routes of plan decision D6, and the seed),
-  which knows the site, leaves an unbound role tile out. An admin can add the tile back in
-  the builder.
+  which knows the site, leaves an unbound role tile out. Once a point exists at
+  the site, an admin can add the tile in the builder and bind it.
 - **The seed applies the same rule to its own copies.** On a database that ran
   an earlier seed, `planCopyPackUpgrade` (`packages/db/src/site-layout-seed-upgrade.ts`)
   deletes an unbound role tile and packs the tab **only** while that tab holds

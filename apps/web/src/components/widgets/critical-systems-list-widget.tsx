@@ -1,5 +1,7 @@
 import { Link } from "react-router-dom";
 
+import { FOCUS_OUTLINE_CLASS } from "../../lib/focus-classes";
+
 import {
   SITE_WIDGET_BODY_CLASS,
   tabCountsText,
@@ -8,7 +10,6 @@ import {
   type SiteWidgetCommon,
 } from "./site-widget-parts";
 import { WidgetFrame } from "./widget-frame";
-import { TAB_FOCUS_CLASS } from "../dashboards/dashboard-tab-strip";
 
 /**
  * `F3.73` (plan D9) — one row per group tab: its name, status pill and counts; "Outside scope"
@@ -32,7 +33,7 @@ export function CriticalSystemsListWidget({
             {tabs.map((tab) => (
               <li key={tab.tabKey} className="flex items-center justify-between gap-3 text-xs">
                 {tabHref !== null ? (
-                  <Link className={`rounded font-medium text-ink hover:underline ${TAB_FOCUS_CLASS}`} to={tabHref(tab.tabKey)}>
+                  <Link className={`rounded font-medium text-ink hover:underline ${FOCUS_OUTLINE_CLASS}`} to={tabHref(tab.tabKey)}>
                     {tab.label}
                   </Link>
                 ) : (
