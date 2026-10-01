@@ -50,6 +50,7 @@ import type * as N from "./contracts/notifications";
 import type * as Ob from "./contracts/onboarding";
 import type * as Op from "./contracts/operations";
 import type * as PK from "./contracts/point-keys";
+import type * as PKS from "./contracts/point-key-states";
 import type * as PM from "./contracts/point-metadata";
 import type * as Rp from "./contracts/reports";
 import type * as SR from "./contracts/seeded-rules";
@@ -884,6 +885,10 @@ export type MimicNodeDto = z.infer<typeof Mi.mimicNodeSchema>;
 export type MimicNodeAlarmDto = z.infer<typeof Mi.mimicNodeAlarmSchema>;
 export type MimicWidgetNodesDto = z.infer<typeof Mi.mimicWidgetNodesSchema>;
 export type DashboardMimicNodesResponseDto = z.infer<typeof Mi.dashboardMimicNodesResponseSchema>;
+// `F3.74` / ADR 0088 plan D3 — the fleet-wide point-key state map (`bms.point_key_states`).
+export type PointKeyStateTone = z.infer<typeof PKS.pointKeyStateToneSchema>;
+export type PointKeyStateDto = z.infer<typeof PKS.pointKeyStateSchema>;
+export type PointKeyStateMapDto = z.infer<typeof PKS.pointKeyStateMapSchema>;
 
 // ---------------------------------------------------------------------------
 // Re-exported sibling modules
@@ -898,6 +903,13 @@ export type * from "./asset-template-content";
 
 /** `F3.32` / ADR 0079 — the mimic preset topology (plan D3). Code, not a contract. */
 export * from "./mimic-presets";
+
+/**
+ * `F3.74` / ADR 0088 plan D3 — the breaker state derivation and the energised walk, pure and run
+ * in the web over the DTO plus the socket overlay (D12). Code, not a contract.
+ */
+export * from "./breaker-state";
+export * from "./mimic-energised";
 
 /**
  * `F3.73` plan Task 2.2 — the pure section template widget planner, moved out of

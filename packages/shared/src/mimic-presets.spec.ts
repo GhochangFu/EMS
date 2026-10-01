@@ -102,7 +102,7 @@ export function everyRoleCodeIsNonEmpty(): void {
   for (const [preset, def] of presets()) {
     for (const node of def.nodes) {
       assert(
-        node.roleCode.trim().length > 0,
+        node.roleCode !== null && node.roleCode.trim().length > 0,
         `${preset}: node "${node.key}" has an empty roleCode`,
       );
     }
@@ -114,7 +114,7 @@ export function everyRoleCodeIsLowercase(): void {
   for (const [preset, def] of presets()) {
     for (const node of def.nodes) {
       assert(
-        node.roleCode === node.roleCode.toLowerCase(),
+        node.roleCode !== null && node.roleCode === node.roleCode.toLowerCase(),
         `${preset}: node "${node.key}" roleCode "${node.roleCode}" must be lowercase`,
       );
     }
