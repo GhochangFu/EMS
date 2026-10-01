@@ -543,11 +543,11 @@ export async function assertOwningOrganizationReads(client: pg.PoolClient): Prom
  * (no role, plan D6); `p` a panel; `t` a label. Every box is inside a 60 × 40 canvas.
  */
 const LAYOUT_NODES: readonly MimicLayoutNodeDto[] = [
-  { key: "p", kind: "panel", symbol: null, label: "Pretreatment", roleCode: null, tone: "info", x: 0, y: 0, w: 60, h: 40, z: 0 },
-  { key: "a", kind: "unit", symbol: "tank", label: "WTP", roleCode: "wtp", tone: null, x: 5, y: 10, w: 8, h: 8, z: 1 },
-  { key: "b", kind: "unit", symbol: "membrane", label: "RO", roleCode: "ro", tone: null, x: 30, y: 10, w: 8, h: 8, z: 1 },
-  { key: "d", kind: "unit", symbol: "discharge", label: "Discharge", roleCode: null, tone: null, x: 45, y: 25, w: 6, h: 6, z: 1 },
-  { key: "t", kind: "label", symbol: null, label: "Plant", roleCode: null, tone: null, x: 2, y: 2, w: 20, h: 3, z: 2 },
+  { key: "p", kind: "panel", symbol: null, label: "Pretreatment", roleCode: null, tone: "info", x: 0, y: 0, w: 60, h: 40, z: 0, fanOut: false, isSource: false },
+  { key: "a", kind: "unit", symbol: "tank", label: "WTP", roleCode: "wtp", tone: null, x: 5, y: 10, w: 8, h: 8, z: 1, fanOut: false, isSource: false },
+  { key: "b", kind: "unit", symbol: "membrane", label: "RO", roleCode: "ro", tone: null, x: 30, y: 10, w: 8, h: 8, z: 1, fanOut: false, isSource: false },
+  { key: "d", kind: "unit", symbol: "discharge", label: "Discharge", roleCode: null, tone: null, x: 45, y: 25, w: 6, h: 6, z: 1, fanOut: false, isSource: false },
+  { key: "t", kind: "label", symbol: null, label: "Plant", roleCode: null, tone: null, x: 2, y: 2, w: 20, h: 3, z: 2, fanOut: false, isSource: false },
 ];
 
 /** The pipes by key, in `read()`'s order; inserted reversed. */

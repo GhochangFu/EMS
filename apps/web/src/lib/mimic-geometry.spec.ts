@@ -123,7 +123,7 @@ function layoutNode(
   extra: Partial<MimicLayoutNodeDto> = {},
 ): MimicLayoutNodeDto {
   const [x, y, w, h] = box;
-  return { key, kind, symbol: null, label: key, roleCode: null, tone: null, x, y, w, h, z: 0, ...extra };
+  return { key, kind, symbol: null, label: key, roleCode: null, tone: null, x, y, w, h, z: 0, fanOut: false, isSource: false, ...extra };
 }
 
 /**

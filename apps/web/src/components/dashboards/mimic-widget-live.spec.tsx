@@ -135,7 +135,7 @@ function layoutWidget(id: string): MimicWidgetDto {
 }
 
 function layoutNode(key: string, symbol: MimicSymbol, roleCode: string | null, x: number): MimicLayoutNodeDto {
-  return { key, kind: "unit", symbol, label: key, roleCode, tone: null, x, y: 2, w: 20, h: 25, z: 0 };
+  return { key, kind: "unit", symbol, label: key, roleCode, tone: null, x, y: 2, w: 20, h: 25, z: 0, fanOut: false, isSource: false };
 }
 
 /**

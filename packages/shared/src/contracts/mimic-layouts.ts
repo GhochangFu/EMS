@@ -196,6 +196,13 @@ export const mimicLayoutNodeSchema = z.object({
   w: z.number().int(),
   h: z.number().int(),
   z: z.number().int(),
+  /**
+   * `F3.74` / ADR 0088 Amendment 1 (OQ3b) — a unit that draws every member of its role
+   * (`fan_out`), and a unit the energy walk starts from (`is_source`). Always `false` on a panel
+   * or label: migration `0097`'s `mimic_layout_nodes_flags_units_check`.
+   */
+  fanOut: z.boolean(),
+  isSource: z.boolean(),
 });
 
 /** A pipe between two units, by key (plan D5, D7). */

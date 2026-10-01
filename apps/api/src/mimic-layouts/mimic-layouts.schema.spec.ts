@@ -280,3 +280,44 @@ export function refusesAnOrgSymbolKeyWithAnUppercaseCode(): void {
 export function refusesAnOrgLibraryKeyWithAnUppercaseCode(): void {
   refusedAt(withLibraries(["core", "org.Plant"]), ["symbolLibraries.1"]);
 }
+
+// `F3.74` Task 1.6 (plan D3b, ADR 0088 Amendment 1 OQ3b) — the unit flags `fanOut` / `isSource`.
+
+/** The parsed node at `index`, for a body that parses. */
+const parsedNode = (value: unknown, index: number): Record<string, unknown> => {
+  const result = createMimicLayoutBodySchema.safeParse(value);
+  if (!result.success) throw new Error(`the body must parse: ${JSON.stringify(result.error.issues)}`);
+  return result.data.nodes[index] as Record<string, unknown>;
+};
+
+export function acceptsAUnitThatFansOutAndIsASource(): void {
+  const node = parsedNode(withNode(0, { fanOut: true, isSource: true }), 0);
+  expect(node.fanOut).toBe(true);
+  expect(node.isSource).toBe(true);
+}
+
+export function refusesAPanelThatFansOut(): void {
+  refusedAt(withNode(3, { fanOut: true }), ["nodes.3.fanOut"]);
+}
+
+export function refusesALabelThatIsASource(): void {
+  refusedAt(withNode(4, { isSource: true }), ["nodes.4.isSource"]);
+}
+
+/** An explicit `false` on a panel says nothing: only a `true` flag is a unit's. */
+export function acceptsAPanelWithFalseFlags(): void {
+  expect(issuesOf(createMimicLayoutBodySchema, withNode(3, { fanOut: false, isSource: false }))).toEqual([]);
+}
+
+/** Absent flags stay absent: the service, not the parse, decides the stored `false`. */
+export function leavesAbsentFlagsAbsent(): void {
+  const node = parsedNode(validCreateBody(), 0);
+  expect(Object.keys(node)).not.toContain("fanOut");
+  expect(Object.keys(node)).not.toContain("isSource");
+  // Positive control: the same read sees a key the body does carry.
+  expect(Object.keys(node)).toContain("roleCode");
+}
+
+export function refusesAFlagThatIsNotABoolean(): void {
+  refusedAt(withNode(0, { fanOut: "yes" }), ["nodes.0.fanOut"]);
+}

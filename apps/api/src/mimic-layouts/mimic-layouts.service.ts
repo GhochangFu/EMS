@@ -44,6 +44,7 @@ import { FLEET_DRIZZLE, TENANT_DRIZZLE } from "../database/database.tokens";
 import { withTenant } from "../database/tenant-context";
 import type { BmsTx } from "../database/tenant-context";
 import {
+  MIMIC_LAYOUT_FLAGS_MESSAGE,
   MIMIC_LAYOUT_IN_USE_MESSAGE,
   MIMIC_LAYOUT_STALE_MESSAGE,
 } from "./mimic-layouts.schema";
@@ -578,6 +579,9 @@ export class MimicLayoutsService {
           w: node.w,
           h: node.h,
           z: node.z ?? 0,
+          // `F3.74` (plan D3b): replace-all — an absent flag is `false`, never the stored value.
+          fanOut: node.fanOut ?? false,
+          isSource: node.isSource ?? false,
         })),
       )
       .returning({ id: mimicLayoutNodes.id, key: mimicLayoutNodes.key });
@@ -666,6 +670,8 @@ export class MimicLayoutsService {
           w: node.w,
           h: node.h,
           z: node.z,
+          fanOut: node.fanOut,
+          isSource: node.isSource,
         }),
       ),
       pipes: pipes.map((pipe): MimicLayoutPipeDto => ({ fromKey: pipe.fromKey, toKey: pipe.toKey })),
@@ -697,6 +703,10 @@ export class MimicLayoutsService {
     if (constraint === "mimic_layout_nodes_org_symbol_fkey") {
       // `F3.32f` migration `0093`: no such symbol in the layout's organization. No echo of the key.
       return new BadRequestException(UNKNOWN_SYMBOL_MESSAGE);
+    }
+    if (constraint === "mimic_layout_nodes_flags_units_check") {
+      // `F3.74` migration `0097`: the backstop behind the body's per-kind refusal. No echo of the node.
+      return new BadRequestException(MIMIC_LAYOUT_FLAGS_MESSAGE);
     }
     return err;
   }
