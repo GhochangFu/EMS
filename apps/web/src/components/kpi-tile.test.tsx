@@ -3,7 +3,9 @@ import { afterEach, describe, it, vi } from "vitest";
 import { cleanup } from "@testing-library/react";
 
 import {
+  aLongValueTruncatesAndKeepsTheFullReadingInItsTitle,
   aNonStaleReadyTileShowsNoCaption,
+  aTileWithoutAUnitTitlesTheBareValue,
   aReadyTileWithAValueShowsNoAlert,
   aStaleErrorTileShowsTheCaptionBesideTheAlert,
   aStaleLoadingTileShowsTheCaption,
@@ -40,6 +42,14 @@ describe("F4.164 U1 — KpiTile: the error is an alert; the caption follows the 
 
   it("shows the stale caption for a ready tile", () => {
     aStaleReadyTileShowsTheCaption();
+  });
+
+  it("truncates a long value and titles it with the full reading", () => {
+    aLongValueTruncatesAndKeepsTheFullReadingInItsTitle();
+  });
+
+  it("titles a unitless value with the bare value", () => {
+    aTileWithoutAUnitTitlesTheBareValue();
   });
 
   it("shows no caption for a non-stale ready tile", () => {

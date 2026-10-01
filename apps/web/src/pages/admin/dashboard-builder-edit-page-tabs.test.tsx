@@ -5,6 +5,9 @@ import { cleanup } from "@testing-library/react";
 import { useAuthStore } from "../../stores/auth-store";
 import {
   aBoundTabIsNotMislabelledWhileTheGroupsLoad,
+  aCatalogBoundTileNamesItsMetric,
+  aProblemOnAnotherTabNamesAndSelectsIt,
+  theRemoveButtonsNameIsItsVisibleText,
   aDisabledGroupsReadDoesNotMislabelABoundTab,
   aFailedGroupsReadShowsItsErrorNotAMisleadingLabel,
   aLoadedListWithoutTheBoundGroupSaysAnotherSite,
@@ -80,5 +83,17 @@ describe("F3.73 D11 dashboard builder edit page — tabs", () => {
 
   it("a loaded list without the bound group says 'another site'", async () => {
     await aLoadedListWithoutTheBoundGroupSaysAnotherSite();
+  });
+
+  it("F3.73 critique: the remove button's accessible name is its visible text", async () => {
+    await theRemoveButtonsNameIsItsVisibleText();
+  });
+
+  it("F3.73 critique: a problem on another tab names the tab, and a click selects it", async () => {
+    await aProblemOnAnotherTabNamesAndSelectsIt();
+  });
+
+  it("F3.73 critique: a catalog-bound tile names its metric", async () => {
+    await aCatalogBoundTileNamesItsMetric();
   });
 });

@@ -14,6 +14,7 @@ import * as assetsApi from "../../api/assets";
 import * as controlRoomApi from "../../api/control-room";
 import * as locationsApi from "../../api/locations";
 import * as systemStatusApi from "../../api/system-status";
+import * as vocabApi from "../../api/vocabularies";
 import { OPERATIONAL } from "../../components/system-status-indicator.spec";
 import { ApiError } from "../../lib/api-error";
 import { siteViewNoticeText } from "../../lib/site-view-notice";
@@ -68,6 +69,7 @@ const MADE: controlRoomApi.MakeSiteLayoutAnswer = {
     dashboardSlug: "site-layout-lotapata",
     omittedTabs: [],
     droppedCards: [],
+    omittedTiles: [],
     resolution: [],
   },
 };
@@ -101,6 +103,9 @@ function stubReads(
   useAuthStore.setState({ scope: { kind: "global", locations: [], assetGroups: [], assetIds: [] } });
   vi.spyOn(systemStatusApi, "fetchSystemStatus").mockResolvedValue(OPERATIONAL);
   vi.spyOn(assetsApi, "fetchAssets").mockResolvedValue([]);
+  vi.spyOn(vocabApi, "fetchVocabularies").mockResolvedValue({
+    assetDomains: [{ code: "electrical", label: "Electrical systems", sortOrder: 10, active: true }],
+  } as never);
   vi.spyOn(locationsApi, "fetchLocationKpis").mockResolvedValue({ items: [SITE] });
   const resolve = vi.spyOn(controlRoomApi, "fetchResolvedSiteControlRoomView");
   for (const answer of resolveAnswers) {
@@ -154,6 +159,27 @@ export async function dashboardRemovedShowsTheButton(): Promise<void> {
   expect(screen.getByRole("button", BUTTON)).toBeInTheDocument();
 }
 
+/**
+ * M2b — tone: `no_site_layout` is a state, not a fault, so its box is info-toned and not
+ * warning-toned; `dashboard_removed` keeps the warning tone. The text element is capped at a
+ * readable measure.
+ */
+export async function noSiteLayoutIsInfoToneAndDashboardRemovedStaysWarning(): Promise<void> {
+  stubReads([generatedWith("no_site_layout")]);
+  renderPage();
+  const infoBox = await screen.findByTestId("site-view-notice-box");
+  expect(infoBox.className).toContain("bg-info-wash");
+  expect(infoBox.className, "no_site_layout kept the warning colours").not.toContain("warning");
+  expect(screen.getByTestId("site-view-notice").className).toContain("max-w-prose");
+  cleanup();
+
+  stubReads([generatedWith("dashboard_removed")]);
+  renderPage();
+  const warnBox = await screen.findByTestId("site-view-notice-box");
+  expect(warnBox.className).toContain("bg-warning-wash");
+  expect(warnBox.className).not.toContain("info");
+}
+
 /** M3 — an `operator` sees the notice and no button (the banner is the positive control). */
 export async function anOperatorSeesNoButton(): Promise<void> {
   stubReads([generatedWith("no_site_layout")]);
@@ -200,7 +226,11 @@ async function openThePicker(): Promise<{ make: Mock; picker: HTMLElement }> {
 export async function anAmbiguousAnswerOpensThePicker(): Promise<void> {
   const { picker } = await openThePicker();
 
-  const select = within(picker).getByRole("combobox", { name: "Asset group for the sld tab (electrical)" });
+  // The tab's label and the domain's vocabulary label, never the raw `sld` key or `electrical` code.
+  const select = within(picker).getByRole("combobox", {
+    name: "Asset group for the Electrical tab (Electrical systems)",
+  });
+  expect(picker.textContent, "the picker showed a raw tab key").not.toContain("sld");
   const options = within(select).getAllByRole("option");
   expect(options.map((option) => [option.textContent, (option as HTMLOptionElement).value])).toEqual([
     ["Choose a group", ""],

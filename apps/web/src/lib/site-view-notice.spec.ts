@@ -1,4 +1,4 @@
-import { siteViewNoticeText } from "./site-view-notice";
+import { siteViewNoticeText, siteViewNoticeTone } from "./site-view-notice";
 
 function assert(condition: boolean, message: string): void {
   if (!condition) {
@@ -50,6 +50,18 @@ export function runN6(): void {
     text === "This site has no site layout yet. Showing the generated view.",
     `no_site_layout must say the site has no site layout yet — got ${String(text)}`,
   );
+}
+
+/**
+ * `N7` — `F3.73` critique: `no_site_layout` is not a fault, so it takes the info tone; every
+ * fail-safe code (a removed, out-of-scope or unknown view) keeps the warning tone. One loop, one
+ * claim per code, so a swapped tone names the code it broke.
+ */
+export function runN7(): void {
+  assert(siteViewNoticeTone("no_site_layout") === "info", "no_site_layout must take the info tone");
+  for (const code of ["dashboard_removed", "dashboard_out_of_scope", "builtin_unknown"] as const) {
+    assert(siteViewNoticeTone(code) === "warning", `${code} must keep the warning tone`);
+  }
 }
 
 /** `N2` — a `null` notice maps to `null` (no banner). */

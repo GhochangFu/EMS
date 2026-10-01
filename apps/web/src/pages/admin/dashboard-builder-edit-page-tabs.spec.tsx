@@ -157,6 +157,49 @@ export async function aNewWidgetLandsOnTheSelectedTab(): Promise<void> {
   expect(screen.queryAllByText("Plant mimic · 0 point(s)")).toHaveLength(0);
 }
 
+/** `F3.73` critique fix (WCAG 2.5.3) — the remove button's accessible name is its visible text,
+ * which names the tab and what goes with it. Mutation: restore `aria-label={`Remove tab ${n}`}` => red. */
+export async function theRemoveButtonsNameIsItsVisibleText(): Promise<void> {
+  stubLoads({ dto: TABBED_DTO, groups: [GROUP] });
+  renderPage(asUser("admin"));
+  await waitForPrefill("Location");
+
+  const button = await screen.findByRole("button", { name: /^Remove tab 2/ });
+  expect(button).toHaveTextContent("Remove tab 2 (and its 1 widget)");
+  expect(button).toHaveAccessibleName(button.textContent ?? "");
+}
+
+/** `F3.73` critique fix — a widget on another tab with a problem: the summary names the tab and the
+ * widget's title, and a click selects that tab. The problem is the Electrical tile's missing point,
+ * while the Overview tab shows. Mutations: render the subject as plain text => red; drop the tab
+ * select from the click => red. */
+export async function aProblemOnAnotherTabNamesAndSelectsIt(): Promise<void> {
+  const unbound = { ...tileOnTab("w-electrical", TABBED_DTO.tabs[1]!.id, 2), points: [] };
+  stubLoads({ dto: { ...TABBED_DTO, widgets: [TABBED_DTO.widgets[0]!, unbound] }, groups: [GROUP] });
+  renderPage(asUser("admin"));
+  await waitForPrefill("Location");
+  expect(await within(strip()).findByRole("tab", { name: "Overview" })).toHaveAttribute("aria-selected", "true");
+
+  await userEvent.click(screen.getByRole("button", { name: "Electrical › Tile w-electrical:" }));
+  expect(within(strip()).getByRole("tab", { name: "Electrical" })).toHaveAttribute("aria-selected", "true");
+  expect(canvasTitles()).toEqual(["Tile w-electrical"]);
+}
+
+/** `F3.73` critique fix — a tile bound to a catalog metric names the metric, not "0 point(s)".
+ * Mutation: always print the point count => red. */
+export async function aCatalogBoundTileNamesItsMetric(): Promise<void> {
+  const bound = {
+    ...tileOnTab("w-overview", TABBED_DTO.tabs[0]!.id, 0),
+    points: [],
+    sources: [{ id: "cccccccc-cccc-4ccc-8ccc-cccccccccccc", catalogKey: "alarms.active.count" as const, params: {}, sortOrder: 0 }],
+  };
+  stubLoads({ dto: { ...TABBED_DTO, widgets: [bound, TABBED_DTO.widgets[1]!] }, groups: [GROUP] });
+  renderPage(asUser("admin"));
+  await waitForPrefill("Location");
+
+  expect(await screen.findByText("Value tile · Active alarms metric")).toBeInTheDocument();
+}
+
 /** A tab keyed `assets` is refused before the save, and the summary says why. */
 export async function aReservedTabKeyBlocksTheSave(): Promise<void> {
   stubLoads({ dto: TABBED_DTO, groups: [GROUP] });

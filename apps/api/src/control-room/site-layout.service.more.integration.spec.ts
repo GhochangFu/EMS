@@ -306,6 +306,89 @@ export async function assertConcurrentCopyAnswers409(ctx: SiteLayoutCtx): Promis
   }
 }
 
+/** `tab:type:title@x,y` of every widget of a copy, in tab then grid order. */
+async function copyRects(ctx: SiteLayoutCtx, dashboardId: string): Promise<string[]> {
+  const { rows } = await ctx.fleetPool.query<{ widget: string }>(
+    `SELECT t.tab_key || ':' || w.widget_type || ':' || coalesce(w.title, '') || '@' || w.grid_x || ',' || w.grid_y AS widget
+       FROM bms.dashboard_widgets w JOIN bms.dashboard_tabs t ON t.id = w.tab_id
+      WHERE w.dashboard_id = $1
+      ORDER BY t.sort_order, w.grid_y, w.grid_x`,
+    [dashboardId],
+  );
+  return rows.map((row) => row.widget);
+}
+
+/**
+ * S15a (the F3.73 design critique) — the Overview cards of the tabs a site keeps are packed left
+ * in template order: the S1 shape keeps `sld` and `env`, so `env` moves from column 8 to 2.
+ * Mutation: `planSiteLayout` filters without `packAfterRemoval` → `env` at 8 → red.
+ */
+export async function assertKeptCardsArePackedLeft(ctx: SiteLayoutCtx): Promise<void> {
+  const site = await zeroGroupSite(ctx, "s15a");
+  const result = await ctx.svc.makeForSite(admin(), { locationId: site, templateId: ctx.templateId });
+  const cards = (await copyRects(ctx, result.dashboardId)).filter((w) => w.includes(":module_summary_card:"));
+  expect(cards).toEqual(["overview:module_summary_card:Electrical@0,6", "overview:module_summary_card:Environment@2,6"]);
+}
+
+/**
+ * S15b — a role tile with no point at the site is left out of the copy, and the tab's body moves
+ * up into the emptied tile row. The S1 shape makes its groups with every role NULL, so no role
+ * tile binds. The Overview's four catalog tiles bind no role and stay: the adjacent positive.
+ * Mutation: the service writes `planTemplateWidget`'s plans without `omitUnboundTiles` → red.
+ * Mutation: `makeForSite` answers `omittedTiles: []` → the body assertion is red.
+ */
+export async function assertUnboundRoleTilesAreOmitted(ctx: SiteLayoutCtx): Promise<void> {
+  const site = await zeroGroupSite(ctx, "s15b");
+  const result = await ctx.svc.makeForSite(admin(), { locationId: site, templateId: ctx.templateId });
+  const widgets = await copyRects(ctx, result.dashboardId);
+  expect(widgets.filter((w) => w.includes(":value_tile:") && !w.startsWith("overview:"))).toEqual([]);
+  expect(widgets.filter((w) => w.startsWith("overview:value_tile:"))).toHaveLength(4);
+  expect(widgets.filter((w) => w.startsWith("sld:") || w.startsWith("env:"))).toEqual([
+    "sld:mimic:@0,0",
+    "sld:active_alarms_rail:Active alarms@0,7",
+    "sld:table:Assets@6,7",
+    "env:mimic:@0,0",
+    "env:active_alarms_rail:Active alarms@0,7",
+    "env:table:Assets@6,7",
+  ]);
+  const tileKeys = result.resolution.flatMap((tab) => tab.widgets.map((w) => w.widgetKey)).filter((key) => key.endsWith("-tile"));
+  expect(tileKeys.filter((key) => !key.startsWith("overview-")), "an omitted tile has no resolution row").toEqual([]);
+  // ADR 0049 Amendment 2 decision 1: the answer reports every widget, so the tiles that have no
+  // resolution row are named here, the way `droppedCards` names a removed card.
+  expect(result.omittedTiles.map((tile) => `${tile.tabKey}/${tile.widgetKey}`).sort(), "the answer names each omitted tile").toEqual([
+    "env/env-humidity-tile",
+    "env/env-temperature-tile",
+    "sld/sld-frequency-tile",
+    "sld/sld-incomer-kw-tile",
+    "sld/sld-incomer-pf-tile",
+    "sld/sld-main-bus-kw-tile",
+  ]);
+}
+
+/**
+ * S15c — the make audit names every omitted tile, `tab/widget key`, as it names omitted tabs.
+ * Mutation: drop `omittedTiles` from the payload → red.
+ */
+export async function assertOmittedTilesAreAudited(ctx: SiteLayoutCtx): Promise<void> {
+  const site = await zeroGroupSite(ctx, "s15c");
+  await ctx.svc.makeForSite(admin(), { locationId: site, templateId: ctx.templateId });
+  const { rows } = await ctx.fleetPool.query<{ tiles: string[] }>(
+    `SELECT payload->'omittedTiles' AS tiles FROM bms.audit_log
+      WHERE organization_id = $1 AND entity_id = $2 AND action = 'master.location.site_layout.make'`,
+    [ctx.orgId, site],
+  );
+  expect(rows.map((row) => row.tiles)).toEqual([
+    [
+      "sld/sld-incomer-kw-tile",
+      "sld/sld-incomer-pf-tile",
+      "sld/sld-frequency-tile",
+      "sld/sld-main-bus-kw-tile",
+      "env/env-temperature-tile",
+      "env/env-humidity-tile",
+    ],
+  ]);
+}
+
 /**
  * Polls until a session of this database waits on a lock in a copy statement — the advisory
  * lock with the fix, the group insert's unique index without it. Bounded: a call that never

@@ -25,6 +25,7 @@ import {
 import type { BmsDb } from "@bms/db";
 import {
   groupsToCreate,
+  omitUnboundTiles,
   planSiteLayout,
   planTemplateWidget,
   sectionTemplateContentSchema,
@@ -38,6 +39,7 @@ import type {
   SiteLayoutBulkResultDto,
   SiteLayoutChoice,
   SiteLayoutGroup,
+  SiteLayoutOmittedTile,
   SiteLayoutResultDto,
   SiteLayoutSkipReason,
 } from "@bms/shared";
@@ -363,10 +365,17 @@ export class SiteLayoutService {
 
         const pointsByAsset = await loadActivePoints(tx, organizationId);
         const resolution: SiteLayoutResultDto["resolution"] = [];
+        const omittedTiles: SiteLayoutOmittedTile[] = [];
         for (const row of plan.tabs) {
           const groupId = groupIdOf(row.group);
           const members = groupId === null ? new Map() : await loadMembersByRole(tx, groupId, organizationId);
-          const plans = row.tab.widgets.map((widget) => planTemplateWidget(widget, members, pointsByAsset));
+          // A role tile with no point at this site is left out and the tab re-packed, the way an
+          // omitted tab's card is: it would show "—" for good and fail the builder's save rule.
+          const { plans, omittedTiles: omittedHere } = omitUnboundTiles(
+            row.tab.key,
+            row.tab.widgets.map((widget) => planTemplateWidget(widget, members, pointsByAsset)),
+          );
+          omittedTiles.push(...omittedHere);
           await this.writeWidgets(tx, organizationId, dashboardId, tabIds.get(row.tab.key) ?? null, plans);
           resolution.push({
             tabKey: row.tab.key,
@@ -392,6 +401,7 @@ export class SiteLayoutService {
               tabs: plan.tabs.map((row) => row.tab.key),
               omittedTabs: plan.omitted.map((tab) => tab.tabKey),
               droppedCards: plan.droppedCards.length,
+              omittedTiles: omittedTiles.map((tile) => `${tile.tabKey}/${tile.widgetKey}`),
               createdGroups: toCreate.length,
               replacedRemovedCopy: removedCopy,
             },
@@ -416,6 +426,7 @@ export class SiteLayoutService {
           dashboardSlug: slug,
           omittedTabs: plan.omitted.map((tab) => ({ tabKey: tab.tabKey, domain: tab.domain })),
           droppedCards: [...plan.droppedCards],
+          omittedTiles,
           resolution,
         };
       });

@@ -23,8 +23,26 @@ export function formatWidgetValue(value: number | null, format: WidgetValueForma
     ? abbreviateNumber(value, format.decimals)
     : format.decimals !== undefined
       ? value.toFixed(format.decimals)
-      : String(value);
+      : defaultNumber(value);
   return format.unit ? `${body} ${format.unit}` : body;
+}
+
+/**
+ * The format a reading gets when the author set no `decimals`: `String(value)` printed
+ * "203.61802397133374 kW" and overflowed the tile (Impeccable critique, F3.73).
+ *
+ * The magnitude decides the precision — two decimals under 10, one from 10 up. An integer stays
+ * an integer (no minimum fraction digits), and there is no digit grouping and no exponent, so the
+ * text is the same width class in every locale. A non-zero reading under 0.01 keeps two
+ * significant digits rather than rounding to a misleading "0".
+ */
+function defaultNumber(value: number): string {
+  const abs = Math.abs(value);
+  const options: Intl.NumberFormatOptions =
+    abs > 0 && abs < 0.01
+      ? { maximumSignificantDigits: 2, useGrouping: false }
+      : { maximumFractionDigits: abs < 10 ? 2 : 1, useGrouping: false };
+  return new Intl.NumberFormat("en-US", options).format(value);
 }
 
 /**
@@ -48,7 +66,7 @@ function abbreviateNumber(value: number, decimals?: number): string {
           ? [1_000, "k"]
           : [1, ""];
   if (divisor === 1) {
-    return decimals !== undefined ? value.toFixed(decimals) : String(value);
+    return decimals !== undefined ? value.toFixed(decimals) : defaultNumber(value);
   }
   const scaled = Math.round((value / divisor) * 100) / 100;
   return `${scaled}${suffix}`;
@@ -166,6 +184,9 @@ const WIDGET_TONE_TO_KPI_TONE: Readonly<Record<WidgetTone, "default" | "warning"
   critical: "critical",
 };
 
+/** The metric whose reading is a 0..1 fraction and is drawn as a percentage. */
+const HEALTH_SCORE_KEY = "assets.health.score";
+
 /** One computed change-over-time reading, ready to drop straight into `KpiTile`'s `hint` slot. */
 export type WidgetDelta = {
   readonly direction: "up" | "down" | "flat";
@@ -282,6 +303,12 @@ export function toKpiTileProps(params: {
    * back to the plain number rather than drawing a currency it was not given.
    */
   readonly currency?: string | null;
+  /**
+   * The widget's first bound metric, when the caller knows it. `assets.health.score` is a 0..1
+   * fraction with no unit of its own, so the tile says it as a percentage ("98 %"). Absent, the
+   * reading is formatted as the plain number it always was.
+   */
+  readonly catalogKey?: string | null;
 }): KpiTileWidgetProps {
   const {
     title,
@@ -292,8 +319,10 @@ export function toKpiTileProps(params: {
     compareValue = null,
     coverage = null,
     currency = null,
+    catalogKey = null,
   } = params;
   const ready = status === "ready";
+  const isHealthScore = catalogKey === HEALTH_SCORE_KEY;
   // **Gated on `ready` for the same reason `value` is.** TanStack Query keeps
   // the previous `data` through a refetch error, so a widget can hold a stale
   // non-null `primary` while its status is `"error"`. Ungated, the tile would
@@ -315,9 +344,12 @@ export function toKpiTileProps(params: {
     // `config.decimals`, and a currency string has its own rounding rules.
     value: ready
       ? (formatMoney(primary, currency) ??
-        formatWidgetValue(primary, { decimals: config.decimals, abbreviate: config.abbreviate }))
+        formatWidgetValue(isHealthScore && primary !== null ? primary * 100 : primary, {
+          decimals: config.decimals ?? (isHealthScore ? 0 : undefined),
+          abbreviate: config.abbreviate,
+        }))
       : null,
-    unit: config.unit,
+    unit: isHealthScore ? "%" : config.unit,
     hint: delta ? delta.text : config.hint,
     // **Gated on `ready`, for the reason `value` and `delta` are.** TanStack
     // Query keeps the previous `data` through a refetch error, so an errored

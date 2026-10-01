@@ -8,6 +8,7 @@ import {
   aLiveTankWithNoReadingSaysSoInsideTheVessel,
   aReadyTankShowsItsPercentageAndNamesTheVessel,
   aReadyValueTileShowsTheFormattedReadingAndItsUnit,
+  aHealthScoreTileShowsAPercentage,
   aReadyWidgetShowsNoPlaceholder,
   aStaleReadyValueTileShowsKpiTilesOwnStaleNote,
   aStaleReadyWidgetSaysOfflineWithoutHidingTheReading,
@@ -110,5 +111,9 @@ describe("E4.2 — roll-up coverage on a value tile", () => {
 
   it("renders no note when every carrying asset is fresh, and still renders the value", () => {
     aValueTileWithFullCoverageRendersNoNote();
+  });
+
+  it("F3.73: a health-score value tile shows a percentage", () => {
+    aHealthScoreTileShowsAPercentage();
   });
 });

@@ -829,6 +829,7 @@ export type ResolvedSiteControlRoomViewDto = z.infer<
 >;
 // `F3.73` plan D6 — the site-layout copy action's answers.
 export type SiteLayoutResultDto = z.infer<typeof SL.siteLayoutResultDtoSchema>;
+export type SiteLayoutOmittedTile = z.infer<typeof SL.siteLayoutOmittedTileSchema>;
 export type SiteLayoutAmbiguousDto = z.infer<typeof SL.siteLayoutAmbiguousDtoSchema>;
 export type SiteLayoutBulkResultDto = z.infer<typeof SL.siteLayoutBulkResultDtoSchema>;
 export type SiteLayoutSkipReason = z.infer<typeof SL.siteLayoutSkipReasonSchema>;

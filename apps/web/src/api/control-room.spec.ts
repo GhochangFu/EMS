@@ -88,6 +88,7 @@ const MADE_BODY = {
   dashboardSlug: "site-layout-lotapata",
   omittedTabs: [],
   droppedCards: [],
+  omittedTiles: [],
   resolution: [],
 };
 

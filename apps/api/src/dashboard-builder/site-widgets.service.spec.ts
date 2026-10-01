@@ -68,6 +68,23 @@ export function emptyGroupIsAZeroStatus(): void {
   ).toEqual({ worstSeverity: null, tone: "ok", activeAlarms: 0, offlineAssets: 0, assets: 0 });
 }
 
+/** Offline members with no active alarm raise the tab to `warning` — never `ok` ("NORMAL · 3 offline"). */
+export function offlineWithNoAlarmIsAWarning(): void {
+  expect(
+    tabOf(row({ active_alarms: 0, offline_assets: 3, worst_severity: null, worst_tone: null })).status?.tone,
+  ).toBe("warning");
+}
+
+/** An `info` alarm is not worse than an offline member: the tab still reads `warning`. */
+export function offlineBeatsAnInfoAlarm(): void {
+  expect(tabOf(row({ offline_assets: 1, worst_severity: "info", worst_tone: "info" })).status?.tone).toBe("warning");
+}
+
+/** The positive control for the two above: an `info` alarm with every member online keeps `info`. */
+export function anInfoAlarmWithNoOfflineKeepsInfo(): void {
+  expect(tabOf(row({ offline_assets: 0, worst_severity: "info", worst_tone: "info" })).status?.tone).toBe("info");
+}
+
 /** The worst severity's own vocabulary tone is carried through. */
 export function worstSeverityCarriesItsTone(): void {
   expect(tabOf(row({})).status).toEqual({

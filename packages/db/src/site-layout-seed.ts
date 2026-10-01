@@ -2,12 +2,14 @@ import type pg from "pg";
 
 import {
   type GroupMember,
+  omitUnboundTiles,
   planSiteLayout,
   planTemplateWidget,
   type SectionTemplateContent,
   sectionTemplateContentSchema,
   type SiteLayoutChoice,
   type SiteLayoutGroup,
+  type SiteLayoutOmittedTile,
 } from "@bms/shared";
 import { SMOC_STANDARD_SITE_TEMPLATE } from "@bms/shared/site-templates";
 
@@ -243,7 +245,13 @@ export type SiteLayoutSeedSkipReason =
   | "refused";
 
 export type SiteLayoutSeedOutcome = {
-  readonly made: readonly { readonly locationId: string; readonly dashboardId: string; readonly tabKeys: readonly string[] }[];
+  readonly made: readonly {
+    readonly locationId: string;
+    readonly dashboardId: string;
+    readonly tabKeys: readonly string[];
+    /** The role tiles left out because they bound no point at the site (`omitUnboundTiles`). */
+    readonly omittedTiles: readonly SiteLayoutOmittedTile[];
+  }[];
   readonly skipped: readonly { readonly locationId: string; readonly reason: SiteLayoutSeedSkipReason }[];
 };
 
@@ -342,7 +350,7 @@ export async function seedSiteLayouts(
   },
 ): Promise<SiteLayoutSeedOutcome> {
   const log = options.log ?? ((line: string) => console.error(line));
-  const made: { locationId: string; dashboardId: string; tabKeys: string[] }[] = [];
+  const made: SiteLayoutSeedOutcome["made"][number][] = [];
   const skipped: { locationId: string; reason: SiteLayoutSeedSkipReason }[] = [];
   const skip = (locationId: string, reason: SiteLayoutSeedSkipReason): void => {
     skipped.push({ locationId, reason });
@@ -395,12 +403,19 @@ export async function seedSiteLayouts(
     );
     const points = pointsByAsset;
     const tabs = [];
+    const omittedTiles: SiteLayoutOmittedTile[] = [];
     for (const row of plan.tabs) {
       const members =
         row.group === null
           ? new Map<string, GroupMember[]>()
           : await membersByRole(pool, organizationId, row.group.id);
-      tabs.push({ row, widgets: row.tab.widgets.map((widget) => planTemplateWidget(widget, members, points)) });
+      // The API copy's rule: a role tile with no point at this site is left out, the tab re-packed.
+      const kept = omitUnboundTiles(
+        row.tab.key,
+        row.tab.widgets.map((widget) => planTemplateWidget(widget, members, points)),
+      );
+      omittedTiles.push(...kept.omittedTiles);
+      tabs.push({ row, widgets: kept.plans });
     }
 
     const dashboard = await pool.query<{ id: string }>(DASHBOARD_INSERT_SQL, [
@@ -474,7 +489,7 @@ export async function seedSiteLayouts(
           "can drop rows without raising: check this runs inside the organization's tenant bracket.",
       );
     }
-    made.push({ locationId, dashboardId, tabKeys: tabs.map(({ row }) => row.tab.key) });
+    made.push({ locationId, dashboardId, tabKeys: tabs.map(({ row }) => row.tab.key), omittedTiles });
   }
   return { made, skipped };
 }

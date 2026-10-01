@@ -5,7 +5,10 @@ import {
   emptyGroupIsAZeroStatus,
   groupGrantKeepsTheGrantedGroups,
   locationGrantKeepsTheGroupsAtReadableSites,
+  anInfoAlarmWithNoOfflineKeepsInfo,
   noReadableMemberIsNullStatus,
+  offlineBeatsAnInfoAlarm,
+  offlineWithNoAlarmIsAWarning,
   unrestrictedKeepsEveryGroup,
   worstSeverityCarriesItsTone,
 } from "./site-widgets.service.spec";
@@ -38,5 +41,17 @@ describe("F3.73 — SiteWidgetsService pure helpers", () => {
 
   it("the worst severity carries its vocabulary tone", () => {
     worstSeverityCarriesItsTone();
+  });
+
+  it("offline members with no active alarm raise the tab to warning", () => {
+    offlineWithNoAlarmIsAWarning();
+  });
+
+  it("offline members outrank an info alarm", () => {
+    offlineBeatsAnInfoAlarm();
+  });
+
+  it("an info alarm with no member offline keeps info", () => {
+    anInfoAlarmWithNoOfflineKeepsInfo();
   });
 });

@@ -196,6 +196,7 @@ export function DashboardWidget({ widget, data, now }: DashboardWidgetProps) {
           compareValue={compareValue}
           coverage={coverage}
           currency={currency}
+          catalogKey={widget.sources[0]?.catalogKey ?? null}
         />
       );
     case "chart":

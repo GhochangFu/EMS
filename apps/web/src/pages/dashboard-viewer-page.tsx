@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link, useParams, useSearchParams } from "react-router-dom";
 
@@ -77,25 +77,49 @@ export function DashboardViewerPage({ user }: DashboardViewerPageProps) {
   );
 }
 
+/** The query parameter that holds the viewer's selected tab key. */
+const TAB_PARAM = "tab";
+
 /**
  * `F3.73` (plan D11) — a tabbed dashboard (a site-layout copy reached by "Open in Dashboards")
  * shows the builder's tab strip and renders the selected tab's widgets only; without it every
- * tab's widgets share one grid and the tiles overlap. The first tab by `sortOrder` is selected by
- * default. The selection is local state: this route has no `:tab` segment, and its query string
- * already carries `organizationId`. A dashboard with no tabs renders every widget, as before.
+ * tab's widgets share one grid and the tiles overlap. A dashboard with no tabs renders every
+ * widget, as before.
+ *
+ * `F3.73` critique fix — the selection is in the URL as `?tab=<key>`, beside `organizationId`, so a
+ * reload, a shared link and Back keep it. A missing or unknown key opens the first tab by
+ * `sortOrder`, and the first load writes nothing. Each selection pushes a history entry.
+ *
+ * The widget titles are `h3` (`WidgetFrame`), so the canvas carries the `h2` between them and the
+ * page's `h1`: the selected tab's label, or "Widgets". It is visually hidden — the strip already
+ * shows the label.
  */
 function ViewerCanvas({ dashboard }: { dashboard: DashboardDto }) {
   const tabs = useMemo(() => [...dashboard.tabs].sort((a, b) => a.sortOrder - b.sortOrder), [dashboard.tabs]);
-  const [selectedKey, setSelectedKey] = useState<string | null>(null);
+  const [searchParams, setSearchParams] = useSearchParams();
+  const selectedKey = searchParams.get(TAB_PARAM);
   const selected = tabs.find((tab) => tab.key === selectedKey) ?? tabs[0];
 
+  function selectTab(key: string): void {
+    setSearchParams((current) => {
+      const next = new URLSearchParams(current);
+      next.set(TAB_PARAM, key);
+      return next;
+    });
+  }
+
   if (selected === undefined) {
-    return <DashboardLiveCanvas dashboard={dashboard} />;
+    return (
+      <section>
+        <h2 className="sr-only">Widgets</h2>
+        <DashboardLiveCanvas dashboard={dashboard} />
+      </section>
+    );
   }
   return (
-    <>
-      <DashboardTabStrip tabs={tabs} selectedKey={selected.key} onSelect={setSelectedKey} />
+    <DashboardTabStrip tabs={tabs} selectedKey={selected.key} onSelect={selectTab}>
+      <h2 className="sr-only">{selected.label.trim() || selected.key}</h2>
       <DashboardLiveCanvas dashboard={dashboard} tabKey={selected.key} />
-    </>
+    </DashboardTabStrip>
   );
 }

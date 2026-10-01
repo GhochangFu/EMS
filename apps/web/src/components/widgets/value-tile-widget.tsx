@@ -19,6 +19,8 @@ type ValueTileWidgetProps = {
   /** `E4.2` PR 2 sweep — the organization ISO 4217 code for a money metric;
    * null for every other one, which renders the plain number. */
   currency?: string | null;
+  /** The widget's first bound metric; `assets.health.score` renders as a percentage. */
+  catalogKey?: string | null;
 };
 
 /**
@@ -49,7 +51,8 @@ export function ValueTileWidget({
   compareValue,
   coverage,
   currency,
+  catalogKey,
 }: ValueTileWidgetProps) {
-  const props = toKpiTileProps({ title, status, primary, config, compareValue, coverage, currency });
+  const props = toKpiTileProps({ title, status, primary, config, compareValue, coverage, currency, catalogKey });
   return <KpiTile {...props} icon={WidgetIconGlyph(props.icon)} stale={stale && status === "ready"} />;
 }

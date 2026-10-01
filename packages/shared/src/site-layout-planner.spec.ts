@@ -1,12 +1,15 @@
 import {
   domainsPresent,
   groupsToCreate,
+  omitUnboundTiles,
+  packAfterRemoval,
   pickTabGroups,
   planSiteLayout,
   type SiteLayoutGroup,
   type SiteLayoutTabSpec,
 } from "./site-layout-planner";
 import { SMOC_STANDARD_SITE_TEMPLATE } from "./site-templates/smoc-standard";
+import { planTemplateWidget } from "./template-instantiation";
 
 /**
  * `F3.73` plan D5 — the site-layout planner. Assertions live here; `site-layout-planner.test.ts`
@@ -265,4 +268,142 @@ export function domainsPresentIsSortedUniqueAndNonNull(): void {
     { domain: "water" },
   ]);
   assert(got.join(",") === "electrical,water", `domains present: got ${got.join(",")}`);
+}
+
+// ---- packing: the Overview cards (critique finding a) ----------------------------------------
+
+/** `targetTabKey@gridX,gridY` of each Overview card, in widget order. */
+function cardRects(result: ReturnType<typeof planSiteLayout>): string {
+  const overview = planned(result).tabs.find((row) => row.tab.key === "overview");
+  return (overview?.tab.widgets ?? [])
+    .flatMap((widget) =>
+      widget.widgetType === "module_summary_card" ? [`${widget.config.targetTabKey}@${widget.gridX},${widget.gridY}`] : [],
+    )
+    .join(" ");
+}
+
+export function pheOverviewPacksTheKeptCardsLeft(): void {
+  const got = cardRects(planSiteLayout(SMOC_TABS, PHE_GROUPS));
+  assert(got === "sld@0,6 env@2,6", `PHE Overview card rects: got ${got}`);
+}
+
+export function csmocOverviewPacksTheKeptCardsLeftInTemplateOrder(): void {
+  const got = cardRects(planSiteLayout(SMOC_TABS, CSMOC_GROUPS, CSMOC_CHOICE));
+  assert(got === "sld@0,6 ups@2,6 hvac@4,6 water@6,6", `CSMOC Overview card rects: got ${got}`);
+}
+
+export function packingNeverMovesTheTemplatesOwnCards(): void {
+  planSiteLayout(SMOC_TABS, PHE_GROUPS);
+  const env = SMOC_TABS[0].widgets.find((widget) => widget.key === "overview-env-card");
+  assert(env?.gridX === 8, `the template's env card moved to ${env?.gridX}`);
+}
+
+// ---- packing: the general rule ---------------------------------------------------------------
+
+type Box = { readonly id: string; readonly gridX: number; readonly gridY: number; readonly gridW: number; readonly gridH: number };
+const box = (id: string, gridX: number, gridY: number, gridW: number, gridH: number): Box => ({ id, gridX, gridY, gridW, gridH });
+const boxes = (list: readonly Box[]): string => list.map((b) => `${b.id}@${b.gridX},${b.gridY}`).join(" ");
+
+export function aRowWithNoRemovalKeepsItsGaps(): void {
+  const got = packAfterRemoval(
+    [box("a", 0, 0, 3, 2), box("b", 6, 0, 3, 2), box("c", 0, 2, 3, 2), box("d", 3, 2, 3, 2)],
+    (b) => b.id !== "c",
+  );
+  assert(boxes(got) === "a@0,0 b@6,0 d@0,2", `pack, a gap in an untouched row: got ${boxes(got)}`);
+}
+
+export function anEmptiedRowLiftsTheRowsBelowIt(): void {
+  const got = packAfterRemoval(
+    [box("t1", 0, 0, 3, 2), box("t2", 3, 0, 3, 2), box("rail", 0, 2, 6, 5), box("table", 6, 2, 6, 5)],
+    (b) => b.id !== "t1" && b.id !== "t2",
+  );
+  assert(boxes(got) === "rail@0,0 table@6,0", `pack, an emptied row: got ${boxes(got)}`);
+}
+
+export function aRowThatKeepsAWidgetLiftsNothing(): void {
+  const got = packAfterRemoval(
+    [box("t1", 0, 0, 3, 2), box("t2", 3, 0, 3, 2), box("rail", 0, 2, 6, 5)],
+    (b) => b.id !== "t1",
+  );
+  assert(boxes(got) === "t2@0,0 rail@0,2", `pack, a row that keeps one: got ${boxes(got)}`);
+}
+
+/** A kept tall widget from a higher row that reaches into the packed row is an obstacle, not a gap. */
+export function aPackedRowStepsAroundATallWidgetFromAbove(): void {
+  const got = packAfterRemoval(
+    [box("t", 4, 0, 2, 4), box("a", 0, 2, 4, 2), box("b", 6, 2, 4, 2), box("c", 10, 2, 2, 2)],
+    (b) => b.id !== "a",
+  );
+  assert(boxes(got) === "t@4,0 b@0,2 c@6,2", `pack, a tall widget from above: got ${boxes(got)}`);
+}
+
+/** A tall widget packed left does not slide over a kept widget in a lower row it reaches into. */
+export function aPackedTallWidgetStepsAroundAWidgetBelow(): void {
+  const got = packAfterRemoval(
+    [box("a", 0, 0, 3, 2), box("r", 3, 0, 3, 6), box("x", 0, 2, 3, 2)],
+    (b) => b.id !== "a",
+  );
+  assert(boxes(got) === "r@3,0 x@0,2", `pack, a tall widget over a lower row: got ${boxes(got)}`);
+}
+
+// ---- unbound role tiles (critique finding b) -------------------------------------------------
+
+const SLD_WIDGETS = SMOC_TABS[1].widgets;
+
+/** Plans the SLD tab where `incoming-supply` has a member holding only `kw`, `meter` none. */
+function sldPlans(pointKeys: readonly string[]) {
+  const members = new Map([["incoming-supply", [{ assetId: "a-inc", code: "INC-1" }]]]);
+  const points = new Map(pointKeys.map((key) => [`a-inc::${key}`, `p-${key}`] as const));
+  return SLD_WIDGETS.map((widget) => planTemplateWidget(widget, members, points));
+}
+
+function keysOf(plans: readonly { widget: { key: string } }[]): string {
+  return plans.map((plan) => plan.widget.key).join(",");
+}
+
+export function aTileWhoseRoleHasNoMemberIsOmitted(): void {
+  const { omittedTiles } = omitUnboundTiles("sld", sldPlans(["kw", "pf"]));
+  const got = omittedTiles.map((tile) => `${tile.tabKey}>${tile.widgetKey}`).join(",");
+  assert(
+    got === "sld>sld-frequency-tile,sld>sld-main-bus-kw-tile",
+    `omitted tiles, roles with no member: got ${got}`,
+  );
+}
+
+export function aTileWhoseMemberLacksThePointKeyIsOmitted(): void {
+  // `incoming-supply` HAS a member, so `pf` reports `partial`, not `unresolved` — and still no point.
+  const plans = sldPlans(["kw"]);
+  const pf = plans.find((plan) => plan.widget.key === "sld-incomer-pf-tile");
+  assert(pf?.resolution.outcome === "partial", `fixture: pf outcome is ${pf?.resolution.outcome}`);
+  const { omittedTiles } = omitUnboundTiles("sld", plans);
+  assert(
+    omittedTiles.some((tile) => tile.widgetKey === "sld-incomer-pf-tile"),
+    `a member without the point key: got ${omittedTiles.map((tile) => tile.widgetKey).join(",")}`,
+  );
+}
+
+export function aBoundTileAndEveryUnboundWidgetAreKept(): void {
+  const { plans } = omitUnboundTiles("sld", sldPlans(["kw"]));
+  assert(
+    keysOf(plans) === "sld-incomer-kw-tile,sld-mimic,sld-alarms-rail,sld-assets-table",
+    `kept widgets: got ${keysOf(plans)}`,
+  );
+}
+
+export function aSourceTileWithNoRoleIsKept(): void {
+  const overview = SMOC_TABS[0].widgets.map((widget) => planTemplateWidget(widget, new Map(), new Map()));
+  const { omittedTiles } = omitUnboundTiles("overview", overview);
+  assert(omittedTiles.length === 0, `overview omitted tiles: got ${omittedTiles.length}`);
+}
+
+export function theKeptTilesArePackedLeft(): void {
+  const { plans } = omitUnboundTiles("sld", sldPlans(["pf"]));
+  const tile = plans.find((plan) => plan.widget.key === "sld-incomer-pf-tile");
+  assert(tile?.widget.gridX === 0 && tile.widget.gridY === 0, `pf tile at ${tile?.widget.gridX},${tile?.widget.gridY}`);
+}
+
+export function aTabThatLosesEveryTileLiftsItsBody(): void {
+  const { plans } = omitUnboundTiles("sld", sldPlans([]));
+  const mimic = plans.find((plan) => plan.widget.key === "sld-mimic");
+  assert(mimic?.widget.gridY === 0, `sld mimic with no tile at y ${mimic?.widget.gridY}`);
 }

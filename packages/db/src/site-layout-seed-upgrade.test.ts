@@ -12,7 +12,34 @@ import {
   theSeedsV1TemplateRowIsSuperseded,
   theV1DescriptionIsReplaced,
   theV1TableNamesExactlyTheTemplateWidgets,
+  aFullyBoundTabWritesNothing,
+  anEditedTabIsNotPacked,
+  anUnboundTileIsDeletedAndTheRowPacked,
+  anUnpackedOverviewHasItsCardsPacked,
+  aPackedTabIsNotPackedAgain,
+  aTabThatLosesEveryTileIsLifted,
 } from "./site-layout-seed-upgrade.spec";
+
+describe("F3.73 — the seed upgrade's v2 → packed step", () => {
+  it("packs an unpacked Overview's cards left", () => {
+    anUnpackedOverviewHasItsCardsPacked();
+  });
+  it("deletes an unbound role tile and packs its row", () => {
+    anUnboundTileIsDeletedAndTheRowPacked();
+  });
+  it("lifts a tab's body when it loses every tile", () => {
+    aTabThatLosesEveryTileIsLifted();
+  });
+  it("packs no tab an administrator edited", () => {
+    anEditedTabIsNotPacked();
+  });
+  it("packs nothing a second time", () => {
+    aPackedTabIsNotPackedAgain();
+  });
+  it("writes nothing for a tab whose tiles are all bound", () => {
+    aFullyBoundTabWritesNothing();
+  });
+});
 
 /** Vitest entry point — assertions live in the sibling `.spec` (ADR 0014). */
 describe("F3.73 — the SMOC standard site layout's v1 → v2 seed upgrade", () => {

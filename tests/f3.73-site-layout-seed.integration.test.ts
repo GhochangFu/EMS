@@ -84,7 +84,9 @@ const mapRows = seedMapLocationRows(loadPheCatalog());
 const pheSlugs = pheSiteLayoutStations(loadPheCatalog()).map((station) => station.slug);
 const CSMOC_SLUG = siteLayoutSlug("csmoc-gauteng");
 
-describe.skipIf(!ownerUrl)("F3.73 D12 — the seeded SMOC standard site layouts", () => {
+// 60 s a case: the rewinding cases re-seed CSMOC up to three times in one transaction, and a
+// case cut off at the 5 s default leaves its transaction open on the one seed connection.
+describe.skipIf(!ownerUrl)("F3.73 D12 — the seeded SMOC standard site layouts", { timeout: 60_000 }, () => {
   let probePool: IntegrationPool | undefined;
   let seedPool: SeedPool | undefined;
   let eskomOrgId = "";
@@ -204,6 +206,32 @@ describe.skipIf(!ownerUrl)("F3.73 D12 — the seeded SMOC standard site layouts"
       "hvac:hvac",
       "water:water",
     ]);
+  });
+
+  it("leaves no seeded copy a role tile without a point, and keeps CSMOC's two bound ones", async () => {
+    const res = await probePool!.query<{ slug: string; unbound: number; bound: number }>(
+      `SELECT d.slug,
+              count(*) FILTER (WHERE NOT EXISTS (SELECT 1 FROM bms.dashboard_widget_points p WHERE p.widget_id = w.id)
+                                 AND NOT EXISTS (SELECT 1 FROM bms.dashboard_widget_sources s WHERE s.widget_id = w.id))::int AS unbound,
+              count(*) FILTER (WHERE EXISTS (SELECT 1 FROM bms.dashboard_widget_points p WHERE p.widget_id = w.id))::int AS bound
+         ${SEEDED_COPIES_SQL.replace("FROM bms.dashboards d", "FROM bms.dashboards d JOIN bms.dashboard_widgets w ON w.dashboard_id = d.id AND w.widget_type = 'value_tile'")}
+        GROUP BY d.slug ORDER BY d.slug`,
+      [csmocId, pheSlugs],
+    );
+    expect(res.rows).toHaveLength(7);
+    expect(res.rows.filter((row) => row.unbound > 0).map((row) => row.slug)).toEqual([]);
+    expect(res.rows.find((row) => row.slug === CSMOC_SLUG)?.bound).toBe(2);
+  });
+
+  it("packs each seeded PHE Overview's sld and env cards into columns 0 and 2", async () => {
+    const res = await probePool!.query<{ cards: string }>(
+      `SELECT string_agg(w.config->>'targetTabKey' || '@' || w.grid_x, ' ' ORDER BY w.grid_x) AS cards
+         ${SEEDED_COPIES_SQL.replace("FROM bms.dashboards d", "FROM bms.dashboards d JOIN bms.dashboard_widgets w ON w.dashboard_id = d.id AND w.widget_type = 'module_summary_card'")}
+          AND l.slug = ANY($2::varchar[])
+        GROUP BY d.slug`,
+      [csmocId, pheSlugs],
+    );
+    expect(res.rows.map((row) => row.cards)).toEqual(Array.from({ length: 6 }, () => "sld@0 env@2"));
   });
 
   it("writes no row on a second run", async () => {
@@ -384,7 +412,78 @@ describe.skipIf(!ownerUrl)("F3.73 D12 — the seeded SMOC standard site layouts"
     return res.rows.map((row) => row.row).join(",");
   }
 
+  /**
+   * Puts CSMOC's copy back to what the seed wrote before the pack rule: every role tile of each
+   * kept tab, the ones it leaves out re-inserted with no point row, and every widget at its v2
+   * rect. Only a role tile may be missing, so an administrator's deletion fails the precondition.
+   */
+  async function rewindToUnpacked(pool: Pick<SeedPool, "query">): Promise<void> {
+    const tabs = await pool.query<{ id: string; tab_key: string; dashboard_id: string }>(
+      `SELECT t.id, t.tab_key, t.dashboard_id FROM bms.dashboard_tabs t
+         JOIN bms.dashboards d ON d.id = t.dashboard_id
+        WHERE d.organization_id = $1 AND d.slug = $2`,
+      [eskomOrgId, CSMOC_SLUG],
+    );
+    const tabKeys = new Set(tabs.rows.map((row) => row.tab_key));
+    const stored = new Set((await copyWidgets(pool)).map((widget) => widget.identity));
+    for (const tab of smocStandardV1Content().tabs) {
+      const row = tabs.rows.find((candidate) => candidate.tab_key === tab.key);
+      if (!row) continue;
+      for (const widget of tab.widgets) {
+        if (widget.widgetType === "module_summary_card" && !tabKeys.has(widget.config.targetTabKey)) continue;
+        const identity = siteWidgetIdentity(tab.key, widget.widgetType, widget.title);
+        if (stored.has(identity)) continue;
+        assert(
+          widget.widgetType === "value_tile" && widget.bindings.length > 0,
+          `precondition: only a role tile is missing from the copy, not ${identity}`,
+        );
+        await pool.query(
+          `INSERT INTO bms.dashboard_widgets
+             (organization_id, dashboard_id, tab_id, widget_type, title, grid_x, grid_y, grid_w, grid_h, config)
+           VALUES ($1, $2, $3, 'value_tile', $4, 0, 0, 1, 1, $5::jsonb)`,
+          [eskomOrgId, row.dashboard_id, row.id, widget.title, JSON.stringify(widget.config)],
+        );
+      }
+    }
+    for (const widget of await copyWidgets(pool)) {
+      const rect = SMOC_STANDARD_CURRENT_RECTS.get(widget.identity);
+      assert(rect !== undefined, `precondition: ${widget.identity} is a template widget`);
+      await pool.query(
+        `UPDATE bms.dashboard_widgets SET grid_x = $2, grid_y = $3, grid_w = $4, grid_h = $5 WHERE id = $1`,
+        [widget.id, rect?.gridX, rect?.gridY, rect?.gridW, rect?.gridH],
+      );
+    }
+  }
+
+  /** `identity@rect` of CSMOC's copy as the seed makes it today: deleted, then seeded afresh. */
+  async function freshCopyRects(): Promise<string[]> {
+    let rects: string[] = [];
+    await inTransaction(eskomOrgId, async (pool) => {
+      await pool.query(`DELETE FROM bms.site_control_room_views WHERE location_id = $1`, [csmocId]);
+      await pool.query(`DELETE FROM bms.dashboards WHERE organization_id = $1 AND slug = $2`, [eskomOrgId, CSMOC_SLUG]);
+      const outcome = await seedEskomSiteLayouts(pool, eskomOrgId, mapRows, () => undefined);
+      assert(outcome.made.length === 1, `the fresh copy was not made: ${JSON.stringify(outcome.skipped)}`);
+      rects = (await copyWidgets(pool)).map((widget) => `${widget.identity}@${widget.rect}`).sort();
+    });
+    return rects;
+  }
+
+  /** CSMOC's role tiles (a value tile off the Overview) as `title:points`. */
+  async function roleTiles(pool: Pick<SeedPool, "query">): Promise<string[]> {
+    const res = await pool.query<{ tile: string }>(
+      `SELECT w.title || ':' || (SELECT count(*) FROM bms.dashboard_widget_points p WHERE p.widget_id = w.id) AS tile
+         FROM bms.dashboard_widgets w
+         JOIN bms.dashboard_tabs t ON t.id = w.tab_id
+         JOIN bms.dashboards d ON d.id = w.dashboard_id
+        WHERE d.organization_id = $1 AND d.slug = $2 AND w.widget_type = 'value_tile' AND t.tab_key <> 'overview'
+        ORDER BY 1`,
+      [eskomOrgId, CSMOC_SLUG],
+    );
+    return res.rows.map((row) => row.tile);
+  }
+
   async function rewindToV1(pool: Pick<SeedPool, "query">): Promise<void> {
+    await rewindToUnpacked(pool);
     // The upgraded state: the seed's own version 2, which no copy names (copies keep v1's id).
     // Deleted before v1 is published again; any other newer row survives and fails the
     // precondition below.
@@ -421,7 +520,8 @@ describe.skipIf(!ownerUrl)("F3.73 D12 — the seeded SMOC standard site layouts"
     }
   }
 
-  it("moves a v1 copy's widgets to the v2 rects on a re-seed", async () => {
+  it("moves a v1 copy's widgets to v2 and packs them where a fresh copy has them, on a re-seed", async () => {
+    const fresh = await freshCopyRects();
     await inTransaction(eskomOrgId, async (pool) => {
       await rewindToV1(pool);
       const before = await copyWidgets(pool);
@@ -429,10 +529,75 @@ describe.skipIf(!ownerUrl)("F3.73 D12 — the seeded SMOC standard site layouts"
       expect(before.map((w) => w.rect)).toEqual(before.map((w) => rectText(SMOC_STANDARD_V1_RECTS.get(w.identity)!)));
       await seedEskomSiteLayouts(pool, eskomOrgId, mapRows, () => undefined);
       const after = await copyWidgets(pool);
-      expect(after.map((w) => `${w.identity}@${w.rect}`)).toEqual(
-        after.map((w) => `${w.identity}@${rectText(SMOC_STANDARD_CURRENT_RECTS.get(w.identity)!)}`),
-      );
-      expect(after).toHaveLength(before.length);
+      expect(after.map((w) => `${w.identity}@${w.rect}`).sort()).toEqual(fresh);
+    });
+  });
+
+  // ── The pack step (the F3.73 design critique, findings a and b) ─────────────────────────────
+
+  it("leaves nine unbound role tiles out of a fresh CSMOC copy and keeps its two bound ones", async () => {
+    await inTransaction(eskomOrgId, async (pool) => {
+      await pool.query(`DELETE FROM bms.site_control_room_views WHERE location_id = $1`, [csmocId]);
+      await pool.query(`DELETE FROM bms.dashboards WHERE organization_id = $1 AND slug = $2`, [eskomOrgId, CSMOC_SLUG]);
+      const outcome = await seedEskomSiteLayouts(pool, eskomOrgId, mapRows, () => undefined);
+      expect(outcome.made[0]?.omittedTiles).toHaveLength(9);
+      expect(await roleTiles(pool)).toEqual(["Main bus load:1", "Supply air:1"]);
+    });
+  });
+
+  it("deletes an unpacked copy's nine unbound role tiles on a re-seed and keeps the two bound ones", async () => {
+    await inTransaction(eskomOrgId, async (pool) => {
+      await rewindToUnpacked(pool);
+      const before = await roleTiles(pool);
+      expect(before.filter((tile) => tile.endsWith(":0"))).toHaveLength(9);
+      await seedEskomSiteLayouts(pool, eskomOrgId, mapRows, () => undefined);
+      expect(await roleTiles(pool)).toEqual(["Main bus load:1", "Supply air:1"]);
+    });
+  });
+
+  it("packs an unpacked copy onto the rects a fresh copy gets, on a re-seed", async () => {
+    const fresh = await freshCopyRects();
+    await inTransaction(eskomOrgId, async (pool) => {
+      await rewindToUnpacked(pool);
+      const unpacked = (await copyWidgets(pool)).map((w) => `${w.identity}@${w.rect}`).sort();
+      expect(unpacked).not.toEqual(fresh);
+      await seedEskomSiteLayouts(pool, eskomOrgId, mapRows, () => undefined);
+      expect((await copyWidgets(pool)).map((w) => `${w.identity}@${w.rect}`).sort()).toEqual(fresh);
+    });
+  });
+
+  it("writes nothing when the pack step runs a second time", async () => {
+    await inTransaction(eskomOrgId, async (pool) => {
+      await rewindToUnpacked(pool);
+      const first = await upgradeSeededSiteLayoutCopies(pool, eskomOrgId, [csmocId], SITE_LAYOUT_SLUG_PREFIX);
+      expect(first.omittedTiles).toBe(9);
+      expect(first.packed).toBeGreaterThan(0);
+      const snapshot = JSON.stringify(await copyWidgets(pool));
+      expect(await upgradeSeededSiteLayoutCopies(pool, eskomOrgId, [csmocId], SITE_LAYOUT_SLUG_PREFIX)).toEqual({
+        descriptions: 0,
+        widgets: 0,
+        packed: 0,
+        omittedTiles: 0,
+      });
+      expect(JSON.stringify(await copyWidgets(pool))).toBe(snapshot);
+    });
+  });
+
+  it("keeps an admin's edited tab unpacked and packs the other tabs", async () => {
+    await inTransaction(eskomOrgId, async (pool) => {
+      await rewindToUnpacked(pool);
+      const rail = (await copyWidgets(pool)).find((w) => w.identity === "sld|active_alarms_rail|Active alarms");
+      expect(rail).toBeDefined();
+      await pool.query(`UPDATE bms.dashboard_widgets SET grid_y = grid_y + 1 WHERE id = $1`, [rail?.id]);
+      await seedEskomSiteLayouts(pool, eskomOrgId, mapRows, () => undefined);
+      const after = await copyWidgets(pool);
+      const sld = after.filter((w) => w.tabKey === "sld" && w.id !== rail?.id);
+      expect(sld.filter((w) => w.identity.startsWith("sld|value_tile|"))).toHaveLength(4);
+      expect(sld.map((w) => w.rect)).toEqual(sld.map((w) => rectText(SMOC_STANDARD_CURRENT_RECTS.get(w.identity)!)));
+      expect(after.filter((w) => w.tabKey === "ups").map((w) => `${w.identity}@${w.rect}`)).toEqual([
+        "ups|active_alarms_rail|Active alarms@0,0,6,5",
+        "ups|table|Assets@6,0,6,5",
+      ]);
     });
   });
 
@@ -465,6 +630,8 @@ describe.skipIf(!ownerUrl)("F3.73 D12 — the seeded SMOC standard site layouts"
       expect(await upgradeSeededSiteLayoutCopies(pool, eskomOrgId, [csmocId], SITE_LAYOUT_SLUG_PREFIX)).toEqual({
         descriptions: 0,
         widgets: 0,
+        packed: 0,
+        omittedTiles: 0,
       });
       await seedEskomSiteLayouts(pool, eskomOrgId, mapRows, () => undefined);
       expect(await snapshot()).toBe(first);
@@ -500,8 +667,11 @@ describe.skipIf(!ownerUrl)("F3.73 D12 — the seeded SMOC standard site layouts"
       const ups = after.filter((w) => w.tabKey === "ups");
       expect(sld.length).toBeGreaterThan(0);
       expect(sld.map((w) => w.rect)).toEqual(sld.map((w) => rectText(SMOC_STANDARD_V1_RECTS.get(w.identity)!)));
-      expect(ups.length).toBeGreaterThan(0);
-      expect(ups.map((w) => w.rect)).toEqual(ups.map((w) => rectText(SMOC_STANDARD_CURRENT_RECTS.get(w.identity)!)));
+      // The ups tab moved to v2 and was then packed: both its role tiles bind nothing at CSMOC.
+      expect(ups.map((w) => `${w.identity}@${w.rect}`)).toEqual([
+        "ups|active_alarms_rail|Active alarms@0,0,6,5",
+        "ups|table|Assets@6,0,6,5",
+      ]);
       expect(await descriptionOf(pool)).toBe(`Edited ${RUN_ID}`);
     });
   });

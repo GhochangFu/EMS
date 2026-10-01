@@ -20,7 +20,8 @@ import {
   drawsEightNodesInPresetOrder,
   drawsEveryPipeAndTheSink,
   loadingDrawsNoNodes,
-  unassignedNodeSaysNotAssigned,
+  aNodeWithNoMemberSaysNoAssetAtThisSite,
+  aNoAssetNodeDrawsANeutralSolidFrame,
 } from "./mimic-widget.spec";
 
 /**
@@ -35,8 +36,11 @@ describe("F3.32 U4 — MimicWidget", () => {
   it("W1 draws eight nodes in the preset's order", () => {
     drawsEightNodesInPresetOrder();
   });
-  it("W2 an unassigned node says Not assigned and is dimmed", () => {
-    unassignedNodeSaysNotAssigned();
+  it("W2 a node with no member says No asset at this site and is dimmed", () => {
+    aNodeWithNoMemberSaysNoAssetAtThisSite();
+  });
+  it("W2c a no-asset node draws a neutral, solid frame", () => {
+    aNoAssetNodeDrawsANeutralSolidFrame();
   });
   it("W2b an assigned node shows its asset code and is not dimmed", () => {
     assignedNodeShowsItsAssetCode();

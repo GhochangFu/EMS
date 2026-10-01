@@ -7,8 +7,22 @@ import {
   aChoiceOfAnotherDomainIsRefused,
   aChoiceOfATakenGroupIsRefused,
   aDomainlessGroupNeverBindsTheOverview,
+  aBoundTileAndEveryUnboundWidgetAreKept,
   aLaterTabTakesOnlyAnUntakenGroup,
+  anEmptiedRowLiftsTheRowsBelowIt,
+  aPackedRowStepsAroundATallWidgetFromAbove,
+  aPackedTallWidgetStepsAroundAWidgetBelow,
+  aRowThatKeepsAWidgetLiftsNothing,
+  aRowWithNoRemovalKeepsItsGaps,
   aSiteWithNoGroupGetsOneGroupPerDomain,
+  aSourceTileWithNoRoleIsKept,
+  aTabThatLosesEveryTileLiftsItsBody,
+  aTileWhoseMemberLacksThePointKeyIsOmitted,
+  aTileWhoseRoleHasNoMemberIsOmitted,
+  csmocOverviewPacksTheKeptCardsLeftInTemplateOrder,
+  packingNeverMovesTheTemplatesOwnCards,
+  pheOverviewPacksTheKeptCardsLeft,
+  theKeptTilesArePackedLeft,
   csmocWithoutAChoiceBindsEachTabByGroupCode,
   csmocWithoutAChoiceHasTheSameFiveTabs,
   csmocWithTheSeedChoiceBindsByChoice,
@@ -84,5 +98,53 @@ describe("F3.73 — the site-layout planner (plan D5)", () => {
   });
   it("lists the domains present, sorted, unique and non-null", () => {
     domainsPresentIsSortedUniqueAndNonNull();
+  });
+});
+
+describe("F3.73 — packing a copy left when the plan removes widgets", () => {
+  it("packs the two PHE Overview cards left", () => {
+    pheOverviewPacksTheKeptCardsLeft();
+  });
+  it("packs the four CSMOC Overview cards left in template order", () => {
+    csmocOverviewPacksTheKeptCardsLeftInTemplateOrder();
+  });
+  it("never moves the template's own cards", () => {
+    packingNeverMovesTheTemplatesOwnCards();
+  });
+  it("keeps the gaps of a row nothing was removed from", () => {
+    aRowWithNoRemovalKeepsItsGaps();
+  });
+  it("lifts the rows below a row that lost every widget", () => {
+    anEmptiedRowLiftsTheRowsBelowIt();
+  });
+  it("lifts nothing below a row that keeps a widget", () => {
+    aRowThatKeepsAWidgetLiftsNothing();
+  });
+  it("packs a row around a tall widget from a higher row", () => {
+    aPackedRowStepsAroundATallWidgetFromAbove();
+  });
+  it("never packs a tall widget over a widget in a lower row", () => {
+    aPackedTallWidgetStepsAroundAWidgetBelow();
+  });
+});
+
+describe("F3.73 — role tiles with no point at the site are omitted", () => {
+  it("omits a tile whose role has no member", () => {
+    aTileWhoseRoleHasNoMemberIsOmitted();
+  });
+  it("omits a tile whose member lacks the point key", () => {
+    aTileWhoseMemberLacksThePointKeyIsOmitted();
+  });
+  it("keeps a bound tile and every widget with no role", () => {
+    aBoundTileAndEveryUnboundWidgetAreKept();
+  });
+  it("keeps a catalog-source tile", () => {
+    aSourceTileWithNoRoleIsKept();
+  });
+  it("packs the kept tiles left", () => {
+    theKeptTilesArePackedLeft();
+  });
+  it("lifts the tab's body when every tile is omitted", () => {
+    aTabThatLosesEveryTileLiftsItsBody();
   });
 });

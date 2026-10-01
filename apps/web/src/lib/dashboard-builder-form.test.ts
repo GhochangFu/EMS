@@ -10,6 +10,9 @@ import {
   runBuilderHasChangedTests,
   runDashboardBuilderErrorsTests,
   runDashboardBuilderProblemSubjectTests,
+  runTabbedProblemNamesItsTabTests,
+  runTabbedProblemsComeInTabOrderTests,
+  runUntabbedProblemsKeepTheirSubjectTests,
   runDashboardRowsFromDtoTests,
   runRemovingASourceClearsColumnsTests,
   runTableColumnRoundTripTests,
@@ -75,6 +78,18 @@ describe("dashboard builder form", () => {
 
   it("names a problem's subject — Dashboard, or the widget's own title/catalog label", () => {
     runDashboardBuilderProblemSubjectTests();
+  });
+
+  it("F3.73 critique: a tabbed widget's problem names its tab and title", () => {
+    runTabbedProblemNamesItsTabTests();
+  });
+
+  it("F3.73 critique: the summary's problems come grouped in tab order", () => {
+    runTabbedProblemsComeInTabOrderTests();
+  });
+
+  it("F3.73 critique: an untabbed widget's problem keeps its numbered subject", () => {
+    runUntabbedProblemsKeepTheirSubjectTests();
   });
 
   it("F3.32: an asset-group dashboard offers the plant mimic", () => {

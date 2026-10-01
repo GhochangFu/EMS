@@ -34,13 +34,14 @@ import {
   tabWritesFromDto,
   builderHasChanged,
   dashboardBuilderErrors,
-  dashboardBuilderProblemSubject,
   dashboardRowsFromDto,
+  tabbedDashboardBuilderProblems,
   unselectedDashboardBuilderProblems,
   type BuilderTabsState,
   type DashboardWidgetRow,
   type TabWritePayload,
 } from "../../lib/dashboard-builder-form";
+import { metricCatalogLabel } from "../../lib/metric-catalog";
 import { WIDGET_CATALOG } from "../../lib/widget-catalog";
 import { AppShell } from "../../layouts/app-shell";
 import { PageHeader } from "../../components/page-header";
@@ -59,6 +60,16 @@ type DashboardBuilderEditPageProps = {
 };
 
 type WidgetTile = CanvasTile & { row: DashboardWidgetRow; index: number };
+
+/** `F3.73` critique fix — what a canvas tile binds: its catalog metric(s) when it binds one ("Active
+ * alarms metric"), else its point count. A catalog-bound tile used to read "0 point(s)". */
+function tileBindingText(row: DashboardWidgetRow): string {
+  if (row.sources.length === 0) {
+    return `${row.points.length} point(s)`;
+  }
+  const labels = row.sources.map((source) => metricCatalogLabel(source.catalogKey)).join(", ");
+  return `${labels} metric${row.sources.length === 1 ? "" : "s"}`;
+}
 
 /**
  * `F3.1d` Unit 7 — edits an existing dashboard's scope, arrangement, config
@@ -346,6 +357,44 @@ export function DashboardBuilderEditPage({ user }: DashboardBuilderEditPageProps
 
   const selectedRow = selected !== null ? rows[selected] : undefined;
 
+  /** `F3.73` critique fix — opens a summary problem's tab and selects its widget, so the inspector
+   * shows the field to fix. */
+  function showProblem(tabKey: string, widget: number | null): void {
+    selectTab(tabKey);
+    setSelected(widget);
+  }
+
+  const canvas =
+    tiles.length === 0 ? (
+      <p className="rounded border border-dashed border-line-strong p-4 text-xs text-ink-muted">
+        {tabs.length > 0 ? "Add a widget to this tab." : "Add a widget to start composing this dashboard."}
+      </p>
+    ) : (
+      <DashboardCanvas
+        tiles={tiles}
+        renderTile={(tile) => (
+          <button
+            type="button"
+            onClick={() => setSelected(tile.index)}
+            className={`h-full w-full p-2 text-left text-xs ${
+              tile.index === selected ? "border-accent bg-accent/10" : "surface-raised-sm"
+            }`}
+          >
+            <div className="font-semibold">{tile.row.title.trim() || WIDGET_CATALOG[tile.row.widgetType].label}</div>
+            <div className="text-[10px] text-ink-muted">
+              {WIDGET_CATALOG[tile.row.widgetType].label} · {tileBindingText(tile.row)}
+            </div>
+          </button>
+        )}
+        onArrange={(key, next) => {
+          const tile = tiles.find((candidate) => candidate.key === key);
+          if (tile) {
+            updateWidget(tile.index, next);
+          }
+        }}
+      />
+    );
+
   return (
     <AppShell user={user} kpiRibbon={<span className="text-ink">{dto?.name ?? "Edit dashboard"}</span>}>
       <div className="mx-auto max-w-[1400px] space-y-4 pb-8">
@@ -436,39 +485,13 @@ export function DashboardBuilderEditPage({ user }: DashboardBuilderEditPageProps
                 </div>
               }
             >
+              {/* `F3.73` critique fix — the strip owns the tabpanel, so the canvas is its child. */}
               {tabs.length > 0 ? (
-                <DashboardTabStrip tabs={tabs} selectedKey={selectedTabKey} onSelect={selectTab} />
-              ) : null}
-              {tiles.length === 0 ? (
-                <p className="rounded border border-dashed border-line-strong p-4 text-xs text-ink-muted">
-                  {tabs.length > 0 ? "Add a widget to this tab." : "Add a widget to start composing this dashboard."}
-                </p>
+                <DashboardTabStrip tabs={tabs} selectedKey={selectedTabKey} onSelect={selectTab}>
+                  {canvas}
+                </DashboardTabStrip>
               ) : (
-                <DashboardCanvas
-                  tiles={tiles}
-                  renderTile={(tile) => (
-                    <button
-                      type="button"
-                      onClick={() => setSelected(tile.index)}
-                      className={`h-full w-full p-2 text-left text-xs ${
-                        tile.index === selected ? "border-accent bg-accent/10" : "surface-raised-sm"
-                      }`}
-                    >
-                      <div className="font-semibold">
-                        {tile.row.title.trim() || WIDGET_CATALOG[tile.row.widgetType].label}
-                      </div>
-                      <div className="text-[10px] text-ink-muted">
-                        {WIDGET_CATALOG[tile.row.widgetType].label} · {tile.row.points.length} point(s)
-                      </div>
-                    </button>
-                  )}
-                  onArrange={(key, next) => {
-                    const tile = tiles.find((candidate) => candidate.key === key);
-                    if (tile) {
-                      updateWidget(tile.index, next);
-                    }
-                  }}
-                />
+                canvas
               )}
             </SectionCard>
 
@@ -498,9 +521,21 @@ export function DashboardBuilderEditPage({ user }: DashboardBuilderEditPageProps
                 <p>{saveReason}</p>
                 {summaryProblems.length > 0 ? (
                   <ul className="mt-1 space-y-0.5 text-critical-ink">
-                    {summaryProblems.map((problem, index) => (
+                    {/* `F3.73` critique fix — grouped by tab, each tabbed entry named by its tab and
+                        a button that opens it: the canvas shows one tab and numbers no tile. */}
+                    {tabbedDashboardBuilderProblems(rows, tabs, summaryProblems).map(({ problem, tabKey, subject }, index) => (
                       <li key={index}>
-                        <span className="font-semibold">{dashboardBuilderProblemSubject(rows, problem)}:</span>{" "}
+                        {tabKey !== null ? (
+                          <button
+                            type="button"
+                            onClick={() => showProblem(tabKey, problem.widget)}
+                            className="rounded font-semibold underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus"
+                          >
+                            {subject}:
+                          </button>
+                        ) : (
+                          <span className="font-semibold">{subject}:</span>
+                        )}{" "}
                         {problem.message}
                       </li>
                     ))}

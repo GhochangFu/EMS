@@ -23,6 +23,10 @@ import {
   siteTemplateInstantiatePicksALocation,
   siteTemplateCountsAndListsItsTabWidgets,
   groupTemplateCountAndEmptyMessageAreUnchanged,
+  archiveAsksBeforeArchiving,
+  archiveIsNotAPrimaryFill,
+  confirmedArchiveAnnouncesArchiving,
+  readOnlyNoticeGivesAPlainReason,
 } from "./dashboard-template-detail-page.spec";
 
 /**
@@ -114,5 +118,21 @@ describe("F3.36 dashboard template detail page", () => {
 
   it("a group template keeps its own count and empty message (F3.73)", async () => {
     await groupTemplateCountAndEmptyMessageAreUnchanged();
+  });
+
+  it("Archive asks for a confirm before it archives (F3.73 critique)", async () => {
+    await archiveAsksBeforeArchiving();
+  });
+
+  it("a confirmed archive shows Archiving… with aria-busy on the page's Archive (F4.168)", async () => {
+    await confirmedArchiveAnnouncesArchiving();
+  });
+
+  it("Archive is not a primary-filled button (F3.73 critique)", async () => {
+    await archiveIsNotAPrimaryFill();
+  });
+
+  it("the read-only notice gives a plain reason, no ADR number (F3.73 critique)", async () => {
+    await readOnlyNoticeGivesAPlainReason();
   });
 });

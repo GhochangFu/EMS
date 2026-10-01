@@ -47,7 +47,7 @@ export function KpiTile({
 
   return (
     <div
-      className={`surface-raised surface-kpi relative flex flex-col overflow-hidden p-4 after:absolute ${toneBorder} ${toneBar} ${staleRing}`}
+      className={`surface-raised surface-kpi relative flex min-w-0 flex-col overflow-hidden p-4 after:absolute ${toneBorder} ${toneBar} ${staleRing}`}
     >
       <div className="flex items-start justify-between gap-2">
         <span className="text-[11px] font-medium uppercase tracking-wide text-ink-muted">
@@ -64,7 +64,10 @@ export function KpiTile({
       ) : status === "empty" ? (
         <p className="mt-3 font-condensed text-2xl font-bold text-ink-muted">—</p>
       ) : (
-        <p className="mt-2 font-condensed text-2xl font-bold tabular-nums text-ink">
+        <p
+          title={unit ? `${value} ${unit}` : (value ?? undefined)}
+          className="mt-2 min-w-0 truncate font-condensed text-xl font-bold tabular-nums text-ink lg:text-2xl"
+        >
           {value}
           {unit ? (
             <span className="ml-1 text-sm font-normal text-ink-muted">{unit}</span>

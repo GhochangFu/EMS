@@ -2,6 +2,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { fetchSiteWidgets } from "../api/dashboard-site-widgets";
 import { useAlarmsSocket } from "./use-alarms-socket";
+import { catalogValuesQueryPrefix } from "./use-dashboard-telemetry";
 
 /** The prefix, without the ids: one socket event refreshes every tab's entry. */
 export const siteWidgetsQueryPrefix = ["dashboards", "site-widgets"] as const;
@@ -36,10 +37,16 @@ export function useSiteWidgets(dashboardId: string, tabKey: string | null) {
  * `DashboardLiveCanvas` mounts it once. A subscription per widget opened a socket per widget
  * (socket.io-client dials each `io()` of one namespace separately) and invalidated once per
  * widget, each call cancelling and restarting the reads — about N reads per event.
+ *
+ * The same event invalidates the catalog-values read too (critique: the Active alarms tile, a
+ * `alarms.active.count` catalog binding on a 60 s poll, showed fewer alarms than the rail beside
+ * it). By prefix, because the hook takes no dashboard id: only a MOUNTED entry refetches, and the
+ * canvas that mounts this hook is the one whose catalog entry is mounted.
  */
 export function useSiteWidgetsAlarmRefresh(): void {
   const qc = useQueryClient();
   useAlarmsSocket(() => {
     void qc.invalidateQueries({ queryKey: siteWidgetsQueryPrefix });
+    void qc.invalidateQueries({ queryKey: catalogValuesQueryPrefix });
   });
 }

@@ -36,6 +36,16 @@ export const siteLayoutDroppedCardSchema = z.object({
   targetTabKey: dashboardTabKeySchema,
 });
 
+/**
+ * A role-bound value tile left out of a kept tab because it bound no point at the site
+ * (`isUnboundRoleTile`). It has no `resolution` row, so the answer names it here: ADR 0049
+ * Amendment 2 decision 1 reports every widget of a copy.
+ */
+export const siteLayoutOmittedTileSchema = z.object({
+  tabKey: dashboardTabKeySchema,
+  widgetKey: z.string(),
+});
+
 /** The copy one site received. */
 export const siteLayoutResultDtoSchema = z.object({
   locationId: z.string().uuid(),
@@ -43,6 +53,7 @@ export const siteLayoutResultDtoSchema = z.object({
   dashboardSlug: z.string(),
   omittedTabs: z.array(siteLayoutOmittedTabSchema),
   droppedCards: z.array(siteLayoutDroppedCardSchema),
+  omittedTiles: z.array(siteLayoutOmittedTileSchema),
   resolution: z.array(siteLayoutTabResolutionSchema),
 });
 

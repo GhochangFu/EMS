@@ -93,7 +93,8 @@ export interface TabStatusRow extends Record<string, unknown> {
  * worst `bms.alarm_severities.rank` among the active alarms of the tab group's readable active
  * members, their active-alarm count, how many of them have no sample in the shared live window
  * (`LIVE_ASSETS_CTE_SQL`, `telemetry-freshness.ts` — never a restated interval), and how many
- * there are. A tab with no group (the Overview) is not listed: it has no status to show. A tab
+ * there are. The tone is the worst severity's, raised to `warning` by an offline member when no
+ * alarm is `critical` or `warning` (`tabTone`). A tab with no group (the Overview) is not listed: it has no status to show. A tab
  * whose group has members, none of them readable, answers `status: null` ("Outside scope"),
  * never a zero that would read as healthy.
  */
@@ -427,6 +428,22 @@ async function tabStatuses(
   return result.rows.map(tabOf);
 }
 
+type TabTone = NonNullable<SiteWidgetTab["status"]>["tone"];
+
+/**
+ * A tab's tone. The worst active alarm's own tone when it is `critical` or `warning`; otherwise,
+ * with any readable member offline, `warning` — an offline member is never "Normal" (F3.73
+ * critique: "NORMAL · 3 offline"); otherwise the worst tone, `ok` with no active alarm. `tone` is
+ * closed by `alarm_severities_tone_check`, so the column's `string` is the contract's enum.
+ */
+export function tabTone(worstTone: string | null, offlineAssets: number): TabTone {
+  const tone = (worstTone ?? "ok") as TabTone;
+  if (tone === "critical" || tone === "warning") {
+    return tone;
+  }
+  return offlineAssets > 0 ? "warning" : tone;
+}
+
 /** One status row as the contract's tab: `status: null` when the group has members, none readable. */
 export function tabOf(row: TabStatusRow): SiteWidgetTab {
   const assetCount = Number(row.assets);
@@ -439,8 +456,7 @@ export function tabOf(row: TabStatusRow): SiteWidgetTab {
         ? null
         : {
             worstSeverity: row.worst_severity,
-            // `tone` is closed by `alarm_severities_tone_check`; no active alarm reads `ok`.
-            tone: (row.worst_tone ?? "ok") as NonNullable<SiteWidgetTab["status"]>["tone"],
+            tone: tabTone(row.worst_tone, Number(row.offline_assets)),
             activeAlarms: Number(row.active_alarms),
             offlineAssets: Number(row.offline_assets),
             assets: assetCount,

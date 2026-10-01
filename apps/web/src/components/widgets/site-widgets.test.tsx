@@ -3,6 +3,15 @@ import { afterEach, describe, it } from "vitest";
 
 import {
   aCardOnAHealthyTabReadsNormal,
+  anInfoAlarmBesideAnOfflineMemberReadsOffline,
+  anInfoAlarmWithNoOfflineMemberReadsItsLabel,
+  anUnlistedSeverityBesideAnOfflineMemberKeepsItsCode,
+  aWarningAlarmBesideAnOfflineMemberReadsWarning,
+  aCardOnATabWithOfflineMembersNeverReadsNormal,
+  aListRowWithOfflineMembersNeverReadsNormal,
+  anOfflineCardsPillCarriesTheWarningTone,
+  theCountsSaySingularForOneAlarm,
+  theCountsSaySingularForOneAsset,
   aCardOnAnUnlistedTabSaysOutsideScope,
   aCardOnAnUnreadableTabSaysOutsideScope,
   aFailedSiteWidgetDrawsTheErrorLine,
@@ -17,6 +26,8 @@ import {
   theListSaysSoWhenTheDashboardHasNoGroupTab,
   theListShowsOneRowPerGroupTab,
   theListShowsOutsideScopeForATabWithNoStatus,
+  aRenamedRailKeepsItsHeadingAndALoadingRailKeepsItsTitle,
+  theRailDoesNotRepeatItsTabAsAHeading,
   theRailDrawsAtMostItsConfiguredRows,
   theRailHidesTheSummaryTabWhenConfiguredOff,
   theRailListsTheActiveAlarmsOfItsTab,
@@ -37,6 +48,12 @@ describe("F3.73 site widgets — presentation", () => {
 
   it("SW1 the rail lists the active alarms of its tab", () => {
     theRailListsTheActiveAlarmsOfItsTab();
+  });
+  it("SW1b the rail does not repeat its tab as a heading", () => {
+    theRailDoesNotRepeatItsTabAsAHeading();
+  });
+  it("SW1c a renamed or loading rail keeps its title", () => {
+    aRenamedRailKeepsItsHeadingAndALoadingRailKeepsItsTitle();
   });
   it("SW2 the rail draws at most its configured rows", () => {
     theRailDrawsAtMostItsConfiguredRows();
@@ -97,5 +114,32 @@ describe("F3.73 site widgets — presentation", () => {
   });
   it("SW20 a failed site widget draws the error line", () => {
     aFailedSiteWidgetDrawsTheErrorLine();
+  });
+  it("SW22 a card on a tab with offline members reads Offline, never Normal", () => {
+    aCardOnATabWithOfflineMembersNeverReadsNormal();
+  });
+  it("SW23 an offline card's pill carries the warning tone", () => {
+    anOfflineCardsPillCarriesTheWarningTone();
+  });
+  it("SW24 a list row with offline members reads Offline, never Normal", () => {
+    aListRowWithOfflineMembersNeverReadsNormal();
+  });
+  it('SW25 the counts say "1 alarm" for one alarm', () => {
+    theCountsSaySingularForOneAlarm();
+  });
+  it('SW26 the counts say "1 asset" for one asset', () => {
+    theCountsSaySingularForOneAsset();
+  });
+  it("SW27 an info alarm beside an offline member reads Offline, not Info", () => {
+    anInfoAlarmBesideAnOfflineMemberReadsOffline();
+  });
+  it("SW28 an info alarm with no offline member reads its label", () => {
+    anInfoAlarmWithNoOfflineMemberReadsItsLabel();
+  });
+  it("SW29 a warning alarm beside an offline member reads Warning", () => {
+    aWarningAlarmBesideAnOfflineMemberReadsWarning();
+  });
+  it("SW30 an unlisted severity beside an offline member keeps its code", () => {
+    anUnlistedSeverityBesideAnOfflineMemberKeepsItsCode();
   });
 });
