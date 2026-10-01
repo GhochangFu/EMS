@@ -19,9 +19,10 @@ type WidgetFrameProps = {
  * `load-trend-chart.tsx`'s language. `children` render only on `"ready"`.
  *
  * Written once so the `widgetTitle(...)` fallback and the three non-ready
- * states are not repeated across four renderers — a `ValueTileWidget` is the
- * one exception: it composes `KpiTile`, which is already its own frame (see
- * that file's docblock for why it does not use this one).
+ * states are not repeated across four renderers. Two widgets do not use it: a
+ * `ValueTileWidget` composes `KpiTile`, which is already its own frame (see that
+ * file's docblock), and the `F3.77` compact `StateLegendWidget` is one row with
+ * its title inline, so that it fits a 64 px row.
  */
 export function WidgetFrame({ title, status, stale = false, children }: WidgetFrameProps) {
   return (
