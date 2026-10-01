@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useCallback, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link, useParams, useSearchParams } from "react-router-dom";
 
@@ -11,6 +11,7 @@ import { AppShell } from "../layouts/app-shell";
 import { PageHeader } from "../components/page-header";
 import { DashboardLiveCanvas } from "../components/dashboards/dashboard-live-canvas";
 import { DashboardTabStrip } from "../components/dashboards/dashboard-tab-strip";
+import { SiteTabHrefContext } from "../components/widgets/site-widget-parts";
 import type { AuthUser } from "../stores/auth-store";
 
 type DashboardViewerPageProps = {
@@ -88,7 +89,9 @@ const TAB_PARAM = "tab";
  *
  * `F3.73` critique fix — the selection is in the URL as `?tab=<key>`, beside `organizationId`, so a
  * reload, a shared link and Back keep it. A missing or unknown key opens the first tab by
- * `sortOrder`, and the first load writes nothing. Each selection pushes a history entry.
+ * `sortOrder`, and the first load writes nothing. A click pushes a history entry; an arrow-key move
+ * replaces it, so Back leaves a run of key presses in one step. The module cards and the
+ * critical-systems rows link to their tab here too (`SiteTabHrefContext`).
  *
  * The widget titles are `h3` (`WidgetFrame`), so the canvas carries the `h2` between them and the
  * page's `h1`: the selected tab's label, or "Widgets". It is visually hidden — the strip already
@@ -100,13 +103,24 @@ function ViewerCanvas({ dashboard }: { dashboard: DashboardDto }) {
   const selectedKey = searchParams.get(TAB_PARAM);
   const selected = tabs.find((tab) => tab.key === selectedKey) ?? tabs[0];
 
-  function selectTab(key: string): void {
-    setSearchParams((current) => {
-      const next = new URLSearchParams(current);
-      next.set(TAB_PARAM, key);
-      return next;
-    });
+  function selectTab(key: string, via: "pointer" | "keyboard"): void {
+    setSearchParams(
+      (current) => {
+        const next = new URLSearchParams(current);
+        next.set(TAB_PARAM, key);
+        return next;
+      },
+      { replace: via === "keyboard" },
+    );
   }
+  const tabHref = useCallback(
+    (key: string): string => {
+      const next = new URLSearchParams(searchParams);
+      next.set(TAB_PARAM, key);
+      return `?${next.toString()}`;
+    },
+    [searchParams],
+  );
 
   if (selected === undefined) {
     return (
@@ -119,7 +133,9 @@ function ViewerCanvas({ dashboard }: { dashboard: DashboardDto }) {
   return (
     <DashboardTabStrip tabs={tabs} selectedKey={selected.key} onSelect={selectTab}>
       <h2 className="sr-only">{selected.label.trim() || selected.key}</h2>
-      <DashboardLiveCanvas dashboard={dashboard} tabKey={selected.key} />
+      <SiteTabHrefContext.Provider value={tabHref}>
+        <DashboardLiveCanvas dashboard={dashboard} tabKey={selected.key} />
+      </SiteTabHrefContext.Provider>
     </DashboardTabStrip>
   );
 }

@@ -1,3 +1,5 @@
+import { createContext } from "react";
+
 import type { AlarmSeverityDto, DashboardWidgetSpec, SiteWidgetsResponse, SiteWidgetTab } from "@bms/shared";
 
 import type { WidgetStatus } from "../../lib/widget-catalog";
@@ -50,6 +52,15 @@ export function tabCountsText(status: NonNullable<SiteWidgetTab["status"]>): str
     countOf(status.assets, "asset", "assets"),
   ].join(" · ");
 }
+
+/** Builds the URL that opens one tab of the dashboard a site widget is drawn in. */
+export type SiteTabHref = (tabKey: string) => string;
+
+/**
+ * The dashboard viewer's {@link SiteTabHref} (`?tab=<key>`), for the site widgets it draws. The site
+ * page needs none: `SiteWidgetLive` builds its links from the route's `locationId`. Null elsewhere.
+ */
+export const SiteTabHrefContext = createContext<SiteTabHref | null>(null);
 
 /** The URL of one tab under the site page: `<site path>/<tab key>`. */
 export function siteTabHref(sitePath: string, tabKey: string): string {

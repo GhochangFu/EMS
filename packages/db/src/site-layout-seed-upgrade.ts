@@ -34,8 +34,9 @@ import { SMOC_STANDARD_SITE_TEMPLATE } from "@bms/shared/site-templates";
  * rule to a copy the earlier seed made, per tab, only while the tab is exactly as it was written.
  *
  * **Idempotent.** A second run finds the v2 rects, the new description, a stock-2 template and
- * packed tabs (no longer at the stock rects, so outside the pack gate), and writes nothing. Every write runs in the caller's `withOrganization` bracket and checks its
- * row count: a FORCE-RLS write can drop a row without raising.
+ * packed tabs (no longer at the stock rects, so outside the pack gate), and writes nothing. Every
+ * write runs in the caller's `withOrganization` bracket and checks its row count: a FORCE-RLS
+ * write can drop a row without raising. The pack step is ADR 0087 Amendment 2.
  */
 
 /** The copy's description since stock version 2. */

@@ -568,6 +568,37 @@ export async function siteTemplateInstantiatePicksALocation(): Promise<void> {
   });
   expect(calls[0]?.slice(0, 2)).toEqual([TEMPLATE_ID, "loc-2"]);
   expect(await screen.findByText(/site-layout-plant-2/)).toBeInTheDocument();
+  expect(screen.queryByText(/left out/), "a copy that left out no tile said it did").not.toBeInTheDocument();
+}
+
+/**
+ * ADR 0087 Amendment 2 — the answer names the role tiles a copy left out, and the summary counts
+ * them. The adjacent case answers `omittedTiles: []`, and its summary says nothing about tiles.
+ */
+export async function madeSummaryCountsTheTilesLeftOut(): Promise<void> {
+  stubSiteApi({
+    fetchAdminDashboardTemplate: () => Promise.resolve(publishedSiteTemplate()),
+    instantiateSiteTemplate: () =>
+      Promise.resolve({
+        locationId: "loc-2",
+        dashboardId: "d1",
+        dashboardSlug: "site-layout-plant-2",
+        omittedTabs: [],
+        droppedCards: [],
+        omittedTiles: [
+          { tabKey: "sld", widgetKey: "sld-pf-tile" },
+          { tabKey: "env", widgetKey: "env-humidity-tile" },
+        ],
+        resolution: [],
+      }),
+  });
+  renderPage();
+
+  await userEvent.click(await screen.findByRole("button", { name: "Instantiate" }));
+  await userEvent.selectOptions(await screen.findByRole("combobox", { name: "Location" }), "loc-2");
+  await userEvent.click(screen.getByRole("button", { name: "Confirm instantiate" }));
+
+  expect(await screen.findByText(/2 tiles left out \(no point at the site\)/)).toBeInTheDocument();
 }
 
 /**

@@ -5,6 +5,7 @@ import { Link, Navigate } from "react-router-dom";
 import { fetchDashboard } from "../../api/dashboards";
 import { apiErrorMessage } from "../../lib/api-error-message";
 import { DashboardLiveCanvas } from "../dashboards/dashboard-live-canvas";
+import { TAB_FOCUS_CLASS } from "../dashboards/dashboard-tab-strip";
 import { SectionCard } from "../section-card";
 import { siteTabHref } from "../widgets/site-widget-parts";
 
@@ -99,7 +100,7 @@ export function SiteDashboardView({ slug, organizationId, locationId, tab }: Sit
                   key={entry.id}
                   to={siteTabHref(sitePath, entry.key)}
                   aria-current={entry.key === selected?.key ? "page" : undefined}
-                  className={`surface-tab px-3 py-1.5 ${entry.key === selected?.key ? "surface-tab-selected" : ""}`}
+                  className={`surface-tab px-3 py-1.5 ${TAB_FOCUS_CLASS} ${entry.key === selected?.key ? "surface-tab-selected" : ""}`}
                 >
                   {entry.label}
                 </Link>

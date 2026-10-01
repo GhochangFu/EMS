@@ -14,6 +14,8 @@ import {
   cleanupLive,
   oneReadPerTabWithTheCanvasDerivedTabKey,
   theCardLinksUnderTheRoutesSite,
+  inTheViewerTheCardLinksToTheTabParam,
+  withNoSiteAndNoViewerTheCardIsNotALink,
   theFrameShowsLoadingUntilTheFirstAnswer,
   theReadPollsEveryFifteenSeconds,
 } from "./site-widget-live.spec";
@@ -49,6 +51,12 @@ describe("F3.73 SiteWidgetLive", () => {
   });
   it("SL6 the card links under the route's own site", async () => {
     await theCardLinksUnderTheRoutesSite();
+  });
+  it("SL6b in the viewer the card links to its ?tab= (critique fix)", async () => {
+    await inTheViewerTheCardLinksToTheTabParam();
+  });
+  it("SL6c with no site and no viewer the card is not a link", async () => {
+    await withNoSiteAndNoViewerTheCardIsNotALink();
   });
   it("SL7 an alarm event refetches the read", async () => {
     await anAlarmEventRefetchesTheRead();

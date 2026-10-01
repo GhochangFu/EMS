@@ -21,6 +21,7 @@ import {
   applyToAllSitesShowsOnlyForAPublishedSiteTemplate,
   applyResultTableListsASkippedSitesReason,
   siteTemplateInstantiatePicksALocation,
+  madeSummaryCountsTheTilesLeftOut,
   siteTemplateCountsAndListsItsTabWidgets,
   groupTemplateCountAndEmptyMessageAreUnchanged,
   archiveAsksBeforeArchiving,
@@ -110,6 +111,10 @@ describe("F3.36 dashboard template detail page", () => {
 
   it("a site template's instantiate dialog picks a location (F3.73)", async () => {
     await siteTemplateInstantiatePicksALocation();
+  });
+
+  it("the made summary counts the role tiles a copy left out (ADR 0087 Amendment 2)", async () => {
+    await madeSummaryCountsTheTilesLeftOut();
   });
 
   it("a site template counts its tab widgets and lists its tabs (F3.73)", async () => {

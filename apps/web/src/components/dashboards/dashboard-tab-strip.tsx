@@ -5,7 +5,8 @@ import type { TabWritePayload } from "../../lib/dashboard-builder-form";
 type DashboardTabStripProps = {
   tabs: readonly TabWritePayload[];
   selectedKey: string | null;
-  onSelect: (key: string) => void;
+  /** `via` says how: the viewer keeps one history entry for a run of arrow-key moves. */
+  onSelect: (key: string, via: "pointer" | "keyboard") => void;
   /** The selected tab's content, drawn inside the `tabpanel` every tab controls. */
   children: ReactNode;
 };
@@ -54,7 +55,7 @@ export function DashboardTabStrip({ tabs, selectedKey, onSelect, children }: Das
       return;
     }
     event.preventDefault();
-    onSelect(tab.key);
+    onSelect(tab.key, "keyboard");
     buttons.current[target]?.focus();
   }
 
@@ -73,7 +74,7 @@ export function DashboardTabStrip({ tabs, selectedKey, onSelect, children }: Das
             aria-selected={index === selectedIndex}
             aria-controls={panelId}
             tabIndex={index === focusableIndex ? 0 : -1}
-            onClick={() => onSelect(tab.key)}
+            onClick={() => onSelect(tab.key, "pointer")}
             onKeyDown={(event) => onKeyDown(event, index)}
             className={`px-3 py-1.5 surface-tab ${TAB_FOCUS_CLASS} ${index === selectedIndex ? "surface-tab-selected" : ""}`}
           >

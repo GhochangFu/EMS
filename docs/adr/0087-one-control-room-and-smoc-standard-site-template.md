@@ -10,7 +10,8 @@ questions*. The owner approved this written record on 2026-09-30.
 Creates rows `F3.72`–`F3.75`. Amends [ADR 0076](./0076-control-room-for-each-organization.md)
 gate question 8 and decisions 1, 8 and 9, [ADR 0079](./0079-fixed-plant-mimic-widget.md)
 decision 4 and [ADR 0081](./0081-mimic-layout-builder.md) decision 10 (see
-*Amended records*). Promotes nothing out of `AGENTS.md` §6. `F3.72` ships in
+*Amended records*); Amendment 2 narrows [ADR 0049](./0049-section-dashboard-templates.md)
+decision 6 for a site-layout copy. Promotes nothing out of `AGENTS.md` §6. `F3.72` ships in
 the first stable version (gate question 9); `F3.73`–`F3.75` start after it.
 
 ## Context

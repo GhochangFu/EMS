@@ -11,6 +11,7 @@ import { ActiveAlarmsRailWidget } from "./active-alarms-rail-widget";
 import { AssetClassStripWidget } from "./asset-class-strip-widget";
 import { CriticalSystemsListWidget } from "./critical-systems-list-widget";
 import { ModuleSummaryCardWidget } from "./module-summary-card-widget";
+import { siteTabHref, type SiteTabHref } from "./site-widget-parts";
 import { StateLegendWidget } from "./state-legend-widget";
 
 /**
@@ -33,6 +34,7 @@ const SEVERITIES: AlarmSeverityDto[] = [
 ];
 
 const SITE_PATH = "/control-room/site/loc-1";
+const SITE_TAB_HREF: SiteTabHref = (tabKey) => siteTabHref(SITE_PATH, tabKey);
 
 function alarm(id: string, assetCode: string, message: string): AlarmListItem {
   return {
@@ -210,8 +212,8 @@ export function theStripSaysSoWhenNoRoleIsInScope(): void {
 
 // ---------------------------------------------------------------------------------- module card
 
-function card(data: SiteWidgetsResponse, targetTabKey: string, sitePath: string | null = SITE_PATH): void {
-  render(wrap(<ModuleSummaryCardWidget {...COMMON} data={data} config={{ targetTabKey }} sitePath={sitePath} />));
+function card(data: SiteWidgetsResponse, targetTabKey: string, tabHref: SiteTabHref | null = SITE_TAB_HREF): void {
+  render(wrap(<ModuleSummaryCardWidget {...COMMON} data={data} config={{ targetTabKey }} tabHref={tabHref} />));
 }
 
 export function theCardShowsItsTabsStatusAndCounts(): void {
@@ -301,7 +303,7 @@ function infoCard(offlineAssets: number): void {
         severities={INFO_SEVERITIES}
         data={response({ tabs: [infoTab(offlineAssets)] })}
         config={{ targetTabKey: "water" }}
-        sitePath={SITE_PATH}
+        tabHref={SITE_TAB_HREF}
       />,
     ),
   );
@@ -331,7 +333,7 @@ export function anUnlistedSeverityBesideAnOfflineMemberKeepsItsCode(): void {
         severities={[]}
         data={response({ tabs: [UPS_TAB] })}
         config={{ targetTabKey: "ups" }}
-        sitePath={SITE_PATH}
+        tabHref={SITE_TAB_HREF}
       />,
     ),
   );
@@ -375,7 +377,7 @@ export function aCardOnAnUnlistedTabSaysOutsideScope(): void {
 // ---------------------------------------------------------------------------------- list
 
 export function theListShowsOneRowPerGroupTab(): void {
-  render(wrap(<CriticalSystemsListWidget {...COMMON} data={response()} sitePath={SITE_PATH} />));
+  render(wrap(<CriticalSystemsListWidget {...COMMON} data={response()} tabHref={SITE_TAB_HREF} />));
   const rows = within(screen.getByRole("list", { name: "Critical systems" })).getAllByRole("listitem");
   expect(rows).toHaveLength(3);
   expect(within(rows[0]).getByText("3 alarms · 1 offline · 6 assets")).toBeInTheDocument();
@@ -385,7 +387,7 @@ export function theListShowsOneRowPerGroupTab(): void {
 
 /** A critical-systems row with offline members and no alarm reads "Offline"; the HVAC row beside it, "Normal". */
 export function aListRowWithOfflineMembersNeverReadsNormal(): void {
-  render(wrap(<CriticalSystemsListWidget {...COMMON} data={response({ tabs: [OFFLINE_TAB, HVAC_TAB] })} sitePath={SITE_PATH} />));
+  render(wrap(<CriticalSystemsListWidget {...COMMON} data={response({ tabs: [OFFLINE_TAB, HVAC_TAB] })} tabHref={SITE_TAB_HREF} />));
   const rows = within(screen.getByRole("list", { name: "Critical systems" })).getAllByRole("listitem");
   expect(within(rows[0]).getByText("Offline")).toBeInTheDocument();
   expect(within(rows[0]).queryByText("Normal")).toBeNull();
@@ -394,20 +396,20 @@ export function aListRowWithOfflineMembersNeverReadsNormal(): void {
 
 /** The positive control is the first two rows above; this one is the row with no status. */
 export function theListShowsOutsideScopeForATabWithNoStatus(): void {
-  render(wrap(<CriticalSystemsListWidget {...COMMON} data={response()} sitePath={SITE_PATH} />));
+  render(wrap(<CriticalSystemsListWidget {...COMMON} data={response()} tabHref={SITE_TAB_HREF} />));
   const rows = within(screen.getByRole("list", { name: "Critical systems" })).getAllByRole("listitem");
   expect(within(rows[2]).getByText("Outside scope")).toBeInTheDocument();
   expect(within(rows[0]).queryByText("Outside scope")).toBeNull();
 }
 
 export function theListLinksEachRowToItsTab(): void {
-  render(wrap(<CriticalSystemsListWidget {...COMMON} data={response()} sitePath={SITE_PATH} />));
+  render(wrap(<CriticalSystemsListWidget {...COMMON} data={response()} tabHref={SITE_TAB_HREF} />));
   expect(screen.getByRole("link", { name: "UPS Monitoring" }).getAttribute("href")).toBe(`${SITE_PATH}/ups`);
   expect(screen.getByRole("link", { name: "HVAC System" }).getAttribute("href")).toBe(`${SITE_PATH}/hvac`);
 }
 
 export function theListSaysSoWhenTheDashboardHasNoGroupTab(): void {
-  render(wrap(<CriticalSystemsListWidget {...COMMON} data={response({ tabs: [] })} sitePath={SITE_PATH} />));
+  render(wrap(<CriticalSystemsListWidget {...COMMON} data={response({ tabs: [] })} tabHref={SITE_TAB_HREF} />));
   expect(screen.getByText("No system tabs")).toBeInTheDocument();
 }
 
@@ -415,13 +417,13 @@ export function theListSaysSoWhenTheDashboardHasNoGroupTab(): void {
 
 /** Not ready: the frame's placeholder replaces every body — the same rule as the other types. */
 export function aLoadingSiteWidgetDrawsThePlaceholderNotItsBody(): void {
-  render(wrap(<CriticalSystemsListWidget {...COMMON} status="loading" data={undefined} sitePath={SITE_PATH} />));
+  render(wrap(<CriticalSystemsListWidget {...COMMON} status="loading" data={undefined} tabHref={SITE_TAB_HREF} />));
   expect(screen.getByText("Loading…")).toBeInTheDocument();
   expect(screen.queryByText("No system tabs")).toBeNull();
 }
 
 export function aFailedSiteWidgetDrawsTheErrorLine(): void {
-  render(wrap(<ModuleSummaryCardWidget {...COMMON} status="error" data={undefined} config={{ targetTabKey: "ups" }} sitePath={SITE_PATH} />));
+  render(wrap(<ModuleSummaryCardWidget {...COMMON} status="error" data={undefined} config={{ targetTabKey: "ups" }} tabHref={SITE_TAB_HREF} />));
   expect(screen.getByText("Could not load widget.")).toBeInTheDocument();
   expect(screen.queryByText("Outside scope")).toBeNull();
 }

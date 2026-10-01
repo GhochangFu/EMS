@@ -688,12 +688,16 @@ const SKIP_REASON_LABELS: Record<SiteLayoutSkipReason, string> = {
   slug_taken: "Another site already holds this dashboard slug",
 };
 
-/** What one site's copy did, in one cell: the kept tabs and any tab the site could not hold. */
+/**
+ * What one site's copy did, in one cell: the kept tabs, any tab the site could not hold, and any
+ * role tile left out because it binds no point at the site (ADR 0087 Amendment 2).
+ */
 function madeSummary(made: SiteLayoutResultDto): string {
   const kept = `${made.resolution.length} tab${made.resolution.length === 1 ? "" : "s"}`;
-  return made.omittedTabs.length > 0
-    ? `Made — ${kept}, ${made.omittedTabs.length} omitted (no matching group)`
-    : `Made — ${kept}`;
+  const tabs = made.omittedTabs.length > 0 ? `, ${made.omittedTabs.length} omitted (no matching group)` : "";
+  const tiles = made.omittedTiles.length;
+  const left = tiles > 0 ? `, ${tiles} tile${tiles === 1 ? "" : "s"} left out (no point at the site)` : "";
+  return `Made — ${kept}${tabs}${left}`;
 }
 
 /**

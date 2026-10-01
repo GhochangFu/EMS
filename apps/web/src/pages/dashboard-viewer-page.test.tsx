@@ -9,6 +9,8 @@ import {
   anUnknownTabKeyOpensTheFirstTab,
   anUntabbedViewerHasAnH2,
   backReturnsToThePreviousTab,
+  anArrowKeyMoveReplacesTheHistoryEntry,
+  aModuleCardInTheViewerOpensItsTab,
   selectingATabWritesItKeepingOrganizationId,
   aLocationAdminStillSeesTheEditLink,
   aTabbedDashboardRendersOnlyTheSelectedTabsWidgets,
@@ -76,6 +78,14 @@ describe("F3.1d dashboard viewer page", () => {
 
   it("F3.73 critique: Back returns to the previous tab", async () => {
     await backReturnsToThePreviousTab();
+  });
+
+  it("F3.73 critique: an arrow-key move replaces the history entry", async () => {
+    await anArrowKeyMoveReplacesTheHistoryEntry();
+  });
+
+  it("F3.73 critique: a module card in the viewer opens its tab", async () => {
+    await aModuleCardInTheViewerOpensItsTab();
   });
 
   it("F3.73 critique: a tabbed viewer has an h2 for the selected tab", async () => {

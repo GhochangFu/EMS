@@ -4,9 +4,11 @@ import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Route, Routes, useLocation, useNavigate } from "react-router-dom";
 import { expect, vi } from "vitest";
 
-import type { DashboardDto, UserRole } from "@bms/shared";
+import type { DashboardDto, SiteWidgetsResponse, UserRole } from "@bms/shared";
 
 import * as dashboardsApi from "../api/dashboards";
+import * as siteWidgetsApi from "../api/dashboard-site-widgets";
+import * as vocabulariesApi from "../api/vocabularies";
 import * as systemStatusApi from "../api/system-status";
 import { OPERATIONAL } from "../components/system-status-indicator.spec";
 import type { AuthUser } from "../stores/auth-store";
@@ -296,6 +298,63 @@ export async function backReturnsToThePreviousTab(): Promise<void> {
 
   expect(await screen.findByText("Power tile")).toBeInTheDocument();
   expect(screen.getByRole("tab", { name: "Power" })).toHaveAttribute("aria-selected", "true");
+}
+
+/**
+ * Critique fix — a module card in the viewer opens its tab: its link is the viewer's own `?tab=`
+ * (keeping `organizationId`), and following it selects that tab. Mutation: drop the viewer's
+ * `SiteTabHrefContext` provider => the card draws no link => red.
+ */
+export async function aModuleCardInTheViewerOpensItsTab(): Promise<void> {
+  stubLiveCanvas();
+  const card = {
+    ...widgetOn("widget-card", "HVAC card", TAB_POWER_ID),
+    widgetType: "module_summary_card",
+    config: { targetTabKey: "hvac" },
+    points: [],
+  } as unknown as DashboardDto["widgets"][number];
+  vi.spyOn(dashboardsApi, "fetchDashboard").mockResolvedValue({ ...DTO_WITH_TABS, widgets: [...DTO_WITH_TABS.widgets, card] });
+  const answer: SiteWidgetsResponse = {
+    dashboardId: "dash-1",
+    tabKey: "power",
+    resolvedAt: "2026-10-01T10:00:00.000Z",
+    scope: { assetCount: 0 },
+    alarms: { active: [], summary: [] },
+    roles: [],
+    tabs: [{ tabKey: "hvac", label: "HVAC", assetGroupId: null, status: null }],
+  } as unknown as SiteWidgetsResponse;
+  vi.spyOn(siteWidgetsApi, "fetchSiteWidgets").mockResolvedValue(answer);
+  vi.spyOn(vocabulariesApi, "fetchVocabularies").mockResolvedValue({ alarmSeverities: [] } as never);
+  renderPage(asUser("asset_group_admin"), `/dashboards/site-a-overview?organizationId=${ORG_ID}`);
+
+  const link = await screen.findByRole("link", { name: "Open HVAC" });
+  expect(link.getAttribute("href")).toBe(`/dashboards/site-a-overview?organizationId=${ORG_ID}&tab=hvac`);
+  await userEvent.click(link);
+  expect(await screen.findByText("HVAC tile")).toBeInTheDocument();
+  expect(screen.getByRole("tab", { name: "HVAC" })).toHaveAttribute("aria-selected", "true");
+}
+
+/**
+ * An arrow-key move replaces the history entry: open on HVAC, click Power (one entry), press
+ * ArrowRight back to HVAC (replaced), and Back returns to the first HVAC, not to Power. Mutation:
+ * push on a key move => Back lands on Power => red.
+ */
+export async function anArrowKeyMoveReplacesTheHistoryEntry(): Promise<void> {
+  stubLiveCanvas();
+  vi.spyOn(dashboardsApi, "fetchDashboard").mockResolvedValue(DTO_WITH_TABS);
+  renderPage(asUser("asset_group_admin"), "/dashboards/site-a-overview?tab=hvac");
+
+  await screen.findByText("HVAC tile");
+  await userEvent.click(screen.getByRole("tab", { name: "Power" }));
+  await screen.findByText("Power tile");
+  await userEvent.keyboard("{ArrowRight}");
+  await screen.findByText("HVAC tile");
+  expect(searchParams().get("tab")).toBe("hvac");
+  await userEvent.click(screen.getByRole("button", { name: "Probe back" }));
+
+  expect(await screen.findByText("HVAC tile")).toBeInTheDocument();
+  expect(screen.getByRole("tab", { name: "HVAC" })).toHaveAttribute("aria-selected", "true");
+  expect(screen.queryByText("Power tile")).toBeNull();
 }
 
 /** The widget titles are `h3`; the tab panel carries the `h2` between them and the page's `h1`,
