@@ -12,6 +12,7 @@ import { PageHeader } from "../components/page-header";
 import { DashboardLiveCanvas } from "../components/dashboards/dashboard-live-canvas";
 import { DashboardTabStrip } from "../components/dashboards/dashboard-tab-strip";
 import { SiteTabHrefContext } from "../components/widgets/site-widget-parts";
+import { useTabMarkers } from "../hooks/use-tab-markers";
 import type { AuthUser } from "../stores/auth-store";
 
 type DashboardViewerPageProps = {
@@ -97,12 +98,17 @@ const TAB_PARAM = "tab";
  * The widget titles are `h3` (`WidgetFrame`), so the canvas carries the `h2` between them and the
  * page's `h1`: the selected tab's label, or "Widgets". It is visually hidden — the strip already
  * shows the label.
+ *
+ * `F3.77` (plan D4) — the strip carries each group tab's status marker (`useTabMarkers`).
  */
 function ViewerCanvas({ dashboard }: { dashboard: DashboardDto }) {
   const tabs = useMemo(() => [...dashboard.tabs].sort((a, b) => a.sortOrder - b.sortOrder), [dashboard.tabs]);
   const [searchParams, setSearchParams] = useSearchParams();
   const selectedKey = searchParams.get(TAB_PARAM);
   const selected = tabs.find((tab) => tab.key === selectedKey) ?? tabs[0];
+  // `F3.77` (plan D4) — keyed on the first stored tab, never the selected one, so a tab switch
+  // makes no second read; null (no tab) reads nothing.
+  const markers = useTabMarkers(dashboard.id, tabs[0]?.key ?? null);
 
   const lastVia = useRef<"pointer" | "keyboard">("pointer");
   function selectTab(key: string, via: "pointer" | "keyboard"): void {
@@ -135,7 +141,7 @@ function ViewerCanvas({ dashboard }: { dashboard: DashboardDto }) {
     );
   }
   return (
-    <DashboardTabStrip tabs={tabs} selectedKey={selected.key} onSelect={selectTab}>
+    <DashboardTabStrip tabs={tabs} selectedKey={selected.key} onSelect={selectTab} markers={markers}>
       <h2 className="sr-only">{selected.label.trim() || selected.key}</h2>
       <SiteTabHrefContext.Provider value={tabHref}>
         <DashboardLiveCanvas dashboard={dashboard} tabKey={selected.key} />

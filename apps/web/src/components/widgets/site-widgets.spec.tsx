@@ -11,7 +11,7 @@ import { ActiveAlarmsRailWidget } from "./active-alarms-rail-widget";
 import { AssetClassStripWidget } from "./asset-class-strip-widget";
 import { CriticalSystemsListWidget } from "./critical-systems-list-widget";
 import { ModuleSummaryCardWidget } from "./module-summary-card-widget";
-import { siteTabHref, type SiteTabHref } from "./site-widget-parts";
+import { siteTabHref, tabAccessibleName, tabStatusLabel, type SiteTabHref } from "./site-widget-parts";
 import { StateLegendWidget } from "./state-legend-widget";
 
 /**
@@ -346,6 +346,35 @@ export function aWarningAlarmBesideAnOfflineMemberReadsWarning(): void {
   card(response({ tabs: [ONE_TAB] }), "one");
   expect(screen.getByText("Warning")).toBeInTheDocument();
   expect(screen.queryByText("Offline")).toBeNull();
+}
+
+/**
+ * `F3.77` (plan D4) — the pill's label rule is `tabStatusLabel`, which the tab markers read too, so
+ * the pill and the marker never name one tab two ways. Each case is one claim on the function.
+ */
+const WARNING_STATUS = { worstSeverity: "warning", tone: "warning", activeAlarms: 2, offlineAssets: 0, assets: 4 } as const;
+
+export function theLabelReadsOfflineWhenAnOfflineMemberSetsTheTone(): void {
+  expect(tabStatusLabel({ ...WARNING_STATUS, worstSeverity: null, activeAlarms: 0, offlineAssets: 3 }, SEVERITIES)).toBe("Offline");
+}
+
+export function theLabelReadsTheWorstSeveritysVocabularyLabel(): void {
+  expect(tabStatusLabel(WARNING_STATUS, SEVERITIES)).toBe("Warning");
+}
+
+export function theLabelReadsNormalWithNoAlarmAndNoOfflineMember(): void {
+  expect(tabStatusLabel({ ...WARNING_STATUS, worstSeverity: null, tone: "ok", activeAlarms: 0 }, SEVERITIES)).toBe("Normal");
+}
+
+/** A marked tab's accessible name: the label, the status and the count, in one string. */
+export function theAccessibleNameNamesTheStatusAndTheCount(): void {
+  expect(tabAccessibleName("HVAC", WARNING_STATUS, SEVERITIES)).toBe("HVAC, Warning, 2 alarms");
+}
+
+/** A tab the caller cannot read is named "Outside scope", never a zero. Mutation: name a null
+ * status "0 alarms" => red. */
+export function theAccessibleNameOfAnUnreadableTabSaysOutsideScope(): void {
+  expect(tabAccessibleName("HVAC", null, SEVERITIES)).toBe("HVAC, Outside scope");
 }
 
 /** "1 alarm" and "1 asset", singular for exactly one (critique: "1 alarms", "1 assets"). */

@@ -3,9 +3,17 @@ import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testi
 import { MemoryRouter, Route, Routes, useLocation } from "react-router-dom";
 import { expect, vi, type Mock } from "vitest";
 
-import type { DashboardDto, DashboardTabDto, ResolvedSiteControlRoomViewDto } from "@bms/shared";
+import type {
+  AlarmSeverityDto,
+  DashboardDto,
+  DashboardTabDto,
+  ResolvedSiteControlRoomViewDto,
+  SiteWidgetsResponse,
+} from "@bms/shared";
 
+import * as siteWidgetsApi from "../../api/dashboard-site-widgets";
 import * as dashboardsApi from "../../api/dashboards";
+import * as vocabulariesApi from "../../api/vocabularies";
 import { ApiError } from "../../lib/api-error";
 import { SiteDashboardView } from "./site-dashboard-view";
 
@@ -63,6 +71,8 @@ const RESOLVED: ResolvedSiteControlRoomViewDto = {
   notice: null,
 };
 
+const SEVERITIES: AlarmSeverityDto[] = [{ code: "warning", label: "Warning", tone: "warning", rank: 20, active: true }];
+
 function notFound(): ApiError {
   return new ApiError('{"message":"Dashboard not found","statusCode":404}', 404);
 }
@@ -71,9 +81,26 @@ let fetchSpy: Mock | null = null;
 
 type Answer = DashboardDto | "reject" | "pending";
 
+/**
+ * `F3.77` — the tab markers' two reads (`useTabMarkers`). A tabbed dashboard starts them, so every
+ * case stubs both: the site-widgets read stays pending unless a case answers it, which keeps the
+ * strip as it was (no marker), and the vocabulary names `warning`.
+ */
+function stubMarkerReads(answer?: SiteWidgetsResponse): Mock {
+  vi.spyOn(vocabulariesApi, "fetchVocabularies").mockResolvedValue({ alarmSeverities: SEVERITIES } as never);
+  const read = vi.spyOn(siteWidgetsApi, "fetchSiteWidgets");
+  if (answer === undefined) {
+    read.mockImplementation(() => new Promise(() => undefined));
+  } else {
+    read.mockResolvedValue(answer);
+  }
+  return read as unknown as Mock;
+}
+
 function stubRead(...answers: Answer[]): Mock {
   fetchSpy = vi.fn(() => Promise.reject(new Error("a spec reached the network")));
   vi.stubGlobal("fetch", fetchSpy);
+  stubMarkerReads();
   const read = vi.spyOn(dashboardsApi, "fetchDashboard");
   for (const answer of answers) {
     if (answer === "reject") {
@@ -410,6 +437,89 @@ export async function aPendingReadDoesNotRedirect(): Promise<void> {
   await waitFor(() => expect(read).toHaveBeenCalled());
   expect(screen.getByRole("status").textContent).toMatch(/Loading dashboard/);
   expect(pathname()).toBe(`${SITE_PATH}/x`);
+}
+
+/**
+ * `F3.77` (plan D4) — a site layout with two group tabs: HVAC readable with two warnings,
+ * Environment outside the caller's scope. The Overview is no group tab, so `tabs[]` omits it.
+ */
+const MARKED: DashboardDto = {
+  ...DTO,
+  tabs: [tab("env", "Environment", 2), tab("overview", "Overview", 0), tab("hvac", "HVAC", 1)],
+};
+
+const MARKERS_ANSWER: SiteWidgetsResponse = {
+  dashboardId: DTO.id,
+  tabKey: "overview",
+  resolvedAt: "2026-10-01T10:00:00.000Z",
+  scope: { assetCount: 4 },
+  alarms: { active: [], summary: [] },
+  roles: [],
+  tabs: [
+    {
+      tabKey: "hvac",
+      label: "HVAC",
+      assetGroupId: null,
+      status: { worstSeverity: "warning", tone: "warning", activeAlarms: 2, offlineAssets: 0, assets: 4 },
+    },
+    { tabKey: "env", label: "Environment", assetGroupId: null, status: null },
+  ],
+};
+
+/** Renders `MARKED` with the markers answered, and returns the strip once a marker has drawn. */
+async function renderMarked(segment?: string): Promise<{ strip: HTMLElement; markersRead: Mock }> {
+  stubRead(MARKED, MARKED);
+  const markersRead = stubMarkerReads(MARKERS_ANSWER);
+  renderAtTab(segment);
+  const strip = await screen.findByRole("navigation", { name: "Dashboard tabs" });
+  await within(strip).findByText("2 alarms");
+  return { strip, markersRead };
+}
+
+/** M1 — the HVAC link is named by its status and shows the count. */
+export async function aGroupTabLinkIsNamedByItsStatus(): Promise<void> {
+  const { strip } = await renderMarked();
+  const hvac = within(strip).getByRole("link", { name: "HVAC, Warning, 2 alarms" });
+  expect(hvac).toHaveTextContent("2 alarms");
+}
+
+/** M2 — the Overview link has no marker: its name is its label (HVAC's marker beside it is the
+ * positive control). */
+export async function theOverviewLinkHasNoMarker(): Promise<void> {
+  const { strip } = await renderMarked();
+  const overview = within(strip).getByRole("link", { name: "Overview" });
+  expect(overview).not.toHaveAttribute("aria-label");
+  expect(overview.textContent).toBe("Overview");
+}
+
+/** M3 — a tab outside the caller's scope reads "Outside scope", never a zero. */
+export async function aTabOutsideScopeSaysSoNeverAZero(): Promise<void> {
+  const { strip } = await renderMarked();
+  const env = within(strip).getByRole("link", { name: "Environment, Outside scope" });
+  expect(env).toHaveTextContent("Outside scope");
+  expect(env.textContent).not.toMatch(/\d/);
+}
+
+/**
+ * M4 — the markers read with the first stored tab's key (the Overview's own entry), so a tab switch
+ * makes no second read. The settle lets a re-keyed read start before the calls are read.
+ * Mutation: key `useTabMarkers` on the selected tab => a call with "hvac" => red.
+ */
+export async function aTabSwitchMakesNoSecondMarkersRead(): Promise<void> {
+  const { strip, markersRead } = await renderMarked();
+  fireEvent.click(within(strip).getByRole("link", { name: "HVAC, Warning, 2 alarms" }));
+  await waitFor(() => expect(screen.getByTestId("dashboard-live-canvas").getAttribute("data-tab-key")).toBe("hvac"));
+  await act(() => new Promise((resolve) => setTimeout(resolve, 20)));
+  expect(markersRead.mock.calls.map((call) => call[1])).toEqual(["overview"]);
+}
+
+/** M5 — before the markers read answers, no tab draws a marker: never a zero while loading. */
+export async function aPendingMarkersReadDrawsNoMarker(): Promise<void> {
+  stubRead(MARKED);
+  renderAtTab();
+  const strip = await screen.findByRole("navigation", { name: "Dashboard tabs" });
+  expect(within(strip).getByRole("link", { name: "HVAC" }).textContent).toBe("HVAC");
+  expect(strip.textContent).not.toMatch(/alarm|Outside scope/);
 }
 
 /** Unmounts, restores the spies and fails the case if any read reached the network. */

@@ -47,7 +47,7 @@ function countOf(n: number, singular: string, plural: string): string {
  */
 export function tabCountsText(status: NonNullable<SiteWidgetTab["status"]>): string {
   return [
-    countOf(status.activeAlarms, "alarm", "alarms"),
+    tabAlarmsText(status.activeAlarms),
     `${status.offlineAssets} offline`,
     countOf(status.assets, "asset", "assets"),
   ].join(" · ");
@@ -71,12 +71,51 @@ export function siteTabHref(sitePath: string, tabKey: string): string {
 const TONES_ABOVE_OFFLINE: ReadonlySet<string> = new Set(["critical", "warning"]);
 
 /**
- * The tab's status pill. The label names what set the tone, the read's own (`tabOf`): the server
- * raises a tab with an offline member and no `critical` or `warning` alarm to `warning`
- * (`tabTone`), so that tab reads "Offline" — whether it has no alarm (critique: "NORMAL · 3
- * offline") or only a less urgent one, such as `info` (never an amber "Info"). Otherwise the worst
- * active severity's vocabulary label, else "Normal".
+ * A readable tab's status label — the one rule the pill and the tab marker (`F3.77`) share. The
+ * label names what set the tone, the read's own (`tabOf`): the server raises a tab with an offline
+ * member and no `critical` or `warning` alarm to `warning` (`tabTone`), so that tab reads "Offline"
+ * — whether it has no alarm (critique: "NORMAL · 3 offline") or only a less urgent one, such as
+ * `info` (never an amber "Info"). Otherwise the worst active severity's vocabulary label, else
+ * "Normal".
  */
+export function tabStatusLabel(
+  status: NonNullable<SiteWidgetTab["status"]>,
+  severities: readonly AlarmSeverityDto[],
+): string {
+  const worst =
+    status.worstSeverity === null ? undefined : severities.find((severity) => severity.code === status.worstSeverity);
+  // A code the vocabulary does not list (not loaded yet) keeps its alarm label: it may be critical.
+  const alarmSetsTheTone = status.worstSeverity !== null && (worst === undefined || TONES_ABOVE_OFFLINE.has(worst.tone));
+  return status.offlineAssets > 0 && !alarmSetsTheTone
+    ? "Offline"
+    : status.worstSeverity !== null
+      ? (worst?.label ?? status.worstSeverity)
+      : "Normal";
+}
+
+/** A tab's active alarm count, as the tab marker prints it: "1 alarm", "2 alarms". */
+export function tabAlarmsText(activeAlarms: number): string {
+  return countOf(activeAlarms, "alarm", "alarms");
+}
+
+/** What a tab marker says for a tab the caller cannot read — never a zero that reads as healthy. */
+export const OUTSIDE_SCOPE_TEXT = "Outside scope";
+
+/**
+ * `F3.77` (plan D4) — a marked tab's accessible name: "HVAC, Warning, 2 alarms", or "HVAC, Outside
+ * scope" when the caller can read none of its members (`status` null).
+ */
+export function tabAccessibleName(
+  label: string,
+  status: SiteWidgetTab["status"],
+  severities: readonly AlarmSeverityDto[],
+): string {
+  return status === null
+    ? `${label}, ${OUTSIDE_SCOPE_TEXT}`
+    : `${label}, ${tabStatusLabel(status, severities)}, ${tabAlarmsText(status.activeAlarms)}`;
+}
+
+/** The tab's status pill, labelled by {@link tabStatusLabel}. */
 export function TabStatusPill({
   status,
   severities,
@@ -84,15 +123,5 @@ export function TabStatusPill({
   status: NonNullable<SiteWidgetTab["status"]>;
   severities: readonly AlarmSeverityDto[];
 }) {
-  const worst =
-    status.worstSeverity === null ? undefined : severities.find((severity) => severity.code === status.worstSeverity);
-  // A code the vocabulary does not list (not loaded yet) keeps its alarm label: it may be critical.
-  const alarmSetsTheTone = status.worstSeverity !== null && (worst === undefined || TONES_ABOVE_OFFLINE.has(worst.tone));
-  const label =
-    status.offlineAssets > 0 && !alarmSetsTheTone
-      ? "Offline"
-      : status.worstSeverity !== null
-        ? (worst?.label ?? status.worstSeverity)
-        : "Normal";
-  return <StatusPill label={label} tone={status.tone} />;
+  return <StatusPill label={tabStatusLabel(status, severities)} tone={status.tone} />;
 }

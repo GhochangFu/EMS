@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useParams, useSearchParams } from "react-router-dom";
 
 import { adminAssetGroupsQueryKey, fetchAdminAssetGroups } from "../../api/admin/asset-groups";
@@ -11,6 +11,7 @@ import {
   type UpdateDashboardPayload,
 } from "../../api/dashboards";
 import { useDashboardScopeOptions } from "../../hooks/use-dashboard-scope-options";
+import { firstStoredTabKey, useTabMarkers, type TabMarkers } from "../../hooks/use-tab-markers";
 import { isMasterDataAdmin } from "../../lib/admin-access";
 import { apiErrorMessage } from "../../lib/api-error-message";
 import {
@@ -53,7 +54,7 @@ import { DashboardTabsPanel, type TabGroups } from "../../components/dashboards/
 import { DuplicateDashboardDialog } from "../../components/dashboards/duplicate-dashboard-dialog";
 import { WidgetInspector } from "../../components/dashboards/widget-inspector";
 import type { AuthUser } from "../../stores/auth-store";
-import type { WidgetType } from "@bms/shared";
+import type { SiteWidgetTab, WidgetType } from "@bms/shared";
 
 type DashboardBuilderEditPageProps = {
   user: AuthUser;
@@ -182,6 +183,22 @@ export function DashboardBuilderEditPage({ user }: DashboardBuilderEditPageProps
             ? { status: "loading" }
             : { status: "unavailable" };
   const selectedTab = tabs.find((tab) => tab.key === selectedTabKey);
+
+  // `F3.77` (plan D4) — the tab markers read the STORED tabs (`dto.tabs`, the first by sortOrder),
+  // never the edited set, and an edited tab draws one only while it is still the stored tab of
+  // that key (same id, same key): an unsaved tab, or a re-keyed one, has none.
+  const storedMarkers = useTabMarkers(dto?.id ?? "", dto ? firstStoredTabKey(dto.tabs) : null);
+  const markers = useMemo((): TabMarkers => {
+    const storedKeyById = new Map((dto?.tabs ?? []).map((tab) => [tab.id, tab.key]));
+    const byTab = new Map<string, SiteWidgetTab>();
+    for (const tab of tabs) {
+      const marker = storedMarkers.byTab.get(tab.key);
+      if (marker !== undefined && tab.id !== undefined && storedKeyById.get(tab.id) === tab.key) {
+        byTab.set(tab.key, marker);
+      }
+    }
+    return { byTab, severities: storedMarkers.severities };
+  }, [dto, tabs, storedMarkers.byTab, storedMarkers.severities]);
 
   // F3.73 — the edited tabs: the per-tab cap, the tab rules and a mimic on a group-bound tab.
   // A move off the site while a SAVED tab binds a group is refused before Save: the PATCH would meet
@@ -487,7 +504,7 @@ export function DashboardBuilderEditPage({ user }: DashboardBuilderEditPageProps
             >
               {/* `F3.73` critique fix — the strip owns the tabpanel, so the canvas is its child. */}
               {tabs.length > 0 ? (
-                <DashboardTabStrip tabs={tabs} selectedKey={selectedTabKey} onSelect={selectTab}>
+                <DashboardTabStrip tabs={tabs} selectedKey={selectedTabKey} onSelect={selectTab} markers={markers}>
                   {canvas}
                 </DashboardTabStrip>
               ) : (

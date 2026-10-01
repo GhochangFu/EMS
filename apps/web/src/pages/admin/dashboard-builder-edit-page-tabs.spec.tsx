@@ -2,9 +2,10 @@ import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, vi } from "vitest";
 
-import type { DashboardDto } from "@bms/shared";
+import type { DashboardDto, SiteWidgetsResponse } from "@bms/shared";
 
 import * as assetGroupsApi from "../../api/admin/asset-groups";
+import * as siteWidgetsApi from "../../api/dashboard-site-widgets";
 import * as dashboardsApi from "../../api/dashboards";
 import { ApiError } from "../../lib/api-error";
 import { TAB_LOCATION_MOVE_PROBLEM } from "../../lib/dashboard-builder-form";
@@ -160,6 +161,50 @@ export async function aNewWidgetLandsOnTheSelectedTab(): Promise<void> {
   expect(screen.getAllByText("Plant mimic · 0 point(s)")).toHaveLength(1);
   await userEvent.click(within(await strip()).getByRole("tab", { name: "Overview" }));
   expect(screen.queryAllByText("Plant mimic · 0 point(s)")).toHaveLength(0);
+}
+
+/**
+ * `F3.77` (plan D4) — the builder's strip carries the markers of the STORED tabs only. The stored
+ * Electrical group tab is named by its status (the positive control); once it is removed and an
+ * unsaved tab takes its key, the new tab draws no marker — the read is about the stored tab, not
+ * the key. Mutation: match the markers by key alone (no stored-id check) => red.
+ */
+export async function onlyAStoredTabCarriesItsMarker(): Promise<void> {
+  stubLoads({ dto: TABBED_DTO, groups: [GROUP] });
+  const markersRead = vi.spyOn(siteWidgetsApi, "fetchSiteWidgets").mockResolvedValue({
+    dashboardId: TABBED_DTO.id,
+    tabKey: "overview",
+    resolvedAt: "2026-10-01T10:00:00.000Z",
+    scope: { assetCount: 4 },
+    alarms: { active: [], summary: [] },
+    roles: [],
+    tabs: [
+      {
+        tabKey: "electrical",
+        label: "Electrical",
+        assetGroupId: "22222222-2222-4222-8222-222222222222",
+        status: { worstSeverity: "warning", tone: "warning", activeAlarms: 2, offlineAssets: 0, assets: 4 },
+      },
+    ],
+  } as SiteWidgetsResponse);
+  renderPage(asUser("admin"));
+  await waitForPrefill("Location");
+
+  expect(await within(await strip()).findByRole("tab", { name: "Electrical, Warning, 2 alarms" })).toHaveTextContent(
+    "2 alarms",
+  );
+  expect(markersRead.mock.calls.map((call) => call[1])).toEqual(["overview"]);
+
+  await userEvent.click(screen.getByRole("button", { name: /^Remove tab 2/ }));
+  await userEvent.click(screen.getByRole("button", { name: "Add tab" }));
+  const key = screen.getByRole("textbox", { name: "Tab 2 key" });
+  await userEvent.clear(key);
+  await userEvent.type(key, "electrical");
+  await userEvent.tab();
+
+  const unsaved = within(await strip()).getByRole("tab", { name: "Tab 1" });
+  expect(unsaved.textContent).toBe("Tab 1");
+  expect((await strip()).textContent).not.toMatch(/alarm/);
 }
 
 /** `F3.73` critique fix (WCAG 2.5.3) — the remove button's accessible name is its visible text,

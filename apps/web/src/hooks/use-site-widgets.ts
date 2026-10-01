@@ -22,12 +22,17 @@ export const SITE_WIDGETS_REFETCH_MS = 15_000;
  *
  * The query's `signal` reaches `fetch`, so a read an invalidation cancels is aborted rather than
  * left to finish at the server with its answer discarded.
+ *
+ * `F3.77` — `enabled` (default `true`) lets the tab markers (`useTabMarkers`) read nothing when the
+ * dashboard has no stored tab. It is an option, not derived from a null `tabKey`: a widget on a
+ * legacy canvas reads with `tabKey` null on purpose.
  */
-export function useSiteWidgets(dashboardId: string, tabKey: string | null) {
+export function useSiteWidgets(dashboardId: string, tabKey: string | null, options: { enabled?: boolean } = {}) {
   return useQuery({
     queryKey: [...siteWidgetsQueryPrefix, dashboardId, tabKey],
     queryFn: ({ signal }) => fetchSiteWidgets(dashboardId, tabKey, signal),
     refetchInterval: SITE_WIDGETS_REFETCH_MS,
+    enabled: options.enabled ?? true,
   });
 }
 
