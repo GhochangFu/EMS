@@ -2,11 +2,11 @@
 
 ## Status
 
-Proposed — drafted on 2026-10-01, before any implementation code, as
+Accepted — drafted on 2026-10-01, before any implementation code, as
 [ADR 0087](./0087-one-control-room-and-smoc-standard-site-template.md)
 decision 8 requires. Twelve scope questions were put to the owner one at a
 time on 2026-10-01; all were ruled, and each ruling is recorded under *Gate
-questions*. The written record waits for the owner's approval.
+questions*. The owner approved this written record on 2026-10-01.
 
 Implements row `F3.74` (phase 2 of ADR 0087). Amends
 [ADR 0079](./0079-fixed-plant-mimic-widget.md) decision 4,
