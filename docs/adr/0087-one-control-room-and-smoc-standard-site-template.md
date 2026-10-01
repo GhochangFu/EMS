@@ -11,7 +11,7 @@ Creates rows `F3.72`–`F3.75`. Amends [ADR 0076](./0076-control-room-for-each-o
 gate question 8 and decisions 1, 8 and 9, [ADR 0079](./0079-fixed-plant-mimic-widget.md)
 decision 4 and [ADR 0081](./0081-mimic-layout-builder.md) decision 10 (see
 *Amended records*); Amendment 2 narrows [ADR 0049](./0049-section-dashboard-templates.md)
-decision 6 for a site-layout copy. Amendment 3 (proposed) creates row `F3.77`. Promotes nothing out of `AGENTS.md` §6. `F3.72` ships in
+decision 6 for a site-layout copy. Amendment 3 (accepted 2026-10-01) creates row `F3.77`. Promotes nothing out of `AGENTS.md` §6. `F3.72` ships in
 the first stable version (gate question 9); `F3.73`–`F3.75` start after it.
 
 ## Context
@@ -401,7 +401,7 @@ are otherwise unchanged.
 
 ## Amendment 3 (2026-10-01, `F3.77`) — the site Overview leads with alarms, and a wall mode
 
-**Status: proposed** — waits for the owner's approval of this written record.
+**Status: accepted** — the owner approved this written record on 2026-10-01.
 
 An Impeccable critique of the site layout (2026-10-01, 20/40) found that the
 Overview hides the alarms and shows each domain's status three times. After the
