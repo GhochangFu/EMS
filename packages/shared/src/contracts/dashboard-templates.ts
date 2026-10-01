@@ -14,6 +14,8 @@ import {
   WIDGET_SOURCE_SHAPES,
 } from "./dashboard-builder";
 import { dashboardDtoSchema } from "./dashboard-dto";
+import { dashboardTabKeySchema, MAX_DASHBOARD_TABS } from "./dashboard-tabs";
+import { mimicPresetSchema } from "./mimic-config";
 import { assetRoleCodeSchema, dashboardSectionCodeSchema } from "./operations";
 import { templateLifecycleStatusSchema } from "./template-lifecycle";
 
@@ -317,37 +319,143 @@ export const sectionTemplateWidgetSchema = z
       'widget instantiates as "No data bound." (ADR 0049 decision 6).',
   );
 
+// ---------------------------------------------------------------------------
+// F3.73 — the site target and content tabs (plan D4, rulings Q3a/Q3b)
+// ---------------------------------------------------------------------------
+
+/**
+ * What a template instantiates into — `F3.73` ruling Q3a. `asset_group` is every template
+ * before `F3.73`: one canvas against one group. `site` is a tabbed layout copied onto one
+ * location, one tab per domain present there. **Closed**: each value is a different write
+ * path, not a label. Migration `0095`'s `dashboard_templates_target_check` restates it, and
+ * `tests/f3.73-site-template-schema.test.ts` holds the two equal.
+ */
+export const dashboardTemplateTargetSchema = z.enum(["asset_group", "site"]);
+
+/**
+ * One tab of a site template — plan D4.
+ *
+ * `domain` is a live `bms.asset_domains` code, or `null` for the Overview (no group). It is a
+ * string and never a `z.enum` for `assetRoleCode`'s reason: the set is a table, and
+ * `VocabulariesService.assertAssetDomain` is the boundary that turns an unknown code into a
+ * 400 at publish. `groupCode` breaks the tie when the site holds two untaken groups of the
+ * tab's domain (OQ1, ruled 2026-09-30). `mimicPreset` names the preset the tab's mimic draws,
+ * which the copy action reads (ruling Q2).
+ *
+ * The widget cap is **per tab** (plan D2): the Overview plus five domain tabs is more than
+ * `MAX_DASHBOARD_WIDGETS` together, and each tab is its own canvas.
+ */
+export const siteTemplateTabSchema = z.object({
+  // `.describe()` AFTER the shared refinement (ADR 0029 decision 10), as `dashboards.schema.ts`
+  // does for the same schema: the document emits nothing for the reserved-key refusal.
+  key: dashboardTabKeySchema.describe(
+    "Lowercase letters, digits and hyphens, 1 to 64 characters. `assets` is reserved: it is " +
+      "the site page's own Assets & RTUs segment.",
+  ),
+  label: z.string().min(1).max(128),
+  sortOrder: z.number().int().min(0).default(0),
+  domain: z.string().min(1).max(64).nullable(),
+  groupCode: z.string().min(1).max(64).optional(),
+  mimicPreset: mimicPresetSchema.optional(),
+  widgets: z.array(sectionTemplateWidgetSchema).max(MAX_DASHBOARD_WIDGETS).default([]),
+});
+
 /**
  * A template's `content` — the whole authored canvas.
  *
  * The widget cap is `MAX_DASHBOARD_WIDGETS`, read rather than restated, so an
  * instantiated dashboard cannot exceed what the dashboard write path accepts.
+ * Since `F3.73` it bounds the top-level canvas and each tab separately.
  *
  * `key` uniqueness is enforced here because the resolution report addresses
  * widgets by `key`: two widgets sharing one would make *"this widget is short"*
  * ambiguous at exactly the moment an administrator needs it to be precise.
+ * **The key space is the whole template** — the top-level widgets and every
+ * tab's — because one report covers one copy. Tab keys are unique too: they
+ * become `dashboard_tabs.tab_key`, which is unique per dashboard, and the copy
+ * action's group choice is addressed by tab key.
+ *
+ * `tabs` defaults to `[]`, so content stored before `F3.73` parses unchanged.
+ * Which of `widgets` and `tabs` may hold anything is the template's `target`,
+ * which this object cannot see — `templateTargetContentMessage` below.
  */
 export const sectionTemplateContentSchema = z
   .object({
     widgets: z.array(sectionTemplateWidgetSchema).max(MAX_DASHBOARD_WIDGETS).default([]),
+    tabs: z.array(siteTemplateTabSchema).max(MAX_DASHBOARD_TABS).default([]),
   })
   .superRefine((content, ctx) => {
     const seen = new Set<string>();
-    content.widgets.forEach((widget, index) => {
-      if (seen.has(widget.key)) {
+    const check = (key: string, path: (string | number)[]): void => {
+      if (seen.has(key)) {
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
-          message: `duplicate widget key "${widget.key}" — keys address widgets in the resolution report and must be unique within a template`,
-          path: ["widgets", index, "key"],
+          message: `duplicate widget key "${key}" — keys address widgets in the resolution report and must be unique within a template`,
+          path,
         });
       }
-      seen.add(widget.key);
+      seen.add(key);
+    };
+    content.widgets.forEach((widget, index) => check(widget.key, ["widgets", index, "key"]));
+
+    const tabKeys = new Set<string>();
+    content.tabs.forEach((tab, tabIndex) => {
+      if (tabKeys.has(tab.key)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: `duplicate tab key "${tab.key}" — tab keys must be unique within a template`,
+          path: ["tabs", tabIndex, "key"],
+        });
+      }
+      tabKeys.add(tab.key);
+      tab.widgets.forEach((widget, index) =>
+        check(widget.key, ["tabs", tabIndex, "widgets", index, "key"]),
+      );
     });
   })
   // After the refinement — ADR 0029 Amendment 1 fact F.
   .describe(
-    "The authored canvas. One rule the document cannot express: widget keys must be unique within a template, because the instantiation resolution report addresses widgets by key.",
+    "The authored canvas. Two rules the document cannot express: widget keys must be unique within a template, top-level and tab widgets together, because the instantiation resolution report addresses widgets by key; and tab keys must be unique within a template.",
   );
+
+/**
+ * Every widget of a template: the top-level canvas, then each tab's in order.
+ *
+ * **Every count and every walk over a template's widgets reads this, never `content.widgets`.**
+ * A site template's top-level list is empty by rule, so a walk over `content.widgets` alone
+ * would publish a site template with no role or source check at all, and refuse every one as
+ * empty.
+ */
+export function templateWidgets(
+  content: z.infer<typeof sectionTemplateContentSchema>,
+): readonly z.infer<typeof sectionTemplateWidgetSchema>[] {
+  return [...content.widgets, ...content.tabs.flatMap((tab) => tab.widgets)];
+}
+
+/** `F3.73` plan D4 — a site template holds its widgets in tabs only. */
+export const SITE_TEMPLATE_TOP_LEVEL_MESSAGE =
+  "a site template holds its widgets in tabs; its top-level widgets must be empty";
+
+/** `F3.73` plan D4 — an asset-group template is one canvas and holds no tabs. */
+export const ASSET_GROUP_TEMPLATE_TABS_MESSAGE =
+  "an asset-group template is one canvas and holds no tabs";
+
+/**
+ * The target rule — plan D4. `null` when `content` fits `target`, else the sentence to answer.
+ *
+ * One function and not a refinement on the content object, because the object cannot see the
+ * target: the create body checks it where it carries both, and the service checks a `PATCH`,
+ * a publish and an instantiation against the stored row's target. A site template with no tab
+ * passes here: a draft may be incomplete, and publish refuses a template with no widget.
+ */
+export function templateTargetContentMessage(
+  target: z.infer<typeof dashboardTemplateTargetSchema>,
+  content: z.infer<typeof sectionTemplateContentSchema>,
+): string | null {
+  if (target === "site" && content.widgets.length > 0) return SITE_TEMPLATE_TOP_LEVEL_MESSAGE;
+  if (target === "asset_group" && content.tabs.length > 0) return ASSET_GROUP_TEMPLATE_TABS_MESSAGE;
+  return null;
+}
 
 // ---------------------------------------------------------------------------
 // The template rows
@@ -362,6 +470,8 @@ export const dashboardTemplateDtoSchema = z.object({
   version: z.number().int(),
   name: z.string().max(255),
   section: dashboardSectionCodeSchema,
+  /** `F3.73` ruling Q3a. Defaulted so a reader written before the column parses a row. */
+  target: dashboardTemplateTargetSchema.default("asset_group"),
   description: z.string().nullable(),
   status: templateLifecycleStatusSchema,
   content: sectionTemplateContentSchema,
@@ -386,6 +496,7 @@ export const dashboardTemplateSummaryDtoSchema = z.object({
   version: z.number().int(),
   name: z.string().max(255),
   section: dashboardSectionCodeSchema,
+  target: dashboardTemplateTargetSchema.default("asset_group"),
   description: z.string().nullable(),
   status: templateLifecycleStatusSchema,
   publishedAt: z.string().nullable(),
@@ -411,6 +522,7 @@ export const stockDashboardTemplateDtoSchema = z.object({
   code: z.string().min(1).max(64),
   name: z.string().min(1).max(255),
   section: dashboardSectionCodeSchema,
+  target: dashboardTemplateTargetSchema.default("asset_group"),
   description: z.string().nullable(),
   stockVersion: z.number().int().positive(),
   content: sectionTemplateContentSchema,

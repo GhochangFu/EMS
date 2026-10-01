@@ -144,6 +144,7 @@ const POINT_KEY_SOURCE_LABEL = POINT_KEY_SOURCE_RELS.join(" + ");
 const ROLE_MIGRATION_RELS = [
   "packages/db/drizzle/0051_asset_role_vocabulary.sql",
   "packages/db/drizzle/0060_asset_role_estate_shapes.sql",
+  "packages/db/drizzle/0095_site_template_target_and_group_domain.sql",
 ] as const;
 
 /** The seeded role codes, spelled as one list for an assertion message. */
@@ -271,8 +272,15 @@ describe("F3.38 the stock template catalog binds names that exist", () => {
   const vocabulary = new Set(
     [...vocabularyBySource.values()].flatMap((codes) => [...codes]),
   );
+  // Each file is cut to its `INSERT INTO bms.asset_roles` block: `0095` also inserts a
+  // `dashboard_sections` row shaped `('site', 'Site layouts', ...)`, which the row regex
+  // would count as a role code.
   const roles = roleVocabulary(
-    ROLE_MIGRATION_RELS.map((rel) => sqlOnly(read(rel))).join("\n"),
+    ROLE_MIGRATION_RELS.map((rel) => {
+      const sql = sqlOnly(read(rel));
+      const start = sql.indexOf("INSERT INTO bms.asset_roles");
+      return sql.slice(start, sql.indexOf("ON CONFLICT DO NOTHING;", start));
+    }).join("\n"),
   );
   // **Scanned per file, not over the joined blob.** `scanCatalog` tracks the
   // current `section:` line by line and carries it forward, so concatenating
@@ -377,7 +385,8 @@ describe("F3.38 the stock template catalog binds names that exist", () => {
     // `ROLE_MIGRATION_RELS` and move this number with it — never to loosen
     // this assertion, which is the anti-vacuity control for the whole role
     // scan. `F3.40` is the first time that instruction was followed.
-    expect(roles.size, `no role codes parsed out of ${ROLE_MIGRATIONS_LABEL}`).toBe(28);
+    // 30 since `F3.73` (0095's `leak-sensor` and `smoke-detector`) — 28 before it.
+    expect(roles.size, `no role codes parsed out of ${ROLE_MIGRATIONS_LABEL}`).toBe(30);
   });
 
   /**

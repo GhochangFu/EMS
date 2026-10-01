@@ -62,6 +62,43 @@ export async function assertLocationScopeNarrowsTheCount(
   ).toBe(true);
 }
 
+/**
+ * `F3.73` Task 2.4 — a tile on a tab that binds an asset group counts that GROUP's alarms; a tile
+ * on the Overview (no group) counts the dashboard's site. Both tiles bind the same key with the
+ * same params, so before the dedupe key carried the scope they were ONE resolve and one of them
+ * showed the other's number — silently, like every scope defect in this file.
+ */
+export async function assertGroupTabNarrowsItsTile(
+  service: MetricCatalogService,
+  organizationId: string,
+  tabbedDashboardId: string,
+  groupWidgetId: string,
+  overviewWidgetId: string,
+  callerScope: readonly string[],
+  expectedForGroup: number,
+  expectedForSite: number,
+): Promise<void> {
+  const resolved = await service.resolveForDashboard(organizationId, tabbedDashboardId, [
+    ...callerScope,
+  ]);
+  const valueOf = (widgetId: string) => {
+    const entry = resolved.values.find((value) => value.widgetId === widgetId)?.resolved;
+    return entry?.shape === "metric" ? entry.value : undefined;
+  };
+  expect(
+    valueOf(groupWidgetId),
+    "a tile on a group-bound tab must count its tab's GROUP, not the dashboard's site",
+  ).toBe(expectedForGroup);
+  expect(
+    valueOf(overviewWidgetId),
+    "a tile on the Overview tab must count the dashboard's site",
+  ).toBe(expectedForSite);
+  expect(
+    expectedForGroup < expectedForSite,
+    "the fixture is pointless unless the group's count differs from the site's",
+  ).toBe(true);
+}
+
 /** The caller's readable-asset scope INTERSECTS the dashboard's; it does not replace it. */
 export async function assertCallerScopeIntersects(
   service: MetricCatalogService,

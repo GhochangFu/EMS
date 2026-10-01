@@ -12,6 +12,10 @@ import {
   assertForeignOrganizationAlarmIsNeverTop,
   assertForeignLayoutWidgetIsSkippedWithOneWarning,
   assertForeignOrganizationIsNotFound,
+  assertForeignStampedTabResolvesAsNoGroup,
+  assertEachTabMimicResolvesItsOwnGroup,
+  assertOverviewTabMimicIsUnassignedForThatWidgetOnly,
+  assertTwoTabGroupsAreThreeStatements,
   assertFullReadIsThreeStatements,
   assertGrouplessDashboardIsEightNullsInOneStatement,
   assertLayoutReadIsFiveStatements,
@@ -128,6 +132,18 @@ describe.skipIf(!connectionString)("F3.32 — MimicNodesService", () => {
   it(
     "L5 another organization's layout is skipped with one warning",
     rolledBack(assertForeignLayoutWidgetIsSkippedWithOneWarning),
+    60_000,
+  );
+  it("T1 each tab's mimic resolves its own tab's group", rolledBack(assertEachTabMimicResolvesItsOwnGroup), 60_000);
+  it("T1b two tab groups still cost three statements", rolledBack(assertTwoTabGroupsAreThreeStatements), 60_000);
+  it(
+    "T2 an Overview-tab mimic answers every node unassigned, for that widget only",
+    rolledBack(assertOverviewTabMimicIsUnassignedForThatWidgetOnly),
+    60_000,
+  );
+  it(
+    "T3 a tab stamped with another organization resolves as no group",
+    rolledBack(assertForeignStampedTabResolvesAsNoGroup),
     60_000,
   );
 });

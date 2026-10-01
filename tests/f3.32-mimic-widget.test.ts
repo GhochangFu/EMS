@@ -245,21 +245,30 @@ describe("F3.32 v1 — the mimic-nodes read (U2)", () => {
   // `F3.32c` / ADR 0081 decision 6 — the layout statements run on `FLEET_POOL`, which bypasses
   // RLS, so the organization predicate on each layout table IS the isolation (ADR 0043
   // Amendment 3). Every alias the service gives a `bms.mimic_layout*` table must be filtered by
-  // `<alias>.organization_id = $n`.
-  it("the mimic-nodes service filters every bms.mimic_layout* table it reads by organization_id", () => {
+  // `<alias>.organization_id = $n`. `F3.73` (plan D3, task 2.3) adds the widget statement's join
+  // to `bms.dashboard_tabs`, which the same rule binds. The predicate is looked for in the rest
+  // of the SAME template literal (from the table to the literal's closing backtick): a
+  // whole-file search let one statement's `t.organization_id` answer for another statement's
+  // unfiltered `t`, and `t` is already the pipes statement's alias for its `to` node.
+  it("the mimic-nodes service filters every bms.mimic_layout* and bms.dashboard_tabs table it reads by organization_id", () => {
     const src = read(MIMIC_NODES_SERVICE_REL);
-    const reads = [...src.matchAll(/bms\.(mimic_layout\w*)\s+(?:AS\s+)?([a-z]\w*)/g)].map((match) => ({
-      table: match[1] as string,
-      alias: match[2] as string,
-    }));
+    const reads = [...src.matchAll(/bms\.(mimic_layout\w*|dashboard_tabs)\s+(?:AS\s+)?([a-z]\w*)/g)].map((match) => {
+      const end = src.indexOf("`", match.index);
+      return {
+        table: match[1] as string,
+        alias: match[2] as string,
+        statement: src.slice(match.index, end === -1 ? undefined : end),
+      };
+    });
     expect(
       [...new Set(reads.map((entry) => entry.table))].sort(),
-      "the resolver must read the layout, its nodes and its pipes (plan D9, statements 1b and 1c)",
-    ).toEqual(["mimic_layout_nodes", "mimic_layout_pipes", "mimic_layouts"]);
-    const unfiltered = reads.filter(
-      (entry) => !new RegExp(`\\b${entry.alias}\\.organization_id\\s*=\\s*\\$\\d`).test(src),
-    );
-    expect(unfiltered, "each alias must carry an organization_id = $n predicate").toEqual([]);
+      "the resolver must read the widget's tab (F3.73 plan D3), the layout, its nodes and its pipes " +
+        "(F3.32c plan D9, statements 1b and 1c)",
+    ).toEqual(["dashboard_tabs", "mimic_layout_nodes", "mimic_layout_pipes", "mimic_layouts"]);
+    const unfiltered = reads
+      .filter((entry) => !new RegExp(`\\b${entry.alias}\\.organization_id\\s*=\\s*\\$\\d`).test(entry.statement))
+      .map((entry) => `${entry.table} ${entry.alias}`);
+    expect(unfiltered, "each alias must carry an organization_id = $n predicate in its own statement").toEqual([]);
   });
 
   it("the controller declares :id/mimic-nodes before :slug", () => {

@@ -143,8 +143,12 @@ export function DashboardTemplateDetailPage({ user }: DashboardTemplateDetailPag
     onError: onActionError,
   });
   const saveM = useMutation({
+    // `F3.73` — the stored tabs go back unchanged. This canvas edits the top-level widgets
+    // only, and a site template's content without `tabs` is refused rather than cleared.
     mutationFn: () =>
-      updateAdminDashboardTemplate(templateId ?? "", { content: { widgets: rows } }),
+      updateAdminDashboardTemplate(templateId ?? "", {
+        content: { widgets: rows, tabs: templateQ.data?.content.tabs },
+      }),
     onSuccess: afterChange,
     onError: onActionError,
   });

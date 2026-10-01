@@ -96,6 +96,13 @@ export type SectionTemplateWidgetInput = {
  * `sectionTemplateContentSchema`. */
 export interface SectionTemplateContentInput {
   widgets: SectionTemplateWidgetInput[];
+  /**
+   * `F3.73` — a site template's tabs. Typed as the response shape, not restated: no screen
+   * edits a tab yet, so a caller only sends the stored tabs back unchanged. A `PATCH` of a
+   * site template's content that omits this key answers 400 — an omitted key would otherwise
+   * read as "clear every tab".
+   */
+  tabs?: DashboardTemplateDto["content"]["tabs"];
 }
 
 export interface CreateDashboardTemplateInput {

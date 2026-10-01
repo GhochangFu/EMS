@@ -3,9 +3,9 @@ import { and, asc, desc, eq, inArray, isNull, notInArray, sql } from "drizzle-or
 
 import {
   alarms,
-  assetGroupMembers,
   assets,
   dashboards,
+  dashboardTabs,
   dashboardWidgets,
   locations,
   workOrders,
@@ -26,6 +26,11 @@ import { AssetHealthService } from "../asset-health/asset-health.service";
 import { AccessControlService } from "../auth/access-control.service";
 import { FLEET_DRIZZLE, TENANT_DRIZZLE } from "../database/database.tokens";
 import { withTenant, type BmsTx } from "../database/tenant-context";
+import {
+  resolveAssetScope,
+  scopeKeyFor,
+  type DashboardAssetScope,
+} from "./dashboard-scope-assets";
 import { resolveWidgetSources } from "./dashboard-source-scope";
 import { METRIC_CATALOG_PARAMS_WRITE } from "./dashboards.schema";
 import {
@@ -120,9 +125,13 @@ type WaterBalanceParams = { readonly period: WaterBalancePeriod };
  * the entry's write schema (and the containment test still passing), never a query-string
  * parameter.
  *
- * **One resolve per distinct `(catalogKey, canonical params)`, not per key.** Two tiles
- * binding `sustainability.total` with different `pointKey`s are two different numbers; two
- * tiles binding `alarms.active.count` are still one query, because their params are both `{}`.
+ * **One resolve per distinct `(catalogKey, canonical params, scope key)`, not per key.** Two
+ * tiles binding `sustainability.total` with different `pointKey`s are two different numbers; two
+ * tiles binding `alarms.active.count` on one tab are still one query, because their params are
+ * both `{}`. Since `F3.73` (plan D3) the scope is PER WIDGET: a widget on a tab that binds an
+ * asset group resolves over that group, every other widget over the dashboard's scope — so the
+ * same key on two group tabs is two resolves (`planResolves`), and each distinct scope is
+ * resolved to asset ids once (`resolveAssetScope`, `dashboard-scope-assets.ts`).
  */
 @Injectable()
 export class MetricCatalogService {
@@ -193,9 +202,23 @@ export class MetricCatalogService {
         return { values: [], resolvedAt: new Date().toISOString() };
       }
 
+      // `F3.73` — each widget's tab, and the group that tab binds (NULL for the Overview and
+      // for a legacy widget with no tab). The join carries its own organization predicate,
+      // EXPLICIT rather than delegated to RLS, for the reason `resolveAssetScope`'s location
+      // arm states: the predicate is what makes the read correct on any pool (`bms_fleet`
+      // holds BYPASSRLS). A tab stamped with another organization therefore reads as "no
+      // group", and its widget falls back to the dashboard's scope — never wider.
       const widgetRows = await tx
-        .select({ id: dashboardWidgets.id })
+        .select({ id: dashboardWidgets.id, tabGroupId: dashboardTabs.assetGroupId })
         .from(dashboardWidgets)
+        .leftJoin(
+          dashboardTabs,
+          and(
+            eq(dashboardTabs.id, dashboardWidgets.tabId),
+            eq(dashboardTabs.dashboardId, dashboardWidgets.dashboardId),
+            eq(dashboardTabs.organizationId, organizationId),
+          ),
+        )
         .where(eq(dashboardWidgets.dashboardId, dashboardId));
       const sources = await resolveWidgetSources(
         tx,
@@ -206,45 +229,45 @@ export class MetricCatalogService {
         return { values: [], resolvedAt: new Date().toISOString() };
       }
 
-      const scope = await this.resolveAssetScope(tx, organizationId, dashboard, readableAssetIds);
+      // A group tab's widget resolves over the GROUP: `locationId` null, or the location arm
+      // fires first and the group is ignored (`DashboardAssetScope`'s docblock).
+      const tabGroupOf = new Map(widgetRows.map((widget) => [widget.id, widget.tabGroupId]));
+      const scopeOfWidget = (widgetId: string): DashboardAssetScope => {
+        const tabGroupId = tabGroupOf.get(widgetId) ?? null;
+        return tabGroupId === null
+          ? dashboard
+          : { assetId: null, locationId: null, assetGroupId: tabGroupId };
+      };
 
-      // One resolve per DISTINCT (catalogKey, canonical params), not per binding (`E4.2`).
-      // Two tiles binding `alarms.active.count` on one dashboard are one query; two tiles
-      // binding `sustainability.total` with different point keys are two.
-      const resolveKeyOf = new Map<string, string>();
-      const paramsByResolveKey = new Map<string, unknown>();
-      for (const source of sources) {
-        const key = source.catalogKey as MetricCatalogKey;
-        const schema = METRIC_CATALOG_PARAMS_WRITE[key];
-        if (schema === undefined) continue;
-        const parsed = schema.safeParse(source.params);
-        if (!parsed.success) {
-          // A stored row the write schema no longer accepts (a hand-edited row, or a schema
-          // tightened after the write). Skipped, not thrown: the other bindings still resolve.
-          // ONE string: `this.logger` is Nest's `Logger` routed through nestjs-pino, where a
-          // trailing string argument is read as the CONTEXT and an object becomes fields with
-          // no message. Field paths only, never the params values (§4.3 / §9.6).
-          this.logger.warn(
-            "catalog binding params failed the entry's write schema; binding skipped: " +
-              `dashboard ${dashboardId}, source ${source.id}, key ${key}, paths ` +
-              parsed.error.issues.map((issue) => issue.path.join(".")).join(","),
-          );
-          continue;
-        }
-        const resolveKey = `${key}\u0000${canonicalJson(parsed.data)}`;
-        resolveKeyOf.set(source.id, resolveKey);
-        paramsByResolveKey.set(resolveKey, parsed.data);
-      }
+      const plan = planResolves(sources, scopeOfWidget, (source, key, paths) => {
+        // A stored row the write schema no longer accepts (a hand-edited row, or a schema
+        // tightened after the write). Skipped, not thrown: the other bindings still resolve.
+        // ONE string: `this.logger` is Nest's `Logger` routed through nestjs-pino, where a
+        // trailing string argument is read as the CONTEXT and an object becomes fields with
+        // no message. Field paths only, never the params values (§4.3 / §9.6).
+        this.logger.warn(
+          "catalog binding params failed the entry's write schema; binding skipped: " +
+            `dashboard ${dashboardId}, source ${source.id}, key ${key}, paths ${paths}`,
+        );
+      });
+
+      // One scope resolution per distinct scope key, however many resolves share it.
+      const scopeByKey = new Map<string, readonly string[]>();
       const byKey = new Map<string, MetricCatalogValueDto>();
-      for (const [resolveKey, params] of paramsByResolveKey) {
-        const key = resolveKey.slice(0, resolveKey.indexOf("\u0000")) as MetricCatalogKey;
-        const resolver = RESOLVERS[key];
+      for (const [resolveKey, planned] of plan.resolves) {
+        const resolver = RESOLVERS[planned.key];
         if (resolver === undefined) continue;
+        let scope = scopeByKey.get(planned.scopeKey);
+        if (scope === undefined) {
+          scope = await resolveAssetScope(tx, organizationId, planned.scope, readableAssetIds);
+          scopeByKey.set(planned.scopeKey, scope);
+        }
         byKey.set(
           resolveKey,
-          await resolver(tx, organizationId, scope, { health: this.health }, params),
+          await resolver(tx, organizationId, scope, { health: this.health }, planned.params),
         );
       }
+      const resolveKeyOf = plan.resolveKeyOf;
 
       return {
         values: sources.flatMap((source) => {
@@ -268,96 +291,6 @@ export class MetricCatalogService {
       };
     });
   }
-
-  /**
-   * The dashboard's scope and the caller's, intersected into one asset-id list.
-   *
-   * **Never returns `null`, and an earlier version did — that was a cross-tenant defect, not a
-   * simplification** (security and correctness review, High). `readableAssetIds` is `null` only
-   * for `role === "admin"`, meaning "unrestricted across every organization"; returning it
-   * unchanged for a dashboard with no location and no asset group let `null` reach the
-   * resolvers. The SQL entries carry `eq(<table>.organizationId, organizationId)` and survived
-   * it. `assets.health.score`, delegates to `AssetHealthService`, which injects the
-   * `BYPASSRLS` fleet pool and whose `assetsInScope(null, undefined)` filters on
-   * `assets.active` alone — so a PHEWB dashboard answered a weighted mean over ESKOM's assets
-   * too. Nothing threw, nothing logged, and the tile rendered a number.
-   *
-   * `access-control.service.ts:308-312` names this exact trap: `readableAssetIds` returns `null`
-   * only for `admin` *today*, and Amendment 2 forbids keying anything on that coincidence. An
-   * unrestricted scope must be resolved to a list, not passed through as an absence.
-   *
-   * So the un-narrowed case now resolves the ORGANIZATION's own active assets. The empty list
-   * stays a real answer — a caller scoped to an asset group with no assets gets `[]`, which
-   * every entry answers as zero rather than as a query over everything.
-   *
-   * `bms.asset_groups.location_id` is NOT NULL, so an asset-group scope already implies a
-   * location and no two of the three scope columns can be set at once
-   * (`dashboards_scope_check`; `asset_id` is the F3.2 third axis). One branch each, no
-   * combination.
-   */
-  private async resolveAssetScope(
-    tx: BmsTx,
-    organizationId: string,
-    dashboard: { locationId: string | null; assetGroupId: string | null; assetId: string | null },
-    readableAssetIds: readonly string[] | null,
-  ): Promise<readonly string[]> {
-    let fromDashboard: string[] | null = null;
-
-    // `F3.2` / ADR 0067 decision 1 — the third scope axis. Found in the `E4.2` review: without
-    // this arm an asset-scoped dashboard fell to the ORGANIZATION branch, and its
-    // `sustainability.total` tile showed the organization's kWh under one asset's name (ADR
-    // 0072 ruling 3: "over the dashboard's scope, never wider"). The organization predicate
-    // is applied here too, so a mis-stamped foreign `asset_id` resolves to nothing.
-    if (dashboard.assetId !== null) {
-      const rows = await tx
-        .select({ id: assets.id })
-        .from(assets)
-        .where(and(eq(assets.id, dashboard.assetId), eq(assets.organizationId, organizationId)));
-      fromDashboard = rows.map((row) => row.id);
-    } else if (dashboard.locationId !== null) {
-      const rows = await tx
-        .select({ id: assets.id })
-        .from(assets)
-        .where(
-          and(
-            eq(assets.locationId, dashboard.locationId),
-            // EXPLICIT, never delegated to RLS. This runs on the tenant pool today, but
-            // `dashboard-source-scope.ts`'s docblock records why that is not a reason to omit
-            // it: the predicate is what makes the read correct on any pool.
-            eq(assets.organizationId, organizationId),
-          ),
-        );
-      fromDashboard = rows.map((row) => row.id);
-    } else if (dashboard.assetGroupId !== null) {
-      const rows = await tx
-        .select({ id: assets.id })
-        .from(assetGroupMembers)
-        .innerJoin(assets, eq(assetGroupMembers.assetId, assets.id))
-        .where(
-          and(
-            eq(assetGroupMembers.assetGroupId, dashboard.assetGroupId),
-            eq(assets.organizationId, organizationId),
-          ),
-        );
-      fromDashboard = rows.map((row) => row.id);
-    }
-
-    // The dashboard narrows nothing: fall back to the ORGANIZATION, resolved as ids. This is
-    // the branch that used to return `readableAssetIds` — and therefore `null` — straight
-    // through to the resolvers.
-    if (fromDashboard === null) {
-      const rows = await tx
-        .select({ id: assets.id })
-        .from(assets)
-        .where(and(eq(assets.organizationId, organizationId), eq(assets.active, true)));
-      fromDashboard = rows.map((row) => row.id);
-    }
-
-    if (readableAssetIds === null) return fromDashboard;
-
-    const readable = new Set(readableAssetIds);
-    return fromDashboard.filter((id) => readable.has(id));
-  }
 }
 
 /**
@@ -375,6 +308,66 @@ export class MetricCatalogService {
  * SHAPE — a zero count, an empty dataset — rather than preventing a crash. Keep them; do not
  * keep the reason.
  */
+/** One stored binding, as `resolveWidgetSources` returns it — the fields `planResolves` reads. */
+type PlannableSource = {
+  readonly id: string;
+  readonly widgetId: string;
+  readonly catalogKey: string;
+  readonly params: unknown;
+};
+
+/** One distinct resolve: an entry, its parsed params, and the scope it runs over. */
+export type PlannedResolve = {
+  readonly key: MetricCatalogKey;
+  readonly params: unknown;
+  readonly scope: DashboardAssetScope;
+  readonly scopeKey: string;
+};
+
+/**
+ * Groups a dashboard's bindings into DISTINCT resolves, keyed `(catalogKey, canonical params,
+ * scope key)` — pure, so the dedupe is claimed without a database
+ * (`metric-catalog.service.spec.ts`).
+ *
+ * `E4.2`: two tiles binding `sustainability.total` with different point keys are two resolves,
+ * and two tiles binding `alarms.active.count` are one because their params are both `{}`.
+ * `F3.73` (plan D3): the key gains the widget's scope, because the same key on two tabs bound
+ * to two groups is two different numbers — without it the second tile shows the first tab's
+ * count, and nothing throws.
+ *
+ * A binding whose params fail the entry's write schema is reported through `onInvalid` (field
+ * paths only) and left out; a key with no write schema is left out silently, as before.
+ */
+export function planResolves(
+  sources: readonly PlannableSource[],
+  scopeOfWidget: (widgetId: string) => DashboardAssetScope,
+  onInvalid: (source: PlannableSource, key: MetricCatalogKey, paths: string) => void,
+): {
+  readonly resolveKeyOf: ReadonlyMap<string, string>;
+  readonly resolves: ReadonlyMap<string, PlannedResolve>;
+} {
+  const resolveKeyOf = new Map<string, string>();
+  const resolves = new Map<string, PlannedResolve>();
+  for (const source of sources) {
+    const key = source.catalogKey as MetricCatalogKey;
+    const schema = METRIC_CATALOG_PARAMS_WRITE[key];
+    if (schema === undefined) continue;
+    const parsed = schema.safeParse(source.params);
+    if (!parsed.success) {
+      onInvalid(source, key, parsed.error.issues.map((issue) => issue.path.join(".")).join(","));
+      continue;
+    }
+    const scope = scopeOfWidget(source.widgetId);
+    const scopeKey = scopeKeyFor(scope);
+    const resolveKey = `${key}\u0000${canonicalJson(parsed.data)}\u0000${scopeKey}`;
+    resolveKeyOf.set(source.id, resolveKey);
+    if (!resolves.has(resolveKey)) {
+      resolves.set(resolveKey, { key, params: parsed.data, scope, scopeKey });
+    }
+  }
+  return { resolveKeyOf, resolves };
+}
+
 /**
  * A key-sorted JSON encoding, so `{ pointKey, aggregate }` and `{ aggregate, pointKey }` are
  * one resolve. The write schemas are flat objects of scalars, so one level of sorting is the

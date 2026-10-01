@@ -2,6 +2,15 @@ import { describe, it } from "vitest";
 
 import {
   acceptsAnInstantiateBodyWithANullAssetGroup,
+  aPatchBodyKeepsAnOmittedTabsUndefined,
+  rejectsAPatchBodyWithADuplicateKeyAcrossTabs,
+  acceptsASiteCreateBodyWithTabsAndDefaultsTheTarget,
+  acceptsASiteInstantiateBody,
+  rejectsALayoutMimicInsideATab,
+  rejectsAnAssetGroupCreateBodyWithTabs,
+  rejectsAnInstantiateBodyNamingBothArms,
+  rejectsASiteCreateBodyWithTopLevelWidgets,
+  theTargetBodyRuleRefusesEachMismatch,
   acceptsAPatchBodyWhoseMimicNamesThePreset,
   acceptsAPatchBodyWhoseWidgetCarriesNeitherKind,
   acceptsAPatchBodyWhoseWidgetCarriesOnlyARoleBinding,
@@ -62,5 +71,44 @@ describe("F3.32c — a template body refuses a layout-arm mimic", () => {
 
   it("accepts a PATCH body whose mimic names the preset (positive control)", () => {
     acceptsAPatchBodyWhoseMimicNamesThePreset();
+  });
+});
+
+/** `F3.73` plan D4 and D6 — the template target at the request boundary. */
+describe("F3.73 — the template target, content tabs and the instantiate site arm", () => {
+  it("refuses a site-target create body with top-level widgets", () => {
+    rejectsASiteCreateBodyWithTopLevelWidgets();
+  });
+
+  it("refuses an asset-group create body with tabs", () => {
+    rejectsAnAssetGroupCreateBodyWithTabs();
+  });
+
+  it("accepts a site create body with tabs only, and defaults the target", () => {
+    acceptsASiteCreateBodyWithTabsAndDefaultsTheTarget();
+  });
+
+  it("refuses a layout-arm mimic inside a tab", () => {
+    rejectsALayoutMimicInsideATab();
+  });
+
+  it("a PATCH body keeps an omitted content.tabs undefined", () => {
+    aPatchBodyKeepsAnOmittedTabsUndefined();
+  });
+
+  it("refuses a PATCH body whose two tabs share one widget key", () => {
+    rejectsAPatchBodyWithADuplicateKeyAcrossTabs();
+  });
+
+  it("accepts a site instantiate body", () => {
+    acceptsASiteInstantiateBody();
+  });
+
+  it("refuses an instantiate body naming both arms", () => {
+    rejectsAnInstantiateBodyNamingBothArms();
+  });
+
+  it("the body/target rule refuses a site body on a group template and the reverse", () => {
+    theTargetBodyRuleRefusesEachMismatch();
   });
 });

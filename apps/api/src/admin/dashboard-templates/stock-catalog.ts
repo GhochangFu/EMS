@@ -196,9 +196,11 @@ export const STOCK_DASHBOARD_TEMPLATE_CATALOG = [
     code: "water-overview",
     name: "Water Overview",
     section: "water",
+    target: "asset_group",
     description: "Raw intake, pump house, treatment, tanks and distribution.",
     stockVersion: 1,
     content: {
+      tabs: [],
       widgets: [
         {
           key: "alarms-tile",
@@ -304,9 +306,11 @@ export const STOCK_DASHBOARD_TEMPLATE_CATALOG = [
     code: "stp-overview",
     name: "STP Overview",
     section: "stp",
+    target: "asset_group",
     description: "Inlet screening, equalization, aeration, secondary clarifier and disinfection.",
     stockVersion: 1,
     content: {
+      tabs: [],
       widgets: [
         {
           key: "alarms-tile",
@@ -429,9 +433,11 @@ export const STOCK_DASHBOARD_TEMPLATE_CATALOG = [
     code: "etp-overview",
     name: "ETP Overview",
     section: "etp",
+    target: "asset_group",
     description: "Neutralization, biological treatment, settling and discharge.",
     stockVersion: 1,
     content: {
+      tabs: [],
       widgets: [
         {
           key: "alarms-tile",
@@ -534,9 +540,11 @@ export const STOCK_DASHBOARD_TEMPLATE_CATALOG = [
     code: "hvac-overview",
     name: "HVAC Overview",
     section: "hvac",
+    target: "asset_group",
     description: "Chillers, cooling towers, primary pumps, AHU/FCU and zones.",
     stockVersion: 1,
     content: {
+      tabs: [],
       widgets: [
         {
           key: "alarms-tile",
@@ -720,9 +728,11 @@ export const STOCK_DASHBOARD_TEMPLATE_CATALOG = [
     code: "sustainability-overview",
     name: "Sustainability Overview",
     section: "sustainability",
+    target: "asset_group",
     description: "Energy, water and emissions rollups across the plant.",
     stockVersion: 4,
     content: {
+      tabs: [],
       widgets: [
         // ---- Row A (y=0) — today ------------------------------------------
         {

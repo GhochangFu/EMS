@@ -17,6 +17,7 @@ import {
   publishAnnouncesPublishing,
   resolutionReportNamesAPartialWidget,
   roleFreeTemplateOffersTheOrganizationWideOption,
+  saveCanvasSendsTheStoredTabsBack,
 } from "./dashboard-template-detail-page.spec";
 
 /**
@@ -84,5 +85,9 @@ describe("F3.36 dashboard template detail page", () => {
 
   it("B3 Delete draft stays disabled while Publish pends", async () => {
     await deleteDraftIsDisabledWhilePublishPends();
+  });
+
+  it("Save canvas on a site draft sends the stored tabs back (F3.73)", async () => {
+    await saveCanvasSendsTheStoredTabsBack();
   });
 });

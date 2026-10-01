@@ -27,7 +27,10 @@ import * as generatedSiteView from "../control-room/generated-site-view.service"
 import { FLEET_DRIZZLE, FLEET_POOL } from "../database/database.tokens";
 import { telemetryFreshnessAt } from "../telemetry/telemetry-freshness";
 
-/** Statement (1)'s row: the dashboard's group, and one of its mimic widgets (or none). */
+/**
+ * Statement (1)'s row: one of the dashboard's mimic widgets (or none), with the group it
+ * resolves against — its tab's group, else the dashboard's (`F3.73` plan D3).
+ */
 interface WidgetRow {
   asset_group_id: string | null;
   widget_id: string | null;
@@ -83,13 +86,21 @@ interface LayoutPipeRow {
   to_key: string;
 }
 
-/** A parsed mimic widget of statement (1), either arm, in statement (1)'s grid order. */
-type ParsedWidget =
+/**
+ * A parsed mimic widget of statement (1), either arm, in statement (1)'s grid order, with the
+ * group its nodes resolve against (`null`: every node unassigned).
+ */
+type ParsedWidget = { groupId: string | null } & (
   | { source: "preset"; widgetId: string; preset: MimicPreset }
-  | { source: "layout"; widgetId: string; layoutId: string };
+  | { source: "layout"; widgetId: string; layoutId: string }
+);
 
-/** Statement (2)'s row: the first readable member carrying one role, by asset code, and its top alarm. */
+/**
+ * Statement (2)'s row: per group, the first readable member carrying one role, by asset code,
+ * and its top alarm.
+ */
 interface MemberRow {
+  asset_group_id: string;
   role: string;
   asset_id: string;
   asset_code: string;
@@ -122,7 +133,8 @@ interface PointRow {
 /**
  * `F3.32` / ADR 0079 — `GET /api/v1/dashboards/:id/mimic-nodes` (plan D1, U2): every `mimic`
  * widget on one dashboard, each preset node resolved AT READ TIME to the member of the
- * dashboard's asset group that carries the node's `bms.asset_roles` code.
+ * widget's asset group — its tab's group, else the dashboard's (`F3.73` plan D3) — that carries
+ * the node's `bms.asset_roles` code.
  *
  * **Access.** `forUser` is `MetricCatalogService.catalogValues`' seam, copied: the caller's
  * readable organizations decide whether the dashboard exists for them at all (a 404, never a
@@ -139,15 +151,21 @@ interface PointRow {
  * layout (`F3.32c` plan D9), all on `FLEET_POOL` (ADR 0043 Amendment 3: the `WHERE` is the
  * isolation control, so every statement names the organization explicitly):
  *
- * 1. The dashboard's `asset_group_id`, left-joined to its mimic widgets. A widget whose stored
- *    config no longer parses is skipped with one warning (field paths only), never thrown. No
- *    parsable mimic widget → `widgets: []`; no group → every node unassigned. Both end here.
+ * 1. The dashboard, left-joined to its mimic widgets, each left-joined to its tab (`F3.73`
+ *    plan D3): a widget resolves against its tab's group, else the dashboard's
+ *    (`COALESCE`), so two domain tabs on one site dashboard each resolve their own group. The
+ *    tab join carries its own `organization_id` predicate — nothing ties a tab's organization
+ *    to its dashboard's, so a tab stamped with another organization reads as "no group" rather
+ *    than lending its binding. A widget whose stored config no longer parses is skipped with
+ *    one warning (field paths only), never thrown. No parsable mimic widget → `widgets: []`; no
+ *    widget with a group (an Overview-tab mimic on a site dashboard, or a group-less dashboard)
+ *    → every node unassigned, for that widget only. Both end here when no widget has a group.
  *    1b. Only when a widget takes the layout arm (ADR 0081 decision 6): those layouts of THIS
  *    organization, each left-joined to its nodes. A layout id with no row here — deleted, or
  *    another organization's — skips its widget with one warning (ids only), never thrown.
  *    1c. Only when (1b) found a layout: their pipes, each end named by its node's key.
- * 2. Per role the presets and the layouts' roled units name, the first readable member by
- *    asset code, how many readable
+ * 2. Per distinct group the widgets resolve against, and per role the presets and the layouts'
+ *    roled units name, the first readable member by asset code, how many readable
  *    members carry the role, and the shown asset's open-alarm count (`cleared_at IS NULL`,
  *    ADR 0057 decision 1). `F3.32b` (ADR 0079 Amendment 2 item 3) folds the shown asset's most
  *    severe open alarm into the same statement as a lateral: `bms.alarm_severities.rank DESC`
@@ -208,12 +226,16 @@ export class MimicNodesService {
 
     const widgetRows = await this.pool.query<WidgetRow>(
       `
-      SELECT d.asset_group_id, w.id AS widget_id, w.config
+      SELECT COALESCE(dt.asset_group_id, d.asset_group_id) AS asset_group_id, w.id AS widget_id, w.config
       FROM bms.dashboards d
       LEFT JOIN bms.dashboard_widgets w
         ON w.dashboard_id = d.id
        AND w.organization_id = d.organization_id
        AND w.widget_type = 'mimic'
+      LEFT JOIN bms.dashboard_tabs dt
+        ON dt.id = w.tab_id
+       AND dt.dashboard_id = d.id
+       AND dt.organization_id = $2
       WHERE d.id = $1 AND d.organization_id = $2
       ORDER BY w.grid_y, w.grid_x, w.id
       `,
@@ -234,7 +256,7 @@ export class MimicNodesService {
         );
         continue;
       }
-      parsedWidgets.push({ widgetId: row.widget_id, ...parsed.data });
+      parsedWidgets.push({ widgetId: row.widget_id, groupId: row.asset_group_id, ...parsed.data });
     }
 
     const layoutIds = [
@@ -262,7 +284,8 @@ export class MimicNodesService {
       return { dashboardId, resolvedAt, widgets: [] };
     }
 
-    const groupId = widgetRows.rows[0]?.asset_group_id ?? null;
+    // Every group a widget resolves against, once: ONE members statement reads them all.
+    const groupIds = [...new Set(widgets.flatMap((widget) => (widget.groupId === null ? [] : [widget.groupId])))];
     const roleCodes = [
       ...new Set(
         widgets.flatMap((widget) =>
@@ -272,19 +295,21 @@ export class MimicNodesService {
         ),
       ),
     ];
-    const members = new Map<string, MemberRow>();
+    /** Shown member per group, then per role. */
+    const members = new Map<string, Map<string, MemberRow>>();
     const pointsByAsset = new Map<string, GeneratedSitePointDto[]>();
 
-    if (groupId !== null && (readableAssetIds === null || readableAssetIds.length > 0)) {
+    if (groupIds.length > 0 && (readableAssetIds === null || readableAssetIds.length > 0)) {
       const memberRows = await this.pool.query<MemberRow>(
         `
-        SELECT DISTINCT ON (agm.role)
+        SELECT DISTINCT ON (agm.asset_group_id, agm.role)
+          agm.asset_group_id,
           agm.role,
           a.id AS asset_id,
           a.code AS asset_code,
           a.name AS asset_name,
           a.domain,
-          (count(*) OVER (PARTITION BY agm.role))::int AS member_count,
+          (count(*) OVER (PARTITION BY agm.asset_group_id, agm.role))::int AS member_count,
           (
             SELECT count(*)::int
             FROM bms.alarms al
@@ -312,18 +337,22 @@ export class MimicNodesService {
           ORDER BY s.rank DESC, al.raised_at DESC, al.id ASC
           LIMIT 1
         ) ta ON true
-        WHERE agm.asset_group_id = $1
+        WHERE agm.asset_group_id = ANY($1::uuid[])
           AND agm.role = ANY($3::text[])
           AND ($4::uuid[] IS NULL OR a.id = ANY($4::uuid[]))
-        ORDER BY agm.role, a.code ASC
+        ORDER BY agm.asset_group_id, agm.role, a.code ASC
         `,
-        [groupId, organizationId, roleCodes, readableAssetIds],
+        [groupIds, organizationId, roleCodes, readableAssetIds],
       );
       for (const row of memberRows.rows) {
-        members.set(row.role, row);
+        const byRole = members.get(row.asset_group_id) ?? new Map<string, MemberRow>();
+        byRole.set(row.role, row);
+        members.set(row.asset_group_id, byRole);
       }
 
-      const shownIds = [...new Set([...members.values()].map((member) => member.asset_id))];
+      const shownIds = [
+        ...new Set([...members.values()].flatMap((byRole) => [...byRole.values()].map((member) => member.asset_id))),
+      ];
       if (shownIds.length > 0) {
         const pointRows = await this.pool.query<PointRow>(
           `
@@ -384,9 +413,13 @@ export class MimicNodesService {
     }
 
     // One resolution for both arms (ADR 0081 decision 6): a layout's unit resolves exactly as a
-    // preset node does, by its role code against the group's members.
-    const resolveNode = (node: { key: string; label: string; roleCode: string }): MimicNodeDto => {
-      const member = members.get(node.roleCode);
+    // preset node does, by its role code against the members of the WIDGET's group (`F3.73`
+    // plan D3). A widget with no group finds no member, so every node reads unassigned.
+    const resolveNode = (
+      groupId: string | null,
+      node: { key: string; label: string; roleCode: string },
+    ): MimicNodeDto => {
+      const member = groupId === null ? undefined : members.get(groupId)?.get(node.roleCode);
       return {
         key: node.key,
         label: node.label,
@@ -407,7 +440,7 @@ export class MimicNodesService {
             source: "preset" as const,
             widgetId: widget.widgetId,
             preset: widget.preset,
-            nodes: MIMIC_PRESETS[widget.preset].nodes.map(resolveNode),
+            nodes: MIMIC_PRESETS[widget.preset].nodes.map((node) => resolveNode(widget.groupId, node)),
           };
         }
         // Present: `widgets` kept only the layout widgets whose layout (1b) found.
@@ -419,7 +452,7 @@ export class MimicNodesService {
           layout,
           // A passive unit (no role, plan D6), a panel and a label are drawn from `layout`
           // alone; only a roled unit has a member to resolve.
-          nodes: roledUnits(layout).map(resolveNode),
+          nodes: roledUnits(layout).map((node) => resolveNode(widget.groupId, node)),
         };
       }),
     };

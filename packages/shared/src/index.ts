@@ -182,6 +182,10 @@ export type SectionTemplateSource = z.infer<typeof Dt.sectionTemplateSourceSchem
 export type SectionTemplateWidget = z.infer<typeof Dt.sectionTemplateWidgetSchema>;
 /** A template's whole authored canvas. */
 export type SectionTemplateContent = z.infer<typeof Dt.sectionTemplateContentSchema>;
+/** What a template instantiates into — one asset group, or one site (`F3.73` ruling Q3a). */
+export type DashboardTemplateTarget = z.infer<typeof Dt.dashboardTemplateTargetSchema>;
+/** One tab of a site template (`F3.73` plan D4). */
+export type SiteTemplateTab = z.infer<typeof Dt.siteTemplateTabSchema>;
 /** A section template version, with its content. */
 export type DashboardTemplateDto = z.infer<typeof Dt.dashboardTemplateDtoSchema>;
 /** A section template in a list, without its content. */
@@ -882,6 +886,13 @@ export type * from "./asset-template-content";
 
 /** `F3.32` / ADR 0079 — the mimic preset topology (plan D3). Code, not a contract. */
 export * from "./mimic-presets";
+
+/**
+ * `F3.73` plan Task 2.2 — the pure section template widget planner, moved out of
+ * `DashboardTemplatesInstantiateService` so the site-layout copy and the seed share it.
+ * Code, not a contract.
+ */
+export * from "./template-instantiation";
 
 /**
  * `F3.32e` / ADR 0084 — the preloaded symbol libraries: the registry and the generated keys,

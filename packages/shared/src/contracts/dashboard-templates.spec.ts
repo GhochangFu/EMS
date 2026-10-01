@@ -1,7 +1,13 @@
+import { MAX_DASHBOARD_WIDGETS } from "./dashboard-builder";
 import {
+  dashboardTemplateDtoSchema,
+  dashboardTemplateSummaryDtoSchema,
   sectionTemplateContentSchema,
   sectionTemplateWidgetIdentitySchema,
   sectionTemplateWidgetSchema,
+  stockDashboardTemplateDtoSchema,
+  templateTargetContentMessage,
+  templateWidgets,
 } from "./dashboard-templates";
 
 /**
@@ -303,4 +309,148 @@ export function widgetSchemaDescribesShapeCapAndColumnsRules(): void {
   assert(/shape/.test(description), `the description must name the shape rule, got "${description}"`);
   assert(/at most/.test(description), `the description must name the cap rule, got "${description}"`);
   assert(/columns/.test(description), `the description must name the columns rule, got "${description}"`);
+}
+
+// ---------------------------------------------------------------------------
+// F3.73 (plan D4) — the site target and content tabs
+// ---------------------------------------------------------------------------
+
+/** A legal site-template tab, overridable. */
+function tab(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+  return { key: "sld", label: "SLD", sortOrder: 1, domain: "electrical", widgets: [], ...overrides };
+}
+
+/** Content written before `F3.73` has no `tabs` key; it must still parse, and read as no tabs. */
+export function oldContentWithoutTabsParses(): void {
+  const result = sectionTemplateContentSchema.safeParse({ widgets: [widget()] });
+  assert(
+    result.success === true,
+    `content without tabs must parse — got ${JSON.stringify(result.success ? null : result.error.issues)}`,
+  );
+  assert(
+    result.success && Array.isArray(result.data.tabs) && result.data.tabs.length === 0,
+    "content without tabs must read as `tabs: []`",
+  );
+}
+
+/** A row written before `F3.73` carries no `target`; every template DTO reads it as `asset_group`. */
+export function targetDefaultsToAssetGroup(): void {
+  const stock = stockDashboardTemplateDtoSchema.parse({
+    code: "x",
+    name: "X",
+    section: "hvac",
+    description: null,
+    stockVersion: 1,
+    content: { widgets: [] },
+  });
+  assert(stock.target === "asset_group", `the stock DTO must default target, got ${String(stock.target)}`);
+
+  const row = {
+    id: "8f1d2c3b-4a5e-4f60-9a7b-1c2d3e4f5a6b",
+    organizationId: "0b7c6d5e-4f3a-4b2c-8d1e-9f0a1b2c3d4e",
+    code: "x",
+    version: 1,
+    name: "X",
+    section: "hvac",
+    description: null,
+    status: "draft",
+    publishedAt: null,
+    archivedAt: null,
+    stockCode: null,
+    stockVersion: null,
+    createdAt: "2026-09-30T00:00:00.000Z",
+    updatedAt: "2026-09-30T00:00:00.000Z",
+  };
+  const full = dashboardTemplateDtoSchema.parse({ ...row, content: { widgets: [] }, createdBy: null });
+  assert(full.target === "asset_group", `the template DTO must default target, got ${String(full.target)}`);
+  const summary = dashboardTemplateSummaryDtoSchema.parse({ ...row, widgetCount: 0 });
+  assert(summary.target === "asset_group", `the summary DTO must default target, got ${String(summary.target)}`);
+}
+
+/** The Overview tab binds no domain: `domain: null` with widgets parses. */
+export function acceptsATabWithANullDomainAndWidgets(): void {
+  expectAccepts(
+    sectionTemplateContentSchema,
+    { widgets: [], tabs: [tab({ key: "overview", domain: null, widgets: [widget({ key: "a" })] })] },
+    "an Overview tab (domain null) holding one widget",
+  );
+}
+
+/** Keys address widgets in the resolution report across the whole template, tabs included. */
+export function rejectsTwoTabsSharingAWidgetKey(): void {
+  expectRejectsAt(
+    sectionTemplateContentSchema,
+    {
+      widgets: [],
+      tabs: [
+        tab({ key: "sld", widgets: [widget({ key: "same" })] }),
+        tab({ key: "ups", widgets: [widget({ key: "same" })] }),
+      ],
+    },
+    ["tabs", 1, "widgets", 0, "key"],
+    /duplicate widget key "same"/,
+    "two tabs whose widgets share one key",
+  );
+}
+
+/** A top-level widget and a tab widget share the key space too. */
+export function rejectsATopLevelKeyEqualToATabWidgetKey(): void {
+  expectRejectsAt(
+    sectionTemplateContentSchema,
+    { widgets: [widget({ key: "same" })], tabs: [tab({ widgets: [widget({ key: "same" })] })] },
+    ["tabs", 0, "widgets", 0, "key"],
+    /duplicate widget key "same"/,
+    "a top-level widget key equal to a tab widget key",
+  );
+}
+
+/** Two tabs with one key would collide on `dashboard_tabs (dashboard_id, tab_key)` at copy time. */
+export function rejectsTwoTabsSharingATabKey(): void {
+  expectRejectsAt(
+    sectionTemplateContentSchema,
+    { widgets: [], tabs: [tab({ key: "sld" }), tab({ key: "sld", label: "Again" })] },
+    ["tabs", 1, "key"],
+    /duplicate tab key "sld"/,
+    "two tabs sharing one tab key",
+  );
+}
+
+/** The widget cap is per tab: 41 widgets in one tab are refused. */
+export function rejectsATabOverTheWidgetCap(): void {
+  const widgets = Array.from({ length: MAX_DASHBOARD_WIDGETS + 1 }, (_, i) => widget({ key: `w${i}` }));
+  expectRejectsAt(
+    sectionTemplateContentSchema,
+    { widgets: [], tabs: [tab({ widgets })] },
+    ["tabs", 0, "widgets"],
+    /at most/i,
+    "a tab holding one widget more than MAX_DASHBOARD_WIDGETS",
+  );
+}
+
+/** `templateWidgets` yields the top-level widgets, then every tab's, in order. */
+export function templateWidgetsYieldsTopLevelThenTabWidgets(): void {
+  const content = sectionTemplateContentSchema.parse({
+    widgets: [widget({ key: "top" })],
+    tabs: [tab({ key: "sld", widgets: [widget({ key: "a" })] }), tab({ key: "ups", widgets: [widget({ key: "b" })] })],
+  });
+  const keys = templateWidgets(content).map((w) => w.key);
+  assert(JSON.stringify(keys) === JSON.stringify(["top", "a", "b"]), `expected top, a, b — got ${JSON.stringify(keys)}`);
+}
+
+/** The target rule: a site template holds tabs only, an asset-group template holds no tabs. */
+export function theTargetRuleNamesEachMismatch(): void {
+  const siteWithTop = sectionTemplateContentSchema.parse({ widgets: [widget()], tabs: [tab()] });
+  const groupWithTabs = sectionTemplateContentSchema.parse({ widgets: [widget()], tabs: [tab()] });
+  const siteTabsOnly = sectionTemplateContentSchema.parse({ widgets: [], tabs: [tab()] });
+  const groupPlain = sectionTemplateContentSchema.parse({ widgets: [widget()] });
+  assert(
+    /site template/.test(templateTargetContentMessage("site", siteWithTop) ?? ""),
+    "a site template with top-level widgets must be refused",
+  );
+  assert(
+    /asset-group template/.test(templateTargetContentMessage("asset_group", groupWithTabs) ?? ""),
+    "an asset-group template with tabs must be refused",
+  );
+  assert(templateTargetContentMessage("site", siteTabsOnly) === null, "a site template with tabs only is legal");
+  assert(templateTargetContentMessage("asset_group", groupPlain) === null, "a plain asset-group template is legal");
 }

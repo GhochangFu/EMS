@@ -3,6 +3,10 @@ import { describe, it } from "vitest";
 import {
   byLocationOnAnEmptyScopeBuildsNoSql,
   everyEntryOnAnEmptyScopeBuildsNoSql,
+  overviewAndGroupTabAreTwoResolves,
+  sameKeyOnOneTabIsOneResolve,
+  sameKeyOnTwoGroupTabsIsTwoResolves,
+  scopeKeyFollowsTheResolverArmOrder,
   totalOnAnEmptyScopeBuildsNoSql,
   waterBalanceOnAnEmptyScopeBuildsNoSql,
 } from "./metric-catalog.service.spec";
@@ -23,5 +27,23 @@ describe("E4.2 sweep — the catalog's resolvers on an empty scope (no database)
 
   it("every catalog entry answers an empty scope before any SQL (the sentence over RESOLVERS)", async () => {
     await everyEntryOnAnEmptyScopeBuildsNoSql();
+  });
+});
+
+describe("F3.73 — the catalog dedupe key carries the widget's scope (no database)", () => {
+  it("one key on two tabs bound to two groups is two resolves", () => {
+    sameKeyOnTwoGroupTabsIsTwoResolves();
+  });
+
+  it("one key twice on one tab is one resolve", () => {
+    sameKeyOnOneTabIsOneResolve();
+  });
+
+  it("an Overview tile beside a group tile is two resolves", () => {
+    overviewAndGroupTabAreTwoResolves();
+  });
+
+  it("scopeKeyFor follows resolveAssetScope's arm order", () => {
+    scopeKeyFollowsTheResolverArmOrder();
   });
 });
