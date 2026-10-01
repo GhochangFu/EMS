@@ -43,6 +43,15 @@ export function runN5(): void {
   assert(/built-in view/.test(text), `builtin_unknown must name the built-in view — got ${text}`);
 }
 
+/** `N6` — `F3.73` plan Task 5.1: `no_site_layout` (ruling Q5) maps to its own sentence. */
+export function runN6(): void {
+  const text = siteViewNoticeText("no_site_layout");
+  assert(
+    text === "This site has no site layout yet. Showing the generated view.",
+    `no_site_layout must say the site has no site layout yet — got ${String(text)}`,
+  );
+}
+
 /** `N2` — a `null` notice maps to `null` (no banner). */
 export function runN2(): void {
   assert(siteViewNoticeText(null) === null, "null must map to null");

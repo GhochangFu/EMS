@@ -2,8 +2,11 @@ import {
   bindingExclusiveMessage,
   bindingRequiredMessage,
   DASHBOARD_GRID,
+  dashboardTabKeySchema,
+  MAX_DASHBOARD_TABS,
   MAX_DASHBOARD_WIDGETS,
   mimicPresetSchema,
+  RESERVED_DASHBOARD_TAB_KEYS,
   widgetTypeBindsNothing,
 } from "@bms/shared";
 import type {
@@ -203,6 +206,18 @@ export function offerableWidgetTypes(kind: DashboardScopeValue["kind"]): readonl
   return WIDGET_TYPES.filter((type) => kind === "assetGroup" || !needsAssetGroup(type));
 }
 
+/**
+ * `F3.73` D11 — the widget types the edit page offers on the SELECTED tab. A mimic on a tab that
+ * binds a group resolves against that group (the API's `mimicGroupFor`), so such a tab offers it
+ * whatever the scope kind; `tab` is `undefined` on a dashboard without tabs.
+ */
+export function offerableWidgetTypesOnTab(
+  kind: DashboardScopeValue["kind"],
+  tab: TabForRules | undefined,
+): readonly WidgetType[] {
+  return offerableWidgetTypes(tab !== undefined && tab.assetGroupId !== null ? "assetGroup" : kind);
+}
+
 /** Whether a widget type resolves against an asset group — the plant mimic alone (see above). */
 function needsAssetGroup(type: WidgetType): boolean {
   return type === "mimic";
@@ -386,9 +401,55 @@ export const SCOPE_PROBLEM_FIELD = "scope";
 export const MIMIC_NEEDS_ASSET_GROUP_MESSAGE =
   "A plant mimic needs an asset-group scope, or a tab bound to an asset group.";
 
-/** `F3.73` plan D2 — the two fields of a tab the client rules read. `DashboardDto["tabs"]` and
+/** `F3.73` plan D2 — the fields of a tab the client rules read. `DashboardDto["tabs"]` and
  * `TabWritePayload[]` both fit, so either page passes what it already holds. */
-export type TabForRules = { readonly key: string; readonly assetGroupId: string | null };
+export type TabForRules = { readonly key: string; readonly label: string; readonly assetGroupId: string | null };
+
+/** `F3.73` D11 — the field of a problem about the tab set. Reported with `widget: null`, so the
+ * page summary shows it whatever is selected. */
+export const TABS_PROBLEM_FIELD = "tabs";
+
+/** The API's `tabWriteSchema.label` bound (`varchar(128)`). */
+const MAX_TAB_LABEL_LENGTH = 128;
+
+/**
+ * `F3.73` D11 — the tab set's own rules, the API's `tabWriteSchema` and `tabRulesHold` mirror:
+ * the tab cap, a well-formed key, the reserved `assets` key (named first, so the author reads
+ * why rather than the generic key sentence), unique keys and a label. And the service's
+ * `TAB_GROUP_SCOPE_MESSAGE` mirror: a group tab needs a location scope — otherwise the save's
+ * PATCH commits the new scope and the PUT then answers 400.
+ */
+function tabSetErrors(tabs: readonly TabForRules[], scopeKind: DashboardScopeValue["kind"]): DashboardBuilderProblem[] {
+  const problems: DashboardBuilderProblem[] = [];
+  const push = (message: string): void => {
+    problems.push({ widget: null, field: TABS_PROBLEM_FIELD, message });
+  };
+  if (tabs.length > MAX_DASHBOARD_TABS) {
+    push(`A dashboard holds at most ${MAX_DASHBOARD_TABS} tabs. This one has ${tabs.length}.`);
+  }
+  const seen = new Set<string>();
+  tabs.forEach((tab, index) => {
+    const subject = `Tab ${index + 1}`;
+    if (RESERVED_DASHBOARD_TAB_KEYS.includes(tab.key)) {
+      push(`${subject}: the key "${tab.key}" is reserved for the site's Assets & RTUs page.`);
+    } else if (!dashboardTabKeySchema.safeParse(tab.key).success) {
+      push(`${subject}: a key is 1 to 64 lowercase letters, digits or hyphens.`);
+    } else if (seen.has(tab.key)) {
+      push(`${subject}: another tab already uses the key "${tab.key}".`);
+    }
+    seen.add(tab.key);
+    const label = tab.label.trim();
+    if (label === "") {
+      push(`${subject} needs a label.`);
+    } else if (label.length > MAX_TAB_LABEL_LENGTH) {
+      push(`${subject}: a label is at most ${MAX_TAB_LABEL_LENGTH} characters.`);
+    }
+    if (tab.assetGroupId !== null && scopeKind !== "location") {
+      push(`${subject} binds an asset group, and only a location dashboard carries group tabs. Clear its group or choose a location.`);
+    }
+  });
+  return problems;
+}
 
 /** A human-readable subject for a problem — "Dashboard" for a set-level one (`widget: null`),
  * or the widget's own title/catalog label otherwise, so a summary entry names what it is about
@@ -449,13 +510,25 @@ export function dashboardBuilderErrors(
       );
     }
   }
+  problems.push(...tabSetErrors(tabs, scopeKind));
   const groupTabKeys = new Set(tabs.filter((tab) => tab.assetGroupId !== null).map((tab) => tab.key));
+  const tabKeys = new Set(tabs.map((tab) => tab.key));
 
   rows.forEach((row, index) => {
     // `F3.73` plan D2 — the API's `TAB_KEY_REQUIRED_MESSAGE` mirror: on a dashboard with tabs every
     // widget names one, or the PATCH commits and the PUT then answers 400.
     if (tabs.length > 0 && row.tabKey === undefined) {
       push(index, "tabKey", "A dashboard with tabs needs every widget on a tab.");
+    }
+    // `F3.73` D11 — the API's `TAB_KEY_UNKNOWN_MESSAGE` mirror (a tab-less dashboard has no key to name).
+    if (row.tabKey !== undefined && !tabKeys.has(row.tabKey)) {
+      push(index, "tabKey", `This widget sits on the tab "${row.tabKey}", which this dashboard does not have.`);
+    }
+    // `F3.73` D11 — the API's `TAB_TARGET_UNKNOWN_MESSAGE` mirror. An empty target is
+    // `widgetConfigErrors`'s "Choose the tab" problem, so it is not reported twice.
+    const target = row.widgetType === "module_summary_card" ? (row.config.targetTabKey ?? "") : "";
+    if (target !== "" && !tabKeys.has(target)) {
+      push(index, "targetTabKey", `This card links to the tab "${target}", which this dashboard does not have.`);
     }
     if (row.title.trim().length > MAX_WIDGET_TITLE_LENGTH) {
       push(index, "title", `A widget title is at most ${MAX_WIDGET_TITLE_LENGTH} characters.`);
@@ -653,4 +726,131 @@ export function buildPutWidgetsPayload(
  * and must report `true` — normalizing it away would silently discard the edit on Save. */
 export function builderHasChanged(rows: readonly DashboardWidgetRow[], dto: DashboardDto): boolean {
   return JSON.stringify(rows) !== JSON.stringify(dashboardRowsFromDto(dto));
+}
+
+/** `F3.73` D11 — whether the edited tab set differs from the stored one. The tab edits below
+ * renumber `sortOrder` only when the order moves, so an unedited set compares equal. */
+export function tabsHaveChanged(tabs: readonly TabWritePayload[], dto: DashboardDto): boolean {
+  return JSON.stringify(tabs) !== JSON.stringify(tabWritesFromDto(dto.tabs));
+}
+
+/** The page summary's sentence for `tabLocationMoveProblems`; exported for the specs. */
+export const TAB_LOCATION_MOVE_PROBLEM =
+  "This dashboard's saved tabs bind asset groups at its site, so it cannot leave that site in this save. " +
+  "Put the site back, clear the tabs' groups and save, then move the dashboard.";
+
+/**
+ * `F3.73` review finding — the API's `TAB_LOCATION_MOVE_MESSAGE` mirror, judged against the
+ * STORED tabs. `dashboard_tabs_dashboard_id_location_id_fkey` refuses the PATCH that moves a
+ * dashboard (to another site, or to a scope with no site) while a saved tab binds a group, and the
+ * save sends that PATCH before the PUT that would clear the group — so clearing the groups in the
+ * panel and moving in one save met the same 400 again. `next` is `scopePatch`'s output: an asset
+ * scope sends no `locationId`, so it never moves.
+ */
+export function tabLocationMoveProblems(
+  stored: { readonly locationId: string | null; readonly tabs: readonly { readonly assetGroupId: string | null }[] },
+  next: { readonly locationId?: string | null; readonly assetGroupId?: string | null },
+): DashboardBuilderProblem[] {
+  const moves = next.locationId !== undefined && next.locationId !== stored.locationId;
+  if (!moves || !stored.tabs.some((tab) => tab.assetGroupId !== null)) {
+    return [];
+  }
+  return [{ widget: null, field: TABS_PROBLEM_FIELD, message: TAB_LOCATION_MOVE_PROBLEM }];
+}
+
+/**
+ * `F3.73` D11 — the tab set and the rows edited together. A tab edit that changes a key, or
+ * removes a tab, must move the rows with it, so the edits below take and return both. They live
+ * here rather than in the panel's handlers because a `.tsx` handler is outside the coverage
+ * denominator (`widgetRowAfterRemovingSource`'s reason).
+ */
+export type BuilderTabsState = {
+  readonly tabs: readonly TabWritePayload[];
+  readonly rows: readonly DashboardWidgetRow[];
+};
+
+const renumbered = (tabs: readonly TabWritePayload[]): TabWritePayload[] =>
+  tabs.map((tab, position) => ({ ...tab, sortOrder: position }));
+
+/**
+ * Adds a tab with the first free `tab-N` key and no group. **The first tab adopts every widget
+ * already on the canvas**: the builder shows one tab's widgets at a time, so an untabbed widget
+ * would be hidden while "needs every widget on a tab" blocks Save.
+ *
+ * The set is renumbered from position (review finding): a site-layout copy keeps the template's
+ * `sortOrder`s with gaps where tabs were omitted (`0, 1, 2, 3, 6`), so `state.tabs.length` would
+ * save the new tab before the last stored one, or tie with it, while the panel shows it last.
+ */
+export function addBuilderTab(state: BuilderTabsState): BuilderTabsState & { key: string } {
+  const taken = new Set(state.tabs.map((tab) => tab.key));
+  let n = 1;
+  while (taken.has(`tab-${n}`)) {
+    n += 1;
+  }
+  const key = `tab-${n}`;
+  const tabs = renumbered([...state.tabs, { key, label: `Tab ${n}`, sortOrder: 0, assetGroupId: null }]);
+  const rows = state.tabs.length === 0 ? state.rows.map((row) => ({ ...row, tabKey: key })) : [...state.rows];
+  return { tabs, rows, key };
+}
+
+/**
+ * Re-keys one tab, and moves its widgets and every module summary card that links to it with it.
+ * Answers `null` when another tab holds the key: applying it would put two tabs' widgets under one
+ * key, and no later edit could tell them apart again.
+ */
+export function renameBuilderTabKey(state: BuilderTabsState, index: number, key: string): BuilderTabsState | null {
+  const tab = state.tabs[index];
+  if (!tab) {
+    return state;
+  }
+  if (state.tabs.some((other, position) => position !== index && other.key === key)) {
+    return null;
+  }
+  const from = tab.key;
+  return {
+    tabs: state.tabs.map((other, position) => (position === index ? { ...other, key } : other)),
+    rows: state.rows.map((row) => {
+      const next = row.tabKey === from ? { ...row, tabKey: key } : row;
+      return next.config.targetTabKey === from ? { ...next, config: { ...next.config, targetTabKey: key } } : next;
+    }),
+  };
+}
+
+/** Moves one tab by `delta` places and renumbers `sortOrder` from position. A move past either
+ * end answers the same array. */
+export function moveBuilderTab(
+  tabs: readonly TabWritePayload[],
+  index: number,
+  delta: -1 | 1,
+): readonly TabWritePayload[] {
+  const target = index + delta;
+  if (target < 0 || target >= tabs.length) {
+    return tabs;
+  }
+  const next = [...tabs];
+  [next[index], next[target]] = [next[target]!, next[index]!];
+  return renumbered(next);
+}
+
+/**
+ * Removes one tab **and its widgets** — the API cascades them on save, so the builder shows the
+ * same result before the save. A card that linked to the tab stays, with the target problem
+ * `dashboardBuilderErrors` reports. With no tab left the dashboard is one canvas again, so no
+ * widget keeps a `tabKey` (the API refuses one on a tab-less body).
+ */
+export function removeBuilderTab(state: BuilderTabsState, index: number): BuilderTabsState {
+  const tab = state.tabs[index];
+  if (!tab) {
+    return state;
+  }
+  const tabs = renumbered(state.tabs.filter((_, position) => position !== index));
+  const kept = state.rows.filter((row) => row.tabKey !== tab.key);
+  const rows =
+    tabs.length > 0
+      ? kept
+      : kept.map((row) => {
+          const { tabKey: _dropped, ...rest } = row;
+          return rest;
+        });
+  return { tabs, rows };
 }

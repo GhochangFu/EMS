@@ -1,6 +1,6 @@
 import { describe, it } from "vitest";
 
-import { runN1, runN2, runN3, runN4, runN5 } from "./site-view-notice.spec";
+import { runN1, runN2, runN3, runN4, runN5, runN6 } from "./site-view-notice.spec";
 
 /** Vitest entry point — see `apps/web/src/lib/admin-access.test.ts` (ADR 0014). */
 describe("site-view-notice", () => {
@@ -22,5 +22,9 @@ describe("site-view-notice", () => {
 
   it("N5 — builtin_unknown names the built-in view", () => {
     runN5();
+  });
+
+  it("N6 — no_site_layout says the site has no site layout yet (F3.73)", () => {
+    runN6();
   });
 });

@@ -19,6 +19,7 @@ import {
   aSiteOutsideTheListShowsTheNotAvailableCard,
   aTabOnAGeneratedSiteMountsNoBodyAtTheTabUrl,
   aTabOnAGeneratedSiteRedirectsToTheBarePath,
+  aTabOnADashboardSiteDoesNotRedirect,
   anUnknownTabRedirectsToTheBarePath,
   aBuiltinOnANonSmocSiteHostsTheGeneratedView,
   aBuiltinOnANonSmocSiteMountsNoSmocView,
@@ -155,6 +156,10 @@ describe("F3.66 U4 ControlRoomSitePage", () => {
 
   it("V16 shows only the loading line while the KPI read is pending (D1)", async () => {
     await aPendingKpiReadShowsOnlyTheLoadingLine();
+  });
+
+  it("V7d hands a dashboard site's :tab segment to SiteDashboardView without redirecting (F3.73 D10)", async () => {
+    await aTabOnADashboardSiteDoesNotRedirect();
   });
 
   it("V17 redirects an unknown tab on a builtin site to the bare site path", async () => {

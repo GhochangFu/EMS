@@ -18,6 +18,9 @@ import {
   resolutionReportNamesAPartialWidget,
   roleFreeTemplateOffersTheOrganizationWideOption,
   saveCanvasSendsTheStoredTabsBack,
+  applyToAllSitesShowsOnlyForAPublishedSiteTemplate,
+  applyResultTableListsASkippedSitesReason,
+  siteTemplateInstantiatePicksALocation,
 } from "./dashboard-template-detail-page.spec";
 
 /**
@@ -89,5 +92,17 @@ describe("F3.36 dashboard template detail page", () => {
 
   it("Save canvas on a site draft sends the stored tabs back (F3.73)", async () => {
     await saveCanvasSendsTheStoredTabsBack();
+  });
+
+  it("Apply to all sites shows only for a published site template (F3.73)", async () => {
+    await applyToAllSitesShowsOnlyForAPublishedSiteTemplate();
+  });
+
+  it("the apply-to-sites result lists a skipped site with its reason (F3.73)", async () => {
+    await applyResultTableListsASkippedSitesReason();
+  });
+
+  it("a site template's instantiate dialog picks a location (F3.73)", async () => {
+    await siteTemplateInstantiatePicksALocation();
   });
 });

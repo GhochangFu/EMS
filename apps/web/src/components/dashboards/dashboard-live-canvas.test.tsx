@@ -2,9 +2,11 @@
 import { afterEach, beforeEach, describe, it, vi } from "vitest";
 
 import {
+  aTabKeyShowsOnlyThatTabsWidgets,
   boundWidgetFetchesItsRef,
   cleanupCanvas,
   emptyDashboardShowsNoWidgetsLine,
+  noTabKeyShowsEveryWidget,
   oneSocketWithTokenDisconnectsOnUnmount,
   oneWidgetRendersItsTile,
 } from "./dashboard-live-canvas.spec";
@@ -38,5 +40,13 @@ describe("F3.69 U1 DashboardLiveCanvas", () => {
 
   it("L4 opens one socket with the session token and disconnects on unmount", async () => {
     await oneSocketWithTokenDisconnectsOnUnmount();
+  });
+
+  it("L5 renders only the selected tab's widgets when given a tabKey (F3.73 D10)", async () => {
+    await aTabKeyShowsOnlyThatTabsWidgets();
+  });
+
+  it("L6 renders every widget of a tabbed dashboard when given no tabKey", async () => {
+    await noTabKeyShowsEveryWidget();
   });
 });

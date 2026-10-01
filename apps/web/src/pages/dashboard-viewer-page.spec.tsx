@@ -1,11 +1,14 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { expect, vi } from "vitest";
 
 import type { DashboardDto, UserRole } from "@bms/shared";
 
 import * as dashboardsApi from "../api/dashboards";
+import * as systemStatusApi from "../api/system-status";
+import { OPERATIONAL } from "../components/system-status-indicator.spec";
 import type { AuthUser } from "../stores/auth-store";
 import { DashboardViewerPage } from "./dashboard-viewer-page";
 
@@ -103,6 +106,9 @@ function asUser(role: UserRole): AuthUser {
 }
 
 function renderPage(user: AuthUser): void {
+  // `AppShell` mounts `SystemStatusIndicator`; unstubbed, its `GET /system/status` reaches a local
+  // API on :4000, answers 401 and clears the session (`dashboard-builder-page.spec.tsx`'s precedent).
+  vi.spyOn(systemStatusApi, "fetchSystemStatus").mockResolvedValue(OPERATIONAL);
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   render(
     <QueryClientProvider client={queryClient}>
@@ -129,6 +135,77 @@ export async function aLocationAdminStillSeesTheEditLink(): Promise<void> {
 
   expect(await screen.findByRole("heading", { name: "Site A Overview" })).toBeInTheDocument();
   expect(screen.getByRole("link", { name: /Edit dashboard/i })).toBeInTheDocument();
+}
+
+const ORG_ID = "22222222-2222-4222-8222-222222222222";
+const TAB_POWER_ID = "33333333-3333-4333-8333-333333333331";
+const TAB_HVAC_ID = "33333333-3333-4333-8333-333333333332";
+
+function widgetOn(id: string, title: string, tabId: string | null): DashboardDto["widgets"][number] {
+  return { ...DTO_WITH_WIDGET.widgets[0], id, title, tabId } as DashboardDto["widgets"][number];
+}
+
+/** `F3.73` (plan D11) — a site-layout copy: two tabs, listed out of `sortOrder` so the default
+ * selection is proved to read `sortOrder` rather than array order. */
+const DTO_WITH_TABS: DashboardDto = {
+  ...DTO,
+  tabs: [
+    { id: TAB_HVAC_ID, dashboardId: "dash-1", organizationId: ORG_ID, key: "hvac", label: "HVAC", sortOrder: 1, assetGroupId: null },
+    { id: TAB_POWER_ID, dashboardId: "dash-1", organizationId: ORG_ID, key: "power", label: "Power", sortOrder: 0, assetGroupId: null },
+  ],
+  widgets: [widgetOn("widget-power", "Power tile", TAB_POWER_ID), widgetOn("widget-hvac", "HVAC tile", TAB_HVAC_ID)],
+};
+
+function stubLiveCanvas(): void {
+  mocks.io.mockImplementation(() => ({ on: vi.fn(), disconnect: mocks.disconnect }));
+  mocks.fetchTelemetryRecent.mockResolvedValue([]);
+  mocks.fetchPointAggregate.mockResolvedValue({ stats: null, buckets: [] });
+}
+
+/** `F3.73` D11 — a tabbed dashboard shows the tab strip, the first tab by `sortOrder` selected. */
+export async function aTabbedDashboardShowsTheStripWithTheFirstTabSelected(): Promise<void> {
+  stubLiveCanvas();
+  vi.spyOn(dashboardsApi, "fetchDashboard").mockResolvedValue(DTO_WITH_TABS);
+  renderPage(asUser("asset_group_admin"));
+
+  const strip = await screen.findByRole("tablist", { name: "Dashboard tabs" });
+  expect(within(strip).getAllByRole("tab").map((tab) => tab.textContent)).toEqual(["Power", "HVAC"]);
+  expect(within(strip).getByRole("tab", { name: "Power" })).toHaveAttribute("aria-selected", "true");
+}
+
+/** `F3.73` D11 — only the selected tab's widgets render, so two tabs' tiles never share one grid.
+ * Mutation: drop `tabKey` from the viewer's `DashboardLiveCanvas` => red. */
+export async function aTabbedDashboardRendersOnlyTheSelectedTabsWidgets(): Promise<void> {
+  stubLiveCanvas();
+  vi.spyOn(dashboardsApi, "fetchDashboard").mockResolvedValue(DTO_WITH_TABS);
+  renderPage(asUser("asset_group_admin"));
+
+  expect(await screen.findByText("Power tile")).toBeInTheDocument();
+  expect(screen.queryByText("HVAC tile")).not.toBeInTheDocument();
+}
+
+/** `F3.73` D11 — selecting another tab swaps the canvas to that tab's widgets. */
+export async function switchingTabsSwapsTheWidgets(): Promise<void> {
+  stubLiveCanvas();
+  vi.spyOn(dashboardsApi, "fetchDashboard").mockResolvedValue(DTO_WITH_TABS);
+  renderPage(asUser("asset_group_admin"));
+
+  await screen.findByText("Power tile");
+  await userEvent.click(screen.getByRole("tab", { name: "HVAC" }));
+
+  expect(await screen.findByText("HVAC tile")).toBeInTheDocument();
+  expect(screen.queryByText("Power tile")).not.toBeInTheDocument();
+  expect(screen.getByRole("tab", { name: "HVAC" })).toHaveAttribute("aria-selected", "true");
+}
+
+/** `F3.73` D11 — a dashboard with no tabs shows no strip and still renders its widgets. */
+export async function anUntabbedDashboardShowsNoStrip(): Promise<void> {
+  stubLiveCanvas();
+  vi.spyOn(dashboardsApi, "fetchDashboard").mockResolvedValue(DTO_WITH_WIDGET);
+  renderPage(asUser("asset_group_admin"));
+
+  expect(await screen.findByText("Energy today")).toBeInTheDocument();
+  expect(screen.queryByRole("tablist")).not.toBeInTheDocument();
 }
 
 /** DV1 — a DTO with one widget renders it via `DashboardLiveCanvas`, below the heading. */

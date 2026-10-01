@@ -10,6 +10,8 @@ import {
   aRailShowsItsRowsAtTheDefault,
   aSiteWidgetHidesUnitDecimalsAndBoundPoints,
   aStoredTabKeyTheDashboardNoLongerHasStaysSelected,
+  aWidgetOnADashboardWithoutTabsHasNoTabSelect,
+  aWidgetOnATabbedDashboardMovesThroughTheTabSelect,
   aTabProblemRendersUnderTheSelect,
   choosingATabWritesItsKeyToTheConfig,
   editingTheRailRowsWritesThemToTheConfig,
@@ -182,6 +184,14 @@ describe("F3.73 widget inspector — the site widgets", () => {
 
   it("disables the tab select with a hint when the dashboard has no tabs", () => {
     aModuleCardOnADashboardWithNoTabsIsDisabledWithAHint();
+  });
+
+  it("moves a widget on a tabbed dashboard through the tab select (F3.73 D11)", async () => {
+    await aWidgetOnATabbedDashboardMovesThroughTheTabSelect();
+  });
+
+  it("shows no tab select on a dashboard without tabs (F3.73 D11)", () => {
+    aWidgetOnADashboardWithoutTabsHasNoTabSelect();
   });
 
   it("keeps a stored tab key the dashboard no longer has as the select's value", () => {

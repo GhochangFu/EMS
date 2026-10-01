@@ -33,15 +33,19 @@ import {
 import type {
   DashboardTemplateDto,
   InstantiateSectionTemplateResponse,
+  SiteLayoutResultDto,
+  SiteLayoutSkipReason,
   TemplateWidgetResolutionDto,
 } from "@bms/shared";
 
 import {
+  applySiteTemplate,
   archiveAdminDashboardTemplate,
   createDraftFromAdminDashboardTemplate,
   deleteAdminDashboardTemplateDraft,
   fetchAdminDashboardTemplate,
   instantiateAdminDashboardTemplate,
+  instantiateSiteTemplate,
   publishAdminDashboardTemplate,
   updateAdminDashboardTemplate,
 } from "../../api/admin/dashboard-templates";
@@ -49,6 +53,7 @@ import type {
   SectionTemplateWidgetInput,
 } from "../../api/admin/dashboard-templates";
 import { fetchAdminAssetGroups } from "../../api/admin/asset-groups";
+import { fetchAdminLocations } from "../../api/admin/locations";
 import { DashboardCanvas } from "../../components/dashboards/dashboard-canvas";
 import { MasterDataLayout } from "../../components/admin/master-data-layout";
 import {
@@ -89,6 +94,7 @@ export function DashboardTemplateDetailPage({ user }: DashboardTemplateDetailPag
   const [rows, setRows] = useState<SectionTemplateWidgetInput[]>([]);
   const [actionError, setActionError] = useState<string | null>(null);
   const [instantiateOpen, setInstantiateOpen] = useState(false);
+  const [applyOpen, setApplyOpen] = useState(false);
 
   const templateQ = useQuery({
     queryKey: ["admin", "dashboard-template", templateId],
@@ -193,7 +199,12 @@ export function DashboardTemplateDetailPage({ user }: DashboardTemplateDetailPag
   // Instantiation is not a status TRANSITION and carries no shared helper —
   // ADR 0049 requires only a published version resolve against live members.
   // A single-value render comparison, not a restatement of the vocabulary.
-  const canRunInstantiate = mayInstantiate && template.status === "published";
+  // `F3.73` — the site arm asks authorship on the API (`instantiateSite`'s `assertCanAuthor`), so a
+  // `location_admin` is not offered a button that answers 403. The bulk action is the same gate.
+  const isSiteTemplate = template.target === "site";
+  const canRunInstantiate =
+    mayInstantiate && template.status === "published" && (!isSiteTemplate || mayAuthor);
+  const canApplyToSites = mayAuthor && template.status === "published" && isSiteTemplate;
 
   const busy = publishM.isPending || archiveM.isPending || draftM.isPending || deleteM.isPending;
 
@@ -313,6 +324,15 @@ export function DashboardTemplateDetailPage({ user }: DashboardTemplateDetailPag
                 {deleteM.isPending ? "Deleting draft…" : "Delete draft"}
               </button>
             ) : null}
+            {canApplyToSites ? (
+              <button
+                type="button"
+                onClick={() => setApplyOpen(true)}
+                className="surface-button px-3 py-1.5"
+              >
+                Apply to all sites
+              </button>
+            ) : null}
             {canRunInstantiate ? (
               <button
                 type="button"
@@ -373,7 +393,14 @@ export function DashboardTemplateDetailPage({ user }: DashboardTemplateDetailPag
       </SectionCard>
 
       {instantiateOpen ? (
-        <InstantiateDialog template={template} onClose={() => setInstantiateOpen(false)} />
+        isSiteTemplate ? (
+          <SiteInstantiateDialog template={template} onClose={() => setInstantiateOpen(false)} />
+        ) : (
+          <InstantiateDialog template={template} onClose={() => setInstantiateOpen(false)} />
+        )
+      ) : null}
+      {applyOpen ? (
+        <ApplyToSitesDialog template={template} onClose={() => setApplyOpen(false)} />
       ) : null}
     </MasterDataLayout>
   );
@@ -562,6 +589,220 @@ function InstantiateDialog({
               className="rounded bg-accent px-3 py-1.5 text-xs font-semibold text-on-accent disabled:opacity-60"
             >
               {instantiateM.isPending ? "Instantiating…" : "Instantiate"}
+            </button>
+          ) : null}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/** The sites an organization holds, for the site arm's picker and its result's names. */
+function useSiteLocations(template: DashboardTemplateDto) {
+  return useQuery({
+    queryKey: ["admin", "locations", "true", template.organizationId],
+    queryFn: () => fetchAdminLocations("true", template.organizationId),
+  });
+}
+
+/** One sentence per skip reason of the bulk action — a closed record, so a new reason fails to compile here. */
+const SKIP_REASON_LABELS: Record<SiteLayoutSkipReason, string> = {
+  has_view: "The site already has a site view",
+  ambiguous: "A tab matches two or more asset groups — make this site's layout by hand to choose",
+  no_assets: "The site has no assets to bind",
+  slug_taken: "Another site already holds this dashboard slug",
+};
+
+/** What one site's copy did, in one cell: the kept tabs and any tab the site could not hold. */
+function madeSummary(made: SiteLayoutResultDto): string {
+  const kept = `${made.resolution.length} tab${made.resolution.length === 1 ? "" : "s"}`;
+  return made.omittedTabs.length > 0
+    ? `Made — ${kept}, ${made.omittedTabs.length} omitted (no matching group)`
+    : `Made — ${kept}`;
+}
+
+/**
+ * `F3.73` ruling Q3a — the site arm of the instantiate dialog: a published SITE template copies
+ * onto one location. There is no slug and no name (the copy is named for its site), and no
+ * resolution report: the answer is the one site's copy.
+ */
+function SiteInstantiateDialog({
+  template,
+  onClose,
+}: {
+  template: DashboardTemplateDto;
+  onClose: () => void;
+}) {
+  const [locationId, setLocationId] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [result, setResult] = useState<SiteLayoutResultDto | null>(null);
+  const locationsQ = useSiteLocations(template);
+
+  const instantiateM = useMutation({
+    mutationFn: () => instantiateSiteTemplate(template.id, locationId),
+    onSuccess: (response) => {
+      setError(null);
+      setResult(response);
+    },
+    onError: (cause: Error) => setError(apiErrorMessage(cause)),
+  });
+
+  return (
+    <div className="fixed inset-0 z-40 flex items-center justify-center bg-scrim/30 p-4">
+      <div className="w-full max-w-2xl space-y-3 surface-dialog p-4">
+        <h2 className="font-condensed text-base font-bold text-ink">
+          Instantiate {template.code} v{template.version}
+        </h2>
+        {result ? (
+          <p className="rounded border border-accent/20 bg-ok-wash p-2 text-xs text-ok-ink">
+            Created the site layout <strong>{result.dashboardSlug}</strong>. {madeSummary(result)}.
+          </p>
+        ) : (
+          <>
+            <label className="block text-xs font-semibold text-ink">
+              Location
+              <select
+                required
+                value={locationId}
+                onChange={(event) => setLocationId(event.target.value)}
+                className="mt-1 w-full surface-field px-2 py-1 text-xs font-normal"
+              >
+                <option value="">Select a location…</option>
+                {(locationsQ.data?.items ?? []).map((location) => (
+                  <option key={location.id} value={location.id}>
+                    {location.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+            {error ? (
+              <p className="rounded border border-critical-line bg-critical-wash p-2 text-xs text-critical-ink-strong">
+                {error}
+              </p>
+            ) : null}
+          </>
+        )}
+        <div className="flex justify-end gap-2">
+          <button type="button" onClick={onClose} className="surface-button px-3 py-1.5">
+            {result ? "Close" : "Cancel"}
+          </button>
+          {!result ? (
+            <button
+              type="button"
+              aria-label={instantiateM.isPending ? "Instantiating…" : "Confirm instantiate"}
+              disabled={locationId === "" || instantiateM.isPending}
+              aria-busy={instantiateM.isPending}
+              onClick={() => {
+                setError(null);
+                instantiateM.mutate();
+              }}
+              className="rounded bg-accent px-3 py-1.5 text-xs font-semibold text-on-accent disabled:opacity-60"
+            >
+              {instantiateM.isPending ? "Instantiating…" : "Instantiate"}
+            </button>
+          ) : null}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * `F3.73` ruling Q4 — "Apply to all sites": confirm, then one POST. The answer lists every site
+ * the action made a copy for and every site it skipped, each skip with its reason — a skipped
+ * site is a normal outcome of the action, not an error, and a report that hid it would read as
+ * every site done.
+ */
+function ApplyToSitesDialog({
+  template,
+  onClose,
+}: {
+  template: DashboardTemplateDto;
+  onClose: () => void;
+}) {
+  const queryClient = useQueryClient();
+  const [error, setError] = useState<string | null>(null);
+  const locationsQ = useSiteLocations(template);
+  const siteName = (locationId: string): string =>
+    locationsQ.data?.items.find((location) => location.id === locationId)?.name ?? locationId;
+
+  const applyM = useMutation({
+    mutationFn: () => applySiteTemplate(template.id),
+    onSuccess: () => {
+      setError(null);
+      // The copies are the sites' views now; a cached site view read must not outlive them.
+      void queryClient.invalidateQueries({ queryKey: ["control-room", "site-view"] });
+    },
+    onError: (cause: Error) => setError(apiErrorMessage(cause)),
+  });
+  const result = applyM.data;
+
+  return (
+    <div className="fixed inset-0 z-40 flex items-center justify-center bg-scrim/30 p-4">
+      <div className="w-full max-w-2xl space-y-3 surface-dialog p-4">
+        <h2 className="font-condensed text-base font-bold text-ink">
+          Apply {template.code} v{template.version} to all sites
+        </h2>
+        {result ? (
+          <>
+            <p className="rounded border border-accent/20 bg-ok-wash p-2 text-xs text-ok-ink">
+              {result.made.length} site{result.made.length === 1 ? "" : "s"} made,{" "}
+              {result.skipped.length} skipped.
+            </p>
+            <table className="w-full text-xs">
+              <thead>
+                <tr className="text-left text-[11px] uppercase text-ink-muted">
+                  <th className="py-1">Site</th>
+                  <th className="py-1">Result</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-well-deep">
+                {result.made.map((made) => (
+                  <tr key={made.locationId}>
+                    <td className="py-1 font-semibold">{siteName(made.locationId)}</td>
+                    <td className="py-1">{madeSummary(made)}</td>
+                  </tr>
+                ))}
+                {result.skipped.map((skipped) => (
+                  <tr key={skipped.locationId}>
+                    <td className="py-1 font-semibold">{siteName(skipped.locationId)}</td>
+                    <td className="py-1">Skipped — {SKIP_REASON_LABELS[skipped.reason]}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </>
+        ) : (
+          <>
+            <p className="text-xs text-ink-muted">
+              This copies the template onto every active site of its organization, one site at a
+              time. A site that already has a site view, has no assets, or has a tab that matches
+              two or more asset groups is skipped and listed.
+            </p>
+            {error ? (
+              <p className="rounded border border-critical-line bg-critical-wash p-2 text-xs text-critical-ink-strong">
+                {error}
+              </p>
+            ) : null}
+          </>
+        )}
+        <div className="flex justify-end gap-2">
+          <button type="button" onClick={onClose} className="surface-button px-3 py-1.5">
+            {result ? "Close" : "Cancel"}
+          </button>
+          {!result ? (
+            <button
+              type="button"
+              aria-label={applyM.isPending ? "Applying…" : "Confirm apply to all sites"}
+              disabled={applyM.isPending}
+              aria-busy={applyM.isPending}
+              onClick={() => {
+                setError(null);
+                applyM.mutate();
+              }}
+              className="rounded bg-accent px-3 py-1.5 text-xs font-semibold text-on-accent disabled:opacity-60"
+            >
+              {applyM.isPending ? "Applying…" : "Apply"}
             </button>
           ) : null}
         </div>

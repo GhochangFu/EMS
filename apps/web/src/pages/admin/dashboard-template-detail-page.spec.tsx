@@ -1,11 +1,12 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen, waitFor } from "@testing-library/react";
+import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { expect, vi } from "vitest";
 
 import * as api from "../../api/admin/dashboard-templates";
 import * as groupsApi from "../../api/admin/asset-groups";
+import * as locationsApi from "../../api/admin/locations";
 import * as systemStatusApi from "../../api/system-status";
 import * as vocabApi from "../../api/vocabularies";
 import { OPERATIONAL } from "../../components/system-status-indicator.spec";
@@ -449,6 +450,120 @@ function siteDraftTemplate() {
       ],
     },
   };
+}
+
+function publishedSiteTemplate() {
+  return { ...siteDraftTemplate(), status: "published", publishedAt: new Date(0).toISOString() };
+}
+
+const SITE_LOCATIONS = {
+  items: [
+    { id: "loc-1", name: "Plant 1", slug: "plant-1", active: true },
+    { id: "loc-2", name: "Plant 2", slug: "plant-2", active: true },
+  ],
+};
+
+/** The site arm reads the organization's locations; unstubbed it would reach :4000. */
+function stubSiteApi(overrides: Partial<Record<string, unknown>> = {}): void {
+  vi.spyOn(locationsApi, "fetchAdminLocations").mockResolvedValue(SITE_LOCATIONS as never);
+  stubApi(overrides);
+}
+
+/**
+ * `F3.73` Task 5.3 — "Apply to all sites" shows for a published SITE template only. The
+ * adjacent positive control is the same button on the published site template; the two
+ * absences are a published asset-group template (wrong target) and a site draft (wrong status).
+ */
+export async function applyToAllSitesShowsOnlyForAPublishedSiteTemplate(): Promise<void> {
+  stubSiteApi({ fetchAdminDashboardTemplate: () => Promise.resolve(publishedSiteTemplate()) });
+  renderPage();
+  expect(await screen.findByRole("button", { name: "Apply to all sites" })).toBeInTheDocument();
+  cleanup();
+  vi.restoreAllMocks();
+
+  stubSiteApi({ fetchAdminDashboardTemplate: () => Promise.resolve(publishedTemplate()) });
+  renderPage();
+  expect(await screen.findByRole("button", { name: "Archive" })).toBeInTheDocument();
+  expect(
+    screen.queryByRole("button", { name: "Apply to all sites" }),
+    "an asset-group template offered the bulk site action",
+  ).not.toBeInTheDocument();
+  cleanup();
+  vi.restoreAllMocks();
+
+  stubSiteApi({ fetchAdminDashboardTemplate: () => Promise.resolve(siteDraftTemplate()) });
+  renderPage();
+  expect(await screen.findByRole("button", { name: "Publish" })).toBeInTheDocument();
+  expect(
+    screen.queryByRole("button", { name: "Apply to all sites" }),
+    "a draft offered the bulk site action",
+  ).not.toBeInTheDocument();
+}
+
+/** The bulk action names a made site and a skipped site with its reason, and posts once. */
+export async function applyResultTableListsASkippedSitesReason(): Promise<void> {
+  const calls: string[] = [];
+  stubSiteApi({
+    fetchAdminDashboardTemplate: () => Promise.resolve(publishedSiteTemplate()),
+    applySiteTemplate: (id: string) => {
+      calls.push(id);
+      return Promise.resolve({
+        made: [
+          {
+            locationId: "loc-1",
+            dashboardId: "d1",
+            dashboardSlug: "site-layout-plant-1",
+            omittedTabs: [],
+            droppedCards: [],
+            resolution: [],
+          },
+        ],
+        skipped: [{ locationId: "loc-2", reason: "has_view" }],
+      });
+    },
+  });
+  renderPage();
+
+  await userEvent.click(await screen.findByRole("button", { name: "Apply to all sites" }));
+  expect(calls, "the click posted before the confirm dialog was answered").toHaveLength(0);
+  await userEvent.click(await screen.findByRole("button", { name: "Confirm apply to all sites" }));
+
+  expect(await screen.findByRole("cell", { name: "Plant 2" })).toBeInTheDocument();
+  expect(screen.getByRole("cell", { name: /already has a site view/i })).toBeInTheDocument();
+  expect(screen.getByRole("cell", { name: "Plant 1" })).toBeInTheDocument();
+  expect(screen.getByRole("cell", { name: /made/i })).toBeInTheDocument();
+  expect(calls).toEqual([TEMPLATE_ID]);
+}
+
+/** A site template's instantiate dialog picks a location, sends `{ locationId }`, no group. */
+export async function siteTemplateInstantiatePicksALocation(): Promise<void> {
+  const calls: unknown[][] = [];
+  stubSiteApi({
+    fetchAdminDashboardTemplate: () => Promise.resolve(publishedSiteTemplate()),
+    instantiateSiteTemplate: (...args: unknown[]) => {
+      calls.push(args);
+      return Promise.resolve({
+        locationId: "loc-2",
+        dashboardId: "d1",
+        dashboardSlug: "site-layout-plant-2",
+        omittedTabs: [],
+        droppedCards: [],
+        resolution: [],
+      });
+    },
+  });
+  renderPage();
+
+  await userEvent.click(await screen.findByRole("button", { name: "Instantiate" }));
+  expect(screen.queryByRole("combobox", { name: "Asset group" })).not.toBeInTheDocument();
+  await userEvent.selectOptions(await screen.findByRole("combobox", { name: "Location" }), "loc-2");
+  await userEvent.click(screen.getByRole("button", { name: "Confirm instantiate" }));
+
+  await waitFor(() => {
+    expect(calls).toHaveLength(1);
+  });
+  expect(calls[0]?.slice(0, 2)).toEqual([TEMPLATE_ID, "loc-2"]);
+  expect(await screen.findByText(/site-layout-plant-2/)).toBeInTheDocument();
 }
 
 /**

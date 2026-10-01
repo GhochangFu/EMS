@@ -207,6 +207,11 @@ export function DashboardTemplatesAdminPage({ user }: DashboardTemplatesAdminPag
                 >
                   {row.code} v{row.version}
                 </Link>
+                {row.target === "site" ? (
+                  <span className="ml-2 rounded border border-info-line bg-info-wash px-1.5 py-0.5 text-[10px] font-semibold uppercase text-info-ink">
+                    Site
+                  </span>
+                ) : null}
                 <div className="text-[11px] text-ink-muted">
                   {row.name} · {row.section} · {row.widgetCount} widget
                   {row.widgetCount === 1 ? "" : "s"}
