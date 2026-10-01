@@ -13,7 +13,8 @@ import { WidgetFrame } from "./widget-frame";
 
 /**
  * `F3.73` (plan D9) — one row per group tab: its name, status pill and counts; "Outside scope"
- * for an unreadable tab. Each name links to its tab through `tabHref`, when there is one.
+ * for an unreadable tab. The name is text; an `Open` link follows each row's status when `tabHref`
+ * builds one (`F3.77`, ADR 0087 Amendment 3, plan D3). The list is named by the widget's title.
  */
 export function CriticalSystemsListWidget({
   title,
@@ -29,24 +30,29 @@ export function CriticalSystemsListWidget({
         {tabs.length === 0 ? (
           <p className="text-xs text-ink-muted">No system tabs</p>
         ) : (
-          <ul className="space-y-2" aria-label="Critical systems">
+          <ul className="space-y-2" aria-label={title}>
             {tabs.map((tab) => (
               <li key={tab.tabKey} className="flex items-center justify-between gap-3 text-xs">
-                {tabHref !== null ? (
-                  <Link className={`rounded font-medium text-ink hover:underline ${FOCUS_OUTLINE_CLASS}`} to={tabHref(tab.tabKey)}>
-                    {tab.label}
-                  </Link>
-                ) : (
-                  <span className="font-medium text-ink">{tab.label}</span>
-                )}
-                {tab.status !== null ? (
-                  <span className="flex items-center gap-2">
-                    <span className="text-ink-muted">{tabCountsText(tab.status)}</span>
-                    <TabStatusPill status={tab.status} severities={severities} />
-                  </span>
-                ) : (
-                  <span className="text-ink-muted">Outside scope</span>
-                )}
+                <span className="font-medium text-ink">{tab.label}</span>
+                <span className="flex items-center gap-2">
+                  {tab.status !== null ? (
+                    <>
+                      <span className="text-ink-muted">{tabCountsText(tab.status)}</span>
+                      <TabStatusPill status={tab.status} severities={severities} />
+                    </>
+                  ) : (
+                    <span className="text-ink-muted">Outside scope</span>
+                  )}
+                  {tabHref !== null ? (
+                    <Link
+                      className={`rounded font-semibold text-accent-strong hover:underline ${FOCUS_OUTLINE_CLASS}`}
+                      to={tabHref(tab.tabKey)}
+                      aria-label={`Open ${tab.label}`}
+                    >
+                      Open
+                    </Link>
+                  ) : null}
+                </span>
               </li>
             ))}
           </ul>

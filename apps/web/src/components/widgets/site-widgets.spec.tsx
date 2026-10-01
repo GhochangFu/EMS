@@ -378,7 +378,7 @@ export function aCardOnAnUnlistedTabSaysOutsideScope(): void {
 
 export function theListShowsOneRowPerGroupTab(): void {
   render(wrap(<CriticalSystemsListWidget {...COMMON} data={response()} tabHref={SITE_TAB_HREF} />));
-  const rows = within(screen.getByRole("list", { name: "Critical systems" })).getAllByRole("listitem");
+  const rows = within(screen.getByRole("list", { name: COMMON.title })).getAllByRole("listitem");
   expect(rows).toHaveLength(3);
   expect(within(rows[0]).getByText("3 alarms · 1 offline · 6 assets")).toBeInTheDocument();
   expect(within(rows[0]).getByText("Critical")).toBeInTheDocument();
@@ -388,7 +388,7 @@ export function theListShowsOneRowPerGroupTab(): void {
 /** A critical-systems row with offline members and no alarm reads "Offline"; the HVAC row beside it, "Normal". */
 export function aListRowWithOfflineMembersNeverReadsNormal(): void {
   render(wrap(<CriticalSystemsListWidget {...COMMON} data={response({ tabs: [OFFLINE_TAB, HVAC_TAB] })} tabHref={SITE_TAB_HREF} />));
-  const rows = within(screen.getByRole("list", { name: "Critical systems" })).getAllByRole("listitem");
+  const rows = within(screen.getByRole("list", { name: COMMON.title })).getAllByRole("listitem");
   expect(within(rows[0]).getByText("Offline")).toBeInTheDocument();
   expect(within(rows[0]).queryByText("Normal")).toBeNull();
   expect(within(rows[1]).getByText("Normal")).toBeInTheDocument();
@@ -397,15 +397,43 @@ export function aListRowWithOfflineMembersNeverReadsNormal(): void {
 /** The positive control is the first two rows above; this one is the row with no status. */
 export function theListShowsOutsideScopeForATabWithNoStatus(): void {
   render(wrap(<CriticalSystemsListWidget {...COMMON} data={response()} tabHref={SITE_TAB_HREF} />));
-  const rows = within(screen.getByRole("list", { name: "Critical systems" })).getAllByRole("listitem");
+  const rows = within(screen.getByRole("list", { name: COMMON.title })).getAllByRole("listitem");
   expect(within(rows[2]).getByText("Outside scope")).toBeInTheDocument();
+  expect(within(rows[2]).queryByText(/alarms ·/)).toBeNull();
   expect(within(rows[0]).queryByText("Outside scope")).toBeNull();
 }
 
+/** Each row's Open link names its own tab: a link hardcoded to the first tab gives HVAC the UPS href. */
 export function theListLinksEachRowToItsTab(): void {
   render(wrap(<CriticalSystemsListWidget {...COMMON} data={response()} tabHref={SITE_TAB_HREF} />));
-  expect(screen.getByRole("link", { name: "UPS Monitoring" }).getAttribute("href")).toBe(`${SITE_PATH}/ups`);
-  expect(screen.getByRole("link", { name: "HVAC System" }).getAttribute("href")).toBe(`${SITE_PATH}/hvac`);
+  expect(screen.getByRole("link", { name: "Open UPS Monitoring" }).getAttribute("href")).toBe(`${SITE_PATH}/ups`);
+  expect(screen.getByRole("link", { name: "Open HVAC System" }).getAttribute("href")).toBe(`${SITE_PATH}/hvac`);
+}
+
+/** The name is text, not a link: the only link of a row is its Open link (positive control: the Open link exists). */
+export function theListNameIsNotALink(): void {
+  render(wrap(<CriticalSystemsListWidget {...COMMON} data={response()} tabHref={SITE_TAB_HREF} />));
+  const rows = within(screen.getByRole("list", { name: COMMON.title })).getAllByRole("listitem");
+  expect(within(rows[0]).getByText("UPS Monitoring").closest("a")).toBeNull();
+  expect(within(rows[0]).getAllByRole("link")).toHaveLength(1);
+  expect(within(rows[0]).getByRole("link", { name: "Open UPS Monitoring" })).toBeInTheDocument();
+  expect(within(rows[0]).getByText("Open")).toBeInTheDocument();
+}
+
+/** With no `tabHref` the rows carry no link at all; the rows themselves still render. */
+export function theListHasNoLinkWithoutATabHref(): void {
+  render(wrap(<CriticalSystemsListWidget {...COMMON} data={response()} tabHref={null} />));
+  const rows = within(screen.getByRole("list", { name: COMMON.title })).getAllByRole("listitem");
+  expect(rows).toHaveLength(3);
+  expect(within(rows[0]).getByText("UPS Monitoring")).toBeInTheDocument();
+  expect(screen.queryByRole("link")).toBeNull();
+}
+
+/** The list is named by the widget's own title, not a literal. */
+export function theListIsNamedByTheWidgetTitle(): void {
+  render(wrap(<CriticalSystemsListWidget {...COMMON} title="Our systems" data={response()} tabHref={SITE_TAB_HREF} />));
+  expect(screen.getByRole("list", { name: "Our systems" })).toBeInTheDocument();
+  expect(screen.queryByRole("list", { name: "Critical systems" })).toBeNull();
 }
 
 export function theListSaysSoWhenTheDashboardHasNoGroupTab(): void {

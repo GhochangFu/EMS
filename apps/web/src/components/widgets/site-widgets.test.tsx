@@ -22,7 +22,10 @@ import {
   theCardLinksToItsTargetTab,
   theCardShowsItsTabsStatusAndCounts,
   theLegendNamesNormalAndOffline,
+  theListHasNoLinkWithoutATabHref,
+  theListIsNamedByTheWidgetTitle,
   theListLinksEachRowToItsTab,
+  theListNameIsNotALink,
   theListSaysSoWhenTheDashboardHasNoGroupTab,
   theListShowsOneRowPerGroupTab,
   theListShowsOutsideScopeForATabWithNoStatus,
@@ -103,8 +106,17 @@ describe("F3.73 site widgets — presentation", () => {
   it("SW16 the list shows Outside scope for a tab with no status", () => {
     theListShowsOutsideScopeForATabWithNoStatus();
   });
-  it("SW17 the list links each row to its tab", () => {
+  it("SW17 the list links each row to its tab through an Open link", () => {
     theListLinksEachRowToItsTab();
+  });
+  it("SW31 the list name is text, not a link", () => {
+    theListNameIsNotALink();
+  });
+  it("SW32 the list draws no link without a tab href", () => {
+    theListHasNoLinkWithoutATabHref();
+  });
+  it("SW33 the list is named by the widget title", () => {
+    theListIsNamedByTheWidgetTitle();
   });
   it("SW18 the list says so when the dashboard has no group tab", () => {
     theListSaysSoWhenTheDashboardHasNoGroupTab();
