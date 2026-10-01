@@ -11,7 +11,7 @@ Creates rows `F3.72`–`F3.75`. Amends [ADR 0076](./0076-control-room-for-each-o
 gate question 8 and decisions 1, 8 and 9, [ADR 0079](./0079-fixed-plant-mimic-widget.md)
 decision 4 and [ADR 0081](./0081-mimic-layout-builder.md) decision 10 (see
 *Amended records*); Amendment 2 narrows [ADR 0049](./0049-section-dashboard-templates.md)
-decision 6 for a site-layout copy. Promotes nothing out of `AGENTS.md` §6. `F3.72` ships in
+decision 6 for a site-layout copy. Amendment 3 (proposed) creates row `F3.77`. Promotes nothing out of `AGENTS.md` §6. `F3.72` ships in
 the first stable version (gate question 9); `F3.73`–`F3.75` start after it.
 
 ## Context
@@ -398,3 +398,91 @@ are otherwise unchanged.
   the rect and the empty bindings in its predicate, so a tile an admin moved or
   bound since the read stays. A tab an admin changed is left whole. The step is
   idempotent: a packed tab no longer stands at the stock rects.
+
+## Amendment 3 (2026-10-01, `F3.77`) — the site Overview leads with alarms, and a wall mode
+
+**Status: proposed** — waits for the owner's approval of this written record.
+
+An Impeccable critique of the site layout (2026-10-01, 20/40) found that the
+Overview hides the alarms and shows each domain's status three times. After the
+critique fixes merged (#681, `b21eadad`), the owner shaped a redesign with
+`/impeccable shape` and confirmed the brief on 2026-10-01
+(`docs/plans/f3.73-overview-shape.md`; product record `apps/web/PRODUCT.md`).
+The owner ruled each question one at a time. This amendment creates row
+**`F3.77`** for the build. Decisions 4 to 7 and Amendments 1 and 2 are
+otherwise unchanged.
+
+### Rulings
+
+1. **Users.** The site Overview serves the shift operator and the site engineer
+   with equal weight. The normal view serves both; wall mode serves the
+   operator on a wall screen.
+2. **No colour change.** The palette, the state colours, the brand accent and
+   the ADR 0085 surfaces stay as they are. The owner declined an ISA-101
+   grey-for-normal conversion.
+3. **SMOC standard stock v3, Overview tab only.** The Overview reads, top to
+   bottom: problem tiles (Active alarms, Offline assets, Total load, Asset
+   health); the active alarms rail (8 columns) beside one Systems list
+   (4 columns); the asset-class strip; the state legend last, as one compact
+   row. The domain tabs do not change.
+4. **One status, shown once.** The Systems list is the `critical_systems_list`
+   widget, with one row per domain tab: status, counts and an Open link. It
+   replaces both the module cards and the critical-systems list on the stock
+   Overview. `module_summary_card` stays in the widget vocabulary for admins.
+   The alarm rail is the only alarm list on the Overview.
+5. **Tab status markers.** Every tab of a tabbed site dashboard shows a marker
+   in the tab's tone (the server's `tabTone`) and its count of active alarms, as
+   text as well as colour, in the site view, the viewer and the builder. The
+   data is the existing Overview read (`tabs[]`); there is no new endpoint.
+6. **A seventh widget icon, `offline`.** The closed icon vocabulary
+   (`widgetIconSchema`) gains `offline`. It is widened together with the web
+   icon map (`apps/web/src/components/widget-icon.tsx`) and the F3.35 tile-icon
+   gate (`tests/f3.35-tile-icon-vocabulary.test.ts`). The Offline assets tile
+   uses it, so the tile no longer shares `alert` with Active alarms.
+7. **Wall mode, a toggle on the site view.** `?wall=1` hides the app shell and
+   enlarges the type. A thin top bar shows the site name, a live clock and the
+   time of the newest read. The mode rotates through the site's dashboard tabs
+   (not "Assets & RTUs"), every 30 s by default (choices 15, 30, 60 and 120 s),
+   with equal turns for every tab. A key press or a click pauses it; a visible
+   control resumes it. The URL keeps the mode, the interval and the tab
+   (`?wall=1&every=30&tab=<key>`); an unknown value falls back to the default.
+8. **No auth change for wall use.** When the API answers 401, wall mode shows a
+   full-screen "Session ended — sign in" state, never the last data as if it
+   were live. After sign-in, the app returns to the same wall URL. A lost socket
+   or stale reads show in the top bar, by the existing stale rule. A long-lived
+   wall session is not in scope; it would need its own ADR.
+9. **v3 reaches existing copies only where they are untouched.** The seed
+   upgrades a seeded copy's Overview tab to v3 only while that tab holds
+   exactly the v2 content at the rects its own site-layout copy wrote,
+   **including the packing of Amendment 2**. Each site packs its cards
+   differently, so the gate compares with that site's own packed plan, not with
+   the raw template. An Overview that an admin changed stays as it is. A copy
+   made after v3 gets v3. The seed supersedes its own stock template row
+   whenever that row's `stock_version` is below the current one (not only for
+   v1), and archives it under the same rule as v1 was: only when the
+   organization's newest `smoc-standard` row is the seed's own.
+10. **Order with `F3.74`.** `F3.74` (ADR 0088) also changes the stock
+   template: its SLD tab gets the `lv_single_line` preset and a breaker
+   table, and the Overview gets a compact SLD mimic about 6 columns wide. The
+   two rows agree (2026-10-01, coordinated between the two sessions): `F3.77`
+   takes stock v3 and makes the seed-upgrade predicate general (ruling 9);
+   `F3.74` rebases onto it and takes v4. The compact SLD goes in the row below
+   the alarms rail and the Systems list, in the left half; in v4 the
+   asset-class strip moves to the right half of that row. In v3 the strip
+   spans the full width.
+
+### Out of scope
+
+The colours and tokens; auth and the session lifetime; the content of the domain
+tabs; the mimic (`F3.74`, ADR 0088); `RSMOC-WC` (`F3.75`); the generated view.
+
+### Consequences
+
+- The stock template is content: v3 bumps `stockVersion` to 3 in
+  `packages/shared/src/site-templates/smoc-standard.ts`, and the seed upgrade
+  (`packages/db/src/site-layout-seed-upgrade.ts`) gains a v2 → v3 step for the
+  Overview tab.
+- A widened icon vocabulary is a contract change (ADR 0030); the web and the
+  API deploy together.
+- Wall mode is a view of the existing site view. It adds no route, no API and
+  no role gate.
