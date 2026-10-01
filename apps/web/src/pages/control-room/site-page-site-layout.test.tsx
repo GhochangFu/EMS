@@ -9,6 +9,7 @@ import {
   aRefusalShowsTheApiMessage,
   cleanupSiteLayout,
   dashboardRemovedShowsTheButton,
+  noSiteLayoutIsInfoToneAndDashboardRemovedStaysWarning,
   noSiteLayoutShowsItsTextAndTheButton,
   theRetryCarriesTheChosenGroup,
   theRetryWaitsForAChoice,
@@ -30,6 +31,10 @@ describe("F3.73 Make site layout on the site page's notice", () => {
 
   it("M2 shows the button on the dashboard_removed notice", async () => {
     await dashboardRemovedShowsTheButton();
+  });
+
+  it("M2b tones no_site_layout as info and keeps dashboard_removed warning", async () => {
+    await noSiteLayoutIsInfoToneAndDashboardRemovedStaysWarning();
   });
 
   it("M3 shows no button to an operator", async () => {

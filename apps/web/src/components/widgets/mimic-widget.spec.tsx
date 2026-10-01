@@ -133,13 +133,26 @@ export function drawsEightNodesInPresetOrder(): void {
   expect(keys).toHaveLength(8);
 }
 
-/** W2 — an unassigned node says so, and is dimmed. */
-export function unassignedNodeSaysNotAssigned(): void {
+/**
+ * W2 — a node the read resolved with no member says "No asset at this site", dimmed — never "Not
+ * assigned" (F3.73 critique: it read like a fault). The no-entry case is S3 in `mimic-scene.spec`.
+ */
+export function aNodeWithNoMemberSaysNoAssetAtThisSite(): void {
   renderMimic();
   const softener = nodeEl("softener");
-  expect(softener.getAttribute("data-status")).toBe("unassigned");
-  expect(within(softener).getByText("Not assigned")).toBeInTheDocument();
+  expect(softener.getAttribute("data-status")).toBe("no-asset");
+  expect(within(softener).getByText("No asset at this site")).toBeInTheDocument();
+  expect(within(softener).queryByText("Not assigned")).toBeNull();
   expect(softener.getAttribute("class")).toContain("opacity-50");
+}
+
+/** W2c — the no-asset frame is neutral: a solid `stroke-line` outline, no dash, no alarm stroke. */
+export function aNoAssetNodeDrawsANeutralSolidFrame(): void {
+  renderMimic();
+  const frame = nodeEl("softener").querySelector("rect");
+  expect(frame?.getAttribute("stroke-dasharray")).toBeNull();
+  expect(frame?.getAttribute("class")).toContain("stroke-line");
+  expect(frame?.getAttribute("class")).not.toContain("stroke-critical");
 }
 
 /** W2b — an assigned node shows its asset code and is not dimmed. */

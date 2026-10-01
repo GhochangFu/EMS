@@ -284,6 +284,30 @@ export function aReadyValueTileShowsTheFormattedReadingAndItsUnit(): void {
 }
 
 /**
+ * `F3.73` critique — a value tile bound to `assets.health.score` reads its catalog key from the
+ * widget's source, so the 0..1 score shows as a percentage, not "0.9818181818181818".
+ */
+export function aHealthScoreTileShowsAPercentage(): void {
+  const widget: DashboardWidgetDto = {
+    ...sampleWidget("value_tile", "Asset health"),
+    config: { unit: null },
+    sources: [
+      {
+        id: "22222222-2222-4222-8222-222222222222",
+        catalogKey: "assets.health.score",
+        params: {},
+        sortOrder: 0,
+      },
+    ],
+  } as DashboardWidgetDto;
+  render(<DashboardWidget widget={widget} data={{ status: "ready", primary: 0.9818181818181818, series: [], stale: false }} />);
+
+  expect(screen.getByText("98")).toBeInTheDocument();
+  expect(screen.getByText("%")).toBeInTheDocument();
+  expect(screen.queryByText(/0\.98/)).toBeNull();
+}
+
+/**
  * A failed value tile shows `KpiTile`'s own failure line, not the frame's.
  *
  * Recorded rather than corrected. Because a value tile is not inside a

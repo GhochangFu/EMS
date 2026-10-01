@@ -75,6 +75,12 @@ export type DashboardTelemetry = {
   isLoading: boolean;
 };
 
+/**
+ * The catalog-values key's prefix, without the dashboard id: `useSiteWidgetsAlarmRefresh`
+ * invalidates it on each `/ws/alarms` event, so the key is spelled once.
+ */
+export const catalogValuesQueryPrefix = ["dashboards", "catalog-values"] as const;
+
 /** The TanStack key for one aggregate read. Every field of the request is in it, or two
  * widgets asking the same point for different windows would share one cache entry. */
 const aggregateQueryKey = (request: {
@@ -133,9 +139,12 @@ export function useDashboardTelemetry(dashboard: DashboardDto | undefined): Dash
   /**
    * `F3.35` Stage C — the third data path (ADR 0048 decisions 1 and 2).
    *
-   * **A poll, not the socket, and the reason is in `CATALOG_REFRESH_MS`'s own docblock**: an
-   * alarm raise is not a telemetry reading, so the socket below never carries one, and hanging
-   * a re-read off it would both miss the events this counts and burst on the ones it does not.
+   * **A poll, not the telemetry socket, and the reason is in `CATALOG_REFRESH_MS`'s own
+   * docblock**: an alarm raise is not a telemetry reading, so the socket below never carries one,
+   * and hanging a re-read off it would both miss the events this counts and burst on the ones it
+   * does not. A canvas with site widgets ALSO invalidates this entry on each `/ws/alarms` event
+   * (`useSiteWidgetsAlarmRefresh`, keyed on {@link catalogValuesQueryPrefix}), so the Active alarms
+   * tile moves with the rail beside it rather than up to a minute behind (F3.73 critique).
    *
    * **One request per dashboard and only when something binds a metric.** `enabled` is the same
    * additive gate `aggregateRequestsFor` applies one path over — a dashboard saved before this
@@ -148,7 +157,7 @@ export function useDashboardTelemetry(dashboard: DashboardDto | undefined): Dash
   const bindsCatalog = dashboard !== undefined && dashboardBindsCatalogSources(dashboard);
   const dashboardId = dashboard?.id;
   const catalogQuery = useQuery({
-    queryKey: ["dashboards", "catalog-values", dashboardId],
+    queryKey: [...catalogValuesQueryPrefix, dashboardId],
     queryFn: () => fetchDashboardCatalogValues(dashboardId as string),
     enabled: bindsCatalog && dashboardId !== undefined,
     // `refetchIntervalInBackground` is left at its default `false`: a hidden tab stops polling

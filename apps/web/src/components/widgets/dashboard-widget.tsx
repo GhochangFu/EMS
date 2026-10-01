@@ -196,6 +196,7 @@ export function DashboardWidget({ widget, data, now }: DashboardWidgetProps) {
           compareValue={compareValue}
           coverage={coverage}
           currency={currency}
+          catalogKey={widget.sources[0]?.catalogKey ?? null}
         />
       );
     case "chart":
@@ -257,12 +258,12 @@ export function DashboardWidget({ widget, data, now }: DashboardWidgetProps) {
           data={undefined}
           severities={NO_SEVERITIES}
           config={widget.config}
-          sitePath={null}
+          tabHref={null}
         />
       );
     case "critical_systems_list":
       return (
-        <CriticalSystemsListWidget title={title} status={status} data={undefined} severities={NO_SEVERITIES} sitePath={null} />
+        <CriticalSystemsListWidget title={title} status={status} data={undefined} severities={NO_SEVERITIES} tabHref={null} />
       );
     default: {
       const unreachable: never = widget;

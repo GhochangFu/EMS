@@ -10,7 +10,8 @@ questions*. The owner approved this written record on 2026-09-30.
 Creates rows `F3.72`–`F3.75`. Amends [ADR 0076](./0076-control-room-for-each-organization.md)
 gate question 8 and decisions 1, 8 and 9, [ADR 0079](./0079-fixed-plant-mimic-widget.md)
 decision 4 and [ADR 0081](./0081-mimic-layout-builder.md) decision 10 (see
-*Amended records*). Promotes nothing out of `AGENTS.md` §6. `F3.72` ships in
+*Amended records*); Amendment 2 narrows [ADR 0049](./0049-section-dashboard-templates.md)
+decision 6 for a site-layout copy. Promotes nothing out of `AGENTS.md` §6. `F3.72` ships in
 the first stable version (gate question 9); `F3.73`–`F3.75` start after it.
 
 ## Context
@@ -358,3 +359,42 @@ are unchanged.
 - **`assets.list` dataset.** It has no `role` column; the resolver signature
   returns asset ids only. A role column on the group assets table stays
   `F3.75`.
+
+## Amendment 2 (2026-10-01, `F3.73`) — a copy leaves out a tile that binds nothing
+
+An Impeccable design critique of the merged `F3.73` layout (`main`
+`6d4d0505`) found role value tiles that show only a dash on a seeded site:
+a tile whose role has no member at the site, or whose members carry none of its
+point keys (for example *Cooling kW* on a site with no CRAC). The owner asked
+for every implementation finding to be fixed, and on 2026-10-01 ruled that the
+copy rule below stands and is recorded here. Decisions 4 to 7 and Amendment 1
+are otherwise unchanged.
+
+- **The omission rule.** A site-layout copy leaves out a `value_tile` that has
+  role bindings, no catalog source, and resolves **zero** points at the site
+  (`isUnboundRoleTile` in `packages/shared/src/site-layout-planner.ts`). Every
+  other widget type, and a tile with a catalog source, is copied as before. The
+  rest of the tab is packed left in template order (`packAfterRemoval`), so the
+  copy has no hole and no tile overlaps a tall neighbour. This extends plan
+  decision D5, which until now left out only a whole tab and its Overview
+  cards.
+- **Reported, never silent.** The `201` body of
+  `POST /admin/locations/:id/site-layout` (and each `made[]` entry of
+  `apply-to-sites`) carries `omittedTiles: { tabKey, widgetKey }[]` beside
+  `droppedCards`, and the audit row records the same tiles as `tabKey/widgetKey`
+  strings. The seed writes no audit row; its return value (`made[]`) lists them. ADR 0049 Amendment 2
+  decision 1 (a per-widget report) is kept: a tile left out is named in the
+  answer, not lost.
+- **ADR 0049 decision 6 is narrowed, not reversed.** Instantiating a
+  `target = 'dashboard'` template still imports a widget with zero bindings.
+  Only a site-layout copy (the three routes of plan decision D6, and the seed),
+  which knows the site, leaves an unbound role tile out. Once a point exists at
+  the site, an admin can add the tile in the builder and bind it.
+- **The seed applies the same rule to its own copies.** On a database that ran
+  an earlier seed, `planCopyPackUpgrade` (`packages/db/src/site-layout-seed-upgrade.ts`)
+  deletes an unbound role tile and packs the tab **only** while that tab holds
+  exactly what the seed wrote: every template widget once, at its stock rect,
+  and the deleted tile holds no point row and no source row. The delete repeats
+  the rect and the empty bindings in its predicate, so a tile an admin moved or
+  bound since the read stays. A tab an admin changed is left whole. The step is
+  idempotent: a packed tab no longer stands at the stock rects.

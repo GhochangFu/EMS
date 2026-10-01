@@ -139,13 +139,14 @@ export function DashboardTabsPanel({
                   >
                     ↓
                   </button>
+                  {/* `F3.73` critique fix (WCAG 2.5.3) — no `aria-label`: the visible text names the
+                      tab and what goes with it, so the accessible name is what a sighted user reads. */}
                   <button
                     type="button"
-                    aria-label={`Remove tab ${n}`}
                     onClick={() => onRemove(index)}
                     className="surface-button border-critical-line px-2 py-1 text-critical-ink"
                   >
-                    {count > 0 ? `Remove (and its ${count} widget${count === 1 ? "" : "s"})` : "Remove"}
+                    {count > 0 ? `Remove tab ${n} (and its ${count} widget${count === 1 ? "" : "s"})` : `Remove tab ${n}`}
                   </button>
                 </div>
               </li>

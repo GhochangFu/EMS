@@ -26,9 +26,48 @@ export function formatWidgetValueRoundsAndUnrounds(): void {
     "a renderer dropping decimals prints the raw float on a gauge face",
   ).toBe("1234.6 kW");
   expect(
-    formatWidgetValue(1234.567),
-    "absent decimals must not round — dropping this leaves no way to show full precision",
+    formatWidgetValue(1234.567, { decimals: 3 }),
+    "an explicit decimals must still win over the default format",
   ).toBe("1234.567");
+}
+
+/** Critique finding: "203.61802397133374 kW" on a tile. Absent `decimals` gets a default, bounded format. */
+export function formatWidgetValueDefaultsToABoundedFormatWhenDecimalsAreUnset(): void {
+  expect(formatWidgetValue(203.61802397133374, { unit: "kW" }), "a raw float overflows the tile").toBe("203.6 kW");
+  expect(formatWidgetValue(42.678), "10 to 100 gets one decimal").toBe("42.7");
+  expect(formatWidgetValue(3.14159), "below 10 gets two decimals").toBe("3.14");
+  expect(formatWidgetValue(-203.618), "the magnitude decides, not the sign").toBe("-203.6");
+  expect(formatWidgetValue(0.000012345), "a tiny reading must not render as 0 or an exponent").toBe("0.000012");
+  expect(formatWidgetValue(1234567.891), "no grouping, no exponent").toBe("1234567.9");
+}
+
+export function formatWidgetValueKeepsAnIntegerAnInteger(): void {
+  expect(formatWidgetValue(750)).toBe("750");
+  expect(formatWidgetValue(7)).toBe("7");
+  expect(formatWidgetValue(0)).toBe("0");
+}
+
+export function formatWidgetValueDefaultsBelowTheAbbreviationThresholdToo(): void {
+  expect(formatWidgetValue(987.654321, { abbreviate: true })).toBe("987.7");
+}
+
+/** `assets.health.score` is a 0..1 fraction; the tile says it as a percentage. */
+export function aHealthScoreTileRendersAPercentage(): void {
+  const props = toKpiTileProps({
+    title: "Asset health",
+    status: "ready",
+    primary: 0.9818181818,
+    config: {},
+    catalogKey: "assets.health.score",
+  });
+  expect(props.value).toBe("98");
+  expect(props.unit).toBe("%");
+}
+
+export function aHealthScoreTileKeepsAnExplicitUnitOutOfThePercentPath(): void {
+  const other = toKpiTileProps({ title: "Load", status: "ready", primary: 0.5, config: { unit: "kW" } });
+  expect(other.value, "a tile without the health key must not be scaled").toBe("0.5");
+  expect(other.unit).toBe("kW");
 }
 
 export function formatWidgetValueRendersAnEmDashForNull(): void {

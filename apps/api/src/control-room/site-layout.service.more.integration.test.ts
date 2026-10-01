@@ -12,9 +12,12 @@ import {
   assertConcurrentCopyAnswers409,
   assertGetBySlugCarriesTheStamp,
   assertInstantiateSiteArmMakesTheCopy,
+  assertKeptCardsArePackedLeft,
   assertMimicNodesResolveThroughTheTabGroup,
   assertNoPublishedSiteTemplateAnswers409,
+  assertOmittedTilesAreAudited,
   assertTakenSlugAnswers409,
+  assertUnboundRoleTilesAreOmitted,
 } from "./site-layout.service.more.integration.spec";
 
 /**
@@ -66,5 +69,17 @@ describe.skipIf(!connectionString)("F3.73 — SiteLayoutService under real RLS",
 
   it("S14 a copy concurrent with another on the same site answers 409, not a raw 23505", async () => {
     await assertConcurrentCopyAnswers409(harness.ctx());
+  });
+
+  it("S15a the Overview cards of the kept tabs are packed left", async () => {
+    await assertKeptCardsArePackedLeft(harness.ctx());
+  });
+
+  it("S15b a role tile with no point at the site is omitted and the tab's body moves up", async () => {
+    await assertUnboundRoleTilesAreOmitted(harness.ctx());
+  });
+
+  it("S15c the make audit names every omitted tile", async () => {
+    await assertOmittedTilesAreAudited(harness.ctx());
   });
 });

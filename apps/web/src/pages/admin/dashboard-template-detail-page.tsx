@@ -95,6 +95,7 @@ export function DashboardTemplateDetailPage({ user }: DashboardTemplateDetailPag
   const [actionError, setActionError] = useState<string | null>(null);
   const [instantiateOpen, setInstantiateOpen] = useState(false);
   const [applyOpen, setApplyOpen] = useState(false);
+  const [archiveOpen, setArchiveOpen] = useState(false);
 
   const templateQ = useQuery({
     queryKey: ["admin", "dashboard-template", templateId],
@@ -294,8 +295,8 @@ export function DashboardTemplateDetailPage({ user }: DashboardTemplateDetailPag
                 type="button"
                 disabled={busy}
                 aria-busy={archiveM.isPending}
-                onClick={() => archiveM.mutate()}
-                className="rounded bg-accent px-3 py-1.5 text-xs font-semibold text-on-accent disabled:opacity-60"
+                onClick={() => setArchiveOpen(true)}
+                className="rounded border border-critical-line px-3 py-1.5 text-xs font-semibold text-critical-ink disabled:opacity-60"
               >
                 {archiveM.isPending ? "Archiving…" : "Archive"}
               </button>
@@ -357,9 +358,9 @@ export function DashboardTemplateDetailPage({ user }: DashboardTemplateDetailPag
       ) : null}
 
       {!editable ? (
-        <p className="rounded border border-info-line bg-info-wash p-3 text-xs text-info-ink">
-          This version is read-only. ADR 0015 freezes a template once it is published, so that
-          dashboards instantiated from it never change underneath.
+        <p className="max-w-prose rounded border border-info-line bg-info-wash p-3 text-xs text-info-ink">
+          This version is read-only. A template is frozen once it is published, so that dashboards
+          made from it never change underneath. To change it, open a new draft.
         </p>
       ) : null}
 
@@ -421,7 +422,62 @@ export function DashboardTemplateDetailPage({ user }: DashboardTemplateDetailPag
       {applyOpen ? (
         <ApplyToSitesDialog template={template} onClose={() => setApplyOpen(false)} />
       ) : null}
+      {archiveOpen ? (
+        <ArchiveConfirmDialog
+          template={template}
+          onConfirm={() => {
+            setArchiveOpen(false);
+            archiveM.mutate();
+          }}
+          onClose={() => setArchiveOpen(false)}
+        />
+      ) : null}
     </MasterDataLayout>
+  );
+}
+
+/**
+ * `F3.73` critique — Archive asks first. It sits beside Instantiate and takes the template out of
+ * use, so one stray click must not do it. Same shape as the Apply-to-all-sites confirm.
+ *
+ * It takes no pending flag: the confirm closes the dialog in the same click that starts the
+ * post, and the page's Archive button (disabled while any lifecycle call pends, so the dialog
+ * cannot reopen) is the one that announces "Archiving…" with `aria-busy`.
+ */
+function ArchiveConfirmDialog({
+  template,
+  onConfirm,
+  onClose,
+}: {
+  template: DashboardTemplateDto;
+  onConfirm: () => void;
+  onClose: () => void;
+}) {
+  return (
+    <div className="fixed inset-0 z-40 flex items-center justify-center bg-scrim/30 p-4">
+      <div className="w-full max-w-2xl space-y-3 surface-dialog p-4">
+        <h2 className="font-condensed text-base font-bold text-ink">
+          Archive {template.code} v{template.version}
+        </h2>
+        <p className="max-w-prose text-xs text-ink-muted">
+          An archived version can no longer be instantiated. Dashboards already made from it are not
+          changed. You can revive it later as a new draft.
+        </p>
+        <div className="flex justify-end gap-2">
+          <button type="button" onClick={onClose} className="surface-button px-3 py-1.5">
+            Cancel
+          </button>
+          <button
+            type="button"
+            aria-label="Confirm archive"
+            onClick={onConfirm}
+            className="rounded border border-critical-line px-3 py-1.5 text-xs font-semibold text-critical-ink"
+          >
+            Archive
+          </button>
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -632,12 +688,16 @@ const SKIP_REASON_LABELS: Record<SiteLayoutSkipReason, string> = {
   slug_taken: "Another site already holds this dashboard slug",
 };
 
-/** What one site's copy did, in one cell: the kept tabs and any tab the site could not hold. */
+/**
+ * What one site's copy did, in one cell: the kept tabs, any tab the site could not hold, and any
+ * role tile left out because it binds no point at the site (ADR 0087 Amendment 2).
+ */
 function madeSummary(made: SiteLayoutResultDto): string {
   const kept = `${made.resolution.length} tab${made.resolution.length === 1 ? "" : "s"}`;
-  return made.omittedTabs.length > 0
-    ? `Made — ${kept}, ${made.omittedTabs.length} omitted (no matching group)`
-    : `Made — ${kept}`;
+  const tabs = made.omittedTabs.length > 0 ? `, ${made.omittedTabs.length} omitted (no matching group)` : "";
+  const tiles = made.omittedTiles.length;
+  const left = tiles > 0 ? `, ${tiles} tile${tiles === 1 ? "" : "s"} left out (no point at the site)` : "";
+  return `Made — ${kept}${tabs}${left}`;
 }
 
 /**
@@ -793,7 +853,7 @@ function ApplyToSitesDialog({
           </>
         ) : (
           <>
-            <p className="text-xs text-ink-muted">
+            <p className="max-w-prose text-xs text-ink-muted">
               This copies the template onto every active site of its organization, one site at a
               time. A site that already has a site view, has no assets, or has a tab that matches
               two or more asset groups is skipped and listed.

@@ -41,6 +41,14 @@ export type MimicSceneProps = {
   children?: ReactNode;
 };
 
+/**
+ * The label of a roled unit the response lists with `asset: null` — resolved, no member carrying
+ * its role (F3.73 critique: "Not assigned" read like a fault). "Not assigned" stays for a unit the
+ * response does not list at all: the editor's drawing (`nodes={[]}`) and a widget missing from
+ * the read.
+ */
+const MIMIC_NO_ASSET_LABEL = "No asset at this site";
+
 /** Value rows, under the status frame, in unit-slot units. */
 const ROW_Y = [152, 170, 188] as const;
 
@@ -153,8 +161,11 @@ export function MimicScene({ title, geometry, nodes, readings, children }: Mimic
     const node = byKey.get(unit.key);
     const asset = node?.asset ?? null;
     const nodeStatus = statusOf.get(unit.key) ?? "unassigned";
+    // The server resolved the node and found no member for its role: a plain fact about the site,
+    // not a fault — drawn muted and solid, never dashed, never "Not assigned".
+    const noAsset = node !== undefined && asset === null;
     const badge = asset === null ? null : mimicBadge(node?.memberCount ?? 0);
-    const statusLabel = MIMIC_STATUS_LABEL[nodeStatus];
+    const statusLabel = noAsset ? MIMIC_NO_ASSET_LABEL : MIMIC_STATUS_LABEL[nodeStatus];
     const levelPoint = asset === null || unit.symbol !== "tank" ? null : mimicLevelPoint(asset);
     const level =
       asset === null || levelPoint === null
@@ -169,7 +180,7 @@ export function MimicScene({ title, geometry, nodes, readings, children }: Mimic
         key={unit.key}
         data-testid="mimic-node"
         data-node-key={unit.key}
-        data-status={nodeStatus}
+        data-status={noAsset ? "no-asset" : nodeStatus}
         transform={transform}
         className={asset === null ? "opacity-50" : undefined}
       >
@@ -181,7 +192,7 @@ export function MimicScene({ title, geometry, nodes, readings, children }: Mimic
           height={MIMIC_FRAME_H}
           rx={10}
           strokeWidth={nodeStatus === "alarm" ? 3 : 2}
-          strokeDasharray={asset === null ? "6 4" : undefined}
+          strokeDasharray={asset === null && !noAsset ? "6 4" : undefined}
           className={`fill-surface ${MIMIC_STATUS_STROKE[nodeStatus]}`}
         />
         <text x={12} y={22} fontSize={15} fontWeight={700} className="fill-ink">

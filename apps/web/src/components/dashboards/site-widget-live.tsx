@@ -1,3 +1,4 @@
+import { useContext } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useParams } from "react-router-dom";
 
@@ -11,6 +12,7 @@ import { ActiveAlarmsRailWidget } from "../widgets/active-alarms-rail-widget";
 import { AssetClassStripWidget } from "../widgets/asset-class-strip-widget";
 import { CriticalSystemsListWidget } from "../widgets/critical-systems-list-widget";
 import { ModuleSummaryCardWidget } from "../widgets/module-summary-card-widget";
+import { SiteTabHrefContext, siteTabHref, type SiteTabHref } from "../widgets/site-widget-parts";
 import { StateLegendWidget } from "../widgets/state-legend-widget";
 
 /** The five widget types `SiteWidgetLive` draws — the branch `DashboardWidgetLive` takes. */
@@ -57,7 +59,8 @@ type SiteWidgetLiveProps = {
  *
  * The module card and the list link to `<site path>/<tab key>`, where the site path is the route
  * the widget is drawn under (`/control-room/site/:locationId`). Off that route there is no
- * `locationId` and they draw without a link.
+ * `locationId`: the dashboard viewer gives a `?tab=` link through `SiteTabHrefContext` (critique
+ * fix), and anywhere else they draw without a link.
  */
 export function SiteWidgetLive({ widget, dashboardId, tabKey }: SiteWidgetLiveProps) {
   // The legend names the closed palette from the vocabulary and needs nothing from the read, so it
@@ -80,7 +83,11 @@ function ReadingSiteWidget({
     staleTime: 5 * 60 * 1000,
   });
   const { locationId } = useParams();
-  const sitePath = locationId === undefined ? null : `/control-room/site/${encodeURIComponent(locationId)}`;
+  const viewerTabHref = useContext(SiteTabHrefContext);
+  const tabHref: SiteTabHref | null =
+    locationId === undefined
+      ? viewerTabHref
+      : (key) => siteTabHref(`/control-room/site/${encodeURIComponent(locationId)}`, key);
 
   const title = widgetTitle(widget.title, widget.widgetType);
   const status: WidgetStatus = query.data !== undefined ? "ready" : query.isError ? "error" : "loading";
@@ -92,9 +99,9 @@ function ReadingSiteWidget({
     case "asset_class_strip":
       return <AssetClassStripWidget title={title} status={status} data={query.data} />;
     case "module_summary_card":
-      return <ModuleSummaryCardWidget {...common} config={widget.config} sitePath={sitePath} />;
+      return <ModuleSummaryCardWidget {...common} config={widget.config} tabHref={tabHref} />;
     case "critical_systems_list":
-      return <CriticalSystemsListWidget {...common} sitePath={sitePath} />;
+      return <CriticalSystemsListWidget {...common} tabHref={tabHref} />;
     default: {
       const unreachable: never = widget;
       return unreachable;

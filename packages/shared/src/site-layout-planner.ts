@@ -1,5 +1,5 @@
 // Type-only, and erased at emit: the `./ingest` precedent for an import back from the index.
-import type { SectionTemplateWidget, SiteTemplateTab } from "./index";
+import type { SectionTemplateWidget, SiteLayoutOmittedTile, SiteTemplateTab, TemplateWidgetPlan } from "./index";
 
 /**
  * `F3.73` plan D5 — the site-layout planner: which asset group each tab of a site template binds
@@ -242,9 +242,127 @@ export function planSiteLayout(
   };
   const planned = pick.tabs.map((row) => ({
     ...row,
-    tab: { ...row.tab, widgets: row.tab.widgets.filter((widget) => keepsItsTarget(row.tab.key, widget)) },
+    tab: { ...row.tab, widgets: packAfterRemoval(row.tab.widgets, (widget) => keepsItsTarget(row.tab.key, widget)) },
   }));
   return { status: "planned", tabs: planned, omitted: pick.omitted, droppedCards };
+}
+
+/** The rect fields the pack reads and writes. */
+export type SiteLayoutGridBox = {
+  readonly gridX: number;
+  readonly gridY: number;
+  readonly gridW: number;
+  readonly gridH: number;
+};
+
+/**
+ * The widgets `keep` accepts, packed so a removal leaves no hole (the F3.73 design critique: a
+ * PHE Overview kept its `sld` and `env` cards at columns 0 and 8, four empty slots apart).
+ *
+ * **Left, per row.** In each row (`gridY`) a removed widget stood in, the kept widgets of that row
+ * move left in their order there, edge to edge from the row's first column. A row nothing was
+ * removed from keeps its gaps: those are the template's, not the copy's. A kept widget of another
+ * row that shares grid rows with the one moving (a tall widget reaching down from above, or one
+ * below that a tall mover reaches into) is stepped around, never overlapped: no writer of a copy
+ * checks for overlap, and the canvas draws one.
+ *
+ * **Up, per emptied row.** A grid row a removed widget covered and no kept widget covers is gone,
+ * and every kept widget below it moves up one. The canvas places each widget at its own `gridY`
+ * and does not compact, so a tab that lost its whole tile row would otherwise open on a blank
+ * band.
+ *
+ * Pure: the widgets come back as new objects, in input order, and the input is never mutated
+ * (it is the shared stock template's own content).
+ */
+export function packAfterRemoval<W extends SiteLayoutGridBox>(
+  widgets: readonly W[],
+  keep: (widget: W, index: number) => boolean,
+): W[] {
+  const kept = widgets.map((widget, index) => keep(widget, index));
+  const removed = widgets.filter((_, index) => !kept[index]);
+  const newX = new Map<number, number>();
+  const xOf = (index: number): number => newX.get(index) ?? (widgets[index] as W).gridX;
+  const spansMeet = (a: W, b: W): boolean => a.gridY < b.gridY + b.gridH && b.gridY < a.gridY + a.gridH;
+  for (const rowY of [...new Set(removed.map((widget) => widget.gridY))].sort((a, b) => a - b)) {
+    const row = widgets.flatMap((widget, index) => (widget.gridY === rowY ? [index] : []));
+    let x = Math.min(...row.map((index) => (widgets[index] as W).gridX));
+    const keptRow = row
+      .filter((index) => kept[index])
+      .sort((a, b) => (widgets[a] as W).gridX - (widgets[b] as W).gridX || a - b);
+    for (const index of keptRow) {
+      const widget = widgets[index] as W;
+      // A kept widget of another row that shares grid rows with this one is an obstacle: one
+      // from a higher row reaching down, or one below that this widget reaches into.
+      const obstacles = widgets.flatMap((other, at) =>
+        kept[at] && other.gridY !== rowY && spansMeet(widget, other) ? [{ x: xOf(at), w: other.gridW }] : [],
+      );
+      let placed = x;
+      for (let moved = true; moved; ) {
+        moved = false;
+        for (const obstacle of obstacles) {
+          if (placed < obstacle.x + obstacle.w && obstacle.x < placed + widget.gridW) {
+            placed = obstacle.x + obstacle.w;
+            moved = true;
+          }
+        }
+      }
+      // Never right of where the template put it: that place was free, the rows before it only
+      // moved left.
+      placed = Math.min(placed, widget.gridX);
+      newX.set(index, placed);
+      x = placed + widget.gridW;
+    }
+  }
+  const covers = (widget: W, y: number): boolean => y >= widget.gridY && y < widget.gridY + widget.gridH;
+  const emptied = new Set<number>();
+  for (const widget of removed) {
+    for (let y = widget.gridY; y < widget.gridY + widget.gridH; y += 1) {
+      if (!widgets.some((other, index) => kept[index] && covers(other, y))) emptied.add(y);
+    }
+  }
+  return widgets.flatMap((widget, index) => {
+    if (!kept[index]) return [];
+    const lift = [...emptied].filter((y) => y < widget.gridY).length;
+    return [{ ...widget, gridX: newX.get(index) ?? widget.gridX, gridY: widget.gridY - lift }];
+  });
+}
+
+/**
+ * Whether a widget is a role-bound value tile that bound no point: it names a role, reads no
+ * catalog source, and resolved nothing. **Zero points, not the `unresolved` outcome**: a role
+ * whose members all lack the point key reports `partial` and binds nothing just the same.
+ * Such a tile shows "—" for good and fails the builder's save rule
+ * (`bindingRequiredMessage`), so a copy never carries one.
+ */
+export function isUnboundRoleTile(
+  widget: Pick<SectionTemplateWidget, "widgetType" | "bindings" | "sources">,
+  boundPoints: number,
+): boolean {
+  return (
+    widget.widgetType === "value_tile" && widget.bindings.length > 0 && widget.sources.length === 0 && boundPoints === 0
+  );
+}
+
+/**
+ * One tab's widget plans without its unbound role tiles ({@link isUnboundRoleTile}), the rest
+ * packed by {@link packAfterRemoval}. Runs after `planTemplateWidget`, in both writers of a copy
+ * (the API's `SiteLayoutService` and the seed), so the two leave out the same tiles.
+ */
+export function omitUnboundTiles(
+  tabKey: string,
+  plans: readonly TemplateWidgetPlan[],
+): { plans: TemplateWidgetPlan[]; omittedTiles: SiteLayoutOmittedTile[] } {
+  const omit = plans.map((plan) => isUnboundRoleTile(plan.widget, plan.points.length));
+  const omittedTiles = plans.flatMap((plan, index) => (omit[index] ? [{ tabKey, widgetKey: plan.widget.key }] : []));
+  const packed = packAfterRemoval(
+    plans.map((plan) => plan.widget),
+    (_, index) => !omit[index],
+  );
+  const keptPlans = plans.filter((_, index) => !omit[index]);
+  return {
+    plans: keptPlans.map((plan, index) => ({ ...plan, widget: packed[index] as SectionTemplateWidget })),
+    omittedTiles,
+  };
 }
 
 /** The asset domains present at a site, sorted and unique; an asset with no domain adds none. */

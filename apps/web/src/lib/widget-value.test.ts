@@ -12,6 +12,11 @@ import {
   formatDeltaIsNullWithoutAComputablePercentage,
   formatDeltaMatchesTheMocksExactWording,
   formatDeltaSignsDirectionCorrectlyAndFlatOnATinyChange,
+  aHealthScoreTileKeepsAnExplicitUnitOutOfThePercentPath,
+  aHealthScoreTileRendersAPercentage,
+  formatWidgetValueDefaultsBelowTheAbbreviationThresholdToo,
+  formatWidgetValueDefaultsToABoundedFormatWhenDecimalsAreUnset,
+  formatWidgetValueKeepsAnIntegerAnInteger,
   formatWidgetValueAbbreviatesOnlyWhenAsked,
   formatWidgetValueHonoursDecimalsBelowTheAbbreviationThreshold,
   formatWidgetValueRendersAnEmDashForNull,
@@ -37,6 +42,26 @@ import {
 describe("widget-value", () => {
   it("rounds a value to the configured decimals, and does not round when absent", () => {
     formatWidgetValueRoundsAndUnrounds();
+  });
+
+  it("bounds the default format when decimals is unset", () => {
+    formatWidgetValueDefaultsToABoundedFormatWhenDecimalsAreUnset();
+  });
+
+  it("keeps an integer an integer under the default format", () => {
+    formatWidgetValueKeepsAnIntegerAnInteger();
+  });
+
+  it("applies the default format below the abbreviation threshold", () => {
+    formatWidgetValueDefaultsBelowTheAbbreviationThresholdToo();
+  });
+
+  it("renders the asset health score as a percentage", () => {
+    aHealthScoreTileRendersAPercentage();
+  });
+
+  it("scales only the health score metric", () => {
+    aHealthScoreTileKeepsAnExplicitUnitOutOfThePercentPath();
   });
 
   it("renders an em dash for a null reading, never the literal string 'null'", () => {

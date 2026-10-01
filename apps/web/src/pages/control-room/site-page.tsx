@@ -16,7 +16,7 @@ import { SectionCard } from "../../components/section-card";
 import { AppShell } from "../../layouts/app-shell";
 import { isMasterDataAdmin } from "../../lib/admin-access";
 import { controlRoomCrumbs } from "../../lib/control-room-levels";
-import { siteViewNoticeText } from "../../lib/site-view-notice";
+import { siteViewNoticeText, siteViewNoticeTone } from "../../lib/site-view-notice";
 import {
   DEFAULT_SMOC_TAB,
   isSmocSite,
@@ -234,9 +234,16 @@ function SiteViewBody({ view, site, scope, tab, tabParam, role }: SiteViewBodyPr
   return (
     <>
       {notice !== null ? (
-        <div className="space-y-2 rounded border border-warning-line bg-warning-wash px-4 py-2 text-sm text-warning-ink">
+        <div
+          data-testid="site-view-notice-box"
+          className={`space-y-2 rounded border px-4 py-2 text-sm ${
+            view.notice !== null && siteViewNoticeTone(view.notice) === "info"
+              ? "border-info-line bg-info-wash text-info-ink"
+              : "border-warning-line bg-warning-wash text-warning-ink"
+          }`}
+        >
           {/* The testid element holds the notice text only; the action sits beside it. */}
-          <div role="status" data-testid="site-view-notice">
+          <div role="status" data-testid="site-view-notice" className="max-w-prose">
             {notice}
           </div>
           {offersSiteLayout ? <MakeSiteLayoutButton locationId={site.id} /> : null}

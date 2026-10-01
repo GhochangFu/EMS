@@ -1,6 +1,11 @@
 import type pg from "pg";
 
-import { type SectionTemplateContent, sectionTemplateContentSchema } from "@bms/shared";
+import {
+  isUnboundRoleTile,
+  packAfterRemoval,
+  type SectionTemplateContent,
+  sectionTemplateContentSchema,
+} from "@bms/shared";
 import { SMOC_STANDARD_SITE_TEMPLATE } from "@bms/shared/site-templates";
 
 /**
@@ -23,9 +28,15 @@ import { SMOC_STANDARD_SITE_TEMPLATE } from "@bms/shared/site-templates";
  * lifecycle performs (`publish` alone archives nothing). Any newer row — an administrator's
  * draft or version — leaves both alone. The copies keep their `template_id` stamp on v1.
  *
- * **Idempotent.** A second run finds the v2 rects, the new description and a stock-2 template,
- * and writes nothing. Every write runs in the caller's `withOrganization` bracket and checks its
- * row count: a FORCE-RLS write can drop a row without raising.
+ * **The pack step (the F3.73 design critique).** A copy-time rule, not template content, so no
+ * stock version bump: the copy action and the seed now pack the kept Overview cards left and leave
+ * out a role tile that binds no point at the site. {@link planCopyPackUpgrade} applies the same
+ * rule to a copy the earlier seed made, per tab, only while the tab is exactly as it was written.
+ *
+ * **Idempotent.** A second run finds the v2 rects, the new description, a stock-2 template and
+ * packed tabs (no longer at the stock rects, so outside the pack gate), and writes nothing. Every
+ * write runs in the caller's `withOrganization` bracket and checks its row count: a FORCE-RLS
+ * write can drop a row without raising. The pack step is ADR 0087 Amendment 2.
  */
 
 /** The copy's description since stock version 2. */
@@ -190,6 +201,76 @@ export function planCopyWidgetUpgrade(
   return moves;
 }
 
+/** One stored widget of a copy, with the point and source rows it holds. */
+export type PackCopyWidget = CopyWidget & { readonly points: number; readonly sources: number };
+
+/**
+ * The v2 → packed step (the F3.73 design critique, findings a and b): what the seed's copy rule
+ * now leaves out and packs, applied to a copy the earlier seed made. Per tab, and only while the
+ * tab holds **exactly** what that seed wrote: every template widget of the tab once, at its
+ * current stock rect, less the Overview cards of tabs the copy does not have. A tab with a
+ * widget moved, added or deleted by an administrator is left whole.
+ *
+ * In a kept tab, a role tile holding no point and no source row is deleted (it bound nothing at
+ * the site, `isUnboundRoleTile`), and the rest of the tab is packed by `packAfterRemoval` in
+ * template order — the same function and order the copy action runs, so an upgraded copy lands
+ * where a fresh one would.
+ *
+ * Idempotent by its gate: a packed tab no longer stands at the stock rects, so a second run finds
+ * nothing to do. A tab nothing is removed from packs to the rects it holds and writes nothing.
+ */
+export function planCopyPackUpgrade(
+  widgets: readonly PackCopyWidget[],
+  copyTabKeys: readonly string[],
+  content: SectionTemplateContent = SMOC_STANDARD_SITE_TEMPLATE.content as SectionTemplateContent,
+): { readonly moves: { id: string; from: GridRect; to: GridRect }[]; readonly deletes: { id: string; from: GridRect }[] } {
+  const tabs = new Set(copyTabKeys);
+  const moves: { id: string; from: GridRect; to: GridRect }[] = [];
+  const deletes: { id: string; from: GridRect }[] = [];
+  for (const tab of content.tabs) {
+    const stored = widgets.filter((widget) => widget.tabKey === tab.key);
+    if (!tabs.has(tab.key) || stored.length === 0) continue;
+    const byIdentity = new Map(stored.map((widget) => [siteWidgetIdentity(tab.key, widget.widgetType, widget.title), widget]));
+    const expected = tab.widgets.filter(
+      (widget) => widget.widgetType !== "module_summary_card" || tabs.has(widget.config.targetTabKey),
+    );
+    const exact =
+      byIdentity.size === stored.length &&
+      stored.length === expected.length &&
+      expected.every((widget) => {
+        const row = byIdentity.get(siteWidgetIdentity(tab.key, widget.widgetType, widget.title));
+        return row !== undefined && sameRect(row, widget);
+      });
+    if (!exact) continue;
+
+    const rowOf = (widget: (typeof tab.widgets)[number]): PackCopyWidget | undefined =>
+      byIdentity.get(siteWidgetIdentity(tab.key, widget.widgetType, widget.title));
+    const unbound = (widget: (typeof tab.widgets)[number], row: PackCopyWidget): boolean =>
+      row.sources === 0 && isUnboundRoleTile(widget, row.points);
+    const keep = (widget: (typeof tab.widgets)[number]): boolean => {
+      const row = rowOf(widget);
+      return row !== undefined && !unbound(widget, row);
+    };
+    const keptTemplate = tab.widgets.filter(keep);
+    const packed = packAfterRemoval(tab.widgets, keep);
+    for (const [index, widget] of keptTemplate.entries()) {
+      const row = rowOf(widget) as PackCopyWidget;
+      const to = packed[index] as GridRect;
+      const from = { gridX: row.gridX, gridY: row.gridY, gridW: row.gridW, gridH: row.gridH };
+      if (!sameRect(from, to)) {
+        moves.push({ id: row.id, from, to: { gridX: to.gridX, gridY: to.gridY, gridW: to.gridW, gridH: to.gridH } });
+      }
+    }
+    for (const widget of tab.widgets) {
+      const row = rowOf(widget);
+      if (row !== undefined && unbound(widget, row)) {
+        deletes.push({ id: row.id, from: { gridX: row.gridX, gridY: row.gridY, gridW: row.gridW, gridH: row.gridH } });
+      }
+    }
+  }
+  return { moves, deletes };
+}
+
 /** A template row as the upgrade reads it. */
 export type SiteTemplateRow = {
   readonly id: string;
@@ -333,12 +414,115 @@ const WIDGET_RECT_UPDATE_SQL = `
      AND grid_x = $7 AND grid_y = $8 AND grid_w = $9 AND grid_h = $10
 `;
 
+/** The copy's widgets with their point and source row counts — the pack step's read. */
+const PACK_WIDGETS_SQL = `
+  SELECT w.id, t.tab_key, w.widget_type, w.title, w.grid_x, w.grid_y, w.grid_w, w.grid_h,
+         (SELECT count(*)::int FROM bms.dashboard_widget_points p WHERE p.widget_id = w.id) AS points,
+         (SELECT count(*)::int FROM bms.dashboard_widget_sources s WHERE s.widget_id = w.id) AS sources
+    FROM bms.dashboard_widgets w
+    JOIN bms.dashboard_tabs t ON t.id = w.tab_id
+   WHERE w.dashboard_id = $1 AND w.organization_id = $2
+`;
+const COPY_TABS_SQL = `SELECT tab_key FROM bms.dashboard_tabs WHERE dashboard_id = $1 AND organization_id = $2`;
+/** The rect and the empty bindings are in the predicate: a tile bound or moved since the read stays. */
+const UNBOUND_TILE_DELETE_SQL = `
+  DELETE FROM bms.dashboard_widgets w
+   WHERE w.id = $1 AND w.organization_id = $2 AND w.widget_type = 'value_tile'
+     AND w.grid_x = $3 AND w.grid_y = $4 AND w.grid_w = $5 AND w.grid_h = $6
+     AND NOT EXISTS (SELECT 1 FROM bms.dashboard_widget_points p WHERE p.widget_id = w.id)
+     AND NOT EXISTS (SELECT 1 FROM bms.dashboard_widget_sources s WHERE s.widget_id = w.id)
+`;
+
 export type SiteLayoutCopyUpgrade = {
   readonly descriptions: number;
+  /** Widgets moved from their v1 rect to the v2 one. */
   readonly widgets: number;
+  /** Widgets moved by the pack step. */
+  readonly packed: number;
+  /** Unbound role tiles the pack step deleted. */
+  readonly omittedTiles: number;
 };
 
-/** Moves each seed-owned copy at `locationIds` to v2 where it still holds the v1 seed's values. */
+/** One rect update, checked: the `from` rect is in the predicate. */
+async function moveWidget(
+  pool: Pick<pg.Pool, "query">,
+  organizationId: string,
+  move: { readonly id: string; readonly from: GridRect; readonly to: GridRect },
+): Promise<void> {
+  const res = await pool.query(WIDGET_RECT_UPDATE_SQL, [
+    move.id,
+    organizationId,
+    move.to.gridX,
+    move.to.gridY,
+    move.to.gridW,
+    move.to.gridH,
+    move.from.gridX,
+    move.from.gridY,
+    move.from.gridW,
+    move.from.gridH,
+  ]);
+  if (res.rowCount !== 1) {
+    throw new Error(`upgradeSeededSiteLayoutCopies: widget ${move.id} updated ${res.rowCount} of 1 rows`);
+  }
+}
+
+/** The pack step on one copy ({@link planCopyPackUpgrade}): deletes first, then moves. */
+async function packCopy(
+  pool: Pick<pg.Pool, "query">,
+  organizationId: string,
+  dashboardId: string,
+): Promise<{ packed: number; omittedTiles: number }> {
+  const stored = await pool.query<{
+    id: string;
+    tab_key: string;
+    widget_type: string;
+    title: string | null;
+    grid_x: number;
+    grid_y: number;
+    grid_w: number;
+    grid_h: number;
+    points: number;
+    sources: number;
+  }>(PACK_WIDGETS_SQL, [dashboardId, organizationId]);
+  const tabs = await pool.query<{ tab_key: string }>(COPY_TABS_SQL, [dashboardId, organizationId]);
+  const plan = planCopyPackUpgrade(
+    stored.rows.map((row) => ({
+      id: row.id,
+      tabKey: row.tab_key,
+      widgetType: row.widget_type,
+      title: row.title,
+      gridX: row.grid_x,
+      gridY: row.grid_y,
+      gridW: row.grid_w,
+      gridH: row.grid_h,
+      points: row.points,
+      sources: row.sources,
+    })),
+    tabs.rows.map((row) => row.tab_key),
+  );
+  for (const tile of plan.deletes) {
+    const res = await pool.query(UNBOUND_TILE_DELETE_SQL, [
+      tile.id,
+      organizationId,
+      tile.from.gridX,
+      tile.from.gridY,
+      tile.from.gridW,
+      tile.from.gridH,
+    ]);
+    if (res.rowCount !== 1) {
+      throw new Error(`upgradeSeededSiteLayoutCopies: unbound tile ${tile.id} deleted ${res.rowCount} of 1 rows`);
+    }
+  }
+  for (const move of plan.moves) {
+    await moveWidget(pool, organizationId, move);
+  }
+  return { packed: plan.moves.length, omittedTiles: plan.deletes.length };
+}
+
+/**
+ * Moves each seed-owned copy at `locationIds` to v2 where it still holds the v1 seed's values,
+ * then packs each tab still exactly as the seed wrote it ({@link planCopyPackUpgrade}).
+ */
 export async function upgradeSeededSiteLayoutCopies(
   pool: Pick<pg.Pool, "query">,
   organizationId: string,
@@ -353,6 +537,8 @@ export async function upgradeSeededSiteLayoutCopies(
   ]);
   let descriptions = 0;
   let widgets = 0;
+  let packed = 0;
+  let omittedTiles = 0;
   for (const copy of copies.rows) {
     const description = upgradedCopyDescription(copy.description);
     if (description !== null) {
@@ -390,23 +576,13 @@ export async function upgradeSeededSiteLayoutCopies(
       })),
     );
     for (const move of moves) {
-      const res = await pool.query(WIDGET_RECT_UPDATE_SQL, [
-        move.id,
-        organizationId,
-        move.to.gridX,
-        move.to.gridY,
-        move.to.gridW,
-        move.to.gridH,
-        move.from.gridX,
-        move.from.gridY,
-        move.from.gridW,
-        move.from.gridH,
-      ]);
-      if (res.rowCount !== 1) {
-        throw new Error(`upgradeSeededSiteLayoutCopies: widget ${move.id} updated ${res.rowCount} of 1 rows`);
-      }
+      await moveWidget(pool, organizationId, move);
       widgets += 1;
     }
+    // After the v1 → v2 moves, so a v1 copy lands packed in the same boot.
+    const step = await packCopy(pool, organizationId, copy.id);
+    packed += step.packed;
+    omittedTiles += step.omittedTiles;
   }
-  return { descriptions, widgets };
+  return { descriptions, widgets, packed, omittedTiles };
 }

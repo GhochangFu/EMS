@@ -1,20 +1,22 @@
 import { Link } from "react-router-dom";
 
+import { FOCUS_OUTLINE_CLASS } from "../../lib/focus-classes";
+
 import {
   SITE_WIDGET_BODY_CLASS,
-  siteTabHref,
   tabCountsText,
   TabStatusPill,
   type ModuleSummaryCardConfig,
+  type SiteTabHref,
   type SiteWidgetCommon,
 } from "./site-widget-parts";
 import { WidgetFrame } from "./widget-frame";
 
 /**
  * `F3.73` (plan D9) — one domain tab's card: status pill and "n alarms · m offline · k assets",
- * linking to the tab the config names. `sitePath` is the site page's own path
- * (`/control-room/site/:locationId`), or null off the site page — a dashboard viewed elsewhere has
- * no tab to link to, so the card is not a link. A tab the read does not list, or whose members
+ * linking to the tab the config names. `tabHref` builds that tab's URL: a path under the site page,
+ * a `?tab=` link in the dashboard viewer (critique fix), or null where there is no tab to open (the
+ * builder), so the card is not a link. A tab the read does not list, or whose members
  * the caller cannot read, says "Outside scope".
  */
 export function ModuleSummaryCardWidget({
@@ -23,8 +25,8 @@ export function ModuleSummaryCardWidget({
   data,
   severities,
   config,
-  sitePath,
-}: SiteWidgetCommon & { config: ModuleSummaryCardConfig; sitePath: string | null }) {
+  tabHref,
+}: SiteWidgetCommon & { config: ModuleSummaryCardConfig; tabHref: SiteTabHref | null }) {
   const tab = data?.tabs.find((candidate) => candidate.tabKey === config.targetTabKey);
   const tabStatus = tab?.status ?? null;
   const label = tab?.label ?? config.targetTabKey;
@@ -40,10 +42,10 @@ export function ModuleSummaryCardWidget({
           ) : (
             <p className="text-xs text-ink-muted">Outside scope</p>
           )}
-          {sitePath !== null ? (
+          {tabHref !== null ? (
             <Link
-              className="text-xs font-semibold text-accent-strong hover:underline"
-              to={siteTabHref(sitePath, config.targetTabKey)}
+              className={`rounded text-xs font-semibold text-accent-strong hover:underline ${FOCUS_OUTLINE_CLASS}`}
+              to={tabHref(config.targetTabKey)}
             >
               Open {label}
             </Link>

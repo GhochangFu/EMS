@@ -469,6 +469,48 @@ export function dashboardBuilderProblemSubject(
   return `Widget ${problem.widget + 1} (${label})`;
 }
 
+/** One summary entry on a tabbed builder: the problem, the tab its widget sits on, and its subject. */
+export type TabbedBuilderProblem = {
+  readonly problem: DashboardBuilderProblem;
+  /** The key of the tab the problem's widget sits on; `null` for a set-level problem, a widget on
+   * no tab, or a canvas with no tabs — a problem the summary cannot take the author to. */
+  readonly tabKey: string | null;
+  readonly subject: string;
+};
+
+/**
+ * `F3.73` critique fix — the summary of a tabbed builder, grouped by tab. The canvas shows one tab
+ * and numbers no tile, so "Widget 7 (UPS load)" names a widget the author cannot find. A widget on
+ * a tab is named by the tab's label and its own title instead ("Electrical › UPS load"), and the
+ * entries come in tab order — the ones with no tab first — so one tab's problems read together.
+ * The page makes a tabbed entry a button that selects its tab. With no tabs, the subjects are
+ * `dashboardBuilderProblemSubject`'s and the order is kept.
+ */
+export function tabbedDashboardBuilderProblems(
+  rows: readonly DashboardWidgetRow[],
+  tabs: readonly TabForRules[],
+  problems: readonly DashboardBuilderProblem[],
+): TabbedBuilderProblem[] {
+  const tabIndex = new Map<string, number>();
+  tabs.forEach((tab, index) => {
+    if (!tabIndex.has(tab.key)) {
+      tabIndex.set(tab.key, index);
+    }
+  });
+  const located = problems.map((problem): TabbedBuilderProblem & { order: number } => {
+    const row = problem.widget === null ? undefined : rows[problem.widget];
+    const position = row?.tabKey === undefined ? undefined : tabIndex.get(row.tabKey);
+    const tab = position === undefined ? undefined : tabs[position];
+    if (row === undefined || position === undefined || tab === undefined) {
+      return { problem, tabKey: null, subject: dashboardBuilderProblemSubject(rows, problem), order: -1 };
+    }
+    const label = row.title.trim() || WIDGET_CATALOG[row.widgetType].label;
+    return { problem, tabKey: tab.key, subject: `${tab.label.trim() || tab.key} › ${label}`, order: position };
+  });
+  // `Array.prototype.sort` is stable, so the problems keep their order within a tab.
+  return located.sort((a, b) => a.order - b.order).map(({ problem, tabKey, subject }) => ({ problem, tabKey, subject }));
+}
+
 /**
  * Validates the whole widget set before `PUT /dashboards/:id/widgets` is attempted.
  *

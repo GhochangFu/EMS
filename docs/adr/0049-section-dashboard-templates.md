@@ -454,4 +454,8 @@ Two costs come with it and are accepted rather than unnoticed:
   name neither amendment. Add `dashboard_sections` and `section` to the searches.
 - **Decision 6 is unchanged.** A role that matches nothing still imports as a
   widget with zero bindings, rendering "no data bound". Amendment 2 extends the
-  cases either side of it; it does not re-read it.
+  cases either side of it; it does not re-read it. **Narrowed by
+  [ADR 0087](./0087-one-control-room-and-smoc-standard-site-template.md)
+  Amendment 2 (2026-10-01):** a site-layout copy leaves out a role value tile
+  that resolves no point at the site and names it in `omittedTiles`; a
+  `target = 'dashboard'` instantiate is unchanged.

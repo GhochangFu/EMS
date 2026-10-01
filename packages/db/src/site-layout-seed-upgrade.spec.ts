@@ -5,6 +5,8 @@ import {
   type CopyWidget,
   type GridRect,
   isSeedV1SiteTemplate,
+  type PackCopyWidget,
+  planCopyPackUpgrade,
   planCopyWidgetUpgrade,
   SITE_LAYOUT_COPY_DESCRIPTION,
   SITE_LAYOUT_COPY_DESCRIPTION_V1,
@@ -138,4 +140,76 @@ export function aTemplateRowTheSeedDoesNotOwnIsKept(): void {
     assert(!isSeedV1SiteTemplate(row), `${label} was taken for the seed's v1 row`);
   }
   assert(isSeedV1SiteTemplate(seedV1Row()), "the seed's v1 row is not recognised");
+}
+
+// ---- the v2 → packed step (the F3.73 design critique) ----------------------------------------
+
+/** Tab `tabKey` at v2 rects; `bound` names the tiles holding a point (by widget title). */
+function packTab(tabKey: string, bound: readonly string[] = []): PackCopyWidget[] {
+  return copyTab(tabKey, SMOC_STANDARD_CURRENT_RECTS).map((widget) => ({
+    ...widget,
+    points: bound.includes(widget.title ?? "") ? 1 : 0,
+    sources: tabKey === "overview" && widget.widgetType === "value_tile" ? 1 : 0,
+  }));
+}
+
+/** A PHE station's Overview as the earlier seed wrote it: the ups/hvac/it/water cards dropped. */
+function pheOverview(): PackCopyWidget[] {
+  const absent = ["UPS & battery", "HVAC", "IT", "Water"];
+  return packTab("overview").filter(
+    (widget) => !(widget.widgetType === "module_summary_card" && absent.includes(widget.title ?? "")),
+  );
+}
+
+const PHE_TABS = ["overview", "sld", "env"];
+const rects = (list: readonly { id: string; to: GridRect }[]): string =>
+  list.map((move) => `${move.id}@${move.to.gridX},${move.to.gridY}`).join(";");
+
+export function anUnpackedOverviewHasItsCardsPacked(): void {
+  const { moves, deletes } = planCopyPackUpgrade(pheOverview(), PHE_TABS);
+  assert(rects(moves) === "overview/overview-env-card@2,6", `overview moves: ${rects(moves)}`);
+  assert(deletes.length === 0, `overview deletes: ${deletes.length}`);
+}
+
+export function anUnboundTileIsDeletedAndTheRowPacked(): void {
+  const { moves, deletes } = planCopyPackUpgrade(packTab("sld", ["Frequency"]), PHE_TABS);
+  assert(
+    deletes.map((tile) => tile.id).join(",") ===
+      "sld/sld-incomer-kw-tile,sld/sld-incomer-pf-tile,sld/sld-main-bus-kw-tile",
+    `sld deletes: ${deletes.map((tile) => tile.id).join(",")}`,
+  );
+  assert(rects(moves) === "sld/sld-frequency-tile@0,0", `sld moves: ${rects(moves)}`);
+}
+
+export function aTabThatLosesEveryTileIsLifted(): void {
+  const { moves } = planCopyPackUpgrade(packTab("env"), PHE_TABS);
+  assert(
+    rects(moves) === "env/env-mimic@0,0;env/env-alarms-rail@0,7;env/env-assets-table@6,7",
+    `env moves: ${rects(moves)}`,
+  );
+}
+
+export function anEditedTabIsNotPacked(): void {
+  const moved = packTab("sld").map((widget) =>
+    widget.widgetType === "active_alarms_rail" ? { ...widget, gridY: widget.gridY + 1 } : widget,
+  );
+  const deleted = packTab("env").filter((widget) => widget.widgetType !== "table");
+  const plan = planCopyPackUpgrade([...moved, ...deleted, ...pheOverview()], PHE_TABS);
+  const tabs = [...new Set([...plan.moves, ...plan.deletes].map((row) => row.id.split("/")[0]))].join(",");
+  assert(tabs === "overview", `tabs packed: ${tabs}`);
+}
+
+export function aPackedTabIsNotPackedAgain(): void {
+  const first = planCopyPackUpgrade(packTab("env"), PHE_TABS);
+  const after = packTab("env")
+    .filter((widget) => !first.deletes.some((tile) => tile.id === widget.id))
+    .map((widget) => ({ ...widget, ...first.moves.find((move) => move.id === widget.id)?.to }));
+  const second = planCopyPackUpgrade(after, PHE_TABS);
+  assert(second.moves.length + second.deletes.length === 0, `second run: ${rects(second.moves)}`);
+  assert(first.deletes.length === 2, `first run deletes: ${first.deletes.length}`);
+}
+
+export function aFullyBoundTabWritesNothing(): void {
+  const plan = planCopyPackUpgrade(packTab("hvac", ["Supply air", "Return air", "Cooling load"]), ["overview", "hvac"]);
+  assert(plan.moves.length + plan.deletes.length === 0, `hvac: ${rects(plan.moves)}`);
 }

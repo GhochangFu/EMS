@@ -5,7 +5,9 @@ import {
   aFailedReadShowsTheErrorLine,
   aFailedRefetchKeepsTheLastDrawing,
   aLayoutWidgetDrawsItsLayout,
+  aLayoutMimicReportsItsLayoutAspect,
   aLayoutWidgetMissingFromTheResponseDrawsNothing,
+  aPresetMimicReportsItsAspect,
   theEntrySourceDecidesTheDrawing,
   aWidgetMissingFromTheResponseDrawsUnassigned,
   cleanupLive,
@@ -62,5 +64,11 @@ describe("F3.32 U4 — MimicWidgetLive", () => {
   });
   it("LV11 a layout widget missing from the response draws nothing", async () => {
     await aLayoutWidgetMissingFromTheResponseDrawsNothing();
+  });
+  it("LV12 a preset mimic reports its drawing's aspect to its canvas tile", async () => {
+    await aPresetMimicReportsItsAspect();
+  });
+  it("LV13 a layout mimic reports its layout's aspect to its canvas tile", async () => {
+    await aLayoutMimicReportsItsLayoutAspect();
   });
 });

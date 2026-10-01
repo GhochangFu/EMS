@@ -16,6 +16,8 @@ import {
 
 import { MIMIC_REFRESH_MS } from "../../hooks/use-mimic-nodes";
 import { useAuthStore } from "../../stores/auth-store";
+import { MIMIC_FRAME_CHROME_PX } from "../widgets/mimic-widget";
+import { CanvasTileAspectProvider, type TileAspect } from "./dashboard-canvas";
 import { DashboardLiveCanvas } from "./dashboard-live-canvas";
 import { MimicWidgetLive } from "./mimic-widget-live";
 
@@ -359,6 +361,43 @@ export async function theEntrySourceDecidesTheDrawing(): Promise<void> {
   await screen.findByText("WTR-WTP-01");
   expect(unitKeys()).toEqual(["feed", "drain"]);
   expect(screen.queryByTestId("mimic-sink")).toBeNull();
+}
+
+function renderInTile(
+  answer: () => Promise<DashboardMimicNodesResponseDto>,
+  widget: MimicWidgetDto,
+): Mock<(aspect: TileAspect | null) => void> {
+  const client = arrange(answer);
+  const report = vi.fn<(aspect: TileAspect | null) => void>();
+  render(
+    <QueryClientProvider client={client}>
+      <CanvasTileAspectProvider value={report}>
+        <MimicWidgetLive widget={widget} dashboardId={DASHBOARD_ID} />
+      </CanvasTileAspectProvider>
+    </QueryClientProvider>,
+  );
+  return report;
+}
+
+/**
+ * LV12 (`F3.73` critique fixes) — a preset mimic reports its drawing's aspect (water train,
+ * 1260 x 680) and its frame's 49 px to the canvas tile it sits in.
+ */
+export async function aPresetMimicReportsItsAspect(): Promise<void> {
+  const report = renderInTile(() => Promise.resolve(response([WIDGET_A])), mimicWidget(WIDGET_A, "Train A"));
+  await screen.findByText("WTR-WTP-01");
+  expect(report).toHaveBeenLastCalledWith({ ratio: 680 / 1260, chromePx: MIMIC_FRAME_CHROME_PX });
+  expect(MIMIC_FRAME_CHROME_PX).toBe(49);
+}
+
+/**
+ * LV13 (`F3.73` critique fixes) — a layout mimic reports its layout's aspect once the read
+ * answers: an 80 x 40 grid is a 2:1 drawing, not the preset's.
+ */
+export async function aLayoutMimicReportsItsLayoutAspect(): Promise<void> {
+  const report = renderInTile(() => Promise.resolve(layoutResponse(WIDGET_A)), layoutWidget(WIDGET_A));
+  await screen.findByText("WTR-WTP-01");
+  expect(report).toHaveBeenLastCalledWith({ ratio: 0.5, chromePx: MIMIC_FRAME_CHROME_PX });
 }
 
 /** LV11 (`F3.32c`) — a layout widget the read does not list draws nothing, and does not throw. */

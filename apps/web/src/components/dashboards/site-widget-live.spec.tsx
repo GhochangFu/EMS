@@ -7,6 +7,7 @@ import type { DashboardDto, DashboardWidgetDto, SiteWidgetsResponse } from "@bms
 
 import { SITE_WIDGETS_REFETCH_MS } from "../../hooks/use-site-widgets";
 import { useAuthStore } from "../../stores/auth-store";
+import { SiteTabHrefContext, type SiteTabHref } from "../widgets/site-widget-parts";
 import { DashboardLiveCanvas } from "./dashboard-live-canvas";
 
 /**
@@ -148,7 +149,15 @@ function response(tabKey: string | null, alarmMessage: string): SiteWidgetsRespo
 
 let fetchSpy: Mock | null = null;
 
-function renderCanvas(widgets: DashboardWidgetDto[], answer: (tabKey: string | null) => Promise<SiteWidgetsResponse>): QueryClient {
+/** Where the canvas is drawn: the site page (the default), or the dashboard viewer with its `?tab=` link builder. */
+type CanvasRoute = { entry: string; path: string; tabHref: SiteTabHref | null };
+const SITE_ROUTE: CanvasRoute = { entry: "/control-room/site/loc-9/overview", path: "/control-room/site/:locationId/:tab?", tabHref: null };
+
+function renderCanvas(
+  widgets: DashboardWidgetDto[],
+  answer: (tabKey: string | null) => Promise<SiteWidgetsResponse>,
+  route: CanvasRoute = SITE_ROUTE,
+): QueryClient {
   fetchSpy = vi.fn(() => Promise.reject(new Error("a spec reached the network")));
   vi.stubGlobal("fetch", fetchSpy);
   mocks.alarmHandlers.length = 0;
@@ -167,10 +176,12 @@ function renderCanvas(widgets: DashboardWidgetDto[], answer: (tabKey: string | n
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   render(
     <QueryClientProvider client={client}>
-      <MemoryRouter initialEntries={["/control-room/site/loc-9/overview"]}>
-        <Routes>
-          <Route path="/control-room/site/:locationId/:tab?" element={<DashboardLiveCanvas dashboard={dashboard(widgets)} />} />
-        </Routes>
+      <MemoryRouter initialEntries={[route.entry]}>
+        <SiteTabHrefContext.Provider value={route.tabHref}>
+          <Routes>
+            <Route path={route.path} element={<DashboardLiveCanvas dashboard={dashboard(widgets)} />} />
+          </Routes>
+        </SiteTabHrefContext.Provider>
       </MemoryRouter>
     </QueryClientProvider>,
   );
@@ -245,6 +256,32 @@ export async function theCardLinksUnderTheRoutesSite(): Promise<void> {
   renderCanvas([CARD_UPS], (tabKey) => Promise.resolve(response(tabKey, "x")));
   const link = await screen.findByRole("link", { name: "Open HVAC" });
   expect(link.getAttribute("href")).toBe("/control-room/site/loc-9/hvac");
+}
+
+/**
+ * Critique fix — in the dashboard viewer (no `:locationId`) the card links through the viewer's
+ * `SiteTabHrefContext`. The adjacent case is the site page's path link; with neither, no link
+ * (the builder's dispatcher passes null).
+ */
+export async function inTheViewerTheCardLinksToTheTabParam(): Promise<void> {
+  renderCanvas([CARD_UPS], (tabKey) => Promise.resolve(response(tabKey, "x")), {
+    entry: "/dashboards/site-9",
+    path: "/dashboards/:slug",
+    tabHref: (key) => `?tab=${key}`,
+  });
+  const link = await screen.findByRole("link", { name: "Open HVAC" });
+  expect(link.getAttribute("href")).toBe("/dashboards/site-9?tab=hvac");
+}
+
+/** Off the site page with no viewer context, the card is not a link. */
+export async function withNoSiteAndNoViewerTheCardIsNotALink(): Promise<void> {
+  renderCanvas([CARD_UPS], (tabKey) => Promise.resolve(response(tabKey, "x")), {
+    entry: "/dashboards/site-9",
+    path: "/dashboards/:slug",
+    tabHref: null,
+  });
+  expect(await screen.findByText("Outside scope")).toBeInTheDocument();
+  expect(screen.queryByRole("link")).toBeNull();
 }
 
 /** An alarm event on `/ws/alarms` refetches the tab's read. */

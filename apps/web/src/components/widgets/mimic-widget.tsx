@@ -16,6 +16,13 @@ type MimicWidgetProps = {
   readings: SiteLiveReadings;
 };
 
+/**
+ * `F3.73` critique fixes — the height `WidgetFrame` adds round the drawing, in px: `p-3` top and
+ * bottom (24), the 11 px title at the inherited 1.5 line height (16.5) and its `mb-2` (8), so
+ * 48.5, rounded up. A view canvas adds it to the drawing's height when it sizes the mimic's rows.
+ */
+export const MIMIC_FRAME_CHROME_PX = 49;
+
 /** No resolved node — what `DashboardWidget` draws, having no node read of its own. */
 export const NO_MIMIC_NODES: readonly MimicNodeDto[] = [];
 

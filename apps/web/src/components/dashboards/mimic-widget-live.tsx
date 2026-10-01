@@ -8,7 +8,8 @@ import { mimicViewFor } from "../../lib/mimic";
 import { EMPTY_GEOMETRY, layoutGeometry, presetGeometry, type MimicGeometry } from "../../lib/mimic-geometry";
 import type { WidgetStatus } from "../../lib/widget-catalog";
 import { widgetTitle } from "../../lib/widget-value";
-import { MimicWidget, NO_MIMIC_NODES } from "../widgets/mimic-widget";
+import { MIMIC_FRAME_CHROME_PX, MimicWidget, NO_MIMIC_NODES } from "../widgets/mimic-widget";
+import { useCanvasTileAspect } from "./dashboard-canvas";
 
 type MimicWidgetLiveProps = {
   widget: Extract<DashboardWidgetDto, { widgetType: "mimic" }>;
@@ -49,6 +50,13 @@ export function MimicWidgetLive({ widget, dashboardId }: MimicWidgetLiveProps) {
   const view = useMemo(() => mimicViewFor(entry, resolvedAt), [entry, resolvedAt]);
   const readings = useSiteLiveReadings(widget.id, view, query.dataUpdatedAt);
   const geometry = useMemo(() => geometryFor(entry, widget.config), [entry, widget.config]);
+  // `F3.73` critique fixes — a view canvas sizes this tile's rows from the drawing's aspect, so
+  // the drawing is not shrunk to fit a stored height. The builder's canvas ignores the report.
+  useCanvasTileAspect(
+    geometry.width > 0 && geometry.height > 0
+      ? { ratio: geometry.height / geometry.width, chromePx: MIMIC_FRAME_CHROME_PX }
+      : null,
+  );
 
   const status: WidgetStatus = query.data !== undefined ? "ready" : query.isError ? "error" : "loading";
 

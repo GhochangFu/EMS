@@ -1,12 +1,14 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen, within } from "@testing-library/react";
+import { act, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { MemoryRouter, Route, Routes } from "react-router-dom";
+import { MemoryRouter, Route, Routes, useLocation, useNavigate } from "react-router-dom";
 import { expect, vi } from "vitest";
 
-import type { DashboardDto, UserRole } from "@bms/shared";
+import type { DashboardDto, SiteWidgetsResponse, UserRole } from "@bms/shared";
 
 import * as dashboardsApi from "../api/dashboards";
+import * as siteWidgetsApi from "../api/dashboard-site-widgets";
+import * as vocabulariesApi from "../api/vocabularies";
 import * as systemStatusApi from "../api/system-status";
 import { OPERATIONAL } from "../components/system-status-indicator.spec";
 import type { AuthUser } from "../stores/auth-store";
@@ -105,21 +107,46 @@ function asUser(role: UserRole): AuthUser {
   } as unknown as AuthUser;
 }
 
-function renderPage(user: AuthUser): void {
+/** Prints the router's search string and offers a Back, so a spec reads the URL the page wrote and
+ * walks the history the way the browser's Back button does. */
+function LocationProbe() {
+  const location = useLocation();
+  const navigate = useNavigate();
+  return (
+    <>
+      <output data-testid="location-search">{location.search}</output>
+      <button type="button" onClick={() => navigate(-1)}>
+        Probe back
+      </button>
+    </>
+  );
+}
+
+function renderPage(user: AuthUser, entry = "/dashboards/site-a-overview"): void {
   // `AppShell` mounts `SystemStatusIndicator`; unstubbed, its `GET /system/status` reaches a local
   // API on :4000, answers 401 and clears the session (`dashboard-builder-page.spec.tsx`'s precedent).
   vi.spyOn(systemStatusApi, "fetchSystemStatus").mockResolvedValue(OPERATIONAL);
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   render(
     <QueryClientProvider client={queryClient}>
-      <MemoryRouter initialEntries={["/dashboards/site-a-overview"]}>
+      <MemoryRouter initialEntries={[entry]}>
         <Routes>
-          <Route path="/dashboards/:slug" element={<DashboardViewerPage user={user} />} />
+          <Route
+            path="/dashboards/:slug"
+            element={
+              <>
+                <DashboardViewerPage user={user} />
+                <LocationProbe />
+              </>
+            }
+          />
         </Routes>
       </MemoryRouter>
     </QueryClientProvider>,
   );
 }
+
+const searchParams = () => new URLSearchParams(screen.getByTestId("location-search").textContent ?? "");
 
 export async function assetGroupAdminSeesTheEditLink(): Promise<void> {
   vi.spyOn(dashboardsApi, "fetchDashboard").mockResolvedValue(DTO);
@@ -206,6 +233,153 @@ export async function anUntabbedDashboardShowsNoStrip(): Promise<void> {
 
   expect(await screen.findByText("Energy today")).toBeInTheDocument();
   expect(screen.queryByRole("tablist")).not.toBeInTheDocument();
+}
+
+/** `F3.73` critique fix — the selected tab lives in the URL (`?tab=<key>`), so a reload or a shared
+ * link opens it. Mutation: read the selection from local state, not the search => red. */
+export async function aTabInTheUrlIsSelectedOnLoad(): Promise<void> {
+  stubLiveCanvas();
+  vi.spyOn(dashboardsApi, "fetchDashboard").mockResolvedValue(DTO_WITH_TABS);
+  renderPage(asUser("asset_group_admin"), "/dashboards/site-a-overview?tab=hvac");
+
+  expect(await screen.findByText("HVAC tile")).toBeInTheDocument();
+  expect(screen.getByRole("tab", { name: "HVAC" })).toHaveAttribute("aria-selected", "true");
+}
+
+/** An unknown `?tab=` key opens the first tab by `sortOrder`. Mutation: render no canvas for an
+ * unknown key => red. */
+export async function anUnknownTabKeyOpensTheFirstTab(): Promise<void> {
+  stubLiveCanvas();
+  vi.spyOn(dashboardsApi, "fetchDashboard").mockResolvedValue(DTO_WITH_TABS);
+  renderPage(asUser("asset_group_admin"), "/dashboards/site-a-overview?tab=nope");
+
+  expect(await screen.findByText("Power tile")).toBeInTheDocument();
+  expect(screen.getByRole("tab", { name: "Power" })).toHaveAttribute("aria-selected", "true");
+}
+
+/** The first load writes no `?tab=`: the default tab needs none. The settle lets an effect's write
+ * reach the probe before the absence is read. Mutation: a mount effect that writes the default tab
+ * => red. */
+export async function aFirstLoadWritesNoTabParam(): Promise<void> {
+  stubLiveCanvas();
+  vi.spyOn(dashboardsApi, "fetchDashboard").mockResolvedValue(DTO_WITH_TABS);
+  renderPage(asUser("asset_group_admin"), `/dashboards/site-a-overview?organizationId=${ORG_ID}`);
+
+  await screen.findByText("Power tile");
+  await act(() => new Promise((resolve) => setTimeout(resolve, 50)));
+  expect(screen.getByRole("tab", { name: "Power" })).toHaveAttribute("aria-selected", "true");
+  expect(Object.fromEntries(searchParams())).toEqual({ organizationId: ORG_ID });
+}
+
+/** Selecting a tab writes `?tab=` and keeps `organizationId` (the slug's disambiguator). Mutation:
+ * write a fresh search with `tab` only => red. */
+export async function selectingATabWritesItKeepingOrganizationId(): Promise<void> {
+  stubLiveCanvas();
+  vi.spyOn(dashboardsApi, "fetchDashboard").mockResolvedValue(DTO_WITH_TABS);
+  renderPage(asUser("asset_group_admin"), `/dashboards/site-a-overview?organizationId=${ORG_ID}`);
+
+  await screen.findByText("Power tile");
+  await userEvent.click(screen.getByRole("tab", { name: "HVAC" }));
+
+  expect(Object.fromEntries(searchParams())).toEqual({ organizationId: ORG_ID, tab: "hvac" });
+}
+
+/** Back returns to the previous tab: a selection is a history entry. Mutation: write the search
+ * with `replace: true` => red. */
+export async function backReturnsToThePreviousTab(): Promise<void> {
+  stubLiveCanvas();
+  vi.spyOn(dashboardsApi, "fetchDashboard").mockResolvedValue(DTO_WITH_TABS);
+  renderPage(asUser("asset_group_admin"));
+
+  await screen.findByText("Power tile");
+  await userEvent.click(screen.getByRole("tab", { name: "HVAC" }));
+  await screen.findByText("HVAC tile");
+  await userEvent.click(screen.getByRole("button", { name: "Probe back" }));
+
+  expect(await screen.findByText("Power tile")).toBeInTheDocument();
+  expect(screen.getByRole("tab", { name: "Power" })).toHaveAttribute("aria-selected", "true");
+}
+
+/**
+ * Critique fix — a module card in the viewer opens its tab: its link is the viewer's own `?tab=`
+ * (keeping `organizationId`), and following it selects that tab. Mutation: drop the viewer's
+ * `SiteTabHrefContext` provider => the card draws no link => red.
+ */
+export async function aModuleCardInTheViewerOpensItsTab(): Promise<void> {
+  stubLiveCanvas();
+  const card = {
+    ...widgetOn("widget-card", "HVAC card", TAB_POWER_ID),
+    widgetType: "module_summary_card",
+    config: { targetTabKey: "hvac" },
+    points: [],
+  } as unknown as DashboardDto["widgets"][number];
+  vi.spyOn(dashboardsApi, "fetchDashboard").mockResolvedValue({ ...DTO_WITH_TABS, widgets: [...DTO_WITH_TABS.widgets, card] });
+  const answer: SiteWidgetsResponse = {
+    dashboardId: "dash-1",
+    tabKey: "power",
+    resolvedAt: "2026-10-01T10:00:00.000Z",
+    scope: { assetCount: 0 },
+    alarms: { active: [], summary: [] },
+    roles: [],
+    tabs: [{ tabKey: "hvac", label: "HVAC", assetGroupId: null, status: null }],
+  } as unknown as SiteWidgetsResponse;
+  vi.spyOn(siteWidgetsApi, "fetchSiteWidgets").mockResolvedValue(answer);
+  vi.spyOn(vocabulariesApi, "fetchVocabularies").mockResolvedValue({ alarmSeverities: [] } as never);
+  renderPage(asUser("asset_group_admin"), `/dashboards/site-a-overview?organizationId=${ORG_ID}`);
+
+  const link = await screen.findByRole("link", { name: "Open HVAC" });
+  expect(link.getAttribute("href")).toBe(`/dashboards/site-a-overview?organizationId=${ORG_ID}&tab=hvac`);
+  await userEvent.click(link);
+  expect(await screen.findByText("HVAC tile")).toBeInTheDocument();
+  expect(screen.getByRole("tab", { name: "HVAC" })).toHaveAttribute("aria-selected", "true");
+}
+
+/**
+ * A run of arrow-key moves is one history entry: open on HVAC, click Power (an entry), then
+ * ArrowRight to HVAC (the run's entry) and ArrowLeft to Power (replaced). One Back lands on Power,
+ * where the run started. Mutations: push every key move => Back lands on HVAC => red; replace
+ * every key move (the first one too) => Back lands on the opening HVAC => red.
+ */
+export async function anArrowKeyMoveReplacesTheHistoryEntry(): Promise<void> {
+  stubLiveCanvas();
+  vi.spyOn(dashboardsApi, "fetchDashboard").mockResolvedValue(DTO_WITH_TABS);
+  renderPage(asUser("asset_group_admin"), "/dashboards/site-a-overview?tab=hvac");
+
+  await screen.findByText("HVAC tile");
+  await userEvent.click(screen.getByRole("tab", { name: "Power" }));
+  await screen.findByText("Power tile");
+  await userEvent.keyboard("{ArrowRight}");
+  await screen.findByText("HVAC tile");
+  await userEvent.keyboard("{ArrowLeft}");
+  await screen.findByText("Power tile");
+  expect(searchParams().get("tab")).toBe("power");
+  await userEvent.click(screen.getByRole("button", { name: "Probe back" }));
+
+  expect(await screen.findByText("Power tile")).toBeInTheDocument();
+  expect(searchParams().get("tab")).toBe("power");
+  expect(screen.queryByText("HVAC tile")).toBeNull();
+}
+
+/** The widget titles are `h3`; the tab panel carries the `h2` between them and the page's `h1`,
+ * named by the selected tab. Mutation: drop the panel heading => red. */
+export async function aTabbedViewerHasAnH2ForTheSelectedTab(): Promise<void> {
+  stubLiveCanvas();
+  vi.spyOn(dashboardsApi, "fetchDashboard").mockResolvedValue(DTO_WITH_TABS);
+  renderPage(asUser("asset_group_admin"));
+
+  await screen.findByText("Power tile");
+  expect(screen.getByRole("heading", { level: 2, name: "Power" })).toBeInTheDocument();
+}
+
+/** The untabbed canvas has the same `h1` → `h3` gap, so it carries an `h2` too. Mutation: drop the
+ * untabbed heading => red. */
+export async function anUntabbedViewerHasAnH2(): Promise<void> {
+  stubLiveCanvas();
+  vi.spyOn(dashboardsApi, "fetchDashboard").mockResolvedValue(DTO_WITH_WIDGET);
+  renderPage(asUser("asset_group_admin"));
+
+  await screen.findByText("Energy today");
+  expect(screen.getByRole("heading", { level: 2, name: "Widgets" })).toBeInTheDocument();
 }
 
 /** DV1 — a DTO with one widget renders it via `DashboardLiveCanvas`, below the heading. */

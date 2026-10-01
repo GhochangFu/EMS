@@ -1,6 +1,15 @@
 import type { SiteControlRoomViewNotice } from "@bms/shared";
 
 /**
+ * `F3.73` critique — the banner's tone. `no_site_layout` is a state ("not made yet"), not a
+ * fault, so it reads as information; the fail-safe codes mean a configured view is gone or out
+ * of reach and keep the warning tone.
+ */
+export function siteViewNoticeTone(notice: SiteControlRoomViewNotice): "info" | "warning" {
+  return notice === "no_site_layout" ? "info" : "warning";
+}
+
+/**
  * `F3.66` / `F3.67` (ADR 0076 decision 5) — the fail-safe banner text for the
  * resolve read's `notice` field. `null` means the site's configured view
  * resolved cleanly, so the banner does not render (`U4`).

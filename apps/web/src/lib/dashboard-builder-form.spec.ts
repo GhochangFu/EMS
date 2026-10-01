@@ -11,6 +11,7 @@ import {
   dashboardBuilderProblemSubject,
   dashboardRowsFromDto,
   offerableWidgetTypes,
+  tabbedDashboardBuilderProblems,
   tabWritesFromDto,
   unselectedDashboardBuilderProblems,
   MIMIC_NEEDS_ASSET_GROUP_MESSAGE,
@@ -414,6 +415,52 @@ export function runDashboardBuilderProblemSubjectTests(): void {
   assert(
     dashboardBuilderProblemSubject(rows, { widget: 0, field: "points", message: "m" }) === "Widget 1 (Value tile)",
     "an untitled widget falls back to its catalog label",
+  );
+}
+
+const SUMMARY_TABS = [
+  { key: "overview", label: "Overview", assetGroupId: null },
+  { key: "electrical", label: "Electrical", assetGroupId: null },
+];
+const SUMMARY_ROWS: DashboardWidgetRow[] = [
+  { ...blankDashboardWidgetRow("value_tile"), title: "Grid feed", tabKey: "electrical" },
+  { ...blankDashboardWidgetRow("value_tile"), title: "UPS load", tabKey: "electrical" },
+  { ...blankDashboardWidgetRow("value_tile"), tabKey: "overview" },
+];
+
+/** `F3.73` critique fix — a widget on a tab is named by the tab's label and its own title, not a
+ * global number the per-tab canvas does not show. Mutation: keep `dashboardBuilderProblemSubject`'s
+ * subject for a tabbed widget => red. */
+export function runTabbedProblemNamesItsTabTests(): void {
+  const [entry] = tabbedDashboardBuilderProblems(SUMMARY_ROWS, SUMMARY_TABS, [
+    { widget: 1, field: "points", message: "m" },
+  ]);
+  assert(
+    entry?.subject === "Electrical › UPS load" && entry.tabKey === "electrical",
+    `a tabbed widget's problem names its tab and title — got ${JSON.stringify(entry)}`,
+  );
+}
+
+/** The entries come in tab order, the set-level one first, so one tab's problems read together.
+ * Mutation: drop the sort => red. */
+export function runTabbedProblemsComeInTabOrderTests(): void {
+  const entries = tabbedDashboardBuilderProblems(SUMMARY_ROWS, SUMMARY_TABS, [
+    { widget: 0, field: "points", message: "electrical-1" },
+    { widget: 2, field: "points", message: "overview" },
+    { widget: null, field: "tabs", message: "set" },
+    { widget: 1, field: "points", message: "electrical-2" },
+  ]);
+  const order = entries.map((entry) => entry.problem.message).join(",");
+  assert(order === "set,overview,electrical-1,electrical-2", `grouped by tab in tab order — got ${order}`);
+}
+
+/** With no tabs, the subject stays `dashboardBuilderProblemSubject`'s and no entry has a tab. */
+export function runUntabbedProblemsKeepTheirSubjectTests(): void {
+  const rows = SUMMARY_ROWS.map(({ tabKey: _tabKey, ...row }) => row);
+  const [entry] = tabbedDashboardBuilderProblems(rows, [], [{ widget: 1, field: "points", message: "m" }]);
+  assert(
+    entry?.subject === "Widget 2 (UPS load)" && entry.tabKey === null,
+    `an untabbed widget keeps its numbered subject — got ${JSON.stringify(entry)}`,
   );
 }
 

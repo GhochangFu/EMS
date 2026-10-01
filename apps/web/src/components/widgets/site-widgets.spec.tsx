@@ -11,6 +11,7 @@ import { ActiveAlarmsRailWidget } from "./active-alarms-rail-widget";
 import { AssetClassStripWidget } from "./asset-class-strip-widget";
 import { CriticalSystemsListWidget } from "./critical-systems-list-widget";
 import { ModuleSummaryCardWidget } from "./module-summary-card-widget";
+import { siteTabHref, type SiteTabHref } from "./site-widget-parts";
 import { StateLegendWidget } from "./state-legend-widget";
 
 /**
@@ -33,6 +34,7 @@ const SEVERITIES: AlarmSeverityDto[] = [
 ];
 
 const SITE_PATH = "/control-room/site/loc-1";
+const SITE_TAB_HREF: SiteTabHref = (tabKey) => siteTabHref(SITE_PATH, tabKey);
 
 function alarm(id: string, assetCode: string, message: string): AlarmListItem {
   return {
@@ -124,6 +126,26 @@ export function theRailListsTheActiveAlarmsOfItsTab(): void {
 }
 
 /** `rows` caps the list: two rows of three alarms, with the third absent beside the two present. */
+/**
+ * Critique finding: a frame title "ACTIVE ALARMS" sat over an inner "Active Alarms" tab. The
+ * doubled heading goes; a title that adds information (a renamed widget) and the non-ready
+ * placeholder, which has no tab strip, both keep theirs.
+ */
+export function theRailDoesNotRepeatItsTabAsAHeading(): void {
+  render(wrap(<ActiveAlarmsRailWidget {...COMMON} title="Active alarms" data={response()} config={{ rows: 8, showSummary: true }} />));
+  expect(screen.getByRole("tab", { name: "Active Alarms" })).toBeInTheDocument();
+  expect(screen.queryByRole("heading", { name: /active alarms/i })).toBeNull();
+}
+
+export function aRenamedRailKeepsItsHeadingAndALoadingRailKeepsItsTitle(): void {
+  render(wrap(<ActiveAlarmsRailWidget {...COMMON} title="Plant alarms" data={response()} config={{ rows: 8, showSummary: true }} />));
+  expect(screen.getByRole("heading", { name: "Plant alarms" })).toBeInTheDocument();
+  cleanup();
+  render(wrap(<ActiveAlarmsRailWidget {...COMMON} title="Active alarms" status="loading" data={undefined} config={{ rows: 8, showSummary: true }} />));
+  expect(screen.getByRole("heading", { name: "Active alarms" })).toBeInTheDocument();
+  expect(screen.getByText("Loading…")).toBeInTheDocument();
+}
+
 export function theRailDrawsAtMostItsConfiguredRows(): void {
   render(wrap(<ActiveAlarmsRailWidget {...COMMON} data={response()} config={{ rows: 2, showSummary: true }} />));
   expect(screen.getByText("UPS-01")).toBeInTheDocument();
@@ -190,8 +212,8 @@ export function theStripSaysSoWhenNoRoleIsInScope(): void {
 
 // ---------------------------------------------------------------------------------- module card
 
-function card(data: SiteWidgetsResponse, targetTabKey: string, sitePath: string | null = SITE_PATH): void {
-  render(wrap(<ModuleSummaryCardWidget {...COMMON} data={data} config={{ targetTabKey }} sitePath={sitePath} />));
+function card(data: SiteWidgetsResponse, targetTabKey: string, tabHref: SiteTabHref | null = SITE_TAB_HREF): void {
+  render(wrap(<ModuleSummaryCardWidget {...COMMON} data={data} config={{ targetTabKey }} tabHref={tabHref} />));
 }
 
 export function theCardShowsItsTabsStatusAndCounts(): void {
@@ -226,6 +248,119 @@ export function aCardOnAHealthyTabReadsNormal(): void {
   expect(screen.getByText("0 alarms · 0 offline · 9 assets")).toBeInTheDocument();
 }
 
+/**
+ * Critique: "NORMAL · 3 offline". A tab with offline members and no active alarm reads "Offline"
+ * in the server's tone, never "Normal"; the healthy HVAC card beside it still reads "Normal".
+ */
+const OFFLINE_TAB = tab("water", "Water", {
+  worstSeverity: null,
+  tone: "warning",
+  activeAlarms: 0,
+  offlineAssets: 3,
+  assets: 5,
+});
+
+export function aCardOnATabWithOfflineMembersNeverReadsNormal(): void {
+  card(response({ tabs: [OFFLINE_TAB, HVAC_TAB] }), "water");
+  expect(screen.getByText("Offline")).toBeInTheDocument();
+  expect(screen.queryByText("Normal")).toBeNull();
+  cleanup();
+  card(response({ tabs: [OFFLINE_TAB, HVAC_TAB] }), "hvac");
+  expect(screen.getByText("Normal")).toBeInTheDocument();
+}
+
+/** The pill carries the read's tone: the offline card's pill is drawn in the warning palette. */
+export function anOfflineCardsPillCarriesTheWarningTone(): void {
+  card(response({ tabs: [OFFLINE_TAB] }), "water");
+  expect(screen.getByText("Offline").className).toMatch(/warning/);
+}
+
+/**
+ * The server raises an `info` tab with an offline member to `warning` (`tabTone`), so the label
+ * names that cause: "Offline", never an amber "Info". An `info` tab with no offline member keeps
+ * its severity's label — the positive control beside it.
+ */
+const INFO_SEVERITIES: AlarmSeverityDto[] = [
+  ...SEVERITIES,
+  { code: "info", label: "Info", tone: "info", rank: 10, active: true },
+];
+
+function infoTab(offlineAssets: number): SiteWidgetTab {
+  return tab("water", "Water", {
+    worstSeverity: "info",
+    tone: offlineAssets > 0 ? "warning" : "info",
+    activeAlarms: 1,
+    offlineAssets,
+    assets: 5,
+  });
+}
+
+function infoCard(offlineAssets: number): void {
+  render(
+    wrap(
+      <ModuleSummaryCardWidget
+        {...COMMON}
+        severities={INFO_SEVERITIES}
+        data={response({ tabs: [infoTab(offlineAssets)] })}
+        config={{ targetTabKey: "water" }}
+        tabHref={SITE_TAB_HREF}
+      />,
+    ),
+  );
+}
+
+export function anInfoAlarmBesideAnOfflineMemberReadsOffline(): void {
+  infoCard(1);
+  expect(screen.getByText("Offline")).toBeInTheDocument();
+  expect(screen.queryByText("Info")).toBeNull();
+}
+
+export function anInfoAlarmWithNoOfflineMemberReadsItsLabel(): void {
+  infoCard(0);
+  expect(screen.getByText("Info")).toBeInTheDocument();
+  expect(screen.queryByText("Offline")).toBeNull();
+}
+
+/**
+ * A severity the vocabulary does not list yet (still loading) keeps its code as the label beside
+ * an offline member: it may be `critical`, so the pill never claims the member set the tone.
+ */
+export function anUnlistedSeverityBesideAnOfflineMemberKeepsItsCode(): void {
+  render(
+    wrap(
+      <ModuleSummaryCardWidget
+        {...COMMON}
+        severities={[]}
+        data={response({ tabs: [UPS_TAB] })}
+        config={{ targetTabKey: "ups" }}
+        tabHref={SITE_TAB_HREF}
+      />,
+    ),
+  );
+  expect(screen.getByText("critical")).toBeInTheDocument();
+  expect(screen.queryByText("Offline")).toBeNull();
+}
+
+/** A `warning` alarm beside an offline member keeps its label: the alarm, not the member, set the tone. */
+export function aWarningAlarmBesideAnOfflineMemberReadsWarning(): void {
+  card(response({ tabs: [ONE_TAB] }), "one");
+  expect(screen.getByText("Warning")).toBeInTheDocument();
+  expect(screen.queryByText("Offline")).toBeNull();
+}
+
+/** "1 alarm" and "1 asset", singular for exactly one (critique: "1 alarms", "1 assets"). */
+const ONE_TAB = tab("one", "One", { worstSeverity: "warning", tone: "warning", activeAlarms: 1, offlineAssets: 1, assets: 1 });
+
+export function theCountsSaySingularForOneAlarm(): void {
+  card(response({ tabs: [ONE_TAB] }), "one");
+  expect(screen.getByText(/^1 alarm · /)).toBeInTheDocument();
+}
+
+export function theCountsSaySingularForOneAsset(): void {
+  card(response({ tabs: [ONE_TAB] }), "one");
+  expect(screen.getByText(/ · 1 asset$/)).toBeInTheDocument();
+}
+
 /** A tab the caller cannot read says so — never a zero that would read as healthy. */
 export function aCardOnAnUnreadableTabSaysOutsideScope(): void {
   card(response(), "env");
@@ -242,7 +377,7 @@ export function aCardOnAnUnlistedTabSaysOutsideScope(): void {
 // ---------------------------------------------------------------------------------- list
 
 export function theListShowsOneRowPerGroupTab(): void {
-  render(wrap(<CriticalSystemsListWidget {...COMMON} data={response()} sitePath={SITE_PATH} />));
+  render(wrap(<CriticalSystemsListWidget {...COMMON} data={response()} tabHref={SITE_TAB_HREF} />));
   const rows = within(screen.getByRole("list", { name: "Critical systems" })).getAllByRole("listitem");
   expect(rows).toHaveLength(3);
   expect(within(rows[0]).getByText("3 alarms · 1 offline · 6 assets")).toBeInTheDocument();
@@ -250,22 +385,31 @@ export function theListShowsOneRowPerGroupTab(): void {
   expect(within(rows[1]).getByText("Normal")).toBeInTheDocument();
 }
 
+/** A critical-systems row with offline members and no alarm reads "Offline"; the HVAC row beside it, "Normal". */
+export function aListRowWithOfflineMembersNeverReadsNormal(): void {
+  render(wrap(<CriticalSystemsListWidget {...COMMON} data={response({ tabs: [OFFLINE_TAB, HVAC_TAB] })} tabHref={SITE_TAB_HREF} />));
+  const rows = within(screen.getByRole("list", { name: "Critical systems" })).getAllByRole("listitem");
+  expect(within(rows[0]).getByText("Offline")).toBeInTheDocument();
+  expect(within(rows[0]).queryByText("Normal")).toBeNull();
+  expect(within(rows[1]).getByText("Normal")).toBeInTheDocument();
+}
+
 /** The positive control is the first two rows above; this one is the row with no status. */
 export function theListShowsOutsideScopeForATabWithNoStatus(): void {
-  render(wrap(<CriticalSystemsListWidget {...COMMON} data={response()} sitePath={SITE_PATH} />));
+  render(wrap(<CriticalSystemsListWidget {...COMMON} data={response()} tabHref={SITE_TAB_HREF} />));
   const rows = within(screen.getByRole("list", { name: "Critical systems" })).getAllByRole("listitem");
   expect(within(rows[2]).getByText("Outside scope")).toBeInTheDocument();
   expect(within(rows[0]).queryByText("Outside scope")).toBeNull();
 }
 
 export function theListLinksEachRowToItsTab(): void {
-  render(wrap(<CriticalSystemsListWidget {...COMMON} data={response()} sitePath={SITE_PATH} />));
+  render(wrap(<CriticalSystemsListWidget {...COMMON} data={response()} tabHref={SITE_TAB_HREF} />));
   expect(screen.getByRole("link", { name: "UPS Monitoring" }).getAttribute("href")).toBe(`${SITE_PATH}/ups`);
   expect(screen.getByRole("link", { name: "HVAC System" }).getAttribute("href")).toBe(`${SITE_PATH}/hvac`);
 }
 
 export function theListSaysSoWhenTheDashboardHasNoGroupTab(): void {
-  render(wrap(<CriticalSystemsListWidget {...COMMON} data={response({ tabs: [] })} sitePath={SITE_PATH} />));
+  render(wrap(<CriticalSystemsListWidget {...COMMON} data={response({ tabs: [] })} tabHref={SITE_TAB_HREF} />));
   expect(screen.getByText("No system tabs")).toBeInTheDocument();
 }
 
@@ -273,13 +417,13 @@ export function theListSaysSoWhenTheDashboardHasNoGroupTab(): void {
 
 /** Not ready: the frame's placeholder replaces every body — the same rule as the other types. */
 export function aLoadingSiteWidgetDrawsThePlaceholderNotItsBody(): void {
-  render(wrap(<CriticalSystemsListWidget {...COMMON} status="loading" data={undefined} sitePath={SITE_PATH} />));
+  render(wrap(<CriticalSystemsListWidget {...COMMON} status="loading" data={undefined} tabHref={SITE_TAB_HREF} />));
   expect(screen.getByText("Loading…")).toBeInTheDocument();
   expect(screen.queryByText("No system tabs")).toBeNull();
 }
 
 export function aFailedSiteWidgetDrawsTheErrorLine(): void {
-  render(wrap(<ModuleSummaryCardWidget {...COMMON} status="error" data={undefined} config={{ targetTabKey: "ups" }} sitePath={SITE_PATH} />));
+  render(wrap(<ModuleSummaryCardWidget {...COMMON} status="error" data={undefined} config={{ targetTabKey: "ups" }} tabHref={SITE_TAB_HREF} />));
   expect(screen.getByText("Could not load widget.")).toBeInTheDocument();
   expect(screen.queryByText("Outside scope")).toBeNull();
 }

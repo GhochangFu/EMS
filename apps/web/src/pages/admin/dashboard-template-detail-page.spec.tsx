@@ -517,6 +517,7 @@ export async function applyResultTableListsASkippedSitesReason(): Promise<void> 
             dashboardSlug: "site-layout-plant-1",
             omittedTabs: [],
             droppedCards: [],
+            omittedTiles: [],
             resolution: [],
           },
         ],
@@ -550,6 +551,7 @@ export async function siteTemplateInstantiatePicksALocation(): Promise<void> {
         dashboardSlug: "site-layout-plant-2",
         omittedTabs: [],
         droppedCards: [],
+        omittedTiles: [],
         resolution: [],
       });
     },
@@ -566,6 +568,37 @@ export async function siteTemplateInstantiatePicksALocation(): Promise<void> {
   });
   expect(calls[0]?.slice(0, 2)).toEqual([TEMPLATE_ID, "loc-2"]);
   expect(await screen.findByText(/site-layout-plant-2/)).toBeInTheDocument();
+  expect(screen.queryByText(/left out/), "a copy that left out no tile said it did").not.toBeInTheDocument();
+}
+
+/**
+ * ADR 0087 Amendment 2 — the answer names the role tiles a copy left out, and the summary counts
+ * them. The adjacent case answers `omittedTiles: []`, and its summary says nothing about tiles.
+ */
+export async function madeSummaryCountsTheTilesLeftOut(): Promise<void> {
+  stubSiteApi({
+    fetchAdminDashboardTemplate: () => Promise.resolve(publishedSiteTemplate()),
+    instantiateSiteTemplate: () =>
+      Promise.resolve({
+        locationId: "loc-2",
+        dashboardId: "d1",
+        dashboardSlug: "site-layout-plant-2",
+        omittedTabs: [],
+        droppedCards: [],
+        omittedTiles: [
+          { tabKey: "sld", widgetKey: "sld-pf-tile" },
+          { tabKey: "env", widgetKey: "env-humidity-tile" },
+        ],
+        resolution: [],
+      }),
+  });
+  renderPage();
+
+  await userEvent.click(await screen.findByRole("button", { name: "Instantiate" }));
+  await userEvent.selectOptions(await screen.findByRole("combobox", { name: "Location" }), "loc-2");
+  await userEvent.click(screen.getByRole("button", { name: "Confirm instantiate" }));
+
+  expect(await screen.findByText(/2 tiles left out \(no point at the site\)/)).toBeInTheDocument();
 }
 
 /**
@@ -600,6 +633,85 @@ export async function groupTemplateCountAndEmptyMessageAreUnchanged(): Promise<v
   renderPage();
   expect(await screen.findByText(/electrical · 0 widgets/)).toBeInTheDocument();
   expect(screen.getByText("This template has no widgets yet.")).toBeInTheDocument();
+}
+
+/**
+ * `F3.73` critique — Archive asks before it archives. The click opens a confirm dialog and posts
+ * nothing; the dialog's own button posts once. Cancel closes it with no post (the adjacent
+ * negative, so a dialog that archived on open or on cancel goes red).
+ */
+export async function archiveAsksBeforeArchiving(): Promise<void> {
+  const calls: string[] = [];
+  stubApi({
+    fetchAdminDashboardTemplate: () => Promise.resolve(publishedTemplate()),
+    archiveAdminDashboardTemplate: (id: string) => {
+      calls.push(id);
+      return Promise.resolve({ ...publishedTemplate(), status: "archived" });
+    },
+  });
+  renderPage();
+
+  await userEvent.click(await screen.findByRole("button", { name: "Archive" }));
+  expect(calls, "the click archived before the confirm was answered").toHaveLength(0);
+  await userEvent.click(await screen.findByRole("button", { name: "Cancel" }));
+  expect(calls, "Cancel archived the template").toHaveLength(0);
+  expect(screen.queryByRole("button", { name: "Confirm archive" })).not.toBeInTheDocument();
+
+  await userEvent.click(screen.getByRole("button", { name: "Archive" }));
+  await userEvent.click(await screen.findByRole("button", { name: "Confirm archive" }));
+  await waitFor(() => {
+    expect(calls).toEqual([TEMPLATE_ID]);
+  });
+}
+
+/**
+ * `F4.168` H15 for the `F3.73` critique's confirm — the confirm closes the dialog and the post
+ * then pends. The page's Archive button announces it: named "Archiving…", `aria-busy="true"` and
+ * disabled, so the dialog cannot reopen while the post is in flight.
+ */
+export async function confirmedArchiveAnnouncesArchiving(): Promise<void> {
+  stubApi({
+    fetchAdminDashboardTemplate: () => Promise.resolve(publishedTemplate()),
+    archiveAdminDashboardTemplate: () => new Promise<never>(() => {}),
+  });
+  renderPage();
+
+  const archive = await screen.findByRole("button", { name: "Archive" });
+  await userEvent.click(archive);
+  await userEvent.click(await screen.findByRole("button", { name: "Confirm archive" }));
+  await waitFor(() => {
+    expect(archive).toHaveAccessibleName("Archiving…");
+  });
+  expect(archive).toHaveAttribute("aria-busy", "true");
+  expect(archive).toBeDisabled();
+  expect(screen.queryByRole("button", { name: "Confirm archive" })).not.toBeInTheDocument();
+}
+
+/**
+ * `F3.73` critique — Archive is not a filled primary button beside Instantiate. The positive
+ * control is Instantiate, which keeps the accent fill.
+ */
+export async function archiveIsNotAPrimaryFill(): Promise<void> {
+  stubApi({ fetchAdminDashboardTemplate: () => Promise.resolve(publishedTemplate()) });
+  renderPage();
+
+  const archive = await screen.findByRole("button", { name: "Archive" });
+  expect(screen.getByRole("button", { name: "Instantiate" }).className).toContain("bg-accent");
+  expect(archive.className, "Archive kept the primary accent fill").not.toContain("bg-accent");
+}
+
+/**
+ * `F3.73` critique — the read-only notice says why in plain words and cites no ADR number, and
+ * is capped at a readable measure.
+ */
+export async function readOnlyNoticeGivesAPlainReason(): Promise<void> {
+  stubApi({ fetchAdminDashboardTemplate: () => Promise.resolve(publishedTemplate()) });
+  renderPage();
+
+  const notice = await screen.findByText(/This version is read-only/);
+  expect(notice.textContent).toContain("published");
+  expect(notice.textContent, "the notice cites an ADR number").not.toMatch(/ADR/);
+  expect(notice.className).toContain("max-w-prose");
 }
 
 /**
