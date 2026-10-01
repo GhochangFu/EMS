@@ -22,8 +22,10 @@ import {
   MAX_WIDGET_TITLE_LENGTH,
   WIDGET_TYPES,
   blankConfigRow,
+  buildActiveAlarmsRailConfig,
   buildChartConfig,
   buildMimicConfig,
+  buildModuleSummaryCardConfig,
   buildTableConfig,
   buildGaugeConfig,
   buildTankConfig,
@@ -166,6 +168,11 @@ export function blankDashboardWidgetRow(widgetType: WidgetType): DashboardWidget
     // behaviour unchanged from before the layout arm existed.
     config.mimicSource = "preset";
   }
+  if (widgetType === "active_alarms_rail") {
+    // `F3.73` — the contract's own defaults, so a fresh rail saves as the schema would default it.
+    config.railRows = "8";
+    config.railShowSummary = true;
+  }
   return {
     widgetType,
     title: "",
@@ -183,16 +190,22 @@ export function blankDashboardWidgetRow(widgetType: WidgetType): DashboardWidget
  * The widget types the builder offers on a dashboard of this scope kind (`F3.32`, ADR 0079
  * decision 6).
  *
- * A type that binds nothing — the plant mimic — resolves each node at read time from the
- * dashboard's asset group by role, so it is offered only on an `assetGroup` dashboard; the API
- * refuses it on every other scope with a 400. Derived from `widgetTypeBindsNothing` rather than
- * the `"mimic"` literal, the way that predicate derives from the cardinality records.
+ * The plant mimic resolves each node at read time from the dashboard's asset group by role, so it
+ * is offered only on an `assetGroup` dashboard; the API refuses it on every other scope with a 400
+ * (`needsAssetGroup`). **`F3.73`: not derived from `widgetTypeBindsNothing` any more.** The five
+ * site widgets bind nothing too, but they read the dashboard's own scope (plan D9), so they are
+ * offered on every scope kind — the API's `mimicGroupFor` rule names the mimic alone.
  *
  * Takes the scope KIND from the form's live state, not the stored DTO, so switching an edited
  * dashboard away from its group removes the button at once.
  */
 export function offerableWidgetTypes(kind: DashboardScopeValue["kind"]): readonly WidgetType[] {
-  return WIDGET_TYPES.filter((type) => kind === "assetGroup" || !widgetTypeBindsNothing(type));
+  return WIDGET_TYPES.filter((type) => kind === "assetGroup" || !needsAssetGroup(type));
+}
+
+/** Whether a widget type resolves against an asset group — the plant mimic alone (see above). */
+function needsAssetGroup(type: WidgetType): boolean {
+  return type === "mimic";
 }
 
 /** A display label for an already-bound point — `pointKey` alone, or `pointKey (unit)` when a
@@ -279,6 +292,20 @@ function configRowFromDto(widget: DashboardWidgetDto): WidgetConfigRow {
         row.mimicSource = "preset";
         row.mimicPreset = widget.config.preset;
       }
+      break;
+    case "active_alarms_rail":
+      // `F3.73` — the same edit-and-resave reason as the arms above: a field `buildActiveAlarmsRailConfig`
+      // writes and this switch does not read back is lost on the next save.
+      row.railRows = String(widget.config.rows);
+      row.railShowSummary = widget.config.showSummary;
+      break;
+    case "module_summary_card":
+      row.targetTabKey = widget.config.targetTabKey;
+      break;
+    case "state_legend":
+    case "asset_class_strip":
+    case "critical_systems_list":
+      // `F3.73` — configure nothing (`{}`); named so the `never` below still proves no arm is forgotten.
       break;
     default: {
       // No arm may be forgotten: this switch has no compile-time exhaustiveness otherwise, and a
@@ -492,7 +519,7 @@ export function dashboardBuilderErrors(
     // dashboard's group, or else the group of the tab it sits on, so a mimic on a group-bound tab
     // is legal on any scope kind. A mimic on the Overview tab (no group) still needs a group scope.
     if (
-      widgetTypeBindsNothing(row.widgetType) &&
+      needsAssetGroup(row.widgetType) &&
       scopeKind !== "assetGroup" &&
       !(row.tabKey !== undefined && groupTabKeys.has(row.tabKey))
     ) {
@@ -600,6 +627,16 @@ export function buildPutWidgetsPayload(
           return { ...identity, widgetType: "table", config: buildTableConfig(row.config) };
         case "mimic":
           return { ...identity, widgetType: "mimic", config: buildMimicConfig(row.config) };
+        case "active_alarms_rail":
+          return { ...identity, widgetType: "active_alarms_rail", config: buildActiveAlarmsRailConfig(row.config) };
+        case "state_legend":
+          return { ...identity, widgetType: "state_legend", config: {} };
+        case "asset_class_strip":
+          return { ...identity, widgetType: "asset_class_strip", config: {} };
+        case "module_summary_card":
+          return { ...identity, widgetType: "module_summary_card", config: buildModuleSummaryCardConfig(row.config) };
+        case "critical_systems_list":
+          return { ...identity, widgetType: "critical_systems_list", config: {} };
         default: {
           const unreachable: never = row.widgetType;
           throw new Error(`Unhandled widget type ${JSON.stringify(unreachable)}`);

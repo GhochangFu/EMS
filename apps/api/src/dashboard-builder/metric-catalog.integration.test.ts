@@ -19,6 +19,7 @@ import {
   assertUnnarrowedScopeStaysInsideTheOrganization,
   assertLocationScopeNarrowsTheCount,
   assertNoBindingsResolvesEmpty,
+  assertOfflineCountAndAssetList,
 } from "./metric-catalog.integration.spec";
 import { MetricCatalogService } from "./metric-catalog.service";
 
@@ -97,6 +98,16 @@ describe.skipIf(!connectionString)("F3.35 Stage C — the metric catalog resolve
   let overviewWidgetId = "";
   const ALARMS_AT_C1 = 1;
   const ALARMS_AT_C2 = 2;
+
+  // `F3.73` Task 3.3 — site D: D1 live, D2 sampled a minute ago, D3 never sampled, D4 retired.
+  let assetD1 = "";
+  let assetD2 = "";
+  let assetD3 = "";
+  let assetD4 = "";
+  let assetsDashboardId = "";
+  let offlineWidgetId = "";
+  let listWidgetId = "";
+  const ALARMS_AT_D1 = 2;
 
   beforeAll(async () => {
     const url = connectionString as string;
@@ -324,6 +335,65 @@ describe.skipIf(!connectionString)("F3.35 Stage C — the metric catalog resolve
     };
     overviewWidgetId = await mkTabTile(overviewTab.rows[0]?.id as string);
     groupWidgetId = await mkTabTile(groupTab.rows[0]?.id as string);
+
+    // `F3.73` Task 3.3 — a FOURTH site of its own. D1's fresh sample is written inside the
+    // `it()`, not here: this hook runs many statements on a one-connection pool, and a sample
+    // older than the 25 s live window by the time the resolve runs would read offline.
+    const locD = await superuserPool.query<{ id: string }>(
+      `INSERT INTO bms.locations (organization_id, code, slug, name, type, latitude, longitude)
+       VALUES ($1, $2, $3, $4, 'csmoc', 0, 0) RETURNING id`,
+      [orgId, `F373D-${RUN}`, `f373d-${RUN}`, `F3.73 site D ${RUN}`],
+    );
+    const locationD = locD.rows[0]?.id as string;
+    locationIds.push(locationD);
+    assetD1 = await mkAsset(locationD, "D1");
+    assetD2 = await mkAsset(locationD, "D2");
+    assetD3 = await mkAsset(locationD, "D3");
+    assetD4 = await mkAsset(locationD, "D4");
+    await superuserPool.query(`UPDATE bms.assets SET active = false WHERE id = $1`, [assetD4]);
+    // A minute old: outside the 25 s window, so D2 is offline.
+    await superuserPool.query(
+      `INSERT INTO telemetry.point_values (time, asset_id, point_key, value)
+       VALUES (now() - make_interval(secs => 60), $1, 'kw', 1)`,
+      [assetD2],
+    );
+    for (let i = 0; i < ALARMS_AT_D1; i += 1) {
+      await superuserPool.query(
+        `INSERT INTO bms.alarms (organization_id, asset_id, severity, message, raised_at)
+         VALUES ($1, $2, $3, $4, now())`,
+        [orgId, assetD1, severityCode, `F3.73 D1 ${i} ${RUN}`],
+      );
+    }
+    // Cleared: not active, so it adds nothing to D1's `activeAlarms`.
+    await superuserPool.query(
+      `INSERT INTO bms.alarms (organization_id, asset_id, severity, message, raised_at, cleared_at)
+       VALUES ($1, $2, $3, $4, now(), now())`,
+      [orgId, assetD1, severityCode, `F3.73 D1 cleared ${RUN}`],
+    );
+    const assetsDash = await superuserPool.query<{ id: string }>(
+      `INSERT INTO bms.dashboards (organization_id, slug, name, location_id)
+       VALUES ($1, $2, $3, $4) RETURNING id`,
+      [orgId, `f373-assets-${RUN}`, `F3.73 assets ${RUN}`, locationD],
+    );
+    assetsDashboardId = assetsDash.rows[0]?.id as string;
+    dashboardIds.push(assetsDashboardId);
+    const mkBound = async (widgetType: string, catalogKey: string): Promise<string> => {
+      const widget = await superuserPool.query<{ id: string }>(
+        `INSERT INTO bms.dashboard_widgets
+           (organization_id, dashboard_id, widget_type, grid_x, grid_y, grid_w, grid_h)
+         VALUES ($1, $2, $3, 0, 0, 4, 4) RETURNING id`,
+        [orgId, assetsDashboardId, widgetType],
+      );
+      const widgetId = widget.rows[0]?.id as string;
+      await superuserPool.query(
+        `INSERT INTO bms.dashboard_widget_sources (organization_id, widget_id, catalog_key)
+         VALUES ($1, $2, $3)`,
+        [orgId, widgetId, catalogKey],
+      );
+      return widgetId;
+    };
+    offlineWidgetId = await mkBound("value_tile", "assets.offline.count");
+    listWidgetId = await mkBound("table", "assets.list");
   }, 60_000);
 
   afterAll(async () => {
@@ -342,8 +412,21 @@ describe.skipIf(!connectionString)("F3.35 Stage C — the metric catalog resolve
       ]);
       await superuserPool.query(`DELETE FROM bms.asset_groups WHERE id = $1`, [groupId]);
     }
-    const fixtureAssets = [assetA, assetB, assetC1, assetC2].filter(Boolean);
+    const fixtureAssets = [
+      assetA,
+      assetB,
+      assetC1,
+      assetC2,
+      assetD1,
+      assetD2,
+      assetD3,
+      assetD4,
+    ].filter(Boolean);
     if (fixtureAssets.length > 0) {
+      await superuserPool.query(
+        `DELETE FROM telemetry.point_values WHERE asset_id = ANY($1::uuid[])`,
+        [fixtureAssets],
+      );
       await superuserPool.query(`DELETE FROM bms.alarms WHERE asset_id = ANY($1::uuid[])`, [
         fixtureAssets,
       ]);
@@ -386,6 +469,31 @@ describe.skipIf(!connectionString)("F3.35 Stage C — the metric catalog resolve
       [assetC1, assetC2],
       ALARMS_AT_C1,
       ALARMS_AT_C1 + ALARMS_AT_C2,
+    );
+  });
+
+  it("counts offline assets and lists assets with status and active alarms (F3.73)", async () => {
+    // Written here, a moment before the resolve, so it is inside the 25 s window.
+    await superuserPool.query(
+      `INSERT INTO telemetry.point_values (time, asset_id, point_key, value)
+       VALUES (now() - make_interval(secs => 1), $1, 'kw', 1)`,
+      [assetD1],
+    );
+    const row = (tag: string, status: string, activeAlarms: number) => ({
+      code: `F335-${tag}-${RUN}`,
+      name: `F3.35 ${tag} ${RUN}`,
+      status,
+      activeAlarms,
+    });
+    await assertOfflineCountAndAssetList(
+      service,
+      orgId,
+      assetsDashboardId,
+      offlineWidgetId,
+      listWidgetId,
+      [assetD1, assetD2, assetD3, assetD4],
+      2,
+      [row("D1", "live", ALARMS_AT_D1), row("D2", "offline", 0), row("D3", "offline", 0)],
     );
   });
 

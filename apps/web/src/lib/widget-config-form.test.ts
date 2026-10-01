@@ -16,6 +16,10 @@ import {
   runMimicWithLayoutIsCleanTests,
   runMimicLayoutConfigValuesTests,
   runMimicLayoutConfigThrowsWithoutALayoutTests,
+  runModuleCardConfigTests,
+  runModuleCardTargetTabRequiredTests,
+  runRailConfigValuesTests,
+  runRailRowsBoundsTests,
 } from "./widget-config-form.spec";
 
 /** Vitest entry point — see `apps/web/src/lib/admin-access.test.ts` (ADR 0014). */
@@ -78,5 +82,21 @@ describe("widget config form", () => {
 
   it("F3.32c: buildMimicConfig throws on a layout source with no layout chosen", () => {
     runMimicLayoutConfigThrowsWithoutALayoutTests();
+  });
+
+  it("F3.73: a module summary card needs a target tab", () => {
+    runModuleCardTargetTabRequiredTests();
+  });
+
+  it("F3.73: the rail rows are an integer from 1 to 20, blank is the default", () => {
+    runRailRowsBoundsTests();
+  });
+
+  it("F3.73: the rail config writes rows and showSummary and never a unit", () => {
+    runRailConfigValuesTests();
+  });
+
+  it("F3.73: the module card config writes targetTabKey alone and throws on none", () => {
+    runModuleCardConfigTests();
   });
 });

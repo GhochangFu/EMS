@@ -1,6 +1,11 @@
 import { z } from "zod";
 
 import {
+  activeAlarmsRailConfigSchema,
+  assetClassStripConfigSchema,
+  criticalSystemsListConfigSchema,
+  moduleSummaryCardConfigSchema,
+  stateLegendConfigSchema,
   bindingExclusiveMessage,
   bindingRequiredMessage,
   bindingShapeMessage,
@@ -100,6 +105,9 @@ export const MIMIC_LAYOUT_ORG_MESSAGE = "a plant mimic layout must belong to the
  */
 export const TAB_KEY_UNKNOWN_MESSAGE = "a widget's tabKey must name one of the tabs in this request";
 export const TAB_KEY_REQUIRED_MESSAGE = "a dashboard with tabs needs a tabKey on every widget";
+/** `F3.73` Task 3.2 — a module summary card links to a tab of the same dashboard. */
+export const TAB_TARGET_UNKNOWN_MESSAGE =
+  "a module summary card's targetTabKey must name one of the tabs in this request";
 export const DUPLICATE_TAB_KEY_MESSAGE =
   "two tabs may not share one key (dashboard_tabs_dashboard_id_tab_key_key)";
 /** Two body tabs naming one stored `id` would both write the same row, so the second silently
@@ -350,6 +358,9 @@ export const METRIC_CATALOG_PARAMS_WRITE: Record<MetricCatalogKey, z.AnyZodObjec
   "sustainability.by_location": z.object({ ...sustainabilityParamsFields }).strict(),
   // `E4.3` / ADR 0073 decision 3 — one row per balance-carrying site for one calendar period.
   "water.balance": z.object({ period: waterBalancePeriodSchema }).strict(),
+  // `F3.73` — both resolve over the dashboard's (or the tab's) scope and take no params.
+  "assets.offline.count": z.object({}).strict(),
+  "assets.list": z.object({}).strict(),
 };
 
 /**
@@ -549,7 +560,7 @@ const mimicConfigWriteSchema = z.discriminatedUnion("source", [
 ]);
 
 /**
- * The arms, one per widget type (six since `F3.32`). Each stays a plain `.strict()` `ZodObject` — never
+ * The arms, one per widget type (eleven since `F3.73`). Each stays a plain `.strict()` `ZodObject` — never
  * wrapped in its own `.refine()`/`.superRefine()` — because `z.discriminatedUnion` accepts only
  * `ZodObject` arms; the cross-widget grid-fit check lives on the ARRAY field in
  * `widgetsWriteFieldSchema` below instead of here, for exactly that reason.
@@ -620,6 +631,54 @@ export const widgetWriteSchema = z.discriminatedUnion("widgetType", [
       config: mimicConfigWriteSchema,
       points: pointsFieldFor("mimic"),
       sources: sourcesFieldFor("mimic"),
+    })
+    .strict(),
+  // `F3.73` — the five site widgets. Each binds nothing (`{0, 0}` in the shared records), so
+  // `points` and `sources` are capped at zero; each config is the shared one, `.strict()`.
+  z
+    .object({
+      ...widgetIdentityWriteFields,
+      widgetType: z.literal("active_alarms_rail"),
+      config: activeAlarmsRailConfigSchema.strict(),
+      points: pointsFieldFor("active_alarms_rail"),
+      sources: sourcesFieldFor("active_alarms_rail"),
+    })
+    .strict(),
+  z
+    .object({
+      ...widgetIdentityWriteFields,
+      widgetType: z.literal("state_legend"),
+      config: stateLegendConfigSchema.strict(),
+      points: pointsFieldFor("state_legend"),
+      sources: sourcesFieldFor("state_legend"),
+    })
+    .strict(),
+  z
+    .object({
+      ...widgetIdentityWriteFields,
+      widgetType: z.literal("asset_class_strip"),
+      config: assetClassStripConfigSchema.strict(),
+      points: pointsFieldFor("asset_class_strip"),
+      sources: sourcesFieldFor("asset_class_strip"),
+    })
+    .strict(),
+  // Whether `targetTabKey` names a tab of the request is `tabRulesHold`'s check on the body.
+  z
+    .object({
+      ...widgetIdentityWriteFields,
+      widgetType: z.literal("module_summary_card"),
+      config: moduleSummaryCardConfigSchema.strict(),
+      points: pointsFieldFor("module_summary_card"),
+      sources: sourcesFieldFor("module_summary_card"),
+    })
+    .strict(),
+  z
+    .object({
+      ...widgetIdentityWriteFields,
+      widgetType: z.literal("critical_systems_list"),
+      config: criticalSystemsListConfigSchema.strict(),
+      points: pointsFieldFor("critical_systems_list"),
+      sources: sourcesFieldFor("critical_systems_list"),
     })
     .strict(),
 ]);
@@ -866,14 +925,24 @@ const tabsWriteFieldSchema = z
  *   absent list and an empty one mean the same thing — the PUT replaces the whole set, so a
  *   dashboard saved without tabs loses its stored tabs.
  * - `MAX_DASHBOARD_WIDGETS` holds per tab, and on the legacy canvas.
+ * - A `module_summary_card`'s `targetTabKey` names a key in `tabs`.
  */
 const tabRulesHold = (
-  body: { tabs?: readonly { key: string }[]; widgets: readonly { tabKey?: string }[] },
+  body: { tabs?: readonly { key: string }[]; widgets: readonly z.infer<typeof widgetWriteSchema>[] },
   ctx: z.RefinementCtx,
 ): void => {
   const keys = new Set((body.tabs ?? []).map((tab) => tab.key));
   const counts = new Map<string, number>();
   body.widgets.forEach((widget, index) => {
+    // `F3.73` Task 3.2 — a card's link target is a tab key of THIS request (none, when there are
+    // no tabs, so a card on a legacy canvas is refused: it would link nowhere).
+    if (widget.widgetType === "module_summary_card" && !keys.has(widget.config.targetTabKey)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["widgets", index, "config", "targetTabKey"],
+        message: TAB_TARGET_UNKNOWN_MESSAGE,
+      });
+    }
     if (keys.size > 0 && widget.tabKey === undefined) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,

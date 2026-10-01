@@ -285,5 +285,46 @@ export async function assertNoBindingsResolvesEmpty(
   ).toBe(false);
 }
 
+/**
+ * `F3.73` Task 3.3 (ruling Q6a/Q6b) — `assets.offline.count` counts the active assets in scope
+ * with no sample inside the shared live window, and `assets.list` lists them with a `live` /
+ * `offline` status and their active alarm count.
+ *
+ * The fixture holds one asset sampled a second ago (live), one sampled a minute ago (offline:
+ * the window is `LIVE_TELEMETRY_MAX_AGE_SECONDS`, 25 s — a resolver on any wider window counts
+ * it live and this goes red), one never sampled (offline), and one retired asset, which is
+ * neither: a retired asset is absent, as it is from the role summary's `offlineCount`.
+ */
+export async function assertOfflineCountAndAssetList(
+  service: MetricCatalogService,
+  organizationId: string,
+  dashboardId: string,
+  countWidgetId: string,
+  listWidgetId: string,
+  callerScope: readonly string[],
+  expectedOffline: number,
+  expectedRows: readonly Record<string, string | number | boolean | null>[],
+): Promise<void> {
+  const resolved = await service.resolveForDashboard(organizationId, dashboardId, [
+    ...callerScope,
+  ]);
+  const valueOf = (widgetId: string) =>
+    resolved.values.find((value) => value.widgetId === widgetId)?.resolved;
+
+  const count = valueOf(countWidgetId);
+  expect(count?.shape, "assets.offline.count must resolve as a metric").toBe("metric");
+  expect(
+    count?.shape === "metric" ? count.value : undefined,
+    "the offline count must be the active assets in scope with no sample in the live window",
+  ).toBe(expectedOffline);
+
+  const list = valueOf(listWidgetId);
+  expect(list?.shape, "assets.list must resolve as a dataset").toBe("dataset");
+  if (list?.shape !== "dataset") return;
+  expect(list.columns).toEqual(["code", "name", "status", "activeAlarms"]);
+  expect(list.rows, "one row per active asset in scope, in code order").toEqual(expectedRows);
+  expect(list.truncated, "the fixture is far below MAX_DATASET_ROWS").toBe(false);
+}
+
 /** A per-run suffix so two instances of this suite cannot collide (F4.65). */
 export const RUN_SUFFIX = (): string => randomUUID().replace(/-/g, "").slice(0, 8);

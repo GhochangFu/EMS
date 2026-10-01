@@ -1,4 +1,7 @@
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { render, screen } from "@testing-library/react";
+import type { ReactElement } from "react";
+import { MemoryRouter } from "react-router-dom";
 import { expect, vi } from "vitest";
 
 import type { DashboardWidgetDto, WidgetType } from "@bms/shared";
@@ -40,6 +43,22 @@ import { DashboardWidget, type WidgetData } from "./dashboard-widget";
 vi.mock("echarts-for-react", () => ({
   default: () => null,
 }));
+
+// `F3.73` — the state legend reads the severity vocabulary. An unmocked fetch would reach the real
+// API on :4000 (a web spec otherwise does), so the read is replaced and answers no severities.
+vi.mock("../../api/vocabularies", () => ({
+  vocabulariesQueryKey: ["vocabularies"],
+  fetchVocabularies: () => Promise.resolve({ alarmSeverities: [] }),
+}));
+
+/** The providers the five site widgets need: a query client (the legend) and a router (the rail's link). */
+function withSiteProviders(ui: ReactElement): ReactElement {
+  return (
+    <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+      <MemoryRouter>{ui}</MemoryRouter>
+    </QueryClientProvider>
+  );
+}
 
 const IDENTITY = {
   id: "11111111-1111-4111-8111-111111111111",
@@ -88,6 +107,17 @@ function sampleWidget(widgetType: WidgetType, title: string | null = "Feed pump 
     case "mimic":
       // `F3.32` — binds nothing; the preset is the whole config (ADR 0079 decision 3).
       return { ...IDENTITY, title, widgetType, config: { source: "preset", preset: "water_train" } };
+    // `F3.73` — the five site widgets bind nothing; the smallest config each arm accepts.
+    case "active_alarms_rail":
+      return { ...IDENTITY, title, widgetType, config: { rows: 8, showSummary: true } };
+    case "state_legend":
+      return { ...IDENTITY, title, widgetType, config: {} };
+    case "asset_class_strip":
+      return { ...IDENTITY, title, widgetType, config: {} };
+    case "module_summary_card":
+      return { ...IDENTITY, title, widgetType, config: { targetTabKey: "ups" } };
+    case "critical_systems_list":
+      return { ...IDENTITY, title, widgetType, config: {} };
     default: {
       const unreachable: never = widgetType;
       return unreachable;
@@ -108,14 +138,16 @@ const WIDGET_TYPES = Object.keys(WIDGET_CATALOG) as WidgetType[];
 export function everyCatalogTypeDrawsItsTitle(): void {
   expect(
     WIDGET_TYPES.length,
-    "the catalog holds six widget types (ADR 0047 decision 2; `table` added by ADR 0048 " +
-      "decision 5, `F3.35` Stage B; `mimic` by ADR 0079 decision 1, `F3.32`). A zero means the " +
-      "walk is broken and the loop below asserts nothing; a seven means a type was added — widen " +
-      "this number and say so.",
-  ).toBe(6);
+    "the catalog holds eleven widget types (ADR 0047 decision 2; `table` added by ADR 0048 " +
+      "decision 5, `F3.35` Stage B; `mimic` by ADR 0079 decision 1, `F3.32`; the five site " +
+      "widgets by `F3.73`). A zero means the walk is broken and the loop below asserts nothing; a " +
+      "twelve means a type was added — widen this number and say so.",
+  ).toBe(11);
 
   for (const widgetType of WIDGET_TYPES) {
-    const { unmount } = render(<DashboardWidget widget={sampleWidget(widgetType)} data={READY_AT_750} />);
+    const { unmount } = render(
+      withSiteProviders(<DashboardWidget widget={sampleWidget(widgetType)} data={READY_AT_750} />),
+    );
     expect(screen.getByText("Feed pump power"), `${widgetType} rendered no title`).toBeInTheDocument();
     unmount();
   }
@@ -381,4 +413,36 @@ export function aLayoutMimicDispatchedWithoutItsReadDrawsNothing(): void {
   render(<DashboardWidget widget={widget} data={READY_AT_750} />);
   expect(screen.getByRole("img", { name: "Plant B: Plant mimic" })).toBeInTheDocument();
   expect(screen.queryAllByTestId("mimic-node")).toHaveLength(0);
+}
+
+/**
+ * `F3.73` — the five site widgets dispatched without their read (the static case: the live canvas
+ * branches to `SiteWidgetLive` first) draw their own empty state, each one its own. One sentence
+ * per type, so a `case` that returns another type's component — or `null` — reddens exactly one of
+ * these, which the title walk above cannot see (every frame draws its title).
+ */
+export function theFiveSiteWidgetsDispatchedWithoutTheirReadDrawTheirOwnEmptyState(): void {
+  const empty: readonly (readonly [WidgetType, string])[] = [
+    ["active_alarms_rail", "No active alarms"],
+    ["state_legend", "Normal"],
+    ["asset_class_strip", "No asset classes in scope"],
+    ["module_summary_card", "Outside scope"],
+    ["critical_systems_list", "No system tabs"],
+  ];
+  for (const [widgetType, text] of empty) {
+    const { unmount } = render(
+      withSiteProviders(<DashboardWidget widget={sampleWidget(widgetType)} data={READY_AT_750} />),
+    );
+    expect(screen.getByText(text), `${widgetType} did not draw ${text}`).toBeInTheDocument();
+    unmount();
+  }
+}
+
+/** `F3.73` — a non-ready site widget replaces its body with the frame placeholder, like every type. */
+export function aNonReadySiteWidgetDrawsThePlaceholderNotItsBody(): void {
+  render(
+    withSiteProviders(<DashboardWidget widget={sampleWidget("active_alarms_rail")} data={{ status: "loading" }} />),
+  );
+  expect(screen.getByText("Loading…")).toBeInTheDocument();
+  expect(screen.queryByText("No active alarms")).not.toBeInTheDocument();
 }

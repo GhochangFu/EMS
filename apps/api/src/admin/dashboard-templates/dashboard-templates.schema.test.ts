@@ -11,6 +11,10 @@ import {
   rejectsAnInstantiateBodyNamingBothArms,
   rejectsASiteCreateBodyWithTopLevelWidgets,
   theTargetBodyRuleRefusesEachMismatch,
+  acceptsASiteTemplateCardNamingItsOwnTab,
+  rejectsAnAssetGroupTemplateWithATopLevelModuleCard,
+  rejectsAPatchCardNamingAMissingTab,
+  rejectsASiteTemplateCardNamingAMissingTab,
   acceptsAPatchBodyWhoseMimicNamesThePreset,
   acceptsAPatchBodyWhoseWidgetCarriesNeitherKind,
   acceptsAPatchBodyWhoseWidgetCarriesOnlyARoleBinding,
@@ -110,5 +114,21 @@ describe("F3.73 — the template target, content tabs and the instantiate site a
 
   it("the body/target rule refuses a site body on a group template and the reverse", () => {
     theTargetBodyRuleRefusesEachMismatch();
+  });
+
+  it("refuses an asset-group template's top-level module card", () => {
+    rejectsAnAssetGroupTemplateWithATopLevelModuleCard();
+  });
+
+  it("refuses a site template's card naming a tab it does not hold", () => {
+    rejectsASiteTemplateCardNamingAMissingTab();
+  });
+
+  it("refuses a PATCH card naming a tab the content does not hold", () => {
+    rejectsAPatchCardNamingAMissingTab();
+  });
+
+  it("accepts a site template's card naming its own tab", () => {
+    acceptsASiteTemplateCardNamingItsOwnTab();
   });
 });

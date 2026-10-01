@@ -2,6 +2,13 @@ import { z } from "zod";
 
 import type { TemplateAuthorableWidgetType } from "../asset-template-content";
 import { mimicConfigSchema } from "./mimic-config";
+import {
+  activeAlarmsRailConfigSchema,
+  assetClassStripConfigSchema,
+  criticalSystemsListConfigSchema,
+  moduleSummaryCardConfigSchema,
+  stateLegendConfigSchema,
+} from "./site-widgets";
 
 /**
  * `F3.1a` — the configurable-dashboard contract (ADR 0047).
@@ -70,19 +77,20 @@ import { mimicConfigSchema } from "./mimic-config";
  */
 
 /**
- * The six widget types, closed (ADR 0047 decision 2; `"table"` added by ADR 0048 decision 5;
- * `"mimic"` by ADR 0079 decision 1).
+ * The eleven widget types, closed (ADR 0047 decision 2; `"table"` added by ADR 0048 decision 5;
+ * `"mimic"` by ADR 0079 decision 1; the last five by `F3.73`, ADR 0087 decision 11).
  *
- * **Three migrations declare this list, and only the last is current.** `0050` froze the
+ * **Four migrations declare this list, and only the last is current.** `0050` froze the
  * original four in `dashboard_widgets_widget_type_check`; `F3.35` Stage B's `0055` dropped and
- * re-added that constraint with `table`; `F3.32`'s `0086` does the same with `mimic`. A
- * committed migration is frozen by the pre-commit hook, so `0050` still reads four and `0055`
- * five, and always will.
+ * re-added that constraint with `table`; `F3.32`'s `0086` does the same with `mimic`; `F3.73`'s
+ * `0096` adds the five site widgets. A committed migration is frozen by the pre-commit hook, so
+ * `0050` still reads four, `0055` five and `0086` six, and always will.
  *
- * `tests/f3.32-mimic-widget.test.ts` compares this enum against `0086`'s widened list;
+ * `tests/f3.73-site-widget-types.test.ts` compares this enum against `0096`'s list;
+ * `tests/f3.32-mimic-widget.test.ts` pins `0086` to its six,
  * `tests/f3.35-table-widget-schema.test.ts` pins `0055` to its five and
- * `tests/f3.1a-dashboard-schema.test.ts` pins `0050` to its four. All three are correct at
- * once: the first asks what the database enforces now, the others what each migration froze.
+ * `tests/f3.1a-dashboard-schema.test.ts` pins `0050` to its four. All are correct at once: the
+ * first asks what the database enforces now, the others what each migration froze.
  */
 export const widgetTypeSchema = z.enum([
   "radial_gauge",
@@ -91,6 +99,11 @@ export const widgetTypeSchema = z.enum([
   "chart",
   "table",
   "mimic",
+  "active_alarms_rail",
+  "state_legend",
+  "asset_class_strip",
+  "module_summary_card",
+  "critical_systems_list",
 ]);
 
 /**
@@ -384,6 +397,18 @@ export const dashboardWidgetSpecSchema = z.discriminatedUnion("widgetType", [
   z.object({ widgetType: z.literal("chart"), config: chartConfigSchema }),
   z.object({ widgetType: z.literal("table"), config: tableConfigSchema }),
   z.object({ widgetType: z.literal("mimic"), config: mimicConfigSchema }),
+  // `F3.73` — the five site widgets; their configs live in `./site-widgets`.
+  z.object({ widgetType: z.literal("active_alarms_rail"), config: activeAlarmsRailConfigSchema }),
+  z.object({ widgetType: z.literal("state_legend"), config: stateLegendConfigSchema }),
+  z.object({ widgetType: z.literal("asset_class_strip"), config: assetClassStripConfigSchema }),
+  z.object({
+    widgetType: z.literal("module_summary_card"),
+    config: moduleSummaryCardConfigSchema,
+  }),
+  z.object({
+    widgetType: z.literal("critical_systems_list"),
+    config: criticalSystemsListConfigSchema,
+  }),
 ]);
 
 /**
@@ -456,6 +481,12 @@ export const WIDGET_POINT_CARDINALITY: Record<
   // the dashboard's asset group carrying the node's role. `{0, 0}` here and in
   // `WIDGET_SOURCE_CARDINALITY` is that statement, and `widgetTypeBindsNothing` names it.
   mimic: { min: 0, max: 0 },
+  // `F3.73` — the five site widgets read `GET :id/site-widgets`, not a point. `{0, 0}` again.
+  active_alarms_rail: { min: 0, max: 0 },
+  state_legend: { min: 0, max: 0 },
+  asset_class_strip: { min: 0, max: 0 },
+  module_summary_card: { min: 0, max: 0 },
+  critical_systems_list: { min: 0, max: 0 },
 };
 
 /**
@@ -488,6 +519,12 @@ export const WIDGET_SOURCE_CARDINALITY: Record<
   table: { min: 1, max: 1 },
   // `F3.32` — see `WIDGET_POINT_CARDINALITY.mimic`.
   mimic: { min: 0, max: 0 },
+  // `F3.73` — see `WIDGET_POINT_CARDINALITY.active_alarms_rail`.
+  active_alarms_rail: { min: 0, max: 0 },
+  state_legend: { min: 0, max: 0 },
+  asset_class_strip: { min: 0, max: 0 },
+  module_summary_card: { min: 0, max: 0 },
+  critical_systems_list: { min: 0, max: 0 },
 };
 
 /**
@@ -577,8 +614,10 @@ export const bindingExclusiveMessage = (label: string): string =>
  * **`water.balance`** (ADR 0073 decision 3) is the second entry with parameters — `{ period }` —
  * and the first dataset among them: one row per site owning an asset with an `intake`,
  * `reuse` or `discharge` role, with intake, reuse, discharge, consumed-or-lost and coverage.
- * Must match `dashboard_widget_sources_catalog_key_check` as migration `0081` widened it
- * (`0054` froze the first five, `0079` froze the next two).
+ * **`assets.offline.count` and `assets.list`** (`F3.73`) are the site-scope metric and dataset the
+ * SMOC standard layout binds.
+ * Must match `dashboard_widget_sources_catalog_key_check` as migration `0096` widened it
+ * (`0054` froze the first five, `0079` the next two, `0081` the eighth).
  */
 export const metricCatalogKeySchema = z.enum([
   "alarms.active.count",
@@ -589,6 +628,8 @@ export const metricCatalogKeySchema = z.enum([
   "sustainability.total",
   "sustainability.by_location",
   "water.balance",
+  "assets.offline.count",
+  "assets.list",
 ]);
 
 /**
@@ -684,6 +725,10 @@ export const METRIC_CATALOG: Record<z.infer<typeof metricCatalogKeySchema>, Cata
     columns: ["locationCode", "locationName", "intake", "reuse", "discharge", "consumed", "coverage"],
     params: ["period"],
   },
+  // `F3.73` / ADR 0087 decision 11 — assets in scope with no live sample, and the asset table.
+  // No `role` column: the resolver takes asset ids only, so it cannot know a member's group role.
+  "assets.offline.count": { shape: "metric" },
+  "assets.list": { shape: "dataset", columns: ["code", "name", "status", "activeAlarms"] },
 };
 
 /**
@@ -729,6 +774,12 @@ export const WIDGET_SOURCE_SHAPES: Record<
   table: ["dataset"],
   // `F3.32` — a mimic binds no catalog source.
   mimic: [],
+  // `F3.73` — nor does any of the five site widgets.
+  active_alarms_rail: [],
+  state_legend: [],
+  asset_class_strip: [],
+  module_summary_card: [],
+  critical_systems_list: [],
 };
 
 /**

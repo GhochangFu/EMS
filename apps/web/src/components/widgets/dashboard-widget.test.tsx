@@ -19,6 +19,8 @@ import {
   aValueTileWithFullCoverageRendersNoNote,
   aMimicDispatchedWithoutItsReadDrawsThePresetUnresolved,
   aLayoutMimicDispatchedWithoutItsReadDrawsNothing,
+  aNonReadySiteWidgetDrawsThePlaceholderNotItsBody,
+  theFiveSiteWidgetsDispatchedWithoutTheirReadDrawTheirOwnEmptyState,
 } from "./dashboard-widget.spec";
 
 /**
@@ -86,6 +88,14 @@ describe("F3.1c widget rendering", () => {
 
   it("F3.32c draws a layout mimic dispatched without its node read as an empty drawing, without throwing", () => {
     aLayoutMimicDispatchedWithoutItsReadDrawsNothing();
+  });
+
+  it("F3.73 draws each site widget dispatched without its read as its own empty state", () => {
+    theFiveSiteWidgetsDispatchedWithoutTheirReadDrawTheirOwnEmptyState();
+  });
+
+  it("F3.73 draws the frame placeholder, not the body, for a non-ready site widget", () => {
+    aNonReadySiteWidgetDrawsThePlaceholderNotItsBody();
   });
 });
 

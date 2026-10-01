@@ -739,3 +739,75 @@ export function runWidgetOffEveryTabIsFlaggedTests(): void {
   );
   assert(untabbed.length === 0, `a dashboard without tabs flags no row — got ${JSON.stringify(untabbed)}`);
 }
+
+// -------------------------------------------------------------------------------------------
+// `F3.73` (plan Task 3.5) — the five site widgets in the builder's row model.
+// -------------------------------------------------------------------------------------------
+
+const SITE_WIDGET_TYPES_UNDER_TEST = [
+  "active_alarms_rail",
+  "state_legend",
+  "asset_class_strip",
+  "module_summary_card",
+  "critical_systems_list",
+] as const;
+
+/** The five bind nothing yet read the dashboard's own scope, so every scope kind offers them — unlike
+ * the mimic, which `runNotOfferableWithoutAGroupTests` holds to a group. Mutation: derive the filter
+ * from `widgetTypeBindsNothing` again => red for `organization`, `location` and `asset`. */
+export function runSiteWidgetsOfferedOnEveryScopeTests(): void {
+  for (const kind of ["organization", "location", "asset", "assetGroup"] as const) {
+    const offered = offerableWidgetTypes(kind);
+    for (const type of SITE_WIDGET_TYPES_UNDER_TEST) {
+      assert(offered.includes(type), `a ${kind} dashboard offers ${type} — got ${JSON.stringify(offered)}`);
+    }
+  }
+}
+
+/** A site widget on a location dashboard carries no scope problem and no binding problem (the API's
+ * `mimicGroupFor` rule names the mimic alone). Mutation: apply the mimic rule to every type that
+ * binds nothing => red. */
+export function runSiteWidgetsHaveNoScopeOrBindingProblemTests(): void {
+  for (const type of SITE_WIDGET_TYPES_UNDER_TEST) {
+    const row = blankDashboardWidgetRow(type);
+    if (type === "module_summary_card") {
+      row.config.targetTabKey = "ups";
+    }
+    const problems = dashboardBuilderErrors([row], "location", []);
+    assert(problems.length === 0, `a ${type} on a location dashboard is clean — got ${JSON.stringify(problems)}`);
+  }
+}
+
+/** A new rail starts on the contract's defaults, so an untouched one saves as the schema defaults it. */
+export function runBlankRailRowTests(): void {
+  const row = blankDashboardWidgetRow("active_alarms_rail");
+  assert(row.config.railRows === "8" && row.config.railShowSummary === true, `got ${JSON.stringify(row.config)}`);
+}
+
+function siteDto(widgetType: string, config: unknown, id: string): DashboardWidgetDto {
+  return widgetDto({ id, title: null, points: [], widgetType, config } as unknown as Partial<DashboardWidgetDto>);
+}
+
+/** Every stored site widget re-saves its own config, and an unedited set is not a change — the
+ * edit-and-resave trap `configRowFromDto`'s comments name. Mutation: drop the rail's read-back arm
+ * (rows/showSummary) or the card's `targetTabKey` read-back => red. */
+export function runSiteWidgetsRoundTripTests(): void {
+  const stored: [string, unknown][] = [
+    ["active_alarms_rail", { rows: 5, showSummary: false }],
+    ["state_legend", {}],
+    ["asset_class_strip", {}],
+    ["module_summary_card", { targetTabKey: "hvac" }],
+    ["critical_systems_list", {}],
+  ];
+  const dto = dashboardDto(stored.map(([type, config], index) => siteDto(type, config, `site-${index}`)));
+  const payload = buildPutWidgetsPayload(dashboardRowsFromDto(dto), []);
+  stored.forEach(([type, config], index) => {
+    const widget = payload.widgets[index]!;
+    assert(
+      widget.widgetType === type && JSON.stringify(widget.config) === JSON.stringify(config),
+      `a stored ${type} re-saves its own config — got ${JSON.stringify(widget)}`,
+    );
+    assert(widget.points.length === 0 && widget.sources.length === 0, `${type} binds nothing`);
+  });
+  assert(!builderHasChanged(dashboardRowsFromDto(dto), dto), "an unedited set of site widgets is no change");
+}

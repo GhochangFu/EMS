@@ -356,6 +356,7 @@ export function DashboardBuilderEditPage({ user }: DashboardBuilderEditPageProps
                 role={user.role}
                 problems={problems.filter((problem) => problem.widget === selected)}
                 organizationId={dto.organizationId}
+                tabs={dto.tabs}
                 onChange={(patch) => updateWidget(selected, patch)}
                 onRemove={() => removeWidget(selected)}
               />

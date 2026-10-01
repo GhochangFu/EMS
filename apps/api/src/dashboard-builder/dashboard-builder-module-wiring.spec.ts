@@ -4,13 +4,15 @@ import { join } from "node:path";
 
 import { expect } from "vitest";
 
+import { AssetRoleSummaryService } from "../assets/asset-role-summary.service";
 import { AccessControlModule } from "../auth/access-control.module";
 import { DatabaseModule } from "../database/database.module";
-import { FLEET_DRIZZLE, FLEET_POOL } from "../database/database.tokens";
+import { FLEET_DRIZZLE, FLEET_POOL, TENANT_DRIZZLE } from "../database/database.tokens";
 import { repoRoot } from "../testing/repo-root";
 import { DashboardBuilderController } from "./dashboard-builder.controller";
 import { DashboardBuilderModule } from "./dashboard-builder.module";
 import { MimicNodesService } from "./mimic-nodes.service";
+import { SiteWidgetsService } from "./site-widgets.service";
 
 /**
  * `F3.32` U2 / ADR 0079 — the Nest module graph for `MimicNodesService`, which a green
@@ -109,4 +111,35 @@ export function assertControllerDepsResolveWithinTheModule(): void {
   const { byName } = resolvableTokens();
   const classes = classTypedParams("dashboard-builder.controller.ts", "DashboardBuilderController");
   expect(classes.filter((cls) => !byName.has(cls)), "classes Nest would fail to resolve at boot").toEqual([]);
+}
+
+/**
+ * `F3.73` (plan D9, Task 3.4) — `SiteWidgetsService` and the `AssetRoleSummaryService` it reads
+ * the role summary through. The same three facts as for `MimicNodesService`: the module provides
+ * it, its `@Inject` tokens resolve, and its class-typed parameters resolve by name — the last is
+ * what a missing `AssetRoleSummaryService` provider would break at boot, with the build green.
+ */
+export function assertModuleProvidesSiteWidgetsService(): void {
+  expect(moduleList(DashboardBuilderModule, "providers").map(tokenOf)).toEqual(
+    expect.arrayContaining([SiteWidgetsService, AssetRoleSummaryService]),
+  );
+}
+
+export function assertSiteWidgetsServiceDepsResolveWithinTheModule(): void {
+  const { byIdentity, byName } = resolvableTokens();
+  expect(injectedTokens(SiteWidgetsService)).toEqual([FLEET_DRIZZLE, TENANT_DRIZZLE]);
+  const missingTokens = [...injectedTokens(SiteWidgetsService), ...injectedTokens(AssetRoleSummaryService)].filter(
+    (token) => !byIdentity.has(token),
+  );
+  expect(missingTokens.map(nameOf), "@Inject tokens Nest would fail to resolve").toEqual([]);
+  const classes = classTypedParams("site-widgets.service.ts", "SiteWidgetsService");
+  expect(classes).toEqual(["AccessControlService", "AssetRoleSummaryService"]);
+  expect(classes.filter((cls) => !byName.has(cls)), "classes Nest would fail to resolve at boot").toEqual([]);
+}
+
+/** Positive control: the controller's constructor carries the site-widgets service. */
+export function assertControllerTakesSiteWidgetsService(): void {
+  expect(classTypedParams("dashboard-builder.controller.ts", "DashboardBuilderController")).toContain(
+    "SiteWidgetsService",
+  );
 }

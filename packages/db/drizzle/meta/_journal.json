@@ -666,6 +666,13 @@
       "when": 1790781215345,
       "tag": "0095_site_template_target_and_group_domain",
       "breakpoints": true
+    },
+    {
+      "idx": 96,
+      "version": "7",
+      "when": 1790791804063,
+      "tag": "0096_site_widget_types_and_assets_catalog",
+      "breakpoints": true
     }
   ]
 }

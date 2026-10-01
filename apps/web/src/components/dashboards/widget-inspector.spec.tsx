@@ -71,7 +71,11 @@ function libraryLayout(
 
 function renderInspector(
   row: DashboardWidgetRow,
-  options: { problems?: DashboardBuilderProblem[]; onChange?: (patch: Partial<DashboardWidgetRow>) => void } = {},
+  options: {
+    problems?: DashboardBuilderProblem[];
+    onChange?: (patch: Partial<DashboardWidgetRow>) => void;
+    tabs?: readonly { key: string; label: string }[];
+  } = {},
 ): void {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   render(
@@ -81,6 +85,7 @@ function renderInspector(
         problems={options.problems ?? []}
         role="admin"
         organizationId="org-1"
+        tabs={options.tabs ?? []}
         onChange={options.onChange ?? (() => {})}
         onRemove={() => {}}
       />
@@ -260,4 +265,114 @@ export function aLayoutSourceWithNoLayoutReportsTheProblem(): void {
     problems: [{ widget: 0, field: "layout", message: "Choose a layout from the library." }],
   });
   expect(screen.getByText("Choose a layout from the library.")).not.toBeNull();
+}
+
+/**
+ * `F3.73` — the five site widgets' inspector surface. Each absence sits beside the `value_tile`
+ * positive controls above, which render the same fields.
+ */
+const SITE_TYPES = [
+  "active_alarms_rail",
+  "state_legend",
+  "asset_class_strip",
+  "module_summary_card",
+  "critical_systems_list",
+] as const;
+
+export function aSiteWidgetHidesUnitDecimalsAndBoundPoints(): void {
+  for (const type of SITE_TYPES) {
+    const { unmount } = render(
+      <QueryClientProvider client={new QueryClient()}>
+        <WidgetInspector
+          row={blankDashboardWidgetRow(type)}
+          problems={[]}
+          role="admin"
+          organizationId="org-1"
+          tabs={[]}
+          onChange={() => {}}
+          onRemove={() => {}}
+        />
+      </QueryClientProvider>,
+    );
+    expect(screen.queryByText("Unit", { exact: true }), `${type} shows Unit`).toBeNull();
+    expect(screen.queryByText("Decimals", { exact: true }), `${type} shows Decimals`).toBeNull();
+    expect(screen.queryByText("Bound points", { exact: true }), `${type} shows Bound points`).toBeNull();
+    expect(screen.queryByText("Named metric", { exact: true }), `${type} shows Named metric`).toBeNull();
+    unmount();
+  }
+}
+
+export function aRailShowsItsRowsAtTheDefault(): void {
+  renderInspector(blankDashboardWidgetRow("active_alarms_rail"));
+  expect((screen.getByRole("textbox", { name: /^Rows/ }) as HTMLInputElement).value).toBe("8");
+}
+
+export async function editingTheRailRowsWritesThemToTheConfig(): Promise<void> {
+  const onChange = vi.fn();
+  renderInspector(blankDashboardWidgetRow("active_alarms_rail"), { onChange });
+  await userEvent.type(screen.getByRole("textbox", { name: /^Rows/ }), "5");
+  // The row is controlled, so each keystroke reports against the prop's "8": "8" + "5".
+  expect(onChange).toHaveBeenLastCalledWith({ config: expect.objectContaining({ railRows: "85" }) });
+}
+
+export async function untickingSummaryWritesItToTheConfig(): Promise<void> {
+  const onChange = vi.fn();
+  renderInspector(blankDashboardWidgetRow("active_alarms_rail"), { onChange });
+  await userEvent.click(screen.getByRole("checkbox", { name: /Alarm Summary/ }));
+  expect(onChange).toHaveBeenLastCalledWith({ config: expect.objectContaining({ railShowSummary: false }) });
+}
+
+export function aRailRowsProblemRendersUnderTheRows(): void {
+  renderInspector(blankDashboardWidgetRow("active_alarms_rail"), {
+    problems: [{ widget: 0, field: "railRows", message: "The rail shows an integer from 1 to 20 alarms." }],
+  });
+  expect(screen.getByText("The rail shows an integer from 1 to 20 alarms.")).not.toBeNull();
+}
+
+const TABS = [
+  { key: "ups", label: "UPS" },
+  { key: "hvac", label: "HVAC" },
+];
+
+export function aModuleCardOffersTheDashboardsTabs(): void {
+  renderInspector(blankDashboardWidgetRow("module_summary_card"), { tabs: TABS });
+  const select = screen.getByRole("combobox", { name: /^Links to tab/ }) as HTMLSelectElement;
+  expect(select.disabled).toBe(false);
+  expect(screen.getByRole("option", { name: "UPS" })).not.toBeNull();
+  expect(screen.getByRole("option", { name: "HVAC" })).not.toBeNull();
+}
+
+export async function choosingATabWritesItsKeyToTheConfig(): Promise<void> {
+  const onChange = vi.fn();
+  renderInspector(blankDashboardWidgetRow("module_summary_card"), { tabs: TABS, onChange });
+  await userEvent.selectOptions(screen.getByRole("combobox", { name: /^Links to tab/ }), "hvac");
+  expect(onChange).toHaveBeenLastCalledWith({ config: expect.objectContaining({ targetTabKey: "hvac" }) });
+}
+
+/** No tabs: the select is disabled and the hint says why — the plan's "disabled with a hint". */
+export function aModuleCardOnADashboardWithNoTabsIsDisabledWithAHint(): void {
+  renderInspector(blankDashboardWidgetRow("module_summary_card"), { tabs: [] });
+  expect((screen.getByRole("combobox", { name: /^Links to tab/ }) as HTMLSelectElement).disabled).toBe(true);
+  expect(screen.getByText("This dashboard has no tabs yet, so there is nothing to link to.")).not.toBeNull();
+}
+
+/** A stored key the dashboard no longer has keeps its own option rather than showing another tab. */
+export function aStoredTabKeyTheDashboardNoLongerHasStaysSelected(): void {
+  const row = blankDashboardWidgetRow("module_summary_card");
+  row.config.targetTabKey = "gone";
+  renderInspector(row, { tabs: TABS });
+  expect((screen.getByRole("combobox", { name: /^Links to tab/ }) as HTMLSelectElement).value).toBe("gone");
+}
+
+export function aTabProblemRendersUnderTheSelect(): void {
+  renderInspector(blankDashboardWidgetRow("module_summary_card"), {
+    tabs: TABS,
+    problems: [{ widget: 0, field: "targetTabKey", message: "Choose the tab this card links to." }],
+  });
+  expect(screen.getByText("Choose the tab this card links to.")).not.toBeNull();
+}
+
+export function aNonModuleCardHasNoTabSelect(): void {
+  renderInspector(blankDashboardWidgetRow("value_tile"), { tabs: TABS });
+  expect(screen.queryByText("Links to tab", { exact: true })).toBeNull();
 }

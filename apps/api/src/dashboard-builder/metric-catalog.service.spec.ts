@@ -194,6 +194,26 @@ export function scopeKeyFollowsTheResolverArmOrder(): void {
   );
 }
 
+/** `F3.73` Task 3.3 — `assets.offline.count` over `[]` is `0` and `assets.list` an empty
+ * dataset of its four declared columns, both before any SQL (the `scopeIsEmpty` claim). The
+ * enumerating claim above holds that no SQL runs; this one holds the ANSWER. */
+export async function assetsEntriesOnAnEmptyScopeAnswerZeroAndEmpty(): Promise<void> {
+  const count = await RESOLVERS["assets.offline.count"](refusingTx(), "org", [], noDeps, {});
+  same(
+    count.shape === "metric" ? count.value : count,
+    0,
+    "assets.offline.count over []",
+  );
+  const list = await RESOLVERS["assets.list"](refusingTx(), "org", [], noDeps, {});
+  same(
+    list.shape === "dataset"
+      ? { columns: list.columns, rows: list.rows, truncated: list.truncated }
+      : list,
+    { columns: ["code", "name", "status", "activeAlarms"], rows: [], truncated: false },
+    "assets.list over []",
+  );
+}
+
 /** `E4.3` U9 — `water.balance` on an empty scope is an empty dataset of its seven columns
  * before any SQL: the location read and the three roll-up reads are all skipped. */
 export async function waterBalanceOnAnEmptyScopeBuildsNoSql(): Promise<void> {

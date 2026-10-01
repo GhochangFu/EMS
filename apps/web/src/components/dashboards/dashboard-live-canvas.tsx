@@ -1,14 +1,26 @@
 import type { DashboardDto, DashboardWidgetDto } from "@bms/shared";
 
 import { useDashboardTelemetry } from "../../hooks/use-dashboard-telemetry";
+import { useSiteWidgetsAlarmRefresh } from "../../hooks/use-site-widgets";
 import { DashboardCanvas, type CanvasTile } from "./dashboard-canvas";
 import { DashboardWidgetLive } from "./dashboard-widget-live";
+import { isSiteWidget } from "./site-widget-live";
 
 type DashboardLiveCanvasProps = {
   dashboard: DashboardDto;
 };
 
 type WidgetTile = CanvasTile & { widget: DashboardWidgetDto };
+
+/**
+ * `F3.73` — the canvas's one `/ws/alarms` subscription for its site widgets, as a component so
+ * the canvas mounts it only when a widget reads (a hook cannot be skipped). The legend reads
+ * nothing, so a canvas of legends alone opens no socket.
+ */
+function SiteWidgetsAlarmRefresh() {
+  useSiteWidgetsAlarmRefresh();
+  return null;
+}
 
 /**
  * `F3.69` U1 — the viewer's live canvas, byte-moved out of
@@ -26,6 +38,8 @@ type WidgetTile = CanvasTile & { widget: DashboardWidgetDto };
 export function DashboardLiveCanvas({ dashboard }: DashboardLiveCanvasProps) {
   const { latestByRef, historyByRef, aggregateByKey, catalog } = useDashboardTelemetry(dashboard);
   const now = Date.now();
+  // `F3.73` — a widget's tab key, read through the dashboard's own tabs (`dashboardRowsFromDto`'s rule).
+  const tabKeyById = new Map(dashboard.tabs.map((tab) => [tab.id, tab.key]));
 
   const tiles: WidgetTile[] = dashboard.widgets.map((widget) => ({
     key: widget.id,
@@ -44,20 +58,28 @@ export function DashboardLiveCanvas({ dashboard }: DashboardLiveCanvasProps) {
     );
   }
 
+  const readsSiteWidgets = dashboard.widgets.some(
+    (widget) => isSiteWidget(widget) && widget.widgetType !== "state_legend",
+  );
+
   return (
-    <DashboardCanvas
-      tiles={tiles}
-      renderTile={(tile) => (
-        <DashboardWidgetLive
-          widget={tile.widget}
-          dashboardId={dashboard.id}
-          latestByRef={latestByRef}
-          historyByRef={historyByRef}
-          aggregateByKey={aggregateByKey}
-          catalog={catalog}
-          now={now}
-        />
-      )}
-    />
+    <>
+      {readsSiteWidgets ? <SiteWidgetsAlarmRefresh /> : null}
+      <DashboardCanvas
+        tiles={tiles}
+        renderTile={(tile) => (
+          <DashboardWidgetLive
+            widget={tile.widget}
+            dashboardId={dashboard.id}
+            tabKey={tile.widget.tabId === null ? null : (tabKeyById.get(tile.widget.tabId) ?? null)}
+            latestByRef={latestByRef}
+            historyByRef={historyByRef}
+            aggregateByKey={aggregateByKey}
+            catalog={catalog}
+            now={now}
+          />
+        )}
+      />
+    </>
   );
 }

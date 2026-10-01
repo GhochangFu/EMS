@@ -2,12 +2,14 @@ import { Module } from "@nestjs/common";
 
 import { MasterDataAuditService } from "../admin/master-data-audit.service";
 import { AssetHealthModule } from "../asset-health/asset-health.module";
+import { AssetRoleSummaryService } from "../assets/asset-role-summary.service";
 import { AuthModule } from "../auth/auth.module";
 import { DatabaseModule } from "../database/database.module";
 import { DashboardBuilderController } from "./dashboard-builder.controller";
 import { DashboardsService } from "./dashboards.service";
 import { MetricCatalogService } from "./metric-catalog.service";
 import { MimicNodesService } from "./mimic-nodes.service";
+import { SiteWidgetsService } from "./site-widgets.service";
 
 /**
  * `F3.1b` — the dashboard read/write API (ADR 0047). Follows
@@ -29,9 +31,22 @@ import { MimicNodesService } from "./mimic-nodes.service";
  * the way `MasterDataAuditService` is — it holds the window/level resolution `E1.3` owns, and a
  * second instance would be a second place that decides which rollup level a window maps to.
  */
+/**
+ * `F3.73` (plan D9, Task 3.4) — `SiteWidgetsService` reads the role summary through
+ * `AssetRoleSummaryService`, provided here rather than imported: `AssetsModule` does not export
+ * it, and it is stateless the way `MasterDataAuditService` is (its two Drizzle handles come from
+ * `DatabaseModule`'s tokens), so a second instance is not a second copy of anything.
+ */
 @Module({
   imports: [DatabaseModule, AuthModule, AssetHealthModule],
   controllers: [DashboardBuilderController],
-  providers: [DashboardsService, MetricCatalogService, MasterDataAuditService, MimicNodesService],
+  providers: [
+    DashboardsService,
+    MetricCatalogService,
+    MasterDataAuditService,
+    MimicNodesService,
+    SiteWidgetsService,
+    AssetRoleSummaryService,
+  ],
 })
 export class DashboardBuilderModule {}

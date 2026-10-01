@@ -1,6 +1,7 @@
 import { describe, it } from "vitest";
 
 import {
+  assetsEntriesOnAnEmptyScopeAnswerZeroAndEmpty,
   byLocationOnAnEmptyScopeBuildsNoSql,
   everyEntryOnAnEmptyScopeBuildsNoSql,
   overviewAndGroupTabAreTwoResolves,
@@ -23,6 +24,10 @@ describe("E4.2 sweep — the catalog's resolvers on an empty scope (no database)
 
   it("water.balance answers an empty seven-column dataset before any SQL (E4.3)", async () => {
     await waterBalanceOnAnEmptyScopeBuildsNoSql();
+  });
+
+  it("assets.offline.count answers 0 and assets.list an empty four-column dataset before any SQL (F3.73)", async () => {
+    await assetsEntriesOnAnEmptyScopeAnswerZeroAndEmpty();
   });
 
   it("every catalog entry answers an empty scope before any SQL (the sentence over RESOLVERS)", async () => {
