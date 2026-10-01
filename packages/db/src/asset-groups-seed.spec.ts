@@ -119,9 +119,19 @@ export function assertEskomReadingsAreUnchanged(): void {
     ["TX-01", "transformer"],
     ["CR-MAIN-BUS", "lt-panel"],
     ["MDB-01", "lt-panel"],
-    ["CR-Q1", "mcc"],
-    ["CR-Q7", "mcc"],
-    ["CR-Q12", "mcc"],
+    // `F3.74` D10 — the twelve control-room breakers each take one of five breaker roles.
+    ["CR-Q1", "main-breaker"],
+    ["CR-Q2", "ups-input-breaker"],
+    ["CR-Q3", "ups-input-breaker"],
+    ["CR-Q4", "ups-output-breaker"],
+    ["CR-Q5", "ups-output-breaker"],
+    ["CR-Q6", "load-feeder-breaker"],
+    ["CR-Q7", "load-feeder-breaker"],
+    ["CR-Q8", "load-feeder-breaker"],
+    ["CR-Q9", "load-feeder-breaker"],
+    ["CR-Q10", "mains-feeder-breaker"],
+    ["CR-Q11", "mains-feeder-breaker"],
+    ["CR-Q12", "mains-feeder-breaker"],
     ["CR-LIGHT-AUX", "utilities"],
     ["PV-INV-01", "utilities"],
   ];
@@ -154,6 +164,9 @@ export function assertAnElectricalReadingStaysInItsDomain(): void {
 export function assertAnUndecidedCodeStaysNull(): void {
   expect(demoRoleForAsset("CR-SOMETHING-ELSE", "electrical")).toBeNull();
   expect(demoRoleForAsset("", "electrical")).toBeNull();
+  // `F3.74` D10 — the breaker roles come from a table of the twelve seeded codes, not a pattern,
+  // so a thirteenth `CR-Q` code decides nothing.
+  expect(demoRoleForAsset("CR-Q13", "electrical")).toBeNull();
 }
 
 /**

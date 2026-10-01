@@ -103,6 +103,11 @@ const seededRoles = (): string[] => [
   // `F3.73` — `leak-sensor` and `smoke-detector`. `seededCodes` cuts at the asset_roles INSERT's own
   // `ON CONFLICT`, so 0095's `dashboard_sections` row above it is not read as a role.
   ...seededCodes(read("packages/db/drizzle/0095_site_template_target_and_group_domain.sql"), "asset_roles"),
+  // `F3.74` — the five breaker roles (`main-breaker` … `mains-feeder-breaker`, D10).
+  ...seededCodes(
+    read("packages/db/drizzle/0097_point_key_states_breaker_roles_asset_rating_and_layout_flags.sql"),
+    "asset_roles",
+  ),
 ];
 
 export function runStockCatalogTests(): void {
