@@ -4,7 +4,9 @@
  * again.
  *
  * `clearSessionOnAuthFailure` (`api/http.ts`) calls `rememberWallReturnPath`
- * on a 401 before it clears the session; the route guard then sends the tab to
+ * on a 401 before it clears the session, and so do `App`'s two session effects
+ * (`app.tsx`: a stored token that has expired, and a `/me` read that fails) —
+ * a wall tab reloaded with a dead session; the route guard then sends the tab to
  * `/login` as before. The login page shows the "Session ended" banner while a
  * path is stored (`peekReturnPath`), and both login pages navigate to
  * `takeReturnPath() ?? "/"`. `sessionStorage` is per tab and survives the

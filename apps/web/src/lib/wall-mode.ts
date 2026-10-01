@@ -1,5 +1,5 @@
 import type { LatestByRef } from "./dashboard-widget-data";
-import { isStale } from "./schematic-telemetry";
+import { isStale, readingTimestampMs } from "./schematic-telemetry";
 
 /**
  * `F3.77` (ADR 0087 Amendment 3 ruling 7, plan D7) — the pure rules of the site view's wall mode.
@@ -62,22 +62,27 @@ export type NewestReadSamples = {
  * `F3.77` plan D9 (owner ruling OQ5) — the newest read the canvas holds, in epoch ms, or `null`
  * when it holds none. Only finite, positive times count: an unparsable time is no evidence of
  * freshness, a query that never answered reports `dataUpdatedAt` `0`, and one `NaN` in a
- * `Math.max` would make the result `NaN` — which `isStale` reads as fresh. A time ahead of the
- * clock is kept as it is (not clamped), so `isStale`'s `lastSeenMs > nowMs` clause reads it as
- * stale: the bar fails closed, never open.
+ * `Math.max` would make the result `NaN` — which `isStale` reads as fresh.
+ *
+ * **A time ahead of `nowMs` is clamped to it (`F4.37`)** — the sample times and the catalog read
+ * through `readingTimestampMs`, the helper `widgetDataFor` reads the same samples with, so the bar
+ * and the tiles beside it agree. Unclamped, a producer or server clock ahead of the wall PC wins
+ * the `Math.max` and `isStale`'s `lastSeenMs > nowMs` clause reads it as stale: "Live data paused
+ * since <a future time>" beside live tiles (`schematic-telemetry.ts`: treating a future time as
+ * instantly stale "breaks the live pilot").
  */
-export function newestReadMs(samples: NewestReadSamples): number | null {
+export function newestReadMs(samples: NewestReadSamples, nowMs: number): number | null {
   const times: number[] = [];
   for (const reading of samples.latestByRef.values()) {
     if (reading !== null) {
-      times.push(Date.parse(reading.time));
+      times.push(readingTimestampMs(reading.time, nowMs) ?? Number.NaN);
     }
   }
   if (samples.catalogResolvedAt !== null) {
-    times.push(Date.parse(samples.catalogResolvedAt));
+    times.push(readingTimestampMs(samples.catalogResolvedAt, nowMs) ?? Number.NaN);
   }
   if (samples.siteWidgetsUpdatedAt !== undefined) {
-    times.push(samples.siteWidgetsUpdatedAt);
+    times.push(Math.min(samples.siteWidgetsUpdatedAt, nowMs));
   }
   const evidence = times.filter((time) => Number.isFinite(time) && time > 0);
   return evidence.length === 0 ? null : Math.max(...evidence);
@@ -91,12 +96,17 @@ export type WallBarState =
  * The top bar's data line: live while the newest read passes `isStale` (`FRESH_MS`, the one
  * stale rule of the web client), else "Live data paused since <the newest read>". No read at all
  * is paused with no time.
+ *
+ * The read is clamped to `nowMs` here too: the canvas reports it clamped to its own render-time
+ * clock, and the frame judges it on a one-second tick that can be up to a second behind — so an
+ * honest read can still be ahead of `nowMs`, and must not read as paused until the next tick.
  */
 export function wallBar(newestMs: number | null, nowMs: number): WallBarState {
-  if (newestMs === null || isStale(newestMs, nowMs)) {
-    return { kind: "paused", since: newestMs };
+  const read = newestMs === null ? null : Math.min(newestMs, nowMs);
+  if (read === null || isStale(read, nowMs)) {
+    return { kind: "paused", since: read };
   }
-  return { kind: "live", updatedAt: newestMs };
+  return { kind: "live", updatedAt: read };
 }
 
 /** Local `hh:mm:ss`, 24-hour and zero padded, whatever the browser's locale. */

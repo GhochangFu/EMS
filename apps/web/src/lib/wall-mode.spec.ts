@@ -74,36 +74,67 @@ export function newestReadIsTheMaximum(): void {
       ]),
       catalogResolvedAt: new Date(t2).toISOString(),
       siteWidgetsUpdatedAt: t3,
-    }),
+    }, t1 + 60_000),
   ).toBe(t2);
   expect(
     newestReadMs({
       latestByRef: new Map([["a", { value: 1, time: new Date(t2).toISOString() }]]),
       catalogResolvedAt: null,
       siteWidgetsUpdatedAt: undefined,
-    }),
+    }, t1 + 60_000),
   ).toBe(t2);
 }
 
 /** W6 — no read at all, a never-updated query (`0`) and an unparsable time are no evidence. */
 export function newestReadIgnoresWhatIsNoEvidence(): void {
-  expect(newestReadMs({ latestByRef: new Map(), catalogResolvedAt: null, siteWidgetsUpdatedAt: undefined })).toBeNull();
-  expect(newestReadMs({ latestByRef: new Map(), catalogResolvedAt: null, siteWidgetsUpdatedAt: 0 })).toBeNull();
   const t1 = Date.UTC(2026, 9, 2, 4, 0, 0);
+  const now = t1 + 60_000;
+  expect(newestReadMs({ latestByRef: new Map(), catalogResolvedAt: null, siteWidgetsUpdatedAt: undefined }, now)).toBeNull();
+  expect(newestReadMs({ latestByRef: new Map(), catalogResolvedAt: null, siteWidgetsUpdatedAt: 0 }, now)).toBeNull();
   expect(
     newestReadMs({
       latestByRef: new Map([["a", { value: 1, time: "not a time" }]]),
       catalogResolvedAt: "garbage",
       siteWidgetsUpdatedAt: t1,
-    }),
+    }, now),
   ).toBe(t1);
   expect(
     newestReadMs({
       latestByRef: new Map([["a", { value: 1, time: "not a time" }]]),
       catalogResolvedAt: "garbage",
       siteWidgetsUpdatedAt: Number.NaN,
-    }),
+    }, now),
   ).toBeNull();
+}
+
+/**
+ * W10 — `F4.37`'s clamp: a sample or a catalog read ahead of the wall PC's clock reads as `now`,
+ * so the bar is live (as the tiles are), never "paused since <a future time>". Each source on its
+ * own case, so dropping the clamp on either one reddens its own claim.
+ */
+export function newestReadClampsAFutureTime(): void {
+  const now = Date.UTC(2026, 9, 2, 4, 0, 0);
+  const ahead = new Date(now + 60_000).toISOString();
+  const fromSample = newestReadMs(
+    { latestByRef: new Map([["a", { value: 1, time: ahead }]]), catalogResolvedAt: null, siteWidgetsUpdatedAt: undefined },
+    now,
+  );
+  expect(fromSample).toBe(now);
+  expect(wallBar(fromSample, now)).toEqual({ kind: "live", updatedAt: now });
+  const fromCatalog = newestReadMs(
+    { latestByRef: new Map(), catalogResolvedAt: ahead, siteWidgetsUpdatedAt: undefined },
+    now,
+  );
+  expect(fromCatalog).toBe(now);
+}
+
+/**
+ * W11 — the frame judges on a one-second tick, so a read reported a moment after that tick is
+ * ahead of the frame's `now`. The bar clamps it and stays live; it is not "paused" until the tick.
+ */
+export function wallBarClampsAReadAheadOfTheClock(): void {
+  const now = Date.UTC(2026, 9, 2, 4, 0, 0);
+  expect(wallBar(now + 500, now)).toEqual({ kind: "live", updatedAt: now });
 }
 
 /** W7 — the bar is live at exactly `FRESH_MS` old and paused one ms later (OQ5: `isStale`). */

@@ -182,7 +182,8 @@ export async function noTabKeyShowsEveryWidget(): Promise<void> {
   expect(screen.getByText("Overview tile")).toBeInTheDocument();
 }
 
-const SAMPLE_AT = Date.UTC(2026, 9, 2, 4, 15, 0);
+// In the past of any clock the suite runs on: the canvas clamps a time ahead of `now` (F4.37).
+const SAMPLE_AT = Date.UTC(2026, 0, 2, 4, 15, 0);
 const CATALOG_AT = SAMPLE_AT + 9_000;
 
 /**

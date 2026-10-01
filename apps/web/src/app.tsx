@@ -2,6 +2,7 @@ import { Navigate, Route, Routes } from "react-router-dom";
 import { useEffect } from "react";
 
 import { fetchCurrentUser } from "./api/login";
+import { rememberWallReturnPath } from "./lib/return-path";
 import { AlarmKbPage } from "./pages/alarm-kb-page";
 import { AlarmsPage } from "./pages/alarms-page";
 import { AssetsPage } from "./pages/assets-page";
@@ -87,7 +88,10 @@ export function App() {
   const setSession = useAuthStore((s) => s.setSession);
 
   useEffect(() => {
+    // `F3.77` (plan D10) — a wall tab reloaded with a dead session keeps its wall URL across the
+    // sign-in, as a 401 does (`clearSessionOnAuthFailure`); a non-wall URL stores nothing.
     if (accessToken && isJwtExpired(accessToken)) {
+      rememberWallReturnPath(window.location);
       clearSession();
     }
   }, [accessToken, clearSession]);
@@ -112,6 +116,7 @@ export function App() {
       })
       .catch(() => {
         if (!cancelled) {
+          rememberWallReturnPath(window.location);
           clearSession();
         }
       });

@@ -69,11 +69,14 @@ export function DashboardLiveCanvas({ dashboard: fullDashboard, tabKey }: Dashbo
     fullDashboard.id,
     tabKey ?? null,
   ])?.dataUpdatedAt;
-  const newestMs = newestReadMs({
-    latestByRef,
-    catalogResolvedAt: catalog?.resolvedAt ?? null,
-    siteWidgetsUpdatedAt,
-  });
+  const newestMs = newestReadMs(
+    {
+      latestByRef,
+      catalogResolvedAt: catalog?.resolvedAt ?? null,
+      siteWidgetsUpdatedAt,
+    },
+    now,
+  );
   const reportNewestRead = useReportNewestRead();
   // Reported from an effect keyed on the number, never during render: the reporter sets the
   // frame's state, and a render-time update of another component is a React error.
