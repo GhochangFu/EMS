@@ -1,5 +1,8 @@
+import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link, useParams, useSearchParams } from "react-router-dom";
+
+import type { DashboardDto } from "@bms/shared";
 
 import { fetchDashboard } from "../api/dashboards";
 import { apiErrorMessage } from "../lib/api-error-message";
@@ -7,6 +10,7 @@ import { canAuthorDashboards } from "../lib/admin-access";
 import { AppShell } from "../layouts/app-shell";
 import { PageHeader } from "../components/page-header";
 import { DashboardLiveCanvas } from "../components/dashboards/dashboard-live-canvas";
+import { DashboardTabStrip } from "../components/dashboards/dashboard-tab-strip";
 import type { AuthUser } from "../stores/auth-store";
 
 type DashboardViewerPageProps = {
@@ -67,8 +71,31 @@ export function DashboardViewerPage({ user }: DashboardViewerPageProps) {
           </p>
         ) : null}
 
-        {dashboardQ.data ? <DashboardLiveCanvas dashboard={dashboardQ.data} /> : null}
+        {dashboardQ.data ? <ViewerCanvas dashboard={dashboardQ.data} /> : null}
       </div>
     </AppShell>
+  );
+}
+
+/**
+ * `F3.73` (plan D11) — a tabbed dashboard (a site-layout copy reached by "Open in Dashboards")
+ * shows the builder's tab strip and renders the selected tab's widgets only; without it every
+ * tab's widgets share one grid and the tiles overlap. The first tab by `sortOrder` is selected by
+ * default. The selection is local state: this route has no `:tab` segment, and its query string
+ * already carries `organizationId`. A dashboard with no tabs renders every widget, as before.
+ */
+function ViewerCanvas({ dashboard }: { dashboard: DashboardDto }) {
+  const tabs = useMemo(() => [...dashboard.tabs].sort((a, b) => a.sortOrder - b.sortOrder), [dashboard.tabs]);
+  const [selectedKey, setSelectedKey] = useState<string | null>(null);
+  const selected = tabs.find((tab) => tab.key === selectedKey) ?? tabs[0];
+
+  if (selected === undefined) {
+    return <DashboardLiveCanvas dashboard={dashboard} />;
+  }
+  return (
+    <>
+      <DashboardTabStrip tabs={tabs} selectedKey={selected.key} onSelect={setSelectedKey} />
+      <DashboardLiveCanvas dashboard={dashboard} tabKey={selected.key} />
+    </>
   );
 }

@@ -15,6 +15,9 @@ export function siteViewNoticeText(
       return "The dashboard configured for this site is no longer in your access scope. Showing the generated view instead.";
     case "builtin_unknown":
       return "The built-in view configured for this site is no longer available. Showing the generated view instead.";
+    // `F3.73` (ruling Q5) — no view row yet, and the organization has a published site template.
+    case "no_site_layout":
+      return "This site has no site layout yet. Showing the generated view.";
     default:
       return null;
   }

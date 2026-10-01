@@ -2,8 +2,13 @@
 import { afterEach, describe, it } from "vitest";
 
 import {
+  aDashboardWithNoTabsRendersAsToday,
   aFailedRefetchKeepsTheCanvas,
   aFailedRefetchShowsNoAlert,
+  anUnknownTabRedirectsToTheBarePath,
+  aPendingReadDoesNotRedirect,
+  aTabOnAnUntabbedDashboardRedirects,
+  aTabSegmentSelectsThatTab,
   cleanupView,
   linkOpensTheViewer,
   noEditLink,
@@ -13,10 +18,13 @@ import {
   rejectedReadRendersNoCanvas,
   rejectedReadShowsTheApiMessage,
   resolvedReadRendersTheCanvas,
+  theBarePathSelectsTheFirstTab,
+  theSelectedTabIsCurrent,
   titleIsTheDashboardName,
   tryAgainInvalidatesOnlyTheResolveRead,
   tryAgainInvalidatesTheResolveRead,
   tryAgainRereadsTheDashboard,
+  twoTabsRenderAsLinks,
 } from "./site-dashboard-view.spec";
 
 /**
@@ -83,5 +91,43 @@ describe("F3.69 SiteDashboardView", () => {
 
   it("S9b shows no alert when a background refetch fails", async () => {
     await aFailedRefetchShowsNoAlert();
+  });
+});
+
+describe("F3.73 D10 SiteDashboardView tabs", () => {
+  afterEach(() => {
+    cleanupView();
+  });
+
+  it("T1 renders two tabs as links to their :tab paths, in sortOrder order", async () => {
+    await twoTabsRenderAsLinks();
+  });
+
+  it("T2 marks the selected tab aria-current", async () => {
+    await theSelectedTabIsCurrent();
+  });
+
+  it("T3 hands the canvas the :tab segment's key", async () => {
+    await aTabSegmentSelectsThatTab();
+  });
+
+  it("T4 selects the first tab by sortOrder at the bare path", async () => {
+    await theBarePathSelectsTheFirstTab();
+  });
+
+  it("T5 redirects an unknown tab to the bare path", async () => {
+    await anUnknownTabRedirectsToTheBarePath();
+  });
+
+  it("T6 renders a dashboard with no tabs as before", async () => {
+    await aDashboardWithNoTabsRendersAsToday();
+  });
+
+  it("T7 redirects a :tab segment on a dashboard with no tabs", async () => {
+    await aTabOnAnUntabbedDashboardRedirects();
+  });
+
+  it("T8 does not redirect while the read is pending", async () => {
+    await aPendingReadDoesNotRedirect();
   });
 });

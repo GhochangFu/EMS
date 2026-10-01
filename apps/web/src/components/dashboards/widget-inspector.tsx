@@ -162,6 +162,29 @@ export function WidgetInspector({ row, problems, role, organizationId, tabs, onC
         />
       </Field>
 
+      {/*
+        `F3.73` D11 — the tab this widget sits on, on a dashboard with tabs. Choosing another tab
+        moves the widget there (the page's canvas follows it).
+      */}
+      {tabs.length > 0 ? (
+        <Field label="Tab" error={problemFor("tabKey")}>
+          <select
+            value={row.tabKey ?? ""}
+            onChange={(event) => onChange({ tabKey: event.target.value })}
+            className="surface-field w-full px-2 py-1.5 text-xs"
+          >
+            {row.tabKey === undefined || !tabs.some((tab) => tab.key === row.tabKey) ? (
+              <option value={row.tabKey ?? ""}>{row.tabKey ?? "Choose a tab"}</option>
+            ) : null}
+            {tabs.map((tab) => (
+              <option key={tab.key} value={tab.key}>
+                {tab.label.trim() || tab.key}
+              </option>
+            ))}
+          </select>
+        </Field>
+      ) : null}
+
       <div className="grid grid-cols-4 gap-2">
         <Field label="gridX" error={problemFor("gridX")}>
           <input
@@ -316,7 +339,7 @@ export function WidgetInspector({ row, problems, role, organizationId, tabs, onC
       {/*
         `F3.73` — the card's target is one of THIS dashboard's tabs (the API refuses any other key).
         A dashboard with no tabs offers none, so the select is disabled with the reason beside it;
-        the tab editor is PR5's, and a tab added there appears here on the next render.
+        a tab added in the edit page's Tabs panel appears here on the next render.
       */}
       {row.widgetType === "module_summary_card" ? (
         <Field label="Links to tab" error={problemFor("targetTabKey")}>

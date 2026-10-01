@@ -60,10 +60,10 @@ import { DashboardBuilderEditPage } from "./dashboard-builder-edit-page";
  * rule): the foreign-scope case now has a visible line, pinned as its own `it()`.
  */
 
-const ORG_ID = "22222222-2222-4222-8222-222222222222";
+export const ORG_ID = "22222222-2222-4222-8222-222222222222";
 const OTHER_ORG_ID = "33333333-3333-4333-8333-333333333333";
 
-const LOCATION = {
+export const LOCATION = {
   id: "loc-1",
   organizationId: ORG_ID,
   organizationCode: "IONX",
@@ -84,7 +84,7 @@ const LOCATION = {
   updatedAt: new Date(0).toISOString(),
 };
 
-const DTO: DashboardDto = {
+export const DTO: DashboardDto = {
   id: "dash-1",
   organizationId: ORG_ID,
   slug: "site-a-overview",
@@ -135,7 +135,7 @@ const ASSET: AssetListRow = {
 
 /** `fetchAdminAssetGroups`'s real response shape — the full `AdminAssetGroupDto`, no cast, so a
  * missing `organizationId` fails the compiler rather than the run. */
-const GROUP: AdminAssetGroupDto = {
+export const GROUP: AdminAssetGroupDto = {
   id: "grp-1",
   code: "hvac",
   name: "Hvac",
@@ -146,7 +146,7 @@ const GROUP: AdminAssetGroupDto = {
   memberCount: 3,
   createdAt: new Date(0).toISOString(),
 };
-const SECOND_GROUP: AdminAssetGroupDto = { ...GROUP, id: "grp-2", code: "electrical", name: "Electrical" };
+export const SECOND_GROUP: AdminAssetGroupDto = { ...GROUP, id: "grp-2", code: "electrical", name: "Electrical" };
 /** A group in another organization — `GET /admin/asset-groups` is unfiltered for `admin`, so
  * the page must narrow the list to the dashboard's own organization itself. */
 const FOREIGN_GROUP: AdminAssetGroupDto = {
@@ -157,7 +157,7 @@ const FOREIGN_GROUP: AdminAssetGroupDto = {
   organizationId: OTHER_ORG_ID,
 };
 
-function asUser(role: UserRole): AuthUser {
+export function asUser(role: UserRole): AuthUser {
   return {
     id: "u1",
     email: `${role}@bms.local`,
@@ -168,7 +168,7 @@ function asUser(role: UserRole): AuthUser {
 
 /** Stubs every load the page issues. `dto` and `groups` are explicit at each group case so a
  * case cannot stay green against the wrong fixture. */
-function stubLoads({
+export function stubLoads({
   dto,
   groups,
   locations = [LOCATION],
@@ -221,7 +221,7 @@ function stubSave() {
  * races the dto effect — the race CI lost once on the sweep PR (#476). The groups query is a
  * second async load; assertions on the option list wait for it separately.
  */
-async function waitForPrefill(kind: "Location" | "Asset group"): Promise<void> {
+export async function waitForPrefill(kind: "Location" | "Asset group"): Promise<void> {
   await screen.findByRole("radio", { name: kind, checked: true });
 }
 
@@ -231,7 +231,7 @@ async function waitForAssetPrefill(): Promise<void> {
   await screen.findByText(/Scoped to asset Chiller 1\./);
 }
 
-function renderPage(user: AuthUser): void {
+export function renderPage(user: AuthUser): void {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   render(
     <QueryClientProvider client={queryClient}>
@@ -700,7 +700,7 @@ export async function renamingAMimicDashboardOnItsGroupCanSave(): Promise<void> 
 }
 
 /** `F3.73` (plan D2) — a location dashboard with two stored tabs, one widget on each. */
-const OVERVIEW_TAB: DashboardDto["tabs"][number] = {
+export const OVERVIEW_TAB: DashboardDto["tabs"][number] = {
   id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
   dashboardId: DTO.id,
   organizationId: ORG_ID,
@@ -709,7 +709,7 @@ const OVERVIEW_TAB: DashboardDto["tabs"][number] = {
   sortOrder: 0,
   assetGroupId: null,
 };
-const ELECTRICAL_TAB: DashboardDto["tabs"][number] = {
+export const ELECTRICAL_TAB: DashboardDto["tabs"][number] = {
   ...OVERVIEW_TAB,
   id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
   key: "electrical",
@@ -717,7 +717,7 @@ const ELECTRICAL_TAB: DashboardDto["tabs"][number] = {
   sortOrder: 1,
   assetGroupId: "grp-1",
 };
-const tileOnTab = (id: string, tabId: string, gridY: number): DashboardWidgetDto => ({
+export const tileOnTab = (id: string, tabId: string, gridY: number): DashboardWidgetDto => ({
   id,
   dashboardId: DTO.id,
   organizationId: ORG_ID,
@@ -743,7 +743,7 @@ const tileOnTab = (id: string, tabId: string, gridY: number): DashboardWidgetDto
   widgetType: "value_tile",
   config: {},
 });
-const TABBED_DTO: DashboardDto = {
+export const TABBED_DTO: DashboardDto = {
   ...DTO,
   tabs: [OVERVIEW_TAB, ELECTRICAL_TAB],
   widgets: [tileOnTab("w-overview", OVERVIEW_TAB.id, 0), tileOnTab("w-electrical", ELECTRICAL_TAB.id, 2)],

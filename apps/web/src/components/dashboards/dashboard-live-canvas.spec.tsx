@@ -97,7 +97,7 @@ function dashboard(widgets: DashboardWidgetDto[]): DashboardDto {
 
 let fetchSpy: Mock | null = null;
 
-function renderCanvas(dto: DashboardDto): ReturnType<typeof render> {
+function renderCanvas(dto: DashboardDto, tabKey?: string): ReturnType<typeof render> {
   fetchSpy = vi.fn(() => Promise.reject(new Error("a spec reached the network")));
   vi.stubGlobal("fetch", fetchSpy);
   mocks.io.mockImplementation(() => ({ on: vi.fn(), disconnect: mocks.disconnect }));
@@ -108,7 +108,7 @@ function renderCanvas(dto: DashboardDto): ReturnType<typeof render> {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
     <QueryClientProvider client={queryClient}>
-      <DashboardLiveCanvas dashboard={dto} />
+      <DashboardLiveCanvas dashboard={dto} tabKey={tabKey} />
     </QueryClientProvider>,
   );
 }
@@ -142,6 +142,42 @@ export async function boundWidgetFetchesItsRef(): Promise<void> {
   renderCanvas(dashboard([widget(true)]));
   await screen.findByText("Energy today");
   expect(mocks.fetchTelemetryRecent).toHaveBeenCalledWith(REF, expect.any(String));
+}
+
+const TAB_OVERVIEW = "11111111-1111-4111-8111-111111111111";
+const TAB_SLD = "22222222-2222-4222-8222-222222222222";
+
+/** `F3.73` — a two-tab dashboard: an unbound tile on each tab, told apart by its title. */
+function tabbedDashboard(): DashboardDto {
+  const tab = (id: string, key: string, sortOrder: number) => ({
+    id,
+    dashboardId: "dash-1",
+    organizationId: "org-1",
+    key,
+    label: key.toUpperCase(),
+    sortOrder,
+    assetGroupId: null,
+  });
+  const onTab = (id: string, title: string, tabId: string): DashboardWidgetDto =>
+    ({ ...widget(false), id, title, tabId }) as DashboardWidgetDto;
+  return {
+    ...dashboard([onTab("widget-a", "Overview tile", TAB_OVERVIEW), onTab("widget-b", "SLD tile", TAB_SLD)]),
+    tabs: [tab(TAB_OVERVIEW, "overview", 0), tab(TAB_SLD, "sld", 1)],
+  };
+}
+
+/** L5 — `F3.73` plan D10: with `tabKey`, only that tab's widgets render (tab A's tile is absent). */
+export async function aTabKeyShowsOnlyThatTabsWidgets(): Promise<void> {
+  renderCanvas(tabbedDashboard(), "sld");
+  expect(await screen.findByText("SLD tile")).toBeInTheDocument();
+  expect(screen.queryByText("Overview tile")).toBeNull();
+}
+
+/** L6 — no `tabKey` (the viewer page) renders every widget of a tabbed dashboard, as before. */
+export async function noTabKeyShowsEveryWidget(): Promise<void> {
+  renderCanvas(tabbedDashboard());
+  expect(await screen.findByText("SLD tile")).toBeInTheDocument();
+  expect(screen.getByText("Overview tile")).toBeInTheDocument();
 }
 
 /** L4 — one socket, opened with the session token; disconnected on unmount. */

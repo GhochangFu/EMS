@@ -1,14 +1,20 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Link } from "react-router-dom";
+import type { DashboardDto } from "@bms/shared";
+import { Link, Navigate } from "react-router-dom";
 
 import { fetchDashboard } from "../../api/dashboards";
 import { apiErrorMessage } from "../../lib/api-error-message";
 import { DashboardLiveCanvas } from "../dashboards/dashboard-live-canvas";
 import { SectionCard } from "../section-card";
+import { siteTabHref } from "../widgets/site-widget-parts";
 
 type SiteDashboardViewProps = {
   slug: string;
   organizationId: string;
+  /** The site the page renders; the tab links and the redirect are built on its path. */
+  locationId: string;
+  /** The route's raw `:tab` segment (`undefined` at the bare path); never `assets`, the page owns it. */
+  tab: string | undefined;
 };
 
 /**
@@ -43,8 +49,16 @@ const SITE_VIEW_RESOLVE_PREFIX = ["control-room", "site-view"] as const;
  *
  * **No Edit link (owner ruling OQ1 (a)).** `Open in Dashboards` goes to the
  * viewer, which holds the Edit link behind `canAuthorDashboards`.
+ *
+ * **Tabs (`F3.73` plan D10).** This view owns the `:tab` decision for the `dashboard` kind;
+ * the site page's D5 redirect no longer fires for it. Once the read has data: a dashboard with
+ * tabs shows a strip under the section title (one link per tab by `sortOrder`, the selected one
+ * `aria-current="page"`), the bare path selects the first tab in place, and the canvas renders
+ * the selected tab's widgets only. A segment that names no tab — on any dashboard, including
+ * one with no tabs — redirects to the bare path. A dashboard with no tabs renders as before.
+ * A pending or rejected read redirects nowhere.
  */
-export function SiteDashboardView({ slug, organizationId }: SiteDashboardViewProps) {
+export function SiteDashboardView({ slug, organizationId, locationId, tab }: SiteDashboardViewProps) {
   const queryClient = useQueryClient();
   const dashboardQ = useQuery({
     queryKey: ["dashboards", "detail", slug, organizationId],
@@ -55,6 +69,14 @@ export function SiteDashboardView({ slug, organizationId }: SiteDashboardViewPro
     void queryClient.invalidateQueries({ queryKey: [...SITE_VIEW_RESOLVE_PREFIX] });
     void dashboardQ.refetch();
   };
+
+  const sitePath = `/control-room/site/${encodeURIComponent(locationId)}`;
+  const tabs = dashboardQ.data === undefined ? [] : sortedTabs(dashboardQ.data);
+  const selected = tab === undefined ? tabs[0] : tabs.find((candidate) => candidate.key === tab);
+
+  if (dashboardQ.data !== undefined && tab !== undefined && selected === undefined) {
+    return <Navigate to={sitePath} replace />;
+  }
 
   return (
     <SectionCard
@@ -69,7 +91,23 @@ export function SiteDashboardView({ slug, organizationId }: SiteDashboardViewPro
       }
     >
       {dashboardQ.data !== undefined ? (
-        <DashboardLiveCanvas dashboard={dashboardQ.data} />
+        <>
+          {tabs.length > 0 ? (
+            <nav aria-label="Dashboard tabs" className="mb-3 flex flex-wrap gap-1 border-b border-line pb-2">
+              {tabs.map((entry) => (
+                <Link
+                  key={entry.id}
+                  to={siteTabHref(sitePath, entry.key)}
+                  aria-current={entry.key === selected?.key ? "page" : undefined}
+                  className={`surface-tab px-3 py-1.5 ${entry.key === selected?.key ? "surface-tab-selected" : ""}`}
+                >
+                  {entry.label}
+                </Link>
+              ))}
+            </nav>
+          ) : null}
+          <DashboardLiveCanvas dashboard={dashboardQ.data} tabKey={selected?.key} />
+        </>
       ) : dashboardQ.isError ? (
         <div role="alert" className="rounded border border-critical-line bg-critical-wash p-3 text-sm text-critical-ink-strong">
           <p>{apiErrorMessage(dashboardQ.error)}</p>
@@ -88,4 +126,9 @@ export function SiteDashboardView({ slug, organizationId }: SiteDashboardViewPro
       )}
     </SectionCard>
   );
+}
+
+/** The dashboard's tabs by `sortOrder` — a copy, so the cached DTO is never reordered. */
+function sortedTabs(dashboard: DashboardDto): DashboardDto["tabs"] {
+  return [...dashboard.tabs].sort((a, b) => a.sortOrder - b.sortOrder);
 }

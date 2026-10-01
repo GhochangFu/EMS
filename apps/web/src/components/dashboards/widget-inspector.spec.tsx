@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, vi } from "vitest";
 
@@ -338,8 +338,8 @@ export function aModuleCardOffersTheDashboardsTabs(): void {
   renderInspector(blankDashboardWidgetRow("module_summary_card"), { tabs: TABS });
   const select = screen.getByRole("combobox", { name: /^Links to tab/ }) as HTMLSelectElement;
   expect(select.disabled).toBe(false);
-  expect(screen.getByRole("option", { name: "UPS" })).not.toBeNull();
-  expect(screen.getByRole("option", { name: "HVAC" })).not.toBeNull();
+  expect(within(select).getByRole("option", { name: "UPS" })).not.toBeNull();
+  expect(within(select).getByRole("option", { name: "HVAC" })).not.toBeNull();
 }
 
 export async function choosingATabWritesItsKeyToTheConfig(): Promise<void> {
@@ -375,4 +375,21 @@ export function aTabProblemRendersUnderTheSelect(): void {
 export function aNonModuleCardHasNoTabSelect(): void {
   renderInspector(blankDashboardWidgetRow("value_tile"), { tabs: TABS });
   expect(screen.queryByText("Links to tab", { exact: true })).toBeNull();
+}
+
+/** `F3.73` D11 — on a dashboard with tabs every widget has a tab select, and choosing a tab
+ * writes the row's `tabKey` (the page moves the widget). Mutation: drop the select => red. */
+export async function aWidgetOnATabbedDashboardMovesThroughTheTabSelect(): Promise<void> {
+  const onChange = vi.fn();
+  renderInspector({ ...blankDashboardWidgetRow("value_tile"), tabKey: "ups" }, { tabs: TABS, onChange });
+  const select = screen.getByRole("combobox", { name: "Tab" }) as HTMLSelectElement;
+  expect(select.value).toBe("ups");
+  await userEvent.selectOptions(select, "hvac");
+  expect(onChange).toHaveBeenLastCalledWith({ tabKey: "hvac" });
+}
+
+/** A dashboard without tabs shows no tab select. */
+export function aWidgetOnADashboardWithoutTabsHasNoTabSelect(): void {
+  renderInspector(blankDashboardWidgetRow("value_tile"), { tabs: [] });
+  expect(screen.queryByRole("combobox", { name: "Tab" })).toBeNull();
 }

@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import { useParams, useSearchParams } from "react-router-dom";
 
+import { adminAssetGroupsQueryKey, fetchAdminAssetGroups } from "../../api/admin/asset-groups";
 import { fetchAssets } from "../../api/assets";
 import {
   fetchDashboard,
@@ -10,6 +11,7 @@ import {
   type UpdateDashboardPayload,
 } from "../../api/dashboards";
 import { useDashboardScopeOptions } from "../../hooks/use-dashboard-scope-options";
+import { isMasterDataAdmin } from "../../lib/admin-access";
 import { apiErrorMessage } from "../../lib/api-error-message";
 import {
   isScopeAuthorised,
@@ -20,16 +22,24 @@ import {
   type ScopeAssetOption,
 } from "../../lib/dashboard-scope";
 import {
+  addBuilderTab,
   blankDashboardWidgetRow,
   buildPutWidgetsPayload,
+  moveBuilderTab,
+  offerableWidgetTypesOnTab,
+  removeBuilderTab,
+  renameBuilderTabKey,
+  tabLocationMoveProblems,
+  tabsHaveChanged,
   tabWritesFromDto,
   builderHasChanged,
   dashboardBuilderErrors,
   dashboardBuilderProblemSubject,
   dashboardRowsFromDto,
-  offerableWidgetTypes,
   unselectedDashboardBuilderProblems,
+  type BuilderTabsState,
   type DashboardWidgetRow,
+  type TabWritePayload,
 } from "../../lib/dashboard-builder-form";
 import { WIDGET_CATALOG } from "../../lib/widget-catalog";
 import { AppShell } from "../../layouts/app-shell";
@@ -37,6 +47,8 @@ import { PageHeader } from "../../components/page-header";
 import { SectionCard } from "../../components/section-card";
 import { DashboardCanvas, type CanvasTile } from "../../components/dashboards/dashboard-canvas";
 import { DashboardScopeFields, type DashboardScopeValue } from "../../components/dashboards/dashboard-scope-fields";
+import { DashboardTabStrip } from "../../components/dashboards/dashboard-tab-strip";
+import { DashboardTabsPanel, type TabGroups } from "../../components/dashboards/dashboard-tabs-panel";
 import { DuplicateDashboardDialog } from "../../components/dashboards/duplicate-dashboard-dialog";
 import { WidgetInspector } from "../../components/dashboards/widget-inspector";
 import type { AuthUser } from "../../stores/auth-store";
@@ -89,6 +101,10 @@ export function DashboardBuilderEditPage({ user }: DashboardBuilderEditPageProps
   });
   const [rows, setRows] = useState<DashboardWidgetRow[]>([]);
   const [selected, setSelected] = useState<number | null>(null);
+  // `F3.73` D11 — the edited tab set and the tab the canvas shows. The rows keep `tabKey`, so a
+  // re-key or a removal moves the rows in the same update (`BuilderTabsState`).
+  const [tabs, setTabs] = useState<readonly TabWritePayload[]>([]);
+  const [selectedTabKey, setSelectedTabKey] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   // ADR 0047 Amendment 2 ruling 3's duplicate action needs a way in, and this page is it: the
   // ruling reserved the organization-wide dashboard to the two organization-level roles and
@@ -112,6 +128,10 @@ export function DashboardBuilderEditPage({ user }: DashboardBuilderEditPageProps
     setScope(scopeFromDashboard(dto));
     setRows(dashboardRowsFromDto(dto));
     setSelected(null);
+    // The read orders the tabs by `sortOrder`, so the first is the default.
+    const storedTabs = tabWritesFromDto(dto.tabs);
+    setTabs(storedTabs);
+    setSelectedTabKey(storedTabs[0]?.key ?? null);
   }, [dto]);
 
   // Both lists narrowed to the dashboard's own organization (`F3.34`), read by role (`F3.63`).
@@ -129,8 +149,36 @@ export function DashboardBuilderEditPage({ user }: DashboardBuilderEditPageProps
   });
   const assets: readonly ScopeAssetOption[] = (assetsQ.data ?? []).map((asset) => ({ id: asset.id, name: asset.name }));
 
-  // F3.73 — the stored tabs: the per-tab cap and a mimic on a group-bound tab read them.
-  const problems = dashboardBuilderErrors(rows, scope.kind, dto?.tabs ?? []);
+  // `F3.73` D11 — a tab binds one of the groups AT the dashboard's site, so the select reads
+  // `GET /admin/asset-groups?locationId=` for the live location: the location-scope branch only
+  // (the API refuses a group tab on every other scope), and only once a tab exists to bind.
+  const siteLocationId = scope.kind === "location" && scope.locationId !== "" ? scope.locationId : null;
+  const tabGroupsQ = useQuery({
+    queryKey: adminAssetGroupsQueryKey(siteLocationId ?? undefined),
+    queryFn: () => fetchAdminAssetGroups(siteLocationId ?? undefined),
+    enabled: siteLocationId !== null && tabs.length > 0 && isMasterDataAdmin(user.role),
+  });
+  // Review fix — only a read that answered says which groups the site holds. A pending, failed or
+  // disabled read is not an empty site: the panel must not call a bound group "at another site".
+  const tabGroups: TabGroups | null =
+    siteLocationId === null
+      ? null
+      : tabGroupsQ.data !== undefined
+        ? { status: "loaded", items: tabGroupsQ.data.items.map((group) => ({ id: group.id, name: group.name })) }
+        : tabGroupsQ.isError
+          ? { status: "failed", message: apiErrorMessage(tabGroupsQ.error) }
+          : tabGroupsQ.fetchStatus === "fetching"
+            ? { status: "loading" }
+            : { status: "unavailable" };
+  const selectedTab = tabs.find((tab) => tab.key === selectedTabKey);
+
+  // F3.73 — the edited tabs: the per-tab cap, the tab rules and a mimic on a group-bound tab.
+  // A move off the site while a SAVED tab binds a group is refused before Save: the PATCH would meet
+  // the tabs' location FK before the PUT could clear the group (`tabLocationMoveProblems`).
+  const problems = [
+    ...dashboardBuilderErrors(rows, scope.kind, tabs),
+    ...(dto ? tabLocationMoveProblems(dto, scopePatch(scope)) : []),
+  ];
   // Review finding — `WidgetInspector` (below) renders only the SELECTED widget's problems, so
   // a set-level problem or another widget's problem must surface somewhere else, or `Save`
   // disables with a reason nothing on the page shows.
@@ -138,7 +186,7 @@ export function DashboardBuilderEditPage({ user }: DashboardBuilderEditPageProps
   const fieldsChanged = dto
     ? name !== dto.name || description !== (dto.description ?? "") || scopeChanged(scope, dto)
     : false;
-  const widgetsChanged = dto ? builderHasChanged(rows, dto) : false;
+  const widgetsChanged = dto ? builderHasChanged(rows, dto) || tabsHaveChanged(tabs, dto) : false;
   const changed = fieldsChanged || widgetsChanged;
   // Chosen AND authorised (`F3.63` review, then its post-merge sweep): a location or a group a
   // SCOPED role's option list does not hold — a foreign scope the role can open but not save —
@@ -202,7 +250,9 @@ export function DashboardBuilderEditPage({ user }: DashboardBuilderEditPageProps
         ...scopePatch(scope),
       };
       const updated = await updateDashboard(dto.id, body);
-      return putDashboardWidgets(updated.id, buildPutWidgetsPayload(rows, tabWritesFromDto(dto.tabs)));
+      // `F3.73` D11 — the edited tabs, labels trimmed; stored ids kept, so the API's diff keeps them.
+      const tabWrites = tabs.map((tab) => ({ ...tab, label: tab.label.trim() }));
+      return putDashboardWidgets(updated.id, buildPutWidgetsPayload(rows, tabWrites));
     },
     onSuccess: (next) => {
       setError(null);
@@ -212,8 +262,10 @@ export function DashboardBuilderEditPage({ user }: DashboardBuilderEditPageProps
   });
 
   function addWidget(widgetType: WidgetType): void {
+    // `F3.73` D11 — a new widget lands on the tab the canvas shows.
+    const onTab = selectedTabKey !== null && tabs.length > 0 ? { tabKey: selectedTabKey } : {};
     setRows((current) => {
-      const next = [...current, blankDashboardWidgetRow(widgetType)];
+      const next = [...current, { ...blankDashboardWidgetRow(widgetType), ...onTab }];
       setSelected(next.length - 1);
       return next;
     });
@@ -221,6 +273,62 @@ export function DashboardBuilderEditPage({ user }: DashboardBuilderEditPageProps
 
   function updateWidget(index: number, patch: Partial<DashboardWidgetRow>): void {
     setRows((current) => current.map((row, position) => (position === index ? { ...row, ...patch } : row)));
+    // A widget moved to another tab: the canvas follows it, so the author sees where it went.
+    if (patch.tabKey !== undefined) {
+      setSelectedTabKey(patch.tabKey);
+    }
+  }
+
+  /** Applies one tab edit to the tabs and the rows together. */
+  function applyTabs(next: BuilderTabsState): void {
+    setTabs(next.tabs);
+    setRows([...next.rows]);
+  }
+
+  function selectTab(key: string | null): void {
+    setSelectedTabKey(key);
+    setSelected(null);
+  }
+
+  function addTab(): void {
+    const next = addBuilderTab({ tabs, rows });
+    applyTabs(next);
+    selectTab(next.key);
+  }
+
+  function rekeyTab(index: number, key: string): boolean {
+    const next = renameBuilderTabKey({ tabs, rows }, index, key);
+    if (next === null) {
+      return false;
+    }
+    applyTabs(next);
+    if (tabs[index]?.key === selectedTabKey) {
+      setSelectedTabKey(key);
+    }
+    return true;
+  }
+
+  function updateTab(index: number, patch: Partial<Pick<TabWritePayload, "label" | "assetGroupId">>): void {
+    setTabs((current) => current.map((tab, position) => (position === index ? { ...tab, ...patch } : tab)));
+  }
+
+  function removeTab(index: number): void {
+    const removed = tabs[index]?.key;
+    const next = removeBuilderTab({ tabs, rows }, index);
+    applyTabs(next);
+    // The rows were re-indexed, so no selection survives a removal.
+    if (removed === selectedTabKey) {
+      selectTab(next.tabs[0]?.key ?? null);
+    } else {
+      setSelected(null);
+    }
+  }
+
+  const widgetCounts = new Map<string, number>();
+  for (const row of rows) {
+    if (row.tabKey !== undefined) {
+      widgetCounts.set(row.tabKey, (widgetCounts.get(row.tabKey) ?? 0) + 1);
+    }
   }
 
   function removeWidget(index: number): void {
@@ -228,15 +336,13 @@ export function DashboardBuilderEditPage({ user }: DashboardBuilderEditPageProps
     setSelected((current) => (current === index ? null : current));
   }
 
-  const tiles: WidgetTile[] = rows.map((row, index) => ({
-    key: row.id ?? `new-${index}`,
-    gridX: row.gridX,
-    gridY: row.gridY,
-    gridW: row.gridW,
-    gridH: row.gridH,
-    row,
-    index,
-  }));
+  // `F3.73` D11 — the selected tab's widgets only. `index` stays the index into the WHOLE
+  // `rows` array, which `updateWidget`, `removeWidget` and the inspector's problems key on.
+  const tiles: WidgetTile[] = rows.flatMap((row, index) =>
+    tabs.length === 0 || row.tabKey === selectedTabKey
+      ? [{ key: row.id ?? `new-${index}`, gridX: row.gridX, gridY: row.gridY, gridW: row.gridW, gridH: row.gridH, row, index }]
+      : [],
+  );
 
   const selectedRow = selected !== null ? rows[selected] : undefined;
 
@@ -299,12 +405,25 @@ export function DashboardBuilderEditPage({ user }: DashboardBuilderEditPageProps
               </div>
             </SectionCard>
 
+            <DashboardTabsPanel
+              tabs={tabs}
+              groups={tabGroups}
+              widgetCounts={widgetCounts}
+              onAdd={addTab}
+              onLabel={(index, label) => updateTab(index, { label })}
+              onKey={rekeyTab}
+              onGroup={(index, assetGroupId) => updateTab(index, { assetGroupId })}
+              onMove={(index, delta) => setTabs(moveBuilderTab(tabs, index, delta))}
+              onRemove={removeTab}
+            />
+
             <SectionCard
               title="Widgets"
               actions={
                 <div className="flex flex-wrap gap-2">
-                  {/* `F3.32` — the live scope's kind, so a scope switch removes "Plant mimic" at once. */}
-                  {offerableWidgetTypes(scope.kind).map((type) => (
+                  {/* `F3.32` — the live scope's kind, so a scope switch removes "Plant mimic" at once;
+                      `F3.73` D11 — and the selected tab, so a group-bound tab offers it. */}
+                  {offerableWidgetTypesOnTab(scope.kind, selectedTab).map((type) => (
                     <button
                       key={type}
                       type="button"
@@ -317,9 +436,12 @@ export function DashboardBuilderEditPage({ user }: DashboardBuilderEditPageProps
                 </div>
               }
             >
-              {rows.length === 0 ? (
+              {tabs.length > 0 ? (
+                <DashboardTabStrip tabs={tabs} selectedKey={selectedTabKey} onSelect={selectTab} />
+              ) : null}
+              {tiles.length === 0 ? (
                 <p className="rounded border border-dashed border-line-strong p-4 text-xs text-ink-muted">
-                  Add a widget to start composing this dashboard.
+                  {tabs.length > 0 ? "Add a widget to this tab." : "Add a widget to start composing this dashboard."}
                 </p>
               ) : (
                 <DashboardCanvas
@@ -356,7 +478,7 @@ export function DashboardBuilderEditPage({ user }: DashboardBuilderEditPageProps
                 role={user.role}
                 problems={problems.filter((problem) => problem.widget === selected)}
                 organizationId={dto.organizationId}
-                tabs={dto.tabs}
+                tabs={tabs}
                 onChange={(patch) => updateWidget(selected, patch)}
                 onRemove={() => removeWidget(selected)}
               />

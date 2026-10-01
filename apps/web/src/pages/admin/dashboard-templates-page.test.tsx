@@ -10,6 +10,7 @@ import {
   importingRemovesThatEntrysIdleName,
   rendersTemplatesAndStockCatalog,
   sectionFilterComesFromTheVocabularyFetch,
+  siteTemplateRowShowsASiteBadge,
   stockRowLinksToTheViewer,
 } from "./dashboard-templates-page.spec";
 
@@ -26,6 +27,10 @@ describe("F3.36 dashboard templates list page", () => {
 
   it("renders the template list and the stock catalog with an Import action each", async () => {
     await rendersTemplatesAndStockCatalog();
+  });
+
+  it("a site template's row shows a Site badge (F3.73)", async () => {
+    await siteTemplateRowShowsASiteBadge();
   });
 
   it("builds the section filter from the vocabulary fetch, never a hardcoded list", async () => {

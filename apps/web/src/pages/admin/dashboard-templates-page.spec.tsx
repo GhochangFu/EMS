@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import { expect, vi } from "vitest";
@@ -105,6 +105,25 @@ export async function rendersTemplatesAndStockCatalog(): Promise<void> {
   expect(await screen.findByRole("link", { name: /ELECTRICAL v1/ })).toBeInTheDocument();
   expect(await screen.findByText("Electrical (stock)")).toBeInTheDocument();
   expect(screen.getByRole("button", { name: "Import Electrical (stock)" })).toBeInTheDocument();
+}
+
+/**
+ * `F3.73` Task 5.3 — a site template's row carries a `Site` badge from `target`; an
+ * asset-group row beside it does not (the adjacent control for the absence).
+ */
+export async function siteTemplateRowShowsASiteBadge(): Promise<void> {
+  stubApi();
+  const site = { ...LIST.items[0], id: "22222222-2222-2222-2222-222222222222", code: "SITE", target: "site" };
+  vi.spyOn(api, "fetchAdminDashboardTemplates").mockResolvedValue({
+    items: [{ ...LIST.items[0], target: "asset_group" }, site],
+  } as never);
+  renderPage();
+
+  const siteLink = await screen.findByRole("link", { name: /SITE v1/ });
+  const siteRow = siteLink.closest("li") as HTMLElement;
+  expect(within(siteRow).getByText("Site")).toBeInTheDocument();
+  const groupRow = screen.getByRole("link", { name: /ELECTRICAL v1/ }).closest("li") as HTMLElement;
+  expect(within(groupRow).queryByText("Site")).not.toBeInTheDocument();
 }
 
 /** The section filter comes from the vocabulary fetch, not a hardcoded list. */

@@ -4,8 +4,12 @@ import { cleanup } from "@testing-library/react";
 
 import {
   aLocationAdminStillSeesTheEditLink,
+  aTabbedDashboardRendersOnlyTheSelectedTabsWidgets,
+  aTabbedDashboardShowsTheStripWithTheFirstTabSelected,
   aWidgetRendersViaTheLiveCanvas,
+  anUntabbedDashboardShowsNoStrip,
   assetGroupAdminSeesTheEditLink,
+  switchingTabsSwapsTheWidgets,
 } from "./dashboard-viewer-page.spec";
 
 /**
@@ -29,5 +33,21 @@ describe("F3.1d dashboard viewer page", () => {
 
   it("DV1 renders a widget via DashboardLiveCanvas", async () => {
     await aWidgetRendersViaTheLiveCanvas();
+  });
+
+  it("F3.73 D11 shows the tab strip with the first tab by sortOrder selected", async () => {
+    await aTabbedDashboardShowsTheStripWithTheFirstTabSelected();
+  });
+
+  it("F3.73 D11 renders only the selected tab's widgets", async () => {
+    await aTabbedDashboardRendersOnlyTheSelectedTabsWidgets();
+  });
+
+  it("F3.73 D11 swaps the widgets when another tab is selected", async () => {
+    await switchingTabsSwapsTheWidgets();
+  });
+
+  it("F3.73 D11 shows no strip on a dashboard with no tabs", async () => {
+    await anUntabbedDashboardShowsNoStrip();
   });
 });

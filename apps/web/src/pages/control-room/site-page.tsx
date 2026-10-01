@@ -1,4 +1,4 @@
-import type { AccessibleScope, LocationKpiSummary, ResolvedSiteControlRoomViewDto } from "@bms/shared";
+import type { AccessibleScope, LocationKpiSummary, ResolvedSiteControlRoomViewDto, UserRole } from "@bms/shared";
 import { useQuery } from "@tanstack/react-query";
 import { Link, Navigate, useParams } from "react-router-dom";
 
@@ -6,6 +6,7 @@ import { fetchResolvedSiteControlRoomView } from "../../api/control-room";
 import { fetchLocationKpis } from "../../api/locations";
 import { ControlRoomBreadcrumb } from "../../components/control-room/control-room-breadcrumb";
 import { GeneratedSiteView } from "../../components/control-room/generated-site-view";
+import { MakeSiteLayoutButton } from "../../components/control-room/make-site-layout-button";
 import { ScopedDashboardsList } from "../../components/control-room/scoped-dashboards-list";
 import { SiteAssetsView } from "../../components/control-room/site-assets-view";
 import { SiteDashboardView } from "../../components/control-room/site-dashboard-view";
@@ -13,6 +14,7 @@ import { SmocSiteView } from "../../components/control-room/smoc-site-view";
 import { PageHeader } from "../../components/page-header";
 import { SectionCard } from "../../components/section-card";
 import { AppShell } from "../../layouts/app-shell";
+import { isMasterDataAdmin } from "../../lib/admin-access";
 import { controlRoomCrumbs } from "../../lib/control-room-levels";
 import { siteViewNoticeText } from "../../lib/site-view-notice";
 import {
@@ -74,6 +76,12 @@ const linkClass = "mt-2 inline-block text-sm font-semibold text-accent-strong ho
  * a site outside the scope. The SMOC seven-tab strip stays inside
  * `SmocSiteView` under Site view, and the Site view entry lists the site's
  * dashboards (`ScopedDashboardsList`, D7) under the body.
+ *
+ * `F3.73` (plan D10) — a `dashboard` view that renders (a slug is set) is exempt from the D5
+ * redirect: `SiteDashboardView` owns its `:tab` decision (the dashboard's own tabs) and is
+ * handed the raw segment. A `dashboard` row with no slug renders the generated view and still
+ * redirects. The `no_site_layout` and `dashboard_removed` notices carry **Make site layout**
+ * for `isMasterDataAdmin` roles (`MakeSiteLayoutButton`), beside the notice text, never in it.
  */
 export function ControlRoomSitePage({ user, locationId: locationIdProp }: ControlRoomSitePageProps) {
   const params = useParams();
@@ -100,12 +108,14 @@ export function ControlRoomSitePage({ user, locationId: locationIdProp }: Contro
   const site = items?.find((item) => item.id === locationId);
 
   const showsSmocTabs = siteView.data?.kind === "builtin" && site !== undefined && isSmocSite(site);
+  const showsDashboard = siteView.data?.kind === "dashboard" && siteView.data.dashboardSlug !== null;
 
   if (
     items !== undefined &&
     siteView.data !== undefined &&
     tabParam !== undefined &&
     !onAssetsTab &&
+    !showsDashboard &&
     (!showsSmocTabs || tab === null)
   ) {
     return <Navigate to={`/control-room/site/${encodeURIComponent(locationId)}`} replace />;
@@ -135,8 +145,15 @@ export function ControlRoomSitePage({ user, locationId: locationIdProp }: Contro
                 <SiteAssetsView locationId={site.id} />
               ) : (
                 <>
-                  {/* `tab` is null only for an unknown segment, which redirected above. */}
-                  <SiteViewBody view={siteView.data} site={site} scope={scope} tab={tab ?? DEFAULT_SMOC_TAB} />
+                  {/* On the SMOC view `tab` is null only for an unknown segment, which redirected above. */}
+                  <SiteViewBody
+                    view={siteView.data}
+                    site={site}
+                    scope={scope}
+                    tab={tab ?? DEFAULT_SMOC_TAB}
+                    tabParam={tabParam}
+                    role={user.role}
+                  />
                   <ScopedDashboardsList locationId={site.id} organizationId={site.organization.id} />
                 </>
               )}
@@ -201,27 +218,40 @@ type SiteViewBodyProps = {
   site: LocationKpiSummary;
   scope: AccessibleScope | null;
   tab: SmocTabKey;
+  /** The raw `:tab` segment, for `SiteDashboardView`'s own tab decision (`F3.73` D10). */
+  tabParam: string | undefined;
+  role: UserRole;
 };
 
-function SiteViewBody({ view, site, scope, tab }: SiteViewBodyProps) {
+/** `F3.73` (plan D10, ruling Q5) — the notices a site layout copy answers. */
+const MAKE_SITE_LAYOUT_NOTICES: readonly string[] = ["no_site_layout", "dashboard_removed"];
+
+function SiteViewBody({ view, site, scope, tab, tabParam, role }: SiteViewBodyProps) {
   const notice = siteViewNoticeText(view.notice);
+  const offersSiteLayout =
+    view.notice !== null && MAKE_SITE_LAYOUT_NOTICES.includes(view.notice) && isMasterDataAdmin(role);
 
   return (
     <>
       {notice !== null ? (
-        <div
-          role="status"
-          data-testid="site-view-notice"
-          className="rounded border border-warning-line bg-warning-wash px-4 py-2 text-sm text-warning-ink"
-        >
-          {notice}
+        <div className="space-y-2 rounded border border-warning-line bg-warning-wash px-4 py-2 text-sm text-warning-ink">
+          {/* The testid element holds the notice text only; the action sits beside it. */}
+          <div role="status" data-testid="site-view-notice">
+            {notice}
+          </div>
+          {offersSiteLayout ? <MakeSiteLayoutButton locationId={site.id} /> : null}
         </div>
       ) : null}
       {view.kind === "builtin" && isSmocSite(site) ? (
         // Any other site with a `builtin` view falls through to the generated view (L1).
         <SmocSiteView locationId={site.id} tab={tab} scope={scope} />
       ) : view.kind === "dashboard" && view.dashboardSlug !== null ? (
-        <SiteDashboardView slug={view.dashboardSlug} organizationId={site.organization.id} />
+        <SiteDashboardView
+          slug={view.dashboardSlug}
+          organizationId={site.organization.id}
+          locationId={site.id}
+          tab={tabParam}
+        />
       ) : (
         <GeneratedSiteView locationId={site.id} />
       )}

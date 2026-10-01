@@ -4,6 +4,9 @@ import {
   fetchResolvedSiteControlRoomViewHitsTheResolvePath,
   fetchResolvedSiteControlRoomViewThrowsOn404,
   fetchResolvedSiteControlRoomViewThrowsOnSchemaMismatch,
+  makeSiteLayoutPostsTheBody,
+  makeSiteLayoutReadsTheAmbiguousBody,
+  makeSiteLayoutThrowsOnAnotherConflict,
 } from "./control-room.spec";
 
 /**
@@ -27,5 +30,24 @@ describe("F3.66 U2 control-room resolve-read client — what it puts on the wire
 
   it("throws when the body fails the contract", async () => {
     await fetchResolvedSiteControlRoomViewThrowsOnSchemaMismatch();
+  });
+});
+
+describe("F3.73 makeSiteLayout client — what it puts on the wire", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+  });
+
+  it("A4 POSTs the body as JSON to /admin/locations/:id/site-layout and answers made", async () => {
+    await makeSiteLayoutPostsTheBody();
+  });
+
+  it("A5 answers the 409 body's ambiguous candidates", async () => {
+    await makeSiteLayoutReadsTheAmbiguousBody();
+  });
+
+  it("A6 throws ApiError with the status on any other 409", async () => {
+    await makeSiteLayoutThrowsOnAnotherConflict();
   });
 });

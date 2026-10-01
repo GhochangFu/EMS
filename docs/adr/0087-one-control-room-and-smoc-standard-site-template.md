@@ -221,8 +221,11 @@ decision listed below. The rulings settle decision 11; decisions 4 to 7 stand.
 **When `F3.73` ships (owner ruling, 2026-09-30).** The *Status* section says
 `F3.73`–`F3.75` start after the first stable version. The owner ruled that a
 complete `F3.73` pull request — green and reviewed — may merge before the v1
-merge cutoff (2026-10-01 09:00 IST), each on the owner's explicit merge. A
-pull request that is not complete by then waits for v1. `F3.74` and `F3.75`
+merge cutoff (2026-10-01 11:00 IST; first set at 09:00, moved by the owner the
+same day), each on the owner's explicit merge. A pull request that is not
+complete by then waits for v1. `PR4` merges only together with `PR5` (owner
+ruling 2026-10-01): its seed points demo sites at tabbed copies that only
+`PR5`'s web can draw. `F3.74` and `F3.75`
 are unchanged.
 
 ### Rulings

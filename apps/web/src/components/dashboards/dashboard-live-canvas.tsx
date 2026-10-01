@@ -1,4 +1,5 @@
 import type { DashboardDto, DashboardWidgetDto } from "@bms/shared";
+import { useMemo } from "react";
 
 import { useDashboardTelemetry } from "../../hooks/use-dashboard-telemetry";
 import { useSiteWidgetsAlarmRefresh } from "../../hooks/use-site-widgets";
@@ -8,6 +9,13 @@ import { isSiteWidget } from "./site-widget-live";
 
 type DashboardLiveCanvasProps = {
   dashboard: DashboardDto;
+  /**
+   * `F3.73` plan D10 — the selected tab's key: only that tab's widgets render, and only theirs
+   * are read. Absent (a dashboard with no tabs, on the viewer or the site view) renders every
+   * widget, as before.
+   * A key the dashboard has no tab for renders none — it fails closed, never to every tab.
+   */
+  tabKey?: string;
 };
 
 type WidgetTile = CanvasTile & { widget: DashboardWidgetDto };
@@ -32,10 +40,20 @@ function SiteWidgetsAlarmRefresh() {
  * `now` read fresh on every render (so the periodic re-render
  * `useDashboardTelemetry`'s own `staleTick` drives actually advances the
  * clock `widgetDataFor` ages readings against), the tile map, the
- * "This dashboard has no widgets yet." line and `DashboardCanvas` +
- * `DashboardWidgetLive`. The caller owns the query, loading and error states.
+ * "This dashboard has no widgets yet." line (`F3.73`: "This tab has no widgets yet." for a
+ * selected tab) and `DashboardCanvas` + `DashboardWidgetLive`. The caller owns the query,
+ * loading and error states.
  */
-export function DashboardLiveCanvas({ dashboard }: DashboardLiveCanvasProps) {
+export function DashboardLiveCanvas({ dashboard: fullDashboard, tabKey }: DashboardLiveCanvasProps) {
+  // `F3.73` — the selected tab's slice. The telemetry hook keys its reads on the slice's point refs,
+  // not on this object, so a tab switch re-tracks only the refs the new tab shows.
+  const dashboard = useMemo(() => {
+    if (tabKey === undefined) {
+      return fullDashboard;
+    }
+    const tabId = fullDashboard.tabs.find((tab) => tab.key === tabKey)?.id;
+    return { ...fullDashboard, widgets: fullDashboard.widgets.filter((widget) => widget.tabId === tabId) };
+  }, [fullDashboard, tabKey]);
   const { latestByRef, historyByRef, aggregateByKey, catalog } = useDashboardTelemetry(dashboard);
   const now = Date.now();
   // `F3.73` — a widget's tab key, read through the dashboard's own tabs (`dashboardRowsFromDto`'s rule).
@@ -53,7 +71,7 @@ export function DashboardLiveCanvas({ dashboard }: DashboardLiveCanvasProps) {
   if (tiles.length === 0) {
     return (
       <p className="rounded border border-dashed border-line-strong p-4 text-xs text-ink-muted">
-        This dashboard has no widgets yet.
+        {tabKey === undefined ? "This dashboard has no widgets yet." : "This tab has no widgets yet."}
       </p>
     );
   }

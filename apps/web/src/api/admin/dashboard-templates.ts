@@ -16,6 +16,8 @@ import {
   dashboardTemplateDtoSchema,
   dashboardTemplatesListResponseSchema,
   instantiateSectionTemplateResponseSchema,
+  siteLayoutBulkResultDtoSchema,
+  siteLayoutResultDtoSchema,
   stockDashboardTemplatesListResponseSchema,
   templateDraftDeletedResponseSchema,
 } from "@bms/shared/contracts";
@@ -26,6 +28,8 @@ import type {
   DashboardWidgetSpec,
   InstantiateSectionTemplateResponse,
   MetricCatalogKey,
+  SiteLayoutBulkResultDto,
+  SiteLayoutResultDto,
   StockDashboardTemplatesListResponse,
   TemplateDraftDeletedResponse,
   TemplateLifecycleStatus,
@@ -253,4 +257,29 @@ export async function instantiateAdminDashboardTemplate(
     instantiateSectionTemplateResponseSchema,
     { method: "POST", headers: jsonHeaders, body: JSON.stringify(input) },
   );
+}
+
+/**
+ * `F3.73` ruling Q3a — the site arm of the same route: the body names a `locationId` (and, for
+ * an ambiguous tab, a `tabGroups` choice) instead of a group, a slug and a name. The answer is
+ * the one site's copy, not a resolution report.
+ */
+export async function instantiateSiteTemplate(
+  id: string,
+  locationId: string,
+  tabGroups?: Record<string, string>,
+): Promise<SiteLayoutResultDto> {
+  return adminFetch(`/admin/dashboard-templates/${id}/instantiate`, siteLayoutResultDtoSchema, {
+    method: "POST",
+    headers: jsonHeaders,
+    body: JSON.stringify(tabGroups ? { locationId, tabGroups } : { locationId }),
+  });
+}
+
+/** `F3.73` ruling Q4 — `POST .../apply-to-sites`: no body; one transaction per site, with the
+ * skipped sites and their reasons in the answer. */
+export async function applySiteTemplate(id: string): Promise<SiteLayoutBulkResultDto> {
+  return adminFetch(`/admin/dashboard-templates/${id}/apply-to-sites`, siteLayoutBulkResultDtoSchema, {
+    method: "POST",
+  });
 }

@@ -1,9 +1,9 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
-import { MemoryRouter } from "react-router-dom";
+import { MemoryRouter, Route, Routes, useLocation } from "react-router-dom";
 import { expect, vi, type Mock } from "vitest";
 
-import type { DashboardDto, ResolvedSiteControlRoomViewDto } from "@bms/shared";
+import type { DashboardDto, DashboardTabDto, ResolvedSiteControlRoomViewDto } from "@bms/shared";
 
 import * as dashboardsApi from "../../api/dashboards";
 import { ApiError } from "../../lib/api-error";
@@ -25,8 +25,8 @@ import { SiteDashboardView } from "./site-dashboard-view";
  * because react-query turns the throw into `isError`.
  */
 vi.mock("../dashboards/dashboard-live-canvas", () => ({
-  DashboardLiveCanvas: ({ dashboard }: { dashboard: DashboardDto }) => (
-    <div data-testid="dashboard-live-canvas" data-dashboard-id={dashboard.id} />
+  DashboardLiveCanvas: ({ dashboard, tabKey }: { dashboard: DashboardDto; tabKey?: string }) => (
+    <div data-testid="dashboard-live-canvas" data-dashboard-id={dashboard.id} data-tab-key={tabKey ?? "(all)"} />
   ),
 }));
 
@@ -93,7 +93,7 @@ function renderView(
   render(
     <QueryClientProvider client={queryClient}>
       <MemoryRouter>
-        <SiteDashboardView slug={SLUG} organizationId={ORG_PHE.id} />
+        <SiteDashboardView slug={SLUG} organizationId={ORG_PHE.id} locationId={LOCATION_ID} tab={undefined} />
       </MemoryRouter>
     </QueryClientProvider>,
   );
@@ -273,6 +273,143 @@ export async function noEditLink(): Promise<void> {
   await screen.findByRole("link", { name: "Open in Dashboards" });
   await screen.findByTestId("dashboard-live-canvas");
   expect(screen.queryByRole("link", { name: /Edit dashboard/ })).toBeNull();
+}
+
+/**
+ * `F3.73` plan D10 — a two-tab dashboard. The array holds `sld` FIRST and `overview` second
+ * while `overview` sorts first, so a strip or a default that read the array order goes red.
+ */
+function tab(key: string, label: string, sortOrder: number): DashboardTabDto {
+  return {
+    id: `tab-${key}`,
+    dashboardId: DTO.id,
+    organizationId: ORG_PHE.id,
+    key,
+    label,
+    sortOrder,
+    assetGroupId: null,
+  };
+}
+
+const TABBED: DashboardDto = { ...DTO, tabs: [tab("sld", "SLD", 1), tab("overview", "Overview", 0)] };
+
+const SITE_PATH = `/control-room/site/${LOCATION_ID}`;
+
+/** The router's pathname, rendered outside `<Routes>`, so a redirect to the bare path is visible. */
+function PathnameProbe() {
+  const { pathname } = useLocation();
+  return <p data-testid="pathname">{pathname}</p>;
+}
+
+/** The view at the site route, with the `:tab` segment the site page would hand it. */
+function TabRoute() {
+  const { pathname } = useLocation();
+  const segment = pathname.slice(SITE_PATH.length + 1);
+  return (
+    <SiteDashboardView
+      slug={SLUG}
+      organizationId={ORG_PHE.id}
+      locationId={LOCATION_ID}
+      tab={segment === "" ? undefined : segment}
+    />
+  );
+}
+
+function renderAtTab(segment?: string): void {
+  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  render(
+    <QueryClientProvider client={queryClient}>
+      <MemoryRouter initialEntries={[segment === undefined ? SITE_PATH : `${SITE_PATH}/${segment}`]}>
+        <PathnameProbe />
+        <Routes>
+          <Route path="/control-room/site/:locationId/:tab?" element={<TabRoute />} />
+        </Routes>
+      </MemoryRouter>
+    </QueryClientProvider>,
+  );
+}
+
+function pathname(): string {
+  return screen.getByTestId("pathname").textContent ?? "";
+}
+
+/** T1 — two tabs render as links to their `:tab` paths, in `sortOrder` order. */
+export async function twoTabsRenderAsLinks(): Promise<void> {
+  stubRead(TABBED);
+  renderAtTab("sld");
+
+  const strip = await screen.findByRole("navigation", { name: "Dashboard tabs" });
+  const links = within(strip).getAllByRole("link");
+  expect(links.map((link) => [link.textContent, link.getAttribute("href")])).toEqual([
+    ["Overview", `${SITE_PATH}/overview`],
+    ["SLD", `${SITE_PATH}/sld`],
+  ]);
+}
+
+/** T2 — the selected tab's link carries `aria-current="page"`; the other does not. */
+export async function theSelectedTabIsCurrent(): Promise<void> {
+  stubRead(TABBED);
+  renderAtTab("sld");
+
+  const strip = await screen.findByRole("navigation", { name: "Dashboard tabs" });
+  expect(within(strip).getByRole("link", { name: "SLD" }).getAttribute("aria-current")).toBe("page");
+  expect(within(strip).getByRole("link", { name: "Overview" }).getAttribute("aria-current")).toBeNull();
+}
+
+/** T3 — `/sld` hands the canvas `tabKey: "sld"`, and stays at `/sld`. */
+export async function aTabSegmentSelectsThatTab(): Promise<void> {
+  stubRead(TABBED);
+  renderAtTab("sld");
+
+  const canvas = await screen.findByTestId("dashboard-live-canvas");
+  expect([canvas.getAttribute("data-tab-key"), pathname()]).toEqual(["sld", `${SITE_PATH}/sld`]);
+}
+
+/** T4 — the bare path selects the first tab by `sortOrder`, in place (no redirect). */
+export async function theBarePathSelectsTheFirstTab(): Promise<void> {
+  stubRead(TABBED);
+  renderAtTab();
+
+  const canvas = await screen.findByTestId("dashboard-live-canvas");
+  expect([canvas.getAttribute("data-tab-key"), pathname()]).toEqual(["overview", SITE_PATH]);
+}
+
+/** T5 — an unknown tab key redirects to the bare path, which shows the first tab. */
+export async function anUnknownTabRedirectsToTheBarePath(): Promise<void> {
+  stubRead(TABBED, TABBED);
+  renderAtTab("x");
+
+  await waitFor(() => expect(pathname()).toBe(SITE_PATH));
+  expect((await screen.findByTestId("dashboard-live-canvas")).getAttribute("data-tab-key")).toBe("overview");
+}
+
+/** T6 — a dashboard with no tabs renders as today: no strip, the whole canvas (no `tabKey`). */
+export async function aDashboardWithNoTabsRendersAsToday(): Promise<void> {
+  stubRead(DTO);
+  renderAtTab();
+
+  const canvas = await screen.findByTestId("dashboard-live-canvas");
+  expect(canvas.getAttribute("data-tab-key")).toBe("(all)");
+  expect(screen.queryByRole("navigation", { name: "Dashboard tabs" })).toBeNull();
+}
+
+/** T7 — a `:tab` segment on a dashboard with no tabs redirects to the bare path (the page no longer does). */
+export async function aTabOnAnUntabbedDashboardRedirects(): Promise<void> {
+  stubRead(DTO, DTO);
+  renderAtTab("sld");
+
+  await waitFor(() => expect(pathname()).toBe(SITE_PATH));
+  expect(await screen.findByTestId("dashboard-live-canvas")).toBeInTheDocument();
+}
+
+/** T8 — a pending read does not redirect an unknown tab: the decision waits for the data. */
+export async function aPendingReadDoesNotRedirect(): Promise<void> {
+  const read = stubRead("pending");
+  renderAtTab("x");
+
+  await waitFor(() => expect(read).toHaveBeenCalled());
+  expect(screen.getByRole("status").textContent).toMatch(/Loading dashboard/);
+  expect(pathname()).toBe(`${SITE_PATH}/x`);
 }
 
 /** Unmounts, restores the spies and fails the case if any read reached the network. */

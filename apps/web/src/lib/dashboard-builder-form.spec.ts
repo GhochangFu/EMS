@@ -656,8 +656,8 @@ export function runNonMimicHasNoScopeProblemTests(): void {
 /** `F3.73` plan D2 — the tabs the per-tab client rules read (the API's `tabRulesHold` and
  * `mimicGroupFor` mirrors). "overview" binds no group; "electrical" binds one. */
 const TABS_FOR_RULES = [
-  { key: "overview", assetGroupId: null },
-  { key: "electrical", assetGroupId: "33333333-3333-4333-8333-333333333333" },
+  { key: "overview", label: "Overview", assetGroupId: null },
+  { key: "electrical", label: "Electrical", assetGroupId: "33333333-3333-4333-8333-333333333333" },
 ] as const;
 
 const onTab = (tabKey: string, widgetType: Parameters<typeof blankDashboardWidgetRow>[0] = "value_tile") => ({
@@ -768,12 +768,15 @@ export function runSiteWidgetsOfferedOnEveryScopeTests(): void {
  * `mimicGroupFor` rule names the mimic alone). Mutation: apply the mimic rule to every type that
  * binds nothing => red. */
 export function runSiteWidgetsHaveNoScopeOrBindingProblemTests(): void {
+  // `F3.73` Task 5.2 — the card's target must name a tab of the dashboard (the API's
+  // `TAB_TARGET_UNKNOWN_MESSAGE`), so the fixture carries the `ups` tab and every row sits on it.
+  const tabs = [{ key: "ups", label: "UPS", assetGroupId: null }];
   for (const type of SITE_WIDGET_TYPES_UNDER_TEST) {
-    const row = blankDashboardWidgetRow(type);
+    const row = { ...blankDashboardWidgetRow(type), tabKey: "ups" };
     if (type === "module_summary_card") {
       row.config.targetTabKey = "ups";
     }
-    const problems = dashboardBuilderErrors([row], "location", []);
+    const problems = dashboardBuilderErrors([row], "location", tabs);
     assert(problems.length === 0, `a ${type} on a location dashboard is clean — got ${JSON.stringify(problems)}`);
   }
 }

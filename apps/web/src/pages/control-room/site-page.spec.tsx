@@ -69,11 +69,28 @@ vi.mock("../../components/control-room/smoc-site-view", () => ({
  * `F3.69` U3 — `SiteDashboardView` hosts the `dashboard` kind (plan decision
  * D4). The component owns its own read, its own states and the `Open in
  * Dashboards` link (`F3.69` U2 proves those); this suite asserts only which
- * slug and organization id the page hands it.
+ * slug and organization id the page hands it, and (`F3.73` D10, V7d) the site
+ * id and the raw `:tab` segment.
  */
 vi.mock("../../components/control-room/site-dashboard-view", () => ({
-  SiteDashboardView: ({ slug, organizationId }: { slug: string; organizationId: string }) => (
-    <div data-testid="site-dashboard-view" data-slug={slug} data-organization-id={organizationId} />
+  SiteDashboardView: ({
+    slug,
+    organizationId,
+    locationId,
+    tab,
+  }: {
+    slug: string;
+    organizationId: string;
+    locationId: string;
+    tab: string | undefined;
+  }) => (
+    <div
+      data-testid="site-dashboard-view"
+      data-slug={slug}
+      data-organization-id={organizationId}
+      data-location-id={locationId}
+      data-tab={tab ?? "(bare)"}
+    />
   ),
 }));
 
@@ -357,6 +374,22 @@ export async function dashboardRendersSiteDashboardView(): Promise<void> {
   const mount = await screen.findByTestId("site-dashboard-view");
   expect(mount.getAttribute("data-slug")).toBe("phe-lotapata");
   expect(mount.getAttribute("data-organization-id")).toBe(ORG_PHE.id);
+}
+
+/**
+ * V7d — `F3.73` plan D10: a `dashboard` site's `:tab` segment no longer redirects in the page;
+ * the page hands the raw segment and the site id to `SiteDashboardView`, which owns the decision.
+ */
+export async function aTabOnADashboardSiteDoesNotRedirect(): Promise<void> {
+  stubReads(PHE_SITES, view("p1", { kind: "dashboard", dashboardId: "d1", dashboardSlug: "phe-lotapata" }));
+  renderAt("p1", undefined, "sld");
+
+  const mount = await screen.findByTestId("site-dashboard-view");
+  expect([mount.getAttribute("data-tab"), mount.getAttribute("data-location-id"), pathname()]).toEqual([
+    "sld",
+    "p1",
+    "/control-room/site/p1/sld",
+  ]);
 }
 
 /** V7b — after V7: no interim text, and no real `/dashboards/` link outside the mock. */
