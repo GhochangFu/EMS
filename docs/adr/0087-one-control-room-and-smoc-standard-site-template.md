@@ -430,10 +430,12 @@ otherwise unchanged.
    replaces both the module cards and the critical-systems list on the stock
    Overview. `module_summary_card` stays in the widget vocabulary for admins.
    The alarm rail is the only alarm list on the Overview.
-5. **Tab status markers.** Every tab of a tabbed site dashboard shows a marker
-   in the tab's tone (the server's `tabTone`) and its count of active alarms, as
-   text as well as colour, in the site view, the viewer and the builder. The
-   data is the existing Overview read (`tabs[]`); there is no new endpoint.
+5. **Tab status markers.** Every group tab of a tabbed site dashboard shows a
+   marker in the tab's tone (the server's `tabTone`) and its count of active
+   alarms, as text as well as colour, in the site view, the viewer and the
+   builder. The Overview and "Assets & RTUs" have no status and no marker. A tab
+   whose members the caller cannot read shows "Outside scope", never a zero.
+   The data is the existing Overview read (`tabs[]`); there is no new endpoint.
 6. **A seventh widget icon, `offline`.** The closed icon vocabulary
    (`widgetIconSchema`) gains `offline`. It is widened together with the web
    icon map (`apps/web/src/components/widget-icon.tsx`) and the F3.35 tile-icon
@@ -448,9 +450,13 @@ otherwise unchanged.
    (`?wall=1&every=30&tab=<key>`); an unknown value falls back to the default.
 8. **No auth change for wall use.** When the API answers 401, wall mode shows a
    full-screen "Session ended — sign in" state, never the last data as if it
-   were live. After sign-in, the app returns to the same wall URL. A lost socket
-   or stale reads show in the top bar, by the existing stale rule. A long-lived
-   wall session is not in scope; it would need its own ADR.
+   were live. After sign-in, the app returns to the same wall URL: the web
+   keeps the return path (today `login-page.tsx` always goes to `/`). This is a
+   web-only change to the sign-in redirect. It accepts a same-origin path only
+   (no open redirect), and it does not change the token or the session
+   lifetime. A lost socket or stale reads show in the top bar, by the existing
+   stale rule. A long-lived wall session is not in scope; it would need its own
+   ADR.
 9. **v3 reaches existing copies only where they are untouched.** The seed
    upgrades a seeded copy's Overview tab to v3 only while that tab holds
    exactly the v2 content at the rects its own site-layout copy wrote,
@@ -463,9 +469,10 @@ otherwise unchanged.
    organization's newest `smoc-standard` row is the seed's own.
 10. **Order with `F3.74`.** `F3.74` (ADR 0088) also changes the stock
    template: its SLD tab gets the `lv_single_line` preset and a breaker
-   table, and the Overview gets a compact SLD mimic about 6 columns wide. The
-   two rows agree (2026-10-01, coordinated between the two sessions): `F3.77`
-   takes stock v3 and makes the seed-upgrade predicate general (ruling 9);
+   table, and the Overview gets a compact SLD mimic about 6 columns wide. ADR
+   0088 says only "a new published version", so the order is recorded here
+   (agreed 2026-10-01 with the `F3.74` work, which notes it in its own plan):
+   `F3.77` takes stock v3 and makes the seed-upgrade predicate general (ruling 9);
    `F3.74` rebases onto it and takes v4. The compact SLD goes in the row below
    the alarms rail and the Systems list, in the left half; in v4 the
    asset-class strip moves to the right half of that row. In v3 the strip
@@ -485,4 +492,5 @@ tabs; the mimic (`F3.74`, ADR 0088); `RSMOC-WC` (`F3.75`); the generated view.
 - A widened icon vocabulary is a contract change (ADR 0030); the web and the
   API deploy together.
 - Wall mode is a view of the existing site view. It adds no route, no API and
-  no role gate.
+  no role gate. The only sign-in change is the same-origin return path (ruling
+  8).

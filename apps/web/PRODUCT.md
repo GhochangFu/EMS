@@ -40,7 +40,7 @@ with the generated view as the fail-safe.
   stations), plus demo organizations. Seeded demo logins: `admin@bms.local`
   (global), `wc-admin@bms.local` (location), `wc-hvac-admin@bms.local` (group).
 - A site view: an Overview tab, one tab per asset domain at the site (Electrical,
-  UPS & battery, HVAC, Water, ENV, IT), and the fixed "Assets & RTUs" tab.
+  UPS & battery, HVAC, Water, Environment, IT), and the fixed "Assets & RTUs" tab.
 - Telemetry is live through a socket; alarms arrive on `/ws/alarms`.
 - A wall PC stays on for a whole shift. Sessions expire (OIDC / local auth); the
   owner ruled no auth change for wall use (2026-10-01).
@@ -72,8 +72,8 @@ with the generated view as the fail-safe.
 - Live seeded data on the shared stack: 7 seeded site layouts (CSMOC Gauteng and
   six PHEWB sites) with the simulator publishing control-room, HVAC, water and
   electrical points.
-- Impeccable critique of the site layout, 2026-10-01: 20/40
-  (`.impeccable/critique/2026-10-01T07-09-25Z__…site-dashboard-view-tsx-fcc5e58b.md`).
+- Impeccable critique of the site layout, 2026-10-01: 20/40 (a local run, not
+  committed: `.impeccable/critique/2026-10-01T07-09-25Z__…site-dashboard-view-tsx-fcc5e58b.md`).
 - No user research, no operator interviews and no customer quotes exist. Do not
   invent them.
 
