@@ -51,6 +51,8 @@ const unitNode = {
   w: 20,
   h: 25,
   z: 1,
+  fanOut: false,
+  isSource: false,
 };
 
 const panelNode = {
@@ -65,6 +67,8 @@ const panelNode = {
   w: 60,
   h: 60,
   z: 0,
+  fanOut: false,
+  isSource: false,
 };
 
 const geometry = {
@@ -294,8 +298,18 @@ export function layoutDtoParsesOrgSymbols(): void {
 export function layoutDtoRefusesAnAbsentOrgSymbols(): void {
   const parsed = mimicLayoutDtoSchema.safeParse({ ...storedLayout, symbolLibraries: ["core"], orgSymbols: undefined });
   assert(!parsed.success, "a DTO without orgSymbols parsed");
+  // Refused for the right field: a fixture that falls behind the node schema must not
+  // keep this claim green on an unrelated missing field.
+  assert(
+    !parsed.success && parsed.error.issues.every((issue) => issue.path[0] === "orgSymbols"),
+    `the DTO must be refused at orgSymbols only, got ${JSON.stringify(parsed.success ? [] : parsed.error.issues.map((i) => i.path))}`,
+  );
   const geometryParsed = mimicLayoutGeometrySchema.safeParse({ ...geometry, orgSymbols: undefined });
   assert(!geometryParsed.success, "a geometry without orgSymbols parsed");
+  assert(
+    !geometryParsed.success && geometryParsed.error.issues.every((issue) => issue.path[0] === "orgSymbols"),
+    `the geometry must be refused at orgSymbols only, got ${JSON.stringify(geometryParsed.success ? [] : geometryParsed.error.issues.map((i) => i.path))}`,
+  );
 }
 
 /** `symbolLibraries` accepts `org.<code>` beside the static codes, and not a symbol key. */

@@ -64,6 +64,9 @@ const TONE_RANK: Readonly<Record<PointKeyStateTone, number>> = { closed: 1, open
  * A breaker's state. Stale wins over every value (ADR 0088 decision 5's frame precedence starts at
  * offline); otherwise, among the points whose latest value matches a map row, the highest-ranked
  * tone wins whatever the point order; no match is `unknown`.
+ *
+ * The seeded map has a `breaker_trip` row for 1 only, so a breaker that reports `breaker_trip` 0
+ * and no `breaker_main` is `unknown`, not `closed`: "not tripped" says nothing about the contact.
  */
 export function deriveBreakerState(
   input: BreakerStateInput,

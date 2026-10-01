@@ -158,18 +158,18 @@ describe.skipIf(!connectionString)("E7.1b — AssetsAdminService under real RLS"
   });
 
   it("F3.74: a create carrying rating and tripCause reads both back", async () => {
-    const id = await assertCreateStoresRatingAndTripCause(
+    await assertCreateStoresRatingAndTripCause(
       { svc, ownerPool, organizationId, locationId, domain },
       jwt,
+      (id) => createdIds.push(id),
     );
-    createdIds.push(id);
   });
 
   it("F3.74: an update keeps an omitted rating/tripCause and clears an explicit null", async () => {
-    const id = await assertUpdateKeepsOmittedAndClearsNull(
+    await assertUpdateKeepsOmittedAndClearsNull(
       { svc, ownerPool, organizationId, locationId, domain },
       jwt,
+      (id) => createdIds.push(id),
     );
-    createdIds.push(id);
   });
 });

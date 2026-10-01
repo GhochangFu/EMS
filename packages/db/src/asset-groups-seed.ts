@@ -172,7 +172,7 @@ export function demoRoleForAsset(code: string, domain: string): string | null {
   }
   // `F3.74` D10 — the twelve control-room breakers, each one of five breaker roles, from a table
   // rather than the old `/^CR-Q\d+$/ → mcc` pattern. A thirteenth `CR-Q` code decides nothing.
-  const breakerRole = CR_BREAKER_ROLES[code];
+  const breakerRole = Object.hasOwn(CR_BREAKER_ROLES, code) ? CR_BREAKER_ROLES[code] : undefined;
   if (breakerRole !== undefined) {
     return breakerRole;
   }

@@ -114,7 +114,16 @@ export function energiseGraph(
     inbound.set(source, "energised");
     queue.push(source);
   }
+  // Each node's outbound energy only rises through three levels, so a settled walk pops at
+  // most sources + 3 × pipes entries. Past that bound the walk has a fault (a lost visited
+  // check): throw rather than spin, so a regression reddens a test instead of hanging CI.
+  const bound = graph.sources.length + 3 * graph.pipes.length + 1;
+  let steps = 0;
   while (queue.length > 0) {
+    steps += 1;
+    if (steps > bound) {
+      throw new Error("energiseGraph: the walk did not settle");
+    }
     const key = queue.shift() as string;
     const out = outbound(key);
     if (visited.get(key) === out) {

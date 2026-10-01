@@ -104,7 +104,8 @@ export async function assertRefusesCrossOrgRelocation(
 export async function assertCreateStoresRatingAndTripCause(
   ctx: SvcWithFixtures,
   jwt: JwtPayload,
-): Promise<string> {
+  track: (id: string) => void,
+): Promise<void> {
   const { svc, locationId, domain } = ctx;
   const created = await svc.create(jwt, {
     code: `f3-74-rating-${Date.now()}`,
@@ -116,18 +117,20 @@ export async function assertCreateStoresRatingAndTripCause(
     rating: "630A",
     tripCause: "overload",
   });
+  // Tracked before any assertion, so a failing claim still leaves no row behind.
+  track(created.id);
   expect(created.rating).toBe("630A");
   expect(created.tripCause).toBe("overload");
   const fetched = (await svc.list(jwt, locationId)).items.find((a) => a.id === created.id);
   expect(fetched?.rating).toBe("630A");
   expect(fetched?.tripCause).toBe("overload");
-  return created.id;
 }
 
 export async function assertUpdateKeepsOmittedAndClearsNull(
   ctx: SvcWithFixtures,
   jwt: JwtPayload,
-): Promise<string> {
+  track: (id: string) => void,
+): Promise<void> {
   const { svc, locationId, domain } = ctx;
   const created = await svc.create(jwt, {
     code: `f3-74-clear-${Date.now()}`,
@@ -139,6 +142,7 @@ export async function assertUpdateKeepsOmittedAndClearsNull(
     rating: "400A",
     tripCause: "earth fault",
   });
+  track(created.id);
   const renamed = await svc.update(jwt, created.id, { name: "F3.74 clear renamed" });
   expect(renamed.rating).toBe("400A");
   expect(renamed.tripCause).toBe("earth fault");
@@ -148,5 +152,4 @@ export async function assertUpdateKeepsOmittedAndClearsNull(
   const refetched = (await svc.list(jwt, locationId)).items.find((a) => a.id === created.id);
   expect(refetched?.tripCause).toBeNull();
   expect(refetched?.rating).toBe("400A");
-  return created.id;
 }
