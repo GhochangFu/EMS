@@ -3,6 +3,9 @@ import { describe, it } from "vitest";
 import {
   assertAssetScopedDashboardIsOutOfScope,
   assertGeneratedRowIsGenerated,
+  assertGeneratedRowWithSiteTemplateHasNoNotice,
+  assertNoRowWithSiteTemplateNotices,
+  assertNoRowWithoutSiteTemplateHasNoNotice,
   assertGroupScopedDashboardIsTheView,
   assertKnownBuiltinIsTheView,
   assertNoRowIsGeneratedWithoutNotice,
@@ -66,5 +69,17 @@ describe("F3.67 — resolveSiteControlRoomView", () => {
 
   it("P12 a row and dashboard that agree on an organization other than the site's answer dashboard_out_of_scope", () => {
     assertRowAndDashboardFromAnotherOrganizationAreOutOfScope();
+  });
+
+  it("P13 no row in an organization with a published site template answers no_site_layout", () => {
+    assertNoRowWithSiteTemplateNotices();
+  });
+
+  it("P14 no row and no published site template answers no notice", () => {
+    assertNoRowWithoutSiteTemplateHasNoNotice();
+  });
+
+  it("P15 a generated row answers no notice even with a published site template", () => {
+    assertGeneratedRowWithSiteTemplateHasNoNotice();
   });
 });

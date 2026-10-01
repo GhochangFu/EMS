@@ -50,6 +50,7 @@ import {
   seedMapLocations,
 } from "./eskom-locations-seed";
 import { seedSiteControlRoomViews } from "./site-control-room-views-seed";
+import { seedEskomSiteLayouts, seedPhewbSiteLayouts } from "./site-layout-seed";
 
 /**
  * The single `pnpm db:seed` entrypoint. It owns the pool and the call order and
@@ -330,6 +331,17 @@ async function main(): Promise<void> {
       // and the `energy_tariff_per_kwh` vocabulary row, which migration `0074`
       // writes — so `roles → migrate → seed` puts it there on every environment.
       await seedCalcParametersDemo(pool, eskomOrgId);
+      // `F3.73` plan D12 — LAST, so the order is one fact: the SMOC standard site layout copies
+      // bind the groups, domains and roles both `seedAssetGroups` passes wrote, the second water
+      // group `seedWaterMimicDemo` wrote, and the points every writer above wrote.
+      await seedEskomSiteLayouts(pool, eskomOrgId, mapLocationRows);
+    });
+
+    // `F3.73` plan D12 — PHEWB's copies, in their own bracket after ESKOM's, for the same reason
+    // the ESKOM call is last: after `seedPheCatalog`, PHEWB's `seedAssetGroups` pass and the
+    // point-key catalog.
+    await withOrganization(pool, phewbOrgId, async () => {
+      await seedPhewbSiteLayouts(pool, phewbOrgId, pheCatalog);
     });
 
     // ── Post-tenant ───────────────────────────────────────────────────────

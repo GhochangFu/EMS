@@ -17,6 +17,7 @@ import { ZodError } from "zod";
 import type { JwtPayload } from "@bms/shared";
 
 import { CurrentUser } from "../../auth/current-user.decorator";
+import { SiteLayoutService } from "../../control-room/site-layout.service";
 import { JwtAuthGuard } from "../../auth/jwt-auth.guard";
 import { idParamSchema, stockCodeParamSchema } from "../admin.schema";
 import { DashboardTemplatesInstantiateService } from "./dashboard-templates-instantiate.service";
@@ -52,6 +53,7 @@ export class DashboardTemplatesController {
     private readonly service: DashboardTemplatesService,
     private readonly stock: DashboardTemplatesStockService,
     private readonly instantiate: DashboardTemplatesInstantiateService,
+    private readonly siteLayout: SiteLayoutService,
   ) {}
 
   @Get()
@@ -197,5 +199,15 @@ export class DashboardTemplatesController {
       }
       throw err;
     }
+  }
+
+  /**
+   * `F3.73` plan D6 (ruling Q4) — the bulk backfill: copy this published site template onto
+   * every active site of its organization, one transaction per site; sites with a view row, an
+   * ambiguous tab, no assets or a taken slug are skipped and reported. No body.
+   */
+  @Post(":id/apply-to-sites")
+  async applyToSites(@Param("id") id: string, @CurrentUser() user: JwtPayload) {
+    return this.siteLayout.makeForOrganization(user, idParamSchema.parse(id));
   }
 }

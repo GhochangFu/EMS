@@ -4,6 +4,7 @@ import {
   sectionTemplateContentSchema,
   stockDashboardTemplateDtoSchema,
   SUSTAINABILITY_WATER_POINT_KEYS,
+  templateWidgets,
   WIDGET_POINT_CARDINALITY,
   WIDGET_SOURCE_CARDINALITY,
 } from "@bms/shared";
@@ -20,9 +21,10 @@ import { STOCK_DASHBOARD_TEMPLATE_CATALOG } from "./stock-catalog";
  *
  * **Two vocabularies are read out of their migrations AT TEST TIME, never
  * retyped.** `packages/db/drizzle/0056_dashboard_templates.sql` seeds the six
- * `bms.dashboard_sections` codes, while `bms.asset_roles` is seeded by TWO
+ * `bms.dashboard_sections` codes (`0095` a seventh, `site`), while `bms.asset_roles` is seeded by TWO
  * migrations since `F3.40` — `0051`'s 26 codes and `0060`'s `meter` and `pump`
- * — and `seededRoles()` takes the union. Parsing them here is what keeps this
+ * — and `seededRoles()` takes the union (five migrations since `F3.73`, and
+ * `seededSections()` two, `0056` and `0095`). Parsing them here is what keeps this
  * catalog and those seeded tables from drifting apart silently, the same
  * discipline `tests/f3.37-asset-role-vocabulary.test.ts` and
  * `tests/f3.35-metric-catalog-schema.test.ts` already hold for their own
@@ -69,15 +71,20 @@ function seededCodes(migration: string, table: string): string[] {
     throw new Error(`unterminated INSERT INTO bms.${table} — expected a trailing ON CONFLICT`);
   }
   const block = migration.slice(start, end);
-  const codes = [...block.matchAll(/\(\s*'([a-z0-9-]+)'/g)].map((m) => m[1] as string);
+  // `_` since `F3.73`: `0087` seeds `water_intake` and `water_storage`, which a hyphen-only class
+  // skipped, so a binding to either read as an unknown code.
+  const codes = [...block.matchAll(/\(\s*'([a-z0-9_-]+)'/g)].map((m) => m[1] as string);
   if (codes.length === 0) {
     throw new Error(`parsed zero codes out of the bms.${table} insert — the parser is broken`);
   }
   return codes;
 }
 
-const seededSections = (): string[] =>
-  seededCodes(read("packages/db/drizzle/0056_dashboard_templates.sql"), "dashboard_sections");
+const seededSections = (): string[] => [
+  ...seededCodes(read("packages/db/drizzle/0056_dashboard_templates.sql"), "dashboard_sections"),
+  // `F3.73` — the `site` section ("Site layouts"), for the SMOC standard site layout.
+  ...seededCodes(read("packages/db/drizzle/0095_site_template_target_and_group_domain.sql"), "dashboard_sections"),
+];
 
 /**
  * `bms.asset_roles` is seeded by MORE THAN ONE migration since `F3.40`, so this
@@ -89,6 +96,10 @@ const seededSections = (): string[] =>
 const seededRoles = (): string[] => [
   ...seededCodes(read("packages/db/drizzle/0051_asset_role_vocabulary.sql"), "asset_roles"),
   ...seededCodes(read("packages/db/drizzle/0060_asset_role_estate_shapes.sql"), "asset_roles"),
+  // `F3.73` — the water-train roles (`wtp`, `ro`, …) and the SMOC domain roles (`ups`, `battery`,
+  // `pdu`, `it-rack`, `crac`, `indoor-air`, …) the SMOC standard site layout binds.
+  ...seededCodes(read("packages/db/drizzle/0087_asset_roles_water_train.sql"), "asset_roles"),
+  ...seededCodes(read("packages/db/drizzle/0089_mimic_domain_symbols_and_roles.sql"), "asset_roles"),
   // `F3.73` — `leak-sensor` and `smoke-detector`. `seededCodes` cuts at the asset_roles INSERT's own
   // `ON CONFLICT`, so 0095's `dashboard_sections` row above it is not read as a role.
   ...seededCodes(read("packages/db/drizzle/0095_site_template_target_and_group_domain.sql"), "asset_roles"),
@@ -110,11 +121,12 @@ export function runStockCatalogTests(): void {
     );
   }
 
-  // ---- exactly seven entries, unique codes, the literal list itself --------
+  // ---- exactly eight entries, unique codes, the literal list itself --------
 
+  // Eight since `F3.73`: `smoc-standard`, the one `target: "site"` entry.
   assert(
-    STOCK_DASHBOARD_TEMPLATE_CATALOG.length === 7,
-    `expected exactly seven stock templates, found ${STOCK_DASHBOARD_TEMPLATE_CATALOG.length}`,
+    STOCK_DASHBOARD_TEMPLATE_CATALOG.length === 8,
+    `expected exactly eight stock templates, found ${STOCK_DASHBOARD_TEMPLATE_CATALOG.length}`,
   );
 
   const codes = STOCK_DASHBOARD_TEMPLATE_CATALOG.map((entry) => entry.code);
@@ -145,6 +157,7 @@ export function runStockCatalogTests(): void {
         "electrical-overview",
         "etp-overview",
         "hvac-overview",
+        "smoc-standard",
         "stp-overview",
         "sustainability-overview",
         "water-overview",
@@ -161,18 +174,20 @@ export function runStockCatalogTests(): void {
   for (const entry of STOCK_DASHBOARD_TEMPLATE_CATALOG) {
     assert(
       sections.includes(entry.section),
-      `${entry.code} uses section "${entry.section}", which migration 0056 does not seed ` +
+      `${entry.code} uses section "${entry.section}", which neither migration 0056 nor 0095 seeds ` +
         `(seeded: ${sections.join(", ")})`,
     );
 
-    for (const widget of entry.content.widgets) {
+    // `templateWidgets`, never `content.widgets`: a site entry's widgets are all in its tabs, so
+    // a walk over the top-level list would check none of them.
+    for (const widget of templateWidgets(entry.content)) {
       // ---- role and catalog-key membership ---------------------------------
 
       for (const binding of widget.bindings) {
         assert(
           roles.includes(binding.assetRoleCode),
           `${entry.code}/${widget.key} binds assetRoleCode "${binding.assetRoleCode}", which ` +
-            "neither migration 0051 nor 0060 seeds — this is exactly the plural/singular drift the " +
+            "no role migration read above seeds — this is exactly the plural/singular drift the " +
             "plan calls out (e.g. binding \"chillers\" against a vocabulary whose codes are " +
             "singular).",
         );
@@ -233,7 +248,7 @@ export function runStockCatalogTests(): void {
 
     // ---- no two widgets in one template share a key ----------------------
 
-    const keys = entry.content.widgets.map((widget) => widget.key);
+    const keys = templateWidgets(entry.content).map((widget) => widget.key);
     assert(
       new Set(keys).size === keys.length,
       `${entry.code} has a duplicate widget key in ${keys.join(",")}`,

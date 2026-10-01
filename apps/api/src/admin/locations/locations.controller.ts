@@ -20,6 +20,8 @@ import { CurrentUser } from "../../auth/current-user.decorator";
 import { JwtAuthGuard } from "../../auth/jwt-auth.guard";
 import { SiteControlRoomViewService } from "../../control-room/site-control-room-view.service";
 import { putSiteControlRoomViewBodySchema } from "../../control-room/site-control-room-view.schema";
+import { siteLayoutBodySchema } from "../../control-room/site-layout.schema";
+import { SiteLayoutService } from "../../control-room/site-layout.service";
 import { idParamSchema, parseActiveFilter } from "../admin.schema";
 import {
   createLocationBodySchema,
@@ -33,6 +35,7 @@ export class LocationsAdminController {
   constructor(
     private readonly service: LocationsAdminService,
     private readonly controlRoomView: SiteControlRoomViewService,
+    private readonly siteLayout: SiteLayoutService,
   ) {}
 
   @Get()
@@ -116,6 +119,29 @@ export class LocationsAdminController {
         idParamSchema.parse(id),
         putSiteControlRoomViewBodySchema.parse(body),
       );
+    } catch (err) {
+      if (err instanceof ZodError) {
+        throw new BadRequestException(err.flatten());
+      }
+      throw err;
+    }
+  }
+
+  /**
+   * `F3.73` plan D6 (ruling Q4) — "Make site layout": copy the organization's published site
+   * template onto this site and point its Control Room view at the copy. 409 with the candidates
+   * when a tab has two groups to choose from; the caller retries with `tabGroups`.
+   */
+  @Post(":id/site-layout")
+  async makeSiteLayout(
+    @Param("id") id: string,
+    @Body() body: unknown,
+    @CurrentUser() user: JwtPayload,
+  ) {
+    try {
+      const locationId = idParamSchema.parse(id);
+      const parsed = siteLayoutBodySchema.parse(body ?? {});
+      return await this.siteLayout.makeForSite(user, { locationId, ...parsed });
     } catch (err) {
       if (err instanceof ZodError) {
         throw new BadRequestException(err.flatten());

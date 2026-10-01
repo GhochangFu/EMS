@@ -2,9 +2,14 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
 import { expect } from "vitest";
+import { ZodError } from "zod";
 
+import type { JwtPayload } from "@bms/shared";
+
+import type { SiteLayoutService } from "../../control-room/site-layout.service";
 import { repoRoot } from "../../testing/repo-root";
 import { decoratorAt, methodBody } from "../../testing/source-scan";
+import { DashboardTemplatesController } from "./dashboard-templates.controller";
 
 /**
  * `F3.36` Part E3 — the one thing about this controller that is invisible in
@@ -87,4 +92,59 @@ export function runDashboardTemplatesControllerTests(): void {
     importStock,
     "importStock must parse :code with stockCodeParamSchema before using it",
   ).toContain("stockCodeParamSchema.parse(code)");
+}
+
+/**
+ * `F3.73` plan Task 4.2 — the `POST /admin/dashboard-templates/:id/apply-to-sites` route claims:
+ * the decorator on `applyToSites`, and the parsed id reaching `makeForOrganization` with the
+ * caller (a direct call with a recording stub; the bulk itself is the integration spec's S7).
+ */
+const BULK_JWT: JwtPayload = {
+  sub: "00000000-0000-4000-8000-000000000373",
+  email: "admin@bms.local",
+  name: "spec",
+  role: "admin",
+};
+
+function bulkController(): { controller: DashboardTemplatesController; calls: unknown[][] } {
+  const calls: unknown[][] = [];
+  const siteLayout = {
+    makeForOrganization: async (...args: unknown[]) => {
+      calls.push(args);
+      return { made: [], skipped: [] };
+    },
+  } as unknown as SiteLayoutService;
+  const controller = new DashboardTemplatesController({} as never, {} as never, {} as never, siteLayout);
+  return { controller, calls };
+}
+
+/** The decorator sits on `applyToSites`, with no other decorator between them. */
+export function assertApplyToSitesRouteIsDeclared(): void {
+  const source = readFileSync(CONTROLLER, "utf8");
+  const literal = '@Post(":id/apply-to-sites")';
+  const at = decoratorAt(source, literal);
+  expect(at, `the controller must declare ${literal}`).toBeGreaterThan(-1);
+  const between = source.slice(at + literal.length, source.indexOf("async applyToSites(", at));
+  expect(between.trim(), "the route decorator must sit directly on applyToSites").toBe("");
+}
+
+/** The path id reaches `makeForOrganization` with the caller, and its answer is the response. */
+export async function assertApplyToSitesCallsTheBulk(): Promise<void> {
+  const { controller, calls } = bulkController();
+  const id = "22222222-2222-4222-8222-222222222222";
+  expect(await controller.applyToSites(id, BULK_JWT)).toEqual({ made: [], skipped: [] });
+  expect(calls).toEqual([[BULK_JWT, id]]);
+}
+
+/** A non-uuid id is a `ZodError` (the global filter's 400) and the bulk never runs. */
+export async function assertApplyToSitesRefusesABadId(): Promise<void> {
+  const { controller, calls } = bulkController();
+  let thrown: unknown;
+  try {
+    await controller.applyToSites("not-a-uuid", BULK_JWT);
+  } catch (err) {
+    thrown = err;
+  }
+  expect(thrown).toBeInstanceOf(ZodError);
+  expect(calls).toEqual([]);
 }

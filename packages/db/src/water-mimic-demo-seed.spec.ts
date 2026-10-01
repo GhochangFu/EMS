@@ -5,6 +5,7 @@ import { DEMO_WATER_ASSET_CODES } from "./water-plant-demo-seed";
 import type pg from "pg";
 
 import {
+  DEMO_MIMIC_GROUP_UPSERT_SQL,
   DEMO_MIMIC_ROLE_BY_ASSET_CODE,
   DEMO_MIMIC_WIDGET_CONFIG,
   DEMO_MIMIC_WIDGET_RESIZE_SQL,
@@ -99,4 +100,20 @@ export async function assertTheSeedResizesItsOwnDashboardsWidget(): Promise<void
   await seedWaterMimicDemo(pool, "org-id");
   const resizes = calls.filter((c) => c.sql === DEMO_MIMIC_WIDGET_RESIZE_SQL);
   expect(resizes.map((c) => c.values)).toEqual([["org-id", "dashboard-id"]]);
+}
+
+/**
+ * `F3.73` plan D12 — the demo group is a `water` domain group, so the site-layout planner can
+ * bind the SMOC standard `water` tab at CSMOC Gauteng (with `water`, a second candidate that
+ * the seed's explicit choice and the tab's `groupCode` decide between). The domain is filled
+ * while NULL and never overwritten, the `COALESCE` rule this file already applies to the role.
+ */
+export function assertTheDemoGroupIsAWaterDomainGroup(): void {
+  const sql = DEMO_MIMIC_GROUP_UPSERT_SQL.replace(/\s+/g, " ");
+  expect(sql, "the insert must write the water domain").toContain(
+    "(location_id, code, name, description, organization_id, domain) VALUES ($1, $2, $3, $4, $5, 'water')",
+  );
+  expect(sql, "a re-seed must fill a NULL domain and keep any other").toContain(
+    "domain = COALESCE(bms.asset_groups.domain, EXCLUDED.domain)",
+  );
 }

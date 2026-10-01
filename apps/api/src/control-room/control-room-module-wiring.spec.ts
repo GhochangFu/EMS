@@ -6,8 +6,9 @@ import { expect } from "vitest";
 
 import { AccessControlModule } from "../auth/access-control.module";
 import { DatabaseModule } from "../database/database.module";
-import { FLEET_POOL } from "../database/database.tokens";
+import { FLEET_DRIZZLE, FLEET_POOL, TENANT_DRIZZLE } from "../database/database.tokens";
 import { AdminModule } from "../admin/admin.module";
+import { SITE_TEMPLATE_ARM, type SiteTemplateArm } from "../admin/dashboard-templates/dashboard-templates-instantiate.service";
 import { LocationsAdminController } from "../admin/locations/locations.controller";
 import { MasterDataAuditService } from "../admin/master-data-audit.service";
 import { AppModule } from "../app.module";
@@ -16,6 +17,7 @@ import { ControlRoomModule } from "./control-room.module";
 import { GeneratedSiteViewController } from "./generated-site-view.controller";
 import { GeneratedSiteViewService } from "./generated-site-view.service";
 import { SiteControlRoomViewService } from "./site-control-room-view.service";
+import { SiteLayoutService } from "./site-layout.service";
 import { SiteViewController } from "./site-view.controller";
 
 /**
@@ -152,7 +154,7 @@ export function assertAppModuleImportsControlRoomModule(): void {
 /** Positive control: the scan finds the token that would be missing without the AdminModule import. */
 export function assertScanFindsTheServiceOnLocationsAdminController(): void {
   const classes = classTypedParams("apps/api/src/admin/locations", "locations.controller.ts", "LocationsAdminController");
-  expect(classes).toEqual(["LocationsAdminService", "SiteControlRoomViewService"]);
+  expect(classes).toEqual(["LocationsAdminService", "SiteControlRoomViewService", "SiteLayoutService"]);
 }
 
 export function assertLocationsAdminControllerDepsResolveThroughAdmin(): void {
@@ -213,4 +215,71 @@ export function assertGeneratedSiteViewServiceDepsResolveWithinControlRoom(): vo
   expect(classes).toEqual(["AccessControlService"]);
   const missingClasses = classes.filter((cls) => !byName.has(cls));
   expect(missingClasses, "classes Nest would fail to resolve at boot").toEqual([]);
+}
+
+/**
+ * `F3.73` plan D6 — `ControlRoomModule` provides AND exports `SiteLayoutService`: the three
+ * `AdminModule` doors (the location route, the `instantiate` arm, the bulk route) inject it.
+ */
+export function assertControlRoomModuleProvidesAndExportsSiteLayout(): void {
+  expect(moduleList(ControlRoomModule, "providers").map(tokenOf)).toContain(SiteLayoutService);
+  expect(moduleList(ControlRoomModule, "exports").map(tokenOf)).toContain(SiteLayoutService);
+}
+
+/** `F3.73` — `SiteLayoutService`'s own dependencies resolve inside `ControlRoomModule`'s scope. */
+export function assertSiteLayoutServiceDepsResolveWithinControlRoom(): void {
+  const { byIdentity, byName } = controlRoomResolvableTokens();
+  const tokens = injectedTokens(SiteLayoutService).map((d) => d.param);
+  expect(tokens).toEqual(expect.arrayContaining([FLEET_DRIZZLE, TENANT_DRIZZLE]));
+  expect(tokens.filter((t) => !byIdentity.has(t)).map(nameOf), "@Inject tokens Nest would fail to resolve").toEqual([]);
+  const classes = classTypedParams("apps/api/src/control-room", "site-layout.service.ts", "SiteLayoutService");
+  expect(classes).toEqual(["AccessControlService", "MasterDataAuditService"]);
+  expect(classes.filter((cls) => !byName.has(cls)), "classes Nest would fail to resolve at boot").toEqual([]);
+}
+
+/** `F3.73` — `DashboardTemplatesController` (the bulk route) resolves `SiteLayoutService` through `AdminModule`. */
+export function assertDashboardTemplatesControllerDepsResolveThroughAdmin(): void {
+  const { byName } = adminResolvableTokens();
+  const classes = classTypedParams(
+    "apps/api/src/admin/dashboard-templates",
+    "dashboard-templates.controller.ts",
+    "DashboardTemplatesController",
+  );
+  expect(classes).toContain("SiteLayoutService");
+  expect(classes.filter((cls) => !byName.has(cls)), "classes Nest would fail to resolve at boot").toEqual([]);
+}
+
+type FactoryProvider = { provide: unknown; useFactory: (...deps: unknown[]) => unknown; inject?: unknown[] };
+
+function siteArmProvider(): FactoryProvider | undefined {
+  return moduleList(AdminModule, "providers").find(
+    (entry): entry is FactoryProvider =>
+      typeof entry === "object" && entry !== null && (entry as { provide?: unknown }).provide === SITE_TEMPLATE_ARM,
+  );
+}
+
+/**
+ * `F3.73` plan D6 — `AdminModule` fills the `SITE_TEMPLATE_ARM` seam from `SiteLayoutService`.
+ * The seam is `@Optional()`, so a missing provider leaves the arm answering 501 and fails nothing
+ * at boot; every integration case builds the instantiate service by hand. This is the gate.
+ */
+export function assertAdminModuleProvidesTheSiteArm(): void {
+  const provider = siteArmProvider();
+  expect(provider, "AdminModule must provide SITE_TEMPLATE_ARM").toBeDefined();
+  expect(provider?.inject).toEqual([SiteLayoutService]);
+  expect(adminResolvableTokens().byIdentity.has(SiteLayoutService), "SiteLayoutService resolvable in AdminModule").toBe(
+    true,
+  );
+}
+
+/** `F3.73` — the arm the factory builds IS the copy action: it forwards the location, the template and the choice. */
+export async function assertTheSiteArmDelegatesToMakeForSite(): Promise<void> {
+  const calls: unknown[][] = [];
+  const fake = { makeForSite: async (...args: unknown[]) => (calls.push(args), { made: true }) };
+  const arm = siteArmProvider()?.useFactory(fake) as SiteTemplateArm;
+  const jwt = { sub: "s", email: "e@x", name: "n", role: "admin" } as const;
+  const LOCATION = "11111111-1111-4111-8111-111111111111";
+  const GROUP = "22222222-2222-4222-8222-222222222222";
+  await arm(jwt, { id: "t-1", organizationId: "o-1" }, { locationId: LOCATION, tabGroups: { sld: GROUP } });
+  expect(calls).toEqual([[jwt, { locationId: LOCATION, templateId: "t-1", tabGroups: { sld: GROUP } }]]);
 }

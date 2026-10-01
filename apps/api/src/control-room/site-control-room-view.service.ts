@@ -5,9 +5,16 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { and, eq } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 
-import { assetGroups, dashboards, locations, siteControlRoomViews, users } from "@bms/db";
+import {
+  assetGroups,
+  dashboards,
+  dashboardTemplates,
+  locations,
+  siteControlRoomViews,
+  users,
+} from "@bms/db";
 import type { BmsDb } from "@bms/db";
 import {
   builtinSiteViewKeySchema,
@@ -172,13 +179,38 @@ export class SiteControlRoomViewService {
       siteGroupIds = await this.siteGroupIds(locationId);
     }
 
+    // `F3.73` plan D7 — read only when there is no row: the resolver consults it for no other case.
+    const hasPublishedSiteTemplate =
+      row === undefined ? await this.hasPublishedSiteTemplate(location.organizationId) : false;
+
     return resolveSiteControlRoomView(
       { locationId, organizationId: location.organizationId },
       row ?? null,
       dashboard,
       siteGroupIds,
       builtinSiteViewKeySchema.options,
+      hasPublishedSiteTemplate,
     );
+  }
+
+  /**
+   * `F3.73` plan D7 — whether the site's organization holds a published `target = 'site'`
+   * template. On `fleetDb` (BYPASSRLS), so the `organization_id` predicate is the only thing
+   * that keeps another organization's template from raising this site's notice; the
+   * integration spec proves it with a template published in another organization.
+   */
+  private async hasPublishedSiteTemplate(organizationId: string): Promise<boolean> {
+    const [row] = await this.fleetDb
+      .select({ n: sql<number>`count(*)::int` })
+      .from(dashboardTemplates)
+      .where(
+        and(
+          eq(dashboardTemplates.organizationId, organizationId),
+          eq(dashboardTemplates.target, "site"),
+          eq(dashboardTemplates.status, "published"),
+        ),
+      );
+    return (row?.n ?? 0) > 0;
   }
 
   private async assertCanManageLocation(jwt: JwtPayload, locationId: string): Promise<void> {

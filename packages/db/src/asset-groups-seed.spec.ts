@@ -1,8 +1,10 @@
 import { expect } from "vitest";
 
 import {
+  ASSET_GROUP_UPSERT_SQL,
   BACKFILL_ASSET_LOCATIONS_SQL,
   demoGroupCodesForAsset,
+  demoGroupDomain,
   demoGroupName,
   demoRoleForAsset,
 } from "./asset-groups-seed";
@@ -129,19 +131,17 @@ export function assertEskomReadingsAreUnchanged(): void {
 }
 
 /**
- * A non-electrical asset takes no role, whatever its code says.
+ * An electrical code takes no role in another domain.
  *
- * The domain guard is the first line of the function and the HVAC paragraph of
- * its docblock depends on it: `CR-HVAC-1` decides nothing between `chiller` and
- * `ahu-fcu`, so it must stay NULL for an admin to fill. Pinned here because the
- * two new branches are prefix tests that would otherwise be reachable from any
- * domain if the guard were ever moved below them.
+ * `F3.73` gave the `hvac`, `it` and `environment` domains their own branches
+ * (plan D12), so "a non-electrical asset takes no role" is no longer the rule.
+ * What stays is that an ELECTRICAL reading never reaches another domain: the
+ * electrical branches are prefix and substring tests that would be reachable from
+ * any domain if the guard were ever moved below them.
  */
-export function assertOnlyElectricalAssetsTakeARole(): void {
+export function assertAnElectricalReadingStaysInItsDomain(): void {
   expect(demoRoleForAsset("CR-XFMR-100KVA", "hvac")).toBeNull();
   expect(demoRoleForAsset("PHE-MFM-000000001", "environment")).toBeNull();
-  expect(demoRoleForAsset("CR-HVAC-1", "hvac")).toBeNull();
-  expect(demoRoleForAsset("CR-CRAC-101", "hvac")).toBeNull();
 }
 
 /**
@@ -280,5 +280,91 @@ export function assertTheBackfillFillsOnlyANullLocation(): void {
   expect(sql, "the backfill must not move an asset that has a location").not.toContain("<>");
   expect(sql, "only the oldest location of a name is a candidate").toContain(
     "SELECT DISTINCT ON (name) id, name FROM bms.locations ORDER BY name, created_at, id",
+  );
+}
+
+/**
+ * `F3.73` plan D12 — the SMOC roles, by domain and then by code (ruling Q6b: "the seed gives
+ * roles to UPS, battery, HVAC, IT and environment assets").
+ *
+ * The domain-keyed branches run BEFORE the electrical guard and the two code-keyed branches
+ * AFTER it. So an environment sensor named for the room it sits in (`CR-ENV-UPS-ROOM`,
+ * `CR-ENV-BATTERY-ROOM`) is `indoor-air`, never `ups` or `battery`: moving the UPS/BATT
+ * branches to the top of the function reddens those two claims.
+ */
+export function assertTheSmocRolesFollowTheDomainThenTheCode(): void {
+  const table: ReadonlyArray<readonly [string, string, string]> = [
+    ["CR-UPS-1", "electrical", "ups"],
+    ["CR-UPS-OUT-BUS", "electrical", "ups"],
+    ["UPS-A", "electrical", "ups"],
+    ["CR-BATT-1", "electrical", "battery"],
+    ["GP-CR-BATT-1", "electrical", "battery"],
+    ["CR-HVAC-1", "hvac", "crac"],
+    ["GP-CR-HVAC-1", "hvac", "crac"],
+    ["CH-CRAC-101", "hvac", "crac"],
+    ["CR-NET-RACK-PDU-A", "it", "pdu"],
+    ["CR-VW-RACK-PDU-B", "it", "pdu"],
+    ["GP-CR-NET-RACK", "it", "it-rack"],
+    ["CR-VW-SRV-RACK", "it", "it-rack"],
+    ["CR-ENV-OP-CONSOLE", "environment", "indoor-air"],
+    ["GP-CR-ENV-ROOM", "environment", "indoor-air"],
+    ["CR-ENV-UPS-ROOM", "environment", "indoor-air"],
+    ["CR-ENV-BATTERY-ROOM", "environment", "indoor-air"],
+  ];
+  for (const [code, domain, role] of table) {
+    expect(demoRoleForAsset(code, domain), `${code} (${domain})`).toBe(role);
+  }
+}
+
+/** `F3.73` OQ6 ruling — the leak sensors take `leak-sensor` (migration `0095`). */
+export function assertALeakSensorTakesLeakSensor(): void {
+  expect(demoRoleForAsset("CR-LEAK-01", "environment")).toBe("leak-sensor");
+  expect(demoRoleForAsset("CR-LEAK-04", "environment")).toBe("leak-sensor");
+}
+
+/** `F3.73` OQ6 ruling — the smoke detectors take `smoke-detector` (migration `0095`). */
+export function assertASmokeDetectorTakesSmokeDetector(): void {
+  expect(demoRoleForAsset("CR-SMOKE-01", "environment")).toBe("smoke-detector");
+  expect(demoRoleForAsset("CR-SMOKE-04", "environment")).toBe("smoke-detector");
+}
+
+/**
+ * The environment branches read the CODE, not the domain: a PHE gateway is `environment`
+ * domain and stays unroled (the `F3.41` ruling). A branch keyed on `domain === "environment"`
+ * alone would role it `indoor-air`, and this claim reddens.
+ */
+export function assertThePheGatewayStaysUnroledInItsOwnDomain(): void {
+  expect(demoRoleForAsset("PHE-AIRSP1051M-000000003", "environment")).toBeNull();
+  expect(demoRoleForAsset("CR-SOMETHING", "hvac")).toBeNull();
+  expect(demoRoleForAsset("CR-SOMETHING", "it")).toBeNull();
+}
+
+/**
+ * `F3.73` plan D12 — the domain each demo group carries, which the site-layout planner reads
+ * to bind a tab. `IT_LOAD` is a formula group (`F2.8`), not a domain group, so it stays NULL;
+ * a copy that bound it would give the `it` tab two candidates.
+ */
+export function assertEachDemoGroupCarriesItsDomain(): void {
+  expect(demoGroupDomain("IT_LOAD")).toBeNull();
+  expect(demoGroupDomain("ups-battery")).toBe("electrical");
+  expect(demoGroupDomain("it-rack")).toBe("it");
+  expect(demoGroupDomain("electrical")).toBe("electrical");
+  expect(demoGroupDomain("hvac")).toBe("hvac");
+  expect(demoGroupDomain("environment")).toBe("environment");
+  expect(demoGroupDomain("water")).toBe("water");
+}
+
+/**
+ * The upsert fills a NULL `domain` and never overwrites one: an administrator may re-file a
+ * group, and the next boot must not revert it (the `COALESCE` role rule, `F3.37`). The value
+ * passes through `bms.asset_domains`, so a code that is no domain writes NULL, not an FK error.
+ */
+export function assertTheGroupUpsertFillsOnlyANullDomain(): void {
+  const sql = ASSET_GROUP_UPSERT_SQL.replace(/\s+/g, " ");
+  expect(sql, "the domain must be written only while it is NULL").toContain(
+    "domain = COALESCE(bms.asset_groups.domain, EXCLUDED.domain)",
+  );
+  expect(sql, "the domain must be a live asset_domains code").toContain(
+    "(SELECT d.code FROM bms.asset_domains d WHERE d.code = $6)",
   );
 }

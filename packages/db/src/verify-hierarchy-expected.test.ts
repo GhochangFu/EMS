@@ -1,6 +1,9 @@
 import { describe, it } from "vitest";
 
 import {
+  assertOneEskomSiteLayoutLocation,
+  assertSeventyTwoSmocRoledAssets,
+  assertSixPheSiteLayoutSlugs,
   assertAnEmptyDerivedListIsRefused,
   assertCombinedAndEskomOnlyRowsAgree,
   assertElevenEskomLocations,
@@ -67,5 +70,17 @@ describe("F4.169/F4.170 addendum — the boot gate's expectations derive from th
 
   it("refuses an empty derived list, naming it", () => {
     assertAnEmptyDerivedListIsRefused();
+  });
+
+  it("F3.73 derives one ESKOM site-layout location, CSMOC Gauteng, not RSMOC-WC", () => {
+    assertOneEskomSiteLayoutLocation();
+  });
+
+  it("F3.73 derives six PHE site-layout station slugs", () => {
+    assertSixPheSiteLayoutSlugs();
+  });
+
+  it("F3.73 derives seventy-two SMOC-roled ESKOM assets", () => {
+    assertSeventyTwoSmocRoledAssets();
   });
 });

@@ -6,6 +6,7 @@ import { DatabaseModule } from "../database/database.module";
 import { GeneratedSiteViewController } from "./generated-site-view.controller";
 import { GeneratedSiteViewService } from "./generated-site-view.service";
 import { SiteControlRoomViewService } from "./site-control-room-view.service";
+import { SiteLayoutService } from "./site-layout.service";
 import { SiteViewController } from "./site-view.controller";
 
 /**
@@ -36,7 +37,9 @@ import { SiteViewController } from "./site-view.controller";
   // read that selects it. `GeneratedSiteViewService` is not exported — only
   // its own controller injects it.
   controllers: [SiteViewController, GeneratedSiteViewController],
-  providers: [SiteControlRoomViewService, MasterDataAuditService, GeneratedSiteViewService],
-  exports: [SiteControlRoomViewService],
+  // `F3.73` plan D6 — `SiteLayoutService` (the site-layout copy action) is exported for the
+  // three `AdminModule` doors: the location route, the `instantiate` site arm and the bulk route.
+  providers: [SiteControlRoomViewService, SiteLayoutService, MasterDataAuditService, GeneratedSiteViewService],
+  exports: [SiteControlRoomViewService, SiteLayoutService],
 })
 export class ControlRoomModule {}

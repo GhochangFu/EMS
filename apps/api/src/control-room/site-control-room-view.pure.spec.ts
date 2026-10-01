@@ -49,7 +49,7 @@ function dashboard(scope: Partial<DashboardScopeRow>): DashboardScopeRow {
 
 /** P1 — no row is the generated view, and carries no notice. */
 export function assertNoRowIsGeneratedWithoutNotice(): void {
-  expect(resolveSiteControlRoomView(SITE_AT_ORG, null, null, NO_GROUPS, KNOWN)).toEqual({
+  expect(resolveSiteControlRoomView(SITE_AT_ORG, null, null, NO_GROUPS, KNOWN, false)).toEqual({
     locationId: SITE,
     kind: "generated",
     dashboardId: null,
@@ -62,7 +62,7 @@ export function assertNoRowIsGeneratedWithoutNotice(): void {
 /** P2 — an explicit `generated` row answers the same as no row. */
 export function assertGeneratedRowIsGenerated(): void {
   const row: SiteViewRow = { organizationId: ORG, kind: "generated", dashboardId: null, builtinKey: null };
-  expect(resolveSiteControlRoomView(SITE_AT_ORG, row, null, NO_GROUPS, KNOWN)).toEqual({
+  expect(resolveSiteControlRoomView(SITE_AT_ORG, row, null, NO_GROUPS, KNOWN, false)).toEqual({
     locationId: SITE,
     kind: "generated",
     dashboardId: null,
@@ -75,7 +75,7 @@ export function assertGeneratedRowIsGenerated(): void {
 /** P3 — a dashboard scoped to the site itself is the view, with its slug. */
 export function assertSiteScopedDashboardIsTheView(): void {
   expect(
-    resolveSiteControlRoomView(SITE_AT_ORG, dashboardRow, dashboard({ locationId: SITE }), NO_GROUPS, KNOWN),
+    resolveSiteControlRoomView(SITE_AT_ORG, dashboardRow, dashboard({ locationId: SITE }), NO_GROUPS, KNOWN, false),
   ).toEqual({
     locationId: SITE,
     kind: "dashboard",
@@ -94,6 +94,7 @@ export function assertGroupScopedDashboardIsTheView(): void {
     dashboard({ assetGroupId: SITE_GROUP }),
     new Set([SITE_GROUP]),
     KNOWN,
+    false,
   );
   expect(resolved.kind).toBe("dashboard");
   expect(resolved.notice).toBeNull();
@@ -102,7 +103,7 @@ export function assertGroupScopedDashboardIsTheView(): void {
 /** P5 — the chosen dashboard is gone: the generated view, with `dashboard_removed`. */
 export function assertRemovedDashboardFailsSafe(): void {
   const removed: SiteViewRow = { ...dashboardRow, dashboardId: null };
-  expect(resolveSiteControlRoomView(SITE_AT_ORG, removed, null, NO_GROUPS, KNOWN)).toEqual({
+  expect(resolveSiteControlRoomView(SITE_AT_ORG, removed, null, NO_GROUPS, KNOWN, false)).toEqual({
     locationId: SITE,
     kind: "generated",
     dashboardId: null,
@@ -120,6 +121,7 @@ export function assertRescopedDashboardIsOutOfScope(): void {
     dashboard({ locationId: OTHER_SITE }),
     NO_GROUPS,
     KNOWN,
+    false,
   );
   expect(resolved.kind).toBe("generated");
   expect(resolved.notice).toBe("dashboard_out_of_scope");
@@ -137,6 +139,7 @@ export function assertOtherOrganizationDashboardIsOutOfScope(): void {
     dashboard({ organizationId: OTHER_ORG, locationId: SITE }),
     NO_GROUPS,
     KNOWN,
+    false,
   );
   expect(resolved.kind).toBe("generated");
   expect(resolved.notice).toBe("dashboard_out_of_scope");
@@ -155,6 +158,7 @@ export function assertAssetScopedDashboardIsOutOfScope(): void {
     dashboard({ assetId: ASSET }),
     new Set([SITE_GROUP]),
     KNOWN,
+    false,
   );
   expect(resolved.kind).toBe("generated");
   expect(resolved.notice).toBe("dashboard_out_of_scope");
@@ -164,7 +168,7 @@ const builtinRow: SiteViewRow = { organizationId: ORG, kind: "builtin", dashboar
 
 /** P9 — a known built-in key is the view. */
 export function assertKnownBuiltinIsTheView(): void {
-  expect(resolveSiteControlRoomView(SITE_AT_ORG, builtinRow, null, NO_GROUPS, KNOWN)).toEqual({
+  expect(resolveSiteControlRoomView(SITE_AT_ORG, builtinRow, null, NO_GROUPS, KNOWN, false)).toEqual({
     locationId: SITE,
     kind: "builtin",
     dashboardId: null,
@@ -176,7 +180,7 @@ export function assertKnownBuiltinIsTheView(): void {
 
 /** P10 — a key this build does not ship: the generated view, with `builtin_unknown`. */
 export function assertUnknownBuiltinFailsSafe(): void {
-  expect(resolveSiteControlRoomView(SITE_AT_ORG, builtinRow, null, NO_GROUPS, [])).toEqual({
+  expect(resolveSiteControlRoomView(SITE_AT_ORG, builtinRow, null, NO_GROUPS, [], false)).toEqual({
     locationId: SITE,
     kind: "generated",
     dashboardId: null,
@@ -199,6 +203,7 @@ export function assertRowFromAnotherOrganizationIsOutOfScope(): void {
     dashboard({ locationId: SITE }),
     NO_GROUPS,
     KNOWN,
+    false,
   );
   expect(resolved.kind).toBe("generated");
   expect(resolved.notice).toBe("dashboard_out_of_scope");
@@ -216,7 +221,40 @@ export function assertRowAndDashboardFromAnotherOrganizationAreOutOfScope(): voi
     dashboard({ organizationId: OTHER_ORG, locationId: SITE }),
     NO_GROUPS,
     KNOWN,
+    false,
   );
   expect(resolved.kind).toBe("generated");
   expect(resolved.notice).toBe("dashboard_out_of_scope");
+}
+
+/**
+ * P13 (`F3.73` plan D7, ruling Q5) — a site with no row, in an organization that holds a
+ * published site template, answers the generated view with `no_site_layout`: the notice that
+ * carries the "Make site layout" action.
+ */
+export function assertNoRowWithSiteTemplateNotices(): void {
+  expect(resolveSiteControlRoomView(SITE_AT_ORG, null, null, NO_GROUPS, KNOWN, true)).toEqual({
+    locationId: SITE,
+    kind: "generated",
+    dashboardId: null,
+    dashboardSlug: null,
+    builtinKey: null,
+    notice: "no_site_layout",
+  });
+}
+
+/** P14 (`F3.73` plan D7) — no row and no published site template: no notice (P1's case, stated). */
+export function assertNoRowWithoutSiteTemplateHasNoNotice(): void {
+  expect(resolveSiteControlRoomView(SITE_AT_ORG, null, null, NO_GROUPS, KNOWN, false).notice).toBeNull();
+}
+
+/**
+ * P15 (`F3.73` plan D7) — an explicit `generated` row is a choice an administrator made, so a
+ * published site template does not turn it into `no_site_layout`. Only `row === null` does.
+ */
+export function assertGeneratedRowWithSiteTemplateHasNoNotice(): void {
+  const row: SiteViewRow = { organizationId: ORG, kind: "generated", dashboardId: null, builtinKey: null };
+  const resolved = resolveSiteControlRoomView(SITE_AT_ORG, row, null, NO_GROUPS, KNOWN, true);
+  expect(resolved.kind).toBe("generated");
+  expect(resolved.notice).toBeNull();
 }

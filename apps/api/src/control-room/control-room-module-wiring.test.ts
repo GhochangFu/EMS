@@ -2,14 +2,19 @@ import { describe, it } from "vitest";
 
 import {
   assertAdminModuleImportsControlRoomModule,
+  assertAdminModuleProvidesTheSiteArm,
   assertAppModuleImportsControlRoomModule,
   assertControlRoomModuleDeclaresItsMembers,
+  assertControlRoomModuleProvidesAndExportsSiteLayout,
+  assertDashboardTemplatesControllerDepsResolveThroughAdmin,
   assertGeneratedSiteViewControllerDepsResolveWithinControlRoom,
   assertGeneratedSiteViewServiceDepsResolveWithinControlRoom,
   assertLocationsAdminControllerDepsResolveThroughAdmin,
   assertScanFindsTheServiceOnLocationsAdminController,
   assertServiceDepsResolveWithinControlRoom,
+  assertSiteLayoutServiceDepsResolveWithinControlRoom,
   assertSiteViewControllerDepsResolveWithinControlRoom,
+  assertTheSiteArmDelegatesToMakeForSite,
 } from "./control-room-module-wiring.spec";
 
 /**
@@ -52,5 +57,25 @@ describe("F3.67 — ControlRoomModule wiring", () => {
 
   it("F3.68 GeneratedSiteViewService's own dependencies resolve inside ControlRoomModule's scope", () => {
     assertGeneratedSiteViewServiceDepsResolveWithinControlRoom();
+  });
+
+  it("F3.73 provides and exports SiteLayoutService", () => {
+    assertControlRoomModuleProvidesAndExportsSiteLayout();
+  });
+
+  it("F3.73 SiteLayoutService's own dependencies resolve inside ControlRoomModule's scope", () => {
+    assertSiteLayoutServiceDepsResolveWithinControlRoom();
+  });
+
+  it("F3.73 DashboardTemplatesController's dependencies resolve inside AdminModule's scope", () => {
+    assertDashboardTemplatesControllerDepsResolveThroughAdmin();
+  });
+
+  it("F3.73 AdminModule fills the SITE_TEMPLATE_ARM seam from SiteLayoutService", () => {
+    assertAdminModuleProvidesTheSiteArm();
+  });
+
+  it("F3.73 the site arm forwards the location, the template and the choice to makeForSite", async () => {
+    await assertTheSiteArmDelegatesToMakeForSite();
   });
 });

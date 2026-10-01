@@ -93,6 +93,10 @@ function generated(
  *   here, so a key the database holds and this build does not ship fails safe.
  * - Any other stored `kind` → `generated`, no notice (the CHECK forbids it; the
  *   resolver still does not trust it).
+ * - `F3.73` plan D7 — no row at all, in an organization that holds a published
+ *   site template (`hasPublishedSiteTemplate`) → `generated` + `no_site_layout`.
+ *   Only `row === null`: an explicit `generated` row is an administrator's
+ *   choice, and the notice would offer to overwrite it.
  */
 export function resolveSiteControlRoomView(
   site: { locationId: string; organizationId: string },
@@ -100,10 +104,11 @@ export function resolveSiteControlRoomView(
   dashboard: DashboardScopeRow | null,
   siteGroupIds: ReadonlySet<string>,
   knownBuiltinKeys: readonly BuiltinSiteViewKey[],
+  hasPublishedSiteTemplate: boolean,
 ): ResolvedSiteControlRoomViewDto {
   const { locationId } = site;
   if (row === null) {
-    return generated(locationId, null);
+    return generated(locationId, hasPublishedSiteTemplate ? "no_site_layout" : null);
   }
 
   if (row.kind === "dashboard") {

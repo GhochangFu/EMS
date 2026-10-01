@@ -2,6 +2,12 @@ import { describe, it } from "vitest";
 
 import {
   assertAnUndecidedCodeStaysNull,
+  assertALeakSensorTakesLeakSensor,
+  assertASmokeDetectorTakesSmokeDetector,
+  assertEachDemoGroupCarriesItsDomain,
+  assertTheGroupUpsertFillsOnlyANullDomain,
+  assertThePheGatewayStaysUnroledInItsOwnDomain,
+  assertTheSmocRolesFollowTheDomainThenTheCode,
   assertAWaterAssetJoinsTheWaterGroup,
   assertAWaterAssetTakesNoTrainRole,
   assertTheWaterGroupIsNamedWater,
@@ -9,7 +15,7 @@ import {
   assertEskomReadingsAreUnchanged,
   assertEveryItAssetJoinsItRackAndItLoad,
   assertNoPheDeviceJoinsItLoad,
-  assertOnlyElectricalAssetsTakeARole,
+  assertAnElectricalReadingStaysInItsDomain,
   assertTheGatewayTakesNoRole,
   assertTheBackfillFillsOnlyANullLocation,
   assertTheRulingMapsEveryPheDevice,
@@ -39,8 +45,8 @@ describe("F3.41 — demoRoleForAsset carries the owner's meter/pump ruling", () 
     assertEskomReadingsAreUnchanged();
   });
 
-  it("gives a non-electrical asset no role, whatever its code says", () => {
-    assertOnlyElectricalAssetsTakeARole();
+  it("keeps an electrical reading out of every other domain", () => {
+    assertAnElectricalReadingStaysInItsDomain();
   });
 
   it("leaves a code that decides nothing at NULL", () => {
@@ -69,6 +75,34 @@ describe("E4.3 U11 — demoGroupCodesForAsset files a water asset under water", 
 
   it("gives a water asset no train role", () => {
     assertAWaterAssetTakesNoTrainRole();
+  });
+});
+
+describe("F3.73 D12 — demoRoleForAsset gives the SMOC roles", () => {
+  it("roles UPS, battery, HVAC, IT and environment assets by domain, then by code", () => {
+    assertTheSmocRolesFollowTheDomainThenTheCode();
+  });
+
+  it("gives a leak sensor leak-sensor", () => {
+    assertALeakSensorTakesLeakSensor();
+  });
+
+  it("gives a smoke detector smoke-detector", () => {
+    assertASmokeDetectorTakesSmokeDetector();
+  });
+
+  it("leaves the PHE gateway unroled in its own environment domain", () => {
+    assertThePheGatewayStaysUnroledInItsOwnDomain();
+  });
+});
+
+describe("F3.73 D12 — seedAssetGroups writes each group's domain", () => {
+  it("maps every demo group code to its domain, and IT_LOAD to none", () => {
+    assertEachDemoGroupCarriesItsDomain();
+  });
+
+  it("fills a NULL domain from a live asset_domains code and never overwrites one", () => {
+    assertTheGroupUpsertFillsOnlyANullDomain();
   });
 });
 

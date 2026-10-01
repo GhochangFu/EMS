@@ -5,6 +5,7 @@ import {
   IONX_ORG_CODE,
   IONX_ASSET_CODES,
   IONX_EXPECTED,
+  IONX_GROUP_UPSERT_SQL,
   IONX_ROLE_BY_ASSET_CODE,
   IONX_WIDGET_CONFIG,
   ionxAssetCodeFor,
@@ -125,4 +126,19 @@ export async function assertTheCommandResizesItsOwnDashboardsWidget(): Promise<v
   await expect(runIonExchangeDemo(pool, pool)).rejects.toBe(stop);
   const resizes = calls.filter((c) => c.sql === DEMO_MIMIC_WIDGET_RESIZE_SQL);
   expect(resizes.map((c) => c.values)).toEqual([["org-id", "dashboard-id"]]);
+}
+
+/**
+ * `F3.73` plan D12 — the IONX group is a `water` domain group, so a site-layout copy at the
+ * demo plant binds its `water` tab. The upsert changes a row only while its domain is NULL, so
+ * a re-run still writes 0 rows and an administrator's re-filing stands.
+ */
+export function assertTheIonxGroupIsAWaterDomainGroup(): void {
+  const sql = IONX_GROUP_UPSERT_SQL.replace(/\s+/g, " ");
+  expect(sql, "the insert must write the water domain").toContain(
+    "(location_id, code, name, description, organization_id, domain) VALUES ($1, $2, $3, $4, $5, 'water')",
+  );
+  expect(sql, "an existing row must gain the domain only while it has none").toContain(
+    "ON CONFLICT (location_id, code) DO UPDATE SET domain = EXCLUDED.domain WHERE bms.asset_groups.domain IS NULL",
+  );
 }

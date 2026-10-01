@@ -7,6 +7,7 @@ import {
   assertTheResizeSetsTenRows,
   assertTheSeedResizesItsOwnDashboardsWidget,
   assertTheWidgetConfigParsesUnderMimicConfigSchema,
+  assertTheDemoGroupIsAWaterDomainGroup,
 } from "./water-mimic-demo-seed.spec";
 
 describe("F3.32 v1 — the demo water plant mimic seed's role map", () => {
@@ -20,6 +21,12 @@ describe("F3.32 v1 — the demo water plant mimic seed's role map", () => {
 
   it("the widget config parses under mimicConfigSchema", () => {
     assertTheWidgetConfigParsesUnderMimicConfigSchema();
+  });
+});
+
+describe("F3.73 D12 — the demo group carries the water domain", () => {
+  it("writes domain water and fills only a NULL one", () => {
+    assertTheDemoGroupIsAWaterDomainGroup();
   });
 });
 

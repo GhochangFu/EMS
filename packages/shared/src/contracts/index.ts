@@ -51,6 +51,7 @@ export * from "./point-metadata";
 export * from "./reports";
 export * from "./seeded-rules";
 export * from "./site-control-room-views";
+export * from "./site-layout";
 export * from "./site-widgets";
 export * from "./system-status";
 export * from "./telemetry-entry";

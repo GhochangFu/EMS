@@ -36,7 +36,13 @@ export type SiteViewCtx = {
   phewbId: string;
   eskomId: string;
   pheAdminUserId: string;
-  created: { locations: string[]; groups: string[]; dashboards: string[] };
+  created: {
+    locations: string[];
+    groups: string[];
+    dashboards: string[];
+    organizations: string[];
+    templates: string[];
+  };
 };
 
 const SYNTHETIC_SUB = "00000000-0000-4000-8000-000000000367";
@@ -466,4 +472,50 @@ export async function assertSiteMovedToAnotherOrganizationIsOutOfScope(ctx: Site
   const after = await ctx.svc.resolve(admin(), site);
   expect(after.kind).toBe("generated");
   expect(after.notice).toBe("dashboard_out_of_scope");
+}
+
+/** A fresh organization no seed touches, registered — `F3.73` S19 needs one with no template. */
+async function newOrganization(ctx: SiteViewCtx, suffix: string): Promise<string> {
+  const { rows } = await ctx.fleetPool.query<{ id: string }>(
+    `INSERT INTO bms.organizations (code, name, currency, active) VALUES ($1, $2, 'ZAR', false) RETURNING id`,
+    [`F367-${ctx.run}-${suffix}`, `F3.67 ${suffix}`],
+  );
+  const id = rows[0]?.id as string;
+  ctx.created.organizations.push(id);
+  return id;
+}
+
+/** A published `target = 'site'` template under `org`, registered. The count reads no content. */
+async function newPublishedSiteTemplate(ctx: SiteViewCtx, org: string, suffix: string): Promise<string> {
+  const { rows } = await ctx.fleetPool.query<{ id: string }>(
+    `INSERT INTO bms.dashboard_templates
+       (organization_id, code, version, name, section, status, content, target, published_at)
+     VALUES ($1, $2, 1, $3, 'site', 'published', '{"widgets":[],"tabs":[]}'::jsonb, 'site', now())
+     RETURNING id`,
+    [org, `f367-${ctx.run}-${suffix}`.toLowerCase(), `F3.67 ${suffix}`],
+  );
+  const id = rows[0]?.id as string;
+  ctx.created.templates.push(id);
+  return id;
+}
+
+/**
+ * S19 (`F3.73` plan D7) — the `no_site_layout` count carries the site's organization. A site
+ * with no row, in a fixture organization that holds no template, answers no notice although
+ * ESKOM holds a published site template; once its own organization publishes one, the same
+ * site answers `no_site_layout` (the positive leg, so the first is not a count that never fires).
+ * A fixture organization, not PHEWB or ESKOM: the seed publishes site templates in both.
+ * Mutation: drop the `organization_id` predicate from `hasPublishedSiteTemplate` → red.
+ */
+export async function assertSiteTemplateCountIsPerOrganization(ctx: SiteViewCtx): Promise<void> {
+  const org = await newOrganization(ctx, "s19");
+  const site = await newSite(ctx, org, "s19");
+  await newPublishedSiteTemplate(ctx, ctx.eskomId, "s19-eskom");
+
+  const before = await ctx.svc.resolve(admin(), site);
+  expect(before.kind).toBe("generated");
+  expect(before.notice, "another organization's site template must not raise this site's notice").toBeNull();
+
+  await newPublishedSiteTemplate(ctx, org, "s19-own");
+  expect((await ctx.svc.resolve(admin(), site)).notice).toBe("no_site_layout");
 }

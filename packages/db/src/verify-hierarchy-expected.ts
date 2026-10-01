@@ -17,6 +17,22 @@ import {
   type PhePilotExpectedRows,
 } from "./phe-pilot-seed";
 import { PUE_DEMO_INCOMER_ROLE } from "./pue-demo-seed";
+import { eskomSiteLayoutIdentities, pheSiteLayoutStations } from "./site-layout-seed";
+
+/**
+ * `F3.73` plan D12 — the roles `demoRoleForAsset` gives the UPS, battery, HVAC, IT and
+ * environment assets (ruling Q6b), which the SMOC standard layout's tiles bind.
+ */
+export const SMOC_SEED_ROLES: readonly string[] = [
+  "ups",
+  "battery",
+  "crac",
+  "pdu",
+  "it-rack",
+  "indoor-air",
+  "leak-sensor",
+  "smoke-detector",
+];
 
 /**
  * `F4.169` / `F4.170` addendum — the rows the seed owns, as the boot gate
@@ -52,6 +68,12 @@ export type HierarchyExpectations = {
   readonly eskomItCodes: readonly string[];
   /** What `seedPheCatalog` writes for PHEWB. */
   readonly phe: PhePilotExpectedRows;
+  /** `F3.73` — the ESKOM identities whose row carries a seeded site-layout view (CSMOC Gauteng). */
+  readonly siteLayoutEskomLocations: readonly SeedLocationIdentity[];
+  /** `F3.73` — the PHE catalog station slugs whose row carries a seeded site-layout view. */
+  readonly siteLayoutPheSlugs: readonly string[];
+  /** `F3.73` — the catalog assets the seed gives one of {@link SMOC_SEED_ROLES}. */
+  readonly eskomSmocRoledCodes: readonly string[];
 };
 
 /**
@@ -91,6 +113,11 @@ export function hierarchyExpectations(pheCatalog: PheCatalogFile = loadPheCatalo
       .map((asset) => asset.code),
     eskomItCodes: eskomCatalog.filter((asset) => asset.domain === "it").map((asset) => asset.code),
     phe: phePilotExpectedRows(pheCatalog),
+    siteLayoutEskomLocations: eskomSiteLayoutIdentities(mapLocationRows),
+    siteLayoutPheSlugs: pheSiteLayoutStations(pheCatalog).map((station) => station.slug),
+    eskomSmocRoledCodes: eskomCatalog
+      .filter((asset) => SMOC_SEED_ROLES.includes(demoRoleForAsset(asset.code, asset.domain) ?? ""))
+      .map((asset) => asset.code),
   };
   const lists: ReadonlyArray<readonly [string, readonly unknown[]]> = [
     ["organizationCodes", expected.organizationCodes],
@@ -103,6 +130,9 @@ export function hierarchyExpectations(pheCatalog: PheCatalogFile = loadPheCatalo
     ["phe.points", expected.phe.points],
     ["phe.electricalAssetCodes", expected.phe.electricalAssetCodes],
     ["phe.legacyLocationSlugs", expected.phe.legacyLocationSlugs],
+    ["siteLayoutEskomLocations", expected.siteLayoutEskomLocations],
+    ["siteLayoutPheSlugs", expected.siteLayoutPheSlugs],
+    ["eskomSmocRoledCodes", expected.eskomSmocRoledCodes],
   ];
   const empty = lists.filter(([, list]) => list.length === 0).map(([name]) => name);
   if (empty.length > 0) {
