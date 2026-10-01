@@ -200,6 +200,52 @@ export async function theLegendNamesNormalAndOffline(): Promise<void> {
   expect(screen.getByText("Offline")).toBeInTheDocument();
 }
 
+/**
+ * `F3.77` plan D2 — the legend is one 64 px row: no `WidgetFrame`, whose chrome (`p-3`, the `h3`,
+ * `mb-2`) takes about 48.5 px. The title is still drawn, inline: the adjacent positive.
+ * Mutation: wrap the body in `WidgetFrame` again → the heading is back → red.
+ */
+export async function theLegendDrawsNoHeadingButItsTitleInline(): Promise<void> {
+  render(wrap(<StateLegendWidget title="Legend" status="ready" />));
+  await screen.findByText("Normal");
+  expect(screen.getByText("Legend")).toBeInTheDocument();
+  expect(screen.queryByRole("heading")).not.toBeInTheDocument();
+}
+
+/** `F3.77` plan D2 — the title and the pills share one clipped row that fills its cell. */
+export async function theLegendTitleAndPillsShareOneRow(): Promise<void> {
+  render(wrap(<StateLegendWidget title="Legend" status="ready" />));
+  await screen.findByText("Normal");
+  const row = screen.getByText("Legend").parentElement;
+  expect(row).not.toBeNull();
+  expect(screen.getByLabelText("State legend").parentElement?.parentElement).toBe(row);
+  for (const name of ["flex", "h-full", "items-center", "overflow-hidden", "surface-raised"]) {
+    expect(row, `the legend row lacks ${name}`).toHaveClass(name);
+  }
+}
+
+/**
+ * `F3.77` review — a long title gives way to the pills, not the other way round. The title is
+ * `varchar(255)`; with `shrink-0` it kept its full width, `truncate` never applied, and the row's
+ * `overflow-hidden` clipped the trailing pills (Offline first). jsdom has no layout, so this pins
+ * the flex contract that decides it: the title may shrink (`min-w-0`, no `shrink-0`) and
+ * truncates; the pills' wrapper may not shrink, so the pills stay on one line at full width.
+ * Mutation: put `shrink-0` back on the title → red.
+ */
+export async function aLongLegendTitleTruncatesAndKeepsThePills(): Promise<void> {
+  const long = "Severity and connection state legend - north campus";
+  render(wrap(<StateLegendWidget title={long} status="ready" />));
+  await screen.findByText("Normal");
+  const title = screen.getByText(long);
+  const row = title.parentElement;
+  expect(within(row as HTMLElement).getByText("Offline")).toBeInTheDocument();
+  expect(title).toHaveClass("min-w-0", "truncate");
+  expect(title).not.toHaveClass("shrink-0");
+  const pills = screen.getByLabelText("State legend").parentElement;
+  expect(pills?.parentElement).toBe(row);
+  expect(pills).toHaveClass("shrink-0");
+}
+
 export function theStripDrawsOnePillPerRole(): void {
   render(wrap(<AssetClassStripWidget title="Classes" status="ready" data={response()} />));
   expect(screen.getByText("UPS 4 · 2 Critical · 1 Offline")).toBeInTheDocument();

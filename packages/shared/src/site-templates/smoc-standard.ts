@@ -5,6 +5,8 @@ import type { SectionTemplateWidget, StockDashboardTemplateDto } from "../index"
 /**
  * `F3.73` plan D8 — the SMOC standard site layout: one stock template with `target: "site"`,
  * copied onto a location as one tabbed dashboard (ADR 0087 decision 11, rulings Q3a and Q6b).
+ * Stock version 3 (`F3.77`, ADR 0087 Amendment 3) gives the Overview to alarms: the four problem
+ * tiles, the alarm rail beside the systems list, the class strip, and a 1-row legend.
  *
  * **Why it lives in `packages/shared` and not beside the other stock entries.** Two readers need
  * it: `apps/api`'s stock catalog (the import route) and `packages/db`'s site-layout seed (the
@@ -15,7 +17,8 @@ import type { SectionTemplateWidget, StockDashboardTemplateDto } from "../index"
  *
  * **Tabs, in order**: `overview` (no group), `sld`, `ups`, `hvac`, `it`, `env`, `water`. The copy
  * action binds each domain tab to one asset group of the site (`site-layout-planner.ts`) and
- * omits a tab whose domain the site does not hold, dropping the Overview card that opens it.
+ * omits a tab whose domain the site does not hold. The v3 Overview holds no module card; the
+ * planner's card-drop rule stays for an admin's site template.
  * `groupCode` names the seeded group a tab prefers when a site holds two of one domain (OQ1):
  * `electrical` and `ups-battery` share the electrical domain, `water` and `demo-water-plant`
  * the water domain.
@@ -30,25 +33,37 @@ import type { SectionTemplateWidget, StockDashboardTemplateDto } from "../index"
 
 /**
  * The canvas literals, read by every widget below rather than restated per widget. Stock
- * version 2 compacts each height to its content (v1: tile 4, strip 3, card 4, mimic 10, lower
- * 8). The seed moves a seeded copy still at the v1 rects to these
- * (`packages/db/src/site-layout-seed-upgrade.ts`), so a change here is a stock version bump.
+ * version 2 compacted each height to its content (v1: tile 4, strip 3, card 4, mimic 10, lower
+ * 8); version 3 reshaped the Overview only. The seed moves a seeded copy still at an older
+ * stock shape to these (`packages/db/src/site-layout-seed-upgrade.ts`), so a change here is a
+ * stock version bump.
  *
  * **The floor is the view canvas's 64 px row** (`VIEW_ROW_MIN_PX` in `dashboard-canvas.tsx`),
- * not the builder's 72 px one: `n` rows are `64n + 8(n - 1)` px. The legend keeps v1's 2 rows
- * (136 px): `WidgetFrame`'s chrome takes about 48.5 px, so 1 row would leave its pills about
- * 15 px. A value tile takes 2 rows (136 px): `KpiTile` with a hint and the ADR 0027 stale line
- * is about 132 px and is not clipped to its cell.
+ * not the builder's 72 px one: `n` rows are `64n + 8(n - 1)` px. The legend takes 1 row
+ * (64 px) since v3: it draws without `WidgetFrame`, as one row of an inline title and the pills
+ * (`state-legend-widget.tsx`). A value tile takes 2 rows (136 px): `KpiTile` with a hint and
+ * the ADR 0027 stale line is about 132 px and is not clipped to its cell.
  */
-const LEGEND_H = 2;
+const LEGEND_H = 1;
 const TILE_W = 3;
 const TILE_H = 2;
 const STRIP_H = 2;
-const CARD_W = 2;
-const CARD_H = 3;
 const MIMIC_H = 7;
 const LOWER_H = 5;
 const HALF_W = DASHBOARD_GRID.columns / 2;
+
+/**
+ * The v3 Overview (`F3.77` plan D1): the tiles at y0, the alarm rail (`RAIL_W` wide) beside the
+ * systems list in the rest of the row, then the class strip at `STRIP_Y` and the legend under it.
+ *
+ * **The v4 slot (ADR 0087 Amendment 3 ruling 10) is the row at `STRIP_Y`.** Stock v4 (`F3.74`,
+ * ADR 0088) puts the compact electrical diagram at `(0, STRIP_Y)`, `HALF_W` wide, and moves the
+ * strip to `(HALF_W, STRIP_Y)`, `HALF_W` wide. Nothing else on the Overview moves for it.
+ */
+const RAIL_W = 8;
+const RAIL_H = 7;
+const STRIP_Y = TILE_H + RAIL_H;
+const LEGEND_Y = STRIP_Y + STRIP_H;
 
 type Widget = SectionTemplateWidget;
 
@@ -136,22 +151,6 @@ function domainTabBody(
   ];
 }
 
-/** One Overview card that opens tab `targetTabKey`, in slot `slot` of the card row. */
-function moduleCard(targetTabKey: string, title: string, slot: number): Widget {
-  return {
-    key: `overview-${targetTabKey}-card`,
-    title,
-    gridX: slot * CARD_W,
-    gridY: LEGEND_H + TILE_H + STRIP_H,
-    gridW: CARD_W,
-    gridH: CARD_H,
-    bindings: [],
-    sources: [],
-    widgetType: "module_summary_card",
-    config: { targetTabKey },
-  };
-}
-
 /** The Overview's four site tiles — catalog sources over the site scope, no role (ruling Q6b). */
 function siteTile(
   key: string,
@@ -164,7 +163,7 @@ function siteTile(
     key,
     title,
     gridX: slot * TILE_W,
-    gridY: LEGEND_H,
+    gridY: 0,
     gridW: TILE_W,
     gridH: TILE_H,
     bindings: [],
@@ -174,55 +173,23 @@ function siteTile(
   };
 }
 
-const LOWER_OVERVIEW_Y = LEGEND_H + TILE_H + STRIP_H + CARD_H;
-
 const OVERVIEW_WIDGETS: Widget[] = [
-  {
-    key: "overview-legend",
-    title: null,
-    gridX: 0,
-    gridY: 0,
-    gridW: DASHBOARD_GRID.columns,
-    gridH: LEGEND_H,
-    bindings: [],
-    sources: [],
-    widgetType: "state_legend",
-    config: {},
-  },
   siteTile("overview-alarms-tile", "Active alarms", 0,
     { catalogKey: "alarms.active.count", params: {}, sortOrder: 0 }, { icon: "alert" }),
-  siteTile("overview-load-tile", "Total load", 1,
+  siteTile("overview-offline-tile", "Offline assets", 1,
+    { catalogKey: "assets.offline.count", params: {}, sortOrder: 0 }, { icon: "offline" }),
+  siteTile("overview-load-tile", "Total load", 2,
     { catalogKey: "sustainability.total", params: { pointKey: "kw", aggregate: "sum" }, sortOrder: 0 },
     { icon: "bolt", unit: "kW" }),
-  siteTile("overview-health-tile", "Asset health", 2,
+  siteTile("overview-health-tile", "Asset health", 3,
     { catalogKey: "assets.health.score", params: {}, sortOrder: 0 }, { icon: "gauge" }),
-  siteTile("overview-offline-tile", "Offline assets", 3,
-    { catalogKey: "assets.offline.count", params: {}, sortOrder: 0 }, { icon: "alert" }),
-  {
-    key: "overview-class-strip",
-    title: null,
-    gridX: 0,
-    gridY: LEGEND_H + TILE_H,
-    gridW: DASHBOARD_GRID.columns,
-    gridH: STRIP_H,
-    bindings: [],
-    sources: [],
-    widgetType: "asset_class_strip",
-    config: {},
-  },
-  moduleCard("sld", "Electrical", 0),
-  moduleCard("ups", "UPS & battery", 1),
-  moduleCard("hvac", "HVAC", 2),
-  moduleCard("it", "IT", 3),
-  moduleCard("env", "Environment", 4),
-  moduleCard("water", "Water", 5),
   {
     key: "overview-alarms-rail",
     title: "Active alarms",
     gridX: 0,
-    gridY: LOWER_OVERVIEW_Y,
-    gridW: HALF_W,
-    gridH: LOWER_H,
+    gridY: TILE_H,
+    gridW: RAIL_W,
+    gridH: RAIL_H,
     bindings: [],
     sources: [],
     widgetType: "active_alarms_rail",
@@ -231,13 +198,37 @@ const OVERVIEW_WIDGETS: Widget[] = [
   {
     key: "overview-critical-systems",
     title: "Critical systems",
-    gridX: HALF_W,
-    gridY: LOWER_OVERVIEW_Y,
-    gridW: HALF_W,
-    gridH: LOWER_H,
+    gridX: RAIL_W,
+    gridY: TILE_H,
+    gridW: DASHBOARD_GRID.columns - RAIL_W,
+    gridH: RAIL_H,
     bindings: [],
     sources: [],
     widgetType: "critical_systems_list",
+    config: {},
+  },
+  {
+    key: "overview-class-strip",
+    title: null,
+    gridX: 0,
+    gridY: STRIP_Y,
+    gridW: DASHBOARD_GRID.columns,
+    gridH: STRIP_H,
+    bindings: [],
+    sources: [],
+    widgetType: "asset_class_strip",
+    config: {},
+  },
+  {
+    key: "overview-legend",
+    title: null,
+    gridX: 0,
+    gridY: LEGEND_Y,
+    gridW: DASHBOARD_GRID.columns,
+    gridH: LEGEND_H,
+    bindings: [],
+    sources: [],
+    widgetType: "state_legend",
     config: {},
   },
 ];
@@ -304,8 +295,8 @@ export const SMOC_STANDARD_SITE_TEMPLATE = {
   target: "site",
   description:
     "One tab per domain present at the site — electrical, UPS & battery, HVAC, IT, environment, " +
-    "water — behind an Overview of site metrics, module cards and critical systems.",
-  stockVersion: 2,
+    "water — behind an Overview of active alarms, site metrics and critical systems.",
+  stockVersion: 3,
   content: {
     widgets: [],
     tabs: [

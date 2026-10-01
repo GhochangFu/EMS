@@ -178,7 +178,7 @@ export async function caught(promise: Promise<unknown>): Promise<unknown> {
 /**
  * S1 — a site with no group and electrical + environment assets: one group per domain (code =
  * domain, `domain` set, every member's role NULL), a template-stamped site dashboard with three
- * tabs, every widget on a tab, the Overview holding exactly the `sld` and `env` cards, the view
+ * tabs, every widget on a tab, the v3 Overview holding no card and one systems list, the view
  * row `kind = 'dashboard'`, and the three audit actions.
  */
 export async function assertZeroGroupSiteGetsGroupsAndACopy(ctx: SiteLayoutCtx): Promise<void> {
@@ -223,14 +223,21 @@ export async function assertZeroGroupSiteGetsGroupsAndACopy(ctx: SiteLayoutCtx):
     ]),
     "every widget of a copy sits on a tab",
   ).toBe(0);
-  const { rows: cards } = await ctx.fleetPool.query<{ target: string }>(
-    `SELECT w.config->>'targetTabKey' AS target FROM bms.dashboard_widgets w
-       JOIN bms.dashboard_tabs t ON t.id = w.tab_id
-      WHERE w.dashboard_id = $1 AND t.tab_key = 'overview' AND w.widget_type = 'module_summary_card'
-      ORDER BY 1`,
+  // `F3.77` plan D1: the v3 Overview holds no module card, and one Critical systems list 4×7 at
+  // x8 beside the 8-wide rail. The list row is the adjacent positive for the card absence.
+  const { rows: overview } = await ctx.fleetPool.query<{ widget: string }>(
+    `SELECT w.widget_type || ':' || coalesce(w.title, '') || '@' || w.grid_x || ',' || w.grid_y || ',' || w.grid_w || ',' || w.grid_h AS widget
+       FROM bms.dashboard_widgets w JOIN bms.dashboard_tabs t ON t.id = w.tab_id
+      WHERE w.dashboard_id = $1 AND t.tab_key = 'overview'
+        AND w.widget_type IN ('module_summary_card', 'critical_systems_list', 'active_alarms_rail')
+      ORDER BY w.grid_y, w.grid_x`,
     [result.dashboardId],
   );
-  expect(cards.map((c) => c.target)).toEqual(["env", "sld"]);
+  expect(overview.map((row) => row.widget)).toEqual([
+    "active_alarms_rail:Active alarms@0,2,8,7",
+    "critical_systems_list:Critical systems@8,2,4,7",
+  ]);
+  expect(result.droppedCards, "the v3 Overview has no card to drop").toEqual([]);
   expect(result.omittedTabs.map((t) => t.tabKey).sort()).toEqual(["hvac", "it", "ups", "water"]);
 
   expect(await viewRows(ctx, site)).toEqual([{ kind: "dashboard", dashboard_id: result.dashboardId }]);

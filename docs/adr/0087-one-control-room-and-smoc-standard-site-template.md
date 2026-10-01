@@ -446,11 +446,14 @@ otherwise unchanged.
    time of the newest read. The mode rotates through the site's dashboard tabs
    (not "Assets & RTUs"), every 30 s by default (choices 15, 30, 60 and 120 s),
    with equal turns for every tab. A key press or a click pauses it; a visible
-   control resumes it. The URL keeps the mode, the interval and the tab
-   (`?wall=1&every=30&tab=<key>`); an unknown value falls back to the default.
-8. **No auth change for wall use.** When the API answers 401, wall mode shows a
-   full-screen "Session ended — sign in" state, never the last data as if it
-   were live. After sign-in, the app returns to the same wall URL: the web
+   control resumes it. The URL keeps the mode, the interval and the tab: the
+   tab is the site route's own tab segment, and the query holds the rest
+   (`/control-room/site/:id/<key>?wall=1&every=30`, owner ruling at the plan,
+   2026-10-01); an unknown value falls back to the default.
+8. **No auth change for wall use.** When the API answers 401, the app leaves the
+   wall for the sign-in page, which shows a full-width "Session ended — sign
+   in" banner (owner ruling at the plan, 2026-10-01: the route guard already
+   sends a signed-out page there), never the last data as if it were live. After sign-in, the app returns to the same wall URL: the web
    keeps the return path (today `login-page.tsx` always goes to `/`). This is a
    web-only change to the sign-in redirect. It accepts a same-origin path only
    (no open redirect), and it does not change the token or the session
