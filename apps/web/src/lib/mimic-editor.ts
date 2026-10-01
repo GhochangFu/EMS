@@ -452,6 +452,14 @@ export function toWriteBody(layout: EditorLayout): MimicLayoutWriteBody {
       if (node.tone !== null) {
         out.tone = node.tone;
       }
+      // F3.74 (OQ3b): a save replaces the whole layout, so a flag the editor
+      // drops is a flag the save clears. Send each one only when it is set.
+      if (node.fanOut) {
+        out.fanOut = true;
+      }
+      if (node.isSource) {
+        out.isSource = true;
+      }
       return out;
     }),
     pipes: layout.pipes.map((pipe) => ({ fromKey: pipe.fromKey, toKey: pipe.toKey })),
