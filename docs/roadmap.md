@@ -6939,6 +6939,34 @@ fixed and L2 tested on the real database; the browser run as `admin`,
 now unblocked, after the first stable version. Owed: the `chore(agents):`
 sweep (AGENTS.md names `/` as the dashboard).
 
+### `F3.73` — the SMOC standard site template ✅ 2026-10-01
+
+Five PRs on `feat/F3.73-smoc-site-template` (numbers and squash hashes are
+recorded at merge; no merge before v1 ships 2026-10-02 without an owner
+ruling). ADR 0087 decisions 4–7 and Amendment 1; plan
+`docs/plans/f3.73-smoc-site-template.md` (Fable; owner answers OQ1–OQ7 in §9,
+deviations in §12).
+
+A dashboard has tabs. A tab binds at most one asset group of the dashboard's
+site, so a `mimic` works on a domain tab; the same-location rule is held in
+the database (migration 0094). A site template (`target = 'site'`) holds the
+SMOC standard content: Overview, then `sld`, `ups`, `hvac`, `it`, `env` and
+`water`. Five widget types read `GET /dashboards/:id/site-widgets`: the active
+alarms rail, the state legend, the asset-class strip, the module summary card
+and the critical-systems list. Three actions make a copy through one planner
+(`SiteLayoutService`): the per-site "Make site layout" button, the instantiate
+site arm and the bulk "Apply to all sites". The seed makes copies for CSMOC
+Gauteng and the six PHE stations. The site view shows the tabs; the builder
+edits them. A later template version does not overwrite an edited copy, and
+the generated view stays as the fail-safe.
+
+Verified: unit, jsdom and integration cases red→green per PR; the mutations
+the plan names red their assertions (substitutions in plan §12).
+
+**Cascade:** `F3.74` (live breaker state) and `F3.75` (`RSMOC-WC` onto the
+template) list `F3.73` and are unblocked. Owed: the `chore(agents):` sweep
+(AGENTS.md still names one dashboard per site).
+
 ### `F3.76` — the Master Data Hub in five areas ✅ 2026-09-30
 
 PR #668, squash `427adf8d`; the owner ruled it into v1 on 2026-09-30, with no
