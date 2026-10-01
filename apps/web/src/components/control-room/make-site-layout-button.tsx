@@ -62,9 +62,10 @@ export function MakeSiteLayoutButton({ locationId }: MakeSiteLayoutButtonProps) 
           type="button"
           onClick={() => make.mutate({})}
           disabled={make.isPending}
+          aria-busy={make.isPending}
           className="surface-button border border-warning-line px-3 py-1 text-sm font-semibold text-warning-ink disabled:cursor-not-allowed disabled:opacity-40"
         >
-          Make site layout
+          {make.isPending ? "Making the site layout…" : "Make site layout"}
         </button>
       ) : (
         <fieldset className="space-y-2">
@@ -96,9 +97,10 @@ export function MakeSiteLayoutButton({ locationId }: MakeSiteLayoutButtonProps) 
             type="button"
             onClick={retry}
             disabled={!chosenForEveryTab || make.isPending}
+            aria-busy={make.isPending}
             className="surface-button border border-warning-line px-3 py-1 text-sm font-semibold text-warning-ink disabled:cursor-not-allowed disabled:opacity-40"
           >
-            Make site layout with these groups
+            {make.isPending ? "Making the site layout…" : "Make site layout with these groups"}
           </button>
         </fieldset>
       )}
