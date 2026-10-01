@@ -59,9 +59,11 @@ describe.skipIf(!has)("F3.74 — bms.point_key_states, the breaker roles and the
     if (orgs.rows.length < 2) throw new Error("F3.74: needs two bms.organizations rows — run pnpm db:seed.");
     orgA = orgs.rows[0]?.id as string;
     orgB = orgs.rows[1]?.id as string;
-    const key = await client.query(`SELECT code FROM bms.point_keys ORDER BY code LIMIT 1`);
+    // A named seed-owned key, not "the first row": no suite deletes `breaker_main`,
+    // and naming it keeps the F4.53 fixture-read gate's "oldest wins" rule moot.
+    const key = await client.query(`SELECT code FROM bms.point_keys WHERE code = 'breaker_main'`);
     pointKey = key.rows[0]?.code as string;
-    if (!pointKey) throw new Error("F3.74: needs a seeded bms.point_keys row — run pnpm db:seed.");
+    if (!pointKey) throw new Error("F3.74: needs the seeded bms.point_keys row breaker_main — run pnpm db:seed.");
   });
 
   afterAll(async () => {
