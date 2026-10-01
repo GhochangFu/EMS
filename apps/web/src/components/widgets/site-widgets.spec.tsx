@@ -216,12 +216,34 @@ export async function theLegendDrawsNoHeadingButItsTitleInline(): Promise<void> 
 export async function theLegendTitleAndPillsShareOneRow(): Promise<void> {
   render(wrap(<StateLegendWidget title="Legend" status="ready" />));
   await screen.findByText("Normal");
-  const row = screen.getByLabelText("State legend").parentElement;
+  const row = screen.getByText("Legend").parentElement;
   expect(row).not.toBeNull();
-  expect(screen.getByText("Legend").parentElement).toBe(row);
+  expect(screen.getByLabelText("State legend").parentElement?.parentElement).toBe(row);
   for (const name of ["flex", "h-full", "items-center", "overflow-hidden", "surface-raised"]) {
     expect(row, `the legend row lacks ${name}`).toHaveClass(name);
   }
+}
+
+/**
+ * `F3.77` review — a long title gives way to the pills, not the other way round. The title is
+ * `varchar(255)`; with `shrink-0` it kept its full width, `truncate` never applied, and the row's
+ * `overflow-hidden` clipped the trailing pills (Offline first). jsdom has no layout, so this pins
+ * the flex contract that decides it: the title may shrink (`min-w-0`, no `shrink-0`) and
+ * truncates; the pills' wrapper may not shrink, so the pills stay on one line at full width.
+ * Mutation: put `shrink-0` back on the title → red.
+ */
+export async function aLongLegendTitleTruncatesAndKeepsThePills(): Promise<void> {
+  const long = "Severity and connection state legend - north campus";
+  render(wrap(<StateLegendWidget title={long} status="ready" />));
+  await screen.findByText("Normal");
+  const title = screen.getByText(long);
+  const row = title.parentElement;
+  expect(within(row as HTMLElement).getByText("Offline")).toBeInTheDocument();
+  expect(title).toHaveClass("min-w-0", "truncate");
+  expect(title).not.toHaveClass("shrink-0");
+  const pills = screen.getByLabelText("State legend").parentElement;
+  expect(pills?.parentElement).toBe(row);
+  expect(pills).toHaveClass("shrink-0");
 }
 
 export function theStripDrawsOnePillPerRole(): void {
