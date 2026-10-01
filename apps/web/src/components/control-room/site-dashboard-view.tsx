@@ -1,6 +1,6 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import type { DashboardDto } from "@bms/shared";
-import { Link, Navigate } from "react-router-dom";
+import { Link, Navigate, useLocation } from "react-router-dom";
 
 import { fetchDashboard } from "../../api/dashboards";
 import { useTabMarkers } from "../../hooks/use-tab-markers";
@@ -64,9 +64,14 @@ const SITE_VIEW_RESOLVE_PREFIX = ["control-room", "site-view"] as const;
  * **Tab markers (`F3.77` plan D4).** Each group tab's link carries its status marker and is named
  * by `tabAccessibleName` ("HVAC, Warning, 2 alarms" / "HVAC, Outside scope"); the Overview and any
  * tab the site-widgets `tabs[]` does not list keep their label. See `useTabMarkers`.
+ *
+ * **The query string stays (`F3.77`, wall mode).** A tab link and the unknown-tab redirect keep
+ * the current query (`?wall=1&every=30`), so choosing a tab on a wall screen does not leave wall
+ * mode. The site route has no other query, so nothing else is carried.
  */
 export function SiteDashboardView({ slug, organizationId, locationId, tab }: SiteDashboardViewProps) {
   const queryClient = useQueryClient();
+  const { search } = useLocation();
   const dashboardQ = useQuery({
     queryKey: ["dashboards", "detail", slug, organizationId],
     queryFn: () => fetchDashboard(slug, organizationId),
@@ -85,7 +90,7 @@ export function SiteDashboardView({ slug, organizationId, locationId, tab }: Sit
   const markers = useTabMarkers(dashboardQ.data?.id ?? "", tabs[0]?.key ?? null);
 
   if (dashboardQ.data !== undefined && tab !== undefined && selected === undefined) {
-    return <Navigate to={sitePath} replace />;
+    return <Navigate to={`${sitePath}${search}`} replace />;
   }
 
   return (
@@ -109,7 +114,7 @@ export function SiteDashboardView({ slug, organizationId, locationId, tab }: Sit
                 return (
                   <Link
                     key={entry.id}
-                    to={siteTabHref(sitePath, entry.key)}
+                    to={`${siteTabHref(sitePath, entry.key)}${search}`}
                     aria-current={entry.key === selected?.key ? "page" : undefined}
                     aria-label={
                       marker === undefined ? undefined : tabAccessibleName(entry.label, marker.status, markers.severities)

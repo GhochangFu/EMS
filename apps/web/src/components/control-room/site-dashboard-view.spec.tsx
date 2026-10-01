@@ -324,8 +324,13 @@ const SITE_PATH = `/control-room/site/${LOCATION_ID}`;
 
 /** The router's pathname, rendered outside `<Routes>`, so a redirect to the bare path is visible. */
 function PathnameProbe() {
-  const { pathname } = useLocation();
-  return <p data-testid="pathname">{pathname}</p>;
+  const { pathname, search } = useLocation();
+  return (
+    <>
+      <p data-testid="pathname">{pathname}</p>
+      <p data-testid="search">{search}</p>
+    </>
+  );
 }
 
 /** The view at the site route, with the `:tab` segment the site page would hand it. */
@@ -342,11 +347,11 @@ function TabRoute() {
   );
 }
 
-function renderAtTab(segment?: string): void {
+function renderAtTab(segment?: string, search = ""): void {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   render(
     <QueryClientProvider client={queryClient}>
-      <MemoryRouter initialEntries={[segment === undefined ? SITE_PATH : `${SITE_PATH}/${segment}`]}>
+      <MemoryRouter initialEntries={[`${segment === undefined ? SITE_PATH : `${SITE_PATH}/${segment}`}${search}`]}>
         <PathnameProbe />
         <Routes>
           <Route path="/control-room/site/:locationId/:tab?" element={<TabRoute />} />
@@ -408,6 +413,33 @@ export async function anUnknownTabRedirectsToTheBarePath(): Promise<void> {
 
   await waitFor(() => expect(pathname()).toBe(SITE_PATH));
   expect((await screen.findByTestId("dashboard-live-canvas")).getAttribute("data-tab-key")).toBe("overview");
+}
+
+/**
+ * T9 (`F3.77`, wall mode) — the tab links keep the current query, so a tab chosen on a wall screen
+ * stays in wall mode. Mutation: drop `search` from the link => the hrefs lose the query => red.
+ */
+export async function theTabLinksKeepTheQuery(): Promise<void> {
+  stubRead(TABBED);
+  renderAtTab("sld", "?wall=1&every=30");
+
+  const strip = await screen.findByRole("navigation", { name: "Dashboard tabs" });
+  expect(within(strip).getAllByRole("link").map((link) => link.getAttribute("href"))).toEqual([
+    `${SITE_PATH}/overview?wall=1&every=30`,
+    `${SITE_PATH}/sld?wall=1&every=30`,
+  ]);
+}
+
+/**
+ * T10 (`F3.77`, wall mode) — an unknown tab redirects to the bare path with the query kept.
+ * Mutation: redirect to `sitePath` alone => the search probe is empty => red.
+ */
+export async function anUnknownTabRedirectKeepsTheQuery(): Promise<void> {
+  stubRead(TABBED, TABBED);
+  renderAtTab("x", "?wall=1&every=30");
+
+  await waitFor(() => expect(pathname()).toBe(SITE_PATH));
+  expect(screen.getByTestId("search").textContent).toBe("?wall=1&every=30");
 }
 
 /** T6 — a dashboard with no tabs renders as today: no strip, the whole canvas (no `tabKey`). */

@@ -30,6 +30,8 @@ import {
   tryAgainInvalidatesTheResolveRead,
   tryAgainRereadsTheDashboard,
   twoTabsRenderAsLinks,
+  theTabLinksKeepTheQuery,
+  anUnknownTabRedirectKeepsTheQuery,
 } from "./site-dashboard-view.spec";
 
 /**
@@ -154,5 +156,13 @@ describe("F3.73 D10 SiteDashboardView tabs", () => {
 
   it("F3.77 M5 a pending markers read draws no marker", async () => {
     await aPendingMarkersReadDrawsNoMarker();
+  });
+
+  it("F3.77 T9 the tab links keep the query (wall mode)", async () => {
+    await theTabLinksKeepTheQuery();
+  });
+
+  it("F3.77 T10 an unknown tab redirect keeps the query", async () => {
+    await anUnknownTabRedirectKeepsTheQuery();
   });
 });
