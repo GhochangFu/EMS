@@ -1,4 +1,5 @@
 import { clearSessionOnAuthFailure, withAuth } from "./http";
+import { RETURN_PATH_KEY } from "../lib/return-path";
 import { useAuthStore } from "../stores/auth-store";
 
 function assert(condition: boolean, message: string): void {
@@ -77,6 +78,76 @@ export function runAuthFailureTests(): void {
   assert(
     useAuthStore.getState().accessToken === "token-abc",
     "a 200 must not clear the session",
+  );
+}
+
+const WALL_PATH = "/control-room/site/x/sld";
+const WALL_SEARCH = "?wall=1&every=30";
+
+/** Puts the jsdom tab on `url`, empties the tab's storage and signs in. */
+function onPage(url: string): void {
+  window.history.replaceState({}, "", url);
+  window.sessionStorage.clear();
+  signIn();
+}
+
+/**
+ * `F3.77` H1 (plan D10) — a 401 on a wall URL keeps the wall URL as the return
+ * path **and** still clears the session.
+ */
+export function runWallReturnPathOn401Test(): void {
+  onPage(`${WALL_PATH}${WALL_SEARCH}`);
+  clearSessionOnAuthFailure(response(401));
+  assert(
+    window.sessionStorage.getItem(RETURN_PATH_KEY) === `${WALL_PATH}${WALL_SEARCH}`,
+    "a 401 on a wall URL must store the wall URL as the return path",
+  );
+  assert(
+    useAuthStore.getState().accessToken === null,
+    "a 401 on a wall URL must still clear the session",
+  );
+}
+
+/** `F3.77` H2 — a 401 off a wall URL stores nothing, and still clears the session. */
+export function runNoReturnPathOffWallTest(): void {
+  onPage("/alarms?state=active");
+  clearSessionOnAuthFailure(response(401));
+  assert(
+    window.sessionStorage.getItem(RETURN_PATH_KEY) === null,
+    "a 401 off a wall URL must store no return path",
+  );
+  assert(
+    useAuthStore.getState().accessToken === null,
+    "a 401 off a wall URL must clear the session",
+  );
+}
+
+/**
+ * `F3.77` H4 — the wall tab's later 401s land after the route guard has moved
+ * it to `/login`; they must keep the path the first 401 stored.
+ */
+export function runLater401KeepsReturnPathTest(): void {
+  onPage(`${WALL_PATH}${WALL_SEARCH}`);
+  clearSessionOnAuthFailure(response(401));
+  window.history.replaceState({}, "", "/login");
+  clearSessionOnAuthFailure(response(401));
+  assert(
+    window.sessionStorage.getItem(RETURN_PATH_KEY) === `${WALL_PATH}${WALL_SEARCH}`,
+    "a later 401 on /login must keep the wall URL the first 401 stored",
+  );
+}
+
+/** `F3.77` H3 — a 403 on a wall URL does neither: no return path, the session kept. */
+export function runNoReturnPathOn403Test(): void {
+  onPage(`${WALL_PATH}${WALL_SEARCH}`);
+  clearSessionOnAuthFailure(response(403));
+  assert(
+    window.sessionStorage.getItem(RETURN_PATH_KEY) === null,
+    "a 403 must store no return path",
+  );
+  assert(
+    useAuthStore.getState().accessToken === "token-abc",
+    "a 403 must keep the session",
   );
 }
 

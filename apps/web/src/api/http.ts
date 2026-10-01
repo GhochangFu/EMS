@@ -1,3 +1,4 @@
+import { rememberWallReturnPath } from "../lib/return-path";
 import { useAuthStore } from "../stores/auth-store";
 
 /** Merges Authorization header when a session exists (JWT-protected API routes). */
@@ -56,9 +57,21 @@ export function withAuth(init: RequestInit = {}): RequestInit {
  * organization-scope case "falls through to the API's 403, rendered inline";
  * the render was always there, and clearing the session was what stopped it
  * running.
+ *
+ * **`F3.77` (plan D10)** — before it clears, a 401 keeps the tab's path and
+ * query as the return path when the tab is a wall URL (`?wall=1`), and does
+ * nothing otherwise — a later 401 that lands after the tab has moved to
+ * `/login` must not drop the path; `lib/return-path.ts` holds the guard. The route
+ * guard's `<Navigate to="/login">` is unchanged, and the login page then shows
+ * "Session ended" and returns there after sign-in. `rememberWallReturnPath`
+ * never throws, and with no `window` (a node-environment spec) it does
+ * nothing, so the session is cleared whatever the storage does.
  */
 export function clearSessionOnAuthFailure(res: Response): void {
   if (res.status === 401) {
+    if (typeof window !== "undefined") {
+      rememberWallReturnPath(window.location);
+    }
     useAuthStore.getState().clearSession();
   }
 }

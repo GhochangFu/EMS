@@ -22,7 +22,9 @@ const landingRoutePath = join(webSrc, "lib/landing-route.ts");
  *   itself (the no-sites card).
  * - E2: the one-location landing redirect is gone: `lib/landing-route.ts` is
  *   deleted, and neither `app.tsx` nor the two login pages name
- *   `landingRouteForScope`; both login pages navigate to `/`.
+ *   `landingRouteForScope`; both login pages navigate to the stored
+ *   same-origin return path, else `/` (`F3.77` plan D10:
+ *   `navigate(takeReturnPath() ?? "/", { replace: true })`).
  * - E3: the sidebar has no `path: "/"` module item — the Control Room entry
  *   replaced *Dashboard*. The top-nav `to: "/"` (Overview) stays.
  *
@@ -89,9 +91,15 @@ function namesTheLandingHelper(source: string): boolean {
   return /\blandingRouteForScope\b|lib\/landing-route\b/.test(source);
 }
 
-/** E2 — whether a login page sends the new session to `/`, replacing the history entry. */
-function navigatesToTheRoot(source: string): boolean {
-  return /navigate\(\s*["'`]\/["'`]\s*,\s*\{\s*replace:\s*true\s*\}\s*\)/.test(source);
+/**
+ * E2 — whether a login page sends the new session to the stored same-origin
+ * return path, else `/`, replacing the history entry (`F3.77` plan D10:
+ * `navigate(takeReturnPath() ?? "/", { replace: true })`).
+ */
+function navigatesToTheReturnPathOrRoot(source: string): boolean {
+  return /navigate\(\s*takeReturnPath\(\)\s*\?\?\s*["'`]\/["'`]\s*,\s*\{\s*replace:\s*true\s*\}\s*\)/.test(
+    source,
+  );
 }
 
 /** E3 — whether a source declares a rail item on the path `/`. */
@@ -143,14 +151,31 @@ describe("F3.72 E2 — the one-location landing redirect is gone", () => {
   it.each([
     ["login-page.tsx", loginPagePath],
     ["auth-callback-page.tsx", authCallbackPagePath],
-  ] as const)('%s navigates to "/" with replace', (_name, path) => {
-    expect(navigatesToTheRoot(read(path))).toBe(true);
+  ] as const)('%s navigates to the stored return path, else "/", with replace', (_name, path) => {
+    expect(navigatesToTheReturnPathOrRoot(read(path))).toBe(true);
   });
 
   it("positive control — the helper's import and call are both caught", () => {
     expect(namesTheLandingHelper(`import { x } from "../lib/landing-route";`)).toBe(true);
     expect(namesTheLandingHelper("void navigate(landingRouteForScope(current.scope), { replace: true });")).toBe(true);
-    expect(navigatesToTheRoot("void navigate(landingRouteForScope(current.scope), { replace: true });")).toBe(false);
+    expect(navigatesToTheReturnPathOrRoot("void navigate(landingRouteForScope(current.scope), { replace: true });")).toBe(false);
+  });
+
+  it.each([
+    ["login-page.tsx", loginPagePath],
+    ["auth-callback-page.tsx", authCallbackPagePath],
+  ] as const)("positive control — a copy of %s navigating to a literal /dashboards is caught", (_name, path) => {
+    const source = read(path);
+    const literal = source.replace(
+      /navigate\(\s*takeReturnPath\(\)\s*\?\?\s*["'`]\/["'`]/,
+      () => 'navigate("/dashboards"',
+    );
+    expect(literal).not.toBe(source);
+    expect(navigatesToTheReturnPathOrRoot(literal)).toBe(false);
+  });
+
+  it("positive control — the pre-F3.77 literal / (the return path dropped) is caught", () => {
+    expect(navigatesToTheReturnPathOrRoot('void navigate("/", { replace: true });')).toBe(false);
   });
 });
 

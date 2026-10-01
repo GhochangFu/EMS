@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 
 import { completeOidcLogin } from "../api/oidc";
 import { fetchCurrentUser } from "../api/login";
+import { takeReturnPath } from "../lib/return-path";
 import { useAuthStore } from "../stores/auth-store";
 
 export function AuthCallbackPage() {
@@ -24,8 +25,10 @@ export function AuthCallbackPage() {
             current.scope,
             session.idToken,
           );
-          // `F3.72` (plan D1) — `/` renders the caller's Control Room entry level.
-          void navigate("/", { replace: true });
+          // `F3.77` (plan D10) — back to the wall URL a 401 kept in this tab's
+          // `sessionStorage`, validated on read; else `/`, the caller's Control
+          // Room entry level (`F3.72` plan D1).
+          void navigate(takeReturnPath() ?? "/", { replace: true });
         }
       } catch (err) {
         if (!cancelled) {

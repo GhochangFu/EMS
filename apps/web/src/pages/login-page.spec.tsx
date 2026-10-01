@@ -1,9 +1,11 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen } from "@testing-library/react";
-import { MemoryRouter } from "react-router-dom";
+import { fireEvent, render, screen } from "@testing-library/react";
+import { MemoryRouter, Route, Routes, useLocation, useNavigationType } from "react-router-dom";
 import { expect, vi } from "vitest";
 
+import * as loginApi from "../api/login";
 import * as oidcApi from "../api/oidc";
+import { RETURN_PATH_KEY } from "../lib/return-path";
 import { LoginPage } from "./login-page";
 
 /**
@@ -104,4 +106,101 @@ export function readsNoTrinetra(): void {
   renderLogin();
   expect(screen.getByRole("img", WORDMARK)).toBeTruthy();
   expect(screen.queryByText(/trinetra/i)).toBeNull();
+}
+
+/*
+ * `F3.77` (ADR 0087 Amendment 3 ruling 8, plan D10, OQ6) — the session-ended
+ * banner and the return path. A 401 on a wall URL leaves the path in
+ * `sessionStorage` (`api/http.ts`); the login page shows the banner while one
+ * is stored and, after a successful sign-in, navigates to it with `replace`,
+ * else to `/`. `ProbeAfterLogin` renders only once the router has left
+ * `/login`, so a `findBy` on it waits for the navigation itself.
+ */
+
+export const SESSION_ENDED = "Session ended — sign in to return to the wall view";
+export const WALL_URL = "/control-room/site/x/sld?wall=1&every=30";
+
+function ProbeAfterLogin() {
+  const location = useLocation();
+  const type = useNavigationType();
+  return <p data-testid="after-login">{`${location.pathname}${location.search}|${type}`}</p>;
+}
+
+function renderLoginRoutes(oidc = false): void {
+  vi.spyOn(oidcApi, "isOidcEnabled").mockReturnValue(oidc);
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(() => Promise.reject(new Error("login-page.spec: no fetch expected"))),
+  );
+  vi.spyOn(loginApi, "loginRequest").mockResolvedValue({
+    accessToken: "token-new",
+    tokenType: "Bearer",
+    expiresIn: "8h",
+    user: { id: "u1", email: "admin@bms.local", displayName: "Admin", role: "admin" },
+  } as Awaited<ReturnType<typeof loginApi.loginRequest>>);
+  vi.spyOn(loginApi, "fetchCurrentUser").mockResolvedValue({
+    user: { id: "u1", email: "admin@bms.local", displayName: "Admin", role: "admin" },
+    scope: { kind: "global", locations: [], assetGroups: [], assetIds: [] },
+  } as unknown as Awaited<ReturnType<typeof loginApi.fetchCurrentUser>>);
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  render(
+    <QueryClientProvider client={client}>
+      <MemoryRouter initialEntries={["/login"]}>
+        <Routes>
+          <Route path="/login" element={<LoginPage />} />
+          <Route path="*" element={<ProbeAfterLogin />} />
+        </Routes>
+      </MemoryRouter>
+    </QueryClientProvider>,
+  );
+}
+
+async function signInLocally(): Promise<string> {
+  fireEvent.change(screen.getByLabelText("Password"), { target: { value: "admin123" } });
+  fireEvent.click(screen.getByRole("button", { name: "Sign in securely" }));
+  return (await screen.findByTestId("after-login")).textContent ?? "";
+}
+
+/** L9 — with a stored return path, the banner shows. */
+export function showsTheSessionEndedBanner(): void {
+  window.sessionStorage.setItem(RETURN_PATH_KEY, WALL_URL);
+  renderLoginRoutes();
+  expect(screen.getByRole("status").textContent).toBe(SESSION_ENDED);
+}
+
+/** L10 — the banner shows in OIDC mode too, which is how production signs in. */
+export function showsTheBannerInOidcMode(): void {
+  window.sessionStorage.setItem(RETURN_PATH_KEY, WALL_URL);
+  renderLoginRoutes(true);
+  expect(screen.getByRole("button", { name: "Sign in securely with Keycloak" })).toBeTruthy();
+  expect(screen.getByRole("status").textContent).toBe(SESSION_ENDED);
+}
+
+/** L11 — with no stored path no banner shows; the card heading is the positive control. */
+export function showsNoBannerWithoutAReturnPath(): void {
+  renderLoginRoutes();
+  expect(screen.getByRole("heading", { level: 2, name: "Sign in to IONSiTE NEXUS" })).toBeTruthy();
+  expect(screen.queryByText(SESSION_ENDED)).toBeNull();
+}
+
+/** L12 — a refused stored value shows no banner (it is validated on read). */
+export function showsNoBannerForARefusedPath(): void {
+  window.sessionStorage.setItem(RETURN_PATH_KEY, "//evil.example");
+  renderLoginRoutes();
+  expect(screen.getByRole("heading", { level: 2, name: "Sign in to IONSiTE NEXUS" })).toBeTruthy();
+  expect(screen.queryByText(SESSION_ENDED)).toBeNull();
+}
+
+/** L13 — a sign-in with a stored path lands on it, replacing the history entry, and spends it. */
+export async function navigatesToTheReturnPath(): Promise<void> {
+  window.sessionStorage.setItem(RETURN_PATH_KEY, WALL_URL);
+  renderLoginRoutes();
+  expect(await signInLocally()).toBe(`${WALL_URL}|REPLACE`);
+  expect(window.sessionStorage.getItem(RETURN_PATH_KEY)).toBeNull();
+}
+
+/** L14 — a sign-in with no stored path lands on `/`, replacing the history entry. */
+export async function navigatesToTheRootWithoutAReturnPath(): Promise<void> {
+  renderLoginRoutes();
+  expect(await signInLocally()).toBe("/|REPLACE");
 }
