@@ -24,6 +24,11 @@
       "types": "./dist/contracts/index.d.ts",
       "import": "./dist/contracts/index.js",
       "require": "./dist/contracts/index.js"
+    },
+    "./site-templates": {
+      "types": "./dist/site-templates.d.ts",
+      "import": "./dist/site-templates.js",
+      "require": "./dist/site-templates.js"
     }
   },
   "scripts": {
@@ -34,5 +39,12 @@
   },
   "devDependencies": {
     "typescript": "~5.7.3"
+  },
+  "typesVersions": {
+    "*": {
+      "site-templates": [
+        "./dist/site-templates.d.ts"
+      ]
+    }
   }
 }

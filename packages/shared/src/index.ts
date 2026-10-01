@@ -54,6 +54,7 @@ import type * as PM from "./contracts/point-metadata";
 import type * as Rp from "./contracts/reports";
 import type * as SR from "./contracts/seeded-rules";
 import type * as SC from "./contracts/site-control-room-views";
+import type * as SL from "./contracts/site-layout";
 import type * as SW from "./contracts/site-widgets";
 import type * as Ss from "./contracts/system-status";
 import type * as Te from "./contracts/telemetry-entry";
@@ -826,6 +827,11 @@ export type SiteControlRoomViewSettingDto = z.infer<
 export type ResolvedSiteControlRoomViewDto = z.infer<
   typeof SC.resolvedSiteControlRoomViewDtoSchema
 >;
+// `F3.73` plan D6 — the site-layout copy action's answers.
+export type SiteLayoutResultDto = z.infer<typeof SL.siteLayoutResultDtoSchema>;
+export type SiteLayoutAmbiguousDto = z.infer<typeof SL.siteLayoutAmbiguousDtoSchema>;
+export type SiteLayoutBulkResultDto = z.infer<typeof SL.siteLayoutBulkResultDtoSchema>;
+export type SiteLayoutSkipReason = z.infer<typeof SL.siteLayoutSkipReasonSchema>;
 
 // `F3.68` / ADR 0076 decision 7 — the generated site view
 // (`GET /api/v1/control-room/sites/:locationId/generated`).
@@ -904,6 +910,13 @@ export * from "./template-instantiation";
  * labels and groups (no path data). Code, not a contract, like the presets above.
  */
 export * from "./mimic-symbol-libraries";
+
+/**
+ * `F3.73` plan D5 — the site-layout planner, pure and shared by the copy action and the seed. The
+ * stock site-layout CONTENT is not here: it is the `./site-templates` subpath, so the widget
+ * configuration never enters the web bundle.
+ */
+export * from "./site-layout-planner";
 
 /**
  * Ingest data contracts (ADR 0016 §8). Re-exported here, not only under the

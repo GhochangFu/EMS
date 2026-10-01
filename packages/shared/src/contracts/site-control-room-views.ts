@@ -22,11 +22,15 @@ export const siteControlRoomViewKindSchema = z.enum(["generated", "dashboard", "
 export const builtinSiteViewKeySchema = z.enum(["smoc"]);
 
 /** The closed set of fail-safe notices the resolver can attach when it falls
- * back to the generated view (decision 5). */
+ * back to the generated view (decision 5). `no_site_layout` (`F3.73` ruling
+ * Q5, plan D7) is not a fail-safe: it marks a site with no view row in an
+ * organization that holds a published site template, so the web can offer
+ * the "Make site layout" action. */
 export const siteControlRoomViewNoticeSchema = z.enum([
   "dashboard_removed",
   "dashboard_out_of_scope",
   "builtin_unknown",
+  "no_site_layout",
 ]);
 
 /** `GET`/`PUT /api/v1/admin/locations/:id/control-room-view` — the stored
