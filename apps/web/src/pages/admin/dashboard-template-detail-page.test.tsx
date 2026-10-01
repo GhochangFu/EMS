@@ -21,6 +21,8 @@ import {
   applyToAllSitesShowsOnlyForAPublishedSiteTemplate,
   applyResultTableListsASkippedSitesReason,
   siteTemplateInstantiatePicksALocation,
+  siteTemplateCountsAndListsItsTabWidgets,
+  groupTemplateCountAndEmptyMessageAreUnchanged,
 } from "./dashboard-template-detail-page.spec";
 
 /**
@@ -104,5 +106,13 @@ describe("F3.36 dashboard template detail page", () => {
 
   it("a site template's instantiate dialog picks a location (F3.73)", async () => {
     await siteTemplateInstantiatePicksALocation();
+  });
+
+  it("a site template counts its tab widgets and lists its tabs (F3.73)", async () => {
+    await siteTemplateCountsAndListsItsTabWidgets();
+  });
+
+  it("a group template keeps its own count and empty message (F3.73)", async () => {
+    await groupTemplateCountAndEmptyMessageAreUnchanged();
   });
 });

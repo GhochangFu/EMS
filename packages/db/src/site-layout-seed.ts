@@ -19,13 +19,20 @@ import {
   type SeedLocationIdentity,
 } from "./eskom-locations-seed";
 import { type PheCatalogFile, stationSlug } from "./phe-pilot-seed";
+import {
+  SITE_LAYOUT_COPY_DESCRIPTION,
+  upgradeSeededSiteLayoutCopies,
+  upgradeSeedSiteTemplate,
+} from "./site-layout-seed-upgrade";
 
 /**
  * `F3.73` plan D12 (ADR 0087 decision 11, ruling Q4) — the SMOC standard site layout on the
  * seed-owned demo sites.
  *
  * **What this seeds, per organization (ESKOM, PHEWB).** (a) The SMOC standard template as a
- * published stock import at version 1, insert-if-absent. (b) For each seed-owned location with
+ * published stock import at version 1, insert-if-absent, holding the current stock content; a
+ * database the v1 seed already ran is moved to the current stock version by
+ * `site-layout-seed-upgrade.ts` (its own seed-owned rows only). (b) For each seed-owned location with
  * no `bms.site_control_room_views` row and no dashboard holding its slug, one tabbed copy of the
  * organization's newest published `smoc-standard` version, planned by the SAME shared planner
  * the API's copy action runs (`planSiteLayout` and `planTemplateWidget`, `@bms/shared`), and the
@@ -67,7 +74,10 @@ export const SITE_LAYOUT_SLUG_PREFIX = "site-layout-";
 /** `bms.dashboards.slug` is `varchar(64)`. */
 const DASHBOARD_SLUG_MAX = 64;
 
-/** The version the seed imports: the first. A later version is an administrator's. */
+/**
+ * The version the seed imports: the first. A later version is an administrator's, or the one
+ * `upgradeSeedSiteTemplate` adds when it supersedes the seed's own stock-1 row.
+ */
 export const SITE_LAYOUT_SEED_TEMPLATE_VERSION = 1;
 
 /** The ESKOM seed identities (`meta.seedKey`) that receive a copy: CSMOC Gauteng. */
@@ -207,6 +217,7 @@ export async function ensureSiteTemplate(
     JSON.stringify(entry.content),
     entry.stockVersion,
   ]);
+  await upgradeSeedSiteTemplate(pool, organizationId);
   const res = await pool.query<{ id: string; content: unknown }>(SITE_TEMPLATE_READ_SQL, [
     organizationId,
     entry.code,
@@ -396,7 +407,7 @@ export async function seedSiteLayouts(
       organizationId,
       slug,
       `${location.name} site layout`,
-      "The SMOC standard site layout, seeded for this demo site (F3.73).",
+      SITE_LAYOUT_COPY_DESCRIPTION,
       locationId,
       options.template.id,
     ]);
@@ -485,6 +496,7 @@ export async function seedEskomSiteLayouts(
     eskomOrgId,
     eskomSiteLayoutIdentities(mapLocationRows),
   );
+  await upgradeSeededSiteLayoutCopies(pool, eskomOrgId, locationIds, SITE_LAYOUT_SLUG_PREFIX);
   return seedSiteLayouts(pool, eskomOrgId, {
     template,
     locationIds,
@@ -506,6 +518,7 @@ export async function seedPhewbSiteLayouts(
     return { made: [], skipped: [] };
   }
   const locationIds = await resolvePhewbSiteLayoutLocations(pool, phewbOrgId, pheSiteLayoutStations(pheCatalog));
+  await upgradeSeededSiteLayoutCopies(pool, phewbOrgId, locationIds, SITE_LAYOUT_SLUG_PREFIX);
   return seedSiteLayouts(pool, phewbOrgId, {
     template,
     locationIds,

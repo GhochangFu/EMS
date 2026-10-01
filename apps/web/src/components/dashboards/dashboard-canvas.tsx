@@ -1,5 +1,5 @@
 import { DASHBOARD_GRID } from "@bms/shared";
-import { useRef, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
+import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
 
 import {
   cellWidth,
@@ -14,7 +14,8 @@ import {
  * (Unit 7) render widgets through. `DASHBOARD_GRID.columns` wide; a fixed row
  * height, since the canvas grows downward without a fixed row count (the same
  * reason `dashboard-grid-geometry.ts`'s own docblock gives for not deriving
- * one).
+ * one). Since the `F3.73` polish only the builder's rows are fixed; a view canvas's rows follow
+ * its measured width (`viewRowHeightPx`).
  *
  * `ROW_HEIGHT_PX` is a presentation constant, not a grid-axis bound — it never
  * appears beside a `gridX`/`gridY`/`gridW`/`gridH` token, so
@@ -35,6 +36,36 @@ export type CanvasTile = {
 
 const ROW_HEIGHT_PX = 72;
 const GAP_PX = 8;
+
+/**
+ * `F3.73` polish — a view canvas (no `onArrange`) sizes its rows from its measured width, so a
+ * narrow site view does not draw tall, mostly empty tiles. The builder keeps `ROW_HEIGHT_PX`:
+ * `measuredCellSize()` hands that fixed height to the drag and resize maths.
+ *
+ * `VIEW_ROW_MAX_PX` and `VIEW_ROW_FALLBACK_PX` are both 72 today, but they are two rules: the
+ * cap bounds a measured row, and the fallback is the height with no measurement (jsdom, or a
+ * browser before the first `ResizeObserver` callback).
+ */
+const VIEW_ROW_MIN_PX = 64;
+const VIEW_ROW_MAX_PX = 72;
+const VIEW_ROW_FALLBACK_PX = 72;
+const VIEW_ROW_TO_COLUMN_RATIO = 0.55;
+
+/**
+ * A view canvas's row height for a measured container width:
+ * `clamp(64, round(columnWidth * 0.55), 72)`, where `columnWidth` is one column after the gaps.
+ * A width that is not a positive finite number is no measurement, and gives the fallback — a
+ * zero width would otherwise clamp to the minimum.
+ */
+export function viewRowHeightPx(containerWidth: number): number {
+  if (!Number.isFinite(containerWidth) || containerWidth <= 0) {
+    return VIEW_ROW_FALLBACK_PX;
+  }
+  const columns = DASHBOARD_GRID.columns;
+  const columnWidth = (containerWidth - GAP_PX * (columns - 1)) / columns;
+  const raw = Math.round(columnWidth * VIEW_ROW_TO_COLUMN_RATIO);
+  return Math.min(VIEW_ROW_MAX_PX, Math.max(VIEW_ROW_MIN_PX, raw));
+}
 
 type DashboardCanvasProps<T extends CanvasTile> = {
   tiles: readonly T[];
@@ -74,6 +105,29 @@ export function DashboardCanvas<T extends CanvasTile>({
 }: DashboardCanvasProps<T>) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const dragState = useRef<DragState | null>(null);
+  const arranging = onArrange !== undefined;
+  const [measuredWidth, setMeasuredWidth] = useState<number | null>(null);
+
+  // The canvas measures itself whether or not it arranges; the arranging exemption lives in one
+  // place, `rowHeightPx` below. No `ResizeObserver` (jsdom) measures nothing, so the canvas keeps
+  // the fallback height.
+  useEffect(() => {
+    const element = containerRef.current;
+    if (!element || typeof ResizeObserver === "undefined") {
+      return;
+    }
+    const observer = new ResizeObserver((entries) => {
+      const width = entries[entries.length - 1]?.contentRect.width;
+      if (width !== undefined) {
+        setMeasuredWidth(width);
+      }
+    });
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, []);
+
+  // A null width is no measurement yet: `viewRowHeightPx` gives the fallback for it.
+  const rowHeightPx = arranging ? ROW_HEIGHT_PX : viewRowHeightPx(measuredWidth ?? 0);
 
   function measuredCellSize(): { width: number; height: number } {
     const containerWidth = containerRef.current?.getBoundingClientRect().width ?? 0;
@@ -119,7 +173,7 @@ export function DashboardCanvas<T extends CanvasTile>({
       className="relative grid"
       style={{
         gridTemplateColumns: `repeat(${DASHBOARD_GRID.columns}, minmax(0, 1fr))`,
-        gridAutoRows: `${ROW_HEIGHT_PX}px`,
+        gridAutoRows: `${rowHeightPx}px`,
         gap: `${GAP_PX}px`,
       }}
     >
