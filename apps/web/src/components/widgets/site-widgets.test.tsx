@@ -159,19 +159,19 @@ describe("F3.73 site widgets — presentation", () => {
   it("SW30 an unlisted severity beside an offline member keeps its code", () => {
     anUnlistedSeverityBesideAnOfflineMemberKeepsItsCode();
   });
-  it("SW31 tabStatusLabel reads Offline when an offline member sets the tone", () => {
+  it("SW36 tabStatusLabel reads Offline when an offline member sets the tone", () => {
     theLabelReadsOfflineWhenAnOfflineMemberSetsTheTone();
   });
-  it("SW32 tabStatusLabel reads the worst severity's vocabulary label", () => {
+  it("SW37 tabStatusLabel reads the worst severity's vocabulary label", () => {
     theLabelReadsTheWorstSeveritysVocabularyLabel();
   });
-  it("SW33 tabStatusLabel reads Normal with no alarm and no offline member", () => {
+  it("SW38 tabStatusLabel reads Normal with no alarm and no offline member", () => {
     theLabelReadsNormalWithNoAlarmAndNoOfflineMember();
   });
-  it("SW34 tabAccessibleName names the status and the alarm count", () => {
+  it("SW39 tabAccessibleName names the status and the alarm count", () => {
     theAccessibleNameNamesTheStatusAndTheCount();
   });
-  it("SW35 tabAccessibleName of an unreadable tab says Outside scope", () => {
+  it("SW40 tabAccessibleName of an unreadable tab says Outside scope", () => {
     theAccessibleNameOfAnUnreadableTabSaysOutsideScope();
   });
 });

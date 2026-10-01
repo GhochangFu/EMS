@@ -1,6 +1,6 @@
 import { useContext } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { useParams } from "react-router-dom";
+import { useLocation, useParams } from "react-router-dom";
 
 import type { DashboardWidgetDto } from "@bms/shared";
 
@@ -83,11 +83,14 @@ function ReadingSiteWidget({
     staleTime: 5 * 60 * 1000,
   });
   const { locationId } = useParams();
+  // `F3.77` review fix — on the site route the link keeps the query, as the tab strip's links do,
+  // so a tab opened on a wall stays in wall mode.
+  const { search } = useLocation();
   const viewerTabHref = useContext(SiteTabHrefContext);
   const tabHref: SiteTabHref | null =
     locationId === undefined
       ? viewerTabHref
-      : (key) => siteTabHref(`/control-room/site/${encodeURIComponent(locationId)}`, key);
+      : (key) => `${siteTabHref(`/control-room/site/${encodeURIComponent(locationId)}`, key)}${search}`;
 
   const title = widgetTitle(widget.title, widget.widgetType);
   const status: WidgetStatus = query.data !== undefined ? "ready" : query.isError ? "error" : "loading";

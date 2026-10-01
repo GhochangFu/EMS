@@ -11,6 +11,7 @@ import {
   type UpdateDashboardPayload,
 } from "../../api/dashboards";
 import { useDashboardScopeOptions } from "../../hooks/use-dashboard-scope-options";
+import { siteWidgetsQueryPrefix } from "../../hooks/use-site-widgets";
 import { firstStoredTabKey, useTabMarkers, type TabMarkers } from "../../hooks/use-tab-markers";
 import { isMasterDataAdmin } from "../../lib/admin-access";
 import { apiErrorMessage } from "../../lib/api-error-message";
@@ -285,6 +286,8 @@ export function DashboardBuilderEditPage({ user }: DashboardBuilderEditPageProps
     onSuccess: (next) => {
       setError(null);
       queryClient.setQueryData(["dashboards", "detail", slug, organizationIdParam], next);
+      // `F3.77` review fix — the tab markers' read: a rebound group shows its status now, not at the next poll.
+      void queryClient.invalidateQueries({ queryKey: [...siteWidgetsQueryPrefix, next.id] });
     },
     onError: (cause: Error) => setError(apiErrorMessage(cause)),
   });

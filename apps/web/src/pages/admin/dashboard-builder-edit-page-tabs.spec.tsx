@@ -207,6 +207,49 @@ export async function onlyAStoredTabCarriesItsMarker(): Promise<void> {
   expect((await strip()).textContent).not.toMatch(/alarm/);
 }
 
+/** The Electrical tab's marker answer, as `onlyAStoredTabCarriesItsMarker` stubs it. */
+function stubElectricalMarker() {
+  return vi.spyOn(siteWidgetsApi, "fetchSiteWidgets").mockResolvedValue({
+    dashboardId: TABBED_DTO.id,
+    tabKey: "overview",
+    resolvedAt: "2026-10-01T10:00:00.000Z",
+    scope: { assetCount: 4 },
+    alarms: { active: [], summary: [] },
+    roles: [],
+    tabs: [
+      {
+        tabKey: "electrical",
+        label: "Electrical",
+        assetGroupId: "22222222-2222-4222-8222-222222222222",
+        status: { worstSeverity: "warning", tone: "warning", activeAlarms: 2, offlineAssets: 0, assets: 4 },
+      },
+    ],
+  } as SiteWidgetsResponse);
+}
+
+/**
+ * `F3.77` review fix — a save refreshes the markers' read, so a stored tab rebound to another
+ * group does not show the old group's status until the next poll. Mutation: drop the
+ * site-widgets invalidation from the save's `onSuccess` => red.
+ */
+export async function aSaveRefreshesTheTabMarkers(): Promise<void> {
+  stubLoads({ dto: TABBED_DTO, groups: [GROUP, SECOND_GROUP] });
+  const putSpy = stubPut(TABBED_DTO);
+  const markersRead = stubElectricalMarker();
+  renderPage(asUser("admin"));
+  await waitForPrefill("Location");
+  await within(await strip()).findByRole("tab", { name: "Electrical, Warning, 2 alarms" });
+  const readsBeforeSave = markersRead.mock.calls.length;
+
+  const select = await screen.findByRole("combobox", { name: "Tab 1 asset group" });
+  await within(select).findByRole("option", { name: "Electrical" });
+  await userEvent.selectOptions(select, "grp-2");
+  await userEvent.click(screen.getByRole("button", { name: "Save dashboard" }));
+
+  await waitFor(() => expect(putSpy).toHaveBeenCalledTimes(1));
+  await waitFor(() => expect(markersRead.mock.calls.length).toBeGreaterThan(readsBeforeSave));
+}
+
 /** `F3.73` critique fix (WCAG 2.5.3) — the remove button's accessible name is its visible text,
  * which names the tab and what goes with it. Mutation: restore `aria-label={`Remove tab ${n}`}` => red. */
 export async function theRemoveButtonsNameIsItsVisibleText(): Promise<void> {

@@ -259,6 +259,20 @@ export async function theCardLinksUnderTheRoutesSite(): Promise<void> {
 }
 
 /**
+ * `F3.77` review fix — on the site route the card's link keeps the current query, as the tab
+ * strip's links do, so an Open chosen on a wall stays in wall mode. Mutation: drop the route's
+ * `search` from the site-route link => red.
+ */
+export async function onTheSiteRouteTheCardLinkKeepsTheQuery(): Promise<void> {
+  renderCanvas([CARD_UPS], (tabKey) => Promise.resolve(response(tabKey, "x")), {
+    ...SITE_ROUTE,
+    entry: "/control-room/site/loc-9/overview?wall=1&every=30",
+  });
+  const link = await screen.findByRole("link", { name: "Open HVAC" });
+  expect(link.getAttribute("href")).toBe("/control-room/site/loc-9/hvac?wall=1&every=30");
+}
+
+/**
  * Critique fix — in the dashboard viewer (no `:locationId`) the card links through the viewer's
  * `SiteTabHrefContext`. The adjacent case is the site page's path link; with neither, no link
  * (the builder's dispatcher passes null).
