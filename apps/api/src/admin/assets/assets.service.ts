@@ -216,6 +216,8 @@ export class AssetsAdminService {
           rtuId: body.rtuId ?? null,
           domain: body.domain,
           waterBalanceRole: body.waterBalanceRole ?? null,
+          rating: body.rating ?? null,
+          tripCause: body.tripCause ?? null,
           organizationId,
           meta: storedMeta,
           active: true,
@@ -276,6 +278,9 @@ export class AssetsAdminService {
     // an explicit `null` takes the asset out of the balance.
     const nextWaterBalanceRole =
       body.waterBalanceRole === undefined ? existing.waterBalanceRole : body.waterBalanceRole;
+    // F3.74 / ADR 0088 — the same idiom for rating and trip cause: `undefined` keeps, `null` clears.
+    const nextRating = body.rating === undefined ? existing.rating : body.rating;
+    const nextTripCause = body.tripCause === undefined ? existing.tripCause : body.tripCause;
 
     // Authorize the DESTINATION, not just the asset's current home.
     // `canManageAsset` above resolves through the asset's *existing* location,
@@ -359,6 +364,8 @@ export class AssetsAdminService {
           rtuId: nextRtuId,
           domain: body.domain ?? existing.domain,
           waterBalanceRole: nextWaterBalanceRole,
+          rating: nextRating,
+          tripCause: nextTripCause,
           organizationId,
           meta: nextMeta,
         })
@@ -604,6 +611,8 @@ export class AssetsAdminService {
       rtuDisplayName: row.rtuDisplayName,
       domain: asset.domain,
       waterBalanceRole: asset.waterBalanceRole,
+      rating: asset.rating,
+      tripCause: asset.tripCause,
       active: asset.active,
       templateId: asset.templateId,
       templateCode: row.templateCode,

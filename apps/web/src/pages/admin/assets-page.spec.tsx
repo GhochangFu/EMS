@@ -48,6 +48,8 @@ function asset(
     rtuDisplayName: null,
     domain: "electrical",
     waterBalanceRole: null,
+    rating: null,
+    tripCause: null,
     active: true,
     templateId: null,
     templateCode: null,
@@ -303,4 +305,38 @@ export async function editOfALiveStoredRoleOffersNoRetiredOption(): Promise<void
   expect(
     Array.from(select.options).filter((option) => option.textContent?.includes("(retired)")),
   ).toEqual([]);
+}
+
+// ---------------------------------------------------------------------------
+// `F3.74` (ADR 0088) — the rating and last-trip-cause inputs on the asset form.
+// ---------------------------------------------------------------------------
+
+/** Typed values reach the create call as strings. */
+export async function ratingAndTripCauseInputsSubmit(): Promise<void> {
+  stubApi();
+  const create = vi.spyOn(assetsApi, "createAdminAsset").mockResolvedValue(FIRST);
+  renderPage();
+
+  await openAddAndFindRoleSelect();
+  await fillRequiredFields();
+  await userEvent.type(screen.getByRole("textbox", { name: "Rating" }), "630A");
+  await userEvent.type(screen.getByRole("textbox", { name: "Last trip cause" }), "overload");
+  await userEvent.click(screen.getByRole("button", { name: "Save" }));
+
+  await vi.waitFor(() => expect(create).toHaveBeenCalledTimes(1));
+  expect(create.mock.calls[0]?.[0]).toMatchObject({ rating: "630A", tripCause: "overload" });
+}
+
+/** Empty inputs send `null`, never `""` — on update that is what clears a stored value. */
+export async function emptyRatingAndTripCauseSendNull(): Promise<void> {
+  stubApi();
+  const create = vi.spyOn(assetsApi, "createAdminAsset").mockResolvedValue(FIRST);
+  renderPage();
+
+  await openAddAndFindRoleSelect();
+  await fillRequiredFields();
+  await userEvent.click(screen.getByRole("button", { name: "Save" }));
+
+  await vi.waitFor(() => expect(create).toHaveBeenCalledTimes(1));
+  expect(create.mock.calls[0]?.[0]).toMatchObject({ rating: null, tripCause: null });
 }

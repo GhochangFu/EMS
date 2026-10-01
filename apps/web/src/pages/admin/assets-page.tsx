@@ -55,6 +55,9 @@ export function AssetsAdminPage({ user }: AssetsAdminPageProps) {
     domain: "electrical",
     // ADR 0073 decision 1 (E4.3): "" is "not in the balance" and is sent as `null`.
     waterBalanceRole: "",
+    // F3.74 / ADR 0088: "" is "none" and is sent as `null`.
+    rating: "",
+    tripCause: "",
   });
   const [error, setError] = useState<string | null>(null);
 
@@ -151,6 +154,8 @@ export function AssetsAdminPage({ user }: AssetsAdminPageProps) {
         ...form,
         rtuId: form.rtuId || null,
         waterBalanceRole: form.waterBalanceRole || null,
+        rating: form.rating.trim() || null,
+        tripCause: form.tripCause.trim() || null,
       };
       if (editing) {
         return updateAdminAsset(editing.id, payload);
@@ -194,6 +199,8 @@ export function AssetsAdminPage({ user }: AssetsAdminPageProps) {
                 rtuId: rtuId ?? selection.rtuId ?? "",
                 domain: defaultDomainCode(vocabQ.data?.assetDomains),
                 waterBalanceRole: "",
+                rating: "",
+                tripCause: "",
               });
               setModalOpen(true);
             }}
@@ -267,6 +274,8 @@ export function AssetsAdminPage({ user }: AssetsAdminPageProps) {
                           rtuId: item.rtuId ?? "",
                           domain: item.domain,
                           waterBalanceRole: item.waterBalanceRole ?? "",
+                          rating: item.rating ?? "",
+                          tripCause: item.tripCause ?? "",
                         });
                         setModalOpen(true);
                       }}
@@ -429,6 +438,25 @@ export function AssetsAdminPage({ user }: AssetsAdminPageProps) {
                     <option value={retiredStoredRole}>{retiredStoredRole} (retired)</option>
                   ) : null}
                 </select>
+              </label>
+              {/* F3.74 / ADR 0088: shown on the breaker's mimic readout. Both optional. */}
+              <label className="block text-xs font-semibold text-ink-muted">
+                Rating
+                <input
+                  className="mt-1 w-full surface-field px-3 py-2 text-sm"
+                  value={form.rating}
+                  maxLength={32}
+                  onChange={(event) => setForm({ ...form, rating: event.target.value })}
+                />
+              </label>
+              <label className="block text-xs font-semibold text-ink-muted">
+                Last trip cause
+                <input
+                  className="mt-1 w-full surface-field px-3 py-2 text-sm"
+                  value={form.tripCause}
+                  maxLength={128}
+                  onChange={(event) => setForm({ ...form, tripCause: event.target.value })}
+                />
               </label>
             </div>
             {error ? <div className="mt-2 text-xs text-critical-ink">{error}</div> : null}

@@ -8,7 +8,9 @@ import {
   editOfARetiredStoredRoleKeepsItsValue,
   editOfARetiredStoredRoleOffersItMarkedRetired,
   editPrefillsTheStoredRole,
+  emptyRatingAndTripCauseSendNull,
   imagesOpensThePanelForThatRow,
+  ratingAndTripCauseInputsSubmit,
   roleSelectOffersTheVocabularyAfterAnEmptyOption,
   savingWithARoleSendsIt,
   savingWithNoRoleSendsNull,
@@ -67,5 +69,21 @@ describe("E4.3 assets page water balance role", () => {
 
   it("offers no (retired) option when the stored role is live (sweep L1 control)", async () => {
     await editOfALiveStoredRoleOffersNoRetiredOption();
+  });
+});
+
+/** `F3.74` (ADR 0088) — rating and last trip cause on the asset form. */
+describe("F3.74 assets page rating and trip cause", () => {
+  afterEach(() => {
+    cleanup();
+    vi.restoreAllMocks();
+  });
+
+  it("submits the typed rating and trip cause", async () => {
+    await ratingAndTripCauseInputsSubmit();
+  });
+
+  it("sends null for empty rating and trip cause", async () => {
+    await emptyRatingAndTripCauseSendNull();
   });
 });

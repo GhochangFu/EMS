@@ -31,6 +31,10 @@ export const createAssetBodySchema = z
     // `assets_water_balance_role_fkey`. Omitted or `null` = not in the balance; on update,
     // omitted leaves the stored role alone and `null` clears it.
     waterBalanceRole: waterBalanceRoleCodeSchema.nullish(),
+    // F3.74 / ADR 0088: a breaker's rating and the cause of its last trip. Free text; on update
+    // omitted keeps the stored value and `null` clears it.
+    rating: z.string().max(32).nullish(),
+    tripCause: z.string().max(128).nullish(),
     meta: z.record(z.unknown()).optional(),
   })
   .strict();
