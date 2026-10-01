@@ -11,10 +11,7 @@ import {
 import { and, asc, eq } from "drizzle-orm";
 
 import {
-  assetGroupMembers,
   assetGroups,
-  assetPoints,
-  assets,
   dashboards,
   dashboardWidgetPoints,
   dashboardWidgets,
@@ -52,6 +49,7 @@ import type {
   InstantiateSiteTemplateBody,
 } from "./dashboard-templates.schema";
 import { DashboardTemplatesService } from "./dashboard-templates.service";
+import { loadActivePoints, loadMembersByRole } from "./template-resolution.reads";
 
 /**
  * Instantiating a section template against one asset group — `F3.36` Part E4,
@@ -114,8 +112,9 @@ import { DashboardTemplatesService } from "./dashboard-templates.service";
  * whose `target` is `site` takes `{ locationId, tabGroups? }` and is copied onto
  * that location by the site-layout copy action, which owns the group picking,
  * the tabs and the site view row. This service only routes to it, through ONE
- * optional seam (`SITE_TEMPLATE_ARM`): the copy action arrives in PR4, and
- * until it is provided the arm answers 501 `SITE_ARM_NOT_WIRED_MESSAGE`. The
+ * optional seam (`SITE_TEMPLATE_ARM`), which `AdminModule` fills from
+ * `SiteLayoutService` (PR4); a module that does not provide it answers 501
+ * `SITE_ARM_NOT_WIRED_MESSAGE`. The
  * per-widget plan (`planTemplateWidget`) moved to `@bms/shared` for the same
  * reason — the copy action and the seed plan widgets with it too.
  */
@@ -131,7 +130,8 @@ export const SITE_ARM_NOT_WIRED_MESSAGE =
  */
 export const SITE_TEMPLATE_ARM = Symbol("SITE_TEMPLATE_ARM");
 
-/** What the site arm answers. PR4 names its contract (plan D6); this seam only passes it on. */
+/** What the site arm answers. The copy action answers `SiteLayoutResultDto` (plan D6); this seam
+ * only passes it on, so it stays `object` and the seam specs may stub any answer. */
 export type SiteTemplateArmResult = object;
 
 /**
@@ -298,11 +298,11 @@ export class DashboardTemplatesInstantiateService {
     const members =
       body.assetGroupId === null
         ? new Map<string, GroupMember[]>()
-        : await this.loadMembersByRole(body.assetGroupId, template.organizationId);
+        : await loadMembersByRole(this.fleetDb, body.assetGroupId, template.organizationId);
     const pointsByAsset =
       body.assetGroupId === null
         ? new Map<string, string>()
-        : await this.loadActivePoints(template.organizationId);
+        : await loadActivePoints(this.fleetDb, template.organizationId);
 
     // `F3.73` — the plan moved to `@bms/shared` (`template-instantiation.ts`), byte for byte.
     const plans = content.widgets.map((widget) =>
@@ -484,67 +484,6 @@ export class DashboardTemplatesInstantiateService {
     ) {
       throw new ForbiddenException("Asset group is outside your access scope");
     }
-  }
-
-  /**
-   * Members of one group, grouped by role and **ordered by `assets.code`**.
-   *
-   * The order is the whole reason "the first match" is an answer rather than a
-   * coin toss: `assets.code` is `NOT NULL UNIQUE`, so it is a total order.
-   * Members with no role are skipped — a membership with a NULL role plays no
-   * named part and no template widget can name it.
-   */
-  private async loadMembersByRole(
-    assetGroupId: string,
-    organizationId: string,
-  ): Promise<Map<string, GroupMember[]>> {
-    const rows = await this.fleetDb
-      .select({ role: assetGroupMembers.role, assetId: assets.id, code: assets.code })
-      .from(assetGroupMembers)
-      .innerJoin(assets, eq(assetGroupMembers.assetId, assets.id))
-      // `bms_fleet` holds `BYPASSRLS`, so this predicate is the ONLY isolation
-      // control on this read — `dashboard-point-scope.ts` states the rule and
-      // calls a foreign `assetId` leaving the module "a cross-tenant telemetry
-      // read waiting to happen". The organization filter was missing: a foreign
-      // member yielded no binding only because `loadActivePoints` filters, which
-      // makes containment transitive on a predicate one file away. Added by the
-      // `F3.36` security review.
-      .where(
-        and(
-          eq(assetGroupMembers.assetGroupId, assetGroupId),
-          eq(assets.organizationId, organizationId),
-        ),
-      )
-      .orderBy(asc(assets.code));
-
-    const byRole = new Map<string, GroupMember[]>();
-    for (const row of rows) {
-      if (!row.role) continue;
-      const list = byRole.get(row.role) ?? [];
-      // The CODE is carried, not only the id. It used to be selected and then
-      // discarded, and the field that survived was named `assetCode` while
-      // holding a uuid — so the next reader who sorted on it would have sorted
-      // by uuid and silently lost Amendment 2 decision 2's tie-break. Found by
-      // the `F3.36` correctness review.
-      list.push({ assetId: row.assetId, code: row.code });
-      byRole.set(row.role, list);
-    }
-    return byRole;
-  }
-
-  /** Active points, keyed `assetId::pointKey`. Inactive points are skipped:
-   * binding a retired sensor is the shortfall `partial` exists to report. */
-  private async loadActivePoints(organizationId: string): Promise<Map<string, string>> {
-    const rows = await this.fleetDb
-      .select({ id: assetPoints.id, assetId: assetPoints.assetId, pointKey: assetPoints.pointKey })
-      .from(assetPoints)
-      .where(and(eq(assetPoints.organizationId, organizationId), eq(assetPoints.active, true)));
-
-    const byKey = new Map<string, string>();
-    for (const row of rows) {
-      byKey.set(`${row.assetId}::${row.pointKey}`, row.id);
-    }
-    return byKey;
   }
 
   /** The created dashboard with its widgets, read back so the response carries

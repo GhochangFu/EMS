@@ -36,6 +36,7 @@ import {
   updateLocationBodySchema,
 } from "../admin/locations/locations.schema";
 import { putSiteControlRoomViewBodySchema } from "../control-room/site-control-room-view.schema";
+import { siteLayoutBodySchema } from "../control-room/site-layout.schema";
 import {
   createMimicLayoutBodySchema,
   putMimicLayoutBodySchema,
@@ -293,6 +294,9 @@ export const REQUEST_SCHEMAS: Record<string, ZodTypeAny> = {
   // rule above. `SiteViewController_view` (the resolve read) is absent for the
   // same reason.
   LocationsAdminController_putControlRoomView: putSiteControlRoomViewBodySchema,
+  // `F3.73` plan D6 — the "Make site layout" body. `DashboardTemplatesController_applyToSites`
+  // is absent: one path parameter, no body, no query.
+  LocationsAdminController_makeSiteLayout: siteLayoutBodySchema,
   MaintenanceController_convert: convertMaintenanceBodySchema,
   MaintenanceController_createSchedule: createMaintenanceScheduleBodySchema,
   MaintenanceController_listSchedules: listMaintenanceQuerySchema,

@@ -35,6 +35,7 @@ import {
   assertRescopedDashboardResolvesOutOfScope,
   assertSecondWriteUpserts,
   assertSiteMovedToAnotherOrganizationIsOutOfScope,
+  assertSiteTemplateCountIsPerOrganization,
   assertUngrantedPrincipalCannotResolve,
 } from "./site-control-room-view.integration.spec";
 import { SiteControlRoomViewService } from "./site-control-room-view.service";
@@ -70,6 +71,12 @@ async function sweepStaleRuns(pool: pg.Pool): Promise<void> {
     await pool.query(`DELETE FROM bms.asset_groups WHERE location_id IN (${stale})`);
     await pool.query(
       `DELETE FROM bms.locations WHERE code LIKE 'F367-%' AND created_at < now() - interval '30 minutes'`,
+    );
+    await pool.query(
+      `DELETE FROM bms.dashboard_templates WHERE code LIKE 'f367-%' AND created_at < now() - interval '30 minutes'`,
+    );
+    await pool.query(
+      `DELETE FROM bms.organizations WHERE code LIKE 'F367-%' AND created_at < now() - interval '30 minutes'`,
     );
   } catch (err) {
     process.stderr.write(
@@ -150,7 +157,7 @@ describe.skipIf(!connectionString)("F3.67 — SiteControlRoomViewService under r
       phewbId,
       eskomId,
       pheAdminUserId: pheAdmin[0].id,
-      created: { locations: [], groups: [], dashboards: [] },
+      created: { locations: [], groups: [], dashboards: [], organizations: [], templates: [] },
     };
   });
 
@@ -160,7 +167,7 @@ describe.skipIf(!connectionString)("F3.67 — SiteControlRoomViewService under r
     // suite writes no fixture user — the operator in S8 is an unprovisioned
     // claim — so no user delete can ever meet a setting row.
     if (ctx) {
-      const { locations, groups, dashboards } = ctx.created;
+      const { locations, groups, dashboards, organizations, templates } = ctx.created;
       await fleetPool.query(
         `DELETE FROM bms.audit_log WHERE entity_type = 'site_control_room_view' AND entity_id = ANY($1)`,
         [locations],
@@ -171,6 +178,9 @@ describe.skipIf(!connectionString)("F3.67 — SiteControlRoomViewService under r
       await fleetPool.query(`DELETE FROM bms.dashboards WHERE id = ANY($1)`, [dashboards]);
       await fleetPool.query(`DELETE FROM bms.asset_groups WHERE id = ANY($1)`, [groups]);
       await fleetPool.query(`DELETE FROM bms.locations WHERE id = ANY($1)`, [locations]);
+      // `F3.73` S19 — templates before organizations (RESTRICT), and after the locations of them.
+      await fleetPool.query(`DELETE FROM bms.dashboard_templates WHERE id = ANY($1)`, [templates]);
+      await fleetPool.query(`DELETE FROM bms.organizations WHERE id = ANY($1)`, [organizations]);
     }
     await Promise.all([fleetPool?.end(), authPool?.end(), tenantPool?.end()]);
   });
@@ -269,5 +279,9 @@ describe.skipIf(!connectionString)("F3.67 — SiteControlRoomViewService under r
 
   it("S18 a site moved to another organization resolves dashboard_out_of_scope", async () => {
     await assertSiteMovedToAnotherOrganizationIsOutOfScope(ctx);
+  });
+
+  it("S19 the no_site_layout count carries the site's organization (F3.73 plan D7)", async () => {
+    await assertSiteTemplateCountIsPerOrganization(ctx);
   });
 });

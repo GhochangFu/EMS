@@ -1,4 +1,5 @@
 import { DASHBOARD_GRID, type StockDashboardTemplateDto } from "@bms/shared";
+import { SMOC_STANDARD_SITE_TEMPLATE } from "@bms/shared/site-templates";
 
 import {
   BELOW_TILES_Y,
@@ -46,8 +47,11 @@ import {
  *
  * It stays under `apps/api` and NOT `packages/shared`, because the browser
  * reaches the catalog through `GET /admin/dashboard-templates/stock` (this
- * part's sibling unit), never by importing it — so six templates' worth of
- * widget configuration never enters the web bundle.
+ * part's sibling unit), never by importing it — so the catalog's widget
+ * configuration never enters the web bundle. **Content may live in
+ * `packages/shared` only behind a subpath the index does not export** — the
+ * `F3.73` SMOC site layout is `@bms/shared/site-templates`, because the boot
+ * seed makes copies of it and cannot import from `apps/api`.
  *
  * ---
  *
@@ -97,9 +101,10 @@ import {
  * may import from `packages/db`, and that the codes are a literal list in the
  * spec.
  *
- * **`tests/f3.38-stock-catalog-vocabulary.test.ts` scans both files as text**
- * and its `STOCK_RELS` docblock says so. A third catalog file must be added to
- * that list, or its entries' `pointKey` and `assetRoleCode` values are checked
+ * **`tests/f3.38-stock-catalog-vocabulary.test.ts` scans every catalog file as
+ * text** (these two and, since `F3.73`, `site-templates/smoc-standard.ts` in
+ * `packages/shared`) and its `STOCK_RELS` docblock says so. A further catalog
+ * file must be added to that list, or its entries' `pointKey` and `assetRoleCode` values are checked
  * against no vocabulary at all and nothing reports it.
  */
 
@@ -141,6 +146,8 @@ import {
  */
 export const STOCK_DASHBOARD_TEMPLATE_CATALOG = [
   ...ELECTRICAL_STOCK_TEMPLATES,
+  // `F3.73` plan D8 — the one `target: "site"` entry; its content and docblock are in `packages/shared`.
+  SMOC_STANDARD_SITE_TEMPLATE,
 
   // -------------------------------------------------------------------------
   // Water — raw intake, pump house, treatment, tanks, distribution.

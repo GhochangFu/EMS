@@ -2,6 +2,7 @@ import { Module } from "@nestjs/common";
 
 import { CalcModule } from "../calc/calc.module";
 import { ControlRoomModule } from "../control-room/control-room.module";
+import { SiteLayoutService, siteTemplateArmOf } from "../control-room/site-layout.service";
 import { CredentialCryptoService } from "../security/credential-crypto.service";
 import { VocabulariesModule } from "../vocabularies/vocabularies.module";
 import { AssetPointCalcOverrideController } from "./asset-points/asset-point-calc-override.controller";
@@ -20,7 +21,11 @@ import { AssetTemplatesAdminController } from "./asset-templates/asset-templates
 import { AssetTemplatesAdminService } from "./asset-templates/asset-templates.service";
 import { STOCK_ASSET_TEMPLATE_CATALOG_TOKEN } from "./asset-templates/asset-templates.tokens";
 import { STOCK_ASSET_TEMPLATE_CATALOG } from "./asset-templates/stock-catalog/stock-catalog";
-import { DashboardTemplatesInstantiateService } from "./dashboard-templates/dashboard-templates-instantiate.service";
+import {
+  DashboardTemplatesInstantiateService,
+  SITE_TEMPLATE_ARM,
+  type SiteTemplateArm,
+} from "./dashboard-templates/dashboard-templates-instantiate.service";
 import { DashboardTemplatesStockService } from "./dashboard-templates/dashboard-templates-stock.service";
 import { DashboardTemplatesController } from "./dashboard-templates/dashboard-templates.controller";
 import { DashboardTemplatesService } from "./dashboard-templates/dashboard-templates.service";
@@ -137,6 +142,15 @@ import { TelemetryImportService } from "./telemetry-import/telemetry-import.serv
     DashboardTemplatesService,
     DashboardTemplatesStockService,
     DashboardTemplatesInstantiateService,
+    // `F3.73` plan D6 (ruling Q3a) — the `instantiate` site arm, filled by the site-layout copy
+    // action `ControlRoomModule` exports. The seam is `@Optional()`, so without this provider the
+    // arm answers 501 and nothing fails at boot: `control-room-module-wiring.spec.ts` resolves it.
+    // The factory is `siteTemplateArmOf`, so the integration spec's S13 drives this same arm.
+    {
+      provide: SITE_TEMPLATE_ARM,
+      useFactory: (siteLayout: SiteLayoutService): SiteTemplateArm => siteTemplateArmOf(siteLayout),
+      inject: [SiteLayoutService],
+    },
     AuditAdminService,
     TelemetryWriteService,
     TelemetryImportService,

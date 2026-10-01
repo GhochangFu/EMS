@@ -38,6 +38,7 @@ import {
   updateLocationBodySchema,
 } from "../admin/locations/locations.schema";
 import { putSiteControlRoomViewBodySchema } from "../control-room/site-control-room-view.schema";
+import { siteLayoutBodySchema } from "../control-room/site-layout.schema";
 import {
   createMimicLayoutBodySchema,
   putMimicLayoutBodySchema,
@@ -286,6 +287,9 @@ export const BODY_SCHEMAS: Record<string, ZodTypeAny> = {
   createMimicLayoutBodySchema,
   putMimicLayoutBodySchema,
   putSiteControlRoomViewBodySchema,
+  // `F3.73` plan D6. `.strict()`: both keys are optional, so a misspelt `tabGroup` dropped
+  // silently would run the copy with no choice and answer 409 for a reason the caller cannot see.
+  siteLayoutBodySchema,
   // `F3.32f` slice 3 (ADR 0086 decisions 4, 6, 7). `.strict()`: a library, a symbol patch and the
   // switch are closed authoring shapes with no `z.record` escape, so an unknown key is a typo.
   createMimicOrgSymbolLibraryBodySchema,
