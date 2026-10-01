@@ -652,6 +652,13 @@
       "when": 1790731287289,
       "tag": "0093_mimic_org_symbol_libraries",
       "breakpoints": true
+    },
+    {
+      "idx": 94,
+      "version": "7",
+      "when": 1790768303628,
+      "tag": "0094_dashboard_tabs",
+      "breakpoints": true
     }
   ]
 }

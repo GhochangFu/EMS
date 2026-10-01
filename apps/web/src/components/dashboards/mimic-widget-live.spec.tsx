@@ -78,6 +78,7 @@ function mimicWidget(id: string, title: string): MimicWidgetDto {
     gridH: 6,
     points: [],
     sources: [],
+    tabId: null,
     widgetType: "mimic",
     config: { source: "preset", preset: "water_train" },
   };
@@ -181,6 +182,8 @@ function dashboard(widgets: DashboardWidgetDto[]): DashboardDto {
     assetTemplateId: null,
     createdAt: "2026-01-01T00:00:00Z",
     updatedAt: "2026-01-01T00:00:00Z",
+    templateId: null,
+    tabs: [],
     widgets,
   };
 }

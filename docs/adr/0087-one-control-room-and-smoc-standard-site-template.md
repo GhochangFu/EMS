@@ -210,3 +210,148 @@ question:
 - **Reference:** the owner-reviewed layout demo is the canvas artifact
   "Unified Operations Demo" (version 3, 2026-09-30). Its menu label
   "Operations" is superseded by gate question 6.
+
+## Amendment 1 (2026-09-30, `F3.73`) — decision-11 rulings
+
+The owner ruled each design question of decision 11 on 2026-09-30, one at a
+time, after a research pass at `main` `9a03f67a`. The owner then approved the
+step-3 plan (`docs/plans/f3.73-smoc-site-template.md`), including every plan
+decision listed below. The rulings settle decision 11; decisions 4 to 7 stand.
+
+**When `F3.73` ships (owner ruling, 2026-09-30).** The *Status* section says
+`F3.73`–`F3.75` start after the first stable version. The owner ruled that a
+complete `F3.73` pull request — green and reviewed — may merge before the v1
+merge cutoff (2026-10-01 09:00 IST), each on the owner's explicit merge. A
+pull request that is not complete by then waits for v1. `F3.74` and `F3.75`
+are unchanged.
+
+### Rulings
+
+1. **Q1 Tab storage — a tabs table and a database rule.** New
+   `bms.dashboard_tabs` (`id`, `organization_id`, `dashboard_id` ON DELETE
+   CASCADE, `tab_key`, `label`, `sort_order`, `asset_group_id` NULL = Overview,
+   ON DELETE RESTRICT). `dashboard_widgets.tab_id` is nullable (NULL = legacy
+   single canvas) with a composite FK `(dashboard_id, tab_id)` →
+   `dashboard_tabs(dashboard_id, id)`. The same-location rule (a tab's group is
+   at the dashboard's site) is held **in the database**: `UNIQUE (id,
+   location_id)` on `asset_groups` and on `dashboards`, and composite FKs from
+   the tab, so a later PATCH of the dashboard's location fails `23503` and
+   answers 400. FORCE RLS with legs: own organization, parent dashboard, asset
+   group.
+2. **Q2 Mimic — presets in the template.** Each domain tab's mimic is
+   `{source:'preset', preset:<domain>}`. No layout is copied. An admin can
+   switch a copy's mimic to a drawn layout in the builder later.
+3. **Q3a Template storage — a target column.** `bms.dashboard_templates.target`
+   (`'asset_group' | 'site'`, default `'asset_group'`). Content gains optional
+   `tabs`; old rows still parse. Instantiate gains a site arm. Versions, stock
+   import, RLS and the `template_id` stamp are reused.
+4. **Q3b Tab group — a domain column plus an override.** Nullable
+   `asset_groups.domain`, an FK to `bms.asset_domains(code)`, filled for seeded
+   groups. The copy action picks the group of each domain automatically. If a
+   domain has two groups at the site, the admin picks one in the action, and a
+   bulk run skips that site and reports it.
+5. **Q4 Copy timing — a per-site action, a bulk action and seed demo sites.**
+   The per-site "Make site layout" button sits on the no-copy notice (one
+   transaction: copy from the organization's **published** site template, point
+   the site view at it; never replaces a builtin row or an existing row). The
+   bulk organization action is the backfill (one transaction per site; it skips
+   sites that have a row and `RSMOC-WC`, and reports the skips). The seed makes
+   copies only for seed-owned demo sites (PHEWB pump stations, CSMOC Gauteng)
+   through the same shared planner. **Not** at site creation, **not** at
+   onboarding, **not** in a migration.
+6. **Q4b No groups — the action makes groups.** One group per asset domain at
+   the site (`code` = domain, `domain` set), the site's assets of that domain
+   as members, in the same transaction. Roles stay empty until an admin sets
+   them.
+7. **Q5 Site view — keep kind `dashboard`.** No change to
+   `site_control_room_views`. The web knows a copy by the template stamp (the
+   DTO exposes `templateId`) and shows tabs. One new closed notice value,
+   "no site layout yet", only at a site with no view row in an organization
+   that holds a published site template.
+8. **Q6a Status — alarms and offline.** A module card and a critical-systems
+   row show the worst active alarm severity in the tab's group plus the offline
+   asset count, computed on the server. There is no rule-match state (breaker
+   state is `F3.74`).
+9. **Q6b Content — the proposed layout.**
+   - Overview (no group): a state legend; four value tiles on site metrics
+     (Active alarms `alarms.active.count`, Total load kW `sustainability.total`
+     kw sum, Asset health `assets.health.score`, Offline assets
+     `assets.offline.count`); an asset-class strip; an active-alarms rail; one
+     module summary card per domain tab (it opens that tab); a critical-systems
+     list.
+   - Domain tab (one group): four role-bound value tiles (SLD: incomer kW, PF,
+     frequency, main bus kW; UPS: load %, backup minutes; HVAC: supply and
+     return air, cooling kW; ENV: average temperature, humidity; Water: inlet
+     flow, tank level); the domain preset mimic; an active-alarms rail scoped to
+     the group; a table of the group's assets.
+   - The seed gives roles to UPS, battery, HVAC, IT and environment assets
+     (matched on asset code for `CR-UPS` and `CR-BATT`, which are in the
+     electrical domain).
+10. **Q6b correction — add `assets.offline.count`.** A new catalog metric with
+    the same site and group scope as `alarms.active.count`. It reuses the server
+    offline count of Q6a.
+
+### Owner answers to the plan's open questions (2026-09-30)
+
+- **OQ1 + OQ2 — a template tab's `groupCode` breaks the tie.** Ruling Q3b (one
+  group per domain, the admin picks) and the Q6b layout (a UPS tab) disagree
+  where one domain has two groups at a site (`electrical` and `ups-battery`).
+  The template names the group; the admin picks only when the named group is
+  absent and two candidates remain. The `ups` and `it` tabs stay, and every
+  seeded site resolves with no choice.
+- **OQ3 — a new `site` row ("Site layouts")** in `dashboard_sections`.
+- **OQ4 — the newest published** `target='site'` template of the organization,
+  for the per-site button only.
+- **OQ5 — not an owner question.** Whether the `dashboard_widgets` policy gains
+  a tab leg is `security-reviewer`'s call on PR1. If it asks, it is one
+  statement in migration `0094` before merge.
+- **OQ6 — two new role codes**, `leak-sensor` and `smoke-detector`, in
+  migration `0095`, given to the seeded `CR-LEAK-*` and `CR-SMOKE-*` sensors.
+  Leak and smoke datasets and tables stay `F3.75`.
+- **OQ7 — 40 widgets per tab and 8 tabs per dashboard.** A dashboard with no
+  tabs keeps 40.
+
+### Plan decisions (approved by the owner on 2026-09-30)
+
+- **D0 File split.** The dashboard DTO block moves from
+  `packages/shared/src/contracts/dashboard-builder.ts` to a new
+  `dashboard-dto.ts`, before PR1, so the builder contract file stays under the
+  1000-line cap.
+- **D1 Tabs table.** The Overview tab stores `location_id NULL`, so its
+  composite FK is inert and a dashboard with only an Overview tab can still move
+  scope. The `dashboard_widgets` policy is **not** re-created: the composite FK
+  pins a widget's tab to its own dashboard and the existing policy already
+  checks that dashboard's organization (see OQ5).
+- **D2 Per-tab cap.** The 40-widget cap applies per tab and to the legacy
+  canvas; at most 8 tabs (OQ7).
+- **D4 Section row.** A new `site` row in `dashboard_sections` gives the NOT NULL
+  `section` an honest value. `target` is the behaviour switch; `section` stays
+  display grouping (OQ3).
+- **D5 Group picking.** A tab whose domain has no group at the site is
+  **omitted**. Every Overview `module_summary_card` whose target tab is omitted
+  is **dropped** and reported. The tie-break order per tab is: the admin's
+  choice; the untaken group of the tab's domain whose code equals the tab's
+  `groupCode`; the single untaken candidate; else ambiguous (per-site: the admin
+  picks; bulk: skip and report).
+- **D6 Three routes, one service.** `POST /admin/locations/:id/site-layout`,
+  the site arm of `POST /admin/dashboard-templates/:id/instantiate` and
+  `POST /admin/dashboard-templates/:id/apply-to-sites` (bulk) all delegate to
+  one `SiteLayoutService`. **Removed-copy rule:** a site whose view row is
+  `kind = 'dashboard'` with `dashboard_id IS NULL` (an admin deleted the copy
+  and `ON DELETE SET NULL` left the row) is a removed copy, not an existing
+  view. The action updates that row in place and asserts one row changed; every
+  other existing row (builtin, generated, a live dashboard) is refused with 409.
+  Ruling Q4 forbids replacing a builtin row or an existing copy, and a removed
+  copy is neither.
+- **D8 SMOC standard content.** The UPS and IT tabs are gap-fills the Q6b layout
+  implies; the `water` tab names `groupCode` `water`. The content is exported
+  as the subpath `@bms/shared/site-templates` and is not re-exported from the
+  shared index, so the widget configuration stays out of the web bundle.
+- **D12 Seed.** Seed ownership is per organization (ESKOM: the CSMOC Gauteng
+  identity, never `RSMOC-WC`; PHEWB: the six pump stations). The seed passes
+  explicit group choices. `IT_LOAD` keeps a NULL domain (a formula group, not a
+  domain group). `demo-water-plant` gets `domain = 'water'`. The verifier counts
+  view rows on the seed-resolved locations, never dashboard slugs.
+- **`assets.list` dataset.** It has no `role` column; the resolver signature
+  returns asset ids only. A role column on the group assets table stays
+  `F3.75`.

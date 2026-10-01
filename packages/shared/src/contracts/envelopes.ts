@@ -34,7 +34,7 @@ import {
   templateVersionDeltaDtoSchema,
   templateVersionSummaryDtoSchema,
 } from "./admin";
-import { dashboardSummaryDtoSchema } from "./dashboard-builder";
+import { dashboardSummaryDtoSchema } from "./dashboard-dto";
 import { dashboardTemplateSummaryDtoSchema, stockDashboardTemplateDtoSchema } from "./dashboard-templates";
 import {
   alarmListItemSchema,

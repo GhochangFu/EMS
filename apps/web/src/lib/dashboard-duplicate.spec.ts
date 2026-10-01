@@ -36,13 +36,14 @@ function widgetDto(overrides: Partial<DashboardWidgetDto> = {}): DashboardWidget
     // `F3.35` Stage C. Required by the DTO; the `as DashboardWidgetDto` cast below hides
     // an omission from the compiler, so a missing key surfaces as a TypeError at run time.
     sources: [],
+    tabId: null,
     widgetType: "value_tile",
     config: { unit: "kW", decimals: 1 },
     ...overrides,
   } as DashboardWidgetDto;
 }
 
-function sourceDashboard(widgets: DashboardWidgetDto[]): DashboardDto {
+function sourceDashboard(widgets: DashboardWidgetDto[], tabs: DashboardDto["tabs"] = []): DashboardDto {
   return {
     id: "source-dash",
     organizationId: "org-1",
@@ -55,8 +56,98 @@ function sourceDashboard(widgets: DashboardWidgetDto[]): DashboardDto {
     assetTemplateId: null,
     createdAt: "2026-01-01T00:00:00Z",
     updatedAt: "2026-01-01T00:00:00Z",
+    templateId: null,
+    tabs,
     widgets,
   };
+}
+
+const TAB_OVERVIEW = {
+  id: "tab-overview-id",
+  dashboardId: "source-dash",
+  organizationId: "org-1",
+  key: "overview",
+  label: "Overview",
+  sortOrder: 0,
+  assetGroupId: null,
+};
+const TAB_UPS = {
+  ...TAB_OVERVIEW,
+  id: "tab-ups-id",
+  key: "ups",
+  label: "UPS",
+  sortOrder: 1,
+  assetGroupId: "group-ups",
+};
+
+function tabbedSource(): DashboardDto {
+  return sourceDashboard(
+    [
+      widgetDto({ id: "w-tile-overview", tabId: TAB_OVERVIEW.id }),
+      widgetDto({ id: "w-tile-ups", tabId: TAB_UPS.id }),
+      widgetDto({
+        id: "w-mimic-ups",
+        tabId: TAB_UPS.id,
+        widgetType: "mimic",
+        points: [],
+        config: { source: "preset", preset: "water_train" },
+      } as Partial<DashboardWidgetDto>),
+    ],
+    [TAB_OVERVIEW, TAB_UPS],
+  );
+}
+
+const sameLocation = { locationId: "loc-1", assetGroupId: null };
+const otherLocation = { locationId: "loc-2", assetGroupId: null };
+function targetAt(scope: { locationId: string | null; assetGroupId: string | null }) {
+  return { organizationId: "org-1", scope, slug: "feed-pumps-copy", name: "Feed pumps (copy)" };
+}
+
+/** `F3.73` D11b — the copy carries the source tabs with their ids dropped. */
+export function runDuplicateTabsCarriedTests(): void {
+  const payload = duplicatePayload(tabbedSource(), targetAt(sameLocation));
+  assert(payload.widgets.tabs.length === 2, "the copy carries both source tabs");
+  for (const tab of payload.widgets.tabs) {
+    assert(!("id" in tab), `a duplicated tab must not carry the source tab's id — found ${JSON.stringify(tab)}`);
+  }
+  assert(
+    payload.widgets.tabs[1]!.key === "ups" && payload.widgets.tabs[1]!.label === "UPS",
+    "the tab key and label are copied",
+  );
+  const byTitle = payload.widgets.widgets.map((widget) => widget.tabKey);
+  assert(
+    JSON.stringify(byTitle) === JSON.stringify(["overview", "ups", "ups"]),
+    `each widget keeps its tabKey — got ${JSON.stringify(byTitle)}`,
+  );
+}
+
+/** `F3.73` D11b — a same-location copy keeps the group bindings and every mimic. */
+export function runDuplicateSameLocationKeepsGroupsTests(): void {
+  const payload = duplicatePayload(tabbedSource(), targetAt(sameLocation));
+  assert(
+    payload.widgets.tabs[1]!.assetGroupId === "group-ups",
+    "a same-location duplicate keeps the tab's group binding",
+  );
+  assert(payload.widgets.widgets.length === 3, "a same-location duplicate keeps the tab mimic");
+  assert(payload.droppedMimics === 0, "nothing is dropped on a same-location duplicate");
+}
+
+/** `F3.73` D11b — a cross-location copy clears every tab group and drops the tab mimics. */
+export function runDuplicateCrossLocationClearsGroupsTests(): void {
+  const payload = duplicatePayload(tabbedSource(), targetAt(otherLocation));
+  assert(
+    payload.widgets.tabs.every((tab) => tab.assetGroupId === null),
+    `a cross-location duplicate clears every tab's assetGroupId — got ${JSON.stringify(payload.widgets.tabs)}`,
+  );
+  assert(
+    payload.widgets.tabs.length === 2,
+    "the tabs stay as plain canvases",
+  );
+  assert(
+    payload.widgets.widgets.length === 2 && payload.widgets.widgets.every((w) => w.widgetType !== "mimic"),
+    "the mimic on the group-cleared tab is dropped",
+  );
+  assert(payload.droppedMimics === 1, `one dropped mimic is counted — got ${payload.droppedMimics}`);
 }
 
 /** `freeSlug` — the first candidate not already taken, bounded and length-safe. */

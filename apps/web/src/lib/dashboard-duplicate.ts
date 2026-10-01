@@ -3,8 +3,10 @@ import type { DashboardDto } from "@bms/shared";
 import {
   buildPutWidgetsPayload,
   dashboardRowsFromDto,
+  tabWritesFromDto,
   type DashboardWidgetRow,
   type PutDashboardWidgetsPayload,
+  type TabWritePayload,
 } from "./dashboard-builder-form";
 
 /**
@@ -83,6 +85,9 @@ export type DuplicateDashboardCreateBody = {
 export type DuplicateDashboardPayload = {
   create: DuplicateDashboardCreateBody;
   widgets: PutDashboardWidgetsPayload;
+  /** `F3.73` D11b — tab mimic widgets left out because their tab lost its group on a
+   * cross-location copy. The dialog says so; the server would refuse them (`MIMIC_SCOPE_MESSAGE`). */
+  droppedMimics: number;
 };
 
 /** Every `dashboard_widgets.id`/`dashboard_widget_points.id` on `row` belongs to the SOURCE
@@ -91,6 +96,14 @@ export type DuplicateDashboardPayload = {
  * an id copied from another dashboard is not that. */
 function dropWidgetId(row: DashboardWidgetRow): DashboardWidgetRow {
   const { id: _sourceId, ...rest } = row;
+  return rest;
+}
+
+/** `F3.73` D11b — a tab's own `id` belongs to the SOURCE dashboard, for the reason `dropWidgetId`
+ * gives: the API treats a present tab `id` as one of THIS dashboard's stored tabs and answers 400
+ * (`TAB_ID_UNKNOWN_MESSAGE`) for any other. */
+function dropTabId(tab: TabWritePayload): TabWritePayload {
+  const { id: _sourceId, ...rest } = tab;
   return rest;
 }
 
@@ -104,8 +117,23 @@ export function duplicatePayload(
   source: DashboardDto,
   target: DuplicateDashboardTarget,
 ): DuplicateDashboardPayload {
-  const widgets = buildPutWidgetsPayload(dashboardRowsFromDto(source).map(dropWidgetId));
+  // A tab's group binds to the SOURCE's location. Off that location the copy keeps the tabs as
+  // plain canvases (every `assetGroupId` cleared), and a mimic on a tab that had a group would fail
+  // the API's per-tab mimic guard — so those rows are dropped and counted.
+  const crossLocation = target.scope.locationId !== source.locationId;
+  const groupClearedKeys = new Set(
+    crossLocation ? source.tabs.filter((tab) => tab.assetGroupId !== null).map((tab) => tab.key) : [],
+  );
+  const tabs = tabWritesFromDto(source.tabs)
+    .map(dropTabId)
+    .map((tab) => (crossLocation ? { ...tab, assetGroupId: null } : tab));
+  const rows = dashboardRowsFromDto(source).map(dropWidgetId);
+  const kept = rows.filter(
+    (row) => !(row.widgetType === "mimic" && row.tabKey !== undefined && groupClearedKeys.has(row.tabKey)),
+  );
+  const widgets = buildPutWidgetsPayload(kept, tabs);
   return {
+    droppedMimics: rows.length - kept.length,
     create: {
       organizationId: target.organizationId,
       slug: target.slug,

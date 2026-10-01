@@ -77,6 +77,9 @@ export type DashboardWidgetRow = {
    * alternative was a builder that accepts a tile binding nothing.
    */
   sources: DashboardWidgetSourceRow[];
+  /** `F3.73` D11 — the key of the tab this widget sits on; absent on a legacy (tab-less) canvas
+   * and on a widget in no tab. Read from `widget.tabId` through the dashboard's own `tabs`. */
+  tabKey?: string;
   config: WidgetConfigRow;
 };
 
@@ -107,8 +110,31 @@ export type SourceWritePayload = {
   sortOrder: number;
 };
 
+/** `F3.73` D2 — one tab as submitted. `id` is present for a stored tab (kept by the API's diff)
+ * and absent for a new one — or for a duplicate's copy, which must not name the source's tab. */
+export type TabWritePayload = {
+  id?: string;
+  key: string;
+  label: string;
+  sortOrder: number;
+  assetGroupId: string | null;
+};
+
+/** The stored tabs as a write set, ids kept — what a save that edits no tab re-sends, so the
+ * API's diff keeps them rather than deleting every tab. */
+export function tabWritesFromDto(tabs: DashboardDto["tabs"]): TabWritePayload[] {
+  return tabs.map((tab) => ({
+    id: tab.id,
+    key: tab.key,
+    label: tab.label,
+    sortOrder: tab.sortOrder,
+    assetGroupId: tab.assetGroupId,
+  }));
+}
+
 type WidgetIdentityWritePayload = {
   id?: string;
+  tabKey?: string;
   title?: string | null;
   gridX: number;
   gridY: number;
@@ -121,6 +147,7 @@ type WidgetIdentityWritePayload = {
 export type WidgetWritePayload = WidgetIdentityWritePayload & DashboardWidgetSpec;
 
 export type PutDashboardWidgetsPayload = {
+  tabs: TabWritePayload[];
   widgets: WidgetWritePayload[];
 };
 
@@ -266,8 +293,12 @@ function configRowFromDto(widget: DashboardWidgetDto): WidgetConfigRow {
 /** Reads a dashboard's stored widgets into editable rows, preserving each widget's own `id`
  * so a re-save can key on it (`PutDashboardWidgetsBody.id`'s own reason for being optional). */
 export function dashboardRowsFromDto(dto: DashboardDto): DashboardWidgetRow[] {
+  const tabKeyById = new Map(dto.tabs.map((tab) => [tab.id, tab.key]));
   return dto.widgets.map((widget) => ({
     id: widget.id,
+    // `F3.73` — conditional spread: an absent key, not `tabKey: undefined`, so `builderHasChanged`'s
+    // JSON comparison and the write body treat a tab-less widget the way they did before tabs.
+    ...(widget.tabId !== null && tabKeyById.has(widget.tabId) ? { tabKey: tabKeyById.get(widget.tabId)! } : {}),
     widgetType: widget.widgetType,
     title: widget.title ?? "",
     gridX: widget.gridX,
@@ -323,8 +354,14 @@ export function unselectedDashboardBuilderProblems(
  */
 export const SCOPE_PROBLEM_FIELD = "scope";
 
-/** The sentence `dashboardBuilderErrors` reports for a plant mimic on a non-group scope. */
-export const MIMIC_NEEDS_ASSET_GROUP_MESSAGE = "A plant mimic needs an asset-group scope.";
+/** The sentence `dashboardBuilderErrors` reports for a plant mimic with no group to resolve
+ * against: neither the dashboard's scope nor the tab it sits on is an asset group. */
+export const MIMIC_NEEDS_ASSET_GROUP_MESSAGE =
+  "A plant mimic needs an asset-group scope, or a tab bound to an asset group.";
+
+/** `F3.73` plan D2 — the two fields of a tab the client rules read. `DashboardDto["tabs"]` and
+ * `TabWritePayload[]` both fit, so either page passes what it already holds. */
+export type TabForRules = { readonly key: string; readonly assetGroupId: string | null };
 
 /** A human-readable subject for a problem — "Dashboard" for a set-level one (`widget: null`),
  * or the widget's own title/catalog label otherwise, so a summary entry names what it is about
@@ -358,21 +395,41 @@ export function dashboardBuilderProblemSubject(
 export function dashboardBuilderErrors(
   rows: readonly DashboardWidgetRow[],
   scopeKind: DashboardScopeValue["kind"],
+  // `F3.73` — REQUIRED, not defaulted: an omitted list would count every row against one cap
+  // and refuse a mimic on a group tab, and tsc would stay green at the call site.
+  tabs: readonly TabForRules[],
 ): DashboardBuilderProblem[] {
   const problems: DashboardBuilderProblem[] = [];
   const push = (widget: number | null, field: string, message: string): void => {
     problems.push({ widget, field, message });
   };
 
-  if (rows.length > MAX_DASHBOARD_WIDGETS) {
-    push(
-      null,
-      "widgets",
-      `A dashboard holds at most ${MAX_DASHBOARD_WIDGETS} widgets. This one has ${rows.length}.`,
-    );
+  // `F3.73` plan D2 — the API's `tabRulesHold` mirror: `MAX_DASHBOARD_WIDGETS` holds per tab,
+  // and on the single canvas of a dashboard without tabs (the `""` bucket).
+  const perCanvas = new Map<string, number>();
+  for (const row of rows) {
+    const canvas = row.tabKey ?? "";
+    perCanvas.set(canvas, (perCanvas.get(canvas) ?? 0) + 1);
   }
+  for (const [canvas, count] of perCanvas) {
+    if (count > MAX_DASHBOARD_WIDGETS) {
+      push(
+        null,
+        "widgets",
+        canvas === ""
+          ? `A dashboard without tabs holds at most ${MAX_DASHBOARD_WIDGETS} widgets. This one has ${count}.`
+          : `The tab "${canvas}" holds at most ${MAX_DASHBOARD_WIDGETS} widgets. It has ${count}.`,
+      );
+    }
+  }
+  const groupTabKeys = new Set(tabs.filter((tab) => tab.assetGroupId !== null).map((tab) => tab.key));
 
   rows.forEach((row, index) => {
+    // `F3.73` plan D2 — the API's `TAB_KEY_REQUIRED_MESSAGE` mirror: on a dashboard with tabs every
+    // widget names one, or the PATCH commits and the PUT then answers 400.
+    if (tabs.length > 0 && row.tabKey === undefined) {
+      push(index, "tabKey", "A dashboard with tabs needs every widget on a tab.");
+    }
     if (row.title.trim().length > MAX_WIDGET_TITLE_LENGTH) {
       push(index, "title", `A widget title is at most ${MAX_WIDGET_TITLE_LENGTH} characters.`);
     }
@@ -430,7 +487,15 @@ export function dashboardBuilderErrors(
     // away from the group. Without this problem Save stayed enabled, and the save sequence
     // committed the dashboard (POST, or the PATCH of the new scope) before the widget PUT met the
     // API's 400. `scopeKind` is REQUIRED, so neither page can call this without the live scope.
-    if (widgetTypeBindsNothing(row.widgetType) && scopeKind !== "assetGroup") {
+    //
+    // `F3.73` plan D2 — the API's `mimicGroupFor` mirror: a mimic resolves against the
+    // dashboard's group, or else the group of the tab it sits on, so a mimic on a group-bound tab
+    // is legal on any scope kind. A mimic on the Overview tab (no group) still needs a group scope.
+    if (
+      widgetTypeBindsNothing(row.widgetType) &&
+      scopeKind !== "assetGroup" &&
+      !(row.tabKey !== undefined && groupTabKeys.has(row.tabKey))
+    ) {
       push(index, SCOPE_PROBLEM_FIELD, MIMIC_NEEDS_ASSET_GROUP_MESSAGE);
     }
 
@@ -472,6 +537,9 @@ function buildIdentity(row: DashboardWidgetRow): WidgetIdentityWritePayload {
   if (row.id !== undefined) {
     identity.id = row.id;
   }
+  if (row.tabKey !== undefined) {
+    identity.tabKey = row.tabKey;
+  }
   const title = row.title.trim();
   if (title !== "") {
     identity.title = title;
@@ -509,8 +577,14 @@ export function widgetRowAfterRemovingSource(
 /** Builds the whole `PUT /dashboards/:id/widgets` body — `buildWidgetPayload`'s shape in
  * `template-dashboard-form.ts`, over the live widget's richer `points` array instead of
  * `pointKeys`. */
-export function buildPutWidgetsPayload(rows: readonly DashboardWidgetRow[]): PutDashboardWidgetsPayload {
+export function buildPutWidgetsPayload(
+  rows: readonly DashboardWidgetRow[],
+  tabs: readonly TabWritePayload[],
+): PutDashboardWidgetsPayload {
   return {
+    // `tabs` is REQUIRED, not defaulted: an omitted argument at a call site would send `[]` and
+    // the API's diff would delete every stored tab on an unrelated save.
+    tabs: [...tabs],
     widgets: rows.map((row): WidgetWritePayload => {
       const identity = buildIdentity(row);
       switch (row.widgetType) {

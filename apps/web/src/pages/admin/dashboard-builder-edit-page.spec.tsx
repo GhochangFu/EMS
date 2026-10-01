@@ -11,6 +11,8 @@ import * as locationsApi from "../../api/admin/locations";
 import * as assetsApi from "../../api/assets";
 import * as dashboardsApi from "../../api/dashboards";
 import * as mimicLayoutsApi from "../../api/mimic-layouts";
+import * as systemStatusApi from "../../api/system-status";
+import { OPERATIONAL } from "../../components/system-status-indicator.spec";
 import { useAuthStore, type AuthUser } from "../../stores/auth-store";
 import { DashboardBuilderEditPage } from "./dashboard-builder-edit-page";
 
@@ -94,6 +96,8 @@ const DTO: DashboardDto = {
   assetTemplateId: null,
   createdAt: "2026-01-01T00:00:00Z",
   updatedAt: "2026-01-01T00:00:00Z",
+  templateId: null,
+  tabs: [],
   widgets: [],
 };
 
@@ -182,6 +186,9 @@ function stubLoads({
   // `F3.32c` — `WidgetInspector` reads the layout library on every mount; unstubbed, the read
   // reaches a local API on :4000, answers 401 and clears the session.
   vi.spyOn(mimicLayoutsApi, "fetchMimicLayouts").mockResolvedValue({ items: [] });
+  // `AppShell` mounts `SystemStatusIndicator`, whose `GET /system/status` is the same leak: a
+  // local API on :4000 answers 401 and clears the session, emptying the role's group list.
+  vi.spyOn(systemStatusApi, "fetchSystemStatus").mockResolvedValue(OPERATIONAL);
 }
 
 /** `/auth/me`'s scope for an `asset_group_admin` of this dashboard's organization —
@@ -650,6 +657,7 @@ const MIMIC_WIDGET: DashboardWidgetDto = {
   gridH: 6,
   points: [],
   sources: [],
+  tabId: null,
   widgetType: "mimic",
   config: { source: "preset", preset: "water_train" },
 };
@@ -689,4 +697,86 @@ export async function renamingAMimicDashboardOnItsGroupCanSave(): Promise<void> 
 
   expect(screen.getByRole("button", { name: "Save dashboard" })).toBeEnabled();
   expect(screen.queryByText(/A plant mimic needs an asset-group scope./)).not.toBeInTheDocument();
+}
+
+/** `F3.73` (plan D2) — a location dashboard with two stored tabs, one widget on each. */
+const OVERVIEW_TAB: DashboardDto["tabs"][number] = {
+  id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+  dashboardId: DTO.id,
+  organizationId: ORG_ID,
+  key: "overview",
+  label: "Overview",
+  sortOrder: 0,
+  assetGroupId: null,
+};
+const ELECTRICAL_TAB: DashboardDto["tabs"][number] = {
+  ...OVERVIEW_TAB,
+  id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+  key: "electrical",
+  label: "Electrical",
+  sortOrder: 1,
+  assetGroupId: "grp-1",
+};
+const tileOnTab = (id: string, tabId: string, gridY: number): DashboardWidgetDto => ({
+  id,
+  dashboardId: DTO.id,
+  organizationId: ORG_ID,
+  title: `Tile ${id}`,
+  gridX: 0,
+  gridY,
+  gridW: 3,
+  gridH: 2,
+  points: [
+    {
+      id: `${id}-p`,
+      pointId: "55555555-5555-4555-8555-555555555555",
+      role: "primary",
+      sortOrder: 0,
+      assetId: "66666666-6666-4666-8666-666666666666",
+      assetCode: "BRK-01",
+      pointKey: "power_kw",
+      unit: "kW",
+    },
+  ],
+  sources: [],
+  tabId,
+  widgetType: "value_tile",
+  config: {},
+});
+const TABBED_DTO: DashboardDto = {
+  ...DTO,
+  tabs: [OVERVIEW_TAB, ELECTRICAL_TAB],
+  widgets: [tileOnTab("w-overview", OVERVIEW_TAB.id, 0), tileOnTab("w-electrical", ELECTRICAL_TAB.id, 2)],
+};
+
+/**
+ * `F3.73` review finding — a save that edits no tab must re-send the stored tabs, ids kept, and
+ * each widget's `tabKey`: the API's diff deletes every stored tab a PUT omits, with its widgets.
+ * Every other fixture here has `tabs: []`, so nothing gated this. Mutation: pass `[]` to
+ * `buildPutWidgetsPayload` in the page => red.
+ */
+export async function renamingATabbedDashboardReSendsItsTabs(): Promise<void> {
+  stubLoads({ dto: TABBED_DTO, groups: [GROUP] });
+  vi.spyOn(dashboardsApi, "updateDashboard").mockResolvedValue(TABBED_DTO);
+  const putSpy = vi.spyOn(dashboardsApi, "putDashboardWidgets").mockResolvedValue(TABBED_DTO);
+
+  renderPage(asUser("admin"));
+
+  await waitForPrefill("Location");
+  await screen.findByRole("option", { name: "Kolkata Works" });
+  await userEvent.type(screen.getByLabelText("Name"), " (renamed)");
+  await userEvent.click(screen.getByRole("button", { name: "Save dashboard" }));
+
+  await waitFor(() => {
+    expect(putSpy).toHaveBeenCalledTimes(1);
+  });
+  const body = putSpy.mock.calls[0]![1];
+  expect(body.tabs).toEqual([
+    { id: OVERVIEW_TAB.id, key: "overview", label: "Overview", sortOrder: 0, assetGroupId: null },
+    { id: ELECTRICAL_TAB.id, key: "electrical", label: "Electrical", sortOrder: 1, assetGroupId: "grp-1" },
+  ]);
+  expect(body.widgets.map((widget) => [widget.id, widget.tabKey])).toEqual([
+    ["w-overview", "overview"],
+    ["w-electrical", "electrical"],
+  ]);
 }

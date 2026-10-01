@@ -40,8 +40,11 @@ const dto = {
   assetGroupId: null,
   assetId: null,
   assetTemplateId: null,
+  // `F3.73` (plan D1) — a hand-built dashboard with no tabs.
+  templateId: null,
   createdAt: new Date(0).toISOString(),
   updatedAt: new Date(0).toISOString(),
+  tabs: [],
   widgets: [],
 } as DashboardDto;
 

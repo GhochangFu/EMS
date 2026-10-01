@@ -4,7 +4,6 @@ import {
   bindingShapeMessage,
   columnNotDeclaredMessage,
   DASHBOARD_GRID,
-  dashboardDtoSchema,
   dashboardWidgetSpecSchema,
   duplicateColumnMessage,
   MAX_DASHBOARD_WIDGETS,
@@ -14,6 +13,7 @@ import {
   WIDGET_SOURCE_CARDINALITY,
   WIDGET_SOURCE_SHAPES,
 } from "./dashboard-builder";
+import { dashboardDtoSchema } from "./dashboard-dto";
 import { assetRoleCodeSchema, dashboardSectionCodeSchema } from "./operations";
 import { templateLifecycleStatusSchema } from "./template-lifecycle";
 

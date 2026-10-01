@@ -7,9 +7,7 @@ import {
   metricArmParsesWithCoverage,
   metricArmParsesWithoutCoverage,
   metricArmRefusesNegativeFresh,
-  runDashboardAssetScopeFieldsTests,
   runDashboardBuilderTests,
-  runDashboardGridTests,
   runDashboardWidgetPointDtoTests,
   runMetricCatalogDtoTests,
   runMetricCatalogTests,
@@ -27,12 +25,6 @@ import {
 describe("F3.1a — the dashboard widget vocabulary and config union", () => {
   it("closes the vocabulary, discriminates the config, and narrows through the DTO", () => {
     runDashboardBuilderTests();
-  });
-});
-
-describe("F3.1d Unit 2 — DASHBOARD_GRID wired into dashboardWidgetIdentitySchema", () => {
-  it("reads the single-source grid bounds rather than a private 11/12/24", () => {
-    runDashboardGridTests();
   });
 });
 
@@ -85,12 +77,6 @@ describe("F3.35 Stage A — aggregation and presentation on the tile and chart c
 
   it("narrows the new fields through the discriminated spec union too", () => {
     runStageASpecUnionCarriesTheNewFieldsTests();
-  });
-});
-
-describe("F3.2 — dashboardDto/dashboardSummaryDto gain the asset scope arm (ADR 0067)", () => {
-  it("rejects a dashboard or summary row missing assetId; the summary alone also carries assetCode", () => {
-    runDashboardAssetScopeFieldsTests();
   });
 });
 

@@ -30,6 +30,8 @@ import type * as AI from "./contracts/asset-images";
 import type * as Au from "./contracts/auth";
 import type * as D from "./contracts/dashboard";
 import type * as Db from "./contracts/dashboard-builder";
+import type * as Dd from "./contracts/dashboard-dto";
+import type * as Dtab from "./contracts/dashboard-tabs";
 import type * as Dt from "./contracts/dashboard-templates";
 import type * as E from "./contracts/envelopes";
 import type * as Esc from "./contracts/escalation";
@@ -154,11 +156,13 @@ export type DashboardWidgetSpec = z.infer<typeof Db.dashboardWidgetSpecSchema>;
 /** One point binding — a row, never an id inside JSON (ADR 0047 decision 3). */
 export type DashboardWidgetPointDto = z.infer<typeof Db.dashboardWidgetPointDtoSchema>;
 /** A widget as read, narrowing on `widgetType` through the intersection. */
-export type DashboardWidgetDto = z.infer<typeof Db.dashboardWidgetDtoSchema>;
-/** A dashboard with its widgets. */
-export type DashboardDto = z.infer<typeof Db.dashboardDtoSchema>;
+export type DashboardWidgetDto = z.infer<typeof Dd.dashboardWidgetDtoSchema>;
+/** A dashboard with its tabs and widgets. */
+export type DashboardDto = z.infer<typeof Dd.dashboardDtoSchema>;
 /** A dashboard in a list, without its widgets. */
-export type DashboardSummaryDto = z.infer<typeof Db.dashboardSummaryDtoSchema>;
+export type DashboardSummaryDto = z.infer<typeof Dd.dashboardSummaryDtoSchema>;
+/** One tab of a dashboard (`F3.73`, plan D1). */
+export type DashboardTabDto = z.infer<typeof Dtab.dashboardTabDtoSchema>;
 
 // --- F3.36 — section dashboard templates (ADR 0049 + Amendments 1, 2) -------
 /**

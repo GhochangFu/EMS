@@ -54,6 +54,7 @@ const IDENTITY = {
   // and a catalog binding is a row rather than a config field, so it stays empty:
   // the key-set assertion below reads the two config schemas, not the identity.
   sources: [],
+  tabId: null,
 };
 
 /** Every field `F3.35` added to the tile, all set, all distinguishable. */
@@ -94,6 +95,8 @@ function dto(): DashboardDto {
     assetTemplateId: null,
     createdAt: new Date(0).toISOString(),
     updatedAt: new Date(0).toISOString(),
+    templateId: null,
+    tabs: [],
     widgets: [
       { ...IDENTITY, widgetType: "value_tile", config: TILE_CONFIG },
       {
@@ -142,7 +145,7 @@ export function runFixturesCoverEveryContractFieldTests(): void {
  * escaping through a fixture nobody extended.
  */
 export function runLiveBuilderRoundTripTests(): void {
-  const payload = buildPutWidgetsPayload(dashboardRowsFromDto(dto()));
+  const payload = buildPutWidgetsPayload(dashboardRowsFromDto(dto()), []);
 
   const tile = payload.widgets.find((w) => w.widgetType === "value_tile");
   assert(tile !== undefined, "the tile survived the round trip at all");
@@ -223,6 +226,8 @@ export function runUnsetFieldsAreOmittedTests(): void {
     assetTemplateId: null,
     createdAt: new Date(0).toISOString(),
     updatedAt: new Date(0).toISOString(),
+    templateId: null,
+    tabs: [],
     widgets: [
       { ...IDENTITY, widgetType: "value_tile", config: { unit: "kW" } },
       {
@@ -234,7 +239,7 @@ export function runUnsetFieldsAreOmittedTests(): void {
     ],
   } as DashboardDto;
 
-  const payload = buildPutWidgetsPayload(dashboardRowsFromDto(legacy));
+  const payload = buildPutWidgetsPayload(dashboardRowsFromDto(legacy), []);
   const tile = payload.widgets.find((w) => w.widgetType === "value_tile");
   assert(
     JSON.stringify(tile?.config) === JSON.stringify({ unit: "kW" }),

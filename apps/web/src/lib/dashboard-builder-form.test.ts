@@ -27,6 +27,12 @@ import {
   runMimicOnAGroupHasNoScopeProblemTests,
   runNonMimicHasNoScopeProblemTests,
   runSummaryKeepsTheSelectedWidgetsScopeProblemTests,
+  runTabKeyRoundTripTests,
+  runWidgetCapIsPerTabTests,
+  runWidgetCapRefusesOneTabOverTests,
+  runMimicOnAGroupTabHasNoScopeProblemTests,
+  runMimicOnAnOverviewTabHasTheScopeProblemTests,
+  runWidgetOffEveryTabIsFlaggedTests,
 } from "./dashboard-builder-form.spec";
 
 /** Vitest entry point — see `apps/web/src/lib/admin-access.test.ts` (ADR 0014). */
@@ -133,5 +139,29 @@ describe("dashboard builder form", () => {
 
   it("F3.32: the summary keeps the selected widget's scope problem", () => {
     runSummaryKeepsTheSelectedWidgetsScopeProblemTests();
+  });
+
+  it("F3.73: a two-tab dashboard round-trips tabKey and re-sends its stored tabs", () => {
+    runTabKeyRoundTripTests();
+  });
+
+  it("F3.73: the widget cap is per tab — a full tab plus one on another is legal", () => {
+    runWidgetCapIsPerTabTests();
+  });
+
+  it("F3.73: one widget over the cap on one tab is refused, naming the tab", () => {
+    runWidgetCapRefusesOneTabOverTests();
+  });
+
+  it("F3.73: a mimic on a group-bound tab has no scope problem", () => {
+    runMimicOnAGroupTabHasNoScopeProblemTests();
+  });
+
+  it("F3.73: a mimic on the Overview tab off a group scope keeps the scope problem", () => {
+    runMimicOnAnOverviewTabHasTheScopeProblemTests();
+  });
+
+  it("F3.73: a widget with no tab on a tabbed dashboard is flagged", () => {
+    runWidgetOffEveryTabIsFlaggedTests();
   });
 });

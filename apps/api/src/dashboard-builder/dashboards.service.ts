@@ -33,7 +33,19 @@ import { withTenant, type BmsTx } from "../database/tenant-context";
 import { withOrganizationReadScope } from "../database/tenant-read-scope";
 import { assertBoundPointsInOrganization, resolveBoundPoints, type ResolvedBoundPoint } from "./dashboard-point-scope";
 import { resolveWidgetSources, type ResolvedWidgetSource } from "./dashboard-source-scope";
-import { MIMIC_LAYOUT_ORG_MESSAGE, MIMIC_SCOPE_MESSAGE, SCOPE_REFUSAL_MESSAGE } from "./dashboards.schema";
+import {
+  MIMIC_LAYOUT_ORG_MESSAGE,
+  MIMIC_SCOPE_MESSAGE,
+  SCOPE_REFUSAL_MESSAGE,
+  TAB_GROUP_SCOPE_MESSAGE,
+  TAB_LOCATION_MOVE_MESSAGE,
+} from "./dashboards.schema";
+import {
+  assertTabGroupsAtSite,
+  assertTabIdsStored,
+  readDashboardTabs,
+  writeDashboardTabs,
+} from "./dashboard-tabs-write";
 import {
   assertSourceParamsBalanceRolesActive,
   assertSourceParamsPointKeysActive,
@@ -41,9 +53,13 @@ import {
 import type { CreateDashboardBody, PutDashboardWidgetsBody, UpdateDashboardBody } from "./dashboards.schema";
 
 import {
+  diffTabs,
   diffWidgets,
   mapDashboardSummary,
+  mapDashboardTab,
   mapDashboardWidget,
+  mimicGroupFor,
+  tabIdsByKey,
   type DashboardRow,
   type StoredWidgetForDiff,
 } from "./dashboards.pure";
@@ -509,11 +525,30 @@ export class DashboardsService {
     // GUC so RLS is a second layer beneath its explicit organization predicate). A mimic widget on a
     // location-, asset- or unscoped dashboard would resolve every node to nothing: the honest
     // answer is a refusal, not a canvas that renders "not assigned" eight times.
-    if (existing.assetGroupId === null && body.widgets.some((widget) => widget.widgetType === "mimic")) {
+    //
+    // `F3.73` (plan D2) — per tab: a mimic resolves against the dashboard's group, or else the
+    // group of the tab it sits on (`mimicGroupFor`). A tab's group needs a site to be at, so a
+    // group tab on a dashboard with no `locationId` is refused here too, from the body alone;
+    // whether the group IS at that site is `assertTabGroupsAtSite`'s read inside the transaction.
+    const tabs = body.tabs ?? [];
+    if (existing.locationId === null && tabs.some((tab) => tab.assetGroupId != null)) {
+      throw new BadRequestException(TAB_GROUP_SCOPE_MESSAGE);
+    }
+    if (
+      body.widgets.some(
+        (widget) => widget.widgetType === "mimic" && mimicGroupFor(existing.assetGroupId, tabs, widget) === null,
+      )
+    ) {
       throw new BadRequestException(MIMIC_SCOPE_MESSAGE);
     }
 
     return withTenant(this.tenantDb, existing.organizationId, async (tx) => {
+      // `F3.73` — the stored tabs, read on this transaction, and the two tab guards before any
+      // write: a body tab id must be one of them, and every named group must be at the site.
+      const storedTabs = await readDashboardTabs(tx, id, existing.organizationId);
+      assertTabIdsStored(storedTabs, tabs);
+      await assertTabGroupsAtSite(tx, existing.organizationId, existing.locationId, tabs);
+
       const storedWidgets = await tx
         .select()
         .from(dashboardWidgets)
@@ -555,6 +590,7 @@ export class DashboardsService {
 
       const forDiff: StoredWidgetForDiff[] = storedWidgets.map((widget) => ({
         id: widget.id,
+        tabId: widget.tabId,
         widgetType: widget.widgetType,
         title: widget.title,
         gridX: widget.gridX,
@@ -579,17 +615,29 @@ export class DashboardsService {
       await assertBoundPointsInOrganization(tx, existing.organizationId, allPointIds);
       await assertMimicLayoutsInOrganization(tx, existing.organizationId, body.widgets);
 
-      const diff = diffWidgets(forDiff, body.widgets);
+      const diff = diffWidgets(forDiff, body.widgets, tabIdsByKey(tabs));
+      const tabDiff = diffTabs(storedTabs, tabs);
 
+      // Deleted explicitly, BEFORE the tabs, rather than left to the tab cascade: the audit's
+      // counts below are then the widgets this request removed, whichever tab they sat on.
       if (diff.deleteIds.length > 0) {
         await tx.delete(dashboardWidgets).where(inArray(dashboardWidgets.id, [...diff.deleteIds]));
       }
+      const tabIdByKey = await writeDashboardTabs(
+        tx,
+        { organizationId: existing.organizationId, dashboardId: id, locationId: existing.locationId },
+        storedTabs,
+        tabDiff,
+      );
+      const tabIdFor = (widget: { tabKey?: string }): string | null =>
+        widget.tabKey === undefined ? null : (tabIdByKey.get(widget.tabKey) ?? null);
 
       for (const widget of diff.updates) {
         if (widget.id === undefined) continue; // narrowed by diffWidgets; guard for TS
         await tx
           .update(dashboardWidgets)
           .set({
+            tabId: tabIdFor(widget),
             widgetType: widget.widgetType,
             title: widget.title ?? null,
             gridX: widget.gridX,
@@ -614,6 +662,7 @@ export class DashboardsService {
           .values({
             organizationId: existing.organizationId,
             dashboardId: id,
+            tabId: tabIdFor(widget),
             widgetType: widget.widgetType,
             title: widget.title ?? null,
             gridX: widget.gridX,
@@ -641,6 +690,8 @@ export class DashboardsService {
             updates: diff.updates.length,
             inserts: diff.inserts.length,
             deletes: diff.deleteIds.length,
+            tabCount: tabs.length,
+            tabDeletes: tabDiff.deleteIds.length,
           },
         },
         tx,
@@ -713,6 +764,13 @@ export class DashboardsService {
         "This dashboard still carries an asset-template stamp, which describes nothing once it " +
           "names no asset. The stamp is cleared together with the asset scope.",
       );
+    }
+    // `F3.73` (ruling Q1) — a scope change of a dashboard whose tabs bind groups at its site
+    // fails this composite FK. Independent of the scope axes and placed before `field === null`
+    // for the same reason as the branch above: a move to organization-wide leaves every axis
+    // null, and returning the raw error there would answer a 500.
+    if (code === "23503" && constraint === "dashboard_tabs_dashboard_id_location_id_fkey") {
+      return new BadRequestException(TAB_LOCATION_MOVE_MESSAGE);
     }
     const field =
       scope.assetId !== null
@@ -858,6 +916,10 @@ export class DashboardsService {
       sourcesByWidget.set(source.widgetId, list);
     }
 
+    // `F3.73` — the tabs, with the explicit organization predicate the fleet branch needs
+    // (`readDashboardTabs`' docblock).
+    const tabRows = await readDashboardTabs(tx, dashboardId, effective.organizationId);
+
     return {
       id: effective.id,
       organizationId: effective.organizationId,
@@ -868,8 +930,10 @@ export class DashboardsService {
       assetGroupId: effective.assetGroupId,
       assetId: effective.assetId,
       assetTemplateId: effective.assetTemplateId,
+      templateId: effective.templateId,
       createdAt: effective.createdAt.toISOString(),
       updatedAt: effective.updatedAt.toISOString(),
+      tabs: tabRows.map(mapDashboardTab),
       widgets: widgetRows.map((widget) =>
         mapDashboardWidget(
           widget,

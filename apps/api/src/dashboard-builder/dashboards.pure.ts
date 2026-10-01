@@ -1,11 +1,12 @@
-import { dashboards, dashboardWidgets } from "@bms/db";
-import type { DashboardSummaryDto, DashboardWidgetDto, DashboardWidgetSourceDto } from "@bms/shared";
+import { dashboards, dashboardTabs, dashboardWidgets } from "@bms/db";
+import type { DashboardSummaryDto, DashboardTabDto, DashboardWidgetDto, DashboardWidgetSourceDto } from "@bms/shared";
 
 import type { ResolvedBoundPoint } from "./dashboard-point-scope";
-import type { WidgetWriteBody } from "./dashboards.schema";
+import type { TabWriteBody, WidgetWriteBody } from "./dashboards.schema";
 
 export type DashboardRow = typeof dashboards.$inferSelect;
 export type WidgetRow = typeof dashboardWidgets.$inferSelect;
+export type TabRow = typeof dashboardTabs.$inferSelect;
 
 // ---------------------------------------------------------------------------
 // Pure functions — no database. Exported so dashboards.service.spec.ts covers
@@ -59,6 +60,8 @@ export function mapDashboardWidget(
     id: row.id,
     dashboardId: row.dashboardId,
     organizationId: row.organizationId,
+    // `F3.73` (plan D1) — null is the legacy single canvas.
+    tabId: row.tabId,
     title: row.title,
     gridX: row.gridX,
     gridY: row.gridY,
@@ -95,6 +98,9 @@ export function mapDashboardWidget(
 /** One stored widget's content, in the shape the diff compares against a submitted one. */
 export type StoredWidgetForDiff = {
   readonly id: string;
+  /** `F3.73` (plan D2). In the diff so a widget whose ONLY change is its tab lands in
+   * `updates` — otherwise a move between tabs answers 200 and the widget stays where it was. */
+  readonly tabId: string | null;
   readonly widgetType: string;
   readonly title: string | null;
   readonly gridX: number;
@@ -150,8 +156,16 @@ function stableParams(params: unknown): string {
   return JSON.stringify(entries);
 }
 
-function widgetContentEqual(stored: StoredWidgetForDiff, submitted: WidgetWriteBody): boolean {
+function widgetContentEqual(
+  stored: StoredWidgetForDiff,
+  submitted: WidgetWriteBody,
+  tabIdByKey: ReadonlyMap<string, string>,
+): boolean {
   if (stored.widgetType !== submitted.widgetType) return false;
+  // `F3.73` — a key with no id in the map is a tab this request adds, which no stored widget
+  // can already sit on, so `undefined` never equals a stored id and the widget is an update.
+  const submittedTabId = submitted.tabKey === undefined ? null : tabIdByKey.get(submitted.tabKey);
+  if (stored.tabId !== submittedTabId) return false;
   if ((stored.title ?? null) !== (submitted.title ?? null)) return false;
   if (
     stored.gridX !== submitted.gridX ||
@@ -195,10 +209,15 @@ function widgetContentEqual(stored: StoredWidgetForDiff, submitted: WidgetWriteB
  * byte-identical is neither updated nor deleted — it "keeps its id" with zero writes. A stored
  * widget absent from the submitted set is deleted; a submitted widget with no id, or an id
  * matching nothing stored, is inserted.
+ *
+ * `tabIdByKey` (`F3.73`) is `tabIdsByKey` of the request's tabs. It is required, not
+ * defaulted: a caller that forgot it would compare every tabbed widget against no tab and
+ * rewrite it on every save.
  */
 export function diffWidgets(
   existing: readonly StoredWidgetForDiff[],
   submitted: readonly WidgetWriteBody[],
+  tabIdByKey: ReadonlyMap<string, string>,
 ): WidgetSyncDiff {
   const existingById = new Map(existing.map((widget) => [widget.id, widget]));
   const updates: WidgetWriteBody[] = [];
@@ -213,7 +232,7 @@ export function diffWidgets(
       continue;
     }
     keepIds.add(stored.id);
-    if (widgetContentEqual(stored, widget)) {
+    if (widgetContentEqual(stored, widget, tabIdByKey)) {
       unchangedIds.push(stored.id);
     } else {
       updates.push(widget);
@@ -221,5 +240,106 @@ export function diffWidgets(
   }
 
   const deleteIds = existing.map((widget) => widget.id).filter((id) => !keepIds.has(id));
+  return { updates, inserts, deleteIds, unchangedIds };
+}
+
+// ---------------------------------------------------------------------------
+// `F3.73` (plan D1, D2) — dashboard tabs.
+// ---------------------------------------------------------------------------
+
+/** Row -> DTO for one tab. */
+export function mapDashboardTab(row: TabRow): DashboardTabDto {
+  return {
+    id: row.id,
+    dashboardId: row.dashboardId,
+    organizationId: row.organizationId,
+    key: row.tabKey,
+    label: row.label,
+    sortOrder: row.sortOrder,
+    assetGroupId: row.assetGroupId,
+  };
+}
+
+/**
+ * The request's key -> stored tab id, for the tabs that carry an id. A tab without one is new
+ * and has no id until the service inserts it; `diffWidgets` reads its absence as "not the
+ * tab this widget is stored on". The service has already refused an id that is not one of this
+ * dashboard's own tabs, so every id here is a stored one.
+ */
+export function tabIdsByKey(tabs: readonly TabWriteBody[]): ReadonlyMap<string, string> {
+  const byKey = new Map<string, string>();
+  for (const tab of tabs) {
+    if (tab.id !== undefined) {
+      byKey.set(tab.key, tab.id);
+    }
+  }
+  return byKey;
+}
+
+/**
+ * The asset group a `mimic` widget resolves against (plan D2): the dashboard's own group, or
+ * else the group of the tab the widget sits on. Null means a mimic there would draw every node
+ * "not assigned", which `MIMIC_SCOPE_MESSAGE` refuses.
+ */
+export function mimicGroupFor(
+  dashboardGroupId: string | null,
+  tabs: readonly TabWriteBody[],
+  widget: { tabKey?: string },
+): string | null {
+  if (dashboardGroupId !== null) {
+    return dashboardGroupId;
+  }
+  const tab = tabs.find((candidate) => candidate.key === widget.tabKey);
+  return tab?.assetGroupId ?? null;
+}
+
+/** One stored tab, in the shape `diffTabs` compares a submitted one against. */
+export type StoredTabForDiff = {
+  readonly id: string;
+  /** The column's name, so a `TabRow` is one as it stands. */
+  readonly tabKey: string;
+  readonly label: string;
+  readonly sortOrder: number;
+  readonly assetGroupId: string | null;
+};
+
+export type TabSyncDiff = {
+  /** Kept tabs whose key, label, order or group changed; each carries its stored `id`. */
+  readonly updates: readonly (TabWriteBody & { id: string })[];
+  readonly inserts: readonly TabWriteBody[];
+  readonly deleteIds: readonly string[];
+  readonly unchangedIds: readonly string[];
+};
+
+/**
+ * The tab sync diff (plan D2), in `diffWidgets`' shape: a submitted tab with a stored `id` is
+ * kept (updated when its content differs), one without an id is inserted, and a stored tab the
+ * request omits is deleted. The caller refuses an unknown id before this runs.
+ */
+export function diffTabs(stored: readonly StoredTabForDiff[], submitted: readonly TabWriteBody[]): TabSyncDiff {
+  const storedById = new Map(stored.map((tab) => [tab.id, tab]));
+  const updates: (TabWriteBody & { id: string })[] = [];
+  const inserts: TabWriteBody[] = [];
+  const unchangedIds: string[] = [];
+  const keepIds = new Set<string>();
+  for (const tab of submitted) {
+    const kept = tab.id !== undefined ? storedById.get(tab.id) : undefined;
+    if (kept === undefined) {
+      inserts.push(tab);
+      continue;
+    }
+    keepIds.add(kept.id);
+    const same =
+      kept.tabKey === tab.key &&
+      kept.label === tab.label &&
+      kept.sortOrder === tab.sortOrder &&
+      kept.assetGroupId === (tab.assetGroupId ?? null);
+    if (same) {
+      unchangedIds.push(kept.id);
+    } else {
+      updates.push({ ...tab, id: kept.id });
+    }
+  }
+  const deleteIds = stored.map((tab) => tab.id).filter((id) => !keepIds.has(id));
   return { updates, inserts, deleteIds, unchangedIds };
 }

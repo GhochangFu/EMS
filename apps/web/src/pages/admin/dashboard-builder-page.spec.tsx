@@ -12,6 +12,8 @@ import * as organizationsApi from "../../api/admin/organizations";
 import * as assetsApi from "../../api/assets";
 import * as dashboardsApi from "../../api/dashboards";
 import * as mimicLayoutsApi from "../../api/mimic-layouts";
+import * as systemStatusApi from "../../api/system-status";
+import { OPERATIONAL } from "../../components/system-status-indicator.spec";
 import { useAuthStore, type AuthUser } from "../../stores/auth-store";
 import { DashboardBuilderPage } from "./dashboard-builder-page";
 
@@ -88,6 +90,9 @@ function stubMasterData(): void {
   // `F3.32c` — `WidgetInspector` reads the layout library on every mount; unstubbed, the read
   // reaches a local API on :4000, answers 401 and clears the session.
   vi.spyOn(mimicLayoutsApi, "fetchMimicLayouts").mockResolvedValue({ items: [] });
+  // `AppShell` mounts `SystemStatusIndicator`, whose `GET /system/status` is the same leak: a
+  // local API on :4000 answers 401 and clears the session, emptying the role's group list.
+  vi.spyOn(systemStatusApi, "fetchSystemStatus").mockResolvedValue(OPERATIONAL);
 }
 
 function renderPage(user: AuthUser): void {
@@ -127,6 +132,8 @@ export async function creatingWithAnAssetGroupSendsAssetGroupIdAndNoLocationId()
     assetTemplateId: null,
     createdAt: "2026-01-01T00:00:00Z",
     updatedAt: "2026-01-01T00:00:00Z",
+    templateId: null,
+    tabs: [],
     widgets: [],
   });
   vi.spyOn(dashboardsApi, "putDashboardWidgets").mockResolvedValue({} as never);
@@ -289,6 +296,8 @@ export async function assetGroupAdminCreatesAGroupDashboardFromItsOwnScope(): Pr
     assetTemplateId: null,
     createdAt: "2026-01-01T00:00:00Z",
     updatedAt: "2026-01-01T00:00:00Z",
+    templateId: null,
+    tabs: [],
     widgets: [],
   });
   vi.spyOn(dashboardsApi, "putDashboardWidgets").mockResolvedValue({} as never);

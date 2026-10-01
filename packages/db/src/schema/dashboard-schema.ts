@@ -1,5 +1,6 @@
 import {
   boolean,
+  foreignKey,
   integer,
   jsonb,
   timestamp,
@@ -226,6 +227,66 @@ export const dashboards = bmsSchema.table(
       t.organizationId,
       t.slug,
     ),
+    // F3.73, migration 0094 — never refuses a row (`id` is the primary key); it exists only
+    // as the target of `dashboard_tabs_dashboard_id_location_id_fkey`.
+    idLocationUnique: unique("dashboards_id_location_key").on(t.id, t.locationId),
+  }),
+);
+
+/**
+ * The named tabs of one dashboard — `F3.73`, migration `0094`, ADR 0087 Amendment 1 (ruling
+ * Q1).
+ *
+ * A tab binds one asset group (a domain tab) or none (the Overview). **An Overview tab stores
+ * `locationId` NULL**, so both composite foreign keys are inert for it and a dashboard whose
+ * only tab is an Overview can still move scope. A group tab carries its dashboard's site in
+ * `locationId`, and the two composite keys pin it from both sides: the group is at that site
+ * (`dashboard_tabs_asset_group_id_location_id_fkey`, ON DELETE RESTRICT) and the dashboard is
+ * at that site (`dashboard_tabs_dashboard_id_location_id_fkey`, so a later scope change on
+ * the dashboard fails `23503` and the service answers 400).
+ *
+ * CHECKs are not mirrored here, following this file's convention:
+ * `dashboard_tabs_group_location_check` (`assetGroupId` and `locationId` are both NULL or
+ * both set) and `dashboard_tabs_tab_key_check` (a lower-case slug, never `assets`) live in
+ * migration 0094 and are pinned by `tests/f3.73-dashboard-tabs-schema.test.ts`.
+ */
+export const dashboardTabs = bmsSchema.table(
+  "dashboard_tabs",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    organizationId: uuid("organization_id")
+      .notNull()
+      .references(() => organizations.id),
+    dashboardId: uuid("dashboard_id").notNull(),
+    locationId: uuid("location_id"),
+    assetGroupId: uuid("asset_group_id"),
+    tabKey: varchar("tab_key", { length: 64 }).notNull(),
+    label: varchar("label", { length: 128 }).notNull(),
+    sortOrder: integer("sort_order").notNull().default(0),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    // Named in SQL, so every foreign key is declared here by name rather than with
+    // `.references()`, which would derive a different name.
+    dashboardFk: foreignKey({
+      name: "dashboard_tabs_dashboard_id_fkey",
+      columns: [t.dashboardId],
+      foreignColumns: [dashboards.id],
+    }).onDelete("cascade"),
+    dashboardLocationFk: foreignKey({
+      name: "dashboard_tabs_dashboard_id_location_id_fkey",
+      columns: [t.dashboardId, t.locationId],
+      foreignColumns: [dashboards.id, dashboards.locationId],
+    }).onDelete("cascade"),
+    groupLocationFk: foreignKey({
+      name: "dashboard_tabs_asset_group_id_location_id_fkey",
+      columns: [t.assetGroupId, t.locationId],
+      foreignColumns: [assetGroups.id, assetGroups.locationId],
+    }).onDelete("restrict"),
+    dashboardTabKeyUnique: unique("dashboard_tabs_dashboard_id_tab_key_key").on(t.dashboardId, t.tabKey),
+    // The target of `dashboard_widgets_dashboard_id_tab_id_fkey`.
+    dashboardIdUnique: unique("dashboard_tabs_dashboard_id_id_key").on(t.dashboardId, t.id),
   }),
 );
 
@@ -256,28 +317,42 @@ export const dashboards = bmsSchema.table(
  * `title` NULL means "use the catalog label", which is `F3.1c`'s frontend registry rather than
  * a column here: the catalog is presentation, and presentation is the frontend's.
  */
-export const dashboardWidgets = bmsSchema.table("dashboard_widgets", {
-  id: uuid("id").primaryKey().defaultRandom(),
-  // ADR 0047 decision 5.
-  organizationId: uuid("organization_id")
-    .notNull()
-    .references(() => organizations.id),
-  dashboardId: uuid("dashboard_id")
-    .notNull()
-    .references(() => dashboards.id, { onDelete: "cascade" }),
-  widgetType: varchar("widget_type", { length: 32 }).notNull(),
-  title: varchar("title", { length: 255 }),
-  gridX: integer("grid_x").notNull(),
-  gridY: integer("grid_y").notNull(),
-  gridW: integer("grid_w").notNull(),
-  gridH: integer("grid_h").notNull(),
-  // Bounded by the per-type discriminated union in
-  // `@bms/shared/contracts/dashboard-builder`, not by the database: the shape depends on
-  // `widgetType`, which no row-level CHECK can branch on usefully.
-  config: jsonb("config").notNull().default({}),
-  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
-});
+export const dashboardWidgets = bmsSchema.table(
+  "dashboard_widgets",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    // ADR 0047 decision 5.
+    organizationId: uuid("organization_id")
+      .notNull()
+      .references(() => organizations.id),
+    dashboardId: uuid("dashboard_id")
+      .notNull()
+      .references(() => dashboards.id, { onDelete: "cascade" }),
+    // F3.73, migration 0094 — the widget's tab; NULL is the legacy single canvas. No
+    // single-column `.references()`: the only foreign key is the composite one below, which
+    // pins the tab to this widget's own dashboard.
+    tabId: uuid("tab_id"),
+    widgetType: varchar("widget_type", { length: 32 }).notNull(),
+    title: varchar("title", { length: 255 }),
+    gridX: integer("grid_x").notNull(),
+    gridY: integer("grid_y").notNull(),
+    gridW: integer("grid_w").notNull(),
+    gridH: integer("grid_h").notNull(),
+    // Bounded by the per-type discriminated union in
+    // `@bms/shared/contracts/dashboard-builder`, not by the database: the shape depends on
+    // `widgetType`, which no row-level CHECK can branch on usefully.
+    config: jsonb("config").notNull().default({}),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    dashboardTabFk: foreignKey({
+      name: "dashboard_widgets_dashboard_id_tab_id_fkey",
+      columns: [t.dashboardId, t.tabId],
+      foreignColumns: [dashboardTabs.dashboardId, dashboardTabs.id],
+    }).onDelete("cascade"),
+  }),
+);
 
 /**
  * A widget's point bindings — the table that makes ADR 0047 decision 3 true.

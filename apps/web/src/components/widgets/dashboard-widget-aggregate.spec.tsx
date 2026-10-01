@@ -40,6 +40,7 @@ const IDENTITY = {
   // `F3.35` Stage C — the second binding array. Empty here: these fixtures
   // exercise Stage A's aggregation, which is a point-bound path.
   sources: [],
+  tabId: null,
 };
 
 const STATS = {

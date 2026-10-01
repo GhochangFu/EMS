@@ -11,6 +11,7 @@ import {
   dashboardBuilderProblemSubject,
   dashboardRowsFromDto,
   offerableWidgetTypes,
+  tabWritesFromDto,
   unselectedDashboardBuilderProblems,
   MIMIC_NEEDS_ASSET_GROUP_MESSAGE,
   SCOPE_PROBLEM_FIELD,
@@ -53,13 +54,14 @@ function widgetDto(overrides: Partial<DashboardWidgetDto> = {}): DashboardWidget
     // `apps/api` records. The failure was a TypeError inside `dashboardRowsFromDto`, not a
     // type error, which is why it surfaced only when the suite ran.
     sources: [],
+    tabId: null,
     widgetType: "value_tile",
     config: { unit: "kW", decimals: 1 },
     ...overrides,
   } as DashboardWidgetDto;
 }
 
-function dashboardDto(widgets: DashboardWidgetDto[]): DashboardDto {
+function dashboardDto(widgets: DashboardWidgetDto[], tabs: DashboardDto["tabs"] = []): DashboardDto {
   return {
     id: "dash-1",
     organizationId: "33333333-3333-4333-8333-333333333333",
@@ -72,8 +74,59 @@ function dashboardDto(widgets: DashboardWidgetDto[]): DashboardDto {
     assetTemplateId: null,
     createdAt: "2026-01-01T00:00:00Z",
     updatedAt: "2026-01-01T00:00:00Z",
+    templateId: null,
+    tabs,
     widgets,
   };
+}
+
+const TAB_A = {
+  id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+  dashboardId: "22222222-2222-4222-8222-222222222222",
+  organizationId: "33333333-3333-4333-8333-333333333333",
+  key: "overview",
+  label: "Overview",
+  sortOrder: 0,
+  assetGroupId: null,
+};
+const TAB_B = {
+  ...TAB_A,
+  id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+  key: "ups",
+  label: "UPS",
+  sortOrder: 1,
+  assetGroupId: "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
+};
+
+/** `F3.73` D11 — a dashboard with two tabs round-trips each widget's `tabKey`, and the tab set
+ * the builder re-saves keeps every stored tab id. */
+export function runTabKeyRoundTripTests(): void {
+  const dto = dashboardDto(
+    [
+      widgetDto({ id: "w-a", tabId: TAB_A.id }),
+      widgetDto({ id: "w-b", tabId: TAB_B.id }),
+      widgetDto({ id: "w-none", tabId: null }),
+    ],
+    [TAB_A, TAB_B],
+  );
+  const rows = dashboardRowsFromDto(dto);
+  assert(rows[0]!.tabKey === "overview", `a widget in tab A reads back its key — got ${rows[0]!.tabKey}`);
+  assert(rows[1]!.tabKey === "ups", `a widget in tab B reads back its key — got ${rows[1]!.tabKey}`);
+  assert(rows[2]!.tabKey === undefined, "a widget in no tab has no tabKey");
+
+  const payload = buildPutWidgetsPayload(rows, tabWritesFromDto(dto.tabs));
+  assert(payload.widgets[0]!.tabKey === "overview", "the write body carries tabKey for tab A");
+  assert(payload.widgets[1]!.tabKey === "ups", "the write body carries tabKey for tab B");
+  assert(!("tabKey" in payload.widgets[2]!), "a widget in no tab omits tabKey rather than sending undefined");
+  assert(
+    JSON.stringify(payload.tabs) ===
+      JSON.stringify([
+        { id: TAB_A.id, key: "overview", label: "Overview", sortOrder: 0, assetGroupId: null },
+        { id: TAB_B.id, key: "ups", label: "UPS", sortOrder: 1, assetGroupId: TAB_B.assetGroupId },
+      ]),
+    `the write body re-sends the stored tabs with their ids — got ${JSON.stringify(payload.tabs)}`,
+  );
+  assert(!builderHasChanged(rows, dto), "unedited tabbed rows report no change");
 }
 
 /** `blankDashboardWidgetRow` — a new row, sized from the catalog rather than a literal. */
@@ -163,7 +216,7 @@ export function runTableColumnRoundTripTests(): void {
 
   // And back out again. This is the half that catches the silent loss: the payload built from
   // the row the builder just loaded must carry the same projection the server stored.
-  const payload = buildPutWidgetsPayload([row!]);
+  const payload = buildPutWidgetsPayload([row!], []);
   const written = payload.widgets[0];
   assert(
     written?.widgetType === "table",
@@ -189,7 +242,7 @@ export function runTableColumnRoundTripTests(): void {
   });
   const [bare] = dashboardRowsFromDto(dashboardDto([noColumns]));
   assert(bare?.config.tableColumns.length === 0, "an absent column list reads back as empty");
-  const bareWritten = buildPutWidgetsPayload([bare!]).widgets[0];
+  const bareWritten = buildPutWidgetsPayload([bare!], []).widgets[0];
   assert(
     bareWritten?.widgetType === "table" && bareWritten.config.columns === undefined,
     "an empty projection must be written as ABSENT, not as an empty array",
@@ -240,13 +293,13 @@ export function runRemovingASourceClearsColumnsTests(): void {
 
 export function runDashboardBuilderErrorsTests(): void {
   const valid = dashboardRowsFromDto(dashboardDto([widgetDto()]));
-  assert(dashboardBuilderErrors(valid, "organization").length === 0, "a valid single-widget set reports no problems");
+  assert(dashboardBuilderErrors(valid, "organization", []).length === 0, "a valid single-widget set reports no problems");
 
   const tooManyWidgets: DashboardWidgetRow[] = Array.from({ length: MAX_DASHBOARD_WIDGETS + 1 }, () =>
     blankDashboardWidgetRow("value_tile"),
   );
   assert(
-    dashboardBuilderErrors(tooManyWidgets, "organization").some((p) => p.field === "widgets"),
+    dashboardBuilderErrors(tooManyWidgets, "organization", []).some((p) => p.field === "widgets"),
     "more than MAX_DASHBOARD_WIDGETS rows reports a widgets-level problem",
   );
 
@@ -256,7 +309,7 @@ export function runDashboardBuilderErrorsTests(): void {
   // neither, which is the state the *exactly one kind* rule refuses.
   const noBindings = [blankDashboardWidgetRow("value_tile")];
   assert(
-    dashboardBuilderErrors(noBindings, "organization").some((p) => p.field === "points"),
+    dashboardBuilderErrors(noBindings, "organization", []).some((p) => p.field === "points"),
     "a value_tile binding neither a point nor a metric reports a points problem",
   );
 
@@ -271,7 +324,7 @@ export function runDashboardBuilderErrorsTests(): void {
     },
   ];
   assert(
-    dashboardBuilderErrors(bothKinds, "organization").some((p) => p.field === "points"),
+    dashboardBuilderErrors(bothKinds, "organization", []).some((p) => p.field === "points"),
     "a value_tile binding both a point and a metric reports a points problem",
   );
 
@@ -285,7 +338,7 @@ export function runDashboardBuilderErrorsTests(): void {
     },
   ];
   assert(
-    dashboardBuilderErrors(metricOnly, "organization").every((p) => p.field !== "points"),
+    dashboardBuilderErrors(metricOnly, "organization", []).every((p) => p.field !== "points"),
     "a value_tile bound to a named metric alone is legal and reports no points problem",
   );
 
@@ -299,13 +352,13 @@ export function runDashboardBuilderErrorsTests(): void {
     },
   ];
   assert(
-    dashboardBuilderErrors(gaugeWithSource, "organization").some((p) => p.field === "points"),
+    dashboardBuilderErrors(gaugeWithSource, "organization", []).some((p) => p.field === "points"),
     "a radial_gauge binding a named metric reports a problem; only the tile takes one",
   );
 
   const tooWide: DashboardWidgetRow[] = [{ ...blankDashboardWidgetRow("value_tile"), gridX: 10, gridW: 5 }];
   assert(
-    dashboardBuilderErrors(tooWide, "organization").some((p) => p.field === "gridW"),
+    dashboardBuilderErrors(tooWide, "organization", []).some((p) => p.field === "gridW"),
     `a widget overhanging the ${DASHBOARD_GRID.columns}-column canvas reports a gridW problem`,
   );
 
@@ -315,7 +368,7 @@ export function runDashboardBuilderErrorsTests(): void {
   badConfig[0]!.config.min = "10";
   badConfig[0]!.config.max = "5";
   assert(
-    dashboardBuilderErrors(badConfig, "organization").some((p) => p.field === "max"),
+    dashboardBuilderErrors(badConfig, "organization", []).some((p) => p.field === "max"),
     "an inverted gauge range is caught through widgetConfigErrors, not restated here",
   );
 }
@@ -368,7 +421,7 @@ export function runDashboardBuilderProblemSubjectTests(): void {
  * in `widget-config-form.spec.ts`. */
 export function runBuildPutWidgetsPayloadTests(): void {
   const rows = dashboardRowsFromDto(dashboardDto([widgetDto({ id: "existing-1" })]));
-  const payload = buildPutWidgetsPayload(rows);
+  const payload = buildPutWidgetsPayload(rows, []);
   assert(payload.widgets.length === 1, "one payload widget per row");
   assert(payload.widgets[0]!.id === "existing-1", "an existing row keeps its id");
   assert(
@@ -381,7 +434,7 @@ export function runBuildPutWidgetsPayloadTests(): void {
   );
 
   const newRow = blankDashboardWidgetRow("value_tile");
-  const newPayload = buildPutWidgetsPayload([newRow]);
+  const newPayload = buildPutWidgetsPayload([newRow], []);
   assert(!("id" in newPayload.widgets[0]!), "a new row (no server id) omits id entirely, rather than sending undefined");
 }
 
@@ -464,13 +517,13 @@ export function runBlankMimicRowTests(): void {
 
 /** A mimic binds nothing, so the "needs a point or a metric" rule does not apply to it. */
 export function runMimicHasNoBindingProblemTests(): void {
-  const problems = dashboardBuilderErrors([blankDashboardWidgetRow("mimic")], "assetGroup");
+  const problems = dashboardBuilderErrors([blankDashboardWidgetRow("mimic")], "assetGroup", []);
   assert(problems.length === 0, `a new mimic row has no problem — got ${JSON.stringify(problems)}`);
 }
 
 /** The positive twin: a value tile that binds nothing still gets the binding problem. */
 export function runUnboundTileStillHasBindingProblemTests(): void {
-  const problems = dashboardBuilderErrors([blankDashboardWidgetRow("value_tile")], "organization");
+  const problems = dashboardBuilderErrors([blankDashboardWidgetRow("value_tile")], "organization", []);
   assert(
     problems.some((problem) => problem.field === "points"),
     `an unbound value tile still reports a points problem — got ${JSON.stringify(problems)}`,
@@ -482,7 +535,7 @@ export function runUnboundTileStillHasBindingProblemTests(): void {
 export function runMimicPayloadHasNoUnitTests(): void {
   const row = blankDashboardWidgetRow("mimic");
   const withUnit = { ...row, config: { ...row.config, unit: "kW", decimals: "2" } };
-  const payload = buildPutWidgetsPayload([withUnit]);
+  const payload = buildPutWidgetsPayload([withUnit], []);
   const widget = payload.widgets[0]!;
   assert(
     widget.widgetType === "mimic" &&
@@ -503,7 +556,7 @@ export function runMimicRowKeepsPresetTests(): void {
 
 /** The round trip, end to end: DTO → rows → payload writes back the stored config. */
 export function runMimicRoundTripTests(): void {
-  const payload = buildPutWidgetsPayload(dashboardRowsFromDto(dashboardDto([mimicDto()])));
+  const payload = buildPutWidgetsPayload(dashboardRowsFromDto(dashboardDto([mimicDto()])), []);
   const widget = payload.widgets[0]!;
   assert(
     JSON.stringify(widget.config) === JSON.stringify({ source: "preset", preset: "water_train" }) &&
@@ -548,7 +601,7 @@ export function runMimicRowKeepsLayoutTests(): void {
 
 /** The round trip, end to end: a stored layout mimic re-saves the same layout config. */
 export function runMimicLayoutRoundTripTests(): void {
-  const payload = buildPutWidgetsPayload(dashboardRowsFromDto(dashboardDto([layoutMimicDto()])));
+  const payload = buildPutWidgetsPayload(dashboardRowsFromDto(dashboardDto([layoutMimicDto()])), []);
   const widget = payload.widgets[0]!;
   assert(
     JSON.stringify(widget.config) === JSON.stringify({ source: "layout", layoutId: "layout-1" }) &&
@@ -569,7 +622,7 @@ export function runMimicLayoutUneditedIsNoChangeTests(): void {
 export function runMimicOffAGroupHasTheScopeProblemTests(): void {
   const rows = [blankDashboardWidgetRow("mimic"), blankDashboardWidgetRow("mimic")];
   for (const kind of ["organization", "location", "asset"] as const) {
-    const scoped = dashboardBuilderErrors(rows, kind).filter((problem) => problem.field === SCOPE_PROBLEM_FIELD);
+    const scoped = dashboardBuilderErrors(rows, kind, []).filter((problem) => problem.field === SCOPE_PROBLEM_FIELD);
     assert(
       JSON.stringify(scoped.map((problem) => [problem.widget, problem.message])) ===
         JSON.stringify([
@@ -584,7 +637,7 @@ export function runMimicOffAGroupHasTheScopeProblemTests(): void {
 /** The positive twin: on a group scope the mimic has no scope problem. Mutation: fire the
  * problem on every kind ⇒ red. */
 export function runMimicOnAGroupHasNoScopeProblemTests(): void {
-  const problems = dashboardBuilderErrors([blankDashboardWidgetRow("mimic")], "assetGroup");
+  const problems = dashboardBuilderErrors([blankDashboardWidgetRow("mimic")], "assetGroup", []);
   assert(
     problems.every((problem) => problem.field !== SCOPE_PROBLEM_FIELD),
     `a group dashboard's mimic has no scope problem — got ${JSON.stringify(problems)}`,
@@ -593,10 +646,70 @@ export function runMimicOnAGroupHasNoScopeProblemTests(): void {
 
 /** A widget that is not a mimic never reports the scope problem off a group. */
 export function runNonMimicHasNoScopeProblemTests(): void {
-  const problems = dashboardBuilderErrors([blankDashboardWidgetRow("value_tile")], "organization");
+  const problems = dashboardBuilderErrors([blankDashboardWidgetRow("value_tile")], "organization", []);
   assert(
     problems.every((problem) => problem.field !== SCOPE_PROBLEM_FIELD),
     `a value tile has no scope problem — got ${JSON.stringify(problems)}`,
+  );
+}
+
+/** `F3.73` plan D2 — the tabs the per-tab client rules read (the API's `tabRulesHold` and
+ * `mimicGroupFor` mirrors). "overview" binds no group; "electrical" binds one. */
+const TABS_FOR_RULES = [
+  { key: "overview", assetGroupId: null },
+  { key: "electrical", assetGroupId: "33333333-3333-4333-8333-333333333333" },
+] as const;
+
+const onTab = (tabKey: string, widgetType: Parameters<typeof blankDashboardWidgetRow>[0] = "value_tile") => ({
+  ...blankDashboardWidgetRow(widgetType),
+  tabKey,
+});
+
+/** `MAX_DASHBOARD_WIDGETS` on one tab plus one on another is legal: the cap is per tab.
+ * Mutation: count every row against one total => red. */
+export function runWidgetCapIsPerTabTests(): void {
+  const rows = [
+    ...Array.from({ length: MAX_DASHBOARD_WIDGETS }, () => onTab("overview")),
+    onTab("electrical"),
+  ];
+  const problems = dashboardBuilderErrors(rows, "location", TABS_FOR_RULES);
+  assert(
+    problems.every((problem) => problem.field !== "widgets"),
+    `${MAX_DASHBOARD_WIDGETS} + 1 widgets across two tabs is under the per-tab cap — got ${JSON.stringify(problems.filter((p) => p.field === "widgets"))}`,
+  );
+}
+
+/** One over the cap on ONE tab is refused, and the problem names the tab. Mutation: never
+ * report the cap => red. */
+export function runWidgetCapRefusesOneTabOverTests(): void {
+  const rows = Array.from({ length: MAX_DASHBOARD_WIDGETS + 1 }, () => onTab("overview"));
+  const capped = dashboardBuilderErrors(rows, "location", TABS_FOR_RULES).filter((p) => p.field === "widgets");
+  assert(
+    capped.length === 1 && capped[0]!.message.includes("overview") && capped[0]!.message.includes(`${MAX_DASHBOARD_WIDGETS}`),
+    `${MAX_DASHBOARD_WIDGETS + 1} widgets on one tab reports one widgets problem naming the tab — got ${JSON.stringify(capped)}`,
+  );
+}
+
+/** A mimic on a tab that binds a group resolves against that group, so a location dashboard
+ * carries it with no scope problem. Mutation: drop the tab branch => red. */
+export function runMimicOnAGroupTabHasNoScopeProblemTests(): void {
+  const problems = dashboardBuilderErrors([onTab("electrical", "mimic")], "location", TABS_FOR_RULES);
+  assert(
+    problems.every((problem) => problem.field !== SCOPE_PROBLEM_FIELD),
+    `a mimic on a group-bound tab has no scope problem — got ${JSON.stringify(problems)}`,
+  );
+}
+
+/** A mimic on the Overview tab (no group) off a group scope still has the scope problem.
+ * Mutation: allow a mimic on any tab => red. */
+export function runMimicOnAnOverviewTabHasTheScopeProblemTests(): void {
+  const scoped = dashboardBuilderErrors([onTab("overview", "mimic")], "location", TABS_FOR_RULES).filter(
+    (problem) => problem.field === SCOPE_PROBLEM_FIELD,
+  );
+  assert(
+    JSON.stringify(scoped.map((problem) => [problem.widget, problem.message])) ===
+      JSON.stringify([[0, MIMIC_NEEDS_ASSET_GROUP_MESSAGE]]),
+    `a mimic on the Overview tab of a location dashboard reports the scope problem — got ${JSON.stringify(scoped)}`,
   );
 }
 
@@ -612,4 +725,17 @@ export function runSummaryKeepsTheSelectedWidgetsScopeProblemTests(): void {
     JSON.stringify(summary) === JSON.stringify([problems[0]]),
     `the summary keeps only the selected widget's scope problem — got ${JSON.stringify(summary)}`,
   );
+}
+
+export function runWidgetOffEveryTabIsFlaggedTests(): void {
+  const rows = [onTab("overview"), blankDashboardWidgetRow("value_tile")];
+  const flagged = dashboardBuilderErrors(rows, "location", TABS_FOR_RULES).filter((problem) => problem.field === "tabKey");
+  assert(
+    JSON.stringify(flagged.map((problem) => problem.widget)) === JSON.stringify([1]),
+    `only the row with no tab is flagged on a tabbed dashboard — got ${JSON.stringify(flagged)}`,
+  );
+  const untabbed = dashboardBuilderErrors([blankDashboardWidgetRow("value_tile")], "location", []).filter(
+    (problem) => problem.field === "tabKey",
+  );
+  assert(untabbed.length === 0, `a dashboard without tabs flags no row — got ${JSON.stringify(untabbed)}`);
 }

@@ -49,6 +49,8 @@ const DTO: DashboardDto = {
   assetTemplateId: null,
   createdAt: "2026-01-01T00:00:00Z",
   updatedAt: "2026-01-01T00:00:00Z",
+  templateId: null,
+  tabs: [],
   widgets: [],
 };
 

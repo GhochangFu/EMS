@@ -36,6 +36,7 @@ const IDENTITY = {
   // `F3.35` Stage C. Every widget as read carries both binding arrays; these
   // fixtures bind points only, so the source array stays empty.
   sources: [],
+  tabId: null,
 };
 
 function point(overrides: Partial<DashboardWidgetPointDto> = {}): DashboardWidgetPointDto {
@@ -76,6 +77,8 @@ export function runPointRefsForTests(): void {
     assetTemplateId: null,
     createdAt: "2026-01-01T00:00:00Z",
     updatedAt: "2026-01-01T00:00:00Z",
+    templateId: null,
+    tabs: [],
     widgets: [
       valueTileWidget([shared]),
       // A second widget rebinding the SAME point must not double the ref count.

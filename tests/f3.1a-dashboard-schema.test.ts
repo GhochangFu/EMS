@@ -56,6 +56,7 @@ const sqlOnly = (source: string): string =>
 
 const MIGRATION_REL = "packages/db/drizzle/0050_configurable_dashboard_tables.sql";
 const CONTRACT_REL = "packages/shared/src/contracts/dashboard-builder.ts";
+const DTO_REL = "packages/shared/src/contracts/dashboard-dto.ts";
 
 /** The three tables migration 0050 creates, all tenant-scoped from birth (ADR 0047 decision 5). */
 const TABLES = ["dashboards", "dashboard_widgets", "dashboard_widget_points"] as const;
@@ -379,7 +380,16 @@ describe("F3.1a — the widget contract's encoding", () => {
 
     expect(source).toContain('z.discriminatedUnion("widgetType"');
 
-    const code = source
+    // `F3.73` D0 moved the DTO block (the `z.intersection` this test protects) to
+    // `dashboard-dto.ts`, so the flatten scan reads both files. The `.merge(` / `.extend(` ban
+    // would otherwise stop covering the schemas it was written for.
+    expect(existsSync(join(repoRoot, DTO_REL)), `${DTO_REL} must exist`).toBe(true);
+    const dtoSource = read(DTO_REL);
+    expect(dtoSource, "the widget DTO is still the intersection, not a flattened object").toContain(
+      "z.intersection(",
+    );
+
+    const code = `${source}\n${dtoSource}`
       .split("\n")
       .filter((line) => {
         const trimmed = line.trim();
