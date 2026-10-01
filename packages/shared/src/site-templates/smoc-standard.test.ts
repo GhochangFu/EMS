@@ -5,7 +5,7 @@ import {
   everyModuleCardNamesATab,
   everyTabPresetIsAPresetOption,
   everyWidgetFitsTheViewCanvasFloorRow,
-  everyWidgetHasItsCompactSize,
+  everyDomainTabWidgetHasItsCompactSize,
   noTabHoldsMoreThanTheWidgetCap,
   noTabLeavesAnEmptyRow,
   noTwoWidgetsInATabOverlap,
@@ -14,18 +14,23 @@ import {
   theContentParsesUnderTheContentSchema,
   theEntryIsTheSiteTargetStockRow,
   theEntryParsesUnderTheStockContract,
-  theOverviewHasOneCardPerGroupTab,
+  theOfflineTileUsesTheOfflineIcon,
+  theOverviewHoldsItsV3Rects,
+  theOverviewHoldsNoCardAndOneSystemsList,
   theTabsAreThePlanOrder,
   theValueNamesNoControlRoomAssetCode,
 } from "./smoc-standard.spec";
 
 /** Vitest entry point — assertions live in the sibling `.spec` (ADR 0014). */
 describe("F3.73 — the SMOC standard site layout (plan D8)", () => {
-  it("is the smoc-standard site-target stock row, version 2", () => {
+  it("is the smoc-standard site-target stock row, version 3", () => {
     theEntryIsTheSiteTargetStockRow();
   });
-  it("gives each widget its compact v2 size", () => {
-    everyWidgetHasItsCompactSize();
+  it("holds the v3 Overview rects (F3.77 D1)", () => {
+    theOverviewHoldsItsV3Rects();
+  });
+  it("gives each domain-tab widget its compact v2 size", () => {
+    everyDomainTabWidgetHasItsCompactSize();
   });
   it("gives the legend and a value tile the rows they need at the 64 px view floor", () => {
     everyWidgetFitsTheViewCanvasFloorRow();
@@ -36,7 +41,7 @@ describe("F3.73 — the SMOC standard site layout (plan D8)", () => {
   it("leaves no empty row in a tab", () => {
     noTabLeavesAnEmptyRow();
   });
-  it("totals 14 rows on the Overview and on a domain tab with a mimic", () => {
+  it("totals 12 rows on the Overview and 14 on a domain tab with a mimic", () => {
     theTabsTotalTheirCompactRows();
   });
   it("parses under the stock template contract", () => {
@@ -60,8 +65,11 @@ describe("F3.73 — the SMOC standard site layout (plan D8)", () => {
   it("points every module card at a tab", () => {
     everyModuleCardNamesATab();
   });
-  it("puts one module card per group tab on the Overview", () => {
-    theOverviewHasOneCardPerGroupTab();
+  it("holds no module card and one Critical systems list beside the rail on the Overview (F3.77 D1)", () => {
+    theOverviewHoldsNoCardAndOneSystemsList();
+  });
+  it("draws the offline icon on the Offline assets tile (F3.77)", () => {
+    theOfflineTileUsesTheOfflineIcon();
   });
   it("holds at most the widget cap in each tab", () => {
     noTabHoldsMoreThanTheWidgetCap();

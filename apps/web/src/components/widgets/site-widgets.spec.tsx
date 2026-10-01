@@ -200,6 +200,30 @@ export async function theLegendNamesNormalAndOffline(): Promise<void> {
   expect(screen.getByText("Offline")).toBeInTheDocument();
 }
 
+/**
+ * `F3.77` plan D2 — the legend is one 64 px row: no `WidgetFrame`, whose chrome (`p-3`, the `h3`,
+ * `mb-2`) takes about 48.5 px. The title is still drawn, inline: the adjacent positive.
+ * Mutation: wrap the body in `WidgetFrame` again → the heading is back → red.
+ */
+export async function theLegendDrawsNoHeadingButItsTitleInline(): Promise<void> {
+  render(wrap(<StateLegendWidget title="Legend" status="ready" />));
+  await screen.findByText("Normal");
+  expect(screen.getByText("Legend")).toBeInTheDocument();
+  expect(screen.queryByRole("heading")).not.toBeInTheDocument();
+}
+
+/** `F3.77` plan D2 — the title and the pills share one clipped row that fills its cell. */
+export async function theLegendTitleAndPillsShareOneRow(): Promise<void> {
+  render(wrap(<StateLegendWidget title="Legend" status="ready" />));
+  await screen.findByText("Normal");
+  const row = screen.getByLabelText("State legend").parentElement;
+  expect(row).not.toBeNull();
+  expect(screen.getByText("Legend").parentElement).toBe(row);
+  for (const name of ["flex", "h-full", "items-center", "overflow-hidden", "surface-raised"]) {
+    expect(row, `the legend row lacks ${name}`).toHaveClass(name);
+  }
+}
+
 export function theStripDrawsOnePillPerRole(): void {
   render(wrap(<AssetClassStripWidget title="Classes" status="ready" data={response()} />));
   expect(screen.getByText("UPS 4 · 2 Critical · 1 Offline")).toBeInTheDocument();

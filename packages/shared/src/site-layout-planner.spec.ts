@@ -8,6 +8,7 @@ import {
   type SiteLayoutGroup,
   type SiteLayoutTabSpec,
 } from "./site-layout-planner";
+import type { SectionTemplateWidget, SiteTemplateTab } from "./index";
 import { SMOC_STANDARD_SITE_TEMPLATE } from "./site-templates/smoc-standard";
 import { planTemplateWidget } from "./template-instantiation";
 
@@ -36,6 +37,64 @@ function group(code: string, domain: string | null): SiteLayoutGroup {
 }
 
 const SMOC_TABS = SMOC_STANDARD_SITE_TEMPLATE.content.tabs;
+
+/** One `module_summary_card` that opens `targetTabKey`, in slot `slot` of the fixture's card row (y6). */
+function fixtureCard(targetTabKey: string, slot: number): SectionTemplateWidget {
+  return {
+    key: `overview-${targetTabKey}-card`,
+    title: targetTabKey,
+    gridX: slot * 2,
+    gridY: 6,
+    gridW: 2,
+    gridH: 3,
+    bindings: [],
+    sources: [],
+    widgetType: "module_summary_card",
+    config: { targetTabKey },
+  };
+}
+
+/**
+ * `F3.77` — the stock Overview holds no card since v3 (plan D1), but the drop-and-pack rule stays
+ * for an admin's site template. This fixture is the SMOC tabs with an Overview that carries one
+ * card per group tab in a row at y6 between a strip and a rail, the shape the v2 stock row had.
+ */
+const CARD_TABS: readonly SiteTemplateTab[] = [
+  {
+    key: "overview",
+    label: "Overview",
+    sortOrder: 0,
+    domain: null,
+    widgets: [
+      {
+        key: "overview-class-strip",
+        title: null,
+        gridX: 0,
+        gridY: 0,
+        gridW: 12,
+        gridH: 6,
+        bindings: [],
+        sources: [],
+        widgetType: "asset_class_strip",
+        config: {},
+      },
+      ...["sld", "ups", "hvac", "it", "env", "water"].map(fixtureCard),
+      {
+        key: "overview-alarms-rail",
+        title: "Active alarms",
+        gridX: 0,
+        gridY: 9,
+        gridW: 12,
+        gridH: 5,
+        bindings: [],
+        sources: [],
+        widgetType: "active_alarms_rail",
+        config: { rows: 8, showSummary: true },
+      },
+    ],
+  },
+  ...SMOC_TABS.slice(1),
+];
 
 const PHE_GROUPS = [group("electrical", "electrical"), group("environment", "environment")];
 
@@ -93,7 +152,7 @@ export function pheShapeOmitsTheFourAbsentDomains(): void {
 }
 
 export function pheOverviewKeepsExactlyTheSldAndEnvCards(): void {
-  const targets = cardTargets(planSiteLayout(SMOC_TABS, PHE_GROUPS));
+  const targets = cardTargets(planSiteLayout(CARD_TABS, PHE_GROUPS));
   assert(
     targets.join(",") === "sld,env",
     `PHE Overview module cards: expected sld,env, got ${targets.join(",")}`,
@@ -101,12 +160,23 @@ export function pheOverviewKeepsExactlyTheSldAndEnvCards(): void {
 }
 
 export function pheReportsTheFourDroppedCards(): void {
-  const dropped = planned(planSiteLayout(SMOC_TABS, PHE_GROUPS)).droppedCards;
+  const dropped = planned(planSiteLayout(CARD_TABS, PHE_GROUPS)).droppedCards;
   const shape = dropped.map((row) => `${row.tabKey}>${row.targetTabKey}`).join(",");
   assert(
     shape === "overview>ups,overview>hvac,overview>it,overview>water",
     `PHE dropped cards: got ${shape}`,
   );
+}
+
+/**
+ * `F3.77` plan D1 — the v3 stock Overview holds no card, so a PHE copy drops none. The kept
+ * Overview still carries its eight widgets: the adjacent positive, so an empty plan cannot pass.
+ */
+export function theSmocOverviewHasNoCardToDrop(): void {
+  const plan = planned(planSiteLayout(SMOC_TABS, PHE_GROUPS));
+  const overview = plan.tabs.find((row) => row.tab.key === "overview");
+  assert(overview?.tab.widgets.length === 8, `PHE Overview widgets: got ${overview?.tab.widgets.length}`);
+  assert(plan.droppedCards.length === 0, `PHE dropped cards: got ${JSON.stringify(plan.droppedCards)}`);
 }
 
 // ---- the CSMOC Gauteng shape ----------------------------------------------------------------
@@ -283,18 +353,18 @@ function cardRects(result: ReturnType<typeof planSiteLayout>): string {
 }
 
 export function pheOverviewPacksTheKeptCardsLeft(): void {
-  const got = cardRects(planSiteLayout(SMOC_TABS, PHE_GROUPS));
+  const got = cardRects(planSiteLayout(CARD_TABS, PHE_GROUPS));
   assert(got === "sld@0,6 env@2,6", `PHE Overview card rects: got ${got}`);
 }
 
 export function csmocOverviewPacksTheKeptCardsLeftInTemplateOrder(): void {
-  const got = cardRects(planSiteLayout(SMOC_TABS, CSMOC_GROUPS, CSMOC_CHOICE));
+  const got = cardRects(planSiteLayout(CARD_TABS, CSMOC_GROUPS, CSMOC_CHOICE));
   assert(got === "sld@0,6 ups@2,6 hvac@4,6 water@6,6", `CSMOC Overview card rects: got ${got}`);
 }
 
 export function packingNeverMovesTheTemplatesOwnCards(): void {
-  planSiteLayout(SMOC_TABS, PHE_GROUPS);
-  const env = SMOC_TABS[0].widgets.find((widget) => widget.key === "overview-env-card");
+  planSiteLayout(CARD_TABS, PHE_GROUPS);
+  const env = CARD_TABS[0]?.widgets.find((widget) => widget.key === "overview-env-card");
   assert(env?.gridX === 8, `the template's env card moved to ${env?.gridX}`);
 }
 
