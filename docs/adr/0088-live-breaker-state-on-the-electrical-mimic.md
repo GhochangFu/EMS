@@ -122,9 +122,10 @@ Ruled by the owner on 2026-10-01, one at a time:
    breaker. Two-way commanding stays out (`AGENTS.md` §6; the command path is
    row `F3.12`).
 2. **A state map in the point catalog.** A new fleet-wide table,
-   `bms.point_key_states` (`point_key` → `bms.point_keys`, `value` double,
-   `label`, `tone`), maps a numeric value of a point key to a label and a
-   tone. It is master data like `bms.point_keys` (`0059`): one list for every
+   `bms.point_key_states` (`point_key_code` → `bms.point_keys(code)`, `value`
+   double, `label`, `tone`), maps a numeric value of a point key to a label and
+   a tone. Both keys are catalog rows today. It is master data like
+   `bms.point_keys` (migration `0059`): one list for every
    organization. `tone` is a closed vocabulary (a `z.enum` and a `CHECK`), for
    the reason ADR 0047 decision 2 gives: each tone is a drawing. `F3.74` seeds
    rows for two keys only — `breaker_main` (0 OPEN, 1 CLOSED) and
@@ -173,8 +174,8 @@ Ruled by the owner on 2026-10-01, one at a time:
    are fan-out nodes (decision 4). The `breaker` glyph gains its states. This
    brings one network mimic into scope (amends ADR 0081 decision 10 and ADR
    0082 decision 7). `electrical_distribution` does not change.
-9. **Five new role codes** in the electrical sort band, inserted in the `0087`
-   idiom: `main-breaker`, `ups-input-breaker`, `ups-output-breaker`,
+9. **Five new role codes** in the electrical sort band, inserted in the
+   migration `0087` idiom: `main-breaker`, `ups-input-breaker`, `ups-output-breaker`,
    `load-feeder-breaker`, `mains-feeder-breaker`. The seed moves `CR-Q1`
    (main), `CR-Q2`–`Q3` (UPS input), `CR-Q4`–`Q5` (UPS output), `CR-Q6`–`Q9`
    (load feeders) and `CR-Q10`–`Q12` (mains feeders) off `mcc`.
@@ -198,8 +199,10 @@ Ruled by the owner on 2026-10-01, one at a time:
 ### Template, seed and simulator
 
 12. **A new published version of "SMOC standard".** Its electrical tab draws
-    `lv_single_line` and adds a `breaker_table`; its Overview adds a mimic that
-    names the electrical tab. Only new copies get it. Existing copies are not
+    `lv_single_line` and adds a `breaker_table` (gate question 12); its
+    Overview adds a mimic that names the electrical tab, which follows from
+    gate questions 1 and 10 (the MiniSld is part of parity). Only new copies
+    get it. Existing copies are not
     overwritten (ADR 0087 gate question 4). A site with no breaker-role
     members draws "Not assigned" breakers until an admin binds them.
 13. **A seed demo dashboard at `RSMOC-WC`.** A library dashboard scoped to
