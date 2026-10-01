@@ -45,7 +45,12 @@ function stubPut(dto: DashboardDto) {
   return vi.spyOn(dashboardsApi, "putDashboardWidgets").mockResolvedValue(dto);
 }
 
-const strip = () => screen.getByRole("tablist", { name: "Dashboard tabs" });
+/**
+ * The strip, waited for. The builder's scope starts as an empty `location`, so `waitForPrefill
+ * ("Location")` can resolve before the dto effect lands; the strip renders only once it has (the
+ * stored tabs), so a synchronous `getByRole` here raced the prefill on a slow runner (CI on #681).
+ */
+const strip = () => screen.findByRole("tablist", { name: "Dashboard tabs" });
 const canvasTitles = () => screen.queryAllByText(/^Tile w-/).map((node) => node.textContent);
 
 /** The strip names each tab, the first is selected, and the canvas shows that tab's widgets only.
@@ -55,12 +60,12 @@ export async function theStripShowsTheSelectedTabsWidgetsOnly(): Promise<void> {
   renderPage(asUser("admin"));
   await waitForPrefill("Location");
 
-  const overview = await within(strip()).findByRole("tab", { name: "Overview" });
+  const overview = await within(await strip()).findByRole("tab", { name: "Overview" });
   expect(overview).toHaveAttribute("aria-selected", "true");
   expect(canvasTitles()).toEqual(["Tile w-overview"]);
 
-  await userEvent.click(within(strip()).getByRole("tab", { name: "Electrical" }));
-  expect(within(strip()).getByRole("tab", { name: "Electrical" })).toHaveAttribute("aria-selected", "true");
+  await userEvent.click(within(await strip()).getByRole("tab", { name: "Electrical" }));
+  expect(within(await strip()).getByRole("tab", { name: "Electrical" })).toHaveAttribute("aria-selected", "true");
   expect(canvasTitles()).toEqual(["Tile w-electrical"]);
 }
 
@@ -83,7 +88,7 @@ export async function addingATabSendsItWithItsWidget(): Promise<void> {
   await userEvent.clear(key);
   await userEvent.type(key, "main");
   await userEvent.tab();
-  expect(within(strip()).getByRole("tab", { name: "Main hall" })).toHaveAttribute("aria-selected", "true");
+  expect(within(await strip()).getByRole("tab", { name: "Main hall" })).toHaveAttribute("aria-selected", "true");
   expect(canvasTitles()).toEqual(["Tile w-1"]);
 
   await userEvent.click(screen.getByRole("button", { name: "Save dashboard" }));
@@ -125,10 +130,10 @@ export async function movingAWidgetToAnotherTab(): Promise<void> {
   await waitForPrefill("Location");
   await screen.findByRole("option", { name: "Kolkata Works" });
 
-  await userEvent.click(await within(strip()).findByRole("tab", { name: "Electrical" }));
+  await userEvent.click(await within(await strip()).findByRole("tab", { name: "Electrical" }));
   await userEvent.click(screen.getByText("Tile w-electrical"));
   await userEvent.selectOptions(screen.getByRole("combobox", { name: "Tab" }), "overview");
-  expect(within(strip()).getByRole("tab", { name: "Overview" })).toHaveAttribute("aria-selected", "true");
+  expect(within(await strip()).getByRole("tab", { name: "Overview" })).toHaveAttribute("aria-selected", "true");
   expect(canvasTitles()).toEqual(["Tile w-overview", "Tile w-electrical"]);
 
   await userEvent.click(screen.getByRole("button", { name: "Save dashboard" }));
@@ -146,14 +151,14 @@ export async function aNewWidgetLandsOnTheSelectedTab(): Promise<void> {
   renderPage(asUser("admin"));
   await waitForPrefill("Location");
 
-  await within(strip()).findByRole("tab", { name: "Overview" });
+  await within(await strip()).findByRole("tab", { name: "Overview" });
   expect(screen.queryByRole("button", { name: "+ Plant mimic" })).toBeNull();
-  await userEvent.click(within(strip()).getByRole("tab", { name: "Electrical" }));
+  await userEvent.click(within(await strip()).getByRole("tab", { name: "Electrical" }));
   await userEvent.click(screen.getByRole("button", { name: "+ Plant mimic" }));
 
   expect(screen.getByRole("combobox", { name: "Tab" })).toHaveValue("electrical");
   expect(screen.getAllByText("Plant mimic · 0 point(s)")).toHaveLength(1);
-  await userEvent.click(within(strip()).getByRole("tab", { name: "Overview" }));
+  await userEvent.click(within(await strip()).getByRole("tab", { name: "Overview" }));
   expect(screen.queryAllByText("Plant mimic · 0 point(s)")).toHaveLength(0);
 }
 
@@ -178,10 +183,10 @@ export async function aProblemOnAnotherTabNamesAndSelectsIt(): Promise<void> {
   stubLoads({ dto: { ...TABBED_DTO, widgets: [TABBED_DTO.widgets[0]!, unbound] }, groups: [GROUP] });
   renderPage(asUser("admin"));
   await waitForPrefill("Location");
-  expect(await within(strip()).findByRole("tab", { name: "Overview" })).toHaveAttribute("aria-selected", "true");
+  expect(await within(await strip()).findByRole("tab", { name: "Overview" })).toHaveAttribute("aria-selected", "true");
 
   await userEvent.click(screen.getByRole("button", { name: "Electrical › Tile w-electrical:" }));
-  expect(within(strip()).getByRole("tab", { name: "Electrical" })).toHaveAttribute("aria-selected", "true");
+  expect(within(await strip()).getByRole("tab", { name: "Electrical" })).toHaveAttribute("aria-selected", "true");
   expect(canvasTitles()).toEqual(["Tile w-electrical"]);
 }
 
@@ -229,7 +234,7 @@ export async function aTakenTabKeyIsRefusedAtTheField(): Promise<void> {
   await userEvent.tab();
 
   expect(screen.getByText('Another tab already uses the key "overview".')).toBeInTheDocument();
-  await userEvent.click(within(strip()).getByRole("tab", { name: "Electrical" }));
+  await userEvent.click(within(await strip()).getByRole("tab", { name: "Electrical" }));
   expect(canvasTitles()).toEqual(["Tile w-electrical"]);
 }
 
@@ -308,17 +313,37 @@ export async function aFailedGroupsReadShowsItsErrorNotAMisleadingLabel(): Promi
  * brief — the page then clamps this role's location scope off the site, and the select gives way
  * to "Clear tab 2 group". Mutation: map the disabled read to the loaded state with no items => red. */
 export async function aDisabledGroupsReadDoesNotMislabelABoundTab(): Promise<void> {
+
+  // The select shows only until this role's scope clamp moves the scope off the location, and on a
+  // slow runner the clamp can land before a `waitFor` poll (CI on #681). So every "Tab 2 asset
+  // group" select the page ever adds is recorded from the mutation records — a removed node keeps
+  // its options — and checked once the page has settled.
+  const labels: string[][] = [];
+  const observer = new MutationObserver((records) => {
+    for (const record of records) {
+      for (const node of record.addedNodes) {
+        if (!(node instanceof Element)) continue;
+        // The select itself, a select inside the added subtree, or the select an added option joined.
+        const selects = [node, ...node.querySelectorAll("select"), node.closest("select")].filter(
+          (element): element is Element => element?.getAttribute("aria-label") === "Tab 2 asset group",
+        );
+        for (const select of selects) {
+          labels.push([...select.querySelectorAll("option")].map((option) => option.textContent ?? ""));
+        }
+      }
+    }
+  });
+  observer.observe(document.body, { childList: true, subtree: true });
   stubLoads({ dto: TABBED_DTO, groups: [GROUP] });
   renderPage(asUser("asset_group_admin"));
-
-  // The select shows only until this role's scope clamp moves the scope off the location (below),
-  // so both option checks run in one synchronous pass over the same select.
-  await waitFor(() => {
-    const select = screen.getByRole("combobox", { name: "Tab 2 asset group" });
-    expect(within(select).getByRole("option", { name: "Its group (not loaded)" })).toBeInTheDocument();
-    expect(within(select).queryByRole("option", { name: ANOTHER_SITE_LABEL })).toBeNull();
-  });
   expect(await screen.findByRole("button", { name: "Clear tab 2 group" })).toBeInTheDocument();
+  observer.disconnect();
+
+  expect(labels.length, "the tab's group select never rendered").toBeGreaterThan(0);
+  for (const options of labels) {
+    expect(options).toContain("Its group (not loaded)");
+    expect(options).not.toContain(ANOTHER_SITE_LABEL);
+  }
   expect(assetGroupsApi.fetchAdminAssetGroups).not.toHaveBeenCalledWith("loc-1");
 }
 
