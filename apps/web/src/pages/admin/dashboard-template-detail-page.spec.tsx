@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { expect, vi } from "vitest";
@@ -39,7 +39,7 @@ function draftTemplate() {
     section: "electrical",
     description: null,
     status: "draft",
-    content: { widgets: [] },
+    content: { widgets: [], tabs: [] },
     publishedAt: null,
     archivedAt: null,
     stockCode: null,
@@ -56,6 +56,7 @@ function publishedTemplate() {
     status: "published",
     publishedAt: new Date(0).toISOString(),
     content: {
+      tabs: [],
       widgets: [
         {
           key: "w1",
@@ -80,6 +81,7 @@ function roleFreeTemplate() {
     ...publishedTemplate(),
     section: "sustainability",
     content: {
+      tabs: [],
       widgets: [
         {
           ...publishedTemplate().content.widgets[0],
@@ -564,6 +566,40 @@ export async function siteTemplateInstantiatePicksALocation(): Promise<void> {
   });
   expect(calls[0]?.slice(0, 2)).toEqual([TEMPLATE_ID, "loc-2"]);
   expect(await screen.findByText(/site-layout-plant-2/)).toBeInTheDocument();
+}
+
+/**
+ * A published site template (0 top-level widgets, two tabs of one widget each) reads "2 widgets"
+ * and lists its tabs with label, domain and count — never the empty-canvas message. The adjacent
+ * positive control is the asset-group template, whose count and empty message are unchanged.
+ */
+export async function siteTemplateCountsAndListsItsTabWidgets(): Promise<void> {
+  stubSiteApi({ fetchAdminDashboardTemplate: () => Promise.resolve(publishedSiteTemplate()) });
+  renderPage();
+
+  expect(await screen.findByText(/site · 2 widgets/)).toBeInTheDocument();
+  expect(screen.queryByText("This template has no widgets yet.")).not.toBeInTheDocument();
+  const tabs = screen.getByRole("list", { name: "Site tabs" });
+  expect(within(tabs).getAllByRole("listitem")).toHaveLength(2);
+  expect(within(tabs).getByText("SLD")).toBeInTheDocument();
+  expect(within(tabs).getByText("electrical")).toBeInTheDocument();
+  expect(within(tabs).getByText("overview")).toBeInTheDocument();
+  expect(within(tabs).getAllByText("1 widget")).toHaveLength(2);
+}
+
+/** A group template is unchanged: its own widgets are the count, and no tab list shows. */
+export async function groupTemplateCountAndEmptyMessageAreUnchanged(): Promise<void> {
+  stubApi({ fetchAdminDashboardTemplate: () => Promise.resolve(publishedTemplate()) });
+  renderPage();
+  expect(await screen.findByText(/electrical · 1 widget$/)).toBeInTheDocument();
+  expect(screen.queryByRole("list", { name: "Site tabs" })).not.toBeInTheDocument();
+  cleanup();
+  vi.restoreAllMocks();
+
+  stubApi({ fetchAdminDashboardTemplate: () => Promise.resolve(draftTemplate()) });
+  renderPage();
+  expect(await screen.findByText(/electrical · 0 widgets/)).toBeInTheDocument();
+  expect(screen.getByText("This template has no widgets yet.")).toBeInTheDocument();
 }
 
 /**

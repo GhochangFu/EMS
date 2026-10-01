@@ -28,15 +28,26 @@ import type { SectionTemplateWidget, StockDashboardTemplateDto } from "../index"
  * the ruling implies (OQ2); `it` binds the two IT keys the seeded racks and PDUs hold.
  */
 
-/** The canvas literals, read by every widget below rather than restated per widget. */
+/**
+ * The canvas literals, read by every widget below rather than restated per widget. Stock
+ * version 2 compacts each height to its content (v1: tile 4, strip 3, card 4, mimic 10, lower
+ * 8). The seed moves a seeded copy still at the v1 rects to these
+ * (`packages/db/src/site-layout-seed-upgrade.ts`), so a change here is a stock version bump.
+ *
+ * **The floor is the view canvas's 64 px row** (`VIEW_ROW_MIN_PX` in `dashboard-canvas.tsx`),
+ * not the builder's 72 px one: `n` rows are `64n + 8(n - 1)` px. The legend keeps v1's 2 rows
+ * (136 px): `WidgetFrame`'s chrome takes about 48.5 px, so 1 row would leave its pills about
+ * 15 px. A value tile takes 2 rows (136 px): `KpiTile` with a hint and the ADR 0027 stale line
+ * is about 132 px and is not clipped to its cell.
+ */
 const LEGEND_H = 2;
 const TILE_W = 3;
-const TILE_H = 4;
-const STRIP_H = 3;
+const TILE_H = 2;
+const STRIP_H = 2;
 const CARD_W = 2;
-const CARD_H = 4;
-const MIMIC_H = 10;
-const LOWER_H = 8;
+const CARD_H = 3;
+const MIMIC_H = 7;
+const LOWER_H = 5;
 const HALF_W = DASHBOARD_GRID.columns / 2;
 
 type Widget = SectionTemplateWidget;
@@ -294,7 +305,7 @@ export const SMOC_STANDARD_SITE_TEMPLATE = {
   description:
     "One tab per domain present at the site — electrical, UPS & battery, HVAC, IT, environment, " +
     "water — behind an Overview of site metrics, module cards and critical systems.",
-  stockVersion: 1,
+  stockVersion: 2,
   content: {
     widgets: [],
     tabs: [

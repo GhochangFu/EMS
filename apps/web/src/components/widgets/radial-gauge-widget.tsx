@@ -37,7 +37,16 @@ export function RadialGaugeWidget({ title, status, primary, stale, config }: Rad
 
   return (
     <WidgetFrame title={title} status={status} stale={stale}>
-      <ReactECharts option={option} theme={theme} style={{ height: 220 }} notMerge lazyUpdate />
+      {/* `F3.73` polish — a 220 px basis that shrinks to the tile (see `ChartWidget`). */}
+      <div className="relative min-h-0 flex-[1_1_220px]">
+        <ReactECharts
+          option={option}
+          theme={theme}
+          style={{ position: "absolute", inset: 0, height: "100%" }}
+          notMerge
+          lazyUpdate
+        />
+      </div>
     </WidgetFrame>
   );
 }

@@ -61,7 +61,18 @@ export function ChartWidget({
 
   return (
     <WidgetFrame title={title} status={status} stale={stale}>
-      <ReactECharts option={option} theme={theme} style={{ height: 220 }} notMerge lazyUpdate />
+      {/* `F3.73` polish — a 220 px basis that shrinks to the tile: a view canvas's rows can be
+          48 px, and a fixed 220 px chart would draw over the tile below. The chart fills the box
+          absolutely, so its height resolves in an auto-height host too. */}
+      <div className="relative min-h-0 flex-[1_1_220px]">
+        <ReactECharts
+          option={option}
+          theme={theme}
+          style={{ position: "absolute", inset: 0, height: "100%" }}
+          notMerge
+          lazyUpdate
+        />
+      </div>
       {config.footerStats && status === "ready" ? (
         <ChartFooter config={config} stats={stats ?? null} bucketSeconds={bucketSeconds ?? null} />
       ) : null}

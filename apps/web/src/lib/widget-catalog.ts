@@ -198,7 +198,7 @@ export const WIDGET_CATALOG: Readonly<Record<WidgetType, WidgetCatalogEntry>> = 
     label: "State legend",
     // Three swatches with their labels — a legend.
     iconPath: "M3 5h4v4H3V5Zm6 1h12v2H9V6Zm-6 5h4v4H3v-4Zm6 1h12v2H9v-2Zm-6 5h4v4H3v-4Zm6 1h12v2H9v-2Z",
-    defaultSize: { w: 12, h: 1 },
+    defaultSize: { w: 12, h: 2 },
     points: WIDGET_POINT_CARDINALITY.state_legend,
     sources: WIDGET_SOURCE_CARDINALITY.state_legend,
   },
@@ -206,7 +206,7 @@ export const WIDGET_CATALOG: Readonly<Record<WidgetType, WidgetCatalogEntry>> = 
     label: "Asset class strip",
     // A row of four cells, the strip itself.
     iconPath: "M2 8h4v8H2V8Zm5 0h4v8H7V8Zm5 0h4v8h-4V8Zm5 0h4v8h-4V8Z",
-    defaultSize: { w: 12, h: 1 },
+    defaultSize: { w: 12, h: 2 },
     points: WIDGET_POINT_CARDINALITY.asset_class_strip,
     sources: WIDGET_SOURCE_CARDINALITY.asset_class_strip,
   },

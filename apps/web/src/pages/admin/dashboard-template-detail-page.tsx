@@ -206,6 +206,10 @@ export function DashboardTemplateDetailPage({ user }: DashboardTemplateDetailPag
     mayInstantiate && template.status === "published" && (!isSiteTemplate || mayAuthor);
   const canApplyToSites = mayAuthor && template.status === "published" && isSiteTemplate;
 
+  // `F3.73` — a site template holds every widget in a tab, so the top-level rows alone read "0".
+  const tabs = template.content.tabs;
+  const widgetCount = rows.length + tabs.reduce((sum, tab) => sum + tab.widgets.length, 0);
+
   const busy = publishM.isPending || archiveM.isPending || draftM.isPending || deleteM.isPending;
 
   function addWidget(): void {
@@ -251,7 +255,7 @@ export function DashboardTemplateDetailPage({ user }: DashboardTemplateDetailPag
           <span className="flex flex-wrap items-center gap-2">
             <StatusPill label={template.status} tone={statusTone(template.status)} />
             <span>
-              {template.section} · {rows.length} widget{rows.length === 1 ? "" : "s"}
+              {template.section} · {widgetCount} widget{widgetCount === 1 ? "" : "s"}
             </span>
           </span>
         }
@@ -373,8 +377,23 @@ export function DashboardTemplateDetailPage({ user }: DashboardTemplateDetailPag
           ) : null
         }
       >
+        {isSiteTemplate && tabs.length > 0 ? (
+          <ul aria-label="Site tabs" className="mb-3 divide-y divide-well-deep text-xs">
+            {tabs.map((tab) => (
+              <li key={tab.key} className="flex flex-wrap items-center gap-x-3 py-1.5">
+                <span className="font-semibold text-ink">{tab.label}</span>
+                <span className="text-ink-muted">{tab.domain ?? "overview"}</span>
+                <span className="text-ink-muted">
+                  {tab.widgets.length} widget{tab.widgets.length === 1 ? "" : "s"}
+                </span>
+              </li>
+            ))}
+          </ul>
+        ) : null}
         {rows.length === 0 ? (
-          <p className="text-sm text-ink-muted">This template has no widgets yet.</p>
+          isSiteTemplate && tabs.length > 0 ? null : (
+            <p className="text-sm text-ink-muted">This template has no widgets yet.</p>
+          )
         ) : (
           <DashboardCanvas tiles={rows} renderTile={renderTemplateTile} />
         )}
