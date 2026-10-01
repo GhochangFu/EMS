@@ -20,8 +20,9 @@ import { type SiteViewRowForCopy, SiteLayoutService } from "./site-layout.servic
  * `F3.73` plan Task 4.2 — `SiteLayoutService` (the site-layout copy action) against real,
  * non-owner roles: S1–S6 and S2b of the plan, plus S2c, the race the in-place `UPDATE` exists
  * for. S7–S14 live in `site-layout.service.more.integration.spec.ts` (the 1000-line cap), on the
- * helpers this file exports. `site-layout.service.integration.test.ts` owns the pools and the
- * cleanup; the assertions live here (ADR 0014, AGENTS.md §4.6).
+ * helpers this file exports. `src/testing/site-layout-harness.ts` owns the pools and the cleanup,
+ * and `site-layout.service.integration.test.ts` runs these cases; the assertions live here
+ * (ADR 0014, AGENTS.md §4.6).
  *
  * **The service commits** (one `withTenant` per site on its own tenant pool), so `withRollback`
  * cannot hold it: the `F3.67` harness shape instead — per-run `F373SL-<run>-…` codes, every

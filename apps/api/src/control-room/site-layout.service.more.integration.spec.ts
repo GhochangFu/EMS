@@ -31,8 +31,9 @@ import { siteLayoutLockKey } from "./site-layout.service";
  * `F3.73` plan Task 4.2 — the rest of the `SiteLayoutService` cases: S7 (bulk), S8 (no published
  * site template), S9 (mimic nodes through the tab group), S10 (`getBySlug` carries the stamp),
  * S11 (a taken slug is a 409), S13 (the `instantiate` site arm) and S14 (two concurrent copies on
- * one site). Split from `site-layout.service.integration.spec.ts` for the 1000-line cap; the same
- * wrapper (`site-layout.service.integration.test.ts`) owns the pools and the cleanup.
+ * one site). Split from `site-layout.service.integration.spec.ts` for the 1000-line cap;
+ * `src/testing/site-layout-harness.ts` owns the pools and the cleanup, and
+ * `site-layout.service.more.integration.test.ts` runs these cases.
  *
  * S7, S8 and S13 each run in their own fixture organization (registered, so the cleanup removes
  * it): the bulk visits every active site of one organization, and "the newest published site
