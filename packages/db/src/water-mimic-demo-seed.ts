@@ -91,14 +91,19 @@ const LOCATION_ID_SQL = `
   WHERE organization_id = $1 AND name = $2
 `;
 
-/** The group upsert — name/description only, per the module docblock. */
-const GROUP_UPSERT_SQL = `
-  INSERT INTO bms.asset_groups (location_id, code, name, description, organization_id)
-  VALUES ($1, $2, $3, $4, $5)
+/**
+ * The group upsert — name/description, per the module docblock, and since `F3.73` (plan D12)
+ * the `water` domain the site-layout planner binds a tab by. The domain is filled while NULL and
+ * never overwritten: the role's `COALESCE` rule. Exported for `water-mimic-demo-seed.spec.ts`.
+ */
+export const DEMO_MIMIC_GROUP_UPSERT_SQL = `
+  INSERT INTO bms.asset_groups (location_id, code, name, description, organization_id, domain)
+  VALUES ($1, $2, $3, $4, $5, 'water')
   ON CONFLICT (location_id, code) DO UPDATE
   SET name = EXCLUDED.name,
       description = EXCLUDED.description,
-      organization_id = EXCLUDED.organization_id
+      organization_id = EXCLUDED.organization_id,
+      domain = COALESCE(bms.asset_groups.domain, EXCLUDED.domain)
   RETURNING id
 `;
 
@@ -195,7 +200,7 @@ export async function seedWaterMimicDemo(pool: pg.Pool, organizationId: string):
     );
   }
 
-  const group = await pool.query<{ id: string }>(GROUP_UPSERT_SQL, [
+  const group = await pool.query<{ id: string }>(DEMO_MIMIC_GROUP_UPSERT_SQL, [
     locationId,
     DEMO_MIMIC_GROUP_CODE,
     DEMO_MIMIC_GROUP_NAME,

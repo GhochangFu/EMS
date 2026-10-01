@@ -181,3 +181,37 @@ export function assertAnEmptyDerivedListIsRefused(): void {
   }
   expect(message, "only the empty lists are named").not.toContain("eskomLocationCodes");
 }
+
+/**
+ * `F3.73` plan D12 — one ESKOM location carries a seeded site-layout copy: CSMOC Gauteng.
+ * RSMOC-WC keeps its `builtin` view and is not in the list.
+ */
+export function assertOneEskomSiteLayoutLocation(): void {
+  const { siteLayoutEskomLocations, controlRoomViewLocation } = hierarchyExpectations();
+  expect(siteLayoutEskomLocations.map((identity) => identity.key)).toEqual(["csmoc-gauteng"]);
+  expect(siteLayoutEskomLocations.map((identity) => identity.code)).toEqual(["CSMOC-GP"]);
+  expect(siteLayoutEskomLocations.map((identity) => identity.key)).not.toContain(controlRoomViewLocation.key);
+}
+
+/** `F3.73` plan D12 — each of the six PHE catalog stations carries one, by its station slug. */
+export function assertSixPheSiteLayoutSlugs(): void {
+  const { siteLayoutPheSlugs } = hierarchyExpectations();
+  const catalog = loadPheCatalog();
+  expect(distinct(siteLayoutPheSlugs)).toBe(6);
+  expect([...siteLayoutPheSlugs].sort()).toEqual(
+    [...new Set(catalog.rows.map((row) => stationSlug(row.StationName)))].sort(),
+  );
+}
+
+/**
+ * `F3.73` plan D12 — 72 catalog assets take a SMOC role: at Western Cape 5 UPS/battery, 2 HVAC,
+ * 6 room sensors, 4 leak, 4 smoke and 6 IT; at each of the eight regional RSMOCs 5 (UPS-1,
+ * BATT-1, HVAC-1, ENV-ROOM, NET-RACK); at CSMOC Gauteng `UPS-A` and `CH-CRAC-101..104`.
+ *
+ * Mutation: dropping the `indoor-air` branch of `demoRoleForAsset` gives 58.
+ */
+export function assertSeventyTwoSmocRoledAssets(): void {
+  const { eskomSmocRoledCodes } = hierarchyExpectations();
+  expect(eskomSmocRoledCodes).toHaveLength(72);
+  expect(distinct(eskomSmocRoledCodes)).toBe(72);
+}

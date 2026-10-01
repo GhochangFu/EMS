@@ -318,6 +318,7 @@ export async function readEskomChecks(
     eskom_incomers_on_pue_template: string;
     eskom_it_load_members: string;
     eskom_it_rack_kw_points: string;
+    eskom_smoc_roled: string;
   }>(`
     SELECT
       (SELECT COUNT(*)::text FROM bms.locations l
@@ -356,11 +357,24 @@ export async function readEskomChecks(
         INNER JOIN bms.organizations o ON o.id = a.organization_id
         WHERE o.code = 'ESKOM' AND a.domain = 'it'
           AND a.code = ANY($3::varchar[])
-          AND ap.point_key = 'rack_kw') AS eskom_it_rack_kw_points
+          AND ap.point_key = 'rack_kw') AS eskom_it_rack_kw_points,
+      -- F3.73 plan D12. The catalog assets the seed gives a SMOC role (UPS,
+      -- battery, CRAC, PDU, rack, room air, leak, smoke) that carry A role in
+      -- a membership, of any code: an admin may re-role one through the
+      -- picker (the PHE electrical precedent), and clearing it is what fails.
+      -- The exact mapping is held by asset-groups-seed.spec.ts.
+      (SELECT COUNT(DISTINCT a.code)::text FROM bms.asset_group_members agm
+        INNER JOIN bms.asset_groups ag ON ag.id = agm.asset_group_id
+        INNER JOIN bms.organizations o ON o.id = ag.organization_id
+        INNER JOIN bms.assets a ON a.id = agm.asset_id
+        WHERE o.code = 'ESKOM'
+          AND a.code = ANY($4::varchar[])
+          AND agm.role IS NOT NULL) AS eskom_smoc_roled
   `, [
     expected.eskomLocationCodes,
     expected.eskomIncomerCodes,
     expected.eskomItCodes,
+    expected.eskomSmocRoledCodes,
   ]);
   const present = presence.rows[0];
 
@@ -457,6 +471,21 @@ export async function readEskomChecks(
   const viewCount = views.rows[0]?.n;
   const viewActual =
     viewLocation.id !== null || viewCount === undefined ? viewCount : Number(viewCount) > 0 ? "1" : "0";
+  // F3.73 plan D12: the seeded site-layout copies' view rows, in the F3.67
+  // shape — presence of any kind on the row the seed resolves for each
+  // identity, never a dashboard slug count (an admin may delete the copy; its
+  // view row stays, dashboard_id NULL). An ambiguous identity passes when any
+  // candidate carries a row, the RSMOC-WC rule above.
+  let siteLayoutViews = 0;
+  for (const identity of expected.siteLayoutEskomLocations) {
+    const found = await findSeedLocation(pool, eskomOrgId, identity);
+    const ids = found.id !== null ? [found.id] : found.candidates;
+    const res = await pool.query<{ n: string }>(
+      `SELECT COUNT(*)::text AS n FROM bms.site_control_room_views WHERE location_id = ANY($1::uuid[])`,
+      [ids],
+    );
+    siteLayoutViews += Number(res.rows[0]?.n ?? 0) > 0 ? 1 : 0;
+  }
   // F4.10: the decommissioned fixture location must stay inactive, or the
   // read-scope active filter it exists to prove is untested again. Addendum 4
   // section 3: the row resolved for its identity only, never a row found by
@@ -510,6 +539,11 @@ export async function readEskomChecks(
   );
   expect("ESKOM catalog IT assets in IT_LOAD", present?.eskom_it_load_members, expected.eskomItCodes.length);
   expect(
+    "ESKOM catalog SMOC assets carrying a role",
+    present?.eskom_smoc_roled,
+    expected.eskomSmocRoledCodes.length,
+  );
+  expect(
     "ESKOM catalog IT assets with a rack_kw catalog row",
     present?.eskom_it_rack_kw_points,
     expected.eskomItCodes.length,
@@ -532,6 +566,11 @@ export async function readEskomChecks(
   // F3.67 — RSMOC-WC always carries exactly one Control Room view row,
   // whatever kind an administrator has set it to (OQ2).
   expect("ESKOM RSMOC-WC control room view row", viewActual, 1);
+  expect(
+    "ESKOM seed-owned site-layout view rows",
+    String(siteLayoutViews),
+    expected.siteLayoutEskomLocations.length,
+  );
   // `E4.1c` — a floor of one (see the SQL comment); `expect` is exact, so
   // the floor is written as its own check.
   checks.push({
@@ -570,6 +609,7 @@ export async function readPhewbChecks(
     loc_mismatch: string;
     phe_elec_members: string;
     phe_elec_roled: string;
+    phe_site_layout_views: string;
   }>(`
     SELECT
       (SELECT COUNT(*)::text FROM bms.locations l
@@ -637,7 +677,12 @@ export async function readPhewbChecks(
         INNER JOIN bms.assets a ON a.id = agm.asset_id
         WHERE ag.code = 'electrical'
           AND a.code = ANY($9::varchar[])
-          AND agm.role IS NOT NULL) AS phe_elec_roled
+          AND agm.role IS NOT NULL) AS phe_elec_roled,
+      -- F3.73 plan D12: a view row, of any kind, on each catalog station
+      -- (the F3.67 shape; the seed does not own the row once written).
+      (SELECT COUNT(*)::text FROM bms.site_control_room_views v
+        INNER JOIN bms.locations l ON l.id = v.location_id
+        WHERE l.slug = ANY($10::varchar[])) AS phe_site_layout_views
   `, [
     phe.locationCodes,
     phe.legacyLocationSlugs,
@@ -648,6 +693,7 @@ export async function readPhewbChecks(
     phe.tsPoints.map((point) => point.assetCode),
     phe.tsPoints.map((point) => point.pointKey),
     phe.electricalAssetCodes,
+    expected.siteLayoutPheSlugs,
   ]);
   const row = res.rows[0];
   expect("PHEWB catalog locations present", row?.phe_locs, phe.locationCodes.length);
@@ -676,5 +722,6 @@ export async function readPhewbChecks(
   // picker, and that must not stop the next boot (owner ruling 10,
   // 2026-09-28). No boot gate reads a gateway's role.
   expect("PHE catalog electrical members carrying a role", row?.phe_elec_roled, phe.electricalAssetCodes.length);
+  expect("PHEWB catalog station site-layout view rows", row?.phe_site_layout_views, expected.siteLayoutPheSlugs.length);
   return checks;
 }

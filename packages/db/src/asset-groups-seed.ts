@@ -124,11 +124,40 @@ export async function backfillAssetLocations(pool: pg.Pool): Promise<void> {
  *    ESKOM, and that is the correct answer rather than a gap to paper over —
  *    it is exactly what ADR 0049 Amendment 2's resolution report exists to say.
  *
- * Nothing here covers HVAC. `CH-CRAC-101` plausibly reads as `ahu-fcu`, but
- * `CR-HVAC-1`/`CR-HVAC-2` decide nothing between `chiller` and `ahu-fcu`, and a
- * coin toss seeded as master data is worse than a NULL an admin must fill.
+ * 3. **`F3.73` plan D12 (ruling Q6b: "the seed gives roles to UPS, battery,
+ *    HVAC, IT and environment assets").** The SMOC standard site layout binds
+ *    its UPS, HVAC, IT and ENV tiles to the roles migration `0089` seeds, so
+ *    without these every one of those tiles resolved nothing. Domain-keyed
+ *    branches run FIRST, before the electrical guard: an HVAC unit is `crac`
+ *    (the SMOC pages call both `CR-HVAC-*` and `CH-CRAC-*` CRAC units), a PDU
+ *    is `pdu` (tested before `RACK`, since `CR-NET-RACK-PDU-A` holds both), a
+ *    rack is `it-rack`, a room sensor `CR-ENV-*` is `indoor-air`, and the
+ *    `CR-LEAK-*` / `CR-SMOKE-*` sensors take `0095`'s `leak-sensor` and
+ *    `smoke-detector` (OQ6). Each reads the CODE as well as the domain, so the
+ *    PHE gateways (`environment` domain, case 1) stay unroled. The UPS and
+ *    battery branches read the code and run AFTER the guard, because those
+ *    assets are electrical-domain and a room sensor named `CR-ENV-UPS-ROOM` is
+ *    not a UPS.
  */
 export function demoRoleForAsset(code: string, domain: string): string | null {
+  if (domain === "hvac" && /CRAC|CR-HVAC/.test(code)) {
+    return "crac";
+  }
+  if (domain === "it" && code.includes("PDU")) {
+    return "pdu";
+  }
+  if (domain === "it" && code.includes("RACK")) {
+    return "it-rack";
+  }
+  if (domain === "environment" && /(^|-)CR-ENV-/.test(code)) {
+    return "indoor-air";
+  }
+  if (domain === "environment" && code.startsWith("CR-LEAK-")) {
+    return "leak-sensor";
+  }
+  if (domain === "environment" && code.startsWith("CR-SMOKE-")) {
+    return "smoke-detector";
+  }
   if (domain !== "electrical") {
     return null;
   }
@@ -167,6 +196,14 @@ export function demoRoleForAsset(code: string, domain: string): string | null {
   // `dosing-pump`" and gives the reason.
   if (code.startsWith("PHE-PUMP-")) {
     return "pump";
+  }
+  // `F3.73` — case 3's code-keyed half, electrical only. No branch above claims
+  // a UPS or battery code: none holds `UTILITY`, `XFMR`, `MAIN-BUS` or `MDB`.
+  if (code.includes("UPS")) {
+    return "ups";
+  }
+  if (code.includes("BATT")) {
+    return "battery";
   }
   return null;
 }
@@ -230,6 +267,45 @@ export function demoGroupName(groupCode: string): string {
   }
 }
 
+/**
+ * `F3.73` plan D12 — the asset domain a demo group stands for, which the site-layout planner
+ * reads to bind a tab (`asset_groups.domain`, migration `0095`). `IT_LOAD` is a formula group
+ * (`F2.8`) and stands for none: bound as an `it` candidate beside `it-rack`, it would make the
+ * `it` tab ambiguous at every RSMOC. Every other code is its own domain, and the upsert keeps
+ * the value only when `bms.asset_domains` holds it.
+ */
+export function demoGroupDomain(groupCode: string): string | null {
+  switch (groupCode) {
+    case IT_LOAD_GROUP_CODE:
+      return null;
+    case "ups-battery":
+      return "electrical";
+    case "it-rack":
+      return "it";
+    default:
+      return groupCode;
+  }
+}
+
+/**
+ * The group upsert {@link seedAssetGroups} runs, exported so `asset-groups-seed.spec.ts` can hold
+ * its `domain` rule. `domain` is written only while it is NULL (`COALESCE` on the stored value,
+ * the membership role's rule below), so an administrator's re-filing survives the next boot, and
+ * only as a live `bms.asset_domains` code, so a code that names no domain writes NULL rather than
+ * failing the foreign key and aborting the tenant transaction.
+ * Params: `[locationId, code, name, description, organizationId, domain]`.
+ */
+export const ASSET_GROUP_UPSERT_SQL = `
+        INSERT INTO bms.asset_groups (location_id, code, name, description, organization_id, domain)
+        VALUES ($1, $2, $3, $4, $5, (SELECT d.code FROM bms.asset_domains d WHERE d.code = $6))
+        ON CONFLICT (location_id, code) DO UPDATE
+        SET name = EXCLUDED.name,
+            description = EXCLUDED.description,
+            organization_id = EXCLUDED.organization_id,
+            domain = COALESCE(bms.asset_groups.domain, EXCLUDED.domain)
+        RETURNING id
+        `;
+
 function demoGroupDescription(groupCode: string): string {
   if (groupCode === IT_LOAD_GROUP_CODE) {
     return (
@@ -268,24 +344,14 @@ export async function seedAssetGroups(
 
   for (const row of assetScopeRows.rows) {
     for (const groupCode of demoGroupCodesForAsset(row.code, row.domain)) {
-      const group = await pool.query<{ id: string }>(
-        `
-        INSERT INTO bms.asset_groups (location_id, code, name, description, organization_id)
-        VALUES ($1, $2, $3, $4, $5)
-        ON CONFLICT (location_id, code) DO UPDATE
-        SET name = EXCLUDED.name,
-            description = EXCLUDED.description,
-            organization_id = EXCLUDED.organization_id
-        RETURNING id
-        `,
-        [
-          row.location_id,
-          groupCode,
-          demoGroupName(groupCode),
-          demoGroupDescription(groupCode),
-          organizationId,
-        ],
-      );
+      const group = await pool.query<{ id: string }>(ASSET_GROUP_UPSERT_SQL, [
+        row.location_id,
+        groupCode,
+        demoGroupName(groupCode),
+        demoGroupDescription(groupCode),
+        organizationId,
+        demoGroupDomain(groupCode),
+      ]);
       const groupId = group.rows[0]?.id;
       if (!groupId) {
         continue;

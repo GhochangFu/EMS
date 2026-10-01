@@ -41,7 +41,7 @@ const read = (rel: string): string => readFileSync(join(repoRoot, rel), "utf8");
  * **The two halves of a binding, and both are checked.** A binding names an
  * `assetRoleCode` and a `pointKey`. The role side has a closed source of truth
  * in the migrations `ROLE_MIGRATION_RELS` names — `0051` and, since `F3.40`,
- * `0060`; the point side has one in the `*_POINT_KEYS` arrays that
+ * `0060` (five since `F3.73`); the point side has one in the `*_POINT_KEYS` arrays that
  * `packages/db/src/point-keys-seed.ts` builds `bms.point_keys` from. Checking
  * one and not the other leaves half the binding free to drift.
  */
@@ -55,15 +55,28 @@ const read = (rel: string): string => readFileSync(join(repoRoot, rel), "utf8");
  * and `assetRoleCode` values checked against no vocabulary at all, and every
  * assertion below stays green while checking less.
  *
- * **A THIRD FILE BELONGS HERE THE DAY THE CATALOG GAINS ONE**, and the
- * anti-vacuity lower bounds move with it. This is the same instruction
+ * **A FURTHER FILE BELONGS HERE THE DAY THE CATALOG GAINS ONE** (`F3.73` added
+ * the third), and the anti-vacuity lower bounds move with it. This is the same instruction
  * `ROLE_MIGRATION_RELS` below carries for its own second file, and for the same
  * reason.
  */
 const STOCK_RELS = [
   "apps/api/src/admin/dashboard-templates/stock-catalog.ts",
   "apps/api/src/admin/dashboard-templates/stock-catalog-electrical.ts",
+  // `F3.73` — the third file, and the first outside `apps/api`: the SMOC standard site layout,
+  // spread into the catalog from `@bms/shared/site-templates`. Its widgets are all in tabs; a
+  // text scan reads them like any other widget, so no tab walk is needed here.
+  "packages/shared/src/site-templates/smoc-standard.ts",
 ] as const;
+
+/**
+ * The section a file's widgets belong to before its first `section:` line. The SMOC file
+ * declares its widgets in constants ABOVE the entry's `section: "site"` line, so without this
+ * `scanCatalog` would tag every one of them `<before the first section>`.
+ */
+const STOCK_INITIAL_SECTION: Readonly<Record<string, string>> = {
+  "packages/shared/src/site-templates/smoc-standard.ts": "site",
+};
 
 /** The files as one list, for an assertion message. */
 const STOCK_LABEL = STOCK_RELS.join(" + ");
@@ -144,6 +157,9 @@ const POINT_KEY_SOURCE_LABEL = POINT_KEY_SOURCE_RELS.join(" + ");
 const ROLE_MIGRATION_RELS = [
   "packages/db/drizzle/0051_asset_role_vocabulary.sql",
   "packages/db/drizzle/0060_asset_role_estate_shapes.sql",
+  // `F3.73` — the water-train roles and the SMOC domain roles the site layout binds.
+  "packages/db/drizzle/0087_asset_roles_water_train.sql",
+  "packages/db/drizzle/0089_mimic_domain_symbols_and_roles.sql",
   "packages/db/drizzle/0095_site_template_target_and_group_domain.sql",
 ] as const;
 
@@ -188,8 +204,8 @@ const pointKeyVocabulary = (source: string): ReadonlySet<string> => {
 };
 
 /**
- * The role codes the repository seeds into `bms.asset_roles` — 26 from `0051`
- * and 2 from `0060`.
+ * The role codes the repository seeds into `bms.asset_roles` — 26 from `0051`,
+ * 2 from `0060`, 7 from `0087`, 18 from `0089` and 2 from `0095` (55).
  *
  * Takes the migrations already concatenated, so one regex serves however many
  * files `ROLE_MIGRATION_RELS` names. Both share the shape the regex matches:
@@ -197,7 +213,8 @@ const pointKeyVocabulary = (source: string): ReadonlySet<string> => {
  */
 const roleVocabulary = (sql: string): ReadonlySet<string> => {
   const codes = new Set<string>();
-  for (const row of sql.matchAll(/\('([a-z][a-z-]*)',\s*'/g)) {
+  // `_` since `F3.73`: `0087` seeds `water_intake` and `water_storage`.
+  for (const row of sql.matchAll(/\('([a-z][a-z_-]*)',\s*'/g)) {
     codes.add(row[1]!);
   }
   return codes;
@@ -216,10 +233,11 @@ type StockReference = { readonly section: string; readonly value: string };
  */
 const scanCatalog = (
   source: string,
+  initialSection = "<before the first section>",
 ): { readonly pointKeys: StockReference[]; readonly roleCodes: StockReference[] } => {
   const pointKeys: StockReference[] = [];
   const roleCodes: StockReference[] = [];
-  let section = "<before the first section>";
+  let section = initialSection;
   for (const line of source.split("\n")) {
     const sectionMatch = /^\s*section:\s*"([a-z-]+)"/.exec(line);
     if (sectionMatch) {
@@ -288,7 +306,9 @@ describe("F3.38 the stock template catalog binds names that exist", () => {
   // first file happened to end on. That would not fail anything — it would
   // just name the wrong template in a failure message, which is the one thing
   // this section tagging exists to get right.
-  const scans = stockSources.map((source) => scanCatalog(source));
+  const scans = stockSources.map((source, index) =>
+    scanCatalog(source, STOCK_INITIAL_SECTION[STOCK_RELS[index]!]),
+  );
   const pointKeys = scans.flatMap((scan) => scan.pointKeys);
   const roleCodes = scans.flatMap((scan) => scan.roleCodes);
 
@@ -318,8 +338,11 @@ describe("F3.38 the stock template catalog binds names that exist", () => {
     // table each carry (the three kept tiles — alarms/workorders/health —
     // bind a catalogKey with no pointKey). Measured, not derived: raised past
     // the actual (999999) to read the true 38, then set here.
-    expect(pointKeys.length, `no pointKey found in ${STOCK_LABEL} — the scan is blind`).toBeGreaterThanOrEqual(38);
-    expect(roleCodes.length, `no assetRoleCode found in ${STOCK_LABEL} — the scan is blind`).toBeGreaterThanOrEqual(23);
+    // **54 and 38 since `F3.73`** — 38 and 23 + the SMOC site layout's 15 role tiles (one
+    // `pointKey` and one `assetRoleCode` each) and its Overview load tile's `pointKey: "kw"`
+    // source. Measured per file with the scan's own regexes: 27/12, 11/11, 16/15.
+    expect(pointKeys.length, `no pointKey found in ${STOCK_LABEL} — the scan is blind`).toBeGreaterThanOrEqual(54);
+    expect(roleCodes.length, `no assetRoleCode found in ${STOCK_LABEL} — the scan is blind`).toBeGreaterThanOrEqual(38);
     // **Six since `E4.2` PR 2 (U8), and it was five until then.** The five were
     // electrical, water, stp, etp and hvac; `sustainability` held no point
     // binding at all, because its template shipped catalog SOURCES with no
@@ -329,11 +352,12 @@ describe("F3.38 the stock template catalog binds names that exist", () => {
     // now false and the floor that went with it was slack: at five, the whole
     // sustainability template could be parsed as nothing and this stayed green.
     // Measured: electrical 11, sustainability 15, water/stp/etp/hvac 3 each.
+    // **Seven since `F3.73`**: the SMOC site layout's 16 are tagged `site`.
     const sections = new Set(pointKeys.map((entry) => entry.section));
     expect(
       sections.size,
       "every pointKey was attributed to one section — the section tracker is broken",
-    ).toBeGreaterThanOrEqual(6);
+    ).toBeGreaterThanOrEqual(7);
     // Named, not just counted: a sixth section arriving while the whole
     // sustainability template went unparsed would clear the floor above on the
     // newcomer alone, and the fifteen codes U8 added would be checked against
@@ -385,8 +409,29 @@ describe("F3.38 the stock template catalog binds names that exist", () => {
     // `ROLE_MIGRATION_RELS` and move this number with it — never to loosen
     // this assertion, which is the anti-vacuity control for the whole role
     // scan. `F3.40` is the first time that instruction was followed.
-    // 30 since `F3.73` (0095's `leak-sensor` and `smoke-detector`) — 28 before it.
-    expect(roles.size, `no role codes parsed out of ${ROLE_MIGRATIONS_LABEL}`).toBe(30);
+    // 30 since `F3.73` (0095's `leak-sensor` and `smoke-detector`) — 28 before it. **55 since
+    // `F3.73` Task 4.1**: 30 + `0087`'s 7 water-train roles (two spelled with `_`, which the row
+    // regex now admits) + `0089`'s 18 domain roles. Measured, not derived.
+    expect(roles.size, `no role codes parsed out of ${ROLE_MIGRATIONS_LABEL}`).toBe(55);
+  });
+
+  // `F3.73` — the SMOC site layout's bindings sit in the third file, above its `section:` line.
+  // Named, for the sustainability reason above: the section floor could clear on the other six.
+  it("the SMOC site layout's bindings are attributed to the site section", () => {
+    const siteRoles = roleCodes.filter((entry) => entry.section === "site").length;
+    expect(
+      siteRoles,
+      "no assetRoleCode was attributed to the site section — the SMOC tabs are not being " +
+        "scanned, so the membership claims below run over a set without them",
+    ).toBe(15);
+  });
+
+  // ADR 0049 decision 4 — stock content names roles, never an asset. `CR-` is the
+  // control-room asset-code prefix the seeds use; the file's text, docblocks included, must not
+  // spell it. The value is checked by `smoc-standard.spec.ts`.
+  it("the SMOC site layout spells no control-room asset code", () => {
+    const smoc = stockSources[STOCK_RELS.indexOf("packages/shared/src/site-templates/smoc-standard.ts")]!;
+    expect(smoc.split("\n").filter((line) => line.includes("CR-"))).toEqual([]);
   });
 
   /**

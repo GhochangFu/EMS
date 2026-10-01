@@ -201,10 +201,16 @@ VALUES ($1, $2, $3, $4, 'water', $5, $6, '{"telemetrySource":"simulator"}'::json
 ON CONFLICT (code) DO NOTHING
 `;
 
-const GROUP_INSERT_SQL = `
-INSERT INTO bms.asset_groups (location_id, code, name, description, organization_id)
-VALUES ($1, $2, $3, $4, $5)
-ON CONFLICT (location_id, code) DO NOTHING
+/**
+ * `F3.73` plan D12 — the group carries the `water` domain, so a site-layout copy at the demo
+ * plant binds its `water` tab. An existing row gains the domain only while it has none, so a
+ * re-run still writes 0 rows and an administrator's re-filing stands.
+ */
+export const IONX_GROUP_UPSERT_SQL = `
+INSERT INTO bms.asset_groups (location_id, code, name, description, organization_id, domain)
+VALUES ($1, $2, $3, $4, $5, 'water')
+ON CONFLICT (location_id, code) DO UPDATE SET domain = EXCLUDED.domain
+WHERE bms.asset_groups.domain IS NULL
 `;
 
 const GROUP_ID_SQL = `SELECT id FROM bms.asset_groups WHERE location_id = $1 AND code = $2`;
@@ -402,7 +408,7 @@ export async function runIonExchangeDemo(pool: pg.Pool, superuserPool: pg.Pool):
       written += await count(pool, DEMO_WATER_PIN_SQL, [organizationId, c.assetCode, c.role, c.templateCode]);
     }
 
-    written += await count(pool, GROUP_INSERT_SQL, [
+    written += await count(pool, IONX_GROUP_UPSERT_SQL, [
       locationId,
       IONX_GROUP_CODE,
       IONX_GROUP_NAME,
