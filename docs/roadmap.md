@@ -6941,9 +6941,13 @@ sweep (AGENTS.md names `/` as the dashboard).
 
 ### `F3.73` — the SMOC standard site template ✅ 2026-10-01
 
-Five PRs on `feat/F3.73-smoc-site-template` (numbers and squash hashes are
-recorded at merge; no merge before v1 ships 2026-10-02 without an owner
-ruling). ADR 0087 decisions 4–7 and Amendment 1; plan
+Five stacked PRs, all merged 2026-10-01 into the first stable version by
+owner ruling (the v1 cutoff moved to 13:00 IST that day): #670 (`cabf67f4`,
+the tabs seam, 0094), #673 (`d6966a53`, template target and per-tab scope,
+0095), #674 (`b2891ffd`, five site widget types, 0096), #675 (`3f966350`, the
+SMOC standard template, the site-layout actions and the seed) and #676
+(`a080726d`, the web tabs, *Make site layout* and the closure docs); #675 and
+#676 merged together by owner ruling. ADR 0087 decisions 4–7 and Amendment 1; plan
 `docs/plans/f3.73-smoc-site-template.md` (Fable; owner answers OQ1–OQ7 in §9,
 deviations in §12).
 
