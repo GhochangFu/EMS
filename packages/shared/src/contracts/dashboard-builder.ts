@@ -150,7 +150,8 @@ export const pointAggregateFunctionSchema = z.enum(["sum", "avg", "min", "max"])
  * then render a blank square in front of an operator.
  *
  * The six are exactly the mock's KPI row
- * (`docs/ion-exchange-nexus-dashboard-2026-08-29.html`). Adding a seventh is a
+ * (`docs/ion-exchange-nexus-dashboard-2026-08-29.html`), and `offline` (ADR 0087
+ * Amendment 3 ruling 6). Adding a name is a
  * code change by design, and `tests/f3.35-tile-icon-vocabulary.test.ts` holds
  * this enum and that map to the same set.
  */
@@ -161,6 +162,7 @@ export const widgetIconSchema = z.enum([
   "drop",
   "recycle",
   "gauge",
+  "offline",
 ]);
 
 /**

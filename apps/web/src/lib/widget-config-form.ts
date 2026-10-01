@@ -108,6 +108,7 @@ export const WIDGET_ICON_LABELS: Readonly<Record<WidgetIcon, string>> = {
   drop: "Water",
   recycle: "Recycled",
   gauge: "Efficiency",
+  offline: "Offline",
 };
 
 /** Labels stay local — `F3.1c`'s `widget-catalog.ts` does not exist yet
