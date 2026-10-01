@@ -23,6 +23,7 @@ import {
   packingNeverMovesTheTemplatesOwnCards,
   pheOverviewPacksTheKeptCardsLeft,
   theKeptTilesArePackedLeft,
+  theSmocOverviewHasNoCardToDrop,
   csmocWithoutAChoiceBindsEachTabByGroupCode,
   csmocWithoutAChoiceHasTheSameFiveTabs,
   csmocWithTheSeedChoiceBindsByChoice,
@@ -50,6 +51,9 @@ describe("F3.73 — the site-layout planner (plan D5)", () => {
   });
   it("reports the four PHE module cards it drops", () => {
     pheReportsTheFourDroppedCards();
+  });
+  it("drops no card from the v3 SMOC Overview on a PHE pump station (F3.77)", () => {
+    theSmocOverviewHasNoCardToDrop();
   });
   it("plans overview, sld, ups, hvac and water on CSMOC with the seed choice", () => {
     csmocWithTheSeedChoiceHasFiveTabs();

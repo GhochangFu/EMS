@@ -8,6 +8,7 @@ import type * as PhePilotSeed from "../packages/db/dist/phe-pilot-seed.js";
 import type * as SeedTenant from "../packages/db/dist/seed-tenant.js";
 import type * as SiteLayoutSeed from "../packages/db/dist/site-layout-seed.js";
 import type * as SiteLayoutSeedUpgrade from "../packages/db/dist/site-layout-seed-upgrade.js";
+import type * as SiteLayoutStockHistory from "../packages/db/dist/site-layout-stock-history.js";
 import type * as VerifyHierarchySeed from "../packages/db/dist/verify-hierarchy-seed.js";
 import {
   openIntegrationPool,
@@ -35,13 +36,18 @@ const {
 const {
   SITE_LAYOUT_COPY_DESCRIPTION,
   SITE_LAYOUT_COPY_DESCRIPTION_V1,
-  SMOC_STANDARD_CURRENT_RECTS,
-  SMOC_STANDARD_V1_RECTS,
   siteWidgetIdentity,
-  smocStandardV1Content,
   upgradeSeededSiteLayoutCopies,
   upgradeSeedSiteTemplate,
 } = require_("../packages/db/dist/site-layout-seed-upgrade.js") as typeof SiteLayoutSeedUpgrade;
+const {
+  canonicalJson,
+  OVERVIEW_V2_WIDGETS,
+  SMOC_STANDARD_V1_RECTS,
+  SMOC_STANDARD_V2_RECTS,
+  smocStandardV1Content,
+  smocStandardV2Content,
+} = require_("../packages/db/dist/site-layout-stock-history.js") as typeof SiteLayoutStockHistory;
 const { readEskomChecks } = require_(
   "../packages/db/dist/verify-hierarchy-seed.js",
 ) as typeof VerifyHierarchySeed;
@@ -223,15 +229,23 @@ describe.skipIf(!ownerUrl)("F3.73 D12 — the seeded SMOC standard site layouts"
     expect(res.rows.find((row) => row.slug === CSMOC_SLUG)?.bound).toBe(2);
   });
 
-  it("packs each seeded PHE Overview's sld and env cards into columns 0 and 2", async () => {
-    const res = await probePool!.query<{ cards: string }>(
-      `SELECT string_agg(w.config->>'targetTabKey' || '@' || w.grid_x, ' ' ORDER BY w.grid_x) AS cards
-         ${SEEDED_COPIES_SQL.replace("FROM bms.dashboards d", "FROM bms.dashboards d JOIN bms.dashboard_widgets w ON w.dashboard_id = d.id AND w.widget_type = 'module_summary_card'")}
-          AND l.slug = ANY($2::varchar[])
+  // F3.77 (ADR 0087 Amendment 3): the v3 Overview, written literally rather than read from the
+  // stock entry, so a seed that wrote the stock rects of another version is caught.
+  it("gives every seeded Overview the v3 rects, the offline icon and no module card", async () => {
+    const res = await probePool!.query<{ overview: string }>(
+      `SELECT string_agg(w.widget_type || '|' || COALESCE(w.title, '') || '@' || w.grid_x || ',' || w.grid_y || ','
+                         || w.grid_w || ',' || w.grid_h || COALESCE(':' || (w.config->>'icon'), ''),
+                         ';' ORDER BY w.grid_y, w.grid_x) AS overview
+         ${SEEDED_COPIES_SQL.replace("FROM bms.dashboards d", "FROM bms.dashboards d JOIN bms.dashboard_widgets w ON w.dashboard_id = d.id JOIN bms.dashboard_tabs tab ON tab.id = w.tab_id AND tab.tab_key = 'overview'")}
         GROUP BY d.slug`,
       [csmocId, pheSlugs],
     );
-    expect(res.rows.map((row) => row.cards)).toEqual(Array.from({ length: 6 }, () => "sld@0 env@2"));
+    const v3 =
+      "value_tile|Active alarms@0,0,3,2:alert;value_tile|Offline assets@3,0,3,2:offline;" +
+      "value_tile|Total load@6,0,3,2:bolt;value_tile|Asset health@9,0,3,2:gauge;" +
+      "active_alarms_rail|Active alarms@0,2,8,7;critical_systems_list|Critical systems@8,2,4,7;" +
+      "asset_class_strip|@0,9,12,2;state_legend|@0,11,12,1";
+    expect(res.rows.map((row) => row.overview)).toEqual(Array.from({ length: 7 }, () => v3));
   });
 
   it("writes no row on a second run", async () => {
@@ -358,17 +372,19 @@ describe.skipIf(!ownerUrl)("F3.73 D12 — the seeded SMOC standard site layouts"
     });
   });
 
-  // ── The v1 → v2 upgrade (`site-layout-seed-upgrade.ts`) ─────────────────────────────────────
-  // Each case first puts ESKOM's template and CSMOC's copy back to what the v1 seed wrote, inside
-  // its rolled-back transaction: a database seeded by this code holds v2 already, and would prove
-  // nothing. The rewind accepts the two states this code's seed leaves: a fresh database (one
-  // seed-owned version 1 row, holding stock version 2), and a database the upgrade already ran
-  // on (version 1 archived, a seed-owned published version 2 that no dashboard names). Any other
-  // newer `smoc-standard` row fails its precondition.
+  // ── The upgrade chain (`site-layout-seed-upgrade.ts`) ───────────────────────────────────────
+  // Each case first puts ESKOM's template and CSMOC's copy back to what an earlier seed wrote,
+  // inside its rolled-back transaction: a database seeded by this code holds the current stock
+  // version already, and would prove nothing. The template rewind accepts the states this code's
+  // seed leaves: a fresh database (one seed-owned version 1 row at the current stock version), and
+  // a database the upgrade already ran on (older rows archived, a seed-owned published newer
+  // version that no dashboard names). Any other newer `smoc-standard` row fails its precondition.
 
-  type StoredWidget = { id: string; identity: string; tabKey: string; rect: string };
+  type StoredWidget = { id: string; identity: string; tabKey: string; rect: string; config: string };
   const rectText = (rect: { gridX: number; gridY: number; gridW: number; gridH: number }): string =>
     `${rect.gridX},${rect.gridY},${rect.gridW},${rect.gridH}`;
+  /** A widget as the fresh-copy comparisons see it: identity, rect and config. */
+  const shapeOf = (widget: StoredWidget): string => `${widget.identity}@${widget.rect}${widget.config}`;
 
   async function copyWidgets(pool: Pick<SeedPool, "query">): Promise<StoredWidget[]> {
     const res = await pool.query<{
@@ -377,9 +393,10 @@ describe.skipIf(!ownerUrl)("F3.73 D12 — the seeded SMOC standard site layouts"
       widget_type: string;
       title: string | null;
       rect: string;
+      config: unknown;
     }>(
       `SELECT w.id, t.tab_key, w.widget_type, w.title,
-              w.grid_x || ',' || w.grid_y || ',' || w.grid_w || ',' || w.grid_h AS rect
+              w.grid_x || ',' || w.grid_y || ',' || w.grid_w || ',' || w.grid_h AS rect, w.config
          FROM bms.dashboard_widgets w
          JOIN bms.dashboard_tabs t ON t.id = w.tab_id
          JOIN bms.dashboards d ON d.id = w.dashboard_id
@@ -392,6 +409,7 @@ describe.skipIf(!ownerUrl)("F3.73 D12 — the seeded SMOC standard site layouts"
       identity: siteWidgetIdentity(row.tab_key, row.widget_type, row.title),
       tabKey: row.tab_key,
       rect: row.rect,
+      config: canonicalJson(row.config),
     }));
   }
 
@@ -405,67 +423,136 @@ describe.skipIf(!ownerUrl)("F3.73 D12 — the seeded SMOC standard site layouts"
 
   async function templateRows(pool: Pick<SeedPool, "query">): Promise<string> {
     const res = await pool.query<{ row: string }>(
-      `SELECT version || ':' || status || ':' || stock_version AS row FROM bms.dashboard_templates
+      `SELECT version || ':' || status || ':' || COALESCE(stock_version::text, '-') AS row
+         FROM bms.dashboard_templates
         WHERE organization_id = $1 AND code = 'smoc-standard' ORDER BY version`,
       [eskomOrgId],
     );
     return res.rows.map((row) => row.row).join(",");
   }
 
-  /**
-   * Puts CSMOC's copy back to what the seed wrote before the pack rule: every role tile of each
-   * kept tab, the ones it leaves out re-inserted with no point row, and every widget at its v2
-   * rect. Only a role tile may be missing, so an administrator's deletion fails the precondition.
-   */
-  async function rewindToUnpacked(pool: Pick<SeedPool, "query">): Promise<void> {
+  /** CSMOC's tabs: id and key. */
+  async function copyTabs(pool: Pick<SeedPool, "query">): Promise<{ id: string; tab_key: string; dashboard_id: string }[]> {
     const tabs = await pool.query<{ id: string; tab_key: string; dashboard_id: string }>(
       `SELECT t.id, t.tab_key, t.dashboard_id FROM bms.dashboard_tabs t
          JOIN bms.dashboards d ON d.id = t.dashboard_id
         WHERE d.organization_id = $1 AND d.slug = $2`,
       [eskomOrgId, CSMOC_SLUG],
     );
-    const tabKeys = new Set(tabs.rows.map((row) => row.tab_key));
+    return tabs.rows;
+  }
+
+  /** Writes `rect` and `config` to the copy widget `id`. */
+  async function reshape(
+    pool: Pick<SeedPool, "query">,
+    id: string,
+    rect: { gridX: number; gridY: number; gridW: number; gridH: number },
+    config: unknown,
+  ): Promise<void> {
+    const res = await pool.query(
+      `UPDATE bms.dashboard_widgets SET grid_x = $2, grid_y = $3, grid_w = $4, grid_h = $5, config = $6::jsonb WHERE id = $1`,
+      [id, rect.gridX, rect.gridY, rect.gridW, rect.gridH, JSON.stringify(config)],
+    );
+    assert(res.rowCount === 1, `precondition: widget ${id} was reshaped`);
+  }
+
+  /**
+   * Puts CSMOC's copy back to what the v2 seed wrote before the pack rule: every v2 widget of each
+   * kept tab — the Overview's module cards for the copy's tabs and the role tiles the pack rule
+   * leaves out re-inserted with no point row — each at its v2 rect with its v2 config. Only a card
+   * or a role tile may be missing, so an administrator's deletion fails the precondition.
+   */
+  async function rewindToUnpacked(pool: Pick<SeedPool, "query">): Promise<void> {
+    const tabs = await copyTabs(pool);
+    const tabKeys = new Set(tabs.map((row) => row.tab_key));
     const stored = new Set((await copyWidgets(pool)).map((widget) => widget.identity));
-    for (const tab of smocStandardV1Content().tabs) {
-      const row = tabs.rows.find((candidate) => candidate.tab_key === tab.key);
+    const v2 = smocStandardV2Content();
+    const configs = new Map<string, unknown>();
+    for (const tab of v2.tabs) {
+      const row = tabs.find((candidate) => candidate.tab_key === tab.key);
       if (!row) continue;
       for (const widget of tab.widgets) {
         if (widget.widgetType === "module_summary_card" && !tabKeys.has(widget.config.targetTabKey)) continue;
         const identity = siteWidgetIdentity(tab.key, widget.widgetType, widget.title);
+        configs.set(identity, widget.config);
         if (stored.has(identity)) continue;
         assert(
-          widget.widgetType === "value_tile" && widget.bindings.length > 0,
-          `precondition: only a role tile is missing from the copy, not ${identity}`,
+          widget.widgetType === "module_summary_card" || (widget.widgetType === "value_tile" && widget.bindings.length > 0),
+          `precondition: only a card or a role tile is missing from the copy, not ${identity}`,
         );
         await pool.query(
           `INSERT INTO bms.dashboard_widgets
              (organization_id, dashboard_id, tab_id, widget_type, title, grid_x, grid_y, grid_w, grid_h, config)
-           VALUES ($1, $2, $3, 'value_tile', $4, 0, 0, 1, 1, $5::jsonb)`,
-          [eskomOrgId, row.dashboard_id, row.id, widget.title, JSON.stringify(widget.config)],
+           VALUES ($1, $2, $3, $4, $5, 0, 0, 1, 1, $6::jsonb)`,
+          [eskomOrgId, row.dashboard_id, row.id, widget.widgetType, widget.title, JSON.stringify(widget.config)],
         );
       }
     }
     for (const widget of await copyWidgets(pool)) {
-      const rect = SMOC_STANDARD_CURRENT_RECTS.get(widget.identity);
-      assert(rect !== undefined, `precondition: ${widget.identity} is a template widget`);
-      await pool.query(
-        `UPDATE bms.dashboard_widgets SET grid_x = $2, grid_y = $3, grid_w = $4, grid_h = $5 WHERE id = $1`,
-        [widget.id, rect?.gridX, rect?.gridY, rect?.gridW, rect?.gridH],
-      );
+      const rect = SMOC_STANDARD_V2_RECTS.get(widget.identity);
+      assert(rect !== undefined && configs.has(widget.identity), `precondition: ${widget.identity} is a v2 widget`);
+      await reshape(pool, widget.id, rect!, configs.get(widget.identity));
     }
   }
 
-  /** `identity@rect` of CSMOC's copy as the seed makes it today: deleted, then seeded afresh. */
-  async function freshCopyRects(): Promise<string[]> {
-    let rects: string[] = [];
+  /**
+   * Puts CSMOC's Overview back to what the v2 seed's copy rule wrote: the v2 widgets at their v2
+   * rects and config (the Offline tile on `alert`), the cards of the copy's tabs re-inserted and
+   * packed left in template order — two columns each, from column 0, which is what the pack rule
+   * gives a row of equal cards. The domain tabs are left as they are.
+   */
+  async function rewindOverviewToPackedV2(pool: Pick<SeedPool, "query">): Promise<void> {
+    const tabs = await copyTabs(pool);
+    const tabKeys = new Set(tabs.map((row) => row.tab_key));
+    const overviewTab = tabs.find((row) => row.tab_key === "overview");
+    assert(overviewTab !== undefined, "precondition: CSMOC's copy has an Overview");
+    const stored = new Map(
+      (await copyWidgets(pool)).filter((w) => w.tabKey === "overview").map((w) => [w.identity, w.id]),
+    );
+    let slot = 0;
+    for (const widget of OVERVIEW_V2_WIDGETS) {
+      let gridX = widget.gridX;
+      if (widget.widgetType === "module_summary_card") {
+        if (!tabKeys.has(widget.config.targetTabKey)) continue;
+        gridX = slot * widget.gridW;
+        slot += 1;
+      }
+      const rect = { gridX, gridY: widget.gridY, gridW: widget.gridW, gridH: widget.gridH };
+      const identity = siteWidgetIdentity("overview", widget.widgetType, widget.title);
+      const id = stored.get(identity);
+      if (id !== undefined) {
+        await reshape(pool, id, rect, widget.config);
+        stored.delete(identity);
+        continue;
+      }
+      assert(widget.widgetType === "module_summary_card", `precondition: only a card is missing, not ${identity}`);
+      await pool.query(
+        `INSERT INTO bms.dashboard_widgets
+           (organization_id, dashboard_id, tab_id, widget_type, title, grid_x, grid_y, grid_w, grid_h, config)
+         VALUES ($1, $2, $3, 'module_summary_card', $4, $5, $6, $7, $8, $9::jsonb)`,
+        [eskomOrgId, overviewTab!.dashboard_id, overviewTab!.id, widget.title, rect.gridX, rect.gridY, rect.gridW, rect.gridH, JSON.stringify(widget.config)],
+      );
+    }
+    assert(stored.size === 0, `precondition: the Overview holds no other widget: ${[...stored.keys()].join(",")}`);
+    assert(slot === 4, `precondition: CSMOC keeps four cards, got ${slot}`);
+  }
+
+  /** CSMOC's Overview as `shapeOf` strings, sorted. */
+  async function overviewShapes(pool: Pick<SeedPool, "query">): Promise<string[]> {
+    return (await copyWidgets(pool)).filter((w) => w.tabKey === "overview").map(shapeOf).sort();
+  }
+
+  /** CSMOC's copy as the seed makes it today (deleted, then seeded afresh), as sorted shapes. */
+  async function freshCopyShapes(): Promise<string[]> {
+    let shapes: string[] = [];
     await inTransaction(eskomOrgId, async (pool) => {
       await pool.query(`DELETE FROM bms.site_control_room_views WHERE location_id = $1`, [csmocId]);
       await pool.query(`DELETE FROM bms.dashboards WHERE organization_id = $1 AND slug = $2`, [eskomOrgId, CSMOC_SLUG]);
       const outcome = await seedEskomSiteLayouts(pool, eskomOrgId, mapRows, () => undefined);
       assert(outcome.made.length === 1, `the fresh copy was not made: ${JSON.stringify(outcome.skipped)}`);
-      rects = (await copyWidgets(pool)).map((widget) => `${widget.identity}@${widget.rect}`).sort();
+      shapes = (await copyWidgets(pool)).map(shapeOf).sort();
     });
-    return rects;
+    return shapes;
   }
 
   /** CSMOC's role tiles (a value tile off the Overview) as `title:points`. */
@@ -482,28 +569,34 @@ describe.skipIf(!ownerUrl)("F3.73 D12 — the seeded SMOC standard site layouts"
     return res.rows.map((row) => row.tile);
   }
 
-  async function rewindToV1(pool: Pick<SeedPool, "query">): Promise<void> {
-    await rewindToUnpacked(pool);
-    // The upgraded state: the seed's own version 2, which no copy names (copies keep v1's id).
-    // Deleted before v1 is published again; any other newer row survives and fails the
-    // precondition below.
+  /**
+   * ESKOM's `smoc-standard` rows back to one: the seed's own version 1, published at stock
+   * `stockVersion` with `content`. The seed's own newer rows that no dashboard names (what a
+   * supersede added) are deleted first; any other newer row survives and fails the precondition.
+   */
+  async function rewindTemplate(pool: Pick<SeedPool, "query">, stockVersion: number, content: unknown): Promise<void> {
     await pool.query(
       `DELETE FROM bms.dashboard_templates t
-        WHERE t.organization_id = $1 AND t.code = 'smoc-standard' AND t.version = 2
-          AND t.status = 'published' AND t.created_by IS NULL AND t.stock_version = 2
+        WHERE t.organization_id = $1 AND t.code = 'smoc-standard' AND t.version > 1
+          AND t.status IN ('published', 'archived') AND t.created_by IS NULL AND t.stock_version IS NOT NULL
           AND NOT EXISTS (SELECT 1 FROM bms.dashboards d WHERE d.template_id = t.id)`,
       [eskomOrgId],
     );
     const template = await pool.query(
       `UPDATE bms.dashboard_templates
-          SET content = $2::jsonb, stock_version = 1, status = 'published', archived_at = NULL
+          SET content = $2::jsonb, stock_version = $3, status = 'published', archived_at = NULL
         WHERE organization_id = $1 AND code = 'smoc-standard' AND version = 1
           AND status IN ('published', 'archived') AND created_by IS NULL
           AND NOT EXISTS (SELECT 1 FROM bms.dashboard_templates n
                            WHERE n.organization_id = $1 AND n.code = 'smoc-standard' AND n.version > 1)`,
-      [eskomOrgId, JSON.stringify(smocStandardV1Content())],
+      [eskomOrgId, JSON.stringify(content), stockVersion],
     );
     assert(template.rowCount === 1, "precondition: ESKOM's only smoc-standard row is the seed's version 1");
+  }
+
+  async function rewindToV1(pool: Pick<SeedPool, "query">): Promise<void> {
+    await rewindToUnpacked(pool);
+    await rewindTemplate(pool, 1, smocStandardV1Content());
     const copy = await pool.query(`UPDATE bms.dashboards SET description = $3 WHERE organization_id = $1 AND slug = $2`, [
       eskomOrgId,
       CSMOC_SLUG,
@@ -520,8 +613,10 @@ describe.skipIf(!ownerUrl)("F3.73 D12 — the seeded SMOC standard site layouts"
     }
   }
 
-  it("moves a v1 copy's widgets to v2 and packs them where a fresh copy has them, on a re-seed", async () => {
-    const fresh = await freshCopyRects();
+  const NOTHING = { descriptions: 0, widgets: 0, packed: 0, omittedTiles: 0, overviews: 0 };
+
+  it("moves a v1 copy along the chain to where a fresh copy has it, on a re-seed", async () => {
+    const fresh = await freshCopyShapes();
     await inTransaction(eskomOrgId, async (pool) => {
       await rewindToV1(pool);
       const before = await copyWidgets(pool);
@@ -529,7 +624,58 @@ describe.skipIf(!ownerUrl)("F3.73 D12 — the seeded SMOC standard site layouts"
       expect(before.map((w) => w.rect)).toEqual(before.map((w) => rectText(SMOC_STANDARD_V1_RECTS.get(w.identity)!)));
       await seedEskomSiteLayouts(pool, eskomOrgId, mapRows, () => undefined);
       const after = await copyWidgets(pool);
-      expect(after.map((w) => `${w.identity}@${w.rect}`).sort()).toEqual(fresh);
+      expect(after.map(shapeOf).sort()).toEqual(fresh);
+    });
+  });
+
+  // ── The v2 → v3 Overview step (F3.77, ADR 0087 Amendment 3) ─────────────────────────────────
+
+  it("moves an Overview at its packed v2 plan to v3 on a re-seed, as a fresh copy has it", async () => {
+    const fresh = (await freshCopyShapes()).filter((shape) => shape.startsWith("overview|"));
+    await inTransaction(eskomOrgId, async (pool) => {
+      await rewindOverviewToPackedV2(pool);
+      const v2 = await overviewShapes(pool);
+      expect(v2.filter((shape) => shape.startsWith("overview|module_summary_card|"))).toHaveLength(4);
+      expect(v2).toContain('overview|value_tile|Offline assets@9,2,3,2{"icon":"alert"}');
+      await seedEskomSiteLayouts(pool, eskomOrgId, mapRows, () => undefined);
+      expect(await overviewShapes(pool)).toEqual(fresh);
+    });
+  });
+
+  it("leaves a packed v2 Overview with one card moved whole on a re-seed", async () => {
+    await inTransaction(eskomOrgId, async (pool) => {
+      await rewindOverviewToPackedV2(pool);
+      const card = (await copyWidgets(pool)).find((w) => w.identity === "overview|module_summary_card|Water");
+      expect(card).toBeDefined();
+      await pool.query(`UPDATE bms.dashboard_widgets SET grid_y = grid_y + 1 WHERE id = $1`, [card?.id]);
+      const before = await overviewShapes(pool);
+      await seedEskomSiteLayouts(pool, eskomOrgId, mapRows, () => undefined);
+      expect(await overviewShapes(pool)).toEqual(before);
+    });
+  });
+
+  it("supersedes the seed's stock-2 template row with a published stock-3 row and archives it", async () => {
+    await inTransaction(eskomOrgId, async (pool) => {
+      await rewindTemplate(pool, 2, smocStandardV2Content());
+      expect(await templateRows(pool)).toBe("1:published:2");
+      await seedEskomSiteLayouts(pool, eskomOrgId, mapRows, () => undefined);
+      expect(await templateRows(pool)).toBe("1:archived:2,2:published:3");
+    });
+  });
+
+  it("keeps the seed's stock-2 row and a draft above it on a re-seed", async () => {
+    await inTransaction(eskomOrgId, async (pool) => {
+      await rewindTemplate(pool, 2, smocStandardV2Content());
+      await pool.query(
+        `INSERT INTO bms.dashboard_templates
+           (organization_id, code, version, name, section, target, description, status, content)
+         SELECT organization_id, code, 2, name, section, target, description, 'draft', content
+           FROM bms.dashboard_templates WHERE organization_id = $1 AND code = 'smoc-standard' AND version = 1`,
+        [eskomOrgId],
+      );
+      expect(await templateRows(pool)).toBe("1:published:2,2:draft:-");
+      await seedEskomSiteLayouts(pool, eskomOrgId, mapRows, () => undefined);
+      expect(await templateRows(pool)).toBe("1:published:2,2:draft:-");
     });
   });
 
@@ -555,30 +701,26 @@ describe.skipIf(!ownerUrl)("F3.73 D12 — the seeded SMOC standard site layouts"
     });
   });
 
-  it("packs an unpacked copy onto the rects a fresh copy gets, on a re-seed", async () => {
-    const fresh = await freshCopyRects();
+  it("packs an unpacked copy and moves its Overview to v3, onto what a fresh copy gets, on a re-seed", async () => {
+    const fresh = await freshCopyShapes();
     await inTransaction(eskomOrgId, async (pool) => {
       await rewindToUnpacked(pool);
-      const unpacked = (await copyWidgets(pool)).map((w) => `${w.identity}@${w.rect}`).sort();
+      const unpacked = (await copyWidgets(pool)).map(shapeOf).sort();
       expect(unpacked).not.toEqual(fresh);
       await seedEskomSiteLayouts(pool, eskomOrgId, mapRows, () => undefined);
-      expect((await copyWidgets(pool)).map((w) => `${w.identity}@${w.rect}`).sort()).toEqual(fresh);
+      expect((await copyWidgets(pool)).map(shapeOf).sort()).toEqual(fresh);
     });
   });
 
-  it("writes nothing when the pack step runs a second time", async () => {
+  it("writes nothing when the pack and Overview steps run a second time", async () => {
     await inTransaction(eskomOrgId, async (pool) => {
       await rewindToUnpacked(pool);
       const first = await upgradeSeededSiteLayoutCopies(pool, eskomOrgId, [csmocId], SITE_LAYOUT_SLUG_PREFIX);
       expect(first.omittedTiles).toBe(9);
       expect(first.packed).toBeGreaterThan(0);
+      expect(first.overviews).toBe(1);
       const snapshot = JSON.stringify(await copyWidgets(pool));
-      expect(await upgradeSeededSiteLayoutCopies(pool, eskomOrgId, [csmocId], SITE_LAYOUT_SLUG_PREFIX)).toEqual({
-        descriptions: 0,
-        widgets: 0,
-        packed: 0,
-        omittedTiles: 0,
-      });
+      expect(await upgradeSeededSiteLayoutCopies(pool, eskomOrgId, [csmocId], SITE_LAYOUT_SLUG_PREFIX)).toEqual(NOTHING);
       expect(JSON.stringify(await copyWidgets(pool))).toBe(snapshot);
     });
   });
@@ -593,7 +735,7 @@ describe.skipIf(!ownerUrl)("F3.73 D12 — the seeded SMOC standard site layouts"
       const after = await copyWidgets(pool);
       const sld = after.filter((w) => w.tabKey === "sld" && w.id !== rail?.id);
       expect(sld.filter((w) => w.identity.startsWith("sld|value_tile|"))).toHaveLength(4);
-      expect(sld.map((w) => w.rect)).toEqual(sld.map((w) => rectText(SMOC_STANDARD_CURRENT_RECTS.get(w.identity)!)));
+      expect(sld.map((w) => w.rect)).toEqual(sld.map((w) => rectText(SMOC_STANDARD_V2_RECTS.get(w.identity)!)));
       expect(after.filter((w) => w.tabKey === "ups").map((w) => `${w.identity}@${w.rect}`)).toEqual([
         "ups|active_alarms_rail|Active alarms@0,0,6,5",
         "ups|table|Assets@6,0,6,5",
@@ -610,12 +752,12 @@ describe.skipIf(!ownerUrl)("F3.73 D12 — the seeded SMOC standard site layouts"
     });
   });
 
-  it("supersedes the seed's v1 template with a published version 2 and archives v1", async () => {
+  it("supersedes the seed's v1 template with a published version 2 at the current stock and archives v1", async () => {
     await inTransaction(eskomOrgId, async (pool) => {
       await rewindToV1(pool);
       expect(await templateRows(pool)).toBe("1:published:1");
       await seedEskomSiteLayouts(pool, eskomOrgId, mapRows, () => undefined);
-      expect(await templateRows(pool)).toBe("1:archived:1,2:published:2");
+      expect(await templateRows(pool)).toBe("1:archived:1,2:published:3");
     });
   });
 
@@ -627,12 +769,7 @@ describe.skipIf(!ownerUrl)("F3.73 D12 — the seeded SMOC standard site layouts"
         JSON.stringify([await templateRows(pool), await descriptionOf(pool), await copyWidgets(pool)]);
       const first = await snapshot();
       expect(await upgradeSeedSiteTemplate(pool, eskomOrgId)).toBeNull();
-      expect(await upgradeSeededSiteLayoutCopies(pool, eskomOrgId, [csmocId], SITE_LAYOUT_SLUG_PREFIX)).toEqual({
-        descriptions: 0,
-        widgets: 0,
-        packed: 0,
-        omittedTiles: 0,
-      });
+      expect(await upgradeSeededSiteLayoutCopies(pool, eskomOrgId, [csmocId], SITE_LAYOUT_SLUG_PREFIX)).toEqual(NOTHING);
       await seedEskomSiteLayouts(pool, eskomOrgId, mapRows, () => undefined);
       expect(await snapshot()).toBe(first);
     });
@@ -642,11 +779,11 @@ describe.skipIf(!ownerUrl)("F3.73 D12 — the seeded SMOC standard site layouts"
     await inTransaction(eskomOrgId, async (pool) => {
       await rewindToV1(pool);
       await seedEskomSiteLayouts(pool, eskomOrgId, mapRows, () => undefined);
-      expect(await templateRows(pool)).toBe("1:archived:1,2:published:2");
+      expect(await templateRows(pool)).toBe("1:archived:1,2:published:3");
       await rewindToV1(pool);
       expect(await templateRows(pool)).toBe("1:published:1");
       await seedEskomSiteLayouts(pool, eskomOrgId, mapRows, () => undefined);
-      expect(await templateRows(pool)).toBe("1:archived:1,2:published:2");
+      expect(await templateRows(pool)).toBe("1:archived:1,2:published:3");
     });
   });
 

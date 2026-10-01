@@ -33,8 +33,8 @@ import {
  *
  * **What this seeds, per organization (ESKOM, PHEWB).** (a) The SMOC standard template as a
  * published stock import at version 1, insert-if-absent, holding the current stock content; a
- * database the v1 seed already ran is moved to the current stock version by
- * `site-layout-seed-upgrade.ts` (its own seed-owned rows only). (b) For each seed-owned location with
+ * database an earlier seed already ran is moved to the current stock version by the upgrade
+ * chain in `site-layout-seed-upgrade.ts` (its own seed-owned rows only). (b) For each seed-owned location with
  * no `bms.site_control_room_views` row and no dashboard holding its slug, one tabbed copy of the
  * organization's newest published `smoc-standard` version, planned by the SAME shared planner
  * the API's copy action runs (`planSiteLayout` and `planTemplateWidget`, `@bms/shared`), and the
@@ -78,7 +78,7 @@ const DASHBOARD_SLUG_MAX = 64;
 
 /**
  * The version the seed imports: the first. A later version is an administrator's, or the one
- * `upgradeSeedSiteTemplate` adds when it supersedes the seed's own stock-1 row.
+ * `upgradeSeedSiteTemplate` adds when it supersedes the seed's own row at an older stock version.
  */
 export const SITE_LAYOUT_SEED_TEMPLATE_VERSION = 1;
 

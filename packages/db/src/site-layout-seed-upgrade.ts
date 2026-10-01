@@ -8,35 +8,56 @@ import {
 } from "@bms/shared";
 import { SMOC_STANDARD_SITE_TEMPLATE } from "@bms/shared/site-templates";
 
+import {
+  canonicalJson,
+  type GridRect,
+  OVERVIEW_TAB_KEY,
+  SMOC_STANDARD_V1_RECTS,
+  SMOC_STANDARD_V2_RECTS,
+  siteTemplateRects,
+  siteWidgetIdentity,
+  smocStandardV2Content,
+} from "./site-layout-stock-history";
+
+export { type GridRect, siteTemplateRects, siteWidgetIdentity } from "./site-layout-stock-history";
+
 /**
- * The SMOC standard site layout's v1 → v2 upgrade, for a database that already ran the `F3.73`
- * seed (v1 template rows and v1 copies). Stock version 2 compacts each widget's height to its
- * content; this moves the seed's own rows there and leaves every row an administrator touched.
+ * The SMOC standard site layout's seed upgrade chain, for a database an earlier seed already ran
+ * on. It moves the seed's own rows to the current stock version and leaves every row an
+ * administrator touched. The past versions it recognises are frozen in
+ * `site-layout-stock-history.ts`; **`F3.74` adds v4 here** — freeze v3 there, then add the next
+ * step after {@link upgradeOverview} in {@link upgradeSeededSiteLayoutCopies}.
  *
- * **The copies.** For each seed-owned copy (the locations `site-layout-seed.ts` resolves, the
- * slug it gives, a `smoc-standard` template stamp): the description changes only while it still
- * equals {@link SITE_LAYOUT_COPY_DESCRIPTION_V1} exactly, and a TAB's widgets move to the v2
- * rects only while every widget in that tab still holds its v1 rect. A copy stores no widget key,
- * so a widget is known by its tab key, widget type and title ({@link siteWidgetIdentity}), which
- * is unique per tab. The gate is per tab, not per widget: moving the rest of a tab around one
- * widget an administrator moved could stack the two.
+ * **The chain, per seed-owned copy, in order** (the locations `site-layout-seed.ts` resolves,
+ * the slug it gives, a `smoc-standard` template stamp):
+ *
+ * 1. **v1 → v2** ({@link planCopyWidgetUpgrade}): stock version 2 compacts each widget's height.
+ *    The description changes only while it still equals {@link SITE_LAYOUT_COPY_DESCRIPTION_V1}
+ *    exactly, and a TAB's widgets move to the v2 rects only while every widget in it still holds
+ *    its v1 rect. The gate is per tab, not per widget: moving the rest of a tab around one widget
+ *    an administrator moved could stack the two.
+ * 2. **v2 → packed** ({@link planCopyPackUpgrade}, ADR 0087 Amendment 2): a copy-time rule, not
+ *    template content — pack the kept Overview cards left and leave out a role tile that binds no
+ *    point at the site, per tab, only while the tab is exactly as the v2 seed wrote it.
+ * 3. **v2 → v3 Overview** ({@link planOverviewUpgrade}, ADR 0087 Amendment 3): only while the
+ *    Overview holds exactly its own packed v2 plan, delete its module cards and move the rest to
+ *    the v3 rects and config. The domain tabs did not change in v3.
+ *
+ * A copy stores no widget key, so a widget is known by its tab key, widget type and title
+ * ({@link siteWidgetIdentity}), which is unique per tab.
  *
  * **The template.** A published row is never edited (ADR 0049 — the lifecycle's `update` takes
- * drafts only). When the organization's newest `smoc-standard` row is still the seed's own v1
- * (version 1, stock version 1, no author, v1 rects), the seed adds the next version as a
- * published row holding the v2 content and archives the v1 row, the explicit archive the
- * lifecycle performs (`publish` alone archives nothing). Any newer row — an administrator's
- * draft or version — leaves both alone. The copies keep their `template_id` stamp on v1.
+ * drafts only), so its stock stamp is its content. When the organization's newest
+ * `smoc-standard` row is the seed's own at an older stock version ({@link isSeedStockSiteTemplate}),
+ * the seed adds the next version as a published row holding the current content and archives the
+ * older row, the explicit archive the lifecycle performs (`publish` alone archives nothing). Any
+ * newer row — an administrator's draft or version — leaves both alone. The copies keep their
+ * `template_id` stamp.
  *
- * **The pack step (the F3.73 design critique).** A copy-time rule, not template content, so no
- * stock version bump: the copy action and the seed now pack the kept Overview cards left and leave
- * out a role tile that binds no point at the site. {@link planCopyPackUpgrade} applies the same
- * rule to a copy the earlier seed made, per tab, only while the tab is exactly as it was written.
- *
- * **Idempotent.** A second run finds the v2 rects, the new description, a stock-2 template and
- * packed tabs (no longer at the stock rects, so outside the pack gate), and writes nothing. Every
- * write runs in the caller's `withOrganization` bracket and checks its row count: a FORCE-RLS
- * write can drop a row without raising. The pack step is ADR 0087 Amendment 2.
+ * **Idempotent.** Each step's gate is the exact shape its own previous step wrote, so a second
+ * run finds nothing to do and writes nothing. Every write runs in the caller's
+ * `withOrganization` bracket, holds the read values in its predicate and checks its row count: a
+ * FORCE-RLS write can drop a row without raising.
  */
 
 /** The copy's description since stock version 2. */
@@ -46,108 +67,10 @@ export const SITE_LAYOUT_COPY_DESCRIPTION =
 /** The copy's description the v1 seed wrote; only this exact text is replaced. */
 export const SITE_LAYOUT_COPY_DESCRIPTION_V1 = "The SMOC standard site layout, seeded for this demo site (F3.73).";
 
-export type GridRect = {
-  readonly gridX: number;
-  readonly gridY: number;
-  readonly gridW: number;
-  readonly gridH: number;
-};
-
-/** How a copy's widget is known: its tab key, widget type and title. */
-export function siteWidgetIdentity(tabKey: string, widgetType: string, title: string | null): string {
-  return `${tabKey}|${widgetType}|${title ?? ""}`;
-}
-
-/**
- * Stock version 1's rects, `[x, y, w, h]`. Read from the copies the v1 seed wrote (every tab
- * but `it`, which no seeded site holds; its rects follow the same v1 rule as the other mimic
- * tabs). Frozen: v1 exists nowhere else in code once stock version 2 ships.
- */
-const V1_RECTS: Readonly<Record<string, readonly [number, number, number, number]>> = {
-  "overview|state_legend|": [0, 0, 12, 2],
-  "overview|value_tile|Active alarms": [0, 2, 3, 4],
-  "overview|value_tile|Total load": [3, 2, 3, 4],
-  "overview|value_tile|Asset health": [6, 2, 3, 4],
-  "overview|value_tile|Offline assets": [9, 2, 3, 4],
-  "overview|asset_class_strip|": [0, 6, 12, 3],
-  "overview|module_summary_card|Electrical": [0, 9, 2, 4],
-  "overview|module_summary_card|UPS & battery": [2, 9, 2, 4],
-  "overview|module_summary_card|HVAC": [4, 9, 2, 4],
-  "overview|module_summary_card|IT": [6, 9, 2, 4],
-  "overview|module_summary_card|Environment": [8, 9, 2, 4],
-  "overview|module_summary_card|Water": [10, 9, 2, 4],
-  "overview|active_alarms_rail|Active alarms": [0, 13, 6, 8],
-  "overview|critical_systems_list|Critical systems": [6, 13, 6, 8],
-  "sld|value_tile|Incomer load": [0, 0, 3, 4],
-  "sld|value_tile|Incomer power factor": [3, 0, 3, 4],
-  "sld|value_tile|Frequency": [6, 0, 3, 4],
-  "sld|value_tile|Main bus load": [9, 0, 3, 4],
-  "sld|mimic|": [0, 4, 12, 10],
-  "sld|active_alarms_rail|Active alarms": [0, 14, 6, 8],
-  "sld|table|Assets": [6, 14, 6, 8],
-  "ups|value_tile|UPS load": [0, 0, 3, 4],
-  "ups|value_tile|Battery backup": [3, 0, 3, 4],
-  "ups|active_alarms_rail|Active alarms": [0, 4, 6, 8],
-  "ups|table|Assets": [6, 4, 6, 8],
-  "hvac|value_tile|Supply air": [0, 0, 3, 4],
-  "hvac|value_tile|Return air": [3, 0, 3, 4],
-  "hvac|value_tile|Cooling load": [6, 0, 3, 4],
-  "hvac|mimic|": [0, 4, 12, 10],
-  "hvac|active_alarms_rail|Active alarms": [0, 14, 6, 8],
-  "hvac|table|Assets": [6, 14, 6, 8],
-  "it|value_tile|Rack load": [0, 0, 3, 4],
-  "it|value_tile|PDU utilisation": [3, 0, 3, 4],
-  "it|mimic|": [0, 4, 12, 10],
-  "it|active_alarms_rail|Active alarms": [0, 14, 6, 8],
-  "it|table|Assets": [6, 14, 6, 8],
-  "env|value_tile|Room temperature": [0, 0, 3, 4],
-  "env|value_tile|Room humidity": [3, 0, 3, 4],
-  "env|mimic|": [0, 4, 12, 10],
-  "env|active_alarms_rail|Active alarms": [0, 14, 6, 8],
-  "env|table|Assets": [6, 14, 6, 8],
-  "water|value_tile|Inlet flow": [0, 0, 3, 4],
-  "water|value_tile|Treated tank level": [3, 0, 3, 4],
-  "water|mimic|": [0, 4, 12, 10],
-  "water|active_alarms_rail|Active alarms": [0, 14, 6, 8],
-  "water|table|Assets": [6, 14, 6, 8],
-};
-
-/** Stock version 1's rects by {@link siteWidgetIdentity}. */
-export const SMOC_STANDARD_V1_RECTS: ReadonlyMap<string, GridRect> = new Map(
-  Object.entries(V1_RECTS).map(([key, [gridX, gridY, gridW, gridH]]) => [key, { gridX, gridY, gridW, gridH }]),
-);
-
-/** A template content's rects by {@link siteWidgetIdentity}. */
-export function siteTemplateRects(content: SectionTemplateContent): Map<string, GridRect> {
-  const rects = new Map<string, GridRect>();
-  for (const tab of content.tabs) {
-    for (const widget of tab.widgets) {
-      const { gridX, gridY, gridW, gridH } = widget;
-      rects.set(siteWidgetIdentity(tab.key, widget.widgetType, widget.title), { gridX, gridY, gridW, gridH });
-    }
-  }
-  return rects;
-}
-
-/** The current stock entry's rects — the v2 layout the upgrade moves a copy to. */
+/** The current stock entry's rects. */
 export const SMOC_STANDARD_CURRENT_RECTS: ReadonlyMap<string, GridRect> = siteTemplateRects(
   SMOC_STANDARD_SITE_TEMPLATE.content as SectionTemplateContent,
 );
-
-/** The stock content with every widget at its v1 rect — what the v1 seed stored. */
-export function smocStandardV1Content(): SectionTemplateContent {
-  const content = SMOC_STANDARD_SITE_TEMPLATE.content as SectionTemplateContent;
-  return {
-    ...content,
-    tabs: content.tabs.map((tab) => ({
-      ...tab,
-      widgets: tab.widgets.map((widget) => ({
-        ...widget,
-        ...SMOC_STANDARD_V1_RECTS.get(siteWidgetIdentity(tab.key, widget.widgetType, widget.title)),
-      })),
-    })),
-  };
-}
 
 function sameRect(a: GridRect, b: GridRect): boolean {
   return a.gridX === b.gridX && a.gridY === b.gridY && a.gridW === b.gridW && a.gridH === b.gridH;
@@ -169,12 +92,13 @@ export type CopyWidget = GridRect & {
 /**
  * The widgets to move, each with its new rect. A tab moves only when every widget in it is a
  * template widget at its `from` rect, no identity repeats, and `to` holds a rect for each;
- * otherwise the whole tab is kept.
+ * otherwise the whole tab is kept. `to` is the frozen v2 shape, not the live one: the steps after
+ * this one take a copy on from v2.
  */
 export function planCopyWidgetUpgrade(
   widgets: readonly CopyWidget[],
   from: ReadonlyMap<string, GridRect> = SMOC_STANDARD_V1_RECTS,
-  to: ReadonlyMap<string, GridRect> = SMOC_STANDARD_CURRENT_RECTS,
+  to: ReadonlyMap<string, GridRect> = SMOC_STANDARD_V2_RECTS,
 ): { readonly id: string; readonly from: GridRect; readonly to: GridRect }[] {
   const byTab = new Map<string, CopyWidget[]>();
   for (const widget of widgets) {
@@ -208,7 +132,7 @@ export type PackCopyWidget = CopyWidget & { readonly points: number; readonly so
  * The v2 → packed step (the F3.73 design critique, findings a and b): what the seed's copy rule
  * now leaves out and packs, applied to a copy the earlier seed made. Per tab, and only while the
  * tab holds **exactly** what that seed wrote: every template widget of the tab once, at its
- * current stock rect, less the Overview cards of tabs the copy does not have. A tab with a
+ * v2 stock rect, less the Overview cards of tabs the copy does not have. A tab with a
  * widget moved, added or deleted by an administrator is left whole.
  *
  * In a kept tab, a role tile holding no point and no source row is deleted (it bound nothing at
@@ -222,7 +146,7 @@ export type PackCopyWidget = CopyWidget & { readonly points: number; readonly so
 export function planCopyPackUpgrade(
   widgets: readonly PackCopyWidget[],
   copyTabKeys: readonly string[],
-  content: SectionTemplateContent = SMOC_STANDARD_SITE_TEMPLATE.content as SectionTemplateContent,
+  content: SectionTemplateContent = smocStandardV2Content(),
 ): { readonly moves: { id: string; from: GridRect; to: GridRect }[]; readonly deletes: { id: string; from: GridRect }[] } {
   const tabs = new Set(copyTabKeys);
   const moves: { id: string; from: GridRect; to: GridRect }[] = [];
@@ -271,6 +195,113 @@ export function planCopyPackUpgrade(
   return { moves, deletes };
 }
 
+/** One stored widget of a copy, with its bindings' row counts and its `config`. */
+export type OverviewCopyWidget = PackCopyWidget & { readonly config: unknown };
+
+/** The Overview step's writes: the widgets `to` no longer holds, and the ones it reshapes. */
+export type OverviewUpgradePlan = {
+  readonly deletes: readonly { id: string; widgetType: string; from: GridRect; config: unknown }[];
+  readonly updates: readonly {
+    id: string;
+    title: string | null;
+    from: GridRect;
+    fromConfig: unknown;
+    to: GridRect;
+    toConfig: unknown;
+  }[];
+};
+
+const rectOf = (widget: GridRect): GridRect => ({
+  gridX: widget.gridX,
+  gridY: widget.gridY,
+  gridW: widget.gridW,
+  gridH: widget.gridH,
+});
+
+/**
+ * The v2 → v3 Overview step (`F3.77` plan D5, ADR 0087 Amendment 3). The gate: the copy's stored
+ * Overview equals `from`'s Overview as the copy rule left it — `packAfterRemoval` over `from`'s
+ * widgets, keeping a module card only when its target tab is one of `copyTabKeys` — exactly:
+ * the same identities, none repeated, nothing added, the same rects, the same `config` (compared
+ * without key order, as `jsonb` stores it), no point row, and each widget's source rows as many
+ * as its template sources. Anything else is an administrator's Overview, left whole.
+ *
+ * In a matching Overview, a widget `to` does not hold is deleted (v3: every module card), and a
+ * widget whose `to` rect or config differs is updated (v3: everything else, the Offline tile to
+ * the `offline` icon). The title is kept (owner ruling OQ1), so the identity holds across the
+ * step. A widget new in `to` would need an insert this step does not make: such a `to` throws, so
+ * the version that adds one (`F3.74`'s compact diagram) has to add the insert too.
+ *
+ * Idempotent by its gate: an Overview at `to` no longer holds `from`'s cards and rects.
+ */
+export function planOverviewUpgrade(
+  widgets: readonly OverviewCopyWidget[],
+  copyTabKeys: readonly string[],
+  from: SectionTemplateContent = smocStandardV2Content(),
+  to: SectionTemplateContent = SMOC_STANDARD_SITE_TEMPLATE.content as SectionTemplateContent,
+): OverviewUpgradePlan {
+  const none: OverviewUpgradePlan = { deletes: [], updates: [] };
+  const fromTab = from.tabs.find((tab) => tab.key === OVERVIEW_TAB_KEY);
+  const toTab = to.tabs.find((tab) => tab.key === OVERVIEW_TAB_KEY);
+  if (!fromTab || !toTab) return none;
+  const identity = (widget: { widgetType: string; title: string | null }): string =>
+    siteWidgetIdentity(OVERVIEW_TAB_KEY, widget.widgetType, widget.title);
+  const fromIdentities = new Set(fromTab.widgets.map(identity));
+  const target = new Map(toTab.widgets.map((widget) => [identity(widget), widget]));
+  for (const key of target.keys()) {
+    if (!fromIdentities.has(key)) {
+      throw new Error(`planOverviewUpgrade: ${key} is new in the target version, and this step inserts nothing`);
+    }
+  }
+
+  const tabs = new Set(copyTabKeys);
+  const expected = packAfterRemoval(
+    fromTab.widgets,
+    (widget) => widget.widgetType !== "module_summary_card" || tabs.has(widget.config.targetTabKey),
+  );
+  const stored = widgets.filter((widget) => widget.tabKey === OVERVIEW_TAB_KEY);
+  const byIdentity = new Map(stored.map((widget) => [identity(widget), widget]));
+  if (byIdentity.size !== stored.length || stored.length !== expected.length) return none;
+  const exact = expected.every((widget) => {
+    const row = byIdentity.get(identity(widget));
+    return (
+      row !== undefined &&
+      sameRect(row, widget) &&
+      canonicalJson(row.config) === canonicalJson(widget.config) &&
+      row.points === 0 &&
+      row.sources === widget.sources.length
+    );
+  });
+  if (!exact) return none;
+
+  const deletes: { id: string; widgetType: string; from: GridRect; config: unknown }[] = [];
+  const updates: {
+    id: string;
+    title: string | null;
+    from: GridRect;
+    fromConfig: unknown;
+    to: GridRect;
+    toConfig: unknown;
+  }[] = [];
+  for (const widget of expected) {
+    const row = byIdentity.get(identity(widget)) as OverviewCopyWidget;
+    const next = target.get(identity(widget));
+    if (next === undefined) {
+      deletes.push({ id: row.id, widgetType: row.widgetType, from: rectOf(row), config: row.config });
+    } else if (!sameRect(row, next) || canonicalJson(row.config) !== canonicalJson(next.config)) {
+      updates.push({
+        id: row.id,
+        title: row.title,
+        from: rectOf(row),
+        fromConfig: row.config,
+        to: rectOf(next),
+        toConfig: next.config,
+      });
+    }
+  }
+  return { deletes, updates };
+}
+
 /** A template row as the upgrade reads it. */
 export type SiteTemplateRow = {
   readonly id: string;
@@ -283,27 +314,25 @@ export type SiteTemplateRow = {
 
 /**
  * Whether `newest` (the organization's highest `smoc-standard` version, any status) is the
- * seed's own unedited v1 row — the one row the upgrade supersedes.
+ * seed's own row at an older stock version — the one row the upgrade supersedes (ADR 0087
+ * Amendment 3 ruling 9, owner ruling OQ7): published, no author, a stock stamp below
+ * `currentStockVersion`, and content that parses. No per-version rects check: a published row is
+ * immutable (ADR 0049), so its stamp is its content.
  */
-export function isSeedV1SiteTemplate(newest: SiteTemplateRow | undefined): boolean {
+export function isSeedStockSiteTemplate(
+  newest: SiteTemplateRow | undefined,
+  currentStockVersion: number = SMOC_STANDARD_SITE_TEMPLATE.stockVersion,
+): boolean {
   if (
     !newest ||
-    newest.version !== 1 ||
     newest.status !== "published" ||
-    newest.stockVersion !== 1 ||
-    newest.createdBy !== null
+    newest.createdBy !== null ||
+    newest.stockVersion === null ||
+    !(newest.stockVersion < currentStockVersion)
   ) {
     return false;
   }
-  const parsed = sectionTemplateContentSchema.safeParse(newest.content);
-  if (!parsed.success) return false;
-  const rects = siteTemplateRects(parsed.data);
-  if (rects.size !== SMOC_STANDARD_V1_RECTS.size) return false;
-  for (const [identity, rect] of rects) {
-    const v1 = SMOC_STANDARD_V1_RECTS.get(identity);
-    if (!v1 || !sameRect(rect, v1)) return false;
-  }
-  return true;
+  return sectionTemplateContentSchema.safeParse(newest.content).success;
 }
 
 const NEWEST_TEMPLATE_SQL = `
@@ -328,8 +357,9 @@ const TEMPLATE_ARCHIVE_SQL = `
 `;
 
 /**
- * Supersedes the seed's v1 `smoc-standard` row with the current stock version, published, and
- * archives v1. Returns the new row's id, or `null` when nothing was the seed's v1.
+ * Supersedes the seed's own older `smoc-standard` row ({@link isSeedStockSiteTemplate}) with the
+ * current stock version, published, and archives the older row. Returns the new row's id, or
+ * `null` when the newest row is not the seed's own older one.
  */
 export async function upgradeSeedSiteTemplate(
   pool: Pick<pg.Pool, "query">,
@@ -354,7 +384,7 @@ export async function upgradeSeedSiteTemplate(
     createdBy: row.created_by,
     content: row.content,
   };
-  if (!newest || !isSeedV1SiteTemplate(newest)) return null;
+  if (!newest || !isSeedStockSiteTemplate(newest)) return null;
 
   const inserted = await pool.query<{ id: string }>(NEXT_TEMPLATE_INSERT_SQL, [
     organizationId,
@@ -376,7 +406,7 @@ export async function upgradeSeedSiteTemplate(
   }
   const archived = await pool.query(TEMPLATE_ARCHIVE_SQL, [newest.id, organizationId]);
   if (archived.rowCount !== 1) {
-    throw new Error(`upgradeSeedSiteTemplate: archived ${archived.rowCount} of 1 v1 rows in ${organizationId}`);
+    throw new Error(`upgradeSeedSiteTemplate: archived ${archived.rowCount} of 1 superseded rows in ${organizationId}`);
   }
   return id;
 }
@@ -414,9 +444,12 @@ const WIDGET_RECT_UPDATE_SQL = `
      AND grid_x = $7 AND grid_y = $8 AND grid_w = $9 AND grid_h = $10
 `;
 
-/** The copy's widgets with their point and source row counts — the pack step's read. */
+/**
+ * The copy's widgets with their config and their point and source row counts — the read of the
+ * pack step and the Overview step.
+ */
 const PACK_WIDGETS_SQL = `
-  SELECT w.id, t.tab_key, w.widget_type, w.title, w.grid_x, w.grid_y, w.grid_w, w.grid_h,
+  SELECT w.id, t.tab_key, w.widget_type, w.title, w.grid_x, w.grid_y, w.grid_w, w.grid_h, w.config,
          (SELECT count(*)::int FROM bms.dashboard_widget_points p WHERE p.widget_id = w.id) AS points,
          (SELECT count(*)::int FROM bms.dashboard_widget_sources s WHERE s.widget_id = w.id) AS sources
     FROM bms.dashboard_widgets w
@@ -432,6 +465,25 @@ const UNBOUND_TILE_DELETE_SQL = `
      AND NOT EXISTS (SELECT 1 FROM bms.dashboard_widget_points p WHERE p.widget_id = w.id)
      AND NOT EXISTS (SELECT 1 FROM bms.dashboard_widget_sources s WHERE s.widget_id = w.id)
 `;
+/**
+ * The Overview step's delete. The type, rect and config read are in the predicate, and the step's
+ * gate read no point row: a widget an administrator edited or bound since the read stays.
+ */
+const CARD_DELETE_SQL = `
+  DELETE FROM bms.dashboard_widgets w
+   WHERE w.id = $1 AND w.organization_id = $2 AND w.widget_type = $3
+     AND w.grid_x = $4 AND w.grid_y = $5 AND w.grid_w = $6 AND w.grid_h = $7
+     AND w.config = $8::jsonb
+     AND NOT EXISTS (SELECT 1 FROM bms.dashboard_widget_points p WHERE p.widget_id = w.id)
+`;
+/** The Overview step's update: rect and config, with the rect, title and config read in the predicate. */
+const WIDGET_UPGRADE_SQL = `
+  UPDATE bms.dashboard_widgets
+     SET grid_x = $3, grid_y = $4, grid_w = $5, grid_h = $6, config = $7::jsonb, updated_at = now()
+   WHERE id = $1 AND organization_id = $2
+     AND grid_x = $8 AND grid_y = $9 AND grid_w = $10 AND grid_h = $11
+     AND title IS NOT DISTINCT FROM $12::text AND config = $13::jsonb
+`;
 
 export type SiteLayoutCopyUpgrade = {
   readonly descriptions: number;
@@ -441,7 +493,98 @@ export type SiteLayoutCopyUpgrade = {
   readonly packed: number;
   /** Unbound role tiles the pack step deleted. */
   readonly omittedTiles: number;
+  /** Overviews the v2 → v3 step moved. */
+  readonly overviews: number;
 };
+
+type PackWidgetRow = {
+  id: string;
+  tab_key: string;
+  widget_type: string;
+  title: string | null;
+  grid_x: number;
+  grid_y: number;
+  grid_w: number;
+  grid_h: number;
+  config: unknown;
+  points: number;
+  sources: number;
+};
+
+/** A copy's widgets and tab keys, as the pack and Overview steps read them. */
+async function readCopy(
+  pool: Pick<pg.Pool, "query">,
+  organizationId: string,
+  dashboardId: string,
+): Promise<{ widgets: OverviewCopyWidget[]; tabKeys: string[] }> {
+  const stored = await pool.query<PackWidgetRow>(PACK_WIDGETS_SQL, [dashboardId, organizationId]);
+  const tabs = await pool.query<{ tab_key: string }>(COPY_TABS_SQL, [dashboardId, organizationId]);
+  return {
+    widgets: stored.rows.map((row) => ({
+      id: row.id,
+      tabKey: row.tab_key,
+      widgetType: row.widget_type,
+      title: row.title,
+      gridX: row.grid_x,
+      gridY: row.grid_y,
+      gridW: row.grid_w,
+      gridH: row.grid_h,
+      config: row.config,
+      points: row.points,
+      sources: row.sources,
+    })),
+    tabKeys: tabs.rows.map((row) => row.tab_key),
+  };
+}
+
+/**
+ * The v2 → v3 Overview step on one copy ({@link planOverviewUpgrade}), read after the pack step
+ * moved its cards: deletes first, then updates. Returns 1 when it wrote the Overview, else 0.
+ */
+async function upgradeOverview(
+  pool: Pick<pg.Pool, "query">,
+  organizationId: string,
+  dashboardId: string,
+): Promise<number> {
+  const copy = await readCopy(pool, organizationId, dashboardId);
+  const plan = planOverviewUpgrade(copy.widgets, copy.tabKeys);
+  for (const op of plan.deletes) {
+    const res = await pool.query(CARD_DELETE_SQL, [
+      op.id,
+      organizationId,
+      op.widgetType,
+      op.from.gridX,
+      op.from.gridY,
+      op.from.gridW,
+      op.from.gridH,
+      JSON.stringify(op.config),
+    ]);
+    if (res.rowCount !== 1) {
+      throw new Error(`upgradeSeededSiteLayoutCopies: Overview widget ${op.id} deleted ${res.rowCount} of 1 rows`);
+    }
+  }
+  for (const op of plan.updates) {
+    const res = await pool.query(WIDGET_UPGRADE_SQL, [
+      op.id,
+      organizationId,
+      op.to.gridX,
+      op.to.gridY,
+      op.to.gridW,
+      op.to.gridH,
+      JSON.stringify(op.toConfig),
+      op.from.gridX,
+      op.from.gridY,
+      op.from.gridW,
+      op.from.gridH,
+      op.title,
+      JSON.stringify(op.fromConfig),
+    ]);
+    if (res.rowCount !== 1) {
+      throw new Error(`upgradeSeededSiteLayoutCopies: Overview widget ${op.id} updated ${res.rowCount} of 1 rows`);
+    }
+  }
+  return plan.deletes.length + plan.updates.length > 0 ? 1 : 0;
+}
 
 /** One rect update, checked: the `from` rect is in the predicate. */
 async function moveWidget(
@@ -472,34 +615,8 @@ async function packCopy(
   organizationId: string,
   dashboardId: string,
 ): Promise<{ packed: number; omittedTiles: number }> {
-  const stored = await pool.query<{
-    id: string;
-    tab_key: string;
-    widget_type: string;
-    title: string | null;
-    grid_x: number;
-    grid_y: number;
-    grid_w: number;
-    grid_h: number;
-    points: number;
-    sources: number;
-  }>(PACK_WIDGETS_SQL, [dashboardId, organizationId]);
-  const tabs = await pool.query<{ tab_key: string }>(COPY_TABS_SQL, [dashboardId, organizationId]);
-  const plan = planCopyPackUpgrade(
-    stored.rows.map((row) => ({
-      id: row.id,
-      tabKey: row.tab_key,
-      widgetType: row.widget_type,
-      title: row.title,
-      gridX: row.grid_x,
-      gridY: row.grid_y,
-      gridW: row.grid_w,
-      gridH: row.grid_h,
-      points: row.points,
-      sources: row.sources,
-    })),
-    tabs.rows.map((row) => row.tab_key),
-  );
+  const copy = await readCopy(pool, organizationId, dashboardId);
+  const plan = planCopyPackUpgrade(copy.widgets, copy.tabKeys);
   for (const tile of plan.deletes) {
     const res = await pool.query(UNBOUND_TILE_DELETE_SQL, [
       tile.id,
@@ -520,8 +637,9 @@ async function packCopy(
 }
 
 /**
- * Moves each seed-owned copy at `locationIds` to v2 where it still holds the v1 seed's values,
- * then packs each tab still exactly as the seed wrote it ({@link planCopyPackUpgrade}).
+ * Moves each seed-owned copy at `locationIds` along the chain: to v2 where it still holds the v1
+ * seed's values, then packs each tab still exactly as the seed wrote it ({@link planCopyPackUpgrade}),
+ * then moves an Overview still at its packed v2 plan to v3 ({@link planOverviewUpgrade}).
  */
 export async function upgradeSeededSiteLayoutCopies(
   pool: Pick<pg.Pool, "query">,
@@ -539,6 +657,7 @@ export async function upgradeSeededSiteLayoutCopies(
   let widgets = 0;
   let packed = 0;
   let omittedTiles = 0;
+  let overviews = 0;
   for (const copy of copies.rows) {
     const description = upgradedCopyDescription(copy.description);
     if (description !== null) {
@@ -583,6 +702,8 @@ export async function upgradeSeededSiteLayoutCopies(
     const step = await packCopy(pool, organizationId, copy.id);
     packed += step.packed;
     omittedTiles += step.omittedTiles;
+    // After the pack step, which moves the cards the Overview step's gate expects packed.
+    overviews += await upgradeOverview(pool, organizationId, copy.id);
   }
-  return { descriptions, widgets, packed, omittedTiles };
+  return { descriptions, widgets, packed, omittedTiles, overviews };
 }

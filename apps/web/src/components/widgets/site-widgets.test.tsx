@@ -3,6 +3,7 @@ import { afterEach, describe, it } from "vitest";
 
 import {
   aCardOnAHealthyTabReadsNormal,
+  aLongLegendTitleTruncatesAndKeepsThePills,
   anInfoAlarmBesideAnOfflineMemberReadsOffline,
   anInfoAlarmWithNoOfflineMemberReadsItsLabel,
   anUnlistedSeverityBesideAnOfflineMemberKeepsItsCode,
@@ -21,7 +22,9 @@ import {
   theCardDrawsNoLinkOffTheSitePage,
   theCardLinksToItsTargetTab,
   theCardShowsItsTabsStatusAndCounts,
+  theLegendDrawsNoHeadingButItsTitleInline,
   theLegendNamesNormalAndOffline,
+  theLegendTitleAndPillsShareOneRow,
   theListHasNoLinkWithoutATabHref,
   theListIsNamedByTheWidgetTitle,
   theListLinksEachRowToItsTab,
@@ -81,6 +84,15 @@ describe("F3.73 site widgets — presentation", () => {
   it("SW6 the legend names Normal and Offline", async () => {
     await theLegendNamesNormalAndOffline();
   });
+  it("SW32 the legend draws no heading, but its title inline (F3.77 D2)", async () => {
+    await theLegendDrawsNoHeadingButItsTitleInline();
+  });
+  it("SW31 the legend's title and pills share one clipped row (F3.77 D2)", async () => {
+    await theLegendTitleAndPillsShareOneRow();
+  });
+  it("SW33 a long legend title truncates and keeps the pills (F3.77 review)", async () => {
+    await aLongLegendTitleTruncatesAndKeepsThePills();
+  });
   it("SW7 the strip draws one pill per role", () => {
     theStripDrawsOnePillPerRole();
   });
@@ -114,13 +126,13 @@ describe("F3.73 site widgets — presentation", () => {
   it("SW17 the list links each row to its tab through an Open link", () => {
     theListLinksEachRowToItsTab();
   });
-  it("SW31 the list name is text, not a link", () => {
+  it("SW50 the list name is text, not a link", () => {
     theListNameIsNotALink();
   });
-  it("SW32 the list draws no link without a tab href", () => {
+  it("SW51 the list draws no link without a tab href", () => {
     theListHasNoLinkWithoutATabHref();
   });
-  it("SW33 the list is named by the widget title", () => {
+  it("SW52 the list is named by the widget title", () => {
     theListIsNamedByTheWidgetTitle();
   });
   it("SW18 the list says so when the dashboard has no group tab", () => {

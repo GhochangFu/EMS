@@ -28,28 +28,43 @@ const entry: StockDashboardTemplateDto = SMOC_STANDARD_SITE_TEMPLATE;
 
 export function theEntryIsTheSiteTargetStockRow(): void {
   const shape = `${entry.code}|${entry.section}|${entry.target}|${entry.stockVersion}`;
-  assert(shape === "smoc-standard|site|site|2", `code|section|target|stockVersion: got ${shape}`);
+  assert(shape === "smoc-standard|site|site|3", `code|section|target|stockVersion: got ${shape}`);
 }
 
-/** Stock version 2 — each widget's height fits its content at the view canvas's 64 px row; the widths are v1's. */
-const COMPACT_SIZE: Readonly<Record<string, string>> = {
-  state_legend: "12x2",
+/**
+ * Stock version 3 (`F3.77` plan D1) — the Overview, `key@x,y,w,h` in grid order: four problem
+ * tiles, the 8-wide alarm rail beside the 4-wide systems list, the class strip, then the 1-row
+ * legend. One size per type no longer holds: the rail is 8x7 here and 6x5 on a domain tab.
+ */
+const OVERVIEW_RECTS =
+  "overview-alarms-tile@0,0,3,2;overview-offline-tile@3,0,3,2;overview-load-tile@6,0,3,2;" +
+  "overview-health-tile@9,0,3,2;overview-alarms-rail@0,2,8,7;overview-critical-systems@8,2,4,7;" +
+  "overview-class-strip@0,9,12,2;overview-legend@0,11,12,1";
+
+export function theOverviewHoldsItsV3Rects(): void {
+  const overview = entry.content.tabs.find((tab) => tab.key === "overview");
+  const rects = [...(overview?.widgets ?? [])]
+    .sort((a, b) => a.gridY - b.gridY || a.gridX - b.gridX)
+    .map((widget) => `${widget.key}@${widget.gridX},${widget.gridY},${widget.gridW},${widget.gridH}`)
+    .join(";");
+  assert(rects === OVERVIEW_RECTS, `Overview rects: got ${rects}`);
+}
+
+/** Stock version 2 — a domain tab's widget heights fit their content at the 64 px view row; unchanged in v3. */
+const DOMAIN_TAB_SIZE: Readonly<Record<string, string>> = {
   value_tile: "3x2",
-  asset_class_strip: "12x2",
-  module_summary_card: "2x3",
   mimic: "12x7",
   active_alarms_rail: "6x5",
   table: "6x5",
-  critical_systems_list: "6x5",
 };
 
-export function everyWidgetHasItsCompactSize(): void {
-  for (const tab of entry.content.tabs) {
+export function everyDomainTabWidgetHasItsCompactSize(): void {
+  for (const tab of entry.content.tabs.filter((row) => row.key !== "overview")) {
     for (const widget of tab.widgets) {
       const size = `${widget.gridW}x${widget.gridH}`;
       assert(
-        size === COMPACT_SIZE[widget.widgetType],
-        `${tab.key}/${widget.key} is ${size}, wanted ${COMPACT_SIZE[widget.widgetType]}`,
+        size === DOMAIN_TAB_SIZE[widget.widgetType],
+        `${tab.key}/${widget.key} is ${size}, wanted ${DOMAIN_TAB_SIZE[widget.widgetType]}`,
       );
     }
   }
@@ -58,13 +73,13 @@ export function everyWidgetHasItsCompactSize(): void {
 /**
  * The fewest rows a widget type needs on the view canvas's 64 px floor row (`VIEW_ROW_MIN_PX` in
  * `apps/web/src/components/dashboards/dashboard-canvas.tsx`), where `n` rows are
- * `64n + 8(n - 1)` px. The legend: `WidgetFrame`'s chrome (`p-3`, the title line, `mb-2`) is
- * about 48.5 px, so 1 row (64 px) leaves the pills about 15 px; 2 rows (136 px) leave about
- * 87 px. A value tile: `KpiTile` with a hint and the ADR 0027 stale line is about 132 px and is
- * not clipped to its cell, so 2 rows (136 px) hold it.
+ * `64n + 8(n - 1)` px. The legend (`F3.77` plan D2): it draws without `WidgetFrame`, as one row
+ * of an inline 11 px title and the pills (`StatusPill` about 20 px), so 1 row (64 px) holds it;
+ * the browser layer measures the fit. A value tile: `KpiTile` with a hint and the ADR 0027 stale
+ * line is about 132 px and is not clipped to its cell, so 2 rows (136 px) hold it.
  */
 const VIEW_FLOOR_MIN_ROWS: Readonly<Record<string, number>> = {
-  state_legend: 2,
+  state_legend: 1,
   value_tile: 2,
 };
 
@@ -105,13 +120,13 @@ export function noTabLeavesAnEmptyRow(): void {
   }
 }
 
-/** Overview 2 + 2 + 2 + 3 + 5; a domain tab 2 + 7 + 5; UPS (no mimic) 2 + 5. */
+/** Overview 2 + 7 + 2 + 1; a domain tab 2 + 7 + 5; UPS (no mimic) 2 + 5. */
 export function theTabsTotalTheirCompactRows(): void {
   const totals = entry.content.tabs
     .map((tab) => `${tab.key}:${Math.max(...tab.widgets.map((widget) => widget.gridY + widget.gridH))}`)
     .join(",");
   assert(
-    totals === "overview:14,sld:14,ups:7,hvac:14,it:14,env:14,water:14",
+    totals === "overview:12,sld:14,ups:7,hvac:14,it:14,env:14,water:14",
     `rows per tab: got ${totals}`,
   );
 }
@@ -177,14 +192,30 @@ export function everyModuleCardNamesATab(): void {
   }
 }
 
-/** One card per group tab on the Overview, in tab order — ruling Q6b. */
-export function theOverviewHasOneCardPerGroupTab(): void {
-  const [overview, ...groupTabs] = entry.content.tabs;
-  const cards = (overview?.widgets ?? []).flatMap((widget) =>
-    widget.widgetType === "module_summary_card" ? [widget.config.targetTabKey] : [],
-  );
-  const expected = groupTabs.map((tab) => tab.key);
-  assert(cards.join(",") === expected.join(","), `Overview cards: got ${cards.join(",")}`);
+/**
+ * `F3.77` plan D1 (ADR 0087 Amendment 3; the title stays "Critical systems", owner ruling OQ1) —
+ * the v3 Overview holds no module card, and one systems list 4 wide at x8 beside an 8-wide alarm
+ * rail, both at y2. `module_summary_card` stays in the vocabulary; only the stock Overview drops it.
+ */
+export function theOverviewHoldsNoCardAndOneSystemsList(): void {
+  const overview = entry.content.tabs.find((tab) => tab.key === "overview")?.widgets ?? [];
+  const cards = overview.filter((widget) => widget.widgetType === "module_summary_card");
+  assert(cards.length === 0, `the Overview holds ${cards.length} module cards`);
+  const lists = overview.filter((widget) => widget.widgetType === "critical_systems_list");
+  const list = lists.map((widget) => `${widget.title ?? "null"}@${widget.gridX},${widget.gridY}w${widget.gridW}`).join(";");
+  assert(list === "Critical systems@8,2w4", `the Overview systems lists: got ${list}`);
+  const rails = overview.filter((widget) => widget.widgetType === "active_alarms_rail");
+  const rail = rails.map((widget) => `${widget.gridX},${widget.gridY}w${widget.gridW}`).join(";");
+  assert(rail === "0,2w8", `the Overview alarm rails: got ${rail}`);
+}
+
+/** `F3.77` (ADR 0087 Amendment 3 ruling 6) — the Offline assets tile draws the `offline` icon. */
+export function theOfflineTileUsesTheOfflineIcon(): void {
+  const tile = entry.content.tabs
+    .find((tab) => tab.key === "overview")
+    ?.widgets.find((widget) => widget.key === "overview-offline-tile");
+  const icon = tile?.widgetType === "value_tile" ? tile.config.icon : undefined;
+  assert(icon === "offline", `the Offline assets tile's icon: got ${String(icon)}`);
 }
 
 export function noTabHoldsMoreThanTheWidgetCap(): void {

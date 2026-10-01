@@ -651,6 +651,11 @@ export function runStageAVocabulariesAreClosedTests(): void {
     "last must be refused — a bucket keeps no ordering within itself",
   );
   expectAccepts(widgetIconSchema, "bolt", "bolt is one of the mock's six");
+  expectAccepts(
+    widgetIconSchema,
+    "offline",
+    "offline is the seventh icon (ADR 0087 Amendment 3 ruling 6)",
+  );
   expectRejects(
     widgetIconSchema,
     "wrench",

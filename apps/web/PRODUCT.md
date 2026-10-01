@@ -51,8 +51,8 @@ with the generated view as the fail-safe.
 - Dashboards are a 12-column grid of typed widgets (`widgetType` is a closed
   vocabulary, ADR 0047). Site layouts are copies of a versioned template; a later
   template version never overwrites an admin-edited copy (ADR 0087).
-- Widget icons are a closed six-value vocabulary (`alert`, `clipboard`, `bolt`,
-  `drop`, `recycle`, `gauge`).
+- Widget icons are a closed seven-value vocabulary (`alert`, `clipboard`, `bolt`,
+  `drop`, `recycle`, `gauge`, `offline`).
 - **Colours stay as they are** (owner ruling 2026-10-01): no palette change and no
   ISA-101 grey-for-normal conversion. The existing state colours, the brand accent
   and the neumorphic / flat surfaces (ADR 0085) are kept.

@@ -318,16 +318,70 @@ async function copyRects(ctx: SiteLayoutCtx, dashboardId: string): Promise<strin
   return rows.map((row) => row.widget);
 }
 
+/** One fixture Overview card that opens `targetTabKey`, in slot `slot` of a card row at y2. */
+function fixtureCard(targetTabKey: string, title: string, slot: number) {
+  return {
+    key: `overview-${targetTabKey}-card`,
+    title,
+    gridX: slot * 2,
+    gridY: 2,
+    gridW: 2,
+    gridH: 3,
+    bindings: [],
+    sources: [],
+    widgetType: "module_summary_card",
+    config: { targetTabKey },
+  };
+}
+
 /**
  * S15a (the F3.73 design critique) — the Overview cards of the tabs a site keeps are packed left
  * in template order: the S1 shape keeps `sld` and `env`, so `env` moves from column 8 to 2.
+ * Since `F3.77` the stock Overview holds no card (plan D1), so the case publishes its own site
+ * template: the stock tabs behind an Overview of a strip and one card per group tab. It is
+ * published a day in the past, so it is never the organization's newest site template.
  * Mutation: `planSiteLayout` filters without `packAfterRemoval` → `env` at 8 → red.
  */
 export async function assertKeptCardsArePackedLeft(ctx: SiteLayoutCtx): Promise<void> {
+  const [, ...domainTabs] = SMOC_STANDARD_SITE_TEMPLATE.content.tabs;
+  const overview = {
+    key: "overview",
+    label: "Overview",
+    sortOrder: 0,
+    domain: null,
+    widgets: [
+      {
+        key: "overview-class-strip",
+        title: null,
+        gridX: 0,
+        gridY: 0,
+        gridW: 12,
+        gridH: 2,
+        bindings: [],
+        sources: [],
+        widgetType: "asset_class_strip",
+        config: {},
+      },
+      fixtureCard("sld", "Electrical", 0),
+      fixtureCard("ups", "UPS & battery", 1),
+      fixtureCard("hvac", "HVAC", 2),
+      fixtureCard("it", "IT", 3),
+      fixtureCard("env", "Environment", 4),
+      fixtureCard("water", "Water", 5),
+    ],
+  };
+  const { rows } = await ctx.fleetPool.query<{ id: string }>(
+    `INSERT INTO bms.dashboard_templates (organization_id, code, version, name, section, status, content, target, published_at)
+     VALUES ($1, $2, 1, 'F3.77 cards fixture', 'site', 'published', $3::jsonb, 'site', now() - interval '1 day') RETURNING id`,
+    [ctx.orgId, `f373sl-${ctx.run}-s15a-cards`.toLowerCase(), JSON.stringify({ widgets: [], tabs: [overview, ...domainTabs] })],
+  );
+  const templateId = rows[0]?.id as string;
+  ctx.created.templates.push(templateId);
+
   const site = await zeroGroupSite(ctx, "s15a");
-  const result = await ctx.svc.makeForSite(admin(), { locationId: site, templateId: ctx.templateId });
+  const result = await ctx.svc.makeForSite(admin(), { locationId: site, templateId });
   const cards = (await copyRects(ctx, result.dashboardId)).filter((w) => w.includes(":module_summary_card:"));
-  expect(cards).toEqual(["overview:module_summary_card:Electrical@0,6", "overview:module_summary_card:Environment@2,6"]);
+  expect(cards).toEqual(["overview:module_summary_card:Electrical@0,2", "overview:module_summary_card:Environment@2,2"]);
 }
 
 /**
