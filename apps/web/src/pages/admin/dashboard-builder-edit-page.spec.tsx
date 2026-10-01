@@ -216,13 +216,25 @@ function stubSave() {
 
 /**
  * Waits until the page has applied the loaded dto — the scope radio it prefills is checked.
- * `findByLabelText("Name")` is NOT that wait: the Name input renders before the dto arrives
- * (state `""`), so it resolves at once and a synchronous `getByRole("combobox", …)` after it
- * races the dto effect — the race CI lost once on the sweep PR (#476). The groups query is a
- * second async load; assertions on the option list wait for it separately.
+ * `findByLabelText("Name")` is NOT that wait: the Name input renders empty (state `""`) on the
+ * first render that holds the dto, so it resolves at once and a synchronous
+ * `getByRole("combobox", …)` after it races the dto effect — the race CI lost once on the sweep
+ * PR (#476). The groups query is a second async load; assertions on the option list wait for it
+ * separately.
+ *
+ * The "Location" radio alone is not that wait either: the page's initial scope is an unchosen
+ * location, so that radio is checked on the same first render, before the prefill effect commits.
+ * A spec that acts then races that commit: the prefill overwrites its choice, or a read misses the
+ * tabs (the tab strip, CI on #681). The effect sets the name in the same update as the scope, the
+ * rows and the tabs, and every fixture's name is non-empty, so a filled Name field is the commit.
+ * Mutation: delay the prefill effect by 300 ms => five to seven specs across this file and the
+ * tabs spec fail without this second wait (the set varies by run); with it, all of them pass.
+ * The delay also lets an `asset_group_admin`'s scope clamp commit before the prefill, so some of
+ * those failures are "Asset group" callers; unmutated, the clamp and the prefill share one update.
  */
 export async function waitForPrefill(kind: "Location" | "Asset group"): Promise<void> {
   await screen.findByRole("radio", { name: kind, checked: true });
+  await waitFor(() => expect(screen.getByLabelText("Name")).not.toHaveValue(""));
 }
 
 /** The asset-kind wait: there is no radio for it, so the read-only scope line — rendered only
