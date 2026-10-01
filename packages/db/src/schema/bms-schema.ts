@@ -318,6 +318,10 @@ export const assets = bmsSchema.table("assets", {
   // write path, never a template field (the same water class is `intake` on
   // one site and `internal` on the next).
   waterBalanceRole: varchar("water_balance_role", { length: 64 }).references(() => waterBalanceRoles.code),
+  // F3.74 / ADR 0088 (migration 0097) — a breaker's rating and the cause of its last trip, shown
+  // on the mimic. Nullable text: the asset form writes them, the seed fills the demo breakers.
+  rating: varchar("rating", { length: 32 }),
+  tripCause: varchar("trip_cause", { length: 128 }),
   active: boolean("active").notNull().default(true),
   meta: jsonb("meta"),
   createdAt: timestamp("created_at", { withTimezone: true })
@@ -476,6 +480,29 @@ export const pointKeys = bmsSchema.table("point_keys", {
   // generated site card; NULL = unranked. Not unique; ties by code (plan D1).
   headlineRank: smallint("headline_rank"),
 });
+
+/**
+ * `F3.74` / ADR 0088 (migration `0097`) — what one value of one point key means:
+ * a label and a tone (`closed | open | tripped`). Global master data beside
+ * `point_keys` — no `organization_id`, no policy; `bms_tenant` may only read it.
+ * The rows are seed-owned (`point-key-states-seed.ts`). The tone list is restated
+ * by `point_key_states_tone_check`; `pointKeyStateToneSchema` is its twin.
+ */
+export const pointKeyStates = bmsSchema.table(
+  "point_key_states",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    pointKeyCode: varchar("point_key_code", { length: 128 })
+      .notNull()
+      .references(() => pointKeys.code, { onDelete: "cascade" }),
+    value: doublePrecision("value").notNull(),
+    label: varchar("label", { length: 64 }).notNull(),
+    tone: varchar("tone", { length: 16 }).notNull(),
+  },
+  (t) => ({
+    codeValueUnique: unique("point_key_states_code_value_key").on(t.pointKeyCode, t.value),
+  }),
+);
 
 /**
  * Asset templates (ADR 0015) — one row per template *version*.
