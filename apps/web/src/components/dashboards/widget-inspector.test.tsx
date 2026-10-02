@@ -4,6 +4,15 @@ import { cleanup } from "@testing-library/react";
 
 import {
   aModuleCardOffersTheDashboardsTabs,
+  aMimicOnAGroupBoundTabHasNoMimicTabSelect,
+  aMimicWithNoGroupTabAnywhereHasNoMimicTabSelect,
+  aStoredMimicTabKeyKeepsTheSelectWithNoGroupTab,
+  aMimicTabProblemRendersUnderTheSelect,
+  aValueTileHasNoMimicTabSelect,
+  choosingAMimicTabWritesItToTheConfig,
+  theLayoutSourceHasNoCompactCheckbox,
+  theMimicTabSelectListsOnlyGroupBoundTabs,
+  tickingCompactWritesItToTheConfig,
   aModuleCardOnADashboardWithNoTabsIsDisabledWithAHint,
   aNonModuleCardHasNoTabSelect,
   aRailRowsProblemRendersUnderTheRows,
@@ -204,5 +213,41 @@ describe("F3.73 widget inspector — the site widgets", () => {
 
   it("offers no tab select on a value tile (the control for the module card cases)", () => {
     aNonModuleCardHasNoTabSelect();
+  });
+
+  it("F3.74: a mimic on a group-less tab lists only the group-bound tabs to resolve through", () => {
+    theMimicTabSelectListsOnlyGroupBoundTabs();
+  });
+
+  it("F3.74: choosing a mimic tab writes mimicTabKey", async () => {
+    await choosingAMimicTabWritesItToTheConfig();
+  });
+
+  it("F3.74: a mimic on a group-bound tab has no mimic tab select", () => {
+    aMimicOnAGroupBoundTabHasNoMimicTabSelect();
+  });
+
+  it("F3.74 review 7a: a mimic with no group-bound tab anywhere has no mimic tab select", () => {
+    aMimicWithNoGroupTabAnywhereHasNoMimicTabSelect();
+  });
+
+  it("F3.74 review 7a: a stored mimicTabKey keeps the select with no group-bound tab", () => {
+    aStoredMimicTabKeyKeepsTheSelectWithNoGroupTab();
+  });
+
+  it("F3.74: a value tile has no mimic tab select", () => {
+    aValueTileHasNoMimicTabSelect();
+  });
+
+  it("F3.74: a mimicTabKey problem renders under the select", () => {
+    aMimicTabProblemRendersUnderTheSelect();
+  });
+
+  it("F3.74: ticking Compact writes mimicCompact", async () => {
+    await tickingCompactWritesItToTheConfig();
+  });
+
+  it("F3.74: the layout source has no Compact checkbox", () => {
+    theLayoutSourceHasNoCompactCheckbox();
   });
 });

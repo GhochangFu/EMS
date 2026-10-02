@@ -43,6 +43,7 @@ import {
   type DashboardWidgetRow,
   type TabWritePayload,
 } from "../../lib/dashboard-builder-form";
+import { withDefaultMimicTabKey } from "../../lib/dashboard-builder-mimic-tab";
 import { metricCatalogLabel } from "../../lib/metric-catalog";
 import { WIDGET_CATALOG } from "../../lib/widget-catalog";
 import { AppShell } from "../../layouts/app-shell";
@@ -295,8 +296,10 @@ export function DashboardBuilderEditPage({ user }: DashboardBuilderEditPageProps
   function addWidget(widgetType: WidgetType): void {
     // `F3.73` D11 — a new widget lands on the tab the canvas shows.
     const onTab = selectedTabKey !== null && tabs.length > 0 ? { tabKey: selectedTabKey } : {};
+    // `F3.74` — a new mimic on a group-less tab resolves through the first group-bound tab.
+    const added = withDefaultMimicTabKey({ ...blankDashboardWidgetRow(widgetType), ...onTab }, tabs);
     setRows((current) => {
-      const next = [...current, { ...blankDashboardWidgetRow(widgetType), ...onTab }];
+      const next = [...current, added];
       setSelected(next.length - 1);
       return next;
     });
@@ -492,7 +495,7 @@ export function DashboardBuilderEditPage({ user }: DashboardBuilderEditPageProps
                 <div className="flex flex-wrap gap-2">
                   {/* `F3.32` — the live scope's kind, so a scope switch removes "Plant mimic" at once;
                       `F3.73` D11 — and the selected tab, so a group-bound tab offers it. */}
-                  {offerableWidgetTypesOnTab(scope.kind, selectedTab).map((type) => (
+                  {offerableWidgetTypesOnTab(scope.kind, selectedTab, tabs).map((type) => (
                     <button
                       key={type}
                       type="button"

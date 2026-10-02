@@ -145,15 +145,16 @@ export async function movingAWidgetToAnotherTab(): Promise<void> {
   ]);
 }
 
-/** A new widget lands on the selected tab, and a group-bound tab offers the plant mimic where the
- * Overview tab of a location dashboard does not. Mutation: add the row without the tab => red. */
+/** A new widget lands on the selected tab. `F3.74`: the plant mimic is offered on the group-less
+ * Overview tab too, because the dashboard has a group-bound tab to resolve through. Mutation: add
+ * the row without the tab => red. */
 export async function aNewWidgetLandsOnTheSelectedTab(): Promise<void> {
   stubLoads({ dto: TABBED_DTO, groups: [GROUP] });
   renderPage(asUser("admin"));
   await waitForPrefill("Location");
 
   await within(await strip()).findByRole("tab", { name: "Overview" });
-  expect(screen.queryByRole("button", { name: "+ Plant mimic" })).toBeNull();
+  expect(screen.getByRole("button", { name: "+ Plant mimic" })).toBeInTheDocument();
   await userEvent.click(within(await strip()).getByRole("tab", { name: "Electrical" }));
   await userEvent.click(screen.getByRole("button", { name: "+ Plant mimic" }));
 
@@ -161,6 +162,22 @@ export async function aNewWidgetLandsOnTheSelectedTab(): Promise<void> {
   expect(screen.getAllByText("Plant mimic · 0 point(s)")).toHaveLength(1);
   await userEvent.click(within(await strip()).getByRole("tab", { name: "Overview" }));
   expect(screen.queryAllByText("Plant mimic · 0 point(s)")).toHaveLength(0);
+}
+
+/** `F3.74` review finding 7(c) — a mimic added on the group-less Overview tab resolves through the
+ * first group-bound tab by default, so its select reads Electrical and no scope problem shows.
+ * Mutation: drop `withDefaultMimicTabKey` from the page's `addWidget` => red. */
+export async function aNewMimicOnOverviewResolvesThroughTheGroupTab(): Promise<void> {
+  stubLoads({ dto: TABBED_DTO, groups: [GROUP] });
+  renderPage(asUser("admin"));
+  await waitForPrefill("Location");
+
+  await within(await strip()).findByRole("tab", { name: "Overview" });
+  await userEvent.click(screen.getByRole("button", { name: "+ Plant mimic" }));
+
+  expect(screen.getByRole("combobox", { name: "Tab" })).toHaveValue("overview");
+  expect(screen.getByRole("combobox", { name: /^Resolves through tab/ })).toHaveValue("electrical");
+  expect(screen.queryByText(/A plant mimic needs an asset-group scope./)).not.toBeInTheDocument();
 }
 
 /**

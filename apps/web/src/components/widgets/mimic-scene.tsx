@@ -1,8 +1,29 @@
 import { useId, type ReactNode } from "react";
 
-import type { MimicNodeDto } from "@bms/shared";
+import {
+  energiseGraph,
+  mimicPipeKey,
+  worstDownstreamSwitch,
+  type MimicNodeDto,
+  type PointKeyStateMapDto,
+} from "@bms/shared";
 
 import type { SiteLiveReadings } from "../../hooks/use-site-live-readings";
+import {
+  BREAKER_LOOK_CLASSES,
+  BREAKER_PILL,
+  ENERGY_PIPE_CLASSES,
+  breakerLook,
+  breakerPillClass,
+  fanOutRows,
+  graphOf,
+  mimicBreakerAriaSuffix,
+  switchStatesOf,
+  toSwitchState,
+  unitBreakerDrawing,
+  type BreakerLook,
+  type MimicBreakerMember,
+} from "../../lib/mimic-breaker";
 import { formatPointValue } from "../../lib/generated-site-view";
 import {
   MIMIC_ALARM_CLASSES,
@@ -27,8 +48,13 @@ import {
 } from "../../lib/mimic";
 import { unitScale, type MimicGeometry, type MimicGeometryUnit } from "../../lib/mimic-geometry";
 import { isStale } from "../../lib/schematic-telemetry";
+import { BreakerSwitch } from "./mimic-breaker-switch";
+import { FanOutMembers } from "./mimic-fanout-members";
 import { FlowDash } from "./mimic-flow-dash";
 import { MimicGlyph } from "./mimic-glyphs";
+
+/** No state map: every switching member reads `unknown` (or `offline` when stale). */
+export const NO_STATE_MAPS: readonly PointKeyStateMapDto[] = [];
 
 export type MimicSceneProps = {
   /** The widget's title — the first part of the drawing's accessible name. */
@@ -37,6 +63,13 @@ export type MimicSceneProps = {
   /** The resolved nodes, by key. A roled unit with no entry here draws as "Not assigned". */
   nodes: readonly MimicNodeDto[];
   readings: SiteLiveReadings;
+  /**
+   * `F3.74` plan D4/D12 — the response's `stateMaps`: which value of a state point means which
+   * switch state. The editor and the preset preview have no read and pass none.
+   */
+  stateMaps?: readonly PointKeyStateMapDto[];
+  /** `F3.74` OQ9 — draw labels, switches and pills only: no value rows and no callouts. */
+  compact?: boolean;
   /** Drawn inside the `<svg>`, after the drawing — the editor's hit rects and handles (U6). */
   children?: ReactNode;
 };
@@ -73,14 +106,43 @@ const CALLOUT_TEXT_PAD_R = 6;
  * back to front: panel frames, labels, pipes (with the flow dash out of a unit with fresh data),
  * pumps, the sink, the units — grouped under their panel — and then `children`.
  *
+ * **Breakers (`F3.74`, ADR 0088 decisions 4–5, plan D6).** A unit whose symbol switches derives
+ * each member's state with `deriveBreakerState` over the socket overlay and `stateMaps`
+ * (`switchStatesOf`). Not fanning out, it draws a `BreakerSwitch` in place of its symbol and a
+ * state pill, and frames by the precedence offline → tripped → open → alarm tone → closed; its
+ * alarm status and callout stay. A fan-out unit stacks its members (code · switch · pill, or the
+ * member's status for a unit that does not switch or a member with no state point) in the value
+ * rows' and callout's slot, so it draws neither, nor the `+N` badge or the code line; the drawing's
+ * accessible name still carries its alarm. Which unit or member draws a state is decided once,
+ * in `unitBreakerDrawing`, for the drawing and the accessible name alike. A passive unit with a
+ * switching unit directly downstream frames as their worst member (`worstDownstreamSwitch`).
+ * `compact` hides every value row and callout and keeps the labels, switches and pills.
+ *
+ * **Energy is a colour beside the freshness dash (`F3.74` OQ5 rev 2, plan D6).** When the graph
+ * names a source (a preset's `sources`, a layout's `isSource` units) the scene walks it with
+ * `energiseGraph`; every pipe then carries `data-energy` and its energy's stroke
+ * (`ENERGY_PIPE_CLASSES`), and the `F3.32b` dash — still drawn from upstream freshness — takes the
+ * same class, so a de-energised or unknown pipe never animates in accent. A graph with no source
+ * is not walked and draws exactly as before.
+ *
  * **Accessibility.** The SVG is one `role="img"`; its `aria-label` names every unit whose callout
- * is drawn, with the severity label and the full message (`mimicAriaLabel`).
+ * is drawn, with the severity label and the full message (`mimicAriaLabel`), and — since the
+ * switch is `aria-hidden` — every drawn breaker state, per unit or per fan-out member
+ * (`mimicBreakerAriaSuffix`: "Main breaker CR-Q1: open").
  *
  * **Colours are ADR 0078 role classes only** — no hex, no palette class, no named colour, no
  * `dark:` (`tests/f3.65-colour-roles-gate.test.ts`). Marker and clip ids come from `useId`, so
  * two mimics on one dashboard do not share one.
  */
-export function MimicScene({ title, geometry, nodes, readings, children }: MimicSceneProps) {
+export function MimicScene({
+  title,
+  geometry,
+  nodes,
+  readings,
+  stateMaps = NO_STATE_MAPS,
+  compact = false,
+  children,
+}: MimicSceneProps) {
   const uid = useId().replace(/:/g, "");
   const markerId = `mimic-arrow-${uid}`;
   const byKey = new Map(nodes.map((n) => [n.key, n]));
@@ -115,27 +177,69 @@ export function MimicScene({ title, geometry, nodes, readings, children }: Mimic
     const node = statusOf.has(key) ? byKey.get(key) : undefined;
     return node === undefined || node.asset === null ? null : node.topAlarm;
   };
-  const ariaLabel = mimicAriaLabel(
-    title,
-    geometry.label,
-    geometry.units.flatMap((unit) => {
-      const alarm = calloutOf(unit.key);
-      return alarm === null ? [] : [{ unit: unit.label, severity: alarm.label, message: alarm.message }];
+  // `F3.74` plan D6 — every switching unit's members with their derived state (socket overlay,
+  // staleness first), and the same as the walk's switch states for the passive-bus frame.
+  const breakersOf = new Map<string, readonly MimicBreakerMember[]>(
+    geometry.units
+      .filter((u) => u.switching)
+      .map((u) => [u.key, switchStatesOf(byKey.get(u.key), readings, stateMaps, readings.nowMs)]),
+  );
+  // What each roled unit draws of its breakers — one answer for the drawing and its name.
+  const drawingOf = new Map(
+    roled.map((unit) => {
+      const node = byKey.get(unit.key);
+      const fanOut = unit.fanOut && (node?.asset ?? null) !== null;
+      return [unit.key, { fanOut, ...unitBreakerDrawing(fanOut, node, breakersOf.get(unit.key), readings) }] as const;
     }),
   );
+  const ariaLabel =
+    mimicAriaLabel(
+      title,
+      geometry.label,
+      geometry.units.flatMap((unit) => {
+        const alarm = calloutOf(unit.key);
+        return alarm === null ? [] : [{ unit: unit.label, severity: alarm.label, message: alarm.message }];
+      }),
+    ) +
+    mimicBreakerAriaSuffix(
+      roled.flatMap((unit) => {
+        const drawn = drawingOf.get(unit.key);
+        if (drawn === undefined) {
+          return [];
+        }
+        if (drawn.single !== null) {
+          return [{ unit: unit.label, code: drawn.single.asset.code, state: drawn.single.state }];
+        }
+        return drawn.rows.flatMap((row) =>
+          row.state === null ? [] : [{ unit: unit.label, code: row.code, state: row.state }],
+        );
+      }),
+    );
+  const graph = graphOf(geometry);
+  const switchStates = new Map(
+    [...breakersOf].map(([key, members]) => [key, members.map((m) => toSwitchState(m.state))] as const),
+  );
+  // `null` when the graph names no source: no walk, no `data-energy`, the freshness dash alone.
+  const energised = energiseGraph(graph, switchStates);
 
   const renderPassive = (unit: MimicGeometryUnit, transform: string) => {
     const { w } = MIMIC_NODE_SIZE;
+    // The passive-bus rule (D6, both arms): a role-less unit with a switching unit directly
+    // downstream frames as the worst of those units' members; with none it stays plain passive.
+    const worst = worstDownstreamSwitch(graph, unit.key, switchStates);
+    const look: BreakerLook | null = worst === null ? null : breakerLook(worst, null);
+    const frameClass = look === null ? "stroke-line" : BREAKER_LOOK_CLASSES[look].frame;
     return (
       <g
         key={unit.key}
         data-testid="mimic-node"
         data-node-key={unit.key}
         data-status="passive"
+        data-frame={look ?? undefined}
         transform={transform}
       >
         <title>{unit.label}</title>
-        <rect x={0} y={0} width={w} height={MIMIC_FRAME_H} rx={10} strokeWidth={2} className="fill-surface stroke-line" />
+        <rect x={0} y={0} width={w} height={MIMIC_FRAME_H} rx={10} strokeWidth={2} className={`fill-surface ${frameClass}`} />
         <text x={12} y={22} fontSize={15} fontWeight={700} className="fill-ink">
           {unit.label}
         </text>
@@ -164,7 +268,11 @@ export function MimicScene({ title, geometry, nodes, readings, children }: Mimic
     // The server resolved the node and found no member for its role: a plain fact about the site,
     // not a fault — drawn muted and solid, never dashed, never "Not assigned".
     const noAsset = node !== undefined && asset === null;
-    const badge = asset === null ? null : mimicBadge(node?.memberCount ?? 0);
+    // `F3.74` plan D6 — a fan-out unit stacks its members in place of the value rows and the
+    // callout's slot, and its rows name every member, so it draws no `+N` badge and no code line;
+    // a switching unit that does not fan out carries its one member's switch (`unitBreakerDrawing`).
+    const { fanOut, single, rows: memberRows } = drawingOf.get(unit.key) ?? { fanOut: false, single: null, rows: [] };
+    const badge = asset === null || fanOut ? null : mimicBadge(node?.memberCount ?? 0);
     const statusLabel = noAsset ? MIMIC_NO_ASSET_LABEL : MIMIC_STATUS_LABEL[nodeStatus];
     const levelPoint = asset === null || unit.symbol !== "tank" ? null : mimicLevelPoint(asset);
     const level =
@@ -175,12 +283,24 @@ export function MimicScene({ title, geometry, nodes, readings, children }: Mimic
     const topAlarm = calloutOf(unit.key);
     const alarmTone = topAlarm === null ? null : mimicAlarmTone(topAlarm.tone);
     const clipId = `mimic-callout-${uid}-${unit.key}`;
+    // A switching unit with no state points draws its glyph, frame and status as before — but the
+    // walk still reads it `unknown` (`breakersOf`), so every pipe downstream of it is hint-grey and
+    // dashed: unknown never looks energised (ADR 0088 decision 6, ADR 0027).
+    const singleLook = single === null ? null : breakerLook(single.state, alarmTone);
+    const frameClass = singleLook === null ? MIMIC_STATUS_STROKE[nodeStatus] : BREAKER_LOOK_CLASSES[singleLook].frame;
+    const dashed = (asset === null && !noAsset) || (singleLook !== null && BREAKER_LOOK_CLASSES[singleLook].dashed);
+    const fanOutPlaces = fanOutRows(memberRows.length, node?.memberCount ?? 0, w);
+    const drawValues = !compact && !fanOut;
+    const glyphX = (w - GLYPH_SIZE) / 2;
+    const glyphY = MIMIC_PIPE_Y - GLYPH_SIZE / 2;
     return (
       <g
         key={unit.key}
         data-testid="mimic-node"
         data-node-key={unit.key}
         data-status={noAsset ? "no-asset" : nodeStatus}
+        data-breaker-state={single?.state}
+        data-frame={singleLook ?? undefined}
         transform={transform}
         className={asset === null ? "opacity-50" : undefined}
       >
@@ -192,8 +312,8 @@ export function MimicScene({ title, geometry, nodes, readings, children }: Mimic
           height={MIMIC_FRAME_H}
           rx={10}
           strokeWidth={nodeStatus === "alarm" ? 3 : 2}
-          strokeDasharray={asset === null && !noAsset ? "6 4" : undefined}
-          className={`fill-surface ${MIMIC_STATUS_STROKE[nodeStatus]}`}
+          strokeDasharray={dashed ? "6 4" : undefined}
+          className={`fill-surface ${frameClass}`}
         />
         <text x={12} y={22} fontSize={15} fontWeight={700} className="fill-ink">
           {unit.label}
@@ -211,9 +331,11 @@ export function MimicScene({ title, geometry, nodes, readings, children }: Mimic
             {badge}
           </text>
         )}
-        <text x={12} y={40} fontSize={12} className="fill-ink-muted">
-          {asset === null ? statusLabel : asset.code}
-        </text>
+        {fanOut ? null : (
+          <text data-testid="mimic-node-code" x={12} y={40} fontSize={12} className="fill-ink-muted">
+            {asset === null ? statusLabel : asset.code}
+          </text>
+        )}
         {asset === null ? null : (
           <text
             data-testid="mimic-node-status"
@@ -227,16 +349,51 @@ export function MimicScene({ title, geometry, nodes, readings, children }: Mimic
             {statusLabel}
           </text>
         )}
-        <MimicGlyph
-          kind={unit.symbol}
-          x={(w - GLYPH_SIZE) / 2}
-          y={MIMIC_PIPE_Y - GLYPH_SIZE / 2}
-          size={GLYPH_SIZE}
-          className={glyphClass}
-          level={level}
-          orgSymbol={orgSymbolOf.get(unit.symbol) ?? null}
-        />
-        {asset === null
+        {single === null || singleLook === null ? (
+          <MimicGlyph
+            kind={unit.symbol}
+            x={glyphX}
+            y={glyphY}
+            size={GLYPH_SIZE}
+            className={glyphClass}
+            level={level}
+            orgSymbol={orgSymbolOf.get(unit.symbol) ?? null}
+          />
+        ) : (
+          <>
+            <BreakerSwitch
+              state={single.state}
+              look={singleLook}
+              symbol={unit.symbol}
+              x={glyphX}
+              y={glyphY}
+              size={GLYPH_SIZE}
+              plainClass={glyphClass}
+              orgSymbol={orgSymbolOf.get(unit.symbol) ?? null}
+            />
+            <text
+              data-testid="mimic-breaker-pill"
+              x={w / 2}
+              y={MIMIC_FRAME_H - 5}
+              textAnchor="middle"
+              fontSize={11}
+              fontWeight={700}
+              className={breakerPillClass(single.state, singleLook)}
+            >
+              {BREAKER_PILL[single.state]}
+            </text>
+          </>
+        )}
+        {fanOut ? (
+          <FanOutMembers
+            members={memberRows}
+            places={fanOutPlaces.rows}
+            more={fanOutPlaces.more}
+            symbol={unit.symbol}
+            plainClass={glyphClass}
+          />
+        ) : null}
+        {asset === null || !drawValues
           ? null
           : mimicNodePoints(asset).map((point, i) => {
               const latest = readings.pointLatest(asset.id, point);
@@ -262,7 +419,7 @@ export function MimicScene({ title, geometry, nodes, readings, children }: Mimic
                 </g>
               );
             })}
-        {topAlarm === null || alarmTone === null ? null : (
+        {topAlarm === null || alarmTone === null || !drawValues ? null : (
           <g data-testid="mimic-alarm-callout" data-severity={topAlarm.severity} data-tone={alarmTone}>
             <title>{topAlarm.message}</title>
             <rect
@@ -362,21 +519,27 @@ export function MimicScene({ title, geometry, nodes, readings, children }: Mimic
         </text>
       ))}
 
-      {geometry.pipes.map((pipe) => (
-        <g key={`${pipe.from}->${pipe.to}`}>
-          <path
-            data-testid="mimic-pipe"
-            data-pipe-from={pipe.from}
-            data-pipe-to={pipe.to}
-            d={pipe.d}
-            fill="none"
-            strokeWidth={3}
-            markerEnd={`url(#${markerId})`}
-            className="stroke-line-strong"
-          />
-          {flows(pipe.from) ? <FlowDash d={pipe.d} from={pipe.from} /> : null}
-        </g>
-      ))}
+      {geometry.pipes.map((pipe) => {
+        const energy = energised?.pipes.get(mimicPipeKey(pipe.from, pipe.to)) ?? null;
+        const look = energy === null ? null : ENERGY_PIPE_CLASSES[energy];
+        return (
+          <g key={`${pipe.from}->${pipe.to}`}>
+            <path
+              data-testid="mimic-pipe"
+              data-pipe-from={pipe.from}
+              data-pipe-to={pipe.to}
+              data-energy={energy ?? undefined}
+              d={pipe.d}
+              fill="none"
+              strokeWidth={3}
+              strokeDasharray={look?.dashed === true ? "6 4" : undefined}
+              markerEnd={`url(#${markerId})`}
+              className={look?.stroke ?? "stroke-line-strong"}
+            />
+            {flows(pipe.from) ? <FlowDash d={pipe.d} from={pipe.from} className={look?.stroke} /> : null}
+          </g>
+        );
+      })}
 
       {geometry.pumps.map((pump) => (
         <g key={`pump:${pump.from}->${pump.to}`} data-testid="mimic-pump">

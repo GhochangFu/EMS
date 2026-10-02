@@ -2,6 +2,8 @@
 import { afterEach, beforeEach, describe, it, vi } from "vitest";
 
 import {
+  aCompactConfigReachesTheScene,
+  aFanOutMemberIsTrackedAndFlipsOnTheSocket,
   aFailedReadShowsTheErrorLine,
   aFailedRefetchKeepsTheLastDrawing,
   aLayoutWidgetDrawsItsLayout,
@@ -70,5 +72,11 @@ describe("F3.32 U4 — MimicWidgetLive", () => {
   });
   it("LV13 a layout mimic reports its layout's aspect to its canvas tile", async () => {
     await aLayoutMimicReportsItsLayoutAspect();
+  });
+  it("LV-B1 a fan-out member is tracked, reads the response's maps and flips on the socket", async () => {
+    await aFanOutMemberIsTrackedAndFlipsOnTheSocket();
+  });
+  it("LV-B2 a preset config's compact reaches the scene", async () => {
+    await aCompactConfigReachesTheScene();
   });
 });

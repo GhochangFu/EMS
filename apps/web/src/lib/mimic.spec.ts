@@ -100,6 +100,52 @@ export function noWidgetIsNoView(): void {
   expect(mimicViewFor(undefined, "2026-09-28T10:00:00.000Z")).toBeUndefined();
 }
 
+const Q6_ID = "cccccccc-cccc-4ccc-8ccc-cccccccccccc";
+
+/**
+ * A `F3.74` fan-out node: `asset` is the first member (WTP), whose state point `breaker_main` is
+ * not a headline point; the second member (Q6) is only in `members`.
+ */
+function fanOutWidget(): MimicWidgetNodesDto {
+  const first = asset(WTP_ID, "CR-Q5");
+  const second = asset(Q6_ID, "CR-Q6");
+  const state = [point("breaker_main")];
+  return widget([
+    {
+      ...node("feeders", first),
+      memberCount: 2,
+      statePoints: state,
+      members: [
+        { asset: first, activeAlarms: 0, topAlarm: null, statePoints: state },
+        { asset: second, activeAlarms: 0, topAlarm: null, statePoints: state },
+      ],
+    },
+  ]);
+}
+
+/** M1d — every fan-out member's asset is in the view, each once, in member order. */
+export function viewHoldsEveryFanOutMember(): void {
+  const view = mimicViewFor(fanOutWidget(), "2026-10-02T10:00:00.000Z");
+  expect(view?.domains.flatMap((d) => d.assets.map((a) => a.id))).toEqual([WTP_ID, Q6_ID]);
+}
+
+/** M1e — each view asset carries its state points after its headline points, once per key. */
+export function viewAssetsCarryTheirStatePoints(): void {
+  const view = mimicViewFor(fanOutWidget(), "2026-10-02T10:00:00.000Z");
+  expect(view?.domains.flatMap((d) => d.assets.map((a) => a.points.map((p) => p.pointKey)))).toEqual([
+    ["flow", "breaker_main"],
+    ["flow", "breaker_main"],
+  ]);
+}
+
+/** M1f — the view never writes into the DTO: the node's own points stay its headline points. */
+export function viewLeavesTheDtoPointsAlone(): void {
+  const dto = fanOutWidget();
+  mimicViewFor(dto, "2026-10-02T10:00:00.000Z");
+  expect(dto.nodes[0]?.asset?.points.map((p) => p.pointKey)).toEqual(["flow"]);
+  expect(dto.nodes[0]?.members.map((m) => m.asset.points.map((p) => p.pointKey))).toEqual([["flow"], ["flow"]]);
+}
+
 /** M2a — an unassigned node is `unassigned`, even with alarms counted (precedence, plan D5). */
 export function unassignedWinsOverAlarm(): void {
   expect(mimicNodeStatus(node("softener", null, 2), NOW - 1_000, NOW)).toBe("unassigned");

@@ -243,6 +243,13 @@ export type WidgetConfigRow = {
   mimicSource?: "preset" | "layout";
   // mimic — `F3.32c`. The chosen library layout's id, set only when `mimicSource === "layout"`.
   mimicLayoutId?: string;
+  // mimic — `F3.74` (ADR 0088, plan D7). `config.tabKey`: the group-bound tab the mimic resolves
+  // through when the tab it sits on binds no asset group. Absent is "none"; both arms carry it.
+  // `configRowFromDto` reads it back, `buildMimicConfig` writes it, or an edit-and-resave drops it.
+  mimicTabKey?: string;
+  // mimic — `F3.74` (OQ9). `config.compact`: labels, switches and pills only. The preset arm's
+  // field alone (the layout arm's schema has none). Absent is false and is written back absent.
+  mimicCompact?: boolean;
   // active_alarms_rail — `F3.73` (plan D9). Optional, the mimic idiom above, because
   // `template-dashboard-form.ts` builds this row as a literal and a template can never hold a site
   // widget. Absent `railRows` reads as the contract's default (8) and absent `railShowSummary` as true;
@@ -552,12 +559,21 @@ export function buildMimicConfig(config: WidgetConfigRow): MimicConfig {
     if (config.mimicLayoutId === undefined) {
       throw new Error("A mimic widget has no layout chosen; validate the row before building its payload.");
     }
-    return { source: "layout", layoutId: config.mimicLayoutId };
+    return {
+      source: "layout",
+      layoutId: config.mimicLayoutId,
+      ...(config.mimicTabKey !== undefined ? { tabKey: config.mimicTabKey } : {}),
+    };
   }
   if (config.mimicPreset === undefined) {
     throw new Error("A mimic widget has no preset chosen; validate the row before building its payload.");
   }
-  return { source: "preset", preset: config.mimicPreset };
+  return {
+    source: "preset",
+    preset: config.mimicPreset,
+    ...(config.mimicTabKey !== undefined ? { tabKey: config.mimicTabKey } : {}),
+    ...(config.mimicCompact === true ? { compact: true } : {}),
+  };
 }
 
 /** The default `activeAlarmsRailConfigSchema.rows`, for a row that never set one. */

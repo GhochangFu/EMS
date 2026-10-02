@@ -410,3 +410,112 @@ export async function aLayoutWidgetMissingFromTheResponseDrawsNothing(): Promise
   await screen.findByRole("img", { name: "Plant B: Plant mimic" });
   expect(screen.queryAllByTestId("mimic-node")).toHaveLength(0);
 }
+
+const Q6_ID = "66666666-6666-4666-8666-666666666666";
+const Q7_ID = "77777777-7777-4777-8777-777777777777";
+const TX_ID = "88888888-8888-4888-8888-888888888888";
+
+/** A fresh electrical asset with one headline point and, for a breaker, `breaker_main` 1. */
+function electrical(id: string, code: string, breaker: boolean) {
+  const at = isoAgo(1_000);
+  return {
+    asset: {
+      id,
+      code,
+      name: code,
+      domain: "electrical",
+      latestTelemetryAt: at,
+      freshness: "live" as const,
+      points: [{ pointKey: "current_a", name: "Current", unit: "A", headlineRank: 1, latest: { value: 40, time: at } }],
+    },
+    statePoints: breaker ? [{ pointKey: "breaker_main", name: "Main", unit: "", headlineRank: 10, latest: { value: 1, time: at } }] : [],
+  };
+}
+
+/**
+ * `F3.74` — an `lv_single_line` answer: `load_feeders` fans out to Q6 and Q7 (Q7 only in
+ * `members`), `transformer` holds TX with a value row, and the maps are the response's.
+ */
+function sldResponse(widgetId: string): DashboardMimicNodesResponseDto {
+  const q6 = electrical(Q6_ID, "CR-Q6", true);
+  const q7 = electrical(Q7_ID, "CR-Q7", true);
+  const tx = electrical(TX_ID, "TX-1", false);
+  const base = { activeAlarms: 0, topAlarm: null };
+  return {
+    dashboardId: DASHBOARD_ID,
+    resolvedAt: new Date().toISOString(),
+    stateMaps: [
+      {
+        pointKey: "breaker_main",
+        states: [
+          { value: 0, label: "OPEN", tone: "open" },
+          { value: 1, label: "CLOSED", tone: "closed" },
+        ],
+      },
+    ],
+    widgets: [
+      {
+        source: "preset",
+        widgetId,
+        preset: "lv_single_line",
+        nodes: [
+          { key: "transformer", label: "Transformer", roleCode: "transformer", asset: tx.asset, memberCount: 1, ...base, statePoints: [], members: [] },
+          {
+            key: "load_feeders",
+            label: "Load feeders",
+            roleCode: "load-feeder-breaker",
+            asset: q6.asset,
+            memberCount: 2,
+            ...base,
+            statePoints: q6.statePoints,
+            members: [
+              { ...q6, ...base },
+              { ...q7, ...base },
+            ],
+          },
+        ],
+      },
+    ],
+  };
+}
+
+function sldWidget(compact: boolean): MimicWidgetDto {
+  return {
+    ...mimicWidget(WIDGET_A, "SLD"),
+    config: compact ? { source: "preset", preset: "lv_single_line", compact: true } : { source: "preset", preset: "lv_single_line" },
+  };
+}
+
+function feederPills(): (string | null)[][] {
+  return screen
+    .getAllByTestId("mimic-breaker-member")
+    .map((row) => [row.getAttribute("data-asset-code"), within(row).getByTestId("mimic-breaker-pill").textContent]);
+}
+
+/**
+ * LV-B1 — through the real overlay: the second fan-out member is tracked (its last-seen instant
+ * seeds, so it reads CLOSED, not OFFLINE) with the response's maps, and a socket reading on its
+ * state key flips its pill; the value rows draw when the config is not compact.
+ */
+export async function aFanOutMemberIsTrackedAndFlipsOnTheSocket(): Promise<void> {
+  renderWidget(() => Promise.resolve(sldResponse(WIDGET_A)), sldWidget(false));
+  await screen.findByText("TX-1");
+  expect(feederPills()).toEqual([
+    ["CR-Q6", "CLOSED"],
+    ["CR-Q7", "CLOSED"],
+  ]);
+  expect(screen.getAllByTestId("mimic-point").length).toBeGreaterThan(0);
+  emit([{ assetId: Q7_ID, pointKey: "breaker_main", value: 0, unit: "", time: new Date().toISOString() }]);
+  expect(feederPills()).toEqual([
+    ["CR-Q6", "CLOSED"],
+    ["CR-Q7", "OPEN"],
+  ]);
+}
+
+/** LV-B2 — a preset config's `compact` reaches the scene: no value row draws, the pills stay. */
+export async function aCompactConfigReachesTheScene(): Promise<void> {
+  renderWidget(() => Promise.resolve(sldResponse(WIDGET_A)), sldWidget(true));
+  await screen.findByText("TX-1");
+  expect(screen.queryAllByTestId("mimic-point")).toHaveLength(0);
+  expect(feederPills()).toHaveLength(2);
+}

@@ -63,6 +63,9 @@ export type EditorNodePatch = {
   readonly symbol?: MimicSymbol;
   readonly roleCode?: string | null;
   readonly tone?: MimicPanelTone;
+  /** `F3.74` — units only: draw every member of the role / mark the unit an energy source. */
+  readonly fanOut?: boolean;
+  readonly isSource?: boolean;
   readonly x?: number;
   readonly y?: number;
   readonly w?: number;
@@ -284,6 +287,8 @@ function updateNode(state: EditorState, key: string, patch: EditorNodePatch): Ed
     symbol: node.kind === "unit" ? (patch.symbol ?? node.symbol) : null,
     roleCode: node.kind === "unit" && patch.roleCode !== undefined ? patch.roleCode : node.roleCode,
     tone: node.kind === "panel" ? (patch.tone ?? node.tone) : null,
+    fanOut: node.kind === "unit" ? (patch.fanOut ?? node.fanOut === true) : false,
+    isSource: node.kind === "unit" ? (patch.isSource ?? node.isSource === true) : false,
     ...box,
   };
   return commit(state, withNode(state.layout, key, () => next));
