@@ -183,6 +183,7 @@
     "tests/f3.74-point-key-states-schema.test.ts",
     "tests/f3.74-point-key-states-schema.integration.test.ts",
     "tests/f3.74-point-key-states-seed.integration.test.ts",
-    "tests/f3.74-breaker-table-widget-type.test.ts"
+    "tests/f3.74-breaker-table-widget-type.test.ts",
+    "tests/f3.74-site-layout-v4-upgrade.integration.test.ts"
   ]
 }

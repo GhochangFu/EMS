@@ -21,6 +21,7 @@ import {
   aTabThatLosesEveryTileIsLifted,
   aTemplateRowTheSeedDoesNotOwnIsKept,
   aTileWithNoSourceRowKeepsTheOverview,
+  anInsertThatReturnsNoRowThrowsNamingTheRunner,
   aV3OverviewIsNotUpgradedAgain,
   aWidgetTheTemplateDoesNotHoldKeepsItsTab,
   everyTemplateWidgetHasItsOwnIdentity,
@@ -68,6 +69,12 @@ describe("F3.77 — the seed upgrade's v2 → v3 Overview step", () => {
   });
   it("reads the Overview only", () => {
     theStepReadsTheOverviewOnly();
+  });
+});
+
+describe("F3.74 — the seed upgrade runner's insert guard", () => {
+  it("I6: throws naming the runner when an insert returns no row", async () => {
+    await anInsertThatReturnsNoRowThrowsNamingTheRunner();
   });
 });
 

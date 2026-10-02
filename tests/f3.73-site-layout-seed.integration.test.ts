@@ -131,6 +131,9 @@ describe.skipIf(!ownerUrl)("F3.73 D12 — the seeded SMOC standard site layouts"
     await pool.query("BEGIN");
     try {
       await pool.query("select set_config('app.current_organization', $1, true)", [organizationId]);
+      // One case at a time across this suite and the F3.74 v4-upgrade suite: both rewrite
+      // CSMOC's copy and ESKOM's template rows, and two such transactions deadlock.
+      await pool.query("SELECT pg_advisory_xact_lock(hashtext('site-layout seed suites'))");
       await pool.query("SET LOCAL lock_timeout = '5s'");
       await body(pool);
     } finally {
@@ -457,6 +460,15 @@ describe.skipIf(!ownerUrl)("F3.73 D12 — the seeded SMOC standard site layouts"
     assert(res.rowCount === 1, `precondition: widget ${id} was reshaped`);
   }
 
+  /** Deletes the widgets v4 added (F3.74) from `tabKeys` of a copy the seed wrote at v4. */
+  async function dropV4Widgets(pool: Pick<SeedPool, "query">, tabKeys: readonly string[]): Promise<void> {
+    const v4Only = ["overview|mimic|", "sld|breaker_table|Breakers"];
+    for (const widget of (await copyWidgets(pool)).filter((w) => tabKeys.includes(w.tabKey) && v4Only.includes(w.identity))) {
+      const res = await pool.query(`DELETE FROM bms.dashboard_widgets WHERE id = $1`, [widget.id]);
+      assert(res.rowCount === 1, `precondition: ${widget.identity} was deleted`);
+    }
+  }
+
   /**
    * Puts CSMOC's copy back to what the v2 seed wrote before the pack rule: every v2 widget of each
    * kept tab — the Overview's module cards for the copy's tabs and the role tiles the pack rule
@@ -464,6 +476,7 @@ describe.skipIf(!ownerUrl)("F3.73 D12 — the seeded SMOC standard site layouts"
    * or a role tile may be missing, so an administrator's deletion fails the precondition.
    */
   async function rewindToUnpacked(pool: Pick<SeedPool, "query">): Promise<void> {
+    await dropV4Widgets(pool, ["overview", "sld"]);
     const tabs = await copyTabs(pool);
     const tabKeys = new Set(tabs.map((row) => row.tab_key));
     const stored = new Set((await copyWidgets(pool)).map((widget) => widget.identity));
@@ -503,6 +516,7 @@ describe.skipIf(!ownerUrl)("F3.73 D12 — the seeded SMOC standard site layouts"
    * gives a row of equal cards. The domain tabs are left as they are.
    */
   async function rewindOverviewToPackedV2(pool: Pick<SeedPool, "query">): Promise<void> {
+    await dropV4Widgets(pool, ["overview"]);
     const tabs = await copyTabs(pool);
     const tabKeys = new Set(tabs.map((row) => row.tab_key));
     const overviewTab = tabs.find((row) => row.tab_key === "overview");
@@ -614,7 +628,7 @@ describe.skipIf(!ownerUrl)("F3.73 D12 — the seeded SMOC standard site layouts"
     }
   }
 
-  const NOTHING = { descriptions: 0, widgets: 0, packed: 0, omittedTiles: 0, overviews: 0 };
+  const NOTHING = { descriptions: 0, widgets: 0, packed: 0, omittedTiles: 0, overviews: 0, overviewsV4: 0, electricalTabs: 0 };
 
   it("moves a v1 copy along the chain to where a fresh copy has it, on a re-seed", async () => {
     const fresh = await freshCopyShapes();

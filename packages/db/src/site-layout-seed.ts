@@ -34,7 +34,10 @@ import {
  * **What this seeds, per organization (ESKOM, PHEWB).** (a) The SMOC standard template as a
  * published stock import at version 1, insert-if-absent, holding the current stock content; a
  * database an earlier seed already ran is moved to the current stock version by the upgrade
- * chain in `site-layout-seed-upgrade.ts` (its own seed-owned rows only). (b) For each seed-owned location with
+ * chain in `site-layout-seed-upgrade.ts` (its own seed-owned rows only) — since `F3.74` that is
+ * stock v4, which reaches an untouched seeded copy per tab (ADR 0088 Amendment 2): the compact
+ * electrical diagram on its Overview, `lv_single_line` and the breaker table on its electrical
+ * tab. (b) For each seed-owned location with
  * no `bms.site_control_room_views` row and no dashboard holding its slug, one tabbed copy of the
  * organization's newest published `smoc-standard` version, planned by the SAME shared planner
  * the API's copy action runs (`planSiteLayout` and `planTemplateWidget`, `@bms/shared`), and the

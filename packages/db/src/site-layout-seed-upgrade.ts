@@ -9,9 +9,15 @@ import {
 import { SMOC_STANDARD_SITE_TEMPLATE } from "@bms/shared/site-templates";
 
 import {
-  canonicalJson,
+  type OverviewV3UpgradePlan,
+  planElectricalV4Upgrade,
+  planOverviewV3Upgrade,
+  planOverviewV4Upgrade,
+  type TabCopyWidget,
+  type TabUpgradePlan,
+} from "./site-layout-seed-upgrade-tabs";
+import {
   type GridRect,
-  OVERVIEW_TAB_KEY,
   SMOC_STANDARD_V1_RECTS,
   SMOC_STANDARD_V2_RECTS,
   siteTemplateRects,
@@ -26,8 +32,9 @@ export { type GridRect, siteTemplateRects, siteWidgetIdentity } from "./site-lay
  * The SMOC standard site layout's seed upgrade chain, for a database an earlier seed already ran
  * on. It moves the seed's own rows to the current stock version and leaves every row an
  * administrator touched. The past versions it recognises are frozen in
- * `site-layout-stock-history.ts`; **`F3.74` adds v4 here** — freeze v3 there, then add the next
- * step after {@link upgradeOverview} in {@link upgradeSeededSiteLayoutCopies}.
+ * `site-layout-stock-history.ts`, and the per-tab planners are `site-layout-seed-upgrade-tabs.ts`.
+ * **The next version (v5) adds its step here**: freeze v4 there, then add the step after
+ * {@link upgradeElectricalV4} in {@link upgradeSeededSiteLayoutCopies}.
  *
  * **The chain, per seed-owned copy, in order** (the locations `site-layout-seed.ts` resolves,
  * the slug it gives, a `smoc-standard` template stamp):
@@ -43,6 +50,12 @@ export { type GridRect, siteTemplateRects, siteWidgetIdentity } from "./site-lay
  * 3. **v2 → v3 Overview** ({@link planOverviewUpgrade}, ADR 0087 Amendment 3): only while the
  *    Overview holds exactly its own packed v2 plan, delete its module cards and move the rest to
  *    the v3 rects and config. The domain tabs did not change in v3.
+ * 4. **v3 → v4** (`F3.74`, ADR 0088 Amendment 2), two steps gated per tab (OQ-A): an Overview
+ *    still at v3 as the copy rule left it gains the compact electrical diagram and its class strip
+ *    moves beside it ({@link upgradeOverviewV4}); an electrical tab still at v3 draws
+ *    `lv_single_line`, gains the "Breakers" table under the mimic, and its alarm rail and asset
+ *    table move down five rows ({@link upgradeElectricalV4}). Both insert a widget row with no
+ *    binding row. The other tabs did not change in v4.
  *
  * A copy stores no widget key, so a widget is known by its tab key, widget type and title
  * ({@link siteWidgetIdentity}), which is unique per tab.
@@ -199,28 +212,12 @@ export function planCopyPackUpgrade(
 /** One stored widget of a copy, with its bindings' row counts and its `config`. */
 export type OverviewCopyWidget = PackCopyWidget & { readonly config: unknown };
 
-/** The Overview step's writes: the widgets `to` no longer holds, and the ones it reshapes. */
-export type OverviewUpgradePlan = {
-  readonly deletes: readonly { id: string; widgetType: string; from: GridRect; config: unknown }[];
-  readonly updates: readonly {
-    id: string;
-    title: string | null;
-    from: GridRect;
-    fromConfig: unknown;
-    to: GridRect;
-    toConfig: unknown;
-  }[];
-};
-
-const rectOf = (widget: GridRect): GridRect => ({
-  gridX: widget.gridX,
-  gridY: widget.gridY,
-  gridW: widget.gridW,
-  gridH: widget.gridH,
-});
+/** The v2 → v3 Overview step's writes: deletes, updates (rect or config) and inserts. */
+export type OverviewUpgradePlan = OverviewV3UpgradePlan;
 
 /**
- * The v2 → v3 Overview step (`F3.77` plan D5, ADR 0087 Amendment 3). The gate: the copy's stored
+ * The v2 → v3 Overview step (`F3.77` plan D5, ADR 0087 Amendment 3), planned by
+ * `planOverviewV3Upgrade` (`site-layout-seed-upgrade-tabs.ts`). The gate: the copy's stored
  * Overview equals `from`'s Overview as the copy rule left it — `packAfterRemoval` over `from`'s
  * widgets, keeping a module card only when its target tab is one of `copyTabKeys` — exactly:
  * the same identities, none repeated, nothing added, the same rects, the same `config` (compared
@@ -230,8 +227,7 @@ const rectOf = (widget: GridRect): GridRect => ({
  * In a matching Overview, a widget `to` does not hold is deleted (v3: every module card), and a
  * widget whose `to` rect or config differs is updated (v3: everything else, the Offline tile to
  * the `offline` icon). The title is kept (owner ruling OQ1), so the identity holds across the
- * step. A widget new in `to` would need an insert this step does not make: such a `to` throws, so
- * the version that adds one (`F3.74`'s compact diagram) has to add the insert too.
+ * step. A widget new in `to` is an insert (v3 has none).
  *
  * `to` defaults to the frozen v3 content, not the live entry: this step is v2 → v3, and the live
  * entry is v4 (`F3.74`), whose Overview holds a widget v3 does not.
@@ -244,66 +240,7 @@ export function planOverviewUpgrade(
   from: SectionTemplateContent = smocStandardV2Content(),
   to: SectionTemplateContent = smocStandardV3Content(),
 ): OverviewUpgradePlan {
-  const none: OverviewUpgradePlan = { deletes: [], updates: [] };
-  const fromTab = from.tabs.find((tab) => tab.key === OVERVIEW_TAB_KEY);
-  const toTab = to.tabs.find((tab) => tab.key === OVERVIEW_TAB_KEY);
-  if (!fromTab || !toTab) return none;
-  const identity = (widget: { widgetType: string; title: string | null }): string =>
-    siteWidgetIdentity(OVERVIEW_TAB_KEY, widget.widgetType, widget.title);
-  const fromIdentities = new Set(fromTab.widgets.map(identity));
-  const target = new Map(toTab.widgets.map((widget) => [identity(widget), widget]));
-  for (const key of target.keys()) {
-    if (!fromIdentities.has(key)) {
-      throw new Error(`planOverviewUpgrade: ${key} is new in the target version, and this step inserts nothing`);
-    }
-  }
-
-  const tabs = new Set(copyTabKeys);
-  const expected = packAfterRemoval(
-    fromTab.widgets,
-    (widget) => widget.widgetType !== "module_summary_card" || tabs.has(widget.config.targetTabKey),
-  );
-  const stored = widgets.filter((widget) => widget.tabKey === OVERVIEW_TAB_KEY);
-  const byIdentity = new Map(stored.map((widget) => [identity(widget), widget]));
-  if (byIdentity.size !== stored.length || stored.length !== expected.length) return none;
-  const exact = expected.every((widget) => {
-    const row = byIdentity.get(identity(widget));
-    return (
-      row !== undefined &&
-      sameRect(row, widget) &&
-      canonicalJson(row.config) === canonicalJson(widget.config) &&
-      row.points === 0 &&
-      row.sources === widget.sources.length
-    );
-  });
-  if (!exact) return none;
-
-  const deletes: { id: string; widgetType: string; from: GridRect; config: unknown }[] = [];
-  const updates: {
-    id: string;
-    title: string | null;
-    from: GridRect;
-    fromConfig: unknown;
-    to: GridRect;
-    toConfig: unknown;
-  }[] = [];
-  for (const widget of expected) {
-    const row = byIdentity.get(identity(widget)) as OverviewCopyWidget;
-    const next = target.get(identity(widget));
-    if (next === undefined) {
-      deletes.push({ id: row.id, widgetType: row.widgetType, from: rectOf(row), config: row.config });
-    } else if (!sameRect(row, next) || canonicalJson(row.config) !== canonicalJson(next.config)) {
-      updates.push({
-        id: row.id,
-        title: row.title,
-        from: rectOf(row),
-        fromConfig: row.config,
-        to: rectOf(next),
-        toConfig: next.config,
-      });
-    }
-  }
-  return { deletes, updates };
+  return planOverviewV3Upgrade(widgets, copyTabKeys, from, to);
 }
 
 /** A template row as the upgrade reads it. */
@@ -460,7 +397,17 @@ const PACK_WIDGETS_SQL = `
     JOIN bms.dashboard_tabs t ON t.id = w.tab_id
    WHERE w.dashboard_id = $1 AND w.organization_id = $2
 `;
-const COPY_TABS_SQL = `SELECT tab_key FROM bms.dashboard_tabs WHERE dashboard_id = $1 AND organization_id = $2`;
+const COPY_TABS_SQL = `SELECT id, tab_key FROM bms.dashboard_tabs WHERE dashboard_id = $1 AND organization_id = $2`;
+/**
+ * A tab step's insert: the copy's own insert shape (`site-layout-seed.ts`), the widget row only.
+ * `RETURNING id` is checked: a FORCE-RLS insert can drop a row without raising.
+ */
+const WIDGET_INSERT_SQL = `
+  INSERT INTO bms.dashboard_widgets
+    (organization_id, dashboard_id, tab_id, widget_type, title, grid_x, grid_y, grid_w, grid_h, config)
+  VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::jsonb)
+  RETURNING id
+`;
 /** The rect and the empty bindings are in the predicate: a tile bound or moved since the read stays. */
 const UNBOUND_TILE_DELETE_SQL = `
   DELETE FROM bms.dashboard_widgets w
@@ -499,6 +446,10 @@ export type SiteLayoutCopyUpgrade = {
   readonly omittedTiles: number;
   /** Overviews the v2 → v3 step moved. */
   readonly overviews: number;
+  /** Overviews the v3 → v4 step moved (the compact diagram and the strip). */
+  readonly overviewsV4: number;
+  /** Electrical tabs the v3 → v4 step moved (`lv_single_line` and the breaker table). */
+  readonly electricalTabs: number;
 };
 
 type PackWidgetRow = {
@@ -515,14 +466,14 @@ type PackWidgetRow = {
   sources: number;
 };
 
-/** A copy's widgets and tab keys, as the pack and Overview steps read them. */
+/** A copy's widgets, tab keys and tab ids by key, as the pack and tab steps read them. */
 async function readCopy(
   pool: Pick<pg.Pool, "query">,
   organizationId: string,
   dashboardId: string,
-): Promise<{ widgets: OverviewCopyWidget[]; tabKeys: string[] }> {
+): Promise<{ widgets: TabCopyWidget[]; tabKeys: string[]; tabIds: Map<string, string> }> {
   const stored = await pool.query<PackWidgetRow>(PACK_WIDGETS_SQL, [dashboardId, organizationId]);
-  const tabs = await pool.query<{ tab_key: string }>(COPY_TABS_SQL, [dashboardId, organizationId]);
+  const tabs = await pool.query<{ id: string; tab_key: string }>(COPY_TABS_SQL, [dashboardId, organizationId]);
   return {
     widgets: stored.rows.map((row) => ({
       id: row.id,
@@ -538,20 +489,23 @@ async function readCopy(
       sources: row.sources,
     })),
     tabKeys: tabs.rows.map((row) => row.tab_key),
+    tabIds: new Map(tabs.rows.map((row) => [row.tab_key, row.id])),
   };
 }
 
 /**
- * The v2 → v3 Overview step on one copy ({@link planOverviewUpgrade}), read after the pack step
- * moved its cards: deletes first, then updates. Returns 1 when it wrote the Overview, else 0.
+ * One tab step's writes on one copy, each checked: deletes, then moves, then updates, then
+ * inserts. The electrical step's order is the ADR's: the rail and table down first, then the
+ * mimic's config, then the breaker table in the rows they left. `label` names the tab in an error.
  */
-async function upgradeOverview(
+async function applyTabPlan(
   pool: Pick<pg.Pool, "query">,
   organizationId: string,
   dashboardId: string,
-): Promise<number> {
-  const copy = await readCopy(pool, organizationId, dashboardId);
-  const plan = planOverviewUpgrade(copy.widgets, copy.tabKeys);
+  tabIds: ReadonlyMap<string, string>,
+  plan: Pick<TabUpgradePlan, "deletes" | "updates" | "inserts"> & Partial<Pick<TabUpgradePlan, "moves">>,
+  label: string,
+): Promise<void> {
   for (const op of plan.deletes) {
     const res = await pool.query(CARD_DELETE_SQL, [
       op.id,
@@ -564,8 +518,11 @@ async function upgradeOverview(
       JSON.stringify(op.config),
     ]);
     if (res.rowCount !== 1) {
-      throw new Error(`upgradeSeededSiteLayoutCopies: Overview widget ${op.id} deleted ${res.rowCount} of 1 rows`);
+      throw new Error(`upgradeSeededSiteLayoutCopies: ${label} widget ${op.id} deleted ${res.rowCount} of 1 rows`);
     }
+  }
+  for (const move of plan.moves ?? []) {
+    await moveWidget(pool, organizationId, move);
   }
   for (const op of plan.updates) {
     const res = await pool.query(WIDGET_UPGRADE_SQL, [
@@ -584,10 +541,82 @@ async function upgradeOverview(
       JSON.stringify(op.fromConfig),
     ]);
     if (res.rowCount !== 1) {
-      throw new Error(`upgradeSeededSiteLayoutCopies: Overview widget ${op.id} updated ${res.rowCount} of 1 rows`);
+      throw new Error(`upgradeSeededSiteLayoutCopies: ${label} widget ${op.id} updated ${res.rowCount} of 1 rows`);
     }
   }
-  return plan.deletes.length + plan.updates.length > 0 ? 1 : 0;
+  for (const op of plan.inserts) {
+    const tabId = tabIds.get(op.tabKey);
+    if (tabId === undefined) {
+      throw new Error(`upgradeSeededSiteLayoutCopies: copy ${dashboardId} has no ${op.tabKey} tab for its ${op.widgetType} insert`);
+    }
+    const res = await pool.query<{ id: string }>(WIDGET_INSERT_SQL, [
+      organizationId,
+      dashboardId,
+      tabId,
+      op.widgetType,
+      op.title,
+      op.to.gridX,
+      op.to.gridY,
+      op.to.gridW,
+      op.to.gridH,
+      JSON.stringify(op.config),
+    ]);
+    if (!res.rows[0]?.id) {
+      throw new Error(
+        `upgradeSeededSiteLayoutCopies: the ${op.tabKey} ${op.widgetType} insert returned no row in copy ${dashboardId}. ` +
+          "A FORCE-RLS write can drop a row without raising: check this runs inside the organization's tenant bracket.",
+      );
+    }
+  }
+}
+
+/** Whether a plan writes anything. */
+const writes = (plan: Pick<TabUpgradePlan, "deletes" | "updates" | "inserts"> & Partial<Pick<TabUpgradePlan, "moves">>): boolean =>
+  plan.deletes.length + plan.updates.length + plan.inserts.length + (plan.moves?.length ?? 0) > 0;
+
+/**
+ * The v2 → v3 Overview step on one copy ({@link planOverviewUpgrade}), read after the pack step
+ * moved its cards. Returns 1 when it wrote the Overview, else 0.
+ */
+async function upgradeOverview(
+  pool: Pick<pg.Pool, "query">,
+  organizationId: string,
+  dashboardId: string,
+): Promise<number> {
+  const copy = await readCopy(pool, organizationId, dashboardId);
+  const plan = planOverviewUpgrade(copy.widgets, copy.tabKeys);
+  await applyTabPlan(pool, organizationId, dashboardId, copy.tabIds, plan, "Overview");
+  return writes(plan) ? 1 : 0;
+}
+
+/**
+ * The v3 → v4 Overview step on one copy (`planOverviewV4Upgrade`), read after the v2 → v3 step.
+ * Returns 1 when it wrote the Overview, else 0.
+ */
+async function upgradeOverviewV4(
+  pool: Pick<pg.Pool, "query">,
+  organizationId: string,
+  dashboardId: string,
+): Promise<number> {
+  const copy = await readCopy(pool, organizationId, dashboardId);
+  const plan = planOverviewV4Upgrade(copy.widgets, copy.tabKeys);
+  await applyTabPlan(pool, organizationId, dashboardId, copy.tabIds, plan, "Overview");
+  return writes(plan) ? 1 : 0;
+}
+
+/**
+ * The v3 → v4 electrical step on one copy (`planElectricalV4Upgrade`), gated apart from the
+ * Overview (ADR 0088 Amendment 2 OQ-A). Returns 1 when it wrote the electrical tab, else 0.
+ */
+async function upgradeElectricalV4(
+  pool: Pick<pg.Pool, "query">,
+  organizationId: string,
+  dashboardId: string,
+): Promise<number> {
+  const copy = await readCopy(pool, organizationId, dashboardId);
+  const plan = planElectricalV4Upgrade(copy.widgets);
+  await applyTabPlan(pool, organizationId, dashboardId, copy.tabIds, plan, "electrical tab");
+  return writes(plan) ? 1 : 0;
 }
 
 /** One rect update, checked: the `from` rect is in the predicate. */
@@ -643,7 +672,8 @@ async function packCopy(
 /**
  * Moves each seed-owned copy at `locationIds` along the chain: to v2 where it still holds the v1
  * seed's values, then packs each tab still exactly as the seed wrote it ({@link planCopyPackUpgrade}),
- * then moves an Overview still at its packed v2 plan to v3 ({@link planOverviewUpgrade}).
+ * then moves an Overview still at its packed v2 plan to v3 ({@link planOverviewUpgrade}), then
+ * moves an Overview and an electrical tab still at v3 to v4, each on its own gate.
  */
 export async function upgradeSeededSiteLayoutCopies(
   pool: Pick<pg.Pool, "query">,
@@ -662,6 +692,8 @@ export async function upgradeSeededSiteLayoutCopies(
   let packed = 0;
   let omittedTiles = 0;
   let overviews = 0;
+  let overviewsV4 = 0;
+  let electricalTabs = 0;
   for (const copy of copies.rows) {
     const description = upgradedCopyDescription(copy.description);
     if (description !== null) {
@@ -708,6 +740,9 @@ export async function upgradeSeededSiteLayoutCopies(
     omittedTiles += step.omittedTiles;
     // After the pack step, which moves the cards the Overview step's gate expects packed.
     overviews += await upgradeOverview(pool, organizationId, copy.id);
+    // After the v2 → v3 step, so a copy still at v1 or v2 reaches v4 in the same boot.
+    overviewsV4 += await upgradeOverviewV4(pool, organizationId, copy.id);
+    electricalTabs += await upgradeElectricalV4(pool, organizationId, copy.id);
   }
-  return { descriptions, widgets, packed, omittedTiles, overviews };
+  return { descriptions, widgets, packed, omittedTiles, overviews, overviewsV4, electricalTabs };
 }
