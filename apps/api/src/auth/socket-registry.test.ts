@@ -1,11 +1,13 @@
 import { describe, it } from "vitest";
 
 import {
-  assertADisabledReReadClosesTheSocket,
+  assertAlarmsDisabledReReadClosesTheSocket,
+  assertAlarmsEnabledReReadKeepsTheSocket,
   assertAlarmsHandshakeWindowIsClosed,
-  assertAnEnabledReReadKeepsTheSocket,
   assertDisconnectsOnlyTheUsersSocketsAcrossNamespaces,
   assertReturnsTheCount,
+  assertTelemetryDisabledReReadClosesTheSocket,
+  assertTelemetryEnabledReReadKeepsTheSocket,
   assertTelemetryHandshakeWindowIsClosed,
 } from "./socket-registry.spec";
 
@@ -29,11 +31,19 @@ describe("gateway handshake and a deactivated user (F3.78, ADR 0089 decision 8)"
     await assertTelemetryHandshakeWindowIsClosed();
   });
 
-  it("the disabled_at re-read after the scope closes a deactivated user's socket", async () => {
-    await assertADisabledReReadClosesTheSocket();
+  it("/ws/alarms: the disabled_at re-read after the scope closes a deactivated user's socket", async () => {
+    await assertAlarmsDisabledReReadClosesTheSocket();
   });
 
-  it("the re-read keeps an enabled user's socket open (positive control)", async () => {
-    await assertAnEnabledReReadKeepsTheSocket();
+  it("/ws/alarms: the re-read keeps an enabled user's socket open (positive control)", async () => {
+    await assertAlarmsEnabledReReadKeepsTheSocket();
+  });
+
+  it("/ws/telemetry: the disabled_at re-read after the scope closes a deactivated user's socket", async () => {
+    await assertTelemetryDisabledReReadClosesTheSocket();
+  });
+
+  it("/ws/telemetry: the re-read keeps an enabled user's socket open (positive control)", async () => {
+    await assertTelemetryEnabledReReadKeepsTheSocket();
   });
 });

@@ -147,7 +147,7 @@ export async function assertTelemetryHandshakeWindowIsClosed(): Promise<void> {
 }
 
 /** The re-read after the scope: a user disabled before the socket was registered is still closed. */
-export async function assertADisabledReReadClosesTheSocket(): Promise<void> {
+async function assertADisabledReReadClosesTheSocket(build: typeof alarms | typeof telemetry): Promise<void> {
   const registry = new SocketRegistry();
   const jwt = { verifyToken: async () => PAYLOAD } as unknown as JwtAuthGuard;
   const access = {
@@ -155,7 +155,7 @@ export async function assertADisabledReReadClosesTheSocket(): Promise<void> {
     readableAssetIds: async () => [],
     isUserDisabled: async (id: string) => id === USER,
   } as unknown as AccessControlService;
-  const gateway = alarms(jwt, access, registry);
+  const gateway = build(jwt, access, registry);
   const client = Object.assign(fakeSocket(undefined), {
     data: {} as Record<string, unknown>,
     handshake: { auth: { token: "a-token" }, headers: {} },
@@ -165,7 +165,7 @@ export async function assertADisabledReReadClosesTheSocket(): Promise<void> {
 }
 
 /** Positive control for the re-read: an enabled user's socket stays open. */
-export async function assertAnEnabledReReadKeepsTheSocket(): Promise<void> {
+async function assertAnEnabledReReadKeepsTheSocket(build: typeof alarms | typeof telemetry): Promise<void> {
   const registry = new SocketRegistry();
   const jwt = { verifyToken: async () => PAYLOAD } as unknown as JwtAuthGuard;
   const access = {
@@ -173,7 +173,7 @@ export async function assertAnEnabledReReadKeepsTheSocket(): Promise<void> {
     readableAssetIds: async () => [],
     isUserDisabled: async () => false,
   } as unknown as AccessControlService;
-  const gateway = alarms(jwt, access, registry);
+  const gateway = build(jwt, access, registry);
   const client = Object.assign(fakeSocket(undefined), {
     data: {} as Record<string, unknown>,
     handshake: { auth: { token: "a-token" }, headers: {} },
@@ -181,4 +181,20 @@ export async function assertAnEnabledReReadKeepsTheSocket(): Promise<void> {
   await gateway.handleConnection(client as unknown as Socket);
   expect(client.closed).toBe(0);
   expect(client.data.userId).toBe(USER);
+}
+
+export async function assertAlarmsDisabledReReadClosesTheSocket(): Promise<void> {
+  await assertADisabledReReadClosesTheSocket(alarms);
+}
+
+export async function assertAlarmsEnabledReReadKeepsTheSocket(): Promise<void> {
+  await assertAnEnabledReReadKeepsTheSocket(alarms);
+}
+
+export async function assertTelemetryDisabledReReadClosesTheSocket(): Promise<void> {
+  await assertADisabledReReadClosesTheSocket(telemetry);
+}
+
+export async function assertTelemetryEnabledReReadKeepsTheSocket(): Promise<void> {
+  await assertAnEnabledReReadKeepsTheSocket(telemetry);
 }
