@@ -6971,6 +6971,36 @@ the plan names red their assertions (substitutions in plan §12).
 template) list `F3.73` and are unblocked. Owed: the `chore(agents):` sweep
 (AGENTS.md still names one dashboard per site).
 
+### `F3.77` — the site Overview leads with alarms, and a wall mode ✅ 2026-10-02
+
+Three PRs, merged in order 2026-10-02: #685 (`63022eeb`), #686 (`ae196e63`)
+and #688 (`d86a3a09`). ADR 0087 Amendment 3 (accepted 2026-10-01, #684); plan
+`docs/plans/f3.77-overview-and-wall-mode.md` (Fable; owner answers OQ1–OQ7 in
+§11). Shaped with `/impeccable shape` after the F3.73 design critique; the
+brief and `apps/web/PRODUCT.md` landed in #684.
+
+SMOC standard stock v3 changes the Overview only: the problem tiles (Active
+alarms, Offline assets, Total load, Asset health), the active alarms rail beside
+the "Critical systems" list, the asset-class strip, and the state legend as one
+row. The module cards leave the stock Overview. A seventh widget icon,
+`offline`, is used by the Offline assets tile. The seed moves an untouched
+seeded Overview to v3 through a frozen stock history, and supersedes any older
+stock row of its own (`isSeedStockSiteTemplate`). Every group tab shows a status
+marker. Wall mode (`?wall=1&every=30` on the site route) hides the app shell,
+shows a seconds clock and the time of the newest read, rotates through the tabs,
+and pauses on a key press or a click. A 401 on a wall URL keeps a same-origin
+return path, and the sign-in page shows "Session ended". No colour changed.
+
+Verified: TDD with mutations per task; a full suite with coverage per PR on its
+own scratch database; a merge-skew check of B and C on the moved main; the
+shared stack rebuilt from `d86a3a09`, with all seven seeded Overviews at v3;
+browser 9 of 9 with the pane visible (order, legend fit, the icon, markers, Open
+links, wall bar and rotation, pause and resume, session ended, return after
+sign-in).
+
+**Cascade:** `F3.74` PR5 takes stock v4 on this seam (Amendment 3 ruling 10).
+No `chore(agents):` sentence is owed by this row.
+
 ### `F3.76` — the Master Data Hub in five areas ✅ 2026-09-30
 
 PR #668, squash `427adf8d`; the owner ruled it into v1 on 2026-09-30, with no
