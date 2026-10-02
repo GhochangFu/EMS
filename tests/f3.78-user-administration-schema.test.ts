@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -10,8 +11,23 @@ const read = (rel: string): string => readFileSync(join(repoRoot, rel), "utf8");
 const MIGRATION_REL = "packages/db/drizzle/0098_user_administration.sql";
 const TAG = "0098_user_administration";
 const SCHEMA_REL = "packages/db/src/schema/bms-schema.ts";
-/** 0097's journal `when` — 0098 must sort after it (the F4.94 class). */
-const WHEN_0097 = 1790876326348;
+/**
+ * `0099_breaker_table_widget_type`'s journal `when` (F3.74, #695), which
+ * landed on `main` after this migration was authored with a lower `when`.
+ * Drizzle applies an entry only when its `when` is above the newest applied
+ * `created_at`, so on a database that already ran `0099` a `0098` entry
+ * stamped below it is skipped with an F4.94 warning and an exit 0.
+ *
+ * The fix moves the journal entry, not the file. The entry is re-stamped
+ * above `0099` and carries `idx: 100` — `idx` must increase in array order
+ * (`f3.32d`), and drizzle reads only `tag` (the file) and `when`, never
+ * `idx`. The file keeps its name and its bytes: the pre-commit hook freezes a
+ * committed migration, and the `F4.94` re-sync re-stamps a database that
+ * applied it under the old `when` by matching its hash.
+ */
+const WHEN_0099 = 1790962705586;
+/** The file's sha256 as authored and applied — see `WHEN_0099` for why it must not change. */
+const MIGRATION_SHA256 = "7dd5857a3bd08a046b250ed05dfa1033abf0620052fd9517e9b8a6b3db0e991d";
 
 /** Strip `--` comment lines before a scan — a raw scan is satisfied by a comment
  * that quotes the statement it explains (the `f3.1a-dashboard-schema.test.ts` lesson). */
@@ -54,17 +70,38 @@ describe("F3.78 — migration 0098: user administration grants, CHECK, indexes, 
     expect(migration()).toContain("ALTER TABLE bms.users");
   });
 
-  it("registers migration 0098 in the journal, after 0097 and before now", () => {
+  it("registers migration 0098 in the journal as idx 100, after 0099 and before now", () => {
     const journal = JSON.parse(read("packages/db/drizzle/meta/_journal.json")) as {
       entries: Array<Record<string, unknown>>;
     };
     const entry = journal.entries.find((e) => e.tag === TAG);
     expect(entry, "migration 0098 must have a journal entry, or drizzle never runs it").toBeDefined();
-    expect(entry?.idx).toBe(98);
+    expect(entry?.idx).toBe(100);
     expect(entry?.version).toBe("7");
     expect(entry?.breakpoints).toBe(true);
-    expect(entry?.when as number).toBeGreaterThan(WHEN_0097);
+    expect(entry?.when as number).toBeGreaterThan(WHEN_0099);
     expect(entry?.when as number).toBeLessThanOrEqual(Date.now());
+  });
+
+  it("stamps its `when` above every entry before it in the journal, not only its predecessor", () => {
+    const journal = JSON.parse(read("packages/db/drizzle/meta/_journal.json")) as {
+      entries: Array<{ tag: string; when: number }>;
+    };
+    const at = journal.entries.findIndex((e) => e.tag === TAG);
+    expect(at, "migration 0098 must have a journal entry").toBeGreaterThan(0);
+    const before = journal.entries.slice(0, at);
+    expect(before.map((e) => e.tag), "positive control: 0099 precedes it").toContain(
+      "0099_breaker_table_widget_type",
+    );
+    const own = journal.entries[at]!.when;
+    for (const e of before) {
+      expect(own, `${TAG} when must exceed ${e.tag}'s`).toBeGreaterThan(e.when);
+    }
+  });
+
+  it("keeps the bytes it was first applied with, so the F4.94 re-sync matches it by hash", () => {
+    const digest = createHash("sha256").update(readFileSync(join(repoRoot, MIGRATION_REL))).digest("hex");
+    expect(digest).toBe(MIGRATION_SHA256);
   });
 
   it("drops NOT NULL on bms.users.password_hash", () => {
