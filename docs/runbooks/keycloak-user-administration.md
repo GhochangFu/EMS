@@ -27,7 +27,7 @@ one-shot provisioning step closes that gap on every host, new or existing:
 | The `bms-api-admin` client, created or updated | Confidential, service accounts only, every browser flow off. |
 | The client secret, from `KEYCLOAK_ADMIN_CLIENT_SECRET` | Decision 5. An empty value is refused before any request. |
 | The service account's `realm-management` roles: exactly `manage-users`, `view-users` | Any other `realm-management` role is removed. |
-| The user profile: `email` editable by `admin` only | Decision 4. The step reads the live profile and changes only that one key. |
+| The user profile: `email` editable by `admin` only; `firstName` and `lastName` not required | Decision 4, and owner ruling Q-D: the API creates a user with a first name only, and a required last name would send that user to an "update profile" page at first sign-in. The step reads the live profile and changes only those keys. |
 
 It then prints every realm user that is **unverified and unlinked** (§3) and
 exits **2** if there is one, **1** on any failure, **0** otherwise. It prints

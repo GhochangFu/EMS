@@ -126,6 +126,33 @@ export function withAdminOnlyEmailEdit(current: UserProfileConfig): UserProfileC
   return next;
 }
 
+/**
+ * Owner ruling Q-D: the live configuration with the `required` block removed
+ * from `firstName` and `lastName`, and **nothing else changed**. Keycloak 24
+ * requires both names by default and realm `bms` has `VERIFY_PROFILE` on, so
+ * a user the API creates with `firstName` only (D1) would otherwise meet an
+ * "update profile" page at first sign-in, where it could change the `name`
+ * claim. A transform for the same reason as {@link withAdminOnlyEmailEdit};
+ * a configuration missing either attribute is refused rather than passed
+ * through.
+ */
+export function withOptionalNames(current: UserProfileConfig): UserProfileConfig {
+  const next = structuredClone(current);
+  for (const name of ["firstName", "lastName"]) {
+    const attribute = next.attributes.find((a) => a.name === name);
+    if (attribute === undefined) {
+      throw new Error(`the realm's user profile has no ${name} attribute; refusing to write it`);
+    }
+    delete attribute.required;
+  }
+  return next;
+}
+
+/** The whole profile the step `PUT`s: decision 4's email rule and Q-D's optional names. */
+export function desiredUserProfile(current: UserProfileConfig): UserProfileConfig {
+  return withOptionalNames(withAdminOnlyEmailEdit(current));
+}
+
 /** A realm user as `GET /users?briefRepresentation=true` returns it. */
 export type RealmUserSummary = {
   readonly id: string;

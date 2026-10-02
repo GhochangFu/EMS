@@ -2,8 +2,10 @@ import {
   PASSWORD_POLICY,
   desiredAdminClient,
   desiredRealmSettings,
+  desiredUserProfile,
   unlinkedUnverifiedReport,
   withAdminOnlyEmailEdit,
+  withOptionalNames,
   type RealmUserSummary,
   type UserProfileConfig,
   type UserRowSummary,
@@ -78,8 +80,16 @@ const CURRENT_PROFILE: UserProfileConfig = {
       required: { roles: ["user"] },
       permissions: { view: ["admin", "user"], edit: ["admin", "user"] },
     },
-    { name: "firstName", permissions: { view: ["admin", "user"], edit: ["admin", "user"] } },
-    { name: "lastName", permissions: { view: ["admin", "user"], edit: ["admin", "user"] } },
+    {
+      name: "firstName",
+      required: { roles: ["user"] },
+      permissions: { view: ["admin", "user"], edit: ["admin", "user"] },
+    },
+    {
+      name: "lastName",
+      required: { roles: ["user"] },
+      permissions: { view: ["admin", "user"], edit: ["admin", "user"] },
+    },
   ],
   groups: [{ name: "user-metadata" }],
 };
@@ -126,6 +136,58 @@ export function assertAProfileWithNoEmailAttributeIsRefused(): void {
     threw = true;
   }
   assert(threw, "a profile with no email attribute must be refused, not passed through unchanged");
+}
+
+// --- the optional names (owner ruling Q-D) -------------------------------------
+
+/**
+ * Q-D: Keycloak 24 requires `firstName` and `lastName` by default and the
+ * realm has `VERIFY_PROFILE` on, so a user created with `firstName` only (D1)
+ * would meet an "update profile" page at first sign-in. Both lose `required`.
+ */
+export function assertTheProfileMakesFirstAndLastNameOptional(): void {
+  const next = withOptionalNames(CURRENT_PROFILE);
+  const required = next.attributes
+    .filter((a) => a.name === "firstName" || a.name === "lastName")
+    .map((a) => [a.name, Object.prototype.hasOwnProperty.call(a, "required")]);
+  assert(
+    JSON.stringify(required) === JSON.stringify([["firstName", false], ["lastName", false]]),
+    `firstName and lastName must carry no required block; got ${JSON.stringify(next.attributes)}`,
+  );
+}
+
+/** Only the two `required` blocks go: the email's stays, and so does everything else. */
+export function assertTheOptionalNamesTransformKeepsEverythingElse(): void {
+  const next = withOptionalNames(CURRENT_PROFILE);
+  const expected = structuredClone(CURRENT_PROFILE);
+  delete expected.attributes[2]!.required;
+  delete expected.attributes[3]!.required;
+  assert(
+    JSON.stringify(next) === JSON.stringify(expected),
+    `only firstName.required and lastName.required may go; got ${JSON.stringify(next)}`,
+  );
+}
+
+export function assertTheOptionalNamesTransformDoesNotMutateItsInput(): void {
+  const input = structuredClone(CURRENT_PROFILE);
+  withOptionalNames(input);
+  assert(
+    JSON.stringify(input) === JSON.stringify(CURRENT_PROFILE),
+    "withOptionalNames must not mutate the configuration it was given",
+  );
+}
+
+/** The step's whole profile write: both rules applied, in either order, to the live config. */
+export function assertTheDesiredProfileAppliesBothRules(): void {
+  const next = desiredUserProfile(CURRENT_PROFILE);
+  const email = next.attributes.find((a) => a.name === "email");
+  const names = next.attributes.filter((a) => a.name === "firstName" || a.name === "lastName");
+  assert(
+    JSON.stringify(email?.permissions?.edit) === JSON.stringify(["admin"]) &&
+      names.length === 2 &&
+      names.every((a) => !Object.prototype.hasOwnProperty.call(a, "required")),
+    `the desired profile must have email edit ["admin"] and optional names; got ${JSON.stringify(next)}`,
+  );
 }
 
 // --- the unlinked/unverified report -----------------------------------------------

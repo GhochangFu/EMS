@@ -40,6 +40,10 @@ describe("F3.78 U4 — keycloak:provision against a stubbed Keycloak (ADR 0089 d
     await spec.assertTheUserProfilePutKeepsTheOtherAttributes();
   });
 
+  it("the user-profile PUT leaves firstName and lastName optional (Q-D)", async () => {
+    await spec.assertTheUserProfilePutMakesTheNamesOptional();
+  });
+
   it("the first request is retried while Keycloak starts", async () => {
     await spec.assertTheFirstRequestIsRetried();
   });

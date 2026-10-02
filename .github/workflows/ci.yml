@@ -388,7 +388,15 @@ jobs:
       # --coverage, not plain `test`: the thresholds in vitest.config.ts are
       # only evaluated when the coverage provider runs, so `pnpm test` alone
       # would go green while coverage regressed.
+      # F3.78 owner ruling Q-C: K6 reads `GET /admin/realms/bms` as the
+      # bootstrap master admin, because the `bms-api-admin` service account
+      # (manage-users, view-users only) gets a realm representation without
+      # `passwordPolicy` or `bruteForceProtected`. The throwaway values the
+      # "Start Keycloak" step created the container with.
       - name: Run tests
+        env:
+          KEYCLOAK_ADMIN: admin
+          KEYCLOAK_ADMIN_PASSWORD: admin
         run: pnpm test:coverage
 
   # F4.48, second half. The first half added a redaction pattern and a leak

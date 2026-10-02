@@ -38,8 +38,16 @@ const LIVE_PROFILE: UserProfileConfig = {
   attributes: [
     { name: "username", permissions: { view: ["admin", "user"], edit: ["admin", "user"] } },
     { name: "email", permissions: { view: ["admin", "user"], edit: ["admin", "user"] } },
-    { name: "firstName", permissions: { view: ["admin", "user"], edit: ["admin", "user"] } },
-    { name: "lastName", permissions: { view: ["admin", "user"], edit: ["admin", "user"] } },
+    {
+      name: "firstName",
+      required: { roles: ["user"] },
+      permissions: { view: ["admin", "user"], edit: ["admin", "user"] },
+    },
+    {
+      name: "lastName",
+      required: { roles: ["user"] },
+      permissions: { view: ["admin", "user"], edit: ["admin", "user"] },
+    },
   ],
   groups: [{ name: "user-metadata" }],
 };
@@ -250,6 +258,18 @@ export async function assertTheUserProfilePutKeepsTheOtherAttributes(): Promise<
     JSON.stringify(names) === JSON.stringify(["username", "email", "firstName", "lastName"]) &&
       JSON.stringify(edit) === JSON.stringify(["admin"]),
     `the profile PUT must be the live config with email edit ["admin"]; got ${put?.body ?? "no PUT"}`,
+  );
+}
+
+/** Owner ruling Q-D: the step's profile `PUT` leaves `firstName` and `lastName` optional. */
+export async function assertTheUserProfilePutMakesTheNamesOptional(): Promise<void> {
+  const r = await run();
+  const put = r.calls.find((c) => c.method === "PUT" && c.path === "/admin/realms/bms/users/profile");
+  const body = put?.body === undefined ? null : (JSON.parse(put.body) as UserProfileConfig);
+  const names = (body?.attributes ?? []).filter((a) => a.name === "firstName" || a.name === "lastName");
+  assert(
+    names.length === 2 && names.every((a) => !Object.prototype.hasOwnProperty.call(a, "required")),
+    `the profile PUT must carry firstName and lastName with no required block; got ${put?.body ?? "no PUT"}`,
   );
 }
 

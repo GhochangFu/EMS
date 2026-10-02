@@ -36,6 +36,22 @@ describe("F3.78 U4 — provision plan (ADR 0089 decisions 4–6)", () => {
     spec.assertAProfileWithNoEmailAttributeIsRefused();
   });
 
+  it("the user profile's firstName and lastName lose their required block (Q-D)", () => {
+    spec.assertTheProfileMakesFirstAndLastNameOptional();
+  });
+
+  it("the optional-names transform keeps every other key", () => {
+    spec.assertTheOptionalNamesTransformKeepsEverythingElse();
+  });
+
+  it("the optional-names transform does not mutate its input", () => {
+    spec.assertTheOptionalNamesTransformDoesNotMutateItsInput();
+  });
+
+  it("the desired user profile applies the email rule and the optional names", () => {
+    spec.assertTheDesiredProfileAppliesBothRules();
+  });
+
   it("the report lists a user that is unverified and unlinked", () => {
     spec.assertTheReportListsAnUnverifiedUnlinkedUser();
   });

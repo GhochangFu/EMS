@@ -9,8 +9,8 @@ import {
   SERVICE_ACCOUNT_ROLES,
   desiredAdminClient,
   desiredRealmSettings,
+  desiredUserProfile,
   unlinkedUnverifiedReport,
-  withAdminOnlyEmailEdit,
   type RealmUserSummary,
   type UserProfileConfig,
   type UserRowSummary,
@@ -28,7 +28,8 @@ import {
  *    `KEYCLOAK_ADMIN_CLIENT_SECRET` (an empty one is refused before any call);
  * 4. leaves the service account with exactly `manage-users` and `view-users`;
  * 5. reads the user profile and writes it back with only
- *    `email.permissions.edit` changed to `["admin"]`;
+ *    `email.permissions.edit` changed to `["admin"]` and the `required` block
+ *    removed from `firstName` and `lastName` (owner ruling Q-D);
  * 6. reads `bms.users (email, oidc_subject)` on `DATABASE_URL_AUTH` and lists
  *    every realm user that is unverified **and** unlinked, by email. Exit 2
  *    when that list is not empty, 1 on any failure, 0 otherwise.
@@ -117,8 +118,8 @@ class Provisioner {
     await this.ensureServiceAccountRoles(clientUuid);
 
     const profile = await this.json<UserProfileConfig>("user profile", "GET", "/users/profile");
-    await this.call("user profile", "PUT", "/users/profile", withAdminOnlyEmailEdit(profile));
-    out(`${PREFIX}: user profile applied (email editable by an admin only)`);
+    await this.call("user profile", "PUT", "/users/profile", desiredUserProfile(profile));
+    out(`${PREFIX}: user profile applied (email editable by an admin only; first and last name optional)`);
 
     const report = unlinkedUnverifiedReport(await this.realmUsers(), await this.deps.readUserRows());
     if (report.length === 0) {

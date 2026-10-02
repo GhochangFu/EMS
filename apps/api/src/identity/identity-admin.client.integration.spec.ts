@@ -186,8 +186,57 @@ export async function assertK5OnlyAnAdminEditsTheEmail(config: IdentityAdminConf
   );
 }
 
+/**
+ * K5 — owner ruling Q-D: `firstName` and `lastName` carry no `required` block,
+ * so a user created with `firstName` only (D1) meets no "update profile" page.
+ */
+export async function assertK5TheNamesAreOptional(config: IdentityAdminConfig): Promise<void> {
+  const { status, body } = await adminGet(config, "/users/profile");
+  const attributes = (body as { attributes?: { name: string }[] } | null)?.attributes ?? [];
+  const names = attributes.filter((a) => a.name === "firstName" || a.name === "lastName");
+  assert(
+    names.length === 2 && names.every((a) => !Object.prototype.hasOwnProperty.call(a, "required")),
+    `firstName and lastName must carry no required block; got HTTP ${status}, ${JSON.stringify(names)}`,
+  );
+}
+
+/**
+ * Owner ruling Q-C: the service account (`manage-users`, `view-users`) gets a
+ * reduced realm representation with neither `passwordPolicy` nor
+ * `bruteForceProtected`, and it does not gain `view-realm`. K6 therefore reads
+ * the realm as the bootstrap master admin on `admin-cli` — the identity
+ * `keycloak:provision` writes it with. The two variables are the ones the
+ * provisioning step reads; unset, K6 fails rather than skipping, because a set
+ * `KEYCLOAK_ADMIN_URL` is a claim that Keycloak is there to be read.
+ */
+async function realmAsMasterAdmin(config: IdentityAdminConfig): Promise<{ status: number; body: unknown }> {
+  const username = process.env.KEYCLOAK_ADMIN?.trim();
+  const password = process.env.KEYCLOAK_ADMIN_PASSWORD;
+  assert(
+    !!username && !!password,
+    "K6 reads the realm as the master admin: KEYCLOAK_ADMIN and KEYCLOAK_ADMIN_PASSWORD must be set (ruling Q-C)",
+  );
+  const tokenRes = await fetch(`${config.url}/realms/master/protocol/openid-connect/token`, {
+    method: "POST",
+    headers: { "content-type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({
+      grant_type: "password",
+      client_id: "admin-cli",
+      username: username!,
+      password: password!,
+    }).toString(),
+  });
+  assert(tokenRes.ok, `the master-admin token request must succeed; got HTTP ${tokenRes.status}`);
+  const { access_token } = (await tokenRes.json()) as { access_token: string };
+  const res = await fetch(`${config.url}/admin/realms/${config.realm}`, {
+    headers: { authorization: `Bearer ${access_token}` },
+  });
+  const body: unknown = res.ok ? await res.json() : null;
+  return { status: res.status, body };
+}
+
 export async function assertK6ThePasswordPolicyIsProvisioned(config: IdentityAdminConfig): Promise<void> {
-  const { status, body } = await adminGet(config, "");
+  const { status, body } = await realmAsMasterAdmin(config);
   const policy = (body as { passwordPolicy?: unknown } | null)?.passwordPolicy;
   assert(
     typeof policy === "string" && policy.includes("length(12)"),
@@ -196,7 +245,7 @@ export async function assertK6ThePasswordPolicyIsProvisioned(config: IdentityAdm
 }
 
 export async function assertK6BruteForceProtectionIsOn(config: IdentityAdminConfig): Promise<void> {
-  const { status, body } = await adminGet(config, "");
+  const { status, body } = await realmAsMasterAdmin(config);
   const on = (body as { bruteForceProtected?: unknown } | null)?.bruteForceProtected;
   assert(on === true, `bruteForceProtected must be true; got HTTP ${status}, ${String(on)}`);
 }

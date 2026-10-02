@@ -66,6 +66,10 @@ describe.skipIf(!config)("F3.78 U3 — KeycloakIdentityAdminClient against Keycl
     await spec.assertK5OnlyAnAdminEditsTheEmail(live);
   }, TIMEOUT);
 
+  it("K5 — the user profile's firstName and lastName are optional (Q-D)", async () => {
+    await spec.assertK5TheNamesAreOptional(live);
+  }, TIMEOUT);
+
   it("K6 — passwordPolicy contains length(12)", async () => {
     await spec.assertK6ThePasswordPolicyIsProvisioned(live);
   }, TIMEOUT);
