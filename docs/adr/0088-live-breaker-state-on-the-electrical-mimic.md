@@ -52,7 +52,10 @@ planner and the seed, which this row also touches.
   three points (`MIMIC_HEADLINE_POINTS = 3`).
 - Migration `0033` raises a critical "Main breaker reported OPEN" alarm on
   every ESKOM electrical asset at `breaker_main < 0.5`. The simulator holds
-  `CR-Q11` and `CR-HVAC-2` open on purpose.
+  `CR-Q11` and `CR-HVAC-2` open on purpose. *(Note 2026-10-03, plan OQ10: since
+  PR5 the simulator also holds `CR-Q9` open and tripped — `breaker_main` 0,
+  `breaker_trip` 1 — and an open or tripped breaker reports exactly 0 kW and
+  0 A.)*
 - Assets have no topology (no parent, feeds or bus relation). The only
   topology is the directed pipes of a preset or a drawn layout.
 
@@ -392,9 +395,13 @@ its stored widgets equal **the previous stock version's tab as the copy rule
 left it**: the same identities (`siteWidgetIdentity`: tab key, widget type,
 title; `site-layout-stock-history.ts:32-35`), none repeated, nothing added,
 nothing deleted, the same rects, the same `config` compared without key order
-(`canonicalJson`, `:49-62`), and the binding rows the copy rule wrote
-(`site-layout-seed-upgrade.ts:222-227`). Anything else is an administrator's
-tab and is left whole.
+(`canonicalJson`, `:49-62`), and per widget as many point and source rows as
+the copy rule wrote — a count of rows, not their identity
+(`site-layout-seed-upgrade-tabs.ts`). Anything else is an administrator's tab
+and is left whole. The gate compares the widgets, not the tab row: a tab whose
+name was changed but whose widgets are untouched still upgrades. The electrical
+step reads the tab's group only to decide which role tiles the copy keeps (the
+electrical bullet below). (clarified 2026-10-03 after review)
 
 - **The Overview.** "As the copy rule left it" is `packAfterRemoval` over v3's
   Overview, keeping a module card only when its target tab is one of the copy's
@@ -404,8 +411,13 @@ tab and is left whole.
 - **The electrical tab.** "As the copy rule left it" is `packAfterRemoval` over
   v3's `sld` widgets with the role tiles the copy left out removed (the copy's
   `omitUnboundTiles`, `packages/shared/src/site-layout-planner.ts:368`). A role
-  tile absent from the store counts as omitted; a role tile present must hold at
-  least one point row. The mimic holds the v3 config
+  tile absent from the store counts as omitted only when the copy rule would
+  omit it today — its role and point key resolve to no active point in the
+  tab's group at that site (`electricalTilesTheCopyKeeps`). An absent tile the
+  copy would keep was deleted by an administrator, and the tab is left whole.
+  The safe-side cost: a copy whose omitted tile has since become bindable is
+  treated as edited and is not upgraded. A role tile present must hold at
+  least one point row. (clarified 2026-10-03 after review) The mimic holds the v3 config
   `{ source: "preset", preset: "electrical_distribution" }`
   (`smoc-standard.ts:290`), the rail and the table sit at the rects the pack left
   them, the table holds its one `assets.list` source, and nothing else is

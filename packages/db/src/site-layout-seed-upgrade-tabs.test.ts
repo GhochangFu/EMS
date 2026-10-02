@@ -4,11 +4,13 @@ import {
   aBoundLegendKeepsTheOverview,
   aCsmocV3ElectricalTabGainsTheBreakerTable,
   aCsmocV3OverviewGainsTheCompactDiagram,
+  aDeletedBindableTileKeepsTheElectricalTab,
   aDeletedWidgetKeepsTheOverview,
   aMovedRailKeepsTheElectricalTab,
   aMovedTileKeepsTheOverview,
   anAddedWidgetKeepsTheElectricalTab,
   anAddedWidgetKeepsTheOverview,
+  anAbsentUnbindableTileStillUpgrades,
   anEditedMimicKeepsTheElectricalTab,
   anEditedRailKeepsTheOverview,
   anOverviewWithNoElectricalTabGetsNoDiagram,
@@ -19,6 +21,7 @@ import {
   aRepeatedWidgetKeepsTheOverview,
   aV4ElectricalTabIsNotUpgradedAgain,
   aV4OverviewIsNotUpgradedAgain,
+  theCopyKeepsTheTilesWhoseRoleHasThePoint,
   theElectricalStepReadsTheElectricalTabOnly,
   theOverviewStepReadsTheOverviewOnly,
   theV3StepLeavesAV4OverviewAndDoesNotThrow,
@@ -92,6 +95,15 @@ describe("F3.74 — the seed upgrade's v3 → v4 electrical step", () => {
   });
   it("E7: leaves an electrical tab whose mimic config was edited whole", () => {
     anEditedMimicKeepsTheElectricalTab();
+  });
+  it("E8: leaves an electrical tab whole when a tile the copy would keep is absent", () => {
+    aDeletedBindableTileKeepsTheElectricalTab();
+  });
+  it("E9: still upgrades an electrical tab whose absent tile binds nothing at the site", () => {
+    anAbsentUnbindableTileStillUpgrades();
+  });
+  it("E10: keeps the role tiles whose role has a member with the tile's point", () => {
+    theCopyKeepsTheTilesWhoseRoleHasThePoint();
   });
   it("reads the electrical tab only", () => {
     theElectricalStepReadsTheElectricalTabOnly();

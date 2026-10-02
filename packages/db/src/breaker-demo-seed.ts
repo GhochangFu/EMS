@@ -8,12 +8,13 @@ import { demoRoleForAsset } from "./asset-groups-seed";
  * **What this seeds, at the row `seedEskomLocations` resolved for `RSMOC-WC` only** (owner ruling
  * 17: never a row found by code). Five steps, each scoped to that location:
  *
- *  1. **The forced breaker roles.** The twelve `CR-Q*` memberships in the site's `electrical` group
- *     take the role `demoRoleForAsset` gives them (`CR_BREAKER_ROLES`, D10) with
- *     `SET role = EXCLUDED.role`. `seedAssetGroups` fills a NULL role and never overwrites one, so
- *     on a database an earlier seed wrote the twelve keep `mcc` without this step (plan §2, the
- *     `COALESCE` fact). This is the one place the seed overwrites a membership role, and it touches
- *     these twelve rows at this one site.
+ *  1. **The breaker roles, seeded once.** The twelve `CR-Q*` memberships in the site's `electrical`
+ *     group take the role `demoRoleForAsset` gives them (`CR_BREAKER_ROLES`, D10) with
+ *     `SET role = EXCLUDED.role`, but only over a NULL role or `mcc`. `seedAssetGroups` fills a
+ *     NULL role and never overwrites one, so on a database an earlier seed wrote the twelve keep
+ *     `mcc` without this step (plan §2, the `COALESCE` fact). Any other role is an
+ *     administrator's and survives every re-seed. This is the one place the seed overwrites a
+ *     membership role, and it touches only the stale `mcc` of these twelve rows at this one site.
  *  2. **The members the preset names.** `CR-UPS-1`/`-2` (`ups`), the four rack PDUs (`pdu`) and
  *     `CR-HVAC-1`/`-2` (`crac`) join the same group, `ON CONFLICT DO NOTHING`: a membership an
  *     operator already holds keeps its role. An explicit list, never a pattern: `CR-UPS-OUT-BUS`
@@ -22,21 +23,23 @@ import { demoRoleForAsset } from "./asset-groups-seed";
  *     ruled-point catalog gives `breaker_main` (`SIM_BREAKER_TRIP`, no RTU), `ON CONFLICT
  *     (asset_id, point_key) DO NOTHING`, so an operator's own row is never overwritten.
  *  4. **`rating` and `trip_cause`**, from {@link BREAKER_DEMO_NAMEPLATES} (copied from the web's
- *     `CR_BREAKERS`), written only while `rating IS NULL`: a rating an administrator set by hand
- *     survives every re-seed, and so does that row's trip cause. A mockup cause of `-` is stored as
- *     NULL; the breaker table renders NULL as `-`.
+ *     `CR_BREAKERS`), written only while both `rating` and `trip_cause` are NULL: a rating or a
+ *     trip cause an administrator set by hand survives every re-seed, with the rest of that row's
+ *     nameplate. A mockup cause of `-` is stored as NULL; the breaker table renders NULL as `-`.
  *  5. **The demo dashboard** {@link BREAKER_DEMO_DASHBOARD_SLUG}, scoped to the `electrical` group,
  *     with one `lv_single_line` mimic and one `breaker_table` under it. No tab: the mimic and the
  *     table bind the dashboard's own group. Each widget is `NOT EXISTS`-guarded by type, so a
- *     re-seed writes neither twice and an operator's move or resize survives.
+ *     re-seed writes neither twice and an operator's move or resize survives. A dashboard that
+ *     already holds the slug on another group (or none) is not the seed's: it gets no widget, and
+ *     one line says so.
  *
  * **Where it runs (`seed.ts`).** In the ESKOM bracket after `seedRuledPointCatalog`: after
  * `seedAssetGroups` (the group and the twelve memberships) and after `seedPointKeyCatalog` (the
  * `breaker_trip` key and its unit).
  *
- * **Post-conditions.** Step 1 asserts its `rowCount` (an upsert returns one row per breaker on every
- * pass). Steps 2 to 5 may correctly write nothing on a re-seed, so each is read back instead and the
- * call throws on a shortfall — a write outside the tenant context changes zero rows without raising
+ * **Post-conditions.** Every step may correctly write nothing on a re-seed, so each is read back
+ * and the call throws on a shortfall: step 1 when a breaker's membership is missing or its role is
+ * still NULL or `mcc`, steps 2 to 5 on the counts of {@link VERIFY_SQL} — a write outside the tenant context changes zero rows without raising
  * under FORCE ROW LEVEL SECURITY (`water-plant-demo-seed.ts`).
  */
 
@@ -106,12 +109,25 @@ const ASSETS_SQL = `
   ORDER BY code
 `;
 
-/** Step 1 — the forced role. `EXCLUDED.role`, not the `COALESCE` idiom: see the module docblock. */
+/**
+ * Step 1 — the breaker role, over a NULL or the stale `mcc` only: see the module docblock. Any
+ * other role is an administrator's and survives.
+ */
 const FORCE_ROLE_SQL = `
   INSERT INTO bms.asset_group_members (asset_group_id, asset_id, role)
   VALUES ($1, $2, $3)
   ON CONFLICT (asset_group_id, asset_id) DO UPDATE
   SET role = EXCLUDED.role
+  WHERE asset_group_members.role IS NULL OR asset_group_members.role = 'mcc'
+`;
+
+/** Step 1's read-back: the twelve memberships and their roles. */
+const BREAKER_ROLES_SQL = `
+  SELECT a.code, agm.role
+    FROM bms.asset_group_members agm
+    JOIN bms.assets a ON a.id = agm.asset_id
+   WHERE agm.asset_group_id = $1 AND a.code = ANY($2::varchar[])
+   ORDER BY a.code
 `;
 
 /** Step 2 — a member the preset names; an existing membership keeps its role. */
@@ -132,11 +148,11 @@ const BREAKER_TRIP_POINTS_SQL = `
   ON CONFLICT (asset_id, point_key) DO NOTHING
 `;
 
-/** Step 4 — one breaker's nameplate, only while its rating is unset. */
+/** Step 4 — one breaker's nameplate, only while both its rating and its trip cause are unset. */
 const NAMEPLATE_SQL = `
   UPDATE bms.assets
   SET rating = $4, trip_cause = $5
-  WHERE organization_id = $1 AND location_id = $2 AND code = $3 AND rating IS NULL
+  WHERE organization_id = $1 AND location_id = $2 AND code = $3 AND rating IS NULL AND trip_cause IS NULL
 `;
 
 /** Step 5 — the dashboard, scoped to the group. `DO NOTHING`: the slug is stable. */
@@ -146,8 +162,9 @@ const DASHBOARD_INSERT_SQL = `
   ON CONFLICT (organization_id, slug) DO NOTHING
 `;
 
+/** The slug's dashboard and the group it binds: the widget step runs only on the seed's own group. */
 const DASHBOARD_ID_SQL = `
-  SELECT id FROM bms.dashboards WHERE organization_id = $1 AND slug = $2
+  SELECT id, asset_group_id FROM bms.dashboards WHERE organization_id = $1 AND slug = $2
 `;
 
 /** One widget of a type per dashboard — `NOT EXISTS`-guarded so a re-seed writes it once. */
@@ -173,11 +190,11 @@ SELECT
        AND ap.point_key = 'breaker_trip') AS trip_points,
   (SELECT count(*)::int FROM bms.assets a
      WHERE a.organization_id = $3 AND a.location_id = $4 AND a.code = ANY($5::varchar[])
-       AND a.rating IS NOT NULL) AS rated,
+       AND (a.rating IS NOT NULL OR a.trip_cause IS NOT NULL)) AS rated,
   (SELECT count(*)::int FROM bms.dashboard_widgets w
-     WHERE w.dashboard_id = $6 AND w.widget_type = 'mimic') AS mimics,
+     WHERE w.dashboard_id = $6::uuid AND w.widget_type = 'mimic') AS mimics,
   (SELECT count(*)::int FROM bms.dashboard_widgets w
-     WHERE w.dashboard_id = $6 AND w.widget_type = 'breaker_table') AS tables
+     WHERE w.dashboard_id = $6::uuid AND w.widget_type = 'breaker_table') AS tables
 `;
 
 type VerifyRow = { added_members: number; trip_points: number; rated: number; mimics: number; tables: number };
@@ -232,14 +249,22 @@ export async function seedBreakerDemo(
     );
   }
 
-  // Step 1 — forced roles. Every row is an insert or an update, so the count is exact.
-  let forced = 0;
+  // Step 1 — the breaker roles over a NULL or `mcc`. A skipped row (an administrator's role)
+  // changes no row, so the row count says nothing: the twelve roles are read back instead.
   for (const asset of await assetsAt(pool, organizationId, rsmocWcId, BREAKER_DEMO_BREAKER_CODES)) {
-    const res = await pool.query(FORCE_ROLE_SQL, [groupId, asset.id, roleOf(asset)]);
-    forced += res.rowCount ?? 0;
+    await pool.query(FORCE_ROLE_SQL, [groupId, asset.id, roleOf(asset)]);
   }
-  if (forced !== BREAKER_DEMO_BREAKER_CODES.length) {
-    throw new Error(`seedBreakerDemo: forced ${forced} of ${BREAKER_DEMO_BREAKER_CODES.length} breaker roles`);
+  const roles = await pool.query<{ code: string; role: string | null }>(BREAKER_ROLES_SQL, [
+    groupId,
+    BREAKER_DEMO_BREAKER_CODES,
+  ]);
+  const stale = roles.rows.filter((row) => row.role === null || row.role === "mcc");
+  if (roles.rows.length !== BREAKER_DEMO_BREAKER_CODES.length || stale.length > 0) {
+    throw new Error(
+      `seedBreakerDemo: ${roles.rows.length} of ${BREAKER_DEMO_BREAKER_CODES.length} breaker memberships read back, ` +
+        `${stale.length} still NULL or mcc (${stale.map((row) => row.code).join(", ")}). A FORCE-RLS write can ` +
+        "drop rows without raising; check this runs inside the ESKOM tenant bracket.",
+    );
   }
 
   // Step 2 — the members the preset names.
@@ -262,31 +287,44 @@ export async function seedBreakerDemo(
     BREAKER_DEMO_DASHBOARD_NAME,
     groupId,
   ]);
-  const dashboard = await pool.query<{ id: string }>(DASHBOARD_ID_SQL, [organizationId, BREAKER_DEMO_DASHBOARD_SLUG]);
+  const dashboard = await pool.query<{ id: string; asset_group_id: string | null }>(DASHBOARD_ID_SQL, [
+    organizationId,
+    BREAKER_DEMO_DASHBOARD_SLUG,
+  ]);
   const dashboardId = dashboard.rows[0]?.id;
   if (!dashboardId) {
     throw new Error(`seedBreakerDemo: dashboard '${BREAKER_DEMO_DASHBOARD_SLUG}' does not exist after insert`);
   }
-  await pool.query(WIDGET_INSERT_SQL, [
-    organizationId,
-    dashboardId,
-    "mimic",
-    0,
-    0,
-    12,
-    10,
-    JSON.stringify(BREAKER_DEMO_MIMIC_CONFIG),
-  ]);
-  await pool.query(WIDGET_INSERT_SQL, [
-    organizationId,
-    dashboardId,
-    "breaker_table",
-    0,
-    10,
-    12,
-    5,
-    JSON.stringify(BREAKER_DEMO_TABLE_CONFIG),
-  ]);
+  // The slug is all `DO NOTHING` matched on. A dashboard holding it on another group (or none) is
+  // not the seed's: it gets no widget, and the boot goes on — a throw here would fail every boot.
+  const ours = dashboard.rows[0]?.asset_group_id === groupId;
+  if (ours) {
+    await pool.query(WIDGET_INSERT_SQL, [
+      organizationId,
+      dashboardId,
+      "mimic",
+      0,
+      0,
+      12,
+      10,
+      JSON.stringify(BREAKER_DEMO_MIMIC_CONFIG),
+    ]);
+    await pool.query(WIDGET_INSERT_SQL, [
+      organizationId,
+      dashboardId,
+      "breaker_table",
+      0,
+      10,
+      12,
+      5,
+      JSON.stringify(BREAKER_DEMO_TABLE_CONFIG),
+    ]);
+  } else {
+    log(
+      `seedBreakerDemo: no demo widgets written: dashboard '${BREAKER_DEMO_DASHBOARD_SLUG}' binds another group ` +
+        `than RSMOC-WC's '${BREAKER_DEMO_GROUP_CODE}'`,
+    );
+  }
 
   const check = await pool.query<VerifyRow>(VERIFY_SQL, [
     groupId,
@@ -294,20 +332,21 @@ export async function seedBreakerDemo(
     organizationId,
     rsmocWcId,
     BREAKER_DEMO_BREAKER_CODES,
-    dashboardId,
+    ours ? dashboardId : null,
   ]);
   const row = check.rows[0];
   const want = BREAKER_DEMO_BREAKER_CODES.length;
   const wantMembers = BREAKER_DEMO_ADDED_MEMBER_CODES.length;
-  // `rated` counts a rating of any value: a hand-set one is the operator's, and clearing it is what
-  // fails. Widgets: at least one of each, as `seedWaterMimicDemo` — an operator may add a second.
+  // `rated` counts a breaker whose rating or trip cause is set: step 4 writes neither over a value
+  // an operator set by hand, so either one counts, and a write a FORCE-RLS bracket dropped leaves
+  // both NULL, which fails. Widgets: at least one of each, as `seedWaterMimicDemo` — an operator
+  // may add a second — and none asked of a dashboard the step left alone.
   if (
     !row ||
     row.added_members !== wantMembers ||
     row.trip_points !== want ||
     row.rated !== want ||
-    row.mimics < 1 ||
-    row.tables < 1
+    (ours && (row.mimics < 1 || row.tables < 1))
   ) {
     throw new Error(
       `seedBreakerDemo: ${row?.added_members ?? -1} of ${wantMembers} preset members, ` +

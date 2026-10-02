@@ -153,6 +153,20 @@ export function theV3ContentHoldsTheV3OverviewAndTheV2ElectricalTab(): void {
 }
 
 /**
+ * The sha256 of {@link canonicalJson} of the frozen v3 Overview's widgets. Equal to the hash of
+ * the live entry's Overview at `origin/main` 7bb6283d, stock version 3, the content that shipped:
+ * the upgrade's gate compares a stored Overview with this, so an edit to one frozen config or rect
+ * would silently stop every v3 copy from moving to v4.
+ */
+const OVERVIEW_V3_SHA256 = "b92626e2e33f528f64c37ac8018bf4b8469f7b08da40cef840b345ac98b20d98";
+
+/** The frozen v3 Overview is byte for byte, config included, the one stock v3 shipped. */
+export function theFrozenV3OverviewHashesAsShipped(): void {
+  const digest = createHash("sha256").update(canonicalJson(OVERVIEW_V3_WIDGETS)).digest("hex");
+  assert(digest === OVERVIEW_V3_SHA256, `the frozen v3 Overview hashes to ${digest}: it changed since stock v3`);
+}
+
+/**
  * The sha256 of {@link canonicalJson} of the five tabs v4 did not touch (`ups`, `hvac`, `it`,
  * `env`, `water`), taken at the v3 → v4 commit. The frozen v3 reuses those tabs from the live
  * entry, so only a hash can say an edit to one is not a silent change under v3.

@@ -1,6 +1,9 @@
 import {
+  type GroupMember,
   isUnboundRoleTile,
+  omitUnboundTiles,
   packAfterRemoval,
+  planTemplateWidget,
   type SectionTemplateContent,
   type SectionTemplateWidget,
 } from "@bms/shared";
@@ -26,8 +29,11 @@ import {
  * **The gate (ADR 0088 Amendment 2, "What untouched means for v4").** A tab moves only while its
  * stored widgets equal the previous version's tab as the copy rule left it: the same identities
  * (tab key, widget type, title), none repeated, nothing added, nothing deleted, the same rects,
- * the same `config` compared without key order, and the binding rows the copy rule wrote. Anything
- * else is an administrator's tab, left whole. Each tab is gated on its own (OQ-A: per tab).
+ * the same `config` compared without key order, and per widget as many point and source rows as
+ * the copy rule wrote (a count, not the rows' identity). Anything else is an administrator's tab,
+ * left whole. Each tab is gated on its own (OQ-A: per tab). The gate reads the widgets, not the
+ * tab row; the electrical step also reads the tab's group, but only to decide which role tiles the
+ * copy keeps ({@link electricalTilesTheCopyKeeps}).
  *
  * **Both shapes go through the copy rule.** The previous and the next tab are packed by the same
  * `packAfterRemoval` and the same keep rule the copy action runs, so an upgraded tab lands where a
@@ -241,15 +247,45 @@ export function planOverviewV4Upgrade(
 const isRoleTile = (widget: SectionTemplateWidget): boolean => isUnboundRoleTile(widget, 0);
 
 /**
+ * The `sld` role tiles the copy rule keeps at a site today, by template widget key: the copy's
+ * own `planTemplateWidget` and `omitUnboundTiles` over `from`'s `sld` tab, given the members of
+ * the tab's group by role and the site's active points (`asset_id::point_key` → point id), as
+ * `seedSiteLayouts` and the API's copy action resolve them. Pure; the runner does the reads.
+ */
+export function electricalTilesTheCopyKeeps(
+  membersByRole: Map<string, GroupMember[]>,
+  pointsByAsset: Map<string, string>,
+  from: SectionTemplateContent = smocStandardV3Content(),
+): Set<string> {
+  const tab = tabOf(from, SLD_TAB_KEY);
+  if (!tab) return new Set();
+  const plans = tab.widgets.map((widget) => planTemplateWidget(widget, membersByRole, pointsByAsset));
+  const omitted = new Set(omitUnboundTiles(SLD_TAB_KEY, plans).omittedTiles.map((tile) => tile.widgetKey));
+  return new Set(tab.widgets.filter((widget) => isRoleTile(widget) && !omitted.has(widget.key)).map((widget) => widget.key));
+}
+
+/**
  * The v3 → v4 electrical step (ADR 0088 Amendment 2): the mimic's config from
  * `electrical_distribution` to `lv_single_line`, the "Breakers" table inserted under it, and the
- * alarm rail and asset table moved down by its height. The copy rule is the copy's
- * `omitUnboundTiles`: a role tile the store does not hold counts as left out, and both sides are
- * packed without it. A role tile present must hold a point row; every other widget holds none,
- * and each holds a source row per template source.
+ * alarm rail and asset table moved down by its height.
+ *
+ * **The copy rule** is the copy's `omitUnboundTiles`. A role tile the store holds is kept, and
+ * must hold a point row. A role tile the store does not hold counts as left out by the copy ONLY
+ * when the copy rule would leave it out today: when it is not in `bindableTiles`
+ * ({@link electricalTilesTheCopyKeeps}, the runner's reads of the tab's group and the site's
+ * active points). An absent tile the copy would keep was deleted by an administrator, so the
+ * expected tab holds it, the stored tab does not, and nothing is written. Both sides are packed
+ * without the tiles left out. Every other widget holds no point row, and each holds a source row
+ * per template source.
+ *
+ * **The safe-side cost.** A copy whose omitted tile has since become bindable (a member or a
+ * point added at the site, or the tab's group changed) is treated as edited and is not upgraded.
+ * The gate cannot tell that tile from one an administrator deleted, and only the second may be
+ * read as consent.
  */
 export function planElectricalV4Upgrade(
   widgets: readonly TabCopyWidget[],
+  bindableTiles: ReadonlySet<string>,
   from: SectionTemplateContent = smocStandardV3Content(),
   to: SectionTemplateContent = SMOC_STANDARD_SITE_TEMPLATE.content as SectionTemplateContent,
 ): TabUpgradePlan {
@@ -262,7 +298,9 @@ export function planElectricalV4Upgrade(
       .map((widget) => siteWidgetIdentity(SLD_TAB_KEY, widget.widgetType, widget.title)),
   );
   const keep = (widget: SectionTemplateWidget): boolean =>
-    !isRoleTile(widget) || held.has(siteWidgetIdentity(SLD_TAB_KEY, widget.widgetType, widget.title));
+    !isRoleTile(widget) ||
+    held.has(siteWidgetIdentity(SLD_TAB_KEY, widget.widgetType, widget.title)) ||
+    bindableTiles.has(widget.key);
   const bound: TabBindingRule = (template, row) =>
     (isRoleTile(template) ? row.points >= 1 : row.points === 0) && row.sources === template.sources.length;
   return planTabUpgrade(

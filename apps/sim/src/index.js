@@ -372,6 +372,11 @@ function stepElectrical(assetId, code = "") {
     : rndWalk(s.i, 3, 200, 260);
   s.pf = rndWalk(s.pf, 0.01, 0.82, 0.99);
   s.kw = profile ? rndWalk(profile.kw, 0.05, Math.max(0, profile.kw - 0.3), profile.kw + 0.3) : (s.v * s.i * s.pf) / 1000;
+  // A tripped or open breaker carries no load: exactly 0, not the walk's noise around 0 (F3.74).
+  if (profile && (profile.trip === 1 || profile.breaker === 0)) {
+    s.kw = 0;
+    s.i = 0;
+  }
   const kva = (s.v * s.i) / 1000;
   const kvar = Math.sqrt(Math.max(0, kva * kva - s.kw * s.kw));
   const breaker = profile ? profile.breaker : Math.random() > 0.002 ? 1 : 0;

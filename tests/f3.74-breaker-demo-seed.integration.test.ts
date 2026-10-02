@@ -277,6 +277,24 @@ describe.skipIf(!ownerUrl)("F3.74 D11 — the breaker demo seed at RSMOC-WC", { 
     });
   });
 
+  // Mutation: drop the `WHERE … role IS NULL OR … = 'mcc'` of FORCE_ROLE_SQL → CR-Q9 is forced back → red.
+  it("keeps an administrator's non-mcc role on CR-Q9 on a re-seed", async () => {
+    await inTransaction(async (pool) => {
+      await pool.query(
+        `UPDATE bms.asset_group_members agm SET role = 'mains-feeder-breaker'
+           FROM bms.asset_groups g, bms.assets a
+          WHERE g.id = agm.asset_group_id AND a.id = agm.asset_id
+            AND g.location_id = $1 AND g.code = 'electrical' AND a.code = 'CR-Q9'`,
+        [rsmocWcId],
+      );
+      await seedBreakerDemo(pool, eskomOrgId, rsmocWcId, silent);
+      expect(await electricalRoles(pool, ["CR-Q9", "CR-Q8"])).toEqual([
+        "CR-Q8=load-feeder-breaker",
+        "CR-Q9=mains-feeder-breaker",
+      ]);
+    });
+  });
+
   it("adds CR-UPS-1 to the group as ups on a re-seed that finds it absent", async () => {
     await inTransaction(async (pool) => {
       await pool.query(
@@ -307,6 +325,17 @@ describe.skipIf(!ownerUrl)("F3.74 D11 — the breaker demo seed at RSMOC-WC", { 
     });
   });
 
+  // Mutation: drop `AND trip_cause IS NULL` from NAMEPLATE_SQL → the hand-set cause is overwritten → red.
+  it("keeps a trip cause set by hand on a breaker whose rating is unset", async () => {
+    await inTransaction(async (pool) => {
+      await pool.query(`UPDATE bms.assets SET rating = NULL, trip_cause = 'thermal' WHERE location_id = $1 AND code = 'CR-Q1'`, [
+        rsmocWcId,
+      ]);
+      await seedBreakerDemo(pool, eskomOrgId, rsmocWcId, silent);
+      expect(await nameplate(pool, "CR-Q1")).toBe("-|thermal");
+    });
+  });
+
   it("fills a rating that is unset", async () => {
     await inTransaction(async (pool) => {
       await pool.query(`UPDATE bms.assets SET rating = NULL, trip_cause = NULL WHERE location_id = $1 AND code = 'CR-Q11'`, [
@@ -332,6 +361,47 @@ describe.skipIf(!ownerUrl)("F3.74 D11 — the breaker demo seed at RSMOC-WC", { 
       await seedBreakerDemo(pool, eskomOrgId, rsmocWcId, silent);
       expect((await snapshot(pool)).split(" / ").slice(3)).toEqual(["1", "breaker_table@0,10,12,5,mimic@0,0,12,10"]);
     });
+  });
+
+  /**
+   * The slug is held by a dashboard on another group: the seed adds no widget to it, logs one
+   * line, and does not throw (a throw would fail every boot).
+   * Mutation: drop the group check (`ours` always true) → two widgets land on it → red.
+   */
+  it("adds no widget to a dashboard that holds the slug on another group, and logs one line", async () => {
+    const lines: string[] = [];
+    let outcome = "";
+    await inTransaction(async (pool) => {
+      const other = await pool.query<{ id: string }>(
+        `SELECT id FROM bms.asset_groups WHERE location_id = $1 AND code <> 'electrical' ORDER BY code LIMIT 1`,
+        [rsmocWcId],
+      );
+      const otherId = other.rows[0]?.id;
+      if (!otherId) throw new Error("precondition: RSMOC-WC holds a second asset group");
+      const moved = await pool.query(
+        `UPDATE bms.dashboards SET asset_group_id = $3 WHERE organization_id = $1 AND slug = $2`,
+        [eskomOrgId, BREAKER_DEMO_DASHBOARD_SLUG, otherId],
+      );
+      if (moved.rowCount !== 1) throw new Error("precondition: the demo dashboard was re-pointed");
+      await pool.query(
+        `DELETE FROM bms.dashboard_widgets w USING bms.dashboards d
+          WHERE d.id = w.dashboard_id AND d.organization_id = $1 AND d.slug = $2`,
+        [eskomOrgId, BREAKER_DEMO_DASHBOARD_SLUG],
+      );
+      try {
+        await seedBreakerDemo(pool, eskomOrgId, rsmocWcId, (line) => lines.push(line));
+        outcome = "ok";
+      } catch (error) {
+        outcome = `threw: ${(error as Error).message}`;
+      }
+      const widgets = await pool.query<{ n: number }>(
+        `SELECT count(*)::int AS n FROM bms.dashboard_widgets w JOIN bms.dashboards d ON d.id = w.dashboard_id
+          WHERE d.organization_id = $1 AND d.slug = $2`,
+        [eskomOrgId, BREAKER_DEMO_DASHBOARD_SLUG],
+      );
+      outcome += ` widgets=${widgets.rows[0]?.n ?? -1}`;
+    });
+    expect({ outcome, lines: lines.length }).toEqual({ outcome: "ok widgets=0", lines: 1 });
   });
 
   describe("when RSMOC-WC has no seed row", () => {

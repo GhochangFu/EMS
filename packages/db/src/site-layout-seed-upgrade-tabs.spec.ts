@@ -3,6 +3,7 @@ import { SMOC_STANDARD_SITE_TEMPLATE } from "@bms/shared/site-templates";
 
 import { planOverviewUpgrade } from "./site-layout-seed-upgrade";
 import {
+  electricalTilesTheCopyKeeps,
   planElectricalV4Upgrade,
   planOverviewV4Upgrade,
   type TabCopyWidget,
@@ -102,6 +103,33 @@ function untiledV3Sld(): TabCopyWidget[] {
     stored("sld", v3Sld("sld-mimic"), at(0, 0, 12, 7)),
     stored("sld", v3Sld("sld-alarms-rail"), at(0, 7, 6, 5)),
     stored("sld", v3Sld("sld-assets-table"), at(6, 7, 6, 5)),
+  ];
+}
+
+/**
+ * The `sld` role tiles the copy rule keeps today, by template key — what the runner derives from
+ * the tab's group and the site's active points (`electricalTilesTheCopyKeeps`).
+ */
+const CSMOC_TILES: ReadonlySet<string> = new Set(["sld-main-bus-kw-tile"]);
+const PHE_TILES: ReadonlySet<string> = new Set(["sld-frequency-tile"]);
+const NO_TILES: ReadonlySet<string> = new Set();
+const ALL_TILES: ReadonlySet<string> = new Set([
+  "sld-incomer-kw-tile",
+  "sld-incomer-pf-tile",
+  "sld-frequency-tile",
+  "sld-main-bus-kw-tile",
+]);
+
+/**
+ * A v3 `sld` tab whose first three tiles were kept (each with a point row) at their v3 rects, and
+ * "Main bus load" (the trailing tile, `9,0`) absent; the mimic, rail and table at their v3 rects.
+ */
+function threeTileV3Sld(): TabCopyWidget[] {
+  return [
+    stored("sld", v3Sld("sld-incomer-kw-tile"), { points: 1 }),
+    stored("sld", v3Sld("sld-incomer-pf-tile"), { points: 1 }),
+    stored("sld", v3Sld("sld-frequency-tile"), { points: 1 }),
+    ...csmocV3Sld().slice(1),
   ];
 }
 
@@ -256,19 +284,19 @@ const ELECTRICAL_V4_PLAN =
 
 /** E1 — CSMOC's v3 `sld` tab: the single line, the rail and table down five, the breaker table. */
 export function aCsmocV3ElectricalTabGainsTheBreakerTable(): void {
-  const got = planText(planElectricalV4Upgrade(csmocV3Sld()));
+  const got = planText(planElectricalV4Upgrade(csmocV3Sld(), CSMOC_TILES));
   assert(got === ELECTRICAL_V4_PLAN, got);
 }
 
 /** E2 — a PHE `sld` with only Frequency bound gets the same three ops. */
 export function aPheV3ElectricalTabGainsTheBreakerTable(): void {
-  const got = planText(planElectricalV4Upgrade(pheV3Sld()));
+  const got = planText(planElectricalV4Upgrade(pheV3Sld(), PHE_TILES));
   assert(got === ELECTRICAL_V4_PLAN, got);
 }
 
 /** E2b — an `sld` that kept no tile: the breaker table at `0,7`, the lower row to `y12`. */
 export function anUntiledElectricalTabGetsThePackedBreakerTable(): void {
-  const got = planText(planElectricalV4Upgrade(untiledV3Sld()));
+  const got = planText(planElectricalV4Upgrade(untiledV3Sld(), NO_TILES));
   assert(
     got ===
       'deletes= updates=sld/sld-mimic@0,0,12,7{"preset":"lv_single_line","source":"preset"} ' +
@@ -283,14 +311,14 @@ export function aMovedRailKeepsTheElectricalTab(): void {
   const moved = csmocV3Sld().map((widget) =>
     widget.widgetType === "active_alarms_rail" ? { ...widget, gridY: widget.gridY + 1 } : widget,
   );
-  const got = planText(planElectricalV4Upgrade(moved));
+  const got = planText(planElectricalV4Upgrade(moved, CSMOC_TILES));
   assert(got === NOTHING, got);
 }
 
 /** E4 — a kept role tile holding no point row keeps the electrical tab. */
 export function anUnboundKeptTileKeepsTheElectricalTab(): void {
   const unbound = csmocV3Sld().map((widget) => (widget.widgetType === "value_tile" ? { ...widget, points: 0 } : widget));
-  const got = planText(planElectricalV4Upgrade(unbound));
+  const got = planText(planElectricalV4Upgrade(unbound, CSMOC_TILES));
   assert(got === NOTHING, got);
 }
 
@@ -300,7 +328,7 @@ export function aV4ElectricalTabIsNotUpgradedAgain(): void {
   const v4 = (tab?.widgets ?? [])
     .filter((widget) => widget.key !== "sld-incomer-kw-tile" && widget.key !== "sld-incomer-pf-tile" && widget.key !== "sld-frequency-tile")
     .map((widget) => stored("sld", widget, widget.widgetType === "value_tile" ? { ...at(0, 0, 3, 2), points: 1 } : {}));
-  const got = planText(planElectricalV4Upgrade(v4));
+  const got = planText(planElectricalV4Upgrade(v4, CSMOC_TILES));
   assert(v4.length === 5 && got === NOTHING, `${v4.length} widgets: ${got}`);
 }
 
@@ -310,7 +338,7 @@ export function anAddedWidgetKeepsTheElectricalTab(): void {
     id: "sld/mine", tabKey: "sld", widgetType: "table", title: "Mine",
     gridX: 0, gridY: 20, gridW: 6, gridH: 5, points: 0, sources: 0, config: {},
   };
-  const got = planText(planElectricalV4Upgrade([...csmocV3Sld(), extra]));
+  const got = planText(planElectricalV4Upgrade([...csmocV3Sld(), extra], CSMOC_TILES));
   assert(got === NOTHING, got);
 }
 
@@ -319,8 +347,43 @@ export function anEditedMimicKeepsTheElectricalTab(): void {
   const edited = csmocV3Sld().map((widget) =>
     widget.widgetType === "mimic" ? { ...widget, config: { source: "preset", preset: "electrical_distribution", compact: true } } : widget,
   );
-  const got = planText(planElectricalV4Upgrade(edited));
+  const got = planText(planElectricalV4Upgrade(edited, CSMOC_TILES));
   assert(got === NOTHING, got);
+}
+
+/**
+ * E8 — every tile is bindable at the site and "Main bus load" is absent: the copy rule would have
+ * kept it, so an administrator deleted it, and the tab is left whole. Its slot was the trailing
+ * one, so nothing else moved, and a gate that read "absent" as "omitted" would write four ops.
+ */
+export function aDeletedBindableTileKeepsTheElectricalTab(): void {
+  const got = planText(planElectricalV4Upgrade(threeTileV3Sld(), ALL_TILES));
+  assert(got === NOTHING, got);
+}
+
+/** E9 — the same tab where "Main bus load" binds nothing at the site: the copy omitted it, so it moves. */
+export function anAbsentUnbindableTileStillUpgrades(): void {
+  const bindable = new Set([...ALL_TILES].filter((key) => key !== "sld-main-bus-kw-tile"));
+  const got = planText(planElectricalV4Upgrade(threeTileV3Sld(), bindable));
+  assert(got === ELECTRICAL_V4_PLAN, got);
+}
+
+/**
+ * E10 — the tiles the copy keeps: a role tile whose role has a member with an active point of the
+ * tile's key. CSMOC's shape: an `lt-panel` member with `kw`, a `meter` member without
+ * `frequency_hz`, no `incoming-supply` member.
+ */
+export function theCopyKeepsTheTilesWhoseRoleHasThePoint(): void {
+  const members = new Map([
+    ["lt-panel", [{ assetId: "a-lt", code: "LT-1" }]],
+    ["meter", [{ assetId: "a-meter", code: "M-1" }]],
+  ]);
+  const points = new Map([
+    ["a-lt::kw", "p-1"],
+    ["a-meter::kw", "p-2"],
+  ]);
+  const got = [...electricalTilesTheCopyKeeps(members, points)].sort().join(",");
+  assert(got === "sld-main-bus-kw-tile", got);
 }
 
 /** The control for the per-tab gate: the Overview step reads the Overview only. */
@@ -331,6 +394,6 @@ export function theOverviewStepReadsTheOverviewOnly(): void {
 
 /** The control for the per-tab gate: the electrical step reads the electrical tab only. */
 export function theElectricalStepReadsTheElectricalTabOnly(): void {
-  const got = planText(planElectricalV4Upgrade([...csmocV3Sld(), ...v3Overview()]));
+  const got = planText(planElectricalV4Upgrade([...csmocV3Sld(), ...v3Overview()], CSMOC_TILES));
   assert(got === ELECTRICAL_V4_PLAN, got);
 }

@@ -27,7 +27,7 @@ const { createSeedPool } = require_("../packages/db/dist/seed-tenant.js") as typ
 const { seedEskomSiteLayouts, SITE_LAYOUT_SLUG_PREFIX, siteLayoutSlug } = require_(
   "../packages/db/dist/site-layout-seed.js",
 ) as typeof SiteLayoutSeed;
-const { siteWidgetIdentity, upgradeSeededSiteLayoutCopies } = require_(
+const { siteWidgetIdentity, TAB_WIDGET_INSERT_SQL, upgradeSeededSiteLayoutCopies } = require_(
   "../packages/db/dist/site-layout-seed-upgrade.js",
 ) as typeof SiteLayoutSeedUpgrade;
 const { canonicalJson, OVERVIEW_V3_WIDGETS, SLD_V3_WIDGETS, smocStandardV3Content } = require_(
@@ -297,6 +297,67 @@ describe.skipIf(!ownerUrl)("F3.74 — the v3 → v4 seed upgrade of the seeded s
         overview: freshOverview,
         sld,
       });
+    });
+  });
+
+  /**
+   * I8 (ADR 0088 Amendment 2, "nothing deleted") — an administrator deleted "Main bus load", a tile
+   * the copy rule keeps at CSMOC (its `lt-panel` member has `kw`), and the tab's body sits where a
+   * copy that omitted it would: the mimic at `0,0`, the rail and the table at `y7`. The tab is
+   * left whole; the Overview, untouched, still moves.
+   * Mutation: `planElectricalV4Upgrade` keeps only the tiles the store holds (drop
+   * `bindableTiles.has`) → the tab reads as a copy that omitted the tile and moves → red. The
+   * lift is what makes this case able to fail: without it the stored rects match neither shape.
+   */
+  it("I8: leaves an electrical tab whose bindable tile was deleted whole and still moves the Overview", async () => {
+    await inTransaction(async (pool) => {
+      await rewindToV3(pool);
+      const sldWidgets = (await copyWidgets(pool)).filter((w) => w.tabKey === "sld");
+      const reshape = async (identity: string, rect: [number, number, number, number]): Promise<void> => {
+        const widget = sldWidgets.find((w) => w.identity === identity);
+        const res = await pool.query(
+          `UPDATE bms.dashboard_widgets SET grid_x = $2, grid_y = $3, grid_w = $4, grid_h = $5 WHERE id = $1`,
+          [widget?.id, ...rect],
+        );
+        assert(res.rowCount === 1, `precondition: ${identity} was reshaped`);
+      };
+      const tile = sldWidgets.find((w) => w.identity === "sld|value_tile|Main bus load");
+      const deleted = await pool.query(`DELETE FROM bms.dashboard_widgets WHERE id = $1`, [tile?.id]);
+      assert(deleted.rowCount === 1, "precondition: Main bus load was deleted");
+      await reshape("sld|mimic|", [0, 0, 12, 7]);
+      await reshape("sld|active_alarms_rail|Active alarms", [0, 7, 6, 5]);
+      await reshape("sld|table|Assets", [6, 7, 6, 5]);
+      const sld = await shapesOf(pool, "sld");
+      const outcome = await upgradeSeededSiteLayoutCopies(pool, eskomOrgId, [csmocId], SITE_LAYOUT_SLUG_PREFIX);
+      expect({
+        overviewsV4: outcome.overviewsV4,
+        electricalTabs: outcome.electricalTabs,
+        sld: await shapesOf(pool, "sld"),
+      }).toEqual({ overviewsV4: 1, electricalTabs: 0, sld });
+    });
+  });
+
+  /**
+   * I9 — the tab step's insert writes a widget once: run twice on the Overview's diagram (no
+   * title, so the guard must compare with `IS NOT DISTINCT FROM`), the second writes no row, which
+   * the runner's `RETURNING` check turns into a throw.
+   * Mutation: drop the `NOT EXISTS` of `TAB_WIDGET_INSERT_SQL` → the second insert returns a row → red.
+   */
+  it("I9: inserts a tab widget once when the insert runs twice", async () => {
+    await inTransaction(async (pool) => {
+      await rewindToV3(pool);
+      const ids = await pool.query<{ dashboard_id: string; tab_id: string }>(
+        `SELECT d.id AS dashboard_id, t.id AS tab_id FROM bms.dashboards d
+           JOIN bms.dashboard_tabs t ON t.dashboard_id = d.id AND t.tab_key = 'overview'
+          WHERE d.organization_id = $1 AND d.slug = $2`,
+        [eskomOrgId, CSMOC_SLUG],
+      );
+      const row = ids.rows[0];
+      assert(row !== undefined, "precondition: CSMOC's copy has an Overview tab");
+      const params = [eskomOrgId, row!.dashboard_id, row!.tab_id, "mimic", null, 0, 9, 6, 2, JSON.stringify({ compact: true })];
+      const first = await pool.query(TAB_WIDGET_INSERT_SQL, params);
+      const second = await pool.query(TAB_WIDGET_INSERT_SQL, params);
+      expect([first.rows.length, second.rows.length]).toEqual([1, 0]);
     });
   });
 

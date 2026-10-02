@@ -81,6 +81,25 @@ describe("F3.74 — simulator breaker trip", () => {
     expect(body).toMatch(/pointKey:\s*"breaker_trip",\s*value:\s*profile\.trip/);
   });
 
+  /**
+   * A tripped or open breaker carries exactly 0 kW and 0 A: `rndWalk` around a profile of 0 still
+   * wanders up to 0.3 kW and 1.5 A, so the walk is overridden after it, for both values.
+   * Mutation: drop the override → red. Mutation: override only `s.kw` → red.
+   */
+  it("stepElectrical zeroes kW and current after the walk when the profile trips or is open", () => {
+    const body = bodyOf("stepElectrical");
+    const guard = body.match(
+      /if\s*\(\s*profile\s*&&\s*\(\s*profile\.trip\s*===\s*1\s*\|\|\s*profile\.breaker\s*===\s*0\s*\)\s*\)\s*\{([^}]*)\}/,
+    );
+    expect(guard, "the trip-or-open guard").not.toBeNull();
+    expect(guard?.[1]).toMatch(/\bs\.kw\s*=\s*0\s*;/);
+    expect(guard?.[1]).toMatch(/\bs\.i\s*=\s*0\s*;/);
+    const walk = body.search(/\bs\.kw\s*=\s*profile\s*\?/);
+    expect(walk, "the kW walk").toBeGreaterThanOrEqual(0);
+    expect(body.indexOf(guard?.[0] ?? "\u0000"), "the guard runs after the walk").toBeGreaterThan(walk);
+    expect(body.indexOf(guard?.[0] ?? "\u0000"), "the guard runs before kVAR is derived").toBeLessThan(body.indexOf("const kvar"));
+  });
+
   it("stepElectrical still pushes breaker_main", () => {
     expect(bodyOf("stepElectrical")).toMatch(/pointKey:\s*"breaker_main",\s*value:\s*breaker\b/);
   });

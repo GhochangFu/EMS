@@ -8,7 +8,9 @@ import {
 } from "@bms/shared";
 import { SMOC_STANDARD_SITE_TEMPLATE } from "@bms/shared/site-templates";
 
+import { activePointsByAsset, membersByRole } from "./site-layout-seed-reads";
 import {
+  electricalTilesTheCopyKeeps,
   type OverviewV3UpgradePlan,
   planElectricalV4Upgrade,
   planOverviewV3Upgrade,
@@ -19,6 +21,7 @@ import {
 import {
   type GridRect,
   SMOC_STANDARD_V1_RECTS,
+  SLD_TAB_KEY,
   SMOC_STANDARD_V2_RECTS,
   siteTemplateRects,
   siteWidgetIdentity,
@@ -399,13 +402,22 @@ const PACK_WIDGETS_SQL = `
 `;
 const COPY_TABS_SQL = `SELECT id, tab_key FROM bms.dashboard_tabs WHERE dashboard_id = $1 AND organization_id = $2`;
 /**
- * A tab step's insert: the copy's own insert shape (`site-layout-seed.ts`), the widget row only.
- * `RETURNING id` is checked: a FORCE-RLS insert can drop a row without raising.
+ * A tab step's insert: the copy's own insert shape (`site-layout-seed.ts`), the widget row only,
+ * and only while the tab holds no widget of that type and title (`IS NOT DISTINCT FROM`: the
+ * Overview's diagram has no title). A second seed that inserted it since this one read the tab
+ * makes this insert write nothing. `RETURNING id` is checked, so that throws, as a FORCE-RLS
+ * insert that drops its row without raising does. Params: `[organizationId, dashboardId, tabId,
+ * widgetType, title, gridX, gridY, gridW, gridH, config]`.
  */
-const WIDGET_INSERT_SQL = `
+export const TAB_WIDGET_INSERT_SQL = `
   INSERT INTO bms.dashboard_widgets
     (organization_id, dashboard_id, tab_id, widget_type, title, grid_x, grid_y, grid_w, grid_h, config)
-  VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::jsonb)
+  SELECT $1::uuid, $2::uuid, $3::uuid, $4::varchar, $5::varchar, $6::int, $7::int, $8::int, $9::int, $10::jsonb
+   WHERE NOT EXISTS (
+     SELECT 1 FROM bms.dashboard_widgets existing
+      WHERE existing.tab_id = $3::uuid AND existing.widget_type = $4::varchar
+        AND existing.title IS NOT DISTINCT FROM $5::varchar
+   )
   RETURNING id
 `;
 /** The rect and the empty bindings are in the predicate: a tile bound or moved since the read stays. */
@@ -549,7 +561,7 @@ async function applyTabPlan(
     if (tabId === undefined) {
       throw new Error(`upgradeSeededSiteLayoutCopies: copy ${dashboardId} has no ${op.tabKey} tab for its ${op.widgetType} insert`);
     }
-    const res = await pool.query<{ id: string }>(WIDGET_INSERT_SQL, [
+    const res = await pool.query<{ id: string }>(TAB_WIDGET_INSERT_SQL, [
       organizationId,
       dashboardId,
       tabId,
@@ -564,7 +576,8 @@ async function applyTabPlan(
     if (!res.rows[0]?.id) {
       throw new Error(
         `upgradeSeededSiteLayoutCopies: the ${op.tabKey} ${op.widgetType} insert returned no row in copy ${dashboardId}. ` +
-          "A FORCE-RLS write can drop a row without raising: check this runs inside the organization's tenant bracket.",
+          "Either the tab already holds that widget (a second seed inserted it since this one read the tab), or a " +
+          "FORCE-RLS write dropped the row without raising: check this runs inside the organization's tenant bracket.",
       );
     }
   }
@@ -614,9 +627,40 @@ async function upgradeElectricalV4(
   dashboardId: string,
 ): Promise<number> {
   const copy = await readCopy(pool, organizationId, dashboardId);
-  const plan = planElectricalV4Upgrade(copy.widgets);
+  // No electrical widget, nothing to gate: skip the reads.
+  if (!copy.widgets.some((widget) => widget.tabKey === SLD_TAB_KEY)) return 0;
+  const bindable = await bindableElectricalTiles(pool, organizationId, dashboardId);
+  const plan = planElectricalV4Upgrade(copy.widgets, bindable);
   await applyTabPlan(pool, organizationId, dashboardId, copy.tabIds, plan, "electrical tab");
   return writes(plan) ? 1 : 0;
+}
+
+const SLD_TAB_GROUP_SQL = `
+  SELECT asset_group_id FROM bms.dashboard_tabs WHERE dashboard_id = $1 AND organization_id = $2 AND tab_key = $3
+`;
+
+/**
+ * The `sld` role tiles the copy rule would keep at this copy's site today
+ * (`electricalTilesTheCopyKeeps`): the members of the electrical tab's group by role and the
+ * organization's active points, read as `seedSiteLayouts` reads them. A tab with no group keeps
+ * no role tile.
+ */
+async function bindableElectricalTiles(
+  pool: Pick<pg.Pool, "query">,
+  organizationId: string,
+  dashboardId: string,
+): Promise<Set<string>> {
+  const tab = await pool.query<{ asset_group_id: string | null }>(SLD_TAB_GROUP_SQL, [
+    dashboardId,
+    organizationId,
+    SLD_TAB_KEY,
+  ]);
+  const groupId = tab.rows[0]?.asset_group_id ?? null;
+  if (groupId === null) return new Set();
+  return electricalTilesTheCopyKeeps(
+    await membersByRole(pool, organizationId, groupId),
+    await activePointsByAsset(pool, organizationId),
+  );
 }
 
 /** One rect update, checked: the `from` rect is in the predicate. */
