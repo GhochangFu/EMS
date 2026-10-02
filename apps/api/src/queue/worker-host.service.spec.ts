@@ -114,6 +114,7 @@ export const DISPATCH_SUMMARY: ReportDispatchSummary = {
   due: 3,
   enqueued: 2,
   skippedInvalid: 1,
+  skippedOwnerDisabled: 1,
   durationMs: 456,
 };
 

@@ -100,6 +100,8 @@ export type ReportDispatchSummary = {
   readonly due: number;
   readonly enqueued: number;
   readonly skippedInvalid: number;
+  /** `F3.78` (ADR 0089 decision 8, plan D3): due schedules paused because their owner is deactivated. */
+  readonly skippedOwnerDisabled: number;
   readonly durationMs: number;
 };
 
@@ -130,6 +132,8 @@ type DueRow = {
   run_at_local: string;
   timezone: string;
   next_run_at: string | Date;
+  /** The owner's `disabled_at`, or `null` for an enabled or absent owner (`F3.78`). */
+  owner_disabled_at: string | Date | null;
 };
 
 /**
@@ -157,17 +161,25 @@ export class ReportDispatchService {
     const startedAt = Date.now();
     return fleetDb.transaction(async (tx) => {
       const result = await tx.execute(sql`
-        SELECT id, organization_id, cadence, run_at_local, timezone, next_run_at
-        FROM bms.report_schedules
-        WHERE enabled AND next_run_at <= ${now}
-        ORDER BY next_run_at
+        SELECT s.id, s.organization_id, s.cadence, s.run_at_local, s.timezone, s.next_run_at,
+          (SELECT u.disabled_at FROM bms.users u WHERE u.id = s.created_by) AS owner_disabled_at
+        FROM bms.report_schedules s
+        WHERE s.enabled AND s.next_run_at <= ${now}
+        ORDER BY s.next_run_at
         LIMIT ${REPORT_DISPATCH_CLAIM_LIMIT}
-        FOR UPDATE SKIP LOCKED
+        FOR UPDATE OF s SKIP LOCKED
       `);
+      // F3.78 (ADR 0089 decision 8, plan D3): the owner's `disabled_at` is a
+      // scalar subquery, not a join. A LEFT JOIN cannot take FOR UPDATE on its
+      // nullable side, an INNER JOIN drops a NULL-owner schedule, and a
+      // NOT EXISTS filter would hide the paused rows from the count. `OF s`
+      // keeps the lock on the schedule rows alone.
       const rows = result.rows as DueRow[];
 
       let skippedInvalid = 0;
+      let skippedOwnerDisabled = 0;
       const advanced: { id: string; next: Date }[] = [];
+      const paused: { id: string; next: Date }[] = [];
       const deferred: { id: string; next: Date }[] = [];
       const backoffUntil = new Date(now.getTime() + REPORT_DISPATCH_POISON_BACKOFF_MS);
 
@@ -184,6 +196,17 @@ export class ReportDispatchService {
           deferred.push({ id: row.id, next: backoffUntil });
           this.logger.warn(
             `report schedule ${row.id}: skipped this tick with ${errorName(err)}; deferred one hour and still enabled until a PATCH corrects it (ADR 0071 decision 8, plan R-6, Amendment 2 item 7 C)`,
+          );
+          continue;
+        }
+        // F3.78: the owner is deactivated, so the schedule pauses. Advanced to
+        // its next occurrence — never the poison backoff, so it warns once per
+        // occurrence — and never enqueued. A NULL owner still runs.
+        if (row.owner_disabled_at !== null && row.owner_disabled_at !== undefined) {
+          skippedOwnerDisabled += 1;
+          paused.push({ id: row.id, next });
+          this.logger.warn(
+            `report schedule ${row.id}: skipped this occurrence because its owner is deactivated (ADR 0089 decision 8); advanced to the next occurrence`,
           );
           continue;
         }
@@ -209,6 +232,14 @@ export class ReportDispatchService {
       }
       // Item 7 C: the poison rows' backoff, in the same phase and the same
       // transaction — `next_run_at` only; the row never ran.
+      // The paused rows never ran: `next_run_at` only, as the deferral below.
+      for (const { id, next } of paused) {
+        await tx.execute(sql`
+          UPDATE bms.report_schedules
+          SET next_run_at = ${next}
+          WHERE id = ${id}
+        `);
+      }
       for (const { id, next } of deferred) {
         await tx.execute(sql`
           UPDATE bms.report_schedules
@@ -221,6 +252,7 @@ export class ReportDispatchService {
         due: rows.length,
         enqueued: advanced.length,
         skippedInvalid,
+        skippedOwnerDisabled,
         durationMs: Date.now() - startedAt,
       };
     });
