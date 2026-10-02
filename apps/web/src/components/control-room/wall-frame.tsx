@@ -1,6 +1,7 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { Link, useNavigate } from "react-router-dom";
 
+import { useWallFit } from "../../hooks/use-wall-fit";
 import { useWallRotation } from "../../hooks/use-wall-rotation";
 import { FOCUS_OUTLINE_CLASS } from "../../lib/focus-classes";
 import {
@@ -45,15 +46,20 @@ const controlClass = `surface-button px-3 py-1 text-sm font-semibold ${FOCUS_OUT
  * {@link NewestReadContext}; the bar judges it with `isStale` (`FRESH_MS`) every second on its own
  * clock, so a silent socket and a dead API still turn the line to "Live data paused since …".
  *
- * **The type scale (OQ4).** `.wall-root` sets CSS `zoom` (`index.css`): 1.25, and 2.5 at
- * 3000 px and wider. `zoom` scales the widgets' px literals too, which a root `font-size` would
- * not; the canvas measures its zoomed width, so its row height follows.
+ * **The zoom is computed (`F3.77` follow-up, plan D5, OQ4 refined).** `useWallFit` sets CSS `zoom`
+ * inline on `[data-wall-root]`, the one source: the base (1.25, and 2.5 at 3000 px and wider),
+ * reduced so the bar plus the content wrapper fit one screen, never below 0.5 (owner ruling Q2;
+ * below it the page scrolls). `zoom` scales the widgets' px literals too, which a root
+ * `font-size` would not. `min-h-screen` is on the unzoomed outer element, so `100vh` is never
+ * resolved inside the zoomed box; the measured wrapper sits inside `<main>` and carries the
+ * padding, so its height is the content's and not `main`'s stretched one.
  */
 export function WallFrame({ siteName, sitePath, tabKeys, currentKey, everyS, children }: WallFrameProps) {
   const navigate = useNavigate();
   const { paused, resume } = useWallRotation({ sitePath, tabKeys, currentKey, everyS });
   const [newestMs, setNewestMs] = useState<number | null>(null);
   const [nowMs, setNowMs] = useState(() => Date.now());
+  const { zoom, barRef, contentRef } = useWallFit();
 
   useEffect(() => {
     const id = window.setInterval(() => setNowMs(Date.now()), BAR_TICK_MS);
@@ -69,51 +75,55 @@ export function WallFrame({ siteName, sitePath, tabKeys, currentKey, everyS, chi
         : `Live data paused since ${formatWallTime(bar.since)}`;
 
   return (
-    <div className="wall-root flex min-h-screen flex-col bg-canvas text-ink">
-      <div data-wall-bar className="surface-raised flex flex-wrap items-center gap-x-5 gap-y-2 px-4 py-2">
-        <h1 className="font-condensed text-xl font-bold text-ink">{siteName}</h1>
-        <span data-testid="wall-clock" className="text-sm text-ink-muted">
-          <StatusBarClock precision="second" />
-        </span>
-        <span
-          data-testid="wall-read"
-          className={`text-sm font-semibold ${bar.kind === "live" ? "text-ink-muted" : "text-warning-ink"}`}
-        >
-          {readLine}
-        </span>
-        <div className="ml-auto flex flex-wrap items-center gap-3">
-          <label className="flex items-center gap-2 text-sm text-ink-muted">
-            <span>Rotate every</span>
-            <select
-              className={`surface-field px-2 py-1 text-sm ${FOCUS_OUTLINE_CLASS}`}
-              value={String(everyS)}
-              onChange={(event) => {
-                const next = WALL_INTERVALS_S.find((interval) => String(interval) === event.target.value);
-                if (next !== undefined) {
-                  navigate(wallHref(sitePath, currentKey, next), { replace: true });
-                }
-              }}
-            >
-              {WALL_INTERVALS_S.map((interval) => (
-                <option key={interval} value={String(interval)}>
-                  {interval} s
-                </option>
-              ))}
-            </select>
-          </label>
-          {paused ? (
-            <button type="button" onClick={resume} className={controlClass}>
-              Paused — Resume
-            </button>
-          ) : null}
-          <Link to={wallTabPath(sitePath, currentKey)} className={controlClass}>
-            Exit wall
-          </Link>
+    <div className="min-h-screen bg-canvas text-ink">
+      <div data-wall-root className="flex flex-col" style={{ zoom }}>
+        <div ref={barRef} data-wall-bar className="surface-raised flex flex-wrap items-center gap-x-5 gap-y-2 px-4 py-2">
+          <h1 className="font-condensed text-xl font-bold text-ink">{siteName}</h1>
+          <span data-testid="wall-clock" className="text-sm text-ink-muted">
+            <StatusBarClock precision="second" />
+          </span>
+          <span
+            data-testid="wall-read"
+            className={`text-sm font-semibold ${bar.kind === "live" ? "text-ink-muted" : "text-warning-ink"}`}
+          >
+            {readLine}
+          </span>
+          <div className="ml-auto flex flex-wrap items-center gap-3">
+            <label className="flex items-center gap-2 text-sm text-ink-muted">
+              <span>Rotate every</span>
+              <select
+                className={`surface-field px-2 py-1 text-sm ${FOCUS_OUTLINE_CLASS}`}
+                value={String(everyS)}
+                onChange={(event) => {
+                  const next = WALL_INTERVALS_S.find((interval) => String(interval) === event.target.value);
+                  if (next !== undefined) {
+                    navigate(wallHref(sitePath, currentKey, next), { replace: true });
+                  }
+                }}
+              >
+                {WALL_INTERVALS_S.map((interval) => (
+                  <option key={interval} value={String(interval)}>
+                    {interval} s
+                  </option>
+                ))}
+              </select>
+            </label>
+            {paused ? (
+              <button type="button" onClick={resume} className={controlClass}>
+                Paused — Resume
+              </button>
+            ) : null}
+            <Link to={wallTabPath(sitePath, currentKey)} className={controlClass}>
+              Exit wall
+            </Link>
+          </div>
         </div>
+        <main className="flex-1">
+          <div ref={contentRef} data-wall-content className="p-3">
+            <NewestReadContext.Provider value={setNewestMs}>{children}</NewestReadContext.Provider>
+          </div>
+        </main>
       </div>
-      <main className="flex-1 p-3">
-        <NewestReadContext.Provider value={setNewestMs}>{children}</NewestReadContext.Provider>
-      </main>
     </div>
   );
 }

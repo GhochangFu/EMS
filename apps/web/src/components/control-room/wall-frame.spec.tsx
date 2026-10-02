@@ -30,6 +30,30 @@ export function setUpFrame(): void {
 export function tearDownFrame(): void {
   cleanup();
   vi.useRealTimers();
+  vi.unstubAllGlobals();
+  if (offsetHeightDescriptor !== undefined) {
+    Object.defineProperty(HTMLElement.prototype, "offsetHeight", offsetHeightDescriptor);
+    offsetHeightDescriptor = undefined;
+  }
+}
+
+let offsetHeightDescriptor: PropertyDescriptor | undefined;
+
+/**
+ * `F3.77` follow-up — jsdom has no layout: the bar (`[data-wall-bar]`) is 48 px, the content
+ * wrapper (`[data-wall-content]`) `contentPx`, every other element 0, on a 1920 × 1080 window.
+ * Restored by `tearDownFrame`.
+ */
+function layOut(contentPx: number): void {
+  vi.stubGlobal("innerWidth", 1920);
+  vi.stubGlobal("innerHeight", 1080);
+  offsetHeightDescriptor = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "offsetHeight");
+  Object.defineProperty(HTMLElement.prototype, "offsetHeight", {
+    configurable: true,
+    get(this: HTMLElement) {
+      return this.hasAttribute("data-wall-bar") ? 48 : this.hasAttribute("data-wall-content") ? contentPx : 0;
+    },
+  });
 }
 
 function Reporter({ ms }: { ms: number | null }) {
@@ -156,4 +180,36 @@ export async function tabReachesResumeAndTheTabs(): Promise<void> {
     reached.push(active?.textContent ?? "");
   }
   expect(reached).toEqual(expect.arrayContaining(["Paused — Resume", "Overview", "SLD"]));
+}
+
+function wallRoot(): HTMLElement {
+  const root = document.querySelector<HTMLElement>("[data-wall-root]");
+  expect(root, "the zoomed wall root").not.toBeNull();
+  return root as HTMLElement;
+}
+
+/**
+ * F10a (`F3.77` follow-up, plan D5) — the wall root's zoom is the computed fit of the bar plus the
+ * content wrapper: 1080 / (48 + 1000) → 1.03, not the stylesheet's old constant 1.25. Mutation: a
+ * fixed `zoom: 1.25`, or `contentRef` on another element => red.
+ */
+export function theRootZoomIsTheComputedFit(): void {
+  layOut(1000);
+  renderFrame();
+  expect(wallRoot().style.zoom).toBe("1.03");
+}
+
+/**
+ * F10b — `min-h-screen` sits on an unzoomed outer element, never on the zoomed root, so `100vh`
+ * is never resolved inside the zoomed box. Mutation: `min-h-screen` back on the root => red.
+ */
+export function theScreenHeightIsOutsideTheZoom(): void {
+  layOut(1000);
+  renderFrame();
+  const root = wallRoot();
+  expect([root.classList.contains("min-h-screen"), root.parentElement?.classList.contains("min-h-screen")]).toEqual([
+    false,
+    true,
+  ]);
+  expect(root.parentElement?.style.zoom, "the outer element is not zoomed").toBe("");
 }

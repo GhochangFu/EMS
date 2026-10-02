@@ -12,6 +12,8 @@ import {
   tearDownFrame,
   theClockShowsSeconds,
   theFrameHasNoShellLandmarks,
+  theRootZoomIsTheComputedFit,
+  theScreenHeightIsOutsideTheZoom,
   theSelectChangesEvery,
 } from "./wall-frame.spec";
 
@@ -62,5 +64,13 @@ describe("F3.77 WallFrame (plan D8, D9)", () => {
 
   it("F9 lets the keyboard reach the Resume control and the tabs", async () => {
     await tabReachesResumeAndTheTabs();
+  });
+
+  it("F10a zooms the wall root to the computed fit of the bar and the content", () => {
+    theRootZoomIsTheComputedFit();
+  });
+
+  it("F10b keeps min-h-screen on an unzoomed outer element", () => {
+    theScreenHeightIsOutsideTheZoom();
   });
 });
