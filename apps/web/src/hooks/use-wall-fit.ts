@@ -24,20 +24,33 @@ export type WallFit = {
  * The natural height is the two elements' `offsetHeight`, in unscaled CSS px, so it does not move
  * with the zoom itself. A zoom change still changes the content's width in CSS px, which can
  * re-wrap it and change its height: the `ResizeObserver` fires again, and the hook re-measures.
- * `settleWallZoom` ignores a growth under 0.05, so that two-cycle damps, and React drops a state
- * set to the same value, so a stable fit renders nothing more.
+ * `settleWallZoom` ignores a growth under 0.05 (small jitter), and refuses any growth to the
+ * **overflow ceiling** — the lowest zoom the content has been seen to overflow at, recorded here on
+ * every shrink — so a re-wrap two-cycle of any size settles at the lower zoom (review finding).
+ * React drops a state set to the same value, so a stable fit renders nothing more.
+ *
+ * The ceiling is cleared on a window `resize` (a new width wraps differently) and on a new
+ * `resetKey` (the wall's tab: the frame does not remount on a rotation, and one tab's ceiling must
+ * not hold the next tab's content below the base). Known limit: on a tab that never changes, a
+ * content that shrinks later (fewer alarms) does not grow the zoom back past the ceiling until the
+ * next tab or resize — the page then stays a little small; it never overflows.
  *
  * Measured in a layout effect, so the first paint already has the fitted zoom. Re-measured on a
- * content or bar resize and on a window `resize`. Without `ResizeObserver` (jsdom) only the first
- * measure and the window listener run.
+ * content or bar resize, on a window `resize` and on a new `resetKey`. Without `ResizeObserver`
+ * (jsdom) only the measures on mount, on a key and on the window listener run.
  */
-export function useWallFit(): WallFit {
+export function useWallFit(resetKey: string | undefined): WallFit {
   const barRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
   const [zoom, setZoom] = useState(() => wallBaseZoom(window.innerWidth));
   const [viewportHeight, setViewportHeight] = useState(() => window.innerHeight);
+  // Mirrors of the applied zoom and the overflow ceiling, read and written outside a state
+  // updater (React may call an updater twice; the ceiling must be written once per measure).
+  const zoomRef = useRef(zoom);
+  const ceilingRef = useRef<number | null>(null);
 
   useLayoutEffect(() => {
+    ceilingRef.current = null;
     const measure = () => {
       setViewportHeight(window.innerHeight);
       const bar = barRef.current;
@@ -49,11 +62,22 @@ export function useWallFit(): WallFit {
         naturalPx,
         floor: WALL_ZOOM_FLOOR,
       });
-      setZoom((current) => settleWallZoom(current, target));
+      const current = zoomRef.current;
+      const next = settleWallZoom(current, target, ceilingRef.current);
+      if (next < current) {
+        // The zoom being left is the one that overflowed.
+        ceilingRef.current = Math.min(ceilingRef.current ?? Number.POSITIVE_INFINITY, current);
+      }
+      zoomRef.current = next;
+      setZoom(next);
+    };
+    const onWindowResize = () => {
+      ceilingRef.current = null;
+      measure();
     };
 
     measure();
-    window.addEventListener("resize", measure);
+    window.addEventListener("resize", onWindowResize);
     const observer = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(measure);
     for (const element of [barRef.current, contentRef.current]) {
       if (element !== null) {
@@ -62,9 +86,9 @@ export function useWallFit(): WallFit {
     }
     return () => {
       observer?.disconnect();
-      window.removeEventListener("resize", measure);
+      window.removeEventListener("resize", onWindowResize);
     };
-  }, []);
+  }, [resetKey]);
 
   return { zoom, viewportHeight, barRef, contentRef };
 }

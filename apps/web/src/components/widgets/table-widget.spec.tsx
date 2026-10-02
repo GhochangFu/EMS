@@ -197,6 +197,38 @@ export function theScrollBoxCapsItsHeight(): void {
   expect(classes).toContain("max-h-96");
 }
 
+function scrollBoxClasses(): string[] {
+  render(
+    <TableWidget
+      title="Active alarms"
+      status="ready"
+      config={{}}
+      columns={COLUMNS}
+      rows={ROWS}
+      truncated={false}
+    />,
+  );
+  return (screen.getByRole("table").parentElement as HTMLElement).className.split(" ");
+}
+
+/**
+ * Review finding — the builder keeps fixed 72 px rows, so in a two-row cell the scroll box must
+ * shrink below its content (and below 384 px) and scroll there, not paint over the tile below.
+ * `min-h-0` makes that shrink explicit in the frame's column. jsdom has no layout: this pins the
+ * class; the fit inside the builder cell is a browser claim.
+ */
+export function theScrollBoxShrinksIntoAFixedCell(): void {
+  expect(scrollBoxClasses()).toContain("min-h-0");
+}
+
+/**
+ * Review finding — in the builder the scroll box fills the rest of its fixed cell under the
+ * title, as `h-full` did before the view cap: `flex-1` in the frame's column.
+ */
+export function theScrollBoxFillsAFixedCell(): void {
+  expect(scrollBoxClasses()).toContain("flex-1");
+}
+
 /**
  * Every chosen column gone from the dataset is the "edit this widget" state — and it must be
  * distinguishable from "resolved with no rows", which is not the author's problem to fix.

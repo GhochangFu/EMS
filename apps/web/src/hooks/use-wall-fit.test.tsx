@@ -2,7 +2,10 @@
 import { afterEach, beforeEach, describe, it } from "vitest";
 
 import {
+  aNewTabClearsTheCeiling,
+  aRewrapJumpSettlesBelowTheCeiling,
   aSmallGrowthKeepsTheZoom,
+  aWindowResizeClearsTheCeiling,
   aTallerContentShrinksTheZoom,
   aWideScreenKeepsItsBase,
   aWindowResizeRecomputes,
@@ -49,6 +52,18 @@ describe("F3.77 follow-up useWallFit (plan D5)", () => {
 
   it("H5 recomputes on a window resize", () => {
     aWindowResizeRecomputes();
+  });
+
+  it("H7 settles a re-wrap jump bigger than the step below the overflow ceiling", () => {
+    aRewrapJumpSettlesBelowTheCeiling();
+  });
+
+  it("H8 clears the ceiling on a window resize", () => {
+    aWindowResizeClearsTheCeiling();
+  });
+
+  it("H9 clears the ceiling on a new tab", () => {
+    aNewTabClearsTheCeiling();
   });
 
   it("H6a disconnects the observer on unmount", () => {

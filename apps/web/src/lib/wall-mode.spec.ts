@@ -198,19 +198,34 @@ export function fitZoomWithoutAMeasurementKeepsTheBase(): void {
   ]);
 }
 
-/** Z5a — a growth under the 0.05 step is ignored, so a wrap-induced two-cycle damps. */
+/** Z5a — a growth under the 0.05 step is ignored, so small jitter does not move the zoom. */
 export function settleIgnoresASmallGrowth(): void {
-  expect(settleWallZoom(1.0, 1.03)).toBe(1.0);
+  expect(settleWallZoom(1.0, 1.03, null)).toBe(1.0);
 }
 
 /** Z5b — a growth of the step or more applies. */
 export function settleAppliesALargeGrowth(): void {
-  expect(settleWallZoom(1.0, 1.06)).toBe(1.06);
+  expect(settleWallZoom(1.0, 1.06, null)).toBe(1.06);
 }
 
 /** Z5c — a shrink always applies, however small: the page must never overflow to hold a zoom. */
 export function settleAlwaysAppliesAShrink(): void {
-  expect([settleWallZoom(1.0, 0.9), settleWallZoom(1.0, 0.99)]).toEqual([0.9, 0.99]);
+  expect([settleWallZoom(1.0, 0.9, null), settleWallZoom(1.0, 0.99, null)]).toEqual([0.9, 0.99]);
+}
+
+/**
+ * Z5d (review finding) — a growth to the ceiling (the lowest zoom seen to overflow) or above it is
+ * refused, however large: that is what stops a re-wrap jump bigger than the step from flipping
+ * the zoom forever. A growth below the ceiling still applies, and a shrink ignores the ceiling.
+ * Mutation: drop the ceiling clause => 1.08 for the first two => red.
+ */
+export function settleRefusesAGrowthToTheCeiling(): void {
+  expect([
+    settleWallZoom(0.98, 1.08, 1.08),
+    settleWallZoom(0.98, 1.2, 1.08),
+    settleWallZoom(0.98, 1.05, 1.08),
+    settleWallZoom(0.98, 0.9, 1.08),
+  ]).toEqual([0.98, 0.98, 1.05, 0.9]);
 }
 
 /**

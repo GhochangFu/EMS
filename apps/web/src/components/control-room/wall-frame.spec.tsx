@@ -46,16 +46,20 @@ let offsetHeightDescriptor: PropertyDescriptor | undefined;
  * Restored by `tearDownFrame`.
  */
 function layOut(contentPx: number): void {
+  laidOutContentPx = contentPx;
   vi.stubGlobal("innerWidth", 1920);
   vi.stubGlobal("innerHeight", 1080);
   offsetHeightDescriptor = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "offsetHeight");
   Object.defineProperty(HTMLElement.prototype, "offsetHeight", {
     configurable: true,
     get(this: HTMLElement) {
-      return this.hasAttribute("data-wall-bar") ? 48 : this.hasAttribute("data-wall-content") ? contentPx : 0;
+      return this.hasAttribute("data-wall-bar") ? 48 : this.hasAttribute("data-wall-content") ? laidOutContentPx : 0;
     },
   });
 }
+
+/** The content wrapper's height `layOut` reports; a case may change it between renders. */
+let laidOutContentPx = 0;
 
 function Reporter({ ms }: { ms: number | null }) {
   const report = useReportNewestRead();
@@ -255,6 +259,28 @@ export function aResizeMovesTheCapAtTheSameZoom(): void {
     ["1.25", "518"],
     ["1.25", "432"],
   ]);
+}
+
+/**
+ * F12 (review finding) — the fit is keyed on the tab: a rotation does not remount the frame, so
+ * the frame hands `currentKey` to `useWallFit`, which clears its overflow ceiling and re-measures.
+ * The first tab overflows at 1.25 (1.03, ceiling 1.25); the next tab's content fits, so it gets
+ * the base back. Mutation: `useWallFit(undefined)` => no re-measure, the zoom stays 1.03 => red.
+ */
+export function aNewTabRefitsTheZoom(): void {
+  layOut(1000);
+  const frame = (currentKey: string) => (
+    <MemoryRouter initialEntries={[`${SITE}/${currentKey}?wall=1&every=30`]}>
+      <WallFrame siteName="Lotapata" sitePath={SITE} tabKeys={["overview", "sld"]} currentKey={currentKey} everyS={30}>
+        <Reporter ms={READ_AT} />
+      </WallFrame>
+    </MemoryRouter>
+  );
+  const { rerender } = render(frame("overview"));
+  const before = wallRoot().style.zoom;
+  laidOutContentPx = 500;
+  rerender(frame("sld"));
+  expect([before, wallRoot().style.zoom]).toEqual(["1.03", "1.25"]);
 }
 
 /**

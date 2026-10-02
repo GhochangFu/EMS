@@ -79,8 +79,8 @@ export function tearDownFit(): void {
 
 const BAR_PX = 48;
 
-function Probe({ contentPx }: { contentPx: number }) {
-  const { zoom, barRef, contentRef } = useWallFit();
+function Probe({ contentPx, tabKey }: { contentPx: number; tabKey?: string }) {
+  const { zoom, barRef, contentRef } = useWallFit(tabKey);
   return (
     <>
       <div ref={barRef} data-h={BAR_PX} />
@@ -90,20 +90,51 @@ function Probe({ contentPx }: { contentPx: number }) {
   );
 }
 
+/**
+ * Content that re-wraps with the zoom (the review finding's scenario): above 1.0 the CSS width is
+ * narrower and the rows wrap, so bar + content is 1100 px; at 1.0 or below it is 1000 px. That is
+ * 0.98 against 1.08 at 1080 px high — a jump of 0.10, twice the growth step.
+ */
+function WrapProbe({ tabKey }: { tabKey?: string }) {
+  const { zoom, barRef, contentRef } = useWallFit(tabKey);
+  return (
+    <>
+      <div ref={barRef} data-h={BAR_PX} />
+      <div ref={contentRef} data-testid="content" data-h={zoom > 1 ? 1052 : 952} />
+      <output data-testid="zoom">{String(zoom)}</output>
+    </>
+  );
+}
+
 function zoom(): string {
   return screen.getByTestId("zoom").textContent ?? "";
 }
 
-/** Sets the content's height and fires every observer still watching a connected element. */
-function resizeContent(px: number): void {
+/** Fires every observer still watching a connected element, as a browser does after a layout. */
+function fireObservers(): void {
   act(() => {
-    screen.getByTestId("content").dataset.h = String(px);
     for (const observer of observers) {
       if ([...observer.targets].some((target) => target.isConnected)) {
         observer.callback();
       }
     }
   });
+}
+
+/** Sets the content's height and fires the observers. */
+function resizeContent(px: number): void {
+  screen.getByTestId("content").dataset.h = String(px);
+  fireObservers();
+}
+
+/** Mounts the wrap probe and fires the observer six times, one layout each: the zoom after each. */
+function settleWrapProbe(): string[] {
+  const seen: string[] = [];
+  for (let fire = 0; fire < 6; fire += 1) {
+    fireObservers();
+    seen.push(zoom());
+  }
+  return seen;
 }
 
 /** H1 — 1920 × 1080, bar 48 + content 1000 = 1048 px: 1080 / 1048 = 1.0305 → 1.03, at the first layout. */
@@ -150,6 +181,41 @@ export function aWindowResizeRecomputes(): void {
     window.dispatchEvent(new Event("resize"));
   });
   expect(zoom()).toBe("0.73");
+}
+
+/**
+ * H7 (review finding) — a re-wrap jump bigger than the growth step settles instead of flipping:
+ * 1.25 overflows (0.98), 0.98 grows to 1.08, 1.08 overflows again, and 1.08 is now the ceiling, so
+ * the zoom stays 0.98 on every later layout. Mutation: ignore the ceiling => 1.08, 0.98, … => red.
+ */
+export function aRewrapJumpSettlesBelowTheCeiling(): void {
+  render(<WrapProbe />);
+  expect(settleWrapProbe().slice(-3)).toEqual(["0.98", "0.98", "0.98"]);
+}
+
+/**
+ * H8 — a window resize clears the ceiling (a new width re-wraps differently), so the zoom may try
+ * the growth again. Mutation: keep the ceiling on resize => stays 0.98 => red.
+ */
+export function aWindowResizeClearsTheCeiling(): void {
+  render(<WrapProbe />);
+  settleWrapProbe();
+  act(() => {
+    window.dispatchEvent(new Event("resize"));
+  });
+  expect(zoom()).toBe("1.08");
+}
+
+/**
+ * H9 — a new tab clears the ceiling: the frame does not remount on a rotation, and a ceiling from
+ * one tab must not hold a later tab's content that fits below the base. Mutation: drop the reset
+ * on the key => the earlier tab's 1.25 ceiling refuses 1.25 => stays 1.03 => red.
+ */
+export function aNewTabClearsTheCeiling(): void {
+  const { rerender } = render(<Probe contentPx={1000} tabKey="overview" />);
+  expect(zoom()).toBe("1.03");
+  rerender(<Probe contentPx={700} tabKey="water" />);
+  expect(zoom()).toBe("1.25");
 }
 
 /** H6a — unmount disconnects the observer: it watches nothing afterwards (and watched both probes before). */

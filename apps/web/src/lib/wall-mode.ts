@@ -129,7 +129,11 @@ export const WALL_WIDE_SCREEN_PX = 3000;
 /** Below 0.5 the type is unreadable: the fit stops here and the page scrolls (owner ruling Q2). */
 export const WALL_ZOOM_FLOOR = 0.5;
 
-/** A growth smaller than this is ignored, so a zoom that re-wraps the content cannot oscillate. */
+/**
+ * A growth smaller than this is ignored, so small jitter in the measured height does not move the
+ * zoom. It does not stop a re-wrap two-cycle on its own — a jump larger than the step passes it;
+ * the overflow ceiling in {@link settleWallZoom} does.
+ */
 export const WALL_ZOOM_GROWTH_STEP = 0.05;
 
 /** The base zoom: 1.25 on a 1920 px wall, 2.5 from {@link WALL_WIDE_SCREEN_PX} (a 4K wall). */
@@ -163,11 +167,20 @@ export function wallFitZoom({ base, viewportHeight, naturalPx, floor }: WallFitI
 
 /**
  * The zoom to apply next. A shrink always applies (the page must not overflow to keep a zoom); a
- * growth applies only when it is at least {@link WALL_ZOOM_GROWTH_STEP}. A zoom change re-wraps
- * the content, which changes its height, which changes the fit: the step damps that two-cycle.
+ * growth applies only when it is at least {@link WALL_ZOOM_GROWTH_STEP} **and** stays below
+ * `ceiling`, the lowest zoom at which the content has been seen to overflow (`null` for none).
+ *
+ * A zoom change re-wraps the content, which changes its height, which changes the fit. When the
+ * jump is larger than the step, the step alone lets the zoom flip between two values for ever
+ * (overflow at the high one, room at the low one). The ceiling fails closed: once a zoom has
+ * overflowed, the fit never grows back to it, so the zoom settles at the lower value. The caller
+ * clears the ceiling when the conditions change (a window resize, a new tab).
  */
-export function settleWallZoom(current: number, target: number): number {
-  if (target > current && target - current < WALL_ZOOM_GROWTH_STEP) {
+export function settleWallZoom(current: number, target: number, ceiling: number | null): number {
+  if (target <= current) {
+    return target;
+  }
+  if (target - current < WALL_ZOOM_GROWTH_STEP || (ceiling !== null && target >= ceiling)) {
     return current;
   }
   return target;

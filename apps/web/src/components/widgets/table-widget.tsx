@@ -56,7 +56,9 @@ export function TableWidget({
       ) : (
         // `F3.77` follow-up (owner ruling Q5): a view tile is as tall as its content, and a table
         // has no configured row count, so the box caps at `max-h-96` and scrolls inside itself.
-        <div className="max-h-96 overflow-auto surface-table">
+        // `min-h-0 flex-1` keep the builder's fixed cell: the box fills what the frame's column
+        // leaves under the title and shrinks into it, as `h-full` did before the cap.
+        <div className="min-h-0 flex-1 max-h-96 overflow-auto surface-table">
           <table className="w-full border-collapse text-left text-xs">
             <thead className="sticky top-0 bg-surface">
               <tr>

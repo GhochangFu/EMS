@@ -2,6 +2,7 @@
 import { afterEach, beforeEach, describe, it } from "vitest";
 
 import {
+  aNewTabRefitsTheZoom,
   aResizeMovesTheCapAtTheSameZoom,
   theClockTickDoesNotRerenderTheCanvas,
   theFrameProvidesTheAspectCap,
@@ -87,5 +88,9 @@ describe("F3.77 WallFrame (plan D8, D9)", () => {
 
   it("F11c does not re-render the canvas on the bar's clock tick", () => {
     theClockTickDoesNotRerenderTheCanvas();
+  });
+
+  it("F12 re-fits the zoom on a new tab (the fit is keyed on currentKey)", () => {
+    aNewTabRefitsTheZoom();
   });
 });

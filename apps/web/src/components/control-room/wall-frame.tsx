@@ -66,7 +66,8 @@ export function WallFrame({ siteName, sitePath, tabKeys, currentKey, everyS, chi
   const { paused, resume } = useWallRotation({ sitePath, tabKeys, currentKey, everyS });
   const [newestMs, setNewestMs] = useState<number | null>(null);
   const [nowMs, setNowMs] = useState(() => Date.now());
-  const { zoom, viewportHeight, barRef, contentRef } = useWallFit();
+  // Keyed on the tab: a rotation does not remount the frame, so the fit's overflow ceiling resets here.
+  const { zoom, viewportHeight, barRef, contentRef } = useWallFit(currentKey);
   const maxAspectHeightPx = wallAspectCapPx(viewportHeight, zoom);
   // One value per cap, so the bar's one-second clock does not re-render every canvas tile.
   const canvasFit = useMemo(() => ({ maxAspectHeightPx }), [maxAspectHeightPx]);
