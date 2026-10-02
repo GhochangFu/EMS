@@ -41,7 +41,7 @@ type WidgetInspectorProps = {
   /** `F3.73` — the dashboard's tabs, for a module summary card's target select. Required, so a
    * host that forgets it fails `tsc` rather than silently disabling the select; `[]` is a
    * dashboard with no tabs (a new one, or a legacy canvas), where the select says so. */
-  tabs: readonly { readonly key: string; readonly label: string }[];
+  tabs: readonly { readonly key: string; readonly label: string; readonly assetGroupId: string | null }[];
   onChange: (patch: Partial<DashboardWidgetRow>) => void;
   onRemove: () => void;
 };
@@ -83,6 +83,9 @@ export function WidgetInspector({ row, problems, role, organizationId, tabs, onC
   const layouts = (layoutsQuery.data?.items ?? []).filter((layout) => layout.organizationId === organizationId);
   const storedLayoutId = row.config.mimicLayoutId;
   const mimicSource = row.config.mimicSource ?? "preset";
+  // `F3.74` — the tabs a mimic may resolve through, and whether its own tab already binds a group.
+  const groupTabs = tabs.filter((tab) => tab.assetGroupId !== null);
+  const mimicOwnTabBindsGroup = groupTabs.some((tab) => tab.key === row.tabKey);
 
   function updateConfig(patch: Partial<WidgetConfigRow>): void {
     onChange({ config: { ...row.config, ...patch } });
@@ -311,6 +314,43 @@ export function WidgetInspector({ row, problems, role, organizationId, tabs, onC
             ))}
           </select>
         </Field>
+      ) : null}
+
+      {/*
+        `F3.74` (plan D7) — a mimic on a tab that binds no asset group resolves through the group-bound
+        tab named here (`config.tabKey`); the select lists only those tabs, the API's rule. A mimic on a
+        group-bound tab of its own resolves through that tab, so it shows no select. `compact` is the
+        preset arm's only field (the layout arm's schema has none).
+      */}
+      {row.widgetType === "mimic" && !mimicOwnTabBindsGroup ? (
+        <Field label="Resolves through tab" error={problemFor("mimicTabKey")}>
+          <select
+            value={row.config.mimicTabKey ?? ""}
+            onChange={(event) => updateConfig({ mimicTabKey: event.target.value || undefined })}
+            className="surface-field w-full px-2 py-1.5 text-xs"
+          >
+            <option value="">None</option>
+            {row.config.mimicTabKey !== undefined && !groupTabs.some((tab) => tab.key === row.config.mimicTabKey) ? (
+              <option value={row.config.mimicTabKey}>{row.config.mimicTabKey}</option>
+            ) : null}
+            {groupTabs.map((tab) => (
+              <option key={tab.key} value={tab.key}>
+                {tab.label}
+              </option>
+            ))}
+          </select>
+        </Field>
+      ) : null}
+
+      {row.widgetType === "mimic" && mimicSource === "preset" ? (
+        <label className="flex items-center gap-2 text-xs text-ink">
+          <input
+            type="checkbox"
+            checked={row.config.mimicCompact ?? false}
+            onChange={(event) => updateConfig({ mimicCompact: event.target.checked })}
+          />
+          Compact — labels, switches and pills only
+        </label>
       ) : null}
 
       {row.widgetType === "active_alarms_rail" ? (

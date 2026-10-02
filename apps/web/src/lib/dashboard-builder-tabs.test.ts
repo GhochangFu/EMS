@@ -16,6 +16,8 @@ import {
   runMovingATabRenumbersTests,
   runRemovingATabRemovesItsWidgetsTests,
   runMimicOfferedOnAGroupTabTests,
+  runMimicResolvesThroughItsTabKeyTests,
+  runMimicTabKeyAndCompactRoundTripTests,
 } from "./dashboard-builder-tabs.spec";
 
 /** Vitest entry point — assertions live in the sibling `.spec` (ADR 0014). */
@@ -72,8 +74,16 @@ describe("F3.73 D11 dashboard builder tabs", () => {
     runRemovingATabRemovesItsWidgetsTests();
   });
 
-  it("the plant mimic is offered on a group-bound tab", () => {
+  it("the plant mimic is offered on a group-bound tab, and on a group-less one beside it", () => {
     runMimicOfferedOnAGroupTabTests();
+  });
+
+  it("a mimic on a group-less tab resolves through its tabKey (F3.74)", () => {
+    runMimicResolvesThroughItsTabKeyTests();
+  });
+
+  it("a mimic's tabKey and compact round-trip through the payload and the DTO (F3.74)", () => {
+    runMimicTabKeyAndCompactRoundTripTests();
   });
 
   it("a group tab off a location scope is refused", () => {

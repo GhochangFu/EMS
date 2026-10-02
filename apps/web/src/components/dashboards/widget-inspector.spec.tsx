@@ -74,7 +74,7 @@ function renderInspector(
   options: {
     problems?: DashboardBuilderProblem[];
     onChange?: (patch: Partial<DashboardWidgetRow>) => void;
-    tabs?: readonly { key: string; label: string }[];
+    tabs?: readonly { key: string; label: string; assetGroupId: string | null }[];
   } = {},
 ): void {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -330,8 +330,14 @@ export function aRailRowsProblemRendersUnderTheRows(): void {
 }
 
 const TABS = [
-  { key: "ups", label: "UPS" },
-  { key: "hvac", label: "HVAC" },
+  { key: "ups", label: "UPS", assetGroupId: null },
+  { key: "hvac", label: "HVAC", assetGroupId: null },
+];
+
+/** `F3.74` — "overview" binds no group; "electrical" binds one. */
+const GROUP_TABS = [
+  { key: "overview", label: "Overview", assetGroupId: null },
+  { key: "electrical", label: "Electrical", assetGroupId: "33333333-3333-4333-8333-333333333333" },
 ];
 
 export function aModuleCardOffersTheDashboardsTabs(): void {
@@ -392,4 +398,54 @@ export async function aWidgetOnATabbedDashboardMovesThroughTheTabSelect(): Promi
 export function aWidgetOnADashboardWithoutTabsHasNoTabSelect(): void {
   renderInspector(blankDashboardWidgetRow("value_tile"), { tabs: [] });
   expect(screen.queryByRole("combobox", { name: "Tab" })).toBeNull();
+}
+
+/** `F3.74` — a mimic on a group-less tab offers only the group-bound tabs to resolve through.
+ * Mutation: list every tab => red (the Overview option is present). */
+export function theMimicTabSelectListsOnlyGroupBoundTabs(): void {
+  renderInspector({ ...blankDashboardWidgetRow("mimic"), tabKey: "overview" }, { tabs: GROUP_TABS });
+  const select = screen.getByRole("combobox", { name: /^Resolves through tab/ });
+  expect(within(select).getByRole("option", { name: "Electrical" })).not.toBeNull();
+  expect(within(select).queryByRole("option", { name: "Overview" })).toBeNull();
+}
+
+export async function choosingAMimicTabWritesItToTheConfig(): Promise<void> {
+  const onChange = vi.fn();
+  renderInspector({ ...blankDashboardWidgetRow("mimic"), tabKey: "overview" }, { tabs: GROUP_TABS, onChange });
+  await userEvent.selectOptions(screen.getByRole("combobox", { name: /^Resolves through tab/ }), "electrical");
+  expect(onChange).toHaveBeenLastCalledWith({ config: expect.objectContaining({ mimicTabKey: "electrical" }) });
+}
+
+/** A mimic on a group-bound tab resolves through its own tab, so it shows no select. */
+export function aMimicOnAGroupBoundTabHasNoMimicTabSelect(): void {
+  renderInspector({ ...blankDashboardWidgetRow("mimic"), tabKey: "electrical" }, { tabs: GROUP_TABS });
+  expect(screen.queryByRole("combobox", { name: /^Resolves through tab/ })).toBeNull();
+}
+
+export function aValueTileHasNoMimicTabSelect(): void {
+  renderInspector({ ...blankDashboardWidgetRow("value_tile"), tabKey: "overview" }, { tabs: GROUP_TABS });
+  expect(screen.queryByRole("combobox", { name: /^Resolves through tab/ })).toBeNull();
+}
+
+export function aMimicTabProblemRendersUnderTheSelect(): void {
+  renderInspector(
+    { ...blankDashboardWidgetRow("mimic"), tabKey: "overview" },
+    { tabs: GROUP_TABS, problems: [{ widget: 0, field: "mimicTabKey", message: "tab problem sentence" }] },
+  );
+  expect(screen.getByText("tab problem sentence")).not.toBeNull();
+}
+
+export async function tickingCompactWritesItToTheConfig(): Promise<void> {
+  const onChange = vi.fn();
+  renderInspector(blankDashboardWidgetRow("mimic"), { onChange });
+  await userEvent.click(screen.getByRole("checkbox", { name: /Compact/ }));
+  expect(onChange).toHaveBeenLastCalledWith({ config: expect.objectContaining({ mimicCompact: true }) });
+}
+
+/** `compact` is the preset arm's only (plan D7): the layout arm shows no checkbox. */
+export function theLayoutSourceHasNoCompactCheckbox(): void {
+  const row = blankDashboardWidgetRow("mimic");
+  row.config.mimicSource = "layout";
+  renderInspector(row);
+  expect(screen.queryByRole("checkbox", { name: /Compact/ })).toBeNull();
 }

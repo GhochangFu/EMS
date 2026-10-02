@@ -492,7 +492,7 @@ export function DashboardBuilderEditPage({ user }: DashboardBuilderEditPageProps
                 <div className="flex flex-wrap gap-2">
                   {/* `F3.32` — the live scope's kind, so a scope switch removes "Plant mimic" at once;
                       `F3.73` D11 — and the selected tab, so a group-bound tab offers it. */}
-                  {offerableWidgetTypesOnTab(scope.kind, selectedTab).map((type) => (
+                  {offerableWidgetTypesOnTab(scope.kind, selectedTab, tabs).map((type) => (
                     <button
                       key={type}
                       type="button"

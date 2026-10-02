@@ -1,4 +1,5 @@
 import {
+  MIMIC_TAB_MESSAGE,
   bindingExclusiveMessage,
   bindingRequiredMessage,
   DASHBOARD_GRID,
@@ -214,8 +215,12 @@ export function offerableWidgetTypes(kind: DashboardScopeValue["kind"]): readonl
 export function offerableWidgetTypesOnTab(
   kind: DashboardScopeValue["kind"],
   tab: TabForRules | undefined,
+  // `F3.74` — REQUIRED: the dashboard's whole tab set. A mimic on a group-less tab resolves through
+  // `config.tabKey`, so it is offered whenever some tab binds a group; an omitted list would hide it.
+  tabs: readonly TabForRules[],
 ): readonly WidgetType[] {
-  return offerableWidgetTypes(tab !== undefined && tab.assetGroupId !== null ? "assetGroup" : kind);
+  const resolves = tab !== undefined && (tab.assetGroupId !== null || tabs.some((other) => other.assetGroupId !== null));
+  return offerableWidgetTypes(resolves ? "assetGroup" : kind);
 }
 
 /** Whether a widget type resolves against an asset group — the plant mimic alone (see above). */
@@ -306,6 +311,13 @@ function configRowFromDto(widget: DashboardWidgetDto): WidgetConfigRow {
       } else {
         row.mimicSource = "preset";
         row.mimicPreset = widget.config.preset;
+        // `F3.74` — `compact` is the preset arm's only; stored `false` and absent both read as unset.
+        if (widget.config.compact === true) {
+          row.mimicCompact = true;
+        }
+      }
+      if (widget.config.tabKey !== undefined) {
+        row.mimicTabKey = widget.config.tabKey;
       }
       break;
     case "active_alarms_rail":
@@ -633,12 +645,21 @@ export function dashboardBuilderErrors(
     // `F3.73` plan D2 — the API's `mimicGroupFor` mirror: a mimic resolves against the
     // dashboard's group, or else the group of the tab it sits on, so a mimic on a group-bound tab
     // is legal on any scope kind. A mimic on the Overview tab (no group) still needs a group scope.
+    //
+    // `F3.74` — and else the group of the tab its `config.tabKey` names (the API's `mimicGroupFor`).
+    // No key keeps the scope sentence; a key that names no group-bound tab is `MIMIC_TAB_MESSAGE`,
+    // the API's own sentence, on the key's field so the inspector's select shows it.
     if (
       needsAssetGroup(row.widgetType) &&
       scopeKind !== "assetGroup" &&
       !(row.tabKey !== undefined && groupTabKeys.has(row.tabKey))
     ) {
-      push(index, SCOPE_PROBLEM_FIELD, MIMIC_NEEDS_ASSET_GROUP_MESSAGE);
+      const named = row.config.mimicTabKey;
+      if (named === undefined) {
+        push(index, SCOPE_PROBLEM_FIELD, MIMIC_NEEDS_ASSET_GROUP_MESSAGE);
+      } else if (!groupTabKeys.has(named)) {
+        push(index, "mimicTabKey", MIMIC_TAB_MESSAGE);
+      }
     }
 
     if (row.gridW < DASHBOARD_GRID.minWidgetW || row.gridW > DASHBOARD_GRID.columns) {

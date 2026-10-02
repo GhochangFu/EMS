@@ -145,15 +145,16 @@ export async function movingAWidgetToAnotherTab(): Promise<void> {
   ]);
 }
 
-/** A new widget lands on the selected tab, and a group-bound tab offers the plant mimic where the
- * Overview tab of a location dashboard does not. Mutation: add the row without the tab => red. */
+/** A new widget lands on the selected tab. `F3.74`: the plant mimic is offered on the group-less
+ * Overview tab too, because the dashboard has a group-bound tab to resolve through. Mutation: add
+ * the row without the tab => red. */
 export async function aNewWidgetLandsOnTheSelectedTab(): Promise<void> {
   stubLoads({ dto: TABBED_DTO, groups: [GROUP] });
   renderPage(asUser("admin"));
   await waitForPrefill("Location");
 
   await within(await strip()).findByRole("tab", { name: "Overview" });
-  expect(screen.queryByRole("button", { name: "+ Plant mimic" })).toBeNull();
+  expect(screen.getByRole("button", { name: "+ Plant mimic" })).toBeInTheDocument();
   await userEvent.click(within(await strip()).getByRole("tab", { name: "Electrical" }));
   await userEvent.click(screen.getByRole("button", { name: "+ Plant mimic" }));
 
