@@ -16,6 +16,8 @@ import type { IdentityAdminConfig } from "./identity-admin.config";
  * {@link cleanUpCreatedUsers}. The client has no read methods, so the reads
  * that check its writes go through {@link adminGet} under the same service
  * account — a read the service account cannot make is itself a finding (D1).
+ * K6 is the one exception: it reads the realm as the master admin (owner
+ * ruling Q-C, see {@link realmAsMasterAdmin}).
  */
 
 function assert(condition: boolean, message: string): void {

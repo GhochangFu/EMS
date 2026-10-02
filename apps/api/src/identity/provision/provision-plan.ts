@@ -7,10 +7,12 @@
  * cases with no Keycloak; `provision-cli.ts` makes the REST calls.
  *
  * The realm file (`infra/keycloak/bms-realm.json`) states the same client,
- * brute-force settings and user profile for a fresh import. The provisioning
- * step re-applies them so an existing realm — imported before F3.78, or built
- * by hand — converges too, and it alone sets the password policy and the
- * client secret (plan U4).
+ * brute-force settings and admin-only email for a fresh import. The
+ * provisioning step re-applies them so an existing realm — imported before
+ * F3.78, or built by hand — converges too, and it alone sets the password
+ * policy, the client secret (plan U4) and the optional first and last name
+ * (owner ruling Q-D): the realm file still requires both names, so a fresh
+ * import requires them until the step runs.
  */
 
 /** The confidential client the users API calls Keycloak as (decision 5). */

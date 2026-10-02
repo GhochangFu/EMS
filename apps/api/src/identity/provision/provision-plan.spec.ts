@@ -168,13 +168,24 @@ export function assertTheOptionalNamesTransformKeepsEverythingElse(): void {
   );
 }
 
+/**
+ * Asserts on the input's own `required` blocks, not against `CURRENT_PROFILE`:
+ * a mutating transform called by an earlier case would have stripped the shared
+ * fixture too, and the comparison would then pass.
+ */
 export function assertTheOptionalNamesTransformDoesNotMutateItsInput(): void {
-  const input = structuredClone(CURRENT_PROFILE);
+  const input: UserProfileConfig = {
+    attributes: [
+      { name: "email" },
+      { name: "firstName", required: { roles: ["user"] } },
+      { name: "lastName", required: { roles: ["user"] } },
+    ],
+  };
   withOptionalNames(input);
-  assert(
-    JSON.stringify(input) === JSON.stringify(CURRENT_PROFILE),
-    "withOptionalNames must not mutate the configuration it was given",
-  );
+  const kept = input.attributes
+    .filter((a) => a.name === "firstName" || a.name === "lastName")
+    .every((a) => JSON.stringify(a.required) === JSON.stringify({ roles: ["user"] }));
+  assert(kept, `withOptionalNames must not mutate the configuration it was given; got ${JSON.stringify(input)}`);
 }
 
 /** The step's whole profile write: both rules applied, in either order, to the live config. */
