@@ -172,3 +172,23 @@ export function settleWallZoom(current: number, target: number): number {
   }
   return target;
 }
+
+/**
+ * The share of the screen's height a fixed-aspect tile (the mimic) may take on the wall (owner
+ * ruling Q4). A full-width drawing's height follows its width, which `zoom` does not change in
+ * viewport px, so zoom alone cannot fit it; the cap letterboxes it instead.
+ */
+export const WALL_ASPECT_CAP_FRACTION = 0.6;
+
+/**
+ * The fixed-aspect cap in the zoomed box's CSS px: {@link WALL_ASPECT_CAP_FRACTION} of the
+ * viewport's height, divided by the zoom, so the tile is that share of the screen whatever the
+ * zoom. Constant in viewport px, so the fit still converges. `null` (no cap) for a viewport or a
+ * zoom that is not a finite positive number.
+ */
+export function wallAspectCapPx(viewportHeight: number, zoom: number): number | null {
+  if (!(Number.isFinite(viewportHeight) && viewportHeight > 0 && Number.isFinite(zoom) && zoom > 0)) {
+    return null;
+  }
+  return Math.round((WALL_ASPECT_CAP_FRACTION * viewportHeight) / zoom);
+}

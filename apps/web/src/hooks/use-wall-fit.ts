@@ -5,6 +5,11 @@ import { settleWallZoom, WALL_ZOOM_FLOOR, wallBaseZoom, wallFitZoom } from "../l
 export type WallFit = {
   /** The zoom to set inline on the wall's root (`style.zoom`). */
   readonly zoom: number;
+  /**
+   * `window.innerHeight` at the last measure, in viewport px. State, so a resize that leaves the
+   * zoom alone still re-renders what depends on it (the fixed-aspect cap, owner ruling Q4).
+   */
+  readonly viewportHeight: number;
   /** The wall's top bar. */
   readonly barRef: RefObject<HTMLDivElement>;
   /** A block wrapper around the content, inside `<main>`, carrying the padding: its natural height. */
@@ -30,9 +35,11 @@ export function useWallFit(): WallFit {
   const barRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
   const [zoom, setZoom] = useState(() => wallBaseZoom(window.innerWidth));
+  const [viewportHeight, setViewportHeight] = useState(() => window.innerHeight);
 
   useLayoutEffect(() => {
     const measure = () => {
+      setViewportHeight(window.innerHeight);
       const bar = barRef.current;
       const content = contentRef.current;
       const naturalPx = bar === null || content === null ? Number.NaN : bar.offsetHeight + content.offsetHeight;
@@ -59,5 +66,5 @@ export function useWallFit(): WallFit {
     };
   }, []);
 
-  return { zoom, barRef, contentRef };
+  return { zoom, viewportHeight, barRef, contentRef };
 }

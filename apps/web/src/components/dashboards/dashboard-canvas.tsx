@@ -171,6 +171,11 @@ function compactRowTracks(rects: readonly GridRect[]): (rect: GridRect) => strin
   };
 }
 
+/** A cap is a finite positive number of px; anything else (`null`, `NaN`, zero) is no cap. */
+function isUsableCap(cap: number | null | undefined): cap is number {
+  return cap !== null && cap !== undefined && Number.isFinite(cap) && cap > 0;
+}
+
 function isUsableAspect(aspect: TileAspect | undefined): aspect is TileAspect {
   return (
     aspect !== undefined &&
@@ -194,6 +199,9 @@ function isUsableAspect(aspect: TileAspect | undefined): aspect is TileAspect {
  * - **At or below a breakpoint**: the tiles are ordered by reading order (`gridY`, then `gridX`)
  *   and placed by CSS auto-flow with spans only (`grid-row: auto`), so a widened tile cannot
  *   overlap the next. A tile with an aspect gets the minimum height at its reflowed span.
+ * - **`maxAspectHeightPx`** (the wall, owner ruling Q4) caps every aspect minimum height in a
+ *   view canvas, so the drawing letterboxes inside a shorter tile. Not a finite positive number:
+ *   no cap.
  */
 export function canvasLayout<T extends CanvasTile>(
   tiles: readonly T[],
@@ -201,9 +209,10 @@ export function canvasLayout<T extends CanvasTile>(
     readonly arranging: boolean;
     readonly containerWidth: number | null;
     readonly aspects?: ReadonlyMap<string, TileAspect>;
+    readonly maxAspectHeightPx?: number | null;
   },
 ): CanvasLayout<T> {
-  const { arranging, containerWidth } = options;
+  const { arranging, containerWidth, maxAspectHeightPx } = options;
   const aspects = options.aspects ?? new Map<string, TileAspect>();
   if (arranging) {
     return {
@@ -223,7 +232,11 @@ export function canvasLayout<T extends CanvasTile>(
   const measured = isMeasuredWidth(containerWidth) ? containerWidth : null;
   const minHeightFor = (key: string, span: number): number | null => {
     const aspect = aspects.get(key);
-    return measured !== null && isUsableAspect(aspect) ? aspectHeightPx(span, measured, aspect) : null;
+    if (measured === null || !isUsableAspect(aspect)) {
+      return null;
+    }
+    const height = aspectHeightPx(span, measured, aspect);
+    return isUsableCap(maxAspectHeightPx) ? Math.min(height, maxAspectHeightPx) : height;
   };
 
   if (mode !== "desktop") {
@@ -249,6 +262,15 @@ export function canvasLayout<T extends CanvasTile>(
     })),
   };
 }
+
+/**
+ * `F3.77` follow-up (owner ruling Q4) — what a host tells the canvases inside it about fitting:
+ * `maxAspectHeightPx` caps a fixed-aspect tile's minimum height (`canvasLayout`). The wall
+ * provides 60 % of the screen; everywhere else the default is no cap.
+ */
+export type CanvasFit = { readonly maxAspectHeightPx: number | null };
+
+export const CanvasFitContext = createContext<CanvasFit>({ maxAspectHeightPx: null });
 
 /**
  * How a tile's content reports its aspect to the canvas it sits in. The canvas gives each tile
@@ -371,7 +393,8 @@ export function DashboardCanvas<T extends CanvasTile>({
     return reporter;
   }
 
-  const layout = canvasLayout(tiles, { arranging, containerWidth: measuredWidth, aspects });
+  const { maxAspectHeightPx } = useContext(CanvasFitContext);
+  const layout = canvasLayout(tiles, { arranging, containerWidth: measuredWidth, aspects, maxAspectHeightPx });
 
   function measuredCellSize(): { width: number; height: number } {
     const containerWidth = containerRef.current?.getBoundingClientRect().width ?? 0;

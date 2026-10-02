@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { Link, useNavigate } from "react-router-dom";
 
 import { useWallFit } from "../../hooks/use-wall-fit";
@@ -9,9 +9,11 @@ import {
   WALL_INTERVALS_S,
   wallBar,
   wallHref,
+  wallAspectCapPx,
   wallTabPath,
   type WallIntervalS,
 } from "../../lib/wall-mode";
+import { CanvasFitContext } from "../dashboards/dashboard-canvas";
 import { NewestReadContext } from "../dashboards/newest-read-context";
 import { StatusBarClock } from "../status-bar-clock";
 
@@ -53,13 +55,21 @@ const controlClass = `surface-button px-3 py-1 text-sm font-semibold ${FOCUS_OUT
  * `font-size` would not. `min-h-screen` is on the unzoomed outer element, so `100vh` is never
  * resolved inside the zoomed box; the measured wrapper sits inside `<main>` and carries the
  * padding, so its height is the content's and not `main`'s stretched one.
+ *
+ * **A fixed-aspect tile is capped (owner ruling Q4).** A full-width mimic's height follows its
+ * width, which `zoom` does not change in viewport px, so zoom alone cannot fit it. The frame
+ * gives the canvas inside it a cap through `CanvasFitContext`: 60 % of the screen's height in the
+ * zoomed box's px (`wallAspectCapPx`), and the drawing letterboxes inside the shorter tile.
  */
 export function WallFrame({ siteName, sitePath, tabKeys, currentKey, everyS, children }: WallFrameProps) {
   const navigate = useNavigate();
   const { paused, resume } = useWallRotation({ sitePath, tabKeys, currentKey, everyS });
   const [newestMs, setNewestMs] = useState<number | null>(null);
   const [nowMs, setNowMs] = useState(() => Date.now());
-  const { zoom, barRef, contentRef } = useWallFit();
+  const { zoom, viewportHeight, barRef, contentRef } = useWallFit();
+  const maxAspectHeightPx = wallAspectCapPx(viewportHeight, zoom);
+  // One value per cap, so the bar's one-second clock does not re-render every canvas tile.
+  const canvasFit = useMemo(() => ({ maxAspectHeightPx }), [maxAspectHeightPx]);
 
   useEffect(() => {
     const id = window.setInterval(() => setNowMs(Date.now()), BAR_TICK_MS);
@@ -120,7 +130,9 @@ export function WallFrame({ siteName, sitePath, tabKeys, currentKey, everyS, chi
         </div>
         <main className="flex-1">
           <div ref={contentRef} data-wall-content className="p-3">
-            <NewestReadContext.Provider value={setNewestMs}>{children}</NewestReadContext.Provider>
+            <CanvasFitContext.Provider value={canvasFit}>
+              <NewestReadContext.Provider value={setNewestMs}>{children}</NewestReadContext.Provider>
+            </CanvasFitContext.Provider>
           </div>
         </main>
       </div>

@@ -9,6 +9,8 @@ import {
   settleWallZoom,
   WALL_DEFAULT_S,
   WALL_ZOOM_FLOOR,
+  WALL_ASPECT_CAP_FRACTION,
+  wallAspectCapPx,
   wallBar,
   wallBaseZoom,
   wallFitZoom,
@@ -209,4 +211,27 @@ export function settleAppliesALargeGrowth(): void {
 /** Z5c — a shrink always applies, however small: the page must never overflow to hold a zoom. */
 export function settleAlwaysAppliesAShrink(): void {
   expect([settleWallZoom(1.0, 0.9), settleWallZoom(1.0, 0.99)]).toEqual([0.9, 0.99]);
+}
+
+/**
+ * Z6a (`F3.77` follow-up, owner ruling Q4) — a fixed-aspect tile on the wall is capped at 60 % of
+ * the screen's height, in the zoomed box's CSS px: 0.6 × 1080 = 648 viewport px is 518 px at zoom
+ * 1.25 (518.4) and 629 px at zoom 1.03 (629.1). Mutation: drop the division by the zoom => red.
+ */
+export function theAspectCapIsSixtyPercentOfTheScreen(): void {
+  expect(WALL_ASPECT_CAP_FRACTION).toBe(0.6);
+  expect([wallAspectCapPx(1080, 1.25), wallAspectCapPx(1080, 1.03)]).toEqual([518, 629]);
+}
+
+/**
+ * Z6b — no measurement is no cap: a viewport or a zoom that is not a finite positive number gives
+ * `null`, never `NaN` px or an infinite cap.
+ */
+export function theAspectCapWithoutAMeasurementIsNull(): void {
+  expect([
+    wallAspectCapPx(Number.NaN, 1.25),
+    wallAspectCapPx(0, 1.25),
+    wallAspectCapPx(1080, 0),
+    wallAspectCapPx(1080, Number.NaN),
+  ]).toEqual([null, null, null, null]);
 }

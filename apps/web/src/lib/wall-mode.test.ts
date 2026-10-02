@@ -15,6 +15,8 @@ import {
   settleAlwaysAppliesAShrink,
   settleAppliesALargeGrowth,
   settleIgnoresASmallGrowth,
+  theAspectCapIsSixtyPercentOfTheScreen,
+  theAspectCapWithoutAMeasurementIsNull,
   wallBarClampsAReadAheadOfTheClock,
   wallBarFollowsIsStale,
   wallHrefKeepsTheTabInThePath,
@@ -100,5 +102,13 @@ describe("F3.77 follow-up wall mode — the fit zoom (plan D5)", () => {
 
   it("Z5c always applies a shrink", () => {
     settleAlwaysAppliesAShrink();
+  });
+
+  it("Z6a caps a fixed-aspect tile at 60 % of the screen, in the zoomed box's px", () => {
+    theAspectCapIsSixtyPercentOfTheScreen();
+  });
+
+  it("Z6b gives no cap without a measurement", () => {
+    theAspectCapWithoutAMeasurementIsNull();
   });
 });

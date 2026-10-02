@@ -1,10 +1,11 @@
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { useEffect } from "react";
+import { useContext, useEffect } from "react";
 import { Link, MemoryRouter, Route, Routes, useLocation } from "react-router-dom";
 import { expect, vi } from "vitest";
 
 import { FRESH_MS } from "../../lib/schematic-telemetry";
+import { CanvasFitContext } from "../dashboards/dashboard-canvas";
 import { useReportNewestRead } from "../dashboards/newest-read-context";
 import { WallFrame } from "./wall-frame";
 
@@ -74,7 +75,16 @@ function LocationProbe() {
   return <output data-testid="location">{`${location.pathname}${location.search}`}</output>;
 }
 
-function renderFrame(readMs: number | null = READ_AT): void {
+let fitProbeRenders = 0;
+
+/** Prints the fixed-aspect cap the frame provides to the canvas inside it, and counts its renders. */
+function FitProbe() {
+  const { maxAspectHeightPx } = useContext(CanvasFitContext);
+  fitProbeRenders += 1;
+  return <output data-testid="fit-cap">{String(maxAspectHeightPx)}</output>;
+}
+
+function renderFrame(readMs: number | null = READ_AT, withFitProbe = false): void {
   render(
     <MemoryRouter initialEntries={[`${SITE}/sld?wall=1&every=30`]}>
       <Routes>
@@ -90,6 +100,7 @@ function renderFrame(readMs: number | null = READ_AT): void {
                 everyS={30}
               >
                 <Reporter ms={readMs} />
+                {withFitProbe ? <FitProbe /> : null}
               </WallFrame>
               <LocationProbe />
             </>
@@ -212,4 +223,54 @@ export function theScreenHeightIsOutsideTheZoom(): void {
     true,
   ]);
   expect(root.parentElement?.style.zoom, "the outer element is not zoomed").toBe("");
+}
+
+/**
+ * F11a (`F3.77` follow-up, owner ruling Q4) — the frame gives the canvas inside it a fixed-aspect
+ * cap of 60 % of the screen in the zoomed box's px: 0.6 × 1080 / 1.03 → 629. Mutation: the frame
+ * provides no context, or does not divide by the zoom (648) => red.
+ */
+export function theFrameProvidesTheAspectCap(): void {
+  layOut(1000);
+  renderFrame(READ_AT, true);
+  expect([wallRoot().style.zoom, screen.getByTestId("fit-cap").textContent]).toEqual(["1.03", "629"]);
+}
+
+/**
+ * F11b — a window resize that leaves the zoom alone still moves the cap: the content (548 px with
+ * the bar) fits at 1080 and at 900, so the zoom stays 1.25 and the cap goes 518 → 432. The
+ * re-render comes from `useWallFit`'s viewport-height state: with no zoom change nothing else
+ * renders the frame. Mutation: `measure` stops setting the viewport height => the cap stays 518 =>
+ * red.
+ */
+export function aResizeMovesTheCapAtTheSameZoom(): void {
+  layOut(500);
+  renderFrame(READ_AT, true);
+  const before = [wallRoot().style.zoom, screen.getByTestId("fit-cap").textContent];
+  vi.stubGlobal("innerHeight", 900);
+  act(() => {
+    window.dispatchEvent(new Event("resize"));
+  });
+  expect([before, [wallRoot().style.zoom, screen.getByTestId("fit-cap").textContent]]).toEqual([
+    ["1.25", "518"],
+    ["1.25", "432"],
+  ]);
+}
+
+/**
+ * F11c — the bar's one-second clock does not re-render the canvas: the cap's context value keeps
+ * its identity while the cap is unchanged, so a consumer passed as `children` renders no more on a
+ * tick. The positive control is the clock line, which does move. Mutation: a new `{ maxAspectHeightPx }`
+ * object each render (no `useMemo`) => the probe re-renders each second => red.
+ */
+export function theClockTickDoesNotRerenderTheCanvas(): void {
+  layOut(1000);
+  renderFrame(READ_AT, true);
+  const clockBefore = screen.getByTestId("wall-clock").textContent;
+  const rendersBefore = fitProbeRenders;
+  act(() => {
+    vi.advanceTimersByTime(3_000);
+  });
+  expect(screen.getByTestId("wall-clock").textContent, "the clock did not tick").not.toBe(clockBefore);
+  expect(fitProbeRenders - rendersBefore).toBe(0);
 }

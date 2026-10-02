@@ -324,3 +324,17 @@ export function staleNodesDoNotFlow(): void {
   const froms = screen.getAllByTestId("mimic-flow").map((f) => f.getAttribute("data-flow-from"));
   expect(froms).toEqual(["water_storage", "water_storage"]);
 }
+
+/**
+ * L1 (`F3.77` follow-up, owner ruling Q4) — the drawing sits in an `absolute inset-0` box inside a
+ * `relative min-h-0 flex-1` scene box, so the drawing adds no height of its own: the tile is as tall
+ * as the canvas's minimum height (the aspect height, or the wall's cap), and the `meet` drawing
+ * letterboxes inside it. Mutation: drop `absolute` from the drawing's box => red.
+ */
+export function theDrawingAddsNoHeightOfItsOwn(): void {
+  renderMimic();
+  const drawingBox = screen.getByRole("img", { name: /Demo water plant/ }).parentElement;
+  const sceneBox = drawingBox?.parentElement;
+  expect(drawingBox?.className.split(" ")).toEqual(expect.arrayContaining(["absolute", "inset-0"]));
+  expect(sceneBox?.className.split(" ")).toEqual(expect.arrayContaining(["relative", "min-h-0", "flex-1"]));
+}

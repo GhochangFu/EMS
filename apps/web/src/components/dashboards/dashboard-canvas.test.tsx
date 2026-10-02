@@ -2,6 +2,10 @@
 import { afterEach, describe, it } from "vitest";
 
 import {
+  aCapAboveTheAspectHeightLeavesIt,
+  aCapBelowTheAspectHeightWins,
+  anUnusableCapIsNoCap,
+  theFitContextCapReachesTheTile,
   above1024KeepsStoredPlacement,
   aDesktopMimicGetsItsAspectMinHeight,
   aNarrowMimicGetsItsAspectMinHeight,
@@ -123,6 +127,23 @@ describe("F3.77 follow-up — aspect minimum height and cell fill", () => {
   it("M5 an aspect reported through useCanvasTileAspect reaches the tile's min-height", () => {
     installFakeResizeObserver();
     aReportedAspectReachesTheTile();
+  });
+
+  it("M6a a cap below the aspect height wins", () => {
+    aCapBelowTheAspectHeightWins();
+  });
+
+  it("M6b a cap above the aspect height leaves the aspect height", () => {
+    aCapAboveTheAspectHeightLeavesIt();
+  });
+
+  it("M6c a cap that is not a finite positive number is no cap", () => {
+    anUnusableCapIsNoCap();
+  });
+
+  it("M7 the CanvasFitContext cap reaches the tile's min-height", () => {
+    installFakeResizeObserver();
+    theFitContextCapReachesTheTile();
   });
 
   it("E1 a tile's root fills its cell", () => {

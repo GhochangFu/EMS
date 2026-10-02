@@ -2,6 +2,7 @@ import { act, cleanup, render } from "@testing-library/react";
 import { expect, vi } from "vitest";
 
 import {
+  CanvasFitContext,
   canvasLayout,
   DashboardCanvas,
   useCanvasTileAspect,
@@ -288,6 +289,53 @@ export function aReportedAspectReachesTheTile(): void {
   expect(mimic.style.minHeight).toBe("362px");
   expect(below.style.gridRow).toBe("2 / span 1");
   expect(below.style.minHeight).toBe("");
+}
+
+function cappedMimic(maxAspectHeightPx: number | null): number | null {
+  return (
+    canvasLayout([MIMIC, BELOW], {
+      arranging: false,
+      containerWidth: 1168,
+      aspects: new Map([["m", WATER_TRAIN]]),
+      maxAspectHeightPx,
+    }).placements.find((p) => p.tile.key === "m")?.minHeightPx ?? null
+  );
+}
+
+/**
+ * M6a (`F3.77` follow-up, owner ruling Q4) — a cap below the aspect height (362 px at 1168) wins:
+ * the wall caps a fixed-aspect tile and the drawing letterboxes inside it.
+ */
+export function aCapBelowTheAspectHeightWins(): void {
+  expect(cappedMimic(300)).toBe(300);
+}
+
+/** M6b — a cap above the aspect height leaves the aspect height. */
+export function aCapAboveTheAspectHeightLeavesIt(): void {
+  expect(cappedMimic(400)).toBe(362);
+}
+
+/**
+ * M6c — a cap that is not a finite positive number is no cap (fails closed: `Math.min` with `NaN`
+ * gives `NaN`, which would set `"NaNpx"`).
+ */
+export function anUnusableCapIsNoCap(): void {
+  expect([cappedMimic(Number.NaN), cappedMimic(0), cappedMimic(null)]).toEqual([362, 362, 362]);
+}
+
+/**
+ * M7 — the canvas reads the cap from `CanvasFitContext`: a provider's 300 px reaches the mimic
+ * tile's `min-height`. Mutation: the canvas ignores the context => red.
+ */
+export function theFitContextCapReachesTheTile(): void {
+  const { container } = render(
+    <CanvasFitContext.Provider value={{ maxAspectHeightPx: 300 }}>
+      <DashboardCanvas tiles={[MIMIC, BELOW]} renderTile={(tile) => (tile.key === "m" ? <AspectProbe /> : <div />)} />
+    </CanvasFitContext.Provider>,
+  );
+  fireWidth(1168);
+  const mimic = container.querySelector('[data-canvas-tile="m"]') as HTMLElement;
+  expect(mimic.style.minHeight).toBe("300px");
 }
 
 /** A tile's own root fills its cell: the wrapper makes its first child full height. */
