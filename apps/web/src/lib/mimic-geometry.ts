@@ -1,6 +1,7 @@
 import { MIMIC_LAYOUT_BOUNDS } from "@bms/shared/contracts";
 import {
   MIMIC_PRESETS,
+  isSwitchingSymbol,
   type MimicLayoutGeometryDto,
   type MimicLayoutNodeDto,
   type MimicOrgSymbolDto,
@@ -43,6 +44,10 @@ export type MimicBox = { readonly x: number; readonly y: number; readonly w: num
  * One drawn unit. `roleCode` `null` is a passive unit (plan D6): its symbol draws, no status and
  * no values. `tone` is the tint of the panel the unit sits in (`neutral` when none); `panelKey`
  * names that panel, so the scene groups the unit under it.
+ *
+ * `F3.74` plan D3/D6: `fanOut` stands the unit for every member of its role; `isSource` marks
+ * where `energiseGraph` starts; `switching` is `isSwitchingSymbol(symbol)` — the unit draws a
+ * breaker switch per member. The three are flags of the drawing, not of the data.
  */
 export type MimicGeometryUnit = {
   readonly key: string;
@@ -52,6 +57,9 @@ export type MimicGeometryUnit = {
   readonly box: MimicBox;
   readonly tone: MimicPanelTone;
   readonly panelKey: string | null;
+  readonly fanOut: boolean;
+  readonly isSource: boolean;
+  readonly switching: boolean;
 };
 
 export type MimicGeometryPanel = {
@@ -195,21 +203,27 @@ function buildPresetGeometry(preset: MimicPreset): MimicGeometry {
     presetPanels.flatMap((p) => p.nodes.map((k) => [k, { key: p.key, tone: p.tone }] as const)),
   );
 
+  const sources = new Set<string>(def.sources ?? []);
+
   const units = def.nodes.flatMap((n): MimicGeometryUnit[] => {
     const pos = at[n.key];
     if (pos === undefined) {
       return [];
     }
     const panel = panelOf.get(n.key);
+    const symbol = glyphs[n.key] ?? "vessel";
     return [
       {
         key: n.key,
         label: n.label,
-        symbol: glyphs[n.key] ?? "vessel",
+        symbol,
         roleCode: n.roleCode,
         box: slotBox(pos),
         tone: panel?.tone ?? "neutral",
         panelKey: panel?.key ?? null,
+        fanOut: n.fanOut === true,
+        isSource: sources.has(n.key),
+        switching: isSwitchingSymbol(symbol),
       },
     ];
   });
@@ -306,14 +320,18 @@ export function layoutGeometry(layout: MimicLayoutGeometryDto): MimicGeometry {
       const box = scaled(n);
       const centre = { x: box.x + box.w / 2, y: box.y + box.h / 2 };
       const panel = [...panels].reverse().find((p) => contains(p.box, centre));
+      const symbol = n.symbol ?? "unit";
       return {
         key: n.key,
         label: n.label,
-        symbol: n.symbol ?? "unit",
+        symbol,
         roleCode: n.roleCode,
         box,
         tone: panel?.tone ?? "neutral",
         panelKey: panel?.key ?? null,
+        fanOut: n.fanOut,
+        isSource: n.isSource,
+        switching: isSwitchingSymbol(symbol),
       };
     });
 

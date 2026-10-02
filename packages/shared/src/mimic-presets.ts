@@ -188,4 +188,45 @@ export const MIMIC_PRESETS = {
       { from: "main_meter", to: "utilities" },
     ],
   },
+  /**
+   * `F3.74` plan D5 (ADR 0088 decision 8) — the low-voltage single line: incoming supply through
+   * the main breaker onto a 415 V bus, the UPS path (input breakers, UPS, output breakers) onto a
+   * 230 V load bus and its feeders, and the mains feeders to HVAC and lighting. The two buses are
+   * passive (`roleCode: null`): they resolve to no asset and are absent from the resolver's nodes.
+   * `incoming` is the one source `energiseGraph` starts from. A `fanOut` node stands for every
+   * member of its role, so a breaker group draws one switch per breaker.
+   */
+  lv_single_line: {
+    label: "LV single line",
+    nodes: [
+      { key: "incoming", label: "Incoming supply", roleCode: "incoming-supply" },
+      { key: "transformer", label: "Transformer", roleCode: "transformer" },
+      { key: "main_breaker", label: "Main breaker", roleCode: "main-breaker", fanOut: true },
+      { key: "main_bus", label: "Main bus 415 V", roleCode: null },
+      { key: "ups_input", label: "UPS input breakers", roleCode: "ups-input-breaker", fanOut: true },
+      { key: "ups", label: "UPS", roleCode: "ups", fanOut: true },
+      { key: "ups_output", label: "UPS output breakers", roleCode: "ups-output-breaker", fanOut: true },
+      { key: "load_bus", label: "Load bus 230 V", roleCode: null },
+      { key: "load_feeders", label: "Load feeders", roleCode: "load-feeder-breaker", fanOut: true },
+      { key: "pdu", label: "Rack PDUs", roleCode: "pdu", fanOut: true },
+      { key: "mains_feeders", label: "Mains feeders", roleCode: "mains-feeder-breaker", fanOut: true },
+      { key: "hvac", label: "HVAC", roleCode: "crac", fanOut: true },
+      { key: "lighting", label: "Lighting / aux", roleCode: "utilities" },
+    ],
+    pipes: [
+      { from: "incoming", to: "transformer" },
+      { from: "transformer", to: "main_breaker" },
+      { from: "main_breaker", to: "main_bus" },
+      { from: "main_bus", to: "ups_input" },
+      { from: "ups_input", to: "ups" },
+      { from: "ups", to: "ups_output" },
+      { from: "ups_output", to: "load_bus" },
+      { from: "load_bus", to: "load_feeders" },
+      { from: "load_feeders", to: "pdu" },
+      { from: "main_bus", to: "mains_feeders" },
+      { from: "mains_feeders", to: "hvac" },
+      { from: "mains_feeders", to: "lighting" },
+    ],
+    sources: ["incoming"],
+  },
 } as const satisfies Record<MimicPreset, MimicPresetDef>;

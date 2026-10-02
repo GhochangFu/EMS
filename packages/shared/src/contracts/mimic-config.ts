@@ -28,6 +28,7 @@ export const mimicPresetSchema = z.enum([
   "compressed_air",
   "environment_monitoring",
   "facility_services",
+  "lv_single_line",
 ]);
 
 /**

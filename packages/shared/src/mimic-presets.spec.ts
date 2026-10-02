@@ -131,7 +131,33 @@ export function environmentMonitoringHasNoPipes(): void {
 export function presetNodeCountsAreThePlanTable(): void {
   const counts = mimicPresetSchema.options.map((preset) => MIMIC_PRESETS[preset].nodes.length);
   assert(
-    JSON.stringify(counts) === JSON.stringify([8, 7, 5, 6, 4, 4, 5]),
-    `node counts in enum order must be [8,7,5,6,4,4,5], got ${JSON.stringify(counts)}`,
+    JSON.stringify(counts) === JSON.stringify([8, 7, 5, 6, 4, 4, 5, 13]),
+    `node counts in enum order must be [8,7,5,6,4,4,5,13], got ${JSON.stringify(counts)}`,
+  );
+}
+
+/** `F3.74` plan D5 — `lv_single_line`'s `sources` name nodes of the preset, and name `incoming` alone. */
+export function lvSingleLineSourcesAreNodeKeys(): void {
+  const def: MimicPresetDef = MIMIC_PRESETS.lv_single_line;
+  const keys = new Set(def.nodes.map((node) => node.key));
+  const sources = def.sources ?? [];
+  assert(sources.length > 0, "lv_single_line names at least one source");
+  for (const source of sources) {
+    assert(keys.has(source), `lv_single_line: source "${source}" names no node`);
+  }
+  assert(
+    JSON.stringify(sources) === JSON.stringify(["incoming"]),
+    `lv_single_line's sources are ["incoming"], got ${JSON.stringify(sources)}`,
+  );
+}
+
+/** `F3.74` plan D5 — the two bus nodes are passive (`roleCode: null`) and nothing else is. */
+export function lvSingleLineBusesArePassive(): void {
+  const passive = MIMIC_PRESETS.lv_single_line.nodes
+    .filter((node) => node.roleCode === null)
+    .map((node) => node.key);
+  assert(
+    JSON.stringify(passive) === JSON.stringify(["main_bus", "load_bus"]),
+    `only main_bus and load_bus are passive, got ${JSON.stringify(passive)}`,
   );
 }

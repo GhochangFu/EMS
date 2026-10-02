@@ -519,6 +519,7 @@ export function fromPreset(preset: MimicPreset): EditorLayout {
   const nodesAt = coords.nodes as Readonly<Record<string, { readonly x: number; readonly y: number }>>;
   const glyphs = MIMIC_NODE_GLYPHS[preset] as Readonly<Record<string, MimicSymbol>>;
   const size = MIMIC_EDITOR_DEFAULT_BOX.unit;
+  const sources = new Set<string>(def.sources ?? []);
   const [, , viewW, viewH] = coords.viewBox.split(" ").map(Number);
 
   const units: EditorNode[] = def.nodes.map((node) => {
@@ -540,9 +541,10 @@ export function fromPreset(preset: MimicPreset): EditorLayout {
       y: toCell(at.y),
       ...size,
       z: MIMIC_EDITOR_Z.unit,
-      // `F3.74` Task 1.6 placeholder so the build compiles; Task 3.4 copies the preset's flags.
-      fanOut: false,
-      isSource: false,
+      // `F3.74` plan D5: the preset's fan-out flag and its sources (as `is_source`) are copied, so a
+      // started layout resolves and energises like the preset it came from.
+      fanOut: node.fanOut === true,
+      isSource: sources.has(node.key),
     };
   });
 

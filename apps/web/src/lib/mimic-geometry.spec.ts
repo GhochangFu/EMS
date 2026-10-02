@@ -201,12 +201,12 @@ export function layoutPipesJoinUnitsOnly(): void {
   expect(g.sink).toBeNull();
 }
 
-/** The six presets of `F3.32d` (ADR 0082 decision 3) — every preset but `water_train`. */
+/** The six presets of `F3.32d` (ADR 0082 decision 3) and `lv_single_line` (`F3.74`) — every preset but `water_train`. */
 const DOMAIN_PRESETS = mimicPresetSchema.options.filter((p) => p !== "water_train");
 
 /** G12 — each domain preset draws one unit per preset node, in preset order. */
 export function domainPresetsDrawEveryNode(): void {
-  expect(DOMAIN_PRESETS).toHaveLength(6);
+  expect(DOMAIN_PRESETS).toHaveLength(7);
   for (const p of DOMAIN_PRESETS) {
     expect(presetGeometry(p).units.map((u) => u.key), p).toEqual(MIMIC_PRESETS[p].nodes.map((n) => n.key));
   }
@@ -273,4 +273,56 @@ export function layoutCarriesItsOrgSymbols(): void {
 /** G19 — a preset draws no organization symbol. */
 export function presetCarriesNoOrgSymbols(): void {
   expect(presetGeometry("water_train").orgSymbols).toEqual([]);
+}
+
+/**
+ * G20 — `F3.74` plan D5: `lv_single_line`'s units carry `isSource` on `incoming` only, `fanOut` where the
+ * preset says so, and `switching` on exactly the five breaker nodes.
+ */
+export function lvSingleLineUnitsCarryTheirFlags(): void {
+  const units = presetGeometry("lv_single_line").units;
+  expect(units.filter((u) => u.isSource).map((u) => u.key)).toEqual(["incoming"]);
+  expect(units.filter((u) => u.switching).map((u) => u.key)).toEqual([
+    "main_breaker",
+    "ups_input",
+    "ups_output",
+    "load_feeders",
+    "mains_feeders",
+  ]);
+  expect(units.filter((u) => u.fanOut).map((u) => u.key)).toEqual([
+    "main_breaker",
+    "ups_input",
+    "ups",
+    "ups_output",
+    "load_feeders",
+    "pdu",
+    "mains_feeders",
+    "hvac",
+  ]);
+}
+
+/** G21 — a preset without `sources` or `fanOut` carries `false` for both flags on every unit. */
+export function presetsWithoutFlagsCarryFalse(): void {
+  for (const unit of presetGeometry("water_train").units) {
+    expect([unit.fanOut, unit.isSource, unit.switching], unit.key).toEqual([false, false, false]);
+  }
+}
+
+/** G22 — a layout's units carry the stored flags through; `switching` follows the symbol, not `fanOut`. */
+export function layoutUnitsCarryFlagsAndSwitchingFollowsTheSymbol(): void {
+  const g = layoutGeometry({
+    ...LAYOUT,
+    nodes: [
+      layoutNode("q1", "unit", [3, 5, 10, 25], { symbol: "breaker", roleCode: "main-breaker", fanOut: true }),
+      layoutNode("src", "unit", [20, 5, 10, 25], { symbol: "tank", isSource: true }),
+      layoutNode("fan", "unit", [40, 5, 10, 25], { symbol: "pump", fanOut: true }),
+      layoutNode("lib", "unit", [60, 5, 10, 25], { symbol: "wmpid:breaker" }),
+    ],
+    pipes: [],
+  });
+  const by = new Map(g.units.map((u) => [u.key, u] as const));
+  expect([by.get("q1")?.fanOut, by.get("q1")?.isSource, by.get("q1")?.switching]).toEqual([true, false, true]);
+  expect([by.get("src")?.fanOut, by.get("src")?.isSource, by.get("src")?.switching]).toEqual([false, true, false]);
+  expect([by.get("fan")?.fanOut, by.get("fan")?.switching]).toEqual([true, false]);
+  expect(by.get("lib")?.switching).toBe(true);
 }
