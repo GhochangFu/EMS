@@ -122,20 +122,34 @@ describe("repo invariants", () => {
     // been missing since `F4.2`, and `adr-0025-level-selector.test.ts` was about to
     // repeat it. Adding both fixed the instances; this fixes the class, because the
     // next `tests/` file will otherwise be forgotten the same way.
+    //
+    // `F3.74` moved the file list out of the script into `tsconfig.typecheck-tests.json`:
+    // the inline list had grown to 8,189 characters and cmd.exe stops at 8,191, so
+    // `pnpm typecheck:tests` failed on Windows with "The command line is too long."
+    // The script must still run that config, or the list below checks nothing.
     const script = JSON.parse(readFileSync(join(repoRoot, "package.json"), "utf8")) as {
       scripts?: Record<string, string>;
     };
     const typecheckTests = script.scripts?.["typecheck:tests"] ?? "";
     expect(typecheckTests, "package.json has no typecheck:tests script").not.toBe("");
+    expect(
+      typecheckTests,
+      "typecheck:tests no longer runs tsconfig.typecheck-tests.json, so its file list is dead",
+    ).toContain("tsc -p tsconfig.typecheck-tests.json");
+
+    const config = JSON.parse(
+      readFileSync(join(repoRoot, "tsconfig.typecheck-tests.json"), "utf8"),
+    ) as { files?: string[] };
+    const listed = new Set(config.files ?? []);
 
     const missing = readdirSync(join(repoRoot, "tests"))
       .filter((name) => /\.test\.tsx?$/.test(name))
-      .filter((name) => !typecheckTests.includes(`tests/${name}`));
+      .filter((name) => !listed.has(`tests/${name}`));
 
     expect(
       missing,
       `tests/ files absent from the typecheck:tests file list:\n${missing.join("\n")}\n\n` +
-        "Append them to the final `tsc --noEmit ...` invocation in package.json. Without that " +
+        "Append them to the `files` array of tsconfig.typecheck-tests.json. Without that " +
         "they run but are never typechecked, so a type error in them fails nothing.",
     ).toEqual([]);
   });
