@@ -1,5 +1,7 @@
 import { z } from "zod";
 
+import { dashboardTabKeySchema } from "./dashboard-tabs";
+
 /**
  * `F3.32c` / ADR 0081 — the `mimic` widget's config, both arms (plan D1, D2).
  *
@@ -32,8 +34,31 @@ export const mimicPresetSchema = z.enum([
 ]);
 
 /**
- * The preset arm (`F3.32`, ADR 0079 decision 2) — its shape unchanged since v1, so a stored
- * widget with `source: "preset"` never needs migrating; ADR 0082 only widens the enum.
+ * `F3.74` (ADR 0088 decision 11, plan D7) — the tab a mimic resolves through when the tab it sits
+ * on binds no group: an Overview mimic names `sld` and draws that tab's group. Optional on both
+ * arms, so every stored config still parses. The write guard (`mimicGroupFor`) refuses a key that
+ * names no group-bound tab of the body with this sentence; the key is never echoed.
+ */
+export const MIMIC_TAB_MESSAGE =
+  "a plant mimic's tabKey must name a tab of this dashboard that is bound to an asset group";
+
+/**
+ * The `tabKey` field of both arms. `.describe()` AFTER the shared refinement (ADR 0029 decision
+ * 10), as `siteTemplateTabSchema.key` does: the document emits nothing for the reserved-key
+ * refusal, and the guard on the named tab is the service's.
+ */
+const mimicTabKeySchema = dashboardTabKeySchema.describe(
+  "The tab this mimic resolves through when the tab it sits on binds no asset group: " +
+    "lowercase letters, digits and hyphens, 1 to 64 characters, and not `assets`. On a dashboard " +
+    "it must name a tab of the same dashboard that binds a group; in a template, one of the " +
+    "template's tabs that has a domain. Otherwise the write answers 400.",
+);
+
+/**
+ * The preset arm (`F3.32`, ADR 0079 decision 2). Every field added since v1 is optional, so a
+ * stored widget with `source: "preset"` never needs migrating; ADR 0082 only widens the enum, and
+ * `F3.74` adds `tabKey` (see `MIMIC_TAB_MESSAGE`) and `compact` (draw labels, switches and pills
+ * only — no value rows or callouts; ADR 0088 OQ9).
  *
  * **No `commonConfigFields`, deliberately (F3.32 plan D8).** A mimic draws several nodes, each
  * with its own points and units, so one widget-level `unit` or `decimals` has nothing to apply
@@ -45,6 +70,8 @@ export const mimicPresetSchema = z.enum([
 export const mimicPresetConfigSchema = z.object({
   source: z.literal("preset"),
   preset: mimicPresetSchema,
+  tabKey: mimicTabKeySchema.optional(),
+  compact: z.boolean().optional(),
 });
 
 /**
@@ -56,12 +83,15 @@ export const mimicPresetConfigSchema = z.object({
  * an uppercase uuid, and the id is stored as sent: the resolver keys layouts by the database's
  * lowercase id, so an uppercase one would never render. A refusal keeps the field a plain string
  * schema, which the write surface's `.shape` rebuild and the OpenAPI walkers need.
+ *
+ * `F3.74` adds `tabKey`, as on the preset arm; `compact` is the preset arm's only (plan D7).
  */
 export const MIMIC_LAYOUT_ID_CASE_MESSAGE = "layoutId must be a lowercase uuid";
 
 export const mimicLayoutConfigSchema = z.object({
   source: z.literal("layout"),
   layoutId: z.string().uuid().regex(/^[0-9a-f-]+$/, MIMIC_LAYOUT_ID_CASE_MESSAGE),
+  tabKey: mimicTabKeySchema.optional(),
 });
 
 /**

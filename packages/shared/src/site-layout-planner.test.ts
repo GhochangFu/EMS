@@ -1,6 +1,10 @@
 import { describe, it } from "vitest";
 
 import {
+  aDomainTabMimicNamingAnOmittedTabIsKept,
+  anOverviewMimicNamingAnOmittedTabIsDropped,
+  anOverviewMimicNamingAnOmittedTabIsReported,
+  csmocKeepsTheOverviewMimic,
   aChoiceForAnUnknownTabIsRefused,
   aChoiceForTheOverviewIsRefused,
   aChoiceOfAGroupNotAtTheSiteIsRefused,
@@ -150,5 +154,20 @@ describe("F3.73 — role tiles with no point at the site are omitted", () => {
   });
   it("lifts the tab's body when every tile is omitted", () => {
     aTabThatLosesEveryTileLiftsItsBody();
+  });
+});
+
+describe("F3.74 — an Overview mimic naming an omitted tab is dropped", () => {
+  it("drops the Overview mimic when its named tab is omitted", () => {
+    anOverviewMimicNamingAnOmittedTabIsDropped();
+  });
+  it("reports the dropped mimic in droppedCards", () => {
+    anOverviewMimicNamingAnOmittedTabIsReported();
+  });
+  it("keeps a domain-tab mimic that names an omitted tab", () => {
+    aDomainTabMimicNamingAnOmittedTabIsKept();
+  });
+  it("keeps the Overview mimic on CSMOC", () => {
+    csmocKeepsTheOverviewMimic();
   });
 });

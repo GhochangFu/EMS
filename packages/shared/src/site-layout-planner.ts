@@ -199,7 +199,11 @@ export function pickTabGroups<T extends SiteLayoutTabSpec>(
   return { status: "planned", tabs: picked, omitted };
 }
 
-/** A `module_summary_card` removed because the tab it opens is not in the copy. */
+/**
+ * A `module_summary_card` removed because the tab it opens is not in the copy, or (`F3.74`) an
+ * Overview `mimic` removed because the tab its `config.tabKey` resolves through is not;
+ * `targetTabKey` is that tab.
+ */
 export type SiteLayoutDroppedCard = {
   readonly tabKey: string;
   readonly widgetKey: string;
@@ -221,6 +225,10 @@ export type SiteLayoutPlan =
  * The write path refuses a card naming no tab of the dashboard (plan D2), so a card left
  * pointing at an omitted tab would make the copy unsaveable. The kept tabs' widgets are new
  * arrays; the template's content is never mutated.
+ *
+ * `F3.74` (plan D7) — an Overview `mimic` whose `config.tabKey` names a tab that is not kept is
+ * dropped and reported the same way: the write path refuses it (`MIMIC_TAB_MESSAGE`), and it
+ * would draw every node unassigned. A mimic on a kept domain tab stays: its own tab's group wins.
  */
 export function planSiteLayout(
   tabs: readonly SiteTemplateTab[],
@@ -233,16 +241,25 @@ export function planSiteLayout(
   }
   const kept = new Set(pick.tabs.map((row) => row.tab.key));
   const droppedCards: SiteLayoutDroppedCard[] = [];
-  const keepsItsTarget = (tabKey: string, widget: SectionTemplateWidget): boolean => {
-    if (widget.widgetType !== "module_summary_card" || kept.has(widget.config.targetTabKey)) {
+  const keepsItsTarget = (tab: SiteTemplateTab, widget: SectionTemplateWidget): boolean => {
+    const tabKey = tab.key;
+    // A mimic on a domain tab resolves through its own tab's group first, so only the Overview's
+    // (no group of its own) depends on the tab it names.
+    const target =
+      widget.widgetType === "module_summary_card"
+        ? widget.config.targetTabKey
+        : widget.widgetType === "mimic" && tab.domain === null
+          ? widget.config.tabKey
+          : undefined;
+    if (target === undefined || kept.has(target)) {
       return true;
     }
-    droppedCards.push({ tabKey, widgetKey: widget.key, targetTabKey: widget.config.targetTabKey });
+    droppedCards.push({ tabKey, widgetKey: widget.key, targetTabKey: target });
     return false;
   };
   const planned = pick.tabs.map((row) => ({
     ...row,
-    tab: { ...row.tab, widgets: packAfterRemoval(row.tab.widgets, (widget) => keepsItsTarget(row.tab.key, widget)) },
+    tab: { ...row.tab, widgets: packAfterRemoval(row.tab.widgets, (widget) => keepsItsTarget(row.tab, widget)) },
   }));
   return { status: "planned", tabs: planned, omitted: pick.omitted, droppedCards };
 }

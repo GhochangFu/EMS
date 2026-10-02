@@ -6,6 +6,7 @@ import {
   createDashboardTemplateBodySchema,
   instantiateSectionTemplateBodySchema,
   TEMPLATE_MIMIC_LAYOUT_MESSAGE,
+  TEMPLATE_MIMIC_TAB_MESSAGE,
   TEMPLATE_TARGET_BODY_MESSAGE,
   templateTargetBodyMessage,
   updateDashboardTemplateBodySchema,
@@ -451,5 +452,53 @@ export function acceptsASiteTemplateCardNamingItsOwnTab(): void {
       content: { widgets: [], tabs: [siteTab({ key: "overview", domain: null, widgets: [card("sld")] }), siteTab()] },
     }),
     "a site create body whose card names its own sld tab",
+  );
+}
+
+// ---------------------------------------------------------------- F3.74
+
+/** An Overview holding one preset mimic that resolves through `tabKey`. */
+function overviewWithMimicNaming(tabKey: string): Record<string, unknown> {
+  return siteTab({
+    key: "overview",
+    domain: null,
+    widgets: [
+      widget({
+        key: "overview-mimic",
+        widgetType: "mimic",
+        gridW: 6,
+        gridH: 6,
+        config: { source: "preset", preset: "lv_single_line", tabKey },
+      }),
+    ],
+  });
+}
+
+/**
+ * `F3.74` plan D7 — a template mimic's `tabKey` names a content tab with a domain: only such a
+ * tab binds a group when the copy is made. Naming the Overview (`domain: null`) is refused.
+ */
+export function rejectsAMimicTabKeyNamingADomainlessTab(): void {
+  expectRejectsAt(
+    createDashboardTemplateBodySchema,
+    createBody({
+      target: "site",
+      content: { widgets: [], tabs: [overviewWithMimicNaming("overview"), siteTab()] },
+    }),
+    ["content", "tabs", 0, "widgets", 0, "config", "tabKey"],
+    new RegExp(TEMPLATE_MIMIC_TAB_MESSAGE),
+    "a site create body whose Overview mimic names the Overview",
+  );
+}
+
+/** The positive control: the same mimic naming the `sld` tab (domain `electrical`) parses. */
+export function acceptsAMimicTabKeyNamingADomainTab(): void {
+  expectAccepts(
+    createDashboardTemplateBodySchema,
+    createBody({
+      target: "site",
+      content: { widgets: [], tabs: [overviewWithMimicNaming("sld"), siteTab()] },
+    }),
+    "a site create body whose Overview mimic names the sld tab",
   );
 }

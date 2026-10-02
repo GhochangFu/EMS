@@ -477,3 +477,112 @@ export function aTabThatLosesEveryTileLiftsItsBody(): void {
   const mimic = plans.find((plan) => plan.widget.key === "sld-mimic");
   assert(mimic?.widget.gridY === 0, `sld mimic with no tile at y ${mimic?.widget.gridY}`);
 }
+
+// ---- F3.74: an Overview mimic that names an omitted tab (plan D7) ------------------------------
+
+/**
+ * The SMOC tabs with an Overview that holds a compact SLD mimic resolving through the `sld` tab,
+ * beside an alarms rail — the shape stock v4 gives the Overview (plan D9).
+ */
+const MIMIC_TABS: readonly SiteTemplateTab[] = [
+  {
+    key: "overview",
+    label: "Overview",
+    sortOrder: 0,
+    domain: null,
+    widgets: [
+      {
+        key: "overview-sld-mimic",
+        title: "Single line",
+        gridX: 0,
+        gridY: 0,
+        gridW: 6,
+        gridH: 6,
+        bindings: [],
+        sources: [],
+        widgetType: "mimic",
+        config: { source: "preset", preset: "lv_single_line", tabKey: "sld", compact: true },
+      },
+      {
+        key: "overview-alarms-rail",
+        title: "Active alarms",
+        gridX: 6,
+        gridY: 0,
+        gridW: 6,
+        gridH: 6,
+        bindings: [],
+        sources: [],
+        widgetType: "active_alarms_rail",
+        config: { rows: 8, showSummary: true },
+      },
+    ],
+  },
+  ...SMOC_TABS.slice(1),
+];
+
+/** The IONX-DEMO groups: one water group, so the `sld` tab is omitted. */
+const IONX_GROUPS = [group("demo-water-plant", "water")];
+
+function overviewWidgetKeys(result: ReturnType<typeof planSiteLayout>): string {
+  const overview = planned(result).tabs.find((row) => row.tab.key === "overview");
+  return (overview?.tab.widgets ?? []).map((widget) => widget.key).join(",");
+}
+
+/** A site with no `sld` tab loses the Overview mimic that resolves through it. */
+export function anOverviewMimicNamingAnOmittedTabIsDropped(): void {
+  const keys = overviewWidgetKeys(planSiteLayout(MIMIC_TABS, IONX_GROUPS));
+  assert(keys === "overview-alarms-rail", `IONX-DEMO Overview widgets: got ${keys}`);
+}
+
+/** The dropped mimic is reported in `droppedCards`, naming the tab it resolved through. */
+export function anOverviewMimicNamingAnOmittedTabIsReported(): void {
+  const dropped = planned(planSiteLayout(MIMIC_TABS, IONX_GROUPS)).droppedCards;
+  const shape = JSON.stringify(dropped);
+  assert(
+    shape === JSON.stringify([{ tabKey: "overview", widgetKey: "overview-sld-mimic", targetTabKey: "sld" }]),
+    `IONX-DEMO dropped cards: got ${shape}`,
+  );
+}
+
+/**
+ * A mimic on a kept domain tab that also names the omitted `sld` stays: it resolves through its
+ * own tab's group first (the write guard's and the resolver's order), so it is never dropped.
+ */
+export function aDomainTabMimicNamingAnOmittedTabIsKept(): void {
+  const tabs = MIMIC_TABS.map((tab) =>
+    tab.key !== "water"
+      ? tab
+      : {
+          ...tab,
+          widgets: [
+            ...tab.widgets,
+            {
+              key: "water-sld-mimic",
+              title: null,
+              gridX: 0,
+              gridY: 40,
+              gridW: 6,
+              gridH: 6,
+              bindings: [],
+              sources: [],
+              widgetType: "mimic" as const,
+              config: { source: "preset" as const, preset: "lv_single_line" as const, tabKey: "sld" },
+            },
+          ],
+        },
+  );
+  const plan = planned(planSiteLayout(tabs, IONX_GROUPS));
+  const water = plan.tabs.find((row) => row.tab.key === "water");
+  const keys = (water?.tab.widgets ?? []).map((widget) => widget.key);
+  assert(keys.includes("water-sld-mimic"), `IONX-DEMO water widgets: got ${keys.join(",")}`);
+  const reported = plan.droppedCards.map((row) => row.widgetKey);
+  assert(!reported.includes("water-sld-mimic"), `IONX-DEMO dropped: got ${reported.join(",")}`);
+}
+
+/** CSMOC keeps its `sld` tab, so the Overview mimic stays and nothing is reported. */
+export function csmocKeepsTheOverviewMimic(): void {
+  const result = planSiteLayout(MIMIC_TABS, CSMOC_GROUPS);
+  const keys = overviewWidgetKeys(result);
+  assert(keys === "overview-sld-mimic,overview-alarms-rail", `CSMOC Overview widgets: got ${keys}`);
+  assert(planned(result).droppedCards.length === 0, `CSMOC dropped: ${JSON.stringify(planned(result).droppedCards)}`);
+}

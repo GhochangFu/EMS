@@ -18,6 +18,7 @@ import {
   dashboardWidgets,
 } from "@bms/db";
 import type { BmsDb } from "@bms/db";
+import { MIMIC_TAB_MESSAGE } from "@bms/shared";
 import type {
   DashboardDto,
   DashboardSummaryDto,
@@ -533,12 +534,12 @@ export class DashboardsService {
     if (existing.locationId === null && tabs.some((tab) => tab.assetGroupId != null)) {
       throw new BadRequestException(TAB_GROUP_SCOPE_MESSAGE);
     }
-    if (
-      body.widgets.some(
-        (widget) => widget.widgetType === "mimic" && mimicGroupFor(existing.assetGroupId, tabs, widget) === null,
-      )
-    ) {
-      throw new BadRequestException(MIMIC_SCOPE_MESSAGE);
+    // `F3.74` (plan D7) — a mimic that names a tab (`config.tabKey`) and still resolves no group
+    // is refused with the tab sentence, which never echoes the key.
+    for (const widget of body.widgets) {
+      if (widget.widgetType === "mimic" && mimicGroupFor(existing.assetGroupId, tabs, widget) === null) {
+        throw new BadRequestException(widget.config.tabKey === undefined ? MIMIC_SCOPE_MESSAGE : MIMIC_TAB_MESSAGE);
+      }
     }
 
     return withTenant(this.tenantDb, existing.organizationId, async (tx) => {
