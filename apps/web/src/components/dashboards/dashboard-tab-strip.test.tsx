@@ -3,6 +3,9 @@ import { afterEach, describe, it } from "vitest";
 import { cleanup } from "@testing-library/react";
 
 import {
+  aMarkedTabIsNamedByItsStatus,
+  aTabOutsideScopeSaysSo,
+  anUnmarkedTabKeepsItsLabel,
   aTabDrawsTheFocusOutline,
   arrowLeftOnTheFirstTabWrapsToTheLast,
   arrowRightSelectsAndFocusesTheNextTab,
@@ -52,5 +55,17 @@ describe("F3.73 dashboard tab strip", () => {
 
   it("a tab draws the --focus outline on keyboard focus", () => {
     aTabDrawsTheFocusOutline();
+  });
+
+  it("F3.77 a marked tab is named by its status and shows the count", () => {
+    aMarkedTabIsNamedByItsStatus();
+  });
+
+  it("F3.77 a tab outside scope says so, never a zero", () => {
+    aTabOutsideScopeSaysSo();
+  });
+
+  it("F3.77 an unmarked tab keeps its label as its name", () => {
+    anUnmarkedTabKeepsItsLabel();
   });
 });

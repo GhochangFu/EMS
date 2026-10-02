@@ -3,6 +3,9 @@ import userEvent from "@testing-library/user-event";
 import { useState } from "react";
 import { expect } from "vitest";
 
+import type { SiteWidgetTab } from "@bms/shared";
+
+import type { TabMarkers } from "../../hooks/use-tab-markers";
 import type { TabWritePayload } from "../../lib/dashboard-builder-form";
 import { DashboardTabStrip } from "./dashboard-tab-strip";
 
@@ -87,6 +90,58 @@ export function theTablistIsNotANavLandmark(): void {
   render(<Harness />);
   const list = screen.getByRole("tablist", { name: "Dashboard tabs" });
   expect(list.tagName).toBe("DIV");
+}
+
+/**
+ * `F3.77` (plan D4) — the markers the hosts pass: HVAC readable with two warnings, Electrical
+ * outside the caller's scope, the Overview absent (it is no group tab, so `tabs[]` never lists it).
+ */
+const MARKERS: TabMarkers = {
+  byTab: new Map<string, SiteWidgetTab>([
+    [
+      "hvac",
+      {
+        tabKey: "hvac",
+        label: "HVAC",
+        assetGroupId: null,
+        status: { worstSeverity: "warning", tone: "warning", activeAlarms: 2, offlineAssets: 0, assets: 4 },
+      },
+    ],
+    ["electrical", { tabKey: "electrical", label: "Electrical", assetGroupId: null, status: null }],
+  ]),
+  severities: [{ code: "warning", label: "Warning", tone: "warning", rank: 20, active: true }],
+};
+
+function renderMarked(): void {
+  render(
+    <DashboardTabStrip tabs={TABS} selectedKey="overview" onSelect={() => undefined} markers={MARKERS}>
+      <p>Panel</p>
+    </DashboardTabStrip>,
+  );
+}
+
+/** A marked tab's accessible name is the composed one, and it shows the count. */
+export function aMarkedTabIsNamedByItsStatus(): void {
+  renderMarked();
+  const hvac = screen.getByRole("tab", { name: "HVAC, Warning, 2 alarms" });
+  expect(hvac).toHaveTextContent("2 alarms");
+}
+
+/** A tab outside the caller's scope says so — never a zero. */
+export function aTabOutsideScopeSaysSo(): void {
+  renderMarked();
+  const electrical = screen.getByRole("tab", { name: "Electrical, Outside scope" });
+  expect(electrical).toHaveTextContent("Outside scope");
+  expect(electrical.textContent).not.toMatch(/\d/);
+}
+
+/** A tab absent from the markers (the Overview) keeps its label as its name and draws no marker.
+ * Mutation: mark every tab (a missing entry read as outside scope) => red. */
+export function anUnmarkedTabKeepsItsLabel(): void {
+  renderMarked();
+  const overview = screen.getByRole("tab", { name: "Overview" });
+  expect(overview).not.toHaveAttribute("aria-label");
+  expect(overview.textContent).toBe("Overview");
 }
 
 /** A tab draws the project's `--focus` outline on keyboard focus (an outline, not a ring: the

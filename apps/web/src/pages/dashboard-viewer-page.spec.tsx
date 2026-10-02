@@ -187,6 +187,44 @@ function stubLiveCanvas(): void {
   mocks.io.mockImplementation(() => ({ on: vi.fn(), disconnect: mocks.disconnect }));
   mocks.fetchTelemetryRecent.mockResolvedValue([]);
   mocks.fetchPointAggregate.mockResolvedValue({ stats: null, buckets: [] });
+  // `F3.77` — a tabbed dashboard starts the tab markers' reads (`useTabMarkers`); unstubbed they
+  // reach the API on :4000. Pending unless a case answers it, so the strip draws no marker.
+  vi.spyOn(siteWidgetsApi, "fetchSiteWidgets").mockImplementation(() => new Promise(() => undefined));
+  vi.spyOn(vocabulariesApi, "fetchVocabularies").mockResolvedValue({
+    alarmSeverities: [{ code: "warning", label: "Warning", tone: "warning", rank: 20, active: true }],
+  } as never);
+}
+
+/**
+ * `F3.77` (plan D4) — the viewer's strip carries the markers: HVAC (a group tab with two warnings)
+ * is named by its status, and Power (the first tab, absent from `tabs[]`) keeps its label.
+ * Mutation: drop `markers` from the viewer's `DashboardTabStrip` => red.
+ */
+export async function theViewerStripCarriesTheTabMarkers(): Promise<void> {
+  stubLiveCanvas();
+  vi.spyOn(dashboardsApi, "fetchDashboard").mockResolvedValue(DTO_WITH_TABS);
+  vi.spyOn(siteWidgetsApi, "fetchSiteWidgets").mockResolvedValue({
+    dashboardId: "dash-1",
+    tabKey: "power",
+    resolvedAt: "2026-10-01T10:00:00.000Z",
+    scope: { assetCount: 4 },
+    alarms: { active: [], summary: [] },
+    roles: [],
+    tabs: [
+      {
+        tabKey: "hvac",
+        label: "HVAC",
+        assetGroupId: null,
+        status: { worstSeverity: "warning", tone: "warning", activeAlarms: 2, offlineAssets: 0, assets: 4 },
+      },
+    ],
+  } as unknown as SiteWidgetsResponse);
+  renderPage(asUser("asset_group_admin"));
+
+  const hvac = await screen.findByRole("tab", { name: "HVAC, Warning, 2 alarms" });
+  expect(hvac).toHaveTextContent("2 alarms");
+  expect(screen.getByRole("tab", { name: "Power" }).textContent).toBe("Power");
+  expect(siteWidgetsApi.fetchSiteWidgets).toHaveBeenCalledWith("dash-1", "power", expect.anything());
 }
 
 /** `F3.73` D11 — a tabbed dashboard shows the tab strip, the first tab by `sortOrder` selected. */
@@ -331,7 +369,8 @@ export async function aModuleCardInTheViewerOpensItsTab(): Promise<void> {
   expect(link.getAttribute("href")).toBe(`/dashboards/site-a-overview?organizationId=${ORG_ID}&tab=hvac`);
   await userEvent.click(link);
   expect(await screen.findByText("HVAC tile")).toBeInTheDocument();
-  expect(screen.getByRole("tab", { name: "HVAC" })).toHaveAttribute("aria-selected", "true");
+  // `F3.77` — the answer's HVAC tab is outside scope, so its marker names it so.
+  expect(screen.getByRole("tab", { name: "HVAC, Outside scope" })).toHaveAttribute("aria-selected", "true");
 }
 
 /**

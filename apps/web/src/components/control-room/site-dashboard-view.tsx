@@ -1,13 +1,15 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import type { DashboardDto } from "@bms/shared";
-import { Link, Navigate } from "react-router-dom";
+import { Link, Navigate, useLocation } from "react-router-dom";
 
 import { fetchDashboard } from "../../api/dashboards";
+import { useTabMarkers } from "../../hooks/use-tab-markers";
 import { apiErrorMessage } from "../../lib/api-error-message";
 import { FOCUS_OUTLINE_CLASS } from "../../lib/focus-classes";
 import { DashboardLiveCanvas } from "../dashboards/dashboard-live-canvas";
+import { TabStatusMarker } from "../dashboards/tab-status-marker";
 import { SectionCard } from "../section-card";
-import { siteTabHref } from "../widgets/site-widget-parts";
+import { siteTabHref, tabAccessibleName } from "../widgets/site-widget-parts";
 
 type SiteDashboardViewProps = {
   slug: string;
@@ -58,9 +60,18 @@ const SITE_VIEW_RESOLVE_PREFIX = ["control-room", "site-view"] as const;
  * the selected tab's widgets only. A segment that names no tab — on any dashboard, including
  * one with no tabs — redirects to the bare path. A dashboard with no tabs renders as before.
  * A pending or rejected read redirects nowhere.
+ *
+ * **Tab markers (`F3.77` plan D4).** Each group tab's link carries its status marker and is named
+ * by `tabAccessibleName` ("HVAC, Warning, 2 alarms" / "HVAC, Outside scope"); the Overview and any
+ * tab the site-widgets `tabs[]` does not list keep their label. See `useTabMarkers`.
+ *
+ * **The query string stays (`F3.77`, wall mode).** A tab link and the unknown-tab redirect keep
+ * the current query (`?wall=1&every=30`), so choosing a tab on a wall screen does not leave wall
+ * mode. The site route has no other query, so nothing else is carried.
  */
 export function SiteDashboardView({ slug, organizationId, locationId, tab }: SiteDashboardViewProps) {
   const queryClient = useQueryClient();
+  const { search } = useLocation();
   const dashboardQ = useQuery({
     queryKey: ["dashboards", "detail", slug, organizationId],
     queryFn: () => fetchDashboard(slug, organizationId),
@@ -74,9 +85,12 @@ export function SiteDashboardView({ slug, organizationId, locationId, tab }: Sit
   const sitePath = `/control-room/site/${encodeURIComponent(locationId)}`;
   const tabs = dashboardQ.data === undefined ? [] : sortedTabs(dashboardQ.data);
   const selected = tab === undefined ? tabs[0] : tabs.find((candidate) => candidate.key === tab);
+  // `F3.77` (plan D4) — keyed on the FIRST stored tab, never the selected one: the Overview's own
+  // read, so a tab switch makes no second read. Called before the redirect below (a hook).
+  const markers = useTabMarkers(dashboardQ.data?.id ?? "", tabs[0]?.key ?? null);
 
   if (dashboardQ.data !== undefined && tab !== undefined && selected === undefined) {
-    return <Navigate to={sitePath} replace />;
+    return <Navigate to={`${sitePath}${search}`} replace />;
   }
 
   return (
@@ -95,16 +109,23 @@ export function SiteDashboardView({ slug, organizationId, locationId, tab }: Sit
         <>
           {tabs.length > 0 ? (
             <nav aria-label="Dashboard tabs" className="mb-3 flex flex-wrap gap-1 border-b border-line pb-2">
-              {tabs.map((entry) => (
-                <Link
-                  key={entry.id}
-                  to={siteTabHref(sitePath, entry.key)}
-                  aria-current={entry.key === selected?.key ? "page" : undefined}
-                  className={`surface-tab px-3 py-1.5 ${FOCUS_OUTLINE_CLASS} ${entry.key === selected?.key ? "surface-tab-selected" : ""}`}
-                >
-                  {entry.label}
-                </Link>
-              ))}
+              {tabs.map((entry) => {
+                const marker = markers.byTab.get(entry.key);
+                return (
+                  <Link
+                    key={entry.id}
+                    to={`${siteTabHref(sitePath, entry.key)}${search}`}
+                    aria-current={entry.key === selected?.key ? "page" : undefined}
+                    aria-label={
+                      marker === undefined ? undefined : tabAccessibleName(entry.label, marker.status, markers.severities)
+                    }
+                    className={`surface-tab px-3 py-1.5 ${FOCUS_OUTLINE_CLASS} ${entry.key === selected?.key ? "surface-tab-selected" : ""}`}
+                  >
+                    {entry.label}
+                    {marker === undefined ? null : <TabStatusMarker status={marker.status} />}
+                  </Link>
+                );
+              })}
             </nav>
           ) : null}
           <DashboardLiveCanvas dashboard={dashboardQ.data} tabKey={selected?.key} />

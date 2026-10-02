@@ -2,6 +2,11 @@
 import { afterEach, describe, it } from "vitest";
 
 import {
+  aGroupTabLinkIsNamedByItsStatus,
+  aPendingMarkersReadDrawsNoMarker,
+  aTabOutsideScopeSaysSoNeverAZero,
+  aTabSwitchMakesNoSecondMarkersRead,
+  theOverviewLinkHasNoMarker,
   aDashboardWithNoTabsRendersAsToday,
   aFailedRefetchKeepsTheCanvas,
   aFailedRefetchShowsNoAlert,
@@ -25,6 +30,8 @@ import {
   tryAgainInvalidatesTheResolveRead,
   tryAgainRereadsTheDashboard,
   twoTabsRenderAsLinks,
+  theTabLinksKeepTheQuery,
+  anUnknownTabRedirectKeepsTheQuery,
 } from "./site-dashboard-view.spec";
 
 /**
@@ -129,5 +136,33 @@ describe("F3.73 D10 SiteDashboardView tabs", () => {
 
   it("T8 does not redirect while the read is pending", async () => {
     await aPendingReadDoesNotRedirect();
+  });
+
+  it("F3.77 M1 a group tab link is named by its status and shows the count", async () => {
+    await aGroupTabLinkIsNamedByItsStatus();
+  });
+
+  it("F3.77 M2 the Overview link has no marker", async () => {
+    await theOverviewLinkHasNoMarker();
+  });
+
+  it("F3.77 M3 a tab outside scope says so, never a zero", async () => {
+    await aTabOutsideScopeSaysSoNeverAZero();
+  });
+
+  it("F3.77 M4 a tab switch makes no second markers read", async () => {
+    await aTabSwitchMakesNoSecondMarkersRead();
+  });
+
+  it("F3.77 M5 a pending markers read draws no marker", async () => {
+    await aPendingMarkersReadDrawsNoMarker();
+  });
+
+  it("F3.77 T9 the tab links keep the query (wall mode)", async () => {
+    await theTabLinksKeepTheQuery();
+  });
+
+  it("F3.77 T10 an unknown tab redirect keeps the query", async () => {
+    await anUnknownTabRedirectKeepsTheQuery();
   });
 });

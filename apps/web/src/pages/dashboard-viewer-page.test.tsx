@@ -19,6 +19,7 @@ import {
   anUntabbedDashboardShowsNoStrip,
   assetGroupAdminSeesTheEditLink,
   switchingTabsSwapsTheWidgets,
+  theViewerStripCarriesTheTabMarkers,
 } from "./dashboard-viewer-page.spec";
 
 /**
@@ -94,5 +95,9 @@ describe("F3.1d dashboard viewer page", () => {
 
   it("F3.73 critique: an untabbed viewer has an h2", async () => {
     await anUntabbedViewerHasAnH2();
+  });
+
+  it("F3.77 the viewer's strip carries the tab markers", async () => {
+    await theViewerStripCarriesTheTabMarkers();
   });
 });

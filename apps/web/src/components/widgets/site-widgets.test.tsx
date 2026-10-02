@@ -25,7 +25,10 @@ import {
   theLegendDrawsNoHeadingButItsTitleInline,
   theLegendNamesNormalAndOffline,
   theLegendTitleAndPillsShareOneRow,
+  theListHasNoLinkWithoutATabHref,
+  theListIsNamedByTheWidgetTitle,
   theListLinksEachRowToItsTab,
+  theListNameIsNotALink,
   theListSaysSoWhenTheDashboardHasNoGroupTab,
   theListShowsOneRowPerGroupTab,
   theListShowsOutsideScopeForATabWithNoStatus,
@@ -38,6 +41,11 @@ import {
   theRailSummaryTabShowsTheTotal,
   theStripDrawsOnePillPerRole,
   theStripSaysSoWhenNoRoleIsInScope,
+  theAccessibleNameNamesTheStatusAndTheCount,
+  theAccessibleNameOfAnUnreadableTabSaysOutsideScope,
+  theLabelReadsNormalWithNoAlarmAndNoOfflineMember,
+  theLabelReadsOfflineWhenAnOfflineMemberSetsTheTone,
+  theLabelReadsTheWorstSeveritysVocabularyLabel,
 } from "./site-widgets.spec";
 
 /**
@@ -115,8 +123,17 @@ describe("F3.73 site widgets — presentation", () => {
   it("SW16 the list shows Outside scope for a tab with no status", () => {
     theListShowsOutsideScopeForATabWithNoStatus();
   });
-  it("SW17 the list links each row to its tab", () => {
+  it("SW17 the list links each row to its tab through an Open link", () => {
     theListLinksEachRowToItsTab();
+  });
+  it("SW50 the list name is text, not a link", () => {
+    theListNameIsNotALink();
+  });
+  it("SW51 the list draws no link without a tab href", () => {
+    theListHasNoLinkWithoutATabHref();
+  });
+  it("SW52 the list is named by the widget title", () => {
+    theListIsNamedByTheWidgetTitle();
   });
   it("SW18 the list says so when the dashboard has no group tab", () => {
     theListSaysSoWhenTheDashboardHasNoGroupTab();
@@ -153,5 +170,20 @@ describe("F3.73 site widgets — presentation", () => {
   });
   it("SW30 an unlisted severity beside an offline member keeps its code", () => {
     anUnlistedSeverityBesideAnOfflineMemberKeepsItsCode();
+  });
+  it("SW36 tabStatusLabel reads Offline when an offline member sets the tone", () => {
+    theLabelReadsOfflineWhenAnOfflineMemberSetsTheTone();
+  });
+  it("SW37 tabStatusLabel reads the worst severity's vocabulary label", () => {
+    theLabelReadsTheWorstSeveritysVocabularyLabel();
+  });
+  it("SW38 tabStatusLabel reads Normal with no alarm and no offline member", () => {
+    theLabelReadsNormalWithNoAlarmAndNoOfflineMember();
+  });
+  it("SW39 tabAccessibleName names the status and the alarm count", () => {
+    theAccessibleNameNamesTheStatusAndTheCount();
+  });
+  it("SW40 tabAccessibleName of an unreadable tab says Outside scope", () => {
+    theAccessibleNameOfAnUnreadableTabSaysOutsideScope();
   });
 });

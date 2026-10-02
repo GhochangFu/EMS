@@ -9,9 +9,11 @@ import type { AdminAssetGroupDto, AssetListRow, DashboardDto, DashboardWidgetDto
 import * as assetGroupsApi from "../../api/admin/asset-groups";
 import * as locationsApi from "../../api/admin/locations";
 import * as assetsApi from "../../api/assets";
+import * as siteWidgetsApi from "../../api/dashboard-site-widgets";
 import * as dashboardsApi from "../../api/dashboards";
 import * as mimicLayoutsApi from "../../api/mimic-layouts";
 import * as systemStatusApi from "../../api/system-status";
+import * as vocabulariesApi from "../../api/vocabularies";
 import { OPERATIONAL } from "../../components/system-status-indicator.spec";
 import { useAuthStore, type AuthUser } from "../../stores/auth-store";
 import { DashboardBuilderEditPage } from "./dashboard-builder-edit-page";
@@ -189,6 +191,12 @@ export function stubLoads({
   // `AppShell` mounts `SystemStatusIndicator`, whose `GET /system/status` is the same leak: a
   // local API on :4000 answers 401 and clears the session, emptying the role's group list.
   vi.spyOn(systemStatusApi, "fetchSystemStatus").mockResolvedValue(OPERATIONAL);
+  // `F3.77` — a tabbed dashboard starts the tab markers' reads (`useTabMarkers`), the same leak.
+  // Pending unless a case answers it, so the strip draws no marker.
+  vi.spyOn(siteWidgetsApi, "fetchSiteWidgets").mockImplementation(() => new Promise(() => undefined));
+  vi.spyOn(vocabulariesApi, "fetchVocabularies").mockResolvedValue({
+    alarmSeverities: [{ code: "warning", label: "Warning", tone: "warning", rank: 20, active: true }],
+  } as never);
 }
 
 /** `/auth/me`'s scope for an `asset_group_admin` of this dashboard's organization —

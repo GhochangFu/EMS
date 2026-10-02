@@ -14,6 +14,7 @@ import {
   cleanupLive,
   oneReadPerTabWithTheCanvasDerivedTabKey,
   theCardLinksUnderTheRoutesSite,
+  onTheSiteRouteTheCardLinkKeepsTheQuery,
   inTheViewerTheCardLinksToTheTabParam,
   withNoSiteAndNoViewerTheCardIsNotALink,
   theFrameShowsLoadingUntilTheFirstAnswer,
@@ -51,6 +52,9 @@ describe("F3.73 SiteWidgetLive", () => {
   });
   it("SL6 the card links under the route's own site", async () => {
     await theCardLinksUnderTheRoutesSite();
+  });
+  it("SL6d on the site route the card's link keeps the query (F3.77 review fix)", async () => {
+    await onTheSiteRouteTheCardLinkKeepsTheQuery();
   });
   it("SL6b in the viewer the card links to its ?tab= (critique fix)", async () => {
     await inTheViewerTheCardLinksToTheTabParam();

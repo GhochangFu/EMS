@@ -7,6 +7,7 @@ import {
   aBoundTabIsNotMislabelledWhileTheGroupsLoad,
   aCatalogBoundTileNamesItsMetric,
   aProblemOnAnotherTabNamesAndSelectsIt,
+  aSaveRefreshesTheTabMarkers,
   theRemoveButtonsNameIsItsVisibleText,
   aDisabledGroupsReadDoesNotMislabelABoundTab,
   aFailedGroupsReadShowsItsErrorNotAMisleadingLabel,
@@ -19,6 +20,7 @@ import {
   addingATabSendsItWithItsWidget,
   bindingATabToAGroupReadsTheSitesGroups,
   movingAWidgetToAnotherTab,
+  onlyAStoredTabCarriesItsMarker,
   theStripShowsTheSelectedTabsWidgetsOnly,
 } from "./dashboard-builder-edit-page-tabs.spec";
 
@@ -95,5 +97,13 @@ describe("F3.73 D11 dashboard builder edit page — tabs", () => {
 
   it("F3.73 critique: a catalog-bound tile names its metric", async () => {
     await aCatalogBoundTileNamesItsMetric();
+  });
+
+  it("F3.77 only a stored tab carries its marker; an unsaved tab has none", async () => {
+    await onlyAStoredTabCarriesItsMarker();
+  });
+
+  it("F3.77 review fix: a save refreshes the tab markers' read", async () => {
+    await aSaveRefreshesTheTabMarkers();
   });
 });
