@@ -421,6 +421,22 @@ function NodeFields({
               ))}
             </select>
           </label>
+          <label className="flex items-center gap-2 text-xs text-ink-muted">
+            <input
+              type="checkbox"
+              checked={node.fanOut === true}
+              onChange={(event) => change({ fanOut: event.target.checked })}
+            />
+            Fan out — draw every member of the role
+          </label>
+          <label className="flex items-center gap-2 text-xs text-ink-muted">
+            <input
+              type="checkbox"
+              checked={node.isSource === true}
+              onChange={(event) => change({ isSource: event.target.checked })}
+            />
+            Energy source
+          </label>
         </>
       ) : null}
       {node.kind === "panel" ? (

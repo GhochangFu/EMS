@@ -21,6 +21,7 @@ import * as systemStatusApi from "../../api/system-status";
 import * as vocabApi from "../../api/vocabularies";
 import { OPERATIONAL } from "../../components/system-status-indicator.spec";
 import { ApiError } from "../../lib/api-error";
+import type { MimicLayoutWriteBody, MimicLayoutWriteNode } from "../../api/mimic-layouts";
 import { emptyEditorLayout, fromPreset, toWriteBody } from "../../lib/mimic-editor";
 import type { AuthUser } from "../../stores/auth-store";
 import { MIMIC_LAYOUT_STALE_MESSAGE as STALE_SERVER_MESSAGE } from "@bms/shared/contracts";
@@ -142,6 +143,17 @@ export async function aNewPresetLayoutPostsWithTheOrganization(): Promise<void> 
   await save();
   await waitFor(() => expect(create).toHaveBeenCalledTimes(1));
   expect(create).toHaveBeenCalledWith({ ...toWriteBody(fromPreset("water_train")), organizationId: ORG_ID });
+}
+
+/** E1c — saving a layout started from lv_single_line sends the fan-out and source flags. */
+export async function aStartedSldLayoutPostsItsFlags(): Promise<void> {
+  const { create } = renderAt("/admin/mimic-layouts/new?preset=lv_single_line");
+  await save();
+  await waitFor(() => expect(create).toHaveBeenCalledTimes(1));
+  const body = create.mock.calls[0]?.[0] as MimicLayoutWriteBody | undefined;
+  expect(body?.nodes.find((n: MimicLayoutWriteNode) => n.key === "main_breaker")?.fanOut).toBe(true);
+  expect(body?.nodes.find((n: MimicLayoutWriteNode) => n.key === "incoming")?.isSource).toBe(true);
+  expect(body?.nodes.find((n: MimicLayoutWriteNode) => n.key === "main_bus")?.fanOut).toBeUndefined();
 }
 
 /** E1b — `?preset=compressed_air` POSTs that preset's copy (ADR 0082 decision 5, plan D9). */

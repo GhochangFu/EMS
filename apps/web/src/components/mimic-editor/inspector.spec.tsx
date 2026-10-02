@@ -450,3 +450,40 @@ export async function aNewLayoutCanUncheckAnUnknownOrgLibrary(): Promise<void> {
   await userEvent.click(box);
   expect(props.onLayoutChange).toHaveBeenCalledWith({ symbolLibraries: ["core"] });
 }
+
+/** N-new1 — a unit offers "Fan out" and "Energy source"; toggling Fan out reports the patch. */
+export async function fanOutToggleReportsThePatch(): Promise<void> {
+  const props = renderInspector("wtp");
+  await userEvent.click(screen.getByRole("checkbox", { name: /Fan out/ }));
+  expect(props.onNodeChange).toHaveBeenCalledWith("wtp", { fanOut: true });
+}
+
+/** N-new2 — toggling Energy source reports the patch. */
+export async function sourceToggleReportsThePatch(): Promise<void> {
+  const props = renderInspector("wtp");
+  await userEvent.click(screen.getByRole("checkbox", { name: /Energy source/ }));
+  expect(props.onNodeChange).toHaveBeenCalledWith("wtp", { isSource: true });
+}
+
+/** N-new3 — a set flag shows checked; toggling it off reports false. */
+export async function aSetFlagShowsCheckedAndClears(): Promise<void> {
+  const flagged: EditorLayout = {
+    ...layout,
+    nodes: layout.nodes.map((n) => (n.key === "wtp" ? { ...n, fanOut: true } : n)),
+  };
+  const props = renderInspector("wtp", { layout: flagged, selected: flagged.nodes.find((n) => n.key === "wtp") ?? null });
+  const box = screen.getByRole("checkbox", { name: /Fan out/ });
+  expect(box).toBeChecked();
+  await userEvent.click(box);
+  expect(props.onNodeChange).toHaveBeenCalledWith("wtp", { fanOut: false });
+}
+
+/** N-new4 — a panel shows neither checkbox, and a unit does show one (adjacent positive). */
+export function aPanelShowsNeitherFlag(): void {
+  const panel = layout.nodes.find((n) => n.kind === "panel");
+  if (panel === undefined) throw new Error("water_train has a panel");
+  renderInspector(null, { selected: panel });
+  expect(screen.getByRole("combobox", { name: "Tone" })).toBeInTheDocument();
+  expect(screen.queryByRole("checkbox", { name: /Fan out/ })).toBeNull();
+  expect(screen.queryByRole("checkbox", { name: /Energy source/ })).toBeNull();
+}
