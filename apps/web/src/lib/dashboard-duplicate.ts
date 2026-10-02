@@ -86,7 +86,8 @@ export type DuplicateDashboardPayload = {
   create: DuplicateDashboardCreateBody;
   widgets: PutDashboardWidgetsPayload;
   /** `F3.73` D11b — tab mimic widgets left out because their tab lost its group on a
-   * cross-location copy. The dialog says so; the server would refuse them (`MIMIC_SCOPE_MESSAGE`). */
+   * cross-location copy. The dialog says so; the server would refuse them (`MIMIC_SCOPE_MESSAGE`).
+   * `F3.74` — also a mimic whose `config.tabKey` names such a tab (`MIMIC_TAB_MESSAGE`). */
   droppedMimics: number;
 };
 
@@ -120,6 +121,11 @@ export function duplicatePayload(
   // A tab's group binds to the SOURCE's location. Off that location the copy keeps the tabs as
   // plain canvases (every `assetGroupId` cleared), and a mimic on a tab that had a group would fail
   // the API's per-tab mimic guard — so those rows are dropped and counted.
+  //
+  // `F3.74` (plan D7) — so would a mimic whose `config.tabKey` names such a tab (an Overview mimic
+  // naming `sld`): the PUT answers 400 `MIMIC_TAB_MESSAGE` after the POST has made the dashboard.
+  // The row does not carry `config.tabKey` (the builder form reads it from PR3 on), so it is read
+  // from the source widget; `dashboardRowsFromDto` maps `source.widgets` one to one, in order.
   const crossLocation = target.scope.locationId !== source.locationId;
   const groupClearedKeys = new Set(
     crossLocation ? source.tabs.filter((tab) => tab.assetGroupId !== null).map((tab) => tab.key) : [],
@@ -128,8 +134,21 @@ export function duplicatePayload(
     .map(dropTabId)
     .map((tab) => (crossLocation ? { ...tab, assetGroupId: null } : tab));
   const rows = dashboardRowsFromDto(source).map(dropWidgetId);
+  const namesClearedTab = (index: number): boolean => {
+    const widget = source.widgets[index];
+    return (
+      widget !== undefined &&
+      widget.widgetType === "mimic" &&
+      widget.config.tabKey !== undefined &&
+      groupClearedKeys.has(widget.config.tabKey)
+    );
+  };
   const kept = rows.filter(
-    (row) => !(row.widgetType === "mimic" && row.tabKey !== undefined && groupClearedKeys.has(row.tabKey)),
+    (row, index) =>
+      !(
+        row.widgetType === "mimic" &&
+        ((row.tabKey !== undefined && groupClearedKeys.has(row.tabKey)) || namesClearedTab(index))
+      ),
   );
   const widgets = buildPutWidgetsPayload(kept, tabs);
   return {

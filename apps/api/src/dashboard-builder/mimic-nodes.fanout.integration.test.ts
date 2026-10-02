@@ -15,7 +15,9 @@ import {
   assertLayoutUnitWithoutFanOutShowsOneMember,
   assertNonFanOutNodeHasNoMembers,
   assertOverviewMimicResolvesThroughTheNamedTab,
+  assertOwnGroupTabWinsOverTheNamedTab,
   assertRolelessPresetNodeIsAbsent,
+  assertScopedFanOutLeavesOutTheUnreadableMember,
   assertStateMapsListOnlyTheKeysSeen,
   assertStatePointCountsTowardFreshness,
   assertTabKeyOfAnotherDashboardIsUnassigned,
@@ -59,10 +61,20 @@ describe.skipIf(!connectionString)("F3.74 — MimicNodesService fan-out", () => 
   it("F5 stateMaps lists only the keys seen", rolledBack(assertStateMapsListOnlyTheKeysSeen), 60_000);
   it("F6 a node without fanOut answers members: []", rolledBack(assertNonFanOutNodeHasNoMembers), 60_000);
   it("F7 a fan-out node sums alarms and answers the worst", rolledBack(assertFanOutAlarmsAreSummedAndWorst), 60_000);
+  it(
+    "F7b a scoped reader's fan-out leaves the unreadable member out of members, count and alarms",
+    rolledBack(assertScopedFanOutLeavesOutTheUnreadableMember),
+    60_000,
+  );
   it("F8 a role-less preset node is absent from nodes", rolledBack(assertRolelessPresetNodeIsAbsent), 60_000);
   it(
     "F9 an Overview mimic naming sld resolves through that tab's group",
     rolledBack(assertOverviewMimicResolvesThroughTheNamedTab),
+    60_000,
+  );
+  it(
+    "F9b the mimic's own group tab wins over a named tab with its own group",
+    rolledBack(assertOwnGroupTabWinsOverTheNamedTab),
     60_000,
   );
   it(

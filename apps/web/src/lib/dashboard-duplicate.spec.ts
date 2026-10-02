@@ -150,6 +150,47 @@ export function runDuplicateCrossLocationClearsGroupsTests(): void {
   assert(payload.droppedMimics === 1, `one dropped mimic is counted — got ${payload.droppedMimics}`);
 }
 
+/** `F3.74` (plan D7) — the only mimic sits on the Overview (no group) and names the `ups` tab. */
+function overviewMimicSource(): DashboardDto {
+  return sourceDashboard(
+    [
+      widgetDto({ id: "w-tile-overview", tabId: TAB_OVERVIEW.id }),
+      widgetDto({
+        id: "w-mimic-overview",
+        tabId: TAB_OVERVIEW.id,
+        widgetType: "mimic",
+        points: [],
+        config: { source: "preset", preset: "lv_single_line", tabKey: "ups" },
+      } as Partial<DashboardWidgetDto>),
+    ],
+    [TAB_OVERVIEW, TAB_UPS],
+  );
+}
+
+/**
+ * `F3.74` review — a cross-location copy clears the `ups` tab's group, so an Overview mimic naming
+ * `ups` would make the widget PUT answer 400 (`MIMIC_TAB_MESSAGE`) after the POST had already made
+ * the dashboard. It is dropped and counted.
+ */
+export function runDuplicateCrossLocationDropsOverviewMimicNamingClearedTabTests(): void {
+  const payload = duplicatePayload(overviewMimicSource(), targetAt(otherLocation));
+  const mimics = payload.widgets.widgets.filter((widget) => widget.widgetType === "mimic").length;
+  assert(
+    mimics === 0 && payload.droppedMimics === 1,
+    `the Overview mimic naming a group-cleared tab is dropped and counted — got ${mimics} mimic(s), droppedMimics ${payload.droppedMimics}`,
+  );
+}
+
+/** `F3.74` review — the positive control: a same-location copy keeps that Overview mimic. */
+export function runDuplicateSameLocationKeepsOverviewMimicTests(): void {
+  const payload = duplicatePayload(overviewMimicSource(), targetAt(sameLocation));
+  const mimics = payload.widgets.widgets.filter((widget) => widget.widgetType === "mimic").length;
+  assert(
+    mimics === 1 && payload.droppedMimics === 0,
+    `a same-location duplicate keeps the Overview mimic — got ${mimics} mimic(s), droppedMimics ${payload.droppedMimics}`,
+  );
+}
+
 /** `freeSlug` — the first candidate not already taken, bounded and length-safe. */
 export function runFreeSlugTests(): void {
   assert(freeSlug("feed-pumps", []) === "feed-pumps-copy", "the first candidate is <base>-copy");

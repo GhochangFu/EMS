@@ -36,8 +36,12 @@ export const mimicPresetSchema = z.enum([
 /**
  * `F3.74` (ADR 0088 decision 11, plan D7) — the tab a mimic resolves through when the tab it sits
  * on binds no group: an Overview mimic names `sld` and draws that tab's group. Optional on both
- * arms, so every stored config still parses. The write guard (`mimicGroupFor`) refuses a key that
- * names no group-bound tab of the body with this sentence; the key is never echoed.
+ * arms, so every stored config still parses. The write guard (`mimicGroupFor`) reads the
+ * dashboard's own group first, so on a group-scoped dashboard any key saves, even one that names
+ * no tab or a tab with no group. The resolver still reads `COALESCE(own tab, named tab,
+ * dashboard)`: such a dangling key falls through to the dashboard's group, while a key naming a
+ * group-bound tab still resolves through that tab. On a group-less dashboard the guard refuses a
+ * key that names no group-bound tab of the body with this sentence; the key is never echoed.
  */
 export const MIMIC_TAB_MESSAGE =
   "a plant mimic's tabKey must name a tab of this dashboard that is bound to an asset group";
@@ -50,8 +54,8 @@ export const MIMIC_TAB_MESSAGE =
 const mimicTabKeySchema = dashboardTabKeySchema.describe(
   "The tab this mimic resolves through when the tab it sits on binds no asset group: " +
     "lowercase letters, digits and hyphens, 1 to 64 characters, and not `assets`. On a dashboard " +
-    "it must name a tab of the same dashboard that binds a group; in a template, one of the " +
-    "template's tabs that has a domain. Otherwise the write answers 400.",
+    "with no asset group it must name a tab of the same dashboard that binds a group; in a " +
+    "template, one of the template's tabs that has a domain. Otherwise the write answers 400.",
 );
 
 /**

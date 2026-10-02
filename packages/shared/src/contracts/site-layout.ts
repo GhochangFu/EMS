@@ -29,7 +29,11 @@ export const siteLayoutOmittedTabSchema = z.object({
   domain: z.string(),
 });
 
-/** An Overview card removed because the tab it opens was omitted. */
+/**
+ * An Overview card removed because the tab it opens was omitted. `F3.74` — also an Overview mimic
+ * removed because the tab its `config.tabKey` names was omitted; `targetTabKey` then holds that
+ * `tabKey`.
+ */
 export const siteLayoutDroppedCardSchema = z.object({
   tabKey: dashboardTabKeySchema,
   widgetKey: z.string(),

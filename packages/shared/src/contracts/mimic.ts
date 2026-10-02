@@ -118,7 +118,9 @@ export const mimicWidgetNodesSchema = z.discriminatedUnion("source", [
 
 /**
  * The whole response: every mimic widget on one dashboard. `stateMaps` (`F3.74` plan D4) holds
- * the `bms.point_key_states` rows of every state-point key the answer carries, and only those.
+ * the `bms.point_key_states` rows of the state keys of every member the read loaded. A role fans
+ * out when any widget's node of that role does, so this can include keys of members that a
+ * non-fan-out node of another widget does not show.
  */
 export const dashboardMimicNodesResponseSchema = z.object({
   dashboardId: z.string().uuid(),

@@ -140,8 +140,13 @@ async function seedBreakerSite(client: pg.PoolClient, mainBreakers: number): Pro
   return { site, groupId, dashboardId, mainBreakers: ids };
 }
 
-async function readDashboard(client: pg.PoolClient, site: Site, dashboardId: string): Promise<DashboardMimicNodesResponseDto> {
-  return readService(client as unknown as pg.Pool).read(site.organizationId, dashboardId, null, await txNowMs(client));
+async function readDashboard(
+  client: pg.PoolClient,
+  site: Site,
+  dashboardId: string,
+  readableAssetIds: readonly string[] | null = null,
+): Promise<DashboardMimicNodesResponseDto> {
+  return readService(client as unknown as pg.Pool).read(site.organizationId, dashboardId, readableAssetIds, await txNowMs(client));
 }
 
 function nodeOf(dto: DashboardMimicNodesResponseDto, key: string, widgetIndex = 0): MimicNodeDto {
@@ -272,6 +277,32 @@ export async function assertFanOutAlarmsAreSummedAndWorst(client: pg.PoolClient)
   });
 }
 
+/**
+ * F7b — a scoped reader (plan D6, readable first, then counted): the readable set leaves out the
+ * MIDDLE of three `main-breaker` members, which carries the only critical alarm. It is absent from
+ * `members`, and `memberCount`, `activeAlarms` and `topAlarm` exclude it. The middle member, not
+ * the first, so a filter applied only to `rn = 1` would let it through the fan-out branch.
+ */
+export async function assertScopedFanOutLeavesOutTheUnreadableMember(client: pg.PoolClient): Promise<void> {
+  const fixture = await seedBreakerSite(client, 3);
+  const [first, second, third] = fixture.mainBreakers as [string, string, string];
+  await seedAlarm(client, fixture.site, first, "warning", "F3.74 readable first member warning");
+  await seedAlarm(client, fixture.site, second, "critical", "F3.74 unreadable member critical");
+  const dto = await readDashboard(client, fixture.site, fixture.dashboardId, [first, third]);
+  const node = nodeOf(dto, "main_breaker");
+  expect({
+    members: node.members.map((member) => member.asset.id),
+    memberCount: node.memberCount,
+    activeAlarms: node.activeAlarms,
+    top: node.topAlarm?.message,
+  }).toEqual({
+    members: [first, third],
+    memberCount: 2,
+    activeAlarms: 1,
+    top: "F3.74 readable first member warning",
+  });
+}
+
 /** F8 — a preset node with `roleCode: null` (`main_bus`) is absent; a roled one is present. */
 export async function assertRolelessPresetNodeIsAbsent(client: pg.PoolClient): Promise<void> {
   const fixture = await seedBreakerSite(client, 1);
@@ -372,6 +403,24 @@ export async function assertOverviewMimicResolvesThroughTheNamedTab(client: pg.P
   await seedOverviewMimic(client, fixture.site, fixture.dashboardId);
   const dto = await readDashboard(client, fixture.site, fixture.dashboardId);
   expect(nodeOf(dto, "main_breaker").asset?.id).toBe(fixture.mainBreaker);
+}
+
+/**
+ * F9b — the widget's OWN group tab wins over the tab it names (`COALESCE(dt, nt, d)`): a mimic on
+ * tab `h` (group H) names tab `sld`, which binds a DIFFERENT group S. The node answers H's member.
+ */
+export async function assertOwnGroupTabWinsOverTheNamedTab(client: pg.PoolClient): Promise<void> {
+  const site = await seedSite(client);
+  const ownGroup = await seedGroup(client, site, "H");
+  const namedGroup = await seedGroup(client, site, "S");
+  const [ownMember] = (await seedMembers(client, site, ownGroup, "main-breaker", 1, "QH")) as [string];
+  await seedMembers(client, site, namedGroup, "main-breaker", 1, "QS");
+  const dashboardId = await seedSiteDashboard(client, site, "own-tab");
+  const ownTab = await seedTab(client, site, dashboardId, "h", ownGroup);
+  await seedTab(client, site, dashboardId, "sld", namedGroup);
+  await seedMimicWidget(client, site.organizationId, dashboardId, { source: "preset", preset: LV, tabKey: "sld" }, 0, ownTab);
+  const dto = await readDashboard(client, site, dashboardId);
+  expect(nodeOf(dto, "main_breaker").asset?.id).toBe(ownMember);
 }
 
 /**
