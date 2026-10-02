@@ -228,6 +228,9 @@ services:
       AUTH_MODE: oidc
       OIDC_ISSUER: http://localhost:8080/realms/bms
       OIDC_JWKS_URI: http://keycloak:8080/realms/bms/protocol/openid-connect/certs
+      # F3.78 / ADR 0089 decision 5: the API accepts only tokens whose `azp` is
+      # this client. Required under OIDC, no default — unset, every token is 401.
+      OIDC_CLIENT_ID: bms-web
       OTEL_SERVICE_NAME: bms-api
       # AES-256-GCM key window for RTU connection credentials and webhook
       # secrets (ADR 0012, ADR 0062). Interpolated from the gitignored compose
@@ -346,6 +349,9 @@ services:
       AUTH_MODE: oidc
       OIDC_ISSUER: http://localhost:8080/realms/bms
       OIDC_JWKS_URI: http://keycloak:8080/realms/bms/protocol/openid-connect/certs
+      # F3.78 / ADR 0089 decision 5: the API accepts only tokens whose `azp` is
+      # this client. Required under OIDC, no default — unset, every token is 401.
+      OIDC_CLIENT_ID: bms-web
       # `E8.4` / ADR 0062 owner ruling 6 — this service previously set none of
       # these at all. A replica that cannot decrypt a channel secret answers
       # `unreadable` on every webhook it evaluates, so it needs the whole

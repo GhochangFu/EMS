@@ -24,6 +24,7 @@ provide.
 | `OIDC_ISSUER` | OIDC only | `http://localhost:8080/realms/bms` | Expected issuer claim for Keycloak tokens. Setting it is on its own enough to select OIDC: `POST /api/v1/auth/login` (local password login) is then refused with 401 regardless of `AUTH_MODE` (F4.12). |
 | `OIDC_JWKS_URI` | OIDC only | `http://keycloak:8080/realms/bms/protocol/openid-connect/certs` | API-internal URL used to fetch the Keycloak signing keys. |
 | `OIDC_AUDIENCE` | No | unset | Optional audience check for access tokens. |
+| `OIDC_CLIENT_ID` | OIDC only | `bms-web` in compose; no default | The client a token must have been issued to (`azp` claim, F3.78 / ADR 0089 decision 5). A token for any other client of the realm — the `bms-api-admin` service account included — is 401 `Token was not issued to this application`. Unset under OIDC, every token is 401 `OIDC client id is not configured`. |
 | `OTEL_SERVICE_NAME` | No | `bms-api` in compose | Service name attached to OpenTelemetry spans and Prometheus default labels. |
 | `OTEL_SDK_DISABLED` | No | unset | Set to `true` to disable API OpenTelemetry SDK startup. |
 | `OTEL_EXPORTER_OTLP_ENDPOINT` | No | unset | Optional OTLP HTTP collector base URL. When unset, tracing instrumentation starts without export. |

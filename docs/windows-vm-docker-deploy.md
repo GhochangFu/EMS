@@ -268,6 +268,14 @@ After for the current HTTPS deployment:
 OIDC_ISSUER: https://bms.demosites.co.in/realms/bms
 ```
 
+Set `OIDC_CLIENT_ID` (F3.78 / ADR 0089 decision 5). It has no default: an
+API without it answers **every** request with 401, so a host upgraded past
+F3.78 without this line cannot sign anyone in:
+
+```yaml
+OIDC_CLIENT_ID: bms-web
+```
+
 Keep `OIDC_JWKS_URI` unchanged:
 
 ```yaml
@@ -672,6 +680,7 @@ machine, and you need to update the Windows VM that serves
      api:
        environment:
          OIDC_ISSUER: https://bms.demosites.co.in/realms/bms
+         OIDC_CLIENT_ID: bms-web
      web:
        build:
          args:

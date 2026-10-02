@@ -251,6 +251,9 @@ BMS_FLEET_PASSWORD=bms_fleet_dev
 JWT_SECRET=change-me-in-prototype
 JWT_TTL=8h
 AUTH_MODE=local
+# Only under OIDC (F3.78 / ADR 0089 decision 5): the client a token's `azp`
+# must name. Unset under OIDC, every token is refused with 401.
+# OIDC_CLIENT_ID=bms-web
 PORT=4000
 LOG_LEVEL=info
 
