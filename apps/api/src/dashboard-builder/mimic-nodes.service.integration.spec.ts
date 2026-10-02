@@ -54,21 +54,21 @@ interface Train {
   readonly keys: { readonly r1: string; readonly r2: string; readonly r3: string; readonly unranked: string };
 }
 
-async function txNowMs(client: pg.PoolClient): Promise<number> {
+export async function txNowMs(client: pg.PoolClient): Promise<number> {
   const { rows } = await client.query<{ now: Date }>("SELECT now() AS now");
   const now = rows[0]?.now;
   if (!now) throw new Error("SELECT now() returned no row");
   return now.getTime();
 }
 
-async function one<T>(client: pg.PoolClient, sql: string, params: unknown[], what: string): Promise<T> {
+export async function one<T>(client: pg.PoolClient, sql: string, params: unknown[], what: string): Promise<T> {
   const { rows } = await client.query<T & pg.QueryResultRow>(sql, params);
   const row = rows[0];
   if (!row) throw new Error(`F3.32 fixture: failed to insert ${what}`);
   return row;
 }
 
-async function seedSite(client: pg.PoolClient): Promise<{ organizationId: string; locationId: string; tag: string }> {
+export async function seedSite(client: pg.PoolClient): Promise<{ organizationId: string; locationId: string; tag: string }> {
   const tag = `F332-${RUN}-${randomUUID().slice(0, 8)}`;
   const org = await one<{ id: string }>(
     client,
@@ -86,7 +86,7 @@ async function seedSite(client: pg.PoolClient): Promise<{ organizationId: string
   return { organizationId: org.id, locationId: loc.id, tag };
 }
 
-async function seedAsset(
+export async function seedAsset(
   client: pg.PoolClient,
   site: { organizationId: string; locationId: string; tag: string },
   code: string,
@@ -107,7 +107,7 @@ async function seedAsset(
   return asset.id;
 }
 
-async function seedDashboard(
+export async function seedDashboard(
   client: pg.PoolClient,
   site: { organizationId: string; tag: string },
   groupId: string | null,
@@ -122,7 +122,7 @@ async function seedDashboard(
   return dashboard.id;
 }
 
-async function seedMimicWidget(
+export async function seedMimicWidget(
   client: pg.PoolClient,
   organizationId: string,
   dashboardId: string,
@@ -248,7 +248,7 @@ async function seedTrain(client: pg.PoolClient): Promise<Train> {
   };
 }
 
-function readService(pool: pg.Pool): MimicNodesService {
+export function readService(pool: pg.Pool): MimicNodesService {
   // `read()` touches neither the Drizzle handle nor access control.
   return new MimicNodesService({} as never, pool, {} as AccessControlService);
 }

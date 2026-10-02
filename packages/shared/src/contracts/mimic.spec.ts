@@ -52,6 +52,8 @@ const assignedNode = {
     message: "Inlet pressure above limit",
     raisedAt: "2026-09-28T09:58:00.000Z",
   },
+  statePoints: [],
+  members: [],
 };
 
 const unassignedNode = {
@@ -62,11 +64,14 @@ const unassignedNode = {
   memberCount: 0,
   activeAlarms: 0,
   topAlarm: null,
+  statePoints: [],
+  members: [],
 };
 
 const response = (preset: string, nodes: unknown[]) => ({
   dashboardId: DASHBOARD_ID,
   resolvedAt: "2026-09-28T10:00:05.000Z",
+  stateMaps: [],
   widgets: [{ source: "preset", widgetId: WIDGET_ID, preset, nodes }],
 });
 

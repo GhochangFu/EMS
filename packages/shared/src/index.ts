@@ -881,6 +881,8 @@ export type MimicLayoutDeletedResponse = z.infer<typeof Ml.mimicLayoutDeletedRes
 export type MimicPresetWidgetNodesDto = z.infer<typeof Mi.mimicPresetWidgetNodesSchema>;
 export type MimicLayoutWidgetNodesDto = z.infer<typeof Mi.mimicLayoutWidgetNodesSchema>;
 export type MimicNodeDto = z.infer<typeof Mi.mimicNodeSchema>;
+/** `F3.74` plan D4 — one member of a fan-out node. */
+export type MimicNodeMemberDto = z.infer<typeof Mi.mimicNodeMemberSchema>;
 /** `F3.32b` — a node's most severe open alarm, drawn as a callout under the unit. */
 export type MimicNodeAlarmDto = z.infer<typeof Mi.mimicNodeAlarmSchema>;
 export type MimicWidgetNodesDto = z.infer<typeof Mi.mimicWidgetNodesSchema>;

@@ -88,6 +88,8 @@ const TANK_NODE: MimicNodeDto = {
   memberCount: 1,
   activeAlarms: 0,
   topAlarm: null,
+  statePoints: [],
+  members: [],
 };
 
 const FRESH: SiteLiveReadings = {

@@ -112,6 +112,8 @@ function nodes(lastSeenAgoMs: number): MimicNodeDto[] {
     memberCount: n.key === "wtp" ? 1 : 0,
     activeAlarms: 0,
     topAlarm: null,
+    statePoints: [],
+    members: [],
   }));
 }
 
@@ -119,6 +121,7 @@ function response(widgetIds: string[], lastSeenAgoMs = 1_000): DashboardMimicNod
   return {
     dashboardId: DASHBOARD_ID,
     resolvedAt: new Date().toISOString(),
+    stateMaps: [],
     widgets: widgetIds.map((widgetId) => ({
       source: "preset" as const,
       widgetId,
@@ -146,6 +149,7 @@ function layoutResponse(widgetId: string): DashboardMimicNodesResponseDto {
   return {
     dashboardId: DASHBOARD_ID,
     resolvedAt: new Date().toISOString(),
+    stateMaps: [],
     widgets: [
       {
         source: "layout",
@@ -160,7 +164,7 @@ function layoutResponse(widgetId: string): DashboardMimicNodesResponseDto {
           orgSymbols: [],
         },
         nodes: [
-          { key: "feed", label: "feed", roleCode: "wtp", asset: wtp(1_000), memberCount: 1, activeAlarms: 0, topAlarm: null },
+          { key: "feed", label: "feed", roleCode: "wtp", asset: wtp(1_000), memberCount: 1, activeAlarms: 0, topAlarm: null, statePoints: [], members: [] },
         ],
       },
     ],

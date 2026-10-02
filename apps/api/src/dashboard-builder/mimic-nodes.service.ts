@@ -5,6 +5,7 @@ import type { Pool } from "pg";
 import { dashboards } from "@bms/db";
 import type { BmsDb } from "@bms/db";
 import {
+  MIMIC_FANOUT_MAX,
   MIMIC_HEADLINE_POINTS,
   MIMIC_PRESETS,
   mimicConfigSchema,
@@ -16,7 +17,10 @@ import {
   type MimicLayoutNodeDto,
   type MimicNodeAlarmDto,
   type MimicNodeDto,
+  type MimicNodeMemberDto,
   type MimicPreset,
+  type MimicPresetNode,
+  type PointKeyStateMapDto,
 } from "@bms/shared";
 
 import { AccessControlService } from "../auth/access-control.service";
@@ -60,6 +64,9 @@ interface LayoutNodeRow {
   w: number | null;
   h: number | null;
   z: number | null;
+  /** `F3.74` (0097): `NOT NULL DEFAULT false`, `null` only on a node-less layout's row. */
+  fan_out: boolean | null;
+  is_source: boolean | null;
 }
 
 /** Statement (1d)'s row (`F3.32f` slice 3): one organization symbol a layout's units draw. */
@@ -96,12 +103,15 @@ type ParsedWidget = { groupId: string | null } & (
 );
 
 /**
- * Statement (2)'s row: per group, the first readable member carrying one role, by asset code,
- * and its top alarm.
+ * Statement (2)'s row: per group and role, a readable member carrying the role — the first by
+ * asset code, and for a fan-out role every one up to `MIMIC_FANOUT_MAX` (`F3.74` plan D4) — with
+ * its top alarm.
  */
 interface MemberRow {
   asset_group_id: string;
   role: string;
+  /** 1-based position among the role's readable members, by asset code. */
+  rn: number;
   asset_id: string;
   asset_code: string;
   asset_name: string;
@@ -117,17 +127,35 @@ interface MemberRow {
   top_alarm_label: string | null;
   top_alarm_message: string | null;
   top_alarm_raised_at: Date | string | null;
+  /**
+   * The top alarm's `bms.alarm_severities.rank` (`F3.74`): how a fan-out node picks the worst
+   * alarm across its members. Never answered — it is not on `mimicNodeAlarmSchema`.
+   */
+  top_alarm_rank: number | null;
 }
 
-/** Statement (3)'s row: one of a shown asset's top points, with its latest sample. */
+/**
+ * Statement (3)'s row: one of a shown asset's top points, or (`F3.74` plan D4) one of its state
+ * points, with its latest sample. A key that is both is two rows, one per side.
+ */
 interface PointRow {
   asset_id: string;
   point_key: string;
   name: string | null;
   unit: string | null;
   headline_rank: number | null;
+  /** `true`: a state point (an active key with a `bms.point_key_states` row); `false`: a top point. */
+  is_state: boolean;
   value: number | null;
   time: Date | string | null;
+}
+
+/** Statement (4)'s row (`F3.74` plan D4): one `bms.point_key_states` row of a key seen in (3). */
+interface StateMapRow {
+  point_key_code: string;
+  value: number;
+  label: string;
+  tone: string;
 }
 
 /**
@@ -148,7 +176,7 @@ interface PointRow {
  * unreadable reads "Not assigned", exactly as a role no member carries.
  *
  * **The read.** Three statements for a dashboard of preset widgets, five when a widget names a
- * layout (`F3.32c` plan D9), all on `FLEET_POOL` (ADR 0043 Amendment 3: the `WHERE` is the
+ * layout (`F3.32c` plan D9), one more when a shown asset has a state point (`F3.74`), all on `FLEET_POOL` (ADR 0043 Amendment 3: the `WHERE` is the
  * isolation control, so every statement names the organization explicitly):
  *
  * 1. The dashboard, left-joined to its mimic widgets, each left-joined to its tab (`F3.73`
@@ -156,7 +184,12 @@ interface PointRow {
  *    (`COALESCE`), so two domain tabs on one site dashboard each resolve their own group. The
  *    tab join carries its own `organization_id` predicate — nothing ties a tab's organization
  *    to its dashboard's, so a tab stamped with another organization reads as "no group" rather
- *    than lending its binding. A widget whose stored config no longer parses is skipped with
+ *    than lending its binding. `F3.74` (plan D7, ADR 0088 decision 11): a widget may NAME a tab
+ *    in `config.tabKey`, so an Overview mimic draws the SLD of a group-bound tab; the named tab
+ *    is a second join on the SAME dashboard with its own organization predicate, and the group
+ *    is `COALESCE(own tab, named tab, dashboard)`. A name with no tab here — another
+ *    dashboard's, or one stamped with another organization — adds nothing, never throws.
+ *    A widget whose stored config no longer parses is skipped with
  *    one warning (field paths only), never thrown. No parsable mimic widget → `widgets: []`; no
  *    widget with a group (an Overview-tab mimic on a site dashboard, or a group-less dashboard)
  *    → every node unassigned, for that widget only. Both end here when no widget has a group.
@@ -173,10 +206,20 @@ interface PointRow {
  *    stable. The same join answers the severity's `tone` and `label`, so the widget draws a
  *    level from its vocabulary row, never from a list of codes (ADR 0032 decision 9). Its
  *    `message` is the stored text the Alarm Centre already shows; it is never logged.
+ *    `F3.74` (plan D4, ADR 0088 decision 4): a node that FANS OUT (a preset node's `fanOut`, a
+ *    layout unit's `fan_out`) stands for every readable member of its role up to
+ *    `MIMIC_FANOUT_MAX`, by code, so the statement numbers the members with `row_number()` in
+ *    place of `DISTINCT ON` and keeps the first for every role, and the rest for a fan-out role.
+ *    The readable filter runs BEFORE the windows, so `member_count` stays the readable count.
  * 3. Each shown asset's top `MIMIC_HEADLINE_POINTS` active points, ordered by F3.68's rule
  *    (`headline_rank ASC NULLS LAST, point_key ASC`), the limit applied PER ASSET inside a
  *    lateral, each point's newest sample found by F3.68's bounded literal-window lateral —
- *    never a bound `now() - $n`, which plans every hypertable chunk.
+ *    never a bound `now() - $n`, which plans every hypertable chunk. `F3.74` (plan D4) adds,
+ *    in the SAME statement and through the same one window lateral, each shown asset's STATE
+ *    points: every active `asset_points` key that has a `bms.point_key_states` row — no key
+ *    name is written here. Their samples count toward the asset's freshness.
+ * 4. `F3.74` — only when (3) found a state point: the `bms.point_key_states` rows of the keys
+ *    seen, answered as `stateMaps`. The web derives a switch state from them (plan D12).
  *
  * **Rows are mapped by hand** — no `.parse` of stored data beyond the widget config.
  */
@@ -226,7 +269,8 @@ export class MimicNodesService {
 
     const widgetRows = await this.pool.query<WidgetRow>(
       `
-      SELECT COALESCE(dt.asset_group_id, d.asset_group_id) AS asset_group_id, w.id AS widget_id, w.config
+      SELECT COALESCE(dt.asset_group_id, nt.asset_group_id, d.asset_group_id) AS asset_group_id,
+             w.id AS widget_id, w.config
       FROM bms.dashboards d
       LEFT JOIN bms.dashboard_widgets w
         ON w.dashboard_id = d.id
@@ -236,6 +280,10 @@ export class MimicNodesService {
         ON dt.id = w.tab_id
        AND dt.dashboard_id = d.id
        AND dt.organization_id = $2
+      LEFT JOIN bms.dashboard_tabs nt
+        ON nt.dashboard_id = d.id
+       AND nt.tab_key = w.config->>'tabKey'
+       AND nt.organization_id = $2
       WHERE d.id = $1 AND d.organization_id = $2
       ORDER BY w.grid_y, w.grid_x, w.id
       `,
@@ -281,39 +329,47 @@ export class MimicNodesService {
       widgets.push(widget);
     }
     if (widgets.length === 0) {
-      return { dashboardId, resolvedAt, widgets: [] };
+      return { dashboardId, resolvedAt, widgets: [], stateMaps: [] };
     }
+
+    // The nodes each widget resolves: a preset's roled nodes (a `roleCode: null` bus is drawn,
+    // never resolved — `F3.74` OQ8, the `roledUnits` rule applied to presets) or a layout's
+    // roled units, each with whether it fans out.
+    const nodesOf = (widget: ParsedWidget): ResolvableNode[] =>
+      widget.source === "preset"
+        ? presetRoledNodes(widget.preset)
+        : roledUnits(layouts.get(widget.layoutId));
 
     // Every group a widget resolves against, once: ONE members statement reads them all.
     const groupIds = [...new Set(widgets.flatMap((widget) => (widget.groupId === null ? [] : [widget.groupId])))];
-    const roleCodes = [
-      ...new Set(
-        widgets.flatMap((widget) =>
-          widget.source === "preset"
-            ? MIMIC_PRESETS[widget.preset].nodes.map((node) => node.roleCode)
-            : roledUnits(layouts.get(widget.layoutId)).map((node) => node.roleCode),
-        ),
-      ),
+    const roleCodes = [...new Set(widgets.flatMap((widget) => nodesOf(widget).map((node) => node.roleCode)))];
+    // A role fans out when ANY widget's node of that role does; a widget whose node does not
+    // still shows only the first (`resolveNode`), so the extra rows cost reads, never answers.
+    const fanOutRoleCodes = [
+      ...new Set(widgets.flatMap((widget) => nodesOf(widget).flatMap((node) => (node.fanOut ? [node.roleCode] : [])))),
     ];
-    /** Shown member per group, then per role. */
-    const members = new Map<string, Map<string, MemberRow>>();
+    /** Members per group, then per role, by code (`rn` order). */
+    const members = new Map<string, Map<string, MemberRow[]>>();
     const pointsByAsset = new Map<string, GeneratedSitePointDto[]>();
+    const statePointsByAsset = new Map<string, GeneratedSitePointDto[]>();
+    let stateMaps: PointKeyStateMapDto[] = [];
 
     if (groupIds.length > 0 && (readableAssetIds === null || readableAssetIds.length > 0)) {
       const memberRows = await this.pool.query<MemberRow>(
         `
-        SELECT DISTINCT ON (agm.asset_group_id, agm.role)
-          agm.asset_group_id,
-          agm.role,
-          a.id AS asset_id,
-          a.code AS asset_code,
-          a.name AS asset_name,
-          a.domain,
-          (count(*) OVER (PARTITION BY agm.asset_group_id, agm.role))::int AS member_count,
+        SELECT
+          m.asset_group_id,
+          m.role,
+          m.rn,
+          m.asset_id,
+          m.asset_code,
+          m.asset_name,
+          m.domain,
+          m.member_count,
           (
             SELECT count(*)::int
             FROM bms.alarms al
-            WHERE al.asset_id = a.id
+            WHERE al.asset_id = m.asset_id
               AND al.organization_id = $2
               AND al.cleared_at IS NULL
           ) AS active_alarms,
@@ -321,38 +377,49 @@ export class MimicNodesService {
           ta.tone AS top_alarm_tone,
           ta.label AS top_alarm_label,
           ta.message AS top_alarm_message,
-          ta.raised_at AS top_alarm_raised_at
-        FROM bms.asset_group_members agm
-        INNER JOIN bms.asset_groups ag
-          ON ag.id = agm.asset_group_id AND ag.organization_id = $2
-        INNER JOIN bms.assets a
-          ON a.id = agm.asset_id AND a.organization_id = $2
+          ta.raised_at AS top_alarm_raised_at,
+          ta.rank AS top_alarm_rank
+        FROM (
+          SELECT
+            agm.asset_group_id,
+            agm.role,
+            (row_number() OVER (PARTITION BY agm.asset_group_id, agm.role ORDER BY a.code ASC))::int AS rn,
+            a.id AS asset_id,
+            a.code AS asset_code,
+            a.name AS asset_name,
+            a.domain,
+            (count(*) OVER (PARTITION BY agm.asset_group_id, agm.role))::int AS member_count
+          FROM bms.asset_group_members agm
+          INNER JOIN bms.asset_groups ag
+            ON ag.id = agm.asset_group_id AND ag.organization_id = $2
+          INNER JOIN bms.assets a
+            ON a.id = agm.asset_id AND a.organization_id = $2
+          WHERE agm.asset_group_id = ANY($1::uuid[])
+            AND agm.role = ANY($3::text[])
+            AND ($4::uuid[] IS NULL OR a.id = ANY($4::uuid[]))
+        ) m
         LEFT JOIN LATERAL (
-          SELECT al.severity, s.tone, s.label, al.message, al.raised_at
+          SELECT al.severity, s.tone, s.label, al.message, al.raised_at, s.rank
           FROM bms.alarms al
           INNER JOIN bms.alarm_severities s ON s.code = al.severity
-          WHERE al.asset_id = a.id
+          WHERE al.asset_id = m.asset_id
             AND al.organization_id = $2
             AND al.cleared_at IS NULL
           ORDER BY s.rank DESC, al.raised_at DESC, al.id ASC
           LIMIT 1
         ) ta ON true
-        WHERE agm.asset_group_id = ANY($1::uuid[])
-          AND agm.role = ANY($3::text[])
-          AND ($4::uuid[] IS NULL OR a.id = ANY($4::uuid[]))
-        ORDER BY agm.asset_group_id, agm.role, a.code ASC
+        WHERE m.rn = 1 OR (m.rn <= $6 AND m.role = ANY($5::text[]))
+        ORDER BY m.asset_group_id, m.role, m.rn
         `,
-        [groupIds, organizationId, roleCodes, readableAssetIds],
+        [groupIds, organizationId, roleCodes, readableAssetIds, fanOutRoleCodes, MIMIC_FANOUT_MAX],
       );
       for (const row of memberRows.rows) {
-        const byRole = members.get(row.asset_group_id) ?? new Map<string, MemberRow>();
-        byRole.set(row.role, row);
+        const byRole = members.get(row.asset_group_id) ?? new Map<string, MemberRow[]>();
+        byRole.set(row.role, [...(byRole.get(row.role) ?? []), row]);
         members.set(row.asset_group_id, byRole);
       }
 
-      const shownIds = [
-        ...new Set([...members.values()].flatMap((byRole) => [...byRole.values()].map((member) => member.asset_id))),
-      ];
+      const shownIds = [...new Set(memberRows.rows.map((member) => member.asset_id))];
       if (shownIds.length > 0) {
         const pointRows = await this.pool.query<PointRow>(
           `
@@ -362,6 +429,7 @@ export class MimicNodesService {
             top.name,
             top.unit,
             top.headline_rank,
+            top.is_state,
             top.value,
             top.time
           FROM unnest($1::uuid[]) AS sa(id)
@@ -371,17 +439,28 @@ export class MimicNodesService {
               ranked.name,
               ranked.unit,
               ranked.headline_rank,
+              ranked.is_state,
               lt.value,
               lt.time
             FROM (
-              SELECT ap.point_key, pk.name, COALESCE(ap.unit, pk.unit) AS unit, pk.headline_rank
-              FROM bms.asset_points ap
-              LEFT JOIN bms.point_keys pk ON pk.code = ap.point_key
-              WHERE ap.asset_id = sa.id
-                AND ap.organization_id = $2
-                AND ap.active = true
-              ORDER BY pk.headline_rank ASC NULLS LAST, ap.point_key ASC
-              LIMIT ${MIMIC_HEADLINE_POINTS}
+              (
+                SELECT ap.point_key, pk.name, COALESCE(ap.unit, pk.unit) AS unit, pk.headline_rank, false AS is_state
+                FROM bms.asset_points ap
+                LEFT JOIN bms.point_keys pk ON pk.code = ap.point_key
+                WHERE ap.asset_id = sa.id
+                  AND ap.organization_id = $2
+                  AND ap.active = true
+                ORDER BY pk.headline_rank ASC NULLS LAST, ap.point_key ASC
+                LIMIT ${MIMIC_HEADLINE_POINTS}
+              )
+              UNION ALL
+              SELECT sp.point_key, spk.name, COALESCE(sp.unit, spk.unit) AS unit, spk.headline_rank, true AS is_state
+              FROM bms.asset_points sp
+              LEFT JOIN bms.point_keys spk ON spk.code = sp.point_key
+              WHERE sp.asset_id = sa.id
+                AND sp.organization_id = $2
+                AND sp.active = true
+                AND EXISTS (SELECT 1 FROM bms.point_key_states pks WHERE pks.point_key_code = sp.point_key)
             ) ranked
             LEFT JOIN LATERAL (
               SELECT pv.value, pv.time
@@ -393,13 +472,14 @@ export class MimicNodesService {
               LIMIT 1
             ) lt ON true
           ) top
-          ORDER BY sa.id, top.headline_rank ASC NULLS LAST, top.point_key ASC
+          ORDER BY sa.id, top.is_state, top.headline_rank ASC NULLS LAST, top.point_key ASC
           `,
           [shownIds, organizationId],
         );
         for (const row of pointRows.rows) {
           const time = toIsoString(row.time);
-          const list = pointsByAsset.get(row.asset_id) ?? [];
+          const byAsset = row.is_state ? statePointsByAsset : pointsByAsset;
+          const list = byAsset.get(row.asset_id) ?? [];
           list.push({
             pointKey: row.point_key,
             name: row.name,
@@ -407,40 +487,97 @@ export class MimicNodesService {
             headlineRank: row.headline_rank === null ? null : Number(row.headline_rank),
             latest: time !== null && row.value !== null ? { value: Number(row.value), time } : null,
           });
-          pointsByAsset.set(row.asset_id, list);
+          byAsset.set(row.asset_id, list);
+        }
+
+        // Statement (4): the maps of the state keys seen, and only those — `bms.point_key_states`
+        // is global master data (0097, no `organization_id`), so the key list is the filter.
+        const stateKeys = [
+          ...new Set([...statePointsByAsset.values()].flatMap((points) => points.map((point) => point.pointKey))),
+        ];
+        if (stateKeys.length > 0) {
+          const stateRows = await this.pool.query<StateMapRow>(
+            `
+            SELECT pks.point_key_code, pks.value, pks.label, pks.tone
+            FROM bms.point_key_states pks
+            WHERE pks.point_key_code = ANY($1::text[])
+            ORDER BY pks.point_key_code, pks.value
+            `,
+            [stateKeys],
+          );
+          stateMaps = stateMapsOf(stateRows.rows);
         }
       }
     }
 
     // One resolution for both arms (ADR 0081 decision 6): a layout's unit resolves exactly as a
     // preset node does, by its role code against the members of the WIDGET's group (`F3.73`
-    // plan D3). A widget with no group finds no member, so every node reads unassigned.
-    const resolveNode = (
-      groupId: string | null,
-      node: { key: string; label: string; roleCode: string },
-    ): MimicNodeDto => {
-      const member = groupId === null ? undefined : members.get(groupId)?.get(node.roleCode);
+    // plan D3), and fans out exactly as a preset node does (`F3.74` OQ3b). A widget with no
+    // group finds no member, so every node reads unassigned.
+    const resolveNode = (groupId: string | null, node: ResolvableNode): MimicNodeDto => {
+      const rows = groupId === null ? [] : (members.get(groupId)?.get(node.roleCode) ?? []);
+      const first = rows[0];
+      if (first === undefined) {
+        return {
+          key: node.key,
+          label: node.label,
+          roleCode: node.roleCode,
+          asset: null,
+          memberCount: 0,
+          activeAlarms: 0,
+          topAlarm: null,
+          statePoints: [],
+          members: [],
+        };
+      }
+      const memberOf = (row: MemberRow): MimicNodeMemberDto => {
+        const statePoints = statePointsByAsset.get(row.asset_id) ?? [];
+        return {
+          asset: assetOf(row, pointsByAsset.get(row.asset_id) ?? [], statePoints, nowMs),
+          activeAlarms: Number(row.active_alarms),
+          topAlarm: topAlarmOf(row),
+          statePoints,
+        };
+      };
+      const shown = memberOf(first);
+      if (!node.fanOut) {
+        return {
+          key: node.key,
+          label: node.label,
+          roleCode: node.roleCode,
+          asset: shown.asset,
+          memberCount: Number(first.member_count),
+          activeAlarms: shown.activeAlarms,
+          topAlarm: shown.topAlarm,
+          statePoints: shown.statePoints,
+          members: [],
+        };
+      }
+      const fanned = rows.map(memberOf);
       return {
         key: node.key,
         label: node.label,
         roleCode: node.roleCode,
-        asset: member === undefined ? null : assetOf(member, pointsByAsset.get(member.asset_id) ?? [], nowMs),
-        memberCount: member === undefined ? 0 : Number(member.member_count),
-        activeAlarms: member === undefined ? 0 : Number(member.active_alarms),
-        topAlarm: member === undefined ? null : topAlarmOf(member),
+        asset: shown.asset,
+        memberCount: Number(first.member_count),
+        activeAlarms: fanned.reduce((sum, member) => sum + member.activeAlarms, 0),
+        topAlarm: worstTopAlarm(rows),
+        statePoints: shown.statePoints,
+        members: fanned,
       };
     };
 
     return {
       dashboardId,
       resolvedAt,
+      stateMaps,
       widgets: widgets.map((widget) => {
         if (widget.source === "preset") {
           return {
             source: "preset" as const,
             widgetId: widget.widgetId,
             preset: widget.preset,
-            nodes: MIMIC_PRESETS[widget.preset].nodes.map((node) => resolveNode(widget.groupId, node)),
+            nodes: nodesOf(widget).map((node) => resolveNode(widget.groupId, node)),
           };
         }
         // Present: `widgets` kept only the layout widgets whose layout (1b) found.
@@ -471,7 +608,8 @@ export class MimicNodesService {
     const nodeRows = await this.pool.query<LayoutNodeRow>(
       `
       SELECT l.id AS layout_id, l.name, l.canvas_w, l.canvas_h,
-             n.key, n.kind, n.symbol, n.org_symbol_key, n.label, n.role_code, n.tone, n.x, n.y, n.w, n.h, n.z
+             n.key, n.kind, n.symbol, n.org_symbol_key, n.label, n.role_code, n.tone, n.x, n.y, n.w, n.h, n.z,
+             n.fan_out, n.is_source
       FROM bms.mimic_layouts l
       LEFT JOIN bms.mimic_layout_nodes n
         ON n.layout_id = l.id
@@ -574,13 +712,37 @@ export class MimicNodesService {
   }
 }
 
-/** A layout's units that carry a role, in the layout's node order — the nodes a read resolves. */
-function roledUnits(
-  layout: MimicLayoutGeometryDto | undefined,
-): { key: string; label: string; roleCode: string }[] {
+/** One node a read resolves, either arm: its key, label, role and whether it fans out (`F3.74`). */
+interface ResolvableNode {
+  key: string;
+  label: string;
+  roleCode: string;
+  fanOut: boolean;
+}
+
+/**
+ * A preset's nodes that carry a role, in the preset's order (`F3.74` OQ8: a `roleCode: null` bus
+ * is drawn by the web from the preset alone and is absent from `nodes`, as a passive layout unit
+ * is), each with its `fanOut` flag.
+ */
+function presetRoledNodes(preset: MimicPreset): ResolvableNode[] {
+  const nodes: readonly MimicPresetNode[] = MIMIC_PRESETS[preset].nodes;
+  return nodes.flatMap((node) =>
+    node.roleCode === null
+      ? []
+      : [{ key: node.key, label: node.label, roleCode: node.roleCode, fanOut: node.fanOut === true }],
+  );
+}
+
+/**
+ * A layout's units that carry a role, in the layout's node order — the nodes a read resolves —
+ * each with its stored `fan_out` (`F3.74` plan D3b), so a layout unit fans out exactly as a
+ * preset node does (ADR 0081 decision 6).
+ */
+function roledUnits(layout: MimicLayoutGeometryDto | undefined): ResolvableNode[] {
   return (layout?.nodes ?? []).flatMap((node) =>
     node.kind === "unit" && node.roleCode !== null
-      ? [{ key: node.key, label: node.label, roleCode: node.roleCode }]
+      ? [{ key: node.key, label: node.label, roleCode: node.roleCode, fanOut: node.fanOut }]
       : [],
   );
 }
@@ -606,17 +768,25 @@ function layoutNodeOf(row: LayoutNodeRow): MimicLayoutNodeDto | null {
     w: Number(row.w),
     h: Number(row.h),
     z: Number(row.z),
-    // `F3.74` Task 1.6 placeholder so the build compiles: Task 2.2 selects `n.fan_out` and
-    // `n.is_source` in `readLayouts` and emits them here (its F13 reddens on this constant).
-    fanOut: false,
-    isSource: false,
+    // `F3.74` (0097): both columns are `NOT NULL DEFAULT false`; the guard above already left
+    // out the all-`null` row of a node-less layout.
+    fanOut: row.fan_out === true,
+    isSource: row.is_source === true,
   };
 }
 
-/** A shown member as F3.68's asset shape: freshness from its newest shown point's sample. */
-function assetOf(member: MemberRow, points: GeneratedSitePointDto[], nowMs: number): GeneratedSiteAssetDto {
+/**
+ * A shown member as F3.68's asset shape: freshness from the newest sample among its shown points
+ * and (`F3.74` plan D4) its state points — a breaker reporting only its state is live.
+ */
+function assetOf(
+  member: MemberRow,
+  points: GeneratedSitePointDto[],
+  statePoints: GeneratedSitePointDto[],
+  nowMs: number,
+): GeneratedSiteAssetDto {
   let latestTelemetryAt: string | null = null;
-  for (const point of points) {
+  for (const point of [...points, ...statePoints]) {
     if (point.latest !== null && (latestTelemetryAt === null || Date.parse(point.latest.time) > Date.parse(latestTelemetryAt))) {
       latestTelemetryAt = point.latest.time;
     }
@@ -654,6 +824,45 @@ function topAlarmOf(member: MemberRow): MimicNodeAlarmDto | null {
     message: member.top_alarm_message,
     raisedAt,
   };
+}
+
+/**
+ * A fan-out node's top alarm (`F3.74` plan D4): the most severe across its members by the
+ * severity's rank, then the newest; a tie keeps the member that comes first by code.
+ */
+function worstTopAlarm(rows: readonly MemberRow[]): MimicNodeAlarmDto | null {
+  let worst: { row: MemberRow; alarm: MimicNodeAlarmDto } | null = null;
+  for (const row of rows) {
+    const alarm = topAlarmOf(row);
+    if (alarm === null) continue;
+    if (
+      worst === null ||
+      Number(row.top_alarm_rank) > Number(worst.row.top_alarm_rank) ||
+      (Number(row.top_alarm_rank) === Number(worst.row.top_alarm_rank) &&
+        Date.parse(alarm.raisedAt) > Date.parse(worst.alarm.raisedAt))
+    ) {
+      worst = { row, alarm };
+    }
+  }
+  return worst === null ? null : worst.alarm;
+}
+
+/**
+ * Statement (4)'s rows as one map per key, in key then value order. The tone is
+ * `point_key_states_tone_check`'s closed set (0097), so the cast restates the SQL `CHECK`.
+ */
+function stateMapsOf(rows: readonly StateMapRow[]): PointKeyStateMapDto[] {
+  const byKey = new Map<string, PointKeyStateMapDto>();
+  for (const row of rows) {
+    const map = byKey.get(row.point_key_code) ?? { pointKey: row.point_key_code, states: [] };
+    map.states.push({
+      value: Number(row.value),
+      label: row.label,
+      tone: row.tone as PointKeyStateMapDto["states"][number]["tone"],
+    });
+    byKey.set(row.point_key_code, map);
+  }
+  return [...byKey.values()];
 }
 
 function toIsoString(value: Date | string | null): string | null {

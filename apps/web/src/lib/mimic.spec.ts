@@ -71,7 +71,7 @@ function asset(id: string, code: string, points: GeneratedSitePointDto[] = [poin
 }
 
 function node(key: string, a: GeneratedSiteAssetDto | null, activeAlarms = 0): MimicNodeDto {
-  return { key, label: key, roleCode: key, asset: a, memberCount: a === null ? 0 : 1, activeAlarms, topAlarm: null };
+  return { key, label: key, roleCode: key, asset: a, memberCount: a === null ? 0 : 1, activeAlarms, topAlarm: null, statePoints: [], members: [] };
 }
 
 function widget(nodes: MimicNodeDto[]): MimicWidgetNodesDto {
