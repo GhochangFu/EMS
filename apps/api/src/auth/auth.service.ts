@@ -52,6 +52,13 @@ export class AuthService {
       throw new UnauthorizedException("Invalid email or password");
     }
 
+    // F3.78 / migration 0098: a user created through the admin screen has no
+    // local hash. Refused with the same generic 401 as a wrong password, before
+    // bcrypt sees a NULL.
+    if (user.passwordHash === null) {
+      throw new UnauthorizedException("Invalid email or password");
+    }
+
     const ok = await bcrypt.compare(body.password, user.passwordHash);
     if (!ok) {
       throw new UnauthorizedException("Invalid email or password");

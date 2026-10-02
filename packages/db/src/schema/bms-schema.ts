@@ -58,7 +58,12 @@ export const users = bmsSchema.table("users", {
   // defect the 0046 backfill aborts on. See migration 0046.
   organizationId: uuid("organization_id").references(() => organizations.id),
   email: varchar("email", { length: 255 }).notNull().unique(),
-  passwordHash: varchar("password_hash", { length: 255 }).notNull(),
+  // F3.78 / ADR 0089 decision 7: nullable since migration 0098 — a user created
+  // through the admin screen has a Keycloak password and no local hash. 0098
+  // also adds what Drizzle cannot express here: the admin/organization CHECK
+  // (users_role_organization_check), the unique indexes on lower(email) and
+  // oidc_subject, and the trigger that fixes a set oidc_subject.
+  passwordHash: varchar("password_hash", { length: 255 }),
   displayName: varchar("display_name", { length: 255 }).notNull(),
   role: varchar("role", { length: 64 }).notNull(),
   oidcSubject: varchar("oidc_subject", { length: 255 }),
@@ -66,6 +71,9 @@ export const users = bmsSchema.table("users", {
   createdAt: timestamp("created_at", { withTimezone: true })
     .notNull()
     .defaultNow(),
+  // F3.78 / ADR 0089 decision 8 (migration 0098): set when the user is
+  // deactivated; every request from a user with a non-NULL value is refused.
+  disabledAt: timestamp("disabled_at", { withTimezone: true }),
 });
 
 /**

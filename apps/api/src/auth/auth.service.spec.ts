@@ -1,0 +1,81 @@
+import { UnauthorizedException } from "@nestjs/common";
+import type { JwtService } from "@nestjs/jwt";
+import bcrypt from "bcrypt";
+import { expect, vi } from "vitest";
+
+import type { BmsDb } from "@bms/db";
+
+import { AuthService } from "./auth.service";
+
+/**
+ * `F3.78` / ADR 0089 decision 7 — `0098` makes `bms.users.password_hash`
+ * nullable: a user created through the admin screen has a Keycloak password and
+ * no local hash. Local login must refuse such a row with the generic 401 and
+ * must not hand `null` to `bcrypt.compare`.
+ */
+
+type LoginRow = { id: string; email: string; passwordHash: string | null; displayName: string; role: string };
+
+/** A fake auth pool: the login lookup answers `row`, the `last_login_at` stamp is a no-op. */
+function fakeDb(row: LoginRow): BmsDb {
+  const select = {
+    from: () => select,
+    where: () => select,
+    limit: async () => [row],
+  };
+  const update = { set: () => update, where: async () => undefined };
+  return { select: () => select, update: () => update } as unknown as BmsDb;
+}
+
+const jwt = { signAsync: async () => "token" } as unknown as JwtService;
+
+const ROW: LoginRow = {
+  id: "00000000-0000-4000-8000-000000000001",
+  email: "probe@bms.local",
+  passwordHash: null,
+  displayName: "Probe",
+  role: "viewer",
+};
+
+/** Runs `fn` with local login enabled and a `bcrypt.compare` spy, restoring both. */
+async function withLocalLogin(fn: (compare: ReturnType<typeof vi.spyOn>) => Promise<void>): Promise<void> {
+  const saved = { AUTH_MODE: process.env.AUTH_MODE, OIDC_ISSUER: process.env.OIDC_ISSUER };
+  process.env.AUTH_MODE = "local";
+  delete process.env.OIDC_ISSUER;
+  const compare = vi.spyOn(bcrypt, "compare").mockImplementation(async () => false);
+  try {
+    await fn(compare);
+  } finally {
+    compare.mockRestore();
+    for (const [key, value] of Object.entries(saved)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  }
+}
+
+export async function assertANullHashIsTheGeneric401(): Promise<void> {
+  await withLocalLogin(async () => {
+    const service = new AuthService(fakeDb(ROW), jwt);
+    const login = service.login({ email: ROW.email, password: "anything" });
+    await expect(login).rejects.toBeInstanceOf(UnauthorizedException);
+    await expect(login).rejects.toThrow("Invalid email or password");
+  });
+}
+
+export async function assertANullHashNeverReachesBcrypt(): Promise<void> {
+  await withLocalLogin(async (compare) => {
+    const service = new AuthService(fakeDb(ROW), jwt);
+    await service.login({ email: ROW.email, password: "anything" }).catch(() => undefined);
+    expect(compare).not.toHaveBeenCalled();
+  });
+}
+
+/** Positive control for the spy: a row with a hash does reach `bcrypt.compare`. */
+export async function assertAHashedRowReachesBcrypt(): Promise<void> {
+  await withLocalLogin(async (compare) => {
+    const service = new AuthService(fakeDb({ ...ROW, passwordHash: "$2b$10$hash" }), jwt);
+    await service.login({ email: ROW.email, password: "anything" }).catch(() => undefined);
+    expect(compare).toHaveBeenCalledTimes(1);
+  });
+}
