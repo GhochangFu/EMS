@@ -65,8 +65,12 @@ only while it is empty, so a role an operator changed is never overwritten.
 
 ## 2. Add the login to Keycloak (OIDC deployments)
 
-The API maps a token to `bms.users` by email, so the Keycloak user must carry
-the same email. `infra/keycloak/bms-realm.json` now holds
+The API maps a token to `bms.users` by its subject (`oidc_subject`). On the
+first sign-in it links the row whose email matches the token's **verified**
+email (ADR 0089 decision 4), so the Keycloak user must carry the same email,
+with **Email verified** on — see
+[`keycloak-user-administration.md`](./keycloak-user-administration.md) §3.
+`infra/keycloak/bms-realm.json` now holds
 `ionx-admin@bms.local` with realm role `organization_admin`.
 
 - Keycloak's `--import-realm` (the compose `keycloak` service) imports the
