@@ -31,7 +31,7 @@ async function anUnlinkedUser(tx: Pick<BmsDb, "select">): Promise<Unlinked> {
     .select({ id: users.id, email: users.email })
     .from(users)
     .where(isNull(users.oidcSubject))
-    .orderBy(users.email)
+    .orderBy(users.createdAt, users.id)
     .limit(1);
   if (!row) {
     throw new Error("F3.78: no bms.users row has a NULL oidc_subject — run pnpm db:seed on a fresh database");
@@ -77,7 +77,11 @@ export async function assertASecondLinkChangesNothing(authDb: BmsDb): Promise<vo
 export async function assertTheAuthRoleReadsDisabledAt(authDb: BmsDb): Promise<void> {
   let rows: unknown[] = [];
   await withRollback(authDb, async (tx) => {
-    rows = await tx.select({ id: users.id, disabledAt: users.disabledAt }).from(users).limit(1);
+    rows = await tx
+      .select({ id: users.id, disabledAt: users.disabledAt })
+      .from(users)
+      .orderBy(users.createdAt, users.id)
+      .limit(1);
     tx.rollback();
   });
   expect(rows).toHaveLength(1);

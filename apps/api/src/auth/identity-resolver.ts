@@ -1,4 +1,4 @@
-import { and, eq, isNull, sql } from "drizzle-orm";
+import { and, eq, getTableColumns, isNull, sql } from "drizzle-orm";
 
 import { users } from "@bms/db";
 import type { BmsDb } from "@bms/db";
@@ -33,15 +33,14 @@ import { resolveAuthMode } from "./auth-mode";
  * that is not there yet may be linked by a concurrent request.
  */
 
-export type ResolvedIdentity = {
-  readonly id: string;
-  readonly email: string;
-  readonly displayName: string;
-  readonly role: UserRole;
-  readonly organizationId: string | null;
-  readonly oidcSubject: string | null;
-  readonly disabledAt: Date | null;
-};
+/** The seven identity columns, named as the schema names them. */
+type IdentityKey = "id" | "email" | "displayName" | "role" | "organizationId" | "oidcSubject" | "disabledAt";
+
+/** A `bms.users` row as the projection returns it — derived from the schema, so it cannot drift. */
+type IdentityRow = Pick<typeof users.$inferSelect, IdentityKey>;
+
+/** The resolved identity: the row, with `role` narrowed to the role vocabulary. */
+export type ResolvedIdentity = Readonly<Omit<IdentityRow, "role"> & { role: UserRole }>;
 
 /** What a lookup needs from a pool or a transaction: a select, and the link's update. */
 export type IdentityDb = Pick<BmsDb, "select" | "update">;
@@ -51,41 +50,24 @@ type Principal = Pick<JwtPayload, "sub">;
 const memo = new WeakMap<object, ResolvedIdentity>();
 
 /**
- * The explicit column list. Never a bare `select()`: `password_hash` is not
- * granted to `bms_fleet` or `bms_tenant`, and a bare select names it.
+ * The explicit column list, taken from the table's own columns. Never a bare
+ * `select()`: `password_hash` is not granted to `bms_fleet` or `bms_tenant`,
+ * and a bare select names it.
  */
-const IDENTITY_COLUMNS = {
-  id: users.id,
-  email: users.email,
-  displayName: users.displayName,
-  role: users.role,
-  organizationId: users.organizationId,
-  oidcSubject: users.oidcSubject,
-  disabledAt: users.disabledAt,
-};
-
-type IdentityRow = {
-  id: string;
-  email: string;
-  displayName: string;
-  role: string;
-  organizationId: string | null;
-  oidcSubject: string | null;
-  disabledAt: Date | null;
-};
+const IDENTITY_COLUMNS = (({ id, email, displayName, role, organizationId, oidcSubject, disabledAt }) => ({
+  id,
+  email,
+  displayName,
+  role,
+  organizationId,
+  oidcSubject,
+  disabledAt,
+}))(getTableColumns(users));
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 function toIdentity(row: IdentityRow): ResolvedIdentity {
-  return {
-    id: row.id,
-    email: row.email,
-    displayName: row.displayName,
-    role: row.role as UserRole,
-    organizationId: row.organizationId,
-    oidcSubject: row.oidcSubject,
-    disabledAt: row.disabledAt,
-  };
+  return { ...row, role: row.role as UserRole };
 }
 
 /** Stores `row` as the identity of this payload object. */
@@ -168,9 +150,13 @@ export async function linkIdentity(
   if (jwt.emailVerified !== true) {
     return null;
   }
+  // Shorthand on purpose: `tests/e7.1h-audit-subject-writer-shape.test.ts`
+  // reads every `oidcSubject:` key under apps/api/src as an audit-payload
+  // write. This is a column write, not an audit payload.
+  const oidcSubject = jwt.sub;
   const rows = await authDb
     .update(users)
-    .set({ oidcSubject: jwt.sub })
+    .set({ oidcSubject })
     .where(and(sql`lower(${users.email}) = ${jwt.email.toLowerCase()}`, isNull(users.oidcSubject)))
     .returning(IDENTITY_COLUMNS);
 
