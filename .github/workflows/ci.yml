@@ -164,10 +164,47 @@ jobs:
       OBJECT_STORAGE_REGION: us-east-1
       OBJECT_STORAGE_FORCE_PATH_STYLE: "true"
       OBJECT_STORAGE_ALLOW_INSECURE: "true"
+      # F3.78 / ADR 0089 decision 5, plan D6 (Q-A). Enable
+      # `apps/api/src/identity/identity-admin.client.integration.test.ts`,
+      # which `keycloak-gate.ts` REFUSES to skip under CI. `keycloak` resolves
+      # through the hosts entry the "Start Keycloak" step writes; the fourth
+      # variable, the secret, is exported by that step through `$GITHUB_ENV`.
+      KEYCLOAK_ADMIN_URL: http://keycloak:8080
+      KEYCLOAK_ADMIN_REALM: bms
+      KEYCLOAK_ADMIN_CLIENT_ID: bms-api-admin
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      # F3.78 / ADR 0089, plan D6, owner ruling Q-A: the Keycloak integration
+      # spec (`identity-admin.client.integration.test.ts`, K1–K6) runs on every
+      # code PR, and `requireKeycloak` refuses to skip it under CI. Started
+      # this early, from the committed realm file, because the import takes a
+      # few minutes and the build below covers it.
+      #
+      # The hosts entry is how CI meets decision 5's URL rule WITHOUT widening
+      # it: the rule accepts `https://` or exactly `http://keycloak:8080`, and
+      # refuses `localhost`. The tag is compose's, on ADR 0023 decision 4's
+      # reasoning — CI runs the engine compose runs.
+      #
+      # The secret is a fresh throwaway per run, masked before it is exported
+      # so no later step can print it; `keycloak:provision` sets it on the
+      # `bms-api-admin` client and the spec authenticates with it.
+      - name: Start Keycloak for the identity integration spec
+        run: |
+          echo '127.0.0.1 keycloak' | sudo tee -a /etc/hosts
+          docker run -d --name keycloak \
+            -p 8080:8080 \
+            -e KEYCLOAK_ADMIN=admin \
+            -e KEYCLOAK_ADMIN_PASSWORD=admin \
+            -e KC_HOSTNAME_STRICT=false \
+            -e KC_HTTP_ENABLED=true \
+            -v "${GITHUB_WORKSPACE}/infra/keycloak:/opt/keycloak/data/import:ro" \
+            quay.io/keycloak/keycloak:24.0 start-dev --import-realm
+          secret="$(openssl rand -base64 32)"
+          echo "::add-mask::${secret}"
+          echo "KEYCLOAK_ADMIN_CLIENT_SECRET=${secret}" >> "$GITHUB_ENV"
 
       - name: Enable pnpm
         run: |
@@ -280,6 +317,37 @@ jobs:
       # no compression policy compresses anything here.
       - name: Validate the aggregate backfill script
         run: pnpm db:refresh-aggregates
+
+      # F3.78 / ADR 0089 decisions 4–6 (plan D6). After `pnpm typecheck`
+      # (the CLI runs from `apps/api/dist`) and after `db:seed` (it reads
+      # `bms.users` on `bms_auth`). Running the CLI here is its proof: it sets
+      # the password policy, the client secret, the service-account roles and
+      # the user profile that K1–K6 then read back, and it exits 2 if a seeded
+      # realm user is unverified and unlinked. The readiness loop is bounded
+      # and FAILS THE JOB, so a Keycloak that never came up reads as that, not
+      # as a CLI or spec defect. `/health` needs a flag this container lacks,
+      # so the loop polls the realm's discovery document.
+      - name: Provision the Keycloak realm
+        env:
+          KEYCLOAK_ADMIN: admin
+          KEYCLOAK_ADMIN_PASSWORD: admin
+          DATABASE_URL_AUTH: postgres://bms_auth:bms_auth_dev@localhost:5432/bms
+        run: |
+          ready=0
+          for attempt in $(seq 1 100); do
+            if curl -sf http://keycloak:8080/realms/bms/.well-known/openid-configuration > /dev/null; then
+              echo "Keycloak realm bms is up after ${attempt} attempt(s)."
+              ready=1
+              break
+            fi
+            sleep 3
+          done
+          if [ "$ready" != 1 ]; then
+            echo "Keycloak realm bms did not answer within 300s."
+            docker logs keycloak | tail -n 100
+            exit 1
+          fi
+          pnpm --filter api keycloak:provision
 
       # ADR 0066 decision 10, Amendment 1 Q-D (F3.3) and Amendment 5 (the
       # registry moved to Docker Hub's pgsty/minio). A `docker run` STEP,
