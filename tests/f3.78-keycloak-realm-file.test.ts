@@ -123,4 +123,26 @@ describe("F3.78 U4 — the bms realm file (ADR 0089 decisions 4–6)", () => {
     const names = userProfileConfig(readRealm()).attributes.map((a) => a.name);
     expect(names).toEqual(["username", "email", "firstName", "lastName"]);
   });
+
+  /**
+   * Decision 4 makes `oidc_subject` the only join from a token to a row, and a
+   * pool role cannot re-point a set subject. The subject is the Keycloak user
+   * id, and `start-dev` keeps the realm in the container: every re-import of
+   * this file on a recreated container would mint new ids, and every linked
+   * row would then miss its user (the admin refused, every other role scoped
+   * to nothing). A pinned `id` per user keeps the subject stable across a
+   * re-import.
+   */
+  it("pins a unique uuid id on every user, the service account included", () => {
+    const realmUsers = readRealm().users as Obj[];
+    expect(realmUsers.map((u) => u.username), "positive control: the walk saw the service account").toContain(
+      "service-account-bms-api-admin",
+    );
+    const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+    for (const u of realmUsers) {
+      expect(typeof u.id === "string" && UUID.test(u.id), `${String(u.username)} must pin a uuid id`).toBe(true);
+    }
+    const ids = realmUsers.map((u) => u.id);
+    expect(new Set(ids).size).toBe(ids.length);
+  });
 });

@@ -82,6 +82,7 @@
   ],
   "users": [
     {
+      "id": "2e34e2a2-42b3-4a58-b00b-52b0a6ecf35d",
       "username": "admin@bms.local",
       "email": "admin@bms.local",
       "firstName": "BMS",
@@ -98,6 +99,7 @@
       ]
     },
     {
+      "id": "1f1c9970-8cde-4cdf-afa8-8b0e08951da6",
       "username": "wc-admin@bms.local",
       "email": "wc-admin@bms.local",
       "firstName": "Western Cape",
@@ -114,6 +116,7 @@
       ]
     },
     {
+      "id": "9beedd4a-86ef-4289-abb8-4b79f5df56ec",
       "username": "wc-hvac-admin@bms.local",
       "email": "wc-hvac-admin@bms.local",
       "firstName": "Western Cape",
@@ -130,6 +133,7 @@
       ]
     },
     {
+      "id": "a20fc741-6345-4aff-8ba3-39041587641c",
       "username": "phe-admin@bms.local",
       "email": "phe-admin@bms.local",
       "firstName": "PHE",
@@ -146,6 +150,7 @@
       ]
     },
     {
+      "id": "33462e7f-08c3-4ded-8db9-4d97b85ceab0",
       "username": "ionx-admin@bms.local",
       "email": "ionx-admin@bms.local",
       "firstName": "Ion Exchange",
@@ -162,6 +167,7 @@
       ]
     },
     {
+      "id": "a2c22c4e-3185-4419-89b9-09fd784760e8",
       "username": "operator@bms.local",
       "email": "operator@bms.local",
       "firstName": "BMS",
@@ -178,6 +184,7 @@
       ]
     },
     {
+      "id": "09ae3be9-9a1e-48be-8e78-7c9ad6b0e917",
       "username": "viewer@bms.local",
       "email": "viewer@bms.local",
       "firstName": "BMS",
@@ -194,6 +201,7 @@
       ]
     },
     {
+      "id": "26c52dd9-8b54-408e-a29e-b8fd3c87b382",
       "username": "service-account-bms-api-admin",
       "enabled": true,
       "serviceAccountClientId": "bms-api-admin",
