@@ -118,6 +118,17 @@ describe.skipIf(!has)("F3.73 — site widget types and catalog keys against a li
     });
   });
 
+  // `F3.74` (ADR 0088 decision 10) — migration `0099` widened the same CHECK by `breaker_table`.
+  // `tests/f3.74-breaker-table-widget-type.test.ts` reads the migration's text; this is what the
+  // migrated database enforces. Same lifecycle as above: `BEGIN` … `ROLLBACK`, nothing commits.
+  it("accepts breaker_table (F3.74, migration 0099)", async () => {
+    await inTx(async (run) => {
+      const dash = await newDashboard(run);
+      const ok = await run(INSERT_WIDGET, [org, dash, "breaker_table"]);
+      expect(ok.rows.length, "breaker_table must be accepted").toBe(1);
+    });
+  });
+
   it("accepts both new catalog keys and still refuses an unknown one, naming the CHECK", async () => {
     await inTx(async (run) => {
       const dash = await newDashboard(run);

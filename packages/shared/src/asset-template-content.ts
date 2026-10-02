@@ -212,8 +212,8 @@ export type TemplateMaintenancePlan = {
  * nodes from the dashboard's **asset group**, which an asset template does not have. The
  * runtime predicate is `isTemplateAuthorableWidgetType` in `contracts/dashboard-builder.ts` —
  * a source minimum of zero AND a point maximum above zero — and the specs hold it to this
- * `Exclude`. **The five `F3.73` site widgets fail the same second clause**: they read the
- * site-widgets endpoint and bind no point.
+ * `Exclude`. **The five `F3.73` site widgets and `F3.74`'s `breaker_table` fail the same second
+ * clause**: they read the site-widgets endpoint and bind no point.
  */
 export type TemplateDashboardWidget = {
   pointKeys: string[];
@@ -232,7 +232,8 @@ export type TemplateDashboardWidget = {
       | "state_legend"
       | "asset_class_strip"
       | "module_summary_card"
-      | "critical_systems_list";
+      | "critical_systems_list"
+      | "breaker_table";
   }
 >;
 

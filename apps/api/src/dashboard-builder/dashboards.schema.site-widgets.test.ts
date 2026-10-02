@@ -1,13 +1,16 @@
 import { describe, it } from "vitest";
 
 import {
+  acceptsABreakerTable,
   acceptsEachOfTheFiveSiteWidgets,
   acceptsTheTwoAssetsCatalogEntries,
   refusesACardOnADashboardWithoutTabs,
   refusesACardTargetingAnUnknownTab,
   refusesACardWithoutATargetTabKey,
   refusesAnUnknownKeyInASiteWidgetConfig,
+  refusesAPointOnABreakerTable,
   refusesAPointOnASiteWidget,
+  refusesAnUnknownKeyInABreakerTableConfig,
   refusesARailBeyondTwentyRows,
   refusesParamsOnTheTwoAssetsCatalogEntries,
 } from "./dashboards.schema.site-widgets.spec";
@@ -36,6 +39,18 @@ describe("F3.73 — the five site widgets on PUT /dashboards/:id/widgets", () =>
 
   it("refuses a point binding on a site widget", () => {
     refusesAPointOnASiteWidget();
+  });
+
+  it("accepts a breaker_table widget", () => {
+    acceptsABreakerTable();
+  });
+
+  it("refuses a point binding on a breaker_table widget", () => {
+    refusesAPointOnABreakerTable();
+  });
+
+  it("refuses an undeclared key in a breaker_table config", () => {
+    refusesAnUnknownKeyInABreakerTableConfig();
   });
 
   it("refuses a rail beyond 20 rows", () => {

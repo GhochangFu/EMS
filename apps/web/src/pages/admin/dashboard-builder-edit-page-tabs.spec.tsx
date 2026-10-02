@@ -195,6 +195,8 @@ export async function onlyAStoredTabCarriesItsMarker(): Promise<void> {
     scope: { assetCount: 4 },
     alarms: { active: [], summary: [] },
     roles: [],
+    breakers: [],
+    stateMaps: [],
     tabs: [
       {
         tabKey: "electrical",
@@ -233,6 +235,8 @@ function stubElectricalMarker() {
     scope: { assetCount: 4 },
     alarms: { active: [], summary: [] },
     roles: [],
+    breakers: [],
+    stateMaps: [],
     tabs: [
       {
         tabKey: "electrical",

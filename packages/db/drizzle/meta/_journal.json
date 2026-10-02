@@ -680,6 +680,13 @@
       "when": 1790876326348,
       "tag": "0097_point_key_states_breaker_roles_asset_rating_and_layout_flags",
       "breakpoints": true
+    },
+    {
+      "idx": 99,
+      "version": "7",
+      "when": 1790962705586,
+      "tag": "0099_breaker_table_widget_type",
+      "breakpoints": true
     }
   ]
 }

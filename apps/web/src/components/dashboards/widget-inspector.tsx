@@ -234,8 +234,9 @@ export function WidgetInspector({ row, problems, role, organizationId, tabs, onC
       {/*
         `F3.32` / plan D8 — a mimic's config has no `unit` or `decimals`: it draws several
         nodes, each with its own points and units, so one widget-level value would apply to
-        nothing and the API's `.strict()` would refuse it. `F3.73`: the five site widgets
-        likewise — a type that binds nothing has no value to format.
+        nothing and the API's `.strict()` would refuse it. `F3.73`: the site widgets
+        likewise (`F3.74`: the breaker table too, config `{}`) — a type that binds nothing has no
+        value to format.
       */}
       {!widgetTypeBindsNothing(row.widgetType) ? (
         <div className="grid gap-3 md:grid-cols-2">

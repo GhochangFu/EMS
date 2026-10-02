@@ -118,6 +118,9 @@ function sampleWidget(widgetType: WidgetType, title: string | null = "Feed pump 
       return { ...IDENTITY, title, widgetType, config: { targetTabKey: "ups" } };
     case "critical_systems_list":
       return { ...IDENTITY, title, widgetType, config: {} };
+    // `F3.74` — the breaker table binds nothing either.
+    case "breaker_table":
+      return { ...IDENTITY, title, widgetType, config: {} };
     default: {
       const unreachable: never = widgetType;
       return unreachable;
@@ -138,11 +141,11 @@ const WIDGET_TYPES = Object.keys(WIDGET_CATALOG) as WidgetType[];
 export function everyCatalogTypeDrawsItsTitle(): void {
   expect(
     WIDGET_TYPES.length,
-    "the catalog holds eleven widget types (ADR 0047 decision 2; `table` added by ADR 0048 " +
+    "the catalog holds twelve widget types (ADR 0047 decision 2; `table` added by ADR 0048 " +
       "decision 5, `F3.35` Stage B; `mimic` by ADR 0079 decision 1, `F3.32`; the five site " +
-      "widgets by `F3.73`). A zero means the walk is broken and the loop below asserts nothing; a " +
-      "twelve means a type was added — widen this number and say so.",
-  ).toBe(11);
+      "widgets by `F3.73`; `breaker_table` by `F3.74`). A zero means the walk is broken and the loop below asserts nothing; a " +
+      "thirteen means a type was added — widen this number and say so.",
+  ).toBe(12);
 
   for (const widgetType of WIDGET_TYPES) {
     const { unmount } = render(

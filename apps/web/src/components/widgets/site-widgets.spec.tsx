@@ -97,6 +97,8 @@ function response(overrides: Partial<SiteWidgetsResponse> = {}): SiteWidgetsResp
       ],
     },
     roles: [ROLE],
+    breakers: [],
+    stateMaps: [],
     tabs: [UPS_TAB, HVAC_TAB, HIDDEN_TAB],
     ...overrides,
   };

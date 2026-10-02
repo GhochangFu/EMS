@@ -308,7 +308,8 @@ export const dashboardTabs = bmsSchema.table(
  * held the four: `radial_gauge`, `tank_level`, `value_tile`, `chart`. `0055` added `table`,
  * `0086` added `mimic`, and `0096` (F3.73) added the five site widgets — `active_alarms_rail`,
  * `state_legend`, `asset_class_strip`, `module_summary_card`, `critical_systems_list` — for
- * eleven in all; `tests/f3.73-site-widget-types.test.ts` compares the list to `widgetTypeSchema`.
+ * eleven, and `0099` (F3.74) added `breaker_table` for twelve; `tests/f3.73-site-widget-types.test.ts`
+ * and `tests/f3.74-breaker-table-widget-type.test.ts` compare the list to `widgetTypeSchema`.
  *
  * **Grid position is on the row, not in `config`.** ADR 0047 decision 3 reserves `config` for
  * options the *renderer alone* consumes; position is read by the builder, by ordering and by

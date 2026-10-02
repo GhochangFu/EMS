@@ -226,6 +226,14 @@ export const WIDGET_CATALOG: Readonly<Record<WidgetType, WidgetCatalogEntry>> = 
     points: WIDGET_POINT_CARDINALITY.critical_systems_list,
     sources: WIDGET_SOURCE_CARDINALITY.critical_systems_list,
   },
+  breaker_table: {
+    label: "Breaker table",
+    // A header bar over three rows with a state cell at the left — one row per breaker.
+    iconPath: "M3 4h18v3H3V4Zm0 5h4v3H3V9Zm5 .5h13v2H8v-2ZM3 14h4v3H3v-3Zm5 .5h13v2H8v-2ZM3 19h4v2H3v-2Zm5 0h13v2H8v-2Z",
+    defaultSize: { w: 12, h: 5 },
+    points: WIDGET_POINT_CARDINALITY.breaker_table,
+    sources: WIDGET_SOURCE_CARDINALITY.breaker_table,
+  },
 };
 
 /**

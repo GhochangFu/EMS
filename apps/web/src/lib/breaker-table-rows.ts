@@ -7,9 +7,16 @@ import type {
 import type { CrBreakerBinding } from "../components/live-svg/control-room-bindings";
 import { freshValue, type SchematicTelemetrySlice, STALE_VALUE } from "./schematic-telemetry";
 
+/**
+ * The statuses a page's rule derivation gives a breaker. `tripped` and `unknown` come only from
+ * a breaker's state keys (`breaker-site-rows.ts`); the SMOC SLD's status chains (`sld.tsx`) name
+ * the others and draw any status they do not name as closed, so the type keeps those two out.
+ */
+export type BreakerRowStatus = Exclude<BreakerVisualStatus, "tripped" | "unknown">;
+
 /** What a page's `derive…RuleState` returns for one breaker. */
 export type BreakerRowState = {
-  status: BreakerVisualStatus;
+  status: BreakerRowStatus;
   matchedRule: RuleListItem | null;
   /** True when the asset has stopped reporting (ADR 0027). */
   stale: boolean;

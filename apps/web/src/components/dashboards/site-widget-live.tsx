@@ -1,21 +1,29 @@
-import { useContext } from "react";
+import { useContext, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useLocation, useParams } from "react-router-dom";
 
 import type { DashboardWidgetDto } from "@bms/shared";
 
 import { fetchVocabularies, vocabulariesQueryKey } from "../../api/vocabularies";
+import { useSiteLiveReadings } from "../../hooks/use-site-live-readings";
 import { useSiteWidgets } from "../../hooks/use-site-widgets";
+import { breakerViewFor } from "../../lib/breaker-site-rows";
 import type { WidgetStatus } from "../../lib/widget-catalog";
 import { widgetTitle } from "../../lib/widget-value";
 import { ActiveAlarmsRailWidget } from "../widgets/active-alarms-rail-widget";
 import { AssetClassStripWidget } from "../widgets/asset-class-strip-widget";
+import { BreakerTableWidget } from "../widgets/breaker-table-widget";
 import { CriticalSystemsListWidget } from "../widgets/critical-systems-list-widget";
 import { ModuleSummaryCardWidget } from "../widgets/module-summary-card-widget";
-import { SiteTabHrefContext, siteTabHref, type SiteTabHref } from "../widgets/site-widget-parts";
+import {
+  SiteTabHrefContext,
+  siteTabHref,
+  type SiteTabHref,
+  type SiteWidgetCommon,
+} from "../widgets/site-widget-parts";
 import { StateLegendWidget } from "../widgets/state-legend-widget";
 
-/** The five widget types `SiteWidgetLive` draws — the branch `DashboardWidgetLive` takes. */
+/** The six widget types `SiteWidgetLive` draws — the branch `DashboardWidgetLive` takes. */
 export type SiteWidgetDto = Extract<
   DashboardWidgetDto,
   {
@@ -24,11 +32,12 @@ export type SiteWidgetDto = Extract<
       | "state_legend"
       | "asset_class_strip"
       | "module_summary_card"
-      | "critical_systems_list";
+      | "critical_systems_list"
+      | "breaker_table";
   }
 >;
 
-/** Whether a widget is one of the five, narrowing it for `DashboardWidgetLive`'s branch. */
+/** Whether a widget is one of the six, narrowing it for `DashboardWidgetLive`'s branch. */
 export function isSiteWidget(widget: DashboardWidgetDto): widget is SiteWidgetDto {
   switch (widget.widgetType) {
     case "active_alarms_rail":
@@ -36,6 +45,7 @@ export function isSiteWidget(widget: DashboardWidgetDto): widget is SiteWidgetDt
     case "asset_class_strip":
     case "module_summary_card":
     case "critical_systems_list":
+    case "breaker_table":
       return true;
     default:
       return false;
@@ -105,9 +115,28 @@ function ReadingSiteWidget({
       return <ModuleSummaryCardWidget {...common} config={widget.config} tabHref={tabHref} />;
     case "critical_systems_list":
       return <CriticalSystemsListWidget {...common} tabHref={tabHref} />;
+    case "breaker_table":
+      return <LiveBreakerTable {...common} widgetId={widget.id} dataUpdatedAt={query.dataUpdatedAt} />;
     default: {
       const unreachable: never = widget;
       return unreachable;
     }
   }
+}
+
+/**
+ * `F3.74` (plan D8, D12) — the breaker table's live binding. A second component, as the legend's
+ * is: the telemetry overlay (`useSiteLiveReadings`, one `/ws/telemetry` socket keyed on the widget)
+ * belongs to the table alone, so the other five site widgets open none. The synthetic view is
+ * memoised on the read, so the hook's clamp memo is not rerun each render, and `dataUpdatedAt` is
+ * the instant a seeded sample is clamped at (`F4.37`).
+ */
+function LiveBreakerTable({
+  widgetId,
+  dataUpdatedAt,
+  ...common
+}: SiteWidgetCommon & { widgetId: string; dataUpdatedAt: number }) {
+  const view = useMemo(() => breakerViewFor(common.data, widgetId), [common.data, widgetId]);
+  const readings = useSiteLiveReadings(widgetId, view, dataUpdatedAt);
+  return <BreakerTableWidget {...common} readings={readings} />;
 }

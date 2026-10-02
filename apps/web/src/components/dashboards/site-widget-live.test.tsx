@@ -3,6 +3,8 @@ import { afterEach, beforeEach, describe, it, vi } from "vitest";
 
 import {
   aFailedReadShowsTheErrorLine,
+  aTelemetryReadingFlipsABreakerRowWithoutARefetch,
+  onlyTheBreakerTableOpensATelemetrySocket,
   aFailedRefetchKeepsTheLastDrawing,
   aWidgetOnAStoredOverviewTabReadsWithItsKey,
   aLegendReadsNothingButStillDrawsOnTheOverview,
@@ -82,5 +84,11 @@ describe("F3.73 SiteWidgetLive", () => {
   });
   it("SL13 a canvas with no reading site widget opens no /ws/alarms socket", async () => {
     await aCanvasWithNoReadingSiteWidgetOpensNoAlarmsSocket();
+  });
+  it("SL14 a telemetry reading flips a breaker row without a refetch (F3.74)", async () => {
+    await aTelemetryReadingFlipsABreakerRowWithoutARefetch();
+  });
+  it("SL15 only the breaker table opens a /ws/telemetry socket (F3.74)", async () => {
+    await onlyTheBreakerTableOpensATelemetrySocket();
   });
 });

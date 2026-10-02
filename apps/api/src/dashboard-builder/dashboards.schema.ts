@@ -3,6 +3,7 @@ import { z } from "zod";
 import {
   activeAlarmsRailConfigSchema,
   assetClassStripConfigSchema,
+  breakerTableConfigSchema,
   criticalSystemsListConfigSchema,
   moduleSummaryCardConfigSchema,
   stateLegendConfigSchema,
@@ -579,7 +580,7 @@ const bindsNothingArm = <T extends z.infer<typeof widgetTypeSchema>, C extends z
     .strict();
 
 /**
- * The arms, one per widget type (eleven since `F3.73`). Each stays a plain `.strict()` `ZodObject` — never
+ * The arms, one per widget type (twelve since `F3.74`). Each stays a plain `.strict()` `ZodObject` — never
  * wrapped in its own `.refine()`/`.superRefine()` — because `z.discriminatedUnion` accepts only
  * `ZodObject` arms; the cross-widget grid-fit check lives on the ARRAY field in
  * `widgetsWriteFieldSchema` below instead of here, for exactly that reason.
@@ -660,6 +661,8 @@ export const widgetWriteSchema = z.discriminatedUnion("widgetType", [
   // Whether `targetTabKey` names a tab of the request is `tabRulesHold`'s check on the body.
   bindsNothingArm("module_summary_card", moduleSummaryCardConfigSchema),
   bindsNothingArm("critical_systems_list", criticalSystemsListConfigSchema),
+  // `F3.74` / ADR 0088 decision 10 — the breaker table; binds nothing, reads `GET :id/site-widgets`.
+  bindsNothingArm("breaker_table", breakerTableConfigSchema),
 ]);
 
 const eachWidgetFitsTheGrid = (

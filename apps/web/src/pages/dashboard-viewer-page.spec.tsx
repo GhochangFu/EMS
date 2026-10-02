@@ -210,6 +210,8 @@ export async function theViewerStripCarriesTheTabMarkers(): Promise<void> {
     scope: { assetCount: 4 },
     alarms: { active: [], summary: [] },
     roles: [],
+    breakers: [],
+    stateMaps: [],
     tabs: [
       {
         tabKey: "hvac",
@@ -359,6 +361,8 @@ export async function aModuleCardInTheViewerOpensItsTab(): Promise<void> {
     scope: { assetCount: 0 },
     alarms: { active: [], summary: [] },
     roles: [],
+    breakers: [],
+    stateMaps: [],
     tabs: [{ tabKey: "hvac", label: "HVAC", assetGroupId: null, status: null }],
   } as unknown as SiteWidgetsResponse;
   vi.spyOn(siteWidgetsApi, "fetchSiteWidgets").mockResolvedValue(answer);

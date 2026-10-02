@@ -29,6 +29,8 @@ const ANSWER: SiteWidgetsResponse = {
   scope: { assetCount: 4 },
   alarms: { active: [], summary: [] },
   roles: [],
+  breakers: [],
+  stateMaps: [],
   tabs: [
     groupTab("hvac", { worstSeverity: "warning", tone: "warning", activeAlarms: 2, offlineAssets: 0, assets: 4 }),
     groupTab("env", null),
