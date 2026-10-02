@@ -21,7 +21,9 @@ const config = requireKeycloak({
 const TIMEOUT = 30_000;
 
 describe.skipIf(!config)("F3.78 U3 — KeycloakIdentityAdminClient against Keycloak (K1–K6)", () => {
-  // `skipIf` keeps this body from running without a config; the `!` is safe.
+  // Vitest still runs this body at collection time when skipped, so `live` is
+  // `undefined` then; `skipIf` skips only the `it` and `afterAll` callbacks,
+  // which are the only readers of it.
   const live = config!;
 
   afterAll(async () => {
