@@ -8,6 +8,9 @@ import {
   domainPresetsDrawNoPump,
   domainPresetsDrawNoSink,
   domainPresetsDrawTheirGlyphs,
+  layoutUnitsCarryFlagsAndSwitchingFollowsTheSymbol,
+  lvSingleLineUnitsCarryTheirFlags,
+  presetsWithoutFlagsCarryFalse,
   emptyGeometryHoldsNothing,
   layoutCarriesItsOrgSymbols,
   layoutPipesJoinUnitsOnly,
@@ -80,5 +83,14 @@ describe("F3.32c U4 — mimic geometry", () => {
   });
   it("G19 a preset carries no organization symbol (F3.32f slice 3)", () => {
     presetCarriesNoOrgSymbols();
+  });
+  it("G20 lv_single_line's units carry isSource, fanOut and switching (F3.74)", () => {
+    lvSingleLineUnitsCarryTheirFlags();
+  });
+  it("G21 a preset without flags carries false for all three", () => {
+    presetsWithoutFlagsCarryFalse();
+  });
+  it("G22 a layout carries its flags and switching follows the symbol", () => {
+    layoutUnitsCarryFlagsAndSwitchingFollowsTheSymbol();
   });
 });

@@ -1,5 +1,12 @@
 import { MIMIC_LAYOUT_BOUNDS, MIMIC_LAYOUT_NODE_KEY, mimicPresetSchema, mimicSymbolSchema } from "@bms/shared/contracts";
-import { MIMIC_PRESETS, libraryOfSymbol, type MimicLayoutDto, type MimicPreset, type MimicSymbol } from "@bms/shared";
+import {
+  MIMIC_PRESETS,
+  libraryOfSymbol,
+  type MimicLayoutDto,
+  type MimicPreset,
+  type MimicPresetNode,
+  type MimicSymbol,
+} from "@bms/shared";
 
 import { MIMIC_PANELS } from "./mimic";
 import {
@@ -255,6 +262,7 @@ const PRESET_LIBRARIES: Readonly<Record<MimicPreset, readonly string[]>> = {
   compressed_air: ["core", "lucide", "mdi"],
   environment_monitoring: ["core", "lucide", "mdi"],
   facility_services: ["core", "tabler", "lucide", "mdi"],
+  lv_single_line: ["core", "tabler", "lucide", "mdi"],
 };
 
 export function runEveryPresetChoosesCoreAndItsGlyphLibraries(): void {
@@ -667,8 +675,8 @@ export function runPresetUnitsDoNotOverlap(): void {
 /** Every preset but `water_train`: none has a sink, so each copy is its nodes, panels and pipes. */
 const DOMAIN_PRESETS = mimicPresetSchema.options.filter((p) => p !== "water_train");
 
-export function runDomainPresetsAreSix(): void {
-  assert(DOMAIN_PRESETS.length === 6, `six domain presets, got ${DOMAIN_PRESETS.length}`);
+export function runDomainPresetsAreSeven(): void {
+  assert(DOMAIN_PRESETS.length === 7, `seven domain presets, got ${DOMAIN_PRESETS.length}`);
 }
 
 /**
@@ -708,9 +716,24 @@ export function runDomainPresetUnitsDoNotOverlap(): void {
 export function runDomainPresetRoledUnitsAreThePresetNodes(): void {
   for (const p of DOMAIN_PRESETS) {
     const roled = fromPreset(p).nodes.filter((n) => n.kind === "unit" && n.roleCode !== null);
-    const want = MIMIC_PRESETS[p].nodes.length;
+    // A `null` role is a passive node (F3.74: the two buses of lv_single_line): a unit, but not roled.
+    const want = MIMIC_PRESETS[p].nodes.filter((n) => n.roleCode !== null).length;
     assert(roled.length === want, `${p}: ${want} roled units, got ${roled.length}`);
   }
+}
+
+/** `F3.74` plan D5 — the starter copies `fanOut` and the preset's sources (as `isSource`), and no other unit carries either. */
+export function runLvSingleLineStarterCarriesItsFlags(): void {
+  const units = fromPreset("lv_single_line").nodes.filter((n) => n.kind === "unit");
+  const fan = units.filter((n) => n.fanOut).map((n) => n.key);
+  const want = (MIMIC_PRESETS.lv_single_line.nodes as readonly MimicPresetNode[]).filter((n) => n.fanOut === true).map((n) => n.key);
+  assert(JSON.stringify(fan) === JSON.stringify(want) && want.length === 8, `fan-out units ${JSON.stringify(fan)}, want ${JSON.stringify(want)}`);
+  const sources = units.filter((n) => n.isSource).map((n) => n.key);
+  assert(JSON.stringify(sources) === '["incoming"]', `source units ${JSON.stringify(sources)}`);
+  assert(
+    fromPreset("lv_single_line").nodes.filter((n) => n.kind !== "unit").every((n) => !n.fanOut && !n.isSource),
+    "a panel carries neither flag",
+  );
 }
 
 export function runDomainPresetHasNoDischarge(): void {

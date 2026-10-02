@@ -51,6 +51,13 @@ export const TEMPLATE_MIMIC_LAYOUT_MESSAGE =
   "a dashboard template holds a preset mimic only; layouts in templates are a later stage";
 
 /**
+ * `F3.74` (plan D7) — a template mimic resolves through a named tab only when that tab has a
+ * domain, so the copy binds it a group. The key is the template's own and is not echoed.
+ */
+export const TEMPLATE_MIMIC_TAB_MESSAGE =
+  "a template mimic's tabKey must name one of the template's tabs that has a domain";
+
+/**
  * The template's content, with the layout-arm refusal. The shared
  * `sectionTemplateContentSchema` takes both mimic arms because its widget spec
  * is the dashboard's too, so the refusal is added HERE, on the field both
@@ -64,10 +71,21 @@ const templateContentWriteSchema = sectionTemplateContentSchema
     // `PUT :id/widgets`, which the instantiate path never runs. An asset-group template has no
     // tabs, so its card is always refused: instantiated, it would link nowhere, and the builder
     // would then refuse every save of that dashboard until the card was deleted.
+    // `F3.74` (plan D7) — a mimic's `tabKey` must name a content tab with a domain: only such a
+    // tab binds a group in a copy. The Overview binds none, and an asset-group template has no
+    // tabs, so there the key is always refused.
     const tabKeys = new Set(content.tabs.map((tab) => tab.key));
+    const domainTabKeys = new Set(content.tabs.filter((tab) => tab.domain !== null).map((tab) => tab.key));
     const refuse = (widget: (typeof content.widgets)[number], path: (string | number)[]): void => {
       if (widget.widgetType === "mimic" && widget.config.source === "layout") {
         ctx.addIssue({ code: z.ZodIssueCode.custom, path, message: TEMPLATE_MIMIC_LAYOUT_MESSAGE });
+      }
+      if (
+        widget.widgetType === "mimic" &&
+        widget.config.tabKey !== undefined &&
+        !domainTabKeys.has(widget.config.tabKey)
+      ) {
+        ctx.addIssue({ code: z.ZodIssueCode.custom, path: [...path, "tabKey"], message: TEMPLATE_MIMIC_TAB_MESSAGE });
       }
       if (widget.widgetType === "module_summary_card" && !tabKeys.has(widget.config.targetTabKey)) {
         ctx.addIssue({
@@ -89,7 +107,8 @@ const templateContentWriteSchema = sectionTemplateContentSchema
       '({ source: "preset" }); a layout arm answers 400 (ADR 0081 decision 5) — ' +
       "a layout is one organization's row, and a template carries no layout " +
       "reference in this stage. A module_summary_card's config.targetTabKey must name one of " +
-      "content.tabs, so an asset-group template holds none.",
+      "content.tabs, so an asset-group template holds none. A mimic's config.tabKey must name " +
+      "one of content.tabs whose domain is not null.",
   );
 
 /**

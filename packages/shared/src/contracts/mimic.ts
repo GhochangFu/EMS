@@ -1,9 +1,10 @@
 import { z } from "zod";
 
-import { generatedSiteAssetSchema } from "./generated-site-view";
+import { generatedSiteAssetSchema, generatedSitePointSchema } from "./generated-site-view";
 import { mimicPresetSchema } from "./mimic-config";
 import { mimicLayoutGeometrySchema } from "./mimic-layouts";
 import { alarmSeverityCodeSchema, pillToneSchema } from "./operations";
+import { pointKeyStateMapSchema } from "./point-key-states";
 
 /**
  * `F3.32` / ADR 0079 — `GET /api/v1/dashboards/:id/mimic-nodes` (plan D1).
@@ -19,6 +20,12 @@ import { alarmSeverityCodeSchema, pillToneSchema } from "./operations";
 /** How many of a node's points, ordered `headline_rank ASC NULLS LAST, point_key ASC`, a node
  * shows. The server's `LIMIT` reads this. */
 export const MIMIC_HEADLINE_POINTS = 3;
+
+/**
+ * `F3.74` / ADR 0088 OQ6 — how many members a fan-out node answers, by asset code. `memberCount`
+ * stays the true count; the web draws "+N more" past this many.
+ */
+export const MIMIC_FANOUT_MAX = 16;
 
 /**
  * `F3.32b` (ADR 0079 Amendment 2) — the shown asset's most severe open alarm, drawn as a
@@ -38,6 +45,20 @@ export const mimicNodeAlarmSchema = z.object({
 });
 
 /**
+ * `F3.74` / ADR 0088 plan D4 — one member of a fan-out node: its asset (F3.68's shape), its
+ * open-alarm count and most severe open alarm, and its state points — the latest sample of each
+ * active `asset_points` key that has a row in `bms.point_key_states` (data-driven; no key name
+ * is written in code). The web derives the member's switch state from these and the response's
+ * `stateMaps` (`deriveBreakerState`, D12); the API never answers a derived state.
+ */
+export const mimicNodeMemberSchema = z.object({
+  asset: generatedSiteAssetSchema,
+  activeAlarms: z.number().int().min(0),
+  topAlarm: mimicNodeAlarmSchema.nullable(),
+  statePoints: z.array(generatedSitePointSchema),
+});
+
+/**
  * One preset node, resolved.
  *
  * `asset` is `null` when no member of the group carries `roleCode`, or when the caller cannot
@@ -54,6 +75,18 @@ export const mimicNodeSchema = z.object({
   activeAlarms: z.number().int().min(0),
   /** `null` when the node has no asset or the asset has no open alarm. */
   topAlarm: mimicNodeAlarmSchema.nullable(),
+  /**
+   * `F3.74` plan D4 — the shown asset's state points (`[]` when it has none, or no asset).
+   * For a fan-out node, the first member's.
+   */
+  statePoints: z.array(generatedSitePointSchema),
+  /**
+   * `F3.74` plan D4 — `[]` for a node that does not fan out. For a fan-out node (a preset node's
+   * `fanOut`, a layout unit's `fan_out`), every readable member up to `MIMIC_FANOUT_MAX`, by
+   * asset code; then `asset` is the first member's, `activeAlarms` the sum across these members
+   * and `topAlarm` the most severe among them.
+   */
+  members: z.array(mimicNodeMemberSchema),
 });
 
 /** One preset `mimic` widget and its nodes, in the preset's declared order. */
@@ -83,9 +116,15 @@ export const mimicWidgetNodesSchema = z.discriminatedUnion("source", [
   mimicLayoutWidgetNodesSchema,
 ]);
 
-/** The whole response: every mimic widget on one dashboard. */
+/**
+ * The whole response: every mimic widget on one dashboard. `stateMaps` (`F3.74` plan D4) holds
+ * the `bms.point_key_states` rows of the state keys of every member the read loaded. A role fans
+ * out when any widget's node of that role does, so this can include keys of members that a
+ * non-fan-out node of another widget does not show.
+ */
 export const dashboardMimicNodesResponseSchema = z.object({
   dashboardId: z.string().uuid(),
   resolvedAt: z.string(),
   widgets: z.array(mimicWidgetNodesSchema),
+  stateMaps: z.array(pointKeyStateMapSchema),
 });

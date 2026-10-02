@@ -74,7 +74,7 @@ const LONG_MESSAGE = "Clarifier outlet turbidity above the high limit for 15 min
 function nodes(wtpAlarm: MimicNodeDto["topAlarm"] = WTP_ALARM): MimicNodeDto[] {
   return MIMIC_PRESETS.water_train.nodes
     .map((n): MimicNodeDto => {
-      const base = { key: n.key, label: n.label, roleCode: n.roleCode, topAlarm: null };
+      const base = { key: n.key, label: n.label, roleCode: n.roleCode, topAlarm: null, statePoints: [], members: [] };
       switch (n.key) {
         case "wtp":
           return { ...base, asset: WTP, memberCount: 1, activeAlarms: 1, topAlarm: wtpAlarm };

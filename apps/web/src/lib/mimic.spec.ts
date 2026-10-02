@@ -2,6 +2,7 @@ import { expect } from "vitest";
 
 import { MIMIC_HEADLINE_POINTS, mimicPresetSchema } from "@bms/shared/contracts";
 import {
+  BREAKER_ROLE_CODES,
   MIMIC_PRESETS,
   type GeneratedSiteAssetDto,
   type GeneratedSitePointDto,
@@ -70,7 +71,7 @@ function asset(id: string, code: string, points: GeneratedSitePointDto[] = [poin
 }
 
 function node(key: string, a: GeneratedSiteAssetDto | null, activeAlarms = 0): MimicNodeDto {
-  return { key, label: key, roleCode: key, asset: a, memberCount: a === null ? 0 : 1, activeAlarms, topAlarm: null };
+  return { key, label: key, roleCode: key, asset: a, memberCount: a === null ? 0 : 1, activeAlarms, topAlarm: null, statePoints: [], members: [] };
 }
 
 function widget(nodes: MimicNodeDto[]): MimicWidgetNodesDto {
@@ -423,4 +424,25 @@ export function glyphFillClassMapKeepsTheSameRolePerEntry(): void {
     expect(fillClass, strokeClass).toMatch(/^fill-[a-z-]+$/);
     expect(fillClass, strokeClass).toBe(`fill-${strokeClass.replace(/^stroke-/, "")}`);
   }
+}
+
+/**
+ * M17 — `F3.74` plan D5: every fan-out node whose role is a breaker role draws the `breaker`
+ * glyph, because that glyph is what makes it switch (`isSwitchingSymbol`). The positive control
+ * first: `lv_single_line` has five such nodes, so a loop that matches none cannot pass.
+ */
+export function everyBreakerRoleFanOutNodeDrawsTheBreakerGlyph(): void {
+  const breakerRoles: readonly string[] = BREAKER_ROLE_CODES;
+  let seen = 0;
+  for (const preset of PRESETS) {
+    const glyphs = MIMIC_NODE_GLYPHS[preset] as Readonly<Record<string, string>>;
+    const def: MimicPresetDef = MIMIC_PRESETS[preset];
+    for (const n of def.nodes) {
+      if (n.fanOut === true && n.roleCode !== null && breakerRoles.includes(n.roleCode)) {
+        seen += 1;
+        expect(glyphs[n.key], `${preset}.${n.key}`).toBe("breaker");
+      }
+    }
+  }
+  expect(seen).toBe(5);
 }

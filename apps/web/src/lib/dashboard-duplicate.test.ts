@@ -2,8 +2,10 @@ import { describe, it } from "vitest";
 
 import {
   runDuplicateCrossLocationClearsGroupsTests,
+  runDuplicateCrossLocationDropsOverviewMimicNamingClearedTabTests,
   runDuplicatePayloadTests,
   runDuplicateSameLocationKeepsGroupsTests,
+  runDuplicateSameLocationKeepsOverviewMimicTests,
   runDuplicateTabsCarriedTests,
   runFreeSlugTests,
 } from "./dashboard-duplicate.spec";
@@ -28,5 +30,13 @@ describe("dashboard duplicate", () => {
 
   it("F3.73: a cross-location copy clears the tab groups and drops the tab mimics", () => {
     runDuplicateCrossLocationClearsGroupsTests();
+  });
+
+  it("F3.74: a cross-location copy drops and counts an Overview mimic naming a group-cleared tab", () => {
+    runDuplicateCrossLocationDropsOverviewMimicNamingClearedTabTests();
+  });
+
+  it("F3.74: a same-location copy keeps an Overview mimic naming a group tab", () => {
+    runDuplicateSameLocationKeepsOverviewMimicTests();
   });
 });

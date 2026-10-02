@@ -84,8 +84,8 @@ export async function openLinksToTheEditor(): Promise<void> {
   expect(link).toHaveAttribute("href", `/admin/mimic-layouts/${LAYOUT_ID}`);
 }
 
-/** L3a — "Start from" lists the seven presets by label, in enum order (ADR 0082 decision 5). */
-export async function startFromListsTheSevenPresets(): Promise<void> {
+/** L3a — "Start from" lists the eight presets by label, in enum order (ADR 0082 decision 5, F3.74). */
+export async function startFromListsTheEightPresets(): Promise<void> {
   renderPage(user("admin"));
   const select = await screen.findByRole("combobox", { name: "Start from" });
   expect(within(select).getAllByRole("option").map((o) => o.textContent)).toEqual([
@@ -96,6 +96,7 @@ export async function startFromListsTheSevenPresets(): Promise<void> {
     "Compressed air",
     "Environment monitoring",
     "Facility services",
+    "LV single line",
   ]);
 }
 

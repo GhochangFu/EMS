@@ -15,7 +15,7 @@ import {
   previewFollowsTheSelect,
   startDefaultsToWaterTrain,
   startFollowsTheChosenPreset,
-  startFromListsTheSevenPresets,
+  startFromListsTheEightPresets,
 } from "./mimic-layouts-page.spec";
 
 /** Vitest entry point — assertions live in the sibling `.spec` (ADR 0014, ADR 0042 decision 2). */
@@ -33,8 +33,8 @@ describe("F3.32c mimic layouts page", () => {
     await openLinksToTheEditor();
   });
 
-  it("L3a Start from lists the seven presets by label", async () => {
-    await startFromListsTheSevenPresets();
+  it("L3a Start from lists the eight presets by label", async () => {
+    await startFromListsTheEightPresets();
   });
 
   it("L3b Start from opens on Water train and Start links to it", async () => {

@@ -280,17 +280,25 @@ export function tabIdsByKey(tabs: readonly TabWriteBody[]): ReadonlyMap<string, 
  * The asset group a `mimic` widget resolves against (plan D2): the dashboard's own group, or
  * else the group of the tab the widget sits on. Null means a mimic there would draw every node
  * "not assigned", which `MIMIC_SCOPE_MESSAGE` refuses.
+ *
+ * `F3.74` (plan D7) — else the group of the tab its `config.tabKey` names among the BODY's tabs,
+ * the order the resolver's `COALESCE(dt, nt, d)` reads the stored rows in for a group-less
+ * dashboard. A named tab that is absent or binds no group answers null, which the service
+ * refuses with `MIMIC_TAB_MESSAGE`. The widget's own group tab wins over a named one.
  */
 export function mimicGroupFor(
   dashboardGroupId: string | null,
   tabs: readonly TabWriteBody[],
-  widget: { tabKey?: string },
+  widget: { readonly tabKey?: string; readonly config: { readonly tabKey?: string } },
 ): string | null {
   if (dashboardGroupId !== null) {
     return dashboardGroupId;
   }
-  const tab = tabs.find((candidate) => candidate.key === widget.tabKey);
-  return tab?.assetGroupId ?? null;
+  const ownGroup = tabs.find((candidate) => candidate.key === widget.tabKey)?.assetGroupId ?? null;
+  if (ownGroup !== null || widget.config.tabKey === undefined) {
+    return ownGroup;
+  }
+  return tabs.find((candidate) => candidate.key === widget.config.tabKey)?.assetGroupId ?? null;
 }
 
 /** One stored tab, in the shape `diffTabs` compares a submitted one against. */

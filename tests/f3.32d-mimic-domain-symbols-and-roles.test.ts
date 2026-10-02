@@ -238,9 +238,9 @@ describe("F3.32d — migration 0089: the symbol CHECK restated and eighteen role
 
   it("every roleCode in mimic-presets.ts is inserted by 0051, 0060, 0087, 0089 or 0097", () => {
     const codes = [...read(PRESETS_REL).matchAll(/roleCode:\s*"([a-z0-9_-]+)"/g)].map((m) => m[1] as string);
-    // Positive control: the parse finds all seven presets' role codes (8+7+5+6+4+4+5), not
-    // only water_train's.
-    expect(codes).toHaveLength(39);
+    // Positive control: the parse finds all seven presets' role codes (8+7+5+6+4+4+5, plus lv_single_line's 13 nodes less its
+    // two passive buses = 11, since a `null` role carries no quoted code), not only water_train's.
+    expect(codes).toHaveLength(50);
     const known = new Set(
       [MIGRATION_0051, MIGRATION_0060, MIGRATION_0087, MIGRATION_0097, MIGRATION_REL].flatMap((rel) =>
         insertedRoles(rel).map((r) => r.code),

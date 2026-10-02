@@ -1,6 +1,8 @@
 import { describe, it } from "vitest";
 
 import {
+  acceptsAMimicTabKeyNamingADomainTab,
+  rejectsAMimicTabKeyNamingADomainlessTab,
   acceptsAnInstantiateBodyWithANullAssetGroup,
   aPatchBodyKeepsAnOmittedTabsUndefined,
   rejectsAPatchBodyWithADuplicateKeyAcrossTabs,
@@ -130,5 +132,13 @@ describe("F3.73 — the template target, content tabs and the instantiate site a
 
   it("accepts a site template's card naming its own tab", () => {
     acceptsASiteTemplateCardNamingItsOwnTab();
+  });
+
+  it("refuses a mimic tabKey naming a tab with no domain", () => {
+    rejectsAMimicTabKeyNamingADomainlessTab();
+  });
+
+  it("accepts a mimic tabKey naming a domain tab", () => {
+    acceptsAMimicTabKeyNamingADomainTab();
   });
 });

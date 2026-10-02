@@ -198,6 +198,33 @@ const FACILITY_SERVICES_LAYOUT = {
   pumps: [],
 } as const satisfies MimicLayout<NodeKeyOf<"facility_services">>;
 
+/**
+ * `lv_single_line` (`F3.74` plan D5) — six columns by three rows. The flow wraps: the supply runs
+ * across the top, drops onto the main bus, the UPS path runs right and back along the bottom, and
+ * the mains branch runs left. Every pipe joins adjacent columns on a row, or adjacent rows, so none
+ * runs through a third unit (`mimic.spec.ts` M15), and the three panels' frames do not overlap
+ * (M7b): the mains branch holds columns 0–1 and the UPS path columns 2–5 of the lower rows.
+ */
+const LV_SINGLE_LINE_LAYOUT = {
+  viewBox: slotViewBox(6, 3),
+  nodes: {
+    incoming: slotAt(0, 0),
+    transformer: slotAt(1, 0),
+    main_breaker: slotAt(2, 0),
+    main_bus: slotAt(2, 1),
+    ups_input: slotAt(3, 1),
+    ups: slotAt(4, 1),
+    ups_output: slotAt(5, 1),
+    load_bus: slotAt(5, 2),
+    load_feeders: slotAt(4, 2),
+    pdu: slotAt(3, 2),
+    mains_feeders: slotAt(1, 1),
+    hvac: slotAt(0, 1),
+    lighting: slotAt(0, 2),
+  },
+  pumps: [],
+} as const satisfies MimicLayout<NodeKeyOf<"lv_single_line">>;
+
 /** One layout per preset — a missing preset or node key is a compile error here. */
 export const MIMIC_LAYOUTS: { readonly [P in MimicPreset]: MimicLayout<NodeKeyOf<P>> } = {
   water_train: WATER_TRAIN_LAYOUT,
@@ -207,6 +234,7 @@ export const MIMIC_LAYOUTS: { readonly [P in MimicPreset]: MimicLayout<NodeKeyOf
   compressed_air: COMPRESSED_AIR_LAYOUT,
   environment_monitoring: ENVIRONMENT_MONITORING_LAYOUT,
   facility_services: FACILITY_SERVICES_LAYOUT,
+  lv_single_line: LV_SINGLE_LINE_LAYOUT,
 };
 
 /**
@@ -267,6 +295,16 @@ export const MIMIC_PANELS: { readonly [P in MimicPreset]: readonly MimicPanel<No
   facility_services: [
     { key: "metering", label: "Metering", tone: "info", nodes: ["main_meter"] },
     { key: "services", label: "Services", tone: "neutral", nodes: ["lighting", "lifts", "fire_pumps", "utilities"] },
+  ],
+  lv_single_line: [
+    { key: "supply", label: "Supply", tone: "info", nodes: ["incoming", "transformer", "main_breaker"] },
+    {
+      key: "ups_path",
+      label: "UPS path",
+      tone: "accent",
+      nodes: ["main_bus", "ups_input", "ups", "ups_output", "load_bus", "load_feeders", "pdu"],
+    },
+    { key: "mains", label: "Mains", tone: "neutral", nodes: ["mains_feeders", "hvac", "lighting"] },
   ],
 };
 
@@ -402,6 +440,24 @@ export const MIMIC_NODE_GLYPHS: {
     lifts: "tabler:elevator",
     fire_pumps: "tabler:fire-hydrant",
     utilities: "lucide:cog",
+  },
+  // `F3.74` plan D5 — the five breaker nodes draw `breaker`: that glyph is what makes a unit
+  // switch (`isSwitchingSymbol`). The buses are `switchboard`; the rest are the glyphs the same
+  // roles draw in `electrical_distribution` and `it_power_cooling`.
+  lv_single_line: {
+    incoming: "mdi:transmission-tower-import",
+    transformer: "transformer",
+    main_breaker: "breaker",
+    main_bus: "switchboard",
+    ups_input: "breaker",
+    ups: "ups",
+    ups_output: "breaker",
+    load_bus: "switchboard",
+    load_feeders: "breaker",
+    pdu: "tabler:plug-connected",
+    mains_feeders: "breaker",
+    hvac: "tabler:air-conditioning",
+    lighting: "lucide:cog",
   },
 };
 

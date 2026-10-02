@@ -16,6 +16,8 @@ const MIGRATION_0050 = "packages/db/drizzle/0050_configurable_dashboard_tables.s
 const MIGRATION_0051 = "packages/db/drizzle/0051_asset_role_vocabulary.sql";
 const MIGRATION_0060 = "packages/db/drizzle/0060_asset_role_estate_shapes.sql";
 const MIGRATION_0089 = "packages/db/drizzle/0089_mimic_domain_symbols_and_roles.sql";
+// `F3.74`: the five breaker roles `lv_single_line` names.
+const MIGRATION_0097 = "packages/db/drizzle/0097_point_key_states_breaker_roles_asset_rating_and_layout_flags.sql";
 const CONTRACT_REL = "packages/shared/src/contracts/dashboard-builder.ts";
 const JOURNAL_REL = "packages/db/drizzle/meta/_journal.json";
 const CONSTRAINT = "dashboard_widgets_widget_type_check";
@@ -208,7 +210,8 @@ describe("F3.32 v1 — migration 0087 seeds the seven `water_train` role codes",
     const seeded0060 = insertedRoleCodes(MIGRATION_0060);
     // ADR 0082 decision 4: 0089 inserts the eighteen role codes the six new presets name.
     const seeded0089 = insertedRoleCodes(MIGRATION_0089);
-    const known = new Set([...seededHere, ...seeded0051, ...seeded0060, ...seeded0089]);
+    const seeded0097 = insertedRoleCodes(MIGRATION_0097);
+    const known = new Set([...seededHere, ...seeded0051, ...seeded0060, ...seeded0089, ...seeded0097]);
 
     for (const roleCode of roleCodeMatches) {
       expect(known.has(roleCode), `preset roleCode '${roleCode}' must be seeded somewhere`).toBe(
@@ -257,7 +260,9 @@ describe("F3.32 v1 — the mimic-nodes read (U2)", () => {
   // RLS, so the organization predicate on each layout table IS the isolation (ADR 0043
   // Amendment 3). Every alias the service gives a `bms.mimic_layout*` table must be filtered by
   // `<alias>.organization_id = $n`. `F3.73` (plan D3, task 2.3) adds the widget statement's join
-  // to `bms.dashboard_tabs`, which the same rule binds. The predicate is looked for in the rest
+  // to `bms.dashboard_tabs`, which the same rule binds; `F3.74` (plan D7) adds a SECOND alias of
+  // it (`nt`, the tab a widget names in `config.tabKey`) — the table set below is deduplicated,
+  // so it is the per-alias check that binds `nt`. The predicate is looked for in the rest
   // of the SAME template literal (from the table to the literal's closing backtick): a
   // whole-file search let one statement's `t.organization_id` answer for another statement's
   // unfiltered `t`, and `t` is already the pipes statement's alias for its `to` node.
@@ -276,6 +281,10 @@ describe("F3.32 v1 — the mimic-nodes read (U2)", () => {
       "the resolver must read the widget's tab (F3.73 plan D3), the layout, its nodes and its pipes " +
         "(F3.32c plan D9, statements 1b and 1c)",
     ).toEqual(["dashboard_tabs", "mimic_layout_nodes", "mimic_layout_pipes", "mimic_layouts"]);
+    expect(
+      reads.filter((entry) => entry.table === "dashboard_tabs").map((entry) => entry.alias),
+      "the widget statement joins the widget's own tab (dt, F3.73) and the tab it names (nt, F3.74 plan D7)",
+    ).toEqual(["dt", "nt"]);
     const unfiltered = reads
       .filter((entry) => !new RegExp(`\\b${entry.alias}\\.organization_id\\s*=\\s*\\$\\d`).test(entry.statement))
       .map((entry) => `${entry.table} ${entry.alias}`);
