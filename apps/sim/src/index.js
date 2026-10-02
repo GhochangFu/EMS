@@ -167,18 +167,18 @@ function crProfile(code) {
     "CR-XFMR-100KVA": { kw: 4.6, current: 14, breaker: 1 },
     "CR-MAIN-BUS": { kw: 4.4, current: 13.8, breaker: 1 },
     "CR-UPS-OUT-BUS": { kw: 4.2, current: 13.2, breaker: 1 },
-    "CR-Q1": { kw: 4.21, current: 13.6, breaker: 1 },
-    "CR-Q2": { kw: 2.61, current: 7.4, breaker: 1 },
-    "CR-Q3": { kw: 2.01, current: 5.6, breaker: 1 },
-    "CR-Q4": { kw: 1.74, current: 8.1, breaker: 1 },
-    "CR-Q5": { kw: 1.3, current: 5.9, breaker: 1 },
-    "CR-Q6": { kw: 1.4, current: 6.2, breaker: 1 },
-    "CR-Q7": { kw: 1.41, current: 6.4, breaker: 1 },
-    "CR-Q8": { kw: 0.81, current: 3.6, breaker: 1 },
-    "CR-Q9": { kw: 0.61, current: 3.0, breaker: 1 },
-    "CR-Q10": { kw: 2.81, current: 12.4, breaker: 1 },
-    "CR-Q11": { kw: 0, current: 0, breaker: 0 },
-    "CR-Q12": { kw: 0.41, current: 1.8, breaker: 1 },
+    "CR-Q1": { kw: 4.21, current: 13.6, breaker: 1, trip: 0 },
+    "CR-Q2": { kw: 2.61, current: 7.4, breaker: 1, trip: 0 },
+    "CR-Q3": { kw: 2.01, current: 5.6, breaker: 1, trip: 0 },
+    "CR-Q4": { kw: 1.74, current: 8.1, breaker: 1, trip: 0 },
+    "CR-Q5": { kw: 1.3, current: 5.9, breaker: 1, trip: 0 },
+    "CR-Q6": { kw: 1.4, current: 6.2, breaker: 1, trip: 0 },
+    "CR-Q7": { kw: 1.41, current: 6.4, breaker: 1, trip: 0 },
+    "CR-Q8": { kw: 0.81, current: 3.6, breaker: 1, trip: 0 },
+    "CR-Q9": { kw: 0, current: 0, breaker: 0, trip: 1 },
+    "CR-Q10": { kw: 2.81, current: 12.4, breaker: 1, trip: 0 },
+    "CR-Q11": { kw: 0, current: 0, breaker: 0, trip: 0 },
+    "CR-Q12": { kw: 0.41, current: 1.8, breaker: 1, trip: 0 },
     "CR-UPS-1": { kw: 1.74, current: 8.1, breaker: 1, loadPct: 62 },
     "CR-UPS-2": { kw: 1.3, current: 5.9, breaker: 1, loadPct: 48 },
     "CR-BATT-1": { kw: 0.18, current: 0.5, breaker: 1, batteryV: 384.2 },
@@ -384,6 +384,9 @@ function stepElectrical(assetId, code = "") {
     { assetId, pointKey: "pf", value: s.pf, unit: null, time: t },
     { assetId, pointKey: "breaker_main", value: breaker, unit: null, time: t },
   ];
+  if (profile?.trip !== undefined) {
+    points.push({ assetId, pointKey: "breaker_trip", value: profile.trip, unit: null, time: t });
+  }
   if (code.startsWith("CR-")) {
     points.push(
       { assetId, pointKey: "frequency_hz", value: rndWalk(50.02, 0.02, 49.8, 50.2), unit: "Hz", time: t },
