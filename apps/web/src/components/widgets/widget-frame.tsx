@@ -22,7 +22,7 @@ type WidgetFrameProps = {
  * states are not repeated across four renderers. Two widgets do not use it: a
  * `ValueTileWidget` composes `KpiTile`, which is already its own frame (see that
  * file's docblock), and the `F3.77` compact `StateLegendWidget` is one row with
- * its title inline, so that it fits a 64 px row.
+ * its title inline, so that its band is one line of pills tall.
  */
 export function WidgetFrame({ title, status, stale = false, children }: WidgetFrameProps) {
   return (

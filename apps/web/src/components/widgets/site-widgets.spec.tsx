@@ -201,7 +201,7 @@ export async function theLegendNamesNormalAndOffline(): Promise<void> {
 }
 
 /**
- * `F3.77` plan D2 — the legend is one 64 px row: no `WidgetFrame`, whose chrome (`p-3`, the `h3`,
+ * `F3.77` plan D2 — the legend is one compact row: no `WidgetFrame`, whose chrome (`p-3`, the `h3`,
  * `mb-2`) takes about 48.5 px. The title is still drawn, inline: the adjacent positive.
  * Mutation: wrap the body in `WidgetFrame` again → the heading is back → red.
  */

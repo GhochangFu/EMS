@@ -50,7 +50,7 @@ export function theOverviewHoldsItsV3Rects(): void {
   assert(rects === OVERVIEW_RECTS, `Overview rects: got ${rects}`);
 }
 
-/** Stock version 2 — a domain tab's widget heights fit their content at the 64 px view row; unchanged in v3. */
+/** Stock version 2 — a domain tab's compact widget sizes on the builder's grid; unchanged in v3. */
 const DOMAIN_TAB_SIZE: Readonly<Record<string, string>> = {
   value_tile: "3x2",
   mimic: "12x7",
@@ -71,23 +71,24 @@ export function everyDomainTabWidgetHasItsCompactSize(): void {
 }
 
 /**
- * The fewest rows a widget type needs on the view canvas's 64 px floor row (`VIEW_ROW_MIN_PX` in
+ * The fewest rows a widget type takes on the builder's 72 px row (`ROW_HEIGHT_PX` in
  * `apps/web/src/components/dashboards/dashboard-canvas.tsx`), where `n` rows are
- * `64n + 8(n - 1)` px. The legend (`F3.77` plan D2): it draws without `WidgetFrame`, as one row
- * of an inline 11 px title and the pills (`StatusPill` about 20 px), so 1 row (64 px) holds it;
- * the browser layer measures the fit. A value tile: `KpiTile` with a hint and the ADR 0027 stale
- * line is about 132 px and is not clipped to its cell, so 2 rows (136 px) hold it.
+ * `72n + 8(n - 1)` px, so the builder grid keeps each type's proportion to its content. A view
+ * canvas fits each band to its content since the `F3.77` follow-up, so this is not a view-mode
+ * floor. The legend (`F3.77` plan D2): it draws without `WidgetFrame`, as one row of an inline
+ * 11 px title and the pills (`StatusPill` about 20 px), so 1 row. A value tile: `KpiTile` with a
+ * hint and the ADR 0027 stale line is about 132 px, so 2 rows (152 px).
  */
-const VIEW_FLOOR_MIN_ROWS: Readonly<Record<string, number>> = {
+const BUILDER_MIN_ROWS: Readonly<Record<string, number>> = {
   state_legend: 1,
   value_tile: 2,
 };
 
-export function everyWidgetFitsTheViewCanvasFloorRow(): void {
+export function everyWidgetFitsTheBuilderRow(): void {
   for (const tab of entry.content.tabs) {
     for (const widget of tab.widgets) {
-      const min = VIEW_FLOOR_MIN_ROWS[widget.widgetType] ?? 1;
-      assert(widget.gridH >= min, `${tab.key}/${widget.key} is ${widget.gridH} rows, under the ${min} it needs at 64 px`);
+      const min = BUILDER_MIN_ROWS[widget.widgetType] ?? 1;
+      assert(widget.gridH >= min, `${tab.key}/${widget.key} is ${widget.gridH} rows, under the ${min} it needs at 72 px`);
     }
   }
 }

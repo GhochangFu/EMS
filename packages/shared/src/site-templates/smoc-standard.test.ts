@@ -4,7 +4,7 @@ import {
   everyMimicDrawsItsTabsPreset,
   everyModuleCardNamesATab,
   everyTabPresetIsAPresetOption,
-  everyWidgetFitsTheViewCanvasFloorRow,
+  everyWidgetFitsTheBuilderRow,
   everyDomainTabWidgetHasItsCompactSize,
   noTabHoldsMoreThanTheWidgetCap,
   noTabLeavesAnEmptyRow,
@@ -32,8 +32,8 @@ describe("F3.73 — the SMOC standard site layout (plan D8)", () => {
   it("gives each domain-tab widget its compact v2 size", () => {
     everyDomainTabWidgetHasItsCompactSize();
   });
-  it("gives the legend and a value tile the rows they need at the 64 px view floor", () => {
-    everyWidgetFitsTheViewCanvasFloorRow();
+  it("gives the legend and a value tile the rows they need on the builder's 72 px row", () => {
+    everyWidgetFitsTheBuilderRow();
   });
   it("overlaps no two widgets in a tab", () => {
     noTwoWidgetsInATabOverlap();

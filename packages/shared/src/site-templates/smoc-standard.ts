@@ -38,11 +38,13 @@ import type { SectionTemplateWidget, StockDashboardTemplateDto } from "../index"
  * stock shape to these (`packages/db/src/site-layout-seed-upgrade.ts`), so a change here is a
  * stock version bump.
  *
- * **The floor is the view canvas's 64 px row** (`VIEW_ROW_MIN_PX` in `dashboard-canvas.tsx`),
- * not the builder's 72 px one: `n` rows are `64n + 8(n - 1)` px. The legend takes 1 row
- * (64 px) since v3: it draws without `WidgetFrame`, as one row of an inline title and the pills
- * (`state-legend-widget.tsx`). A value tile takes 2 rows (136 px): `KpiTile` with a hint and
- * the ADR 0027 stale line is about 132 px and is not clipped to its cell.
+ * **The rects are the builder's 72 px grid**: `n` rows are `72n + 8(n - 1)` px in the builder
+ * and in a template preview. Since the `F3.77` follow-up a view canvas has no row height: its
+ * rows are auto tracks, so each band is as tall as its content, whatever the stored rows. The
+ * legend takes 1 row since v3: it draws without `WidgetFrame`, as one row of an inline title and
+ * the pills (`state-legend-widget.tsx`). A value tile takes 2 rows, so the builder grid keeps
+ * its proportion to the content: `KpiTile` with a hint and the ADR 0027 stale line is about
+ * 132 px, and 2 builder rows are 152 px.
  */
 const LEGEND_H = 1;
 const TILE_W = 3;
