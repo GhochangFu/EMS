@@ -24,6 +24,13 @@ export const jwtPayloadSchema = z.object({
   email: z.string(),
   name: z.string(),
   role: userRoleSchema,
+  /**
+   * `F3.78` / ADR 0089 decision 4 — set by the OIDC guard, `true` only when the
+   * token carries `email_verified: true` and a string `email`. The guard links a
+   * `bms.users` row to the token's subject by email only when this is `true`.
+   * Absent on a local-mode token.
+   */
+  emailVerified: z.boolean().optional(),
 });
 
 /**

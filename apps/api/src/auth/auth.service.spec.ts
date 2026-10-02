@@ -14,7 +14,14 @@ import { AuthService } from "./auth.service";
  * must not hand `null` to `bcrypt.compare`.
  */
 
-type LoginRow = { id: string; email: string; passwordHash: string | null; displayName: string; role: string };
+type LoginRow = {
+  id: string;
+  email: string;
+  passwordHash: string | null;
+  displayName: string;
+  role: string;
+  disabledAt?: Date | null;
+};
 
 /** A fake auth pool: the login lookup answers `row`, the `last_login_at` stamp is a no-op. */
 function fakeDb(row: LoginRow): BmsDb {
@@ -79,5 +86,33 @@ export async function assertAHashedRowReachesBcrypt(): Promise<void> {
     const service = new AuthService(fakeDb({ ...ROW, passwordHash: "$2b$10$hash" }), jwt);
     await service.login({ email: ROW.email, password: "anything" }).catch(() => undefined);
     expect(compare).toHaveBeenCalledTimes(1);
+  });
+}
+
+/**
+ * `F3.78` / ADR 0089 decision 8 — a deactivated row is the generic 401 before
+ * `bcrypt.compare`. The fixture carries a real hash of the password sent, so
+ * with the refusal deleted the login would succeed (a token, not a 401): the
+ * case cannot pass on bcrypt's own refusal.
+ */
+export async function assertADisabledRowIsTheGeneric401BeforeBcrypt(): Promise<void> {
+  const hash = await bcrypt.hash("right-password", 4);
+  await withLocalLogin(async (compare) => {
+    const row = { ...ROW, passwordHash: hash, disabledAt: new Date("2026-10-01T00:00:00Z") };
+    const service = new AuthService(fakeDb(row), jwt);
+    const login = service.login({ email: ROW.email, password: "right-password" });
+    await expect(login).rejects.toBeInstanceOf(UnauthorizedException);
+    await expect(login).rejects.toThrow("Invalid email or password");
+    expect(compare).not.toHaveBeenCalled();
+  });
+}
+
+/** Positive control: the same row, not disabled, signs in — the hash and password match. */
+export async function assertAnEnabledRowWithTheRightPasswordSignsIn(): Promise<void> {
+  const hash = await bcrypt.hash("right-password", 4);
+  await withLocalLogin(async () => {
+    const service = new AuthService(fakeDb({ ...ROW, passwordHash: hash, disabledAt: null }), jwt);
+    const response = await service.login({ email: ROW.email, password: "right-password" });
+    expect(response.accessToken).toBe("token");
   });
 }

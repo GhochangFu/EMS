@@ -42,6 +42,7 @@ export class AuthService {
         passwordHash: users.passwordHash,
         displayName: users.displayName,
         role: users.role,
+        disabledAt: users.disabledAt,
       })
       .from(users)
       .where(eq(users.email, body.email))
@@ -49,6 +50,13 @@ export class AuthService {
 
     const user = row[0];
     if (!user) {
+      throw new UnauthorizedException("Invalid email or password");
+    }
+
+    // F3.78 / ADR 0089 decision 8: a deactivated account gets the same generic
+    // 401 as a wrong password, before bcrypt runs — the response must not tell
+    // a caller that the password was right.
+    if (user.disabledAt !== null && user.disabledAt !== undefined) {
       throw new UnauthorizedException("Invalid email or password");
     }
 

@@ -24,7 +24,9 @@ async function rejectsWith(
 
 type Ctor = ConstructorParameters<typeof AccessControlService>;
 
-const USER_ID = "u1";
+// A uuid since F3.78: local auth resolves `id = sub`, and a non-uuid subject
+// matches no row by construction (`identity-resolver.ts`), never reaching the fake.
+const USER_ID = "00000000-0000-4000-8000-0000000000e1";
 const USER_EMAIL = "u1@bms.local";
 const OWN_ORG_ID = "11111111-1111-1111-1111-111111111111";
 const OTHER_ORG_ID = "22222222-2222-2222-2222-222222222222";
