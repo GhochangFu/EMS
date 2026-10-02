@@ -2,6 +2,7 @@ import type { BackoffPolicy } from "@bms/shared";
 
 import {
   createNotifyListener,
+  reason,
   type ListenerClient,
   type ListenerLogger,
   type ListenerState,
@@ -53,7 +54,41 @@ export function handleUserDisabledNotification(
   deps.logger.log(`${USER_DISABLED_NOTIFY_CHANNEL}: closed ${closed} socket(s) for user ${userId}`);
 }
 
-export type UserDisabledListenerDeps = UserDisabledHandlerDeps & {
+export type UserDisabledCatchUpDeps = UserDisabledHandlerDeps & {
+  /** `SocketRegistry.connectedUserIds` — the users holding a socket on this process. */
+  connectedUserIds(): string[];
+  /** Which of `ids` are deactivated now: one read on the auth pool. */
+  readDisabledUserIds(ids: readonly string[]): Promise<string[]>;
+};
+
+/**
+ * The catch-up on connect (`F3.78` security review). `NOTIFY` is not queued
+ * for a session that is not listening, so a deactivation committed while this
+ * process's `LISTEN` connection is down — in a reconnect backoff, or before
+ * the first `LISTEN` after boot — never arrives here, and the gateways do not
+ * re-check a socket after its handshake. Each transition to `connected`
+ * therefore reads which of the users holding a socket here are deactivated
+ * now, and closes theirs. Returns how many sockets it closed.
+ */
+export async function closeSocketsOfDisabledUsers(deps: UserDisabledCatchUpDeps): Promise<number> {
+  const ids = deps.connectedUserIds();
+  if (ids.length === 0) {
+    return 0;
+  }
+  const disabled = await deps.readDisabledUserIds(ids);
+  let closed = 0;
+  for (const userId of disabled) {
+    closed += deps.disconnectUser(userId);
+  }
+  if (disabled.length > 0) {
+    deps.logger.log(
+      `${USER_DISABLED_NOTIFY_CHANNEL}: catch-up on connect closed ${closed} socket(s) for ${disabled.length} deactivated user(s)`,
+    );
+  }
+  return closed;
+}
+
+export type UserDisabledListenerDeps = UserDisabledCatchUpDeps & {
   /** A fresh client per attempt — `pg.Client` is not reusable after `end()`. */
   createClient(): ListenerClient;
   sleep(ms: number, signal: AbortSignal): Promise<void>;
@@ -71,5 +106,16 @@ export function createUserDisabledListener(deps: UserDisabledListenerDeps): Noti
     ...deps,
     channel: USER_DISABLED_NOTIFY_CHANNEL,
     onNotification: (raw) => handleUserDisabledNotification(raw, deps),
+    // `onStateChange` is synchronous, so the catch-up promise is voided with
+    // its own `.catch` — the `alarm-notify.ts` reason: an unhandled rejection
+    // from here would take the API down through the loop meant to keep it up.
+    onStateChange: (state) => {
+      deps.onStateChange?.(state);
+      if (state === "connected") {
+        void closeSocketsOfDisabledUsers(deps).catch((error: unknown) => {
+          deps.logger.warn(`${USER_DISABLED_NOTIFY_CHANNEL}: catch-up on connect failed: ${reason(error)}`);
+        });
+      }
+    },
   });
 }

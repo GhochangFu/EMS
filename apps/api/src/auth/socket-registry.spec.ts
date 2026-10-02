@@ -66,6 +66,23 @@ export function assertReturnsTheCount(): void {
   expect(registry.disconnectUser("00000000-0000-4000-8000-0000000000ff")).toBe(0);
 }
 
+/** The catch-up's input: each user with a socket on this process, once, across namespaces. */
+export function assertListsEachConnectedUserOnce(): void {
+  const registry = new SocketRegistry();
+  registry.register(namespaceOf(fakeSocket(USER), fakeSocket(OTHER), fakeSocket(undefined)));
+  registry.register(namespaceOf(fakeSocket(USER)));
+  expect(registry.connectedUserIds().sort()).toEqual([USER, OTHER].sort());
+}
+
+/** A socket whose handshake has not stored a string id yet is not a user to read. */
+export function assertListsNoIdForASocketWithoutOne(): void {
+  const registry = new SocketRegistry();
+  const odd = fakeSocket(undefined);
+  odd.data.userId = 42;
+  registry.register(namespaceOf(fakeSocket(undefined), odd));
+  expect(registry.connectedUserIds()).toEqual([]);
+}
+
 type Deferred<T> = { promise: Promise<T>; resolve(value: T): void };
 
 function deferred<T>(): Deferred<T> {

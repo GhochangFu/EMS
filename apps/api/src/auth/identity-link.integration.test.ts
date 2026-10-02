@@ -11,6 +11,7 @@ import {
 } from "../testing/integration-db-gate";
 import {
   assertASecondLinkChangesNothing,
+  assertDisabledUserIdsListsOnlyTheStampedRow,
   assertIsUserDisabledIsFalseForAnEnabledRow,
   assertIsUserDisabledIsTrueForAStampedRow,
   assertTheAuthRoleReadsDisabledAt,
@@ -73,5 +74,9 @@ describe.skipIf(!connectionString)("F3.78 — identity link on bms_auth (ADR 008
 
   it("isUserDisabled on bms_auth answers false for an enabled row it can see", async () => {
     await assertIsUserDisabledIsFalseForAnEnabledRow(superDb);
+  });
+
+  it("disabledUserIds on bms_auth returns the stamped id and not the enabled one", async () => {
+    await assertDisabledUserIdsListsOnlyTheStampedRow(superDb);
   });
 });

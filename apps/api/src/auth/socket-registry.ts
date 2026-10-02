@@ -42,4 +42,22 @@ export class SocketRegistry {
     }
     return closed;
   }
+
+  /**
+   * Every distinct `data.userId` held by a registered socket — the input to
+   * the listener's catch-up on connect (`user-disabled-notify.ts`). A socket
+   * whose handshake has not stored a string id carries no user to read.
+   */
+  connectedUserIds(): string[] {
+    const ids = new Set<string>();
+    for (const namespace of this.namespaces) {
+      for (const socket of namespace.sockets.values()) {
+        const userId = socket.data?.userId;
+        if (typeof userId === "string") {
+          ids.add(userId);
+        }
+      }
+    }
+    return [...ids];
+  }
 }

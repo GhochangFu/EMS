@@ -88,7 +88,13 @@ export async function assertTheAuthRoleReadsDisabledAt(authDb: BmsDb): Promise<v
   expect(rows).toHaveLength(1);
 }
 
-type DisabledReads = { disabled: boolean; enabled: boolean; enabledVisible: number };
+type DisabledReads = {
+  disabled: boolean;
+  enabled: boolean;
+  enabledVisible: number;
+  listed: string[];
+  targetId: string;
+};
 
 /**
  * `AccessControlService.isUserDisabled` itself, as `bms_auth` — the handshake
@@ -119,6 +125,8 @@ async function readDisabledAsAuth(superDb: BmsDb): Promise<DisabledReads> {
       disabled: await access.isUserDisabled(target.id),
       enabled: await access.isUserDisabled(other.id),
       enabledVisible: visible.length,
+      listed: await access.disabledUserIds([target.id, other.id]),
+      targetId: target.id,
     };
     tx.rollback();
   });
@@ -134,4 +142,11 @@ export async function assertIsUserDisabledIsFalseForAnEnabledRow(superDb: BmsDb)
   const reads = await readDisabledAsAuth(superDb);
   expect(reads.enabledVisible, "positive control: bms_auth sees the enabled row").toBe(1);
   expect(reads.enabled).toBe(false);
+}
+
+/** The catch-up read: of two ids, one stamped and one enabled, only the stamped one comes back. */
+export async function assertDisabledUserIdsListsOnlyTheStampedRow(superDb: BmsDb): Promise<void> {
+  const reads = await readDisabledAsAuth(superDb);
+  expect(reads.enabledVisible, "positive control: bms_auth sees the enabled row").toBe(1);
+  expect(reads.listed).toEqual([reads.targetId]);
 }

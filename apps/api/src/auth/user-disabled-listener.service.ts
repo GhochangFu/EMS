@@ -4,6 +4,7 @@ import { Client } from "pg";
 import { DATABASE_URL_AUTH_ENV_VAR } from "../database/database-urls";
 import type { ListenerClient, NotifyListener } from "../database/notify-listener";
 import { sleep } from "../telemetry/sleep";
+import { AccessControlService } from "./access-control.service";
 import { SocketRegistry } from "./socket-registry";
 import { createUserDisabledListener } from "./user-disabled-notify";
 
@@ -26,7 +27,10 @@ export class UserDisabledListenerService implements OnModuleInit, OnModuleDestro
   private readonly logger = new Logger(UserDisabledListenerService.name);
   private listener: NotifyListener | null = null;
 
-  constructor(private readonly registry: SocketRegistry) {}
+  constructor(
+    private readonly registry: SocketRegistry,
+    private readonly accessControl: AccessControlService,
+  ) {}
 
   onModuleInit(): void {
     const url = process.env[DATABASE_URL_AUTH_ENV_VAR];
@@ -38,6 +42,10 @@ export class UserDisabledListenerService implements OnModuleInit, OnModuleDestro
     this.listener = createUserDisabledListener({
       createClient: () => new Client({ connectionString: url }) as unknown as ListenerClient,
       disconnectUser: (userId) => this.registry.disconnectUser(userId),
+      // The catch-up on every connect: a NOTIFY sent while this LISTEN
+      // connection was down is lost, so re-read the users holding a socket.
+      connectedUserIds: () => this.registry.connectedUserIds(),
+      readDisabledUserIds: (ids) => this.accessControl.disabledUserIds(ids),
       sleep,
       logger: {
         // Single-argument calls — see `alarm-notify.service.ts`.

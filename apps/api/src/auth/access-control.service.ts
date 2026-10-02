@@ -1,5 +1,5 @@
 import { Inject, Injectable, ForbiddenException } from "@nestjs/common";
-import { and, eq, inArray } from "drizzle-orm";
+import { and, eq, inArray, isNotNull } from "drizzle-orm";
 
 import {
   assetGroupMembers,
@@ -828,6 +828,24 @@ export class AccessControlService {
       .where(eq(users.id, userId))
       .limit(1);
     return row?.disabledAt != null;
+  }
+
+  /**
+   * `F3.78` / ADR 0089 decision 8 — which of `userIds` are deactivated now, in
+   * one read on the auth pool. The `bms_user_disabled` listener's catch-up on
+   * connect calls it with the users holding a socket on this process, so a
+   * deactivation whose `NOTIFY` arrived while the `LISTEN` connection was down
+   * still closes their sockets.
+   */
+  async disabledUserIds(userIds: readonly string[]): Promise<string[]> {
+    if (userIds.length === 0) {
+      return [];
+    }
+    const rows = await this.authDb
+      .select({ id: users.id })
+      .from(users)
+      .where(and(inArray(users.id, [...userIds]), isNotNull(users.disabledAt)));
+    return rows.map((row) => row.id);
   }
 
   /**

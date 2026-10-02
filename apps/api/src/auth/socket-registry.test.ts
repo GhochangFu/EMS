@@ -5,6 +5,8 @@ import {
   assertAlarmsEnabledReReadKeepsTheSocket,
   assertAlarmsHandshakeWindowIsClosed,
   assertDisconnectsOnlyTheUsersSocketsAcrossNamespaces,
+  assertListsEachConnectedUserOnce,
+  assertListsNoIdForASocketWithoutOne,
   assertReturnsTheCount,
   assertTelemetryDisabledReReadClosesTheSocket,
   assertTelemetryEnabledReReadKeepsTheSocket,
@@ -19,6 +21,14 @@ describe("SocketRegistry (F3.78, ADR 0089 decision 8)", () => {
 
   it("returns the number of sockets it closed", () => {
     assertReturnsTheCount();
+  });
+
+  it("lists each connected user once, across namespaces", () => {
+    assertListsEachConnectedUserOnce();
+  });
+
+  it("lists no id for a socket that carries none", () => {
+    assertListsNoIdForASocketWithoutOne();
   });
 });
 
