@@ -40,6 +40,11 @@ export const FORCED_TABLES = [
   // unforced table answers too. `storage.integration.spec.ts` holds the
   // non-vacuous half against a committed row, as `bms_tenant`.
   "asset_images",
+  // `F3.78` / migration `0098` (ADR 0089 decision 10). The count-0 check below is
+  // non-vacuous for both: the seed writes `wc-admin`'s location grant and
+  // `wc-hvac-admin`'s asset-group grant.
+  "user_location_access",
+  "user_asset_group_access",
 ] as const;
 
 function assert(condition: boolean, message: string): void {

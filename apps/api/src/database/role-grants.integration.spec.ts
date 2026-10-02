@@ -31,6 +31,34 @@ const NON_SECRET_USER_COLUMNS = [
   "oidc_subject",
   "last_login_at",
   "created_at",
+  "disabled_at",
+] as const;
+
+/**
+ * `F3.78` / ADR 0089 decision 7 — the column `INSERT` grant `0098` gives both
+ * pool roles, so a request path can create a `bms.users` row. `password_hash`
+ * is absent: a pool role can never write a credential.
+ */
+const USER_INSERT_COLUMNS = [
+  "created_at",
+  "display_name",
+  "email",
+  "id",
+  "oidc_subject",
+  "organization_id",
+  "role",
+] as const;
+
+/**
+ * `F3.78` / ADR 0089 decisions 4 and 7 — the `UPDATE` columns both pool roles
+ * hold on `bms.users` after `0098` revoked `email` and `oidc_subject`.
+ */
+const POOL_USER_UPDATE_COLUMNS = [
+  "disabled_at",
+  "display_name",
+  "last_login_at",
+  "organization_id",
+  "role",
 ] as const;
 
 export async function assertRolesExist(pool: pg.Pool): Promise<void> {
@@ -74,11 +102,14 @@ export async function assertAuthCanReadPasswordHash(pool: pg.Pool): Promise<void
  * Decision 5 by a second door. Withholding `SELECT (password_hash)` is pointless
  * while the blanket `GRANT ... ON ALL TABLES IN SCHEMA bms` still lets the same
  * role `INSERT` a row carrying an attacker-chosen hash, or `DELETE` the row an
- * administrator authenticates with. No request path creates or removes a
- * `bms.users` row — only `packages/db/src/demo-users-seed.ts` does, and the seed
- * runs as the owner `bms_app` — so both privileges come back off every pool role.
+ * administrator authenticates with. No pool role holds `DELETE` or a
+ * *table-level* `INSERT` on `bms.users`. Since `F3.78` / `0098` (ADR 0089
+ * decision 7) `bms_tenant` and `bms_fleet` hold a *column* `INSERT` that leaves
+ * out `password_hash` — `assertTenantAndFleetHoldTheColumnInsert` pins it, and
+ * `information_schema.table_privileges` does not list a column grant, so this
+ * query still answers empty.
  */
-export async function assertNoRoleCanInsertOrDeleteUsers(pool: pg.Pool): Promise<void> {
+export async function assertNoPoolRoleHoldsDeleteOrTableInsertOnUsers(pool: pg.Pool): Promise<void> {
   const { rows } = await pool.query<{ grantee: string; privilege_type: string }>(
     `select grantee, privilege_type from information_schema.table_privileges
       where table_schema = 'bms' and table_name = 'users'
@@ -97,6 +128,59 @@ export async function assertNoRoleCanInsertOrDeleteUsers(pool: pg.Pool): Promise
       order by privilege_type`,
   );
   expect(control.map((r) => r.privilege_type)).toEqual(["DELETE", "INSERT"]);
+}
+
+/**
+ * `F3.78` / ADR 0089 decision 7 — no pool role reaches `password_hash` by
+ * `INSERT` or `UPDATE`, through a column grant or a table grant. The positive
+ * control is `bms_auth`'s `SELECT (password_hash)` through the same catalogue
+ * view, so an empty answer is a withheld grant, not a typo in the query.
+ */
+export async function assertNoPoolRoleReachesPasswordHashByInsertOrUpdate(pool: pg.Pool): Promise<void> {
+  const { rows } = await pool.query<{ grantee: string; privilege_type: string }>(
+    `select grantee, privilege_type from information_schema.column_privileges
+      where table_schema = 'bms' and table_name = 'users' and column_name = 'password_hash'
+        and grantee in ('bms_tenant', 'bms_fleet', 'bms_auth')
+        and privilege_type in ('INSERT', 'UPDATE')
+      order by grantee, privilege_type`,
+  );
+  expect(rows).toEqual([]);
+
+  const { rows: control } = await pool.query<{ grantee: string; privilege_type: string }>(
+    `select grantee, privilege_type from information_schema.column_privileges
+      where table_schema = 'bms' and table_name = 'users' and column_name = 'password_hash'
+        and grantee in ('bms_tenant', 'bms_fleet', 'bms_auth')
+      order by grantee, privilege_type`,
+  );
+  expect(control).toEqual([{ grantee: "bms_auth", privilege_type: "SELECT" }]);
+}
+
+/**
+ * `F3.78` / ADR 0089 decision 7 — both pool roles hold the column `INSERT` on
+ * exactly the seven non-secret columns. Exact, so a widened grant (a
+ * `password_hash` or a `disabled_at` written at creation) fails here.
+ */
+export async function assertTenantAndFleetHoldTheColumnInsert(pool: pg.Pool): Promise<void> {
+  for (const role of ["bms_tenant", "bms_fleet"]) {
+    expect(await userColumns(pool, role, "INSERT"), `${role}'s INSERT columns on bms.users`).toEqual([
+      ...USER_INSERT_COLUMNS,
+    ]);
+  }
+}
+
+/**
+ * `F3.78` / ADR 0089 decisions 4 and 7 — `0098` revoked `UPDATE (email,
+ * oidc_subject)` from both pool roles: the email is the Keycloak link a create
+ * wrote, and the subject is written only by the sign-in link (`bms_auth`) and
+ * the create. Asserted as the exact remaining list per role, so the revoke
+ * cannot be satisfied by an empty grant.
+ */
+export async function assertTenantAndFleetCannotUpdateEmailOrSubject(pool: pg.Pool): Promise<void> {
+  for (const role of ["bms_tenant", "bms_fleet"]) {
+    expect(await userColumns(pool, role, "UPDATE"), `${role}'s UPDATE columns on bms.users`).toEqual([
+      ...POOL_USER_UPDATE_COLUMNS,
+    ]);
+  }
 }
 
 /**
@@ -126,23 +210,19 @@ export async function assertAuthReachesOnlyIdentityTables(pool: pg.Pool): Promis
 }
 
 /**
- * `E7.1b` / ADR 0043 Amendment 4 — `bms_auth`'s only write on `bms.users` is
- * `UPDATE (last_login_at)` (0039:113). That column grant is the SOLE containment
- * for `0047`'s `auth_bootstrap_write` policy, which is row-unrestricted
- * (`USING (true) WITH CHECK (true)`) so `AuthService.login` can stamp any user's
- * `last_login_at` before any tenant context exists. Asserted positively (exactly
- * that one column, nothing more), so a future migration widening `bms_auth`'s
- * UPDATE columns — which would let it rewrite `role` / `email` /
- * `organization_id` on any user row fleet-wide — fails here rather than silently.
+ * `E7.1b` / ADR 0043 Amendment 4 — `bms_auth`'s writes on `bms.users` are
+ * `UPDATE (last_login_at)` (0039:113) and, since `F3.78` / `0098` (ADR 0089
+ * decision 4), `UPDATE (oidc_subject)` for the first-sign-in link. Those column
+ * grants are the containment for `0047`'s `auth_bootstrap_write` policy, which
+ * is row-unrestricted (`USING (true) WITH CHECK (true)`) so `AuthService.login`
+ * can stamp any user's `last_login_at` before any tenant context exists; the
+ * `users_oidc_subject_guard` trigger keeps a set subject fixed. Asserted
+ * positively (exactly those two columns, nothing more), so a future migration
+ * widening `bms_auth`'s UPDATE columns — which would let it rewrite `role` /
+ * `email` / `organization_id` on any user row fleet-wide — fails here.
  */
-export async function assertAuthCanUpdateOnlyLastLogin(pool: pg.Pool): Promise<void> {
-  const { rows } = await pool.query<{ column_name: string }>(
-    `select column_name from information_schema.column_privileges
-      where grantee = 'bms_auth' and table_schema = 'bms'
-        and table_name = 'users' and privilege_type = 'UPDATE'
-      order by column_name`,
-  );
-  expect(rows.map((r) => r.column_name)).toEqual(["last_login_at"]);
+export async function assertAuthCanUpdateOnlyLastLoginAndSubject(pool: pg.Pool): Promise<void> {
+  expect(await userColumns(pool, "bms_auth", "UPDATE")).toEqual(["last_login_at", "oidc_subject"]);
 }
 
 /**
@@ -415,6 +495,18 @@ async function selectableColumns(pool: pg.Pool, role: string): Promise<string[]>
         and table_name = 'users' and privilege_type = 'SELECT'
       order by column_name`,
     [role],
+  );
+  return rows.map((r) => r.column_name);
+}
+
+/** Column grants of one privilege held by `role` on `bms.users`, sorted. */
+async function userColumns(pool: pg.Pool, role: string, privilege: "INSERT" | "UPDATE"): Promise<string[]> {
+  const { rows } = await pool.query<{ column_name: string }>(
+    `select column_name from information_schema.column_privileges
+      where grantee = $1 and table_schema = 'bms'
+        and table_name = 'users' and privilege_type = $2
+      order by column_name`,
+    [role, privilege],
   );
   return rows.map((r) => r.column_name);
 }

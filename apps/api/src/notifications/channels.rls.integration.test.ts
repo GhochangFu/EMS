@@ -14,6 +14,7 @@ import {
   assertNullOrgUserInsertIsRefusedForTenant,
   assertRuleNotificationsJunctionKeysOnRuleOrg,
   assertTenantCannotCreateNullOrgChannel,
+  assertTenantInsertCarryingAHashIsRefused,
 } from "./channels.rls.integration.spec";
 
 /**
@@ -56,9 +57,13 @@ const TENANT_CREATED_CODE = `E71B-NCHTC-${RUN}`;
 // E7.1c — the positive-control code for an org-scoped insert on the tenant
 // pool. Self-cleaning inside the same transaction as its own assertion.
 const TENANT_ORG_SCOPED_CODE = `E71C-NCHOS-${RUN}`;
-// E7.1c — the NULL-org bms.users probe email. Never lands (0039:106 revokes
-// the grant), so there is nothing to clean up.
+// E7.1c — the NULL-org bms.users probe email. Never lands (0048's
+// tenant_isolation WITH CHECK refuses it since 0098 gave bms_tenant a column
+// INSERT), so there is nothing to clean up.
 const NULL_ORG_USER_EMAIL = `e71c-null-org-user-${RUN}@bms.local`;
+// F3.78 — the hash-carrying bms.users probe email. Never lands (0098's column
+// INSERT grant leaves out password_hash).
+const HASH_USER_EMAIL = `f378-hash-user-${RUN}@bms.local`;
 
 describe.skipIf(!connectionString)("E7.1b — notification channel + junction isolation under real RLS", () => {
   let ownerPool: pg.Pool;
@@ -168,11 +173,12 @@ describe.skipIf(!connectionString)("E7.1b — notification channel + junction is
       await ownerPool.query("DELETE FROM bms.notification_channels WHERE code = $1", [
         TENANT_ORG_SCOPED_CODE,
       ]);
-      // No defensive cleanup for NULL_ORG_USER_EMAIL: 0039:106 revokes INSERT
-      // *and* DELETE on bms.users from both bms_tenant and bms_fleet, so
-      // `ownerPool` here (the fleet/BYPASSRLS connection this gate hands back
-      // by default) could not run the delete even if the insert ever landed.
-      // That the row can never be inserted is exactly what the assertion pins.
+      // No defensive cleanup for NULL_ORG_USER_EMAIL or HASH_USER_EMAIL:
+      // 0039:106 revokes DELETE on bms.users from both bms_tenant and bms_fleet
+      // (0098 does not give it back), so `ownerPool` here (the fleet/BYPASSRLS
+      // connection this gate hands back by default) could not run the delete
+      // even if an insert ever landed. That neither row can be inserted is
+      // exactly what the two assertions pin.
     }
     await Promise.all([ownerPool, tenantPool].filter(Boolean).map((p) => p.end()));
   });
@@ -206,7 +212,11 @@ describe.skipIf(!connectionString)("E7.1b — notification channel + junction is
     await assertNullOrgDeliveryIsRefusedForEveryRole(tenantDb, fleetDb, ruleOrgId, channelId);
   });
 
-  it("refuses a NULL-org bms.users insert for bms_tenant (the grant, not the policy)", async () => {
+  it("refuses a NULL-org bms.users insert for bms_tenant (the 0048 policy, since 0098 grants the columns)", async () => {
     await assertNullOrgUserInsertIsRefusedForTenant(tenantDb, ruleOrgId, NULL_ORG_USER_EMAIL);
+  });
+
+  it("refuses bms_tenant a bms.users insert carrying password_hash (the 0098 grant)", async () => {
+    await assertTenantInsertCarryingAHashIsRefused(tenantDb, ruleOrgId, HASH_USER_EMAIL);
   });
 });

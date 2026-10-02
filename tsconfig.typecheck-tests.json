@@ -186,6 +186,8 @@
     "tests/f3.74-breaker-table-widget-type.test.ts",
     "tests/f3.74-site-layout-v4-upgrade.integration.test.ts",
     "tests/f3.74-breaker-demo-seed.integration.test.ts",
-    "tests/f3.74-sim-breaker-trip.test.ts"
+    "tests/f3.74-sim-breaker-trip.test.ts",
+    "tests/f3.78-user-administration-schema.test.ts",
+    "tests/f3.78-user-administration-schema.integration.test.ts"
   ]
 }

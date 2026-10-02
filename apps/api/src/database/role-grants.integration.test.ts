@@ -3,16 +3,19 @@ import { afterAll, beforeAll, describe, it } from "vitest";
 
 import {
   assertAuthCanReadPasswordHash,
-  assertAuthCanUpdateOnlyLastLogin,
+  assertAuthCanUpdateOnlyLastLoginAndSubject,
   assertAuthReachesOnlyIdentityTables,
   assertFleetCanInsertARankedPointKey,
   assertOwnerCanInsertARankedPointKey,
   assertSuperuserCanInsertARankedPointKey,
+  assertTenantAndFleetCannotUpdateEmailOrSubject,
+  assertTenantAndFleetHoldTheColumnInsert,
   assertTenantCanInsertAnUnrankedPointKey,
   assertTenantIsRefusedARankedPointKey,
   assertFleetCannotReadPasswordHash,
   assertFleetIsDeniedPasswordHashAtRuntime,
-  assertNoRoleCanInsertOrDeleteUsers,
+  assertNoPoolRoleHoldsDeleteOrTableInsertOnUsers,
+  assertNoPoolRoleReachesPasswordHashByInsertOrUpdate,
   assertRolesExist,
   assertTenantCannotEditPointKeys,
   assertTenantCannotReadPasswordHash,
@@ -82,16 +85,28 @@ describe.skipIf(!connectionString)("F4.16 — role grant matrix", () => {
     await assertAuthCanReadPasswordHash(pool as pg.Pool);
   });
 
-  it("lets no pool role insert or delete a bms.users row", async () => {
-    await assertNoRoleCanInsertOrDeleteUsers(pool as pg.Pool);
+  it("gives no pool role DELETE or a table-level INSERT on bms.users", async () => {
+    await assertNoPoolRoleHoldsDeleteOrTableInsertOnUsers(pool as pg.Pool);
+  });
+
+  it("lets no pool role reach password_hash by INSERT or UPDATE (F3.78, ADR 0089 decision 7)", async () => {
+    await assertNoPoolRoleReachesPasswordHashByInsertOrUpdate(pool as pg.Pool);
+  });
+
+  it("gives bms_tenant and bms_fleet the column INSERT on exactly the seven non-secret columns (F3.78)", async () => {
+    await assertTenantAndFleetHoldTheColumnInsert(pool as pg.Pool);
+  });
+
+  it("refuses bms_tenant and bms_fleet an UPDATE of email or oidc_subject (F3.78, ADR 0089 decision 4)", async () => {
+    await assertTenantAndFleetCannotUpdateEmailOrSubject(pool as pg.Pool);
   });
 
   it("grants bms_auth nothing beyond the four identity tables", async () => {
     await assertAuthReachesOnlyIdentityTables(pool as pg.Pool);
   });
 
-  it("lets bms_auth update only last_login_at on bms.users (auth_bootstrap_write containment)", async () => {
-    await assertAuthCanUpdateOnlyLastLogin(pool as pg.Pool);
+  it("lets bms_auth update only last_login_at and oidc_subject on bms.users (auth_bootstrap_write containment)", async () => {
+    await assertAuthCanUpdateOnlyLastLoginAndSubject(pool as pg.Pool);
   });
 
   it("lets bms_tenant extend the point-key catalog but not edit it (ADR 0051 A1)", async () => {

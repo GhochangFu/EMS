@@ -261,16 +261,15 @@ export async function assertNullOrgDeliveryIsRefusedForEveryRole(
 
 /**
  * `E7.1c` (ADR 0043 Amendment 5) — the `bms.users` half of Blocker-adjacent
- * ground truth: **this assertion does not depend on `0048` at all.**
- * `0039:106` (`REVOKE INSERT, DELETE ON bms.users FROM bms_tenant, bms_fleet`)
- * already removed `INSERT` from both pool roles, unconditionally, before
- * `E7.1b` even existed. So a `bms_tenant` insert of a NULL-org `bms.users` row
- * is refused **by the grant**, not by `tenant_isolation`'s `WITH CHECK` — the
- * policy never gets a chance to run. This is pinned here anyway because
- * Amendment 5 is what makes `bms.users`' NULL branch `TO bms_fleet`-scoped in
- * `0048`, and a reader of that migration could otherwise assume the grant *and*
- * the policy jointly guard this path; only the grant does. No RETURNING: same
- * reasoning as the channel probe above.
+ * ground truth. Until `F3.78`, `0039:106` removed `INSERT` from both pool
+ * roles and the grant alone refused this probe. `0098` (ADR 0089 decision 7)
+ * gives `bms_tenant` a column `INSERT` without `password_hash`, so the probe
+ * leaves `password_hash` out and the grant no longer fires: the refusal now
+ * comes from `0048`'s `tenant_isolation` `WITH CHECK`, whose NULL branch is
+ * `TO bms_fleet` only (Amendment 5). Row-level security runs before the
+ * `0098` CHECK, so the message names the policy, not the constraint.
+ * `assertTenantInsertCarryingAHashIsRefused` pins the grant half. No
+ * RETURNING: same reasoning as the channel probe above.
  */
 export async function assertNullOrgUserInsertIsRefusedForTenant(
   tenantDb: BmsDb,
@@ -280,12 +279,34 @@ export async function assertNullOrgUserInsertIsRefusedForTenant(
   await expect(
     withTenant(tenantDb, tenantOrgId, (tx) =>
       tx.execute(
-        sql`INSERT INTO bms.users (email, password_hash, display_name, role)
-            VALUES (${email}, 'x', 'E7.1c null-org user probe', 'viewer')`,
+        sql`INSERT INTO bms.users (email, display_name, role)
+            VALUES (${email}, 'E7.1c null-org user probe', 'viewer')`,
       ),
     ),
-    "bms_tenant has no INSERT grant on bms.users at all (0039:106) — this is not a policy check",
-  ).rejects.toThrow(/permission denied/i);
+    "0048's tenant_isolation WITH CHECK refuses a NULL-org row for bms_tenant — the grant admits these columns since 0098",
+  ).rejects.toThrow(/row-level security/i);
+}
+
+/**
+ * `F3.78` / ADR 0089 decision 7 — the grant half. `bms_tenant`'s column
+ * `INSERT` on `bms.users` leaves out `password_hash`, so an insert that names
+ * it is refused by the grant even when the row is in the tenant's own
+ * organization and every policy would admit it.
+ */
+export async function assertTenantInsertCarryingAHashIsRefused(
+  tenantDb: BmsDb,
+  tenantOrgId: string,
+  email: string,
+): Promise<void> {
+  await expect(
+    withTenant(tenantDb, tenantOrgId, (tx) =>
+      tx.execute(
+        sql`INSERT INTO bms.users (email, password_hash, display_name, role, organization_id)
+            VALUES (${email}, 'x', 'F3.78 hash-carrying user probe', 'viewer', ${tenantOrgId})`,
+      ),
+    ),
+    "0098's column INSERT grant leaves out password_hash",
+  ).rejects.toThrow(/permission denied for table users/i);
 }
 
 /**
