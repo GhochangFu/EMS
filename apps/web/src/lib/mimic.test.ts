@@ -33,7 +33,10 @@ import {
   silentNodeIsNone,
   unassignedWinsOverAlarm,
   viewHoldsEachAssetOnce,
+  viewAssetsCarryTheirStatePoints,
+  viewHoldsEveryFanOutMember,
   viewHoldsOnlyAssignedAssets,
+  viewLeavesTheDtoPointsAlone,
 } from "./mimic.spec";
 
 /** Vitest entry point — assertions live in the sibling `.spec` (ADR 0014). */
@@ -46,6 +49,15 @@ describe("F3.32 U4 — the plant mimic's pure half", () => {
   });
   it("M1c no widget entry is no view", () => {
     noWidgetIsNoView();
+  });
+  it("M1d every fan-out member's asset is in the view, once each", () => {
+    viewHoldsEveryFanOutMember();
+  });
+  it("M1e each view asset carries its state points after its headline points", () => {
+    viewAssetsCarryTheirStatePoints();
+  });
+  it("M1f the view never writes into the DTO's points", () => {
+    viewLeavesTheDtoPointsAlone();
   });
   it("M2a an unassigned node is unassigned even with alarms", () => {
     unassignedWinsOverAlarm();

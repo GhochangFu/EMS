@@ -1,4 +1,4 @@
-import type { MimicNodeDto } from "@bms/shared";
+import type { MimicNodeDto, PointKeyStateMapDto } from "@bms/shared";
 
 import type { SiteLiveReadings } from "../../hooks/use-site-live-readings";
 import type { MimicGeometry } from "../../lib/mimic-geometry";
@@ -14,6 +14,10 @@ type MimicWidgetProps = {
   /** The resolved nodes, by key. A roled unit with no entry here draws as "Not assigned". */
   nodes: readonly MimicNodeDto[];
   readings: SiteLiveReadings;
+  /** `F3.74` — the read's state maps; none where there is no read (`DashboardWidget`). */
+  stateMaps?: readonly PointKeyStateMapDto[];
+  /** `F3.74` OQ9 — a preset config's `compact`. */
+  compact?: boolean;
 };
 
 /**
@@ -43,12 +47,19 @@ export const NO_LIVE_READINGS: SiteLiveReadings = {
  * it adds no height of its own: the tile is as tall as the canvas's minimum height (the aspect
  * height, or the wall's cap) or its builder cell, and the `meet` drawing letterboxes inside it.
  */
-export function MimicWidget({ title, status, geometry, nodes, readings }: MimicWidgetProps) {
+export function MimicWidget({ title, status, geometry, nodes, readings, stateMaps, compact }: MimicWidgetProps) {
   return (
     <WidgetFrame title={title} status={status}>
       <div className="relative min-h-0 flex-1">
         <div className="absolute inset-0">
-          <MimicScene title={title} geometry={geometry} nodes={nodes} readings={readings} />
+          <MimicScene
+            title={title}
+            geometry={geometry}
+            nodes={nodes}
+            readings={readings}
+            stateMaps={stateMaps}
+            compact={compact}
+          />
         </div>
       </div>
     </WidgetFrame>

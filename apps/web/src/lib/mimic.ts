@@ -520,6 +520,11 @@ export function mimicCalloutText(message: string, max = MIMIC_CALLOUT_CHARS): st
  * The synthetic view `useSiteLiveReadings` reads: the widget's assigned assets, each once, in
  * node order. An unassigned node holds no asset and so is never tracked; no widget entry is no
  * view (the hook then tracks nothing and clamps nothing).
+ *
+ * `F3.74` plan D6 — every fan-out member's asset is in the view too (a member left out would have
+ * no last-seen instant and read OFFLINE), and each asset's `points` carry its state points after
+ * its headline points, once per key, so the socket tracks and seeds them. These are fresh objects:
+ * the DTO's own `points` (the value rows, `mimicNodePoints`) are never touched.
  */
 export function mimicViewFor(
   widget: MimicWidgetNodesDto | undefined,
@@ -528,14 +533,22 @@ export function mimicViewFor(
   if (widget === undefined) {
     return undefined;
   }
-  const seen = new Set<string>();
-  const assets: GeneratedSiteAssetDto[] = [];
+  const byId = new Map<string, GeneratedSiteAssetDto>();
+  const add = (asset: GeneratedSiteAssetDto, statePoints: readonly GeneratedSitePointDto[]): void => {
+    const known = byId.get(asset.id) ?? { ...asset, points: [...asset.points] };
+    const keys = new Set(known.points.map((p) => p.pointKey));
+    const extra = statePoints.filter((p) => !keys.has(p.pointKey));
+    byId.set(asset.id, extra.length === 0 ? known : { ...known, points: [...known.points, ...extra] });
+  };
   for (const node of widget.nodes) {
-    if (node.asset !== null && !seen.has(node.asset.id)) {
-      seen.add(node.asset.id);
-      assets.push(node.asset);
+    if (node.asset !== null) {
+      add(node.asset, node.statePoints);
+    }
+    for (const member of node.members) {
+      add(member.asset, member.statePoints);
     }
   }
+  const assets = [...byId.values()];
   return {
     locationId: widget.widgetId,
     asOf,
