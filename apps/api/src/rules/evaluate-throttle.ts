@@ -32,10 +32,11 @@ export const GLOBAL_ADMIN_THROTTLE_KEY = "fleet:admin";
 /**
  * The bucket a **grantless** caller gets: a `configuration` role holding zero
  * grant rows, keyed by its own **IdP subject** — the token's `sub` claim, which
- * is not a `bms.users.id`. `AccessControlService.resolveDbUser` matches on
- * `users.id` OR `users.email` and never reads `bms.users.oidc_subject`, so
- * under OIDC a provisioned account's row id and that same account's Keycloak
- * `sub` are normally different values. This key is the claim, never the row.
+ * is not a `bms.users.id`. Since `F3.78` (ADR 0089 decision 4)
+ * `AccessControlService.resolveDbUser` matches `bms.users.oidc_subject = sub`
+ * under OIDC (and `users.id = sub` only under local auth), so under OIDC a
+ * provisioned account's row id and that same account's Keycloak `sub` are
+ * different values. This key is the claim, never the row.
  *
  * All three scoped admin roles are `configuration: true` and each has exactly
  * one read-scope source (`access-scope.ts`), so `readableOrganizationIds`

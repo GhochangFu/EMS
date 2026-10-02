@@ -6,7 +6,7 @@ import {
 } from "@nestjs/common";
 import { and, asc, desc, eq, inArray, isNull, lt, or, sql } from "drizzle-orm";
 
-import { alarms, alarmSeverities, assets, auditLog, users } from "@bms/db";
+import { alarms, alarmSeverities, assets, auditLog } from "@bms/db";
 import type { BmsDb } from "@bms/db";
 import type {
   AlarmListItem,
@@ -15,6 +15,7 @@ import type {
   JwtPayload,
 } from "@bms/shared";
 
+import { resolveActorId } from "../auth/identity-resolver";
 import { FLEET_DRIZZLE, TENANT_DRIZZLE } from "../database/database.tokens";
 import { withTenant } from "../database/tenant-context";
 import { withReadScope } from "../database/tenant-read-scope";
@@ -273,12 +274,7 @@ export class AlarmsService {
     if (assetIds && assetIds.length === 0) {
       throw new NotFoundException("Alarm not found or outside your access scope");
     }
-    const [actorRow] = await this.fleetDb
-      .select({ id: users.id })
-      .from(users)
-      .where(or(eq(users.id, actor.sub), eq(users.email, actor.email)))
-      .limit(1);
-    const dbActorId = actorRow?.id ?? null;
+    const dbActorId = await resolveActorId(this.fleetDb, actor);
 
     const organizationId = await this.resolveAlarmOrg(alarmId, assetIds);
 

@@ -6,9 +6,9 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { and, asc, desc, eq, inArray, or, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, sql } from "drizzle-orm";
 
-import { dashboardSections, dashboardTemplates, organizations, users } from "@bms/db";
+import { dashboardSections, dashboardTemplates, organizations } from "@bms/db";
 import type { BmsDb } from "@bms/db";
 // ADR 0049 decision 2 — one declaration of the template lifecycle, shared with
 // `asset-templates.service.ts`. `tests/f3.36-template-lifecycle-single-source.test.ts`
@@ -39,6 +39,7 @@ import type {
 } from "@bms/shared";
 
 import { AccessControlService } from "../../auth/access-control.service";
+import { resolveActorId } from "../../auth/identity-resolver";
 // `F4.108` / ADR 0060 ruling 2 — every parse below reads a `content` column or
 // assembles a DTO out of one, so a failure means a stored row broke its
 // contract. That is a server fault, and it has to say so explicitly or the
@@ -577,12 +578,8 @@ export class DashboardTemplatesService {
    * correctness review.
    */
   async resolveCreatedBy(jwt: JwtPayload): Promise<string | null> {
-    const [row] = await this.fleetDb
-      .select({ id: users.id })
-      .from(users)
-      .where(or(eq(users.id, jwt.sub), eq(users.email, jwt.email)))
-      .limit(1);
-    return row?.id ?? null;
+    // F3.78: by subject (or local id), never by email — the shared resolver.
+    return resolveActorId(this.fleetDb, jwt);
   }
 
   async fetchRow(id: string): Promise<TemplateRow> {

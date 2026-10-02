@@ -5,7 +5,7 @@ import {
   Inject,
   Injectable,
 } from "@nestjs/common";
-import { and, eq, inArray, or } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 
 import type { BmsDb } from "@bms/db";
 import {
@@ -14,7 +14,6 @@ import {
   alarmEscalationStepChannels,
   alarmEscalationSteps,
   auditLog,
-  users,
 } from "@bms/db";
 import type {
   EscalationDefaultDto,
@@ -26,6 +25,7 @@ import type {
 } from "@bms/shared";
 
 import { AccessControlService } from "../auth/access-control.service";
+import { resolveActorId } from "../auth/identity-resolver";
 import { FLEET_DRIZZLE, TENANT_DRIZZLE } from "../database/database.tokens";
 import type { BmsTx } from "../database/tenant-context";
 import { withTenant } from "../database/tenant-context";
@@ -561,15 +561,11 @@ export class EscalationProfilesService {
     organizationId: string,
     payload: Record<string, unknown>,
   ): Promise<void> {
-    const [actorRow] = await this.fleetDb
-      .select({ id: users.id })
-      .from(users)
-      .where(or(eq(users.id, actor.sub), eq(users.email, actor.email)))
-      .limit(1);
+    const actorId = await resolveActorId(this.fleetDb, actor);
 
     await this.fleetDb.insert(auditLog).values({
       organizationId,
-      actorId: actorRow?.id ?? null,
+      actorId,
       action,
       entityType,
       entityId,
