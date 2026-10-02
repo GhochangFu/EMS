@@ -156,21 +156,28 @@ export function requireIntegrationDb({
  */
 export function resolveIntegrationRoleUrl(
   connectionString: string,
-  connection: "fleet" | "owner" | "superuser",
+  connection: "fleet" | "owner" | "superuser" | "auth",
   env: Record<string, string | undefined>,
 ): string {
   if (connection === "owner") {
     return connectionString;
   }
   const explicit =
-    connection === "fleet" ? env.DATABASE_URL_FLEET : env.DATABASE_URL_SUPERUSER;
+    connection === "fleet"
+      ? env.DATABASE_URL_FLEET
+      : connection === "auth"
+        ? env.DATABASE_URL_AUTH
+        : env.DATABASE_URL_SUPERUSER;
   if (explicit) {
     return explicit;
   }
+  // `auth` (F3.78): the `bms_auth` dev credential `site-layout-harness.ts` derives too.
   const [role, password] =
     connection === "fleet"
       ? ["bms_fleet", env.BMS_FLEET_PASSWORD ?? "bms_fleet_dev"]
-      : ["bms_app", "bms_app_dev"];
+      : connection === "auth"
+        ? ["bms_auth", "bms_auth_dev"]
+        : ["bms_app", "bms_app_dev"];
   const parsed = new URL(connectionString);
   parsed.username = role;
   parsed.password = password;
