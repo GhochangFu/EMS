@@ -25,6 +25,10 @@ provide.
 | `OIDC_JWKS_URI` | OIDC only | `http://keycloak:8080/realms/bms/protocol/openid-connect/certs` | API-internal URL used to fetch the Keycloak signing keys. |
 | `OIDC_AUDIENCE` | No | unset | Optional audience check for access tokens. |
 | `OIDC_CLIENT_ID` | OIDC only | `bms-web` in compose; no default | The client a token must have been issued to (`azp` claim, F3.78 / ADR 0089 decision 5). A token for any other client of the realm — the `bms-api-admin` service account included — is 401 `Token was not issued to this application`. Unset under OIDC, every token is 401 `OIDC client id is not configured`. |
+| `KEYCLOAK_ADMIN_URL` | For user administration | `http://keycloak:8080` in compose | F3.78 / ADR 0089 decision 5. Base URL of the Keycloak the users API writes through. Must be `https://`, with one exception: `http://keycloak:8080`, the Compose service name. Anything else — `http://localhost:8080` included — leaves user administration unconfigured, with one warning naming the variable. A from-source API reaches the exception through a `keycloak` hosts entry (`docs/runbooks/keycloak-user-administration.md`). |
+| `KEYCLOAK_ADMIN_REALM` | For user administration | `bms` in compose | The realm users are created in. |
+| `KEYCLOAK_ADMIN_CLIENT_ID` | For user administration | `bms-api-admin` in compose | The confidential service-account client (realm file; `keycloak:provision`). |
+| `KEYCLOAK_ADMIN_CLIENT_SECRET` | For user administration | empty — from `.env` | **Secret, equivalent to global admin.** Set per host (`openssl rand -base64 32`); `keycloak-provision` writes it to the client. Empty, the user write routes answer 503 and the reads work. Never logged, returned or put in an error. |
 | `OTEL_SERVICE_NAME` | No | `bms-api` in compose | Service name attached to OpenTelemetry spans and Prometheus default labels. |
 | `OTEL_SDK_DISABLED` | No | unset | Set to `true` to disable API OpenTelemetry SDK startup. |
 | `OTEL_EXPORTER_OTLP_ENDPOINT` | No | unset | Optional OTLP HTTP collector base URL. When unset, tracing instrumentation starts without export. |
@@ -89,7 +93,7 @@ re-login during demos.
 | Variable | Required | Default / compose value | Purpose |
 |----------|----------|-------------------------|---------|
 | `KEYCLOAK_ADMIN` | Yes | `admin` | Local Keycloak admin username. |
-| `KEYCLOAK_ADMIN_PASSWORD` | Yes | `admin` | Local Keycloak admin password. Development only. |
+| `KEYCLOAK_ADMIN_PASSWORD` | Yes | `admin` | Local Keycloak admin password. Development only. The `keycloak-provision` job logs into realm `master` with the same pair. |
 | `KC_HOSTNAME_STRICT` | No | `false` | Allows localhost browser access during development. |
 | `KC_HTTP_ENABLED` | No | `true` | Enables HTTP for local compose development. |
 
