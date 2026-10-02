@@ -1,12 +1,13 @@
 import { randomUUID } from "node:crypto";
 
-import { eq, isNull } from "drizzle-orm";
+import { eq, isNull, sql } from "drizzle-orm";
 import { expect } from "vitest";
 
 import { users } from "@bms/db";
 import type { BmsDb } from "@bms/db";
 
 import { withRollback } from "../testing/with-rollback";
+import { AccessControlService } from "./access-control.service";
 import { linkIdentity, type ResolvedIdentity } from "./identity-resolver";
 
 /**
@@ -85,4 +86,52 @@ export async function assertTheAuthRoleReadsDisabledAt(authDb: BmsDb): Promise<v
     tx.rollback();
   });
   expect(rows).toHaveLength(1);
+}
+
+type DisabledReads = { disabled: boolean; enabled: boolean; enabledVisible: number };
+
+/**
+ * `AccessControlService.isUserDisabled` itself, as `bms_auth` — the handshake
+ * re-read (decision 8) every gateway spec stubs. `bms_auth` holds no
+ * `UPDATE (disabled_at)`, so the superuser sets it inside the transaction and
+ * then drops to `bms_auth` with `SET LOCAL ROLE`; the reads run on that role
+ * and see the uncommitted stamp. `enabledVisible` is the positive control: a
+ * `false` for a row `bms_auth` cannot see would pass vacuously.
+ */
+async function readDisabledAsAuth(superDb: BmsDb): Promise<DisabledReads> {
+  let reads: DisabledReads | undefined;
+  await withRollback(superDb, async (tx) => {
+    const rows = await tx
+      .select({ id: users.id })
+      .from(users)
+      .where(isNull(users.disabledAt))
+      .orderBy(users.createdAt, users.id)
+      .limit(2);
+    const [target, other] = rows;
+    if (!target || !other) {
+      throw new Error("F3.78: fewer than two enabled bms.users rows — run pnpm db:seed on a fresh database");
+    }
+    await tx.update(users).set({ disabledAt: new Date() }).where(eq(users.id, target.id));
+    await tx.execute(sql`SET LOCAL ROLE bms_auth`);
+    const access = new AccessControlService(tx as unknown as BmsDb, tx as unknown as BmsDb);
+    const visible = await tx.select({ id: users.id }).from(users).where(eq(users.id, other.id));
+    reads = {
+      disabled: await access.isUserDisabled(target.id),
+      enabled: await access.isUserDisabled(other.id),
+      enabledVisible: visible.length,
+    };
+    tx.rollback();
+  });
+  if (!reads) throw new Error("F3.78: the disabled_at reads never ran");
+  return reads;
+}
+
+export async function assertIsUserDisabledIsTrueForAStampedRow(superDb: BmsDb): Promise<void> {
+  expect((await readDisabledAsAuth(superDb)).disabled).toBe(true);
+}
+
+export async function assertIsUserDisabledIsFalseForAnEnabledRow(superDb: BmsDb): Promise<void> {
+  const reads = await readDisabledAsAuth(superDb);
+  expect(reads.enabledVisible, "positive control: bms_auth sees the enabled row").toBe(1);
+  expect(reads.enabled).toBe(false);
 }

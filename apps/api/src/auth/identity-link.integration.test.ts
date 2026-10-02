@@ -11,6 +11,8 @@ import {
 } from "../testing/integration-db-gate";
 import {
   assertASecondLinkChangesNothing,
+  assertIsUserDisabledIsFalseForAnEnabledRow,
+  assertIsUserDisabledIsTrueForAStampedRow,
   assertTheAuthRoleReadsDisabledAt,
   assertTheLinkChangesOneRowOnTheAuthRole,
 } from "./identity-link.integration.spec";
@@ -32,6 +34,8 @@ const connectionString = requireIntegrationDb({
 describe.skipIf(!connectionString)("F3.78 — identity link on bms_auth (ADR 0089 decision 4)", () => {
   let pool: pg.Pool;
   let authDb: BmsDb;
+  let superPool: pg.Pool;
+  let superDb: BmsDb;
 
   beforeAll(async () => {
     pool = await openIntegrationPool(
@@ -39,10 +43,16 @@ describe.skipIf(!connectionString)("F3.78 — identity link on bms_auth (ADR 008
       "F3.78",
     );
     authDb = createDb(pool);
+    superPool = await openIntegrationPool(
+      resolveIntegrationRoleUrl(connectionString as string, "superuser", process.env),
+      "F3.78",
+    );
+    superDb = createDb(superPool);
   });
 
   afterAll(async () => {
     await pool?.end();
+    await superPool?.end();
   });
 
   it("the link statement on bms_auth changes one row for a user with a NULL subject", async () => {
@@ -55,5 +65,13 @@ describe.skipIf(!connectionString)("F3.78 — identity link on bms_auth (ADR 008
 
   it("SELECT disabled_at on bms_auth succeeds", async () => {
     await assertTheAuthRoleReadsDisabledAt(authDb);
+  });
+
+  it("isUserDisabled on bms_auth answers true for a row whose disabled_at is set", async () => {
+    await assertIsUserDisabledIsTrueForAStampedRow(superDb);
+  });
+
+  it("isUserDisabled on bms_auth answers false for an enabled row it can see", async () => {
+    await assertIsUserDisabledIsFalseForAnEnabledRow(superDb);
   });
 });
