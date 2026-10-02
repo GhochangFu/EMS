@@ -1,11 +1,18 @@
 import { useId, type ReactNode } from "react";
 
-import { worstDownstreamSwitch, type MimicNodeDto, type PointKeyStateMapDto } from "@bms/shared";
+import {
+  energiseGraph,
+  mimicPipeKey,
+  worstDownstreamSwitch,
+  type MimicNodeDto,
+  type PointKeyStateMapDto,
+} from "@bms/shared";
 
 import type { SiteLiveReadings } from "../../hooks/use-site-live-readings";
 import {
   BREAKER_LOOK_CLASSES,
   BREAKER_PILL,
+  ENERGY_PIPE_CLASSES,
   breakerLook,
   breakerRow,
   fanOutRows,
@@ -108,6 +115,13 @@ const CALLOUT_TEXT_PAD_R = 6;
  * switching unit directly downstream frames as their worst member (`worstDownstreamSwitch`).
  * `compact` hides every value row and callout and keeps the labels, switches and pills.
  *
+ * **Energy is a colour beside the freshness dash (`F3.74` OQ5 rev 2, plan D6).** When the graph
+ * names a source (a preset's `sources`, a layout's `isSource` units) the scene walks it with
+ * `energiseGraph`; every pipe then carries `data-energy` and its energy's stroke
+ * (`ENERGY_PIPE_CLASSES`), and the `F3.32b` dash — still drawn from upstream freshness — takes the
+ * same class, so a de-energised or unknown pipe never animates in accent. A graph with no source
+ * is not walked and draws exactly as before.
+ *
  * **Accessibility.** The SVG is one `role="img"`; its `aria-label` names every unit whose callout
  * is drawn, with the severity label and the full message (`mimicAriaLabel`).
  *
@@ -178,6 +192,8 @@ export function MimicScene({
   const switchStates = new Map(
     [...breakersOf].map(([key, members]) => [key, members.map((m) => toSwitchState(m.state))] as const),
   );
+  // `null` when the graph names no source: no walk, no `data-energy`, the freshness dash alone.
+  const energised = energiseGraph(graph, switchStates);
 
   const renderPassive = (unit: MimicGeometryUnit, transform: string) => {
     const { w } = MIMIC_NODE_SIZE;
@@ -480,21 +496,27 @@ export function MimicScene({
         </text>
       ))}
 
-      {geometry.pipes.map((pipe) => (
-        <g key={`${pipe.from}->${pipe.to}`}>
-          <path
-            data-testid="mimic-pipe"
-            data-pipe-from={pipe.from}
-            data-pipe-to={pipe.to}
-            d={pipe.d}
-            fill="none"
-            strokeWidth={3}
-            markerEnd={`url(#${markerId})`}
-            className="stroke-line-strong"
-          />
-          {flows(pipe.from) ? <FlowDash d={pipe.d} from={pipe.from} /> : null}
-        </g>
-      ))}
+      {geometry.pipes.map((pipe) => {
+        const energy = energised?.pipes.get(mimicPipeKey(pipe.from, pipe.to)) ?? null;
+        const look = energy === null ? null : ENERGY_PIPE_CLASSES[energy];
+        return (
+          <g key={`${pipe.from}->${pipe.to}`}>
+            <path
+              data-testid="mimic-pipe"
+              data-pipe-from={pipe.from}
+              data-pipe-to={pipe.to}
+              data-energy={energy ?? undefined}
+              d={pipe.d}
+              fill="none"
+              strokeWidth={3}
+              strokeDasharray={look?.dashed === true ? "6 4" : undefined}
+              markerEnd={`url(#${markerId})`}
+              className={look?.stroke ?? "stroke-line-strong"}
+            />
+            {flows(pipe.from) ? <FlowDash d={pipe.d} from={pipe.from} className={look?.stroke} /> : null}
+          </g>
+        );
+      })}
 
       {geometry.pumps.map((pump) => (
         <g key={`pump:${pump.from}->${pump.to}`} data-testid="mimic-pump">

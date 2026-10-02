@@ -4,6 +4,15 @@ import { afterEach, describe, it } from "vitest";
 
 import {
   aBreakerGlyphWithNoStatePointsDrawsAsBefore,
+  allClosedEveryFreshPipeAnimatesInAccent,
+  allClosedEveryPipeIsEnergisedAccent,
+  anOpenMainBreakerDashesInGreyAfterIt,
+  anOpenMainBreakerDeEnergisesThePipesAfterIt,
+  anUnsourcedLayoutDrawsAsBefore,
+  anUnsourcedPresetDrawsAsBefore,
+  aSourcedLayoutWithAnOpenBreakerBehavesAsTheSld,
+  aStaleMainBreakerDrawsNoDashAndHintDashesAfterIt,
+  aStaleMainBreakerMakesThePipesAfterItUnknown,
   aClosedBreakerWithACriticalAlarmFramesCritical,
   aClosedFanOutMemberWithACriticalAlarmFramesCritical,
   aStaleBreakerGlyphWithNoStatePointsIsNotOffline,
@@ -101,5 +110,39 @@ describe("F3.74 Task 3.1 — MimicScene breakers", () => {
   });
   it("S12b a stale breaker glyph with no state points is not OFFLINE", () => {
     aStaleBreakerGlyphWithNoStatePointsIsNotOffline();
+  });
+});
+
+describe("F3.74 Task 3.2 — MimicScene energy colour beside the freshness dash", () => {
+  afterEach(() => {
+    cleanup();
+  });
+
+  it("E1a every breaker closed: every pipe is energised in accent", () => {
+    allClosedEveryPipeIsEnergisedAccent();
+  });
+  it("E1b every breaker closed: every fresh pipe animates in accent", () => {
+    allClosedEveryFreshPipeAnimatesInAccent();
+  });
+  it("E2a an open main breaker de-energises the pipes after it", () => {
+    anOpenMainBreakerDeEnergisesThePipesAfterIt();
+  });
+  it("E2b an open main breaker: the dash after it is grey, never accent", () => {
+    anOpenMainBreakerDashesInGreyAfterIt();
+  });
+  it("E3a a stale main breaker makes the pipes after it unknown, dashed, in hint", () => {
+    aStaleMainBreakerMakesThePipesAfterItUnknown();
+  });
+  it("E3b a stale main breaker draws no dash; fresh units after it dash in hint", () => {
+    aStaleMainBreakerDrawsNoDashAndHintDashesAfterIt();
+  });
+  it("E4 an unsourced preset draws as before", () => {
+    anUnsourcedPresetDrawsAsBefore();
+  });
+  it("E5 a sourced layout with an open breaker behaves as the SLD (arm parity)", () => {
+    aSourcedLayoutWithAnOpenBreakerBehavesAsTheSld();
+  });
+  it("E6 an unsourced layout draws as before", () => {
+    anUnsourcedLayoutDrawsAsBefore();
   });
 });

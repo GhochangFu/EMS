@@ -2,6 +2,7 @@ import { MIMIC_FANOUT_MAX } from "@bms/shared/contracts";
 import {
   deriveBreakerState,
   type BreakerState,
+  type Energy,
   type EnergyGraph,
   type GeneratedSiteAssetDto,
   type GeneratedSitePointDto,
@@ -127,6 +128,17 @@ export const BREAKER_LOOK_CLASSES: Readonly<
   neutral: { frame: "stroke-line-strong", ink: "stroke-accent", pill: "fill-ok-ink", dashed: false },
   closed: { frame: "stroke-accent", ink: "stroke-accent", pill: "fill-ok-ink", dashed: false },
   unknown: { frame: "stroke-line-strong", ink: "stroke-ink-muted", pill: "fill-ink-muted", dashed: false },
+};
+
+/**
+ * A pipe's energy → its stroke (OQ5 rev 2, plan D6), ADR 0078 role tokens only: energised accent,
+ * de-energised the plain pipe grey, unknown the hint ink and dashed — never accent. The same class
+ * colours the pipe's `F3.32b` freshness dash on a graph with sources.
+ */
+export const ENERGY_PIPE_CLASSES: Readonly<Record<Energy, { readonly stroke: string; readonly dashed: boolean }>> = {
+  energised: { stroke: "stroke-accent", dashed: false },
+  "de-energised": { stroke: "stroke-line-strong", dashed: false },
+  unknown: { stroke: "stroke-ink-hint", dashed: true },
 };
 
 /** The pill's text per state. */
