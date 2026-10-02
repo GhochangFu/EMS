@@ -4,14 +4,19 @@
 
 Proposed — drafted on 2026-10-02, before any implementation code, as the
 `F3.78` row requires. Eleven gate questions were put to the owner one at a
-time on 2026-10-02; all were ruled, and each ruling is recorded under *Gate
-questions*. It becomes Accepted when the owner approves this written record.
+time on 2026-10-02 and ruled. A security review of the first draft then found
+three critical and four high defects; two of its fixes changed what a ruling
+promised, so the owner ruled two more questions (Q12, Q13). Every ruling is
+recorded under *Gate questions*, and *Review record* lists what the review
+changed. It becomes Accepted when the owner approves this written record.
 
-Implements row `F3.78`. Amends the grant matrix of migration `0039` and the
-`assertNoRoleCanInsertOrDeleteUsers` invariant that pins it (decision 6), and
-narrows one clause of `AGENTS.md` §6 (see *Promotion*). It does not amend
+Implements row `F3.78`. Amends the `bms.users` grant matrix of migration
+`0039` and the `assertNoRoleCanInsertOrDeleteUsers` invariant that pins it
+(decision 7), and changes how `resolveDbUser` matches a token to a row
+(decision 4). It does not amend
 [ADR 0043](./0043-multi-tenant-architecture.md) decision 5: the threat that
-decision closes stays closed by a different grant.
+decision closes stays closed by a different grant. It narrows one clause of
+`AGENTS.md` §6 (see *Promotion*).
 
 The research for this record was read-only at `origin/main` `6008a1d9`.
 
@@ -28,32 +33,48 @@ site with no group.
 
 What constrains the design:
 
-- **Identity is split across two systems.** Keycloak holds the credential;
-  `bms.users` holds the role and the home organization. `resolveDbUser`
-  (`apps/api/src/auth/access-control.service.ts:828`) matches a token to a row
-  by `id = sub` or by `email`, the row's `role` then wins over the token's
-  realm role, and [ADR 0044](./0044-fail-closed-unprovisioned-admin-claim.md)
-  refuses an `admin` claim that matches no row. The web app also replaces the
-  token's role with the database role from `GET /api/v1/auth/me`.
+- **Identity is split across two systems, and they are joined by email.**
+  Keycloak holds the credential; `bms.users` holds the role and the home
+  organization. `resolveDbUser`
+  (`apps/api/src/auth/access-control.service.ts:828-861`) matches
+  `or(id = sub, email = jwt.email)` with `limit(1)` and no order, and the
+  row's `role` then wins over the token's realm role. Seeded rows have random
+  ids, so for every existing user the match is the email.
+  `bms.users.oidc_subject` exists (migration `0010`) and nothing writes it.
+  [ADR 0044](./0044-fail-closed-unprovisioned-admin-claim.md) refuses an
+  `admin` claim that matches no row.
+- **Fourteen services repeat the `sub`-or-email lookup themselves** instead of
+  calling `resolveDbUser` (for example `reports/report-files.service.ts:395`,
+  `reports/report-schedules.service.ts:378`).
+- **`JwtAuthGuard` checks only the token.** The two Socket.IO gateways resolve
+  the user once, in `handleConnection`
+  (`alarms/alarms.gateway.ts:34-45`, `telemetry/telemetry.gateway.ts:38-49`),
+  and then stream to the cached scope. `OIDC_AUDIENCE` is unset in Compose, so
+  any token the realm issues verifies.
 - **No pool role may insert or delete a `bms.users` row.** Migration `0039`
   revokes both from `bms_tenant` and `bms_fleet` (`0039:106`); `bms_auth` holds
   only `SELECT` and `UPDATE (last_login_at)`. The reason is the second half of
   ADR 0043 decision 5's `password_hash` guard: a pool role that can insert can
   write an attacker-chosen hash. `role-grants.integration.spec.ts:80-103`
-  pins it.
+  pins it. No pool role holds `UPDATE (password_hash)`.
 - **`bms.users.password_hash` is `NOT NULL`** and means nothing under OIDC.
-  Only the seed writes it, with `bcrypt` (cost 10).
+  Only the seed writes it, with `bcrypt` (cost 10). `bms.users.role` has no
+  `CHECK`, and the "`NULL` organization only for `admin`" rule was checked once,
+  by the `0046` backfill.
 - **There is no active flag** on `bms.users` or on any grant table.
-- **The realm has one client, the public `bms-web`.** No client can call the
-  Keycloak Admin REST API, the realm has no SMTP server, and the realm file is
-  imported only when realm `bms` does not exist yet
-  (`docs/runbooks/ion-exchange-demo-organization.md:72-76`). Access tokens live
-  28800 s (8 h).
-- **Two grant tables have no row-level security.** `bms.user_location_access`
-  and `bms.user_asset_group_access` carry no policy in any migration, and
-  `bms_tenant` holds full DML on both from the blanket grant. Their reads run
-  on `bms_fleet`, filtered by the caller's own user id. `bms.user_organization_access`
-  has RLS and `FORCE` (`0040`, `0041`).
+- **The realm has one client, the public `bms-web`**, no password policy, no
+  brute-force detection and no SMTP server. Compose publishes Keycloak on
+  `8080` with the master admin `admin`/`admin`, and imports the realm file on
+  the first boot of any host; a changed realm file does not reach a realm that
+  already exists (`docs/runbooks/ion-exchange-demo-organization.md:72-76`).
+  Access tokens live 28800 s (8 h).
+- **Two grant tables have no row-level security.**
+  `bms.user_location_access` and `bms.user_asset_group_access` carry no policy
+  in any migration, and `bms_tenant` holds full DML on both from the blanket
+  grant. `bms.user_organization_access` has RLS and `FORCE` (`0040`, `0041`).
+- **An `organization_admin` writes in every organization it is granted,** not
+  only its home organization: `writableOrganizationIds` returns all its direct
+  `user_organization_access` rows (`access-control.service.ts:163-165`).
 - **Master-data writes already have a shape.** `requireMasterDataUser` admits
   `admin`, `organization_admin` and `location_admin`; `canManageOrganization`
   and `canManageLocation` bound the write; the write runs in `withTenant` with
@@ -71,28 +92,38 @@ Ruled by the owner on 2026-10-02, one at a time:
 2. **Q2 How the API reaches Keycloak.** Options: a service-account client
    over plain `fetch`; the same with `@keycloak/keycloak-admin-client`; the
    master-realm admin login. **Ruled: a service-account client over `fetch`**
-   (decision 4).
+   (decision 5).
 3. **Q3 The first password.** Options: a temporary password typed by the
    admin; a Keycloak email link; both. **Ruled: a temporary password**
-   (decision 5).
+   (decision 6).
 4. **Q4 The `bms.users` insert grant.** Options: a column-level insert that
    leaves out `password_hash`; a `SECURITY DEFINER` function; the full insert.
-   **Ruled: an insert without the hash** (decision 6).
+   **Ruled: an insert without the hash** (decision 7).
 5. **Q5 Removing access.** Options: deactivate with an immediate stop;
-   Keycloak only; delete. **Ruled: deactivate, stop now** (decision 7).
+   Keycloak only; delete. **Ruled: deactivate, stop now** (decision 8).
 6. **Q6 The realm role.** Options: write both; the database only. **Ruled:
-   write both** (decision 8).
+   write both** (decision 9).
 7. **Q7 RLS on the two grant tables.** Options: add it now; app checks only;
-   a separate row. **Ruled: add it now** (decision 9).
+   a separate row. **Ruled: add it now** (decision 10).
 8. **Q8 Local auth mode.** Options: the user screen is read-only; local users
-   too. **Ruled: read-only** (decision 10).
+   too. **Ruled: read-only** (decision 11).
 9. **Q9 The order of the two writes.** Options: Keycloak first with an undo;
    the database first; a repair job. **Ruled: Keycloak first, with an undo**
-   (decision 3).
+   (decision 3). The draft also set `bms.users.id` to the Keycloak id; Q13
+   replaced that with `oidc_subject`.
 10. **Q10 Deleting an asset group.** Options: no delete; delete when unused;
-    an archive flag. **Ruled: no delete in `F3.78`** (decision 12).
+    an archive flag. **Ruled: no delete in `F3.78`** (decision 13).
 11. **Q11 Resetting a forgotten password.** Options: in `F3.78`; a later row.
-    **Ruled: in `F3.78`** (decision 5).
+    **Ruled: in `F3.78`** (decision 6).
+12. **Q12 Open sockets after a deactivation.** Asked after the review showed
+    that the gateways check the user only on connect. Options: close the
+    sockets too; REST at once and sockets at reconnect. **Ruled: close the
+    sockets too** (decision 8).
+13. **Q13 How a row links to its Keycloak account.** Asked after the review
+    showed that the email join lets a failed create, or a changed Keycloak
+    email, inherit another row's role. Options: link by the Keycloak id in
+    `oidc_subject`; keep email matching. **Ruled: link by the Keycloak id**
+    (decision 4).
 
 ## Decision
 
@@ -103,111 +134,184 @@ Ruled by the owner on 2026-10-02, one at a time:
      `password_hash`.
    - `POST /admin/users` — `{ email, displayName, role, organizationId,
      temporaryPassword }`.
-   - `PATCH /admin/users/:id` — `{ displayName?, role? }`. The email is not
-     editable; it is the Keycloak username.
+   - `PATCH /admin/users/:id` — `{ displayName?, role?, organizationId? }`.
+     `organizationId` is required, and only accepted, when the role crosses
+     the `admin` boundary (to `admin` it must be `null`; from `admin` it must
+     name an organization). The email is not editable; it is the Keycloak
+     username.
    - `POST /admin/users/:id/deactivate` and `POST /admin/users/:id/reactivate`.
    - `POST /admin/users/:id/temporary-password` — `{ temporaryPassword }`.
 
    Request and response bodies are Zod schemas in
    `packages/shared/src/contracts/` (ADR 0030). The email is trimmed and
-   lower-cased before every write, and the migration adds a unique index on
-   `lower(email)` beside the existing case-sensitive one.
+   lower-cased before every write.
 
-2. **Who may manage whom.** `admin` manages every user. `organization_admin`
-   manages users whose home organization is one of its own
-   `user_organization_access` organizations, and may give any role except
-   `admin`. Every other role is refused with 403. In addition:
-   - An `admin` user has a `NULL` home organization (ADR 0043 Amendment 4);
-     every other role must name one. Only an `admin` creates, promotes or
-     edits an `admin`.
-   - No caller may change its own role, deactivate itself, or deactivate or
-     demote the last active `admin`.
-   - An `organization_admin` cannot see or touch a user outside its
-     organizations, and the refusal does not name that user (the `F4.64` rule).
+2. **Who may manage whom.** `admin` manages every user. Every role other than
+   `admin` and `organization_admin` is refused with 403. An
+   `organization_admin` may manage a target only when **the target's whole
+   reach is inside the caller's own organizations**: the target's home
+   organization, its `user_organization_access` organizations, and the
+   organizations of its location and asset-group grants. The service checks
+   this on every write — edit, role change, deactivate, reactivate, temporary
+   password, grant add and grant remove — not only on create. In addition:
+   - An `organization_admin` may give any role except `admin`. **Every action
+     on an `admin` target is `admin`-only**, deactivate and temporary password
+     included.
+   - An `admin` row has a `NULL` home organization (ADR 0043 Amendment 4) and
+     every other row names one; the migration adds
+     `CHECK ((role = 'admin') = (organization_id IS NULL))`.
+   - No caller may change its own role or deactivate itself. A demotion or
+     deactivation of an `admin` counts the other active admins and writes in
+     one transaction that takes `SELECT … FOR UPDATE` on the active `admin`
+     rows, so two admins cannot demote each other at once and leave none.
+   - An `organization_admin` cannot see a user outside its scope, and a
+     refusal does not name that user (the `F4.64` rule). The duplicate-email
+     409 on create does tell any caller that an email is taken somewhere; this
+     is accepted, as the owner accepted the same oracle at `F4.141`.
 
-3. **Create writes Keycloak first, then the database, and undoes Keycloak on
-   failure.** The sequence: create the Keycloak user (username and email = the
-   lower-cased email, `enabled`, `emailVerified`), set the temporary password,
-   map the realm role; then, in one `withTenant` transaction (or `bms_fleet`
-   for an `admin` with no home organization), insert the `bms.users` row with
-   **`id` = the Keycloak user id**, so `resolveDbUser` matches on `sub`, and
-   write the audit row. If any step after the Keycloak create fails, the API
-   deletes the new Keycloak user and returns the original error. If that undo
-   also fails, the API logs the Keycloak user id only (no email, no name) and
-   the response says that the Keycloak account remains and must be removed by
-   hand. An email that already exists in either system is a 409 before any
-   write.
+3. **Create writes Keycloak first, then the database, and the Keycloak
+   account stays disabled until the row exists.** The sequence:
+   1. A duplicate check on a pool that sees every row (`bms_fleet`): an email
+      already in `bms.users` (compared lower-case) is a 409 before any write.
+   2. Create the Keycloak user with username and email = the lower-cased
+      email, `emailVerified: true`, **`enabled: false`**. A Keycloak 409 (the
+      email exists in the realm) stops here with a 409 and no undo.
+   3. Read the new id from that response's `Location` header, set the
+      temporary password and map the realm role.
+   4. In one transaction — `withTenant` of the target's home organization, or
+      `bms_fleet` only when both the caller and the target are `admin` — insert
+      the `bms.users` row with `oidc_subject` = the Keycloak id, and write the
+      audit row.
+   5. After the commit, set the Keycloak user `enabled: true`.
+
+   If step 3 or 4 fails, the API deletes **only the id parsed in step 3** —
+   never a user looked up by username or email — and returns the original
+   error. If that undo also fails, the account is still disabled, the API logs
+   the Keycloak id only (no email, no name), and the response says that a
+   disabled Keycloak account remains. If step 5 fails, the row exists and the
+   response says the account must be enabled with *reactivate*.
+
+4. **A row is joined to its Keycloak account by `oidc_subject`.**
+   `resolveDbUser`, and the fourteen services that repeat its lookup (which
+   move onto one shared resolver), match in this order:
+   - Under OIDC: `oidc_subject = sub`. If no row has that subject, and the
+     token's `email_verified` is true, a row with the token's email **and a
+     `NULL` `oidc_subject`** is linked once: `bms_auth` writes
+     `oidc_subject = sub` on it (a new `UPDATE (oidc_subject)` grant, under
+     the existing `auth_bootstrap_write` policy) and the match succeeds. A row
+     that already has a different subject never matches by email.
+   - Under local auth: `id = sub`, as today.
+
+   `bms.users.oidc_subject` gets a unique index. The user screen refuses to
+   change a row with no `oidc_subject` yet and says that the user must sign in
+   once first; the seven seeded users link on their next sign-in. The step-3
+   plan also proves that a Keycloak user cannot edit its own email in realm
+   `bms` (or sets the user profile so that it cannot).
 
 ### Keycloak
 
-4. **A confidential service-account client, over plain `fetch`.** The realm
-   gains a client `bms-api-admin`: confidential, `serviceAccountsEnabled`,
-   every browser flow off, and its service account holds only the
-   `realm-management` roles needed to create a user, set a password, map a
-   realm role and enable or disable a user (`manage-users`, `view-users`; the
-   step-3 plan confirms against Keycloak 24 whether reading realm roles also
-   needs `view-realm`). No new package: an `IdentityAdminClient` in `apps/api`
-   gets a client-credentials token, caches it until shortly before expiry, and
-   makes the REST calls. Configuration is a pure `buildConfig(env)`, like
-   `notifications.config.ts`:
-   - `KEYCLOAK_ADMIN_URL` (for example `http://keycloak:8080`),
-     `KEYCLOAK_ADMIN_REALM` (`bms`), `KEYCLOAK_ADMIN_CLIENT_ID`,
-     `KEYCLOAK_ADMIN_CLIENT_SECRET`.
-   - When any of them is unset, the user write routes answer 503 and say that
-     user administration is not configured; the reads still work. The secret
-     is never logged and never returned (§9.6).
-   - The committed realm file carries a development secret for local use
-     only, and a runbook step adds the client to an existing realm, because a
-     changed realm file does not reach a realm that already exists.
+5. **A confidential service-account client, over plain `fetch`, with no
+   secret in the repository.**
+   - The realm gains a client `bms-api-admin`: confidential,
+     `serviceAccountsEnabled`, every browser flow off. Its service account
+     holds only the `realm-management` roles needed to create, enable, disable
+     and delete a user, set a password, map a realm role and end a user's
+     sessions (`manage-users`, `view-users`; the step-3 plan confirms against
+     Keycloak 24 whether reading realm roles also needs `view-realm`).
+   - **The realm file carries no secret for it.** Each host's secret comes from
+     that host's environment: a one-shot provisioning step (a Compose job and a
+     runbook section, for new and existing realms alike) sets the client secret
+     from `KEYCLOAK_ADMIN_CLIENT_SECRET`. A secret in the repository would be
+     live on the first boot of every new host, with Keycloak published on
+     `8080`.
+   - **The client secret is equivalent to global admin**, because
+     `manage-users` can set any realm user's password, the `admin`'s included.
+     It is never logged, never returned, never in an error (§9.6).
+   - An `IdentityAdminClient` in `apps/api` gets a client-credentials token,
+     caches it until shortly before expiry, and makes the REST calls. It never
+     logs a request body or a Keycloak response body, and maps Keycloak errors
+     to a fixed set of reasons rather than echoing `error_description`.
+     Configuration is a pure `buildConfig(env)`, like `notifications.config.ts`:
+     `KEYCLOAK_ADMIN_URL` (`https://`, except the Compose service name
+     `http://keycloak:8080`), `KEYCLOAK_ADMIN_REALM`, `KEYCLOAK_ADMIN_CLIENT_ID`,
+     `KEYCLOAK_ADMIN_CLIENT_SECRET`. When any is unset, the user write routes
+     answer 503 and say that user administration is not configured; the reads
+     still work.
+   - **`JwtAuthGuard` accepts only tokens issued to `bms-web`** (an `azp`
+     check, or `OIDC_AUDIENCE` made required), so the `bms-api-admin`
+     service-account token cannot call the API as a `viewer`.
 
-5. **Passwords are temporary, and the admin sets them.** On create and on
+6. **Passwords are temporary, and the admin sets them.** On create and on
    `temporary-password`, the API sets a Keycloak password credential with
    `temporary: true`, so Keycloak makes the user choose a new password at the
-   next sign-in. No email is sent; the admin passes the password on by another
-   channel. The temporary password is validated for a minimum length in the
-   Zod schema, a Keycloak password-policy refusal is a 400 with Keycloak's
-   reason, and the value is never logged, stored, audited or echoed.
+   next sign-in. `temporary-password` also ends the user's Keycloak sessions.
+   No email is sent; the admin passes the password on by another channel. The
+   realm gains a password policy (a minimum length, at least 12) and
+   brute-force detection, in the realm file and in the provisioning step; the
+   Zod schema applies the same minimum. The value is never logged, stored,
+   audited or echoed.
 
 ### Database
 
-6. **`bms.users` takes an insert that cannot carry a hash.** The migration:
+7. **`bms.users` takes an insert that cannot carry a hash.** The migration:
    - drops `NOT NULL` from `bms.users.password_hash`. A `NULL` hash means the
-     user has no local password, and the local login path refuses such a row
-     before it calls `bcrypt.compare`;
+     user has no local password; the local login path refuses such a row with
+     401 before it calls `bcrypt.compare`, which throws on `NULL`;
    - grants `bms_tenant` and `bms_fleet` a column-level `INSERT (id,
-     organization_id, email, display_name, role, created_at)` on `bms.users`.
-     `password_hash` is left out, so no pool role can write it. `DELETE` stays
-     revoked;
-   - rewrites `assertNoRoleCanInsertOrDeleteUsers` to assert that no pool role
-     holds `DELETE` and that no pool role's `INSERT` reaches `password_hash`,
-     with a positive control that the column-level `INSERT` exists.
+     organization_id, email, display_name, role, oidc_subject, created_at)` on
+     `bms.users`. `password_hash` is left out, so no pool role can write it.
+     `DELETE` stays revoked;
+   - adds the `CHECK` of decision 2, a unique index on `oidc_subject`, and a
+     unique index on `lower(email)`, after a `DO` block that aborts with a
+     clear message if existing rows collide on `lower(email)`;
+   - rewrites `assertNoRoleCanInsertOrDeleteUsers` to assert, from
+     `table_privileges` and `column_privileges`, that no pool role holds
+     `DELETE` or a table-level `INSERT` and that no pool role's `INSERT` or
+     `UPDATE` reaches `password_hash`, with a positive control that the
+     column-level `INSERT` exists.
 
-7. **Deactivation is a column, and it stops a live token at once.**
-   `bms.users` gains `disabled_at timestamptz` (nullable). Deactivate sets
-   `enabled = false` in Keycloak and `disabled_at = now()`; reactivate reverses
-   both. `resolveDbUser` refuses a row with `disabled_at` set with 403, and so
-   does the local login path, so an access token that is still valid stops
-   working on its next request rather than after 8 h. `bms_auth` gains
-   `SELECT (disabled_at)`; `bms_tenant` and `bms_fleet` gain `SELECT` and
-   `UPDATE` on it. No user row is ever deleted.
+   This keeps the hash threat closed. It does not change the older fact that a
+   pool role can already `UPDATE (email, role)`; decision 4's subject link is
+   what stops a changed email from moving an identity.
 
-8. **The database role is the authority, and Keycloak mirrors it.** On create
+8. **Deactivation stops every surface at once.** `bms.users` gains
+   `disabled_at timestamptz` (nullable). Deactivate sets `disabled_at = now()`,
+   disables the Keycloak user and ends its Keycloak sessions; reactivate
+   reverses both. Then:
+   - **`JwtAuthGuard.verifyToken` refuses a disabled user** with 401, after it
+     verifies the token. Every REST route and every socket handshake goes
+     through it, so this covers the services that do not call
+     `resolveDbUser`. The local login path refuses a disabled row too.
+   - **Open sockets close.** Deactivate sends a Postgres `NOTIFY` with the user
+     id. Each API process (`api`, `api-replica`) listens, and disconnects that
+     user's sockets in both gateways.
+   - `bms_auth` gains `SELECT (disabled_at)`; `bms_tenant` and `bms_fleet` gain
+     `SELECT` and `UPDATE` on it. No user row is ever deleted.
+
+9. **The database role is the authority, and Keycloak mirrors it.** On create
    and on each role change, the API sets the user's realm role in Keycloak to
    the one matching `bms.users.role` and removes the other five. A role change
-   writes Keycloak first and the database second, with the same undo rule as
-   decision 3. `resolveDbUser` is not changed: the row still wins.
+   writes Keycloak first and the database second, and undoes the Keycloak
+   mapping if the database write fails.
 
-9. **The two grant tables get row-level security.** In the same migration,
-   `bms.user_location_access` and `bms.user_asset_group_access` get `ENABLE`
-   and `FORCE ROW LEVEL SECURITY` and a `tenant_isolation` policy that follows
-   the parent's organization: the location's for the first, the asset group's
-   for the second. `bms.asset_group_members` already uses this pattern
-   (`0047:223-238`). Grant reads run on `bms_fleet` and do not change. The seed
-   that writes these rows already runs on the superuser connection
-   (`demo-users-seed.ts:22-23,93`, under ADR 0045), so `FORCE` does not bind
-   it; any other fixture that writes them must set `app.current_organization`.
+10. **The two grant tables get row-level security.** In the same migration,
+    `bms.user_location_access` and `bms.user_asset_group_access` get `ENABLE`
+    and `FORCE ROW LEVEL SECURITY` and a `tenant_isolation` policy that follows
+    the parent's organization: the location's for the first, the asset group's
+    for the second. `bms.asset_group_members` already uses this pattern
+    (`0047:223-238`). A grant write runs in `withTenant` of the **target**
+    location's or asset group's organization, not the user's home
+    organization.
+    - Grant reads run on `bms_fleet`, which has `BYPASSRLS`, so they do not
+      change.
+    - `FORCE` binds `bms_owner`. The demo-users seed runs on the superuser
+      connection (`demo-users-seed.ts:22-23,93`), so it is not bound;
+      `cleanupLegacyPheRtuLocations` (`hierarchy-seed.ts:456`) runs on
+      `bms_owner` under `withOrganization(PHEWB)` and works while every legacy
+      slug stays in PHEWB. Any other fixture that writes these tables on a
+      `FORCE`-bound role must set `app.current_organization`.
 
-10. **Local auth mode keeps the user screen read-only.** When
+11. **Local auth mode keeps the user screen read-only.** When
     `resolveAuthMode` returns `local`, the user write routes answer 409 and say
     that user administration needs Keycloak. Grants, groups and members still
     work, because they touch only the database. ADR 0003 already calls local
@@ -215,20 +319,22 @@ Ruled by the owner on 2026-10-02, one at a time:
 
 ### Grants
 
-11. **Routes and rules.** `GET /admin/users/:id/grants`,
+12. **Routes and rules.** `GET /admin/users/:id/grants`,
     `POST /admin/users/:id/grants` — `{ kind: "organization" | "location" |
     "asset_group", targetId }` — and
     `DELETE /admin/users/:id/grants/:kind/:grantId`. A caller manages grants
-    only for a user it may manage (decision 2), and only on targets inside its
-    own scope (`canManageOrganization` for an organization, `canManageLocation`
-    for a location or an asset group's location). A grant to an organization
-    other than the user's home organization is `admin`-only — that is the Ion
-    Exchange multi-organization case `bms.user_organization_access` exists for.
-    A duplicate grant is a 409 from the existing unique constraints.
+    only for a user it may manage (decision 2), only on targets inside its own
+    scope (`canManageOrganization` for an organization, `canManageLocation`
+    for a location or an asset group's location), and a new grant must not
+    take the target's reach outside the caller's organizations. A grant to an
+    organization other than the user's home organization is `admin`-only —
+    that is the Ion Exchange multi-organization case
+    `bms.user_organization_access` exists for. A duplicate grant is a 409 from
+    the existing unique constraints.
 
 ### Asset groups and members
 
-12. **Create and edit, add and remove; no delete.**
+13. **Create and edit, add and remove; no delete.**
     - `POST /admin/asset-groups` — `{ locationId, code, name, description?,
       domain? }`; `PATCH /admin/asset-groups/:id` — `{ name?, description?,
       domain? }`. The code is fixed after create, because the site-layout
@@ -246,7 +352,7 @@ Ruled by the owner on 2026-10-02, one at a time:
 
 ### Audit
 
-13. **Every write emits one audit event in its own transaction.** Actions:
+14. **Every write emits one audit event in its own transaction.** Actions:
     `master.user.create`, `master.user.update`, `master.user.deactivate`,
     `master.user.reactivate`, `master.user.temporary_password.set`,
     `master.user_grant.add`, `master.user_grant.remove`,
@@ -258,24 +364,60 @@ Ruled by the owner on 2026-10-02, one at a time:
 
 ### Web
 
-14. **A "Users and access" master-data area, and an editable groups page.**
+15. **A "Users and access" master-data area, and an editable groups page.**
     A new `masterDataAreas` entry, visible to `admin` and
     `organization_admin`, holds a Users tab (list, create, edit, deactivate,
     reactivate, set a temporary password) and the user's grants. The existing
     `/admin/asset-groups` page gains create and edit for groups and add and
     remove for members, beside `F3.37`'s role picker. In local auth mode the
-    user actions are shown disabled with the reason from decision 10.
+    user actions are shown disabled with the reason from decision 11, and a
+    user with no `oidc_subject` shows why it cannot be changed yet.
 
 ### Design questions for the step-3 plan
 
 - Which Keycloak user fields carry `displayName` (`firstName` only, or a
-  split), and the exact `realm-management` roles (decision 4).
+  split), and the exact `realm-management` roles (decision 5).
 - What happens to a user's grants when its role changes to one that does not
   read that grant table: keep, warn, or remove.
-- How many pull requests, and in which order; the migration and the
-  `IdentityAdminClient` are the natural first unit.
-- Whether the Keycloak integration spec runs against the compose Keycloak in
+- What happens to report schedules and other owned rows of a deactivated user.
+- The per-request cost of decision 8's `disabled_at` read in
+  `JwtAuthGuard`, and whether the fourteen repeated lookups can reuse it.
+- How many pull requests, and in which order; the migration, the shared
+  resolver and the `IdentityAdminClient` are the natural first unit.
+- Whether the Keycloak integration spec runs against the Compose Keycloak in
   CI or skips there, and how a skip is reported.
+
+## Review record
+
+A security review of the first draft (commit `9135d4fb`) changed:
+
+- **C1** — an `organization_admin` could set a temporary password on, or
+  promote, a home-organization user that an `admin` had also granted another
+  organization, and so reach that organization. Fixed by the *whole reach*
+  rule (decisions 2 and 12).
+- **C2** — a create whose database insert failed left an enabled Keycloak
+  account whose email could match another row, including the seeded
+  `admin`, through the email join. Fixed by the disabled-until-commit
+  sequence, a duplicate check on `bms_fleet`, an undo by parsed id only
+  (decision 3), and the subject link (decision 4, Q13).
+- **C3** — a client secret in the committed realm file would be live on every
+  new host. Fixed by per-host provisioning, and the secret is stated to be
+  admin-equivalent (decision 5).
+- **H1** — "stops at once" was false for open sockets and for services that do
+  not call `resolveDbUser`. Fixed in `JwtAuthGuard` plus a `NOTIFY` (decision
+  8, Q12).
+- **H2** — the role rule had no constraint and the edit body could not express
+  it. Fixed by the `CHECK`, the `organizationId` field and admin-only actions
+  on admins (decisions 1, 2 and 7).
+- **H3** and **H4** — existing rows could not be mapped to Keycloak safely, and
+  a self-edited Keycloak email could inherit a row. Fixed by the subject link
+  and the email-edit proof (decision 4).
+- Medium and lower findings: the grant-assertion shape and the `bcrypt` `NULL`
+  case (decision 7), the `BYPASSRLS` reason and the `bms_owner` writer
+  (decision 10), the password policy and the error mapping (decisions 5 and
+  6), the last-admin race (decision 2), the service-account token as a viewer
+  and the `https` rule (decision 5), the `lower(email)` collision check
+  (decision 7), sessions ended on a password reset (decision 6).
 
 ## Promotion
 
@@ -290,25 +432,28 @@ MFA (`F4.13`), SSO federation, self-service sign-up, and identity governance
 ## Dependencies
 
 None. The Keycloak client uses global `fetch`; `bcrypt` and `nodemailer` are
-not touched.
+not touched. The `NOTIFY` listener uses the existing `pg` driver.
 
 ## Consequences
 
 - A new site user no longer needs a developer, and a customer's
-  `organization_admin` can manage its own staff.
-- `apps/api` now holds a credential that can create Keycloak users in realm
-  `bms`. Its blast radius is that realm's users, and the 503 path keeps the
-  API booting without it.
+  `organization_admin` can manage its own staff — but not a user an `admin`
+  has also given access to another organization.
+- `apps/api` now holds a credential equivalent to global admin. It never
+  enters the repository, and the 503 path keeps the API booting without it.
+- The token-to-row join moves from email to the Keycloak subject, which closes
+  the email-inheritance class for every user, not only new ones. Each existing
+  user links on its next sign-in, and until then the user screen cannot change
+  it.
 - The `password_hash` threat stays closed by a column grant instead of a table
-  revoke; the invariant test changes shape, not strength.
-- Deactivation is immediate because every request already resolves the
-  database user; it costs one column read in a query that already runs.
+  revoke, and the invariant test checks columns as well as tables.
+- Deactivation now costs one indexed read per request in `JwtAuthGuard` and a
+  `NOTIFY` listener in each API process.
 - RLS on the two grant tables closes a tenant gap that existed before this
-  row, and every test fixture that writes those tables on a `FORCE`-bound role
-  must now set the organization.
+  row.
 - The user feature is tied to Keycloak. If production moves to another OIDC
-  provider, `IdentityAdminClient` is the one class to replace.
+  provider, `IdentityAdminClient` and the subject link are what change.
 - **Follow-ups owed:** a `chore(agents):` sweep for §6 (*Promotion*), §2's
-  database-roles and auth rows, and the status line; the runbook step for an
-  existing realm (decision 4); the `docs/BACKLOG.md` §5 "User administration"
-  entry closes when this record is accepted.
+  database-roles and auth rows, and the status line; the provisioning runbook
+  (decision 5); the `docs/BACKLOG.md` §5 "User administration" entry closes
+  when this record is accepted.
