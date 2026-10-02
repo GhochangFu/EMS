@@ -2,13 +2,15 @@
 
 ## Status
 
-Proposed — drafted on 2026-10-02, before any implementation code, as the
+Accepted — drafted on 2026-10-02, before any implementation code, as the
 `F3.78` row requires. Eleven gate questions were put to the owner one at a
 time on 2026-10-02 and ruled. A security review of the first draft then found
 three critical and four high defects; two of its fixes changed what a ruling
 promised, so the owner ruled two more questions (Q12, Q13). Every ruling is
-recorded under *Gate questions*, and *Review record* lists what the review
-changed. It becomes Accepted when the owner approves this written record.
+recorded under *Gate questions*, and *Review record* lists what the three
+review passes changed. The owner approved this written record on 2026-10-02,
+on the condition that the review passed; the third pass reported no open
+critical or high defect.
 
 Implements row `F3.78`. Amends the `bms.users` grant matrix of migration
 `0039` and the two invariants that pin it, `assertNoRoleCanInsertOrDeleteUsers`
@@ -181,7 +183,9 @@ Ruled by the owner on 2026-10-02, one at a time:
    4. In one transaction — `withTenant` of the target's home organization, or
       `bms_fleet` only when both the caller and the target are `admin` — insert
       the `bms.users` row with `oidc_subject` = the Keycloak id, and write the
-      audit row.
+      audit row. The `oidc_subject` comes only from step 3 of this request;
+      no route accepts a subject from the request body, because a planted
+      subject would bind a real user's first sign-in to the wrong row.
    5. After the commit, set the Keycloak user `enabled: true`.
 
    If step 3 or 4 fails, the API deletes **only the id parsed in step 3** —
@@ -214,7 +218,9 @@ Ruled by the owner on 2026-10-02, one at a time:
      (`0039:86-87,96-97`), so the link is written only by the sign-in path and
      the create path (decision 7's `INSERT`).
    - A trigger on `bms.users` refuses any update that changes a non-`NULL`
-     `oidc_subject`, unless the session is a superuser. The existing
+     `oidc_subject`, unless `current_user` (not `session_user`) is a
+     superuser, so a superuser session that runs `SET ROLE bms_auth` — as the
+     test suite does — is still bound. The existing
      `auth_bootstrap_write` policy is `USING (true)`, so without the trigger
      `bms_auth` could re-point the `admin` row's subject. A re-link is a
      runbook operation run as the superuser.
@@ -303,9 +309,12 @@ Ruled by the owner on 2026-10-02, one at a time:
      column-level `INSERT` exists.
 
    This keeps the hash threat closed, and with the revoke above no pool role
-   can rewrite either half of the token-to-row join. A pool role can still
-   `UPDATE (role)`, as it can today; the user routes are the only code that
-   does, under decision 2.
+   can rewrite either half of the token-to-row join. It does not make the
+   pool roles harmless: a compromised `bms_fleet` (`BYPASSRLS`) can still
+   create an `admin` through `INSERT`, or promote a linked row through
+   `UPDATE (role, organization_id)` (`0046:55`), exactly as it can today. This
+   record does not close that; the user routes are the only code that writes
+   those columns, under decision 2.
 
 8. **Deactivation stops every surface at once.** `bms.users` gains
    `disabled_at timestamptz` (nullable). Deactivate runs in this order, so a
@@ -330,9 +339,11 @@ Ruled by the owner on 2026-10-02, one at a time:
      on the socket at the handshake (today it stores only `assetIds`). Each API
      process (`api`, `api-replica`) listens for the `NOTIFY` and disconnects
      the sockets with that id in both gateways.
-   - **A deactivated user's report schedules pause.** A schedule whose owner is
-     disabled is skipped with a recorded reason until the owner is reactivated
-     or the schedule is given to another user.
+   - **A deactivated user's report schedules pause.** A schedule whose
+     `created_by` user is disabled is skipped with a recorded reason until that
+     user is reactivated. A schedule with a `NULL` `created_by`
+     (`0078_report_schedules.sql:81`) has no owner to check and is not
+     affected. No reassign route is added here.
    - `bms_auth` gains `SELECT (disabled_at)`; `bms_tenant` and `bms_fleet` gain
      `SELECT` and `UPDATE` on it. No user row is ever deleted.
 
@@ -428,7 +439,8 @@ Ruled by the owner on 2026-10-02, one at a time:
 - What happens to a user's grants when its role changes to one that does not
   read that grant table: keep, warn, or remove.
 - Whether a deactivated user owns rows other than report schedules that
-  should pause too (decision 8).
+  should pause too, and whether a paused schedule needs a reassign route
+  (decision 8).
 - The per-request cost of decision 8's `disabled_at` read in
   `JwtAuthGuard`, and whether the fourteen repeated lookups can reuse it.
 - How many pull requests, and in which order; the migration, the shared
@@ -485,6 +497,12 @@ found eight defects in the new subject link and deactivation path:
 - **N6**, **N7**, **N8** — the socket id, the deactivate order, the unlinked-row
   dependency, the guard's new pool, and an idempotent reactivate (decisions 3
   and 8). Report schedules of a deactivated user are now decided (decision 8).
+
+A third pass (commit `fe460099`) confirmed N1–N8 fixed and found no critical
+or high defect. Its medium and low notes are applied: the residual
+`bms_fleet` exposure is stated (decision 7), a subject comes only from this
+request's Keycloak create (decision 3), the trigger checks `current_user`
+(decision 4), and the schedule pause names its `NULL`-owner case (decision 8).
 
 ## Promotion
 
