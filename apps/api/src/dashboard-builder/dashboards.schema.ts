@@ -560,6 +560,25 @@ const mimicConfigWriteSchema = z.discriminatedUnion("source", [
 ]);
 
 /**
+ * One write arm of a site widget that binds nothing (`F3.73`, plan D13): `points` and `sources` are
+ * capped at zero by the shared cardinality records, and the config is the shared one, `.strict()`.
+ * Still a plain `.strict()` `ZodObject`, so `z.discriminatedUnion` accepts it.
+ */
+const bindsNothingArm = <T extends z.infer<typeof widgetTypeSchema>, C extends z.AnyZodObject>(
+  widgetType: T,
+  config: C,
+) =>
+  z
+    .object({
+      ...widgetIdentityWriteFields,
+      widgetType: z.literal(widgetType),
+      config: config.strict(),
+      points: pointsFieldFor(widgetType),
+      sources: sourcesFieldFor(widgetType),
+    })
+    .strict();
+
+/**
  * The arms, one per widget type (eleven since `F3.73`). Each stays a plain `.strict()` `ZodObject` — never
  * wrapped in its own `.refine()`/`.superRefine()` — because `z.discriminatedUnion` accepts only
  * `ZodObject` arms; the cross-widget grid-fit check lives on the ARRAY field in
@@ -635,52 +654,12 @@ export const widgetWriteSchema = z.discriminatedUnion("widgetType", [
     .strict(),
   // `F3.73` — the five site widgets. Each binds nothing (`{0, 0}` in the shared records), so
   // `points` and `sources` are capped at zero; each config is the shared one, `.strict()`.
-  z
-    .object({
-      ...widgetIdentityWriteFields,
-      widgetType: z.literal("active_alarms_rail"),
-      config: activeAlarmsRailConfigSchema.strict(),
-      points: pointsFieldFor("active_alarms_rail"),
-      sources: sourcesFieldFor("active_alarms_rail"),
-    })
-    .strict(),
-  z
-    .object({
-      ...widgetIdentityWriteFields,
-      widgetType: z.literal("state_legend"),
-      config: stateLegendConfigSchema.strict(),
-      points: pointsFieldFor("state_legend"),
-      sources: sourcesFieldFor("state_legend"),
-    })
-    .strict(),
-  z
-    .object({
-      ...widgetIdentityWriteFields,
-      widgetType: z.literal("asset_class_strip"),
-      config: assetClassStripConfigSchema.strict(),
-      points: pointsFieldFor("asset_class_strip"),
-      sources: sourcesFieldFor("asset_class_strip"),
-    })
-    .strict(),
+  bindsNothingArm("active_alarms_rail", activeAlarmsRailConfigSchema),
+  bindsNothingArm("state_legend", stateLegendConfigSchema),
+  bindsNothingArm("asset_class_strip", assetClassStripConfigSchema),
   // Whether `targetTabKey` names a tab of the request is `tabRulesHold`'s check on the body.
-  z
-    .object({
-      ...widgetIdentityWriteFields,
-      widgetType: z.literal("module_summary_card"),
-      config: moduleSummaryCardConfigSchema.strict(),
-      points: pointsFieldFor("module_summary_card"),
-      sources: sourcesFieldFor("module_summary_card"),
-    })
-    .strict(),
-  z
-    .object({
-      ...widgetIdentityWriteFields,
-      widgetType: z.literal("critical_systems_list"),
-      config: criticalSystemsListConfigSchema.strict(),
-      points: pointsFieldFor("critical_systems_list"),
-      sources: sourcesFieldFor("critical_systems_list"),
-    })
-    .strict(),
+  bindsNothingArm("module_summary_card", moduleSummaryCardConfigSchema),
+  bindsNothingArm("critical_systems_list", criticalSystemsListConfigSchema),
 ]);
 
 const eachWidgetFitsTheGrid = (
