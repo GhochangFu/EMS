@@ -2,7 +2,6 @@ import pg from "pg";
 import { afterAll, beforeAll, describe, it } from "vitest";
 
 import { createDb } from "@bms/db";
-import type { JwtPayload } from "@bms/shared";
 
 import { AccessControlService } from "../../auth/access-control.service";
 import { MasterDataAuditService } from "../master-data-audit.service";
@@ -23,6 +22,7 @@ import {
   updateWithoutMetaKeepsAKeyWrittenAfterTheRead,
   updateWithoutMetaKeepsTheKey,
 } from "./locations.seed-key.integration.spec";
+import { jwtFor, primeSeededSubjects } from "../../testing/seeded-subjects";
 
 /**
  * `F4.170` owner ruling 20 — Vitest entry point. Assertions live in the
@@ -38,7 +38,6 @@ const connectionString = requireIntegrationDb({
 });
 
 const ORGANIZATION_ADMIN_EMAIL = "phe-admin@bms.local";
-const SYNTHETIC_SUB = "00000000-0000-4000-8000-000000000001";
 
 const RUN = Date.now();
 /** Per-run family; every row this suite writes carries it (`code LIKE 'F4170-SK-<run>-%'`). */
@@ -91,10 +90,6 @@ class HookedVocabularies extends VocabulariesService {
   }
 }
 
-function jwtFor(email: string): JwtPayload {
-  return { sub: SYNTHETIC_SUB, email, name: `integration:${email}`, role: "organization_admin" };
-}
-
 describe.skipIf(!connectionString)("F4.170 ruling 20 — meta.seedKey on the location admin write path", () => {
   let fleetPool: pg.Pool;
   let authPool: pg.Pool;
@@ -108,6 +103,8 @@ describe.skipIf(!connectionString)("F4.170 ruling 20 — meta.seedKey on the loc
       process.env.DATABASE_URL_FLEET ?? asRole(url, "bms_fleet", "bms_fleet_dev"),
       "F4.170",
     );
+    // F3.78: jwtFor carries the real bms.users.id as sub (ADR 0089 decision 4).
+    await primeSeededSubjects(fleetPool);
     authPool = await openIntegrationPool(
       process.env.DATABASE_URL_AUTH ?? asRole(url, "bms_auth", "bms_auth_dev"),
       "F4.170",
@@ -143,7 +140,7 @@ describe.skipIf(!connectionString)("F4.170 ruling 20 — meta.seedKey on the loc
       svc,
       fleetPool,
       organizationId: rows[0].id,
-      jwt: jwtFor(ORGANIZATION_ADMIN_EMAIL),
+      jwt: jwtFor(ORGANIZATION_ADMIN_EMAIL, "organization_admin"),
       register: (id) => createdIds.push(id),
       family: FAMILY,
       keyValue: (suffix) => `f4170-api-${RUN}-${suffix.toLowerCase()}`,

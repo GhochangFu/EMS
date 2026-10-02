@@ -33,6 +33,7 @@ import {
 import { DashboardTemplatesInstantiateService } from "./dashboard-templates-instantiate.service";
 import { DashboardTemplatesService } from "./dashboard-templates.service";
 import { STOCK_DASHBOARD_TEMPLATE_CATALOG } from "./stock-catalog";
+import { primeSeededSubjects } from "../../testing/seeded-subjects";
 
 /**
  * `F3.45` — Vitest entry point. Owns the fixture and cleanup.
@@ -178,6 +179,8 @@ describe.skipIf(!connectionString)(
         "F3.45",
       );
       fleetPool = await openIntegrationPool(url, "F3.45");
+      // F3.78: jwtFor carries the real bms.users.id as sub (ADR 0089 decision 4).
+      await primeSeededSubjects(fleetPool);
       fleetDb = createDb(fleetPool);
 
       const org = await ownerPool.query<{ id: string }>(

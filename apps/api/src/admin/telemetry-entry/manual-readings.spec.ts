@@ -8,6 +8,7 @@ import {
   loadFixtures as sharedLoadFixtures,
   type Fixtures,
 } from "./telemetry-write.spec";
+import { jwtFor, primeSeededSubjects } from "../../testing/seeded-subjects";
 
 /**
  * Distinct from `telemetry-write.spec.ts`'s own prefix so this suite's fresh
@@ -46,14 +47,11 @@ export async function runManualReadingsControllerTests(
   controller: ManualReadingsController,
   fx: Fixtures,
 ): Promise<void> {
+  // F3.78: the payloads below carry the real bms.users.id as sub (ADR 0089 decision 4).
+  await primeSeededSubjects(pool);
   // ---- a non-master-data caller is refused (403), nothing written -----------
 
-  const hvacAdminJwt = {
-    sub: "00000000-0000-4000-8000-000000000000",
-    email: "wc-hvac-admin@bms.local",
-    name: "integration:asset-group-admin",
-    role: "asset_group_admin" as const,
-  };
+  const hvacAdminJwt = jwtFor("wc-hvac-admin@bms.local", "asset_group_admin");
   const forbiddenTime = new Date().toISOString();
   let forbiddenRejected = false;
   try {

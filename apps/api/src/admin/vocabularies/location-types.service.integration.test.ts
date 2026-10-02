@@ -36,6 +36,7 @@ import {
   removeFixtures,
 } from "./location-types.service.integration.spec";
 import { LocationTypesVocabularyAdminService } from "./location-types.service";
+import { primeSeededSubjects } from "../../testing/seeded-subjects";
 
 /**
  * `F4.162` (ADR 0077 Amendment 1, plan U2) — Vitest entry point for the
@@ -82,6 +83,8 @@ describe.skipIf(!connectionString)(
         resolveIntegrationRoleUrl(url, "fleet", process.env),
         "F4.162",
       );
+      // F3.78: jwtFor carries the real bms.users.id as sub (ADR 0089 decision 4).
+      await primeSeededSubjects(fleetPool);
       superPool = await openIntegrationPool(
         resolveIntegrationRoleUrl(url, "superuser", process.env),
         "F4.162",

@@ -23,6 +23,7 @@ import {
   type MappingSheetFixtures,
 } from "./mapping-sheet.integration.spec";
 import { MappingSheetService } from "./mapping-sheet.service";
+import { jwtFor, primeSeededSubjects } from "../../testing/seeded-subjects";
 
 /**
  * `F2.7` Unit H — Vitest entry point. Assertions live in the sibling `.spec`
@@ -51,7 +52,6 @@ const connectionString = requireIntegrationDb({
 const GLOBAL_ADMIN_EMAIL = "admin@bms.local";
 const OTHER_LOCATION_ADMIN_EMAIL = "wc-admin@bms.local";
 const ORGANIZATION_ADMIN_EMAIL = "phe-admin@bms.local";
-const SYNTHETIC_SUB = "00000000-0000-4000-8000-000000000007";
 
 // Per-run fixture prefixes (`F4.65`). `afterAll` sweeps with `DELETE ... WHERE
 // code LIKE` on the owner pool, which sees every organization's rows, so a
@@ -89,10 +89,6 @@ const KEYS = {
   temp: `${POINT_KEY_PREFIX}TEMP`,
 } as const;
 
-function jwtFor(email: string, role: JwtPayload["role"]): JwtPayload {
-  return { sub: SYNTHETIC_SUB, email, name: `integration:${email}`, role };
-}
-
 describe.skipIf(!connectionString)("F2.7 — the MAPPINGS sheet: export, preview, commit", () => {
   let ownerPool: pg.Pool;
   let authPool: pg.Pool;
@@ -100,8 +96,8 @@ describe.skipIf(!connectionString)("F2.7 — the MAPPINGS sheet: export, preview
   let fleetPool: pg.Pool;
   let ctx: MappingSheetFixtures;
 
-  const jwt = jwtFor(GLOBAL_ADMIN_EMAIL, "admin");
-  const outOfScope = jwtFor(OTHER_LOCATION_ADMIN_EMAIL, "location_admin");
+  let jwt: JwtPayload;
+  let outOfScope: JwtPayload;
 
   beforeAll(async () => {
     const url = connectionString as string;
@@ -118,6 +114,10 @@ describe.skipIf(!connectionString)("F2.7 — the MAPPINGS sheet: export, preview
       process.env.DATABASE_URL_FLEET ?? asRole(url, "bms_fleet", "bms_fleet_dev"),
       "F2.7",
     );
+    // F3.78: jwtFor carries the real bms.users.id as sub (ADR 0089 decision 4).
+    await primeSeededSubjects(fleetPool);
+    jwt = jwtFor(GLOBAL_ADMIN_EMAIL, "admin");
+    outOfScope = jwtFor(OTHER_LOCATION_ADMIN_EMAIL, "location_admin");
 
     // The organization is resolved through a *user's* grant rather than by
     // organization code, so the fixture follows the seed rather than a literal.

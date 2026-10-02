@@ -22,6 +22,7 @@ import {
   type MetadataFixtures,
 } from "./asset-points.metadata.integration.spec";
 import { AssetPointsAdminService } from "./asset-points.service";
+import { jwtFor, primeSeededSubjects } from "../../testing/seeded-subjects";
 
 /**
  * `F2.7` Unit C — Vitest entry point. Assertions live in the sibling `.spec`
@@ -40,7 +41,6 @@ const connectionString = requireIntegrationDb({
 });
 
 const ORGANIZATION_ADMIN_EMAIL = "phe-admin@bms.local";
-const SYNTHETIC_SUB = "00000000-0000-4000-8000-000000000005";
 
 // Per-run fixture prefixes (`F4.65`). `afterAll` sweeps with `DELETE ... WHERE
 // code LIKE` on the fleet (BYPASSRLS) pool, which sees every organization's
@@ -72,10 +72,6 @@ const KEYS = {
   manual: `${POINT_KEY_PREFIX}MANUAL`,
 } as const;
 
-function jwtFor(email: string, role: JwtPayload["role"]): JwtPayload {
-  return { sub: SYNTHETIC_SUB, email, name: `integration:${email}`, role };
-}
-
 describe.skipIf(!connectionString)("F2.7 — asset-point metadata and RTU wiring", () => {
   let ownerPool: pg.Pool;
   let authPool: pg.Pool;
@@ -83,7 +79,7 @@ describe.skipIf(!connectionString)("F2.7 — asset-point metadata and RTU wiring
   let fleetPool: pg.Pool;
   let ctx: MetadataFixtures;
 
-  const jwt = jwtFor(ORGANIZATION_ADMIN_EMAIL, "organization_admin");
+  let jwt: JwtPayload;
 
   beforeAll(async () => {
     const url = connectionString as string;
@@ -100,6 +96,9 @@ describe.skipIf(!connectionString)("F2.7 — asset-point metadata and RTU wiring
       process.env.DATABASE_URL_FLEET ?? asRole(url, "bms_fleet", "bms_fleet_dev"),
       "F2.7",
     );
+    // F3.78: jwtFor carries the real bms.users.id as sub (ADR 0089 decision 4).
+    await primeSeededSubjects(fleetPool);
+    jwt = jwtFor(ORGANIZATION_ADMIN_EMAIL, "organization_admin");
 
     const org = await ownerPool.query<{ id: string }>(
       `SELECT uoa.organization_id AS id

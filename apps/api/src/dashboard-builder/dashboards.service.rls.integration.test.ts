@@ -44,6 +44,7 @@ import {
   assertTenantBranchIgnoresAnExplicitForeignOrganizationId,
   assertUnauthorizedUpdateWithScopeConflictIs404,
 } from "./dashboards.service.rls.integration.spec";
+import { primeSeededSubjects, rememberSubject } from "../testing/seeded-subjects";
 
 /**
  * `F3.1b` Task 4 — Vitest entry point. Assertions live in the sibling `.spec` (ADR 0014); this
@@ -148,6 +149,8 @@ describe.skipIf(!connectionString)(
         process.env.DATABASE_URL_AUTH ?? asRole(url, "bms_auth", "bms_auth_dev"),
         "F3.1b",
       );
+      // F3.78: jwtFor carries the real bms.users.id as sub (ADR 0089 decision 4).
+      await primeSeededSubjects(authPool);
       fleetDb = createDb(ownerPool);
 
       const eskom = await ownerPool.query<{ id: string }>(
@@ -554,6 +557,7 @@ describe.skipIf(!connectionString)(
         throw new Error("F3.1b: multi-org proof user did not insert");
       }
       multiOrgUserIdForCleanup = multiOrgUserId;
+      rememberSubject(MULTI_ORG_EMAIL, multiOrgUserId);
       await superuserPool.query(
         `INSERT INTO bms.user_organization_access (user_id, organization_id) VALUES ($1, $2), ($1, $3)`,
         [multiOrgUserId, eskomOrgId, phewbOrgId],
@@ -677,6 +681,7 @@ describe.skipIf(!connectionString)(
         throw new Error("F4.161 U4: fixture viewer did not insert");
       }
       f4161ViewerIdForCleanup = f4161ViewerId;
+      rememberSubject(F4161_VIEWER_EMAIL, f4161ViewerId);
 
       await superuserPool.query(
         `INSERT INTO bms.user_organization_access (user_id, organization_id) VALUES ($1, $2)`,
@@ -763,6 +768,7 @@ describe.skipIf(!connectionString)(
         throw new Error("F3.69 N2: multi-org proof user did not insert");
       }
       n2MultiOrgUserIdForCleanup = n2MultiOrgUserId;
+      rememberSubject(N2_MULTI_ORG_EMAIL, n2MultiOrgUserId);
       await superuserPool.query(
         `INSERT INTO bms.user_organization_access (user_id, organization_id) VALUES ($1, $2), ($1, $3)`,
         [n2MultiOrgUserId, eskomOrgId, phewbOrgId],

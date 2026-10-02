@@ -12,6 +12,7 @@ import {
   assertOrganizationAdminStillIsolatedUnderRealRls,
 } from "./access-control-rls.integration.spec";
 import { openIntegrationPool, requireIntegrationDb } from "../testing/integration-db-gate";
+import { primeSeededSubjects } from "../testing/seeded-subjects";
 
 /**
  * `F4.16` — Vitest entry point. Assertions live in the sibling `.spec` (ADR
@@ -53,6 +54,8 @@ describe.skipIf(!connectionString)(
     beforeAll(async () => {
       const url = connectionString as string;
       fleetFixturePool = await openIntegrationPool(url, "F4.16");
+      // F3.78: jwtFor carries the real bms.users.id as sub (ADR 0089 decision 4).
+      await primeSeededSubjects(fleetFixturePool);
       authPool = await openIntegrationPool(
         process.env.DATABASE_URL_AUTH ?? asRole(url, "bms_auth", "bms_auth_dev"),
         "F4.16",

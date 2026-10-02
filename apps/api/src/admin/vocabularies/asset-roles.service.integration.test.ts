@@ -22,6 +22,7 @@ import {
   removeFixtures,
 } from "./asset-roles.service.integration.spec";
 import { AssetRolesAdminService } from "./asset-roles.service";
+import { primeSeededSubjects } from "../../testing/seeded-subjects";
 
 /**
  * `F3.40` (ADR 0051 decision 5) — Vitest entry point for the asset role write
@@ -60,6 +61,8 @@ describe.skipIf(!connectionString)(
 
     beforeAll(async () => {
       pool = await openIntegrationPool(connectionString as string, "F3.40");
+      // F3.78: jwtFor carries the real bms.users.id as sub (ADR 0089 decision 4).
+      await primeSeededSubjects(pool);
       const db = createDb(pool);
       svc = new AssetRolesAdminService(
         db,

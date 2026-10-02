@@ -10,6 +10,7 @@ import {
   type TemplateContentParsed,
 } from "./asset-templates-content.schema";
 import type { AssetTemplatesAdminService } from "./asset-templates.service";
+import { jwtFor, primeSeededSubjects } from "../../testing/seeded-subjects";
 
 /**
  * `F2.1` — the ADR 0015 version lifecycle, against a real database.
@@ -177,6 +178,8 @@ export async function sweepStaleRuns(pool: pg.Pool): Promise<void> {
  * would not be deterministic.
  */
 export async function loadFixtures(pool: pg.Pool): Promise<Fixtures> {
+  // F3.78: the payloads below carry the real bms.users.id as sub (ADR 0089 decision 4).
+  await primeSeededSubjects(pool);
   // `F3.39`: the catalog is fleet-wide, so the two codes no longer come from a
   // GROUP BY on `organization_id`. The `created_at, code` ordering above is
   // unchanged and still load-bearing for exactly the reason stated — it is what
@@ -207,18 +210,8 @@ export async function loadFixtures(pool: pg.Pool): Promise<Fixtures> {
   return {
     organizationId: row.organization_id,
     pointKeys: [row.codes[0], row.codes[1]],
-    adminJwt: {
-      sub: "00000000-0000-4000-8000-000000000000",
-      email: "admin@bms.local",
-      name: "integration:admin",
-      role: "admin",
-    },
-    locationAdminJwt: {
-      sub: "00000000-0000-4000-8000-000000000000",
-      email: "wc-admin@bms.local",
-      name: "integration:location-admin",
-      role: "location_admin",
-    },
+    adminJwt: jwtFor("admin@bms.local", "admin"),
+    locationAdminJwt: jwtFor("wc-admin@bms.local", "location_admin"),
   };
 }
 

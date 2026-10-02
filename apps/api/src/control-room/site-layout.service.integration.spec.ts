@@ -15,6 +15,7 @@ import {
   SITE_LAYOUT_CHOICE_MESSAGES,
 } from "./site-layout.schema";
 import { type SiteViewRowForCopy, SiteLayoutService } from "./site-layout.service";
+import { jwtFor, jwtForUnprovisioned, rememberSubject } from "../testing/seeded-subjects";
 
 /**
  * `F3.73` plan Task 4.2 — `SiteLayoutService` (the site-layout copy action) against real,
@@ -61,11 +62,12 @@ export type SiteLayoutCtx = {
   };
 };
 
-const SYNTHETIC_SUB = "00000000-0000-4000-8000-000000000373";
-
-export function jwtFor(email: string, role: JwtPayload["role"]): JwtPayload {
-  return { sub: SYNTHETIC_SUB, email, name: `integration:${email}`, role };
-}
+/**
+ * `F3.78` — the shared fixture subjects (ADR 0089 decision 4: local auth resolves
+ * `id = sub`). The wrapper primes them in `beforeAll`; a user this file inserts
+ * is recorded with `rememberSubject`. Re-exported for this file's importers.
+ */
+export { jwtFor };
 
 export const admin = (): JwtPayload => jwtFor("admin@bms.local", "admin");
 
@@ -455,6 +457,7 @@ export async function newLocationAdmin(ctx: SiteLayoutCtx, site: string, suffix:
   );
   const id = rows[0]?.id as string;
   ctx.created.users.push(id);
+  rememberSubject(email, id);
   await ctx.superuserPool.query(`INSERT INTO bms.user_location_access (user_id, location_id) VALUES ($1, $2)`, [id, site]);
   return email;
 }
@@ -487,7 +490,7 @@ export async function assertLocationAdminOfAnotherSiteIsForbidden(ctx: SiteLayou
 export async function assertOperatorIsForbidden(ctx: SiteLayoutCtx): Promise<void> {
   const site = await zeroGroupSite(ctx, "s6c");
   const err = await caught(
-    ctx.svc.makeForSite(jwtFor(`f373sl-${ctx.run}-op@bms.local`, "operator"), {
+    ctx.svc.makeForSite(jwtForUnprovisioned(`f373sl-${ctx.run}-op@bms.local`, "operator"), {
       locationId: site,
       templateId: ctx.templateId,
     }),

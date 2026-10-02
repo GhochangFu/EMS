@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import pg from "pg";
 import { afterAll, beforeAll, describe, it } from "vitest";
 
+import type { JwtPayload } from "@bms/shared";
 import { createDb } from "@bms/db";
 import type { BmsDb } from "@bms/db";
 
@@ -36,6 +37,7 @@ import {
   seededCodeStoresItsParams,
   unknownCodeIs400NamingIt,
 } from "./source-params-point-keys.integration.spec";
+import { primeSeededSubjects } from "../testing/seeded-subjects";
 
 /**
  * `E4.2` U3 — Vitest entry point. Assertions live in the sibling `.integration.spec.ts`
@@ -103,7 +105,7 @@ describe.skipIf(!connectionString)("E4.2 U3 — pointKey verified at the binding
   let roleDashboardId: string;
   let keyDashboardId: string;
   let liveDashboardId: string;
-  const actor = jwtFor(SEEDED.globalAdmin, "admin");
+  let actor: JwtPayload;
 
   const makeServices = () => {
     const tenantDb = createDb(tenantPool);
@@ -124,6 +126,9 @@ describe.skipIf(!connectionString)("E4.2 U3 — pointKey verified at the binding
   beforeAll(async () => {
     const url = connectionString as string;
     fleetPool = await openIntegrationPool(url, "E4.2");
+    // F3.78: jwtFor carries the real bms.users.id as sub (ADR 0089 decision 4).
+    await primeSeededSubjects(fleetPool);
+    actor = jwtFor(SEEDED.globalAdmin, "admin");
     superuserPool = await openIntegrationPool(
       resolveIntegrationRoleUrl(url, "superuser", process.env),
       "E4.2",

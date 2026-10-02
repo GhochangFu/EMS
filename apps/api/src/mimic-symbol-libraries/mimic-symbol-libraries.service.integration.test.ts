@@ -20,6 +20,7 @@ import { asRole } from "../testing/role-urls";
 import * as spec from "./mimic-symbol-libraries.service.integration.spec";
 import type { Ctx } from "./mimic-symbol-libraries.service.integration.spec";
 import { MimicSymbolLibrariesService } from "./mimic-symbol-libraries.service";
+import { primeSeededSubjects } from "../testing/seeded-subjects";
 
 /**
  * `F3.32f` slice 3 U2 — Vitest entry point for the organization symbol libraries against a real
@@ -64,6 +65,8 @@ describe.skipIf(!connectionString)("F3.32f — organization symbol libraries aga
       "F3.32f",
     );
     fleetPool = await openIntegrationPool(url, "F3.32f");
+    // F3.78: jwtFor carries the real bms.users.id as sub (ADR 0089 decision 4).
+    await primeSeededSubjects(fleetPool);
     const fleetDb = createDb(fleetPool);
 
     const org = async (code: string): Promise<string> => {

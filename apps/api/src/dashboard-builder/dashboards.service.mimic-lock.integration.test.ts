@@ -17,6 +17,7 @@ import {
 import { asRole } from "../testing/role-urls";
 import { DashboardsService } from "./dashboards.service";
 import { assertSaveWaitsForAConcurrentDeleteThenRefuses } from "./dashboards.service.mimic-lock.integration.spec";
+import { primeSeededSubjects } from "../testing/seeded-subjects";
 
 /**
  * `F3.32c` U7 — Vitest entry point for the widget-save / layout-delete lock. Assertions live in
@@ -50,6 +51,8 @@ describe.skipIf(!connectionString)("F3.32c — a widget save waits for a concurr
   beforeAll(async () => {
     const url = connectionString as string;
     fleetPool = await openIntegrationPool(url, "F3.32c");
+    // F3.78: jwtFor carries the real bms.users.id as sub (ADR 0089 decision 4).
+    await primeSeededSubjects(fleetPool);
     superuserPool = await openIntegrationPool(resolveIntegrationRoleUrl(url, "superuser", process.env), "F3.32c");
     tenantPool = await openIntegrationPool(
       process.env.DATABASE_URL_TENANT ?? asRole(url, "bms_tenant", "bms_tenant_dev"),

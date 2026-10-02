@@ -23,6 +23,7 @@ import {
   assertTheMoveMergesTheAssetMetaBag,
   type TelemetrySourceCtx,
 } from "./rtus.telemetry-source.integration.spec";
+import { jwtFor, primeSeededSubjects } from "../../testing/seeded-subjects";
 
 /**
  * `F4.59` — Vitest entry point. Assertions live in the sibling `.spec`
@@ -42,11 +43,6 @@ const connectionString = requireIntegrationDb({
 });
 
 const ORGANIZATION_ADMIN_EMAIL = "phe-admin@bms.local";
-const SYNTHETIC_SUB = "00000000-0000-4000-8000-000000000004";
-
-function jwtFor(email: string, role: JwtPayload["role"]): JwtPayload {
-  return { sub: SYNTHETIC_SUB, email, name: `integration:${email}`, role };
-}
 
 describe.skipIf(!connectionString)("F4.59 — telemetrySource moves with ingest_enabled", () => {
   let fixturePool: pg.Pool;
@@ -54,7 +50,7 @@ describe.skipIf(!connectionString)("F4.59 — telemetrySource moves with ingest_
   let tenantPool: pg.Pool;
   let ctx: TelemetrySourceCtx;
 
-  const jwt = jwtFor(ORGANIZATION_ADMIN_EMAIL, "organization_admin");
+  let jwt: JwtPayload;
   const createdRtuIds: string[] = [];
   const createdAssetIds: string[] = [];
 
@@ -64,6 +60,9 @@ describe.skipIf(!connectionString)("F4.59 — telemetrySource moves with ingest_
     // (migration 0039) — the fixture rows and the read-back need to see across
     // the tenant policy, and this is the same pool the service reads on.
     fixturePool = await openIntegrationPool(url, "F4.59");
+    // F3.78: jwtFor carries the real bms.users.id as sub (ADR 0089 decision 4).
+    await primeSeededSubjects(fixturePool);
+    jwt = jwtFor(ORGANIZATION_ADMIN_EMAIL, "organization_admin");
     authPool = await openIntegrationPool(
       process.env.DATABASE_URL_AUTH ?? asRole(url, "bms_auth", "bms_auth_dev"),
       "F4.59",

@@ -18,6 +18,7 @@ import type { JwtPayload } from "@bms/shared";
 
 import type { VocabulariesService } from "../../vocabularies/vocabularies.service";
 import type { LocationTypesVocabularyAdminService } from "./location-types.service";
+import { lazyJwtFor } from "../../testing/seeded-subjects";
 
 /**
  * `F4.162` (ADR 0077 Amendment 1, plan U2 I1–I16) — the global-admin write
@@ -43,49 +44,30 @@ export type Ctx = {
 };
 
 /**
- * Seeded logins (`pnpm db:seed`, `AUTH_MODE=local`). The email decides the
- * `bms.users` row (`AccessControlService.resolveDbUser` matches id OR email and
- * no seeded row carries these ids), and each JWT carries a distinct `sub` so
- * that stays true by construction.
+ * Seeded logins (`pnpm db:seed`, `AUTH_MODE=local`). `sub` decides the
+ * `bms.users` row (`F3.78`, ADR 0089 decision 4: local auth resolves
+ * `id = sub`): each JWT carries its seeded row's real id, read by
+ * `primeSeededSubjects` in the wrapper's `beforeAll`. `lazyJwtFor` defers that
+ * lookup to first use, because these payloads are built at import time.
  */
-export const globalAdminJwt: JwtPayload = {
-  sub: "00000000-0000-4000-8000-0000f4162001",
-  email: "admin@bms.local",
-  name: "integration:admin",
-  role: "admin",
-};
+export const globalAdminJwt: JwtPayload = lazyJwtFor("admin@bms.local", "admin");
 
 /**
  * A `location_admin`: `requireMasterDataUser` ADMITS them, so only
  * `isGlobalAdmin` stops them — the gate under test. A `viewer` would be refused
  * one step earlier and prove nothing about it.
  */
-export const locationAdminJwt: JwtPayload = {
-  sub: "00000000-0000-4000-8000-0000f4162002",
-  email: "wc-admin@bms.local",
-  name: "integration:location-admin",
-  role: "location_admin",
-};
+export const locationAdminJwt: JwtPayload = lazyJwtFor("wc-admin@bms.local", "location_admin");
 
 /** An `organization_admin` — the role the step-6 non-global check runs as. */
-export const organizationAdminJwt: JwtPayload = {
-  sub: "00000000-0000-4000-8000-0000f4162003",
-  email: "phe-admin@bms.local",
-  name: "integration:organization-admin",
-  role: "organization_admin",
-};
+export const organizationAdminJwt: JwtPayload = lazyJwtFor("phe-admin@bms.local", "organization_admin");
 
 /**
  * An `asset_group_admin` (seeded `wc-hvac-admin`). `requireMasterDataUser`
  * refuses this role before `isGlobalAdmin` is asked, so I18 names that gate
  * by its message.
  */
-export const assetGroupAdminJwt: JwtPayload = {
-  sub: "00000000-0000-4000-8000-0000f4162004",
-  email: "wc-hvac-admin@bms.local",
-  name: "integration:asset-group-admin",
-  role: "asset_group_admin",
-};
+export const assetGroupAdminJwt: JwtPayload = lazyJwtFor("wc-hvac-admin@bms.local", "asset_group_admin");
 
 /** The seeded codes, in `sort_order` order (migration `0085`: 10, 20, 30, 40). */
 export const SEEDED_CODES = ["smoc_campus", "rsmoc", "csmoc", "pump_station"] as const;

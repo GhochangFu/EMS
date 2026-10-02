@@ -28,6 +28,7 @@ import {
   type CommitKeyVersionFixtures,
   type CommitRlsFixtures,
 } from "./onboarding-commit.service.rls.integration.spec";
+import { jwtFor, primeSeededSubjects } from "../../testing/seeded-subjects";
 
 /**
  * `E7.1b` — Vitest entry point. Assertions live in the sibling `.spec`
@@ -53,7 +54,6 @@ const connectionString = requireIntegrationDb({
 });
 
 const ORGANIZATION_ADMIN_EMAIL = "phe-admin@bms.local";
-const SYNTHETIC_SUB = "00000000-0000-4000-8000-000000000006";
 
 const RUN = Date.now();
 const LOCATION_CODE = `E71B-OB-${RUN}`;
@@ -130,10 +130,6 @@ type DraftCodes = {
   pointKeyCode: string;
   pointKeyUnit: string;
 };
-
-function jwtFor(email: string, role: JwtPayload["role"]): JwtPayload {
-  return { sub: SYNTHETIC_SUB, email, name: `integration:${email}`, role };
-}
 
 function commitReadyDraft(domain: string, codes: DraftCodes): OnboardingDraft {
   return {
@@ -355,7 +351,7 @@ describe.skipIf(!connectionString)("E7.1b — onboarding commit stamps org under
   let keyVerSessionId = "";
   let keyVerCommitted: CommitIds | undefined;
 
-  const jwt = jwtFor(ORGANIZATION_ADMIN_EMAIL, "organization_admin");
+  let jwt: JwtPayload;
 
   beforeAll(async () => {
     const url = connectionString as string;
@@ -372,6 +368,9 @@ describe.skipIf(!connectionString)("E7.1b — onboarding commit stamps org under
       process.env.DATABASE_URL_FLEET ?? asRole(url, "bms_fleet", "bms_fleet_dev"),
       "E7.1b",
     );
+    // F3.78: jwtFor carries the real bms.users.id as sub (ADR 0089 decision 4).
+    await primeSeededSubjects(fleetPool);
+    jwt = jwtFor(ORGANIZATION_ADMIN_EMAIL, "organization_admin");
 
     const org = await ownerPool.query<{ id: string }>(
       `SELECT uoa.organization_id AS id

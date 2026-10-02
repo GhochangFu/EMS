@@ -10,6 +10,7 @@ import type { AlarmDetailsService } from "./alarm-details.service";
 import type { AlarmEnrichmentService } from "./alarm-enrichment.service";
 import { AlarmsController } from "./alarms.controller";
 import type { AlarmsService } from "./alarms.service";
+import { lazyJwtFor } from "../testing/seeded-subjects";
 
 /**
  * `E7.1b` (ADR 0043 decisions 1+3) — the read-path isolation proof
@@ -114,12 +115,7 @@ async function listIds(
   return page.items.map((i) => i.id);
 }
 
-const ACTOR_PAYLOAD: JwtPayload = {
-  sub: "00000000-0000-4000-8000-000000000009",
-  email: "phe-admin@bms.local",
-  name: "F3.28 rls",
-  role: "viewer",
-};
+const ACTOR_PAYLOAD: JwtPayload = lazyJwtFor("phe-admin@bms.local", "viewer");
 
 async function alarmRow(
   pool: pg.Pool,

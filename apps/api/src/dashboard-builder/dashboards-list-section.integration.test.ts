@@ -28,6 +28,7 @@ import {
   assertUnknownSectionAnswersEmpty,
 } from "./dashboards-list-section.integration.spec";
 import { DashboardsService } from "./dashboards.service";
+import { primeSeededSubjects } from "../testing/seeded-subjects";
 
 /**
  * `E4.2` U9 — Vitest entry point. Owns the fixtures and cleanup; the assertions
@@ -110,6 +111,8 @@ describe.skipIf(!connectionString)("E4.2 — GET /dashboards?section=", () => {
       "E4.2",
     );
     fleetPool = await openIntegrationPool(url, "E4.2");
+    // F3.78: jwtFor carries the real bms.users.id as sub (ADR 0089 decision 4).
+    await primeSeededSubjects(fleetPool);
     fleetDb = createDb(fleetPool);
 
     const tenantDb = createDb(tenantPool);

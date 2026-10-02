@@ -6,6 +6,7 @@ import type { JwtPayload } from "@bms/shared";
 
 import { AUDIT_EXPORT_COLUMNS } from "./audit.serialise";
 import type { AuditAdminService } from "./audit.service";
+import { jwtFor, lazyJwtFor, primeSeededSubjects, rememberSubject } from "../../testing/seeded-subjects";
 
 /**
  * `F4.14` — the ADR 0021 audit read API against a real database, widened by
@@ -189,11 +190,17 @@ export async function seedGrantlessOrgAdmin(
   superuserPool: pg.Pool,
   fx: Fixtures,
 ): Promise<void> {
-  await superuserPool.query(
+  const { rows: grantlessRows } = await superuserPool.query<{ id: string }>(
     `INSERT INTO bms.users (organization_id, email, password_hash, display_name, role)
-     VALUES ($1, $2, 'not-a-usable-hash', 'E7.1e grantless org admin', 'organization_admin')`,
+     VALUES ($1, $2, 'not-a-usable-hash', 'E7.1e grantless org admin', 'organization_admin')
+     RETURNING id`,
     [fx.ownOrgId, GRANTLESS_ORG_ADMIN_EMAIL],
   );
+  const grantlessUserId = grantlessRows[0]?.id;
+  if (!grantlessUserId) {
+    throw new Error("E7.1e could not create the grantless organization_admin fixture user");
+  }
+  rememberSubject(GRANTLESS_ORG_ADMIN_EMAIL, grantlessUserId);
 
   // The multi-organization actor, same pool and same reason. Two grants, so
   // `writableOrganizationIds` returns two ids and `inArray` is exercised as
@@ -208,6 +215,7 @@ export async function seedGrantlessOrgAdmin(
   if (!multiOrgUserId) {
     throw new Error("E7.1e could not create the multi-organization fixture user");
   }
+  rememberSubject(MULTI_ORG_ADMIN_EMAIL, multiOrgUserId);
   await superuserPool.query(
     `INSERT INTO bms.user_organization_access (user_id, organization_id)
      VALUES ($1, $2), ($1, $3)`,
@@ -232,6 +240,8 @@ export async function cleanupGrantlessOrgAdmin(superuserPool: pg.Pool): Promise<
 }
 
 export async function loadFixtures(pool: pg.Pool): Promise<Fixtures> {
+  // F3.78: the payloads below carry the real bms.users.id as sub (ADR 0089 decision 4).
+  await primeSeededSubjects(pool);
   const { rows } = await pool.query<{ id: string }>(
     `SELECT id FROM bms.users WHERE email = 'admin@bms.local' LIMIT 1`,
   );
@@ -284,30 +294,12 @@ export async function loadFixtures(pool: pg.Pool): Promise<Fixtures> {
     actorId: actor.id,
     ownOrgId,
     foreignOrgId,
-    orgAdminJwt: {
-      sub: "00000000-0000-4000-8000-000000000000",
-      email: "phe-admin@bms.local",
-      name: "integration:org-admin",
-      role: "organization_admin",
-    },
-    grantlessOrgAdminJwt: {
-      sub: "00000000-0000-4000-8000-000000000000",
-      email: GRANTLESS_ORG_ADMIN_EMAIL,
-      name: "integration:grantless-org-admin",
-      role: "organization_admin",
-    },
-    multiOrgAdminJwt: {
-      sub: "00000000-0000-4000-8000-000000000000",
-      email: MULTI_ORG_ADMIN_EMAIL,
-      name: "integration:multi-org-admin",
-      role: "organization_admin",
-    },
-    assetGroupAdminJwt: {
-      sub: "00000000-0000-4000-8000-000000000000",
-      email: "wc-hvac-admin@bms.local",
-      name: "integration:asset-group-admin",
-      role: "asset_group_admin",
-    },
+    orgAdminJwt: jwtFor("phe-admin@bms.local", "organization_admin"),
+    // F3.78: these two rows are inserted later, by `seedGrantlessOrgAdmin`, which
+    // records each id with `rememberSubject`; `lazyJwtFor` reads it on first use.
+    grantlessOrgAdminJwt: lazyJwtFor(GRANTLESS_ORG_ADMIN_EMAIL, "organization_admin"),
+    multiOrgAdminJwt: lazyJwtFor(MULTI_ORG_ADMIN_EMAIL, "organization_admin"),
+    assetGroupAdminJwt: jwtFor("wc-hvac-admin@bms.local", "asset_group_admin"),
     // Neither the id nor the email matches a `bms.users` row, and the claim is
     // `organization_admin` rather than `admin`, so ADR 0044's refusal does not
     // fire. Only the probe refuses this one.
@@ -317,18 +309,8 @@ export async function loadFixtures(pool: pg.Pool): Promise<Fixtures> {
       name: "integration:unprovisioned-org-admin",
       role: "organization_admin",
     },
-    adminJwt: {
-      sub: "00000000-0000-4000-8000-000000000000",
-      email: "admin@bms.local",
-      name: "integration:admin",
-      role: "admin",
-    },
-    locationAdminJwt: {
-      sub: "00000000-0000-4000-8000-000000000000",
-      email: "wc-admin@bms.local",
-      name: "integration:location-admin",
-      role: "location_admin",
-    },
+    adminJwt: jwtFor("admin@bms.local", "admin"),
+    locationAdminJwt: jwtFor("wc-admin@bms.local", "location_admin"),
     // Neither the id nor the email matches any `bms.users` row, so
     // `resolveDbUser` finds nothing. In OIDC mode this is an ordinary Keycloak
     // principal holding the realm role `admin` that nobody provisioned here.

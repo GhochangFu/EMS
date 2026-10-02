@@ -12,6 +12,7 @@ import {
   updateAssetRoleBodySchema,
 } from "./asset-roles.schema";
 import type { AssetRolesAdminService } from "./asset-roles.service";
+import { lazyJwtFor } from "../../testing/seeded-subjects";
 
 /**
  * `F3.40` / ADR 0051 decision 5 — assertions for the asset role write path.
@@ -32,24 +33,16 @@ import type { AssetRolesAdminService } from "./asset-roles.service";
 /**
  * A global `admin`. Seeded by `pnpm db:seed` (`AUTH_MODE=local`).
  *
- * **THE EMAIL IS THE LOAD-BEARING FIELD, NOT `sub`, and the two JWTs below
- * carry DIFFERENT `sub` values so that stays true by construction.**
- * `AccessControlService.resolveDbUser` matches
- * `or(eq(users.id, jwt.sub), eq(users.email, jwt.email))`, and
- * `packages/db/src/demo-users-seed.ts` gives every seeded login a
- * `defaultRandom()` id — so no `bms.users` row carries a sentinel uuid and the
- * email decides. The first draft gave both fixtures the SAME `sub`, which made
- * the whole 403 assertion rest on that undeclared fact: if `sub` ever won the
- * lookup, the tenant fixture would resolve to the admin row and the refusals
- * would fail as "the gate moved" rather than "the fixture is wrong".
- * `resolveDbUser` has already been re-keyed once, at ADR 0044.
+ * **`sub` is the load-bearing field** (`F3.78`, ADR 0089 decision 4: local
+ * auth resolves `id = sub`). Each JWT carries its seeded row's real id, read by
+ * `primeSeededSubjects` in the wrapper's `beforeAll`; `lazyJwtFor` defers the
+ * lookup because this payload is built at import time. The two JWTs below
+ * therefore carry DIFFERENT `sub` values by construction: if they shared one,
+ * the tenant fixture would resolve to the admin row and the refusals would fail
+ * as "the gate moved" rather than "the fixture is wrong". `resolveDbUser` has
+ * been re-keyed before, at ADR 0044.
  */
-export const globalAdminJwt: JwtPayload = {
-  sub: "00000000-0000-4000-8000-0000f3400001",
-  email: "admin@bms.local",
-  name: "integration:admin",
-  role: "admin",
-};
+export const globalAdminJwt: JwtPayload = lazyJwtFor("admin@bms.local", "admin");
 
 /**
  * A `location_admin`, and the point is that `requireMasterDataUser` ADMITS
@@ -58,12 +51,7 @@ export const globalAdminJwt: JwtPayload = {
  * 5 closes. A `viewer` would be refused one step earlier and prove nothing
  * about this gate.
  */
-export const tenantAdminJwt: JwtPayload = {
-  sub: "00000000-0000-4000-8000-0000f3400002",
-  email: "wc-admin@bms.local",
-  name: "integration:location-admin",
-  role: "location_admin",
-};
+export const tenantAdminJwt: JwtPayload = lazyJwtFor("wc-admin@bms.local", "location_admin");
 
 /**
  * The family every fixture code of this suite belongs to. A constant, and it is

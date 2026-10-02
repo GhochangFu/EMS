@@ -2,7 +2,6 @@ import pg from "pg";
 import { afterAll, beforeAll, describe, it } from "vitest";
 
 import { createDb } from "@bms/db";
-import type { JwtPayload } from "@bms/shared";
 
 import { AccessControlService } from "../../auth/access-control.service";
 import { openIntegrationPool, requireIntegrationDb } from "../../testing/integration-db-gate";
@@ -20,6 +19,7 @@ import {
   assertUpdateLeavesTheDisplayName,
   type TenantAgreementCtx,
 } from "./rtus.tenant-agreement.integration.spec";
+import { jwtFor, primeSeededSubjects } from "../../testing/seeded-subjects";
 
 /**
  * `F4.138` — Vitest entry point. Assertions live in the sibling `.spec`
@@ -37,11 +37,6 @@ const connectionString = requireIntegrationDb({
 });
 
 const ORGANIZATION_ADMIN_EMAIL = "phe-admin@bms.local";
-const SYNTHETIC_SUB = "00000000-0000-4000-8000-000000000004";
-
-function jwtFor(email: string, role: JwtPayload["role"]): JwtPayload {
-  return { sub: SYNTHETIC_SUB, email, name: `integration:${email}`, role };
-}
 
 describe.skipIf(!connectionString)("F4.138 — a drifted RTU is refused under real RLS", () => {
   let fixturePool: pg.Pool;
@@ -58,6 +53,8 @@ describe.skipIf(!connectionString)("F4.138 — a drifted RTU is refused under re
     // (migration 0039): the drift fixture and the read-back need to see across
     // the tenant policy, and this is the pool the service reads on.
     fixturePool = await openIntegrationPool(url, "F4.138");
+    // F3.78: jwtFor carries the real bms.users.id as sub (ADR 0089 decision 4).
+    await primeSeededSubjects(fixturePool);
     authPool = await openIntegrationPool(
       process.env.DATABASE_URL_AUTH ?? asRole(url, "bms_auth", "bms_auth_dev"),
       "F4.138",

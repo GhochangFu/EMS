@@ -22,6 +22,7 @@ import {
   assertWritesAuditRow,
 } from "./asset-groups.service.integration.spec";
 import type { GroupFixtures } from "./asset-groups.service.integration.spec";
+import { jwtFor, primeSeededSubjects } from "../../testing/seeded-subjects";
 
 /**
  * `F3.37` (ADR 0049 decision 5) — Vitest entry point. Assertions live in the
@@ -42,11 +43,6 @@ const connectionString = requireIntegrationDb({
 
 const GLOBAL_ADMIN_EMAIL = "admin@bms.local";
 const LOCATION_ADMIN_EMAIL = "wc-admin@bms.local";
-const SYNTHETIC_SUB = "00000000-0000-4000-8000-000000000037";
-
-function jwtFor(email: string, role: JwtPayload["role"]): JwtPayload {
-  return { sub: SYNTHETIC_SUB, email, name: `integration:${email}`, role };
-}
 
 describe.skipIf(!connectionString)("F3.37 — AssetGroupsAdminService under real RLS", () => {
   let ownerPool: pg.Pool;
@@ -55,8 +51,8 @@ describe.skipIf(!connectionString)("F3.37 — AssetGroupsAdminService under real
   let fleetPool: pg.Pool;
   let ctx: GroupFixtures;
 
-  const adminJwt = jwtFor(GLOBAL_ADMIN_EMAIL, "admin");
-  const scopedJwt = jwtFor(LOCATION_ADMIN_EMAIL, "location_admin");
+  let adminJwt: JwtPayload;
+  let scopedJwt: JwtPayload;
 
   const createdAssetIds: string[] = [];
   const createdGroupIds: string[] = [];
@@ -114,6 +110,10 @@ describe.skipIf(!connectionString)("F3.37 — AssetGroupsAdminService under real
       "F3.37",
       { max: 2 },
     );
+    // F3.78: jwtFor carries the real bms.users.id as sub (ADR 0089 decision 4).
+    await primeSeededSubjects(fleetPool);
+    adminJwt = jwtFor(GLOBAL_ADMIN_EMAIL, "admin");
+    scopedJwt = jwtFor(LOCATION_ADMIN_EMAIL, "location_admin");
 
     // The location-scoped seed user's own location, and one in another
     // organization, so the refusal has something real to refuse.

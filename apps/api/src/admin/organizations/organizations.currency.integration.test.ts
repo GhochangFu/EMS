@@ -2,7 +2,6 @@ import pg from "pg";
 import { afterAll, beforeAll, describe, it } from "vitest";
 
 import { createDb } from "@bms/db";
-import type { JwtPayload } from "@bms/shared";
 
 import { AccessControlService } from "../../auth/access-control.service";
 import { MasterDataAuditService } from "../master-data-audit.service";
@@ -18,6 +17,7 @@ import {
   updateChangesAndAbsentKeeps,
   type CurrencyCtx,
 } from "./organizations.currency.integration.spec";
+import { jwtFor, primeSeededSubjects } from "../../testing/seeded-subjects";
 
 /**
  * `E4.1c` — Vitest entry point. Assertions live in the sibling `.spec`
@@ -43,7 +43,6 @@ const connectionString = requireIntegrationDb({
 });
 
 const GLOBAL_ADMIN_EMAIL = "admin@bms.local";
-const SYNTHETIC_SUB = "00000000-0000-4000-8000-000000000001";
 
 /** Per-run family; every row this suite writes carries it (`code LIKE 'E41C-CUR-<run>-%'`). */
 const FAMILY = `E41C-CUR-${Date.now()}`;
@@ -73,10 +72,6 @@ async function sweepStaleRuns(pool: pg.Pool): Promise<void> {
   }
 }
 
-function jwtFor(email: string): JwtPayload {
-  return { sub: SYNTHETIC_SUB, email, name: `integration:${email}`, role: "admin" };
-}
-
 describe.skipIf(!connectionString)("E4.1c — organizations.currency on the admin write path", () => {
   let fleetPool: pg.Pool;
   let authPool: pg.Pool;
@@ -90,6 +85,8 @@ describe.skipIf(!connectionString)("E4.1c — organizations.currency on the admi
       process.env.DATABASE_URL_FLEET ?? asRole(url, "bms_fleet", "bms_fleet_dev"),
       "E4.1c",
     );
+    // F3.78: jwtFor carries the real bms.users.id as sub (ADR 0089 decision 4).
+    await primeSeededSubjects(fleetPool);
     authPool = await openIntegrationPool(
       process.env.DATABASE_URL_AUTH ?? asRole(url, "bms_auth", "bms_auth_dev"),
       "E4.1c",
@@ -118,7 +115,7 @@ describe.skipIf(!connectionString)("E4.1c — organizations.currency on the admi
     ctx = {
       svc,
       fleetPool,
-      jwt: jwtFor(GLOBAL_ADMIN_EMAIL),
+      jwt: jwtFor(GLOBAL_ADMIN_EMAIL, "admin"),
       register: (id) => createdIds.push(id),
       family: FAMILY,
     };

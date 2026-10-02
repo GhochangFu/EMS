@@ -29,6 +29,7 @@ import {
   assertUpdateWithNullClearsTheRole,
   type AssetsWaterBalanceRoleCtx,
 } from "./assets.water-balance-role.integration.spec";
+import { jwtFor, primeSeededSubjects } from "../../testing/seeded-subjects";
 
 /**
  * `E4.3` U3 — Vitest entry point. Assertions live in the sibling `.spec` (ADR 0014); this file
@@ -44,13 +45,8 @@ const connectionString = requireIntegrationDb({
 });
 
 const ORGANIZATION_ADMIN_EMAIL = "phe-admin@bms.local";
-const SYNTHETIC_SUB = "00000000-0000-4000-8000-000000000005";
 // Review C1 — a per-run retired role; the prefix names its author if it leaks.
 const RETIRED_ROLE = `e43_u3_retired_${Date.now()}`;
-
-function jwtFor(email: string, role: JwtPayload["role"]): JwtPayload {
-  return { sub: SYNTHETIC_SUB, email, name: `integration:${email}`, role };
-}
 
 describe.skipIf(!connectionString)("E4.3 U3 — the water balance role on the asset write path", () => {
   let fixturePool: pg.Pool;
@@ -59,12 +55,15 @@ describe.skipIf(!connectionString)("E4.3 U3 — the water balance role on the as
   let superuserPool: pg.Pool;
   let ctx: AssetsWaterBalanceRoleCtx;
 
-  const jwt = jwtFor(ORGANIZATION_ADMIN_EMAIL, "organization_admin");
+  let jwt: JwtPayload;
   const createdAssetIds: string[] = [];
 
   beforeAll(async () => {
     const url = connectionString as string;
     fixturePool = await openIntegrationPool(url, "E4.3 U3");
+    // F3.78: jwtFor carries the real bms.users.id as sub (ADR 0089 decision 4).
+    await primeSeededSubjects(fixturePool);
+    jwt = jwtFor(ORGANIZATION_ADMIN_EMAIL, "organization_admin");
     superuserPool = await openIntegrationPool(
       resolveIntegrationRoleUrl(url, "superuser", process.env),
       "E4.3 U3",

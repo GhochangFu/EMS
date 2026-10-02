@@ -14,6 +14,7 @@ import {
 } from "./assets.service.integration.spec";
 import { openIntegrationPool, requireIntegrationDb } from "../testing/integration-db-gate";
 import { asRole } from "../testing/role-urls";
+import { primeSeededSubjects } from "../testing/seeded-subjects";
 
 /**
  * `E2.1` follow-up — Vitest entry point. Assertions live in the sibling
@@ -52,6 +53,8 @@ describe.skipIf(!connectionString)("E2.1 follow-up — AssetsService organizatio
       process.env.DATABASE_URL_AUTH ?? asRole(url, "bms_auth", "bms_auth_dev"),
       "F3.31",
     );
+    // F3.78: jwtFor carries the real bms.users.id as sub (ADR 0089 decision 4).
+    await primeSeededSubjects(authPool);
     db = createDb(pool);
     authDb = createDb(authPool);
   });

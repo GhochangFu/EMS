@@ -23,6 +23,7 @@ import {
   type AssetDashboardFixtures,
 } from "./access-control.asset-dashboard.integration.spec";
 import { openIntegrationPool, requireIntegrationDb } from "../testing/integration-db-gate";
+import { primeSeededSubjects } from "../testing/seeded-subjects";
 
 /**
  * `F3.2` Task 4 — Vitest entry point for `canManageDashboard`'s asset arm. Assertions live in
@@ -55,6 +56,8 @@ describe.skipIf(!connectionString)("F3.2 — canManageDashboard's asset arm", ()
 
   beforeAll(async () => {
     const created = await openIntegrationPool(connectionString as string, "F3.2");
+    // F3.78: jwtFor carries the real bms.users.id as sub (ADR 0089 decision 4).
+    await primeSeededSubjects(created);
     pool = created;
     const db = createDb(created);
     svc = new AccessControlService(db, db);

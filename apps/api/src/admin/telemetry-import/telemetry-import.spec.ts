@@ -5,6 +5,7 @@ import * as XLSX from "xlsx";
 import type { JwtPayload } from "@bms/shared";
 
 import type { TelemetryImportService } from "./telemetry-import.service";
+import { jwtFor, jwtForUnprovisioned, primeSeededSubjects } from "../../testing/seeded-subjects";
 
 /** All rows this suite creates carry this asset code prefix. */
 export const TEST_ASSET_PREFIX = "F19-IMPORT-TEST-";
@@ -75,6 +76,8 @@ export async function cleanup(pool: pg.Pool): Promise<void> {
 }
 
 export async function loadFixtures(pool: pg.Pool): Promise<Fixtures> {
+  // F3.78: the payloads below carry the real bms.users.id as sub (ADR 0089 decision 4).
+  await primeSeededSubjects(pool);
   const { rows: grants } = await pool.query<{ organization_id: string; location_id: string }>(
     `SELECT l.organization_id, l.id AS location_id
        FROM bms.users u
@@ -149,27 +152,12 @@ export async function loadFixtures(pool: pg.Pool): Promise<Fixtures> {
   }
 
   return {
-    adminJwt: {
-      sub: "00000000-0000-4000-8000-000000000000",
-      email: "admin@bms.local",
-      name: "integration:admin",
-      role: "admin",
-    },
-    scopedJwt: {
-      sub: "00000000-0000-4000-8000-000000000000",
-      email: "wc-admin@bms.local",
-      name: "integration:location-admin",
-      role: "location_admin",
-    },
+    adminJwt: jwtFor("admin@bms.local", "admin"),
+    scopedJwt: jwtFor("wc-admin@bms.local", "location_admin"),
     // No user row matches this sub/email, so `AccessControlService` falls
     // back to the JWT's own claimed role — a clean role-gate 403 with no
     // dependency on a specific seeded non-master-data account existing.
-    nonMasterDataJwt: {
-      sub: "00000000-0000-4000-8000-0000000000ff",
-      email: "f19-import-test-nobody@bms.local",
-      name: "integration:viewer",
-      role: "viewer",
-    },
+    nonMasterDataJwt: jwtForUnprovisioned("f19-import-test-nobody@bms.local", "viewer"),
     outOfScopeAssetId: foreignRows[0].id,
     outOfScopeAssetCode: foreignRows[0].code,
     freshAssetId,

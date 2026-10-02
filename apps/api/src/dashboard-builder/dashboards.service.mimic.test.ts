@@ -13,6 +13,7 @@ import { openIntegrationPool, requireIntegrationDb } from "../testing/integratio
 import { asRole } from "../testing/role-urls";
 import { DashboardsService } from "./dashboards.service";
 import { assertMimicWidgetSavesAndReadsBackOnAGroupDashboard } from "./dashboards.service.mimic.spec";
+import { primeSeededSubjects } from "../testing/seeded-subjects";
 
 /**
  * `F3.32` U3 — Vitest entry point. Assertions live in the sibling `.spec` (ADR 0014); this file
@@ -53,6 +54,8 @@ describe.skipIf(!connectionString)(
         process.env.DATABASE_URL_AUTH ?? asRole(url, "bms_auth", "bms_auth_dev"),
         "F3.32",
       );
+      // F3.78: jwtFor carries the real bms.users.id as sub (ADR 0089 decision 4).
+      await primeSeededSubjects(authPool);
       fleetDb = createDb(ownerPool);
 
       const eskom = await ownerPool.query<{ id: string }>(

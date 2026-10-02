@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import pg from "pg";
 import { afterAll, beforeAll, describe, it } from "vitest";
 
+import type { JwtPayload } from "@bms/shared";
 import { createDb } from "@bms/db";
 import type { BmsDb } from "@bms/db";
 
@@ -38,6 +39,7 @@ import {
   assertUnknownTabDomainIsRefusedAtPublish,
 } from "./dashboard-templates-site-target.integration.spec";
 import { DashboardTemplatesService } from "./dashboard-templates.service";
+import { primeSeededSubjects } from "../../testing/seeded-subjects";
 
 /**
  * `F3.73` plan Task 2.2 — Vitest entry point. Owns the fixtures and cleanup.
@@ -140,7 +142,7 @@ describe.skipIf(!connectionString)(
       );
       return { templates, instantiate };
     };
-    const admin = jwtFor(SEEDED.globalAdmin, "admin");
+    let admin: JwtPayload;
 
     beforeAll(async () => {
       const url = connectionString as string;
@@ -156,6 +158,9 @@ describe.skipIf(!connectionString)(
         process.env.DATABASE_URL_AUTH ?? asRole(url, "bms_auth", "bms_auth_dev"),
         "F3.73",
       );
+      // F3.78: jwtFor carries the real bms.users.id as sub (ADR 0089 decision 4).
+      await primeSeededSubjects(authPool);
+      admin = jwtFor(SEEDED.globalAdmin, "admin");
       fleetDb = createDb(await openIntegrationPool(url, "F3.73"));
 
       const org = await ownerPool.query<{ id: string }>(

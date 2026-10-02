@@ -19,6 +19,7 @@ import {
   assertScopeFallsThroughToAssetGroupKind,
   assertScopeFallsThroughToLocationGrant,
 } from "./read-scope-stop-rule.integration.spec";
+import { primeSeededSubjects, rememberSubject } from "../testing/seeded-subjects";
 
 /**
  * `F4.161` — Vitest entry point. Assertions live in the sibling `.spec`
@@ -95,6 +96,8 @@ describe.skipIf(!connectionString)("F4.161 — one read-scope source selection",
       process.env.DATABASE_URL_AUTH ?? asRole(url, "bms_auth", "bms_auth_dev"),
       "F4.161",
     );
+    // F3.78: jwtFor carries the real bms.users.id as sub (ADR 0089 decision 4).
+    await primeSeededSubjects(fleetPool);
     superPool = await openIntegrationPool(superuserConnectionString as string, "F4.161");
     fleetDb = createDb(fleetPool);
     svc = new AccessControlService(createDb(authPool), fleetDb);
@@ -176,6 +179,7 @@ describe.skipIf(!connectionString)("F4.161 — one read-scope source selection",
         [actor.email, `F4.161 ${actor.role}`, actor.role, orgEmptyId],
       );
       actor.id = row.rows[0]!.id;
+      rememberSubject(actor.email, actor.id);
     }
 
     const grantOrg = (userId: string, organizationId: string) =>

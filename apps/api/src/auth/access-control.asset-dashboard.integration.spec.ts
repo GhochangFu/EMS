@@ -2,7 +2,7 @@ import { expect } from "vitest";
 import type pg from "pg";
 
 import type { AccessControlService } from "./access-control.service";
-import { jwtFor, SEEDED } from "./access-control.integration.spec";
+import { jwtFor, jwtForUnprovisioned, SEEDED } from "./access-control.integration.spec";
 import { resolveSeededAssetByCode } from "../testing/integration-fixtures";
 
 /**
@@ -413,7 +413,7 @@ export async function assertA8ViewerAndOperatorAreRefusedWithoutThrowing(
   f: AssetDashboardFixtures,
 ): Promise<void> {
   for (const role of ["viewer", "operator"] as const) {
-    const jwt = jwtFor(`f3.2-no-grants-${role}@integration.invalid`, role);
+    const jwt = jwtForUnprovisioned(`f3.2-no-grants-${role}@integration.invalid`, role);
     expect(
       await svc.canManageDashboard(jwt, f.eskomOrgId, assetScope(f.assetInOwnLocationId)),
       `${role} must be refused an asset-scoped dashboard`,
