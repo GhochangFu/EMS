@@ -3,25 +3,27 @@ import { afterEach, describe, it } from "vitest";
 
 import {
   above1024KeepsStoredPlacement,
-  aDesktopMimicGrowsAndPushesTheTileBelow,
-  aDesktopMimicNeverShrinks,
-  aNarrowMimicTakesItsAspectRows,
+  aDesktopMimicGetsItsAspectMinHeight,
+  aNarrowMimicGetsItsAspectMinHeight,
   aRemountedRootIsMeasured,
   aReportedAspectReachesTheTile,
   arrangingCanvasStays72,
+  aTallTileSpansTheTracksBesideIt,
   at1024TilesSpanHalfOrAll,
   at640EveryTileSpansTheGrid,
   aTileRootFillsItsCell,
   belowABreakpointTilesFlowInReadingOrder,
   cleanupCanvas,
+  emptyStoredRowsAddNoTrack,
   installFakeResizeObserver,
-  measured1168PxFollowsTheWidth,
-  measured1650PxGivesTheCap,
-  narrowWidthClampsTo64,
-  noResizeObserverGives72,
+  measured1168PxViewRowsAreAuto,
+  measured1650PxViewRowsAreAuto,
+  noResizeObserverBuilderStays72,
+  noResizeObserverViewRowsAreAuto,
   removeResizeObserver,
   theBuilderAndNoMeasurementKeepStoredPlacement,
   theBuilderKeepsTheMimicRows,
+  theOverviewShapeGivesFourTracks,
 } from "./dashboard-canvas.spec";
 
 /**
@@ -29,24 +31,19 @@ import {
  * the jsdom docblock is here because this is the file Vitest collects
  * (ADR 0042 decision 2).
  */
-describe("F3.73 DashboardCanvas row height", () => {
+describe("F3.77 follow-up DashboardCanvas row tracks", () => {
   afterEach(() => {
     cleanupCanvas();
   });
 
-  it("C1 a measured 1168 px view canvas gets round(columnWidth * 0.75) = 68 px rows", () => {
+  it("V1a a measured 1168 px view canvas sizes its rows to content (auto)", () => {
     installFakeResizeObserver();
-    measured1168PxFollowsTheWidth();
+    measured1168PxViewRowsAreAuto();
   });
 
-  it("C2 a measured 1650 px view canvas gets the 84 px cap", () => {
+  it("V1b a measured 1650 px view canvas sizes its rows to content (auto)", () => {
     installFakeResizeObserver();
-    measured1650PxGivesTheCap();
-  });
-
-  it("C3 a narrow view canvas clamps its rows to 64 px", () => {
-    installFakeResizeObserver();
-    narrowWidthClampsTo64();
+    measured1650PxViewRowsAreAuto();
   });
 
   it("C4 the arranging (builder) canvas keeps 72 px rows at any width", () => {
@@ -54,9 +51,14 @@ describe("F3.73 DashboardCanvas row height", () => {
     arrangingCanvasStays72();
   });
 
-  it("C5 with no ResizeObserver a view canvas keeps 72 px rows", () => {
+  it("V2a with no ResizeObserver a view canvas sizes its rows to content", () => {
     removeResizeObserver();
-    noResizeObserverGives72();
+    noResizeObserverViewRowsAreAuto();
+  });
+
+  it("V2b with no ResizeObserver the builder keeps 72 px rows", () => {
+    removeResizeObserver();
+    noResizeObserverBuilderStays72();
   });
 
   it("C6 a canvas mounted on a new root measures the new root", () => {
@@ -65,8 +67,22 @@ describe("F3.73 DashboardCanvas row height", () => {
   });
 });
 
+describe("F3.77 follow-up — compacted row tracks", () => {
+  it("R1 stored rows no tile covers add no track", () => {
+    emptyStoredRowsAddNoTrack();
+  });
+
+  it("R2 a tall tile beside two stacked tiles spans both of their tracks", () => {
+    aTallTileSpansTheTracksBesideIt();
+  });
+
+  it("R3 the Overview shape compacts to four tracks", () => {
+    theOverviewShapeGivesFourTracks();
+  });
+});
+
 describe("F3.73 critique fixes — view-mode breakpoints", () => {
-  it("B1 above 1024 px the stored rectangles stand", () => {
+  it("B1 above 1024 px the stored columns stand and the rows compact", () => {
     above1024KeepsStoredPlacement();
   });
 
@@ -82,33 +98,29 @@ describe("F3.73 critique fixes — view-mode breakpoints", () => {
     at640EveryTileSpansTheGrid();
   });
 
-  it("B5 the builder and an unmeasured canvas keep the stored placement", () => {
+  it("B5 the builder keeps the stored placement; an unmeasured canvas compacts its rows", () => {
     theBuilderAndNoMeasurementKeepStoredPlacement();
   });
 });
 
-describe("F3.73 critique fixes — aspect rows and cell fill", () => {
+describe("F3.77 follow-up — aspect minimum height and cell fill", () => {
   afterEach(() => {
     cleanupCanvas();
   });
 
-  it("M1 a desktop mimic grows to its aspect rows and pushes the tile below", () => {
-    aDesktopMimicGrowsAndPushesTheTileBelow();
+  it("M1 a desktop mimic gets its aspect minimum height; the tile below gets none", () => {
+    aDesktopMimicGetsItsAspectMinHeight();
   });
 
-  it("M2 a desktop mimic never shrinks below its stored rows", () => {
-    aDesktopMimicNeverShrinks();
+  it("M3 a narrow full-width mimic gets its aspect minimum height on an auto row", () => {
+    aNarrowMimicGetsItsAspectMinHeight();
   });
 
-  it("M3 a narrow mimic takes exactly its aspect rows", () => {
-    aNarrowMimicTakesItsAspectRows();
-  });
-
-  it("M4 the builder keeps the mimic's stored rows", () => {
+  it("M4 the builder keeps the mimic's stored rows and no minimum height", () => {
     theBuilderKeepsTheMimicRows();
   });
 
-  it("M5 an aspect reported through useCanvasTileAspect reaches the tile's grid row", () => {
+  it("M5 an aspect reported through useCanvasTileAspect reaches the tile's min-height", () => {
     installFakeResizeObserver();
     aReportedAspectReachesTheTile();
   });

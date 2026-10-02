@@ -54,7 +54,9 @@ export function TableWidget({
           No columns to show. Edit this widget and choose at least one.
         </p>
       ) : (
-        <div className="h-full overflow-auto surface-table">
+        // `F3.77` follow-up (owner ruling Q5): a view tile is as tall as its content, and a table
+        // has no configured row count, so the box caps at `max-h-96` and scrolls inside itself.
+        <div className="max-h-96 overflow-auto surface-table">
           <table className="w-full border-collapse text-left text-xs">
             <thead className="sticky top-0 bg-surface">
               <tr>

@@ -175,6 +175,29 @@ export function truncationIsAnnouncedOnlyWhenItHappened(): void {
 }
 
 /**
+ * `F3.77` follow-up (owner ruling Q5) — a view canvas sizes its rows to content, and the table
+ * has no configured row count, so its scroll box caps at `max-h-96` (384 px) and scrolls inside
+ * itself rather than growing with every resolved row. jsdom has no layout: this pins the classes;
+ * the 384 px cap itself is a browser claim.
+ */
+export function theScrollBoxCapsItsHeight(): void {
+  render(
+    <TableWidget
+      title="Active alarms"
+      status="ready"
+      config={{}}
+      columns={COLUMNS}
+      rows={ROWS}
+      truncated={false}
+    />,
+  );
+  const box = screen.getByRole("table").parentElement as HTMLElement;
+  const classes = box.className.split(" ");
+  expect(classes).toContain("overflow-auto");
+  expect(classes).toContain("max-h-96");
+}
+
+/**
  * Every chosen column gone from the dataset is the "edit this widget" state — and it must be
  * distinguishable from "resolved with no rows", which is not the author's problem to fix.
  */

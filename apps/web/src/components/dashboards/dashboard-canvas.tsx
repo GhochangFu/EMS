@@ -21,13 +21,15 @@ import {
 
 /**
  * `F3.1d` — the CSS-grid canvas both the viewer (Unit 6) and the builder
- * (Unit 7) render widgets through. `DASHBOARD_GRID.columns` wide; a fixed row
- * height, since the canvas grows downward without a fixed row count (the same
- * reason `dashboard-grid-geometry.ts`'s own docblock gives for not deriving
- * one). Since the `F3.73` polish only the builder's rows are fixed; a view canvas's rows follow
- * its measured width (`viewRowHeightPx`), and since the `F3.73` critique fixes a view canvas
- * also reflows at two container breakpoints and sizes a fixed-aspect tile (the mimic) from its
- * aspect ratio (`canvasLayout`).
+ * (Unit 7) render widgets through. `DASHBOARD_GRID.columns` wide. The builder
+ * has a fixed row height, since the canvas grows downward without a fixed row
+ * count (the same reason `dashboard-grid-geometry.ts`'s own docblock gives for
+ * not deriving one) and the drag maths needs one. Since the `F3.77` follow-up a
+ * view canvas has no row height at all: its rows are auto tracks over the
+ * compacted stored rows, so each band is as tall as its tallest content. Since
+ * the `F3.73` critique fixes a view canvas also reflows at two container
+ * breakpoints and gives a fixed-aspect tile (the mimic) a minimum height from
+ * its aspect ratio (`canvasLayout`).
  *
  * `ROW_HEIGHT_PX` is a presentation constant, not a grid-axis bound — it never
  * appears beside a `gridX`/`gridY`/`gridW`/`gridH` token, so
@@ -46,28 +48,12 @@ export type CanvasTile = {
   readonly gridH: number;
 };
 
+/**
+ * The builder's row height. `measuredCellSize()` hands this fixed height to the drag and resize
+ * maths, so the builder never takes the view canvas's auto rows.
+ */
 const ROW_HEIGHT_PX = 72;
 const GAP_PX = 8;
-
-/**
- * `F3.73` polish, retuned by the critique fixes — a view canvas (no `onArrange`) sizes its rows
- * from its measured width. The builder keeps `ROW_HEIGHT_PX`: `measuredCellSize()` hands that
- * fixed height to the drag and resize maths.
- *
- * The constants are chosen for the widths that occur. The site view is capped at 1168 px, and a
- * full-width viewer on a 1650 px wall screen is the other end. The old `clamp(64, colW * 0.55, 72)`
- * gave 64 px at every width up to ~1590 px, so it did not follow the width. With `0.75`, 1168 px
- * gives 68 px rows and 1650 px gives the 84 px cap. The 64 px floor keeps a two-row value tile at
- * 2 * 64 + 8 = 136 px, above the 132 px its content needs. The cap keeps a wall screen from
- * drawing tall, mostly empty tiles.
- *
- * `VIEW_ROW_FALLBACK_PX` is the height with no measurement (jsdom, or a browser before the first
- * `ResizeObserver` callback). It is a separate rule from the cap and the floor.
- */
-const VIEW_ROW_MIN_PX = 64;
-const VIEW_ROW_MAX_PX = 84;
-const VIEW_ROW_FALLBACK_PX = 72;
-const VIEW_ROW_TO_COLUMN_RATIO = 0.75;
 
 /**
  * `F3.73` critique fixes — the two view-mode breakpoints, on the canvas's measured width (not a
@@ -84,18 +70,9 @@ function columnWidthPx(containerWidth: number): number {
   return (containerWidth - GAP_PX * (columns - 1)) / columns;
 }
 
-/**
- * A view canvas's row height for a measured container width:
- * `clamp(64, round(columnWidth * 0.75), 84)`, where `columnWidth` is one column after the gaps.
- * A width that is not a positive finite number is no measurement, and gives the fallback — a
- * zero width would otherwise clamp to the minimum.
- */
-export function viewRowHeightPx(containerWidth: number): number {
-  if (!Number.isFinite(containerWidth) || containerWidth <= 0) {
-    return VIEW_ROW_FALLBACK_PX;
-  }
-  const raw = Math.round(columnWidthPx(containerWidth) * VIEW_ROW_TO_COLUMN_RATIO);
-  return Math.min(VIEW_ROW_MAX_PX, Math.max(VIEW_ROW_MIN_PX, raw));
+/** A measured container width: a positive finite number. Anything else is no measurement. */
+function isMeasuredWidth(containerWidth: number | null): containerWidth is number {
+  return containerWidth !== null && Number.isFinite(containerWidth) && containerWidth > 0;
 }
 
 /**
@@ -104,22 +81,28 @@ export function viewRowHeightPx(containerWidth: number): number {
  */
 export type TileAspect = { readonly ratio: number; readonly chromePx: number };
 
-/** Where one tile sits: the CSS `grid-column` and `grid-row` values. */
+/**
+ * Where one tile sits: the CSS `grid-column` and `grid-row` values, and the minimum height in px
+ * a fixed-aspect view tile needs (`null` for every other tile, for the builder, and before the
+ * canvas is measured).
+ */
 export type TilePlacement<T extends CanvasTile> = {
   readonly tile: T;
   readonly gridColumn: string;
   readonly gridRow: string;
+  readonly minHeightPx: number | null;
 };
 
+/** `gridAutoRows` is the CSS `grid-auto-rows` value: `"auto"` in view mode, 72 px in the builder. */
 export type CanvasLayout<T extends CanvasTile> = {
-  readonly rowHeightPx: number;
+  readonly gridAutoRows: string;
   readonly placements: readonly TilePlacement<T>[];
 };
 
 type ViewMode = "desktop" | "half" | "single";
 
 function viewModeFor(containerWidth: number | null): ViewMode {
-  if (containerWidth === null || !Number.isFinite(containerWidth) || containerWidth <= 0) {
+  if (!isMeasuredWidth(containerWidth)) {
     return "desktop";
   }
   if (containerWidth <= SINGLE_BREAKPOINT_PX) {
@@ -142,13 +125,41 @@ function spanFor(storedSpan: number, mode: ViewMode): number {
 }
 
 /**
- * The rows a fixed-aspect tile needs: its drawing's height at the tile's pixel width, plus the
- * frame round it, rounded up to whole rows (each row after the first adds one gap).
+ * The height in px a fixed-aspect tile needs: its drawing's height at the tile's pixel width,
+ * plus the frame round it, rounded to a whole pixel.
  */
-function aspectRowSpan(span: number, containerWidth: number, rowHeightPx: number, aspect: TileAspect): number {
+function aspectHeightPx(span: number, containerWidth: number, aspect: TileAspect): number {
   const tileWidth = span * columnWidthPx(containerWidth) + (span - 1) * GAP_PX;
-  const contentHeight = tileWidth * aspect.ratio + aspect.chromePx;
-  return Math.max(1, Math.ceil((contentHeight + GAP_PX) / (rowHeightPx + GAP_PX)));
+  return Math.round(tileWidth * aspect.ratio + aspect.chromePx);
+}
+
+/**
+ * `F3.77` follow-up — the stored rows, compacted to auto tracks. The sorted, distinct row
+ * boundaries (each rect's top and bottom) cut the stored rows into intervals; an interval that
+ * some rect covers is one track, and an interval no rect covers is dropped, because an empty auto
+ * track still adds a gap. Returns each rect's CSS `grid-row`: its first track and the number of
+ * tracks it spans.
+ */
+function compactRowTracks(rects: readonly GridRect[]): (rect: GridRect) => string {
+  const boundaries = [...new Set(rects.flatMap((rect) => [rect.gridY, rect.gridY + rect.gridH]))].sort(
+    (a, b) => a - b,
+  );
+  // The top boundary of every covered interval, in order: one per track.
+  const trackTops: number[] = [];
+  let top: number | null = null;
+  for (const bottom of boundaries) {
+    const from = top;
+    if (from !== null && rects.some((rect) => rect.gridY <= from && rect.gridY + rect.gridH >= bottom)) {
+      trackTops.push(from);
+    }
+    top = bottom;
+  }
+  const tracksAbove = (row: number): number => trackTops.filter((trackTop) => trackTop < row).length;
+  return (rect) => {
+    const first = tracksAbove(rect.gridY);
+    const span = Math.max(1, tracksAbove(rect.gridY + rect.gridH) - first);
+    return `${first + 1} / span ${span}`;
+  };
 }
 
 function isUsableAspect(aspect: TileAspect | undefined): aspect is TileAspect {
@@ -162,18 +173,18 @@ function isUsableAspect(aspect: TileAspect | undefined): aspect is TileAspect {
 }
 
 /**
- * Where every tile sits. Pure, so the breakpoints and the aspect rows are tested without layout.
+ * Where every tile sits. Pure, so the breakpoints, the row tracks and the aspect heights are
+ * tested without layout.
  *
- * - **The builder** (`arranging`): every tile at its stored, clamped rectangle, 72 px rows — the
- *   drag maths needs exactly what is stored.
- * - **A view canvas at desktop width** (or not yet measured): stored columns and rows. A tile
- *   with a reported aspect takes the rows its drawing needs when that is MORE than stored, and
- *   every tile that starts at or below its old bottom moves down by the difference, so nothing
- *   overlaps. It never shrinks below its stored rows: moving tiles up could overlap a tile beside
- *   it, so a too-tall stored height keeps its centred drawing and its spare space.
+ * - **The builder** (`arranging`): every tile at its stored, clamped rectangle, 72 px rows and
+ *   no minimum height — the drag maths needs exactly what is stored.
+ * - **A view canvas at desktop width** (or not yet measured): stored columns; the stored rows
+ *   compacted to auto tracks (`compactRowTracks`), so a band is as tall as its tallest content
+ *   and a shorter tile beside it stretches to the band. A tile with a reported aspect gets the
+ *   height its drawing needs as a minimum height once the width is measured.
  * - **At or below a breakpoint**: the tiles are ordered by reading order (`gridY`, then `gridX`)
- *   and placed by CSS auto-flow with spans only, so a widened tile cannot overlap the next. A
- *   tile with an aspect takes exactly the rows its drawing needs.
+ *   and placed by CSS auto-flow with spans only (`grid-row: auto`), so a widened tile cannot
+ *   overlap the next. A tile with an aspect gets the minimum height at its reflowed span.
  */
 export function canvasLayout<T extends CanvasTile>(
   tiles: readonly T[],
@@ -186,60 +197,47 @@ export function canvasLayout<T extends CanvasTile>(
   const { arranging, containerWidth } = options;
   const aspects = options.aspects ?? new Map<string, TileAspect>();
   if (arranging) {
-    return { rowHeightPx: ROW_HEIGHT_PX, placements: tiles.map((tile) => explicitPlacement(tile, 0, null)) };
+    return {
+      gridAutoRows: `${ROW_HEIGHT_PX}px`,
+      placements: tiles.map((tile) => {
+        const rect = clampWidget(tile);
+        return {
+          tile,
+          gridColumn: `${rect.gridX + 1} / span ${rect.gridW}`,
+          gridRow: `${rect.gridY + 1} / span ${rect.gridH}`,
+          minHeightPx: null,
+        };
+      }),
+    };
   }
-  const rowHeightPx = viewRowHeightPx(containerWidth ?? 0);
   const mode = viewModeFor(containerWidth);
-  const measured = mode === "desktop" ? null : containerWidth;
+  const measured = isMeasuredWidth(containerWidth) ? containerWidth : null;
+  const minHeightFor = (key: string, span: number): number | null => {
+    const aspect = aspects.get(key);
+    return measured !== null && isUsableAspect(aspect) ? aspectHeightPx(span, measured, aspect) : null;
+  };
 
-  if (mode !== "desktop" && measured !== null) {
+  if (mode !== "desktop") {
     const ordered = [...tiles].sort((a, b) => a.gridY - b.gridY || a.gridX - b.gridX);
     return {
-      rowHeightPx,
+      gridAutoRows: "auto",
       placements: ordered.map((tile) => {
-        const rect = clampWidget(tile);
-        const span = spanFor(rect.gridW, mode);
-        const aspect = aspects.get(tile.key);
-        const rows = isUsableAspect(aspect) ? aspectRowSpan(span, measured, rowHeightPx, aspect) : rect.gridH;
-        return { tile, gridColumn: `span ${span}`, gridRow: `span ${rows}` };
+        const span = spanFor(clampWidget(tile).gridW, mode);
+        return { tile, gridColumn: `span ${span}`, gridRow: "auto", minHeightPx: minHeightFor(tile.key, span) };
       }),
     };
   }
 
-  // Desktop: the rows each fixed-aspect tile grows by, keyed on its stored bottom row.
-  const growths: { bottom: number; by: number }[] = [];
-  const rowsByKey = new Map<string, number>();
-  if (containerWidth !== null && Number.isFinite(containerWidth) && containerWidth > 0) {
-    for (const tile of tiles) {
-      const aspect = aspects.get(tile.key);
-      if (!isUsableAspect(aspect)) {
-        continue;
-      }
-      const rect = clampWidget(tile);
-      const rows = aspectRowSpan(rect.gridW, containerWidth, rowHeightPx, aspect);
-      if (rows > rect.gridH) {
-        rowsByKey.set(tile.key, rows);
-        growths.push({ bottom: rect.gridY + rect.gridH, by: rows - rect.gridH });
-      }
-    }
-  }
+  const clamped = tiles.map((tile) => ({ tile, rect: clampWidget(tile) }));
+  const rowFor = compactRowTracks(clamped.map(({ rect }) => rect));
   return {
-    rowHeightPx,
-    placements: tiles.map((tile) => {
-      const rect = clampWidget(tile);
-      // The sum of every growth above this tile: a tile below two grown tiles moves past both.
-      const shift = growths.reduce((sum, growth) => (rect.gridY >= growth.bottom ? sum + growth.by : sum), 0);
-      return explicitPlacement(tile, shift, rowsByKey.get(tile.key) ?? null);
-    }),
-  };
-}
-
-function explicitPlacement<T extends CanvasTile>(tile: T, shift: number, rows: number | null): TilePlacement<T> {
-  const rect = clampWidget(tile);
-  return {
-    tile,
-    gridColumn: `${rect.gridX + 1} / span ${rect.gridW}`,
-    gridRow: `${rect.gridY + shift + 1} / span ${rows ?? rect.gridH}`,
+    gridAutoRows: "auto",
+    placements: clamped.map(({ tile, rect }) => ({
+      tile,
+      gridColumn: `${rect.gridX + 1} / span ${rect.gridW}`,
+      gridRow: rowFor(rect),
+      minHeightPx: minHeightFor(tile.key, rect.gridW),
+    })),
   };
 }
 
@@ -254,8 +252,8 @@ export const CanvasTileAspectProvider = CanvasTileAspectContext.Provider;
 
 /**
  * `F3.73` critique fixes — a tile whose content draws at a fixed aspect ratio calls this, so a
- * view canvas gives it the rows its drawing needs. `null` reports nothing. Unmounting withdraws
- * the report.
+ * view canvas gives it the minimum height its drawing needs (`F3.77` follow-up; it was rows).
+ * `null` reports nothing. Unmounting withdraws the report.
  */
 export function useCanvasTileAspect(aspect: TileAspect | null): void {
   const report = useContext(CanvasTileAspectContext);
@@ -320,7 +318,7 @@ export function DashboardCanvas<T extends CanvasTile>({
 
   // The canvas measures itself whether or not it arranges; the arranging exemption lives in one
   // place, `canvasLayout`. No `ResizeObserver` (jsdom) measures nothing, so the canvas keeps
-  // the fallback height and the desktop layout.
+  // the desktop layout and gives no tile an aspect minimum height.
   useEffect(() => {
     if (!rootElement || typeof ResizeObserver === "undefined") {
       return;
@@ -410,18 +408,18 @@ export function DashboardCanvas<T extends CanvasTile>({
       className="relative grid"
       style={{
         gridTemplateColumns: `repeat(${DASHBOARD_GRID.columns}, minmax(0, 1fr))`,
-        gridAutoRows: `${layout.rowHeightPx}px`,
+        gridAutoRows: layout.gridAutoRows,
         gap: `${GAP_PX}px`,
       }}
     >
-      {layout.placements.map(({ tile, gridColumn, gridRow }) => (
+      {layout.placements.map(({ tile, gridColumn, gridRow, minHeightPx }) => (
         // `[&>:first-child]:h-full` — the tile's own root fills the cell. `WidgetFrame` is already
         // `h-full`; `KpiTile` (a value tile) is not, and drew a dead band under its content.
         <div
           key={tile.key}
           data-canvas-tile={tile.key}
           className="relative min-w-0 [&>:first-child]:h-full"
-          style={{ gridColumn, gridRow }}
+          style={{ gridColumn, gridRow, minHeight: minHeightPx === null ? undefined : `${minHeightPx}px` }}
         >
           <CanvasTileAspectProvider value={reporterFor(tile.key)}>{renderTile(tile)}</CanvasTileAspectProvider>
           {onArrange ? (
