@@ -24,6 +24,7 @@ import {
   SMOC_STANDARD_V2_RECTS,
   smocStandardV1Content,
   smocStandardV2Content,
+  smocStandardV3Content,
 } from "./site-layout-stock-history";
 
 /**
@@ -161,6 +162,13 @@ export function theSeedsOlderStockRowsAreSuperseded(): void {
   }
 }
 
+/** `F3.74`: the stock-3 row the v3 seed published is superseded once the current stock is 4. */
+export function theSeedsStockThreeRowIsSupersededByStockFour(): void {
+  const row = seedRow({ version: 2, stockVersion: 3, content: smocStandardV3Content() });
+  assert(isSeedStockSiteTemplate(row, 4), "stock 3 at version 2 is not superseded by stock 4");
+  assert(!isSeedStockSiteTemplate(row, 3), "stock 3 at version 2 is superseded by stock 3");
+}
+
 export function aTemplateRowTheSeedDoesNotOwnIsKept(): void {
   const cases: [string, SiteTemplateRow | undefined][] = [
     ["absent", undefined],
@@ -291,9 +299,9 @@ function packedV2Overview(cards: readonly string[]): OverviewCopyWidget[] {
   });
 }
 
-/** The current (v3) Overview as a fresh copy stores it. */
+/** The frozen v3 Overview as a copy stores it (the live entry is v4 since F3.74). */
 function v3Overview(): OverviewCopyWidget[] {
-  const tab = current.tabs.find((candidate) => candidate.key === "overview");
+  const tab = smocStandardV3Content().tabs.find((candidate) => candidate.key === "overview");
   return (tab?.widgets ?? []).map((widget) => ({
     id: `overview/${widget.key}`,
     tabKey: "overview",

@@ -28,6 +28,7 @@ import {
   theNewDescriptionNamesNoRowSeedOrDemo,
   theOfflineTileGetsTheOfflineIcon,
   theSeedsOlderStockRowsAreSuperseded,
+  theSeedsStockThreeRowIsSupersededByStockFour,
   theStepReadsTheOverviewOnly,
   theV1DescriptionIsReplaced,
   theV1TableNamesExactlyTheV2Widgets,
@@ -73,6 +74,9 @@ describe("F3.77 — the seed upgrade's v2 → v3 Overview step", () => {
 describe("F3.77 — the seed's supersede rule for its own older stock row", () => {
   it("supersedes the seed's stock-1 and stock-2 rows", () => {
     theSeedsOlderStockRowsAreSuperseded();
+  });
+  it("supersedes the seed's stock-3 row at version 2 once the current stock is 4", () => {
+    theSeedsStockThreeRowIsSupersededByStockFour();
   });
   it("keeps a template row the seed does not own or that is current", () => {
     aTemplateRowTheSeedDoesNotOwnIsKept();

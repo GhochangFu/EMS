@@ -17,6 +17,7 @@ import {
   siteTemplateRects,
   siteWidgetIdentity,
   smocStandardV2Content,
+  smocStandardV3Content,
 } from "./site-layout-stock-history";
 
 export { type GridRect, siteTemplateRects, siteWidgetIdentity } from "./site-layout-stock-history";
@@ -232,13 +233,16 @@ const rectOf = (widget: GridRect): GridRect => ({
  * step. A widget new in `to` would need an insert this step does not make: such a `to` throws, so
  * the version that adds one (`F3.74`'s compact diagram) has to add the insert too.
  *
+ * `to` defaults to the frozen v3 content, not the live entry: this step is v2 → v3, and the live
+ * entry is v4 (`F3.74`), whose Overview holds a widget v3 does not.
+ *
  * Idempotent by its gate: an Overview at `to` no longer holds `from`'s cards and rects.
  */
 export function planOverviewUpgrade(
   widgets: readonly OverviewCopyWidget[],
   copyTabKeys: readonly string[],
   from: SectionTemplateContent = smocStandardV2Content(),
-  to: SectionTemplateContent = SMOC_STANDARD_SITE_TEMPLATE.content as SectionTemplateContent,
+  to: SectionTemplateContent = smocStandardV3Content(),
 ): OverviewUpgradePlan {
   const none: OverviewUpgradePlan = { deletes: [], updates: [] };
   const fromTab = from.tabs.find((tab) => tab.key === OVERVIEW_TAB_KEY);
