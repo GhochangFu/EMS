@@ -5,6 +5,8 @@ import { AccessControlModule } from "./access-control.module";
 import { AuthController } from "./auth.controller";
 import { AuthService } from "./auth.service";
 import { JwtAuthGuard } from "./jwt-auth.guard";
+import { SocketRegistry } from "./socket-registry";
+import { UserDisabledListenerService } from "./user-disabled-listener.service";
 
 /**
  * `F3.11` / ADR 0064 Amendment 1 A1: `AccessControlService` moved to the
@@ -25,7 +27,10 @@ import { JwtAuthGuard } from "./jwt-auth.guard";
     }),
   ],
   controllers: [AuthController],
-  providers: [AuthService, JwtAuthGuard],
-  exports: [JwtAuthGuard],
+  // F3.78 / ADR 0089 decision 8: the socket registry the two gateways register
+  // with, and the `bms_user_disabled` listener that closes a deactivated
+  // user's sockets through it.
+  providers: [AuthService, JwtAuthGuard, SocketRegistry, UserDisabledListenerService],
+  exports: [JwtAuthGuard, SocketRegistry],
 })
 export class AuthModule {}

@@ -4,6 +4,7 @@ import type { TelemetryReading } from "@bms/shared";
 
 import type { AccessControlService } from "../auth/access-control.service";
 import type { JwtAuthGuard } from "../auth/jwt-auth.guard";
+import { SocketRegistry } from "../auth/socket-registry";
 import type { MetricsService } from "../observability/metrics.service";
 import { ExistingAssetIds } from "./existing-asset-ids";
 import type { TelemetryBroadcastHub } from "./telemetry-broadcast.hub";
@@ -162,6 +163,7 @@ export async function assertTheGatewayFiltersBeforeItEmits(): Promise<void> {
     {} as JwtAuthGuard,
     {} as AccessControlService,
     h.cache,
+    new SocketRegistry(),
   );
   const sent: TelemetryReading[][] = [];
   const socket = { data: { assetIds: null }, emit: (_: string, payload: { readings: TelemetryReading[] }) => sent.push(payload.readings) };

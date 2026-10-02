@@ -10,6 +10,7 @@ import { Namespace, Socket } from "socket.io";
 
 import { AccessControlService } from "../auth/access-control.service";
 import { JwtAuthGuard } from "../auth/jwt-auth.guard";
+import { SocketRegistry } from "../auth/socket-registry";
 import { MetricsService } from "../observability/metrics.service";
 import { ExistingAssetIds } from "./existing-asset-ids";
 import { TelemetryBroadcastHub } from "./telemetry-broadcast.hub";
@@ -33,8 +34,14 @@ export class TelemetryGateway implements OnGatewayInit, OnGatewayConnection {
     private readonly jwtAuth: JwtAuthGuard,
     private readonly accessControl: AccessControlService,
     private readonly existingAssets: ExistingAssetIds,
+    private readonly sockets: SocketRegistry,
   ) {}
 
+  /**
+   * `F3.78` / ADR 0089 decision 8 — the same handshake order as
+   * `AlarmsGateway.handleConnection`: `userId` before the scope `await`, one
+   * fresh `disabled_at` read after it.
+   */
   async handleConnection(client: Socket): Promise<void> {
     const token = this.extractToken(client);
     if (!token) {
@@ -43,13 +50,19 @@ export class TelemetryGateway implements OnGatewayInit, OnGatewayConnection {
     }
     try {
       const payload = await this.jwtAuth.verifyToken(token);
+      const userId = this.accessControl.resolveUserId(payload);
+      client.data.userId = userId;
       client.data.assetIds = await this.accessControl.readableAssetIds(payload);
+      if (userId !== null && (await this.accessControl.isUserDisabled(userId))) {
+        client.disconnect(true);
+      }
     } catch {
       client.disconnect(true);
     }
   }
 
   afterInit(): void {
+    this.sockets.register(this.server);
     this.hub.on("readings", (readings: TelemetryReading[]) => {
       // F4.159: a reading whose asset row is gone reaches no socket
       // (`existing-asset-ids.ts`). Filtered once, before the per-client scope.
