@@ -5,6 +5,8 @@ import { cleanup } from "@testing-library/react";
 import {
   aModuleCardOffersTheDashboardsTabs,
   aMimicOnAGroupBoundTabHasNoMimicTabSelect,
+  aMimicWithNoGroupTabAnywhereHasNoMimicTabSelect,
+  aStoredMimicTabKeyKeepsTheSelectWithNoGroupTab,
   aMimicTabProblemRendersUnderTheSelect,
   aValueTileHasNoMimicTabSelect,
   choosingAMimicTabWritesItToTheConfig,
@@ -223,6 +225,14 @@ describe("F3.73 widget inspector — the site widgets", () => {
 
   it("F3.74: a mimic on a group-bound tab has no mimic tab select", () => {
     aMimicOnAGroupBoundTabHasNoMimicTabSelect();
+  });
+
+  it("F3.74 review 7a: a mimic with no group-bound tab anywhere has no mimic tab select", () => {
+    aMimicWithNoGroupTabAnywhereHasNoMimicTabSelect();
+  });
+
+  it("F3.74 review 7a: a stored mimicTabKey keeps the select with no group-bound tab", () => {
+    aStoredMimicTabKeyKeepsTheSelectWithNoGroupTab();
   });
 
   it("F3.74: a value tile has no mimic tab select", () => {

@@ -164,6 +164,22 @@ export async function aNewWidgetLandsOnTheSelectedTab(): Promise<void> {
   expect(screen.queryAllByText("Plant mimic · 0 point(s)")).toHaveLength(0);
 }
 
+/** `F3.74` review finding 7(c) — a mimic added on the group-less Overview tab resolves through the
+ * first group-bound tab by default, so its select reads Electrical and no scope problem shows.
+ * Mutation: drop `withDefaultMimicTabKey` from the page's `addWidget` => red. */
+export async function aNewMimicOnOverviewResolvesThroughTheGroupTab(): Promise<void> {
+  stubLoads({ dto: TABBED_DTO, groups: [GROUP] });
+  renderPage(asUser("admin"));
+  await waitForPrefill("Location");
+
+  await within(await strip()).findByRole("tab", { name: "Overview" });
+  await userEvent.click(screen.getByRole("button", { name: "+ Plant mimic" }));
+
+  expect(screen.getByRole("combobox", { name: "Tab" })).toHaveValue("overview");
+  expect(screen.getByRole("combobox", { name: /^Resolves through tab/ })).toHaveValue("electrical");
+  expect(screen.queryByText(/A plant mimic needs an asset-group scope./)).not.toBeInTheDocument();
+}
+
 /**
  * `F3.77` (plan D4) — the builder's strip carries the markers of the STORED tabs only. The stored
  * Electrical group tab is named by its status (the positive control); once it is removed and an

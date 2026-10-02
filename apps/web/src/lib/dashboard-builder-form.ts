@@ -37,6 +37,7 @@ import {
   widgetConfigErrors,
   type WidgetConfigRow,
 } from "./widget-config-form";
+import { mimicConfigForSave } from "./dashboard-builder-mimic-tab";
 
 /**
  * The live dashboard builder's row model (`F3.1d` Unit 4). Not a restatement of
@@ -762,7 +763,8 @@ export function buildPutWidgetsPayload(
         case "table":
           return { ...identity, widgetType: "table", config: buildTableConfig(row.config) };
         case "mimic":
-          return { ...identity, widgetType: "mimic", config: buildMimicConfig(row.config) };
+          // `F3.74` — a mimic on a group-bound tab writes no `tabKey` left from an earlier tab.
+          return { ...identity, widgetType: "mimic", config: buildMimicConfig(mimicConfigForSave(row, tabs)) };
         case "active_alarms_rail":
           return { ...identity, widgetType: "active_alarms_rail", config: buildActiveAlarmsRailConfig(row.config) };
         case "state_legend":

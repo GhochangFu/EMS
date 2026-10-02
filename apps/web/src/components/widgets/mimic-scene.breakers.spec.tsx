@@ -245,6 +245,17 @@ export function aSingleBreakerUnitCarriesItsOwnState(): void {
   expect(within(unit).getAllByTestId("mimic-breaker-switch")).toHaveLength(1);
   expect(pillText(unit)).toBe("OPEN");
   expect(rowsOf("single")).toHaveLength(0);
+  // The positive side of S4/S5's "no code line on a fan-out unit": a single unit names its asset.
+  expect(within(unit).getByTestId("mimic-node-code").textContent).toBe("CR-Q2");
+}
+
+/**
+ * A fan-out unit's rows name every member, so it draws neither the `+N` badge (the hidden-members
+ * count of a unit that shows one member) nor the first member's code line.
+ */
+function expectNoBadgeAndNoCodeLine(key: string): void {
+  expect(within(unitEl(key)).queryByTestId("mimic-badge"), `${key} badge`).toBeNull();
+  expect(within(unitEl(key)).queryByTestId("mimic-node-code"), `${key} code line`).toBeNull();
 }
 
 /**
@@ -304,6 +315,7 @@ export function aFanOutUnitDrawsOneRowPerMember(): void {
   expect(rows.map((r) => r.getAttribute("data-asset-code"))).toEqual(["CR-Q6", "CR-Q7", "CR-Q8"]);
   expect(rows.map((r) => pillText(r))).toEqual(["CLOSED", "CLOSED", "CLOSED"]);
   expect(within(unitEl("load_feeders")).queryAllByTestId("mimic-point")).toHaveLength(0);
+  expectNoBadgeAndNoCodeLine("load_feeders");
 }
 
 /**
@@ -315,6 +327,7 @@ export function seventeenMembersDrawSixteenAndOneMore(): void {
   renderBreakers(SLD(), [fanOutNode("load_feeders", "load-feeder-breaker", members, 17)], readingsOf({}));
   expect(rowsOf("load_feeders")).toHaveLength(16);
   expect(within(unitEl("load_feeders")).getByTestId("mimic-fanout-more").textContent).toBe("+1 more");
+  expectNoBadgeAndNoCodeLine("load_feeders");
 }
 
 /** S5b — a fan-out unit whose every member is drawn shows no "+N more". */
@@ -543,6 +556,112 @@ export function aStaleBreakerGlyphWithNoStatePointsIsNotOffline(): void {
   expect(frameClass(unit)).toContain("stroke-warning");
 }
 
+/**
+ * S6e (single) — a breaker whose state point has no reading is `unknown`; with a critical alarm the
+ * alarm takes the frame, but the "—" pill keeps the unknown ink, never the CLOSED green
+ * (mutation: colour the pill from the look → red).
+ */
+export function anUnknownBreakerWithACriticalAlarmHasNoClosedPill(): void {
+  const single = asset(2, "CR-Q2");
+  renderBreakers(
+    BOARD(),
+    [singleNode("single", "main-breaker", { asset: single, statePoints: [statePoint("breaker_main", 1)], activeAlarms: 1, topAlarm: CRITICAL })],
+    readingsOf({}),
+  );
+  const unit = unitEl("single");
+  expect(unit.getAttribute("data-breaker-state")).toBe("unknown");
+  expect(unit.getAttribute("data-frame")).toBe("critical");
+  const pill = within(unit).getByTestId("mimic-breaker-pill");
+  expect(pill.textContent).toBe("—");
+  expect(cls(pill)).toContain("fill-ink-muted");
+  expect(cls(pill)).not.toContain("fill-ok-ink");
+}
+
+/** S6e (fan-out) — the same for a fan-out member row (mutation: colour the row's pill from the look → red). */
+export function anUnknownFanOutMemberWithACriticalAlarmHasNoClosedPill(): void {
+  renderBreakers(
+    SLD(),
+    [fanOutNode("main_breaker", "main-breaker", [{ asset: Q1, statePoints: [statePoint("breaker_main", 1)], activeAlarms: 1, topAlarm: CRITICAL }])],
+    readingsOf({}),
+  );
+  const row = onlyRow("main_breaker");
+  expect(row.getAttribute("data-breaker-state")).toBe("unknown");
+  expect(row.getAttribute("data-frame")).toBe("critical");
+  const pill = within(row).getByTestId("mimic-breaker-pill");
+  expect(pill.textContent).toBe("—");
+  expect(cls(pill)).toContain("fill-ink-muted");
+  expect(cls(pill)).not.toContain("fill-ok-ink");
+}
+
+/**
+ * S12c — the fan-out mirror of S12b: a `breaker`-symbol fan-out unit whose members carry no state
+ * point draws each member's status — one fresh (Live), one stale (Stale) — with no switch, no
+ * "—" pill and no OFFLINE dashed row (mutation: drop the per-member state-point gate → red).
+ */
+export function aFanOutBreakerWithNoStatePointsDrawsStatusRows(): void {
+  const [fresh, stale] = FEEDERS;
+  renderBreakers(
+    SLD(),
+    [fanOutNode("load_feeders", "load-feeder-breaker", [{ asset: fresh as GeneratedSiteAssetDto }, { asset: stale as GeneratedSiteAssetDto }])],
+    readingsOf({}, new Set([(stale as GeneratedSiteAssetDto).id])),
+  );
+  const rows = rowsOf("load_feeders");
+  expect(rows.map((r) => within(r).getByTestId("mimic-member-status").textContent)).toEqual(["Live", "Stale"]);
+  expect(rows.map((r) => r.getAttribute("data-frame"))).toEqual(["live", "stale"]);
+  const unit = unitEl("load_feeders");
+  expect(within(unit).queryAllByTestId("mimic-breaker-pill")).toHaveLength(0);
+  expect(within(unit).queryAllByTestId("mimic-breaker-switch")).toHaveLength(0);
+  expect(unit.textContent ?? "").not.toContain("—");
+  expect(unit.textContent ?? "").not.toContain("OFFLINE");
+  expect(rows.some((r) => r.querySelector("rect[stroke-dasharray]") !== null)).toBe(false);
+}
+
+/** The accessible name of the one drawing. */
+function ariaName(): string {
+  return screen.getByRole("img").getAttribute("aria-label") ?? "";
+}
+
+/**
+ * A1 — the switch is `aria-hidden`, so the drawing's accessible name carries each member's state:
+ * a tripped feeder is heard as tripped, its closed neighbour as closed (mutation: drop the breaker
+ * part of the name → red).
+ */
+export function aTrippedMembersStateIsInTheAccessibleName(): void {
+  const [q6, q7] = FEEDERS as [GeneratedSiteAssetDto, GeneratedSiteAssetDto];
+  renderBreakers(
+    SLD(),
+    [
+      fanOutNode("load_feeders", "load-feeder-breaker", [
+        { asset: q6, statePoints: [statePoint("breaker_main", 1)] },
+        { asset: q7, statePoints: [statePoint("breaker_main", 1), statePoint("breaker_trip", 1)] },
+      ]),
+    ],
+    readingsOf({ [`${q6.id}|breaker_main`]: 1, [`${q7.id}|breaker_main`]: 1, [`${q7.id}|breaker_trip`]: 1 }),
+  );
+  expect(ariaName()).toContain("Load feeders CR-Q7: tripped");
+  expect(ariaName()).toContain("Load feeders CR-Q6: closed");
+}
+
+/** A2 — a single breaker unit's state is in the accessible name too (mutation: names fan-out rows only → red). */
+export function aSingleBreakersStateIsInTheAccessibleName(): void {
+  const single = asset(2, "CR-Q2");
+  renderBreakers(
+    BOARD(),
+    [singleNode("single", "main-breaker", { asset: single, statePoints: [statePoint("breaker_main", 0)] })],
+    readingsOf({ [`${single.id}|breaker_main`]: 0 }),
+  );
+  expect(ariaName()).toContain("single CR-Q2: open");
+}
+
+/**
+ * A3 — a unit that draws no state adds nothing: S12a's `ht_panel` (no state points) leaves the name
+ * as the title and the preset alone (mutation: name every switching unit → red).
+ */
+export function aBreakerGlyphWithNoStatePointsAddsNothingToTheName(): void {
+  renderBreakers(presetGeometry("electrical_distribution"), htPanelOnly(), readingsOf({}));
+  expect(ariaName()).toBe(`SLD: ${presetGeometry("electrical_distribution").label}`);
+}
+
 /*
  * `F3.74` Task 3.2 (OQ5 rev 2, plan D6) — energy is a colour beside the `F3.32b` freshness dash.
  * On a graph with sources every pipe carries `data-energy` and the energy's stroke class, and the
@@ -721,6 +840,35 @@ export function aStaleMainBreakerDrawsNoDashAndHintDashesAfterIt(): void {
   for (const dash of after) {
     expect(cls(dash)).toContain("stroke-ink-hint");
     expect(cls(dash)).not.toContain("stroke-accent");
+  }
+}
+
+/**
+ * E3c — a main breaker whose member carries no state point draws its status (S12c), but the walk
+ * still reads it `unknown`: every pipe after it is `unknown`, hint-grey and dashed, never accent —
+ * unknown never looks energised (ADR 0088 decision 6, ADR 0027) (mutation: walk a member with no
+ * state point as closed → red).
+ */
+export function aBreakerWithNoStatePointsMakesThePipesAfterItUnknown(): void {
+  const values: Record<string, number> = {};
+  const nodes = SLD_UNITS.map(([key, role, breaker]) => {
+    const a = sldAsset(key);
+    if (!breaker) {
+      return singleNode(key, role, { asset: a });
+    }
+    if (key === "main_breaker") {
+      return fanOutNode(key, role, [{ asset: a }]);
+    }
+    values[`${a.id}|breaker_main`] = 1;
+    return fanOutNode(key, role, [{ asset: a, statePoints: [statePoint("breaker_main", 1)] }]);
+  });
+  renderBreakers(SLD(), nodes, readingsOf(values));
+  expect(pipeEl("transformer", "main_breaker").getAttribute("data-energy")).toBe("energised");
+  for (const [from, to] of AFTER_MAIN) {
+    const pipe = pipeEl(from, to);
+    expect(pipe.getAttribute("data-energy"), `${from}->${to}`).toBe("unknown");
+    expect(cls(pipe), `${from}->${to}`).toContain("stroke-ink-hint");
+    expect(pipe.hasAttribute("stroke-dasharray"), `${from}->${to}`).toBe(true);
   }
 }
 

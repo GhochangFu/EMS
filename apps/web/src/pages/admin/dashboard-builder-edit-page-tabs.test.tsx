@@ -15,6 +15,7 @@ import {
   aGroupTabOffALocationScopeBlocksTheSave,
   aLocationMoveWithSavedGroupTabsBlocksTheSave,
   aNewWidgetLandsOnTheSelectedTab,
+  aNewMimicOnOverviewResolvesThroughTheGroupTab,
   aReservedTabKeyBlocksTheSave,
   aTakenTabKeyIsRefusedAtTheField,
   addingATabSendsItWithItsWidget,
@@ -53,6 +54,10 @@ describe("F3.73 D11 dashboard builder edit page — tabs", () => {
 
   it("a new widget lands on the selected tab, and a group tab offers the plant mimic", async () => {
     await aNewWidgetLandsOnTheSelectedTab();
+  });
+
+  it("F3.74 review 7c: a new mimic on Overview resolves through the group tab by default", async () => {
+    await aNewMimicOnOverviewResolvesThroughTheGroupTab();
   });
 
   it("a reserved tab key blocks the save", async () => {

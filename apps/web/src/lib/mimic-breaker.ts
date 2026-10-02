@@ -179,7 +179,8 @@ export function fanOutRows(
 
 /**
  * One member row of a fan-out unit, decided here so the component only draws: `state` is `null`
- * for a unit that does not switch — the row then shows the member's status, no switch and no pill.
+ * for a member of a unit that does not switch, or a member with no state point — the row then
+ * shows the member's status, no switch and no pill.
  */
 export type FanOutMemberRow = {
   readonly id: string;
@@ -199,7 +200,16 @@ export function memberAlarmTone(member: MimicMember): MimicAlarmTone | null {
   return member.topAlarm === null ? null : mimicAlarmTone(member.topAlarm.tone);
 }
 
-/** A switching unit's member row: the frame precedence per member, and its pill. */
+/**
+ * The pill's class. The alarm tone may set the frame only: an `unknown` state's "—" pill keeps
+ * the unknown ink whatever `breakerLook` answered, never the CLOSED green an alarm look carries.
+ * OPEN, TRIPPED and OFFLINE need no guard — `breakerLook` returns those states before the alarm.
+ */
+export function breakerPillClass(state: BreakerState, look: BreakerLook): string {
+  return state === "unknown" ? BREAKER_LOOK_CLASSES.unknown.pill : BREAKER_LOOK_CLASSES[look].pill;
+}
+
+/** A switching member's row (one with state points): the frame precedence per member, and its pill. */
 export function breakerRow(member: MimicBreakerMember): FanOutMemberRow {
   const look = breakerLook(member.state, memberAlarmTone(member));
   const cls = BREAKER_LOOK_CLASSES[look];
@@ -212,11 +222,14 @@ export function breakerRow(member: MimicBreakerMember): FanOutMemberRow {
     dashed: cls.dashed,
     look,
     text: BREAKER_PILL[member.state],
-    textClass: cls.pill,
+    textClass: breakerPillClass(member.state, look),
   };
 }
 
-/** A non-switching unit's member row: the member's own status, as a node's status reads. */
+/**
+ * A status member row — a member of a unit that does not switch, or a member with no state point:
+ * the member's own status, as a node's status reads.
+ */
 export function statusRow(member: MimicMember, readings: SiteLiveReadings, nowMs: number): FanOutMemberRow {
   const status = mimicNodeStatus(member, readings.assetLastSeenMs(member.asset), nowMs);
   return {
@@ -230,4 +243,45 @@ export function statusRow(member: MimicMember, readings: SiteLiveReadings, nowMs
     text: MIMIC_STATUS_LABEL[status],
     textClass: "fill-ink-muted",
   };
+}
+
+/**
+ * What a roled unit draws of its breakers, decided once so the drawing and its accessible name
+ * read the same answer. `single`: a unit that does not fan out and carries state points takes its
+ * one member's switch (D6 — an `electrical_distribution` `ht_panel` draws the `breaker` glyph and
+ * reports no state-mapped key, so it draws as before). `rows`: a fan-out unit's member rows, each
+ * gated as a single unit is — a switching member with state points draws code · switch · pill,
+ * any other member its status. The walk is not gated here: `switchStatesOf` still reads a member
+ * with no state point `unknown`, so the pipes after it never look energised (ADR 0088 decision 6).
+ */
+export function unitBreakerDrawing(
+  fanOut: boolean,
+  node: MimicNodeDto | undefined,
+  breakers: readonly MimicBreakerMember[] | undefined,
+  readings: SiteLiveReadings,
+): { readonly single: MimicBreakerMember | null; readonly rows: readonly FanOutMemberRow[] } {
+  if (!fanOut) {
+    const hasState = (node?.statePoints.length ?? 0) > 0;
+    return { single: hasState && breakers?.length === 1 ? (breakers[0] ?? null) : null, rows: [] };
+  }
+  const rows =
+    breakers === undefined
+      ? membersOf(node).map((m) => statusRow(m, readings, readings.nowMs))
+      : breakers.map((m) => (m.statePoints.length > 0 ? breakerRow(m) : statusRow(m, readings, readings.nowMs)));
+  return { single: null, rows };
+}
+
+/** One drawn breaker, as the accessible name says it: "Main breaker CR-Q1: open". */
+export type MimicBreakerAria = { readonly unit: string; readonly code: string; readonly state: BreakerState };
+
+/**
+ * The breaker part of the drawing's accessible name (the switch is `aria-hidden`, so a screen
+ * reader hears the state here): `""` when no unit draws a state, so an unswitched drawing's name
+ * is unchanged.
+ */
+export function mimicBreakerAriaSuffix(breakers: readonly MimicBreakerAria[]): string {
+  if (breakers.length === 0) {
+    return "";
+  }
+  return `. Breakers: ${breakers.map((b) => `${b.unit} ${b.code}: ${b.state}`).join("; ")}`;
 }

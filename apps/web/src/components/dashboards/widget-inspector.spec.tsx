@@ -422,6 +422,24 @@ export function aMimicOnAGroupBoundTabHasNoMimicTabSelect(): void {
   expect(screen.queryByRole("combobox", { name: /^Resolves through tab/ })).toBeNull();
 }
 
+/** `F3.74` review finding 7(a), plan D7 — with no group-bound tab anywhere there is nothing to
+ * resolve through, so a group-less mimic shows no select (the positive side is
+ * `theMimicTabSelectListsOnlyGroupBoundTabs`). Mutation: drop the "a group tab exists" test => red. */
+export function aMimicWithNoGroupTabAnywhereHasNoMimicTabSelect(): void {
+  renderInspector({ ...blankDashboardWidgetRow("mimic"), tabKey: "overview" }, { tabs: [GROUP_TABS[0]!] });
+  expect(screen.queryByRole("combobox", { name: /^Resolves through tab/ })).toBeNull();
+}
+
+/** The same dashboard, but the mimic still stores a key: the select stays, so the author can clear
+ * the key the builder refuses on this field — hidden, that problem would block Save unseen.
+ * Mutation: drop the stored-key branch => red. */
+export function aStoredMimicTabKeyKeepsTheSelectWithNoGroupTab(): void {
+  const row = blankDashboardWidgetRow("mimic");
+  renderInspector({ ...row, tabKey: "overview", config: { ...row.config, mimicTabKey: "gone" } }, { tabs: [GROUP_TABS[0]!] });
+  const select = screen.getByRole("combobox", { name: /^Resolves through tab/ }) as HTMLSelectElement;
+  expect(select.value).toBe("gone");
+}
+
 export function aValueTileHasNoMimicTabSelect(): void {
   renderInspector({ ...blankDashboardWidgetRow("value_tile"), tabKey: "overview" }, { tabs: GROUP_TABS });
   expect(screen.queryByRole("combobox", { name: /^Resolves through tab/ })).toBeNull();

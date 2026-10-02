@@ -17,6 +17,7 @@ import {
   type TabForRules,
   type TabWritePayload,
 } from "./dashboard-builder-form";
+import { withDefaultMimicTabKey } from "./dashboard-builder-mimic-tab";
 
 /**
  * `F3.73` (plan Task 5.2, D11) — the tab rules and the tab edits of the builder. A sibling of
@@ -245,6 +246,34 @@ export function runMimicTabKeyAndCompactRoundTripTests(): void {
     read.config.mimicTabKey === "electrical" && read.config.mimicCompact === true,
     `a stored mimic reads tabKey and compact back — got ${JSON.stringify(read.config)}`,
   );
+}
+
+/** The tabs as the save path sends them: "overview" binds no group, "electrical" binds one. */
+const SAVE_TABS: TabWritePayload[] = TABS_FOR_RULES.map((tab, sortOrder) => ({ ...tab, sortOrder }));
+
+/** `F3.74` review finding 7(b) — a mimic on a group-bound tab resolves through that tab, so a
+ * `mimicTabKey` left from an earlier tab is not saved; on a group-less tab the key is the mimic's
+ * route and is saved. Mutation: drop `mimicConfigForSave` from the build => red. */
+export function runMimicTabKeyIsDroppedOnAGroupTabTests(): void {
+  const moved = onTab("electrical", "mimic");
+  moved.config.mimicTabKey = "electrical";
+  const written = buildPutWidgetsPayload([moved], SAVE_TABS).widgets[0]!.config as Record<string, unknown>;
+  assert(!("tabKey" in written), `a mimic on a group tab saves no tabKey — got ${JSON.stringify(written)}`);
+  const kept = buildPutWidgetsPayload([mimicOnOverview("electrical")], SAVE_TABS).widgets[0]!.config as Record<string, unknown>;
+  assert(kept.tabKey === "electrical", `a mimic on a group-less tab saves its tabKey — got ${JSON.stringify(kept)}`);
+}
+
+/** `F3.74` review finding 7(c) — a new mimic on a group-less tab resolves through the first
+ * group-bound tab by default, so it shows no scope problem; a mimic on a group tab, a non-mimic,
+ * and a dashboard with no group tab get no key. Mutation: return the row unchanged => red. */
+export function runNewMimicDefaultsItsTabKeyTests(): void {
+  const fresh = withDefaultMimicTabKey(onTab("overview", "mimic"), TABS_FOR_RULES);
+  assert(fresh.config.mimicTabKey === "electrical", `a new Overview mimic resolves through Electrical — got ${String(fresh.config.mimicTabKey)}`);
+  const problems = dashboardBuilderErrors([fresh], "location", TABS_FOR_RULES);
+  assert(problems.length === 0, `and shows no problem — got ${JSON.stringify(problems)}`);
+  assert(withDefaultMimicTabKey(onTab("electrical", "mimic"), TABS_FOR_RULES).config.mimicTabKey === undefined, "a mimic on a group tab gets no key");
+  assert(withDefaultMimicTabKey(onTab("overview"), TABS_FOR_RULES).config.mimicTabKey === undefined, "a value tile gets no key");
+  assert(withDefaultMimicTabKey(onTab("overview", "mimic"), [TABS_FOR_RULES[0]]).config.mimicTabKey === undefined, "no group tab, no key");
 }
 
 const tabWrite = (key: string, sortOrder: number, assetGroupId: string | null = null): TabWritePayload => ({

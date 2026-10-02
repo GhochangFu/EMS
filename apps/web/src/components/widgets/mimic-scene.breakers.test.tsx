@@ -3,7 +3,14 @@ import { cleanup } from "@testing-library/react";
 import { afterEach, describe, it } from "vitest";
 
 import {
+  aBreakerGlyphWithNoStatePointsAddsNothingToTheName,
   aBreakerGlyphWithNoStatePointsDrawsAsBefore,
+  aBreakerWithNoStatePointsMakesThePipesAfterItUnknown,
+  aFanOutBreakerWithNoStatePointsDrawsStatusRows,
+  aSingleBreakersStateIsInTheAccessibleName,
+  aTrippedMembersStateIsInTheAccessibleName,
+  anUnknownBreakerWithACriticalAlarmHasNoClosedPill,
+  anUnknownFanOutMemberWithACriticalAlarmHasNoClosedPill,
   allClosedEveryFreshPipeAnimatesInAccent,
   allClosedEveryPipeIsEnergisedAccent,
   anOpenMainBreakerDashesInGreyAfterIt,
@@ -111,6 +118,24 @@ describe("F3.74 Task 3.1 — MimicScene breakers", () => {
   it("S12b a stale breaker glyph with no state points is not OFFLINE", () => {
     aStaleBreakerGlyphWithNoStatePointsIsNotOffline();
   });
+  it("S6e an unknown single breaker with a critical alarm has no CLOSED-green pill", () => {
+    anUnknownBreakerWithACriticalAlarmHasNoClosedPill();
+  });
+  it("S6e an unknown fan-out member with a critical alarm has no CLOSED-green pill", () => {
+    anUnknownFanOutMemberWithACriticalAlarmHasNoClosedPill();
+  });
+  it("S12c a fan-out breaker whose members have no state points draws status rows", () => {
+    aFanOutBreakerWithNoStatePointsDrawsStatusRows();
+  });
+  it("A1 a tripped member's state is in the accessible name", () => {
+    aTrippedMembersStateIsInTheAccessibleName();
+  });
+  it("A2 a single breaker's state is in the accessible name", () => {
+    aSingleBreakersStateIsInTheAccessibleName();
+  });
+  it("A3 a breaker glyph with no state points adds nothing to the accessible name", () => {
+    aBreakerGlyphWithNoStatePointsAddsNothingToTheName();
+  });
 });
 
 describe("F3.74 Task 3.2 — MimicScene energy colour beside the freshness dash", () => {
@@ -135,6 +160,9 @@ describe("F3.74 Task 3.2 — MimicScene energy colour beside the freshness dash"
   });
   it("E3b a stale main breaker draws no dash; fresh units after it dash in hint", () => {
     aStaleMainBreakerDrawsNoDashAndHintDashesAfterIt();
+  });
+  it("E3c a breaker with no state points makes the pipes after it unknown", () => {
+    aBreakerWithNoStatePointsMakesThePipesAfterItUnknown();
   });
   it("E4 an unsourced preset draws as before", () => {
     anUnsourcedPresetDrawsAsBefore();

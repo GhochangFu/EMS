@@ -10,6 +10,7 @@ import type { AssetPointPickerRow, MetricCatalogKey, MimicPreset, UserRole, Widg
 
 import { widgetRowAfterRemovingSource } from "../../lib/dashboard-builder-form";
 import type { DashboardBuilderProblem, DashboardWidgetRow } from "../../lib/dashboard-builder-form";
+import { mimicTabSelectShown } from "../../lib/dashboard-builder-mimic-tab";
 import { useMimicLayouts } from "../../hooks/use-mimic-layouts";
 import { metricCatalogLabel } from "../../lib/metric-catalog";
 import { WIDGET_CATALOG } from "../../lib/widget-catalog";
@@ -83,9 +84,9 @@ export function WidgetInspector({ row, problems, role, organizationId, tabs, onC
   const layouts = (layoutsQuery.data?.items ?? []).filter((layout) => layout.organizationId === organizationId);
   const storedLayoutId = row.config.mimicLayoutId;
   const mimicSource = row.config.mimicSource ?? "preset";
-  // `F3.74` — the tabs a mimic may resolve through, and whether its own tab already binds a group.
+  // `F3.74` — the tabs a mimic may resolve through, and whether it shows the select at all (plan D7).
   const groupTabs = tabs.filter((tab) => tab.assetGroupId !== null);
-  const mimicOwnTabBindsGroup = groupTabs.some((tab) => tab.key === row.tabKey);
+  const showMimicTabSelect = mimicTabSelectShown(row, tabs);
 
   function updateConfig(patch: Partial<WidgetConfigRow>): void {
     onChange({ config: { ...row.config, ...patch } });
@@ -319,10 +320,11 @@ export function WidgetInspector({ row, problems, role, organizationId, tabs, onC
       {/*
         `F3.74` (plan D7) — a mimic on a tab that binds no asset group resolves through the group-bound
         tab named here (`config.tabKey`); the select lists only those tabs, the API's rule. A mimic on a
-        group-bound tab of its own resolves through that tab, so it shows no select. `compact` is the
-        preset arm's only field (the layout arm's schema has none).
+        group-bound tab of its own resolves through that tab, so it shows no select; nor does a mimic
+        on a dashboard with no group-bound tab, unless it still stores a key to clear
+        (`mimicTabSelectShown`). `compact` is the preset arm's only field (the layout arm's schema has none).
       */}
-      {row.widgetType === "mimic" && !mimicOwnTabBindsGroup ? (
+      {showMimicTabSelect ? (
         <Field label="Resolves through tab" error={problemFor("mimicTabKey")}>
           <select
             value={row.config.mimicTabKey ?? ""}

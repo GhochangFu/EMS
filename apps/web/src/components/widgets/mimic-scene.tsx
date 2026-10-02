@@ -14,13 +14,13 @@ import {
   BREAKER_PILL,
   ENERGY_PIPE_CLASSES,
   breakerLook,
-  breakerRow,
+  breakerPillClass,
   fanOutRows,
   graphOf,
-  membersOf,
-  statusRow,
+  mimicBreakerAriaSuffix,
   switchStatesOf,
   toSwitchState,
+  unitBreakerDrawing,
   type BreakerLook,
   type MimicBreakerMember,
 } from "../../lib/mimic-breaker";
@@ -48,7 +48,8 @@ import {
 } from "../../lib/mimic";
 import { unitScale, type MimicGeometry, type MimicGeometryUnit } from "../../lib/mimic-geometry";
 import { isStale } from "../../lib/schematic-telemetry";
-import { BreakerSwitch, FanOutMembers } from "./mimic-breaker-switch";
+import { BreakerSwitch } from "./mimic-breaker-switch";
+import { FanOutMembers } from "./mimic-fanout-members";
 import { FlowDash } from "./mimic-flow-dash";
 import { MimicGlyph } from "./mimic-glyphs";
 
@@ -110,8 +111,10 @@ const CALLOUT_TEXT_PAD_R = 6;
  * (`switchStatesOf`). Not fanning out, it draws a `BreakerSwitch` in place of its symbol and a
  * state pill, and frames by the precedence offline → tripped → open → alarm tone → closed; its
  * alarm status and callout stay. A fan-out unit stacks its members (code · switch · pill, or the
- * member's status for a unit that does not switch) in the value rows' and callout's slot, so it
- * draws neither; the drawing's accessible name still carries its alarm. A passive unit with a
+ * member's status for a unit that does not switch or a member with no state point) in the value
+ * rows' and callout's slot, so it draws neither, nor the `+N` badge or the code line; the drawing's
+ * accessible name still carries its alarm. Which unit or member draws a state is decided once,
+ * in `unitBreakerDrawing`, for the drawing and the accessible name alike. A passive unit with a
  * switching unit directly downstream frames as their worst member (`worstDownstreamSwitch`).
  * `compact` hides every value row and callout and keeps the labels, switches and pills.
  *
@@ -123,7 +126,9 @@ const CALLOUT_TEXT_PAD_R = 6;
  * is not walked and draws exactly as before.
  *
  * **Accessibility.** The SVG is one `role="img"`; its `aria-label` names every unit whose callout
- * is drawn, with the severity label and the full message (`mimicAriaLabel`).
+ * is drawn, with the severity label and the full message (`mimicAriaLabel`), and — since the
+ * switch is `aria-hidden` — every drawn breaker state, per unit or per fan-out member
+ * (`mimicBreakerAriaSuffix`: "Main breaker CR-Q1: open").
  *
  * **Colours are ADR 0078 role classes only** — no hex, no palette class, no named colour, no
  * `dark:` (`tests/f3.65-colour-roles-gate.test.ts`). Marker and clip ids come from `useId`, so
@@ -172,15 +177,6 @@ export function MimicScene({
     const node = statusOf.has(key) ? byKey.get(key) : undefined;
     return node === undefined || node.asset === null ? null : node.topAlarm;
   };
-  const ariaLabel = mimicAriaLabel(
-    title,
-    geometry.label,
-    geometry.units.flatMap((unit) => {
-      const alarm = calloutOf(unit.key);
-      return alarm === null ? [] : [{ unit: unit.label, severity: alarm.label, message: alarm.message }];
-    }),
-  );
-
   // `F3.74` plan D6 — every switching unit's members with their derived state (socket overlay,
   // staleness first), and the same as the walk's switch states for the passive-bus frame.
   const breakersOf = new Map<string, readonly MimicBreakerMember[]>(
@@ -188,6 +184,37 @@ export function MimicScene({
       .filter((u) => u.switching)
       .map((u) => [u.key, switchStatesOf(byKey.get(u.key), readings, stateMaps, readings.nowMs)]),
   );
+  // What each roled unit draws of its breakers — one answer for the drawing and its name.
+  const drawingOf = new Map(
+    roled.map((unit) => {
+      const node = byKey.get(unit.key);
+      const fanOut = unit.fanOut && (node?.asset ?? null) !== null;
+      return [unit.key, { fanOut, ...unitBreakerDrawing(fanOut, node, breakersOf.get(unit.key), readings) }] as const;
+    }),
+  );
+  const ariaLabel =
+    mimicAriaLabel(
+      title,
+      geometry.label,
+      geometry.units.flatMap((unit) => {
+        const alarm = calloutOf(unit.key);
+        return alarm === null ? [] : [{ unit: unit.label, severity: alarm.label, message: alarm.message }];
+      }),
+    ) +
+    mimicBreakerAriaSuffix(
+      roled.flatMap((unit) => {
+        const drawn = drawingOf.get(unit.key);
+        if (drawn === undefined) {
+          return [];
+        }
+        if (drawn.single !== null) {
+          return [{ unit: unit.label, code: drawn.single.asset.code, state: drawn.single.state }];
+        }
+        return drawn.rows.flatMap((row) =>
+          row.state === null ? [] : [{ unit: unit.label, code: row.code, state: row.state }],
+        );
+      }),
+    );
   const graph = graphOf(geometry);
   const switchStates = new Map(
     [...breakersOf].map(([key, members]) => [key, members.map((m) => toSwitchState(m.state))] as const),
@@ -241,7 +268,11 @@ export function MimicScene({
     // The server resolved the node and found no member for its role: a plain fact about the site,
     // not a fault — drawn muted and solid, never dashed, never "Not assigned".
     const noAsset = node !== undefined && asset === null;
-    const badge = asset === null ? null : mimicBadge(node?.memberCount ?? 0);
+    // `F3.74` plan D6 — a fan-out unit stacks its members in place of the value rows and the
+    // callout's slot, and its rows name every member, so it draws no `+N` badge and no code line;
+    // a switching unit that does not fan out carries its one member's switch (`unitBreakerDrawing`).
+    const { fanOut, single, rows: memberRows } = drawingOf.get(unit.key) ?? { fanOut: false, single: null, rows: [] };
+    const badge = asset === null || fanOut ? null : mimicBadge(node?.memberCount ?? 0);
     const statusLabel = noAsset ? MIMIC_NO_ASSET_LABEL : MIMIC_STATUS_LABEL[nodeStatus];
     const levelPoint = asset === null || unit.symbol !== "tank" ? null : mimicLevelPoint(asset);
     const level =
@@ -252,22 +283,12 @@ export function MimicScene({
     const topAlarm = calloutOf(unit.key);
     const alarmTone = topAlarm === null ? null : mimicAlarmTone(topAlarm.tone);
     const clipId = `mimic-callout-${uid}-${unit.key}`;
-    // `F3.74` plan D6 — a fan-out unit stacks its members in place of the value rows and the
-    // callout's slot; a switching unit that does not fan out carries its one member's switch.
-    const fanOut = unit.fanOut && asset !== null;
-    const breakers = breakersOf.get(unit.key);
-    // Only a node that carries state points takes a state (D6): an `electrical_distribution`
-    // `ht_panel` draws the `breaker` glyph and reports no state-mapped key, so it draws as before.
-    const hasState = (node?.statePoints.length ?? 0) > 0;
-    const single = !fanOut && hasState && breakers?.length === 1 ? (breakers[0] ?? null) : null;
+    // A switching unit with no state points draws its glyph, frame and status as before — but the
+    // walk still reads it `unknown` (`breakersOf`), so every pipe downstream of it is hint-grey and
+    // dashed: unknown never looks energised (ADR 0088 decision 6, ADR 0027).
     const singleLook = single === null ? null : breakerLook(single.state, alarmTone);
     const frameClass = singleLook === null ? MIMIC_STATUS_STROKE[nodeStatus] : BREAKER_LOOK_CLASSES[singleLook].frame;
     const dashed = (asset === null && !noAsset) || (singleLook !== null && BREAKER_LOOK_CLASSES[singleLook].dashed);
-    const memberRows = !fanOut
-      ? []
-      : breakers !== undefined
-        ? breakers.map(breakerRow)
-        : membersOf(node).map((m) => statusRow(m, readings, readings.nowMs));
     const fanOutPlaces = fanOutRows(memberRows.length, node?.memberCount ?? 0, w);
     const drawValues = !compact && !fanOut;
     const glyphX = (w - GLYPH_SIZE) / 2;
@@ -310,9 +331,11 @@ export function MimicScene({
             {badge}
           </text>
         )}
-        <text x={12} y={40} fontSize={12} className="fill-ink-muted">
-          {asset === null ? statusLabel : asset.code}
-        </text>
+        {fanOut ? null : (
+          <text data-testid="mimic-node-code" x={12} y={40} fontSize={12} className="fill-ink-muted">
+            {asset === null ? statusLabel : asset.code}
+          </text>
+        )}
         {asset === null ? null : (
           <text
             data-testid="mimic-node-status"
@@ -355,7 +378,7 @@ export function MimicScene({
               textAnchor="middle"
               fontSize={11}
               fontWeight={700}
-              className={BREAKER_LOOK_CLASSES[singleLook].pill}
+              className={breakerPillClass(single.state, singleLook)}
             >
               {BREAKER_PILL[single.state]}
             </text>
