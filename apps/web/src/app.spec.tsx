@@ -7,6 +7,7 @@ import type { AccessibleScope } from "@bms/shared";
 
 import * as loginApi from "./api/login";
 import { App } from "./app";
+import { RETURN_PATH_KEY } from "./lib/return-path";
 import { useAuthStore, type AuthUser } from "./stores/auth-store";
 
 /**
@@ -104,4 +105,68 @@ export async function aViewerReachesTheAttributionsPage(): Promise<void> {
     expect(fetchCurrentUser).toHaveBeenCalled();
   });
   expect(await screen.findByRole("heading", { name: "Attributions" })).toBeInTheDocument();
+}
+
+/** A wall URL (`F3.77` plan D10), the tab's address when the stored session turns out to be dead. */
+export const WALL_URL = "/control-room/site/x/sld?wall=1&every=30";
+
+/** An access token whose `exp` has passed — `isJwtExpired` reads it as expired. */
+function expiredAccessToken(): string {
+  const payload = btoa(JSON.stringify({ exp: Math.floor(Date.now() / 1000) - 60 }))
+    .replace(/\+/g, "-")
+    .replace(/\//g, "_")
+    .replace(/=+$/, "");
+  return `header.${payload}.signature`;
+}
+
+/**
+ * Renders `App` with the tab at {@link WALL_URL}. `App` reads `window.location` (as
+ * `clearSessionOnAuthFailure` does), and a `MemoryRouter` leaves jsdom's at `/`, so the spec moves
+ * it with `history.replaceState`; the caller restores it.
+ */
+function renderAtTheWallUrl(): void {
+  window.history.replaceState(null, "", WALL_URL);
+  // AppShell's status indicator fetches; an unstubbed fetch would reach the real API on :4000.
+  vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response("{}", { status: 200 })));
+  render(
+    <QueryClientProvider client={new QueryClient()}>
+      <MemoryRouter initialEntries={[WALL_URL]}>
+        <App />
+      </MemoryRouter>
+    </QueryClientProvider>,
+  );
+}
+
+/**
+ * R1 (`F3.77` plan D10) — a wall tab reloaded with an expired token keeps its wall URL as the return
+ * path, as a 401 does. Positive control first: the session was cleared, so the store is the
+ * effect's doing.
+ */
+export async function anExpiredTokenOnAWallUrlKeepsTheReturnPath(): Promise<void> {
+  vi.spyOn(loginApi, "fetchCurrentUser").mockReturnValue(new Promise(() => undefined));
+  useAuthStore.setState({ accessToken: expiredAccessToken(), oidcIdToken: ID_TOKEN, user: USER, scope: SCOPE });
+
+  renderAtTheWallUrl();
+
+  await waitFor(() => {
+    expect(useAuthStore.getState().accessToken).toBeNull();
+  });
+  expect(sessionStorage.getItem(RETURN_PATH_KEY)).toBe(WALL_URL);
+}
+
+/**
+ * R2 (`F3.77` plan D10) — the same when the token is unexpired but `/me` refuses it: the effect
+ * clears the session and keeps the wall URL.
+ */
+export async function aRefusedMeOnAWallUrlKeepsTheReturnPath(): Promise<void> {
+  const fetchCurrentUser = vi.spyOn(loginApi, "fetchCurrentUser").mockRejectedValue(new Error("401"));
+  useAuthStore.setState({ accessToken: unexpiredAccessToken(), oidcIdToken: ID_TOKEN, user: USER, scope: null });
+
+  renderAtTheWallUrl();
+
+  await waitFor(() => {
+    expect(useAuthStore.getState().accessToken).toBeNull();
+  });
+  expect(fetchCurrentUser, "control: the /me effect ran").toHaveBeenCalled();
+  expect(sessionStorage.getItem(RETURN_PATH_KEY)).toBe(WALL_URL);
 }

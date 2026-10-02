@@ -4,6 +4,7 @@ import { useNavigate } from "react-router-dom";
 
 import { fetchCurrentUser, loginRequest } from "../api/login";
 import { isOidcEnabled, startOidcLogin } from "../api/oidc";
+import { peekReturnPath, takeReturnPath } from "../lib/return-path";
 import { useAuthStore } from "../stores/auth-store";
 import { Wordmark } from "../components/wordmark";
 
@@ -14,6 +15,8 @@ export function LoginPage() {
   const [email, setEmail] = useState("admin@bms.local");
   const [password, setPassword] = useState("");
   const [formError, setFormError] = useState<string | null>(null);
+  // `F3.77` (plan D10, OQ6) — read once: a wall session ended on a 401 and its URL is kept.
+  const [sessionEnded] = useState(() => peekReturnPath() !== null);
 
   const mutation = useMutation({
     mutationFn: () => loginRequest(email, password),
@@ -21,8 +24,9 @@ export function LoginPage() {
       const current = await fetchCurrentUser(data.accessToken);
       // Local login has no OIDC id token.
       setSession(data.accessToken, current.user, current.scope, null);
-      // `F3.72` (plan D1) — `/` renders the caller's Control Room entry level.
-      void navigate("/", { replace: true });
+      // `F3.77` (plan D10) — back to the wall URL a 401 kept, validated on read;
+      // else `/`, the caller's Control Room entry level (`F3.72` plan D1).
+      void navigate(takeReturnPath() ?? "/", { replace: true });
     },
     onError: (err: Error) => {
       setFormError(err.message);
@@ -46,6 +50,14 @@ export function LoginPage() {
 
   return (
     <div className="min-h-screen bg-chrome px-4 py-8 text-on-dark">
+      {sessionEnded ? (
+        <p
+          role="status"
+          className="mx-auto mb-4 w-full max-w-6xl rounded-xl border border-warning-line bg-warning-wash px-4 py-3 text-sm font-semibold text-warning-ink"
+        >
+          Session ended — sign in to return to the wall view
+        </p>
+      ) : null}
       <div className="mx-auto grid min-h-[calc(100vh-4rem)] w-full max-w-6xl overflow-hidden rounded-2xl border border-on-dark/10 bg-on-dark/5 shadow-2xl lg:grid-cols-[1.12fr_0.88fr]">
         <section className="relative flex flex-col justify-between overflow-hidden bg-[radial-gradient(circle_at_top_left,_rgb(var(--accent)_/_0.34),_transparent_32%),linear-gradient(135deg,rgb(var(--chrome))_0%,rgb(var(--chrome))_54%,rgb(var(--chrome-nav)_/_0.35)_100%)] p-8 lg:p-10">
           <div className="absolute right-8 top-8 h-36 w-36 rounded-full border border-accent/30 bg-accent/10 blur-sm" />

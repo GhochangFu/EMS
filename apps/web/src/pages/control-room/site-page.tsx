@@ -1,8 +1,9 @@
 import type { AccessibleScope, LocationKpiSummary, ResolvedSiteControlRoomViewDto, UserRole } from "@bms/shared";
 import { useQuery } from "@tanstack/react-query";
-import { Link, Navigate, useParams } from "react-router-dom";
+import { Link, Navigate, useLocation, useParams } from "react-router-dom";
 
 import { fetchResolvedSiteControlRoomView } from "../../api/control-room";
+import { fetchDashboard } from "../../api/dashboards";
 import { fetchLocationKpis } from "../../api/locations";
 import { ControlRoomBreadcrumb } from "../../components/control-room/control-room-breadcrumb";
 import { GeneratedSiteView } from "../../components/control-room/generated-site-view";
@@ -11,11 +12,13 @@ import { ScopedDashboardsList } from "../../components/control-room/scoped-dashb
 import { SiteAssetsView } from "../../components/control-room/site-assets-view";
 import { SiteDashboardView } from "../../components/control-room/site-dashboard-view";
 import { SmocSiteView } from "../../components/control-room/smoc-site-view";
+import { WallFrame } from "../../components/control-room/wall-frame";
 import { PageHeader } from "../../components/page-header";
 import { SectionCard } from "../../components/section-card";
 import { AppShell } from "../../layouts/app-shell";
 import { isMasterDataAdmin } from "../../lib/admin-access";
 import { controlRoomCrumbs } from "../../lib/control-room-levels";
+import { FOCUS_OUTLINE_CLASS } from "../../lib/focus-classes";
 import { siteViewNoticeText, siteViewNoticeTone } from "../../lib/site-view-notice";
 import {
   DEFAULT_SMOC_TAB,
@@ -25,6 +28,7 @@ import {
   smocTabFromParam,
   type SmocTabKey,
 } from "../../lib/smoc-pages";
+import { parseWallParams, WALL_DEFAULT_S, wallHref } from "../../lib/wall-mode";
 import { useAuthStore, type AuthUser } from "../../stores/auth-store";
 
 type ControlRoomSitePageProps = {
@@ -82,9 +86,18 @@ const linkClass = "mt-2 inline-block text-sm font-semibold text-accent-strong ho
  * handed the raw segment. A `dashboard` row with no slug renders the generated view and still
  * redirects. The `no_site_layout` and `dashboard_removed` notices carry **Make site layout**
  * for `isMasterDataAdmin` roles (`MakeSiteLayoutButton`), beside the notice text, never in it.
+ *
+ * `F3.77` (ADR 0087 Amendment 3 ruling 7, plan D8) — **wall mode.** `?wall=1&every=<s>` on a
+ * `dashboard` view that renders (the tab stays the route's `:tab` segment, owner ruling OQ2)
+ * renders `WallFrame` instead of `AppShell`, with the same `SiteDashboardView` inside; the frame
+ * rotates through the dashboard's tabs by `sortOrder`. Any other view, the assets tab, a site
+ * outside the KPI list and a pending read render the normal page (OQ3). The page header's
+ * **Wall** link shows on a `dashboard` view only and opens the current tab's wall URL at the
+ * default interval. The D5 redirect runs first, so a wall URL with a bad segment still redirects.
  */
 export function ControlRoomSitePage({ user, locationId: locationIdProp }: ControlRoomSitePageProps) {
   const params = useParams();
+  const location = useLocation();
   const locationId = locationIdProp ?? params.locationId ?? "";
   const tabParam = params.tab;
   const onAssetsTab = tabParam === SITE_ASSETS_TAB;
@@ -108,7 +121,20 @@ export function ControlRoomSitePage({ user, locationId: locationIdProp }: Contro
   const site = items?.find((item) => item.id === locationId);
 
   const showsSmocTabs = siteView.data?.kind === "builtin" && site !== undefined && isSmocSite(site);
-  const showsDashboard = siteView.data?.kind === "dashboard" && siteView.data.dashboardSlug !== null;
+  const dashboardSlug = siteView.data?.kind === "dashboard" ? siteView.data.dashboardSlug : null;
+  const showsDashboard = dashboardSlug !== null;
+
+  // `F3.77` (plan D8, OQ3) — the wall shows a site's `dashboard` view only, never the assets tab.
+  const wall = parseWallParams(location.search);
+  const sitePath = `/control-room/site/${encodeURIComponent(locationId)}`;
+  const wallSite = wall.on && dashboardSlug !== null && !onAssetsTab ? site : undefined;
+  // The rotation's tab order. The same key and read as `SiteDashboardView`'s (and the viewer's),
+  // so the wall shares that cache entry and adds no request.
+  const wallDashboardQ = useQuery({
+    queryKey: ["dashboards", "detail", dashboardSlug, wallSite?.organization.id],
+    queryFn: () => fetchDashboard(dashboardSlug as string, wallSite?.organization.id as string),
+    enabled: wallSite !== undefined,
+  });
 
   if (
     items !== undefined &&
@@ -118,7 +144,29 @@ export function ControlRoomSitePage({ user, locationId: locationIdProp }: Contro
     !showsDashboard &&
     (!showsSmocTabs || tab === null)
   ) {
-    return <Navigate to={`/control-room/site/${encodeURIComponent(locationId)}`} replace />;
+    return <Navigate to={sitePath} replace />;
+  }
+
+  if (wallSite !== undefined && dashboardSlug !== null) {
+    const tabKeys = [...(wallDashboardQ.data?.tabs ?? [])]
+      .sort((a, b) => a.sortOrder - b.sortOrder)
+      .map((entry) => entry.key);
+    return (
+      <WallFrame
+        siteName={wallSite.name}
+        sitePath={sitePath}
+        tabKeys={tabKeys}
+        currentKey={tabParam}
+        everyS={wall.everyS}
+      >
+        <SiteDashboardView
+          slug={dashboardSlug}
+          organizationId={wallSite.organization.id}
+          locationId={wallSite.id}
+          tab={tabParam}
+        />
+      </WallFrame>
+    );
   }
 
   return (
@@ -135,6 +183,16 @@ export function ControlRoomSitePage({ user, locationId: locationIdProp }: Contro
                 eyebrow="Control Room"
                 title={site.name}
                 subtitle={`${site.organization.name} · ${site.organization.code}`}
+                actions={
+                  showsDashboard ? (
+                    <Link
+                      to={wallHref(sitePath, onAssetsTab ? undefined : tabParam, WALL_DEFAULT_S)}
+                      className={`surface-button px-3 py-1.5 text-sm font-semibold text-accent-strong ${FOCUS_OUTLINE_CLASS}`}
+                    >
+                      Wall
+                    </Link>
+                  ) : undefined
+                }
               />
               <SiteSectionStrip locationId={site.id} onAssetsTab={onAssetsTab} />
               {siteView.data === undefined ? (

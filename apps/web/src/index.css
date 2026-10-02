@@ -467,3 +467,20 @@ body {
 .leaflet-container a.leaflet-popup-close-button:focus {
   color: rgb(var(--ink));
 }
+
+/*
+ * F3.77 (ADR 0087 Amendment 3 ruling 7, plan D8, owner ruling OQ4) — the wall mode's type scale.
+ * `zoom` and not a root `font-size`: many widget sizes are px literals (`text-[11px]`), which a
+ * root size would leave alone. 1.25 on a 1920 px wall, 2.5 from 3000 px (a 4K wall). The canvas
+ * measures its zoomed width, so its row height follows. The wall PCs run Chrome or Edge; Firefox
+ * before 126 ignores `zoom`. Plain CSS, not `@layer`, so Tailwind does not purge it.
+ */
+.wall-root {
+  zoom: 1.25;
+}
+
+@media (min-width: 3000px) {
+  .wall-root {
+    zoom: 2.5;
+  }
+}

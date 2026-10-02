@@ -5,6 +5,12 @@ import { cleanup } from "@testing-library/react";
 import {
   accentsTheDescriptorCore,
   drawsNoImgElement,
+  navigatesToTheReturnPath,
+  navigatesToTheRootWithoutAReturnPath,
+  showsNoBannerForARefusedPath,
+  showsNoBannerWithoutAReturnPath,
+  showsTheBannerInOidcMode,
+  showsTheSessionEndedBanner,
   readsNoTrinetra,
   readsTheCardHeading,
   readsTheCardSentence,
@@ -13,6 +19,7 @@ import {
   readsTheRolePills,
   showsTheWordmark,
 } from "./login-page.spec";
+import { useAuthStore } from "../stores/auth-store";
 
 /**
  * `F3.33` U4 — Vitest entry point. Assertions live in the sibling `.spec` (ADR 0014); the jsdom
@@ -59,5 +66,37 @@ describe("F3.33 the login page reads IONSiTE NEXUS", () => {
 
   it("L8 reads no TRINETRA", () => {
     readsNoTrinetra();
+  });
+});
+
+describe("F3.77 the login page after a wall session ends", () => {
+  afterEach(() => {
+    window.sessionStorage.clear();
+    window.localStorage.clear();
+    useAuthStore.getState().clearSession();
+  });
+
+  it("L9 shows the session-ended banner while a return path is stored", () => {
+    showsTheSessionEndedBanner();
+  });
+
+  it("L10 shows the banner in OIDC mode too", () => {
+    showsTheBannerInOidcMode();
+  });
+
+  it("L11 shows no banner without a return path", () => {
+    showsNoBannerWithoutAReturnPath();
+  });
+
+  it("L12 shows no banner for a refused stored path", () => {
+    showsNoBannerForARefusedPath();
+  });
+
+  it("L13 a sign-in lands on the stored return path with replace", async () => {
+    await navigatesToTheReturnPath();
+  });
+
+  it("L14 a sign-in with no return path lands on / with replace", async () => {
+    await navigatesToTheRootWithoutAReturnPath();
   });
 });

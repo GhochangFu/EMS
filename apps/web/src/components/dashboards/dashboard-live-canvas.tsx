@@ -1,10 +1,13 @@
 import type { DashboardDto, DashboardWidgetDto } from "@bms/shared";
-import { useMemo } from "react";
+import { useQueryClient } from "@tanstack/react-query";
+import { useEffect, useMemo } from "react";
 
 import { useDashboardTelemetry } from "../../hooks/use-dashboard-telemetry";
-import { useSiteWidgetsAlarmRefresh } from "../../hooks/use-site-widgets";
+import { siteWidgetsQueryPrefix, useSiteWidgetsAlarmRefresh } from "../../hooks/use-site-widgets";
+import { newestReadMs } from "../../lib/wall-mode";
 import { DashboardCanvas, type CanvasTile } from "./dashboard-canvas";
 import { DashboardWidgetLive } from "./dashboard-widget-live";
+import { useReportNewestRead } from "./newest-read-context";
 import { isSiteWidget } from "./site-widget-live";
 
 type DashboardLiveCanvasProps = {
@@ -56,6 +59,30 @@ export function DashboardLiveCanvas({ dashboard: fullDashboard, tabKey }: Dashbo
   }, [fullDashboard, tabKey]);
   const { latestByRef, historyByRef, aggregateByKey, catalog } = useDashboardTelemetry(dashboard);
   const now = Date.now();
+  // `F3.77` plan D9 — the newest read on this canvas, for the wall frame's "Updated" line. The
+  // site-widgets key is the one the tab's widgets read with (`null` for no tab). Not a
+  // subscription: the canvas re-renders every `STALE_TICK_MS` (the telemetry hook's tick), which
+  // re-reads it well inside `FRESH_MS`.
+  const queryClient = useQueryClient();
+  const siteWidgetsUpdatedAt = queryClient.getQueryState([
+    ...siteWidgetsQueryPrefix,
+    fullDashboard.id,
+    tabKey ?? null,
+  ])?.dataUpdatedAt;
+  const newestMs = newestReadMs(
+    {
+      latestByRef,
+      catalogResolvedAt: catalog?.resolvedAt ?? null,
+      siteWidgetsUpdatedAt,
+    },
+    now,
+  );
+  const reportNewestRead = useReportNewestRead();
+  // Reported from an effect keyed on the number, never during render: the reporter sets the
+  // frame's state, and a render-time update of another component is a React error.
+  useEffect(() => {
+    reportNewestRead(newestMs);
+  }, [reportNewestRead, newestMs]);
   // `F3.73` — a widget's tab key, read through the dashboard's own tabs (`dashboardRowsFromDto`'s rule).
   const tabKeyById = new Map(dashboard.tabs.map((tab) => [tab.id, tab.key]));
 

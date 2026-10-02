@@ -9,6 +9,9 @@ import {
   noTabKeyShowsEveryWidget,
   oneSocketWithTokenDisconnectsOnUnmount,
   oneWidgetRendersItsTile,
+  theCanvasReportsTheNewerCatalogRead,
+  theCanvasReportsTheNewerSample,
+  theCanvasReportsTheSiteWidgetsRead,
 } from "./dashboard-live-canvas.spec";
 
 /**
@@ -48,5 +51,17 @@ describe("F3.69 U1 DashboardLiveCanvas", () => {
 
   it("L6 renders every widget of a tabbed dashboard when given no tabKey", async () => {
     await noTabKeyShowsEveryWidget();
+  });
+
+  it("L7 reports the catalog read as the newest read when it is newer than the sample (F3.77 D9)", async () => {
+    await theCanvasReportsTheNewerCatalogRead();
+  });
+
+  it("L8 reports the sample as the newest read when it is newer than the catalog read (F3.77 D9)", async () => {
+    await theCanvasReportsTheNewerSample();
+  });
+
+  it("L9 reports the tab's site-widgets read when there is no sample and no catalog read (F3.77 D9)", async () => {
+    await theCanvasReportsTheSiteWidgetsRead();
   });
 });

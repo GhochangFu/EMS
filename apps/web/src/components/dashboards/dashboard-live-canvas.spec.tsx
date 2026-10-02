@@ -1,11 +1,13 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import { expect, vi, type Mock } from "vitest";
 
 import { encodePointRef, type DashboardDto, type DashboardWidgetDto } from "@bms/shared";
 
+import { siteWidgetsQueryPrefix } from "../../hooks/use-site-widgets";
 import { useAuthStore } from "../../stores/auth-store";
 import { DashboardLiveCanvas } from "./dashboard-live-canvas";
+import { NewestReadContext } from "./newest-read-context";
 
 /**
  * `F3.69` U1 — `DashboardLiveCanvas`, byte-moved out of `DashboardViewerPage`
@@ -178,6 +180,87 @@ export async function noTabKeyShowsEveryWidget(): Promise<void> {
   renderCanvas(tabbedDashboard());
   expect(await screen.findByText("SLD tile")).toBeInTheDocument();
   expect(screen.getByText("Overview tile")).toBeInTheDocument();
+}
+
+// In the past of any clock the suite runs on: the canvas clamps a time ahead of `now` (F4.37).
+const SAMPLE_AT = Date.UTC(2026, 0, 2, 4, 15, 0);
+const CATALOG_AT = SAMPLE_AT + 9_000;
+
+/**
+ * `F3.77` plan D9 — a bound widget that also binds a catalog source, rendered under a reporter
+ * spy: the seed answers one sample at `sampleAt`, the catalog read resolves at `catalogAt`.
+ */
+async function reportedNewestRead(sampleAt: number, catalogAt: number): Promise<Mock> {
+  const report = vi.fn();
+  const bound = {
+    ...widget(true),
+    sources: [{ id: "source-1", catalogKey: "alarms.active.count", params: {}, sortOrder: 0 }],
+  } as DashboardWidgetDto;
+  fetchSpy = vi.fn(() => Promise.reject(new Error("a spec reached the network")));
+  vi.stubGlobal("fetch", fetchSpy);
+  mocks.io.mockImplementation(() => ({ on: vi.fn(), disconnect: mocks.disconnect }));
+  mocks.fetchTelemetryRecent.mockResolvedValue([
+    { time: new Date(sampleAt).toISOString(), assetId: ASSET_ID, pointKey: "kw", value: 4, unit: "kWh" },
+  ]);
+  mocks.fetchPointAggregate.mockResolvedValue({ stats: null, buckets: [] });
+  mocks.fetchDashboardCatalogValues.mockResolvedValue({ values: [], resolvedAt: new Date(catalogAt).toISOString() });
+  useAuthStore.setState({ accessToken: TOKEN });
+  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  render(
+    <QueryClientProvider client={queryClient}>
+      <NewestReadContext.Provider value={report}>
+        <DashboardLiveCanvas dashboard={dashboard([bound])} />
+      </NewestReadContext.Provider>
+    </QueryClientProvider>,
+  );
+  await screen.findByText("Energy today");
+  // Both reads reached the canvas before the claim: the newest is a choice between two times.
+  await waitFor(() => {
+    expect(mocks.fetchTelemetryRecent).toHaveBeenCalledWith(REF, expect.any(String));
+    expect(mocks.fetchDashboardCatalogValues).toHaveBeenCalledWith("dash-1");
+    expect(report).toHaveBeenCalledWith(sampleAt > catalogAt ? sampleAt : catalogAt);
+  });
+  return report;
+}
+
+/** L7 — `F3.77` D9: a catalog read newer than the sample is the reported newest read. */
+export async function theCanvasReportsTheNewerCatalogRead(): Promise<void> {
+  const report = await reportedNewestRead(SAMPLE_AT, CATALOG_AT);
+  expect(report.mock.calls.at(-1)).toEqual([CATALOG_AT]);
+}
+
+/** L8 — `F3.77` D9: a sample newer than the catalog read is the reported newest read. */
+export async function theCanvasReportsTheNewerSample(): Promise<void> {
+  const report = await reportedNewestRead(CATALOG_AT, SAMPLE_AT);
+  expect(report.mock.calls.at(-1)).toEqual([CATALOG_AT]);
+}
+
+/**
+ * L9 — `F3.77` D9: the tab's site-widgets read counts. A catalog-only Overview has no sample, and
+ * the catalog polls every minute (`CATALOG_REFRESH_MS`, above `FRESH_MS`), so this read is what
+ * keeps the wall's line live between catalog reads.
+ */
+export async function theCanvasReportsTheSiteWidgetsRead(): Promise<void> {
+  const report = vi.fn();
+  fetchSpy = vi.fn(() => Promise.reject(new Error("a spec reached the network")));
+  vi.stubGlobal("fetch", fetchSpy);
+  mocks.io.mockImplementation(() => ({ on: vi.fn(), disconnect: mocks.disconnect }));
+  useAuthStore.setState({ accessToken: TOKEN });
+  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  queryClient.setQueryData([...siteWidgetsQueryPrefix, "dash-1", "overview"], { tabs: [] }, { updatedAt: CATALOG_AT });
+  render(
+    <QueryClientProvider client={queryClient}>
+      <NewestReadContext.Provider value={report}>
+        <DashboardLiveCanvas dashboard={tabbedDashboard()} tabKey="overview" />
+      </NewestReadContext.Provider>
+    </QueryClientProvider>,
+  );
+  expect(await screen.findByText("Overview tile")).toBeInTheDocument();
+  expect(mocks.fetchTelemetryRecent, "control: no sample on this tab").not.toHaveBeenCalled();
+  expect(mocks.fetchDashboardCatalogValues, "control: no catalog read on this tab").not.toHaveBeenCalled();
+  await waitFor(() => {
+    expect(report).toHaveBeenCalledWith(CATALOG_AT);
+  });
 }
 
 /** L4 — one socket, opened with the session token; disconnected on unmount. */

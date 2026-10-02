@@ -3,7 +3,12 @@ import { afterEach, describe, it, vi } from "vitest";
 import { cleanup } from "@testing-library/react";
 
 import { useAuthStore } from "./stores/auth-store";
-import { aViewerReachesTheAttributionsPage, theMeEffectKeepsTheStoredIdToken } from "./app.spec";
+import {
+  aRefusedMeOnAWallUrlKeepsTheReturnPath,
+  anExpiredTokenOnAWallUrlKeepsTheReturnPath,
+  aViewerReachesTheAttributionsPage,
+  theMeEffectKeepsTheStoredIdToken,
+} from "./app.spec";
 
 /**
  * Vitest entry point — assertions live in the sibling `.spec` (ADR 0014), and
@@ -25,5 +30,25 @@ describe("F4.156 App /me effect", () => {
 
   it("A1 a signed-in viewer reaches /attributions", async () => {
     await aViewerReachesTheAttributionsPage();
+  });
+});
+
+describe("F3.77 D10 App session effects keep a wall URL", () => {
+  afterEach(() => {
+    cleanup();
+    vi.restoreAllMocks();
+    vi.unstubAllGlobals();
+    useAuthStore.getState().clearSession();
+    localStorage.clear();
+    sessionStorage.clear();
+    window.history.replaceState(null, "", "/");
+  });
+
+  it("R1 keeps the wall URL as the return path when the stored token has expired", async () => {
+    await anExpiredTokenOnAWallUrlKeepsTheReturnPath();
+  });
+
+  it("R2 keeps the wall URL as the return path when /me refuses the token", async () => {
+    await aRefusedMeOnAWallUrlKeepsTheReturnPath();
   });
 });
