@@ -103,9 +103,12 @@ const JUNCTION_PARENTS: Record<string, string[]> = {
 };
 
 /**
- * Platform vocabulary and access-control plumbing get no column and no policy.
- * The `user_*_access` grant tables are read during scope resolution on the
- * fleet/auth pools; policying them is out of scope (consistent with F4.16).
+ * Platform vocabulary and access-control plumbing get no `organization_id`
+ * column. The `user_*_access` grant tables stay on this list: they carry no
+ * column of their own, but since `0098` (F3.78 / ADR 0089 decision 10)
+ * `user_location_access` and `user_asset_group_access` are `FORCE`-policied by
+ * their parent location's / asset group's organization, the `0047` junction
+ * shape. `tests/f3.78-user-administration-schema.test.ts` pins that policy.
  */
 const NO_COLUMN = [
   "asset_domains",

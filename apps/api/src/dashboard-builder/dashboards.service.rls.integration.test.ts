@@ -543,10 +543,11 @@ describe.skipIf(!connectionString)(
       // throwaway user rather than mutating a seeded fixture's grants, so this cannot race
       // another suite reading phe-admin@bms.local's identity in the same parallel run.
       const multiOrgUser = await superuserPool.query<{ id: string }>(
-        `INSERT INTO bms.users (email, password_hash, display_name, role)
-         VALUES ($1, 'x', 'F3.1b multi-org proof', 'organization_admin')
+        `INSERT INTO bms.users (email, password_hash, display_name, role, organization_id)
+         VALUES ($1, 'x', 'F3.1b multi-org proof', 'organization_admin', $2)
          RETURNING id`,
-        [MULTI_ORG_EMAIL],
+        // ADR 0089 decision 2 (0098): every non-admin role carries a home organization.
+        [MULTI_ORG_EMAIL, eskomOrgId],
       );
       const multiOrgUserId = multiOrgUser.rows[0]?.id;
       if (!multiOrgUserId) {
@@ -666,9 +667,10 @@ describe.skipIf(!connectionString)(
       f4161OrgIdForCleanup = f4161OrgId;
 
       const viewer = await superuserPool.query<{ id: string }>(
-        `INSERT INTO bms.users (email, password_hash, display_name, role)
-         VALUES ($1, 'x', 'F4.161 U4 mixed-grant viewer', 'viewer') RETURNING id`,
-        [F4161_VIEWER_EMAIL],
+        `INSERT INTO bms.users (email, password_hash, display_name, role, organization_id)
+         VALUES ($1, 'x', 'F4.161 U4 mixed-grant viewer', 'viewer', $2) RETURNING id`,
+        // ADR 0089 decision 2 (0098): every non-admin role carries a home organization.
+        [F4161_VIEWER_EMAIL, f4161OrgId],
       );
       const f4161ViewerId = viewer.rows[0]?.id;
       if (!f4161ViewerId) {
@@ -750,10 +752,11 @@ describe.skipIf(!connectionString)(
       dashboardIds.push(n2LeakDashboard.id);
 
       const n2MultiOrgUser = await superuserPool.query<{ id: string }>(
-        `INSERT INTO bms.users (email, password_hash, display_name, role)
-         VALUES ($1, 'x', 'F3.69 N2 multi-org proof', 'organization_admin')
+        `INSERT INTO bms.users (email, password_hash, display_name, role, organization_id)
+         VALUES ($1, 'x', 'F3.69 N2 multi-org proof', 'organization_admin', $2)
          RETURNING id`,
-        [N2_MULTI_ORG_EMAIL],
+        // ADR 0089 decision 2 (0098): every non-admin role carries a home organization.
+        [N2_MULTI_ORG_EMAIL, eskomOrgId],
       );
       const n2MultiOrgUserId = n2MultiOrgUser.rows[0]?.id;
       if (!n2MultiOrgUserId) {
