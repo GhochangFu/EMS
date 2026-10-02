@@ -37,12 +37,14 @@ const ROW: LoginRow = {
   role: "viewer",
 };
 
-/** Runs `fn` with local login enabled and a `bcrypt.compare` spy, restoring both. */
+/** Runs `fn` with local login enabled and a call-through `bcrypt.compare` spy, restoring both. */
 async function withLocalLogin(fn: (compare: ReturnType<typeof vi.spyOn>) => Promise<void>): Promise<void> {
   const saved = { AUTH_MODE: process.env.AUTH_MODE, OIDC_ISSUER: process.env.OIDC_ISSUER };
   process.env.AUTH_MODE = "local";
   delete process.env.OIDC_ISSUER;
-  const compare = vi.spyOn(bcrypt, "compare").mockImplementation(async () => false);
+  // Calls through to the real bcrypt: a stub answering `false` would turn a NULL
+  // hash into the same 401 with the guard deleted, so the 401 case could not redden.
+  const compare = vi.spyOn(bcrypt, "compare");
   try {
     await fn(compare);
   } finally {
