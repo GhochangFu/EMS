@@ -11,9 +11,9 @@ recorded under *Gate questions*, and *Review record* lists what the review
 changed. It becomes Accepted when the owner approves this written record.
 
 Implements row `F3.78`. Amends the `bms.users` grant matrix of migration
-`0039` and the `assertNoRoleCanInsertOrDeleteUsers` invariant that pins it
-(decision 7), and changes how `resolveDbUser` matches a token to a row
-(decision 4). It does not amend
+`0039` and the two invariants that pin it, `assertNoRoleCanInsertOrDeleteUsers`
+(decision 7) and `assertAuthCanUpdateOnlyLastLogin` (decision 4), and changes
+how `resolveDbUser` matches a token to a row (decision 4). It does not amend
 [ADR 0043](./0043-multi-tenant-architecture.md) decision 5: the threat that
 decision closes stays closed by a different grant. It narrows one clause of
 `AGENTS.md` §6 (see *Promotion*).
@@ -189,24 +189,46 @@ Ruled by the owner on 2026-10-02, one at a time:
    error. If that undo also fails, the account is still disabled, the API logs
    the Keycloak id only (no email, no name), and the response says that a
    disabled Keycloak account remains. If step 5 fails, the row exists and the
-   response says the account must be enabled with *reactivate*.
+   response says the account must be enabled with *reactivate*. Reactivate is
+   idempotent: it accepts a row whose `disabled_at` is already `NULL` and still
+   sets the Keycloak user `enabled: true`.
 
 4. **A row is joined to its Keycloak account by `oidc_subject`.**
    `resolveDbUser`, and the fourteen services that repeat its lookup (which
    move onto one shared resolver), match in this order:
    - Under OIDC: `oidc_subject = sub`. If no row has that subject, and the
-     token's `email_verified` is true, a row with the token's email **and a
-     `NULL` `oidc_subject`** is linked once: `bms_auth` writes
-     `oidc_subject = sub` on it (a new `UPDATE (oidc_subject)` grant, under
-     the existing `auth_bootstrap_write` policy) and the match succeeds. A row
-     that already has a different subject never matches by email.
+     token's raw `email` claim is present with `email_verified === true`, the
+     row with that email and a `NULL` subject is linked once and the match
+     succeeds. The link is one statement on `bms_auth`:
+     `UPDATE bms.users SET oidc_subject = $sub WHERE lower(email) = $email
+     AND oidc_subject IS NULL`, and it must change exactly one row. It never
+     uses the guard's fallback email (`preferred_username`, then `sub`,
+     `jwt-auth.guard.ts:174`); `KeycloakClaims` and `JwtPayload` gain
+     `email_verified` for this.
    - Under local auth: `id = sub`, as today.
 
-   `bms.users.oidc_subject` gets a unique index. The user screen refuses to
-   change a row with no `oidc_subject` yet and says that the user must sign in
-   once first; the seven seeded users link on their next sign-in. The step-3
-   plan also proves that a Keycloak user cannot edit its own email in realm
-   `bms` (or sets the user profile so that it cannot).
+   The database holds the link fixed, not only the application:
+   - `bms_auth` gains `UPDATE (oidc_subject)` — so `assertAuthCanUpdateOnlyLastLogin`
+     becomes "`last_login_at` and `oidc_subject` only" — and `bms_tenant` and
+     `bms_fleet` **lose** the `UPDATE (oidc_subject)` they hold today
+     (`0039:86-87,96-97`), so the link is written only by the sign-in path and
+     the create path (decision 7's `INSERT`).
+   - A trigger on `bms.users` refuses any update that changes a non-`NULL`
+     `oidc_subject`, unless the session is a superuser. The existing
+     `auth_bootstrap_write` policy is `USING (true)`, so without the trigger
+     `bms_auth` could re-point the `admin` row's subject. A re-link is a
+     runbook operation run as the superuser.
+   - `bms.users.oidc_subject` gets a unique index.
+
+   The user screen refuses to change a row with no `oidc_subject` yet and says
+   that the user must sign in once first; the seven seeded users link on their
+   next sign-in. On a host whose realm was built by hand, a user whose
+   Keycloak email is not verified cannot link, and an unlinked `admin` is then
+   refused by ADR 0044. So the provisioning step (decision 5) lists every realm
+   user whose `bms.users` row is unlinked and whose `emailVerified` is false,
+   and the runbook gives a one-shot superuser link command for those users.
+   The step-3 plan also proves that a Keycloak user cannot edit its own email
+   in realm `bms` (or sets the user profile so that it cannot).
 
 ### Keycloak
 
@@ -261,30 +283,56 @@ Ruled by the owner on 2026-10-02, one at a time:
      organization_id, email, display_name, role, oidc_subject, created_at)` on
      `bms.users`. `password_hash` is left out, so no pool role can write it.
      `DELETE` stays revoked;
+   - revokes `UPDATE (email, oidc_subject)` from `bms_tenant` and `bms_fleet`.
+     The email is not editable (decision 1), no code updates it today (the one
+     runtime `bms.users` update is `auth.service.ts:62`, `last_login_at`), and
+     the subject is decision 4's identity key;
    - adds the `CHECK` of decision 2, a unique index on `oidc_subject`, and a
      unique index on `lower(email)`, after a `DO` block that aborts with a
-     clear message if existing rows collide on `lower(email)`;
+     clear message if existing rows collide on `lower(email)`. The `CHECK`
+     breaks four integration fixtures that insert a non-`admin` user with a
+     `NULL` organization as the superuser, and the build changes them:
+     `dashboard-builder/dashboards.service.rls.integration.test.ts:546,669,753`
+     and the "null-org user probe" in
+     `notifications/channels.rls.integration.spec.ts:283`, whose subject the
+     `CHECK` makes impossible;
    - rewrites `assertNoRoleCanInsertOrDeleteUsers` to assert, from
      `table_privileges` and `column_privileges`, that no pool role holds
      `DELETE` or a table-level `INSERT` and that no pool role's `INSERT` or
      `UPDATE` reaches `password_hash`, with a positive control that the
      column-level `INSERT` exists.
 
-   This keeps the hash threat closed. It does not change the older fact that a
-   pool role can already `UPDATE (email, role)`; decision 4's subject link is
-   what stops a changed email from moving an identity.
+   This keeps the hash threat closed, and with the revoke above no pool role
+   can rewrite either half of the token-to-row join. A pool role can still
+   `UPDATE (role)`, as it can today; the user routes are the only code that
+   does, under decision 2.
 
 8. **Deactivation stops every surface at once.** `bms.users` gains
-   `disabled_at timestamptz` (nullable). Deactivate sets `disabled_at = now()`,
-   disables the Keycloak user and ends its Keycloak sessions; reactivate
-   reverses both. Then:
+   `disabled_at timestamptz` (nullable). Deactivate runs in this order, so a
+   failure always leaves the user blocked:
+   1. In one transaction: set `disabled_at = now()`, write the audit row, and
+      `NOTIFY` with the `bms.users.id`.
+   2. Then disable the Keycloak user and end its Keycloak sessions. If this
+      fails, the user is already refused (below), and the response says the
+      Keycloak step must be retried with *deactivate*, which is idempotent.
+
+   Reactivate clears `disabled_at` and enables the Keycloak user. Then:
    - **`JwtAuthGuard.verifyToken` refuses a disabled user** with 401, after it
      verifies the token. Every REST route and every socket handshake goes
      through it, so this covers the services that do not call
-     `resolveDbUser`. The local login path refuses a disabled row too.
-   - **Open sockets close.** Deactivate sends a Postgres `NOTIFY` with the user
-     id. Each API process (`api`, `api-replica`) listens, and disconnects that
-     user's sockets in both gateways.
+     `resolveDbUser`. The local login path refuses a disabled row too. The
+     guard reads the row by `oidc_subject = sub`; a token with no linked row
+     passes this check, which is safe only because decision 4 forbids changing
+     an unlinked row, so an unlinked row is never disabled. `JwtAuthGuard`
+     gains a database pool (`bms_auth`) in its constructor; only booting the
+     app proves that DI change.
+   - **Open sockets close.** Each gateway stores the resolved `bms.users.id`
+     on the socket at the handshake (today it stores only `assetIds`). Each API
+     process (`api`, `api-replica`) listens for the `NOTIFY` and disconnects
+     the sockets with that id in both gateways.
+   - **A deactivated user's report schedules pause.** A schedule whose owner is
+     disabled is skipped with a recorded reason until the owner is reactivated
+     or the schedule is given to another user.
    - `bms_auth` gains `SELECT (disabled_at)`; `bms_tenant` and `bms_fleet` gain
      `SELECT` and `UPDATE` on it. No user row is ever deleted.
 
@@ -379,7 +427,8 @@ Ruled by the owner on 2026-10-02, one at a time:
   split), and the exact `realm-management` roles (decision 5).
 - What happens to a user's grants when its role changes to one that does not
   read that grant table: keep, warn, or remove.
-- What happens to report schedules and other owned rows of a deactivated user.
+- Whether a deactivated user owns rows other than report schedules that
+  should pause too (decision 8).
 - The per-request cost of decision 8's `disabled_at` read in
   `JwtAuthGuard`, and whether the fourteen repeated lookups can reuse it.
 - How many pull requests, and in which order; the migration, the shared
@@ -418,6 +467,24 @@ A security review of the first draft (commit `9135d4fb`) changed:
   6), the last-admin race (decision 2), the service-account token as a viewer
   and the `https` rule (decision 5), the `lower(email)` collision check
   (decision 7), sessions ended on a password reset (decision 6).
+
+A second pass over the revision (commit `7215603c`) confirmed those fixes and
+found eight defects in the new subject link and deactivation path:
+
+- **N1** (high) — the `bms_auth` link write ran under a `USING (true)` policy,
+  so "link only a `NULL` subject" was an application rule. Fixed by the
+  single guarded statement and a trigger (decision 4).
+- **N2** (high) — `bms_tenant` and `bms_fleet` already hold
+  `UPDATE (oidc_subject)`, so the new key was as writable as the email. Fixed
+  by revoking `UPDATE (email, oidc_subject)` (decisions 4 and 7).
+- **N3** — the API did not carry `email_verified`, and its email falls back to
+  `preferred_username`. Fixed: the raw claim only (decision 4).
+- **N4** — the `CHECK` breaks four fixtures; they are named (decision 7).
+- **N5** — an `admin` with an unverified email on a hand-built realm could
+  never link. Fixed by the provisioning check and a link command (decision 4).
+- **N6**, **N7**, **N8** — the socket id, the deactivate order, the unlinked-row
+  dependency, the guard's new pool, and an idempotent reactivate (decisions 3
+  and 8). Report schedules of a deactivated user are now decided (decision 8).
 
 ## Promotion
 
