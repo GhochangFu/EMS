@@ -39,6 +39,19 @@ export const OTHER_ID = "44444444-4444-4444-8444-444444444444";
 const ACTOR_ID = "55555555-5555-4555-8555-555555555555";
 const CREATED_AT = new Date("2026-09-16T10:00:00.000Z");
 export const JWT: JwtPayload = { sub: ACTOR_ID, email: "admin@bms.local", name: "Admin", role: "admin" };
+
+// F3.78: the actor lookup is the shared resolveIdentity, whose projection is the
+// seven identity columns (identity-resolver.ts), keyed here by their sorted names.
+const IDENTITY_SHAPE = "disabledAt,displayName,email,id,oidcSubject,organizationId,role";
+const IDENTITY_ROW = {
+  id: ACTOR_ID,
+  email: "admin@bms.local",
+  displayName: "Admin",
+  role: "admin",
+  organizationId: null,
+  oidcSubject: null,
+  disabledAt: null,
+};
 const CAP: number = MAX_ASSET_IMAGES_PER_ASSET;
 
 /** A key built through the one authority; its last segment is deliberately not `IMAGE_ID`. */
@@ -169,7 +182,7 @@ export function harness(scenario: Scenario = {}): Harness {
       return chain(async () => {
         if (shape === "organizationId") return scenario.orgRows ?? [{ organizationId: ORG_ID }];
         if (shape === "count") return scenario.fleetCountRows ?? [{ count: scenario.fleetCount ?? 0 }];
-        if (shape === "id") return [{ id: ACTOR_ID }];
+        if (shape === IDENTITY_SHAPE) return [IDENTITY_ROW];
         if (shape === "imageId") {
           if (scenario.committedCheckError) throw scenario.committedCheckError;
           return scenario.committedRows ?? [];
