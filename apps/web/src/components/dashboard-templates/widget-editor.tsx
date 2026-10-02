@@ -4,6 +4,7 @@ import type { SectionTemplateWidgetInput } from "../../api/admin/dashboard-templ
 import { METRIC_CATALOG_PRESENTATION, metricCatalogLabel } from "../../lib/metric-catalog";
 import { WIDGET_CATALOG } from "../../lib/widget-catalog";
 import { AssetRoleBindingPicker } from "../dashboards/asset-role-binding-picker";
+import { builderCellHeightPx } from "../dashboards/dashboard-canvas";
 import { MetricSourcePicker } from "../dashboards/metric-source-picker";
 
 /**
@@ -254,10 +255,17 @@ export function WidgetEditor({
   );
 }
 
-/** The five-line tile preview `DashboardCanvas` draws for one widget. */
+/**
+ * The five-line tile preview `DashboardCanvas` draws for one widget. Since the `F3.77` follow-up
+ * a view canvas fits a tile to its content, so the preview keeps the builder's height for its
+ * stored rows as a minimum (owner ruling Q3) rather than shrinking to its one line of text.
+ */
 export function renderTemplateTile(tile: SectionTemplateWidgetInput) {
   return (
-    <div className="h-full surface-raised-sm p-1 text-[10px] text-ink-muted">
+    <div
+      className="h-full surface-raised-sm p-1 text-[10px] text-ink-muted"
+      style={{ minHeight: `${builderCellHeightPx(tile.gridH)}px` }}
+    >
       {tile.title ?? tile.key}
     </div>
   );

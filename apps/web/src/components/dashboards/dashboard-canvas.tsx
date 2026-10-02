@@ -56,6 +56,15 @@ const ROW_HEIGHT_PX = 72;
 const GAP_PX = 8;
 
 /**
+ * `F3.77` follow-up (owner ruling Q3) — the height in px a builder cell takes for `rows` stored
+ * rows: the rows plus the gaps between them. A template preview tile, one line of text, keeps it
+ * as a minimum height in a view canvas, which fits a tile to its content.
+ */
+export function builderCellHeightPx(rows: number): number {
+  return rows * ROW_HEIGHT_PX + (rows - 1) * GAP_PX;
+}
+
+/**
  * `F3.73` critique fixes — the two view-mode breakpoints, on the canvas's measured width (not a
  * media query), so the viewer and the site view, which give the canvas different widths in one
  * window, behave the same. At or below `HALF_BREAKPOINT_PX` a tile spans half the grid or all of
