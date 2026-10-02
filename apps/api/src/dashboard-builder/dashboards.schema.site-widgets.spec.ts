@@ -101,6 +101,37 @@ export function refusesAPointOnASiteWidget(): void {
   );
 }
 
+const breakerTable = { ...slot, widgetType: "breaker_table" as const, config: {}, tabKey: "overview" };
+
+/** `F3.74` (plan Task 4.1) — the sixth binds-nothing site arm, `breaker_table`. */
+export function acceptsABreakerTable(): void {
+  expectAccepts(
+    putDashboardWidgetsBodySchema,
+    tabbed(breakerTable),
+    "a breaker_table widget with an empty config, no points and no sources must parse",
+  );
+}
+
+export function refusesAPointOnABreakerTable(): void {
+  expectRejectsAt(
+    putDashboardWidgetsBodySchema,
+    tabbed({ ...breakerTable, points: [{ pointId: POINT_A }] }),
+    ["widgets", 0, "points"],
+    [],
+    "a breaker table binds nothing, so a point binding is capped at zero",
+  );
+}
+
+export function refusesAnUnknownKeyInABreakerTableConfig(): void {
+  expectRejectsAt(
+    putDashboardWidgetsBodySchema,
+    tabbed({ ...breakerTable, config: { rows: 5 } }),
+    ["widgets", 0, "config"],
+    [],
+    "the breaker table config is .strict(): it configures nothing",
+  );
+}
+
 export function refusesARailBeyondTwentyRows(): void {
   expectRejectsAt(
     putDashboardWidgetsBodySchema,

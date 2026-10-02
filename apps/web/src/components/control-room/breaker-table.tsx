@@ -7,6 +7,10 @@
  * `derive…RuleState` (which calls `isStale` — a scanned repo invariant) and
  * gates the numbers through `breakerTableRow` in `lib/breaker-table-rows.ts`,
  * so a stale breaker arrives here already `offline` with `null` readings.
+ *
+ * `F3.74` — the breaker table widget (`BreakerTableWidget`) draws it too, with rows from
+ * `breakerSiteRows` (`lib/breaker-site-rows.ts`), which derives the status through
+ * `deriveBreakerState` and gates the readings the same way.
  */
 
 /**
@@ -15,7 +19,7 @@
  * reading. `offline` says we cannot see the breaker at all. On a single-line
  * diagram those must never look the same.
  */
-export type BreakerVisualStatus = "normal" | "warning" | "critical" | "open" | "offline";
+export type BreakerVisualStatus = "normal" | "warning" | "critical" | "open" | "tripped" | "unknown" | "offline";
 
 /** One table row. The three readings are already gated: `null` renders `—`. */
 export type BreakerTableRow = {
@@ -35,40 +39,56 @@ function n(value: number | null, digits: number): string {
 }
 
 export function breakerStatusClass(status: BreakerVisualStatus): string {
-  if (status === "open") {
-    return "border-line bg-well-deep text-neutral-ink";
+  switch (status) {
+    case "open":
+      return "border-line bg-well-deep text-neutral-ink";
+    // A deliberately different grey from `open` — see BreakerVisualStatus.
+    case "offline":
+      return "border-line-strong bg-line text-ink-muted";
+    case "critical":
+    case "tripped":
+      return "border-critical-line bg-critical-wash-strong text-critical-ink-strong";
+    case "warning":
+      return "border-warning-line bg-warning-wash-strong text-warning-ink";
+    // `F3.74` — a breaker whose position is not knowable is neither closed nor open.
+    case "unknown":
+      return "border-line bg-well text-ink-muted";
+    case "normal":
+      return "border-accent/20 bg-accent/10 text-accent-strong";
+    default: {
+      const unreachable: never = status;
+      return unreachable;
+    }
   }
-  // A deliberately different grey from `open` — see BreakerVisualStatus.
-  if (status === "offline") {
-    return "border-line-strong bg-line text-ink-muted";
-  }
-  if (status === "critical") {
-    return "border-critical-line bg-critical-wash-strong text-critical-ink-strong";
-  }
-  if (status === "warning") {
-    return "border-warning-line bg-warning-wash-strong text-warning-ink";
-  }
-  return "border-accent/20 bg-accent/10 text-accent-strong";
 }
 
 /**
- * `offline` is tested FIRST, and that ordering is the fix rather than a style
- * choice: the chain ends in a green "healthy" default, so a status it does not
- * name falls through to *closed and energised*. Before this arm existed a
- * breaker whose telemetry had died read "CLOSED" — the exact claim F4.38 exists
- * to stop the page making. The compiler cannot catch it because this is a
- * ternary, not an exhaustive switch.
+ * An exhaustive `switch`, so a status without an arm fails the build. This was a ternary chain
+ * ending in "CLOSED": a status it did not name fell through to *closed and energised*, and before
+ * `offline` had its arm a breaker whose telemetry had died read "CLOSED" — the exact claim F4.38
+ * exists to stop the page making. `F3.74` adds `tripped` and `unknown` ("—", as the mimic's pill).
  */
 function breakerStatusLabel(status: BreakerVisualStatus): string {
-  return status === "offline"
-    ? "OFFLINE"
-    : status === "open"
-      ? "OPEN"
-      : status === "critical"
-        ? "CRITICAL"
-        : status === "warning"
-          ? "WARN"
-          : "CLOSED";
+  switch (status) {
+    case "offline":
+      return "OFFLINE";
+    case "tripped":
+      return "TRIPPED";
+    case "open":
+      return "OPEN";
+    case "critical":
+      return "CRITICAL";
+    case "warning":
+      return "WARN";
+    case "unknown":
+      return "—";
+    case "normal":
+      return "CLOSED";
+    default: {
+      const unreachable: never = status;
+      return unreachable;
+    }
+  }
 }
 
 export function BreakerTable({ rows }: { rows: readonly BreakerTableRow[] }) {

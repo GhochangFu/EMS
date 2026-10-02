@@ -2,6 +2,7 @@ import { describe, it } from "vitest";
 
 import {
   runBlankRailRowTests,
+  runBreakerTableNeedsABoundGroupTests,
   runSiteWidgetsHaveNoScopeOrBindingProblemTests,
   runSiteWidgetsOfferedOnEveryScopeTests,
   runSiteWidgetsRoundTripTests,
@@ -190,6 +191,10 @@ describe("dashboard builder form", () => {
 
   it("F3.73: a site widget on a location dashboard has no scope or binding problem", () => {
     runSiteWidgetsHaveNoScopeOrBindingProblemTests();
+  });
+
+  it("F3.74: a breaker table needs a bound group (the tab's, else the dashboard's)", () => {
+    runBreakerTableNeedsABoundGroupTests();
   });
 
   it("F3.73: a new rail starts on the contract defaults", () => {

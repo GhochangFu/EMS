@@ -28,6 +28,7 @@ const mocks = vi.hoisted(() => ({
   fetchDashboardCatalogValues: vi.fn(),
   io: vi.fn(),
   alarmHandlers: [] as ((payload: unknown) => void)[],
+  telemetryHandlers: [] as ((payload: unknown) => void)[],
 }));
 
 vi.mock("socket.io-client", () => ({ io: mocks.io }));
@@ -140,6 +141,8 @@ function response(tabKey: string | null, alarmMessage: string): SiteWidgetsRespo
       summary: [],
     },
     roles: [],
+    breakers: [],
+    stateMaps: [],
     tabs: [
       { tabKey: "ups", label: "UPS", assetGroupId: GROUP_ID, status: null },
       { tabKey: "hvac", label: "HVAC", assetGroupId: GROUP_ID, status: null },
@@ -161,9 +164,11 @@ function renderCanvas(
   fetchSpy = vi.fn(() => Promise.reject(new Error("a spec reached the network")));
   vi.stubGlobal("fetch", fetchSpy);
   mocks.alarmHandlers.length = 0;
+  mocks.telemetryHandlers.length = 0;
   mocks.io.mockImplementation(() => ({
     on: (name: string, handler: (payload: unknown) => void) => {
       if (name === "alarm") mocks.alarmHandlers.push(handler);
+      if (name === "telemetry") mocks.telemetryHandlers.push(handler);
     },
     disconnect: vi.fn(),
   }));
@@ -399,4 +404,96 @@ export async function aCanvasWithNoReadingSiteWidgetOpensNoAlarmsSocket(): Promi
   await settle();
   expect(screen.getByText("Normal")).toBeInTheDocument();
   expect(alarmSocketCount()).toBe(0);
+}
+
+// ------------------------------------------------------------------- F3.74 Task 4.3 breaker table
+
+const BREAKERS = widget("99999999-9999-4999-8999-999999999999", UPS_TAB_ID, { widgetType: "breaker_table", config: {} });
+const BREAKER_ASSET_ID = "00000000-0000-4000-8000-0000000000b1";
+
+/** A response holding one CLOSED breaker, fresh now: the DTO says `breaker_main` 1 and `current_a` 40. */
+function breakerResponse(tabKey: string | null): SiteWidgetsResponse {
+  const now = new Date().toISOString();
+  const point = (pointKey: string, value: number) => ({
+    pointKey,
+    name: pointKey,
+    unit: null,
+    headlineRank: null,
+    latest: { value, time: now },
+  });
+  return {
+    ...response(tabKey, "x"),
+    breakers: [
+      {
+        asset: {
+          id: BREAKER_ASSET_ID,
+          code: "CR-Q1",
+          name: "CR-Q1",
+          domain: "electrical",
+          latestTelemetryAt: now,
+          freshness: "live",
+          points: [point("current_a", 40), point("breaker_main", 1)],
+        },
+        roleCode: "main-breaker",
+        roleLabel: "Main Breakers",
+        rating: "630 A",
+        tripCause: null,
+        activeAlarms: 0,
+        topAlarm: null,
+      },
+    ],
+    stateMaps: [
+      {
+        pointKey: "breaker_main",
+        states: [
+          { value: 0, label: "OPEN", tone: "open" },
+          { value: 1, label: "CLOSED", tone: "closed" },
+        ],
+      },
+    ],
+  };
+}
+
+function breakerCells(): string[] {
+  const tr = screen.getByText("CR-Q1").closest("tr");
+  return Array.from(tr?.querySelectorAll("td") ?? []).map((td) => td.textContent ?? "");
+}
+
+function telemetryReading(pointKey: string, value: number): unknown {
+  return { readings: [{ assetId: BREAKER_ASSET_ID, pointKey, value, unit: "", time: new Date().toISOString() }] };
+}
+
+/**
+ * SL14 — through the real overlay: the table seeds from the read (fresh, so CLOSED, not OFFLINE),
+ * and a `/ws/telemetry` reading for the asset flips the pill and the current with no refetch.
+ * An empty view or a missing `dataUpdatedAt` would leave the row OFFLINE or unflipped.
+ */
+export async function aTelemetryReadingFlipsABreakerRowWithoutARefetch(): Promise<void> {
+  renderCanvas([BREAKERS], (tabKey) => Promise.resolve(breakerResponse(tabKey)));
+  await screen.findByRole("table");
+  expect(breakerCells()[3]).toBe("CLOSED");
+  expect(breakerCells()[4]).toBe("40.0");
+  expect(mocks.telemetryHandlers.length, "no telemetry handler was registered").toBeGreaterThan(0);
+  act(() => {
+    for (const handler of mocks.telemetryHandlers) {
+      handler(telemetryReading("breaker_main", 0));
+      handler(telemetryReading("current_a", 12.5));
+    }
+  });
+  expect(breakerCells()[3]).toBe("OPEN");
+  expect(breakerCells()[4]).toBe("12.5");
+  expect(mocks.fetchSiteWidgets).toHaveBeenCalledTimes(1);
+}
+
+/** SL15 — the telemetry socket belongs to the table: a canvas of the other site widgets opens none. */
+export async function onlyTheBreakerTableOpensATelemetrySocket(): Promise<void> {
+  const telemetrySockets = (): number =>
+    mocks.io.mock.calls.filter((call) => String(call[0]).endsWith("/ws/telemetry")).length;
+  renderCanvas([RAIL, CARD_UPS], (tabKey) => Promise.resolve(response(tabKey, "Bypass open")));
+  await screen.findByText("Bypass open");
+  expect(telemetrySockets()).toBe(0);
+  cleanup();
+  renderCanvas([BREAKERS], (tabKey) => Promise.resolve(breakerResponse(tabKey)));
+  await screen.findByRole("table");
+  expect(telemetrySockets()).toBe(1);
 }

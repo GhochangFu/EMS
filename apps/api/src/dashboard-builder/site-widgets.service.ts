@@ -22,6 +22,7 @@ import { AccessControlService } from "../auth/access-control.service";
 import { FLEET_DRIZZLE, TENANT_DRIZZLE } from "../database/database.tokens";
 import { withTenant, type BmsTx } from "../database/tenant-context";
 import { LIVE_ASSETS_CTE_SQL } from "../telemetry/telemetry-freshness";
+import { readBreakerRows } from "./breaker-rows";
 import { resolveAssetScope, type DashboardAssetScope } from "./dashboard-scope-assets";
 
 /** The dashboard row the read needs: its organization and its three scope axes. */
@@ -97,6 +98,13 @@ export interface TabStatusRow extends Record<string, unknown> {
  * alarm is `critical` or `warning` (`tabTone`). A tab with no group (the Overview) is not listed: it has no status to show. A tab
  * whose group has members, none of them readable, answers `status: null` ("Outside scope"),
  * never a zero that would read as healthy.
+ *
+ * **Breakers (`F3.74`, plan D8).** `readBreakerRows` (`breaker-rows.ts`) on the same tenant
+ * transaction, over the same narrowed scope: the tab group's members of the five breaker roles,
+ * with the state maps of the state keys they carry. The bound group is the tab's, else the
+ * dashboard's own `assetGroupId`; it is read only when the caller may read it (security L1). A
+ * group-less tab of a location, organization or asset dashboard (its Overview, or a legacy canvas)
+ * answers `[]`.
  */
 @Injectable()
 export class SiteWidgetsService {
@@ -147,7 +155,7 @@ export class SiteWidgetsService {
     nowMs: number,
   ): Promise<SiteWidgetsResponse> {
     const organizationId = dashboard.organizationId;
-    const { assetIds, groupIds, active, summary, tabs } = await withTenant(this.tenantDb, organizationId, async (tx) => {
+    const { assetIds, groupIds, active, summary, tabs, breakerRows } = await withTenant(this.tenantDb, organizationId, async (tx) => {
       let scope: DashboardAssetScope = {
         locationId: dashboard.locationId,
         assetGroupId: dashboard.assetGroupId,
@@ -185,12 +193,21 @@ export class SiteWidgetsService {
         tabGroupId !== null
           ? await groupsWhere(tx, organizationId, eq(assetGroups.id, tabGroupId))
           : await overviewGroups(tx, dashboard);
+      const countedGroupIds = readableGroupIds(candidates, readableGroups);
+      // `F3.74` (plan D8, ADR 0088 decision 10): the bound group is the tab's, else the dashboard's
+      // own (the mimic's `mimicGroupFor` fallback); a location, organization or asset dashboard's
+      // group-less tab has none. Security L1 (owner ruling 2026-09-24): the group is read only when
+      // it is among the caller's readable groups, the set the role summary counts by — an asset
+      // the caller reads through ANOTHER group does not open this one.
+      const boundGroupId = tabGroupId ?? dashboard.assetGroupId;
+      const breakerGroupId = boundGroupId !== null && countedGroupIds.includes(boundGroupId) ? boundGroupId : null;
       return {
         assetIds: scopedIds,
-        groupIds: readableGroupIds(candidates, readableGroups),
+        groupIds: countedGroupIds,
         active: await activeAlarms(tx, organizationId, scopedIds),
         summary: await severityCounts(tx, organizationId, scopedIds),
         tabs: await tabStatuses(tx, organizationId, dashboard.id, readableAssetIds),
+        breakerRows: await readBreakerRows(tx, organizationId, breakerGroupId, scopedIds, nowMs),
       };
     });
 
@@ -203,6 +220,8 @@ export class SiteWidgetsService {
       alarms: { active, summary },
       roles: roles.items,
       tabs,
+      breakers: breakerRows.breakers,
+      stateMaps: breakerRows.stateMaps,
     };
   }
 }

@@ -2,10 +2,7 @@ import type { AutomationRuleOperator, RuleListItem } from "@bms/shared";
 import { useQuery } from "@tanstack/react-query";
 
 import { fetchRules } from "../../../api/rules";
-import {
-  BreakerTable,
-  type BreakerVisualStatus,
-} from "../../../components/control-room/breaker-table";
+import { BreakerTable } from "../../../components/control-room/breaker-table";
 import { CR_BREAKERS } from "../../../components/live-svg/control-room-bindings";
 import {
   type SchematicTelemetrySlice,
@@ -80,7 +77,7 @@ function compareValue(
   }
 }
 
-function severityStatus(severity: string | null): BreakerVisualStatus {
+function severityStatus(severity: string | null): "critical" | "warning" {
   return severity === "critical" ? "critical" : "warning";
 }
 

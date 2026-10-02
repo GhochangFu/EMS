@@ -533,6 +533,8 @@ const MARKERS_ANSWER: SiteWidgetsResponse = {
   scope: { assetCount: 4 },
   alarms: { active: [], summary: [] },
   roles: [],
+  breakers: [],
+  stateMaps: [],
   tabs: [
     {
       tabKey: "hvac",

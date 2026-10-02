@@ -6,6 +6,7 @@ import {
   moduleCardRequiresAValidTabKey,
   railConfigDefaultsAndBounds,
   siteWidgetsBindNothingAndAreNotTemplateAuthorable,
+  siteWidgetsBreakersAreBounded,
   siteWidgetsResponseIsBounded,
   siteWidgetsResponseParses,
 } from "./site-widgets.spec";
@@ -38,5 +39,9 @@ describe("F3.73 — the five site widgets", () => {
 
   it("caps the alarm rail at 20 rows and refuses a non-uuid dashboard id", () => {
     siteWidgetsResponseIsBounded();
+  });
+
+  it("caps the breaker rows at MAX_SITE_BREAKER_ROWS (F3.74)", () => {
+    siteWidgetsBreakersAreBounded();
   });
 });

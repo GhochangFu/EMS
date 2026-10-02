@@ -5,6 +5,7 @@ import { mimicConfigSchema } from "./mimic-config";
 import {
   activeAlarmsRailConfigSchema,
   assetClassStripConfigSchema,
+  breakerTableConfigSchema,
   criticalSystemsListConfigSchema,
   moduleSummaryCardConfigSchema,
   stateLegendConfigSchema,
@@ -77,16 +78,22 @@ import {
  */
 
 /**
- * The eleven widget types, closed (ADR 0047 decision 2; `"table"` added by ADR 0048 decision 5;
- * `"mimic"` by ADR 0079 decision 1; the last five by `F3.73`, ADR 0087 decision 11).
+ * The twelve widget types, closed (ADR 0047 decision 2; `"table"` added by ADR 0048 decision 5;
+ * `"mimic"` by ADR 0079 decision 1; five site widgets by `F3.73`, ADR 0087 decision 11;
+ * `"breaker_table"` by `F3.74`, ADR 0088 decision 10).
  *
- * **Four migrations declare this list, and only the last is current.** `0050` froze the
+ * No comment may sit inside the `z.enum` array: the repo gates parse it with a split on commas,
+ * and a comment line would swallow the value after it.
+ *
+ * **Five migrations declare this list, and only the last is current.** `0050` froze the
  * original four in `dashboard_widgets_widget_type_check`; `F3.35` Stage B's `0055` dropped and
  * re-added that constraint with `table`; `F3.32`'s `0086` does the same with `mimic`; `F3.73`'s
- * `0096` adds the five site widgets. A committed migration is frozen by the pre-commit hook, so
- * `0050` still reads four, `0055` five and `0086` six, and always will.
+ * `0096` adds the five site widgets; `F3.74`'s `0099` adds `breaker_table`. A committed migration
+ * is frozen by the pre-commit hook, so `0050` still reads four, `0055` five, `0086` six and
+ * `0096` eleven, and always will.
  *
- * `tests/f3.73-site-widget-types.test.ts` compares this enum against `0096`'s list;
+ * `tests/f3.73-site-widget-types.test.ts` and `tests/f3.74-breaker-table-widget-type.test.ts`
+ * compare this enum against `0099`'s list;
  * `tests/f3.32-mimic-widget.test.ts` pins `0086` to its six,
  * `tests/f3.35-table-widget-schema.test.ts` pins `0055` to its five and
  * `tests/f3.1a-dashboard-schema.test.ts` pins `0050` to its four. All are correct at once: the
@@ -104,6 +111,7 @@ export const widgetTypeSchema = z.enum([
   "asset_class_strip",
   "module_summary_card",
   "critical_systems_list",
+  "breaker_table",
 ]);
 
 /**
@@ -411,6 +419,7 @@ export const dashboardWidgetSpecSchema = z.discriminatedUnion("widgetType", [
     widgetType: z.literal("critical_systems_list"),
     config: criticalSystemsListConfigSchema,
   }),
+  z.object({ widgetType: z.literal("breaker_table"), config: breakerTableConfigSchema }),
 ]);
 
 /**
@@ -489,6 +498,7 @@ export const WIDGET_POINT_CARDINALITY: Record<
   asset_class_strip: { min: 0, max: 0 },
   module_summary_card: { min: 0, max: 0 },
   critical_systems_list: { min: 0, max: 0 },
+  breaker_table: { min: 0, max: 0 },
 };
 
 /**
@@ -527,6 +537,7 @@ export const WIDGET_SOURCE_CARDINALITY: Record<
   asset_class_strip: { min: 0, max: 0 },
   module_summary_card: { min: 0, max: 0 },
   critical_systems_list: { min: 0, max: 0 },
+  breaker_table: { min: 0, max: 0 },
 };
 
 /**
@@ -782,6 +793,8 @@ export const WIDGET_SOURCE_SHAPES: Record<
   asset_class_strip: [],
   module_summary_card: [],
   critical_systems_list: [],
+  // `F3.74` — nor does the breaker table.
+  breaker_table: [],
 };
 
 /**

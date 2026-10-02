@@ -268,7 +268,7 @@ export function aLayoutSourceWithNoLayoutReportsTheProblem(): void {
 }
 
 /**
- * `F3.73` — the five site widgets' inspector surface. Each absence sits beside the `value_tile`
+ * `F3.73` — the site widgets' inspector surface (`F3.74` adds `breaker_table`, a sixth). Each absence sits beside the `value_tile`
  * positive controls above, which render the same fields.
  */
 const SITE_TYPES = [
@@ -277,6 +277,7 @@ const SITE_TYPES = [
   "asset_class_strip",
   "module_summary_card",
   "critical_systems_list",
+  "breaker_table",
 ] as const;
 
 export function aSiteWidgetHidesUnitDecimalsAndBoundPoints(): void {

@@ -170,6 +170,8 @@ export type DashboardTabDto = z.infer<typeof Dtab.dashboardTabDtoSchema>;
 export type SiteWidgetsResponse = z.infer<typeof SW.siteWidgetsResponseSchema>;
 /** One group tab's status in that response; null `status` means outside the caller's scope. */
 export type SiteWidgetTab = z.infer<typeof SW.siteWidgetTabSchema>;
+/** One breaker of the tab's group in that response (`F3.74`, plan D8). */
+export type BreakerRow = z.infer<typeof SW.breakerRowSchema>;
 
 // --- F3.36 — section dashboard templates (ADR 0049 + Amendments 1, 2) -------
 /**

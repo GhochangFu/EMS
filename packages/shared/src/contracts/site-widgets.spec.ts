@@ -10,6 +10,7 @@ import {
   widgetTypeSchema,
 } from "./dashboard-builder";
 import {
+  MAX_SITE_BREAKER_ROWS,
   SITE_WIDGET_TYPES,
   activeAlarmsRailConfigSchema,
   moduleSummaryCardConfigSchema,
@@ -35,8 +36,9 @@ export function fiveSiteWidgetTypesAreInTheEnumWithAnArm(): void {
         "asset_class_strip",
         "module_summary_card",
         "critical_systems_list",
+        "breaker_table",
       ]),
-    `the site widget types are the plan's five, got ${JSON.stringify(SITE_WIDGET_TYPES)}`,
+    `the site widget types are the five of F3.73 and F3.74's breaker_table, got ${JSON.stringify(SITE_WIDGET_TYPES)}`,
   );
   const configs: Record<string, unknown> = {
     active_alarms_rail: {},
@@ -44,6 +46,7 @@ export function fiveSiteWidgetTypesAreInTheEnumWithAnArm(): void {
     asset_class_strip: {},
     module_summary_card: { targetTabKey: "hvac" },
     critical_systems_list: {},
+    breaker_table: {},
   };
   for (const type of SITE_WIDGET_TYPES) {
     assert(widgetTypeSchema.options.includes(type), `${type} is missing from widgetTypeSchema`);
@@ -120,6 +123,8 @@ function response(): Record<string, unknown> {
     scope: { assetCount: 5 },
     alarms: { active: [], summary: [] },
     roles: [],
+    breakers: [],
+    stateMaps: [],
     tabs: [{ tabKey: "hvac", label: "HVAC", assetGroupId: GROUP_ID, status: tabStatus }],
   };
 }
@@ -145,4 +150,23 @@ export function siteWidgetsResponseIsBounded(): void {
   assert(siteWidgetsResponseSchema.safeParse(twenty).success === true, "20 alarms must parse");
   assert(siteWidgetsResponseSchema.safeParse(twentyOne).success === false, "21 alarms must be refused");
   assert(siteWidgetsResponseSchema.safeParse({ ...response(), dashboardId: "x" }).success === false, "a non-uuid id is refused");
+}
+
+/**
+ * `F3.74` — `breakers` is capped at `MAX_SITE_BREAKER_ROWS` (64), the member statement's `LIMIT`.
+ * Mutation: drop the `.max()` on `breakers` => red on the 65-row refusal.
+ */
+export function siteWidgetsBreakersAreBounded(): void {
+  const breaker = {
+    asset: {
+      id: GROUP_ID, code: "CR-Q1", name: "Main 1", domain: "electrical",
+      latestTelemetryAt: null, freshness: "none", points: [],
+    },
+    roleCode: "main-breaker", roleLabel: "Main Breakers", rating: null, tripCause: null,
+    activeAlarms: 0, topAlarm: null,
+  };
+  const rows = (length: number) => ({ ...response(), breakers: Array.from({ length }, () => breaker) });
+  assert(MAX_SITE_BREAKER_ROWS === 64, `the cap is 64 rows, got ${MAX_SITE_BREAKER_ROWS}`);
+  assert(siteWidgetsResponseSchema.safeParse(rows(MAX_SITE_BREAKER_ROWS)).success === true, "64 breakers must parse");
+  assert(siteWidgetsResponseSchema.safeParse(rows(MAX_SITE_BREAKER_ROWS + 1)).success === false, "65 breakers must be refused");
 }

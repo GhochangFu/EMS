@@ -333,7 +333,8 @@ function configRowFromDto(widget: DashboardWidgetDto): WidgetConfigRow {
     case "state_legend":
     case "asset_class_strip":
     case "critical_systems_list":
-      // `F3.73` — configure nothing (`{}`); named so the `never` below still proves no arm is forgotten.
+    case "breaker_table":
+      // `F3.73` / `F3.74` — configure nothing (`{}`); named so the `never` below still proves no arm is forgotten.
       break;
     default: {
       // No arm may be forgotten: this switch has no compile-time exhaustiveness otherwise, and a
@@ -413,6 +414,11 @@ export const SCOPE_PROBLEM_FIELD = "scope";
  * against: neither the dashboard's scope nor the tab it sits on is an asset group. */
 export const MIMIC_NEEDS_ASSET_GROUP_MESSAGE =
   "A plant mimic needs an asset-group scope, or a tab bound to an asset group.";
+
+/** `F3.74` — the sentence for a breaker table with no group to read: the API answers it no row
+ * unless the tab it sits on, or the dashboard's own scope, is an asset group. */
+export const BREAKER_TABLE_NEEDS_ASSET_GROUP_MESSAGE =
+  "A breaker table needs an asset-group scope, or a tab bound to an asset group.";
 
 /** `F3.73` plan D2 — the fields of a tab the client rules read. `DashboardDto["tabs"]` and
  * `TabWritePayload[]` both fit, so either page passes what it already holds. */
@@ -663,6 +669,18 @@ export function dashboardBuilderErrors(
       }
     }
 
+    // `F3.74` (ADR 0088 decision 10) — the breaker table reads the tab's group, else the
+    // dashboard's own (`SiteWidgetsService.read`'s `tabGroupId ?? dashboard.assetGroupId`), so on a
+    // group-less tab of any other scope it is always empty. The API accepts it; this keeps an
+    // always-empty table from being saved. It names no tab of its own, so there is no key arm.
+    if (
+      row.widgetType === "breaker_table" &&
+      scopeKind !== "assetGroup" &&
+      !(row.tabKey !== undefined && groupTabKeys.has(row.tabKey))
+    ) {
+      push(index, SCOPE_PROBLEM_FIELD, BREAKER_TABLE_NEEDS_ASSET_GROUP_MESSAGE);
+    }
+
     if (row.gridW < DASHBOARD_GRID.minWidgetW || row.gridW > DASHBOARD_GRID.columns) {
       push(index, "gridW", "This widget's width does not fit the canvas.");
     }
@@ -775,6 +793,8 @@ export function buildPutWidgetsPayload(
           return { ...identity, widgetType: "module_summary_card", config: buildModuleSummaryCardConfig(row.config) };
         case "critical_systems_list":
           return { ...identity, widgetType: "critical_systems_list", config: {} };
+        case "breaker_table":
+          return { ...identity, widgetType: "breaker_table", config: {} };
         default: {
           const unreachable: never = row.widgetType;
           throw new Error(`Unhandled widget type ${JSON.stringify(unreachable)}`);

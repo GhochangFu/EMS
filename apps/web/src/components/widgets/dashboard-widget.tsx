@@ -8,6 +8,7 @@ import { MimicWidget, NO_LIVE_READINGS, NO_MIMIC_NODES } from "./mimic-widget";
 import { RadialGaugeWidget } from "./radial-gauge-widget";
 import { ActiveAlarmsRailWidget } from "./active-alarms-rail-widget";
 import { AssetClassStripWidget } from "./asset-class-strip-widget";
+import { BreakerTableWidget } from "./breaker-table-widget";
 import { CriticalSystemsListWidget } from "./critical-systems-list-widget";
 import { ModuleSummaryCardWidget } from "./module-summary-card-widget";
 import { StateLegendWidget } from "./state-legend-widget";
@@ -265,6 +266,8 @@ export function DashboardWidget({ widget, data, now }: DashboardWidgetProps) {
       return (
         <CriticalSystemsListWidget title={title} status={status} data={undefined} severities={NO_SEVERITIES} tabHref={null} />
       );
+    case "breaker_table":
+      return <BreakerTableWidget title={title} status={status} data={undefined} severities={NO_SEVERITIES} readings={null} />;
     default: {
       const unreachable: never = widget;
       return unreachable;

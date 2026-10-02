@@ -14,6 +14,7 @@ import {
   tabbedDashboardBuilderProblems,
   tabWritesFromDto,
   unselectedDashboardBuilderProblems,
+  BREAKER_TABLE_NEEDS_ASSET_GROUP_MESSAGE,
   MIMIC_NEEDS_ASSET_GROUP_MESSAGE,
   SCOPE_PROBLEM_FIELD,
   type DashboardWidgetRow,
@@ -788,7 +789,7 @@ export function runWidgetOffEveryTabIsFlaggedTests(): void {
 }
 
 // -------------------------------------------------------------------------------------------
-// `F3.73` (plan Task 3.5) — the five site widgets in the builder's row model.
+// `F3.73` (plan Task 3.5) — the five site widgets (and `F3.74`'s breaker_table) in the builder's row model.
 // -------------------------------------------------------------------------------------------
 
 const SITE_WIDGET_TYPES_UNDER_TEST = [
@@ -797,6 +798,7 @@ const SITE_WIDGET_TYPES_UNDER_TEST = [
   "asset_class_strip",
   "module_summary_card",
   "critical_systems_list",
+  "breaker_table",
 ] as const;
 
 /** The five bind nothing yet read the dashboard's own scope, so every scope kind offers them — unlike
@@ -813,12 +815,13 @@ export function runSiteWidgetsOfferedOnEveryScopeTests(): void {
 
 /** A site widget on a location dashboard carries no scope problem and no binding problem (the API's
  * `mimicGroupFor` rule names the mimic alone). Mutation: apply the mimic rule to every type that
- * binds nothing => red. */
+ * binds nothing => red. `F3.74`'s breaker_table is held apart: on a group-less tab of a location
+ * dashboard it is always empty, so `runBreakerTableNeedsABoundGroupTests` flags it there. */
 export function runSiteWidgetsHaveNoScopeOrBindingProblemTests(): void {
   // `F3.73` Task 5.2 — the card's target must name a tab of the dashboard (the API's
   // `TAB_TARGET_UNKNOWN_MESSAGE`), so the fixture carries the `ups` tab and every row sits on it.
   const tabs = [{ key: "ups", label: "UPS", assetGroupId: null }];
-  for (const type of SITE_WIDGET_TYPES_UNDER_TEST) {
+  for (const type of SITE_WIDGET_TYPES_UNDER_TEST.filter((t) => t !== "breaker_table")) {
     const row = { ...blankDashboardWidgetRow(type), tabKey: "ups" };
     if (type === "module_summary_card") {
       row.config.targetTabKey = "ups";
@@ -826,6 +829,35 @@ export function runSiteWidgetsHaveNoScopeOrBindingProblemTests(): void {
     const problems = dashboardBuilderErrors([row], "location", tabs);
     assert(problems.length === 0, `a ${type} on a location dashboard is clean — got ${JSON.stringify(problems)}`);
   }
+}
+
+/**
+ * `F3.74` (ADR 0088 decision 10) — the breaker table reads the bound group: the tab's, else the
+ * dashboard's own (the API's `tabGroupId ?? dashboard.assetGroupId`). On a group-less tab of a
+ * dashboard that is not group-scoped it is always empty, so the builder flags it on the scope
+ * field, as it does the mimic. Mutation: drop the breaker_table arm => red on (1); drop the
+ * scope-kind test => red on (2); drop the group-tab test => red on (3).
+ */
+export function runBreakerTableNeedsABoundGroupTests(): void {
+  const tabs = [
+    { key: "overview", label: "Overview", assetGroupId: null },
+    { key: "sld", label: "SLD", assetGroupId: "g-1" },
+  ];
+  const on = (tabKey: string) => ({ ...blankDashboardWidgetRow("breaker_table"), tabKey });
+  // (1) a location dashboard's group-less tab: one scope problem, with its own sentence.
+  const flagged = dashboardBuilderErrors([on("overview")], "location", tabs);
+  assert(
+    JSON.stringify(flagged) ===
+      JSON.stringify([{ widget: 0, field: SCOPE_PROBLEM_FIELD, message: BREAKER_TABLE_NEEDS_ASSET_GROUP_MESSAGE }]),
+    `a breaker table on a location dashboard's Overview is flagged — got ${JSON.stringify(flagged)}`,
+  );
+  // (2) a group-scoped dashboard's group-less tab falls back to the dashboard's group: clean. Only a
+  // location dashboard carries group tabs (`tabSetErrors`), so this one has the Overview alone.
+  const groupScoped = dashboardBuilderErrors([on("overview")], "assetGroup", [tabs[0]!]);
+  assert(groupScoped.length === 0, `a group dashboard's Overview is clean — got ${JSON.stringify(groupScoped)}`);
+  // (3) a location dashboard's group tab: clean.
+  const groupTab = dashboardBuilderErrors([on("sld")], "location", tabs);
+  assert(groupTab.length === 0, `a location dashboard's group tab is clean — got ${JSON.stringify(groupTab)}`);
 }
 
 /** A new rail starts on the contract's defaults, so an untouched one saves as the schema defaults it. */
@@ -848,6 +880,7 @@ export function runSiteWidgetsRoundTripTests(): void {
     ["asset_class_strip", {}],
     ["module_summary_card", { targetTabKey: "hvac" }],
     ["critical_systems_list", {}],
+    ["breaker_table", {}],
   ];
   const dto = dashboardDto(stored.map(([type, config], index) => siteDto(type, config, `site-${index}`)));
   const payload = buildPutWidgetsPayload(dashboardRowsFromDto(dto), []);
