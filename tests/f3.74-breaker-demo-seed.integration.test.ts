@@ -20,7 +20,10 @@ const { BREAKER_DEMO_DASHBOARD_SLUG, seedBreakerDemo } = require_(
 const { createSeedPool } = require_("../packages/db/dist/seed-tenant.js") as typeof SeedTenant;
 
 /**
- * The resolver, from `apps/api/dist` (CI's `pnpm typecheck` builds it before the tests run). Not an
+ * The resolver, from `apps/api/dist` (CI's `pnpm typecheck` builds it before the tests run; locally,
+ * run `pnpm --filter api build` first). Required inside the suite, not at module load: `postinstall`
+ * builds only `@bms/shared` and `@bms/db`, so a top-level require would fail this file on a machine
+ * with no database instead of skipping it. Not an
  * `import`: the service's constructor-parameter decorators need `experimentalDecorators`, which
  * `tsconfig.typecheck-tests.json` does not set. So the shape is restated here, narrowly: only what
  * the two cases read.
@@ -38,7 +41,7 @@ interface NodesAnswer {
 interface MimicNodesReader {
   read(organizationId: string, dashboardId: string, readable: readonly string[] | null, nowMs: number): Promise<NodesAnswer>;
 }
-const { MimicNodesService } = require_("../apps/api/dist/dashboard-builder/mimic-nodes.service.js") as {
+type MimicNodesServiceModule = {
   MimicNodesService: new (fleetDb: unknown, pool: unknown, accessControl: unknown) => MimicNodesReader;
 };
 
@@ -244,6 +247,9 @@ describe.skipIf(!ownerUrl)("F3.74 D11 — the breaker demo seed at RSMOC-WC", { 
       );
       const dashboardId = dashboard.rows[0]?.id;
       if (!dashboardId) throw new Error(`no ${BREAKER_DEMO_DASHBOARD_SLUG} dashboard`);
+      const { MimicNodesService } = require_(
+        "../apps/api/dist/dashboard-builder/mimic-nodes.service.js",
+      ) as MimicNodesServiceModule;
       const answer = await new MimicNodesService({}, probePool, {}).read(eskomOrgId, dashboardId, null, Date.now());
       const widget = answer.widgets[0];
       if (answer.widgets.length !== 1 || !widget) throw new Error(`want one mimic widget, got ${answer.widgets.length}`);
@@ -328,11 +334,24 @@ describe.skipIf(!ownerUrl)("F3.74 D11 — the breaker demo seed at RSMOC-WC", { 
     });
   });
 
-  it("writes nothing and logs one line when RSMOC-WC has no seed row", async () => {
-    const lines: string[] = [];
-    await inTransaction(async (pool) => {
-      await seedBreakerDemo(pool, eskomOrgId, null, (line) => lines.push(line));
+  describe("when RSMOC-WC has no seed row", () => {
+    it("logs one line", async () => {
+      const lines: string[] = [];
+      await inTransaction(async (pool) => {
+        await seedBreakerDemo(pool, eskomOrgId, null, (line) => lines.push(line));
+      });
+      expect(lines).toHaveLength(1);
     });
-    expect(lines).toHaveLength(1);
+
+    it("writes no demo dashboard", async () => {
+      await inTransaction(async (pool) => {
+        await pool.query(`DELETE FROM bms.dashboards WHERE organization_id = $1 AND slug = $2`, [
+          eskomOrgId,
+          BREAKER_DEMO_DASHBOARD_SLUG,
+        ]);
+        await seedBreakerDemo(pool, eskomOrgId, null, silent);
+        expect((await snapshot(pool)).split(" / ").slice(3)).toEqual(["0"]);
+      });
+    });
   });
 });
