@@ -1,5 +1,12 @@
 import { MIMIC_LAYOUT_BOUNDS, MIMIC_LAYOUT_NODE_KEY, mimicPresetSchema, mimicSymbolSchema } from "@bms/shared/contracts";
-import { MIMIC_PRESETS, libraryOfSymbol, type MimicLayoutDto, type MimicPreset, type MimicSymbol } from "@bms/shared";
+import {
+  MIMIC_PRESETS,
+  libraryOfSymbol,
+  type MimicLayoutDto,
+  type MimicPreset,
+  type MimicPresetNode,
+  type MimicSymbol,
+} from "@bms/shared";
 
 import { MIMIC_PANELS } from "./mimic";
 import {
@@ -719,7 +726,7 @@ export function runDomainPresetRoledUnitsAreThePresetNodes(): void {
 export function runLvSingleLineStarterCarriesItsFlags(): void {
   const units = fromPreset("lv_single_line").nodes.filter((n) => n.kind === "unit");
   const fan = units.filter((n) => n.fanOut).map((n) => n.key);
-  const want = MIMIC_PRESETS.lv_single_line.nodes.filter((n) => n.fanOut === true).map((n) => n.key);
+  const want = (MIMIC_PRESETS.lv_single_line.nodes as readonly MimicPresetNode[]).filter((n) => n.fanOut === true).map((n) => n.key);
   assert(JSON.stringify(fan) === JSON.stringify(want) && want.length === 8, `fan-out units ${JSON.stringify(fan)}, want ${JSON.stringify(want)}`);
   const sources = units.filter((n) => n.isSource).map((n) => n.key);
   assert(JSON.stringify(sources) === '["incoming"]', `source units ${JSON.stringify(sources)}`);
