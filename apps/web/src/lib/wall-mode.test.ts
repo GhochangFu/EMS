@@ -1,12 +1,20 @@
 import { describe, it } from "vitest";
 
 import {
+  baseZoomFollowsTheWidth,
   everyFallsBackToTheDefault,
+  fitZoomFloorsToTwoDecimals,
+  fitZoomNeverExceedsTheBase,
+  fitZoomStopsAtTheFloor,
+  fitZoomWithoutAMeasurementKeepsTheBase,
   newestReadClampsAFutureTime,
   newestReadIgnoresWhatIsNoEvidence,
   newestReadIsTheMaximum,
   nextTabKeyWrapsAndSkipsNothing,
   noReadIsPausedWithNoTime,
+  settleAlwaysAppliesAShrink,
+  settleAppliesALargeGrowth,
+  settleIgnoresASmallGrowth,
   wallBarClampsAReadAheadOfTheClock,
   wallBarFollowsIsStale,
   wallHrefKeepsTheTabInThePath,
@@ -58,5 +66,39 @@ describe("F3.77 wall mode — the pure rules (plan D7)", () => {
 
   it("W11 keeps the bar live for a read a moment ahead of the frame's tick", () => {
     wallBarClampsAReadAheadOfTheClock();
+  });
+});
+
+describe("F3.77 follow-up wall mode — the fit zoom (plan D5)", () => {
+  it("Z1 bases the zoom at 1.25, and 2.5 from 3000 px wide", () => {
+    baseZoomFollowsTheWidth();
+  });
+
+  it("Z2 zooms tall content to fit, floored to two decimals", () => {
+    fitZoomFloorsToTwoDecimals();
+  });
+
+  it("Z3 keeps the base for content that fits", () => {
+    fitZoomNeverExceedsTheBase();
+  });
+
+  it("Z4a stops at the 0.5 floor", () => {
+    fitZoomStopsAtTheFloor();
+  });
+
+  it("Z4b keeps the base without a measurement (zero, negative, NaN)", () => {
+    fitZoomWithoutAMeasurementKeepsTheBase();
+  });
+
+  it("Z5a ignores a growth under 0.05", () => {
+    settleIgnoresASmallGrowth();
+  });
+
+  it("Z5b applies a growth of 0.05 or more", () => {
+    settleAppliesALargeGrowth();
+  });
+
+  it("Z5c always applies a shrink", () => {
+    settleAlwaysAppliesAShrink();
   });
 });

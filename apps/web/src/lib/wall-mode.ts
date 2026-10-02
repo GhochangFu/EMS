@@ -115,3 +115,60 @@ export function formatWallTime(ms: number): string {
   const pad = (value: number) => String(value).padStart(2, "0");
   return `${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;
 }
+
+/**
+ * `F3.77` follow-up (plan D5, owner ruling Q2) — the wall's zoom is computed, not a stylesheet
+ * constant: the base scale for the screen's width, then reduced so the whole page fits one screen.
+ *
+ * `zoom` (not a root `font-size`) because many widget sizes are px literals (`text-[11px]`), which
+ * a root size would leave alone. The wall PCs run Chrome or Edge; Firefox before 126 ignores
+ * `zoom`. `WallFrame` sets it inline on `[data-wall-root]`; it is the one source.
+ */
+export const WALL_WIDE_SCREEN_PX = 3000;
+
+/** Below 0.5 the type is unreadable: the fit stops here and the page scrolls (owner ruling Q2). */
+export const WALL_ZOOM_FLOOR = 0.5;
+
+/** A growth smaller than this is ignored, so a zoom that re-wraps the content cannot oscillate. */
+export const WALL_ZOOM_GROWTH_STEP = 0.05;
+
+/** The base zoom: 1.25 on a 1920 px wall, 2.5 from {@link WALL_WIDE_SCREEN_PX} (a 4K wall). */
+export function wallBaseZoom(viewportWidth: number): number {
+  return viewportWidth >= WALL_WIDE_SCREEN_PX ? 2.5 : 1.25;
+}
+
+export type WallFitInput = {
+  readonly base: number;
+  /** `window.innerHeight`, in viewport px. */
+  readonly viewportHeight: number;
+  /** The bar's plus the content's `offsetHeight`: unscaled CSS px, the same at any zoom. */
+  readonly naturalPx: number;
+  readonly floor: number;
+};
+
+/**
+ * The largest zoom, at most `base`, at which `naturalPx` fits `viewportHeight`, floored to two
+ * decimals (never rounded up, which could overflow by a pixel) and never below `floor`.
+ *
+ * **No measurement is not a fit.** A height or a viewport that is not a finite positive number
+ * keeps `base`: `NaN` makes every comparison false, so an unguarded `Math.min` would return it.
+ */
+export function wallFitZoom({ base, viewportHeight, naturalPx, floor }: WallFitInput): number {
+  if (!(Number.isFinite(naturalPx) && naturalPx > 0 && Number.isFinite(viewportHeight) && viewportHeight > 0)) {
+    return base;
+  }
+  const fit = Math.floor((viewportHeight / naturalPx) * 100) / 100;
+  return Math.max(floor, Math.min(base, fit));
+}
+
+/**
+ * The zoom to apply next. A shrink always applies (the page must not overflow to keep a zoom); a
+ * growth applies only when it is at least {@link WALL_ZOOM_GROWTH_STEP}. A zoom change re-wraps
+ * the content, which changes its height, which changes the fit: the step damps that two-cycle.
+ */
+export function settleWallZoom(current: number, target: number): number {
+  if (target > current && target - current < WALL_ZOOM_GROWTH_STEP) {
+    return current;
+  }
+  return target;
+}

@@ -6,8 +6,12 @@ import {
   newestReadMs,
   nextTabKey,
   parseWallParams,
+  settleWallZoom,
   WALL_DEFAULT_S,
+  WALL_ZOOM_FLOOR,
   wallBar,
+  wallBaseZoom,
+  wallFitZoom,
   wallHref,
 } from "./wall-mode";
 
@@ -154,4 +158,55 @@ export function wallTimeIsPaddedLocalTime(): void {
   expect(formatWallTime(new Date(2026, 9, 2, 10, 15, 30).getTime())).toBe("10:15:30");
   expect(formatWallTime(new Date(2026, 9, 2, 7, 5, 3).getTime())).toBe("07:05:03");
   expect(formatWallTime(new Date(2026, 9, 2, 23, 0, 9).getTime())).toBe("23:00:09");
+}
+
+/**
+ * Z1 (`F3.77` follow-up, plan D5) — the base zoom is 1.25, and 2.5 from 3000 px wide (a 4K wall).
+ * The edge pair (2999 / 3000) is what a `>` for `>=` would turn red.
+ */
+export function baseZoomFollowsTheWidth(): void {
+  expect([wallBaseZoom(1920), wallBaseZoom(2999), wallBaseZoom(3000)]).toEqual([1.25, 1.25, 2.5]);
+}
+
+/** Z2 — content taller than the screen at the base zooms to fit, floored to 2 decimals (1.0305 → 1.03). */
+export function fitZoomFloorsToTwoDecimals(): void {
+  expect(wallFitZoom({ base: 1.25, viewportHeight: 1080, naturalPx: 1048, floor: WALL_ZOOM_FLOOR })).toBe(1.03);
+}
+
+/** Z3 — content that fits keeps the base: the fit never zooms above it. */
+export function fitZoomNeverExceedsTheBase(): void {
+  expect(wallFitZoom({ base: 1.25, viewportHeight: 1080, naturalPx: 748, floor: WALL_ZOOM_FLOOR })).toBe(1.25);
+}
+
+/** Z4a — content far taller than the screen stops at the floor (0.5, owner ruling Q2); the page then scrolls. */
+export function fitZoomStopsAtTheFloor(): void {
+  expect(WALL_ZOOM_FLOOR).toBe(0.5);
+  expect(wallFitZoom({ base: 1.25, viewportHeight: 1080, naturalPx: 5000, floor: WALL_ZOOM_FLOOR })).toBe(0.5);
+}
+
+/**
+ * Z4b — no measurement is not a fit: a zero, a negative or a `NaN` height (or viewport) keeps the
+ * base. Fails closed — `NaN` makes every comparison false, so an unguarded `min` would return it.
+ */
+export function fitZoomWithoutAMeasurementKeepsTheBase(): void {
+  const fit = (viewportHeight: number, naturalPx: number) =>
+    wallFitZoom({ base: 1.25, viewportHeight, naturalPx, floor: WALL_ZOOM_FLOOR });
+  expect([fit(1080, 0), fit(1080, -10), fit(1080, Number.NaN), fit(Number.NaN, 1048), fit(0, 1048)]).toEqual([
+    1.25, 1.25, 1.25, 1.25, 1.25,
+  ]);
+}
+
+/** Z5a — a growth under the 0.05 step is ignored, so a wrap-induced two-cycle damps. */
+export function settleIgnoresASmallGrowth(): void {
+  expect(settleWallZoom(1.0, 1.03)).toBe(1.0);
+}
+
+/** Z5b — a growth of the step or more applies. */
+export function settleAppliesALargeGrowth(): void {
+  expect(settleWallZoom(1.0, 1.06)).toBe(1.06);
+}
+
+/** Z5c — a shrink always applies, however small: the page must never overflow to hold a zoom. */
+export function settleAlwaysAppliesAShrink(): void {
+  expect([settleWallZoom(1.0, 0.9), settleWallZoom(1.0, 0.99)]).toEqual([0.9, 0.99]);
 }
