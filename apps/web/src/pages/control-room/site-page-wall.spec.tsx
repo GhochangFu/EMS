@@ -28,8 +28,8 @@ import { ControlRoomSitePage } from "./site-page";
  * `ScopedDashboardsList` are stand-ins too. `fetch` is a spy and `cleanupWall` fails the case if anything reached it.
  */
 vi.mock("../../components/control-room/site-dashboard-view", () => ({
-  SiteDashboardView: ({ slug, tab }: { slug: string; tab: string | undefined }) => (
-    <div data-testid="site-dashboard-view" data-slug={slug} data-tab={tab ?? ""} />
+  SiteDashboardView: ({ slug, tab, wall }: { slug: string; tab: string | undefined; wall?: boolean }) => (
+    <div data-testid="site-dashboard-view" data-slug={slug} data-tab={tab ?? ""} data-wall={String(wall ?? false)} />
   ),
 }));
 
@@ -207,6 +207,24 @@ export async function noWallLinkOnAGeneratedView(): Promise<void> {
   expect(await screen.findByTestId("generated-site-view")).toBeInTheDocument();
   expect(screen.getByRole("heading", { level: 1, name: "Lotapata" }), "control: the header rendered").toBeInTheDocument();
   expect(screen.queryByRole("link", { name: "Wall" })).toBeNull();
+}
+
+/**
+ * P8 (`F3.77` follow-up, plan D6) — the wall branch hands the view `wall`, so it drops its section
+ * title and its `Open in Dashboards` link. Mutation: omit the prop => `data-wall="false"` => red.
+ */
+export async function theWallBranchPassesWall(): Promise<void> {
+  stubReads(DASHBOARD_VIEW);
+  renderPage(`${SITE_PATH}/sld?wall=1&every=30`);
+  await screen.findByRole("link", { name: "Exit wall" });
+  expect(screen.getByTestId("site-dashboard-view")).toHaveAttribute("data-wall", "true");
+}
+
+/** P9 — the normal `dashboard` page does not: it keeps the title and the link. */
+export async function theNormalPageDoesNotPassWall(): Promise<void> {
+  stubReads(DASHBOARD_VIEW);
+  renderPage(`${SITE_PATH}/sld`);
+  expect(await screen.findByTestId("site-dashboard-view")).toHaveAttribute("data-wall", "false");
 }
 
 /** P7 — the wall rotates through the dashboard's tabs by `sortOrder`, read with the viewer's key. */
