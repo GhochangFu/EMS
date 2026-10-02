@@ -2,6 +2,10 @@
 import { afterEach, beforeEach, describe, it } from "vitest";
 
 import {
+  aNewTabRefitsTheZoom,
+  aResizeMovesTheCapAtTheSameZoom,
+  theClockTickDoesNotRerenderTheCanvas,
+  theFrameProvidesTheAspectCap,
   aFreshReadShowsUpdated,
   aStaleReadShowsPaused,
   exitWallLinksToTheBareTabPath,
@@ -12,6 +16,8 @@ import {
   tearDownFrame,
   theClockShowsSeconds,
   theFrameHasNoShellLandmarks,
+  theRootZoomIsTheComputedFit,
+  theScreenHeightIsOutsideTheZoom,
   theSelectChangesEvery,
 } from "./wall-frame.spec";
 
@@ -62,5 +68,29 @@ describe("F3.77 WallFrame (plan D8, D9)", () => {
 
   it("F9 lets the keyboard reach the Resume control and the tabs", async () => {
     await tabReachesResumeAndTheTabs();
+  });
+
+  it("F10a zooms the wall root to the computed fit of the bar and the content", () => {
+    theRootZoomIsTheComputedFit();
+  });
+
+  it("F10b keeps min-h-screen on an unzoomed outer element", () => {
+    theScreenHeightIsOutsideTheZoom();
+  });
+
+  it("F11a gives the canvas a fixed-aspect cap of 60 % of the screen, in the zoomed box's px", () => {
+    theFrameProvidesTheAspectCap();
+  });
+
+  it("F11b moves the cap on a window resize that leaves the zoom alone", () => {
+    aResizeMovesTheCapAtTheSameZoom();
+  });
+
+  it("F11c does not re-render the canvas on the bar's clock tick", () => {
+    theClockTickDoesNotRerenderTheCanvas();
+  });
+
+  it("F12 re-fits the zoom on a new tab (the fit is keyed on currentKey)", () => {
+    aNewTabRefitsTheZoom();
   });
 });

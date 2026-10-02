@@ -61,9 +61,10 @@ export function ChartWidget({
 
   return (
     <WidgetFrame title={title} status={status} stale={stale}>
-      {/* `F3.73` polish — a 220 px basis that shrinks to the tile: a view canvas's rows can be
-          48 px, and a fixed 220 px chart would draw over the tile below. The chart fills the box
-          absolutely, so its height resolves in an auto-height host too. */}
+      {/* `F3.73` polish — a 220 px basis that shrinks to a shorter host rather than drawing over
+          the tile below. The chart fills the box absolutely, so its height resolves in an
+          auto-height host too: since the `F3.77` follow-up a view canvas's rows are auto, and the
+          basis is the chart's natural height. */}
       <div className="relative min-h-0 flex-[1_1_220px]">
         <ReactECharts
           option={option}

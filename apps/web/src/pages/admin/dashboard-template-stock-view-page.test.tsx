@@ -6,6 +6,7 @@ import {
   aFailedCatalogFetchRendersTheError,
   aLocationAdminReadsTheCanvasAndGetsNoImport,
   anUnknownCodeRendersTheNotFoundPanel,
+  aPreviewTileKeepsTheBuilderHeight,
   everyWidgetRendersDisabledWithNoWritableControl,
   importIsDisabledUntilAnOrganizationIsChosen,
   importLandsOnTheNewDraft,
@@ -59,5 +60,9 @@ describe("F3.44 the read-only viewer for a stock dashboard-template entry", () =
 
   it("renders the error when the catalog fetch fails", async () => {
     await aFailedCatalogFetchRendersTheError();
+  });
+
+  it("F3.77 keeps a preview tile at the builder's height for its stored rows", async () => {
+    await aPreviewTileKeepsTheBuilderHeight();
   });
 });

@@ -89,7 +89,8 @@ const linkClass = "mt-2 inline-block text-sm font-semibold text-accent-strong ho
  *
  * `F3.77` (ADR 0087 Amendment 3 ruling 7, plan D8) — **wall mode.** `?wall=1&every=<s>` on a
  * `dashboard` view that renders (the tab stays the route's `:tab` segment, owner ruling OQ2)
- * renders `WallFrame` instead of `AppShell`, with the same `SiteDashboardView` inside; the frame
+ * renders `WallFrame` instead of `AppShell`, with the same `SiteDashboardView` inside (handed
+ * `wall`, so it shows no section title and no `Open in Dashboards` link); the frame
  * rotates through the dashboard's tabs by `sortOrder`. Any other view, the assets tab, a site
  * outside the KPI list and a pending read render the normal page (OQ3). The page header's
  * **Wall** link shows on a `dashboard` view only and opens the current tab's wall URL at the
@@ -164,6 +165,7 @@ export function ControlRoomSitePage({ user, locationId: locationIdProp }: Contro
           organizationId={wallSite.organization.id}
           locationId={wallSite.id}
           tab={tabParam}
+          wall
         />
       </WallFrame>
     );

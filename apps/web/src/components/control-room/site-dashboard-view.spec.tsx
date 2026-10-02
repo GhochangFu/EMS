@@ -365,6 +365,52 @@ function pathname(): string {
   return screen.getByTestId("pathname").textContent ?? "";
 }
 
+/** The view as the wall frame renders it (`site-page.tsx`'s `WallFrame` branch), on a tabbed dashboard. */
+function renderWall(): void {
+  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  render(
+    <QueryClientProvider client={queryClient}>
+      <MemoryRouter initialEntries={[`${SITE_PATH}?wall=1&every=30`]}>
+        <SiteDashboardView slug={SLUG} organizationId={ORG_PHE.id} locationId={LOCATION_ID} tab={undefined} wall />
+      </MemoryRouter>
+    </QueryClientProvider>,
+  );
+}
+
+/**
+ * T11a (`F3.77` follow-up, plan D6) — on the wall the dashboard's name stays the level-2 heading
+ * (h1 → h2 → h3 holds) but is visually hidden: the bar already names the site. S2 is the control.
+ * Mutation: ignore `wall` => the `SectionCard` title has no `sr-only` => red.
+ */
+export async function theWallHidesTheTitle(): Promise<void> {
+  stubRead(TABBED);
+  renderWall();
+
+  const heading = await screen.findByRole("heading", { level: 2, name: "Lotapata Overview" });
+  expect(heading).toHaveClass("sr-only");
+}
+
+/**
+ * T11b — the wall shows no `Open in Dashboards` link. The canvas is the positive control, so an
+ * absent link is not an absent view. Mutation: ignore `wall` => the link shows => red.
+ */
+export async function theWallShowsNoOpenLink(): Promise<void> {
+  stubRead(TABBED);
+  renderWall();
+
+  await screen.findByTestId("dashboard-live-canvas");
+  expect(screen.queryByRole("link", { name: "Open in Dashboards" })).toBeNull();
+}
+
+/** T11c — the wall keeps the tab strip: a tab is still chosen by hand on a wall screen. */
+export async function theWallKeepsTheTabStrip(): Promise<void> {
+  stubRead(TABBED);
+  renderWall();
+
+  const strip = await screen.findByRole("navigation", { name: "Dashboard tabs" });
+  expect(within(strip).getAllByRole("link")).toHaveLength(2);
+}
+
 /** T1 — two tabs render as links to their `:tab` paths, in `sortOrder` order. */
 export async function twoTabsRenderAsLinks(): Promise<void> {
   stubRead(TABBED);

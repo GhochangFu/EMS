@@ -464,6 +464,41 @@ export async function aLocationAdminReadsTheCanvasAndGetsNoImport(): Promise<voi
   ).not.toHaveBeenCalled();
 }
 
+const FIT_CODE = "preview-fit";
+const FIT_NAME = "Preview fit";
+
+/** Two widgets: `w0` on two stored rows, `w1` on three, so a constant height cannot pass. */
+const FIT: StockDashboardTemplateDto = stockDashboardTemplateDtoSchema.parse({
+  code: FIT_CODE,
+  name: FIT_NAME,
+  section: "electrical",
+  description: null,
+  stockVersion: 1,
+  content: {
+    widgets: [stockWidget(0, false), { ...(stockWidget(1, true) as Record<string, unknown>), gridH: 3 }],
+  },
+});
+
+/**
+ * Case 9 (`F3.77` follow-up, owner ruling Q3) — a view canvas fits its tiles to their content, so
+ * a preview tile, one line of text, keeps the builder's height for its stored rows as a minimum:
+ * 72 px a row and the 8 px gaps between them, 152 px for two rows and 232 px for three. The
+ * preview root is found by its canvas tile, not by its text (the editor prints the key too).
+ * Mutation: drop the `minHeight` in `renderTemplateTile` => red.
+ */
+export async function aPreviewTileKeepsTheBuilderHeight(): Promise<void> {
+  stubApi([FIT]);
+  const container = renderViewer(`/admin/dashboard-templates/stock/${FIT_CODE}`);
+
+  await screen.findByText(FIT_NAME);
+  const previewRoot = (key: string): HTMLElement | null =>
+    container.querySelector<HTMLElement>(`[data-canvas-tile="${key}"] > :first-child`);
+  await waitFor(() => {
+    expect(previewRoot("w1"), "the preview canvas did not render w1").not.toBeNull();
+  });
+  expect([previewRoot("w0")?.style.minHeight, previewRoot("w1")?.style.minHeight]).toEqual(["152px", "232px"]);
+}
+
 /** Case 8 — a failed catalog fetch renders the error text and the back link. */
 export async function aFailedCatalogFetchRendersTheError(): Promise<void> {
   stubApi();

@@ -115,3 +115,93 @@ export function formatWallTime(ms: number): string {
   const pad = (value: number) => String(value).padStart(2, "0");
   return `${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;
 }
+
+/**
+ * `F3.77` follow-up (plan D5, owner ruling Q2) — the wall's zoom is computed, not a stylesheet
+ * constant: the base scale for the screen's width, then reduced so the whole page fits one screen.
+ *
+ * `zoom` (not a root `font-size`) because many widget sizes are px literals (`text-[11px]`), which
+ * a root size would leave alone. The wall PCs run Chrome or Edge; Firefox before 126 ignores
+ * `zoom`. `WallFrame` sets it inline on `[data-wall-root]`; it is the one source.
+ */
+export const WALL_WIDE_SCREEN_PX = 3000;
+
+/** Below 0.5 the type is unreadable: the fit stops here and the page scrolls (owner ruling Q2). */
+export const WALL_ZOOM_FLOOR = 0.5;
+
+/**
+ * A growth smaller than this is ignored, so small jitter in the measured height does not move the
+ * zoom. It does not stop a re-wrap two-cycle on its own — a jump larger than the step passes it;
+ * the overflow ceiling in {@link settleWallZoom} does.
+ */
+export const WALL_ZOOM_GROWTH_STEP = 0.05;
+
+/** The base zoom: 1.25 on a 1920 px wall, 2.5 from {@link WALL_WIDE_SCREEN_PX} (a 4K wall). */
+export function wallBaseZoom(viewportWidth: number): number {
+  return viewportWidth >= WALL_WIDE_SCREEN_PX ? 2.5 : 1.25;
+}
+
+export type WallFitInput = {
+  readonly base: number;
+  /** `window.innerHeight`, in viewport px. */
+  readonly viewportHeight: number;
+  /** The bar's plus the content's `offsetHeight`: unscaled CSS px, the same at any zoom. */
+  readonly naturalPx: number;
+  readonly floor: number;
+};
+
+/**
+ * The largest zoom, at most `base`, at which `naturalPx` fits `viewportHeight`, floored to two
+ * decimals (never rounded up, which could overflow by a pixel) and never below `floor`.
+ *
+ * **No measurement is not a fit.** A height or a viewport that is not a finite positive number
+ * keeps `base`: `NaN` makes every comparison false, so an unguarded `Math.min` would return it.
+ */
+export function wallFitZoom({ base, viewportHeight, naturalPx, floor }: WallFitInput): number {
+  if (!(Number.isFinite(naturalPx) && naturalPx > 0 && Number.isFinite(viewportHeight) && viewportHeight > 0)) {
+    return base;
+  }
+  const fit = Math.floor((viewportHeight / naturalPx) * 100) / 100;
+  return Math.max(floor, Math.min(base, fit));
+}
+
+/**
+ * The zoom to apply next. A shrink always applies (the page must not overflow to keep a zoom); a
+ * growth applies only when it is at least {@link WALL_ZOOM_GROWTH_STEP} **and** stays below
+ * `ceiling`, the lowest zoom at which the content has been seen to overflow (`null` for none).
+ *
+ * A zoom change re-wraps the content, which changes its height, which changes the fit. When the
+ * jump is larger than the step, the step alone lets the zoom flip between two values for ever
+ * (overflow at the high one, room at the low one). The ceiling fails closed: once a zoom has
+ * overflowed, the fit never grows back to it, so the zoom settles at the lower value. The caller
+ * clears the ceiling when the conditions change (a window resize, a new tab).
+ */
+export function settleWallZoom(current: number, target: number, ceiling: number | null): number {
+  if (target <= current) {
+    return target;
+  }
+  if (target - current < WALL_ZOOM_GROWTH_STEP || (ceiling !== null && target >= ceiling)) {
+    return current;
+  }
+  return target;
+}
+
+/**
+ * The share of the screen's height a fixed-aspect tile (the mimic) may take on the wall (owner
+ * ruling Q4). A full-width drawing's height follows its width, which `zoom` does not change in
+ * viewport px, so zoom alone cannot fit it; the cap letterboxes it instead.
+ */
+export const WALL_ASPECT_CAP_FRACTION = 0.6;
+
+/**
+ * The fixed-aspect cap in the zoomed box's CSS px: {@link WALL_ASPECT_CAP_FRACTION} of the
+ * viewport's height, divided by the zoom, so the tile is that share of the screen whatever the
+ * zoom. Constant in viewport px, so the fit still converges. `null` (no cap) for a viewport or a
+ * zoom that is not a finite positive number.
+ */
+export function wallAspectCapPx(viewportHeight: number, zoom: number): number | null {
+  if (!(Number.isFinite(viewportHeight) && viewportHeight > 0 && Number.isFinite(zoom) && zoom > 0)) {
+    return null;
+  }
+  return Math.round((WALL_ASPECT_CAP_FRACTION * viewportHeight) / zoom);
+}

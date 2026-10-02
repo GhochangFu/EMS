@@ -4,6 +4,8 @@ import { afterEach, describe, it } from "vitest";
 import {
   cleanupWall,
   noWallLinkOnAGeneratedView,
+  theNormalPageDoesNotPassWall,
+  theWallBranchPassesWall,
   theWallLinkAtTheBarePath,
   theWallLinkCarriesTheTabAndTheDefaults,
   theWallRotatesByTheDashboardsTabOrder,
@@ -47,5 +49,13 @@ describe("F3.77 the site page's wall mode (plan D8)", () => {
 
   it("P7 rotates through the dashboard's tabs by sortOrder", async () => {
     await theWallRotatesByTheDashboardsTabOrder();
+  });
+
+  it("P8 hands the site's dashboard view wall in the wall branch", async () => {
+    await theWallBranchPassesWall();
+  });
+
+  it("P9 does not hand the view wall on the normal page", async () => {
+    await theNormalPageDoesNotPassWall();
   });
 });

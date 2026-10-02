@@ -1,10 +1,11 @@
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { useEffect } from "react";
+import { useContext, useEffect } from "react";
 import { Link, MemoryRouter, Route, Routes, useLocation } from "react-router-dom";
 import { expect, vi } from "vitest";
 
 import { FRESH_MS } from "../../lib/schematic-telemetry";
+import { CanvasFitContext } from "../dashboards/dashboard-canvas";
 import { useReportNewestRead } from "../dashboards/newest-read-context";
 import { WallFrame } from "./wall-frame";
 
@@ -30,7 +31,35 @@ export function setUpFrame(): void {
 export function tearDownFrame(): void {
   cleanup();
   vi.useRealTimers();
+  vi.unstubAllGlobals();
+  if (offsetHeightDescriptor !== undefined) {
+    Object.defineProperty(HTMLElement.prototype, "offsetHeight", offsetHeightDescriptor);
+    offsetHeightDescriptor = undefined;
+  }
 }
+
+let offsetHeightDescriptor: PropertyDescriptor | undefined;
+
+/**
+ * `F3.77` follow-up — jsdom has no layout: the bar (`[data-wall-bar]`) is 48 px, the content
+ * wrapper (`[data-wall-content]`) `contentPx`, every other element 0, on a 1920 × 1080 window.
+ * Restored by `tearDownFrame`.
+ */
+function layOut(contentPx: number): void {
+  laidOutContentPx = contentPx;
+  vi.stubGlobal("innerWidth", 1920);
+  vi.stubGlobal("innerHeight", 1080);
+  offsetHeightDescriptor = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "offsetHeight");
+  Object.defineProperty(HTMLElement.prototype, "offsetHeight", {
+    configurable: true,
+    get(this: HTMLElement) {
+      return this.hasAttribute("data-wall-bar") ? 48 : this.hasAttribute("data-wall-content") ? laidOutContentPx : 0;
+    },
+  });
+}
+
+/** The content wrapper's height `layOut` reports; a case may change it between renders. */
+let laidOutContentPx = 0;
 
 function Reporter({ ms }: { ms: number | null }) {
   const report = useReportNewestRead();
@@ -50,7 +79,16 @@ function LocationProbe() {
   return <output data-testid="location">{`${location.pathname}${location.search}`}</output>;
 }
 
-function renderFrame(readMs: number | null = READ_AT): void {
+let fitProbeRenders = 0;
+
+/** Prints the fixed-aspect cap the frame provides to the canvas inside it, and counts its renders. */
+function FitProbe() {
+  const { maxAspectHeightPx } = useContext(CanvasFitContext);
+  fitProbeRenders += 1;
+  return <output data-testid="fit-cap">{String(maxAspectHeightPx)}</output>;
+}
+
+function renderFrame(readMs: number | null = READ_AT, withFitProbe = false): void {
   render(
     <MemoryRouter initialEntries={[`${SITE}/sld?wall=1&every=30`]}>
       <Routes>
@@ -66,6 +104,7 @@ function renderFrame(readMs: number | null = READ_AT): void {
                 everyS={30}
               >
                 <Reporter ms={readMs} />
+                {withFitProbe ? <FitProbe /> : null}
               </WallFrame>
               <LocationProbe />
             </>
@@ -156,4 +195,108 @@ export async function tabReachesResumeAndTheTabs(): Promise<void> {
     reached.push(active?.textContent ?? "");
   }
   expect(reached).toEqual(expect.arrayContaining(["Paused — Resume", "Overview", "SLD"]));
+}
+
+function wallRoot(): HTMLElement {
+  const root = document.querySelector<HTMLElement>("[data-wall-root]");
+  expect(root, "the zoomed wall root").not.toBeNull();
+  return root as HTMLElement;
+}
+
+/**
+ * F10a (`F3.77` follow-up, plan D5) — the wall root's zoom is the computed fit of the bar plus the
+ * content wrapper: 1080 / (48 + 1000) → 1.03, not the stylesheet's old constant 1.25. Mutation: a
+ * fixed `zoom: 1.25`, or `contentRef` on another element => red.
+ */
+export function theRootZoomIsTheComputedFit(): void {
+  layOut(1000);
+  renderFrame();
+  expect(wallRoot().style.zoom).toBe("1.03");
+}
+
+/**
+ * F10b — `min-h-screen` sits on an unzoomed outer element, never on the zoomed root, so `100vh`
+ * is never resolved inside the zoomed box. Mutation: `min-h-screen` back on the root => red.
+ */
+export function theScreenHeightIsOutsideTheZoom(): void {
+  layOut(1000);
+  renderFrame();
+  const root = wallRoot();
+  expect([root.classList.contains("min-h-screen"), root.parentElement?.classList.contains("min-h-screen")]).toEqual([
+    false,
+    true,
+  ]);
+  expect(root.parentElement?.style.zoom, "the outer element is not zoomed").toBe("");
+}
+
+/**
+ * F11a (`F3.77` follow-up, owner ruling Q4) — the frame gives the canvas inside it a fixed-aspect
+ * cap of 60 % of the screen in the zoomed box's px: 0.6 × 1080 / 1.03 → 629. Mutation: the frame
+ * provides no context, or does not divide by the zoom (648) => red.
+ */
+export function theFrameProvidesTheAspectCap(): void {
+  layOut(1000);
+  renderFrame(READ_AT, true);
+  expect([wallRoot().style.zoom, screen.getByTestId("fit-cap").textContent]).toEqual(["1.03", "629"]);
+}
+
+/**
+ * F11b — a window resize that leaves the zoom alone still moves the cap: the content (548 px with
+ * the bar) fits at 1080 and at 900, so the zoom stays 1.25 and the cap goes 518 → 432. The
+ * re-render comes from `useWallFit`'s viewport-height state: with no zoom change nothing else
+ * renders the frame. Mutation: `measure` stops setting the viewport height => the cap stays 518 =>
+ * red.
+ */
+export function aResizeMovesTheCapAtTheSameZoom(): void {
+  layOut(500);
+  renderFrame(READ_AT, true);
+  const before = [wallRoot().style.zoom, screen.getByTestId("fit-cap").textContent];
+  vi.stubGlobal("innerHeight", 900);
+  act(() => {
+    window.dispatchEvent(new Event("resize"));
+  });
+  expect([before, [wallRoot().style.zoom, screen.getByTestId("fit-cap").textContent]]).toEqual([
+    ["1.25", "518"],
+    ["1.25", "432"],
+  ]);
+}
+
+/**
+ * F12 (review finding) — the fit is keyed on the tab: a rotation does not remount the frame, so
+ * the frame hands `currentKey` to `useWallFit`, which clears its overflow ceiling and re-measures.
+ * The first tab overflows at 1.25 (1.03, ceiling 1.25); the next tab's content fits, so it gets
+ * the base back. Mutation: `useWallFit(undefined)` => no re-measure, the zoom stays 1.03 => red.
+ */
+export function aNewTabRefitsTheZoom(): void {
+  layOut(1000);
+  const frame = (currentKey: string) => (
+    <MemoryRouter initialEntries={[`${SITE}/${currentKey}?wall=1&every=30`]}>
+      <WallFrame siteName="Lotapata" sitePath={SITE} tabKeys={["overview", "sld"]} currentKey={currentKey} everyS={30}>
+        <Reporter ms={READ_AT} />
+      </WallFrame>
+    </MemoryRouter>
+  );
+  const { rerender } = render(frame("overview"));
+  const before = wallRoot().style.zoom;
+  laidOutContentPx = 500;
+  rerender(frame("sld"));
+  expect([before, wallRoot().style.zoom]).toEqual(["1.03", "1.25"]);
+}
+
+/**
+ * F11c — the bar's one-second clock does not re-render the canvas: the cap's context value keeps
+ * its identity while the cap is unchanged, so a consumer passed as `children` renders no more on a
+ * tick. The positive control is the clock line, which does move. Mutation: a new `{ maxAspectHeightPx }`
+ * object each render (no `useMemo`) => the probe re-renders each second => red.
+ */
+export function theClockTickDoesNotRerenderTheCanvas(): void {
+  layOut(1000);
+  renderFrame(READ_AT, true);
+  const clockBefore = screen.getByTestId("wall-clock").textContent;
+  const rendersBefore = fitProbeRenders;
+  act(() => {
+    vi.advanceTimersByTime(3_000);
+  });
+  expect(screen.getByTestId("wall-clock").textContent, "the clock did not tick").not.toBe(clockBefore);
+  expect(fitProbeRenders - rendersBefore).toBe(0);
 }

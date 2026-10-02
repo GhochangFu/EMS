@@ -175,6 +175,61 @@ export function truncationIsAnnouncedOnlyWhenItHappened(): void {
 }
 
 /**
+ * `F3.77` follow-up (owner ruling Q5) — a view canvas sizes its rows to content, and the table
+ * has no configured row count, so its scroll box caps at `max-h-96` (384 px) and scrolls inside
+ * itself rather than growing with every resolved row. jsdom has no layout: this pins the classes;
+ * the 384 px cap itself is a browser claim.
+ */
+export function theScrollBoxCapsItsHeight(): void {
+  render(
+    <TableWidget
+      title="Active alarms"
+      status="ready"
+      config={{}}
+      columns={COLUMNS}
+      rows={ROWS}
+      truncated={false}
+    />,
+  );
+  const box = screen.getByRole("table").parentElement as HTMLElement;
+  const classes = box.className.split(" ");
+  expect(classes).toContain("overflow-auto");
+  expect(classes).toContain("max-h-96");
+}
+
+function scrollBoxClasses(): string[] {
+  render(
+    <TableWidget
+      title="Active alarms"
+      status="ready"
+      config={{}}
+      columns={COLUMNS}
+      rows={ROWS}
+      truncated={false}
+    />,
+  );
+  return (screen.getByRole("table").parentElement as HTMLElement).className.split(" ");
+}
+
+/**
+ * Review finding — the builder keeps fixed 72 px rows, so in a two-row cell the scroll box must
+ * shrink below its content (and below 384 px) and scroll there, not paint over the tile below.
+ * `min-h-0` makes that shrink explicit in the frame's column. jsdom has no layout: this pins the
+ * class; the fit inside the builder cell is a browser claim.
+ */
+export function theScrollBoxShrinksIntoAFixedCell(): void {
+  expect(scrollBoxClasses()).toContain("min-h-0");
+}
+
+/**
+ * Review finding — in the builder the scroll box fills the rest of its fixed cell under the
+ * title, as `h-full` did before the view cap: `flex-1` in the frame's column.
+ */
+export function theScrollBoxFillsAFixedCell(): void {
+  expect(scrollBoxClasses()).toContain("flex-1");
+}
+
+/**
  * Every chosen column gone from the dataset is the "edit this widget" state — and it must be
  * distinguishable from "resolved with no rows", which is not the author's problem to fix.
  */

@@ -8,6 +8,9 @@ import {
   anEmptyProjectionAsksTheAuthorToFixIt,
   noProjectionShowsEveryDeclaredColumn,
   theConfigProjectionReachesTheHeader,
+  theScrollBoxCapsItsHeight,
+  theScrollBoxFillsAFixedCell,
+  theScrollBoxShrinksIntoAFixedCell,
   truncationIsAnnouncedOnlyWhenItHappened,
   theBenchmarkCoverageCellRendersTheRatio,
   theBenchmarkNullValueRendersTheEmDash,
@@ -44,6 +47,24 @@ describe("F3.35 Stage B — the table widget", () => {
 
   it("distinguishes a stale projection from an empty dataset", () => {
     anEmptyProjectionAsksTheAuthorToFixIt();
+  });
+});
+
+describe("F3.77 follow-up — the table fits a content-sized tile", () => {
+  afterEach(() => {
+    cleanup();
+  });
+
+  it("caps its scroll box at max-h-96 and scrolls inside it", () => {
+    theScrollBoxCapsItsHeight();
+  });
+
+  it("lets its scroll box shrink into a fixed builder cell (min-h-0)", () => {
+    theScrollBoxShrinksIntoAFixedCell();
+  });
+
+  it("lets its scroll box fill a fixed builder cell (flex-1)", () => {
+    theScrollBoxFillsAFixedCell();
   });
 });
 

@@ -50,8 +50,8 @@ export function MimicWidgetLive({ widget, dashboardId }: MimicWidgetLiveProps) {
   const view = useMemo(() => mimicViewFor(entry, resolvedAt), [entry, resolvedAt]);
   const readings = useSiteLiveReadings(widget.id, view, query.dataUpdatedAt);
   const geometry = useMemo(() => geometryFor(entry, widget.config), [entry, widget.config]);
-  // `F3.73` critique fixes — a view canvas sizes this tile's rows from the drawing's aspect, so
-  // the drawing is not shrunk to fit a stored height. The builder's canvas ignores the report.
+  // `F3.73` critique fixes — a view canvas gives this tile a minimum height from the drawing's
+  // aspect (`F3.77` follow-up; it was rows), capped on the wall. The builder ignores the report.
   useCanvasTileAspect(
     geometry.width > 0 && geometry.height > 0
       ? { ratio: geometry.height / geometry.width, chromePx: MIMIC_FRAME_CHROME_PX }

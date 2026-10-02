@@ -22,6 +22,7 @@ import {
   loadingDrawsNoNodes,
   aNodeWithNoMemberSaysNoAssetAtThisSite,
   aNoAssetNodeDrawsANeutralSolidFrame,
+  theDrawingAddsNoHeightOfItsOwn,
 } from "./mimic-widget.spec";
 
 /**
@@ -96,5 +97,8 @@ describe("F3.32b — MimicWidget, the reference look (ADR 0079 Amendment 2)", ()
   });
   it("F2 an alarm unit with an old reading, and a stale unit, do not flow", () => {
     staleNodesDoNotFlow();
+  });
+  it("L1 the drawing sits in an absolute box, so it adds no height of its own", () => {
+    theDrawingAddsNoHeightOfItsOwn();
   });
 });

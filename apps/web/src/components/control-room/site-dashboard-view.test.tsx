@@ -32,6 +32,9 @@ import {
   twoTabsRenderAsLinks,
   theTabLinksKeepTheQuery,
   anUnknownTabRedirectKeepsTheQuery,
+  theWallHidesTheTitle,
+  theWallKeepsTheTabStrip,
+  theWallShowsNoOpenLink,
 } from "./site-dashboard-view.spec";
 
 /**
@@ -164,5 +167,17 @@ describe("F3.73 D10 SiteDashboardView tabs", () => {
 
   it("F3.77 T10 an unknown tab redirect keeps the query", async () => {
     await anUnknownTabRedirectKeepsTheQuery();
+  });
+
+  it("F3.77 T11a the wall keeps the dashboard name as a visually hidden h2", async () => {
+    await theWallHidesTheTitle();
+  });
+
+  it("F3.77 T11b the wall shows no Open in Dashboards link", async () => {
+    await theWallShowsNoOpenLink();
+  });
+
+  it("F3.77 T11c the wall keeps the tab strip", async () => {
+    await theWallKeepsTheTabStrip();
   });
 });

@@ -18,6 +18,8 @@ type SiteDashboardViewProps = {
   locationId: string;
   /** The route's raw `:tab` segment (`undefined` at the bare path); never `assets`, the page owns it. */
   tab: string | undefined;
+  /** `F3.77` follow-up (plan D6): rendered inside `WallFrame` — no visible section title, no `Open in Dashboards`. */
+  wall?: boolean;
 };
 
 /**
@@ -68,8 +70,13 @@ const SITE_VIEW_RESOLVE_PREFIX = ["control-room", "site-view"] as const;
  * **The query string stays (`F3.77`, wall mode).** A tab link and the unknown-tab redirect keep
  * the current query (`?wall=1&every=30`), so choosing a tab on a wall screen does not leave wall
  * mode. The site route has no other query, so nothing else is carried.
+ *
+ * **On the wall (`F3.77` follow-up, plan D6), `wall` drops the card chrome.** The body renders in a
+ * plain `<section>` whose `h2` (the dashboard's name) is `sr-only`, so the heading order holds
+ * (the bar's `h1`, this `h2`, the widgets' `h3`) while the screen does not repeat the site name;
+ * there is no `Open in Dashboards` link. The tab strip stays: a tab is still chosen by hand.
  */
-export function SiteDashboardView({ slug, organizationId, locationId, tab }: SiteDashboardViewProps) {
+export function SiteDashboardView({ slug, organizationId, locationId, tab, wall = false }: SiteDashboardViewProps) {
   const queryClient = useQueryClient();
   const { search } = useLocation();
   const dashboardQ = useQuery({
@@ -93,9 +100,62 @@ export function SiteDashboardView({ slug, organizationId, locationId, tab }: Sit
     return <Navigate to={`${sitePath}${search}`} replace />;
   }
 
+  const name = dashboardQ.data?.name ?? slug;
+  const body =
+    dashboardQ.data !== undefined ? (
+      <>
+        {tabs.length > 0 ? (
+          <nav aria-label="Dashboard tabs" className="mb-3 flex flex-wrap gap-1 border-b border-line pb-2">
+            {tabs.map((entry) => {
+              const marker = markers.byTab.get(entry.key);
+              return (
+                <Link
+                  key={entry.id}
+                  to={`${siteTabHref(sitePath, entry.key)}${search}`}
+                  aria-current={entry.key === selected?.key ? "page" : undefined}
+                  aria-label={
+                    marker === undefined ? undefined : tabAccessibleName(entry.label, marker.status, markers.severities)
+                  }
+                  className={`surface-tab px-3 py-1.5 ${FOCUS_OUTLINE_CLASS} ${entry.key === selected?.key ? "surface-tab-selected" : ""}`}
+                >
+                  {entry.label}
+                  {marker === undefined ? null : <TabStatusMarker status={marker.status} />}
+                </Link>
+              );
+            })}
+          </nav>
+        ) : null}
+        <DashboardLiveCanvas dashboard={dashboardQ.data} tabKey={selected?.key} />
+      </>
+    ) : dashboardQ.isError ? (
+      <div role="alert" className="rounded border border-critical-line bg-critical-wash p-3 text-sm text-critical-ink-strong">
+        <p>{apiErrorMessage(dashboardQ.error)}</p>
+        <button
+          type="button"
+          onClick={tryAgain}
+          className="surface-button mt-2 border border-critical-line-strong px-3 py-1 text-critical-ink-strong hover:bg-critical-wash-strong"
+        >
+          Try again
+        </button>
+      </div>
+    ) : (
+      <p role="status" className="text-sm text-ink-muted">
+        Loading dashboard…
+      </p>
+    );
+
+  if (wall) {
+    return (
+      <section aria-label={name}>
+        <h2 className="sr-only">{name}</h2>
+        {body}
+      </section>
+    );
+  }
+
   return (
     <SectionCard
-      title={dashboardQ.data?.name ?? slug}
+      title={name}
       actions={
         <Link
           to={`/dashboards/${encodeURIComponent(slug)}?organizationId=${encodeURIComponent(organizationId)}`}
@@ -105,47 +165,7 @@ export function SiteDashboardView({ slug, organizationId, locationId, tab }: Sit
         </Link>
       }
     >
-      {dashboardQ.data !== undefined ? (
-        <>
-          {tabs.length > 0 ? (
-            <nav aria-label="Dashboard tabs" className="mb-3 flex flex-wrap gap-1 border-b border-line pb-2">
-              {tabs.map((entry) => {
-                const marker = markers.byTab.get(entry.key);
-                return (
-                  <Link
-                    key={entry.id}
-                    to={`${siteTabHref(sitePath, entry.key)}${search}`}
-                    aria-current={entry.key === selected?.key ? "page" : undefined}
-                    aria-label={
-                      marker === undefined ? undefined : tabAccessibleName(entry.label, marker.status, markers.severities)
-                    }
-                    className={`surface-tab px-3 py-1.5 ${FOCUS_OUTLINE_CLASS} ${entry.key === selected?.key ? "surface-tab-selected" : ""}`}
-                  >
-                    {entry.label}
-                    {marker === undefined ? null : <TabStatusMarker status={marker.status} />}
-                  </Link>
-                );
-              })}
-            </nav>
-          ) : null}
-          <DashboardLiveCanvas dashboard={dashboardQ.data} tabKey={selected?.key} />
-        </>
-      ) : dashboardQ.isError ? (
-        <div role="alert" className="rounded border border-critical-line bg-critical-wash p-3 text-sm text-critical-ink-strong">
-          <p>{apiErrorMessage(dashboardQ.error)}</p>
-          <button
-            type="button"
-            onClick={tryAgain}
-            className="surface-button mt-2 border border-critical-line-strong px-3 py-1 text-critical-ink-strong hover:bg-critical-wash-strong"
-          >
-            Try again
-          </button>
-        </div>
-      ) : (
-        <p role="status" className="text-sm text-ink-muted">
-          Loading dashboard…
-        </p>
-      )}
+      {body}
     </SectionCard>
   );
 }
