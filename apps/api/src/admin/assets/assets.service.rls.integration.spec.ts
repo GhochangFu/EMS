@@ -95,3 +95,61 @@ export async function assertRefusesCrossOrgRelocation(
     await ownerPool.query("DELETE FROM bms.assets WHERE id = $1", [created.id]);
   }
 }
+
+/**
+ * `F3.74` (ADR 0088) — `rating` and `tripCause` on the asset write path. A create carrying both
+ * reads them back; on update `undefined` keeps the stored value and an explicit `null` clears it.
+ * Two `it`s own the two halves, so a `??` in place of the `undefined` test reddens the update claim.
+ */
+export async function assertCreateStoresRatingAndTripCause(
+  ctx: SvcWithFixtures,
+  jwt: JwtPayload,
+  track: (id: string) => void,
+): Promise<void> {
+  const { svc, locationId, domain } = ctx;
+  const created = await svc.create(jwt, {
+    code: `f3-74-rating-${Date.now()}`,
+    name: "F3.74 rating",
+    siteName: "F3.74 site",
+    locationId,
+    rtuId: null,
+    domain,
+    rating: "630A",
+    tripCause: "overload",
+  });
+  // Tracked before any assertion, so a failing claim still leaves no row behind.
+  track(created.id);
+  expect(created.rating).toBe("630A");
+  expect(created.tripCause).toBe("overload");
+  const fetched = (await svc.list(jwt, locationId)).items.find((a) => a.id === created.id);
+  expect(fetched?.rating).toBe("630A");
+  expect(fetched?.tripCause).toBe("overload");
+}
+
+export async function assertUpdateKeepsOmittedAndClearsNull(
+  ctx: SvcWithFixtures,
+  jwt: JwtPayload,
+  track: (id: string) => void,
+): Promise<void> {
+  const { svc, locationId, domain } = ctx;
+  const created = await svc.create(jwt, {
+    code: `f3-74-clear-${Date.now()}`,
+    name: "F3.74 clear",
+    siteName: "F3.74 site",
+    locationId,
+    rtuId: null,
+    domain,
+    rating: "400A",
+    tripCause: "earth fault",
+  });
+  track(created.id);
+  const renamed = await svc.update(jwt, created.id, { name: "F3.74 clear renamed" });
+  expect(renamed.rating).toBe("400A");
+  expect(renamed.tripCause).toBe("earth fault");
+  const cleared = await svc.update(jwt, created.id, { tripCause: null });
+  expect(cleared.tripCause).toBeNull();
+  expect(cleared.rating).toBe("400A");
+  const refetched = (await svc.list(jwt, locationId)).items.find((a) => a.id === created.id);
+  expect(refetched?.tripCause).toBeNull();
+  expect(refetched?.rating).toBe("400A");
+}

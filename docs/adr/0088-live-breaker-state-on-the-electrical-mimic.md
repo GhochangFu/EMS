@@ -258,3 +258,91 @@ Ruled by the owner on 2026-10-01, one at a time:
 - **The audit's binding faults stay open** until the `F3.73` critique fix or a
   later row corrects the seed and the presets. Until then most preset nodes on
   CSMOC and PHEWB show "Not assigned", with or without this row.
+
+## Amendment 1 (2026-10-01, `F3.74`) — plan rulings
+
+**Status: accepted.** The owner approved the plan on 2026-10-01
+(`docs/plans/f3.74-live-breaker-state.md`, revision 2). The owner ruled each
+open question of decision 16 on 2026-10-01, one at a time, after a research
+pass at `main` `b21eadad`, and then approved the plan decisions listed below.
+Decisions 1 to 15 stand except where an entry below says it widens one.
+
+### Rulings
+
+Every ruling is dated 2026-10-01. Two changed the plan, and both are marked: OQ3 with OQ3b (one change), and
+OQ5.
+
+1. **OQ1 (a) — the state table.** `bms.point_key_states` is global master
+   data with no row-level security; `tone` is one of `closed`, `open`,
+   `tripped`; the rows are seed-owned; `INSERT`, `UPDATE` and `DELETE` are
+   revoked from `bms_tenant`. As recommended.
+2. **OQ2 (a) — the asset fields.** `rating varchar(32)` and `trip_cause
+   varchar(128)`, both nullable, on `bms.assets`. An admin edits them in the
+   asset form in this row. As recommended.
+3. **OQ3 — changed: drawn layouts get fan-out too.** The recommendation was
+   presets only. A layout unit can fan out like a preset node.
+4. **OQ3b "Full" — changed: the layout flags.** `bms.mimic_layout_nodes` gains
+   `fan_out` and `is_source` (booleans, units only; a `CHECK` holds panels and
+   labels at false), with two inspector toggles. A unit whose symbol is
+   `breaker` switches (no column). The energised walk runs on layouts as on
+   presets, with the `is_source` units as sources. "Start from" a preset copies
+   the flags, so "Start from `lv_single_line`" yields a working SLD layout. The
+   columns go into migration `0097`; `security-reviewer` reads PR1. This
+   **widens decision 4** from "a preset unit" to "a preset node or a layout
+   unit". It also means **ADR 0081 decision 6's one resolution now fans out for
+   both arms**.
+5. **OQ4 (a) — sources and fan-out energy.** Sources are declared, not
+   inferred. A fan-out node passes energy when any member is CLOSED (OR). As
+   recommended.
+6. **OQ5 — changed: the freshness dash stays.** The recommendation was to
+   replace the `F3.32b` flow dash on the electrical presets. The dash stays on
+   every preset and layout, and the energy colour is added: energised in the
+   accent colour, de-energised in grey, unknown in a dashed hint colour.
+   Unknown never looks energised. **Accepted by the owner:** an OPEN breaker
+   whose asset is fresh may still animate its downstream pipe, in grey.
+7. **OQ6 (a) — member cap.** A fan-out node draws up to 16 members, then "+N
+   more". As recommended.
+8. **OQ7 (a) — the split.** Five stacked pull requests; migration `0097` in
+   PR1 and `0098` in PR4. As recommended.
+9. **OQ8 (a) — buses.** Bus nodes are passive (`roleCode: null`); a bus frames
+   as the worst downstream switch. As recommended.
+10. **OQ9 (a) — compact size.** A `compact` config flag on the preset arm. As
+    recommended.
+11. **OQ10 (a) — the demo data.** `CR-Q9` trips (`breaker_main` 0,
+    `breaker_trip` 1, 0 kW); `CR-Q11` stays OPEN. As recommended.
+12. **OQ3b follow-on N1 (a) — library breaker symbols.** The two library
+    symbols switch too: `MIMIC_SWITCHING_SYMBOLS = ["breaker", "wmpid:breaker",
+    "drawio:circuit-breaker"]`, one constant. As recommended.
+
+### Stock order with `F3.77`
+
+ADR 0087 Amendment 3 ruling 10 (accepted and merged as #684) gives the stock
+versions in this order. `F3.77` takes stock **v3** and makes the seed-upgrade
+predicate general. `F3.74` PR5 takes **v4**, after `F3.77` merges, and places
+the compact SLD in the left half of the row below the alarms rail. PR1 to PR4
+do not touch `smoc-standard.ts` or `site-layout-seed-upgrade.ts`. This amends
+decision 12 only in its version number.
+
+### Plan decisions (approved by the owner on 2026-10-01)
+
+- **D1 Seed-owned rows.** The three state rows are written by the seed
+  (`ON CONFLICT (point_key_code, value) DO UPDATE`), not by the migration.
+- **D1b Units-only `CHECK` and symbol-based switching.** The constraint
+  `mimic_layout_nodes_flags_units_check` allows either flag only on a `unit`.
+  A unit switches by its symbol, with no column.
+- **D3 Tone order and one walk.** A state derives as offline, then tripped,
+  then open, then closed, else unknown. One shared function, `energiseGraph`,
+  serves both arms.
+- **D4 OR join.** Two paths to one node join as OR: energised, else unknown,
+  else de-energised.
+- **D5 The parity difference.** A fan-out node's outgoing pipe is OR over its
+  members, so with `CR-Q11` OPEN and `CR-Q10` CLOSED the HVAC branch still reads
+  energised. The SMOC SLD pairs members; this record does not.
+- **D6 The passive-bus rule and the dash colour rule.** A passive unit with a
+  switching unit directly downstream frames as the worst downstream switch, on
+  both arms, with no flag. An energised pipe animates in the accent colour only
+  when its energy is energised or the graph has no sources.
+- **D9 Stock v4 after `F3.77`.** As in the section above.
+- **D11 The forced role write.** The demo seed forces the `CR-Q*` membership
+  roles at `RSMOC-WC` (`SET role = EXCLUDED.role`), because the existing upsert
+  keeps the old role. It touches that site only.

@@ -12,7 +12,9 @@ import { MasterDataAuditService } from "../master-data-audit.service";
 import { AssetsAdminService } from "./assets.service";
 import {
   assertAssetWriteLifecycleSurvivesRealRls,
+  assertCreateStoresRatingAndTripCause,
   assertRefusesCrossOrgRelocation,
+  assertUpdateKeepsOmittedAndClearsNull,
 } from "./assets.service.rls.integration.spec";
 
 /**
@@ -152,6 +154,22 @@ describe.skipIf(!connectionString)("E7.1b — AssetsAdminService under real RLS"
     await assertRefusesCrossOrgRelocation(
       { svc, ownerPool, organizationId, locationId, domain, foreignLocationId },
       adminJwt,
+    );
+  });
+
+  it("F3.74: a create carrying rating and tripCause reads both back", async () => {
+    await assertCreateStoresRatingAndTripCause(
+      { svc, ownerPool, organizationId, locationId, domain },
+      jwt,
+      (id) => createdIds.push(id),
+    );
+  });
+
+  it("F3.74: an update keeps an omitted rating/tripCause and clears an explicit null", async () => {
+    await assertUpdateKeepsOmittedAndClearsNull(
+      { svc, ownerPool, organizationId, locationId, domain },
+      jwt,
+      (id) => createdIds.push(id),
     );
   });
 });

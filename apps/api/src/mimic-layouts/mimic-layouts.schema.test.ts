@@ -49,4 +49,10 @@ describe("F3.32c — the mimic layout write bodies", () => {
   it("F3.32f refuses an org symbol key with an uppercase code", () => spec.refusesAnOrgSymbolKeyWithAnUppercaseCode());
   it("F3.32f refuses an org library key with an uppercase code", () =>
     spec.refusesAnOrgLibraryKeyWithAnUppercaseCode());
+  it("F3.74 accepts a unit that fans out and is a source", () => spec.acceptsAUnitThatFansOutAndIsASource());
+  it("F3.74 refuses a panel that fans out", () => spec.refusesAPanelThatFansOut());
+  it("F3.74 refuses a label that is a source", () => spec.refusesALabelThatIsASource());
+  it("F3.74 accepts a panel with both flags false", () => spec.acceptsAPanelWithFalseFlags());
+  it("F3.74 leaves absent flags absent", () => spec.leavesAbsentFlagsAbsent());
+  it("F3.74 refuses a flag that is not a boolean", () => spec.refusesAFlagThatIsNotABoolean());
 });

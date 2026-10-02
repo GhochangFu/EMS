@@ -217,6 +217,9 @@ function newNode(
     key: nextNodeKey(state.layout.nodes, prefix),
     kind,
     roleCode: null,
+    // `F3.74` (OQ3b): a new node neither fans out nor is a source.
+    fanOut: false,
+    isSource: false,
     ...fields,
     ...NEW_NODE_AT,
     ...MIMIC_EDITOR_DEFAULT_BOX[kind],
@@ -449,6 +452,14 @@ export function toWriteBody(layout: EditorLayout): MimicLayoutWriteBody {
       if (node.tone !== null) {
         out.tone = node.tone;
       }
+      // F3.74 (OQ3b): a save replaces the whole layout, so a flag the editor
+      // drops is a flag the save clears. Send each one only when it is set.
+      if (node.fanOut) {
+        out.fanOut = true;
+      }
+      if (node.isSource) {
+        out.isSource = true;
+      }
       return out;
     }),
     pipes: layout.pipes.map((pipe) => ({ fromKey: pipe.fromKey, toKey: pipe.toKey })),
@@ -529,6 +540,9 @@ export function fromPreset(preset: MimicPreset): EditorLayout {
       y: toCell(at.y),
       ...size,
       z: MIMIC_EDITOR_Z.unit,
+      // `F3.74` Task 1.6 placeholder so the build compiles; Task 3.4 copies the preset's flags.
+      fanOut: false,
+      isSource: false,
     };
   });
 
@@ -547,6 +561,8 @@ export function fromPreset(preset: MimicPreset): EditorLayout {
       y: upstream.y,
       ...size,
       z: MIMIC_EDITOR_Z.unit,
+      fanOut: false,
+      isSource: false,
     });
   }
 
@@ -565,6 +581,8 @@ export function fromPreset(preset: MimicPreset): EditorLayout {
       tone: panel.tone,
       ...panelAround(members),
       z: MIMIC_EDITOR_Z.panel,
+      fanOut: false,
+      isSource: false,
     };
   });
 

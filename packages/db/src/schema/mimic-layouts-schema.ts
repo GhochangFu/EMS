@@ -218,6 +218,10 @@ export const mimicLayoutNodes = bmsSchema.table(
     w: integer("w").notNull(),
     h: integer("h").notNull(),
     z: integer("z").notNull().default(0),
+    // `F3.74` / ADR 0088 (migration `0097`) — a drawn unit's fan-out and source flags;
+    // `mimic_layout_nodes_flags_units_check` lets only a `unit` carry either.
+    fanOut: boolean("fan_out").notNull().default(false),
+    isSource: boolean("is_source").notNull().default(false),
   },
   (t) => ({
     layoutKeyUnique: unique("mimic_layout_nodes_layout_key_key").on(t.layoutId, t.key),

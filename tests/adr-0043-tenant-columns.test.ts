@@ -115,6 +115,7 @@ const NO_COLUMN = [
   "protocol_catalog",
   "notification_channel_kinds",
   "location_types",
+  "point_key_states",
   "map_locations",
   "user_location_access",
   "user_asset_group_access",

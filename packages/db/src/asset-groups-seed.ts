@@ -170,8 +170,11 @@ export function demoRoleForAsset(code: string, domain: string): string | null {
   if (code.includes("MAIN-BUS") || code.includes("MDB")) {
     return "lt-panel";
   }
-  if (/^CR-Q\d+$/.test(code)) {
-    return "mcc";
+  // `F3.74` D10 — the twelve control-room breakers, each one of five breaker roles, from a table
+  // rather than the old `/^CR-Q\d+$/ → mcc` pattern. A thirteenth `CR-Q` code decides nothing.
+  const breakerRole = Object.hasOwn(CR_BREAKER_ROLES, code) ? CR_BREAKER_ROLES[code] : undefined;
+  if (breakerRole !== undefined) {
+    return breakerRole;
   }
   if (code.includes("LIGHT-AUX") || code.startsWith("PV-INV")) {
     return "utilities";
@@ -183,8 +186,8 @@ export function demoRoleForAsset(code: string, domain: string): string | null {
   // safe in both directions rather than only one. No branch above can claim a
   // PHE code: `"PHE-PUMP-M-000000000"` holds no `UTILITY`, no `XFMR`, no
   // `MAIN-BUS` and no `MDB` — the `P-U-M-P-M` run does not produce one — no
-  // `LIGHT-AUX`, and starts with neither `TX-` nor `PV-INV`; `/^CR-Q\d+$/` is
-  // anchored. And no ESKOM code begins `PHE-`, so these two cannot claim one
+  // `LIGHT-AUX`, and starts with neither `TX-` nor `PV-INV`; the `CR_BREAKER_ROLES`
+  // lookup is exact. And no ESKOM code begins `PHE-`, so these two cannot claim one
   // either. `asset-groups-seed.spec.ts` checks both directions per code rather
   // than leaving this comment as the only statement of it.
   if (code.startsWith("PHE-MFM-")) {
@@ -207,6 +210,27 @@ export function demoRoleForAsset(code: string, domain: string): string | null {
   }
   return null;
 }
+
+/**
+ * `F3.74` D10 — the role of each control-room breaker, a table and not a pattern. `main-breaker`
+ * is the incomer, the UPS input and output pairs follow `CR-UPS-1`/`-2`, the four PDU feeders are
+ * `load-feeder-breaker`, and the HVAC and lighting feeders are `mains-feeder-breaker`. A code
+ * outside the table (a thirteenth `CR-Q`) decides nothing and keeps its NULL.
+ */
+const CR_BREAKER_ROLES: Readonly<Record<string, string>> = {
+  "CR-Q1": "main-breaker",
+  "CR-Q2": "ups-input-breaker",
+  "CR-Q3": "ups-input-breaker",
+  "CR-Q4": "ups-output-breaker",
+  "CR-Q5": "ups-output-breaker",
+  "CR-Q6": "load-feeder-breaker",
+  "CR-Q7": "load-feeder-breaker",
+  "CR-Q8": "load-feeder-breaker",
+  "CR-Q9": "load-feeder-breaker",
+  "CR-Q10": "mains-feeder-breaker",
+  "CR-Q11": "mains-feeder-breaker",
+  "CR-Q12": "mains-feeder-breaker",
+};
 
 /**
  * `F2.8` ruling 2 — the reserved group code the incomer's `it_kw` formula

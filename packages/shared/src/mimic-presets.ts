@@ -16,11 +16,18 @@ import type { mimicPresetSchema } from "./contracts/mimic-config";
 
 type MimicPreset = z.infer<typeof mimicPresetSchema>;
 
-/** One node of a preset. `roleCode` is a `bms.asset_roles` code. */
+/**
+ * One node of a preset. `roleCode` is a `bms.asset_roles` code, or `null` for a passive node
+ * (`F3.74` / ADR 0088 OQ8: a bus resolves to no asset and is absent from the resolver's nodes).
+ * `fanOut` (`F3.74` plan D4) makes the node stand for every member of its role, up to the
+ * resolver's cap, rather than the first one; optional, so a node that does not fan out leaves
+ * the key out.
+ */
 export type MimicPresetNode = {
   readonly key: string;
   readonly label: string;
-  readonly roleCode: string;
+  readonly roleCode: string | null;
+  readonly fanOut?: true;
 };
 
 /** One pipe between two nodes of the same preset, drawn in flow direction. */
@@ -36,12 +43,16 @@ export type MimicPresetPipe = {
  * `sink` is optional (`F3.32d`, ADR 0082 decision 3): only `water_train` has one, and every
  * reader guards `def.sink !== undefined`. Optional, not nullable, so a preset without a sink
  * simply leaves the key out. A preset with no pipes is valid too.
+ *
+ * `sources` (`F3.74` plan D3) names the nodes energy enters at; a preset that names any is walked
+ * by `energiseGraph`. Optional for the same reason as `sink`: a preset without it is not walked.
  */
 export type MimicPresetDef = {
   readonly label: string;
   readonly nodes: readonly MimicPresetNode[];
   readonly pipes: readonly MimicPresetPipe[];
   readonly sink?: { readonly from: string; readonly label: string };
+  readonly sources?: readonly string[];
 };
 
 /**

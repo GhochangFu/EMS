@@ -38,6 +38,9 @@ export { MIMIC_LAYOUT_STALE_MESSAGE };
 export const MIMIC_LAYOUT_IN_USE_MESSAGE = (n: number): string =>
   `${n} dashboard widget(s) still use this layout`;
 
+/** `F3.74` (plan D3b) — the database refused a fan-out or source flag on a panel or label. Names no node. */
+export const MIMIC_LAYOUT_FLAGS_MESSAGE = "Only a unit carries a fan-out or source flag";
+
 const { canvasW, canvasH, z: zBounds, maxNodes, maxPipes } = MIMIC_LAYOUT_BOUNDS;
 
 /**
@@ -58,12 +61,24 @@ export const mimicLayoutWriteNodeSchema = z
     w: z.number().int().min(1).max(canvasW.max),
     h: z.number().int().min(1).max(canvasH.max),
     z: z.number().int().min(zBounds.min).max(zBounds.max).optional(),
+    /**
+     * `F3.74` (plan D3b, ADR 0088 Amendment 1 OQ3b) — a unit that draws every member of its
+     * role, and a unit the energy walk starts from. Absent is `false`: a save replaces every
+     * node, so an absent flag clears a stored one. Migration `0097`'s
+     * `mimic_layout_nodes_flags_units_check` restates the units-only rule.
+     */
+    fanOut: z.boolean().optional(),
+    isSource: z.boolean().optional(),
   })
   .strict()
   .superRefine((node, ctx) => {
     const refuse = (path: string, message: string): void => {
       ctx.addIssue({ code: z.ZodIssueCode.custom, path: [path], message });
     };
+    if (node.kind !== "unit") {
+      if (node.fanOut === true) refuse("fanOut", `A ${node.kind} carries no fan-out flag`);
+      if (node.isSource === true) refuse("isSource", `A ${node.kind} carries no source flag`);
+    }
     if (node.kind === "unit") {
       if (node.symbol == null) refuse("symbol", "A unit needs a symbol");
       if (node.tone != null) refuse("tone", "A unit carries no tone");
@@ -76,7 +91,7 @@ export const mimicLayoutWriteNodeSchema = z
   })
   .describe(
     "A unit needs a symbol and carries no tone; a panel needs a tone and carries no symbol " +
-      "or role; a label carries none of the three.",
+      "or role; a label carries none of the three. Only a unit may set fanOut or isSource.",
   );
 
 /** One pipe, between two unit keys of the same body. */

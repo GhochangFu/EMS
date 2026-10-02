@@ -189,6 +189,18 @@ describe("F3.32c — bms.mimic_layouts, _nodes, _pipes schema (migration 0088)",
     }
   });
 
+  it("F3.74: names the flags constraint the service translates, in migration 0097", () => {
+    const migration = sqlOnly(
+      read("packages/db/drizzle/0097_point_key_states_breaker_roles_asset_rating_and_layout_flags.sql"),
+    );
+    expect(migration, "the service maps this name to its 400").toContain(
+      "ADD CONSTRAINT mimic_layout_nodes_flags_units_check CHECK",
+    );
+    expect(read("apps/api/src/mimic-layouts/mimic-layouts.service.ts")).toContain(
+      `constraint === "mimic_layout_nodes_flags_units_check"`,
+    );
+  });
+
   it("the pipe foreign keys are three-column, include the kind, and cascade", () => {
     const migration = sqlOnly(read(MIGRATION_REL));
     for (const end of ["from", "to"] as const) {

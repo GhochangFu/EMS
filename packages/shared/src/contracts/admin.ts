@@ -84,6 +84,9 @@ export const adminAssetDtoSchema = z.object({
   rtuDisplayName: z.string().nullable(),
   domain: z.string(),
   waterBalanceRole: z.string().nullable(), // ADR 0073 d1: bms.water_balance_roles; null = none
+  // F3.74 / ADR 0088: a breaker's rating and the cause of its last trip, both free text.
+  rating: z.string().nullable(),
+  tripCause: z.string().nullable(),
   active: z.boolean(),
   // `F2.6` (ADR 0039 decision 8): which template *version* this asset is pinned
   // to. Added because the Versions view is defined as "listing which assets sit

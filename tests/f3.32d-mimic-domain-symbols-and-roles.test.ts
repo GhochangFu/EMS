@@ -12,6 +12,8 @@ const MIGRATION_0088 = "packages/db/drizzle/0088_mimic_layouts.sql";
 const MIGRATION_0051 = "packages/db/drizzle/0051_asset_role_vocabulary.sql";
 const MIGRATION_0060 = "packages/db/drizzle/0060_asset_role_estate_shapes.sql";
 const MIGRATION_0087 = "packages/db/drizzle/0087_asset_roles_water_train.sql";
+// `F3.74` — the five breaker roles; a preset may name them.
+const MIGRATION_0097 = "packages/db/drizzle/0097_point_key_states_breaker_roles_asset_rating_and_layout_flags.sql";
 const CONTRACT_REL = "packages/shared/src/contracts/mimic-layouts.ts";
 const PRESETS_REL = "packages/shared/src/mimic-presets.ts";
 const JOURNAL_REL = "packages/db/drizzle/meta/_journal.json";
@@ -223,9 +225,9 @@ describe("F3.32d — migration 0089: the symbol CHECK restated and eighteen role
     expect(block).toMatch(/RAISE EXCEPTION/);
   });
 
-  it("every role code the plan's presets name is inserted by 0051, 0060, 0087 or 0089", () => {
+  it("every role code the plan's presets name is inserted by 0051, 0060, 0087, 0089 or 0097", () => {
     const known = new Set(
-      [MIGRATION_0051, MIGRATION_0060, MIGRATION_0087, MIGRATION_REL].flatMap((rel) =>
+      [MIGRATION_0051, MIGRATION_0060, MIGRATION_0087, MIGRATION_0097, MIGRATION_REL].flatMap((rel) =>
         insertedRoles(rel).map((r) => r.code),
       ),
     );
@@ -234,13 +236,13 @@ describe("F3.32d — migration 0089: the symbol CHECK restated and eighteen role
     }
   });
 
-  it("every roleCode in mimic-presets.ts is inserted by 0051, 0060, 0087 or 0089", () => {
+  it("every roleCode in mimic-presets.ts is inserted by 0051, 0060, 0087, 0089 or 0097", () => {
     const codes = [...read(PRESETS_REL).matchAll(/roleCode:\s*"([a-z0-9_-]+)"/g)].map((m) => m[1] as string);
     // Positive control: the parse finds all seven presets' role codes (8+7+5+6+4+4+5), not
     // only water_train's.
     expect(codes).toHaveLength(39);
     const known = new Set(
-      [MIGRATION_0051, MIGRATION_0060, MIGRATION_0087, MIGRATION_REL].flatMap((rel) =>
+      [MIGRATION_0051, MIGRATION_0060, MIGRATION_0087, MIGRATION_0097, MIGRATION_REL].flatMap((rel) =>
         insertedRoles(rel).map((r) => r.code),
       ),
     );

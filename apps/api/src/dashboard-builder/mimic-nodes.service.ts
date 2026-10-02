@@ -606,6 +606,10 @@ function layoutNodeOf(row: LayoutNodeRow): MimicLayoutNodeDto | null {
     w: Number(row.w),
     h: Number(row.h),
     z: Number(row.z),
+    // `F3.74` Task 1.6 placeholder so the build compiles: Task 2.2 selects `n.fan_out` and
+    // `n.is_source` in `readLayouts` and emits them here (its F13 reddens on this constant).
+    fanOut: false,
+    isSource: false,
   };
 }
 

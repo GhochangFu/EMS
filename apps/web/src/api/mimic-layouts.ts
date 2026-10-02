@@ -42,6 +42,10 @@ export type MimicLayoutWriteNode = {
   w: number;
   h: number;
   z?: number;
+  /** `F3.74` (OQ3b) — a unit that draws every member of its role. A unit only; absent is `false`. */
+  fanOut?: boolean;
+  /** `F3.74` (OQ3b) — a unit the energy walk starts from. A unit only; absent is `false`. */
+  isSource?: boolean;
 };
 
 /** One pipe in a write body: two unit keys (plan D7). */

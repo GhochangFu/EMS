@@ -673,6 +673,13 @@
       "when": 1790791804063,
       "tag": "0096_site_widget_types_and_assets_catalog",
       "breakpoints": true
+    },
+    {
+      "idx": 97,
+      "version": "7",
+      "when": 1790876326348,
+      "tag": "0097_point_key_states_breaker_roles_asset_rating_and_layout_flags",
+      "breakpoints": true
     }
   ]
 }

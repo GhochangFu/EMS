@@ -6,6 +6,16 @@ import {
 } from "@bms/shared";
 import { z } from "zod";
 
+/** Trimmed free text up to `max` characters; blank becomes `null`; omitted stays `undefined`. */
+export function optionalText(max: number) {
+  return z
+    .string()
+    .trim()
+    .max(max)
+    .transform((value) => (value === "" ? null : value))
+    .nullish();
+}
+
 export const createAssetBodySchema = z
   .object({
     // F2.23 / ADR 0065 decision 1: the catalog class, beside the length bound.
@@ -31,6 +41,11 @@ export const createAssetBodySchema = z
     // `assets_water_balance_role_fkey`. Omitted or `null` = not in the balance; on update,
     // omitted leaves the stored role alone and `null` clears it.
     waterBalanceRole: waterBalanceRoleCodeSchema.nullish(),
+    // F3.74 / ADR 0088: a breaker's rating and the cause of its last trip. Free text; on update
+    // omitted keeps the stored value and `null` clears it. Trimmed, and a blank value is `null`,
+    // so a direct API caller cannot store "" or whitespace as a value that is not "none".
+    rating: optionalText(32),
+    tripCause: optionalText(128),
     meta: z.record(z.unknown()).optional(),
   })
   .strict();
