@@ -379,7 +379,7 @@ async function readUserRowsFrom(url: string): Promise<UserRowSummary[]> {
     const result = await pool.query<{ email: string; oidc_subject: string | null }>(
       "SELECT email, oidc_subject FROM bms.users",
     );
-    return result.rows.map((row) => ({ email: row.email, oidcSubject: row.oidc_subject }));
+    return result.rows.map((row) => ({ email: row.email, subject: row.oidc_subject }));
   } finally {
     await pool.end();
   }

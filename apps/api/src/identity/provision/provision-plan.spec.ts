@@ -146,9 +146,9 @@ const REALM_USERS: RealmUserSummary[] = [
 ];
 
 const DB_ROWS: UserRowSummary[] = [
-  { email: "both@example.test", oidcSubject: null },
-  { email: "verified@example.test", oidcSubject: null },
-  { email: "linked@example.test", oidcSubject: REALM_ID_UNVERIFIED_LINKED },
+  { email: "both@example.test", subject: null },
+  { email: "verified@example.test", subject: null },
+  { email: "linked@example.test", subject: REALM_ID_UNVERIFIED_LINKED },
 ];
 
 /** Decision 4: unverified AND unlinked — the one user who can never link. */
@@ -204,7 +204,7 @@ export function assertTheReportCarriesEmailsAndNoIds(): void {
 
 export function assertTheReportIsEmptyWhenEveryoneIsLinked(): void {
   const report = unlinkedUnverifiedReport(REALM_USERS, [
-    { email: "both@example.test", oidcSubject: REALM_ID_UNVERIFIED_UNLINKED },
+    { email: "both@example.test", subject: REALM_ID_UNVERIFIED_UNLINKED },
   ]);
   assert(report.length === 0, `no unlinked row means an empty report; got ${JSON.stringify(report)}`);
 }

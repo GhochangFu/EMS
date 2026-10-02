@@ -136,7 +136,7 @@ export type RealmUserSummary = {
 /** A `bms.users` row as the step reads it on `bms_auth`. */
 export type UserRowSummary = {
   readonly email: string;
-  readonly oidcSubject: string | null;
+  readonly subject: string | null;
 };
 
 /**
@@ -154,7 +154,7 @@ export function unlinkedUnverifiedReport(
   rows: readonly UserRowSummary[],
 ): string[] {
   const unlinked = new Set(
-    rows.filter((row) => row.oidcSubject === null).map((row) => row.email.toLowerCase()),
+    rows.filter((row) => row.subject === null).map((row) => row.email.toLowerCase()),
   );
   const listed = new Set<string>();
   for (const user of realmUsers) {

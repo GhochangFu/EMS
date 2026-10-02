@@ -272,7 +272,7 @@ export async function assertTheFirstRequestGivesUpAfterTheWindow(): Promise<void
 export async function assertANonEmptyReportExitsTwo(): Promise<void> {
   const r = await run({
     realmUsers: [{ id: "u-1", email: "pending@example.test", emailVerified: false }],
-    rows: [{ email: "pending@example.test", oidcSubject: null }],
+    rows: [{ email: "pending@example.test", subject: null }],
   });
   assert(
     r.code === 2 && r.out.includes("pending@example.test") && !r.out.includes("u-1"),
@@ -287,7 +287,7 @@ export async function assertTheRealmUsersArePaged(): Promise<void> {
     emailVerified: true,
   }));
   many.push({ id: "u-last", email: "last@example.test", emailVerified: false });
-  const r = await run({ realmUsers: many, rows: [{ email: "last@example.test", oidcSubject: null }] });
+  const r = await run({ realmUsers: many, rows: [{ email: "last@example.test", subject: null }] });
   assert(
     r.code === 2 && r.out.includes("last@example.test"),
     `a user past the first page must still be reported; got code ${r.code}`,
