@@ -5,6 +5,9 @@ import { expect } from "vitest";
 import type { BmsDb } from "@bms/db";
 
 import { withTenant } from "../../database/tenant-context";
+import { CredentialCryptoService } from "../../security/credential-crypto.service";
+import { OnboardingLlmResolver } from "../onboarding/onboarding-llm-resolver";
+import { AiAssistantSettingsService } from "./ai-assistant-settings.service";
 
 /**
  * `F3.21` / ADR 0090 Amendment 1 A3 — `bms.organization_llm_settings` against
@@ -22,7 +25,8 @@ import { withTenant } from "../../database/tenant-context";
  * (ADR 0014). One exported function per claim, one `it()` each, run in this
  * file's order: the first writes organization A's row, which the next two
  * read and attack; the CHECK probes write to B, which has no row (the primary
- * key allows one per organization); the cascade case writes B's row last.
+ * key allows one per organization); the cascade case writes B's row last; the
+ * stale-read case (8, `F4.186`) rewrites A's row through the service.
  *
  * **Counts run as `bms_fleet`, never `bms_owner`.** `FORCE` binds the owner,
  * so an owner count with no GUC answers 0 with rows present.
@@ -225,4 +229,66 @@ export async function deletingTheOrganizationCascades(ctx: LlmSettingsCtx): Prom
   expect(await fleetCount(ctx, ctx.orgB), "control: B's row exists before the delete").toBe(1);
   await ctx.fleetPool.query("DELETE FROM bms.organizations WHERE id = $1", [ctx.orgB]);
   expect(await fleetCount(ctx, ctx.orgB), "the row went with its organization").toBe(0);
+}
+
+/**
+ * 8 — `F4.186`, security review M1: a model-only save never writes back a key
+ * that was read before a rotation. `put()` reads the row outside its write
+ * transaction, so `rotate-credentials` can re-encrypt the key between that read
+ * and the upsert. The row is planted at the rotated bytes (version 2) and the
+ * service's read is made to return the stale copy (version 1), as if the
+ * rotation landed in that window; the save must change the model and leave the
+ * key at version 2. A stale write-back would be reported as rotated and then
+ * fall to the guided mode once the previous key is unset (ADR 0062).
+ */
+export async function aModelOnlySaveKeepsAKeyRotatedSinceItsRead(ctx: LlmSettingsCtx): Promise<void> {
+  const rotated = Buffer.from("rotated-v2-ciphertext");
+  const rotatedIv = Buffer.from("rotated-iv12");
+  await ctx.fleetPool.query(
+    `UPDATE bms.organization_llm_settings
+        SET provider = 'openai', model = 'gpt-4o-mini',
+            key_ciphertext = $2, key_iv = $3, key_version = 2, key_last4 = 'rot2'
+      WHERE organization_id = $1`,
+    [ctx.orgA, rotated, rotatedIv],
+  );
+
+  const crypto = new CredentialCryptoService();
+  const resolver = new OnboardingLlmResolver(ctx.tenantDb, crypto);
+  const realRead = resolver.readSetting.bind(resolver);
+  let reads = 0;
+  resolver.readSetting = async (organizationId) => {
+    reads += 1;
+    const row = await realRead(organizationId);
+    if (reads > 1 || !row) return row;
+    // The copy read before the rotation: version 1, the old bytes.
+    return { ...row, keyCiphertext: CIPHERTEXT, keyIv: IV, keyVersion: 1, keyLast4: "xyz9" };
+  };
+  const access = {
+    // A null actor keeps `updated_by` clear of the users FK; the gate is not under test.
+    requireMasterDataUser: async () => ({ id: null, role: "admin" }),
+    canManageOrganization: async () => true,
+  };
+  const audit = { write: async () => undefined };
+  const service = new AiAssistantSettingsService(ctx.tenantDb, access as never, audit as never, crypto, resolver);
+
+  await service.put({ sub: "kc-f4186" } as never, ctx.orgA, { provider: "openai", model: "gpt-4.1-mini" });
+
+  expect(reads, "control: the stale read was served").toBeGreaterThanOrEqual(1);
+  const { rows } = await ctx.fleetPool.query<{
+    model: string;
+    key_ciphertext: Buffer;
+    key_iv: Buffer;
+    key_version: number;
+    key_last4: string;
+  }>(
+    `SELECT model, key_ciphertext, key_iv, key_version, key_last4
+       FROM bms.organization_llm_settings WHERE organization_id = $1`,
+    [ctx.orgA],
+  );
+  const row = rows[0];
+  expect(row?.model, "control: the save landed").toBe("gpt-4.1-mini");
+  expect(row?.key_version, "the rotated key version stays").toBe(2);
+  expect(row?.key_ciphertext.equals(rotated), "the rotated ciphertext stays").toBe(true);
+  expect(row?.key_iv.equals(rotatedIv), "the rotated IV stays").toBe(true);
+  expect(row?.key_last4).toBe("rot2");
 }

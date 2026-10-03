@@ -118,18 +118,23 @@ export class AiAssistantSettingsService {
       key = { keyCiphertext: null, keyIv: null, keyVersion: null, keyLast4: null };
     }
     const keyChanged = body.apiKey !== undefined || (hadKey && key.keyCiphertext === null);
-    const values = {
+    const settings = {
       provider: body.provider,
       model: body.provider === "off" ? null : (body.model ?? null),
-      ...key,
       updatedBy: actorId,
       updatedAt: new Date(),
     };
+    const values = { ...settings, ...key };
+    // F4.186 (security review M1, ADR 0062): `existing` was read outside this
+    // transaction, so `rotate-credentials` may have re-encrypted the key since.
+    // A kept key is therefore never written back on conflict — that would undo
+    // the rotation. The insert still carries it, for a row deleted meanwhile.
+    const set = keepStored ? settings : values;
     await withTenant(this.tenantDb, organizationId, async (tx) => {
       await tx
         .insert(organizationLlmSettings)
         .values({ organizationId, ...values })
-        .onConflictDoUpdate({ target: organizationLlmSettings.organizationId, set: values });
+        .onConflictDoUpdate({ target: organizationLlmSettings.organizationId, set });
       await this.audit.write(
         {
           actor: jwt,
