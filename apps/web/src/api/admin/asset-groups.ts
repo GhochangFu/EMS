@@ -1,15 +1,24 @@
 import {
+  adminAssetGroupDtoSchema,
   adminAssetGroupListResponseSchema,
   adminAssetGroupMemberDtoSchema,
   adminAssetGroupMembersResponseSchema,
 } from "@bms/shared/contracts";
 import type {
+  AddAssetGroupMemberBody,
+  AdminAssetGroupDto,
   AdminAssetGroupListResponse,
   AdminAssetGroupMemberDto,
   AdminAssetGroupMembersResponse,
+  CreateAssetGroupBody,
+  UpdateAssetGroupBody,
 } from "@bms/shared";
 
+import { ApiError } from "../../lib/api-error";
+import { clearSessionOnAuthFailure, withAuth } from "../http";
 import { adminFetch } from "./client";
+
+const base = import.meta.env.VITE_API_URL ?? "http://localhost:4000";
 
 /**
  * `F3.37` (ADR 0049 decision 5) — the asset-group admin surface.
@@ -77,4 +86,67 @@ export async function setAdminAssetGroupMemberRole(
       body: JSON.stringify({ role }),
     },
   );
+}
+
+const jsonInit = (method: string, body: unknown): RequestInit => ({
+  method,
+  headers: { "Content-Type": "application/json" },
+  body: JSON.stringify(body),
+});
+
+/** `F3.78` — POST /api/v1/admin/asset-groups. `code` is fixed from here on. */
+export async function createAdminAssetGroup(
+  body: CreateAssetGroupBody,
+): Promise<AdminAssetGroupDto> {
+  return adminFetch("/admin/asset-groups", adminAssetGroupDtoSchema, jsonInit("POST", body));
+}
+
+/**
+ * `F3.78` — PATCH /api/v1/admin/asset-groups/:id.
+ *
+ * `UpdateAssetGroupBody` has no `code`, and the route is `.strict()`: a
+ * dashboard tab and a site template resolve a group by code, so a rename is a
+ * different group and the server answers 400 rather than dropping the field.
+ */
+export async function updateAdminAssetGroup(
+  groupId: string,
+  body: UpdateAssetGroupBody,
+): Promise<AdminAssetGroupDto> {
+  return adminFetch(
+    `/admin/asset-groups/${groupId}`,
+    adminAssetGroupDtoSchema,
+    jsonInit("PATCH", body),
+  );
+}
+
+/** `F3.78` — POST /api/v1/admin/asset-groups/:id/members. */
+export async function addAdminAssetGroupMember(
+  groupId: string,
+  body: AddAssetGroupMemberBody,
+): Promise<AdminAssetGroupMemberDto> {
+  return adminFetch(
+    `/admin/asset-groups/${groupId}/members`,
+    adminAssetGroupMemberDtoSchema,
+    jsonInit("POST", body),
+  );
+}
+
+/**
+ * `F3.78` — DELETE /api/v1/admin/asset-group-members/:id, 204 and no body.
+ *
+ * `adminFetch` reads `res.json()`, so this is `deleteAdminCalcParameter`'s
+ * shape: success is `status === 204`, a refusal is the same
+ * `clearSessionOnAuthFailure` then `ApiError` sequence.
+ */
+export async function removeAdminAssetGroupMember(membershipId: string): Promise<void> {
+  const res = await fetch(
+    `${base}/api/v1/admin/asset-group-members/${encodeURIComponent(membershipId)}`,
+    withAuth({ method: "DELETE" }),
+  );
+  if (res.status === 204) {
+    return;
+  }
+  clearSessionOnAuthFailure(res);
+  const text = await res.text();
+  throw new ApiError(text || `admin /admin/asset-group-members/:id ${res.status}`, res.status);
 }
