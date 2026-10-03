@@ -259,7 +259,7 @@ None. `openai` (`^6.45.0`, ADR 0011) is already in `apps/api`.
 
 ### Status
 
-Accepted — the owner ruled ten questions one at a time on 2026-10-03, after
+Proposed — the owner ruled ten questions one at a time on 2026-10-03, after
 the record above was merged (#702) and before any implementation code. The
 owner asked for it: there is no OpenAI key available for testing, an
 OpenRouter key is, and the keys must be settable in the UI, not only in
@@ -302,8 +302,13 @@ dependency, so `migration-reviewer` joins the reviews.
 
 ### Decisions
 
-A1. **Three implementations of the decision-1 port.** The port does not
-    change.
+A1. **Three implementations of the decision-1 port.** The port gains one
+    field: an assistant message that carries tool calls also carries the
+    provider's own reply content, opaque to the loop, and the adapter that
+    produced it sends it back unchanged in the next round of the same turn.
+    The Anthropic Messages API needs this: an assistant turn with tool calls
+    must go back as the full content it returned, thinking blocks included.
+    History across turns stays plain text (decision 6).
     - `openai` — the `openai` package, its default base URL.
     - `openrouter` — the same `openai` package with
       `baseURL: "https://openrouter.ai/api/v1"`. OpenRouter accepts the OpenAI
@@ -311,7 +316,10 @@ A1. **Three implementations of the decision-1 port.** The port does not
       the base URL, the key and the model.
     - `anthropic` — the official `@anthropic-ai/sdk`, Messages API with
       client tools, `tool_choice: { type: "auto" }` (Claude Sonnet 5.5 refuses
-      a forced tool choice), non-streaming, `max_tokens` 16,000. It sends the
+      a forced tool choice), non-streaming, `max_tokens` 16,000, and `output_config.effort: "medium"`
+      (Anthropic's suggested start for multistep tool use; the model default,
+      `high`, makes each of up to nine calls slower inside the 45 s deadline).
+      Thinking stays at the model default (adaptive). It sends the
       server-side refusal fallback (`fallbacks: "default"` with the
       `server-side-fallback-2026-07-01` beta), as Anthropic recommends for this
       model. A response whose final `stop_reason` is still `refusal` is a
@@ -360,6 +368,16 @@ A4. **Resolution, once per chat turn.** If the organization has a row:
     it has no row → the `.env` platform default (A2). The key is decrypted for
     the turn and is never cached across turns.
 
+    So the provider is no longer one DI singleton that reads the environment.
+    A resolver, injected into the chat service, returns for one organization
+    either nothing (the guided mode) or a provider instance built for that
+    turn with its key and model. The adapters read no environment variable;
+    the resolver alone reads A2's variables.
+
+    **An organization row never uses the platform key.** A row without a key
+    means the guided mode, as above, and the Test button follows the same
+    rule (A5).
+
 A5. **API**, under `/api/v1/admin/organizations/:orgId/ai-assistant`, gated by
     `canManageOrganization`:
     - `GET` → `{ provider, model, keySet, keyLast4, updatedAt, source }`, where
@@ -374,7 +392,10 @@ A5. **API**, under `/api/v1/admin/organizations/:orgId/ai-assistant`, gated by
     - `DELETE` → removes the row; the organization returns to the platform
       default.
     - `POST …/test` `{ provider, model, apiKey? }` — `apiKey` omitted uses the
-      stored or the platform key. One minimal billed call with one trivial
+      organization's stored key. With no stored key, the test can only check
+      the platform default as it is: the request must name the platform's own
+      provider and model, or it answers 400. An org admin cannot spend the
+      platform key on another model. One minimal billed call with one trivial
       tool and `tool_choice` auto. The answer is `ok` or one error class:
       `invalid_key`, `unknown_model`, `no_tool_support`, `rate_limited`,
       `unreachable`, `provider_error`. Never the key, never the provider's raw
