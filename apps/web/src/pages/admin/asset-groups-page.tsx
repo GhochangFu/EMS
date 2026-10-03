@@ -372,11 +372,11 @@ export function AssetGroupsAdminPage({ user }: AssetGroupsAdminPageProps) {
       </div>
 
       {modal !== null ? (
-        <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/40 p-4">
+        <div className="fixed inset-0 z-40 flex items-center justify-center bg-scrim/40 p-4">
           <form
             role="dialog"
             aria-label={modal === "create" ? "New asset group" : "Edit asset group"}
-            className="w-full max-w-md surface-card p-4"
+            className="w-full max-w-md surface-dialog p-4"
             onSubmit={(event) => {
               event.preventDefault();
               saveGroup.mutate();
