@@ -9,8 +9,11 @@ import {
   assertChannelWalkRotatesSkipsAndIgnoresNoSecret,
   assertConcurrentChannelWriteWinsOverTheRotation,
   assertConcurrentConfigWriteWinsOverTheRotation,
+  assertConcurrentLlmWriteWinsOverTheRotation,
   assertConfigRowRotatesToTheCurrentVersion,
   assertCredentialLessConfigRowIsNotScanned,
+  assertLlmKeyRotatesAndDecryptsUnderTheCurrentKeyAlone,
+  assertLlmRotationLeavesLast4AndUpdatedAtUntouched,
   assertRotatedRowDecryptsUnderTheCurrentKeyAlone,
   assertRotationLeavesUpdatedAtUntouched,
   assertSecondRunRotatesNothing,
@@ -32,7 +35,8 @@ const connectionString = requireIntegrationDb({
   label: "credential rotation integration tests",
   because:
     "a green run here would assert that rotate-credentials re-encrypts every " +
-    "ciphertext-bearing row at the current version, never scans a credential-less " +
+    "ciphertext-bearing row at the current version, re-encrypts every stored " +
+    "organization LLM key, never scans a credential-less " +
     "row, leaves a concurrently rewritten secret alone, collects an unknown stored " +
     "version instead of aborting, and never bumps updated_at — while nothing " +
     "checked any of it against a real database. Fix the pipeline, do not relax " +
@@ -88,5 +92,17 @@ describe.skipIf(!connectionString)("E8.4 — rotate-credentials against a real d
 
   it("leaves updated_at untouched on both tables (ruling 3)", async () => {
     await assertRotationLeavesUpdatedAtUntouched(db);
+  });
+
+  it("rotates an organization LLM key and reads it under the current key alone (ADR 0090 A3)", async () => {
+    await assertLlmKeyRotatesAndDecryptsUnderTheCurrentKeyAlone(db);
+  });
+
+  it("leaves key_last4 and updated_at of an LLM row untouched", async () => {
+    await assertLlmRotationLeavesLast4AndUpdatedAtUntouched(db);
+  });
+
+  it("lets a concurrent LLM key write win over the rotation (ruling 7)", async () => {
+    await assertConcurrentLlmWriteWinsOverTheRotation(db);
   });
 });
