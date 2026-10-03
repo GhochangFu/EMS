@@ -405,8 +405,6 @@ function UsersAdminScreen({ user }: UsersAdminPageProps) {
       {grantsFor ? (
         <GrantsDrawer
           target={grantsFor}
-          writesOff={writesOff}
-          localNoteId={localNoteId}
           organizations={organizations}
           onClose={() => setGrantsFor(null)}
         />
@@ -753,16 +751,13 @@ function TemporaryPasswordModal({
   );
 }
 
+/** Grants touch only the database, so local sign-in still manages them (ADR 0089 decision 11). */
 function GrantsDrawer({
   target,
-  writesOff,
-  localNoteId,
   organizations,
   onClose,
 }: {
   target: AdminUserDto;
-  writesOff: boolean;
-  localNoteId: string;
   organizations: Organizations;
   onClose: () => void;
 }) {
@@ -814,7 +809,6 @@ function GrantsDrawer({
   });
 
   const grants = grantsQ.data?.items ?? [];
-  const describedBy = writesOff ? localNoteId : undefined;
 
   return (
     <div className="fixed inset-y-0 right-0 z-50 w-full max-w-md overflow-y-auto surface-dialog p-4">
@@ -853,8 +847,7 @@ function GrantsDrawer({
                 <button
                   type="button"
                   aria-label={`Remove ${KIND_LABELS[grant.kind]} grant ${grant.targetName}`}
-                  aria-describedby={describedBy}
-                  disabled={writesOff || remove.isPending}
+                  disabled={remove.isPending}
                   className="text-xs font-semibold text-critical-ink disabled:opacity-50"
                   onClick={() => remove.mutate(grant)}
                 >
@@ -908,8 +901,7 @@ function GrantsDrawer({
           <button
             type="submit"
             className="surface-button-primary bg-accent px-3 py-2 text-xs font-semibold text-on-accent disabled:opacity-50"
-            disabled={writesOff || targetId === "" || add.isPending}
-            aria-describedby={describedBy}
+            disabled={targetId === "" || add.isPending}
           >
             Add grant
           </button>

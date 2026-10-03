@@ -13,6 +13,8 @@ import {
   hidesTheUsersTabFromALocationAdmin,
   linkedEditIsEnabled,
   localModeDisablesEveryUserAction,
+  localModeKeepsAddGrantEnabled,
+  localModeKeepsGrantRemoveEnabled,
   passwordInputIsEmptyOnReopen,
   refusesAShortPasswordBeforeFetch,
   refusesAShortPasswordOnCreateBeforeFetch,
@@ -118,6 +120,14 @@ describe("F3.78 users page", () => {
 
   it("removing a grant sends the grant's id and kind", async () => {
     await removingAGrantSendsItsIdAndKind();
+  });
+
+  it("local mode keeps a grant's Remove enabled", async () => {
+    await localModeKeepsGrantRemoveEnabled();
+  });
+
+  it("local mode keeps Add grant enabled once a target is chosen", async () => {
+    await localModeKeepsAddGrantEnabled();
   });
 
   it("adding a grant sends its kind and target", async () => {

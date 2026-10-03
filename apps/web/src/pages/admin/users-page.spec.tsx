@@ -440,6 +440,35 @@ export async function removingAGrantSendsItsIdAndKind(): Promise<void> {
   expect(within(drawer).getByText("Plant South")).toBeInTheDocument();
 }
 
+/**
+ * ADR 0089 decision 11: grants touch only the database, so local sign-in still manages them.
+ * Decision 15 limits the disabled state to the user actions.
+ */
+export async function localModeKeepsGrantRemoveEnabled(): Promise<void> {
+  // No OIDC stub: this is the local sign-in deployment.
+  stubFetch();
+  renderPage();
+  // The user actions are off in this mode (the control for this case's premise).
+  expect(await screen.findByRole("button", { name: "Edit Ada Linked" })).toBeDisabled();
+  const drawer = await openGrants();
+  const remove = await within(drawer).findByRole("button", { name: "Remove Location grant Plant North" });
+  expect(remove).toBeEnabled();
+  expect(remove).not.toHaveAccessibleDescription(LOCAL_SENTENCE);
+}
+
+export async function localModeKeepsAddGrantEnabled(): Promise<void> {
+  stubFetch();
+  renderPage();
+  expect(await screen.findByRole("button", { name: "Edit Ada Linked" })).toBeDisabled();
+  const drawer = await openGrants();
+  await userEvent.selectOptions(within(drawer).getByLabelText("Grant kind"), "organization");
+  await within(drawer).findByRole("option", { name: "Acme Works" });
+  await userEvent.selectOptions(within(drawer).getByLabelText("Grant target"), ORG_ID);
+  const add = within(drawer).getByRole("button", { name: "Add grant" });
+  expect(add).toBeEnabled();
+  expect(add).not.toHaveAccessibleDescription(LOCAL_SENTENCE);
+}
+
 export async function addingAGrantSendsItsKindAndTarget(): Promise<void> {
   stubOidc();
   const calls = stubFetch({
