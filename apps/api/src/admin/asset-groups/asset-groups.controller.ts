@@ -26,14 +26,6 @@ import {
 } from "./asset-groups.schema";
 import { AssetGroupsAdminService } from "./asset-groups.service";
 
-/**
- * `F3.37` (ADR 0049 decision 5) — the asset-group admin reads.
- *
- * Two controllers rather than one, because the membership write is addressed
- * by *membership* id and not by group id: `PATCH /admin/asset-groups/:id/...`
- * would have to carry both, and the group id in the path would then be
- * decorative — a second identifier the server must either ignore or check.
- */
 /** A body that fails its schema is a 400 naming the fields, never a 500. */
 async function parsing<T>(run: () => Promise<T>): Promise<T> {
   try {
@@ -46,6 +38,14 @@ async function parsing<T>(run: () => Promise<T>): Promise<T> {
   }
 }
 
+/**
+ * `F3.37` (ADR 0049 decision 5) — the asset-group admin reads.
+ *
+ * Two controllers rather than one, because the membership write is addressed
+ * by *membership* id and not by group id: `PATCH /admin/asset-groups/:id/...`
+ * would have to carry both, and the group id in the path would then be
+ * decorative — a second identifier the server must either ignore or check.
+ */
 @Controller("admin/asset-groups")
 @UseGuards(JwtAuthGuard)
 export class AssetGroupsAdminController {
