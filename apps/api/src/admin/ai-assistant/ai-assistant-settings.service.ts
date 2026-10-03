@@ -25,7 +25,8 @@ type SettingRow = typeof organizationLlmSettings.$inferSelect;
 /**
  * An organization's AI-assistant setting (`F3.21`, ADR 0090 Amendment 1 A5–A7).
  *
- * Every method gates on `canManageOrganization` first (ruling 7). The key is
+ * Every method calls `gate()` first: the role (`admin` or `organization_admin`,
+ * security review H1) and then `canManageOrganization` (ruling 7). The key is
  * write-only: it is encrypted with `CredentialCryptoService` into the four
  * `key_*` columns, only its last four characters are ever returned, and it
  * never reaches a response, a log line, an audit row or an error (A7).
