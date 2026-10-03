@@ -5,7 +5,7 @@ import type { BmsDb } from "@bms/db";
 
 /**
  * `F3.78` — a recording fake of the drizzle surface `UsersService` uses, for
- * `users.service.spec.ts`. Not a test file: it holds no assertions.
+ * `users.service.spec.ts`. It holds no assertions.
  *
  * Every statement is recorded, in order, into one shared {@link Timeline}
  * (which the spec's identity fake writes into too, so "the db insert precedes

@@ -9,7 +9,7 @@ import { rememberIdentity, type ResolvedIdentity } from "../../auth/identity-res
 import type { IdentityAdminFailureReason, NewIdentityUser } from "../../identity/identity-admin.client";
 import { FakeIdentityAdmin } from "../../identity/testing/fake-identity-admin";
 import { MasterDataAuditService } from "../master-data-audit.service";
-import { dbOps, recordingDb, type DbOp, type Timeline } from "./users-recording-db.spec";
+import { dbOps, recordingDb, type DbOp, type Timeline } from "../../testing/recording-db";
 import {
   ADMIN_ROLE_ADMIN_ONLY,
   CHANGED_UNDER_YOU,
@@ -28,7 +28,7 @@ import {
 
 /**
  * `F3.78` / ADR 0089 decisions 1–3, 6, 8, 11, 14 — `UsersService` against a
- * recording fake db (`users-recording-db.spec.ts`) and `FakeIdentityAdmin`.
+ * recording fake db (`testing/recording-db.ts`) and `FakeIdentityAdmin`.
  * Both write into one timeline, so an ordering claim is one index comparison.
  * The caller's identity is memoised with `rememberIdentity`, so the role every
  * manager decision reads is the row the spec names, never the token's claim.
