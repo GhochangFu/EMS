@@ -61,6 +61,7 @@ import type * as SW from "./contracts/site-widgets";
 import type * as Ss from "./contracts/system-status";
 import type * as Te from "./contracts/telemetry-entry";
 import type * as Ti from "./contracts/telemetry-import";
+import type * as AGW from "./contracts/asset-group-writes";
 import type * as UG from "./contracts/user-grants";
 import type * as Us from "./contracts/users";
 import { TELEMETRY_POINT_REF_SEP } from "./constants";
@@ -491,6 +492,9 @@ export type AdminAssetGroupMembersResponse = z.infer<
 export type SetAssetGroupMemberRoleBody = z.infer<
   typeof A.setAssetGroupMemberRoleBodySchema
 >;
+export type CreateAssetGroupBody = z.infer<typeof AGW.createAssetGroupBodySchema>;
+export type UpdateAssetGroupBody = z.infer<typeof AGW.updateAssetGroupBodySchema>;
+export type AddAssetGroupMemberBody = z.infer<typeof AGW.addAssetGroupMemberBodySchema>;
 /** `F3.78` (ADR 0089) — one `bms.users` row for the users admin screen. */
 export type AdminUserDto = z.infer<typeof Us.adminUserDtoSchema>;
 export type AdminUsersListResponse = z.infer<typeof Us.adminUsersListResponseSchema>;
