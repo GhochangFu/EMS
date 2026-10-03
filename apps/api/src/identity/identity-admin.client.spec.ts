@@ -446,6 +446,66 @@ export async function assertANetworkFailureIsUnavailable(): Promise<void> {
   );
 }
 
+/** A fetch that never settles and ignores its signal: only the client's own bound ends the call. */
+const hangingFetch = (): Promise<Response> => new Promise<Response>(() => undefined);
+
+/** Runs `run`, failing fast with a clear message when it has not rejected within `ms`. */
+async function rejectionWithin(ms: number, run: () => Promise<unknown>): Promise<unknown> {
+  let timer: NodeJS.Timeout | undefined;
+  const guard = new Promise<"hung">((resolve) => {
+    timer = setTimeout(() => resolve("hung"), ms);
+  });
+  try {
+    const outcome = await Promise.race([captureRejection(run), guard]);
+    assert(outcome !== "hung", `the call was still pending after ${ms} ms: no request timeout`);
+    return outcome;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+export async function assertAHungTokenRequestTimesOutAsUnavailable(): Promise<void> {
+  const { logger, lines } = capturingLogger();
+  const client = new KeycloakIdentityAdminClient({
+    config: CONFIG,
+    fetch: hangingFetch as typeof globalThis.fetch,
+    logger,
+    requestTimeoutMs: 20,
+  });
+  const err = await rejectionWithin(2_000, () => client.deleteUser("u-1"));
+  assert(reasonOf(err) === "unavailable", `a hung token request must be unavailable; got ${String(reasonOf(err))}`);
+  const logged = lines.join("\n");
+  assert(logged.includes("within 20 ms"), `positive control: the timeout is logged; got ${logged}`);
+  assert(!logged.includes(BASE) && !logged.includes(CLIENT_SECRET), `the log names no URL or secret; got ${logged}`);
+}
+
+export async function assertAHungAdminCallTimesOutAsUnavailable(): Promise<void> {
+  const fetchStub = (async (input: RequestInfo | URL) =>
+    String(input) === TOKEN_URL ? tokenResponse() : hangingFetch()) as typeof globalThis.fetch;
+  const client = new KeycloakIdentityAdminClient({
+    config: CONFIG,
+    fetch: fetchStub,
+    logger: capturingLogger().logger,
+    requestTimeoutMs: 20,
+  });
+  const err = await rejectionWithin(2_000, () => client.setRealmRole("u-1", "viewer"));
+  assert(reasonOf(err) === "unavailable", `a hung admin call must be unavailable; got ${String(reasonOf(err))}`);
+}
+
+export async function assertEveryRequestCarriesAnAbortSignal(): Promise<void> {
+  const signals: unknown[] = [];
+  const fetchStub = (async (input: RequestInfo | URL, init?: RequestInit) => {
+    signals.push(init?.signal);
+    return String(input) === TOKEN_URL ? tokenResponse() : new Response(null, { status: 204 });
+  }) as typeof globalThis.fetch;
+  const client = new KeycloakIdentityAdminClient({ config: CONFIG, fetch: fetchStub, logger: capturingLogger().logger });
+  await client.deleteUser("u-1");
+  assert(
+    signals.length === 2 && signals.every((signal) => signal instanceof AbortSignal),
+    `the token request and the admin call each carry an AbortSignal; got ${signals.length} calls`,
+  );
+}
+
 /** U5 matches by `name`, never `instanceof` (F4.108). */
 export async function assertTheErrorIsNamedIdentityAdminError(): Promise<void> {
   const { client } = clientWith();

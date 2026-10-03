@@ -1,7 +1,7 @@
 import { Logger } from "@nestjs/common";
 import type { UserRole } from "@bms/shared";
 
-import type { IdentityAdminConfig } from "./identity-admin.config";
+import { KEYCLOAK_REQUEST_TIMEOUT_MS, type IdentityAdminConfig } from "./identity-admin.config";
 
 /**
  * `F3.78` (ADR 0089 decision 5) — the Keycloak admin REST calls the users API
@@ -29,6 +29,12 @@ import type { IdentityAdminConfig } from "./identity-admin.config";
  * `uma_authorization`); deleting every mapping would strip those too. It
  * removes before it adds, so a failure between the two leaves a user with no
  * BMS role (fail closed) rather than two.
+ *
+ * **Every request is bounded** by `requestTimeoutMs` (default
+ * {@link KEYCLOAK_REQUEST_TIMEOUT_MS}): `fetch` gets an `AbortSignal.timeout`
+ * and the call also races that signal, so even a transport that ignores the
+ * signal fails as `unavailable` on time. The log line names the operation and
+ * the timeout, never the URL.
  */
 
 /** The fixed set of reasons a Keycloak failure is reported as. */
@@ -120,6 +126,7 @@ export class KeycloakIdentityAdminClient implements IdentityAdmin {
   private readonly fetch: typeof globalThis.fetch;
   private readonly now: () => number;
   private readonly logger: IdentityAdminLogger;
+  private readonly requestTimeoutMs: number;
   private token: { value: string; refreshAt: number } | null = null;
 
   constructor(
@@ -128,12 +135,14 @@ export class KeycloakIdentityAdminClient implements IdentityAdmin {
       fetch?: typeof globalThis.fetch;
       now?: () => number;
       logger?: IdentityAdminLogger;
+      requestTimeoutMs?: number;
     },
   ) {
     // Bound: `fetch` throws "Illegal invocation" when called detached.
     this.fetch = deps.fetch ?? globalThis.fetch.bind(globalThis);
     this.now = deps.now ?? Date.now;
     this.logger = deps.logger ?? new Logger(KeycloakIdentityAdminClient.name);
+    this.requestTimeoutMs = deps.requestTimeoutMs ?? KEYCLOAK_REQUEST_TIMEOUT_MS;
   }
 
   async createUser(user: NewIdentityUser): Promise<{ id: string }> {
@@ -294,12 +303,23 @@ export class KeycloakIdentityAdminClient implements IdentityAdmin {
     return value;
   }
 
-  /** `fetch`, with a network failure mapped to a fixed reason — its message is never forwarded. */
+  /**
+   * `fetch`, bounded by `requestTimeoutMs`, with a network failure or a
+   * timeout mapped to a fixed reason — its message is never forwarded.
+   */
   private async send(op: string, url: string, init: RequestInit): Promise<Response> {
+    const signal = AbortSignal.timeout(this.requestTimeoutMs);
+    const timedOut = new Promise<never>((_, reject) => {
+      signal.addEventListener("abort", () => reject(signal.reason), { once: true });
+    });
     try {
-      return await this.fetch(url, init);
+      return await Promise.race([this.fetch(url, { ...init, signal }), timedOut]);
     } catch {
-      this.logger.warn(`Keycloak admin ${op} failed: no response (unavailable)`);
+      if (signal.aborted) {
+        this.logger.warn(`Keycloak admin ${op} failed: no response within ${this.requestTimeoutMs} ms (unavailable)`);
+      } else {
+        this.logger.warn(`Keycloak admin ${op} failed: no response (unavailable)`);
+      }
       throw new IdentityAdminError("unavailable");
     }
   }
