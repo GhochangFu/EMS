@@ -65,8 +65,8 @@ export type SeededUserSpec = {
 /**
  * `F3.78` (ADR 0089, plan §5) — the per-row step every seeded scoped login
  * shares: insert it when absent, re-assert its name, role and home
- * organization when present **and unlinked**, and touch nothing when present
- * and linked.
+ * organization when present **and unlinked**, and leave the `bms.users` row
+ * untouched when present and linked. Returns the row's id.
  *
  * A row whose `oidc_subject` is set has signed in through Keycloak and is
  * administered through the users API from then on. Re-asserting the seed's
@@ -76,13 +76,13 @@ export type SeededUserSpec = {
  * local mode never links, and local mode is read-only for user writes, so
  * nothing is reverted there.
  *
- * `linked: true` tells the caller to touch nothing else for this user either:
- * its grants are administered through the API too.
+ * The rule covers the users row only. The callers' grant writes stay
+ * insert-if-absent for every seeded user, linked or not: they never change an
+ * existing grant, and `tests/f4.169-f4.170-seed-ambiguous-identity` drives
+ * them through the seeded `wc-admin`, which is linked on any database where it
+ * has signed in.
  */
-export async function upsertSeededUser(
-  db: BmsDb,
-  spec: SeededUserSpec,
-): Promise<{ id: string; linked: boolean } | null> {
+export async function upsertSeededUser(db: BmsDb, spec: SeededUserSpec): Promise<string | null> {
   const [existing] = await db
     .select({ id: users.id, subject: users.oidcSubject })
     .from(users)
@@ -90,13 +90,13 @@ export async function upsertSeededUser(
     .limit(1);
   if (existing) {
     if (existing.subject !== null) {
-      return { id: existing.id, linked: true };
+      return existing.id;
     }
     await db
       .update(users)
       .set({ displayName: spec.displayName, role: spec.role, organizationId: spec.organizationId })
       .where(eq(users.id, existing.id));
-    return { id: existing.id, linked: false };
+    return existing.id;
   }
   const [created] = await db
     .insert(users)
@@ -108,7 +108,7 @@ export async function upsertSeededUser(
       organizationId: spec.organizationId,
     })
     .returning({ id: users.id });
-  return created ? { id: created.id, linked: false } : null;
+  return created?.id ?? null;
 }
 
 /** Ensures the global `admin@bms.local` login exists, returning its id. */
@@ -172,10 +172,9 @@ export async function seedScopedDemoUsers(
 ): Promise<void> {
   const scopedUserIds = new Map<string, string>();
   for (const scopedUser of SCOPED_USERS) {
-    const seeded = await upsertSeededUser(db, { ...scopedUser, organizationId });
-    // A linked row is administered through the users API (F3.78): its grants too.
-    if (seeded && !seeded.linked) {
-      scopedUserIds.set(scopedUser.email, seeded.id);
+    const seededId = await upsertSeededUser(db, { ...scopedUser, organizationId });
+    if (seededId) {
+      scopedUserIds.set(scopedUser.email, seededId);
     }
   }
 
@@ -246,15 +245,13 @@ export async function seedPheOrganizationAdmin(
   pool: pg.Pool,
 ): Promise<void> {
   const phewbOrgId = await getOrganizationId(pool, "PHEWB");
-  const seeded = await upsertSeededUser(db, {
+  const pheAdminId = await upsertSeededUser(db, {
     email: "phe-admin@bms.local",
     password: "admin123",
     displayName: "PHE Organization Admin",
     role: "organization_admin",
     organizationId: phewbOrgId,
   });
-  // A linked row is administered through the users API (F3.78): touch nothing, its grant included.
-  const pheAdminId = seeded && !seeded.linked ? seeded.id : undefined;
   if (pheAdminId) {
     const existingOrgAccess = await db
       .select({ id: userOrganizationAccess.id })

@@ -21,7 +21,9 @@ const { upsertSeededUser } = require_("../packages/db/dist/demo-users-seed.js") 
  * `F3.78` plan §5 (ADR 0089, review finding 15) — a re-seed (every
  * `compose up`) must not revert a change an admin made through the users API.
  * A row whose `oidc_subject` is set is administered through F3.78, so the
- * seed touches nothing on it; an unlinked row keeps today's upsert.
+ * seed leaves that `bms.users` row untouched; an unlinked row keeps today's
+ * upsert. (The callers' grant writes stay insert-if-absent: see the helper's
+ * docblock.)
  *
  * `upsertSeededUser` is the per-row step `seedScopedDemoUsers` and
  * `seedPheOrganizationAdmin` share. The cases drive it with their **own**
@@ -48,7 +50,7 @@ type Tx = Parameters<Parameters<Db["transaction"]>[0]>[0];
 /** Thrown to roll the case's transaction back once it has read what it needs. */
 class Rollback extends Error {}
 
-describe.skipIf(!superuserUrl)("F3.78 — the demo-users seed touches nothing on a linked row", { timeout: 60_000 }, () => {
+describe.skipIf(!superuserUrl)("F3.78 — the demo-users seed leaves a linked users row untouched", { timeout: 60_000 }, () => {
   let pool: Pool | undefined;
   let db: Db;
   let eskomId = "";
