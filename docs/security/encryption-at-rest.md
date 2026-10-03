@@ -24,7 +24,9 @@ So this document splits into two halves, and both matter:
   plaintext on disk, no matter what §2 says.
 
 **Do not read §2 as "the platform encrypts data at rest."** It does not. It
-encrypts three credential fields. The rest is §4's job.
+encrypts four stores of credentials, all with `CREDENTIAL_ENCRYPTION_KEY`:
+RTU connection credentials, onboarding draft `_secrets`, notification-channel
+webhook secrets and the organization LLM API key. The rest is §4's job.
 
 ---
 
@@ -34,6 +36,7 @@ encrypts three credential fields. The rest is §4's job.
 |------|--------------------|-----------|
 | RTU connection credentials (`bms.rtu_connection_configs`) | **Encrypted** | AES-256-GCM, application layer (ADR 0012) |
 | Pending credentials in onboarding drafts (`bms.onboarding_sessions.draft._secrets`) | **Encrypted** | AES-256-GCM, same key |
+| Notification-channel webhook secret (`bms.notification_channels.secret_*`) | **Encrypted** | AES-256-GCM, same key (ADR 0041 decision 8) |
 | Organization AI-assistant LLM API key (`bms.organization_llm_settings.key_*`) | **Encrypted** | AES-256-GCM, same key (ADR 0090 Amendment 1 A3); `key_last4` is plaintext by design |
 | Local login passwords (`bms.users.password_hash`) | **Hashed, not encrypted** | bcrypt (cost 10) — one-way, see §2.3 |
 | Onboarding chat transcript (`bms.onboarding_sessions.messages`) | **Plaintext** — see §5.1 | none |
@@ -63,15 +66,19 @@ and keys) are encrypted before they reach the database.
 - **Storage:** `bms.rtu_connection_configs.credentials_ciphertext` /
   `.credentials_iv` (`bytea`), plus a `key_version` column.
 - **Implementation:** `apps/api/src/security/credential-crypto.service.ts`.
-- **Read path.** Since ADR 0062 `apps/api/src` decrypts in two more places
-  besides the ingest runtime (`apps/ingest/src/rtu-config.js`):
+- **Read path.** `apps/api/src` decrypts in three places besides the ingest
+  runtime (`apps/ingest/src/rtu-config.js`):
   `notifications/channels.service.ts` reads a webhook secret at its stored
-  version, and `security/credential-rotation.service.ts` decrypts each row
-  it rotates so it can re-encrypt it. Onboarding commit still only moves
+  version, `security/credential-rotation.service.ts` decrypts each row it
+  rotates so it can re-encrypt it (both since ADR 0062), and
+  `admin/onboarding/onboarding-llm-resolver.ts` `decryptKey` decrypts the
+  organization LLM key on every onboarding chat turn and for the AI-assistant
+  Test button (ADR 0090 Amendment 1). Onboarding commit still only moves
   ciphertext and IV across tables — it does not decrypt.
 - **Client exposure — read this before concluding secrets are contained.** The
-  REST API never *decrypts* a stored secret, but that is not the same as never
-  returning one. `redactDraftForClient` deletes the `_secrets` blob and coerces
+  REST API never *returns* a secret it decrypted — the decrypted LLM key and
+  webhook secret are used server-side only — but that is not the same as never
+  returning a secret. `redactDraftForClient` deletes the `_secrets` blob and coerces
   the `credentialsSet` boolean — it **masks nothing**, and unlike
   `redactDraftForLlm` it does not run `scrubSecrets`
   (`apps/api/src/admin/onboarding/onboarding-redaction.ts:19`). More
@@ -309,7 +316,10 @@ version neither key holds is a loud, named error, not a silent skip.
    `failures: []`. There is no three-key window:
    unsetting the previous key while any row still holds the version it wrote
    turns that row into a loud `CredentialKeyVersionError` on its next read,
-   not a silent skip. **A clean report covers
+   not a silent skip. The organization LLM key is the exception:
+   `OnboardingLlmResolver.decryptKey` swallows that error, the chat falls to the
+   guided mode, and the warn line says only that the setting is "incomplete".
+   **A clean report covers
    `rtu_connection_configs`, `notification_channels` and
    `organization_llm_settings` — not an in-flight onboarding draft.** §2.2: commit copies a draft's stored key version
    verbatim rather than re-encrypting, so a draft started before the
@@ -530,7 +540,9 @@ deliberately stays out of that lane. When E8.2 lands it **must** satisfy:
    *not* `CREDENTIAL_ENCRYPTION_KEY` — different lifetime, different blast
    radius.
 3. **A backup remains restorable after `CREDENTIAL_ENCRYPTION_KEY` rotates.**
-   Dumps contain AES-GCM ciphertext in `rtu_connection_configs`; restoring an
+   Dumps contain AES-GCM ciphertext in `rtu_connection_configs`,
+   `notification_channels`, `organization_llm_settings` and onboarding drafts'
+   `_secrets`; restoring an
    old dump under a new key requires the key that dump's rows were still at
    the version of — `decrypt` refuses any other. Retain the retiring key as
    `CREDENTIAL_ENCRYPTION_KEY_PREVIOUS` for at least the backup retention
