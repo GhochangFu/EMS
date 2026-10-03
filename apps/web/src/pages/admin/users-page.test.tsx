@@ -8,6 +8,7 @@ import {
   a503ShowsASentenceAndWritesNothingElse,
   aPendingAddAnnouncesItself,
   aPendingRemoveAnnouncesOnlyItsOwnGrant,
+  aSuccessfulWriteReadsTheListAgain,
   aGlobalAdminMayCreateAnAdmin,
   addingAGrantSendsItsKindAndTarget,
   anIneffectiveGrantShowsTheNote,
@@ -106,6 +107,10 @@ describe("F3.78 users page", () => {
 
   it("a 503 shows a sentence and writes nothing else", async () => {
     await a503ShowsASentenceAndWritesNothingElse();
+  });
+
+  it("a successful write reads the users list again", async () => {
+    await aSuccessfulWriteReadsTheListAgain();
   });
 
   it("a 400 policy refusal shows the server message and never the password", async () => {

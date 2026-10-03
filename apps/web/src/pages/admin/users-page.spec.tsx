@@ -376,6 +376,17 @@ export async function a503ShowsASentenceAndWritesNothingElse(): Promise<void> {
   expect(screen.getByRole("dialog", { name: "Edit Ada Linked" })).toBeInTheDocument();
 }
 
+/** The positive control for the 503 case's "not read again": a successful write reads the list again. */
+export async function aSuccessfulWriteReadsTheListAgain(): Promise<void> {
+  stubOidc();
+  const calls = stubFetch({
+    [`POST /api/v1/admin/users/${LINKED_ID}/deactivate`]: { status: 200, body: written(USERS.items[0] as Record<string, unknown>) },
+  });
+  renderPage();
+  await userEvent.click(await screen.findByRole("button", { name: "Deactivate Ada Linked" }));
+  await waitFor(() => expect(listReads(calls)).toHaveLength(2));
+}
+
 export async function a400PolicyRefusalShowsTheServerMessageNotThePassword(): Promise<void> {
   stubOidc();
   const secret = "Correct-Horse-9!";
