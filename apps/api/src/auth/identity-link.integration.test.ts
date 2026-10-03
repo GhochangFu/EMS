@@ -57,11 +57,11 @@ describe.skipIf(!connectionString)("F3.78 — identity link on bms_auth (ADR 008
   });
 
   it("the link statement on bms_auth changes one row for a user with a NULL subject", async () => {
-    await assertTheLinkChangesOneRowOnTheAuthRole(authDb);
+    await assertTheLinkChangesOneRowOnTheAuthRole(superDb);
   });
 
   it("a second link attempt for the same email changes zero rows and keeps the first subject", async () => {
-    await assertASecondLinkChangesNothing(authDb);
+    await assertASecondLinkChangesNothing(superDb);
   });
 
   it("SELECT disabled_at on bms_auth succeeds", async () => {

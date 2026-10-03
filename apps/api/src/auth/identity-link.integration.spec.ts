@@ -17,7 +17,9 @@ import { linkIdentity, type ResolvedIdentity } from "./identity-resolver";
  * `auth_bootstrap_write` policy are what the guard's two statements need, and
  * a fake proves neither.
  *
- * Every case runs inside `withRollback(authDb, …)` and calls `tx.rollback()`,
+ * Every case runs inside `withRollback(…)` and calls `tx.rollback()` — the two
+ * link cases on the superuser pool, switched to `bms_auth` after they insert
+ * their own unlinked user (`anUnlinkedUserAsAuth`) —
  * so the subject it writes never outlives the case
  * (`tests/f3.60-withrollback-cases-roll-back.test.ts`). The `0098` trigger
  * refuses a pool role's second write to a set subject, so a committed link
@@ -26,26 +28,41 @@ import { linkIdentity, type ResolvedIdentity } from "./identity-resolver";
 
 type Unlinked = { id: string; email: string };
 
-/** A seeded row the auth role sees with no subject yet — the state every local seed leaves. */
-async function anUnlinkedUser(tx: Pick<BmsDb, "select">): Promise<Unlinked> {
-  const [row] = await tx
-    .select({ id: users.id, email: users.email })
-    .from(users)
-    .where(isNull(users.oidcSubject))
-    .orderBy(users.createdAt, users.id)
-    .limit(1);
-  if (!row) {
-    throw new Error("F3.78: no bms.users row has a NULL oidc_subject — run pnpm db:seed on a fresh database");
+/**
+ * The case's own unlinked user, inserted by the superuser inside the case's
+ * transaction, then `SET LOCAL ROLE bms_auth` so every later statement runs as
+ * the auth role. A seeded row is not used: once anyone signs in on the shared
+ * database, every seeded row is linked and stays linked (the `0098` trigger),
+ * so a case that borrows one goes red for a reason that has nothing to do with
+ * the code. `bms_auth` cannot insert a user, hence the superuser and the role
+ * switch; the rollback removes the row.
+ */
+async function anUnlinkedUserAsAuth(tx: Pick<BmsDb, "execute">): Promise<Unlinked> {
+  const id = randomUUID();
+  const email = `f3.78-link-${id}@fixture.local`;
+  await tx.execute(sql`
+    INSERT INTO bms.users (id, organization_id, email, display_name, role)
+    SELECT ${id}::uuid, o.id, ${email}, 'F3.78 link fixture', 'viewer'
+      FROM bms.organizations o
+     ORDER BY o.created_at, o.code
+     LIMIT 1
+  `);
+  await tx.execute(sql`SET LOCAL ROLE bms_auth`);
+  // Without this, a dropped role switch would let the case pass as the superuser.
+  const role = await tx.execute(sql`SELECT current_user AS name`);
+  const name = (role as unknown as { rows: Array<{ name: string }> }).rows[0]?.name;
+  if (name !== "bms_auth") {
+    throw new Error(`F3.78: the link case must run as bms_auth, not ${name ?? "nobody"}`);
   }
-  return row;
+  return { id, email };
 }
 
-export async function assertTheLinkChangesOneRowOnTheAuthRole(authDb: BmsDb): Promise<void> {
+export async function assertTheLinkChangesOneRowOnTheAuthRole(superDb: BmsDb): Promise<void> {
   let linked: ResolvedIdentity | null = null;
   let user: Unlinked | undefined;
   const sub = `f3.78-link-${randomUUID()}`;
-  await withRollback(authDb, async (tx) => {
-    user = await anUnlinkedUser(tx);
+  await withRollback(superDb, async (tx) => {
+    user = await anUnlinkedUserAsAuth(tx);
     // Upper-cased: the link matches lower(email), so the claim's case does not matter.
     linked = await linkIdentity(tx, { sub, email: user.email.toUpperCase(), emailVerified: true });
     tx.rollback();
@@ -55,11 +72,11 @@ export async function assertTheLinkChangesOneRowOnTheAuthRole(authDb: BmsDb): Pr
   expect((linked as ResolvedIdentity | null)?.oidcSubject).toBe(sub);
 }
 
-export async function assertASecondLinkChangesNothing(authDb: BmsDb): Promise<void> {
+export async function assertASecondLinkChangesNothing(superDb: BmsDb): Promise<void> {
   let second: ResolvedIdentity | null | undefined;
   let subjectAfter: string | null | undefined;
-  await withRollback(authDb, async (tx) => {
-    const user = await anUnlinkedUser(tx);
+  await withRollback(superDb, async (tx) => {
+    const user = await anUnlinkedUserAsAuth(tx);
     const first = `f3.78-first-${randomUUID()}`;
     await linkIdentity(tx, { sub: first, email: user.email, emailVerified: true });
     second = await linkIdentity(tx, { sub: `f3.78-second-${randomUUID()}`, email: user.email, emailVerified: true });
