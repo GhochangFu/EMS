@@ -53,6 +53,64 @@ const SCOPED_USERS = [
   },
 ] as const;
 
+/** One seeded demo login, as `upsertSeededUser` writes it. */
+export type SeededUserSpec = {
+  readonly email: string;
+  readonly password: string;
+  readonly displayName: string;
+  readonly role: string;
+  readonly organizationId: string | null;
+};
+
+/**
+ * `F3.78` (ADR 0089, plan §5) — the per-row step every seeded scoped login
+ * shares: insert it when absent, re-assert its name, role and home
+ * organization when present **and unlinked**, and touch nothing when present
+ * and linked.
+ *
+ * A row whose `oidc_subject` is set has signed in through Keycloak and is
+ * administered through the users API from then on. Re-asserting the seed's
+ * role there would silently revert an admin's demotion on the next
+ * `compose up` (every `compose up` re-seeds), with no audit row and with the
+ * Keycloak realm role left out of step. An unlinked row keeps today's upsert:
+ * local mode never links, and local mode is read-only for user writes, so
+ * nothing is reverted there.
+ *
+ * `linked: true` tells the caller to touch nothing else for this user either:
+ * its grants are administered through the API too.
+ */
+export async function upsertSeededUser(
+  db: BmsDb,
+  spec: SeededUserSpec,
+): Promise<{ id: string; linked: boolean } | null> {
+  const [existing] = await db
+    .select({ id: users.id, subject: users.oidcSubject })
+    .from(users)
+    .where(eq(users.email, spec.email))
+    .limit(1);
+  if (existing) {
+    if (existing.subject !== null) {
+      return { id: existing.id, linked: true };
+    }
+    await db
+      .update(users)
+      .set({ displayName: spec.displayName, role: spec.role, organizationId: spec.organizationId })
+      .where(eq(users.id, existing.id));
+    return { id: existing.id, linked: false };
+  }
+  const [created] = await db
+    .insert(users)
+    .values({
+      email: spec.email,
+      passwordHash: await bcrypt.hash(spec.password, 10),
+      displayName: spec.displayName,
+      role: spec.role,
+      organizationId: spec.organizationId,
+    })
+    .returning({ id: users.id });
+  return created ? { id: created.id, linked: false } : null;
+}
+
 /** Ensures the global `admin@bms.local` login exists, returning its id. */
 export async function ensureAdminUser(db: BmsDb): Promise<string> {
   const adminEmail = "admin@bms.local";
@@ -114,35 +172,10 @@ export async function seedScopedDemoUsers(
 ): Promise<void> {
   const scopedUserIds = new Map<string, string>();
   for (const scopedUser of SCOPED_USERS) {
-    const existingScopedUser = await db
-      .select({ id: users.id })
-      .from(users)
-      .where(eq(users.email, scopedUser.email))
-      .limit(1);
-    if (existingScopedUser[0]) {
-      await db
-        .update(users)
-        .set({
-          displayName: scopedUser.displayName,
-          role: scopedUser.role,
-          organizationId,
-        })
-        .where(eq(users.id, existingScopedUser[0].id));
-      scopedUserIds.set(scopedUser.email, existingScopedUser[0].id);
-      continue;
-    }
-    const [createdScopedUser] = await db
-      .insert(users)
-      .values({
-        email: scopedUser.email,
-        passwordHash: await bcrypt.hash(scopedUser.password, 10),
-        displayName: scopedUser.displayName,
-        role: scopedUser.role,
-        organizationId,
-      })
-      .returning({ id: users.id });
-    if (createdScopedUser) {
-      scopedUserIds.set(scopedUser.email, createdScopedUser.id);
+    const seeded = await upsertSeededUser(db, { ...scopedUser, organizationId });
+    // A linked row is administered through the users API (F3.78): its grants too.
+    if (seeded && !seeded.linked) {
+      scopedUserIds.set(scopedUser.email, seeded.id);
     }
   }
 
@@ -213,35 +246,15 @@ export async function seedPheOrganizationAdmin(
   pool: pg.Pool,
 ): Promise<void> {
   const phewbOrgId = await getOrganizationId(pool, "PHEWB");
-  const pheAdminEmail = "phe-admin@bms.local";
-  const existingPheAdmin = await db
-    .select({ id: users.id, role: users.role })
-    .from(users)
-    .where(eq(users.email, pheAdminEmail))
-    .limit(1);
-  let pheAdminId = existingPheAdmin[0]?.id;
-  if (!pheAdminId) {
-    const [createdPheAdmin] = await db
-      .insert(users)
-      .values({
-        email: pheAdminEmail,
-        passwordHash: await bcrypt.hash("admin123", 10),
-        displayName: "PHE Organization Admin",
-        role: "organization_admin",
-        organizationId: phewbOrgId,
-      })
-      .returning({ id: users.id });
-    pheAdminId = createdPheAdmin?.id;
-  } else {
-    await db
-      .update(users)
-      .set({
-        displayName: "PHE Organization Admin",
-        role: "organization_admin",
-        organizationId: phewbOrgId,
-      })
-      .where(eq(users.id, pheAdminId));
-  }
+  const seeded = await upsertSeededUser(db, {
+    email: "phe-admin@bms.local",
+    password: "admin123",
+    displayName: "PHE Organization Admin",
+    role: "organization_admin",
+    organizationId: phewbOrgId,
+  });
+  // A linked row is administered through the users API (F3.78): touch nothing, its grant included.
+  const pheAdminId = seeded && !seeded.linked ? seeded.id : undefined;
   if (pheAdminId) {
     const existingOrgAccess = await db
       .select({ id: userOrganizationAccess.id })
