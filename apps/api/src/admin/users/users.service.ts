@@ -32,7 +32,7 @@ import { USER_DISABLED_NOTIFY_CHANNEL } from "../../auth/user-disabled-notify";
 import { FLEET_DRIZZLE, TENANT_DRIZZLE } from "../../database/database.tokens";
 import { withTenant, type BmsTx } from "../../database/tenant-context";
 import { IdentityAdminError, type IdentityAdmin } from "../../identity/identity-admin.client";
-import { IDENTITY_ADMIN } from "../../identity/identity-admin.module";
+import { IDENTITY_ADMIN, NotConfiguredIdentityAdmin } from "../../identity/identity-admin.module";
 import { MasterDataAuditService } from "../master-data-audit.service";
 import {
   createUserBodySchema,
@@ -318,6 +318,7 @@ export class UsersService {
   async create(jwt: JwtPayload, rawBody: unknown): Promise<UserWriteResponse> {
     const manager = await this.requireManager(jwt);
     this.assertKeycloakMode();
+    this.assertConfigured();
     const body = parseBody(createUserBodySchema, rawBody);
     if (!mayAssignRole(manager.role, body.role)) {
       throw new ForbiddenException(ADMIN_ROLE_ADMIN_ONLY);
@@ -395,6 +396,7 @@ export class UsersService {
   async update(jwt: JwtPayload, id: string, rawBody: unknown): Promise<UserWriteResponse> {
     const manager = await this.requireManager(jwt);
     this.assertKeycloakMode();
+    this.assertConfigured();
     const body = parseBody(updateUserBodySchema, rawBody);
     const target = await this.requireManageableTarget(manager, id);
     const subject = requireLinked(target);
@@ -479,6 +481,7 @@ export class UsersService {
   async deactivate(jwt: JwtPayload, id: string): Promise<UserWriteResponse> {
     const manager = await this.requireManager(jwt);
     this.assertKeycloakMode();
+    this.assertConfigured();
     // `idParamSchema` accepts uppercase hex and Postgres matches it case-insensitively.
     if (id.toLowerCase() === manager.identity.id.toLowerCase()) {
       throw new ForbiddenException(SELF_DEACTIVATE);
@@ -527,6 +530,7 @@ export class UsersService {
   async reactivate(jwt: JwtPayload, id: string): Promise<UserWriteResponse> {
     const manager = await this.requireManager(jwt);
     this.assertKeycloakMode();
+    this.assertConfigured();
     const target = await this.requireManageableTarget(manager, id);
     const subject = requireLinked(target);
     const onFleet = target.role === "admin";
@@ -566,6 +570,7 @@ export class UsersService {
   async temporaryPassword(jwt: JwtPayload, id: string, rawBody: unknown): Promise<UserWriteResponse> {
     const manager = await this.requireManager(jwt);
     this.assertKeycloakMode();
+    this.assertConfigured();
     const body = parseBody(temporaryPasswordBodySchema, rawBody);
     const target = await this.requireManageableTarget(manager, id);
     const subject = requireLinked(target);
@@ -609,6 +614,17 @@ export class UsersService {
   private assertKeycloakMode(): void {
     if (resolveAuthMode(process.env) === "local") {
       throw new ConflictException(LOCAL_MODE_READ_ONLY);
+    }
+  }
+
+  /**
+   * Plan U5: an unconfigured provider makes every write 503 before any db
+   * write. Without this, a displayName-only PATCH never calls Keycloak and
+   * deactivate / reactivate commit first and turn the failure into a followUp.
+   */
+  private assertConfigured(): void {
+    if (this.identity instanceof NotConfiguredIdentityAdmin) {
+      throw new ServiceUnavailableException(NOT_CONFIGURED);
     }
   }
 

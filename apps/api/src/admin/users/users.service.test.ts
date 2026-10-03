@@ -243,6 +243,30 @@ describe("F3.78 — local mode and an unconfigured client (ADR 0089 decisions 5 
     await spec.assertNotConfiguredStillServesTheList();
   });
 
+  it("not_configured refuses create with 503 and no db write", async () => {
+    await spec.assertNotConfiguredRefusesTheWrite("create");
+  });
+
+  it("not_configured refuses PATCH displayName with 503 and no db write", async () => {
+    await spec.assertNotConfiguredRefusesTheWrite("PATCH displayName");
+  });
+
+  it("not_configured refuses PATCH role with 503 and no db write", async () => {
+    await spec.assertNotConfiguredRefusesTheWrite("PATCH role");
+  });
+
+  it("not_configured refuses deactivate with 503 and no db write", async () => {
+    await spec.assertNotConfiguredRefusesTheWrite("deactivate");
+  });
+
+  it("not_configured refuses reactivate with 503 and no db write", async () => {
+    await spec.assertNotConfiguredRefusesTheWrite("reactivate");
+  });
+
+  it("not_configured refuses temporary-password with 503 and no db write", async () => {
+    await spec.assertNotConfiguredRefusesTheWrite("temporary-password");
+  });
+
   it("a Keycloak enable failure after the create commit is a 200 with followUp", async () => {
     await spec.assertAKeycloakEnableFailureOnCreateIsAFollowUp();
   });

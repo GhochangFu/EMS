@@ -598,6 +598,14 @@ export async function assertNotConfiguredStillServesTheList(): Promise<void> {
   expect((await service.list(jwt)).items.length).toBeGreaterThan(0);
 }
 
+/** Plan U5: with the unconfigured provider every write is 503 before any db write. */
+export async function assertNotConfiguredRefusesTheWrite(action: Action | "create"): Promise<void> {
+  const { service, jwt, timeline } = harness({ notConfigured: true });
+  const err = await refusal(action === "create" ? service.create(jwt, createBody()) : act(service, jwt, VIEWER_A.id, action));
+  expect([err.getStatus(), err.message]).toEqual([503, NOT_CONFIGURED]);
+  expect([auditInserts(timeline), userInserts(timeline), userUpdates(timeline), notifies(timeline)]).toEqual([[], [], [], []]);
+}
+
 export async function assertAKeycloakEnableFailureOnCreateIsAFollowUp(): Promise<void> {
   const { service, jwt, identity } = harness();
   identity.failNext("setEnabled", "unavailable");
