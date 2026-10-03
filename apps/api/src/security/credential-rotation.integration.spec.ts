@@ -2,7 +2,7 @@ import { randomBytes, randomUUID } from "node:crypto";
 
 import { eq, is, isNotNull, TransactionRollbackError } from "drizzle-orm";
 
-import { notificationChannels, rtuConnectionConfigs, rtus } from "@bms/db";
+import { notificationChannels, organizationLlmSettings, rtuConnectionConfigs, rtus } from "@bms/db";
 import type { BmsDb } from "@bms/db";
 
 import type { BmsTx } from "../database/tenant-context";
@@ -41,8 +41,11 @@ import {
  * statement is invisible for the rest of it, and it **nulls the secret columns
  * of every committed row inside the transaction** before a fixture is planted
  * — rolled back with everything else, so nothing on the shared database is
- * changed. The channels' `notification_channels_secret_complete_check` is why
- * all three columns go together. The residual hazard is a concurrent suite
+ * changed. The quarantine covers all three tables the walk reads. The channels'
+ * `notification_channels_secret_complete_check` (migration 0038) is why their
+ * three columns go together, and `organization_llm_settings_key_check`
+ * (migration 0100) is why all four LLM `key_*` columns do — `key_last4`
+ * included, or the CHECK rejects the update. The residual hazard is a concurrent suite
  * deleting one of those rows in the milliseconds between the snapshot and the
  * quarantine, which surfaces as a named `40001`, not a wrong count.
  *
@@ -80,9 +83,12 @@ async function withRollback(
 }
 
 /**
- * Makes every committed secret-bearing row invisible to the walk for the rest
- * of the transaction — see the file docblock. The channel update nulls all
- * three columns because the CHECK constraint ties them together.
+ * Makes every committed secret-bearing row of the three tables invisible to the
+ * walk for the rest of the transaction — see the file docblock. The channel
+ * update nulls all three columns because
+ * `notification_channels_secret_complete_check` (migration 0038) ties them
+ * together; the LLM update nulls all four `key_*` columns because
+ * `organization_llm_settings_key_check` (migration 0100) does the same.
  */
 async function quarantineCommittedSecrets(tx: BmsTx): Promise<void> {
   await tx
@@ -93,6 +99,10 @@ async function quarantineCommittedSecrets(tx: BmsTx): Promise<void> {
     .update(notificationChannels)
     .set({ secretCiphertext: null, secretIv: null, secretKeyVersion: null })
     .where(isNotNull(notificationChannels.secretCiphertext));
+  await tx
+    .update(organizationLlmSettings)
+    .set({ keyCiphertext: null, keyIv: null, keyVersion: null, keyLast4: null })
+    .where(isNotNull(organizationLlmSettings.keyCiphertext));
 }
 
 /** A rolled-back `repeatable read` transaction with the shared database's secrets quarantined. */
