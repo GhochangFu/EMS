@@ -1335,7 +1335,7 @@ Process (`AGENTS.md` §10).
   selects by the **stored** version and refuses any other rather than trying
   both: an AES-GCM tag check would make a guess *succeed*. The version travels
   with every ciphertext carrier. `rotate-credentials` re-encrypts both credential
-  tables as `bms_fleet`, selected on ciphertext, compare-and-set, failures
+  tables (three since `F4.186`) as `bms_fleet`, selected on ciphertext, compare-and-set, failures
   collected. An unconfigured key no longer reports a stored credential.
 - **Not shipped — decision 10, and this is why the row is not done.** The
   `MQTT_USERNAME`/`MQTT_PASSWORD` fallback stays; `bms.rtu_connection_configs`
@@ -7042,6 +7042,28 @@ Anthropic providers (no keys).
 **Cascade:** `F3.22`, `F3.23`, `F3.24`, `F3.25`, `F3.26` and `F3.27` are
 now unblocked — each of their other dependencies is done. Owed: the
 `chore(agents):` sweep, and `F4.185` (the shared credential scrub).
+
+### `F4.186` — key rotation re-encrypts the stored AI-assistant keys ✅ 2026-10-04
+
+PR #709, squash `8a2d32b9`; raised by the `F3.21` `chore(agents):` sweep (#707).
+No ADR: ADR 0090 Amendment 1 A3 already names ADR 0062 rotation for
+`bms.organization_llm_settings`. No migration.
+
+- `rotate-credentials` walks the table as its third carrier and reports it as
+  `organizationLlmSettings`; it writes only the ciphertext, the IV and the
+  version, never `key_last4` or `updated_at`.
+- The AI-assistant save takes a per-organization advisory lock and reads the
+  row `FOR UPDATE` inside its transaction, so a save cannot undo a rotation,
+  keep another provider's key, bring a deleted key back, or clear a key
+  unaudited (security review M1, re-review L-a, L-b, L-c).
+- `docs/security/encryption-at-rest.md` names four encrypted stores.
+
+Verified: CI green first run, reviews fixed, 9 mutations killed, full api
+project green, running-stack rotation skip → rotate → decrypt MATCH. Browser
+N/A.
+
+**Cascade:** no row lists `F4.186` in *Depends* except the new `F4.187`
+(`remove()` audits from an earlier read). No `chore(agents):` change owed.
 
 ### `F3.76` — the Master Data Hub in five areas ✅ 2026-09-30
 
