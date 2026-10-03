@@ -1,0 +1,191 @@
+import type { OnboardingChatMessage, OnboardingDraft } from "@bms/shared";
+
+import { cloneJson } from "../stack-safe-json";
+import { runTool, TOOL_DEFINITIONS, type ToolContext, type ToolState } from "./onboarding-agent-tools";
+import { cutToBound } from "./onboarding-draft-caps";
+import type { LlmMessage, OnboardingLlmProvider } from "./onboarding-llm-port";
+import { PROMPT_MARKER_SENTENCE, serialiseDraftForPrompt } from "./onboarding-prompt-budget";
+import type { OnboardingDraftInput, OnboardingPhase } from "./onboarding.schema";
+
+/**
+ * The onboarding agent loop (`F3.21`, ADR 0090 decisions 2, 3, 7 and 9).
+ *
+ * One user turn runs model → tool calls → model until the model returns a
+ * final text or a cap stops it. Tools edit an in-memory copy of the draft; the
+ * caller writes the session row once, from `draftPatch`.
+ *
+ * Two failure classes, told apart by the turn's own `AbortSignal`:
+ * - **the 45 s deadline** (`cap_time`) keeps the edits of the tool calls that
+ *   completed, and the guided mode does not run (ruling 3);
+ * - **anything else** (`provider_error`) discards every edit of the turn, and
+ *   the caller runs the guided mode on the same message (ruling 6).
+ */
+
+export const MAX_TOOL_CALLS_PER_TURN = 8;
+export const TURN_DEADLINE_MS = 45_000;
+export const MAX_HISTORY_MESSAGES = 20;
+export const MAX_HISTORY_MESSAGE_CHARS = 2_000;
+
+export const STOPPED_EARLY_CALLS_REPLY =
+  "I stopped early because the turn reached its limit of tool calls. The changes made so far are in the draft.";
+
+export const STOPPED_EARLY_TIME_REPLY =
+  "I stopped early because the turn reached its time limit. The changes made so far are in the draft.";
+
+export type AgentStopReason = "final" | "cap_calls" | "cap_time" | "provider_error";
+
+/** Decision 9: ids, names and counts only — never message text, arguments, the draft or the summary. */
+export type AgentTurnRecord = {
+  readonly toolCalls: number;
+  readonly tools: readonly string[];
+  readonly stopReason: AgentStopReason;
+  readonly durationMs: number;
+};
+
+export type AgentTurnResult = {
+  readonly reply: string;
+  readonly draftPatch: OnboardingDraftInput;
+  readonly actionLines: readonly string[];
+  readonly commitProposal?: { readonly summary: string };
+  readonly stopReason: AgentStopReason;
+  /** `true` only for `provider_error`: the caller runs the guided mode instead. */
+  readonly fallback: boolean;
+  readonly record: AgentTurnRecord;
+};
+
+const DRAFT_SECTIONS = ["location", "rtus", "pointKeys", "assets", "assetPoints", "onboardingMeta"] as const;
+
+/**
+ * The stored history as provider messages: the last `MAX_HISTORY_MESSAGES`,
+ * `system` rows dropped, an `action` row sent as assistant text (no provider
+ * has an `action` role), each content cut on a whole character, and leading
+ * non-user turns dropped (the Messages API wants a conversation to start with
+ * the user). Never carries provider content: that lives inside one turn.
+ */
+export function buildHistory(messages: readonly OnboardingChatMessage[]): LlmMessage[] {
+  const recent = messages
+    .filter((message) => message.role !== "system")
+    .slice(-MAX_HISTORY_MESSAGES)
+    .map((message): LlmMessage => ({
+      role: message.role === "user" ? "user" : "assistant",
+      content: cutToBound(message.content, MAX_HISTORY_MESSAGE_CHARS),
+    }));
+  const firstUser = recent.findIndex((message) => message.role === "user");
+  return firstUser < 0 ? [] : recent.slice(firstUser);
+}
+
+export function buildSystemPrompt(input: {
+  readonly orgName: string;
+  readonly phase: OnboardingPhase;
+  readonly typeCodes: readonly string[];
+  readonly draft: OnboardingDraft;
+}): string {
+  return `You are an IONSiTE NEXUS BMS onboarding assistant for organization ${input.orgName}.
+Current phase: ${input.phase}. Use the tools to read and change the onboarding draft, then tell the user in one or two sentences what changed and what is next.
+Phases: location, rtu, point_keys, assets, mappings, review.
+Location types (location.type must be one of these codes; ask the user when unsure): ${input.typeCodes.join(", ")}.
+Never include password or secret values in a reply. Credentials are NEVER collected through this chat — if the user offers one, tell them to use the Credentials field on the RTU step. Never put a credential in a tool argument.
+You cannot commit. When the draft is ready, use propose_commit; the user then confirms with the Commit button or by typing \`confirm commit\`.
+${PROMPT_MARKER_SENTENCE}
+Draft context (redacted): ${serialiseDraftForPrompt(input.draft)}`;
+}
+
+/** The six draft sections that differ, wholesale, so `mergeDraft(stored, patch)` reproduces `working`. */
+function diffSections(stored: OnboardingDraft, working: OnboardingDraft): OnboardingDraftInput {
+  const patch: Record<string, unknown> = {};
+  for (const section of DRAFT_SECTIONS) {
+    if (JSON.stringify(stored[section]) !== JSON.stringify(working[section])) {
+      patch[section] = working[section];
+    }
+  }
+  return patch as OnboardingDraftInput;
+}
+
+export async function runAgentTurn(
+  input: {
+    readonly message: string;
+    readonly draft: OnboardingDraft;
+    readonly phase: OnboardingPhase;
+    readonly orgName: string;
+    readonly history: readonly OnboardingChatMessage[];
+    readonly llm: OnboardingLlmProvider;
+    readonly tools: ToolContext;
+  },
+  options: { readonly maxToolCalls?: number; readonly deadlineMs?: number } = {},
+): Promise<AgentTurnResult> {
+  const maxToolCalls = options.maxToolCalls ?? MAX_TOOL_CALLS_PER_TURN;
+  const deadlineMs = options.deadlineMs ?? TURN_DEADLINE_MS;
+  const started = Date.now();
+  const state: ToolState = { working: cloneJson(input.draft) };
+  const actionLines: string[] = [];
+  const tools: string[] = [];
+  const messages: LlmMessage[] = [
+    {
+      role: "system",
+      content: buildSystemPrompt({
+        orgName: input.orgName,
+        phase: input.phase,
+        typeCodes: input.tools.activeTypes.map((type) => type.code),
+        draft: input.draft,
+      }),
+    },
+    ...buildHistory(input.history),
+    { role: "user", content: input.message },
+  ];
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), deadlineMs);
+
+  const finish = (stopReason: AgentStopReason, reply: string): AgentTurnResult => {
+    const record = { toolCalls: tools.length, tools, stopReason, durationMs: Date.now() - started };
+    if (stopReason === "provider_error") {
+      return { reply, draftPatch: {}, actionLines: [], stopReason, fallback: true, record };
+    }
+    return {
+      reply,
+      draftPatch: diffSections(input.draft, state.working),
+      actionLines,
+      ...(state.pendingProposal ? { commitProposal: state.pendingProposal } : {}),
+      stopReason,
+      fallback: false,
+      record,
+    };
+  };
+
+  try {
+    for (;;) {
+      if (controller.signal.aborted) {
+        return finish("cap_time", STOPPED_EARLY_TIME_REPLY);
+      }
+      const reply = await input.llm.complete({ messages, tools: TOOL_DEFINITIONS, signal: controller.signal });
+      if (reply.kind === "final") {
+        return finish("final", reply.text.trim() || "Done.");
+      }
+      messages.push({
+        role: "assistant",
+        content: reply.content,
+        toolCalls: reply.calls,
+        ...(reply.providerContent !== undefined ? { providerContent: reply.providerContent } : {}),
+      });
+      for (const call of reply.calls) {
+        if (tools.length >= maxToolCalls) {
+          return finish("cap_calls", STOPPED_EARLY_CALLS_REPLY);
+        }
+        if (controller.signal.aborted) {
+          return finish("cap_time", STOPPED_EARLY_TIME_REPLY);
+        }
+        tools.push(call.name);
+        const outcome = await runTool(call, state, input.tools);
+        if (outcome.actionLine) {
+          actionLines.push(outcome.actionLine);
+        }
+        messages.push({ role: "tool", toolCallId: call.id, content: outcome.content, isError: !outcome.ok });
+      }
+    }
+  } catch {
+    return controller.signal.aborted
+      ? finish("cap_time", STOPPED_EARLY_TIME_REPLY)
+      : finish("provider_error", "");
+  } finally {
+    clearTimeout(timer);
+  }
+}
