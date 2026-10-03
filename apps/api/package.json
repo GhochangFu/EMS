@@ -11,6 +11,7 @@
     "keycloak:provision": "node dist/identity/provision/provision-cli.js"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.131.0",
     "@aws-sdk/client-s3": "^3.1132.0",
     "@bms/db": "workspace:*",
     "@bms/shared": "workspace:*",

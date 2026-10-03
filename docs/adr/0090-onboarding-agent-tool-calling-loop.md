@@ -365,6 +365,13 @@ A3. **Per-organization setting.** A new tenant table
     `app.current_organization` policy, and grants only to the API's tenant
     role, as every tenant table since ADR 0045.
 
+    *Correction, 2026-10-03 (plan ruling 7):* the last clause describes a
+    pattern this repository does not use. Recent tenant tables (migration
+    `0094` is the model) write no `GRANT` and rely on `0041`'s default
+    privileges, which also reach `bms_fleet` (it bypasses RLS). The owner ruled
+    to follow `0094`: no `GRANT` and no `REVOKE`. `bms_fleet` can read the
+    encrypted rows; it cannot decrypt them without the credential key.
+
 A4. **Resolution, once per chat turn.** If the organization has a row:
     `off` → the guided mode; a complete row (provider, model, key) → that
     provider; an incomplete row → the guided mode and one warning log line. If
@@ -428,6 +435,10 @@ A7. **Secret hygiene.** The key never appears in a response, a log line, an
   The repository's dependency gate needs an ADR staged in the same commit as
   the manifest change; that commit adds a dated line to this amendment.
 - No dependency for OpenRouter.
+- *2026-10-03, the build:* `@anthropic-ai/sdk` `^0.131.0` added to `apps/api`
+  by `pnpm --filter api add`, in the same commit as this line. Version
+  0.131.0 declares no `engines` field; the Node 20 gate is the `api` image
+  build and a booted container at step 6.
 
 ### Consequences
 
