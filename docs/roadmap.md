@@ -7001,19 +7001,20 @@ sign-in).
 **Cascade:** `F3.74` PR5 takes stock v4 on this seam (Amendment 3 ruling 10).
 No `chore(agents):` sentence is owed by this row.
 
-### `F3.74` — live breaker state on the electrical mimic (in review)
+### `F3.74` — live breaker state on the electrical mimic ✅ 2026-10-03
 
-Five PRs: #687, #690, #694 and #695 merged; PR5 is this branch. ADR 0088 and
-its Amendment 2 (2026-10-03); plan `docs/plans/f3.74-live-breaker-state.md`
-(revision 3). Effort 13–15 days.
+Five PRs, merged in order: #687 (`17175232`), #690 (`14c746f6`), #694
+(`41cd928a`), #695 (`7bb6283d`) and #697 (`c2eee4fa`); ADR 0088 (#680) and its
+Amendments 1 and 2; plan `docs/plans/f3.74-live-breaker-state.md` (revision 3).
+Effort 13–15 days.
 
 PR5 ships SMOC standard stock v4 (the electrical tab: `lv_single_line` and a
 breaker table titled "Breakers"; the Overview: a compact diagram beside the
 class strip), a seed upgrade that moves an untouched seeded tab to v4 per tab
 and leaves an edited tab whole, the demo dashboard `sld-demo-rsmoc-wc` at
-`RSMOC-WC`, and a simulator that trips CR-Q9. No migration. The row flips to
-done in the docs PR after the merge. Owed: the `chore(agents):` PR for
-AGENTS.md lines 870–871.
+`RSMOC-WC`, and a simulator that trips CR-Q9. No migration in PR5; PR4 took
+`0099`. Owed: the browser check after the stack rebuild, and the
+`chore(agents):` PR for AGENTS.md lines 870–871.
 
 ### `F3.76` — the Master Data Hub in five areas ✅ 2026-09-30
 
