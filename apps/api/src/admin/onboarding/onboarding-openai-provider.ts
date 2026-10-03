@@ -14,6 +14,9 @@ import {
 /** Amendment 1 A1: OpenRouter is the `openai` package at this base URL. */
 export const OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1";
 
+/** The `openai` provider's base URL, passed explicitly so `OPENAI_BASE_URL` cannot redirect an organization's key. */
+export const OPENAI_BASE_URL = "https://api.openai.com/v1";
+
 /**
  * The OpenAI chat-completions adapter, used for `openai` and, with
  * `OPENROUTER_BASE_URL`, for `openrouter` (ADR 0090 Amendment 1 A1).
@@ -35,12 +38,18 @@ export class OpenAiCompatibleProvider implements OnboardingLlmProvider {
     readonly tools: readonly LlmToolDefinition[];
     readonly signal: AbortSignal;
   }): Promise<LlmReply> {
-    // Imported on use, as `handleOpenAiTurn` did, so the SDK loads only in a
-    // process that has a provider configured.
+    // Imported on use, so the SDK loads only in a process that has a provider
+    // configured for the turn.
     const { default: OpenAI } = await import("openai");
+    // Security review L7: every option the SDK would otherwise fill from the
+    // environment is passed explicitly. `OPENAI_ORG_ID` and `OPENAI_PROJECT_ID`
+    // would otherwise ride along as headers on an organization's own key, even
+    // to OpenRouter.
     const client = new OpenAI({
       apiKey: this.options.apiKey,
-      ...(this.options.baseURL ? { baseURL: this.options.baseURL } : {}),
+      baseURL: this.options.baseURL ?? OPENAI_BASE_URL,
+      organization: null,
+      project: null,
     });
     const completion = await client.chat.completions.create(
       {

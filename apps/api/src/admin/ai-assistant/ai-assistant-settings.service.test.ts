@@ -19,6 +19,8 @@ import {
   assertTestUsesTheGivenKeyFirst,
   assertTestUsesTheStoredKeyForTheSameProvider,
   assertTestWithNoStoredKeyIsRestrictedToThePlatformDefault,
+  assertALocationAdminIsRefusedEvenInScope,
+  assertAnOrganizationRowNeverTestsWithThePlatformKey,
 } from "./ai-assistant-settings.service.spec";
 
 /** Vitest entry point — see `admin.schema.test.ts` for the pattern (ADR 0014). One `it()` per claim. */
@@ -93,5 +95,13 @@ describe("AiAssistantSettingsService (F3.21, ADR 0090 Amendment 1 A5–A7)", () 
 
   it("tests with one trivial tool in one call", async () => {
     await assertTestSendsOneTrivialToolWithAutoChoice();
+  });
+
+  it("refuses a location admin by role, even in scope", async () => {
+    await assertALocationAdminIsRefusedEvenInScope();
+  });
+
+  it("never tests with the platform key for an organization with a row", async () => {
+    await assertAnOrganizationRowNeverTestsWithThePlatformKey();
   });
 });

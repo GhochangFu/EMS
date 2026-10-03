@@ -25,6 +25,9 @@ export const ANTHROPIC_FALLBACK_BETA = "server-side-fallback-2026-07-01";
 /** Amendment 1 A1: one non-streaming reply never exceeds this. */
 export const ANTHROPIC_MAX_TOKENS = 16_000;
 
+/** Passed explicitly so `ANTHROPIC_BASE_URL` cannot redirect an organization's key. */
+export const ANTHROPIC_BASE_URL = "https://api.anthropic.com";
+
 /**
  * The Anthropic Messages API adapter (ADR 0090 Amendment 1 A1).
  *
@@ -53,7 +56,11 @@ export class AnthropicProvider implements OnboardingLlmProvider {
     readonly signal: AbortSignal;
   }): Promise<LlmReply> {
     const { default: Anthropic } = await import("@anthropic-ai/sdk");
-    const client = new Anthropic({ apiKey: this.options.apiKey });
+    // Security review L7: `authToken: null` stops a platform
+    // `ANTHROPIC_AUTH_TOKEN` riding along as a Bearer token beside the
+    // organization's key. `ANTHROPIC_CUSTOM_HEADERS` has no option to refuse
+    // it; compose does not set it.
+    const client = new Anthropic({ apiKey: this.options.apiKey, authToken: null, baseURL: ANTHROPIC_BASE_URL });
     const system = input.messages
       .filter((message): message is { role: "system"; content: string } => message.role === "system")
       .map((message) => message.content)

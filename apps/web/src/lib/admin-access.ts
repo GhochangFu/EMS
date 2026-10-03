@@ -241,10 +241,11 @@ export function canAccessOnboarding(role: UserRole): boolean {
 
 /**
  * `F3.21` (ADR 0090 Amendment 1 A5) — whether the role may set an
- * organization's AI assistant provider, model and key. The API gates on
- * `canManageOrganization`, which only `admin` and `organization_admin` pass;
- * `location_admin` reaches the admin routes, so this is narrower than
- * `isMasterDataAdmin` on purpose.
+ * organization's AI assistant provider, model and key. The API checks the role
+ * first (`admin` or `organization_admin`) and then `canManageOrganization`;
+ * the role check matters, because `canManageOrganization` alone also admits a
+ * `location_admin` for its locations' organizations. So this is narrower than
+ * `isMasterDataAdmin` on purpose, and matches the API.
  */
 export function canManageAiAssistant(role: UserRole): boolean {
   return role === "admin" || role === "organization_admin";

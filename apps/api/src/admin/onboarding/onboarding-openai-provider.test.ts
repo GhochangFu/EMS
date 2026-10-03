@@ -26,7 +26,7 @@ import {
   assertAMissingChoiceIsAProviderError,
   assertFunctionToolCallsBecomeToolCalls,
   assertNoToolCallsIsFinalText,
-  assertOpenAiPassesNoBaseUrl,
+  assertOpenAiPinsItsBaseUrlAndNoOrgHeaders,
   assertOpenRouterUsesTheOpenRouterBaseUrlAndTheGivenKey,
   assertTheAdapterReadsNoEnv,
   assertTheSignalReachesTheSdk,
@@ -64,8 +64,8 @@ describe("OpenAI-compatible provider (F3.21, ADR 0090 Amendment 1 A1)", () => {
     await assertOpenRouterUsesTheOpenRouterBaseUrlAndTheGivenKey(capture);
   });
 
-  it("gives OpenAI the SDK's default base URL", async () => {
-    await assertOpenAiPassesNoBaseUrl(capture);
+  it("pins the OpenAI base URL and sends no organization or project header", async () => {
+    await assertOpenAiPinsItsBaseUrlAndNoOrgHeaders(capture);
   });
 
   it("reads no environment variable", async () => {

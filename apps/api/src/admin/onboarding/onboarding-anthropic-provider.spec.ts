@@ -1,4 +1,4 @@
-import { ANTHROPIC_FALLBACK_BETA, AnthropicProvider } from "./onboarding-anthropic-provider";
+import { ANTHROPIC_BASE_URL, ANTHROPIC_FALLBACK_BETA, AnthropicProvider } from "./onboarding-anthropic-provider";
 import { LlmProviderError, type LlmMessage, type LlmToolDefinition } from "./onboarding-llm-port";
 
 function assert(condition: boolean, message: string): void {
@@ -49,6 +49,8 @@ export async function assertTheCallShapeIsTheAmendmentsOne(capture: AnthropicCap
   });
   const body = capture.requests[0]?.body ?? {};
   assert(capture.constructed[0]?.apiKey === "org-key", "the client gets the constructor's key");
+  assert(capture.constructed[0]?.authToken === null, "no ANTHROPIC_AUTH_TOKEN can ride along as a Bearer token");
+  assert(capture.constructed[0]?.baseURL === ANTHROPIC_BASE_URL && ANTHROPIC_BASE_URL === "https://api.anthropic.com", "the base URL is explicit");
   assert(ANTHROPIC_FALLBACK_BETA === "server-side-fallback-2026-07-01", "the scalar fallback form's beta is pinned");
   assert(
     JSON.stringify(body.betas) === JSON.stringify(["server-side-fallback-2026-07-01"]) && body.fallbacks === "default",

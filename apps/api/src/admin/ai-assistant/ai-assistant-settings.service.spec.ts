@@ -53,7 +53,7 @@ type Built = { name: string; apiKey: string; model: string; tools?: readonly Llm
  * table), a recording audit writer, the real crypto and resolver, and a
  * factory that records what the Test button would call.
  */
-function harness(opts: { row?: Row | null; inScope?: boolean; testError?: unknown } = {}) {
+function harness(opts: { row?: Row | null; inScope?: boolean; testError?: unknown; role?: string } = {}) {
   const store: { row: Row | null } = { row: opts.row ?? null };
   const writes: { kind: "upsert" | "delete"; values?: Record<string, unknown> }[] = [];
   const audits: Record<string, unknown>[] = [];
@@ -79,7 +79,7 @@ function harness(opts: { row?: Row | null; inScope?: boolean; testError?: unknow
   const resolver = new OnboardingLlmResolver(db as never, crypto);
   resolver.readSetting = async () => (store.row ? { ...store.row } : null);
   const access = {
-    requireMasterDataUser: async () => ({ id: "user-1", role: "organization_admin" }),
+    requireMasterDataUser: async () => ({ id: "user-1", role: opts.role ?? "organization_admin" }),
     canManageOrganization: async () => opts.inScope ?? true,
   };
   const audit = { write: async (input: Record<string, unknown>) => void audits.push(input) };
@@ -312,5 +312,39 @@ export async function assertTestNeverSpendsAStoredKeyOnAnotherProvider(): Promis
     const { service, built } = harness({ row: storedRow("openrouter") });
     const error = await rejection(service.test(JWT, ORG, { provider: "anthropic", model: "claude-sonnet-5-5" }));
     assert(error instanceof BadRequestException && built.length === 0, "the stored key is not used for another provider");
+  });
+}
+
+/**
+ * Security review H1. `canManageOrganization` answers **true** here, so the
+ * role check alone is what refuses: a `location_admin` passes that predicate for
+ * every organization one of its locations belongs to.
+ */
+export async function assertALocationAdminIsRefusedEvenInScope(): Promise<void> {
+  await withEnv({}, async () => {
+    const { service, writes, built } = harness({ role: "location_admin", inScope: true, row: storedRow() });
+    const runs = [
+      service.get(JWT, ORG),
+      service.put(JWT, ORG, { provider: "openrouter", model: "x/y", apiKey: "sk-or-attacker-key" }),
+      service.remove(JWT, ORG),
+      service.test(JWT, ORG, { provider: "openrouter", model: "moonshotai/kimi-k3" }),
+    ];
+    for (const run of runs) {
+      assert((await rejection(run)) instanceof ForbiddenException, "a location_admin is refused by role");
+    }
+    assert(writes.length === 0 && built.length === 0, "nothing is written and nothing is called");
+  });
+  await withEnv({}, async () => {
+    const admin = harness({ role: "admin", inScope: true });
+    assert((await admin.service.get(JWT, ORG)).source === "platform", "positive control: a global admin passes");
+  });
+}
+
+/** Security review L4: an organization with its own row never tests with the platform key. */
+export async function assertAnOrganizationRowNeverTestsWithThePlatformKey(): Promise<void> {
+  await withEnv({}, async () => {
+    const { service, built } = harness({ row: storedRow("off", null) });
+    const error = await rejection(service.test(JWT, ORG, { provider: "openrouter", model: "z-ai/glm-5.3-flash" }));
+    assert(error instanceof BadRequestException && built.length === 0, "the platform pair is refused for an org with a row");
   });
 }

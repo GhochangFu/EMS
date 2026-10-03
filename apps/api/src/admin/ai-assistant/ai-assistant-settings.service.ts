@@ -43,9 +43,19 @@ export class AiAssistantSettingsService {
     private readonly resolver: OnboardingLlmResolver,
   ) {}
 
-  /** The acting user's `bms.users` id, after the scope check. */
+  /**
+   * The acting user's `bms.users` id, after the role and scope checks.
+   *
+   * Security review H1: `canManageOrganization` alone admits a
+   * `location_admin` for every organization one of its locations belongs to.
+   * Ruling 7 meant an admin of that organization, so the role is checked first,
+   * as the onboarding chat does (`assertOnboardingAccess`).
+   */
   private async gate(jwt: JwtPayload, organizationId: string): Promise<string> {
     const user = await this.accessControl.requireMasterDataUser(jwt);
+    if (user.role !== "admin" && user.role !== "organization_admin") {
+      throw new ForbiddenException("The AI assistant setting requires admin or organization_admin role");
+    }
     if (!(await this.accessControl.canManageOrganization(jwt, organizationId))) {
       throw new ForbiddenException("Organization is outside your access scope");
     }
@@ -165,10 +175,15 @@ export class AiAssistantSettingsService {
   async test(jwt: JwtPayload, organizationId: string, body: TestAiAssistantBody): Promise<AiAssistantTestResultDto> {
     await this.gate(jwt, organizationId);
     let apiKey = body.apiKey;
-    if (apiKey === undefined) {
-      const row = await this.resolver.readSetting(organizationId);
-      if (row && row.provider === body.provider) {
+    const row = apiKey === undefined ? await this.resolver.readSetting(organizationId) : null;
+    if (apiKey === undefined && row) {
+      if (row.provider === body.provider) {
         apiKey = this.resolver.decryptKey(row) ?? undefined;
+      }
+      // Security review L4: an organization with its own row never tests with
+      // the platform key, as it never chats with it (A4).
+      if (apiKey === undefined) {
+        throw new BadRequestException("There is no key to test: enter one, or save one for this provider first.");
       }
     }
     if (apiKey === undefined) {

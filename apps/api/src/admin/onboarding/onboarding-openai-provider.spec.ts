@@ -1,6 +1,6 @@
 import { createLlmProvider } from "./onboarding-llm-factory";
 import { LlmProviderError, type LlmToolDefinition, type OnboardingLlmProvider } from "./onboarding-llm-port";
-import { OPENROUTER_BASE_URL, OpenAiCompatibleProvider } from "./onboarding-openai-provider";
+import { OPENAI_BASE_URL, OPENROUTER_BASE_URL, OpenAiCompatibleProvider } from "./onboarding-openai-provider";
 
 function assert(condition: boolean, message: string): void {
   if (!condition) {
@@ -142,10 +142,12 @@ export async function assertOpenRouterUsesTheOpenRouterBaseUrlAndTheGivenKey(cap
   assert(capture.requests[0]?.body.model === "z-ai/glm-5.3-flash", "and the given model");
 }
 
-export async function assertOpenAiPassesNoBaseUrl(capture: OpenAiCapture): Promise<void> {
+export async function assertOpenAiPinsItsBaseUrlAndNoOrgHeaders(capture: OpenAiCapture): Promise<void> {
   reset(capture, finalReply);
   await provider("openai").complete({ messages: [{ role: "user", content: "hi" }], tools: [], signal: new AbortController().signal });
-  assert(!("baseURL" in (capture.constructed[0] ?? {})), "the OpenAI client takes the SDK's default base URL");
+  const options = capture.constructed[0] ?? {};
+  assert(options.baseURL === OPENAI_BASE_URL && OPENAI_BASE_URL === "https://api.openai.com/v1", "the OpenAI base URL is explicit");
+  assert(options.organization === null && options.project === null, "no OPENAI_ORG_ID or OPENAI_PROJECT_ID header can ride along");
 }
 
 export async function assertTheAdapterReadsNoEnv(capture: OpenAiCapture): Promise<void> {
