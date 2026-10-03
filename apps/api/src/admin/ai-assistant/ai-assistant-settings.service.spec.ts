@@ -59,6 +59,14 @@ function harness(opts: { row?: Row | null; inScope?: boolean; testError?: unknow
   const audits: Record<string, unknown>[] = [];
   const tx = {
     execute: async () => undefined,
+    // put()'s locked read (`select … for update`) inside its write transaction.
+    select: () => ({
+      from: () => ({
+        where: () => ({
+          for: async () => (store.row ? [{ ...store.row }] : []),
+        }),
+      }),
+    }),
     insert: () => ({
       values: (values: Record<string, unknown>) => ({
         onConflictDoUpdate: async () => {

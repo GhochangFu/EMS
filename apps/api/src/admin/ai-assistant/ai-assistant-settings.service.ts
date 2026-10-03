@@ -1,5 +1,5 @@
 import { BadRequestException, ForbiddenException, Inject, Injectable } from "@nestjs/common";
-import { eq, sql } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 
 import { organizationLlmSettings } from "@bms/db";
 import type { BmsDb } from "@bms/db";
@@ -98,59 +98,58 @@ export class AiAssistantSettingsService {
     if (body.apiKey !== undefined && !CredentialCryptoService.isConfigured()) {
       throw new BadRequestException(NO_ENCRYPTION_KEY_MESSAGE);
     }
-    const existing = await this.resolver.readSetting(organizationId);
-    const hadKey = existing?.keyCiphertext != null;
-    // An omitted key keeps the stored one only for the same provider: a key
-    // belongs to the provider it was issued by. Off stores no key (ruling 14).
-    const keepStored = body.apiKey === undefined && body.provider !== "off" && existing?.provider === body.provider;
-    let key: Pick<SettingRow, "keyCiphertext" | "keyIv" | "keyVersion" | "keyLast4">;
+    type StoredKey = Pick<SettingRow, "keyCiphertext" | "keyIv" | "keyVersion" | "keyLast4">;
+    let entered: StoredKey | null = null;
     if (body.apiKey !== undefined) {
       const encrypted = this.crypto.encrypt({ apiKey: body.apiKey });
-      key = {
+      entered = {
         keyCiphertext: encrypted.ciphertext,
         keyIv: encrypted.iv,
         keyVersion: encrypted.keyVersion,
         keyLast4: body.apiKey.slice(-4),
       };
-    } else if (keepStored && existing) {
-      key = { keyCiphertext: existing.keyCiphertext, keyIv: existing.keyIv, keyVersion: existing.keyVersion, keyLast4: existing.keyLast4 };
-    } else {
-      key = { keyCiphertext: null, keyIv: null, keyVersion: null, keyLast4: null };
     }
-    const keyChanged = body.apiKey !== undefined || (hadKey && key.keyCiphertext === null);
-    const settings = {
-      provider: body.provider,
-      model: body.provider === "off" ? null : (body.model ?? null),
-      updatedBy: actorId,
-      updatedAt: new Date(),
-    };
-    const values = { ...settings, ...key };
-    // F4.186: `existing` was read outside this transaction, so two writers may
-    // have landed since. (1) Security review M1, ADR 0062: `rotate-credentials`
-    // re-encrypted the key — so a kept key is never written back from the read,
-    // which would undo the rotation; the stored columns stay. (2) Another admin
-    // changed the provider and its key — so the stored key stays only while the
-    // stored provider still equals this one, else all four columns are cleared
-    // (A3: a key belongs to the provider it was issued by; the row then reads
-    // incomplete, and `keyChanged` under-reports that clear). The insert still
-    // carries the read's key, for a row deleted meanwhile.
-    const t = organizationLlmSettings;
-    const keptIfSameProvider = (column: typeof t.keyCiphertext | typeof t.keyIv | typeof t.keyVersion | typeof t.keyLast4) =>
-      sql`CASE WHEN ${t.provider} = excluded.provider THEN ${column} ELSE NULL END`;
-    const set = keepStored
-      ? {
-          ...settings,
-          keyCiphertext: keptIfSameProvider(t.keyCiphertext),
-          keyIv: keptIfSameProvider(t.keyIv),
-          keyVersion: keptIfSameProvider(t.keyVersion),
-          keyLast4: keptIfSameProvider(t.keyLast4),
-        }
-      : values;
     await withTenant(this.tenantDb, organizationId, async (tx) => {
+      // F4.186 (security review M1, re-review L-a and L-b): the decision is
+      // made on the committed row, locked until this transaction ends, never
+      // on an earlier read. A concurrent `rotate-credentials` either committed
+      // before this lock (the kept bytes are its rotated ones) or waits on it,
+      // and its compare-and-set then still matches the kept bytes, so it
+      // rotates after this commit. A concurrent delete means no row, so no key
+      // is kept. A concurrent provider change is seen, so its key is not kept
+      // and `keyChanged` is exact. Residual: two concurrent first saves both
+      // see no row and lock nothing; the second's ON CONFLICT writes its own
+      // (provider, entered key or no key) pair — consistent, and never a key
+      // under a provider it was not issued by.
+      const [existing] = await tx
+        .select()
+        .from(organizationLlmSettings)
+        .where(eq(organizationLlmSettings.organizationId, organizationId))
+        .for("update");
+      const hadKey = existing?.keyCiphertext != null;
+      // An omitted key keeps the stored one only for the same provider: a key
+      // belongs to the provider it was issued by. Off stores no key (ruling 14).
+      const keepStored = body.apiKey === undefined && body.provider !== "off" && existing?.provider === body.provider;
+      let key: StoredKey;
+      if (entered) {
+        key = entered;
+      } else if (keepStored && existing) {
+        key = { keyCiphertext: existing.keyCiphertext, keyIv: existing.keyIv, keyVersion: existing.keyVersion, keyLast4: existing.keyLast4 };
+      } else {
+        key = { keyCiphertext: null, keyIv: null, keyVersion: null, keyLast4: null };
+      }
+      const keyChanged = body.apiKey !== undefined || (hadKey && key.keyCiphertext === null);
+      const values = {
+        provider: body.provider,
+        model: body.provider === "off" ? null : (body.model ?? null),
+        updatedBy: actorId,
+        updatedAt: new Date(),
+        ...key,
+      };
       await tx
         .insert(organizationLlmSettings)
         .values({ organizationId, ...values })
-        .onConflictDoUpdate({ target: organizationLlmSettings.organizationId, set });
+        .onConflictDoUpdate({ target: organizationLlmSettings.organizationId, set: values });
       await this.audit.write(
         {
           actor: jwt,

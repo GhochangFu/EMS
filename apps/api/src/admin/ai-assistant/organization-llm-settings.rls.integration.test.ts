@@ -7,8 +7,9 @@ import { openIntegrationPool, requireIntegrationDb } from "../../testing/integra
 import { asRole } from "../../testing/role-urls";
 import {
   aHalfKeyIsRefused,
-  aKeptKeyIsClearedWhenTheProviderChangedSinceTheRead,
-  aModelOnlySaveKeepsAKeyRotatedSinceItsRead,
+  aModelOnlySaveAfterADeleteStoresNoKey,
+  aModelOnlySaveKeepsAKeyRotatedWhileItWaited,
+  aProviderChangeWhileItWaitedClearsTheKeyAndSaysSo,
   aProviderWithoutAModelIsRefused,
   aTenantCannotReadAnotherOrganizationsRow,
   aTenantCannotWriteAnotherOrganizationsRow,
@@ -136,11 +137,17 @@ describe.skipIf(!connectionString)("F3.21 — bms.organization_llm_settings (mig
     await deletingTheOrganizationCascades(ctx);
   });
 
-  it("aModelOnlySaveKeepsAKeyRotatedSinceItsRead", async () => {
-    await aModelOnlySaveKeepsAKeyRotatedSinceItsRead(ctx);
+  // The three lock-race cases poll up to BLOCK_WAIT_MS for put() to block, so
+  // each gets more than the 5 s default.
+  it("aModelOnlySaveKeepsAKeyRotatedWhileItWaited", { timeout: 15_000 }, async () => {
+    await aModelOnlySaveKeepsAKeyRotatedWhileItWaited(ctx);
   });
 
-  it("aKeptKeyIsClearedWhenTheProviderChangedSinceTheRead", async () => {
-    await aKeptKeyIsClearedWhenTheProviderChangedSinceTheRead(ctx);
+  it("aModelOnlySaveAfterADeleteStoresNoKey", { timeout: 15_000 }, async () => {
+    await aModelOnlySaveAfterADeleteStoresNoKey(ctx);
+  });
+
+  it("aProviderChangeWhileItWaitedClearsTheKeyAndSaysSo", { timeout: 15_000 }, async () => {
+    await aProviderChangeWhileItWaitedClearsTheKeyAndSaysSo(ctx);
   });
 });
