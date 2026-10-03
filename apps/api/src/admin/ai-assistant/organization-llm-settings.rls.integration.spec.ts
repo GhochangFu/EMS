@@ -5,6 +5,9 @@ import { expect } from "vitest";
 import type { BmsDb } from "@bms/db";
 
 import { withTenant } from "../../database/tenant-context";
+import { CredentialCryptoService } from "../../security/credential-crypto.service";
+import { OnboardingLlmResolver } from "../onboarding/onboarding-llm-resolver";
+import { AiAssistantSettingsService } from "./ai-assistant-settings.service";
 
 /**
  * `F3.21` / ADR 0090 Amendment 1 A3 — `bms.organization_llm_settings` against
@@ -22,7 +25,9 @@ import { withTenant } from "../../database/tenant-context";
  * (ADR 0014). One exported function per claim, one `it()` each, run in this
  * file's order: the first writes organization A's row, which the next two
  * read and attack; the CHECK probes write to B, which has no row (the primary
- * key allows one per organization); the cascade case writes B's row last.
+ * key allows one per organization); the cascade case writes B's row last; the
+ * lock-race cases (8–11, `F4.186`) rewrite A's row through the service while a
+ * second connection holds it.
  *
  * **Counts run as `bms_fleet`, never `bms_owner`.** `FORCE` binds the owner,
  * so an owner count with no GUC answers 0 with rows present.
@@ -225,4 +230,328 @@ export async function deletingTheOrganizationCascades(ctx: LlmSettingsCtx): Prom
   expect(await fleetCount(ctx, ctx.orgB), "control: B's row exists before the delete").toBe(1);
   await ctx.fleetPool.query("DELETE FROM bms.organizations WHERE id = $1", [ctx.orgB]);
   expect(await fleetCount(ctx, ctx.orgB), "the row went with its organization").toBe(0);
+}
+
+type RecordedAudit = { action: string; payload: Record<string, unknown> };
+
+/**
+ * The real service on the tenant pool, with the gate open and an audit writer
+ * that records each entry `put()` hands it inside its write transaction, then
+ * runs `inTransaction` (if given) on that transaction before it commits.
+ */
+function realService(
+  ctx: LlmSettingsCtx,
+  inTransaction?: (tx: BmsDb) => Promise<void>,
+): { service: AiAssistantSettingsService; audits: RecordedAudit[] } {
+  const crypto = new CredentialCryptoService();
+  const resolver = new OnboardingLlmResolver(ctx.tenantDb, crypto);
+  const access = {
+    // A null actor keeps `updated_by` clear of the users FK; the gate is not under test.
+    requireMasterDataUser: async () => ({ id: null, role: "admin" }),
+    canManageOrganization: async () => true,
+  };
+  const audits: RecordedAudit[] = [];
+  const audit = {
+    write: async (input: RecordedAudit, tx: BmsDb) => {
+      audits.push(input);
+      if (inTransaction) await inTransaction(tx);
+    },
+  };
+  const service = new AiAssistantSettingsService(ctx.tenantDb, access as never, audit as never, crypto, resolver);
+  return { service, audits };
+}
+
+/** Rewrites A's row as an OpenAI setting with the version-1 key, whatever an earlier case left. */
+async function plantOpenAiRow(ctx: LlmSettingsCtx): Promise<void> {
+  const planted = await ctx.fleetPool.query(
+    `UPDATE bms.organization_llm_settings
+        SET provider = 'openai', model = 'gpt-4o-mini',
+            key_ciphertext = $2, key_iv = $3, key_version = 1, key_last4 = 'xyz9'
+      WHERE organization_id = $1`,
+    [ctx.orgA, CIPHERTEXT, IV],
+  );
+  expect(planted.rowCount, "control: A's OpenAI row with its version-1 key was planted").toBe(1);
+}
+
+/** How long a case waits for `put()` to block on the holder's lock before it fails by name. */
+const BLOCK_WAIT_MS = 3_000;
+
+/**
+ * Races `put()` against a second writer. A fleet connection opens a transaction
+ * and locks A's row (`SELECT … FOR UPDATE`); `put()` starts and is polled until
+ * a backend waits on the holder (`pg_blocking_pids`); the holder then runs
+ * `competing` and commits, and `put()` is awaited. `hit` is the competing
+ * statement's row count and `blocked` the number of waiters the poll saw —
+ * both positive controls that the race ran as described.
+ */
+async function putRacingALockHolder(
+  ctx: LlmSettingsCtx,
+  competing: (holder: pg.PoolClient) => Promise<number | null>,
+): Promise<{ hit: number | null; blocked: number; audits: RecordedAudit[] }> {
+  const { service, audits } = realService(ctx);
+  const holder = await ctx.fleetPool.connect();
+  let open = false;
+  let settled: Promise<unknown> | undefined;
+  try {
+    await holder.query("BEGIN");
+    open = true;
+    const pid = (await holder.query<{ pid: number }>("SELECT pg_backend_pid() AS pid")).rows[0]?.pid;
+    const locked = await holder.query(
+      "SELECT 1 FROM bms.organization_llm_settings WHERE organization_id = $1 FOR UPDATE",
+      [ctx.orgA],
+    );
+    expect(locked.rowCount, "control: the holder locked A's row").toBe(1);
+
+    const pending = service.put({ sub: "kc-f4186" } as never, ctx.orgA, { provider: "openai", model: "gpt-4.1-mini" });
+    settled = pending.then(
+      () => undefined,
+      () => undefined,
+    );
+
+    let blocked = 0;
+    const deadline = Date.now() + BLOCK_WAIT_MS;
+    while (blocked === 0 && Date.now() < deadline) {
+      const { rows } = await ctx.fleetPool.query<{ n: number }>(
+        "SELECT count(*)::int AS n FROM pg_stat_activity WHERE $1 = ANY(pg_blocking_pids(pid))",
+        [pid],
+      );
+      blocked = rows[0]?.n ?? 0;
+      if (blocked === 0) await new Promise((resolve) => setTimeout(resolve, 25));
+    }
+    if (blocked === 0) {
+      throw new Error(`putRacingALockHolder: put() never waited on the holder's row lock within ${BLOCK_WAIT_MS} ms`);
+    }
+
+    const hit = await competing(holder);
+    await holder.query("COMMIT");
+    open = false;
+    await pending;
+    return { hit, blocked, audits };
+  } finally {
+    if (open) await holder.query("ROLLBACK").catch(() => undefined);
+    holder.release();
+    await settled;
+  }
+}
+
+type StoredKeyRow = {
+  provider: string;
+  model: string | null;
+  key_ciphertext: Buffer | null;
+  key_iv: Buffer | null;
+  key_version: number | null;
+  key_last4: string | null;
+};
+
+async function storedKeyRow(ctx: LlmSettingsCtx, organizationId: string): Promise<StoredKeyRow | undefined> {
+  const { rows } = await ctx.fleetPool.query<StoredKeyRow>(
+    `SELECT provider, model, key_ciphertext, key_iv, key_version, key_last4
+       FROM bms.organization_llm_settings WHERE organization_id = $1`,
+    [organizationId],
+  );
+  return rows[0];
+}
+
+/**
+ * 8 — `F4.186`, security review M1: a model-only save never writes back a key
+ * that was rotated while it waited. `rotate-credentials` holds A's row and
+ * re-encrypts the key (version 2) while `put()` waits on that row; the save
+ * must change the model and leave the key at version 2. A write-back of the
+ * version-1 bytes would be reported as rotated and then fall to the guided mode
+ * once the previous key is unset (ADR 0062).
+ */
+export async function aModelOnlySaveKeepsAKeyRotatedWhileItWaited(ctx: LlmSettingsCtx): Promise<void> {
+  await plantOpenAiRow(ctx);
+  const rotated = Buffer.from("rotated-v2-ciphertext");
+  const rotatedIv = Buffer.from("rotated-iv12");
+
+  const { hit, blocked, audits } = await putRacingALockHolder(ctx, async (holder) => {
+    const { rowCount } = await holder.query(
+      `UPDATE bms.organization_llm_settings
+          SET key_ciphertext = $2, key_iv = $3, key_version = 2, key_last4 = 'rot2'
+        WHERE organization_id = $1`,
+      [ctx.orgA, rotated, rotatedIv],
+    );
+    return rowCount;
+  });
+
+  expect(blocked, "control: put() waited on the holder's lock").toBeGreaterThan(0);
+  expect(hit, "control: the rotation rewrote A's row").toBe(1);
+  const row = await storedKeyRow(ctx, ctx.orgA);
+  expect(row?.model, "control: the save landed").toBe("gpt-4.1-mini");
+  expect(row?.key_version, "the rotated key version stays").toBe(2);
+  expect(row?.key_ciphertext?.equals(rotated), "the rotated ciphertext stays").toBe(true);
+  expect(row?.key_iv?.equals(rotatedIv), "the rotated IV stays").toBe(true);
+  expect(row?.key_last4).toBe("rot2");
+  expect(audits.map((a) => a.payload.keyChanged), "a kept key is not a key change").toEqual([false]);
+}
+
+/**
+ * 9 — `F4.186`, security re-review L-a: a model-only save never brings back a
+ * key that another admin deleted while it waited. The holder deletes A's row
+ * (`remove()`, perhaps because the key leaked) while `put()` waits on it; the
+ * save then inserts a fresh row, and that row must carry no key at all.
+ */
+export async function aModelOnlySaveAfterADeleteStoresNoKey(ctx: LlmSettingsCtx): Promise<void> {
+  await plantOpenAiRow(ctx);
+
+  const { hit, blocked } = await putRacingALockHolder(ctx, async (holder) => {
+    const { rowCount } = await holder.query("DELETE FROM bms.organization_llm_settings WHERE organization_id = $1", [
+      ctx.orgA,
+    ]);
+    return rowCount;
+  });
+
+  expect(blocked, "control: put() waited on the holder's lock").toBeGreaterThan(0);
+  expect(hit, "control: the holder deleted A's row").toBe(1);
+  const row = await storedKeyRow(ctx, ctx.orgA);
+  expect(row?.provider, "control: the save wrote a row").toBe("openai");
+  expect(row?.model).toBe("gpt-4.1-mini");
+  expect(
+    [row?.key_ciphertext, row?.key_iv, row?.key_version, row?.key_last4],
+    "the deleted key must not come back",
+  ).toEqual([null, null, null, null]);
+}
+
+/**
+ * 10 — `F4.186`, security re-review L-b: a kept key never lands under a
+ * provider it was not issued by, and the audit says the key went. Admin B
+ * saves `anthropic` with an Anthropic key while admin A's `openai` save with
+ * no key waits on the row. Keeping the stored columns would leave `openai`
+ * holding B's Anthropic key, and the next chat turn would send it to OpenAI;
+ * they must be cleared (A3: a key belongs to the provider it was issued by),
+ * and A's audit entry must report `keyChanged: true`, because it removed one.
+ */
+export async function aProviderChangeWhileItWaitedClearsTheKeyAndSaysSo(ctx: LlmSettingsCtx): Promise<void> {
+  await plantOpenAiRow(ctx);
+
+  const { hit, blocked, audits } = await putRacingALockHolder(ctx, async (holder) => {
+    const { rowCount } = await holder.query(
+      `UPDATE bms.organization_llm_settings
+          SET provider = 'anthropic', model = 'claude-haiku-4-5',
+              key_ciphertext = $2, key_iv = $3, key_version = 1, key_last4 = 'anth'
+        WHERE organization_id = $1`,
+      [ctx.orgA, Buffer.from("anthropic-issued-key"), Buffer.from("anthrop-iv12")],
+    );
+    return rowCount;
+  });
+
+  expect(blocked, "control: put() waited on the holder's lock").toBeGreaterThan(0);
+  expect(hit, "control: B's Anthropic save rewrote A's row").toBe(1);
+  const row = await storedKeyRow(ctx, ctx.orgA);
+  expect(row?.provider, "control: A's save landed").toBe("openai");
+  expect(row?.model).toBe("gpt-4.1-mini");
+  expect(
+    [row?.key_ciphertext, row?.key_iv, row?.key_version, row?.key_last4],
+    "B's Anthropic key must not stay under openai",
+  ).toEqual([null, null, null, null]);
+  expect(audits.map((a) => a.action), "control: put() wrote one audit entry").toEqual([
+    "master.organization.ai_assistant.update",
+  ]);
+  expect(audits[0]?.payload.keyChanged, "the audit must say the key was cleared").toBe(true);
+}
+
+const CREDENTIAL_ENV = ["CREDENTIAL_ENCRYPTION_KEY", "CREDENTIAL_ENCRYPTION_KEY_PREVIOUS", "CREDENTIAL_ENCRYPTION_KEY_VERSION"];
+
+/**
+ * 11 — `F4.186`, security re-review L-c: two concurrent FIRST saves for one
+ * organization. Save X enters an OpenAI key; save Y, for the same provider,
+ * enters none. Neither sees a row, so `FOR UPDATE` locks nothing. X is held
+ * inside its transaction after its upsert (its audit write waits on a gate);
+ * Y starts and is polled until it waits on X's backend; X is released. Y must
+ * then decide on X's committed row and keep X's key — without serialization,
+ * Y decided "no row, no key" and its ON CONFLICT cleared X's key while its
+ * audit said `keyChanged: false`.
+ */
+export async function aConcurrentFirstSaveKeepsTheOtherSavesKey(ctx: LlmSettingsCtx): Promise<void> {
+  const emptied = await ctx.fleetPool.query("DELETE FROM bms.organization_llm_settings WHERE organization_id = $1", [
+    ctx.orgA,
+  ]);
+  expect(emptied.rowCount, "control: A's row was removed, so both saves are first saves").toBe(1);
+
+  const previousEnv = Object.fromEntries(CREDENTIAL_ENV.map((name) => [name, process.env[name]]));
+  for (const name of CREDENTIAL_ENV) delete process.env[name];
+  process.env.CREDENTIAL_ENCRYPTION_KEY = Buffer.alloc(32, 0x2a).toString("base64");
+
+  const X_KEY = "sk-x-first-save-key-k3y9";
+  let release: () => void = () => undefined;
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  let paused: (pid: number) => void = () => undefined;
+  const xPaused = new Promise<number>((resolve) => {
+    paused = resolve;
+  });
+  const x = realService(ctx, async (tx) => {
+    const { rows } = await tx.execute<{ pid: number }>(sql`select pg_backend_pid() as pid`);
+    paused(Number(rows[0]?.pid));
+    await gate;
+  });
+  const y = realService(ctx);
+
+  const xPending = x.service.put({ sub: "kc-f4186-x" } as never, ctx.orgA, {
+    provider: "openai",
+    model: "gpt-4o-mini",
+    apiKey: X_KEY,
+  });
+  const xSettled = xPending.then(
+    () => undefined,
+    () => undefined,
+  );
+  let ySettled: Promise<unknown> | undefined;
+  try {
+    const xPid = await Promise.race([
+      xPaused,
+      xPending.then(() => {
+        throw new Error("aConcurrentFirstSaveKeepsTheOtherSavesKey: save X committed without pausing");
+      }),
+      new Promise<never>((_, reject) =>
+        setTimeout(
+          () => reject(new Error(`aConcurrentFirstSaveKeepsTheOtherSavesKey: save X never paused within ${BLOCK_WAIT_MS} ms`)),
+          BLOCK_WAIT_MS,
+        ),
+      ),
+    ]);
+
+    const yPending = y.service.put({ sub: "kc-f4186-y" } as never, ctx.orgA, { provider: "openai", model: "gpt-4.1-mini" });
+    ySettled = yPending.then(
+      () => undefined,
+      () => undefined,
+    );
+
+    let blocked = 0;
+    const deadline = Date.now() + BLOCK_WAIT_MS;
+    while (blocked === 0 && Date.now() < deadline) {
+      const { rows } = await ctx.fleetPool.query<{ n: number }>(
+        "SELECT count(*)::int AS n FROM pg_stat_activity WHERE $1 = ANY(pg_blocking_pids(pid))",
+        [xPid],
+      );
+      blocked = rows[0]?.n ?? 0;
+      if (blocked === 0) await new Promise((resolve) => setTimeout(resolve, 25));
+    }
+    if (blocked === 0) {
+      throw new Error(`aConcurrentFirstSaveKeepsTheOtherSavesKey: save Y never waited on save X within ${BLOCK_WAIT_MS} ms`);
+    }
+
+    release();
+    await xPending;
+    await yPending;
+
+    expect(blocked, "control: save Y waited on save X's transaction").toBeGreaterThan(0);
+    expect(x.audits.map((a) => a.payload.keyChanged), "control: save X entered a key").toEqual([true]);
+    const row = await storedKeyRow(ctx, ctx.orgA);
+    expect(row?.provider).toBe("openai");
+    expect(row?.model, "control: save Y landed last").toBe("gpt-4.1-mini");
+    expect(row?.key_ciphertext, "save X's key must not be cleared by save Y").not.toBeNull();
+    expect(row?.key_last4, "the stored key is save X's").toBe(X_KEY.slice(-4));
+    expect(y.audits.map((a) => a.payload.keyChanged), "save Y kept the key, so it changed none").toEqual([false]);
+  } finally {
+    release();
+    await xSettled;
+    await ySettled;
+    for (const [name, value] of Object.entries(previousEnv)) {
+      if (value === undefined) delete process.env[name];
+      else process.env[name] = value;
+    }
+  }
 }

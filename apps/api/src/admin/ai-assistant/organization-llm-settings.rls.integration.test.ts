@@ -6,7 +6,11 @@ import { createDb } from "@bms/db";
 import { openIntegrationPool, requireIntegrationDb } from "../../testing/integration-db-gate";
 import { asRole } from "../../testing/role-urls";
 import {
+  aConcurrentFirstSaveKeepsTheOtherSavesKey,
   aHalfKeyIsRefused,
+  aModelOnlySaveAfterADeleteStoresNoKey,
+  aModelOnlySaveKeepsAKeyRotatedWhileItWaited,
+  aProviderChangeWhileItWaitedClearsTheKeyAndSaysSo,
   aProviderWithoutAModelIsRefused,
   aTenantCannotReadAnotherOrganizationsRow,
   aTenantCannotWriteAnotherOrganizationsRow,
@@ -132,5 +136,23 @@ describe.skipIf(!connectionString)("F3.21 — bms.organization_llm_settings (mig
 
   it("deletingTheOrganizationCascades", async () => {
     await deletingTheOrganizationCascades(ctx);
+  });
+
+  // The three lock-race cases poll up to BLOCK_WAIT_MS for put() to block, so
+  // each gets more than the 5 s default.
+  it("aModelOnlySaveKeepsAKeyRotatedWhileItWaited", { timeout: 15_000 }, async () => {
+    await aModelOnlySaveKeepsAKeyRotatedWhileItWaited(ctx);
+  });
+
+  it("aModelOnlySaveAfterADeleteStoresNoKey", { timeout: 15_000 }, async () => {
+    await aModelOnlySaveAfterADeleteStoresNoKey(ctx);
+  });
+
+  it("aProviderChangeWhileItWaitedClearsTheKeyAndSaysSo", { timeout: 15_000 }, async () => {
+    await aProviderChangeWhileItWaitedClearsTheKeyAndSaysSo(ctx);
+  });
+
+  it("aConcurrentFirstSaveKeepsTheOtherSavesKey", { timeout: 15_000 }, async () => {
+    await aConcurrentFirstSaveKeepsTheOtherSavesKey(ctx);
   });
 });

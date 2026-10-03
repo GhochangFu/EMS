@@ -2,7 +2,7 @@ import { randomBytes, randomUUID } from "node:crypto";
 
 import { eq, is, isNotNull, TransactionRollbackError } from "drizzle-orm";
 
-import { notificationChannels, rtuConnectionConfigs, rtus } from "@bms/db";
+import { notificationChannels, organizationLlmSettings, organizations, rtuConnectionConfigs, rtus } from "@bms/db";
 import type { BmsDb } from "@bms/db";
 
 import type { BmsTx } from "../database/tenant-context";
@@ -41,10 +41,22 @@ import {
  * statement is invisible for the rest of it, and it **nulls the secret columns
  * of every committed row inside the transaction** before a fixture is planted
  * — rolled back with everything else, so nothing on the shared database is
- * changed. The channels' `notification_channels_secret_complete_check` is why
- * all three columns go together. The residual hazard is a concurrent suite
- * deleting one of those rows in the milliseconds between the snapshot and the
+ * changed. The quarantine covers all three tables the walk reads. The channels'
+ * `notification_channels_secret_complete_check` (migration 0038) is why their
+ * three columns go together, and `organization_llm_settings_key_check`
+ * (migration 0100) is why all four LLM `key_*` columns do — `key_last4`
+ * included, or the CHECK rejects the update. The residual hazard is a concurrent suite
+ * updating or deleting one of those rows between the snapshot and the
  * quarantine, which surfaces as a named `40001`, not a wrong count.
+ *
+ * **That hazard is not rare since `F4.186`.** `organization-llm-settings.rls
+ * .integration` commits keyed `organization_llm_settings` rows through
+ * `put()` and deletes them in `afterAll`, in parallel with this file. Measured
+ * on 2026-10-03: 2 of 14 runs of the two files together failed the LLM
+ * quarantine with `could not serialize access due to concurrent update`; with
+ * the retry, 8 of 8 passed and 8 retries fired. So
+ * {@link withFixtureTx} retries a `40001`, and only a `40001`, on a fresh
+ * snapshot — an assertion error is never retried.
  *
  * **Decision 11 — no test requires a deployed key.** Each function generates
  * its own two 32-byte keys, encrypts its fixtures under key A at version 1, and
@@ -80,9 +92,12 @@ async function withRollback(
 }
 
 /**
- * Makes every committed secret-bearing row invisible to the walk for the rest
- * of the transaction — see the file docblock. The channel update nulls all
- * three columns because the CHECK constraint ties them together.
+ * Makes every committed secret-bearing row of the three tables invisible to the
+ * walk for the rest of the transaction — see the file docblock. The channel
+ * update nulls all three columns because
+ * `notification_channels_secret_complete_check` (migration 0038) ties them
+ * together; the LLM update nulls all four `key_*` columns because
+ * `organization_llm_settings_key_check` (migration 0100) does the same.
  */
 async function quarantineCommittedSecrets(tx: BmsTx): Promise<void> {
   await tx
@@ -93,15 +108,40 @@ async function quarantineCommittedSecrets(tx: BmsTx): Promise<void> {
     .update(notificationChannels)
     .set({ secretCiphertext: null, secretIv: null, secretKeyVersion: null })
     .where(isNotNull(notificationChannels.secretCiphertext));
+  await tx
+    .update(organizationLlmSettings)
+    .set({ keyCiphertext: null, keyIv: null, keyVersion: null, keyLast4: null })
+    .where(isNotNull(organizationLlmSettings.keyCiphertext));
 }
 
-/** A rolled-back `repeatable read` transaction with the shared database's secrets quarantined. */
+const SERIALIZATION_FAILURE = "40001";
+const FIXTURE_TX_ATTEMPTS = 5;
+
+function isSerializationFailure(err: unknown): boolean {
+  return typeof err === "object" && err !== null && "code" in err && err.code === SERIALIZATION_FAILURE;
+}
+
+/**
+ * A rolled-back `repeatable read` transaction with the shared database's
+ * secrets quarantined. A `40001` from a concurrent suite's write is retried on
+ * a fresh snapshot (see the file docblock); every other error propagates on
+ * the first attempt, and the last `40001` propagates too.
+ */
 async function withFixtureTx(db: BmsDb, body: (tx: BmsTx) => Promise<void>): Promise<void> {
-  await withRollback(db, async (tx) => {
-    await quarantineCommittedSecrets(tx);
-    await body(tx);
-    tx.rollback();
-  });
+  for (let attempt = 1; ; attempt += 1) {
+    try {
+      await withRollback(db, async (tx) => {
+        await quarantineCommittedSecrets(tx);
+        await body(tx);
+        tx.rollback();
+      });
+      return;
+    } catch (err) {
+      if (!isSerializationFailure(err) || attempt === FIXTURE_TX_ATTEMPTS) {
+        throw err;
+      }
+    }
+  }
 }
 
 const ENV_NAMES = [
@@ -263,7 +303,66 @@ async function plantChannel(tx: BmsTx, secret: StoredSecret, updatedAt?: Date): 
   return row.id;
 }
 
+/**
+ * An `organization_llm_settings` row inside the caller's transaction, for a
+ * **fresh organization** planted beside it; resolves to that organization's id.
+ *
+ * A fresh organization because the primary key is the tenant column: an
+ * organization holds at most one row. `fixtureLocation`'s organization may
+ * already hold a committed row (quarantined, not deleted), so a plain insert
+ * would collide on the key, and an upsert would mix the fixture with shared
+ * data. A row with no key is `provider 'off'` and no model, which
+ * `organization_llm_settings_model_check` allows; a keyed row is `openai` with
+ * a model. `organization_llm_settings_key_check` ties all four `key_*` columns
+ * together, so `key_last4` follows the ciphertext.
+ */
+async function plantLlmSetting(
+  tx: BmsTx,
+  secret: StoredSecret,
+  opts: { keyLast4?: string; updatedAt?: Date } = {},
+): Promise<string> {
+  const [org] = await tx
+    .insert(organizations)
+    .values({
+      code: `e84-llm-${randomUUID()}`,
+      name: "E8.4 rotation fixture organization",
+      currency: "ZAR",
+    })
+    .returning({ id: organizations.id });
+  assert(org !== undefined, "fixture organization was not inserted");
+  const keyed = secret.ciphertext !== null;
+  await tx.insert(organizationLlmSettings).values({
+    organizationId: org.id,
+    provider: keyed ? "openai" : "off",
+    model: keyed ? "gpt-4o-mini" : null,
+    keyCiphertext: secret.ciphertext,
+    keyIv: secret.iv,
+    keyVersion: secret.keyVersion,
+    keyLast4: keyed ? (opts.keyLast4 ?? "k3y4") : null,
+    updatedBy: null,
+    ...(opts.updatedAt === undefined ? {} : { updatedAt: opts.updatedAt }),
+  });
+  return org.id;
+}
+
 type ReadBack = StoredSecret & { readonly updatedAt: Date };
+
+type LlmReadBack = ReadBack & { readonly keyLast4: string | null };
+
+async function readLlmSetting(tx: BmsTx, organizationId: string): Promise<LlmReadBack> {
+  const [row] = await tx
+    .select({
+      ciphertext: organizationLlmSettings.keyCiphertext,
+      iv: organizationLlmSettings.keyIv,
+      keyVersion: organizationLlmSettings.keyVersion,
+      keyLast4: organizationLlmSettings.keyLast4,
+      updatedAt: organizationLlmSettings.updatedAt,
+    })
+    .from(organizationLlmSettings)
+    .where(eq(organizationLlmSettings.organizationId, organizationId));
+  assert(row !== undefined, `organization_llm_settings ${organizationId} vanished`);
+  return row;
+}
 
 async function readConfig(tx: BmsTx, id: string): Promise<ReadBack> {
   const [row] = await tx
@@ -419,20 +518,23 @@ export async function assertChannelWalkRotatesSkipsAndIgnoresNoSecret(db: BmsDb)
   });
 }
 
-/** Idempotence: a second `run()` under the same window rotates nothing and skips both rows. */
+/** Idempotence: a second `run()` under the same window rotates nothing and skips every row. */
 export async function assertSecondRunRotatesNothing(db: BmsDb): Promise<void> {
   await withFixtureTx(db, async (tx) => {
     const keys = keyPair();
     await plantConfig(tx, stored(await encryptUnder(keys.a, 1, { password: randomUUID() })));
     await plantChannel(tx, stored(await encryptUnder(keys.a, 1, { secret: randomUUID() })));
+    await plantLlmSetting(tx, stored(await encryptUnder(keys.a, 1, { apiKey: `sk-${randomUUID()}` })));
 
     const first = await rotateUnder(tx, rotationWindow(keys));
     assertCounts("first run, rtu_connection_configs", first.rtuConnectionConfigs, counts(1, 1, 0, 0, 0));
     assertCounts("first run, notification_channels", first.notificationChannels, counts(1, 1, 0, 0, 0));
+    assertCounts("first run, organization_llm_settings", first.organizationLlmSettings, counts(1, 1, 0, 0, 0));
 
     const second = await rotateUnder(tx, rotationWindow(keys));
     assertCounts("second run, rtu_connection_configs", second.rtuConnectionConfigs, counts(1, 0, 1, 0, 0));
     assertCounts("second run, notification_channels", second.notificationChannels, counts(1, 0, 1, 0, 0));
+    assertCounts("second run, organization_llm_settings", second.organizationLlmSettings, counts(1, 0, 1, 0, 0));
   });
 }
 
@@ -563,7 +665,9 @@ export async function assertConcurrentChannelWriteWinsOverTheRotation(db: BmsDb)
 }
 
 /**
- * Ruling 3. `updated_at` is not touched on either table. `F3.50` dates
+ * Ruling 3. `updated_at` is not touched on the RTU or the channel table; the
+ * third walked table, `organization_llm_settings`, is held by
+ * `assertLlmRotationLeavesLast4AndUpdatedAtUntouched`. `F3.50` dates
  * `skipped_unconfigured` deliveries against `max(channel.updatedAt,
  * PROCESS_STARTED_AT)`, so a bump here would read as an operator release and
  * re-open every blocked event key. Not in the plan's §10 table — ruling 3 had
@@ -599,6 +703,107 @@ export async function assertRotationLeavesUpdatedAtUntouched(db: BmsDb): Promise
     assert(
       channel.updatedAt.getTime() === planted.getTime(),
       `notification_channels.updated_at moved to ${channel.updatedAt.toISOString()}`,
+    );
+  });
+}
+
+/**
+ * ADR 0090 Amendment 1 A3 makes an organization's LLM API key a carrier of the
+ * credential key, so the walk must move it too. One keyed row under A/v1
+ * rotates; one `off` row with no key is planted beside it and is **not
+ * scanned** — the LLM walk selects on the ciphertext, as the other two do. The
+ * rotated row's bytes change, it reads back at version 2, and it decrypts under
+ * `KEY=B, VERSION=2` with no previous key to exactly the `{ apiKey }` it held.
+ */
+export async function assertLlmKeyRotatesAndDecryptsUnderTheCurrentKeyAlone(db: BmsDb): Promise<void> {
+  await withFixtureTx(db, async (tx) => {
+    const keys = keyPair();
+    const plaintext = { apiKey: `sk-${randomUUID()}` };
+    const before = await encryptUnder(keys.a, 1, plaintext);
+    const organizationId = await plantLlmSetting(tx, stored(before));
+    const keyless = await plantLlmSetting(tx, NO_SECRET);
+
+    const report = await rotateUnder(tx, rotationWindow(keys));
+
+    assertCounts("organization_llm_settings", report.organizationLlmSettings, counts(1, 1, 0, 0, 0));
+    const after = await readLlmSetting(tx, organizationId);
+    assert(
+      !sameBytes(after.ciphertext, before.ciphertext),
+      "the LLM key's ciphertext bytes did not change — the row was relabelled, not re-encrypted",
+    );
+    assert(after.keyVersion === 2, `key_version should be 2 after rotation, got ${after.keyVersion}`);
+    const { ciphertext, iv, keyVersion } = after;
+    assert(ciphertext !== null && iv !== null, "the rotated LLM row lost its ciphertext");
+    const roundTripped = await withEnv(
+      { CREDENTIAL_ENCRYPTION_KEY: keys.b, CREDENTIAL_ENCRYPTION_KEY_VERSION: "2" },
+      () => new CredentialCryptoService().decrypt(ciphertext, iv, keyVersion),
+    );
+    assert(
+      JSON.stringify(roundTripped) === JSON.stringify(plaintext),
+      `the rotated LLM key does not decrypt under the current key alone: ${JSON.stringify(roundTripped)}`,
+    );
+    const untouched = await readLlmSetting(tx, keyless);
+    assert(untouched.ciphertext === null && untouched.keyVersion === null, "the keyless LLM row was touched");
+  });
+}
+
+/**
+ * The LLM update writes the ciphertext, the IV and the version — nothing else.
+ * `key_last4` is the only fragment of the key a response ever shows (A3), and
+ * the plaintext does not change, so it must not either; `updated_at` reads as
+ * an administrator's edit of the settings. `rotated === 1` is the positive
+ * control: without it, a walk that never touched the row passes both checks.
+ */
+export async function assertLlmRotationLeavesLast4AndUpdatedAtUntouched(db: BmsDb): Promise<void> {
+  await withFixtureTx(db, async (tx) => {
+    const keys = keyPair();
+    const planted = new Date("2020-06-15T12:00:00.000Z");
+    const organizationId = await plantLlmSetting(
+      tx,
+      stored(await encryptUnder(keys.a, 1, { apiKey: `sk-${randomUUID()}` })),
+      { keyLast4: "ab12", updatedAt: planted },
+    );
+
+    const report = await rotateUnder(tx, rotationWindow(keys));
+
+    assert(
+      report.organizationLlmSettings.rotated === 1,
+      `the LLM row should have rotated: ${JSON.stringify(report.organizationLlmSettings)}`,
+    );
+    const after = await readLlmSetting(tx, organizationId);
+    assert(after.keyLast4 === "ab12", `organization_llm_settings.key_last4 moved to ${after.keyLast4}`);
+    assert(
+      after.updatedAt.getTime() === planted.getTime(),
+      `organization_llm_settings.updated_at moved to ${after.updatedAt.toISOString()}`,
+    );
+  });
+}
+
+/** Ruling 7, LLM table — the compare-and-set is written once per table, so it is gated once per table. */
+export async function assertConcurrentLlmWriteWinsOverTheRotation(db: BmsDb): Promise<void> {
+  await withFixtureTx(db, async (tx) => {
+    const keys = keyPair();
+    const organizationId = await plantLlmSetting(
+      tx,
+      stored(await encryptUnder(keys.a, 1, { apiKey: `sk-${randomUUID()}` })),
+    );
+    const competing = await encryptUnder(keys.a, 1, { apiKey: `sk-replica-${randomUUID()}` });
+
+    const { crypto, settled } = racingCrypto(() =>
+      tx
+        .update(organizationLlmSettings)
+        .set({ keyCiphertext: competing.ciphertext, keyIv: competing.iv })
+        .where(eq(organizationLlmSettings.organizationId, organizationId))
+        .then(() => undefined),
+    );
+    const report = await rotateWith(tx, rotationWindow(keys), crypto);
+    await settled();
+
+    assertCounts("organization_llm_settings", report.organizationLlmSettings, counts(1, 0, 0, 1, 0));
+    const after = await readLlmSetting(tx, organizationId);
+    assert(
+      sameBytes(after.ciphertext, competing.ciphertext) && after.keyVersion === 1,
+      "the rotation overwrote the competing LLM key write",
     );
   });
 }

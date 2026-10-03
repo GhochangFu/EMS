@@ -1,7 +1,7 @@
 import { Inject, Injectable } from "@nestjs/common";
 import { and, asc, eq, isNotNull, isNull } from "drizzle-orm";
 
-import { notificationChannels, rtuConnectionConfigs } from "@bms/db";
+import { notificationChannels, organizationLlmSettings, rtuConnectionConfigs } from "@bms/db";
 import type { BmsDb } from "@bms/db";
 
 import { FLEET_DRIZZLE } from "../database/database.tokens";
@@ -17,7 +17,12 @@ export type RotationTableCounts = {
 };
 
 export type RotationFailure = {
-  table: "rtu_connection_configs" | "notification_channels";
+  table: "rtu_connection_configs" | "notification_channels" | "organization_llm_settings";
+  /**
+   * The row's primary key. For `organization_llm_settings` that is the
+   * organization id: the table has no `id` column, its primary key is the
+   * tenant column.
+   */
   id: string;
   storedVersion: number | null;
   /** `err.name` only, never the message — the report is written to stdout and kept. */
@@ -28,10 +33,15 @@ export type RotationReport = {
   currentVersion: number;
   rtuConnectionConfigs: RotationTableCounts;
   notificationChannels: RotationTableCounts;
+  organizationLlmSettings: RotationTableCounts;
   failures: RotationFailure[];
 };
 
-/** A row selected for rotation, as both tables hold it. Nullability is the columns' own. */
+/**
+ * A row selected for rotation, as all three tables hold it. Nullability is the
+ * columns' own. `id` is the primary key — the row id for two tables, the
+ * organization id for `organization_llm_settings`.
+ */
 type StoredRow = {
   readonly id: string;
   readonly ciphertext: Buffer | null;
@@ -39,7 +49,7 @@ type StoredRow = {
   readonly keyVersion: number | null;
 };
 
-/** The row after the walk has proved it carries both halves of the ciphertext. */
+/** The row after the walk has proved it carries both halves of the ciphertext; `id` as on {@link StoredRow}. */
 type ReadableRow = {
   readonly id: string;
   readonly ciphertext: Buffer;
@@ -81,10 +91,12 @@ function errorName(err: unknown): string {
 /**
  * `E8.4` / ADR 0062 decision 6 — the `rotate-credentials` walk.
  *
- * Re-encrypts every ciphertext-bearing row of `rtu_connection_configs` and
- * `notification_channels` at the current key version, one row at a time, and
- * reports counts per table so "rotation finished" is a number rather than an
- * absence of errors.
+ * Re-encrypts every ciphertext-bearing row of `rtu_connection_configs`,
+ * `notification_channels` and `organization_llm_settings` at the current key
+ * version, one row at a time, and reports counts per table so "rotation
+ * finished" is a number rather than an absence of errors. ADR 0090 Amendment 1
+ * A3 encrypts each organization's LLM API key with this same key, which makes
+ * that table the third carrier (`F4.186`).
  *
  * **Selected on the ciphertext, never on the version.** `key_version` is
  * `NOT NULL DEFAULT 1`, so a credential-less RTU row still reads `1` — below
@@ -126,7 +138,7 @@ export class CredentialRotationService {
   ) {}
 
   /**
-   * Walks both tables on `db` — the fleet pool by default, or a caller's
+   * Walks the three tables on `db` — the fleet pool by default, or a caller's
    * transaction — and returns the report. Throws only if the window is dead
    * (`currentKeyVersion` propagates `CredentialKeyConfigError`) or a `SELECT`
    * itself fails; a per-row failure is collected.
@@ -136,10 +148,12 @@ export class CredentialRotationService {
     const failures: RotationFailure[] = [];
     const rtu = await this.walk(configWalk(db), currentVersion, failures);
     const channels = await this.walk(channelWalk(db), currentVersion, failures);
+    const llm = await this.walk(llmSettingsWalk(db), currentVersion, failures);
     return {
       currentVersion,
       rtuConnectionConfigs: rtu,
       notificationChannels: channels,
+      organizationLlmSettings: llm,
       failures,
     };
   }
@@ -194,15 +208,21 @@ export class CredentialRotationService {
 
 /**
  * The version half of each compare-and-set. The `isNull` branch is unreachable
- * twice over: `rtu_connection_configs.key_version` is `NOT NULL`, and
+ * three times over: `rtu_connection_configs.key_version` is `NOT NULL`,
  * `notification_channels_secret_complete_check` (migration 0038) ties
- * `secret_key_version` to `secret_ciphertext`, so no row the walk selects can
- * hold a null version — and `decrypt` would refuse one before any update ran.
+ * `secret_key_version` to `secret_ciphertext`, and
+ * `organization_llm_settings_key_check` (migration 0100) ties `key_version` to
+ * `key_ciphertext` — that column is not `NOT NULL` either — so no row the
+ * walk selects can hold a null version, and `decrypt` would refuse one before
+ * any update ran.
  * Kept so the predicate is total over the column's declared type rather than
  * resting on a non-null assertion; no test can reach it, and none claims to.
  */
 function versionMatches(
-  column: typeof rtuConnectionConfigs.keyVersion | typeof notificationChannels.secretKeyVersion,
+  column:
+    | typeof rtuConnectionConfigs.keyVersion
+    | typeof notificationChannels.secretKeyVersion
+    | typeof organizationLlmSettings.keyVersion,
   storedVersion: number | null,
 ) {
   return storedVersion === null ? isNull(column) : eq(column, storedVersion);
@@ -253,6 +273,38 @@ function channelWalk(db: BmsTx | BmsDb): TableWalk {
             eq(t.id, row.id),
             eq(t.secretCiphertext, row.ciphertext),
             versionMatches(t.secretKeyVersion, row.keyVersion),
+          ),
+        );
+      return result.rowCount ?? 0;
+    },
+  };
+}
+
+/**
+ * The update writes the ciphertext, the IV and the version only. `key_last4`
+ * stays because the plaintext does not change; `updated_at` and `updated_by`
+ * stay because they name an administrator's edit, and a rotation is not one.
+ * The table has no `id` column: its primary key is `organization_id`.
+ */
+function llmSettingsWalk(db: BmsTx | BmsDb): TableWalk {
+  const t = organizationLlmSettings;
+  return {
+    table: "organization_llm_settings",
+    select: () =>
+      db
+        .select({ id: t.organizationId, ciphertext: t.keyCiphertext, iv: t.keyIv, keyVersion: t.keyVersion })
+        .from(t)
+        .where(isNotNull(t.keyCiphertext))
+        .orderBy(asc(t.organizationId)),
+    update: async (row, next) => {
+      const result = await db
+        .update(t)
+        .set({ keyCiphertext: next.ciphertext, keyIv: next.iv, keyVersion: next.keyVersion })
+        .where(
+          and(
+            eq(t.organizationId, row.id),
+            eq(t.keyCiphertext, row.ciphertext),
+            versionMatches(t.keyVersion, row.keyVersion),
           ),
         );
       return result.rowCount ?? 0;

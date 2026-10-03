@@ -1,5 +1,5 @@
 import { BadRequestException, ForbiddenException, Inject, Injectable } from "@nestjs/common";
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 
 import { organizationLlmSettings } from "@bms/db";
 import type { BmsDb } from "@bms/db";
@@ -25,7 +25,8 @@ type SettingRow = typeof organizationLlmSettings.$inferSelect;
 /**
  * An organization's AI-assistant setting (`F3.21`, ADR 0090 Amendment 1 A5–A7).
  *
- * Every method gates on `canManageOrganization` first (ruling 7). The key is
+ * Every method calls `gate()` first: the role (`admin` or `organization_admin`,
+ * security review H1) and then `canManageOrganization` (ruling 7). The key is
  * write-only: it is encrypted with `CredentialCryptoService` into the four
  * `key_*` columns, only its last four characters are ever returned, and it
  * never reaches a response, a log line, an audit row or an error (A7).
@@ -97,34 +98,57 @@ export class AiAssistantSettingsService {
     if (body.apiKey !== undefined && !CredentialCryptoService.isConfigured()) {
       throw new BadRequestException(NO_ENCRYPTION_KEY_MESSAGE);
     }
-    const existing = await this.resolver.readSetting(organizationId);
-    const hadKey = existing?.keyCiphertext != null;
-    // An omitted key keeps the stored one only for the same provider: a key
-    // belongs to the provider it was issued by. Off stores no key (ruling 14).
-    const keepStored = body.apiKey === undefined && body.provider !== "off" && existing?.provider === body.provider;
-    let key: Pick<SettingRow, "keyCiphertext" | "keyIv" | "keyVersion" | "keyLast4">;
+    type StoredKey = Pick<SettingRow, "keyCiphertext" | "keyIv" | "keyVersion" | "keyLast4">;
+    let entered: StoredKey | null = null;
     if (body.apiKey !== undefined) {
       const encrypted = this.crypto.encrypt({ apiKey: body.apiKey });
-      key = {
+      entered = {
         keyCiphertext: encrypted.ciphertext,
         keyIv: encrypted.iv,
         keyVersion: encrypted.keyVersion,
         keyLast4: body.apiKey.slice(-4),
       };
-    } else if (keepStored && existing) {
-      key = { keyCiphertext: existing.keyCiphertext, keyIv: existing.keyIv, keyVersion: existing.keyVersion, keyLast4: existing.keyLast4 };
-    } else {
-      key = { keyCiphertext: null, keyIv: null, keyVersion: null, keyLast4: null };
     }
-    const keyChanged = body.apiKey !== undefined || (hadKey && key.keyCiphertext === null);
-    const values = {
-      provider: body.provider,
-      model: body.provider === "off" ? null : (body.model ?? null),
-      ...key,
-      updatedBy: actorId,
-      updatedAt: new Date(),
-    };
     await withTenant(this.tenantDb, organizationId, async (tx) => {
+      // F4.186 (security review M1, re-review L-a, L-b and L-c): the decision
+      // is made on the committed row, never on an earlier read. The advisory
+      // lock serializes put() calls for one organization, including the
+      // no-row path where FOR UPDATE locks nothing — so a concurrent first
+      // save commits before this one reads, and `keyChanged` is exact on every
+      // path. FOR UPDATE handles the writers that are not put(): a concurrent
+      // `rotate-credentials` either committed before this lock (the kept bytes
+      // are its rotated ones) or waits on it, and its compare-and-set then
+      // still matches the kept bytes, so it rotates after this commit; a
+      // concurrent remove() means no row, so no key is kept; a provider change
+      // is seen, so its key is not kept.
+      await tx.execute(
+        sql`select pg_advisory_xact_lock(hashtextextended(${`organization_llm_settings:${organizationId}`}, 0))`,
+      );
+      const [existing] = await tx
+        .select()
+        .from(organizationLlmSettings)
+        .where(eq(organizationLlmSettings.organizationId, organizationId))
+        .for("update");
+      const hadKey = existing?.keyCiphertext != null;
+      // An omitted key keeps the stored one only for the same provider: a key
+      // belongs to the provider it was issued by. Off stores no key (ruling 14).
+      const keepStored = body.apiKey === undefined && body.provider !== "off" && existing?.provider === body.provider;
+      let key: StoredKey;
+      if (entered) {
+        key = entered;
+      } else if (keepStored && existing) {
+        key = { keyCiphertext: existing.keyCiphertext, keyIv: existing.keyIv, keyVersion: existing.keyVersion, keyLast4: existing.keyLast4 };
+      } else {
+        key = { keyCiphertext: null, keyIv: null, keyVersion: null, keyLast4: null };
+      }
+      const keyChanged = body.apiKey !== undefined || (hadKey && key.keyCiphertext === null);
+      const values = {
+        provider: body.provider,
+        model: body.provider === "off" ? null : (body.model ?? null),
+        updatedBy: actorId,
+        updatedAt: new Date(),
+        ...key,
+      };
       await tx
         .insert(organizationLlmSettings)
         .values({ organizationId, ...values })
