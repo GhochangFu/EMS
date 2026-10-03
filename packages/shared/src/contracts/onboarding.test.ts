@@ -1,6 +1,8 @@
 import { describe, it } from "vitest";
 
 import {
+  assertChatMessageRoleAcceptsAction,
+  assertChatMessageRoleRefusesToolRole,
   assertDraftArrayCapsAreEnforced,
   assertDraftLocationMetaDescribesTheSeedKey,
   assertDraftLocationParsesWithoutType,
@@ -44,5 +46,15 @@ describe("F4.157 — onboardingDraftLocationSchema.type becomes optional (ADR 00
 describe("F4.170 — onboardingDraftLocationSchema.meta says seedKey is seed-owned", () => {
   it("D4 — the meta description", () => {
     assertDraftLocationMetaDescribesTheSeedKey();
+  });
+});
+
+describe("F3.21 — onboardingChatMessageSchema.role gains `action`", () => {
+  it("accepts the action role", () => {
+    assertChatMessageRoleAcceptsAction();
+  });
+
+  it("still refuses the tool role", () => {
+    assertChatMessageRoleRefusesToolRole();
   });
 });

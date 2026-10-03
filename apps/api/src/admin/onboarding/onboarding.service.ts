@@ -30,6 +30,16 @@ import { OnboardingCommitService } from "./onboarding-commit.service";
 import { OnboardingCatalogService } from "./onboarding-catalog.service";
 import { OnboardingExcelService } from "./onboarding-excel.service";
 import { looksLikeCredential, scrubMessages } from "./onboarding-credential-detect";
+import {
+  NO_PROPOSAL_REPLY,
+  STALE_PROPOSAL_REPLY,
+  attachCommitProposal,
+  countOf,
+  draftHash,
+  isConfirmCommitPhrase,
+  readCommitProposal,
+  withoutCommitProposal,
+} from "./onboarding-commit-proposal";
 import { draftCountProblem } from "./onboarding-draft-caps";
 import { assertPatchLocationTypeIsActive } from "./onboarding-location-type-match";
 import type { SetCredentialsBody } from "./onboarding.schema";
@@ -201,7 +211,8 @@ export class OnboardingService {
     }
 
     // ADR 0022 decision 2. Checked before ANY side effect: the turn is not
-    // stored in `messages` and never reaches `handleOpenAiTurn`. Returning a
+    // stored in `messages` and never reaches the model (`F3.21`: nor the
+    // confirm check, which runs after this). Returning a
     // normal chat response rather than a 400 keeps the wizard usable — the
     // user is told where the credentials field is instead of hitting an error.
     if (looksLikeCredential(message)) {
@@ -224,6 +235,13 @@ export class OnboardingService {
       };
     }
 
+    // F3.21 (ADR 0090 decision 5): the confirm phrase is matched by code,
+    // after the credential refusal and before any model call. The model is
+    // not on the commit path at all.
+    if (isConfirmCommitPhrase(message)) {
+      return this.confirmCommit(jwt, session, message);
+    }
+
     const draft = session.draft as OnboardingDraft;
     const phase = session.currentPhase as OnboardingPhase;
     const [org] = await this.tenantDb
@@ -239,18 +257,31 @@ export class OnboardingService {
       phase,
       org?.name ?? "Organization",
       session.organizationId,
+      { sessionId, history: session.messages as OnboardingChatMessage[] },
     );
 
-    const mergedDraft = this.chatService.mergeDraft(session.draft, turn.draftPatch);
+    // `mergeDraft` clears any stored proposal. A turn that proposed gets a new
+    // one, bound to the hash of exactly the draft stored below (decision 5).
+    let mergedDraft = this.chatService.mergeDraft(session.draft, turn.draftPatch);
+    if (turn.commitProposal) {
+      const hash = draftHash(mergedDraft);
+      if (hash !== null) {
+        mergedDraft = attachCommitProposal(mergedDraft as object, {
+          draftHash: hash,
+          summary: turn.commitProposal.summary,
+          proposedAt: new Date().toISOString(),
+        });
+      }
+    }
 
     // `F4.103` — the chat patch builder is the **fourth** draft producer, and
     // the one the first pass of this row missed.
     //
     // `handleRuleBasedTurn` is not a fallback: `.env.example` ships
-    // `OPENAI_API_KEY=` empty, so it is the branch that runs by default. It
+    // `LLM_PROVIDER=` empty (`F3.21`), so it is the branch that runs by default. It
     // assembles its patch in code and never reaches
-    // `onboardingDraftSchema.safeParse` — that call guards the *model* branch
-    // alone — and two of its branches concatenate rather than replace
+    // `onboardingDraftSchema.safeParse` — that call guarded the old single-shot
+    // model branch, and `F3.21`'s tools parse each element schema — and two of its branches concatenate rather than replace
     // (`patch.rtus = [...(draft.rtus ?? []), …]`, and the same shape for
     // `pointKeys`). `mergeDraft` then takes `patch.rtus ?? base.rtus`, which
     // replaces the stored array wholesale and is exactly why a `PATCH :id/draft`
@@ -274,16 +305,27 @@ export class OnboardingService {
     }
 
     // H2 from the 2026-08-10 review: only the *user* turn was inspected. On the
-    // OpenAI path `assistantMessage` is model output, so a model echoing back a
+    // agent path `assistantMessage` is model output, so a model echoing back a
     // secret it was handed was stored unchecked. Scrub rather than refuse — the
     // turn is ours, not the user's, so there is nobody to ask to retype it.
     const assistantText = looksLikeCredential(turn.assistantMessage)
       ? "[REDACTED] — the assistant's reply looked like it contained a credential (ADR 0022)"
       : turn.assistantMessage;
     const assistantMsg = this.chatService.createMessage("assistant", assistantText);
+    // Decision 6: one code-written `action` message per draft write, between the
+    // user's turn and the reply.
+    // Security review L5: an action line carries model-chosen names, so it takes
+    // the same credential scrub as the reply above.
+    const actionMsgs = turn.actionLines.map((line) =>
+      this.chatService.createMessage(
+        "action",
+        looksLikeCredential(line) ? "[REDACTED] — an action line looked like it contained a credential (ADR 0022)" : line,
+      ),
+    );
     const messages = [
       ...(session.messages as OnboardingChatMessage[]),
       userMsg,
+      ...actionMsgs,
       assistantMsg,
     ];
 
@@ -506,6 +548,81 @@ export class OnboardingService {
     if (!(await this.accessControl.canManageOrganization(jwt, organizationId))) {
       throw new ForbiddenException("Organization is outside your access scope");
     }
+  }
+
+  /**
+   * The typed confirm (ADR 0090 decision 5). No proposal: say so and change
+   * nothing. A proposal whose hash no longer matches the stored draft: clear it
+   * and do not commit. A match: the existing commit service commits, with its
+   * own access checks, caps, transaction and audit rows. A refusal from it is a
+   * reply, not a 400 (plan ruling 5); access errors still propagate.
+   */
+  private async confirmCommit(
+    jwt: JwtPayload,
+    session: typeof onboardingSessions.$inferSelect,
+    message: string,
+  ): Promise<OnboardingChatResponseDto> {
+    const proposal = readCommitProposal(session.draft);
+    const stale = proposal !== null && draftHash(session.draft) !== proposal.draftHash;
+    let reply: string;
+    let actionLine: string | null = null;
+    let committed = false;
+    let draftWrite: unknown;
+    if (proposal === null) {
+      reply = NO_PROPOSAL_REPLY;
+    } else if (stale) {
+      reply = STALE_PROPOSAL_REPLY;
+      draftWrite = withoutCommitProposal(session.draft);
+    } else {
+      try {
+        const result = await this.commitService.commitProposed(jwt, session.id, proposal.draftHash);
+        committed = true;
+        const name = (session.draft as OnboardingDraft).location?.name ?? "";
+        actionLine =
+          `Committed: location ${name}, ${countOf(result.rtuIds.length, "RTU")}, ` +
+          `${countOf(result.pointKeyIds.length, "point key")}, ${countOf(result.assetIds.length, "asset")}, ` +
+          countOf(result.assetPointIds.length, "mapping");
+        reply = "Committed. The location, RTUs, assets and mappings are created.";
+      } catch (error) {
+        if (!(error instanceof BadRequestException)) {
+          throw error;
+        }
+        reply = `Commit refused: ${error.message}`;
+        draftWrite = withoutCommitProposal(session.draft);
+      }
+    }
+    const messages = [
+      ...(session.messages as OnboardingChatMessage[]),
+      this.chatService.createMessage("user", message),
+      ...(actionLine ? [this.chatService.createMessage("action", actionLine)] : []),
+      this.chatService.createMessage("assistant", reply),
+    ];
+    const updated = await withTenant(this.tenantDb, session.organizationId, (tx) =>
+      tx
+        .update(onboardingSessions)
+        .set({
+          ...(draftWrite !== undefined ? { draft: draftWrite } : {}),
+          messages,
+          updatedAt: sql`now()`,
+        })
+        .where(eq(onboardingSessions.id, session.id))
+        .returning()
+        .then(([row]) => row),
+    );
+    const [org] = await this.tenantDb
+      .select({ code: organizations.code, name: organizations.name })
+      .from(organizations)
+      .where(eq(organizations.id, session.organizationId))
+      .limit(1);
+    return {
+      assistantMessage: reply,
+      session: this.mapSession(updated, org?.code ?? "", org?.name ?? ""),
+      suggestedReplies: committed ? [] : ["View draft"],
+      validationErrors: [],
+      readyToCommit: false,
+      autoOpenPreview: false,
+      autoOpenReason: undefined,
+    };
   }
 
   private mapSession(

@@ -1,4 +1,4 @@
-import { Injectable } from "@nestjs/common";
+import { Injectable, Logger } from "@nestjs/common";
 import { randomUUID } from "node:crypto";
 
 // F4.104: the length of every draft string field, declared once beside the
@@ -23,11 +23,8 @@ import { VocabulariesService } from "../../vocabularies/vocabularies.service";
 import { echoedItems, moreTail, quoteCell } from "../spreadsheet-guard";
 import { cloneJson } from "../stack-safe-json";
 import { OnboardingCatalogService } from "./onboarding-catalog.service";
-import {
-  catalogCodeFromLocationName,
-  cutToBound,
-  cutToBoundWithHashSuffix,
-} from "./onboarding-draft-caps";
+import { catalogCodeFromLocationName, cutToBound } from "./onboarding-draft-caps";
+import { deriveLocationPatch } from "./onboarding-location-derive";
 import { mergeDraftPatch } from "./onboarding-draft-merge";
 import { MAX_RTU_TOPIC_CHARS } from "./onboarding-excel.service";
 import {
@@ -36,22 +33,17 @@ import {
   needsMqttSetup,
 } from "./onboarding-chat-summaries";
 import * as locationTypes from "./onboarding-location-type-match";
-// F4.107: the draft goes into the prompt through this, not through
-// `redactDraftForLlm` directly — the redaction says nothing about size, and
-// nothing measured the serialised draft before this row. The module owns the
-// budget, the two shed passes, the marker, the sentence that explains it to the
-// model and the guard that refuses a patch echoing it back.
-import {
-  PROMPT_MARKER_SENTENCE,
-  carriesPromptMarker,
-  serialiseDraftForPrompt,
-} from "./onboarding-prompt-budget";
+// F3.21 (ADR 0090): the model no longer returns a draft patch, so the
+// prompt-budget guards live where the draft and the arguments now pass — the
+// agent loop's system prompt and the tool registry.
+import { runAgentTurn } from "./onboarding-agent-loop";
+import { scrubMessages } from "./onboarding-credential-detect";
+import { OnboardingLlmResolver } from "./onboarding-llm-resolver";
 import {
   attachEncryptedCredentials,
   reconcileSecrets,
   type EncryptedBlob,
 } from "./onboarding-redaction";
-import { onboardingDraftSchema } from "./onboarding.schema";
 import type { OnboardingDraftInput } from "./onboarding.schema";
 import { OnboardingProtocolService } from "./onboarding-protocol.service";
 import { OnboardingValidateService } from "./onboarding-validate.service";
@@ -65,13 +57,28 @@ export type ChatTurnResult = {
   readyToCommit?: boolean;
   autoOpenPreview?: boolean;
   autoOpenReason?: OnboardingAutoOpenReason;
+  /** F3.21 decision 6: code-written lines for each draft write the agent made. Empty on the guided path. */
+  actionLines: string[];
+  /** F3.21 decision 5: set when the agent proposed a commit; the caller binds it to the stored draft's hash. */
+  commitProposal?: { summary: string };
   // No `credentialsToEncrypt` here by design (ADR 0022 decision 2): a chat turn
   // can no longer yield a credential, so the field is removed rather than left
   // permanently undefined where someone could re-populate it. `mergeDraft`
   // still accepts credentials — `POST :id/credentials` is its only caller now.
 };
 
-/** Conversational onboarding bot with OpenAI or rule-based fallback. */
+/** Ruling 6: the reply after a provider failure starts with this sentence. */
+export const AGENT_UNAVAILABLE_NOTICE = "The assistant is not available right now, so the guided mode answered.";
+
+/** Plan ruling 13: the reply for an organization whose own AI setting is incomplete starts with this. */
+export const AGENT_NOT_SET_UP_NOTICE =
+  "The AI assistant is not fully set up for this organization, so the guided mode answered. An admin can finish it on the AI assistant page.";
+
+/**
+ * Conversational onboarding: the tool-calling agent when a provider resolves
+ * for the organization (`F3.21`, ADR 0090), the rule-based guided mode
+ * otherwise.
+ */
 @Injectable()
 export class OnboardingChatService {
   constructor(
@@ -80,7 +87,10 @@ export class OnboardingChatService {
     private readonly protocolService: OnboardingProtocolService,
     private readonly catalogService: OnboardingCatalogService,
     private readonly vocabularies: VocabulariesService,
+    private readonly llmResolver: OnboardingLlmResolver,
   ) {}
+
+  private readonly logger = new Logger(OnboardingChatService.name);
 
   /** Produces opening assistant message for a new session. */
   openingMessage(orgName: string): ChatTurnResult {
@@ -89,6 +99,7 @@ export class OnboardingChatService {
       draftPatch: {},
       currentPhase: "location",
       suggestedReplies: ["View draft"],
+      actionLines: [],
     };
   }
 
@@ -238,13 +249,22 @@ export class OnboardingChatService {
     };
   }
 
-  /** Handles one user chat turn against the current draft. */
+  /**
+   * Handles one user chat turn against the current draft.
+   *
+   * `F3.21` (ADR 0090): the resolver picks the provider for this organization
+   * and turn. With one, the agent loop runs; with none, the guided
+   * (rule-based) mode answers as before. `context` is required, not optional:
+   * an optional parameter at an adapter is invisible, and `tsc` names every
+   * caller.
+   */
   async handleTurn(
     message: string,
     draft: OnboardingDraft,
     phase: OnboardingPhase,
     orgName: string,
-    organizationId?: string,
+    organizationId: string | undefined,
+    context: { readonly sessionId: string; readonly history: readonly OnboardingChatMessage[] },
   ): Promise<ChatTurnResult> {
     // F4.162 (plan D9): the active types, read once per turn. Every branch and
     // `finalizeTurn` use this one list, so the reply, the phase and the
@@ -256,12 +276,12 @@ export class OnboardingChatService {
       /protocol|modbus|bacnet|mqtt|opc|snmp|rest|simulator/.test(lower) &&
       /what|which|available|list|show|support/.test(lower)
     ) {
-      const context = await this.protocolService.getContextForOrganization(organizationId);
+      const protocolContext = await this.protocolService.getContextForOrganization(organizationId);
       const exampleRtu = draft.location?.name
         ? `${draft.location.name.toUpperCase().replace(/[^A-Z0-9]+/g, "-")}-RTU-1`
         : "LOCATION-RTU-1";
       return this.finalizeTurn(
-        `Here are the protocols available in BMS:\n\n${this.protocolService.formatForAssistant(context, exampleRtu)}`,
+        `Here are the protocols available in BMS:\n\n${this.protocolService.formatForAssistant(protocolContext, exampleRtu)}`,
         {},
         phase,
         ["MQTT", "Modbus TCP", "View draft"],
@@ -271,86 +291,63 @@ export class OnboardingChatService {
       );
     }
 
-    const apiKey = process.env.OPENAI_API_KEY;
-    if (apiKey) {
-      try {
-        return await this.handleOpenAiTurn(message, draft, phase, orgName, apiKey, types);
-      } catch {
-        // fall through to rule-based
-      }
+    if (!organizationId) {
+      return await this.handleRuleBasedTurn(message, draft, phase, orgName, types, organizationId);
     }
-    return await this.handleRuleBasedTurn(message, draft, phase, orgName, types, organizationId);
-  }
+    const resolved = await this.llmResolver.resolveForOrganization(organizationId);
+    if (resolved.kind === "guided") {
+      const guided = await this.handleRuleBasedTurn(message, draft, phase, orgName, types, organizationId);
+      // Plan ruling 13: an organization that chose a provider but did not
+      // finish the setting is told why the guided mode answered. `off` and a
+      // platform without a provider get no notice — that is the chosen mode.
+      return resolved.reason === "organization_incomplete"
+        ? { ...guided, assistantMessage: `${AGENT_NOT_SET_UP_NOTICE}\n\n${guided.assistantMessage}` }
+        : guided;
+    }
 
-  private async handleOpenAiTurn(
-    message: string,
-    draft: OnboardingDraft,
-    phase: OnboardingPhase,
-    orgName: string,
-    apiKey: string,
-    types: readonly LocationTypeDto[],
-  ): Promise<ChatTurnResult> {
-    const { default: OpenAI } = await import("openai");
-    const client = new OpenAI({ apiKey });
-    const model = process.env.OPENAI_MODEL ?? "gpt-4o-mini";
-    const typeCodes = types.map((row) => row.code);
-
-    const system = `You are an IONSiTE NEXUS BMS onboarding assistant for organization ${orgName}.
-Current phase: ${phase}. Return JSON with keys: assistantMessage, draftPatch (partial), currentPhase, suggestedReplies (optional string array).
-Phases: location, rtu, point_keys, assets, mappings, review.
-Protocols: mqtt, modbus_tcp, bacnet, opc_ua, snmp, rest_poller, simulator, catalog.
-Location types (location.type must be one of these codes; ask the user when unsure): ${typeCodes.join(", ")}.
-Never include password or secret values in assistantMessage. Credentials are NEVER collected through this chat — if the user offers one, tell them to use the Credentials field on the RTU step. Never set credential values in draftPatch.
-${PROMPT_MARKER_SENTENCE}
-Draft context (redacted): ${serialiseDraftForPrompt(draft)}`;
-
-    const completion = await client.chat.completions.create({
-      model,
-      response_format: { type: "json_object" },
-      messages: [
-        { role: "system", content: system },
-        { role: "user", content: message },
-      ],
+    const agent = await runAgentTurn({
+      message,
+      draft,
+      phase,
+      orgName,
+      // Security review L5: stored history goes to the model through the same
+      // scrub as every client read.
+      history: scrubMessages(context.history),
+      llm: resolved.provider,
+      tools: {
+        organizationId,
+        activeTypes: types,
+        catalog: this.catalogService,
+        protocols: this.protocolService,
+        validator: this.validateService,
+      },
     });
-
-    const raw = completion.choices[0]?.message?.content ?? "{}";
-    const parsed = JSON.parse(raw) as {
-      assistantMessage?: string;
-      draftPatch?: OnboardingDraftInput;
-      currentPhase?: OnboardingPhase;
-      suggestedReplies?: string[];
-    };
-
-    // F4.107 review, L1: the prompt asks the model not to copy a marker back
-    // (`PROMPT_MARKER_SENTENCE`), and an instruction is not a control. A patch
-    // echoing the marker into `rtus[].config` already fails the parse below and
-    // is discarded; one echoing it into `pointKeys[].description` **passes**,
-    // and `mergeDraft` replaces that array wholesale — so the operator's prose
-    // would be overwritten by a system literal and committed. Both get the same
-    // answer, which is the empty patch the first case already produces. Whole
-    // patch, not the offending leaf: dropping a `config` key lets `.default({})`
-    // blank a real connection config. `carriesPromptMarker` walks it with the
-    // shared iterative rebuild, so a deep reply cannot throw here either.
-    const echoed: unknown = parsed.draftPatch ?? {};
-    const draftPatch: OnboardingDraftInput = carriesPromptMarker(echoed)
-      ? {}
-      : // M2 from the 2026-08-10 review: this was cast straight from the model's
-        // JSON and merged with a spread that preserves unknown keys, so a
-        // `_secrets` key in the reply could overwrite the encrypted credential
-        // store, and `rtus[].config.password` could land as plaintext. Client
-        // input via `patchDraft` was already validated; model output was not.
-        (onboardingDraftSchema.safeParse(echoed).data ?? {});
-
-    // F4.157: the prompt lists the codes; an instruction is not a control.
-    return this.finalizeTurn(
-      parsed.assistantMessage ?? "Thanks, I've updated the draft.",
-      locationTypes.withoutInactiveLocationType(draftPatch, typeCodes),
-      parsed.currentPhase ?? phase,
-      parsed.suggestedReplies,
+    // Decision 9 and plan ruling 10: ids, names and counts — never the
+    // message, the arguments, the draft, the summary, the model or a key.
+    this.logger.log(
+      { sessionId: context.sessionId, provider: resolved.provider.name, source: resolved.source, ...agent.record },
+      "onboarding agent turn",
+    );
+    if (agent.fallback) {
+      // Ruling 6: the turn's edits are already discarded; the guided mode
+      // answers the same message, and the user is told why.
+      const guided = await this.handleRuleBasedTurn(message, draft, phase, orgName, types, organizationId);
+      return { ...guided, assistantMessage: `${AGENT_UNAVAILABLE_NOTICE}\n\n${guided.assistantMessage}` };
+    }
+    const result = this.finalizeTurn(
+      agent.reply,
+      agent.draftPatch,
+      phase,
+      agent.commitProposal ? ["confirm commit", "View draft"] : ["View draft"],
       message,
       draft,
       types,
     );
+    return {
+      ...result,
+      actionLines: [...agent.actionLines],
+      ...(agent.commitProposal ? { commitProposal: { summary: agent.commitProposal.summary } } : {}),
+    };
   }
 
   private async handleRuleBasedTurn(
@@ -403,9 +400,9 @@ Draft context (redacted): ${serialiseDraftForPrompt(draft)}`;
       // a type; `kept` is then spread over the derived fields. See `resolveLocationTurn`.
       const { type, kept } = locationTypes.resolveLocationTurn(message, draft.location, types);
       // F4.104 — **this branch is the draft's default producer, not a
-      // fallback.** `.env.example` ships `OPENAI_API_KEY=` empty, so
+      // fallback.** `.env.example` ships `LLM_PROVIDER=` empty (`F3.21`), so
       // `handleTurn` reaches here on every turn of an ordinary deployment. And
-      // unlike `handleOpenAiTurn` above, which passes the model's patch through
+      // unlike the old single-shot model branch (removed by `F3.21`), which passed the model's patch through
       // `onboardingDraftSchema.safeParse`, this method assembles its patch in
       // code and parses nothing: a bound on the schema binds only the producers
       // that parse it, and this is not one of them. Three sites derive a draft
@@ -472,31 +469,10 @@ Draft context (redacted): ${serialiseDraftForPrompt(draft)}`;
       // both go through it anyway, so reordering the two steps cannot
       // reintroduce the split.
       const name = kept?.name ?? cutToBound(message.trim(), ONBOARDING_DRAFT_STRING_MAX["location.name"]);
-      const slug = cutToBoundWithHashSuffix(
-        name
-          .toLowerCase()
-          .replace(/[^a-z0-9]+/g, "-")
-          .replace(/^-|-$/g, ""),
-        ONBOARDING_DRAFT_STRING_MAX["location.slug"],
-        "lower",
-      );
-      const code = cutToBound(
-        name.toUpperCase().replace(/[^A-Z0-9]+/g, "_"),
-        ONBOARDING_DRAFT_STRING_MAX["location.code"],
-      );
       // A kept location's non-empty slug and code win; an empty one (a blank
       // workbook cell, a `PATCH` that cleared it) is derived from the name.
-      patch.location = {
-        name,
-        latitude: draft.location?.latitude ?? -25.7,
-        longitude: draft.location?.longitude ?? 28.2,
-        province: draft.location?.province,
-        capital: draft.location?.capital,
-        ...kept,
-        slug: kept?.slug || slug || "location",
-        code: kept?.code || code || "LOC",
-        ...(type ? { type } : {}),
-      };
+      // `F3.21`: the derivation is shared with the agent's `set_location` tool.
+      patch.location = deriveLocationPatch({ name, stored: draft.location, kept, type });
       if (!type) {
         const ask = locationTypes.locationTypeQuestion(name);
         const labels = types.map((row) => row.label);
@@ -686,6 +662,7 @@ Draft context (redacted): ${serialiseDraftForPrompt(draft)}`;
       readyToCommit: validation.readyToCommit,
       autoOpenPreview,
       autoOpenReason,
+      actionLines: [],
     };
   }
 
@@ -761,8 +738,12 @@ Draft context (redacted): ${serialiseDraftForPrompt(draft)}`;
   ): unknown {
     const base =
       typeof current === "object" && current !== null
-        ? (cloneJson(current) as OnboardingDraft & { _secrets?: Record<string, string> })
+        ? (cloneJson(current) as OnboardingDraft & { _secrets?: Record<string, string>; _commitProposal?: unknown })
         : {};
+    // F3.21 (ADR 0090 decision 5): every draft write clears a commit proposal.
+    // `chat` re-attaches one only for a turn that proposed, hashed on the
+    // draft it stores, so a proposal never outlives a change it did not see.
+    delete (base as { _commitProposal?: unknown })._commitProposal;
     const merged = mergeDraftPatch(base, patch);
 
     let stored: OnboardingDraft & { _secrets?: Record<string, EncryptedBlob> } =

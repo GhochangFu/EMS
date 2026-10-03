@@ -4,6 +4,8 @@ import {
   runAdminAccessTests,
   runAssetGroupScopePredicateTests,
   runAssetTemplateTabTests,
+  runCanManageAiAssistantAdminsTest,
+  runCanManageAiAssistantOthersTest,
   runCanManageLocationTypesTests,
   runCanManageMimicLayoutsAdminsTest,
   runCanManageMimicLayoutsOthersTest,
@@ -83,5 +85,13 @@ describe("admin-access", () => {
 
   it("hides the Mimic Layouts tab from location_admin (F3.32c)", () => {
     runMimicLayoutsTabHiddenFromLocationAdminTest();
+  });
+
+  it("canManageAiAssistant admits admin and organization_admin (F3.21)", () => {
+    runCanManageAiAssistantAdminsTest();
+  });
+
+  it("canManageAiAssistant refuses every other role (F3.21)", () => {
+    runCanManageAiAssistantOthersTest();
   });
 });

@@ -6,6 +6,7 @@ import {
   MAX_ONBOARDING_POINT_KEYS,
   MAX_ONBOARDING_RTUS,
   ONBOARDING_DRAFT_STRING_MAX,
+  onboardingChatMessageSchema,
   onboardingDraftAssetPointSchema,
   onboardingDraftAssetSchema,
   onboardingDraftLocationSchema,
@@ -526,4 +527,18 @@ export function assertDraftLocationMetaDescribesTheSeedKey(): void {
     typeof description === "string" && /seedKey.*seed-owned.*ignored/s.test(description),
     `onboardingDraftLocationSchema.meta must say seedKey is seed-owned and ignored, got: ${JSON.stringify(description)}`,
   );
+}
+
+const chatMessage = { id: "m1", content: "hi", createdAt: "2026-10-03T08:00:00.000Z" };
+
+/** F3.21 (ADR 0090 Amendment 1) — `action` is a persisted role the client renders. */
+export function assertChatMessageRoleAcceptsAction(): void {
+  const result = onboardingChatMessageSchema.safeParse({ ...chatMessage, role: "action" });
+  assert(result.success, "role `action` must parse");
+}
+
+/** The model's `tool` turn never reaches a stored message, so the role stays refused. */
+export function assertChatMessageRoleRefusesToolRole(): void {
+  const result = onboardingChatMessageSchema.safeParse({ ...chatMessage, role: "tool" });
+  assert(!result.success, "role `tool` must fail the parse");
 }

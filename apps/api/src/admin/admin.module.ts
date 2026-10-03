@@ -49,11 +49,14 @@ import { AssetRolesAdminService } from "./vocabularies/asset-roles.service";
 import { LocationTypesVocabularyAdminController } from "./vocabularies/location-types.controller";
 import { LocationTypesVocabularyAdminService } from "./vocabularies/location-types.service";
 import { MasterDataAuditService } from "./master-data-audit.service";
+import { AiAssistantSettingsController } from "./ai-assistant/ai-assistant-settings.controller";
+import { AiAssistantSettingsService } from "./ai-assistant/ai-assistant-settings.service";
 import { OnboardingController } from "./onboarding/onboarding.controller";
 import { OnboardingCatalogService } from "./onboarding/onboarding-catalog.service";
 import { OnboardingChatService } from "./onboarding/onboarding-chat.service";
 import { OnboardingCommitService } from "./onboarding/onboarding-commit.service";
 import { OnboardingExcelService } from "./onboarding/onboarding-excel.service";
+import { OnboardingLlmResolver } from "./onboarding/onboarding-llm-resolver";
 import { OnboardingProtocolService } from "./onboarding/onboarding-protocol.service";
 import { OnboardingService } from "./onboarding/onboarding.service";
 import { OnboardingValidateService } from "./onboarding/onboarding-validate.service";
@@ -110,6 +113,7 @@ import { UsersService } from "./users/users.service";
     DashboardTemplatesController,
     AuditAdminController,
     OnboardingController,
+    AiAssistantSettingsController,
     ManualReadingsController,
     TelemetryImportController,
     // F3.78 / ADR 0089 decision 1 — /admin/users.
@@ -124,6 +128,8 @@ import { UsersService } from "./users/users.service";
     OnboardingProtocolService,
     OnboardingCatalogService,
     OnboardingExcelService,
+    OnboardingLlmResolver,
+    AiAssistantSettingsService,
     OnboardingChatService,
     OnboardingCommitService,
     OnboardingService,

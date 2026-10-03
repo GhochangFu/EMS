@@ -751,3 +751,32 @@ export const mapLocations = bmsSchema.table("map_locations", {
   stationOperatingStatus: varchar("station_operating_status", { length: 16 }),
   meta: jsonb("meta"),
 });
+
+/**
+ * `bms.organization_llm_settings` — `F3.21`, migration `0100`, ADR 0090
+ * Amendment 1 A3. One organization's onboarding-agent LLM provider, model and
+ * API key; no row means the `.env` platform default. The key is encrypted with
+ * `CredentialCryptoService` into the four `key_*` columns (all NULL or all set)
+ * and only `key_last4` ever reaches a response.
+ *
+ * Tenant table: FORCE RLS with the strict `tenant_isolation` policy, and the
+ * primary key is the tenant column, so an organization has at most one row.
+ * The three CHECKs (provider vocabulary, model unless `off`, key all-or-none)
+ * are not mirrored here; the migration owns them and
+ * `tests/f3.21-organization-llm-settings-schema.test.ts` pins each by name.
+ */
+export const organizationLlmSettings = bmsSchema.table("organization_llm_settings", {
+  organizationId: uuid("organization_id")
+    .primaryKey()
+    .references(() => organizations.id, { onDelete: "cascade" }),
+  provider: varchar("provider", { length: 16 }).notNull(),
+  model: varchar("model", { length: 200 }),
+  keyCiphertext: bytea("key_ciphertext"),
+  keyIv: bytea("key_iv"),
+  keyVersion: integer("key_version"),
+  keyLast4: varchar("key_last4", { length: 4 }),
+  updatedBy: uuid("updated_by").references(() => users.id),
+  updatedAt: timestamp("updated_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+});

@@ -1,6 +1,7 @@
 /**
- * The size bound on the draft context `handleOpenAiTurn` embeds in its system
- * prompt, and the two shed passes that enforce it.
+ * The size bound on the draft context the agent's system prompt embeds
+ * (`buildSystemPrompt`, `F3.21`; before it, `handleOpenAiTurn`), and the two shed
+ * passes that enforce it.
  *
  * **Nothing measured the serialised draft before this module** (`F4.107`).
  * `F4.103` caps how many items a draft holds, `F4.104` how long one string may
@@ -139,10 +140,11 @@ export const PROMPT_MARKER_SENTENCE = `A value shown as ${PROMPT_OMITTED_MARKER}
 /**
  * True when any leaf of `value` is the marker — the guard on the way back in.
  *
- * **The prompt sentence above asks; this refuses.** `handleOpenAiTurn` calls it
- * on the model's `draftPatch` *before* `onboardingDraftSchema.safeParse` and
- * treats a patch that carries the marker as empty, because the parse cannot be
- * relied on to catch it:
+ * **The prompt sentence above asks; this refuses.** Since `F3.21` the agent's
+ * tool registry calls it on every tool call's arguments and refuses the call
+ * (`runTool`). Before it, `handleOpenAiTurn` called it on the model's
+ * `draftPatch` *before* `onboardingDraftSchema.safeParse`, because the parse
+ * could not be relied on to catch it:
  *
  * - `rtus[].config` and the three `meta` records are `z.record(z.unknown())`, so
  *   an echoed marker there is a string where an object is required and the parse
@@ -244,8 +246,9 @@ export function shedOverLongStrings(value: unknown): unknown {
  *
  *    *Why a pre-check exists at all:* `JSON.stringify` is recursive and throws a
  *    `RangeError` a few thousand levels down (4,173 in `bms-api-1`), and inside
- *    `handleOpenAiTurn`'s `try` that error is swallowed by a bare `catch {}`, so
- *    the turn degrades to rule-based with no log line. The measurement itself is
+ *    the old `handleOpenAiTurn`'s `try` that error was swallowed by a bare
+ *    `catch {}`, so the turn degraded to rule-based with no log line (`F3.21`'s
+ *    loop records the error class instead). The measurement itself is
  *    what fails on the draft that most needs measuring, and a budget you cannot
  *    measure on the input is not a budget.
  *

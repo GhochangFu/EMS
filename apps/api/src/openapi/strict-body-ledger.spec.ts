@@ -65,6 +65,10 @@ import {
   updateOrganizationBodySchema,
 } from "../admin/organizations/organizations.schema";
 import {
+  putAiAssistantSettingsBodySchema,
+  testAiAssistantBodySchema,
+} from "../admin/ai-assistant/ai-assistant-settings.schema";
+import {
   createPointKeyBodySchema,
   updatePointKeyBodySchema,
 } from "../admin/point-keys/point-keys.schema";
@@ -269,6 +273,11 @@ export const BODY_SCHEMAS: Record<string, ZodTypeAny> = {
   createNotificationChannelBodySchema,
   createOrganizationBodySchema,
   createPointKeyBodySchema,
+  // `F3.21` (ADR 0090 Amendment 1 A5). Both `.strict()`: the response's own
+  // fields (`keyLast4`, `source`, `platform`) sent back must be a 400, never
+  // silently dropped.
+  putAiAssistantSettingsBodySchema,
+  testAiAssistantBodySchema,
   createRtuBodySchema,
   createSessionBodySchema,
   createWorkOrderBodySchema,

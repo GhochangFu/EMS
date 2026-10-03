@@ -2,7 +2,6 @@ import { ONBOARDING_DRAFT_STRING_MAX } from "@bms/shared";
 import type { OnboardingDraft } from "@bms/shared";
 
 import { OnboardingChatService } from "./onboarding-chat.service";
-import type { ChatTurnResult } from "./onboarding-chat.service";
 import {
   PROMPT_DRAFT_BUDGET_BYTES,
   PROMPT_MARKER_SENTENCE,
@@ -13,6 +12,7 @@ import {
   shedOverLongStrings,
 } from "./onboarding-prompt-budget";
 import { redactDraftForLlm } from "./onboarding-redaction";
+import { FakeLlmProvider } from "./onboarding-agent-loop.spec";
 import { OnboardingValidateService } from "./onboarding-validate.service";
 
 function assert(condition: boolean, message: string): void {
@@ -555,209 +555,22 @@ export function assertAResidualOverBudgetPayloadIsValidJson(): void {
 }
 
 /**
- * A draft small enough that nothing about the turn below is about the budget.
- *
- * `satisfies OnboardingDraft` rather than a cast: the location fields are what
- * `draftLocationSchema` requires, so a field renamed there reddens the compile
- * rather than the assertion.
- */
-function smallDraft(): OnboardingDraft {
-  return {
-    location: {
-      name: "Berhampur",
-      code: "BERHAMPUR",
-      slug: "berhampur",
-      type: "smoc_campus" as const,
-      latitude: 22.3159,
-      longitude: 87.3222,
-    },
-  } satisfies OnboardingDraft;
-}
-
-/**
- * Runs one turn through the OpenAI branch with `reply` as the model's answer,
- * and restores both the key and the mock's reply afterwards.
- *
- * Three things the call has to line up, each of which silently sends the turn
- * somewhere else: `OPENAI_API_KEY` set for the call and restored after (the
- * inverse of the rule-based helper in `onboarding-chat.service.spec.ts`), no
- * `organizationId`, and a message matching neither of the two protocol regexes,
- * or `protocolService` answers before the OpenAI branch is reached.
- */
-async function openAiTurn(
-  captured: { requests: unknown[]; reply: string },
-  reply: string,
-  draft: OnboardingDraft,
-): Promise<ChatTurnResult> {
-  captured.requests.length = 0;
-  const savedReply = captured.reply;
-  const savedKey = process.env.OPENAI_API_KEY;
-  captured.reply = reply;
-  process.env.OPENAI_API_KEY = "not-a-real-key";
-  try {
-    const service = new OnboardingChatService(
-      new OnboardingValidateService(),
-      {} as never,
-      {} as never,
-      {} as never,
-      // F4.157 / F4.162: `handleTurn` reads the location types once per turn,
-      // before either branch, and the OpenAI branch lists them in its prompt. A
-      // `{}` here throws out of `handleTurn` itself.
-      { listLocationTypes: async () => [{ code: "pump_station", label: "Pump station" }] } as never,
-    );
-    return await service.handleTurn("Tell me about the site", draft, "point_keys", "Ion Exchange");
-  } finally {
-    captured.reply = savedReply;
-    if (savedKey === undefined) {
-      delete process.env.OPENAI_API_KEY;
-    } else {
-      process.env.OPENAI_API_KEY = savedKey;
-    }
-  }
-}
-
-/** A model reply whose `draftPatch` carries `description` and nothing else unusual. */
-function replyWithDescription(description: string): string {
-  return JSON.stringify({
-    assistantMessage: "I've updated the point keys.",
-    draftPatch: {
-      pointKeys: [
-        { code: "electrical_feeder_metric_0", name: "Feeder metric 0", description },
-      ],
-    },
-    currentPhase: "point_keys",
-  });
-}
-
-/** The other half: a reply whose `draftPatch` carries an RTU `config`. */
-function replyWithRtuConfig(config: unknown): string {
-  return JSON.stringify({
-    assistantMessage: "I've updated the RTU.",
-    draftPatch: {
-      rtus: [
-        { code: "BERHAMPUR-RTU-1", displayName: "Berhampur RTU 1", protocol: "mqtt", config },
-      ],
-    },
-    currentPhase: "rtu",
-  });
-}
-
-/**
- * **A `draftPatch` that echoes the marker is refused in code, not only asked
- * against in the prompt** (`F4.107` review, L1).
- *
- * The prompt sentence is an instruction, and the case it was written for is the
- * *harmless* one: an echoed `config: "[omitted…]"` is a string where
- * `z.record(z.unknown())` is required, so `safeParse` refuses it and the turn is
- * discarded. The case it does not cover is the one that corrupts the draft — the
- * same marker on `pointKeys[].description` is a valid string, measured against
- * the compiled schema: `safeParse` **succeeds**, and `mergeDraft` replaces
- * `pointKeys` wholesale, so the operator's prose is overwritten by a system
- * literal and committed.
- *
- * Three asserts and their order is the point:
- *
- * 1. **The clean patch comes through.** Without it every claim below is
- *    satisfied by a guard that refuses everything, and by a fixture that was
- *    failing `safeParse` for some unrelated reason. It is also what proves the
- *    OpenAI branch ran at all: the bare `catch {}` in `handleTurn` turns any
- *    throw into a rule-based answer whose `draftPatch` is `{}` — which is
- *    exactly what the refusal below looks like.
- * 2. **The echoed patch carries no `pointKeys`.**
- * 3. **And nothing else either** — the refusal is the whole patch, because
- *    dropping only the offending key would let `draftRtuSchema.config`'s
- *    `.default({})` write an empty config over a real one.
- *
- * Then the same pair on `rtus[].config`, which is the case that was *already*
- * discarded — a string where `z.record(z.unknown())` is required. It is asserted
- * because the sentence the guard is written under says the two cases now get the
- * same answer, and that is a claim about this one as much as the other; the
- * mechanism moved from the parse to the guard, and only an assertion says the
- * answer did not move with it.
- */
-export async function assertAnEchoedMarkerPatchIsRefused(captured: {
-  requests: unknown[];
-  reply: string;
-}): Promise<void> {
-  const clean = await openAiTurn(
-    captured,
-    replyWithDescription("Measured at the feeder panel."),
-    smallDraft(),
-  );
-
-  assert(
-    captured.requests.length === 1,
-    "the OpenAI branch must have run — a rule-based answer carries an empty patch and would pass the refusal below for the wrong reason",
-  );
-  assert(
-    clean.draftPatch.pointKeys?.[0]?.description === "Measured at the feeder panel.",
-    "an ordinary description must reach the draft patch, or the refusal below proves nothing",
-  );
-
-  const echoed = await openAiTurn(
-    captured,
-    replyWithDescription(PROMPT_OMITTED_MARKER),
-    smallDraft(),
-  );
-
-  assert(
-    captured.requests.length === 1,
-    "the OpenAI branch must have run for the echoed patch too",
-  );
-  assert(
-    echoed.draftPatch.pointKeys === undefined,
-    "a description echoing the marker passes safeParse — the patch must be refused before it",
-  );
-  assert(
-    Object.keys(echoed.draftPatch).length === 0,
-    "and the whole patch is refused, not the offending leaf: a stripped key lets .default({}) blank a config",
-  );
-
-  const realConfig = await openAiTurn(
-    captured,
-    replyWithRtuConfig({ host: "phe.thinkiot.co.in", port: 8883 }),
-    smallDraft(),
-  );
-
-  assert(
-    (realConfig.draftPatch.rtus?.[0]?.config as { host?: string } | undefined)?.host ===
-      "phe.thinkiot.co.in",
-    "an ordinary RTU config must reach the draft patch, or the config case below proves nothing either",
-  );
-
-  const echoedConfig = await openAiTurn(
-    captured,
-    replyWithRtuConfig(PROMPT_OMITTED_MARKER),
-    smallDraft(),
-  );
-
-  assert(
-    Object.keys(echoedConfig.draftPatch).length === 0,
-    "a config echoing the marker must answer the same empty patch — through the guard now, where safeParse refused it before",
-  );
-}
-
-/**
- * The measurement on what the OpenAI call is actually handed.
+ * The measurement on what the model is actually handed.
  *
  * Everything above measures the function. This measures the **forward**: the
- * `openai` client is mocked in the `.test.ts` wrapper (the repo's first
- * `vi.mock`, decision 5) and hands back the request object `create()` received,
- * so the assertion is on the bytes that would leave the process rather than on
- * a function that feeds them.
+ * system prompt of the first provider call of an agent turn (`F3.21`, ADR
+ * 0090), so the assertion is on the bytes that would leave the process rather
+ * than on a function that feeds them.
  *
- * **`requests.length === 1` comes first and it is not a formality.** The bare
- * `catch {}` around `handleOpenAiTurn` turns any wrong mock shape into a green
- * rule-based answer, so without this assert every claim below could be measuring
- * a branch that never ran.
- *
- * Three things the call has to line up, each of which silently sends the turn
- * somewhere else: `OPENAI_API_KEY` set for the call and restored after (the
- * inverse of the rule-based helper in `onboarding-chat.service.spec.ts`), no
- * `organizationId`, and a message matching neither of the two protocol regexes,
- * or `protocolService` answers before the OpenAI branch is reached.
+ * Before `F3.21` this case drove the single-shot OpenAI branch through a mocked
+ * `openai` client, and a sibling case refused a `draftPatch` that echoed the
+ * marker back. The model no longer returns a draft patch: the echo guard moved
+ * to the tool arguments (`assertAMarkerInArgumentsIsRefused` in
+ * `onboarding-agent-tools.spec.ts`), and this case now reads the prompt through
+ * a scripted provider. **`llm.calls === 1` comes first**, so a turn that
+ * silently took the guided mode cannot pass.
  */
-export async function assertOpenAiTurnForwardsABoundedPrompt(requests: unknown[]): Promise<void> {
+export async function assertAgentTurnForwardsABoundedPrompt(): Promise<void> {
   const draft = {
     location: {
       name: "Berhampur",
@@ -778,36 +591,24 @@ export async function assertOpenAiTurnForwardsABoundedPrompt(requests: unknown[]
     ],
   } satisfies OnboardingDraft;
 
-  requests.length = 0;
-  const savedKey = process.env.OPENAI_API_KEY;
-  process.env.OPENAI_API_KEY = "not-a-real-key";
-  try {
-    const service = new OnboardingChatService(
-      new OnboardingValidateService(),
-      {} as never,
-      {} as never,
-      {} as never,
-      // F4.157 / F4.162: `handleTurn` reads the location types once per turn,
-      // before either branch, and the OpenAI branch lists them in its prompt. A
-      // `{}` here throws out of `handleTurn` itself.
-      { listLocationTypes: async () => [{ code: "pump_station", label: "Pump station" }] } as never,
-    );
-    await service.handleTurn("Tell me about the site", draft, "location", "Ion Exchange");
-  } finally {
-    if (savedKey === undefined) {
-      delete process.env.OPENAI_API_KEY;
-    } else {
-      process.env.OPENAI_API_KEY = savedKey;
-    }
-  }
-
-  assert(
-    requests.length === 1,
-    "the OpenAI branch must have run — the catch around it turns a wrong mock into a green rule-based answer",
+  const llm = new FakeLlmProvider([{ kind: "final", text: "ok" }]);
+  const service = new OnboardingChatService(
+    new OnboardingValidateService(),
+    {} as never,
+    {} as never,
+    {} as never,
+    { listLocationTypes: async () => [{ code: "pump_station", label: "Pump station" }] } as never,
+    { resolveForOrganization: async () => ({ kind: "ready", provider: llm, source: "platform" }) } as never,
   );
+  await service.handleTurn("Tell me about the site", draft, "location", "Ion Exchange", "org-1", {
+    sessionId: "s-1",
+    history: [],
+  });
 
-  const request = requests[0] as { messages?: { role?: string; content?: string }[] };
-  const system = request.messages?.[0]?.content ?? "";
+  assert(llm.calls === 1, "the agent branch must have run — a guided turn would measure nothing");
+
+  const first = llm.seen[0]?.[0];
+  const system = first && first.role === "system" ? first.content : "";
   const prefix = "Draft context (redacted): ";
   const at = system.indexOf(prefix);
 

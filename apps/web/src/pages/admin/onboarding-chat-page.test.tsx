@@ -3,9 +3,11 @@ import { cleanup } from "@testing-library/react";
 import { afterEach, describe, it, vi } from "vitest";
 
 import {
+  aCommittedSessionFromAChatTurnNavigatesToTheRtus,
   aFailedTemplateDownloadShowsTheReason,
   aFailedUploadReachesTheChatBanner,
   aFailedValidateShowsSomethingAtAll,
+  anActionMessageRendersAsASmallLineNotABubble,
   aRefusedChatTurnShowsTheServersSentence,
   aRefusedCommitShowsTheReason,
   aRefusedCredentialSaveShowsTheReason,
@@ -64,5 +66,23 @@ describe("F4.106 onboarding chat page error surfaces", () => {
 
   it("shows the reason when the template download is refused", async () => {
     await aFailedTemplateDownloadShowsTheReason();
+  });
+});
+
+describe("F3.21 onboarding chat page agent loop", () => {
+  vi.setConfig({ testTimeout: 15_000 });
+
+  afterEach(() => {
+    cleanup();
+    vi.restoreAllMocks();
+    restoreScrolling();
+  });
+
+  it("renders an action message as a small line, not a bubble", async () => {
+    await anActionMessageRendersAsASmallLineNotABubble();
+  });
+
+  it("navigates to the RTU list when a chat turn commits the session", async () => {
+    await aCommittedSessionFromAChatTurnNavigatesToTheRtus();
   });
 });

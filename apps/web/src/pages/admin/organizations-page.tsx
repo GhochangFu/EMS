@@ -16,7 +16,11 @@ import { MasterDataLayout } from "../../components/admin/master-data-layout";
 import { PageHeader } from "../../components/page-header";
 import { SectionCard } from "../../components/section-card";
 import { StatusPill } from "../../components/status-pill";
-import { canWriteOrganizations, canAccessOnboarding } from "../../lib/admin-access";
+import {
+  canAccessOnboarding,
+  canManageAiAssistant,
+  canWriteOrganizations,
+} from "../../lib/admin-access";
 import type { AuthUser } from "../../stores/auth-store";
 
 type OrganizationsAdminPageProps = {
@@ -39,6 +43,7 @@ export function OrganizationsAdminPage({ user }: OrganizationsAdminPageProps) {
   const queryClient = useQueryClient();
   const canWrite = canWriteOrganizations(user.role);
   const canOnboard = canAccessOnboarding(user.role);
+  const canManageAi = canManageAiAssistant(user.role);
   const [activeFilter, setActiveFilter] = useState<MasterDataActiveFilter>("all");
   const [search, setSearch] = useState("");
   const [modalOpen, setModalOpen] = useState(false);
@@ -193,6 +198,17 @@ export function OrganizationsAdminPage({ user }: OrganizationsAdminPageProps) {
                               }
                             >
                               Onboard with AI
+                            </button>
+                          ) : null}
+                          {canManageAi ? (
+                            <button
+                              type="button"
+                              className="text-xs font-semibold text-accent-strong"
+                              onClick={() =>
+                                navigate(`/admin/organizations/${item.id}/ai-assistant`)
+                              }
+                            >
+                              AI assistant
                             </button>
                           ) : null}
                           {canWrite ? (

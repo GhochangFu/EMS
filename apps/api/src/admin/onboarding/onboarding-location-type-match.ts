@@ -66,28 +66,6 @@ export function locationTypeQuestion(name: string): string {
   return `Which type of location is **${name}**?`;
 }
 
-/**
- * The model's patch without a `location.type` that is not an active code.
- *
- * The system prompt lists the active codes, and an instruction is not a
- * control: `onboardingDraftSchema` checks only the shape of `type`, so an
- * invented code would pass the parse and reach the draft. Only the one key is
- * dropped. The rest of the location is kept, and the validator then asks for
- * the type the model could not supply.
- */
-export function withoutInactiveLocationType(
-  patch: OnboardingDraftInput,
-  activeCodes: readonly string[],
-): OnboardingDraftInput {
-  const type = patch.location?.type;
-  if (patch.location === undefined || type === undefined || activeCodes.includes(type)) {
-    return patch;
-  }
-  const location = { ...patch.location };
-  delete location.type;
-  return { ...patch, location };
-}
-
 type DraftLocation = NonNullable<OnboardingDraft["location"]>;
 
 /**
@@ -129,8 +107,8 @@ export async function assertPatchLocationTypeIsActive(
  * **except while the chat waits for a type**.
  *
  * - A stored type counts only when it is an active code in `types`. An inactive
- *   or unknown one is treated as absent, as the OpenAI branch drops one
- *   (`withoutInactiveLocationType`), so it is asked for again, never passed.
+ *   or unknown one is treated as absent (the agent's `set_location` refuses one,
+ *   `F3.21`), so it is asked for again, never passed.
  * - `type` is the type the message names, else the stored active one. The patch
  *   carries it, and the chat asks "Which type…?" only when it is absent. It is
  *   never defaulted.

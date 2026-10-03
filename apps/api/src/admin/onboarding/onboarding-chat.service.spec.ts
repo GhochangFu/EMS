@@ -35,7 +35,7 @@ function longCell(fill: string): string {
  * services and only one of them would still be the one this file describes.
  */
 export function chatService(): OnboardingChatService {
-  return new OnboardingChatService({} as never, {} as never, {} as never, {} as never, {} as never);
+  return new OnboardingChatService({} as never, {} as never, {} as never, {} as never, {} as never, {} as never);
 }
 
 /** A topic exactly at the bound — the longest one `parseRtus` accepts. */
@@ -432,6 +432,7 @@ function ruleBasedChatService(): OnboardingChatService {
     {} as never,
     {} as never,
     { listLocationTypes: async () => [...FOUR] } as never,
+    {} as never, // F3.21: no organization is passed, so the resolver is never asked.
   );
 }
 
@@ -459,7 +460,7 @@ export async function ruleBasedTurn(
   const savedKey = process.env.OPENAI_API_KEY;
   delete process.env.OPENAI_API_KEY;
   try {
-    return await ruleBasedChatService().handleTurn(message, draft, phase, "Ion Exchange");
+    return await ruleBasedChatService().handleTurn(message, draft, phase, "Ion Exchange", undefined, { sessionId: "s-1", history: [] });
   } finally {
     if (savedKey === undefined) {
       delete process.env.OPENAI_API_KEY;

@@ -22,6 +22,7 @@ function buildChatService(): OnboardingChatService {
     {} as never,
     {} as never,
     {} as never,
+    {} as never,
   );
 }
 

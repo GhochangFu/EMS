@@ -39,7 +39,7 @@ export const onboardingSessionStatusSchema = z.enum(["draft", "committed", "aban
 
 export const onboardingChatMessageSchema = z.object({
   id: z.string(),
-  role: z.enum(["user", "assistant", "system"]),
+  role: z.enum(["user", "assistant", "system", "action"]),
   content: z.string(),
   createdAt: z.string(),
 });

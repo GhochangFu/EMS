@@ -21,6 +21,7 @@
  * until its module resolution changes, which is its own decision.
  */
 export * from "./admin";
+export * from "./ai-assistant";
 export * from "./asset-dashboards";
 export * from "./asset-images";
 export * from "./auth";

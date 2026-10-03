@@ -198,17 +198,18 @@ const CAPPED_DRAFT_ARRAYS: readonly CappedDraftArray[] = [
  *
  * 1. `PATCH :id/draft`, whose body is parsed by `patchDraftBodySchema`, so the
  *    schema `.max()` refuses it at the controller.
- * 2. The model's `draftPatch`, parsed by `onboardingDraftSchema.safeParse` in
- *    `handleOpenAiTurn`. Over-cap, the patch fails the parse and `.data ?? {}`
- *    discards it — see the ruling recorded on that schema.
+ * 2. The agent's tool writes (`F3.21`), each parsed with its element schema and
+ *    checked against these caps in `onboarding-agent-tools.ts` before it lands.
+ *    (Before `F3.21` this was the single-shot model `draftPatch`, parsed by
+ *    `onboardingDraftSchema.safeParse`.)
  * 3. **`handleRuleBasedTurn`, which the schema `.max()` does not reach at all.**
  *    It assembles its patch in code and never parses the schema — the
- *    `safeParse` above it guards the model branch alone — and two of its
+ *    parses above it guard the other producers alone — and two of its
  *    branches concatenate onto the stored draft rather than replace it
  *    (`patch.rtus`, `patch.pointKeys`), so the draft grows by one item per turn.
  *    Nothing bounded that until `OnboardingService.chat` was made to call this
  *    function on the merged draft before its write. It is the default branch,
- *    not a fallback: `.env.example` ships `OPENAI_API_KEY=` empty.
+ *    not a fallback: `.env.example` ships `LLM_PROVIDER=` empty (`F3.21`).
  *
  * An earlier version of this docblock named only the first two, and that
  * sentence is why the third shipped unguarded. It is corrected here rather than

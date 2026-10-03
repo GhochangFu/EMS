@@ -107,7 +107,7 @@ function pointKeySession(pointKeyCount: number) {
 }
 
 /** Everything the fake database was asked to do, so a write can be measured absent. */
-type Recorder = {
+export type Recorder = {
   /** The `set({...})` payload of every `update`, in call order. */
   readonly updates: Record<string, unknown>[];
   /** How many transactions `withTenant` opened. */
@@ -122,7 +122,7 @@ type Recorder = {
  * with no policy to enforce here — and both it and `update` are counted, because
  * the claim under test is that **nothing is written**.
  */
-function fakeDb(results: unknown[][], record: Recorder) {
+export function fakeDb(results: unknown[][], record: Recorder) {
   const queue = [...results];
   const next = () => queue.shift() ?? [];
   const selectChain = {
@@ -179,6 +179,9 @@ function buildService(opts: { session: ReturnType<typeof sessionRow>; results?: 
     // F4.162 (plan D9): `handleTurn` reads the active location types on every
     // turn. `smoc_campus` is the fixture location's type, so it stays set.
     { listLocationTypes: async () => [{ code: "smoc_campus", label: "SMOC campus" }] } as never,
+    // F3.21: the platform has no provider, so the guided (rule-based) mode
+    // answers — the producer these cases are about.
+    { resolveForOrganization: async () => ({ kind: "guided", reason: "platform_off" }) } as never,
   );
   const service = new OnboardingService(
     db,

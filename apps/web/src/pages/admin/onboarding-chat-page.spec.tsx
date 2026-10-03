@@ -1,7 +1,7 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { MemoryRouter, Route, Routes } from "react-router-dom";
+import { MemoryRouter, Route, Routes, useParams } from "react-router-dom";
 import { expect, vi } from "vitest";
 
 import type { OnboardingChatResponseDto, OnboardingSessionDto } from "@bms/shared";
@@ -134,6 +134,12 @@ export function restoreScrolling(): void {
   }
 }
 
+/** Stands in for the RTU list page, and echoes the id the router matched. */
+function RtusRouteProbe() {
+  const { locationId } = useParams<{ locationId: string }>();
+  return <div data-testid="rtus-route-probe">{locationId}</div>;
+}
+
 /**
  * Renders the page **on its real route**.
  *
@@ -151,6 +157,11 @@ function renderPage(): HTMLElement {
           <Route
             path="/admin/organizations/:orgId/onboarding"
             element={<OnboardingChatPage user={USER} />}
+          />
+          {/* F3.21 — the probe a committed chat turn must land on. */}
+          <Route
+            path="/admin/locations/:locationId/rtus"
+            element={<RtusRouteProbe />}
           />
         </Routes>
       </MemoryRouter>
@@ -441,4 +452,70 @@ export async function aFailedTemplateDownloadShowsTheReason(): Promise<void> {
   const banner = await findTheOnlyAlert();
   expect(banner).toHaveTextContent("Template download is outside your access scope");
   expectNoEnvelopeLeak(banner);
+}
+
+/** The author label every assistant bubble carries, and an action row must not. */
+const ASSISTANT_LABEL = "Onboarding assistant";
+
+function message(
+  id: string,
+  role: OnboardingSessionDto["messages"][number]["role"],
+  content: string,
+): OnboardingSessionDto["messages"][number] {
+  return { id, role, content, createdAt: new Date(0).toISOString() };
+}
+
+/**
+ * F3.21 — an `action` message (a tool the agent ran) is a small centred line,
+ * not a third assistant bubble.
+ *
+ * Both halves are needed. The `data-message-role` count alone would pass if the
+ * row also kept the assistant's label; the label count alone would pass if the
+ * action row vanished. Two assistant bubbles carry the label, so exactly two.
+ */
+export async function anActionMessageRendersAsASmallLineNotABubble(): Promise<void> {
+  stubStart({
+    ...SESSION,
+    messages: [
+      message("m1", "assistant", "Which RTU should I add?"),
+      message("m2", "action", "Added RTU RTU-1 (mqtt)"),
+      message("m3", "assistant", "RTU-1 is in the draft."),
+    ],
+  });
+  const container = renderPage();
+
+  await screen.findByText("RTU-1 is in the draft.");
+  const actions = container.querySelectorAll('[data-message-role="action"]');
+  expect(actions, "exactly one action row").toHaveLength(1);
+  expect(actions[0]).toHaveTextContent("Added RTU RTU-1 (mqtt)");
+  expect(
+    screen.getAllByText(ASSISTANT_LABEL, { exact: true }),
+    "only the two assistant bubbles carry the author label",
+  ).toHaveLength(2);
+}
+
+/**
+ * F3.21 ruling 4 — a chat turn that committed the draft navigates to the new
+ * location's RTU list, the same target the Commit button reaches.
+ */
+export async function aCommittedSessionFromAChatTurnNavigatesToTheRtus(): Promise<void> {
+  stubStart();
+  vi.spyOn(api, "sendOnboardingChat").mockResolvedValue({
+    assistantMessage: "Committed.",
+    session: {
+      ...SESSION,
+      status: "committed",
+      committedAt: new Date(0).toISOString(),
+      messages: [message("m1", "user", "commit it"), message("m2", "assistant", "Committed.")],
+      result: { locationId: "loc-1", rtuCount: 1 },
+    },
+  });
+  renderPage();
+
+  await waitForSessionToLand();
+  await userEvent.type(screen.getByPlaceholderText(/Type a message/), "commit it");
+  await userEvent.click(screen.getByRole("button", { name: "Send" }));
+
+  const probe = await screen.findByTestId("rtus-route-probe");
+  expect(probe).toHaveTextContent("loc-1");
 }

@@ -45,6 +45,9 @@ export const FORCED_TABLES = [
   // `wc-hvac-admin`'s asset-group grant.
   "user_location_access",
   "user_asset_group_access",
+  // F3.21 (ADR 0090 Amendment 1 A3, migration 0100): the per-organization LLM
+  // setting holds an encrypted provider key, so it is FORCE like every tenant table.
+  "organization_llm_settings",
 ] as const;
 
 function assert(condition: boolean, message: string): void {

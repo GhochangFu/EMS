@@ -240,6 +240,18 @@ export function canAccessOnboarding(role: UserRole): boolean {
 }
 
 /**
+ * `F3.21` (ADR 0090 Amendment 1 A5) — whether the role may set an
+ * organization's AI assistant provider, model and key. The API checks the role
+ * first (`admin` or `organization_admin`) and then `canManageOrganization`;
+ * the role check matters, because `canManageOrganization` alone also admits a
+ * `location_admin` for its locations' organizations. So this is narrower than
+ * `isMasterDataAdmin` on purpose, and matches the API.
+ */
+export function canManageAiAssistant(role: UserRole): boolean {
+  return role === "admin" || role === "organization_admin";
+}
+
+/**
  * `F3.76` — the five areas of the Master Data Hub, in display order. Each tab
  * below names its area; the order of `masterDataTabs` is area by area, so an
  * area's first tab is its landing screen.

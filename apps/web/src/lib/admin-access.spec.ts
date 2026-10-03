@@ -1,5 +1,6 @@
 import {
   canAccessOnboarding,
+  canManageAiAssistant,
   canAuthorDashboards,
   canChooseAssetGroupDashboardScope,
   canChooseLocationDashboardScope,
@@ -412,4 +413,17 @@ export function runMimicLayoutsTabHiddenFromLocationAdminTest(): void {
   const paths = visibleMasterDataTabs("location_admin").map((tab) => tab.path);
   assert(paths.includes("/admin/asset-groups"), "location_admin sees the Asset Groups tab (control)");
   assert(!paths.includes(MIMIC_LAYOUTS), "location_admin must not see the Mimic Layouts tab");
+}
+
+/** `F3.21` (ADR 0090 Amendment 1 A5) — admin and organization_admin manage the AI assistant. */
+export function runCanManageAiAssistantAdminsTest(): void {
+  assert(canManageAiAssistant("admin"), "admin manages the AI assistant");
+  assert(canManageAiAssistant("organization_admin"), "organization_admin manages the AI assistant");
+}
+
+/** `F3.21` — every other role is refused, including location_admin, who reaches the admin routes. */
+export function runCanManageAiAssistantOthersTest(): void {
+  for (const role of ["location_admin", "asset_group_admin", "operator", "viewer"] as const) {
+    assert(!canManageAiAssistant(role), `${role} must not manage the AI assistant`);
+  }
 }
