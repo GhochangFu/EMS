@@ -7,6 +7,7 @@ import type { JwtPayload, UserRole } from "@bms/shared";
 import type { AccessControlService } from "../../auth/access-control.service";
 import { rememberIdentity, type ResolvedIdentity } from "../../auth/identity-resolver";
 import type { IdentityAdminFailureReason, NewIdentityUser } from "../../identity/identity-admin.client";
+import { NotConfiguredIdentityAdmin } from "../../identity/identity-admin.module";
 import { FakeIdentityAdmin } from "../../identity/testing/fake-identity-admin";
 import { MasterDataAuditService } from "../master-data-audit.service";
 import { dbOps, recordingDb, type DbOp, type Timeline } from "../../testing/recording-db";
@@ -16,6 +17,7 @@ import {
   DUPLICATE_EMAIL,
   LAST_ACTIVE_ADMIN,
   LOCAL_MODE_READ_ONLY,
+  MANAGER_ROLE_REQUIRED,
   NOT_CONFIGURED,
   ORGANIZATION_OUT_OF_SCOPE,
   SELF_DEACTIVATE,
@@ -58,6 +60,7 @@ function user(id: string, role: UserRole, organizationId: string | null, extra: 
 
 const ADMIN_CALLER = user("00000000-0000-4000-8000-0000000000a1", "admin", null);
 const ORG_ADMIN_CALLER = user("00000000-0000-4000-8000-0000000000o1", "organization_admin", ORG_A);
+const LOCATION_ADMIN_CALLER = user("00000000-0000-4000-8000-0000000000l1", "location_admin", ORG_A);
 const OTHER_ADMIN = user("00000000-0000-4000-8000-0000000000a2", "admin", null);
 const ADMIN_TARGET = user("00000000-0000-4000-8000-0000000000a3", "admin", null);
 const VIEWER_A = user("00000000-0000-4000-8000-0000000000v1", "viewer", ORG_A);
@@ -114,6 +117,8 @@ type Options = {
   readonly emptyUpdate?: boolean;
   readonly activeAdmins?: string[];
   readonly users?: UserRow[];
+  /** The provider the module returns when Keycloak is unconfigured, instead of the recording fake. */
+  readonly notConfigured?: boolean;
 };
 
 function harness(options: Options = {}) {
@@ -177,7 +182,13 @@ function harness(options: Options = {}) {
     writableOrganizationIds: async () => writable,
   } as unknown as AccessControlService;
   const audit = new MasterDataAuditService(tenant as BmsDb, fleet as BmsDb);
-  const service = new UsersService(fleet, tenant, accessControl, audit, identity);
+  const service = new UsersService(
+    fleet,
+    tenant,
+    accessControl,
+    audit,
+    options.notConfigured ? new NotConfiguredIdentityAdmin() : identity,
+  );
 
   const jwt: JwtPayload = {
     sub: caller.subject ?? caller.id,
@@ -571,8 +582,38 @@ export async function assertNotConfiguredIs503(): Promise<void> {
 }
 
 export async function assertNotConfiguredStillServesTheList(): Promise<void> {
-  const { service, jwt, identity } = harness();
-  identity.failNext("createUser", "not_configured");
-  await refusal(service.create(jwt, createBody()));
+  const { service, jwt } = harness({ notConfigured: true });
+  const err = await refusal(service.create(jwt, createBody()));
+  expect(err.getStatus(), "positive control: writes are refused by the unconfigured provider").toBe(503);
   expect((await service.list(jwt)).items.length).toBeGreaterThan(0);
+}
+
+export async function assertAKeycloakEnableFailureOnCreateIsAFollowUp(): Promise<void> {
+  const { service, jwt, identity } = harness();
+  identity.failNext("setEnabled", "unavailable");
+  const response = await service.create(jwt, createBody());
+  expect(response.followUp).toBe("keycloak_enable_failed");
+}
+
+// -- non-manager rows ---------------------------------------------------------
+
+/** A `location_admin` row whose token claims `organization_admin`: the row decides, and it is not a manager. */
+export async function assertANonManagerRowIsRefusedTheList(): Promise<void> {
+  const { service, jwt } = harness({ caller: LOCATION_ADMIN_CALLER, jwtRole: "organization_admin" });
+  const err = await refusal(service.list(jwt));
+  expect([err.getStatus(), err.message]).toEqual([403, MANAGER_ROLE_REQUIRED]);
+}
+
+export async function assertANonManagerRowIsRefusedAWrite(action: Action): Promise<void> {
+  const { service, jwt, identity, timeline } = harness({ caller: LOCATION_ADMIN_CALLER, jwtRole: "organization_admin" });
+  const err = await refusal(act(service, jwt, VIEWER_A.id, action));
+  expect([err.getStatus(), err.message]).toEqual([403, MANAGER_ROLE_REQUIRED]);
+  expect(identity.calls).toEqual([]);
+  expect(auditInserts(timeline)).toEqual([]);
+}
+
+export async function assertANonManagerRowIsRefusedCreate(): Promise<void> {
+  const { service, jwt, identity } = harness({ caller: LOCATION_ADMIN_CALLER, jwtRole: "organization_admin" });
+  const err = await refusal(service.create(jwt, createBody()));
+  expect([err.getStatus(), err.message, identity.calls.length]).toEqual([403, MANAGER_ROLE_REQUIRED, 0]);
 }

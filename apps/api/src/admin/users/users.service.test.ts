@@ -235,7 +235,41 @@ describe("F3.78 — local mode and an unconfigured client (ADR 0089 decisions 5 
     await spec.assertNotConfiguredIs503();
   });
 
-  it("not_configured still serves the list", async () => {
+  it("not_configured still serves the list (the module's NotConfiguredIdentityAdmin)", async () => {
     await spec.assertNotConfiguredStillServesTheList();
+  });
+
+  it("a Keycloak enable failure after the create commit is a 200 with followUp", async () => {
+    await spec.assertAKeycloakEnableFailureOnCreateIsAFollowUp();
+  });
+});
+
+describe("F3.78 — a non-manager row is 403 on every route, whatever the token claims (ADR 0089 decision 2)", () => {
+  it("a location_admin row claiming organization_admin is refused the list", async () => {
+    await spec.assertANonManagerRowIsRefusedTheList();
+  });
+
+  it("a location_admin row claiming organization_admin is refused create", async () => {
+    await spec.assertANonManagerRowIsRefusedCreate();
+  });
+
+  it("a location_admin row claiming organization_admin is refused PATCH displayName", async () => {
+    await spec.assertANonManagerRowIsRefusedAWrite("PATCH displayName");
+  });
+
+  it("a location_admin row claiming organization_admin is refused PATCH role", async () => {
+    await spec.assertANonManagerRowIsRefusedAWrite("PATCH role");
+  });
+
+  it("a location_admin row claiming organization_admin is refused deactivate", async () => {
+    await spec.assertANonManagerRowIsRefusedAWrite("deactivate");
+  });
+
+  it("a location_admin row claiming organization_admin is refused reactivate", async () => {
+    await spec.assertANonManagerRowIsRefusedAWrite("reactivate");
+  });
+
+  it("a location_admin row claiming organization_admin is refused temporary-password", async () => {
+    await spec.assertANonManagerRowIsRefusedAWrite("temporary-password");
   });
 });
