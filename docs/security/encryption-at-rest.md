@@ -316,8 +316,9 @@ version neither key holds is a loud, named error, not a silent skip.
    `failures: []`. There is no three-key window:
    unsetting the previous key while any row still holds the version it wrote
    turns that row into a loud `CredentialKeyVersionError` on its next read,
-   not a silent skip. The organization LLM key is the exception:
-   `OnboardingLlmResolver.decryptKey` swallows that error, the chat falls to the
+   not a silent skip. The organization LLM key fails more quietly: unlike the
+   channel read, whose warn line names the error class,
+   `OnboardingLlmResolver.decryptKey` swallows the error, the chat falls to the
    guided mode, and the warn line says only that the setting is "incomplete".
    **A clean report covers
    `rtu_connection_configs`, `notification_channels` and
