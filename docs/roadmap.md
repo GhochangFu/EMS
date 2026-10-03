@@ -7016,6 +7016,33 @@ and leaves an edited tab whole, the demo dashboard `sld-demo-rsmoc-wc` at
 `0099`. Owed: the browser check after the stack rebuild, and the
 `chore(agents):` PR for AGENTS.md lines 870–871.
 
+### `F3.21` — the tool-calling onboarding agent loop ✅ 2026-10-03
+
+PR #705, squash `9ff272e1`; ADR 0090 (#702, `a34638d8`) and its Amendment 1
+(#703, `bead5a88`); plan `docs/plans/f3.21-agent-tool-calling-loop.md`.
+Effort 5–7 days.
+
+- The onboarding chat runs a model with 17 tools that edit the session draft:
+  at most 8 tool calls and 45 s per turn, 20 history messages. The model
+  cannot commit. `propose_commit` binds a proposal to a hash of the draft, and
+  only the user's `confirm commit` or the Commit button commits it, after a
+  `FOR UPDATE` re-check of that hash.
+- Three providers behind one port: OpenAI, OpenRouter and Anthropic. `.env`
+  sets the platform default (`LLM_PROVIDER`). An organization can store its
+  own key on a new admin page, `/admin/organizations/:orgId/ai-assistant`, in
+  the new table `bms.organization_llm_settings` (migration `0100`, FORCE RLS,
+  the key encrypted, only its last four characters shown).
+- With no provider, or after a provider error, the rule-based path runs, with a
+  notice.
+
+Verified: CI green; a cold start; `0100` on the dev stack; one live
+OpenRouter turn; `browser-verifier` 10/10. Not checked live: the OpenAI and
+Anthropic providers (no keys).
+
+**Cascade:** `F3.22`, `F3.23`, `F3.24`, `F3.25`, `F3.26` and `F3.27` are
+now unblocked — each of their other dependencies is done. Owed: the
+`chore(agents):` sweep, and `F4.185` (the shared credential scrub).
+
 ### `F3.76` — the Master Data Hub in five areas ✅ 2026-09-30
 
 PR #668, squash `427adf8d`; the owner ruled it into v1 on 2026-09-30, with no
