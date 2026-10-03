@@ -41,6 +41,11 @@ const PHASE_LABELS: Record<string, string> = {
   review: "Review",
 };
 
+/** Where a committed session lands — one target for the Commit button and a chat commit. */
+function rtusPathFor(locationId: string): string {
+  return `/admin/locations/${locationId}/rtus`;
+}
+
 /** Full-screen AI onboarding chat with collapsible draft preview drawer. */
 export function OnboardingChatPage({ user }: OnboardingChatPageProps) {
   const { orgId } = useParams<{ orgId: string }>();
@@ -144,6 +149,14 @@ export function OnboardingChatPage({ user }: OnboardingChatPageProps) {
           ? `Validation found ${data.validationErrors.length} issue(s) — fix them in chat before commit.`
           : null,
       );
+
+      // F3.21 ruling 4: a turn whose agent committed the draft lands where the
+      // Commit button does. `result` is an open record on the wire, so the id
+      // is checked rather than cast.
+      const locationId = data.session.result?.locationId;
+      if (data.session.status === "committed" && typeof locationId === "string") {
+        navigate(rtusPathFor(locationId));
+      }
     },
     onError: (err: Error) => setChatError(apiErrorMessage(err)),
   });
@@ -168,7 +181,7 @@ export function OnboardingChatPage({ user }: OnboardingChatPageProps) {
   const commitMutation = useMutation({
     mutationFn: () => commitOnboardingSession(session!.id),
     onSuccess: (result) => {
-      navigate(`/admin/locations/${result.locationId}/rtus`);
+      navigate(rtusPathFor(result.locationId));
     },
     onError: (err: Error) => setChatError(apiErrorMessage(err)),
   });
@@ -308,31 +321,43 @@ export function OnboardingChatPage({ user }: OnboardingChatPageProps) {
               {startMutation.isPending && !session && (
                 <div className="text-xs text-ink-muted">Starting onboarding session…</div>
               )}
-              {messages.map((m) => (
-                <div
-                  key={m.id}
-                  className={`flex flex-col ${m.role === "user" ? "items-end" : "items-start"}`}
-                >
-                  <span
-                    className={`mb-0.5 px-1 text-[10px] font-semibold uppercase tracking-wide ${
-                      m.role === "user" ? "text-accent" : "text-ink-muted"
-                    }`}
-                  >
-                    {m.role === "user"
-                      ? (user.displayName ?? user.email)
-                      : "Onboarding assistant"}
-                  </span>
+              {messages.map((m) =>
+                // F3.21: an `action` row records a tool the agent ran. It is a
+                // small centred line with no author label, not a third bubble.
+                m.role === "action" ? (
                   <div
-                    className={`max-w-[85%] whitespace-pre-wrap rounded px-3 py-2 text-sm ${
-                      m.role === "user"
-                        ? "bg-accent text-on-accent"
-                        : "surface-raised-sm text-ink"
-                    }`}
+                    key={m.id}
+                    data-message-role="action"
+                    className="self-center text-center text-[11px] text-ink-muted"
                   >
                     {m.content}
                   </div>
-                </div>
-              ))}
+                ) : (
+                  <div
+                    key={m.id}
+                    className={`flex flex-col ${m.role === "user" ? "items-end" : "items-start"}`}
+                  >
+                    <span
+                      className={`mb-0.5 px-1 text-[10px] font-semibold uppercase tracking-wide ${
+                        m.role === "user" ? "text-accent" : "text-ink-muted"
+                      }`}
+                    >
+                      {m.role === "user"
+                        ? (user.displayName ?? user.email)
+                        : "Onboarding assistant"}
+                    </span>
+                    <div
+                      className={`max-w-[85%] whitespace-pre-wrap rounded px-3 py-2 text-sm ${
+                        m.role === "user"
+                          ? "bg-accent text-on-accent"
+                          : "surface-raised-sm text-ink"
+                      }`}
+                    >
+                      {m.content}
+                    </div>
+                  </div>
+                ),
+              )}
               {chatMutation.isPending && (
                 <div className="text-xs text-ink-muted">Assistant is typing…</div>
               )}
