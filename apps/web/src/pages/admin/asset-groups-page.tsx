@@ -195,13 +195,15 @@ export function AssetGroupsAdminPage({ user }: AssetGroupsAdminPageProps) {
         accepted `locationId` since the first commit. Without it the parameter
         was unreachable — a filter the server could honour and no user could
         ask for. `rtu` is omitted from the levels: a group hangs off a location,
-        never off an RTU.
+        never off an RTU. `syncRoutes={false}`: the bar filters this screen;
+        with the default it navigated to the organization's Locations page.
       */}
       <div className="mb-4">
         <HierarchyFilterBar
           user={user}
           levels={["organization", "location"]}
           selection={selection}
+          syncRoutes={false}
           onNavigate={(next) => {
             setSelection(next);
             // The selected group may not survive the filter, and a stale id

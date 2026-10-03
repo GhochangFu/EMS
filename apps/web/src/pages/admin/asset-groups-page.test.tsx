@@ -6,6 +6,7 @@ import {
   aReadOnlyRoleSeesNoWriteControls,
   addSendsTheAssetId,
   anEmptyVocabularyRendersNoRolesOfItsOwn,
+  choosingAnOrganizationStaysOnTheScreen,
   createAtAnotherLocationMovesTheFilterThere,
   createSendsTheSelectedLocation,
   editNeverSendsCode,
@@ -63,6 +64,10 @@ describe("F3.37 asset groups page", () => {
 
   it("moves the filter to the new group's location when it differs from the filter's", async () => {
     await createAtAnotherLocationMovesTheFilterThere();
+  });
+
+  it("stays on the asset-groups screen when an organization is chosen in the filter bar", async () => {
+    await choosingAnOrganizationStaysOnTheScreen();
   });
 
   it("offers only free assets of the group's own location in the picker", async () => {

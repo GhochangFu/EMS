@@ -1,7 +1,7 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { MemoryRouter } from "react-router-dom";
+import { MemoryRouter, useLocation } from "react-router-dom";
 import { expect, vi } from "vitest";
 
 import * as api from "../../api/admin/asset-groups";
@@ -409,6 +409,42 @@ export async function createAtAnotherLocationMovesTheFilterThere(): Promise<void
   await userEvent.click(within(dialog).getByRole("button", { name: "Save" }));
 
   expect(await screen.findByRole("button", { name: "Edit group" })).toBeVisible();
+}
+
+function PathProbe(): JSX.Element {
+  return <output aria-label="current path">{useLocation().pathname}</output>;
+}
+
+/**
+ * The filter bar filters this screen; it does not leave it. `HierarchyFilterBar`
+ * syncs routes by default, so without `syncRoutes={false}` choosing an
+ * organization navigated to that organization's Locations page and the groups
+ * could never be filtered (found in the PR4 browser check). The plain
+ * `renderPage` cannot see this: with no `<Routes>`, the page stays mounted
+ * whatever the path is, hence the path probe.
+ */
+export async function choosingAnOrganizationStaysOnTheScreen(): Promise<void> {
+  stubApi();
+  vi.spyOn(organizationsApi, "fetchAdminOrganizations").mockResolvedValue({
+    items: [{ id: "33333333-3333-3333-3333-333333333333", code: "ORG", name: "Org" }],
+  } as never);
+  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  render(
+    <QueryClientProvider client={queryClient}>
+      <MemoryRouter initialEntries={["/admin/asset-groups"]}>
+        <AssetGroupsAdminPage user={user} />
+        <PathProbe />
+      </MemoryRouter>
+    </QueryClientProvider>,
+  );
+  const orgOption = await screen.findByRole("option", { name: /ORG/ });
+  await userEvent.selectOptions(
+    orgOption.closest("select") as HTMLSelectElement,
+    "33333333-3333-3333-3333-333333333333",
+  );
+  // Positive control: the choice took effect (the location select now lists Plant 1).
+  expect(await screen.findByRole("option", { name: "Plant 1" })).toBeInTheDocument();
+  expect(screen.getByLabelText("current path")).toHaveTextContent(/^\/admin\/asset-groups$/);
 }
 
 /** The picker offers the group's location's free assets, and nothing else. */
