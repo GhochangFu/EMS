@@ -1,9 +1,9 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { MemoryRouter } from "react-router-dom";
+import { MemoryRouter, Route, Routes, useParams } from "react-router-dom";
 import { expect, vi } from "vitest";
-import type { AdminOrganizationDto } from "@bms/shared";
+import type { AdminOrganizationDto, UserRole } from "@bms/shared";
 
 import * as api from "../../api/admin/organizations";
 import type { AuthUser } from "../../stores/auth-store";
@@ -194,4 +194,52 @@ export async function saveLosesItsIdleNameWhilePending(): Promise<void> {
   await openCreateForm();
   await saveHeldPending();
   expect(screen.queryByRole("button", { name: "Save" })).not.toBeInTheDocument();
+}
+
+/** Stands in for the AI assistant page, and echoes the organization id the router matched. */
+function AiAssistantRouteProbe() {
+  const { orgId } = useParams<{ orgId: string }>();
+  return <div data-testid="ai-assistant-route-probe">{orgId}</div>;
+}
+
+/** Renders the list as `role`, beside a probe on the AI assistant sub-page route. */
+function renderPageAs(role: UserRole): void {
+  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  render(
+    <QueryClientProvider client={queryClient}>
+      <MemoryRouter initialEntries={["/admin/organizations"]}>
+        <Routes>
+          <Route path="/admin/organizations" element={<OrganizationsAdminPage user={{ ...user, role }} />} />
+          <Route path="/admin/organizations/:orgId/ai-assistant" element={<AiAssistantRouteProbe />} />
+        </Routes>
+      </MemoryRouter>
+    </QueryClientProvider>,
+  );
+}
+
+/** `F3.21` (ADR 0090 Amendment 1 A6) — an organization_admin's row action opens that row's AI assistant page. */
+export async function theAiAssistantActionNavigatesToTheSubPage(): Promise<void> {
+  stubApi();
+  renderPageAs("organization_admin");
+  const row = (await screen.findByText("Rupee organization")).closest("tr")!;
+
+  await userEvent.click(within(row).getByRole("button", { name: "AI assistant" }));
+
+  expect(await screen.findByTestId("ai-assistant-route-probe")).toHaveTextContent(
+    "22222222-2222-2222-2222-222222222222",
+  );
+}
+
+/**
+ * `F3.21` — the action is hidden from a role without `canManageAiAssistant`.
+ * `location_admin` passes `AdminRoute` and reaches this list, so the absence
+ * means something; the "View only" cell on the same row is the control.
+ */
+export async function theAiAssistantActionIsHiddenWithoutAccess(): Promise<void> {
+  stubApi();
+  renderPageAs("location_admin");
+  const row = (await screen.findByText("Rupee organization")).closest("tr")!;
+
+  expect(within(row).getByText("View only")).toBeInTheDocument();
+  expect(within(row).queryByRole("button", { name: "AI assistant" })).toBeNull();
 }

@@ -9,6 +9,8 @@ import {
   saveAnnouncesSavingWhilePending,
   saveIsNamedSaveAndNotBusyAtIdle,
   saveLosesItsIdleNameWhilePending,
+  theAiAssistantActionIsHiddenWithoutAccess,
+  theAiAssistantActionNavigatesToTheSubPage,
   typedCurrencyIsUppercasedAndSubmitted,
 } from "./organizations-page.spec";
 
@@ -51,5 +53,13 @@ describe("E4.1c organizations page — the Currency field", () => {
 
   it("B1 the idle name Save is gone while pending", async () => {
     await saveLosesItsIdleNameWhilePending();
+  });
+
+  it("F3.21 the AI assistant action opens the row's sub-page for an organization_admin", async () => {
+    await theAiAssistantActionNavigatesToTheSubPage();
+  });
+
+  it("F3.21 the AI assistant action is hidden from a role without access", async () => {
+    await theAiAssistantActionIsHiddenWithoutAccess();
   });
 });
