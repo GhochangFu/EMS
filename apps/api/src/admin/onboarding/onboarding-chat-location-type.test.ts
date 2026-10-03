@@ -1,25 +1,4 @@
-import { describe, it, vi } from "vitest";
-
-/**
- * The `openai` mock, for the H4 cases. `vi.mock` is hoisted above the imports
- * and only a Vitest file may declare it, so it lives here and the assertions
- * stay in the spec (ADR 0014). The shape is `onboarding-prompt-budget.test.ts`'s:
- * `captured` holds each request and the reply the mocked `create()` returns.
- */
-const captured = vi.hoisted(() => ({ requests: [] as unknown[], reply: "{}" }));
-
-vi.mock("openai", () => ({
-  default: class {
-    chat = {
-      completions: {
-        create: async (request: unknown): Promise<unknown> => {
-          captured.requests.push(request);
-          return { choices: [{ message: { content: captured.reply } }] };
-        },
-      },
-    };
-  },
-}));
+import { describe, it } from "vitest";
 
 import {
   assertAwaitingTypeReplyKeepsTheStoredName,
@@ -29,11 +8,9 @@ import {
   assertNameWithLabelSetsTheTypeInOneTurn,
   assertNameWithTypeSetsTheTypeInOneTurn,
   assertNameWithoutTypeAsksForTheType,
-  assertOpenAiPatchKeepsAnActiveType,
-  assertOpenAiPatchLosesAnInactiveType,
-  assertOpenAiTurnValidatesTheMergedDraft,
-  assertOpenAiPromptListsTheActiveCodes,
-  assertOpenAiSystemPromptNamesIonsiteNexus,
+  assertAgentTurnValidatesTheMergedDraft,
+  assertAgentPromptListsTheActiveCodes,
+  assertAgentSystemPromptNamesIonsiteNexus,
   assertStoredInactiveTypeIsAskedFor,
   assertStoredInactiveTypeIsNotPatched,
   assertStoredTypeIsNotAskedFor,
@@ -153,25 +130,17 @@ describe("OnboardingChatService.handleTurn — a stored location type (F4.157 re
   });
 });
 
-describe("OnboardingChatService.handleTurn — the location type (F4.157), OpenAI", () => {
+describe("OnboardingChatService.handleTurn — the location type (F4.157), agent branch (F3.21)", () => {
   it("validates the merged draft, so a patch that completes it moves the phase on", async () => {
-    await assertOpenAiTurnValidatesTheMergedDraft(captured);
-  });
-
-  it("drops a location.type that is not an active code from the model's patch", async () => {
-    await assertOpenAiPatchLosesAnInactiveType(captured);
-  });
-
-  it("keeps an active location.type in the model's patch", async () => {
-    await assertOpenAiPatchKeepsAnActiveType(captured);
+    await assertAgentTurnValidatesTheMergedDraft();
   });
 
   it("names the active codes in the system prompt", async () => {
-    await assertOpenAiPromptListsTheActiveCodes(captured);
+    await assertAgentPromptListsTheActiveCodes();
   });
 
   it("names IONSiTE NEXUS, not TRINETRA, in the system prompt (F3.33)", async () => {
-    await assertOpenAiSystemPromptNamesIonsiteNexus(captured);
+    await assertAgentSystemPromptNamesIonsiteNexus();
   });
 });
 

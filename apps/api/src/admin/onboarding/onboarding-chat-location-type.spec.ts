@@ -17,6 +17,7 @@ import type { LocationTypeDto, OnboardingDraft, OnboardingPhase } from "@bms/sha
 import { OnboardingChatService } from "./onboarding-chat.service";
 import * as locationTypes from "./onboarding-location-type-match";
 import type { ChatTurnResult } from "./onboarding-chat.service";
+import { FakeLlmProvider, calls, toolCall } from "./onboarding-agent-loop.spec";
 import { OnboardingValidateService } from "./onboarding-validate.service";
 
 function assert(condition: boolean, message: string): void {
@@ -49,13 +50,14 @@ const WITH_DISTINCT_LABEL: readonly LocationTypeDto[] = [
 ];
 
 /** A chat service whose vocabulary is `rows`, with the real validator behind it. */
-function serviceWith(rows: readonly LocationTypeDto[]): OnboardingChatService {
+function serviceWith(rows: readonly LocationTypeDto[], llmResolver: unknown = {}): OnboardingChatService {
   return new OnboardingChatService(
     new OnboardingValidateService(),
     {} as never,
     {} as never,
     {} as never,
     { listLocationTypes: async () => [...rows] } as never,
+    llmResolver as never,
   );
 }
 
@@ -69,7 +71,10 @@ async function ruleBasedTurn(
   const savedKey = process.env.OPENAI_API_KEY;
   delete process.env.OPENAI_API_KEY;
   try {
-    return await serviceWith(rows).handleTurn(message, draft, phase, "Ion Exchange");
+    return await serviceWith(rows).handleTurn(message, draft, phase, "Ion Exchange", undefined, {
+      sessionId: "s-1",
+      history: [],
+    });
   } finally {
     if (savedKey !== undefined) {
       process.env.OPENAI_API_KEY = savedKey;
@@ -229,93 +234,47 @@ export async function assertTypeReplyKeepsTheStoredIdentifiers(): Promise<void> 
 }
 
 // ---------------------------------------------------------------------------
-// H4 — the OpenAI branch. The `openai` module is mocked in the `.test.ts`
-// wrapper, as `onboarding-prompt-budget.test.ts` does; `captured` carries the
-// request the mock was handed and the reply it returns.
+// H4, after F3.21 (ADR 0090) — the agent branch. The model no longer returns a
+// draft patch; it calls tools, and `set_location` refuses an inactive type by
+// name (`onboarding-agent-tools.spec.ts`), so the two "patch loses / keeps a
+// type" cases moved there. What stays here is the chat service's part: the
+// system prompt lists the active codes and names the product, and the merged
+// draft — not the patch alone — is validated.
 // ---------------------------------------------------------------------------
 
-export type OpenAiCapture = { requests: unknown[]; reply: string };
-
-/** A model reply whose patch carries a whole, schema-valid location of type `type`. */
-function replyWithLocationType(type: string): string {
-  return JSON.stringify({
-    assistantMessage: "I've updated the location.",
-    draftPatch: {
-      location: {
-        name: "Lotapata",
-        slug: "lotapata",
-        code: "LOTAPATA",
-        type,
-        latitude: 22.3,
-        longitude: 87.3,
-      },
-    },
-    currentPhase: "location",
+/** One agent turn against `stored`, the provider scripted by `script`. */
+async function agentTurn(
+  script: ConstructorParameters<typeof FakeLlmProvider>[0],
+  stored: OnboardingDraft = {},
+): Promise<{ turn: ChatTurnResult; llm: FakeLlmProvider }> {
+  const llm = new FakeLlmProvider(script);
+  const resolver = { resolveForOrganization: async () => ({ kind: "ready", provider: llm, source: "platform" }) };
+  const turn = await serviceWith(FOUR, resolver).handleTurn("Tell me about the site", stored, "location", "Ion Exchange", "org-1", {
+    sessionId: "s-1",
+    history: [],
   });
+  assert(llm.calls >= 1, "the agent branch must have run");
+  return { turn, llm };
 }
 
-/** One turn through the OpenAI branch with `reply` as the model's answer, against the stored `draft`. */
-async function openAiTurn(
-  captured: OpenAiCapture,
-  reply: string,
-  draft: OnboardingDraft = {},
-): Promise<ChatTurnResult> {
-  captured.requests.length = 0;
-  const savedReply = captured.reply;
-  const savedKey = process.env.OPENAI_API_KEY;
-  captured.reply = reply;
-  process.env.OPENAI_API_KEY = "not-a-real-key";
-  try {
-    const turn = await serviceWith(FOUR).handleTurn("Tell me about the site", draft, "location", "Ion Exchange");
-    // The catch around the OpenAI branch turns a broken mock into a green
-    // rule-based answer, so every case first proves the model was asked.
-    assert(captured.requests.length === 1, "the OpenAI branch must have run");
-    return turn;
-  } finally {
-    captured.reply = savedReply;
-    if (savedKey === undefined) {
-      delete process.env.OPENAI_API_KEY;
-    } else {
-      process.env.OPENAI_API_KEY = savedKey;
-    }
-  }
-}
-
-/** H4 — a `location.type` the vocabulary does not hold is dropped from the model's patch. */
-export async function assertOpenAiPatchLosesAnInactiveType(captured: OpenAiCapture): Promise<void> {
-  const turn = await openAiTurn(captured, replyWithLocationType("space_port"));
-  const location = turn.draftPatch.location;
-  assert(location?.name === "Lotapata", `the rest of the location is kept, got ${JSON.stringify(location)}`);
-  assert(
-    location !== undefined && !("type" in location),
-    `an inactive type must be dropped, got ${JSON.stringify(location?.type)}`,
-  );
-}
-
-/** H4, the positive control — an active code in the model's patch is kept. */
-export async function assertOpenAiPatchKeepsAnActiveType(captured: OpenAiCapture): Promise<void> {
-  const turn = await openAiTurn(captured, replyWithLocationType("pump_station"));
-  assert(
-    turn.draftPatch.location?.type === "pump_station",
-    `an active type is kept, got ${JSON.stringify(turn.draftPatch.location?.type)}`,
-  );
+function systemPromptOf(llm: FakeLlmProvider): string {
+  const first = llm.seen[0]?.[0];
+  return first && first.role === "system" ? first.content : "";
 }
 
 /** H4 — the system prompt names every active code, so the model has the list to choose from. */
-export async function assertOpenAiPromptListsTheActiveCodes(captured: OpenAiCapture): Promise<void> {
-  await openAiTurn(captured, replyWithLocationType("pump_station"));
-  const request = captured.requests[0] as { messages?: { content?: string }[] } | undefined;
-  const system = request?.messages?.[0]?.content ?? "";
+export async function assertAgentPromptListsTheActiveCodes(): Promise<void> {
+  const { llm } = await agentTurn([{ kind: "final", text: "ok" }]);
+  const system = systemPromptOf(llm);
   for (const row of FOUR) {
     assert(system.includes(row.code), `the system prompt names ${row.code}`);
   }
 }
 
 /** `F3.33` (ADR 0083, OQ6) — the system prompt names `IONSiTE NEXUS`, not `TRINETRA`. */
-export async function assertOpenAiSystemPromptNamesIonsiteNexus(captured: OpenAiCapture): Promise<void> {
-  await openAiTurn(captured, replyWithLocationType("pump_station"));
-  const request = captured.requests[0] as { messages?: { content?: string }[] } | undefined;
-  const system = request?.messages?.[0]?.content ?? "";
+export async function assertAgentSystemPromptNamesIonsiteNexus(): Promise<void> {
+  const { llm } = await agentTurn([{ kind: "final", text: "ok" }]);
+  const system = systemPromptOf(llm);
   assert(
     system.startsWith("You are an IONSiTE NEXUS BMS onboarding assistant for organization "),
     `got ${JSON.stringify(system.slice(0, 90))}`,
@@ -498,7 +457,7 @@ export async function assertStoredInactiveTypeIsNotPatched(): Promise<void> {
  * reply's own `currentPhase` is `location`, so `rtu` can come only from
  * validation.
  */
-export async function assertOpenAiTurnValidatesTheMergedDraft(captured: OpenAiCapture): Promise<void> {
+export async function assertAgentTurnValidatesTheMergedDraft(): Promise<void> {
   const stored = {
     location: {
       name: "Lotapata",
@@ -509,15 +468,11 @@ export async function assertOpenAiTurnValidatesTheMergedDraft(captured: OpenAiCa
       longitude: 87.3,
     },
   } as OnboardingDraft;
-  const reply = JSON.stringify({
-    assistantMessage: "I've set the code.",
-    draftPatch: {
-      location: { name: "Lotapata", slug: "lotapata", code: "LOTAPATA", latitude: 22.3, longitude: 87.3 },
-    },
-    currentPhase: "location",
-  });
-  const turn = await openAiTurn(captured, reply, stored);
-  assert(turn.draftPatch.location?.code === "LOTAPATA", "the model's patch passed the parse");
+  const { turn } = await agentTurn(
+    [calls(toolCall("set_location", { name: "Lotapata", code: "LOTAPATA" })), { kind: "final", text: "I've set the code." }],
+    stored,
+  );
+  assert(turn.draftPatch.location?.code === "LOTAPATA", "the tool's write is in the patch");
   assert(turn.currentPhase === "rtu", `the merged draft is complete, got ${turn.currentPhase}`);
 }
 

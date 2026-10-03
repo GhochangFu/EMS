@@ -239,6 +239,7 @@ export class OnboardingService {
       phase,
       org?.name ?? "Organization",
       session.organizationId,
+      { sessionId, history: session.messages as OnboardingChatMessage[] },
     );
 
     const mergedDraft = this.chatService.mergeDraft(session.draft, turn.draftPatch);

@@ -1,45 +1,10 @@
-import { describe, it, vi } from "vitest";
-
-/**
- * The repo's first `vi.mock` (decision 5), and it is here rather than in the
- * spec because `vi.mock` is hoisted above the imports and only a Vitest file may
- * declare it. The assertions stay in the spec (ADR 0014); this captures what the
- * `openai` client's `create()` was handed and passes it across.
- *
- * `vi.hoisted` for the same reason: the factory runs before this module's own
- * bindings exist, so the array has to be created above them too.
- *
- * It carries the model's answer as well as its request. `reply` is what the
- * mocked `create()` returns, and the marker-refusal case (`F4.107` review, L1)
- * needs to drive it: what the model sends *back* is the input to the guard in
- * front of `safeParse`. Each spec function restores it, so the two turn-based
- * cases cannot reach each other through it.
- *
- * What the alternative would have proved: a textual pin under `tests/` on the
- * chat service's call site names the function and nothing else. This measures
- * the bytes.
- */
-const captured = vi.hoisted(() => ({ requests: [] as unknown[], reply: "{}" }));
-
-vi.mock("openai", () => ({
-  default: class {
-    chat = {
-      completions: {
-        create: async (request: unknown): Promise<unknown> => {
-          captured.requests.push(request);
-          return { choices: [{ message: { content: captured.reply } }] };
-        },
-      },
-    };
-  },
-}));
+import { describe, it } from "vitest";
 
 import {
   assertADeepStoredDraftIsShedNotThrownOutOf,
   assertAResidualOverBudgetPayloadIsValidJson,
-  assertAnEchoedMarkerPatchIsRefused,
   assertAnUnderBudgetDraftIsForwardedIntact,
-  assertOpenAiTurnForwardsABoundedPrompt,
+  assertAgentTurnForwardsABoundedPrompt,
   assertOverBudgetShedsTheFourRecordsFirst,
   assertOverBudgetThenShedsOverLongStrings,
   assertPromptStringMaxIsTheWidestNameColumn,
@@ -99,11 +64,7 @@ describe("F4.107 — the draft forwarded to the model is bounded", () => {
     assertAResidualOverBudgetPayloadIsValidJson();
   });
 
-  it("hands the OpenAI call a draft context within the budget", async () => {
-    await assertOpenAiTurnForwardsABoundedPrompt(captured.requests);
-  });
-
-  it("refuses a draftPatch that echoes the marker back, instead of merging it", async () => {
-    await assertAnEchoedMarkerPatchIsRefused(captured);
+  it("hands the agent's first model call a draft context within the budget", async () => {
+    await assertAgentTurnForwardsABoundedPrompt();
   });
 });
