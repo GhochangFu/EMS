@@ -248,6 +248,10 @@ describe("F3.78 — UsersService.temporaryPassword (ADR 0089 decision 6)", () =>
   it("a Keycloak failure leaves no committed audit row (decision 14)", async () => {
     await spec.assertATemporaryPasswordKeycloakFailureCommitsNoAudit();
   });
+
+  it("a logout failure after the password is set commits sessionsEnded false and keycloak_logout_failed (decision 14)", async () => {
+    await spec.assertATemporaryPasswordLogoutFailureCommitsATruthfulAudit();
+  });
 });
 
 describe("F3.78 — local mode and an unconfigured client (ADR 0089 decisions 5 and 11)", () => {

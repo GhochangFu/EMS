@@ -120,7 +120,9 @@ export const temporaryPasswordBodySchema = z
  * database commit failed, what an admin must do next: `keycloak_enable_failed`
  * (create committed, the account is still disabled — use reactivate) or
  * `keycloak_disable_failed` (the row is deactivated, the Keycloak account and
- * sessions were not).
+ * sessions were not) or `keycloak_logout_failed` (a temporary password was
+ * set and audited, but the user's existing sessions were not ended — end
+ * them in Keycloak).
  *
  * `keycloak_orphan_disabled_account` rides on an **error** body, not on a
  * 2xx: a create failed after Keycloak made the account, and the compensating
@@ -131,6 +133,7 @@ export const temporaryPasswordBodySchema = z
 export const userWriteFollowUpSchema = z.enum([
   "keycloak_enable_failed",
   "keycloak_disable_failed",
+  "keycloak_logout_failed",
   "keycloak_orphan_disabled_account",
 ]);
 

@@ -586,13 +586,21 @@ export class UsersService {
    * **Decision 14: the credential never changes without an audit row.** The
    * audit transaction opens first and inserts `master.user.temporary_password.set`;
    * `setTemporaryPassword` and `logoutSessions` then run inside it. An audit
-   * failure stops before any Keycloak call; a Keycloak failure rolls the audit
-   * row back. Two residual windows remain: Keycloak succeeded and the `COMMIT` then failed
-   * (the password changed, no audit row), and `setTemporaryPassword`
-   * succeeded but `logoutSessions` failed (a 502, the audit rolled back, the
-   * password changed). A Keycloak call cannot join the database transaction,
-   * so neither window can close here; both are narrower than calling Keycloak
-   * before the transaction, which left every audit failure in that state.
+   * failure stops before any Keycloak call; a `setTemporaryPassword` refusal
+   * rolls the audit row back.
+   *
+   * A `logoutSessions` failure comes after the password certainly changed, so
+   * it must not lose the audit row. The first transaction rolls back (its row
+   * says `sessionsEnded: true`), a second one writes the one truthful row,
+   * `{ sessionsEnded: false }`, and the 2xx carries `keycloak_logout_failed`.
+   * The row is rewritten, not updated: `MasterDataAuditService.write` returns
+   * no id, and a rolled-back first row leaves exactly one committed row.
+   *
+   * The residual window: Keycloak succeeded and the `COMMIT` (or the second
+   * transaction's insert) then failed — the password changed, no audit row. A
+   * Keycloak call cannot join the database transaction, so it cannot close
+   * here; it is narrower than calling Keycloak before the transaction, which
+   * left every audit failure in that state.
    */
   async temporaryPassword(jwt: JwtPayload, id: string, rawBody: unknown): Promise<UserWriteResponse> {
     const manager = await this.requireManager(jwt);
@@ -602,25 +610,38 @@ export class UsersService {
     const target = await this.requireManageableTarget(manager, id);
     const subject = requireLinked(target);
     const onFleet = target.role === "admin";
-
-    await this.inExecutor(onFleet, onFleet ? null : target.organizationId, async (tx) => {
-      await this.audit.write(
+    const organizationId = onFleet ? null : target.organizationId;
+    const writeAudit = (payload: Record<string, unknown>, tx: Executor) =>
+      this.audit.write(
         {
           actor: jwt,
           action: "master.user.temporary_password.set",
           entityType: "user",
           entityId: target.id,
-          organizationId: onFleet ? null : target.organizationId,
-          payload: { sessionsEnded: true },
+          organizationId,
+          payload,
         },
         tx as BmsDb,
       );
-      await this.keycloak(
-        () => this.identity.setTemporaryPassword(subject, body.temporaryPassword),
-        PASSWORD_POLICY_REFUSED,
-      );
-      await this.keycloak(() => this.identity.logoutSessions(subject));
-    });
+
+    try {
+      await this.inExecutor(onFleet, organizationId, async (tx) => {
+        await writeAudit({ sessionsEnded: true }, tx);
+        await this.keycloak(
+          () => this.identity.setTemporaryPassword(subject, body.temporaryPassword),
+          PASSWORD_POLICY_REFUSED,
+        );
+        try {
+          await this.identity.logoutSessions(subject);
+        } catch {
+          throw new AuditRewrite({ sessionsEnded: false });
+        }
+      });
+    } catch (err) {
+      if (!(err instanceof AuditRewrite)) throw err;
+      await this.inExecutor(onFleet, organizationId, (tx) => writeAudit(err.payload, tx));
+      return { user: toAdminUserDto(target), followUp: "keycloak_logout_failed" };
+    }
     return { user: toAdminUserDto(target), followUp: null };
   }
 
@@ -731,6 +752,18 @@ export class UsersService {
       }
       throw err;
     }
+  }
+}
+
+/**
+ * Thrown inside the temporary-password transaction when Keycloak already
+ * changed (or may have changed) the credential: the transaction rolls back
+ * and the caller commits one audit row carrying `payload` instead.
+ */
+class AuditRewrite extends Error {
+  override readonly name = "AuditRewrite";
+  constructor(readonly payload: Record<string, unknown>) {
+    super("the temporary-password audit row is rewritten after the Keycloak outcome");
   }
 }
 

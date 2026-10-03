@@ -229,6 +229,20 @@ async function refusal(promise: Promise<unknown>): Promise<HttpException> {
 
 const ops = (timeline: Timeline) => dbOps(timeline);
 const auditInserts = (timeline: Timeline) => ops(timeline).filter((op) => op.kind === "insert" && op.table === "audit_log");
+/** The audit payloads of the transactions that committed; a rolled-back transaction's inserts are dropped. */
+function committedAuditPayloads(timeline: Timeline): unknown[] {
+  const committed: unknown[] = [];
+  let pending: unknown[] = [];
+  for (const entry of timeline) {
+    if (entry.source === "db" && entry.op.kind === "insert" && entry.op.table === "audit_log") {
+      pending.push(entry.op.values?.payload);
+    } else if (entry.source === "tx") {
+      if (entry.outcome === "commit") committed.push(...pending);
+      pending = [];
+    }
+  }
+  return committed;
+}
 const notifies = (timeline: Timeline) => ops(timeline).filter((op) => op.kind === "execute" && op.text.includes("pg_notify"));
 const userInserts = (timeline: Timeline) =>
   ops(timeline).filter((op) => op.kind === "execute" && op.text.includes("INSERT INTO bms.users"));
@@ -611,6 +625,21 @@ export async function assertATemporaryPasswordKeycloakFailureCommitsNoAudit(): P
   const err = await refusal(service.temporaryPassword(jwt, VIEWER_A.id, { temporaryPassword: PASSWORD }));
   const outcomes = timeline.flatMap((entry) => (entry.source === "tx" ? [entry.outcome] : []));
   expect([err.getStatus(), auditInserts(timeline).length, outcomes]).toEqual([502, 1, ["rollback"]]);
+}
+
+/**
+ * Decision 14: a `logoutSessions` failure comes after the password certainly
+ * changed, so the one committed audit row says `sessionsEnded: false` and the
+ * 2xx carries `keycloak_logout_failed`.
+ */
+export async function assertATemporaryPasswordLogoutFailureCommitsATruthfulAudit(): Promise<void> {
+  const { service, jwt, identity, timeline } = harness();
+  identity.failNext("logoutSessions", "unavailable");
+  const response = await service.temporaryPassword(jwt, VIEWER_A.id, { temporaryPassword: PASSWORD });
+  expect([response.followUp, committedAuditPayloads(timeline)]).toEqual([
+    "keycloak_logout_failed",
+    [{ sessionsEnded: false }],
+  ]);
 }
 
 /** A password Keycloak's policy refuses (400 `bad_request`) is a 400 naming the rule class, never the password. */
