@@ -21,6 +21,7 @@ import {
   type SeedLocationIdentity,
 } from "./eskom-locations-seed";
 import { type PheCatalogFile, stationSlug } from "./phe-pilot-seed";
+import { activePointsByAsset, membersByRole } from "./site-layout-seed-reads";
 import {
   SITE_LAYOUT_COPY_DESCRIPTION,
   upgradeSeededSiteLayoutCopies,
@@ -34,7 +35,10 @@ import {
  * **What this seeds, per organization (ESKOM, PHEWB).** (a) The SMOC standard template as a
  * published stock import at version 1, insert-if-absent, holding the current stock content; a
  * database an earlier seed already ran is moved to the current stock version by the upgrade
- * chain in `site-layout-seed-upgrade.ts` (its own seed-owned rows only). (b) For each seed-owned location with
+ * chain in `site-layout-seed-upgrade.ts` (its own seed-owned rows only) — since `F3.74` that is
+ * stock v4, which reaches an untouched seeded copy per tab (ADR 0088 Amendment 2): the compact
+ * electrical diagram on its Overview, `lv_single_line` and the breaker table on its electrical
+ * tab. (b) For each seed-owned location with
  * no `bms.site_control_room_views` row and no dashboard holding its slug, one tabbed copy of the
  * organization's newest published `smoc-standard` version, planned by the SAME shared planner
  * the API's copy action runs (`planSiteLayout` and `planTemplateWidget`, `@bms/shared`), and the
@@ -263,18 +267,6 @@ const GROUPS_SQL = `
    WHERE organization_id = $1 AND location_id = $2
    ORDER BY code
 `;
-/** `ORDER BY a.code`: `planTemplateWidget`'s tie-break reads the code (ADR 0049 Amendment 2). */
-const MEMBERS_SQL = `
-  SELECT agm.role, a.id AS asset_id, a.code
-    FROM bms.asset_group_members agm
-    JOIN bms.assets a ON a.id = agm.asset_id
-   WHERE agm.asset_group_id = $1 AND a.organization_id = $2
-   ORDER BY a.code
-`;
-const ACTIVE_POINTS_SQL = `
-  SELECT id, asset_id, point_key FROM bms.asset_points
-   WHERE organization_id = $1 AND active = true
-`;
 const DASHBOARD_INSERT_SQL = `
   INSERT INTO bms.dashboards (organization_id, slug, name, description, location_id, template_id)
   VALUES ($1, $2, $3, $4, $5, $6)
@@ -314,26 +306,6 @@ const READ_BACK_SQL = `
     (SELECT count(*)::int FROM bms.site_control_room_views
       WHERE location_id = $2 AND dashboard_id = $1) AS views
 `;
-
-/** Members of one group by role; a member with no role binds nothing. */
-async function membersByRole(
-  pool: Pick<pg.Pool, "query">,
-  organizationId: string,
-  groupId: string,
-): Promise<Map<string, GroupMember[]>> {
-  const res = await pool.query<{ role: string | null; asset_id: string; code: string }>(MEMBERS_SQL, [
-    groupId,
-    organizationId,
-  ]);
-  const byRole = new Map<string, GroupMember[]>();
-  for (const row of res.rows) {
-    if (!row.role) continue;
-    const list = byRole.get(row.role) ?? [];
-    list.push({ assetId: row.asset_id, code: row.code });
-    byRole.set(row.role, list);
-  }
-  return byRole;
-}
 
 /**
  * Makes one copy per location of `locationIds` that has no view row and whose slug is free.
@@ -394,13 +366,7 @@ export async function seedSiteLayouts(
       continue;
     }
 
-    pointsByAsset ??= new Map(
-      (
-        await pool.query<{ id: string; asset_id: string; point_key: string }>(ACTIVE_POINTS_SQL, [
-          organizationId,
-        ])
-      ).rows.map((row) => [`${row.asset_id}::${row.point_key}`, row.id] as const),
-    );
+    pointsByAsset ??= await activePointsByAsset(pool, organizationId);
     const points = pointsByAsset;
     const tabs = [];
     const omittedTiles: SiteLayoutOmittedTile[] = [];

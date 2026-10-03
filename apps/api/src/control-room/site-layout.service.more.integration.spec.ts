@@ -165,9 +165,13 @@ export async function assertNoPublishedSiteTemplateAnswers409(ctx: SiteLayoutCtx
 }
 
 /**
- * S9 — a copy's mimic resolves through its TAB's group (the dashboard itself has none): the `sld`
- * tab's `electrical_distribution` preset finds the `transformer` member of the `electrical` group.
+ * S9 — a copy's mimic resolves through its TAB's group (the dashboard itself has none). Since
+ * stock v4 (`F3.74`, ADR 0088 Amendment 2) the copy holds three mimics: the `sld` tab's
+ * `lv_single_line`, the Overview's compact copy of it, which names the `sld` tab
+ * (`config.tabKey`), and the `env` tab's own. Both `lv_single_line` mimics find the `transformer`
+ * member of the `electrical` group; the `env` mimic does not.
  * Mutation: write every widget with `tab_id` NULL → the node is unassigned → red.
+ * Mutation: the read ignores `config.tabKey` → the Overview's diagram binds no group → red.
  */
 export async function assertMimicNodesResolveThroughTheTabGroup(ctx: SiteLayoutCtx): Promise<void> {
   const site = await newSite(ctx, "s9");
@@ -181,10 +185,23 @@ export async function assertMimicNodesResolveThroughTheTabGroup(ctx: SiteLayoutC
 
   const result = await ctx.svc.makeForSite(admin(), { locationId: site, templateId: ctx.templateId });
   const dto = await ctx.mimicNodes.read(ctx.orgId, result.dashboardId, null, Date.now());
-  expect(dto.widgets, "the sld and env tabs each carry one preset mimic").toHaveLength(2);
-  const resolved = dto.widgets.flatMap((widget) => widget.nodes.filter((node) => node.asset?.id === transformer));
-  expect(resolved.map((node) => node.key), "the transformer node resolves through the sld tab's group").toEqual([
-    "transformer",
+  const { rows } = await ctx.fleetPool.query<{ id: string; tab_key: string }>(
+    `SELECT w.id, t.tab_key FROM bms.dashboard_widgets w JOIN bms.dashboard_tabs t ON t.id = w.tab_id
+      WHERE w.dashboard_id = $1 AND w.widget_type = 'mimic'`,
+    [result.dashboardId],
+  );
+  const tabOf = new Map(rows.map((row) => [row.id, row.tab_key]));
+  const byTab = dto.widgets
+    .map((widget) => {
+      const preset = widget.source === "preset" ? widget.preset : "layout";
+      const node = widget.nodes.find((candidate) => candidate.asset?.id === transformer);
+      return `${tabOf.get(widget.widgetId) ?? "?"}:${preset}:${node?.key ?? "-"}`;
+    })
+    .sort();
+  expect(byTab, "both lv_single_line mimics resolve the transformer through the sld tab's group").toEqual([
+    "env:environment_monitoring:-",
+    "overview:lv_single_line:transformer",
+    "sld:lv_single_line:transformer",
   ]);
 }
 
@@ -397,10 +414,13 @@ export async function assertUnboundRoleTilesAreOmitted(ctx: SiteLayoutCtx): Prom
   const widgets = await copyRects(ctx, result.dashboardId);
   expect(widgets.filter((w) => w.includes(":value_tile:") && !w.startsWith("overview:"))).toEqual([]);
   expect(widgets.filter((w) => w.startsWith("overview:value_tile:"))).toHaveLength(4);
+  // Stock v4 (`F3.74`): the `sld` tab holds the breaker table under its mimic, so its rail and
+  // table sit five rows lower than the `env` tab's.
   expect(widgets.filter((w) => w.startsWith("sld:") || w.startsWith("env:"))).toEqual([
     "sld:mimic:@0,0",
-    "sld:active_alarms_rail:Active alarms@0,7",
-    "sld:table:Assets@6,7",
+    "sld:breaker_table:Breakers@0,7",
+    "sld:active_alarms_rail:Active alarms@0,12",
+    "sld:table:Assets@6,12",
     "env:mimic:@0,0",
     "env:active_alarms_rail:Active alarms@0,7",
     "env:table:Assets@6,7",

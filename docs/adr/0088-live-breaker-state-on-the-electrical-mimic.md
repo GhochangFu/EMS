@@ -52,7 +52,10 @@ planner and the seed, which this row also touches.
   three points (`MIMIC_HEADLINE_POINTS = 3`).
 - Migration `0033` raises a critical "Main breaker reported OPEN" alarm on
   every ESKOM electrical asset at `breaker_main < 0.5`. The simulator holds
-  `CR-Q11` and `CR-HVAC-2` open on purpose.
+  `CR-Q11` and `CR-HVAC-2` open on purpose. *(Note 2026-10-03, plan OQ10: since
+  PR5 the simulator also holds `CR-Q9` open and tripped — `breaker_main` 0,
+  `breaker_trip` 1 — and an open or tripped breaker reports exactly 0 kW and
+  0 A.)*
 - Assets have no topology (no parent, feeds or bus relation). The only
   topology is the directed pipes of a preset or a drawn layout.
 
@@ -346,3 +349,165 @@ decision 12 only in its version number.
 - **D11 The forced role write.** The demo seed forces the `CR-Q*` membership
   roles at `RSMOC-WC` (`SET role = EXCLUDED.role`), because the existing upsert
   keeps the old role. It touches that site only.
+
+## Amendment 2 (2026-10-03, `F3.74`) — stock v4 reaches the untouched seeded copies
+
+**Status: accepted.** The owner approved this written record on 2026-10-03. The owner ruled on 2026-10-03, at the start of PR5
+(#687, #690, #694 and #695 merged; plan revision 2), the question Amendment 1
+left owed: whether the seeded site-layout copies move from stock v3 to v4.
+The five questions the ruling raised (OQ-A to OQ-E) were ruled the same day,
+each as recommended. Decisions 1 to 15 and Amendment 1 stand except where an
+entry below says it amends one.
+
+### The ruling
+
+**Stock v4 upgrades the existing seeded copies that are untouched, as well as
+new copies.** Decision 12 said "Only new copies get it. Existing copies are not
+overwritten (ADR 0087 gate question 4)". The owner chose the precedent `F3.77`
+set instead: ADR 0087 Amendment 3 ruling 9 moved the untouched seeded copies
+from v2 to v3 through `planOverviewUpgrade`
+(`packages/db/src/site-layout-seed-upgrade.ts:221-303`), whose docblock already
+names this row as the version that has to add the insert that step does not
+make (`:232-233`).
+
+### Decision 12, amended
+
+12. **A new published version of "SMOC standard", stock v4**, on top of
+    `F3.77`'s v3 (Amendment 1, *Stock order with `F3.77`*). Its electrical tab
+    (`sld`) draws `lv_single_line` and adds one `breaker_table` titled
+    "Breakers" between the mimic and the lower row (OQ-C, OQ-D); its Overview
+    adds a compact mimic that names the electrical tab
+    (`{ source: "preset", preset: "lv_single_line", tabKey: "sld", compact: true }`)
+    in the slot agreed with `F3.77`: the compact diagram at `(0, STRIP_Y)`, six
+    wide and two rows high (OQ-B), the class strip moved to `(6, STRIP_Y)`, six
+    wide, nothing else on the Overview moved
+    (`packages/shared/src/site-templates/smoc-standard.ts:56-70`). The title
+    "Critical systems" stays. **New copies get v4, and a seeded copy's
+    untouched tab is moved to v4 by the seed.** An administrator's edit is
+    never overwritten (ADR 0087 gate question 4 still holds: the gate below is
+    what "untouched" means).
+
+### What "untouched" means for v4
+
+The gate is `F3.77`'s gate, per tab, reused unchanged for the Overview and
+applied with the same comparator to the electrical tab. A tab is untouched when
+its stored widgets equal **the previous stock version's tab as the copy rule
+left it**: the same identities (`siteWidgetIdentity`: tab key, widget type,
+title; `site-layout-stock-history.ts:32-35`), none repeated, nothing added,
+nothing deleted, the same rects, the same `config` compared without key order
+(`canonicalJson`, `:49-62`), and per widget as many point and source rows as
+the copy rule wrote — a count of rows, not their identity
+(`site-layout-seed-upgrade-tabs.ts`). Anything else is an administrator's tab
+and is left whole. The gate compares the widgets, not the tab row: a tab whose
+name was changed but whose widgets are untouched still upgrades. The electrical
+step reads the tab's group only to decide which role tiles the copy keeps (the
+electrical bullet below). (clarified 2026-10-03 after review)
+
+- **The Overview.** "As the copy rule left it" is `packAfterRemoval` over v3's
+  Overview, keeping a module card only when its target tab is one of the copy's
+  tabs; v3 has no card, so this is v3's eight widgets at their v3 rects and
+  configs, frozen by PR5 in `site-layout-stock-history.ts`. No widget holds a
+  point row; each value tile holds one source row and the others none.
+- **The electrical tab.** "As the copy rule left it" is `packAfterRemoval` over
+  v3's `sld` widgets with the role tiles the copy left out removed (the copy's
+  `omitUnboundTiles`, `packages/shared/src/site-layout-planner.ts:368`). A role
+  tile absent from the store counts as omitted only when the copy rule would
+  omit it today — its role and point key resolve to no active point in the
+  tab's group at that site (`electricalTilesTheCopyKeeps`). An absent tile the
+  copy would keep was deleted by an administrator, and the tab is left whole.
+  The safe-side cost: a copy whose omitted tile has since become bindable is
+  treated as edited and is not upgraded. A role tile present must hold at
+  least one point row. (clarified 2026-10-03 after review) The mimic holds the v3 config
+  `{ source: "preset", preset: "electrical_distribution" }`
+  (`smoc-standard.ts:290`), the rail and the table sit at the rects the pack left
+  them, the table holds its one `assets.list` source, and nothing else is
+  present.
+
+### What the step writes, per untouched tab
+
+Every write runs inside the organization's `withOrganization` bracket, holds
+the read values in its predicate and checks its row count, as every step of the
+chain does. Both the previous and the next shape go through the copy rule
+before they are compared, so an upgraded tab lands where a fresh v4 copy would:
+a copy with no `sld` tab gets no Overview mimic, and its strip is packed to
+`(0, STRIP_Y)`, as `planSiteLayout` drops a tab-naming mimic whose tab is not
+kept (`site-layout-planner.ts:229-264`).
+
+- **The Overview:** one insert, the compact mimic (no point and no source row,
+  `RETURNING id` checked), and one move, the class strip from `(0, 9, 12, 2)` to
+  `(6, 9, 6, 2)`.
+- **The electrical tab:** one config update, the mimic from
+  `electrical_distribution` to `lv_single_line` (from-config in the predicate);
+  one insert, the "Breakers" `breaker_table` (config `{}`), full width and five
+  rows high, under the mimic; and two moves, the alarm rail and the asset table
+  five rows down.
+- **The template:** no new rule. `isSeedStockSiteTemplate` already supersedes
+  the seed's own published row whenever its `stock_version` is below the
+  current one (ADR 0087 Amendment 3 ruling 9), so a v3 seed row gains a
+  published version at stock 4 and is archived. An administrator's draft or
+  version above it leaves both alone.
+
+### A copy with one edited tab (OQ-A: per tab)
+
+**Ruled: per tab.** An untouched tab upgrades; an edited tab is left whole; the
+two tabs are gated and written independently. Every step of the chain is per
+tab (`site-layout-seed-upgrade.ts:37-38`; ADR 0087 Amendments 2 and 3), and the
+Overview mimic resolves through the `sld` **tab's group**, not through that
+tab's widgets (decision 11), so an upgraded Overview beside an edited
+electrical tab still draws live breakers. The known cost: such a copy shows the
+compact `lv_single_line` on its Overview while its electrical tab still draws
+`electrical_distribution`, which is the administrator's own edit, kept.
+
+### Dashboards an administrator made (OQ-E: accepted)
+
+Never read. The chain selects only dashboards at the seed-owned locations whose
+slug is `site-layout-` plus the location slug and whose `template_id` is a
+`smoc-standard` row (`SEEDED_COPIES_SQL`, `site-layout-seed-upgrade.ts:418-428`).
+**Ruled:** a copy an administrator re-made through the API at a seed-owned
+location carries the same slug and is read as seed-owned; it upgrades only while
+untouched. That has been the chain's posture since v1 → v2.
+
+### Idempotency and the version stamp
+
+- **Idempotent by the gate.** A v4 Overview holds `overview|mimic|`, which v3
+  did not, and a v4 electrical tab holds a `breaker_table` and the
+  `lv_single_line` config: neither matches its previous shape, so a second run
+  writes nothing. The seed's return value gains two counters for the step, and
+  the second-run cases hold them at 0.
+- **The stamp is the content.** A copy stores no stock version: it keeps its
+  `template_id` and is known by its shape. The template row is stamped
+  `stock_version = 4` on the new published version; a published row is never
+  edited (ADR 0049). `stockVersion: 4` in `smoc-standard.ts` is the one source.
+- **One boot, whole chain.** A copy still at v1 moves v1 → v2 → packed → v3
+  Overview → v4 in the same seed run, in that order.
+
+### A site with no breaker-role member
+
+The resolver lists a fan-out node whose role has no member in the tab's group
+with `asset: null` and `members: []`
+(`apps/api/src/dashboard-builder/mimic-nodes.service.ts:516-531`), and the scene
+draws it as **"No asset at this site"** (`MIMIC_NO_ASSET_LABEL`,
+`apps/web/src/components/widgets/mimic-scene.tsx:78-84`); "Not assigned" is
+drawn only for a unit the response does not list. Decision 12's "draws 'Not
+assigned' breakers" reads as this label: the `F3.73` critique renamed it after
+the decision was written. On CSMOC Gauteng and the six PHE stations, where no
+asset carries a breaker role, the compact diagram and the electrical tab draw
+every breaker node as "No asset at this site", the walk reads the paths after
+`main_breaker` as unknown, and the breaker table lists no row. The copies still
+upgrade: the content binds roles, never assets (ADR 0049 decision 4), and an
+administrator binds the roles later.
+
+### Consequences
+
+- `site-layout-stock-history.ts` freezes v3, the Overview **and** the electrical
+  tab (the first domain tab to change), and builds v2 from the frozen v3, not
+  from the live entry (`:247-254` today). The v2 domain-tab hash (`:142-147`)
+  stays as it is and is checked against the frozen content.
+- The v2 → v3 Overview step's `to` becomes the frozen v3
+  (`site-layout-seed-upgrade.ts:240-241`); with v4 live, the step would
+  otherwise throw on every boot at `:251-255` ("is new in the target version,
+  and this step inserts nothing"). The throw is replaced by an insert list
+  shared with the v4 step.
+- No migration: PR5 writes data only. Migration `0099` already admits
+  `breaker_table`; `0100` stays free for `F3.78`.
+- Effort: PR5 grows by 1 to 1.5 days; the row's estimate becomes 13–15 days.

@@ -5,8 +5,11 @@ import type { SectionTemplateWidget, StockDashboardTemplateDto } from "../index"
 /**
  * `F3.73` plan D8 — the SMOC standard site layout: one stock template with `target: "site"`,
  * copied onto a location as one tabbed dashboard (ADR 0087 decision 11, rulings Q3a and Q6b).
- * Stock version 3 (`F3.77`, ADR 0087 Amendment 3) gives the Overview to alarms: the four problem
- * tiles, the alarm rail beside the systems list, the class strip, and a 1-row legend.
+ * Stock version 3 (`F3.77`, ADR 0087 Amendment 3) gave the Overview to alarms: the four problem
+ * tiles, the alarm rail beside the systems list, the class strip, and a 1-row legend. Stock
+ * version 4 (`F3.74`, ADR 0088 and its Amendment 2) adds the live breaker state: the electrical
+ * tab draws `lv_single_line` with one breaker table under it, and the Overview holds a compact
+ * copy of that diagram beside the class strip.
  *
  * **Why it lives in `packages/shared` and not beside the other stock entries.** Two readers need
  * it: `apps/api`'s stock catalog (the import route) and `packages/db`'s site-layout seed (the
@@ -58,9 +61,11 @@ const HALF_W = DASHBOARD_GRID.columns / 2;
  * The v3 Overview (`F3.77` plan D1): the tiles at y0, the alarm rail (`RAIL_W` wide) beside the
  * systems list in the rest of the row, then the class strip at `STRIP_Y` and the legend under it.
  *
- * **The v4 slot (ADR 0087 Amendment 3 ruling 10) is the row at `STRIP_Y`.** Stock v4 (`F3.74`,
- * ADR 0088) puts the compact electrical diagram at `(0, STRIP_Y)`, `HALF_W` wide, and moves the
- * strip to `(HALF_W, STRIP_Y)`, `HALF_W` wide. Nothing else on the Overview moves for it.
+ * **The v4 slot (ADR 0087 Amendment 3 ruling 10) was the row at `STRIP_Y`.** Stock v4 (`F3.74`,
+ * ADR 0088 Amendment 2 OQ-B) put the compact electrical diagram at `(0, STRIP_Y)`, `HALF_W` wide,
+ * and moved the strip to `(HALF_W, STRIP_Y)`, `HALF_W` wide. Nothing else on the Overview moved
+ * for it. The diagram names the electrical tab (`tabKey: "sld"`) so it reads that tab's breaker
+ * states, and draws `compact`.
  */
 const RAIL_W = 8;
 const RAIL_H = 7;
@@ -100,13 +105,16 @@ function roleTile(
 
 /**
  * The lower half every domain tab shares: the preset mimic when the tab has one, then the
- * group's alarm rail and its asset table side by side.
+ * group's alarm rail and its asset table side by side. `between` (v4: the electrical tab's
+ * breaker table, `LOWER_H` rows) sits under the mimic and pushes the rail and table down by its
+ * height.
  */
 function domainTabBody(
   tabKey: string,
   preset: Extract<Widget, { widgetType: "mimic" }>["config"] | null,
+  between: { readonly widget: Widget; readonly rows: number } | null = null,
 ): Widget[] {
-  const lowerY = TILE_H + (preset === null ? 0 : MIMIC_H);
+  const lowerY = TILE_H + (preset === null ? 0 : MIMIC_H) + (between?.rows ?? 0);
   const mimic: Widget[] =
     preset === null
       ? []
@@ -126,6 +134,7 @@ function domainTabBody(
         ];
   return [
     ...mimic,
+    ...(between === null ? [] : [between.widget]),
     {
       key: `${tabKey}-alarms-rail`,
       title: "Active alarms",
@@ -210,11 +219,23 @@ const OVERVIEW_WIDGETS: Widget[] = [
     config: {},
   },
   {
-    key: "overview-class-strip",
+    key: "overview-sld-mimic",
     title: null,
     gridX: 0,
     gridY: STRIP_Y,
-    gridW: DASHBOARD_GRID.columns,
+    gridW: HALF_W,
+    gridH: STRIP_H,
+    bindings: [],
+    sources: [],
+    widgetType: "mimic",
+    config: { source: "preset", preset: "lv_single_line", tabKey: "sld", compact: true },
+  },
+  {
+    key: "overview-class-strip",
+    title: null,
+    gridX: HALF_W,
+    gridY: STRIP_Y,
+    gridW: HALF_W,
     gridH: STRIP_H,
     bindings: [],
     sources: [],
@@ -287,7 +308,23 @@ const SLD_WIDGETS: Widget[] = [
   roleTile("sld-incomer-pf-tile", "Incomer power factor", 1, { assetRoleCode: "incoming-supply", pointKey: "pf" }, { decimals: 2 }),
   roleTile("sld-frequency-tile", "Frequency", 2, { assetRoleCode: "meter", pointKey: "frequency_hz" }, { unit: "Hz", decimals: 2 }),
   roleTile("sld-main-bus-kw-tile", "Main bus load", 3, { assetRoleCode: "lt-panel", pointKey: "kw" }, { icon: "bolt", unit: "kW" }),
-  ...domainTabBody("sld", { source: "preset", preset: "electrical_distribution" }),
+  // The breaker table sits under the single line (ADR 0088 Amendment 2 OQ-C): it binds nothing and
+  // reads the electrical tab's group, as the `mimic` does.
+  ...domainTabBody("sld", { source: "preset", preset: "lv_single_line" }, {
+    rows: LOWER_H,
+    widget: {
+      key: "sld-breaker-table",
+      title: "Breakers",
+      gridX: 0,
+      gridY: TILE_H + MIMIC_H,
+      gridW: DASHBOARD_GRID.columns,
+      gridH: LOWER_H,
+      bindings: [],
+      sources: [],
+      widgetType: "breaker_table",
+      config: {},
+    },
+  }),
 ];
 
 export const SMOC_STANDARD_SITE_TEMPLATE = {
@@ -298,7 +335,7 @@ export const SMOC_STANDARD_SITE_TEMPLATE = {
   description:
     "One tab per domain present at the site — electrical, UPS & battery, HVAC, IT, environment, " +
     "water — behind an Overview of active alarms, site metrics and critical systems.",
-  stockVersion: 3,
+  stockVersion: 4,
   content: {
     widgets: [],
     tabs: [
@@ -309,7 +346,7 @@ export const SMOC_STANDARD_SITE_TEMPLATE = {
         sortOrder: 1,
         domain: "electrical",
         groupCode: "electrical",
-        mimicPreset: "electrical_distribution",
+        mimicPreset: "lv_single_line",
         widgets: SLD_WIDGETS,
       },
       {

@@ -28,20 +28,21 @@ const entry: StockDashboardTemplateDto = SMOC_STANDARD_SITE_TEMPLATE;
 
 export function theEntryIsTheSiteTargetStockRow(): void {
   const shape = `${entry.code}|${entry.section}|${entry.target}|${entry.stockVersion}`;
-  assert(shape === "smoc-standard|site|site|3", `code|section|target|stockVersion: got ${shape}`);
+  assert(shape === "smoc-standard|site|site|4", `code|section|target|stockVersion: got ${shape}`);
 }
 
 /**
- * Stock version 3 (`F3.77` plan D1) — the Overview, `key@x,y,w,h` in grid order: four problem
- * tiles, the 8-wide alarm rail beside the 4-wide systems list, the class strip, then the 1-row
- * legend. One size per type no longer holds: the rail is 8x7 here and 6x5 on a domain tab.
+ * Stock version 4 (`F3.74`, ADR 0088 Amendment 2) — the Overview, `key@x,y,w,h` in grid order: four
+ * problem tiles, the 8-wide alarm rail beside the 4-wide systems list, then at y9 the compact
+ * electrical diagram (6 wide) beside the class strip (6 wide), and the 1-row legend. One size per
+ * type no longer holds: the rail is 8x7 here and 6x5 on a domain tab.
  */
 const OVERVIEW_RECTS =
   "overview-alarms-tile@0,0,3,2;overview-offline-tile@3,0,3,2;overview-load-tile@6,0,3,2;" +
   "overview-health-tile@9,0,3,2;overview-alarms-rail@0,2,8,7;overview-critical-systems@8,2,4,7;" +
-  "overview-class-strip@0,9,12,2;overview-legend@0,11,12,1";
+  "overview-sld-mimic@0,9,6,2;overview-class-strip@6,9,6,2;overview-legend@0,11,12,1";
 
-export function theOverviewHoldsItsV3Rects(): void {
+export function theOverviewHoldsItsV4Rects(): void {
   const overview = entry.content.tabs.find((tab) => tab.key === "overview");
   const rects = [...(overview?.widgets ?? [])]
     .sort((a, b) => a.gridY - b.gridY || a.gridX - b.gridX)
@@ -56,6 +57,7 @@ const DOMAIN_TAB_SIZE: Readonly<Record<string, string>> = {
   mimic: "12x7",
   active_alarms_rail: "6x5",
   table: "6x5",
+  breaker_table: "12x5",
 };
 
 export function everyDomainTabWidgetHasItsCompactSize(): void {
@@ -121,13 +123,13 @@ export function noTabLeavesAnEmptyRow(): void {
   }
 }
 
-/** Overview 2 + 7 + 2 + 1; a domain tab 2 + 7 + 5; UPS (no mimic) 2 + 5. */
+/** Overview 2 + 7 + 2 + 1; a domain tab 2 + 7 + 5; the electrical tab 2 + 7 + 5 + 5; UPS (no mimic) 2 + 5. */
 export function theTabsTotalTheirCompactRows(): void {
   const totals = entry.content.tabs
     .map((tab) => `${tab.key}:${Math.max(...tab.widgets.map((widget) => widget.gridY + widget.gridH))}`)
     .join(",");
   assert(
-    totals === "overview:12,sld:14,ups:7,hvac:14,it:14,env:14,water:14",
+    totals === "overview:12,sld:19,ups:7,hvac:14,it:14,env:14,water:14",
     `rows per tab: got ${totals}`,
   );
 }
@@ -165,11 +167,25 @@ export function everyTabPresetIsAPresetOption(): void {
   }
 }
 
-/** A tab's mimic draws the tab's own preset, and a tab with no preset draws no mimic. */
+/**
+ * A tab's own mimic draws the tab's own preset, and a tab with no preset draws no mimic. A mimic
+ * that names a tab by `config.tabKey` (the Overview's compact diagram) draws THAT tab's preset.
+ */
 export function everyMimicDrawsItsTabsPreset(): void {
   for (const tab of entry.content.tabs) {
+    for (const widget of tab.widgets) {
+      if (widget.widgetType !== "mimic" || widget.config.source !== "preset" || widget.config.tabKey === undefined) continue;
+      const named = entry.content.tabs.find((candidate) => candidate.key === widget.config.tabKey);
+      assert(named !== undefined, `${tab.key}/${widget.key} names tab ${widget.config.tabKey}, which is no tab`);
+      assert(
+        widget.config.preset === named?.mimicPreset,
+        `${tab.key}/${widget.key} draws ${widget.config.preset}, the tab ${widget.config.tabKey} names ${String(named?.mimicPreset)}`,
+      );
+    }
     const drawn = tab.widgets.flatMap((widget) =>
-      widget.widgetType === "mimic" && widget.config.source === "preset" ? [widget.config.preset] : [],
+      widget.widgetType === "mimic" && widget.config.source === "preset" && widget.config.tabKey === undefined
+        ? [widget.config.preset]
+        : [],
     );
     const expected = tab.mimicPreset === undefined ? [] : [tab.mimicPreset];
     assert(
@@ -235,4 +251,41 @@ export function noTabHoldsMoreThanTheWidgetCap(): void {
  */
 export function theValueNamesNoControlRoomAssetCode(): void {
   assert(!JSON.stringify(entry).includes("CR-"), "the entry's value spells an asset code");
+}
+
+/**
+ * `F3.74` (ADR 0088 Amendment 2, OQ-B) — the Overview's diagram is a compact `lv_single_line` that
+ * names the electrical tab, so it reads that tab's breaker states and draws no title.
+ */
+export function theOverviewMimicNamesTheElectricalTabCompactly(): void {
+  const mimic = entry.content.tabs
+    .find((tab) => tab.key === "overview")
+    ?.widgets.find((widget) => widget.key === "overview-sld-mimic");
+  assert(mimic?.widgetType === "mimic", `the Overview holds no overview-sld-mimic mimic: got ${String(mimic?.widgetType)}`);
+  assert(mimic?.title === null, `its title: got ${String(mimic?.title)}`);
+  const config = JSON.stringify(mimic?.config);
+  assert(
+    config === JSON.stringify({ source: "preset", preset: "lv_single_line", tabKey: "sld", compact: true }),
+    `its config: got ${config}`,
+  );
+}
+
+/**
+ * `F3.74` (ADR 0088 Amendment 2, OQ-C) — the electrical tab draws the single line, then ONE breaker
+ * table under it, and the rail and the assets table sit 5 rows lower.
+ */
+export function theElectricalTabDrawsTheSingleLineAndOneBreakerTable(): void {
+  const sld = entry.content.tabs.find((tab) => tab.key === "sld");
+  assert(sld?.mimicPreset === "lv_single_line", `the tab's preset: got ${String(sld?.mimicPreset)}`);
+  const tables = (sld?.widgets ?? []).filter((widget) => widget.widgetType === "breaker_table");
+  assert(tables.length === 1, `the electrical tab holds ${tables.length} breaker tables`);
+  const rect = (type: string): string =>
+    (sld?.widgets ?? [])
+      .filter((widget) => widget.widgetType === type)
+      .map((widget) => `${widget.gridX},${widget.gridY},${widget.gridW},${widget.gridH}`)
+      .join(";");
+  assert(rect("breaker_table") === "0,9,12,5", `breaker table: got ${rect("breaker_table")}`);
+  assert(tables[0]?.title === "Breakers", `its title: got ${String(tables[0]?.title)}`);
+  assert(rect("active_alarms_rail") === "0,14,6,5", `rail: got ${rect("active_alarms_rail")}`);
+  assert(rect("table") === "6,14,6,5", `assets table: got ${rect("table")}`);
 }

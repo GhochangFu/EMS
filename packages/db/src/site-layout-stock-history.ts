@@ -10,11 +10,15 @@ import { SMOC_STANDARD_SITE_TEMPLATE } from "@bms/shared/site-templates";
  * - **v1** (`F3.73`): every widget at its first rect ({@link SMOC_STANDARD_V1_RECTS}).
  * - **v2** (`F3.73` compaction): the domain tabs as they still are, and the Overview of 14
  *   widgets with module cards ({@link OVERVIEW_V2_WIDGETS}).
- * - **v3** (`F3.77`, ADR 0087 Amendment 3) is the live entry; its Overview has no card.
+ * - **v3** (`F3.77`, ADR 0087 Amendment 3): the Overview has no card
+ *   ({@link OVERVIEW_V3_WIDGETS}), and the `sld` tab draws `electrical_distribution` with no
+ *   breaker table ({@link SLD_V3_WIDGETS}). `F3.74` froze it here when v4 became the live entry.
+ * - **v4** (`F3.74`, ADR 0088 Amendment 2) is the live entry: a compact `lv_single_line` beside
+ *   the class strip on the Overview, and `lv_single_line` with a breaker table on the `sld` tab.
  *
- * **Adding a version** (`F3.74` adds v4 here): freeze the shape that is about to stop being
- * current — for v3, its Overview widgets and a `smocStandardV3Content()` built the way
- * {@link smocStandardV2Content} is — before the stock entry changes, then point the chain's next
+ * **Adding a version** (v5 is next): freeze the shape that is about to stop being current — its
+ * changed tabs' widgets and a `smocStandardV4Content()` built the way
+ * {@link smocStandardV3Content} is — before the stock entry changes, then point the chain's next
  * step at it. Nothing in this file is ever edited after its version ships: a copy the seed wrote
  * at that version still holds exactly these values.
  */
@@ -28,6 +32,9 @@ export type GridRect = {
 
 /** The Overview's tab key, in every stock version. */
 export const OVERVIEW_TAB_KEY = "overview";
+
+/** The electrical tab's key, in every stock version. */
+export const SLD_TAB_KEY = "sld";
 
 /** How a copy's widget is known: its tab key, widget type and title. */
 export function siteWidgetIdentity(tabKey: string, widgetType: string, title: string | null): string {
@@ -244,12 +251,179 @@ export const OVERVIEW_V2_WIDGETS: readonly SectionTemplateWidget[] = [
   },
 ];
 
-/** Stock v2's content: the live tabs with the Overview's widgets replaced by the v2 ones. */
+/**
+ * Stock v2's content: the frozen v3 content with the Overview's widgets replaced by the v2 ones.
+ * Built from {@link smocStandardV3Content}, not from the live entry: the v2 domain tabs are the v3
+ * ones (hashed by {@link SMOC_STANDARD_V2_DOMAIN_TABS_SHA256}), and the live `sld` tab is v4's.
+ */
 export function smocStandardV2Content(): SectionTemplateContent {
-  const content = SMOC_STANDARD_SITE_TEMPLATE.content as SectionTemplateContent;
+  const content = smocStandardV3Content();
   return {
     ...content,
     tabs: content.tabs.map((tab) => (tab.key === OVERVIEW_TAB_KEY ? { ...tab, widgets: [...OVERVIEW_V2_WIDGETS] } : tab)),
+  };
+}
+
+// ── v3 ──────────────────────────────────────────────────────────────────────────────────────
+
+/** A v3 Overview value tile: slot `slot` of the top row, fed by one catalog source. */
+function v3SiteTile(
+  key: string,
+  title: string,
+  slot: number,
+  source: SectionTemplateWidget["sources"][number],
+  config: Extract<SectionTemplateWidget, { widgetType: "value_tile" }>["config"],
+): SectionTemplateWidget {
+  return { key, title, gridX: slot * 3, gridY: 0, gridW: 3, gridH: 2, bindings: [], sources: [source], widgetType: "value_tile", config };
+}
+
+/**
+ * Stock v3's Overview (`F3.77`), in its template order: the four tiles (the Offline tile with the
+ * `offline` icon), the 8-wide alarm rail and the 4-wide systems list at y2, the full-width class
+ * strip at y9 and the 1-row legend at y11 — 12 rows, no module card.
+ */
+export const OVERVIEW_V3_WIDGETS: readonly SectionTemplateWidget[] = [
+  v3SiteTile("overview-alarms-tile", "Active alarms", 0,
+    { catalogKey: "alarms.active.count", params: {}, sortOrder: 0 }, { icon: "alert" }),
+  v3SiteTile("overview-offline-tile", "Offline assets", 1,
+    { catalogKey: "assets.offline.count", params: {}, sortOrder: 0 }, { icon: "offline" }),
+  v3SiteTile("overview-load-tile", "Total load", 2,
+    { catalogKey: "sustainability.total", params: { pointKey: "kw", aggregate: "sum" }, sortOrder: 0 },
+    { icon: "bolt", unit: "kW" }),
+  v3SiteTile("overview-health-tile", "Asset health", 3,
+    { catalogKey: "assets.health.score", params: {}, sortOrder: 0 }, { icon: "gauge" }),
+  {
+    key: "overview-alarms-rail",
+    title: "Active alarms",
+    gridX: 0,
+    gridY: 2,
+    gridW: 8,
+    gridH: 7,
+    bindings: [],
+    sources: [],
+    widgetType: "active_alarms_rail",
+    config: { rows: 8, showSummary: true },
+  },
+  {
+    key: "overview-critical-systems",
+    title: "Critical systems",
+    gridX: 8,
+    gridY: 2,
+    gridW: 4,
+    gridH: 7,
+    bindings: [],
+    sources: [],
+    widgetType: "critical_systems_list",
+    config: {},
+  },
+  {
+    key: "overview-class-strip",
+    title: null,
+    gridX: 0,
+    gridY: 9,
+    gridW: 12,
+    gridH: 2,
+    bindings: [],
+    sources: [],
+    widgetType: "asset_class_strip",
+    config: {},
+  },
+  {
+    key: "overview-legend",
+    title: null,
+    gridX: 0,
+    gridY: 11,
+    gridW: 12,
+    gridH: 1,
+    bindings: [],
+    sources: [],
+    widgetType: "state_legend",
+    config: {},
+  },
+];
+
+/** A v3 `sld` role tile: slot `slot` of the top row, bound to a role and point key. */
+function v3SldTile(
+  key: string,
+  title: string,
+  slot: number,
+  binding: { readonly assetRoleCode: string; readonly pointKey: string },
+  config: Extract<SectionTemplateWidget, { widgetType: "value_tile" }>["config"],
+): SectionTemplateWidget {
+  return {
+    key,
+    title,
+    gridX: slot * 3,
+    gridY: 0,
+    gridW: 3,
+    gridH: 2,
+    bindings: [{ ...binding, pointRole: "primary", sortOrder: 0 }],
+    sources: [],
+    widgetType: "value_tile",
+    config,
+  };
+}
+
+/**
+ * Stock v3's `sld` tab widgets (`electrical_distribution`, no breaker table): the four role
+ * tiles, the full-width mimic at y2, then the alarm rail and the assets table at y9 — 14 rows.
+ */
+export const SLD_V3_WIDGETS: readonly SectionTemplateWidget[] = [
+  v3SldTile("sld-incomer-kw-tile", "Incomer load", 0, { assetRoleCode: "incoming-supply", pointKey: "kw" }, { icon: "bolt", unit: "kW" }),
+  v3SldTile("sld-incomer-pf-tile", "Incomer power factor", 1, { assetRoleCode: "incoming-supply", pointKey: "pf" }, { decimals: 2 }),
+  v3SldTile("sld-frequency-tile", "Frequency", 2, { assetRoleCode: "meter", pointKey: "frequency_hz" }, { unit: "Hz", decimals: 2 }),
+  v3SldTile("sld-main-bus-kw-tile", "Main bus load", 3, { assetRoleCode: "lt-panel", pointKey: "kw" }, { icon: "bolt", unit: "kW" }),
+  {
+    key: "sld-mimic",
+    title: null,
+    gridX: 0,
+    gridY: 2,
+    gridW: 12,
+    gridH: 7,
+    bindings: [],
+    sources: [],
+    widgetType: "mimic",
+    config: { source: "preset", preset: "electrical_distribution" },
+  },
+  {
+    key: "sld-alarms-rail",
+    title: "Active alarms",
+    gridX: 0,
+    gridY: 9,
+    gridW: 6,
+    gridH: 5,
+    bindings: [],
+    sources: [],
+    widgetType: "active_alarms_rail",
+    config: { rows: 8, showSummary: true },
+  },
+  {
+    key: "sld-assets-table",
+    title: "Assets",
+    gridX: 6,
+    gridY: 9,
+    gridW: 6,
+    gridH: 5,
+    bindings: [],
+    sources: [{ catalogKey: "assets.list", params: {}, sortOrder: 0 }],
+    widgetType: "table",
+    config: {},
+  },
+];
+
+/**
+ * Stock v3's content: the live (v4) tabs with the Overview replaced by {@link OVERVIEW_V3_WIDGETS}
+ * and the `sld` tab by its v3 shape. Every other tab is unchanged in v4.
+ */
+export function smocStandardV3Content(): SectionTemplateContent {
+  const content = SMOC_STANDARD_SITE_TEMPLATE.content as SectionTemplateContent;
+  return {
+    ...content,
+    tabs: content.tabs.map((tab) => {
+      if (tab.key === OVERVIEW_TAB_KEY) return { ...tab, widgets: [...OVERVIEW_V3_WIDGETS] };
+      if (tab.key === SLD_TAB_KEY) return { ...tab, mimicPreset: "electrical_distribution", widgets: [...SLD_V3_WIDGETS] };
+      return tab;
+    }),
   };
 }
 

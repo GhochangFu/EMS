@@ -169,13 +169,14 @@ export function pheReportsTheFourDroppedCards(): void {
 }
 
 /**
- * `F3.77` plan D1 — the v3 stock Overview holds no card, so a PHE copy drops none. The kept
- * Overview still carries its eight widgets: the adjacent positive, so an empty plan cannot pass.
+ * `F3.77` plan D1 — the stock Overview holds no card, so a PHE copy drops none. The kept
+ * Overview still carries its nine widgets (v4 adds the compact diagram, `F3.74`): the adjacent
+ * positive, so an empty plan cannot pass.
  */
 export function theSmocOverviewHasNoCardToDrop(): void {
   const plan = planned(planSiteLayout(SMOC_TABS, PHE_GROUPS));
   const overview = plan.tabs.find((row) => row.tab.key === "overview");
-  assert(overview?.tab.widgets.length === 8, `PHE Overview widgets: got ${overview?.tab.widgets.length}`);
+  assert(overview?.tab.widgets.length === 9, `PHE Overview widgets: got ${overview?.tab.widgets.length}`);
   assert(plan.droppedCards.length === 0, `PHE dropped cards: got ${JSON.stringify(plan.droppedCards)}`);
 }
 
@@ -455,7 +456,7 @@ export function aTileWhoseMemberLacksThePointKeyIsOmitted(): void {
 export function aBoundTileAndEveryUnboundWidgetAreKept(): void {
   const { plans } = omitUnboundTiles("sld", sldPlans(["kw"]));
   assert(
-    keysOf(plans) === "sld-incomer-kw-tile,sld-mimic,sld-alarms-rail,sld-assets-table",
+    keysOf(plans) === "sld-incomer-kw-tile,sld-mimic,sld-breaker-table,sld-alarms-rail,sld-assets-table",
     `kept widgets: got ${keysOf(plans)}`,
   );
 }

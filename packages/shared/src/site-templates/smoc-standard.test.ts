@@ -15,19 +15,21 @@ import {
   theEntryIsTheSiteTargetStockRow,
   theEntryParsesUnderTheStockContract,
   theOfflineTileUsesTheOfflineIcon,
-  theOverviewHoldsItsV3Rects,
+  theElectricalTabDrawsTheSingleLineAndOneBreakerTable,
+  theOverviewHoldsItsV4Rects,
   theOverviewHoldsNoCardAndOneSystemsList,
+  theOverviewMimicNamesTheElectricalTabCompactly,
   theTabsAreThePlanOrder,
   theValueNamesNoControlRoomAssetCode,
 } from "./smoc-standard.spec";
 
 /** Vitest entry point — assertions live in the sibling `.spec` (ADR 0014). */
 describe("F3.73 — the SMOC standard site layout (plan D8)", () => {
-  it("is the smoc-standard site-target stock row, version 3", () => {
+  it("is the smoc-standard site-target stock row, version 4", () => {
     theEntryIsTheSiteTargetStockRow();
   });
-  it("holds the v3 Overview rects (F3.77 D1)", () => {
-    theOverviewHoldsItsV3Rects();
+  it("holds the v4 Overview rects (F3.74, ADR 0088 Amendment 2)", () => {
+    theOverviewHoldsItsV4Rects();
   });
   it("gives each domain-tab widget its compact v2 size", () => {
     everyDomainTabWidgetHasItsCompactSize();
@@ -41,7 +43,7 @@ describe("F3.73 — the SMOC standard site layout (plan D8)", () => {
   it("leaves no empty row in a tab", () => {
     noTabLeavesAnEmptyRow();
   });
-  it("totals 12 rows on the Overview and 14 on a domain tab with a mimic", () => {
+  it("totals 12 rows on the Overview, 19 on the electrical tab and 14 on another tab with a mimic", () => {
     theTabsTotalTheirCompactRows();
   });
   it("parses under the stock template contract", () => {
@@ -73,6 +75,12 @@ describe("F3.73 — the SMOC standard site layout (plan D8)", () => {
   });
   it("holds at most the widget cap in each tab", () => {
     noTabHoldsMoreThanTheWidgetCap();
+  });
+  it("names the electrical tab from a compact Overview diagram (F3.74)", () => {
+    theOverviewMimicNamesTheElectricalTabCompactly();
+  });
+  it("draws the single line and one breaker table on the electrical tab (F3.74)", () => {
+    theElectricalTabDrawsTheSingleLineAndOneBreakerTable();
   });
   it("spells no control-room asset code in its value", () => {
     theValueNamesNoControlRoomAssetCode();

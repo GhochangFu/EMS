@@ -16,6 +16,7 @@ import {
   type SiteTemplateRow,
   siteWidgetIdentity,
   upgradedCopyDescription,
+  upgradeSeededSiteLayoutCopies,
 } from "./site-layout-seed-upgrade";
 import {
   canonicalJson,
@@ -24,6 +25,7 @@ import {
   SMOC_STANDARD_V2_RECTS,
   smocStandardV1Content,
   smocStandardV2Content,
+  smocStandardV3Content,
 } from "./site-layout-stock-history";
 
 /**
@@ -161,6 +163,13 @@ export function theSeedsOlderStockRowsAreSuperseded(): void {
   }
 }
 
+/** `F3.74`: the stock-3 row the v3 seed published is superseded once the current stock is 4. */
+export function theSeedsStockThreeRowIsSupersededByStockFour(): void {
+  const row = seedRow({ version: 2, stockVersion: 3, content: smocStandardV3Content() });
+  assert(isSeedStockSiteTemplate(row, 4), "stock 3 at version 2 is not superseded by stock 4");
+  assert(!isSeedStockSiteTemplate(row, 3), "stock 3 at version 2 is superseded by stock 3");
+}
+
 export function aTemplateRowTheSeedDoesNotOwnIsKept(): void {
   const cases: [string, SiteTemplateRow | undefined][] = [
     ["absent", undefined],
@@ -291,9 +300,9 @@ function packedV2Overview(cards: readonly string[]): OverviewCopyWidget[] {
   });
 }
 
-/** The current (v3) Overview as a fresh copy stores it. */
+/** The frozen v3 Overview as a copy stores it (the live entry is v4 since F3.74). */
 function v3Overview(): OverviewCopyWidget[] {
-  const tab = current.tabs.find((candidate) => candidate.key === "overview");
+  const tab = smocStandardV3Content().tabs.find((candidate) => candidate.key === "overview");
   return (tab?.widgets ?? []).map((widget) => ({
     id: `overview/${widget.key}`,
     tabKey: "overview",
@@ -428,6 +437,55 @@ export function aV3OverviewIsNotUpgradedAgain(): void {
     const plan = planOverviewUpgrade(v3Overview(), tabs);
     assert(plan.deletes.length + plan.updates.length === 0, `v3 overview: ${updateText(plan)}`);
   }
+}
+
+// ---- the runner's insert guard (F3.74, ADR 0088 Amendment 2, I6) -----------------------------
+
+/**
+ * I6 — a v3 Overview's compact-diagram insert that returns no row (a FORCE-RLS write dropped
+ * outside the tenant bracket) throws, naming the runner and the insert. The fake copy is shaped so
+ * every earlier step writes nothing: the v2 description, the v3 rects (no v1 rect, no v2 rect),
+ * and an `sld` tab with no widget. The strip's move returns its row, so only the insert can fail.
+ */
+export async function anInsertThatReturnsNoRowThrowsNamingTheRunner(): Promise<void> {
+  const overview = v3Overview();
+  const rows = (withCounts: boolean) =>
+    overview.map((widget) => ({
+      id: widget.id,
+      tab_key: widget.tabKey,
+      widget_type: widget.widgetType,
+      title: widget.title,
+      grid_x: widget.gridX,
+      grid_y: widget.gridY,
+      grid_w: widget.gridW,
+      grid_h: widget.gridH,
+      ...(withCounts ? { config: widget.config, points: widget.points, sources: widget.sources } : {}),
+    }));
+  const written: string[] = [];
+  const pool = {
+    query: async (sql: string) => {
+      if (sql.includes("FROM bms.dashboards d")) return { rows: [{ id: "d1", description: SITE_LAYOUT_COPY_DESCRIPTION }], rowCount: 1 };
+      if (sql.includes("AS points")) return { rows: rows(true), rowCount: overview.length };
+      if (sql.includes("FROM bms.dashboard_widgets w")) return { rows: rows(false), rowCount: overview.length };
+      if (sql.includes("FROM bms.dashboard_tabs")) {
+        return { rows: [{ id: "tab-overview", tab_key: "overview" }, { id: "tab-sld", tab_key: "sld" }], rowCount: 2 };
+      }
+      written.push(sql.trim().match(/^(UPDATE|INSERT INTO|DELETE FROM)\s+\S+/)?.[0] ?? sql.trim().slice(0, 30));
+      if (sql.includes("INSERT INTO bms.dashboard_widgets")) return { rows: [], rowCount: 0 };
+      return { rows: [], rowCount: 1 };
+    },
+  } as unknown as Parameters<typeof upgradeSeededSiteLayoutCopies>[0];
+  let message = "no throw";
+  try {
+    await upgradeSeededSiteLayoutCopies(pool, "org-1", ["loc-1"], "site-layout-");
+  } catch (error) {
+    message = (error as Error).message;
+  }
+  assert(
+    message.startsWith("upgradeSeededSiteLayoutCopies:") && message.includes("overview mimic insert returned no row") &&
+      written.join(",") === "UPDATE bms.dashboard_widgets,INSERT INTO bms.dashboard_widgets",
+    `${message} after ${written.join(",")}`,
+  );
 }
 
 /** Widgets of other tabs are not the Overview's: the step reads the Overview only. */

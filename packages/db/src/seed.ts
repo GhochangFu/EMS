@@ -27,6 +27,7 @@ import {
 } from "./automation-rules-seed";
 import { seedRuledPointCatalog } from "./ruled-point-catalog-seed";
 import { seedAssetTemplateHealth } from "./asset-template-health-seed";
+import { seedBreakerDemo } from "./breaker-demo-seed";
 import { seedPueDemo, seedPueDemoRackKwPoints } from "./pue-demo-seed";
 import { seedWaterMimicDemo } from "./water-mimic-demo-seed";
 import { seedWaterPlantDemo } from "./water-plant-demo-seed";
@@ -279,6 +280,11 @@ async function main(): Promise<void> {
       // rule's point is what makes a tag scoreable (`E1.3`) and pickable
       // (`F3.35`); before it, `bms.asset_points` held no row for any ESKOM asset.
       await seedRuledPointCatalog(pool, eskomOrgId);
+      // `F3.74` plan D11 — the breaker demo at RSMOC-WC: the forced breaker roles, the preset's
+      // members, `breaker_trip`, the nameplates and `sld-demo-rsmoc-wc`. After `seedAssetGroups`
+      // (the group) and `seedPointKeyCatalog` (the key), and before `seedAssetTemplateHealth`, so
+      // `BASELINE-ELECTRICAL` declares `breaker_trip` on the first boot as on every later one.
+      await seedBreakerDemo(pool, eskomOrgId, westernCapeId);
       // `F2.8`, first half — the fourteen `rack_kw` catalog rows, and NOTHING
       // ELSE. It sits here, between the ruled-point catalog and the health
       // baselines, and both sides of that are load-bearing. After the catalog,
