@@ -25,6 +25,7 @@
 import type { z } from "zod";
 
 import type * as A from "./contracts/admin";
+import type * as Aia from "./contracts/ai-assistant";
 import type * as AD from "./contracts/asset-dashboards";
 import type * as AI from "./contracts/asset-images";
 import type * as Au from "./contracts/auth";
@@ -688,6 +689,16 @@ export type OnboardingValidateResponseDto = z.infer<
 export type OnboardingCommitResponseDto = z.infer<
   typeof Ob.onboardingCommitResponseDtoSchema
 >;
+
+// ---------------------------------------------------------------------------
+// AI assistant settings (F3.21, ADR 0090 Amendment 1)
+// ---------------------------------------------------------------------------
+
+export type LlmProviderName = z.infer<typeof Aia.llmProviderNameSchema>;
+export type AiAssistantProviderChoice = z.infer<typeof Aia.aiAssistantProviderChoiceSchema>;
+export type AiAssistantTestStatus = z.infer<typeof Aia.aiAssistantTestStatusSchema>;
+export type AiAssistantTestResultDto = z.infer<typeof Aia.aiAssistantTestResultDtoSchema>;
+export type AiAssistantSettingsDto = z.infer<typeof Aia.aiAssistantSettingsDtoSchema>;
 
 // ---------------------------------------------------------------------------
 // Response envelopes
