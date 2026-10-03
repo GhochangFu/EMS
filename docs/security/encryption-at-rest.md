@@ -18,7 +18,7 @@ upstream one.
 So this document splits into two halves, and both matter:
 
 - **§2 — what the application encrypts.** Real, in code, testable today. It is
-  a narrow surface: connection credentials only.
+  a narrow surface: stored credentials only.
 - **§4 — what the deployer must configure.** Everything else. If §4 is not
   done, the database, the telemetry history, and every backup are sitting in
   plaintext on disk, no matter what §2 says.
