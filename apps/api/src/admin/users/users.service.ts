@@ -572,6 +572,17 @@ export class UsersService {
    * `POST /admin/users/:id/temporary-password` — decision 6: a temporary
    * Keycloak password, then every session ended. The audit payload never
    * carries the password.
+   *
+   * **Decision 14: the credential never changes without an audit row.** The
+   * audit transaction opens first and inserts `master.user.temporary_password.set`;
+   * `setTemporaryPassword` and `logoutSessions` then run inside it. An audit
+   * failure stops before any Keycloak call; a Keycloak failure rolls the audit
+   * row back. Two residual windows remain: Keycloak succeeded and the `COMMIT` then failed
+   * (the password changed, no audit row), and `setTemporaryPassword`
+   * succeeded but `logoutSessions` failed (a 502, the audit rolled back, the
+   * password changed). A Keycloak call cannot join the database transaction,
+   * so neither window can close here; both are narrower than calling Keycloak
+   * before the transaction, which left every audit failure in that state.
    */
   async temporaryPassword(jwt: JwtPayload, id: string, rawBody: unknown): Promise<UserWriteResponse> {
     const manager = await this.requireManager(jwt);
@@ -581,9 +592,6 @@ export class UsersService {
     const target = await this.requireManageableTarget(manager, id);
     const subject = requireLinked(target);
     const onFleet = target.role === "admin";
-
-    await this.keycloak(() => this.identity.setTemporaryPassword(subject, body.temporaryPassword));
-    await this.keycloak(() => this.identity.logoutSessions(subject));
 
     await this.inExecutor(onFleet, onFleet ? null : target.organizationId, async (tx) => {
       await this.audit.write(
@@ -597,6 +605,8 @@ export class UsersService {
         },
         tx as BmsDb,
       );
+      await this.keycloak(() => this.identity.setTemporaryPassword(subject, body.temporaryPassword));
+      await this.keycloak(() => this.identity.logoutSessions(subject));
     });
     return { user: toAdminUserDto(target), followUp: null };
   }

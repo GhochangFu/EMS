@@ -114,6 +114,8 @@ type Options = {
   readonly writable?: string[];
   readonly authMode?: "oidc" | "local";
   readonly failInsert?: boolean;
+  /** The audit_log insert throws, as a failed audit write would. */
+  readonly failAudit?: boolean;
   readonly emptyUpdate?: boolean;
   readonly activeAdmins?: string[];
   readonly users?: UserRow[];
@@ -170,6 +172,9 @@ function harness(options: Options = {}) {
         ];
       }
       return [];
+    }
+    if (op.kind === "insert" && op.table === "audit_log" && options.failAudit) {
+      throw new Error("the audit insert failed");
     }
     if (op.kind === "update" && op.table === "users") {
       return options.emptyUpdate ? [] : [{ id: "updated" }];
@@ -587,6 +592,24 @@ export async function assertTheTemporaryPasswordEndsTheSessions(): Promise<void>
   const { service, jwt, identity } = harness();
   await service.temporaryPassword(jwt, VIEWER_A.id, { temporaryPassword: PASSWORD });
   expect(identity.calls.map((call) => call.method)).toEqual(["setTemporaryPassword", "logoutSessions"]);
+}
+
+/** Decision 14: an audit failure stops before any Keycloak call. */
+export async function assertATemporaryPasswordAuditFailureCallsNoKeycloak(): Promise<void> {
+  const { service, jwt, identity } = harness({ failAudit: true });
+  await expect(service.temporaryPassword(jwt, VIEWER_A.id, { temporaryPassword: PASSWORD })).rejects.toThrow(
+    "the audit insert failed",
+  );
+  expect(identity.calls).toEqual([]);
+}
+
+/** Decision 14: a Keycloak failure rolls the audit row back — it was written, and its transaction never committed. */
+export async function assertATemporaryPasswordKeycloakFailureCommitsNoAudit(): Promise<void> {
+  const { service, jwt, identity, timeline } = harness();
+  identity.failNext("setTemporaryPassword", "unavailable");
+  const err = await refusal(service.temporaryPassword(jwt, VIEWER_A.id, { temporaryPassword: PASSWORD }));
+  const outcomes = timeline.flatMap((entry) => (entry.source === "tx" ? [entry.outcome] : []));
+  expect([err.getStatus(), auditInserts(timeline).length, outcomes]).toEqual([502, 1, ["rollback"]]);
 }
 
 // -- local mode and not configured -----------------------------------------

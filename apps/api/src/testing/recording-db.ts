@@ -31,7 +31,11 @@ export type DbOp = {
   readonly returning: boolean;
 };
 
-export type TimelineEntry = { readonly source: "db"; readonly op: DbOp } | { readonly source: "identity"; readonly method: string; readonly args: readonly unknown[] };
+export type TimelineEntry =
+  | { readonly source: "db"; readonly op: DbOp }
+  | { readonly source: "identity"; readonly method: string; readonly args: readonly unknown[] }
+  /** How a `transaction(fn)` ended: `commit` when `fn` resolved, `rollback` when it threw. */
+  | { readonly source: "tx"; readonly executor: string; readonly outcome: "commit" | "rollback" };
 
 export type Timeline = TimelineEntry[];
 
@@ -132,7 +136,9 @@ class Builder implements PromiseLike<unknown> {
 
 /**
  * A fake `BmsDb` labelled `executor`. `transaction(fn)` hands `fn` a fake
- * labelled `${executor}.tx` that writes into the same timeline.
+ * labelled `${executor}.tx` that writes into the same timeline, then records
+ * a `tx` entry: `commit` when `fn` resolved, `rollback` when it threw (and
+ * rethrows), as drizzle does.
  */
 export function recordingDb(executor: string, timeline: Timeline, answer: Answer): BmsDb {
   const make = (label: string): Record<string, unknown> => {
@@ -155,7 +161,17 @@ export function recordingDb(executor: string, timeline: Timeline, answer: Answer
         timeline.push({ source: "db", op });
         return { rows: answer(op) ?? [] };
       },
-      transaction: async (fn: (tx: unknown) => Promise<unknown>) => fn(make(`${label}.tx`)),
+      transaction: async (fn: (tx: unknown) => Promise<unknown>) => {
+        const txLabel = `${label}.tx`;
+        try {
+          const result = await fn(make(txLabel));
+          timeline.push({ source: "tx", executor: txLabel, outcome: "commit" });
+          return result;
+        } catch (err) {
+          timeline.push({ source: "tx", executor: txLabel, outcome: "rollback" });
+          throw err;
+        }
+      },
     };
     return db;
   };

@@ -232,6 +232,14 @@ describe("F3.78 — UsersService.temporaryPassword (ADR 0089 decision 6)", () =>
   it("sets the password, then ends the sessions", async () => {
     await spec.assertTheTemporaryPasswordEndsTheSessions();
   });
+
+  it("an audit failure stops before any Keycloak call (decision 14)", async () => {
+    await spec.assertATemporaryPasswordAuditFailureCallsNoKeycloak();
+  });
+
+  it("a Keycloak failure leaves no committed audit row (decision 14)", async () => {
+    await spec.assertATemporaryPasswordKeycloakFailureCommitsNoAudit();
+  });
 });
 
 describe("F3.78 — local mode and an unconfigured client (ADR 0089 decisions 5 and 11)", () => {
