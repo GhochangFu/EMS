@@ -259,11 +259,14 @@ None. `openai` (`^6.45.0`, ADR 0011) is already in `apps/api`.
 
 ### Status
 
-Proposed — the owner ruled ten questions one at a time on 2026-10-03, after
+Accepted — the owner ruled ten questions one at a time on 2026-10-03, after
 the record above was merged (#702) and before any implementation code. The
 owner asked for it: there is no OpenAI key available for testing, an
 OpenRouter key is, and the keys must be settable in the UI, not only in
-`.env`.
+`.env`. The owner approved this written amendment on 2026-10-03, with four
+facts stated before the approval: the migration, page and route group it adds;
+the Anthropic refusal fallback and its billing; that an organization row never
+uses the platform key; and effort `medium`.
 
 **Supersedes:** ruling 2 and decision 1 (one provider), decision 8's "No
 migration", and *Dependencies* ("None"). Every other decision stands. The
