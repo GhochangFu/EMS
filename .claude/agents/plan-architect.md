@@ -47,7 +47,9 @@ Write for an engineer with **zero context for this codebase**. Assume nothing.
    §4.6: assertions live in `*.spec.ts` with a `*.test.ts` wrapper — **except** in
    the top-level `tests/` directory, where invariants are inline and stay that way.
 4. **The gates the task must not break.** A new file in `tests/` is type-checked by
-   nothing until it is listed by hand in the root `typecheck:tests` script. A suite
+   nothing until it is listed by hand in `tsconfig.typecheck-tests.json`'s `files`
+   (`pnpm typecheck:tests` runs it; the list left the root script for the
+   Windows cmd.exe 8,191-character limit). A suite
    CI does not run is not a gate, so `.github/workflows/ci.yml` is wired in the
    same change. Never assert on a lifetime counter, and never lower a coverage
    threshold to go green.

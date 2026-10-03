@@ -867,9 +867,33 @@
 > strip (`components/dashboards/dashboard-tab-strip.tsx`) shows on
 > `/control-room/site/:locationId/:tab?` (`SiteDashboardView`),
 > `/dashboards/:slug` and the builder, whose tabs panel is
-> `dashboard-tabs-panel.tsx`. Next under ADR 0087: `F3.74` (live breaker
-> state, which needs its own ADR) and `F3.75` (`RSMOC-WC` onto the template
-> after parity).
+> `dashboard-tabs-panel.tsx`.
+> And **live breaker state on the electrical mimic** (**ADR 0088** with
+> **Amendments 1 and 2**; row `F3.74`, merged 2026-10-02 and 2026-10-03 in
+> #687, #690, #694, #695 and #697). **Display only: the mimic never operates a
+> breaker, and commands stay `F3.12`.** Migration `0097` adds the state map
+> `bms.point_key_states` (fleet-wide master data: a numeric value of a point
+> key to a label and a closed `tone`; seeded for `breaker_main` and
+> `breaker_trip` only), the five breaker roles (`main-breaker`,
+> `ups-input-breaker`, `ups-output-breaker`, `load-feeder-breaker`,
+> `mains-feeder-breaker`), the asset fields `rating` and `trip_cause`, and the
+> `fan_out` and `is_source` flags on `bms.mimic_layout_nodes`. Migration `0099`
+> widens the widget-type CHECK with `breaker_table`, so `widgetType` has
+> twelve values (the number `0098` is unused). The `lv_single_line` preset
+> draws the SMOC topology; a **fan-out node** draws every member of its role,
+> one breaker each in asset-code order. A mimic on a tab with no group may
+> name one tab of its dashboard (`tabKey`) and draws at a `compact` size. The
+> web runs `energiseGraph` (`packages/shared/src/mimic-energised.ts`) over the
+> directed pipes and the socket overlay: only a breaker switches, and a stale
+> or unknown breaker makes the path after it unknown. **The freshness dash
+> stays, and energy is a colour.** **Stock v4 of "SMOC standard"** adds the
+> electrical tab's `lv_single_line` mimic and `breaker_table`, and an Overview
+> mimic that names the electrical tab. By Amendment 2 a per-tab upgrade moves
+> the untouched seeded copies from v3 to v4 (`planOverviewUpgrade` in
+> `site-layout-seed-upgrade.ts`); an edited tab keeps its own content. The
+> seed adds the demo dashboard `sld-demo-rsmoc-wc` at `RSMOC-WC`, beside its
+> hand-written `builtin` view, and the simulator trips `CR-Q9`. Next under
+> ADR 0087: `F3.75` (`RSMOC-WC` onto the template after parity).
 > Next: `F4.160` is open (of the three spec files the row names, two remain,
 > `dashboard-builder-page` and `dashboard-builder-edit-page`, because `F3.70`
 > took the overview spec off `AppShell`); `F4.161` is closed (#578).
@@ -1152,7 +1176,7 @@ bms/
 │                                conventions are live: adr-00NN-*.test.ts where a
 │                                file tracks one ADR, a subject name where it
 │                                does not. A new file here must ALSO be added to
-│                                the typecheck:tests script — see §4.6
+│                                tsconfig.typecheck-tests.json — see §4.6
 ├── exports/                   ← PHE MQTT reference + point-mapping CSVs (ADR 0007/0011)
 ├── infra/
 │   ├── keycloak/              ← Phase 1 Sprint C realm export
@@ -1965,13 +1989,16 @@ Do not add top-level folders without updating this section.
 - A check that CI does not execute is not a gate. When you add a test suite,
   script, or invariant, wire it into `.github/workflows/ci.yml` in the same
   change — this repo has shipped orphaned specs and orphaned migrations before.
-- **A new file in `tests/` must be added to the root `typecheck:tests` script by
-  hand.** That script names each file explicitly rather than globbing, because
-  `tests/` has no `tsconfig.json` of its own and the flags are passed on the
-  command line. So a new invariant file is type-checked by nothing until it is
-  listed, and `pnpm test` passing tells you only that it *ran* — vitest strips
-  types with esbuild and never checks them. `F4.23` and `F4.43` each added a file
-  and each had to edit that line.
+- **A new file in `tests/` must be added by hand to the `files` array of
+  `tsconfig.typecheck-tests.json`.** `pnpm typecheck:tests` still runs it
+  (`tsc -p tsconfig.typecheck-tests.json`). The list names each file explicitly
+  rather than globbing, because `tests/` has no `tsconfig.json` of its own. It
+  left the root script in `F3.74` (#695): the inline list had reached 8,189
+  characters and the Windows cmd.exe limit is 8,191, so the script failed there.
+  `tests/repo-invariants.test.ts` gates the array. So a new invariant file is
+  type-checked by nothing until it is listed, and `pnpm test` passing tells you
+  only that it *ran* — vitest strips types with esbuild and never checks them.
+  `F4.23` and `F4.43` each added a file and each had to edit the list.
 - **You cannot instantiate a Nest module in a test here, and it is not worth
   discovering that twice** (`F4.20`). Vitest transforms TypeScript with esbuild,
   which does **not** emit `design:paramtypes`, so Nest's constructor injection

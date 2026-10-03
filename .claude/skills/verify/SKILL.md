@@ -31,7 +31,9 @@ Prefer `pnpm typecheck` over building the packages one by one: the root script
 also builds `ingest`, which a hand-written list has forgotten before.
 
 `pnpm typecheck:tests` names each `tests/` file explicitly instead of globbing,
-because `tests/` has no `tsconfig.json`. A new invariant file is type-checked by
+because `tests/` has no `tsconfig.json`. The list is the `files` array of
+`tsconfig.typecheck-tests.json`, not the root script: the inline list passed the
+Windows cmd.exe 8,191-character limit. A new invariant file is type-checked by
 nothing until it is added there by hand (AGENTS.md §4.6).
 
 **Integration suites gate on `DATABASE_URL`, asymmetrically.** Unset, they skip
