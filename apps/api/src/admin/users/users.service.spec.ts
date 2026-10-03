@@ -20,6 +20,7 @@ import {
   MANAGER_ROLE_REQUIRED,
   NOT_CONFIGURED,
   ORGANIZATION_OUT_OF_SCOPE,
+  PASSWORD_POLICY_REFUSED,
   SELF_DEACTIVATE,
   SELF_ROLE_CHANGE,
   UNLINKED_USER,
@@ -610,6 +611,22 @@ export async function assertATemporaryPasswordKeycloakFailureCommitsNoAudit(): P
   const err = await refusal(service.temporaryPassword(jwt, VIEWER_A.id, { temporaryPassword: PASSWORD }));
   const outcomes = timeline.flatMap((entry) => (entry.source === "tx" ? [entry.outcome] : []));
   expect([err.getStatus(), auditInserts(timeline).length, outcomes]).toEqual([502, 1, ["rollback"]]);
+}
+
+/** A password Keycloak's policy refuses (400 `bad_request`) is a 400 naming the rule class, never the password. */
+export async function assertAPolicyRefusedPasswordIs400(action: "create" | "temporary-password"): Promise<void> {
+  const { service, jwt, identity } = harness();
+  identity.failNext("setTemporaryPassword", "bad_request");
+  const err = await refusal(
+    action === "create"
+      ? service.create(jwt, createBody())
+      : service.temporaryPassword(jwt, VIEWER_A.id, { temporaryPassword: PASSWORD }),
+  );
+  expect([err.getStatus(), err.message, JSON.stringify(err.getResponse()).includes(PASSWORD)]).toEqual([
+    400,
+    PASSWORD_POLICY_REFUSED,
+    false,
+  ]);
 }
 
 // -- local mode and not configured -----------------------------------------

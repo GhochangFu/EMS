@@ -33,6 +33,10 @@ describe("F3.78 — UsersService.create (ADR 0089 decision 3)", () => {
     await spec.assertAFailingDeleteAddsTheOrphanFollowUpAndKeepsTheStatus();
   });
 
+  it("a password Keycloak's policy refuses is 400 naming the rule class, not the password", async () => {
+    await spec.assertAPolicyRefusedPasswordIs400("create");
+  });
+
   it("a duplicate email is 409 before any Keycloak call", async () => {
     await spec.assertADuplicateEmailIs409BeforeKeycloak();
   });
@@ -231,6 +235,10 @@ describe("F3.78 — UsersService.temporaryPassword (ADR 0089 decision 6)", () =>
 
   it("sets the password, then ends the sessions", async () => {
     await spec.assertTheTemporaryPasswordEndsTheSessions();
+  });
+
+  it("a password Keycloak's policy refuses is 400 naming the rule class, not the password", async () => {
+    await spec.assertAPolicyRefusedPasswordIs400("temporary-password");
   });
 
   it("an audit failure stops before any Keycloak call (decision 14)", async () => {

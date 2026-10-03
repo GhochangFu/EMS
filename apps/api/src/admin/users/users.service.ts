@@ -96,6 +96,13 @@ export const LAST_ACTIVE_ADMIN = "This is the last active admin; promote another
 export const ADMIN_ROLE_ADMIN_ONLY = "Only an admin can give the admin role";
 export const ORGANIZATION_OUT_OF_SCOPE = "The organization is outside your access scope";
 export const IDENTITY_PROVIDER_FAILED = "The identity provider refused the change";
+/**
+ * Keycloak answers a password its policy refuses with a 400, and the client
+ * never reads the body (decision 5), so the rule is named by class only — the
+ * policy's `notUsername` / `notEmail` rules — and never with the password.
+ */
+export const PASSWORD_POLICY_REFUSED =
+  "The temporary password breaks the realm password policy: it must not match the user's username or email";
 
 // -- Statements -------------------------------------------------------------
 
@@ -351,7 +358,10 @@ export class UsersService {
 
     let created: UserRow;
     try {
-      await this.keycloak(() => this.identity.setTemporaryPassword(keycloakId, body.temporaryPassword));
+      await this.keycloak(
+        () => this.identity.setTemporaryPassword(keycloakId, body.temporaryPassword),
+        PASSWORD_POLICY_REFUSED,
+      );
       await this.keycloak(() => this.identity.setRealmRole(keycloakId, body.role));
       const newRow: NewUserRow = {
         id: randomUUID(),
@@ -605,7 +615,10 @@ export class UsersService {
         },
         tx as BmsDb,
       );
-      await this.keycloak(() => this.identity.setTemporaryPassword(subject, body.temporaryPassword));
+      await this.keycloak(
+        () => this.identity.setTemporaryPassword(subject, body.temporaryPassword),
+        PASSWORD_POLICY_REFUSED,
+      );
       await this.keycloak(() => this.identity.logoutSessions(subject));
     });
     return { user: toAdminUserDto(target), followUp: null };
@@ -699,14 +712,21 @@ export class UsersService {
     return withTenant(this.tenantDb, organizationId, async (tx: BmsTx) => fn(tx as unknown as Executor));
   }
 
-  /** A Keycloak call with its failure mapped: `not_configured` 503, `conflict` 409, anything else 502. */
-  private async keycloak<T>(call: () => Promise<T>): Promise<T> {
+  /**
+   * A Keycloak call with its failure mapped: `not_configured` 503, `conflict`
+   * 409, `bad_request` 400 with `badRequestMessage` when the call names one
+   * (the password calls), anything else 502.
+   */
+  private async keycloak<T>(call: () => Promise<T>, badRequestMessage?: string): Promise<T> {
     try {
       return await call();
     } catch (err) {
       if (err instanceof IdentityAdminError) {
         if (err.reason === "not_configured") throw new ServiceUnavailableException(NOT_CONFIGURED);
         if (err.reason === "conflict") throw new ConflictException(DUPLICATE_EMAIL);
+        if (err.reason === "bad_request" && badRequestMessage !== undefined) {
+          throw new BadRequestException(badRequestMessage);
+        }
         throw new BadGatewayException(IDENTITY_PROVIDER_FAILED);
       }
       throw err;
