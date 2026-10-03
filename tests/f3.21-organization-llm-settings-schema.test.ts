@@ -1,4 +1,5 @@
 import { existsSync, readFileSync } from "node:fs";
+import { createRequire } from "node:module";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -6,6 +7,12 @@ import { describe, expect, it } from "vitest";
 
 const repoRoot = fileURLToPath(new URL("..", import.meta.url));
 const read = (rel: string): string => readFileSync(join(repoRoot, rel), "utf8");
+
+/** `@bms/shared` through `createRequire`, as `tests/adr-0034-alarm-skill-vocabulary.test.ts` does (it reads `packages/shared/dist`). */
+const require_ = createRequire(import.meta.url);
+const { aiAssistantProviderChoiceSchema } = require_("@bms/shared/contracts") as {
+  aiAssistantProviderChoiceSchema: { options: readonly string[] };
+};
 
 /**
  * `F3.21` / ADR 0090 Amendment 1 A3 — migration `0100` creates
@@ -156,5 +163,16 @@ describe("F3.21 migration 0100 — bms.organization_llm_settings (ADR 0090 Amend
     expect(block).toMatch(
       /updatedAt: timestamp\("updated_at", \{ withTimezone: true \}\)\s*\.notNull\(\)\s*\.defaultNow\(\)/,
     );
+  });
+
+  // Migration review L1 (ADR 0047 decision 2's parity precedent): the CHECK and
+  // the API's enum must list the same providers, or a PUT for a provider only
+  // one of them knows answers 500 (23514) in every environment.
+  it("lists exactly the shared enum's providers in the provider CHECK", () => {
+    const sql = sqlOnly(read(MIGRATION_REL));
+    const match = /organization_llm_settings_provider_check CHECK \(provider IN \(([^)]*)\)\)/.exec(sql);
+    expect(match, "the provider CHECK is present").not.toBeNull();
+    const inList = (match?.[1] ?? "").split(",").map((value) => value.trim().replace(/^'|'$/g, ""));
+    expect([...inList].sort()).toEqual([...aiAssistantProviderChoiceSchema.options].sort());
   });
 });

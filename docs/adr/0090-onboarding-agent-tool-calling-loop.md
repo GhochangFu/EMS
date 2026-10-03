@@ -205,6 +205,14 @@ The owner approves this record with that fact stated here.
    its audit rows do not change. No migration: the proposal and the action
    lines live in the existing `jsonb` columns.
 
+   *Dated note, 2026-10-03 (the build's review, owner ruling):* the commit
+   transaction gains one check on the confirm path only. Both reviewers found
+   that a `PATCH`, an upload or a credential save landing between the confirm
+   check and the commit service's own read would commit a draft nobody
+   proposed. `confirm commit` now calls `commitProposed`, which checks the
+   proposal's hash on its read and again inside the transaction on the session
+   row locked `FOR UPDATE`. The Commit button's path is unchanged.
+
 9. **Logging.** Each turn logs one line with the session id, the tool names
    called, the count, the stop reason (`final`, `cap_calls`, `cap_time`,
    `provider_error`) and the duration. No message text, no tool arguments, no
@@ -369,8 +377,9 @@ A3. **Per-organization setting.** A new tenant table
     pattern this repository does not use. Recent tenant tables (migration
     `0094` is the model) write no `GRANT` and rely on `0041`'s default
     privileges, which also reach `bms_fleet` (it bypasses RLS). The owner ruled
-    to follow `0094`: no `GRANT` and no `REVOKE`. `bms_fleet` can read the
-    encrypted rows; it cannot decrypt them without the credential key.
+    to follow `0094`: no `GRANT` and no `REVOKE`. `bms_fleet` can read, insert,
+    update and delete every organization's row (the migration review measured
+    `arwd`); it cannot decrypt a key without the credential key.
 
 A4. **Resolution, once per chat turn.** If the organization has a row:
     `off` → the guided mode; a complete row (provider, model, key) → that
@@ -414,6 +423,13 @@ A5. **API**, under `/api/v1/admin/organizations/:orgId/ai-assistant`, gated by
     `PUT` and `DELETE` write a master-data audit row with the provider, the
     model and whether the key changed — never the key and never its last four
     characters.
+
+    *Correction, 2026-10-03 (the build's security review, H1):* "gated by
+    `canManageOrganization`" is not the whole rule. That predicate also admits
+    a `location_admin` for every organization one of its locations belongs to.
+    Ruling 7's option said a location-scoped admin cannot set the key, so every
+    route first refuses any role but `admin` and `organization_admin`, as the
+    onboarding chat does, and then checks `canManageOrganization`.
 
 A6. **Web.** A new page `/admin/organizations/:orgId/ai-assistant`, opened by
     an "AI assistant" action on each row of the Organizations page. It has a

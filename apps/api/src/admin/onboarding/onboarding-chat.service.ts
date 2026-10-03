@@ -400,7 +400,7 @@ export class OnboardingChatService {
       // a type; `kept` is then spread over the derived fields. See `resolveLocationTurn`.
       const { type, kept } = locationTypes.resolveLocationTurn(message, draft.location, types);
       // F4.104 — **this branch is the draft's default producer, not a
-      // fallback.** `.env.example` ships `OPENAI_API_KEY=` empty, so
+      // fallback.** `.env.example` ships `LLM_PROVIDER=` empty (`F3.21`), so
       // `handleTurn` reaches here on every turn of an ordinary deployment. And
       // unlike the old single-shot model branch (removed by `F3.21`), which passed the model's patch through
       // `onboardingDraftSchema.safeParse`, this method assembles its patch in

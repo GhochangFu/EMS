@@ -211,7 +211,8 @@ export class OnboardingService {
     }
 
     // ADR 0022 decision 2. Checked before ANY side effect: the turn is not
-    // stored in `messages` and never reaches `handleOpenAiTurn`. Returning a
+    // stored in `messages` and never reaches the model (`F3.21`: nor the
+    // confirm check, which runs after this). Returning a
     // normal chat response rather than a 400 keeps the wizard usable — the
     // user is told where the credentials field is instead of hitting an error.
     if (looksLikeCredential(message)) {
@@ -277,10 +278,10 @@ export class OnboardingService {
     // the one the first pass of this row missed.
     //
     // `handleRuleBasedTurn` is not a fallback: `.env.example` ships
-    // `OPENAI_API_KEY=` empty, so it is the branch that runs by default. It
+    // `LLM_PROVIDER=` empty (`F3.21`), so it is the branch that runs by default. It
     // assembles its patch in code and never reaches
-    // `onboardingDraftSchema.safeParse` — that call guards the *model* branch
-    // alone — and two of its branches concatenate rather than replace
+    // `onboardingDraftSchema.safeParse` — that call guarded the old single-shot
+    // model branch, and `F3.21`'s tools parse each element schema — and two of its branches concatenate rather than replace
     // (`patch.rtus = [...(draft.rtus ?? []), …]`, and the same shape for
     // `pointKeys`). `mergeDraft` then takes `patch.rtus ?? base.rtus`, which
     // replaces the stored array wholesale and is exactly why a `PATCH :id/draft`
@@ -304,7 +305,7 @@ export class OnboardingService {
     }
 
     // H2 from the 2026-08-10 review: only the *user* turn was inspected. On the
-    // OpenAI path `assistantMessage` is model output, so a model echoing back a
+    // agent path `assistantMessage` is model output, so a model echoing back a
     // secret it was handed was stored unchecked. Scrub rather than refuse — the
     // turn is ours, not the user's, so there is nobody to ask to retype it.
     const assistantText = looksLikeCredential(turn.assistantMessage)
