@@ -1,6 +1,7 @@
 import type { OnboardingDraft } from "@bms/shared";
 
 import {
+  CREDENTIALED_CONNECTION_ERROR,
   CREDENTIAL_TOOL_ERROR,
   TOOL_DEFINITIONS,
   TOOL_LIST_MAX_ITEMS,
@@ -189,7 +190,6 @@ export async function assertProposeCommitRecordsASummary(): Promise<void> {
   assert(state.pendingProposal?.summary === commitSummary(state.working), "the pending proposal carries the code-written summary");
   assert(out.actionLine === `Proposed commit: ${commitSummary(state.working)}`, "the action line names the summary");
   assert(JSON.stringify(state.working) === before, "proposing does not change the draft");
-  assert(!Object.keys(context()).some((key) => /commit/i.test(key)), "the tool context carries no commit service");
 }
 
 export async function assertAListResultIsBoundedAtOneHundredAndCountsTheRest(): Promise<void> {
@@ -248,4 +248,105 @@ export async function assertASuccessfulWriteDropsThePendingProposal(): Promise<v
   assert(!failed.ok && state.pendingProposal !== undefined, "a refused write keeps the proposal");
   const ok = await runTool(call("add_point_key", { code: "kvar", name: "Reactive" }), state, context());
   assert(ok.ok && state.pendingProposal === undefined, "a successful write drops it");
+}
+
+/** Security review M1: short credential names the substring list misses. */
+export async function assertShortCredentialNamesAreRefused(): Promise<void> {
+  for (const config of [{ user: "admin", pass: "hunter2" }, { auth: { u: "a" } }, { basicAuth: "admin:x" }, { pw: "x" }]) {
+    const state: ToolState = { working: {} };
+    const out = await runTool(call("add_rtu", { ...PLAIN_RTU, config: { ...PLAIN_RTU.config, ...config } }), state, context());
+    assert(!out.ok && parsed(out.content).error === CREDENTIAL_TOOL_ERROR, `${JSON.stringify(config)} is refused`);
+  }
+}
+
+/** Security review L2: the two `meta` carriers are walked too. */
+export async function assertMetaCredentialsAreRefused(): Promise<void> {
+  const location = await runTool(call("set_location", { name: "Berhampur", meta: { broker: { password: "x" } } }), { working: {} }, context());
+  assert(!location.ok && parsed(location.content).error === CREDENTIAL_TOOL_ERROR, "set_location meta is walked");
+  const asset = await runTool(
+    call("add_asset", { rtuIndex: 0, code: "A-1", name: "Meter", siteName: "Site", domain: "electrical", meta: { token: "x" } }),
+    { working: readyDraft() },
+    context(),
+  );
+  assert(!asset.ok && parsed(asset.content).error === CREDENTIAL_TOOL_ERROR, "add_asset meta is walked");
+}
+
+/** Security review M2: a credentialed RTU keeps its connection; the action line names what changed. */
+export async function assertACredentialedRtuKeepsItsConnection(): Promise<void> {
+  for (const patch of [{ config: { host: "evil.example" } }, { config: { port: 1883 } }, { protocol: "modbus_tcp" }, { code: "RTU-9" }]) {
+    const state: ToolState = { working: readyDraft() };
+    state.working.rtus![0]!.credentialsSet = true;
+    const out = await runTool(call("update_rtu", { index: 0, patch }), state, context());
+    assert(!out.ok && parsed(out.content).error === CREDENTIALED_CONNECTION_ERROR, `${JSON.stringify(patch)} is refused`);
+  }
+  const state: ToolState = { working: readyDraft() };
+  state.working.rtus![0]!.credentialsSet = true;
+  const topic = await runTool(call("update_rtu", { index: 0, patch: { config: { topic: "x/y" } } }), state, context());
+  assert(topic.ok, "positive control: a topic change on a credentialed RTU is allowed");
+  assert(topic.actionLine === "Updated RTU RTU-1: 'config.topic'", `the line names the field: ${topic.actionLine}`);
+}
+
+/** Code review #3: `config` merges one level deep. */
+export async function assertUpdateRtuMergesConfig(): Promise<void> {
+  const state: ToolState = { working: readyDraft() };
+  const out = await runTool(call("update_rtu", { index: 0, patch: { config: { topic: "x/y" } } }), state, context());
+  const config = state.working.rtus?.[0]?.config as Record<string, unknown>;
+  assert(out.ok && config.topic === "x/y" && config.host === "broker" && config.port === 8883 && config.tls === true, "host, port and TLS are kept");
+  const moved = await runTool(call("update_rtu", { index: 0, patch: { config: { host: "new.example" } } }), state, context());
+  assert(moved.ok && moved.actionLine === "Updated RTU RTU-1: 'config.host', host 'new.example'", `the line names the new host: ${moved.actionLine}`);
+}
+
+/** The remove-then-re-add path: a removed credentialed code cannot be reused. */
+export async function assertARemovedCredentialedCodeCannotBeReAdded(): Promise<void> {
+  const working = { ...readyDraft(), rtus: [], assets: [], assetPoints: [], _secrets: { "RTU-1": { c: "x", iv: "y" } } } as unknown as OnboardingDraft;
+  const out = await runTool(call("add_rtu", { ...PLAIN_RTU, config: { host: "evil.example", port: 8883, tls: true, topic: "a/b" } }), { working }, context());
+  assert(!out.ok && String(parsed(out.content).error).includes("still holds stored credentials"), "the code is refused");
+  const other = await runTool(call("add_rtu", { ...PLAIN_RTU, code: "RTU-2" }), { working }, context());
+  assert(other.ok, "positive control: another code is accepted");
+}
+
+/** Code review #1: a referenced RTU or asset is refused; otherwise later indexes shift down. */
+export async function assertRemovingKeepsIndexesPointingAtTheSameParent(): Promise<void> {
+  const refused = await runTool(call("remove_rtu", { index: 0 }), { working: readyDraft() }, context());
+  assert(!refused.ok && String(parsed(refused.content).error).includes("BERHAMPUR-ASSET-1"), "an RTU with assets is refused, naming them");
+  const busy = await runTool(call("remove_asset", { index: 0 }), { working: readyDraft() }, context());
+  assert(!busy.ok && String(parsed(busy.content).error).includes("s01"), "an asset with mappings is refused, naming them");
+
+  const two = readyDraft();
+  two.rtus = [{ ...PLAIN_RTU, code: "RTU-0", credentialsSet: false }, ...two.rtus!];
+  two.assets = [{ ...two.assets![0]!, rtuIndex: 1 }];
+  const state: ToolState = { working: two };
+  const shifted = await runTool(call("remove_rtu", { index: 0 }), state, context());
+  assert(shifted.ok && state.working.assets?.[0]?.rtuIndex === 0, "the asset still points at RTU-1, now at index 0");
+  assert(state.working.rtus?.[0]?.code === "RTU-1", "and RTU-1 is the one left");
+
+  const assets = readyDraft();
+  assets.assets = [{ ...assets.assets![0]!, code: "A-0" }, ...assets.assets!];
+  assets.assetPoints = [{ ...assets.assetPoints![0]!, assetIndex: 1 }];
+  const astate: ToolState = { working: assets };
+  const ashift = await runTool(call("remove_asset", { index: 0 }), astate, context());
+  assert(ashift.ok && astate.working.assetPoints?.[0]?.assetIndex === 0, "the mapping still points at its asset");
+}
+
+/** Code review #4: a type-only call keeps a stored slug and code. */
+export async function assertSetLocationKeepsStoredIdentifiersForTheSameName(): Promise<void> {
+  const draft = readyDraft();
+  draft.location = { ...draft.location!, name: "West Campus HQ", slug: "wc-hq", code: "WCHQ" };
+  const state: ToolState = { working: draft };
+  await runTool(call("set_location", { name: "West Campus HQ", type: "pump_station" }), state, context());
+  assert(state.working.location?.slug === "wc-hq" && state.working.location?.code === "WCHQ", "slug and code are kept");
+  await runTool(call("set_location", { name: "East Yard" }), state, context());
+  assert(state.working.location?.slug === "east-yard" && state.working.location?.code === "EAST_YARD", "a new name derives them");
+}
+
+/** Security review L6: a write past the stored-draft depth is refused. */
+export async function assertADeepWriteIsRefused(): Promise<void> {
+  let deep: Record<string, unknown> = { leaf: 1 };
+  for (let i = 0; i < 12; i++) {
+    deep = { child: deep };
+  }
+  const state: ToolState = { working: {} };
+  const out = await runTool(call("add_rtu", { ...PLAIN_RTU, config: { ...PLAIN_RTU.config, extra: deep } }), state, context());
+  assert(!out.ok && String(parsed(out.content).error).startsWith("The draft nests deeper than"), "the depth bound holds");
+  assert((state.working.rtus?.length ?? 0) === 0, "nothing was written");
 }

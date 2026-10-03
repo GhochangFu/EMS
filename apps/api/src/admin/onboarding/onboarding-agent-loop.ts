@@ -1,7 +1,7 @@
 import type { OnboardingChatMessage, OnboardingDraft } from "@bms/shared";
 
 import { cloneJson } from "../stack-safe-json";
-import { runTool, TOOL_DEFINITIONS, type ToolContext, type ToolState } from "./onboarding-agent-tools";
+import { isToolName, runTool, TOOL_DEFINITIONS, type ToolContext, type ToolState } from "./onboarding-agent-tools";
 import { cutToBound } from "./onboarding-draft-caps";
 import type { LlmMessage, OnboardingLlmProvider } from "./onboarding-llm-port";
 import { PROMPT_MARKER_SENTENCE, serialiseDraftForPrompt } from "./onboarding-prompt-budget";
@@ -40,6 +40,12 @@ export type AgentTurnRecord = {
   readonly tools: readonly string[];
   readonly stopReason: AgentStopReason;
   readonly durationMs: number;
+  /**
+   * Code review #5: on `provider_error` only, the error's class name and HTTP
+   * status, so a bad key and a bug in the loop are told apart. Never the message.
+   */
+  readonly errorClass?: string;
+  readonly errorStatus?: number;
 };
 
 export type AgentTurnResult = {
@@ -74,6 +80,7 @@ export function buildHistory(messages: readonly OnboardingChatMessage[]): LlmMes
   return firstUser < 0 ? [] : recent.slice(firstUser);
 }
 
+/** The agent's system prompt: role, phase, active type codes, the credential and commit rules, and the bounded draft. */
 export function buildSystemPrompt(input: {
   readonly orgName: string;
   readonly phase: OnboardingPhase;
@@ -90,6 +97,19 @@ ${PROMPT_MARKER_SENTENCE}
 Draft context (redacted): ${serialiseDraftForPrompt(input.draft)}`;
 }
 
+/** The class name and HTTP status of a failure, for the turn record; never its message. */
+function errorFacts(error: unknown): { errorClass?: string; errorStatus?: number } {
+  if (typeof error !== "object" || error === null) {
+    return { errorClass: typeof error };
+  }
+  const name = (error as { constructor?: { name?: unknown } }).constructor?.name;
+  const status = (error as { status?: unknown }).status;
+  return {
+    ...(typeof name === "string" ? { errorClass: cutToBound(name, 64) } : {}),
+    ...(typeof status === "number" ? { errorStatus: status } : {}),
+  };
+}
+
 /** The six draft sections that differ, wholesale, so `mergeDraft(stored, patch)` reproduces `working`. */
 function diffSections(stored: OnboardingDraft, working: OnboardingDraft): OnboardingDraftInput {
   const patch: Record<string, unknown> = {};
@@ -101,6 +121,7 @@ function diffSections(stored: OnboardingDraft, working: OnboardingDraft): Onboar
   return patch as OnboardingDraftInput;
 }
 
+/** Runs one user turn of the agent loop. Never throws; every failure is a stop reason. */
 export async function runAgentTurn(
   input: {
     readonly message: string;
@@ -135,8 +156,14 @@ export async function runAgentTurn(
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), deadlineMs);
 
-  const finish = (stopReason: AgentStopReason, reply: string): AgentTurnResult => {
-    const record = { toolCalls: tools.length, tools, stopReason, durationMs: Date.now() - started };
+  const finish = (stopReason: AgentStopReason, reply: string, error?: unknown): AgentTurnResult => {
+    const record: AgentTurnRecord = {
+      toolCalls: tools.length,
+      tools,
+      stopReason,
+      durationMs: Date.now() - started,
+      ...(error !== undefined ? errorFacts(error) : {}),
+    };
     if (stopReason === "provider_error") {
       return { reply, draftPatch: {}, actionLines: [], stopReason, fallback: true, record };
     }
@@ -173,7 +200,8 @@ export async function runAgentTurn(
         if (controller.signal.aborted) {
           return finish("cap_time", STOPPED_EARLY_TIME_REPLY);
         }
-        tools.push(call.name);
+        // Security review L3: a name the model made up is logged as `unknown`.
+        tools.push(isToolName(call.name) ? call.name : "unknown");
         const outcome = await runTool(call, state, input.tools);
         if (outcome.actionLine) {
           actionLines.push(outcome.actionLine);
@@ -181,10 +209,10 @@ export async function runAgentTurn(
         messages.push({ role: "tool", toolCallId: call.id, content: outcome.content, isError: !outcome.ok });
       }
     }
-  } catch {
+  } catch (error) {
     return controller.signal.aborted
       ? finish("cap_time", STOPPED_EARLY_TIME_REPLY)
-      : finish("provider_error", "");
+      : finish("provider_error", "", error);
   } finally {
     clearTimeout(timer);
   }

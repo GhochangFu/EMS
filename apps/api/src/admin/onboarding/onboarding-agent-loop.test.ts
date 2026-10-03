@@ -15,6 +15,8 @@ import {
   assertTheNinthToolCallIsNotMade,
   assertTheTurnRecordIsTextFree,
   assertToolCallsAreRunAndResultsReturnedToTheModel,
+  assertAnUnknownToolNameIsRecordedAsUnknown,
+  assertAProviderErrorRecordsItsClassAndStatus,
 } from "./onboarding-agent-loop.spec";
 
 /** Vitest entry point — see `admin.schema.test.ts` for the pattern (ADR 0014). One `it()` per claim. */
@@ -73,5 +75,13 @@ describe("onboarding agent loop (F3.21, ADR 0090 decisions 2, 3, 7, 9)", () => {
 
   it("pins the caps", () => {
     assertCapsArePinned();
+  });
+
+  it("records an unknown tool name as unknown", async () => {
+    await assertAnUnknownToolNameIsRecordedAsUnknown();
+  });
+
+  it("records a provider error class and status, never its message", async () => {
+    await assertAProviderErrorRecordsItsClassAndStatus();
   });
 });

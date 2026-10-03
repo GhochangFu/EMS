@@ -19,6 +19,14 @@ import {
   assertUpdateRtuKeepsCredentialsSet,
   assertUpdateRtuRefusesTheSameTwoShapes,
   assertUseExistingPointKeysWritesOnlyThatFlag,
+  assertShortCredentialNamesAreRefused,
+  assertMetaCredentialsAreRefused,
+  assertACredentialedRtuKeepsItsConnection,
+  assertUpdateRtuMergesConfig,
+  assertARemovedCredentialedCodeCannotBeReAdded,
+  assertRemovingKeepsIndexesPointingAtTheSameParent,
+  assertSetLocationKeepsStoredIdentifiersForTheSameName,
+  assertADeepWriteIsRefused,
 } from "./onboarding-agent-tools.spec";
 
 /** Vitest entry point — see `admin.schema.test.ts` for the pattern (ADR 0014). One `it()` per claim. */
@@ -93,5 +101,37 @@ describe("onboarding agent tools (F3.21, ADR 0090 decision 4)", () => {
 
   it("drops a pending proposal on a successful write only", async () => {
     await assertASuccessfulWriteDropsThePendingProposal();
+  });
+
+  it("refuses short credential names", async () => {
+    await assertShortCredentialNamesAreRefused();
+  });
+
+  it("walks the location and asset meta for credentials", async () => {
+    await assertMetaCredentialsAreRefused();
+  });
+
+  it("keeps a credentialed RTU's connection and names the changed fields", async () => {
+    await assertACredentialedRtuKeepsItsConnection();
+  });
+
+  it("merges an RTU config one level deep", async () => {
+    await assertUpdateRtuMergesConfig();
+  });
+
+  it("refuses to re-add a removed credentialed code", async () => {
+    await assertARemovedCredentialedCodeCannotBeReAdded();
+  });
+
+  it("keeps every index pointing at the same parent after a removal", async () => {
+    await assertRemovingKeepsIndexesPointingAtTheSameParent();
+  });
+
+  it("keeps a stored slug and code when the name is unchanged", async () => {
+    await assertSetLocationKeepsStoredIdentifiersForTheSameName();
+  });
+
+  it("refuses a write past the depth bound", async () => {
+    await assertADeepWriteIsRefused();
   });
 });

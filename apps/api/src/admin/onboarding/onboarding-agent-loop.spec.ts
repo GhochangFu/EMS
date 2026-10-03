@@ -249,3 +249,28 @@ export function assertCapsArePinned(): void {
   assert(MAX_HISTORY_MESSAGE_CHARS === 2_000, "2,000 characters per history message");
   assert(TOOL_RESULT_MAX_CHARS === 8_000, "8,000 characters per tool result");
 }
+
+/** Security review L3: a tool name the model made up never reaches the log record. */
+export async function assertAnUnknownToolNameIsRecordedAsUnknown(): Promise<void> {
+  const made = "drop_database_and_then_some_long_text";
+  const llm = new FakeLlmProvider([calls(toolCall(made, {})), { kind: "final", text: "ok" }]);
+  const result = await runAgentTurn(turn(llm));
+  assert(JSON.stringify(result.record.tools) === '["unknown"]', `got ${JSON.stringify(result.record.tools)}`);
+  assert(!JSON.stringify(result.record).includes(made), "the made-up name is not in the record");
+}
+
+/** Code review #5: a provider error records its class and status, never its message. */
+export async function assertAProviderErrorRecordsItsClassAndStatus(): Promise<void> {
+  class AuthenticationError extends Error {
+    readonly status = 401;
+  }
+  const llm: OnboardingLlmProvider = {
+    name: "openrouter",
+    complete: async () => {
+      throw new AuthenticationError("401 bad key sk-or-secret-1234");
+    },
+  };
+  const result = await runAgentTurn({ ...turn(new FakeLlmProvider([])), llm });
+  assert(result.record.errorClass === "AuthenticationError" && result.record.errorStatus === 401, "class and status");
+  assert(!JSON.stringify(result.record).includes("sk-or-secret"), "never the message");
+}

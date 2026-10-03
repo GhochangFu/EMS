@@ -3,7 +3,7 @@ import { z, type ZodTypeAny } from "zod";
 import { zodToJsonSchema } from "zod-to-json-schema";
 
 import { echoedItems, moreTail, quoteCell } from "../spreadsheet-guard";
-import { isJsonContainer, rebuildDeep } from "../stack-safe-json";
+import { exceedsDepth, isJsonContainer, rebuildDeep } from "../stack-safe-json";
 import { commitSummary } from "./onboarding-commit-proposal";
 import { looksLikeCredential } from "./onboarding-credential-detect";
 import { cutToBound, draftCountProblem } from "./onboarding-draft-caps";
@@ -20,6 +20,8 @@ import {
   draftLocationSchema,
   draftPointKeySchema,
   draftRtuSchema,
+  DRAFT_TOO_DEEP_MESSAGE,
+  MAX_ONBOARDING_DRAFT_DEPTH,
   type OnboardingDraftInput,
 } from "./onboarding.schema";
 
@@ -57,6 +59,30 @@ export const TOOL_RESULT_CUT_TAIL = `…[cut to ${TOOL_RESULT_MAX_CHARS} charact
 
 /** Plan ruling 1: one list result names at most this many items. */
 export const TOOL_LIST_MAX_ITEMS = 100;
+
+/**
+ * Security review M1: short credential names the redactors' substring list
+ * does not cover (`pass` is not a substring of "password"). Matched whole,
+ * after normalising, so `pointKey` and `sourceDataKey` stay legal, plus any
+ * key that contains `auth` (`auth`, `basicAuth`, `authorization`). The
+ * list widens the **refusal** only; widening the shared scrub would change the
+ * client and prompt views of drafts the workbook and `PATCH` already wrote, and
+ * is its own follow-up.
+ */
+const AGENT_SECRET_KEY_NAMES = new Set(["user", "username", "login", "pass", "pw", "creds", "cred", "psk", "pin", "bearer", "key"]);
+
+function agentSecretKey(key: string): boolean {
+  const normalised = key.toLowerCase().replace(/[^a-z0-9]/g, "");
+  return isSecretKey(key) || AGENT_SECRET_KEY_NAMES.has(normalised) || normalised.includes("auth");
+}
+
+/** The tools whose arguments are walked for credentials (decision 4, and security review L2 for the two `meta` carriers). */
+const CREDENTIAL_CHECKED_TOOLS: ReadonlySet<string> = new Set(["add_rtu", "update_rtu", "set_location", "add_asset"]);
+
+/** Security review M2: an RTU with stored credentials keeps its connection, so the credential cannot be sent elsewhere. */
+export const CREDENTIALED_CONNECTION_ERROR =
+  "This RTU has stored credentials, so its code, protocol, host, port and TLS cannot change in this chat. " +
+  "Change them on the RTU step, where the credentials are entered.";
 
 export const CREDENTIAL_TOOL_ERROR =
   "Credentials are never set through this chat. Tell the user to use the Credentials field on the RTU step.";
@@ -166,7 +192,7 @@ export function configCarriesCredential(value: unknown): boolean {
     value,
     isJsonContainer,
     (key) => {
-      if (isSecretKey(key)) {
+      if (agentSecretKey(key)) {
         found = true;
       }
       return null;
@@ -217,6 +243,11 @@ function write(state: ToolState, patch: OnboardingDraftInput, actionLine: string
   if (problem !== null) {
     return fail(problem);
   }
+  // Security review L6: the element schemas carry no depth bound, so the merged
+  // draft is held to the one a `PATCH` body meets (F4.115).
+  if (exceedsDepth(next, MAX_ONBOARDING_DRAFT_DEPTH)) {
+    return fail(DRAFT_TOO_DEEP_MESSAGE);
+  }
   state.working = next;
   state.pendingProposal = undefined;
   return succeed(result, actionLine);
@@ -230,9 +261,14 @@ function removeAt<T>(items: readonly T[] | undefined, index: number): { rest: T[
   return { rest: list.filter((_, i) => i !== index), removed: list[index] as T };
 }
 
+/** Whether `name` is one of the registry's tools; the turn record logs any other name as `unknown` (security review L3). */
+export function isToolName(name: string): name is ToolName {
+  return Object.prototype.hasOwnProperty.call(TOOL_SCHEMAS, name);
+}
+
 /** Runs one tool call against the turn's state. Never throws. */
 export async function runTool(call: LlmToolCall, state: ToolState, ctx: ToolContext): Promise<ToolOutcome> {
-  if (!Object.prototype.hasOwnProperty.call(TOOL_SCHEMAS, call.name)) {
+  if (!isToolName(call.name)) {
     return fail(`Unknown tool ${quoteCell(call.name)}.`);
   }
   const name = call.name as ToolName;
@@ -245,7 +281,7 @@ export async function runTool(call: LlmToolCall, state: ToolState, ctx: ToolCont
   if (carriesPromptMarker(raw)) {
     return fail("The arguments carry a withheld-value marker; send real values only.");
   }
-  if ((name === "add_rtu" || name === "update_rtu") && configCarriesCredential(raw)) {
+  if (CREDENTIAL_CHECKED_TOOLS.has(name) && configCarriesCredential(raw)) {
     return fail(CREDENTIAL_TOOL_ERROR);
   }
   const parsed = TOOL_SCHEMAS[name].safeParse(raw);
@@ -294,13 +330,26 @@ async function dispatch(name: ToolName, args: Record<string, unknown>, state: To
           `Location type ${quoteCell(location.type)} is not active. Use one of: ${[...shown, moreTail(omitted, "types")].filter(Boolean).join(", ")}.`,
         );
       }
-      const derived = deriveLocationPatch({ name: location.name, stored: draft.location, kept: location, type: location.type });
+      // Code review #4: an unchanged name keeps the stored slug and code (a
+      // workbook's `wc-hq` must not become `west-campus-hq` when only the type
+      // changes); the call's own slug and code still win.
+      const stored = draft.location;
+      const kept = stored && stored.name === location.name ? { slug: stored.slug, code: stored.code, ...location } : location;
+      const derived = deriveLocationPatch({ name: location.name, stored, kept, type: location.type });
       const type = derived.type ?? draft.location?.type;
       return write(state, { location: derived }, `Set location ${derived.name} (${type ?? "type not set"})`);
     }
 
     case "add_rtu": {
       const rtu = { ...(args as z.infer<typeof rtuArgs>), credentialsSet: false };
+      // Security review M2 (code review's sibling note): `_secrets` is keyed by
+      // RTU code, so re-adding a removed credentialed code would inherit its
+      // credential at reconcile, pointed at whatever host this call names.
+      const secrets = (draft as { _secrets?: Record<string, unknown> })._secrets ?? {};
+      const code = rtu.code.trim();
+      if (Object.prototype.hasOwnProperty.call(secrets, code) && !(draft.rtus ?? []).some((r) => r.code.trim() === code)) {
+        return fail(`RTU code ${quoteCell(code)} still holds stored credentials from a removed RTU. Use another code.`);
+      }
       return write(state, { rtus: [...(draft.rtus ?? []), rtu] }, `Added RTU ${rtu.code} (${rtu.protocol})`);
     }
 
@@ -311,13 +360,41 @@ async function dispatch(name: ToolName, args: Record<string, unknown>, state: To
       if (!stored) {
         return fail(`There is no RTU at index ${index}; the draft has ${rtus.length}.`);
       }
-      const updated = { ...stored, ...patch, credentialsSet: stored.credentialsSet };
-      return write(state, { rtus: rtus.map((rtu, i) => (i === index ? updated : rtu)) }, `Updated RTU ${updated.code}`);
+      // Code review #3: `config` merges one level deep, so "change the topic"
+      // keeps host, port and TLS.
+      const config = patch.config ? { ...(stored.config ?? {}), ...patch.config } : stored.config;
+      const updated = { ...stored, ...patch, config, credentialsSet: stored.credentialsSet };
+      if (stored.credentialsSet) {
+        const same = (field: string) => JSON.stringify(config?.[field]) === JSON.stringify(stored.config?.[field]);
+        if (!same("host") || !same("port") || !same("tls") || updated.protocol !== stored.protocol || updated.code !== stored.code) {
+          return fail(CREDENTIALED_CONNECTION_ERROR);
+        }
+      }
+      // Security review M2: the line names what changed, and the new host.
+      const changed = Object.keys(patch).flatMap((key) =>
+        key === "config" ? Object.keys(patch.config ?? {}).map((field) => `config.${field}`) : [key],
+      );
+      const { shown, omitted } = echoedItems(changed.map((field) => quoteCell(field)), 10);
+      const fields = [...shown, moreTail(omitted, "fields")].filter(Boolean).join(", ") || "no fields";
+      const host = patch.config && "host" in patch.config ? `, host ${quoteCell(String(config?.host ?? ""))}` : "";
+      return write(state, { rtus: rtus.map((rtu, i) => (i === index ? updated : rtu)) }, `Updated RTU ${updated.code}: ${fields}${host}`);
     }
 
     case "remove_rtu": {
-      const hit = removeAt(draft.rtus, (args as { index: number }).index);
-      return hit ? write(state, { rtus: hit.rest }, `Removed RTU ${hit.removed.code}`) : fail("There is no RTU at that index.");
+      // Code review #1: assets point at RTUs by position. A referenced RTU is
+      // refused, naming its assets; otherwise every later index shifts down.
+      const index = (args as { index: number }).index;
+      const hit = removeAt(draft.rtus, index);
+      if (!hit) {
+        return fail("There is no RTU at that index.");
+      }
+      const dependents = (draft.assets ?? []).filter((asset) => asset.rtuIndex === index).map((asset) => quoteCell(asset.code));
+      if (dependents.length > 0) {
+        const { shown, omitted } = echoedItems(dependents, 10);
+        return fail(`RTU ${hit.removed.code} still has assets: ${[...shown, moreTail(omitted, "assets")].filter(Boolean).join(", ")}. Remove or move them first.`);
+      }
+      const assets = (draft.assets ?? []).map((asset) => (asset.rtuIndex > index ? { ...asset, rtuIndex: asset.rtuIndex - 1 } : asset));
+      return write(state, { rtus: hit.rest, ...(draft.assets ? { assets } : {}) }, `Removed RTU ${hit.removed.code}`);
     }
 
     case "add_point_key": {
@@ -343,8 +420,21 @@ async function dispatch(name: ToolName, args: Record<string, unknown>, state: To
     }
 
     case "remove_asset": {
-      const hit = removeAt(draft.assets, (args as { index: number }).index);
-      return hit ? write(state, { assets: hit.rest }, `Removed asset ${hit.removed.code}`) : fail("There is no asset at that index.");
+      // Code review #1: mappings point at assets by position, as assets do at RTUs.
+      const index = (args as { index: number }).index;
+      const hit = removeAt(draft.assets, index);
+      if (!hit) {
+        return fail("There is no asset at that index.");
+      }
+      const dependents = (draft.assetPoints ?? []).filter((point) => point.assetIndex === index).map((point) => quoteCell(point.sourceDataKey));
+      if (dependents.length > 0) {
+        const { shown, omitted } = echoedItems(dependents, 10);
+        return fail(`Asset ${hit.removed.code} still has mappings: ${[...shown, moreTail(omitted, "mappings")].filter(Boolean).join(", ")}. Remove them first.`);
+      }
+      const assetPoints = (draft.assetPoints ?? []).map((point) =>
+        point.assetIndex > index ? { ...point, assetIndex: point.assetIndex - 1 } : point,
+      );
+      return write(state, { assets: hit.rest, ...(draft.assetPoints ? { assetPoints } : {}) }, `Removed asset ${hit.removed.code}`);
     }
 
     case "map_point": {
