@@ -8,6 +8,11 @@ and each ruling is recorded under *Gate questions*. The owner approved this
 written record on 2026-10-03, with the note under *Where rulings 1 and 4 leave
 the design* stated to them before the approval.
 
+**Amendment 1 (2026-10-03, before any implementation code)** replaces ruling 2
+and decision 1 with three providers, adds `@anthropic-ai/sdk`, and moves a
+per-organization key screen and its table into this row. It is at the end of
+this record.
+
 Implements row `F3.21` (Track E, Wave 2, ⭐). Amends
 [ADR 0011](./0011-ai-onboarding-chat.md) decision 1 (see *Amended records*).
 Keeps [ADR 0022](./0022-onboarding-credential-capture.md) unchanged. Promotes
@@ -249,3 +254,170 @@ None. `openai` (`^6.45.0`, ADR 0011) is already in `apps/api`.
 - **ADR 0011 decision 1** — "chat completions with structured JSON output"
   becomes chat completions **with tool calling**, behind the provider port of
   decision 1 above. Decisions 2–6 of ADR 0011 stand.
+
+## Amendment 1 — three providers and a per-organization key screen (2026-10-03)
+
+### Status
+
+Accepted — the owner ruled ten questions one at a time on 2026-10-03, after
+the record above was merged (#702) and before any implementation code. The
+owner asked for it: there is no OpenAI key available for testing, an
+OpenRouter key is, and the keys must be settable in the UI, not only in
+`.env`.
+
+**Supersedes:** ruling 2 and decision 1 (one provider), decision 8's "No
+migration", and *Dependencies* ("None"). Every other decision stands. The
+amended row is larger: it now carries a migration, a new admin page and a new
+dependency, so `migration-reviewer` joins the reviews.
+
+### Gate questions
+
+1. **Which providers?** Options: OpenAI + OpenRouter + Anthropic; OpenAI +
+   OpenRouter only; OpenRouter only. **Ruled as recommended: all three.**
+2. **How is the provider chosen?** Options: an explicit `LLM_PROVIDER`; the
+   first key that is set; explicit with a fallback chain. **Ruled as
+   recommended: an explicit `LLM_PROVIDER`.**
+3. **Default models.** **Ruled by the owner:** OpenAI keeps `gpt-4o-mini`;
+   Anthropic defaults to `claude-sonnet-5-5`; OpenRouter has **no default** —
+   the owner chooses a third-party model (for example a Kimi or GLM model) in
+   `OPENROUTER_MODEL`.
+4. **Keys in the UI — this row or a later one?** Options: a later row; this
+   row. **Ruled: this row** (against the recommendation).
+5. **Level.** Options: one platform setting; per organization; both. **Ruled:
+   per organization** (against the recommendation), with `.env` as the
+   platform default (question 8).
+6. **What the screen shows of a saved key.** Options: "set" and the last four
+   characters; "set" only. **Ruled as recommended: "set" and the last four.**
+7. **Who sets it.** Options: an admin of that organization; a global admin
+   only. **Ruled as recommended: `canManageOrganization`.**
+8. **Precedence.** Options: the organization wins and `.env` is the default,
+   with an "Off" choice; the organization only; the organization wins with no
+   "Off". **Ruled as recommended: the organization wins, `.env` is the
+   default, and "Off" exists.**
+9. **Checking a key.** Options: a Test button; a test on every save; no test.
+   **Ruled as recommended: a Test button.** Saving does not need a passed test.
+10. **Placement.** Options: a new organization sub-page; a panel in the chat.
+    **Ruled as recommended: a sub-page**, no sidebar change (the IA decision
+    `F3.29` stays open).
+
+### Decisions
+
+A1. **Three implementations of the decision-1 port.** The port does not
+    change.
+    - `openai` — the `openai` package, its default base URL.
+    - `openrouter` — the same `openai` package with
+      `baseURL: "https://openrouter.ai/api/v1"`. OpenRouter accepts the OpenAI
+      chat-completions format with tools, so it differs from `openai` only in
+      the base URL, the key and the model.
+    - `anthropic` — the official `@anthropic-ai/sdk`, Messages API with
+      client tools, `tool_choice: { type: "auto" }` (Claude Sonnet 5.5 refuses
+      a forced tool choice), non-streaming, `max_tokens` 16,000. It sends the
+      server-side refusal fallback (`fallbacks: "default"` with the
+      `server-side-fallback-2026-07-01` beta), as Anthropic recommends for this
+      model. A response whose final `stop_reason` is still `refusal` is a
+      provider error, so ruling 6 applies: the turn is discarded and the
+      guided mode answers.
+
+A2. **The platform default comes from `.env`.** Seven variables, documented in
+    `.env.example` and passed to the `api` service in `docker-compose.yml`:
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `LLM_PROVIDER` | empty | `openai`, `openrouter` or `anthropic`; empty = the agent is off |
+| `OPENAI_API_KEY` | empty | |
+| `OPENAI_MODEL` | `gpt-4o-mini` | |
+| `OPENROUTER_API_KEY` | empty | |
+| `OPENROUTER_MODEL` | none | required when `LLM_PROVIDER=openrouter` |
+| `ANTHROPIC_API_KEY` | empty | |
+| `ANTHROPIC_MODEL` | `claude-sonnet-5-5` | |
+
+    When the selected provider has no key, or OpenRouter has no model, the
+    agent is off and the API logs one boot warning that names the missing
+    variable, never a value.
+
+A3. **Per-organization setting.** A new tenant table
+    `bms.organization_llm_settings`, in the next free migration:
+    - `organization_id uuid` primary key, references `bms.organizations`,
+      `ON DELETE CASCADE`;
+    - `provider varchar(16) NOT NULL`, `CHECK` in
+      (`off`, `openai`, `openrouter`, `anthropic`). A `CHECK`, not a
+      vocabulary table, because every value needs an adapter in code — a row
+      added at run time could do nothing;
+    - `model varchar(200)`, `NOT NULL` unless `provider = 'off'` (`CHECK`);
+    - `key_ciphertext bytea`, `key_iv bytea`, `key_version integer`,
+      `key_last4 varchar(4)` — the key is encrypted with
+      `CredentialCryptoService` (ADR 0012, rotation per ADR 0062); the four
+      columns are all NULL or all set (`CHECK`);
+    - `updated_by uuid` references `bms.users`, `updated_at timestamptz`.
+
+    `ENABLE` and `FORCE ROW LEVEL SECURITY` with the standard
+    `app.current_organization` policy, and grants only to the API's tenant
+    role, as every tenant table since ADR 0045.
+
+A4. **Resolution, once per chat turn.** If the organization has a row:
+    `off` → the guided mode; a complete row (provider, model, key) → that
+    provider; an incomplete row → the guided mode and one warning log line. If
+    it has no row → the `.env` platform default (A2). The key is decrypted for
+    the turn and is never cached across turns.
+
+A5. **API**, under `/api/v1/admin/organizations/:orgId/ai-assistant`, gated by
+    `canManageOrganization`:
+    - `GET` → `{ provider, model, keySet, keyLast4, updatedAt, source }`, where
+      `source` is `organization` or `platform`; for `platform` it also names
+      the platform provider and model, and whether a platform key is set —
+      never a key.
+    - `PUT` `{ provider, model, apiKey? }` (strict body) — `apiKey` omitted
+      keeps the stored key; `apiKey` given replaces it. With
+      `CREDENTIAL_ENCRYPTION_KEY` not configured, a `PUT` that carries
+      `apiKey` answers 400 and stores nothing (ADR 0062 decision 8: no false
+      success).
+    - `DELETE` → removes the row; the organization returns to the platform
+      default.
+    - `POST …/test` `{ provider, model, apiKey? }` — `apiKey` omitted uses the
+      stored or the platform key. One minimal billed call with one trivial
+      tool and `tool_choice` auto. The answer is `ok` or one error class:
+      `invalid_key`, `unknown_model`, `no_tool_support`, `rate_limited`,
+      `unreachable`, `provider_error`. Never the key, never the provider's raw
+      text.
+
+    `PUT` and `DELETE` write a master-data audit row with the provider, the
+    model and whether the key changed — never the key and never its last four
+    characters.
+
+A6. **Web.** A new page `/admin/organizations/:orgId/ai-assistant`, opened by
+    an "AI assistant" action on each row of the Organizations page. It has a
+    provider choice (Platform default, Off, OpenAI, OpenRouter, Anthropic), a
+    model field with the provider's default as its placeholder, a write-only
+    key field, the line "Key set, ends in …xxxx" with the date, Replace and
+    Remove, a Test button and Save. No sidebar change.
+
+A7. **Secret hygiene.** The key never appears in a response, a log line, an
+    audit row, an error message or the chat. The tests gate each surface: the
+    `GET` body, the `PUT` response, the audit row, the test endpoint's answer
+    and the agent turn's log line.
+
+### Dependencies
+
+- `@anthropic-ai/sdk` `^0.131.0` in `apps/api` — MIT; direct dependencies
+  `standardwebhooks` and `json-schema-to-ts`. Imported dynamically, like
+  `openai`, so an organization that never selects Anthropic never loads it.
+  The repository's dependency gate needs an ADR staged in the same commit as
+  the manifest change; that commit adds a dated line to this amendment.
+- No dependency for OpenRouter.
+
+### Consequences
+
+- **A deployment that sets only `OPENAI_API_KEY` now also needs
+  `LLM_PROVIDER=openai`.** Compose does not pass `OPENAI_API_KEY` today, so no
+  stack deployment uses it now.
+- **OpenRouter models differ in tool support and quality.** The Test button
+  reports `no_tool_support`; the quality of a third-party model's tool calls
+  is the owner's choice and is not gated here.
+- **Each organization pays for its own key.** An org admin can spend that
+  organization's money; the audit row records who changed the setting.
+- **The row grows.** One migration (`migration-reviewer`), one new page, one
+  new route group and one dependency join the plan. The plan is re-cut before
+  the first unit.
+- **Deferred:** a global-admin platform setting in the UI (the platform
+  default stays in `.env`), per-organization cost limits, and model lists
+  fetched from the providers.
