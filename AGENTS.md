@@ -879,7 +879,7 @@
 > `mains-feeder-breaker`), the asset fields `rating` and `trip_cause`, and the
 > `fan_out` and `is_source` flags on `bms.mimic_layout_nodes`. Migration `0099`
 > widens the widget-type CHECK with `breaker_table`, so `widgetType` has
-> twelve values (the number `0098` is unused). The `lv_single_line` preset
+> twelve values (journal idx 98 is empty: `F3.78`'s `0098_user_administration.sql` merged later as idx 100). The `lv_single_line` preset
 > draws the SMOC topology; a **fan-out node** draws every member of its role,
 > one breaker each in asset-code order. A mimic on a tab with no group may
 > name one tab of its dashboard (`tabKey`) and draws at a `compact` size. The
