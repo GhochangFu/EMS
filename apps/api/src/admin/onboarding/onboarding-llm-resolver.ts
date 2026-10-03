@@ -105,6 +105,22 @@ export class OnboardingLlmResolver implements OnModuleInit {
     return { state: "ready", provider: selected, model, apiKey };
   }
 
+  /**
+   * What the settings page shows of the platform default (A5): the provider,
+   * its model, and whether its key is set — never the key.
+   */
+  platformSummary(): { provider: LlmProviderName | "off"; model: string | null; keySet: boolean } {
+    const selected = env("LLM_PROVIDER");
+    if (!isProviderName(selected)) {
+      return { provider: "off", model: null, keySet: false };
+    }
+    return {
+      provider: selected,
+      model: env(MODEL_VARIABLE[selected]) || DEFAULT_MODELS[selected],
+      keySet: env(KEY_VARIABLE[selected]) !== "",
+    };
+  }
+
   /** The organization's stored row, or `null`. A tenant read, so it runs inside a transaction (§4.4). */
   async readSetting(organizationId: string): Promise<typeof organizationLlmSettings.$inferSelect | null> {
     const [row] = await withTenant(this.tenantDb, organizationId, (tx) =>

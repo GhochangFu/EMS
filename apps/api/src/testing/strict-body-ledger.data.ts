@@ -374,6 +374,9 @@ export const STRICTNESS_LEDGER: Record<string, LedgerEntry> = {
   createMimicOrgSymbolLibraryBodySchema: STRICT(CALLER_ERROR),
   createNotificationChannelBodySchema: STRICT(CALLER_ERROR),
   createOrganizationBodySchema: STRICT(CALLER_ERROR),
+  // `F3.21` (ADR 0090 Amendment 1 A5): the response fields sent back (`keyLast4`, `source`) must be a 400.
+  putAiAssistantSettingsBodySchema: STRICT(CALLER_ERROR),
+  testAiAssistantBodySchema: STRICT(CALLER_ERROR),
   createPointKeyBodySchema: STRICT(CALLER_ERROR),
   createRtuBodySchema: STRICT(CALLER_ERROR),
   createSessionBodySchema: STRICT(CALLER_ERROR),

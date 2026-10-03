@@ -63,6 +63,10 @@ import {
   updateOrganizationBodySchema,
 } from "../admin/organizations/organizations.schema";
 import {
+  putAiAssistantSettingsBodySchema,
+  testAiAssistantBodySchema,
+} from "../admin/ai-assistant/ai-assistant-settings.schema";
+import {
   createPointKeyBodySchema,
   updatePointKeyBodySchema,
 } from "../admin/point-keys/point-keys.schema";
@@ -323,6 +327,9 @@ export const REQUEST_SCHEMAS: Record<string, ZodTypeAny> = {
   OnboardingController_setCredentials: setCredentialsBodySchema,
   OrganizationsAdminController_create: createOrganizationBodySchema,
   OrganizationsAdminController_update: updateOrganizationBodySchema,
+  // `F3.21` (ADR 0090 Amendment 1 A5). `_get` and `_remove` take no body.
+  AiAssistantSettingsController_put: putAiAssistantSettingsBodySchema,
+  AiAssistantSettingsController_test: testAiAssistantBodySchema,
   PointKeysAdminController_create: createPointKeyBodySchema,
   PointKeysAdminController_update: updatePointKeyBodySchema,
   // `F3.5a` (ADR 0071 decision 11). `_download` and `_remove` are absent —
