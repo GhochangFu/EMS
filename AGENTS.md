@@ -889,8 +889,9 @@
 > stays, and energy is a colour.** **Stock v4 of "SMOC standard"** adds the
 > electrical tab's `lv_single_line` mimic and `breaker_table`, and an Overview
 > mimic that names the electrical tab. By Amendment 2 a per-tab upgrade moves
-> the untouched seeded copies from v3 to v4 (`planOverviewUpgrade` in
-> `site-layout-seed-upgrade.ts`); an edited tab keeps its own content. The
+> the untouched seeded copies from v3 to v4 (`planOverviewV4Upgrade` and
+> `planElectricalV4Upgrade` in `site-layout-seed-upgrade-tabs.ts`, run by
+> `upgradeSeededSiteLayoutCopies`); an edited tab keeps its own content. The
 > seed adds the demo dashboard `sld-demo-rsmoc-wc` at `RSMOC-WC`, beside its
 > hand-written `builtin` view, and the simulator trips `CR-Q9`. Next under
 > ADR 0087: `F3.75` (`RSMOC-WC` onto the template after parity).
