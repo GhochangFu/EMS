@@ -544,6 +544,55 @@ export async function assertAuditRollsBackWithTheWrite(ctx: GroupFixtures, jwt: 
   ).toBe(0);
 }
 
+/** Create: the group row and its audit row both roll back, so neither is counted. */
+export async function assertCreateAuditRollsBackWithTheWrite(ctx: GroupFixtures, jwt: JwtPayload): Promise<void> {
+  const code = uniqueCode();
+  await expect(
+    ctx.rollbackSvc.create(jwt, { locationId: ctx.scopedLocationId, code, name: "F3.78 pr4 rollback" }),
+  ).rejects.toThrow(AUDIT_SENTINEL);
+
+  expect(await count(ctx, "SELECT count(*) AS n FROM bms.asset_groups WHERE code = $1", [code])).toBe(0);
+  expect(
+    await count(
+      ctx,
+      "SELECT count(*) AS n FROM bms.audit_log WHERE action = 'master.asset_group.create' AND payload->>'code' = $1",
+      [code],
+    ),
+  ).toBe(0);
+}
+
+/** Update: the name is unchanged and no update audit row is left for the group. */
+export async function assertUpdateAuditRollsBackWithTheWrite(ctx: GroupFixtures, jwt: JwtPayload): Promise<void> {
+  const group = await createGroup(ctx, jwt, ctx.scopedLocationId);
+  await expect(ctx.rollbackSvc.update(jwt, group.id, { name: "F3.78 pr4 never saved" })).rejects.toThrow(
+    AUDIT_SENTINEL,
+  );
+
+  expect(
+    await count(ctx, "SELECT count(*) AS n FROM bms.asset_groups WHERE id = $1 AND name = $2", [
+      group.id,
+      "F3.78 pr4 group",
+    ]),
+  ).toBe(1);
+  expect((await auditRows(ctx, "master.asset_group.update", group.id)).length).toBe(0);
+}
+
+/** Remove: the membership is still there and no remove audit row is left for it. */
+export async function assertRemoveMemberAuditRollsBackWithTheWrite(
+  ctx: GroupFixtures,
+  jwt: JwtPayload,
+): Promise<void> {
+  const asset = await ctx.makeAsset(ctx.scopedLocationId, ctx.scopedOrganizationId, true);
+  const member = await ctx.svc.addMember(jwt, ctx.groupId, { assetId: asset.id });
+  ctx.createdMembershipIds.push(member.membershipId);
+  await expect(ctx.rollbackSvc.removeMember(jwt, member.membershipId)).rejects.toThrow(AUDIT_SENTINEL);
+
+  expect(
+    await count(ctx, "SELECT count(*) AS n FROM bms.asset_group_members WHERE id = $1", [member.membershipId]),
+  ).toBe(1);
+  expect((await auditRows(ctx, "master.asset_group_member.remove", member.membershipId)).length).toBe(0);
+}
+
 export async function assertCreateWritesAnAuditRow(ctx: GroupFixtures, jwt: JwtPayload): Promise<void> {
   const group = await createGroup(ctx, jwt, ctx.scopedLocationId);
   const rows = await auditRows(ctx, "master.asset_group.create", group.id);

@@ -19,6 +19,7 @@ import {
   assertAuditRollsBackWithTheWrite,
   assertClearsRoleWithNull,
   assertCreateAtAnotherSiteIsRefused,
+  assertCreateAuditRollsBackWithTheWrite,
   assertCreateRejectsAnUnknownDomain,
   assertCreateWritesAnAuditRow,
   assertDuplicateGroupCodeIs409,
@@ -30,9 +31,11 @@ import {
   assertMemberFromOtherOrganizationIs400,
   assertRefusesOutOfScopeMembership,
   assertRejectsRetiredRole,
+  assertRemoveMemberAuditRollsBackWithTheWrite,
   assertRemoveMemberWritesAnAuditRow,
   assertRemoveOfAnotherSitesMemberIsRefused,
   assertUpdateAuditNamesTheChangedFields,
+  assertUpdateAuditRollsBackWithTheWrite,
   assertUpdateOfAnotherSitesGroupIsRefused,
   RollbackAuditService,
   assertRejectsUnknownRoleWith400,
@@ -472,8 +475,20 @@ describe.skipIf(!connectionString)("F3.37 — AssetGroupsAdminService under real
     await assertRemoveOfAnotherSitesMemberIsRefused(ctx, scopedJwt);
   });
 
-  it("the audit row rolls back with the write it describes", async () => {
+  it("the addMember audit row rolls back with the write it describes", async () => {
     await assertAuditRollsBackWithTheWrite(ctx, adminJwt);
+  });
+
+  it("the create audit row rolls back with the group it describes", async () => {
+    await assertCreateAuditRollsBackWithTheWrite(ctx, adminJwt);
+  });
+
+  it("the update audit row rolls back with the edit it describes", async () => {
+    await assertUpdateAuditRollsBackWithTheWrite(ctx, adminJwt);
+  });
+
+  it("the removeMember audit row rolls back with the removal it describes", async () => {
+    await assertRemoveMemberAuditRollsBackWithTheWrite(ctx, adminJwt);
   });
 
   it("create writes one audit row with a real organization and actor", async () => {
