@@ -258,7 +258,8 @@ export function toAdminUserDto(row: UserRow): AdminUserDto {
   };
 }
 
-type Manager = { readonly identity: ResolvedIdentity; readonly role: ManagerRole; readonly writable: string[] | null };
+/** The caller, once {@link UsersService.requireManager} has accepted it. */
+export type Manager = { readonly identity: ResolvedIdentity; readonly role: ManagerRole; readonly writable: string[] | null };
 
 type Executor = UsersExecutor & Pick<BmsDb, "insert">;
 
@@ -590,8 +591,11 @@ export class UsersService {
 
   // -- Helpers --------------------------------------------------------------
 
-  /** 403 unless the caller's **database row** is `admin` or `organization_admin`. */
-  private async requireManager(jwt: JwtPayload): Promise<Manager> {
+  /**
+   * 403 unless the caller's **database row** is `admin` or `organization_admin`.
+   * Public so `UserGrantsService` (U6) applies the same check, not a copy.
+   */
+  async requireManager(jwt: JwtPayload): Promise<Manager> {
     const identity = await resolveIdentity(this.fleetDb, jwt);
     if (!identity || !isManagerRole(identity.role)) {
       throw new ForbiddenException(MANAGER_ROLE_REQUIRED);
@@ -615,8 +619,12 @@ export class UsersService {
     return row;
   }
 
-  /** The target, or a 404 that does not name it when it is missing or out of scope. */
-  private async requireManageableTarget(manager: Manager, id: string): Promise<UserRow> {
+  /**
+   * The target, or a 404 that does not name it when it is missing or out of
+   * scope. Public so `UserGrantsService` (U6) answers a C1 target with the
+   * same body as a nonexistent id.
+   */
+  async requireManageableTarget(manager: Manager, id: string): Promise<UserRow> {
     const [row] = (await this.fleetDb.select(USER_COLUMNS).from(users).where(eq(users.id, id)).limit(1)) as UserRow[];
     if (!row) {
       throw new NotFoundException(USER_NOT_FOUND);
@@ -631,6 +639,11 @@ export class UsersService {
       throw new NotFoundException(USER_NOT_FOUND);
     }
     return row;
+  }
+
+  /** The organizations every grant of `userId` names (the grant half of its reach), read on `fleetDb`. */
+  async reachOf(userId: string): Promise<string[]> {
+    return (await grantOrganizationIds(this.fleetDb, [userId])).get(userId) ?? [];
   }
 
   /** Inside the fleet transaction: refuse when no other active admin would remain. */

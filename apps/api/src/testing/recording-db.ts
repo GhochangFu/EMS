@@ -4,8 +4,8 @@ import { PgDialect } from "drizzle-orm/pg-core";
 import type { BmsDb } from "@bms/db";
 
 /**
- * `F3.78` — a recording fake of the drizzle surface `UsersService` uses, for
- * `users.service.spec.ts`. It holds no assertions.
+ * `F3.78` — a recording fake of the drizzle surface `UsersService` and
+ * `UserGrantsService` use, for their specs. It holds no assertions.
  *
  * Every statement is recorded, in order, into one shared {@link Timeline}
  * (which the spec's identity fake writes into too, so "the db insert precedes
@@ -20,10 +20,10 @@ import type { BmsDb } from "@bms/db";
 
 export type DbOp = {
   readonly executor: string;
-  readonly kind: "select" | "update" | "insert" | "execute";
-  /** The table of `from()` / `update()` / `insert()`; `null` for `execute`. */
+  readonly kind: "select" | "update" | "insert" | "delete" | "execute";
+  /** The table of `from()` / `update()` / `insert()` / `delete()`; `null` for `execute`. */
   readonly table: string | null;
-  /** The rendered `where` (select/update) or statement (execute) text. */
+  /** The rendered `where` (select/update/delete) or statement (execute) text. */
   readonly text: string;
   readonly params: readonly unknown[];
   /** `set()` values of an update, `values()` of an insert. */
@@ -125,7 +125,7 @@ class Builder implements PromiseLike<unknown> {
     if (this.kind === "select" || this.returningCalled) {
       return rows;
     }
-    // drizzle node-postgres: an UPDATE/INSERT without RETURNING resolves to the QueryResult.
+    // drizzle node-postgres: an UPDATE/INSERT/DELETE without RETURNING resolves to the QueryResult.
     return { rows: [], rowCount: rows.length, command: this.kind.toUpperCase() };
   }
 }
@@ -140,6 +140,7 @@ export function recordingDb(executor: string, timeline: Timeline, answer: Answer
       select: () => new Builder(label, "select", timeline, answer),
       update: (table: unknown) => new Builder(label, "update", timeline, answer, table),
       insert: (table: unknown) => new Builder(label, "insert", timeline, answer, table),
+      delete: (table: unknown) => new Builder(label, "delete", timeline, answer, table),
       execute: async (query: unknown) => {
         const rendered = render(query);
         const op: DbOp = {

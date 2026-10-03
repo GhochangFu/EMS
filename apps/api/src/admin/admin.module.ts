@@ -65,6 +65,8 @@ import { ManualReadingsController } from "./telemetry-entry/manual-readings.cont
 import { TelemetryWriteService } from "./telemetry-entry/telemetry-write.service";
 import { TelemetryImportController } from "./telemetry-import/telemetry-import.controller";
 import { TelemetryImportService } from "./telemetry-import/telemetry-import.service";
+import { UserGrantsAdminController } from "./users/user-grants.controller";
+import { UserGrantsService } from "./users/user-grants.service";
 import { UsersAdminController } from "./users/users.controller";
 import { UsersService } from "./users/users.service";
 
@@ -112,6 +114,8 @@ import { UsersService } from "./users/users.service";
     TelemetryImportController,
     // F3.78 / ADR 0089 decision 1 — /admin/users.
     UsersAdminController,
+    // F3.78 / ADR 0089 decision 12 — /admin/users/:id/grants.
+    UserGrantsAdminController,
   ],
   providers: [
     MasterDataAuditService,
@@ -164,6 +168,7 @@ import { UsersService } from "./users/users.service";
     TelemetryWriteService,
     TelemetryImportService,
     UsersService,
+    UserGrantsService,
   ],
 })
 export class AdminModule {}
