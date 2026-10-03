@@ -4,7 +4,7 @@
 > E8.2 automated backup & recovery · F3.3 object storage · ADR 0012 encrypted
 > RTU credentials.
 > **Audience:** whoever deploys and operates a TRINETRA instance.
-> **Last verified against `main`:** 2026-09-15.
+> **Last verified against `main`:** 2026-10-03.
 
 ## 0. Read this first
 
@@ -24,7 +24,7 @@ So this document splits into two halves, and both matter:
   plaintext on disk, no matter what §2 says.
 
 **Do not read §2 as "the platform encrypts data at rest."** It does not. It
-encrypts two credential fields. The rest is §4's job.
+encrypts three credential fields. The rest is §4's job.
 
 ---
 
@@ -34,6 +34,7 @@ encrypts two credential fields. The rest is §4's job.
 |------|--------------------|-----------|
 | RTU connection credentials (`bms.rtu_connection_configs`) | **Encrypted** | AES-256-GCM, application layer (ADR 0012) |
 | Pending credentials in onboarding drafts (`bms.onboarding_sessions.draft._secrets`) | **Encrypted** | AES-256-GCM, same key |
+| Organization AI-assistant LLM API key (`bms.organization_llm_settings.key_*`) | **Encrypted** | AES-256-GCM, same key (ADR 0090 Amendment 1 A3); `key_last4` is plaintext by design |
 | Local login passwords (`bms.users.password_hash`) | **Hashed, not encrypted** | bcrypt (cost 10) — one-way, see §2.3 |
 | Onboarding chat transcript (`bms.onboarding_sessions.messages`) | **Plaintext** — see §5.1 | none |
 | Telemetry (`telemetry.point_values`) | **Plaintext** | none |
@@ -97,7 +98,7 @@ commit they move to `rtu_connection_configs` **unre-encrypted, at the version
 they already carry** — commit copies `enc.keyVersion` verbatim rather than
 calling `encrypt()` again. **This is why `pnpm rotate-credentials` (§3.1) does
 not, by itself, retire an old key**: a draft's `_secrets` blob is not one of
-the two tables the walk covers, so a draft created before a rotation and
+the three tables the walk covers, so a draft created before a rotation and
 committed after it lands in `rtu_connection_configs` still at the old version.
 Drain or discard in-flight drafts before unsetting
 `CREDENTIAL_ENCRYPTION_KEY_PREVIOUS` — a clean rotation report does not prove
@@ -248,7 +249,9 @@ version neither key holds is a loud, named error, not a silent skip.
    `WebhookTransport` records `skipped_unconfigured` — the replica sends no
    webhook and says nothing. (It sits behind the `realtime-smoke` profile, so
    it is often not up; naming it costs nothing and omitting it costs a webhook
-   outage nobody is paged for.)
+   outage nobody is paged for.) `api` also decrypts each organization's LLM
+   key on every onboarding chat turn (ADR 0090 Amendment 1 A3), so this same
+   recreate covers that read path — there is no separate service to restart.
 3. `docker compose exec api pnpm rotate-credentials`. The command connects as
    `bms_fleet` (rotation is fleet-wide by design — an RLS-scoped connection
    would silently skip every other organization's rows and still report
@@ -259,6 +262,7 @@ version neither key holds is a loud, named error, not a silent skip.
      "currentVersion": 2,
      "rtuConnectionConfigs": { "scanned": 12, "rotated": 11, "skipped": 1, "raced": 0, "failed": 0 },
      "notificationChannels": { "scanned": 3, "rotated": 3, "skipped": 0, "raced": 0, "failed": 0 },
+     "organizationLlmSettings": { "scanned": 2, "rotated": 2, "skipped": 0, "raced": 0, "failed": 0 },
      "failures": []
    }
    ```
@@ -288,6 +292,9 @@ version neither key holds is a loud, named error, not a silent skip.
    - **`failed` rows are collected, not fatal.** One bad row does not stop the
      walk; every other row still rotates, and the failure is named in
      `failures` with its table, id and stored version.
+   - **For `organization_llm_settings` the failure's `id` is the organization
+     id.** That table has no `id` column: its primary key is the tenant column,
+     so an organization holds at most one LLM key.
    - **A wrong key reports `error: "Error"`, not a named class.** An AES-GCM
      tag failure throws a bare `Error` — the ciphertext does not authenticate
      under the key the stored version selected — while a version this window
@@ -302,9 +309,9 @@ version neither key holds is a loud, named error, not a silent skip.
    `failures: []`. There is no three-key window:
    unsetting the previous key while any row still holds the version it wrote
    turns that row into a loud `CredentialKeyVersionError` on its next read,
-   not a silent skip. **A clean report covers only
-   `rtu_connection_configs` and `notification_channels` — not an in-flight
-   onboarding draft.** §2.2: commit copies a draft's stored key version
+   not a silent skip. **A clean report covers
+   `rtu_connection_configs`, `notification_channels` and
+   `organization_llm_settings` — not an in-flight onboarding draft.** §2.2: commit copies a draft's stored key version
    verbatim rather than re-encrypting, so a draft started before the
    rotation and committed after it can still land at the old version once the
    walk has already reported clean. Drain or discard open drafts with
