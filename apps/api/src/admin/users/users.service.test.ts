@@ -33,6 +33,22 @@ describe("F3.78 — UsersService.create (ADR 0089 decision 3)", () => {
     await spec.assertAFailedInsertWhoseDeleteFailsLogsTheSqlstateAndNotTheRow();
   });
 
+  it("a failed insert whose compensating delete fails is a 500", async () => {
+    await spec.assertAnOrphanedInsertFailureIs500();
+  });
+
+  it("a failed insert whose compensating delete fails carries followUp keycloak_orphan_disabled_account", async () => {
+    await spec.assertAnOrphanedInsertFailureCarriesTheOrphanFollowUp();
+  });
+
+  it("a failed insert whose compensating delete fails has a generic message", async () => {
+    await spec.assertAnOrphanedInsertFailureHasAGenericMessage();
+  });
+
+  it("a failed insert whose compensating delete fails names neither the email nor the cause in its body", async () => {
+    await spec.assertAnOrphanedInsertFailureBodyNamesNeitherTheEmailNorTheCause();
+  });
+
   it("a failed create whose compensating delete fails keeps its status and says a disabled Keycloak account remains", async () => {
     await spec.assertAFailingDeleteAddsTheOrphanFollowUpAndKeepsTheStatus();
   });

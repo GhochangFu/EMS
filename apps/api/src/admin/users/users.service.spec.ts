@@ -332,6 +332,40 @@ export async function assertAFailedInsertWhoseDeleteFailsLogsTheSqlstateAndNotTh
   ]).toEqual([true, true, false, false]);
 }
 
+/** A failed insert whose undo fails: the non-HTTP cause, wrapped by `withFollowUp`. */
+async function orphanedInsertRefusal(): Promise<HttpException> {
+  vi.spyOn(Logger.prototype, "error").mockImplementation(() => undefined);
+  const { service, jwt, identity } = harness({ failInsert: true });
+  identity.failNext("deleteUser", "unavailable");
+  return refusal(service.create(jwt, createBody()));
+}
+
+export async function assertAnOrphanedInsertFailureIs500(): Promise<void> {
+  const err = await orphanedInsertRefusal();
+  expect(err.getStatus()).toBe(500);
+}
+
+export async function assertAnOrphanedInsertFailureCarriesTheOrphanFollowUp(): Promise<void> {
+  const err = await orphanedInsertRefusal();
+  expect((err.getResponse() as { followUp?: unknown }).followUp).toBe("keycloak_orphan_disabled_account");
+}
+
+export async function assertAnOrphanedInsertFailureHasAGenericMessage(): Promise<void> {
+  const err = await orphanedInsertRefusal();
+  expect((err.getResponse() as { message?: unknown }).message).toBe("Internal server error");
+}
+
+/** The positive half (the followUp is serialised) shows the body was read, so the absent halves mean something. */
+export async function assertAnOrphanedInsertFailureBodyNamesNeitherTheEmailNorTheCause(): Promise<void> {
+  const err = await orphanedInsertRefusal();
+  const body = JSON.stringify(err.getResponse());
+  expect([
+    body.includes("keycloak_orphan_disabled_account"),
+    body.includes("new.person@example.com"),
+    body.includes("the insert failed"),
+  ]).toEqual([true, false, false]);
+}
+
 /** Decision 3: a failed create whose compensating delete fails too says a disabled account remains. */
 export async function assertAFailingDeleteAddsTheOrphanFollowUpAndKeepsTheStatus(): Promise<void> {
   vi.spyOn(Logger.prototype, "error").mockImplementation(() => undefined);
