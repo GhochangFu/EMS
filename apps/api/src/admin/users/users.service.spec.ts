@@ -134,7 +134,9 @@ function harness(options: Options = {}) {
         return rows.filter((row) => op.params.includes(row.email)).map((row) => ({ id: row.id }));
       }
       if (op.text.includes('"id" =')) {
-        return rows.filter((row) => op.params.includes(row.id));
+        // Postgres compares uuids case-insensitively; so does the fake.
+        const ids = op.params.map((param) => String(param).toLowerCase());
+        return rows.filter((row) => ids.includes(row.id.toLowerCase()));
       }
       return rows;
     }
@@ -406,6 +408,14 @@ export async function assertASelfDeactivateIs403(): Promise<void> {
   const { service, jwt } = harness();
   const err = await refusal(service.deactivate(jwt, ADMIN_CALLER.id));
   expect([err.getStatus(), err.message]).toEqual([403, SELF_DEACTIVATE]);
+}
+
+/** `idParamSchema` accepts uppercase hex and Postgres matches it to the caller's own row. */
+export async function assertASelfDeactivateWithAnUppercaseIdIs403(): Promise<void> {
+  const { service, jwt, identity, timeline } = harness();
+  const err = await refusal(service.deactivate(jwt, ADMIN_CALLER.id.toUpperCase()));
+  expect([err.getStatus(), err.message]).toEqual([403, SELF_DEACTIVATE]);
+  expect([userUpdates(timeline), notifies(timeline), identity.calls]).toEqual([[], [], []]);
 }
 
 export async function assertDemotingTheLastActiveAdminIsRefused(): Promise<void> {

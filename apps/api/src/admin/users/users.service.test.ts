@@ -169,6 +169,10 @@ describe("F3.78 — UsersService.deactivate (ADR 0089 decision 8)", () => {
     await spec.assertASelfDeactivateIs403();
   });
 
+  it("a self-deactivate with the caller's id in uppercase is 403", async () => {
+    await spec.assertASelfDeactivateWithAnUppercaseIdIs403();
+  });
+
   it("writes disabled_at and the NOTIFY before setEnabled(false)", async () => {
     await spec.assertDeactivateStampsAndNotifiesBeforeDisablingKeycloak();
   });

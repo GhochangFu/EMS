@@ -479,7 +479,8 @@ export class UsersService {
   async deactivate(jwt: JwtPayload, id: string): Promise<UserWriteResponse> {
     const manager = await this.requireManager(jwt);
     this.assertKeycloakMode();
-    if (id === manager.identity.id) {
+    // `idParamSchema` accepts uppercase hex and Postgres matches it case-insensitively.
+    if (id.toLowerCase() === manager.identity.id.toLowerCase()) {
       throw new ForbiddenException(SELF_DEACTIVATE);
     }
     const target = await this.requireManageableTarget(manager, id);
