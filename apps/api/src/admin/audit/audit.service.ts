@@ -1,5 +1,5 @@
 import { ForbiddenException, Inject, Injectable } from "@nestjs/common";
-import { and, desc, eq, gte, inArray, lte, or, sql } from "drizzle-orm";
+import { and, desc, eq, gte, inArray, lte, sql } from "drizzle-orm";
 import type { SQL } from "drizzle-orm";
 import * as XLSX from "xlsx";
 
@@ -8,6 +8,7 @@ import type { BmsDb } from "@bms/db";
 import type { AuditLogListResponse, JwtPayload } from "@bms/shared";
 
 import { AccessControlService } from "../../auth/access-control.service";
+import { resolveActorId } from "../../auth/identity-resolver";
 import { FLEET_DRIZZLE } from "../../database/database.tokens";
 import { MAX_EXPORT_ROWS, assertWithinExportCap } from "./audit.limits";
 import type { AuditExportQuery, AuditListQuery } from "./audit.schema";
@@ -199,12 +200,9 @@ export class AuditAdminService {
   private async resolveReadScope(
     jwt: JwtPayload,
   ): Promise<{ scope: string[] | null; redactActorSubject: boolean }> {
-    const [provisioned] = await this.fleetDb
-      .select({ id: users.id })
-      .from(users)
-      .where(or(eq(users.id, jwt.sub), eq(users.email, jwt.email)))
-      .limit(1);
-    if (!provisioned) {
+    // F3.78: by subject (or local id), never by email — the shared resolver.
+    const provisioned = await resolveActorId(this.fleetDb, jwt);
+    if (provisioned === null) {
       throw new ForbiddenException(
         "Reading the audit log requires a provisioned account; this token matches no user",
       );

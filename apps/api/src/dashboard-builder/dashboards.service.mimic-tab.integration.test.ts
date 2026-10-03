@@ -19,6 +19,7 @@ import {
   type MimicTabFixture,
 } from "./dashboards.service.mimic-tab.integration.spec";
 import { MimicNodesService } from "./mimic-nodes.service";
+import { primeSeededSubjects } from "../testing/seeded-subjects";
 
 /**
  * `F3.74` Task 2.3 — Vitest entry point. Assertions live in the sibling `.spec` (ADR 0014); this
@@ -48,6 +49,8 @@ describe.skipIf(!connectionString)("F3.74 — a mimic names its tab, against a r
     const url = connectionString as string;
     const POOL = { max: 2 } as const;
     fleetPool = await openIntegrationPool(url, "F3.74", POOL);
+    // F3.78: jwtFor carries the real bms.users.id as sub (ADR 0089 decision 4).
+    await primeSeededSubjects(fleetPool);
     superuserPool = await openIntegrationPool(resolveIntegrationRoleUrl(url, "superuser", process.env), "F3.74", POOL);
     tenantPool = await openIntegrationPool(
       process.env.DATABASE_URL_TENANT ?? asRole(url, "bms_tenant", "bms_tenant_dev"),

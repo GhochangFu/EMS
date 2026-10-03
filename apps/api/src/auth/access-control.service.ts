@@ -1,5 +1,5 @@
 import { Inject, Injectable, ForbiddenException } from "@nestjs/common";
-import { and, eq, inArray, or } from "drizzle-orm";
+import { and, eq, inArray, isNotNull } from "drizzle-orm";
 
 import {
   assetGroupMembers,
@@ -25,6 +25,7 @@ import {
   scopeFromSource,
   selectReadScopeSourceFor,
 } from "./access-scope-sources";
+import { recalledIdentity, resolveIdentity } from "./identity-resolver";
 import {
   canPerformOperationsWrite,
   operationsWriteDenialReason,
@@ -65,7 +66,8 @@ type ScopeAxis = { kind: "location" | "assetGroup" | "asset"; id: string };
  * older `authDb`/`tenantDb` reads here would lose their grant or fall to zero
  * rows — the fleet re-point is what keeps scope resolution whole across that flip.
  *
- * Only `resolveDbUser` stays on `authDb`: `bms_auth` keeps its narrow `SELECT`
+ * Only the `bms.users` reads stay on `authDb` (`resolveDbUser`, and since
+ * `F3.78` `isUserDisabled`): `bms_auth` keeps its narrow `SELECT`
  * on `bms.users` alone (Amendment 4's `auth_bootstrap_read` policy), which is the
  * one read that must work before the fleet pool is even reached. The tenant pool
  * is intentionally **not** injected here — this service never reads through a
@@ -804,7 +806,53 @@ export class AccessControlService {
   }
 
   /**
-   * Resolves the caller against `bms.users` on the auth pool.
+   * `F3.78` — the `bms.users.id` the guard resolved for this payload object, or
+   * `null`. **Synchronous on purpose**: a gateway stores it on the socket before
+   * any other `await`, so a `bms_user_disabled` NOTIFY that lands during scope
+   * resolution still finds the socket. Never a database read.
+   */
+  resolveUserId(jwt: JwtPayload): string | null {
+    return recalledIdentity(jwt)?.id ?? null;
+  }
+
+  /**
+   * `F3.78` / ADR 0089 decision 8 — whether this user is deactivated now. A
+   * fresh read on the auth pool, bypassing the memo: a gateway calls it once
+   * after the handshake's scope resolution, to close the window a NOTIFY could
+   * have fallen into before the socket was registered.
+   */
+  async isUserDisabled(userId: string): Promise<boolean> {
+    const [row] = await this.authDb
+      .select({ disabledAt: users.disabledAt })
+      .from(users)
+      .where(eq(users.id, userId))
+      .limit(1);
+    return row?.disabledAt != null;
+  }
+
+  /**
+   * `F3.78` / ADR 0089 decision 8 — which of `userIds` are deactivated now, in
+   * one read on the auth pool. The `bms_user_disabled` listener's catch-up on
+   * connect calls it with the users holding a socket on this process, so a
+   * deactivation whose `NOTIFY` arrived while the `LISTEN` connection was down
+   * still closes their sockets.
+   */
+  async disabledUserIds(userIds: readonly string[]): Promise<string[]> {
+    if (userIds.length === 0) {
+      return [];
+    }
+    const rows = await this.authDb
+      .select({ id: users.id })
+      .from(users)
+      .where(and(inArray(users.id, [...userIds]), isNotNull(users.disabledAt)));
+    return rows.map((row) => row.id);
+  }
+
+  /**
+   * Resolves the caller against `bms.users` on the auth pool, through the
+   * shared `resolveIdentity` (`F3.78`, ADR 0089 decision 4): the OIDC subject or,
+   * under local auth, the id — never the email. On a request path the guard
+   * has already resolved this payload, so this reads its memo.
    *
    * ADR 0044: the row-absent fallback to the JWT claim now refuses a claimed
    * `admin` outright, rather than trusting the claim. Every other claimed role
@@ -826,23 +874,14 @@ export class AccessControlService {
    * them — see `assertUngrantedRolesFailClosed`.
    */
   private async resolveDbUser(jwt: JwtPayload): Promise<DbUser> {
-    const [row] = await this.authDb
-      .select({
-        id: users.id,
-        email: users.email,
-        displayName: users.displayName,
-        role: users.role,
-      })
-      .from(users)
-      .where(or(eq(users.id, jwt.sub), eq(users.email, jwt.email)))
-      .limit(1);
+    const row = await resolveIdentity(this.authDb, jwt);
 
     if (row) {
       return {
         id: row.id,
         email: row.email,
         displayName: row.displayName,
-        role: row.role as UserRole,
+        role: row.role,
       };
     }
 

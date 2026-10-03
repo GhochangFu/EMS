@@ -31,7 +31,7 @@ const apiSrc = join(repoRoot, "apps", "api", "src");
  *
  * **Rule 3 is the positive control**, without which a walker that follows
  * nothing passes rule 2 vacuously: the same walk over `main.ts` must reach
- * every one of the eighteen files but `main.ts` itself — an entry is in its
+ * every one of the twenty files but `main.ts` itself — an entry is in its
  * own closure by construction, so its presence there proves nothing about
  * the walker. Rule 1's own controls are the same shape — the worker's
  * closure must reach the modules it is built from.
@@ -74,32 +74,36 @@ const apiSrc = join(repoRoot, "apps", "api", "src");
  */
 
 // ---------------------------------------------------------------------------
-// The eighteen files (7 + 4 + 5 + 2), in the ADR's four groups. The first
+// The twenty files (8 + 5 + 5 + 2), in the ADR's four groups. The first
 // version of this file and plan §8 said "thirteen"; the review re-counted to
-// fifteen; F3.11 added a loop site and two loop hosts.
+// fifteen; F3.11 added a loop site and two loop hosts; F3.78 (ADR 0089
+// decision 8) added the bms_user_disabled listener as a loop site and its
+// adapter as a loop host.
 // ---------------------------------------------------------------------------
 
-/** The seven `onModuleInit` loop sites (ADR 0063 Context 2; the seventh is ADR 0064 decision 4's listener). */
+/** The eight `onModuleInit` loop sites (ADR 0063 Context 2; the seventh is ADR 0064 decision 4's listener, the eighth ADR 0089 decision 8's). */
 const LOOP_SITES = [
   "alarms/alarm-engine.service.ts",
   "alarms/alarm-lifecycle.service.ts",
   "alarms/alarm-notify.service.ts",
   "asset-health/health-rollup.service.ts",
+  "auth/user-disabled-listener.service.ts",
   "calc/calc-scheduler.service.ts",
   "calc/calc-streaming.service.ts",
   "telemetry/telemetry-notify.service.ts",
 ] as const;
 
 /**
- * The four loop hosts: the sweep primitive, the telemetry `LISTEN` adapter,
- * the generic `LISTEN` loop both adapters run on (ADR 0064 Amendment 1 A2),
- * and the alarm `LISTEN` adapter.
+ * The five loop hosts: the sweep primitive, the telemetry `LISTEN` adapter,
+ * the generic `LISTEN` loop the adapters run on (ADR 0064 Amendment 1 A2),
+ * the alarm `LISTEN` adapter, and the `bms_user_disabled` adapter (F3.78).
  */
 const LOOP_HOSTS = [
   "scheduling/sweep-loop.ts",
   "telemetry/telemetry-listener.ts",
   "database/notify-listener.ts",
   "alarms/alarm-notify.ts",
+  "auth/user-disabled-notify.ts",
 ] as const;
 
 /** The five modules whose providers start a loop, or import one that does. */
@@ -347,8 +351,8 @@ describe("F4.24 — the worker imports no API loop (ADR 0063 decision 3, Amendme
     });
   });
 
-  describe("rule 2 — the closure of apps/api/src/worker.ts contains none of the eighteen", () => {
-    it("reaches none of the seven onModuleInit loop sites", () => {
+  describe("rule 2 — the closure of apps/api/src/worker.ts contains none of the twenty", () => {
+    it("reaches none of the eight onModuleInit loop sites", () => {
       const offending = present(closure("worker.ts"), LOOP_SITES);
       expect(
         offending,
@@ -358,7 +362,7 @@ describe("F4.24 — the worker imports no API loop (ADR 0063 decision 3, Amendme
       ).toEqual([]);
     });
 
-    it("reaches none of the four loop hosts (sweep-loop, telemetry-listener, notify-listener, alarm-notify)", () => {
+    it("reaches none of the five loop hosts (sweep-loop, telemetry-listener, notify-listener, alarm-notify, user-disabled-notify)", () => {
       const offending = present(closure("worker.ts"), LOOP_HOSTS);
       expect(
         offending,
@@ -389,7 +393,7 @@ describe("F4.24 — the worker imports no API loop (ADR 0063 decision 3, Amendme
     });
   });
 
-  describe("rule 3 — positive control: the closure of apps/api/src/main.ts contains every one of the eighteen but itself", () => {
+  describe("rule 3 — positive control: the closure of apps/api/src/main.ts contains every one of the twenty but itself", () => {
     it("reaches the other seventeen files from main.ts", () => {
       const missing = absent(closure("main.ts"), POSITIVE_CONTROL);
       expect(

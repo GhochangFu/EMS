@@ -20,6 +20,7 @@ import {
   serviceWithViewRow,
 } from "../control-room/site-layout.service.integration.spec";
 import { SiteLayoutService, siteTemplateArmOf } from "../control-room/site-layout.service";
+import { primeSeededSubjects } from "./seeded-subjects";
 
 /**
  * `F3.73` plan Task 4.2 — the shared harness for the two `SiteLayoutService` integration wrappers,
@@ -139,6 +140,8 @@ export function useSiteLayoutHarness(
   beforeAll(async () => {
     const url = db.connectionString as string;
     fleetPool = await db.openPool(url);
+    // F3.78: jwtFor carries the real bms.users.id as sub (ADR 0089 decision 4).
+    await primeSeededSubjects(fleetPool);
     authPool = await db.openPool(process.env.DATABASE_URL_AUTH ?? asRole(url, "bms_auth", "bms_auth_dev"));
     tenantPool = await db.openPool(process.env.DATABASE_URL_TENANT ?? asRole(url, "bms_tenant", "bms_tenant_dev"));
     // Only for the S6 location-admin fixture user: `bms_fleet` may not write `bms.users`.

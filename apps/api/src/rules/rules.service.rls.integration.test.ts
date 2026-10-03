@@ -12,6 +12,7 @@ import { withTenant } from "../database/tenant-context";
 import type { NotificationsService } from "../notifications/notifications.service";
 import { openIntegrationPool, requireIntegrationDb } from "../testing/integration-db-gate";
 import { asRole } from "../testing/role-urls";
+import { jwtFor, primeSeededSubjects } from "../testing/seeded-subjects";
 import { VocabulariesService } from "../vocabularies/vocabularies.service";
 import { pointKeysForAsset } from "./rule-points";
 import { RulesService } from "./rules.service";
@@ -79,6 +80,8 @@ describe.skipIf(!connectionString)("E7.1b — RulesService.createDraft under rea
   beforeAll(async () => {
     const url = connectionString as string;
     ownerPool = await openIntegrationPool(url, "E7.1b");
+    // F3.78: the actor is resolved by id (local auth), so the token carries the real id.
+    await primeSeededSubjects(ownerPool);
     tenantPool = await openIntegrationPool(
       process.env.DATABASE_URL_TENANT ?? asRole(url, "bms_tenant", "bms_tenant_dev"),
       "E7.1b",
@@ -283,11 +286,11 @@ describe.skipIf(!connectionString)("E7.1b — RulesService.createDraft under rea
       assetId,
       pointKey,
       scopedActor: {
-        sub: "00000000-0000-4000-8000-0000000000a1",
+        sub: jwtFor(ORGANIZATION_ADMIN_EMAIL, "organization_admin").sub,
         email: ORGANIZATION_ADMIN_EMAIL,
       },
       adminActor: {
-        sub: "00000000-0000-4000-8000-0000000000a2",
+        sub: jwtFor(GLOBAL_ADMIN_EMAIL, "admin").sub,
         email: GLOBAL_ADMIN_EMAIL,
       },
       createdRuleIds,

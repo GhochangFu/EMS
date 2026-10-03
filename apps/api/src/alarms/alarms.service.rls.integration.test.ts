@@ -36,6 +36,7 @@ import {
   assertBoundedUserSummaryForAForeignOrganizationIdCountsNothing,
   type AlarmsRlsFixtures,
 } from "./alarms.service.rls.integration.spec";
+import { jwtFor, primeSeededSubjects } from "../testing/seeded-subjects";
 
 /**
  * `E7.1b` — Vitest entry point. Assertions live in the sibling `.spec`
@@ -59,7 +60,6 @@ const connectionString = requireIntegrationDb({
 });
 
 const ORGANIZATION_ADMIN_EMAIL = "phe-admin@bms.local";
-const SYNTHETIC_SUB = "00000000-0000-4000-8000-000000000009";
 
 // Per-run fixture prefix (F4.65). afterAll narrows every sweep to this run's
 // code, so a concurrent instance's rows are never reaped. randomUUID() sits in
@@ -79,10 +79,7 @@ describe.skipIf(!connectionString)("E7.1b — alarm reads isolate by assetIds un
   let tenantPool: pg.Pool;
   let ctx: AlarmsRlsFixtures;
 
-  const actor: Pick<JwtPayload, "sub" | "email"> = {
-    sub: SYNTHETIC_SUB,
-    email: ORGANIZATION_ADMIN_EMAIL,
-  };
+  let actor: Pick<JwtPayload, "sub" | "email">;
 
   beforeAll(async () => {
     const url = connectionString as string;
@@ -91,6 +88,9 @@ describe.skipIf(!connectionString)("E7.1b — alarm reads isolate by assetIds un
       process.env.DATABASE_URL_TENANT ?? asRole(url, "bms_tenant", "bms_tenant_dev"),
       "E7.1b",
     );
+    // F3.78: jwtFor carries the real bms.users.id as sub (ADR 0089 decision 4).
+    await primeSeededSubjects(fleetPool);
+    actor = jwtFor(ORGANIZATION_ADMIN_EMAIL, "organization_admin");
 
     // org A = the acting admin's org; org B = any other seeded org. Both need an
     // active location to hang the asset on.

@@ -16,6 +16,7 @@ import {
   assertCommittedLocationHasNoSeedKey,
   type OnboardingSeedKeyCtx,
 } from "./onboarding-commit.seed-key.integration.spec";
+import { jwtFor, primeSeededSubjects } from "../../testing/seeded-subjects";
 
 /**
  * `F4.170` owner ruling 20 — Vitest entry point. Assertions live in the
@@ -33,7 +34,6 @@ const connectionString = requireIntegrationDb({
 });
 
 const ORGANIZATION_ADMIN_EMAIL = "phe-admin@bms.local";
-const SYNTHETIC_SUB = "00000000-0000-4000-8000-000000000007";
 
 const RUN = Date.now();
 /** A row of this family older than this is an earlier run's, never a live one's. */
@@ -123,12 +123,7 @@ describe.skipIf(!connectionString)("F4.170 ruling 20 — the onboarding commit s
   const ctx: OnboardingSeedKeyCtx = { ownerPool: undefined as unknown as pg.Pool };
   let sessionId = "";
 
-  const jwt: JwtPayload = {
-    sub: SYNTHETIC_SUB,
-    email: ORGANIZATION_ADMIN_EMAIL,
-    name: `integration:${ORGANIZATION_ADMIN_EMAIL}`,
-    role: "organization_admin",
-  };
+  let jwt: JwtPayload;
 
   beforeAll(async () => {
     const url = connectionString as string;
@@ -145,6 +140,9 @@ describe.skipIf(!connectionString)("F4.170 ruling 20 — the onboarding commit s
       process.env.DATABASE_URL_FLEET ?? asRole(url, "bms_fleet", "bms_fleet_dev"),
       "F4.170",
     );
+    // F3.78: jwtFor carries the real bms.users.id as sub (ADR 0089 decision 4).
+    await primeSeededSubjects(fleetPool);
+    jwt = jwtFor(ORGANIZATION_ADMIN_EMAIL, "organization_admin");
 
     await sweepStaleRuns(ownerPool);
 

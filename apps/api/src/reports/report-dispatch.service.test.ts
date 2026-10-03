@@ -2,6 +2,12 @@ import { afterEach, beforeAll, describe, it, vi } from "vitest";
 
 import type { ReportDispatchSummary } from "./report-dispatch.service";
 import {
+  assertAnEnabledOwnerIsStillEnqueued,
+  assertOwnerDisabledAdvancesToNextRunAtOnly,
+  assertOwnerDisabledIsCountedAndNotEnqueued,
+  assertOwnerDisabledWarnsOnceById,
+  assertTheClaimReadsTheOwnerAndLocksOnlyTheSchedule,
+  OWNER_DISABLED_ROW,
   assertDueCountsTheClaimedRowsOnly,
   assertEachAddCarriesTheRowsPeriodAndJobId,
   assertEachUpdateAdvancesToNextRunAtFromNow,
@@ -119,6 +125,36 @@ describe("F3.5b — ReportDispatchService.tick: enqueue before advance, the pois
 
     it("still enqueues the healthy row", () => {
       assertTheOtherRowIsStillEnqueued(h);
+    });
+  });
+
+  describe("aScheduleWhoseOwnerIsDeactivatedPauses (F3.78, ADR 0089 decision 8)", () => {
+    let h: DispatchHarness;
+    let summary: ReportDispatchSummary;
+
+    beforeAll(async () => {
+      h = makeHarness([DUE_ROWS[0] as (typeof DUE_ROWS)[number], OWNER_DISABLED_ROW]);
+      summary = await h.service.tick(h.fleetDb, NOW);
+    });
+
+    it("counts skippedOwnerDisabled === 1 and does not enqueue it", () => {
+      assertOwnerDisabledIsCountedAndNotEnqueued(h, summary);
+    });
+
+    it("advances it to nextRunAt(row, now) with an update that sets next_run_at only", () => {
+      assertOwnerDisabledAdvancesToNextRunAtOnly(h);
+    });
+
+    it("warns once naming the schedule id", () => {
+      assertOwnerDisabledWarnsOnceById(h);
+    });
+
+    it("still enqueues the schedule whose owner is enabled (positive control)", () => {
+      assertAnEnabledOwnerIsStillEnqueued(h);
+    });
+
+    it("the claim reads the owner through a scalar subquery and locks FOR UPDATE OF s SKIP LOCKED", () => {
+      assertTheClaimReadsTheOwnerAndLocksOnlyTheSchedule(h);
     });
   });
 

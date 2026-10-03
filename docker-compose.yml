@@ -158,6 +158,48 @@ services:
     volumes:
       - ./infra/keycloak:/opt/keycloak/data/import:ro
 
+  keycloak-provision:
+    # F3.78 / ADR 0089 decisions 4–6 — the one-shot step that makes realm
+    # `bms` ready for user administration, on a fresh realm and on one
+    # imported before F3.78 alike (`--import-realm` skips an existing realm,
+    # so the realm file alone never reaches it). It sets the password policy
+    # and brute force, creates or updates `bms-api-admin`, sets its secret
+    # from `KEYCLOAK_ADMIN_CLIENT_SECRET`, leaves its service account with
+    # exactly `manage-users` and `view-users`, makes email admin-editable only,
+    # and lists every realm user that is unverified and unlinked (exit 2).
+    # Runbook: docs/runbooks/keycloak-user-administration.md.
+    #
+    # The secret is `${...:-}`, not `:?`: Compose interpolates the whole file,
+    # so `:?` would break every compose command on a host without it. The CLI
+    # refuses an empty secret itself, exits 1, and nothing depends on it.
+    profiles: ["core", "identity", "pilot", "phe", "realtime-smoke"]
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    command: ["node", "dist/identity/provision/provision-cli.js"]
+    restart: "no"
+    environment:
+      KEYCLOAK_ADMIN_URL: http://keycloak:8080
+      KEYCLOAK_ADMIN_REALM: bms
+      KEYCLOAK_ADMIN_CLIENT_ID: bms-api-admin
+      KEYCLOAK_ADMIN_CLIENT_SECRET: "${KEYCLOAK_ADMIN_CLIENT_SECRET:-}"
+      # The master-realm admin the `keycloak` service creates above.
+      KEYCLOAK_ADMIN: admin
+      KEYCLOAK_ADMIN_PASSWORD: admin
+      # `bms_auth` reads `bms.users (email, oidc_subject)` through
+      # `auth_bootstrap_read` (`USING (true)`); no superuser URL is needed.
+      DATABASE_URL_AUTH: postgres://bms_auth:bms_auth_dev@postgres:5432/bms
+    depends_on:
+      keycloak:
+        condition: service_started
+      # `required: false` because `migrate` is not in the `identity` profile:
+      # without it `--profile identity` fails every command with "depends on
+      # undefined service". Under that profile the step reads an already
+      # migrated database (`postgres` carries no profile, so it is always up).
+      migrate:
+        condition: service_completed_successfully
+        required: false
+
   migrate:
     profiles: ["core", "migrate", "sim", "pilot", "phe", "realtime-smoke"]
     build:
@@ -228,6 +270,20 @@ services:
       AUTH_MODE: oidc
       OIDC_ISSUER: http://localhost:8080/realms/bms
       OIDC_JWKS_URI: http://keycloak:8080/realms/bms/protocol/openid-connect/certs
+      # F3.78 / ADR 0089 decision 5: the API accepts only tokens whose `azp` is
+      # this client. Required under OIDC, no default — unset, every token is 401.
+      OIDC_CLIENT_ID: bms-web
+      # F3.78 / ADR 0089 decision 5: the Keycloak admin client the users API
+      # writes through. All four or none — an unset or empty secret leaves user
+      # administration unconfigured (the write routes answer 503, the reads
+      # work). The secret is equivalent to global admin: it comes from the
+      # gitignored `.env`, and `keycloak-provision` below sets the same value on
+      # the `bms-api-admin` client. `${...:-}`, never `:?` — Compose
+      # interpolates the whole file, so a `:?` would break every command.
+      KEYCLOAK_ADMIN_URL: ${KEYCLOAK_ADMIN_URL:-http://keycloak:8080}
+      KEYCLOAK_ADMIN_REALM: ${KEYCLOAK_ADMIN_REALM:-bms}
+      KEYCLOAK_ADMIN_CLIENT_ID: ${KEYCLOAK_ADMIN_CLIENT_ID:-bms-api-admin}
+      KEYCLOAK_ADMIN_CLIENT_SECRET: "${KEYCLOAK_ADMIN_CLIENT_SECRET:-}"
       OTEL_SERVICE_NAME: bms-api
       # AES-256-GCM key window for RTU connection credentials and webhook
       # secrets (ADR 0012, ADR 0062). Interpolated from the gitignored compose
@@ -346,6 +402,14 @@ services:
       AUTH_MODE: oidc
       OIDC_ISSUER: http://localhost:8080/realms/bms
       OIDC_JWKS_URI: http://keycloak:8080/realms/bms/protocol/openid-connect/certs
+      # F3.78 / ADR 0089 decision 5: the API accepts only tokens whose `azp` is
+      # this client. Required under OIDC, no default — unset, every token is 401.
+      OIDC_CLIENT_ID: bms-web
+      # F3.78 / ADR 0089 decision 5 — identical to `api` above.
+      KEYCLOAK_ADMIN_URL: ${KEYCLOAK_ADMIN_URL:-http://keycloak:8080}
+      KEYCLOAK_ADMIN_REALM: ${KEYCLOAK_ADMIN_REALM:-bms}
+      KEYCLOAK_ADMIN_CLIENT_ID: ${KEYCLOAK_ADMIN_CLIENT_ID:-bms-api-admin}
+      KEYCLOAK_ADMIN_CLIENT_SECRET: "${KEYCLOAK_ADMIN_CLIENT_SECRET:-}"
       # `E8.4` / ADR 0062 owner ruling 6 — this service previously set none of
       # these at all. A replica that cannot decrypt a channel secret answers
       # `unreadable` on every webhook it evaluates, so it needs the whole

@@ -52,6 +52,19 @@ export const NOW = new Date("2026-09-21T10:00:00.000Z");
 /** The fixture name; no audit payload value may carry it (R-10). */
 export const FIXTURE_NAME = "f3.5b-SHOULD-NOT-APPEAR";
 export const JWT: JwtPayload = { sub: ACTOR_ID, email: "admin@bms.local", name: "Admin", role: "admin" };
+
+// F3.78: the actor lookup is the shared resolveIdentity, whose projection is the
+// seven identity columns (identity-resolver.ts), keyed here by their sorted names.
+const IDENTITY_SHAPE = "disabledAt,displayName,email,id,oidcSubject,organizationId,role";
+const IDENTITY_ROW = {
+  id: ACTOR_ID,
+  email: "admin@bms.local",
+  displayName: "Admin",
+  role: "admin",
+  organizationId: null,
+  oidcSubject: null,
+  disabledAt: null,
+};
 const MASTER_DATA_SENTENCE = "Master data administration requires admin, organization_admin, or location_admin role";
 
 const KEY_A = buildReportObjectKey({ organizationId: ORG_ID, fileId: FILE_A });
@@ -332,7 +345,7 @@ export function harness(scenario: Scenario = {}, now: Date = NOW): Harness {
           return (scenario.organizationLocations ?? [WC, OTHER_LOCATION]).map((locationId) => ({ locationId }));
         });
       }
-      if (shape === "actorId") return chain(async () => [{ actorId: ACTOR_ID }]);
+      if (shape === IDENTITY_SHAPE) return chain(async () => [IDENTITY_ROW]);
       if (shape === "organizationId") {
         return chain(async () => {
           calls.push("fleet:organizationExists");

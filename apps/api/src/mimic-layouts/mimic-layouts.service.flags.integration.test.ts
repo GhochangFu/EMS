@@ -17,6 +17,7 @@ import { asRole } from "../testing/role-urls";
 import * as spec from "./mimic-layouts.service.flags.integration.spec";
 import type { FlagsCtx } from "./mimic-layouts.service.flags.integration.spec";
 import { MimicLayoutsService } from "./mimic-layouts.service";
+import { primeSeededSubjects } from "../testing/seeded-subjects";
 
 /**
  * `F3.74` Task 1.6 — Vitest entry point for the layout unit flags on `MimicLayoutsService`
@@ -56,6 +57,8 @@ describe.skipIf(!connectionString)("F3.74 — MimicLayoutsService flags against 
       "F3.74",
     );
     fleetPool = await openIntegrationPool(url, "F3.74");
+    // F3.78: jwtFor carries the real bms.users.id as sub (ADR 0089 decision 4).
+    await primeSeededSubjects(fleetPool);
     const fleetDb = createDb(fleetPool);
 
     const row = await ownerPool.query<{ id: string }>(`SELECT id FROM bms.organizations WHERE code = 'ESKOM' LIMIT 1`);

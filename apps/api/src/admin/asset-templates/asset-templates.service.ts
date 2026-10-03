@@ -6,9 +6,9 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { and, asc, desc, eq, inArray, or, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, sql } from "drizzle-orm";
 
-import { assetTemplates, organizations, pointKeys, templatePoints, users } from "@bms/db";
+import { assetTemplates, organizations, pointKeys, templatePoints } from "@bms/db";
 import type { BmsDb } from "@bms/db";
 // ADR 0049 decision 2 — the template lifecycle is declared once, in
 // `@bms/shared/contracts/template-lifecycle`, and both template tables read it.
@@ -31,6 +31,7 @@ import type {
 } from "@bms/shared";
 
 import { AccessControlService } from "../../auth/access-control.service";
+import { resolveActorId } from "../../auth/identity-resolver";
 import { CalcParametersService } from "../../calc/calc-parameters.service";
 import { FLEET_DRIZZLE, TENANT_DRIZZLE } from "../../database/database.tokens";
 import { withTenant } from "../../database/tenant-context";
@@ -551,9 +552,9 @@ export class AssetTemplatesAdminService {
    * `jwt.sub` is NOT a `bms.users.id` in OIDC mode — it is Keycloak's subject,
    * which has no row here. Writing it into `created_by` violates
    * `asset_templates_created_by_fkey` and 500s every create for exactly the
-   * users the pilot authenticates. `MasterDataAuditService.write` already
-   * resolves by id-or-email and falls back to null; this does the same, which
-   * is why the column is nullable.
+   * users the pilot authenticates. Since `F3.78` this is the shared
+   * `resolveActorId` (by OIDC subject, or local id — never by email), which
+   * falls back to null; that is why the column is nullable.
    *
    * E7.1b Amendment 4: read on `fleetDb`. `bms.users` gains a `FORCE`d policy in
    * `0047`, and the author is often a scoped actor whose own row would fail a
@@ -562,12 +563,8 @@ export class AssetTemplatesAdminService {
    * does in `WorkOrdersService`/`MaintenanceService`.
    */
   private async resolveCreatedBy(jwt: JwtPayload): Promise<string | null> {
-    const [row] = await this.fleetDb
-      .select({ id: users.id })
-      .from(users)
-      .where(or(eq(users.id, jwt.sub), eq(users.email, jwt.email)))
-      .limit(1);
-    return row?.id ?? null;
+    // F3.78: by subject (or local id), never by email — the shared resolver.
+    return resolveActorId(this.fleetDb, jwt);
   }
 
   /**

@@ -3,7 +3,7 @@ import type pg from "pg";
 
 import type { JwtPayload } from "@bms/shared";
 
-import { SEEDED, jwtFor } from "./access-control.integration.spec";
+import { SEEDED, jwtFor, jwtForUnprovisioned } from "./access-control.integration.spec";
 import type { AccessControlService } from "./access-control.service";
 
 /**
@@ -246,7 +246,7 @@ export async function viewerIsRefused(
   fx: ReportFileFixtures,
 ): Promise<void> {
   const err = await captureRejection(() =>
-    svc.canReadReportFile(jwtFor(UNPROVISIONED_VIEWER, "viewer"), {
+    svc.canReadReportFile(jwtForUnprovisioned(UNPROVISIONED_VIEWER, "viewer"), {
       organizationId: fx.eskomId,
       locationIds: [],
     }),

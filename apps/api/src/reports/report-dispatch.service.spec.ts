@@ -58,6 +58,7 @@ export const ORG_B = "12121212-1212-4121-8121-121212121212";
 export const SCHEDULE_A = "44444444-4444-4444-8444-444444444444";
 export const SCHEDULE_B = "45454545-4545-4454-8454-454545454545";
 export const POISON_ID = "46464646-4646-4464-8464-464646464646";
+export const OWNER_DISABLED_ID = "47474747-4747-4474-8474-474747474747";
 
 /**
  * The row shape Drizzle's raw `execute` hands back: `next_run_at` is the
@@ -75,6 +76,8 @@ export type DueRowFixture = {
   run_at_local: string;
   timezone: string;
   next_run_at: string;
+  /** `F3.78`: the claim's scalar subquery on the owner's `disabled_at`; absent or `null` for an enabled or absent owner. */
+  owner_disabled_at?: string | null;
 };
 
 /** The fixture's due instant, read the way `pg` text is read. */
@@ -400,4 +403,63 @@ export function assertLateTickAdvancesStrictlyPastNow(h: DispatchHarness): void 
     next.length === 1 && (next[0] as number) > NOW.getTime(),
     `expected one update whose next_run_at is strictly after now (missed periods are skipped, Q-3); got ${next.map((t) => new Date(t).toISOString()).join(", ")}`,
   );
+}
+
+/**
+ * `F3.78` / ADR 0089 decision 8, plan D3 — a schedule whose owner is
+ * deactivated pauses: counted `skippedOwnerDisabled`, warned once by schedule
+ * id, never enqueued, and advanced to its next occurrence with
+ * `nextRunAt(row, now)` (the advance a run gets, without the enqueue) — not
+ * the poison row's hourly backoff, so it warns once per occurrence. The row
+ * never ran, so the update sets `next_run_at` only.
+ */
+export const OWNER_DISABLED_ROW: DueRowFixture = {
+  ...(DUE_ROWS[1] as DueRowFixture),
+  id: OWNER_DISABLED_ID,
+  owner_disabled_at: "2026-09-21 05:00:00+00",
+};
+
+export function assertOwnerDisabledIsCountedAndNotEnqueued(h: DispatchHarness, summary: ReportDispatchSummary): void {
+  const shape = { due: summary.due, enqueued: summary.enqueued, skippedOwnerDisabled: summary.skippedOwnerDisabled };
+  const expected = { due: 2, enqueued: 1, skippedOwnerDisabled: 1 };
+  assert(JSON.stringify(shape) === JSON.stringify(expected), `expected ${JSON.stringify(expected)}, got ${JSON.stringify(shape)}`);
+  assert(
+    !h.adds.some((add) => add.data.scheduleId === OWNER_DISABLED_ID),
+    "a schedule whose owner is deactivated must not be enqueued",
+  );
+}
+
+export function assertOwnerDisabledAdvancesToNextRunAtOnly(h: DispatchHarness): void {
+  const mine = h.updates.filter((update) => updateNames(update, OWNER_DISABLED_ID));
+  assert(mine.length === 1, `expected exactly one UPDATE naming the paused schedule; got ${mine.length}`);
+  const update = mine[0] as RecordedUpdate;
+  const row = OWNER_DISABLED_ROW;
+  const expected = nextRunAt({ cadence: row.cadence, runAtLocal: row.run_at_local, timezone: row.timezone }, NOW).toISOString();
+  const actual = nextRunAtOf(update).toISOString();
+  assert(actual === expected, `expected next_run_at = nextRunAt(row, now) = ${expected}; got ${actual}`);
+  assert(
+    update.params.length === 2 && !/last_run_at|updated_at|enabled/.test(update.sql),
+    `expected the pause to set next_run_at only; got ${update.sql} with ${update.params.length} parameters`,
+  );
+}
+
+export function assertOwnerDisabledWarnsOnceById(h: DispatchHarness): void {
+  const mine = h.warns.filter((warn) => warn.includes(OWNER_DISABLED_ID));
+  assert(mine.length === 1 && /owner is deactivated/.test(mine[0] ?? ""), `expected one warn naming the paused schedule; got ${JSON.stringify(h.warns)}`);
+}
+
+export function assertAnEnabledOwnerIsStillEnqueued(h: DispatchHarness): void {
+  assert(
+    h.adds.some((add) => add.data.scheduleId === SCHEDULE_A),
+    "the schedule whose owner is not deactivated must still be enqueued",
+  );
+}
+
+export function assertTheClaimReadsTheOwnerAndLocksOnlyTheSchedule(h: DispatchHarness): void {
+  const select = h.selects[0]?.sql ?? "";
+  assert(
+    /\(SELECT u\.disabled_at FROM bms\.users u WHERE u\.id = s\.created_by\) AS owner_disabled_at/.test(select),
+    `expected the owner subquery in the claim; got ${select}`,
+  );
+  assert(/FOR UPDATE OF s SKIP LOCKED/.test(select), `expected FOR UPDATE OF s SKIP LOCKED; got ${select}`);
 }

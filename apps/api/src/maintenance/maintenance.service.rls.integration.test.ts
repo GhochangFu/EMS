@@ -7,6 +7,7 @@ import type { BmsDb } from "@bms/db";
 import { withTenant } from "../database/tenant-context";
 import { openIntegrationPool, requireIntegrationDb } from "../testing/integration-db-gate";
 import { asRole } from "../testing/role-urls";
+import { jwtFor, primeSeededSubjects } from "../testing/seeded-subjects";
 import { MaintenanceService } from "./maintenance.service";
 import {
   assertConvertReadsBackOnTenantTransaction,
@@ -59,6 +60,8 @@ describe.skipIf(!connectionString)("E7.1b — MaintenanceService under real RLS"
   beforeAll(async () => {
     const url = connectionString as string;
     ownerPool = await openIntegrationPool(url, "E7.1b");
+    // F3.78: the actor is resolved by id (local auth), so the token carries the real id.
+    await primeSeededSubjects(ownerPool);
     tenantPool = await openIntegrationPool(
       process.env.DATABASE_URL_TENANT ?? asRole(url, "bms_tenant", "bms_tenant_dev"),
       "E7.1b",
@@ -198,7 +201,7 @@ describe.skipIf(!connectionString)("E7.1b — MaintenanceService under real RLS"
       organizationId,
       assetId,
       scopedActor: {
-        sub: "00000000-0000-4000-8000-0000000000b1",
+        sub: jwtFor(ORGANIZATION_ADMIN_EMAIL, "organization_admin").sub,
         email: ORGANIZATION_ADMIN_EMAIL,
       },
       createdScheduleIds,

@@ -26,6 +26,7 @@ import {
   openIntegrationPool,
   requireIntegrationDb,
 } from "../testing/integration-db-gate";
+import { primeSeededSubjects } from "../testing/seeded-subjects";
 
 /**
  * `F3.5a` — Vitest entry point for ADR 0071 decision 6. Assertions live in
@@ -54,6 +55,8 @@ describe.skipIf(!connectionString)("F3.5a — report file read scope against a r
 
   beforeAll(async () => {
     const created = await openIntegrationPool(connectionString as string, "F3.5a");
+    // F3.78: jwtFor carries the real bms.users.id as sub (ADR 0089 decision 4).
+    await primeSeededSubjects(created);
     pool = created;
     const db = createDb(created);
     svc = new AccessControlService(db, db);

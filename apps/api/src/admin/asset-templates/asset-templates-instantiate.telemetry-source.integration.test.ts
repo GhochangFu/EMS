@@ -22,6 +22,7 @@ import { AssetDashboardsInstantiateService } from "./asset-dashboards-instantiat
 import { AssetTemplateInstantiationService } from "./asset-templates-instantiate.service";
 import { instantiateAssetsBodySchema } from "./asset-templates.schema";
 import { AssetTemplatesAdminService } from "./asset-templates.service";
+import { jwtFor, primeSeededSubjects } from "../../testing/seeded-subjects";
 
 /**
  * `F4.139` — Vitest entry point for the third `assets.rtu_id` writer.
@@ -50,7 +51,6 @@ const connectionString = requireIntegrationDb({
 });
 
 const ADMIN_EMAIL = "admin@bms.local";
-const SYNTHETIC_SUB = "00000000-0000-4000-8000-000000000000";
 
 describe.skipIf(!connectionString)("F4.139 — instantiate derives telemetrySource", () => {
   let fixturePool: pg.Pool;
@@ -58,12 +58,7 @@ describe.skipIf(!connectionString)("F4.139 — instantiate derives telemetrySour
   let tenantPool: pg.Pool;
   let ctx: InstantiateTelemetrySourceCtx;
 
-  const jwt: JwtPayload = {
-    sub: SYNTHETIC_SUB,
-    email: ADMIN_EMAIL,
-    name: "integration:admin",
-    role: "admin",
-  };
+  let jwt: JwtPayload;
   const createdAssetIds: string[] = [];
   const createdRtuIds: string[] = [];
   let templateId: string | undefined;
@@ -74,6 +69,9 @@ describe.skipIf(!connectionString)("F4.139 — instantiate derives telemetrySour
     // (migration 0039): the fixture RTUs and the `meta` read-back both have to
     // see across the tenant policy.
     fixturePool = await openIntegrationPool(url, "F4.139");
+    // F3.78: jwtFor carries the real bms.users.id as sub (ADR 0089 decision 4).
+    await primeSeededSubjects(fixturePool);
+    jwt = jwtFor(ADMIN_EMAIL, "admin");
     authPool = await openIntegrationPool(
       process.env.DATABASE_URL_AUTH ?? asRole(url, "bms_auth", "bms_auth_dev"),
       "F4.139",

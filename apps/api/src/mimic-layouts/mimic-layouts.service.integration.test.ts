@@ -19,6 +19,7 @@ import * as spec from "./mimic-layouts.service.integration.spec";
 import type { Ctx } from "./mimic-layouts.service.integration.spec";
 import { MimicLayoutsController } from "./mimic-layouts.controller";
 import { MimicLayoutsService } from "./mimic-layouts.service";
+import { primeSeededSubjects } from "../testing/seeded-subjects";
 
 /**
  * `F3.32c` U2 — Vitest entry point for `MimicLayoutsService` against a real
@@ -62,6 +63,8 @@ describe.skipIf(!connectionString)("F3.32c — MimicLayoutsService against a liv
       "F3.32c",
     );
     fleetPool = await openIntegrationPool(url, "F3.32c");
+    // F3.78: jwtFor carries the real bms.users.id as sub (ADR 0089 decision 4).
+    await primeSeededSubjects(fleetPool);
     fleetDb = createDb(fleetPool);
 
     const org = async (code: string): Promise<string> => {

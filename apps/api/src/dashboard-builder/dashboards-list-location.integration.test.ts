@@ -25,6 +25,7 @@ import {
   assertUnknownLocationAnswersEmpty,
 } from "./dashboards-list-location.integration.spec";
 import { DashboardsService } from "./dashboards.service";
+import { primeSeededSubjects } from "../testing/seeded-subjects";
 
 /**
  * `F3.72` U0 — Vitest entry point for `GET /dashboards?locationId=`. Owns the
@@ -73,6 +74,8 @@ describe.skipIf(!connectionString)("F3.72 — GET /dashboards?locationId=", () =
       "F3.72",
     );
     fleetPool = await openIntegrationPool(url, "F3.72");
+    // F3.78: jwtFor carries the real bms.users.id as sub (ADR 0089 decision 4).
+    await primeSeededSubjects(fleetPool);
     fleetDb = createDb(fleetPool);
 
     const tenantDb = createDb(tenantPool);

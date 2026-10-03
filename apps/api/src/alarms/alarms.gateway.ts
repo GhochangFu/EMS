@@ -10,6 +10,7 @@ import { Namespace, Socket } from "socket.io";
 
 import { AccessControlService } from "../auth/access-control.service";
 import { JwtAuthGuard } from "../auth/jwt-auth.guard";
+import { SocketRegistry } from "../auth/socket-registry";
 import { MetricsService } from "../observability/metrics.service";
 
 @WebSocketGateway({
@@ -29,8 +30,16 @@ export class AlarmsGateway implements OnGatewayInit, OnGatewayConnection {
     private readonly metrics: MetricsService,
     private readonly jwtAuth: JwtAuthGuard,
     private readonly accessControl: AccessControlService,
+    private readonly sockets: SocketRegistry,
   ) {}
 
+  /**
+   * `F3.78` / ADR 0089 decision 8: `userId` is stored **immediately** after
+   * `verifyToken`, before the scope `await`, so a `bms_user_disabled` NOTIFY
+   * that lands during scope resolution finds this socket in the registry.
+   * After the scope is stored, one fresh `disabled_at` read closes the socket
+   * of a user deactivated before the socket could be found at all.
+   */
   async handleConnection(client: Socket): Promise<void> {
     const token = this.extractToken(client);
     if (!token) {
@@ -39,13 +48,19 @@ export class AlarmsGateway implements OnGatewayInit, OnGatewayConnection {
     }
     try {
       const payload = await this.jwtAuth.verifyToken(token);
+      const userId = this.accessControl.resolveUserId(payload);
+      client.data.userId = userId;
       client.data.assetIds = await this.accessControl.readableAssetIds(payload);
+      if (userId !== null && (await this.accessControl.isUserDisabled(userId))) {
+        client.disconnect(true);
+      }
     } catch {
       client.disconnect(true);
     }
   }
 
   afterInit(): void {
+    this.sockets.register(this.server);
     this.logger.log("WebSocket namespace /ws/alarms ready");
   }
 

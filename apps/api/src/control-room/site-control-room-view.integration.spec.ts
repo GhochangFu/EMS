@@ -8,6 +8,7 @@ import type { JwtPayload } from "@bms/shared";
 
 import { withTenant } from "../database/tenant-context";
 import type { SiteControlRoomViewService } from "./site-control-room-view.service";
+import { jwtFor, jwtForUnprovisioned } from "../testing/seeded-subjects";
 
 /**
  * `F3.67` — `SiteControlRoomViewService` against real, non-owner roles (plan
@@ -45,12 +46,12 @@ export type SiteViewCtx = {
   };
 };
 
-const SYNTHETIC_SUB = "00000000-0000-4000-8000-000000000367";
-
-/** A JWT whose `sub` matches no user: the service must resolve the actor by email. */
-export function jwtFor(email: string, role: JwtPayload["role"]): JwtPayload {
-  return { sub: SYNTHETIC_SUB, email, name: `integration:${email}`, role };
-}
+/**
+ * `F3.78` — the shared fixture subjects: `sub` is the user's real id (ADR 0089
+ * decision 4: local auth resolves `id = sub`). The wrapper primes them in
+ * `beforeAll`. Re-exported for this file's importers.
+ */
+export { jwtFor };
 
 export const ADMIN_EMAIL = "admin@bms.local";
 export const PHE_ADMIN_EMAIL = "phe-admin@bms.local";
@@ -228,7 +229,7 @@ export async function assertOutOfScopeWriteIsRefused(ctx: SiteViewCtx): Promise<
 /** S8 — an `operator` is refused master-data administration. */
 export async function assertOperatorIsRefused(ctx: SiteViewCtx): Promise<void> {
   const site = await newSite(ctx, ctx.phewbId, "s8");
-  const operator = jwtFor(`f367-operator-${ctx.run}@bms.local`, "operator");
+  const operator = jwtForUnprovisioned(`f367-operator-${ctx.run}@bms.local`, "operator");
   await expect(ctx.svc.putSetting(operator, site, { kind: "generated" })).rejects.toThrow(
     /Master data administration requires/,
   );
@@ -444,7 +445,7 @@ export async function assertAssetGroupAdminCannotResolveAnotherSite(ctx: SiteVie
  */
 export async function assertUngrantedPrincipalCannotResolve(ctx: SiteViewCtx): Promise<void> {
   const site = await newSite(ctx, ctx.phewbId, "s17");
-  const viewer = jwtFor(`f367-viewer-${ctx.run}@bms.local`, "viewer");
+  const viewer = jwtForUnprovisioned(`f367-viewer-${ctx.run}@bms.local`, "viewer");
   expect((await ctx.svc.resolve(admin(), site)).locationId).toBe(site);
   await expect(ctx.svc.resolve(viewer, site)).rejects.toThrow(
     /Location not found or outside your access scope/,

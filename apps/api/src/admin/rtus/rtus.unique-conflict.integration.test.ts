@@ -22,6 +22,7 @@ import {
   assertUpdateRefusesATakenRtuCode,
   type RtuUniqueConflictCtx,
 } from "./rtus.unique-conflict.integration.spec";
+import { jwtFor, primeSeededSubjects } from "../../testing/seeded-subjects";
 
 /**
  * `F4.60` / `F4.141` — Vitest entry point. Assertions live in the sibling
@@ -43,11 +44,6 @@ const connectionString = requireIntegrationDb({
 });
 
 const ORGANIZATION_ADMIN_EMAIL = "phe-admin@bms.local";
-const SYNTHETIC_SUB = "00000000-0000-4000-8000-000000000004";
-
-function jwtFor(email: string, role: JwtPayload["role"]): JwtPayload {
-  return { sub: SYNTHETIC_SUB, email, name: `integration:${email}`, role };
-}
 
 describe.skipIf(!connectionString)(
   "F4.60 / F4.141 — a duplicate on an rtus unique constraint is 409",
@@ -57,7 +53,7 @@ describe.skipIf(!connectionString)(
     let tenantPool: pg.Pool;
     let ctx: RtuUniqueConflictCtx;
 
-    const jwt = jwtFor(ORGANIZATION_ADMIN_EMAIL, "organization_admin");
+    let jwt: JwtPayload;
     const createdRtuIds: string[] = [];
 
     beforeAll(async () => {
@@ -67,6 +63,9 @@ describe.skipIf(!connectionString)(
       // across the tenant policy — under `FORCE ROW LEVEL SECURITY` a count as
       // `bms_owner` returns 0 with the rows present.
       fixturePool = await openIntegrationPool(url, "F4.60");
+      // F3.78: jwtFor carries the real bms.users.id as sub (ADR 0089 decision 4).
+      await primeSeededSubjects(fixturePool);
+      jwt = jwtFor(ORGANIZATION_ADMIN_EMAIL, "organization_admin");
       authPool = await openIntegrationPool(
         process.env.DATABASE_URL_AUTH ?? asRole(url, "bms_auth", "bms_auth_dev"),
         "F4.60",

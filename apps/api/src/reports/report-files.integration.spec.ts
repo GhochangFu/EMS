@@ -23,6 +23,7 @@ import { asRole } from "../testing/role-urls";
 import type { ReportFilesConfig } from "./report-files-config";
 import { OUT_OF_SCOPE_SENTENCE, ReportFilesService } from "./report-files.service";
 import { ReportsService } from "./reports.service";
+import { primeSeededSubjects } from "../testing/seeded-subjects";
 
 /**
  * `F3.5a` (ADR 0071 decisions 4, 5, 6, 11; Amendment 1 items 1–3) — the
@@ -75,11 +76,12 @@ import { ReportsService } from "./reports.service";
  * threshold or turn the third save's 409 into a refusal that proves nothing
  * about the cap.
  *
- * **`jwtFor` is usable here.** Its `sub` is a synthetic uuid that matches no
- * user; `ReportFilesService.resolveActorId`, `MasterDataAuditService.write`
- * and `AccessControlService.resolveDbUser` all fall through to the email, so
- * `created_by` and `audit_log.actor_id` resolve to the seeded user's real id
- * — which `auditRowsCarryIdsOnly` reads by email as its expectation.
+ * **`jwtFor` is usable here.** Since `F3.78` its `sub` is the seeded user's
+ * real `bms.users.id` (ADR 0089 decision 4: local auth resolves `id = sub`),
+ * primed by `openReportFileFixtures`; `ReportFilesService.resolveActorId`,
+ * `MasterDataAuditService.write` and `AccessControlService.resolveDbUser` all
+ * match it by id, so `created_by` and `audit_log.actor_id` resolve to that id —
+ * which `auditRowsCarryIdsOnly` reads by email as its expectation.
  */
 
 /** Everything the assertions need. Built once by the `.test.ts` lifecycle. */
@@ -770,6 +772,8 @@ export async function openReportFileFixtures(
     process.env.DATABASE_URL_TENANT ?? asRole(connectionString, "bms_tenant", "bms_tenant_dev"),
     label,
   );
+  // F3.78: jwtFor carries the real bms.users.id as sub (ADR 0089 decision 4).
+  await primeSeededSubjects(fleetPool);
   const fleetDb = createDb(fleetPool);
   const tenantDb = createDb(tenantPool);
 

@@ -18,6 +18,7 @@ import {
   ReportDispatchService,
   type ReportDispatchSummary,
 } from "./report-dispatch.service";
+import { nextRunAt } from "./report-period";
 
 /**
  * `F3.5b` U9 (ADR 0071 decision 8) — the dispatch tick against a real
@@ -114,13 +115,14 @@ async function insertSchedule(
   prefix: string,
   nextRunAt: Date,
   enabled: boolean,
+  createdBy: string | null = null,
 ): Promise<string> {
   const id = randomUUID();
   await executor.execute(sql`
     INSERT INTO bms.report_schedules
-      (id, organization_id, name, template_id, formats, cadence, run_at_local, timezone, location_ids, enabled, next_run_at)
+      (id, organization_id, name, template_id, formats, cadence, run_at_local, timezone, location_ids, enabled, next_run_at, created_by)
     VALUES
-      (${id}, ${organizationId}, ${`${prefix}-${id}`}, 'energy_consumption', ARRAY['pdf']::text[], 'daily', '00:30:00', 'Asia/Kolkata', '{}'::uuid[], ${enabled}, ${nextRunAt})
+      (${id}, ${organizationId}, ${`${prefix}-${id}`}, 'energy_consumption', ARRAY['pdf']::text[], 'daily', '00:30:00', 'Asia/Kolkata', '{}'::uuid[], ${enabled}, ${nextRunAt}, ${createdBy})
   `);
   return id;
 }
@@ -490,4 +492,69 @@ export function assertTheReleasedRowIsEnqueuedOnce(f: LockedFacts): void {
     mine.length === 1,
     `expected the positive control — the same tick with connection A released — to enqueue the fixture exactly once; got ${mine.length} (the skip above would otherwise pass on a row nothing could ever claim)`,
   );
+}
+
+// ---------------------------------------------------------------------------
+// aScheduleWhoseOwnerIsDeactivatedPauses (F3.78, ADR 0089 decision 8, plan D3)
+// ---------------------------------------------------------------------------
+
+export type OwnerDisabledFacts = {
+  readonly now: Date;
+  readonly pausedId: string;
+  readonly nullOwnerId: string;
+  readonly summary: ReportDispatchSummary;
+  readonly adds: readonly RecordedAdd[];
+  readonly after: ReadonlyMap<string, ScheduleRow>;
+};
+
+/**
+ * Two due rows on the case's transaction: one owned by a seeded user the
+ * transaction deactivates (`UPDATE … SET disabled_at`, rolled back with the
+ * case), one with a `NULL` owner. The claim's scalar subquery is what tells
+ * them apart; with it deleted both are enqueued.
+ */
+export async function runOwnerDisabledScenario(fx: DispatchIntegrationFixtures): Promise<OwnerDisabledFacts> {
+  let facts: OwnerDisabledFacts | undefined;
+  await withRollback(fx.fleetDb, async (tx) => {
+    const now = new Date();
+    const owner = await tx.execute(sql`SELECT id FROM bms.users WHERE email = 'wc-admin@bms.local'`);
+    const ownerId = (owner.rows[0] as { id: string } | undefined)?.id;
+    assert(ownerId !== undefined, "F3.78: the seeded wc-admin@bms.local user is missing — run pnpm db:seed");
+    await tx.execute(sql`UPDATE bms.users SET disabled_at = ${now} WHERE id = ${ownerId as string}`);
+    const due = new Date(now.getTime() - 3_600_000);
+    const pausedId = await insertSchedule(tx, fx.eskomId, "f3.78-paused", due, true, ownerId as string);
+    const nullOwnerId = await insertSchedule(tx, fx.eskomId, "f3.78-null-owner", due, true, null);
+    const { client, adds } = recordingClient();
+    const summary = await new ReportDispatchService(client).tick(tx, now);
+    const after = await readSchedules(tx, [pausedId, nullOwnerId]);
+    facts = { now, pausedId, nullOwnerId, summary, adds, after };
+    tx.rollback();
+  });
+  return facts as OwnerDisabledFacts;
+}
+
+export function assertThePausedScheduleIsNotEnqueued(f: OwnerDisabledFacts): void {
+  const mine = f.adds.filter((add) => add.data.scheduleId === f.pausedId);
+  assert(mine.length === 0, `expected no add for the schedule whose owner is deactivated; got ${mine.length}`);
+}
+
+export function assertThePausedScheduleIsCounted(f: OwnerDisabledFacts): void {
+  assert(
+    f.summary.skippedOwnerDisabled >= 1,
+    `expected skippedOwnerDisabled to count the paused schedule; got ${f.summary.skippedOwnerDisabled}`,
+  );
+}
+
+export function assertThePausedScheduleAdvancesToNextRunAt(f: OwnerDisabledFacts): void {
+  const row = f.after.get(f.pausedId);
+  const expected = nextRunAt({ cadence: "daily", runAtLocal: "00:30:00", timezone: "Asia/Kolkata" }, f.now).getTime();
+  assert(
+    row !== undefined && row.next_run_at.getTime() === expected && row.last_run_at === null,
+    `expected the paused schedule at nextRunAt(row, now) = ${new Date(expected).toISOString()} with last_run_at null; got ${JSON.stringify(row)}`,
+  );
+}
+
+export function assertANullOwnerScheduleIsStillEnqueued(f: OwnerDisabledFacts): void {
+  const mine = f.adds.filter((add) => add.data.scheduleId === f.nullOwnerId);
+  assert(mine.length === 1, `expected the NULL-owner schedule to be enqueued once; got ${mine.length}`);
 }

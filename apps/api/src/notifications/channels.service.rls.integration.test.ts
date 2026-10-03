@@ -21,6 +21,7 @@ import {
   assertSetRuleChannelsKeepsJoinsOutsideTheCallersScope,
   assertSetRuleChannelsRefusesCrossOrgChannel,
 } from "./channels.service.rls.integration.spec";
+import { primeSeededSubjects } from "../testing/seeded-subjects";
 
 /**
  * `E7.1c` (Task 7) — Vitest entry point. Assertions live in the sibling
@@ -72,6 +73,8 @@ describe.skipIf(!connectionString)(
         process.env.DATABASE_URL_AUTH ?? asRole(url, "bms_auth", "bms_auth_dev"),
         "E7.1c",
       );
+      // F3.78: jwtFor carries the real bms.users.id as sub (ADR 0089 decision 4).
+      await primeSeededSubjects(authPool);
       fleetDb = createDb(ownerPool);
     }, 60_000);
 

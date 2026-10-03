@@ -1,10 +1,10 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { or, eq } from "drizzle-orm";
 
-import { auditLog, users } from "@bms/db";
+import { auditLog } from "@bms/db";
 import type { BmsDb } from "@bms/db";
 import type { JwtPayload } from "@bms/shared";
 
+import { resolveActorId } from "../auth/identity-resolver";
 import { FLEET_DRIZZLE, TENANT_DRIZZLE } from "../database/database.tokens";
 
 export type AuditInput = {
@@ -108,15 +108,11 @@ export class MasterDataAuditService {
    * its `executor` changed, never the actor lookup.
    */
   async write(input: AuditInput, executor: BmsDb = this.db): Promise<void> {
-    const [actorRow] = await this.fleetDb
-      .select({ id: users.id })
-      .from(users)
-      .where(or(eq(users.id, input.actor.sub), eq(users.email, input.actor.email)))
-      .limit(1);
+    const actorId = await resolveActorId(this.fleetDb, input.actor);
 
     await executor.insert(auditLog).values({
       organizationId: input.organizationId,
-      actorId: actorRow?.id ?? null,
+      actorId,
       action: input.action,
       entityType: input.entityType,
       entityId: input.entityId,
@@ -166,12 +162,7 @@ export class MasterDataAuditService {
       );
     }
 
-    const [actorRow] = await this.fleetDb
-      .select({ id: users.id })
-      .from(users)
-      .where(or(eq(users.id, first.actor.sub), eq(users.email, first.actor.email)))
-      .limit(1);
-    const actorId = actorRow?.id ?? null;
+    const actorId = await resolveActorId(this.fleetDb, first.actor);
 
     // Chunked: `pg` binds one parameter per column per row, and Postgres refuses
     // a statement with more than 65,535 of them. Seven columns × 20,000 rows

@@ -39,6 +39,7 @@ import {
   assertUngrantedPrincipalCannotResolve,
 } from "./site-control-room-view.integration.spec";
 import { SiteControlRoomViewService } from "./site-control-room-view.service";
+import { primeSeededSubjects } from "../testing/seeded-subjects";
 
 /**
  * `F3.67` — Vitest entry point for `SiteControlRoomViewService` under real RLS
@@ -98,6 +99,8 @@ describe.skipIf(!connectionString)("F3.67 — SiteControlRoomViewService under r
   beforeAll(async () => {
     const url = connectionString as string;
     fleetPool = await openIntegrationPool(url, "F3.67");
+    // F3.78: jwtFor carries the real bms.users.id as sub (ADR 0089 decision 4).
+    await primeSeededSubjects(fleetPool);
     authPool = await openIntegrationPool(
       process.env.DATABASE_URL_AUTH ?? asRole(url, "bms_auth", "bms_auth_dev"),
       "F3.67",

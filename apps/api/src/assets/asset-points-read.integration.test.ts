@@ -25,6 +25,7 @@ import {
 } from "./asset-points-read.integration.spec";
 import { openIntegrationPool, requireIntegrationDb } from "../testing/integration-db-gate";
 import { asRole } from "../testing/role-urls";
+import { primeSeededSubjects } from "../testing/seeded-subjects";
 
 /**
  * `F3.63` (ADR 0047 Amendment 6 §Q1 point 3) — Vitest entry point. Assertions
@@ -63,6 +64,8 @@ describe.skipIf(!connectionString)("F3.63 — the asset point read beside the ma
       process.env.DATABASE_URL_AUTH ?? asRole(url, "bms_auth", "bms_auth_dev"),
       "F3.63",
     );
+    // F3.78: jwtFor carries the real bms.users.id as sub (ADR 0089 decision 4).
+    await primeSeededSubjects(authPool);
     pools = { pool, authDb: createDb(authPool), fleetDb: createDb(pool) };
     fx = await createFixture(pools);
   });

@@ -4,9 +4,9 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { and, asc, desc, eq, inArray, or } from "drizzle-orm";
+import { and, asc, desc, eq, inArray } from "drizzle-orm";
 
-import { alarms, assets, auditLog, users, workOrders } from "@bms/db";
+import { alarms, assets, auditLog, workOrders } from "@bms/db";
 import type { BmsDb } from "@bms/db";
 import type {
   JwtPayload,
@@ -15,6 +15,7 @@ import type {
   WorkOrderStatus,
 } from "@bms/shared";
 
+import { resolveActorId } from "../auth/identity-resolver";
 import { FLEET_DRIZZLE, TENANT_DRIZZLE } from "../database/database.tokens";
 import { withTenant, type BmsTx } from "../database/tenant-context";
 import { withReadScope } from "../database/tenant-read-scope";
@@ -112,12 +113,8 @@ export class WorkOrdersService {
   private async resolveActorId(
     actor: Pick<JwtPayload, "sub" | "email">,
   ): Promise<string | null> {
-    const [actorRow] = await this.fleetDb
-      .select({ id: users.id })
-      .from(users)
-      .where(or(eq(users.id, actor.sub), eq(users.email, actor.email)))
-      .limit(1);
-    return actorRow?.id ?? null;
+    // F3.78: by subject (or local id), never by email — the shared resolver.
+    return resolveActorId(this.fleetDb, actor);
   }
 
   /**

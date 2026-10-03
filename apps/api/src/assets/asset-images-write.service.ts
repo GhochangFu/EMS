@@ -8,15 +8,16 @@ import {
   PayloadTooLargeException,
   ServiceUnavailableException,
 } from "@nestjs/common";
-import { and, count, eq, or } from "drizzle-orm";
+import { and, count, eq } from "drizzle-orm";
 import { createHash, randomUUID } from "node:crypto";
 
-import { assetImages, assets, users } from "@bms/db";
+import { assetImages, assets } from "@bms/db";
 import type { BmsDb } from "@bms/db";
 import { assetImageContentTypeSchema, MAX_ASSET_IMAGE_BYTES, MAX_ASSET_IMAGES_PER_ASSET } from "@bms/shared";
 import type { AssetImageDto, JwtPayload } from "@bms/shared";
 
 import { MasterDataAuditService } from "../admin/master-data-audit.service";
+import { resolveActorId } from "../auth/identity-resolver";
 import { FLEET_DRIZZLE, TENANT_DRIZZLE } from "../database/database.tokens";
 import { withTenant } from "../database/tenant-context";
 import type { BmsTx } from "../database/tenant-context";
@@ -341,14 +342,9 @@ export class AssetImagesWriteService {
     return row.organizationId;
   }
 
-  /** `created_by`: the `bms.users.id` the way `MasterDataAuditService.write` resolves its actor — on the fleet pool, `null` when absent. */
+  /** `created_by`: the `bms.users.id` by subject (or local id), never by email — the shared resolver on the fleet pool, `null` when absent (F3.78). */
   private async resolveActorId(jwt: JwtPayload): Promise<string | null> {
-    const [row] = await this.fleetDb
-      .select({ id: users.id })
-      .from(users)
-      .where(or(eq(users.id, jwt.sub), eq(users.email, jwt.email)))
-      .limit(1);
-    return row?.id ?? null;
+    return resolveActorId(this.fleetDb, jwt);
   }
 }
 

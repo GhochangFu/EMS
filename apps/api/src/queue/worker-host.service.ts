@@ -171,7 +171,7 @@ export class WorkerHostService implements OnModuleInit, OnModuleDestroy {
     const dispatch = runProcessor(reportsDispatchQueue, dbs, async (_payload, ctx) => {
       const s = await this.reportDispatch.tick(ctx.db);
       this.logger.log(
-        `reports-dispatch finished: due=${s.due} enqueued=${s.enqueued} skippedInvalid=${s.skippedInvalid} durationMs=${s.durationMs}`,
+        `reports-dispatch finished: due=${s.due} enqueued=${s.enqueued} skippedInvalid=${s.skippedInvalid} skippedOwnerDisabled=${s.skippedOwnerDisabled} durationMs=${s.durationMs}`,
       );
     });
     const render = runProcessor(reportsRenderQueue, dbs, async (payload, ctx) => {

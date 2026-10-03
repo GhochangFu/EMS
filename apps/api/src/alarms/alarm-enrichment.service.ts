@@ -1,10 +1,11 @@
 import { BadRequestException, Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, eq, inArray, or } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 
-import { alarmAffectedAssets, alarmEnrichments, alarms, auditLog, users } from "@bms/db";
+import { alarmAffectedAssets, alarmEnrichments, alarms, auditLog } from "@bms/db";
 import type { BmsDb } from "@bms/db";
 import type { JwtPayload } from "@bms/shared";
 
+import { resolveActorId } from "../auth/identity-resolver";
 import { FLEET_DRIZZLE, TENANT_DRIZZLE } from "../database/database.tokens";
 import { withTenant } from "../database/tenant-context";
 import { VocabulariesService } from "../vocabularies/vocabularies.service";
@@ -87,12 +88,7 @@ export class AlarmEnrichmentService {
 
     const organizationId = await this.resolveAlarmOrg(alarmId, assetIds);
 
-    const [actorRow] = await this.fleetDb
-      .select({ id: users.id })
-      .from(users)
-      .where(or(eq(users.id, actor.sub), eq(users.email, actor.email)))
-      .limit(1);
-    const dbActorId = actorRow?.id ?? null;
+    const dbActorId = await resolveActorId(this.fleetDb, actor);
 
     await withTenant(this.db, organizationId, async (tx) => {
       const fields: Partial<typeof alarmEnrichments.$inferInsert> = {};

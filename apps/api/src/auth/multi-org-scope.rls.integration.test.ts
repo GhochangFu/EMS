@@ -10,6 +10,7 @@ import { asRole } from "../testing/role-urls";
 import { AccessControlService } from "./access-control.service";
 import { jwtFor } from "./access-control.integration.spec";
 import { assertTwoOrgActorScopeIsBoundedUnion } from "./multi-org-scope.rls.integration.spec";
+import { primeSeededSubjects, rememberSubject } from "../testing/seeded-subjects";
 
 /**
  * `E7.1b` — Vitest entry point. Assertions live in the sibling `.spec`
@@ -77,6 +78,8 @@ describe.skipIf(!connectionString)("E7.1b — multi-org actor scope under real R
       process.env.DATABASE_URL_AUTH ?? asRole(url, "bms_auth", "bms_auth_dev"),
       "E7.1b",
     );
+    // F3.78: jwtFor carries the real bms.users.id as sub (ADR 0089 decision 4).
+    await primeSeededSubjects(ownerPool);
     // The superuser connection (see superuserConnectionString above) — the only
     // role that can seed the identity fixture under FORCE.
     superPool = await openIntegrationPool(superuserConnectionString as string, "E7.1b");
@@ -108,13 +111,15 @@ describe.skipIf(!connectionString)("E7.1b — multi-org actor scope under real R
 
     // The two-org actor. Home org is one of the two (arbitrary — scope comes from
     // the grants below, not the home column). password_hash is required but
-    // unused: this test never authenticates, it resolves scope by email.
+    // unused: this test never authenticates. Its token carries this row's id as
+    // `sub` (F3.78, `rememberSubject` below), which is how scope is resolved.
     const user = await superPool.query<{ id: string }>(
       `INSERT INTO bms.users (email, password_hash, display_name, role, organization_id)
          VALUES ($1, 'unused-not-a-login-test', $2, 'organization_admin', $3) RETURNING id`,
       [ACTOR_EMAIL, "E7.1b multi-org actor", orgAId],
     );
     userId = user.rows[0]!.id;
+    rememberSubject(ACTOR_EMAIL, userId);
 
     await superPool.query(
       `INSERT INTO bms.user_organization_access (user_id, organization_id) VALUES ($1, $2), ($1, $3)`,

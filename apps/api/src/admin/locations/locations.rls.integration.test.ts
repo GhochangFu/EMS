@@ -24,6 +24,7 @@ import {
   assertUpdateRefusesAnUnknownTypeWithA400,
   assertWriteLifecycleSurvivesRealRls,
 } from "./locations.rls.integration.spec";
+import { jwtFor, primeSeededSubjects } from "../../testing/seeded-subjects";
 
 /**
  * `F4.16` Task 8 — Vitest entry point. Assertions live in the sibling `.spec`
@@ -42,7 +43,6 @@ const connectionString = requireIntegrationDb({
 const ORGANIZATION_ADMIN_EMAIL = "phe-admin@bms.local";
 /** `asset_group_admin` in `bms.users` — refused by `requireMasterDataUser`. */
 const ASSET_GROUP_ADMIN_EMAIL = "wc-hvac-admin@bms.local";
-const SYNTHETIC_SUB = "00000000-0000-4000-8000-000000000001";
 
 /** Every location code family this suite commits, for the stale sweep below. */
 const LOCATION_FAMILIES = ["F4.16-RLS-%", "E71B-LOC-GUARD-%", "F4157-LT-%"];
@@ -109,10 +109,6 @@ async function sweepStaleRuns(pool: pg.Pool): Promise<void> {
   }
 }
 
-function jwtFor(email: string): JwtPayload {
-  return { sub: SYNTHETIC_SUB, email, name: `integration:${email}`, role: "organization_admin" };
-}
-
 describe.skipIf(!connectionString)("F4.16 — LocationsAdminService under real RLS", () => {
   let ownerPool: pg.Pool;
   let authPool: pg.Pool;
@@ -123,7 +119,7 @@ describe.skipIf(!connectionString)("F4.16 — LocationsAdminService under real R
   let secondOrganizationId: string;
   const createdIds: string[] = [];
 
-  const jwt = jwtFor(ORGANIZATION_ADMIN_EMAIL);
+  let jwt: JwtPayload;
 
   beforeAll(async () => {
     const url = connectionString as string;
@@ -140,6 +136,9 @@ describe.skipIf(!connectionString)("F4.16 — LocationsAdminService under real R
       process.env.DATABASE_URL_FLEET ?? asRole(url, "bms_fleet", "bms_fleet_dev"),
       "F4.16",
     );
+    // F3.78: jwtFor carries the real bms.users.id as sub (ADR 0089 decision 4).
+    await primeSeededSubjects(fleetPool);
+    jwt = jwtFor(ORGANIZATION_ADMIN_EMAIL, "organization_admin");
 
     await sweepStaleRuns(ownerPool);
 
@@ -253,7 +252,7 @@ describe.skipIf(!connectionString)("F4.16 — LocationsAdminService under real R
 
   it("F4.157 L3 — listLocationTypes refuses a non-master-data user with a 403", async () => {
     await assertListLocationTypesRefusesANonMasterDataUser(svc, {
-      ...jwtFor(ASSET_GROUP_ADMIN_EMAIL),
+      ...jwtFor(ASSET_GROUP_ADMIN_EMAIL, "organization_admin"),
       role: "asset_group_admin",
     });
   });

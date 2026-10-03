@@ -50,6 +50,19 @@ const ASSET_FOREIGN = "68686868-6868-4686-8686-686868686868";
 const CREATED_AT = new Date("2026-09-21T10:00:00.000Z");
 const CAP = 50;
 export const JWT: JwtPayload = { sub: ACTOR_ID, email: "admin@bms.local", name: "Admin", role: "admin" };
+
+// F3.78: the actor lookup is the shared resolveIdentity, whose projection is the
+// seven identity columns (identity-resolver.ts), keyed here by their sorted names.
+const IDENTITY_SHAPE = "disabledAt,displayName,email,id,oidcSubject,organizationId,role";
+const IDENTITY_ROW = {
+  id: ACTOR_ID,
+  email: "admin@bms.local",
+  displayName: "Admin",
+  role: "admin",
+  organizationId: null,
+  oidcSubject: null,
+  disabledAt: null,
+};
 const PDF_BYTES = Buffer.from("%PDF-1.4 fake report bytes");
 const XLSX_BYTES = Buffer.from("PK fake workbook bytes");
 const PDF_TYPE = "application/pdf";
@@ -269,7 +282,7 @@ export function harness(scenario: Scenario = {}): Harness {
           (scenario.organizationLocations ?? [WC, OTHER_LOCATION]).map((locationId) => ({ locationId })),
         );
       }
-      if (shape === "actorId") return chain(async () => [{ actorId: ACTOR_ID }]);
+      if (shape === IDENTITY_SHAPE) return chain(async () => [IDENTITY_ROW]);
       if (shape === "organizationId") {
         return chain(async () => {
           calls.push("fleet:organizationExists");

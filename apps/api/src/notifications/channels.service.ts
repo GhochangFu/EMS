@@ -6,7 +6,7 @@ import {
   Injectable,
   Logger,
 } from "@nestjs/common";
-import { and, desc, eq, inArray, or, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, sql } from "drizzle-orm";
 
 import type { BmsDb } from "@bms/db";
 import {
@@ -15,7 +15,6 @@ import {
   notificationChannels,
   notificationDeliveries,
   ruleNotifications,
-  users,
 } from "@bms/db";
 import type {
   JwtPayload,
@@ -26,6 +25,7 @@ import type {
 } from "@bms/shared";
 
 import { AccessControlService } from "../auth/access-control.service";
+import { resolveActorId } from "../auth/identity-resolver";
 import { FLEET_DRIZZLE, TENANT_DRIZZLE } from "../database/database.tokens";
 import { withTenant } from "../database/tenant-context";
 import { CredentialCryptoService } from "../security/credential-crypto.service";
@@ -824,15 +824,11 @@ export class ChannelsService {
     organizationId: string | null,
     payload: Record<string, unknown>,
   ): Promise<void> {
-    const [actorRow] = await this.fleetDb
-      .select({ id: users.id })
-      .from(users)
-      .where(or(eq(users.id, actor.sub), eq(users.email, actor.email)))
-      .limit(1);
+    const actorId = await resolveActorId(this.fleetDb, actor);
 
     await this.fleetDb.insert(auditLog).values({
       organizationId,
-      actorId: actorRow?.id ?? null,
+      actorId,
       action,
       entityType: "notification_channel",
       entityId,

@@ -3,6 +3,7 @@ import type pg from "pg";
 import type { JwtPayload, TelemetryEntryRow } from "@bms/shared";
 
 import type { TelemetryWriteService } from "./telemetry-write.service";
+import { jwtFor, primeSeededSubjects } from "../../testing/seeded-subjects";
 
 /** All rows this suite creates carry this asset code prefix. */
 export const TEST_ASSET_PREFIX = "F18-WRITE-TEST-";
@@ -88,6 +89,8 @@ export async function cleanup(pool: pg.Pool, prefix: string = TEST_ASSET_PREFIX)
  * the other's fresh asset mid-run.
  */
 export async function loadFixtures(pool: pg.Pool, prefix: string = TEST_ASSET_PREFIX): Promise<Fixtures> {
+  // F3.78: the payloads below carry the real bms.users.id as sub (ADR 0089 decision 4).
+  await primeSeededSubjects(pool);
   const { rows: grants } = await pool.query<{ organization_id: string; location_id: string }>(
     `SELECT l.organization_id, l.id AS location_id
        FROM bms.users u
@@ -201,18 +204,8 @@ export async function loadFixtures(pool: pg.Pool, prefix: string = TEST_ASSET_PR
   }
 
   return {
-    adminJwt: {
-      sub: "00000000-0000-4000-8000-000000000000",
-      email: "admin@bms.local",
-      name: "integration:admin",
-      role: "admin",
-    },
-    scopedJwt: {
-      sub: "00000000-0000-4000-8000-000000000000",
-      email: "wc-admin@bms.local",
-      name: "integration:location-admin",
-      role: "location_admin",
-    },
+    adminJwt: jwtFor("admin@bms.local", "admin"),
+    scopedJwt: jwtFor("wc-admin@bms.local", "location_admin"),
     outOfScopeAssetId: foreignRows[0].id,
     existingMeasured: {
       assetId: existing.asset_id,

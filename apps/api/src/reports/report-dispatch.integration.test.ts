@@ -2,6 +2,12 @@ import { afterAll, beforeAll, describe, it } from "vitest";
 
 import { requireIntegrationDb } from "../testing/integration-db-gate";
 import {
+  assertANullOwnerScheduleIsStillEnqueued,
+  assertThePausedScheduleAdvancesToNextRunAt,
+  assertThePausedScheduleIsCounted,
+  assertThePausedScheduleIsNotEnqueued,
+  runOwnerDisabledScenario,
+  type OwnerDisabledFacts,
   assertBothDueRowsAdvancedStrictlyPastNow,
   assertBothDueRowsStampLastRunAtNow,
   assertBothDueRowsWereEnqueuedOnce,
@@ -76,6 +82,30 @@ describe.skipIf(!connectionString)("F3.5b — ReportDispatchService.tick against
 
     it("leaves the not-due row neither enqueued nor advanced", () => {
       assertTheNotDueRowIsUntouched(facts);
+    });
+  });
+
+  describe("aScheduleWhoseOwnerIsDeactivatedPauses (F3.78, ADR 0089 decision 8)", () => {
+    let facts: OwnerDisabledFacts;
+
+    beforeAll(async () => {
+      facts = await runOwnerDisabledScenario(fx);
+    });
+
+    it("does not enqueue the schedule whose owner is deactivated", () => {
+      assertThePausedScheduleIsNotEnqueued(facts);
+    });
+
+    it("counts it skippedOwnerDisabled", () => {
+      assertThePausedScheduleIsCounted(facts);
+    });
+
+    it("advances it to nextRunAt(row, now) and leaves last_run_at null", () => {
+      assertThePausedScheduleAdvancesToNextRunAt(facts);
+    });
+
+    it("still enqueues a schedule with a NULL owner", () => {
+      assertANullOwnerScheduleIsStillEnqueued(facts);
     });
   });
 

@@ -7,6 +7,7 @@ import type {
 } from "@bms/shared";
 
 import type { AssetTemplatesAdminService } from "./asset-templates.service";
+import { jwtFor, primeSeededSubjects } from "../../testing/seeded-subjects";
 
 /**
  * `F2.2` — template instantiation against a real database (ADR 0015 §6/§7 as
@@ -128,6 +129,8 @@ export async function cleanup(pool: pg.Pool): Promise<void> {
  * deploy-but-cannot-author split without needing two templates.
  */
 export async function loadFixtures(pool: pg.Pool): Promise<Fixtures> {
+  // F3.78: the payloads below carry the real bms.users.id as sub (ADR 0089 decision 4).
+  await primeSeededSubjects(pool);
   const { rows: grants } = await pool.query<{ organization_id: string; location_id: string }>(
     `SELECT l.organization_id, l.id AS location_id
        FROM bms.users u
@@ -193,18 +196,8 @@ export async function loadFixtures(pool: pg.Pool): Promise<Fixtures> {
     otherLocationId: otherRows[0].id,
     foreignLocationId: foreignRows[0].id,
     inactiveLocationId: inactiveRows[0].id,
-    adminJwt: {
-      sub: "00000000-0000-4000-8000-000000000000",
-      email: "admin@bms.local",
-      name: "integration:admin",
-      role: "admin",
-    },
-    locationAdminJwt: {
-      sub: "00000000-0000-4000-8000-000000000000",
-      email: "wc-admin@bms.local",
-      name: "integration:location-admin",
-      role: "location_admin",
-    },
+    adminJwt: jwtFor("admin@bms.local", "admin"),
+    locationAdminJwt: jwtFor("wc-admin@bms.local", "location_admin"),
   };
 }
 

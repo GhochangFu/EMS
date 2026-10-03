@@ -25,6 +25,7 @@ import {
   assertUnknownSectionIsA400NamingTheLiveSet,
 } from "./dashboard-templates.service.rls.integration.spec";
 import { DashboardTemplatesService } from "./dashboard-templates.service";
+import { primeSeededSubjects } from "../../testing/seeded-subjects";
 
 /**
  * `F3.36` Part E1 — Vitest entry point. Assertions live in the sibling `.spec`
@@ -86,6 +87,8 @@ describe.skipIf(!connectionString)(
         process.env.DATABASE_URL_AUTH ?? asRole(url, "bms_auth", "bms_auth_dev"),
         "F3.36",
       );
+      // F3.78: jwtFor carries the real bms.users.id as sub (ADR 0089 decision 4).
+      await primeSeededSubjects(authPool);
       fleetDb = createDb(await openIntegrationPool(url, "F3.36"));
 
       const eskom = await ownerPool.query<{ id: string }>(

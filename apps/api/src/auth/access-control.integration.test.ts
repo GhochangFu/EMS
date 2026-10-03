@@ -12,11 +12,13 @@ import {
   assertDbRoleBeatsJwtClaim,
   assertFixturesPresent,
   assertGlobalAdminScope,
+  assertJwtForFailsClosed,
   assertLocationManagementIsFlat,
   assertLocationScope,
   assertOrganizationScope,
   assertUngrantedRolesFailClosed,
   assertUnprovisionedTokenBehaviour,
+  primeSeededSubjects,
 } from "./access-control.integration.spec";
 import {
   openIntegrationPool,
@@ -78,6 +80,12 @@ const connectionString = requireIntegrationDb({
     "the pipeline, do not relax this guard.",
 });
 
+// F3.78 — DB-free, so it runs with or without DATABASE_URL: a suite that forgot
+// to prime must go red, never fall silently to the claim.
+it("F3.78 — jwtFor throws for an email primeSeededSubjects never read", () => {
+  assertJwtForFailsClosed();
+});
+
 describe.skipIf(!connectionString)("F4.10 — access control against a real database", () => {
   let pool: pg.Pool | undefined;
   let svc: AccessControlService;
@@ -87,6 +95,8 @@ describe.skipIf(!connectionString)("F4.10 — access control against a real data
     pool = created;
     const db = createDb(created);
     svc = new AccessControlService(db, db);
+    // F3.78: jwtFor carries the real bms.users.id as sub (ADR 0089 decision 4).
+    await primeSeededSubjects(created);
   });
 
   afterAll(async () => {

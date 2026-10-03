@@ -19,6 +19,7 @@ import {
   assertSetDefaultsRefusesAForeignProfileWith400,
   assertStepAndChannelJoinIsolatedFromOtherTenant,
 } from "./escalation-profiles.rls.integration.spec";
+import { primeSeededSubjects } from "../testing/seeded-subjects";
 
 /**
  * `F3.10` U8 — Vitest entry point. Assertions live in the sibling `.spec`
@@ -72,6 +73,8 @@ describe.skipIf(!connectionString)(
         process.env.DATABASE_URL_AUTH ?? asRole(url, "bms_auth", "bms_auth_dev"),
         "F3.10",
       );
+      // F3.78: jwtFor carries the real bms.users.id as sub (ADR 0089 decision 4).
+      await primeSeededSubjects(authPool);
       fleetDb = createDb(ownerPool);
       tenantDb = createDb(tenantPool);
 

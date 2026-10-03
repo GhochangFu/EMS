@@ -24,6 +24,7 @@ import {
   twoTabsSwapTheirKeys,
   type TabsFixture,
 } from "./dashboards.service.tabs.integration.spec";
+import { primeSeededSubjects } from "../testing/seeded-subjects";
 
 /**
  * `F3.73` Task 1.4 — Vitest entry point. Assertions live in the sibling `.spec` (ADR 0014); this
@@ -54,6 +55,8 @@ describe.skipIf(!connectionString)("F3.73 — DashboardsService tabs against a r
     const url = connectionString as string;
     const POOL = { max: 2 } as const;
     fleetPool = await openIntegrationPool(url, "F3.73", POOL);
+    // F3.78: jwtFor carries the real bms.users.id as sub (ADR 0089 decision 4).
+    await primeSeededSubjects(fleetPool);
     superuserPool = await openIntegrationPool(resolveIntegrationRoleUrl(url, "superuser", process.env), "F3.73", POOL);
     tenantPool = await openIntegrationPool(
       process.env.DATABASE_URL_TENANT ?? asRole(url, "bms_tenant", "bms_tenant_dev"),

@@ -38,6 +38,7 @@ import {
   assertUnregisteredSampleDoesNotMakeLive,
 } from "./generated-site-view.integration.spec";
 import { GeneratedSiteViewService } from "./generated-site-view.service";
+import { primeSeededSubjects } from "../testing/seeded-subjects";
 
 /**
  * `F3.68` — Vitest entry point for `GeneratedSiteViewService` against a real
@@ -66,6 +67,8 @@ describe.skipIf(!connectionString)("F3.68 — GeneratedSiteViewService", () => {
   beforeAll(async () => {
     const url = connectionString as string;
     fleetPool = await openIntegrationPool(url, "F3.68");
+    // F3.78: jwtFor carries the real bms.users.id as sub (ADR 0089 decision 4).
+    await primeSeededSubjects(fleetPool);
     authPool = await openIntegrationPool(
       process.env.DATABASE_URL_AUTH ?? asRole(url, "bms_auth", "bms_auth_dev"),
       "F3.68",

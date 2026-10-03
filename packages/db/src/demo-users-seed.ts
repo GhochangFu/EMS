@@ -101,9 +101,11 @@ export const WC_ADMIN_LOCATION_KEY = "rsmoc-western-cape";
  * looked up here: `westernCapeId` is the row `seedEskomLocations` resolved for
  * RSMOC-WC (`seed.ts` passes it, owner ruling 17), or `null` when no row is the
  * seed's. The grants it writes,
- * `user_location_access` and `user_asset_group_access`, carry no policy today, so
- * BYPASSRLS is transparent for them; were either ever policied, this path would
- * silently bypass it and would need revisiting.
+ * `user_location_access` and `user_asset_group_access`, are `FORCE`-policied by
+ * `0098` (F3.78 / ADR 0089 decision 10), keyed on the location's and the asset
+ * group's organization. This path runs on the superuser connection and bypasses
+ * that policy by design: the seed writes fixed demo grants before any tenant
+ * context exists, and the rows it writes are in the ESKOM organization anyway.
  */
 export async function seedScopedDemoUsers(
   db: BmsDb,

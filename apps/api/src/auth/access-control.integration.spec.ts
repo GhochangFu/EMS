@@ -1,9 +1,10 @@
 import { ForbiddenException } from "@nestjs/common";
 import type pg from "pg";
 
-import type { JwtPayload, UserRole } from "@bms/shared";
+import type { UserRole } from "@bms/shared";
 
 import type { AccessControlService } from "./access-control.service";
+import { jwtFor, jwtForUnprovisioned, SEEDED, SYNTHETIC_SUB } from "../testing/seeded-subjects";
 
 /**
  * `F4.10` — access-control assertions that only a real database can make.
@@ -31,29 +32,14 @@ import type { AccessControlService } from "./access-control.service";
  * database that is actually clean — CI's.
  */
 
-/** Emails seeded by `packages/db/src/seed.ts`, one per read-scope source. */
-export const SEEDED = {
-  globalAdmin: "admin@bms.local",
-  organizationAdmin: "phe-admin@bms.local",
-  locationAdmin: "wc-admin@bms.local",
-  assetGroupAdmin: "wc-hvac-admin@bms.local",
-} as const;
-
-/**
- * Builds a token payload. `sub` is deliberately a value that matches no user
- * row, so `resolveDbUser` is forced down its email branch — the branch every
- * real OIDC token takes, since Keycloak's `sub` is not a `bms.users.id`.
- */
-export const SYNTHETIC_SUB = "00000000-0000-4000-8000-000000000000";
-
-export function jwtFor(email: string, role: UserRole): JwtPayload {
-  return {
-    sub: SYNTHETIC_SUB,
-    email,
-    name: `integration:${email}`,
-    role,
-  };
-}
+export {
+  assertJwtForFailsClosed,
+  jwtFor,
+  jwtForUnprovisioned,
+  primeSeededSubjects,
+  SEEDED,
+  SYNTHETIC_SUB,
+} from "../testing/seeded-subjects";
 
 const ids = (rows: { id: string }[]): Set<string> => new Set(rows.map((r) => r.id));
 
@@ -164,7 +150,7 @@ export async function assertFixturesPresent(pool: pg.Pool): Promise<void> {
     );
   }
 
-  // `jwtFor` asserts in prose that SYNTHETIC_SUB matches no user row, and every
+  // `jwtForUnprovisioned` assumes SYNTHETIC_SUB matches no user row, and every
   // negative control in this file depends on it. Prove it rather than trust it:
   // a collision would silently resolve the wrong user everywhere at once.
   if (Number(row2?.sub_collision ?? 0) !== 0) {
@@ -561,9 +547,11 @@ export async function assertDbRoleBeatsJwtClaim(svc: AccessControlService): Prom
  * of — **ADR 0044's decision, not the pre-0044 behaviour this test used to
  * pin.**
  *
- * `resolveDbUser` still falls back to the claim when neither `sub` nor
- * `email` matches, for every role except `admin`. That fallback is
- * load-bearing for a real reason: it is what lets the operator/viewer
+ * `resolveDbUser` still falls back to the claim when the token matches no
+ * row, for every role except `admin`. `jwtForUnprovisioned` builds that token:
+ * its `sub` is `SYNTHETIC_SUB` and its email is seeded nowhere, so it matches
+ * no row under today's id-or-email lookup and under ADR 0089's `id = sub`.
+ * That fallback is load-bearing for a real reason: it is what lets the operator/viewer
  * fail-closed checks above run without seeding those roles, and what lets a
  * freshly federated OIDC principal reach the app — with a correctly empty
  * scope — before a local row exists.
@@ -582,7 +570,7 @@ export async function assertDbRoleBeatsJwtClaim(svc: AccessControlService): Prom
 export async function assertUnprovisionedTokenBehaviour(
   svc: AccessControlService,
 ): Promise<void> {
-  const ghost = jwtFor("deprovisioned-admin@integration.invalid", "admin");
+  const ghost = jwtForUnprovisioned("deprovisioned-admin@integration.invalid", "admin");
   await expectForbidden(
     () => svc.currentUser(ghost),
     "an unprovisioned admin token must be refused (ADR 0044), not resolved to a global scope",
@@ -590,7 +578,7 @@ export async function assertUnprovisionedTokenBehaviour(
 
   // The non-admin half of the same fallback must still work — ADR 0044 closes
   // only the admin branch, on purpose.
-  const nonAdminGhost = jwtFor("unprovisioned-viewer@integration.invalid", "viewer");
+  const nonAdminGhost = jwtForUnprovisioned("unprovisioned-viewer@integration.invalid", "viewer");
   const { user, scope } = await svc.currentUser(nonAdminGhost);
   if (user.role !== "viewer" || scope.kind !== "none") {
     throw new Error(
@@ -610,9 +598,9 @@ export async function assertUngrantedRolesFailClosed(
   svc: AccessControlService,
 ): Promise<void> {
   for (const role of ["operator", "viewer"] as const) {
-    // An email with no bms.users row: resolveDbUser falls back to the claim, so
+    // A token with no bms.users row: resolveDbUser falls back to the claim, so
     // the role is honoured while every grant lookup returns nothing.
-    const jwt = jwtFor(`no-grants-${role}@integration.invalid`, role);
+    const jwt = jwtForUnprovisioned(`no-grants-${role}@integration.invalid`, role);
     const { scope } = await svc.currentUser(jwt);
     if (scope.kind !== "none") {
       throw new Error(
@@ -631,7 +619,7 @@ export async function assertUngrantedRolesFailClosed(
   }
 
   // ADR 0017's gate, resolved through the same path the controllers use.
-  const viewer = jwtFor("no-grants-viewer@integration.invalid", "viewer");
+  const viewer = jwtForUnprovisioned("no-grants-viewer@integration.invalid", "viewer");
   for (const writeClass of ["configuration", "operational"] as const) {
     await expectForbidden(
       () => svc.assertOperationsWriteRole(viewer, writeClass),
@@ -639,7 +627,7 @@ export async function assertUngrantedRolesFailClosed(
     );
   }
 
-  const operator = jwtFor("no-grants-operator@integration.invalid", "operator");
+  const operator = jwtForUnprovisioned("no-grants-operator@integration.invalid", "operator");
   await expectForbidden(
     () => svc.assertOperationsWriteRole(operator, "configuration"),
     "operator performing a configuration write (ADR 0017)",
@@ -975,11 +963,11 @@ export async function assertCanManageDashboard(
     );
   }
 
-  // viewer / operator: false, always — not thrown. An unprovisioned email so
+  // viewer / operator: false, always — not thrown. An unprovisioned token so
   // resolveDbUser falls back to the claim (ADR 0017/0044) rather than
   // resolving a seeded admin/org-admin row that would make this vacuous.
   for (const role of ["viewer", "operator"] as const) {
-    const jwt = jwtFor(`f3.1b-no-grants-${role}@integration.invalid`, role);
+    const jwt = jwtForUnprovisioned(`f3.1b-no-grants-${role}@integration.invalid`, role);
     if (await svc.canManageDashboard(jwt, orgAId, { locationId: locId, assetGroupId: null, assetId: null })) {
       throw new Error(`${role} must be refused canManageDashboard on any scope`);
     }

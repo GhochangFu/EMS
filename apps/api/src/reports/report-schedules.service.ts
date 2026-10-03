@@ -7,11 +7,11 @@ import {
   Logger,
   NotFoundException,
 } from "@nestjs/common";
-import { and, arrayContained, count, desc, eq, inArray, or, sql } from "drizzle-orm";
+import { and, arrayContained, count, desc, eq, inArray, sql } from "drizzle-orm";
 import type { SQL } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
 
-import { locations, reportFiles, reportSchedules, users } from "@bms/db";
+import { locations, reportFiles, reportSchedules } from "@bms/db";
 import type { BmsDb } from "@bms/db";
 import { MAX_REPORT_SCHEDULES_PER_ORGANIZATION, reportScheduleDtoSchema, reportTemplateIdSchema } from "@bms/shared";
 import type { JwtPayload, ReportCadence, ReportScheduleDto } from "@bms/shared";
@@ -19,6 +19,7 @@ import type { JwtPayload, ReportCadence, ReportScheduleDto } from "@bms/shared";
 import { MasterDataAuditService } from "../admin/master-data-audit.service";
 import { requireStorageConfigured } from "../assets/require-storage";
 import { AccessControlService } from "../auth/access-control.service";
+import { resolveActorId } from "../auth/identity-resolver";
 import { parseStoredContract } from "../common/parse-stored-contract";
 import { FLEET_DRIZZLE, TENANT_DRIZZLE } from "../database/database.tokens";
 import { withTenant } from "../database/tenant-context";
@@ -374,14 +375,9 @@ export class ReportSchedulesService {
     return row;
   }
 
-  /** `created_by`: the `bms.users.id` the way `MasterDataAuditService.write` resolves its actor — on the fleet pool, `null` when absent. */
+  /** `created_by`: the `bms.users.id` by subject (or local id), never by email — the shared resolver on the fleet pool, `null` when absent (F3.78). */
   private async resolveActorId(jwt: JwtPayload): Promise<string | null> {
-    const [row] = await this.fleetDb
-      .select({ actorId: users.id })
-      .from(users)
-      .where(or(eq(users.id, jwt.sub), eq(users.email, jwt.email)))
-      .limit(1);
-    return row?.actorId ?? null;
+    return resolveActorId(this.fleetDb, jwt);
   }
 }
 
