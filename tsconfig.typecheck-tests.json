@@ -190,6 +190,7 @@
     "tests/f3.78-user-administration-schema.test.ts",
     "tests/f3.78-user-administration-schema.integration.test.ts",
     "tests/f3.78-guard-di-and-contract.test.ts",
+    "tests/f3.78-no-drizzle-insert-on-users.test.ts",
     "tests/f3.78-keycloak-realm-file.test.ts"
   ]
 }
