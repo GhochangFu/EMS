@@ -254,9 +254,10 @@ function SettingsForm({ orgId, settings }: SettingsFormProps) {
               type="button"
               className="font-semibold text-critical-ink disabled:opacity-60"
               disabled={busy}
+              aria-busy={removeMutation.isPending}
               onClick={() => removeMutation.mutate()}
             >
-              Remove
+              {removeMutation.isPending ? "Removing…" : "Remove"}
             </button>
             <span>Deletes this organization&apos;s setting, key included; the platform default then applies.</span>
           </div>
@@ -287,7 +288,7 @@ function SettingsForm({ orgId, settings }: SettingsFormProps) {
             aria-busy={testMutation.isPending}
             onClick={() => testMutation.mutate()}
           >
-            Test
+            {testMutation.isPending ? "Testing…" : "Test"}
           </button>
           <button
             type="submit"
