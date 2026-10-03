@@ -45,9 +45,14 @@ report findings with evidence.
 6. **MQTT/TLS ingest (ADR 0007).** `apps/ingest` should use TLS; credentials
    from env only; no `rejectUnauthorized: false`; topic/payload parsing should
    not trust arbitrary input into SQL or `pg_notify`.
-7. **OpenAI onboarding (ADR 0011).** Credentials must be stripped from LLM
-   context before any chat completion call; check the redaction path
-   (`onboarding-redaction`). Flag prompt construction that could leak secrets.
+7. **LLM onboarding (ADR 0011, ADR 0090 and its Amendment 1).** Credentials
+   must be stripped from the model's context before any call to any of the
+   three providers (OpenAI, OpenRouter, Anthropic); check the redaction path
+   (`onboarding-redaction`) and the agent's credential refusal in
+   `onboarding-agent-tools.ts`. Flag prompt construction that could leak
+   secrets. An organization's provider key (`bms.organization_llm_settings`)
+   must never reach a response, a log line, an audit row or an error, and the
+   AI-assistant routes must check the role before `canManageOrganization`.
 
 ## Output
 
