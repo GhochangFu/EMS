@@ -282,9 +282,10 @@ export function AssetGroupsAdminPage({ user }: AssetGroupsAdminPageProps) {
                 type="button"
                 className="surface-button px-3 py-2 text-xs"
                 disabled={addAssetId === "" || addMember.isPending}
+                aria-busy={addMember.isPending}
                 onClick={() => addMember.mutate(addAssetId)}
               >
-                Add to group
+                {addMember.isPending ? "Adding…" : "Add to group"}
               </button>
             </div>
           ) : null}
@@ -309,62 +310,73 @@ export function AssetGroupsAdminPage({ user }: AssetGroupsAdminPageProps) {
                 </tr>
               </thead>
               <tbody className="divide-y divide-line">
-                {members.map((member) => (
-                  <tr key={member.membershipId}>
-                    <td className="py-2">
-                      <span className="block">{member.assetName}</span>
-                      <span className="block text-xs text-ink-muted">{member.assetCode}</span>
-                    </td>
-                    <td className="py-2">
-                      <select
-                        aria-label={`Role for ${member.assetName}`}
-                        value={member.role ?? ""}
-                        disabled={!canWrite || setRole.isPending}
-                        onChange={(event) =>
-                          setRole.mutate({
-                            membershipId: member.membershipId,
-                            // "" is the cleared state; the API takes an
-                            // explicit null, never an empty string.
-                            role: event.target.value === "" ? null : event.target.value,
-                          })
-                        }
-                        className="surface-field px-2 py-1"
-                      >
-                        <option value="">No role</option>
-                        {roles.map((role) => (
-                          <option key={role.code} value={role.code}>
-                            {role.label}
-                          </option>
-                        ))}
-                      </select>
-                    </td>
-                    <td className="py-2 text-xs text-ink-muted">
-                      {/*
-                        ADR 0049 decision 6 ruled that an unresolved role imports
-                        as a widget with zero bindings rendering "no data bound".
-                        That was written for match/no-match. A role carried by
-                        two of three chillers renders a widget that looks right
-                        and is one short — visible only if something counts.
-                      */}
-                      {member.role
-                        ? `${roleCounts[member.role] ?? 1} with this role`
-                        : "—"}
-                    </td>
-                    {canWrite ? (
-                      <td className="py-2 text-right">
-                        <button
-                          type="button"
-                          aria-label={`Remove ${member.assetName}`}
-                          className="surface-button px-2 py-1 text-xs"
-                          disabled={removeMember.isPending}
-                          onClick={() => removeMember.mutate(member.membershipId)}
-                        >
-                          Remove
-                        </button>
+                {members.map((member) => {
+                  // removeMember is one mutation shared by every row: only
+                  // the row whose id is in flight announces "Removing".
+                  const removingThis =
+                    removeMember.isPending && removeMember.variables === member.membershipId;
+                  return (
+                    <tr key={member.membershipId}>
+                      <td className="py-2">
+                        <span className="block">{member.assetName}</span>
+                        <span className="block text-xs text-ink-muted">{member.assetCode}</span>
                       </td>
-                    ) : null}
-                  </tr>
-                ))}
+                      <td className="py-2">
+                        <select
+                          aria-label={`Role for ${member.assetName}`}
+                          value={member.role ?? ""}
+                          disabled={!canWrite || setRole.isPending}
+                          onChange={(event) =>
+                            setRole.mutate({
+                              membershipId: member.membershipId,
+                              // "" is the cleared state; the API takes an
+                              // explicit null, never an empty string.
+                              role: event.target.value === "" ? null : event.target.value,
+                            })
+                          }
+                          className="surface-field px-2 py-1"
+                        >
+                          <option value="">No role</option>
+                          {roles.map((role) => (
+                            <option key={role.code} value={role.code}>
+                              {role.label}
+                            </option>
+                          ))}
+                        </select>
+                      </td>
+                      <td className="py-2 text-xs text-ink-muted">
+                        {/*
+                          ADR 0049 decision 6 ruled that an unresolved role imports
+                          as a widget with zero bindings rendering "no data bound".
+                          That was written for match/no-match. A role carried by
+                          two of three chillers renders a widget that looks right
+                          and is one short — visible only if something counts.
+                        */}
+                        {member.role
+                          ? `${roleCounts[member.role] ?? 1} with this role`
+                          : "—"}
+                      </td>
+                      {canWrite ? (
+                        <td className="py-2 text-right">
+                          <button
+                            type="button"
+                            aria-label={
+                              removingThis
+                                ? `Removing ${member.assetName}…`
+                                : `Remove ${member.assetName}`
+                            }
+                            aria-busy={removingThis}
+                            className="surface-button px-2 py-1 text-xs"
+                            disabled={removeMember.isPending}
+                            onClick={() => removeMember.mutate(member.membershipId)}
+                          >
+                            {removingThis ? "Removing…" : "Remove"}
+                          </button>
+                        </td>
+                      ) : null}
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           ) : null}
@@ -445,9 +457,10 @@ export function AssetGroupsAdminPage({ user }: AssetGroupsAdminPageProps) {
               <button
                 type="submit"
                 disabled={saveGroup.isPending}
+                aria-busy={saveGroup.isPending}
                 className="surface-button-primary bg-accent px-3 py-2 text-xs font-semibold text-on-accent"
               >
-                Save
+                {saveGroup.isPending ? "Saving…" : "Save"}
               </button>
             </div>
           </form>

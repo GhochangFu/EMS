@@ -15,6 +15,8 @@ import {
   sendsTheCodeAndClearsWithNull,
   showsHowManyMembersCarryEachRole,
   showsTheServerRefusal,
+  theOtherRowsKeepTheirName,
+  theRowBeingRemovedAnnouncesIt,
 } from "./asset-groups-page.spec";
 
 /**
@@ -68,6 +70,14 @@ describe("F3.37 asset groups page", () => {
 
   it("re-reads the members after a removal", async () => {
     await removeInvalidatesTheMembersQuery();
+  });
+
+  it("names the row being removed as removing, with aria-busy", async () => {
+    await theRowBeingRemovedAnnouncesIt();
+  });
+
+  it("keeps the other rows' names while one row is removed", async () => {
+    await theOtherRowsKeepTheirName();
   });
 
   it("never sends a code when a group is edited", async () => {

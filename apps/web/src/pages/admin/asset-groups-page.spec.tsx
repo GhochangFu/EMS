@@ -413,6 +413,38 @@ export async function removeInvalidatesTheMembersQuery(): Promise<void> {
   });
 }
 
+/**
+ * Starts a removal of Transformer 1 that never settles, so the page stays in
+ * the pending state the two cases below read.
+ */
+async function startAPendingRemoval(): Promise<void> {
+  stubApi({ removeAdminAssetGroupMember: () => new Promise<never>(() => {}) });
+  renderPage();
+  await userEvent.click(await screen.findByRole("button", { name: /Electrical train/ }));
+  await userEvent.click(await screen.findByRole("button", { name: "Remove Transformer 1" }));
+}
+
+/**
+ * F4.168: the row being removed announces it. `removeMember` is one mutation
+ * shared by every row, so the name keys on the pending membership id.
+ */
+export async function theRowBeingRemovedAnnouncesIt(): Promise<void> {
+  await startAPendingRemoval();
+  const button = await screen.findByRole("button", { name: "Removing Transformer 1…" });
+  expect(button).toHaveAttribute("aria-busy", "true");
+}
+
+/**
+ * The other rows are disabled while the removal runs, but keep their own
+ * name: a label keyed on `isPending` alone would announce "Removing" on all.
+ */
+export async function theOtherRowsKeepTheirName(): Promise<void> {
+  await startAPendingRemoval();
+  await screen.findByRole("button", { name: "Removing Transformer 1…" });
+  const other = screen.getByRole("button", { name: "Remove Transformer 3" });
+  expect(other).toHaveAttribute("aria-busy", "false");
+}
+
 /** Edit sends name and description for the group, and never a `code` key. */
 export async function editNeverSendsCode(): Promise<void> {
   stubApi();
