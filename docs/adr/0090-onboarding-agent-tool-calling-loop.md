@@ -83,6 +83,14 @@ the component that decides to write master data.
    sections that exist now.** Templates, discovery and retrieval stay with
    `F3.22`–`F3.26`.
 
+**Where rulings 1 and 4 leave the design.** Together, the two rulings mean that
+the model never calls a create API. The model edits the draft and proposes a
+commit. Server code commits, and only on the user's own confirm. This is close
+to option 3 of question 1, which the gate described as "does not meet the row
+text". It differs in two points: the agent proposes the commit and shows its
+summary, and a typed confirm phrase in the chat commits as well as the button.
+The owner approves this record with that fact stated here.
+
 ## Decision
 
 1. **A provider port.** `apps/api` gains an onboarding LLM port: messages and
@@ -103,10 +111,19 @@ the component that decides to write master data.
    - at most **45 s** of wall time per user turn;
    - at most the **last 20 messages** of the session as history;
    - the draft goes into the prompt through `serialiseDraftForPrompt`, as now
-     (`F4.107` budget and marker rules apply unchanged).
+     (`F4.107` budget and marker rules apply unchanged);
+   - each history message goes into the prompt cut to **2,000 characters**
+     (`cutToBound`, never a bare `.slice()`);
+   - each tool result goes into the prompt cut to **8,000 characters**. A list
+     result (the fleet-wide point-key catalog grows with every commit) goes
+     through `echoedItems` and `moreTail` first, so the model sees how many
+     items it did not get.
 
    At a cap, the loop stops, keeps the draft edits that passed validation up
-   to that point, and the reply says that the assistant stopped early.
+   to that point, and the reply says that the assistant stopped early. When the
+   45 s deadline arrives during a model call, the loop aborts that call and
+   stops with `cap_time`, not `provider_error`: the edits of the tool calls
+   that completed are kept (ruling 3), and the rule-based path does not run.
 
 4. **The tool set** (ruling 7). Every tool runs as the session user, inside the
    session's organization, through the services and schemas that exist now.
@@ -118,9 +135,19 @@ the component that decides to write master data.
      `use_existing_point_keys`, which sets only
      `onboardingMeta.useExistingPointKeys` (the flag the rule-based path sets
      today). The arguments of each tool are parsed with the matching element
-     schema of `onboardingDraftSchema`. **No tool takes a credential**, and no
-     tool can write `_secrets`, `credentialsSet` or any other `onboardingMeta`
-     field.
+     schema of `onboardingDraftSchema`. No tool can write `_secrets`,
+     `credentialsSet` or any other `onboardingMeta` field.
+
+   **No tool takes a credential, and code enforces it.** `rtus[].config` is
+   `z.record(z.unknown())`, so the element schema cannot see a password inside
+   it, and today the redactors scrub it only on the way out
+   (`redactDraftForClient`, `redactDraftForLlm`). For `add_rtu` and
+   `update_rtu`, the tool refuses the whole call, as a tool error, when any key
+   at any depth of `config` matches the secret fragments that
+   `onboarding-redaction.ts` already uses (`SECRET_FRAGMENTS`, normalised
+   substring), or when any string value `looksLikeCredential`. One list serves
+   both the scrub and the refusal. The plan gates each refusal path with a
+   test.
    - **Check:** `validate_draft` (`OnboardingValidateService`).
    - **Commit:** `propose_commit` (decision 5).
 
@@ -151,8 +178,11 @@ the component that decides to write master data.
    example `Added RTU RTU-1 (mqtt)`. The raw tool arguments and the model's own
    wording are never stored as an action. The web chat
    (`apps/web/src/pages/admin/onboarding-chat-page.tsx`) shows `action`
-   messages as small lines between the turns. History for the model
-   (decision 3) includes them.
+   messages as small lines between the turns; today it shows any role other
+   than `user` in the assistant style. History for the model (decision 3)
+   includes them, sent as `assistant` text, because the provider accepts no
+   `action` role. `scrubMessages` and the stored-message read paths must accept
+   the new role.
 
 7. **Failure and fallback** (ruling 6). On a provider error or a malformed
    model reply, the loop discards every draft edit of that turn and runs
@@ -191,8 +221,15 @@ None. `openai` (`^6.45.0`, ADR 0011) is already in `apps/api`.
   than 45 s cuts the turn; the stack's own `nginx.conf` does not proxy the
   API. Streaming progress is a later row if the owner asks for it (ruling 3).
 - **The contract gains a role.** A client that reads `messages` and knows only
-  `user`, `assistant` and `system` must accept `action`. The web is the only
-  client.
+  `user`, `assistant` and `system` must accept `action`. In this repository
+  the only consumer outside `apps/api` is
+  `apps/web/src/pages/admin/onboarding-chat-page.tsx`; the OpenAPI document
+  (ADR 0029) shows the new enum value.
+- **The fallback answers a message that was written for the agent.** On a
+  provider error, `handleRuleBasedTurn` gets a message such as "add an MQTT
+  RTU with two meters". On a fresh session its location branch takes the whole
+  message as `location.name`. The user sees this in the preview and can edit
+  it. `F3.27` owns making the two paths agree.
 - **The commit proposal is new state with a narrow rule.** It is bound to the
   draft hash, so it cannot commit a draft that the user did not see. The plan
   must name where it is stored and gate the clearing rule with a test for each
