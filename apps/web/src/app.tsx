@@ -47,6 +47,7 @@ import { NotificationDeliveriesPage } from "./pages/admin/notification-deliverie
 import { OnboardingChatPage } from "./pages/admin/onboarding-chat-page";
 import { AiAssistantPage } from "./pages/admin/ai-assistant-page";
 import { AssetGroupsAdminPage } from "./pages/admin/asset-groups-page";
+import { UsersAdminPage } from "./pages/admin/users-page";
 import { CalcParametersAdminPage } from "./pages/admin/calc-parameters-page";
 import { LocationTypesAdminPage } from "./pages/admin/location-types-page";
 import { MimicLayoutEditorPage } from "./pages/admin/mimic-layout-editor-page";
@@ -740,6 +741,18 @@ export function App() {
           accessToken && user ? (
             <AdminRoute user={user}>
               <AssetGroupsAdminPage user={user} />
+            </AdminRoute>
+          ) : (
+            <Navigate to="/login" replace />
+          )
+        }
+      />
+      <Route
+        path="/admin/users"
+        element={
+          accessToken && user ? (
+            <AdminRoute user={user}>
+              <UsersAdminPage user={user} />
             </AdminRoute>
           ) : (
             <Navigate to="/login" replace />
