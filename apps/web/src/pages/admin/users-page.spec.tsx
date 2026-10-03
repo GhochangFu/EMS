@@ -441,6 +441,49 @@ export async function removingAGrantSendsItsIdAndKind(): Promise<void> {
 }
 
 /**
+ * `F4.168` D4: a pending Remove names the grant being removed, and only that one. The DELETE never
+ * settles, so the pending state holds while the assertions run.
+ */
+export async function aPendingRemoveAnnouncesOnlyItsOwnGrant(): Promise<void> {
+  stubOidc();
+  stubFetch();
+  const real = globalThis.fetch;
+  vi.stubGlobal(
+    "fetch",
+    vi.fn((input: RequestInfo | URL, init?: RequestInit) =>
+      init?.method === "DELETE" ? new Promise<Response>(() => {}) : real(input, init),
+    ),
+  );
+  renderPage();
+  const drawer = await openGrants();
+  await userEvent.click(await within(drawer).findByRole("button", { name: "Remove Location grant Plant North" }));
+  const busy = await within(drawer).findByRole("button", { name: "Removing Location grant Plant North" });
+  expect(busy).toHaveAttribute("aria-busy", "true");
+  const other = within(drawer).getByRole("button", { name: "Remove Location grant Plant South" });
+  expect(other).not.toHaveAttribute("aria-busy", "true");
+}
+
+export async function aPendingAddAnnouncesItself(): Promise<void> {
+  stubOidc();
+  stubFetch();
+  const real = globalThis.fetch;
+  vi.stubGlobal(
+    "fetch",
+    vi.fn((input: RequestInfo | URL, init?: RequestInit) =>
+      init?.method === "POST" ? new Promise<Response>(() => {}) : real(input, init),
+    ),
+  );
+  renderPage();
+  const drawer = await openGrants();
+  await userEvent.selectOptions(within(drawer).getByLabelText("Grant kind"), "organization");
+  await within(drawer).findByRole("option", { name: "Acme Works" });
+  await userEvent.selectOptions(within(drawer).getByLabelText("Grant target"), ORG_ID);
+  await userEvent.click(within(drawer).getByRole("button", { name: "Add grant" }));
+  const busy = await within(drawer).findByRole("button", { name: "Adding…" });
+  expect(busy).toHaveAttribute("aria-busy", "true");
+}
+
+/**
  * ADR 0089 decision 11: grants touch only the database, so local sign-in still manages them.
  * Decision 15 limits the disabled state to the user actions.
  */

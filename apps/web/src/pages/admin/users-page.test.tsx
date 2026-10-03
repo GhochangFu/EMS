@@ -6,6 +6,8 @@ import {
   a400PolicyRefusalShowsTheServerMessageNotThePassword,
   a404ShowsANotFoundSentence,
   a503ShowsASentenceAndWritesNothingElse,
+  aPendingAddAnnouncesItself,
+  aPendingRemoveAnnouncesOnlyItsOwnGrant,
   aGlobalAdminMayCreateAnAdmin,
   addingAGrantSendsItsKindAndTarget,
   anIneffectiveGrantShowsTheNote,
@@ -120,6 +122,14 @@ describe("F3.78 users page", () => {
 
   it("removing a grant sends the grant's id and kind", async () => {
     await removingAGrantSendsItsIdAndKind();
+  });
+
+  it("a pending Remove announces only its own grant", async () => {
+    await aPendingRemoveAnnouncesOnlyItsOwnGrant();
+  });
+
+  it("a pending Add grant announces itself", async () => {
+    await aPendingAddAnnouncesItself();
   });
 
   it("local mode keeps a grant's Remove enabled", async () => {

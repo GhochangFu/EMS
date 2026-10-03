@@ -833,7 +833,14 @@ function GrantsDrawer({
             <p className="text-sm text-ink-muted">This user has no grants.</p>
           ) : null}
           <ul className="divide-y divide-line">
-            {grants.map((grant) => (
+            {grants.map((grant) => {
+              // F4.168 D4: the name keys on the grant being removed; `disabled` stays shared.
+              const removingThis =
+                remove.isPending &&
+                remove.variables?.kind === grant.kind &&
+                remove.variables?.id === grant.id;
+              const grantName = `${KIND_LABELS[grant.kind]} grant ${grant.targetName}`;
+              return (
               <li key={`${grant.kind}-${grant.id}`} className="flex items-start justify-between gap-2 py-2">
                 <div className="text-sm">
                   <span className="block font-semibold">{grant.targetName}</span>
@@ -846,7 +853,8 @@ function GrantsDrawer({
                 </div>
                 <button
                   type="button"
-                  aria-label={`Remove ${KIND_LABELS[grant.kind]} grant ${grant.targetName}`}
+                  aria-label={removingThis ? `Removing ${grantName}` : `Remove ${grantName}`}
+                  aria-busy={removingThis}
                   disabled={remove.isPending}
                   className="text-xs font-semibold text-critical-ink disabled:opacity-50"
                   onClick={() => remove.mutate(grant)}
@@ -854,7 +862,8 @@ function GrantsDrawer({
                   Remove
                 </button>
               </li>
-            ))}
+              );
+            })}
           </ul>
         </div>
 
@@ -902,8 +911,9 @@ function GrantsDrawer({
             type="submit"
             className="surface-button-primary bg-accent px-3 py-2 text-xs font-semibold text-on-accent disabled:opacity-50"
             disabled={targetId === "" || add.isPending}
+            aria-busy={add.isPending}
           >
-            Add grant
+            {add.isPending ? "Adding…" : "Add grant"}
           </button>
         </form>
       </div>
