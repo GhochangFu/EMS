@@ -6,6 +6,7 @@ import { createDb } from "@bms/db";
 import { openIntegrationPool, requireIntegrationDb } from "../../testing/integration-db-gate";
 import { asRole } from "../../testing/role-urls";
 import {
+  aConcurrentFirstSaveKeepsTheOtherSavesKey,
   aHalfKeyIsRefused,
   aModelOnlySaveAfterADeleteStoresNoKey,
   aModelOnlySaveKeepsAKeyRotatedWhileItWaited,
@@ -149,5 +150,9 @@ describe.skipIf(!connectionString)("F3.21 — bms.organization_llm_settings (mig
 
   it("aProviderChangeWhileItWaitedClearsTheKeyAndSaysSo", { timeout: 15_000 }, async () => {
     await aProviderChangeWhileItWaitedClearsTheKeyAndSaysSo(ctx);
+  });
+
+  it("aConcurrentFirstSaveKeepsTheOtherSavesKey", { timeout: 15_000 }, async () => {
+    await aConcurrentFirstSaveKeepsTheOtherSavesKey(ctx);
   });
 });

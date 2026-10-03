@@ -26,7 +26,7 @@ import { AiAssistantSettingsService } from "./ai-assistant-settings.service";
  * file's order: the first writes organization A's row, which the next two
  * read and attack; the CHECK probes write to B, which has no row (the primary
  * key allows one per organization); the cascade case writes B's row last; the
- * lock-race cases (8–10, `F4.186`) rewrite A's row through the service while a
+ * lock-race cases (8–11, `F4.186`) rewrite A's row through the service while a
  * second connection holds it.
  *
  * **Counts run as `bms_fleet`, never `bms_owner`.** `FORCE` binds the owner,
@@ -236,9 +236,13 @@ type RecordedAudit = { action: string; payload: Record<string, unknown> };
 
 /**
  * The real service on the tenant pool, with the gate open and an audit writer
- * that records each entry `put()` hands it inside its write transaction.
+ * that records each entry `put()` hands it inside its write transaction, then
+ * runs `inTransaction` (if given) on that transaction before it commits.
  */
-function realService(ctx: LlmSettingsCtx): { service: AiAssistantSettingsService; audits: RecordedAudit[] } {
+function realService(
+  ctx: LlmSettingsCtx,
+  inTransaction?: (tx: BmsDb) => Promise<void>,
+): { service: AiAssistantSettingsService; audits: RecordedAudit[] } {
   const crypto = new CredentialCryptoService();
   const resolver = new OnboardingLlmResolver(ctx.tenantDb, crypto);
   const access = {
@@ -247,7 +251,12 @@ function realService(ctx: LlmSettingsCtx): { service: AiAssistantSettingsService
     canManageOrganization: async () => true,
   };
   const audits: RecordedAudit[] = [];
-  const audit = { write: async (input: RecordedAudit) => void audits.push(input) };
+  const audit = {
+    write: async (input: RecordedAudit, tx: BmsDb) => {
+      audits.push(input);
+      if (inTransaction) await inTransaction(tx);
+    },
+  };
   const service = new AiAssistantSettingsService(ctx.tenantDb, access as never, audit as never, crypto, resolver);
   return { service, audits };
 }
@@ -440,4 +449,109 @@ export async function aProviderChangeWhileItWaitedClearsTheKeyAndSaysSo(ctx: Llm
     "master.organization.ai_assistant.update",
   ]);
   expect(audits[0]?.payload.keyChanged, "the audit must say the key was cleared").toBe(true);
+}
+
+const CREDENTIAL_ENV = ["CREDENTIAL_ENCRYPTION_KEY", "CREDENTIAL_ENCRYPTION_KEY_PREVIOUS", "CREDENTIAL_ENCRYPTION_KEY_VERSION"];
+
+/**
+ * 11 — `F4.186`, security re-review L-c: two concurrent FIRST saves for one
+ * organization. Save X enters an OpenAI key; save Y, for the same provider,
+ * enters none. Neither sees a row, so `FOR UPDATE` locks nothing. X is held
+ * inside its transaction after its upsert (its audit write waits on a gate);
+ * Y starts and is polled until it waits on X's backend; X is released. Y must
+ * then decide on X's committed row and keep X's key — without serialization,
+ * Y decided "no row, no key" and its ON CONFLICT cleared X's key while its
+ * audit said `keyChanged: false`.
+ */
+export async function aConcurrentFirstSaveKeepsTheOtherSavesKey(ctx: LlmSettingsCtx): Promise<void> {
+  const emptied = await ctx.fleetPool.query("DELETE FROM bms.organization_llm_settings WHERE organization_id = $1", [
+    ctx.orgA,
+  ]);
+  expect(emptied.rowCount, "control: A's row was removed, so both saves are first saves").toBe(1);
+
+  const previousEnv = Object.fromEntries(CREDENTIAL_ENV.map((name) => [name, process.env[name]]));
+  for (const name of CREDENTIAL_ENV) delete process.env[name];
+  process.env.CREDENTIAL_ENCRYPTION_KEY = Buffer.alloc(32, 0x2a).toString("base64");
+
+  const X_KEY = "sk-x-first-save-key-k3y9";
+  let release: () => void = () => undefined;
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  let paused: (pid: number) => void = () => undefined;
+  const xPaused = new Promise<number>((resolve) => {
+    paused = resolve;
+  });
+  const x = realService(ctx, async (tx) => {
+    const { rows } = await tx.execute<{ pid: number }>(sql`select pg_backend_pid() as pid`);
+    paused(Number(rows[0]?.pid));
+    await gate;
+  });
+  const y = realService(ctx);
+
+  const xPending = x.service.put({ sub: "kc-f4186-x" } as never, ctx.orgA, {
+    provider: "openai",
+    model: "gpt-4o-mini",
+    apiKey: X_KEY,
+  });
+  const xSettled = xPending.then(
+    () => undefined,
+    () => undefined,
+  );
+  let ySettled: Promise<unknown> | undefined;
+  try {
+    const xPid = await Promise.race([
+      xPaused,
+      xPending.then(() => {
+        throw new Error("aConcurrentFirstSaveKeepsTheOtherSavesKey: save X committed without pausing");
+      }),
+      new Promise<never>((_, reject) =>
+        setTimeout(
+          () => reject(new Error(`aConcurrentFirstSaveKeepsTheOtherSavesKey: save X never paused within ${BLOCK_WAIT_MS} ms`)),
+          BLOCK_WAIT_MS,
+        ),
+      ),
+    ]);
+
+    const yPending = y.service.put({ sub: "kc-f4186-y" } as never, ctx.orgA, { provider: "openai", model: "gpt-4.1-mini" });
+    ySettled = yPending.then(
+      () => undefined,
+      () => undefined,
+    );
+
+    let blocked = 0;
+    const deadline = Date.now() + BLOCK_WAIT_MS;
+    while (blocked === 0 && Date.now() < deadline) {
+      const { rows } = await ctx.fleetPool.query<{ n: number }>(
+        "SELECT count(*)::int AS n FROM pg_stat_activity WHERE $1 = ANY(pg_blocking_pids(pid))",
+        [xPid],
+      );
+      blocked = rows[0]?.n ?? 0;
+      if (blocked === 0) await new Promise((resolve) => setTimeout(resolve, 25));
+    }
+    if (blocked === 0) {
+      throw new Error(`aConcurrentFirstSaveKeepsTheOtherSavesKey: save Y never waited on save X within ${BLOCK_WAIT_MS} ms`);
+    }
+
+    release();
+    await xPending;
+    await yPending;
+
+    expect(blocked, "control: save Y waited on save X's transaction").toBeGreaterThan(0);
+    expect(x.audits.map((a) => a.payload.keyChanged), "control: save X entered a key").toEqual([true]);
+    const row = await storedKeyRow(ctx, ctx.orgA);
+    expect(row?.provider).toBe("openai");
+    expect(row?.model, "control: save Y landed last").toBe("gpt-4.1-mini");
+    expect(row?.key_ciphertext, "save X's key must not be cleared by save Y").not.toBeNull();
+    expect(row?.key_last4, "the stored key is save X's").toBe(X_KEY.slice(-4));
+    expect(y.audits.map((a) => a.payload.keyChanged), "save Y kept the key, so it changed none").toEqual([false]);
+  } finally {
+    release();
+    await xSettled;
+    await ySettled;
+    for (const [name, value] of Object.entries(previousEnv)) {
+      if (value === undefined) delete process.env[name];
+      else process.env[name] = value;
+    }
+  }
 }

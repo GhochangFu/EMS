@@ -1,5 +1,5 @@
 import { BadRequestException, ForbiddenException, Inject, Injectable } from "@nestjs/common";
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 
 import { organizationLlmSettings } from "@bms/db";
 import type { BmsDb } from "@bms/db";
@@ -110,17 +110,20 @@ export class AiAssistantSettingsService {
       };
     }
     await withTenant(this.tenantDb, organizationId, async (tx) => {
-      // F4.186 (security review M1, re-review L-a and L-b): the decision is
-      // made on the committed row, locked until this transaction ends, never
-      // on an earlier read. A concurrent `rotate-credentials` either committed
-      // before this lock (the kept bytes are its rotated ones) or waits on it,
-      // and its compare-and-set then still matches the kept bytes, so it
-      // rotates after this commit. A concurrent delete means no row, so no key
-      // is kept. A concurrent provider change is seen, so its key is not kept
-      // and `keyChanged` is exact. Residual: two concurrent first saves both
-      // see no row and lock nothing; the second's ON CONFLICT writes its own
-      // (provider, entered key or no key) pair — consistent, and never a key
-      // under a provider it was not issued by.
+      // F4.186 (security review M1, re-review L-a, L-b and L-c): the decision
+      // is made on the committed row, never on an earlier read. The advisory
+      // lock serializes put() calls for one organization, including the
+      // no-row path where FOR UPDATE locks nothing — so a concurrent first
+      // save commits before this one reads, and `keyChanged` is exact on every
+      // path. FOR UPDATE handles the writers that are not put(): a concurrent
+      // `rotate-credentials` either committed before this lock (the kept bytes
+      // are its rotated ones) or waits on it, and its compare-and-set then
+      // still matches the kept bytes, so it rotates after this commit; a
+      // concurrent remove() means no row, so no key is kept; a provider change
+      // is seen, so its key is not kept.
+      await tx.execute(
+        sql`select pg_advisory_xact_lock(hashtextextended(${`organization_llm_settings:${organizationId}`}, 0))`,
+      );
       const [existing] = await tx
         .select()
         .from(organizationLlmSettings)
