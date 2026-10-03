@@ -635,7 +635,9 @@ export async function assertConcurrentChannelWriteWinsOverTheRotation(db: BmsDb)
 }
 
 /**
- * Ruling 3. `updated_at` is not touched on either table. `F3.50` dates
+ * Ruling 3. `updated_at` is not touched on the RTU or the channel table; the
+ * third walked table, `organization_llm_settings`, is held by
+ * `assertLlmRotationLeavesLast4AndUpdatedAtUntouched`. `F3.50` dates
  * `skipped_unconfigured` deliveries against `max(channel.updatedAt,
  * PROCESS_STARTED_AT)`, so a bump here would read as an operator release and
  * re-open every blocked event key. Not in the plan's §10 table — ruling 3 had

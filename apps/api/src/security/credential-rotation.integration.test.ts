@@ -90,7 +90,7 @@ describe.skipIf(!connectionString)("E8.4 — rotate-credentials against a real d
     await assertConcurrentChannelWriteWinsOverTheRotation(db);
   });
 
-  it("leaves updated_at untouched on both tables (ruling 3)", async () => {
+  it("leaves updated_at untouched on the RTU and channel tables (ruling 3)", async () => {
     await assertRotationLeavesUpdatedAtUntouched(db);
   });
 
