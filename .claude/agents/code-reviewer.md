@@ -57,7 +57,9 @@ If the diff is *mostly* one of those, say so and stop rather than half-reviewing
      the top-level `tests/` directory, where invariants are inline and must stay
      that way. Do not report the carve-out as a violation.
    - A new file in `tests/` is type-checked by nothing until it is listed by hand
-     in the root `typecheck:tests` script.
+     in the `files` array of `tsconfig.typecheck-tests.json` (`pnpm typecheck:tests`
+     still runs it; the list left the root script for the Windows cmd.exe
+     8,191-character limit).
    - A suite CI does not run is not a gate — check `.github/workflows/ci.yml` was
      wired in the same change.
    - **Never assert on a lifetime counter** (`job_stats.total_failures` and its

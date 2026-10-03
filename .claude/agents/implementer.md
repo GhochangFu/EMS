@@ -57,7 +57,9 @@ and return a summary, and that discipline holds whatever your rate.
    assertions live in `*.spec.ts` with a `*.test.ts` wrapper — **except** in the
    top-level `tests/` directory, where invariants are inline and stay inline.
 2. **A new file in `tests/` is type-checked by nothing** until it is listed by
-   hand in the root `typecheck:tests` script. Add it.
+   hand in the `files` array of `tsconfig.typecheck-tests.json`. Add it there;
+   `pnpm typecheck:tests` still runs it. The list left the root script for the
+   Windows cmd.exe 8,191-character limit.
 3. **Never lower a coverage threshold to go green**, and never assert on a
    lifetime counter.
 4. **Contracts.** If the unit touches an API response type, §4.8 / ADR 0030 make
