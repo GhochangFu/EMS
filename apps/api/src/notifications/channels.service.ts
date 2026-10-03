@@ -28,6 +28,7 @@ import { AccessControlService } from "../auth/access-control.service";
 import { resolveActorId } from "../auth/identity-resolver";
 import { FLEET_DRIZZLE, TENANT_DRIZZLE } from "../database/database.tokens";
 import { withTenant } from "../database/tenant-context";
+import { translateConstraintErrors } from "../database/translate-constraint-errors";
 import { CredentialCryptoService } from "../security/credential-crypto.service";
 import { parseDeliveryEvent } from "./dedupe-key";
 import type { NotificationChannelRow } from "./notification-transport";
@@ -73,24 +74,18 @@ import { notificationReadiness } from "./readiness";
 /** The shape the ciphertext holds. `CredentialCryptoService` stores objects. */
 const SECRET_FIELD = "secret";
 
-/** Postgres SQLSTATEs this service can produce and must not answer with a 500. */
-const UNIQUE_VIOLATION = "23505";
-const FOREIGN_KEY_VIOLATION = "23503";
-
 /**
  * Turns the two constraint violations a channel write can raise into the
- * answers they are.
+ * answers they are, through the shared {@link translateConstraintErrors}
+ * (`database/translate-constraint-errors.ts`; `F3.78` U6 moved it there).
  *
  * Without this, `POST` with a code that already exists — the first mistake
  * anyone makes on the admin screen — is a 500, and so is a `kind` the
  * vocabulary does not declare. The schema comment says the foreign key
  * "refuses an undeclared kind at write time with a clear database error", and
  * that is only true if something translates it.
- *
- * The message names the field, never the constraint internals: a client should
- * be told "that code is taken", not the index name.
  */
-async function translateConstraintErrors<T>(
+function translateChannelConstraintErrors<T>(
   run: () => Promise<T>,
   /**
    * What a foreign-key violation means for THIS operation, given the raw
@@ -109,23 +104,16 @@ async function translateConstraintErrors<T>(
       "Unknown channel kind — it must be a code declared in bms.notification_channel_kinds",
     ),
 ): Promise<T> {
-  try {
-    return await run();
-  } catch (err) {
-    const code = (err as { code?: string } | null)?.code;
-    if (code === UNIQUE_VIOLATION) {
-      // E7.1c (0048): identity re-keyed from a bare `code` to `(organization_id,
-      // code)`, so the same code is fine in two different organizations — the
-      // message must say which scope the collision is in, not imply it is global.
-      throw new ConflictException(
+  return translateConstraintErrors(run, {
+    // E7.1c (0048): identity re-keyed from a bare `code` to `(organization_id,
+    // code)`, so the same code is fine in two different organizations — the
+    // message must say which scope the collision is in, not imply it is global.
+    onUnique: () =>
+      new ConflictException(
         "That code is already used in this organization (or as a fleet-managed global channel)",
-      );
-    }
-    if (code === FOREIGN_KEY_VIOLATION) {
-      throw onForeignKey(err);
-    }
-    throw err;
-  }
+      ),
+    onForeignKey,
+  });
 }
 
 /** The Postgres constraint name behind `create`'s `body.organizationId` FK. */
@@ -320,7 +308,7 @@ export class ChannelsService {
       ...secret,
     };
 
-    const row = await translateConstraintErrors(
+    const row = await translateChannelConstraintErrors(
       async () => {
         const rows =
           targetOrgId === null
@@ -380,7 +368,7 @@ export class ChannelsService {
     if (body.enabled !== undefined) values.enabled = body.enabled;
     if (body.secret !== undefined) Object.assign(values, this.encryptSecret(body.secret));
 
-    const row = await translateConstraintErrors(async () => {
+    const row = await translateChannelConstraintErrors(async () => {
       // A foreign-org row can never reach this point — the gate above already
       // refused it. If it ever did (a gate bug, or a race with a delete), an
       // UPDATE under FORCE matches ZERO ROWS WITHOUT ERRORING (no current_org
@@ -435,7 +423,7 @@ export class ChannelsService {
       throw new ForbiddenException("Notification channel is outside your access scope");
     }
 
-    const rows = await translateConstraintErrors(
+    const rows = await translateChannelConstraintErrors(
       () =>
         existing.organizationId === null
           ? this.fleetDb

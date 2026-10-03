@@ -82,6 +82,7 @@
     "tests/f2.8-sim-it-load.test.ts",
     "tests/f2.8-pue-curve-is-gone.test.ts",
     "tests/f1.10-ingest-buffer-volume.test.ts",
+    "tests/f3.78-keycloak-data-volume.test.ts",
     "tests/adr-0056-point-metadata-migration.test.ts",
     "tests/f3.46-notification-deliveries-dedupe-index.test.ts",
     "tests/f3.10-alarm-lifecycle-schema.test.ts",
@@ -190,6 +191,8 @@
     "tests/f3.78-user-administration-schema.test.ts",
     "tests/f3.78-user-administration-schema.integration.test.ts",
     "tests/f3.78-guard-di-and-contract.test.ts",
+    "tests/f3.78-no-drizzle-insert-on-users.test.ts",
+    "tests/f3.78-demo-users-seed-linked.integration.test.ts",
     "tests/f3.78-keycloak-realm-file.test.ts"
   ]
 }

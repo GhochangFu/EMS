@@ -49,9 +49,11 @@ const STEP_CHANNEL_FK = "alarm_escalation_step_channels_channel_id_fk";
 /**
  * Turns a constraint violation into the answer it is.
  *
- * `ChannelsService`'s `translateConstraintErrors` in miniature, and separate
- * from it deliberately: plan D10 keeps `channels.service.ts` at 986 lines and
- * adds nothing to it, and the foreign keys here mean different things anyway —
+ * `translateConstraintErrors` in miniature (it lived in `ChannelsService`
+ * when this was written; `F3.78` U6 moved it to
+ * `database/translate-constraint-errors.ts`), and separate from it
+ * deliberately: plan D10 kept `channels.service.ts` at 986 lines and added
+ * nothing to it, and the foreign keys here mean different things anyway —
  * `alarm_escalation_defaults_profile_id_fk` is a **400** on a severity map (the
  * profile does not exist) and a **409** on a profile delete (a severity still
  * maps to it). One shared translator would answer one of the two wrong, so

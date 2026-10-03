@@ -93,6 +93,18 @@ describe("F3.78 U3 — KeycloakIdentityAdminClient (ADR 0089 decision 5)", () =>
       await spec.assertANetworkFailureIsUnavailable();
     });
 
+    it("a token request that never answers fails as unavailable within the request timeout", async () => {
+      await spec.assertAHungTokenRequestTimesOutAsUnavailable();
+    });
+
+    it("an admin call that never answers fails as unavailable within the request timeout", async () => {
+      await spec.assertAHungAdminCallTimesOutAsUnavailable();
+    });
+
+    it("every request carries an AbortSignal so a real fetch is aborted, not abandoned", async () => {
+      await spec.assertEveryRequestCarriesAnAbortSignal();
+    });
+
     it("throws an error named IdentityAdminError", async () => {
       await spec.assertTheErrorIsNamedIdentityAdminError();
     });

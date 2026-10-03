@@ -53,6 +53,12 @@ const { createSeedPool } = require_("../packages/db/dist/seed-tenant.js") as typ
  * the seed's own stamp pass, fixture, seed functions, reads, and `ROLLBACK` in
  * a `finally`. The demo-users case runs on one checked-out superuser client,
  * the connection `seed.ts` writes identity rows on, in the same shape.
+ *
+ * The demo-users cases pass their **own unlinked** fixture users through
+ * `seedScopedDemoUsers`' list parameter, never the seeded `wc-admin` /
+ * `wc-hvac-admin`: since F3.78 a linked user gets no grant write (owner ruling
+ * 2026-10-03), and those two are linked on any database where they have signed
+ * in, so a case driven through them would prove nothing there.
  */
 
 const ownerUrl = requireIntegrationDb({
@@ -288,12 +294,31 @@ describe.skipIf(!ownerUrl)("F4.169/F4.170 addendum 4 — an ambiguous seed ident
 
   // ── The demo users ────────────────────────────────────────────────────────
 
-  it("U-wc: seedScopedDemoUsers grants wc-admin the resolved RSMOC-WC row, not the row found by slug", async () => {
+  /** An unlinked fixture user of `role` in ESKOM, inserted on `client` (rolled back); returns its spec. */
+  async function unlinkedScopedFixture(
+    client: { query: IntegrationPool["query"] },
+    role: "location_admin" | "asset_group_admin",
+  ): Promise<DemoUsersSeed.ScopedUserSpec> {
+    const email = `f3.78-pr2-${randomUUID()}@fixture.local`;
+    await client.query(
+      `INSERT INTO bms.users (organization_id, email, display_name, role) VALUES ($1, $2, 'F4.169 fixture', $3)`,
+      [eskomOrgId, email, role],
+    );
+    const { rows } = await client.query<{ linked: boolean }>(
+      `SELECT oidc_subject IS NOT NULL AS linked FROM bms.users WHERE email = $1`,
+      [email],
+    );
+    assert(rows[0]?.linked === false, `the ${role} fixture must be unlinked`);
+    return { email, password: "admin123", displayName: "F4.169 fixture", role };
+  }
+
+  it("U-wc: seedScopedDemoUsers grants a location admin the resolved RSMOC-WC row, not the row found by slug", async () => {
     if (!superPool) throw new Error("pool not initialised");
     const client = await superPool.connect();
     try {
       await client.query("BEGIN");
       await client.query("SET LOCAL lock_timeout = '5s'");
+      const fixture = await unlinkedScopedFixture(client, "location_admin");
       // Any active ESKOM location other than the one the slug names stands in
       // for "the row the location seed resolved".
       const { rows } = await client.query<{ id: string; slug_row: string }>(
@@ -311,13 +336,13 @@ describe.skipIf(!ownerUrl)("F4.169/F4.170 addendum 4 — an ambiguous seed ident
         const found = await client.query<{ n: number }>(
           `SELECT COUNT(*)::int AS n FROM bms.user_location_access ula
              JOIN bms.users u ON u.id = ula.user_id
-            WHERE u.email = 'wc-admin@bms.local' AND ula.location_id = $1`,
-          [locationId],
+            WHERE u.email = $2 AND ula.location_id = $1`,
+          [locationId, fixture.email],
         );
         return found.rows[0]?.n ?? Number.NaN;
       };
       const slugBefore = await grantsOn(slugRow as string);
-      await seedScopedDemoUsers(createDb(client as never), eskomOrgId, resolved as string);
+      await seedScopedDemoUsers(createDb(client as never), eskomOrgId, resolved as string, [fixture]);
       // Mutation "find RSMOC-WC by slug": the grant lands on the slug row.
       expect(await grantsOn(resolved as string), "the grant is on the resolved row").toBe(1);
       expect(await grantsOn(slugRow as string), "no new grant on the slug row").toBe(slugBefore);
@@ -327,43 +352,31 @@ describe.skipIf(!ownerUrl)("F4.169/F4.170 addendum 4 — an ambiguous seed ident
     }
   }, 60_000);
 
-  it("U-null: seedScopedDemoUsers with no resolved RSMOC-WC row grants neither wc-admin nor wc-hvac-admin", async () => {
+  it("U-null: seedScopedDemoUsers with no resolved RSMOC-WC row grants neither a location admin nor an asset-group admin", async () => {
     if (!superPool) throw new Error("pool not initialised");
     const client = await superPool.connect();
     try {
       await client.query("BEGIN");
       await client.query("SET LOCAL lock_timeout = '5s'");
+      const locationAdmin = await unlinkedScopedFixture(client, "location_admin");
+      const groupAdmin = await unlinkedScopedFixture(client, "asset_group_admin");
       const grants = async (): Promise<{ wcAdmin: number; wcHvacAdmin: number }> => {
         const found = await client.query<{ wc_admin: number; wc_hvac_admin: number }>(
           `SELECT (SELECT COUNT(*)::int FROM bms.user_location_access ula
                      JOIN bms.users u ON u.id = ula.user_id
-                    WHERE u.email = 'wc-admin@bms.local') AS wc_admin,
+                    WHERE u.email = $1) AS wc_admin,
                   (SELECT COUNT(*)::int FROM bms.user_asset_group_access uaga
                      JOIN bms.users u ON u.id = uaga.user_id
-                    WHERE u.email = 'wc-hvac-admin@bms.local') AS wc_hvac_admin`,
+                    WHERE u.email = $2) AS wc_hvac_admin`,
+          [locationAdmin.email, groupAdmin.email],
         );
         return { wcAdmin: found.rows[0]?.wc_admin ?? Number.NaN, wcHvacAdmin: found.rows[0]?.wc_hvac_admin ?? Number.NaN };
       };
-      // The seeded grants exist, so a slug fallback would find its insert
-      // already done and add nothing: remove them first (rolled back), and
-      // prove there was something to remove.
-      const seeded = await grants();
-      assert(
-        seeded.wcAdmin > 0 && seeded.wcHvacAdmin > 0,
-        `both demo users must hold their seeded grant — run pnpm db:seed (got ${JSON.stringify(seeded)})`,
-      );
-      await client.query(
-        `DELETE FROM bms.user_location_access
-          WHERE user_id = (SELECT id FROM bms.users WHERE email = 'wc-admin@bms.local')`,
-      );
-      await client.query(
-        `DELETE FROM bms.user_asset_group_access
-          WHERE user_id = (SELECT id FROM bms.users WHERE email = 'wc-hvac-admin@bms.local')`,
-      );
-      await seedScopedDemoUsers(createDb(client as never), eskomOrgId, null);
+      // Fresh fixture users hold no grant, so a slug fallback would insert one.
+      await seedScopedDemoUsers(createDb(client as never), eskomOrgId, null, [locationAdmin, groupAdmin]);
       // Mutation "fall back to the slug lookup on null": one grant each. One
       // assertion on both, so a fallback for either user reddens it.
-      expect(await grants(), "no grant for either scoped demo user").toEqual({ wcAdmin: 0, wcHvacAdmin: 0 });
+      expect(await grants(), "no grant for either scoped fixture user").toEqual({ wcAdmin: 0, wcHvacAdmin: 0 });
     } finally {
       await client.query("ROLLBACK");
       client.release();

@@ -3,6 +3,7 @@ import { Module } from "@nestjs/common";
 import { CalcModule } from "../calc/calc.module";
 import { ControlRoomModule } from "../control-room/control-room.module";
 import { SiteLayoutService, siteTemplateArmOf } from "../control-room/site-layout.service";
+import { IdentityAdminModule } from "../identity/identity-admin.module";
 import { CredentialCryptoService } from "../security/credential-crypto.service";
 import { VocabulariesModule } from "../vocabularies/vocabularies.module";
 import { AssetPointCalcOverrideController } from "./asset-points/asset-point-calc-override.controller";
@@ -64,6 +65,10 @@ import { ManualReadingsController } from "./telemetry-entry/manual-readings.cont
 import { TelemetryWriteService } from "./telemetry-entry/telemetry-write.service";
 import { TelemetryImportController } from "./telemetry-import/telemetry-import.controller";
 import { TelemetryImportService } from "./telemetry-import/telemetry-import.service";
+import { UserGrantsAdminController } from "./users/user-grants.controller";
+import { UserGrantsService } from "./users/user-grants.service";
+import { UsersAdminController } from "./users/users.controller";
+import { UsersService } from "./users/users.service";
 
 @Module({
   // `F2.9` — `CalcModule` is imported for the two services it exports:
@@ -79,7 +84,11 @@ import { TelemetryImportService } from "./telemetry-import/telemetry-import.serv
   // `ControlRoomModule` own and export the service rather than `AdminModule`
   // re-providing its own copy, so this import is what makes the injected
   // parameter resolvable.
-  imports: [VocabulariesModule, CalcModule, ControlRoomModule],
+  //
+  // `F3.78` (ADR 0089 decision 5) — `IdentityAdminModule` provides `IDENTITY_ADMIN`
+  // to `UsersService`; it is not global. Unconfigured, the token is the
+  // `NotConfiguredIdentityAdmin`, so the module still boots and user writes answer 503.
+  imports: [VocabulariesModule, CalcModule, ControlRoomModule, IdentityAdminModule],
   controllers: [
     OrganizationsAdminController,
     LocationsAdminController,
@@ -103,6 +112,10 @@ import { TelemetryImportService } from "./telemetry-import/telemetry-import.serv
     OnboardingController,
     ManualReadingsController,
     TelemetryImportController,
+    // F3.78 / ADR 0089 decision 1 — /admin/users.
+    UsersAdminController,
+    // F3.78 / ADR 0089 decision 12 — /admin/users/:id/grants.
+    UserGrantsAdminController,
   ],
   providers: [
     MasterDataAuditService,
@@ -154,6 +167,8 @@ import { TelemetryImportService } from "./telemetry-import/telemetry-import.serv
     AuditAdminService,
     TelemetryWriteService,
     TelemetryImportService,
+    UsersService,
+    UserGrantsService,
   ],
 })
 export class AdminModule {}

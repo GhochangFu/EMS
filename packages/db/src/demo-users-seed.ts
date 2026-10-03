@@ -38,7 +38,18 @@ import {
  * foreign-key check is not row-level-security-filtered.
  */
 
-const SCOPED_USERS = [
+/**
+ * The seeded scoped logins. Each grant below is found by **role**, not by
+ * email: `location_admin` gets the Western Cape location, `asset_group_admin`
+ * its `hvac` group. The integration suites pass their own fixture list through
+ * `seedScopedDemoUsers`' last parameter so no case reads or writes a real
+ * seeded user's link or grants.
+ */
+export type ScopedUserSpec = Omit<SeededUserSpec, "organizationId"> & {
+  readonly role: "location_admin" | "asset_group_admin";
+};
+
+export const SCOPED_USERS: readonly ScopedUserSpec[] = [
   {
     email: "wc-admin@bms.local",
     password: "admin123",
@@ -51,7 +62,67 @@ const SCOPED_USERS = [
     displayName: "Western Cape HVAC Admin",
     role: "asset_group_admin",
   },
-] as const;
+];
+
+/** One seeded demo login, as `upsertSeededUser` writes it. */
+export type SeededUserSpec = {
+  readonly email: string;
+  readonly password: string;
+  readonly displayName: string;
+  readonly role: string;
+  readonly organizationId: string | null;
+};
+
+/**
+ * `F3.78` (ADR 0089, plan §5) — the per-row step every seeded scoped login
+ * shares: insert it when absent, re-assert its name, role and home
+ * organization when present **and unlinked**, and leave the `bms.users` row
+ * untouched when present and linked. Returns the row's id.
+ *
+ * A row whose `oidc_subject` is set has signed in through Keycloak and is
+ * administered through the users API from then on. Re-asserting the seed's
+ * role there would silently revert an admin's demotion on the next
+ * `compose up` (every `compose up` re-seeds), with no audit row and with the
+ * Keycloak realm role left out of step. An unlinked row keeps today's upsert:
+ * local mode never links, and local mode is read-only for user writes, so
+ * nothing is reverted there.
+ *
+ * `linked: true` tells the caller to touch nothing else for this user either
+ * (owner ruling 2026-10-03): a linked user's grants are administered through
+ * the grants API, so a re-seed must not re-insert a grant an admin removed.
+ * An unlinked user keeps today's insert-if-absent grant writes.
+ */
+export async function upsertSeededUser(
+  db: BmsDb,
+  spec: SeededUserSpec,
+): Promise<{ readonly id: string; readonly linked: boolean } | null> {
+  const [existing] = await db
+    .select({ id: users.id, subject: users.oidcSubject })
+    .from(users)
+    .where(eq(users.email, spec.email))
+    .limit(1);
+  if (existing) {
+    if (existing.subject !== null) {
+      return { id: existing.id, linked: true };
+    }
+    await db
+      .update(users)
+      .set({ displayName: spec.displayName, role: spec.role, organizationId: spec.organizationId })
+      .where(eq(users.id, existing.id));
+    return { id: existing.id, linked: false };
+  }
+  const [created] = await db
+    .insert(users)
+    .values({
+      email: spec.email,
+      passwordHash: await bcrypt.hash(spec.password, 10),
+      displayName: spec.displayName,
+      role: spec.role,
+      organizationId: spec.organizationId,
+    })
+    .returning({ id: users.id });
+  return created ? { id: created.id, linked: false } : null;
+}
 
 /** Ensures the global `admin@bms.local` login exists, returning its id. */
 export async function ensureAdminUser(db: BmsDb): Promise<string> {
@@ -106,43 +177,28 @@ export const WC_ADMIN_LOCATION_KEY = "rsmoc-western-cape";
  * group's organization. This path runs on the superuser connection and bypasses
  * that policy by design: the seed writes fixed demo grants before any tenant
  * context exists, and the rows it writes are in the ESKOM organization anyway.
+ *
+ * **F3.78 (owner ruling 2026-10-03):** a linked user (`oidc_subject` set) gets
+ * no grant write at all — its grants are administered through the grants API,
+ * and re-inserting one an admin removed would silently widen its scope on the
+ * next `compose up`. An unlinked user keeps the insert-if-absent below.
+ *
+ * `scopedUsers` defaults to the seeded logins; the integration suites pass
+ * their own fixture users. Each grant goes to every unlinked user of its role.
  */
 export async function seedScopedDemoUsers(
   db: BmsDb,
   organizationId: string,
   westernCapeId: string | null,
+  scopedUsers: readonly ScopedUserSpec[] = SCOPED_USERS,
 ): Promise<void> {
-  const scopedUserIds = new Map<string, string>();
-  for (const scopedUser of SCOPED_USERS) {
-    const existingScopedUser = await db
-      .select({ id: users.id })
-      .from(users)
-      .where(eq(users.email, scopedUser.email))
-      .limit(1);
-    if (existingScopedUser[0]) {
-      await db
-        .update(users)
-        .set({
-          displayName: scopedUser.displayName,
-          role: scopedUser.role,
-          organizationId,
-        })
-        .where(eq(users.id, existingScopedUser[0].id));
-      scopedUserIds.set(scopedUser.email, existingScopedUser[0].id);
-      continue;
-    }
-    const [createdScopedUser] = await db
-      .insert(users)
-      .values({
-        email: scopedUser.email,
-        passwordHash: await bcrypt.hash(scopedUser.password, 10),
-        displayName: scopedUser.displayName,
-        role: scopedUser.role,
-        organizationId,
-      })
-      .returning({ id: users.id });
-    if (createdScopedUser) {
-      scopedUserIds.set(scopedUser.email, createdScopedUser.id);
+  const locationAdminIds: string[] = [];
+  const assetGroupAdminIds: string[] = [];
+  for (const scopedUser of scopedUsers) {
+    const seeded = await upsertSeededUser(db, { ...scopedUser, organizationId });
+    // A linked row is administered through the users API (F3.78): its grants too.
+    if (seeded && !seeded.linked) {
+      (scopedUser.role === "location_admin" ? locationAdminIds : assetGroupAdminIds).push(seeded.id);
     }
   }
 
@@ -153,9 +209,11 @@ export async function seedScopedDemoUsers(
   // nothing: neither wc-admin's location grant nor wc-hvac-admin's, whose
   // `hvac` group is found under this row. The location seed's line names every
   // candidate.
-  const westernCape = westernCapeId === null ? undefined : { id: westernCapeId };
-  const wcAdminId = scopedUserIds.get("wc-admin@bms.local");
-  if (westernCape && wcAdminId) {
+  if (westernCapeId === null) {
+    return;
+  }
+  const westernCape = { id: westernCapeId };
+  for (const wcAdminId of locationAdminIds) {
     const existingAccess = await db
       .select({ id: userLocationAccess.id })
       .from(userLocationAccess)
@@ -174,8 +232,7 @@ export async function seedScopedDemoUsers(
     }
   }
 
-  const wcHvacAdminId = scopedUserIds.get("wc-hvac-admin@bms.local");
-  if (westernCape && wcHvacAdminId) {
+  if (assetGroupAdminIds.length > 0) {
     const [hvacGroup] = await db
       .select({ id: assetGroups.id })
       .from(assetGroups)
@@ -186,62 +243,55 @@ export async function seedScopedDemoUsers(
         ),
       )
       .limit(1);
-    if (hvacGroup) {
+    const hvacGroupId = hvacGroup?.id;
+    for (const wcHvacAdminId of assetGroupAdminIds) {
+      if (!hvacGroupId) {
+        break;
+      }
       const existingGroupAccess = await db
         .select({ id: userAssetGroupAccess.id })
         .from(userAssetGroupAccess)
         .where(
           and(
             eq(userAssetGroupAccess.userId, wcHvacAdminId),
-            eq(userAssetGroupAccess.assetGroupId, hvacGroup.id),
+            eq(userAssetGroupAccess.assetGroupId, hvacGroupId),
           ),
         )
         .limit(1);
       if (!existingGroupAccess[0]) {
         await db.insert(userAssetGroupAccess).values({
           userId: wcHvacAdminId,
-          assetGroupId: hvacGroup.id,
+          assetGroupId: hvacGroupId,
         });
       }
     }
   }
 }
 
-/** Creates the PHEWB organization admin and grants it organization scope. */
+/** The seeded PHEWB organization admin, less the organization the caller resolves. */
+export const PHE_ADMIN: Omit<SeededUserSpec, "organizationId"> = {
+  email: "phe-admin@bms.local",
+  password: "admin123",
+  displayName: "PHE Organization Admin",
+  role: "organization_admin",
+};
+
+/**
+ * Creates the PHEWB organization admin and grants it organization scope.
+ *
+ * **F3.78 (owner ruling 2026-10-03):** a linked admin (`oidc_subject` set)
+ * gets no grant write — see `seedScopedDemoUsers`. `spec` defaults to the
+ * seeded login; the integration suites pass their own fixture user.
+ */
 export async function seedPheOrganizationAdmin(
   db: BmsDb,
   pool: pg.Pool,
+  spec: Omit<SeededUserSpec, "organizationId"> = PHE_ADMIN,
 ): Promise<void> {
   const phewbOrgId = await getOrganizationId(pool, "PHEWB");
-  const pheAdminEmail = "phe-admin@bms.local";
-  const existingPheAdmin = await db
-    .select({ id: users.id, role: users.role })
-    .from(users)
-    .where(eq(users.email, pheAdminEmail))
-    .limit(1);
-  let pheAdminId = existingPheAdmin[0]?.id;
-  if (!pheAdminId) {
-    const [createdPheAdmin] = await db
-      .insert(users)
-      .values({
-        email: pheAdminEmail,
-        passwordHash: await bcrypt.hash("admin123", 10),
-        displayName: "PHE Organization Admin",
-        role: "organization_admin",
-        organizationId: phewbOrgId,
-      })
-      .returning({ id: users.id });
-    pheAdminId = createdPheAdmin?.id;
-  } else {
-    await db
-      .update(users)
-      .set({
-        displayName: "PHE Organization Admin",
-        role: "organization_admin",
-        organizationId: phewbOrgId,
-      })
-      .where(eq(users.id, pheAdminId));
-  }
+  const seeded = await upsertSeededUser(db, { ...spec, organizationId: phewbOrgId });
+  // A linked row is administered through the users API (F3.78): touch nothing, its grant included.
+  const pheAdminId = seeded && !seeded.linked ? seeded.id : undefined;
   if (pheAdminId) {
     const existingOrgAccess = await db
       .select({ id: userOrganizationAccess.id })

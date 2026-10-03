@@ -89,13 +89,18 @@ export type AssetImageUploadInput = {
  * even under a cross-organization grant the row is stamped consistently
  * with its parent and `0072`'s `WITH CHECK` holds; the exposure L-1 names
  * is the same one every existing asset write carries through
- * `canManageAsset`, and it is the grant data's, not this row's. What keeps
- * that true today is that **no API path writes `user_location_access` at
- * all** — every reference to it in `access-control.service.ts` is a read — so
- * a cross-organization grant can only arrive by hand in the database; F3.4
- * turns the same grant from a read exposure into a write one, and L-1's
- * organization re-check must therefore land **together with** whatever
- * endpoint first writes a grant, not after it.
+ * `canManageAsset`, and it is the grant data's, not this row's. F3.4 turns
+ * a cross-organization grant from a read exposure into a write one, so L-1's
+ * organization re-check had to land **together with** the first endpoint that
+ * writes a grant. That endpoint is `F3.78`'s grants API
+ * (`admin/users/user-grants.service.ts`, ADR 0089 decisions 10 and 12): it
+ * reads the grant target's organization on `fleetDb` (the location's, the
+ * asset group's, or the organization itself), uses that one value as both the
+ * L-1 re-check and the `withTenant` GUC of the insert, and makes any grant
+ * outside the user's home organization `admin`-only for all three kinds.
+ * `0098` adds the parent-keyed `tenant_isolation` policy to
+ * `user_location_access`, whose `WITH CHECK` refuses an insert whose location
+ * is not in that GUC's organization.
  *
  * **R-6 — the RLS path for the insert.** `withTenant(tenantDb,
  * assetOrganizationId, tx => …)` with the org resolved from `bms.assets` on

@@ -26,6 +26,14 @@ import { Logger } from "@nestjs/common";
  * sits beside it in the same environment.
  */
 
+/**
+ * How long one Keycloak admin request (the token request included) may take
+ * before it fails as `unavailable`. An admin role change calls
+ * `setRealmRole` while it holds the active-admin row locks, so an unbounded
+ * wait there would hold them for as long as Keycloak hangs.
+ */
+export const KEYCLOAK_REQUEST_TIMEOUT_MS = 10_000;
+
 export type IdentityAdminConfig = {
   /** Base URL with no trailing slash, e.g. `http://keycloak:8080`. */
   readonly url: string;

@@ -55,9 +55,13 @@ import { requireStorageConfigured } from "./require-storage";
  * `readableAssetIds` excluded — the two paths agree). That organization
  * bound is a property of the **grant data**, not of a constraint: nothing
  * in the schema forbids a `user_location_access` row that pairs a user with
- * a location in another organization, so a future grant-write endpoint must
- * re-check the location's organization before it inserts (ADR 0066
- * Amendment 2, L-1). The constructor order (tenant, fleet) is pinned by
+ * a location in another organization. The one API path that writes a grant,
+ * `F3.78`'s `admin/users/user-grants.service.ts` (ADR 0089 decision 12),
+ * re-checks the location's organization on `fleetDb` before it inserts and
+ * writes under that organization's GUC (ADR 0066 Amendment 2, L-1), and makes
+ * a grant outside the user's home organization `admin`-only — so a
+ * cross-organization grant is an `admin`'s deliberate act, not an
+ * `organization_admin`'s reach. The constructor order (tenant, fleet) is pinned by
  * `database/fleet-read-wiring.spec.ts`: `withReadScope` reads its pools
  * positionally and a swap silently unscopes.
  *
