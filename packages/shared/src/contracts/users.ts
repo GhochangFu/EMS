@@ -129,12 +129,19 @@ export const temporaryPasswordBodySchema = z
  * delete failed too, so a disabled Keycloak account with no `bms.users` row
  * remains (ADR 0089 decision 3) — an operator removes it in Keycloak. The
  * error keeps its original status.
+ *
+ * `keycloak_create_outcome_unknown` rides on a 502 error body too: Keycloak's
+ * create timed out or answered a 5xx / unrecognised status, so it may have
+ * made the account but no id came back and nothing could be undone — a
+ * (disabled) Keycloak account with no `bms.users` row may remain; an operator
+ * checks Keycloak for the email before retrying.
  */
 export const userWriteFollowUpSchema = z.enum([
   "keycloak_enable_failed",
   "keycloak_disable_failed",
   "keycloak_logout_failed",
   "keycloak_orphan_disabled_account",
+  "keycloak_create_outcome_unknown",
 ]);
 
 export const userWriteResponseSchema = z.object({

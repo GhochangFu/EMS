@@ -330,6 +330,10 @@ export class UsersService {
    * too, the error keeps its status and its body gains
    * `followUp: "keycloak_orphan_disabled_account"` (decision 3: the response
    * says a disabled Keycloak account remains); the log names the Keycloak id only.
+   * A create whose outcome is unknown (`unavailable` / `unexpected_response`:
+   * Keycloak may have made the account, but no id was parsed) undoes nothing,
+   * inserts nothing and is a 502 with `followUp: "keycloak_create_outcome_unknown"`;
+   * a definite refusal keeps the {@link keycloak} mapping.
    */
   async create(jwt: JwtPayload, rawBody: unknown): Promise<UserWriteResponse> {
     const manager = await this.requireManager(jwt);
@@ -356,9 +360,18 @@ export class UsersService {
       throw new ConflictException(DUPLICATE_EMAIL);
     }
 
-    const { id: keycloakId } = await this.keycloak(() =>
-      this.identity.createUser({ email: body.email, displayName: body.displayName }),
-    );
+    const { id: keycloakId } = await this.keycloak(async () => {
+      try {
+        return await this.identity.createUser({ email: body.email, displayName: body.displayName });
+      } catch (err) {
+        if (err instanceof IdentityAdminError && UNKNOWN_OUTCOME.has(err.reason)) {
+          // Keycloak may have made the account, but no id came back, so there is nothing to undo.
+          this.logger.error(`F3.78: the Keycloak create outcome is unknown (${err.reason}); an account may remain with no bms.users row`);
+          throw withFollowUp(new BadGatewayException(IDENTITY_PROVIDER_FAILED), "keycloak_create_outcome_unknown");
+        }
+        throw err;
+      }
+    });
 
     let created: UserRow;
     try {

@@ -379,6 +379,46 @@ export async function assertAFailingDeleteAddsTheOrphanFollowUpAndKeepsTheStatus
   ]);
 }
 
+/**
+ * A create whose outcome is unknown (timeout / 5xx / unrecognised status) may
+ * have made the account, but no id was parsed, so nothing is undone and no
+ * row is inserted: the 502 says an account may remain.
+ */
+export async function assertAnUnknownCreateOutcomeIs502WithFollowUpAndNoUndo(
+  reason: Extract<IdentityAdminFailureReason, "unavailable" | "unexpected_response">,
+): Promise<void> {
+  vi.spyOn(Logger.prototype, "error").mockImplementation(() => undefined);
+  const { service, jwt, identity, timeline } = harness();
+  identity.failNext("createUser", reason);
+  const err = await refusal(service.create(jwt, createBody()));
+  expect([
+    err.getStatus(),
+    (err.getResponse() as { followUp?: unknown }).followUp,
+    userInserts(timeline).length,
+    identity.calls.filter((call) => call.method === "deleteUser").length,
+  ]).toEqual([502, "keycloak_create_outcome_unknown", 0, 0]);
+}
+
+export async function assertAnUnknownCreateOutcomeLogsTheReasonAndNotTheEmail(): Promise<void> {
+  const errorSpy = vi.spyOn(Logger.prototype, "error").mockImplementation(() => undefined);
+  const { service, jwt, identity } = harness();
+  identity.failNext("createUser", "unavailable");
+  await refusal(service.create(jwt, createBody()));
+  const logged = errorSpy.mock.calls.map((call) => String(call[0]));
+  expect([
+    logged.filter((line) => line.includes("unavailable")).length,
+    logged.join("\n").includes("new.person@example.com"),
+  ]).toEqual([1, false]);
+}
+
+/** Positive control: a definite refusal keeps today's mapping and names no follow-up. */
+export async function assertAConflictingCreateIs409WithoutFollowUp(): Promise<void> {
+  const { service, jwt, identity } = harness();
+  identity.failNext("createUser", "conflict");
+  const err = await refusal(service.create(jwt, createBody()));
+  expect([err.getStatus(), (err.getResponse() as { followUp?: unknown }).followUp]).toEqual([409, undefined]);
+}
+
 export async function assertADuplicateEmailIs409BeforeKeycloak(): Promise<void> {
   const { service, jwt, identity } = harness();
   const err = await refusal(service.create(jwt, createBody({ email: VIEWER_A.email.toUpperCase() })));

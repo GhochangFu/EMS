@@ -57,6 +57,22 @@ describe("F3.78 — UsersService.create (ADR 0089 decision 3)", () => {
     await spec.assertAPolicyRefusedPasswordIs400("create");
   });
 
+  it("a Keycloak create that times out (unavailable) is 502 with keycloak_create_outcome_unknown, no insert and no delete", async () => {
+    await spec.assertAnUnknownCreateOutcomeIs502WithFollowUpAndNoUndo("unavailable");
+  });
+
+  it("a Keycloak create with an unexpected response is 502 with keycloak_create_outcome_unknown, no insert and no delete", async () => {
+    await spec.assertAnUnknownCreateOutcomeIs502WithFollowUpAndNoUndo("unexpected_response");
+  });
+
+  it("an unknown create outcome logs one line naming the outcome and not the email", async () => {
+    await spec.assertAnUnknownCreateOutcomeLogsTheReasonAndNotTheEmail();
+  });
+
+  it("a Keycloak create conflict is 409 with no followUp", async () => {
+    await spec.assertAConflictingCreateIs409WithoutFollowUp();
+  });
+
   it("a duplicate email is 409 before any Keycloak call", async () => {
     await spec.assertADuplicateEmailIs409BeforeKeycloak();
   });
