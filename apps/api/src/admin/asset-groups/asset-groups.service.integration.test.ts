@@ -1,3 +1,5 @@
+import { randomUUID } from "node:crypto";
+
 import pg from "pg";
 import { afterAll, beforeAll, describe, it } from "vitest";
 
@@ -11,17 +13,34 @@ import { VocabulariesService } from "../../vocabularies/vocabularies.service";
 import { MasterDataAuditService } from "../master-data-audit.service";
 import { AssetGroupsAdminService } from "./asset-groups.service";
 import {
+  assertAddMemberToAnotherSitesGroupIsRefused,
+  assertAddMemberWritesAnAuditRow,
+  assertAddsThenRemovesAMember,
+  assertAuditRollsBackWithTheWrite,
   assertClearsRoleWithNull,
+  assertCreateAtAnotherSiteIsRefused,
+  assertCreateRejectsAnUnknownDomain,
+  assertCreateWritesAnAuditRow,
+  assertDuplicateGroupCodeIs409,
+  assertDuplicateMemberIs409,
+  assertInactiveAssetIs400,
   assertListReturnsOnlyWritableGroups,
   assertMembersOrderedByAssetCode,
+  assertMemberFromOtherLocationIs400,
+  assertMemberFromOtherOrganizationIs400,
   assertRefusesOutOfScopeMembership,
   assertRejectsRetiredRole,
+  assertRemoveMemberWritesAnAuditRow,
+  assertRemoveOfAnotherSitesMemberIsRefused,
+  assertUpdateAuditNamesTheChangedFields,
+  assertUpdateOfAnotherSitesGroupIsRefused,
+  RollbackAuditService,
   assertRejectsUnknownRoleWith400,
   assertRoleCountsReportPluralRoles,
   assertSetsRoleOnMembership,
   assertWritesAuditRow,
 } from "./asset-groups.service.integration.spec";
-import type { GroupFixtures } from "./asset-groups.service.integration.spec";
+import type { FixtureAsset, GroupFixtures } from "./asset-groups.service.integration.spec";
 import { jwtFor, primeSeededSubjects } from "../../testing/seeded-subjects";
 
 /**
@@ -55,6 +74,8 @@ describe.skipIf(!connectionString)("F3.37 — AssetGroupsAdminService under real
   let scopedJwt: JwtPayload;
 
   const createdAssetIds: string[] = [];
+  /** F3.78 - locations this suite inserts so one asset can sit at a second site of the same organization. */
+  const createdLocationIds: string[] = [];
   const createdGroupIds: string[] = [];
   /**
    * Every membership this suite creates, so `afterAll` can delete **its own**
@@ -221,7 +242,59 @@ describe.skipIf(!connectionString)("F3.37 — AssetGroupsAdminService under real
       `f337-foreign-${stamp}`,
     );
 
+    // F3.78 - a second location of the scoped organization, and fresh assets, all suite-owned.
+    const locationType = await ownerPool.query<{ type: string }>(
+      "SELECT type FROM bms.locations WHERE id = $1",
+      [locationId],
+    );
+    const otherSlug = `f378-pr4-${randomUUID()}`;
+    const otherLoc = await ownerPool.query<{ id: string }>(
+      `INSERT INTO bms.locations (organization_id, code, slug, name, type, latitude, longitude)
+       VALUES ($1, $2, $2, $3, $4, 0, 0) RETURNING id`,
+      [organizationId, otherSlug, "F3.78 pr4 second site", locationType.rows[0]?.type],
+    );
+    const otherLocationId = otherLoc.rows[0]?.id as string;
+    createdLocationIds.push(otherLocationId);
+
+    async function makeAsset(locId: string, orgId: string, active: boolean): Promise<FixtureAsset> {
+      const code = `f378-pr4-${randomUUID()}`;
+      const name = `F3.78 pr4 ${code}`;
+      const row = await ownerPool.query<{ id: string }>(
+        `INSERT INTO bms.assets (organization_id, code, name, site_name, location_id, domain, active)
+         VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id`,
+        [orgId, code, name, "F3.78 fixture site", locId, domain.rows[0]?.code, active],
+      );
+      const id = row.rows[0]?.id as string;
+      createdAssetIds.push(id);
+      return { id, code, name };
+    }
+    const otherLocationAsset = await makeAsset(otherLocationId, organizationId, true);
+    const foreignAssetRow = await ownerPool.query<FixtureAsset>(
+      `SELECT a.id, a.code, a.name FROM bms.asset_group_members m
+         JOIN bms.assets a ON a.id = m.asset_id WHERE m.id = $1`,
+      [foreignMembershipId],
+    );
+    const accessControl = new AccessControlService(createDb(authPool), createDb(fleetPool));
+    const vocabularies = new VocabulariesService(createDb(fleetPool));
+
     ctx = {
+      scopedLocationId: locationId,
+      scopedOrganizationId: organizationId,
+      foreignLocationId: foreignLoc.rows[0].id,
+      foreignOrganizationId: foreignLoc.rows[0].organization_id,
+      foreignAsset: foreignAssetRow.rows[0] as FixtureAsset,
+      otherLocationAsset,
+      makeAsset,
+      createdGroupIds,
+      createdMembershipIds,
+      rollbackSvc: new AssetGroupsAdminService(
+        createDb(fleetPool),
+        createDb(tenantPool),
+        accessControl,
+        // The default executor is the fleet pool: see RollbackAuditService.
+        new RollbackAuditService(createDb(fleetPool), createDb(fleetPool)),
+        vocabularies,
+      ),
       svc: new AssetGroupsAdminService(
         createDb(fleetPool),
         createDb(tenantPool),
@@ -276,6 +349,12 @@ describe.skipIf(!connectionString)("F3.37 — AssetGroupsAdminService under real
       ]);
       await ownerPool.query("DELETE FROM bms.asset_groups WHERE id = ANY($1)", [createdGroupIds]);
     }
+    if (createdGroupIds.length > 0) {
+      await ownerPool.query(
+        "DELETE FROM bms.audit_log WHERE entity_type = 'asset_group' AND entity_id = ANY($1)",
+        [createdGroupIds],
+      );
+    }
     if (createdMembershipIds.length > 0) {
       // Scoped to this suite's own memberships. `entity_type` alone would
       // erase every organization's real role-change history on a developer
@@ -295,7 +374,22 @@ describe.skipIf(!connectionString)("F3.37 — AssetGroupsAdminService under real
     if (createdAssetIds.length > 0) {
       await ownerPool.query("DELETE FROM bms.assets WHERE id = ANY($1)", [createdAssetIds]);
     }
+    if (createdLocationIds.length > 0) {
+      await ownerPool.query("DELETE FROM bms.locations WHERE id = ANY($1)", [createdLocationIds]);
+    }
+    // Leak check: every row this suite registered is gone. A row created before
+    // its id was registered would not be caught here, which is why each case
+    // registers the id the line after the service returns it.
+    const leaked = await ownerPool.query<{ n: string }>(
+      `SELECT (SELECT count(*) FROM bms.asset_groups WHERE id = ANY($1))
+            + (SELECT count(*) FROM bms.assets WHERE id = ANY($2))
+            + (SELECT count(*) FROM bms.locations WHERE id = ANY($3)) AS n`,
+      [createdGroupIds, createdAssetIds, createdLocationIds],
+    );
     await Promise.all([ownerPool.end(), authPool.end(), tenantPool.end(), fleetPool.end()]);
+    if (Number(leaked.rows[0]?.n) !== 0) {
+      throw new Error(`F3.78 pr4: ${leaked.rows[0]?.n} fixture rows leaked`);
+    }
   });
 
   it("lists only groups the caller may administer, with a member count", async () => {
@@ -332,5 +426,69 @@ describe.skipIf(!connectionString)("F3.37 — AssetGroupsAdminService under real
 
   it("writes one audit row with a real organization and a resolved actor", async () => {
     await assertWritesAuditRow(ctx, adminJwt);
+  });
+
+  it("a duplicate group code at a location is a 409 and writes no second row", async () => {
+    await assertDuplicateGroupCodeIs409(ctx, adminJwt);
+  });
+
+  it("create rejects an unknown domain with a 400", async () => {
+    await assertCreateRejectsAnUnknownDomain(ctx, adminJwt);
+  });
+
+  it("a member from another location is a 400 that names no asset", async () => {
+    await assertMemberFromOtherLocationIs400(ctx, adminJwt);
+  });
+
+  it("a member from another organization is a 400 that names no asset", async () => {
+    await assertMemberFromOtherOrganizationIs400(ctx, adminJwt);
+  });
+
+  it("an inactive asset is a 400", async () => {
+    await assertInactiveAssetIs400(ctx, adminJwt);
+  });
+
+  it("a duplicate member is a 409 and leaves one row", async () => {
+    await assertDuplicateMemberIs409(ctx, adminJwt);
+  });
+
+  it("adds a member with a role, then removes it", async () => {
+    await assertAddsThenRemovesAMember(ctx, adminJwt);
+  });
+
+  it("create at another site's location is refused for a location_admin and writes nothing", async () => {
+    await assertCreateAtAnotherSiteIsRefused(ctx, scopedJwt);
+  });
+
+  it("update of another site's group is refused for a location_admin and writes nothing", async () => {
+    await assertUpdateOfAnotherSitesGroupIsRefused(ctx, scopedJwt);
+  });
+
+  it("addMember to another site's group is refused for a location_admin and writes nothing", async () => {
+    await assertAddMemberToAnotherSitesGroupIsRefused(ctx, scopedJwt);
+  });
+
+  it("removeMember of another site's membership is refused for a location_admin and deletes nothing", async () => {
+    await assertRemoveOfAnotherSitesMemberIsRefused(ctx, scopedJwt);
+  });
+
+  it("the audit row rolls back with the write it describes", async () => {
+    await assertAuditRollsBackWithTheWrite(ctx, adminJwt);
+  });
+
+  it("create writes one audit row with a real organization and actor", async () => {
+    await assertCreateWritesAnAuditRow(ctx, adminJwt);
+  });
+
+  it("update's audit row names the changed fields", async () => {
+    await assertUpdateAuditNamesTheChangedFields(ctx, adminJwt);
+  });
+
+  it("addMember writes one audit row", async () => {
+    await assertAddMemberWritesAnAuditRow(ctx, adminJwt);
+  });
+
+  it("removeMember writes one audit row naming the asset", async () => {
+    await assertRemoveMemberWritesAnAuditRow(ctx, adminJwt);
   });
 });
