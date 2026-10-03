@@ -23,11 +23,8 @@ import { VocabulariesService } from "../../vocabularies/vocabularies.service";
 import { echoedItems, moreTail, quoteCell } from "../spreadsheet-guard";
 import { cloneJson } from "../stack-safe-json";
 import { OnboardingCatalogService } from "./onboarding-catalog.service";
-import {
-  catalogCodeFromLocationName,
-  cutToBound,
-  cutToBoundWithHashSuffix,
-} from "./onboarding-draft-caps";
+import { catalogCodeFromLocationName, cutToBound } from "./onboarding-draft-caps";
+import { deriveLocationPatch } from "./onboarding-location-derive";
 import { mergeDraftPatch } from "./onboarding-draft-merge";
 import { MAX_RTU_TOPIC_CHARS } from "./onboarding-excel.service";
 import {
@@ -472,31 +469,10 @@ Draft context (redacted): ${serialiseDraftForPrompt(draft)}`;
       // both go through it anyway, so reordering the two steps cannot
       // reintroduce the split.
       const name = kept?.name ?? cutToBound(message.trim(), ONBOARDING_DRAFT_STRING_MAX["location.name"]);
-      const slug = cutToBoundWithHashSuffix(
-        name
-          .toLowerCase()
-          .replace(/[^a-z0-9]+/g, "-")
-          .replace(/^-|-$/g, ""),
-        ONBOARDING_DRAFT_STRING_MAX["location.slug"],
-        "lower",
-      );
-      const code = cutToBound(
-        name.toUpperCase().replace(/[^A-Z0-9]+/g, "_"),
-        ONBOARDING_DRAFT_STRING_MAX["location.code"],
-      );
       // A kept location's non-empty slug and code win; an empty one (a blank
       // workbook cell, a `PATCH` that cleared it) is derived from the name.
-      patch.location = {
-        name,
-        latitude: draft.location?.latitude ?? -25.7,
-        longitude: draft.location?.longitude ?? 28.2,
-        province: draft.location?.province,
-        capital: draft.location?.capital,
-        ...kept,
-        slug: kept?.slug || slug || "location",
-        code: kept?.code || code || "LOC",
-        ...(type ? { type } : {}),
-      };
+      // `F3.21`: the derivation is shared with the agent's `set_location` tool.
+      patch.location = deriveLocationPatch({ name, stored: draft.location, kept, type });
       if (!type) {
         const ask = locationTypes.locationTypeQuestion(name);
         const labels = types.map((row) => row.label);

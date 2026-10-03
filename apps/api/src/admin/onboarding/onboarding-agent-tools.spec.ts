@@ -1,0 +1,251 @@
+import type { OnboardingDraft } from "@bms/shared";
+
+import {
+  CREDENTIAL_TOOL_ERROR,
+  TOOL_DEFINITIONS,
+  TOOL_LIST_MAX_ITEMS,
+  TOOL_RESULT_CUT_TAIL,
+  TOOL_RESULT_MAX_CHARS,
+  runTool,
+  type ToolContext,
+  type ToolState,
+} from "./onboarding-agent-tools";
+import { commitSummary } from "./onboarding-commit-proposal";
+import { PROMPT_OMITTED_MARKER } from "./onboarding-prompt-budget";
+import { OnboardingValidateService } from "./onboarding-validate.service";
+
+function assert(condition: boolean, message: string): void {
+  if (!condition) {
+    throw new Error(message);
+  }
+}
+
+const TYPES = [
+  { code: "smoc_campus", label: "SMOC campus" },
+  { code: "pump_station", label: "Pump station" },
+];
+
+function catalog(count = 3): ToolContext["catalog"] {
+  return {
+    listPointKeys: async () =>
+      Array.from({ length: count }, (_, i) => ({
+        code: i === 1 ? "energy_kwh" : `key_${i}`,
+        name: i === 2 ? "Active Power" : `Key ${i}`,
+        unit: null,
+        domain: null,
+      })),
+  };
+}
+
+function context(overrides: Partial<ToolContext> = {}): ToolContext {
+  return {
+    organizationId: "org-1",
+    activeTypes: TYPES,
+    catalog: catalog(),
+    protocols: {
+      getContextForOrganization: async () => ({ catalog: [], orgExamples: [] }),
+      formatForAssistant: () => "MQTT, Modbus TCP",
+    },
+    validator: new OnboardingValidateService(),
+    ...overrides,
+  };
+}
+
+const PLAIN_RTU = { code: "RTU-1", displayName: "RTU-1", protocol: "mqtt", config: { host: "broker", port: 8883, tls: true, topic: "a/b" } };
+
+function readyDraft(): OnboardingDraft {
+  return {
+    location: { name: "Berhampur", slug: "berhampur", code: "BERHAMPUR", latitude: 20.1, longitude: 85.1, type: "smoc_campus" },
+    // ingest off: an MQTT RTU with ingest on and no credentials is not ready to commit.
+    rtus: [{ ...PLAIN_RTU, credentialsSet: false, ingestEnabled: false }],
+    pointKeys: [{ code: "kw", name: "Active Power", domain: "electrical", unit: "kW" }],
+    assets: [{ rtuIndex: 0, code: "BERHAMPUR-ASSET-1", name: "Meter", siteName: "Berhampur", domain: "electrical" }],
+    assetPoints: [{ assetIndex: 0, pointKey: "kw", sourceDataKey: "s01", unit: "kW" }],
+  } as OnboardingDraft;
+}
+
+function call(name: string, args: unknown): { id: string; name: string; arguments: string } {
+  return { id: "c1", name, arguments: typeof args === "string" ? args : JSON.stringify(args) };
+}
+
+function parsed(content: string): Record<string, unknown> {
+  return JSON.parse(content) as Record<string, unknown>;
+}
+
+const FORBIDDEN = ["credentialsSet", "_secrets", "_commitProposal", "rtuTargetCount", "importedFromExcel"];
+
+/** Every tool's JSON Schema; none carries a field the agent must never write. */
+export function assertEveryToolHasAJsonSchemaWithNoForbiddenProperty(): void {
+  assert(TOOL_DEFINITIONS.length === 17, `there are 17 tools, got ${TOOL_DEFINITIONS.length}`);
+  for (const tool of TOOL_DEFINITIONS) {
+    const text = JSON.stringify(tool.parameters);
+    for (const field of FORBIDDEN) {
+      assert(!text.includes(`"${field}"`), `${tool.name}'s schema carries no ${field}`);
+    }
+    assert(tool.parameters.type === "object", `${tool.name}'s parameters are an object schema`);
+  }
+  const meta = TOOL_DEFINITIONS.find((t) => t.name === "use_existing_point_keys");
+  const props = Object.keys((meta?.parameters.properties ?? {}) as object);
+  assert(props.length === 1 && props[0] === "value", "use_existing_point_keys takes exactly `value`");
+}
+
+export async function assertAddRtuRefusesASecretKeyAtDepth(): Promise<void> {
+  const state: ToolState = { working: {} };
+  const out = await runTool(call("add_rtu", { ...PLAIN_RTU, config: { mqtt: { auth: { Password: "x" } } } }), state, context());
+  assert(!out.ok && parsed(out.content).error === CREDENTIAL_TOOL_ERROR, "a password key three levels down refuses the call");
+  assert((state.working.rtus?.length ?? 0) === 0, "the working draft is unchanged");
+  assert(out.actionLine === undefined, "a refused call writes no action line");
+}
+
+export async function assertAddRtuRefusesACredentialLookingValue(): Promise<void> {
+  const state: ToolState = { working: {} };
+  const out = await runTool(call("add_rtu", { ...PLAIN_RTU, config: { note: "password: hunter2" } }), state, context());
+  assert(!out.ok && parsed(out.content).error === CREDENTIAL_TOOL_ERROR, "a credential-looking value refuses the call");
+  assert((state.working.rtus?.length ?? 0) === 0, "the working draft is unchanged");
+}
+
+/** `sharedAccessKey` is a fragment only the redactors' list carries, so a private list would miss it. */
+export async function assertUpdateRtuRefusesTheSameTwoShapes(): Promise<void> {
+  for (const config of [{ azure: { sharedAccessKey: "abc" } }, { note: "password: hunter2" }]) {
+    const state: ToolState = { working: readyDraft() };
+    const out = await runTool(call("update_rtu", { index: 0, patch: { config } }), state, context());
+    assert(!out.ok && parsed(out.content).error === CREDENTIAL_TOOL_ERROR, `update_rtu refuses ${JSON.stringify(config)}`);
+    assert(JSON.stringify(state.working.rtus?.[0]?.config) === JSON.stringify(PLAIN_RTU.config), "the stored RTU is unchanged");
+  }
+}
+
+export async function assertAddRtuAcceptsAPlainConfig(): Promise<void> {
+  const state: ToolState = { working: {} };
+  const out = await runTool(call("add_rtu", PLAIN_RTU), state, context());
+  assert(out.ok, "a host/port/tls/topic config is accepted");
+  assert(state.working.rtus?.length === 1, "the RTU is appended");
+  assert(state.working.rtus?.[0]?.credentialsSet === false, "a new RTU has no credentials set");
+  assert(out.actionLine === "Added RTU RTU-1 (mqtt)", `the action line is code-written: ${out.actionLine}`);
+}
+
+export async function assertUpdateRtuKeepsCredentialsSet(): Promise<void> {
+  const draft = readyDraft();
+  draft.rtus![0]!.credentialsSet = true;
+  const state: ToolState = { working: draft };
+  // The patch schema omits credentialsSet and strips unknown keys, so an argument
+  // naming it is dropped, not applied.
+  const out = await runTool(call("update_rtu", { index: 0, patch: { displayName: "Main RTU", credentialsSet: false } }), state, context());
+  assert(out.ok && state.working.rtus?.[0]?.displayName === "Main RTU", "the display name changes");
+  assert(state.working.rtus?.[0]?.credentialsSet === true, "the stored credentialsSet survives, whatever the arguments say");
+}
+
+export async function assertAWriteOverACapIsAToolError(): Promise<void> {
+  const rtus = Array.from({ length: 100 }, (_, i) => ({ ...PLAIN_RTU, code: `RTU-${i}`, credentialsSet: false }));
+  const state: ToolState = { working: { rtus } as OnboardingDraft };
+  const out = await runTool(call("add_rtu", { ...PLAIN_RTU, code: "RTU-X" }), state, context());
+  assert(!out.ok && String(parsed(out.content).error).includes("more than the 100"), "the 101st RTU is refused with the cap sentence");
+  assert(state.working.rtus?.length === 100, "the working draft still holds 100");
+}
+
+export async function assertSetLocationRefusesAnInactiveTypeNamingTheActiveCodes(): Promise<void> {
+  const state: ToolState = { working: readyDraft() };
+  const out = await runTool(call("set_location", { name: "Berhampur", type: "warehouse" }), state, context());
+  const error = String(parsed(out.content).error);
+  assert(!out.ok && error.includes("smoc_campus") && error.includes("pump_station"), "the error names the active codes");
+  assert(state.working.location?.type === "smoc_campus", "the stored type is unchanged");
+  const kept = await runTool(call("set_location", { name: "Berhampur North" }), state, context());
+  assert(kept.ok && state.working.location?.type === "smoc_campus", "a call with no type keeps the stored one");
+  assert(state.working.location?.name === "Berhampur North", "the name changes");
+}
+
+export async function assertSetLocationDerivesSlugAndCode(): Promise<void> {
+  const state: ToolState = { working: {} };
+  const out = await runTool(call("set_location", { name: "Berhampur", type: "pump_station" }), state, context());
+  const location = state.working.location;
+  assert(out.ok, "set_location succeeds");
+  assert(location?.slug === "berhampur" && location?.code === "BERHAMPUR", "slug and code derive from the name");
+  assert(location?.latitude === -25.7 && location?.longitude === 28.2, "the coordinates take the shared defaults");
+  assert(out.actionLine === "Set location Berhampur (pump_station)", `the action line is code-written: ${out.actionLine}`);
+}
+
+export async function assertUseExistingPointKeysWritesOnlyThatFlag(): Promise<void> {
+  const state: ToolState = { working: { onboardingMeta: { importedFromExcel: true } } as OnboardingDraft };
+  const out = await runTool(call("use_existing_point_keys", { value: true }), state, context());
+  assert(out.ok, "the flag is set");
+  assert(state.working.onboardingMeta?.useExistingPointKeys === true, "useExistingPointKeys flips");
+  assert(state.working.onboardingMeta?.importedFromExcel === true, "the other meta field survives");
+  const extra = await runTool(call("use_existing_point_keys", { value: true, rtuTargetCount: 9 }), state, context());
+  assert(!extra.ok, "no other meta field can ride along");
+}
+
+export async function assertProposeCommitRefusesAnUnreadyDraft(): Promise<void> {
+  const state: ToolState = { working: {} };
+  const out = await runTool(call("propose_commit", {}), state, context());
+  assert(!out.ok && String(parsed(out.content).error).startsWith("The draft is not ready to commit."), "an empty draft is refused");
+  assert(state.pendingProposal === undefined, "no proposal is recorded");
+}
+
+/** Also the model-not-on-the-commit-path gate: the tool takes no commit dependency at all. */
+export async function assertProposeCommitRecordsASummary(): Promise<void> {
+  const state: ToolState = { working: readyDraft() };
+  const before = JSON.stringify(state.working);
+  const out = await runTool(call("propose_commit", {}), state, context());
+  assert(out.ok, "a ready draft is proposed");
+  assert(state.pendingProposal?.summary === commitSummary(state.working), "the pending proposal carries the code-written summary");
+  assert(out.actionLine === `Proposed commit: ${commitSummary(state.working)}`, "the action line names the summary");
+  assert(JSON.stringify(state.working) === before, "proposing does not change the draft");
+  assert(!Object.keys(context()).some((key) => /commit/i.test(key)), "the tool context carries no commit service");
+}
+
+export async function assertAListResultIsBoundedAtOneHundredAndCountsTheRest(): Promise<void> {
+  const out = await runTool(call("list_point_keys", {}), { working: {} }, context({ catalog: catalog(130) }));
+  const result = parsed(out.content);
+  assert(TOOL_LIST_MAX_ITEMS === 100, "the list bound is 100");
+  assert((result.pointKeys as unknown[]).length === 100, "100 keys are named");
+  assert(result.more === "…and 30 more point keys", `the rest are counted: ${String(result.more)}`);
+}
+
+export async function assertListPointKeysSearchFiltersCodeAndName(): Promise<void> {
+  const byCode = parsed((await runTool(call("list_point_keys", { search: "ENERGY" }), { working: {} }, context())).content);
+  assert(JSON.stringify((byCode.pointKeys as { code: string }[]).map((k) => k.code)) === '["energy_kwh"]', "search matches the code");
+  const byName = parsed((await runTool(call("list_point_keys", { search: "active" }), { working: {} }, context())).content);
+  assert(JSON.stringify((byName.pointKeys as { code: string }[]).map((k) => k.code)) === '["key_2"]', "search matches the name");
+}
+
+export async function assertAToolResultIsCutToTheBound(): Promise<void> {
+  const draft = readyDraft();
+  // A surrogate pair built from code units, not a literal (AGENTS.md §4.5).
+  draft.location!.province = `${"P".repeat(TOOL_RESULT_MAX_CHARS)}${String.fromCharCode(0xd83d, 0xde00)}`;
+  draft.rtus = Array.from({ length: 60 }, (_, i) => ({ ...PLAIN_RTU, code: `RTU-${i}`, displayName: "D".repeat(120), credentialsSet: false }));
+  const out = await runTool(call("get_draft", {}), { working: draft }, context());
+  assert(out.content.length <= TOOL_RESULT_MAX_CHARS + TOOL_RESULT_CUT_TAIL.length, `the result is bounded (${out.content.length})`);
+  assert(out.content.endsWith(TOOL_RESULT_CUT_TAIL), "a cut result ends with the fixed tail");
+  const body = out.content.slice(0, -TOOL_RESULT_CUT_TAIL.length);
+  const last = body.charCodeAt(body.length - 1);
+  assert(!(last >= 0xd800 && last <= 0xdbff), "the cut never leaves a lone high surrogate");
+}
+
+export async function assertUnknownToolAndBadArgumentsAreToolErrors(): Promise<void> {
+  const state: ToolState = { working: {} };
+  for (const bad of [call("drop_database", {}), call("add_point_key", "{not json"), call("add_point_key", { code: "has space", name: "X" })]) {
+    let out;
+    try {
+      out = await runTool(bad, state, context());
+    } catch {
+      assert(false, `${bad.name} threw instead of returning a tool error`);
+    }
+    assert(out !== undefined && !out.ok && parsed(out.content).ok === false, `${bad.name} ${bad.arguments} is a tool error`);
+  }
+  assert((state.working.pointKeys?.length ?? 0) === 0, "nothing was written");
+}
+
+export async function assertAMarkerInArgumentsIsRefused(): Promise<void> {
+  const state: ToolState = { working: {} };
+  const out = await runTool(call("add_point_key", { code: "kw", name: "kW", description: PROMPT_OMITTED_MARKER }), state, context());
+  assert(!out.ok, "an argument echoing the withheld-value marker is refused");
+  assert((state.working.pointKeys?.length ?? 0) === 0, "nothing was written");
+}
+
+/** Not in the plan's list by name; the loop relies on it (ALaterWriteDropsThePendingProposal). */
+export async function assertASuccessfulWriteDropsThePendingProposal(): Promise<void> {
+  const state: ToolState = { working: readyDraft(), pendingProposal: { summary: "s" } };
+  const failed = await runTool(call("add_point_key", { code: "has space", name: "X" }), state, context());
+  assert(!failed.ok && state.pendingProposal !== undefined, "a refused write keeps the proposal");
+  const ok = await runTool(call("add_point_key", { code: "kvar", name: "Reactive" }), state, context());
+  assert(ok.ok && state.pendingProposal === undefined, "a successful write drops it");
+}

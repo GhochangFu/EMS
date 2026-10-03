@@ -1,0 +1,398 @@
+import type { LocationTypeDto, OnboardingDraft } from "@bms/shared";
+import { z, type ZodTypeAny } from "zod";
+import { zodToJsonSchema } from "zod-to-json-schema";
+
+import { echoedItems, moreTail, quoteCell } from "../spreadsheet-guard";
+import { isJsonContainer, rebuildDeep } from "../stack-safe-json";
+import { commitSummary } from "./onboarding-commit-proposal";
+import { looksLikeCredential } from "./onboarding-credential-detect";
+import { cutToBound, draftCountProblem } from "./onboarding-draft-caps";
+import { mergeDraftPatch } from "./onboarding-draft-merge";
+import type { LlmToolCall, LlmToolDefinition } from "./onboarding-llm-port";
+import { deriveLocationPatch } from "./onboarding-location-derive";
+import type { OrgPointKeySummary } from "./onboarding-catalog.service";
+import { carriesPromptMarker, serialiseDraftForPrompt } from "./onboarding-prompt-budget";
+import type { ProtocolContext } from "./onboarding-protocol.service";
+import { isSecretKey } from "./onboarding-redaction";
+import {
+  draftAssetPointSchema,
+  draftAssetSchema,
+  draftLocationSchema,
+  draftPointKeySchema,
+  draftRtuSchema,
+  type OnboardingDraftInput,
+} from "./onboarding.schema";
+
+/**
+ * The onboarding agent's tools (`F3.21`, ADR 0090 decision 4).
+ *
+ * Every tool runs inside the session's organization against an **in-memory**
+ * copy of the draft; the chat service writes the session row once, at the end
+ * of the turn. Every write parses its arguments with the matching element
+ * schema of `onboardingDraftSchema`, so the `F4.104` length bounds and the
+ * `F2.23` code class hold by construction, and then checks `draftCountProblem`
+ * on the merged result before the next model call.
+ *
+ * **A tool never throws.** Unknown names, malformed JSON, schema failures, a
+ * refused credential and a cap are all returned to the model as `{ ok: false }`
+ * results; every one of them counts toward the turn's 8-call cap (plan ruling
+ * 6).
+ *
+ * **No tool takes a credential**, and code enforces it (decision 4): an RTU
+ * argument is refused whole when any key at any depth matches the secret
+ * fragments the redactors use (`isSecretKey`, one list for scrub and refusal)
+ * or any string value `looksLikeCredential`. No tool schema carries `_secrets`,
+ * `credentialsSet`, `_commitProposal` or an `onboardingMeta` field other than
+ * `useExistingPointKeys`.
+ *
+ * **Action lines are written by code** from the validated, applied values —
+ * never the raw arguments and never the model's text (decision 6).
+ */
+
+/** Decision 3: one tool result in the prompt is cut to this many characters. */
+export const TOOL_RESULT_MAX_CHARS = 8_000;
+
+/** The fixed tail of a cut tool result. */
+export const TOOL_RESULT_CUT_TAIL = `…[cut to ${TOOL_RESULT_MAX_CHARS} characters]`;
+
+/** Plan ruling 1: one list result names at most this many items. */
+export const TOOL_LIST_MAX_ITEMS = 100;
+
+export const CREDENTIAL_TOOL_ERROR =
+  "Credentials are never set through this chat. Tell the user to use the Credentials field on the RTU step.";
+
+/** What the tools read; injected so a spec can supply fakes. */
+export type ToolContext = {
+  readonly organizationId: string;
+  readonly activeTypes: readonly LocationTypeDto[];
+  readonly catalog: {
+    listPointKeys(organizationId: string): Promise<OrgPointKeySummary[]>;
+  };
+  readonly protocols: {
+    getContextForOrganization(organizationId: string): Promise<ProtocolContext>;
+    formatForAssistant(context: ProtocolContext, exampleRtuName: string): string;
+  };
+  readonly validator: {
+    validate(
+      draft: unknown,
+      activeLocationTypeCodes: readonly string[],
+    ): { valid: boolean; readyToCommit: boolean; errors: { path: string; message: string }[] };
+  };
+};
+
+/** The turn's working state; `runTool` replaces `working` only after a write passes every check. */
+export type ToolState = {
+  working: OnboardingDraft;
+  pendingProposal?: { summary: string };
+};
+
+export type ToolOutcome = {
+  readonly ok: boolean;
+  /** The tool result as the model receives it: JSON, cut to `TOOL_RESULT_MAX_CHARS`. */
+  readonly content: string;
+  /** Set only by a successful write or a proposal. */
+  readonly actionLine?: string;
+};
+
+const indexSchema = z.object({ index: z.number().int().min(0) }).strict();
+const noArgs = z.object({}).strict();
+
+const rtuArgs = draftRtuSchema.omit({ credentialsSet: true });
+
+const TOOL_SCHEMAS = {
+  get_draft: noArgs,
+  list_point_keys: z.object({ search: z.string().max(64).optional() }).strict(),
+  list_location_types: noArgs,
+  list_protocols: noArgs,
+  set_location: draftLocationSchema.partial().required({ name: true }),
+  add_rtu: rtuArgs,
+  update_rtu: z.object({ index: z.number().int().min(0), patch: rtuArgs.partial() }).strict(),
+  remove_rtu: indexSchema,
+  add_point_key: draftPointKeySchema,
+  remove_point_key: indexSchema,
+  add_asset: draftAssetSchema,
+  remove_asset: indexSchema,
+  map_point: draftAssetPointSchema,
+  remove_asset_point: indexSchema,
+  use_existing_point_keys: z.object({ value: z.boolean() }).strict(),
+  validate_draft: noArgs,
+  propose_commit: noArgs,
+} as const satisfies Record<string, ZodTypeAny>;
+
+export type ToolName = keyof typeof TOOL_SCHEMAS;
+
+const DESCRIPTIONS: Record<ToolName, string> = {
+  get_draft: "Returns the current onboarding draft (credentials redacted).",
+  list_point_keys: "Lists catalog point keys (code, name, unit, domain). Optional `search` filters code and name.",
+  list_location_types: "Lists the active location type codes and labels. A location's `type` must be one of these codes.",
+  list_protocols: "Describes the communication protocols an RTU can use.",
+  set_location:
+    "Sets the location. `name` is required; `slug` and `code` are derived from it when omitted. `type` must be an active location type code.",
+  add_rtu: "Adds an RTU. Never put a username, password, token or key in `config`: credentials are set on the RTU step only.",
+  update_rtu: "Changes fields of the RTU at `index`. Never put a credential in `config`.",
+  remove_rtu: "Removes the RTU at `index`.",
+  add_point_key: "Declares a point key in this draft.",
+  remove_point_key: "Removes the draft point key at `index`.",
+  add_asset: "Adds an asset on the RTU at `rtuIndex`.",
+  remove_asset: "Removes the asset at `index`.",
+  map_point: "Maps a source data key on the asset at `assetIndex` to a point key.",
+  remove_asset_point: "Removes the mapping at `index`.",
+  use_existing_point_keys: "Sets whether the draft uses the existing point-key catalog instead of declaring new keys.",
+  validate_draft: "Validates the draft and returns the errors and whether it is ready to commit.",
+  propose_commit:
+    "Proposes the commit of a ready draft. You cannot commit: the user confirms with the Commit button or by typing `confirm commit`.",
+};
+
+function jsonSchemaOf(schema: ZodTypeAny): Record<string, unknown> {
+  const converted = zodToJsonSchema(schema, { $refStrategy: "none", target: "jsonSchema7" }) as Record<string, unknown>;
+  delete converted.$schema;
+  return converted;
+}
+
+/** The 17 tools as the model sees them, in a fixed order. */
+export const TOOL_DEFINITIONS: readonly LlmToolDefinition[] = (Object.keys(TOOL_SCHEMAS) as ToolName[]).map((name) => ({
+  name,
+  description: DESCRIPTIONS[name],
+  parameters: jsonSchemaOf(TOOL_SCHEMAS[name]),
+}));
+
+/**
+ * Whether an RTU argument carries a credential anywhere. Walked with the shared
+ * iterative rebuild, so a deep argument cannot overflow the stack (`F4.115`).
+ */
+export function configCarriesCredential(value: unknown): boolean {
+  let found = false;
+  rebuildDeep(
+    value,
+    isJsonContainer,
+    (key) => {
+      if (isSecretKey(key)) {
+        found = true;
+      }
+      return null;
+    },
+    (leaf) => {
+      if (typeof leaf === "string" && looksLikeCredential(leaf)) {
+        found = true;
+      }
+      return null;
+    },
+  );
+  return found;
+}
+
+/** A result as the model receives it: JSON, cut on a whole character with a fixed tail. */
+export function toolResultContent(result: unknown): string {
+  const text = JSON.stringify(result) ?? "null";
+  return text.length <= TOOL_RESULT_MAX_CHARS ? text : `${cutToBound(text, TOOL_RESULT_MAX_CHARS)}${TOOL_RESULT_CUT_TAIL}`;
+}
+
+function fail(error: string): ToolOutcome {
+  return { ok: false, content: toolResultContent({ ok: false, error }) };
+}
+
+function succeed(result: Record<string, unknown>, actionLine?: string): ToolOutcome {
+  return { ok: true, content: toolResultContent({ ok: true, ...result }), ...(actionLine ? { actionLine } : {}) };
+}
+
+function issuesOf(error: z.ZodError): string {
+  return error.issues
+    .slice(0, 10)
+    .map((issue) => cutToBound(`${issue.path.join(".") || "(arguments)"}: ${issue.message}`, 200))
+    .join("; ");
+}
+
+function activeCodes(ctx: ToolContext): string[] {
+  return ctx.activeTypes.map((type) => type.code);
+}
+
+/**
+ * Applies `patch` to the working draft only when the merged draft passes the
+ * caps. A successful write drops any pending proposal: a proposal never outlives
+ * an edit, even inside one turn.
+ */
+function write(state: ToolState, patch: OnboardingDraftInput, actionLine: string, result: Record<string, unknown> = {}): ToolOutcome {
+  const next = mergeDraftPatch(state.working, patch);
+  const problem = draftCountProblem(next);
+  if (problem !== null) {
+    return fail(problem);
+  }
+  state.working = next;
+  state.pendingProposal = undefined;
+  return succeed(result, actionLine);
+}
+
+function removeAt<T>(items: readonly T[] | undefined, index: number): { rest: T[]; removed: T } | null {
+  const list = items ?? [];
+  if (index >= list.length) {
+    return null;
+  }
+  return { rest: list.filter((_, i) => i !== index), removed: list[index] as T };
+}
+
+/** Runs one tool call against the turn's state. Never throws. */
+export async function runTool(call: LlmToolCall, state: ToolState, ctx: ToolContext): Promise<ToolOutcome> {
+  if (!Object.prototype.hasOwnProperty.call(TOOL_SCHEMAS, call.name)) {
+    return fail(`Unknown tool ${quoteCell(call.name)}.`);
+  }
+  const name = call.name as ToolName;
+  let raw: unknown;
+  try {
+    raw = call.arguments.trim() === "" ? {} : JSON.parse(call.arguments);
+  } catch {
+    return fail("The arguments are not valid JSON.");
+  }
+  if (carriesPromptMarker(raw)) {
+    return fail("The arguments carry a withheld-value marker; send real values only.");
+  }
+  if ((name === "add_rtu" || name === "update_rtu") && configCarriesCredential(raw)) {
+    return fail(CREDENTIAL_TOOL_ERROR);
+  }
+  const parsed = TOOL_SCHEMAS[name].safeParse(raw);
+  if (!parsed.success) {
+    return fail(`Invalid arguments: ${issuesOf(parsed.error)}`);
+  }
+  try {
+    return await dispatch(name, parsed.data as never, state, ctx);
+  } catch {
+    return fail("The tool failed. Try again or continue without it.");
+  }
+}
+
+async function dispatch(name: ToolName, args: Record<string, unknown>, state: ToolState, ctx: ToolContext): Promise<ToolOutcome> {
+  const draft = state.working;
+  switch (name) {
+    case "get_draft":
+      return succeed({ draft: serialiseDraftForPrompt(draft) });
+
+    case "list_point_keys": {
+      const search = typeof args.search === "string" ? args.search.toLowerCase() : "";
+      const rows = (await ctx.catalog.listPointKeys(ctx.organizationId)).filter(
+        (row) => !search || row.code.toLowerCase().includes(search) || row.name.toLowerCase().includes(search),
+      );
+      const { shown, omitted } = echoedItems(rows, TOOL_LIST_MAX_ITEMS);
+      return succeed({ pointKeys: shown, more: moreTail(omitted, "point keys") || undefined });
+    }
+
+    case "list_location_types":
+      return succeed({ types: ctx.activeTypes.map((type) => ({ code: type.code, label: type.label })) });
+
+    case "list_protocols": {
+      const context = await ctx.protocols.getContextForOrganization(ctx.organizationId);
+      const example = draft.location?.name
+        ? `${draft.location.name.toUpperCase().replace(/[^A-Z0-9]+/g, "-")}-RTU-1`
+        : "LOCATION-RTU-1";
+      return succeed({ protocols: ctx.protocols.formatForAssistant(context, example) });
+    }
+
+    case "set_location": {
+      const location = args as z.infer<(typeof TOOL_SCHEMAS)["set_location"]>;
+      const codes = activeCodes(ctx);
+      if (location.type !== undefined && !codes.includes(location.type)) {
+        const { shown, omitted } = echoedItems(codes, TOOL_LIST_MAX_ITEMS);
+        return fail(
+          `Location type ${quoteCell(location.type)} is not active. Use one of: ${[...shown, moreTail(omitted, "types")].filter(Boolean).join(", ")}.`,
+        );
+      }
+      const derived = deriveLocationPatch({ name: location.name, stored: draft.location, kept: location, type: location.type });
+      const type = derived.type ?? draft.location?.type;
+      return write(state, { location: derived }, `Set location ${derived.name} (${type ?? "type not set"})`);
+    }
+
+    case "add_rtu": {
+      const rtu = { ...(args as z.infer<typeof rtuArgs>), credentialsSet: false };
+      return write(state, { rtus: [...(draft.rtus ?? []), rtu] }, `Added RTU ${rtu.code} (${rtu.protocol})`);
+    }
+
+    case "update_rtu": {
+      const { index, patch } = args as z.infer<(typeof TOOL_SCHEMAS)["update_rtu"]>;
+      const rtus = draft.rtus ?? [];
+      const stored = rtus[index];
+      if (!stored) {
+        return fail(`There is no RTU at index ${index}; the draft has ${rtus.length}.`);
+      }
+      const updated = { ...stored, ...patch, credentialsSet: stored.credentialsSet };
+      return write(state, { rtus: rtus.map((rtu, i) => (i === index ? updated : rtu)) }, `Updated RTU ${updated.code}`);
+    }
+
+    case "remove_rtu": {
+      const hit = removeAt(draft.rtus, (args as { index: number }).index);
+      return hit ? write(state, { rtus: hit.rest }, `Removed RTU ${hit.removed.code}`) : fail("There is no RTU at that index.");
+    }
+
+    case "add_point_key": {
+      const key = args as z.infer<typeof draftPointKeySchema>;
+      return write(state, { pointKeys: [...(draft.pointKeys ?? []), key] }, `Added point key ${key.code}`);
+    }
+
+    case "remove_point_key": {
+      const hit = removeAt(draft.pointKeys, (args as { index: number }).index);
+      return hit
+        ? write(state, { pointKeys: hit.rest }, `Removed point key ${hit.removed.code}`)
+        : fail("There is no point key at that index.");
+    }
+
+    case "add_asset": {
+      const asset = args as z.infer<typeof draftAssetSchema>;
+      const rtu = draft.rtus?.[asset.rtuIndex];
+      return write(
+        state,
+        { assets: [...(draft.assets ?? []), asset] },
+        `Added asset ${asset.code} on RTU ${rtu?.code ?? `#${asset.rtuIndex}`}`,
+      );
+    }
+
+    case "remove_asset": {
+      const hit = removeAt(draft.assets, (args as { index: number }).index);
+      return hit ? write(state, { assets: hit.rest }, `Removed asset ${hit.removed.code}`) : fail("There is no asset at that index.");
+    }
+
+    case "map_point": {
+      const point = args as z.infer<typeof draftAssetPointSchema>;
+      const asset = draft.assets?.[point.assetIndex];
+      return write(
+        state,
+        { assetPoints: [...(draft.assetPoints ?? []), point] },
+        `Mapped ${point.sourceDataKey} → ${point.pointKey} on asset ${asset?.code ?? `#${point.assetIndex}`}`,
+      );
+    }
+
+    case "remove_asset_point": {
+      const hit = removeAt(draft.assetPoints, (args as { index: number }).index);
+      return hit
+        ? write(state, { assetPoints: hit.rest }, `Removed mapping ${hit.removed.sourceDataKey} → ${hit.removed.pointKey}`)
+        : fail("There is no mapping at that index.");
+    }
+
+    case "use_existing_point_keys": {
+      const value = (args as { value: boolean }).value;
+      return write(
+        state,
+        { onboardingMeta: { useExistingPointKeys: value } },
+        value ? "Point keys: using the existing catalog" : "Point keys: declared in this draft",
+      );
+    }
+
+    case "validate_draft": {
+      const result = ctx.validator.validate(draft, activeCodes(ctx));
+      const { shown, omitted } = echoedItems(result.errors, TOOL_LIST_MAX_ITEMS);
+      return succeed({ valid: result.valid, readyToCommit: result.readyToCommit, errors: shown, more: moreTail(omitted, "errors") || undefined });
+    }
+
+    case "propose_commit": {
+      const problem = draftCountProblem(draft);
+      const result = ctx.validator.validate(draft, activeCodes(ctx));
+      if (problem !== null || !result.readyToCommit) {
+        const { shown } = echoedItems(result.errors, 10);
+        const reasons = [problem, ...shown.map((e) => `${e.path}: ${e.message}`)].filter(Boolean).join("; ");
+        return fail(`The draft is not ready to commit. ${cutToBound(reasons, 2_000)}`);
+      }
+      const summary = commitSummary(draft);
+      state.pendingProposal = { summary };
+      return succeed(
+        { proposed: true, summary, next: "Tell the user to type `confirm commit` or use the Commit button. You cannot commit." },
+        `Proposed commit: ${summary}`,
+      );
+    }
+  }
+}

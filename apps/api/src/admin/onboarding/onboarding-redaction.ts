@@ -90,7 +90,7 @@ function normaliseKey(key: string): string {
   return key.toLowerCase().replace(/[^a-z0-9]/g, "");
 }
 
-function isSecretKey(key: string): boolean {
+export function isSecretKey(key: string): boolean {
   const normalised = normaliseKey(key);
   if (NON_SECRET_KEYS.has(normalised)) {
     return false;
