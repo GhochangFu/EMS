@@ -52,6 +52,10 @@ const PASSWORD_TOO_SHORT_SENTENCE = `The temporary password must be at least ${M
 const NOT_CONFIGURED_SENTENCE =
   "User administration is not available: Keycloak is not configured on the server. Nothing was changed.";
 const NOT_FOUND_SENTENCE = "This user was not found, or it is outside your scope.";
+const GRANT_TARGET_NOT_FOUND_SENTENCE =
+  "That location, group or organization was not found, or it is outside your scope.";
+/** The message the grants API gives a 404 for a missing or out-of-scope target (user-grants.service.ts). */
+const GRANT_TARGET_NOT_FOUND_MESSAGE = "Grant target not found";
 const NO_ACCESS_SENTENCE =
   "User administration is open to administrators and organization administrators only.";
 
@@ -96,13 +100,19 @@ function followUpOf(err: unknown): UserWriteFollowUp | null {
   }
 }
 
-/** What a refused request says: its own sentence for 503 and 404, else the server's message. */
-function failureFeedback(err: unknown): Feedback {
+/**
+ * What a refused request says: its own sentence for 503 and 404, else the server's message. In the
+ * grants drawer (`scope: "grant"`) a 404 for a missing grant target has its own sentence.
+ */
+function failureFeedback(err: unknown, scope: "user" | "grant" = "user"): Feedback {
   const status = err instanceof ApiError ? err.status : null;
   if (status === 503) {
     return { tone: "error", messages: [NOT_CONFIGURED_SENTENCE] };
   }
   if (status === 404) {
+    if (scope === "grant" && apiErrorMessage(err) === GRANT_TARGET_NOT_FOUND_MESSAGE) {
+      return { tone: "error", messages: [GRANT_TARGET_NOT_FOUND_SENTENCE] };
+    }
     return { tone: "error", messages: [NOT_FOUND_SENTENCE] };
   }
   const followUp = followUpOf(err);
@@ -811,7 +821,7 @@ function GrantsDrawer({
       queryClient.setQueryData(adminUserGrantsQueryKey(target.id), response);
       setFeedback(null);
     },
-    onError: (err: unknown) => setFeedback(failureFeedback(err)),
+    onError: (err: unknown) => setFeedback(failureFeedback(err, "grant")),
   };
   const add = useMutation({
     mutationFn: () => addAdminUserGrant(target.id, { kind, targetId }),

@@ -566,6 +566,37 @@ export async function aPendingAddAnnouncesItself(): Promise<void> {
   expect(busy).toHaveAttribute("aria-busy", "true");
 }
 
+const TARGET_NOT_FOUND_SENTENCE = "That location, group or organization was not found, or it is outside your scope.";
+const USER_NOT_FOUND_SENTENCE = "This user was not found, or it is outside your scope.";
+
+async function addOrganizationGrantRefusedWith404(message: string) {
+  stubOidc();
+  stubFetch({
+    [`POST /api/v1/admin/users/${LINKED_ID}/grants`]: { status: 404, body: { statusCode: 404, message } },
+  });
+  renderPage();
+  const drawer = await openGrants();
+  await userEvent.selectOptions(within(drawer).getByLabelText("Grant kind"), "organization");
+  await within(drawer).findByRole("option", { name: "Acme Works" });
+  await userEvent.selectOptions(within(drawer).getByLabelText("Grant target"), ORG_ID);
+  await userEvent.click(within(drawer).getByRole("button", { name: "Add grant" }));
+  return drawer;
+}
+
+/** A missing or out-of-scope grant target is not a missing user. */
+export async function aMissingGrantTargetGetsItsOwnSentence(): Promise<void> {
+  const drawer = await addOrganizationGrantRefusedWith404("Grant target not found");
+  expect(await within(drawer).findByText(TARGET_NOT_FOUND_SENTENCE)).toBeInTheDocument();
+  expect(within(drawer).queryByText(USER_NOT_FOUND_SENTENCE)).not.toBeInTheDocument();
+}
+
+/** The positive control: a 404 that is not the target's keeps the user sentence in the drawer. */
+export async function aMissingUserInTheDrawerKeepsTheUserSentence(): Promise<void> {
+  const drawer = await addOrganizationGrantRefusedWith404("Not Found");
+  expect(await within(drawer).findByText(USER_NOT_FOUND_SENTENCE)).toBeInTheDocument();
+  expect(within(drawer).queryByText(TARGET_NOT_FOUND_SENTENCE)).not.toBeInTheDocument();
+}
+
 /**
  * ADR 0089 decision 11: grants touch only the database, so local sign-in still manages them.
  * Decision 15 limits the disabled state to the user actions.

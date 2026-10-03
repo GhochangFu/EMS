@@ -10,6 +10,8 @@ import {
   aFailedCreateLeavesNoPasswordInTheMarkup,
   a404ShowsANotFoundSentence,
   a503ShowsASentenceAndWritesNothingElse,
+  aMissingGrantTargetGetsItsOwnSentence,
+  aMissingUserInTheDrawerKeepsTheUserSentence,
   aPendingAddAnnouncesItself,
   aPendingRemoveAnnouncesOnlyItsOwnGrant,
   aSuccessfulWriteReadsTheListAgain,
@@ -175,5 +177,13 @@ describe("F3.78 users page", () => {
 
   it("does not offer the admin role to an organization_admin", async () => {
     await anOrganizationAdminIsNotOfferedAdmin();
+  });
+
+  it("a missing grant target gets its own sentence in the drawer", async () => {
+    await aMissingGrantTargetGetsItsOwnSentence();
+  });
+
+  it("a 404 that is not the grant target keeps the user sentence in the drawer", async () => {
+    await aMissingUserInTheDrawerKeepsTheUserSentence();
   });
 });
