@@ -694,6 +694,13 @@
       "when": 1790972165981,
       "tag": "0098_user_administration",
       "breakpoints": true
+    },
+    {
+      "idx": 101,
+      "version": "7",
+      "when": 1791020601045,
+      "tag": "0100_organization_llm_settings",
+      "breakpoints": true
     }
   ]
 }
