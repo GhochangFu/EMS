@@ -29,8 +29,13 @@ export const COMMIT_PROPOSAL_KEY = "_commitProposal";
 /** Bounds the stored summary; `commitSummary` stays far below it. */
 export const MAX_COMMIT_SUMMARY_CHARS = 4_000;
 
+/**
+ * True in both modes (code review): in the guided mode, the default, nothing
+ * can propose, so the reply points at the Commit button first.
+ */
 export const NO_PROPOSAL_REPLY =
-  "No commit has been proposed yet. Ask me to propose the commit when the draft is ready, or use the **Commit** button.";
+  "Nothing has been proposed for commit. Open the preview and use the **Commit** button to commit the draft. " +
+  "When the AI assistant is on, it can also propose the commit for you to confirm here.";
 
 export const STALE_PROPOSAL_REPLY =
   "The draft changed after the commit was proposed, so I have not committed it. Ask me to propose the commit again.";
@@ -107,7 +112,8 @@ export function draftHash(draft: unknown): string | null {
   return createHash("sha256").update(canonical ?? "null").digest("hex");
 }
 
-function count(n: number, noun: string): string {
+/** "1 RTU", "2 RTUs": the one plural rule for code-written summaries and action lines. */
+export function countOf(n: number, noun: string): string {
   return `${n} ${noun}${n === 1 ? "" : "s"}`;
 }
 
@@ -122,12 +128,12 @@ export function commitSummary(draft: OnboardingDraft): string {
   const codes = [...shown, moreTail(omitted, "RTUs")].filter(Boolean).join(", ");
   const parts = [
     `location ${quoteCell(draft.location?.name ?? "")}`,
-    rtus.length > 0 ? `${count(rtus.length, "RTU")} (${codes})` : count(0, "RTU"),
+    rtus.length > 0 ? `${countOf(rtus.length, "RTU")} (${codes})` : countOf(0, "RTU"),
     draft.onboardingMeta?.useExistingPointKeys && (draft.pointKeys?.length ?? 0) === 0
       ? "the existing point-key catalog"
-      : count(draft.pointKeys?.length ?? 0, "point key"),
-    count(draft.assets?.length ?? 0, "asset"),
-    count(draft.assetPoints?.length ?? 0, "mapping"),
+      : countOf(draft.pointKeys?.length ?? 0, "point key"),
+    countOf(draft.assets?.length ?? 0, "asset"),
+    countOf(draft.assetPoints?.length ?? 0, "mapping"),
   ];
   return parts.join(", ");
 }

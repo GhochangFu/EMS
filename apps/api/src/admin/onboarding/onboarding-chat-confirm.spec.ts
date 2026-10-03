@@ -46,7 +46,8 @@ function commitService(behaviour: "ok" | Error = "ok") {
   const calls: unknown[][] = [];
   return {
     calls,
-    commit: async (...args: unknown[]) => {
+    // The confirm path commits through `commitProposed`, with the proposal's hash.
+    commitProposed: async (...args: unknown[]) => {
       calls.push(args);
       if (behaviour !== "ok") {
         throw behaviour;
@@ -130,10 +131,11 @@ export async function assertAMatchingProposalCommitsOnce(): Promise<void> {
   const response = await service.chat(JWT, "s-1", "  Confirm Commit ");
   assert(commit.calls.length === 1, `one commit, got ${commit.calls.length}`);
   assert(commit.calls[0]?.[0] === JWT && commit.calls[0]?.[1] === "s-1", "as the caller, for this session");
+  assert(commit.calls[0]?.[2] === draftHash(readyDraft()), "with the proposal's hash, which the commit checks again under a lock");
   const roles = ((record.updates[0]?.messages ?? []) as OnboardingChatMessage[]).map((m) => m.role).join(",");
   assert(roles === "user,action,assistant", `user, action, assistant, got ${roles}`);
   const action = ((record.updates[0]?.messages ?? []) as OnboardingChatMessage[])[1]?.content ?? "";
-  assert(action.startsWith("Committed: location Berhampur, 1 RTUs"), `the action line is code-written: ${action}`);
+  assert(action === "Committed: location Berhampur, 1 RTU, 1 point key, 1 asset, 1 mapping", `the action line is code-written: ${action}`);
   assert(response.readyToCommit === false, "nothing is left to commit");
 }
 
@@ -158,15 +160,25 @@ export async function assertTheCredentialRefusalStillAnswersFirst(): Promise<voi
   assert(record.updates.length === 0, "nothing is written");
 }
 
+/**
+ * Code review #6: the turn writes **and** proposes, so the written draft differs
+ * from the session's; a proposal hashed on the session's draft (or on anything
+ * but the written one) is caught by the second assertion.
+ */
 export async function assertAProposingTurnStoresAHashOfTheStoredDraft(): Promise<void> {
   const session = sessionRow(readyDraft());
-  const llm = new FakeLlmProvider([calls(toolCall("propose_commit", {})), { kind: "final", text: "Ready." }]);
+  const llm = new FakeLlmProvider([
+    calls(toolCall("add_point_key", { code: "kvar", name: "Reactive" })),
+    calls(toolCall("propose_commit", {})),
+    { kind: "final", text: "Ready." },
+  ]);
   const { service, record } = build({ results: [[session], ORG, [session], ORG], llm });
   await service.chat(JWT, "s-1", "commit it");
   const written = record.updates[0]?.draft as Record<string, unknown>;
   const stored = written?.[COMMIT_PROPOSAL_KEY] as { draftHash?: string } | undefined;
   assert(stored !== undefined, "the proposal is stored");
   assert(stored?.draftHash === draftHash(written), "bound to the hash of the draft that was written");
+  assert(stored?.draftHash !== draftHash(session.draft), "not to the draft the turn started from");
 }
 
 export async function assertANonProposingTurnClearsTheProposal(): Promise<void> {
@@ -221,4 +233,25 @@ export function assertScrubMessagesKeepsTheActionRole(): void {
   const [kept, scrubbed] = scrubMessages(rows);
   assert(kept.role === "action" && kept.content === "Added RTU RTU-1 (mqtt)", "an action row passes with its role and text");
   assert(scrubbed.role === "action" && !scrubbed.content.includes("hunter2"), "a credential-looking action row is still scrubbed");
+}
+
+/** Security review L5: stored history reaches the model scrubbed, and an action line is scrubbed before it is stored. */
+export async function assertHistoryAndActionLinesAreScrubbed(): Promise<void> {
+  const history: OnboardingChatMessage[] = [
+    { id: "u", role: "user", content: "password: hunter2", createdAt: "x" },
+    { id: "a", role: "assistant", content: "noted", createdAt: "x" },
+  ];
+  const session = sessionRow(readyDraft(), history);
+  const llm = new FakeLlmProvider([
+    calls(toolCall("map_point", { assetIndex: 0, pointKey: "kw", sourceDataKey: "password=hunter2" })),
+    { kind: "final", text: "ok" },
+  ]);
+  const { service, record } = build({ results: [[session], ORG, [session], ORG], llm });
+  await service.chat(JWT, "s-1", "what is left?");
+  const sent = JSON.stringify(llm.seen[0] ?? []);
+  assert(!sent.includes("hunter2"), "the stored credential does not reach the model");
+  assert(sent.includes("noted"), "positive control: the rest of the history does");
+  const stored = (record.updates[0]?.messages ?? []) as OnboardingChatMessage[];
+  const action = stored.find((m) => m.role === "action");
+  assert(action !== undefined && !action.content.includes("hunter2"), "a credential-looking action line is scrubbed before it is stored");
 }

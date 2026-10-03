@@ -34,6 +34,7 @@ import {
   NO_PROPOSAL_REPLY,
   STALE_PROPOSAL_REPLY,
   attachCommitProposal,
+  countOf,
   draftHash,
   isConfirmCommitPhrase,
   readCommitProposal,
@@ -312,7 +313,14 @@ export class OnboardingService {
     const assistantMsg = this.chatService.createMessage("assistant", assistantText);
     // Decision 6: one code-written `action` message per draft write, between the
     // user's turn and the reply.
-    const actionMsgs = turn.actionLines.map((line) => this.chatService.createMessage("action", line));
+    // Security review L5: an action line carries model-chosen names, so it takes
+    // the same credential scrub as the reply above.
+    const actionMsgs = turn.actionLines.map((line) =>
+      this.chatService.createMessage(
+        "action",
+        looksLikeCredential(line) ? "[REDACTED] — an action line looked like it contained a credential (ADR 0022)" : line,
+      ),
+    );
     const messages = [
       ...(session.messages as OnboardingChatMessage[]),
       userMsg,
@@ -566,12 +574,13 @@ export class OnboardingService {
       draftWrite = withoutCommitProposal(session.draft);
     } else {
       try {
-        const result = await this.commitService.commit(jwt, session.id);
+        const result = await this.commitService.commitProposed(jwt, session.id, proposal.draftHash);
         committed = true;
         const name = (session.draft as OnboardingDraft).location?.name ?? "";
         actionLine =
-          `Committed: location ${name}, ${result.rtuIds.length} RTUs, ${result.pointKeyIds.length} point keys, ` +
-          `${result.assetIds.length} assets, ${result.assetPointIds.length} mappings`;
+          `Committed: location ${name}, ${countOf(result.rtuIds.length, "RTU")}, ` +
+          `${countOf(result.pointKeyIds.length, "point key")}, ${countOf(result.assetIds.length, "asset")}, ` +
+          countOf(result.assetPointIds.length, "mapping");
         reply = "Committed. The location, RTUs, assets and mappings are created.";
       } catch (error) {
         if (!(error instanceof BadRequestException)) {

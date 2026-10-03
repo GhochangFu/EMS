@@ -40,6 +40,7 @@ import {
   type CatalogPointKey,
 } from "./onboarding-point-key-conflict";
 import { readEncryptedCredentials } from "./onboarding-redaction";
+import { draftHash } from "./onboarding-commit-proposal";
 import { OnboardingValidateService } from "./onboarding-validate.service";
 
 /**
@@ -97,6 +98,11 @@ function protocolToSourceType(protocol: string): "mqtt" | "simulator" | "catalog
  * already stamped it at F4.16; the audit rows defer `organization_id` to
  * E7.1c (ruling 5).
  */
+
+/** The confirm path's refusal when the proposed draft changed before the commit could lock it. */
+export const PROPOSED_DRAFT_CHANGED =
+  "The draft changed after the commit was proposed, so nothing was committed. Ask for the commit to be proposed again.";
+
 @Injectable()
 export class OnboardingCommitService {
   constructor(
@@ -108,8 +114,29 @@ export class OnboardingCommitService {
     private readonly vocabularies: VocabulariesService,
   ) {}
 
-  /** Commits a draft session when validation passes. */
-  async commit(jwt: JwtPayload, sessionId: string): Promise<OnboardingCommitResponseDto> {
+  /** Commits a draft session when validation passes. The Commit button's path. */
+  commit(jwt: JwtPayload, sessionId: string): Promise<OnboardingCommitResponseDto> {
+    return this.commitWith(jwt, sessionId, null);
+  }
+
+  /**
+   * Commits only the draft a proposal was bound to (`F3.21`, ADR 0090 decision
+   * 5 and its dated note under decision 8). The typed `confirm commit` checks
+   * the hash on the session it loaded; a `PATCH`, an upload or a credential save
+   * could land before this method reads the session again. So the hash is
+   * checked twice more: on this method's own read, and inside the transaction
+   * on the session row locked `FOR UPDATE`, which holds every later writer
+   * until the commit ends.
+   */
+  commitProposed(jwt: JwtPayload, sessionId: string, expectedDraftHash: string): Promise<OnboardingCommitResponseDto> {
+    return this.commitWith(jwt, sessionId, expectedDraftHash);
+  }
+
+  private async commitWith(
+    jwt: JwtPayload,
+    sessionId: string,
+    expectedDraftHash: string | null,
+  ): Promise<OnboardingCommitResponseDto> {
     await this.accessControl.requireMasterDataUser(jwt);
     if (!(await this.canUseOnboarding(jwt))) {
       throw new ForbiddenException("Onboarding requires admin or organization_admin role");
@@ -131,6 +158,9 @@ export class OnboardingCommitService {
     }
 
     const draft = session.draft as OnboardingDraft;
+    if (expectedDraftHash !== null && draftHash(session.draft) !== expectedDraftHash) {
+      throw new BadRequestException(PROPOSED_DRAFT_CHANGED);
+    }
 
     // `F4.103` — the count caps, on the stored draft, at the last point before
     // the work is done. This is the last of the four enforcement points — the
@@ -242,6 +272,16 @@ export class OnboardingCommitService {
     // with its stack intact. An unmapped constraint, a foreign-key violation
     // and a dropped connection all still answer exactly as they did.
     return withTenant(this.tenantDb, session.organizationId, async (tx) => {
+      if (expectedDraftHash !== null) {
+        const [locked] = await tx
+          .select({ draft: onboardingSessions.draft, status: onboardingSessions.status })
+          .from(onboardingSessions)
+          .where(eq(onboardingSessions.id, session.id))
+          .for("update");
+        if (!locked || locked.status !== "draft" || draftHash(locked.draft) !== expectedDraftHash) {
+          throw new BadRequestException(PROPOSED_DRAFT_CHANGED);
+        }
+      }
       const loc = draft.location!;
       const [locationRow] = await tx
         .insert(locations)

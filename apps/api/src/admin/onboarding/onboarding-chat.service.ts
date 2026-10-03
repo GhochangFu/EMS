@@ -37,6 +37,7 @@ import * as locationTypes from "./onboarding-location-type-match";
 // prompt-budget guards live where the draft and the arguments now pass — the
 // agent loop's system prompt and the tool registry.
 import { runAgentTurn } from "./onboarding-agent-loop";
+import { scrubMessages } from "./onboarding-credential-detect";
 import { OnboardingLlmResolver } from "./onboarding-llm-resolver";
 import {
   attachEncryptedCredentials,
@@ -309,7 +310,9 @@ export class OnboardingChatService {
       draft,
       phase,
       orgName,
-      history: context.history,
+      // Security review L5: stored history goes to the model through the same
+      // scrub as every client read.
+      history: scrubMessages(context.history),
       llm: resolved.provider,
       tools: {
         organizationId,

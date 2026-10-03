@@ -12,6 +12,7 @@ import {
   assertScrubMessagesKeepsTheActionRole,
   assertSetCredentialsClearsTheProposal,
   assertTheCredentialRefusalStillAnswersFirst,
+  assertHistoryAndActionLinesAreScrubbed,
 } from "./onboarding-chat-confirm.spec";
 
 /** Vitest entry point — see `admin.schema.test.ts` for the pattern (ADR 0014). One `it()` per claim. */
@@ -58,5 +59,9 @@ describe("OnboardingService.chat — the confirm path and action messages (F3.21
 
   it("keeps the action role through the message scrub", () => {
     assertScrubMessagesKeepsTheActionRole();
+  });
+
+  it("scrubs the history and a credential-looking action line", async () => {
+    await assertHistoryAndActionLinesAreScrubbed();
   });
 });
