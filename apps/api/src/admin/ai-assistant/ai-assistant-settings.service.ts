@@ -1,5 +1,5 @@
 import { BadRequestException, ForbiddenException, Inject, Injectable } from "@nestjs/common";
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 
 import { organizationLlmSettings } from "@bms/db";
 import type { BmsDb } from "@bms/db";
@@ -125,11 +125,27 @@ export class AiAssistantSettingsService {
       updatedAt: new Date(),
     };
     const values = { ...settings, ...key };
-    // F4.186 (security review M1, ADR 0062): `existing` was read outside this
-    // transaction, so `rotate-credentials` may have re-encrypted the key since.
-    // A kept key is therefore never written back on conflict — that would undo
-    // the rotation. The insert still carries it, for a row deleted meanwhile.
-    const set = keepStored ? settings : values;
+    // F4.186: `existing` was read outside this transaction, so two writers may
+    // have landed since. (1) Security review M1, ADR 0062: `rotate-credentials`
+    // re-encrypted the key — so a kept key is never written back from the read,
+    // which would undo the rotation; the stored columns stay. (2) Another admin
+    // changed the provider and its key — so the stored key stays only while the
+    // stored provider still equals this one, else all four columns are cleared
+    // (A3: a key belongs to the provider it was issued by; the row then reads
+    // incomplete, and `keyChanged` under-reports that clear). The insert still
+    // carries the read's key, for a row deleted meanwhile.
+    const t = organizationLlmSettings;
+    const keptIfSameProvider = (column: typeof t.keyCiphertext | typeof t.keyIv | typeof t.keyVersion | typeof t.keyLast4) =>
+      sql`CASE WHEN ${t.provider} = excluded.provider THEN ${column} ELSE NULL END`;
+    const set = keepStored
+      ? {
+          ...settings,
+          keyCiphertext: keptIfSameProvider(t.keyCiphertext),
+          keyIv: keptIfSameProvider(t.keyIv),
+          keyVersion: keptIfSameProvider(t.keyVersion),
+          keyLast4: keptIfSameProvider(t.keyLast4),
+        }
+      : values;
     await withTenant(this.tenantDb, organizationId, async (tx) => {
       await tx
         .insert(organizationLlmSettings)

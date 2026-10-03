@@ -7,6 +7,7 @@ import { openIntegrationPool, requireIntegrationDb } from "../../testing/integra
 import { asRole } from "../../testing/role-urls";
 import {
   aHalfKeyIsRefused,
+  aKeptKeyIsClearedWhenTheProviderChangedSinceTheRead,
   aModelOnlySaveKeepsAKeyRotatedSinceItsRead,
   aProviderWithoutAModelIsRefused,
   aTenantCannotReadAnotherOrganizationsRow,
@@ -137,5 +138,9 @@ describe.skipIf(!connectionString)("F3.21 — bms.organization_llm_settings (mig
 
   it("aModelOnlySaveKeepsAKeyRotatedSinceItsRead", async () => {
     await aModelOnlySaveKeepsAKeyRotatedSinceItsRead(ctx);
+  });
+
+  it("aKeptKeyIsClearedWhenTheProviderChangedSinceTheRead", async () => {
+    await aKeptKeyIsClearedWhenTheProviderChangedSinceTheRead(ctx);
   });
 });
