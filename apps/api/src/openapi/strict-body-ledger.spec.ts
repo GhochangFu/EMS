@@ -1,3 +1,12 @@
+import {
+  addAssetGroupMemberBodySchema,
+  addUserGrantBodySchema,
+  createAssetGroupBodySchema,
+  createUserBodySchema,
+  temporaryPasswordBodySchema,
+  updateAssetGroupBodySchema,
+  updateUserBodySchema,
+} from "@bms/shared";
 import { expect } from "vitest";
 import { z } from "zod";
 import type { ZodTypeAny } from "zod";
@@ -325,6 +334,14 @@ export const BODY_SCHEMAS: Record<string, ZodTypeAny> = {
   ruleToggleBodySchema,
   ruleUpdateBodySchema,
   setAssetGroupMemberRoleBodySchema,
+  // `F3.78` (ADR 0089). Seven bodies; the four `.strict()` ones are decided in the ledger.
+  addAssetGroupMemberBodySchema,
+  addUserGrantBodySchema,
+  createAssetGroupBodySchema,
+  createUserBodySchema,
+  temporaryPasswordBodySchema,
+  updateAssetGroupBodySchema,
+  updateUserBodySchema,
   setCredentialsBodySchema,
   setRuleNotificationsBodySchema,
   updateAssetBodySchema,
