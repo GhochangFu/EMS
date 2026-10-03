@@ -60,6 +60,7 @@ import type * as SW from "./contracts/site-widgets";
 import type * as Ss from "./contracts/system-status";
 import type * as Te from "./contracts/telemetry-entry";
 import type * as Ti from "./contracts/telemetry-import";
+import type * as UG from "./contracts/user-grants";
 import type * as Us from "./contracts/users";
 import { TELEMETRY_POINT_REF_SEP } from "./constants";
 
@@ -498,6 +499,11 @@ export type UpdateUserBody = z.infer<typeof Us.updateUserBodySchema>;
 export type TemporaryPasswordBody = z.infer<typeof Us.temporaryPasswordBodySchema>;
 export type UserWriteFollowUp = z.infer<typeof Us.userWriteFollowUpSchema>;
 export type UserWriteResponse = z.infer<typeof Us.userWriteResponseSchema>;
+/** `F3.78` (ADR 0089 decision 12) — one user grant, with whether the role reads it now (plan D2). */
+export type UserGrantKind = z.infer<typeof UG.userGrantKindSchema>;
+export type UserGrantDto = z.infer<typeof UG.userGrantDtoSchema>;
+export type UserGrantsResponse = z.infer<typeof UG.userGrantsResponseSchema>;
+export type AddUserGrantBody = z.infer<typeof UG.addUserGrantBodySchema>;
 export type AdminPointKeyDto = z.infer<typeof PK.adminPointKeyDtoSchema>;
 export type AdminOrganizationSummaryDto = z.infer<
   typeof A.adminOrganizationSummaryDtoSchema
