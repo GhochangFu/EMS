@@ -321,6 +321,16 @@ services:
       CREDENTIAL_ENCRYPTION_KEY: ${CREDENTIAL_ENCRYPTION_KEY:-}
       CREDENTIAL_ENCRYPTION_KEY_PREVIOUS: ${CREDENTIAL_ENCRYPTION_KEY_PREVIOUS:-}
       CREDENTIAL_ENCRYPTION_KEY_VERSION: ${CREDENTIAL_ENCRYPTION_KEY_VERSION:-}
+      # `F3.21` / ADR 0090 Amendment 1 A2 — the onboarding agent's platform
+      # default. Empty LLM_PROVIDER = the agent is off and the guided mode answers.
+      # An organization's own setting (AI assistant page) wins over these.
+      LLM_PROVIDER: ${LLM_PROVIDER:-}
+      OPENAI_API_KEY: "${OPENAI_API_KEY:-}"
+      OPENAI_MODEL: ${OPENAI_MODEL:-}
+      OPENROUTER_API_KEY: "${OPENROUTER_API_KEY:-}"
+      OPENROUTER_MODEL: ${OPENROUTER_MODEL:-}
+      ANTHROPIC_API_KEY: "${ANTHROPIC_API_KEY:-}"
+      ANTHROPIC_MODEL: ${ANTHROPIC_MODEL:-}
       # `F3.3` / ADR 0066 decision 3. All six, or none: an endpoint with a
       # missing bucket or key is a boot error, not a half-configured API
       # (`readStorageConfig`). Unset entirely — a native run without MinIO —
@@ -429,6 +439,16 @@ services:
       CREDENTIAL_ENCRYPTION_KEY: ${CREDENTIAL_ENCRYPTION_KEY:-}
       CREDENTIAL_ENCRYPTION_KEY_PREVIOUS: ${CREDENTIAL_ENCRYPTION_KEY_PREVIOUS:-}
       CREDENTIAL_ENCRYPTION_KEY_VERSION: ${CREDENTIAL_ENCRYPTION_KEY_VERSION:-}
+      # `F3.21` / ADR 0090 Amendment 1 A2 — the onboarding agent's platform
+      # default. Empty LLM_PROVIDER = the agent is off and the guided mode answers.
+      # An organization's own setting (AI assistant page) wins over these.
+      LLM_PROVIDER: ${LLM_PROVIDER:-}
+      OPENAI_API_KEY: "${OPENAI_API_KEY:-}"
+      OPENAI_MODEL: ${OPENAI_MODEL:-}
+      OPENROUTER_API_KEY: "${OPENROUTER_API_KEY:-}"
+      OPENROUTER_MODEL: ${OPENROUTER_MODEL:-}
+      ANTHROPIC_API_KEY: "${ANTHROPIC_API_KEY:-}"
+      ANTHROPIC_MODEL: ${ANTHROPIC_MODEL:-}
       # Identical to `api` above (ADR 0066 decisions 3 and 8). The replica is
       # a second API process against the same database and the same bucket:
       # `ensureBucket` is idempotent and a `BucketAlreadyOwnedByYou` from a

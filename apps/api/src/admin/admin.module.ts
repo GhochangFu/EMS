@@ -54,6 +54,7 @@ import { OnboardingCatalogService } from "./onboarding/onboarding-catalog.servic
 import { OnboardingChatService } from "./onboarding/onboarding-chat.service";
 import { OnboardingCommitService } from "./onboarding/onboarding-commit.service";
 import { OnboardingExcelService } from "./onboarding/onboarding-excel.service";
+import { OnboardingLlmResolver } from "./onboarding/onboarding-llm-resolver";
 import { OnboardingProtocolService } from "./onboarding/onboarding-protocol.service";
 import { OnboardingService } from "./onboarding/onboarding.service";
 import { OnboardingValidateService } from "./onboarding/onboarding-validate.service";
@@ -124,6 +125,7 @@ import { UsersService } from "./users/users.service";
     OnboardingProtocolService,
     OnboardingCatalogService,
     OnboardingExcelService,
+    OnboardingLlmResolver,
     OnboardingChatService,
     OnboardingCommitService,
     OnboardingService,
