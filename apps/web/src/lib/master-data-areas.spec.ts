@@ -9,7 +9,7 @@ import {
 } from "./admin-access";
 
 /**
- * `F3.76` — the five Master Data areas and the route rule that selects an area
+ * `F3.76` — the six Master Data areas and the route rule that selects an area
  * and a sub-tab. Assertions live here; `master-data-areas.test.ts` is the
  * Vitest entry point (ADR 0014).
  */
@@ -28,6 +28,7 @@ export function groupsEveryTabIntoItsArea(): void {
     "Templates & Visuals": ["Asset Templates", "Dashboard Templates", "Mimic Layouts", "Symbol Libraries"],
     "Data Input": ["Manual Entry", "Import Telemetry"],
     Notifications: ["Channels", "Escalation", "Deliveries"],
+    "Users & Access": ["Users"],
   });
 }
 
@@ -42,24 +43,34 @@ function areaLabels(role: Parameters<typeof visibleMasterDataAreas>[0]): string[
   return visibleMasterDataAreas(role).map((area) => area.label);
 }
 
-const ALL_AREAS = ["Sites & Equipment", "Reference Data", "Templates & Visuals", "Data Input", "Notifications"];
+const ALL_AREAS = [
+  "Sites & Equipment",
+  "Reference Data",
+  "Templates & Visuals",
+  "Data Input",
+  "Notifications",
+  "Users & Access",
+];
 
-/** A3a — the global `admin` sees all five areas. */
+/** A3a — the global `admin` sees all six areas. */
 export function showsFiveAreasToTheGlobalAdmin(): void {
   expect(areaLabels("admin")).toEqual(ALL_AREAS);
 }
 
-/** A3b — an `organization_admin` sees all five areas. */
+/** A3b — an `organization_admin` sees all six areas. */
 export function showsFiveAreasToAnOrganizationAdmin(): void {
   expect(areaLabels("organization_admin")).toEqual(ALL_AREAS);
 }
 
 /**
- * A3c — a `location_admin` sees no Notifications area: every tab of it is
- * `notificationAdmin`. The four others are the positive control.
+ * A3c — a `location_admin` sees no Notifications area (every tab of it is
+ * `notificationAdmin`) and no Users & Access area (its one tab is `usersAdmin`).
+ * The four others are the positive control.
  */
 export function hidesTheNotificationsAreaFromALocationAdmin(): void {
-  expect(areaLabels("location_admin")).toEqual(ALL_AREAS.filter((label) => label !== "Notifications"));
+  expect(areaLabels("location_admin")).toEqual(
+    ALL_AREAS.filter((label) => label !== "Notifications" && label !== "Users & Access"),
+  );
 }
 
 /** A4 — an area carries only the tabs the role sees (Reference Data for an `organization_admin`). */
@@ -77,6 +88,7 @@ export function linksEachAreaToItsFirstVisibleTab(): void {
     templates: "/admin/asset-templates",
     "data-input": "/admin/manual-readings",
     notifications: "/admin/notification-channels",
+    access: "/admin/users",
   });
 }
 
@@ -110,6 +122,20 @@ export function gatesTheSymbolLibrariesTab(): void {
 }
 
 /**
+ * A7 — the Users tab (`F3.78`, ADR 0089 decision 1) is a tab for the two roles that
+ * manage users, and not for a `location_admin`.
+ */
+export function gatesTheUsersTab(): void {
+  const sees = (role: Parameters<typeof visibleMasterDataTabs>[0]) =>
+    visibleMasterDataTabs(role).some((tab) => tab.path === "/admin/users");
+  expect({
+    admin: sees("admin"),
+    organization_admin: sees("organization_admin"),
+    location_admin: sees("location_admin"),
+  }).toEqual({ admin: true, organization_admin: true, location_admin: false });
+}
+
+/**
  * R1 — each route selects the tab whose table it shows. A drill-down selects
  * its deepest level; a detail page selects its list's tab; a path outside the
  * hub selects nothing; a prefix counts only on a whole segment.
@@ -134,6 +160,7 @@ export function selectsTheTabOfEachRoute(): void {
     "/admin/mimic-symbol-libraries": "/admin/mimic-symbol-libraries",
     "/admin/telemetry/import": "/admin/telemetry/import",
     "/admin/escalation-profiles": "/admin/escalation-profiles",
+    "/admin/users": "/admin/users",
     "/admin/locations/l1/rtus/": "/admin/rtus",
     "/admin/Assets/A1/Points": "/admin/asset-points",
     "/admin/assets-archive": null,

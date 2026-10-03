@@ -414,8 +414,8 @@ function adminEntries(): string[] {
     .map((link) => `${link.textContent ?? ""} ${link.getAttribute("href") ?? ""}`);
 }
 
-/** S9 — an `organization_admin` has the hub and all five areas. */
-export function showsTheHubAndFiveAreasToAnOrganizationAdmin(): void {
+/** S9 — an `organization_admin` has the hub and all six areas (`F3.78` added Users & Access). */
+export function showsTheHubAndSixAreasToAnOrganizationAdmin(): void {
   renderShell(LOCATION, "/", "organization_admin");
   expect(adminEntries()).toEqual([
     "Master Data Hub /admin",
@@ -424,10 +424,14 @@ export function showsTheHubAndFiveAreasToAnOrganizationAdmin(): void {
     "Templates & Visuals /admin/asset-templates",
     "Data Input /admin/manual-readings",
     "Notifications /admin/notification-channels",
+    "Users & Access /admin/users",
   ]);
 }
 
-/** S10 — a `location_admin` has no Notifications entry: it sees no tab of that area. */
+/**
+ * S10 — a `location_admin` has no Notifications entry (it sees no tab of that area) and no
+ * Users & Access entry (its one tab is `usersAdmin`).
+ */
 export function hidesTheNotificationsEntryFromALocationAdmin(): void {
   renderShell(LOCATION, "/", "location_admin");
   expect(adminEntries()).toEqual([
