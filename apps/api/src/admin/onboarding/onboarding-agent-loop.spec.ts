@@ -59,7 +59,7 @@ export function calls(...list: LlmToolCall[]): LlmReply {
   return { kind: "tool_calls", calls: list, content: null };
 }
 
-export const PLAIN_RTU = { code: "RTU-1", displayName: "RTU-1", protocol: "mqtt", config: { host: "broker", port: 8883, tls: true, topic: "a/b" } };
+export const PLAIN_RTU = { code: "RTU-1", displayName: "RTU-1", protocol: "mqtt" as const, config: { host: "broker", port: 8883, tls: true, topic: "a/b" } };
 
 export function toolContext(): ToolContext {
   return {

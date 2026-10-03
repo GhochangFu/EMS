@@ -51,7 +51,7 @@ function context(overrides: Partial<ToolContext> = {}): ToolContext {
   };
 }
 
-const PLAIN_RTU = { code: "RTU-1", displayName: "RTU-1", protocol: "mqtt", config: { host: "broker", port: 8883, tls: true, topic: "a/b" } };
+const PLAIN_RTU = { code: "RTU-1", displayName: "RTU-1", protocol: "mqtt" as const, config: { host: "broker", port: 8883, tls: true, topic: "a/b" } };
 
 function readyDraft(): OnboardingDraft {
   return {
