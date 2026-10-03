@@ -61,7 +61,7 @@ export function MapPage({ user }: MapPageProps) {
       <div className="mx-auto max-w-[1200px] space-y-4 pb-8">
         <PageHeader
           eyebrow="Sites"
-          title="Stations & SMOC locations"
+          title="Sites & locations"
           subtitle="Markers from Postgres · operational locations use live alarm and comm health"
         />
 
