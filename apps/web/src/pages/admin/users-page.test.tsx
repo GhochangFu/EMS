@@ -3,7 +3,11 @@ import { cleanup } from "@testing-library/react";
 import { afterEach, describe, it, vi } from "vitest";
 
 import {
+  a400ClearsThePasswordInput,
+  a400LeavesNoPasswordInTheMarkup,
   a400PolicyRefusalShowsTheServerMessageNotThePassword,
+  aFailedCreateClearsThePasswordInput,
+  aFailedCreateLeavesNoPasswordInTheMarkup,
   a404ShowsANotFoundSentence,
   a503ShowsASentenceAndWritesNothingElse,
   aPendingAddAnnouncesItself,
@@ -115,6 +119,22 @@ describe("F3.78 users page", () => {
 
   it("a 400 policy refusal shows the server message and never the password", async () => {
     await a400PolicyRefusalShowsTheServerMessageNotThePassword();
+  });
+
+  it("a 400 on the temporary password leaves no password in the markup", async () => {
+    await a400LeavesNoPasswordInTheMarkup();
+  });
+
+  it("a 400 on the temporary password clears the password input", async () => {
+    await a400ClearsThePasswordInput();
+  });
+
+  it("a failed create leaves no password in the markup", async () => {
+    await aFailedCreateLeavesNoPasswordInTheMarkup();
+  });
+
+  it("a failed create clears the password input and keeps the rest", async () => {
+    await aFailedCreateClearsThePasswordInput();
   });
 
   it("a 404 shows a not-found sentence", async () => {

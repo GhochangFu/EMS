@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useState, type FormEvent, type ReactNode } from "react";
+import { useEffect, useRef, useState, type FormEvent, type ReactNode, type RefObject } from "react";
 import { userGrantKindSchema, userRoleSchema, userWriteFollowUpSchema } from "@bms/shared/contracts";
 import type {
   AdminUserDto,
@@ -503,8 +503,11 @@ function OrganizationSelect({
   );
 }
 
-/** The password field is uncontrolled by the page: it mounts empty and unmounts with the modal. */
-function PasswordField({ value, onChange }: { value: string; onChange: (value: string) => void }) {
+/**
+ * The password input is uncontrolled: no `value` prop, so React never mirrors the secret into the
+ * `value` attribute and the markup never holds it. The modal reads it through the ref on submit.
+ */
+function PasswordField({ inputRef }: { inputRef: RefObject<HTMLInputElement> }) {
   return (
     <label className={labelClass}>
       Temporary password
@@ -513,14 +516,27 @@ function PasswordField({ value, onChange }: { value: string; onChange: (value: s
         autoComplete="new-password"
         className={fieldClass}
         maxLength={MAX_TEMPORARY_PASSWORD_LENGTH}
-        value={value}
-        onChange={(event) => onChange(event.target.value)}
+        ref={inputRef}
       />
       <span className="mt-1 block font-normal">
         At least {MIN_TEMPORARY_PASSWORD_LENGTH} characters. The user must change it at the next sign-in.
       </span>
     </label>
   );
+}
+
+/**
+ * The password input's ref, emptied whenever the server refuses the write. The modal stays open on a
+ * refusal, so without this the typed secret would outlive the failed request.
+ */
+function usePasswordRef(feedback: Feedback | null): RefObject<HTMLInputElement> {
+  const ref = useRef<HTMLInputElement>(null);
+  useEffect(() => {
+    if (feedback && ref.current) {
+      ref.current.value = "";
+    }
+  }, [feedback]);
+  return ref;
 }
 
 function CreateUserModal({
@@ -548,12 +564,13 @@ function CreateUserModal({
   const [displayName, setDisplayName] = useState("");
   const [role, setRole] = useState<UserRole>("viewer");
   const [organizationId, setOrganizationId] = useState("");
-  const [password, setPassword] = useState("");
+  const passwordRef = usePasswordRef(feedback);
   const [localError, setLocalError] = useState<string | null>(null);
   const chosenOrg = organizationId || (organizations.length === 1 ? (organizations[0]?.id ?? "") : "");
 
   function handleSubmit(event: FormEvent): void {
     event.preventDefault();
+    const password = passwordRef.current?.value ?? "";
     if (password.length < MIN_TEMPORARY_PASSWORD_LENGTH) {
       setLocalError(PASSWORD_TOO_SHORT_SENTENCE);
       return;
@@ -607,7 +624,7 @@ function CreateUserModal({
         {role === "admin" ? null : (
           <OrganizationSelect organizations={organizations} value={chosenOrg} onChange={setOrganizationId} />
         )}
-        <PasswordField value={password} onChange={setPassword} />
+        <PasswordField inputRef={passwordRef} />
         {localError ? (
           <p role="alert" className="text-xs text-critical-ink">
             {localError}
@@ -721,12 +738,13 @@ function TemporaryPasswordModal({
   onCancel: () => void;
   onSubmit: (password: string) => void;
 }) {
-  // Mounts empty and is unmounted on close, so the password never survives a close.
-  const [password, setPassword] = useState("");
+  // Mounts empty, is emptied on a refusal and is unmounted on close.
+  const passwordRef = usePasswordRef(feedback);
   const [localError, setLocalError] = useState<string | null>(null);
 
   function handleSubmit(event: FormEvent): void {
     event.preventDefault();
+    const password = passwordRef.current?.value ?? "";
     if (password.length < MIN_TEMPORARY_PASSWORD_LENGTH) {
       setLocalError(PASSWORD_TOO_SHORT_SENTENCE);
       return;
@@ -738,7 +756,7 @@ function TemporaryPasswordModal({
   return (
     <ModalFrame title={`Temporary password for ${target.displayName}`} onSubmit={handleSubmit}>
       <div className="mt-3 space-y-3">
-        <PasswordField value={password} onChange={setPassword} />
+        <PasswordField inputRef={passwordRef} />
         {localError ? (
           <p role="alert" className="text-xs text-critical-ink">
             {localError}

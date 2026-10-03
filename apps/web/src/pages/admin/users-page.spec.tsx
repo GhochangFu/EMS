@@ -405,6 +405,78 @@ export async function a400PolicyRefusalShowsTheServerMessageNotThePassword(): Pr
   expect(document.body.textContent).not.toContain(secret);
 }
 
+/**
+ * The secret is not in the markup after a refusal. `textContent` never includes attribute values, so
+ * only `innerHTML` sees a controlled input's mirrored `value` attribute.
+ */
+export async function a400LeavesNoPasswordInTheMarkup(): Promise<void> {
+  stubOidc();
+  const secret = "Correct-Horse-9!";
+  stubFetch({
+    [`POST /api/v1/admin/users/${LINKED_ID}/temporary-password`]: {
+      status: 400,
+      body: { statusCode: 400, message: "The password does not meet the sign-in policy", error: "Bad Request" },
+    },
+  });
+  renderPage();
+  const { dialog, input } = await openPasswordModal();
+  await userEvent.type(input, secret);
+  await userEvent.click(within(dialog).getByRole("button", { name: "Set password" }));
+  expect(await within(dialog).findByText("The password does not meet the sign-in policy")).toBeInTheDocument();
+  expect(document.body.innerHTML).not.toContain(secret);
+}
+
+export async function a400ClearsThePasswordInput(): Promise<void> {
+  stubOidc();
+  stubFetch({
+    [`POST /api/v1/admin/users/${LINKED_ID}/temporary-password`]: {
+      status: 400,
+      body: { statusCode: 400, message: "The password does not meet the sign-in policy", error: "Bad Request" },
+    },
+  });
+  renderPage();
+  const { dialog, input } = await openPasswordModal();
+  await userEvent.type(input, "Correct-Horse-9!");
+  await userEvent.click(within(dialog).getByRole("button", { name: "Set password" }));
+  expect(await within(dialog).findByText("The password does not meet the sign-in policy")).toBeInTheDocument();
+  expect(input.value).toBe("");
+}
+
+export async function aFailedCreateLeavesNoPasswordInTheMarkup(): Promise<void> {
+  stubOidc();
+  const secret = "Correct-Horse-9!";
+  stubFetch({
+    "POST /api/v1/admin/users": {
+      status: 400,
+      body: { statusCode: 400, message: "The password does not meet the sign-in policy", error: "Bad Request" },
+    },
+  });
+  renderPage();
+  const dialog = await openCreateModal();
+  await fillCreate(dialog, secret);
+  await userEvent.click(within(dialog).getByRole("button", { name: "Create" }));
+  expect(await within(dialog).findByText("The password does not meet the sign-in policy")).toBeInTheDocument();
+  expect(document.body.innerHTML).not.toContain(secret);
+}
+
+export async function aFailedCreateClearsThePasswordInput(): Promise<void> {
+  stubOidc();
+  stubFetch({
+    "POST /api/v1/admin/users": {
+      status: 400,
+      body: { statusCode: 400, message: "The password does not meet the sign-in policy", error: "Bad Request" },
+    },
+  });
+  renderPage();
+  const dialog = await openCreateModal();
+  await fillCreate(dialog, "Correct-Horse-9!");
+  await userEvent.click(within(dialog).getByRole("button", { name: "Create" }));
+  expect(await within(dialog).findByText("The password does not meet the sign-in policy")).toBeInTheDocument();
+  expect((within(dialog).getByLabelText(/Temporary password/) as HTMLInputElement).value).toBe("");
+  // The rest of the form survives, so the admin corrects only the password.
+  expect((within(dialog).getByLabelText("Email") as HTMLInputElement).value).toBe("new.person@example.test");
+}
+
 export async function a404ShowsANotFoundSentence(): Promise<void> {
   stubOidc();
   stubFetch({
