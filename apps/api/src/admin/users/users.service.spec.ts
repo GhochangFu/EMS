@@ -618,13 +618,35 @@ export async function assertATemporaryPasswordAuditFailureCallsNoKeycloak(): Pro
   expect(identity.calls).toEqual([]);
 }
 
-/** Decision 14: a Keycloak failure rolls the audit row back — it was written, and its transaction never committed. */
+/**
+ * Decision 14: a definite Keycloak refusal rolls the audit row back — it was
+ * written, and its transaction never committed.
+ */
 export async function assertATemporaryPasswordKeycloakFailureCommitsNoAudit(): Promise<void> {
   const { service, jwt, identity, timeline } = harness();
-  identity.failNext("setTemporaryPassword", "unavailable");
+  identity.failNext("setTemporaryPassword", "not_found");
   const err = await refusal(service.temporaryPassword(jwt, VIEWER_A.id, { temporaryPassword: PASSWORD }));
   const outcomes = timeline.flatMap((entry) => (entry.source === "tx" ? [entry.outcome] : []));
   expect([err.getStatus(), auditInserts(timeline).length, outcomes]).toEqual([502, 1, ["rollback"]]);
+}
+
+/**
+ * Decision 14: `unavailable` / `unexpected_response` from `setTemporaryPassword`
+ * (a timeout, a 5xx) may come after Keycloak applied the reset, so the outcome
+ * is unknown: one audit row commits with `outcome: "unknown"`, no logout is
+ * attempted, and the caller still sees a 502.
+ */
+export async function assertAnUnknownTemporaryPasswordOutcomeCommitsTheAudit(
+  reason: "unavailable" | "unexpected_response",
+): Promise<void> {
+  const { service, jwt, identity, timeline } = harness();
+  identity.failNext("setTemporaryPassword", reason);
+  const err = await refusal(service.temporaryPassword(jwt, VIEWER_A.id, { temporaryPassword: PASSWORD }));
+  expect([err.getStatus(), committedAuditPayloads(timeline), identity.calls.map((call) => call.method)]).toEqual([
+    502,
+    [{ sessionsEnded: false, outcome: "unknown" }],
+    ["setTemporaryPassword"],
+  ]);
 }
 
 /**

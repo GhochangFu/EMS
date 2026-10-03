@@ -33,7 +33,11 @@ import { resolveIdentity, type ResolvedIdentity } from "../../auth/identity-reso
 import { USER_DISABLED_NOTIFY_CHANNEL } from "../../auth/user-disabled-notify";
 import { FLEET_DRIZZLE, TENANT_DRIZZLE } from "../../database/database.tokens";
 import { withTenant, type BmsTx } from "../../database/tenant-context";
-import { IdentityAdminError, type IdentityAdmin } from "../../identity/identity-admin.client";
+import {
+  IdentityAdminError,
+  type IdentityAdmin,
+  type IdentityAdminFailureReason,
+} from "../../identity/identity-admin.client";
 import { IDENTITY_ADMIN, NotConfiguredIdentityAdmin } from "../../identity/identity-admin.module";
 import { MasterDataAuditService } from "../master-data-audit.service";
 import {
@@ -586,8 +590,14 @@ export class UsersService {
    * **Decision 14: the credential never changes without an audit row.** The
    * audit transaction opens first and inserts `master.user.temporary_password.set`;
    * `setTemporaryPassword` and `logoutSessions` then run inside it. An audit
-   * failure stops before any Keycloak call; a `setTemporaryPassword` refusal
-   * rolls the audit row back.
+   * failure stops before any Keycloak call; a definite `setTemporaryPassword`
+   * refusal (a 4xx, or no request sent) rolls the audit row back.
+   *
+   * `unavailable` / `unexpected_response` from `setTemporaryPassword` (the
+   * 10 s client timeout, a proxy 5xx) may arrive after Keycloak applied the
+   * reset, so the outcome is unknown: one row `{ sessionsEnded: false,
+   * outcome: "unknown" }` commits by the same rewrite as below, no logout is
+   * attempted, and the caller sees a 502.
    *
    * A `logoutSessions` failure comes after the password certainly changed, so
    * it must not lose the audit row. The first transaction rolls back (its row
@@ -627,10 +637,16 @@ export class UsersService {
     try {
       await this.inExecutor(onFleet, organizationId, async (tx) => {
         await writeAudit({ sessionsEnded: true }, tx);
-        await this.keycloak(
-          () => this.identity.setTemporaryPassword(subject, body.temporaryPassword),
-          PASSWORD_POLICY_REFUSED,
-        );
+        await this.keycloak(async () => {
+          try {
+            await this.identity.setTemporaryPassword(subject, body.temporaryPassword);
+          } catch (err) {
+            if (err instanceof IdentityAdminError && UNKNOWN_OUTCOME.has(err.reason)) {
+              throw new AuditRewrite({ sessionsEnded: false, outcome: "unknown" });
+            }
+            throw err;
+          }
+        }, PASSWORD_POLICY_REFUSED);
         try {
           await this.identity.logoutSessions(subject);
         } catch {
@@ -640,6 +656,9 @@ export class UsersService {
     } catch (err) {
       if (!(err instanceof AuditRewrite)) throw err;
       await this.inExecutor(onFleet, organizationId, (tx) => writeAudit(err.payload, tx));
+      if (err.payload.outcome === "unknown") {
+        throw new BadGatewayException(IDENTITY_PROVIDER_FAILED);
+      }
       return { user: toAdminUserDto(target), followUp: "keycloak_logout_failed" };
     }
     return { user: toAdminUserDto(target), followUp: null };
@@ -754,6 +773,13 @@ export class UsersService {
     }
   }
 }
+
+/**
+ * The Keycloak failures after which the request may still have been applied:
+ * a timeout or 5xx (`unavailable`) and an unrecognised status
+ * (`unexpected_response`). Every other reason is a definite refusal.
+ */
+const UNKNOWN_OUTCOME: ReadonlySet<IdentityAdminFailureReason> = new Set(["unavailable", "unexpected_response"]);
 
 /**
  * Thrown inside the temporary-password transaction when Keycloak already

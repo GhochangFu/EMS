@@ -245,9 +245,16 @@ describe("F3.78 — UsersService.temporaryPassword (ADR 0089 decision 6)", () =>
     await spec.assertATemporaryPasswordAuditFailureCallsNoKeycloak();
   });
 
-  it("a Keycloak failure leaves no committed audit row (decision 14)", async () => {
+  it("a definite Keycloak refusal leaves no committed audit row (decision 14)", async () => {
     await spec.assertATemporaryPasswordKeycloakFailureCommitsNoAudit();
   });
+
+  it.each(["unavailable", "unexpected_response"] as const)(
+    "%s from setTemporaryPassword is an unknown outcome: one committed audit row, then 502 (decision 14)",
+    async (reason) => {
+      await spec.assertAnUnknownTemporaryPasswordOutcomeCommitsTheAudit(reason);
+    },
+  );
 
   it("a logout failure after the password is set commits sessionsEnded false and keycloak_logout_failed (decision 14)", async () => {
     await spec.assertATemporaryPasswordLogoutFailureCommitsATruthfulAudit();
