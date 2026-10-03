@@ -600,7 +600,7 @@ drizzle journal is a single shared file).
 
 | ID | Status | Feature | P | Effort | Wave | Depends |
 |----|--------|---------|---|--------|------|---------|
-| **F3.21** | ⬜ | Tool-calling agent loop (invokes real create APIs; not single-shot JSON draft) ⭐ | P0 | 5–7 | 2 | create APIs, F4.4 |
+| **F3.21** | 🟡 | Tool-calling agent loop (invokes real create APIs; not single-shot JSON draft) ⭐ — **ADR [0090](./adr/0090-onboarding-agent-tool-calling-loop.md) accepted 2026-10-03**: seven owner rulings (Q1–Q7). The tools edit the session draft, and the model never commits: `propose_commit` binds a proposal to the draft hash, and server code commits only on the user’s confirm (the Commit button or the phrase `confirm commit`). OpenAI behind a provider port, no new dependency; the loop runs in the chat request with caps (8 tool calls, 45 s, 20 history messages); code-written `action` lines; a provider error discards the turn and runs the rule-based path. Amends ADR 0011 decision 1. The `create APIs` dependency is read as met: the admin CRUD and the onboarding `sessions`/`chat`/`draft`/`validate`/`commit` routes exist, and the owner started the row on that reading. Next: the step-3 plan. | P0 | 5–7 | 2 | create APIs, F4.4 |
 | F3.22 | ⬜ | Agent onboards asset templates (create + instantiate) conversationally | P0 | 4–5 | 3 | F2.2, F3.21 |
 | F3.23 | ⬜ | Agent onboards parameters (point keys) + asset tags and maps source↔tag via Q&A | P0 | 3–4 | 3 | F3.21, F2.7 |
 | F3.24 | ⬜ | Agent drives protocol-based device onboarding (per-adapter discovery/prompts) | P1 | 3–4 | 3 | F3.21, F1.1 |

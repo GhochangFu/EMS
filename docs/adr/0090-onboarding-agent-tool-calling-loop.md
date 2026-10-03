@@ -2,10 +2,11 @@
 
 ## Status
 
-Proposed — drafted on 2026-10-03, before any implementation code. Seven scope
+Accepted — drafted on 2026-10-03, before any implementation code. Seven scope
 questions were put to the owner one at a time on 2026-10-03; all were ruled,
-and each ruling is recorded under *Gate questions*. Awaiting the owner's
-approval of this written record.
+and each ruling is recorded under *Gate questions*. The owner approved this
+written record on 2026-10-03, with the note under *Where rulings 1 and 4 leave
+the design* stated to them before the approval.
 
 Implements row `F3.21` (Track E, Wave 2, ⭐). Amends
 [ADR 0011](./0011-ai-onboarding-chat.md) decision 1 (see *Amended records*).
