@@ -7,6 +7,7 @@ import { expect, vi } from "vitest";
 import * as api from "../../api/admin/asset-groups";
 import * as assetsApi from "../../api/admin/assets";
 import * as locationsApi from "../../api/admin/locations";
+import * as organizationsApi from "../../api/admin/organizations";
 import * as vocabApi from "../../api/vocabularies";
 import type { AuthUser } from "../../stores/auth-store";
 import { AssetGroupsAdminPage } from "./asset-groups-page";
@@ -358,6 +359,56 @@ export async function createSendsTheSelectedLocation(): Promise<void> {
       description: null,
     });
   });
+}
+
+/**
+ * A group created at a location other than the filter's must stay visible and
+ * selected: the page moves the filter to the saved group's location, so its
+ * Edit button and member list belong to a group that is in the list.
+ */
+export async function createAtAnotherLocationMovesTheFilterThere(): Promise<void> {
+  stubApi();
+  const saved = {
+    ...GROUPS.items[0],
+    id: "55555555-5555-5555-5555-555555555555",
+    code: "f378-spec-grp",
+    name: "Spec group",
+    locationId: OTHER_LOCATION_ID,
+    locationName: "Plant 2",
+  };
+  vi.spyOn(api, "createAdminAssetGroup").mockResolvedValue(saved as never);
+  vi.spyOn(api, "fetchAdminAssetGroups").mockImplementation(((locId?: string) =>
+    Promise.resolve(locId === OTHER_LOCATION_ID ? { items: [saved] } : GROUPS)) as never);
+  vi.spyOn(organizationsApi, "fetchAdminOrganizations").mockResolvedValue({
+    items: [{ id: "33333333-3333-3333-3333-333333333333", code: "ORG", name: "Org" }],
+  } as never);
+  renderPage();
+  await screen.findByRole("button", { name: /Electrical train/ });
+
+  // Put the filter bar on Plant 1.
+  const orgOption = await screen.findByRole("option", { name: /ORG/ });
+  await userEvent.selectOptions(
+    orgOption.closest("select") as HTMLSelectElement,
+    "33333333-3333-3333-3333-333333333333",
+  );
+  const plantOne = await screen.findByRole("option", { name: "Plant 1" });
+  await userEvent.selectOptions(plantOne.closest("select") as HTMLSelectElement, GROUP_LOCATION_ID);
+  await waitFor(() => {
+    expect(api.fetchAdminAssetGroups).toHaveBeenCalledWith(GROUP_LOCATION_ID);
+  });
+
+  await userEvent.click(await screen.findByRole("button", { name: "New group" }));
+  const dialog = await screen.findByRole("dialog", { name: "New asset group" });
+  const select = within(dialog).getByLabelText("Location");
+  await waitFor(() => {
+    expect(within(select).getAllByRole("option").length).toBe(3);
+  });
+  await userEvent.selectOptions(select, OTHER_LOCATION_ID);
+  await userEvent.type(within(dialog).getByLabelText("Code"), "f378-spec-grp");
+  await userEvent.type(within(dialog).getByLabelText("Name"), "Spec group");
+  await userEvent.click(within(dialog).getByRole("button", { name: "Save" }));
+
+  expect(await screen.findByRole("button", { name: "Edit group" })).toBeVisible();
 }
 
 /** The picker offers the group's location's free assets, and nothing else. */

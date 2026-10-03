@@ -6,6 +6,7 @@ import {
   aReadOnlyRoleSeesNoWriteControls,
   addSendsTheAssetId,
   anEmptyVocabularyRendersNoRolesOfItsOwn,
+  createAtAnotherLocationMovesTheFilterThere,
   createSendsTheSelectedLocation,
   editNeverSendsCode,
   pickerListsOnlyTheGroupsLocation,
@@ -58,6 +59,10 @@ describe("F3.37 asset groups page", () => {
 
   it("creates a group at the location chosen in the modal", async () => {
     await createSendsTheSelectedLocation();
+  });
+
+  it("moves the filter to the new group's location when it differs from the filter's", async () => {
+    await createAtAnotherLocationMovesTheFilterThere();
   });
 
   it("offers only free assets of the group's own location in the picker", async () => {

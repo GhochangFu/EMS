@@ -112,6 +112,11 @@ export function AssetGroupsAdminPage({ user }: AssetGroupsAdminPageProps) {
     onSuccess: async (saved) => {
       setError(null);
       setModal(null);
+      // The modal can save at a location other than the filter's. The list is keyed on the
+      // filter, so move it to the saved group's location or the selected group is not in it.
+      if (locationId !== undefined && saved.locationId !== locationId) {
+        setSelection({ ...selection, locationId: saved.locationId });
+      }
       await invalidateGroups();
       setSelectedGroupId(saved.id);
     },
