@@ -58,4 +58,5 @@ export * from "./system-status";
 export * from "./telemetry-entry";
 export * from "./telemetry-import";
 export * from "./template-lifecycle";
+export * from "./users";
 export type { Assignable, Measured, Strict } from "./equality";
