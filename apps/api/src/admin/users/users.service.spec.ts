@@ -155,7 +155,12 @@ function harness(options: Options = {}) {
       }
       if (op.text.includes("INSERT INTO bms.users")) {
         if (options.failInsert) {
-          throw new Error("the insert failed");
+          // The shape of a pg DatabaseError: SQLSTATE, constraint, and a detail naming the row's values.
+          throw Object.assign(new Error("the insert failed"), {
+            code: "23505",
+            constraint: "users_email_lower_key",
+            detail: "Key (lower(email))=(new.person@example.com) already exists.",
+          });
         }
         const [id, organizationId, email, displayName, role, subject] = op.params as string[];
         return [
@@ -306,6 +311,25 @@ export async function assertAFailingDeleteLogsTheIdAndNotTheEmail(): Promise<voi
   const logged = errorSpy.mock.calls.map((call) => String(call[0])).join("\n");
   expect(logged).toContain("fake-kc-1");
   expect(logged).not.toContain("new.person@example.com");
+}
+
+/**
+ * The wrapped 500 is never logged by Nest's filter, so the root cause of a
+ * failed insert is logged here: its SQLSTATE and constraint (§9.6: never the
+ * email, nor pg's `detail`, which names the row's values).
+ */
+export async function assertAFailedInsertWhoseDeleteFailsLogsTheSqlstateAndNotTheRow(): Promise<void> {
+  const errorSpy = vi.spyOn(Logger.prototype, "error").mockImplementation(() => undefined);
+  const { service, jwt, identity } = harness({ failInsert: true });
+  identity.failNext("deleteUser", "unavailable");
+  await refusal(service.create(jwt, createBody()));
+  const logged = errorSpy.mock.calls.map((call) => String(call[0])).join("\n");
+  expect([
+    logged.includes("23505"),
+    logged.includes("users_email_lower_key"),
+    logged.includes("new.person@example.com"),
+    logged.includes("Key ("),
+  ]).toEqual([true, true, false, false]);
 }
 
 /** Decision 3: a failed create whose compensating delete fails too says a disabled account remains. */

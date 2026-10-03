@@ -394,7 +394,9 @@ export class UsersService {
       try {
         await this.identity.deleteUser(keycloakId);
       } catch {
-        this.logger.error(`F3.78: could not delete the disabled Keycloak user ${keycloakId} after a failed create`);
+        // A non-HTTP cause is wrapped into a 500 below, which Nest's filter never logs: name it here (§9.6).
+        const cause = err instanceof HttpException ? "" : ` (cause: ${describeCause(err)})`;
+        this.logger.error(`F3.78: could not delete the disabled Keycloak user ${keycloakId} after a failed create${cause}`);
         throw withFollowUp(err, "keycloak_orphan_disabled_account");
       }
       throw err;
@@ -803,6 +805,20 @@ function withFollowUp(err: unknown, followUp: UserWriteFollowUp): HttpException 
   const response = err instanceof HttpException ? err.getResponse() : "Internal server error";
   const body = typeof response === "string" ? { statusCode: status, message: response } : response;
   return new HttpException({ ...body, followUp }, status, { cause: err });
+}
+
+/**
+ * A loggable description of a non-HTTP error with no PII (§9.6): its class
+ * name and, for a pg error, its SQLSTATE `code` and `constraint`. Never the
+ * message, the stack or pg's `detail` — those can carry the row's values.
+ */
+function describeCause(err: unknown): string {
+  const name = err instanceof Error ? err.constructor.name : typeof err;
+  const fields = (err ?? {}) as { code?: unknown; constraint?: unknown };
+  const parts = [name];
+  if (typeof fields.code === "string") parts.push(`code=${fields.code}`);
+  if (typeof fields.constraint === "string") parts.push(`constraint=${fields.constraint}`);
+  return parts.join(" ");
 }
 
 /** Unlinked rows have no Keycloak id to act on (decision 4): 409. */

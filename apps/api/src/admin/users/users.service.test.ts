@@ -29,6 +29,10 @@ describe("F3.78 — UsersService.create (ADR 0089 decision 3)", () => {
     await spec.assertAFailingDeleteLogsTheIdAndNotTheEmail();
   });
 
+  it("a failed insert whose compensating delete fails logs the SQLSTATE and constraint, not the email or pg detail", async () => {
+    await spec.assertAFailedInsertWhoseDeleteFailsLogsTheSqlstateAndNotTheRow();
+  });
+
   it("a failed create whose compensating delete fails keeps its status and says a disabled Keycloak account remains", async () => {
     await spec.assertAFailingDeleteAddsTheOrphanFollowUpAndKeepsTheStatus();
   });
