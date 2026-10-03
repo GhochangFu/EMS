@@ -282,10 +282,23 @@ export async function assertAFailingDeleteLogsTheIdAndNotTheEmail(): Promise<voi
   const errorSpy = vi.spyOn(Logger.prototype, "error").mockImplementation(() => undefined);
   const { service, jwt, identity } = harness({ failInsert: true });
   identity.failNext("deleteUser", "unavailable");
-  await expect(service.create(jwt, createBody())).rejects.toThrow("the insert failed");
+  await expect(service.create(jwt, createBody())).rejects.toThrow();
   const logged = errorSpy.mock.calls.map((call) => String(call[0])).join("\n");
   expect(logged).toContain("fake-kc-1");
   expect(logged).not.toContain("new.person@example.com");
+}
+
+/** Decision 3: a failed create whose compensating delete fails too says a disabled account remains. */
+export async function assertAFailingDeleteAddsTheOrphanFollowUpAndKeepsTheStatus(): Promise<void> {
+  vi.spyOn(Logger.prototype, "error").mockImplementation(() => undefined);
+  const { service, jwt, identity } = harness();
+  identity.failNext("setRealmRole", "unavailable");
+  identity.failNext("deleteUser", "unavailable");
+  const err = await refusal(service.create(jwt, createBody()));
+  expect([err.getStatus(), (err.getResponse() as { followUp?: unknown }).followUp]).toEqual([
+    502,
+    "keycloak_orphan_disabled_account",
+  ]);
 }
 
 export async function assertADuplicateEmailIs409BeforeKeycloak(): Promise<void> {

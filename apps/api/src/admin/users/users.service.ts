@@ -5,6 +5,8 @@ import {
   BadRequestException,
   ConflictException,
   ForbiddenException,
+  HttpException,
+  HttpStatus,
   Inject,
   Injectable,
   Logger,
@@ -313,7 +315,10 @@ export class UsersService {
    * `fleetDb`; Keycloak create (disabled); temporary password; realm role; the
    * insert and its audit row in one transaction; after the commit, enable.
    * A failure at the password, the role or the insert deletes **only the id
-   * parsed from this request's create** and rethrows.
+   * parsed from this request's create** and rethrows. When that delete fails
+   * too, the error keeps its status and its body gains
+   * `followUp: "keycloak_orphan_disabled_account"` (decision 3: the response
+   * says a disabled Keycloak account remains); the log names the Keycloak id only.
    */
   async create(jwt: JwtPayload, rawBody: unknown): Promise<UserWriteResponse> {
     const manager = await this.requireManager(jwt);
@@ -376,6 +381,7 @@ export class UsersService {
         await this.identity.deleteUser(keycloakId);
       } catch {
         this.logger.error(`F3.78: could not delete the disabled Keycloak user ${keycloakId} after a failed create`);
+        throw withFollowUp(err, "keycloak_orphan_disabled_account");
       }
       throw err;
     }
@@ -696,6 +702,18 @@ export class UsersService {
       throw err;
     }
   }
+}
+
+/**
+ * `err` with `followUp` added to its response body and its status kept. A
+ * non-HTTP error (a failed insert) stays a 500 whose body names no internal
+ * detail; the original is kept as `cause`, which is never serialised.
+ */
+function withFollowUp(err: unknown, followUp: UserWriteFollowUp): HttpException {
+  const status = err instanceof HttpException ? err.getStatus() : HttpStatus.INTERNAL_SERVER_ERROR;
+  const response = err instanceof HttpException ? err.getResponse() : "Internal server error";
+  const body = typeof response === "string" ? { statusCode: status, message: response } : response;
+  return new HttpException({ ...body, followUp }, status, { cause: err });
 }
 
 /** Unlinked rows have no Keycloak id to act on (decision 4): 409. */

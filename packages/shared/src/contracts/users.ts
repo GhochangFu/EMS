@@ -121,8 +121,18 @@ export const temporaryPasswordBodySchema = z
  * (create committed, the account is still disabled — use reactivate) or
  * `keycloak_disable_failed` (the row is deactivated, the Keycloak account and
  * sessions were not).
+ *
+ * `keycloak_orphan_disabled_account` rides on an **error** body, not on a
+ * 2xx: a create failed after Keycloak made the account, and the compensating
+ * delete failed too, so a disabled Keycloak account with no `bms.users` row
+ * remains (ADR 0089 decision 3) — an operator removes it in Keycloak. The
+ * error keeps its original status.
  */
-export const userWriteFollowUpSchema = z.enum(["keycloak_enable_failed", "keycloak_disable_failed"]);
+export const userWriteFollowUpSchema = z.enum([
+  "keycloak_enable_failed",
+  "keycloak_disable_failed",
+  "keycloak_orphan_disabled_account",
+]);
 
 export const userWriteResponseSchema = z.object({
   user: adminUserDtoSchema,

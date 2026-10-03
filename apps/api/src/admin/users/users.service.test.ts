@@ -29,6 +29,10 @@ describe("F3.78 — UsersService.create (ADR 0089 decision 3)", () => {
     await spec.assertAFailingDeleteLogsTheIdAndNotTheEmail();
   });
 
+  it("a failed create whose compensating delete fails keeps its status and says a disabled Keycloak account remains", async () => {
+    await spec.assertAFailingDeleteAddsTheOrphanFollowUpAndKeepsTheStatus();
+  });
+
   it("a duplicate email is 409 before any Keycloak call", async () => {
     await spec.assertADuplicateEmailIs409BeforeKeycloak();
   });
