@@ -597,6 +597,99 @@ export async function aMissingUserInTheDrawerKeepsTheUserSentence(): Promise<voi
   expect(within(drawer).queryByText(TARGET_NOT_FOUND_SENTENCE)).not.toBeInTheDocument();
 }
 
+function holdWrites(): void {
+  stubFetch();
+  const real = globalThis.fetch;
+  vi.stubGlobal(
+    "fetch",
+    vi.fn((input: RequestInfo | URL, init?: RequestInit) =>
+      init?.method === "POST" ? new Promise<Response>(() => {}) : real(input, init),
+    ),
+  );
+}
+
+/** `F4.168` D4: the row action in flight names itself and is aria-busy; no other row's action does. */
+export async function aPendingDeactivateAnnouncesItselfOnItsRowOnly(): Promise<void> {
+  stubOidc();
+  holdWrites();
+  renderPage();
+  await userEvent.click(await screen.findByRole("button", { name: "Deactivate Ada Linked" }));
+  const busy = await screen.findByRole("button", { name: "Deactivating Ada Linked…" });
+  expect(busy).toHaveAttribute("aria-busy", "true");
+  expect(busy).toHaveTextContent("Deactivating…");
+  // Positive control: another row's action, and another action on this row, keep their names.
+  const other = screen.getByRole("button", { name: "Reactivate Dev Deactivated" });
+  expect(other).not.toHaveAttribute("aria-busy", "true");
+  expect(other).toHaveTextContent("Reactivate");
+  expect(screen.getByRole("button", { name: "Edit Ada Linked" })).not.toHaveAttribute("aria-busy", "true");
+}
+
+/** The same action on another row keeps its name: the key is the row, not just the action. */
+export async function aPendingDeactivateLeavesTheSameActionOnAnotherRowAlone(): Promise<void> {
+  stubOidc();
+  stubFetch({
+    "GET /api/v1/admin/users": {
+      status: 200,
+      body: { items: [userRow(LINKED_ID, "Ada Linked"), userRow("66666666-6666-6666-6666-666666666666", "Bea Second")] },
+    },
+  });
+  const real = globalThis.fetch;
+  vi.stubGlobal(
+    "fetch",
+    vi.fn((input: RequestInfo | URL, init?: RequestInit) =>
+      init?.method === "POST" ? new Promise<Response>(() => {}) : real(input, init),
+    ),
+  );
+  renderPage();
+  await userEvent.click(await screen.findByRole("button", { name: "Deactivate Ada Linked" }));
+  await screen.findByRole("button", { name: "Deactivating Ada Linked…" });
+  const other = screen.getByRole("button", { name: "Deactivate Bea Second" });
+  expect(other).not.toHaveAttribute("aria-busy", "true");
+  expect(other).toHaveTextContent("Deactivate");
+}
+
+export async function aPendingReactivateAnnouncesItself(): Promise<void> {
+  stubOidc();
+  holdWrites();
+  renderPage();
+  await userEvent.click(await screen.findByRole("button", { name: "Reactivate Dev Deactivated" }));
+  const busy = await screen.findByRole("button", { name: "Reactivating Dev Deactivated…" });
+  expect(busy).toHaveAttribute("aria-busy", "true");
+  expect(busy).toHaveTextContent("Reactivating…");
+}
+
+/** The modal-driven actions: the row behind the modal names the save in flight. */
+export async function aPendingEditAnnouncesItsRow(): Promise<void> {
+  stubOidc();
+  stubFetch();
+  const real = globalThis.fetch;
+  vi.stubGlobal(
+    "fetch",
+    vi.fn((input: RequestInfo | URL, init?: RequestInit) =>
+      init?.method === "PATCH" ? new Promise<Response>(() => {}) : real(input, init),
+    ),
+  );
+  renderPage();
+  await userEvent.click(await screen.findByRole("button", { name: "Edit Ada Linked" }));
+  const dialog = await screen.findByRole("dialog", { name: /Edit/ });
+  await userEvent.type(within(dialog).getByLabelText("Display name"), " Jr");
+  await userEvent.click(within(dialog).getByRole("button", { name: /^Save/ }));
+  const busy = await screen.findByRole("button", { name: "Saving Ada Linked…", hidden: true });
+  expect(busy).toHaveAttribute("aria-busy", "true");
+  expect(screen.getByRole("button", { name: "Edit Dev Deactivated", hidden: true })).not.toHaveAttribute("aria-busy", "true");
+}
+
+export async function aPendingTemporaryPasswordAnnouncesItsRow(): Promise<void> {
+  stubOidc();
+  holdWrites();
+  renderPage();
+  const { dialog, input } = await openPasswordModal();
+  await userEvent.type(input, "Correct-Horse-9!");
+  await userEvent.click(within(dialog).getByRole("button", { name: /^(Set|Save)/ }));
+  const busy = await screen.findByRole("button", { name: "Setting temporary password for Ada Linked…", hidden: true });
+  expect(busy).toHaveAttribute("aria-busy", "true");
+}
+
 /**
  * ADR 0089 decision 11: grants touch only the database, so local sign-in still manages them.
  * Decision 15 limits the disabled state to the user actions.

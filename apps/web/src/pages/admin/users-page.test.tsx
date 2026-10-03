@@ -13,6 +13,11 @@ import {
   aMissingGrantTargetGetsItsOwnSentence,
   aMissingUserInTheDrawerKeepsTheUserSentence,
   aPendingAddAnnouncesItself,
+  aPendingDeactivateAnnouncesItselfOnItsRowOnly,
+  aPendingDeactivateLeavesTheSameActionOnAnotherRowAlone,
+  aPendingEditAnnouncesItsRow,
+  aPendingReactivateAnnouncesItself,
+  aPendingTemporaryPasswordAnnouncesItsRow,
   aPendingRemoveAnnouncesOnlyItsOwnGrant,
   aSuccessfulWriteReadsTheListAgain,
   aGlobalAdminMayCreateAnAdmin,
@@ -185,5 +190,25 @@ describe("F3.78 users page", () => {
 
   it("a 404 that is not the grant target keeps the user sentence in the drawer", async () => {
     await aMissingUserInTheDrawerKeepsTheUserSentence();
+  });
+
+  it("a pending Deactivate announces itself and only its own row", async () => {
+    await aPendingDeactivateAnnouncesItselfOnItsRowOnly();
+  });
+
+  it("a pending Deactivate leaves the same action on another row alone", async () => {
+    await aPendingDeactivateLeavesTheSameActionOnAnotherRowAlone();
+  });
+
+  it("a pending Reactivate announces itself", async () => {
+    await aPendingReactivateAnnouncesItself();
+  });
+
+  it("a pending Edit save announces itself on its row", async () => {
+    await aPendingEditAnnouncesItsRow();
+  });
+
+  it("a pending Temporary password announces itself on its row", async () => {
+    await aPendingTemporaryPasswordAnnouncesItsRow();
   });
 });

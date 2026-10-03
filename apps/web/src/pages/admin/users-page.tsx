@@ -164,6 +164,40 @@ export function UsersAdminPage({ user }: UsersAdminPageProps) {
   return <UsersAdminScreen user={user} />;
 }
 
+/** Which row action a user write is, so its button can name itself while it is in flight. */
+type RowActionKind = "edit" | "deactivate" | "reactivate" | "password";
+type UserWrite = {
+  /** The row and action in flight; null for a create, which has no row. */
+  row: { userId: string; action: RowActionKind } | null;
+  run: () => Promise<UserWriteResponse>;
+};
+
+/** Per action: the label and visible text while idle, and while its own write is in flight. */
+const ROW_ACTION_TEXT: Record<
+  RowActionKind,
+  { label: string; text: string; pendingLabel: string; pendingText: string }
+> = {
+  edit: { label: "Edit", text: "Edit", pendingLabel: "Saving", pendingText: "Saving…" },
+  deactivate: {
+    label: "Deactivate",
+    text: "Deactivate",
+    pendingLabel: "Deactivating",
+    pendingText: "Deactivating…",
+  },
+  reactivate: {
+    label: "Reactivate",
+    text: "Reactivate",
+    pendingLabel: "Reactivating",
+    pendingText: "Reactivating…",
+  },
+  password: {
+    label: "Temporary password for",
+    text: "Temporary password",
+    pendingLabel: "Setting temporary password for",
+    pendingText: "Setting password…",
+  },
+};
+
 type Modal =
   | { kind: "create" }
   | { kind: "edit"; target: AdminUserDto }
@@ -202,7 +236,7 @@ function UsersAdminScreen({ user }: UsersAdminPageProps) {
   };
 
   const write = useMutation({
-    mutationFn: (run: () => Promise<UserWriteResponse>) => run(),
+    mutationFn: (input: UserWrite) => input.run(),
     onSuccess: afterWrite,
     onError: (err: unknown) => {
       // A row action has no modal to show the refusal in.
@@ -228,18 +262,27 @@ function UsersAdminScreen({ user }: UsersAdminPageProps) {
     return { disabled: write.isPending };
   }
 
-  function rowAction(target: AdminUserDto, label: string, onClick: () => void, text: string) {
+  /** F4.168 D4: the name keys on the row and action in flight; `disabled` stays shared. */
+  function rowAction(target: AdminUserDto, action: RowActionKind, onClick: () => void) {
     const state = actionState(target);
+    const words = ROW_ACTION_TEXT[action];
+    const inFlight =
+      write.isPending &&
+      write.variables?.row?.userId === target.id &&
+      write.variables.row.action === action;
     return (
       <button
         type="button"
-        aria-label={`${label} ${target.displayName}`}
+        aria-label={
+          inFlight ? `${words.pendingLabel} ${target.displayName}…` : `${words.label} ${target.displayName}`
+        }
+        aria-busy={inFlight}
         aria-describedby={state.describedBy}
         disabled={state.disabled}
         onClick={onClick}
         className="text-xs font-semibold text-accent-strong disabled:opacity-50"
       >
-        {text}
+        {inFlight ? words.pendingText : words.text}
       </button>
     );
   }
@@ -320,43 +363,29 @@ function UsersAdminScreen({ user }: UsersAdminPageProps) {
                     </td>
                     <td className="px-2 py-2">
                       <div className="flex flex-wrap gap-2">
-                        {rowAction(
-                          row,
-                          "Edit",
-                          () => {
-                            setModalFeedback(null);
-                            setModal({ kind: "edit", target: row });
-                          },
-                          "Edit",
-                        )}
+                        {rowAction(row, "edit", () => {
+                          setModalFeedback(null);
+                          setModal({ kind: "edit", target: row });
+                        })}
                         {row.disabledAt
-                          ? rowAction(
-                              row,
-                              "Reactivate",
-                              () => {
-                                setPageFeedback(null);
-                                write.mutate(() => reactivateAdminUser(row.id));
-                              },
-                              "Reactivate",
-                            )
-                          : rowAction(
-                              row,
-                              "Deactivate",
-                              () => {
-                                setPageFeedback(null);
-                                write.mutate(() => deactivateAdminUser(row.id));
-                              },
-                              "Deactivate",
-                            )}
-                        {rowAction(
-                          row,
-                          "Temporary password for",
-                          () => {
-                            setModalFeedback(null);
-                            setModal({ kind: "password", target: row });
-                          },
-                          "Temporary password",
-                        )}
+                          ? rowAction(row, "reactivate", () => {
+                              setPageFeedback(null);
+                              write.mutate({
+                                row: { userId: row.id, action: "reactivate" },
+                                run: () => reactivateAdminUser(row.id),
+                              });
+                            })
+                          : rowAction(row, "deactivate", () => {
+                              setPageFeedback(null);
+                              write.mutate({
+                                row: { userId: row.id, action: "deactivate" },
+                                run: () => deactivateAdminUser(row.id),
+                              });
+                            })}
+                        {rowAction(row, "password", () => {
+                          setModalFeedback(null);
+                          setModal({ kind: "password", target: row });
+                        })}
                         <button
                           type="button"
                           aria-label={`Grants for ${row.displayName}`}
@@ -387,7 +416,7 @@ function UsersAdminScreen({ user }: UsersAdminPageProps) {
           pending={write.isPending}
           feedback={modalFeedback}
           onCancel={closeModal}
-          onSubmit={(input) => write.mutate(() => createAdminUser(input))}
+          onSubmit={(input) => write.mutate({ row: null, run: () => createAdminUser(input) })}
         />
       ) : null}
       {modal?.kind === "edit" ? (
@@ -398,7 +427,12 @@ function UsersAdminScreen({ user }: UsersAdminPageProps) {
           pending={write.isPending}
           feedback={modalFeedback}
           onCancel={closeModal}
-          onSubmit={(body) => write.mutate(() => updateAdminUser(modal.target.id, body))}
+          onSubmit={(body) =>
+            write.mutate({
+              row: { userId: modal.target.id, action: "edit" },
+              run: () => updateAdminUser(modal.target.id, body),
+            })
+          }
         />
       ) : null}
       {modal?.kind === "password" ? (
@@ -408,7 +442,10 @@ function UsersAdminScreen({ user }: UsersAdminPageProps) {
           feedback={modalFeedback}
           onCancel={closeModal}
           onSubmit={(password) =>
-            write.mutate(() => setAdminUserTemporaryPassword(modal.target.id, password))
+            write.mutate({
+              row: { userId: modal.target.id, action: "password" },
+              run: () => setAdminUserTemporaryPassword(modal.target.id, password),
+            })
           }
         />
       ) : null}
