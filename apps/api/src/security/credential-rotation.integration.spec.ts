@@ -46,8 +46,17 @@ import {
  * three columns go together, and `organization_llm_settings_key_check`
  * (migration 0100) is why all four LLM `key_*` columns do — `key_last4`
  * included, or the CHECK rejects the update. The residual hazard is a concurrent suite
- * deleting one of those rows in the milliseconds between the snapshot and the
+ * updating or deleting one of those rows between the snapshot and the
  * quarantine, which surfaces as a named `40001`, not a wrong count.
+ *
+ * **That hazard is not rare since `F4.186`.** `organization-llm-settings.rls
+ * .integration` commits keyed `organization_llm_settings` rows through
+ * `put()` and deletes them in `afterAll`, in parallel with this file. Measured
+ * on 2026-10-03: 2 of 14 runs of the two files together failed the LLM
+ * quarantine with `could not serialize access due to concurrent update`; with
+ * the retry, 8 of 8 passed and 8 retries fired. So
+ * {@link withFixtureTx} retries a `40001`, and only a `40001`, on a fresh
+ * snapshot — an assertion error is never retried.
  *
  * **Decision 11 — no test requires a deployed key.** Each function generates
  * its own two 32-byte keys, encrypts its fixtures under key A at version 1, and
@@ -105,13 +114,34 @@ async function quarantineCommittedSecrets(tx: BmsTx): Promise<void> {
     .where(isNotNull(organizationLlmSettings.keyCiphertext));
 }
 
-/** A rolled-back `repeatable read` transaction with the shared database's secrets quarantined. */
+const SERIALIZATION_FAILURE = "40001";
+const FIXTURE_TX_ATTEMPTS = 5;
+
+function isSerializationFailure(err: unknown): boolean {
+  return typeof err === "object" && err !== null && "code" in err && err.code === SERIALIZATION_FAILURE;
+}
+
+/**
+ * A rolled-back `repeatable read` transaction with the shared database's
+ * secrets quarantined. A `40001` from a concurrent suite's write is retried on
+ * a fresh snapshot (see the file docblock); every other error propagates on
+ * the first attempt, and the last `40001` propagates too.
+ */
 async function withFixtureTx(db: BmsDb, body: (tx: BmsTx) => Promise<void>): Promise<void> {
-  await withRollback(db, async (tx) => {
-    await quarantineCommittedSecrets(tx);
-    await body(tx);
-    tx.rollback();
-  });
+  for (let attempt = 1; ; attempt += 1) {
+    try {
+      await withRollback(db, async (tx) => {
+        await quarantineCommittedSecrets(tx);
+        await body(tx);
+        tx.rollback();
+      });
+      return;
+    } catch (err) {
+      if (!isSerializationFailure(err) || attempt === FIXTURE_TX_ATTEMPTS) {
+        throw err;
+      }
+    }
+  }
 }
 
 const ENV_NAMES = [
