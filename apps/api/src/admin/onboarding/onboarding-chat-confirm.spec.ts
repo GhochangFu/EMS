@@ -166,7 +166,7 @@ export async function assertAProposingTurnStoresAHashOfTheStoredDraft(): Promise
   const written = record.updates[0]?.draft as Record<string, unknown>;
   const stored = written?.[COMMIT_PROPOSAL_KEY] as { draftHash?: string } | undefined;
   assert(stored !== undefined, "the proposal is stored");
-  assert(stored.draftHash === draftHash(written), "bound to the hash of the draft that was written");
+  assert(stored?.draftHash === draftHash(written), "bound to the hash of the draft that was written");
 }
 
 export async function assertANonProposingTurnClearsTheProposal(): Promise<void> {
