@@ -156,6 +156,18 @@ services:
     ports:
       - "8080:8080"
     volumes:
+      # F3.78 / ADR 0089: users the API creates live only in Keycloak's dev-file
+      # (H2) database, which `start-dev` keeps under `/opt/keycloak/data/h2`. On
+      # the container's writable layer a recreate loses every one of them while
+      # `bms.users` keeps rows pointing at subjects that no longer exist. The
+      # mount is the whole data directory, not `data/h2`: the image has no `h2`
+      # directory, so a volume there is root-owned and Keycloak (uid 1000) cannot
+      # open its database. `data` exists in the image owned by `keycloak`, so the
+      # volume inherits that. The import bind below lies on top of the volume.
+      # Consequence: `--import-realm` skips an existing realm, so edits to
+      # `bms-realm.json` no longer reach it on recreate — see the runbook.
+      # `tests/f3.78-keycloak-data-volume.test.ts` holds this shape statically.
+      - bms-keycloak-data:/opt/keycloak/data
       - ./infra/keycloak:/opt/keycloak/data/import:ro
 
   keycloak-provision:
@@ -737,6 +749,8 @@ volumes:
   bms-prometheus-data:
   bms-loki-data:
   bms-grafana-data:
+  # `F3.78`: Keycloak's H2 database, so API-created users survive a recreate.
+  bms-keycloak-data:
   bms-ingest-buffer:
 
 # ADR 0016 Amendment 8, Decision 2 (`F4.61`). `ingest` (profiles `ingest`,

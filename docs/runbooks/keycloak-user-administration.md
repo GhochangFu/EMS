@@ -161,3 +161,73 @@ use `http://localhost:8080`. Two ways:
 Without either, a from-source API runs with user administration not
 configured: one warning names `KEYCLOAK_ADMIN_URL`, the user write routes
 answer 503, and everything else works.
+
+## 6. The Keycloak data volume
+
+Users the API creates exist only in Keycloak's dev-file (H2) database. The
+`keycloak` service keeps it on the named volume **`bms-keycloak-data`**, mounted
+at `/opt/keycloak/data`, so a recreate (`docker compose up -d` after an image
+or config change) no longer loses them. The mount is the whole data directory,
+not `data/h2`: the image has no `h2` directory, so a volume mounted there is
+root-owned and Keycloak (uid 1000) fails to open its database. The realm-file
+bind (`./infra/keycloak:/opt/keycloak/data/import:ro`) lies on top of the volume.
+
+### 6.1 Edits to the realm file no longer reach an existing realm
+
+`--import-realm` skips a realm that exists, and the realm now persists across
+recreates. An edit to `infra/keycloak/bms-realm.json` therefore reaches only a
+**new** realm. For an existing host use one of:
+
+- **`keycloak-provision`** (§1) for what it covers: password policy, brute
+  force, `bms-api-admin`, its roles, the user profile.
+- **A deliberate volume reset** for anything else — `docker compose stop
+  keycloak`, `docker compose rm -f keycloak`, `docker volume rm
+  <project>_bms-keycloak-data`, `docker compose up -d keycloak`. This deletes
+  **every** Keycloak user, including API-created ones; then run §1 and re-create
+  those users. Never do it on a host whose users you cannot re-create.
+
+### 6.2 Switching an existing deployment onto the volume (one time)
+
+A host that ran before this volume existed holds its realm in the container's
+writable layer. The first `up -d` after the change starts Keycloak on an empty
+volume and **re-imports `bms-realm.json`**. Expect:
+
+1. **New signing keys.** The re-import generates new realm keys, so every
+   access and refresh token issued before it fails verification: **every live
+   session ends** and users sign in again.
+2. **Users re-created from the file.** API-created users are not in the file
+   and are **lost** (they were never on a volume). Where the old realm was
+   imported before the user ids were pinned in the file, even the file's users
+   get **new ids**.
+3. **Linked rows no longer match.** `bms.users.oidc_subject` holds the old
+   Keycloak ids. On the shared dev stack today the four linked rows
+   (`admin`, `wc-admin`, `wc-hvac-admin`, `phe-admin` `@bms.local`) hold values
+   that do **not** equal the realm file's pinned ids, so after the switch each
+   of them is refused at sign-in. A pool role cannot clear the column (the
+   `0098` trigger refuses it), so a **superuser** clears it; each row then
+   relinks by email at the next sign-in, as an unlinked row does:
+
+```sql
+-- as the superuser (bms_app on the dev stack); the operator runs this, once,
+-- after the switch and before the users sign in
+BEGIN;
+SELECT id, email, oidc_subject FROM bms.users
+ WHERE lower(email) IN ('admin@bms.local', 'wc-admin@bms.local',
+                        'wc-hvac-admin@bms.local', 'phe-admin@bms.local');
+UPDATE bms.users
+   SET oidc_subject = NULL
+ WHERE lower(email) IN ('admin@bms.local', 'wc-admin@bms.local',
+                        'wc-hvac-admin@bms.local', 'phe-admin@bms.local')
+   AND oidc_subject IS NOT NULL;
+-- must report UPDATE 4 on the dev stack; anything else: ROLLBACK and look
+COMMIT;
+```
+
+On any other host, list the rows whose `oidc_subject` matches no user in the
+re-imported realm and clear only those, by the same statement with their
+emails. Do **not** clear a row whose Keycloak account is still the same person
+and the same id. Then re-run §1 (the new realm has no `bms-api-admin` secret
+set) and re-create the API-created users.
+
+After the switch the volume persists: later recreates change nothing in the
+realm, keys or ids.
