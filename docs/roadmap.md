@@ -7231,3 +7231,34 @@ the `chore(agents):` sweep (the AGENTS.md "17 tools" text and the ADR 0091
 promotion), and three rows raised by the live check: `F4.192` (an
 all-templated draft needs one extra turn), `F4.193` (version wording and two
 review lows) and `F4.194` (the chat page opens a new session on every load).
+
+### `F4.192`, `F4.193`, `F4.194` — the `F3.22` follow-ups ✅ 2026-10-04
+
+PR #727, squash `89516729` (`F4.192`); PR #728, squash `659f87fd`
+(`F4.193`); PR #729, squash `7aebcd87` (`F4.194`). No ADR, no migration, no
+contract change; one owner ruling each.
+
+- `F4.192`: a draft whose every asset is templated skips the `point_keys`
+  phase, so the agent proposes it with no extra turn; a refusal with no field
+  error names the phase.
+- `F4.193`: the import line names the version the commit publishes first
+  (`it publishes as v1 on commit (stock release v5)`), the Committed line says
+  `templates published`; a draft template named at another version is refused;
+  one 128 bound for the onboarding check and the instantiate guards.
+- `F4.194`: the onboarding chat page keeps its session in `?session=`, so a
+  reload resumes the conversation and the credentials form posts to the session
+  on screen.
+
+Verified: CI green on all three; one `code-reviewer` round each, findings
+fixed; 18 new specs and jsdom cases, each reddened by its own mutation (run).
+Live on the rebuilt stack (`main` `7aebcd87`) with OpenRouter in PHEWB: the
+reload kept the session and sent no create; `water-ro` imported with the new
+line, two templated assets proposed with no point-key turn, committed with
+`1 template published`. The second agent turn stopped at the 45 s turn limit
+after its two writes (ADR 0090 cap, not a defect of these rows); the next turn
+proposed. Test rows remain in PHEWB: location "F4192 Plant", RTU-F4192,
+template `water-ro` v1, assets RO-F4192-1 and RO-F4192-2.
+
+**Cascade:** no row lists `F4.192`, `F4.193` or `F4.194` in *Depends*.
+Raised: `F4.195` (two onboarding paths still treat an all-templated draft as
+one that needs point keys). No `chore(agents):` change owed.
