@@ -1,6 +1,6 @@
 import "reflect-metadata";
 
-import { ForbiddenException } from "@nestjs/common";
+import { ForbiddenException, HttpException } from "@nestjs/common";
 import type { ArgumentsHost } from "@nestjs/common";
 import { GUARDS_METADATA } from "@nestjs/common/constants";
 import { expect } from "vitest";
@@ -189,24 +189,39 @@ async function assertBodyRefusedWith400AndNoWrite(
   } catch (err) {
     caught = err;
   }
-  // The handler's `.parse()` sits outside `parsing()`, so the ZodError reaches the global
-  // `ZodErrorFilter` (ADR 0060), which is what answers 400. Run it, so the claim is the status.
-  // By name, not `instanceof`: `@bms/shared` and the api may each resolve their own zod copy.
-  expect((caught as Error).name).toBe("ZodError");
-  expect((caught as ZodError).issues.map((issue) => issue.code)).toEqual(["unrecognized_keys"]);
-  const answered: { status: number | null } = { status: null };
-  const response = {
-    status(code: number) {
-      answered.status = code;
-      return response;
-    },
-    json: () => response,
-  };
-  new ZodErrorFilter().catch(caught as ZodError, {
-    getType: () => "http",
-    switchToHttp: () => ({ getResponse: () => response }),
-  } as unknown as ArgumentsHost);
-  expect(answered.status).toBe(400);
+  // The handler's `.parse()` sits *inside* `parsing()`, which turns a ZodError into
+  // `BadRequestException(err.flatten())` — that is the production path, where the api and
+  // `@bms/shared`'s dist both `require` zod's CJS build. Under vitest the api's `import "zod"`
+  // resolves the ESM build while `@bms/shared` (dist, CJS) `require`s `index.cjs`: one package,
+  // two module instances, so `parsing()`'s `instanceof ZodError` misses and the raw error
+  // escapes to the global `ZodErrorFilter` (ADR 0060), which also answers 400. The claim is the
+  // status and the unknown key, whichever path answered; the message names the branch that ran.
+  if (caught instanceof HttpException) {
+    const branch = "branch: parsing() -> BadRequestException";
+    expect(caught.getStatus(), branch).toBe(400);
+    expect(JSON.stringify(caught.getResponse()), branch).toMatch(/unrecognized_keys|Unrecognized key/);
+  } else {
+    const branch = "branch: raw ZodError -> ZodErrorFilter";
+    // By name, not `instanceof`: the instance comes from the other zod module (see above).
+    expect((caught as Error | undefined)?.name, branch).toBe("ZodError");
+    expect(
+      (caught as ZodError).issues.map((issue) => issue.code),
+      branch,
+    ).toEqual(["unrecognized_keys"]);
+    const answered: { status: number | null } = { status: null };
+    const response = {
+      status(code: number) {
+        answered.status = code;
+        return response;
+      },
+      json: () => response,
+    };
+    new ZodErrorFilter().catch(caught as ZodError, {
+      getType: () => "http",
+      switchToHttp: () => ({ getResponse: () => response }),
+    } as unknown as ArgumentsHost);
+    expect(answered.status, branch).toBe(400);
+  }
   expect(writesOf(timeline)).toEqual([]);
   // Positive control: the same body without the unknown key writes, so the refusal is the key's.
   await accepted(controller, jwt);

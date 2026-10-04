@@ -251,6 +251,15 @@ function committedAuditPayloads(timeline: Timeline): unknown[] {
 const notifies = (timeline: Timeline) => ops(timeline).filter((op) => op.kind === "execute" && op.text.includes("pg_notify"));
 const userInserts = (timeline: Timeline) =>
   ops(timeline).filter((op) => op.kind === "execute" && op.text.includes("INSERT INTO bms.users"));
+/** Every write of any kind: builder inserts, updates and deletes, and raw SQL that writes or notifies. */
+const allWrites = (timeline: Timeline) =>
+  ops(timeline).filter(
+    (op) =>
+      op.kind === "insert" ||
+      op.kind === "update" ||
+      op.kind === "delete" ||
+      (op.kind === "execute" && /\b(INSERT|UPDATE|DELETE)\b|pg_notify/i.test(op.text)),
+  );
 const userUpdates = (timeline: Timeline) => ops(timeline).filter((op) => op.kind === "update" && op.table === "users");
 const identityIndex = (timeline: Timeline, method: string, firstArg?: unknown) =>
   timeline.findIndex(
@@ -434,11 +443,15 @@ export async function assertAnAdminBodyWithAnOrganizationIs400BeforeKeycloak(): 
 export async function assertACreateWithAnUnknownKeyIs400BeforeKeycloakAndWritesNothing(): Promise<void> {
   const { service, jwt, identity, timeline } = harness();
   const err = await refusal(service.create(jwt, createBody({ rol: "admin" })));
-  expect([err.getStatus(), identity.calls.length, userInserts(timeline).length]).toEqual([400, 0, 0]);
+  expect([err.getStatus(), identity.calls.length, allWrites(timeline).length]).toEqual([400, 0, 0]);
   expect(JSON.stringify(err.getResponse())).toContain("Unrecognized key");
-  // Positive control: the same body without the unknown key creates, so the refusal is the key's.
+  // The refused body carried a temporary password; the 400 must not echo it.
+  expect(JSON.stringify(err.getResponse()).includes(PASSWORD)).toBe(false);
+  // Positive control: the same body without the unknown key creates, so the refusal is the key's
+  // — and the write counter sees the raw `INSERT INTO bms.users`, so its zero above is not blind.
   await service.create(jwt, createBody());
-  expect(userInserts(timeline).length).toBe(1);
+  const inserts = userInserts(timeline);
+  expect([inserts.length, inserts.every((op) => allWrites(timeline).includes(op))]).toEqual([1, true]);
 }
 
 export async function assertAnOrganizationAdminCreatingAnAdminIs403(): Promise<void> {

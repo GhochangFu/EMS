@@ -103,4 +103,28 @@ describe("F3.78 U4 — keycloak:provision against a stubbed Keycloak (ADR 0089 d
   it("a stalled first token request is retried inside the window", async () => {
     await spec.assertAStalledFirstTokenRequestIsRetried();
   });
+
+  it("token requests that always time out exit 1 once the window is spent", async () => {
+    await spec.assertAStalledTokenRequestGivesUpAfterTheWindow();
+  });
+
+  it("a login give-up after timeouts names the step and the limit", async () => {
+    await spec.assertAStalledTokenRequestNamesTheStepAndTheLimit();
+  });
+
+  it("a login timeout prints no password, secret, URL or abort reason", async () => {
+    await spec.assertAStalledTokenRequestLeaksNothing();
+  });
+
+  it("a stalled secret PUT is reported by step and limit", async () => {
+    await spec.assertAStalledSecretPutNamesTheStepAndTheLimit();
+  });
+
+  it("a stalled secret PUT prints no secret, password, token, URL or abort reason", async () => {
+    await spec.assertAStalledSecretPutLeaksNothing();
+  });
+
+  it("an aborted secret PUT forwards nothing of its error message", async () => {
+    await spec.assertAnAbortedSecretPutLeaksNothing();
+  });
 });

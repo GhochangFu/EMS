@@ -334,7 +334,7 @@ export const BODY_SCHEMAS: Record<string, ZodTypeAny> = {
   ruleToggleBodySchema,
   ruleUpdateBodySchema,
   setAssetGroupMemberRoleBodySchema,
-  // `F3.78` (ADR 0089). Seven bodies; the four `.strict()` ones are decided in the ledger.
+  // `F3.78` (ADR 0089). Seven bodies, all `.strict()`; three by the F4.189 ruling (2026-10-04).
   addAssetGroupMemberBodySchema,
   addUserGrantBodySchema,
   createAssetGroupBodySchema,

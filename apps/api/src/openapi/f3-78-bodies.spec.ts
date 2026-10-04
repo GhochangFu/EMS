@@ -35,14 +35,20 @@ export function registryHoldsBody(operationId: string): void {
   expect(REQUEST_SCHEMAS[operationId]).toBe(entry?.[1]);
 }
 
-/** Each `.strict()` body of this unit has a recorded ledger decision. */
+/**
+ * Each `.strict()` body of this unit has a recorded ledger decision — all seven since the
+ * F4.189 ruling (2026-10-04) made the last three `.strict()`.
+ */
 export function ledgerRecordsStrictBodies(): void {
   for (const label of [
+    "createAssetGroupBodySchema",
+    "addAssetGroupMemberBodySchema",
+    "createUserBodySchema",
     "updateAssetGroupBodySchema",
     "updateUserBodySchema",
     "temporaryPasswordBodySchema",
     "addUserGrantBodySchema",
   ]) {
-    expect(STRICTNESS_LEDGER[label], `${label} has no ledger entry`).toBeDefined();
+    expect(STRICTNESS_LEDGER[label]?.strict, `${label} is not ledgered strict`).toBe(true);
   }
 }

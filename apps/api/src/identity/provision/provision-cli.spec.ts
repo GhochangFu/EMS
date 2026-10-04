@@ -66,6 +66,13 @@ type FakeOptions = {
   tokenStalls?: number;
   /** The realm settings `PUT` never settles and ignores its signal (F4.188). */
   stallRealmPut?: boolean;
+  /** The client secret `PUT` — the request whose body carries `SECRET` — never settles and ignores its signal. */
+  stallSecretPut?: boolean;
+  /**
+   * The client secret `PUT` never answers but *obeys* its signal: on abort it rejects with an
+   * error whose message quotes the URL and the request body (so `SECRET`).
+   */
+  abortableSecretPut?: boolean;
 };
 
 /** A response that never comes, from a transport that ignores its `AbortSignal`. */
@@ -123,6 +130,19 @@ function fakeKeycloak(opts: FakeOptions = {}): { fetch: typeof globalThis.fetch;
     }
     if (method === "PUT" && url.pathname === `${admin}/clients/client-id`) {
       const isSecret = body !== undefined && body.includes(SECRET);
+      if (isSecret && opts.stallSecretPut) {
+        return hanging();
+      }
+      if (isSecret && opts.abortableSecretPut) {
+        const signal = init?.signal;
+        return new Promise<Response>((_, reject) => {
+          signal?.addEventListener(
+            "abort",
+            () => reject(new Error(`This operation was aborted: PUT ${url.href} ${body}`)),
+            { once: true },
+          );
+        });
+      }
       if (isSecret && opts.failSecretPut) {
         return json(500, { error: "unknown_error", error_description: `echo: ${body} ${ADMIN_PASSWORD}` });
       }
@@ -163,7 +183,13 @@ function fakeKeycloak(opts: FakeOptions = {}): { fetch: typeof globalThis.fetch;
 type Run = { code: number | null; thrown: string; out: string; calls: Call[] };
 
 async function run(
-  opts: FakeOptions & { env?: NodeJS.ProcessEnv; rows?: UserRowSummary[]; requestTimeoutMs?: number } = {},
+  opts: FakeOptions & {
+    env?: NodeJS.ProcessEnv;
+    rows?: UserRowSummary[];
+    requestTimeoutMs?: number;
+    /** What one fake `sleep` adds to the fake clock; defaults to the `ms` asked for. */
+    sleepAdvancesMs?: number;
+  } = {},
 ): Promise<Run> {
   const keycloak = fakeKeycloak(opts);
   const lines: string[] = [];
@@ -175,7 +201,7 @@ async function run(
     out: (line) => lines.push(line),
     err: (line) => lines.push(line),
     sleep: async (ms) => {
-      clock += ms;
+      clock += opts.sleepAdvancesMs ?? ms;
     },
     now: () => clock,
     requestTimeoutMs: opts.requestTimeoutMs,
@@ -376,9 +402,15 @@ export async function assertANetworkErrorMessageIsNotForwarded(): Promise<void> 
 const STALL_LIMIT_MS = 50;
 /** Generous over the limit, far under the 10 s default and vitest's 5 s. */
 const STALL_MARGIN_MS = 2_000;
+/**
+ * What "within the limit" means: ten times the bound. Wide enough for timer slop on a loaded
+ * Windows runner, narrow enough that a run waiting on anything but the bound fails it; the
+ * margin above stays the hang detector.
+ */
+const STALL_WITHIN_MS = STALL_LIMIT_MS * 10;
 
 /** Runs a stalled provisioning run, failing fast when it is still pending after the margin. */
-async function stalledRun(opts: FakeOptions): Promise<Run & { elapsedMs: number }> {
+async function stalledRun(opts: FakeOptions & { sleepAdvancesMs?: number }): Promise<Run & { elapsedMs: number }> {
   const started = Date.now();
   let timer: NodeJS.Timeout | undefined;
   const guard = new Promise<"hung">((resolve) => {
@@ -398,7 +430,7 @@ async function stalledRun(opts: FakeOptions): Promise<Run & { elapsedMs: number 
 export async function assertAStalledAdminCallFailsWithinTheLimit(): Promise<void> {
   const r = await stalledRun({ stallRealmPut: true });
   assert(
-    r.code === 1 && r.elapsedMs < STALL_LIMIT_MS + STALL_MARGIN_MS,
+    r.code === 1 && r.elapsedMs < STALL_WITHIN_MS,
     `a realm PUT that never answers must exit 1 within the bound; got code ${r.code} after ${r.elapsedMs} ms`,
   );
 }
@@ -445,4 +477,73 @@ export async function assertAStalledFirstTokenRequestIsRetried(): Promise<void> 
     r.code === 0 && tokenCalls === 2,
     `a token request that times out once must be retried and the run exit 0; got code ${r.code}, ${tokenCalls} attempts: ${r.out}`,
   );
+}
+
+const TOKEN_PATH = "/realms/master/protocol/openid-connect/token";
+
+/** Every token request stalls; one fake sleep spends the whole 120 s window, so two real attempts run. */
+function everyTokenRequestStalls(): Promise<Run & { elapsedMs: number }> {
+  return stalledRun({ tokenStalls: Number.POSITIVE_INFINITY, sleepAdvancesMs: 120_000 });
+}
+
+export async function assertAStalledTokenRequestGivesUpAfterTheWindow(): Promise<void> {
+  const r = await everyTokenRequestStalls();
+  const tokenCalls = r.calls.filter((c) => c.path === TOKEN_PATH).length;
+  assert(
+    r.code === 1 && tokenCalls === 2,
+    `token requests that always time out must exit 1 once the window is spent; got code ${r.code}, ${tokenCalls} attempts: ${r.out}`,
+  );
+}
+
+export async function assertAStalledTokenRequestNamesTheStepAndTheLimit(): Promise<void> {
+  const r = await everyTokenRequestStalls();
+  assert(
+    r.out.includes(`master login failed: no response within ${STALL_LIMIT_MS} ms`),
+    `the give-up must name the login and the per-request limit; got ${r.out}`,
+  );
+}
+
+export async function assertAStalledTokenRequestLeaksNothing(): Promise<void> {
+  const r = await everyTokenRequestStalls();
+  assert(
+    !r.out.includes(ADMIN_PASSWORD) && !r.out.includes(SECRET) && !r.out.includes(BASE) && !/abort/i.test(r.out),
+    `a login timeout must print no password, secret, URL or abort reason; got ${r.out}`,
+  );
+}
+
+export async function assertAStalledSecretPutNamesTheStepAndTheLimit(): Promise<void> {
+  const r = await stalledRun({ stallSecretPut: true });
+  assert(
+    r.code === 1 && r.out.includes(`client secret failed: no response within ${STALL_LIMIT_MS} ms`),
+    `a secret PUT that never answers must exit 1 naming the step and the limit; got code ${r.code}: ${r.out}`,
+  );
+}
+
+/** The output of a run whose secret `PUT` timed out carries none of the request's values. */
+function assertNoSecretPutLeak(r: Run, which: string): void {
+  assert(
+    r.thrown === "" &&
+      !r.out.includes(SECRET) &&
+      !r.out.includes(ADMIN_PASSWORD) &&
+      !r.out.includes("master-token") &&
+      !r.out.includes(BASE) &&
+      !/abort/i.test(r.out),
+    `${which}: a secret PUT timeout must print no secret, password, token, URL or abort reason, and not throw; ` +
+      `got out ${r.out}, thrown ${r.thrown}`,
+  );
+}
+
+export async function assertAStalledSecretPutLeaksNothing(): Promise<void> {
+  assertNoSecretPutLeak(await stalledRun({ stallSecretPut: true }), "signal ignored");
+}
+
+export async function assertAnAbortedSecretPutLeaksNothing(): Promise<void> {
+  const r = await stalledRun({ abortableSecretPut: true });
+  // Positive control: the run reached the secret PUT and failed there, so the absences below
+  // are about the aborted request's error and not about a run that stopped earlier.
+  assert(
+    r.code === 1 && r.out.includes(`client secret failed: no response within ${STALL_LIMIT_MS} ms`),
+    `an aborted secret PUT must exit 1 naming the step and the limit; got code ${r.code}: ${r.out}`,
+  );
+  assertNoSecretPutLeak(r, "signal obeyed");
 }
