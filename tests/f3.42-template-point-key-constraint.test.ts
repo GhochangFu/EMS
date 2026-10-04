@@ -41,6 +41,8 @@ const MIGRATION_REL = "packages/db/drizzle/0058_template_points_point_key_fk.sql
 const JOURNAL_REL = "packages/db/drizzle/meta/_journal.json";
 const SCHEMA_REL = "packages/db/src/schema/bms-schema.ts";
 const TEMPLATES_SERVICE_REL = "apps/api/src/admin/asset-templates/asset-templates.service.ts";
+// F3.22 PR 1: the guard bodies moved here; the service keeps one-line delegators.
+const WRITE_GUARDS_REL = "apps/api/src/admin/asset-templates/asset-templates-write-guards.ts";
 
 /**
  * Comments stripped, for `f3.1a`'s reason: a `RESET ROLE;` in a header comment
@@ -233,7 +235,7 @@ describe("F3.42 template_points is held to the point-key catalog (ADR 0051 Amend
       }
 
       expect(
-        service,
+        tsOnly(read(WRITE_GUARDS_REL)),
         "the gate no longer filters on active = true. A foreign key holds existence against " +
           "every writer; only this holds activity, because a retired code keeps its row.",
       ).toMatch(/eq\(\s*pointKeys\.active\s*,\s*true\s*\)/);
@@ -243,7 +245,7 @@ describe("F3.42 template_points is held to the point-key catalog (ADR 0051 Amend
       // Stripped on both sides. The negative must not be satisfied by deleting a
       // comment that quotes the old wording, and the positive must not be
       // satisfied by a comment that quotes the new one.
-      const service = tsOnly(read(TEMPLATES_SERVICE_REL));
+      const service = tsOnly(read(WRITE_GUARDS_REL));
       expect(
         service,
         "the thrown message still says \"this organization's\". There has been no organization " +

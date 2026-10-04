@@ -301,6 +301,8 @@ describe("F3.36 half 1: the template lifecycle vocabulary is stated once", () =>
  * present, so a rename cannot empty this describe block silently.
  */
 const TRANSITION_OWNERS = [
+  // F3.22 PR 1: `assertTransition` moved here; the service keeps a delegator and `assertDraft`.
+  "apps/api/src/admin/asset-templates/asset-templates-write-guards.ts",
   "apps/api/src/admin/asset-templates/asset-templates.service.ts",
   "apps/api/src/admin/dashboard-templates/dashboard-templates.service.ts",
 ];
@@ -329,7 +331,20 @@ describe("F3.36 half 2: both template services read the shared transitions", () 
     );
   });
 
-  it.each(present)("%s imports the shared transition helper", (rel) => {
+  // Only a file that DEFINES `assertTransition` (a body that starts with the
+  // `from` read, not a one-line delegator) must import `canTransition`; the
+  // service's delegator and `assertDraft` (-> `canMutate`) need not.
+  const transitionOwners = present.filter((rel) =>
+    /assertTransition\([^)]*\)\s*:\s*void\s*\{\s*const from\b/.test(
+      stripComments(readFileSync(join(repoRoot, rel), "utf8")),
+    ),
+  );
+
+  it("the write-guards file owns assertTransition (the scope above is not empty)", () => {
+    expect(transitionOwners).toContain(TRANSITION_OWNERS[0]);
+  });
+
+  it.each(transitionOwners)("%s imports the shared transition helper", (rel) => {
     const src = readFileSync(join(repoRoot, rel), "utf8");
     expect(
       src,
