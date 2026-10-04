@@ -76,7 +76,7 @@ describe.skipIf(!connectionString)("F3.22 — the instantiate core sees the tran
       "F3.22",
     );
 
-    // C11–C13: one tenant connection, and a connect timeout well under the test
+    // C11–C14: one tenant connection, and a connect timeout well under the test
     // timeout, so a core that asks for a second connection fails with the pool's
     // own message rather than hanging the run.
     singleTenantPool = await openIntegrationPool(

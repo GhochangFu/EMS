@@ -165,7 +165,7 @@ describe("F3.22 template cores (ADR 0091 decision 1)", () => {
     // `VocabulariesService`'s own executor is the tenant pool, so a vocabulary
     // read inside `withTenant` that omits `tx` holds one tenant connection while
     // it waits for a second. The executor is optional on the service, so the
-    // compiler cannot see an omission; this scan and C11–C13 can.
+    // compiler cannot see an omission; this scan and C11–C14 can.
     const WHY =
       "a vocabulary read inside withTenant without tx holds one tenant connection and waits " +
       "for a second — N concurrent cores on a pool of N never finish";

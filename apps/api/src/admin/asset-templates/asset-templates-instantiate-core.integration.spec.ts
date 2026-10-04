@@ -70,7 +70,7 @@ export type Harness = {
   alarmTemplateId: string;
   /**
    * The same services over a tenant pool of **one** connection with a short
-   * connect timeout (C11–C13). A core that reads anything on a second tenant
+   * connect timeout (C11–C14). A core that reads anything on a second tenant
    * connection while its `tx` holds the only one gets the pool's
    * "timeout exceeded when trying to connect" instead of an answer.
    */
@@ -521,7 +521,7 @@ export async function assertInstantiateCoreSeesARuleCodeWrittenInTheSameTransact
 }
 
 /**
- * Why C11–C13 fail when they do: the single-connection pool's checkout timed
+ * Why C11–C14 fail when they do: the single-connection pool's checkout timed
  * out, because the only connection was the core's own `tx`.
  */
 const SECOND_CONNECTION =

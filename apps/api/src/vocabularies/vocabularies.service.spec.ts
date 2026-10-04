@@ -169,3 +169,60 @@ export async function assertLocationTypeRefusesAnUnknownCode(): Promise<void> {
     `expected the refusal to name the field and list the live codes, got: ${message}`,
   );
 }
+
+/**
+ * `F3.22` (ADR 0091 decision 1) — how many queries `list(db)` has in flight at
+ * once, measured on a fake executor.
+ *
+ * Every `select()` chain ends in a thenable that raises a counter when it is
+ * awaited (drizzle builders run on `then`) and lowers it a macrotask later, so
+ * a query that starts while another is unfinished is seen as overlap. Real
+ * `pg` only warns about that overlap, which is why nothing else gates it.
+ */
+function countingExecutor(): { db: BmsDb; maxInFlight: () => number } {
+  let inFlight = 0;
+  let max = 0;
+  const chain = {
+    from: () => chain,
+    where: () => chain,
+    orderBy: () => chain,
+    then: (resolve: (rows: unknown[]) => unknown) => {
+      inFlight += 1;
+      max = Math.max(max, inFlight);
+      return new Promise<unknown[]>((done) => {
+        setTimeout(() => {
+          inFlight -= 1;
+          done([]);
+        }, 0);
+      }).then(resolve);
+    },
+  };
+  return { db: { select: () => chain } as unknown as BmsDb, maxInFlight: () => max };
+}
+
+/** A caller's executor (`tx`) runs the seven reads one at a time. */
+export async function assertListOnAnExecutorRunsOneQueryAtATime(): Promise<void> {
+  const pool = countingExecutor();
+  const tx = countingExecutor();
+  const service = new VocabulariesService(pool.db);
+  await service.list(tx.db);
+  assert(
+    tx.maxInFlight() === 1,
+    `list(tx) must keep one query in flight on a caller's executor, saw ${tx.maxInFlight()}`,
+  );
+  assert(
+    pool.maxInFlight() === 0,
+    `list(tx) must not touch the service's own pool, saw ${pool.maxInFlight()} in flight there`,
+  );
+}
+
+/** The default executor (the pool) keeps the seven reads parallel. */
+export async function assertListOnThePoolStaysParallel(): Promise<void> {
+  const pool = countingExecutor();
+  const service = new VocabulariesService(pool.db);
+  await service.list();
+  assert(
+    pool.maxInFlight() > 1,
+    `list() on the pool must run its queries in parallel, saw max ${pool.maxInFlight()} in flight`,
+  );
+}
