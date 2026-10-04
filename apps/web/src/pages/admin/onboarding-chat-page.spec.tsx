@@ -1,7 +1,7 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { MemoryRouter, Route, Routes, useParams } from "react-router-dom";
+import { MemoryRouter, Route, Routes, useLocation, useParams } from "react-router-dom";
 import { expect, vi } from "vitest";
 
 import type { OnboardingChatResponseDto, OnboardingSessionDto } from "@bms/shared";
@@ -140,6 +140,12 @@ function RtusRouteProbe() {
   return <div data-testid="rtus-route-probe">{locationId}</div>;
 }
 
+/** `F4.194` — echoes the router's query string, so a case can read the session id the page wrote. */
+function LocationProbe() {
+  const { search } = useLocation();
+  return <div data-testid="location-probe">{search}</div>;
+}
+
 /**
  * Renders the page **on its real route**.
  *
@@ -147,12 +153,13 @@ function RtusRouteProbe() {
  * effect never fires and `startMutation` never runs — every case below would
  * then assert nothing while looking green.
  */
-function renderPage(): HTMLElement {
+function renderPage(search = ""): HTMLElement {
   stubScrolling();
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   const view = render(
     <QueryClientProvider client={queryClient}>
-      <MemoryRouter initialEntries={[`/admin/organizations/${ORG_ID}/onboarding`]}>
+      <MemoryRouter initialEntries={[`/admin/organizations/${ORG_ID}/onboarding${search}`]}>
+        <LocationProbe />
         <Routes>
           <Route
             path="/admin/organizations/:orgId/onboarding"
@@ -518,4 +525,89 @@ export async function aCommittedSessionFromAChatTurnNavigatesToTheRtus(): Promis
 
   const probe = await screen.findByTestId("rtus-route-probe");
   expect(probe).toHaveTextContent("loc-1");
+}
+
+/**
+ * `F4.194` — the page keeps its session in `?session=`, so a reload resumes it.
+ *
+ * Each case below stubs both `createOnboardingSession` and
+ * `fetchOnboardingSession` and asserts which one ran, so a page that ignores
+ * the id (and creates on every load, the defect) reddens the resume cases, and
+ * a page that resumes anything reddens the fall-back cases.
+ */
+const RESUMED: OnboardingSessionDto = {
+  ...SESSION_WITH_RTU,
+  id: "session-7",
+  messages: [message("m1", "user", "Kolkata plant"), message("m2", "assistant", "Noted the Kolkata plant.")],
+};
+
+function stubOpen(fetched: OnboardingSessionDto | Error): { create: ReturnType<typeof vi.spyOn>; fetch: ReturnType<typeof vi.spyOn> } {
+  const create = vi.spyOn(api, "createOnboardingSession").mockResolvedValue(chatResponse(SESSION));
+  const fetch =
+    fetched instanceof Error
+      ? vi.spyOn(api, "fetchOnboardingSession").mockRejectedValue(fetched)
+      : vi.spyOn(api, "fetchOnboardingSession").mockResolvedValue(fetched);
+  return { create, fetch };
+}
+
+/** R1 — a load with no id creates a session and writes its id into the URL. */
+export async function aNewSessionWritesItsIdIntoTheUrl(): Promise<void> {
+  const { create } = stubOpen(RESUMED);
+  renderPage();
+  await waitForSessionToLand();
+  expect(create).toHaveBeenCalledTimes(1);
+  await waitFor(() => expect(screen.getByTestId("location-probe")).toHaveTextContent("?session=session-1"));
+}
+
+/** R2 — a load with an id resumes that session and its conversation, and creates none. */
+export async function aSessionIdInTheUrlResumesTheConversation(): Promise<void> {
+  const { create, fetch } = stubOpen(RESUMED);
+  renderPage("?session=session-7");
+  expect(await screen.findByText("Noted the Kolkata plant.")).toBeInTheDocument();
+  expect(fetch).toHaveBeenCalledWith("session-7");
+  expect(create).not.toHaveBeenCalled();
+}
+
+/** R3 — the credentials form of a resumed session posts to that session. */
+export async function theCredentialsFormPostsToTheResumedSession(): Promise<void> {
+  stubOpen(RESUMED);
+  const save = vi.spyOn(api, "setOnboardingCredentials").mockResolvedValue(RESUMED);
+  renderPage("?session=session-7");
+  await openPreview();
+  await userEvent.click(await screen.findByRole("button", { name: "Add credentials" }));
+  await userEvent.type(screen.getByPlaceholderText("Username"), "rtu-reader");
+  await userEvent.click(screen.getByRole("button", { name: "Save encrypted" }));
+  await waitFor(() => expect(save).toHaveBeenCalledTimes(1));
+  expect(save.mock.calls[0]?.[0]).toBe("session-7");
+}
+
+/** R4 — a committed session is not resumed: the page starts a new one and points the URL at it. */
+export async function aCommittedSessionIsNotResumed(): Promise<void> {
+  const { create } = stubOpen({ ...RESUMED, status: "committed" });
+  renderPage("?session=session-7");
+  await waitFor(() => expect(create).toHaveBeenCalledTimes(1));
+  await waitFor(() => expect(screen.getByTestId("location-probe")).toHaveTextContent("?session=session-1"));
+}
+
+/** R5 — a session of another organization is not resumed. */
+export async function aSessionOfAnotherOrganizationIsNotResumed(): Promise<void> {
+  const { create } = stubOpen({ ...RESUMED, organizationId: "33333333-3333-4333-8333-333333333333" });
+  renderPage("?session=session-7");
+  await waitFor(() => expect(create).toHaveBeenCalledTimes(1));
+}
+
+/** R6 — an id the server does not know (404) starts a new session. */
+export async function anUnknownSessionIdStartsANewSession(): Promise<void> {
+  const { create } = stubOpen(new ApiError('{"message":"Session not found","statusCode":404}', 404));
+  renderPage("?session=session-7");
+  await waitFor(() => expect(create).toHaveBeenCalledTimes(1));
+}
+
+/** R7 — any other refusal (403) is shown, and no session is created behind it. */
+export async function aRefusedResumeIsShownNotReplaced(): Promise<void> {
+  const { create } = stubOpen(new ApiError('{"message":"Organization is outside your access scope","statusCode":403}', 403));
+  renderPage("?session=session-7");
+  const banner = await findTheOnlyAlert();
+  expect(banner).toHaveTextContent("Organization is outside your access scope");
+  expect(create).not.toHaveBeenCalled();
 }

@@ -13,6 +13,13 @@ import {
   aRefusedCredentialSaveShowsTheReason,
   aRefusedStartShowsASentenceNotAZodFlatten,
   restoreScrolling,
+  aNewSessionWritesItsIdIntoTheUrl,
+  aSessionIdInTheUrlResumesTheConversation,
+  theCredentialsFormPostsToTheResumedSession,
+  aCommittedSessionIsNotResumed,
+  aSessionOfAnotherOrganizationIsNotResumed,
+  anUnknownSessionIdStartsANewSession,
+  aRefusedResumeIsShownNotReplaced,
 } from "./onboarding-chat-page.spec";
 
 /**
@@ -84,5 +91,43 @@ describe("F3.21 onboarding chat page agent loop", () => {
 
   it("navigates to the RTU list when a chat turn commits the session", async () => {
     await aCommittedSessionFromAChatTurnNavigatesToTheRtus();
+  });
+});
+
+describe("F4.194 onboarding chat page keeps its session in the URL", () => {
+  vi.setConfig({ testTimeout: 15_000 });
+
+  afterEach(() => {
+    cleanup();
+    vi.restoreAllMocks();
+    restoreScrolling();
+  });
+
+  it("writes a new session's id into the URL", async () => {
+    await aNewSessionWritesItsIdIntoTheUrl();
+  });
+
+  it("resumes the session and conversation the URL names, creating none", async () => {
+    await aSessionIdInTheUrlResumesTheConversation();
+  });
+
+  it("posts credentials to the resumed session", async () => {
+    await theCredentialsFormPostsToTheResumedSession();
+  });
+
+  it("does not resume a committed session", async () => {
+    await aCommittedSessionIsNotResumed();
+  });
+
+  it("does not resume a session of another organization", async () => {
+    await aSessionOfAnotherOrganizationIsNotResumed();
+  });
+
+  it("starts a new session for an id the server does not know", async () => {
+    await anUnknownSessionIdStartsANewSession();
+  });
+
+  it("shows a refused resume and creates no session behind it", async () => {
+    await aRefusedResumeIsShownNotReplaced();
   });
 });
