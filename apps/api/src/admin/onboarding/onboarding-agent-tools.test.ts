@@ -13,6 +13,7 @@ import {
   assertListPointKeysSearchFiltersCodeAndName,
   assertProposeCommitRecordsASummary,
   assertProposeCommitRefusesAnUnreadyDraft,
+  assertProposeCommitNamesThePhaseWhenNoFieldErrorExplains,
   assertSetLocationDerivesSlugAndCode,
   assertSetLocationRefusesAnInactiveTypeNamingTheActiveCodes,
   assertUnknownToolAndBadArgumentsAreToolErrors,
@@ -74,6 +75,10 @@ describe("onboarding agent tools (F3.21, ADR 0090 decision 4)", () => {
 
   it("refuses to propose an unready draft", async () => {
     await assertProposeCommitRefusesAnUnreadyDraft();
+  });
+
+  it("names the phase when no field error explains a refusal (F4.192)", async () => {
+    await assertProposeCommitNamesThePhaseWhenNoFieldErrorExplains();
   });
 
   it("records a code-written proposal without committing", async () => {

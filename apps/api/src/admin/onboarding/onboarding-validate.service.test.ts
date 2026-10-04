@@ -36,6 +36,9 @@ import {
   assertV11AMixedDraftStillNeedsMappings,
   assertV11AnAllTemplatedDraftNeedsNoMappings,
   assertV12ATemplatedDraftIsReadyToCommit,
+  assertAnAllTemplatedDraftSkipsThePointKeysPhase,
+  assertAMixedDraftWithNoPointKeyStaysInThePointKeysPhase,
+  assertADraftWithNoAssetAndNoPointKeyStaysInThePointKeysPhase,
 } from "./onboarding-validate.service.spec";
 
 /** Vitest entry point — assertions live in the sibling `.spec` (ADR 0014). */
@@ -174,6 +177,18 @@ describe("OnboardingValidateService — templates and templated assets (F3.22, A
 
   it("V11 keeps a mixed draft in mappings until its plain asset is mapped", () => {
     assertV11AMixedDraftStillNeedsMappings();
+  });
+
+  it("F4.192 lets an all-templated draft with no point key skip the point_keys phase", () => {
+    assertAnAllTemplatedDraftSkipsThePointKeysPhase();
+  });
+
+  it("F4.192 keeps a mixed draft with no point key in the point_keys phase", () => {
+    assertAMixedDraftWithNoPointKeyStaysInThePointKeysPhase();
+  });
+
+  it("F4.192 keeps a draft with no asset and no point key in the point_keys phase", () => {
+    assertADraftWithNoAssetAndNoPointKeyStaysInThePointKeysPhase();
   });
 
   it("V12 finds a draft with every kind of template ready to commit", () => {

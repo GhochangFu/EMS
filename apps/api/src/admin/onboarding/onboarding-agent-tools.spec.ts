@@ -183,6 +183,14 @@ export async function assertProposeCommitRefusesAnUnreadyDraft(): Promise<void> 
   assert(state.pendingProposal === undefined, "no proposal is recorded");
 }
 
+/** F4.192 — a draft with no field error that is not at review is refused with its phase, not an empty reason. */
+export async function assertProposeCommitNamesThePhaseWhenNoFieldErrorExplains(): Promise<void> {
+  const state: ToolState = { working: { ...readyDraft(), assetPoints: [] } };
+  const out = await runTool(call("propose_commit", {}), state, context());
+  const error = String(parsed(out.content).error);
+  assert(!out.ok && error === "The draft is not ready to commit. It is at the mappings phase, not review.", `got ${error}`);
+}
+
 /** Also the model-not-on-the-commit-path gate: the tool takes no commit dependency at all. */
 export async function assertProposeCommitRecordsASummary(): Promise<void> {
   const state: ToolState = { working: readyDraft() };
