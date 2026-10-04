@@ -7083,6 +7083,29 @@ delete wrote no audit. Browser N/A.
 **Cascade:** no row lists `F4.187` in *Depends*. No `chore(agents):` change
 owed.
 
+### `F4.188`, `F4.189`, `F4.190` — the `F3.78` follow-ups ✅ 2026-10-04
+
+PR #718, squash `2efdab93` (`F4.188` and `F4.189`); `F4.190` is an ops step
+with no PR. No ADR, no migration.
+
+- `F4.188`: `keycloak:provision` bounds every request by the client's
+  10 s limit and fails by step and limit, never hanging on a Keycloak that
+  accepts the connection and never answers.
+- `F4.189`: the create-user, create-asset-group and add-member bodies are
+  `.strict()` (owner ruling); an unknown key is a 400, not dropped.
+- `F4.190`: the shared Keycloak runs on `bms-keycloak-data`; the realm was
+  re-imported, the four linked rows relinked to the pinned ids at the owner's
+  sign-ins, and the shared api has its `bms-api-admin` secret again.
+
+Verified: CI green first run; three reviews, their test gaps fixed; full suite
+10,733 pass (the four failing files are shared-DB state, one of them red on
+`main` too); running stack: the built controller answers 400 on an unknown
+key, the new CLI exits 0 against the live Keycloak, and all four subjects match
+the live Keycloak ids. Browser N/A beyond the owner's sign-ins.
+
+**Cascade:** no row lists `F4.188`, `F4.189` or `F4.190` in *Depends*. No
+`chore(agents):` change owed.
+
 ### `F3.78` — user, access-grant and asset-group administration ✅ 2026-10-04
 
 Four PRs: #696 (`7c991951`), #704 (`e6a391e1`), #711 (`100346da`) and #712
