@@ -79,7 +79,7 @@ const FORBIDDEN = ["credentialsSet", "_secrets", "_commitProposal", "rtuTargetCo
 
 /** Every tool's JSON Schema; none carries a field the agent must never write. */
 export function assertEveryToolHasAJsonSchemaWithNoForbiddenProperty(): void {
-  assert(TOOL_DEFINITIONS.length === 20, `there are 20 tools, got ${TOOL_DEFINITIONS.length}`);
+  assert(TOOL_DEFINITIONS.length === 24, `there are 24 tools, got ${TOOL_DEFINITIONS.length}`);
   for (const tool of TOOL_DEFINITIONS) {
     const text = JSON.stringify(tool.parameters);
     for (const field of FORBIDDEN) {
@@ -189,8 +189,8 @@ export async function assertProposeCommitRecordsASummary(): Promise<void> {
   const before = JSON.stringify(state.working);
   const out = await runTool(call("propose_commit", {}), state, context());
   assert(out.ok, "a ready draft is proposed");
-  assert(state.pendingProposal?.summary === commitSummary(state.working), "the pending proposal carries the code-written summary");
-  assert(out.actionLine === `Proposed commit: ${commitSummary(state.working)}`, "the action line names the summary");
+  assert(state.pendingProposal?.summary === commitSummary(state.working, EMPTY_TEMPLATE_CONTEXT), "the pending proposal carries the code-written summary");
+  assert(out.actionLine === `Proposed commit: ${commitSummary(state.working, EMPTY_TEMPLATE_CONTEXT)}`, "the action line names the summary");
   assert(JSON.stringify(state.working) === before, "proposing does not change the draft");
 }
 

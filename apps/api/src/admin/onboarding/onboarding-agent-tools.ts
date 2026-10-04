@@ -82,8 +82,19 @@ function agentSecretKey(key: string): boolean {
   return isSecretKey(key) || AGENT_SECRET_KEY_NAMES.has(normalised) || normalised.includes("auth");
 }
 
-/** The tools whose arguments are walked for credentials (decision 4, and security review L2 for the two `meta` carriers). */
-const CREDENTIAL_CHECKED_TOOLS: ReadonlySet<string> = new Set(["add_rtu", "update_rtu", "set_location", "add_asset"]);
+/**
+ * The tools whose arguments are walked for credentials (decision 4, and security review L2 for the two `meta` carriers).
+ * `F3.22` (ADR 0091 decision 9): the three template writes join, so every label, pattern and variable value is walked.
+ */
+const CREDENTIAL_CHECKED_TOOLS: ReadonlySet<string> = new Set([
+  "add_rtu",
+  "update_rtu",
+  "set_location",
+  "add_asset",
+  "add_template",
+  "import_stock_template",
+  "add_template_assets",
+]);
 
 /** Security review M2: an RTU with stored credentials keeps its connection, so the credential cannot be sent elsewhere. */
 export const CREDENTIALED_CONNECTION_ERROR =
@@ -176,7 +187,7 @@ function jsonSchemaOf(schema: ZodTypeAny): Record<string, unknown> {
   return converted;
 }
 
-/** The 20 tools as the model sees them, in a fixed order. */
+/** The 24 tools as the model sees them, in a fixed order. */
 export const TOOL_DEFINITIONS: readonly LlmToolDefinition[] = (Object.keys(TOOL_SCHEMAS) as ToolName[]).map((name) => ({
   name,
   description: DESCRIPTIONS[name],
@@ -431,7 +442,7 @@ async function dispatch(name: ToolName, args: Record<string, unknown>, state: To
         const reasons = [problem, ...shown.map((e) => `${e.path}: ${e.message}`)].filter(Boolean).join("; ");
         return fail(`The draft is not ready to commit. ${cutToBound(reasons, 2_000)}`);
       }
-      const summary = commitSummary(draft);
+      const summary = commitSummary(draft, ctx.templates);
       state.pendingProposal = { summary };
       return succeed(
         { proposed: true, summary, next: "Tell the user to type `confirm commit` or use the Commit button. You cannot commit." },
