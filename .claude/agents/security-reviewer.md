@@ -53,6 +53,17 @@ report findings with evidence.
    secrets. An organization's provider key (`bms.organization_llm_settings`)
    must never reach a response, a log line, an audit row or an error, and the
    AI-assistant routes must check the role before `canManageOrganization`.
+   Since ADR 0091 (`F3.22`) the agent also writes templates: `add_template`,
+   `import_stock_template` and `add_template_assets` are in
+   `CREDENTIAL_CHECKED_TOOLS`, so every label, source-key pattern and variable
+   value is walked by `looksLikeCredential`, and `patternGrammarProblem` runs
+   at the tool and again in the validate service. No tool publishes: within
+   the onboarding chat only a commit (the Commit button or `confirm commit`)
+   reaches `publishInTransaction`, through `onboarding-commit-templates.ts`
+   and after `assertCanAuthor`; the publish route is its other caller.
+   `onboarding-template-catalog.service.ts` reads `asset_templates` and
+   `template_points` on `fleetDb` (BYPASSRLS), so each read must keep its own
+   `organizationId` filter.
 8. **User administration and the Keycloak admin client (ADR 0089).**
    `KeycloakIdentityAdminClient` (`apps/api/src/identity/`, and the `identity/provision/` CLI, which has its own `fetch`) holds a secret equivalent to
    global admin: it must never be logged, returned, audited or put in an error,
