@@ -2,6 +2,7 @@ import { describe, it } from "vitest";
 
 import {
   assertANewProviderWithoutAKeyClearsTheStoredKey,
+  assertDeleteOfNoRowWritesNoAuditAndReportsThePlatform,
   assertDeleteRemovesAndAudits,
   assertEveryMethodRefusesOutsideScope,
   assertGetNeverCarriesTheKey,
@@ -67,6 +68,10 @@ describe("AiAssistantSettingsService (F3.21, ADR 0090 Amendment 1 A5–A7)", () 
 
   it("removes the row and audits the delete", async () => {
     await assertDeleteRemovesAndAudits();
+  });
+
+  it("writes no audit when there is no row to delete, and still reports the platform", async () => {
+    await assertDeleteOfNoRowWritesNoAuditAndReportsThePlatform();
   });
 
   it("tests with the typed key first", async () => {

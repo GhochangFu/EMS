@@ -75,11 +75,16 @@ function harness(opts: { row?: Row | null; inScope?: boolean; testError?: unknow
         },
       }),
     }),
+    // remove()'s `delete … returning` inside its write transaction: the deleted row, projected.
     delete: () => ({
-      where: async () => {
-        writes.push({ kind: "delete" });
-        store.row = null;
-      },
+      where: () => ({
+        returning: async () => {
+          const deleted = store.row;
+          writes.push({ kind: "delete" });
+          store.row = null;
+          return deleted ? [{ provider: deleted.provider, model: deleted.model, keyCiphertext: deleted.keyCiphertext }] : [];
+        },
+      }),
     }),
   };
   const db = { transaction: async (fn: (t: unknown) => Promise<unknown>) => fn(tx), execute: async () => undefined };
@@ -104,7 +109,14 @@ function harness(opts: { row?: Row | null; inScope?: boolean; testError?: unknow
     };
     return provider;
   };
-  return { service, store, writes, audits, built };
+  return { service, store, writes, audits, built, resolver };
+}
+
+/** F4.187: remove() decides from its own DELETE, so a read outside its transaction fails the case by name. */
+function forbidReadOutsideTransaction(resolver: OnboardingLlmResolver): void {
+  resolver.readSetting = async () => {
+    throw new Error("remove() must not read the row outside its transaction");
+  };
 }
 
 /** Call inside `withEnv`, which sets the credential key the encryption needs. */
@@ -242,11 +254,29 @@ export async function assertPutAuditsProviderModelAndKeyChangedOnly(): Promise<v
 
 export async function assertDeleteRemovesAndAudits(): Promise<void> {
   await withEnv({}, async () => {
-    const { service, store, audits } = harness({ row: storedRow() });
+    const row = storedRow();
+    const { service, store, audits, resolver } = harness({ row });
+    forbidReadOutsideTransaction(resolver);
     const dto = await service.remove(JWT, ORG);
     assert(store.row === null, "the row is removed");
-    assert(audits[0]?.action === "master.organization.ai_assistant.delete", "a delete audit row");
+    assert(audits.length === 1 && audits[0]?.action === "master.organization.ai_assistant.delete", "one delete audit row");
+    assert(
+      JSON.stringify(audits[0]?.payload) === JSON.stringify({ provider: row.provider, model: row.model, keyChanged: true }),
+      "the payload is the deleted row's provider, model and key state",
+    );
     assert(dto.source === "platform", "the organization returns to the platform default");
+  });
+}
+
+/** F4.187: a DELETE that removed no row writes no audit, and the answer is still the platform default. */
+export async function assertDeleteOfNoRowWritesNoAuditAndReportsThePlatform(): Promise<void> {
+  await withEnv({}, async () => {
+    const { service, writes, audits, resolver } = harness();
+    forbidReadOutsideTransaction(resolver);
+    const dto = await service.remove(JWT, ORG);
+    assert(JSON.stringify(writes) === '[{"kind":"delete"}]', "positive control: the DELETE ran");
+    assert(audits.length === 0, "no row deleted, no audit");
+    assert(dto.source === "platform", "the organization reports the platform default");
   });
 }
 
