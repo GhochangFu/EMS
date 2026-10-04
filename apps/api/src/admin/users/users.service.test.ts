@@ -81,6 +81,10 @@ describe("F3.78 — UsersService.create (ADR 0089 decision 3)", () => {
     await spec.assertAnAdminBodyWithAnOrganizationIs400BeforeKeycloak();
   });
 
+  it("a create body with an unknown key is 400 before any Keycloak call and inserts nothing (F4.189)", async () => {
+    await spec.assertACreateWithAnUnknownKeyIs400BeforeKeycloakAndWritesNothing();
+  });
+
   it("organization_admin creating an admin is 403", async () => {
     await spec.assertAnOrganizationAdminCreatingAnAdminIs403();
   });

@@ -217,21 +217,12 @@ export const STRICTNESS_LEDGER: Record<string, LedgerEntry> = {
   closeWorkOrderBodySchema: STRICT(CALLER_ERROR),
   convertMaintenanceBodySchema: STRICT(CALLER_ERROR),
   createAssetBodySchema: STRICT(CALLER_ERROR),
-  // `F3.78` (ADR 0089). The three create/add bodies were written as plain objects and left open,
-  // so each records that rather than staying undecided. An unknown key on any of them is
-  // dropped and answered 200; making them `.strict()` is a behaviour change owed its own review.
-  addAssetGroupMemberBodySchema: {
-    strict: false,
-    because: "F3.78: written open (ADR 0030 plain object); tightening is a separate behaviour change.",
-  },
-  createAssetGroupBodySchema: {
-    strict: false,
-    because: "F3.78: written open (ADR 0030 plain object); tightening is a separate behaviour change.",
-  },
-  createUserBodySchema: {
-    strict: false,
-    because: "F3.78: written open, with a superRefine rule (ADR 0089 decision 2); tightening is a separate behaviour change.",
-  },
+  // `F3.78` (ADR 0089) wrote these three create/add bodies as plain objects and left them open;
+  // the owner ruled on 2026-10-04 (`F4.189`) that all three are strict. The only producer of each
+  // is the admin web form, which sends exactly the schema's keys, so an unknown key is a caller error.
+  addAssetGroupMemberBodySchema: STRICT(CALLER_ERROR),
+  createAssetGroupBodySchema: STRICT(CALLER_ERROR),
+  createUserBodySchema: STRICT(CALLER_ERROR),
   createAssetPointBodySchema: STRICT(CALLER_ERROR),
   createAssetTemplateBodySchema: STRICT(CALLER_ERROR),
   // `F3.40`. The field a caller most plausibly sends and this table does not

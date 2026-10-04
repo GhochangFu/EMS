@@ -27,4 +27,12 @@ describe("F3.78 — asset group write routes (ADR 0089 decision 7, plan U8)", ()
   it("removeMember refuses another site's membership and writes nothing", async () => {
     await spec.assertRemoveMemberRefusesAnotherSitesMember();
   });
+
+  it("create with an unknown key is a 400 and writes nothing (F4.189)", async () => {
+    await spec.assertCreateWithAnUnknownKeyIs400AndWritesNothing();
+  });
+
+  it("addMember with an unknown key is a 400 and writes nothing (F4.189)", async () => {
+    await spec.assertAddMemberWithAnUnknownKeyIs400AndWritesNothing();
+  });
 });
