@@ -170,7 +170,7 @@ function templateSummaryParts(draft: OnboardingDraft, ctx: ValidateTemplateConte
   const entries = draft.templates ?? [];
   const lines = entries.map((entry) => {
     const points = draftTemplateRef(entry, ctx)?.points.length ?? 0;
-    return `will publish ${draftTemplateCode(entry)} v1 (cannot be edited afterwards), ${countOf(points, "point")}`;
+    return `will publish ${quoteCell(draftTemplateCode(entry))} v1 (cannot be edited afterwards), ${countOf(points, "point")}`;
   });
   const { shown, omitted } = echoedItems(lines, SUMMARY_TEMPLATE_LINES);
   const parts =

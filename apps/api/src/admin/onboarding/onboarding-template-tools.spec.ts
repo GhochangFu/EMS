@@ -455,7 +455,7 @@ export async function assertT19ProposeCommitNamesThePublishAndTheCounts(): Promi
   const summary = out.state.pendingProposal?.summary ?? "";
   assert(out.ok, `proposed, got ${out.content}`);
   for (const part of [
-    "1 template: will publish CHILLER v1 (cannot be edited afterwards), 1 point",
+    "1 template: will publish 'CHILLER' v1 (cannot be edited afterwards), 1 point",
     "2 templated assets",
     "2 asset points",
     "0 seeded rules",
@@ -511,7 +511,7 @@ export async function assertT22AStockScenarioFinishesUnderTheCallCap(): Promise<
   });
   assert(result.stopReason === "final" && result.record.toolCalls === 6, `final after 6 calls, got ${result.stopReason}/${result.record.toolCalls}`);
   assert(
-    result.commitProposal?.summary.includes("will publish WTP-PUMP v1 (cannot be edited afterwards), 3 points") === true,
+    result.commitProposal?.summary.includes("will publish 'WTP-PUMP' v1 (cannot be edited afterwards), 3 points") === true,
     `a proposal names the publish, got ${result.commitProposal?.summary}`,
   );
   assert(result.actionLines.includes("Added 2 assets from WTP-PUMP v1 on RTU-1"), `the assets were added, got ${result.actionLines.join(" | ")}`);

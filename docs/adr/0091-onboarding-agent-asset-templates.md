@@ -276,6 +276,15 @@ service files are 940 and 996 lines, against the 1,000-line cap of
     line per template and per templated asset, with a spec, because the
     formatter has none today.
 
+    *Dated note, 2026-10-04 (the PR 2 review, owner ruling):* "does not
+    change" yields to "leaves `assets[].template` untouched" in one place. The
+    guided mappings branch wrote its point mapping onto `assets[0]` even when
+    that asset was templated, which put an `assetPoints` entry on a templated
+    asset and broke a ready all-template draft. The branch now maps onto the
+    first asset with no template, and it does not run when every asset is
+    templated. Nothing else in `handleRuleBasedTurn` changes; `F3.27` still
+    owns parity.
+
 12. **Delivery and verification.** PR 1 is decision 1. PR 2 is decisions 2–11
     and the web preview. Verification: the template-domain integration suites
     unchanged (PR 1); the full suites and a cold start (PR 2); one live turn on
