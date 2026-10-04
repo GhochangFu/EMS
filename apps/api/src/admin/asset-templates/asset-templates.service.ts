@@ -1,5 +1,4 @@
 import {
-  BadRequestException,
   ConflictException,
   ForbiddenException,
   Inject,
@@ -38,6 +37,11 @@ import type { CrossRefCandidatePoint } from "./asset-templates-cross-refs";
 // moved to a pure sibling when it stood at 998 of §4.5's 1000 lines.
 import { toTemplatePointDto } from "./asset-templates-point-rows";
 import {
+  createTemplateCore,
+  publishTemplateCore,
+  type TemplateWriteCoreDeps,
+} from "./asset-templates-write-core";
+import {
   assertCanAuthor,
   assertContentRefsResolve,
   assertParameterKeysKnown,
@@ -45,7 +49,6 @@ import {
   assertTemplateAlarmVocabularies,
   assertTransition,
   loadTemplatePoints,
-  parseStoredContentForPublish,
   replacePoints,
   translateDraftConflict,
   type PointRow,
@@ -83,7 +86,9 @@ import type { StockImportStamp } from "./stock-catalog/types";
  *     the write already runs in (`replacePoints` takes the org for this reason);
  *   - every `template_points` **read** moves to `fleetDb`, behind the same
  *     already-computed grant the `asset_templates` reads trust — under `0047`'s
- *     `FORCE` a `tenantDb` read with no GUC would see zero rows.
+ *     `FORCE` a `tenantDb` read with no GUC would see zero rows. **Except**
+ *     in the create/publish cores (`F3.22`, ADR 0091 decision 1), which read
+ *     on the `withTenant` transaction, where the GUC is set.
  * `users` is likewise policied in `0047` (Amendment 4, a pre-tenant identity
  * table), so `resolveCreatedBy` reads it on `fleetDb`.
  *
@@ -173,7 +178,8 @@ export class AssetTemplatesAdminService {
    * `stamp` (`F2.13`, ADR 0052 decisions 4 and 5) is what a stock import
    * passes and a hand-authored draft does not: it sets `stock_code` /
    * `stock_version` and switches the audit to `master.asset_template.import`.
-   * One optional argument rather than a second method, so every guard below —
+   * One optional argument rather than a second method, so every guard in
+   * `createTemplateCore` —
    * point keys active, domain, alarm vocabularies, content references — runs
    * on an import exactly as it runs on a form submission. The stock service
    * never inserts.
@@ -183,78 +189,30 @@ export class AssetTemplatesAdminService {
     body: CreateAssetTemplateBody,
     stamp?: StockImportStamp,
   ): Promise<AdminAssetTemplateDto> {
-    await this.assertCanAuthor(jwt, body.organizationId);
-    await this.assertPointKeysActive(body.points);
-    await this.assertParameterKeysKnown(body.points, body.content?.kpis);
-    // ADR 0031 Amendment 1. Checked here rather than at instantiation because
-    // that is where the value is *chosen*: a template stores this domain and
-    // stamps it onto every asset built from it, so a bad code caught later
-    // surfaces on someone else's batch, long after the form that set it.
-    await this.vocabularies.assertAssetDomain(body.domain);
-    await this.assertTemplateAlarmVocabularies(body.content);
-    if (body.content) {
-      this.assertContentRefsResolve(body.content, body.points);
-    }
-    const createdBy = await this.resolveCreatedBy(jwt);
-
-    const created = await withTenant(this.tenantDb, body.organizationId, async (tx) => {
-      const [{ maxVersion }] = await tx
-        .select({ maxVersion: sql<number | null>`MAX(${assetTemplates.version})` })
-        .from(assetTemplates)
-        .where(
-          and(
-            eq(assetTemplates.organizationId, body.organizationId),
-            eq(assetTemplates.code, body.code),
-          ),
-        );
-
-      const [row] = await tx
-        .insert(assetTemplates)
-        .values({
-          organizationId: body.organizationId,
-          code: body.code,
-          version: (maxVersion ?? 0) + 1,
-          name: body.name,
-          assetType: body.assetType,
-          domain: body.domain,
-          description: body.description ?? null,
-          status: "draft",
-          content: body.content ?? {},
-          // Both or neither — `asset_templates_stock_stamp_check` holds it.
-          stockCode: stamp?.stockCode ?? null,
-          stockVersion: stamp?.stockVersion ?? null,
-          createdBy,
-        })
-        .returning();
-
-      await this.replacePoints(tx, row.id, body.organizationId, body.points);
-
-      // E7.1c (item D): folded into this transaction so the stamped
-      // organizationId matches the GUC the strict WITH CHECK now demands.
-      // Safe inside the `.catch` below: translateDraftConflict only rewrites
-      // a `23505` on `asset_templates_org_code_draft_unique` and returns any
-      // other error (including one from this insert) unchanged.
-      //
-      // ONE row either way: an import is audited as an import, not as a
-      // create followed by an import.
-      await this.audit.write(
-        {
-          actor: jwt,
-          action: stamp ? "master.asset_template.import" : "master.asset_template.create",
-          entityType: "asset_template",
-          entityId: row.id,
-          organizationId: body.organizationId,
-          reason: stamp ? `stock ${stamp.stockCode} v${stamp.stockVersion}` : undefined,
-          payload: { code: body.code, version: row.version, points: body.points.length },
-        },
-        tx,
-      );
-      return row;
-    }).catch((err: unknown) => {
-      throw this.translateDraftConflict(err, body.code);
+    // F3.22 PR 1 (ADR 0091 decision 1): every guard runs in the core, inside
+    // this transaction — the order and the texts are the ones `create` had.
+    const created = await withTenant(this.tenantDb, body.organizationId, (tx) =>
+      this.createInTransaction(tx, jwt, body, stamp),
+    ).catch((err: unknown) => {
+      throw translateDraftConflict(err, body.code);
     });
 
     return this.getById(jwt, created.id);
+  }
+
+  /**
+   * `create` on a transaction the caller already holds (`F3.22`, ADR 0091
+   * decision 1): every guard reads through `tx`, so a point key written
+   * earlier in the same transaction is visible. Returns the inserted row; the
+   * caller owns the transaction, the draft-conflict translation and the DTO.
+   */
+  async createInTransaction(
+    tx: BmsTx,
+    jwt: JwtPayload,
+    body: CreateAssetTemplateBody,
+    stamp?: StockImportStamp,
+  ): Promise<TemplateRow> {
+    return createTemplateCore(this.coreDeps(), tx, jwt, body, stamp);
   }
 
   /**
@@ -350,51 +308,23 @@ export class AssetTemplatesAdminService {
    * object is re-proved consistent.
    */
   async publish(jwt: JwtPayload, id: string): Promise<AdminAssetTemplateDto> {
+    // The organization for `withTenant`, and the same 404 first, as before.
+    // F3.22 PR 1: the core re-reads the row through `tx` and holds every check.
     const { template } = await this.fetchRow(id);
-    await this.assertCanAuthor(jwt, template.organizationId);
-    this.assertTransition(template, "published");
-
-    const points = await this.loadPoints(id);
-    if (points.length === 0) {
-      throw new BadRequestException(
-        "A template with no points would instantiate assets with no telemetry mapping",
-      );
-    }
-    await this.assertPointKeysActive(points);
-    const storedContent = this.parseStoredContent(template);
-    await this.assertParameterKeysKnown(points, storedContent.kpis);
-    this.assertContentRefsResolve(storedContent, points);
-
-    // ADR 0032. Publish used to get this for free: `parseStoredContent` ran the
-    // schema, and while `severity` and `category` were `z.enum`s the schema was
-    // the vocabulary check. Both are codes now, so the schema passes a stored
-    // value that no vocabulary row backs, and without this line a pre-ADR row
-    // could be published carrying an alarm the rule engine cannot run.
-    //
-    // `create` and `update` already called this on the *incoming* body; the gap
-    // was only ever on stored content, which is exactly what publish reads.
-    await this.assertTemplateAlarmVocabularies(storedContent);
-
-    const now = new Date();
-    await withTenant(this.tenantDb, template.organizationId, async (tx) => {
-      await tx
-        .update(assetTemplates)
-        .set({ status: "published", publishedAt: now, updatedAt: now })
-        .where(eq(assetTemplates.id, id));
-
-      await this.audit.write(
-        {
-          actor: jwt,
-          action: "master.asset_template.publish",
-          entityType: "asset_template",
-          entityId: id,
-          organizationId: template.organizationId,
-          payload: { code: template.code, version: template.version },
-        },
-        tx,
-      );
-    });
+    await withTenant(this.tenantDb, template.organizationId, (tx) =>
+      this.publishInTransaction(tx, jwt, id),
+    );
     return this.getById(jwt, id);
+  }
+
+  /**
+   * `publish` on a transaction the caller already holds (`F3.22`, ADR 0091
+   * decision 1): the row, its points and the point-key catalog are read
+   * through `tx`, so a draft written earlier in the same transaction can be
+   * published. Returns the updated row.
+   */
+  async publishInTransaction(tx: BmsTx, jwt: JwtPayload, id: string): Promise<TemplateRow> {
+    return publishTemplateCore(this.coreDeps(), tx, jwt, id);
   }
 
   /**
@@ -561,6 +491,17 @@ export class AssetTemplatesAdminService {
     return resolveActorId(this.fleetDb, jwt);
   }
 
+  /** The dependencies the create/publish cores take (`F3.22` PR 1). */
+  private coreDeps(): TemplateWriteCoreDeps {
+    return {
+      fleetDb: this.fleetDb,
+      accessControl: this.accessControl,
+      audit: this.audit,
+      vocabularies: this.vocabularies,
+      calcParameters: this.calcParameters,
+    };
+  }
+
   /** Delegates to the write-guards module (`F3.22` PR 1). */
   async assertCanAuthor(jwt: JwtPayload, organizationId: string): Promise<void> {
     return assertCanAuthor(this.accessControl, jwt, organizationId);
@@ -602,11 +543,6 @@ export class AssetTemplatesAdminService {
   /** Delegates to the write-guards module (`F3.22` PR 1). */
   private async loadPoints(templateId: string): Promise<PointRow[]> {
     return loadTemplatePoints(this.fleetDb, templateId);
-  }
-
-  /** Delegates to the write-guards module (`F3.22` PR 1); `publish` only — U2 deletes it. */
-  private parseStoredContent(template: TemplateRow): TemplateContentParsed {
-    return parseStoredContentForPublish(template);
   }
 
   /** Delegates to the write-guards module (`F3.22` PR 1). */
