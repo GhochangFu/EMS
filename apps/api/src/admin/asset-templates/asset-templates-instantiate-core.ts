@@ -76,6 +76,22 @@ export interface InstantiateCoreDeps {
   readonly assetDashboards: AssetDashboardsInstantiateService;
 }
 
+/**
+ * `F3.22` (ADR 0091 decision 5) — which access check guards the target.
+ *
+ * `"location"` (the default, and the only value the instantiate route passes):
+ * `canManageLocation` on the resolved target location, as ADR 0015 §7 has it.
+ *
+ * `"organization"`: the onboarding commit only. It writes the location and the
+ * RTU in the same transaction it instantiates onto, and `canManageLocation`
+ * reads on the auth and fleet pools, which cannot see an uncommitted row — so
+ * it would refuse every `organization_admin` on a location they just created.
+ * There the `canManageOrganization` check on the template's organization, which
+ * every call makes first, is the check, and the target is already proved to be
+ * in that organization by `resolveTarget`.
+ */
+export type InstantiateCoreOptions = { readonly locationAccess: "location" | "organization" };
+
 /** ADR 0015 §6 step 1 — the one cross-organization text, thrown from two places. */
 const CROSS_ORGANIZATION_MESSAGE =
   "Template belongs to a different organization than the target. A template may not " +
@@ -99,6 +115,7 @@ export async function instantiateTemplateCore(
   jwt: JwtPayload,
   templateId: string,
   body: InstantiateAssetsBody,
+  options: InstantiateCoreOptions = { locationAccess: "location" },
 ): Promise<AssetInstantiationResultDto> {
   const template = await fetchTemplateRow(tx, templateId);
 
@@ -129,7 +146,15 @@ export async function instantiateTemplateCore(
   // ADR 0015 §7 as amended: the *write* half. `canManageTemplate` is not
   // consulted — it means "may author" and is false for location_admin by
   // design, so requiring it would deny the one role §7 exists to allow.
-  if (!(await deps.accessControl.canManageLocation(jwt, target.locationId))) {
+  //
+  // `F3.22` (ADR 0091 decision 5): only for `"location"`. For `"organization"`
+  // the `canManageOrganization` check above IS the check — the onboarding
+  // commit wrote this location in the same transaction, and the auth pool that
+  // `canManageLocation` reads cannot see it.
+  if (
+    options.locationAccess === "location" &&
+    !(await deps.accessControl.canManageLocation(jwt, target.locationId))
+  ) {
     throw new ForbiddenException("Target location is outside your access scope");
   }
 

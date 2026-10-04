@@ -588,10 +588,16 @@ export class OnboardingService {
         const result = await this.commitService.commitProposed(jwt, session.id, proposal.draftHash);
         committed = true;
         const name = (session.draft as OnboardingDraft).location?.name ?? "";
+        // F3.22 (ADR 0091 decision 4): the template part of the result too.
+        // `assetIds` holds every asset, so "(N from templates)" says how many
+        // of them the instantiate core built; "dashboards" counts the views it
+        // wrote, as `dashboardCount` does.
         actionLine =
           `Committed: location ${name}, ${countOf(result.rtuIds.length, "RTU")}, ` +
-          `${countOf(result.pointKeyIds.length, "point key")}, ${countOf(result.assetIds.length, "asset")}, ` +
-          countOf(result.assetPointIds.length, "mapping");
+          `${countOf(result.pointKeyIds.length, "point key")}, ${countOf(result.templateIds.length, "template")}, ` +
+          `${countOf(result.assetIds.length, "asset")} (${result.templatedAssetCount} from templates), ` +
+          `${countOf(result.assetPointIds.length, "mapping")}, ${countOf(result.seededRuleCount, "seeded rule")}, ` +
+          countOf(result.dashboardCount, "dashboard");
         reply = "Committed. The location, RTUs, assets and mappings are created.";
       } catch (error) {
         if (!(error instanceof BadRequestException)) {

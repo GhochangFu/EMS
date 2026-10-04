@@ -13,7 +13,7 @@ import { VocabulariesService } from "../../vocabularies/vocabularies.service";
 import { MasterDataAuditService } from "../master-data-audit.service";
 import { AssetDashboardsInstantiateService } from "./asset-dashboards-instantiate.service";
 import type { InstantiateAssetsBody } from "./asset-templates.schema";
-import { instantiateTemplateCore } from "./asset-templates-instantiate-core";
+import { instantiateTemplateCore, type InstantiateCoreOptions } from "./asset-templates-instantiate-core";
 import { translateAssetCodeCollision } from "./asset-templates-instantiate-guards";
 
 /**
@@ -96,12 +96,17 @@ export class AssetTemplateInstantiationService {
    * `withTenant` for the template's organization. Rows written earlier in that
    * transaction are visible to every guard. The caller owns the
    * constraint-name translation (`translateAssetCodeCollision`).
+   *
+   * `options` is forwarded as given; omitted, the core checks the target
+   * location. Only the onboarding commit passes `{ locationAccess:
+   * "organization" }` (ADR 0091 decision 5, `onboarding-commit-templates.ts`).
    */
   instantiateInTransaction(
     tx: BmsTx,
     jwt: JwtPayload,
     templateId: string,
     body: InstantiateAssetsBody,
+    options?: InstantiateCoreOptions,
   ): Promise<AssetInstantiationResultDto> {
     return instantiateTemplateCore(
       {
@@ -115,6 +120,7 @@ export class AssetTemplateInstantiationService {
       jwt,
       templateId,
       body,
+      options,
     );
   }
 

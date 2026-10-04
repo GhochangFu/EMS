@@ -500,6 +500,10 @@ describe.skipIf(!connectionString)("E7.1b — onboarding commit stamps org under
       new OnboardingValidateService(),
       new VocabulariesService(fleetDb),
       { context: async () => EMPTY_TEMPLATE_CONTEXT } as never,
+      // F3.22: the three template services; this draft holds no template, so none is called.
+      {} as never,
+      {} as never,
+      {} as never,
     );
 
     ctx = { commitSvc, ownerPool, organizationId, sessionId };

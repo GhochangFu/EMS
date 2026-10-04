@@ -134,6 +134,10 @@ function buildService(opts: {
     validateService,
     vocabularies,
     { context: async () => EMPTY_TEMPLATE_CONTEXT } as never,
+    // F3.22: the three template services; this draft holds no template, so none is called.
+    {} as never,
+    {} as never,
+    {} as never,
   );
   return { service, domainCalls, validateCalls: () => validateCalls };
 }

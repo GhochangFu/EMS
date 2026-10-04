@@ -89,12 +89,19 @@ const HELPER = "apps/api/src/common/parse-stored-contract.ts";
  * by name with its reason — ADR 0060 Amendment 1.
  *
  * `createAssetTemplateBodySchema.parse({ ...body, organizationId })` in
- * `AssetTemplatesStockService.import` stands on a **request path**:
- * `importStock` (`asset-templates.controller.ts:114`) wraps the call in a `try`
- * whose `catch` already maps a `ZodError` to `BadRequestException(flatten())`.
- * The global filter answers that same 400 if the controller's `catch` ever goes
- * away. Converting it to a server fault would turn a correct 400 into a 500 —
- * the exact inversion ADR 0060 exists to prevent, pointed the other way.
+ * `AssetTemplatesStockService.bodyFor` stands on a **request path**:
+ * `importStock` (`asset-templates.controller.ts:114`) wraps the `import` call in
+ * a `try` whose `catch` already maps a `ZodError` to
+ * `BadRequestException(flatten())`, and the onboarding commit (`F3.22`, ADR 0091
+ * decision 4) reaches it with the caller's own `patterns` overlaid. The global
+ * filter answers that same 400 if either path loses its `catch`. Converting it
+ * to a server fault would turn a correct 400 into a 500 — the exact inversion
+ * ADR 0060 exists to prevent, pointed the other way.
+ *
+ * `F3.22` moved the parse from `import` into `bodyFor`, which `import` calls.
+ * The key below names the file and the receiver, not the method, so the move
+ * left it unchanged; the method is pinned by its own assertion
+ * (`the allowlisted parse sits in bodyFor`).
  *
  * Keyed by file **and receiver**, not by line: `:183` became `:198` in the very
  * commit that wrote this rule, so a line number here would be a maintenance
@@ -411,7 +418,7 @@ describe("F4.108 / ADR 0060 — a stored-data parse never reaches the ZodError f
 
     expect(
       considered.filter((site) => site === ALLOWED_SITE).length,
-      "the allowlisted client-input parse in AssetTemplatesStockService.import must appear " +
+      "the allowlisted client-input parse in AssetTemplatesStockService.bodyFor must appear " +
         "exactly once. Zero: either it was converted to a server fault — which would turn its " +
         "correct 400 into a 500, and ADR 0060 Amendment 1 forbids it — or this scanner is " +
         "broken and the absence assertion below proves nothing. Two: a second parse with the " +
@@ -428,6 +435,32 @@ describe("F4.108 / ADR 0060 — a stored-data parse never reaches the ZodError f
         "parseStoredContract (apps/api/src/common/parse-stored-contract.ts). If it parses " +
         "caller input on a request path, add it to ALLOWED with the reason.",
     ).toEqual([]);
+  });
+
+  /**
+   * `F3.22` (ADR 0091 decision 4) — the allowlisted parse lives in
+   * `AssetTemplatesStockService.bodyFor`, the one body builder both `import` and
+   * the onboarding commit call. The allowlist key cannot see the method, so
+   * this does: a parse moved back into `import` keeps the key at one
+   * occurrence and stays green above, and reddens here.
+   */
+  it("the allowlisted parse sits in bodyFor, and import holds none", () => {
+    const code = blankCommentsAndStrings(read(STOCK_SERVICE));
+    const bodyForStart = code.indexOf("  bodyFor(");
+    expect(bodyForStart, "AssetTemplatesStockService.bodyFor( is gone").toBeGreaterThanOrEqual(0);
+    const bodyForEnd = code.indexOf("\n  }\n", bodyForStart);
+    const importStart = code.indexOf("  async import(");
+    expect(importStart, "AssetTemplatesStockService.import( is gone").toBeGreaterThanOrEqual(0);
+    const importEnd = code.indexOf("\n  }\n", importStart);
+    expect(
+      code.slice(bodyForStart, bodyForEnd),
+      "the client-input parse must live in bodyFor, where both callers reach it",
+    ).toContain("createAssetTemplateBodySchema.parse(");
+    expect(
+      code.slice(importStart, importEnd),
+      "import must build its body through bodyFor, not parse a second time",
+    ).not.toContain(".parse(");
+    expect(code.slice(importStart, importEnd), "import must call bodyFor").toContain("this.bodyFor(");
   });
 
   /**
