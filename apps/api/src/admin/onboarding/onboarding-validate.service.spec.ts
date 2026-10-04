@@ -271,7 +271,7 @@ function templatedDraft(): OnboardingDraft {
         siteName: "Lotapata",
         rtuIndex: 0,
         domain: "electrical",
-        template: { code: "ORG-T" },
+        template: { code: "ORG-T", version: 1 },
       },
     ],
   };
@@ -365,6 +365,62 @@ export function assertV6AnUnresolvedVariableIsAnError(): void {
   );
 }
 
+/** V6 (code review) — a required pattern that resolves to `""`, which `resolveSourceDataKey` refuses. */
+export function assertV6ARequiredKeyThatResolvesEmptyIsAnError(): void {
+  assertOnly(
+    (d) => {
+      d.templates![0] = { code: "PUMP", name: "Pump", domain: "water", points: [{ pointKey: "flow", sourceDataKeyPattern: "{site}" }] };
+      assetAt(d, 1).template = { code: "PUMP", sourceDataKeyVars: { site: "" } };
+    },
+    "assets.1.template.sourceDataKeyVars",
+    `Template ${q("PUMP")} resolves its required point ${q("flow")} to an empty source key; give its variables a value`,
+  );
+}
+
+/**
+ * V6 (code review) — an **optional** point whose key resolves over 128
+ * characters: `planAsset` checks the length on every measured point it
+ * builds, so this refuses the commit as a required one would. Each value is
+ * inside its own 128 bound; the joined key is 2 + 1 + 128 = 131.
+ */
+export function assertV6AnOptionalKeyOverTheLengthLimitIsAnError(): void {
+  assertOnly(
+    (d) => {
+      d.templates![0] = {
+        code: "PUMP",
+        name: "Pump",
+        domain: "water",
+        points: [
+          { pointKey: "flow", sourceDataKeyPattern: "{site}_{asset_code}_FLOW" },
+          { pointKey: "head", required: false, sourceDataKeyPattern: "{site}_{bus}" },
+        ],
+      };
+      assetAt(d, 1).template = { code: "PUMP", sourceDataKeyVars: { site: "S1", bus: "b".repeat(128) } };
+    },
+    "assets.1.template.sourceDataKeyVars",
+    `Template ${q("PUMP")} resolves its point ${q("head")} to a source key of 131 characters, over the 128 limit`,
+  );
+}
+
+/** V6 (code review) — the length limit on a required point: 120 + `_PUMP-1_FLOW` is 132. */
+export function assertV6ARequiredKeyOverTheLengthLimitIsAnError(): void {
+  assertOnly(
+    (d) => {
+      assetAt(d, 1).template = { code: "PUMP", sourceDataKeyVars: { site: "s".repeat(120) } };
+    },
+    "assets.1.template.sourceDataKeyVars",
+    `Template ${q("PUMP")} resolves its point ${q("flow")} to a source key of 132 characters, over the 128 limit`,
+  );
+}
+
+/** V6 — the boundary: a key of exactly 128 characters (116 + `_PUMP-1_FLOW`) is buildable. */
+export function assertV6AKeyAtTheLengthLimitIsValid(): void {
+  const got = templateErrors((d) => {
+    assetAt(d, 1).template = { code: "PUMP", sourceDataKeyVars: { site: "s".repeat(116) } };
+  });
+  assert(got === "[]", `a 128-character key is valid, got ${got}`);
+}
+
 /** V7 — a variable the template does not ask for. */
 export function assertV7AnUnknownVariableIsAnError(): void {
   assertOnly(
@@ -447,6 +503,46 @@ export function assertV10AHeldStockCodeIsAnError(): void {
     "templates.1.stockCode",
     `This organization already holds template ${q("WTP")} (versions: 1); choose another code`,
     { ...TEMPLATES, organization: [...TEMPLATES.organization, held] },
+  );
+}
+
+/** Decision 9 (code review) — an authored pattern with a stray brace (the tokens still parse, so V7 stays quiet). */
+export function assertAnAuthoredPatternOutsideTheGrammarIsAnError(): void {
+  const pattern = "{site}_{asset_code}_FLOW}";
+  assertOnly(
+    (d) => {
+      d.templates![0] = { code: "PUMP", name: "Pump", domain: "water", points: [{ pointKey: "flow", sourceDataKeyPattern: pattern }] };
+    },
+    "templates.0.points.0.sourceDataKeyPattern",
+    `Pattern ${q(pattern)} has a brace outside a {variable}; a variable is letters, digits or _ inside braces`,
+  );
+}
+
+/** Decision 9 (code review) — the same rule on a stock entry's `patterns` value, at its point key. */
+export function assertAStockPatternOutsideTheGrammarIsAnError(): void {
+  const pattern = "{asset_code}_PH{";
+  assertOnly(
+    (d) => {
+      d.templates![1] = { stockCode: "WTP", patterns: { ph: pattern } };
+    },
+    "templates.1.patterns.ph",
+    `Pattern ${q(pattern)} has a brace outside a {variable}; a variable is letters, digits or _ inside braces`,
+  );
+}
+
+/**
+ * Decision 2 (code review) — an organization template with no `version`. The
+ * commit would build whichever version is the highest published at confirm
+ * time, which a version published after the proposal would change under an
+ * unchanged draft hash.
+ */
+export function assertAnUnpinnedOrganizationTemplateIsAnError(): void {
+  assertOnly(
+    (d) => {
+      assetAt(d, 3).template = { code: "ORG-T" };
+    },
+    "assets.3.template.version",
+    `Template ${q("ORG-T")} is an organization template; name the version to build from (the highest published is 1)`,
   );
 }
 

@@ -1,4 +1,4 @@
-import { SOURCE_KEY_RESERVED_VAR, substituteSourceKeyPattern, type OnboardingDraft } from "@bms/shared";
+import type { OnboardingDraft } from "@bms/shared";
 import { z, type ZodTypeAny } from "zod";
 
 import { MAX_INSTANTIATE_ASSETS } from "../asset-templates/asset-templates.schema";
@@ -10,6 +10,8 @@ import {
   heldVersions,
   patternGrammarProblem,
   resolveTemplateForAsset,
+  templateSourceKeyMessage,
+  templateSourceKeyProblem,
   templateVariables,
   type TemplateRef,
   type ValidateTemplateContext,
@@ -165,7 +167,8 @@ function stockVersionOf(ref: TemplateRef): number | null {
  * Decision 7 and owner ruling Q1-C at tool time, so the model learns at the
  * call what validation would refuse later: every required measured point has a
  * pattern (V5), every variable is one the template asks for (V7), and every
- * required pattern resolves with the asset's variables and its own code (V6).
+ * required pattern resolves with the asset's variables and its own code to a
+ * non-empty key, and no measured point resolves over the length limit (V6).
  */
 function templatedAssetsProblem(ref: TemplateRef, assets: z.infer<typeof templateAssetsArgs>["assets"]): string | null {
   const code = quoteCell(ref.code);
@@ -187,16 +190,17 @@ function templatedAssetsProblem(ref: TemplateRef, assets: z.infer<typeof templat
         (variables.length === 0 ? "it has no variables." : `its variables are: ${listOf(variables.map((v) => quoteCell(v)), "variables")}.`)
       );
     }
-    const withCode = { ...vars, [SOURCE_KEY_RESERVED_VAR]: asset.code };
-    for (const point of required) {
-      const unresolved = substituteSourceKeyPattern(point.sourceDataKeyPattern ?? "", withCode).unresolved;
-      if (unresolved.length > 0) {
-        return (
-          `Asset ${quoteCell(asset.code)} needs the variable ${quoteCell(unresolved[0] ?? "")} ` +
-          `for the required point ${quoteCell(point.pointKey)} of template ${code}.`
-        );
-      }
+    const problem = templateSourceKeyProblem(ref, vars, asset.code);
+    if (problem === null) {
+      continue;
     }
+    if (problem.result.outcome === "unresolved") {
+      return (
+        `Asset ${quoteCell(asset.code)} needs the variable ${quoteCell(problem.result.variable)} ` +
+        `for the required point ${quoteCell(problem.pointKey)} of template ${code}.`
+      );
+    }
+    return `Asset ${quoteCell(asset.code)}: ${templateSourceKeyMessage(code, problem)}.`;
   }
   return null;
 }

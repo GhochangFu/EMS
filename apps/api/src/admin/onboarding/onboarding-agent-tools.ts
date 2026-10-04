@@ -131,6 +131,14 @@ const noArgs = z.object({}).strict();
 
 const rtuArgs = draftRtuSchema.omit({ credentialsSet: true });
 
+/**
+ * `F3.22` (ADR 0091 decision 2, code review): `add_template_assets` is the one
+ * tool that writes `assets[].template`, because it is the one that pins an
+ * organization template to the version it resolved. Strict, so a `template`
+ * here is refused and not silently stripped into a plain asset.
+ */
+const assetArgs = draftAssetSchema.omit({ template: true }).strict();
+
 const TOOL_SCHEMAS = {
   get_draft: noArgs,
   list_point_keys: z.object({ search: z.string().max(64).optional() }).strict(),
@@ -142,7 +150,7 @@ const TOOL_SCHEMAS = {
   remove_rtu: indexSchema,
   add_point_key: draftPointKeySchema,
   remove_point_key: indexSchema,
-  add_asset: draftAssetSchema,
+  add_asset: assetArgs,
   remove_asset: indexSchema,
   map_point: draftAssetPointSchema,
   remove_asset_point: indexSchema,
@@ -375,7 +383,7 @@ async function dispatch(name: ToolName, args: Record<string, unknown>, state: To
     }
 
     case "add_asset": {
-      const asset = args as z.infer<typeof draftAssetSchema>;
+      const asset = args as z.infer<typeof assetArgs>;
       const rtu = draft.rtus?.[asset.rtuIndex];
       return write(
         state,

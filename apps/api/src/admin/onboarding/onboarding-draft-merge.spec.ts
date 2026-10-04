@@ -15,6 +15,8 @@ import { draftBeforeAssets, ruleBasedTurn } from "./onboarding-chat.service.spec
 import { OnboardingChatService } from "./onboarding-chat.service";
 import { mergeDraftPatch } from "./onboarding-draft-merge";
 import { OnboardingExcelService, type ParsedExcel } from "./onboarding-excel.service";
+import { EMPTY_TEMPLATE_CONTEXT } from "./onboarding-template-refs";
+import { OnboardingValidateService } from "./onboarding-validate.service";
 
 function assert(condition: boolean, message: string): void {
   if (!condition) {
@@ -118,7 +120,8 @@ export function assertW12AnUploadKeepsTemplatesAndReplacesAssets(): void {
  * W13 — a guided turn that writes a section (the `mappings` branch writes
  * `assetPoints`) stores a draft whose `templates` and `assets[].template` are
  * byte-equal to the stored ones, through the real `handleTurn` and the real
- * `mergeDraft`.
+ * `mergeDraft`. The plain asset is first here; W13b and W13c below put a
+ * templated asset first and leave no plain asset at all.
  */
 export async function assertW13AGuidedTurnLeavesTemplatesIntact(): Promise<void> {
   const stored: OnboardingDraft = {
@@ -146,5 +149,72 @@ export async function assertW13AGuidedTurnLeavesTemplatesIntact(): Promise<void>
     JSON.stringify(merged.assets?.map((asset) => asset.template)) ===
       JSON.stringify([undefined, TEMPLATED_ASSET.template]),
     `the turn keeps assets[].template byte-equal, got ${JSON.stringify(merged.assets)}`,
+  );
+}
+
+/** The chat service with no collaborators: `mergeDraft` reads none. */
+function mergeThroughService(stored: OnboardingDraft, patch: OnboardingDraft): OnboardingDraft {
+  const service = new OnboardingChatService(
+    {} as never,
+    {} as never,
+    {} as never,
+    {} as never,
+    {} as never,
+    {} as never,
+    {} as never,
+  );
+  return service.mergeDraft(stored, patch) as OnboardingDraft;
+}
+
+/** `validate` on a merged draft: the location type of `draftBeforeAssets` is the one active code. */
+function validated(draft: OnboardingDraft): ReturnType<OnboardingValidateService["validate"]> {
+  return new OnboardingValidateService().validate(draft, ["smoc_campus"], EMPTY_TEMPLATE_CONTEXT);
+}
+
+/**
+ * W13b (code review) — with the templated asset first, the guided `mappings`
+ * branch maps onto the first **plain** asset, so the merged draft still
+ * commits. Before the fix it mapped onto index 0, the templated asset, and V4
+ * refused the draft with no guided step that could clear it.
+ */
+export async function assertW13bTheGuidedMappingSkipsATemplatedAsset(): Promise<void> {
+  const stored: OnboardingDraft = {
+    ...draftBeforeAssets("Site"),
+    templates: [AUTHORED],
+    assets: [TEMPLATED_ASSET, UPLOADED_ASSET],
+  };
+  const turn = await ruleBasedTurn("map it", stored, "mappings");
+  const mapped = turn.draftPatch.assetPoints ?? [];
+  assert(
+    mapped.length === 1 && mapped[0].assetIndex === 1,
+    `the mapping lands on the plain asset at index 1, got ${JSON.stringify(mapped)}`,
+  );
+  const result = validated(mergeThroughService(stored, turn.draftPatch as OnboardingDraft));
+  assert(
+    result.readyToCommit && result.errors.length === 0,
+    `the merged draft still commits, got ${JSON.stringify(result.errors)} in ${result.suggestedPhase}`,
+  );
+}
+
+/**
+ * W13c (code review) — a draft whose assets are all templated is ready before
+ * the turn (V11), and a guided turn in review writes no mapping and keeps it
+ * ready. Before the fix the branch's `!draft.assetPoints?.length` fired on
+ * every unmatched message and broke it.
+ */
+export async function assertW13cAGuidedTurnKeepsAnAllTemplatedDraftReady(): Promise<void> {
+  const stored: OnboardingDraft = { ...draftBeforeAssets("Site"), templates: [AUTHORED], assets: [TEMPLATED_ASSET] };
+  const before = validated(stored);
+  assert(before.readyToCommit, `positive control: the stored draft is ready, got ${JSON.stringify(before.errors)}`);
+  const turn = await ruleBasedTurn("looks good, anything else?", stored, "review");
+  assert(
+    turn.draftPatch.assetPoints === undefined,
+    `the turn writes no mapping, got ${JSON.stringify(turn.draftPatch.assetPoints)}`,
+  );
+  assert(turn.assistantMessage.startsWith("We're in review."), `the turn answers from review, got ${turn.assistantMessage}`);
+  const result = validated(mergeThroughService(stored, turn.draftPatch as OnboardingDraft));
+  assert(
+    result.readyToCommit && result.errors.length === 0,
+    `the merged draft stays ready, got ${JSON.stringify(result.errors)} in ${result.suggestedPhase}`,
   );
 }

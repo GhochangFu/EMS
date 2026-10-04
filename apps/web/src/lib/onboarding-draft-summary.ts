@@ -35,13 +35,24 @@ export function formatOnboardingDraftSummary(draft: OnboardingDraft): string {
     });
   }
   if (draft.templates?.length) {
+    // F3.22 (ADR 0091 Consequences, code review): a published template cannot
+    // be edited, and the user who reads this preview is the guard on what is
+    // published, so every authored point and every stock pattern is listed —
+    // not a count. The draft schema caps both lists.
     lines.push("Templates:");
     draft.templates.forEach((entry) => {
-      lines.push(
-        "stockCode" in entry
-          ? `  - ${entry.stockCode} (stock)`
-          : `  - ${entry.code} (authored, ${entry.points.length} points)`,
-      );
+      if ("stockCode" in entry) {
+        lines.push(`  - ${entry.stockCode} (stock)`);
+        Object.entries(entry.patterns ?? {}).forEach(([pointKey, pattern]) => {
+          lines.push(`      ${pointKey} · ${pattern}`);
+        });
+        return;
+      }
+      lines.push(`  - ${entry.code} (authored, ${entry.points.length} points)`);
+      entry.points.forEach((point) => {
+        const pattern = point.sourceDataKeyPattern ? point.sourceDataKeyPattern : "no pattern";
+        lines.push(`      ${point.pointKey} · ${pattern} · ${point.required === false ? "optional" : "required"}`);
+      });
     });
   }
   if (draft.pointKeys?.length) {

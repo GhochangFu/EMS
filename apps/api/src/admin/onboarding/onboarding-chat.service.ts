@@ -614,9 +614,14 @@ export class OnboardingChatService {
       );
     }
 
-    if (phase === "mappings" || !draft.assetPoints?.length) {
+    // F3.22 (ADR 0091 decision 11, code review): the sample mapping goes onto
+    // the first plain asset. A templated asset takes its points from its
+    // template, and V4 refuses a mapping onto it; a draft whose assets are all
+    // templated needs no mapping (V11) and goes on to review.
+    const plainIndex = draft.assets?.findIndex((asset) => !asset.template) ?? -1;
+    if (plainIndex >= 0 && (phase === "mappings" || !draft.assetPoints?.length)) {
       patch.assetPoints = [
-        { assetIndex: 0, pointKey: "kw", sourceDataKey: "s09_r01", unit: "kW" },
+        { assetIndex: plainIndex, pointKey: "kw", sourceDataKey: "s09_r01", unit: "kW" },
       ];
       return this.finalizeTurn(
         "Mapping added. I've opened the preview — review the draft and say **create it** when ready.",

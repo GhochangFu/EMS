@@ -26,23 +26,48 @@ function draft(extra: Record<string, unknown>): OnboardingDraft {
   return { rtus: [rtu], ...extra } as unknown as OnboardingDraft;
 }
 
-/** U1 — an authored template renders its heading and one line. */
+/**
+ * U1 — an authored template renders its heading and every point under it:
+ * key, pattern and whether it is required (`required` defaults to true, ruling
+ * Q2-A). The ADR names this preview as the guard on an irreversible publish.
+ */
 export function anAuthoredTemplateRendersItsLine(): void {
-  const point = { pointKey: "flow" };
   const text = formatOnboardingDraftSummary({
     templates: [
-      { code: "PUMP", name: "Pump", domain: "water", points: [point, point, point] },
+      {
+        code: "PUMP",
+        name: "Pump",
+        domain: "water",
+        points: [
+          { pointKey: "flow", sourceDataKeyPattern: "{site}_{asset_code}_FLOW" },
+          { pointKey: "head", sourceDataKeyPattern: "{asset_code}_HEAD", required: false },
+          { pointKey: "kw" },
+        ],
+      },
     ],
   } as unknown as OnboardingDraft);
-  expect(text).toBe("Templates:\n  - PUMP (authored, 3 points)");
+  expect(text).toBe(
+    "Templates:\n  - PUMP (authored, 3 points)\n" +
+      "      flow · {site}_{asset_code}_FLOW · required\n" +
+      "      head · {asset_code}_HEAD · optional\n" +
+      "      kw · no pattern · required",
+  );
 }
 
-/** U2 — a stock entry renders as stock. */
+/** U2 — a stock entry renders as stock, with no pattern line when it carries none. */
 export function aStockEntryRendersItsLine(): void {
   const text = formatOnboardingDraftSummary({
     templates: [{ stockCode: "WTP" }],
   } as unknown as OnboardingDraft);
   expect(text).toBe("Templates:\n  - WTP (stock)");
+}
+
+/** U2b — a stock entry lists every `patterns` override under its line (owner ruling Q1-C). */
+export function aStockEntryListsItsPatterns(): void {
+  const text = formatOnboardingDraftSummary({
+    templates: [{ stockCode: "WTP", patterns: { ph: "{asset_code}_PH", turbidity: "{asset_code}_NTU" } }],
+  } as unknown as OnboardingDraft);
+  expect(text).toBe("Templates:\n  - WTP (stock)\n      ph · {asset_code}_PH\n      turbidity · {asset_code}_NTU");
 }
 
 /** U3 — a templated asset names its template, with the version when set. */

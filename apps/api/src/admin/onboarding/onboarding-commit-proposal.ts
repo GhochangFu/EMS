@@ -1,12 +1,18 @@
 import { createHash } from "node:crypto";
 
-import { SOURCE_KEY_RESERVED_VAR, substituteSourceKeyPattern, type OnboardingDraft } from "@bms/shared";
+import type { OnboardingDraft } from "@bms/shared";
 import { z } from "zod";
 
 import { echoedItems, moreTail, quoteCell } from "../spreadsheet-guard";
 import { exceedsDepth, isJsonContainer } from "../stack-safe-json";
 import { MAX_ONBOARDING_DRAFT_DEPTH } from "./onboarding.schema";
-import { draftTemplateCode, draftTemplateRef, resolveTemplateForAsset, type ValidateTemplateContext } from "./onboarding-template-refs";
+import {
+  draftTemplateCode,
+  draftTemplateRef,
+  resolveTemplateForAsset,
+  templateSourceKey,
+  type ValidateTemplateContext,
+} from "./onboarding-template-refs";
 
 /**
  * The commit proposal (`F3.21`, ADR 0090 decision 5): **the model cannot
@@ -183,14 +189,13 @@ function templateSummaryParts(draft: OnboardingDraft, ctx: ValidateTemplateConte
     if ("problem" in resolved) {
       continue;
     }
-    const vars = { ...(asset.template.sourceDataKeyVars ?? {}), [SOURCE_KEY_RESERVED_VAR]: asset.code };
-    assetPoints += resolved.ref.points.filter((point) => {
-      if (point.kind !== "measured" || !point.sourceDataKeyPattern) {
-        return false;
-      }
-      const { key, unresolved } = substituteSourceKeyPattern(point.sourceDataKeyPattern, vars);
-      return unresolved.length === 0 && key !== "";
-    }).length;
+    const vars = asset.template.sourceDataKeyVars ?? {};
+    assetPoints += resolved.ref.points.filter(
+      (point) =>
+        point.kind === "measured" &&
+        point.sourceDataKeyPattern !== null &&
+        templateSourceKey(point.sourceDataKeyPattern, vars, asset.code).outcome === "key",
+    ).length;
     rules += resolved.ref.alarmCount;
     widgets += resolved.ref.dashboardWidgetCount;
   }

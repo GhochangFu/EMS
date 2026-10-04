@@ -12,13 +12,20 @@ import {
   assertNoActiveTypeMessageSaysNoneIsActive,
   assertTypedLocationIsReadyToCommit,
   assertTypedLocationLeavesTheLocationPhase,
+  assertAnAuthoredPatternOutsideTheGrammarIsAnError,
+  assertAnUnpinnedOrganizationTemplateIsAnError,
   assertAnUnreferencedTemplateIsValid,
+  assertAStockPatternOutsideTheGrammarIsAnError,
   assertV1AnUnresolvedTemplateCodeIsAnError,
   assertV2AnUnpublishedVersionIsAnError,
   assertV3ADomainMismatchIsAnError,
   assertV4AMappingOntoATemplatedAssetIsAnError,
   assertV5ARequiredPointWithNoPatternIsAnError,
+  assertV6AKeyAtTheLengthLimitIsValid,
+  assertV6AnOptionalKeyOverTheLengthLimitIsAnError,
   assertV6AnUnresolvedVariableIsAnError,
+  assertV6ARequiredKeyOverTheLengthLimitIsAnError,
+  assertV6ARequiredKeyThatResolvesEmptyIsAnError,
   assertV7AnUnknownVariableIsAnError,
   assertV8ADuplicatePointKeyIsAnError,
   assertV8ADuplicateTemplateCodeIsAnError,
@@ -105,6 +112,22 @@ describe("OnboardingValidateService — templates and templated assets (F3.22, A
     assertV6AnUnresolvedVariableIsAnError();
   });
 
+  it("V6 refuses a required key that resolves to an empty string", () => {
+    assertV6ARequiredKeyThatResolvesEmptyIsAnError();
+  });
+
+  it("V6 refuses an optional key over the 128-character limit", () => {
+    assertV6AnOptionalKeyOverTheLengthLimitIsAnError();
+  });
+
+  it("V6 refuses a required key over the 128-character limit", () => {
+    assertV6ARequiredKeyOverTheLengthLimitIsAnError();
+  });
+
+  it("V6 accepts a key of exactly 128 characters", () => {
+    assertV6AKeyAtTheLengthLimitIsValid();
+  });
+
   it("V7 refuses a variable the template does not ask for", () => {
     assertV7AnUnknownVariableIsAnError();
   });
@@ -131,6 +154,18 @@ describe("OnboardingValidateService — templates and templated assets (F3.22, A
 
   it("V10 refuses a stock code the organization already holds", () => {
     assertV10AHeldStockCodeIsAnError();
+  });
+
+  it("refuses an authored pattern outside the token grammar (decision 9)", () => {
+    assertAnAuthoredPatternOutsideTheGrammarIsAnError();
+  });
+
+  it("refuses a stock pattern outside the token grammar (decision 9)", () => {
+    assertAStockPatternOutsideTheGrammarIsAnError();
+  });
+
+  it("refuses an organization template with no version (decision 2)", () => {
+    assertAnUnpinnedOrganizationTemplateIsAnError();
   });
 
   it("V11 lets an all-templated draft reach review with no mappings", () => {

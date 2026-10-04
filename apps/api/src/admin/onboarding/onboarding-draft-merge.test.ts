@@ -3,6 +3,8 @@ import { describe, it } from "vitest";
 import {
   assertW12AnUploadKeepsTemplatesAndReplacesAssets,
   assertW13AGuidedTurnLeavesTemplatesIntact,
+  assertW13bTheGuidedMappingSkipsATemplatedAsset,
+  assertW13cAGuidedTurnKeepsAnAllTemplatedDraftReady,
   assertW1APatchWithoutTemplatesKeepsTheBase,
   assertW2APatchWithTemplatesReplacesThem,
   assertW3AnExplicitUndefinedKeepsTheBase,
@@ -30,5 +32,13 @@ describe("the producers that never write templates keep them (F3.22, ADR 0091 de
 
   it("W13 a guided turn leaves templates and assets[].template intact", async () => {
     await assertW13AGuidedTurnLeavesTemplatesIntact();
+  });
+
+  it("W13b the guided mapping lands on the first plain asset, not a templated one", async () => {
+    await assertW13bTheGuidedMappingSkipsATemplatedAsset();
+  });
+
+  it("W13c a guided turn keeps an all-templated draft ready to commit", async () => {
+    await assertW13cAGuidedTurnKeepsAnAllTemplatedDraftReady();
   });
 });

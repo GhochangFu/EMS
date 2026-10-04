@@ -14,13 +14,16 @@
  */
 import {
   SOURCE_KEY_PATTERN_TOKEN,
+  SOURCE_KEY_RESERVED_VAR,
   patternVariables,
+  substituteSourceKeyPattern,
   type OnboardingDraft,
   type OnboardingDraftAssetTemplateRef,
   type OnboardingDraftStockTemplate,
   type OnboardingDraftTemplate,
 } from "@bms/shared";
 
+import { SOURCE_DATA_KEY_MAX_LENGTH } from "../../calc/computed-source-data-key";
 import { quoteCell } from "../spreadsheet-guard";
 
 export type TemplatePointRef = {
@@ -173,6 +176,82 @@ export function patternGrammarProblem(pattern: string): string | null {
   return rest.includes("{") || rest.includes("}")
     ? `Pattern ${quoteCell(pattern)} has a brace outside a {variable}; a variable is letters, digits or _ inside braces`
     : null;
+}
+
+/** What one pattern resolves to for one asset, in the instantiate core's terms. */
+export type TemplateSourceKey =
+  | { readonly outcome: "key"; readonly key: string }
+  | { readonly outcome: "unresolved"; readonly variable: string }
+  | { readonly outcome: "empty" }
+  | { readonly outcome: "too_long"; readonly length: number };
+
+/**
+ * `F3.22` (ADR 0091 decision 7, code review) — the one predicate the
+ * validator, the tool-time check and the proposal's count share, so all three
+ * agree with the instantiate core. `resolveSourceDataKey` refuses a pattern
+ * with an unsupplied variable and one that resolves to `""`; `planAsset` then
+ * refuses a resolved key over `bms.asset_points.source_data_key`'s 128
+ * characters, on **every** measured point, optional or not. `asset_code` is the
+ * asset's own code, spread last as the core spreads it.
+ */
+export function templateSourceKey(
+  pattern: string,
+  vars: Readonly<Record<string, string>>,
+  assetCode: string,
+): TemplateSourceKey {
+  const { key, unresolved } = substituteSourceKeyPattern(pattern, { ...vars, [SOURCE_KEY_RESERVED_VAR]: assetCode });
+  if (unresolved.length > 0) {
+    return { outcome: "unresolved", variable: unresolved[0] ?? "" };
+  }
+  if (key === "") {
+    return { outcome: "empty" };
+  }
+  return key.length > SOURCE_DATA_KEY_MAX_LENGTH ? { outcome: "too_long", length: key.length } : { outcome: "key", key };
+}
+
+/** A point of a template that one asset cannot build, and why. */
+export type TemplateSourceKeyProblem = {
+  readonly pointKey: string;
+  readonly result: Exclude<TemplateSourceKey, { outcome: "key" }>;
+};
+
+/**
+ * The first measured point `planAsset` would refuse for one asset, or `null`:
+ * a required point whose key does not resolve or resolves to `""`, or any
+ * point whose key resolves over the length limit. A required point with no
+ * pattern at all is V5's, reported apart, so it is skipped here.
+ */
+export function templateSourceKeyProblem(
+  ref: TemplateRef,
+  vars: Readonly<Record<string, string>>,
+  assetCode: string,
+): TemplateSourceKeyProblem | null {
+  for (const point of ref.points) {
+    if (point.kind !== "measured" || point.sourceDataKeyPattern === null) {
+      continue;
+    }
+    const result = templateSourceKey(point.sourceDataKeyPattern, vars, assetCode);
+    if (result.outcome === "too_long" || (result.outcome !== "key" && point.required)) {
+      return { pointKey: point.pointKey, result };
+    }
+  }
+  return null;
+}
+
+/** {@link templateSourceKeyProblem} in words, with no closing full stop; `code` is already quoted. */
+export function templateSourceKeyMessage(code: string, problem: TemplateSourceKeyProblem): string {
+  const point = quoteCell(problem.pointKey);
+  switch (problem.result.outcome) {
+    case "unresolved":
+      return `Template ${code} needs the variable ${quoteCell(problem.result.variable)} for its required point ${point}`;
+    case "empty":
+      return `Template ${code} resolves its required point ${point} to an empty source key; give its variables a value`;
+    case "too_long":
+      return (
+        `Template ${code} resolves its point ${point} to a source key of ${problem.result.length} characters, ` +
+        `over the ${SOURCE_DATA_KEY_MAX_LENGTH} limit`
+      );
+  }
 }
 
 /** Every version of `code` the organization holds, in any status, ascending (decision 6: "in any version"). */

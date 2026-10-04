@@ -273,6 +273,24 @@ export async function assertMetaCredentialsAreRefused(): Promise<void> {
   assert(!asset.ok && parsed(asset.content).error === CREDENTIAL_TOOL_ERROR, "add_asset meta is walked");
 }
 
+/**
+ * `F3.22` (ADR 0091 decision 2, code review): `add_asset` refuses a `template`,
+ * so an unpinned organization ref cannot enter the draft through it —
+ * `add_template_assets` is the one writer, and it pins the version. A refusal,
+ * not a silent strip into a plain asset.
+ */
+export async function assertAddAssetRefusesATemplate(): Promise<void> {
+  const asset = { rtuIndex: 0, code: "P-001", name: "Pump 1", siteName: "Site A", domain: "water" };
+  const refused: ToolState = { working: readyDraft() };
+  const before = refused.working.assets?.length ?? 0;
+  const out = await runTool(call("add_asset", { ...asset, template: { code: "ORG-T" } }), refused, context());
+  assert(!out.ok && String(parsed(out.content).error).includes("template"), `a template is refused, got ${out.content}`);
+  assert((refused.working.assets?.length ?? 0) === before, "nothing is written");
+  const control: ToolState = { working: readyDraft() };
+  const ok = await runTool(call("add_asset", asset), control, context());
+  assert(ok.ok && control.working.assets?.length === before + 1, `positive control: the plain asset is added, got ${ok.content}`);
+}
+
 /** Security review M2: a credentialed RTU keeps its connection; the action line names what changed. */
 export async function assertACredentialedRtuKeepsItsConnection(): Promise<void> {
   for (const patch of [{ config: { host: "evil.example" } }, { config: { port: 1883 } }, { protocol: "modbus_tcp" }, { code: "RTU-9" }]) {

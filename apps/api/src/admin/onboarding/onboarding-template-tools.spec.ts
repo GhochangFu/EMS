@@ -391,6 +391,17 @@ export async function assertT14AddTemplateAssetsRefusesAnUnresolvedVariable(): P
   assert(!out.ok && out.error.includes("'ch'") && out.error.includes("'CH-1'"), `refused naming the variable and the asset, got ${out.content}`);
 }
 
+/** T14 (V6 at tool time, code review): a key the instantiate core would refuse as over 128 characters (4 + 1 + 128). */
+export async function assertT14AddTemplateAssetsRefusesAKeyOverTheLengthLimit(): Promise<void> {
+  const draft = baseDraft({ templates: [CHILLER] });
+  const out = await runOn("add_template_assets", { code: "CHILLER", rtuIndex: 0, assets: [chillerAsset("CH-1", { ch: "c".repeat(128) })] }, draft);
+  assert(
+    !out.ok && out.error.includes("'CH-1'") && out.error.includes("133 characters, over the 128 limit"),
+    `refused naming the asset and the length, got ${out.content}`,
+  );
+  assert(out.state.working.assets?.length === 1, "nothing is written");
+}
+
 /** T14 (V5 at tool time, owner ruling Q1-C): a required measured point with no pattern. */
 export async function assertT14AddTemplateAssetsRefusesARequiredPointWithNoPattern(): Promise<void> {
   const out = await runOn("add_template_assets", { code: "WTP-PUMP", rtuIndex: 0, assets: [chillerAsset("P-1")] }, baseDraft({ templates: [{ stockCode: "WTP-PUMP" }] }));
@@ -517,11 +528,21 @@ export function assertT19TheCountsReadTheTemplatePerAsset(): void {
   const pump = { ...ref("PUMP", 1, "published", [point("kw", "{asset_code}-kw"), point("kvar", "{asset_code}-{phase}"), derived("eff")]), alarmCount: 2, dashboardWidgetCount: 3 };
   const draft = baseDraft();
   for (const code of ["P-1", "P-2"]) {
-    draft.assets!.push({ rtuIndex: 0, code, name: "Pump", siteName: "Berhampur", domain: "electrical", template: { code: "PUMP" } });
+    draft.assets!.push({ rtuIndex: 0, code, name: "Pump", siteName: "Berhampur", domain: "electrical", template: { code: "PUMP", version: 1 } });
   }
   const summary = commitSummary(draft, { organization: [pump], stock: [] });
   for (const part of ["2 templated assets", "2 asset points", "4 seeded rules", "6 dashboard widgets"]) {
     assert(summary.includes(part), `the summary holds "${part}", got ${summary}`);
   }
   assert(!summary.includes("will publish"), "a draft with no template entry publishes nothing");
+}
+
+/** T19 (the counts, code review): a point whose key resolves over 128 characters is not counted as an asset point. */
+export function assertT19TheCountsSkipAKeyOverTheLengthLimit(): void {
+  const pump = ref("PUMP", 1, "published", [point("kw", "{asset_code}-kw"), point("kvar", "{asset_code}-{phase}")]);
+  const draft = baseDraft();
+  const vars = { phase: "p".repeat(128) };
+  draft.assets!.push({ rtuIndex: 0, code: "P-1", name: "Pump", siteName: "Berhampur", domain: "electrical", template: { code: "PUMP", version: 1, sourceDataKeyVars: vars } });
+  const summary = commitSummary(draft, { organization: [pump], stock: [] });
+  assert(summary.includes("1 templated asset") && summary.includes("1 asset point"), `only kw counts, got ${summary}`);
 }

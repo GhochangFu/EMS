@@ -1,8 +1,6 @@
 import { Injectable } from "@nestjs/common";
 
 import {
-  SOURCE_KEY_RESERVED_VAR,
-  substituteSourceKeyPattern,
   type OnboardingDraft,
   type OnboardingFieldError,
   type OnboardingPhase,
@@ -22,7 +20,10 @@ import {
   draftTemplateRef,
   heldVersions,
   isStockEntry,
+  patternGrammarProblem,
   resolveTemplateForAsset,
+  templateSourceKeyMessage,
+  templateSourceKeyProblem,
   templateVariables,
   type TemplateRef,
   type ValidateTemplateContext,
@@ -289,7 +290,8 @@ function echoedList(items: readonly string[]): string {
  * `F3.22` V8, V9, V10 — each draft template entry on its own: a code used once
  * in the draft (V8), each authored point key once (V8), a stock code the
  * release ships with `patterns` only on its measured points (V9), and a code
- * the organization does not hold in any version (V10, decision 6). A stock
+ * the organization does not hold in any version (V10, decision 6), and every
+ * pattern in the shared token grammar (decision 9). A stock
  * entry's code is reported at `stockCode`, the field that carries it. A
  * template no asset uses is valid (decision 11): an upload that replaced
  * `assets[]` keeps it, and the commit still publishes it.
@@ -319,6 +321,14 @@ function validateDraftTemplates(d: OnboardingDraft, ctx: ValidateTemplateContext
           }
         }
       }
+      // Decision 9 (code review): the grammar is checked here too, not only by
+      // the two tools — a `PATCH :id/draft` body reaches the commit unchecked.
+      for (const [key, pattern] of Object.entries(entry.patterns ?? {})) {
+        const grammar = patternGrammarProblem(pattern);
+        if (grammar !== null) {
+          errors.push({ path: `templates.${i}.patterns.${key}`, message: grammar });
+        }
+      }
     } else {
       const keys = new Set<string>();
       entry.points.forEach((point, j) => {
@@ -329,6 +339,10 @@ function validateDraftTemplates(d: OnboardingDraft, ctx: ValidateTemplateContext
           });
         }
         keys.add(point.pointKey);
+        const grammar = point.sourceDataKeyPattern === undefined ? null : patternGrammarProblem(point.sourceDataKeyPattern);
+        if (grammar !== null) {
+          errors.push({ path: `templates.${i}.points.${j}.sourceDataKeyPattern`, message: grammar });
+        }
       });
     }
 
@@ -353,10 +367,12 @@ function requiredMeasured(ref: TemplateRef): TemplateRef["points"] {
  * `F3.22` V1, V2, V3, V5, V6, V7 — each templated asset against the template
  * it names: the template resolves (V1, V2, decision 6), the domains agree (V3),
  * every required measured point has a pattern (V5, owner ruling Q1-C) that
- * resolves with the asset's variables and its own code (V6), and every variable
- * is one the template asks for (V7). V5 and V6 read the substitution the
- * instantiate core's `resolveSourceDataKey` reads, so an asset this passes is
- * one `planAsset` can build.
+ * resolves with the asset's variables and its own code to a non-empty key, and
+ * no measured point resolves over the length limit (V6), and every variable
+ * is one the template asks for (V7). An organization template must name its
+ * version (decision 2). V5 and V6 read `templateSourceKeyProblem`, the
+ * predicate of the instantiate core's `resolveSourceDataKey` and `planAsset`,
+ * so an asset this passes is one `planAsset` can build.
  */
 function validateTemplatedAssets(d: OnboardingDraft, ctx: ValidateTemplateContext, errors: OnboardingFieldError[]): void {
   (d.assets ?? []).forEach((asset, i) => {
@@ -370,6 +386,15 @@ function validateTemplatedAssets(d: OnboardingDraft, ctx: ValidateTemplateContex
     }
     const ref = resolved.ref;
     const code = quoteCell(ref.code);
+    if (resolved.source === "organization" && asset.template.version === undefined) {
+      // Decision 2 (code review): an organization template is pinned, so the
+      // draft hash binds one immutable version. Unpinned, a version published
+      // between the proposal and the confirm would be the one the commit builds.
+      errors.push({
+        path: `assets.${i}.template.version`,
+        message: `Template ${code} is an organization template; name the version to build from (the highest published is ${ref.version})`,
+      });
+    }
     if (asset.domain !== ref.domain) {
       errors.push({
         path: `assets.${i}.domain`,
@@ -389,17 +414,9 @@ function validateTemplatedAssets(d: OnboardingDraft, ctx: ValidateTemplateContex
     }
 
     const vars = asset.template.sourceDataKeyVars ?? {};
-    const withCode = { ...vars, [SOURCE_KEY_RESERVED_VAR]: asset.code };
-    for (const point of required) {
-      const unresolved =
-        point.sourceDataKeyPattern === null ? [] : substituteSourceKeyPattern(point.sourceDataKeyPattern, withCode).unresolved;
-      if (unresolved.length > 0) {
-        errors.push({
-          path: `assets.${i}.template.sourceDataKeyVars`,
-          message: `Template ${code} needs the variable ${quoteCell(unresolved[0])} for its required point ${quoteCell(point.pointKey)}`,
-        });
-        break;
-      }
+    const problem = templateSourceKeyProblem(ref, vars, asset.code);
+    if (problem !== null) {
+      errors.push({ path: `assets.${i}.template.sourceDataKeyVars`, message: templateSourceKeyMessage(code, problem) });
     }
 
     const variables = templateVariables(ref);

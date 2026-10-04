@@ -1,6 +1,8 @@
 import { describe, it } from "vitest";
 
 import {
+  assertT14AddTemplateAssetsRefusesAKeyOverTheLengthLimit,
+  assertT19TheCountsSkipAKeyOverTheLengthLimit,
   assertABigTemplateResultIsCut,
   assertGetTemplateByCodeReturnsPointsAndVariables,
   assertGetTemplateByStockCodeReturnsTheStockEntry,
@@ -158,6 +160,12 @@ describe("onboarding template write tools and the proposal (F3.22, ADR 0091 deci
   });
   it("T19 the counts read the template per asset", () => {
     assertT19TheCountsReadTheTemplatePerAsset();
+  });
+  it("T19 the counts skip a key over the length limit", () => {
+    assertT19TheCountsSkipAKeyOverTheLengthLimit();
+  });
+  it("T14 add template assets refuses a key over the length limit", async () => {
+    await assertT14AddTemplateAssetsRefusesAKeyOverTheLengthLimit();
   });
   it("T20 the summary at the caps is bounded", () => {
     assertT20TheSummaryAtTheCapsIsBounded();
