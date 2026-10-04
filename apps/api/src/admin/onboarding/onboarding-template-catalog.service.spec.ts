@@ -3,6 +3,8 @@
 import "reflect-metadata";
 
 import { assetTemplates, templatePoints } from "@bms/db";
+import type { SQL } from "drizzle-orm";
+import { PgDialect } from "drizzle-orm/pg-core";
 
 import { dashboardWidgetRowsFor } from "../asset-templates/asset-dashboards-plan";
 import { parseStoredTemplateContent } from "../asset-templates/asset-templates-content.schema";
@@ -29,12 +31,13 @@ function contentWithAlarmsAndWidgets(): { content: Record<string, unknown>; alar
   throw new Error("the shipped catalog has no entry with both alarms and dashboard widgets");
 }
 
-type Select = { table: unknown; fields: string[] };
+type Select = { table: unknown; fields: string[]; where: { sql: string; params: unknown[] } | null };
 
 /**
  * A fake `fleetDb` answering the two selects by table: `asset_templates` rows,
- * then `template_points` rows. Every select is recorded, so a spec can say how
- * many the service issued and against which table.
+ * then `template_points` rows. Every select is recorded with its `where`
+ * rendered to SQL, so a spec can say how many the service issued, against
+ * which table, and with which filter.
  */
 function fakeDb(templateRows: unknown[], pointRows: unknown[]): { db: never; selects: Select[] } {
   const selects: Select[] = [];
@@ -42,10 +45,15 @@ function fakeDb(templateRows: unknown[], pointRows: unknown[]): { db: never; sel
     select(fields: Record<string, unknown>) {
       return {
         from(table: unknown) {
-          selects.push({ table, fields: Object.keys(fields) });
+          const select: Select = { table, fields: Object.keys(fields), where: null };
+          selects.push(select);
           const rows = table === assetTemplates ? templateRows : table === templatePoints ? pointRows : [];
           const chain = {
-            where: () => chain,
+            where: (condition: SQL) => {
+              const { sql, params } = new PgDialect().sqlToQuery(condition);
+              select.where = { sql, params };
+              return chain;
+            },
             orderBy: () => Promise.resolve(rows),
           };
           return chain;
@@ -92,6 +100,29 @@ export async function assertS1PublishedVersionsCarryPointsAndDraftsNone(): Promi
     `the published version counts ${alarms} alarms and ${widgets} widgets, got ${published.alarmCount}/${published.dashboardWidgetCount}`,
   );
   assert(draft.status === "draft" && draft.points.length === 0, `the draft version carries no points, got ${JSON.stringify(draft)}`);
+}
+
+/**
+ * S1 — both reads filter by the session's organization. `fleetDb` is
+ * `BYPASSRLS`, so these predicates are the whole tenant boundary: the
+ * `template_points` read filters by organization as well as by template id.
+ * Mutation: drop either `eq(…organizationId, organizationId)`.
+ */
+export async function assertS1BothReadsFilterByTheOrganization(): Promise<void> {
+  const { db, selects } = fakeDb(
+    [{ id: "t1", code: "PUMP", version: 1, name: "Pump", domain: "water", status: "published", content: {} }],
+    [],
+  );
+  await new OnboardingTemplateCatalogService(db, NO_STOCK).listOrganizationTemplates("org-1");
+  assert(selects.length === 2, `two selects, got ${selects.length}`);
+  for (const select of selects) {
+    const table = select.table === assetTemplates ? "asset_templates" : "template_points";
+    const where = select.where;
+    assert(
+      where !== null && where.sql.includes(`"${table}"."organization_id" = $`) && where.params.includes("org-1"),
+      `the ${table} read filters by organization_id = org-1, got ${JSON.stringify(where)}`,
+    );
+  }
 }
 
 /** S1 — with no published version, the `template_points` select is not issued. */
