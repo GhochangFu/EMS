@@ -1,6 +1,6 @@
 ---
 name: security-reviewer
-description: Security audit of a working diff or branch for the TRINETRA BMS — focuses on the high-risk surfaces this repo actually has: encrypted RTU credentials (ADR 0012), Keycloak/OIDC auth, MQTT TLS ingest, secret/PII logging (§9.6), Zod input validation, and SQL injection. Use before merging changes that touch auth, credentials, ingest, or logging. Read-only.
+description: Security audit of a working diff or branch for the TRINETRA BMS — focuses on the high-risk surfaces this repo actually has: encrypted RTU credentials (ADR 0012), Keycloak/OIDC auth and user administration, MQTT TLS ingest, secret/PII logging (§9.6), Zod input validation, and SQL injection. Use before merging changes that touch auth, credentials, ingest, or logging. Read-only.
 tools: Glob, Grep, Read, Bash
 model: opus
 effort: high
@@ -53,6 +53,23 @@ report findings with evidence.
    secrets. An organization's provider key (`bms.organization_llm_settings`)
    must never reach a response, a log line, an audit row or an error, and the
    AI-assistant routes must check the role before `canManageOrganization`.
+8. **User administration and the Keycloak admin client (ADR 0089).**
+   `KeycloakIdentityAdminClient` (`apps/api/src/identity/`, and the `identity/provision/` CLI, which has its own `fetch`) holds a secret equivalent to
+   global admin: it must never be logged, returned, audited or put in an error,
+   and no request or response body of Keycloak may be logged. A password
+   (`temporaryPassword`) must never reach a log line, an audit payload, a
+   response or the `value` attribute of an input (the web input is
+   uncontrolled). On `/admin/users` and the grants routes check that: the
+   manager decision reads the database row's role, never `jwt.role`;
+   `canManageTarget` fails closed on a `NULL` list or home organization and
+   every action on an `admin` target is `admin`-only; an out-of-scope target is
+   a 404 with the missing-id body, not a 403; the executor matches the write
+   (`bms_fleet` only when the row's old or new role is `admin`); every
+   `bms.users` `UPDATE` on the user-administration path has a `RETURNING` guard; the last-admin lock takes
+   `FOR UPDATE`; `bms.users` is never written through `tx.insert(users)` under `apps/api/src` (the owner-run seeds are outside that scan); and
+   `oidc_subject` comes from the Keycloak create in the same request, never
+   from a body. Under OIDC a token joins by `oidc_subject`, never by email or
+   `users.id`, and `JwtAuthGuard` accepts only `azp === OIDC_CLIENT_ID`.
 
 ## Output
 
