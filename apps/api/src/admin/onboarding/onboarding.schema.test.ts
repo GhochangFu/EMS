@@ -2,6 +2,9 @@ import { describe, it } from "vitest";
 
 import {
   assertApiDraftLocationParsesWithoutType,
+  assertApiStockPatternCountIsCapped,
+  assertApiTemplatePointCountIsCapped,
+  assertApiTemplateVarCountIsCapped,
   assertTemplateVarKeyMustMatchTheTokenGrammar,
   assertTemplateVarKeyRefusesTheReservedName,
   assertDraftLocationMetaDescribesTheSeedKey,
@@ -81,5 +84,19 @@ describe("onboarding.schema — a templated asset's variable keys (F3.22, ADR 00
 
   it("refuses the reserved key asset_code", () => {
     assertTemplateVarKeyRefusesTheReservedName();
+  });
+});
+
+describe("onboarding.schema — the nested template counts on the write path (F3.22)", () => {
+  it("caps the points of an authored template", () => {
+    assertApiTemplatePointCountIsCapped();
+  });
+
+  it("caps the variables of a templated asset", () => {
+    assertApiTemplateVarCountIsCapped();
+  });
+
+  it("caps the pattern overlay of a stock entry", () => {
+    assertApiStockPatternCountIsCapped();
   });
 });

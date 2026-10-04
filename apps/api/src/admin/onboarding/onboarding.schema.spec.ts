@@ -3,6 +3,8 @@ import {
   MAX_ONBOARDING_ASSETS,
   MAX_ONBOARDING_POINT_KEYS,
   MAX_ONBOARDING_RTUS,
+  MAX_ONBOARDING_TEMPLATE_POINTS,
+  MAX_ONBOARDING_TEMPLATE_VARS,
   MAX_ONBOARDING_TEMPLATES,
 } from "@bms/shared";
 
@@ -551,5 +553,95 @@ export function assertTemplateVarKeyRefusesTheReservedName(): void {
     message !== null && message.includes("asset_code"),
     "the reserved key `asset_code` must be refused under " +
       `draft.assets[0].template.sourceDataKeyVars, got: ${String(message)}`,
+  );
+}
+
+/* -------------------------------------------------------------------------- */
+/* F3.22 — the nested template counts, on the copy the write path parses        */
+/* -------------------------------------------------------------------------- */
+
+/** `n` distinct token keys, each mapped to a short value. */
+const tokenRecord = (n: number): Record<string, string> =>
+  Object.fromEntries(times(n, (i) => [`k_${i}`, `v_${i}`]));
+
+/**
+ * The issue `PATCH :id/draft` reports at exactly `path`, or what it reported
+ * instead. The at-cap parse beside each refusal proves the refusal is the count,
+ * not a quietly invalid fixture.
+ */
+function patchIssueAt(draft: unknown, path: string): { code: string } | string {
+  const parsed = patchDraftBodySchema.safeParse({ draft });
+  if (parsed.success) {
+    return "it parsed";
+  }
+  return (
+    parsed.error.issues.find((issue) => issue.path.join(".") === path) ??
+    JSON.stringify(parsed.error.issues)
+  );
+}
+
+const authoredWith = (pointCount: number) => ({
+  code: "pump_skid",
+  name: "Pump skid",
+  domain: "electrical",
+  points: times(pointCount, (i) => ({ pointKey: `flow_${i}` })),
+});
+
+/** An authored template holds at most `MAX_ONBOARDING_TEMPLATE_POINTS` points. */
+export function assertApiTemplatePointCountIsCapped(): void {
+  assert(
+    patchDraftBodySchema.safeParse({
+      draft: { templates: [authoredWith(MAX_ONBOARDING_TEMPLATE_POINTS)] },
+    }).success,
+    "PATCH :id/draft must accept an authored template exactly at the point cap",
+  );
+  const issue = patchIssueAt(
+    { templates: [authoredWith(MAX_ONBOARDING_TEMPLATE_POINTS + 1)] },
+    "draft.templates.0.points",
+  );
+  assert(
+    typeof issue !== "string" && issue.code === "too_big",
+    "one point over the cap must be refused with a `too_big` on draft.templates[0].points: " +
+      JSON.stringify(issue),
+  );
+}
+
+/** A templated asset carries at most `MAX_ONBOARDING_TEMPLATE_VARS` variables. */
+export function assertApiTemplateVarCountIsCapped(): void {
+  const draft = (n: number) => ({
+    assets: [{ ...assetAt(0), template: { code: "pump_skid", sourceDataKeyVars: tokenRecord(n) } }],
+  });
+  assert(
+    patchDraftBodySchema.safeParse({ draft: draft(MAX_ONBOARDING_TEMPLATE_VARS) }).success,
+    "PATCH :id/draft must accept an asset exactly at the variable cap",
+  );
+  const issue = patchIssueAt(
+    draft(MAX_ONBOARDING_TEMPLATE_VARS + 1),
+    "draft.assets.0.template.sourceDataKeyVars",
+  );
+  assert(
+    typeof issue !== "string" && issue.code === "custom",
+    "one variable over the cap must be refused on draft.assets[0].template.sourceDataKeyVars: " +
+      JSON.stringify(issue),
+  );
+}
+
+/** A stock entry overlays at most `MAX_ONBOARDING_TEMPLATE_POINTS` patterns. */
+export function assertApiStockPatternCountIsCapped(): void {
+  const draft = (n: number) => ({
+    templates: [{ stockCode: "water-wtp", patterns: tokenRecord(n) }],
+  });
+  assert(
+    patchDraftBodySchema.safeParse({ draft: draft(MAX_ONBOARDING_TEMPLATE_POINTS) }).success,
+    "PATCH :id/draft must accept a stock entry exactly at the pattern cap",
+  );
+  const issue = patchIssueAt(
+    draft(MAX_ONBOARDING_TEMPLATE_POINTS + 1),
+    "draft.templates.0.patterns",
+  );
+  assert(
+    typeof issue !== "string" && issue.code === "custom",
+    "one pattern over the cap must be refused on draft.templates[0].patterns: " +
+      JSON.stringify(issue),
   );
 }
