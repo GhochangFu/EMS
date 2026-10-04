@@ -233,6 +233,29 @@ export async function typeSelectListsTheFourTypesInOrder(): Promise<void> {
   );
 }
 
+/**
+ * D1 (`F3.79`, owner ruling 2026-10-04) — the create form's coordinates default to Mumbai, not
+ * (0,0): every active location is now a map pin, and a pin at (0,0) sat in the Gulf of Guinea
+ * and stretched the map's box. An untouched create posts the Mumbai coordinates.
+ */
+export async function untouchedCreatePostsTheMumbaiCoordinates(): Promise<void> {
+  stubApi();
+  renderPage();
+  await openCreateForm();
+  await fillRequired();
+
+  await userEvent.click(screen.getByRole("button", { name: "Save" }));
+
+  await waitFor(() => {
+    expect(api.createAdminLocation).toHaveBeenCalledTimes(1);
+  });
+  const payload = vi.mocked(api.createAdminLocation).mock.calls[0]![0];
+  expect({ latitude: payload.latitude, longitude: payload.longitude }).toEqual({
+    latitude: 19.076,
+    longitude: 72.8777,
+  });
+}
+
 /** P2 (`F4.157` D9) — submitting the create form untouched posts `type` equal to the list's
  * first code. Mutation: post `form.type` raw (`""`) instead of the resolved value. */
 export async function untouchedCreatePostsTheFirstListedType(): Promise<void> {
