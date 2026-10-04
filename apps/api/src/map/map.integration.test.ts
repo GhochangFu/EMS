@@ -3,6 +3,9 @@ import type pg from "pg";
 import { afterAll, beforeAll, describe, it } from "vitest";
 
 import {
+  assertAnUnpinnedActiveLocationIsAPin,
+  assertAnUnpinnedInactiveLocationIsNotAPin,
+  assertAPinnedLocationIsListedOnce,
   assertCommStatusCountsNonKwFresh,
   assertCommStatusLeavesAStaleAssetOut,
   assertJoinedPinKindIsTheLocationType,
@@ -10,8 +13,10 @@ import {
   assertJoinedPumpStationPinCountsItsAssets,
   assertJoinedPumpStationPinCountsItsCriticalAlarm,
   assertJoinedPumpStationPinOfPumpStationKindCountsItsAssets,
+  assertNoF379MapFixtureRowsRemain,
   assertNoF4157MapFixtureRowsRemain,
   assertSiteOpenAlarmsFollowClearedAt,
+  assertTheScopeFilterKeepsTheNewPinByName,
   assertUnjoinedStationPinKindLabelIsStation,
   assertUnjoinedStationPinStatusIsItsOperatingStatus,
 } from "./map.integration.spec";
@@ -103,5 +108,39 @@ describe.skipIf(!connectionString)("F4.157 — the map reads the location type a
 
   it("leaves no F4157M fixture row behind (counted as bms_fleet)", async () => {
     await assertNoF4157MapFixtureRowsRemain(pool);
+  }, 60_000);
+});
+
+describe.skipIf(!connectionString)("F3.79 — every active location is a map pin", () => {
+  let pool: pg.Pool;
+
+  beforeAll(async () => {
+    pool = await openIntegrationPool(connectionString as string, "F3.79", { max: 1 });
+  }, 60_000);
+
+  afterAll(async () => {
+    if (pool) {
+      await pool.end();
+    }
+  }, 60_000);
+
+  it("I1: an active location with no map_locations row is a pin, from its own columns", async () => {
+    await assertAnUnpinnedActiveLocationIsAPin(pool);
+  }, 60_000);
+
+  it("I2: an inactive location with no map_locations row is not a pin", async () => {
+    await assertAnUnpinnedInactiveLocationIsNotAPin(pool);
+  }, 60_000);
+
+  it("I3: a location with a map_locations row is listed once", async () => {
+    await assertAPinnedLocationIsListedOnce(pool);
+  }, 60_000);
+
+  it("I4: the scope filter keeps the new pin by the location name", async () => {
+    await assertTheScopeFilterKeepsTheNewPinByName(pool);
+  }, 60_000);
+
+  it("leaves no F379M fixture row behind (counted as bms_fleet)", async () => {
+    await assertNoF379MapFixtureRowsRemain(pool);
   }, 60_000);
 });

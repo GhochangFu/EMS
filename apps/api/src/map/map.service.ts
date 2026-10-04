@@ -38,6 +38,12 @@ type LocRow = {
  * (`bms_fleet` holds SELECT on the lookup, migration `0085`), and carries
  * live health because it joins a location. A pin that joins none keeps
  * `map_locations.kind` (`eskom_station`) and its operating status.
+ *
+ * `F3.79` — only the seed writes `map_locations`, so an active location that
+ * no pin joins (one an admin or the onboarding agent created) is a pin of its
+ * own, built from its own columns: its id is the location id, its `siteName`
+ * is the location name (so the by-name scope filter below applies to it), and
+ * it carries campus live health like any joined pin.
  */
 @Injectable()
 export class MapService {
@@ -71,7 +77,32 @@ export class MapService {
        LEFT JOIN bms.locations l ON l.slug = ml.slug
        LEFT JOIN bms.location_types lt ON lt.code = l.type
        LEFT JOIN bms.organizations o ON o.id = l.organization_id
-       ORDER BY ml.kind DESC, ml.name ASC`,
+       UNION ALL
+       -- F3.79: an active location that no map_locations row joins is a pin of its own.
+       SELECT l.id,
+              l.id AS canonical_location_id,
+              l.slug,
+              l.name,
+              l.type AS kind,
+              l.type AS location_type,
+              lt.label AS location_type_label,
+              l.name AS site_name,
+              o.id AS org_id,
+              o.code AS org_code,
+              o.name AS org_name,
+              l.latitude,
+              l.longitude,
+              NULL AS capacity_mw,
+              NULL AS station_type,
+              NULL AS station_category,
+              l.province,
+              NULL AS station_operating_status
+       FROM bms.locations l
+       LEFT JOIN bms.location_types lt ON lt.code = l.type
+       LEFT JOIN bms.organizations o ON o.id = l.organization_id
+       WHERE l.active
+         AND NOT EXISTS (SELECT 1 FROM bms.map_locations ml WHERE ml.slug = l.slug)
+       ORDER BY kind DESC, name ASC`,
     );
 
     const assetIds = opts?.assetIds ?? null;
