@@ -34,12 +34,12 @@ function source(): string {
   return readRepoFile(SERVICE);
 }
 
-/** `deriveTelemetrySource` runs from its declaration to the next method's. */
+/** `deriveTelemetrySource` is the class's last method (`F3.22` U3), so it runs to the class close. */
 function derivationBody(text: string): string {
   return methodBody(
     text,
     "private async deriveTelemetrySource(",
-    "private async assertCatalogActive(",
+    "  }\n}",
   );
 }
 
