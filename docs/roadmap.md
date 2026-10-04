@@ -7175,3 +7175,28 @@ B1–B7 PASS.
 **Cascade:** no row lists `F4.182` in *Depends*. No `chore(agents):` change
 owed. Not in this row: a device-ID column in the onboarding workbook and the
 rule-based chat, and an MQTT topic field on the dialog.
+
+### `F3.79` — a site map on the Control Room organization level ✅ 2026-10-04
+
+PR #722, squash `3895db42`; raised and ruled by the owner on 2026-10-04,
+with no ADR (no route, schema, contract, dependency or role-gate change).
+
+- The organization level shows a full-width **Site map** card above the site
+  cards and the alarms rail: only that organization's pins, and a pin's popup
+  opens the site's Control Room overview.
+- Every active location is a map pin. Only the seed wrote
+  `bms.map_locations`, so a location created in Locations admin or by
+  onboarding had no pin; `MapService.sitesLive` now adds each active location
+  that no pin joins, from its own columns.
+- `GET /map/sites` scopes a pin that joins a location by the location id, not
+  by its name (security review: location names are tenant free text and not
+  unique, so a name match showed another organization's same-named location).
+- A new location's default coordinates are Mumbai (19.076, 72.8777) in the
+  admin form, the onboarding agent and the workbook.
+
+Verified: CI green, reviews fixed, 12 mutations killed, browser PASS as
+`admin`; the owner checked the Control Room as `phe-admin`. The four leaked
+`F3.35`/`F3.73` test locations were deleted from the shared database.
+
+**Cascade:** no row lists `F3.79` in *Depends*. No `chore(agents):` change
+owed.
