@@ -141,7 +141,7 @@ describe.skipIf(!connectionString)("F3.21 — bms.organization_llm_settings (mig
     await deletingTheOrganizationCascades(ctx);
   });
 
-  // The lock-race cases (8–14) poll up to BLOCK_WAIT_MS for put() to block, so
+  // The lock-race cases (8–14) poll up to BLOCK_WAIT_MS for the service to block, so
   // each gets more than the 5 s default.
   it("aModelOnlySaveKeepsAKeyRotatedWhileItWaited", { timeout: 15_000 }, async () => {
     await aModelOnlySaveKeepsAKeyRotatedWhileItWaited(ctx);

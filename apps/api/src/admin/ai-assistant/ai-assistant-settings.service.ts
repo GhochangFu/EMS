@@ -130,9 +130,10 @@ export class AiAssistantSettingsService {
       // is exact on every path. A remove() that committed first means no row,
       // so no key is kept (F4.187). FOR UPDATE handles the writer that takes
       // no advisory lock: a concurrent `rotate-credentials` either committed
-      // before this read (the kept bytes are its rotated ones) or waits on it,
-      // and its compare-and-set then still matches the kept bytes, so it
-      // rotates after this commit. A provider change is seen, so its key is
+      // before this read, or holds the row and this read waits for it to
+      // commit — either way the kept bytes are its rotated ones — or it waits
+      // on this read's lock, and its compare-and-set then still matches the
+      // kept bytes, so it rotates after this commit. A provider change is seen, so its key is
       // not kept.
       await this.lockSetting(tx, organizationId);
       const [existing] = await tx

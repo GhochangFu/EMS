@@ -276,7 +276,7 @@ async function plantOpenAiRow(ctx: LlmSettingsCtx): Promise<void> {
 
 /**
  * Rewrites A's row as a keyless OpenAI setting, inserting it when an earlier
- * case left A with no row (cases 9, 11 and 13 delete it).
+ * case left A with no row (case 12 does, before case 13 plants).
  */
 async function plantKeylessOpenAiRow(ctx: LlmSettingsCtx): Promise<void> {
   const planted = await ctx.fleetPool.query(
@@ -693,8 +693,10 @@ export async function aRemoveThatDeletedNothingWritesNoAudit(ctx: LlmSettingsCtx
  * cannot do this — the DELETE's snapshot does not see X's uncommitted row, so
  * it deletes nothing and returns, and X then commits a row the admin just
  * removed. **This is the only case that gates the advisory lock in
- * `remove()`**: without it, the poll fails by name. After X is released,
- * `remove()` deletes X's row and audits it.
+ * `remove()`**: without it, the poll fails by name; with the lock taken after
+ * the DELETE, the poll passes (the lock waits) and the "row is gone" assertion
+ * fails, because the DELETE ran first. After X is released, `remove()`
+ * deletes X's row and audits it.
  */
 export async function aRemoveWaitsForAPausedFirstSave(ctx: LlmSettingsCtx): Promise<void> {
   // Case 13 may already have left A with no row, so the count is not asserted.

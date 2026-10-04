@@ -268,6 +268,21 @@ export async function assertDeleteRemovesAndAudits(): Promise<void> {
   });
 }
 
+/** F4.187: deleting a row that stored no key audits `keyChanged: false` — no key was removed. */
+export async function assertDeleteOfAKeylessRowAuditsNoKeyChange(): Promise<void> {
+  await withEnv({}, async () => {
+    const row = storedRow("openrouter", null);
+    const { service, store, audits, resolver } = harness({ row });
+    forbidReadOutsideTransaction(resolver);
+    await service.remove(JWT, ORG);
+    assert(store.row === null && audits.length === 1, "control: the row is removed and one audit row written");
+    assert(
+      JSON.stringify(audits[0]?.payload) === JSON.stringify({ provider: "openrouter", model: row.model, keyChanged: false }),
+      "a keyless row's delete changes no key",
+    );
+  });
+}
+
 /** F4.187: a DELETE that removed no row writes no audit, and the answer is still the platform default. */
 export async function assertDeleteOfNoRowWritesNoAuditAndReportsThePlatform(): Promise<void> {
   await withEnv({}, async () => {
