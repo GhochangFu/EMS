@@ -52,7 +52,7 @@ const LIVE_PROFILE: UserProfileConfig = {
   groups: [{ name: "user-metadata" }],
 };
 
-type Call = { method: string; path: string; body: string | undefined };
+type Call = { method: string; path: string; body: string | undefined; signal: unknown };
 
 type FakeOptions = {
   /** The client exists already (`GET` returns it, secret included) unless false. */
@@ -62,7 +62,14 @@ type FakeOptions = {
   failSecretPut?: boolean;
   /** Network failures before the master token answers. */
   tokenNetworkFailures?: number;
+  /** Token requests that never settle (and ignore their signal) before one answers. */
+  tokenStalls?: number;
+  /** The realm settings `PUT` never settles and ignores its signal (F4.188). */
+  stallRealmPut?: boolean;
 };
+
+/** A response that never comes, from a transport that ignores its `AbortSignal`. */
+const hanging = (): Promise<Response> => new Promise<Response>(() => undefined);
 
 function json(status: number, body: unknown, headers: Record<string, string> = {}): Response {
   return new Response(JSON.stringify(body), {
@@ -76,24 +83,31 @@ function fakeKeycloak(opts: FakeOptions = {}): { fetch: typeof globalThis.fetch;
   const calls: Call[] = [];
   let clientExists = opts.clientExists ?? true;
   let tokenFailures = opts.tokenNetworkFailures ?? 0;
+  let tokenStalls = opts.tokenStalls ?? 0;
 
   const fetch = (async (input: string | URL | Request, init?: RequestInit) => {
     const url = new URL(String(input));
     const method = init?.method ?? "GET";
     const body = typeof init?.body === "string" ? init.body : undefined;
     const path = `${url.pathname}${url.search}`;
-    calls.push({ method, path, body });
+    calls.push({ method, path, body, signal: init?.signal });
 
     if (url.pathname === "/realms/master/protocol/openid-connect/token") {
       if (tokenFailures > 0) {
         tokenFailures -= 1;
         throw new TypeError(`fetch failed: connect ECONNREFUSED ${ADMIN_PASSWORD}`);
       }
+      if (tokenStalls > 0) {
+        tokenStalls -= 1;
+        return hanging();
+      }
       return json(200, { access_token: "master-token", expires_in: 60 });
     }
 
     const admin = "/admin/realms/bms";
-    if (method === "PUT" && url.pathname === admin) return new Response(null, { status: 204 });
+    if (method === "PUT" && url.pathname === admin) {
+      return opts.stallRealmPut ? hanging() : new Response(null, { status: 204 });
+    }
 
     if (method === "GET" && url.pathname === `${admin}/clients`) {
       const clientId = url.searchParams.get("clientId");
@@ -149,7 +163,7 @@ function fakeKeycloak(opts: FakeOptions = {}): { fetch: typeof globalThis.fetch;
 type Run = { code: number | null; thrown: string; out: string; calls: Call[] };
 
 async function run(
-  opts: FakeOptions & { env?: NodeJS.ProcessEnv; rows?: UserRowSummary[] } = {},
+  opts: FakeOptions & { env?: NodeJS.ProcessEnv; rows?: UserRowSummary[]; requestTimeoutMs?: number } = {},
 ): Promise<Run> {
   const keycloak = fakeKeycloak(opts);
   const lines: string[] = [];
@@ -164,6 +178,7 @@ async function run(
       clock += ms;
     },
     now: () => clock,
+    requestTimeoutMs: opts.requestTimeoutMs,
   };
   let code: number | null = null;
   let thrown = "";
@@ -353,5 +368,81 @@ export async function assertANetworkErrorMessageIsNotForwarded(): Promise<void> 
   assert(
     !r.out.includes(ADMIN_PASSWORD) && !r.out.includes("ECONNREFUSED"),
     `a network error's message must not be forwarded; got ${r.out}`,
+  );
+}
+
+// --- the request bound (F4.188) -------------------------------------------------------
+
+const STALL_LIMIT_MS = 50;
+/** Generous over the limit, far under the 10 s default and vitest's 5 s. */
+const STALL_MARGIN_MS = 2_000;
+
+/** Runs a stalled provisioning run, failing fast when it is still pending after the margin. */
+async function stalledRun(opts: FakeOptions): Promise<Run & { elapsedMs: number }> {
+  const started = Date.now();
+  let timer: NodeJS.Timeout | undefined;
+  const guard = new Promise<"hung">((resolve) => {
+    timer = setTimeout(() => resolve("hung"), STALL_MARGIN_MS);
+  });
+  try {
+    const outcome = await Promise.race([run({ ...opts, requestTimeoutMs: STALL_LIMIT_MS }), guard]);
+    if (outcome === "hung") {
+      throw new Error(`the run was still pending after ${STALL_MARGIN_MS} ms: no request timeout`);
+    }
+    return { ...outcome, elapsedMs: Date.now() - started };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+export async function assertAStalledAdminCallFailsWithinTheLimit(): Promise<void> {
+  const r = await stalledRun({ stallRealmPut: true });
+  assert(
+    r.code === 1 && r.elapsedMs < STALL_LIMIT_MS + STALL_MARGIN_MS,
+    `a realm PUT that never answers must exit 1 within the bound; got code ${r.code} after ${r.elapsedMs} ms`,
+  );
+}
+
+export async function assertAStalledAdminCallNamesTheStepAndTheLimit(): Promise<void> {
+  const r = await stalledRun({ stallRealmPut: true });
+  assert(
+    r.out.includes(`realm settings failed: no response within ${STALL_LIMIT_MS} ms`),
+    `the timeout must name the request and the limit; got ${r.out}`,
+  );
+}
+
+export async function assertAStalledAdminCallLeaksNothing(): Promise<void> {
+  const r = await stalledRun({ stallRealmPut: true });
+  assert(
+    !r.out.includes(SECRET) && !r.out.includes(ADMIN_PASSWORD) && !r.out.includes(BASE) && !/abort/i.test(r.out),
+    `a timeout must print no secret, password, URL or abort reason; got ${r.out}`,
+  );
+}
+
+export async function assertTheTokenRequestCarriesAnAbortSignal(): Promise<void> {
+  const r = await run();
+  const token = r.calls.filter((c) => c.path === "/realms/master/protocol/openid-connect/token");
+  assert(
+    token.length === 1 && token[0]?.signal instanceof AbortSignal,
+    `the token request must carry an AbortSignal; got ${token.length} token calls`,
+  );
+}
+
+export async function assertEveryAdminCallCarriesAnAbortSignal(): Promise<void> {
+  const r = await run();
+  const admin = r.calls.filter((c) => c.path.startsWith("/admin/realms/bms"));
+  const bare = admin.filter((c) => !(c.signal instanceof AbortSignal));
+  assert(
+    admin.length > 5 && bare.length === 0,
+    `every admin call must carry an AbortSignal; ${bare.length} of ${admin.length} had none`,
+  );
+}
+
+export async function assertAStalledFirstTokenRequestIsRetried(): Promise<void> {
+  const r = await stalledRun({ tokenStalls: 1 });
+  const tokenCalls = r.calls.filter((c) => c.path === "/realms/master/protocol/openid-connect/token").length;
+  assert(
+    r.code === 0 && tokenCalls === 2,
+    `a token request that times out once must be retried and the run exit 0; got code ${r.code}, ${tokenCalls} attempts: ${r.out}`,
   );
 }

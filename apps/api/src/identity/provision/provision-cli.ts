@@ -3,7 +3,11 @@ import "../../load-env";
 import pg from "pg";
 
 import { mapKeycloakFailure } from "../identity-admin.client";
-import { buildIdentityAdminConfig, type IdentityAdminConfig } from "../identity-admin.config";
+import {
+  KEYCLOAK_REQUEST_TIMEOUT_MS,
+  buildIdentityAdminConfig,
+  type IdentityAdminConfig,
+} from "../identity-admin.config";
 import {
   ADMIN_CLIENT_ID,
   SERVICE_ACCOUNT_ROLES,
@@ -42,6 +46,13 @@ import {
  * through `buildIdentityAdminConfig`, so the step obeys decision 5's
  * `https://`-or-`http://keycloak:8080` rule like the API does.
  *
+ * **Every request is bounded** (F4.188) by the client's own limit,
+ * {@link KEYCLOAK_REQUEST_TIMEOUT_MS}: `fetch` gets an `AbortSignal.timeout`
+ * and is raced against it, so a Keycloak that accepts the connection and never
+ * answers fails the step by name ("… no response within N ms") rather than
+ * hanging the command. A timed-out first token request is retried inside the
+ * 120 s window like a refused connection.
+ *
  * `process.stdout.write`, not `console.log` — `scripts/checks/style-hygiene.mjs`.
  */
 
@@ -53,6 +64,8 @@ export type ProvisionDeps = {
   readonly err: (line: string) => void;
   readonly sleep?: (ms: number) => Promise<void>;
   readonly now?: () => number;
+  /** Per-request bound; defaults to the client's {@link KEYCLOAK_REQUEST_TIMEOUT_MS}. */
+  readonly requestTimeoutMs?: number;
 };
 
 /** How long the first request waits for Keycloak to answer. */
@@ -69,11 +82,15 @@ class ProvisionError extends Error {
   constructor(
     readonly step: string,
     readonly status: number | null,
+    /** Set when the request was cut off by the per-request bound. */
+    readonly timeoutMs?: number,
   ) {
     super(
-      status === null
-        ? `${step} failed: no response (unavailable)`
-        : `${step} failed: HTTP ${status} (${mapKeycloakFailure(status)})`,
+      status !== null
+        ? `${step} failed: HTTP ${status} (${mapKeycloakFailure(status)})`
+        : timeoutMs !== undefined
+          ? `${step} failed: no response within ${timeoutMs} ms (unavailable)`
+          : `${step} failed: no response (unavailable)`,
     );
   }
 }
@@ -89,6 +106,7 @@ class Provisioner {
   private readonly fetch: typeof globalThis.fetch;
   private readonly sleep: (ms: number) => Promise<void>;
   private readonly now: () => number;
+  private readonly requestTimeoutMs: number;
   private token = "";
 
   constructor(
@@ -99,6 +117,7 @@ class Provisioner {
     this.fetch = deps.fetch;
     this.sleep = deps.sleep ?? ((ms) => new Promise((resolve) => setTimeout(resolve, ms)));
     this.now = deps.now ?? Date.now;
+    this.requestTimeoutMs = deps.requestTimeoutMs ?? KEYCLOAK_REQUEST_TIMEOUT_MS;
   }
 
   async run(): Promise<number> {
@@ -141,8 +160,9 @@ class Provisioner {
     const deadline = this.now() + FIRST_REQUEST_WINDOW_MS;
     for (;;) {
       let res: Response | null = null;
+      let timeoutMs: number | undefined;
       try {
-        res = await this.fetch(`${this.config.url}/realms/master/protocol/openid-connect/token`, {
+        res = await this.send("master login", `${this.config.url}/realms/master/protocol/openid-connect/token`, {
           method: "POST",
           headers: { "content-type": "application/x-www-form-urlencoded" },
           body: new URLSearchParams({
@@ -153,8 +173,10 @@ class Provisioner {
           }).toString(),
           redirect: "manual",
         });
-      } catch {
+      } catch (err) {
+        // A refused connection or a timeout: both mean "not answering yet".
         res = null;
+        timeoutMs = err instanceof ProvisionError ? err.timeoutMs : undefined;
       }
       const retryable = res === null || res.status >= 500;
       if (!retryable && res !== null) {
@@ -173,7 +195,7 @@ class Provisioner {
         discard(res);
       }
       if (this.now() >= deadline) {
-        throw new ProvisionError("master login", res === null ? null : res.status);
+        throw new ProvisionError("master login", res === null ? null : res.status, timeoutMs);
       }
       await this.sleep(RETRY_INTERVAL_MS);
     }
@@ -279,22 +301,36 @@ class Provisioner {
     if (body !== undefined) {
       headers["content-type"] = "application/json";
     }
-    let res: Response;
-    try {
-      res = await this.fetch(`${this.config.url}/admin/realms/${enc(this.config.realm)}${path}`, {
-        method,
-        headers,
-        body: body === undefined ? undefined : JSON.stringify(body),
-        redirect: "manual",
-      });
-    } catch {
-      throw new ProvisionError(step, null);
-    }
+    const res = await this.send(step, `${this.config.url}/admin/realms/${enc(this.config.realm)}${path}`, {
+      method,
+      headers,
+      body: body === undefined ? undefined : JSON.stringify(body),
+      redirect: "manual",
+    });
     if (!res.ok) {
       discard(res);
       throw new ProvisionError(step, res.status);
     }
     return res;
+  }
+
+  /**
+   * `fetch`, bounded by `requestTimeoutMs` — the shape of the client's
+   * `send()`. The signal aborts a real `fetch`; the race fails the step on
+   * time even when a transport ignores its signal. A network failure or a
+   * timeout becomes a {@link ProvisionError} naming the step; the error's own
+   * message and `signal.reason` are never forwarded.
+   */
+  private async send(step: string, url: string, init: RequestInit): Promise<Response> {
+    const signal = AbortSignal.timeout(this.requestTimeoutMs);
+    const timedOut = new Promise<never>((_, reject) => {
+      signal.addEventListener("abort", () => reject(signal.reason), { once: true });
+    });
+    try {
+      return await Promise.race([this.fetch(url, { ...init, signal }), timedOut]);
+    } catch {
+      throw new ProvisionError(step, null, signal.aborted ? this.requestTimeoutMs : undefined);
+    }
   }
 }
 

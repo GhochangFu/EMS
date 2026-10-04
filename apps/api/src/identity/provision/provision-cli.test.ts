@@ -79,4 +79,28 @@ describe("F3.78 U4 — keycloak:provision against a stubbed Keycloak (ADR 0089 d
   it("a network error's message is not forwarded", async () => {
     await spec.assertANetworkErrorMessageIsNotForwarded();
   });
+
+  it("a stalled admin call exits 1 within the request bound (F4.188)", async () => {
+    await spec.assertAStalledAdminCallFailsWithinTheLimit();
+  });
+
+  it("a stalled admin call is reported by step and limit", async () => {
+    await spec.assertAStalledAdminCallNamesTheStepAndTheLimit();
+  });
+
+  it("a stalled admin call prints no secret, password, URL or abort reason", async () => {
+    await spec.assertAStalledAdminCallLeaksNothing();
+  });
+
+  it("the token request carries an AbortSignal", async () => {
+    await spec.assertTheTokenRequestCarriesAnAbortSignal();
+  });
+
+  it("every admin call carries an AbortSignal", async () => {
+    await spec.assertEveryAdminCallCarriesAnAbortSignal();
+  });
+
+  it("a stalled first token request is retried inside the window", async () => {
+    await spec.assertAStalledFirstTokenRequestIsRetried();
+  });
 });
