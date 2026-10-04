@@ -68,6 +68,17 @@ export type Harness = {
   templateId: string;
   /** Published, the same point and one alarm — every asset seeds one rule. */
   alarmTemplateId: string;
+  /**
+   * The same services over a tenant pool of **one** connection with a short
+   * connect timeout (C11–C13). A core that reads anything on a second tenant
+   * connection while its `tx` holds the only one gets the pool's
+   * "timeout exceeded when trying to connect" instead of an answer.
+   */
+  single: {
+    tenantDb: BmsDb;
+    templates: AssetTemplatesAdminService;
+    instantiation: AssetTemplateInstantiationService;
+  };
 };
 
 function assert(condition: boolean, message: string): void {
@@ -506,5 +517,113 @@ export async function assertInstantiateCoreSeesARuleCodeWrittenInTheSameTransact
     (message ?? "").includes("already exist in this organization:"),
     `C10: the rule-code guard must refuse with its own sentence, but the refusal was: ` +
       `"${message}"`,
+  );
+}
+
+/**
+ * Why C11–C13 fail when they do: the single-connection pool's checkout timed
+ * out, because the only connection was the core's own `tx`.
+ */
+const SECOND_CONNECTION =
+  "a read inside the core asked the tenant pool for a second connection while tx held the " +
+  "only one — on a production pool of N, N concurrent cores wait on each other for good " +
+  "(review finding, F3.22 PR 1). Pass tx to the read.";
+
+/**
+ * C11 — `createTemplateCore` makes every tenant-pool read on its `tx`,
+ * including the two vocabulary checks (`assertAssetDomain`, and the alarm
+ * vocabularies' `list`). The body carries an alarm so the `list` read runs.
+ */
+export async function assertCreateCoreHoldsOneTenantConnection(h: Harness): Promise<void> {
+  const captured = await inRolledBackTransaction<{ error: string | null; status?: string }>(
+    h.single.tenantDb,
+    h.fx.organizationId,
+    async (tx) => {
+      let status: string | undefined;
+      const error = await messageOf(async () => {
+        const row = await h.single.templates.createInTransaction(
+          tx,
+          h.fx.adminJwt,
+          draftBody(
+            h.fx,
+            `${TEST_CODE_PREFIX}C11-${unique()}`,
+            h.fx.seededPointKey,
+            alarmContent(h.fx),
+          ),
+        );
+        status = row.status;
+      });
+      throw new RollbackSentinel({ error, status });
+    },
+  );
+  assert(
+    captured.error === null,
+    `C11: create failed with "${captured.error}" — ${SECOND_CONNECTION}`,
+  );
+  assert(captured.status === "draft", `C11: created row status ${captured.status}`);
+}
+
+/**
+ * C12 — `publishTemplateCore` makes every tenant-pool read on its `tx`,
+ * including the stored-alarm vocabulary `list`. The draft is committed first on
+ * the ordinary pools, so only the publish core runs on the single connection.
+ */
+export async function assertPublishCoreHoldsOneTenantConnection(h: Harness): Promise<void> {
+  const draft = await h.templates.create(
+    h.fx.adminJwt,
+    draftBody(h.fx, `${TEST_CODE_PREFIX}C12-${unique()}`, h.fx.seededPointKey, alarmContent(h.fx)),
+  );
+  const captured = await inRolledBackTransaction<{ error: string | null; status?: string }>(
+    h.single.tenantDb,
+    h.fx.organizationId,
+    async (tx) => {
+      let status: string | undefined;
+      const error = await messageOf(async () => {
+        const row = await h.single.templates.publishInTransaction(tx, h.fx.adminJwt, draft.id);
+        status = row.status;
+      });
+      throw new RollbackSentinel({ error, status });
+    },
+  );
+  assert(
+    captured.error === null,
+    `C12: publish failed with "${captured.error}" — ${SECOND_CONNECTION}`,
+  );
+  assert(captured.status === "published", `C12: publish returned status ${captured.status}`);
+}
+
+/**
+ * C13 — `instantiateTemplateCore` makes every tenant-pool read on its `tx`,
+ * including `assertAlarmVocabulariesStillLive`'s `list`: the alarm template
+ * `TA` is what makes that read run, and `ruleCount === 1` proves it did.
+ */
+export async function assertInstantiateCoreHoldsOneTenantConnection(h: Harness): Promise<void> {
+  const captured = await inRolledBackTransaction<{
+    error: string | null;
+    result?: AssetInstantiationResultDto;
+  }>(h.single.tenantDb, h.fx.organizationId, async (tx) => {
+    let result: AssetInstantiationResultDto | undefined;
+    const error = await messageOf(async () => {
+      result = await h.single.instantiation.instantiateInTransaction(
+        tx,
+        h.fx.adminJwt,
+        h.alarmTemplateId,
+        parse({
+          locationId: h.fx.otherLocationId,
+          assets: [{ code: `${TEST_CODE_PREFIX}C13-${unique()}`, name: "C13" }],
+        }),
+      );
+    });
+    throw new RollbackSentinel({ error, result });
+  });
+  assert(
+    captured.error === null,
+    `C13: instantiate failed with "${captured.error}" — ${SECOND_CONNECTION}`,
+  );
+  assert(captured.result?.assetCount === 1, `C13: assetCount ${captured.result?.assetCount}`);
+  assert(
+    captured.result?.ruleCount === 1,
+    `C13: ruleCount ${captured.result?.ruleCount} — the alarm template must seed one rule, ` +
+      "or the vocabulary read this claim targets never ran",
   );
 }

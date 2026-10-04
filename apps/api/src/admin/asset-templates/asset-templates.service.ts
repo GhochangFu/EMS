@@ -549,7 +549,7 @@ export class AssetTemplatesAdminService {
   private async assertTemplateAlarmVocabularies(
     content: TemplateContentParsed | undefined,
   ): Promise<void> {
-    return assertTemplateAlarmVocabularies(this.vocabularies, content);
+    return assertTemplateAlarmVocabularies(this.vocabularies, this.tenantDb, content);
   }
 
   /** Delegates to the write-guards module (`F3.22` PR 1). */

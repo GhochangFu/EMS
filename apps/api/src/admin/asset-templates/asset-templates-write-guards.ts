@@ -18,6 +18,7 @@ import { AccessControlService } from "../../auth/access-control.service";
 import { CalcParametersService } from "../../calc/calc-parameters.service";
 import type { BmsTx } from "../../database/tenant-context";
 import { VocabulariesService } from "../../vocabularies/vocabularies.service";
+import type { VocabularyExecutor } from "../../vocabularies/vocabularies.service";
 import {
   findUnresolvedContentRefs,
   parseStoredTemplateContent,
@@ -215,9 +216,16 @@ export function parseStoredContentForPublish(template: TemplateRow): TemplateCon
  * discovered whenever that conversion is built — which is exactly the shape
  * of the `electrical` bug this whole ADR is unwinding, where a value sat
  * unnoticed in the database for as long as it took someone to look.
+ *
+ * **`db` is required, and a core passes its `tx`** (`F3.22`). The create and
+ * publish cores run inside `withTenant`, and `VocabulariesService`'s own
+ * executor is that same tenant pool: a read there holds one tenant connection
+ * while it waits for a second, which on a full pool never comes. See
+ * `VocabularyExecutor`.
  */
 export async function assertTemplateAlarmVocabularies(
   vocabularies: VocabulariesService,
+  db: VocabularyExecutor,
   content: TemplateContentParsed | undefined,
 ): Promise<void> {
   const alarms = content?.alarms ?? [];
@@ -254,7 +262,7 @@ export async function assertTemplateAlarmVocabularies(
   // disagreeing. The messages, the check order and the non-echoing property
   // are unchanged; they are pinned by the shared module and by the probes in
   // `asset-templates.lifecycle.integration.spec.ts`.
-  const { ruleCategories, alarmSeverities, alarmSkills } = await vocabularies.list();
+  const { ruleCategories, alarmSeverities, alarmSkills } = await vocabularies.list(db);
   const problem = findAlarmVocabularyProblem(alarms, {
     ruleCategories,
     alarmSeverities,

@@ -12,6 +12,7 @@ import type { JwtPayload } from "@bms/shared";
 import { AccessControlService } from "../../auth/access-control.service";
 import type { BmsTx } from "../../database/tenant-context";
 import { VocabulariesService } from "../../vocabularies/vocabularies.service";
+import type { VocabularyExecutor } from "../../vocabularies/vocabularies.service";
 import { assertDashboardBatchFits } from "./asset-dashboards-plan";
 import { parseStoredTemplateContent } from "./asset-templates-content.schema";
 import type { TemplateContentParsed } from "./asset-templates-content.schema";
@@ -186,9 +187,16 @@ export function parseTemplateContentForInstantiate(
  * making the two disagree is the drift this shared check exists to prevent.
  * Retiring the default category is a fleet-wide event with its own blast
  * radius; it is not this method's to catch.
+ *
+ * **`db` is required, and the core passes its `tx`** (`F3.22`). The
+ * instantiate core runs inside `withTenant`, and `VocabulariesService`'s own
+ * executor is that same tenant pool: a read there holds one tenant connection
+ * while it waits for a second, which on a full pool never comes. See
+ * `VocabularyExecutor`.
  */
 export async function assertAlarmVocabulariesStillLive(
   vocabularies: VocabulariesService,
+  db: VocabularyExecutor,
   alarms: TemplateAlarm[],
   template: TemplateRow,
 ): Promise<void> {
@@ -196,7 +204,7 @@ export async function assertAlarmVocabulariesStillLive(
     return;
   }
   const { ruleCategories, alarmSeverities, alarmSkills } =
-    await vocabularies.list();
+    await vocabularies.list(db);
   const problem = findAlarmVocabularyProblem(alarms, {
     ruleCategories,
     alarmSeverities,

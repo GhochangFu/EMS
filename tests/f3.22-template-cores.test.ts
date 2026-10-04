@@ -158,6 +158,58 @@ describe("F3.22 template cores (ADR 0091 decision 1)", () => {
     });
   });
 
+  describe("vocabulary reads inside a core run on tx (review finding: one tenant connection)", () => {
+    // `VocabulariesService`'s own executor is the tenant pool, so a vocabulary
+    // read inside `withTenant` that omits `tx` holds one tenant connection while
+    // it waits for a second. The executor is optional on the service, so the
+    // compiler cannot see an omission; this scan and C11–C13 can.
+    const WHY =
+      "a vocabulary read inside withTenant without tx holds one tenant connection and waits " +
+      "for a second — N concurrent cores on a pool of N never finish";
+
+    for (const rel of [WRITE_CORE_REL, INSTANTIATE_CORE_REL]) {
+      it(`${rel}: every deps.vocabularies use hands tx on`, () => {
+        const code = tsOnly(read(rel));
+        const uses = code.match(/deps\.vocabularies\b/g) ?? [];
+        const onTx = [
+          ...(code.match(/deps\.vocabularies\.\w+\([^()]*,\s*tx\)/g) ?? []),
+          ...(code.match(/\(deps\.vocabularies,\s*tx,/g) ?? []),
+        ];
+        expect(
+          uses.length,
+          `${rel}: no deps.vocabularies use found; the scan has drifted`,
+        ).toBeGreaterThan(0);
+        expect(
+          onTx.length,
+          `${rel}: ${uses.length - onTx.length} deps.vocabularies use(s) without tx. ${WHY}`,
+        ).toBe(uses.length);
+      });
+    }
+
+    for (const [rel, fn] of [
+      [WRITE_GUARDS_REL, "assertTemplateAlarmVocabularies"],
+      [INSTANTIATE_GUARDS_REL, "assertAlarmVocabulariesStillLive"],
+    ] as const) {
+      it(`${rel}: ${fn} reads vocabularies.list(db)`, () => {
+        const code = tsOnly(read(rel));
+        const start = code.indexOf(`export async function ${fn}(`);
+        expect(start, `${fn} not found in ${rel}`).toBeGreaterThanOrEqual(0);
+        const body = code.slice(start, code.indexOf("\n}\n", start));
+        expect(body, `${fn} must take a required db executor. ${WHY}`).toMatch(
+          /\bdb: VocabularyExecutor,/,
+        );
+        expect(
+          body.match(/vocabularies\.list\(/g) ?? [],
+          `${fn}: one list read`,
+        ).toHaveLength(1);
+        expect(
+          body,
+          `${fn} must read list on the caller's executor. ${WHY}`,
+        ).toContain("vocabularies.list(db)");
+      });
+    }
+  });
+
   it("the two new integration specs have .test siblings", () => {
     for (const base of [
       "asset-templates-write-cores",

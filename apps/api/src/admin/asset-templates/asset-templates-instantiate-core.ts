@@ -57,8 +57,12 @@ import { seededRuleValues, type SeededRuleInsert } from "./template-alarm-rules"
  * - the **estate-wide asset-code read** in `assertAssetCodesFree` runs beside the
  *   `tx` read, because `bms.assets.code` is unique across every organization.
  *
- * Reads that stay off `tx`, on purpose: `accessControl.*` (the auth pool) and
- * `vocabularies.*` (fleet vocabularies no commit writes).
+ * The vocabulary read runs on `tx` as well. `VocabulariesService`'s own
+ * executor is the tenant pool `tx` came from, so a read there would hold one
+ * tenant connection while it waited for a second — on a full pool, for good.
+ *
+ * Reads that stay off `tx`, on purpose: `accessControl.*` (the auth and fleet
+ * pools).
  */
 export interface InstantiateCoreDeps {
   /** TWO uses (§11 Q1): the target probe on a `tx` miss; the estate-wide asset-code read. */
@@ -159,7 +163,7 @@ export async function instantiateTemplateCore(
   // Before the seed there was no consumer of a template alarm, so a retired
   // severity on one was inert; now every alarm becomes an `automation_rules`
   // row whose `category`/`severity` are closed by foreign keys.
-  await assertAlarmVocabulariesStillLive(deps.vocabularies, alarms, template);
+  await assertAlarmVocabulariesStillLive(deps.vocabularies, tx, alarms, template);
   // The unit an alarm's rule records, keyed over **every** template point and
   // not over `measured` or a plan: the template override first, the catalog
   // unit second (D1). A derived point has no `asset_points` row and an

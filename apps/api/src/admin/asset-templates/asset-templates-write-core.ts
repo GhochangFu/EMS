@@ -42,9 +42,13 @@ import type { StockImportStamp } from "./stock-catalog/types";
  * `AssetTemplatesAdminService.create`/`publish` are thin wrappers over these;
  * guard order, error texts and audit rows are unchanged.
  *
- * Reads that stay off `tx`, on purpose: `accessControl.*` (the auth pool),
- * `vocabularies.*` (fleet vocabularies no commit writes), `calcParameters`
- * (fleet vocabulary), and `resolveActorId(deps.fleetDb, jwt)` — an identity
+ * The vocabulary reads (`vocabularies.*`) run on `tx` as well, though no
+ * commit writes a vocabulary: `VocabulariesService`'s own executor is the
+ * tenant pool `tx` came from, so a read there would hold one tenant connection
+ * while it waited for a second — on a full pool, for good.
+ *
+ * Reads that stay off `tx`, on purpose: `accessControl.*` (the auth and fleet
+ * pools), `calcParameters` (the fleet pool), and `resolveActorId(deps.fleetDb, jwt)` — an identity
  * read, not a guard (`bms.users` is `FORCE`d; see the service's
  * `resolveCreatedBy`).
  */
@@ -76,8 +80,8 @@ export async function createTemplateCore(
   // that is where the value is *chosen*: a template stores this domain and
   // stamps it onto every asset built from it, so a bad code caught later
   // surfaces on someone else's batch, long after the form that set it.
-  await deps.vocabularies.assertAssetDomain(body.domain);
-  await assertTemplateAlarmVocabularies(deps.vocabularies, body.content);
+  await deps.vocabularies.assertAssetDomain(body.domain, tx);
+  await assertTemplateAlarmVocabularies(deps.vocabularies, tx, body.content);
   if (body.content) {
     assertContentRefsResolve(body.content, body.points);
   }
@@ -171,7 +175,7 @@ export async function publishTemplateCore(
   //
   // `create` and `update` already check the *incoming* body; the gap was only
   // ever on stored content, which is exactly what publish reads.
-  await assertTemplateAlarmVocabularies(deps.vocabularies, storedContent);
+  await assertTemplateAlarmVocabularies(deps.vocabularies, tx, storedContent);
 
   const now = new Date();
   const [updated] = await tx

@@ -12,7 +12,9 @@ import { AssetDashboardsInstantiateService } from "./asset-dashboards-instantiat
 import { AssetTemplatesAdminService } from "./asset-templates.service";
 import { AssetTemplateInstantiationService } from "./asset-templates-instantiate.service";
 import {
+  assertCreateCoreHoldsOneTenantConnection,
   assertInstantiateCoreChecksTheCatalogThroughTheTransaction,
+  assertInstantiateCoreHoldsOneTenantConnection,
   assertInstantiateCoreSeesALocationWrittenInTheSameTransaction,
   assertInstantiateCoreSeesARuleCodeWrittenInTheSameTransaction,
   assertInstantiateCoreSeesAnAssetCodeWrittenInTheSameTransaction,
@@ -20,6 +22,7 @@ import {
   assertInstantiateCoreSeesATemplatePublishedInTheSameTransaction,
   cleanup,
   loadFixtures,
+  assertPublishCoreHoldsOneTenantConnection,
   publishFixtureTemplates,
   type Harness,
 } from "./asset-templates-instantiate-core.integration.spec";
@@ -52,6 +55,7 @@ describe.skipIf(!connectionString)("F3.22 — the instantiate core sees the tran
   let authPool: pg.Pool | undefined;
   let tenantPool: pg.Pool | undefined;
   let fleetPool: pg.Pool | undefined;
+  let singleTenantPool: pg.Pool | undefined;
   let h: Harness;
 
   beforeAll(async () => {
@@ -69,6 +73,15 @@ describe.skipIf(!connectionString)("F3.22 — the instantiate core sees the tran
     fleetPool = await openIntegrationPool(
       process.env.DATABASE_URL_FLEET ?? asRole(url, "bms_fleet", "bms_fleet_dev"),
       "F3.22",
+    );
+
+    // C11–C13: one tenant connection, and a connect timeout well under the test
+    // timeout, so a core that asks for a second connection fails with the pool's
+    // own message rather than hanging the run.
+    singleTenantPool = await openIntegrationPool(
+      process.env.DATABASE_URL_TENANT ?? asRole(url, "bms_tenant", "bms_tenant_dev"),
+      "F3.22",
+      { max: 1, connectionTimeoutMillis: 2_000 },
     );
 
     const tenantDb = createDb(tenantPool);
@@ -100,18 +113,54 @@ describe.skipIf(!connectionString)("F3.22 — the instantiate core sees the tran
       assetDashboards,
     );
 
+    const singleDb = createDb(singleTenantPool);
+    const singleAudit = new MasterDataAuditService(singleDb, fleetDb);
+    const singleVocabularies = new VocabulariesService(singleDb);
+    const singleTemplates = new AssetTemplatesAdminService(
+      fleetDb,
+      singleDb,
+      access,
+      singleAudit,
+      singleVocabularies,
+      new CalcParametersService(fleetDb),
+    );
+    const single = {
+      tenantDb: singleDb,
+      templates: singleTemplates,
+      instantiation: new AssetTemplateInstantiationService(
+        fleetDb,
+        singleDb,
+        access,
+        singleAudit,
+        singleVocabularies,
+        new AssetDashboardsInstantiateService(
+          fleetDb,
+          singleDb,
+          singleTemplates,
+          singleAudit,
+          access,
+        ),
+      ),
+    };
+
     // Before as well as after: a crashed previous run must not fail this one.
     await cleanup(created);
     const fx = await loadFixtures(created);
     const published = await publishFixtureTemplates(templates, fx);
-    h = { tenantDb, pool: created, templates, instantiation, fx, ...published };
+    h = { tenantDb, pool: created, templates, instantiation, fx, ...published, single };
   });
 
   afterAll(async () => {
     if (pool) {
       await cleanup(pool);
     }
-    await Promise.all([pool?.end(), authPool?.end(), tenantPool?.end(), fleetPool?.end()]);
+    await Promise.all([
+      pool?.end(),
+      authPool?.end(),
+      tenantPool?.end(),
+      fleetPool?.end(),
+      singleTenantPool?.end(),
+    ]);
   });
 
   it("C5: the instantiate core sees an RTU written in the same transaction", async () => {
@@ -136,5 +185,17 @@ describe.skipIf(!connectionString)("F3.22 — the instantiate core sees the tran
 
   it("C10: the instantiate core sees a rule code written in the same transaction", async () => {
     await assertInstantiateCoreSeesARuleCodeWrittenInTheSameTransaction(h);
+  });
+
+  it("C11: the create core makes every tenant read on its one connection", async () => {
+    await assertCreateCoreHoldsOneTenantConnection(h);
+  });
+
+  it("C12: the publish core makes every tenant read on its one connection", async () => {
+    await assertPublishCoreHoldsOneTenantConnection(h);
+  });
+
+  it("C13: the instantiate core makes every tenant read on its one connection", async () => {
+    await assertInstantiateCoreHoldsOneTenantConnection(h);
   });
 });
