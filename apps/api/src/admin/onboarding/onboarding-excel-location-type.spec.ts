@@ -88,3 +88,23 @@ export function assertLocationTypeCellIsCaseFolded(): void {
     `PUMP_STATION folds to pump_station, got ${JSON.stringify(parsed.location.type)}`,
   );
 }
+
+/** Columns 4 and 5 of the `LOCATION` header: **latitude**, **longitude**. */
+const LATITUDE_COLUMN = 4;
+const LONGITUDE_COLUMN = 5;
+
+/**
+ * E4 — `F3.79` (owner ruling 2026-10-04): empty coordinate cells take the Mumbai default, not
+ * Pretoria. Every active location is a map pin, so the default is where a new site shows.
+ */
+export function assertEmptyCoordinateCellsTakeTheMumbaiDefault(): void {
+  const rows = rowsWithTypeCell("pump_station");
+  rows[2][LATITUDE_COLUMN] = "";
+  rows[2][LONGITUDE_COLUMN] = "";
+  const parsed = new OnboardingExcelService().parseUpload(buildWorkbookBuffer(rows), LOCATION_TYPE_CODES);
+  assert(
+    parsed.location.latitude === 19.076 && parsed.location.longitude === 72.8777,
+    `empty coordinate cells take Mumbai (19.076, 72.8777), got ` +
+      `(${parsed.location.latitude}, ${parsed.location.longitude})`,
+  );
+}

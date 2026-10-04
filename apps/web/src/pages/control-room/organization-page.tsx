@@ -7,6 +7,7 @@ import { HealthSummarySection } from "../../components/asset-health/health-summa
 import { ActiveAlarmsRail } from "../../components/control-room/active-alarms-rail";
 import { ControlRoomBreadcrumb } from "../../components/control-room/control-room-breadcrumb";
 import { OrganizationLoadTrend } from "../../components/control-room/organization-load-trend";
+import { OrganizationSiteMap } from "../../components/control-room/organization-site-map";
 import { ScopedDashboardsList } from "../../components/control-room/scoped-dashboards-list";
 import { LocationKpiCard } from "../../components/location-kpi-card";
 import { PageHeader } from "../../components/page-header";
@@ -45,6 +46,9 @@ type ControlRoomOrganizationPageProps = {
  * `F3.72` (plan D3) — under the site grid: Asset health, the load trend and the
  * library dashboards, each read by `organizationId`. They render only with the
  * overview, so the empty card and the pending read send none of those reads.
+ *
+ * `F3.79` — above the site grid: the site map, this organization's pins only. It is keyed by
+ * `organizationId`, so a move to another organization mounts a new map that fits its sites.
  */
 export function ControlRoomOrganizationPage({
   user,
@@ -120,6 +124,7 @@ function OrganizationOverview({ items, organizationId }: OrganizationOverviewPro
         title={card.organization.name}
         subtitle={`${card.organization.code} · ${card.siteCount} sites · ${card.sitesOnline} online · ${card.openAlarms} alarms`}
       />
+      <OrganizationSiteMap key={organizationId} organizationId={organizationId} />
       <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_320px]">
         <div data-testid="control-room-sites" className="grid content-start gap-3 md:grid-cols-2">
           {sites.map((location) => (

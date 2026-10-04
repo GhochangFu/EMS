@@ -160,7 +160,7 @@ export async function assertSetLocationDerivesSlugAndCode(): Promise<void> {
   const location = state.working.location;
   assert(out.ok, "set_location succeeds");
   assert(location?.slug === "berhampur" && location?.code === "BERHAMPUR", "slug and code derive from the name");
-  assert(location?.latitude === -25.7 && location?.longitude === 28.2, "the coordinates take the shared defaults");
+  assert(location?.latitude === 19.076 && location?.longitude === 72.8777, "the coordinates take the shared Mumbai defaults (F3.79)");
   assert(out.actionLine === "Set location Berhampur (pump_station)", `the action line is code-written: ${out.actionLine}`);
 }
 

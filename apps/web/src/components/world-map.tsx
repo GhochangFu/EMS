@@ -5,9 +5,8 @@ import { CircleMarker, MapContainer, Popup, TileLayer, useMap } from "react-leaf
 
 import "leaflet/dist/leaflet.css";
 
-import { siteAssetsPath } from "../lib/smoc-pages";
 import type { RoleName } from "../lib/theme";
-import { isOperationalSite, MAP_TILE, siteBounds } from "../lib/map-site";
+import { isOperationalSite, MAP_TILE, siteBounds, type MapSiteLink } from "../lib/map-site";
 import { useThemeRoles } from "../stores/theme-store";
 
 /**
@@ -54,18 +53,29 @@ function markerRole(site: MapSiteDto): RoleName {
   }
 }
 
+/**
+ * `F3.79` — `siteLink`, `heightClassName` and `scrollWheelZoom` are required, not defaulted:
+ * the Sites map and the Control Room organization level each say which link a popup carries,
+ * how tall the map is, and whether the wheel zooms it.
+ */
 type WorldMapProps = {
   sites: MapSiteDto[];
+  /** The link at the foot of a pin's popup (`estateSiteLink`, `controlRoomSiteLink`). */
+  siteLink: (site: MapSiteDto) => MapSiteLink;
+  /** A Tailwind height class for the map, for example `h-[min(70vh,560px)]`. */
+  heightClassName: string;
+  scrollWheelZoom: boolean;
 };
 
-export function WorldMap({ sites }: WorldMapProps) {
+/** The Leaflet map of site pins, coloured by live status, each with a popup and one link. */
+export function WorldMap({ sites, siteLink, heightClassName, scrollWheelZoom }: WorldMapProps) {
   const roles = useThemeRoles();
   return (
     <MapContainer
       center={[-29, 24.5]}
       zoom={5}
-      className="z-0 h-[min(70vh,560px)] w-full surface-pressed"
-      scrollWheelZoom
+      className={`z-0 ${heightClassName} w-full surface-pressed`}
+      scrollWheelZoom={scrollWheelZoom}
     >
       <TileLayer attribution={MAP_TILE.attribution} url={MAP_TILE.url} maxZoom={MAP_TILE.maxZoom} />
       <FitToSites sites={sites} />
@@ -130,12 +140,9 @@ export function WorldMap({ sites }: WorldMapProps) {
                 </Link>
                 <Link
                   className="text-xs font-semibold text-accent-strong hover:underline"
-                  to={
-                    // `F3.72` (OQ9) — straight to the site's Assets & RTUs tab.
-                    s.canonicalLocationId ? siteAssetsPath(s.canonicalLocationId) : "/"
-                  }
+                  to={siteLink(s).to}
                 >
-                  Dashboard →
+                  {siteLink(s).label} →
                 </Link>
               </div>
             </div>

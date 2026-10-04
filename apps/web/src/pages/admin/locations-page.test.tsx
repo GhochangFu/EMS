@@ -17,6 +17,7 @@ import {
   typedTimezoneIsSubmitted,
   typeSelectListsTheFourTypesInOrder,
   untouchedCreatePostsTheFirstListedType,
+  untouchedCreatePostsTheMumbaiCoordinates,
 } from "./locations-page.spec";
 
 /**
@@ -86,5 +87,9 @@ describe("E4.1b locations page — the Timezone field", () => {
 
   it("P9 a pending types request shows no retired option", async () => {
     await pendingTypesShowNoRetiredOption();
+  });
+
+  it("D1 an untouched create posts the Mumbai coordinates (F3.79)", async () => {
+    await untouchedCreatePostsTheMumbaiCoordinates();
   });
 });

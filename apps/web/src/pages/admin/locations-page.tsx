@@ -48,8 +48,10 @@ const emptyForm = {
   province: "",
   capital: "",
   timezone: "",
-  latitude: "0",
-  longitude: "0",
+  // `F3.79` (owner ruling 2026-10-04): Mumbai, not (0,0). Every active location is a map pin,
+  // and a pin at (0,0) sat in the Gulf of Guinea and stretched the map's box.
+  latitude: "19.076",
+  longitude: "72.8777",
 };
 
 /**

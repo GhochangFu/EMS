@@ -351,3 +351,227 @@ export async function assertNoF4157MapFixtureRowsRemain(pool: pg.Pool): Promise<
     pins: 0,
   });
 }
+
+/**
+ * `F3.79` (owner ruling 2026-10-04) — every active location is a map pin. Only the seed writes
+ * `bms.map_locations`, so a location an admin or the onboarding agent creates had no pin and the
+ * Control Room organization level's site map showed a card with no marker. `sitesLive` now adds
+ * each active location that no `map_locations` row joins, from the location's own columns.
+ *
+ * Every fixture row is prefixed `F379M` / `f379m-` and written inside a rolled-back transaction;
+ * `assertNoF379MapFixtureRowsRemain` proves none survives the run.
+ */
+type UnpinnedFixture = {
+  locationId: string;
+  organizationId: string;
+  assetId: string;
+  slug: string;
+  name: string;
+};
+
+async function insertUnpinnedLocation(
+  client: pg.PoolClient,
+  run: string,
+  opts: { active: boolean; pin: boolean },
+): Promise<UnpinnedFixture> {
+  const db = createDb(client as unknown as pg.Pool);
+  const { organizationId } = await fixtureLocation(db);
+  const slug = `f379m-${run}`;
+  const name = `F3.79 map fixture ${run}`;
+  const location = await client.query<{ id: string }>(
+    `INSERT INTO bms.locations
+       (organization_id, code, slug, name, type, province, latitude, longitude, active)
+     VALUES ($1, $2, $3, $4, 'pump_station', 'Odisha', 21.5, 86.9, $5) RETURNING id`,
+    [organizationId, `F379M-${run}`, slug, name, opts.active],
+  );
+  const locationId = location.rows[0]?.id as string;
+  if (opts.pin) {
+    await client.query(
+      `INSERT INTO bms.map_locations (slug, name, kind, site_name, latitude, longitude)
+       VALUES ($1, $2, 'pump_station', $2, 21.5, 86.9)`,
+      [slug, name],
+    );
+  }
+  const [assetId] = await createFixtureAssets(db, 1, "F379M", { locationId, organizationId });
+  if (!assetId) throw new Error("F3.79: no fixture asset");
+  return { locationId, organizationId, assetId, slug, name };
+}
+
+/**
+ * I1 — an active location with no `map_locations` row is a pin, built from its own columns, and
+ * carries campus live health (its one fixture asset is counted).
+ */
+export async function assertAnUnpinnedActiveLocationIsAPin(pool: pg.Pool): Promise<void> {
+  await withRolledBackClient(pool, async (client) => {
+    const fx = await insertUnpinnedLocation(client, randomUUID().slice(0, 8), { active: true, pin: false });
+    const sites = await new MapService(client as unknown as pg.Pool).sitesLive({ assetIds: [fx.assetId] });
+    const site = sites.find((candidate) => candidate.canonicalLocationId === fx.locationId);
+    expect(site, "an active location with no map_locations row must be listed").toBeDefined();
+    expect({
+      id: site?.id,
+      slug: site?.slug,
+      name: site?.name,
+      siteName: site?.siteName,
+      organizationId: site?.organization?.id,
+      latitude: site?.latitude,
+      longitude: site?.longitude,
+      kind: site?.kind,
+      kindLabel: site?.kindLabel,
+      province: site?.province,
+    }).toEqual({
+      id: fx.locationId,
+      slug: fx.slug,
+      name: fx.name,
+      siteName: fx.name,
+      organizationId: fx.organizationId,
+      latitude: 21.5,
+      longitude: 86.9,
+      kind: "pump_station",
+      kindLabel: "Pump station",
+      province: "Odisha",
+    });
+    expect(site?.live.assetsTotal, "the location's asset is counted: campus live health").toBe(1);
+  });
+}
+
+/**
+ * I2 — an inactive location with no pin is not listed. The active location of I1 is the control
+ * that such a location is listed at all.
+ */
+export async function assertAnUnpinnedInactiveLocationIsNotAPin(pool: pg.Pool): Promise<void> {
+  await withRolledBackClient(pool, async (client) => {
+    const fx = await insertUnpinnedLocation(client, randomUUID().slice(0, 8), { active: false, pin: false });
+    const sites = await new MapService(client as unknown as pg.Pool).sitesLive({ assetIds: [fx.assetId] });
+    expect(
+      sites.filter((candidate) => candidate.canonicalLocationId === fx.locationId),
+      "an inactive location must not become a pin",
+    ).toEqual([]);
+  });
+}
+
+/** I3 — a location that a `map_locations` row joins is listed once, from that row. */
+export async function assertAPinnedLocationIsListedOnce(pool: pg.Pool): Promise<void> {
+  await withRolledBackClient(pool, async (client) => {
+    const fx = await insertUnpinnedLocation(client, randomUUID().slice(0, 8), { active: true, pin: true });
+    const sites = await new MapService(client as unknown as pg.Pool).sitesLive({ assetIds: [fx.assetId] });
+    const matches = sites.filter((candidate) => candidate.canonicalLocationId === fx.locationId);
+    expect(matches, "the pinned location is listed exactly once").toHaveLength(1);
+    expect(matches[0]?.id, "from its map_locations row, not as a second, location-built pin").not.toBe(
+      fx.locationId,
+    );
+  });
+}
+
+/**
+ * I4 — a scoped caller sees the new pin when the location's id is in its scope, and not when it
+ * is not, even with the location's name in scope (`allowedLocationIds`, as `MapController`
+ * passes it).
+ */
+export async function assertTheScopeFilterKeepsTheNewPinById(pool: pg.Pool): Promise<void> {
+  await withRolledBackClient(pool, async (client) => {
+    const fx = await insertUnpinnedLocation(client, randomUUID().slice(0, 8), { active: true, pin: false });
+    const service = new MapService(client as unknown as pg.Pool);
+    const inScope = await service.sitesLive({
+      allowedSiteNames: [fx.name],
+      allowedLocationIds: [fx.locationId],
+      assetIds: [fx.assetId],
+    });
+    expect(
+      inScope.some((candidate) => candidate.canonicalLocationId === fx.locationId),
+      "the location is in the caller's scope by id",
+    ).toBe(true);
+    const outOfScope = await service.sitesLive({
+      allowedSiteNames: [fx.name],
+      allowedLocationIds: [randomUUID()],
+      assetIds: [fx.assetId],
+    });
+    expect(
+      outOfScope.some((candidate) => candidate.canonicalLocationId === fx.locationId),
+      "a scope without the location's id must not see it, whatever names it holds",
+    ).toBe(false);
+  });
+}
+
+/**
+ * I5 — security review of `F3.79`: two organizations each hold an active, unpinned location of
+ * the same name. A caller scoped to org A's location sees it and not org B's: location names are
+ * tenant free text and not unique, so the filter must not match by name. Org A's location is the
+ * positive control.
+ */
+export async function assertASameNamedLocationOfAnotherOrganizationIsNotSeen(
+  pool: pg.Pool,
+): Promise<void> {
+  await withRolledBackClient(pool, async (client) => {
+    const run = randomUUID().slice(0, 8);
+    const mine = await insertUnpinnedLocation(client, run, { active: true, pin: false });
+    const org = await client.query<{ id: string }>(
+      `INSERT INTO bms.organizations (code, name, currency) VALUES ($1, $2, 'INR') RETURNING id`,
+      [`F379M-ORG-${run}`, `F3.79 other organization ${run}`],
+    );
+    const theirs = await client.query<{ id: string }>(
+      `INSERT INTO bms.locations (organization_id, code, slug, name, type, latitude, longitude)
+       VALUES ($1, $2, $3, $4, 'pump_station', 22.5, 88.3) RETURNING id`,
+      [org.rows[0]?.id, `F379M-B-${run}`, `f379m-b-${run}`, mine.name],
+    );
+    const theirLocationId = theirs.rows[0]?.id as string;
+
+    const sites = await new MapService(client as unknown as pg.Pool).sitesLive({
+      allowedSiteNames: [mine.name],
+      allowedLocationIds: [mine.locationId],
+      assetIds: [mine.assetId],
+    });
+    const ids = sites.map((candidate) => candidate.canonicalLocationId);
+    expect(ids, "control: the caller sees its own location").toContain(mine.locationId);
+    expect(ids, "the other organization's same-named location must not be seen").not.toContain(
+      theirLocationId,
+    );
+  });
+}
+
+/**
+ * I6 — a pin that joins no location (a seeded reference station) is still scoped by its
+ * `site_name`: it has no location id to match. Seen with its name in scope, not seen without.
+ */
+export async function assertAnUnjoinedPinIsStillScopedByName(pool: pg.Pool): Promise<void> {
+  await withRolledBackClient(pool, async (client) => {
+    const run = randomUUID().slice(0, 8);
+    const slug = `f379m-station-${run}`;
+    const siteName = `F3.79 station site ${run}`;
+    await client.query(
+      `INSERT INTO bms.map_locations (slug, name, kind, site_name, latitude, longitude)
+       VALUES ($1, $2, 'eskom_station', $3, 0, 0)`,
+      [slug, `F3.79 station ${run}`, siteName],
+    );
+    const service = new MapService(client as unknown as pg.Pool);
+    const named = await service.sitesLive({ allowedSiteNames: [siteName], allowedLocationIds: [] });
+    expect(
+      named.some((candidate) => candidate.slug === slug),
+      "an unjoined pin is seen when its site_name is in scope",
+    ).toBe(true);
+    const unnamed = await service.sitesLive({ allowedSiteNames: [], allowedLocationIds: [] });
+    expect(
+      unnamed.some((candidate) => candidate.slug === slug),
+      "an unjoined pin is not seen when its site_name is out of scope",
+    ).toBe(false);
+  });
+}
+
+/** No `F379M` fixture row survives the rolled-back cases (counted as `bms_fleet`). */
+export async function assertNoF379MapFixtureRowsRemain(pool: pg.Pool): Promise<void> {
+  const result = await pool.query<{ role: string; locations: number; pins: number; organizations: number }>(
+    `SELECT current_user AS role,
+            (SELECT COUNT(*)::int FROM bms.locations WHERE code LIKE 'F379M-%') AS locations,
+            (SELECT COUNT(*)::int FROM bms.map_locations WHERE slug LIKE 'f379m-%') AS pins,
+            (SELECT COUNT(*)::int FROM bms.organizations WHERE code LIKE 'F379M-%') AS organizations`,
+  );
+  const row = result.rows[0];
+  expect(row?.role, "counted as bms_fleet, which FORCE RLS does not hide rows from").toBe("bms_fleet");
+  expect(
+    { locations: row?.locations, pins: row?.pins, organizations: row?.organizations },
+    "no F379M fixture row remains",
+  ).toEqual({
+    locations: 0,
+    pins: 0,
+    organizations: 0,
+  });
+}
