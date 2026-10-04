@@ -7065,6 +7065,24 @@ N/A.
 **Cascade:** no row lists `F4.186` in *Depends* except the new `F4.187`
 (`remove()` audits from an earlier read). No `chore(agents):` change owed.
 
+### `F4.187` — removing the AI-assistant setting audits the row it deleted ✅ 2026-10-04
+
+PR #713, squash `035550ce`; raised by the `F4.186` security re-review (I-3).
+No ADR, no migration.
+
+- `remove()` takes the same per-organization advisory lock as the save, then
+  deletes with `RETURNING` and audits the row it deleted. A save that commits
+  while the remove waits is described correctly, and a delete that removed
+  nothing writes no audit.
+- One helper holds the lock key for the save and the remove.
+
+Verified: CI green first run, reviews fixed, 7 mutations killed, full api
+project green, running stack: a delete audited its row exactly, and a repeat
+delete wrote no audit. Browser N/A.
+
+**Cascade:** no row lists `F4.187` in *Depends*. No `chore(agents):` change
+owed.
+
 ### `F3.76` — the Master Data Hub in five areas ✅ 2026-09-30
 
 PR #668, squash `427adf8d`; the owner ruled it into v1 on 2026-09-30, with no
