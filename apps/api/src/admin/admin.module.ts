@@ -59,6 +59,7 @@ import { OnboardingExcelService } from "./onboarding/onboarding-excel.service";
 import { OnboardingLlmResolver } from "./onboarding/onboarding-llm-resolver";
 import { OnboardingProtocolService } from "./onboarding/onboarding-protocol.service";
 import { OnboardingService } from "./onboarding/onboarding.service";
+import { OnboardingTemplateCatalogService } from "./onboarding/onboarding-template-catalog.service";
 import { OnboardingValidateService } from "./onboarding/onboarding-validate.service";
 import { OrganizationsAdminController } from "./organizations/organizations.controller";
 import { OrganizationsAdminService } from "./organizations/organizations.service";
@@ -127,6 +128,7 @@ import { UsersService } from "./users/users.service";
     OnboardingValidateService,
     OnboardingProtocolService,
     OnboardingCatalogService,
+    OnboardingTemplateCatalogService,
     OnboardingExcelService,
     OnboardingLlmResolver,
     AiAssistantSettingsService,

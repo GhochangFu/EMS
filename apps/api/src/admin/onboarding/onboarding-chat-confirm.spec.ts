@@ -1,4 +1,4 @@
-import { BadRequestException } from "@nestjs/common";
+import { BadRequestException, ConflictException } from "@nestjs/common";
 import type { OnboardingChatMessage, OnboardingDraft } from "@bms/shared";
 
 import { CredentialCryptoService } from "../../security/credential-crypto.service";
@@ -15,6 +15,7 @@ import {
 import { scrubMessages } from "./onboarding-credential-detect";
 import { OnboardingService } from "./onboarding.service";
 import { OnboardingValidateService } from "./onboarding-validate.service";
+import { EMPTY_TEMPLATE_CONTEXT } from "./onboarding-template-refs";
 
 function assert(condition: boolean, message: string): void {
   if (!condition) {
@@ -41,8 +42,25 @@ function sessionRow(draft: unknown, messages: OnboardingChatMessage[] = []) {
   };
 }
 
+/** The template part of a commit result (F3.22, ADR 0091 decision 4); none by default. */
+type TemplateCounts = {
+  templateIds: string[];
+  templatedAssetCount: number;
+  templatedAssetPointCount: number;
+  seededRuleCount: number;
+  dashboardCount: number;
+};
+
+const NO_TEMPLATES: TemplateCounts = {
+  templateIds: [],
+  templatedAssetCount: 0,
+  templatedAssetPointCount: 0,
+  seededRuleCount: 0,
+  dashboardCount: 0,
+};
+
 /** A recording commit service: it records each call and answers, or throws, as told. */
-function commitService(behaviour: "ok" | Error = "ok") {
+function commitService(behaviour: "ok" | Error = "ok", counts: TemplateCounts = NO_TEMPLATES, assetIds = ["a"]) {
   const calls: unknown[][] = [];
   return {
     calls,
@@ -52,7 +70,15 @@ function commitService(behaviour: "ok" | Error = "ok") {
       if (behaviour !== "ok") {
         throw behaviour;
       }
-      return { sessionId: "s-1", locationId: "loc-1", rtuIds: ["r"], assetIds: ["a"], pointKeyIds: ["p"], assetPointIds: ["m"] };
+      return {
+        sessionId: "s-1",
+        locationId: "loc-1",
+        rtuIds: ["r"],
+        assetIds,
+        pointKeyIds: ["p"],
+        assetPointIds: ["m"],
+        ...counts,
+      };
     },
   };
 }
@@ -75,6 +101,7 @@ function build(opts: { results: unknown[][]; llm?: FakeLlmProvider; commit?: Ret
     { listPointKeys: async () => [] } as never,
     vocabularies as never,
     { resolveForOrganization: async () => ({ kind: "ready", provider: llm, source: "platform" }) } as never,
+    { context: async () => EMPTY_TEMPLATE_CONTEXT } as never,
   );
   const service = new OnboardingService(
     db,
@@ -89,6 +116,7 @@ function build(opts: { results: unknown[][]; llm?: FakeLlmProvider; commit?: Ret
     {} as never,
     {} as never,
     vocabularies as never,
+    { context: async () => EMPTY_TEMPLATE_CONTEXT } as never,
   );
   return { service, record, llm, commit };
 }
@@ -135,8 +163,43 @@ export async function assertAMatchingProposalCommitsOnce(): Promise<void> {
   const roles = ((record.updates[0]?.messages ?? []) as OnboardingChatMessage[]).map((m) => m.role).join(",");
   assert(roles === "user,action,assistant", `user, action, assistant, got ${roles}`);
   const action = ((record.updates[0]?.messages ?? []) as OnboardingChatMessage[])[1]?.content ?? "";
-  assert(action === "Committed: location Berhampur, 1 RTU, 1 point key, 1 asset, 1 mapping", `the action line is code-written: ${action}`);
+  assert(
+    action ===
+      "Committed: location Berhampur, 1 RTU, 1 point key, 0 templates, 1 asset (0 from templates), 1 mapping, " +
+        "0 seeded rules, 0 dashboards",
+    `the action line is code-written: ${action}`,
+  );
   assert(response.readyToCommit === false, "nothing is left to commit");
+}
+
+/**
+ * F3.22 (ADR 0091 decision 4) — the confirm line reads the template part of
+ * the result: templates published, assets built from them, seeded rules and
+ * dashboards. Every number differs, so a swapped field reddens by name.
+ */
+export async function assertTheConfirmLineNamesTheTemplateCounts(): Promise<void> {
+  const session = sessionRow(proposed(readyDraft()));
+  const commit = commitService(
+    "ok",
+    {
+      templateIds: ["t1", "t2"],
+      templatedAssetCount: 3,
+      templatedAssetPointCount: 12,
+      seededRuleCount: 7,
+      dashboardCount: 5,
+    },
+    ["a1", "a2", "a3", "a4"],
+  );
+  const { service, record } = build({ results: [[session], [session], ORG], commit });
+  await service.chat(JWT, "s-1", "confirm commit");
+  assert(commit.calls.length === 1, `one commit, got ${commit.calls.length}`);
+  const action = ((record.updates[0]?.messages ?? []) as OnboardingChatMessage[])[1]?.content ?? "";
+  assert(
+    action ===
+      "Committed: location Berhampur, 1 RTU, 1 point key, 2 templates, 4 assets (3 from templates), 1 mapping, " +
+        "7 seeded rules, 5 dashboards",
+    `the action line names the template counts: ${action}`,
+  );
 }
 
 export async function assertACommitRefusalIsAReplyNotAThrow(): Promise<void> {
@@ -147,6 +210,27 @@ export async function assertACommitRefusalIsAReplyNotAThrow(): Promise<void> {
   });
   const response = await service.chat(JWT, "s-1", "confirm commit");
   assert(response.assistantMessage === "Commit refused: Draft is not ready to commit", `got ${response.assistantMessage}`);
+  const written = record.updates[0]?.draft as Record<string, unknown> | undefined;
+  assert(written !== undefined && !(COMMIT_PROPOSAL_KEY in written), "the proposal is cleared");
+}
+
+/**
+ * F3.22 (ADR 0091 decision 4) — the template cores refuse with a 409 (a taken
+ * asset code, a taken rule code, an open draft). On the typed confirm that is
+ * still a reply in the thread, as a 400 is, never an HTTP error that stores
+ * nothing.
+ */
+export async function assertACoreConflictIsAReplyNotAThrow(): Promise<void> {
+  const session = sessionRow(proposed(readyDraft()));
+  const { service, record } = build({
+    results: [[session], [session], ORG],
+    commit: commitService(new ConflictException("Cannot create these assets — already exist: P-1.")),
+  });
+  const response = await service.chat(JWT, "s-1", "confirm commit");
+  assert(
+    response.assistantMessage === "Commit refused: Cannot create these assets — already exist: P-1.",
+    `got ${response.assistantMessage}`,
+  );
   const written = record.updates[0]?.draft as Record<string, unknown> | undefined;
   assert(written !== undefined && !(COMMIT_PROPOSAL_KEY in written), "the proposal is cleared");
 }

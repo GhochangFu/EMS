@@ -23,6 +23,8 @@ import { VocabulariesService } from "../../vocabularies/vocabularies.service";
 import { echoedItems, moreTail, quoteCell } from "../spreadsheet-guard";
 import { cloneJson } from "../stack-safe-json";
 import { OnboardingCatalogService } from "./onboarding-catalog.service";
+import { OnboardingTemplateCatalogService } from "./onboarding-template-catalog.service";
+import type { ValidateTemplateContext } from "./onboarding-template-refs";
 import { catalogCodeFromLocationName, cutToBound } from "./onboarding-draft-caps";
 import { deriveLocationPatch } from "./onboarding-location-derive";
 import { mergeDraftPatch } from "./onboarding-draft-merge";
@@ -75,6 +77,15 @@ export const AGENT_NOT_SET_UP_NOTICE =
   "The AI assistant is not fully set up for this organization, so the guided mode answered. An admin can finish it on the AI assistant page.";
 
 /**
+ * What one turn validates against, read once at its start: the active location
+ * types (`F4.162`, plan D9) and the template context (`F3.22`, ADR 0091).
+ */
+type TurnVocabulary = {
+  readonly types: readonly LocationTypeDto[];
+  readonly templates: ValidateTemplateContext;
+};
+
+/**
  * Conversational onboarding: the tool-calling agent when a provider resolves
  * for the organization (`F3.21`, ADR 0090), the rule-based guided mode
  * otherwise.
@@ -88,6 +99,7 @@ export class OnboardingChatService {
     private readonly catalogService: OnboardingCatalogService,
     private readonly vocabularies: VocabulariesService,
     private readonly llmResolver: OnboardingLlmResolver,
+    private readonly templateCatalog: OnboardingTemplateCatalogService,
   ) {}
 
   private readonly logger = new Logger(OnboardingChatService.name);
@@ -270,6 +282,11 @@ export class OnboardingChatService {
     // `finalizeTurn` use this one list, so the reply, the phase and the
     // validation errors agree about which stored type counts as set.
     const types = await this.vocabularies.listLocationTypes();
+    // F3.22 (ADR 0091): the template context, read once per turn beside the
+    // types, so the agent tools and every `finalizeTurn` validate against one
+    // read. With no organization only the stock catalog is listed.
+    const templates = await this.templateCatalog.context(organizationId);
+    const turn: TurnVocabulary = { types, templates };
     const lower = message.toLowerCase().trim();
     if (
       organizationId &&
@@ -287,16 +304,16 @@ export class OnboardingChatService {
         ["MQTT", "Modbus TCP", "View draft"],
         message,
         draft,
-        types,
+        turn,
       );
     }
 
     if (!organizationId) {
-      return await this.handleRuleBasedTurn(message, draft, phase, orgName, types, organizationId);
+      return await this.handleRuleBasedTurn(message, draft, phase, orgName, turn, organizationId);
     }
     const resolved = await this.llmResolver.resolveForOrganization(organizationId);
     if (resolved.kind === "guided") {
-      const guided = await this.handleRuleBasedTurn(message, draft, phase, orgName, types, organizationId);
+      const guided = await this.handleRuleBasedTurn(message, draft, phase, orgName, turn, organizationId);
       // Plan ruling 13: an organization that chose a provider but did not
       // finish the setting is told why the guided mode answered. `off` and a
       // platform without a provider get no notice — that is the chosen mode.
@@ -320,6 +337,7 @@ export class OnboardingChatService {
         catalog: this.catalogService,
         protocols: this.protocolService,
         validator: this.validateService,
+        templates,
       },
     });
     // Decision 9 and plan ruling 10: ids, names and counts — never the
@@ -331,7 +349,7 @@ export class OnboardingChatService {
     if (agent.fallback) {
       // Ruling 6: the turn's edits are already discarded; the guided mode
       // answers the same message, and the user is told why.
-      const guided = await this.handleRuleBasedTurn(message, draft, phase, orgName, types, organizationId);
+      const guided = await this.handleRuleBasedTurn(message, draft, phase, orgName, turn, organizationId);
       return { ...guided, assistantMessage: `${AGENT_UNAVAILABLE_NOTICE}\n\n${guided.assistantMessage}` };
     }
     const result = this.finalizeTurn(
@@ -341,7 +359,7 @@ export class OnboardingChatService {
       agent.commitProposal ? ["confirm commit", "View draft"] : ["View draft"],
       message,
       draft,
-      types,
+      turn,
     );
     return {
       ...result,
@@ -355,9 +373,10 @@ export class OnboardingChatService {
     draft: OnboardingDraft,
     phase: OnboardingPhase,
     orgName: string,
-    types: readonly LocationTypeDto[],
+    turn: TurnVocabulary,
     organizationId?: string,
   ): Promise<ChatTurnResult> {
+    const { types } = turn;
     const lower = message.toLowerCase().trim();
     const patch: OnboardingDraftInput = {};
 
@@ -375,7 +394,7 @@ export class OnboardingChatService {
           ["confirm assets", "View draft"],
           message,
           draft,
-          types,
+          turn,
         );
       }
     }
@@ -388,7 +407,7 @@ export class OnboardingChatService {
         ["View draft", "Validate"],
         message,
         draft,
-        types,
+        turn,
       );
     }
 
@@ -476,7 +495,7 @@ export class OnboardingChatService {
       if (!type) {
         const ask = locationTypes.locationTypeQuestion(name);
         const labels = types.map((row) => row.label);
-        return this.finalizeTurn(ask, patch, "location", labels, message, draft, types);
+        return this.finalizeTurn(ask, patch, "location", labels, message, draft, turn);
       }
       return this.finalizeTurn(
         `Got it — location **${name}**. Which communication protocol will RTU 1 use?`,
@@ -485,7 +504,7 @@ export class OnboardingChatService {
         ["MQTT", "Modbus", "BACnet", "OPC-UA", "SNMP", "REST", "Simulator"],
         message,
         draft,
-        types,
+        turn,
       );
     }
 
@@ -514,7 +533,7 @@ export class OnboardingChatService {
         ["Add point key kw", "View draft", "Add another RTU"],
         message,
         draft,
-        types,
+        turn,
       );
     }
 
@@ -530,7 +549,7 @@ export class OnboardingChatService {
         ["One asset", "View draft"],
         message,
         draft,
-        types,
+        turn,
       );
     }
 
@@ -591,13 +610,18 @@ export class OnboardingChatService {
         ["auto map", "View draft"],
         message,
         draft,
-        types,
+        turn,
       );
     }
 
-    if (phase === "mappings" || !draft.assetPoints?.length) {
+    // F3.22 (ADR 0091 decision 11, code review): the sample mapping goes onto
+    // the first plain asset. A templated asset takes its points from its
+    // template, and V4 refuses a mapping onto it; a draft whose assets are all
+    // templated needs no mapping (V11) and goes on to review.
+    const plainIndex = draft.assets?.findIndex((asset) => !asset.template) ?? -1;
+    if (plainIndex >= 0 && (phase === "mappings" || !draft.assetPoints?.length)) {
       patch.assetPoints = [
-        { assetIndex: 0, pointKey: "kw", sourceDataKey: "s09_r01", unit: "kW" },
+        { assetIndex: plainIndex, pointKey: "kw", sourceDataKey: "s09_r01", unit: "kW" },
       ];
       return this.finalizeTurn(
         "Mapping added. I've opened the preview — review the draft and say **create it** when ready.",
@@ -606,7 +630,7 @@ export class OnboardingChatService {
         ["create it", "View draft", "Validate"],
         message,
         draft,
-        types,
+        turn,
       );
     }
 
@@ -617,7 +641,7 @@ export class OnboardingChatService {
       ["create it", "View draft"],
       message,
       draft,
-      types,
+      turn,
     );
   }
 
@@ -628,7 +652,7 @@ export class OnboardingChatService {
     suggestedReplies: string[] | undefined,
     _userMessage: string,
     draft: OnboardingDraft,
-    types: readonly LocationTypeDto[],
+    turn: TurnVocabulary,
   ): ChatTurnResult {
     // F4.157 review: the draft `mergeDraft` will store, merged by the same
     // helper — never a shallow `{ ...draft, ...patch }`, which drops the stored
@@ -636,7 +660,8 @@ export class OnboardingChatService {
     // against the turn's active codes, so an inactive stored type is reported.
     const validation = this.validateService.validate(
       mergeDraftPatch(draft, draftPatch),
-      types.map((t) => t.code),
+      turn.types.map((t) => t.code),
+      turn.templates,
     );
     const phase = validation.suggestedPhase ?? currentPhase;
     let autoOpenPreview = false;

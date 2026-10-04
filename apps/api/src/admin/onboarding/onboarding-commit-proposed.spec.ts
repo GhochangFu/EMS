@@ -2,6 +2,7 @@ import type { JwtPayload, OnboardingDraft } from "@bms/shared";
 
 import { draftHash } from "./onboarding-commit-proposal";
 import { OnboardingCommitService, PROPOSED_DRAFT_CHANGED } from "./onboarding-commit.service";
+import { EMPTY_TEMPLATE_CONTEXT } from "./onboarding-template-refs";
 
 function assert(condition: boolean, message: string): void {
   if (!condition) {
@@ -67,6 +68,11 @@ function harness(read: OnboardingDraft, locked: OnboardingDraft) {
       listLocationTypes: () => Promise.resolve([]),
       assertLocationType: () => Promise.resolve(),
     } as never,
+    { context: async () => EMPTY_TEMPLATE_CONTEXT } as never,
+    // F3.22: the three template services; this draft holds no template, so none is called.
+    {} as never,
+    {} as never,
+    {} as never,
   );
   return { service, events };
 }

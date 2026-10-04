@@ -10,10 +10,12 @@ import {
   serialiseDraftForPrompt,
   shedFreeFormRecords,
   shedOverLongStrings,
+  shedTemplatePoints,
 } from "./onboarding-prompt-budget";
 import { redactDraftForLlm } from "./onboarding-redaction";
 import { FakeLlmProvider } from "./onboarding-agent-loop.spec";
 import { OnboardingValidateService } from "./onboarding-validate.service";
+import { EMPTY_TEMPLATE_CONTEXT } from "./onboarding-template-refs";
 
 function assert(condition: boolean, message: string): void {
   if (!condition) {
@@ -231,8 +233,8 @@ export function assertOverBudgetShedsTheFourRecordsFirst(): void {
  * Stage 2 — a string longer than any code or name column, once stage 1 was not
  * enough.
  *
- * `pointKeys.description` is 2,000 characters wide and is the only column wider
- * than `PROMPT_STRING_MAX`. Decision 4 rules it opaque operator prose rather
+ * `pointKeys.description` is 2,000 characters wide and, with `F3.22`'s
+ * `templates.description`, one of the two columns wider than `PROMPT_STRING_MAX`. Decision 4 rules it opaque operator prose rather
  * than a code, a name or a protocol, so it is what stage 2 takes. 200 of them is
  * not producer-reachable in one turn and does not need to be: the fixture's job
  * is to be over budget with nothing left in the four records.
@@ -287,8 +289,11 @@ export function assertPromptStringMaxIsTheWidestNameColumn(): void {
 
   assert(widths.length >= 20, "the column record is far smaller than it was — this scan is broken");
 
+  // The prose columns, wider than every code and name by derivation:
+  // `templates.description` (F3.22) takes the same 2,000 as `pointKeys.description`.
+  const proseColumns = new Set(["pointKeys.description", "templates.description"]);
   for (const [field, width] of widths) {
-    if (field === "pointKeys.description") {
+    if (proseColumns.has(field)) {
       continue;
     }
     assert(
@@ -599,6 +604,7 @@ export async function assertAgentTurnForwardsABoundedPrompt(): Promise<void> {
     {} as never,
     { listLocationTypes: async () => [{ code: "pump_station", label: "Pump station" }] } as never,
     { resolveForOrganization: async () => ({ kind: "ready", provider: llm, source: "platform" }) } as never,
+    { context: async () => EMPTY_TEMPLATE_CONTEXT } as never,
   );
   await service.handleTurn("Tell me about the site", draft, "location", "Ion Exchange", "org-1", {
     sessionId: "s-1",
@@ -627,4 +633,66 @@ export async function assertAgentTurnForwardsABoundedPrompt(): Promise<void> {
     bytes(forwarded) <= PROMPT_DRAFT_BUDGET_BYTES,
     "the JSON embedded in the prompt must be within the budget",
   );
+}
+
+/**
+ * A draft of `count` authored templates of `points` points each. Every string
+ * is under `PROMPT_STRING_MAX`, so stage 2 alone cannot shed any of it: only
+ * the template-points stage brings it under the budget.
+ */
+function templatesDraft(count: number, points: number): OnboardingDraft {
+  return {
+    templates: Array.from({ length: count }, (_, t) => ({
+      code: `TPL-${String(t).padStart(2, "0")}`,
+      name: `Template ${t}`,
+      domain: "water",
+      points: Array.from({ length: points }, (_, p) => ({
+        pointKey: `pk_${String(t).padStart(2, "0")}_${String(p).padStart(3, "0")}`,
+        label: `Point ${p} of template ${t}`,
+        unit: "m3/h",
+        sourceDataKeyPattern: `{asset_code}_{feeder}_P${String(p).padStart(3, "0")}`,
+      })),
+    })),
+  };
+}
+
+type TemplatesShed = { templates?: { code?: string; points?: unknown }[] };
+
+/**
+ * W7 (`F3.22`) — 50 templates at 200 points each (about 1.2 MB) are forwarded
+ * under the budget, with each template's `points` replaced by the marker and
+ * every template code kept. Mutation: delete the stage from
+ * `serialiseDraftForPrompt` — stage 2 leaves these short strings alone, so the
+ * JSON stays over budget and `points` stays an array.
+ */
+export function assertW7OverBudgetShedsTemplatePointsKeepingCodes(): void {
+  const draft = templatesDraft(50, 200);
+  assert(bytes(JSON.stringify(draft)) > PROMPT_DRAFT_BUDGET_BYTES, "the fixture starts over the budget");
+  const json = serialiseDraftForPrompt(draft);
+  const shed = JSON.parse(json) as TemplatesShed;
+  assert(bytes(json) <= PROMPT_DRAFT_BUDGET_BYTES, `the shed draft fits the budget, got ${bytes(json)} bytes`);
+  assert(shed.templates?.[0]?.points === PROMPT_OMITTED_MARKER, "templates[0].points is the marker");
+  const codes = (shed.templates ?? []).map((template) => template.code);
+  assert(
+    JSON.stringify(codes) === JSON.stringify(draft.templates!.map((template) => ("code" in template ? template.code : ""))),
+    `every template code is kept, got ${JSON.stringify(codes)}`,
+  );
+}
+
+/** W8 — an under-budget draft keeps its template points verbatim (the positive half of W7). */
+export function assertW8AnUnderBudgetDraftKeepsTemplatePoints(): void {
+  const draft = templatesDraft(2, 3);
+  const shed = JSON.parse(serialiseDraftForPrompt(draft)) as TemplatesShed;
+  assert(
+    JSON.stringify(shed.templates) === JSON.stringify(draft.templates),
+    `an under-budget draft keeps its templates verbatim, got ${JSON.stringify(shed.templates)}`,
+  );
+}
+
+/** The template-points stage is iterative and rebuilds, as its sibling stages do (`F4.115`). */
+export function assertShedTemplatePointsIsIterative(): void {
+  const deep = chain(DEEP, "leaf");
+  const shed = shedTemplatePoints(deep);
+  assert(leafOf(shed) === "leaf", "the bottom of a 20,000-deep chain must be reached without a throw");
+  assert(shed !== deep, "and the chain must be rebuilt rather than returned");
 }

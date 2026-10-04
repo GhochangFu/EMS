@@ -8,6 +8,8 @@ import {
   assertCutToBoundWithHashSuffix,
   assertDistinctAssetDomains,
   assertDraftCountProblem,
+  assertW5ADraftOverTheTemplateCapIsRefused,
+  assertW6ADraftAtTheTemplateCapIsAccepted,
   assertWorkbookSectionCountProblem,
 } from "./onboarding-draft-caps.spec";
 
@@ -43,5 +45,15 @@ describe("onboarding draft count caps (F4.103)", () => {
 
   it("keeps two names apart when the slug drops what differs between them", () => {
     assertCatalogCodeCarriesTheNameApartFromTheClass();
+  });
+});
+
+describe("onboarding draft count caps — templates (F3.22, ADR 0091 decision 2)", () => {
+  it("W5 refuses a draft over the template cap, naming templates and the cap", () => {
+    assertW5ADraftOverTheTemplateCapIsRefused();
+  });
+
+  it("W6 accepts a draft at the template cap", () => {
+    assertW6ADraftAtTheTemplateCapIsAccepted();
   });
 });

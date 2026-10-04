@@ -9,7 +9,8 @@
  */
 import type { OnboardingDraft } from "@bms/shared";
 
-import { MAX_ECHOED_ITEMS, moreTail } from "../spreadsheet-guard";
+import { MAX_ECHOED_ITEMS, moreTail, quoteCell } from "../spreadsheet-guard";
+import { EMPTY_TEMPLATE_CONTEXT, type TemplateRef, type ValidateTemplateContext } from "./onboarding-template-refs";
 import { OnboardingValidateService } from "./onboarding-validate.service";
 
 function assert(condition: boolean, message: string): void {
@@ -56,7 +57,7 @@ function completeDraft(type: string | undefined): OnboardingDraft {
 
 /** N1 — a location with no type is a `location.type` error, and the draft cannot commit. */
 export function assertMissingLocationTypeIsAnError(): void {
-  const result = new OnboardingValidateService().validate(completeDraft(undefined), CODES);
+  const result = new OnboardingValidateService().validate(completeDraft(undefined), CODES, EMPTY_TEMPLATE_CONTEXT);
   const paths = result.errors.map((error) => error.path);
   assert(
     paths.includes("location.type"),
@@ -75,7 +76,7 @@ export function assertMissingLocationTypeIsAnError(): void {
  * hands the validator `[]` instead of the active codes.
  */
 export function assertTypedLocationIsReadyToCommit(): void {
-  const result = new OnboardingValidateService().validate(completeDraft("pump_station"), CODES);
+  const result = new OnboardingValidateService().validate(completeDraft("pump_station"), CODES, EMPTY_TEMPLATE_CONTEXT);
   assert(
     result.errors.length === 0,
     `the fixture with a type must be clean, got ${JSON.stringify(result.errors)}`,
@@ -101,7 +102,7 @@ export function assertTypedLocationLeavesTheLocationPhase(): void {
  * `F4.162` (plan D9, owner ruling OQ3): a type retired after it was stored.
  */
 export function assertInactiveLocationTypeIsAnErrorNamingTheCodes(): void {
-  const result = new OnboardingValidateService().validate(completeDraft("space_port"), CODES);
+  const result = new OnboardingValidateService().validate(completeDraft("space_port"), CODES, EMPTY_TEMPLATE_CONTEXT);
   const errors = result.errors.filter((error) => error.path === "location.type");
   assert(errors.length === 1, `an inactive type must carry one error at location.type, got ${JSON.stringify(result.errors)}`);
   for (const code of CODES) {
@@ -114,7 +115,7 @@ export function assertInactiveLocationTypeIsAnErrorNamingTheCodes(): void {
  * workbook cell or a `PATCH` body; the codes are what the operator can use.
  */
 export function assertInactiveLocationTypeMessageDoesNotEchoTheValue(): void {
-  const result = new OnboardingValidateService().validate(completeDraft("space_port"), CODES);
+  const result = new OnboardingValidateService().validate(completeDraft("space_port"), CODES, EMPTY_TEMPLATE_CONTEXT);
   const error = result.errors.find((candidate) => candidate.path === "location.type");
   const message = error?.message ?? "";
   assert(error !== undefined, `the positive half: an error at location.type exists, got ${JSON.stringify(result.errors)}`);
@@ -127,7 +128,7 @@ export function assertInactiveLocationTypeMessageDoesNotEchoTheValue(): void {
  * redden it.
  */
 export function assertInactiveLocationTypeIsNotReadyToCommit(): void {
-  const result = new OnboardingValidateService().validate(completeDraft("space_port"), CODES);
+  const result = new OnboardingValidateService().validate(completeDraft("space_port"), CODES, EMPTY_TEMPLATE_CONTEXT);
   assert(result.readyToCommit === false, "a draft whose type is not active must never be ready to commit");
 }
 
@@ -147,7 +148,7 @@ const MANY_CODES: readonly string[] = Array.from(
 );
 
 function inactiveTypeMessage(codes: readonly string[]): string {
-  const result = new OnboardingValidateService().validate(completeDraft("space_port"), codes);
+  const result = new OnboardingValidateService().validate(completeDraft("space_port"), codes, EMPTY_TEMPLATE_CONTEXT);
   const error = result.errors.find((candidate) => candidate.path === "location.type");
   assert(error !== undefined, `an error at location.type exists, got ${JSON.stringify(result.errors)}`);
   return error!.message;
@@ -182,4 +183,400 @@ export function assertNoActiveTypeMessageSaysNoneIsActive(): void {
     message.endsWith("no location type is active"),
     `an empty active list must say no location type is active, got "${message}"`,
   );
+}
+
+/*
+ * `F3.22` (ADR 0091 decisions 2, 6, 7 and 11) — the template rules, V1–V12.
+ *
+ * Every V fixture is {@link templatedDraft} with **one** rule broken, and each
+ * asserts the whole error list, so removing a rule's branch reddens its own
+ * `it()` and no other. `templatedDraft` itself is V12, the positive control: it
+ * exercises every rule's passing branch — an authored template with a required
+ * pattern and a variable, a stock entry whose `patterns` cover its required
+ * point, an organization template, and a plain asset with its mapping.
+ * Messages are rebuilt here from literals and `quoteCell`, so a reworded
+ * message is a red test (F4.105).
+ */
+
+/** The catalog this fixture validates against: one organization template (v1 published, v2 draft) and one stock entry. */
+const TEMPLATES: ValidateTemplateContext = {
+  organization: [
+    {
+      code: "ORG-T",
+      version: 1,
+      name: "Feeder",
+      domain: "electrical",
+      status: "published",
+      points: [{ pointKey: "kw", kind: "measured", required: true, sourceDataKeyPattern: "{asset_code}_KW" }],
+      alarmCount: 0,
+      dashboardCount: 0,
+      dashboardWidgetCount: 0,
+    },
+    {
+      code: "ORG-T",
+      version: 2,
+      name: "Feeder",
+      domain: "electrical",
+      status: "draft",
+      points: [],
+      alarmCount: 0,
+      dashboardCount: 0,
+      dashboardWidgetCount: 0,
+    },
+  ],
+  stock: [
+    {
+      code: "WTP",
+      version: null,
+      name: "Water treatment plant",
+      domain: "water",
+      status: null,
+      points: [
+        { pointKey: "ph", kind: "measured", required: true, sourceDataKeyPattern: null },
+        { pointKey: "turbidity", kind: "measured", required: false, sourceDataKeyPattern: null },
+        { pointKey: "score", kind: "derived", required: true, sourceDataKeyPattern: null },
+      ],
+      alarmCount: 0,
+      dashboardCount: 0,
+      dashboardWidgetCount: 0,
+    },
+  ],
+};
+
+/** V12's draft: ready to commit, with every kind of template and a plain asset. */
+function templatedDraft(): OnboardingDraft {
+  const base = completeDraft("pump_station");
+  return {
+    ...base,
+    templates: [
+      {
+        code: "PUMP",
+        name: "Pump",
+        domain: "water",
+        points: [{ pointKey: "flow", sourceDataKeyPattern: "{site}_{asset_code}_FLOW" }],
+      },
+      { stockCode: "WTP", patterns: { ph: "{asset_code}_PH" } },
+    ],
+    assets: [
+      ...(base.assets ?? []),
+      {
+        code: "PUMP-1",
+        name: "Pump 1",
+        siteName: "Lotapata",
+        rtuIndex: 0,
+        domain: "water",
+        template: { code: "PUMP", sourceDataKeyVars: { site: "S1" } },
+      },
+      { code: "WTP-1", name: "WTP 1", siteName: "Lotapata", rtuIndex: 0, domain: "water", template: { code: "WTP" } },
+      {
+        code: "ORG-1",
+        name: "Feeder 1",
+        siteName: "Lotapata",
+        rtuIndex: 0,
+        domain: "electrical",
+        template: { code: "ORG-T", version: 1 },
+      },
+    ],
+  };
+}
+
+type Breaker = (draft: OnboardingDraft) => void;
+
+function templateErrors(breaker: Breaker, context: ValidateTemplateContext = TEMPLATES): string {
+  const draft = templatedDraft();
+  breaker(draft);
+  return JSON.stringify(new OnboardingValidateService().validate(draft, CODES, context).errors);
+}
+
+function assertOnly(breaker: Breaker, path: string, message: string, context?: ValidateTemplateContext): void {
+  const got = templateErrors(breaker, context);
+  const expected = JSON.stringify([{ path, message }]);
+  assert(got === expected, `expected exactly ${expected}, got ${got}`);
+}
+
+/** The asset at `index` of the fixture, which always has one. */
+function assetAt(draft: OnboardingDraft, index: number): NonNullable<OnboardingDraft["assets"]>[number] {
+  return draft.assets![index];
+}
+
+const q = quoteCell;
+
+/** V1 — a code in neither the draft nor the organization's published versions. */
+export function assertV1AnUnresolvedTemplateCodeIsAnError(): void {
+  assertOnly(
+    (d) => {
+      assetAt(d, 3).template = { code: "NOPE" };
+    },
+    "assets.3.template.code",
+    `Template ${q("NOPE")} is not in this draft and has no published version in this organization`,
+  );
+}
+
+/** V2 — a named version that exists and is not published. */
+export function assertV2AnUnpublishedVersionIsAnError(): void {
+  assertOnly(
+    (d) => {
+      assetAt(d, 3).template = { code: "ORG-T", version: 2 };
+    },
+    "assets.3.template.version",
+    `Template ${q("ORG-T")} has no published version 2`,
+  );
+}
+
+/** V3 — the asset's domain differs from its template's. */
+export function assertV3ADomainMismatchIsAnError(): void {
+  assertOnly(
+    (d) => {
+      assetAt(d, 1).domain = "electrical";
+    },
+    "assets.1.domain",
+    `Template ${q("PUMP")} is in domain ${q("water")}; an asset built from it must be in the same domain`,
+  );
+}
+
+/** V4 — a mapping onto a templated asset. */
+export function assertV4AMappingOntoATemplatedAssetIsAnError(): void {
+  assertOnly(
+    (d) => {
+      d.assetPoints!.push({ assetIndex: 1, pointKey: "kw", sourceDataKey: "s02" });
+    },
+    "assetPoints.1.assetIndex",
+    `Asset ${q("PUMP-1")} is built from a template; its points come from the template, so map no point to it`,
+  );
+}
+
+/** V5 — a required measured point with no pattern (the stock entry's `patterns` no longer cover `ph`). */
+export function assertV5ARequiredPointWithNoPatternIsAnError(): void {
+  assertOnly(
+    (d) => {
+      d.templates![1] = { stockCode: "WTP", patterns: {} };
+    },
+    "assets.2.template",
+    `Template ${q("WTP")} has no source-key pattern for its required point ${q("ph")}; ` +
+      "give that point a pattern before this asset can be built",
+  );
+}
+
+/** V6 — a required pattern whose variable the asset does not supply. */
+export function assertV6AnUnresolvedVariableIsAnError(): void {
+  assertOnly(
+    (d) => {
+      assetAt(d, 1).template = { code: "PUMP", sourceDataKeyVars: {} };
+    },
+    "assets.1.template.sourceDataKeyVars",
+    `Template ${q("PUMP")} needs the variable ${q("site")} for its required point ${q("flow")}`,
+  );
+}
+
+/** V6 (code review) — a required pattern that resolves to `""`, which `resolveSourceDataKey` refuses. */
+export function assertV6ARequiredKeyThatResolvesEmptyIsAnError(): void {
+  assertOnly(
+    (d) => {
+      d.templates![0] = { code: "PUMP", name: "Pump", domain: "water", points: [{ pointKey: "flow", sourceDataKeyPattern: "{site}" }] };
+      assetAt(d, 1).template = { code: "PUMP", sourceDataKeyVars: { site: "" } };
+    },
+    "assets.1.template.sourceDataKeyVars",
+    `Template ${q("PUMP")} resolves its required point ${q("flow")} to an empty source key; give its variables a value`,
+  );
+}
+
+/**
+ * V6 (code review) — an **optional** point whose key resolves over 128
+ * characters: `planAsset` checks the length on every measured point it
+ * builds, so this refuses the commit as a required one would. Each value is
+ * inside its own 128 bound; the joined key is 2 + 1 + 128 = 131.
+ */
+export function assertV6AnOptionalKeyOverTheLengthLimitIsAnError(): void {
+  assertOnly(
+    (d) => {
+      d.templates![0] = {
+        code: "PUMP",
+        name: "Pump",
+        domain: "water",
+        points: [
+          { pointKey: "flow", sourceDataKeyPattern: "{site}_{asset_code}_FLOW" },
+          { pointKey: "head", required: false, sourceDataKeyPattern: "{site}_{bus}" },
+        ],
+      };
+      assetAt(d, 1).template = { code: "PUMP", sourceDataKeyVars: { site: "S1", bus: "b".repeat(128) } };
+    },
+    "assets.1.template.sourceDataKeyVars",
+    `Template ${q("PUMP")} resolves its point ${q("head")} to a source key of 131 characters, over the 128 limit`,
+  );
+}
+
+/** V6 (code review) — the length limit on a required point: 120 + `_PUMP-1_FLOW` is 132. */
+export function assertV6ARequiredKeyOverTheLengthLimitIsAnError(): void {
+  assertOnly(
+    (d) => {
+      assetAt(d, 1).template = { code: "PUMP", sourceDataKeyVars: { site: "s".repeat(120) } };
+    },
+    "assets.1.template.sourceDataKeyVars",
+    `Template ${q("PUMP")} resolves its point ${q("flow")} to a source key of 132 characters, over the 128 limit`,
+  );
+}
+
+/** V6 — the boundary: a key of exactly 128 characters (116 + `_PUMP-1_FLOW`) is buildable. */
+export function assertV6AKeyAtTheLengthLimitIsValid(): void {
+  const got = templateErrors((d) => {
+    assetAt(d, 1).template = { code: "PUMP", sourceDataKeyVars: { site: "s".repeat(116) } };
+  });
+  assert(got === "[]", `a 128-character key is valid, got ${got}`);
+}
+
+/** V7 — a variable the template does not ask for. */
+export function assertV7AnUnknownVariableIsAnError(): void {
+  assertOnly(
+    (d) => {
+      assetAt(d, 1).template = { code: "PUMP", sourceDataKeyVars: { site: "S1", bus: "B2" } };
+    },
+    "assets.1.template.sourceDataKeyVars",
+    `${q("bus")} is not a variable of template ${q("PUMP")}; its variables are: site`,
+  );
+}
+
+/** V8 — two draft templates with one code. */
+export function assertV8ADuplicateTemplateCodeIsAnError(): void {
+  assertOnly(
+    (d) => {
+      d.templates!.push({ code: "PUMP", name: "Pump again", domain: "water", points: [] });
+    },
+    "templates.2.code",
+    `Template ${q("PUMP")} appears more than once in this draft`,
+  );
+}
+
+/** V8 — one authored template declaring a point key twice. */
+export function assertV8ADuplicatePointKeyIsAnError(): void {
+  assertOnly(
+    (d) => {
+      d.templates![0] = {
+        code: "PUMP",
+        name: "Pump",
+        domain: "water",
+        points: [
+          { pointKey: "flow", sourceDataKeyPattern: "{site}_{asset_code}_FLOW" },
+          { pointKey: "flow", required: false },
+        ],
+      };
+    },
+    "templates.0.points.1.pointKey",
+    `Point ${q("flow")} appears more than once in template ${q("PUMP")}`,
+  );
+}
+
+/** V9 — a stock code this release does not ship (on an entry no asset uses, so V1 stays quiet). */
+export function assertV9AnUnknownStockCodeIsAnError(): void {
+  assertOnly(
+    (d) => {
+      d.templates!.push({ stockCode: "NOPE" });
+    },
+    "templates.2.stockCode",
+    `${q("NOPE")} is not a stock template this release ships`,
+  );
+}
+
+/** V9 — a `patterns` key that is not a measured point of the stock entry (`score` is derived). */
+export function assertV9APatternOnANonMeasuredPointIsAnError(): void {
+  assertOnly(
+    (d) => {
+      d.templates![1] = { stockCode: "WTP", patterns: { ph: "{asset_code}_PH", score: "SCORE" } };
+    },
+    "templates.1.patterns.score",
+    `${q("score")} is not a measured point of stock template ${q("WTP")}`,
+  );
+}
+
+/** V10 — a draft template code the organization already holds, in any status (decision 6). */
+export function assertV10AHeldCodeIsAnErrorNamingTheVersions(): void {
+  const held: TemplateRef = { ...TEMPLATES.organization[1], code: "PUMP", version: 3, status: "archived" };
+  assertOnly(
+    () => undefined,
+    "templates.0.code",
+    `This organization already holds template ${q("PUMP")} (versions: 3); choose another code`,
+    { ...TEMPLATES, organization: [...TEMPLATES.organization, held] },
+  );
+}
+
+/** V10 — the same rule on a stock entry, at its `stockCode`. */
+export function assertV10AHeldStockCodeIsAnError(): void {
+  const held: TemplateRef = { ...TEMPLATES.organization[1], code: "WTP", version: 1, status: "published" };
+  assertOnly(
+    () => undefined,
+    "templates.1.stockCode",
+    `This organization already holds template ${q("WTP")} (versions: 1); choose another code`,
+    { ...TEMPLATES, organization: [...TEMPLATES.organization, held] },
+  );
+}
+
+/** Decision 9 (code review) — an authored pattern with a stray brace (the tokens still parse, so V7 stays quiet). */
+export function assertAnAuthoredPatternOutsideTheGrammarIsAnError(): void {
+  const pattern = "{site}_{asset_code}_FLOW}";
+  assertOnly(
+    (d) => {
+      d.templates![0] = { code: "PUMP", name: "Pump", domain: "water", points: [{ pointKey: "flow", sourceDataKeyPattern: pattern }] };
+    },
+    "templates.0.points.0.sourceDataKeyPattern",
+    `Pattern ${q(pattern)} has a brace outside a {variable}; a variable is letters, digits or _ inside braces`,
+  );
+}
+
+/** Decision 9 (code review) — the same rule on a stock entry's `patterns` value, at its point key. */
+export function assertAStockPatternOutsideTheGrammarIsAnError(): void {
+  const pattern = "{asset_code}_PH{";
+  assertOnly(
+    (d) => {
+      d.templates![1] = { stockCode: "WTP", patterns: { ph: pattern } };
+    },
+    "templates.1.patterns.ph",
+    `Pattern ${q(pattern)} has a brace outside a {variable}; a variable is letters, digits or _ inside braces`,
+  );
+}
+
+/**
+ * Decision 2 (code review) — an organization template with no `version`. The
+ * commit would build whichever version is the highest published at confirm
+ * time, which a version published after the proposal would change under an
+ * unchanged draft hash.
+ */
+export function assertAnUnpinnedOrganizationTemplateIsAnError(): void {
+  assertOnly(
+    (d) => {
+      assetAt(d, 3).template = { code: "ORG-T" };
+    },
+    "assets.3.template.version",
+    `Template ${q("ORG-T")} is an organization template; name the version to build from (the highest published is 1)`,
+  );
+}
+
+/** V11 — a draft whose assets are all templated reaches `review` with no mappings. */
+export function assertV11AnAllTemplatedDraftNeedsNoMappings(): void {
+  const draft = templatedDraft();
+  draft.assets = draft.assets!.slice(1);
+  draft.assetPoints = [];
+  const phase = new OnboardingValidateService().inferPhase(draft, CODES);
+  assert(phase === "review", `an all-templated draft reaches review, got ${phase}`);
+}
+
+/** V11 — a mixed draft still needs a mapping for its plain asset. */
+export function assertV11AMixedDraftStillNeedsMappings(): void {
+  const draft = templatedDraft();
+  draft.assetPoints = [];
+  const phase = new OnboardingValidateService().inferPhase(draft, CODES);
+  assert(phase === "mappings", `a draft with a plain asset and no mapping stays in mappings, got ${phase}`);
+}
+
+/** V12 — the positive control: the fixture is clean and ready to commit. */
+export function assertV12ATemplatedDraftIsReadyToCommit(): void {
+  const result = new OnboardingValidateService().validate(templatedDraft(), CODES, TEMPLATES);
+  assert(result.errors.length === 0, `the fixture is clean, got ${JSON.stringify(result.errors)}`);
+  assert(result.readyToCommit === true, `the fixture is ready to commit, got phase ${result.suggestedPhase}`);
+}
+
+/** Decision 11 — a template no asset uses is valid: an upload that replaced `assets[]` keeps it. */
+export function assertAnUnreferencedTemplateIsValid(): void {
+  const got = templateErrors((d) => {
+    d.templates!.push({ code: "SPARE", name: "Spare", domain: "water", points: [{ pointKey: "x" }] });
+  });
+  assert(got === "[]", `an unreferenced template is not an error, got ${got}`);
 }

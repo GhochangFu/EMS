@@ -11,6 +11,8 @@ import {
   assertScrubSecretsKeepsKeyOrderAndProtoKey,
   assertScrubSecretsRebuildsANonJsonObject,
   runOnboardingRedactionTests,
+  assertW9BothRedactorsKeepTemplatesAndTheAssetRef,
+  assertW10APasswordVariableIsRedactedForTheModel,
 } from "./onboarding-redaction.spec";
 
 /** Vitest entry point — see `admin.schema.test.ts` for the pattern (ADR 0014). */
@@ -64,5 +66,15 @@ describe("onboarding-redaction — the draft blob carries a key version (ADR 006
 
   it("reconcileSecrets keeps the version on a kept blob", () => {
     assertReconcileSecretsKeepsTheVersionOnAKeptBlob();
+  });
+});
+
+describe("onboarding-redaction — templates (F3.22, ADR 0091 decision 2)", () => {
+  it("W9 both redactors keep templates and assets[].template", () => {
+    assertW9BothRedactorsKeepTemplatesAndTheAssetRef();
+  });
+
+  it("W10 redacts a password variable on the model's path", () => {
+    assertW10APasswordVariableIsRedactedForTheModel();
   });
 });

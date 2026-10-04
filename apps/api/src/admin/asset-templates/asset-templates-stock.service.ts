@@ -5,10 +5,10 @@ import type { AdminAssetTemplateDto, JwtPayload, StockAssetTemplateDto } from "@
 
 import { AccessControlService } from "../../auth/access-control.service";
 import { parseStoredContract } from "../../common/parse-stored-contract";
-import { createAssetTemplateBodySchema } from "./asset-templates.schema";
+import { createAssetTemplateBodySchema, type CreateAssetTemplateBody } from "./asset-templates.schema";
 import { AssetTemplatesAdminService } from "./asset-templates.service";
 import { STOCK_ASSET_TEMPLATE_CATALOG_TOKEN } from "./asset-templates.tokens";
-import type { StockAssetTemplateEntry } from "./stock-catalog/types";
+import type { StockAssetTemplateEntry, StockImportStamp } from "./stock-catalog/types";
 
 /**
  * The stock asset-template catalog surface — `F2.13`, ADR 0052 decisions 4
@@ -111,7 +111,22 @@ export class AssetTemplatesStockService {
    */
   async import(jwt: JwtPayload, code: string, organizationId: string): Promise<AdminAssetTemplateDto> {
     await this.templates.assertCanAuthor(jwt, organizationId);
+    const { body, stamp } = this.bodyFor(code, organizationId);
+    return this.templates.create(jwt, body, stamp);
+  }
 
+  /**
+   * The create body and the stamp for one catalog entry: the 400 for an
+   * unknown code, the destructure, the overlay of `patterns` and the parse.
+   * Shared by `import` and the onboarding commit (`F3.22`, ADR 0091 decision
+   * 4), which calls `createInTransaction` with it inside its own transaction.
+   * Authorization stays with each caller, before this runs.
+   */
+  bodyFor(
+    code: string,
+    organizationId: string,
+    patterns?: Readonly<Record<string, string>>,
+  ): { body: CreateAssetTemplateBody; stamp: StockImportStamp } {
     const entry = this.catalog.find((candidate) => candidate.code === code);
     if (!entry) {
       const available = this.catalog.map((candidate) => candidate.code);
@@ -155,10 +170,10 @@ export class AssetTemplatesStockService {
     // Exception". It would not: `new BadRequestException(err.flatten())`
     // answers the byte-identical body wherever it is raised, which is exactly
     // what assertion 2 of `asset-templates-stock.service.spec.ts` measures.
-    // The real reason is narrower — `import` has one caller and that caller
-    // already maps the error — and the hazard it leaves is a second caller
-    // added later with no `ZodError` catch, which would turn this 400 into a
-    // 500.
+    // The real reason is narrower — the import route's caller already maps
+    // the error — and the hazard it leaves is a caller with no `ZodError`
+    // catch. `F3.22` added one: the onboarding commit does not catch it, so
+    // there the global `ZodErrorFilter` answers the same 400.
     //
     // Propagating a `ZodError` out of a service is not unique to this method,
     // and the first draft of this comment claimed it was. Eight other service
@@ -195,7 +210,29 @@ export class AssetTemplatesStockService {
     // "organizationId">` and every pack is an array of object literals, so
     // excess-property checking already refuses the key at the literal; this
     // ordering means the guarantee does not rest on that type-level accident.
-    const parsed = createAssetTemplateBodySchema.parse({ ...body, organizationId });
-    return this.templates.create(jwt, parsed, { stockCode: entry.code, stockVersion });
+    //
+    // `F3.22` (ADR 0091 decision 2, dated note; owner ruling Q1): the onboarding
+    // commit is the second caller, and it reaches this parse with `patterns`
+    // laid over the entry's measured points first — the chat is the operator
+    // the catalog defers a site's wiring to (`stock-catalog/water-wtp.ts`).
+    // Laid over BEFORE the parse, so a pattern is held to the same column bound
+    // and `.strict()` key set as a hand-authored one. Only a measured point
+    // takes a pattern; a key naming anything else is ignored here and refused
+    // earlier, at tool time and in validation (V9). `hasOwnProperty`, not `in`:
+    // a key such as `constructor` must not read the prototype.
+    const overlaid =
+      patterns === undefined
+        ? body
+        : {
+            ...body,
+            points: body.points.map((point) =>
+              (point.kind ?? "measured") === "measured" &&
+              Object.prototype.hasOwnProperty.call(patterns, point.pointKey)
+                ? { ...point, sourceDataKeyPattern: patterns[point.pointKey] }
+                : point,
+            ),
+          };
+    const parsed = createAssetTemplateBodySchema.parse({ ...overlaid, organizationId });
+    return { body: parsed, stamp: { stockCode: entry.code, stockVersion } };
   }
 }

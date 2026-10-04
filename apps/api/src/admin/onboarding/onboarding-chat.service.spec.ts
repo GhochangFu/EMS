@@ -8,6 +8,7 @@ import { catalogCodeFromLocationName, catalogCodeSlug } from "./onboarding-draft
 import { MAX_RTU_TOPIC_CHARS } from "./onboarding-excel.service";
 import { OnboardingValidateService } from "./onboarding-validate.service";
 import { onboardingDraftSchema } from "./onboarding.schema";
+import { EMPTY_TEMPLATE_CONTEXT } from "./onboarding-template-refs";
 
 function assert(condition: boolean, message: string): void {
   if (!condition) {
@@ -35,7 +36,7 @@ function longCell(fill: string): string {
  * services and only one of them would still be the one this file describes.
  */
 export function chatService(): OnboardingChatService {
-  return new OnboardingChatService({} as never, {} as never, {} as never, {} as never, {} as never, {} as never);
+  return new OnboardingChatService({} as never, {} as never, {} as never, {} as never, {} as never, {} as never, { context: async () => EMPTY_TEMPLATE_CONTEXT } as never);
 }
 
 /** A topic exactly at the bound — the longest one `parseRtus` accepts. */
@@ -433,6 +434,7 @@ function ruleBasedChatService(): OnboardingChatService {
     {} as never,
     { listLocationTypes: async () => [...FOUR] } as never,
     {} as never, // F3.21: no organization is passed, so the resolver is never asked.
+    { context: async () => EMPTY_TEMPLATE_CONTEXT } as never,
   );
 }
 

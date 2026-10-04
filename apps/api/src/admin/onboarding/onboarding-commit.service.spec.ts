@@ -3,6 +3,7 @@ import { BadRequestException } from "@nestjs/common";
 import type { JwtPayload, OnboardingDraft } from "@bms/shared";
 
 import { OnboardingCommitService } from "./onboarding-commit.service";
+import { EMPTY_TEMPLATE_CONTEXT } from "./onboarding-template-refs";
 
 /**
  * `F4.157` K1 (ADR 0077, plan D4) — the onboarding commit asks
@@ -102,6 +103,11 @@ function buildService(draft: OnboardingDraft, opts: { liveTypes: readonly string
     {} as never,
     validateService,
     vocabularies,
+    { context: async () => EMPTY_TEMPLATE_CONTEXT } as never,
+    // F3.22: the three template services; this draft holds no template, so none is called.
+    {} as never,
+    {} as never,
+    {} as never,
   );
   return { service, events };
 }

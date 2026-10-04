@@ -5,14 +5,22 @@ import {
   MAX_ONBOARDING_ASSETS,
   MAX_ONBOARDING_POINT_KEYS,
   MAX_ONBOARDING_RTUS,
+  MAX_ONBOARDING_TEMPLATE_POINTS,
+  MAX_ONBOARDING_TEMPLATE_VARS,
+  MAX_ONBOARDING_TEMPLATES,
   ONBOARDING_DRAFT_STRING_MAX,
   onboardingChatMessageSchema,
+  onboardingCommitResponseDtoSchema,
   onboardingDraftAssetPointSchema,
   onboardingDraftAssetSchema,
+  onboardingDraftAssetTemplateRefSchema,
+  onboardingDraftAuthoredTemplateSchema,
   onboardingDraftLocationSchema,
   onboardingDraftPointKeySchema,
   onboardingDraftRtuSchema,
   onboardingDraftSchema,
+  onboardingDraftStockTemplateSchema,
+  onboardingDraftTemplatePointSchema,
   onboardingSessionDtoSchema,
 } from "./onboarding";
 import { locationTypeCodeSchema } from "./location-types";
@@ -205,11 +213,20 @@ const DRAFT_SUB_SCHEMAS: readonly (readonly [string, Record<string, z.ZodTypeAny
   ["pointKeys", onboardingDraftPointKeySchema.shape],
   ["assets", onboardingDraftAssetSchema.shape],
   ["assetPoints", onboardingDraftAssetPointSchema.shape],
+  // F3.22 (ADR 0091 decision 2).
+  ["templates", onboardingDraftAuthoredTemplateSchema.shape],
+  ["stockTemplates", onboardingDraftStockTemplateSchema.shape],
+  ["templatePoints", onboardingDraftTemplatePointSchema.shape],
+  ["assetTemplateRef", onboardingDraftAssetTemplateRefSchema.shape],
 ];
 
 /**
- * The number of string fields those five schemas hold between them —
- * 6 + 6 + 5 + 4 + 4 (`location` gained `type` — `F4.157`, `locationTypeCodeSchema`
+ * The number of string fields those nine schemas hold between them —
+ * 6 + 6 + 5 + 4 + 4 + 5 + 1 + 4 + 1. The last four are `F3.22`'s authored
+ * template (code, name, assetType, domain, description), stock entry
+ * (stockCode), template point (pointKey, label, unit, sourceDataKeyPattern) and
+ * template reference (code); record keys and values are not shape fields and
+ * are not counted. (`location` gained `type` — `F4.157`, `locationTypeCodeSchema`
  * is a `ZodString` under its `.optional()` wrapper, same as every other
  * optional string field the walk already counts).
  *
@@ -220,7 +237,7 @@ const DRAFT_SUB_SCHEMAS: readonly (readonly [string, Record<string, z.ZodTypeAny
  * no schema at all. Repair the walk when this number is what fails; do not
  * adjust the number to match a broken walk.
  */
-const DRAFT_STRING_FIELD_COUNT = 25;
+const DRAFT_STRING_FIELD_COUNT = 36;
 
 /** Only the wrappers zod puts *outside* the string: `.optional()`, `.default()`, `.nullable()`. */
 function unwrapSchema(schema: z.ZodTypeAny): z.ZodTypeAny {
@@ -268,7 +285,7 @@ function stringFieldsOf(
   return found;
 }
 
-/** Every string field of all five sub-schemas. */
+/** Every string field of all nine sub-schemas. */
 function allDraftStringFields(): Map<string, z.ZodString> {
   const found = new Map<string, z.ZodString>();
   for (const [prefix, shape] of DRAFT_SUB_SCHEMAS) {
@@ -318,7 +335,7 @@ export function assertDraftStringBoundsAreDeclaredOnce(): void {
   const fields = allDraftStringFields();
   assert(
     fields.size === DRAFT_STRING_FIELD_COUNT,
-    `the five draft sub-schemas must hold ${DRAFT_STRING_FIELD_COUNT} string fields, the walk ` +
+    `the nine draft sub-schemas must hold ${DRAFT_STRING_FIELD_COUNT} string fields, the walk ` +
       `found ${fields.size} (${[...fields.keys()].join(", ") || "none"}). If the schemas really ` +
       "changed, move this number with them; if they did not, repair `stringFieldsOf` rather " +
       "than the assertion — an empty walk satisfies both comparisons below.",
@@ -349,6 +366,13 @@ export function assertDraftStringBoundsAreDeclaredOnce(): void {
     "ONBOARDING_DRAFT_STRING_MAX[\"assets.domain\"] must equal `assetDomainCodeSchema.maxLength` " +
       `— the record says ${String(bounds["assets.domain"])}, the vocabulary schema says ` +
       `${String(assetDomainCodeSchema.maxLength)}`,
+  );
+  // F3.22 — `templates.domain` is the same vocabulary schema, pinned the same way.
+  assert(
+    bounds["templates.domain"] === assetDomainCodeSchema.maxLength,
+    "ONBOARDING_DRAFT_STRING_MAX[\"templates.domain\"] must equal " +
+      `\`assetDomainCodeSchema.maxLength\` — the record says ${String(bounds["templates.domain"])}, ` +
+      `the vocabulary schema says ${String(assetDomainCodeSchema.maxLength)}`,
   );
 }
 
@@ -388,7 +412,7 @@ export function assertDraftStringBoundsAreEnforced(): void {
     // other contract files (`F4.157`, D1). Both floors bind the value when it
     // is present; `.optional()` is what still admits an absent one.
     const expectedMin =
-      key === "assets.domain"
+      key === "assets.domain" || key === "templates.domain"
         ? assetDomainCodeSchema.minLength
         : key === "location.type"
           ? locationTypeCodeSchema.minLength
@@ -541,4 +565,172 @@ export function assertChatMessageRoleAcceptsAction(): void {
 export function assertChatMessageRoleRefusesToolRole(): void {
   const result = onboardingChatMessageSchema.safeParse({ ...chatMessage, role: "tool" });
   assert(!result.success, "role `tool` must fail the parse");
+}
+
+/* -------------------------------------------------------------------------- *
+ * `F3.22` (ADR 0091 decisions 2 and 4) — templates in the draft.               *
+ * -------------------------------------------------------------------------- */
+
+const authoredTemplate = (pointCount: number) => ({
+  code: "pump_skid",
+  name: "Pump skid",
+  domain: "electrical",
+  points: times(pointCount, (i) => ({
+    pointKey: `flow_${i}`,
+    sourceDataKeyPattern: `{site}.flow_${i}`,
+  })),
+});
+
+const templatedAsset = (vars: Record<string, string>) => ({
+  ...assetAt(0),
+  template: { code: "pump_skid", sourceDataKeyVars: vars },
+});
+
+/** `n` distinct keys, each mapped to a short value. */
+const recordOf = (n: number): Record<string, string> =>
+  Object.fromEntries(times(n, (i) => [`k_${i}`, `v_${i}`]));
+
+/** The first issue under `path`, or a description of what was reported instead. */
+function issueAt(result: z.SafeParseReturnType<unknown, unknown>, path: string): z.ZodIssue | string {
+  if (result.success) {
+    return "it parsed";
+  }
+  const issue = result.error.issues.find((candidate) => candidate.path.join(".") === path);
+  return issue ?? JSON.stringify(result.error.issues);
+}
+
+/** A draft with one authored template, one stock entry and one templated asset parses. */
+export function assertDraftWithTemplatesParses(): void {
+  const parsed = onboardingDraftSchema.safeParse({
+    assets: [templatedAsset({ site: "PLANT_A" })],
+    templates: [authoredTemplate(1), { stockCode: "water-wtp", patterns: { flow: "{site}.flow" } }],
+  });
+  assert(
+    parsed.success,
+    "a draft with one authored template, one stock entry and one templated asset must parse: " +
+      (parsed.success ? "" : JSON.stringify(parsed.error.issues)),
+  );
+  assert(
+    parsed.success && parsed.data.assets?.[0]?.template?.sourceDataKeyVars?.site === "PLANT_A",
+    "the parsed asset must keep its template reference — a stripped key would also parse",
+  );
+}
+
+/** `templates` holds at most `MAX_ONBOARDING_TEMPLATES`, refused at the array. */
+export function assertTemplateCountIsCapped(): void {
+  const entry = (i: number) => ({ stockCode: `stock_${i}` });
+  assert(
+    onboardingDraftSchema.safeParse({ templates: times(MAX_ONBOARDING_TEMPLATES, entry) }).success,
+    "a draft holding exactly MAX_ONBOARDING_TEMPLATES templates must parse",
+  );
+  const issue = issueAt(
+    onboardingDraftSchema.safeParse({ templates: times(MAX_ONBOARDING_TEMPLATES + 1, entry) }),
+    "templates",
+  );
+  assert(
+    typeof issue !== "string" && issue.code === "too_big",
+    `one template over the cap must be refused with a \`too_big\` on \`templates\`: ${JSON.stringify(issue)}`,
+  );
+}
+
+/** An authored template holds at most `MAX_ONBOARDING_TEMPLATE_POINTS` points. */
+export function assertTemplatePointCountIsCapped(): void {
+  assert(
+    onboardingDraftSchema.safeParse({
+      templates: [authoredTemplate(MAX_ONBOARDING_TEMPLATE_POINTS)],
+    }).success,
+    "an authored template holding exactly MAX_ONBOARDING_TEMPLATE_POINTS points must parse",
+  );
+  const issue = issueAt(
+    onboardingDraftSchema.safeParse({
+      templates: [authoredTemplate(MAX_ONBOARDING_TEMPLATE_POINTS + 1)],
+    }),
+    "templates.0.points",
+  );
+  assert(
+    typeof issue !== "string" && issue.code === "too_big",
+    "one point over the cap must be refused with a `too_big` on `templates[0].points`: " +
+      JSON.stringify(issue),
+  );
+}
+
+/** A templated asset carries at most `MAX_ONBOARDING_TEMPLATE_VARS` variables. */
+export function assertTemplateVarCountIsCapped(): void {
+  assert(
+    onboardingDraftSchema.safeParse({
+      assets: [templatedAsset(recordOf(MAX_ONBOARDING_TEMPLATE_VARS))],
+    }).success,
+    "an asset holding exactly MAX_ONBOARDING_TEMPLATE_VARS variables must parse",
+  );
+  const issue = issueAt(
+    onboardingDraftSchema.safeParse({
+      assets: [templatedAsset(recordOf(MAX_ONBOARDING_TEMPLATE_VARS + 1))],
+    }),
+    "assets.0.template.sourceDataKeyVars",
+  );
+  assert(
+    typeof issue !== "string" && issue.code === "custom",
+    "one variable over the cap must be refused on `assets[0].template.sourceDataKeyVars`: " +
+      JSON.stringify(issue),
+  );
+}
+
+/** A stock entry overlays at most `MAX_ONBOARDING_TEMPLATE_POINTS` patterns. */
+export function assertStockPatternCountIsCapped(): void {
+  const stock = (n: number) => ({ stockCode: "water-wtp", patterns: recordOf(n) });
+  assert(
+    onboardingDraftSchema.safeParse({ templates: [stock(MAX_ONBOARDING_TEMPLATE_POINTS)] })
+      .success,
+    "a stock entry holding exactly MAX_ONBOARDING_TEMPLATE_POINTS patterns must parse",
+  );
+  const issue = issueAt(
+    onboardingDraftSchema.safeParse({ templates: [stock(MAX_ONBOARDING_TEMPLATE_POINTS + 1)] }),
+    "templates.0.patterns",
+  );
+  assert(
+    typeof issue !== "string" && issue.code === "custom",
+    "one pattern over the cap must be refused on `templates[0].patterns`: " + JSON.stringify(issue),
+  );
+}
+
+const commitBody = {
+  sessionId: "s1",
+  locationId: "l1",
+  rtuIds: ["r1"],
+  assetIds: ["a1", "a2"],
+  pointKeyIds: [],
+  assetPointIds: [],
+  templateIds: ["t1"],
+  templatedAssetCount: 1,
+  templatedAssetPointCount: 3,
+  seededRuleCount: 0,
+  dashboardCount: 1,
+};
+
+/** The commit result carries the five `F3.22` fields (ADR 0091 decision 4). */
+export function assertCommitResponseParsesWithTheTemplateFields(): void {
+  const parsed = onboardingCommitResponseDtoSchema.safeParse(commitBody);
+  assert(
+    parsed.success && parsed.data.templateIds[0] === "t1" && parsed.data.dashboardCount === 1,
+    "a full commit result must parse and keep its template fields: " +
+      (parsed.success ? JSON.stringify(parsed.data) : JSON.stringify(parsed.error.issues)),
+  );
+}
+
+/** Each of the five fields is required: a body missing one is refused, naming it. */
+export function assertCommitResponseRequiresEachTemplateField(): void {
+  for (const key of [
+    "templateIds",
+    "templatedAssetCount",
+    "templatedAssetPointCount",
+    "seededRuleCount",
+    "dashboardCount",
+  ] as const) {
+    const { [key]: _omitted, ...without } = commitBody;
+    const issue = issueAt(onboardingCommitResponseDtoSchema.safeParse(without), key);
+    assert(
+      typeof issue !== "string" && issue.code === "invalid_type",
+      `a commit result without \`${key}\` must be refused at \`${key}\`: ${JSON.stringify(issue)}`,
+    );
+  }
 }

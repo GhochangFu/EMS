@@ -2,6 +2,7 @@ import { describe, it } from "vitest";
 
 import {
   assertACommitRefusalIsAReplyNotAThrow,
+  assertACoreConflictIsAReplyNotAThrow,
   assertAMatchingProposalCommitsOnce,
   assertANonProposingTurnClearsTheProposal,
   assertAProposingTurnStoresAHashOfTheStoredDraft,
@@ -11,6 +12,7 @@ import {
   assertPatchDraftClearsTheProposal,
   assertScrubMessagesKeepsTheActionRole,
   assertSetCredentialsClearsTheProposal,
+  assertTheConfirmLineNamesTheTemplateCounts,
   assertTheCredentialRefusalStillAnswersFirst,
   assertHistoryAndActionLinesAreScrubbed,
 } from "./onboarding-chat-confirm.spec";
@@ -29,8 +31,16 @@ describe("OnboardingService.chat — the confirm path and action messages (F3.21
     await assertAMatchingProposalCommitsOnce();
   });
 
+  it("names the template counts in the confirm line (F3.22, ADR 0091 d4)", async () => {
+    await assertTheConfirmLineNamesTheTemplateCounts();
+  });
+
   it("answers a commit refusal as a reply", async () => {
     await assertACommitRefusalIsAReplyNotAThrow();
+  });
+
+  it("answers a template core's 409 as a reply (F3.22)", async () => {
+    await assertACoreConflictIsAReplyNotAThrow();
   });
 
   it("still answers a credential-looking message with the refusal", async () => {

@@ -14,6 +14,7 @@ import {
   assertTheDeadlineKeepsCompletedEdits,
   assertTheNinthToolCallIsNotMade,
   assertTheTurnRecordIsTextFree,
+  assertW4TheTurnPatchCarriesTemplates,
   assertToolCallsAreRunAndResultsReturnedToTheModel,
   assertAnUnknownToolNameIsRecordedAsUnknown,
   assertAProviderErrorRecordsItsClassAndStatus,
@@ -83,5 +84,11 @@ describe("onboarding agent loop (F3.21, ADR 0090 decisions 2, 3, 7, 9)", () => {
 
   it("records a provider error class and status, never its message", async () => {
     await assertAProviderErrorRecordsItsClassAndStatus();
+  });
+});
+
+describe("runAgentTurn — templates[] (F3.22, ADR 0091 decision 2)", () => {
+  it("W4 the turn patch carries a changed templates section", () => {
+    assertW4TheTurnPatchCarriesTemplates();
   });
 });

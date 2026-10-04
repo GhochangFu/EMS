@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ConflictException,
   ForbiddenException,
   Inject,
   Injectable,
@@ -28,6 +29,7 @@ import { VocabulariesService } from "../../vocabularies/vocabularies.service";
 import { OnboardingChatService } from "./onboarding-chat.service";
 import { OnboardingCommitService } from "./onboarding-commit.service";
 import { OnboardingCatalogService } from "./onboarding-catalog.service";
+import { OnboardingTemplateCatalogService } from "./onboarding-template-catalog.service";
 import { OnboardingExcelService } from "./onboarding-excel.service";
 import { looksLikeCredential, scrubMessages } from "./onboarding-credential-detect";
 import {
@@ -71,6 +73,7 @@ export class OnboardingService {
     private readonly excelService: OnboardingExcelService,
     private readonly catalogService: OnboardingCatalogService,
     private readonly vocabularies: VocabulariesService,
+    private readonly templateCatalog: OnboardingTemplateCatalogService,
   ) {}
 
   /** Creates a new onboarding session for an organization. */
@@ -404,7 +407,11 @@ export class OnboardingService {
   /** Validates draft without committing. */
   async validate(jwt: JwtPayload, sessionId: string): Promise<OnboardingValidateResponseDto> {
     const session = await this.loadSession(jwt, sessionId);
-    const validation = this.validateService.validate(session.draft, await this.activeLocationTypeCodes());
+    const validation = this.validateService.validate(
+      session.draft,
+      await this.activeLocationTypeCodes(),
+      await this.templateCatalog.context(session.organizationId),
+    );
     let autoOpenReason = validation.readyToCommit
       ? ("ready_to_commit" as const)
       : validation.errors.length > 0
@@ -499,7 +506,11 @@ export class OnboardingService {
       .where(eq(organizations.id, session.organizationId))
       .limit(1);
 
-    const validation = this.validateService.validate(mergedDraft, locationTypeCodes);
+    const validation = this.validateService.validate(
+      mergedDraft,
+      locationTypeCodes,
+      await this.templateCatalog.context(session.organizationId),
+    );
 
     return {
       assistantMessage: assistantText,
@@ -578,13 +589,22 @@ export class OnboardingService {
         const result = await this.commitService.commitProposed(jwt, session.id, proposal.draftHash);
         committed = true;
         const name = (session.draft as OnboardingDraft).location?.name ?? "";
+        // F3.22 (ADR 0091 decision 4): the template part of the result too.
+        // `assetIds` holds every asset, so "(N from templates)" says how many
+        // of them the instantiate core built; "dashboards" counts the views it
+        // wrote, as `dashboardCount` does.
         actionLine =
           `Committed: location ${name}, ${countOf(result.rtuIds.length, "RTU")}, ` +
-          `${countOf(result.pointKeyIds.length, "point key")}, ${countOf(result.assetIds.length, "asset")}, ` +
-          countOf(result.assetPointIds.length, "mapping");
+          `${countOf(result.pointKeyIds.length, "point key")}, ${countOf(result.templateIds.length, "template")}, ` +
+          `${countOf(result.assetIds.length, "asset")} (${result.templatedAssetCount} from templates), ` +
+          `${countOf(result.assetPointIds.length, "mapping")}, ${countOf(result.seededRuleCount, "seeded rule")}, ` +
+          countOf(result.dashboardCount, "dashboard");
         reply = "Committed. The location, RTUs, assets and mappings are created.";
       } catch (error) {
-        if (!(error instanceof BadRequestException)) {
+        // F3.22 (ADR 0091 decision 4): the template cores refuse with a 409 — a
+        // taken asset or rule code, an open draft — and that is a refusal the
+        // operator can act on, so it is a reply too. Anything else still throws.
+        if (!(error instanceof BadRequestException || error instanceof ConflictException)) {
           throw error;
         }
         reply = `Commit refused: ${error.message}`;

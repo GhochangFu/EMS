@@ -1,6 +1,7 @@
 import { setCredentialsBodySchema } from "./onboarding.schema";
 import { OnboardingService } from "./onboarding.service";
 import { redactDraftForClient } from "./onboarding-redaction";
+import { EMPTY_TEMPLATE_CONTEXT } from "./onboarding-template-refs";
 
 function assert(condition: boolean, message: string): void {
   if (!condition) {
@@ -88,6 +89,7 @@ function buildService(opts: {
     {} as never,
     {} as never,
     {} as never,
+    { context: async () => EMPTY_TEMPLATE_CONTEXT } as never,
   );
   return { service, calls };
 }

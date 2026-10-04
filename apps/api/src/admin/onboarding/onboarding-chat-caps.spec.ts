@@ -7,6 +7,7 @@ import { CredentialCryptoService } from "../../security/credential-crypto.servic
 import { OnboardingChatService } from "./onboarding-chat.service";
 import { OnboardingService } from "./onboarding.service";
 import { OnboardingValidateService } from "./onboarding-validate.service";
+import { EMPTY_TEMPLATE_CONTEXT } from "./onboarding-template-refs";
 
 function assert(condition: boolean, message: string): void {
   if (!condition) {
@@ -182,6 +183,7 @@ function buildService(opts: { session: ReturnType<typeof sessionRow>; results?: 
     // F3.21: the platform has no provider, so the guided (rule-based) mode
     // answers — the producer these cases are about.
     { resolveForOrganization: async () => ({ kind: "guided", reason: "platform_off" }) } as never,
+    { context: async () => EMPTY_TEMPLATE_CONTEXT } as never,
   );
   const service = new OnboardingService(
     db,
@@ -193,6 +195,7 @@ function buildService(opts: { session: ReturnType<typeof sessionRow>; results?: 
     {} as never,
     {} as never,
     {} as never,
+    { context: async () => EMPTY_TEMPLATE_CONTEXT } as never,
   );
   return { service, record };
 }

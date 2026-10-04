@@ -59,7 +59,7 @@ export type AgentTurnResult = {
   readonly record: AgentTurnRecord;
 };
 
-const DRAFT_SECTIONS = ["location", "rtus", "pointKeys", "assets", "assetPoints", "onboardingMeta"] as const;
+const DRAFT_SECTIONS = ["location", "rtus", "pointKeys", "assets", "assetPoints", "templates", "onboardingMeta"] as const;
 
 /**
  * The stored history as provider messages: the last `MAX_HISTORY_MESSAGES`,
@@ -92,6 +92,7 @@ Current phase: ${input.phase}. Use the tools to read and change the onboarding d
 Phases: location, rtu, point_keys, assets, mappings, review.
 Location types (location.type must be one of these codes; ask the user when unsure): ${input.typeCodes.join(", ")}.
 Never include password or secret values in a reply. Credentials are NEVER collected through this chat — if the user offers one, tell them to use the Credentials field on the RTU step. Never put a credential in a tool argument.
+To build assets from a template: find it with list_templates or list_stock_templates, read its points and variables with get_template, bring it into the draft with import_stock_template or add_template unless the organization already holds it, then use add_template_assets with a value for every variable.
 You cannot commit. When the draft is ready, use propose_commit; the user then confirms with the Commit button or by typing \`confirm commit\`.
 ${PROMPT_MARKER_SENTENCE}
 Draft context (redacted): ${serialiseDraftForPrompt(input.draft)}`;
@@ -111,7 +112,7 @@ function errorFacts(error: unknown): { errorClass?: string; errorStatus?: number
 }
 
 /** The six draft sections that differ, wholesale, so `mergeDraft(stored, patch)` reproduces `working`. */
-function diffSections(stored: OnboardingDraft, working: OnboardingDraft): OnboardingDraftInput {
+export function diffSections(stored: OnboardingDraft, working: OnboardingDraft): OnboardingDraftInput {
   const patch: Record<string, unknown> = {};
   for (const section of DRAFT_SECTIONS) {
     if (JSON.stringify(stored[section]) !== JSON.stringify(working[section])) {

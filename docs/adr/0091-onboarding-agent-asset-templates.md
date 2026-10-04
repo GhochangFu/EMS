@@ -154,6 +154,27 @@ service files are 940 and 996 lines, against the 1,000-line cap of
    and the OpenAPI output. The plan enumerates them by the parse call, not by
    a name search. No migration: the draft is `jsonb`.
 
+   *Dated note, 2026-10-04 (the PR 2 plan, owner rulings Q1 and Q2):*
+   - **A stock entry carries patterns.** The shipped stock catalog has no
+     source-key pattern on any of its 779 points, and 234 of them are
+     required, because the catalog must not guess a site's wiring
+     (`stock-catalog/water-wtp.ts`). With `stockCode` only, a chat-imported
+     stock template with a required point cannot be instantiated. So a stock
+     entry is `{ stockCode, patterns? }`: `patterns` maps a measured point key
+     of that entry to a pattern in the shared token grammar, with the column's
+     length bound and a count cap. `import_stock_template` collects it, and
+     the commit lays it over the catalog body before the create checks run.
+     The rest of the content still comes from the catalog module only.
+     Validation refuses, before the proposal, a templated asset whose required
+     measured point still has no pattern, and names the point.
+   - **An authored point is measured only.** An authored entry's points carry
+     `pointKey`, `label`, `unit`, `sourceDataKeyPattern`, `required` and
+     `sortOrder`, and the commit sets `kind: "measured"`. Derived points
+     (formulas and calc timing) and instrument defaults stay on the template
+     editor (`F2.5`) as a new version, so the model never writes calc DSL. The
+     entry gains an optional `assetType` (the table requires `asset_type`),
+     which defaults to the template code.
+
 3. **The tool set grows from 17 to 24 tools.**
    - **Read:** `list_templates` (the organization's published templates: code,
      highest version, domain, point count), `get_template` (one organization
@@ -254,6 +275,15 @@ service files are 940 and 996 lines, against the 1,000-line cap of
     The web preview (`apps/web/src/lib/onboarding-draft-summary.ts`) gains a
     line per template and per templated asset, with a spec, because the
     formatter has none today.
+
+    *Dated note, 2026-10-04 (the PR 2 review, owner ruling):* "does not
+    change" yields to "leaves `assets[].template` untouched" in one place. The
+    guided mappings branch wrote its point mapping onto `assets[0]` even when
+    that asset was templated, which put an `assetPoints` entry on a templated
+    asset and broke a ready all-template draft. The branch now maps onto the
+    first asset with no template, and it does not run when every asset is
+    templated. Nothing else in `handleRuleBasedTurn` changes; `F3.27` still
+    owns parity.
 
 12. **Delivery and verification.** PR 1 is decision 1. PR 2 is decisions 2–11
     and the web preview. Verification: the template-domain integration suites

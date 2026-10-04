@@ -6,6 +6,7 @@ import { FakeLlmProvider, PLAIN_RTU, calls, toolCall } from "./onboarding-agent-
 import { AGENT_NOT_SET_UP_NOTICE, AGENT_UNAVAILABLE_NOTICE, OnboardingChatService } from "./onboarding-chat.service";
 import type { ResolvedLlm } from "./onboarding-llm-resolver";
 import { OnboardingValidateService } from "./onboarding-validate.service";
+import { EMPTY_TEMPLATE_CONTEXT } from "./onboarding-template-refs";
 
 function assert(condition: boolean, message: string): void {
   if (!condition) {
@@ -28,6 +29,7 @@ function service(resolved: ResolvedLlm): { chat: OnboardingChatService; asked: s
         return resolved;
       },
     } as never,
+    { context: async () => EMPTY_TEMPLATE_CONTEXT } as never,
   );
   return { chat, asked };
 }

@@ -422,6 +422,13 @@ const instantiateAssetBodySchema = z
   .strict();
 
 /**
+ * The number of assets one instantiation may create (ADR 0015). Exported for
+ * `F3.22` (ADR 0091 decision 4), which applies the same bound to the sum of
+ * templated assets over one onboarding commit.
+ */
+export const MAX_INSTANTIATE_ASSETS = 200;
+
+/**
  * The instantiation payload (ADR 0015 §6, as amended 2026-08-05).
  *
  * The target is `rtuId` **or** `locationId`, never both and never neither.
@@ -440,7 +447,7 @@ export const instantiateAssetsBodySchema = z
   .object({
     rtuId: z.string().uuid().optional(),
     locationId: z.string().uuid().optional(),
-    assets: z.array(instantiateAssetBodySchema).min(1).max(200),
+    assets: z.array(instantiateAssetBodySchema).min(1).max(MAX_INSTANTIATE_ASSETS),
   })
   // `.strict()` must precede `.superRefine` — it returns a `ZodEffects`,
   // which has no `.strict()`. Nothing may separate `.superRefine(...)` from

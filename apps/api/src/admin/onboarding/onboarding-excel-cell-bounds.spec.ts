@@ -26,6 +26,7 @@ import {
 } from "./onboarding-excel.service.spec";
 import { MAX_RTU_CREDENTIAL_CHARS, onboardingDraftSchema } from "./onboarding.schema";
 import { OnboardingValidateService } from "./onboarding-validate.service";
+import { EMPTY_TEMPLATE_CONTEXT } from "./onboarding-template-refs";
 
 function assert(condition: boolean, message: string): void {
   if (!condition) {
@@ -397,7 +398,7 @@ export function assertPartialWorkbookStillParses(): void {
     "the draft schema rejects this partial draft — which is exactly why it is not parsed at the upload boundary",
   );
 
-  const validation = new OnboardingValidateService().validate(draft, LOCATION_TYPE_CODES);
+  const validation = new OnboardingValidateService().validate(draft, LOCATION_TYPE_CODES, EMPTY_TEMPLATE_CONTEXT);
   assert(validation.valid === false, "a draft with a blank location code is not valid yet");
   assert(
     validation.errors.some((error) => error.path === "location.code"),

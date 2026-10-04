@@ -13,6 +13,7 @@ import {
 } from "./onboarding-agent-tools";
 import { commitSummary } from "./onboarding-commit-proposal";
 import { PROMPT_OMITTED_MARKER } from "./onboarding-prompt-budget";
+import { EMPTY_TEMPLATE_CONTEXT } from "./onboarding-template-refs";
 import { OnboardingValidateService } from "./onboarding-validate.service";
 
 function assert(condition: boolean, message: string): void {
@@ -48,6 +49,7 @@ function context(overrides: Partial<ToolContext> = {}): ToolContext {
       formatForAssistant: () => "MQTT, Modbus TCP",
     },
     validator: new OnboardingValidateService(),
+    templates: EMPTY_TEMPLATE_CONTEXT,
     ...overrides,
   };
 }
@@ -77,7 +79,7 @@ const FORBIDDEN = ["credentialsSet", "_secrets", "_commitProposal", "rtuTargetCo
 
 /** Every tool's JSON Schema; none carries a field the agent must never write. */
 export function assertEveryToolHasAJsonSchemaWithNoForbiddenProperty(): void {
-  assert(TOOL_DEFINITIONS.length === 17, `there are 17 tools, got ${TOOL_DEFINITIONS.length}`);
+  assert(TOOL_DEFINITIONS.length === 24, `there are 24 tools, got ${TOOL_DEFINITIONS.length}`);
   for (const tool of TOOL_DEFINITIONS) {
     const text = JSON.stringify(tool.parameters);
     for (const field of FORBIDDEN) {
@@ -187,8 +189,8 @@ export async function assertProposeCommitRecordsASummary(): Promise<void> {
   const before = JSON.stringify(state.working);
   const out = await runTool(call("propose_commit", {}), state, context());
   assert(out.ok, "a ready draft is proposed");
-  assert(state.pendingProposal?.summary === commitSummary(state.working), "the pending proposal carries the code-written summary");
-  assert(out.actionLine === `Proposed commit: ${commitSummary(state.working)}`, "the action line names the summary");
+  assert(state.pendingProposal?.summary === commitSummary(state.working, EMPTY_TEMPLATE_CONTEXT), "the pending proposal carries the code-written summary");
+  assert(out.actionLine === `Proposed commit: ${commitSummary(state.working, EMPTY_TEMPLATE_CONTEXT)}`, "the action line names the summary");
   assert(JSON.stringify(state.working) === before, "proposing does not change the draft");
 }
 
@@ -269,6 +271,24 @@ export async function assertMetaCredentialsAreRefused(): Promise<void> {
     context(),
   );
   assert(!asset.ok && parsed(asset.content).error === CREDENTIAL_TOOL_ERROR, "add_asset meta is walked");
+}
+
+/**
+ * `F3.22` (ADR 0091 decision 2, code review): `add_asset` refuses a `template`,
+ * so an unpinned organization ref cannot enter the draft through it —
+ * `add_template_assets` is the one writer, and it pins the version. A refusal,
+ * not a silent strip into a plain asset.
+ */
+export async function assertAddAssetRefusesATemplate(): Promise<void> {
+  const asset = { rtuIndex: 0, code: "P-001", name: "Pump 1", siteName: "Site A", domain: "water" };
+  const refused: ToolState = { working: readyDraft() };
+  const before = refused.working.assets?.length ?? 0;
+  const out = await runTool(call("add_asset", { ...asset, template: { code: "ORG-T" } }), refused, context());
+  assert(!out.ok && String(parsed(out.content).error).includes("template"), `a template is refused, got ${out.content}`);
+  assert((refused.working.assets?.length ?? 0) === before, "nothing is written");
+  const control: ToolState = { working: readyDraft() };
+  const ok = await runTool(call("add_asset", asset), control, context());
+  assert(ok.ok && control.working.assets?.length === before + 1, `positive control: the plain asset is added, got ${ok.content}`);
 }
 
 /** Security review M2: a credentialed RTU keeps its connection; the action line names what changed. */

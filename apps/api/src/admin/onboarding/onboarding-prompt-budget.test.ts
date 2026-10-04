@@ -12,6 +12,9 @@ import {
   assertShedOverLongStringsIsIterative,
   assertTheBudgetIsMeasuredInBytesAtTheBound,
   assertTheMarkerEchoesNothing,
+  assertShedTemplatePointsIsIterative,
+  assertW7OverBudgetShedsTemplatePointsKeepingCodes,
+  assertW8AnUnderBudgetDraftKeepsTemplatePoints,
 } from "./onboarding-prompt-budget.spec";
 
 /**
@@ -66,5 +69,19 @@ describe("F4.107 — the draft forwarded to the model is bounded", () => {
 
   it("hands the agent's first model call a draft context within the budget", async () => {
     await assertAgentTurnForwardsABoundedPrompt();
+  });
+});
+
+describe("F3.22 — template points are shed before over-long strings", () => {
+  it("W7 sheds every template's points over budget and keeps every code", () => {
+    assertW7OverBudgetShedsTemplatePointsKeepingCodes();
+  });
+
+  it("W8 keeps template points verbatim under budget", () => {
+    assertW8AnUnderBudgetDraftKeepsTemplatePoints();
+  });
+
+  it("sheds template points iteratively", () => {
+    assertShedTemplatePointsIsIterative();
   });
 });

@@ -6,6 +6,7 @@ import {
   MAX_ONBOARDING_ASSETS,
   MAX_ONBOARDING_POINT_KEYS,
   MAX_ONBOARDING_RTUS,
+  MAX_ONBOARDING_TEMPLATES,
   ONBOARDING_DRAFT_STRING_MAX,
 } from "@bms/shared";
 import type { OnboardingDraft } from "@bms/shared";
@@ -572,4 +573,31 @@ export function assertCatalogCodeCarriesTheNameApartFromTheClass(): void {
     catalogCodeFromLocationName("Plant_A-2") === "PLANT_A-2-ASSET-1",
     `every character the class admits survives, got "${catalogCodeFromLocationName("Plant_A-2")}"`,
   );
+}
+
+/** A stock template entry; only the count is read. */
+function stockTemplateAt(index: number): NonNullable<OnboardingDraft["templates"]>[number] {
+  return { stockCode: `STOCK-${index}` };
+}
+
+/**
+ * W5 (`F3.22`, ADR 0091 decision 2) — a draft over `MAX_ONBOARDING_TEMPLATES`
+ * is refused with a sentence naming `templates` and the cap. Mutation: drop
+ * the `templates` entry from `CAPPED_DRAFT_ARRAYS`.
+ */
+export function assertW5ADraftOverTheTemplateCapIsRefused(): void {
+  const problem = draftCountProblem({ templates: times(MAX_ONBOARDING_TEMPLATES + 1, stockTemplateAt) });
+  const message = String(problem);
+  assert(
+    message ===
+      `The draft holds ${MAX_ONBOARDING_TEMPLATES + 1} templates, more than the ${MAX_ONBOARDING_TEMPLATES} one ` +
+        "onboarding session may commit; remove some and commit the rest in a second session",
+    `the refusal names templates and the cap of ${MAX_ONBOARDING_TEMPLATES}, got "${message}"`,
+  );
+}
+
+/** W6 — a draft at the template cap is not refused (the positive half of W5). */
+export function assertW6ADraftAtTheTemplateCapIsAccepted(): void {
+  const problem = draftCountProblem({ templates: times(MAX_ONBOARDING_TEMPLATES, stockTemplateAt) });
+  assert(problem === null, `a draft at the template cap commits, got "${String(problem)}"`);
 }

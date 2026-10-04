@@ -1,6 +1,7 @@
 import { CredentialCryptoService } from "../../security/credential-crypto.service";
 import { OnboardingChatService } from "./onboarding-chat.service";
 import { OnboardingValidateService } from "./onboarding-validate.service";
+import { EMPTY_TEMPLATE_CONTEXT } from "./onboarding-template-refs";
 
 function assert(condition: boolean, message: string): void {
   if (!condition) {
@@ -23,6 +24,7 @@ function buildChatService(): OnboardingChatService {
     {} as never,
     {} as never,
     {} as never,
+    { context: async () => EMPTY_TEMPLATE_CONTEXT } as never,
   );
 }
 

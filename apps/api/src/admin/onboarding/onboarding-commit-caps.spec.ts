@@ -5,6 +5,7 @@ import type { JwtPayload, OnboardingDraft } from "@bms/shared";
 
 import { OnboardingCommitService } from "./onboarding-commit.service";
 import { OnboardingValidateService } from "./onboarding-validate.service";
+import { EMPTY_TEMPLATE_CONTEXT } from "./onboarding-template-refs";
 
 function assert(condition: boolean, message: string): void {
   if (!condition) {
@@ -132,6 +133,11 @@ function buildService(opts: {
     {} as never,
     validateService,
     vocabularies,
+    { context: async () => EMPTY_TEMPLATE_CONTEXT } as never,
+    // F3.22: the three template services; this draft holds no template, so none is called.
+    {} as never,
+    {} as never,
+    {} as never,
   );
   return { service, domainCalls, validateCalls: () => validateCalls };
 }
@@ -193,10 +199,10 @@ export async function assertOverCapDraftIsRefusedBeforeValidate(): Promise<void>
   const validateService = new OnboardingValidateService();
   const atCap: OnboardingDraft = { assets: times(MAX_ONBOARDING_ASSETS, (index) => assetAt(index)) };
   assert(
-    validateService.validate(atCap, CODES).errors.filter((error) => error.path === "assets").length === 0,
+    validateService.validate(atCap, CODES, EMPTY_TEMPLATE_CONTEXT).errors.filter((error) => error.path === "assets").length === 0,
     "a draft at the asset cap raises no array-level issue — the cap is a ceiling, not a target",
   );
-  const realVerdict = validateService.validate(overCapDraft(), CODES);
+  const realVerdict = validateService.validate(overCapDraft(), CODES, EMPTY_TEMPLATE_CONTEXT);
   assert(
     realVerdict.errors.some((error) => error.path === "assets"),
     `the real validate service reports the over-cap array, got ${JSON.stringify(realVerdict.errors)}`,

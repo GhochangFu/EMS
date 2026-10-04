@@ -6,6 +6,7 @@ import { createAssetBodySchema, updateAssetBodySchema } from "./assets/assets.sc
 import { OnboardingValidateService } from "./onboarding/onboarding-validate.service";
 import { draftAssetSchema, draftPointKeySchema } from "./onboarding/onboarding.schema";
 import { createPointKeyBodySchema } from "./point-keys/point-keys.schema";
+import { EMPTY_TEMPLATE_CONTEXT } from "./onboarding/onboarding-template-refs";
 
 /**
  * `F2.23` / ADR 0065 decision 1 — the five Zod sites that admit a catalog code
@@ -160,7 +161,7 @@ export function assertValidateNamesTheField(): void {
     assets: [
       { rtuIndex: 0, code: "ST.-MARY'S-WORKS-ASSET-1", name: "Probe asset", siteName: "Probe site", domain: "electrical" },
     ],
-  }, CODES);
+  }, CODES, EMPTY_TEMPLATE_CONTEXT);
 
   const names = (path: string): boolean =>
     result.errors.some((error) => error.path === path && error.message === CATALOG_CODE_MESSAGE);

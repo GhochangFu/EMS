@@ -51,6 +51,7 @@ import {
   MAX_ONBOARDING_ASSETS,
   MAX_ONBOARDING_POINT_KEYS,
   MAX_ONBOARDING_RTUS,
+  MAX_ONBOARDING_TEMPLATES,
   ONBOARDING_DRAFT_STRING_MAX,
 } from "@bms/shared";
 import type { OnboardingDraft } from "@bms/shared";
@@ -169,7 +170,7 @@ export function cellLengthProblem(
 
 /** One draft array, its cap, and the words a human uses for it. */
 type CappedDraftArray = {
-  readonly field: "rtus" | "pointKeys" | "assets" | "assetPoints";
+  readonly field: "rtus" | "pointKeys" | "assets" | "assetPoints" | "templates";
   readonly label: string;
   readonly cap: number;
 };
@@ -185,6 +186,8 @@ const CAPPED_DRAFT_ARRAYS: readonly CappedDraftArray[] = [
   { field: "pointKeys", label: "point keys", cap: MAX_ONBOARDING_POINT_KEYS },
   { field: "assets", label: "assets", cap: MAX_ONBOARDING_ASSETS },
   { field: "assetPoints", label: "asset points", cap: MAX_ONBOARDING_ASSET_POINTS },
+  // F3.22 (ADR 0091 decision 2): after `assetPoints`, as the schema declares it.
+  { field: "templates", label: "templates", cap: MAX_ONBOARDING_TEMPLATES },
 ];
 
 /**

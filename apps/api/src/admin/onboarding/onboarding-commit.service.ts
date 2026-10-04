@@ -32,7 +32,18 @@ import { VocabulariesService } from "../../vocabularies/vocabularies.service";
 import { requestMetaForCreate } from "../locations/location-seed-key";
 import { MasterDataAuditService } from "../master-data-audit.service";
 import { resolveTelemetrySource, withTelemetrySource, type TelemetrySource } from "../telemetry-source";
+import { AssetTemplatesAdminService } from "../asset-templates/asset-templates.service";
+import { translateAssetCodeCollision } from "../asset-templates/asset-templates-instantiate-guards";
+import { AssetTemplateInstantiationService } from "../asset-templates/asset-templates-instantiate.service";
+import { AssetTemplatesStockService } from "../asset-templates/asset-templates-stock.service";
 import { translateCommitUniqueConflict } from "./onboarding-commit-conflict";
+import {
+  assertDraftTemplateAccess,
+  commitDraftTemplates,
+  commitTemplatedAssets,
+  templateGroups,
+  type CommitTemplateDeps,
+} from "./onboarding-commit-templates";
 import { distinctAssetDomains, draftCountProblem } from "./onboarding-draft-caps";
 import {
   conflictingPointKeyDeclaration,
@@ -41,6 +52,7 @@ import {
 } from "./onboarding-point-key-conflict";
 import { readEncryptedCredentials } from "./onboarding-redaction";
 import { draftHash } from "./onboarding-commit-proposal";
+import { OnboardingTemplateCatalogService } from "./onboarding-template-catalog.service";
 import { OnboardingValidateService } from "./onboarding-validate.service";
 
 /**
@@ -112,7 +124,17 @@ export class OnboardingCommitService {
     private readonly audit: MasterDataAuditService,
     private readonly validateService: OnboardingValidateService,
     private readonly vocabularies: VocabulariesService,
+    private readonly templateCatalog: OnboardingTemplateCatalogService,
+    // F3.22 (ADR 0091 decision 4): the three template cores the commit hands
+    // its transaction to — `onboarding-commit-templates.ts`.
+    private readonly templates: AssetTemplatesAdminService,
+    private readonly instantiation: AssetTemplateInstantiationService,
+    private readonly stock: AssetTemplatesStockService,
   ) {}
+
+  private templateDeps(): CommitTemplateDeps {
+    return { templates: this.templates, instantiation: this.instantiation, stock: this.stock };
+  }
 
   /** Commits a draft session when validation passes. The Commit button's path. */
   commit(jwt: JwtPayload, sessionId: string): Promise<OnboardingCommitResponseDto> {
@@ -161,6 +183,10 @@ export class OnboardingCommitService {
     if (expectedDraftHash !== null && draftHash(session.draft) !== expectedDraftHash) {
       throw new BadRequestException(PROPOSED_DRAFT_CHANGED);
     }
+    // F3.22 (ADR 0091 decision 5): a draft that holds a template entry also
+    // needs the author check — with the access gates, before the caps, so an
+    // actor who may not author learns nothing about the draft's size.
+    await assertDraftTemplateAccess(this.templateDeps(), jwt, session.organizationId, draft);
 
     // `F4.103` — the count caps, on the stored draft, at the last point before
     // the work is done. This is the last of the four enforcement points — the
@@ -209,7 +235,11 @@ export class OnboardingCommitService {
     // F4.162 (plan D9): a type retired after it was stored fails here, with the
     // other field errors, rather than alone at `assertLocationType` below.
     const activeTypeCodes = (await this.vocabularies.listLocationTypes()).map((row) => row.code);
-    const validation = this.validateService.validate(draft, activeTypeCodes);
+    // F3.22 (ADR 0091): the template rules read the organization templates and
+    // the stock catalog, so a templated asset that no longer resolves is
+    // refused here, before the transaction, with the other field errors.
+    const templates = await this.templateCatalog.context(session.organizationId);
+    const validation = this.validateService.validate(draft, activeTypeCodes, templates);
     if (!validation.readyToCommit) {
       throw new BadRequestException({
         message: "Draft is not ready to commit",
@@ -451,11 +481,23 @@ export class OnboardingCommitService {
         telemetrySourceByRtuId.set(rtuRow.id, await resolveTelemetrySource(tx, rtuRow));
       }
 
-      const assetIds: string[] = [];
+      // F3.22 (ADR 0091 decision 4): each draft template, created and published
+      // through the cores, after the point keys and RTUs it may name.
+      const published = await commitDraftTemplates(this.templateDeps(), tx, jwt, session.organizationId, draft);
+
+      // F3.22: indexed by `draft.assets` position, never pushed — a templated
+      // asset is written later by its group, and a plain asset after it must
+      // keep its own index for the asset-point loop below.
+      const draftAssets = draft.assets ?? [];
+      const assetIdByIndex: (string | undefined)[] = new Array<string | undefined>(draftAssets.length);
       // ADR 0018: points carry their own provenance, so remember which gateway
-      // feeds each asset as we create it. Parallel to `assetIds` by index.
-      const assetRtuIds: string[] = [];
-      for (const assetDraft of draft.assets ?? []) {
+      // feeds each asset as we create it. Parallel to `assetIdByIndex`.
+      const assetRtuIds: (string | undefined)[] = new Array<string | undefined>(draftAssets.length);
+      for (let assetIndex = 0; assetIndex < draftAssets.length; assetIndex++) {
+        const assetDraft = draftAssets[assetIndex];
+        if (assetDraft.template) {
+          continue;
+        }
         const rtuId = rtuIds[assetDraft.rtuIndex];
         if (!rtuId) {
           throw new BadRequestException("Invalid asset rtuIndex");
@@ -477,13 +519,13 @@ export class OnboardingCommitService {
             ),
           })
           .returning();
-        assetIds.push(assetRow.id);
-        assetRtuIds.push(rtuId);
+        assetIdByIndex[assetIndex] = assetRow.id;
+        assetRtuIds[assetIndex] = rtuId;
       }
 
       const assetPointIds: string[] = [];
       for (const ap of draft.assetPoints ?? []) {
-        const assetId = assetIds[ap.assetIndex];
+        const assetId = assetIdByIndex[ap.assetIndex];
         if (!assetId) {
           throw new BadRequestException("Invalid assetPoint assetIndex");
         }
@@ -508,12 +550,26 @@ export class OnboardingCommitService {
         assetPointIds.push(apRow.id);
       }
 
+      // F3.22 (ADR 0091 decisions 4, 5, 10): each group of templated assets
+      // through the instantiate core, onto the RTU this transaction wrote.
+      const groups = await templateGroups(tx, session.organizationId, draft, published, templates);
+      const totals = await commitTemplatedAssets(this.templateDeps(), tx, jwt, groups, rtuIds, assetIdByIndex);
+      const assetIds = assetIdByIndex.map((id, index) => {
+        if (id === undefined) {
+          throw new Error(`onboarding commit: no asset was written for draft asset ${index}`);
+        }
+        return id;
+      });
+
       const result = {
         locationId: locationRow.id,
         rtuIds,
+        // Every asset the commit created, plain and templated, in draft order.
         assetIds,
         pointKeyIds,
         assetPointIds,
+        templateIds: [...published.values()].map((template) => template.id),
+        ...totals,
       };
 
       await tx
@@ -564,7 +620,12 @@ export class OnboardingCommitService {
       // `F4.109` — `.catch` rather than a `try`, and narrow on both SQLSTATE and
       // constraint name. Both choices are justified in full at the head of
       // `commit()` above; `onboarding-commit-conflict.ts` holds the map.
-      throw translateCommitUniqueConflict(err);
+      // F3.22: the template cores run inside this transaction too, so a
+      // `23505` on `automation_rules_org_code_idx` (a seeded rule code taken in
+      // a race) answers the instantiate route's 409. `assets_code_unique` is
+      // translated first, by the commit's own map, so a plain or templated
+      // asset-code race keeps the commit's field error.
+      throw translateAssetCodeCollision(translateCommitUniqueConflict(err));
     });
   }
 

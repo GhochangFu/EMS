@@ -57,14 +57,19 @@ export const onboardingAutoOpenReasonSchema = z.enum([
 
 /**
  * The maximum length of every string field an onboarding draft carries
- * (`F4.104`) — 24 fields across the five sub-schemas below, declared once here
- * and imported by both copies of the draft schema.
+ * (`F4.104`) — 36 fields across the nine sub-schemas below, declared once here
+ * and imported by both copies of the draft schema. `F3.22` (ADR 0091 decision
+ * 2) added the eleven `templates.*`, `stockTemplates.*`, `templatePoints.*` and
+ * `assetTemplateRef.*` keys.
  *
  * ## Where each number comes from — the column, not a judgement
  *
- * Every value but one is the width of the `varchar` column that field commits
+ * Every value but four is the width of the `varchar` column that field commits
  * to, read from `packages/db/src/schema/bms-schema.ts`: `bms.locations`,
- * `bms.rtus`, `bms.point_keys`, `bms.assets` and `bms.asset_points`. That is
+ * `bms.rtus`, `bms.point_keys`, `bms.assets`, `bms.asset_points` and, for the
+ * `F3.22` keys, `bms.asset_templates` and `bms.template_points`. An
+ * `assetTemplateRef.code` resolves through `bms.asset_templates.code`, so it
+ * carries that column's width. That is
  * why importing them changed no behaviour on the two producers that already
  * parse a schema — `apps/api`'s copy carried these same numbers as inline
  * literals, and this record replaced the literals with their source. The pin
@@ -73,8 +78,8 @@ export const onboardingAutoOpenReasonSchema = z.enum([
  * depends on `zod` and nothing else, so it cannot import `@bms/db` to read a
  * column width.
  *
- * Two fields are not a plain column read, and both are derivations rather than
- * new numbers:
+ * Four fields are not a plain column read, and all four are derivations rather
+ * than new numbers:
  *
  * - **`pointKeys.description` = 2000.** `bms.point_keys.description` is `text`,
  *   so the column supplies no bound at all — it is the one field of the 24 that
@@ -91,6 +96,13 @@ export const onboardingAutoOpenReasonSchema = z.enum([
  *   pins one of them by source text. So the bound is *not* extracted out of
  *   there and inlined here — the key exists so the coverage walk is complete,
  *   and `contracts/onboarding.spec.ts` pins it to `assetDomainCodeSchema.maxLength`.
+ * - **`templates.description` = 2000** (`F3.22`). `bms.asset_templates.description`
+ *   is `text`; the number is the sibling route writing the same column,
+ *   `createAssetTemplateBodySchema.description` in
+ *   `apps/api/src/admin/asset-templates/asset-templates.schema.ts`. The same
+ *   derivation shape as `pointKeys.description`, pinned the same way.
+ * - **`templates.domain` = 64** (`F3.22`). The same vocabulary schema as
+ *   `assets.domain`, on the same terms, and pinned to it the same way.
  *
  * ## What the amplification looks like, measured
  *
@@ -162,6 +174,21 @@ export const ONBOARDING_DRAFT_STRING_MAX = {
   "assetPoints.sourceDataKey": 128,
   "assetPoints.sensorCode": 64,
   "assetPoints.unit": 32,
+  // F3.22 (ADR 0091 decision 2): a chat-authored or imported template. Widths of
+  // bms.asset_templates (code, name, asset_type, domain, description: see above,
+  // stock_code) and bms.template_points (point_key, label, unit,
+  // source_data_key_pattern).
+  "templates.code": 64,
+  "templates.name": 255,
+  "templates.assetType": 64,
+  "templates.domain": 64,
+  "templates.description": 2000,
+  "stockTemplates.stockCode": 64,
+  "templatePoints.pointKey": 128,
+  "templatePoints.label": 255,
+  "templatePoints.unit": 32,
+  "templatePoints.sourceDataKeyPattern": 128,
+  "assetTemplateRef.code": 64,
 } as const;
 
 export const onboardingDraftLocationSchema = z.object({
@@ -211,6 +238,77 @@ export const onboardingDraftPointKeySchema = z.object({
   description: z.string().max(ONBOARDING_DRAFT_STRING_MAX["pointKeys.description"]).optional(),
 });
 
+/**
+ * The number of templates one onboarding session may carry (`F3.22`, ADR 0091
+ * decision 2), imported and authored entries together.
+ *
+ * The only producers are two chat tools, so the anchor is the longest real list
+ * the system ships: the stock catalog. `STOCK_ASSET_TEMPLATE_CATALOG.length` is
+ * **27**, measured 2026-10-04 on the built `apps/api` dist (the exported array
+ * itself, not a text count: a grep of the entry files also hits specs, types
+ * and a docblock). A draft importing every shipped class is therefore 27; 50 is
+ * above it with headroom, the judgement `MAX_ONBOARDING_RTUS` records.
+ *
+ * Cost at the cap: 50 templates of `MAX_ONBOARDING_TEMPLATE_POINTS` points each
+ * is 10,000 `bms.template_points` rows, in 50 statements of at most 200 rows and
+ * roughly 4,000 bind parameters each, under the Postgres limit of 65,535.
+ */
+export const MAX_ONBOARDING_TEMPLATES = 50;
+
+/**
+ * The number of points one chat-authored template may declare (`F3.22`), and
+ * the number of point patterns one stock entry may overlay.
+ *
+ * The largest shipped stock entry holds **84** points (`mechanical-lift`,
+ * measured on the built catalog). The sibling route writing the same table,
+ * `templatePointsBodySchema` in
+ * `apps/api/src/admin/asset-templates/asset-templates.schema.ts`, caps a body at
+ * 500: the ceiling a chat-authored template must stay under, so that every one
+ * is also a valid route body. 200 is 2.4 times the largest shipped entry and
+ * 0.4 times the route.
+ */
+export const MAX_ONBOARDING_TEMPLATE_POINTS = 200;
+
+/**
+ * The number of source-key variables one templated asset may carry (`F3.22`).
+ * **One bound reused, not a second number.** A variable is a token of one of
+ * the template's measured patterns, and the validator refuses any other key, so
+ * on a valid draft this cap cannot bind: a template has at most
+ * `MAX_ONBOARDING_TEMPLATE_POINTS` patterns. It bounds the stored JSON. No
+ * shipped producer anchors a smaller number: every shipped stock pattern is
+ * null, and neither the instantiate dialog nor the instantiate route bounds the
+ * key count.
+ *
+ * Each key is also length-bounded at the pattern column's width, for the same
+ * reason: a token longer than the pattern it sits in cannot be one of its
+ * tokens.
+ */
+export const MAX_ONBOARDING_TEMPLATE_VARS = MAX_ONBOARDING_TEMPLATE_POINTS;
+
+/**
+ * The template an asset is built from (`F3.22`, ADR 0091 decision 2). `code`
+ * names a template of this draft or a published template of the organization;
+ * `version` is written by the tool for an organization template; the variables
+ * fill the template's measured source-key patterns.
+ *
+ * Length and count only on this copy, like every other field here: the token
+ * grammar of a key and the reserved `asset_code` are refused by the API copy,
+ * on the write path, and not on read.
+ */
+export const onboardingDraftAssetTemplateRefSchema = z.object({
+  code: z.string().max(ONBOARDING_DRAFT_STRING_MAX["assetTemplateRef.code"]),
+  version: z.number().optional(),
+  sourceDataKeyVars: z
+    .record(
+      z.string().max(ONBOARDING_DRAFT_STRING_MAX["templatePoints.sourceDataKeyPattern"]),
+      z.string().max(ONBOARDING_DRAFT_STRING_MAX["assetPoints.sourceDataKey"]),
+    )
+    .refine((vars) => Object.keys(vars).length <= MAX_ONBOARDING_TEMPLATE_VARS, {
+      message: `At most ${MAX_ONBOARDING_TEMPLATE_VARS} source-key variables per asset`,
+    })
+    .optional(),
+});
+
 export const onboardingDraftAssetSchema = z.object({
   rtuIndex: z.number(),
   code: z.string().max(ONBOARDING_DRAFT_STRING_MAX["assets.code"]),
@@ -236,6 +334,8 @@ export const onboardingDraftAssetSchema = z.object({
    */
   domain: assetDomainCodeSchema,
   meta: z.record(z.unknown()).optional(),
+  /** `F3.22`: set when the asset is built from a template. */
+  template: onboardingDraftAssetTemplateRefSchema.optional(),
 });
 
 export const onboardingDraftAssetPointSchema = z.object({
@@ -245,6 +345,60 @@ export const onboardingDraftAssetPointSchema = z.object({
   sensorCode: z.string().max(ONBOARDING_DRAFT_STRING_MAX["assetPoints.sensorCode"]).optional(),
   unit: z.string().max(ONBOARDING_DRAFT_STRING_MAX["assetPoints.unit"]).optional(),
 });
+
+/**
+ * One measured point of a chat-authored template (`F3.22`, ADR 0091 decision 2
+ * and its 2026-10-04 note: measured points only; the commit sets the kind).
+ */
+export const onboardingDraftTemplatePointSchema = z.object({
+  pointKey: z.string().max(ONBOARDING_DRAFT_STRING_MAX["templatePoints.pointKey"]),
+  label: z.string().max(ONBOARDING_DRAFT_STRING_MAX["templatePoints.label"]).optional(),
+  unit: z.string().max(ONBOARDING_DRAFT_STRING_MAX["templatePoints.unit"]).optional(),
+  sourceDataKeyPattern: z
+    .string()
+    .max(ONBOARDING_DRAFT_STRING_MAX["templatePoints.sourceDataKeyPattern"])
+    .optional(),
+  required: z.boolean().optional(),
+  sortOrder: z.number().optional(),
+});
+
+/**
+ * A template the chat authors (`F3.22`). `assetType` is optional and the commit
+ * defaults it to the code (owner ruling Q2, 2026-10-04).
+ */
+export const onboardingDraftAuthoredTemplateSchema = z.object({
+  code: z.string().max(ONBOARDING_DRAFT_STRING_MAX["templates.code"]),
+  name: z.string().max(ONBOARDING_DRAFT_STRING_MAX["templates.name"]),
+  assetType: z.string().max(ONBOARDING_DRAFT_STRING_MAX["templates.assetType"]).optional(),
+  domain: assetDomainCodeSchema,
+  description: z.string().max(ONBOARDING_DRAFT_STRING_MAX["templates.description"]).optional(),
+  points: z.array(onboardingDraftTemplatePointSchema).max(MAX_ONBOARDING_TEMPLATE_POINTS),
+});
+
+/**
+ * A stock catalog entry the chat imports (`F3.22`). The content comes from the
+ * catalog; `patterns` overlays a source-key pattern per measured point, keyed by
+ * point key (owner ruling Q1, 2026-10-04), because the shipped catalog carries
+ * none.
+ */
+export const onboardingDraftStockTemplateSchema = z.object({
+  stockCode: z.string().max(ONBOARDING_DRAFT_STRING_MAX["stockTemplates.stockCode"]),
+  patterns: z
+    .record(
+      z.string().max(ONBOARDING_DRAFT_STRING_MAX["templatePoints.pointKey"]),
+      z.string().max(ONBOARDING_DRAFT_STRING_MAX["templatePoints.sourceDataKeyPattern"]),
+    )
+    .refine((patterns) => Object.keys(patterns).length <= MAX_ONBOARDING_TEMPLATE_POINTS, {
+      message: `At most ${MAX_ONBOARDING_TEMPLATE_POINTS} point patterns per stock template`,
+    })
+    .optional(),
+});
+
+/** One template entry of a draft: a stock import or a chat-authored template. */
+export const onboardingDraftTemplateSchema = z.union([
+  onboardingDraftStockTemplateSchema,
+  onboardingDraftAuthoredTemplateSchema,
+]);
 
 export const onboardingDraftMetaSchema = z.object({
   rtuTargetCount: z.number().optional(),
@@ -433,6 +587,7 @@ export const onboardingDraftSchema = z.object({
   pointKeys: z.array(onboardingDraftPointKeySchema).max(MAX_ONBOARDING_POINT_KEYS).optional(),
   assets: z.array(onboardingDraftAssetSchema).max(MAX_ONBOARDING_ASSETS).optional(),
   assetPoints: z.array(onboardingDraftAssetPointSchema).max(MAX_ONBOARDING_ASSET_POINTS).optional(),
+  templates: z.array(onboardingDraftTemplateSchema).max(MAX_ONBOARDING_TEMPLATES).optional(),
   onboardingMeta: onboardingDraftMetaSchema.optional(),
 });
 
@@ -477,4 +632,13 @@ export const onboardingCommitResponseDtoSchema = z.object({
   assetIds: z.array(z.string()),
   pointKeyIds: z.array(z.string()),
   assetPointIds: z.array(z.string()),
+  // F3.22 (ADR 0091 decision 4). Extended in place: this is a flat object, so
+  // nothing is merged (no z.intersection applies) and its fields are not all
+  // readonly (no .readonly() applies). `assetIds` holds every asset the commit
+  // created, in draft order, plain and templated alike.
+  templateIds: z.array(z.string()),
+  templatedAssetCount: z.number(),
+  templatedAssetPointCount: z.number(),
+  seededRuleCount: z.number(),
+  dashboardCount: z.number(),
 });

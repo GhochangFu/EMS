@@ -79,12 +79,14 @@ export const PROMPT_DRAFT_BUDGET_BYTES = 262_144;
  * The length above which a string is opaque enough to shed — the widest
  * code/name column in `ONBOARDING_DRAFT_STRING_MAX`.
  *
- * Ruling 2 keeps every code, name and protocol. Six columns are 255 characters
+ * Ruling 2 keeps every code, name and protocol. Eight columns are 255 characters
  * wide (`location.name`, `rtus.displayName`, `rtus.stationName`, `assets.name`,
- * `assets.siteName`, `pointKeys.name`) and every other column is narrower, so at
- * 255 stage 2 can take nothing the ruling protects. Exactly one column is wider:
- * `pointKeys.description` at 2,000, which decision 4 rules opaque operator prose
- * — not a code, not a name, not a protocol.
+ * `assets.siteName`, `pointKeys.name`, and since `F3.22` `templates.name` and
+ * `templatePoints.label`) and every other column is narrower, so at 255 stage 2
+ * can take nothing the ruling protects. Two columns are wider, both at 2,000:
+ * `pointKeys.description`, which decision 4 rules opaque operator prose — not a
+ * code, not a name, not a protocol — and `F3.22`'s `templates.description`, the
+ * same kind of prose.
  *
  * **Pinned by an assertion, not derived by filtering the record.** Derived, a
  * column widened later would raise this threshold with it and stage 2 would
@@ -213,6 +215,25 @@ export function shedFreeFormRecords(value: unknown): unknown {
 }
 
 /**
+ * Stage 1b (`F3.22`, ADR 0091 decision 2) — every template's `points` array
+ * becomes the marker, whole.
+ *
+ * Between the free-form records and the over-long strings because a template
+ * point is all short strings: 50 templates at 200 points is about 1.2 MB of
+ * them, which stage 2 cannot touch, and the model reads a template by its
+ * `code`, `name` and `domain` (kept) and asks `get_template` for its points.
+ * `points` is a key only under `templates[]` in a draft; on anything else the
+ * visitor sheds more, never less, as stage 1 does. A template's `description`
+ * (bounded at 2,000) is a prose column like `pointKeys.description`, and stage
+ * 2 sheds it as an over-long string when it is wider than `PROMPT_STRING_MAX`.
+ *
+ * Iterative, through the same `rebuildDeep` (`tests/f4.115-iterative-draft-walkers.test.ts`).
+ */
+export function shedTemplatePoints(value: unknown): unknown {
+  return rebuildDeep(value, isJsonContainer, (key) => (key === "points" ? { value: PROMPT_OMITTED_MARKER } : null));
+}
+
+/**
  * Stage 2 — every string wider than any code or name column becomes the marker.
  *
  * This one decides on a **value**, which a key visitor cannot see, so it is the
@@ -220,7 +241,7 @@ export function shedFreeFormRecords(value: unknown): unknown {
  * and `tests/f4.115-iterative-draft-walkers.test.ts` gates it.
  *
  * `>` and not `>=`: a string exactly at a column's width is that column's
- * legitimate value, and six columns are exactly `PROMPT_STRING_MAX` wide.
+ * legitimate value, and eight columns are exactly `PROMPT_STRING_MAX` wide.
  *
  * Iterative, like every other walk over a stored draft, and it has its own
  * assertion for it: `assertADeepStoredDraftIsShedNotThrownOutOf` never reaches
@@ -271,10 +292,11 @@ export function shedOverLongStrings(value: unknown): unknown {
  *    session, and `assertAnUnderBudgetDraftIsForwardedIntact` is the half of the
  *    pair that says the shed does not fire when it should not.
  * 4. Over: stage 1, then measure again.
- * 5. Still over: stage 2, and return what that produces.
+ * 5. Still over: stage 1b, the template points (`F3.22`), then measure again.
+ * 6. Still over: stage 2, and return what that produces.
  *
- * Three `stringify` calls of at most ~0.65 MB is milliseconds, and only on a
- * draft already over the budget.
+ * Four `stringify` calls, the largest about 1.2 MB with 50 templates at their
+ * point cap, is milliseconds, and only on a draft already over the budget.
  *
  * **The budget is a shedding threshold, not a hard limit** (decision 1, the
  * owner's ruling: option a). What survives both stages is codes, names and
@@ -305,6 +327,12 @@ export function serialiseDraftForPrompt(draft: unknown): string {
   }
 
   redacted = shedFreeFormRecords(redacted);
+  json = JSON.stringify(redacted);
+  if (Buffer.byteLength(json) <= PROMPT_DRAFT_BUDGET_BYTES) {
+    return json;
+  }
+
+  redacted = shedTemplatePoints(redacted);
   json = JSON.stringify(redacted);
   if (Buffer.byteLength(json) <= PROMPT_DRAFT_BUDGET_BYTES) {
     return json;

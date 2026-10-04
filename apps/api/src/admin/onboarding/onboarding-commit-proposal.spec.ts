@@ -10,6 +10,7 @@ import {
   withoutCommitProposal,
 } from "./onboarding-commit-proposal";
 import { redactDraftForClient, redactDraftForLlm } from "./onboarding-redaction";
+import { EMPTY_TEMPLATE_CONTEXT } from "./onboarding-template-refs";
 import { MAX_ONBOARDING_DRAFT_DEPTH } from "./onboarding.schema";
 
 function assert(condition: boolean, message: string): void {
@@ -116,13 +117,13 @@ export function assertCommitSummaryIsBoundedAndCodeWritten(): void {
   const draft = readyDraft();
   const rtus = Array.from({ length: 30 }, (_, i) => ({ ...draft.rtus![0], code: `RTU-${i + 1}` }));
   const longName = "N".repeat(300);
-  const summary = commitSummary({ ...draft, rtus, location: { ...draft.location!, name: longName } } as OnboardingDraft);
+  const summary = commitSummary({ ...draft, rtus, location: { ...draft.location!, name: longName } } as OnboardingDraft, EMPTY_TEMPLATE_CONTEXT);
   assert(summary.includes("'RTU-25'") && !summary.includes("'RTU-26'"), "the summary names the first 25 RTU codes only");
   assert(summary.includes("…and 5 more RTUs"), "the summary counts the RTUs it did not name");
   assert(summary.includes("30 RTUs"), "the summary carries the true RTU count");
   assert(!summary.includes(longName), "a long location name is cut");
   assert(summary.length <= 4000, `the summary fits the stored bound (${summary.length})`);
-  const one = commitSummary(draft);
+  const one = commitSummary(draft, EMPTY_TEMPLATE_CONTEXT);
   assert(
     one === "location 'Berhampur', 1 RTU ('RTU-1'), 1 point key, 1 asset, 1 mapping",
     `the one-of-each summary is exact: ${one}`,
@@ -143,4 +144,15 @@ export function assertRedactDraftForLlmDropsTheCommitProposal(): void {
   const llm = redactDraftForLlm(stored) as Record<string, unknown>;
   assert(!(COMMIT_PROPOSAL_KEY in llm), "the LLM view has no _commitProposal");
   assert(!JSON.stringify(llm).includes(HASH), "the LLM view carries no proposal hash");
+}
+
+/**
+ * W11 (`F3.22`) — adding one template entry changes the hash, so a proposal
+ * made before the template was added cannot be confirmed after it (ADR 0090's
+ * confirm/hash rule covers the new section by construction).
+ */
+export function assertW11AddingATemplateChangesTheHash(): void {
+  const draft = readyDraft();
+  const withTemplate: OnboardingDraft = { ...draft, templates: [{ stockCode: "WTP" }] };
+  assert(draftHash(draft) !== draftHash(withTemplate), "adding a template changes the draft hash");
 }

@@ -3,6 +3,13 @@ import { describe, it } from "vitest";
 import {
   assertChatMessageRoleAcceptsAction,
   assertChatMessageRoleRefusesToolRole,
+  assertCommitResponseParsesWithTheTemplateFields,
+  assertCommitResponseRequiresEachTemplateField,
+  assertDraftWithTemplatesParses,
+  assertStockPatternCountIsCapped,
+  assertTemplateCountIsCapped,
+  assertTemplatePointCountIsCapped,
+  assertTemplateVarCountIsCapped,
   assertDraftArrayCapsAreEnforced,
   assertDraftLocationMetaDescribesTheSeedKey,
   assertDraftLocationParsesWithoutType,
@@ -56,5 +63,37 @@ describe("F3.21 — onboardingChatMessageSchema.role gains `action`", () => {
 
   it("still refuses the tool role", () => {
     assertChatMessageRoleRefusesToolRole();
+  });
+});
+
+describe("F3.22 — templates in the onboarding draft (ADR 0091 decision 2)", () => {
+  it("parses a draft with an authored template, a stock entry and a templated asset", () => {
+    assertDraftWithTemplatesParses();
+  });
+
+  it("caps the templates array", () => {
+    assertTemplateCountIsCapped();
+  });
+
+  it("caps the points of an authored template", () => {
+    assertTemplatePointCountIsCapped();
+  });
+
+  it("caps the variables of a templated asset", () => {
+    assertTemplateVarCountIsCapped();
+  });
+
+  it("caps the pattern overlay of a stock entry", () => {
+    assertStockPatternCountIsCapped();
+  });
+});
+
+describe("F3.22 — the commit result reports templates (ADR 0091 decision 4)", () => {
+  it("parses a result carrying the five template fields", () => {
+    assertCommitResponseParsesWithTheTemplateFields();
+  });
+
+  it("refuses a result missing any one of them", () => {
+    assertCommitResponseRequiresEachTemplateField();
   });
 });

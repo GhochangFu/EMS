@@ -13,12 +13,14 @@ const read = (rel: string): string => readFileSync(join(repoRoot, rel), "utf8");
 const API_REL = "apps/api/src/admin/onboarding/onboarding.schema.ts";
 const SHARED_REL = "packages/shared/src/contracts/onboarding.ts";
 
-/** The four draft arrays, and the constant each one's cap must name. */
+/** The five draft arrays, and the constant each one's cap must name. */
 const EXPECTED_CAPS: Readonly<Record<string, string>> = {
   rtus: "MAX_ONBOARDING_RTUS",
   pointKeys: "MAX_ONBOARDING_POINT_KEYS",
   assets: "MAX_ONBOARDING_ASSETS",
   assetPoints: "MAX_ONBOARDING_ASSET_POINTS",
+  // F3.22 (ADR 0091 decision 2): the chat-built templates of one session.
+  templates: "MAX_ONBOARDING_TEMPLATES",
 };
 
 const FIELDS = Object.keys(EXPECTED_CAPS);
@@ -89,7 +91,7 @@ function capsIn(source: string): Map<string, string | null> {
   const found = new Map<string, string | null>();
 
   for (const match of collapsed.matchAll(
-    /\b(rtus|pointKeys|assets|assetPoints)\s*:\s*z\s*\.\s*array\((?:[^()]|\((?:[^()]|\([^()]*\))*\))*\)((?:\s*\.\s*\w+\((?:[^()]|\([^()]*\))*\))*)/g,
+    /\b(rtus|pointKeys|assets|assetPoints|templates)\s*:\s*z\s*\.\s*array\((?:[^()]|\((?:[^()]|\([^()]*\))*\))*\)((?:\s*\.\s*\w+\((?:[^()]|\([^()]*\))*\))*)/g,
   )) {
     const field = match[1] as string;
     const chain = match[2] ?? "";
@@ -106,11 +108,11 @@ function capsIn(source: string): Map<string, string | null> {
  * guard that goes green while checking nothing (AGENTS.md §4.4). If the
  * declarations are reshaped, fix the parser; do not delete the assertion.
  */
-function assertAllFourFound(caps: Map<string, string | null>, label: string): void {
+function assertAllFound(caps: Map<string, string | null>, label: string): void {
   if (caps.size < FIELDS.length) {
     throw new Error(
       `only found ${caps.size} of ${FIELDS.length} draft array declarations in ${label} ` +
-        `(${[...caps.keys()].join(", ") || "none"}). The four arrays are two declarations of ` +
+        `(${[...caps.keys()].join(", ") || "none"}). The arrays are two declarations of ` +
         "one bound — repair this parser rather than the assertion.",
     );
   }
@@ -118,7 +120,7 @@ function assertAllFourFound(caps: Map<string, string | null>, label: string): vo
 
 function declaredCaps(rel: string): Map<string, string | null> {
   const caps = capsIn(read(rel));
-  assertAllFourFound(caps, rel);
+  assertAllFound(caps, rel);
   return caps;
 }
 
@@ -137,7 +139,7 @@ function declaredCaps(rel: string): Map<string, string | null> {
  * Bounding one and not the other is a green build with an incoherent contract.
  */
 describe("F4.103 — both copies of the onboarding draft schema carry the same count caps", () => {
-  it("caps all four arrays in the API copy", () => {
+  it("caps every draft array in the API copy", () => {
     const caps = declaredCaps(API_REL);
     for (const field of FIELDS) {
       expect(caps.get(field), `${API_REL}: \`${field}\` must declare a .max(...)`).toBe(
@@ -146,7 +148,7 @@ describe("F4.103 — both copies of the onboarding draft schema carry the same c
     }
   });
 
-  it("caps all four arrays in the shared contract copy", () => {
+  it("caps every draft array in the shared contract copy", () => {
     const caps = declaredCaps(SHARED_REL);
     for (const field of FIELDS) {
       expect(caps.get(field), `${SHARED_REL}: \`${field}\` must declare a .max(...)`).toBe(
@@ -170,7 +172,7 @@ describe("F4.103 — both copies of the onboarding draft schema carry the same c
     );
   });
 
-  it("still reads all four caps when the declarations are wrapped into the chain form", () => {
+  it("still reads every cap when the declarations are wrapped into the chain form", () => {
     const original = read(API_REL);
     // The repository's own wrap, applied by hand where a line grows past the
     // print width: `field: z` / `.array(…)` / `.max(…)` / `.optional()`.
@@ -190,7 +192,7 @@ describe("F4.103 — both copies of the onboarding draft schema carry the same c
     ).toBe(true);
 
     const caps = capsIn(wrapped);
-    assertAllFourFound(caps, "the API copy, reformatted into the wrapped chain form");
+    assertAllFound(caps, "the API copy, reformatted into the wrapped chain form");
     expect(caps.size, "every field is read, none skipped").toBe(FIELDS.length);
     for (const field of FIELDS) {
       expect(caps.get(field), `wrapped \`${field}\` must still read its cap`).toBe(

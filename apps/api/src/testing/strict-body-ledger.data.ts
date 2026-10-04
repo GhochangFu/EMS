@@ -397,6 +397,11 @@ export const STRICTNESS_LEDGER: Record<string, LedgerEntry> = {
   "patchDraftBodySchema/draft": { strict: false, because: THREE_PRODUCERS },
   "patchDraftBodySchema/draft/assetPoints[]": { strict: false, because: THREE_PRODUCERS },
   "patchDraftBodySchema/draft/assets[]": { strict: false, because: THREE_PRODUCERS },
+  // F3.22 (ADR 0091 decision 2): the template nodes of the same draft, on the same terms.
+  "patchDraftBodySchema/draft/assets[]/template": { strict: false, because: THREE_PRODUCERS },
+  "patchDraftBodySchema/draft/templates[]|0": { strict: false, because: THREE_PRODUCERS },
+  "patchDraftBodySchema/draft/templates[]|1": { strict: false, because: THREE_PRODUCERS },
+  "patchDraftBodySchema/draft/templates[]|1/points[]": { strict: false, because: THREE_PRODUCERS },
   "patchDraftBodySchema/draft/location": { strict: false, because: THREE_PRODUCERS },
   "patchDraftBodySchema/draft/onboardingMeta": { strict: false, because: THREE_PRODUCERS },
   "patchDraftBodySchema/draft/pointKeys[]": { strict: false, because: THREE_PRODUCERS },

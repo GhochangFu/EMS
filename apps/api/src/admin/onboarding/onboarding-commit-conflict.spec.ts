@@ -8,6 +8,7 @@ import {
   translateCommitUniqueConflict,
   type CommitUniqueConflict,
 } from "./onboarding-commit-conflict";
+import { EMPTY_TEMPLATE_CONTEXT } from "./onboarding-template-refs";
 
 function assert(condition: boolean, message: string): void {
   if (!condition) {
@@ -215,6 +216,11 @@ function serviceFailingTheLocationInsert(err: unknown): OnboardingCommitService 
     {} as never,
     validateService,
     vocabularies,
+    { context: async () => EMPTY_TEMPLATE_CONTEXT } as never,
+    // F3.22: the three template services; this draft holds no template, so none is called.
+    {} as never,
+    {} as never,
+    {} as never,
   );
 }
 

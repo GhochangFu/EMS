@@ -213,6 +213,38 @@ describe("F3.22 template cores (ADR 0091 decision 1)", () => {
     }
   });
 
+  describe("the decision-5 option is the onboarding commit's alone (PR 2, ADR 0091 d5, d10)", () => {
+    const COMMIT_TEMPLATES_REL = "apps/api/src/admin/onboarding/onboarding-commit-templates.ts";
+
+    it("the instantiate( route wrapper passes no locationAccess, so the route keeps the location check", () => {
+      const body = methodBody(tsOnly(read(INSTANTIATE_SERVICE_REL)), "  async instantiate(");
+      expect(
+        body,
+        "the route wrapper must take the core's default; an option here would drop canManageLocation " +
+          "for every Instantiate button press",
+      ).not.toContain("locationAccess");
+      expect(body, "the slice has drifted: the wrapper no longer calls the core").toContain(
+        "this.instantiateInTransaction(tx",
+      );
+    });
+
+    it('onboarding-commit-templates.ts passes locationAccess: "organization" exactly once', () => {
+      const code = tsOnly(read(COMMIT_TEMPLATES_REL));
+      expect(code.match(/locationAccess:\s*"organization"/g) ?? []).toHaveLength(1);
+    });
+
+    it("onboarding-commit-templates.ts instantiates through the core and inserts nothing itself", () => {
+      const code = tsOnly(read(COMMIT_TEMPLATES_REL));
+      expect(code, "the templated assets must go through the instantiate core").toContain(
+        "instantiateInTransaction(",
+      );
+      expect(
+        code,
+        "decision 10: the commit writes no template asset rows of its own — the core is the one writer",
+      ).not.toContain(".insert(");
+    });
+  });
+
   it("the two new integration specs have .test siblings", () => {
     for (const base of [
       "asset-templates-write-cores",
