@@ -7,7 +7,7 @@ import type { AiAssistantSettingsDto, AiAssistantTestResultDto, JwtPayload } fro
 
 import { AccessControlService } from "../../auth/access-control.service";
 import { TENANT_DRIZZLE } from "../../database/database.tokens";
-import { withTenant } from "../../database/tenant-context";
+import { type BmsTx, withTenant } from "../../database/tenant-context";
 import { CredentialCryptoService } from "../../security/credential-crypto.service";
 import { MasterDataAuditService } from "../master-data-audit.service";
 import { classifyProviderError, createLlmProvider } from "../onboarding/onboarding-llm-factory";
@@ -63,6 +63,18 @@ export class AiAssistantSettingsService {
     return user.id;
   }
 
+  /**
+   * The per-organization lock `put()` and `remove()` take as their first
+   * statement after `withTenant` sets the tenant context, so the two serialize
+   * for one organization — including when there is no row for `FOR UPDATE` or
+   * a DELETE to lock. One helper, so the two cannot drift onto different keys.
+   */
+  private async lockSetting(tx: BmsTx, organizationId: string): Promise<void> {
+    await tx.execute(
+      sql`select pg_advisory_xact_lock(hashtextextended(${`organization_llm_settings:${organizationId}`}, 0))`,
+    );
+  }
+
   private toDto(row: SettingRow | null): AiAssistantSettingsDto {
     const platform = this.resolver.platformSummary();
     if (!row) {
@@ -112,18 +124,17 @@ export class AiAssistantSettingsService {
     await withTenant(this.tenantDb, organizationId, async (tx) => {
       // F4.186 (security review M1, re-review L-a, L-b and L-c): the decision
       // is made on the committed row, never on an earlier read. The advisory
-      // lock serializes put() calls for one organization, including the
-      // no-row path where FOR UPDATE locks nothing — so a concurrent first
-      // save commits before this one reads, and `keyChanged` is exact on every
-      // path. FOR UPDATE handles the writers that are not put(): a concurrent
-      // `rotate-credentials` either committed before this lock (the kept bytes
-      // are its rotated ones) or waits on it, and its compare-and-set then
-      // still matches the kept bytes, so it rotates after this commit; a
-      // concurrent remove() means no row, so no key is kept; a provider change
-      // is seen, so its key is not kept.
-      await tx.execute(
-        sql`select pg_advisory_xact_lock(hashtextextended(${`organization_llm_settings:${organizationId}`}, 0))`,
-      );
+      // lock serializes put() and remove() calls for one organization,
+      // including the no-row path where FOR UPDATE locks nothing — so a
+      // concurrent first save commits before this one reads, and `keyChanged`
+      // is exact on every path. A remove() that committed first means no row,
+      // so no key is kept (F4.187). FOR UPDATE handles the writer that takes
+      // no advisory lock: a concurrent `rotate-credentials` either committed
+      // before this read (the kept bytes are its rotated ones) or waits on it,
+      // and its compare-and-set then still matches the kept bytes, so it
+      // rotates after this commit. A provider change is seen, so its key is
+      // not kept.
+      await this.lockSetting(tx, organizationId);
       const [existing] = await tx
         .select()
         .from(organizationLlmSettings)
@@ -168,25 +179,40 @@ export class AiAssistantSettingsService {
     return this.toDto(await this.resolver.readSetting(organizationId));
   }
 
+  /**
+   * F4.187 (security re-review I-3): the audit payload comes from
+   * `DELETE … RETURNING` inside the locked transaction, never from a read
+   * before it. Under READ COMMITTED a DELETE that waits on a row lock deletes
+   * the row as the other writer committed it, and RETURNING reports that row.
+   * The advisory lock orders this call after a `put()` whose row is not yet
+   * committed (a first save), which a row lock cannot see. No row deleted, no
+   * audit.
+   */
   async remove(jwt: JwtPayload, organizationId: string): Promise<AiAssistantSettingsDto> {
     await this.gate(jwt, organizationId);
-    const existing = await this.resolver.readSetting(organizationId);
-    if (existing) {
-      await withTenant(this.tenantDb, organizationId, async (tx) => {
-        await tx.delete(organizationLlmSettings).where(eq(organizationLlmSettings.organizationId, organizationId));
-        await this.audit.write(
-          {
-            actor: jwt,
-            action: "master.organization.ai_assistant.delete",
-            entityType: "organization_llm_settings",
-            entityId: organizationId,
-            organizationId,
-            payload: { provider: existing.provider, model: existing.model, keyChanged: existing.keyCiphertext !== null },
-          },
-          tx,
-        );
-      });
-    }
+    await withTenant(this.tenantDb, organizationId, async (tx) => {
+      await this.lockSetting(tx, organizationId);
+      const [deleted] = await tx
+        .delete(organizationLlmSettings)
+        .where(eq(organizationLlmSettings.organizationId, organizationId))
+        .returning({
+          provider: organizationLlmSettings.provider,
+          model: organizationLlmSettings.model,
+          keyCiphertext: organizationLlmSettings.keyCiphertext,
+        });
+      if (!deleted) return;
+      await this.audit.write(
+        {
+          actor: jwt,
+          action: "master.organization.ai_assistant.delete",
+          entityType: "organization_llm_settings",
+          entityId: organizationId,
+          organizationId,
+          payload: { provider: deleted.provider, model: deleted.model, keyChanged: deleted.keyCiphertext !== null },
+        },
+        tx,
+      );
+    });
     return this.toDto(null);
   }
 
