@@ -308,7 +308,10 @@ export async function dispatchTemplateTool(
       return write(
         state,
         { templates: [...(draft.templates ?? []), entry] },
-        `Imported stock template ${stock.code}${version === null ? "" : ` v${version}`} (${countOf(stock.points.length, "point")})`,
+        // F4.193: the line names the version the commit publishes, as the asset
+        // line does; the stock release follows it, so the two cannot be confused.
+        `Imported stock template ${stock.code} (${countOf(stock.points.length, "point")}); it publishes as v1 on commit` +
+          (version === null ? "" : ` (stock release v${version})`),
       );
     }
 

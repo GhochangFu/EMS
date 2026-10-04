@@ -11,6 +11,8 @@ import {
   assertPatternGrammarRefusesAStrayBrace,
   assertTemplateVariablesSkipTheReservedOneAndDerivedPoints,
   assertTheDraftEntryResolvesFirst,
+  assertADraftEntryAtAnotherVersionIsAProblem,
+  assertADraftEntryAtVersionOneResolves,
   assertTheHighestPublishedVersionResolves,
 } from "./onboarding-template-refs.spec";
 
@@ -30,6 +32,14 @@ describe("onboarding template refs (F3.22, ADR 0091 decisions 2 and 6)", () => {
 
   it("the draft entry resolves before an organization version", () => {
     assertTheDraftEntryResolvesFirst();
+  });
+
+  it("a draft entry at a version other than 1 is a problem (F4.193)", () => {
+    assertADraftEntryAtAnotherVersionIsAProblem();
+  });
+
+  it("a draft entry at version 1 resolves (F4.193)", () => {
+    assertADraftEntryAtVersionOneResolves();
   });
 
   it("with no version, the highest published version resolves", () => {

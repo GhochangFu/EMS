@@ -23,7 +23,7 @@ import {
   type OnboardingDraftTemplate,
 } from "@bms/shared";
 
-import { SOURCE_DATA_KEY_MAX_LENGTH } from "../../calc/computed-source-data-key";
+import { SOURCE_DATA_KEY_MAX } from "../asset-templates/asset-templates-instantiate-guards";
 import { quoteCell } from "../spreadsheet-guard";
 
 export type TemplatePointRef = {
@@ -141,6 +141,14 @@ export function resolveTemplateForAsset(
 ): TemplateResolution {
   const entry = (draft.templates ?? []).find((candidate) => draftTemplateCode(candidate) === ref.code);
   if (entry !== undefined) {
+    // F4.193: the commit publishes a draft entry as version 1, so any other
+    // version names a template that will not exist; it is refused, not ignored.
+    if (ref.version !== undefined && ref.version !== 1) {
+      return {
+        problem: `Template ${quoteCell(ref.code)} is in this draft and publishes as version 1, not ${ref.version}`,
+        field: "version",
+      };
+    }
     const resolved = draftTemplateRef(entry, ctx);
     return resolved === null
       ? { problem: `${quoteCell(ref.code)} is not a stock template this release ships`, field: "code" }
@@ -214,7 +222,7 @@ export function templateSourceKey(
   if (key === "") {
     return { outcome: "empty" };
   }
-  return key.length > SOURCE_DATA_KEY_MAX_LENGTH ? { outcome: "too_long", length: key.length } : { outcome: "key", key };
+  return key.length > SOURCE_DATA_KEY_MAX ? { outcome: "too_long", length: key.length } : { outcome: "key", key };
 }
 
 /** A point of a template that one asset cannot build, and why. */
@@ -257,7 +265,7 @@ export function templateSourceKeyMessage(code: string, problem: TemplateSourceKe
     case "too_long":
       return (
         `Template ${code} resolves its point ${point} to a source key of ${problem.result.length} characters, ` +
-        `over the ${SOURCE_DATA_KEY_MAX_LENGTH} limit`
+        `over the ${SOURCE_DATA_KEY_MAX} limit`
       );
   }
 }
