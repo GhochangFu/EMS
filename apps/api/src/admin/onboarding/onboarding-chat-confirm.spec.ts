@@ -15,6 +15,7 @@ import {
 import { scrubMessages } from "./onboarding-credential-detect";
 import { OnboardingService } from "./onboarding.service";
 import { OnboardingValidateService } from "./onboarding-validate.service";
+import { EMPTY_TEMPLATE_CONTEXT } from "./onboarding-template-refs";
 
 function assert(condition: boolean, message: string): void {
   if (!condition) {
@@ -87,6 +88,7 @@ function build(opts: { results: unknown[][]; llm?: FakeLlmProvider; commit?: Ret
     { listPointKeys: async () => [] } as never,
     vocabularies as never,
     { resolveForOrganization: async () => ({ kind: "ready", provider: llm, source: "platform" }) } as never,
+    { context: async () => EMPTY_TEMPLATE_CONTEXT } as never,
   );
   const service = new OnboardingService(
     db,
@@ -101,6 +103,7 @@ function build(opts: { results: unknown[][]; llm?: FakeLlmProvider; commit?: Ret
     {} as never,
     {} as never,
     vocabularies as never,
+    { context: async () => EMPTY_TEMPLATE_CONTEXT } as never,
   );
   return { service, record, llm, commit };
 }

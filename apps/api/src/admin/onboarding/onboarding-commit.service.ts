@@ -41,6 +41,7 @@ import {
 } from "./onboarding-point-key-conflict";
 import { readEncryptedCredentials } from "./onboarding-redaction";
 import { draftHash } from "./onboarding-commit-proposal";
+import { OnboardingTemplateCatalogService } from "./onboarding-template-catalog.service";
 import { OnboardingValidateService } from "./onboarding-validate.service";
 
 /**
@@ -112,6 +113,7 @@ export class OnboardingCommitService {
     private readonly audit: MasterDataAuditService,
     private readonly validateService: OnboardingValidateService,
     private readonly vocabularies: VocabulariesService,
+    private readonly templateCatalog: OnboardingTemplateCatalogService,
   ) {}
 
   /** Commits a draft session when validation passes. The Commit button's path. */
@@ -209,7 +211,11 @@ export class OnboardingCommitService {
     // F4.162 (plan D9): a type retired after it was stored fails here, with the
     // other field errors, rather than alone at `assertLocationType` below.
     const activeTypeCodes = (await this.vocabularies.listLocationTypes()).map((row) => row.code);
-    const validation = this.validateService.validate(draft, activeTypeCodes);
+    // F3.22 (ADR 0091): the template rules read the organization templates and
+    // the stock catalog, so a templated asset that no longer resolves is
+    // refused here, before the transaction, with the other field errors.
+    const templates = await this.templateCatalog.context(session.organizationId);
+    const validation = this.validateService.validate(draft, activeTypeCodes, templates);
     if (!validation.readyToCommit) {
       throw new BadRequestException({
         message: "Draft is not ready to commit",

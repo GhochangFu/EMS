@@ -7,10 +7,12 @@ import {
   STOPPED_EARLY_CALLS_REPLY,
   STOPPED_EARLY_TIME_REPLY,
   TURN_DEADLINE_MS,
+  diffSections,
   runAgentTurn,
 } from "./onboarding-agent-loop";
 import { TOOL_RESULT_MAX_CHARS, type ToolContext } from "./onboarding-agent-tools";
 import type { LlmMessage, LlmReply, LlmToolCall, OnboardingLlmProvider } from "./onboarding-llm-port";
+import { EMPTY_TEMPLATE_CONTEXT } from "./onboarding-template-refs";
 import { OnboardingValidateService } from "./onboarding-validate.service";
 
 function assert(condition: boolean, message: string): void {
@@ -68,6 +70,7 @@ export function toolContext(): ToolContext {
     catalog: { listPointKeys: async () => [] },
     protocols: { getContextForOrganization: async () => ({ catalog: [], orgExamples: [] }), formatForAssistant: () => "MQTT" },
     validator: new OnboardingValidateService(),
+    templates: EMPTY_TEMPLATE_CONTEXT,
   };
 }
 
@@ -273,4 +276,17 @@ export async function assertAProviderErrorRecordsItsClassAndStatus(): Promise<vo
   const result = await runAgentTurn({ ...turn(new FakeLlmProvider([])), llm });
   assert(result.record.errorClass === "AuthenticationError" && result.record.errorStatus === 401, "class and status");
   assert(!JSON.stringify(result.record).includes("sk-or-secret"), "never the message");
+}
+
+/**
+ * W4 (`F3.22`, ADR 0091 decision 2) — the turn's patch carries `templates`
+ * when the working draft changed them. Tested on the section diff directly:
+ * no tool writes `templates` until P4's `add_template`, so a scripted turn
+ * cannot reach it yet (P4 adds the scripted form). Mutation: drop
+ * `"templates"` from `DRAFT_SECTIONS`; the edit is then silently lost.
+ */
+export function assertW4TheTurnPatchCarriesTemplates(): void {
+  const working: OnboardingDraft = { templates: [{ code: "PUMP", name: "Pump", domain: "water", points: [] }] };
+  const patch = diffSections({}, working);
+  assert(patch.templates?.length === 1, `the patch carries the new template, got ${JSON.stringify(patch)}`);
 }

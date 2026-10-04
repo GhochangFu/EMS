@@ -59,7 +59,7 @@ export type AgentTurnResult = {
   readonly record: AgentTurnRecord;
 };
 
-const DRAFT_SECTIONS = ["location", "rtus", "pointKeys", "assets", "assetPoints", "onboardingMeta"] as const;
+const DRAFT_SECTIONS = ["location", "rtus", "pointKeys", "assets", "assetPoints", "templates", "onboardingMeta"] as const;
 
 /**
  * The stored history as provider messages: the last `MAX_HISTORY_MESSAGES`,
@@ -111,7 +111,7 @@ function errorFacts(error: unknown): { errorClass?: string; errorStatus?: number
 }
 
 /** The six draft sections that differ, wholesale, so `mergeDraft(stored, patch)` reproduces `working`. */
-function diffSections(stored: OnboardingDraft, working: OnboardingDraft): OnboardingDraftInput {
+export function diffSections(stored: OnboardingDraft, working: OnboardingDraft): OnboardingDraftInput {
   const patch: Record<string, unknown> = {};
   for (const section of DRAFT_SECTIONS) {
     if (JSON.stringify(stored[section]) !== JSON.stringify(working[section])) {

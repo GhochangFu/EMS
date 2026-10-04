@@ -12,6 +12,23 @@ import {
   assertNoActiveTypeMessageSaysNoneIsActive,
   assertTypedLocationIsReadyToCommit,
   assertTypedLocationLeavesTheLocationPhase,
+  assertAnUnreferencedTemplateIsValid,
+  assertV1AnUnresolvedTemplateCodeIsAnError,
+  assertV2AnUnpublishedVersionIsAnError,
+  assertV3ADomainMismatchIsAnError,
+  assertV4AMappingOntoATemplatedAssetIsAnError,
+  assertV5ARequiredPointWithNoPatternIsAnError,
+  assertV6AnUnresolvedVariableIsAnError,
+  assertV7AnUnknownVariableIsAnError,
+  assertV8ADuplicatePointKeyIsAnError,
+  assertV8ADuplicateTemplateCodeIsAnError,
+  assertV9AnUnknownStockCodeIsAnError,
+  assertV9APatternOnANonMeasuredPointIsAnError,
+  assertV10AHeldCodeIsAnErrorNamingTheVersions,
+  assertV10AHeldStockCodeIsAnError,
+  assertV11AMixedDraftStillNeedsMappings,
+  assertV11AnAllTemplatedDraftNeedsNoMappings,
+  assertV12ATemplatedDraftIsReadyToCommit,
 } from "./onboarding-validate.service.spec";
 
 /** Vitest entry point — assertions live in the sibling `.spec` (ADR 0014). */
@@ -60,5 +77,75 @@ describe("OnboardingValidateService — a location type that is not active (F4.1
 
   it("says no location type is active when the list is empty", () => {
     assertNoActiveTypeMessageSaysNoneIsActive();
+  });
+});
+
+describe("OnboardingValidateService — templates and templated assets (F3.22, ADR 0091)", () => {
+  it("V1 refuses a template code with no draft entry and no published version", () => {
+    assertV1AnUnresolvedTemplateCodeIsAnError();
+  });
+
+  it("V2 refuses a named version that is not published", () => {
+    assertV2AnUnpublishedVersionIsAnError();
+  });
+
+  it("V3 refuses an asset domain that differs from its template's", () => {
+    assertV3ADomainMismatchIsAnError();
+  });
+
+  it("V4 refuses a mapping onto a templated asset", () => {
+    assertV4AMappingOntoATemplatedAssetIsAnError();
+  });
+
+  it("V5 refuses a required measured point with no pattern, naming the point", () => {
+    assertV5ARequiredPointWithNoPatternIsAnError();
+  });
+
+  it("V6 refuses a required pattern that does not resolve, naming the variable", () => {
+    assertV6AnUnresolvedVariableIsAnError();
+  });
+
+  it("V7 refuses a variable the template does not ask for", () => {
+    assertV7AnUnknownVariableIsAnError();
+  });
+
+  it("V8 refuses two draft templates with one code", () => {
+    assertV8ADuplicateTemplateCodeIsAnError();
+  });
+
+  it("V8 refuses a point key declared twice in one template", () => {
+    assertV8ADuplicatePointKeyIsAnError();
+  });
+
+  it("V9 refuses a stock code this release does not ship", () => {
+    assertV9AnUnknownStockCodeIsAnError();
+  });
+
+  it("V9 refuses a pattern on a point that is not measured", () => {
+    assertV9APatternOnANonMeasuredPointIsAnError();
+  });
+
+  it("V10 refuses an authored code the organization already holds, naming the versions", () => {
+    assertV10AHeldCodeIsAnErrorNamingTheVersions();
+  });
+
+  it("V10 refuses a stock code the organization already holds", () => {
+    assertV10AHeldStockCodeIsAnError();
+  });
+
+  it("V11 lets an all-templated draft reach review with no mappings", () => {
+    assertV11AnAllTemplatedDraftNeedsNoMappings();
+  });
+
+  it("V11 keeps a mixed draft in mappings until its plain asset is mapped", () => {
+    assertV11AMixedDraftStillNeedsMappings();
+  });
+
+  it("V12 finds a draft with every kind of template ready to commit", () => {
+    assertV12ATemplatedDraftIsReadyToCommit();
+  });
+
+  it("keeps a template no asset uses valid (decision 11)", () => {
+    assertAnUnreferencedTemplateIsValid();
   });
 });

@@ -144,3 +144,14 @@ export function assertRedactDraftForLlmDropsTheCommitProposal(): void {
   assert(!(COMMIT_PROPOSAL_KEY in llm), "the LLM view has no _commitProposal");
   assert(!JSON.stringify(llm).includes(HASH), "the LLM view carries no proposal hash");
 }
+
+/**
+ * W11 (`F3.22`) — adding one template entry changes the hash, so a proposal
+ * made before the template was added cannot be confirmed after it (ADR 0090's
+ * confirm/hash rule covers the new section by construction).
+ */
+export function assertW11AddingATemplateChangesTheHash(): void {
+  const draft = readyDraft();
+  const withTemplate: OnboardingDraft = { ...draft, templates: [{ stockCode: "WTP" }] };
+  assert(draftHash(draft) !== draftHash(withTemplate), "adding a template changes the draft hash");
+}

@@ -17,6 +17,7 @@ import {
   type OnboardingSeedKeyCtx,
 } from "./onboarding-commit.seed-key.integration.spec";
 import { jwtFor, primeSeededSubjects } from "../../testing/seeded-subjects";
+import { EMPTY_TEMPLATE_CONTEXT } from "./onboarding-template-refs";
 
 /**
  * `F4.170` owner ruling 20 — Vitest entry point. Assertions live in the
@@ -185,6 +186,7 @@ describe.skipIf(!connectionString)("F4.170 ruling 20 — the onboarding commit s
       new MasterDataAuditService(tenantDb, fleetDb),
       new OnboardingValidateService(),
       new VocabulariesService(fleetDb),
+      { context: async () => EMPTY_TEMPLATE_CONTEXT } as never,
     );
 
     ctx.ownerPool = ownerPool;

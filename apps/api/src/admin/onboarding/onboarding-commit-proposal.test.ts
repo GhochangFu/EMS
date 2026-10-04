@@ -10,6 +10,7 @@ import {
   assertReadCommitProposalFailsClosed,
   assertRedactDraftForClientDropsTheCommitProposal,
   assertRedactDraftForLlmDropsTheCommitProposal,
+  assertW11AddingATemplateChangesTheHash,
 } from "./onboarding-commit-proposal.spec";
 
 /** Vitest entry point — see `admin.schema.test.ts` for the pattern (ADR 0014). One `it()` per claim. */
@@ -48,5 +49,11 @@ describe("onboarding commit proposal (F3.21, ADR 0090 decision 5)", () => {
 
   it("drops the proposal from the LLM view", () => {
     assertRedactDraftForLlmDropsTheCommitProposal();
+  });
+});
+
+describe("draftHash — templates (F3.22)", () => {
+  it("W11 changes when a template is added", () => {
+    assertW11AddingATemplateChangesTheHash();
   });
 });

@@ -13,6 +13,7 @@ import { deriveLocationPatch } from "./onboarding-location-derive";
 import type { OrgPointKeySummary } from "./onboarding-catalog.service";
 import { carriesPromptMarker, serialiseDraftForPrompt } from "./onboarding-prompt-budget";
 import type { ProtocolContext } from "./onboarding-protocol.service";
+import type { ValidateTemplateContext } from "./onboarding-template-refs";
 import { isSecretKey } from "./onboarding-redaction";
 import {
   draftAssetPointSchema,
@@ -102,8 +103,11 @@ export type ToolContext = {
     validate(
       draft: unknown,
       activeLocationTypeCodes: readonly string[],
+      templates: ValidateTemplateContext,
     ): { valid: boolean; readyToCommit: boolean; errors: { path: string; message: string }[] };
   };
+  /** `F3.22`: the organization's template versions and the stock catalog, read once per turn. */
+  readonly templates: ValidateTemplateContext;
 };
 
 /** The turn's working state; `runTool` replaces `working` only after a write passes every check. */
@@ -464,14 +468,14 @@ async function dispatch(name: ToolName, args: Record<string, unknown>, state: To
     }
 
     case "validate_draft": {
-      const result = ctx.validator.validate(draft, activeCodes(ctx));
+      const result = ctx.validator.validate(draft, activeCodes(ctx), ctx.templates);
       const { shown, omitted } = echoedItems(result.errors, TOOL_LIST_MAX_ITEMS);
       return succeed({ valid: result.valid, readyToCommit: result.readyToCommit, errors: shown, more: moreTail(omitted, "errors") || undefined });
     }
 
     case "propose_commit": {
       const problem = draftCountProblem(draft);
-      const result = ctx.validator.validate(draft, activeCodes(ctx));
+      const result = ctx.validator.validate(draft, activeCodes(ctx), ctx.templates);
       if (problem !== null || !result.readyToCommit) {
         const { shown } = echoedItems(result.errors, 10);
         const reasons = [problem, ...shown.map((e) => `${e.path}: ${e.message}`)].filter(Boolean).join("; ");

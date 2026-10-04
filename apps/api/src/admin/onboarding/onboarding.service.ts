@@ -28,6 +28,7 @@ import { VocabulariesService } from "../../vocabularies/vocabularies.service";
 import { OnboardingChatService } from "./onboarding-chat.service";
 import { OnboardingCommitService } from "./onboarding-commit.service";
 import { OnboardingCatalogService } from "./onboarding-catalog.service";
+import { OnboardingTemplateCatalogService } from "./onboarding-template-catalog.service";
 import { OnboardingExcelService } from "./onboarding-excel.service";
 import { looksLikeCredential, scrubMessages } from "./onboarding-credential-detect";
 import {
@@ -71,6 +72,7 @@ export class OnboardingService {
     private readonly excelService: OnboardingExcelService,
     private readonly catalogService: OnboardingCatalogService,
     private readonly vocabularies: VocabulariesService,
+    private readonly templateCatalog: OnboardingTemplateCatalogService,
   ) {}
 
   /** Creates a new onboarding session for an organization. */
@@ -404,7 +406,11 @@ export class OnboardingService {
   /** Validates draft without committing. */
   async validate(jwt: JwtPayload, sessionId: string): Promise<OnboardingValidateResponseDto> {
     const session = await this.loadSession(jwt, sessionId);
-    const validation = this.validateService.validate(session.draft, await this.activeLocationTypeCodes());
+    const validation = this.validateService.validate(
+      session.draft,
+      await this.activeLocationTypeCodes(),
+      await this.templateCatalog.context(session.organizationId),
+    );
     let autoOpenReason = validation.readyToCommit
       ? ("ready_to_commit" as const)
       : validation.errors.length > 0
@@ -499,7 +505,11 @@ export class OnboardingService {
       .where(eq(organizations.id, session.organizationId))
       .limit(1);
 
-    const validation = this.validateService.validate(mergedDraft, locationTypeCodes);
+    const validation = this.validateService.validate(
+      mergedDraft,
+      locationTypeCodes,
+      await this.templateCatalog.context(session.organizationId),
+    );
 
     return {
       assistantMessage: assistantText,

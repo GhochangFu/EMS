@@ -20,6 +20,7 @@ import {
   type OnboardingTelemetrySourceCtx,
 } from "./onboarding-commit.telemetry-source.integration.spec";
 import { jwtFor, primeSeededSubjects } from "../../testing/seeded-subjects";
+import { EMPTY_TEMPLATE_CONTEXT } from "./onboarding-template-refs";
 
 /**
  * `F4.140` — Vitest entry point. Assertions live in the sibling `.spec`
@@ -226,6 +227,7 @@ describe.skipIf(!connectionString)(
         new MasterDataAuditService(tenantDb, fleetDb),
         new OnboardingValidateService(),
         new VocabulariesService(fleetDb),
+        { context: async () => EMPTY_TEMPLATE_CONTEXT } as never,
       );
 
       ctx.ownerPool = ownerPool;

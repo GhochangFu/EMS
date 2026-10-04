@@ -19,6 +19,7 @@ import * as locationTypes from "./onboarding-location-type-match";
 import type { ChatTurnResult } from "./onboarding-chat.service";
 import { FakeLlmProvider, calls, toolCall } from "./onboarding-agent-loop.spec";
 import { OnboardingValidateService } from "./onboarding-validate.service";
+import { EMPTY_TEMPLATE_CONTEXT } from "./onboarding-template-refs";
 
 function assert(condition: boolean, message: string): void {
   if (!condition) {
@@ -58,6 +59,7 @@ function serviceWith(rows: readonly LocationTypeDto[], llmResolver: unknown = {}
     {} as never,
     { listLocationTypes: async () => [...rows] } as never,
     llmResolver as never,
+    { context: async () => EMPTY_TEMPLATE_CONTEXT } as never,
   );
 }
 

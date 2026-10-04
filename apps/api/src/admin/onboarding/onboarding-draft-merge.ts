@@ -25,6 +25,9 @@ export function mergeDraftPatch(base: OnboardingDraft, patch: OnboardingDraftInp
     pointKeys: patch.pointKeys ?? base.pointKeys,
     assets: patch.assets ?? base.assets,
     assetPoints: patch.assetPoints ?? base.assetPoints,
+    // F3.22 (ADR 0091 decision 2): wholesale, like the other arrays. Without
+    // this line a patch's explicit `templates: undefined` erases the stored ones.
+    templates: patch.templates ?? base.templates,
     onboardingMeta: patch.onboardingMeta
       ? { ...base.onboardingMeta, ...patch.onboardingMeta }
       : base.onboardingMeta,

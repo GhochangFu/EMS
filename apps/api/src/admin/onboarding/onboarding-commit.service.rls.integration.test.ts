@@ -29,6 +29,7 @@ import {
   type CommitRlsFixtures,
 } from "./onboarding-commit.service.rls.integration.spec";
 import { jwtFor, primeSeededSubjects } from "../../testing/seeded-subjects";
+import { EMPTY_TEMPLATE_CONTEXT } from "./onboarding-template-refs";
 
 /**
  * `E7.1b` — Vitest entry point. Assertions live in the sibling `.spec`
@@ -498,6 +499,7 @@ describe.skipIf(!connectionString)("E7.1b — onboarding commit stamps org under
       new MasterDataAuditService(tenantDb, fleetDb),
       new OnboardingValidateService(),
       new VocabulariesService(fleetDb),
+      { context: async () => EMPTY_TEMPLATE_CONTEXT } as never,
     );
 
     ctx = { commitSvc, ownerPool, organizationId, sessionId };

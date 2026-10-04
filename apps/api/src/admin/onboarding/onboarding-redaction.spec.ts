@@ -652,3 +652,61 @@ export function assertReconcileSecretsKeepsTheVersionOnAKeptBlob(): void {
     "a kept blob's version survives reconcileSecrets",
   );
 }
+
+/** A draft with an authored template, a stock entry and a templated asset. */
+function templatedDraft(vars: Record<string, string>): unknown {
+  return {
+    templates: [
+      {
+        code: "PUMP",
+        name: "Pump",
+        domain: "water",
+        points: [{ pointKey: "flow", label: "Flow", unit: "m3/h", sourceDataKeyPattern: "{site}_{asset_code}_FLOW", required: true }],
+      },
+      { stockCode: "WTP", patterns: { ph: "{asset_code}_PH" } },
+    ],
+    assets: [
+      {
+        code: "PUMP-1",
+        name: "Pump 1",
+        siteName: "Site",
+        rtuIndex: 0,
+        domain: "water",
+        template: { code: "PUMP", version: 1, sourceDataKeyVars: vars },
+      },
+    ],
+  };
+}
+
+/**
+ * W9 (`F3.22`) — both redactors return `templates` and `assets[0].template`
+ * deep-equal to the input: no key of the new shapes looks like a secret, so
+ * neither the client nor the model loses a pattern, a variable or a point key.
+ */
+export function assertW9BothRedactorsKeepTemplatesAndTheAssetRef(): void {
+  const draft = templatedDraft({ site: "S1" }) as { templates: unknown; assets: { template: unknown }[] };
+  for (const [name, redact] of [
+    ["redactDraftForClient", redactDraftForClient],
+    ["redactDraftForLlm", redactDraftForLlm],
+  ] as const) {
+    const out = redact(draft) as unknown as { templates: unknown; assets: { template: unknown }[] };
+    assert(
+      JSON.stringify(out.templates) === JSON.stringify(draft.templates),
+      `${name} keeps templates, got ${JSON.stringify(out.templates)}`,
+    );
+    assert(
+      JSON.stringify(out.assets[0].template) === JSON.stringify(draft.assets[0].template),
+      `${name} keeps assets[0].template, got ${JSON.stringify(out.assets[0].template)}`,
+    );
+  }
+}
+
+/** W10 — a variable named `password` is redacted on the model's path (the existing key rule, on the new field). */
+export function assertW10APasswordVariableIsRedactedForTheModel(): void {
+  const out = redactDraftForLlm(templatedDraft({ site: "S1", password: "hunter2" })) as unknown as {
+    assets: { template: { sourceDataKeyVars: Record<string, string> } }[];
+  };
+  const vars = out.assets[0].template.sourceDataKeyVars;
+  assert(vars.password === "[REDACTED]", `the password variable is redacted, got ${JSON.stringify(vars)}`);
+  assert(vars.site === "S1", `a plain variable is kept beside it, got ${JSON.stringify(vars)}`);
+}

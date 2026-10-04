@@ -13,6 +13,7 @@ import {
 } from "./onboarding-agent-tools";
 import { commitSummary } from "./onboarding-commit-proposal";
 import { PROMPT_OMITTED_MARKER } from "./onboarding-prompt-budget";
+import { EMPTY_TEMPLATE_CONTEXT } from "./onboarding-template-refs";
 import { OnboardingValidateService } from "./onboarding-validate.service";
 
 function assert(condition: boolean, message: string): void {
@@ -48,6 +49,7 @@ function context(overrides: Partial<ToolContext> = {}): ToolContext {
       formatForAssistant: () => "MQTT, Modbus TCP",
     },
     validator: new OnboardingValidateService(),
+    templates: EMPTY_TEMPLATE_CONTEXT,
     ...overrides,
   };
 }
