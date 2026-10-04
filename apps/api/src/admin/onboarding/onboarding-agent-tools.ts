@@ -1,19 +1,32 @@
-import type { LocationTypeDto, OnboardingDraft } from "@bms/shared";
+import type { LocationTypeDto } from "@bms/shared";
 import { z, type ZodTypeAny } from "zod";
 import { zodToJsonSchema } from "zod-to-json-schema";
 
 import { echoedItems, moreTail, quoteCell } from "../spreadsheet-guard";
-import { exceedsDepth, isJsonContainer, rebuildDeep } from "../stack-safe-json";
+import { isJsonContainer, rebuildDeep } from "../stack-safe-json";
 import { commitSummary } from "./onboarding-commit-proposal";
 import { looksLikeCredential } from "./onboarding-credential-detect";
 import { cutToBound, draftCountProblem } from "./onboarding-draft-caps";
-import { mergeDraftPatch } from "./onboarding-draft-merge";
 import type { LlmToolCall, LlmToolDefinition } from "./onboarding-llm-port";
 import { deriveLocationPatch } from "./onboarding-location-derive";
 import type { OrgPointKeySummary } from "./onboarding-catalog.service";
 import { carriesPromptMarker, serialiseDraftForPrompt } from "./onboarding-prompt-budget";
 import type { ProtocolContext } from "./onboarding-protocol.service";
+import { dispatchTemplateTool, isTemplateToolName, TEMPLATE_TOOL_DESCRIPTIONS, TEMPLATE_TOOL_SCHEMAS } from "./onboarding-template-tools";
 import type { ValidateTemplateContext } from "./onboarding-template-refs";
+import {
+  fail,
+  issuesOf,
+  removeAt,
+  succeed,
+  toolResultContent,
+  TOOL_LIST_MAX_ITEMS,
+  TOOL_RESULT_CUT_TAIL,
+  TOOL_RESULT_MAX_CHARS,
+  write,
+  type ToolOutcome,
+  type ToolState,
+} from "./onboarding-tool-outcome";
 import { isSecretKey } from "./onboarding-redaction";
 import {
   draftAssetPointSchema,
@@ -21,10 +34,11 @@ import {
   draftLocationSchema,
   draftPointKeySchema,
   draftRtuSchema,
-  DRAFT_TOO_DEEP_MESSAGE,
-  MAX_ONBOARDING_DRAFT_DEPTH,
-  type OnboardingDraftInput,
 } from "./onboarding.schema";
+
+// The outcome helpers moved to `onboarding-tool-outcome.ts` (F3.22 P3); re-exported so existing imports compile.
+export { toolResultContent, TOOL_LIST_MAX_ITEMS, TOOL_RESULT_CUT_TAIL, TOOL_RESULT_MAX_CHARS };
+export type { ToolOutcome, ToolState };
 
 /**
  * The onboarding agent's tools (`F3.21`, ADR 0090 decision 4).
@@ -51,15 +65,6 @@ import {
  * **Action lines are written by code** from the validated, applied values —
  * never the raw arguments and never the model's text (decision 6).
  */
-
-/** Decision 3: one tool result in the prompt is cut to this many characters. */
-export const TOOL_RESULT_MAX_CHARS = 8_000;
-
-/** The fixed tail of a cut tool result. */
-export const TOOL_RESULT_CUT_TAIL = `…[cut to ${TOOL_RESULT_MAX_CHARS} characters]`;
-
-/** Plan ruling 1: one list result names at most this many items. */
-export const TOOL_LIST_MAX_ITEMS = 100;
 
 /**
  * Security review M1: short credential names the redactors' substring list
@@ -110,20 +115,6 @@ export type ToolContext = {
   readonly templates: ValidateTemplateContext;
 };
 
-/** The turn's working state; `runTool` replaces `working` only after a write passes every check. */
-export type ToolState = {
-  working: OnboardingDraft;
-  pendingProposal?: { summary: string };
-};
-
-export type ToolOutcome = {
-  readonly ok: boolean;
-  /** The tool result as the model receives it: JSON, cut to `TOOL_RESULT_MAX_CHARS`. */
-  readonly content: string;
-  /** Set only by a successful write or a proposal. */
-  readonly actionLine?: string;
-};
-
 const indexSchema = z.object({ index: z.number().int().min(0) }).strict();
 const noArgs = z.object({}).strict();
 
@@ -147,11 +138,13 @@ const TOOL_SCHEMAS = {
   use_existing_point_keys: z.object({ value: z.boolean() }).strict(),
   validate_draft: noArgs,
   propose_commit: noArgs,
+  ...TEMPLATE_TOOL_SCHEMAS,
 } as const satisfies Record<string, ZodTypeAny>;
 
 export type ToolName = keyof typeof TOOL_SCHEMAS;
 
 const DESCRIPTIONS: Record<ToolName, string> = {
+  ...TEMPLATE_TOOL_DESCRIPTIONS,
   get_draft: "Returns the current onboarding draft (credentials redacted).",
   list_point_keys: "Lists catalog point keys (code, name, unit, domain). Optional `search` filters code and name.",
   list_location_types: "Lists the active location type codes and labels. A location's `type` must be one of these codes.",
@@ -176,10 +169,14 @@ const DESCRIPTIONS: Record<ToolName, string> = {
 function jsonSchemaOf(schema: ZodTypeAny): Record<string, unknown> {
   const converted = zodToJsonSchema(schema, { $refStrategy: "none", target: "jsonSchema7" }) as Record<string, unknown>;
   delete converted.$schema;
+  // A union (`get_template`) converts to a bare `anyOf`; providers read the root as an object schema.
+  if (converted.type === undefined) {
+    converted.type = "object";
+  }
   return converted;
 }
 
-/** The 17 tools as the model sees them, in a fixed order. */
+/** The 20 tools as the model sees them, in a fixed order. */
 export const TOOL_DEFINITIONS: readonly LlmToolDefinition[] = (Object.keys(TOOL_SCHEMAS) as ToolName[]).map((name) => ({
   name,
   description: DESCRIPTIONS[name],
@@ -211,58 +208,8 @@ export function configCarriesCredential(value: unknown): boolean {
   return found;
 }
 
-/** A result as the model receives it: JSON, cut on a whole character with a fixed tail. */
-export function toolResultContent(result: unknown): string {
-  const text = JSON.stringify(result) ?? "null";
-  return text.length <= TOOL_RESULT_MAX_CHARS ? text : `${cutToBound(text, TOOL_RESULT_MAX_CHARS)}${TOOL_RESULT_CUT_TAIL}`;
-}
-
-function fail(error: string): ToolOutcome {
-  return { ok: false, content: toolResultContent({ ok: false, error }) };
-}
-
-function succeed(result: Record<string, unknown>, actionLine?: string): ToolOutcome {
-  return { ok: true, content: toolResultContent({ ok: true, ...result }), ...(actionLine ? { actionLine } : {}) };
-}
-
-function issuesOf(error: z.ZodError): string {
-  return error.issues
-    .slice(0, 10)
-    .map((issue) => cutToBound(`${issue.path.join(".") || "(arguments)"}: ${issue.message}`, 200))
-    .join("; ");
-}
-
 function activeCodes(ctx: ToolContext): string[] {
   return ctx.activeTypes.map((type) => type.code);
-}
-
-/**
- * Applies `patch` to the working draft only when the merged draft passes the
- * caps. A successful write drops any pending proposal: a proposal never outlives
- * an edit, even inside one turn.
- */
-function write(state: ToolState, patch: OnboardingDraftInput, actionLine: string, result: Record<string, unknown> = {}): ToolOutcome {
-  const next = mergeDraftPatch(state.working, patch);
-  const problem = draftCountProblem(next);
-  if (problem !== null) {
-    return fail(problem);
-  }
-  // Security review L6: the element schemas carry no depth bound, so the merged
-  // draft is held to the one a `PATCH` body meets (F4.115).
-  if (exceedsDepth(next, MAX_ONBOARDING_DRAFT_DEPTH)) {
-    return fail(DRAFT_TOO_DEEP_MESSAGE);
-  }
-  state.working = next;
-  state.pendingProposal = undefined;
-  return succeed(result, actionLine);
-}
-
-function removeAt<T>(items: readonly T[] | undefined, index: number): { rest: T[]; removed: T } | null {
-  const list = items ?? [];
-  if (index >= list.length) {
-    return null;
-  }
-  return { rest: list.filter((_, i) => i !== index), removed: list[index] as T };
 }
 
 /** Whether `name` is one of the registry's tools; the turn record logs any other name as `unknown` (security review L3). */
@@ -300,6 +247,9 @@ export async function runTool(call: LlmToolCall, state: ToolState, ctx: ToolCont
 }
 
 async function dispatch(name: ToolName, args: Record<string, unknown>, state: ToolState, ctx: ToolContext): Promise<ToolOutcome> {
+  if (isTemplateToolName(name)) {
+    return dispatchTemplateTool(name, args, state, ctx);
+  }
   const draft = state.working;
   switch (name) {
     case "get_draft":
