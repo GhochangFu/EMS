@@ -237,8 +237,12 @@ export class OnboardingValidateService {
     if (d.rtus.some((rtu) => this.rtuNeedsMqttSetup(rtu))) {
       return "rtu";
     }
+    // F4.192: a templated asset takes its point keys from its template, so a
+    // draft whose every asset is templated skips this phase; with no asset at
+    // all, `every` is true, so the length is checked first.
+    const allTemplated = (d.assets?.length ?? 0) > 0 && d.assets!.every((asset) => asset.template);
     if (!d.pointKeys || d.pointKeys.length === 0) {
-      if (!d.onboardingMeta?.useExistingPointKeys) {
+      if (!d.onboardingMeta?.useExistingPointKeys && !allTemplated) {
         return "point_keys";
       }
     }

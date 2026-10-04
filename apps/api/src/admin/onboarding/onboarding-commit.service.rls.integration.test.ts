@@ -270,9 +270,10 @@ async function withKeyWindow<T>(
 
 /**
  * A draft with three RTUs. `readyToCommit` requires the "review" phase, which
- * `OnboardingValidateService.inferPhase` reaches only once a point key, an
- * asset and an asset point all exist — so one of each is added here, mapped
- * to the first RTU, exactly as `commitReadyDraft` does for its single RTU.
+ * `OnboardingValidateService.inferPhase` reaches for a plain asset only once a
+ * point key, the asset and an asset point all exist (`F4.192`: an
+ * all-templated draft needs no point key) — so one of each is added here,
+ * mapped to the first RTU, exactly as `commitReadyDraft` does for its single RTU.
  */
 function keyVersionDraft(domain: string): OnboardingDraft {
   return {

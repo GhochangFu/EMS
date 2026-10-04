@@ -566,6 +566,41 @@ export function assertV11AMixedDraftStillNeedsMappings(): void {
   assert(phase === "mappings", `a draft with a plain asset and no mapping stays in mappings, got ${phase}`);
 }
 
+/**
+ * `F4.192` — a draft whose every asset is templated, with no point key and no
+ * `useExistingPointKeys`, leaves `point_keys`: its templates carry the keys.
+ */
+function allTemplatedNoPointKeys(): OnboardingDraft {
+  const draft = templatedDraft();
+  draft.assets = draft.assets!.slice(1);
+  draft.assetPoints = [];
+  draft.pointKeys = [];
+  return draft;
+}
+
+/** F4.192 — an all-templated draft with no point key reaches review and is ready to commit. */
+export function assertAnAllTemplatedDraftSkipsThePointKeysPhase(): void {
+  const result = new OnboardingValidateService().validate(allTemplatedNoPointKeys(), CODES, TEMPLATES);
+  assert(result.suggestedPhase === "review", `an all-templated draft with no point key reaches review, got ${result.suggestedPhase}`);
+  assert(result.readyToCommit === true, "the draft is ready to commit");
+}
+
+/** F4.192 — one plain asset puts the draft back in `point_keys`. */
+export function assertAMixedDraftWithNoPointKeyStaysInThePointKeysPhase(): void {
+  const draft = allTemplatedNoPointKeys();
+  draft.assets!.push({ code: "PLAIN-1", name: "Plain 1", siteName: "Lotapata", rtuIndex: 0, domain: "electrical" });
+  const phase = new OnboardingValidateService().inferPhase(draft, CODES);
+  assert(phase === "point_keys", `a draft with a plain asset and no point key stays in point_keys, got ${phase}`);
+}
+
+/** F4.192 — a draft with no asset and no point key stays in `point_keys` (`every` on an empty list is true). */
+export function assertADraftWithNoAssetAndNoPointKeyStaysInThePointKeysPhase(): void {
+  const draft = allTemplatedNoPointKeys();
+  draft.assets = [];
+  const phase = new OnboardingValidateService().inferPhase(draft, CODES);
+  assert(phase === "point_keys", `a draft with no asset and no point key stays in point_keys, got ${phase}`);
+}
+
 /** V12 — the positive control: the fixture is clean and ready to commit. */
 export function assertV12ATemplatedDraftIsReadyToCommit(): void {
   const result = new OnboardingValidateService().validate(templatedDraft(), CODES, TEMPLATES);

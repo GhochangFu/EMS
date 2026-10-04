@@ -120,7 +120,7 @@ export type ToolContext = {
       draft: unknown,
       activeLocationTypeCodes: readonly string[],
       templates: ValidateTemplateContext,
-    ): { valid: boolean; readyToCommit: boolean; errors: { path: string; message: string }[] };
+    ): { valid: boolean; readyToCommit: boolean; errors: { path: string; message: string }[]; suggestedPhase: string };
   };
   /** `F3.22`: the organization's template versions and the stock catalog, read once per turn. */
   readonly templates: ValidateTemplateContext;
@@ -447,7 +447,10 @@ async function dispatch(name: ToolName, args: Record<string, unknown>, state: To
       const result = ctx.validator.validate(draft, activeCodes(ctx), ctx.templates);
       if (problem !== null || !result.readyToCommit) {
         const { shown } = echoedItems(result.errors, 10);
-        const reasons = [problem, ...shown.map((e) => `${e.path}: ${e.message}`)].filter(Boolean).join("; ");
+        // F4.192: with no field error, the phase is what holds the draft back,
+        // so the refusal names it rather than ending on nothing.
+        const phase = problem === null && shown.length === 0 ? `It is at the ${result.suggestedPhase} phase, not review.` : null;
+        const reasons = [problem, ...shown.map((e) => `${e.path}: ${e.message}`), phase].filter(Boolean).join("; ");
         return fail(`The draft is not ready to commit. ${cutToBound(reasons, 2_000)}`);
       }
       const summary = commitSummary(draft, ctx.templates);
