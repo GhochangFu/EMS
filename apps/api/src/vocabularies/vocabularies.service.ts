@@ -26,6 +26,32 @@ import type {
 
 import { MAX_ECHOED_CELL_CHARS } from "../admin/spreadsheet-guard";
 import { TENANT_DRIZZLE } from "../database/database.tokens";
+import type { BmsTx } from "../database/tenant-context";
+
+/**
+ * Where a vocabulary read runs: the service's own tenant pool by default, or a
+ * caller's open transaction.
+ *
+ * `F3.22` (ADR 0091 decision 1): the template create, publish and instantiate
+ * cores call `list` and `assertAssetDomain` **inside** `withTenant`, and the
+ * service's `db` is that same tenant pool. A read on `this.db` from there
+ * holds one tenant connection while it waits for a second, so N concurrent
+ * cores on a pool of N connections wait for each other for good. Those cores
+ * pass their `tx`. The vocabulary tables carry no row-level security, so the
+ * answer is the same on either executor.
+ */
+export type VocabularyExecutor = BmsDb | BmsTx;
+
+/** Awaits each query in turn — one client, one query in flight. */
+async function inSequence<T extends readonly PromiseLike<unknown>[]>(
+  queries: T,
+): Promise<{ -readonly [K in keyof T]: Awaited<T[K]> }> {
+  const results: unknown[] = [];
+  for (const query of queries) {
+    results.push(await query);
+  }
+  return results as { -readonly [K in keyof T]: Awaited<T[K]> };
+}
 
 /**
  * Eight open vocabularies — rule concerns and plant domains (ADR 0031
@@ -63,10 +89,14 @@ export class VocabulariesService {
    * because deleting one that plant still references must fail (the foreign
    * keys carry no `ON DELETE` clause, by design). A retired value therefore
    * stops being offered for new work while existing rows keep resolving.
+   *
+   * `db` defaults to the tenant pool; a caller inside `withTenant` passes its
+   * `tx` (see `VocabularyExecutor`).
    */
-  async list(): Promise<VocabulariesResponse> {
-    const [categories, domains, severities, skills, roles, sections, balanceRoles] = await Promise.all([
-      this.db
+  async list(db: VocabularyExecutor = this.db): Promise<VocabulariesResponse> {
+    // Built, not yet run: a drizzle query executes when it is awaited.
+    const queries = [
+      db
         .select({
           code: ruleCategories.code,
           label: ruleCategories.label,
@@ -77,7 +107,7 @@ export class VocabulariesService {
         .from(ruleCategories)
         .where(eq(ruleCategories.active, true))
         .orderBy(asc(ruleCategories.sortOrder), asc(ruleCategories.code)),
-      this.db
+      db
         .select({
           code: assetDomains.code,
           label: assetDomains.label,
@@ -90,7 +120,7 @@ export class VocabulariesService {
       // ADR 0032. Ordered by `rank`, not by a separate sort column — for
       // severity the display order *is* the urgency order, and two columns
       // would let them disagree.
-      this.db
+      db
         .select({
           code: alarmSeverities.code,
           label: alarmSeverities.label,
@@ -103,7 +133,7 @@ export class VocabulariesService {
         .orderBy(asc(alarmSeverities.rank)),
       // ADR 0034: no urgency, so ordered by sortOrder like assetDomains, not
       // by a rank column the way severity is.
-      this.db
+      db
         .select({
           code: alarmSkills.code,
           label: alarmSkills.label,
@@ -121,7 +151,7 @@ export class VocabulariesService {
       // table carries no `domain` column, ruled at the F3.37 plan gate because
       // a foreign key to `bms.asset_domains` would have forced `stp` and `etp`
       // rows into the vocabulary every asset's plant domain reads.
-      this.db
+      db
         .select({
           code: assetRoles.code,
           label: assetRoles.label,
@@ -140,7 +170,7 @@ export class VocabulariesService {
       // reader has to go looking for — and `F4.43`'s failure, a hardcoded list
       // that falls behind and silently renders the wrong option, starts with
       // exactly that inconvenience.
-      this.db
+      db
         .select({
           code: dashboardSections.code,
           label: dashboardSections.label,
@@ -155,7 +185,7 @@ export class VocabulariesService {
       // by sortOrder like assetDomains, alarmSkills, assetRoles and
       // dashboardSections — a balance role carries no urgency, so no rank
       // column.
-      this.db
+      db
         .select({
           code: waterBalanceRoles.code,
           label: waterBalanceRoles.label,
@@ -165,7 +195,13 @@ export class VocabulariesService {
         .from(waterBalanceRoles)
         .where(eq(waterBalanceRoles.active, true))
         .orderBy(asc(waterBalanceRoles.sortOrder), asc(waterBalanceRoles.code)),
-    ]);
+    ] as const;
+    // In parallel on the pool, where each query takes its own connection. On a
+    // caller's `tx` they run one at a time: seven queries at once on one client
+    // is what pg 8 deprecates ("Calling client.query() when the client is
+    // already executing a query") and pg 9 removes.
+    const [categories, domains, severities, skills, roles, sections, balanceRoles] =
+      db === this.db ? await Promise.all(queries) : await inSequence(queries);
 
     return {
       // `tone` is narrowed rather than parsed: `rule_categories_tone_check`
@@ -204,16 +240,19 @@ export class VocabulariesService {
    * Checks `active` too, not merely existence: offering a retired domain on a
    * form and then accepting it by a different route would make retirement
    * meaningless.
+   *
+   * `db` defaults to the tenant pool; a caller inside `withTenant` passes its
+   * `tx` (see `VocabularyExecutor`), and the failure path's lookup runs on it too.
    */
-  async assertAssetDomain(code: string): Promise<void> {
-    const [row] = await this.db
+  async assertAssetDomain(code: string, db: VocabularyExecutor = this.db): Promise<void> {
+    const [row] = await db
       .select({ active: assetDomains.active })
       .from(assetDomains)
       .where(eq(assetDomains.code, code))
       .limit(1);
 
     if (!row || !row.active) {
-      throw new BadRequestException(await this.unknownCodeMessage("domain", code));
+      throw new BadRequestException(await this.unknownCodeMessage("domain", code, db));
     }
   }
 
@@ -350,6 +389,7 @@ export class VocabulariesService {
       | "water balance role"
       | "location type",
     code: string,
+    db: VocabularyExecutor = this.db,
   ): Promise<string> {
     // A lookup rather than the nested ternary this was until `F3.37`. Four
     // arms were already at the edge of readable; the fifth made it five deep,
@@ -359,13 +399,13 @@ export class VocabulariesService {
     // siblings are the gate on.
     const liveCodes: Record<typeof field, () => Promise<{ code: string }[]>> = {
       domain: () =>
-        this.db
+        db
           .select({ code: assetDomains.code })
           .from(assetDomains)
           .where(eq(assetDomains.active, true))
           .orderBy(asc(assetDomains.sortOrder)),
       category: () =>
-        this.db
+        db
           .select({ code: ruleCategories.code })
           .from(ruleCategories)
           .where(eq(ruleCategories.active, true))
@@ -373,31 +413,31 @@ export class VocabulariesService {
       // Ordered by `rank`, not `sortOrder` — for severity the display order
       // *is* the urgency order, and `alarm_severities` has no sort column.
       severity: () =>
-        this.db
+        db
           .select({ code: alarmSeverities.code })
           .from(alarmSeverities)
           .where(eq(alarmSeverities.active, true))
           .orderBy(asc(alarmSeverities.rank)),
       skill: () =>
-        this.db
+        db
           .select({ code: alarmSkills.code })
           .from(alarmSkills)
           .where(eq(alarmSkills.active, true))
           .orderBy(asc(alarmSkills.sortOrder)),
       role: () =>
-        this.db
+        db
           .select({ code: assetRoles.code })
           .from(assetRoles)
           .where(eq(assetRoles.active, true))
           .orderBy(asc(assetRoles.sortOrder)),
       "water balance role": () =>
-        this.db
+        db
           .select({ code: waterBalanceRoles.code })
           .from(waterBalanceRoles)
           .where(eq(waterBalanceRoles.active, true))
           .orderBy(asc(waterBalanceRoles.sortOrder)),
       "location type": () =>
-        this.db
+        db
           .select({ code: locationTypes.code })
           .from(locationTypes)
           .where(eq(locationTypes.active, true))

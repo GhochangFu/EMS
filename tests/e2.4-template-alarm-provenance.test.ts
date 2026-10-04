@@ -186,30 +186,39 @@ describe("E2.4 — template_alarm is a contract value (ADR 0058 decision 6)", ()
 
 // --- Part 6: where the seed is written, and what it does not write ----------
 
-const INSTANTIATE_REL = "apps/api/src/admin/asset-templates/asset-templates-instantiate.service.ts";
+const INSTANTIATE_REL = "apps/api/src/admin/asset-templates/asset-templates-instantiate-core.ts";
+const INSTANTIATE_SERVICE_REL =
+  "apps/api/src/admin/asset-templates/asset-templates-instantiate.service.ts";
 const HELPERS_REL = "apps/api/src/admin/asset-templates/template-alarm-rules.ts";
 const TEMPLATES_DIR = "apps/api/src/admin/asset-templates";
 
 /**
- * The body of `instantiate`'s `withTenant(...)` callback, by brace matching.
+ * The body of `instantiateTemplateCore`, by brace matching.
  *
  * Sliced rather than grepped because the claim is *positional*: ADR 0058
  * decision 9 says the rule insert happens inside the same transaction as
- * `assets` and `asset_points`. An insert moved one line below the closing brace
- * still compiles, still passes every unit test, and still writes rules — it
- * just writes them outside the transaction, so a rolled-back batch leaves rules
- * pointing at assets that never existed, and `bms.automation_rules`' own
- * `WITH CHECK` no longer has a GUC to compare against.
+ * `assets` and `asset_points`. Since `F3.22` PR 1 (ADR 0091 decision 1) that
+ * transaction is the `tx` the core is handed — the service opens it with
+ * `withTenant` and calls the core inside it (the last case below pins that
+ * half). An insert moved out of the core body still compiles, still passes
+ * every unit test, and still writes rules — it just writes them outside the
+ * transaction, so a rolled-back batch leaves rules pointing at assets that
+ * never existed, and `bms.automation_rules`' own `WITH CHECK` no longer has a
+ * GUC to compare against.
  */
-function withTenantBody(source: string): string {
-  const at = source.indexOf("withTenant(this.tenantDb, template.organizationId");
+function coreBody(source: string): string {
+  const at = source.indexOf("export async function instantiateTemplateCore(");
   if (at < 0) {
     throw new Error(
-      "instantiate() no longer opens `withTenant(this.tenantDb, template.organizationId, ...)`. " +
+      "the instantiate core no longer declares `export async function instantiateTemplateCore(`. " +
         "If the write path moved, this test must move with it — do not delete it.",
     );
   }
-  const open = source.indexOf("{", source.indexOf("=>", at));
+  const signatureEnd = source.indexOf("): Promise<AssetInstantiationResultDto>", at);
+  if (signatureEnd < 0) {
+    throw new Error("instantiateTemplateCore no longer returns Promise<AssetInstantiationResultDto>");
+  }
+  const open = source.indexOf("{", signatureEnd);
   let depth = 0;
   for (let i = open; i < source.length; i += 1) {
     if (source[i] === "{") {
@@ -221,14 +230,14 @@ function withTenantBody(source: string): string {
       }
     }
   }
-  throw new Error("unbalanced braces in instantiate()'s withTenant callback");
+  throw new Error("unbalanced braces in instantiateTemplateCore");
 }
 
 describe("E2.4 — the seed is written inside the batch transaction (ADR 0058 decisions 2, 9)", () => {
   const instantiate = read(INSTANTIATE_REL);
-  const body = withTenantBody(instantiate);
+  const body = coreBody(instantiate);
 
-  it("slices a proper sub-range of the service, not the whole file", () => {
+  it("slices a proper sub-range of the core file, not the whole file", () => {
     // Anti-vacuity for the two assertions below: a slicer that returned the
     // whole file would make "the insert is inside the transaction" unfalsifiable.
     expect(body.length).toBeGreaterThan(200);
@@ -236,22 +245,35 @@ describe("E2.4 — the seed is written inside the batch transaction (ADR 0058 de
     expect(body).toContain("insert(assets)");
     expect(
       body,
-      "the slice must stop at the callback's closing brace — `fetchTemplate` is defined well " +
-        "after it, so finding it here means the brace matching ran off the end",
-    ).not.toContain("private async fetchTemplate");
+      "the slice must stop at the core's closing brace — `resolveTarget` is defined after " +
+        "it, so finding it here means the brace matching ran off the end",
+    ).not.toContain("async function resolveTarget");
   });
 
-  it("inserts automationRules inside the withTenant callback", () => {
+  it("inserts automationRules inside the core", () => {
     expect(
       instantiate,
-      "instantiate() must seed the template's alarms at all (ADR 0058 decision 1)",
+      "the instantiate core must seed the template's alarms at all (ADR 0058 decision 1)",
     ).toContain("insert(automationRules)");
     expect(
       body,
-      "the rule insert must sit INSIDE the withTenant callback (decision 9). Outside it the " +
-        "rows are written on a handle with no `app.current_organization` GUC, and a rolled-back " +
-        "batch leaves rules whose assets do not exist.",
+      "the rule insert must sit INSIDE instantiateTemplateCore, on the tx it is handed " +
+        "(decision 9). Outside it the rows are written on a handle with no " +
+        "`app.current_organization` GUC, and a rolled-back batch leaves rules whose assets do " +
+        "not exist.",
     ).toContain("insert(automationRules)");
+  });
+
+  it("the service runs the core inside the one withTenant transaction", () => {
+    // Whitespace-normalised: the claim is the call, not the formatter's line breaks.
+    const service = read(INSTANTIATE_SERVICE_REL).replace(/\s+/g, " ");
+    expect(
+      service,
+      "instantiate() must open `withTenant(this.tenantDb, organizationId, …)` and run the core " +
+        "inside it — the one transaction the batch, its rules and its audit row are written in.",
+    ).toContain(
+      "withTenant(this.tenantDb, organizationId, (tx) => this.instantiateInTransaction(tx",
+    );
   });
 
   it("the row builder writes a review action and the template_alarm source", () => {

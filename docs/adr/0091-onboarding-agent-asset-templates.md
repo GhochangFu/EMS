@@ -56,8 +56,11 @@ tool-calling loop, ADR 0090) closed with PR #705. The owner started the row on
 
 **The central fact.** Every public method of the two template services opens
 its own `withTenant` transaction, and their guards read the target RTU and
-location, the point-key catalog and the template rows through `fleetDb` or the
-vocabulary pool (`asset-templates-instantiate.service.ts:281`, `:513-580`,
+location, the point-key catalog and the template rows through `fleetDb`, and
+their vocabulary checks on a second connection of the tenant pool
+(`VocabulariesService` injects `TENANT_DRIZZLE`; corrected 2026-10-04 at the
+PR 1 review — an earlier draft said "the vocabulary pool", which does not
+exist) (`asset-templates-instantiate.service.ts:281`, `:513-580`,
 `:618-628`; `asset-templates.service.ts:193`, `:369`, `:635-660`). Those reads
 cannot see rows that the onboarding commit wrote but has not committed. So the
 services cannot run inside the onboarding commit as they stand: a template
@@ -110,6 +113,20 @@ service files are 940 and 996 lines, against the 1,000-line cap of
    unchanged, and that is the gate of PR 1. `deriveTelemetrySource(tx, …)` and
    `AssetDashboardsInstantiateService.instantiateForAssets(tx, …)` already take
    `tx` and are reused as they are.
+
+   *Dated note, 2026-10-04 (the plan, owner ruling):* under `FORCE ROW LEVEL
+   SECURITY` a read through the tenant `tx` cannot see another
+   organization's rows. A core with every read on `tx` would change two
+   answers of the instantiate route: a target in another organization would
+   answer 404, not today's 400, and an asset-code collision with another
+   organization would lose today's 409 text. So "every guard read through
+   that `tx`" yields to "no behavior change" in two places. The instantiate
+   core keeps two `fleetDb` reads: a probe that runs only when the `tx` read
+   of the target misses, to tell "another organization" (400) from "not
+   found" (404), and an estate-wide read of asset codes beside the `tx` read,
+   combined by code. A test pins these two reads by name. Every other guard
+   read is on `tx`, so a row written earlier in the same commit stays
+   visible.
 
 2. **The draft gains templates.** Both copies of `onboardingDraftSchema` gain:
    - `templates[]` — one entry per template that this chat creates. An entry

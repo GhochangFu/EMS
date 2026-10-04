@@ -41,6 +41,10 @@ const MIGRATION_REL = "packages/db/drizzle/0058_template_points_point_key_fk.sql
 const JOURNAL_REL = "packages/db/drizzle/meta/_journal.json";
 const SCHEMA_REL = "packages/db/src/schema/bms-schema.ts";
 const TEMPLATES_SERVICE_REL = "apps/api/src/admin/asset-templates/asset-templates.service.ts";
+// F3.22 PR 1: the guard bodies moved here; the service keeps one-line delegators.
+const WRITE_GUARDS_REL = "apps/api/src/admin/asset-templates/asset-templates-write-guards.ts";
+// F3.22 PR 1 U2: create and publish run their guards in transaction-aware cores here.
+const WRITE_CORE_REL = "apps/api/src/admin/asset-templates/asset-templates-write-core.ts";
 
 /**
  * Comments stripped, for `f3.1a`'s reason: a `RESET ROLE;` in a header comment
@@ -81,6 +85,21 @@ const methodBody = (service: string, signature: string): string => {
   }
   const rest = service.slice(start + signature.length);
   const end = rest.search(/\n {2}(?:private|protected|public|async)\b/);
+  return end === -1 ? rest : rest.slice(0, end);
+};
+
+/**
+ * The body of one exported function in a module, from its signature to the
+ * next top-level `export`. Read on `tsOnly` source, so a doc comment naming
+ * the call cannot satisfy the assertion. `""` when the signature is absent.
+ */
+const functionBody = (source: string, signature: string): string => {
+  const start = source.indexOf(signature);
+  if (start === -1) {
+    return "";
+  }
+  const rest = source.slice(start + signature.length);
+  const end = rest.indexOf("\nexport ");
   return end === -1 ? rest : rest.slice(0, end);
 };
 
@@ -219,11 +238,9 @@ describe("F3.42 template_points is held to the point-key catalog (ADR 0051 Amend
        * publish: the catalog row still exists, so the foreign key is satisfied,
        * and `active = true` is the only thing that refuses it.
        */
-      for (const signature of [
-        "async create(",
-        "async update(",
-        "async publish(jwt: JwtPayload, id: string)",
-      ]) {
+      // F3.22 PR 1 U2: `create` and `publish` are wrappers now; their gate is
+      // asserted in the write core below. `update` keeps its own call.
+      for (const signature of ["async update("]) {
         expect(
           methodBody(service, signature),
           `${signature} no longer calls assertPointKeysActive. Nothing else goes red when ` +
@@ -232,8 +249,26 @@ describe("F3.42 template_points is held to the point-key catalog (ADR 0051 Amend
         ).toContain("await this.assertPointKeysActive(");
       }
 
+      /**
+       * F3.22 PR 1 U2 (ADR 0091 decision 1) — the create and publish gates run
+       * in the transaction-aware cores, on the caller's `tx`, so a key written
+       * earlier in the same uncommitted transaction is visible to them. Each
+       * core is sliced on its own, for the reason the loop above gives.
+       */
+      const core = tsOnly(read(WRITE_CORE_REL));
+      for (const signature of [
+        "export async function createTemplateCore(",
+        "export async function publishTemplateCore(",
+      ]) {
+        expect(
+          functionBody(core, signature),
+          `${signature} no longer calls assertPointKeysActive on its tx. Nothing else goes red ` +
+            "when it is deleted, so this assertion is the whole gate.",
+        ).toContain("await assertPointKeysActive(tx,");
+      }
+
       expect(
-        service,
+        tsOnly(read(WRITE_GUARDS_REL)),
         "the gate no longer filters on active = true. A foreign key holds existence against " +
           "every writer; only this holds activity, because a retired code keeps its row.",
       ).toMatch(/eq\(\s*pointKeys\.active\s*,\s*true\s*\)/);
@@ -243,7 +278,7 @@ describe("F3.42 template_points is held to the point-key catalog (ADR 0051 Amend
       // Stripped on both sides. The negative must not be satisfied by deleting a
       // comment that quotes the old wording, and the positive must not be
       // satisfied by a comment that quotes the new one.
-      const service = tsOnly(read(TEMPLATES_SERVICE_REL));
+      const service = tsOnly(read(WRITE_GUARDS_REL));
       expect(
         service,
         "the thrown message still says \"this organization's\". There has been no organization " +
