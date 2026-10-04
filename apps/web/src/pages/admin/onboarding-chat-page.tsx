@@ -1,10 +1,11 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import type { FormEvent, KeyboardEvent } from "react";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Link, useNavigate, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import type {
   OnboardingAutoOpenReason,
   OnboardingChatMessage,
+  OnboardingChatResponseDto,
   OnboardingFieldError,
   OnboardingSessionDto,
 } from "@bms/shared";
@@ -13,6 +14,7 @@ import {
   commitOnboardingSession,
   createOnboardingSession,
   downloadOnboardingTemplate,
+  fetchOnboardingSession,
   sendOnboardingChat,
   setOnboardingCredentials,
   uploadOnboardingExcel,
@@ -20,6 +22,7 @@ import {
 } from "../../api/admin/onboarding";
 import { StatusPill } from "../../components/status-pill";
 import { AppShell } from "../../layouts/app-shell";
+import { ApiError } from "../../lib/api-error";
 import { apiErrorMessage } from "../../lib/api-error-message";
 import {
   formatOnboardingDraftSummary,
@@ -41,6 +44,53 @@ const PHASE_LABELS: Record<string, string> = {
   review: "Review",
 };
 
+/** `F4.194`: the query parameter that holds the session on screen, so a reload resumes it. */
+export const SESSION_PARAM = "session";
+
+/** A session id is a uuid; anything else in `?session=` is never sent to the API. */
+const SESSION_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * Refusals of a resume read that start a new session instead: an id the server
+ * does not know (400, 404), or a session the user may not open (403). The
+ * create call runs the same access gate for the route's organization, so a
+ * fall-back never reaches more than the user already could.
+ */
+const RESUME_FALLBACK_STATUSES: readonly number[] = [400, 403, 404];
+
+/**
+ * `F4.194` — the session the page opens. A `?session=` id resumes that session,
+ * so a reload keeps the conversation and the credentials form keeps posting to
+ * the session on screen. Only an editable (`draft`) session of the route's
+ * organization is resumed, and its validation is read again, so the panel does
+ * not claim a draft with issues is ready. Otherwise the page starts a new
+ * session, as it does with no id; a refusal outside the fall-back list is shown.
+ */
+async function openSession(orgId: string, resumeId: string | null): Promise<OnboardingChatResponseDto> {
+  let session: OnboardingSessionDto | null = null;
+  if (resumeId !== null && SESSION_ID.test(resumeId)) {
+    try {
+      session = await fetchOnboardingSession(resumeId);
+    } catch (err) {
+      if (!(err instanceof ApiError) || !RESUME_FALLBACK_STATUSES.includes(err.status)) {
+        throw err;
+      }
+    }
+  }
+  if (session !== null && session.status === "draft" && session.organizationId === orgId) {
+    const check = await validateOnboardingSession(session.id);
+    return {
+      assistantMessage: "",
+      session,
+      validationErrors: check.errors,
+      readyToCommit: check.readyToCommit,
+      autoOpenPreview: check.autoOpenPreview,
+      ...(check.autoOpenReason !== undefined ? { autoOpenReason: check.autoOpenReason } : {}),
+    };
+  }
+  return createOnboardingSession(orgId);
+}
+
 /** Where a committed session lands — one target for the Commit button and a chat commit. */
 function rtusPathFor(locationId: string): string {
   return `/admin/locations/${locationId}/rtus`;
@@ -50,6 +100,7 @@ function rtusPathFor(locationId: string): string {
 export function OnboardingChatPage({ user }: OnboardingChatPageProps) {
   const { orgId } = useParams<{ orgId: string }>();
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const queryClient = useQueryClient();
   const [session, setSession] = useState<OnboardingSessionDto | null>(null);
   const [input, setInput] = useState("");
@@ -71,9 +122,13 @@ export function OnboardingChatPage({ user }: OnboardingChatPageProps) {
   const startedRef = useRef(false);
 
   const startMutation = useMutation({
-    mutationFn: () => createOnboardingSession(orgId!),
+    mutationFn: () => openSession(orgId!, searchParams.get(SESSION_PARAM)),
     onSuccess: (data) => {
       setSession(data.session);
+      // F4.194: replace, not push, so Back does not step through the bare URL.
+      if (searchParams.get(SESSION_PARAM) !== data.session.id) {
+        setSearchParams({ [SESSION_PARAM]: data.session.id }, { replace: true });
+      }
       setValidationErrors(data.validationErrors ?? []);
       applyAutoOpen(data.autoOpenPreview, data.autoOpenReason);
     },

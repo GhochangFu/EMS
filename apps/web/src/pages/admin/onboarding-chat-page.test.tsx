@@ -13,6 +13,17 @@ import {
   aRefusedCredentialSaveShowsTheReason,
   aRefusedStartShowsASentenceNotAZodFlatten,
   restoreScrolling,
+  aNewSessionWritesItsIdIntoTheUrl,
+  aSessionIdInTheUrlResumesTheConversation,
+  theCredentialsFormPostsToTheResumedSession,
+  aCommittedSessionIsNotResumed,
+  aSessionOfAnotherOrganizationIsNotResumed,
+  aResumedDraftShowsItsValidationIssues,
+  aNonUuidSessionIdIsNotFetched,
+  aResume400StartsANewSession,
+  aResume403StartsANewSession,
+  aResume404StartsANewSession,
+  aRefusedResumeIsShownNotReplaced,
 } from "./onboarding-chat-page.spec";
 
 /**
@@ -84,5 +95,59 @@ describe("F3.21 onboarding chat page agent loop", () => {
 
   it("navigates to the RTU list when a chat turn commits the session", async () => {
     await aCommittedSessionFromAChatTurnNavigatesToTheRtus();
+  });
+});
+
+describe("F4.194 onboarding chat page keeps its session in the URL", () => {
+  vi.setConfig({ testTimeout: 15_000 });
+
+  afterEach(() => {
+    cleanup();
+    vi.restoreAllMocks();
+    restoreScrolling();
+  });
+
+  it("writes a new session's id into the URL", async () => {
+    await aNewSessionWritesItsIdIntoTheUrl();
+  });
+
+  it("resumes the session and conversation the URL names, creating none", async () => {
+    await aSessionIdInTheUrlResumesTheConversation();
+  });
+
+  it("posts credentials to the resumed session", async () => {
+    await theCredentialsFormPostsToTheResumedSession();
+  });
+
+  it("reads a resumed draft's validation again and shows its issues", async () => {
+    await aResumedDraftShowsItsValidationIssues();
+  });
+
+  it("does not resume a committed session", async () => {
+    await aCommittedSessionIsNotResumed();
+  });
+
+  it("does not resume a session of another organization", async () => {
+    await aSessionOfAnotherOrganizationIsNotResumed();
+  });
+
+  it("never sends an id that is not a uuid to the API", async () => {
+    await aNonUuidSessionIdIsNotFetched();
+  });
+
+  it("starts a new session on a 400 resume read", async () => {
+    await aResume400StartsANewSession();
+  });
+
+  it("starts a new session on a 403 resume read", async () => {
+    await aResume403StartsANewSession();
+  });
+
+  it("starts a new session on a 404 resume read", async () => {
+    await aResume404StartsANewSession();
+  });
+
+  it("shows any other refused resume and creates no session behind it", async () => {
+    await aRefusedResumeIsShownNotReplaced();
   });
 });
