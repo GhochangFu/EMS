@@ -154,6 +154,27 @@ service files are 940 and 996 lines, against the 1,000-line cap of
    and the OpenAPI output. The plan enumerates them by the parse call, not by
    a name search. No migration: the draft is `jsonb`.
 
+   *Dated note, 2026-10-04 (the PR 2 plan, owner rulings Q1 and Q2):*
+   - **A stock entry carries patterns.** The shipped stock catalog has no
+     source-key pattern on any of its 779 points, and 234 of them are
+     required, because the catalog must not guess a site's wiring
+     (`stock-catalog/water-wtp.ts`). With `stockCode` only, a chat-imported
+     stock template with a required point cannot be instantiated. So a stock
+     entry is `{ stockCode, patterns? }`: `patterns` maps a measured point key
+     of that entry to a pattern in the shared token grammar, with the column's
+     length bound and a count cap. `import_stock_template` collects it, and
+     the commit lays it over the catalog body before the create checks run.
+     The rest of the content still comes from the catalog module only.
+     Validation refuses, before the proposal, a templated asset whose required
+     measured point still has no pattern, and names the point.
+   - **An authored point is measured only.** An authored entry's points carry
+     `pointKey`, `label`, `unit`, `sourceDataKeyPattern`, `required` and
+     `sortOrder`, and the commit sets `kind: "measured"`. Derived points
+     (formulas and calc timing) and instrument defaults stay on the template
+     editor (`F2.5`) as a new version, so the model never writes calc DSL. The
+     entry gains an optional `assetType` (the table requires `asset_type`),
+     which defaults to the template code.
+
 3. **The tool set grows from 17 to 24 tools.**
    - **Read:** `list_templates` (the organization's published templates: code,
      highest version, domain, point count), `get_template` (one organization
