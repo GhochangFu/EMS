@@ -12,6 +12,9 @@ import {
   aModelOnlySaveKeepsAKeyRotatedWhileItWaited,
   aProviderChangeWhileItWaitedClearsTheKeyAndSaysSo,
   aProviderWithoutAModelIsRefused,
+  aRemoveAuditsTheRowItDeletedNotTheRowItRead,
+  aRemoveThatDeletedNothingWritesNoAudit,
+  aRemoveWaitsForAPausedFirstSave,
   aTenantCannotReadAnotherOrganizationsRow,
   aTenantCannotWriteAnotherOrganizationsRow,
   aTenantWritesItsOwnRow,
@@ -138,7 +141,7 @@ describe.skipIf(!connectionString)("F3.21 — bms.organization_llm_settings (mig
     await deletingTheOrganizationCascades(ctx);
   });
 
-  // The three lock-race cases poll up to BLOCK_WAIT_MS for put() to block, so
+  // The lock-race cases (8–14) poll up to BLOCK_WAIT_MS for the service to block, so
   // each gets more than the 5 s default.
   it("aModelOnlySaveKeepsAKeyRotatedWhileItWaited", { timeout: 15_000 }, async () => {
     await aModelOnlySaveKeepsAKeyRotatedWhileItWaited(ctx);
@@ -154,5 +157,18 @@ describe.skipIf(!connectionString)("F3.21 — bms.organization_llm_settings (mig
 
   it("aConcurrentFirstSaveKeepsTheOtherSavesKey", { timeout: 15_000 }, async () => {
     await aConcurrentFirstSaveKeepsTheOtherSavesKey(ctx);
+  });
+
+  // F4.187 — remove() under the same races. Last: each leaves A with no row.
+  it("aRemoveAuditsTheRowItDeletedNotTheRowItRead", { timeout: 15_000 }, async () => {
+    await aRemoveAuditsTheRowItDeletedNotTheRowItRead(ctx);
+  });
+
+  it("aRemoveThatDeletedNothingWritesNoAudit", { timeout: 15_000 }, async () => {
+    await aRemoveThatDeletedNothingWritesNoAudit(ctx);
+  });
+
+  it("aRemoveWaitsForAPausedFirstSave", { timeout: 15_000 }, async () => {
+    await aRemoveWaitsForAPausedFirstSave(ctx);
   });
 });
