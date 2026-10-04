@@ -2,10 +2,10 @@
 
 ## Status
 
-Proposed — drafted on 2026-10-04, before any implementation code. Six scope
+Accepted — drafted on 2026-10-04, before any implementation code. Six scope
 questions were put to the owner one at a time on 2026-10-04; all were ruled,
-and each ruling is recorded under *Gate questions*. The record becomes
-Accepted when the owner approves this text in its PR.
+and each ruling is recorded under *Gate questions*. The owner approved this
+written record on 2026-10-04.
 
 Implements row `F3.22` (Track E, Wave 3, P0). Builds on
 [ADR 0090](./0090-onboarding-agent-tool-calling-loop.md) and amends its
