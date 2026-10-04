@@ -224,6 +224,17 @@ export function canManageSymbolLibraries(role: UserRole): boolean {
 }
 
 /**
+ * `F3.78` (ADR 0089 decision 1) — `admin` (any organization) and `organization_admin` (its own)
+ * administer users and their grants. Mirrors `UsersService`'s manager check, which refuses every
+ * other role; **deliberately its own predicate** on the `canManageNotificationChannels` rule, so
+ * the users page reads it to fail closed and a future change to either does not silently move the
+ * other.
+ */
+export function canManageUsers(role: UserRole): boolean {
+  return role === "admin" || role === "organization_admin";
+}
+
+/**
  * Where `AdminRoute` sends a master-data role it refuses. Not the landing page:
  * `/admin` renders the Master Data Hub since `F3.76`.
  */
@@ -281,6 +292,11 @@ export const masterDataAreas = [
     id: "notifications",
     label: "Notifications",
     description: "Where alarms go and how they escalate.",
+  },
+  {
+    id: "access",
+    label: "Users & Access",
+    description: "Who can sign in, their role, and the sites each user can reach.",
   },
 ] as const;
 
@@ -361,6 +377,10 @@ export const masterDataTabs = [
   // them hidden would leave a ladder pointing at channels its owner cannot see.
   { label: "Escalation", path: "/admin/escalation-profiles", notificationAdmin: true, area: "notifications" },
   { label: "Deliveries", path: "/admin/notification-deliveries", notificationAdmin: true, area: "notifications" },
+  // `F3.78` (ADR 0089). `usersAdmin`: the API refuses every route to a role that is not
+  // `admin` or `organization_admin`, so the tab is hidden from the others, who would meet
+  // only the page's refusal sentence.
+  { label: "Users", path: "/admin/users", usersAdmin: true, area: "access" },
 ] as const satisfies readonly {
   label: string;
   path: string;
@@ -370,6 +390,7 @@ export const masterDataTabs = [
   notificationAdmin?: true;
   orgAdminOnly?: true;
   symbolLibraryAdmin?: true;
+  usersAdmin?: true;
 }[];
 
 export type MasterDataTab = (typeof masterDataTabs)[number];
@@ -393,6 +414,9 @@ export function visibleMasterDataTabs(role: UserRole): MasterDataTab[] {
     }
     if ("symbolLibraryAdmin" in tab && tab.symbolLibraryAdmin) {
       return canManageSymbolLibraries(role);
+    }
+    if ("usersAdmin" in tab && tab.usersAdmin) {
+      return canManageUsers(role);
     }
     return true;
   });

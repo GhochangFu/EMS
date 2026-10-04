@@ -124,6 +124,8 @@ export function runAssetTemplateTabTests(): void {
         "/admin/notification-channels",
         "/admin/escalation-profiles",
         "/admin/notification-deliveries",
+        // Users & Access. `F3.78` (ADR 0089) — Users, `usersAdmin`.
+        "/admin/users",
       ].join(" "),
     `master data tabs changed — got ${masterDataTabs.map((tab) => tab.path).join(" ")}`,
   );
@@ -151,7 +153,9 @@ export function runAssetTemplateTabTests(): void {
     // `orgAdminOnly`: 16 -> 17 and 15 -> 16; `location_admin` stays at 11.
     // `F3.76` gave Symbol Libraries a tab, gated like Mimic Layouts: 17 -> 18
     // and 16 -> 17; `location_admin` stays at 11.
-    const expected = role === "location_admin" ? 11 : role === "admin" ? 18 : 17;
+    // `F3.78` added Users as `usersAdmin` (admin and organization_admin only): 18 -> 19 and
+    // 17 -> 18; `location_admin` stays at 11.
+    const expected = role === "location_admin" ? 11 : role === "admin" ? 19 : 18;
     assert(
       paths.length === expected,
       `${role} sees the wrong number of tabs — got ${paths.length}, expected ${expected}`,

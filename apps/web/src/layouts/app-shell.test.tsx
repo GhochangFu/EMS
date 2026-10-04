@@ -38,7 +38,7 @@ import {
   selectsTheAreaOfADrillDown,
   selectsTheHubOnTheHubPath,
   selectsTheHubWithATrailingSlash,
-  showsTheHubAndFiveAreasToAnOrganizationAdmin,
+  showsTheHubAndSixAreasToAnOrganizationAdmin,
   showsOneEntryToALocationScope,
   showsTheDescriptorInTheHeader,
   showsTheNameInTheFooter,
@@ -96,8 +96,8 @@ describe("F3.66 Control Room sidebar entry", () => {
     keepsOtherItemsExactMatch();
   });
 
-  it("S9 shows the hub and the five Master Data areas to an organization_admin (F3.76)", () => {
-    showsTheHubAndFiveAreasToAnOrganizationAdmin();
+  it("S9 shows the hub and the six Master Data areas to an organization_admin (F3.76)", () => {
+    showsTheHubAndSixAreasToAnOrganizationAdmin();
   });
 
   it("S10 hides the Notifications area entry from a location_admin (F3.76)", () => {

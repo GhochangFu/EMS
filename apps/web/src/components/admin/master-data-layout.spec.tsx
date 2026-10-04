@@ -65,6 +65,7 @@ export function marksTheAreaOfADrillDown(): void {
     "Templates & Visuals /admin/asset-templates",
     "Data Input /admin/manual-readings",
     "Notifications /admin/notification-channels",
+    "Users & Access /admin/users",
   ]);
 }
 
@@ -109,6 +110,7 @@ export function rendersOneCardPerArea(): void {
     "Templates & Visuals",
     "Data Input",
     "Notifications",
+    "Users & Access",
   ]);
 }
 
@@ -122,7 +124,7 @@ export function linksEveryScreenOfAnArea(): void {
   ]);
 }
 
-/** H3 — a `location_admin` gets no Notifications card; its other four cards stay. */
+/** H3 — a `location_admin` gets no Notifications or Users & Access card; its other four cards stay. */
 export function leavesOutAnAreaTheRoleCannotSee(): void {
   renderAt("/admin", "location_admin", "hub");
   expect(screen.getAllByRole("heading", { level: 2 }).map((heading) => heading.textContent)).toEqual([

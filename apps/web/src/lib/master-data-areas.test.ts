@@ -3,6 +3,7 @@ import { describe, it } from "vitest";
 import {
   firstTabOfEveryAreaIsVisibleWithTheArea,
   gatesTheSymbolLibrariesTab,
+  gatesTheUsersTab,
   givesEveryAdminRouteAnArea,
   groupsEveryTabIntoItsArea,
   hidesTheNotificationsAreaFromALocationAdmin,
@@ -24,11 +25,11 @@ describe("F3.76 master data areas", () => {
     listsTheTabsAreaByArea();
   });
 
-  it("A3a shows five areas to the global admin", () => {
+  it("A3a shows six areas to the global admin", () => {
     showsFiveAreasToTheGlobalAdmin();
   });
 
-  it("A3b shows five areas to an organization_admin", () => {
+  it("A3b shows six areas to an organization_admin", () => {
     showsFiveAreasToAnOrganizationAdmin();
   });
 
@@ -50,6 +51,10 @@ describe("F3.76 master data areas", () => {
 
   it("A6 gates the Symbol Libraries tab like the page", () => {
     gatesTheSymbolLibrariesTab();
+  });
+
+  it("A7 gates the Users tab like the page", () => {
+    gatesTheUsersTab();
   });
 
   it("R1 selects the tab whose table each route shows", () => {
