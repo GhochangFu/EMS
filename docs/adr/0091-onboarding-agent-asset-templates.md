@@ -249,6 +249,12 @@ service files are 940 and 996 lines, against the 1,000-line cap of
    seeded rules and dashboards. The model is not on the commit path, so it
    cannot publish (ADR 0090 decision 5).
 
+   *Dated note, 2026-10-04 (the closure audit, owner ruling):* this holds for
+   the `confirm commit` path, which commits a proposal. The Commit button
+   (ADR 0090 decision 5, unchanged) commits the draft with no proposal, so on
+   that path the web preview is what names each template, its points and
+   their patterns before the publish.
+
 9. **Injection and credential bounds.** `add_template` and
    `add_template_assets` join `CREDENTIAL_CHECKED_TOOLS`: the credential walk
    and the prompt-marker refusal run on every string they carry. Each
@@ -257,6 +263,11 @@ service files are 940 and 996 lines, against the 1,000-line cap of
    `looksLikeCredential` is refused. Each refusal path gets its own test and
    its own mutation. `F4.185` (the shared scrub misses short names) stays its
    own row.
+
+   *Dated note, 2026-10-04 (the closure audit, owner ruling):* the build
+   checks three template tools, not two: `import_stock_template` also joins
+   `CREDENTIAL_CHECKED_TOOLS`, because its `patterns` carry free text. The
+   prompt-marker refusal runs on the arguments of every tool, not only these.
 
 10. **Side effects are identical to the Instantiate button.** The onboarding
     commit and the instantiate route call the same instantiate core, so a
