@@ -54,7 +54,7 @@ report findings with evidence.
    must never reach a response, a log line, an audit row or an error, and the
    AI-assistant routes must check the role before `canManageOrganization`.
 8. **User administration and the Keycloak admin client (ADR 0089).**
-   `IdentityAdminClient` (`apps/api/src/identity/`) holds a secret equivalent to
+   `KeycloakIdentityAdminClient` (`apps/api/src/identity/`, and the `identity/provision/` CLI, which has its own `fetch`) holds a secret equivalent to
    global admin: it must never be logged, returned, audited or put in an error,
    and no request or response body of Keycloak may be logged. A password
    (`temporaryPassword`) must never reach a log line, an audit payload, a
@@ -65,8 +65,8 @@ report findings with evidence.
    every action on an `admin` target is `admin`-only; an out-of-scope target is
    a 404 with the missing-id body, not a 403; the executor matches the write
    (`bms_fleet` only when the row's old or new role is `admin`); every
-   `bms.users` `UPDATE` has a `RETURNING` guard; the last-admin lock takes
-   `FOR UPDATE`; `bms.users` is never written through `tx.insert(users)`; and
+   `bms.users` `UPDATE` on the user-administration path has a `RETURNING` guard; the last-admin lock takes
+   `FOR UPDATE`; `bms.users` is never written through `tx.insert(users)` under `apps/api/src` (the owner-run seeds are outside that scan); and
    `oidc_subject` comes from the Keycloak create in the same request, never
    from a body. Under OIDC a token joins by `oidc_subject`, never by email or
    `users.id`, and `JwtAuthGuard` accepts only `azp === OIDC_CLIENT_ID`.
