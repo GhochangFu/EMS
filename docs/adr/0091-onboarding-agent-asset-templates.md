@@ -111,6 +111,20 @@ service files are 940 and 996 lines, against the 1,000-line cap of
    `AssetDashboardsInstantiateService.instantiateForAssets(tx, …)` already take
    `tx` and are reused as they are.
 
+   *Dated note, 2026-10-04 (the plan, owner ruling):* under `FORCE ROW LEVEL
+   SECURITY` a read through the tenant `tx` cannot see another
+   organization's rows. A core with every read on `tx` would change two
+   answers of the instantiate route: a target in another organization would
+   answer 404, not today's 400, and an asset-code collision with another
+   organization would lose today's 409 text. So "every guard read through
+   that `tx`" yields to "no behavior change" in two places. The instantiate
+   core keeps two `fleetDb` reads: a probe that runs only when the `tx` read
+   of the target misses, to tell "another organization" (400) from "not
+   found" (404), and an estate-wide read of asset codes beside the `tx` read,
+   combined by code. A test pins these two reads by name. Every other guard
+   read is on `tx`, so a row written earlier in the same commit stays
+   visible.
+
 2. **The draft gains templates.** Both copies of `onboardingDraftSchema` gain:
    - `templates[]` — one entry per template that this chat creates. An entry
      is either **authored** (`code`, `name`, `domain`, optional `description`,
