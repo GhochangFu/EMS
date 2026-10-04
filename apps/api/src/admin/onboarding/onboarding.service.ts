@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ConflictException,
   ForbiddenException,
   Inject,
   Injectable,
@@ -600,7 +601,10 @@ export class OnboardingService {
           countOf(result.dashboardCount, "dashboard");
         reply = "Committed. The location, RTUs, assets and mappings are created.";
       } catch (error) {
-        if (!(error instanceof BadRequestException)) {
+        // F3.22 (ADR 0091 decision 4): the template cores refuse with a 409 — a
+        // taken asset or rule code, an open draft — and that is a refusal the
+        // operator can act on, so it is a reply too. Anything else still throws.
+        if (!(error instanceof BadRequestException || error instanceof ConflictException)) {
           throw error;
         }
         reply = `Commit refused: ${error.message}`;
