@@ -29,7 +29,14 @@ import type { AssetTemplatesAdminService } from "./asset-templates.service";
  * `TEST_CODE_PREFIX` and are deleted on the owner pool before and after the run.
  */
 
-export const TEST_CODE_PREFIX = "F322-CORE-";
+/** The family both F3.22 core suites share; only the seeded-key pick excludes by it. */
+export const TEST_CODE_FAMILY = "F322-";
+
+/**
+ * Unique per run, so two concurrent instances of this file never delete each
+ * other's committed rows (`tests/integration-fixture-isolation.test.ts`).
+ */
+export const TEST_CODE_PREFIX = `F322-CORE-${randomUUID().replace(/-/g, "").slice(0, 8).toUpperCase()}-`;
 
 export type Fixtures = {
   organizationId: string;
@@ -109,7 +116,7 @@ export async function loadFixtures(pool: pg.Pool): Promise<Fixtures> {
   const { rows: keyRows } = await pool.query<{ code: string }>(
     `SELECT code FROM bms.point_keys
       WHERE active = true AND code NOT LIKE $1 ORDER BY created_at, code LIMIT 1`,
-    [`${TEST_CODE_PREFIX}%`],
+    [`${TEST_CODE_FAMILY}%`],
   );
   if (!orgRows[0] || !keyRows[0]) {
     throw new Error(

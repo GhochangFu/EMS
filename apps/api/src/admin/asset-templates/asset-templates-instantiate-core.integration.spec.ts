@@ -41,7 +41,14 @@ import {
  * before and after the run.
  */
 
-export const TEST_CODE_PREFIX = "F322-INST-";
+/** The family both F3.22 core suites share; only the seeded-key pick excludes by it. */
+export const TEST_CODE_FAMILY = "F322-";
+
+/**
+ * Unique per run, so two concurrent instances of this file never delete each
+ * other's committed rows (`tests/integration-fixture-isolation.test.ts`).
+ */
+export const TEST_CODE_PREFIX = `F322-INST-${randomUUID().replace(/-/g, "").slice(0, 8).toUpperCase()}-`;
 
 export type Fixtures = {
   organizationId: string;
@@ -98,21 +105,20 @@ const parse = (body: unknown) => instantiateAssetsBodySchema.parse(body);
  * crashed between a public write and its rollback.
  */
 export async function cleanup(pool: pg.Pool): Promise<void> {
-  const like = `${TEST_CODE_PREFIX}%`;
   await pool.query(
     `DELETE FROM bms.automation_rules
       WHERE asset_id IN (SELECT id FROM bms.assets WHERE code LIKE $1)`,
-    [like],
+    [`${TEST_CODE_PREFIX}%`],
   );
   await pool.query(
     `DELETE FROM bms.asset_points
       WHERE asset_id IN (SELECT id FROM bms.assets WHERE code LIKE $1)`,
-    [like],
+    [`${TEST_CODE_PREFIX}%`],
   );
-  await pool.query(`DELETE FROM bms.assets WHERE code LIKE $1`, [like]);
+  await pool.query(`DELETE FROM bms.assets WHERE code LIKE $1`, [`${TEST_CODE_PREFIX}%`]);
   // template_points cascade on the FK.
-  await pool.query(`DELETE FROM bms.asset_templates WHERE code LIKE $1`, [like]);
-  await pool.query(`DELETE FROM bms.point_keys WHERE code LIKE $1`, [like]);
+  await pool.query(`DELETE FROM bms.asset_templates WHERE code LIKE $1`, [`${TEST_CODE_PREFIX}%`]);
+  await pool.query(`DELETE FROM bms.point_keys WHERE code LIKE $1`, [`${TEST_CODE_PREFIX}%`]);
 }
 
 export async function loadFixtures(pool: pg.Pool): Promise<Fixtures> {
@@ -130,7 +136,7 @@ export async function loadFixtures(pool: pg.Pool): Promise<Fixtures> {
   const { rows: keyRows } = await pool.query<{ code: string }>(
     `SELECT code FROM bms.point_keys
       WHERE active = true AND code NOT LIKE $1 ORDER BY created_at, code LIMIT 1`,
-    [`${TEST_CODE_PREFIX}%`],
+    [`${TEST_CODE_FAMILY}%`],
   );
   const { rows: otherRows } = grant
     ? await pool.query<{ id: string }>(
