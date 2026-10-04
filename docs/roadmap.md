@@ -7092,7 +7092,7 @@ ruling).
 
 - PR1: migration `0098`; the `oidc_subject` link to a Keycloak account;
   `disabled_at` checked on every request, with an open socket closed through
-  NOTIFY; `IdentityAdminClient` (`bms-api-admin`); Keycloak provisioning and
+  NOTIFY; `KeycloakIdentityAdminClient` (`bms-api-admin`); Keycloak provisioning and
   its runbook.
 - PR2: the `/admin/users` API (create in Keycloak first, with an undo; a role
   PATCH mirrored to the realm role; deactivate and reactivate; a temporary
