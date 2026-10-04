@@ -7200,3 +7200,34 @@ Verified: CI green, reviews fixed, 12 mutations killed, browser PASS as
 
 **Cascade:** no row lists `F3.79` in *Depends*. No `chore(agents):` change
 owed.
+
+### `F3.22` — the onboarding agent onboards asset templates ✅ 2026-10-04
+
+ADR 0091 (#717, `d7b6bdcf`); PR 1 #720, squash `2735b52b`; PR 2 #724, squash
+`40384388`; plan `docs/plans/f3.22-agent-templates.md` (PR 1 in §§1–12 with the
+§2a amendments, PR 2 in §13). Effort 4–5 days.
+
+- PR 1 made the template create, publish and instantiate cores take a
+  transaction, with no change in behavior. `VocabulariesService` reads on the
+  caller's transaction.
+- PR 2 added draft `templates[]` and `assets[].template`, and raised the agent
+  tools from 17 to 24. A stock template imports, or the agent authors a
+  points-only template. The proposal names every publish, for example
+  `will publish 'water-softener' v1 (cannot be edited afterwards)`.
+- One transaction commits it all: the templates are created and published, and
+  the templated assets are instantiated through the cores. The web preview
+  shows the new lines.
+
+Verified: CI 1,000 files / 10,930 tests (PR 1) and 1,012 files / 11,105 tests
+(PR 2); two review rounds on each PR, all findings fixed; live on the rebuilt
+stack (`bms-api-1` image `926cf8a5`) with OpenRouter `z-ai/glm-5.3-flash`,
+`browser-verifier` 8/8. Cold start N/A (no migration). Not checked live: the
+OpenAI and Anthropic providers. Test rows remain in organization PHEWB:
+location "F322 B Plant", RTU-F322B, template `water-softener` v1, assets
+SOFT-F322-1 and SOFT-F322-2.
+
+**Cascade:** no row lists `F3.22` in *Depends*, so nothing is unblocked. Owed:
+the `chore(agents):` sweep (the AGENTS.md "17 tools" text and the ADR 0091
+promotion), and three rows raised by the live check: `F4.192` (an
+all-templated draft needs one extra turn), `F4.193` (version wording and two
+review lows) and `F4.194` (the chat page opens a new session on every load).
