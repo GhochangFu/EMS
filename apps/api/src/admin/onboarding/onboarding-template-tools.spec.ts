@@ -299,7 +299,7 @@ export async function assertT7ImportStockTemplateAppendsAStockEntry(): Promise<v
     JSON.stringify(out.state.working.templates) === JSON.stringify([{ stockCode: "WTP-PUMP", patterns: { flow: "{asset_code}-flow" } }]),
     `the stock entry is written, got ${JSON.stringify(out.state.working.templates)}`,
   );
-  assert(out.actionLine === "Imported stock template WTP-PUMP v3 (3 points)", `the action line: ${out.actionLine}`);
+  assert(out.actionLine === "Imported stock template WTP-PUMP (3 points); it publishes as v1 on commit (stock release v3)", `the action line: ${out.actionLine}`);
 }
 
 /** T8 */

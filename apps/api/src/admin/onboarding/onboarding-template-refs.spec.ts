@@ -121,6 +121,24 @@ export function assertTheDraftEntryResolvesFirst(): void {
   assert("ref" in resolved && resolved.source === "draft", `the draft entry resolves, got ${JSON.stringify(resolved)}`);
 }
 
+/** F4.193 — a draft entry named at a version other than 1 is a problem: the commit publishes it as version 1. */
+export function assertADraftEntryAtAnotherVersionIsAProblem(): void {
+  const draft = draftWith([{ code: "LOCAL", name: "Local", domain: "water", points: [] }]);
+  const resolved = resolveTemplateForAsset(draft, { code: "LOCAL", version: 2 }, CONTEXT);
+  const expected = `Template ${quoteCell("LOCAL")} is in this draft and publishes as version 1, not 2`;
+  assert(
+    "problem" in resolved && resolved.problem === expected && resolved.field === "version",
+    `expected "${expected}" at version, got ${JSON.stringify(resolved)}`,
+  );
+}
+
+/** F4.193 — a draft entry named at version 1, the version the commit publishes, resolves. */
+export function assertADraftEntryAtVersionOneResolves(): void {
+  const draft = draftWith([{ code: "LOCAL", name: "Local", domain: "water", points: [] }]);
+  const resolved = resolveTemplateForAsset(draft, { code: "LOCAL", version: 1 }, CONTEXT);
+  assert("ref" in resolved && resolved.source === "draft", `version 1 resolves to the draft entry, got ${JSON.stringify(resolved)}`);
+}
+
 /** R5 — with no version, the highest **published** version resolves; a later draft version does not. */
 export function assertTheHighestPublishedVersionResolves(): void {
   const resolved = resolveTemplateForAsset({}, { code: "ORG-T" }, CONTEXT);

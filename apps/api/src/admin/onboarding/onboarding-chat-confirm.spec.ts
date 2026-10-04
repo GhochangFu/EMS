@@ -165,7 +165,7 @@ export async function assertAMatchingProposalCommitsOnce(): Promise<void> {
   const action = ((record.updates[0]?.messages ?? []) as OnboardingChatMessage[])[1]?.content ?? "";
   assert(
     action ===
-      "Committed: location Berhampur, 1 RTU, 1 point key, 0 templates, 1 asset (0 from templates), 1 mapping, " +
+      "Committed: location Berhampur, 1 RTU, 1 point key, 0 templates published, 1 asset (0 from templates), 1 mapping, " +
         "0 seeded rules, 0 dashboards",
     `the action line is code-written: ${action}`,
   );
@@ -196,7 +196,7 @@ export async function assertTheConfirmLineNamesTheTemplateCounts(): Promise<void
   const action = ((record.updates[0]?.messages ?? []) as OnboardingChatMessage[])[1]?.content ?? "";
   assert(
     action ===
-      "Committed: location Berhampur, 1 RTU, 1 point key, 2 templates, 4 assets (3 from templates), 1 mapping, " +
+      "Committed: location Berhampur, 1 RTU, 1 point key, 2 templates published, 4 assets (3 from templates), 1 mapping, " +
         "7 seeded rules, 5 dashboards",
     `the action line names the template counts: ${action}`,
   );

@@ -595,7 +595,7 @@ export class OnboardingService {
         // wrote, as `dashboardCount` does.
         actionLine =
           `Committed: location ${name}, ${countOf(result.rtuIds.length, "RTU")}, ` +
-          `${countOf(result.pointKeyIds.length, "point key")}, ${countOf(result.templateIds.length, "template")}, ` +
+          `${countOf(result.pointKeyIds.length, "point key")}, ${countOf(result.templateIds.length, "template")} published, ` +
           `${countOf(result.assetIds.length, "asset")} (${result.templatedAssetCount} from templates), ` +
           `${countOf(result.assetPointIds.length, "mapping")}, ${countOf(result.seededRuleCount, "seeded rule")}, ` +
           countOf(result.dashboardCount, "dashboard");
