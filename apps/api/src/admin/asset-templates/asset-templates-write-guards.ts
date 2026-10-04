@@ -63,9 +63,11 @@ export async function fetchTemplateRow(tx: BmsTx, id: string): Promise<TemplateR
 /**
  * A template's stored point set, ordered as `replacePoints` wrote it.
  *
- * E7.1b: read on `fleetDb`. Under `0047`'s `FORCE` a `tenantDb` read with no
- * GUC would see zero rows — and `publish` reads this to reject "no points",
- * so the failure would be a loud but wrong rejection.
+ * E7.1b: this read once had to run on `fleetDb`, because under `0047`'s
+ * `FORCE` a `tenantDb` read with no GUC sees zero rows — and `publish` reads
+ * this to reject "no points", so the failure would be a loud but wrong
+ * rejection. `F3.22`: the cores now call it on their `tx`, inside `withTenant`,
+ * where the GUC is set; pass the transaction, not a bare pool.
  */
 export async function loadTemplatePoints(db: BmsDb, templateId: string): Promise<PointRow[]> {
   return db
@@ -192,15 +194,6 @@ export function parseStoredContentForPublish(template: TemplateRow): TemplateCon
 }
 
 /**
- * Every point key `content` names must be one the template declares
- * (ADR 0019 §6) — not merely one in the org's catalog. A KPI referencing a
- * catalogued point the template does not carry produces an asset with no such
- * point on it, which is broken on every instance rather than on one.
- *
- * Names every unresolved key, for the same reason `assertPointKeysActive`
- * does: bisecting a forty-point template by hand is not a debugging strategy.
- */
-/**
  * ADR 0019 §3's binding of template `content.alarms[].category` to the live
  * rule vocabulary, **relocated rather than dropped** (ADR 0031 Amendment 1).
  *
@@ -273,6 +266,15 @@ export async function assertTemplateAlarmVocabularies(
   }
 }
 
+/**
+ * Every point key `content` names must be one the template declares
+ * (ADR 0019 §6) — not merely one in the org's catalog. A KPI referencing a
+ * catalogued point the template does not carry produces an asset with no such
+ * point on it, which is broken on every instance rather than on one.
+ *
+ * Names every unresolved key, for the same reason `assertPointKeysActive`
+ * does: bisecting a forty-point template by hand is not a debugging strategy.
+ */
 export function assertContentRefsResolve(
   content: TemplateContentParsed,
   points: { pointKey: string }[],

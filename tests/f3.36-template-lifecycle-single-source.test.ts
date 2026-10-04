@@ -344,6 +344,19 @@ describe("F3.36 half 2: both template services read the shared transitions", () 
     expect(transitionOwners).toContain(TRANSITION_OWNERS[0]);
   });
 
+  it("the transition-owner set is pinned, so a file cannot leave the scope silently", () => {
+    expect(
+      [...transitionOwners].sort(),
+      "the files that define assertTransition changed. If one was renamed or its body reshaped " +
+        "so the scope regex no longer matches, it has left the canTransition check silently.",
+    ).toEqual(
+      [
+        "apps/api/src/admin/asset-templates/asset-templates-write-guards.ts",
+        "apps/api/src/admin/dashboard-templates/dashboard-templates.service.ts",
+      ].sort(),
+    );
+  });
+
   it.each(transitionOwners)("%s imports the shared transition helper", (rel) => {
     const src = readFileSync(join(repoRoot, rel), "utf8");
     expect(

@@ -100,6 +100,9 @@ describe("F3.22 template cores (ADR 0091 decision 1)", () => {
           "this.accessControl.can",
           "this.vocabularies.",
           "this.fleetDb.select",
+          // The service's own private delegators (assertCanAuthor,
+          // assertPointKeysActive, assertTransition, ...) are guards too.
+          "this.assert",
         ]) {
           expect(
             rest,
