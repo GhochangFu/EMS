@@ -52,7 +52,19 @@ function commitService(behaviour: "ok" | Error = "ok") {
       if (behaviour !== "ok") {
         throw behaviour;
       }
-      return { sessionId: "s-1", locationId: "loc-1", rtuIds: ["r"], assetIds: ["a"], pointKeyIds: ["p"], assetPointIds: ["m"] };
+      return {
+        sessionId: "s-1",
+        locationId: "loc-1",
+        rtuIds: ["r"],
+        assetIds: ["a"],
+        pointKeyIds: ["p"],
+        assetPointIds: ["m"],
+        templateIds: [],
+        templatedAssetCount: 0,
+        templatedAssetPointCount: 0,
+        seededRuleCount: 0,
+        dashboardCount: 0,
+      };
     },
   };
 }

@@ -682,6 +682,16 @@ export type OnboardingDraftLocation = z.infer<typeof Ob.onboardingDraftLocationS
 export type OnboardingDraftRtu = z.infer<typeof Ob.onboardingDraftRtuSchema>;
 export type OnboardingDraftPointKey = z.infer<typeof Ob.onboardingDraftPointKeySchema>;
 export type OnboardingDraftAsset = z.infer<typeof Ob.onboardingDraftAssetSchema>;
+/** F3.22 (ADR 0091 decision 2): the template an asset is built from. */
+export type OnboardingDraftAssetTemplateRef = z.infer<
+  typeof Ob.onboardingDraftAssetTemplateRefSchema
+>;
+export type OnboardingDraftTemplate = z.infer<typeof Ob.onboardingDraftTemplateSchema>;
+export type OnboardingDraftAuthoredTemplate = z.infer<
+  typeof Ob.onboardingDraftAuthoredTemplateSchema
+>;
+export type OnboardingDraftStockTemplate = z.infer<typeof Ob.onboardingDraftStockTemplateSchema>;
+export type OnboardingDraftTemplatePoint = z.infer<typeof Ob.onboardingDraftTemplatePointSchema>;
 export type OnboardingDraftAssetPoint = z.infer<typeof Ob.onboardingDraftAssetPointSchema>;
 export type OnboardingDraftMeta = z.infer<typeof Ob.onboardingDraftMetaSchema>;
 export type OnboardingDraft = z.infer<typeof Ob.onboardingDraftSchema>;

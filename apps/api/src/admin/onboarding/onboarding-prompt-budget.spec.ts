@@ -231,8 +231,8 @@ export function assertOverBudgetShedsTheFourRecordsFirst(): void {
  * Stage 2 — a string longer than any code or name column, once stage 1 was not
  * enough.
  *
- * `pointKeys.description` is 2,000 characters wide and is the only column wider
- * than `PROMPT_STRING_MAX`. Decision 4 rules it opaque operator prose rather
+ * `pointKeys.description` is 2,000 characters wide and, with `F3.22`'s
+ * `templates.description`, one of the two columns wider than `PROMPT_STRING_MAX`. Decision 4 rules it opaque operator prose rather
  * than a code, a name or a protocol, so it is what stage 2 takes. 200 of them is
  * not producer-reachable in one turn and does not need to be: the fixture's job
  * is to be over budget with nothing left in the four records.
@@ -287,8 +287,11 @@ export function assertPromptStringMaxIsTheWidestNameColumn(): void {
 
   assert(widths.length >= 20, "the column record is far smaller than it was — this scan is broken");
 
+  // The prose columns, wider than every code and name by derivation:
+  // `templates.description` (F3.22) takes the same 2,000 as `pointKeys.description`.
+  const proseColumns = new Set(["pointKeys.description", "templates.description"]);
   for (const [field, width] of widths) {
-    if (field === "pointKeys.description") {
+    if (proseColumns.has(field)) {
       continue;
     }
     assert(

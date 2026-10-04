@@ -79,12 +79,14 @@ export const PROMPT_DRAFT_BUDGET_BYTES = 262_144;
  * The length above which a string is opaque enough to shed — the widest
  * code/name column in `ONBOARDING_DRAFT_STRING_MAX`.
  *
- * Ruling 2 keeps every code, name and protocol. Six columns are 255 characters
+ * Ruling 2 keeps every code, name and protocol. Eight columns are 255 characters
  * wide (`location.name`, `rtus.displayName`, `rtus.stationName`, `assets.name`,
- * `assets.siteName`, `pointKeys.name`) and every other column is narrower, so at
- * 255 stage 2 can take nothing the ruling protects. Exactly one column is wider:
- * `pointKeys.description` at 2,000, which decision 4 rules opaque operator prose
- * — not a code, not a name, not a protocol.
+ * `assets.siteName`, `pointKeys.name`, and since `F3.22` `templates.name` and
+ * `templatePoints.label`) and every other column is narrower, so at 255 stage 2
+ * can take nothing the ruling protects. Two columns are wider, both at 2,000:
+ * `pointKeys.description`, which decision 4 rules opaque operator prose — not a
+ * code, not a name, not a protocol — and `F3.22`'s `templates.description`, the
+ * same kind of prose.
  *
  * **Pinned by an assertion, not derived by filtering the record.** Derived, a
  * column widened later would raise this threshold with it and stage 2 would
@@ -220,7 +222,7 @@ export function shedFreeFormRecords(value: unknown): unknown {
  * and `tests/f4.115-iterative-draft-walkers.test.ts` gates it.
  *
  * `>` and not `>=`: a string exactly at a column's width is that column's
- * legitimate value, and six columns are exactly `PROMPT_STRING_MAX` wide.
+ * legitimate value, and eight columns are exactly `PROMPT_STRING_MAX` wide.
  *
  * Iterative, like every other walk over a stored draft, and it has its own
  * assertion for it: `assertADeepStoredDraftIsShedNotThrownOutOf` never reaches

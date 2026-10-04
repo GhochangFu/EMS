@@ -21,7 +21,7 @@ const DOMAIN_SCHEMA = "assetDomainCodeSchema";
 /** `location.type` likewise (`F4.157`, ADR 0077 decision 5). */
 const LOCATION_TYPE_SCHEMA = "locationTypeCodeSchema";
 
-/** The five sub-schemas of a draft, under the name each copy gives them. */
+/** The nine sub-schemas of a draft, under the name each copy gives them. */
 const SECTIONS = [
   { section: "location", shared: "onboardingDraftLocationSchema", api: "draftLocationSchema" },
   { section: "rtus", shared: "onboardingDraftRtuSchema", api: "draftRtuSchema" },
@@ -31,6 +31,28 @@ const SECTIONS = [
     section: "assetPoints",
     shared: "onboardingDraftAssetPointSchema",
     api: "draftAssetPointSchema",
+  },
+  // F3.22 (ADR 0091 decision 2): the two template entries, their points, and
+  // the template reference an asset carries.
+  {
+    section: "templates",
+    shared: "onboardingDraftAuthoredTemplateSchema",
+    api: "draftAuthoredTemplateSchema",
+  },
+  {
+    section: "stockTemplates",
+    shared: "onboardingDraftStockTemplateSchema",
+    api: "draftStockTemplateSchema",
+  },
+  {
+    section: "templatePoints",
+    shared: "onboardingDraftTemplatePointSchema",
+    api: "draftTemplatePointSchema",
+  },
+  {
+    section: "assetTemplateRef",
+    shared: "onboardingDraftAssetTemplateRefSchema",
+    api: "draftAssetTemplateRefSchema",
   },
 ] as const;
 
@@ -80,6 +102,17 @@ const EXPECTED_BOUNDS: Readonly<Record<string, string>> = {
   "assetPoints.sourceDataKey": "assetPoints.sourceDataKey",
   "assetPoints.sensorCode": "assetPoints.sensorCode",
   "assetPoints.unit": "assetPoints.unit",
+  "templates.code": "templates.code",
+  "templates.name": "templates.name",
+  "templates.assetType": "templates.assetType",
+  "templates.domain": DOMAIN_SCHEMA,
+  "templates.description": "templates.description",
+  "stockTemplates.stockCode": "stockTemplates.stockCode",
+  "templatePoints.pointKey": "templatePoints.pointKey",
+  "templatePoints.label": "templatePoints.label",
+  "templatePoints.unit": "templatePoints.unit",
+  "templatePoints.sourceDataKeyPattern": "templatePoints.sourceDataKeyPattern",
+  "assetTemplateRef.code": "assetTemplateRef.code",
 };
 
 const EXPECTED_KEYS = Object.keys(EXPECTED_BOUNDS);
@@ -115,15 +148,15 @@ const VOCABULARY_FIELD = new RegExp(
 /**
  * The body of one `export const <name> = z.object({ … })`, taken as the text
  * from its declaration to the next `export const`. Sections are sliced apart
- * before any field is read because four of the five declare a `code` field and
- * three declare a `domain`: a flat scan of the file would collapse them onto
+ * before any field is read because six of the nine declare a `code` field and
+ * four declare a `domain`: a flat scan of the file would collapse them onto
  * each other and compare `assets.code` against `location.code`.
  */
 function sectionBody(collapsed: string, name: string, label: string): string {
   const start = collapsed.search(new RegExp(`export const ${name}\\b`));
   if (start < 0) {
     throw new Error(
-      `${label} declares no \`${name}\` — the five draft sub-schemas are what this file ` +
+      `${label} declares no \`${name}\` — the draft sub-schemas are what this file ` +
         "compares, so a rename must be reflected here. Repair this parser rather than the " +
         "assertion.",
     );
@@ -216,7 +249,7 @@ const asObject = (found: Map<string, string | null>): Record<string, string | nu
  *
  * A **sibling** of `tests/f4.103-draft-count-caps.test.ts` and not an extension
  * of it. That file matches `field: z.array(...).max(NAME)` at the top level of
- * one object; these bounds are per-field, inside five nested object literals,
+ * one object; these bounds are per-field, inside nine nested object literals,
  * some chained, two supplied by an imported schema. Merging the two would make
  * the non-vacuity count ambiguous — "found 21 of 24" would not say which three.
  *

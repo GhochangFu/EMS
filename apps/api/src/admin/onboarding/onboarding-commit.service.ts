@@ -514,6 +514,14 @@ export class OnboardingCommitService {
         assetIds,
         pointKeyIds,
         assetPointIds,
+        // F3.22 (ADR 0091 decision 4): the template part of the result. Nothing
+        // here commits a template yet, so all five are empty until the
+        // one-transaction template commit lands.
+        templateIds: [] as string[],
+        templatedAssetCount: 0,
+        templatedAssetPointCount: 0,
+        seededRuleCount: 0,
+        dashboardCount: 0,
       };
 
       await tx

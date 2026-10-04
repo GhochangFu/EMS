@@ -14,6 +14,10 @@ import {
   MAX_ONBOARDING_ASSETS,
   MAX_ONBOARDING_POINT_KEYS,
   MAX_ONBOARDING_RTUS,
+  // F3.22 (ADR 0091 decision 2): the template caps, on the same terms.
+  MAX_ONBOARDING_TEMPLATE_POINTS,
+  MAX_ONBOARDING_TEMPLATE_VARS,
+  MAX_ONBOARDING_TEMPLATES,
   // F4.104: the length of every draft string field, on the same terms as the
   // four caps above. The numbers are the widths of the columns the draft
   // commits to, and they were inline literals here until this row moved them to
@@ -21,6 +25,7 @@ import {
   // the `@bms/db` column it came from, which `packages/shared` cannot do.
   ONBOARDING_DRAFT_STRING_MAX,
   locationTypeCodeSchema,
+  SOURCE_KEY_RESERVED_VAR,
 } from "@bms/shared";
 import { z } from "zod";
 
@@ -129,6 +134,37 @@ export const draftPointKeySchema = z
     description: z.string().max(ONBOARDING_DRAFT_STRING_MAX["pointKeys.description"]).optional(),
   });
 
+/**
+ * `F3.22` (ADR 0091 decision 2): the template an asset is built from. The
+ * shared copy bounds length and count only; this copy, on the write path, also
+ * refuses a variable key outside the token grammar of a source-key pattern and
+ * the reserved `asset_code`, which instantiation fills from the asset itself.
+ * The literal grammar, not `SOURCE_KEY_PATTERN_TOKEN`: that one carries the
+ * global flag, and a global regex keeps state between tests.
+ */
+export const draftAssetTemplateRefSchema = z
+  .object({
+    code: z.string().min(1).max(ONBOARDING_DRAFT_STRING_MAX["assetTemplateRef.code"]),
+    version: z.number().int().positive().optional(),
+    sourceDataKeyVars: z
+      .record(
+        z
+          .string()
+          .max(ONBOARDING_DRAFT_STRING_MAX["templatePoints.sourceDataKeyPattern"])
+          .regex(/^[a-zA-Z0-9_]+$/, "A source-key variable is a token: letters, digits and _ only")
+          .refine((key) => key !== SOURCE_KEY_RESERVED_VAR, {
+            message: `\`${SOURCE_KEY_RESERVED_VAR}\` is reserved: it is filled from the asset code`,
+          })
+          .describe(`A token of a source-key pattern, and never \`${SOURCE_KEY_RESERVED_VAR}\`.`),
+        z.string().max(ONBOARDING_DRAFT_STRING_MAX["assetPoints.sourceDataKey"]),
+      )
+      .refine((vars) => Object.keys(vars).length <= MAX_ONBOARDING_TEMPLATE_VARS, {
+        message: `At most ${MAX_ONBOARDING_TEMPLATE_VARS} source-key variables per asset`,
+      })
+      .describe(`At most ${MAX_ONBOARDING_TEMPLATE_VARS} variables.`)
+      .optional(),
+  });
+
 export const draftAssetSchema = z
   .object({
     rtuIndex: z.number().int().min(0),
@@ -157,6 +193,8 @@ export const draftAssetSchema = z
     // spec pins the two to each other.
     domain: assetDomainCodeSchema,
     meta: z.record(z.unknown()).optional(),
+    // F3.22: set when the asset is built from a template.
+    template: draftAssetTemplateRefSchema.optional(),
   });
 
 export const draftAssetPointSchema = z
@@ -170,6 +208,63 @@ export const draftAssetPointSchema = z
     sensorCode: z.string().max(ONBOARDING_DRAFT_STRING_MAX["assetPoints.sensorCode"]).optional(),
     unit: z.string().max(ONBOARDING_DRAFT_STRING_MAX["assetPoints.unit"]).optional(),
   });
+
+/**
+ * `F3.22` (ADR 0091 decision 2 and its 2026-10-04 note): one measured point of
+ * a chat-authored template. The minimums are the sibling route's; the commit
+ * sets the kind to measured, `required` defaults to true and `sortOrder` to the
+ * point's index.
+ */
+export const draftTemplatePointSchema = z
+  .object({
+    pointKey: z.string().min(1).max(ONBOARDING_DRAFT_STRING_MAX["templatePoints.pointKey"]),
+    label: z.string().max(ONBOARDING_DRAFT_STRING_MAX["templatePoints.label"]).optional(),
+    unit: z.string().max(ONBOARDING_DRAFT_STRING_MAX["templatePoints.unit"]).optional(),
+    sourceDataKeyPattern: z
+      .string()
+      .max(ONBOARDING_DRAFT_STRING_MAX["templatePoints.sourceDataKeyPattern"])
+      .optional(),
+    required: z.boolean().optional(),
+    sortOrder: z.number().int().min(0).optional(),
+  });
+
+/**
+ * `F3.22`: a template the chat authors. `assetType` defaults to the code at
+ * commit (owner ruling Q2, 2026-10-04); the minimums are the sibling route's.
+ */
+export const draftAuthoredTemplateSchema = z
+  .object({
+    code: z.string().min(1).max(ONBOARDING_DRAFT_STRING_MAX["templates.code"]),
+    name: z.string().min(1).max(ONBOARDING_DRAFT_STRING_MAX["templates.name"]),
+    assetType: z.string().min(1).max(ONBOARDING_DRAFT_STRING_MAX["templates.assetType"]).optional(),
+    domain: assetDomainCodeSchema,
+    description: z.string().max(ONBOARDING_DRAFT_STRING_MAX["templates.description"]).optional(),
+    points: z.array(draftTemplatePointSchema).max(MAX_ONBOARDING_TEMPLATE_POINTS),
+  });
+
+/**
+ * `F3.22`: a stock catalog entry the chat imports, with a source-key pattern
+ * overlay per measured point (owner ruling Q1, 2026-10-04). Which keys are
+ * measured points of the entry is checked by the tool and the validator, which
+ * read the catalog; this schema bounds length and count.
+ */
+export const draftStockTemplateSchema = z
+  .object({
+    stockCode: z.string().min(1).max(ONBOARDING_DRAFT_STRING_MAX["stockTemplates.stockCode"]),
+    patterns: z
+      .record(
+        z.string().max(ONBOARDING_DRAFT_STRING_MAX["templatePoints.pointKey"]),
+        z.string().max(ONBOARDING_DRAFT_STRING_MAX["templatePoints.sourceDataKeyPattern"]),
+      )
+      .refine((patterns) => Object.keys(patterns).length <= MAX_ONBOARDING_TEMPLATE_POINTS, {
+        message: `At most ${MAX_ONBOARDING_TEMPLATE_POINTS} point patterns per stock template`,
+      })
+      .describe(`At most ${MAX_ONBOARDING_TEMPLATE_POINTS} patterns, keyed by point key.`)
+      .optional(),
+  });
+
+/** `F3.22`: one template entry of a draft, a stock import or an authored template. */
+export const draftTemplateSchema = z.union([draftStockTemplateSchema, draftAuthoredTemplateSchema]);
 
 export const onboardingDraftMetaSchema = z
   .object({
@@ -380,6 +475,7 @@ export const onboardingDraftSchema = z
     pointKeys: z.array(draftPointKeySchema).max(MAX_ONBOARDING_POINT_KEYS).optional(),
     assets: z.array(draftAssetSchema).max(MAX_ONBOARDING_ASSETS).optional(),
     assetPoints: z.array(draftAssetPointSchema).max(MAX_ONBOARDING_ASSET_POINTS).optional(),
+    templates: z.array(draftTemplateSchema).max(MAX_ONBOARDING_TEMPLATES).optional(),
     onboardingMeta: onboardingDraftMetaSchema.optional(),
   })
   .superRefine((draft, ctx) => {
