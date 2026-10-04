@@ -56,8 +56,11 @@ tool-calling loop, ADR 0090) closed with PR #705. The owner started the row on
 
 **The central fact.** Every public method of the two template services opens
 its own `withTenant` transaction, and their guards read the target RTU and
-location, the point-key catalog and the template rows through `fleetDb` or the
-vocabulary pool (`asset-templates-instantiate.service.ts:281`, `:513-580`,
+location, the point-key catalog and the template rows through `fleetDb`, and
+their vocabulary checks on a second connection of the tenant pool
+(`VocabulariesService` injects `TENANT_DRIZZLE`; corrected 2026-10-04 at the
+PR 1 review — an earlier draft said "the vocabulary pool", which does not
+exist) (`asset-templates-instantiate.service.ts:281`, `:513-580`,
 `:618-628`; `asset-templates.service.ts:193`, `:369`, `:635-660`). Those reads
 cannot see rows that the onboarding commit wrote but has not committed. So the
 services cannot run inside the onboarding commit as they stand: a template
