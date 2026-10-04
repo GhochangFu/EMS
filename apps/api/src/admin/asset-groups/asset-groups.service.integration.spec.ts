@@ -1,10 +1,19 @@
-import { BadRequestException, ForbiddenException } from "@nestjs/common";
+import { randomUUID } from "node:crypto";
+
+import { BadRequestException, ConflictException, ForbiddenException } from "@nestjs/common";
+import type { HttpException } from "@nestjs/common";
 import { expect } from "vitest";
 import type pg from "pg";
 
+import type { BmsDb } from "@bms/db";
 import type { JwtPayload } from "@bms/shared";
 
+import { MasterDataAuditService } from "../master-data-audit.service";
+import type { AuditInput } from "../master-data-audit.service";
 import type { AssetGroupsAdminService } from "./asset-groups.service";
+
+/** A fixture asset the F3.78 cases create, so the 400s can prove they name none of it. */
+export type FixtureAsset = { id: string; code: string; name: string };
 
 /**
  * `F3.37` (ADR 0049 decision 5) — the asset-group admin surface against real,
@@ -52,6 +61,22 @@ export type GroupFixtures = {
    * two parallel instances of this file would delete each other's rows.
    */
   createdRoleCodes: string[];
+  /** F3.78 — the scoped caller's own site, and the organization that owns it. */
+  scopedLocationId: string;
+  scopedOrganizationId: string;
+  /** F3.78 — another organization's location, and the asset behind `foreignMembershipId`. */
+  foreignLocationId: string;
+  foreignOrganizationId: string;
+  foreignAsset: FixtureAsset;
+  /** F3.78 — an asset at a fixture location of the SAME organization as `groupId`, but not its location. */
+  otherLocationAsset: FixtureAsset;
+  /** F3.78 — a fresh asset at a location; `active` false stages a retired one. Registered for cleanup. */
+  makeAsset: (locationId: string, organizationId: string, active: boolean) => Promise<FixtureAsset>;
+  /** F3.78 — ids the service created, so `afterAll` deletes exactly those. */
+  createdGroupIds: string[];
+  createdMembershipIds: string[];
+  /** F3.78 — the same service with an audit write that fails after its insert. */
+  rollbackSvc: AssetGroupsAdminService;
 };
 
 /** `list()` returns the caller's groups and never another location's. */
@@ -285,4 +310,321 @@ export async function assertWritesAuditRow(
   expect(rows[0]?.payload?.from).toBeNull();
 
   await ctx.svc.setMemberRole(jwt, id, { role: null });
+}
+
+// ---------------------------------------------------------------------------
+// F3.78 (ADR 0089 decision 7, plan U8) — the four asset-group write routes.
+//
+// Every case that commits uses a `f378-pr4-<uuid>` code and registers the id it
+// creates in `ctx`, so `afterAll` deletes exactly those rows and then proves
+// none is left. Cases that must not write assert it on the owner connection.
+// ---------------------------------------------------------------------------
+
+/** What the rollback audit service throws AFTER its insert ran. */
+export const AUDIT_SENTINEL = "f378-pr4 audit ran, then the write fails";
+
+/**
+ * Wraps the real audit write and fails after it. Its own default executor is
+ * the fleet pool (BYPASSRLS), so a service that forgot to hand over its `tx`
+ * would COMMIT the audit row on that pool instead of failing — and the count in
+ * `assertAuditRollsBackWithTheWrite` would be 1, not 0.
+ */
+export class RollbackAuditService extends MasterDataAuditService {
+  override async write(input: AuditInput, executor?: BmsDb): Promise<void> {
+    await super.write(input, executor);
+    throw new Error(AUDIT_SENTINEL);
+  }
+}
+
+function uniqueCode(): string {
+  return `f378-pr4-${randomUUID()}`;
+}
+
+async function count(ctx: GroupFixtures, sqlText: string, params: unknown[]): Promise<number> {
+  const { rows } = await ctx.ownerPool.query<{ n: string }>(sqlText, params);
+  return Number(rows[0]?.n);
+}
+
+async function auditRows(ctx: GroupFixtures, action: string, entityId: string) {
+  const { rows } = await ctx.ownerPool.query<{
+    organization_id: string | null;
+    actor_id: string | null;
+    payload: Record<string, unknown> | null;
+  }>(
+    "SELECT organization_id, actor_id, payload FROM bms.audit_log WHERE action = $1 AND entity_id = $2",
+    [action, entityId],
+  );
+  return rows;
+}
+
+async function rejection(run: () => Promise<unknown>): Promise<unknown> {
+  try {
+    await run();
+  } catch (err) {
+    return err;
+  }
+  throw new Error("expected the call to be refused");
+}
+
+function bodyOf(err: unknown): string {
+  return JSON.stringify((err as HttpException).getResponse());
+}
+
+/** A refusal body names no row of the other site: no id, code or name. */
+function expectNamesNone(err: unknown, secrets: readonly string[]): void {
+  const text = bodyOf(err);
+  for (const secret of secrets) {
+    expect(text).not.toContain(secret);
+  }
+}
+
+async function createGroup(ctx: GroupFixtures, jwt: JwtPayload, locationId: string) {
+  const group = await ctx.svc.create(jwt, { locationId, code: uniqueCode(), name: "F3.78 pr4 group" });
+  ctx.createdGroupIds.push(group.id);
+  return group;
+}
+
+/** A second group at the same location and code is a 409 and writes no second row. */
+export async function assertDuplicateGroupCodeIs409(ctx: GroupFixtures, jwt: JwtPayload): Promise<void> {
+  const code = uniqueCode();
+  const body = { locationId: ctx.scopedLocationId, code, name: "F3.78 pr4 dup" };
+  ctx.createdGroupIds.push((await ctx.svc.create(jwt, body)).id);
+
+  const err = await rejection(() => ctx.svc.create(jwt, body));
+  expect(err).toBeInstanceOf(ConflictException);
+  expect(
+    await count(ctx, "SELECT count(*) AS n FROM bms.asset_groups WHERE location_id = $1 AND code = $2", [
+      ctx.scopedLocationId,
+      code,
+    ]),
+  ).toBe(1);
+}
+
+/** An unknown domain is a 400 naming the live codes, not the foreign key's 500. */
+export async function assertCreateRejectsAnUnknownDomain(ctx: GroupFixtures, jwt: JwtPayload): Promise<void> {
+  const code = uniqueCode();
+  const err = await rejection(() =>
+    ctx.svc.create(jwt, { locationId: ctx.scopedLocationId, code, name: "X", domain: "f378-not-a-domain" }),
+  );
+  expect(err).toBeInstanceOf(BadRequestException);
+  expect(await count(ctx, "SELECT count(*) AS n FROM bms.asset_groups WHERE code = $1", [code])).toBe(0);
+}
+
+/** A member whose asset sits at another location of the SAME organization is a 400 naming no asset. */
+export async function assertMemberFromOtherLocationIs400(ctx: GroupFixtures, jwt: JwtPayload): Promise<void> {
+  const asset = ctx.otherLocationAsset;
+  const err = await rejection(() => ctx.svc.addMember(jwt, ctx.groupId, { assetId: asset.id }));
+  expect(err).toBeInstanceOf(BadRequestException);
+  expectNamesNone(err, [asset.id, asset.code, asset.name]);
+  expect(
+    await count(ctx, "SELECT count(*) AS n FROM bms.asset_group_members WHERE asset_id = $1", [asset.id]),
+  ).toBe(0);
+}
+
+/** An asset of another ORGANIZATION is refused the same way. */
+export async function assertMemberFromOtherOrganizationIs400(ctx: GroupFixtures, jwt: JwtPayload): Promise<void> {
+  const asset = ctx.foreignAsset;
+  const err = await rejection(() => ctx.svc.addMember(jwt, ctx.groupId, { assetId: asset.id }));
+  expect(err).toBeInstanceOf(BadRequestException);
+  expectNamesNone(err, [asset.id, asset.code, asset.name]);
+}
+
+/** A retired asset at the right location is refused too. */
+export async function assertInactiveAssetIs400(ctx: GroupFixtures, jwt: JwtPayload): Promise<void> {
+  const asset = await ctx.makeAsset(ctx.scopedLocationId, ctx.scopedOrganizationId, false);
+  const err = await rejection(() => ctx.svc.addMember(jwt, ctx.groupId, { assetId: asset.id }));
+  expect(err).toBeInstanceOf(BadRequestException);
+  expectNamesNone(err, [asset.id, asset.code]);
+}
+
+/** The same asset twice in one group is a 409 and leaves one row. */
+export async function assertDuplicateMemberIs409(ctx: GroupFixtures, jwt: JwtPayload): Promise<void> {
+  const asset = await ctx.makeAsset(ctx.scopedLocationId, ctx.scopedOrganizationId, true);
+  const first = await ctx.svc.addMember(jwt, ctx.groupId, { assetId: asset.id });
+  ctx.createdMembershipIds.push(first.membershipId);
+
+  const err = await rejection(() => ctx.svc.addMember(jwt, ctx.groupId, { assetId: asset.id }));
+  expect(err).toBeInstanceOf(ConflictException);
+  expect(
+    await count(
+      ctx,
+      "SELECT count(*) AS n FROM bms.asset_group_members WHERE asset_group_id = $1 AND asset_id = $2",
+      [ctx.groupId, asset.id],
+    ),
+  ).toBe(1);
+}
+
+/** Add with a role answers the joined DTO; remove answers nothing and the row is gone. */
+export async function assertAddsThenRemovesAMember(ctx: GroupFixtures, jwt: JwtPayload): Promise<void> {
+  const asset = await ctx.makeAsset(ctx.scopedLocationId, ctx.scopedOrganizationId, true);
+  const added = await ctx.svc.addMember(jwt, ctx.groupId, { assetId: asset.id, role: ctx.roleCode });
+  ctx.createdMembershipIds.push(added.membershipId);
+  expect(added.assetId).toBe(asset.id);
+  expect(added.role).toBe(ctx.roleCode);
+
+  await expect(ctx.svc.removeMember(jwt, added.membershipId)).resolves.toBeUndefined();
+  expect(
+    await count(ctx, "SELECT count(*) AS n FROM bms.asset_group_members WHERE id = $1", [added.membershipId]),
+  ).toBe(0);
+}
+
+/** Positive control for every refusal below: the same caller, on its own site, is allowed. */
+async function expectOwnSiteAllowed(ctx: GroupFixtures, jwt: JwtPayload): Promise<void> {
+  const group = await createGroup(ctx, jwt, ctx.scopedLocationId);
+  expect(group.locationId).toBe(ctx.scopedLocationId);
+  const asset = await ctx.makeAsset(ctx.scopedLocationId, ctx.scopedOrganizationId, true);
+  const member = await ctx.svc.addMember(jwt, ctx.groupId, { assetId: asset.id });
+  ctx.createdMembershipIds.push(member.membershipId);
+  await ctx.svc.update(jwt, ctx.groupId, { description: "F3.78 pr4 own site" });
+  await ctx.svc.removeMember(jwt, member.membershipId);
+}
+
+export async function assertCreateAtAnotherSiteIsRefused(ctx: GroupFixtures, scopedJwt: JwtPayload): Promise<void> {
+  await expectOwnSiteAllowed(ctx, scopedJwt);
+  const code = uniqueCode();
+  const err = await rejection(() =>
+    ctx.svc.create(scopedJwt, { locationId: ctx.foreignLocationId, code, name: "X" }),
+  );
+  expect(err).toBeInstanceOf(ForbiddenException);
+  expectNamesNone(err, [ctx.foreignLocationId, ctx.foreignOrganizationId]);
+  expect(await count(ctx, "SELECT count(*) AS n FROM bms.asset_groups WHERE code = $1", [code])).toBe(0);
+}
+
+export async function assertUpdateOfAnotherSitesGroupIsRefused(ctx: GroupFixtures, scopedJwt: JwtPayload): Promise<void> {
+  await expectOwnSiteAllowed(ctx, scopedJwt);
+  const err = await rejection(() => ctx.svc.update(scopedJwt, ctx.foreignGroupId, { name: "Hijacked" }));
+  expect(err).toBeInstanceOf(ForbiddenException);
+  expectNamesNone(err, [ctx.foreignGroupId, ctx.foreignLocationId]);
+  expect(
+    await count(ctx, "SELECT count(*) AS n FROM bms.asset_groups WHERE id = $1 AND name = 'Hijacked'", [
+      ctx.foreignGroupId,
+    ]),
+  ).toBe(0);
+}
+
+export async function assertAddMemberToAnotherSitesGroupIsRefused(ctx: GroupFixtures, scopedJwt: JwtPayload): Promise<void> {
+  await expectOwnSiteAllowed(ctx, scopedJwt);
+  const asset = ctx.foreignAsset;
+  const err = await rejection(() => ctx.svc.addMember(scopedJwt, ctx.foreignGroupId, { assetId: asset.id }));
+  expect(err).toBeInstanceOf(ForbiddenException);
+  expectNamesNone(err, [ctx.foreignGroupId, asset.id, asset.code]);
+  expect(
+    await count(
+      ctx,
+      "SELECT count(*) AS n FROM bms.asset_group_members WHERE asset_group_id = $1 AND asset_id = $2",
+      [ctx.foreignGroupId, asset.id],
+    ),
+  ).toBe(1); // the fixture's own membership, and no second row
+}
+
+export async function assertRemoveOfAnotherSitesMemberIsRefused(ctx: GroupFixtures, scopedJwt: JwtPayload): Promise<void> {
+  await expectOwnSiteAllowed(ctx, scopedJwt);
+  const err = await rejection(() => ctx.svc.removeMember(scopedJwt, ctx.foreignMembershipId));
+  expect(err).toBeInstanceOf(ForbiddenException);
+  expectNamesNone(err, [ctx.foreignMembershipId, ctx.foreignGroupId]);
+  expect(
+    await count(ctx, "SELECT count(*) AS n FROM bms.asset_group_members WHERE id = $1", [ctx.foreignMembershipId]),
+  ).toBe(1);
+}
+
+/** The audit row is part of the write's own transaction: when the write rolls back, so does it. */
+export async function assertAuditRollsBackWithTheWrite(ctx: GroupFixtures, jwt: JwtPayload): Promise<void> {
+  const asset = await ctx.makeAsset(ctx.scopedLocationId, ctx.scopedOrganizationId, true);
+  await expect(ctx.rollbackSvc.addMember(jwt, ctx.groupId, { assetId: asset.id })).rejects.toThrow(AUDIT_SENTINEL);
+
+  expect(
+    await count(ctx, "SELECT count(*) AS n FROM bms.asset_group_members WHERE asset_id = $1", [asset.id]),
+  ).toBe(0);
+  expect(
+    await count(
+      ctx,
+      "SELECT count(*) AS n FROM bms.audit_log WHERE action = 'master.asset_group_member.add' AND payload->>'assetId' = $1",
+      [asset.id],
+    ),
+  ).toBe(0);
+}
+
+/** Create: the group row and its audit row both roll back, so neither is counted. */
+export async function assertCreateAuditRollsBackWithTheWrite(ctx: GroupFixtures, jwt: JwtPayload): Promise<void> {
+  const code = uniqueCode();
+  await expect(
+    ctx.rollbackSvc.create(jwt, { locationId: ctx.scopedLocationId, code, name: "F3.78 pr4 rollback" }),
+  ).rejects.toThrow(AUDIT_SENTINEL);
+
+  expect(await count(ctx, "SELECT count(*) AS n FROM bms.asset_groups WHERE code = $1", [code])).toBe(0);
+  expect(
+    await count(
+      ctx,
+      "SELECT count(*) AS n FROM bms.audit_log WHERE action = 'master.asset_group.create' AND payload->>'code' = $1",
+      [code],
+    ),
+  ).toBe(0);
+}
+
+/** Update: the name is unchanged and no update audit row is left for the group. */
+export async function assertUpdateAuditRollsBackWithTheWrite(ctx: GroupFixtures, jwt: JwtPayload): Promise<void> {
+  const group = await createGroup(ctx, jwt, ctx.scopedLocationId);
+  await expect(ctx.rollbackSvc.update(jwt, group.id, { name: "F3.78 pr4 never saved" })).rejects.toThrow(
+    AUDIT_SENTINEL,
+  );
+
+  expect(
+    await count(ctx, "SELECT count(*) AS n FROM bms.asset_groups WHERE id = $1 AND name = $2", [
+      group.id,
+      "F3.78 pr4 group",
+    ]),
+  ).toBe(1);
+  expect((await auditRows(ctx, "master.asset_group.update", group.id)).length).toBe(0);
+}
+
+/** Remove: the membership is still there and no remove audit row is left for it. */
+export async function assertRemoveMemberAuditRollsBackWithTheWrite(
+  ctx: GroupFixtures,
+  jwt: JwtPayload,
+): Promise<void> {
+  const asset = await ctx.makeAsset(ctx.scopedLocationId, ctx.scopedOrganizationId, true);
+  const member = await ctx.svc.addMember(jwt, ctx.groupId, { assetId: asset.id });
+  ctx.createdMembershipIds.push(member.membershipId);
+  await expect(ctx.rollbackSvc.removeMember(jwt, member.membershipId)).rejects.toThrow(AUDIT_SENTINEL);
+
+  expect(
+    await count(ctx, "SELECT count(*) AS n FROM bms.asset_group_members WHERE id = $1", [member.membershipId]),
+  ).toBe(1);
+  expect((await auditRows(ctx, "master.asset_group_member.remove", member.membershipId)).length).toBe(0);
+}
+
+export async function assertCreateWritesAnAuditRow(ctx: GroupFixtures, jwt: JwtPayload): Promise<void> {
+  const group = await createGroup(ctx, jwt, ctx.scopedLocationId);
+  const rows = await auditRows(ctx, "master.asset_group.create", group.id);
+  expect(rows.length).toBe(1);
+  expect(rows[0]?.organization_id).toBe(ctx.scopedOrganizationId);
+  expect(rows[0]?.actor_id).toBeTruthy();
+}
+
+export async function assertUpdateAuditNamesTheChangedFields(ctx: GroupFixtures, jwt: JwtPayload): Promise<void> {
+  const group = await createGroup(ctx, jwt, ctx.scopedLocationId);
+  await ctx.svc.update(jwt, group.id, { name: "F3.78 pr4 renamed", description: null });
+  const rows = await auditRows(ctx, "master.asset_group.update", group.id);
+  expect(rows.length).toBe(1);
+  expect(rows[0]?.payload?.fields).toEqual(["name", "description"]);
+}
+
+export async function assertAddMemberWritesAnAuditRow(ctx: GroupFixtures, jwt: JwtPayload): Promise<void> {
+  const asset = await ctx.makeAsset(ctx.scopedLocationId, ctx.scopedOrganizationId, true);
+  const member = await ctx.svc.addMember(jwt, ctx.groupId, { assetId: asset.id });
+  ctx.createdMembershipIds.push(member.membershipId);
+  const rows = await auditRows(ctx, "master.asset_group_member.add", member.membershipId);
+  expect(rows.length).toBe(1);
+  expect(rows[0]?.organization_id).toBe(ctx.scopedOrganizationId);
+  expect(rows[0]?.actor_id).toBeTruthy();
+}
+
+export async function assertRemoveMemberWritesAnAuditRow(ctx: GroupFixtures, jwt: JwtPayload): Promise<void> {
+  const asset = await ctx.makeAsset(ctx.scopedLocationId, ctx.scopedOrganizationId, true);
+  const member = await ctx.svc.addMember(jwt, ctx.groupId, { assetId: asset.id });
+  ctx.createdMembershipIds.push(member.membershipId);
+  await ctx.svc.removeMember(jwt, member.membershipId);
+  const rows = await auditRows(ctx, "master.asset_group_member.remove", member.membershipId);
+  expect(rows.length).toBe(1);
+  expect(rows[0]?.payload?.assetId).toBe(asset.id);
 }

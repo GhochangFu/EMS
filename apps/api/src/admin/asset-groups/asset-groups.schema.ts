@@ -1,5 +1,15 @@
-import { setAssetGroupMemberRoleBodySchema } from "@bms/shared";
-import type { SetAssetGroupMemberRoleBody } from "@bms/shared";
+import {
+  addAssetGroupMemberBodySchema,
+  createAssetGroupBodySchema,
+  setAssetGroupMemberRoleBodySchema,
+  updateAssetGroupBodySchema,
+} from "@bms/shared";
+import type {
+  AddAssetGroupMemberBody,
+  CreateAssetGroupBody,
+  SetAssetGroupMemberRoleBody,
+  UpdateAssetGroupBody,
+} from "@bms/shared";
 
 /**
  * `F3.37` (ADR 0049 decision 5) — the write side of the asset role vocabulary.
@@ -16,5 +26,15 @@ import type { SetAssetGroupMemberRoleBody } from "@bms/shared";
  * `tests/adr-0029-openapi-contract.test.ts` requires every refinement in a
  * `*.schema.ts` to explain itself in source.
  */
-export { setAssetGroupMemberRoleBodySchema };
-export type { SetAssetGroupMemberRoleBody };
+export {
+  addAssetGroupMemberBodySchema,
+  createAssetGroupBodySchema,
+  setAssetGroupMemberRoleBodySchema,
+  updateAssetGroupBodySchema,
+};
+export type {
+  AddAssetGroupMemberBody,
+  CreateAssetGroupBody,
+  SetAssetGroupMemberRoleBody,
+  UpdateAssetGroupBody,
+};

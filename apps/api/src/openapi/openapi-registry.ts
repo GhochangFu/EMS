@@ -1,3 +1,12 @@
+import {
+  addAssetGroupMemberBodySchema,
+  addUserGrantBodySchema,
+  createAssetGroupBodySchema,
+  createUserBodySchema,
+  temporaryPasswordBodySchema,
+  updateAssetGroupBodySchema,
+  updateUserBodySchema,
+} from "@bms/shared";
 import type { ZodTypeAny } from "zod";
 
 import { setAssetGroupMemberRoleBodySchema } from "../admin/asset-groups/asset-groups.schema";
@@ -204,6 +213,13 @@ export const REQUEST_SCHEMAS: Record<string, ZodTypeAny> = {
   AlarmsController_summary: alarmSummaryQuerySchema,
   AlarmsController_upsertEnrichment: alarmEnrichmentUpsertBodySchema,
   AssetGroupMembersAdminController_setRole: setAssetGroupMemberRoleBodySchema,
+  // `F3.78` (ADR 0089 decision 7) — the three asset-group write bodies, registered for the
+  // `F4.20` reason every entry here exists. `_list` and `_members` (reads) are absent: a
+  // `locationId` query read and a path parameter. `AssetGroupMembersAdminController_remove` is
+  // absent — one path parameter, no body, no query.
+  AssetGroupsAdminController_addMember: addAssetGroupMemberBodySchema,
+  AssetGroupsAdminController_create: createAssetGroupBodySchema,
+  AssetGroupsAdminController_update: updateAssetGroupBodySchema,
   AssetPointCalcOverrideController_set: assetPointCalcOverrideBodySchema,
   // `F2.7` (ADR 0056 decision 8) — the bulk editor's body. Registered rather
   // than left out for the two reasons the `F3.40` note below gives: an
@@ -366,6 +382,13 @@ export const REQUEST_SCHEMAS: Record<string, ZodTypeAny> = {
   // `F4.176` (ADR 0074 Amendment 2) — the batched latest-value read: bounded
   // `assetIds` and `pointKeys` arrays and a bounded `windowMinutes`, no body.
   TelemetryController_latest: pointsLatestQuerySchema,
+  // `F3.78` (ADR 0089 decisions 1 and 3) — the user-administration bodies. `UsersAdminController_list`,
+  // `_deactivate` and `_reactivate`, and `UserGrantsAdminController_list` and `_remove`, are absent:
+  // no body and no query, at most path parameters.
+  UserGrantsAdminController_add: addUserGrantBodySchema,
+  UsersAdminController_create: createUserBodySchema,
+  UsersAdminController_temporaryPassword: temporaryPasswordBodySchema,
+  UsersAdminController_update: updateUserBodySchema,
   WorkOrdersController_close: closeWorkOrderBodySchema,
   WorkOrdersController_create: createWorkOrderBodySchema,
   WorkOrdersController_reorder: reorderWorkOrdersBodySchema,

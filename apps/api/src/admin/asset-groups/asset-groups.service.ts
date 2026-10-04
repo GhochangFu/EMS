@@ -1,17 +1,29 @@
-import { ForbiddenException, Inject, Injectable, NotFoundException } from "@nestjs/common";
+import {
+  BadRequestException,
+  ConflictException,
+  ForbiddenException,
+  Inject,
+  Injectable,
+  NotFoundException,
+} from "@nestjs/common";
 import { and, asc, eq, inArray, sql } from "drizzle-orm";
+import type { SQL } from "drizzle-orm";
 
 import { assetGroupMembers, assetGroups, assetRoles, assets, locations } from "@bms/db";
 import type { BmsDb } from "@bms/db";
 import type {
+  AddAssetGroupMemberBody,
   AdminAssetGroupDto,
   AdminAssetGroupMemberDto,
   AdminAssetGroupMembersResponse,
+  CreateAssetGroupBody,
   JwtPayload,
+  UpdateAssetGroupBody,
 } from "@bms/shared";
 
 import { AccessControlService } from "../../auth/access-control.service";
 import { FLEET_DRIZZLE, TENANT_DRIZZLE } from "../../database/database.tokens";
+import { translateConstraintErrors } from "../../database/translate-constraint-errors";
 import { withTenant } from "../../database/tenant-context";
 import { VocabulariesService } from "../../vocabularies/vocabularies.service";
 import { MasterDataAuditService } from "../master-data-audit.service";
@@ -77,6 +89,11 @@ export class AssetGroupsAdminService {
       conditions.push(inArray(assetGroups.organizationId, writableOrgs));
     }
 
+    return { items: await this.selectGroups(conditions.length > 0 ? and(...conditions) : undefined) };
+  }
+
+  /** The list's row shape, for one `where`; `create` and `update` answer with the same DTO. */
+  private async selectGroups(where: SQL | undefined): Promise<AdminAssetGroupDto[]> {
     const rows = await this.fleetDb
       .select({
         id: assetGroups.id,
@@ -96,15 +113,236 @@ export class AssetGroupsAdminService {
       })
       .from(assetGroups)
       .leftJoin(locations, eq(assetGroups.locationId, locations.id))
-      .where(conditions.length > 0 ? and(...conditions) : undefined)
+      .where(where)
       .orderBy(asc(assetGroups.code));
 
-    return {
-      items: rows.map((row) => ({
-        ...row,
-        createdAt: row.createdAt.toISOString(),
-      })),
-    };
+    return rows.map((row) => ({ ...row, createdAt: row.createdAt.toISOString() }));
+  }
+
+  private async fetchGroup(groupId: string): Promise<AdminAssetGroupDto> {
+    const [group] = await this.selectGroups(eq(assetGroups.id, groupId));
+    if (!group) {
+      throw new NotFoundException("Asset group not found");
+    }
+    return group;
+  }
+
+  /**
+   * `F3.78` (ADR 0089 decision 7) — creates a group at a location the caller
+   * manages. The location is authorized BEFORE it is looked up, so a refused
+   * caller learns nothing about whether it exists; the write runs under the
+   * location's own organization, and the audit row shares the write's `tx`.
+   */
+  async create(jwt: JwtPayload, body: CreateAssetGroupBody): Promise<AdminAssetGroupDto> {
+    await this.accessControl.requireMasterDataUser(jwt);
+    if (!(await this.accessControl.canManageLocation(jwt, body.locationId))) {
+      throw new ForbiddenException("Location is outside your access scope");
+    }
+    const [location] = await this.fleetDb
+      .select({ organizationId: locations.organizationId })
+      .from(locations)
+      .where(eq(locations.id, body.locationId))
+      .limit(1);
+    if (!location) {
+      throw new NotFoundException("Location not found");
+    }
+    if (body.domain) {
+      await this.vocabularies.assertAssetDomain(body.domain);
+    }
+
+    const organizationId = location.organizationId;
+    const groupId = await translateConstraintErrors(
+      () =>
+        withTenant(this.tenantDb, organizationId, async (tx) => {
+          const [created] = await tx
+            .insert(assetGroups)
+            .values({
+              organizationId,
+              locationId: body.locationId,
+              code: body.code,
+              name: body.name,
+              description: body.description ?? null,
+              domain: body.domain ?? null,
+            })
+            .returning({ id: assetGroups.id });
+          if (!created) {
+            throw new NotFoundException("Location not found");
+          }
+          await this.audit.write(
+            {
+              actor: jwt,
+              action: "master.asset_group.create",
+              entityType: "asset_group",
+              entityId: created.id,
+              organizationId,
+              payload: {
+                locationId: body.locationId,
+                code: body.code,
+                name: body.name,
+                domain: body.domain ?? null,
+              },
+            },
+            tx,
+          );
+          return created.id;
+        }),
+      { onUnique: () => new ConflictException("An asset group with that code already exists at this location") },
+    );
+    return this.fetchGroup(groupId);
+  }
+
+  /** `F3.78` — renames or re-describes a group. The code never changes (see the schema). */
+  async update(jwt: JwtPayload, groupId: string, body: UpdateAssetGroupBody): Promise<AdminAssetGroupDto> {
+    await this.accessControl.requireMasterDataUser(jwt);
+    const group = await this.requireManageableGroup(jwt, groupId);
+
+    const set: Partial<typeof assetGroups.$inferInsert> = {};
+    if (body.name !== undefined) set.name = body.name;
+    if (body.description !== undefined) set.description = body.description;
+    if (body.domain !== undefined) set.domain = body.domain;
+    const fields = Object.keys(set);
+    if (fields.length === 0) {
+      throw new BadRequestException("Send at least one of name, description or domain");
+    }
+    if (body.domain) {
+      await this.vocabularies.assertAssetDomain(body.domain);
+    }
+
+    await withTenant(this.tenantDb, group.organizationId, async (tx) => {
+      const updated = await tx
+        .update(assetGroups)
+        .set(set)
+        .where(eq(assetGroups.id, groupId))
+        .returning({ id: assetGroups.id });
+      if (updated.length === 0) {
+        throw new NotFoundException("Asset group not found");
+      }
+      await this.audit.write(
+        {
+          actor: jwt,
+          action: "master.asset_group.update",
+          entityType: "asset_group",
+          entityId: groupId,
+          organizationId: group.organizationId,
+          payload: { fields },
+        },
+        tx,
+      );
+    });
+    return this.fetchGroup(groupId);
+  }
+
+  /**
+   * `F3.78` — adds an asset to a group. The asset must be active and at the
+   * group's location and organization; the 400 names neither the asset nor its
+   * code, so it cannot be used to probe another site's catalogue.
+   */
+  async addMember(
+    jwt: JwtPayload,
+    groupId: string,
+    body: AddAssetGroupMemberBody,
+  ): Promise<AdminAssetGroupMemberDto> {
+    await this.accessControl.requireMasterDataUser(jwt);
+    const group = await this.requireManageableGroup(jwt, groupId);
+
+    const [asset] = await this.fleetDb
+      .select({ active: assets.active, locationId: assets.locationId, organizationId: assets.organizationId })
+      .from(assets)
+      .where(eq(assets.id, body.assetId))
+      .limit(1);
+    if (
+      !asset ||
+      !asset.active ||
+      asset.locationId !== group.locationId ||
+      asset.organizationId !== group.organizationId
+    ) {
+      throw new BadRequestException("Asset must be an active asset at this group's location");
+    }
+    if (body.role) {
+      await this.vocabularies.assertAssetRole(body.role);
+    }
+
+    const organizationId = group.organizationId;
+    const membershipId = await translateConstraintErrors(
+      () =>
+        withTenant(this.tenantDb, organizationId, async (tx) => {
+          const [created] = await tx
+            .insert(assetGroupMembers)
+            .values({ assetGroupId: groupId, assetId: body.assetId, role: body.role ?? null })
+            .returning({ id: assetGroupMembers.id });
+          if (!created) {
+            throw new BadRequestException("Asset could not be added to this group");
+          }
+          await this.audit.write(
+            {
+              actor: jwt,
+              action: "master.asset_group_member.add",
+              entityType: "asset_group_member",
+              entityId: created.id,
+              organizationId,
+              payload: { assetGroupId: groupId, assetId: body.assetId, role: body.role ?? null },
+            },
+            tx,
+          );
+          return created.id;
+        }),
+      { onUnique: () => new ConflictException("That asset is already a member of this group") },
+    );
+    return this.fetchMember(membershipId);
+  }
+
+  /**
+   * `F3.78` — removes one membership. Like `setMemberRole`, the membership's
+   * group is resolved on `fleetDb` first and its location authorized, so a
+   * location admin cannot unbind another site's plant.
+   */
+  async removeMember(jwt: JwtPayload, membershipId: string): Promise<void> {
+    await this.accessControl.requireMasterDataUser(jwt);
+
+    const [membership] = await this.fleetDb
+      .select({
+        assetGroupId: assetGroupMembers.assetGroupId,
+        assetId: assetGroupMembers.assetId,
+        role: assetGroupMembers.role,
+        organizationId: assetGroups.organizationId,
+        locationId: assetGroups.locationId,
+      })
+      .from(assetGroupMembers)
+      .innerJoin(assetGroups, eq(assetGroupMembers.assetGroupId, assetGroups.id))
+      .where(eq(assetGroupMembers.id, membershipId))
+      .limit(1);
+    if (!membership) {
+      throw new NotFoundException("Asset group membership not found");
+    }
+    if (!(await this.accessControl.canManageLocation(jwt, membership.locationId))) {
+      throw new ForbiddenException("Asset group is outside your access scope");
+    }
+
+    const organizationId = membership.organizationId;
+    await withTenant(this.tenantDb, organizationId, async (tx) => {
+      const deleted = await tx
+        .delete(assetGroupMembers)
+        .where(eq(assetGroupMembers.id, membershipId))
+        .returning({ id: assetGroupMembers.id });
+      if (deleted.length === 0) {
+        throw new NotFoundException("Asset group membership not found");
+      }
+      await this.audit.write(
+        {
+          actor: jwt,
+          action: "master.asset_group_member.remove",
+          entityType: "asset_group_member",
+          entityId: membershipId,
+          organizationId,
+          payload: {
+            assetGroupId: membership.assetGroupId,
+            assetId: membership.assetId,
+            role: membership.role,
+          },
+        },
+        tx,
+      );
+    });
   }
 
   /**
@@ -273,9 +511,12 @@ export class AssetGroupsAdminService {
   }
 
   /** Refuses a group the caller may not administer, and a group that does not exist. */
-  private async requireManageableGroup(jwt: JwtPayload, groupId: string): Promise<void> {
+  private async requireManageableGroup(
+    jwt: JwtPayload,
+    groupId: string,
+  ): Promise<{ locationId: string; organizationId: string }> {
     const [group] = await this.fleetDb
-      .select({ locationId: assetGroups.locationId })
+      .select({ locationId: assetGroups.locationId, organizationId: assetGroups.organizationId })
       .from(assetGroups)
       .where(eq(assetGroups.id, groupId))
       .limit(1);
@@ -286,5 +527,6 @@ export class AssetGroupsAdminService {
     if (!(await this.accessControl.canManageLocation(jwt, group.locationId))) {
       throw new ForbiddenException("Asset group is outside your access scope");
     }
+    return group;
   }
 }

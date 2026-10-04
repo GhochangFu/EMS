@@ -3,12 +3,22 @@ import { afterEach, describe, it, vi } from "vitest";
 import { cleanup } from "@testing-library/react";
 
 import {
+  aReadOnlyRoleSeesNoWriteControls,
+  addSendsTheAssetId,
   anEmptyVocabularyRendersNoRolesOfItsOwn,
+  choosingAnOrganizationStaysOnTheScreen,
+  createAtAnotherLocationMovesTheFilterThere,
+  createSendsTheSelectedLocation,
+  editNeverSendsCode,
+  pickerListsOnlyTheGroupsLocation,
+  removeInvalidatesTheMembersQuery,
   rendersMembersInServerOrder,
   rolesComeFromTheVocabularyFetch,
   sendsTheCodeAndClearsWithNull,
   showsHowManyMembersCarryEachRole,
   showsTheServerRefusal,
+  theOtherRowsKeepTheirName,
+  theRowBeingRemovedAnnouncesIt,
 } from "./asset-groups-page.spec";
 
 /**
@@ -46,5 +56,45 @@ describe("F3.37 asset groups page", () => {
 
   it("shows the server's reason when a role write is refused", async () => {
     await showsTheServerRefusal();
+  });
+
+  it("creates a group at the location chosen in the modal", async () => {
+    await createSendsTheSelectedLocation();
+  });
+
+  it("moves the filter to the new group's location when it differs from the filter's", async () => {
+    await createAtAnotherLocationMovesTheFilterThere();
+  });
+
+  it("stays on the asset-groups screen when an organization is chosen in the filter bar", async () => {
+    await choosingAnOrganizationStaysOnTheScreen();
+  });
+
+  it("offers only free assets of the group's own location in the picker", async () => {
+    await pickerListsOnlyTheGroupsLocation();
+  });
+
+  it("adds the picked asset to the group", async () => {
+    await addSendsTheAssetId();
+  });
+
+  it("re-reads the members after a removal", async () => {
+    await removeInvalidatesTheMembersQuery();
+  });
+
+  it("names the row being removed as removing, with aria-busy", async () => {
+    await theRowBeingRemovedAnnouncesIt();
+  });
+
+  it("keeps the other rows' names while one row is removed", async () => {
+    await theOtherRowsKeepTheirName();
+  });
+
+  it("never sends a code when a group is edited", async () => {
+    await editNeverSendsCode();
+  });
+
+  it("hides every write control from a role without the write gate", async () => {
+    await aReadOnlyRoleSeesNoWriteControls();
   });
 });

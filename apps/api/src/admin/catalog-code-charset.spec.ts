@@ -1,4 +1,4 @@
-import { CATALOG_CODE_MESSAGE } from "@bms/shared";
+import { CATALOG_CODE_MESSAGE, createAssetGroupBodySchema } from "@bms/shared";
 import type { z } from "zod";
 
 import { instantiateAssetsBodySchema } from "./asset-templates/asset-templates.schema";
@@ -137,6 +137,13 @@ export function assertDraftPointKeyCodeClass(): void {
   const build = (code: string): unknown => ({ code, name: "Probe point key" });
   assertRefusedAt("draftPointKeySchema", draftPointKeySchema, build, ["code"]);
   assertAccepted("draftPointKeySchema", draftPointKeySchema, build);
+}
+
+/** Site 6 (`F3.78`, ADR 0089 decision 7) — `createAssetGroupBodySchema.code`; the update body has no `code`. */
+export function assertAssetGroupCreateCodeClass(): void {
+  const build = (code: string): unknown => ({ locationId: LOCATION_ID, code, name: "Probe group" });
+  assertRefusedAt("createAssetGroupBodySchema", createAssetGroupBodySchema, build, ["code"]);
+  assertAccepted("createAssetGroupBodySchema", createAssetGroupBodySchema, build);
 }
 
 /**
