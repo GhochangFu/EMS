@@ -1,14 +1,17 @@
 import "reflect-metadata";
 
 import { ForbiddenException } from "@nestjs/common";
+import type { ArgumentsHost } from "@nestjs/common";
 import { GUARDS_METADATA } from "@nestjs/common/constants";
 import { expect } from "vitest";
+import { ZodError } from "zod";
 
 import type { BmsDb } from "@bms/db";
 import type { JwtPayload } from "@bms/shared";
 
 import type { AccessControlService } from "../../auth/access-control.service";
 import { JwtAuthGuard } from "../../auth/jwt-auth.guard";
+import { ZodErrorFilter } from "../../common/zod-error.filter";
 import { dbOps, recordingDb, type DbOp, type Timeline } from "../../testing/recording-db";
 import type { VocabulariesService } from "../../vocabularies/vocabularies.service";
 import type { MasterDataAuditService } from "../master-data-audit.service";
@@ -170,4 +173,60 @@ export async function assertRemoveMemberRefusesAnotherSitesMember(): Promise<voi
   expect(writesOf(timeline)).toEqual([]);
   await service.removeMember(jwt, MEMBER_A);
   expect(writesOf(timeline).map((op) => `${op.kind}:${op.table}`)).toEqual(["delete:asset_group_members"]);
+}
+
+/** `F4.189` — the route is the controller over the real service: a refused body is a 400 and writes nothing. */
+async function assertBodyRefusedWith400AndNoWrite(
+  run: (controller: AssetGroupsAdminController, jwt: JwtPayload) => Promise<unknown>,
+  accepted: (controller: AssetGroupsAdminController, jwt: JwtPayload) => Promise<unknown>,
+  writtenTable: string,
+): Promise<void> {
+  const { service, jwt, timeline } = harness();
+  const controller = new AssetGroupsAdminController(service);
+  let caught: unknown;
+  try {
+    await run(controller, jwt);
+  } catch (err) {
+    caught = err;
+  }
+  // The handler's `.parse()` sits outside `parsing()`, so the ZodError reaches the global
+  // `ZodErrorFilter` (ADR 0060), which is what answers 400. Run it, so the claim is the status.
+  // By name, not `instanceof`: `@bms/shared` and the api may each resolve their own zod copy.
+  expect((caught as Error).name).toBe("ZodError");
+  expect((caught as ZodError).issues.map((issue) => issue.code)).toEqual(["unrecognized_keys"]);
+  const answered: { status: number | null } = { status: null };
+  const response = {
+    status(code: number) {
+      answered.status = code;
+      return response;
+    },
+    json: () => response,
+  };
+  new ZodErrorFilter().catch(caught as ZodError, {
+    getType: () => "http",
+    switchToHttp: () => ({ getResponse: () => response }),
+  } as unknown as ArgumentsHost);
+  expect(answered.status).toBe(400);
+  expect(writesOf(timeline)).toEqual([]);
+  // Positive control: the same body without the unknown key writes, so the refusal is the key's.
+  await accepted(controller, jwt);
+  expect(writesOf(timeline).map((op) => op.table)).toEqual([writtenTable]);
+}
+
+export async function assertCreateWithAnUnknownKeyIs400AndWritesNothing(): Promise<void> {
+  const body = { locationId: LOC_A, code: "G_X", name: "X" };
+  await assertBodyRefusedWith400AndNoWrite(
+    (controller, jwt) => controller.create({ ...body, descripton: "typo" }, jwt),
+    (controller, jwt) => controller.create(body, jwt),
+    "asset_groups",
+  );
+}
+
+export async function assertAddMemberWithAnUnknownKeyIs400AndWritesNothing(): Promise<void> {
+  const body = { assetId: ASSET_A };
+  await assertBodyRefusedWith400AndNoWrite(
+    (controller, jwt) => controller.addMember(GROUP_A, { ...body, rol: "typo" }, jwt),
+    (controller, jwt) => controller.addMember(GROUP_A, body, jwt),
+    "asset_group_members",
+  );
 }

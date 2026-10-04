@@ -13,14 +13,19 @@ import { assetRoleCodeSchema } from "./operations";
  * `POST /api/v1/admin/asset-groups`. `code` takes the shared catalog-code rule
  * and joins `catalog-code-charset.spec.ts`. `domain` is a vocabulary code the
  * service checks is live, so a retired one is a 400 and not the foreign key's 500.
+ * **`.strict()`** (`F4.189`): an unknown key is a caller error — a misspelt
+ * `description` or `domain` would otherwise be dropped and the create answered
+ * 200 with the field unset. It is refused, not dropped.
  */
-export const createAssetGroupBodySchema = z.object({
-  locationId: z.string().uuid(),
-  code: z.string().min(1).max(64).regex(CATALOG_CODE_PATTERN, CATALOG_CODE_MESSAGE),
-  name: z.string().min(1).max(255),
-  description: z.string().max(2000).nullable().optional(),
-  domain: z.string().min(1).max(64).nullable().optional(),
-});
+export const createAssetGroupBodySchema = z
+  .object({
+    locationId: z.string().uuid(),
+    code: z.string().min(1).max(64).regex(CATALOG_CODE_PATTERN, CATALOG_CODE_MESSAGE),
+    name: z.string().min(1).max(255),
+    description: z.string().max(2000).nullable().optional(),
+    domain: z.string().min(1).max(64).nullable().optional(),
+  })
+  .strict();
 
 /**
  * `PATCH /api/v1/admin/asset-groups/:id`. **No `code`, and `.strict()` makes
@@ -36,8 +41,14 @@ export const updateAssetGroupBodySchema = z
   })
   .strict();
 
-/** `POST /api/v1/admin/asset-groups/:id/members` — `role` is checked by `assertAssetRole`. */
-export const addAssetGroupMemberBodySchema = z.object({
-  assetId: z.string().uuid(),
-  role: assetRoleCodeSchema.nullable().optional(),
-});
+/**
+ * `POST /api/v1/admin/asset-groups/:id/members` — `role` is checked by `assertAssetRole`.
+ * **`.strict()`** (`F4.189`): an unknown key (a misspelt `role`) is a caller
+ * error, refused rather than dropped and answered 200 with the role unset.
+ */
+export const addAssetGroupMemberBodySchema = z
+  .object({
+    assetId: z.string().uuid(),
+    role: assetRoleCodeSchema.nullable().optional(),
+  })
+  .strict();

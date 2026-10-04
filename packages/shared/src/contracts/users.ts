@@ -35,7 +35,11 @@ const temporaryPasswordSchema = z.string().min(12).max(128);
 
 /**
  * `POST /admin/users`. The admin/organization rule is checked here, so a body
- * that breaks it is a 400 before any Keycloak call.
+ * that breaks it is a 400 before any Keycloak call. **`.strict()`** (`F4.189`),
+ * on the object before the `superRefine`: an unknown key is a caller error and
+ * is refused before any Keycloak call, not dropped and answered 200 — a key
+ * this route does not take (a grant list, say) would otherwise be silently
+ * ignored while the account is created.
  */
 export const createUserBodySchema = z
   .object({
@@ -50,6 +54,7 @@ export const createUserBodySchema = z
     organizationId: z.string().uuid().nullable(),
     temporaryPassword: temporaryPasswordSchema,
   })
+  .strict()
   .superRefine((body, ctx) => {
     if ((body.role === "admin") !== (body.organizationId === null)) {
       ctx.addIssue({

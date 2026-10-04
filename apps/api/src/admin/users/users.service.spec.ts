@@ -431,6 +431,16 @@ export async function assertAnAdminBodyWithAnOrganizationIs400BeforeKeycloak(): 
   expect([err.getStatus(), identity.calls.length]).toEqual([400, 0]);
 }
 
+export async function assertACreateWithAnUnknownKeyIs400BeforeKeycloakAndWritesNothing(): Promise<void> {
+  const { service, jwt, identity, timeline } = harness();
+  const err = await refusal(service.create(jwt, createBody({ rol: "admin" })));
+  expect([err.getStatus(), identity.calls.length, userInserts(timeline).length]).toEqual([400, 0, 0]);
+  expect(JSON.stringify(err.getResponse())).toContain("Unrecognized key");
+  // Positive control: the same body without the unknown key creates, so the refusal is the key's.
+  await service.create(jwt, createBody());
+  expect(userInserts(timeline).length).toBe(1);
+}
+
 export async function assertAnOrganizationAdminCreatingAnAdminIs403(): Promise<void> {
   const { service, jwt, identity } = harness({ caller: ORG_ADMIN_CALLER });
   const err = await refusal(service.create(jwt, createBody({ role: "admin", organizationId: null })));
