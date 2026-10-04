@@ -26,7 +26,22 @@ export function formatOnboardingDraftSummary(draft: OnboardingDraft): string {
     lines.push("Assets:");
     draft.assets.forEach((asset) => {
       const rtuName = draft.rtus?.[asset.rtuIndex]?.displayName ?? `RTU ${asset.rtuIndex}`;
-      lines.push(`  - ${asset.name} (${asset.code}) on ${rtuName}`);
+      const from = asset.template
+        ? ` · from template ${asset.template.code}${
+            asset.template.version === undefined ? "" : ` v${asset.template.version}`
+          }`
+        : "";
+      lines.push(`  - ${asset.name} (${asset.code}) on ${rtuName}${from}`);
+    });
+  }
+  if (draft.templates?.length) {
+    lines.push("Templates:");
+    draft.templates.forEach((entry) => {
+      lines.push(
+        "stockCode" in entry
+          ? `  - ${entry.stockCode} (stock)`
+          : `  - ${entry.code} (authored, ${entry.points.length} points)`,
+      );
     });
   }
   if (draft.pointKeys?.length) {
