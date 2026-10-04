@@ -7083,6 +7083,34 @@ delete wrote no audit. Browser N/A.
 **Cascade:** no row lists `F4.187` in *Depends*. No `chore(agents):` change
 owed.
 
+### `F3.78` — user, access-grant and asset-group administration ✅ 2026-10-04
+
+Four PRs: #696 (`7c991951`), #704 (`e6a391e1`), #711 (`100346da`) and #712
+(`311711a1`); ADR 0089 (#693, `91be9e70`, accepted 2026-10-02); plan
+`docs/plans/f3.78-user-administration.md`. MFA is deferred to `F4.13` (owner
+ruling).
+
+- PR1: migration `0098`; the `oidc_subject` link to a Keycloak account;
+  `disabled_at` checked on every request, with an open socket closed through
+  NOTIFY; `IdentityAdminClient` (`bms-api-admin`); Keycloak provisioning and
+  its runbook.
+- PR2: the `/admin/users` API (create in Keycloak first, with an undo; a role
+  PATCH mirrored to the realm role; deactivate and reactivate; a temporary
+  password) and the grants API. The seed skips linked users' rows and grants.
+  The `bms-keycloak-data` volume.
+- PR3: the Users & Access screen: users list, create, edit and
+  temporary-password modals, a grants drawer, the local-mode and unlinked
+  states, an uncontrolled password field.
+- PR4: asset-group create, update, add-member and remove-member API and
+  screen; OpenAPI request bodies for the users, grants and asset-group routes;
+  the fix for the asset-groups filter bar, which navigated to the Locations
+  page (on `main` since `F3.37`).
+
+**Cascade:** no row lists `F3.78` in *Depends*. Owed: the `chore(agents):`
+sweep; `F4.188` (the provisioning CLI has no request timeout), `F4.189` (three
+request bodies are not `.strict()`) and `F4.190` (the one-time realm re-import
+on the shared Keycloak, an owner-gated ops step).
+
 ### `F3.76` — the Master Data Hub in five areas ✅ 2026-09-30
 
 PR #668, squash `427adf8d`; the owner ruled it into v1 on 2026-09-30, with no
