@@ -44,6 +44,13 @@ export type TemplateRef = {
   /** Empty for an organization version that is not published (the catalog reads no points for it). */
   readonly points: readonly TemplatePointRef[];
   readonly alarmCount: number;
+  /**
+   * The dashboards one templated asset gets: one per view of `content.dashboards`
+   * (`sortedViewNames`), which is what the instantiate core's `dashboardCount`
+   * counts per asset. The commit proposal prints this one.
+   */
+  readonly dashboardCount: number;
+  /** The `dashboard_widgets` rows one asset costs (`dashboardWidgetRowsFor`) — the bound's unit, not the one the proposal prints. */
   readonly dashboardWidgetCount: number;
 };
 
@@ -112,6 +119,7 @@ export function draftTemplateRef(entry: OnboardingDraftTemplate, ctx: ValidateTe
       sourceDataKeyPattern: patternOrNull(point.sourceDataKeyPattern),
     })),
     alarmCount: 0,
+    dashboardCount: 0,
     dashboardWidgetCount: 0,
   };
 }

@@ -6,7 +6,7 @@ import { assetTemplates, templatePoints } from "@bms/db";
 import type { SQL } from "drizzle-orm";
 import { PgDialect } from "drizzle-orm/pg-core";
 
-import { dashboardWidgetRowsFor } from "../asset-templates/asset-dashboards-plan";
+import { dashboardWidgetRowsFor, sortedViewNames } from "../asset-templates/asset-dashboards-plan";
 import { parseStoredTemplateContent } from "../asset-templates/asset-templates-content.schema";
 import { STOCK_ASSET_TEMPLATE_CATALOG } from "../asset-templates/stock-catalog/stock-catalog";
 import { OnboardingTemplateCatalogService } from "./onboarding-template-catalog.service";
@@ -18,13 +18,14 @@ function assert(condition: boolean, message: string): void {
 }
 
 /** The first shipped entry whose content seeds alarms and dashboard widgets, so the counts are not zero by accident. */
-function contentWithAlarmsAndWidgets(): { content: Record<string, unknown>; alarms: number; widgets: number } {
+function contentWithAlarmsAndWidgets(): { content: Record<string, unknown>; alarms: number; views: number; widgets: number } {
   for (const entry of STOCK_ASSET_TEMPLATE_CATALOG) {
     const parsed = parseStoredTemplateContent(entry.content);
     if (parsed.ok && (parsed.content.alarms ?? []).length > 0) {
       const widgets = dashboardWidgetRowsFor(parsed.content.dashboards ?? {});
       if (widgets > 0) {
-        return { content: entry.content as Record<string, unknown>, alarms: parsed.content.alarms!.length, widgets };
+        const views = sortedViewNames(parsed.content.dashboards ?? {}).length;
+        return { content: entry.content as Record<string, unknown>, alarms: parsed.content.alarms!.length, views, widgets };
       }
     }
   }
@@ -72,7 +73,7 @@ const NO_STOCK = { list: () => ({ items: [] }) } as never;
  * alarm and widget counts, and a draft version carries no points.
  */
 export async function assertS1PublishedVersionsCarryPointsAndDraftsNone(): Promise<void> {
-  const { content, alarms, widgets } = contentWithAlarmsAndWidgets();
+  const { content, alarms, views, widgets } = contentWithAlarmsAndWidgets();
   const { db, selects } = fakeDb(
     [
       { id: "t1", code: "PUMP", version: 1, name: "Pump", domain: "water", status: "published", content },
@@ -99,6 +100,10 @@ export async function assertS1PublishedVersionsCarryPointsAndDraftsNone(): Promi
     published.alarmCount === alarms && published.dashboardWidgetCount === widgets,
     `the published version counts ${alarms} alarms and ${widgets} widgets, got ${published.alarmCount}/${published.dashboardWidgetCount}`,
   );
+  // Code review, round 2: a dashboard per view — the instantiate core's unit —
+  // and not the widget-row count. The fixture must tell the two apart.
+  assert(views > 0 && views !== widgets, `the fixture has views (${views}) unequal to widget rows (${widgets})`);
+  assert(published.dashboardCount === views, `the published version counts ${views} dashboards, got ${published.dashboardCount}`);
   assert(draft.status === "draft" && draft.points.length === 0, `the draft version carries no points, got ${JSON.stringify(draft)}`);
 }
 

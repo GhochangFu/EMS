@@ -36,6 +36,7 @@ function orgVersion(code: string, version: number, status: TemplateRef["status"]
         ? [{ pointKey: `kw_v${version}`, kind: "measured", required: true, sourceDataKeyPattern: pattern }]
         : [],
     alarmCount: 0,
+    dashboardCount: 0,
     dashboardWidgetCount: 0,
   };
 }
@@ -52,6 +53,7 @@ const STOCK_WTP: TemplateRef = {
     { pointKey: "score", kind: "derived", required: true, sourceDataKeyPattern: null },
   ],
   alarmCount: 2,
+  dashboardCount: 1,
   dashboardWidgetCount: 3,
 };
 

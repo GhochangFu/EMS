@@ -5,20 +5,31 @@ import { assetTemplates, templatePoints } from "@bms/db";
 import type { BmsDb } from "@bms/db";
 
 import { FLEET_DRIZZLE } from "../../database/database.tokens";
-import { dashboardWidgetRowsFor } from "../asset-templates/asset-dashboards-plan";
+import { dashboardWidgetRowsFor, sortedViewNames } from "../asset-templates/asset-dashboards-plan";
 import { parseStoredTemplateContent } from "../asset-templates/asset-templates-content.schema";
 import { AssetTemplatesStockService } from "../asset-templates/asset-templates-stock.service";
 import type { StockTemplateRef, TemplatePointRef, TemplateRef, ValidateTemplateContext } from "./onboarding-template-refs";
 
-/** The alarm and dashboard-widget counts of one stored `content`; an unparsable one counts 0 (the core refuses it at commit). */
-function contentCounts(content: unknown): { alarmCount: number; dashboardWidgetCount: number } {
+type ContentCounts = Pick<TemplateRef, "alarmCount" | "dashboardCount" | "dashboardWidgetCount">;
+
+const NO_CONTENT_COUNTS: ContentCounts = Object.freeze({ alarmCount: 0, dashboardCount: 0, dashboardWidgetCount: 0 });
+
+/**
+ * The alarm, dashboard and dashboard-widget counts of one stored `content`, per
+ * asset; an unparsable one counts 0 (the core refuses it at commit). A
+ * dashboard is one per view, as the instantiate core writes them
+ * (`sortedViewNames`); a widget row is `dashboardWidgetRowsFor`'s count.
+ */
+function contentCounts(content: unknown): ContentCounts {
   const parsed = parseStoredTemplateContent(content);
   if (!parsed.ok) {
-    return { alarmCount: 0, dashboardWidgetCount: 0 };
+    return NO_CONTENT_COUNTS;
   }
+  const views = parsed.content.dashboards ?? {};
   return {
     alarmCount: (parsed.content.alarms ?? []).length,
-    dashboardWidgetCount: dashboardWidgetRowsFor(parsed.content.dashboards ?? {}),
+    dashboardCount: sortedViewNames(views).length,
+    dashboardWidgetCount: dashboardWidgetRowsFor(views),
   };
 }
 
@@ -112,7 +123,7 @@ export class OnboardingTemplateCatalogService {
         domain: row.domain,
         status,
         points: status === "published" ? (pointsById.get(row.id) ?? []) : [],
-        ...(status === "published" ? contentCounts(row.content) : { alarmCount: 0, dashboardWidgetCount: 0 }),
+        ...(status === "published" ? contentCounts(row.content) : NO_CONTENT_COUNTS),
       };
     });
   }

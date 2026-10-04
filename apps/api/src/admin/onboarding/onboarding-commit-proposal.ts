@@ -161,8 +161,10 @@ const SUMMARY_TEMPLATE_LINES = 10;
  * published version cannot be edited, so the line says so. The counts mirror
  * the instantiate core: an asset point per measured point whose pattern
  * resolves to a non-empty key (`resolveSourceDataKey`), a seeded rule per
- * alarm per asset, and a dashboard widget row per widget per asset (the
- * `dashboardWidgetRowsFor` count the template ref carries).
+ * alarm per asset, and a dashboard per view per asset (the ref's
+ * `dashboardCount`). That last one is the unit the confirm line prints from the
+ * core's `dashboardCount`, so the operator confirms the number they will see;
+ * widget rows (`dashboardWidgetCount`) are the bound's unit, not this line's.
  */
 function templateSummaryParts(draft: OnboardingDraft, ctx: ValidateTemplateContext): string[] {
   const entries = draft.templates ?? [];
@@ -179,7 +181,7 @@ function templateSummaryParts(draft: OnboardingDraft, ctx: ValidateTemplateConte
   let templated = 0;
   let assetPoints = 0;
   let rules = 0;
-  let widgets = 0;
+  let dashboards = 0;
   for (const asset of draft.assets ?? []) {
     if (!asset.template) {
       continue;
@@ -197,13 +199,13 @@ function templateSummaryParts(draft: OnboardingDraft, ctx: ValidateTemplateConte
         templateSourceKey(point.sourceDataKeyPattern, vars, asset.code).outcome === "key",
     ).length;
     rules += resolved.ref.alarmCount;
-    widgets += resolved.ref.dashboardWidgetCount;
+    dashboards += resolved.ref.dashboardCount;
   }
   return [
     ...parts,
     countOf(templated, "templated asset"),
     countOf(assetPoints, "asset point"),
     countOf(rules, "seeded rule"),
-    countOf(widgets, "dashboard widget"),
+    countOf(dashboards, "dashboard"),
   ];
 }

@@ -27,7 +27,7 @@ function point(pointKey: string, pattern: string | null = null): TemplatePointRe
 }
 
 function ref(code: string, version: number | null, status: TemplateRef["status"], points: TemplatePointRef[], name = code): TemplateRef {
-  return { code, version, name, domain: "electrical", status, points, alarmCount: 0, dashboardWidgetCount: 0 };
+  return { code, version, name, domain: "electrical", status, points, alarmCount: 0, dashboardCount: 0, dashboardWidgetCount: 0 };
 }
 
 function context(templates: ValidateTemplateContext): ToolContext {
@@ -459,7 +459,7 @@ export async function assertT19ProposeCommitNamesThePublishAndTheCounts(): Promi
     "2 templated assets",
     "2 asset points",
     "0 seeded rules",
-    "0 dashboard widgets",
+    "0 dashboards",
   ]) {
     assert(summary.includes(part), `the summary holds "${part}", got ${summary}`);
   }
@@ -523,17 +523,26 @@ export function assertT23TheSystemPromptNamesTheTemplateTools(): void {
   assert(prompt.includes("get_template") && prompt.includes("add_template_assets"), "the prompt names get_template and add_template_assets");
 }
 
-/** T19 (the counts): an asset point per measured point whose pattern resolves; rules and widget rows per asset. */
+/**
+ * T19 (the counts): an asset point per measured point whose pattern resolves;
+ * rules per asset; and dashboards per VIEW per asset — the unit the confirm
+ * line prints from the core's `dashboardCount` (code review, round 2). The
+ * ref carries 1 view of 6 widget rows, so a widget-row count would print 12.
+ */
 export function assertT19TheCountsReadTheTemplatePerAsset(): void {
-  const pump = { ...ref("PUMP", 1, "published", [point("kw", "{asset_code}-kw"), point("kvar", "{asset_code}-{phase}"), derived("eff")]), alarmCount: 2, dashboardWidgetCount: 3 };
+  const pump = { ...ref("PUMP", 1, "published", [point("kw", "{asset_code}-kw"), point("kvar", "{asset_code}-{phase}"), derived("eff")]), alarmCount: 2, dashboardCount: 1, dashboardWidgetCount: 6 };
   const draft = baseDraft();
   for (const code of ["P-1", "P-2"]) {
     draft.assets!.push({ rtuIndex: 0, code, name: "Pump", siteName: "Berhampur", domain: "electrical", template: { code: "PUMP", version: 1 } });
   }
   const summary = commitSummary(draft, { organization: [pump], stock: [] });
-  for (const part of ["2 templated assets", "2 asset points", "4 seeded rules", "6 dashboard widgets"]) {
-    assert(summary.includes(part), `the summary holds "${part}", got ${summary}`);
+  // A whole comma-separated part, not a substring: "12 dashboards" — the
+  // widget-row count — contains "2 dashboards".
+  const parts = summary.split(", ");
+  for (const part of ["2 templated assets", "2 asset points", "4 seeded rules", "2 dashboards"]) {
+    assert(parts.includes(part), `the summary holds "${part}", got ${summary}`);
   }
+  assert(!summary.includes("dashboard widget"), `the summary counts dashboards, not widget rows, got ${summary}`);
   assert(!summary.includes("will publish"), "a draft with no template entry publishes nothing");
 }
 

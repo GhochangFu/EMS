@@ -209,6 +209,7 @@ const TEMPLATES: ValidateTemplateContext = {
       status: "published",
       points: [{ pointKey: "kw", kind: "measured", required: true, sourceDataKeyPattern: "{asset_code}_KW" }],
       alarmCount: 0,
+      dashboardCount: 0,
       dashboardWidgetCount: 0,
     },
     {
@@ -219,6 +220,7 @@ const TEMPLATES: ValidateTemplateContext = {
       status: "draft",
       points: [],
       alarmCount: 0,
+      dashboardCount: 0,
       dashboardWidgetCount: 0,
     },
   ],
@@ -235,6 +237,7 @@ const TEMPLATES: ValidateTemplateContext = {
         { pointKey: "score", kind: "derived", required: true, sourceDataKeyPattern: null },
       ],
       alarmCount: 0,
+      dashboardCount: 0,
       dashboardWidgetCount: 0,
     },
   ],
