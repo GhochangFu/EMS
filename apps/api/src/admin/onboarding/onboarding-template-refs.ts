@@ -23,7 +23,10 @@ import {
   type OnboardingDraftTemplate,
 } from "@bms/shared";
 
-import { SOURCE_DATA_KEY_MAX } from "../asset-templates/asset-templates-instantiate-guards";
+// F4.193: the instantiate guards take their bound from this same leaf module,
+// so the onboarding check and `planAsset` cannot disagree, and this module
+// stays pure (no Nest or database import).
+import { SOURCE_DATA_KEY_MAX_LENGTH as SOURCE_DATA_KEY_MAX } from "../../calc/computed-source-data-key";
 import { quoteCell } from "../spreadsheet-guard";
 
 export type TemplatePointRef = {

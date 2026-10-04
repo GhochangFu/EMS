@@ -10,6 +10,7 @@ import {
 import type { JwtPayload } from "@bms/shared";
 
 import { AccessControlService } from "../../auth/access-control.service";
+import { SOURCE_DATA_KEY_MAX_LENGTH } from "../../calc/computed-source-data-key";
 import type { BmsTx } from "../../database/tenant-context";
 import { VocabulariesService } from "../../vocabularies/vocabularies.service";
 import type { VocabularyExecutor } from "../../vocabularies/vocabularies.service";
@@ -44,8 +45,11 @@ import {
  * byte for byte over the shared `substituteSourceKeyPattern`.
  */
 
-/** `bms.asset_points.source_data_key` is `varchar(128)`. */
-export const SOURCE_DATA_KEY_MAX = 128;
+/**
+ * `bms.asset_points.source_data_key` is `varchar(128)`. `F4.193`: one constant
+ * with the leaf module the onboarding template check imports, not a second 128.
+ */
+export const SOURCE_DATA_KEY_MAX = SOURCE_DATA_KEY_MAX_LENGTH;
 
 /**
  * Ceiling on `asset_points` rows per call.
