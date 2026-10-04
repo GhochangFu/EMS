@@ -47,25 +47,46 @@ const PHASE_LABELS: Record<string, string> = {
 /** `F4.194`: the query parameter that holds the session on screen, so a reload resumes it. */
 export const SESSION_PARAM = "session";
 
+/** A session id is a uuid; anything else in `?session=` is never sent to the API. */
+const SESSION_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * Refusals of a resume read that start a new session instead: an id the server
+ * does not know (400, 404), or a session the user may not open (403). The
+ * create call runs the same access gate for the route's organization, so a
+ * fall-back never reaches more than the user already could.
+ */
+const RESUME_FALLBACK_STATUSES: readonly number[] = [400, 403, 404];
+
 /**
  * `F4.194` — the session the page opens. A `?session=` id resumes that session,
  * so a reload keeps the conversation and the credentials form keeps posting to
- * the session on screen. A committed session, one of another organization, or
- * an id the server does not know (400, 404) is not resumed: the page starts a
- * new one, as it does with no id. Any other refusal is shown, not hidden.
+ * the session on screen. Only an editable (`draft`) session of the route's
+ * organization is resumed, and its validation is read again, so the panel does
+ * not claim a draft with issues is ready. Otherwise the page starts a new
+ * session, as it does with no id; a refusal outside the fall-back list is shown.
  */
 async function openSession(orgId: string, resumeId: string | null): Promise<OnboardingChatResponseDto> {
-  if (resumeId) {
+  let session: OnboardingSessionDto | null = null;
+  if (resumeId !== null && SESSION_ID.test(resumeId)) {
     try {
-      const session = await fetchOnboardingSession(resumeId);
-      if (session.status !== "committed" && session.organizationId === orgId) {
-        return { assistantMessage: "", session };
-      }
+      session = await fetchOnboardingSession(resumeId);
     } catch (err) {
-      if (!(err instanceof ApiError) || (err.status !== 400 && err.status !== 404)) {
+      if (!(err instanceof ApiError) || !RESUME_FALLBACK_STATUSES.includes(err.status)) {
         throw err;
       }
     }
+  }
+  if (session !== null && session.status === "draft" && session.organizationId === orgId) {
+    const check = await validateOnboardingSession(session.id);
+    return {
+      assistantMessage: "",
+      session,
+      validationErrors: check.errors,
+      readyToCommit: check.readyToCommit,
+      autoOpenPreview: check.autoOpenPreview,
+      ...(check.autoOpenReason !== undefined ? { autoOpenReason: check.autoOpenReason } : {}),
+    };
   }
   return createOnboardingSession(orgId);
 }

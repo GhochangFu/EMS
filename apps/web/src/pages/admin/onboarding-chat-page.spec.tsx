@@ -4,7 +4,7 @@ import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Route, Routes, useLocation, useParams } from "react-router-dom";
 import { expect, vi } from "vitest";
 
-import type { OnboardingChatResponseDto, OnboardingSessionDto } from "@bms/shared";
+import type { OnboardingChatResponseDto, OnboardingFieldError, OnboardingSessionDto } from "@bms/shared";
 
 import * as api from "../../api/admin/onboarding";
 import { ApiError } from "../../lib/api-error";
@@ -530,24 +530,39 @@ export async function aCommittedSessionFromAChatTurnNavigatesToTheRtus(): Promis
 /**
  * `F4.194` — the page keeps its session in `?session=`, so a reload resumes it.
  *
- * Each case below stubs both `createOnboardingSession` and
- * `fetchOnboardingSession` and asserts which one ran, so a page that ignores
+ * Each case below stubs `createOnboardingSession`, `fetchOnboardingSession`
+ * and `validateOnboardingSession` and asserts which ran, so a page that ignores
  * the id (and creates on every load, the defect) reddens the resume cases, and
  * a page that resumes anything reddens the fall-back cases.
  */
+const RESUMED_ID = "77777777-7777-4777-8777-777777777777";
+
 const RESUMED: OnboardingSessionDto = {
   ...SESSION_WITH_RTU,
-  id: "session-7",
+  id: RESUMED_ID,
   messages: [message("m1", "user", "Kolkata plant"), message("m2", "assistant", "Noted the Kolkata plant.")],
 };
 
-function stubOpen(fetched: OnboardingSessionDto | Error): { create: ReturnType<typeof vi.spyOn>; fetch: ReturnType<typeof vi.spyOn> } {
+type OpenStubs = {
+  create: ReturnType<typeof vi.spyOn>;
+  fetch: ReturnType<typeof vi.spyOn>;
+  validate: ReturnType<typeof vi.spyOn>;
+};
+
+function stubOpen(fetched: OnboardingSessionDto | Error, errors: OnboardingFieldError[] = []): OpenStubs {
   const create = vi.spyOn(api, "createOnboardingSession").mockResolvedValue(chatResponse(SESSION));
   const fetch =
     fetched instanceof Error
       ? vi.spyOn(api, "fetchOnboardingSession").mockRejectedValue(fetched)
       : vi.spyOn(api, "fetchOnboardingSession").mockResolvedValue(fetched);
-  return { create, fetch };
+  const validate = vi.spyOn(api, "validateOnboardingSession").mockResolvedValue({
+    valid: errors.length === 0,
+    errors,
+    preview: {},
+    readyToCommit: false,
+    autoOpenPreview: false,
+  });
+  return { create, fetch, validate };
 }
 
 /** R1 — a load with no id creates a session and writes its id into the URL. */
@@ -562,9 +577,9 @@ export async function aNewSessionWritesItsIdIntoTheUrl(): Promise<void> {
 /** R2 — a load with an id resumes that session and its conversation, and creates none. */
 export async function aSessionIdInTheUrlResumesTheConversation(): Promise<void> {
   const { create, fetch } = stubOpen(RESUMED);
-  renderPage("?session=session-7");
+  renderPage(`?session=${RESUMED_ID}`);
   expect(await screen.findByText("Noted the Kolkata plant.")).toBeInTheDocument();
-  expect(fetch).toHaveBeenCalledWith("session-7");
+  expect(fetch).toHaveBeenCalledWith(RESUMED_ID);
   expect(create).not.toHaveBeenCalled();
 }
 
@@ -572,42 +587,70 @@ export async function aSessionIdInTheUrlResumesTheConversation(): Promise<void> 
 export async function theCredentialsFormPostsToTheResumedSession(): Promise<void> {
   stubOpen(RESUMED);
   const save = vi.spyOn(api, "setOnboardingCredentials").mockResolvedValue(RESUMED);
-  renderPage("?session=session-7");
+  renderPage(`?session=${RESUMED_ID}`);
   await openPreview();
   await userEvent.click(await screen.findByRole("button", { name: "Add credentials" }));
   await userEvent.type(screen.getByPlaceholderText("Username"), "rtu-reader");
   await userEvent.click(screen.getByRole("button", { name: "Save encrypted" }));
   await waitFor(() => expect(save).toHaveBeenCalledTimes(1));
-  expect(save.mock.calls[0]?.[0]).toBe("session-7");
+  expect(save.mock.calls[0]?.[0]).toBe(RESUMED_ID);
 }
 
-/** R4 — a committed session is not resumed: the page starts a new one and points the URL at it. */
+/** R4 — a resumed draft's validation is read again, so its issues show rather than "ready to commit". */
+export async function aResumedDraftShowsItsValidationIssues(): Promise<void> {
+  const { validate } = stubOpen(RESUMED, [{ path: "location.type", message: "Location type is required" }]);
+  renderPage(`?session=${RESUMED_ID}`);
+  await screen.findByText("Noted the Kolkata plant.");
+  await openPreview();
+  expect(await screen.findByText(/location\.type: Location type is required/)).toBeInTheDocument();
+  expect(validate).toHaveBeenCalledWith(RESUMED_ID);
+}
+
+/** R5 — a session that is not a draft (committed) is not resumed: a new one starts and the URL points at it. */
 export async function aCommittedSessionIsNotResumed(): Promise<void> {
   const { create } = stubOpen({ ...RESUMED, status: "committed" });
-  renderPage("?session=session-7");
+  renderPage(`?session=${RESUMED_ID}`);
   await waitFor(() => expect(create).toHaveBeenCalledTimes(1));
   await waitFor(() => expect(screen.getByTestId("location-probe")).toHaveTextContent("?session=session-1"));
 }
 
-/** R5 — a session of another organization is not resumed. */
+/** R6 — a session of another organization is not resumed. */
 export async function aSessionOfAnotherOrganizationIsNotResumed(): Promise<void> {
   const { create } = stubOpen({ ...RESUMED, organizationId: "33333333-3333-4333-8333-333333333333" });
-  renderPage("?session=session-7");
+  renderPage(`?session=${RESUMED_ID}`);
   await waitFor(() => expect(create).toHaveBeenCalledTimes(1));
 }
 
-/** R6 — an id the server does not know (404) starts a new session. */
-export async function anUnknownSessionIdStartsANewSession(): Promise<void> {
-  const { create } = stubOpen(new ApiError('{"message":"Session not found","statusCode":404}', 404));
-  renderPage("?session=session-7");
+/** R7 — an id that is not a uuid is never sent to the API; a new session starts. */
+export async function aNonUuidSessionIdIsNotFetched(): Promise<void> {
+  const { create, fetch } = stubOpen(RESUMED);
+  renderPage("?session=..%2F..%2Forganizations");
   await waitFor(() => expect(create).toHaveBeenCalledTimes(1));
+  expect(fetch).not.toHaveBeenCalled();
 }
 
-/** R7 — any other refusal (403) is shown, and no session is created behind it. */
+function fallsBackOn(status: number): () => Promise<void> {
+  return async () => {
+    const { create } = stubOpen(new ApiError(`{"message":"refused","statusCode":${status}}`, status));
+    renderPage(`?session=${RESUMED_ID}`);
+    await waitFor(() => expect(create).toHaveBeenCalledTimes(1));
+  };
+}
+
+/** R8 — a 400 on the resume read starts a new session. */
+export const aResume400StartsANewSession = fallsBackOn(400);
+
+/** R9 — a 403 (a session the user may not open) starts a new session; the create runs its own gate. */
+export const aResume403StartsANewSession = fallsBackOn(403);
+
+/** R10 — a 404 (an id the server does not know) starts a new session. */
+export const aResume404StartsANewSession = fallsBackOn(404);
+
+/** R11 — any other refusal (503) is shown, and no session is created behind it. */
 export async function aRefusedResumeIsShownNotReplaced(): Promise<void> {
-  const { create } = stubOpen(new ApiError('{"message":"Organization is outside your access scope","statusCode":403}', 403));
-  renderPage("?session=session-7");
+  const { create } = stubOpen(new ApiError('{"message":"The database is not reachable","statusCode":503}', 503));
+  renderPage(`?session=${RESUMED_ID}`);
   const banner = await findTheOnlyAlert();
-  expect(banner).toHaveTextContent("Organization is outside your access scope");
+  expect(banner).toHaveTextContent("The database is not reachable");
   expect(create).not.toHaveBeenCalled();
 }

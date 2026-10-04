@@ -18,7 +18,11 @@ import {
   theCredentialsFormPostsToTheResumedSession,
   aCommittedSessionIsNotResumed,
   aSessionOfAnotherOrganizationIsNotResumed,
-  anUnknownSessionIdStartsANewSession,
+  aResumedDraftShowsItsValidationIssues,
+  aNonUuidSessionIdIsNotFetched,
+  aResume400StartsANewSession,
+  aResume403StartsANewSession,
+  aResume404StartsANewSession,
   aRefusedResumeIsShownNotReplaced,
 } from "./onboarding-chat-page.spec";
 
@@ -115,6 +119,10 @@ describe("F4.194 onboarding chat page keeps its session in the URL", () => {
     await theCredentialsFormPostsToTheResumedSession();
   });
 
+  it("reads a resumed draft's validation again and shows its issues", async () => {
+    await aResumedDraftShowsItsValidationIssues();
+  });
+
   it("does not resume a committed session", async () => {
     await aCommittedSessionIsNotResumed();
   });
@@ -123,11 +131,23 @@ describe("F4.194 onboarding chat page keeps its session in the URL", () => {
     await aSessionOfAnotherOrganizationIsNotResumed();
   });
 
-  it("starts a new session for an id the server does not know", async () => {
-    await anUnknownSessionIdStartsANewSession();
+  it("never sends an id that is not a uuid to the API", async () => {
+    await aNonUuidSessionIdIsNotFetched();
   });
 
-  it("shows a refused resume and creates no session behind it", async () => {
+  it("starts a new session on a 400 resume read", async () => {
+    await aResume400StartsANewSession();
+  });
+
+  it("starts a new session on a 403 resume read", async () => {
+    await aResume403StartsANewSession();
+  });
+
+  it("starts a new session on a 404 resume read", async () => {
+    await aResume404StartsANewSession();
+  });
+
+  it("shows any other refused resume and creates no session behind it", async () => {
     await aRefusedResumeIsShownNotReplaced();
   });
 });
