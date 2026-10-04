@@ -34,18 +34,28 @@ import type { InstantiateAssetsBody } from "./asset-templates.schema";
  * a query builder is itself thenable, so an extra promise hop would silently
  * shift a spare answer and the case would pass for the wrong reason.
  *
+ * **Two queues since `F3.22` PR 1** (ADR 0091 decision 1). The wrapper makes one
+ * `fleetDb` read — the template's organization, to open `withTenant` — and the
+ * core makes every guard read on the transaction it is handed: the template row
+ * (a bare row now; the `organizations` join is gone), the target, the points and
+ * the catalog. Both counts are asserted, so a guard read that drifted back onto
+ * `fleetDb`, or a new read before the bound, desyncs a queue by name.
+ *
  * The plan's Task 6 wording asked for the refusal "before any read of the
  * target". That is not implementable as written and was not implemented: D7
  * pins the dashboard term to the existing `assertBatchFits` call, which runs
  * after `resolveTarget` because it needs the template's measured-point count.
  * Hoisting it would change the 404/400 precedence of a bad target. What is
  * asserted instead is that **no write is attempted** — with a positive control:
- * the tenant handle's `transaction` throws a distinctive error, so a service
- * that reached it fails loudly rather than by an absence check.
+ * the transaction's `insert` throws a distinctive error, so a service that
+ * reached a write fails loudly rather than by an absence check.
  */
 
-/** How many `fleetDb.select()` chains `instantiate` runs before the bound. */
-const EXPECTED_READS = 4;
+/** `fleetDb.select()` chains before the bound: the wrapper's organization lookup. */
+const EXPECTED_FLEET_READS = 1;
+
+/** `tx.select()` chains before the bound: template, target, points, catalog. */
+const EXPECTED_TX_READS = 4;
 
 const ORG = "11111111-1111-4111-8111-111111111111";
 const TEMPLATE_ID = "22222222-2222-4222-8222-222222222222";
@@ -73,29 +83,58 @@ const CONTENT = {
 /** The sentinel a reached write raises — the positive control, not an absence test. */
 const WROTE = "the batch reached the write; the dashboard bound did not refuse it";
 
-type Reads = { count: number };
+type Reads = { fleet: number; tx: number };
 
 /**
  * A drizzle-shaped query builder that answers from a queue.
  *
- * Every chaining method returns the same object and `then` shifts one answer.
- * Written out rather than proxied so a method this service starts calling fails
- * with a named `TypeError` instead of resolving to an empty array.
+ * Every chaining method returns the same object and `then` shifts one answer
+ * (`[]` once the queue is empty). Written out rather than proxied so a method
+ * this service starts calling fails with a named `TypeError` instead of
+ * resolving to an empty array.
  */
-function fakeFleetDb(answers: unknown[][], reads: Reads): never {
+function queueBuilder(answers: unknown[][], count: () => void): Record<string, unknown> {
   const builder: Record<string, unknown> = {};
   for (const method of ["from", "innerJoin", "leftJoin", "where", "limit", "orderBy", "groupBy"]) {
     builder[method] = () => builder;
   }
   builder.then = (resolve: (value: unknown) => void) => {
-    reads.count += 1;
+    count();
     resolve(answers.shift() ?? []);
   };
+  return builder;
+}
+
+/** The wrapper's handle: one answer, the template's organization. */
+function fakeFleetDb(reads: Reads): never {
+  const builder = queueBuilder([[{ organizationId: ORG }]], () => {
+    reads.fleet += 1;
+  });
   return { select: () => builder, selectDistinct: () => builder } as never;
 }
 
-/** Everything `instantiate` reads on `fleetDb` before the bound, in order. */
-function answersForTheBound(): unknown[][] {
+/**
+ * The tenant handle. `transaction` runs the callback with a fake `tx` — `execute`
+ * absorbs `withTenant`'s `set_config`, `select` answers the core's guard reads in
+ * order, and `insert` raises `WROTE`.
+ */
+function fakeTenantDb(reads: Reads): never {
+  const builder = queueBuilder(txAnswersForTheBound(), () => {
+    reads.tx += 1;
+  });
+  const tx = {
+    execute: async () => undefined,
+    select: () => builder,
+    selectDistinct: () => builder,
+    insert: () => {
+      throw new Error(WROTE);
+    },
+  };
+  return { transaction: async (fn: (handle: unknown) => Promise<unknown>) => fn(tx) } as never;
+}
+
+/** Everything the core reads on `tx` before the bound, in order. */
+function txAnswersForTheBound(): unknown[][] {
   const template = {
     id: TEMPLATE_ID,
     organizationId: ORG,
@@ -106,8 +145,8 @@ function answersForTheBound(): unknown[][] {
     content: CONTENT,
   };
   return [
-    // fetchTemplate
-    [{ template }],
+    // fetchTemplateRow — a bare row; the `organizations` join is gone (F3.22).
+    [template],
     // resolveTarget, location branch
     [{ locationId: LOCATION_ID, locationName: "Bound Site", organizationId: ORG, active: true }],
     // the template's points — two measured, so the POINT bound stays clear and
@@ -147,14 +186,9 @@ function serviceUnderTest(reads: Reads): AssetTemplateInstantiationService {
     canManageOrganization: async () => true,
     canManageLocation: async () => true,
   } as unknown as AccessControlService;
-  const tenantDb = {
-    transaction: () => {
-      throw new Error(WROTE);
-    },
-  } as never;
   return new AssetTemplateInstantiationService(
-    fakeFleetDb(answersForTheBound(), reads),
-    tenantDb,
+    fakeFleetDb(reads),
+    fakeTenantDb(reads),
     access,
     {} as MasterDataAuditService,
     {} as VocabulariesService,
@@ -184,7 +218,7 @@ function bodyFor(assetCount: number): InstantiateAssetsBody {
  * the arithmetic to pass.
  */
 export async function assertTheDashboardTermRefusesAnOverLargeBatch(): Promise<void> {
-  const reads: Reads = { count: 0 };
+  const reads: Reads = { fleet: 0, tx: 0 };
   const service = serviceUnderTest(reads);
   let message = "";
   try {
@@ -201,12 +235,12 @@ export async function assertTheDashboardTermRefusesAnOverLargeBatch(): Promise<v
 /**
  * The same call attempted no write — the positive control on the claim above.
  *
- * `WROTE` is raised by both the tenant transaction and the dashboards service,
- * so either of the two ways to reach a write turns this into a named failure
- * rather than a silent pass.
+ * `WROTE` is raised by both the transaction's `insert` and the dashboards
+ * service, so either of the two ways to reach a write turns this into a named
+ * failure rather than a silent pass.
  */
 export async function assertTheOverLargeBatchWroteNothing(): Promise<void> {
-  const reads: Reads = { count: 0 };
+  const reads: Reads = { fleet: 0, tx: 0 };
   const service = serviceUnderTest(reads);
   let message = "";
   try {
@@ -218,7 +252,7 @@ export async function assertTheOverLargeBatchWroteNothing(): Promise<void> {
   // The read count is the desync guard: the builder is thenable, so an extra
   // promise hop would shift a spare answer and the refusal above could come
   // from a read that returned `[]` rather than from the bound.
-  expect(reads.count).toBe(EXPECTED_READS);
+  expect(reads).toEqual({ fleet: EXPECTED_FLEET_READS, tx: EXPECTED_TX_READS });
 }
 
 /**
@@ -229,7 +263,7 @@ export async function assertTheOverLargeBatchWroteNothing(): Promise<void> {
  * proceeds and fails at the write instead, which is the fake's sentinel.
  */
 export async function assertABatchInsideTheBoundIsNotRefused(): Promise<void> {
-  const reads: Reads = { count: 0 };
+  const reads: Reads = { fleet: 0, tx: 0 };
   const service = serviceUnderTest(reads);
   let message = "";
   try {

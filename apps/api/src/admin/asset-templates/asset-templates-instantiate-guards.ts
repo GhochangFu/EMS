@@ -10,6 +10,7 @@ import {
 import type { JwtPayload } from "@bms/shared";
 
 import { AccessControlService } from "../../auth/access-control.service";
+import type { BmsTx } from "../../database/tenant-context";
 import { VocabulariesService } from "../../vocabularies/vocabularies.service";
 import { assertDashboardBatchFits } from "./asset-dashboards-plan";
 import { parseStoredTemplateContent } from "./asset-templates-content.schema";
@@ -29,7 +30,8 @@ import {
 /**
  * `F3.22` PR 1 (ADR 0091 decision 1) — the instantiate guards, moved verbatim out of
  * `AssetTemplateInstantiationService` with their executors and collaborators turned into
- * parameters, so a transaction-aware core can call them on its own `tx`.
+ * parameters, so the transaction-aware core (`asset-templates-instantiate-core.ts`) calls
+ * them on its own `tx`. A `db: BmsDb` parameter accepts that `tx`.
  */
 
 /**
@@ -65,12 +67,13 @@ export type InstantiationTarget = {
    * The gateway the batch attaches to, or `null` on the location branch.
    *
    * **The id only, never the RTU's flags** (`F4.139` second pass). `resolveTarget`
-   * runs on `fleetDb`, before `withTenant` opens the transaction the batch is
-   * written in; carrying `ingest_enabled`/`source_type` across that boundary made
-   * half of the `telemetrySource` predicate read a row from outside the write's
-   * transaction, so an operator disabling the RTU between the two reads got a
-   * batch derived from the flags as they were before the write began. The flags
-   * are re-read on the tenant transaction instead (`deriveTelemetrySource`).
+   * used to run on `fleetDb`, before `withTenant` opened the transaction the batch
+   * is written in; carrying `ingest_enabled`/`source_type` across that boundary
+   * made half of the `telemetrySource` predicate read a row from outside the
+   * write's transaction, so an operator disabling the RTU between the two reads
+   * got a batch derived from the flags as they were before the write began. The
+   * flags are read on the tenant transaction instead (`deriveTelemetrySource`);
+   * `resolveTarget` reads on `tx` since `F3.22`, but its miss probe reads `fleetDb`.
    */
   rtuId: string | null;
 };
@@ -148,7 +151,7 @@ export function parseTemplateContentForInstantiate(
 
 /**
  * Re-validates the alarms' `category`, `severity` and `philosophy.skill`
- * against the live vocabularies, **before the transaction opens**.
+ * against the live vocabularies, **before anything is written**.
  *
  * The publish gate is not enough on its own. A published version is
  * immutable and its content is frozen, but the vocabularies are not: a value
@@ -264,11 +267,11 @@ export function assertBatchFits(
  * really does hold its code. Inheriting the bug here would turn a batch of
  * forty assets into a rolled-back constraint error.
  *
- * `fleetDb`, like `assertAssetCodesFree`: this runs before the transaction
- * opens, and `automation_rules` is `FORCE`d, so a bare tenant handle would
- * read zero rows and find no collision at all. Scoped to the template's own
- * organization, which is where the unique index is scoped — so unlike the
- * asset-code check this discloses nothing across a tenant boundary.
+ * On the core's `tx` since `F3.22` (ADR 0091 decision 1), so a rule seeded
+ * earlier in the same transaction is seen. `automation_rules` is `FORCE`d and
+ * the GUC `withTenant` set is the template's organization — which is where the
+ * unique index is scoped, so `tx` sees every row that can collide, and unlike
+ * the asset-code check this discloses nothing across a tenant boundary.
  */
 export async function assertRuleCodesFree(
   db: BmsDb,
@@ -336,26 +339,40 @@ export async function assertRuleCodesFree(
  * echoes every hit turns this into a cross-tenant existence oracle: a caller
  * could submit 200 guessable codes per call and learn which exist anywhere in
  * the deployment, including other organizations' equipment — and because this
- * runs before the transaction, the probe writes nothing and raises no audit
+ * refuses before the first insert, the probe writes nothing and raises no audit
  * row. So codes inside the caller's own writable scope are named (that is the
  * useful, ADR-mandated part) and any others are reported only as a count.
+ *
+ * **Two reads, combined by code** (`F3.22`, plan §11 Q1). `tx` sees this
+ * organization's rows, including one written earlier in the same transaction;
+ * `fleetDb` sees the committed estate, every organization. A code found by both
+ * is kept once, from the `tx` read, so a committed same-organization collision
+ * is not counted twice.
  */
 export async function assertAssetCodesFree(
+  tx: BmsTx,
   fleetDb: BmsDb,
   accessControl: AccessControlService,
   jwt: JwtPayload,
   entries: InstantiateAssetBody[],
 ): Promise<void> {
   const codes = entries.map((entry) => entry.code);
-  // E7.1b: `assets` read on `fleetDb` — FORCEd in 0047. This collision check
-  // must see across the tenant boundary (codes are unique estate-wide, and a
-  // zero-row tenantDb read would miss a collision and let the INSERT fail with
-  // a raw constraint error instead of a named one); the grant is applied below
-  // only to decide which codes may be NAMED versus counted.
-  const taken = await fleetDb
+  const sameOrganization = await tx
     .select({ code: assets.code, locationId: assets.locationId })
     .from(assets)
     .where(inArray(assets.code, codes));
+  // E7.1b: `assets` read on `fleetDb` — FORCEd in 0047. This collision check
+  // must see across the tenant boundary (codes are unique estate-wide, and a
+  // tenant read sees one organization only, so it would miss a collision and
+  // let the INSERT fail with a raw constraint error instead of a named one);
+  // the grant is applied below only to decide which codes may be NAMED versus
+  // counted.
+  const estate = await fleetDb
+    .select({ code: assets.code, locationId: assets.locationId })
+    .from(assets)
+    .where(inArray(assets.code, codes));
+  const seen = new Set(sameOrganization.map((row) => row.code));
+  const taken = [...sameOrganization, ...estate.filter((row) => !seen.has(row.code))];
   if (taken.length === 0) {
     return;
   }
