@@ -195,6 +195,7 @@
     "tests/f3.78-demo-users-seed-linked.integration.test.ts",
     "tests/f3.78-keycloak-realm-file.test.ts",
     "tests/f3.21-organization-llm-settings-schema.test.ts",
-    "tests/f3.78-users-admin-reachable.test.ts"
+    "tests/f3.78-users-admin-reachable.test.ts",
+    "tests/f3.22-template-cores.test.ts"
   ]
 }
