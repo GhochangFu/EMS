@@ -1,5 +1,6 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
+import { useEffect } from "react";
 import { MemoryRouter, Route, Routes, useParams } from "react-router-dom";
 import { expect, vi } from "vitest";
 
@@ -91,7 +92,23 @@ vi.mock("../../components/control-room/scoped-dashboards-list", () => ({
   ),
 }));
 
-const PANELS = ["health-panel", "trend-panel", "dashboards-panel"] as const;
+/*
+ * `F3.79` — the site map is a stand-in too: it prints the organization id it is handed and
+ * counts its mounts, so a case can tell a fresh map (keyed by organization) from a reused one.
+ * Its own read is gated by `organization-site-map.spec.tsx`.
+ */
+const siteMapMounts = vi.hoisted(() => ({ count: 0 }));
+
+vi.mock("../../components/control-room/organization-site-map", () => ({
+  OrganizationSiteMap: ({ organizationId }: { organizationId: string }) => {
+    useEffect(() => {
+      siteMapMounts.count += 1;
+    }, []);
+    return <div data-testid="site-map-panel" data-organization-id={organizationId} />;
+  },
+}));
+
+const PANELS = ["site-map-panel", "health-panel", "trend-panel", "dashboards-panel"] as const;
 
 const ORG_ESKOM = { id: "org-eskom", code: "ESKOM", name: "Eskom" };
 const ORG_PHE = { id: "org-phe", code: "PHEWB", name: "PHE West Bengal" };
@@ -383,6 +400,68 @@ export async function aPendingKpiReadRendersNoPanels(): Promise<void> {
   for (const testId of PANELS) {
     expect(screen.queryByTestId(testId), `${testId} must not render`).toBeNull();
   }
+}
+
+/** P6 — `F3.79`: the site map reads by the organization id. */
+export async function theSiteMapReadsByTheOrganizationId(): Promise<void> {
+  stubReads(TWO_ORGS);
+  renderAt(ORG_A.id);
+
+  await siteGrid();
+  expect(screen.getByTestId("site-map-panel").dataset.organizationId).toBe(ORG_A.id);
+}
+
+/** P7 — `F3.79`: the site map sits above the site cards and the alarms rail. */
+export async function theSiteMapSitsAboveTheSiteCards(): Promise<void> {
+  stubReads(TWO_ORGS);
+  renderAt(ORG_A.id);
+
+  const grid = await siteGrid();
+  const map = screen.getByTestId("site-map-panel");
+  const rail = screen.getByTestId("alarms-rail");
+  expect(
+    map.compareDocumentPosition(grid) & Node.DOCUMENT_POSITION_FOLLOWING,
+    "the site cards must follow the map",
+  ).toBeTruthy();
+  expect(
+    map.compareDocumentPosition(rail) & Node.DOCUMENT_POSITION_FOLLOWING,
+    "the alarms rail must follow the map",
+  ).toBeTruthy();
+}
+
+/** Two organizations, each with two sites, so neither skips to a site. */
+const TWO_FULL_ORGS: LocationKpiSummary[] = [
+  ...TWO_ORGS,
+  site({ id: "b2", name: "Beta Two", organization: ORG_B }),
+];
+
+/**
+ * P8 — `F3.79`: a move to another organization mounts a new site map, so the map fits the new
+ * organization's box (`FitToSites` fits once per mount). The map's organization id after the
+ * move is the control that the page re-rendered with org B.
+ */
+export async function anotherOrganizationMountsANewSiteMap(): Promise<void> {
+  stubReads(TWO_FULL_ORGS);
+  siteMapMounts.count = 0;
+  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  const tree = (organizationId: string) => (
+    <QueryClientProvider client={queryClient}>
+      <MemoryRouter initialEntries={["/"]}>
+        <Routes>
+          <Route path="/" element={<ControlRoomOrganizationPage user={USER} organizationId={organizationId} />} />
+        </Routes>
+      </MemoryRouter>
+    </QueryClientProvider>
+  );
+  const view = render(tree(ORG_A.id));
+  await siteGrid();
+  expect(siteMapMounts.count).toBe(1);
+
+  view.rerender(tree(ORG_B.id));
+  await waitFor(() =>
+    expect(screen.getByTestId("site-map-panel").dataset.organizationId).toBe(ORG_B.id),
+  );
+  expect(siteMapMounts.count, "org B must get a new map, not org A's").toBe(2);
 }
 
 export function cleanupPage(): void {

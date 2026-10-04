@@ -2,6 +2,7 @@
 import { afterEach, describe, it } from "vitest";
 
 import {
+  anotherOrganizationMountsANewSiteMap,
   aPendingKpiReadRendersNoPanels,
   anUnreadableOrganizationRendersNoPanels,
   theDashboardsListReadsByTheOrganizationId,
@@ -20,6 +21,8 @@ import {
   thePageMakesNoAssetsRead,
   theRailIsSentNoAssetIds,
   theRailReadsByTheOrganizationId,
+  theSiteMapReadsByTheOrganizationId,
+  theSiteMapSitsAboveTheSiteCards,
 } from "./organization-page.spec";
 
 /**
@@ -98,5 +101,17 @@ describe("F3.66 U3 ControlRoomOrganizationPage", () => {
 
   it("P5 renders no panel while the KPI read is pending (F3.72 D3)", async () => {
     await aPendingKpiReadRendersNoPanels();
+  });
+
+  it("P6 gives the site map the organization id (F3.79)", async () => {
+    await theSiteMapReadsByTheOrganizationId();
+  });
+
+  it("P7 places the site map above the site cards and the alarms rail (F3.79)", async () => {
+    await theSiteMapSitsAboveTheSiteCards();
+  });
+
+  it("P8 mounts a new site map for another organization (F3.79)", async () => {
+    await anotherOrganizationMountsANewSiteMap();
   });
 });

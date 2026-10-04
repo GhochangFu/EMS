@@ -1,5 +1,7 @@
 import type { MapSiteDto } from "@bms/shared";
 
+import { siteAssetsPath } from "./smoc-pages";
+
 /**
  * `F4.157` (ADR 0077, D8) — a map pin is operational (a larger marker, live
  * health from alarms and telemetry) when it joins a `bms.locations` row. The
@@ -52,4 +54,42 @@ export function siteBounds(sites: readonly MapSiteDto[]): SiteBounds | null {
     [south, west],
     [north, east],
   ];
+}
+
+/**
+ * `F3.79` — the organization's own pins, for the Control Room's organization
+ * level. A pin carries an organization only through its join to a location
+ * (`map.service.ts`), so these are the organization's operational sites; a
+ * reference station, which joins none, never matches.
+ */
+export function organizationPins(
+  sites: readonly MapSiteDto[],
+  organizationId: string,
+): MapSiteDto[] {
+  return sites.filter((site) => site.organization?.id === organizationId);
+}
+
+/** The link at the foot of a map pin's popup. */
+export type MapSiteLink = { to: string; label: string };
+
+/** The Sites map's popup link: the site's Assets & RTUs tab (`F3.72` OQ9). */
+export function estateSiteLink(site: MapSiteDto): MapSiteLink {
+  return {
+    to: site.canonicalLocationId ? siteAssetsPath(site.canonicalLocationId) : "/",
+    label: "Dashboard",
+  };
+}
+
+/**
+ * `F3.79` — the org site map's popup link: the next drill-down level, the site's overview.
+ * `organizationPins` keeps only pins that join a location, so the `/control-room` fallback is
+ * not reached from the org site map; it keeps the function total over `MapSiteDto`.
+ */
+export function controlRoomSiteLink(site: MapSiteDto): MapSiteLink {
+  return {
+    to: site.canonicalLocationId
+      ? `/control-room/site/${encodeURIComponent(site.canonicalLocationId)}`
+      : "/control-room",
+    label: "Open site",
+  };
 }

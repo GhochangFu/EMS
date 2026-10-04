@@ -5,6 +5,7 @@ import { expect, vi } from "vitest";
 
 import type { MapSiteDto } from "@bms/shared";
 
+import { estateSiteLink } from "../lib/map-site";
 import { resolveRoles } from "../lib/theme";
 import { useThemeStore } from "../stores/theme-store";
 import { fromTokenMap, ROLE_TOKENS } from "../test-role-tokens";
@@ -65,7 +66,12 @@ const SITES = [HEALTHY];
 function toggleToDark(): PathOptions {
   render(
     <MemoryRouter>
-      <WorldMap sites={SITES} />
+      <WorldMap
+        sites={SITES}
+        siteLink={estateSiteLink}
+        heightClassName="h-[min(70vh,560px)]"
+        scrollWheelZoom
+      />
     </MemoryRouter>,
   );
   act(() => useThemeStore.getState().setTheme("dark"));

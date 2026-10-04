@@ -7,6 +7,7 @@ import { PageHeader } from "../components/page-header";
 import { SectionCard } from "../components/section-card";
 import { WorldMap } from "../components/world-map";
 import { AppShell } from "../layouts/app-shell";
+import { estateSiteLink } from "../lib/map-site";
 import { socketBaseUrl } from "../lib/socket-url";
 import { useAuthStore, type AuthUser } from "../stores/auth-store";
 
@@ -76,7 +77,12 @@ export function MapPage({ user }: MapPageProps) {
           </p>
         ) : (
           <SectionCard bodyClassName="p-0">
-            <WorldMap sites={q.data} />
+            <WorldMap
+              sites={q.data}
+              siteLink={estateSiteLink}
+              heightClassName="h-[min(70vh,560px)]"
+              scrollWheelZoom
+            />
           </SectionCard>
         )}
       </div>

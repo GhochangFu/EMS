@@ -1,6 +1,13 @@
 import type { MapSiteDto } from "@bms/shared";
 
-import { isOperationalSite, MAP_TILE, siteBounds } from "./map-site";
+import {
+  controlRoomSiteLink,
+  estateSiteLink,
+  isOperationalSite,
+  MAP_TILE,
+  organizationPins,
+  siteBounds,
+} from "./map-site";
 
 function assert(condition: boolean, message: string): void {
   if (!condition) {
@@ -108,4 +115,63 @@ export function runSiteBoundsFallsBackToAllSitesTest(): void {
 export function runSiteBoundsEmptyIsNullTest(): void {
   const bounds = siteBounds([]);
   assert(bounds === null, `expected null for no sites, got ${JSON.stringify(bounds)}`);
+}
+
+/** A complete `MapSiteDto` for other specs (the org site map). */
+export { site as mapSite };
+
+const ORG_A = { id: "org-a", code: "ALPHA", name: "Alpha Utilities" };
+const ORG_B = { id: "org-b", code: "BETA", name: "Beta Water" };
+
+/**
+ * `F3.79` O1 — the org site map keeps only this organization's pins. The pin of
+ * this organization is the positive control for the two pins it drops: another
+ * organization's, and a reference station with no organization.
+ */
+export function runOrganizationPinsKeepsOnlyThisOrganizationTest(): void {
+  const pins = organizationPins(
+    [
+      site({ id: "a1", canonicalLocationId: "loc-a1", organization: ORG_A }),
+      site({ id: "b1", canonicalLocationId: "loc-b1", organization: ORG_B }),
+      site({ id: "st", canonicalLocationId: null, organization: null }),
+      site({ id: "a2", canonicalLocationId: "loc-a2", organization: ORG_A }),
+    ],
+    ORG_A.id,
+  );
+  assert(
+    JSON.stringify(pins.map((p) => p.id)) === JSON.stringify(["a1", "a2"]),
+    `expected only org A's pins a1 and a2, got ${JSON.stringify(pins.map((p) => p.id))}`,
+  );
+}
+
+/** `F3.79` O2 — an organization with no pin gets an empty list, not every pin. */
+export function runOrganizationPinsEmptyForAnOrganizationWithNoPinTest(): void {
+  const pins = organizationPins([site({ id: "b1", organization: ORG_B })], ORG_A.id);
+  assert(pins.length === 0, `expected no pins for org A, got ${pins.length}`);
+}
+
+/**
+ * `F3.79` L1 — the Sites map's popup link is unchanged: "Dashboard", to the
+ * site's Assets & RTUs tab (`F3.72` OQ9), or `/` for a pin that joins no location.
+ */
+export function runEstateSiteLinkOpensTheAssetsTabTest(): void {
+  const joined = estateSiteLink(site({ canonicalLocationId: "loc-1" }));
+  assert(
+    joined.label === "Dashboard" && joined.to === "/control-room/site/loc-1/assets",
+    `expected Dashboard -> /control-room/site/loc-1/assets, got ${JSON.stringify(joined)}`,
+  );
+  const unjoined = estateSiteLink(site({ canonicalLocationId: null }));
+  assert(unjoined.to === "/", `expected / for an unjoined pin, got ${unjoined.to}`);
+}
+
+/**
+ * `F3.79` L2 — the org site map's popup link opens the next drill-down level:
+ * the site's Control Room overview, not one of its tabs.
+ */
+export function runControlRoomSiteLinkOpensTheSiteLevelTest(): void {
+  const link = controlRoomSiteLink(site({ canonicalLocationId: "loc-1" }));
+  assert(
+    link.label === "Open site" && link.to === "/control-room/site/loc-1",
+    `expected Open site -> /control-room/site/loc-1, got ${JSON.stringify(link)}`,
+  );
 }

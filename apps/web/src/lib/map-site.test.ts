@@ -1,7 +1,11 @@
 import { describe, it } from "vitest";
 
 import {
+  runControlRoomSiteLinkOpensTheSiteLevelTest,
+  runEstateSiteLinkOpensTheAssetsTabTest,
   runMapTileAttributionTest,
+  runOrganizationPinsEmptyForAnOrganizationWithNoPinTest,
+  runOrganizationPinsKeepsOnlyThisOrganizationTest,
   runMapTileIsOpenStreetMapTest,
   runOperationalSiteJoinedPumpStationTest,
   runOperationalSiteUnjoinedRsmocTest,
@@ -38,5 +42,21 @@ describe("map-site", () => {
 
   it("has no box for no sites (F4.163 B3)", () => {
     runSiteBoundsEmptyIsNullTest();
+  });
+
+  it("keeps only this organization's pins (F3.79 O1)", () => {
+    runOrganizationPinsKeepsOnlyThisOrganizationTest();
+  });
+
+  it("keeps no pin for an organization with none (F3.79 O2)", () => {
+    runOrganizationPinsEmptyForAnOrganizationWithNoPinTest();
+  });
+
+  it("links the Sites map popup to the site's Assets & RTUs tab (F3.79 L1)", () => {
+    runEstateSiteLinkOpensTheAssetsTabTest();
+  });
+
+  it("links the org site map popup to the site's Control Room level (F3.79 L2)", () => {
+    runControlRoomSiteLinkOpensTheSiteLevelTest();
   });
 });
