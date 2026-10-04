@@ -3,6 +3,13 @@ import type { OnboardingDraft } from "@bms/shared";
 
 import { cutToBound, cutToBoundWithHashSuffix } from "./onboarding-draft-caps";
 
+/**
+ * `F3.79` (owner ruling 2026-10-04) — where an onboarded location goes when nothing gives it
+ * coordinates: Mumbai, not Pretoria. Every active location is a map pin, so this is where a new
+ * site shows until an operator corrects it. The admin Locations form defaults to the same point.
+ */
+export const ONBOARDING_DEFAULT_COORDINATES = { latitude: 19.076, longitude: 72.8777 } as const;
+
 type DraftLocation = NonNullable<OnboardingDraft["location"]>;
 
 /**
@@ -41,8 +48,8 @@ export function deriveLocationPatch(input: {
   );
   return {
     name,
-    latitude: stored?.latitude ?? -25.7,
-    longitude: stored?.longitude ?? 28.2,
+    latitude: stored?.latitude ?? ONBOARDING_DEFAULT_COORDINATES.latitude,
+    longitude: stored?.longitude ?? ONBOARDING_DEFAULT_COORDINATES.longitude,
     province: stored?.province,
     capital: stored?.capital,
     ...kept,

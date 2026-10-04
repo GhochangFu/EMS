@@ -13,6 +13,7 @@ import { MAX_HEADER_COLUMNS, SHEET_ROWS_BOUND } from "../telemetry-import/teleme
 import { MAX_IMPORT_FILE_BYTES } from "../telemetry-import/telemetry-import.schema";
 import { cellLengthProblem, workbookSectionCountProblem } from "./onboarding-draft-caps";
 import type { OnboardingWorkbookCellSection } from "./onboarding-draft-caps";
+import { ONBOARDING_DEFAULT_COORDINATES } from "./onboarding-location-derive";
 import { MAX_RTU_CREDENTIAL_CHARS, onboardingProtocolSchema } from "./onboarding.schema";
 import type { OnboardingDraftInput } from "./onboarding.schema";
 
@@ -454,8 +455,8 @@ export class OnboardingExcelService {
       const idx = headers.indexOf(key);
       return idx >= 0 ? values[idx] ?? fallback : fallback;
     };
-    const lat = Number.parseFloat(get("latitude", "-25.7"));
-    const lng = Number.parseFloat(get("longitude", "28.2"));
+    const lat = Number.parseFloat(get("latitude"));
+    const lng = Number.parseFloat(get("longitude"));
     // F4.104 — bounded **after** the transform, in `LOCATION_HEADERS` column
     // order so a row with two long cells always gets the same sentence.
     //
@@ -514,8 +515,8 @@ export class OnboardingExcelService {
       code,
       slug,
       type,
-      latitude: Number.isFinite(lat) ? lat : -25.7,
-      longitude: Number.isFinite(lng) ? lng : 28.2,
+      latitude: Number.isFinite(lat) ? lat : ONBOARDING_DEFAULT_COORDINATES.latitude,
+      longitude: Number.isFinite(lng) ? lng : ONBOARDING_DEFAULT_COORDINATES.longitude,
       province: province || undefined,
     };
   }
