@@ -564,6 +564,38 @@ export async function assertCreateCoreHoldsOneTenantConnection(h: Harness): Prom
 }
 
 /**
+ * C14 — the domain refusal's own lookup (`unknownCodeMessage`, the live codes
+ * it lists back) runs on the core's `tx` too. A bad domain is the one path that
+ * reaches it, so C11's `"water"` cannot cover it.
+ */
+export async function assertCreateCoreDomainRefusalHoldsOneTenantConnection(
+  h: Harness,
+): Promise<void> {
+  const badDomain = `f322_no_such_domain_${unique().toLowerCase()}`;
+  const message = await inRolledBackTransaction<string | null>(
+    h.single.tenantDb,
+    h.fx.organizationId,
+    async (tx) => {
+      const refused = await messageOf(() =>
+        h.single.templates.createInTransaction(tx, h.fx.adminJwt, {
+          ...draftBody(h.fx, `${TEST_CODE_PREFIX}C14-${unique()}`, h.fx.seededPointKey),
+          domain: badDomain,
+        }),
+      );
+      throw new RollbackSentinel(refused);
+    },
+  );
+  assert(
+    !(message ?? "").includes("timeout exceeded"),
+    `C14: the domain refusal failed with "${message}" — ${SECOND_CONNECTION}`,
+  );
+  assert(
+    (message ?? "").startsWith(`domain "${badDomain}" is not a live value. Expected one of: `),
+    `C14: a bad domain must be refused with assertAssetDomain's own sentence, but got "${message}"`,
+  );
+}
+
+/**
  * C12 — `publishTemplateCore` makes every tenant-pool read on its `tx`,
  * including the stored-alarm vocabulary `list`. The draft is committed first on
  * the ordinary pools, so only the publish core runs on the single connection.

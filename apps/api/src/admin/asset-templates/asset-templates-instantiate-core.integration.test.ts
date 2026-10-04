@@ -12,6 +12,7 @@ import { AssetDashboardsInstantiateService } from "./asset-dashboards-instantiat
 import { AssetTemplatesAdminService } from "./asset-templates.service";
 import { AssetTemplateInstantiationService } from "./asset-templates-instantiate.service";
 import {
+  assertCreateCoreDomainRefusalHoldsOneTenantConnection,
   assertCreateCoreHoldsOneTenantConnection,
   assertInstantiateCoreChecksTheCatalogThroughTheTransaction,
   assertInstantiateCoreHoldsOneTenantConnection,
@@ -197,5 +198,9 @@ describe.skipIf(!connectionString)("F3.22 — the instantiate core sees the tran
 
   it("C13: the instantiate core makes every tenant read on its one connection", async () => {
     await assertInstantiateCoreHoldsOneTenantConnection(h);
+  });
+
+  it("C14: the create core refuses a bad domain on its one connection", async () => {
+    await assertCreateCoreDomainRefusalHoldsOneTenantConnection(h);
   });
 });
