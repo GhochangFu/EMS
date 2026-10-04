@@ -16,7 +16,9 @@ import {
   assertNoF379MapFixtureRowsRemain,
   assertNoF4157MapFixtureRowsRemain,
   assertSiteOpenAlarmsFollowClearedAt,
-  assertTheScopeFilterKeepsTheNewPinByName,
+  assertTheScopeFilterKeepsTheNewPinById,
+  assertASameNamedLocationOfAnotherOrganizationIsNotSeen,
+  assertAnUnjoinedPinIsStillScopedByName,
   assertUnjoinedStationPinKindLabelIsStation,
   assertUnjoinedStationPinStatusIsItsOperatingStatus,
 } from "./map.integration.spec";
@@ -136,8 +138,16 @@ describe.skipIf(!connectionString)("F3.79 — every active location is a map pin
     await assertAPinnedLocationIsListedOnce(pool);
   }, 60_000);
 
-  it("I4: the scope filter keeps the new pin by the location name", async () => {
-    await assertTheScopeFilterKeepsTheNewPinByName(pool);
+  it("I4: the scope filter keeps the new pin by the location id", async () => {
+    await assertTheScopeFilterKeepsTheNewPinById(pool);
+  }, 60_000);
+
+  it("I5: a same-named location of another organization is not seen (security review)", async () => {
+    await assertASameNamedLocationOfAnotherOrganizationIsNotSeen(pool);
+  }, 60_000);
+
+  it("I6: a pin that joins no location is still scoped by its site_name", async () => {
+    await assertAnUnjoinedPinIsStillScopedByName(pool);
   }, 60_000);
 
   it("leaves no F379M fixture row behind (counted as bms_fleet)", async () => {

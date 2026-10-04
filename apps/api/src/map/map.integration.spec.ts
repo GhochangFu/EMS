@@ -463,40 +463,115 @@ export async function assertAPinnedLocationIsListedOnce(pool: pg.Pool): Promise<
 }
 
 /**
- * I4 — a scoped caller sees the new pin when the location's name is in its scope, and not when
- * it is not (`allowedSiteNames`, as `MapController` passes it).
+ * I4 — a scoped caller sees the new pin when the location's id is in its scope, and not when it
+ * is not, even with the location's name in scope (`allowedLocationIds`, as `MapController`
+ * passes it).
  */
-export async function assertTheScopeFilterKeepsTheNewPinByName(pool: pg.Pool): Promise<void> {
+export async function assertTheScopeFilterKeepsTheNewPinById(pool: pg.Pool): Promise<void> {
   await withRolledBackClient(pool, async (client) => {
     const fx = await insertUnpinnedLocation(client, randomUUID().slice(0, 8), { active: true, pin: false });
     const service = new MapService(client as unknown as pg.Pool);
-    const inScope = await service.sitesLive({ allowedSiteNames: [fx.name], assetIds: [fx.assetId] });
+    const inScope = await service.sitesLive({
+      allowedSiteNames: [fx.name],
+      allowedLocationIds: [fx.locationId],
+      assetIds: [fx.assetId],
+    });
     expect(
       inScope.some((candidate) => candidate.canonicalLocationId === fx.locationId),
-      "the location is in the caller's scope by name",
+      "the location is in the caller's scope by id",
     ).toBe(true);
     const outOfScope = await service.sitesLive({
-      allowedSiteNames: ["F3.79 a site outside the scope"],
+      allowedSiteNames: [fx.name],
+      allowedLocationIds: [randomUUID()],
       assetIds: [fx.assetId],
     });
     expect(
       outOfScope.some((candidate) => candidate.canonicalLocationId === fx.locationId),
-      "a scope without the location must not see it",
+      "a scope without the location's id must not see it, whatever names it holds",
+    ).toBe(false);
+  });
+}
+
+/**
+ * I5 — security review of `F3.79`: two organizations each hold an active, unpinned location of
+ * the same name. A caller scoped to org A's location sees it and not org B's: location names are
+ * tenant free text and not unique, so the filter must not match by name. Org A's location is the
+ * positive control.
+ */
+export async function assertASameNamedLocationOfAnotherOrganizationIsNotSeen(
+  pool: pg.Pool,
+): Promise<void> {
+  await withRolledBackClient(pool, async (client) => {
+    const run = randomUUID().slice(0, 8);
+    const mine = await insertUnpinnedLocation(client, run, { active: true, pin: false });
+    const org = await client.query<{ id: string }>(
+      `INSERT INTO bms.organizations (code, name, currency) VALUES ($1, $2, 'INR') RETURNING id`,
+      [`F379M-ORG-${run}`, `F3.79 other organization ${run}`],
+    );
+    const theirs = await client.query<{ id: string }>(
+      `INSERT INTO bms.locations (organization_id, code, slug, name, type, latitude, longitude)
+       VALUES ($1, $2, $3, $4, 'pump_station', 22.5, 88.3) RETURNING id`,
+      [org.rows[0]?.id, `F379M-B-${run}`, `f379m-b-${run}`, mine.name],
+    );
+    const theirLocationId = theirs.rows[0]?.id as string;
+
+    const sites = await new MapService(client as unknown as pg.Pool).sitesLive({
+      allowedSiteNames: [mine.name],
+      allowedLocationIds: [mine.locationId],
+      assetIds: [mine.assetId],
+    });
+    const ids = sites.map((candidate) => candidate.canonicalLocationId);
+    expect(ids, "control: the caller sees its own location").toContain(mine.locationId);
+    expect(ids, "the other organization's same-named location must not be seen").not.toContain(
+      theirLocationId,
+    );
+  });
+}
+
+/**
+ * I6 — a pin that joins no location (a seeded reference station) is still scoped by its
+ * `site_name`: it has no location id to match. Seen with its name in scope, not seen without.
+ */
+export async function assertAnUnjoinedPinIsStillScopedByName(pool: pg.Pool): Promise<void> {
+  await withRolledBackClient(pool, async (client) => {
+    const run = randomUUID().slice(0, 8);
+    const slug = `f379m-station-${run}`;
+    const siteName = `F3.79 station site ${run}`;
+    await client.query(
+      `INSERT INTO bms.map_locations (slug, name, kind, site_name, latitude, longitude)
+       VALUES ($1, $2, 'eskom_station', $3, 0, 0)`,
+      [slug, `F3.79 station ${run}`, siteName],
+    );
+    const service = new MapService(client as unknown as pg.Pool);
+    const named = await service.sitesLive({ allowedSiteNames: [siteName], allowedLocationIds: [] });
+    expect(
+      named.some((candidate) => candidate.slug === slug),
+      "an unjoined pin is seen when its site_name is in scope",
+    ).toBe(true);
+    const unnamed = await service.sitesLive({ allowedSiteNames: [], allowedLocationIds: [] });
+    expect(
+      unnamed.some((candidate) => candidate.slug === slug),
+      "an unjoined pin is not seen when its site_name is out of scope",
     ).toBe(false);
   });
 }
 
 /** No `F379M` fixture row survives the rolled-back cases (counted as `bms_fleet`). */
 export async function assertNoF379MapFixtureRowsRemain(pool: pg.Pool): Promise<void> {
-  const result = await pool.query<{ role: string; locations: number; pins: number }>(
+  const result = await pool.query<{ role: string; locations: number; pins: number; organizations: number }>(
     `SELECT current_user AS role,
             (SELECT COUNT(*)::int FROM bms.locations WHERE code LIKE 'F379M-%') AS locations,
-            (SELECT COUNT(*)::int FROM bms.map_locations WHERE slug LIKE 'f379m-%') AS pins`,
+            (SELECT COUNT(*)::int FROM bms.map_locations WHERE slug LIKE 'f379m-%') AS pins,
+            (SELECT COUNT(*)::int FROM bms.organizations WHERE code LIKE 'F379M-%') AS organizations`,
   );
   const row = result.rows[0];
   expect(row?.role, "counted as bms_fleet, which FORCE RLS does not hide rows from").toBe("bms_fleet");
-  expect({ locations: row?.locations, pins: row?.pins }, "no F379M fixture row remains").toEqual({
+  expect(
+    { locations: row?.locations, pins: row?.pins, organizations: row?.organizations },
+    "no F379M fixture row remains",
+  ).toEqual({
     locations: 0,
     pins: 0,
+    organizations: 0,
   });
 }

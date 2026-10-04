@@ -22,6 +22,11 @@ export class MapController {
         currentUser.scope.kind === "global"
           ? null
           : currentUser.scope.locations.map((location) => location.name),
+      // F3.79 security review: a pin that joins a location is scoped by its id, not its name.
+      allowedLocationIds:
+        currentUser.scope.kind === "global"
+          ? null
+          : currentUser.scope.locations.map((location) => location.id),
       assetIds:
         currentUser.scope.kind === "global" ? null : currentUser.scope.assetIds,
     });
