@@ -350,3 +350,46 @@ export async function assertAnAssetGroupGrantReadsItsLocationName(superDb: BmsDb
   expect(read.expected).toBe("F3.78 PR2 grants fixture");
   expect(read.locationName).toBe(read.expected);
 }
+
+type CrossOrgRead = { listed: boolean; hasLocationName: boolean };
+
+/**
+ * A group whose location is in another organization (a broken row): its grant is still listed —
+ * so it stays visible and revocable — but it names no location, because the other
+ * organization's location name is not the caller's to read through this join.
+ */
+async function readACrossOrganizationGroupGrant(superDb: BmsDb): Promise<CrossOrgRead> {
+  let read: CrossOrgRead | undefined;
+  await withRollback(superDb, async (tx) => {
+    const db = tx as unknown as BmsDb;
+    const eskom = await organizationId(db, "ESKOM");
+    const phewb = await organizationId(db, "PHEWB");
+    const caller = await insertUser(db, "admin", null);
+    const user = await insertUser(db, "viewer", eskom);
+    const elsewhere = await insertLocation(db, phewb);
+    const groupId = randomUUID();
+    await db.execute(sql`
+      INSERT INTO bms.asset_groups (id, organization_id, location_id, code, name)
+      VALUES (${groupId}, ${eskom}, ${elsewhere}, ${`f4201-${groupId.slice(0, 8)}`}, 'F4.201 cross-org group')
+    `);
+    await db.execute(sql`INSERT INTO bms.user_asset_group_access (user_id, asset_group_id) VALUES (${user.id}, ${groupId})`);
+    const service = buildService(db, asTenant(db, []));
+    const { items } = await service.list(callerJwt(caller), user.id);
+    const item = items.find((i) => i.targetId === groupId);
+    read = { listed: item !== undefined, hasLocationName: item !== undefined && "locationName" in item };
+    tx.rollback();
+  });
+  if (!read) throw new Error("F4.201: the cross-organization group case never ran");
+  return read;
+}
+
+export async function assertACrossOrganizationGroupGrantIsStillListed(superDb: BmsDb): Promise<void> {
+  expect((await readACrossOrganizationGroupGrant(superDb)).listed).toBe(true);
+}
+
+export async function assertACrossOrganizationGroupGrantNamesNoLocation(superDb: BmsDb): Promise<void> {
+  const read = await readACrossOrganizationGroupGrant(superDb);
+  // Positive control: the row is there, so the absence below is the join's, not a missing row.
+  expect(read.listed).toBe(true);
+  expect(read.hasLocationName).toBe(false);
+}

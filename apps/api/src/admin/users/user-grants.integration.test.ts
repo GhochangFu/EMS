@@ -69,4 +69,12 @@ describe.skipIf(!connectionString)("F3.78 — grants API on bms_tenant (ADR 0089
   it("F4.201: an asset-group grant reads its group's location name", async () => {
     await spec.assertAnAssetGroupGrantReadsItsLocationName(superDb);
   });
+
+  it("F4.201: a group grant whose location is in another organization is still listed", async () => {
+    await spec.assertACrossOrganizationGroupGrantIsStillListed(superDb);
+  });
+
+  it("F4.201: a group grant whose location is in another organization names no location", async () => {
+    await spec.assertACrossOrganizationGroupGrantNamesNoLocation(superDb);
+  });
 });

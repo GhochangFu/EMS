@@ -216,7 +216,9 @@ export class UserGrantsService {
       UNION ALL
       SELECT a.id, 'asset_group' AS kind, g.id, g.name, gl.name, g.organization_id, a.created_at
         FROM bms.user_asset_group_access a JOIN bms.asset_groups g ON g.id = a.asset_group_id
-        JOIN bms.locations gl ON gl.id = g.location_id
+        -- F4.201: LEFT, and in the group's own organization only — a group whose location is in
+        -- another organization keeps its grant row (visible, revocable) and names no location.
+        LEFT JOIN bms.locations gl ON gl.id = g.location_id AND gl.organization_id = g.organization_id
        WHERE a.user_id = ${user.id}
       ORDER BY kind, target_name
     `);
