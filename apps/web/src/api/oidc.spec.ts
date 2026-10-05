@@ -11,6 +11,7 @@ import { completeOidcLogin } from "./oidc";
  */
 
 const STATE_KEY = "bms-oidc-state";
+const VERIFIER_KEY = "bms-oidc-code-verifier";
 const ATTACKER = "ATTACKER-TEXT";
 
 /** The message `completeOidcLogin` throws for `search`, with `stored` as the kept state. */
@@ -20,6 +21,7 @@ async function expectRejection(search: string, stored = "good"): Promise<string>
     vi.fn(() => Promise.reject(new Error("oidc.spec: no fetch expected"))),
   );
   sessionStorage.setItem(STATE_KEY, stored);
+  sessionStorage.setItem(VERIFIER_KEY, "verifier");
   try {
     await completeOidcLogin(search);
   } catch (err) {
@@ -56,4 +58,11 @@ export async function aNonAllowlistedErrorIsNotEchoed(): Promise<void> {
 /** S4 — control: no `error`, a valid `state` and no `code` still throws the state sentence. */
 export async function noCodeWithAValidStateThrowsTheStateSentence(): Promise<void> {
   expect(await expectRejection("?state=good")).toBe("OIDC callback state is invalid");
+}
+
+/** S5 — an IdP error with a valid `state` still removes both one-time keys. */
+export async function anIdpErrorRemovesBothSessionKeys(): Promise<void> {
+  await expectRejection("?error=access_denied&state=good");
+  expect(sessionStorage.getItem(STATE_KEY)).toBeNull();
+  expect(sessionStorage.getItem(VERIFIER_KEY)).toBeNull();
 }

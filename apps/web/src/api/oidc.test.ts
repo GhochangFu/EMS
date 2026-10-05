@@ -2,6 +2,7 @@
 import { afterEach, describe, it, vi } from "vitest";
 
 import {
+  anIdpErrorRemovesBothSessionKeys,
   aNonAllowlistedErrorIsNotEchoed,
   anAllowlistedErrorReadsAsTheFixedSentence,
   anErrorWithAWrongStateThrowsTheStateSentence,
@@ -32,5 +33,9 @@ describe("F4.210 the OIDC callback validates state before it reads the IdP error
 
   it("S4 no error, a valid state and no code still throws the state sentence", async () => {
     await noCodeWithAValidStateThrowsTheStateSentence();
+  });
+
+  it("S5 an IdP error with a valid state removes both one-time session keys", async () => {
+    await anIdpErrorRemovesBothSessionKeys();
   });
 });
