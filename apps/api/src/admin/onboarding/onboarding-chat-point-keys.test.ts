@@ -8,6 +8,21 @@ import {
   assertTheYesAnswerOffersOnlyViewDraft,
   assertTheImportFollowUpSendsAnAllTemplatedDraftToCommit,
   assertTheImportFollowUpStillAsksAPlainAssetToMap,
+  assertAddAnotherRtuAddsAnRtuOnTheModbusPath,
+  assertAddAnotherRtuAddsAnRtuOnTheMqttPath,
+  assertAddPointKeyAddsKwOnTheModbusPath,
+  assertAnAddedModbusRtuOffersAddPointKey,
+  assertAnAddedMqttRtuOffersConfirmRtu,
+  assertCommitStillGivesTheCommitAnswer,
+  assertConfirmAloneStillGivesTheCommitAnswer,
+  assertConfirmAssetsSaysAnAssetIsMissing,
+  assertConfirmingALaterStepNamesTheEarlierOne,
+  assertConfirmMappingsSaysAMappingIsMissing,
+  assertConfirmPointKeysSaysAKeyIsMissing,
+  assertConfirmRtuGoesOnWhenTheRtuIsSetUp,
+  assertConfirmRtuSaysTheCredentialsAreMissing,
+  assertTheProtocolAnswerOffersNoProtocolPastTheRtuStep,
+  assertTheProtocolAnswerOffersProtocolsAtTheRtuStep,
 } from "./onboarding-chat-point-keys.spec";
 
 /** Vitest entry point — see `admin.schema.test.ts` for the pattern (ADR 0014). One `it()` per claim. */
@@ -38,5 +53,67 @@ describe("onboarding chat point-key step (F4.195)", () => {
 
   it("F4.199: offers create it and View draft after a mapping is added", async () => {
     await assertTheMappingAddedAnswerOffersCreateItAndViewDraft();
+  });
+});
+
+describe("onboarding chat reply buttons reach their step (F4.199)", () => {
+  it("confirm rtu says the MQTT credentials are missing and adds no RTU", async () => {
+    await assertConfirmRtuSaysTheCredentialsAreMissing();
+  });
+
+  it("confirm rtu goes on to the point keys once the RTU is set up", async () => {
+    await assertConfirmRtuGoesOnWhenTheRtuIsSetUp();
+  });
+
+  it("confirm point keys says a key is missing and adds none", async () => {
+    await assertConfirmPointKeysSaysAKeyIsMissing();
+  });
+
+  it("confirm assets says an asset is missing and adds none", async () => {
+    await assertConfirmAssetsSaysAnAssetIsMissing();
+  });
+
+  it("confirm mappings says a mapping is missing and adds none", async () => {
+    await assertConfirmMappingsSaysAMappingIsMissing();
+  });
+
+  it("confirming a later step names the earlier one", async () => {
+    await assertConfirmingALaterStepNamesTheEarlierOne();
+  });
+
+  it("confirm alone still gives the commit answer", async () => {
+    await assertConfirmAloneStillGivesTheCommitAnswer();
+  });
+
+  it("Commit still gives the commit answer", async () => {
+    await assertCommitStillGivesTheCommitAnswer();
+  });
+
+  it("an added MQTT RTU offers confirm rtu, not Add point key kw", async () => {
+    await assertAnAddedMqttRtuOffersConfirmRtu();
+  });
+
+  it("Add another RTU adds an RTU on the MQTT path", async () => {
+    await assertAddAnotherRtuAddsAnRtuOnTheMqttPath();
+  });
+
+  it("an added Modbus RTU offers Add point key kw", async () => {
+    await assertAnAddedModbusRtuOffersAddPointKey();
+  });
+
+  it("Add point key kw adds kw on the Modbus path", async () => {
+    await assertAddPointKeyAddsKwOnTheModbusPath();
+  });
+
+  it("Add another RTU adds an RTU on the Modbus path", async () => {
+    await assertAddAnotherRtuAddsAnRtuOnTheModbusPath();
+  });
+
+  it("the protocol answer offers protocols at the RTU step", async () => {
+    await assertTheProtocolAnswerOffersProtocolsAtTheRtuStep();
+  });
+
+  it("the protocol answer offers no protocol past the RTU step", async () => {
+    await assertTheProtocolAnswerOffersNoProtocolPastTheRtuStep();
   });
 });

@@ -85,6 +85,63 @@ type TurnVocabulary = {
   readonly templates: ValidateTemplateContext;
 };
 
+/** The guided steps in the order `inferPhase` walks them. */
+const PHASE_ORDER: readonly OnboardingPhase[] = ["location", "rtu", "point_keys", "assets", "mappings", "review"];
+
+/** The protocol replies; each is a protocol `detectProtocol` reads. */
+const PROTOCOL_REPLIES = ["MQTT", "Modbus", "BACnet", "OPC-UA", "SNMP", "REST", "Simulator"];
+
+/** F4.199 — the "confirm <step>" replies the guided mode offers, matched whole after trim and lower-casing. */
+const CONFIRM_STEP_REPLIES: ReadonlyMap<string, OnboardingPhase> = new Map([
+  ["confirm rtu", "rtu"],
+  ["confirm point keys", "point_keys"],
+  ["confirm assets", "assets"],
+  ["confirm mappings", "mappings"],
+]);
+
+const STEP_NAMES: Readonly<Record<OnboardingPhase, string>> = {
+  location: "location",
+  rtu: "RTU",
+  point_keys: "point keys",
+  assets: "assets",
+  mappings: "mappings",
+  review: "review",
+};
+
+/**
+ * F4.199 — what the draft still needs at `phase`, with only replies that the
+ * guided mode answers at that phase: each one reaches the branch its text names.
+ */
+function stepPrompt(phase: OnboardingPhase, draft: OnboardingDraft): { text: string; replies: string[] } {
+  switch (phase) {
+    case "location":
+      return { text: "The location needs a name and a type first. What is the location name?", replies: ["View draft"] };
+    case "rtu": {
+      const waiting = (draft.rtus ?? []).filter(needsMqttSetup).length;
+      if ((draft.rtus ?? []).length === 0) {
+        return { text: "Add an RTU first. Which communication protocol will RTU 1 use?", replies: [...PROTOCOL_REPLIES] };
+      }
+      if (waiting > 0) {
+        return {
+          text:
+            `${waiting} MQTT RTU(s) still need credentials or a topic. Set each RTU's credentials with the ` +
+            "**Credentials** field on the RTU step — never in this chat — then say **confirm rtu**.",
+          replies: ["confirm rtu", "View draft"],
+        };
+      }
+      return { text: "Each RTU needs a code and a protocol. Open the preview to fix them.", replies: ["View draft"] };
+    }
+    case "point_keys":
+      return { text: "Add a point key: say **kw** to add the catalog key **kw**.", replies: ["kw", "View draft"] };
+    case "assets":
+      return { text: "Add an asset: say **One asset** to add one.", replies: ["One asset", "View draft"] };
+    case "mappings":
+      return { text: "Map the assets: say **auto map** to map each asset to **kw**.", replies: ["auto map", "View draft"] };
+    case "review":
+      return { text: "Open the preview and click **Commit**, or say **create it**.", replies: ["create it", "View draft"] };
+  }
+}
+
 /**
  * Conversational onboarding: the tool-calling agent when a provider resolves
  * for the organization (`F3.21`, ADR 0090), the rule-based guided mode
@@ -303,7 +360,11 @@ export class OnboardingChatService {
         `Here are the protocols available in BMS:\n\n${this.protocolService.formatForAssistant(protocolContext, exampleRtu)}`,
         {},
         phase,
-        ["MQTT", "Modbus TCP", "View draft"],
+        // F4.199: a protocol reply adds an RTU only at the RTU step; past it
+        // the same text reaches the point-key or asset branch.
+        this.validateService.inferPhase(draft, types.map((t) => t.code)) === "rtu"
+          ? ["MQTT", "Modbus TCP", "View draft"]
+          : ["View draft"],
         message,
         draft,
         turn,
@@ -403,7 +464,12 @@ export class OnboardingChatService {
       }
     }
 
-    if (/^(yes|create|commit|confirm)/.test(lower)) {
+    // F4.199: the whole message, never a prefix. As a prefix this rule also
+    // took the "confirm rtu", "confirm point keys", "confirm assets" and
+    // "confirm mappings" reply buttons, so they answered with the commit line
+    // and their step never ran. It commits nothing either way: only the typed
+    // `confirm commit` phrase or the Commit button commits (ADR 0090 decision 5).
+    if (/^(yes|create|create it|commit|confirm)$/.test(lower)) {
       return this.finalizeTurn(
         "I'll prepare the commit — open the preview to confirm everything looks correct.",
         patch,
@@ -413,6 +479,15 @@ export class OnboardingChatService {
         draft,
         turn,
       );
+    }
+
+    // F4.199: a "confirm <step>" reply answers here and changes nothing. The
+    // phase branches below read the stored phase and not the message, so
+    // without this one "confirm rtu" appended an RTU and "confirm point keys"
+    // appended `kw`.
+    const confirmedStep = CONFIRM_STEP_REPLIES.get(lower);
+    if (confirmedStep) {
+      return this.confirmStepTurn(confirmedStep, message, draft, turn);
     }
 
     // F4.162 (plan D9): a stored type that is not active counts as missing, so a
@@ -505,14 +580,16 @@ export class OnboardingChatService {
         `Got it — location **${name}**. Which communication protocol will RTU 1 use?`,
         patch,
         "rtu",
-        ["MQTT", "Modbus", "BACnet", "OPC-UA", "SNMP", "REST", "Simulator"],
+        [...PROTOCOL_REPLIES],
         message,
         draft,
         turn,
       );
     }
 
-    if (phase === "rtu" || !draft.rtus?.length) {
+    // F4.199: "Add another RTU" is offered past the RTU step too (a non-MQTT
+    // RTU moves the phase on to `point_keys`), so it is matched by its text.
+    if (phase === "rtu" || !draft.rtus?.length || /^add another rtu\b/.test(lower)) {
       const protocol = this.detectProtocol(lower);
       const rtuCode = `RTU-${(draft.rtus?.length ?? 0) + 1}`;
       const rtuPatch = {
@@ -534,7 +611,7 @@ export class OnboardingChatService {
           : `Added ${protocol} RTU. Ingest adapter is not connected yet — config will be stored. Add point keys next?`,
         patch,
         "point_keys",
-        ["Add point key kw", "View draft", "Add another RTU"],
+        this.addedRtuReplies(mergeDraftPatch(draft, patch), turn),
         message,
         draft,
         turn,
@@ -651,6 +728,48 @@ export class OnboardingChatService {
       draft,
       turn,
     );
+  }
+
+  /**
+   * F4.199 — the replies after an RTU is added, from the step the draft is
+   * now at. An MQTT RTU waits at `rtu` for its credentials, where no turn
+   * reaches the point keys, so "Add point key kw" is offered only at
+   * `point_keys`.
+   */
+  private addedRtuReplies(draft: OnboardingDraft, turn: TurnVocabulary): string[] {
+    const next = this.validateService.inferPhase(draft, turn.types.map((t) => t.code));
+    if (next === "rtu") {
+      return ["confirm rtu", "View draft", "Add another RTU"];
+    }
+    if (next === "point_keys") {
+      return ["Add point key kw", "View draft", "Add another RTU"];
+    }
+    return ["View draft", "Add another RTU"];
+  }
+
+  /**
+   * F4.199 — the answer to a "confirm <step>" reply. The phase is derived from
+   * the draft (`inferPhase`), so a confirm cannot skip a step the draft has not
+   * met: the answer goes on when the draft is past the step and otherwise says
+   * what is still missing. The patch is empty — the turn changes nothing.
+   */
+  private confirmStepTurn(
+    step: OnboardingPhase,
+    message: string,
+    draft: OnboardingDraft,
+    turn: TurnVocabulary,
+  ): ChatTurnResult {
+    const derived = this.validateService.inferPhase(draft, turn.types.map((t) => t.code));
+    const position = PHASE_ORDER.indexOf(derived) - PHASE_ORDER.indexOf(step);
+    const name = STEP_NAMES[step];
+    const lead =
+      position > 0
+        ? `The ${name} step is complete.`
+        : position === 0
+          ? `The ${name} step is not complete yet.`
+          : `The ${name} step comes later.`;
+    const prompt = stepPrompt(derived, draft);
+    return this.finalizeTurn(`${lead} ${prompt.text}`, {}, derived, prompt.replies, message, draft, turn);
   }
 
   private finalizeTurn(
