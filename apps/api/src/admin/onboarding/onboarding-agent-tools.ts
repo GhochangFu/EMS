@@ -13,7 +13,7 @@ import type { OrgPointKeySummary } from "./onboarding-catalog.service";
 import { carriesPromptMarker, serialiseDraftForPrompt } from "./onboarding-prompt-budget";
 import type { ProtocolContext } from "./onboarding-protocol.service";
 import { dispatchTemplateTool, isTemplateToolName, TEMPLATE_TOOL_DESCRIPTIONS, TEMPLATE_TOOL_SCHEMAS } from "./onboarding-template-tools";
-import type { ValidateTemplateContext } from "./onboarding-template-refs";
+import { draftTemplateCode, isStockEntry, type ValidateTemplateContext } from "./onboarding-template-refs";
 import {
   fail,
   issuesOf,
@@ -174,7 +174,7 @@ const DESCRIPTIONS: Record<ToolName, string> = {
   update_rtu: "Changes fields of the RTU at `index`. Never put a credential in `config`.",
   remove_rtu: "Removes the RTU at `index`.",
   add_point_key: "Declares a point key in this draft.",
-  remove_point_key: "Removes the draft point key at `index`.",
+  remove_point_key: "Removes the draft point key at `index`. Refused while a draft template uses it and the catalog does not hold it.",
   add_asset: "Adds an asset on the RTU at `rtuIndex`.",
   remove_asset: "Removes the asset at `index`.",
   map_point: "Maps a source data key on the asset at `assetIndex` to a point key.",
@@ -377,9 +377,28 @@ async function dispatch(name: ToolName, args: Record<string, unknown>, state: To
 
     case "remove_point_key": {
       const hit = removeAt(draft.pointKeys, (args as { index: number }).index);
-      return hit
-        ? write(state, { pointKeys: hit.rest }, `Removed point key ${hit.removed.code}`)
-        : fail("There is no point key at that index.");
+      if (!hit) {
+        return fail("There is no point key at that index.");
+      }
+      // F4.195: an authored draft template resolves its point keys at commit
+      // against the draft and the catalog, as `add_template` checks them. A key
+      // only the draft declares cannot leave while a template uses it, or the
+      // proposal succeeds and the commit fails. A second declaration of the
+      // same code keeps it resolved, so one copy of a duplicate can leave.
+      const code = hit.removed.code;
+      const users = hit.rest.some((key) => key.code === code)
+        ? []
+        : (draft.templates ?? [])
+            .filter((entry) => !isStockEntry(entry) && entry.points.some((point) => point.pointKey === code))
+            .map((entry) => quoteCell(draftTemplateCode(entry)));
+      if (users.length > 0 && !(await ctx.catalog.listPointKeys(ctx.organizationId)).some((key) => key.code === code)) {
+        const { shown, omitted } = echoedItems(users, 10);
+        return fail(
+          `Point key ${quoteCell(code)} is used by draft templates: ${[...shown, moreTail(omitted, "templates")].filter(Boolean).join(", ")}. ` +
+            "Remove those templates first.",
+        );
+      }
+      return write(state, { pointKeys: hit.rest }, `Removed point key ${code}`);
     }
 
     case "add_asset": {

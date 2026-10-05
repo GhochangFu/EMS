@@ -28,6 +28,11 @@ import {
   assertT10RemoveTemplateIsRefusedWhileAnAssetReferencesIt,
   assertT10RemoveTemplateRemovesAnUnreferencedTemplate,
   assertT10RemoveTemplateRefusesAnUnknownCode,
+  assertRemovePointKeyIsRefusedWhileADraftTemplateUsesIt,
+  assertRemovePointKeyRemovesAKeyTheCatalogHolds,
+  assertRemovePointKeyRemovesAKeyNoTemplateUses,
+  assertRemovePointKeyRemovesOneCopyOfADuplicateKey,
+  assertRemovePointKeyReadsPastAStockTemplate,
   assertT11AddTemplateAssetsAppendsTemplatedAssets,
   assertT12AddTemplateAssetsPinsTheHighestPublishedVersion,
   assertT12AddTemplateAssetsPinsTheNamedVersion,
@@ -124,6 +129,21 @@ describe("onboarding template write tools and the proposal (F3.22, ADR 0091 deci
   });
   it("T10 remove template refuses an unknown code", async () => {
     await assertT10RemoveTemplateRefusesAnUnknownCode();
+  });
+  it("F4.195 remove point key is refused while a draft template uses it", async () => {
+    await assertRemovePointKeyIsRefusedWhileADraftTemplateUsesIt();
+  });
+  it("F4.195 remove point key removes a key the catalog holds", async () => {
+    await assertRemovePointKeyRemovesAKeyTheCatalogHolds();
+  });
+  it("F4.195 remove point key removes a key no template uses", async () => {
+    await assertRemovePointKeyRemovesAKeyNoTemplateUses();
+  });
+  it("F4.195 remove point key removes one copy of a duplicate key", async () => {
+    await assertRemovePointKeyRemovesOneCopyOfADuplicateKey();
+  });
+  it("F4.195 remove point key reads past a stock template", async () => {
+    await assertRemovePointKeyReadsPastAStockTemplate();
   });
   it("T11 add template assets appends templated assets", async () => {
     await assertT11AddTemplateAssetsAppendsTemplatedAssets();
