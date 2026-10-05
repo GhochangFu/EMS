@@ -3,6 +3,7 @@ import { afterEach, describe, it, vi } from "vitest";
 import { cleanup } from "@testing-library/react";
 
 import {
+  aCraftedErrorLinkShowsTheStateSentence,
   aDeactivatedCallbackShowsTheSentence,
   aPlainRefusedCallbackKeepsItsMessage,
   aRawEnvelopeFailureReadsAsItsSentence,
@@ -22,6 +23,7 @@ afterEach(() => {
   vi.unstubAllGlobals();
   window.sessionStorage.clear();
   window.localStorage.clear();
+  window.history.replaceState({}, "", "/");
   useAuthStore.getState().clearSession();
   // `clearSession` keeps the reason by design; the next case must start without it.
   useAuthStore.setState({ authFailureReason: null });
@@ -54,5 +56,11 @@ describe("F4.203 the auth callback for a deactivated account", () => {
 
   it("A6 a raw error envelope reads as its sentence", async () => {
     await aRawEnvelopeFailureReadsAsItsSentence();
+  });
+});
+
+describe("F4.210 a crafted callback error link", () => {
+  it("A7 shows the state sentence, not the link's error_description", async () => {
+    await aCraftedErrorLinkShowsTheStateSentence();
   });
 });

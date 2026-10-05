@@ -134,14 +134,43 @@ export async function startOidcLogin(): Promise<void> {
   window.location.assign(url.toString());
 }
 
-/** Completes OIDC callback handling and returns the app session. */
+/**
+ * The IdP error codes a refusal may name on screen: RFC 6749 §4.1.2.1 and
+ * OpenID Connect Core §3.1.2.6. Any other value is not echoed.
+ */
+const OIDC_ERROR_CODES: ReadonlySet<string> = new Set([
+  "invalid_request",
+  "unauthorized_client",
+  "access_denied",
+  "unsupported_response_type",
+  "invalid_scope",
+  "server_error",
+  "temporarily_unavailable",
+  "interaction_required",
+  "login_required",
+  "account_selection_required",
+  "consent_required",
+]);
+
+/** A fixed sentence for an IdP refusal; it names the code only when the code is a known one. */
+function oidcRefusalSentence(code: string): string {
+  return OIDC_ERROR_CODES.has(code)
+    ? `Keycloak refused the sign-in (${code}).`
+    : "Keycloak refused the sign-in.";
+}
+
+/**
+ * Completes OIDC callback handling and returns the app session.
+ *
+ * `F4.210` — `state` is validated before the IdP's `error` is read, because an
+ * IdP error response carries `state` but no `code`, so the old combined check
+ * ran after the error branch and any crafted `/auth/callback?error=…` link
+ * reached the screen. A refusal reads as a fixed sentence that names an
+ * allowlisted code only; `error_description` is never read, since nothing on
+ * the trusted origin should render text a link supplied.
+ */
 export async function completeOidcLogin(search: string): Promise<OidcSession> {
   const params = new URLSearchParams(search);
-  const error = params.get("error");
-  if (error) {
-    throw new Error(params.get("error_description") ?? error);
-  }
-
   const code = params.get("code");
   const state = params.get("state");
   const expectedState = sessionStorage.getItem(stateKey);
@@ -149,7 +178,16 @@ export async function completeOidcLogin(search: string): Promise<OidcSession> {
   sessionStorage.removeItem(stateKey);
   sessionStorage.removeItem(verifierKey);
 
-  if (!code || !state || !expectedState || state !== expectedState || !verifier) {
+  if (!state || !expectedState || state !== expectedState) {
+    throw new Error("OIDC callback state is invalid");
+  }
+
+  const error = params.get("error");
+  if (error) {
+    throw new Error(oidcRefusalSentence(error));
+  }
+
+  if (!code || !verifier) {
     throw new Error("OIDC callback state is invalid");
   }
 
