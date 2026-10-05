@@ -10,6 +10,7 @@ import {
   organizationAdminSeesNoEdit,
   rankHintSaysASeededCodeIsReRanked,
   typingTwoSendsTwo,
+  aRefusedSaveShowsTheSentence,
 } from "./point-keys-page.spec";
 
 /**
@@ -49,5 +50,9 @@ describe("F3.68 point keys page — headline rank", () => {
 
   it("W6 the rank hint says a seeded code is re-ranked on the next seed", async () => {
     await rankHintSaysASeededCodeIsReRanked();
+  });
+
+  it("F4.204 a refused save shows the sentence, not the envelope", async () => {
+    await aRefusedSaveShowsTheSentence();
   });
 });

@@ -3,6 +3,7 @@ import { afterEach, describe, it, vi } from "vitest";
 import { cleanup } from "@testing-library/react";
 
 import {
+  draftSaveRefusalShowsTheServerSentence,
   hidesTheFieldForATimeWindowRule,
   refusesANonNumericClearHold,
   saveDraftAnnouncesSavingWhilePending,
@@ -22,6 +23,7 @@ describe("F3.10 rule builder clear-hold field", () => {
   afterEach(() => {
     cleanup();
     vi.restoreAllMocks();
+    vi.unstubAllGlobals();
   });
 
   it("shows the placeholder on a new threshold draft", async () => {
@@ -51,4 +53,8 @@ describe("F3.10 rule builder clear-hold field", () => {
   it("B7 Save draft announces Saving… while createM is pending", async () => {
     await saveDraftAnnouncesSavingWhilePending();
   });
+
+  it("F4.204 shows the server sentence, not the JSON envelope, when a draft save is refused", async () => {
+    await draftSaveRefusalShowsTheServerSentence();
+  }, 15_000);
 });

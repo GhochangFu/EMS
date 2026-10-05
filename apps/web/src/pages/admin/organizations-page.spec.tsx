@@ -6,6 +6,7 @@ import { expect, vi } from "vitest";
 import type { AdminOrganizationDto, UserRole } from "@bms/shared";
 
 import * as api from "../../api/admin/organizations";
+import { ApiError } from "../../lib/api-error";
 import type { AuthUser } from "../../stores/auth-store";
 import { OrganizationsAdminPage } from "./organizations-page";
 
@@ -242,4 +243,31 @@ export async function theAiAssistantActionIsHiddenWithoutAccess(): Promise<void>
 
   expect(within(row).getByText("View only")).toBeInTheDocument();
   expect(within(row).queryByRole("button", { name: "AI assistant" })).toBeNull();
+}
+
+/**
+ * `F4.204` — an `ApiError` carries the whole response body, so a refusal read
+ * through `err.message` showed `{"statusCode":409,…}`. Each site reads it through
+ * `apiErrorMessage`; one case per site, because a site left on `err.message`
+ * reddens only its own case. The sentence is found by text (the banner has no
+ * role), and the element holding it must not also hold the envelope.
+ */
+
+/** F4.204 — a refused save shows the sentence, not the envelope. */
+export async function aRefusedSaveShowsTheSentence(): Promise<void> {
+  stubApi();
+  vi.spyOn(api, "createAdminOrganization").mockRejectedValue(
+    new ApiError(
+      '{"statusCode":409,"message":"An organization with that code already exists","error":"Conflict"}',
+      409,
+    ),
+  );
+  renderPage();
+  await openCreateForm();
+  await userEvent.type(screen.getByLabelText("Code"), "e41c-new");
+  await userEvent.type(screen.getByLabelText("Name"), "New organization");
+  await userEvent.type(screen.getByLabelText("Currency (ISO 4217)"), "inr");
+  await userEvent.click(screen.getByRole("button", { name: "Save" }));
+  const banner = await screen.findByText(/An organization with that code already exists/);
+  expect(banner.textContent).not.toContain('{"');
 }

@@ -201,3 +201,28 @@ export async function saveDraftAnnouncesSavingWhilePending(): Promise<void> {
   const pending = await screen.findByRole("button", { name: "Saving…" });
   expect(pending).toHaveAttribute("aria-busy", "true");
 }
+
+/**
+ * `F4.204` — a refused draft save shows the server's sentence.
+ *
+ * `createRuleDraft` throws `new Error(text)` with the whole response body, so
+ * before this row the panel's error line rendered the Nest envelope verbatim.
+ */
+export async function draftSaveRefusalShowsTheServerSentence(): Promise<void> {
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(() => Promise.reject(new Error("no fetch expected"))),
+  );
+  stubApi();
+  const sentence = "A rule with code new_draft_rule already exists.";
+  vi.spyOn(rulesApi, "createRuleDraft").mockRejectedValue(
+    new Error(JSON.stringify({ statusCode: 409, message: sentence, error: "Conflict" })),
+  );
+  renderPanel();
+
+  await fillMinimalThresholdForm();
+  await userEvent.click(screen.getByRole("button", { name: "Save draft" }));
+
+  const shown = await screen.findByText(sentence);
+  expect(shown.textContent).not.toContain('{"');
+}

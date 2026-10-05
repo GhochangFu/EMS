@@ -3,6 +3,7 @@ import { afterEach, describe, it, vi } from "vitest";
 import { cleanup } from "@testing-library/react";
 
 import {
+  readsARawEnvelopeRefusalAsItsSentence,
   anAdminCreatesAnOrgScopedChannel,
   anAdminCreatingFleetWideOmitsTheOrganization,
   anOrganizationAdminSeesItsOwnOrganizationLocked,
@@ -92,5 +93,9 @@ describe("F3.8 notification channels page", () => {
 
   it("says the organization list failed rather than claiming there are none", async () => {
     await saysTheOrganizationListFailedRatherThanClaimingThereAreNone();
+  });
+
+  it("reads a raw error envelope as its sentence (F4.204)", async () => {
+    await readsARawEnvelopeRefusalAsItsSentence();
   });
 });

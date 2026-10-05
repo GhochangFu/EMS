@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 
 import { completeOidcLogin } from "../api/oidc";
 import { fetchCurrentUser } from "../api/login";
+import { apiErrorMessage } from "../lib/api-error-message";
 import { takeReturnPath } from "../lib/return-path";
 import { useAuthStore } from "../stores/auth-store";
 
@@ -38,9 +39,7 @@ export function AuthCallbackPage() {
           setError(
             useAuthStore.getState().authFailureReason === "account_deactivated"
               ? "Your account is deactivated. Ask an administrator."
-              : err instanceof Error
-                ? err.message
-                : "OIDC login failed",
+              : apiErrorMessage(err),
           );
         }
       }

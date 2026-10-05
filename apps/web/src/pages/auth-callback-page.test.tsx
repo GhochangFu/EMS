@@ -5,6 +5,7 @@ import { cleanup } from "@testing-library/react";
 import {
   aDeactivatedCallbackShowsTheSentence,
   aPlainRefusedCallbackKeepsItsMessage,
+  aRawEnvelopeFailureReadsAsItsSentence,
   navigatesToTheReturnPath,
   navigatesToTheRootWithoutAReturnPath,
   readsTheWaitingSentence,
@@ -49,5 +50,9 @@ describe("F4.203 the auth callback for a deactivated account", () => {
 
   it("A5 a plain 401 keeps 'Current user failed (401)'", async () => {
     await aPlainRefusedCallbackKeepsItsMessage();
+  });
+
+  it("A6 a raw error envelope reads as its sentence", async () => {
+    await aRawEnvelopeFailureReadsAsItsSentence();
   });
 });

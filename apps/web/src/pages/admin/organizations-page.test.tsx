@@ -12,6 +12,7 @@ import {
   theAiAssistantActionIsHiddenWithoutAccess,
   theAiAssistantActionNavigatesToTheSubPage,
   typedCurrencyIsUppercasedAndSubmitted,
+  aRefusedSaveShowsTheSentence,
 } from "./organizations-page.spec";
 
 /**
@@ -61,5 +62,9 @@ describe("E4.1c organizations page — the Currency field", () => {
 
   it("F3.21 the AI assistant action is hidden from a role without access", async () => {
     await theAiAssistantActionIsHiddenWithoutAccess();
+  });
+
+  it("F4.204 a refused save shows the sentence, not the envelope", async () => {
+    await aRefusedSaveShowsTheSentence();
   });
 });

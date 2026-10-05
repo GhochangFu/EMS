@@ -4,6 +4,7 @@ import { useNavigate } from "react-router-dom";
 
 import { ackAlarm, fetchAlarmsPage } from "../api/alarms";
 import { fetchVocabularies, vocabulariesQueryKey } from "../api/vocabularies";
+import { apiErrorMessage } from "../lib/api-error-message";
 import { alarmSeverityTone, summariseAlarmSeverities } from "../lib/alarm-severity";
 import {
   alarmLifecycleState,
@@ -123,7 +124,7 @@ export function AlarmsPage({ user }: AlarmsPageProps) {
       void qc.invalidateQueries({ queryKey: ["dashboard", "kpis"] });
     },
     onError: (e: Error) => {
-      setAckError(e.message);
+      setAckError(apiErrorMessage(e));
     },
   });
 

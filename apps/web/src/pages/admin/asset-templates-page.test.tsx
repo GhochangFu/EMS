@@ -24,6 +24,7 @@ import {
   pickersOfferOnlyWhatIsPresentInVocabularyOrder,
   stockEntriesAreGroupedByDomainInVocabularyOrder,
   switchingTabsSwapsTheListAndRecordsItInTheUrl,
+  aFailedListShowsTheSentence,
 } from "./asset-templates-page.spec";
 
 /**
@@ -136,5 +137,9 @@ describe("F2.13 asset templates list page — the stock catalog card", () => {
 
   it("does not render a picker that could only offer one value", async () => {
     await aPickerWithASingleValueIsNotRendered();
+  });
+
+  it("F4.204 a failed list read shows the sentence, not the envelope", async () => {
+    await aFailedListShowsTheSentence();
   });
 });

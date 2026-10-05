@@ -24,8 +24,12 @@
  * The narrow fix. `adminFetch` is shared by 42 call sites across every admin
  * page, and changing what it throws would change all of them — a decision
  * worth making deliberately rather than as a side effect of this item. So the
- * unwrapping happens where the message is rendered, and the same JSON still
- * shows on the other admin pages until that call is made.
+ * unwrapping happens where the message is rendered.
+ *
+ * Every render site reads through this function since `F4.204`, and
+ * `tests/f4.204-raw-error-message-render.test.ts` refuses a new raw
+ * `.message` read of an error anywhere in `apps/web/src` outside `api/` and
+ * this file.
  */
 
 /** Nest's error envelope, as far as this needs to care. */

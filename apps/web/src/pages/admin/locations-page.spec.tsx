@@ -10,6 +10,7 @@ import * as api from "../../api/admin/locations";
 import * as orgApi from "../../api/admin/organizations";
 import * as dashboardsApi from "../../api/dashboards";
 import * as systemStatusApi from "../../api/system-status";
+import { ApiError } from "../../lib/api-error";
 import type { AuthUser } from "../../stores/auth-store";
 import { LocationsAdminPage } from "./locations-page";
 
@@ -448,4 +449,30 @@ export async function pendingTypesShowNoRetiredOption(): Promise<void> {
   expect(api.fetchAdminLocationTypes).toHaveBeenCalled();
   const options = Array.from(select.options).map((option) => option.textContent ?? "");
   expect(options.filter((text) => text.includes("(retired)"))).toEqual([]);
+}
+
+/**
+ * `F4.204` — an `ApiError` carries the whole response body, so a refusal read
+ * through `err.message` showed `{"statusCode":409,…}`. Each site reads it through
+ * `apiErrorMessage`; one case per site, because a site left on `err.message`
+ * reddens only its own case. The sentence is found by text (the banner has no
+ * role), and the element holding it must not also hold the envelope.
+ */
+
+/** F4.204 — a refused save shows the sentence, not the envelope. */
+export async function aRefusedSaveShowsTheSentence(): Promise<void> {
+  vi.spyOn(systemStatusApi, "fetchSystemStatus").mockRejectedValue(new Error("not under test"));
+  stubApi();
+  vi.spyOn(api, "createAdminLocation").mockRejectedValue(
+    new ApiError(
+      '{"statusCode":409,"message":"A location with that slug already exists","error":"Conflict"}',
+      409,
+    ),
+  );
+  renderPage();
+  await openCreateForm();
+  await fillRequired();
+  await userEvent.click(screen.getByRole("button", { name: "Save" }));
+  const banner = await screen.findByText(/A location with that slug already exists/);
+  expect(banner.textContent).not.toContain('{"');
 }

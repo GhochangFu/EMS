@@ -135,3 +135,31 @@ export async function aPlainRefusedCallbackKeepsItsMessage(): Promise<void> {
 export async function navigatesToTheRootWithoutAReturnPath(): Promise<void> {
   expect(await completeTheCallback()).toBe("/|REPLACE");
 }
+
+/**
+ * A6 (`F4.204`) — a `fetchCurrentUser` failure whose message is a raw Nest envelope (not the
+ * deactivated one) reads as its sentence, not as JSON.
+ */
+export async function aRawEnvelopeFailureReadsAsItsSentence(): Promise<void> {
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(() => Promise.reject(new Error("auth-callback-page.spec: no fetch expected"))),
+  );
+  vi.spyOn(oidcApi, "completeOidcLogin").mockResolvedValue({
+    accessToken: "token-oidc",
+    idToken: "id-token",
+  } as Awaited<ReturnType<typeof oidcApi.completeOidcLogin>>);
+  vi.spyOn(loginApi, "fetchCurrentUser").mockRejectedValue(
+    new Error('{"statusCode":500,"message":"The directory is unavailable","error":"Internal Server Error"}'),
+  );
+  render(
+    <QueryClientProvider client={new QueryClient()}>
+      <MemoryRouter initialEntries={["/auth/callback?code=c&state=s"]}>
+        <AuthCallbackPage />
+      </MemoryRouter>
+    </QueryClientProvider>,
+  );
+  const text = (await screen.findByRole("alert")).textContent ?? "";
+  expect(text).toBe("The directory is unavailable");
+  expect(text).not.toContain('{"');
+}

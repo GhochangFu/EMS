@@ -365,7 +365,7 @@ export function AssetTemplatesAdminPage({ user }: AssetTemplatesAdminPageProps) 
         {listQ.isPending ? <p className="text-sm text-ink-muted">Loading templates…</p> : null}
         {listQ.isError ? (
           <p className="rounded border border-critical-line bg-critical-wash p-3 text-sm text-critical-ink-strong">
-            {(listQ.error as Error).message}
+            {apiErrorMessage(listQ.error)}
           </p>
         ) : null}
         {!listQ.isPending && !listQ.isError && visibleGroups.length === 0 ? (

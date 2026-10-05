@@ -25,6 +25,7 @@ import {
   MAINTENANCE_GENERATION_MODE_LABELS,
   WORK_ORDER_PRIORITY_LABELS,
 } from "../lib/maintenance-labels";
+import { apiErrorMessage } from "../lib/api-error-message";
 
 type MaintenanceSchedulesPanelProps = {
   assetOptions: AssetRow[];
@@ -168,8 +169,8 @@ export function MaintenanceSchedulesPanel({
       resetCreateForm();
       void qc.invalidateQueries({ queryKey: ["maintenance", "schedules"] });
     },
-    onError: (err: Error) => {
-      setCreateError(err.message);
+    onError: (err: unknown) => {
+      setCreateError(apiErrorMessage(err));
     },
   });
 
@@ -451,12 +452,12 @@ export function MaintenanceSchedulesPanel({
 
       {convertM.isError ? (
         <p className="text-xs text-critical-ink" role="alert">
-          Could not generate work order: {convertM.error.message}
+          Could not generate work order: {apiErrorMessage(convertM.error)}
         </p>
       ) : null}
       {updateM.isError ? (
         <p className="text-xs text-critical-ink" role="alert">
-          Could not update schedule: {updateM.error.message}
+          Could not update schedule: {apiErrorMessage(updateM.error)}
         </p>
       ) : null}
 

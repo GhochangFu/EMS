@@ -3,6 +3,8 @@ import { afterEach, describe, it, vi } from "vitest";
 import { cleanup } from "@testing-library/react";
 
 import {
+  detailsLoadFailureShowsTheThrownText,
+  enrichmentSaveRefusalShowsTheServerSentence,
   keepsTheClassBlockDistinctFromTheInstanceEnrichment,
   offersNoControlThatCopiesTheClassTextIntoTheForm,
   omitsTheClassBlockEntirelyWhenThereIsNoProvenance,
@@ -19,6 +21,7 @@ describe("E2.2 — the class philosophy on the Alarm Details panel", () => {
   afterEach(() => {
     cleanup();
     vi.restoreAllMocks();
+    vi.unstubAllGlobals();
   });
 
   it("shows the class philosophy, naming the template version it came from", async () => {
@@ -39,5 +42,13 @@ describe("E2.2 — the class philosophy on the Alarm Details panel", () => {
 
   it("offers no control that copies the class text into the enrichment form", async () => {
     await offersNoControlThatCopiesTheClassTextIntoTheForm();
+  });
+
+  it("F4.204 shows the server sentence, not the JSON envelope, when an enrichment save is refused", async () => {
+    await enrichmentSaveRefusalShowsTheServerSentence();
+  });
+
+  it("F4.204 shows the thrown text unchanged when the details load fails", async () => {
+    await detailsLoadFailureShowsTheThrownText();
   });
 });

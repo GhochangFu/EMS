@@ -18,6 +18,7 @@ import { fetchVocabularies, vocabulariesQueryKey } from "../../api/vocabularies"
 import { MasterDataLayout } from "../../components/admin/master-data-layout";
 import { PageHeader } from "../../components/page-header";
 import { SectionCard } from "../../components/section-card";
+import { apiErrorMessage } from "../../lib/api-error-message";
 import { channelOrganizationOptions, organizationLabel } from "../../lib/notification-channels";
 import type { AuthUser } from "../../stores/auth-store";
 
@@ -224,7 +225,7 @@ export function EscalationProfilesPage({ user }: EscalationProfilesPageProps) {
       setError(null);
       await queryClient.invalidateQueries({ queryKey: ["escalation", "profiles"] });
     },
-    onError: (err: Error) => setError(err.message),
+    onError: (err: unknown) => setError(apiErrorMessage(err)),
   });
 
   const deleteMutation = useMutation({
@@ -235,7 +236,7 @@ export function EscalationProfilesPage({ user }: EscalationProfilesPageProps) {
     },
     // A profile a severity still maps to comes back 409 with the reason. It is
     // rendered rather than swallowed: unmapping first is the operator's move.
-    onError: (err: Error) => setError(err.message),
+    onError: (err: unknown) => setError(apiErrorMessage(err)),
   });
 
   const defaultsMutation = useMutation({
@@ -259,7 +260,7 @@ export function EscalationProfilesPage({ user }: EscalationProfilesPageProps) {
       // role that may hold several.
       await queryClient.invalidateQueries({ queryKey: ["escalation", "defaults"] });
     },
-    onError: (err: Error) => setError(err.message),
+    onError: (err: unknown) => setError(apiErrorMessage(err)),
   });
 
   // Deliberately narrow, and it does NOT include the ladder's own rules. A

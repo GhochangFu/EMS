@@ -3,6 +3,7 @@ import { cleanup } from "@testing-library/react";
 import { afterEach, describe, it, vi } from "vitest";
 
 import {
+  readsARawEnvelopeRefusalAsItsSentence,
   anotherTenantsProfileShowsNoMappedSeverity,
   asksAnAdminToChooseAnOrganization,
   aStepRowCanBeAddedAndRemoved,
@@ -82,5 +83,9 @@ describe("F3.10 escalation profiles page", () => {
 
   it("leaves another tenant's profile with no mapped severity", async () => {
     await anotherTenantsProfileShowsNoMappedSeverity();
+  }, CASE_TIMEOUT_MS);
+
+  it("reads a raw error envelope as its sentence (F4.204)", async () => {
+    await readsARawEnvelopeRefusalAsItsSentence();
   }, CASE_TIMEOUT_MS);
 });

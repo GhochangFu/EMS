@@ -8,6 +8,7 @@ import {
   fetchRuleNotifications,
   setRuleNotifications,
 } from "../api/notifications";
+import { apiErrorMessage } from "../lib/api-error-message";
 
 /**
  * `F3.7` — which channels a rule notifies, on the rule's own card.
@@ -87,7 +88,7 @@ export function RuleChannelsEditor({
       // Deliberately not done on failure: a refusal keeps the operator's work.
       setSelected(null);
     },
-    onError: (err: Error) => setError(err.message),
+    onError: (err: unknown) => setError(apiErrorMessage(err)),
   });
 
   const channels = channelsQ.data?.items ?? [];

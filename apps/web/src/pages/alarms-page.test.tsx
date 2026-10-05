@@ -3,6 +3,7 @@ import { afterEach, describe, it, vi } from "vitest";
 import { cleanup } from "@testing-library/react";
 
 import {
+  ackRefusalShowsTheServerSentence,
   countsActiveAsUnclearedAndAcknowledgedAsStamped,
   offersAckOnExactlyTheUnacknowledgedRows,
   rendersAllFourLifecycleStates,
@@ -18,6 +19,7 @@ describe("F3.10 alarm lifecycle on the alarms page", () => {
   afterEach(() => {
     cleanup();
     vi.restoreAllMocks();
+    vi.unstubAllGlobals();
   });
 
   it("renders all four lifecycle states", async () => {
@@ -34,5 +36,9 @@ describe("F3.10 alarm lifecycle on the alarms page", () => {
 
   it("finds both cleared alarms when searching for cleared", async () => {
     await searchingClearedKeepsBothClearedRows();
+  });
+
+  it("F4.204 shows the server sentence, not the JSON envelope, when an ack is refused", async () => {
+    await ackRefusalShowsTheServerSentence();
   });
 });

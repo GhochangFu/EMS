@@ -16,6 +16,7 @@ import { PageHeader } from "../../components/page-header";
 import { SectionCard } from "../../components/section-card";
 import { StatusPill } from "../../components/status-pill";
 import { canManageLocationTypes } from "../../lib/admin-access";
+import { apiErrorMessage } from "../../lib/api-error-message";
 import type { AuthUser } from "../../stores/auth-store";
 
 type LocationTypesAdminPageProps = { user: AuthUser };
@@ -112,7 +113,7 @@ function LocationTypesCatalog() {
       setError(null);
       await invalidateBoth();
     },
-    onError: (err: Error) => setError(err.message),
+    onError: (err: unknown) => setError(apiErrorMessage(err)),
   });
 
   const toggleMutation = useMutation({
@@ -149,7 +150,7 @@ function LocationTypesCatalog() {
           </button>
         </div>
         {toggleMutation.error ? (
-          <div className="text-xs text-critical-ink">{toggleMutation.error.message}</div>
+          <div className="text-xs text-critical-ink">{apiErrorMessage(toggleMutation.error)}</div>
         ) : null}
         <table className="min-w-full text-sm">
           <thead>

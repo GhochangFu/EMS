@@ -568,3 +568,29 @@ export async function saysTheOrganizationListFailedRatherThanClaimingThereAreNon
   // Still refused — the form genuinely cannot name a tenant.
   expect(screen.getByRole("button", { name: "Add channel" })).toBeDisabled();
 }
+
+/**
+ * `F4.204` — a create refused with the raw Nest envelope reads as its sentence, not as JSON.
+ * Route-only page: the three mutation handlers share one `apiErrorMessage` read.
+ */
+export async function readsARawEnvelopeRefusalAsItsSentence(): Promise<void> {
+  stubApi({
+    createNotificationChannel: (() =>
+      Promise.reject(
+        new Error(
+          '{"statusCode":409,"message":"A notification channel with that code already exists","error":"Conflict"}',
+        ),
+      )) as typeof api.createNotificationChannel,
+  });
+  renderPage();
+
+  await screen.findByText("ops-email");
+  await userEvent.type(screen.getByLabelText("Code"), "ops-email");
+  await userEvent.type(screen.getByLabelText("Name"), "Duplicate");
+  await userEvent.type(screen.getByLabelText(/Recipients/i), "a@b.c");
+  await userEvent.click(screen.getByRole("button", { name: "Add channel" }));
+
+  const alert = await screen.findByRole("alert");
+  expect(alert.textContent).toBe("A notification channel with that code already exists");
+  expect(alert.textContent).not.toContain('{"');
+}

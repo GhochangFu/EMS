@@ -10,6 +10,8 @@ import {
   rendersOneRowPerItemWithItsCount,
   saveInvalidatesTheDropdownKey,
   showsARetiredRowAsInactiveWithReactivate,
+  aRefusedSaveShowsTheSentence,
+  aRefusedToggleShowsTheSentence,
 } from "./location-types-page.spec";
 
 /**
@@ -49,5 +51,13 @@ describe("F4.162 Location Types admin page", () => {
 
   it("W7 fails closed for an organization_admin: status line, no table, no catalog read", async () => {
     await failsClosedForAnOrganizationAdmin();
+  });
+
+  it("F4.204 a refused save shows the sentence, not the envelope", async () => {
+    await aRefusedSaveShowsTheSentence();
+  });
+
+  it("F4.204 a refused deactivate shows the sentence, not the envelope", async () => {
+    await aRefusedToggleShowsTheSentence();
   });
 });

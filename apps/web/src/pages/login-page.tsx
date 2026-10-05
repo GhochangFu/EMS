@@ -4,6 +4,7 @@ import { useNavigate } from "react-router-dom";
 
 import { fetchCurrentUser, loginRequest } from "../api/login";
 import { isOidcEnabled, startOidcLogin } from "../api/oidc";
+import { apiErrorMessage } from "../lib/api-error-message";
 import { peekReturnPath, takeReturnPath } from "../lib/return-path";
 import { useAuthStore } from "../stores/auth-store";
 import { Wordmark } from "../components/wordmark";
@@ -31,8 +32,8 @@ export function LoginPage() {
       // else `/`, the caller's Control Room entry level (`F3.72` plan D1).
       void navigate(takeReturnPath() ?? "/", { replace: true });
     },
-    onError: (err: Error) => {
-      setFormError(err.message);
+    onError: (err: unknown) => {
+      setFormError(apiErrorMessage(err));
     },
   });
 
@@ -50,7 +51,7 @@ export function LoginPage() {
     try {
       await startOidcLogin();
     } catch (err) {
-      setFormError(err instanceof Error ? err.message : "OIDC login failed");
+      setFormError(apiErrorMessage(err));
     }
   }
 

@@ -18,6 +18,7 @@ import {
   typeSelectListsTheFourTypesInOrder,
   untouchedCreatePostsTheFirstListedType,
   untouchedCreatePostsTheMumbaiCoordinates,
+  aRefusedSaveShowsTheSentence,
 } from "./locations-page.spec";
 
 /**
@@ -91,5 +92,9 @@ describe("E4.1b locations page — the Timezone field", () => {
 
   it("D1 an untouched create posts the Mumbai coordinates (F3.79)", async () => {
     await untouchedCreatePostsTheMumbaiCoordinates();
+  });
+
+  it("F4.204 a refused save shows the sentence, not the envelope", async () => {
+    await aRefusedSaveShowsTheSentence();
   });
 });

@@ -3,6 +3,7 @@ import { afterEach, describe, it, vi } from "vitest";
 import { cleanup } from "@testing-library/react";
 
 import {
+  readsARawEnvelopeRefusalAsItsSentence,
   carriesAJoinedChannelItCannotShowThroughTheSave,
   keepsThePlainCaptionForANotifyRule,
   keepsTheOperatorsBoxesWhenTheSaveIsRefused,
@@ -95,5 +96,17 @@ describe("F3.65b rule enable toggle knob follows its track", () => {
 
   it("paints the knob on-dark when the rule is disabled", async () => {
     await paintsTheDisabledKnobOnDark();
+  });
+});
+
+describe("F4.204 a refused save reads as a sentence", () => {
+  afterEach(() => {
+    cleanup();
+    vi.restoreAllMocks();
+    vi.unstubAllGlobals();
+  });
+
+  it("reads a raw error envelope as its sentence", async () => {
+    await readsARawEnvelopeRefusalAsItsSentence();
   });
 });

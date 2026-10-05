@@ -472,3 +472,22 @@ export async function mountsTheEditorOnlyWhenTheCardAsksForIt(): Promise<void> {
   expect(api.fetchRuleNotifications).toHaveBeenCalledTimes(1);
   expect(api.fetchRuleNotifications).toHaveBeenCalledWith(RULE_ID);
 }
+
+/** `F4.204` — a save refused with the raw Nest envelope reads as its sentence, not as JSON. */
+export async function readsARawEnvelopeRefusalAsItsSentence(): Promise<void> {
+  stubApi({
+    setRuleNotifications: (() =>
+      Promise.reject(
+        new Error('{"statusCode":403,"message":"You may not edit this rule","error":"Forbidden"}'),
+      )) as typeof api.setRuleNotifications,
+  });
+  renderEditor();
+
+  expect(await screen.findByRole("checkbox", { name: "Operations email" })).toBeChecked();
+  await userEvent.click(screen.getByRole("checkbox", { name: "Operations webhook (disabled)" }));
+  await userEvent.click(screen.getByRole("button", { name: "Save" }));
+
+  const alert = await screen.findByRole("alert");
+  expect(alert.textContent).toBe("You may not edit this rule");
+  expect(alert.textContent).not.toContain('{"');
+}

@@ -12,6 +12,7 @@ import {
 import { MasterDataLayout } from "../../components/admin/master-data-layout";
 import { PageHeader } from "../../components/page-header";
 import { SectionCard } from "../../components/section-card";
+import { apiErrorMessage } from "../../lib/api-error-message";
 import {
   buildManualReadingRow,
   defaultLocalDateTime,
@@ -66,9 +67,9 @@ export function ManualReadingsPage({ user }: ManualReadingsPageProps) {
       setResult(response);
       setSubmitError(null);
     },
-    onError: (err: Error) => {
+    onError: (err: unknown) => {
       setResult(null);
-      setSubmitError(err.message);
+      setSubmitError(apiErrorMessage(err));
     },
   });
 
