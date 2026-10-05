@@ -28,18 +28,25 @@ export function needsMqttSetup(rtu: DraftRtu): boolean {
 }
 
 /**
- * `F4.208` — the topic `OnboardingCommitService` writes to `bms.rtus.mqtt_topic`:
- * `config.topic`, else the legacy `config.mqttTopic`, untrimmed. `inferPhase`
- * reads unparsed drafts, so `config` may be absent.
+ * `F4.208` — the topic `OnboardingCommitService` writes to `bms.rtus.mqtt_topic`,
+ * read the way it reads it: a string `config.topic`, else a string legacy
+ * `config.mqttTopic`, untrimmed; any other value counts as absent. The commit
+ * writes it for every protocol, so this does not look at the protocol.
+ * `inferPhase` reads unparsed drafts, so `config` may be absent.
  */
 export function rtuTopic(rtu: DraftRtu): string {
-  return String(rtu.config?.topic ?? rtu.config?.mqttTopic ?? "");
+  const config = rtu.config ?? {};
+  return (
+    (typeof config.topic === "string" ? config.topic : null) ??
+    (typeof config.mqttTopic === "string" ? config.mqttTopic : null) ??
+    ""
+  );
 }
 
 /**
  * `F4.208` — a topic the RTU cannot ingest with: blank, the `-` placeholder, or
- * wider than the `varchar(255)` column it commits to. The one predicate behind
- * `needsMqttSetup`, `inferPhase` and the guided turn's RTU in hand.
+ * wider than the `varchar(255)` column it commits to. The topic half of
+ * `needsMqttSetup`, which `inferPhase` and `rtuInHand` read.
  */
 export function topicUnusable(rtu: DraftRtu): boolean {
   const topic = rtuTopic(rtu);
@@ -49,12 +56,14 @@ export function topicUnusable(rtu: DraftRtu): boolean {
 
 /**
  * `F4.208` (owner ruling) — the index of the RTU a guided `topic: x` turn
- * writes to: the first enabled MQTT RTU whose topic is unusable, else the last
- * enabled MQTT RTU, else `-1`, and the turn appends a new RTU as before.
+ * writes to when the message names none: the first RTU `needsMqttSetup`
+ * holds for, else the last enabled MQTT RTU, else `-1`, and the turn appends a
+ * new RTU as before. The first pass is the order `mqttSetupTemplate` lists its
+ * blocks in, so a pasted template's first `topic:` lands on its first block.
  */
 export function rtuInHand(draft: OnboardingDraft): number {
   const rtus = draft.rtus ?? [];
-  const waiting = rtus.findIndex((rtu) => isEnabledMqttRtu(rtu) && topicUnusable(rtu));
+  const waiting = rtus.findIndex(needsMqttSetup);
   if (waiting >= 0) {
     return waiting;
   }
@@ -66,6 +75,41 @@ export function rtuInHand(draft: OnboardingDraft): number {
   return -1;
 }
 
+/**
+ * `F4.208` — the RTU a guided `topic: x` turn writes to. A message with exactly
+ * one `RTU:` line — one block of `mqttSetupTemplate`, pasted back — targets the
+ * one enabled MQTT RTU that line names, as the template prints it
+ * (`quoteCell(displayName)`) or by its bare display name or code. Any other
+ * message, or a name that matches no RTU or several, falls back to `rtuInHand`.
+ */
+export function rtuForTopicTurn(message: string, draft: OnboardingDraft): number {
+  const named = [...message.matchAll(/^[ \t]*RTU:[ \t]*(.*?)[ \t]*$/gim)].map((match) => match[1]);
+  if (named.length === 1) {
+    const name = named[0];
+    const matches = (draft.rtus ?? []).flatMap((rtu, index) =>
+      isEnabledMqttRtu(rtu) && [quoteCell(rtu.displayName), rtu.displayName, rtu.code].includes(name) ? [index] : [],
+    );
+    if (matches.length === 1) {
+      return matches[0];
+    }
+  }
+  return rtuInHand(draft);
+}
+
+/** `F4.208` — the guided reply to an added MQTT RTU; it names both routes to its topic. */
+export const MQTT_RTU_ADDED_REPLY =
+  "MQTT RTU added. Add its credentials with the **Credentials** field on the RTU step — never in this chat — " +
+  "set its topic in the preview, or write **topic: <topic>**, then say **confirm rtu**.";
+
+/** `F4.208` — the guided RTU step's prompt while `waiting` MQTT RTUs still need setup. */
+export function mqttRtusWaitingPrompt(waiting: number): string {
+  return (
+    `${waiting} MQTT RTU(s) still need credentials or a topic. Set each RTU's credentials with the ` +
+    "**Credentials** field on the RTU step — never in this chat — set each topic in the preview, or write " +
+    "**topic: <topic>**, then say **confirm rtu**."
+  );
+}
+
 export function mqttSetupTemplate(draft: OnboardingDraft): string {
   const mqttRtus = (draft.rtus ?? []).filter(isEnabledMqttRtu);
   if (mqttRtus.length === 0) {
@@ -74,13 +118,15 @@ export function mqttSetupTemplate(draft: OnboardingDraft): string {
   // `F4.105` site 2. **Capping this costs no working function**, and that is
   // measured rather than assumed: the template already does not do what it
   // says past the first block. The guided turn reads one *non-global*
-  // `/topic[:\s]+(\S+)/i`, so only the first block's topic is ever taken.
+  // `/\btopic\s*:\s*(\S+)/i`, so only the first block's topic is ever taken.
   // Until `F4.208` the `phase === "rtu"` branch of `handleRuleBasedTurn` also
   // *appended* an RTU instead of updating the ones the import created; since
-  // then a `topic:` turn that names no protocol sets the topic of the RTU in
-  // hand (`rtuInHand`) — the first one still waiting — so a pasted template
-  // fills one RTU per message. Reading several blocks from one paste stays a
-  // recorded limit (owner ruling, `F4.208`).
+  // then, while the derived phase is `rtu`, a `topic:` turn that names no
+  // protocol sets the topic of `rtuForTopicTurn`'s RTU: the one a single
+  // pasted block names, else `rtuInHand`'s, whose first pass is the
+  // `needsMqttSetup` order this function sorts the blocks into — so the first
+  // block's topic lands on the first block's RTU, one RTU per message. Reading
+  // several blocks from one paste stays a recorded limit (owner ruling, `F4.208`).
   //
   // **The two predicates diverge, and the cap turned that from untidy into an
   // elision — so this list is sorted, not filtered.** `mqttIncomplete` — a
@@ -116,11 +162,12 @@ export function mqttSetupTemplate(draft: OnboardingDraft): string {
   );
   const { shown, omitted } = echoedItems(setupOrder);
   const blocks = shown.map((rtu) => {
-    const existingTopic = String(rtu.config.topic ?? rtu.config.mqttTopic ?? "").trim();
+    const existingTopic = rtuTopic(rtu).trim();
     // `topic:` is the one echo site `quoteCell` cannot cover — the operator
     // copies this block, edits it and pastes it back, and the quotes would be
-    // captured into the stored topic by `defaultConfig`'s
-    // `/topic[:\s]+(\S+)/i`. So it is bounded by *length* instead, against the
+    // captured into the stored topic by the guided turn's
+    // `/\btopic\s*:\s*(\S+)/i` (or `defaultConfig`'s `/topic[:\s]+(\S+)/i` when
+    // the turn appends). So it is bounded by *length* instead, against the
     // same `MAX_RTU_TOPIC_CHARS` the sheet is refused on, and an unusable
     // value falls back to the placeholder rather than being cut: a truncated
     // topic pasted back subscribes to a topic nobody asked for. A draft can
@@ -131,9 +178,9 @@ export function mqttSetupTemplate(draft: OnboardingDraft): string {
         ? existingTopic
         : "your/topic/here";
     return [
-      // Quoting this breaks no round trip: the paste-back parser is
-      // `defaultConfig`'s `/topic[:\s]+(\S+)/i`, which reads the `topic:`
-      // line below and never this one.
+      // Quoting this breaks no round trip: the topic is read from the `topic:`
+      // line below, and `rtuForTopicTurn` matches this line against
+      // `quoteCell(displayName)` — this exact form — to pick the RTU.
       `RTU: ${quoteCell(rtu.displayName)}`,
       `topic: ${topic}`,
       // No username/password lines (ADR 0022, decision 2). A copy-paste block

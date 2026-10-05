@@ -31,9 +31,11 @@ import { mergeDraftPatch } from "./onboarding-draft-merge";
 import { MAX_RTU_TOPIC_CHARS } from "./onboarding-excel.service";
 import {
   formatAssetsByRtuSummary,
+  MQTT_RTU_ADDED_REPLY,
+  mqttRtusWaitingPrompt,
   mqttSetupTemplate,
   needsMqttSetup,
-  rtuInHand,
+  rtuForTopicTurn,
 } from "./onboarding-chat-summaries";
 import * as locationTypes from "./onboarding-location-type-match";
 // F3.21 (ADR 0090): the model no longer returns a draft patch, so the
@@ -136,12 +138,7 @@ function stepPrompt(
         return { text: "Add an RTU first. Which communication protocol will RTU 1 use?", replies: [...PROTOCOL_REPLIES] };
       }
       if (waiting > 0) {
-        return {
-          text:
-            `${waiting} MQTT RTU(s) still need credentials or a topic. Set each RTU's credentials with the ` +
-            "**Credentials** field on the RTU step — never in this chat — then say **confirm rtu**.",
-          replies: ["confirm rtu", "View draft"],
-        };
+        return { text: mqttRtusWaitingPrompt(waiting), replies: ["confirm rtu", "View draft"] };
       }
       return { text: "Each RTU needs a code and a protocol. Open the preview to fix them.", replies: ["View draft"] };
     }
@@ -615,13 +612,14 @@ export class OnboardingChatService {
       );
     }
 
-    // F4.208: "topic: x" sets the topic of the RTU in hand rather than append
+    // F4.208: while the derived phase is `rtu`, "topic: x" (the colon is
+    // required) sets the topic of `rtuForTopicTurn`'s RTU rather than append
     // one. Naming a protocol, or "add another rtu", still appends; the protocol
     // test skips the topic itself, so `site/sim/rtu` is not read as `sim`.
     const addAnother = /^add another rtu\b/.test(lower);
-    const topicTurn = message.match(/topic[:\s]+(\S+)/i);
+    const topicTurn = derived === "rtu" ? message.match(/\btopic\s*:\s*(\S+)/i) : null;
     const rest = topicTurn ? lower.replace(topicTurn[0].toLowerCase(), "") : lower;
-    const inHand = topicTurn && !addAnother && !NAMES_A_PROTOCOL.test(rest) ? rtuInHand(draft) : -1;
+    const inHand = topicTurn && !addAnother && !NAMES_A_PROTOCOL.test(rest) ? rtuForTopicTurn(message, draft) : -1;
     if (topicTurn && inHand >= 0) {
       const topic = cutToBound(topicTurn[1], MAX_RTU_TOPIC_CHARS);
       const rtus = (draft.rtus ?? []).map((rtu, i) => (i === inHand ? { ...rtu, config: { ...rtu.config, topic } } : rtu));
@@ -656,7 +654,7 @@ export class OnboardingChatService {
       // Credentials now arrive only through `POST :id/credentials`.
       return this.finalizeTurn(
         protocol === "mqtt"
-          ? "MQTT RTU added. Add its credentials with the **Credentials** field on the RTU step — never in this chat — then say **confirm rtu**."
+          ? MQTT_RTU_ADDED_REPLY
           : `Added ${protocol} RTU. Ingest adapter is not connected yet — config will be stored. Add point keys next?`,
         patch,
         "point_keys",

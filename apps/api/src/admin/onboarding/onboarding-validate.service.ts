@@ -166,8 +166,10 @@ export class OnboardingValidateService {
         }
         // F4.208: `config` is a `z.record(z.unknown())`, so no schema bounds the
         // topic; without this an over-long one passes to the commit and fails
-        // on the `varchar(255)` insert.
-        if (rtu.protocol === "mqtt" && rtuTopic(rtu).length > MAX_RTU_TOPIC_CHARS) {
+        // on the `varchar(255)` insert. `rtuTopic` reads the topic as the commit
+        // does, and the commit writes it for every protocol, so this is not
+        // gated on `mqtt`.
+        if (rtuTopic(rtu).length > MAX_RTU_TOPIC_CHARS) {
           errors.push({
             path: `rtus.${i}.config.topic`,
             message: `MQTT topic is longer than ${MAX_RTU_TOPIC_CHARS} characters`,

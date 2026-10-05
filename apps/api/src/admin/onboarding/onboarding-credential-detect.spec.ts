@@ -1,3 +1,4 @@
+import { MQTT_RTU_ADDED_REPLY, mqttRtusWaitingPrompt } from "./onboarding-chat-summaries";
 import { looksLikeCredential, scrubMessages } from "./onboarding-credential-detect";
 
 function assert(condition: boolean, message: string): void {
@@ -80,6 +81,9 @@ export function runCredentialDetectTests(): void {
     // telling users where the Credentials field is with "[REDACTED]".
     "MQTT RTU added. Add its credentials with the **Credentials** field on the RTU step — never in this chat — or carry on without them for now.",
     "Set each RTU's credentials with the **Credentials** field on the RTU step — never in this chat. The topic can be completed here:",
+    // F4.208: the live copy, which since review also names the topic route.
+    MQTT_RTU_ADDED_REPLY,
+    mqttRtusWaitingPrompt(2),
     "Credentials are encrypted before storage and never sent to the assistant.",
     "[REDACTED] — withheld by ADR 0022",
     "the token bus is down",

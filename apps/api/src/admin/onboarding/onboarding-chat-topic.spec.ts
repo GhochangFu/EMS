@@ -4,7 +4,7 @@ import { CredentialCryptoService } from "../../security/credential-crypto.servic
 import { OnboardingChatService } from "./onboarding-chat.service";
 import type { ChatTurnResult } from "./onboarding-chat.service";
 import { ruleBasedTurn } from "./onboarding-chat.service.spec";
-import { needsMqttSetup } from "./onboarding-chat-summaries";
+import { mqttSetupTemplate, needsMqttSetup, rtuInHand } from "./onboarding-chat-summaries";
 import { mergeDraftPatch } from "./onboarding-draft-merge";
 import { MAX_RTU_TOPIC_CHARS } from "./onboarding-excel.service";
 import { EMPTY_TEMPLATE_CONTEXT } from "./onboarding-template-refs";
@@ -221,14 +221,129 @@ export async function assertTheFirstWaitingRtuIsInHand(): Promise<void> {
   );
 }
 
-/** T12 (owner ruling) — with none waiting, the last enabled MQTT RTU is in hand. */
-export async function assertTheLastRtuIsInHandWhenNoneWaits(): Promise<void> {
-  const result = await ruleBasedTurn("topic: plant/new", threeRtus(["plant/a", "plant/b", "plant/c"]), "point_keys");
-  const topics = patchedRtus(result).map((rtu) => rtu.config.topic);
+/**
+ * T12 (owner ruling) — with none waiting, the last enabled MQTT RTU is in hand.
+ * Asserted on `rtuInHand` itself: since review a guided turn updates a topic
+ * only while the derived phase is `rtu`, and a draft with none waiting has
+ * moved past it (B2 is that turn).
+ */
+export function assertTheLastRtuIsInHandWhenNoneWaits(): void {
+  const index = rtuInHand(threeRtus(["plant/a", "plant/b", "plant/c"]));
+  assert(index === 2, `RTU-3, the last, is in hand, got index ${index}`);
+}
+
+/** The topics of the draft after the turn's patch is merged into it. */
+function mergedTopics(draft: OnboardingDraft, result: ChatTurnResult): unknown[] {
+  return (mergeDraftPatch(draft, result.draftPatch).rtus ?? []).map((rtu) => rtu.config.topic);
+}
+
+/** B1 — a sentence that mentions a topic without a colon does not overwrite the RTU in hand. */
+export async function assertATopicQuestionDoesNotUpdate(): Promise<void> {
+  const draft = waitingForATopic();
+  const result = await ruleBasedTurn("what topic should I use", draft, "rtu");
+  const topics = mergedTopics(draft, result);
+  assert(topics[0] === "", `RTU-1 keeps its empty topic, got ${JSON.stringify(topics)}`);
+}
+
+/** B2 — "topic: x" past the RTU step changes no RTU's topic. */
+export async function assertATopicTurnPastTheRtuStepDoesNotUpdate(): Promise<void> {
+  const draft = threeRtus(["plant/a", "plant/b", "plant/c"]);
+  const result = await ruleBasedTurn("topic: plant/new", draft, "point_keys");
+  const topics = mergedTopics(draft, result);
   assert(
-    JSON.stringify(topics) === JSON.stringify(["plant/a", "plant/b", "plant/new"]),
-    `the topic lands on RTU-3, the last, got ${JSON.stringify(topics)}`,
+    JSON.stringify(topics) === JSON.stringify(["plant/a", "plant/b", "plant/c"]),
+    `every topic is unchanged past the RTU step, got ${JSON.stringify(topics)}`,
   );
+}
+
+/**
+ * Enabled MQTT RTUs whose display names differ from their codes, as an
+ * imported workbook's do: RTU-1 lacks only its credential, the others only a topic.
+ */
+function templateDraft(count: 2 | 3): OnboardingDraft {
+  const rtus = [
+    credentialedRtu("plant/a", { code: "RTU-1", displayName: "Pump House A", credentialsSet: false }),
+    credentialedRtu("", { code: "RTU-2", displayName: "Pump House B" }),
+    credentialedRtu("", { code: "RTU-3", displayName: "Pump House C" }),
+  ];
+  return draftWith(...rtus.slice(0, count));
+}
+
+/** The paste-back blocks of the service's own MQTT setup template, between its markers. */
+function templateBlocks(draft: OnboardingDraft): string[] {
+  const text = mqttSetupTemplate(draft);
+  const body = text.slice(text.indexOf("START COPY"), text.indexOf("────────── END COPY"));
+  return body.slice(body.indexOf("\n") + 1).trim().split("\n---\n");
+}
+
+/** C1 — the whole template pasted back with its first block's topic filled in sets that block's RTU. */
+export async function assertAPastedTemplateSetsItsFirstBlocksRtu(): Promise<void> {
+  const draft = templateDraft(2);
+  const blocks = templateBlocks(draft);
+  assert(blocks[0]?.startsWith("RTU: 'Pump House A'"), `the template lists RTU-1 first, got ${JSON.stringify(blocks)}`);
+  blocks[0] = blocks[0].replace(/topic: .*/, "topic: plant/new");
+  const result = await ruleBasedTurn(blocks.join("\n---\n"), draft, "rtu");
+  const topics = mergedTopics(draft, result);
+  assert(
+    JSON.stringify(topics) === JSON.stringify(["plant/new", ""]),
+    `the topic lands on RTU-1, the block it was written in, got ${JSON.stringify(topics)}`,
+  );
+}
+
+/** C2 — one pasted block that names an RTU sets that RTU, not the RTU in hand. */
+export async function assertAPastedBlockSetsTheRtuItNames(): Promise<void> {
+  const draft = templateDraft(3);
+  const block = templateBlocks(draft).find((text) => text.startsWith("RTU: 'Pump House C'")) ?? "";
+  const result = await ruleBasedTurn(block.replace(/topic: .*/, "topic: plant/c"), draft, "rtu");
+  const topics = mergedTopics(draft, result);
+  assert(
+    JSON.stringify(topics) === JSON.stringify(["plant/a", "", "plant/c"]),
+    `the topic lands on RTU-3, the RTU the block names, got ${JSON.stringify(topics)}`,
+  );
+}
+
+/** D1 — the bound is inclusive: a credentialed MQTT RTU with a 255-character topic is not waiting. */
+export function assertATopicAtTheBoundDoesNotNeedSetup(): void {
+  assert(!needsMqttSetup(credentialedRtu(AT_BOUND)), "a 255-character topic does not need MQTT setup");
+}
+
+/** E1 — a disabled MQTT RTU with nothing set is never in hand; the enabled one after it is. */
+export function assertADisabledMqttRtuIsNotInHand(): void {
+  const disabled = credentialedRtu("", { code: "RTU-1", ingestEnabled: false, credentialsSet: false });
+  const index = rtuInHand(draftWith(disabled, credentialedRtu("", { code: "RTU-2" })));
+  assert(index === 1, `RTU-2, the enabled MQTT RTU, is in hand, got index ${index}`);
+}
+
+/** E2 — a non-MQTT RTU after the last MQTT one is never in hand. */
+export function assertANonMqttRtuIsNotInHand(): void {
+  const modbus: DraftRtu = { code: "RTU-2", displayName: "RTU-2", protocol: "modbus_tcp", config: {}, credentialsSet: false };
+  const index = rtuInHand(draftWith(credentialedRtu("plant/a"), modbus));
+  assert(index === 0, `RTU-1, the last MQTT RTU, is in hand, got index ${index}`);
+}
+
+/** The validation messages at `rtus.0.config.topic` for a one-RTU draft. */
+function rtuTopicErrors(rtu: DraftRtu): string[] {
+  const result = new OnboardingValidateService().validate(draftWith(rtu), ACTIVE_TYPES, EMPTY_TEMPLATE_CONTEXT);
+  return result.errors.filter((error) => error.path === "rtus.0.config.topic").map((error) => error.message);
+}
+
+/** F1 — a non-string `config.topic` is skipped as the commit skips it, so an over-long `mqttTopic` is the error. */
+export function assertANonStringTopicFallsBackToMqttTopic(): void {
+  const messages = rtuTopicErrors(credentialedRtu("", { config: { topic: 42, mqttTopic: OVER_LONG } }));
+  assert(messages.includes(TOO_LONG_MESSAGE), `the over-long mqttTopic is an error, got ${JSON.stringify(messages)}`);
+}
+
+/** F2 — the commit writes the topic for every protocol, so an over-long one on a Modbus RTU is an error too. */
+export function assertAnOverLongTopicOnAModbusRtuIsAnError(): void {
+  const modbus: DraftRtu = {
+    code: "RTU-1",
+    displayName: "RTU-1",
+    protocol: "modbus_tcp",
+    config: { topic: OVER_LONG },
+    credentialsSet: false,
+  };
+  const messages = rtuTopicErrors(modbus);
+  assert(messages.includes(TOO_LONG_MESSAGE), `the over-long topic is an error, got ${JSON.stringify(messages)}`);
 }
 
 // ---------------------------------------------------------------------------

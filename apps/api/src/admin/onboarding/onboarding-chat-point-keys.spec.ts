@@ -243,7 +243,8 @@ export async function assertAnAddedMqttRtuOffersConfirmRtu(): Promise<void> {
   assert(repliesOf(result) === JSON.stringify(["confirm rtu", "View draft", "Add another RTU"]), turnSummary(result));
   assert(
     result.assistantMessage ===
-      "MQTT RTU added. Add its credentials with the **Credentials** field on the RTU step — never in this chat — then say **confirm rtu**.",
+      "MQTT RTU added. Add its credentials with the **Credentials** field on the RTU step — never in this chat — " +
+        "set its topic in the preview, or write **topic: <topic>**, then say **confirm rtu**.",
     turnSummary(result),
   );
 }
