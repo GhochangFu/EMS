@@ -21,6 +21,7 @@ import {
   assertAnInactiveTemplateKeyTheDraftDeclaresIsAnError,
   assertAnInactiveTemplateKeyIsAnError,
   assertADraftWhosePatchDroppedATemplateKeyIsNotReady,
+  assertADraftWhosePatchDroppedATemplateKeyNamesThePoint,
   assertAStockPatternOutsideTheGrammarIsAnError,
   assertV1AnUnresolvedTemplateCodeIsAnError,
   assertV2AnUnpublishedVersionIsAnError,
@@ -227,5 +228,9 @@ describe("OnboardingValidateService — templates and templated assets (F3.22, A
 
   it("F4.196 keeps a draft whose PATCH dropped a template key from ready", () => {
     assertADraftWhosePatchDroppedATemplateKeyIsNotReady();
+  });
+
+  it("F4.196 names the template point a PATCH left unresolved", () => {
+    assertADraftWhosePatchDroppedATemplateKeyNamesThePoint();
   });
 });

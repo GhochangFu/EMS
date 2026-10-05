@@ -25,6 +25,7 @@ import {
   templateSourceKeyMessage,
   templateSourceKeyProblem,
   templateVariables,
+  unresolvedPointKey,
   type TemplateRef,
   type ValidateTemplateContext,
 } from "./onboarding-template-refs";
@@ -378,25 +379,6 @@ function validateDraftTemplates(d: OnboardingDraft, ctx: ValidateTemplateContext
       });
     }
   });
-}
-
-/**
- * `F4.196` — why an authored template's point key does not resolve at commit,
- * or `null` when it does. The commit inserts each draft key the catalog does
- * not hold, as active, and reuses the row of one it does hold; then
- * `assertPointKeysActive` refuses a template key that is not active. So a key
- * resolves when it is active in the catalog, or when the draft declares it and
- * the catalog does not hold it. Checked here because a `PATCH :id/draft` can
- * drop a declaration that `remove_point_key` (`F4.195`) would refuse.
- */
-function unresolvedPointKey(key: string, declared: ReadonlySet<string>, catalog: ReadonlyMap<string, boolean>): string | null {
-  const active = catalog.get(key);
-  if (active === true || (active === undefined && declared.has(key))) {
-    return null;
-  }
-  return active === false
-    ? `Point key ${quoteCell(key)} is inactive in the catalog`
-    : `Point key ${quoteCell(key)} is neither in this draft nor in the catalog`;
 }
 
 /** The points that must resolve to a source key, or the asset cannot be built. */

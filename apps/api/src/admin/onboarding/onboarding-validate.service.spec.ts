@@ -673,13 +673,23 @@ export function assertAnInactiveTemplateKeyIsAnError(): void {
   assertOnly((d) => pumpKey(d, "retired"), "templates.0.points.0.pointKey", `Point key ${q("retired")} is inactive in the catalog`);
 }
 
-/** F4.196 — the draft from the bug: the PATCH dropped the only declaration of a key a template uses; it is not ready. */
-export function assertADraftWhosePatchDroppedATemplateKeyIsNotReady(): void {
+/** F4.196 — the draft from the bug: the PATCH dropped the only declaration of a key a template uses. */
+function patchDroppedResult(): ReturnType<OnboardingValidateService["validate"]> {
   const draft = templatedDraft();
   pumpKey(draft, "kw");
   draft.pointKeys = [];
   draft.onboardingMeta = { useExistingPointKeys: true };
-  const result = new OnboardingValidateService().validate(draft, CODES, TEMPLATES);
-  assert(result.readyToCommit === false, "the draft is not ready to commit");
-  assert(result.errors.some((error) => error.path === "templates.0.points.0.pointKey"), `the error names the point, got ${JSON.stringify(result.errors)}`);
+  return new OnboardingValidateService().validate(draft, CODES, TEMPLATES);
+}
+
+/** F4.196 — that draft is not ready to commit. */
+export function assertADraftWhosePatchDroppedATemplateKeyIsNotReady(): void {
+  const result = patchDroppedResult();
+  assert(result.readyToCommit === false, `the draft is not ready, got phase ${result.suggestedPhase} and ${JSON.stringify(result.errors)}`);
+}
+
+/** F4.196 — and its error names the template point. */
+export function assertADraftWhosePatchDroppedATemplateKeyNamesThePoint(): void {
+  const { errors } = patchDroppedResult();
+  assert(errors.some((error) => error.path === "templates.0.points.0.pointKey"), `the error names the point, got ${JSON.stringify(errors)}`);
 }

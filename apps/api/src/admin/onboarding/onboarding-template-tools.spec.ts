@@ -174,8 +174,11 @@ const WRITE: ValidateTemplateContext = {
     ref("METER", 3, "draft", []),
   ],
   stock: [stockRef("WTP-PUMP", 3, [point("flow"), optional("level"), derived("efficiency")])],
-  // F4.196: the same catalog as `writeContext`'s `listPointKeys`, so the tool and the rule agree.
-  pointKeys: new Map([["energy_kwh", true]]),
+  // F4.196: the catalog `add_template`, `remove_point_key` and the validator read; `old_kw` is held inactive.
+  pointKeys: new Map([
+    ["energy_kwh", true],
+    ["old_kw", false],
+  ]),
 };
 
 const RTU = {
@@ -267,6 +270,12 @@ export async function assertT4AddTemplateRefusesAnUnknownPointKey(): Promise<voi
 export async function assertT4AddTemplateAcceptsADraftAndACatalogPointKey(): Promise<void> {
   const out = await runOn("add_template", { ...CHILLER, points: [{ pointKey: "kw" }, { pointKey: "energy_kwh" }] }, baseDraft());
   assert(out.ok && out.actionLine === "Added template CHILLER (2 points)", `accepted, got ${out.content}`);
+}
+
+/** F4.196 — a key the catalog holds inactive is refused, as validation refuses it. */
+export async function assertT4AddTemplateRefusesAnInactiveCatalogKey(): Promise<void> {
+  const out = await runOn("add_template", { ...CHILLER, points: [{ pointKey: "old_kw" }] }, baseDraft());
+  assert(!out.ok && out.error.includes("'old_kw'") && out.error.includes("active in the catalog"), `refused naming the key, got ${out.content}`);
 }
 
 /** T5 */
@@ -388,6 +397,14 @@ export async function assertRemovePointKeyRemovesOneCopyOfADuplicateKey(): Promi
 export async function assertRemovePointKeyReadsPastAStockTemplate(): Promise<void> {
   const out = await runOn("remove_point_key", { index: 0 }, baseDraft({ templates: [{ stockCode: "WTP-PUMP" }] }));
   assert(out.ok && out.actionLine === "Removed point key kw", `removed, got ${out.content}`);
+}
+
+/** F4.196 — a key that already does not resolve (held inactive) can leave: removing it breaks nothing more. */
+export async function assertRemovePointKeyRemovesAKeyThatAlreadyDoesNotResolve(): Promise<void> {
+  const draft = baseDraft({ templates: [{ ...CHILLER, points: [{ pointKey: "old_kw" }] }] });
+  draft.pointKeys!.push({ code: "old_kw", name: "Old" });
+  const out = await runOn("remove_point_key", { index: 1 }, draft);
+  assert(out.ok && out.actionLine === "Removed point key old_kw", `removed, got ${out.content}`);
 }
 
 /** T10 (a code the draft does not hold) */

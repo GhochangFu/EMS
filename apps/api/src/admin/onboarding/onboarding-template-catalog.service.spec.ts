@@ -177,13 +177,22 @@ export async function assertTheContextWithNoOrganizationReadsOnlyTheStock(): Pro
  * `F4.196` — the context carries every catalog code with its `active` flag,
  * read with no filter: the validation needs the inactive codes too.
  */
-export async function assertTheContextCarriesThePointKeyCatalogWithItsActiveFlag(): Promise<void> {
+async function catalogContext(): Promise<{ context: Awaited<ReturnType<OnboardingTemplateCatalogService["context"]>>; selects: Select[] }> {
   const { db, selects } = fakeDb([], [], [
     { code: "kw", active: true },
     { code: "retired", active: false },
   ]);
-  const context = await new OnboardingTemplateCatalogService(db, NO_STOCK).context(undefined);
+  return { context: await new OnboardingTemplateCatalogService(db, NO_STOCK).context(undefined), selects };
+}
+
+export async function assertTheContextCarriesThePointKeyCatalogWithItsActiveFlag(): Promise<void> {
+  const { context } = await catalogContext();
   assert(JSON.stringify([...context.pointKeys]) === JSON.stringify([["kw", true], ["retired", false]]), `got ${JSON.stringify([...context.pointKeys])}`);
+}
+
+/** `F4.196` — that catalog is one unfiltered `code, active` read. */
+export async function assertThePointKeyCatalogIsOneUnfilteredRead(): Promise<void> {
+  const { selects } = await catalogContext();
   const read = selects.find((select) => select.table === pointKeys);
   assert(read !== undefined && read.where === null && read.fields.join() === "code,active", `one unfiltered code,active read, got ${read === undefined ? "none" : `${read.fields.join()} where ${JSON.stringify(read.where)}`}`);
 }
