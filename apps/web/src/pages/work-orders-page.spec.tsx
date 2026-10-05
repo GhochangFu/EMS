@@ -227,21 +227,6 @@ export async function aRefusedReorderShowsTheSentence(): Promise<void> {
 }
 
 /**
- * `F4.209` — while the list query has no data, `rows` must be a stable reference,
- * or the page's `[rows]` effect sets a fresh `[]` into state on every commit and
- * the page re-renders without end. React only warns on that loop (it does not
- * throw), and under RTL's `render` the loop runs inside `act`, which drains it
- * synchronously from mount: `render` never returns, no microtask runs, and no
- * test timeout can fire. So a `Profiler` counts commits and *throws* past the
- * bound. React catches a commit-phase throw with no error boundary by unmounting
- * the root and rethrowing it out of `act`; the loop dies with the tree, `render`
- * returns, and the case reddens on the bound.
- *
- * `COMMIT_BOUND` and `CommitBoundExceeded` sit above `renderPage`, which arms the
- * same guard for WO1–WO4 until the row paints.
- */
-
-/**
  * Waits until `count()` holds the same value for `STABLE_TURNS` macrotask turns in
  * a row, so a loop that starts only after the error paints is still counted: a
  * running loop never holds still, and the turn cap then ends the wait.
@@ -259,7 +244,22 @@ async function settle(count: () => number): Promise<void> {
   }
 }
 
-/** A failed list read with no cache seed shows the error and stops committing. */
+/**
+ * `F4.209` — while the list query has no data, `rows` must be a stable reference,
+ * or the page's `[rows]` effect sets a fresh `[]` into state on every commit and
+ * the page re-renders without end. React only warns on that loop (it does not
+ * throw), and under RTL's `render` the loop runs inside `act`, which drains it
+ * synchronously from mount: `render` never returns, no microtask runs, and no
+ * test timeout can fire. So a `Profiler` counts commits and *throws* past the
+ * bound. React catches a commit-phase throw with no error boundary by unmounting
+ * the root and rethrowing it out of `act`; the loop dies with the tree, `render`
+ * returns, and the case reddens on the bound.
+ *
+ * `COMMIT_BOUND` and `CommitBoundExceeded` sit above `renderPage`, which arms the
+ * same guard for WO1–WO4 until the row paints.
+ *
+ * A failed list read with no cache seed shows the error and stops committing.
+ */
 export async function aFailedListReadSettles(): Promise<void> {
   vi.stubGlobal(
     "fetch",

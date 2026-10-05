@@ -20,7 +20,8 @@ import { adminFetch } from "./client";
  *
  * A write that fails after Keycloak changed something answers either a 200
  * with `followUp` or an error body carrying `followUp`; the page reads both
- * (`users-page.tsx`). The temporary password travels only in the request body
+ * (parsed in `users-feedback.tsx`, used by `users-page.tsx` and
+ * `users-grants-drawer.tsx`). The temporary password travels only in the request body
  * and is never part of a query key or a logged value.
  */
 export const adminUsersQueryKey = ["admin", "users"] as const;

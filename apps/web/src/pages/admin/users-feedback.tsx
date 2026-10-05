@@ -80,6 +80,7 @@ export function followUpFeedback(response: UserWriteResponse): Feedback | null {
     : null;
 }
 
+/** Renders a write's outcome (or nothing when `feedback` is null) as an alert box. */
 export function FeedbackBox({ feedback }: { feedback: Feedback | null }) {
   if (!feedback) {
     return null;
