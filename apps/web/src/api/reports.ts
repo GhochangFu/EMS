@@ -36,12 +36,13 @@ function query(input: EnergyReportInput): URLSearchParams {
 export async function fetchEnergyReportPreview(
   input: EnergyReportInput,
 ): Promise<EnergyReportPreview> {
+  const sent = withAuth();
   const res = await fetch(
     `${base}/api/v1/reports/energy/preview?${query(input)}`,
-    withAuth(),
+    sent,
   );
   if (!res.ok) {
-    clearSessionOnAuthFailure(res);
+    clearSessionOnAuthFailure(res, sent);
     throw new Error(`energy-report-preview ${res.status}`);
   }
   return checkResponse(energyReportPreviewSchema, await res.json(), "reports/energy/preview");
@@ -72,9 +73,10 @@ async function saveExport(
   filename: string,
   label: string,
 ): Promise<void> {
-  const res = await fetch(`${base}${path}?${query(input)}`, withAuth());
+  const sent = withAuth();
+  const res = await fetch(`${base}${path}?${query(input)}`, sent);
   if (!res.ok) {
-    clearSessionOnAuthFailure(res);
+    clearSessionOnAuthFailure(res, sent);
     throw new Error(`${label} ${res.status}`);
   }
   const blob = await res.blob();
@@ -158,12 +160,13 @@ export async function fetchReportFiles(): Promise<ReportFileDto[]> {
  * plain `Error`, so the panel can render the API's own 403/404 sentence.
  */
 export async function downloadReportFile(file: ReportFileDto): Promise<void> {
+  const sent = withAuth();
   const res = await fetch(
     `${base}/api/v1/reports/files/${encodeURIComponent(file.id)}/download`,
-    withAuth(),
+    sent,
   );
   if (!res.ok) {
-    clearSessionOnAuthFailure(res);
+    clearSessionOnAuthFailure(res, sent);
     const text = await res.text();
     throw new ApiError(text || `report file download ${res.status}`, res.status);
   }
@@ -176,14 +179,15 @@ export async function downloadReportFile(file: ReportFileDto): Promise<void> {
  * shape: success is `status === 204`, not `res.ok`).
  */
 export async function deleteReportFile(id: string): Promise<void> {
+  const sent = withAuth({ method: "DELETE" });
   const res = await fetch(
     `${base}/api/v1/reports/files/${encodeURIComponent(id)}`,
-    withAuth({ method: "DELETE" }),
+    sent,
   );
   if (res.status === 204) {
     return;
   }
-  clearSessionOnAuthFailure(res);
+  clearSessionOnAuthFailure(res, sent);
   const text = await res.text();
   throw new ApiError(text || `report file delete ${res.status}`, res.status);
 }
@@ -246,14 +250,15 @@ export async function updateReportSchedule(
  * shape: success is `status === 204`, not `res.ok`).
  */
 export async function deleteReportSchedule(id: string): Promise<void> {
+  const sent = withAuth({ method: "DELETE" });
   const res = await fetch(
     `${base}/api/v1/reports/schedules/${encodeURIComponent(id)}`,
-    withAuth({ method: "DELETE" }),
+    sent,
   );
   if (res.status === 204) {
     return;
   }
-  clearSessionOnAuthFailure(res);
+  clearSessionOnAuthFailure(res, sent);
   const text = await res.text();
   throw new ApiError(text || `report schedule delete ${res.status}`, res.status);
 }

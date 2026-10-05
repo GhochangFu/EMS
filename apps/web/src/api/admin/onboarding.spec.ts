@@ -122,7 +122,7 @@ export async function aFourOhOneFromTheTemplateDownloadClearsTheSession(): Promi
  * function.
  *
  * It gates this path and not A2's. Measured: replacing this function's
- * `clearSessionOnAuthFailure(res)` with an unconditional clear reddens this
+ * `clearSessionOnAuthFailure(res, sent)` with an unconditional clear reddens this
  * case alone — A3 above stays green because it still clears on its 401, and A2
  * stays green because the upload is a different call site.
  */

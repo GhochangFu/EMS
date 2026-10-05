@@ -41,9 +41,10 @@ async function dashboardsFetch<S extends ContractSchema>(
   endpoint: string,
   init?: RequestInit,
 ): Promise<Contract<S>> {
-  const res = await fetch(`${base}/api/v1${path}`, withAuth(init));
+  const sent = withAuth(init);
+  const res = await fetch(`${base}/api/v1${path}`, sent);
   if (!res.ok) {
-    clearSessionOnAuthFailure(res);
+    clearSessionOnAuthFailure(res, sent);
     const text = await res.text();
     throw new ApiError(text || `${endpoint} ${res.status}`, res.status);
   }

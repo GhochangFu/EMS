@@ -18,9 +18,10 @@ export const vocabulariesQueryKey = ["vocabularies"] as const;
 
 /** GET /api/v1/vocabularies */
 export async function fetchVocabularies(): Promise<VocabulariesResponse> {
-  const res = await fetch(`${base}/api/v1/vocabularies`, withAuth());
+  const sent = withAuth();
+  const res = await fetch(`${base}/api/v1/vocabularies`, sent);
   if (!res.ok) {
-    clearSessionOnAuthFailure(res);
+    clearSessionOnAuthFailure(res, sent);
     throw new Error(`vocabularies ${res.status}`);
   }
   return checkResponse(vocabulariesResponseSchema, await res.json(), "vocabularies");

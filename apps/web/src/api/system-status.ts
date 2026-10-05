@@ -27,12 +27,13 @@ export const SYSTEM_STATUS_TIMEOUT_MS = 10_000;
  */
 export async function fetchSystemStatus(signal?: AbortSignal): Promise<SystemStatusResponse> {
   const timeout = AbortSignal.timeout(SYSTEM_STATUS_TIMEOUT_MS);
+  const sent = withAuth({ signal: signal ? AbortSignal.any([signal, timeout]) : timeout });
   const res = await fetch(
     `${base}/api/v1/system/status`,
-    withAuth({ signal: signal ? AbortSignal.any([signal, timeout]) : timeout }),
+    sent,
   );
   if (!res.ok) {
-    clearSessionOnAuthFailure(res);
+    clearSessionOnAuthFailure(res, sent);
     throw new Error(`system/status ${res.status}`);
   }
   return checkResponse(systemStatusResponseSchema, await res.json(), "system/status");

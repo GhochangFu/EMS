@@ -15,9 +15,10 @@ const base = import.meta.env.VITE_API_URL ?? "http://localhost:4000";
  */
 export async function fetchDashboardMimicNodes(dashboardId: string): Promise<DashboardMimicNodesResponseDto> {
   const endpoint = "dashboards/:id/mimic-nodes";
-  const res = await fetch(`${base}/api/v1/dashboards/${encodeURIComponent(dashboardId)}/mimic-nodes`, withAuth());
+  const sent = withAuth();
+  const res = await fetch(`${base}/api/v1/dashboards/${encodeURIComponent(dashboardId)}/mimic-nodes`, sent);
   if (!res.ok) {
-    clearSessionOnAuthFailure(res);
+    clearSessionOnAuthFailure(res, sent);
     const text = await res.text();
     throw new ApiError(text || `${endpoint} ${res.status}`, res.status);
   }

@@ -163,3 +163,31 @@ export async function aRawEnvelopeFailureReadsAsItsSentence(): Promise<void> {
   expect(text).toBe("The directory is unavailable");
   expect(text).not.toContain('{"');
 }
+
+/**
+ * A7 (`F4.210`) — a crafted callback link with an `error_description` and a wrong `state` shows the
+ * state sentence, never the link's text. The real `completeOidcLogin` runs; the page reads
+ * `window.location.search`, not the router, so the URL is set on `window.history`.
+ */
+export async function aCraftedErrorLinkShowsTheStateSentence(): Promise<void> {
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(() => Promise.reject(new Error("auth-callback-page.spec: no fetch expected"))),
+  );
+  window.sessionStorage.setItem("bms-oidc-state", "good");
+  window.history.replaceState(
+    {},
+    "",
+    "/auth/callback?error=x&error_description=ATTACKER-TEXT&state=wrong",
+  );
+  render(
+    <QueryClientProvider client={new QueryClient()}>
+      <MemoryRouter initialEntries={["/auth/callback"]}>
+        <AuthCallbackPage />
+      </MemoryRouter>
+    </QueryClientProvider>,
+  );
+  const text = (await screen.findByRole("alert")).textContent ?? "";
+  expect(text).toBe("OIDC callback state is invalid");
+  expect(text).not.toContain("ATTACKER-TEXT");
+}

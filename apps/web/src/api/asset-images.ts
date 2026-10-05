@@ -50,15 +50,16 @@ export async function fetchAssetImages(assetId: string): Promise<AssetImageDto[]
  * for the revocation that pairs with it.
  */
 export async function fetchAssetImageBlob(assetId: string, imageId: string): Promise<Blob> {
+  const sent = withAuth();
   const res = await fetch(
     `${base}/api/v1/assets/${encodeURIComponent(assetId)}/images/${encodeURIComponent(imageId)}/content`,
-    withAuth(),
+    sent,
   );
   if (!res.ok) {
     // Before the body is read: `res.text()` on a broken stream rejects, and an
     // ordering that read it first would skip the clear on exactly the failures
     // that most need it (`onboarding.ts`'s rule).
-    clearSessionOnAuthFailure(res);
+    clearSessionOnAuthFailure(res, sent);
     const text = await res.text();
     throw new ApiError(text || `asset image content ${res.status}`, res.status);
   }
@@ -105,14 +106,15 @@ export async function uploadAssetImage(
  * this path would mean the client is talking to something that is not it.
  */
 export async function deleteAssetImage(assetId: string, imageId: string): Promise<void> {
+  const sent = withAuth({ method: "DELETE" });
   const res = await fetch(
     `${base}/api/v1/assets/${encodeURIComponent(assetId)}/images/${encodeURIComponent(imageId)}`,
-    withAuth({ method: "DELETE" }),
+    sent,
   );
   if (res.status === 204) {
     return;
   }
-  clearSessionOnAuthFailure(res);
+  clearSessionOnAuthFailure(res, sent);
   const text = await res.text();
   throw new ApiError(text || `asset image delete ${res.status}`, res.status);
 }

@@ -30,13 +30,14 @@ export async function previewTelemetryImport(
   opts: TelemetryImportRequestOptions = {},
 ): Promise<TelemetryImportPreviewDto> {
   const headers = await getAdminAuthHeaders();
-  const res = await fetch(`${base}/api/v1/admin/telemetry/import/preview`, {
+  const sent = {
     method: "POST",
     headers,
     body: buildForm(file, opts),
-  });
+  };
+  const res = await fetch(`${base}/api/v1/admin/telemetry/import/preview`, sent);
   if (!res.ok) {
-    clearSessionOnAuthFailure(res);
+    clearSessionOnAuthFailure(res, sent);
     throw new Error(describeImportUploadError(res.status, await res.text()));
   }
   return readJson(res, telemetryImportPreviewDtoSchema, "admin telemetry import preview");
@@ -48,13 +49,14 @@ export async function commitTelemetryImport(
   opts: TelemetryImportRequestOptions = {},
 ): Promise<TelemetryImportCommitDto> {
   const headers = await getAdminAuthHeaders();
-  const res = await fetch(`${base}/api/v1/admin/telemetry/import/commit`, {
+  const sent = {
     method: "POST",
     headers,
     body: buildForm(file, opts),
-  });
+  };
+  const res = await fetch(`${base}/api/v1/admin/telemetry/import/commit`, sent);
   if (!res.ok) {
-    clearSessionOnAuthFailure(res);
+    clearSessionOnAuthFailure(res, sent);
     throw new Error(describeImportUploadError(res.status, await res.text()));
   }
   return readJson(res, telemetryImportCommitDtoSchema, "admin telemetry import commit");

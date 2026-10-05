@@ -15,9 +15,10 @@ export const alarmKbQueryKey = ["alarm-kb"] as const;
 
 /** `GET /api/v1/alarm-kb` (`E2.2` PR 2, ADR 0059 decision 4). */
 export async function fetchAlarmKb(): Promise<AlarmKbResponse> {
-  const res = await fetch(`${base}/api/v1/alarm-kb`, withAuth());
+  const sent = withAuth();
+  const res = await fetch(`${base}/api/v1/alarm-kb`, sent);
   if (!res.ok) {
-    clearSessionOnAuthFailure(res);
+    clearSessionOnAuthFailure(res, sent);
     throw new Error(`alarm-kb ${res.status}`);
   }
   return checkResponse(alarmKbResponseSchema, await res.json(), "alarm-kb");

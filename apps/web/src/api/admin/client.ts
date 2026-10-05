@@ -31,9 +31,10 @@ export async function adminFetch<S extends ContractSchema>(
   schema: S,
   init?: RequestInit,
 ): Promise<Contract<S>> {
-  const res = await fetch(`${base}/api/v1${path}`, withAuth(init));
+  const sent = withAuth(init);
+  const res = await fetch(`${base}/api/v1${path}`, sent);
   if (!res.ok) {
-    clearSessionOnAuthFailure(res);
+    clearSessionOnAuthFailure(res, sent);
     const text = await res.text();
     throw new ApiError(text || `admin ${path} ${res.status}`, res.status);
   }

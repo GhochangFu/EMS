@@ -70,16 +70,17 @@ export type MakeSiteLayoutAnswer =
  * session, as `adminFetch` does.
  */
 export async function makeSiteLayout(locationId: string, body: MakeSiteLayoutBody): Promise<MakeSiteLayoutAnswer> {
+  const sent = withAuth({
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
   const res = await fetch(
     `${base}/api/v1/admin/locations/${encodeURIComponent(locationId)}/site-layout`,
-    withAuth({
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-    }),
+    sent,
   );
   if (!res.ok) {
-    clearSessionOnAuthFailure(res);
+    clearSessionOnAuthFailure(res, sent);
     const text = await res.text();
     if (res.status === 409) {
       const ambiguous = ambiguousTabsOf(text);
