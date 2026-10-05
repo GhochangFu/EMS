@@ -1,3 +1,4 @@
+import { ConflictException } from "@nestjs/common";
 import { expect } from "vitest";
 import pg from "pg";
 
@@ -407,4 +408,28 @@ export async function assertAssetPointsRejectsAnUnlistedKey(
     await client.query("ROLLBACK").catch(() => undefined);
     client.release();
   }
+}
+
+/**
+ * `F4.211` — a second create with a code the catalog already holds is a 409
+ * that names the code, not pg's `23505` surfacing as a 500. The caller deletes
+ * `code` by code in a `finally`.
+ */
+export async function assertADuplicateCodeIsA409NamingTheCode(
+  ctx: SvcWithFixtures,
+  jwt: JwtPayload,
+  code: string,
+): Promise<void> {
+  await ctx.svc.create(jwt, { code, name: "F4.211 first" });
+  const err = await ctx.svc.create(jwt, { code, name: "F4.211 second" }).then(
+    () => null,
+    (e: unknown) => e,
+  );
+  const expected = `Point key "${code}" already exists`;
+  assert(
+    err instanceof ConflictException && err.message === expected,
+    `F4.211: a duplicate point-key code must be a ConflictException "${expected}"; got ` +
+      `${(err as Error | null)?.constructor?.name} ` +
+      `(code ${(err as { code?: unknown } | null)?.code}) "${(err as Error | null)?.message}".`,
+  );
 }

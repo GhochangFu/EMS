@@ -10,6 +10,7 @@ import { openIntegrationPool, requireIntegrationDb } from "../../testing/integra
 import { asRole } from "../../testing/role-urls";
 import { PointKeysAdminService } from "./point-keys.service";
 import {
+  assertADuplicateCodeIsA409NamingTheCode,
   assertAssetPointsRejectsAnUnlistedKey,
   assertCheckRefusesAZeroRank,
   assertCreateAuditRowIsOrgLess,
@@ -140,5 +141,18 @@ describe.skipIf(!connectionString)("F3.39 — the point key catalog is fleet-wid
 
   it("refuses headline_rank = 0 in the database (0083's CHECK)", async () => {
     await assertCheckRefusesAZeroRank(ownerPool);
+  });
+
+  it("F4.211 — a duplicate code is a 409 naming the code", async () => {
+    const code = `f4-211-dup-${Date.now()}`;
+    try {
+      await assertADuplicateCodeIsA409NamingTheCode({ svc, ownerPool }, adminJwt, code);
+    } finally {
+      await ownerPool.query(
+        "DELETE FROM bms.audit_log WHERE entity_id IN (SELECT id FROM bms.point_keys WHERE code = $1)",
+        [code],
+      );
+      await ownerPool.query("DELETE FROM bms.point_keys WHERE code = $1", [code]);
+    }
   });
 });
