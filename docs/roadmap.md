@@ -7308,3 +7308,32 @@ integration DB, 0 skipped. Reviews: nothing blocking; two security Lows (one
 **Cascade:** no row lists `F4.196` in *Depends* except the new `F4.205`.
 Raised: `F4.205` (validation does not check a stock template's point keys).
 No `chore(agents):` change owed.
+
+### `F4.197`–`F4.203` — the v1 user-guide defects ✅ 2026-10-05
+
+Rows raised in #733 (`67dd14ac`) from the 2026-10-05 v1 user-guide pass, with
+owner rulings per row. Three PRs, built in parallel in separate worktrees, no
+ADR, no migration:
+
+- #737 (`353b09b4`) — `F4.197` Asset Groups refusals read through
+  `apiErrorMessage`; `F4.200` shared role labels on the Users page;
+  `F4.201` asset-group grant targets and rows name their location (optional
+  `locationName`, organization-checked `LEFT JOIN`); `F4.202` one
+  `ConfirmDialog` before Deactivate, grant Remove and member Remove.
+- #736 (`06826acb`) — `F4.203` the deactivated 401 carries
+  `code: "account_deactivated"`; the sign-in and callback pages say why.
+- #738 (`f8d3099c`) — `F4.198` in-house bold segments in the chat;
+  `F4.199` suggested-reply buttons, and a guided script whose replies each
+  reach their step (owner rulings after two review rounds).
+
+Verified: each mutation run; reviews (code, security, compliance per PR, a
+second code round on #738) all fixed or recorded; CI green on each PR. Live on
+the stack rebuilt from `f8d3099c` (bundle `index-o490Fkum.js`): every row
+passed in `browser-verifier` runs, `F4.203` with `wc-admin` deactivated by
+SQL and restored. Not checked live: the guided chat mode (no organization runs
+it; owner chose the specs).
+
+**Cascade:** no row lists these IDs in *Depends* except the new ones. Raised:
+`F4.206` (a late 401 from an old session), `F4.207` (move `GrantsDrawer`),
+`F4.208` (guided MQTT topic). `F4.204` (the raw-JSON sweep) stays open. No
+`chore(agents):` change owed.
