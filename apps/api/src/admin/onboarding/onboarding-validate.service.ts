@@ -312,6 +312,11 @@ function echoedList(items: readonly string[]): string {
  * entry's code is reported at `stockCode`, the field that carries it. A
  * template no asset uses is valid (decision 11): an upload that replaced
  * `assets[]` keeps it, and the commit still publishes it.
+ *
+ * `F4.196` / `F4.205` — every point key a template would import must resolve
+ * at commit (`unresolvedPointKey`): an authored point's key at that point,
+ * and a stock entry's point and formula keys at its `stockCode`, each named
+ * once.
  */
 function validateDraftTemplates(d: OnboardingDraft, ctx: ValidateTemplateContext, errors: OnboardingFieldError[]): void {
   const seen = new Set<string>();
@@ -336,6 +341,15 @@ function validateDraftTemplates(d: OnboardingDraft, ctx: ValidateTemplateContext
               path: `templates.${i}.patterns.${key}`,
               message: `${quoteCell(key)} is not a measured point of stock template ${quoteCell(code)}`,
             });
+          }
+        }
+        // F4.205: the import's `assertPointKeysActive` checks the points' keys
+        // and the keys their formulas name; the same rule as an authored point.
+        const keys = new Set([...stock.points.map((p) => p.pointKey), ...stock.formulaPointKeys]);
+        for (const key of keys) {
+          const unresolved = unresolvedPointKey(key, declared, ctx.pointKeys);
+          if (unresolved !== null) {
+            errors.push({ path: codePath, message: `${unresolved} (stock template ${quoteCell(code)} needs it)` });
           }
         }
       }

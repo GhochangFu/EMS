@@ -175,9 +175,13 @@ const WRITE: ValidateTemplateContext = {
   ],
   stock: [stockRef("WTP-PUMP", 3, [point("flow"), optional("level"), derived("efficiency")])],
   // F4.196: the catalog `add_template`, `remove_point_key` and the validator read; `old_kw` is held inactive.
+  // F4.205: `flow`, `level` and `efficiency` are the stock WTP-PUMP's keys, active, as the import requires.
   pointKeys: new Map([
     ["energy_kwh", true],
     ["old_kw", false],
+    ["flow", true],
+    ["level", true],
+    ["efficiency", true],
   ]),
 };
 
