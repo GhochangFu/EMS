@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Route, Routes, useLocation, useParams } from "react-router-dom";
 import { expect, vi } from "vitest";
@@ -653,4 +653,132 @@ export async function aRefusedResumeIsShownNotReplaced(): Promise<void> {
   const banner = await findTheOnlyAlert();
   expect(banner).toHaveTextContent("The database is not reachable");
   expect(create).not.toHaveBeenCalled();
+}
+
+/** `F4.198` — an assistant message with the given content, on the page. */
+async function renderAssistantSays(content: string): Promise<HTMLElement> {
+  stubStart({ ...SESSION, messages: [message("m1", "assistant", content)] });
+  const container = renderPage();
+  await waitForSessionToLand();
+  return container;
+}
+
+/** B1 — a `**` pair in an assistant bubble is a `<strong>`, and the markers are gone. */
+export async function aPairedBoldRendersAsStrong(): Promise<void> {
+  const container = await renderAssistantSays("use the **Credentials** field");
+  const strong = await screen.findByText("Credentials", { selector: "strong" });
+  expect(strong.tagName).toBe("STRONG");
+  expect(container.textContent ?? "").toContain("use the Credentials field");
+  expect(container.textContent ?? "").not.toContain("**");
+}
+
+/** B2 — a lone `**` stays literal text, with no `<strong>` beside it (positive control: the text is there). */
+export async function anUnpairedMarkerStaysLiteral(): Promise<void> {
+  const container = await renderAssistantSays("a ** b");
+  await screen.findByText("a ** b");
+  expect(container.querySelectorAll("strong")).toHaveLength(0);
+}
+
+/** B3 — untrusted markup renders as text: no element, the `<img` visible, only the pair bold. */
+export async function anHtmlBearingMessageRendersNoMarkup(): Promise<void> {
+  const container = await renderAssistantSays("<img src=x onerror=alert(1)> **ok**");
+  const strong = await screen.findByText("ok", { selector: "strong" });
+  expect(strong.textContent).toBe("ok");
+  expect(container.querySelectorAll("img")).toHaveLength(0);
+  expect(container.textContent ?? "").toContain("<img");
+}
+
+/** `F4.199` — a start response carrying suggested replies. */
+function stubStartWithReplies(replies: string[]): void {
+  vi.spyOn(api, "createOnboardingSession").mockResolvedValue({
+    ...chatResponse(SESSION),
+    suggestedReplies: replies,
+  });
+}
+
+function repliesGroup(): HTMLElement | null {
+  return screen.queryByRole("group", { name: "Suggested replies" });
+}
+
+/** S1 — each suggested reply is a button in the Suggested replies group. */
+export async function suggestedRepliesRenderAsButtons(): Promise<void> {
+  stubStartWithReplies(["confirm rtu", "View draft"]);
+  renderPage();
+  const group = await screen.findByRole("group", { name: "Suggested replies" });
+  expect(within(group).getByRole("button", { name: "confirm rtu" })).toBeEnabled();
+  expect(within(group).getByRole("button", { name: "View draft" })).toBeEnabled();
+}
+
+/** S2 — clicking a reply sends exactly its text as the chat turn. */
+export async function aSuggestedReplySendsItsText(): Promise<void> {
+  stubStartWithReplies(["confirm rtu"]);
+  const send = vi.spyOn(api, "sendOnboardingChat").mockResolvedValue(chatResponse(SESSION));
+  renderPage();
+  await userEvent.click(await screen.findByRole("button", { name: "confirm rtu" }));
+  await waitFor(() => expect(send).toHaveBeenCalledTimes(1));
+  expect(send).toHaveBeenCalledWith(SESSION.id, "confirm rtu");
+}
+
+/** S3 — "Commit" is a plain text reply, sent as typed (owner ruling 2026-10-05). */
+export async function aCommitReplyIsSentAsText(): Promise<void> {
+  stubStartWithReplies(["Commit"]);
+  const send = vi.spyOn(api, "sendOnboardingChat").mockResolvedValue(chatResponse(SESSION));
+  renderPage();
+  await userEvent.click(await screen.findByRole("button", { name: "Commit" }));
+  await waitFor(() => expect(send).toHaveBeenCalledWith(SESSION.id, "Commit"));
+}
+
+/** S4 — the "View draft" reply opens the preview and sends nothing. */
+export async function theViewDraftReplyOpensThePreview(): Promise<void> {
+  stubStartWithReplies(["View draft"]);
+  const send = vi.spyOn(api, "sendOnboardingChat").mockResolvedValue(chatResponse(SESSION));
+  renderPage();
+  expect(screen.queryByText("Draft preview")).toBeNull();
+  await userEvent.click(await screen.findByRole("button", { name: "View draft" }));
+  expect(await screen.findByText("Draft preview")).toBeInTheDocument();
+  expect(send).not.toHaveBeenCalled();
+}
+
+/** S5 — while a turn is pending the replies are hidden (the typing line is the positive control). */
+export async function repliesHideWhileATurnIsPending(): Promise<void> {
+  stubStartWithReplies(["confirm rtu"]);
+  vi.spyOn(api, "sendOnboardingChat").mockReturnValue(new Promise(() => undefined));
+  renderPage();
+  await userEvent.click(await screen.findByRole("button", { name: "confirm rtu" }));
+  expect(await screen.findByText("Assistant is typing…")).toBeInTheDocument();
+  expect(repliesGroup()).toBeNull();
+}
+
+/** S6 — a new turn replaces the previous replies; a turn with none shows none. */
+export async function onlyTheLatestTurnsRepliesShow(): Promise<void> {
+  stubStartWithReplies(["first"]);
+  const send = vi
+    .spyOn(api, "sendOnboardingChat")
+    .mockResolvedValueOnce({
+      ...chatResponse({ ...SESSION, messages: [message("m1", "assistant", "one")] }),
+      suggestedReplies: ["second"],
+    })
+    .mockResolvedValueOnce(
+      chatResponse({
+        ...SESSION,
+        messages: [message("m1", "assistant", "one"), message("m2", "assistant", "two")],
+      }),
+    );
+  renderPage();
+  await userEvent.click(await screen.findByRole("button", { name: "first" }));
+  expect(await screen.findByRole("button", { name: "second" })).toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "first" })).toBeNull();
+  await userEvent.click(screen.getByRole("button", { name: "second" }));
+  await waitFor(() => expect(send).toHaveBeenCalledTimes(2));
+  await screen.findByText("two");
+  expect(repliesGroup()).toBeNull();
+}
+
+/** S7 — a "confirm commit" reply is never offered, in any case or padding; its neighbour is (ADR 0090 decision 5). */
+export async function aConfirmCommitReplyIsNeverOffered(): Promise<void> {
+  stubStartWithReplies(["  Confirm Commit ", "confirm commit", "View draft"]);
+  renderPage();
+  const group = await screen.findByRole("group", { name: "Suggested replies" });
+  expect(within(group).getByRole("button", { name: "View draft" })).toBeInTheDocument();
+  expect(within(group).getAllByRole("button")).toHaveLength(1);
 }

@@ -1,6 +1,6 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import type { FormEvent, KeyboardEvent } from "react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useRef, useState } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import type {
   OnboardingAutoOpenReason,
@@ -24,6 +24,7 @@ import { StatusPill } from "../../components/status-pill";
 import { AppShell } from "../../layouts/app-shell";
 import { ApiError } from "../../lib/api-error";
 import { apiErrorMessage } from "../../lib/api-error-message";
+import { boldSegments } from "../../lib/bold-segments";
 import {
   formatOnboardingDraftSummary,
   formatOnboardingValidationErrors,
@@ -91,6 +92,29 @@ async function openSession(orgId: string, resumeId: string | null): Promise<Onbo
   return createOnboardingSession(orgId);
 }
 
+/**
+ * `F4.198` — an assistant bubble's text with its `**bold**` pairs as `<strong>`.
+ * Agent-mode text is untrusted LLM output: every segment is a React text node,
+ * never markup, so a message carrying HTML renders as visible text.
+ */
+function AssistantText({ text }: { text: string }) {
+  return (
+    <>
+      {boldSegments(text).map((segment, i) =>
+        segment.bold ? <strong key={i}>{segment.text}</strong> : <Fragment key={i}>{segment.text}</Fragment>,
+      )}
+    </>
+  );
+}
+
+/** `F4.199`: the one phrase the client never offers as a button (ADR 0090 decision 5). */
+const NEVER_OFFERED_REPLY = "confirm commit";
+
+/** The replies to render: the server's list, minus any "confirm commit" (trim, lower case). */
+function offeredReplies(replies: readonly string[] | undefined): string[] {
+  return (replies ?? []).filter((r) => r.trim().toLowerCase() !== NEVER_OFFERED_REPLY);
+}
+
 /** Where a committed session lands — one target for the Commit button and a chat commit. */
 function rtusPathFor(locationId: string): string {
   return `/admin/locations/${locationId}/rtus`;
@@ -117,6 +141,10 @@ export function OnboardingChatPage({ user }: OnboardingChatPageProps) {
   const [credUsername, setCredUsername] = useState("");
   const [credPassword, setCredPassword] = useState("");
   const [credError, setCredError] = useState<string | null>(null);
+  // F4.199: the latest turn's suggested replies, replaced on every turn. The
+  // F4.194 resume path (`openSession` with a stored session) carries none, so a
+  // reloaded page shows no buttons until the next turn.
+  const [replies, setReplies] = useState<string[]>([]);
   const threadRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const startedRef = useRef(false);
@@ -130,6 +158,7 @@ export function OnboardingChatPage({ user }: OnboardingChatPageProps) {
         setSearchParams({ [SESSION_PARAM]: data.session.id }, { replace: true });
       }
       setValidationErrors(data.validationErrors ?? []);
+      setReplies(offeredReplies(data.suggestedReplies));
       applyAutoOpen(data.autoOpenPreview, data.autoOpenReason);
     },
     onError: (err: Error) => setChatError(apiErrorMessage(err)),
@@ -180,6 +209,7 @@ export function OnboardingChatPage({ user }: OnboardingChatPageProps) {
       setSession(data.session);
       queryClient.setQueryData(["onboarding", data.session.id], data.session);
       setValidationErrors(data.validationErrors ?? []);
+      setReplies(offeredReplies(data.suggestedReplies));
       applyAutoOpen(data.autoOpenPreview, data.autoOpenReason);
 
       // ADR 0022 decision 2 refuses a credential-bearing turn by storing
@@ -260,17 +290,25 @@ export function OnboardingChatPage({ user }: OnboardingChatPageProps) {
     threadRef.current?.scrollTo({ top: threadRef.current.scrollHeight });
   }, [session?.messages.length, chatMutation.isPending]);
 
-  const sendMessage = () => {
-    const msg = input.trim();
+  /**
+   * One path for the form and the suggested-reply buttons. "view draft" opens
+   * the preview; everything else — "Commit" included, by owner ruling — goes
+   * to the agent as text.
+   */
+  const sendText = (text: string) => {
+    const msg = text.trim();
     if (!msg || !session) {
       return;
     }
     if (msg.toLowerCase() === "view draft") {
       setPreviewOpen(true);
-      setInput("");
       return;
     }
     chatMutation.mutate(msg);
+  };
+
+  const sendMessage = () => {
+    sendText(input);
     setInput("");
   };
 
@@ -349,6 +387,7 @@ export function OnboardingChatPage({ user }: OnboardingChatPageProps) {
               uploadOnboardingExcel(session.id, file)
                 .then((data) => {
                   setSession(data.session);
+                  setReplies(offeredReplies(data.suggestedReplies));
                   applyAutoOpen(data.autoOpenPreview, data.autoOpenReason);
                   setValidationErrors(data.validationErrors ?? []);
                   setChatError(
@@ -408,7 +447,7 @@ export function OnboardingChatPage({ user }: OnboardingChatPageProps) {
                           : "surface-raised-sm text-ink"
                       }`}
                     >
-                      {m.content}
+                      {m.role === "user" ? m.content : <AssistantText text={m.content} />}
                     </div>
                   </div>
                 ),
@@ -425,6 +464,26 @@ export function OnboardingChatPage({ user }: OnboardingChatPageProps) {
                 </div>
               )}
             </div>
+
+            {replies.length > 0 && !chatMutation.isPending && (
+              <div
+                role="group"
+                aria-label="Suggested replies"
+                className="flex flex-wrap gap-2 border-t border-line px-4 pt-3"
+              >
+                {replies.map((reply) => (
+                  <button
+                    key={reply}
+                    type="button"
+                    onClick={() => sendText(reply)}
+                    disabled={!session || startMutation.isPending}
+                    className="surface-button px-3 py-1 text-xs disabled:opacity-50"
+                  >
+                    {reply}
+                  </button>
+                ))}
+              </div>
+            )}
 
             <form onSubmit={onSubmit} className="border-t border-line p-4">
               <div className="flex items-end gap-2">
