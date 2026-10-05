@@ -625,7 +625,7 @@ export function OnboardingChatPage({ user }: OnboardingChatPageProps) {
                                   aria-busy={topicMutation.isPending}
                                   className="shrink-0 surface-button px-2 py-1 text-[11px] disabled:opacity-50"
                                 >
-                                  Save topic
+                                  {topicMutation.isPending ? "Saving topic…" : "Save topic"}
                                 </button>
                               </form>
                             )}
