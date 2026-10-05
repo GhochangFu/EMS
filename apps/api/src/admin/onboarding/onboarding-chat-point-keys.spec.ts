@@ -70,7 +70,7 @@ export async function assertADraftWithAPlainAssetIsStillGivenAPointKey(): Promis
  * as a chat turn, and "Validate" and "Add point key kw" are not turns the
  * guided mode answers as buttons, so they are no longer offered.
  */
-function repliesOf(result: { suggestedReplies: string[] }): string {
+function repliesOf(result: { suggestedReplies?: readonly string[] }): string {
   return JSON.stringify(result.suggestedReplies);
 }
 
