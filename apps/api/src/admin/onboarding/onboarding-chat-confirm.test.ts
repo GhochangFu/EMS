@@ -4,8 +4,11 @@ import {
   assertACommitRefusalIsAReplyNotAThrow,
   assertACoreConflictIsAReplyNotAThrow,
   assertAMatchingProposalCommitsOnce,
+  assertConfirmCommitWithAFullStopDoesNotCommit,
   assertANonProposingTurnClearsTheProposal,
   assertAProposingTurnStoresAHashOfTheStoredDraft,
+  assertAProposingTurnOffersOnlyViewDraft,
+  assertTheCredentialRefusalOffersOnlyViewDraft,
   assertAStaleProposalIsClearedAndNotCommitted,
   assertActionLinesAreStoredBetweenUserAndAssistant,
   assertConfirmWithNoProposalRepliesWithoutAModelCall,
@@ -31,6 +34,10 @@ describe("OnboardingService.chat — the confirm path and action messages (F3.21
     await assertAMatchingProposalCommitsOnce();
   });
 
+  it("F4.199: does not commit on confirm commit. with a full stop", async () => {
+    await assertConfirmCommitWithAFullStopDoesNotCommit();
+  });
+
   it("names the template counts in the confirm line (F3.22, ADR 0091 d4)", async () => {
     await assertTheConfirmLineNamesTheTemplateCounts();
   });
@@ -49,6 +56,14 @@ describe("OnboardingService.chat — the confirm path and action messages (F3.21
 
   it("binds a new proposal to the hash of the written draft", async () => {
     await assertAProposingTurnStoresAHashOfTheStoredDraft();
+  });
+
+  it("F4.199: offers only View draft on a proposing turn", async () => {
+    await assertAProposingTurnOffersOnlyViewDraft();
+  });
+
+  it("F4.199: offers only View draft after a credential refusal", async () => {
+    await assertTheCredentialRefusalOffersOnlyViewDraft();
   });
 
   it("clears the proposal on a turn that does not propose", async () => {

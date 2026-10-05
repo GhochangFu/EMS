@@ -24,6 +24,22 @@ import {
   aResume403StartsANewSession,
   aResume404StartsANewSession,
   aRefusedResumeIsShownNotReplaced,
+  aPairedBoldRendersAsStrong,
+  anUnpairedMarkerStaysLiteral,
+  anHtmlBearingMessageRendersNoMarkup,
+  suggestedRepliesRenderAsButtons,
+  aSuggestedReplySendsItsText,
+  aCommitReplyIsSentAsText,
+  theViewDraftReplyOpensThePreview,
+  repliesHideWhileATurnIsPending,
+  onlyTheLatestTurnsRepliesShow,
+  aConfirmCommitReplyIsNeverOffered,
+  markupInsideABoldPairRendersAsText,
+  aUserRowStaysPlain,
+  anUploadSetsItsReplies,
+  aRefusedCredentialTurnReplacesTheReplies,
+  aChatTurnsConfirmCommitReplyIsNotOffered,
+  anUploadsConfirmCommitReplyIsNotOffered,
 } from "./onboarding-chat-page.spec";
 
 /**
@@ -149,5 +165,89 @@ describe("F4.194 onboarding chat page keeps its session in the URL", () => {
 
   it("shows any other refused resume and creates no session behind it", async () => {
     await aRefusedResumeIsShownNotReplaced();
+  });
+});
+
+describe("F4.198 onboarding chat page renders the assistant's bold", () => {
+  vi.setConfig({ testTimeout: 15_000 });
+
+  afterEach(() => {
+    cleanup();
+    vi.restoreAllMocks();
+    restoreScrolling();
+  });
+
+  it("renders a paired marker as strong", async () => {
+    await aPairedBoldRendersAsStrong();
+  });
+
+  it("leaves a lone marker as literal text", async () => {
+    await anUnpairedMarkerStaysLiteral();
+  });
+
+  it("renders a message carrying HTML as text, not markup", async () => {
+    await anHtmlBearingMessageRendersNoMarkup();
+  });
+});
+
+describe("F4.199 onboarding chat page suggested replies", () => {
+  vi.setConfig({ testTimeout: 15_000 });
+
+  afterEach(() => {
+    cleanup();
+    vi.restoreAllMocks();
+    restoreScrolling();
+  });
+
+  it("renders each suggested reply as a button", async () => {
+    await suggestedRepliesRenderAsButtons();
+  });
+
+  it("sends a suggested reply's text as the chat turn", async () => {
+    await aSuggestedReplySendsItsText();
+  });
+
+  it("sends the Commit reply as text", async () => {
+    await aCommitReplyIsSentAsText();
+  });
+
+  it("opens the preview for the View draft reply and sends nothing", async () => {
+    await theViewDraftReplyOpensThePreview();
+  });
+
+  it("hides the replies while a turn is pending", async () => {
+    await repliesHideWhileATurnIsPending();
+  });
+
+  it("shows only the latest turn's replies", async () => {
+    await onlyTheLatestTurnsRepliesShow();
+  });
+
+  it("never offers a confirm commit reply", async () => {
+    await aConfirmCommitReplyIsNeverOffered();
+  });
+
+  it("renders markup inside a bold pair as text", async () => {
+    await markupInsideABoldPairRendersAsText();
+  });
+
+  it("keeps a user row plain", async () => {
+    await aUserRowStaysPlain();
+  });
+
+  it("sets the replies from an Excel upload", async () => {
+    await anUploadSetsItsReplies();
+  });
+
+  it("replaces the replies on a refused credential turn", async () => {
+    await aRefusedCredentialTurnReplacesTheReplies();
+  });
+
+  it("does not offer a chat turn's confirm commit reply", async () => {
+    await aChatTurnsConfirmCommitReplyIsNotOffered();
+  });
+
+  it("does not offer an upload's confirm commit reply", async () => {
+    await anUploadsConfirmCommitReplyIsNotOffered();
   });
 });

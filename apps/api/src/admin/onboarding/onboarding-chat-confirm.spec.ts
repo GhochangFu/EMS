@@ -141,6 +141,19 @@ export async function assertConfirmWithNoProposalRepliesWithoutAModelCall(): Pro
   assert((write.messages as unknown[]).length === 2, "the user turn and the reply are stored");
 }
 
+/**
+ * F4.199 second review (owner ruling 2026-10-05): the chat normalises a typed
+ * label, but the commit phrase stays exact. "confirm commit." with a matching
+ * proposal is an ordinary turn and commits nothing.
+ */
+export async function assertConfirmCommitWithAFullStopDoesNotCommit(): Promise<void> {
+  const session = sessionRow(proposed(readyDraft()));
+  const { service, commit, llm } = build({ results: [[session], ORG, [session], ORG] });
+  await service.chat(JWT, "s-1", "confirm commit.");
+  assert(commit.calls.length === 0, `nothing is committed, got ${commit.calls.length}`);
+  assert(llm.calls === 1, `positive control: it went on as an ordinary turn, got ${llm.calls} model calls`);
+}
+
 export async function assertAStaleProposalIsClearedAndNotCommitted(): Promise<void> {
   const before = readyDraft();
   const after = { ...before, pointKeys: [...(before.pointKeys ?? []), { code: "kvar", name: "Reactive" }] } as OnboardingDraft;
@@ -263,6 +276,26 @@ export async function assertAProposingTurnStoresAHashOfTheStoredDraft(): Promise
   assert(stored !== undefined, "the proposal is stored");
   assert(stored?.draftHash === draftHash(written), "bound to the hash of the draft that was written");
   assert(stored?.draftHash !== draftHash(session.draft), "not to the draft the turn started from");
+}
+
+/** F4.199 — a proposing turn offers "View draft" only: the client never sends `confirm commit` for the user. */
+export async function assertAProposingTurnOffersOnlyViewDraft(): Promise<void> {
+  const session = sessionRow(readyDraft());
+  const llm = new FakeLlmProvider([calls(toolCall("propose_commit", {})), { kind: "final", text: "Ready." }]);
+  const { service, record } = build({ results: [[session], ORG, [session], ORG], llm });
+  const response = await service.chat(JWT, "s-1", "commit it");
+  const written = record.updates[0]?.draft as Record<string, unknown>;
+  assert(written?.[COMMIT_PROPOSAL_KEY] !== undefined, "this case must propose a commit, or it measures the other branch");
+  assert(JSON.stringify(response.suggestedReplies) === JSON.stringify(["View draft"]), `got ${JSON.stringify(response.suggestedReplies)}`);
+}
+
+/** F4.199 — the credential refusal offers "View draft" only; "Add point key kw" was a turn the refusal did not answer. */
+export async function assertTheCredentialRefusalOffersOnlyViewDraft(): Promise<void> {
+  const session = sessionRow(proposed(readyDraft()));
+  const { service } = build({ results: [[session], ORG] });
+  const response = await service.chat(JWT, "s-1", "password: hunter2");
+  assert(response.assistantMessage.includes("looks like it contains a credential"), "this case must reach the refusal");
+  assert(JSON.stringify(response.suggestedReplies) === JSON.stringify(["View draft"]), `got ${JSON.stringify(response.suggestedReplies)}`);
 }
 
 export async function assertANonProposingTurnClearsTheProposal(): Promise<void> {
