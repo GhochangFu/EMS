@@ -13,7 +13,7 @@ import type { OrgPointKeySummary } from "./onboarding-catalog.service";
 import { carriesPromptMarker, serialiseDraftForPrompt } from "./onboarding-prompt-budget";
 import type { ProtocolContext } from "./onboarding-protocol.service";
 import { dispatchTemplateTool, isTemplateToolName, TEMPLATE_TOOL_DESCRIPTIONS, TEMPLATE_TOOL_SCHEMAS } from "./onboarding-template-tools";
-import { draftTemplateCode, isStockEntry, type ValidateTemplateContext } from "./onboarding-template-refs";
+import { draftTemplateCode, isStockEntry, unresolvedPointKey, type ValidateTemplateContext } from "./onboarding-template-refs";
 import {
   fail,
   issuesOf,
@@ -174,7 +174,7 @@ const DESCRIPTIONS: Record<ToolName, string> = {
   update_rtu: "Changes fields of the RTU at `index`. Never put a credential in `config`.",
   remove_rtu: "Removes the RTU at `index`.",
   add_point_key: "Declares a point key in this draft.",
-  remove_point_key: "Removes the draft point key at `index`. Refused while a draft template uses it and the catalog does not hold it.",
+  remove_point_key: "Removes the draft point key at `index`. Refused while a draft template uses it and the catalog does not hold it active.",
   add_asset: "Adds an asset on the RTU at `rtuIndex`.",
   remove_asset: "Removes the asset at `index`.",
   map_point: "Maps a source data key on the asset at `assetIndex` to a point key.",
@@ -382,16 +382,22 @@ async function dispatch(name: ToolName, args: Record<string, unknown>, state: To
       }
       // F4.195: an authored draft template resolves its point keys at commit
       // against the draft and the catalog, as `add_template` checks them. A key
-      // only the draft declares cannot leave while a template uses it, or the
-      // proposal succeeds and the commit fails. A second declaration of the
-      // same code keeps it resolved, so one copy of a duplicate can leave.
+      // that resolves only through this declaration cannot leave while a
+      // template uses it, or the proposal succeeds and the commit fails. A
+      // second declaration of the same code keeps it resolved, so one copy of a
+      // duplicate can leave. F4.196: the validator's rule (`unresolvedPointKey`)
+      // against the context's catalog, so the tool and validation agree.
       const code = hit.removed.code;
-      const users = hit.rest.some((key) => key.code === code)
+      const catalog = ctx.templates.pointKeys;
+      const before = new Set((draft.pointKeys ?? []).map((key) => key.code));
+      const after = new Set(hit.rest.map((key) => key.code));
+      const breaks = unresolvedPointKey(code, before, catalog) === null && unresolvedPointKey(code, after, catalog) !== null;
+      const users = !breaks
         ? []
         : (draft.templates ?? [])
             .filter((entry) => !isStockEntry(entry) && entry.points.some((point) => point.pointKey === code))
             .map((entry) => quoteCell(draftTemplateCode(entry)));
-      if (users.length > 0 && !(await ctx.catalog.listPointKeys(ctx.organizationId)).some((key) => key.code === code)) {
+      if (users.length > 0) {
         const { shown, omitted } = echoedItems(users, 10);
         return fail(
           `Point key ${quoteCell(code)} is used by draft templates: ${[...shown, moreTail(omitted, "templates")].filter(Boolean).join(", ")}. ` +

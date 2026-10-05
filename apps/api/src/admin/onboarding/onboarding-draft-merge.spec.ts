@@ -166,9 +166,12 @@ function mergeThroughService(stored: OnboardingDraft, patch: OnboardingDraft): O
   return service.mergeDraft(stored, patch) as OnboardingDraft;
 }
 
-/** `validate` on a merged draft: the location type of `draftBeforeAssets` is the one active code. */
+/**
+ * `validate` on a merged draft: the location type of `draftBeforeAssets` is the
+ * one active code, and `AUTHORED`'s key `flow` is in the catalog (`F4.196`).
+ */
 function validated(draft: OnboardingDraft): ReturnType<OnboardingValidateService["validate"]> {
-  return new OnboardingValidateService().validate(draft, ["smoc_campus"], EMPTY_TEMPLATE_CONTEXT);
+  return new OnboardingValidateService().validate(draft, ["smoc_campus"], { ...EMPTY_TEMPLATE_CONTEXT, pointKeys: new Map([["flow", true]]) });
 }
 
 /**

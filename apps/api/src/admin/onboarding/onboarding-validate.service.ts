@@ -25,6 +25,7 @@ import {
   templateSourceKeyMessage,
   templateSourceKeyProblem,
   templateVariables,
+  unresolvedPointKey,
   type TemplateRef,
   type ValidateTemplateContext,
 } from "./onboarding-template-refs";
@@ -314,6 +315,7 @@ function echoedList(items: readonly string[]): string {
  */
 function validateDraftTemplates(d: OnboardingDraft, ctx: ValidateTemplateContext, errors: OnboardingFieldError[]): void {
   const seen = new Set<string>();
+  const declared = new Set((d.pointKeys ?? []).map((key) => key.code));
   (d.templates ?? []).forEach((entry, i) => {
     const code = draftTemplateCode(entry);
     const codePath = `templates.${i}.${isStockEntry(entry) ? "stockCode" : "code"}`;
@@ -353,6 +355,11 @@ function validateDraftTemplates(d: OnboardingDraft, ctx: ValidateTemplateContext
             path: `templates.${i}.points.${j}.pointKey`,
             message: `Point ${quoteCell(point.pointKey)} appears more than once in template ${quoteCell(code)}`,
           });
+        } else {
+          const unresolved = unresolvedPointKey(point.pointKey, declared, ctx.pointKeys);
+          if (unresolved !== null) {
+            errors.push({ path: `templates.${i}.points.${j}.pointKey`, message: unresolved });
+          }
         }
         keys.add(point.pointKey);
         const grammar = point.sourceDataKeyPattern === undefined ? null : patternGrammarProblem(point.sourceDataKeyPattern);

@@ -60,17 +60,45 @@ export type TemplateRef = {
 /** A stock entry's ref, with the catalog release it would be imported from. */
 export type StockTemplateRef = TemplateRef & { readonly stockVersion: number };
 
-/** What a validation reads about templates: every organization version (all statuses), and the stock catalog. */
+/** What a validation reads about templates: every organization version (all statuses), the stock catalog, and the point-key catalog. */
 export type ValidateTemplateContext = {
   readonly organization: readonly TemplateRef[];
   readonly stock: readonly TemplateRef[];
+  /**
+   * `F4.196`: the fleet point-key catalog, code → `active`. An authored draft
+   * template's point resolves at commit against this catalog or against a key
+   * the draft declares, so validation reads the same rule as the commit.
+   */
+  readonly pointKeys: ReadonlyMap<string, boolean>;
 };
 
 /** For a caller with no organization and no catalog — a spec, or a draft that names no template. */
 export const EMPTY_TEMPLATE_CONTEXT: ValidateTemplateContext = Object.freeze({
   organization: Object.freeze([]) as readonly TemplateRef[],
   stock: Object.freeze([]) as readonly TemplateRef[],
+  pointKeys: new Map<string, boolean>() as ReadonlyMap<string, boolean>,
 });
+
+/**
+ * `F4.196` — why an authored template's point key does not resolve at commit,
+ * or `null` when it does. The commit inserts each draft key the catalog does
+ * not hold, as active, and reuses the row of one it does hold; then
+ * `assertPointKeysActive` refuses a template key that is not active. So a key
+ * resolves when it is active in the catalog, or when the draft declares it and
+ * the catalog does not hold it. Checked here because a `PATCH :id/draft` can
+ * drop a declaration that `remove_point_key` (`F4.195`) would refuse. The
+ * validator and both template-key tools (`add_template`, `remove_point_key`)
+ * ask this one question, so a tool cannot accept what validation refuses.
+ */
+export function unresolvedPointKey(key: string, declared: ReadonlySet<string>, catalog: ReadonlyMap<string, boolean>): string | null {
+  const active = catalog.get(key);
+  if (active === true || (active === undefined && declared.has(key))) {
+    return null;
+  }
+  return active === false
+    ? `Point key ${quoteCell(key)} is inactive in the catalog`
+    : `Point key ${quoteCell(key)} is neither in this draft nor in the catalog`;
+}
 
 /** A stock import, as opposed to an authored template: the union's stock branch carries `stockCode`. */
 export function isStockEntry(entry: OnboardingDraftTemplate): entry is OnboardingDraftStockTemplate {

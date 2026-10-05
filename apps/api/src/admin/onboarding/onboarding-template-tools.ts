@@ -13,6 +13,7 @@ import {
   templateSourceKeyMessage,
   templateSourceKeyProblem,
   templateVariables,
+  unresolvedPointKey,
   type TemplateRef,
   type ValidateTemplateContext,
 } from "./onboarding-template-refs";
@@ -261,15 +262,15 @@ export async function dispatchTemplateTool(
       if (held !== null) {
         return fail(held);
       }
+      // F4.196: the validator's own rule, against the context's catalog, so the
+      // tool cannot accept a key (an inactive one) that validation refuses.
       const draftKeys = new Set((draft.pointKeys ?? []).map((key) => key.code));
-      let unknown = [...new Set(entry.points.map((point) => point.pointKey))].filter((key) => !draftKeys.has(key));
-      if (unknown.length > 0) {
-        const catalog = new Set((await ctx.catalog.listPointKeys(ctx.organizationId)).map((key) => key.code));
-        unknown = unknown.filter((key) => !catalog.has(key));
-      }
+      const unknown = [...new Set(entry.points.map((point) => point.pointKey))].filter(
+        (key) => unresolvedPointKey(key, draftKeys, ctx.templates.pointKeys) !== null,
+      );
       if (unknown.length > 0) {
         return fail(
-          `Template ${quoteCell(entry.code)} names point keys that are neither in this draft nor in the catalog: ` +
+          `Template ${quoteCell(entry.code)} names point keys that are neither in this draft nor active in the catalog: ` +
             `${listOf(unknown.map((key) => quoteCell(key)), "point keys")}. Add them with add_point_key first.`,
         );
       }

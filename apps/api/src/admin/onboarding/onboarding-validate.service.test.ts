@@ -15,6 +15,13 @@ import {
   assertAnAuthoredPatternOutsideTheGrammarIsAnError,
   assertAnUnpinnedOrganizationTemplateIsAnError,
   assertAnUnreferencedTemplateIsValid,
+  assertATemplateKeyInTheActiveCatalogIsValid,
+  assertATemplateKeyOnlyTheDraftDeclaresIsValid,
+  assertATemplateKeyInNeitherIsAnError,
+  assertAnInactiveTemplateKeyTheDraftDeclaresIsAnError,
+  assertAnInactiveTemplateKeyIsAnError,
+  assertADraftWhosePatchDroppedATemplateKeyIsNotReady,
+  assertADraftWhosePatchDroppedATemplateKeyNamesThePoint,
   assertAStockPatternOutsideTheGrammarIsAnError,
   assertV1AnUnresolvedTemplateCodeIsAnError,
   assertV2AnUnpublishedVersionIsAnError,
@@ -197,5 +204,33 @@ describe("OnboardingValidateService — templates and templated assets (F3.22, A
 
   it("keeps a template no asset uses valid (decision 11)", () => {
     assertAnUnreferencedTemplateIsValid();
+  });
+
+  it("F4.196 accepts a template key the active catalog holds", () => {
+    assertATemplateKeyInTheActiveCatalogIsValid();
+  });
+
+  it("F4.196 accepts a template key only the draft declares", () => {
+    assertATemplateKeyOnlyTheDraftDeclaresIsValid();
+  });
+
+  it("F4.196 refuses a template key in neither the draft nor the catalog", () => {
+    assertATemplateKeyInNeitherIsAnError();
+  });
+
+  it("F4.196 refuses an inactive template key the draft declares", () => {
+    assertAnInactiveTemplateKeyTheDraftDeclaresIsAnError();
+  });
+
+  it("F4.196 refuses an inactive template key the draft does not declare", () => {
+    assertAnInactiveTemplateKeyIsAnError();
+  });
+
+  it("F4.196 keeps a draft whose PATCH dropped a template key from ready", () => {
+    assertADraftWhosePatchDroppedATemplateKeyIsNotReady();
+  });
+
+  it("F4.196 names the template point a PATCH left unresolved", () => {
+    assertADraftWhosePatchDroppedATemplateKeyNamesThePoint();
   });
 });

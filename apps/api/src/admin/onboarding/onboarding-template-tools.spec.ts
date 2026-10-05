@@ -62,6 +62,7 @@ const ORG: ValidateTemplateContext = {
     ref("OLD", 1, "archived", []),
   ],
   stock: [ref("STOCK-A", null, null, [point("flow")], "Flow meter"), ref("STOCK-B", null, null, [point("level")], "Level probe")],
+  pointKeys: new Map(),
 };
 
 /** T21 (with the FORBIDDEN walk in `onboarding-agent-tools.spec.ts`, which covers every tool) */
@@ -95,7 +96,7 @@ export async function assertListTemplatesIsPublishedOnlyWithHighestVersion(): Pr
 /** R2 */
 export async function assertListTemplatesIsBoundedAtOneHundred(): Promise<void> {
   const organization = Array.from({ length: TOOL_LIST_MAX_ITEMS + 1 }, (_, i) => ref(`T${String(i).padStart(3, "0")}`, 1, "published", [point("kw")]));
-  const out = await run("list_templates", {}, { organization, stock: [] });
+  const out = await run("list_templates", {}, { organization, stock: [], pointKeys: new Map() });
   assert((out.body.templates as unknown[]).length === TOOL_LIST_MAX_ITEMS, "100 are shown");
   assert(typeof out.body.more === "string" && out.body.more.includes("1"), `a more tail counts the rest, got ${String(out.body.more)}`);
 }
@@ -144,7 +145,7 @@ export async function assertListStockTemplatesFiltersCodeAndName(): Promise<void
 /** R7 */
 export async function assertABigTemplateResultIsCut(): Promise<void> {
   const points = Array.from({ length: 300 }, (_, i) => point(`point_${i}`, `{asset_code}-s${i}`));
-  const out = await run("get_template", { code: "BIG" }, { organization: [ref("BIG", 1, "published", points)], stock: [] });
+  const out = await run("get_template", { code: "BIG" }, { organization: [ref("BIG", 1, "published", points)], stock: [], pointKeys: new Map() });
   assert(out.content.endsWith(TOOL_RESULT_CUT_TAIL), "a 300-point result ends with the fixed tail");
   assert(out.content.length <= TOOL_RESULT_MAX_CHARS + TOOL_RESULT_CUT_TAIL.length, "and is bounded");
 }
@@ -173,6 +174,11 @@ const WRITE: ValidateTemplateContext = {
     ref("METER", 3, "draft", []),
   ],
   stock: [stockRef("WTP-PUMP", 3, [point("flow"), optional("level"), derived("efficiency")])],
+  // F4.196: the catalog `add_template`, `remove_point_key` and the validator read; `old_kw` is held inactive.
+  pointKeys: new Map([
+    ["energy_kwh", true],
+    ["old_kw", false],
+  ]),
 };
 
 const RTU = {
@@ -264,6 +270,12 @@ export async function assertT4AddTemplateRefusesAnUnknownPointKey(): Promise<voi
 export async function assertT4AddTemplateAcceptsADraftAndACatalogPointKey(): Promise<void> {
   const out = await runOn("add_template", { ...CHILLER, points: [{ pointKey: "kw" }, { pointKey: "energy_kwh" }] }, baseDraft());
   assert(out.ok && out.actionLine === "Added template CHILLER (2 points)", `accepted, got ${out.content}`);
+}
+
+/** F4.196 — a key the catalog holds inactive is refused, as validation refuses it. */
+export async function assertT4AddTemplateRefusesAnInactiveCatalogKey(): Promise<void> {
+  const out = await runOn("add_template", { ...CHILLER, points: [{ pointKey: "old_kw" }] }, baseDraft());
+  assert(!out.ok && out.error.includes("'old_kw'") && out.error.includes("active in the catalog"), `refused naming the key, got ${out.content}`);
 }
 
 /** T5 */
@@ -385,6 +397,14 @@ export async function assertRemovePointKeyRemovesOneCopyOfADuplicateKey(): Promi
 export async function assertRemovePointKeyReadsPastAStockTemplate(): Promise<void> {
   const out = await runOn("remove_point_key", { index: 0 }, baseDraft({ templates: [{ stockCode: "WTP-PUMP" }] }));
   assert(out.ok && out.actionLine === "Removed point key kw", `removed, got ${out.content}`);
+}
+
+/** F4.196 — a key that already does not resolve (held inactive) can leave: removing it breaks nothing more. */
+export async function assertRemovePointKeyRemovesAKeyThatAlreadyDoesNotResolve(): Promise<void> {
+  const draft = baseDraft({ templates: [{ ...CHILLER, points: [{ pointKey: "old_kw" }] }] });
+  draft.pointKeys!.push({ code: "old_kw", name: "Old" });
+  const out = await runOn("remove_point_key", { index: 1 }, draft);
+  assert(out.ok && out.actionLine === "Removed point key old_kw", `removed, got ${out.content}`);
 }
 
 /** T10 (a code the draft does not hold) */
@@ -578,7 +598,7 @@ export function assertT19TheCountsReadTheTemplatePerAsset(): void {
   for (const code of ["P-1", "P-2"]) {
     draft.assets!.push({ rtuIndex: 0, code, name: "Pump", siteName: "Berhampur", domain: "electrical", template: { code: "PUMP", version: 1 } });
   }
-  const summary = commitSummary(draft, { organization: [pump], stock: [] });
+  const summary = commitSummary(draft, { organization: [pump], stock: [], pointKeys: new Map() });
   // A whole comma-separated part, not a substring: "12 dashboards" — the
   // widget-row count — contains "2 dashboards".
   const parts = summary.split(", ");
@@ -595,6 +615,6 @@ export function assertT19TheCountsSkipAKeyOverTheLengthLimit(): void {
   const draft = baseDraft();
   const vars = { phase: "p".repeat(128) };
   draft.assets!.push({ rtuIndex: 0, code: "P-1", name: "Pump", siteName: "Berhampur", domain: "electrical", template: { code: "PUMP", version: 1, sourceDataKeyVars: vars } });
-  const summary = commitSummary(draft, { organization: [pump], stock: [] });
+  const summary = commitSummary(draft, { organization: [pump], stock: [], pointKeys: new Map() });
   assert(summary.includes("1 templated asset") && summary.includes("1 asset point"), `only kw counts, got ${summary}`);
 }
