@@ -39,6 +39,11 @@ type AuthState = {
    * flight the first reason wins. `setSession` consumes it.
    */
   rememberAuthFailure: (code: AuthFailureCode) => void;
+  /**
+   * `F4.203` (security L1) — a new sign-in attempt drops the reason, so it
+   * never stays on the sign-in page for the next person.
+   */
+  clearAuthFailure: () => void;
 };
 
 export const useAuthStore = create<AuthState>()(
@@ -56,6 +61,7 @@ export const useAuthStore = create<AuthState>()(
         set({ accessToken: null, oidcIdToken: null, user: null, scope: null }),
       rememberAuthFailure: (code) =>
         set((state) => (state.authFailureReason === null ? { authFailureReason: code } : {})),
+      clearAuthFailure: () => set({ authFailureReason: null }),
     }),
     {
       name: "bms-auth",

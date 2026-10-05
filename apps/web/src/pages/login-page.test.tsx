@@ -3,6 +3,9 @@ import { afterEach, describe, it, vi } from "vitest";
 import { cleanup } from "@testing-library/react";
 
 import {
+  aLateReasonStillRenders,
+  aLocalSignInAttemptClearsTheReason,
+  anOidcSignInAttemptClearsTheReason,
   aPlain401ShowsNothing,
   aSignInConsumesTheReason,
   showsTheDeactivatedSentence,
@@ -129,5 +132,17 @@ describe("F4.203 the login page after a deactivated 401", () => {
 
   it("L18 a sign-in consumes the reason", async () => {
     await aSignInConsumesTheReason();
+  });
+
+  it("L19 a reason that lands after mount still renders", async () => {
+    await aLateReasonStillRenders();
+  });
+
+  it("L20 starting a local sign-in clears the reason", async () => {
+    await aLocalSignInAttemptClearsTheReason();
+  });
+
+  it("L21 starting a Keycloak sign-in clears the reason", async () => {
+    await anOidcSignInAttemptClearsTheReason();
   });
 });

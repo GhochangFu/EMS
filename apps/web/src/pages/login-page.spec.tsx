@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { fireEvent, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter, Route, Routes, useLocation, useNavigationType } from "react-router-dom";
 import { expect, vi } from "vitest";
 
@@ -229,6 +229,42 @@ export async function aSignInConsumesTheReason(): Promise<void> {
   useAuthStore.getState().rememberAuthFailure("account_deactivated");
   renderLoginRoutes();
   expect(await signInLocally()).toBe("/|REPLACE");
+  expect(useAuthStore.getState().authFailureReason).toBeNull();
+}
+
+/** L19 (`F4.203`) — a reason that lands after the page mounts still renders (a subscription, not a read). */
+export async function aLateReasonStillRenders(): Promise<void> {
+  renderLoginRoutes();
+  expect(screen.queryByText(DEACTIVATED), "control: no sentence before the reason lands").toBeNull();
+  act(() => {
+    useAuthStore.getState().rememberAuthFailure("account_deactivated");
+  });
+  expect(await screen.findByText(DEACTIVATED)).toBeTruthy();
+}
+
+/**
+ * L20 (`F4.203`, security L1) — starting a local sign-in clears the reason, so it never stays for
+ * the next person. The sign-in is refused, so `setSession` cannot be what cleared it.
+ */
+export async function aLocalSignInAttemptClearsTheReason(): Promise<void> {
+  useAuthStore.getState().rememberAuthFailure("account_deactivated");
+  renderLoginRoutes();
+  vi.spyOn(loginApi, "loginRequest").mockRejectedValue(new Error("Invalid email or password"));
+  fireEvent.change(screen.getByLabelText("Password"), { target: { value: "wrong" } });
+  fireEvent.click(screen.getByRole("button", { name: "Sign in securely" }));
+  expect(await screen.findByText("Invalid email or password"), "control: the attempt ran").toBeTruthy();
+  expect(useAuthStore.getState().authFailureReason).toBeNull();
+}
+
+/** L21 (`F4.203`, security L1) — starting a Keycloak sign-in clears the reason too. */
+export async function anOidcSignInAttemptClearsTheReason(): Promise<void> {
+  useAuthStore.getState().rememberAuthFailure("account_deactivated");
+  renderLoginRoutes(true);
+  const start = vi.spyOn(oidcApi, "startOidcLogin").mockResolvedValue(undefined);
+  fireEvent.click(screen.getByRole("button", { name: "Sign in securely with Keycloak" }));
+  await waitFor(() => {
+    expect(start, "control: the Keycloak sign-in started").toHaveBeenCalled();
+  });
   expect(useAuthStore.getState().authFailureReason).toBeNull();
 }
 

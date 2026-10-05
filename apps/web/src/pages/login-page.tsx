@@ -13,6 +13,7 @@ export function LoginPage() {
   const setSession = useAuthStore((s) => s.setSession);
   // `F4.203` — why the last session ended; a subscription, so a reason read late still renders.
   const authFailureReason = useAuthStore((s) => s.authFailureReason);
+  const clearAuthFailure = useAuthStore((s) => s.clearAuthFailure);
   const oidcEnabled = isOidcEnabled();
   const [email, setEmail] = useState("admin@bms.local");
   const [password, setPassword] = useState("");
@@ -38,11 +39,14 @@ export function LoginPage() {
   function onSubmit(e: FormEvent): void {
     e.preventDefault();
     setFormError(null);
+    // `F4.203` (security L1) — a new attempt drops the last session's reason.
+    clearAuthFailure();
     mutation.mutate();
   }
 
   async function onOidcLogin(): Promise<void> {
     setFormError(null);
+    clearAuthFailure();
     try {
       await startOidcLogin();
     } catch (err) {
