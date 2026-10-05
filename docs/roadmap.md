@@ -7286,3 +7286,25 @@ fixed, nothing else blocking. No live check: API only, gated by the specs.
 **Cascade:** no row lists `F4.195` in *Depends* except the new `F4.196`.
 Raised: `F4.196` (a draft PATCH can drop a point key a draft template uses, and
 the draft still reads as ready). No `chore(agents):` change owed.
+
+### `F4.196` — validation reads the commit's point-key rule ✅ 2026-10-05
+
+PR #734, squash `a147ad02`. No ADR, no migration, no shared contract change.
+
+- The template context carries the fleet point-key catalog (code → active),
+  read once per request beside the templates.
+- `validateDraftTemplates` applies the commit's rule to each authored template
+  point: active in the catalog, or declared by the draft and absent from the
+  catalog. An inactive catalog key is refused even when declared. A
+  `PATCH :id/draft` that drops a template's key no longer reads ready.
+- `add_template` and `remove_point_key` ask the same rule, so the tools and the
+  validator agree.
+
+Verified: CI green, and `main` green on `a147ad02` after #733; 12 new `it()`s,
+13 mutations run, each reddening its target; the onboarding folder with the
+integration DB, 0 skipped. Reviews: nothing blocking; two security Lows (one
+`point_keys` read per request, one error per unresolved point) left as noted.
+
+**Cascade:** no row lists `F4.196` in *Depends* except the new `F4.205`.
+Raised: `F4.205` (validation does not check a stock template's point keys).
+No `chore(agents):` change owed.
