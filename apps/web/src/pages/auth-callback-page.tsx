@@ -32,7 +32,16 @@ export function AuthCallbackPage() {
         }
       } catch (err) {
         if (!cancelled) {
-          setError(err instanceof Error ? err.message : "OIDC login failed");
+          // `F4.203` (owner ruling) — `fetchCurrentUser` records the 401's reason
+          // before it throws; a deactivated account reads the sentence the
+          // sign-in page shows, not "Current user failed (401)".
+          setError(
+            useAuthStore.getState().authFailureReason === "account_deactivated"
+              ? "Your account is deactivated. Ask an administrator."
+              : err instanceof Error
+                ? err.message
+                : "OIDC login failed",
+          );
         }
       }
     }

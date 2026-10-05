@@ -79,6 +79,58 @@ export async function navigatesToTheReturnPath(): Promise<void> {
   expect(window.sessionStorage.getItem(RETURN_PATH_KEY)).toBeNull();
 }
 
+export const DEACTIVATED = "Your account is deactivated. Ask an administrator.";
+
+/**
+ * `F4.203` (owner ruling) — Keycloak signs the user in, then `/me` refuses with a 401 body. The
+ * real `fetchCurrentUser` runs (a spy would replace the read this pins), so the reason it records
+ * is what the page reads.
+ */
+async function refuseTheCallback(body: unknown): Promise<string> {
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(() =>
+      Promise.resolve(
+        new Response(JSON.stringify(body), {
+          status: 401,
+          headers: { "Content-Type": "application/json" },
+        }),
+      ),
+    ),
+  );
+  vi.spyOn(oidcApi, "completeOidcLogin").mockResolvedValue({
+    accessToken: "token-oidc",
+    idToken: "id-token",
+  } as Awaited<ReturnType<typeof oidcApi.completeOidcLogin>>);
+  render(
+    <QueryClientProvider client={new QueryClient()}>
+      <MemoryRouter initialEntries={["/auth/callback?code=c&state=s"]}>
+        <AuthCallbackPage />
+      </MemoryRouter>
+    </QueryClientProvider>,
+  );
+  return (await screen.findByRole("alert")).textContent ?? "";
+}
+
+/** A4 — a deactivated account's callback shows the sentence, not "Current user failed (401)". */
+export async function aDeactivatedCallbackShowsTheSentence(): Promise<void> {
+  expect(
+    await refuseTheCallback({
+      statusCode: 401,
+      message: "This account is deactivated",
+      error: "Unauthorized",
+      code: "account_deactivated",
+    }),
+  ).toBe(DEACTIVATED);
+}
+
+/** A5 — a plain 401 keeps the existing message (the positive control for A4's branch). */
+export async function aPlainRefusedCallbackKeepsItsMessage(): Promise<void> {
+  expect(
+    await refuseTheCallback({ statusCode: 401, message: "Invalid token", error: "Unauthorized" }),
+  ).toBe("Current user failed (401)");
+}
+
 /** A3 — a completed callback with no stored path lands on `/` with replace. */
 export async function navigatesToTheRootWithoutAReturnPath(): Promise<void> {
   expect(await completeTheCallback()).toBe("/|REPLACE");
