@@ -1,3 +1,4 @@
+import { ConflictException } from "@nestjs/common";
 import { expect } from "vitest";
 import pg from "pg";
 
@@ -152,4 +153,66 @@ export async function assertUpdateKeepsOmittedAndClearsNull(
   const refetched = (await svc.list(jwt, locationId)).items.find((a) => a.id === created.id);
   expect(refetched?.tripCause).toBeNull();
   expect(refetched?.rating).toBe("400A");
+}
+
+/** `F4.211` — creates an asset with `code`, tracked before any claim runs. */
+async function createF4211Asset(
+  ctx: SvcWithFixtures,
+  jwt: JwtPayload,
+  code: string,
+  track: (id: string) => void,
+) {
+  const created = await ctx.svc.create(jwt, {
+    code,
+    name: "F4.211 duplicate code check",
+    siteName: "F4.211 site",
+    locationId: ctx.locationId,
+    rtuId: null,
+    domain: ctx.domain,
+  });
+  track(created.id);
+  return created;
+}
+
+function expectConflict(err: unknown, expected: string): void {
+  expect(
+    err instanceof ConflictException && err.message === expected,
+    `F4.211: expected ConflictException "${expected}"; got ` +
+      `${(err as Error | null)?.constructor?.name} (code ${(err as { code?: unknown } | null)?.code}) ` +
+      `"${(err as Error | null)?.message}"`,
+  ).toBe(true);
+}
+
+/**
+ * `F4.211` — a create whose code another asset holds is a 409 naming the
+ * code (`assets_code_unique`), not pg's `23505` as a 500.
+ */
+export async function assertCreateWithADuplicateCodeIsA409(
+  ctx: SvcWithFixtures,
+  jwt: JwtPayload,
+  track: (id: string) => void,
+): Promise<void> {
+  const code = `f4-211-asset-dup-${Date.now()}`;
+  await createF4211Asset(ctx, jwt, code, track);
+  const err = await createF4211Asset(ctx, jwt, code, track).then(
+    () => null,
+    (e: unknown) => e,
+  );
+  expectConflict(err, `An asset with code "${code}" already exists`);
+}
+
+/** `F4.211` — an update to a code another asset holds is the same 409. */
+export async function assertUpdateToATakenCodeIsA409(
+  ctx: SvcWithFixtures,
+  jwt: JwtPayload,
+  track: (id: string) => void,
+): Promise<void> {
+  const taken = `f4-211-asset-taken-${Date.now()}`;
+  await createF4211Asset(ctx, jwt, taken, track);
+  const second = await createF4211Asset(ctx, jwt, `f4-211-asset-free-${Date.now()}`, track);
+  const err = await ctx.svc.update(jwt, second.id, { code: taken }).then(
+    () => null,
+    (e: unknown) => e,
+  );
+  expectConflict(err, `An asset with code "${taken}" already exists`);
 }

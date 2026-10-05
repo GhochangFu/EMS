@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ConflictException,
   ForbiddenException,
   Inject,
   Injectable,
@@ -14,6 +15,7 @@ import type { AdminAssetDto, AdminAssetSummaryDto, JwtPayload } from "@bms/share
 import { AccessControlService } from "../../auth/access-control.service";
 import { FLEET_DRIZZLE, TENANT_DRIZZLE } from "../../database/database.tokens";
 import { withTenant, type BmsTx } from "../../database/tenant-context";
+import { translateConstraintErrors } from "../../database/translate-constraint-errors";
 import { VocabulariesService } from "../../vocabularies/vocabularies.service";
 import { MasterDataAuditService } from "../master-data-audit.service";
 import {
@@ -190,7 +192,7 @@ export class AssetsAdminService {
     // the insert both run under the tenant GUC (E7.1b).
     const organizationId = await this.resolveLocationOrg(body.locationId);
 
-    const created = await withTenant(this.tenantDb, organizationId, async (tx) => {
+    const insertRow = () => withTenant(this.tenantDb, organizationId, async (tx) => {
       const rtu = await this.assertRtuLocation(body.rtuId, body.locationId, tx);
       // `F4.139` — an asset attached to an RTU takes its `telemetrySource` from
       // that RTU, never from the caller: see `admin/telemetry-source.ts` for the
@@ -248,6 +250,10 @@ export class AssetsAdminService {
         tx,
       );
       return row;
+    });
+    // F4.211 — a taken code is a 409 that names it, not pg's 23505 as a 500.
+    const created = await translateConstraintErrors(insertRow, {
+      onUnique: () => assetCodeConflict(body.code),
     });
 
     return this.fetchRow(created.id);
@@ -326,7 +332,8 @@ export class AssetsAdminService {
       );
     }
 
-    await withTenant(this.tenantDb, organizationId, async (tx) => {
+    const nextCode = body.code ?? existing.code;
+    const updateRow = () => withTenant(this.tenantDb, organizationId, async (tx) => {
       const rtu = await this.assertRtuLocation(nextRtuId, nextLocationId, tx);
       // `F4.139` — restated on every update that leaves an RTU attached, not
       // only on the ones that mention `rtuId`: the invariant is a postcondition,
@@ -357,7 +364,7 @@ export class AssetsAdminService {
       await tx
         .update(assets)
         .set({
-          code: body.code ?? existing.code,
+          code: nextCode,
           name: body.name ?? existing.name,
           siteName: body.siteName ?? existing.siteName,
           locationId: nextLocationId,
@@ -394,6 +401,10 @@ export class AssetsAdminService {
         },
         tx,
       );
+    });
+    // F4.211 — a taken code is a 409 that names it, not pg's 23505 as a 500.
+    await translateConstraintErrors(updateRow, {
+      onUnique: () => assetCodeConflict(nextCode),
     });
     return this.fetchRow(id);
   }
@@ -621,4 +632,13 @@ export class AssetsAdminService {
       createdAt: asset.createdAt.toISOString(),
     };
   }
+}
+
+/**
+ * `F4.211` — the 409 for `assets_code_unique`, the one unique key a create or
+ * update here can take. Not `translateAssetCodeCollision`: that one speaks for
+ * a template instantiation's batch of codes.
+ */
+function assetCodeConflict(code: string): ConflictException {
+  return new ConflictException(`An asset with code "${code}" already exists`);
 }
