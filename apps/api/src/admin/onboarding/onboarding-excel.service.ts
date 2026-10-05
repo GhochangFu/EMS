@@ -5,7 +5,7 @@ import * as XLSX from "xlsx";
 // rather than restated. `@bms/shared` and not `@bms/shared/contracts` — apps/api
 // compiles with moduleResolution "node" and ignores the exports map (ADR 0030
 // Amendment 2).
-import { ONBOARDING_DRAFT_STRING_MAX } from "@bms/shared";
+import { MAX_RTU_TOPIC_CHARS, ONBOARDING_DRAFT_STRING_MAX } from "@bms/shared";
 import type { OnboardingDraft } from "@bms/shared";
 
 import { quoteCell, zipInflationProblem } from "../spreadsheet-guard";
@@ -144,8 +144,11 @@ export function onboardingSheetRangeProblem(range: XLSX.Range): string | null {
  * The four other guards are this row's own commits, not `ef1a3e11`'s: at
  * `ef1a3e11` `parseUpload` had no byte cap, no inflation check, no `sheetRows`
  * and no range check.
+ *
+ * `F4.208`: declared in `@bms/shared` so the web's Topic field reads the same
+ * number, and re-exported here so the importers of this path do not move.
  */
-export const MAX_RTU_TOPIC_CHARS = 255;
+export { MAX_RTU_TOPIC_CHARS };
 
 /**
  * The longest `host` cell an onboarding workbook may carry (`F4.104`).

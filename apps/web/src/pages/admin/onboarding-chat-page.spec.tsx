@@ -65,7 +65,7 @@ const USER: AuthUser = {
   role: "admin",
 };
 
-const SESSION: OnboardingSessionDto = {
+export const SESSION: OnboardingSessionDto = {
   id: "session-1",
   organizationId: ORG_ID,
   organizationCode: "IONX",
@@ -81,7 +81,7 @@ const SESSION: OnboardingSessionDto = {
 };
 
 /** A session whose one RTU still needs credentials, so the drawer offers the form. */
-const SESSION_WITH_RTU: OnboardingSessionDto = {
+export const SESSION_WITH_RTU: OnboardingSessionDto = {
   ...SESSION,
   draft: {
     rtus: [
@@ -153,7 +153,7 @@ function LocationProbe() {
  * effect never fires and `startMutation` never runs — every case below would
  * then assert nothing while looking green.
  */
-function renderPage(search = ""): HTMLElement {
+export function renderPage(search = ""): HTMLElement {
   stubScrolling();
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   const view = render(
@@ -178,7 +178,7 @@ function renderPage(search = ""): HTMLElement {
 }
 
 /** Every case but the start failure needs the session to exist first. */
-function stubStart(session: OnboardingSessionDto = SESSION): void {
+export function stubStart(session: OnboardingSessionDto = SESSION): void {
   vi.spyOn(api, "createOnboardingSession").mockResolvedValue(chatResponse(session));
 }
 
@@ -232,7 +232,7 @@ async function waitForSessionToLand(): Promise<void> {
  * asserted the credentials reason against the chat banner would be green for
  * the wrong reason.
  */
-async function findTheOnlyAlert(): Promise<HTMLElement> {
+export async function findTheOnlyAlert(): Promise<HTMLElement> {
   const alerts = await screen.findAllByRole("alert");
   expect(alerts, "exactly one banner belongs on screen for this case").toHaveLength(1);
   return alerts[0] as HTMLElement;
@@ -245,7 +245,7 @@ async function findTheOnlyAlert(): Promise<HTMLElement> {
  * still contains the sentence — so the presence half stays green and the
  * assertion gates nothing.
  */
-function expectNoEnvelopeLeak(banner: HTMLElement): void {
+export function expectNoEnvelopeLeak(banner: HTMLElement): void {
   const text = (banner.textContent ?? "").trim();
   for (const leak of ["statusCode", '"error"', "errors"]) {
     expect(text, `the banner leaked "${leak}": ${text}`).not.toContain(leak);
@@ -254,7 +254,7 @@ function expectNoEnvelopeLeak(banner: HTMLElement): void {
 }
 
 /** Opens the draft preview drawer, where Validate, Commit and credentials live. */
-async function openPreview(): Promise<void> {
+export async function openPreview(): Promise<void> {
   await userEvent.click(await screen.findByRole("button", { name: /^Preview/ }));
 }
 

@@ -191,6 +191,20 @@ export const ONBOARDING_DRAFT_STRING_MAX = {
   "assetTemplateRef.code": 64,
 } as const;
 
+/**
+ * `F4.208` — the longest MQTT topic an onboarding draft may carry: the width of
+ * `bms.rtus.mqtt_topic` (`varchar(255)`).
+ *
+ * **Deliberately outside `ONBOARDING_DRAFT_STRING_MAX`.** `rtus[].config` is a
+ * `z.record(z.unknown())`, so `topic` is not a declared string field of the
+ * draft schema and no schema reads this number — the same reason
+ * `MAX_RTU_HOST_CHARS` (`onboarding-excel.service.ts`) is kept out of that
+ * record, whose key set `onboarding.schema.string-bounds.spec.ts` pins to the
+ * schema's declared fields. It lives here, not in the api, so the web's Topic
+ * field and every api producer read one number.
+ */
+export const MAX_RTU_TOPIC_CHARS = 255;
+
 export const onboardingDraftLocationSchema = z.object({
   code: z.string().max(ONBOARDING_DRAFT_STRING_MAX["location.code"]),
   slug: z.string().max(ONBOARDING_DRAFT_STRING_MAX["location.slug"]),
