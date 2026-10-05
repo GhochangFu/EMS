@@ -9,6 +9,7 @@ import * as assetsApi from "../../api/admin/assets";
 import * as locationsApi from "../../api/admin/locations";
 import * as organizationsApi from "../../api/admin/organizations";
 import * as vocabApi from "../../api/vocabularies";
+import { ApiError } from "../../lib/api-error";
 import type { AuthUser } from "../../stores/auth-store";
 import { AssetGroupsAdminPage } from "./asset-groups-page";
 
@@ -332,6 +333,81 @@ export async function showsTheServerRefusal(): Promise<void> {
   await userEvent.selectOptions(select, "f337-spec-beta");
 
   expect(await screen.findByRole("alert")).toHaveTextContent(/not a live value/);
+}
+
+/**
+ * `F4.197` — an `ApiError` carries the whole response body, so a refusal read
+ * through `err.message` showed `{"statusCode":409,…}` in the banner. Each write
+ * site reads it through `apiErrorMessage`; one case per site, because a site
+ * left on `err.message` reddens only its own case.
+ */
+const REFUSAL_SENTENCE = "An asset group with that code already exists at this location";
+const refused = () =>
+  Promise.reject(
+    new ApiError(`{"statusCode":409,"message":"${REFUSAL_SENTENCE}","error":"Conflict"}`, 409),
+  );
+
+async function expectTheSentenceNotTheEnvelope(): Promise<void> {
+  const alert = await screen.findByRole("alert");
+  expect(alert).toHaveTextContent(REFUSAL_SENTENCE);
+  expect(alert.textContent).not.toContain("statusCode");
+}
+
+export async function aRefusedSaveShowsTheSentence(): Promise<void> {
+  stubApi({ createAdminAssetGroup: refused });
+  renderPage();
+  await screen.findByRole("button", { name: /Electrical train/ });
+
+  await userEvent.click(screen.getByRole("button", { name: "New group" }));
+  const dialog = await screen.findByRole("dialog", { name: "New asset group" });
+  const select = within(dialog).getByLabelText("Location");
+  await waitFor(() => {
+    expect(within(select).getAllByRole("option").length).toBe(3);
+  });
+  await userEvent.selectOptions(select, GROUP_LOCATION_ID);
+  await userEvent.type(within(dialog).getByLabelText("Code"), "electrical");
+  await userEvent.type(within(dialog).getByLabelText("Name"), "Duplicate");
+  await userEvent.click(within(dialog).getByRole("button", { name: "Save" }));
+
+  await expectTheSentenceNotTheEnvelope();
+}
+
+export async function aRefusedAddShowsTheSentence(): Promise<void> {
+  stubApi({ addAdminAssetGroupMember: refused });
+  renderPage();
+  await userEvent.click(await screen.findByRole("button", { name: /Electrical train/ }));
+
+  const picker = await screen.findByRole("combobox", { name: "Asset to add" });
+  await waitFor(() => {
+    expect(within(picker).getAllByRole("option").length).toBe(2);
+  });
+  await userEvent.selectOptions(picker, "asset-4");
+  await userEvent.click(screen.getByRole("button", { name: "Add to group" }));
+
+  await expectTheSentenceNotTheEnvelope();
+}
+
+export async function aRefusedRemoveShowsTheSentence(): Promise<void> {
+  stubApi({ removeAdminAssetGroupMember: refused });
+  renderPage();
+  await userEvent.click(await screen.findByRole("button", { name: /Electrical train/ }));
+  await userEvent.click(await screen.findByRole("button", { name: "Remove Transformer 1" }));
+
+  await expectTheSentenceNotTheEnvelope();
+}
+
+export async function aRefusedRoleWriteShowsTheSentence(): Promise<void> {
+  stubApi({ setAdminAssetGroupMemberRole: refused });
+  renderPage();
+  await userEvent.click(await screen.findByRole("button", { name: /Electrical train/ }));
+
+  const select = await screen.findByRole("combobox", { name: "Role for Transformer 3" });
+  await waitFor(() => {
+    expect(within(select).getAllByRole("option").length).toBe(3);
+  });
+  await userEvent.selectOptions(select, "f337-spec-beta");
+
+  await expectTheSentenceNotTheEnvelope();
 }
 
 /** Create sends the location chosen in the modal, with the code and name typed. */

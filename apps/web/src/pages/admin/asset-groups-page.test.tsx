@@ -4,6 +4,10 @@ import { cleanup } from "@testing-library/react";
 
 import {
   aReadOnlyRoleSeesNoWriteControls,
+  aRefusedAddShowsTheSentence,
+  aRefusedRemoveShowsTheSentence,
+  aRefusedRoleWriteShowsTheSentence,
+  aRefusedSaveShowsTheSentence,
   addSendsTheAssetId,
   anEmptyVocabularyRendersNoRolesOfItsOwn,
   choosingAnOrganizationStaysOnTheScreen,
@@ -96,5 +100,21 @@ describe("F3.37 asset groups page", () => {
 
   it("hides every write control from a role without the write gate", async () => {
     await aReadOnlyRoleSeesNoWriteControls();
+  });
+
+  it("F4.197: a refused save shows the server's sentence, not the JSON envelope", async () => {
+    await aRefusedSaveShowsTheSentence();
+  });
+
+  it("F4.197: a refused add shows the server's sentence, not the JSON envelope", async () => {
+    await aRefusedAddShowsTheSentence();
+  });
+
+  it("F4.197: a refused remove shows the server's sentence, not the JSON envelope", async () => {
+    await aRefusedRemoveShowsTheSentence();
+  });
+
+  it("F4.197: a refused role write shows the server's sentence, not the JSON envelope", async () => {
+    await aRefusedRoleWriteShowsTheSentence();
   });
 });

@@ -23,6 +23,8 @@ import { MasterDataLayout } from "../../components/admin/master-data-layout";
 import { PageHeader } from "../../components/page-header";
 import { SectionCard } from "../../components/section-card";
 import { isMasterDataAdmin } from "../../lib/admin-access";
+// `F4.197`: an `ApiError` carries the whole response body; this reads the sentence out of it.
+import { apiErrorMessage } from "../../lib/api-error-message";
 import type { AuthUser } from "../../stores/auth-store";
 
 type AssetGroupsAdminPageProps = { user: AuthUser };
@@ -121,7 +123,7 @@ export function AssetGroupsAdminPage({ user }: AssetGroupsAdminPageProps) {
       setSelectedGroupId(saved.id);
     },
     onError: (err: unknown) => {
-      setError(err instanceof Error ? err.message : "Could not save the group");
+      setError(apiErrorMessage(err));
     },
   });
 
@@ -134,7 +136,7 @@ export function AssetGroupsAdminPage({ user }: AssetGroupsAdminPageProps) {
       await invalidateGroups();
     },
     onError: (err: unknown) => {
-      setError(err instanceof Error ? err.message : "Could not add the member");
+      setError(apiErrorMessage(err));
     },
   });
 
@@ -145,7 +147,7 @@ export function AssetGroupsAdminPage({ user }: AssetGroupsAdminPageProps) {
       await invalidateGroups();
     },
     onError: (err: unknown) => {
-      setError(err instanceof Error ? err.message : "Could not remove the member");
+      setError(apiErrorMessage(err));
     },
   });
 
@@ -162,7 +164,7 @@ export function AssetGroupsAdminPage({ user }: AssetGroupsAdminPageProps) {
     },
     onError: (err: unknown) => {
       // The API's 400 names the live codes; showing it beats "something failed".
-      setError(err instanceof Error ? err.message : "Could not set the role");
+      setError(apiErrorMessage(err));
     },
   });
 
