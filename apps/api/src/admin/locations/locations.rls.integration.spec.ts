@@ -1,4 +1,4 @@
-import { BadRequestException, ForbiddenException } from "@nestjs/common";
+import { BadRequestException, ConflictException, ForbiddenException } from "@nestjs/common";
 import { expect } from "vitest";
 import pg from "pg";
 
@@ -403,4 +403,94 @@ export async function assertListLocationTypesReturnsTheFour(
   const seeded = ["smoc_campus", "rsmoc", "csmoc", "pump_station"];
   const { items } = await svc.listLocationTypes(jwt);
   expect(items.map((row) => row.code).filter((code) => seeded.includes(code))).toEqual(seeded);
+}
+
+/**
+ * `F4.211` — per-run codes in the `F4211-LOC-` family (the test file's stale
+ * sweep reaps it). The slug is the code lower-cased plus a suffix, so two rows
+ * with one code can still carry distinct slugs.
+ */
+function f4211Code(tag: string): string {
+  return `F4211-LOC-${tag}-${Date.now()}-${Math.floor(Math.random() * 1e6)}`;
+}
+
+async function createF4211Location(
+  ctx: SvcWithFixtures,
+  jwt: JwtPayload,
+  code: string,
+  slug: string,
+  register: (id: string) => void,
+) {
+  const created = await ctx.svc.create(jwt, {
+    organizationId: ctx.organizationId,
+    code,
+    slug,
+    name: "F4.211 duplicate key check",
+    type: "pump_station",
+    latitude: 0,
+    longitude: 0,
+  });
+  register(created.id);
+  return created;
+}
+
+/** The rejection a call ends in, or `null` when it resolved. */
+async function rejectionOf(promise: Promise<unknown>): Promise<unknown> {
+  return promise.then(
+    () => null,
+    (err: unknown) => err,
+  );
+}
+
+function describeError(err: unknown): string {
+  return (
+    `${(err as Error | null)?.constructor?.name} (code ${(err as { code?: unknown } | null)?.code}, ` +
+    `constraint ${(err as { constraint?: unknown } | null)?.constraint}) "${(err as Error | null)?.message}"`
+  );
+}
+
+/**
+ * `F4.211` — a create whose code the organization already holds is a 409
+ * naming the code (`locations_org_code_idx`), not pg's `23505` as a 500. The
+ * slugs differ, so only the code index can fire.
+ */
+export async function assertCreateWithADuplicateCodeIsA409(
+  ctx: SvcWithFixtures,
+  jwt: JwtPayload,
+  register: (id: string) => void,
+): Promise<void> {
+  const code = f4211Code("DUPCODE");
+  await createF4211Location(ctx, jwt, code, `${code.toLowerCase()}-a`, register);
+  const err = await rejectionOf(
+    createF4211Location(ctx, jwt, code, `${code.toLowerCase()}-b`, register),
+  );
+  const expected = `A location with code "${code}" already exists in this organization`;
+  expect(
+    err instanceof ConflictException && err.message === expected,
+    `F4.211: expected ConflictException "${expected}"; got ${describeError(err)}`,
+  ).toBe(true);
+}
+
+/**
+ * `F4.211` — an update to a slug another location holds is a 409 naming the
+ * slug (`locations_slug_unique`, global). The codes differ, so only the slug
+ * index can fire; with the create case above, a swapped constraint mapping
+ * reddens both.
+ */
+export async function assertUpdateToATakenSlugIsA409(
+  ctx: SvcWithFixtures,
+  jwt: JwtPayload,
+  register: (id: string) => void,
+): Promise<void> {
+  const firstCode = f4211Code("SLUGA");
+  const firstSlug = firstCode.toLowerCase();
+  await createF4211Location(ctx, jwt, firstCode, firstSlug, register);
+  const secondCode = f4211Code("SLUGB");
+  const second = await createF4211Location(ctx, jwt, secondCode, secondCode.toLowerCase(), register);
+  const err = await rejectionOf(ctx.svc.update(jwt, second.id, { slug: firstSlug }));
+  const expected = `A location with slug "${firstSlug}" already exists`;
+  expect(
+    err instanceof ConflictException && err.message === expected,
+    `F4.211: expected ConflictException "${expected}"; got ${describeError(err)}`,
+  ).toBe(true);
 }

@@ -20,6 +20,10 @@ import type {
 import { AccessControlService } from "../../auth/access-control.service";
 import { FLEET_DRIZZLE, TENANT_DRIZZLE } from "../../database/database.tokens";
 import { withTenant } from "../../database/tenant-context";
+import {
+  constraintOf,
+  translateConstraintErrors,
+} from "../../database/translate-constraint-errors";
 import { VocabulariesService } from "../../vocabularies/vocabularies.service";
 import { MasterDataAuditService } from "../master-data-audit.service";
 import { requestMetaForCreate, requestMetaForUpdate } from "./location-seed-key";
@@ -146,7 +150,7 @@ export class LocationsAdminService {
     // a 500 (plan D11).
     await this.vocabularies.assertLocationType(body.type);
 
-    const created = await withTenant(this.tenantDb, body.organizationId, async (tx) => {
+    const insertRow = () => withTenant(this.tenantDb, body.organizationId, async (tx) => {
       const [row] = await tx
         .insert(locations)
         .values({
@@ -185,6 +189,10 @@ export class LocationsAdminService {
       );
       return row;
     });
+    // F4.211 — a taken code or slug is a 409 that names it, not a 500.
+    const created = await translateConstraintErrors(insertRow, {
+      onUnique: (err) => locationConflict(err, body.code, body.slug),
+    });
 
     return this.fetchRow(created.id);
   }
@@ -217,7 +225,9 @@ export class LocationsAdminService {
       await this.vocabularies.assertLocationType(body.type);
     }
 
-    await withTenant(this.tenantDb, existing.organizationId, async (tx) => {
+    const nextCode = body.code ?? existing.code;
+    const nextSlug = body.slug ?? existing.slug;
+    const updateRow = () => withTenant(this.tenantDb, existing.organizationId, async (tx) => {
       // `F4.170` (security review Low-B): `meta` is read again here, locked,
       // not taken from `existing`. `existing` is a fleet read made before this
       // transaction, so a key the seed writes in between (a first keyed boot)
@@ -233,8 +243,8 @@ export class LocationsAdminService {
       const [written] = await tx
         .update(locations)
         .set({
-          code: body.code ?? existing.code,
-          slug: body.slug ?? existing.slug,
+          code: nextCode,
+          slug: nextSlug,
           name: body.name ?? existing.name,
           type: body.type ?? existing.type,
           province: body.province !== undefined ? body.province : existing.province,
@@ -264,6 +274,10 @@ export class LocationsAdminService {
         },
         tx,
       );
+    });
+    // F4.211 — a taken code or slug is a 409 that names it, not a 500.
+    await translateConstraintErrors(updateRow, {
+      onUnique: (err) => locationConflict(err, nextCode, nextSlug),
     });
     return this.fetchRow(id);
   }
@@ -445,4 +459,16 @@ export class LocationsAdminService {
       updatedAt: loc.updatedAt.toISOString(),
     };
   }
+}
+
+/**
+ * `F4.211` — which of the two unique keys a location write took. The slug is
+ * unique across the fleet (`locations_slug_unique`), so its sentence names no
+ * organization; the code is unique per organization (`locations_org_code_idx`).
+ */
+function locationConflict(err: unknown, code: string, slug: string): ConflictException {
+  if (constraintOf(err) === "locations_slug_unique") {
+    return new ConflictException(`A location with slug "${slug}" already exists`);
+  }
+  return new ConflictException(`A location with code "${code}" already exists in this organization`);
 }
