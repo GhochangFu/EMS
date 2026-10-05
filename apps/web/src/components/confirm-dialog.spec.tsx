@@ -43,6 +43,20 @@ export async function cancelCallsOnCloseAndNeverOnConfirm(): Promise<void> {
   expect(onConfirm).not.toHaveBeenCalled();
 }
 
+/** Focus opens on Cancel: the safe default for a destructive confirm, so Enter does not act. */
+export function cancelHasFocusOnOpen(): void {
+  renderDialog();
+  expect(screen.getByRole("button", { name: "Cancel" })).toHaveFocus();
+}
+
+/** Escape closes, as Cancel does — and never confirms. */
+export async function escapeCallsOnCloseAndNeverOnConfirm(): Promise<void> {
+  const { onConfirm, onClose } = renderDialog();
+  await userEvent.keyboard("{Escape}");
+  expect(onClose).toHaveBeenCalledTimes(1);
+  expect(onConfirm).not.toHaveBeenCalled();
+}
+
 export async function confirmCallsOnConfirmOnce(): Promise<void> {
   const { onConfirm, onClose } = renderDialog();
   await userEvent.click(screen.getByRole("button", { name: "Confirm deactivate" }));

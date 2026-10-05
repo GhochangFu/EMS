@@ -645,9 +645,51 @@ export async function confirmingMemberRemoveSendsOneRequest(): Promise<void> {
   renderPage();
   await userEvent.click(await screen.findByRole("button", { name: /Electrical train/ }));
   await removeMemberAndConfirm("Transformer 1");
+  // The confirm closes the dialog in the click that starts the request.
+  await waitFor(() =>
+    expect(screen.queryByRole("dialog", { name: "Remove Transformer 1 from Electrical train" })).toBeNull(),
+  );
   await waitFor(() => expect(api.removeAdminAssetGroupMember).toHaveBeenCalled());
   await settle();
   expect(api.removeAdminAssetGroupMember).toHaveBeenCalledTimes(1);
+}
+
+/**
+ * `F4.202` review: a member-remove dialog left open does not survive a change of group. Kept
+ * open, it would come back naming the newly selected group for a member of the old one.
+ */
+export async function pickingAnotherGroupClosesTheMemberRemoveDialog(): Promise<void> {
+  stubApi();
+  const water = { ...GROUPS.items[0], id: "66666666-6666-6666-6666-666666666666", code: "water", name: "Water train" };
+  vi.spyOn(api, "fetchAdminAssetGroups").mockResolvedValue({ items: [...GROUPS.items, water] } as never);
+  renderPage();
+  await userEvent.click(await screen.findByRole("button", { name: /Electrical train/ }));
+  await userEvent.click(await screen.findByRole("button", { name: "Remove Transformer 1" }));
+  // Positive control: the dialog opened.
+  await screen.findByRole("dialog", { name: "Remove Transformer 1 from Electrical train" });
+  await userEvent.click(screen.getByRole("button", { name: /Water train/ }));
+  expect(await screen.findByRole("heading", { name: "Members — Water train" })).toBeInTheDocument();
+  expect(screen.queryByRole("dialog")).toBeNull();
+}
+
+/** The same for the filter bar: choosing an organization clears the selected group and the dialog. */
+export async function changingTheFilterClosesTheMemberRemoveDialog(): Promise<void> {
+  stubApi();
+  vi.spyOn(organizationsApi, "fetchAdminOrganizations").mockResolvedValue({
+    items: [{ id: "33333333-3333-3333-3333-333333333333", code: "ORG", name: "Org" }],
+  } as never);
+  renderPage();
+  await userEvent.click(await screen.findByRole("button", { name: /Electrical train/ }));
+  await userEvent.click(await screen.findByRole("button", { name: "Remove Transformer 1" }));
+  await screen.findByRole("dialog", { name: "Remove Transformer 1 from Electrical train" });
+  const orgOption = await screen.findByRole("option", { name: /ORG/ });
+  await userEvent.selectOptions(
+    orgOption.closest("select") as HTMLSelectElement,
+    "33333333-3333-3333-3333-333333333333",
+  );
+  // Positive control: the filter took effect and the group selection was cleared.
+  expect(await screen.findByText("Select a group to set member roles.")).toBeInTheDocument();
+  expect(screen.queryByRole("dialog")).toBeNull();
 }
 
 /** Edit sends name and description for the group, and never a `code` key. */

@@ -4,7 +4,9 @@ import { afterEach, describe, it, vi } from "vitest";
 
 import {
   cancelCallsOnCloseAndNeverOnConfirm,
+  cancelHasFocusOnOpen,
   confirmCallsOnConfirmOnce,
+  escapeCallsOnCloseAndNeverOnConfirm,
   rendersTheTitleAndTheBody,
 } from "./confirm-dialog.spec";
 
@@ -28,5 +30,13 @@ describe("F4.202 ConfirmDialog", () => {
 
   it("the confirm button calls onConfirm once and never onClose", async () => {
     await confirmCallsOnConfirmOnce();
+  });
+
+  it("Cancel has focus when the dialog opens", () => {
+    cancelHasFocusOnOpen();
+  });
+
+  it("Escape calls onClose once and never onConfirm", async () => {
+    await escapeCallsOnCloseAndNeverOnConfirm();
   });
 });

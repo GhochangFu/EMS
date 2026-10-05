@@ -899,6 +899,8 @@ export async function confirmingDeactivateSendsOneRequest(): Promise<void> {
   });
   renderPage();
   await deactivateAndConfirm("Ada Linked");
+  // The confirm closes the dialog in the click that starts the request.
+  await waitFor(() => expect(screen.queryByRole("dialog", { name: "Deactivate Ada Linked" })).toBeNull());
   await waitFor(() => expect(writes(calls).length).toBeGreaterThan(0));
   await settle();
   expect(writes(calls)).toEqual([{ path: `/api/v1/admin/users/${LINKED_ID}/deactivate`, method: "POST", body: undefined }]);
@@ -928,6 +930,7 @@ export async function confirmingGrantRemoveSendsOneRequest(): Promise<void> {
   renderPage();
   const drawer = await openGrants();
   await removeGrantAndConfirm(drawer, "Location grant Plant North");
+  await waitFor(() => expect(screen.queryByRole("dialog", { name: "Remove Location grant Plant North" })).toBeNull());
   await waitFor(() => expect(writes(calls).length).toBeGreaterThan(0));
   await settle();
   expect(writes(calls)).toEqual([

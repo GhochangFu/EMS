@@ -11,6 +11,8 @@ import {
   addSendsTheAssetId,
   anEmptyVocabularyRendersNoRolesOfItsOwn,
   cancellingMemberRemoveSendsNothing,
+  changingTheFilterClosesTheMemberRemoveDialog,
+  pickingAnotherGroupClosesTheMemberRemoveDialog,
   confirmingMemberRemoveSendsOneRequest,
   choosingAnOrganizationStaysOnTheScreen,
   createAtAnotherLocationMovesTheFilterThere,
@@ -126,5 +128,13 @@ describe("F3.37 asset groups page", () => {
 
   it("F4.202: confirming a member's Remove sends one request", async () => {
     await confirmingMemberRemoveSendsOneRequest();
+  });
+
+  it("F4.202: picking another group closes an open member-remove dialog", async () => {
+    await pickingAnotherGroupClosesTheMemberRemoveDialog();
+  });
+
+  it("F4.202: changing the filter closes an open member-remove dialog", async () => {
+    await changingTheFilterClosesTheMemberRemoveDialog();
   });
 });

@@ -1,3 +1,4 @@
+import { useEffect } from "react";
 import { createPortal } from "react-dom";
 
 /**
@@ -31,6 +32,15 @@ export function ConfirmDialog({
   onConfirm: () => void;
   onClose: () => void;
 }) {
+  // Escape closes, as Cancel does. On the document, so it works wherever focus is.
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") onClose();
+    };
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, [onClose]);
+
   return createPortal(
     <div className="fixed inset-0 z-[60] flex items-center justify-center bg-scrim/30 p-4">
       <div
@@ -42,7 +52,8 @@ export function ConfirmDialog({
         <h2 className="font-condensed text-base font-bold text-ink">{title}</h2>
         <p className="max-w-prose text-xs text-ink-muted">{body}</p>
         <div className="flex justify-end gap-2">
-          <button type="button" onClick={onClose} className="surface-button px-3 py-1.5">
+          {/* Focus opens on Cancel: the safe default for a destructive confirm. */}
+          <button type="button" autoFocus onClick={onClose} className="surface-button px-3 py-1.5">
             Cancel
           </button>
           <button

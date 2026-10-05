@@ -59,9 +59,13 @@ export function AssetGroupsAdminPage({ user }: AssetGroupsAdminPageProps) {
   const [form, setForm] = useState<GroupForm>(EMPTY_FORM);
   const [addAssetId, setAddAssetId] = useState("");
   // `F4.202`: a member's Remove asks first; the confirm starts the request and closes the dialog.
-  const [removingMember, setRemovingMember] = useState<{ membershipId: string; assetName: string } | null>(
-    null,
-  );
+  // The group's name is taken at click time, and a change of group or filter clears the dialog,
+  // so it can never name a group other than the member's.
+  const [removingMember, setRemovingMember] = useState<{
+    membershipId: string;
+    assetName: string;
+    groupName: string;
+  } | null>(null);
 
   const locationId = selection.locationId ?? undefined;
 
@@ -217,6 +221,7 @@ export function AssetGroupsAdminPage({ user }: AssetGroupsAdminPageProps) {
             // would keep its member list on screen beside a list that no
             // longer contains it.
             setSelectedGroupId(null);
+            setRemovingMember(null);
           }}
         />
       </div>
@@ -244,7 +249,10 @@ export function AssetGroupsAdminPage({ user }: AssetGroupsAdminPageProps) {
               <li key={group.id}>
                 <button
                   type="button"
-                  onClick={() => setSelectedGroupId(group.id)}
+                  onClick={() => {
+                    setSelectedGroupId(group.id);
+                    setRemovingMember(null);
+                  }}
                   aria-current={group.id === selectedGroupId ? "true" : undefined}
                   className={`w-full px-2 py-2 text-left text-sm ${
                     group.id === selectedGroupId ? "bg-canvas font-medium" : ""
@@ -382,7 +390,13 @@ export function AssetGroupsAdminPage({ user }: AssetGroupsAdminPageProps) {
                             aria-busy={removingThis}
                             className="surface-button px-2 py-1 text-xs"
                             disabled={removeMember.isPending}
-                            onClick={() => setRemovingMember(member)}
+                            onClick={() =>
+                              setRemovingMember({
+                                membershipId: member.membershipId,
+                                assetName: member.assetName,
+                                groupName: selectedGroup?.name ?? "",
+                              })
+                            }
                           >
                             {removingThis ? "Removing…" : "Remove"}
                           </button>
@@ -397,9 +411,9 @@ export function AssetGroupsAdminPage({ user }: AssetGroupsAdminPageProps) {
         </SectionCard>
       </div>
 
-      {removingMember && selectedGroup ? (
+      {removingMember ? (
         <ConfirmDialog
-          title={`Remove ${removingMember.assetName} from ${selectedGroup.name}`}
+          title={`Remove ${removingMember.assetName} from ${removingMember.groupName}`}
           body="Dashboards bound to this group no longer read this asset."
           confirmLabel="Confirm remove"
           onClose={() => setRemovingMember(null)}
