@@ -14,6 +14,7 @@ import {
   assertNoRowSendsAnAdminClaimTo403,
   assertRefusesAnotherClientsToken,
   assertRefusesAnUnsetClientId,
+  assertTheDeactivatedRefusalCarriesTheCode,
 } from "./jwt-auth.guard.spec";
 
 /** Vitest entry point — assertions live in the sibling `.spec` (ADR 0014). */
@@ -64,6 +65,10 @@ describe("JwtAuthGuard — the subject link (F3.78, ADR 0089 decision 4)", () =>
 describe("JwtAuthGuard — a deactivated account (F3.78, ADR 0089 decision 8)", () => {
   it("refuses a disabled row with 'This account is deactivated'", async () => {
     await assertADisabledRowIsRefused();
+  });
+
+  it("F4.203 the deactivated 401 carries code account_deactivated", async () => {
+    await assertTheDeactivatedRefusalCarriesTheCode();
   });
 
   it("checks the signature first: a forged token never queries the db", async () => {

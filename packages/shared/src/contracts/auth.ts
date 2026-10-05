@@ -91,3 +91,23 @@ export const currentUserResponseSchema = z.object({
   user: sessionUserSchema,
   scope: accessibleScopeSchema,
 });
+
+/**
+ * `F4.203` — why an authenticated request was refused, when the reason is one
+ * the user can act on. A closed set: a new code is a contract change.
+ */
+export const authFailureCodeSchema = z.enum(["account_deactivated"]);
+
+/**
+ * `F4.203` — the 401 body `JwtAuthGuard` sends. Nest's default envelope plus an
+ * optional `code`: a deactivated account carries `account_deactivated`; an
+ * expired, missing or unverifiable token carries none, and the web shows nothing
+ * for it. Local login keeps its generic refusal (ADR 0089 decision 8) and never
+ * sends a code.
+ */
+export const unauthorizedEnvelopeSchema = z.object({
+  statusCode: z.literal(401),
+  message: z.string(),
+  error: z.string(),
+  code: authFailureCodeSchema.optional(),
+});

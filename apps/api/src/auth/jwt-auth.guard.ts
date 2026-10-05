@@ -9,7 +9,7 @@ import { JwtService } from "@nestjs/jwt";
 import { createPublicKey } from "node:crypto";
 
 import type { BmsDb } from "@bms/db";
-import type { JwtPayload, UserRole } from "@bms/shared";
+import type { JwtPayload, UnauthorizedEnvelope, UserRole } from "@bms/shared";
 
 import { AUTH_DRIZZLE } from "../database/database.tokens";
 import { type AuthMode, resolveAuthMode } from "./auth-mode";
@@ -167,7 +167,14 @@ export class JwtAuthGuard implements CanActivate {
       (await resolveIdentity(this.authDb, payload)) ??
       (oidc && payload.emailVerified === true ? await linkIdentity(this.authDb, payload) : null);
     if (identity?.disabledAt) {
-      throw new UnauthorizedException("This account is deactivated");
+      // `F4.203` — the body carries a machine code, so the web can say why the
+      // session ended instead of returning to sign-in in silence.
+      throw new UnauthorizedException({
+        statusCode: 401,
+        message: "This account is deactivated",
+        error: "Unauthorized",
+        code: "account_deactivated",
+      } satisfies UnauthorizedEnvelope);
     }
     if (identity) {
       rememberIdentity(payload, identity);
