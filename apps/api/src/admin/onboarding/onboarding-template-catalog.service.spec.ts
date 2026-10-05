@@ -2,7 +2,7 @@
 // decorator calls `Reflect.defineMetadata` when the module is evaluated.
 import "reflect-metadata";
 
-import { assetTemplates, templatePoints } from "@bms/db";
+import { assetTemplates, pointKeys, templatePoints } from "@bms/db";
 import type { SQL } from "drizzle-orm";
 import { PgDialect } from "drizzle-orm/pg-core";
 
@@ -35,12 +35,13 @@ function contentWithAlarmsAndWidgets(): { content: Record<string, unknown>; alar
 type Select = { table: unknown; fields: string[]; where: { sql: string; params: unknown[] } | null };
 
 /**
- * A fake `fleetDb` answering the two selects by table: `asset_templates` rows,
- * then `template_points` rows. Every select is recorded with its `where`
+ * A fake `fleetDb` answering the selects by table: `asset_templates` rows,
+ * then `template_points` rows, and `point_keys` rows (`F4.196`, awaited with no
+ * `where` or `orderBy`). Every select is recorded with its `where`
  * rendered to SQL, so a spec can say how many the service issued, against
  * which table, and with which filter.
  */
-function fakeDb(templateRows: unknown[], pointRows: unknown[]): { db: never; selects: Select[] } {
+function fakeDb(templateRows: unknown[], pointRows: unknown[], pointKeyRows: unknown[] = []): { db: never; selects: Select[] } {
   const selects: Select[] = [];
   const db = {
     select(fields: Record<string, unknown>) {
@@ -48,7 +49,7 @@ function fakeDb(templateRows: unknown[], pointRows: unknown[]): { db: never; sel
         from(table: unknown) {
           const select: Select = { table, fields: Object.keys(fields), where: null };
           selects.push(select);
-          const rows = table === assetTemplates ? templateRows : table === templatePoints ? pointRows : [];
+          const rows = table === assetTemplates ? templateRows : table === templatePoints ? pointRows : table === pointKeys ? pointKeyRows : [];
           const chain = {
             where: (condition: SQL) => {
               const { sql, params } = new PgDialect().sqlToQuery(condition);
@@ -56,6 +57,7 @@ function fakeDb(templateRows: unknown[], pointRows: unknown[]): { db: never; sel
               return chain;
             },
             orderBy: () => Promise.resolve(rows),
+            then: (resolve: (value: unknown[]) => unknown, reject: (reason: unknown) => unknown) => Promise.resolve(rows).then(resolve, reject),
           };
           return chain;
         },
@@ -166,6 +168,22 @@ export async function assertTheContextWithNoOrganizationReadsOnlyTheStock(): Pro
   const stock = { list: () => ({ items: entries }) } as never;
   const { db, selects } = fakeDb([], []);
   const context = await new OnboardingTemplateCatalogService(db, stock).context(undefined);
-  assert(selects.length === 0, "no organization, no select");
+  // F4.196: the point-key catalog is fleet-wide, so it is the one select.
+  assert(selects.length === 1 && selects[0].table === pointKeys, `no organization, no template select, got ${selects.length}`);
   assert(context.organization.length === 0 && context.stock.length === 1, `got ${JSON.stringify(context).slice(0, 200)}`);
+}
+
+/**
+ * `F4.196` — the context carries every catalog code with its `active` flag,
+ * read with no filter: the validation needs the inactive codes too.
+ */
+export async function assertTheContextCarriesThePointKeyCatalogWithItsActiveFlag(): Promise<void> {
+  const { db, selects } = fakeDb([], [], [
+    { code: "kw", active: true },
+    { code: "retired", active: false },
+  ]);
+  const context = await new OnboardingTemplateCatalogService(db, NO_STOCK).context(undefined);
+  assert(JSON.stringify([...context.pointKeys]) === JSON.stringify([["kw", true], ["retired", false]]), `got ${JSON.stringify([...context.pointKeys])}`);
+  const read = selects.find((select) => select.table === pointKeys);
+  assert(read !== undefined && read.where === null && read.fields.join() === "code,active", `one unfiltered code,active read, got ${read === undefined ? "none" : `${read.fields.join()} where ${JSON.stringify(read.where)}`}`);
 }

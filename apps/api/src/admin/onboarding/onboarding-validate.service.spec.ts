@@ -241,6 +241,12 @@ const TEMPLATES: ValidateTemplateContext = {
       dashboardWidgetCount: 0,
     },
   ],
+  // F4.196: `flow` and `head` (V6) are the authored PUMP template's keys, active; `retired` is a key the catalog holds inactive.
+  pointKeys: new Map([
+    ["flow", true],
+    ["head", true],
+    ["retired", false],
+  ]),
 };
 
 /** V12's draft: ready to commit, with every kind of template and a plain asset. */
@@ -611,7 +617,69 @@ export function assertV12ATemplatedDraftIsReadyToCommit(): void {
 /** Decision 11 — a template no asset uses is valid: an upload that replaced `assets[]` keeps it. */
 export function assertAnUnreferencedTemplateIsValid(): void {
   const got = templateErrors((d) => {
-    d.templates!.push({ code: "SPARE", name: "Spare", domain: "water", points: [{ pointKey: "x" }] });
+    d.templates!.push({ code: "SPARE", name: "Spare", domain: "water", points: [{ pointKey: "flow" }] });
   });
   assert(got === "[]", `an unreferenced template is not an error, got ${got}`);
+}
+
+/**
+ * `F4.196` — an authored draft template's point key must resolve at commit:
+ * active in the catalog, or declared by the draft and absent from the catalog.
+ * The fixture's PUMP template is `templates[0]`, with one point.
+ */
+function pumpKey(d: OnboardingDraft, key: string): void {
+  const pump = d.templates![0];
+  if ("stockCode" in pump) {
+    throw new Error("the fixture's first template is the authored PUMP");
+  }
+  pump.points = [{ ...pump.points[0]!, pointKey: key }];
+}
+
+/** F4.196 — a key the active catalog holds resolves; the draft need not declare it. */
+export function assertATemplateKeyInTheActiveCatalogIsValid(): void {
+  const got = templateErrors((d) => pumpKey(d, "flow"));
+  assert(got === "[]", `an active catalog key is valid, got ${got}`);
+}
+
+/** F4.196 — a key only the draft declares resolves: the commit inserts it. */
+export function assertATemplateKeyOnlyTheDraftDeclaresIsValid(): void {
+  const got = templateErrors((d) => pumpKey(d, "kw"));
+  assert(got === "[]", `a key the draft declares is valid, got ${got}`);
+}
+
+/** F4.196 — a key in neither the draft nor the catalog is an error at the point. */
+export function assertATemplateKeyInNeitherIsAnError(): void {
+  assertOnly(
+    (d) => pumpKey(d, "nope"),
+    "templates.0.points.0.pointKey",
+    `Point key ${q("nope")} is neither in this draft nor in the catalog`,
+  );
+}
+
+/** F4.196 — an inactive catalog key is an error even when the draft declares it: the commit reuses the inactive row. */
+export function assertAnInactiveTemplateKeyTheDraftDeclaresIsAnError(): void {
+  assertOnly(
+    (d) => {
+      pumpKey(d, "retired");
+      d.pointKeys!.push({ code: "retired", name: "Retired" });
+    },
+    "templates.0.points.0.pointKey",
+    `Point key ${q("retired")} is inactive in the catalog`,
+  );
+}
+
+/** F4.196 — an inactive catalog key the draft does not declare is an error. */
+export function assertAnInactiveTemplateKeyIsAnError(): void {
+  assertOnly((d) => pumpKey(d, "retired"), "templates.0.points.0.pointKey", `Point key ${q("retired")} is inactive in the catalog`);
+}
+
+/** F4.196 — the draft from the bug: the PATCH dropped the only declaration of a key a template uses; it is not ready. */
+export function assertADraftWhosePatchDroppedATemplateKeyIsNotReady(): void {
+  const draft = templatedDraft();
+  pumpKey(draft, "kw");
+  draft.pointKeys = [];
+  draft.onboardingMeta = { useExistingPointKeys: true };
+  const result = new OnboardingValidateService().validate(draft, CODES, TEMPLATES);
+  assert(result.readyToCommit === false, "the draft is not ready to commit");
+  assert(result.errors.some((error) => error.path === "templates.0.points.0.pointKey"), `the error names the point, got ${JSON.stringify(result.errors)}`);
 }

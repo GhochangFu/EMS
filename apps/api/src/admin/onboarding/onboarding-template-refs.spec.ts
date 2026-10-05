@@ -65,6 +65,7 @@ const CONTEXT: ValidateTemplateContext = {
     orgVersion("OLD", 4, "archived", null),
   ],
   stock: [STOCK_WTP],
+  pointKeys: new Map(),
 };
 
 /** R1 — an authored entry's points default to `required: true`, `kind: "measured"`, an empty pattern to none. */

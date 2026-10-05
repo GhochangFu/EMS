@@ -1,7 +1,7 @@
 import { Inject, Injectable } from "@nestjs/common";
 import { and, asc, eq, inArray } from "drizzle-orm";
 
-import { assetTemplates, templatePoints } from "@bms/db";
+import { assetTemplates, pointKeys, templatePoints } from "@bms/db";
 import type { BmsDb } from "@bms/db";
 
 import { FLEET_DRIZZLE } from "../../database/database.tokens";
@@ -155,12 +155,25 @@ export class OnboardingTemplateCatalogService {
 
   /**
    * The context a validation reads, once per request. With no organization
-   * (the guided chat with none bound) only the stock is listed.
+   * (the guided chat with none bound) only the stock is listed; the point-key
+   * catalog is fleet-wide (`F3.39`), so it is read either way.
    */
   async context(organizationId: string | undefined): Promise<ValidateTemplateContext> {
     return {
       organization: organizationId === undefined ? [] : await this.listOrganizationTemplates(organizationId),
       stock: this.listStock(),
+      pointKeys: await this.listPointKeyCatalog(),
     };
+  }
+
+  /**
+   * `F4.196`: every catalog code with its `active` flag. The commit refuses a
+   * template point whose key is not active (`assertPointKeysActive`), and a
+   * key the draft declares that the catalog already holds reuses that row, so
+   * validation needs the inactive codes as well as the active ones.
+   */
+  private async listPointKeyCatalog(): Promise<ReadonlyMap<string, boolean>> {
+    const rows = await this.db.select({ code: pointKeys.code, active: pointKeys.active }).from(pointKeys);
+    return new Map(rows.map((row) => [row.code, row.active]));
   }
 }

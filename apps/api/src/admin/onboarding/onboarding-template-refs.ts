@@ -60,16 +60,23 @@ export type TemplateRef = {
 /** A stock entry's ref, with the catalog release it would be imported from. */
 export type StockTemplateRef = TemplateRef & { readonly stockVersion: number };
 
-/** What a validation reads about templates: every organization version (all statuses), and the stock catalog. */
+/** What a validation reads about templates: every organization version (all statuses), the stock catalog, and the point-key catalog. */
 export type ValidateTemplateContext = {
   readonly organization: readonly TemplateRef[];
   readonly stock: readonly TemplateRef[];
+  /**
+   * `F4.196`: the fleet point-key catalog, code → `active`. An authored draft
+   * template's point resolves at commit against this catalog or against a key
+   * the draft declares, so validation reads the same rule as the commit.
+   */
+  readonly pointKeys: ReadonlyMap<string, boolean>;
 };
 
 /** For a caller with no organization and no catalog — a spec, or a draft that names no template. */
 export const EMPTY_TEMPLATE_CONTEXT: ValidateTemplateContext = Object.freeze({
   organization: Object.freeze([]) as readonly TemplateRef[],
   stock: Object.freeze([]) as readonly TemplateRef[],
+  pointKeys: new Map<string, boolean>() as ReadonlyMap<string, boolean>,
 });
 
 /** A stock import, as opposed to an authored template: the union's stock branch carries `stockCode`. */

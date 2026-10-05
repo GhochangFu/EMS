@@ -6,6 +6,7 @@ import {
   assertS1PublishedVersionsCarryPointsAndDraftsNone,
   assertS2TheStockProjectionHasNoVersion,
   assertTheContextWithNoOrganizationReadsOnlyTheStock,
+  assertTheContextCarriesThePointKeyCatalogWithItsActiveFlag,
 } from "./onboarding-template-catalog.service.spec";
 
 /** Vitest entry point — assertions live in the sibling `.spec` (ADR 0014). One `it()` per claim. */
@@ -28,5 +29,9 @@ describe("OnboardingTemplateCatalogService (F3.22, ADR 0091)", () => {
 
   it("reads only the stock when there is no organization", async () => {
     await assertTheContextWithNoOrganizationReadsOnlyTheStock();
+  });
+
+  it("F4.196 carries the point-key catalog with its active flag", async () => {
+    await assertTheContextCarriesThePointKeyCatalogWithItsActiveFlag();
   });
 });
