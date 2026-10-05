@@ -782,3 +782,87 @@ export async function aConfirmCommitReplyIsNeverOffered(): Promise<void> {
   expect(within(group).getByRole("button", { name: "View draft" })).toBeInTheDocument();
   expect(within(group).getAllByRole("button")).toHaveLength(1);
 }
+
+/** B4 — markup inside a `**` pair is text too: no element, and the `<strong>` reads the markup literally. */
+export async function markupInsideABoldPairRendersAsText(): Promise<void> {
+  const container = await renderAssistantSays("**<img src=x>**");
+  const strong = await screen.findByText("<img src=x>", { selector: "strong" });
+  expect(strong.textContent).toBe("<img src=x>");
+  expect(container.querySelectorAll("img")).toHaveLength(0);
+}
+
+/** B5 — a user row stays plain (owner OQ5): its `**` markers are literal and no `<strong>` renders. */
+export async function aUserRowStaysPlain(): Promise<void> {
+  stubStart({ ...SESSION, messages: [message("u1", "user", "**x**")] });
+  const container = renderPage();
+  await waitForSessionToLand();
+  expect(await screen.findByText("**x**")).toBeInTheDocument();
+  expect(container.querySelectorAll("strong")).toHaveLength(0);
+}
+
+/** Uploads one workbook through the hidden file input, once the session has landed. */
+async function uploadAWorkbook(container: HTMLElement): Promise<void> {
+  await waitForSessionToLand();
+  const input = container.querySelector('input[type="file"]');
+  expect(input, "the wizard's hidden file input").not.toBeNull();
+  await userEvent.upload(
+    input as HTMLInputElement,
+    new File(["x"], "estate.xlsx", {
+      type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    }),
+  );
+}
+
+/** S8 — an Excel upload's response sets the replies. */
+export async function anUploadSetsItsReplies(): Promise<void> {
+  stubStart();
+  vi.spyOn(api, "uploadOnboardingExcel").mockResolvedValue({
+    ...chatResponse(SESSION),
+    suggestedReplies: ["confirm rtu"],
+  });
+  const container = renderPage();
+  await uploadAWorkbook(container);
+  const group = await screen.findByRole("group", { name: "Suggested replies" });
+  expect(within(group).getByRole("button", { name: "confirm rtu" })).toBeInTheDocument();
+}
+
+/** S9 — a refused credential turn (the transcript does not grow) still replaces the replies. */
+export async function aRefusedCredentialTurnReplacesTheReplies(): Promise<void> {
+  stubStartWithReplies(["first"]);
+  vi.spyOn(api, "sendOnboardingChat").mockResolvedValue({
+    assistantMessage: "That message looks like it contains a credential, so I have not saved it.",
+    session: SESSION,
+    suggestedReplies: ["refused"],
+  });
+  renderPage();
+  await userEvent.click(await screen.findByRole("button", { name: "first" }));
+  expect(await findTheOnlyAlert()).toHaveTextContent("I have not saved it");
+  expect(await screen.findByRole("button", { name: "refused" })).toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "first" })).toBeNull();
+}
+
+/** S10 — a chat turn's "confirm commit" reply is not offered; its neighbour is. */
+export async function aChatTurnsConfirmCommitReplyIsNotOffered(): Promise<void> {
+  stubStartWithReplies(["first"]);
+  vi.spyOn(api, "sendOnboardingChat").mockResolvedValue({
+    ...chatResponse({ ...SESSION, messages: [message("m1", "assistant", "one")] }),
+    suggestedReplies: ["confirm commit", "after chat"],
+  });
+  renderPage();
+  await userEvent.click(await screen.findByRole("button", { name: "first" }));
+  expect(await screen.findByRole("button", { name: "after chat" })).toBeInTheDocument();
+  expect(within(repliesGroup() as HTMLElement).getAllByRole("button")).toHaveLength(1);
+}
+
+/** S11 — an upload's "confirm commit" reply is not offered; its neighbour is. */
+export async function anUploadsConfirmCommitReplyIsNotOffered(): Promise<void> {
+  stubStart();
+  vi.spyOn(api, "uploadOnboardingExcel").mockResolvedValue({
+    ...chatResponse(SESSION),
+    suggestedReplies: ["confirm commit", "after upload"],
+  });
+  const container = renderPage();
+  await uploadAWorkbook(container);
+  expect(await screen.findByRole("button", { name: "after upload" })).toBeInTheDocument();
+  expect(within(repliesGroup() as HTMLElement).getAllByRole("button")).toHaveLength(1);
+}

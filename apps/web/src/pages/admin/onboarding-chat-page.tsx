@@ -471,9 +471,9 @@ export function OnboardingChatPage({ user }: OnboardingChatPageProps) {
                 aria-label="Suggested replies"
                 className="flex flex-wrap gap-2 border-t border-line px-4 pt-3"
               >
-                {replies.map((reply) => (
+                {replies.map((reply, i) => (
                   <button
-                    key={reply}
+                    key={`${i}-${reply}`}
                     type="button"
                     onClick={() => sendText(reply)}
                     disabled={!session}

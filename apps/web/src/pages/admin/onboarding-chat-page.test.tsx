@@ -34,6 +34,12 @@ import {
   repliesHideWhileATurnIsPending,
   onlyTheLatestTurnsRepliesShow,
   aConfirmCommitReplyIsNeverOffered,
+  markupInsideABoldPairRendersAsText,
+  aUserRowStaysPlain,
+  anUploadSetsItsReplies,
+  aRefusedCredentialTurnReplacesTheReplies,
+  aChatTurnsConfirmCommitReplyIsNotOffered,
+  anUploadsConfirmCommitReplyIsNotOffered,
 } from "./onboarding-chat-page.spec";
 
 /**
@@ -219,5 +225,29 @@ describe("F4.199 onboarding chat page suggested replies", () => {
 
   it("never offers a confirm commit reply", async () => {
     await aConfirmCommitReplyIsNeverOffered();
+  });
+
+  it("renders markup inside a bold pair as text", async () => {
+    await markupInsideABoldPairRendersAsText();
+  });
+
+  it("keeps a user row plain", async () => {
+    await aUserRowStaysPlain();
+  });
+
+  it("sets the replies from an Excel upload", async () => {
+    await anUploadSetsItsReplies();
+  });
+
+  it("replaces the replies on a refused credential turn", async () => {
+    await aRefusedCredentialTurnReplacesTheReplies();
+  });
+
+  it("does not offer a chat turn's confirm commit reply", async () => {
+    await aChatTurnsConfirmCommitReplyIsNotOffered();
+  });
+
+  it("does not offer an upload's confirm commit reply", async () => {
+    await anUploadsConfirmCommitReplyIsNotOffered();
   });
 });
