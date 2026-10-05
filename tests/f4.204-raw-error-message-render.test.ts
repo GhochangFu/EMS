@@ -230,7 +230,7 @@ describe("F4.204 — the web tree", () => {
     expect(hidden).toEqual([
       "apps/web/src/components/assets/asset-image-gallery.tsx query.error.message",
       "apps/web/src/components/assets/asset-images-panel.tsx cause.message",
-      "apps/web/src/pages/admin/users-page.tsx err.message",
+      "apps/web/src/pages/admin/users-feedback.tsx err.message",
     ]);
   });
 
