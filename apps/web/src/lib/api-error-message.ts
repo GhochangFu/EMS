@@ -162,8 +162,7 @@ export function apiErrorMessage(cause: unknown): string {
   // `asset-templates-stock.service.ts` — not the four onboarding routes named
   // above. So this branch changes the rendered refusal text repo-wide, at 46
   // `apiErrorMessage` call sites across 24 modules, while editing none of them.
-  // Since `F4.204` routed every render site through it, that is more than 130
-  // call sites across 64 modules.
+  // Since `F4.204` routed every render site through it, 64 modules import it.
   //
   // What is true is that the change is **non-increasing**. The rendered
   // sentence is never longer than the raw body it replaces, because every part
