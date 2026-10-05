@@ -31,6 +31,8 @@ import {
   assertRemovePointKeyIsRefusedWhileADraftTemplateUsesIt,
   assertRemovePointKeyRemovesAKeyTheCatalogHolds,
   assertRemovePointKeyRemovesAKeyNoTemplateUses,
+  assertRemovePointKeyRemovesOneCopyOfADuplicateKey,
+  assertRemovePointKeyReadsPastAStockTemplate,
   assertT11AddTemplateAssetsAppendsTemplatedAssets,
   assertT12AddTemplateAssetsPinsTheHighestPublishedVersion,
   assertT12AddTemplateAssetsPinsTheNamedVersion,
@@ -136,6 +138,12 @@ describe("onboarding template write tools and the proposal (F3.22, ADR 0091 deci
   });
   it("F4.195 remove point key removes a key no template uses", async () => {
     await assertRemovePointKeyRemovesAKeyNoTemplateUses();
+  });
+  it("F4.195 remove point key removes one copy of a duplicate key", async () => {
+    await assertRemovePointKeyRemovesOneCopyOfADuplicateKey();
+  });
+  it("F4.195 remove point key reads past a stock template", async () => {
+    await assertRemovePointKeyReadsPastAStockTemplate();
   });
   it("T11 add template assets appends templated assets", async () => {
     await assertT11AddTemplateAssetsAppendsTemplatedAssets();

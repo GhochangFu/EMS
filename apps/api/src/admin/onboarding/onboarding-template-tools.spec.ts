@@ -372,6 +372,21 @@ export async function assertRemovePointKeyRemovesAKeyNoTemplateUses(): Promise<v
   assert(out.state.working.pointKeys?.map((key) => key.code).join() === "kw", "only kw is left");
 }
 
+/** F4.195 — one copy of a key the draft declares twice can leave: the other still resolves the template's point. */
+export async function assertRemovePointKeyRemovesOneCopyOfADuplicateKey(): Promise<void> {
+  const draft = baseDraft({ templates: [CHILLER] });
+  draft.pointKeys!.push({ code: "kw", name: "Active Power", domain: "electrical", unit: "W" });
+  const out = await runOn("remove_point_key", { index: 1 }, draft);
+  assert(out.ok && out.actionLine === "Removed point key kw", `removed, got ${out.content}`);
+  assert(out.state.working.pointKeys?.map((key) => key.unit).join() === "kW", "the first copy is left");
+}
+
+/** F4.195 — a stock template entry carries no points of its own, so it does not hold a key in the draft. */
+export async function assertRemovePointKeyReadsPastAStockTemplate(): Promise<void> {
+  const out = await runOn("remove_point_key", { index: 0 }, baseDraft({ templates: [{ stockCode: "WTP-PUMP" }] }));
+  assert(out.ok && out.actionLine === "Removed point key kw", `removed, got ${out.content}`);
+}
+
 /** T10 (a code the draft does not hold) */
 export async function assertT10RemoveTemplateRefusesAnUnknownCode(): Promise<void> {
   const out = await runOn("remove_template", { code: "NOPE" }, baseDraft({ templates: [CHILLER] }));

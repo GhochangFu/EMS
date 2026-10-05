@@ -49,6 +49,13 @@ export async function assertAnAllTemplatedReviewDraftIsNotGivenAPointKey(): Prom
   assert(result.draftPatch.pointKeys === undefined, `no point key is added, got ${JSON.stringify(result.draftPatch.pointKeys)}`);
 }
 
+/** F4.195 — a `point_keys` phase stored before F4.192 does not give an all-templated draft `kw` either. */
+export async function assertAStoredPointKeysPhaseDoesNotGiveAnAllTemplatedDraftAPointKey(): Promise<void> {
+  const result = await ruleBasedTurn("hello", allTemplatedDraft(), "point_keys");
+  assert(result.assistantMessage === IN_REVIEW, `the review branch answers, got ${result.assistantMessage}`);
+  assert(result.draftPatch.pointKeys === undefined, `no point key is added, got ${JSON.stringify(result.draftPatch.pointKeys)}`);
+}
+
 /** F4.195 — a draft that uses the existing catalog is not given `kw` either; it goes on to its first asset. */
 export async function assertADraftThatUsesTheExistingCatalogIsNotGivenAPointKey(): Promise<void> {
   const draft: OnboardingDraft = { ...allTemplatedDraft(), assets: [], onboardingMeta: { useExistingPointKeys: true } };
@@ -65,12 +72,24 @@ export async function assertADraftWithAPlainAssetIsStillGivenAPointKey(): Promis
   assert(result.draftPatch.pointKeys?.[0]?.code === "kw", `kw is added, got ${JSON.stringify(result.draftPatch.pointKeys)}`);
 }
 
+const IMPORTED = { locationName: "Lotapata", rtuCount: 1, assetCount: 2 };
+
 /**
- * F4.195 — after an import, an all-templated draft with no point key is not
- * asked for point keys; the follow-up goes on to the next step it reads.
+ * F4.195 — after an import, an all-templated draft with no point key and no
+ * mapping is asked for neither; the follow-up goes on to commit.
  */
-export function assertTheImportFollowUpDoesNotAskAnAllTemplatedDraftForPointKeys(): void {
-  const result = chatService().excelImportFollowUp(allTemplatedDraft(), { locationName: "Lotapata", rtuCount: 1, assetCount: 2 }, ["kw"]);
-  assert(result.suggestedReplies[0] === "auto map", `the next step answers, got ${JSON.stringify(result.suggestedReplies)}`);
-  assert(!result.suggestedReplies.includes("use existing keys"), `no point-key step, got ${JSON.stringify(result.suggestedReplies)}`);
+export function assertTheImportFollowUpSendsAnAllTemplatedDraftToCommit(): void {
+  const result = chatService().excelImportFollowUp(allTemplatedDraft(), IMPORTED, ["kw"]);
+  assert(
+    JSON.stringify(result.suggestedReplies) === JSON.stringify(["View draft", "Commit"]),
+    `the commit step answers, got ${JSON.stringify(result.suggestedReplies)}`,
+  );
+}
+
+/** F4.195, the positive control — a plain asset with no mapping is still asked to map. */
+export function assertTheImportFollowUpStillAsksAPlainAssetToMap(): void {
+  const draft: OnboardingDraft = { ...allTemplatedDraft(), pointKeys: [{ code: "kw", name: "Active Power", domain: "electrical", unit: "kW" }] };
+  draft.assets!.push({ rtuIndex: 0, code: "PLAIN-1", name: "Plain 1", siteName: "Lotapata", domain: "electrical" });
+  const result = chatService().excelImportFollowUp(draft, IMPORTED, ["kw"]);
+  assert(result.suggestedReplies[0] === "auto map", `the mapping step answers, got ${JSON.stringify(result.suggestedReplies)}`);
 }

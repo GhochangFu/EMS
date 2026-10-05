@@ -383,11 +383,14 @@ async function dispatch(name: ToolName, args: Record<string, unknown>, state: To
       // F4.195: an authored draft template resolves its point keys at commit
       // against the draft and the catalog, as `add_template` checks them. A key
       // only the draft declares cannot leave while a template uses it, or the
-      // proposal succeeds and the commit fails.
+      // proposal succeeds and the commit fails. A second declaration of the
+      // same code keeps it resolved, so one copy of a duplicate can leave.
       const code = hit.removed.code;
-      const users = (draft.templates ?? [])
-        .filter((entry) => !isStockEntry(entry) && entry.points.some((point) => point.pointKey === code))
-        .map((entry) => quoteCell(draftTemplateCode(entry)));
+      const users = hit.rest.some((key) => key.code === code)
+        ? []
+        : (draft.templates ?? [])
+            .filter((entry) => !isStockEntry(entry) && entry.points.some((point) => point.pointKey === code))
+            .map((entry) => quoteCell(draftTemplateCode(entry)));
       if (users.length > 0 && !(await ctx.catalog.listPointKeys(ctx.organizationId)).some((key) => key.code === code)) {
         const { shown, omitted } = echoedItems(users, 10);
         return fail(
