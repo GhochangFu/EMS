@@ -531,9 +531,9 @@ export class OnboardingChatService {
       // unlike the old single-shot model branch (removed by `F3.21`), which passed the model's patch through
       // `onboardingDraftSchema.safeParse`, this method assembles its patch in
       // code and parses nothing: a bound on the schema binds only the producers
-      // that parse it, and this is not one of them. Three sites derive a draft
+      // that parse it, and this is not one of them. Four sites derive a draft
       // string from the chat message — here, `assets[].code`/`siteName` below,
-      // and `defaultConfig`'s `topic` — and each is cut to the same imported
+      // `defaultConfig`'s `topic`, F4.208's topic turn — and each is cut to the same imported
       // bound the schema carries. `code` was already `.slice(0, 64)`; the
       // pattern was right and incomplete, and the literal is now derived
       // (§4.8).
