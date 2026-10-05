@@ -4,7 +4,7 @@ import { CredentialCryptoService } from "../../security/credential-crypto.servic
 import { OnboardingChatService } from "./onboarding-chat.service";
 import type { ChatTurnResult } from "./onboarding-chat.service";
 import { ruleBasedTurn } from "./onboarding-chat.service.spec";
-import { mqttSetupTemplate, needsMqttSetup, rtuInHand } from "./onboarding-chat-summaries";
+import { MQTT_TOPIC_PLACEHOLDER, mqttSetupTemplate, needsMqttSetup, rtuInHand } from "./onboarding-chat-summaries";
 import { mergeDraftPatch } from "./onboarding-draft-merge";
 import { MAX_RTU_TOPIC_CHARS } from "./onboarding-excel.service";
 import { EMPTY_TEMPLATE_CONTEXT } from "./onboarding-template-refs";
@@ -299,6 +299,119 @@ export async function assertAPastedBlockSetsTheRtuItNames(): Promise<void> {
   assert(
     JSON.stringify(topics) === JSON.stringify(["plant/a", "", "plant/c"]),
     `the topic lands on RTU-3, the RTU the block names, got ${JSON.stringify(topics)}`,
+  );
+}
+
+/** Runs each message as a guided turn on the draft the previous one left, from phase `rtu`. */
+async function chainedTurns(draft: OnboardingDraft, messages: string[]): Promise<OnboardingDraft> {
+  let current = draft;
+  let phase: ChatTurnResult["currentPhase"] = "rtu";
+  for (const message of messages) {
+    const result = await ruleBasedTurn(message, current, phase);
+    current = mergeDraftPatch(current, result.draftPatch);
+    phase = result.currentPhase;
+  }
+  return current;
+}
+
+/**
+ * G1 — the RTU in hand is the one whose *topic* is missing. A topic set on
+ * RTU-1 before its credential is saved, then "add another rtu": the next bare
+ * `topic:` belongs to RTU-2, not to RTU-1, which still lacks only a credential.
+ */
+export async function assertABareTopicLandsOnTheRtuMissingATopic(): Promise<void> {
+  const draft = await chainedTurns(draftWith(), ["mqtt", "topic: plant/a", "add another rtu", "topic: plant/b"]);
+  const topics = (draft.rtus ?? []).map((rtu) => rtu.config.topic);
+  assert(
+    JSON.stringify(topics) === JSON.stringify(["plant/a", "plant/b"]),
+    `the second topic lands on RTU-2, got ${JSON.stringify(topics)}`,
+  );
+}
+
+/** Enabled MQTT RTUs with a credential and no topic, one per display name, coded RTU-1..RTU-n. */
+function namedRtus(...names: string[]): OnboardingDraft {
+  return draftWith(...names.map((displayName, i) => credentialedRtu("", { code: `RTU-${i + 1}`, displayName })));
+}
+
+/** G2 — a block whose display name holds a protocol word (`Sim`) is still a topic turn, not a new RTU. */
+export async function assertAPastedBlockNamingAProtocolWordSetsItsRtu(): Promise<void> {
+  const draft = namedRtus("Pump House A", "Sim House C");
+  const block = templateBlocks(draft).find((text) => text.startsWith("RTU: 'Sim House C'")) ?? "";
+  const topics = mergedTopics(draft, await ruleBasedTurn(block.replace(/topic: .*/, "topic: plant/c"), draft, "rtu"));
+  assert(
+    JSON.stringify(topics) === JSON.stringify(["", "plant/c"]),
+    `the topic lands on 'Sim House C' and no RTU is appended, got ${JSON.stringify(topics)}`,
+  );
+}
+
+/** G3 — a later block's topic that holds a protocol word (`site/mqtt/b`) does not make the paste a new RTU. */
+export async function assertALaterBlocksTopicDoesNotAppend(): Promise<void> {
+  const draft = templateDraft(2);
+  const blocks = templateBlocks(draft);
+  blocks[0] = blocks[0].replace(/topic: .*/, "topic: plant/new");
+  blocks[1] = blocks[1].replace(/topic: .*/, "topic: site/mqtt/b");
+  const topics = mergedTopics(draft, await ruleBasedTurn(blocks.join("\n---\n"), draft, "rtu"));
+  assert(
+    JSON.stringify(topics) === JSON.stringify(["plant/new", ""]),
+    `the first block's topic lands on RTU-1 and no RTU is appended, got ${JSON.stringify(topics)}`,
+  );
+}
+
+/** H1 — the template's own placeholder is not a usable topic. */
+export function assertThePlaceholderTopicNeedsSetup(): void {
+  assert(
+    needsMqttSetup(credentialedRtu(MQTT_TOPIC_PLACEHOLDER)),
+    `a credentialed MQTT RTU whose topic is "${MQTT_TOPIC_PLACEHOLDER}" still needs MQTT setup`,
+  );
+}
+
+/** H2 — an unedited block pasted back does not move the draft past the RTU step. */
+export async function assertAnUneditedBlockKeepsTheRtuStep(): Promise<void> {
+  const draft = waitingForATopic();
+  const result = await ruleBasedTurn(templateBlocks(draft)[0] ?? "", draft, "rtu");
+  assert(result.currentPhase === "rtu", `the phase stays at rtu, got ${result.currentPhase}`);
+}
+
+/** G4 — a block that names a disabled MQTT RTU does not set its topic; the RTU in hand takes it. */
+export async function assertABlockNamingADisabledRtuDoesNotTargetIt(): Promise<void> {
+  const draft = draftWith(
+    credentialedRtu("", { code: "RTU-1", displayName: "Pump House A" }),
+    credentialedRtu("", { code: "RTU-2", displayName: "Pump House B", ingestEnabled: false }),
+  );
+  const topics = mergedTopics(draft, await ruleBasedTurn("RTU: 'Pump House B'\ntopic: plant/x", draft, "rtu"));
+  assert(
+    JSON.stringify(topics) === JSON.stringify(["plant/x", ""]),
+    `the disabled RTU-2 keeps its empty topic, got ${JSON.stringify(topics)}`,
+  );
+}
+
+/** G5 — a block may name its RTU by code. */
+export async function assertABlockNamingAnRtuByCodeSetsIt(): Promise<void> {
+  const draft = templateDraft(3);
+  const topics = mergedTopics(draft, await ruleBasedTurn("RTU: RTU-3\ntopic: plant/c", draft, "rtu"));
+  assert(
+    JSON.stringify(topics) === JSON.stringify(["plant/a", "", "plant/c"]),
+    `the topic lands on RTU-3, named by its code, got ${JSON.stringify(topics)}`,
+  );
+}
+
+/** G6 — a block may name its RTU by its display name without the template's quotes. */
+export async function assertABlockNamingAnRtuByBareNameSetsIt(): Promise<void> {
+  const draft = templateDraft(3);
+  const topics = mergedTopics(draft, await ruleBasedTurn("RTU: Pump House C\ntopic: plant/c", draft, "rtu"));
+  assert(
+    JSON.stringify(topics) === JSON.stringify(["plant/a", "", "plant/c"]),
+    `the topic lands on RTU-3, named by its bare display name, got ${JSON.stringify(topics)}`,
+  );
+}
+
+/** G7 — a name two RTUs share picks neither; the RTU in hand takes the topic. */
+export async function assertASharedNameFallsBackToTheRtuInHand(): Promise<void> {
+  const draft = namedRtus("Pump House A", "Pump House", "Pump House");
+  const topics = mergedTopics(draft, await ruleBasedTurn("RTU: 'Pump House'\ntopic: plant/x", draft, "rtu"));
+  assert(
+    JSON.stringify(topics) === JSON.stringify(["plant/x", "", ""]),
+    `the topic lands on RTU-1, the RTU in hand, got ${JSON.stringify(topics)}`,
   );
 }
 

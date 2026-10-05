@@ -43,6 +43,9 @@ export function rtuTopic(rtu: DraftRtu): string {
   );
 }
 
+/** The topic `mqttSetupTemplate` prints for an RTU that has no usable one. */
+export const MQTT_TOPIC_PLACEHOLDER = "your/topic/here";
+
 /**
  * `F4.208` — a topic the RTU cannot ingest with: blank, the `-` placeholder, or
  * wider than the `varchar(255)` column it commits to. The topic half of
@@ -51,19 +54,24 @@ export function rtuTopic(rtu: DraftRtu): string {
 export function topicUnusable(rtu: DraftRtu): boolean {
   const topic = rtuTopic(rtu);
   const trimmed = topic.trim();
-  return trimmed === "" || trimmed === "-" || topic.length > MAX_RTU_TOPIC_CHARS;
+  return (
+    trimmed === "" ||
+    trimmed === "-" ||
+    trimmed === MQTT_TOPIC_PLACEHOLDER ||
+    topic.length > MAX_RTU_TOPIC_CHARS
+  );
 }
 
 /**
  * `F4.208` (owner ruling) — the index of the RTU a guided `topic: x` turn
- * writes to when the message names none: the first RTU `needsMqttSetup`
- * holds for, else the last enabled MQTT RTU, else `-1`, and the turn appends a
- * new RTU as before. The first pass is the order `mqttSetupTemplate` lists its
- * blocks in, so a pasted template's first `topic:` lands on its first block.
+ * writes to when the message names none: the first enabled MQTT RTU whose
+ * *topic* is unusable, else the last enabled MQTT RTU, else `-1`, and the turn
+ * appends a new RTU as before. Not `needsMqttSetup`: an RTU that lacks only its
+ * credential would take a topic meant for the RTU added after it.
  */
 export function rtuInHand(draft: OnboardingDraft): number {
   const rtus = draft.rtus ?? [];
-  const waiting = rtus.findIndex(needsMqttSetup);
+  const waiting = rtus.findIndex((rtu) => isEnabledMqttRtu(rtu) && topicUnusable(rtu));
   if (waiting >= 0) {
     return waiting;
   }
@@ -75,17 +83,35 @@ export function rtuInHand(draft: OnboardingDraft): number {
   return -1;
 }
 
+/** An `RTU:` line of `mqttSetupTemplate`; group 1 is the name it carries. */
+const RTU_LINE = /^[ \t]*RTU:[ \t]*(.*?)[ \t]*$/gim;
+
+/** The guided turn's `topic: x` — non-global there, so only the first is taken. */
+export const TOPIC_TURN = /\btopic\s*:\s*(\S+)/i;
+
 /**
- * `F4.208` — the RTU a guided `topic: x` turn writes to. A message with exactly
- * one `RTU:` line — one block of `mqttSetupTemplate`, pasted back — targets the
- * one enabled MQTT RTU that line names, as the template prints it
- * (`quoteCell(displayName)`) or by its bare display name or code. Any other
- * message, or a name that matches no RTU or several, falls back to `rtuInHand`.
+ * `F4.208` — the lower-cased message without its `RTU:` lines and without any
+ * `topic: x`, which is what the guided turn tests for a protocol word: a
+ * display name (`Sim House C`) or another block's topic (`site/mqtt/b`) names
+ * no protocol. Only the `topic: x` token goes, not its line, so a typed
+ * `mqtt topic: plant/x` still names one.
+ */
+export function protocolTestText(message: string): string {
+  return message.replace(RTU_LINE, "").replace(new RegExp(TOPIC_TURN.source, "gi"), "").toLowerCase();
+}
+
+/**
+ * `F4.208` — the RTU a guided `topic: x` turn writes to. A message with an
+ * `RTU:` line — a block of `mqttSetupTemplate`, pasted back — targets the
+ * enabled MQTT RTU its **first** `RTU:` line names, as the template prints it
+ * (`quoteCell(displayName)`) or by its bare display name or code. The first,
+ * because `TOPIC_TURN` takes the first `topic:`, which is the first block's.
+ * A message with no `RTU:` line, or a name that matches no such RTU or several,
+ * falls back to `rtuInHand`.
  */
 export function rtuForTopicTurn(message: string, draft: OnboardingDraft): number {
-  const named = [...message.matchAll(/^[ \t]*RTU:[ \t]*(.*?)[ \t]*$/gim)].map((match) => match[1]);
-  if (named.length === 1) {
-    const name = named[0];
+  const name = [...message.matchAll(RTU_LINE)][0]?.[1];
+  if (name !== undefined) {
     const matches = (draft.rtus ?? []).flatMap((rtu, index) =>
       isEnabledMqttRtu(rtu) && [quoteCell(rtu.displayName), rtu.displayName, rtu.code].includes(name) ? [index] : [],
     );
@@ -122,10 +148,9 @@ export function mqttSetupTemplate(draft: OnboardingDraft): string {
   // Until `F4.208` the `phase === "rtu"` branch of `handleRuleBasedTurn` also
   // *appended* an RTU instead of updating the ones the import created; since
   // then, while the derived phase is `rtu`, a `topic:` turn that names no
-  // protocol sets the topic of `rtuForTopicTurn`'s RTU: the one a single
-  // pasted block names, else `rtuInHand`'s, whose first pass is the
-  // `needsMqttSetup` order this function sorts the blocks into — so the first
-  // block's topic lands on the first block's RTU, one RTU per message. Reading
+  // protocol sets the topic of `rtuForTopicTurn`'s RTU: the one the first
+  // pasted `RTU:` line names, else `rtuInHand`'s — so the first block's topic
+  // lands on the first block's RTU, one RTU per message. Reading
   // several blocks from one paste stays a recorded limit (owner ruling, `F4.208`).
   //
   // **The two predicates diverge, and the cap turned that from untidy into an
@@ -176,7 +201,7 @@ export function mqttSetupTemplate(draft: OnboardingDraft): string {
     const topic =
       existingTopic && existingTopic !== "-" && existingTopic.length <= MAX_RTU_TOPIC_CHARS
         ? existingTopic
-        : "your/topic/here";
+        : MQTT_TOPIC_PLACEHOLDER;
     return [
       // Quoting this breaks no round trip: the topic is read from the `topic:`
       // line below, and `rtuForTopicTurn` matches this line against

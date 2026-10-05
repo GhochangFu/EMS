@@ -29,6 +29,15 @@ import {
   assertATopicAtTheBoundDoesNotNeedSetup,
   assertATopicQuestionDoesNotUpdate,
   assertATopicTurnPastTheRtuStepDoesNotUpdate,
+  assertABareTopicLandsOnTheRtuMissingATopic,
+  assertAPastedBlockNamingAProtocolWordSetsItsRtu,
+  assertALaterBlocksTopicDoesNotAppend,
+  assertABlockNamingADisabledRtuDoesNotTargetIt,
+  assertABlockNamingAnRtuByCodeSetsIt,
+  assertABlockNamingAnRtuByBareNameSetsIt,
+  assertASharedNameFallsBackToTheRtuInHand,
+  assertThePlaceholderTopicNeedsSetup,
+  assertAnUneditedBlockKeepsTheRtuStep,
 } from "./onboarding-chat-topic.spec";
 
 /** Vitest entry point — see `admin.schema.test.ts` for the pattern (ADR 0014). One `it()` per claim. */
@@ -117,6 +126,42 @@ describe("F4.208 — the guided `topic: x` turn sets the topic of the RTU in han
 
   it("C2: one pasted block sets the RTU it names", async () => {
     await assertAPastedBlockSetsTheRtuItNames();
+  });
+
+  it("G1: a bare topic after add another rtu lands on the RTU missing a topic", async () => {
+    await assertABareTopicLandsOnTheRtuMissingATopic();
+  });
+
+  it("G2: a block whose name holds a protocol word sets its RTU", async () => {
+    await assertAPastedBlockNamingAProtocolWordSetsItsRtu();
+  });
+
+  it("G3: a later block's topic holding a protocol word does not append", async () => {
+    await assertALaterBlocksTopicDoesNotAppend();
+  });
+
+  it("G4: a block naming a disabled RTU does not target it", async () => {
+    await assertABlockNamingADisabledRtuDoesNotTargetIt();
+  });
+
+  it("G5: a block may name its RTU by code", async () => {
+    await assertABlockNamingAnRtuByCodeSetsIt();
+  });
+
+  it("G6: a block may name its RTU by its bare display name", async () => {
+    await assertABlockNamingAnRtuByBareNameSetsIt();
+  });
+
+  it("G7: a name two RTUs share falls back to the RTU in hand", async () => {
+    await assertASharedNameFallsBackToTheRtuInHand();
+  });
+
+  it("H1: the template placeholder topic still needs setup", () => {
+    assertThePlaceholderTopicNeedsSetup();
+  });
+
+  it("H2: an unedited pasted block keeps the RTU step", async () => {
+    await assertAnUneditedBlockKeepsTheRtuStep();
   });
 
   it("E1: a disabled MQTT RTU is never in hand", () => {

@@ -35,7 +35,9 @@ import {
   mqttRtusWaitingPrompt,
   mqttSetupTemplate,
   needsMqttSetup,
+  protocolTestText,
   rtuForTopicTurn,
+  TOPIC_TURN,
 } from "./onboarding-chat-summaries";
 import * as locationTypes from "./onboarding-location-type-match";
 // F3.21 (ADR 0090): the model no longer returns a draft patch, so the
@@ -615,10 +617,11 @@ export class OnboardingChatService {
     // F4.208: while the derived phase is `rtu`, "topic: x" (the colon is
     // required) sets the topic of `rtuForTopicTurn`'s RTU rather than append
     // one. Naming a protocol, or "add another rtu", still appends; the protocol
-    // test skips the topic itself, so `site/sim/rtu` is not read as `sim`.
+    // test skips topics and `RTU:` lines (`protocolTestText`), so neither
+    // `site/sim/rtu` nor an RTU named `Sim House C` is read as `sim`.
     const addAnother = /^add another rtu\b/.test(lower);
-    const topicTurn = derived === "rtu" ? message.match(/\btopic\s*:\s*(\S+)/i) : null;
-    const rest = topicTurn ? lower.replace(topicTurn[0].toLowerCase(), "") : lower;
+    const topicTurn = derived === "rtu" ? message.match(TOPIC_TURN) : null;
+    const rest = topicTurn ? protocolTestText(message) : lower;
     const inHand = topicTurn && !addAnother && !NAMES_A_PROTOCOL.test(rest) ? rtuForTopicTurn(message, draft) : -1;
     if (topicTurn && inHand >= 0) {
       const topic = cutToBound(topicTurn[1], MAX_RTU_TOPIC_CHARS);
