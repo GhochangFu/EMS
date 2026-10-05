@@ -241,10 +241,22 @@ export async function aRefusedReorderShowsTheSentence(): Promise<void> {
  * same guard for WO1–WO4 until the row paints.
  */
 
-/** Two macrotask turns, so a loop still running after the error paints is counted. */
-async function settle(): Promise<void> {
-  await new Promise((resolve) => setTimeout(resolve, 0));
-  await new Promise((resolve) => setTimeout(resolve, 0));
+/**
+ * Waits until `count()` holds the same value for `STABLE_TURNS` macrotask turns in
+ * a row, so a loop that starts only after the error paints is still counted: a
+ * running loop never holds still, and the turn cap then ends the wait.
+ */
+const STABLE_TURNS = 5;
+const MAX_TURNS = 200;
+async function settle(count: () => number): Promise<void> {
+  let last = -1;
+  let stable = 0;
+  for (let turn = 0; turn < MAX_TURNS && stable < STABLE_TURNS; turn += 1) {
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    const now = count();
+    stable = now === last ? stable + 1 : 0;
+    last = now;
+  }
 }
 
 /** A failed list read with no cache seed shows the error and stops committing. */
@@ -287,7 +299,7 @@ export async function aFailedListReadSettles(): Promise<void> {
 
   if (!boundExceeded) {
     await screen.findByText("Could not load work orders.", {}, { timeout: 2000 });
-    await settle();
+    await settle(() => commits);
   }
   expect(commits).toBeLessThanOrEqual(COMMIT_BOUND);
 }
