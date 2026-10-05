@@ -86,6 +86,9 @@ const kanbanColumns: KanbanColumn[] = [
   },
 ];
 
+// F4.209: a stable empty list, so the `[rows]` effect does not fire (and set state) on every render while the list has no data.
+const NO_ROWS: WorkOrderListItem[] = [];
+
 function statusStyle(status: WorkOrderStatus): string {
   switch (status) {
     case "closed":
@@ -260,7 +263,7 @@ export function WorkOrdersPage({ user }: WorkOrdersPageProps) {
     },
   });
 
-  const rows = workOrdersQ.data?.items ?? [];
+  const rows = workOrdersQ.data?.items ?? NO_ROWS;
   const assetOptions = assetsQ.data ?? [];
   const rowById = useMemo(
     () => new Map(rows.map((row) => [row.id, row])),

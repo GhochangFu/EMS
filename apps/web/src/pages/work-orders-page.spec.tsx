@@ -113,12 +113,6 @@ async function renderPage(): Promise<void> {
   vi.spyOn(workOrdersApi, "fetchWorkOrders").mockResolvedValue({ items: [ROW] });
   vi.spyOn(assetsApi, "fetchAssets").mockResolvedValue([ASSET]);
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  // Seeded, not only stubbed. While the list query has no data, `rows` is a fresh `[]` on every
-  // render and the page's `[rows]` effect sets a fresh `[]` into state, so each commit schedules
-  // another render. Observed: without this seed the jsdom worker hangs before any case reports;
-  // with it, every case runs.
-  queryClient.setQueryData(["work-orders", "list"], { items: [ROW] });
-  queryClient.setQueryData(["assets", "list"], [ASSET]);
   render(
     <QueryClientProvider client={queryClient}>
       <MemoryRouter>
