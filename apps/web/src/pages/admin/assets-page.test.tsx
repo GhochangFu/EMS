@@ -14,6 +14,7 @@ import {
   roleSelectOffersTheVocabularyAfterAnEmptyOption,
   savingWithARoleSendsIt,
   savingWithNoRoleSendsNull,
+  aRefusedSaveShowsTheSentence,
 } from "./assets-page.spec";
 
 /**
@@ -85,5 +86,9 @@ describe("F3.74 assets page rating and trip cause", () => {
 
   it("sends null for empty rating and trip cause", async () => {
     await emptyRatingAndTripCauseSendNull();
+  });
+
+  it("F4.204 a refused save shows the sentence, not the envelope", async () => {
+    await aRefusedSaveShowsTheSentence();
   });
 });

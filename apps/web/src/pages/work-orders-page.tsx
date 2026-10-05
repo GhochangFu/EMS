@@ -18,6 +18,7 @@ import {
   type ReorderWorkOrderItem,
 } from "../api/work-orders";
 import { PageHeader } from "../components/page-header";
+import { apiErrorMessage } from "../lib/api-error-message";
 import { AppShell } from "../layouts/app-shell";
 import type { AuthUser } from "../stores/auth-store";
 
@@ -214,8 +215,8 @@ export function WorkOrdersPage({ user }: WorkOrdersPageProps) {
       navigate("/work-orders", { replace: true });
       void qc.invalidateQueries({ queryKey: ["work-orders", "list"] });
     },
-    onError: (err: Error) => {
-      setCreateError(err.message);
+    onError: (err: unknown) => {
+      setCreateError(apiErrorMessage(err));
     },
   });
 
@@ -227,8 +228,8 @@ export function WorkOrdersPage({ user }: WorkOrdersPageProps) {
       setStatusError(null);
       void qc.invalidateQueries({ queryKey: ["work-orders", "list"] });
     },
-    onError: (err: Error) => {
-      setStatusError(err.message);
+    onError: (err: unknown) => {
+      setStatusError(apiErrorMessage(err));
     },
   });
 
@@ -242,8 +243,8 @@ export function WorkOrdersPage({ user }: WorkOrdersPageProps) {
       setCloseSortOrder(undefined);
       void qc.invalidateQueries({ queryKey: ["work-orders", "list"] });
     },
-    onError: (err: Error) => {
-      setCloseError(err.message);
+    onError: (err: unknown) => {
+      setCloseError(apiErrorMessage(err));
     },
   });
 
@@ -253,8 +254,8 @@ export function WorkOrdersPage({ user }: WorkOrdersPageProps) {
       setDragError(null);
       void qc.invalidateQueries({ queryKey: ["work-orders", "list"] });
     },
-    onError: (err: Error) => {
-      setDragError(err.message);
+    onError: (err: unknown) => {
+      setDragError(apiErrorMessage(err));
       void qc.invalidateQueries({ queryKey: ["work-orders", "list"] });
     },
   });

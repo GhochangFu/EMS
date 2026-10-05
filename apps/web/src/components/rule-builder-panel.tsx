@@ -24,6 +24,7 @@ import {
   severityFromRule,
   type RuleSeverity,
 } from "../lib/rule-severity";
+import { apiErrorMessage } from "../lib/api-error-message";
 import { defaultCategoryCode } from "../lib/vocabulary";
 
 type BuilderForm = {
@@ -663,6 +664,16 @@ function invalidateRules(qc: ReturnType<typeof useQueryClient>) {
   void qc.invalidateQueries({ queryKey: ["rules", "executions"] });
 }
 
+/**
+ * The sentence a rule mutation's refusal should show (`F4.204`).
+ *
+ * The `api/rules` functions throw `new Error(text)` with the whole response
+ * body, so `err.message` alone rendered the Nest envelope
+ * (`{"statusCode":409,...}`). `apiErrorMessage` unwraps it. A non-`Error`
+ * rejection reads `String(cause)`; only null, undefined or a blank string reads
+ * "The request failed." (`apiErrorMessage`'s fallback), where this helper used
+ * to say "Rule operation failed.".
+ */
 function errorMessage(err: unknown): string {
-  return err instanceof Error ? err.message : "Rule operation failed.";
+  return apiErrorMessage(err);
 }

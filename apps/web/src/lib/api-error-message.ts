@@ -24,8 +24,12 @@
  * The narrow fix. `adminFetch` is shared by 42 call sites across every admin
  * page, and changing what it throws would change all of them — a decision
  * worth making deliberately rather than as a side effect of this item. So the
- * unwrapping happens where the message is rendered, and the same JSON still
- * shows on the other admin pages until that call is made.
+ * unwrapping happens where the message is rendered.
+ *
+ * Every render site reads through this function since `F4.204`, and
+ * `tests/f4.204-raw-error-message-render.test.ts` refuses a new raw read of
+ * an error in `apps/web/src` outside `api/` and this file, in every shape its
+ * header lists. Its header also lists the shapes it cannot see.
  */
 
 /** Nest's error envelope, as far as this needs to care. */
@@ -141,8 +145,8 @@ export function apiErrorMessage(cause: unknown): string {
     return envelope.error.trim();
   }
 
-  // LAST, and the placement is the whole safety argument for a function 24
-  // modules import: everything above still wins — the `message` branch and the
+  // LAST, and the placement is the whole safety argument for a function 64
+  // modules import (24 when this branch was written): everything above still wins — the `message` branch and the
   // `error` branch — so this branch fires only on bodies that used to return
   // raw JSON. Both halves are asserted rather than asserted-in-a-comment; see
   // `runEnvelopeMessageWinsOverFieldErrorsTests` and
@@ -158,6 +162,7 @@ export function apiErrorMessage(cause: unknown): string {
   // `asset-templates-stock.service.ts` — not the four onboarding routes named
   // above. So this branch changes the rendered refusal text repo-wide, at 46
   // `apiErrorMessage` call sites across 24 modules, while editing none of them.
+  // Since `F4.204` routed every render site through it, 64 modules import it.
   //
   // What is true is that the change is **non-increasing**. The rendered
   // sentence is never longer than the raw body it replaces, because every part

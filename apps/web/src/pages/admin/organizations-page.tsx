@@ -21,6 +21,7 @@ import {
   canManageAiAssistant,
   canWriteOrganizations,
 } from "../../lib/admin-access";
+import { apiErrorMessage } from "../../lib/api-error-message";
 import type { AuthUser } from "../../stores/auth-store";
 
 type OrganizationsAdminPageProps = {
@@ -91,7 +92,7 @@ export function OrganizationsAdminPage({ user }: OrganizationsAdminPageProps) {
       setError(null);
       await queryClient.invalidateQueries({ queryKey: ["admin", "organizations"] });
     },
-    onError: (err: Error) => setError(err.message),
+    onError: (err: unknown) => setError(apiErrorMessage(err)),
   });
 
   const toggleMutation = useMutation({

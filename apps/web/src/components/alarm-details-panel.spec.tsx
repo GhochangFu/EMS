@@ -1,5 +1,6 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { render, screen, waitFor, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { expect, vi } from "vitest";
 
 import type { AlarmDetailsResponse } from "@bms/shared";
@@ -200,4 +201,64 @@ export async function offersNoControlThatCopiesTheClassTextIntoTheForm(): Promis
   // And the form is genuinely empty rather than silently seeded from the class.
   const rootCause = screen.getByLabelText("Root cause") as HTMLTextAreaElement;
   expect(rootCause.value).toBe("");
+}
+
+/**
+ * `F4.204` — a refused enrichment save shows the server's sentence.
+ *
+ * `saveAlarmEnrichment` throws `new Error(text)` with the whole response body,
+ * so before this row the form's alert rendered the Nest envelope verbatim.
+ */
+export async function enrichmentSaveRefusalShowsTheServerSentence(): Promise<void> {
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(() => Promise.reject(new Error("no fetch expected"))),
+  );
+  const sentence = "Root cause must be 4000 characters or fewer.";
+  vi.spyOn(alarmsApi, "saveAlarmEnrichment").mockRejectedValue(
+    new Error(JSON.stringify({ statusCode: 400, message: sentence, error: "Bad Request" })),
+  );
+  await renderPanel(details());
+
+  await userEvent.type(screen.getByLabelText("Root cause"), "Grease line cracked");
+  await userEvent.click(screen.getByRole("button", { name: "Save" }));
+
+  const alert = await screen.findByRole("alert");
+  expect(alert).toHaveTextContent(sentence);
+  expect(alert.textContent).not.toContain('{"');
+}
+
+/**
+ * `F4.204`, route-only — the details load failure reads the envelope's sentence.
+ * The load throws `new Error(<raw body>)` with the Nest envelope, so reading
+ * `.message` alone would render JSON; `apiErrorMessage` unwraps it.
+ */
+export async function detailsLoadFailureReadsTheEnvelopeSentence(): Promise<void> {
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(() => Promise.reject(new Error("no fetch expected"))),
+  );
+  const sentence = "Alarm details were not found.";
+  vi.spyOn(alarmsApi, "fetchAlarmDetails").mockRejectedValue(
+    new Error(JSON.stringify({ statusCode: 404, message: sentence, error: "Not Found" })),
+  );
+  vi.spyOn(assetsApi, "fetchAssets").mockResolvedValue([]);
+  vi.spyOn(vocabApi, "fetchVocabularies").mockResolvedValue({
+    alarmSeverities: [],
+    alarmSkills: [],
+    ruleCategories: [],
+    assetDomains: [],
+    assetRoles: [],
+  } as unknown as Awaited<ReturnType<typeof vocabApi.fetchVocabularies>>);
+
+  const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  render(
+    <QueryClientProvider client={qc}>
+      <AlarmDetailsPanel alarmId="alarm-1" readOnly={false} onClose={() => {}} />
+    </QueryClientProvider>,
+  );
+
+  const alert = await screen.findByRole("alert");
+  expect(alert).toHaveTextContent(sentence);
+  expect(alert.textContent).not.toContain('{"');
 }

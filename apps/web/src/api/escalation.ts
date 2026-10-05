@@ -6,6 +6,7 @@ import {
 } from "@bms/shared/contracts";
 import type { EscalationDefaultsResponse, EscalationProfileDto } from "@bms/shared";
 
+import { apiErrorMessage } from "../lib/api-error-message";
 import { clearSessionOnAuthFailure, withAuth } from "./http";
 import { checkResponse } from "./validate";
 
@@ -65,18 +66,17 @@ export type EscalationDefaultsPayload = {
   items: Array<{ severity: string; profileId: string }>;
 };
 
-/** The server's message, when it sent one — a 409 on a mapped profile says so. */
+/**
+ * The server's message, when it sent one — a 409 on a mapped profile says so.
+ *
+ * Reads the body through the shared `apiErrorMessage` (`F4.204`), which also
+ * handles an array `message` (a Zod validation refusal) that a private parse
+ * here used to miss. An empty body keeps the `label status` fallback.
+ */
 async function failure(res: Response, label: string): Promise<Error> {
   clearSessionOnAuthFailure(res);
   const text = await res.text();
-  try {
-    const parsed: unknown = JSON.parse(text);
-    const message = (parsed as { message?: unknown }).message;
-    if (typeof message === "string") return new Error(message);
-  } catch {
-    // Not JSON; fall through to the raw text.
-  }
-  return new Error(text || `${label} ${res.status}`);
+  return new Error(text.trim() === "" ? `${label} ${res.status}` : apiErrorMessage(text));
 }
 
 /** GET /api/v1/admin/escalation-profiles */

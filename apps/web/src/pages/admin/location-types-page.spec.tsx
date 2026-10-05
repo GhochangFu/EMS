@@ -8,6 +8,7 @@ import type { AdminLocationTypesListResponse } from "@bms/shared";
 
 import * as api from "../../api/admin/location-types";
 import * as systemStatusApi from "../../api/system-status";
+import { ApiError } from "../../lib/api-error";
 import { OPERATIONAL } from "../../components/system-status-indicator.spec";
 import type { AuthUser } from "../../stores/auth-store";
 import { LocationTypesAdminPage } from "./location-types-page";
@@ -205,4 +206,45 @@ export async function failsClosedForAnOrganizationAdmin(): Promise<void> {
   });
   expect(screen.queryByRole("table")).toBeNull();
   expect(api.fetchLocationTypeCatalog).toHaveBeenCalledTimes(0);
+}
+
+/**
+ * `F4.204` — an `ApiError` carries the whole response body, so a refusal read
+ * through `err.message` showed `{"statusCode":409,…}`. Each site reads it through
+ * `apiErrorMessage`; one case per site, because a site left on `err.message`
+ * reddens only its own case. The sentence is found by text (the banner has no
+ * role), and the element holding it must not also hold the envelope.
+ */
+const refusedWith = (sentence: string) => () =>
+  Promise.reject(
+    new ApiError(`{"statusCode":409,"message":"${sentence}","error":"Conflict"}`, 409),
+  );
+
+/** F4.204 — a refused save shows the sentence, not the envelope. */
+export async function aRefusedSaveShowsTheSentence(): Promise<void> {
+  const user = userEvent.setup();
+  renderPage(admin);
+  vi.mocked(api.createLocationType).mockImplementation(
+    refusedWith("A location type with that code already exists"),
+  );
+  await rowOf(ACTIVE.code);
+  await user.click(screen.getByRole("button", { name: "Add location type" }));
+  await user.type(screen.getByLabelText("Code"), "f4204_new");
+  await user.type(screen.getByLabelText("Label"), "Spec new");
+  await user.click(screen.getByRole("button", { name: "Save" }));
+  const banner = await screen.findByText(/A location type with that code already exists/);
+  expect(banner.textContent).not.toContain('{"');
+}
+
+/** F4.204 — a refused Deactivate shows the sentence, not the envelope. */
+export async function aRefusedToggleShowsTheSentence(): Promise<void> {
+  const user = userEvent.setup();
+  renderPage(admin);
+  vi.mocked(api.deactivateLocationType).mockImplementation(
+    refusedWith("A location type in use cannot be deactivated"),
+  );
+  const row = await rowOf(ACTIVE.code);
+  await user.click(within(row).getByRole("button", { name: "Deactivate" }));
+  const banner = await screen.findByText(/A location type in use cannot be deactivated/);
+  expect(banner.textContent).not.toContain('{"');
 }

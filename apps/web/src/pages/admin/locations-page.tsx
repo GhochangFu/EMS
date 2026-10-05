@@ -35,6 +35,7 @@ import {
   siteViewPayloadFromDraft,
   type SiteViewDraft,
 } from "../../lib/site-control-room-view";
+import { apiErrorMessage } from "../../lib/api-error-message";
 import type { AuthUser } from "../../stores/auth-store";
 
 type LocationsAdminPageProps = { user: AuthUser };
@@ -188,8 +189,8 @@ export function LocationsAdminPage({ user }: LocationsAdminPageProps) {
       setError(null);
       await queryClient.invalidateQueries({ queryKey: ["admin", "locations"] });
     },
-    onError: async (err: Error) => {
-      setError(err.message);
+    onError: async (err: unknown) => {
+      setError(apiErrorMessage(err));
       // The location update may have landed before the view `PUT` failed.
       await queryClient.invalidateQueries({ queryKey: ["admin", "locations"] });
     },

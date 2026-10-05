@@ -9,6 +9,7 @@ import * as api from "../../api/admin/asset-templates";
 import * as orgApi from "../../api/admin/organizations";
 import * as vocabApi from "../../api/vocabularies";
 import { StockCatalogAccordion } from "../../components/asset-templates/stock-catalog-accordion";
+import { ApiError } from "../../lib/api-error";
 import { STOCK_CATALOG_COLLAPSE_KEY } from "../../lib/stock-catalog-collapse";
 import { groupStockByDomain } from "../../lib/stock-catalog-groups";
 import type { AuthUser } from "../../stores/auth-store";
@@ -933,4 +934,26 @@ export async function theGroupHeaderPrintsTheDomainLabel(): Promise<void> {
 
   expect(await screen.findByText("IX · unit · HVAC")).toBeInTheDocument();
   expect(screen.queryByText("IX · unit · hvac")).toBeNull();
+}
+
+/**
+ * `F4.204` — an `ApiError` carries the whole response body, so a refusal read
+ * through `err.message` showed `{"statusCode":409,…}`. Each site reads it through
+ * `apiErrorMessage`; one case per site, because a site left on `err.message`
+ * reddens only its own case. The sentence is found by text (the banner has no
+ * role), and the element holding it must not also hold the envelope.
+ */
+
+/** F4.204 — a failed list read shows the sentence in the banner, not the envelope. */
+export async function aFailedListShowsTheSentence(): Promise<void> {
+  stubApi();
+  vi.spyOn(api, "fetchAdminAssetTemplates").mockRejectedValue(
+    new ApiError(
+      '{"statusCode":403,"message":"Templates are outside your access scope","error":"Forbidden"}',
+      403,
+    ),
+  );
+  renderPage();
+  const banner = await screen.findByText(/Templates are outside your access scope/);
+  expect(banner.textContent).not.toContain('{"');
 }

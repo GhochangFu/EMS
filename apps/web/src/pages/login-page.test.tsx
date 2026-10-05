@@ -4,6 +4,7 @@ import { cleanup } from "@testing-library/react";
 
 import {
   aLateReasonStillRenders,
+  aRawEnvelopeReadsAsItsSentence,
   aLocalSignInAttemptClearsTheReason,
   anOidcSignInAttemptClearsTheReason,
   aPlain401ShowsNothing,
@@ -144,5 +145,9 @@ describe("F4.203 the login page after a deactivated 401", () => {
 
   it("L21 starting a Keycloak sign-in clears the reason", async () => {
     await anOidcSignInAttemptClearsTheReason();
+  });
+
+  it("L22 a raw error envelope reads as its sentence", async () => {
+    await aRawEnvelopeReadsAsItsSentence();
   });
 });

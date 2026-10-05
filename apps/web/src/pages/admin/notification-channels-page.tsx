@@ -29,6 +29,7 @@ import {
   testResultMessage,
   type ChannelForm,
 } from "../../lib/notification-channels";
+import { apiErrorMessage } from "../../lib/api-error-message";
 import type { AuthUser } from "../../stores/auth-store";
 
 type NotificationChannelsPageProps = { user: AuthUser };
@@ -162,7 +163,7 @@ export function NotificationChannelsPage({ user }: NotificationChannelsPageProps
       setError(null);
       await queryClient.invalidateQueries({ queryKey: ["notifications", "channels"] });
     },
-    onError: (err: Error) => setError(err.message),
+    onError: (err: unknown) => setError(apiErrorMessage(err)),
   });
 
   const deleteMutation = useMutation({
@@ -171,7 +172,7 @@ export function NotificationChannelsPage({ user }: NotificationChannelsPageProps
       setError(null);
       await queryClient.invalidateQueries({ queryKey: ["notifications", "channels"] });
     },
-    onError: (err: Error) => setError(err.message),
+    onError: (err: unknown) => setError(apiErrorMessage(err)),
   });
 
   const testMutation = useMutation({
@@ -182,7 +183,7 @@ export function NotificationChannelsPage({ user }: NotificationChannelsPageProps
       // A test writes a delivery row like any other attempt.
       await queryClient.invalidateQueries({ queryKey: ["notifications", "deliveries"] });
     },
-    onError: (err: Error) => setError(err.message),
+    onError: (err: unknown) => setError(apiErrorMessage(err)),
   });
 
   const channels = channelsQ.data?.items ?? [];

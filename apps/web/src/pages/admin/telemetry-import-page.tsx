@@ -10,6 +10,7 @@ import {
 import { MasterDataLayout } from "../../components/admin/master-data-layout";
 import { PageHeader } from "../../components/page-header";
 import { SectionCard } from "../../components/section-card";
+import { apiErrorMessage } from "../../lib/api-error-message";
 import {
   groupRejectionsByReason,
   summarizeCommit,
@@ -40,12 +41,12 @@ export function TelemetryImportPage({ user }: TelemetryImportPageProps) {
       setCommitResult(null);
       setError(null);
     },
-    onError: (err: Error) => {
+    onError: (err: unknown) => {
       // A failed re-preview (new file, changed options) must not leave the
       // PRIOR preview on screen with Commit still enabled — that preview
       // describes a file/options combination this attempt just replaced.
       setPreview(null);
-      setError(err.message);
+      setError(apiErrorMessage(err));
     },
   });
 
@@ -58,7 +59,7 @@ export function TelemetryImportPage({ user }: TelemetryImportPageProps) {
       setCommitResult(result);
       setError(null);
     },
-    onError: (err: Error) => setError(err.message),
+    onError: (err: unknown) => setError(apiErrorMessage(err)),
   });
 
   const reset = () => {

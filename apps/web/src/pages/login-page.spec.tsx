@@ -273,3 +273,18 @@ export async function navigatesToTheRootWithoutAReturnPath(): Promise<void> {
   renderLoginRoutes();
   expect(await signInLocally()).toBe("/|REPLACE");
 }
+
+/**
+ * L22 (`F4.204`) — a refused sign-in whose error carries the raw Nest envelope renders the
+ * envelope's sentence, not the JSON. `loginRequest` throws the response text unchanged.
+ */
+export async function aRawEnvelopeReadsAsItsSentence(): Promise<void> {
+  renderLoginRoutes();
+  vi.spyOn(loginApi, "loginRequest").mockRejectedValue(
+    new Error('{"statusCode":401,"message":"Invalid email or password","error":"Unauthorized"}'),
+  );
+  fireEvent.change(screen.getByLabelText("Password"), { target: { value: "wrong" } });
+  fireEvent.click(screen.getByRole("button", { name: "Sign in securely" }));
+  const alert = await screen.findByText("Invalid email or password");
+  expect(alert.textContent).not.toContain('{"');
+}

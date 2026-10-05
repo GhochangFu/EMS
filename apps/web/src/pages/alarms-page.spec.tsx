@@ -229,3 +229,34 @@ export async function searchingClearedKeepsBothClearedRows(): Promise<void> {
   expect(within(table).queryByText("Voltage above limit")).toBeNull();
   expect(within(table).queryByText("Current above limit")).toBeNull();
 }
+
+/**
+ * `F4.204` — a refused acknowledgement shows the server's sentence.
+ *
+ * `ackAlarm` throws `new Error(text)` where `text` is the whole response body,
+ * so before this row the ack dialog's alert rendered the Nest envelope
+ * (`{"statusCode":409,...}`) verbatim. The alert is asserted by its text, which
+ * only exists after the mutation has rejected.
+ */
+export async function ackRefusalShowsTheServerSentence(): Promise<void> {
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(() => Promise.reject(new Error("no fetch expected"))),
+  );
+  const sentence = "This alarm was already acknowledged by another operator.";
+  vi.spyOn(alarmsApi, "ackAlarm").mockRejectedValue(
+    new Error(JSON.stringify({ statusCode: 409, message: sentence, error: "Conflict" })),
+  );
+  await renderPage();
+
+  await userEvent.click(
+    within(rowFor("Voltage above limit")).getByRole("button", { name: "Ack" }),
+  );
+  const dialog = screen.getByRole("dialog");
+  await userEvent.type(within(dialog).getByLabelText("Reason (required)"), "Verified at panel");
+  await userEvent.click(within(dialog).getByRole("button", { name: "Confirm ack" }));
+
+  const alert = await within(dialog).findByRole("alert");
+  expect(alert).toHaveTextContent(sentence);
+  expect(alert.textContent).not.toContain('{"');
+}

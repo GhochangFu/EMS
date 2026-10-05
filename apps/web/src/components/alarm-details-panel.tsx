@@ -9,6 +9,7 @@ import {
 import { fetchAssets } from "../api/assets";
 import { fetchVocabularies, vocabulariesQueryKey } from "../api/vocabularies";
 import { filterAssetsByQuery, toggleAssetSelection } from "../lib/asset-picker";
+import { apiErrorMessage } from "../lib/api-error-message";
 import { alarmSkillLabel, formatThresholdPairing, toLocalDateTimeInputValue } from "../lib/alarm-details";
 import { alarmSeverityTone } from "../lib/alarm-severity";
 import { alarmLifecycleState, alarmStateLabel } from "../lib/alarm-state";
@@ -134,7 +135,7 @@ export function AlarmDetailsPanel({ alarmId, readOnly, onClose }: AlarmDetailsPa
       void qc.invalidateQueries({ queryKey: ["alarms", "list"] });
     },
     onError: (e: Error) => {
-      setSaveError(e.message);
+      setSaveError(apiErrorMessage(e));
     },
   });
 
@@ -203,7 +204,7 @@ export function AlarmDetailsPanel({ alarmId, readOnly, onClose }: AlarmDetailsPa
         {detailsQ.isLoading ? <p className="mt-4 text-sm text-ink-muted">Loading…</p> : null}
         {detailsQ.isError ? (
           <p className="mt-4 text-sm text-critical-ink" role="alert">
-            {(detailsQ.error as Error).message}
+            {apiErrorMessage(detailsQ.error)}
           </p>
         ) : null}
 

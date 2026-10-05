@@ -12,6 +12,7 @@ import * as locationsApi from "../../api/admin/locations";
 import * as rtusApi from "../../api/admin/rtus";
 import * as assetImagesApi from "../../api/asset-images";
 import * as vocabApi from "../../api/vocabularies";
+import { ApiError } from "../../lib/api-error";
 import type { AuthUser } from "../../stores/auth-store";
 import { AssetsAdminPage } from "./assets-page";
 
@@ -339,4 +340,29 @@ export async function emptyRatingAndTripCauseSendNull(): Promise<void> {
 
   await vi.waitFor(() => expect(create).toHaveBeenCalledTimes(1));
   expect(create.mock.calls[0]?.[0]).toMatchObject({ rating: null, tripCause: null });
+}
+
+/**
+ * `F4.204` — an `ApiError` carries the whole response body, so a refusal read
+ * through `err.message` showed `{"statusCode":409,…}`. Each site reads it through
+ * `apiErrorMessage`; one case per site, because a site left on `err.message`
+ * reddens only its own case. The sentence is found by text (the banner has no
+ * role), and the element holding it must not also hold the envelope.
+ */
+
+/** F4.204 — a refused save shows the sentence, not the envelope. */
+export async function aRefusedSaveShowsTheSentence(): Promise<void> {
+  stubApi();
+  vi.spyOn(assetsApi, "createAdminAsset").mockRejectedValue(
+    new ApiError(
+      '{"statusCode":409,"message":"An asset with that code already exists at this location","error":"Conflict"}',
+      409,
+    ),
+  );
+  renderPage();
+  await openAddAndFindRoleSelect();
+  await fillRequiredFields();
+  await userEvent.click(screen.getByRole("button", { name: "Save" }));
+  const banner = await screen.findByText(/An asset with that code already exists at this location/);
+  expect(banner.textContent).not.toContain('{"');
 }

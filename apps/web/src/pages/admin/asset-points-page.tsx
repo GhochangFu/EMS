@@ -329,7 +329,7 @@ export function AssetPointsAdminPage({ user }: AssetPointsAdminPageProps) {
       setError(null);
       await queryClient.invalidateQueries({ queryKey: ["admin", "asset-points"] });
     },
-    onError: (err: Error) => setError(err.message),
+    onError: (err: unknown) => setError(apiErrorMessage(err)),
   });
 
   const toggleMutation = useMutation({

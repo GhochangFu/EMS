@@ -16,6 +16,7 @@ import { PageHeader } from "../../components/page-header";
 import { SectionCard } from "../../components/section-card";
 import { StatusPill } from "../../components/status-pill";
 import { canWritePointKeys } from "../../lib/admin-access";
+import { apiErrorMessage } from "../../lib/api-error-message";
 import type { AuthUser } from "../../stores/auth-store";
 
 type PointKeysAdminPageProps = { user: AuthUser };
@@ -110,7 +111,7 @@ export function PointKeysAdminPage({ user }: PointKeysAdminPageProps) {
       setError(null);
       await queryClient.invalidateQueries({ queryKey: ["admin", "point-keys"] });
     },
-    onError: (err: Error) => setError(err.message),
+    onError: (err: unknown) => setError(apiErrorMessage(err)),
   });
 
   const toggleMutation = useMutation({
