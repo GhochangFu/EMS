@@ -3,6 +3,13 @@ import { afterEach, describe, it, vi } from "vitest";
 import { cleanup } from "@testing-library/react";
 
 import {
+  aLateReasonStillRenders,
+  aLocalSignInAttemptClearsTheReason,
+  anOidcSignInAttemptClearsTheReason,
+  aPlain401ShowsNothing,
+  aSignInConsumesTheReason,
+  showsTheDeactivatedSentence,
+  showsTheDeactivatedSentenceInOidcMode,
   accentsTheDescriptorCore,
   drawsNoImgElement,
   navigatesToTheReturnPath,
@@ -74,6 +81,7 @@ describe("F3.77 the login page after a wall session ends", () => {
     window.sessionStorage.clear();
     window.localStorage.clear();
     useAuthStore.getState().clearSession();
+    useAuthStore.setState({ authFailureReason: null });
   });
 
   it("L9 shows the session-ended banner while a return path is stored", () => {
@@ -98,5 +106,43 @@ describe("F3.77 the login page after a wall session ends", () => {
 
   it("L14 a sign-in with no return path lands on / with replace", async () => {
     await navigatesToTheRootWithoutAReturnPath();
+  });
+});
+
+describe("F4.203 the login page after a deactivated 401", () => {
+  afterEach(() => {
+    window.sessionStorage.clear();
+    window.localStorage.clear();
+    useAuthStore.getState().clearSession();
+    // `clearSession` keeps the reason by design; the next case must start without it.
+    useAuthStore.setState({ authFailureReason: null });
+  });
+
+  it("L15 shows the deactivated sentence once", () => {
+    showsTheDeactivatedSentence();
+  });
+
+  it("L16 shows it in OIDC mode too", () => {
+    showsTheDeactivatedSentenceInOidcMode();
+  });
+
+  it("L17 a plain 401 shows nothing", () => {
+    aPlain401ShowsNothing();
+  });
+
+  it("L18 a sign-in consumes the reason", async () => {
+    await aSignInConsumesTheReason();
+  });
+
+  it("L19 a reason that lands after mount still renders", async () => {
+    await aLateReasonStillRenders();
+  });
+
+  it("L20 starting a local sign-in clears the reason", async () => {
+    await aLocalSignInAttemptClearsTheReason();
+  });
+
+  it("L21 starting a Keycloak sign-in clears the reason", async () => {
+    await anOidcSignInAttemptClearsTheReason();
   });
 });

@@ -232,6 +232,26 @@ export async function assertADisabledRowIsRefused(): Promise<void> {
   });
 }
 
+/**
+ * `F4.203` — the deactivated refusal is a 401 whose body carries the machine
+ * code the web reads to say why the session ended.
+ */
+export async function assertTheDeactivatedRefusalCarriesTheCode(): Promise<void> {
+  await withOidc(async () => {
+    const fake = authFake([{ ...ROW, disabledAt: new Date("2026-10-01T00:00:00Z") }]);
+    const refusal: unknown = await guardOver(fake)
+      .verifyToken(oidcToken())
+      .then(
+        () => null,
+        (err: unknown) => err,
+      );
+    expect(refusal).toBeInstanceOf(UnauthorizedException);
+    const exception = refusal as UnauthorizedException;
+    expect(exception.getStatus()).toBe(401);
+    expect((exception.getResponse() as { code?: unknown }).code).toBe("account_deactivated");
+  });
+}
+
 export async function assertAForgedTokenNeverReachesTheDb(): Promise<void> {
   await withOidc(async () => {
     const fake = authFake([{ ...ROW, disabledAt: new Date("2026-10-01T00:00:00Z") }]);

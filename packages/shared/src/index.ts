@@ -132,6 +132,10 @@ export type AccessLocation = z.infer<typeof Au.accessLocationSchema>;
 export type AccessAssetGroup = z.infer<typeof Au.accessAssetGroupSchema>;
 export type AccessibleScope = z.infer<typeof Au.accessibleScopeSchema>;
 export type CurrentUserResponse = z.infer<typeof Au.currentUserResponseSchema>;
+/** `F4.203` — a refusal reason the user can act on. */
+export type AuthFailureCode = z.infer<typeof Au.authFailureCodeSchema>;
+/** `F4.203` — the 401 body `JwtAuthGuard` sends. */
+export type UnauthorizedEnvelope = z.infer<typeof Au.unauthorizedEnvelopeSchema>;
 
 // ---------------------------------------------------------------------------
 // Dashboard, telemetry and map

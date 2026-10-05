@@ -107,6 +107,27 @@ export async function assertADisabledRowIsTheGeneric401BeforeBcrypt(): Promise<v
   });
 }
 
+/**
+ * `F4.203` / ADR 0089 decision 8 — the local login refusal for a deactivated
+ * account carries no `code`: only the guard's 401 for a signed-in session says
+ * why. Login must not tell a caller which accounts exist and are deactivated.
+ */
+export async function assertADisabledRowsLoginRefusalCarriesNoCode(): Promise<void> {
+  const hash = await bcrypt.hash("right-password", 4);
+  await withLocalLogin(async () => {
+    const row = { ...ROW, passwordHash: hash, disabledAt: new Date("2026-10-01T00:00:00Z") };
+    const refusal: unknown = await new AuthService(fakeDb(row), jwt)
+      .login({ email: ROW.email, password: "right-password" })
+      .then(
+        () => null,
+        (err: unknown) => err,
+      );
+    expect(refusal, "control: the login was refused").toBeInstanceOf(UnauthorizedException);
+    const body = (refusal as UnauthorizedException).getResponse();
+    expect(typeof body === "object" && body !== null && "code" in body).toBe(false);
+  });
+}
+
 /** Positive control: the same row, not disabled, signs in — the hash and password match. */
 export async function assertAnEnabledRowWithTheRightPasswordSignsIn(): Promise<void> {
   const hash = await bcrypt.hash("right-password", 4);

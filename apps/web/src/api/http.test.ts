@@ -2,6 +2,15 @@
 import { describe, it } from "vitest";
 
 import {
+  runALaterPlain401DoesNotEraseTheReason,
+  runAnUnclonableResponseStillClearsTheSession,
+  runANonJsonBodyIsIgnored,
+  runAReadBodyStillClearsTheSession,
+  runDeactivated401RecordsTheReason,
+  runPlain401RecordsNoReason,
+  runSetSessionConsumesTheReason,
+  runTheCallerCanStillReadTheBody,
+  runTheStoreKeepsTheFirstReason,
   runAuthFailureTests,
   runLater401KeepsReturnPathTest,
   runNoReturnPathOffWallTest,
@@ -38,5 +47,43 @@ describe("api/http", () => {
 
   it("adds the bearer token without discarding the caller's headers", () => {
     runWithAuthTests();
+  });
+});
+
+describe("F4.203 api/http keeps the first auth-failure reason", () => {
+  it("R1 a deactivated 401 records account_deactivated", async () => {
+    await runDeactivated401RecordsTheReason();
+  });
+
+  it("R2 a plain 401 records no reason", async () => {
+    await runPlain401RecordsNoReason();
+  });
+
+  it("R3 a later plain 401 does not erase the reason", async () => {
+    await runALaterPlain401DoesNotEraseTheReason();
+  });
+
+  it("R3b the store keeps the first reason", () => {
+    runTheStoreKeepsTheFirstReason();
+  });
+
+  it("R4 a non-JSON 401 body is ignored", async () => {
+    await runANonJsonBodyIsIgnored();
+  });
+
+  it("R5 the caller can still read the body", async () => {
+    await runTheCallerCanStillReadTheBody();
+  });
+
+  it("R6 a 401 with a used body still clears the session", async () => {
+    await runAReadBodyStillClearsTheSession();
+  });
+
+  it("R8 a 401 whose clone throws still clears the session", async () => {
+    await runAnUnclonableResponseStillClearsTheSession();
+  });
+
+  it("R7 setSession consumes the reason", async () => {
+    await runSetSessionConsumesTheReason();
   });
 });
