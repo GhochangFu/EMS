@@ -27,4 +27,12 @@ describe("F3.78 — translateConstraintErrors (shared by channels, grants, asset
   it("a successful run returns its value", async () => {
     await spec.assertASuccessfulRunReturnsItsValue();
   });
+
+  it("F4.211 — constraintOf reads the driver's constraint field", () => {
+    spec.assertConstraintOfReadsTheDriverField();
+  });
+
+  it("F4.211 — constraintOf is undefined when the error carries none", () => {
+    spec.assertConstraintOfIsUndefinedWithoutOne();
+  });
 });
