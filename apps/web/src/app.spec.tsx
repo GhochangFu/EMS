@@ -170,3 +170,70 @@ export async function aRefusedMeOnAWallUrlKeepsTheReturnPath(): Promise<void> {
   expect(fetchCurrentUser, "control: the /me effect ran").toHaveBeenCalled();
   expect(sessionStorage.getItem(RETURN_PATH_KEY)).toBe(WALL_URL);
 }
+
+export const DEACTIVATED_SENTENCE = "Your account is deactivated. Ask an administrator.";
+
+const DEACTIVATED_401 = {
+  statusCode: 401,
+  message: "This account is deactivated",
+  error: "Unauthorized",
+  code: "account_deactivated",
+};
+
+/**
+ * `F4.203` (OQ2) — renders `App` on `/login` with a stored token and no scope, so the `/me`
+ * effect runs, and answers `/me` with a 401 carrying `body`. The real `fetchCurrentUser` runs: a
+ * spy on it would replace the read this spec pins. Returns the `fetch` stub.
+ */
+function renderWithARefusedMe(body: unknown): ReturnType<typeof vi.fn> {
+  const fetchStub = vi.fn((input: RequestInfo | URL) =>
+    Promise.resolve(
+      String(input).includes("/api/v1/auth/me")
+        ? new Response(JSON.stringify(body), {
+            status: 401,
+            headers: { "Content-Type": "application/json" },
+          })
+        : new Response("{}", { status: 200 }),
+    ),
+  );
+  vi.stubGlobal("fetch", fetchStub);
+  useAuthStore.setState({ accessToken: unexpiredAccessToken(), oidcIdToken: null, user: USER, scope: null });
+  render(
+    <QueryClientProvider client={new QueryClient()}>
+      <MemoryRouter initialEntries={["/login"]}>
+        <App />
+      </MemoryRouter>
+    </QueryClientProvider>,
+  );
+  return fetchStub;
+}
+
+/** D1 — a deactivated `/me` 401 on load records the reason before the session is cleared. */
+export async function aDeactivatedMeOnLoadRecordsTheReason(): Promise<void> {
+  const fetchStub = renderWithARefusedMe(DEACTIVATED_401);
+  await waitFor(() => {
+    expect(useAuthStore.getState().accessToken).toBeNull();
+  });
+  expect(
+    fetchStub.mock.calls.some(([input]) => String(input).includes("/api/v1/auth/me")),
+    "control: the /me effect fetched /me",
+  ).toBe(true);
+  expect(useAuthStore.getState().authFailureReason).toBe("account_deactivated");
+}
+
+/** D2 — and the sign-in page then shows the deactivated sentence. */
+export async function aDeactivatedMeOnLoadShowsTheSentence(): Promise<void> {
+  renderWithARefusedMe(DEACTIVATED_401);
+  expect(await screen.findByText(DEACTIVATED_SENTENCE)).toBeInTheDocument();
+}
+
+/** D3 — a plain `/me` 401 shows nothing; the card heading is the positive control. */
+export async function aPlainMeOnLoadShowsNothing(): Promise<void> {
+  renderWithARefusedMe({ statusCode: 401, message: "Invalid token", error: "Unauthorized" });
+  await waitFor(() => {
+    expect(useAuthStore.getState().accessToken).toBeNull();
+  });
+  expect(screen.getByRole("heading", { level: 2, name: "Sign in to IONSiTE NEXUS" })).toBeInTheDocument();
+  expect(useAuthStore.getState().authFailureReason).toBeNull();
+  expect(screen.queryByText(DEACTIVATED_SENTENCE)).toBeNull();
+}

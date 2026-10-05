@@ -4,6 +4,7 @@ import { cleanup } from "@testing-library/react";
 
 import { useAuthStore } from "./stores/auth-store";
 import {
+  aDeactivatedMeOnLoadRecordsTheReason,
   aRefusedMeOnAWallUrlKeepsTheReturnPath,
   anExpiredTokenOnAWallUrlKeepsTheReturnPath,
   aViewerReachesTheAttributionsPage,
@@ -50,5 +51,21 @@ describe("F3.77 D10 App session effects keep a wall URL", () => {
 
   it("R2 keeps the wall URL as the return path when /me refuses the token", async () => {
     await aRefusedMeOnAWallUrlKeepsTheReturnPath();
+  });
+});
+
+describe("F4.203 a deactivated /me on load (OQ2)", () => {
+  afterEach(() => {
+    cleanup();
+    vi.restoreAllMocks();
+    vi.unstubAllGlobals();
+    useAuthStore.getState().clearSession();
+    // `clearSession` keeps the reason by design; the next case must start without it.
+    useAuthStore.setState({ authFailureReason: null });
+    localStorage.clear();
+  });
+
+  it("D1 a deactivated /me 401 records the reason", async () => {
+    await aDeactivatedMeOnLoadRecordsTheReason();
   });
 });

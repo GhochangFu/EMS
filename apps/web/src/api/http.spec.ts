@@ -1,3 +1,7 @@
+import { vi } from "vitest";
+
+import type { AuthFailureCode } from "@bms/shared";
+
 import { clearSessionOnAuthFailure, withAuth } from "./http";
 import { RETURN_PATH_KEY } from "../lib/return-path";
 import { useAuthStore } from "../stores/auth-store";
@@ -184,4 +188,111 @@ export function runWithAuthTests(): void {
     anonymous.get("Authorization") === null,
     "a signed-out request must send no Authorization header at all",
   );
+}
+
+const DEACTIVATED_BODY = {
+  statusCode: 401,
+  message: "This account is deactivated",
+  error: "Unauthorized",
+  code: "account_deactivated",
+};
+const PLAIN_BODY = { statusCode: 401, message: "Invalid token", error: "Unauthorized" };
+
+function json401(body: unknown): Response {
+  return new Response(JSON.stringify(body), {
+    status: 401,
+    headers: { "Content-Type": "application/json" },
+  });
+}
+
+/** Lets the clone's async body read settle; long enough that a wrong write lands first. */
+async function settle(): Promise<void> {
+  await new Promise((resolve) => setTimeout(resolve, 25));
+}
+
+function reason(): string | null {
+  return useAuthStore.getState().authFailureReason;
+}
+
+/** `F4.203` R1 — a deactivated 401 records its code, and the session is still cleared. */
+export async function runDeactivated401RecordsTheReason(): Promise<void> {
+  signIn();
+  clearSessionOnAuthFailure(json401(DEACTIVATED_BODY));
+  assert(useAuthStore.getState().accessToken === null, "a deactivated 401 must clear the session");
+  await vi.waitFor(() => {
+    assert(reason() === "account_deactivated", `expected account_deactivated, got ${String(reason())}`);
+  });
+}
+
+/** `F4.203` R2 — a plain 401 records nothing; the cleared session is the positive control. */
+export async function runPlain401RecordsNoReason(): Promise<void> {
+  signIn();
+  clearSessionOnAuthFailure(json401(PLAIN_BODY));
+  assert(useAuthStore.getState().accessToken === null, "control: a plain 401 must clear the session");
+  await settle();
+  assert(reason() === null, `a plain 401 must record no reason, got ${String(reason())}`);
+}
+
+/** `F4.203` R3 — with several 401s in flight the first reason wins; a later plain one keeps it. */
+export async function runALaterPlain401KeepsTheFirstReason(): Promise<void> {
+  signIn();
+  clearSessionOnAuthFailure(json401(DEACTIVATED_BODY));
+  await vi.waitFor(() => {
+    assert(reason() === "account_deactivated", "control: the first 401 recorded its reason");
+  });
+  clearSessionOnAuthFailure(json401(PLAIN_BODY));
+  await settle();
+  assert(
+    reason() === "account_deactivated",
+    `a later plain 401 must keep the first reason, got ${String(reason())}`,
+  );
+}
+
+/** `F4.203` R3b — the store's own rule: a second reason never replaces the first. */
+export function runTheStoreKeepsTheFirstReason(): void {
+  signIn();
+  useAuthStore.getState().rememberAuthFailure("account_deactivated");
+  useAuthStore.getState().rememberAuthFailure("a_later_code" as AuthFailureCode);
+  assert(reason() === "account_deactivated", `the first reason must win, got ${String(reason())}`);
+}
+
+/** `F4.203` R4 — a 401 whose body is not JSON records nothing and still clears the session. */
+export async function runANonJsonBodyIsIgnored(): Promise<void> {
+  signIn();
+  clearSessionOnAuthFailure(new Response("<html>gateway</html>", { status: 401 }));
+  assert(useAuthStore.getState().accessToken === null, "control: a non-JSON 401 must clear the session");
+  await settle();
+  assert(reason() === null, "a non-JSON 401 must record no reason");
+}
+
+/** `F4.203` R5 — the reason is read from a clone: the caller can still read the body after. */
+export async function runTheCallerCanStillReadTheBody(): Promise<void> {
+  signIn();
+  const res = json401(DEACTIVATED_BODY);
+  clearSessionOnAuthFailure(res);
+  const body = (await res.json()) as { code?: unknown };
+  assert(body.code === "account_deactivated", "the caller must still read the whole body");
+  await vi.waitFor(() => {
+    assert(reason() === "account_deactivated", "and the reason is recorded as well");
+  });
+}
+
+/** `F4.203` R6 — a caller that read the body first still gets its session cleared (fail closed). */
+export async function runAReadBodyStillClearsTheSession(): Promise<void> {
+  signIn();
+  const res = json401(DEACTIVATED_BODY);
+  await res.text();
+  clearSessionOnAuthFailure(res);
+  assert(useAuthStore.getState().accessToken === null, "a 401 with a used body must still clear the session");
+}
+
+/** `F4.203` R7 — a new session consumes the reason. */
+export async function runSetSessionConsumesTheReason(): Promise<void> {
+  signIn();
+  clearSessionOnAuthFailure(json401(DEACTIVATED_BODY));
+  await vi.waitFor(() => {
+    assert(reason() === "account_deactivated", "control: the reason was recorded");
+  });
+  signIn();
+  assert(reason() === null, "setSession must consume the reason");
 }

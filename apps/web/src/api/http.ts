@@ -1,3 +1,5 @@
+import { unauthorizedEnvelopeSchema } from "@bms/shared/contracts";
+
 import { rememberWallReturnPath } from "../lib/return-path";
 import { useAuthStore } from "../stores/auth-store";
 
@@ -69,9 +71,35 @@ export function withAuth(init: RequestInit = {}): RequestInit {
  */
 export function clearSessionOnAuthFailure(res: Response): void {
   if (res.status === 401) {
+    // `F4.203` — keep the reason the 401 gives. Read from a clone, so every
+    // caller can still read the body after this call (none reads it before —
+    // re-verified across the 53 call sites). A used body cannot be cloned; it
+    // skips the reason, never the clear.
+    if (!res.bodyUsed) {
+      void recordAuthFailureReason(res.clone());
+    }
     if (typeof window !== "undefined") {
       rememberWallReturnPath(window.location);
     }
     useAuthStore.getState().clearSession();
   }
+}
+
+/**
+ * `F4.203` — reads a 401 body and, when it is the guard's envelope with a
+ * `code`, records the code as the reason the session ended (first wins, in the
+ * store). A plain 401, a non-JSON body or a failed read records nothing and
+ * never rejects. Consumes `res`'s body: pass a clone, or a response nobody
+ * reads after.
+ */
+export function recordAuthFailureReason(res: Response): Promise<void> {
+  return res
+    .json()
+    .then((body: unknown) => {
+      const parsed = unauthorizedEnvelopeSchema.safeParse(body);
+      if (parsed.success && parsed.data.code) {
+        useAuthStore.getState().rememberAuthFailure(parsed.data.code);
+      }
+    })
+    .catch(() => undefined);
 }
