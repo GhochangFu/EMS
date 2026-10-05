@@ -1,6 +1,7 @@
 import { describe, it } from "vitest";
 
 import {
+  assertListStockLiftsTheFormulaKeys,
   assertS1BothReadsFilterByTheOrganization,
   assertS1NoPublishedVersionIssuesOneSelect,
   assertS1PublishedVersionsCarryPointsAndDraftsNone,
@@ -26,6 +27,10 @@ describe("OnboardingTemplateCatalogService (F3.22, ADR 0091)", () => {
 
   it("S2 projects the stock catalog with no version", () => {
     assertS2TheStockProjectionHasNoVersion();
+  });
+
+  it("F4.205 a stock ref lifts the keys its cross-asset formulas name", () => {
+    assertListStockLiftsTheFormulaKeys();
   });
 
   it("reads only the stock when there is no organization", async () => {

@@ -55,6 +55,14 @@ export type TemplateRef = {
   readonly dashboardCount: number;
   /** The `dashboard_widgets` rows one asset costs (`dashboardWidgetRowsFor`) — the bound's unit, not the one the proposal prints. */
   readonly dashboardWidgetCount: number;
+  /**
+   * `F4.205` — the point keys a cross-asset derived formula names inside its
+   * text (`crossRefPointKeys`), which the stock import's `assertPointKeysActive`
+   * checks beside `points`. `[]` for an organization version (its publish
+   * already ran that check) and for an authored draft entry (its points carry
+   * no formula). Required, so every builder states it.
+   */
+  readonly formulaPointKeys: readonly string[];
 };
 
 /** A stock entry's ref, with the catalog release it would be imported from. */
@@ -152,6 +160,7 @@ export function draftTemplateRef(entry: OnboardingDraftTemplate, ctx: ValidateTe
     alarmCount: 0,
     dashboardCount: 0,
     dashboardWidgetCount: 0,
+    formulaPointKeys: [],
   };
 }
 

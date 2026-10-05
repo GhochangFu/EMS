@@ -162,6 +162,35 @@ export function assertS2TheStockProjectionHasNoVersion(): void {
   }
 }
 
+/**
+ * `F4.205` — a stock ref lifts the keys its cross-asset formulas name
+ * (`crossRefPointKeys`), so validation can check them against the catalog as
+ * the import's `assertPointKeysActive` will. The point is shaped like
+ * `electrical-feeder.ts`'s `site_kw = sum({kw} @site)`.
+ */
+export function assertListStockLiftsTheFormulaKeys(): void {
+  const entry = {
+    ...STOCK_ASSET_TEMPLATE_CATALOG[0]!,
+    points: [
+      {
+        pointKey: "site_kw",
+        kind: "derived",
+        required: true,
+        sourceDataKeyPattern: null,
+        formula: "sum({kw} @site)",
+        formulaDialect: "bms-calc-v2",
+        calcTrigger: "scheduled",
+        calcIntervalSeconds: 60,
+      },
+    ],
+  };
+  const stock = { list: () => ({ items: [entry] }) } as never;
+  const { db } = fakeDb([], []);
+  const [ref] = new OnboardingTemplateCatalogService(db, stock).listStock();
+  const got = JSON.stringify(ref?.formulaPointKeys);
+  assert(got === JSON.stringify(["kw"]), `the stock ref lifts the formula's key, got ${got}`);
+}
+
 /** The context: no organization reads no organization templates and still lists the stock. */
 export async function assertTheContextWithNoOrganizationReadsOnlyTheStock(): Promise<void> {
   const entries = STOCK_ASSET_TEMPLATE_CATALOG.slice(0, 1);

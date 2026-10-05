@@ -27,7 +27,7 @@ function point(pointKey: string, pattern: string | null = null): TemplatePointRe
 }
 
 function ref(code: string, version: number | null, status: TemplateRef["status"], points: TemplatePointRef[], name = code): TemplateRef {
-  return { code, version, name, domain: "electrical", status, points, alarmCount: 0, dashboardCount: 0, dashboardWidgetCount: 0 };
+  return { code, version, name, domain: "electrical", status, points, alarmCount: 0, dashboardCount: 0, dashboardWidgetCount: 0, formulaPointKeys: [] };
 }
 
 function context(templates: ValidateTemplateContext): ToolContext {

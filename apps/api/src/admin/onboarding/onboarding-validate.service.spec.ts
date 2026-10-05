@@ -211,6 +211,7 @@ const TEMPLATES: ValidateTemplateContext = {
       alarmCount: 0,
       dashboardCount: 0,
       dashboardWidgetCount: 0,
+      formulaPointKeys: [],
     },
     {
       code: "ORG-T",
@@ -222,6 +223,7 @@ const TEMPLATES: ValidateTemplateContext = {
       alarmCount: 0,
       dashboardCount: 0,
       dashboardWidgetCount: 0,
+      formulaPointKeys: [],
     },
   ],
   stock: [
@@ -239,6 +241,7 @@ const TEMPLATES: ValidateTemplateContext = {
       alarmCount: 0,
       dashboardCount: 0,
       dashboardWidgetCount: 0,
+      formulaPointKeys: [],
     },
   ],
   // F4.196: `flow` and `head` (V6) are the authored PUMP template's keys, active; `retired` is a key the catalog holds inactive.
