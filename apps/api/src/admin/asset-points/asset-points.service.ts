@@ -15,6 +15,10 @@ import type { AdminAssetPointDto, JwtPayload, PointMetadataFields, QualityPolicy
 import { AccessControlService } from "../../auth/access-control.service";
 import { FLEET_DRIZZLE, TENANT_DRIZZLE } from "../../database/database.tokens";
 import { withTenant, type BmsTx } from "../../database/tenant-context";
+import {
+  constraintOf,
+  translateConstraintErrors,
+} from "../../database/translate-constraint-errors";
 import { MasterDataAuditService } from "../master-data-audit.service";
 import { mapAssetPointRow, type AssetPointRow } from "./asset-point-row";
 import type {
@@ -177,7 +181,7 @@ export class AssetPointsAdminService {
     // own gateway, and with neither the honest record is `unmapped`.
     const sourceRtuId = body.rtuId ?? ownerAsset.rtuId ?? null;
 
-    const created = await withTenant(this.tenantDb, organizationId, async (tx) => {
+    const insertRow = () => withTenant(this.tenantDb, organizationId, async (tx) => {
       if (body.rtuId) {
         await this.assertRtuLocation(body.rtuId, ownerAsset.locationId, tx);
       }
@@ -216,6 +220,10 @@ export class AssetPointsAdminService {
         tx,
       );
       return row;
+    });
+    // F4.211 — a taken point key or source key is a 409 that names it, not a 500.
+    const created = await translateConstraintErrors(insertRow, {
+      onUnique: (err) => assetPointConflict(err, body.pointKey, body.sourceDataKey),
     });
 
     return this.fetchRow(created.id);
@@ -307,13 +315,14 @@ export class AssetPointsAdminService {
       throw new BadRequestException(problems.join(" "));
     }
 
-    await withTenant(this.tenantDb, organizationId, async (tx) => {
+    const nextSourceDataKey = body.sourceDataKey ?? existing.sourceDataKey;
+    const updateRow = () => withTenant(this.tenantDb, organizationId, async (tx) => {
       const wiring = await this.resolveUpdatedWiring(existing, body, tx);
       await tx
         .update(assetPoints)
         .set({
           pointKey: nextPointKey,
-          sourceDataKey: body.sourceDataKey ?? existing.sourceDataKey,
+          sourceDataKey: nextSourceDataKey,
           sensorCode: body.sensorCode !== undefined ? body.sensorCode : existing.sensorCode,
           unit: body.unit !== undefined ? body.unit : (existing.unit ?? catalog.unit),
           rtuId: wiring.rtuId,
@@ -338,6 +347,10 @@ export class AssetPointsAdminService {
         },
         tx,
       );
+    });
+    // F4.211 — a taken point key or source key is a 409 that names it, not a 500.
+    await translateConstraintErrors(updateRow, {
+      onUnique: (err) => assetPointConflict(err, nextPointKey, nextSourceDataKey),
     });
     return this.fetchRow(id);
   }
@@ -760,4 +773,22 @@ function statedBulkColumns(
   if (patch.unit !== undefined) stated.unit = patch.unit;
   if (patch.active !== undefined) stated.active = patch.active;
   return stated;
+}
+
+/**
+ * `F4.211` — which of the two unique keys an asset-point write took: the
+ * source key the asset's telemetry is read by (`asset_points_asset_source_key_idx`),
+ * or the point key itself (`asset_points_asset_id_point_key_unique`).
+ */
+function assetPointConflict(
+  err: unknown,
+  pointKey: string,
+  sourceDataKey: string | null,
+): ConflictException {
+  if (constraintOf(err) === "asset_points_asset_source_key_idx") {
+    return new ConflictException(
+      `Source key "${sourceDataKey}" is already used by another point on this asset`,
+    );
+  }
+  return new ConflictException(`Point "${pointKey}" is already mapped on this asset`);
 }

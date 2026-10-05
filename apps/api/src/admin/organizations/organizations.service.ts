@@ -13,6 +13,7 @@ import type { AdminOrganizationDto, AdminOrganizationSummaryDto, JwtPayload } fr
 
 import { AccessControlService } from "../../auth/access-control.service";
 import { FLEET_DRIZZLE, TENANT_DRIZZLE } from "../../database/database.tokens";
+import { translateConstraintErrors } from "../../database/translate-constraint-errors";
 import { MasterDataAuditService } from "../master-data-audit.service";
 import type {
   CreateOrganizationBody,
@@ -98,16 +99,24 @@ export class OrganizationsAdminService {
     const user = await this.accessControl.requireMasterDataUser(jwt);
     this.accessControl.assertAdminRole(user.role);
 
-    const [created] = await this.tenantDb
-      .insert(organizations)
-      .values({
-        code: body.code,
-        name: body.name,
-        currency: body.currency,
-        meta: body.meta ?? null,
-        active: true,
-      })
-      .returning();
+    // F4.211 — a taken code is a 409 that names it, not pg's 23505 as a 500.
+    const [created] = await translateConstraintErrors(
+      () =>
+        this.tenantDb
+          .insert(organizations)
+          .values({
+            code: body.code,
+            name: body.name,
+            currency: body.currency,
+            meta: body.meta ?? null,
+            active: true,
+          })
+          .returning(),
+      {
+        onUnique: () =>
+          new ConflictException(`An organization with code "${body.code}" already exists`),
+      },
+    );
 
     await this.audit.write(
       {

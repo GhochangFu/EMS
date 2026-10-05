@@ -2,6 +2,7 @@ import { BadRequestException, ConflictException } from "@nestjs/common";
 import { expect } from "vitest";
 
 import {
+  constraintOf,
   FOREIGN_KEY_VIOLATION,
   translateConstraintErrors,
   UNIQUE_VIOLATION,
@@ -91,4 +92,14 @@ export async function assertAnUnhandledForeignKeyViolationIsRethrown(): Promise<
 
 export async function assertASuccessfulRunReturnsItsValue(): Promise<void> {
   expect(await translateConstraintErrors(async () => 42, handlers)).toBe(42);
+}
+
+/** `F4.211` — `constraintOf` reads the driver's `constraint` field, so a caller can pick the sentence. */
+export function assertConstraintOfReadsTheDriverField(): void {
+  expect(constraintOf({ code: UNIQUE_VIOLATION, constraint: "x" })).toBe("x");
+}
+
+/** `F4.211` — an error without a `constraint` string is `undefined`, never a guess. */
+export function assertConstraintOfIsUndefinedWithoutOne(): void {
+  expect(constraintOf({ code: UNIQUE_VIOLATION })).toBeUndefined();
 }

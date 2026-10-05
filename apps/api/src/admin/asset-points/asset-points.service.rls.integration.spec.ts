@@ -1,3 +1,4 @@
+import { ConflictException } from "@nestjs/common";
 import { expect } from "vitest";
 import pg from "pg";
 
@@ -38,6 +39,11 @@ export type RlsFixtures = {
   templatedAssetId: string;
   /** A derived template point on that asset, for the override path. */
   derivedKey: string;
+  /**
+   * `F4.211` — two active catalog keys no other case maps onto
+   * `mappingAssetId`, so the duplicate-key cases own every row they write.
+   */
+  freeKeys: readonly [string, string];
 };
 
 async function orgOfPoint(ownerPool: pg.Pool, assetPointId: string): Promise<string | null> {
@@ -114,4 +120,91 @@ export async function assertOverrideEagerCreateStampsOrgUnderRealRls(
   ).rows;
   expect(row?.source_kind).toBe("computed");
   expect(row?.organization_id).toBe(organizationId);
+}
+
+function expectConflict(err: unknown, expected: string): void {
+  expect(
+    err instanceof ConflictException && err.message === expected,
+    `F4.211: expected ConflictException "${expected}"; got ` +
+      `${(err as Error | null)?.constructor?.name} (code ${(err as { code?: unknown } | null)?.code}, ` +
+      `constraint ${(err as { constraint?: unknown } | null)?.constraint}) "${(err as Error | null)?.message}"`,
+  ).toBe(true);
+}
+
+/** Deletes the rows a duplicate-key case wrote on `mappingAssetId`, audit rows first. */
+async function removeMappedKeys(ctx: RlsFixtures, keys: readonly string[]): Promise<void> {
+  await ctx.ownerPool.query(
+    `DELETE FROM bms.audit_log WHERE entity_id IN
+       (SELECT id FROM bms.asset_points WHERE asset_id = $1 AND point_key = ANY($2))`,
+    [ctx.mappingAssetId, keys],
+  );
+  await ctx.ownerPool.query(
+    "DELETE FROM bms.asset_points WHERE asset_id = $1 AND point_key = ANY($2)",
+    [ctx.mappingAssetId, keys],
+  );
+}
+
+/**
+ * `F4.211` — a second mapping of one key onto one asset is a 409 naming the
+ * key (`asset_points_asset_id_point_key_unique`), not pg's `23505` as a 500.
+ * The source keys differ, so only the point-key index can fire.
+ */
+export async function assertCreateADuplicatePointKeyIsA409(
+  ctx: RlsFixtures,
+  jwt: JwtPayload,
+): Promise<void> {
+  const [key] = ctx.freeKeys;
+  try {
+    await ctx.pointsSvc.create(jwt, {
+      assetId: ctx.mappingAssetId,
+      pointKey: key,
+      sourceDataKey: `F4211/${key}/A`,
+    });
+    const err = await ctx.pointsSvc
+      .create(jwt, { assetId: ctx.mappingAssetId, pointKey: key, sourceDataKey: `F4211/${key}/B` })
+      .then(
+        () => null,
+        (e: unknown) => e,
+      );
+    expectConflict(err, `Point "${key}" is already mapped on this asset`);
+  } finally {
+    await removeMappedKeys(ctx, [key]);
+  }
+}
+
+/**
+ * `F4.211` — an update to a source key another point on the asset reads is a
+ * 409 naming the source key (`asset_points_asset_source_key_idx`). The point
+ * keys differ, so only the source-key index can fire; with the create case
+ * above, a swapped constraint mapping reddens both.
+ */
+export async function assertUpdateToATakenSourceKeyIsA409(
+  ctx: RlsFixtures,
+  jwt: JwtPayload,
+): Promise<void> {
+  const [firstKey, secondKey] = ctx.freeKeys;
+  try {
+    const first = await ctx.pointsSvc.create(jwt, {
+      assetId: ctx.mappingAssetId,
+      pointKey: firstKey,
+      sourceDataKey: `F4211/${firstKey}/SRC`,
+    });
+    const second = await ctx.pointsSvc.create(jwt, {
+      assetId: ctx.mappingAssetId,
+      pointKey: secondKey,
+      sourceDataKey: `F4211/${secondKey}/SRC`,
+    });
+    const err = await ctx.pointsSvc
+      .update(jwt, second.id, { sourceDataKey: first.sourceDataKey })
+      .then(
+        () => null,
+        (e: unknown) => e,
+      );
+    expectConflict(
+      err,
+      `Source key "${first.sourceDataKey}" is already used by another point on this asset`,
+    );
+  } finally {
+    await removeMappedKeys(ctx, [firstKey, secondKey]);
+  }
 }

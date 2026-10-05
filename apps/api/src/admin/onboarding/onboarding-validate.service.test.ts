@@ -1,6 +1,11 @@
 import { describe, it } from "vitest";
 
 import {
+  assertAStockDraftWithAnInactiveKeyIsNotReady,
+  assertAStockFormulaKeyMissingFromTheCatalogIsAnError,
+  assertAStockKeyInactiveInTheCatalogIsAnError,
+  assertAStockKeyNamedTwiceIsReportedOnce,
+  assertAStockKeyOnlyTheDraftDeclaresIsValid,
   assertInactiveLocationTypeIsAnErrorNamingTheCodes,
   assertInactiveLocationTypeIsNotReadyToCommit,
   assertInactiveLocationTypeMessageCarriesTheMoreTail,
@@ -232,5 +237,25 @@ describe("OnboardingValidateService — templates and templated assets (F3.22, A
 
   it("F4.196 names the template point a PATCH left unresolved", () => {
     assertADraftWhosePatchDroppedATemplateKeyNamesThePoint();
+  });
+
+  it("F4.205 refuses a stock point key the catalog holds inactive", () => {
+    assertAStockKeyInactiveInTheCatalogIsAnError();
+  });
+
+  it("F4.205 refuses a stock formula key missing from the catalog", () => {
+    assertAStockFormulaKeyMissingFromTheCatalogIsAnError();
+  });
+
+  it("F4.205 accepts a stock key only the draft declares", () => {
+    assertAStockKeyOnlyTheDraftDeclaresIsValid();
+  });
+
+  it("F4.205 reports a key that is both a point and a formula key once", () => {
+    assertAStockKeyNamedTwiceIsReportedOnce();
+  });
+
+  it("F4.205 keeps a draft whose stock entry needs an inactive key from ready", () => {
+    assertAStockDraftWithAnInactiveKeyIsNotReady();
   });
 });

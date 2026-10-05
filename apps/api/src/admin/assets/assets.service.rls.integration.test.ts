@@ -13,8 +13,10 @@ import { AssetsAdminService } from "./assets.service";
 import {
   assertAssetWriteLifecycleSurvivesRealRls,
   assertCreateStoresRatingAndTripCause,
+  assertCreateWithADuplicateCodeIsA409,
   assertRefusesCrossOrgRelocation,
   assertUpdateKeepsOmittedAndClearsNull,
+  assertUpdateToATakenCodeIsA409,
 } from "./assets.service.rls.integration.spec";
 import { jwtFor, primeSeededSubjects } from "../../testing/seeded-subjects";
 
@@ -167,6 +169,22 @@ describe.skipIf(!connectionString)("E7.1b — AssetsAdminService under real RLS"
 
   it("F3.74: an update keeps an omitted rating/tripCause and clears an explicit null", async () => {
     await assertUpdateKeepsOmittedAndClearsNull(
+      { svc, ownerPool, organizationId, locationId, domain },
+      jwt,
+      (id) => createdIds.push(id),
+    );
+  });
+
+  it("F4.211 — a create with a code another asset holds is a 409 naming the code", async () => {
+    await assertCreateWithADuplicateCodeIsA409(
+      { svc, ownerPool, organizationId, locationId, domain },
+      jwt,
+      (id) => createdIds.push(id),
+    );
+  });
+
+  it("F4.211 — an update to a code another asset holds is a 409 naming the code", async () => {
+    await assertUpdateToATakenCodeIsA409(
       { svc, ownerPool, organizationId, locationId, domain },
       jwt,
       (id) => createdIds.push(id),

@@ -14,6 +14,18 @@ export type ConstraintErrorHandlers = {
 };
 
 /**
+ * `F4.211` — the name of the constraint a write violated, as the driver
+ * reports it. Postgres sets it for a unique index as well as a named
+ * constraint, so a write with two unique keys can say which one is taken.
+ * `undefined` when the error carries none — the caller then falls back to its
+ * default sentence rather than guessing.
+ */
+export function constraintOf(err: unknown): string | undefined {
+  const constraint = (err as { constraint?: unknown } | null)?.constraint;
+  return typeof constraint === "string" ? constraint : undefined;
+}
+
+/**
  * Turns the constraint violations a write can raise into the answers they are.
  *
  * Without this, `POST` with a value that already exists — the first mistake

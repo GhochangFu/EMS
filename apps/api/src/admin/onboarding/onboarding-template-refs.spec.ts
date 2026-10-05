@@ -38,6 +38,7 @@ function orgVersion(code: string, version: number, status: TemplateRef["status"]
     alarmCount: 0,
     dashboardCount: 0,
     dashboardWidgetCount: 0,
+    formulaPointKeys: [],
   };
 }
 
@@ -55,6 +56,7 @@ const STOCK_WTP: TemplateRef = {
   alarmCount: 2,
   dashboardCount: 1,
   dashboardWidgetCount: 3,
+  formulaPointKeys: [],
 };
 
 const CONTEXT: ValidateTemplateContext = {

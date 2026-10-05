@@ -1,4 +1,5 @@
 import {
+  ConflictException,
   ForbiddenException,
   Inject,
   Injectable,
@@ -12,6 +13,7 @@ import type { AdminPointKeyDto, JwtPayload } from "@bms/shared";
 
 import { AccessControlService } from "../../auth/access-control.service";
 import { FLEET_DRIZZLE } from "../../database/database.tokens";
+import { translateConstraintErrors } from "../../database/translate-constraint-errors";
 import { MasterDataAuditService } from "../master-data-audit.service";
 import type { CreatePointKeyBody, UpdatePointKeyBody } from "./point-keys.schema";
 
@@ -85,33 +87,38 @@ export class PointKeysAdminService {
   async create(jwt: JwtPayload, body: CreatePointKeyBody): Promise<AdminPointKeyDto> {
     await this.requireGlobalAdmin(jwt);
 
-    const created = await this.fleetDb.transaction(async (tx) => {
-      const [row] = await tx
-        .insert(pointKeys)
-        .values({
-          code: body.code,
-          name: body.name,
-          domain: body.domain ?? null,
-          unit: body.unit ?? null,
-          description: body.description ?? null,
-          headlineRank: body.headlineRank ?? null,
-          active: true,
-        })
-        .returning();
+    // F4.211 — a taken code is a 409 that names it, not pg's 23505 as a 500.
+    const created = await translateConstraintErrors(
+      () =>
+        this.fleetDb.transaction(async (tx) => {
+          const [row] = await tx
+            .insert(pointKeys)
+            .values({
+              code: body.code,
+              name: body.name,
+              domain: body.domain ?? null,
+              unit: body.unit ?? null,
+              description: body.description ?? null,
+              headlineRank: body.headlineRank ?? null,
+              active: true,
+            })
+            .returning();
 
-      await this.audit.write(
-        {
-          actor: jwt,
-          action: "master.point_key.create",
-          entityType: "point_key",
-          entityId: row!.id,
-          organizationId: null,
-          payload: body,
-        },
-        tx,
-      );
-      return row!;
-    });
+          await this.audit.write(
+            {
+              actor: jwt,
+              action: "master.point_key.create",
+              entityType: "point_key",
+              entityId: row!.id,
+              organizationId: null,
+              payload: body,
+            },
+            tx,
+          );
+          return row!;
+        }),
+      { onUnique: () => new ConflictException(`Point key "${body.code}" already exists`) },
+    );
 
     return this.fetchRow(created.id);
   }

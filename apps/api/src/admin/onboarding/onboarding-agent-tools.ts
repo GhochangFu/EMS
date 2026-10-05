@@ -386,7 +386,11 @@ async function dispatch(name: ToolName, args: Record<string, unknown>, state: To
       // template uses it, or the proposal succeeds and the commit fails. A
       // second declaration of the same code keeps it resolved, so one copy of a
       // duplicate can leave. F4.196: the validator's rule (`unresolvedPointKey`)
-      // against the context's catalog, so the tool and validation agree.
+      // against the context's catalog decides whether the key still resolves.
+      // The scan below skips stock entries, but since F4.205 validation does
+      // not: a key a stock entry needs can be removed here and validation then
+      // refuses the draft. The tool and validation therefore do NOT agree on
+      // stock entries yet; tool parity is a proposed separate row.
       const code = hit.removed.code;
       const catalog = ctx.templates.pointKeys;
       const before = new Set((draft.pointKeys ?? []).map((key) => key.code));

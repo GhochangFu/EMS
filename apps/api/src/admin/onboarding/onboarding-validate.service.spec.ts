@@ -211,6 +211,7 @@ const TEMPLATES: ValidateTemplateContext = {
       alarmCount: 0,
       dashboardCount: 0,
       dashboardWidgetCount: 0,
+      formulaPointKeys: [],
     },
     {
       code: "ORG-T",
@@ -222,6 +223,7 @@ const TEMPLATES: ValidateTemplateContext = {
       alarmCount: 0,
       dashboardCount: 0,
       dashboardWidgetCount: 0,
+      formulaPointKeys: [],
     },
   ],
   stock: [
@@ -239,15 +241,44 @@ const TEMPLATES: ValidateTemplateContext = {
       alarmCount: 0,
       dashboardCount: 0,
       dashboardWidgetCount: 0,
+      formulaPointKeys: [],
     },
   ],
   // F4.196: `flow` and `head` (V6) are the authored PUMP template's keys, active; `retired` is a key the catalog holds inactive.
+  // F4.205: `ph`, `turbidity` and `score` are the stock WTP's keys, active, so the stock entry resolves.
   pointKeys: new Map([
     ["flow", true],
     ["head", true],
     ["retired", false],
+    ["ph", true],
+    ["turbidity", true],
+    ["score", true],
   ]),
 };
+
+/**
+ * `F4.205` — {@link TEMPLATES} with the stock WTP's `formulaPointKeys` set and
+ * the point-key catalog patched: `true`/`false` sets a key's `active` flag,
+ * `null` removes the key from the catalog.
+ */
+function stockContext(
+  formulaPointKeys: readonly string[],
+  keyPatch: Readonly<Record<string, boolean | null>> = {},
+): ValidateTemplateContext {
+  const pointKeys = new Map(TEMPLATES.pointKeys);
+  for (const [key, active] of Object.entries(keyPatch)) {
+    if (active === null) {
+      pointKeys.delete(key);
+    } else {
+      pointKeys.set(key, active);
+    }
+  }
+  return {
+    ...TEMPLATES,
+    stock: TEMPLATES.stock.map((ref) => ({ ...ref, formulaPointKeys })),
+    pointKeys,
+  };
+}
 
 /** V12's draft: ready to commit, with every kind of template and a plain asset. */
 function templatedDraft(): OnboardingDraft {
@@ -686,6 +717,62 @@ function patchDroppedResult(): ReturnType<OnboardingValidateService["validate"]>
 export function assertADraftWhosePatchDroppedATemplateKeyIsNotReady(): void {
   const result = patchDroppedResult();
   assert(result.readyToCommit === false, `the draft is not ready, got phase ${result.suggestedPhase} and ${JSON.stringify(result.errors)}`);
+}
+
+/**
+ * `F4.205` — a stock entry's keys resolve by the same rule as an authored
+ * template's (`unresolvedPointKey`): its points' keys and the keys its
+ * formulas name, each active in the catalog or declared by a draft that the
+ * catalog does not hold. The stock WTP is `templates[1]`.
+ */
+const NO_BREAK: Breaker = () => undefined;
+
+/** F4.205 — a stock point key the catalog holds inactive is an error at the stock code. */
+export function assertAStockKeyInactiveInTheCatalogIsAnError(): void {
+  assertOnly(
+    NO_BREAK,
+    "templates.1.stockCode",
+    `Point key ${q("score")} is inactive in the catalog (stock template ${q("WTP")} needs it)`,
+    stockContext([], { score: false }),
+  );
+}
+
+/** F4.205 — a key a stock formula names, missing from the catalog, is an error too. */
+export function assertAStockFormulaKeyMissingFromTheCatalogIsAnError(): void {
+  assertOnly(
+    NO_BREAK,
+    "templates.1.stockCode",
+    `Point key ${q("chlorine")} is neither in this draft nor in the catalog (stock template ${q("WTP")} needs it)`,
+    stockContext(["chlorine"]),
+  );
+}
+
+/** F4.205 — a stock key the catalog does not hold resolves when the draft declares it: the commit inserts it first. */
+export function assertAStockKeyOnlyTheDraftDeclaresIsValid(): void {
+  const got = templateErrors(
+    (d) => d.pointKeys!.push({ code: "turbidity", name: "Turbidity" }),
+    stockContext([], { turbidity: null }),
+  );
+  assert(got === "[]", `a stock key the draft declares is valid, got ${got}`);
+}
+
+/** F4.205 — a key that is both a point and a formula key is reported once. */
+export function assertAStockKeyNamedTwiceIsReportedOnce(): void {
+  assertOnly(
+    NO_BREAK,
+    "templates.1.stockCode",
+    `Point key ${q("score")} is inactive in the catalog (stock template ${q("WTP")} needs it)`,
+    stockContext(["score"], { score: false }),
+  );
+}
+
+/** F4.205 — a draft whose stock entry needs an inactive key is not ready to commit. */
+export function assertAStockDraftWithAnInactiveKeyIsNotReady(): void {
+  const result = new OnboardingValidateService().validate(templatedDraft(), CODES, stockContext([], { score: false }));
+  assert(
+    result.readyToCommit === false,
+    `the draft is not ready, got phase ${result.suggestedPhase} and ${JSON.stringify(result.errors)}`,
+  );
 }
 
 /** F4.196 — and its error names the template point. */

@@ -7,6 +7,7 @@ import type { BmsDb } from "@bms/db";
 import { FLEET_DRIZZLE } from "../../database/database.tokens";
 import { dashboardWidgetRowsFor, sortedViewNames } from "../asset-templates/asset-dashboards-plan";
 import { parseStoredTemplateContent } from "../asset-templates/asset-templates-content.schema";
+import { crossRefPointKeys } from "../asset-templates/asset-templates-cross-refs";
 import { AssetTemplatesStockService } from "../asset-templates/asset-templates-stock.service";
 import type { StockTemplateRef, TemplatePointRef, TemplateRef, ValidateTemplateContext } from "./onboarding-template-refs";
 
@@ -124,6 +125,8 @@ export class OnboardingTemplateCatalogService {
         status,
         points: status === "published" ? (pointsById.get(row.id) ?? []) : [],
         ...(status === "published" ? contentCounts(row.content) : NO_CONTENT_COUNTS),
+        // F4.205: its publish already ran `assertPointKeysActive` on these.
+        formulaPointKeys: [],
       };
     });
   }
@@ -149,6 +152,8 @@ export class OnboardingTemplateCatalogService {
         sourceDataKeyPattern: point.sourceDataKeyPattern,
       })),
       ...contentCounts(entry.content),
+      // F4.205: the keys the import's `assertPointKeysActive` reads out of the formulas.
+      formulaPointKeys: crossRefPointKeys(entry.points).map((ref) => ref.pointKey),
     }));
     return this.stockRefs;
   }

@@ -21,8 +21,10 @@ import { AssetPointCalcOverrideService } from "./asset-point-calc-override.servi
 import { AssetPointsAdminService } from "./asset-points.service";
 import { MasterDataAuditService } from "../master-data-audit.service";
 import {
+  assertCreateADuplicatePointKeyIsA409,
   assertMappingCreateStampsOrgUnderRealRls,
   assertOverrideEagerCreateStampsOrgUnderRealRls,
+  assertUpdateToATakenSourceKeyIsA409,
   type RlsFixtures,
 } from "./asset-points.service.rls.integration.spec";
 import { jwtFor, primeSeededSubjects } from "../../testing/seeded-subjects";
@@ -295,6 +297,9 @@ describe.skipIf(!connectionString)("E7.1b — asset_points write funnels under r
       catalogPointKey: CATALOG_CODE,
       templatedAssetId,
       derivedKey: DERIVED_KEY,
+      // F4.211 — both are catalog rows (above) and the hand asset has no
+      // template, so either maps onto it as a plain telemetry point.
+      freeKeys: [MEASURED_KEY, DERIVED_KEY],
     };
   });
 
@@ -347,5 +352,13 @@ describe.skipIf(!connectionString)("E7.1b — asset_points write funnels under r
 
   it("stamps org on the asset_points row setOverride eagerly creates (decision 7)", async () => {
     await assertOverrideEagerCreateStampsOrgUnderRealRls(ctx, jwt);
+  });
+
+  it("F4.211 — a second mapping of one key onto an asset is a 409 naming the key", async () => {
+    await assertCreateADuplicatePointKeyIsA409(ctx, jwt);
+  });
+
+  it("F4.211 — an update to a source key another point reads is a 409 naming the source key", async () => {
+    await assertUpdateToATakenSourceKeyIsA409(ctx, jwt);
   });
 });

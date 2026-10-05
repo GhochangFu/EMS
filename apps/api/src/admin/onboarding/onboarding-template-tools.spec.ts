@@ -27,7 +27,7 @@ function point(pointKey: string, pattern: string | null = null): TemplatePointRe
 }
 
 function ref(code: string, version: number | null, status: TemplateRef["status"], points: TemplatePointRef[], name = code): TemplateRef {
-  return { code, version, name, domain: "electrical", status, points, alarmCount: 0, dashboardCount: 0, dashboardWidgetCount: 0 };
+  return { code, version, name, domain: "electrical", status, points, alarmCount: 0, dashboardCount: 0, dashboardWidgetCount: 0, formulaPointKeys: [] };
 }
 
 function context(templates: ValidateTemplateContext): ToolContext {
@@ -175,9 +175,13 @@ const WRITE: ValidateTemplateContext = {
   ],
   stock: [stockRef("WTP-PUMP", 3, [point("flow"), optional("level"), derived("efficiency")])],
   // F4.196: the catalog `add_template`, `remove_point_key` and the validator read; `old_kw` is held inactive.
+  // F4.205: `flow`, `level` and `efficiency` are the stock WTP-PUMP's keys, active, as the import requires.
   pointKeys: new Map([
     ["energy_kwh", true],
     ["old_kw", false],
+    ["flow", true],
+    ["level", true],
+    ["efficiency", true],
   ]),
 };
 
@@ -393,7 +397,14 @@ export async function assertRemovePointKeyRemovesOneCopyOfADuplicateKey(): Promi
   assert(out.state.working.pointKeys?.map((key) => key.unit).join() === "kW", "the first copy is left");
 }
 
-/** F4.195 — a stock template entry carries no points of its own, so it does not hold a key in the draft. */
+/**
+ * F4.195 — pins what `remove_point_key` does today: it skips stock template
+ * entries, so a key is removable while a stock entry is in the draft. This is
+ * NOT a claim that the removal is safe. Since F4.205, validation reads stock
+ * entries' point keys, so a draft-declared key a stock entry needs can be
+ * removed here and validation then refuses the draft. Tool parity is a
+ * proposed separate row; when it lands, this case changes with it.
+ */
 export async function assertRemovePointKeyReadsPastAStockTemplate(): Promise<void> {
   const out = await runOn("remove_point_key", { index: 0 }, baseDraft({ templates: [{ stockCode: "WTP-PUMP" }] }));
   assert(out.ok && out.actionLine === "Removed point key kw", `removed, got ${out.content}`);

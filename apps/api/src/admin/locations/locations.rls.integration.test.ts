@@ -15,6 +15,7 @@ import {
   assertARefusedUpdateLeavesTheTypeUnchanged,
   assertCreateAcceptsALiveType,
   assertCreateRefusesAnUnknownTypeWithA400,
+  assertCreateWithADuplicateCodeIsA409,
   assertDeactivateGuardSeesActiveAssetsUnderRls,
   assertListCarriesTheRsmocTypeLabel,
   assertListLocationTypesRefusesANonMasterDataUser,
@@ -22,6 +23,7 @@ import {
   assertPolicyRefusesMismatchedOrg,
   assertRefusesOutOfScopeOrganization,
   assertUpdateRefusesAnUnknownTypeWithA400,
+  assertUpdateToATakenSlugIsA409,
   assertWriteLifecycleSurvivesRealRls,
 } from "./locations.rls.integration.spec";
 import { jwtFor, primeSeededSubjects } from "../../testing/seeded-subjects";
@@ -45,7 +47,7 @@ const ORGANIZATION_ADMIN_EMAIL = "phe-admin@bms.local";
 const ASSET_GROUP_ADMIN_EMAIL = "wc-hvac-admin@bms.local";
 
 /** Every location code family this suite commits, for the stale sweep below. */
-const LOCATION_FAMILIES = ["F4.16-RLS-%", "E71B-LOC-GUARD-%", "F4157-LT-%"];
+const LOCATION_FAMILIES = ["F4.16-RLS-%", "E71B-LOC-GUARD-%", "F4157-LT-%", "F4211-LOC-%"];
 const GUARD_ASSET_FAMILY = "E71B-AS-GUARD-%";
 
 /**
@@ -263,5 +265,13 @@ describe.skipIf(!connectionString)("F4.16 — LocationsAdminService under real R
 
   it("F4.162 L5 — list carries typeLabel: \"RSMOC\" for a live rsmoc fixture location", async () => {
     await assertListCarriesTheRsmocTypeLabel({ svc, tenantPool, ownerPool, organizationId }, jwt, register);
+  });
+
+  it("F4.211 — a create with a code the organization holds is a 409 naming the code", async () => {
+    await assertCreateWithADuplicateCodeIsA409({ svc, tenantPool, ownerPool, organizationId }, jwt, register);
+  });
+
+  it("F4.211 — an update to a slug another location holds is a 409 naming the slug", async () => {
+    await assertUpdateToATakenSlugIsA409({ svc, tenantPool, ownerPool, organizationId }, jwt, register);
   });
 });
