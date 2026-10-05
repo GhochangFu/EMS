@@ -7,6 +7,8 @@ import {
   aRefusedTopicSaveShowsTheReason,
   theSavedTopicReachesTheSummary,
   theTopicFieldIsBoundedAt255,
+  theTopicSaveWaitsForAChatTurn,
+  theTopicSaveWaitsForACredentialSave,
   theTopicSaveKeepsTheRestOfTheConfig,
   theTopicSaveSendsTheTopic,
 } from "./onboarding-chat-page-topic.spec";
@@ -50,5 +52,13 @@ describe("F4.208 the Topic field beside an MQTT RTU's credentials", () => {
 
   it("W6: a Modbus RTU has no Topic field", async () => {
     await aModbusRtuHasNoTopicField();
+  });
+
+  it("W7: Save topic is disabled while a chat turn is in flight", async () => {
+    await theTopicSaveWaitsForAChatTurn();
+  });
+
+  it("W8: Save topic is disabled while a credentials save is in flight", async () => {
+    await theTopicSaveWaitsForACredentialSave();
   });
 });

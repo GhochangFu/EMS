@@ -118,3 +118,34 @@ export async function aModbusRtuHasNoTopicField(): Promise<void> {
   expect(await topicField("RTU-1"), "the MQTT RTU has its field").toBeInTheDocument();
   expect(screen.queryByRole("textbox", { name: "Topic for RTU-2" })).toBeNull();
 }
+
+/** Opens the drawer and types `plant/a` into RTU-1's Topic field; Save topic is enabled then. */
+async function typeATopic(): Promise<HTMLElement> {
+  renderPage();
+  await openPreview();
+  await userEvent.type(await topicField(), "plant/a");
+  const save = screen.getByRole("button", { name: "Save topic" });
+  expect(save, "Save topic is enabled before the other write starts").toBeEnabled();
+  return save;
+}
+
+/** W7 — Save topic is disabled while a chat turn is in flight: both write the `rtus` list. */
+export async function theTopicSaveWaitsForAChatTurn(): Promise<void> {
+  stubStart(WITH_MQTT_RTU);
+  vi.spyOn(api, "sendOnboardingChat").mockReturnValue(new Promise(() => undefined));
+  const save = await typeATopic();
+  await userEvent.type(screen.getByPlaceholderText(/Type a message/), "add another RTU");
+  await userEvent.click(screen.getByRole("button", { name: "Send" }));
+  await waitFor(() => expect(save).toBeDisabled());
+}
+
+/** W8 — Save topic is disabled while a credentials save is in flight. */
+export async function theTopicSaveWaitsForACredentialSave(): Promise<void> {
+  stubStart({ ...SESSION, draft: { rtus: [{ ...MQTT_RTU, credentialsSet: false }] } });
+  vi.spyOn(api, "setOnboardingCredentials").mockReturnValue(new Promise(() => undefined));
+  const save = await typeATopic();
+  await userEvent.click(screen.getByRole("button", { name: "Add credentials" }));
+  await userEvent.type(screen.getByPlaceholderText("Username"), "rtu-reader");
+  await userEvent.click(screen.getByRole("button", { name: "Save encrypted" }));
+  await waitFor(() => expect(save).toBeDisabled());
+}

@@ -613,8 +613,12 @@ export function OnboardingChatPage({ user }: OnboardingChatPageProps) {
                                 />
                                 <button
                                   type="submit"
+                                  // A chat turn and a credentials save both write
+                                  // the `rtus` list too, so one waits for the other.
                                   disabled={
                                     topicMutation.isPending ||
+                                    chatMutation.isPending ||
+                                    credentialsMutation.isPending ||
                                     topicEdits[index] === undefined ||
                                     topicEdits[index].trim() === String(rtu.config.topic ?? "")
                                   }
