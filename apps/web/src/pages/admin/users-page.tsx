@@ -79,8 +79,18 @@ const ROW_ACTION_TEXT: Record<
   { label: string; text: string; pendingLabel: string; pendingText: string }
 > = {
   edit: { label: "Edit", text: "Edit", pendingLabel: "Saving", pendingText: "Saving…" },
-  deactivate: { label: "Deactivate", text: "Deactivate", pendingLabel: "Deactivating", pendingText: "Deactivating…" },
-  reactivate: { label: "Reactivate", text: "Reactivate", pendingLabel: "Reactivating", pendingText: "Reactivating…" },
+  deactivate: {
+    label: "Deactivate",
+    text: "Deactivate",
+    pendingLabel: "Deactivating",
+    pendingText: "Deactivating…",
+  },
+  reactivate: {
+    label: "Reactivate",
+    text: "Reactivate",
+    pendingLabel: "Reactivating",
+    pendingText: "Reactivating…",
+  },
   password: {
     label: "Temporary password for",
     text: "Temporary password",
