@@ -7285,4 +7285,4 @@ fixed, nothing else blocking. No live check: API only, gated by the specs.
 
 **Cascade:** no row lists `F4.195` in *Depends* except the new `F4.196`.
 Raised: `F4.196` (a draft PATCH can drop a point key a draft template uses, and
-the draft still reads ready to commit). No `chore(agents):` change owed.
+the draft still reads as ready). No `chore(agents):` change owed.
