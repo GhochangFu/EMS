@@ -5,6 +5,8 @@ import { cleanup } from "@testing-library/react";
 import { useAuthStore } from "./stores/auth-store";
 import {
   aDeactivatedMeOnLoadRecordsTheReason,
+  aDeactivatedMeOnLoadShowsTheSentence,
+  aPlainMeOnLoadShowsNothing,
   aRefusedMeOnAWallUrlKeepsTheReturnPath,
   anExpiredTokenOnAWallUrlKeepsTheReturnPath,
   aViewerReachesTheAttributionsPage,
@@ -67,5 +69,13 @@ describe("F4.203 a deactivated /me on load (OQ2)", () => {
 
   it("D1 a deactivated /me 401 records the reason", async () => {
     await aDeactivatedMeOnLoadRecordsTheReason();
+  });
+
+  it("D2 the sign-in page then shows the deactivated sentence", async () => {
+    await aDeactivatedMeOnLoadShowsTheSentence();
+  });
+
+  it("D3 a plain /me 401 shows nothing", async () => {
+    await aPlainMeOnLoadShowsNothing();
   });
 });

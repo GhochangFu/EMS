@@ -6,6 +6,7 @@ import { expect, vi } from "vitest";
 import * as loginApi from "../api/login";
 import * as oidcApi from "../api/oidc";
 import { RETURN_PATH_KEY } from "../lib/return-path";
+import { useAuthStore } from "../stores/auth-store";
 import { LoginPage } from "./login-page";
 
 /**
@@ -197,6 +198,38 @@ export async function navigatesToTheReturnPath(): Promise<void> {
   renderLoginRoutes();
   expect(await signInLocally()).toBe(`${WALL_URL}|REPLACE`);
   expect(window.sessionStorage.getItem(RETURN_PATH_KEY)).toBeNull();
+}
+
+export const DEACTIVATED = "Your account is deactivated. Ask an administrator.";
+
+/** L15 (`F4.203`) — a session ended by a deactivated 401 shows the sentence once. */
+export function showsTheDeactivatedSentence(): void {
+  useAuthStore.getState().rememberAuthFailure("account_deactivated");
+  renderLoginRoutes();
+  expect(screen.getAllByText(DEACTIVATED)).toHaveLength(1);
+}
+
+/** L16 (`F4.203`) — in OIDC mode too, which is how production signs in. */
+export function showsTheDeactivatedSentenceInOidcMode(): void {
+  useAuthStore.getState().rememberAuthFailure("account_deactivated");
+  renderLoginRoutes(true);
+  expect(screen.getByRole("button", { name: "Sign in securely with Keycloak" })).toBeTruthy();
+  expect(screen.getAllByText(DEACTIVATED)).toHaveLength(1);
+}
+
+/** L17 (`F4.203`) — no reason (a plain 401) shows nothing; the card heading is the positive control. */
+export function aPlain401ShowsNothing(): void {
+  renderLoginRoutes();
+  expect(screen.getByRole("heading", { level: 2, name: "Sign in to IONSiTE NEXUS" })).toBeTruthy();
+  expect(screen.queryByText(DEACTIVATED)).toBeNull();
+}
+
+/** L18 (`F4.203`) — a sign-in consumes the reason (the store, not the page that navigates away). */
+export async function aSignInConsumesTheReason(): Promise<void> {
+  useAuthStore.getState().rememberAuthFailure("account_deactivated");
+  renderLoginRoutes();
+  expect(await signInLocally()).toBe("/|REPLACE");
+  expect(useAuthStore.getState().authFailureReason).toBeNull();
 }
 
 /** L14 — a sign-in with no stored path lands on `/`, replacing the history entry. */
