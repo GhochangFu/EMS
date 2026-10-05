@@ -139,14 +139,15 @@ export async function addAdminAssetGroupMember(
  * `clearSessionOnAuthFailure` then `ApiError` sequence.
  */
 export async function removeAdminAssetGroupMember(membershipId: string): Promise<void> {
+  const sent = withAuth({ method: "DELETE" });
   const res = await fetch(
     `${base}/api/v1/admin/asset-group-members/${encodeURIComponent(membershipId)}`,
-    withAuth({ method: "DELETE" }),
+    sent,
   );
   if (res.status === 204) {
     return;
   }
-  clearSessionOnAuthFailure(res);
+  clearSessionOnAuthFailure(res, sent);
   const text = await res.text();
   throw new ApiError(text || `admin /admin/asset-group-members/:id ${res.status}`, res.status);
 }

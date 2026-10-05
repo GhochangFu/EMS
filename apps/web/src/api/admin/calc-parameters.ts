@@ -101,14 +101,15 @@ export async function updateAdminCalcParameter(
  * `clearSessionOnAuthFailure` then `ApiError` sequence `adminFetch` runs.
  */
 export async function deleteAdminCalcParameter(id: string): Promise<void> {
+  const sent = withAuth({ method: "DELETE" });
   const res = await fetch(
     `${base}/api/v1/admin/calc-parameters/${encodeURIComponent(id)}`,
-    withAuth({ method: "DELETE" }),
+    sent,
   );
   if (res.status === 204) {
     return;
   }
-  clearSessionOnAuthFailure(res);
+  clearSessionOnAuthFailure(res, sent);
   const text = await res.text();
   throw new ApiError(text || `admin /admin/calc-parameters/:id ${res.status}`, res.status);
 }

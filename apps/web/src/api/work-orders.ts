@@ -43,9 +43,10 @@ export async function fetchWorkOrders(
   limit = 100,
 ): Promise<WorkOrdersListResponse> {
   const params = new URLSearchParams({ limit: String(limit) });
-  const res = await fetch(`${base}/api/v1/work-orders?${params}`, withAuth());
+  const sent = withAuth();
+  const res = await fetch(`${base}/api/v1/work-orders?${params}`, sent);
   if (!res.ok) {
-    clearSessionOnAuthFailure(res);
+    clearSessionOnAuthFailure(res, sent);
     throw new Error(`work-orders ${res.status}`);
   }
   return checkResponse(workOrdersListResponseSchema, await res.json(), "work-orders");
@@ -55,15 +56,16 @@ export async function fetchWorkOrders(
 export async function createWorkOrder(
   input: CreateWorkOrderInput,
 ): Promise<WorkOrderListItem> {
-  const res = await fetch(`${base}/api/v1/work-orders`, {
+  const sent = {
     ...withAuth({
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(input),
     }),
-  });
+  };
+  const res = await fetch(`${base}/api/v1/work-orders`, sent);
   if (!res.ok) {
-    clearSessionOnAuthFailure(res);
+    clearSessionOnAuthFailure(res, sent);
     const text = await res.text();
     throw new Error(text || `work-order-create ${res.status}`);
   }
@@ -75,15 +77,16 @@ export async function updateWorkOrderStatus(
   input: UpdateWorkOrderStatusInput,
 ): Promise<WorkOrderListItem> {
   const { id, ...body } = input;
-  const res = await fetch(`${base}/api/v1/work-orders/${id}/status`, {
+  const sent = {
     ...withAuth({
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
     }),
-  });
+  };
+  const res = await fetch(`${base}/api/v1/work-orders/${id}/status`, sent);
   if (!res.ok) {
-    clearSessionOnAuthFailure(res);
+    clearSessionOnAuthFailure(res, sent);
     const text = await res.text();
     throw new Error(text || `work-order-status ${res.status}`);
   }
@@ -94,7 +97,7 @@ export async function updateWorkOrderStatus(
 export async function reorderWorkOrders(
   items: ReorderWorkOrderItem[],
 ): Promise<WorkOrdersListResponse> {
-  const res = await fetch(`${base}/api/v1/work-orders/reorder`, {
+  const sent = {
     ...withAuth({
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
@@ -103,9 +106,10 @@ export async function reorderWorkOrders(
         reason: "Kanban order updated by drag-and-drop",
       }),
     }),
-  });
+  };
+  const res = await fetch(`${base}/api/v1/work-orders/reorder`, sent);
   if (!res.ok) {
-    clearSessionOnAuthFailure(res);
+    clearSessionOnAuthFailure(res, sent);
     const text = await res.text();
     throw new Error(text || `work-order-reorder ${res.status}`);
   }
@@ -118,15 +122,16 @@ export async function closeWorkOrder(
   reason: string,
   sortOrder?: number,
 ): Promise<WorkOrderListItem> {
-  const res = await fetch(`${base}/api/v1/work-orders/${id}/close`, {
+  const sent = {
     ...withAuth({
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ reason, sortOrder }),
     }),
-  });
+  };
+  const res = await fetch(`${base}/api/v1/work-orders/${id}/close`, sent);
   if (!res.ok) {
-    clearSessionOnAuthFailure(res);
+    clearSessionOnAuthFailure(res, sent);
     const text = await res.text();
     throw new Error(text || `work-order-close ${res.status}`);
   }

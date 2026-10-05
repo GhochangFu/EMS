@@ -71,18 +71,24 @@ export type EscalationDefaultsPayload = {
  *
  * Reads the body through the shared `apiErrorMessage` (`F4.204`), which also
  * handles an array `message` (a Zod validation refusal) that a private parse
- * here used to miss. An empty body keeps the `label status` fallback.
+ * here used to miss. An empty body keeps the `label status` fallback. `sent` is
+ * the request's `RequestInit`, so a 401 clears only its own session (`F4.206`).
  */
-async function failure(res: Response, label: string): Promise<Error> {
-  clearSessionOnAuthFailure(res);
+async function failure(
+  res: Response,
+  sent: Pick<RequestInit, "headers">,
+  label: string,
+): Promise<Error> {
+  clearSessionOnAuthFailure(res, sent);
   const text = await res.text();
   return new Error(text.trim() === "" ? `${label} ${res.status}` : apiErrorMessage(text));
 }
 
 /** GET /api/v1/admin/escalation-profiles */
 export async function fetchEscalationProfiles(): Promise<EscalationProfilesResponse> {
-  const res = await fetch(`${base}/api/v1/admin/escalation-profiles`, withAuth());
-  if (!res.ok) throw await failure(res, "escalation-profiles");
+  const sent = withAuth();
+  const res = await fetch(`${base}/api/v1/admin/escalation-profiles`, sent);
+  if (!res.ok) throw await failure(res, sent, "escalation-profiles");
   return checkResponse(
     escalationProfilesListResponseSchema,
     await res.json(),
@@ -94,14 +100,15 @@ export async function fetchEscalationProfiles(): Promise<EscalationProfilesRespo
 export async function createEscalationProfile(
   payload: EscalationProfilePayload,
 ): Promise<EscalationProfileDto> {
-  const res = await fetch(`${base}/api/v1/admin/escalation-profiles`, {
+  const sent = {
     ...withAuth({
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
     }),
-  });
-  if (!res.ok) throw await failure(res, "escalation-profile-create");
+  };
+  const res = await fetch(`${base}/api/v1/admin/escalation-profiles`, sent);
+  if (!res.ok) throw await failure(res, sent, "escalation-profile-create");
   return checkResponse(
     escalationProfileResponseSchema,
     await res.json(),
@@ -114,14 +121,15 @@ export async function updateEscalationProfile(input: {
   id: string;
   patch: EscalationProfilePatch;
 }): Promise<EscalationProfileDto> {
-  const res = await fetch(`${base}/api/v1/admin/escalation-profiles/${input.id}`, {
+  const sent = {
     ...withAuth({
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(input.patch),
     }),
-  });
-  if (!res.ok) throw await failure(res, "escalation-profile-update");
+  };
+  const res = await fetch(`${base}/api/v1/admin/escalation-profiles/${input.id}`, sent);
+  if (!res.ok) throw await failure(res, sent, "escalation-profile-update");
   return checkResponse(
     escalationProfileResponseSchema,
     await res.json(),
@@ -138,10 +146,11 @@ export async function updateEscalationProfile(input: {
  * would leave them without one.
  */
 export async function deleteEscalationProfile(id: string): Promise<{ deleted: true }> {
-  const res = await fetch(`${base}/api/v1/admin/escalation-profiles/${id}`, {
+  const sent = {
     ...withAuth({ method: "DELETE" }),
-  });
-  if (!res.ok) throw await failure(res, "escalation-profile-delete");
+  };
+  const res = await fetch(`${base}/api/v1/admin/escalation-profiles/${id}`, sent);
+  if (!res.ok) throw await failure(res, sent, "escalation-profile-delete");
   return checkResponse(
     escalationProfileDeletedResponseSchema,
     await res.json(),
@@ -160,8 +169,9 @@ export async function fetchEscalationDefaults(
   organizationId: string,
 ): Promise<EscalationDefaultsResponse> {
   const params = new URLSearchParams({ organizationId });
-  const res = await fetch(`${base}/api/v1/admin/escalation-defaults?${params}`, withAuth());
-  if (!res.ok) throw await failure(res, "escalation-defaults");
+  const sent = withAuth();
+  const res = await fetch(`${base}/api/v1/admin/escalation-defaults?${params}`, sent);
+  if (!res.ok) throw await failure(res, sent, "escalation-defaults");
   return checkResponse(
     escalationDefaultsResponseSchema,
     await res.json(),
@@ -173,14 +183,15 @@ export async function fetchEscalationDefaults(
 export async function setEscalationDefaults(
   payload: EscalationDefaultsPayload,
 ): Promise<EscalationDefaultsResponse> {
-  const res = await fetch(`${base}/api/v1/admin/escalation-defaults`, {
+  const sent = {
     ...withAuth({
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
     }),
-  });
-  if (!res.ok) throw await failure(res, "escalation-defaults-set");
+  };
+  const res = await fetch(`${base}/api/v1/admin/escalation-defaults`, sent);
+  if (!res.ok) throw await failure(res, sent, "escalation-defaults-set");
   return checkResponse(
     escalationDefaultsResponseSchema,
     await res.json(),

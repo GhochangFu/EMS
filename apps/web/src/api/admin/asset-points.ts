@@ -200,12 +200,13 @@ export async function downloadMappingSheet(
   locationId: string,
 ): Promise<{ blob: Blob; filename: string }> {
   const headers = getAdminAuthHeaders();
+  const sent = { headers };
   const res = await fetch(
     `${base}/api/v1/admin/asset-points/mapping-sheet.xlsx?locationId=${encodeURIComponent(locationId)}`,
-    { headers },
+    sent,
   );
   if (!res.ok) {
-    clearSessionOnAuthFailure(res);
+    clearSessionOnAuthFailure(res, sent);
     const text = await res.text();
     throw new Error(text.trim() || `Mapping sheet download failed (${res.status}).`);
   }
@@ -239,12 +240,13 @@ export async function previewMappingSheet(
   locationId: string,
   file: File,
 ): Promise<MappingSheetPreviewDto> {
+  const sent = { method: "POST", headers: getAdminAuthHeaders(), body: mappingSheetForm(file) };
   const res = await fetch(
     `${base}/api/v1/admin/asset-points/mapping-sheet/preview?locationId=${encodeURIComponent(locationId)}`,
-    { method: "POST", headers: getAdminAuthHeaders(), body: mappingSheetForm(file) },
+    sent,
   );
   if (!res.ok) {
-    clearSessionOnAuthFailure(res);
+    clearSessionOnAuthFailure(res, sent);
     throw new Error(describeMappingSheetUploadError(res.status, await res.text()));
   }
   return readJson(res, mappingSheetPreviewDtoSchema, "admin asset-points mapping-sheet preview");
@@ -255,12 +257,13 @@ export async function commitMappingSheet(
   locationId: string,
   file: File,
 ): Promise<MappingSheetCommitDto> {
+  const sent = { method: "POST", headers: getAdminAuthHeaders(), body: mappingSheetForm(file) };
   const res = await fetch(
     `${base}/api/v1/admin/asset-points/mapping-sheet/commit?locationId=${encodeURIComponent(locationId)}`,
-    { method: "POST", headers: getAdminAuthHeaders(), body: mappingSheetForm(file) },
+    sent,
   );
   if (!res.ok) {
-    clearSessionOnAuthFailure(res);
+    clearSessionOnAuthFailure(res, sent);
     throw new Error(describeMappingSheetUploadError(res.status, await res.text()));
   }
   return readJson(res, mappingSheetCommitDtoSchema, "admin asset-points mapping-sheet commit");

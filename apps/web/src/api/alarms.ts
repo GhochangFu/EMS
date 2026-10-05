@@ -24,9 +24,10 @@ export async function fetchAlarmsPage(
   if (cursor) {
     params.set("cursor", cursor);
   }
-  const res = await fetch(`${base}/api/v1/alarms?${params}`, withAuth());
+  const sent = withAuth();
+  const res = await fetch(`${base}/api/v1/alarms?${params}`, sent);
   if (!res.ok) {
-    clearSessionOnAuthFailure(res);
+    clearSessionOnAuthFailure(res, sent);
     throw new Error(`alarms ${res.status}`);
   }
   return checkResponse(alarmsListResponseSchema, await res.json(), "alarms");
@@ -62,9 +63,10 @@ export async function fetchActiveAlarms(
 ): Promise<AlarmsListResponse> {
   const params = new URLSearchParams({ state: "active", limit: String(limit) });
   appendScope(params, scope);
-  const res = await fetch(`${base}/api/v1/alarms?${params}`, withAuth());
+  const sent = withAuth();
+  const res = await fetch(`${base}/api/v1/alarms?${params}`, sent);
   if (!res.ok) {
-    clearSessionOnAuthFailure(res);
+    clearSessionOnAuthFailure(res, sent);
     throw new Error(`alarms ${res.status}`);
   }
   return checkResponse(alarmsListResponseSchema, await res.json(), "alarms");
@@ -77,9 +79,10 @@ export async function fetchActiveAlarms(
 export async function fetchAlarmSummary(scope: AlarmScope): Promise<AlarmSummaryResponse> {
   const params = new URLSearchParams();
   appendScope(params, scope);
-  const res = await fetch(`${base}/api/v1/alarms/summary?${params}`, withAuth());
+  const sent = withAuth();
+  const res = await fetch(`${base}/api/v1/alarms/summary?${params}`, sent);
   if (!res.ok) {
-    clearSessionOnAuthFailure(res);
+    clearSessionOnAuthFailure(res, sent);
     throw new Error(`alarms/summary ${res.status}`);
   }
   return checkResponse(alarmSummaryResponseSchema, await res.json(), "alarms/summary");
@@ -89,15 +92,16 @@ export async function ackAlarm(
   id: string,
   reason: string,
 ): Promise<AlarmListItem> {
-  const res = await fetch(`${base}/api/v1/alarms/${id}/ack`, {
+  const sent = {
     ...withAuth({
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ reason }),
     }),
-  });
+  };
+  const res = await fetch(`${base}/api/v1/alarms/${id}/ack`, sent);
   if (!res.ok) {
-    clearSessionOnAuthFailure(res);
+    clearSessionOnAuthFailure(res, sent);
     const text = await res.text();
     throw new Error(text || `ack ${res.status}`);
   }
@@ -106,9 +110,10 @@ export async function ackAlarm(
 
 /** GET /api/v1/alarms/:id/details (ADR 0034 decision 5). */
 export async function fetchAlarmDetails(id: string): Promise<AlarmDetailsResponse> {
-  const res = await fetch(`${base}/api/v1/alarms/${id}/details`, withAuth());
+  const sent = withAuth();
+  const res = await fetch(`${base}/api/v1/alarms/${id}/details`, sent);
   if (!res.ok) {
-    clearSessionOnAuthFailure(res);
+    clearSessionOnAuthFailure(res, sent);
     throw new Error(`alarms/:id/details ${res.status}`);
   }
   return checkResponse(alarmDetailsResponseSchema, await res.json(), "alarms/:id/details");
@@ -136,15 +141,16 @@ export async function saveAlarmEnrichment(
   id: string,
   body: AlarmEnrichmentUpsertBody,
 ): Promise<AlarmDetailsResponse> {
-  const res = await fetch(`${base}/api/v1/alarms/${id}/enrichment`, {
+  const sent = {
     ...withAuth({
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
     }),
-  });
+  };
+  const res = await fetch(`${base}/api/v1/alarms/${id}/enrichment`, sent);
   if (!res.ok) {
-    clearSessionOnAuthFailure(res);
+    clearSessionOnAuthFailure(res, sent);
     const text = await res.text();
     throw new Error(text || `alarms/:id/enrichment ${res.status}`);
   }

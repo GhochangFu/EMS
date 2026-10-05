@@ -64,12 +64,13 @@ export async function fetchMaintenanceSchedules(input: {
   if (input.priority) {
     params.set("priority", input.priority);
   }
+  const sent = withAuth();
   const res = await fetch(
     `${base}/api/v1/maintenance/schedules?${params}`,
-    withAuth(),
+    sent,
   );
   if (!res.ok) {
-    clearSessionOnAuthFailure(res);
+    clearSessionOnAuthFailure(res, sent);
     throw new Error(`maintenance-schedules ${res.status}`);
   }
   return checkResponse(maintenanceSchedulesResponseSchema, await res.json(), "maintenance/schedules");
@@ -79,15 +80,16 @@ export async function fetchMaintenanceSchedules(input: {
 export async function createMaintenanceSchedule(
   input: CreateMaintenanceScheduleInput,
 ): Promise<MaintenanceScheduleItem> {
-  const res = await fetch(`${base}/api/v1/maintenance/schedules`, {
+  const sent = {
     ...withAuth({
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(input),
     }),
-  });
+  };
+  const res = await fetch(`${base}/api/v1/maintenance/schedules`, sent);
   if (!res.ok) {
-    clearSessionOnAuthFailure(res);
+    clearSessionOnAuthFailure(res, sent);
     const text = await res.text();
     throw new Error(text || `maintenance-create ${res.status}`);
   }
@@ -100,15 +102,16 @@ export async function updateMaintenanceSchedule(input: {
   active: boolean;
   reason?: string;
 }): Promise<MaintenanceScheduleItem> {
-  const res = await fetch(`${base}/api/v1/maintenance/schedules/${input.id}`, {
+  const sent = {
     ...withAuth({
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ active: input.active, reason: input.reason }),
     }),
-  });
+  };
+  const res = await fetch(`${base}/api/v1/maintenance/schedules/${input.id}`, sent);
   if (!res.ok) {
-    clearSessionOnAuthFailure(res);
+    clearSessionOnAuthFailure(res, sent);
     const text = await res.text();
     throw new Error(text || `maintenance-update ${res.status}`);
   }
@@ -120,18 +123,19 @@ export async function convertMaintenanceSchedule(input: {
   id: string;
   notes?: string;
 }): Promise<ConvertMaintenanceResponse> {
+  const sent = {
+    ...withAuth({
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ notes: input.notes }),
+    }),
+  };
   const res = await fetch(
     `${base}/api/v1/maintenance/schedules/${input.id}/convert`,
-    {
-      ...withAuth({
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ notes: input.notes }),
-      }),
-    },
+    sent,
   );
   if (!res.ok) {
-    clearSessionOnAuthFailure(res);
+    clearSessionOnAuthFailure(res, sent);
     const text = await res.text();
     throw new Error(text || `maintenance-convert ${res.status}`);
   }

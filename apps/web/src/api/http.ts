@@ -13,6 +13,12 @@ export function withAuth(init: RequestInit = {}): RequestInit {
   return { ...init, headers };
 }
 
+/** `F4.206` — the bearer token a request carried, or `null` when it sent none. */
+function carriedBearer(sent: Pick<RequestInit, "headers">): string | null {
+  const header = new Headers(sent.headers).get("Authorization");
+  return header?.startsWith("Bearer ") ? header.slice("Bearer ".length) : null;
+}
+
 /**
  * Clears stale local auth when the API says it does not know who the caller is.
  *
@@ -68,9 +74,34 @@ export function withAuth(init: RequestInit = {}): RequestInit {
  * "Session ended" and returns there after sign-in. `rememberWallReturnPath`
  * never throws, and with no `window` (a node-environment spec) it does
  * nothing, so the session is cleared whatever the storage does.
+ *
+ * **`F4.206`** — a 401 acts only when the request carried the bearer the store
+ * holds now. A slow request sent with an old token used to sign out a user who
+ * signed in after it was sent, and (since `F4.203`) record a reason for them.
+ * `sent` is the `RequestInit` the request went out with — `withAuth(...)`'s
+ * result, or `{ headers }` where the caller built them — and it is **required**,
+ * not optional, so the compiler enumerates every call site: an optional
+ * parameter at an adapter is invisible to `tsc` and to every fake. A request
+ * that carried no bearer compares `null` with the store, so a 401 while signed
+ * out keeps today's behaviour, and an anonymous 401 that lands after a sign-in
+ * does nothing. The comparison runs before the return path, the clear and the
+ * reason, so a stale 401 does none of them.
+ *
+ * Residual, by design: `fetchCurrentUser` (`login.ts`) records a reason for its
+ * own `/me` 401 and does not pass through here. On the OIDC callback and the
+ * local-login path the store is still empty when `/me` runs, so there is no
+ * current token to compare with, and its callers clear only in a guarded
+ * `catch`. A late `/me` 401 for an old token can therefore still record a
+ * reason; it cannot clear a session.
  */
-export function clearSessionOnAuthFailure(res: Response): void {
+export function clearSessionOnAuthFailure(
+  res: Response,
+  sent: Pick<RequestInit, "headers">,
+): void {
   if (res.status === 401) {
+    if (carriedBearer(sent) !== useAuthStore.getState().accessToken) {
+      return;
+    }
     if (typeof window !== "undefined") {
       rememberWallReturnPath(window.location);
     }

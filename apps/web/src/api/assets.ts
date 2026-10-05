@@ -73,9 +73,10 @@ export async function fetchAssetRoleSummary(
   for (const id of assetIds) {
     params.append("assetIds", id);
   }
-  const res = await fetch(`${base}/api/v1/assets/role-summary?${params}`, withAuth());
+  const sent = withAuth();
+  const res = await fetch(`${base}/api/v1/assets/role-summary?${params}`, sent);
   if (!res.ok) {
-    clearSessionOnAuthFailure(res);
+    clearSessionOnAuthFailure(res, sent);
     throw new Error(`assets/role-summary ${res.status}`);
   }
   return checkResponse(assetRoleSummaryResponseSchema, await res.json(), "assets/role-summary");

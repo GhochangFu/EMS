@@ -79,9 +79,10 @@ export type RuleDraftPayload = {
 
 /** GET /api/v1/rules */
 export async function fetchRules(): Promise<RulesResponse> {
-  const res = await fetch(`${base}/api/v1/rules`, withAuth());
+  const sent = withAuth();
+  const res = await fetch(`${base}/api/v1/rules`, sent);
   if (!res.ok) {
-    clearSessionOnAuthFailure(res);
+    clearSessionOnAuthFailure(res, sent);
     throw new Error(`rules ${res.status}`);
   }
   return checkResponse(rulesResponseSchema, await res.json(), "rules");
@@ -89,9 +90,10 @@ export async function fetchRules(): Promise<RulesResponse> {
 
 /** GET /api/v1/rules/catalog */
 export async function fetchRuleBuilderCatalog(): Promise<RuleBuilderCatalogResponse> {
-  const res = await fetch(`${base}/api/v1/rules/catalog`, withAuth());
+  const sent = withAuth();
+  const res = await fetch(`${base}/api/v1/rules/catalog`, sent);
   if (!res.ok) {
-    clearSessionOnAuthFailure(res);
+    clearSessionOnAuthFailure(res, sent);
     throw new Error(`rule-catalog ${res.status}`);
   }
   return checkResponse(ruleBuilderCatalogResponseSchema, await res.json(), "rules/catalog");
@@ -102,9 +104,10 @@ export async function fetchRuleExecutions(
   limit = 25,
 ): Promise<RuleExecutionsResponse> {
   const params = new URLSearchParams({ limit: String(limit) });
-  const res = await fetch(`${base}/api/v1/rules/executions?${params}`, withAuth());
+  const sent = withAuth();
+  const res = await fetch(`${base}/api/v1/rules/executions?${params}`, sent);
   if (!res.ok) {
-    clearSessionOnAuthFailure(res);
+    clearSessionOnAuthFailure(res, sent);
     throw new Error(`rule-executions ${res.status}`);
   }
   return checkResponse(ruleExecutionsResponseSchema, await res.json(), "rules/executions");
@@ -116,7 +119,7 @@ export async function setRuleEnabled(input: {
   enabled: boolean;
   reason?: string;
 }): Promise<RuleListItem> {
-  const res = await fetch(`${base}/api/v1/rules/${input.id}/enabled`, {
+  const sent = {
     ...withAuth({
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
@@ -125,9 +128,10 @@ export async function setRuleEnabled(input: {
         reason: input.reason,
       }),
     }),
-  });
+  };
+  const res = await fetch(`${base}/api/v1/rules/${input.id}/enabled`, sent);
   if (!res.ok) {
-    clearSessionOnAuthFailure(res);
+    clearSessionOnAuthFailure(res, sent);
     const text = await res.text();
     throw new Error(text || `rule-toggle ${res.status}`);
   }
@@ -136,11 +140,12 @@ export async function setRuleEnabled(input: {
 
 /** POST /api/v1/rules/evaluate */
 export async function evaluateRules(): Promise<RuleExecutionsResponse> {
-  const res = await fetch(`${base}/api/v1/rules/evaluate`, {
+  const sent = {
     ...withAuth({ method: "POST" }),
-  });
+  };
+  const res = await fetch(`${base}/api/v1/rules/evaluate`, sent);
   if (!res.ok) {
-    clearSessionOnAuthFailure(res);
+    clearSessionOnAuthFailure(res, sent);
     const text = await res.text();
     throw new Error(text || `rule-evaluate ${res.status}`);
   }
@@ -149,15 +154,16 @@ export async function evaluateRules(): Promise<RuleExecutionsResponse> {
 
 /** POST /api/v1/rules */
 export async function createRuleDraft(input: RuleDraftPayload): Promise<RuleListItem> {
-  const res = await fetch(`${base}/api/v1/rules`, {
+  const sent = {
     ...withAuth({
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(input),
     }),
-  });
+  };
+  const res = await fetch(`${base}/api/v1/rules`, sent);
   if (!res.ok) {
-    clearSessionOnAuthFailure(res);
+    clearSessionOnAuthFailure(res, sent);
     const text = await res.text();
     throw new Error(text || `rule-create ${res.status}`);
   }
@@ -169,15 +175,16 @@ export async function updateRuleDraft(input: {
   id: string;
   payload: Partial<RuleDraftPayload> & { reason?: string };
 }): Promise<RuleListItem> {
-  const res = await fetch(`${base}/api/v1/rules/${input.id}`, {
+  const sent = {
     ...withAuth({
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(input.payload),
     }),
-  });
+  };
+  const res = await fetch(`${base}/api/v1/rules/${input.id}`, sent);
   if (!res.ok) {
-    clearSessionOnAuthFailure(res);
+    clearSessionOnAuthFailure(res, sent);
     const text = await res.text();
     throw new Error(text || `rule-update ${res.status}`);
   }
@@ -188,15 +195,16 @@ export async function updateRuleDraft(input: {
 export async function previewRuleDraft(
   input: RuleDraftPayload & { id?: string },
 ): Promise<RulePreviewResult> {
-  const res = await fetch(`${base}/api/v1/rules/preview`, {
+  const sent = {
     ...withAuth({
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(input),
     }),
-  });
+  };
+  const res = await fetch(`${base}/api/v1/rules/preview`, sent);
   if (!res.ok) {
-    clearSessionOnAuthFailure(res);
+    clearSessionOnAuthFailure(res, sent);
     const text = await res.text();
     throw new Error(text || `rule-preview ${res.status}`);
   }
@@ -232,15 +240,16 @@ async function ruleLifecycleRequest(
   action: "publish" | "duplicate" | "archive",
   reason?: string,
 ): Promise<RuleListItem> {
-  const res = await fetch(`${base}/api/v1/rules/${id}/${action}`, {
+  const sent = {
     ...withAuth({
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ reason }),
     }),
-  });
+  };
+  const res = await fetch(`${base}/api/v1/rules/${id}/${action}`, sent);
   if (!res.ok) {
-    clearSessionOnAuthFailure(res);
+    clearSessionOnAuthFailure(res, sent);
     const text = await res.text();
     throw new Error(text || `rule-${action} ${res.status}`);
   }

@@ -83,9 +83,10 @@ export async function setOnboardingCredentials(
  */
 export async function downloadOnboardingTemplate(): Promise<void> {
   const headers = await getAdminAuthHeaders();
-  const res = await fetch(`${base}/api/v1/admin/onboarding/template.xlsx`, { headers });
+  const sent = { headers };
+  const res = await fetch(`${base}/api/v1/admin/onboarding/template.xlsx`, sent);
   if (!res.ok) {
-    clearSessionOnAuthFailure(res);
+    clearSessionOnAuthFailure(res, sent);
     const text = await res.text();
     throw new Error(
       text.trim() === "" ? `Template download failed (${res.status})` : apiErrorMessage(text),
@@ -130,13 +131,14 @@ export async function uploadOnboardingExcel(
   const headers = await getAdminAuthHeaders();
   const form = new FormData();
   form.append("file", file);
-  const res = await fetch(`${base}/api/v1/admin/onboarding/sessions/${sessionId}/upload`, {
+  const sent = {
     method: "POST",
     headers,
     body: form,
-  });
+  };
+  const res = await fetch(`${base}/api/v1/admin/onboarding/sessions/${sessionId}/upload`, sent);
   if (!res.ok) {
-    clearSessionOnAuthFailure(res);
+    clearSessionOnAuthFailure(res, sent);
     throw new Error(describeOnboardingUploadError(res.status, await res.text()));
   }
   return readJson(res, onboardingChatResponseDtoSchema, "admin onboarding upload");

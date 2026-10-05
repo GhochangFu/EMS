@@ -21,12 +21,13 @@ export async function fetchSiteWidgets(
 ): Promise<SiteWidgetsResponse> {
   const endpoint = "dashboards/:id/site-widgets";
   const query = tabKey === null ? "" : `?tab=${encodeURIComponent(tabKey)}`;
+  const sent = withAuth({ signal });
   const res = await fetch(
     `${base}/api/v1/dashboards/${encodeURIComponent(dashboardId)}/site-widgets${query}`,
-    withAuth({ signal }),
+    sent,
   );
   if (!res.ok) {
-    clearSessionOnAuthFailure(res);
+    clearSessionOnAuthFailure(res, sent);
     const text = await res.text();
     throw new ApiError(text || `${endpoint} ${res.status}`, res.status);
   }

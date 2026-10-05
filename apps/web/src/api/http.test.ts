@@ -2,6 +2,11 @@
 import { describe, it } from "vitest";
 
 import {
+  runACurrent401StillClearsAndRecords,
+  runALate401LeavesTheNewSession,
+  runALate401RecordsNoReason,
+  runAnAnonymous401LeavesALaterSession,
+  runAStale401StoresNoReturnPath,
   runALaterPlain401DoesNotEraseTheReason,
   runAnUnclonableResponseStillClearsTheSession,
   runANonJsonBodyIsIgnored,
@@ -85,5 +90,27 @@ describe("F4.203 api/http keeps the first auth-failure reason", () => {
 
   it("R7 setSession consumes the reason", async () => {
     await runSetSessionConsumesTheReason();
+  });
+});
+
+describe("F4.206 a 401 clears the session only when it carried the current bearer", () => {
+  it("L1 a late 401 for an old token leaves the new session", () => {
+    runALate401LeavesTheNewSession();
+  });
+
+  it("L2 a late 401 for an old token records no reason", async () => {
+    await runALate401RecordsNoReason();
+  });
+
+  it("L3 control: a 401 that carried the current token still clears and records", async () => {
+    await runACurrent401StillClearsAndRecords();
+  });
+
+  it("L4 a 401 whose request carried no bearer leaves a later session", () => {
+    runAnAnonymous401LeavesALaterSession();
+  });
+
+  it("L5 a stale 401 on a wall URL stores no return path", () => {
+    runAStale401StoresNoReturnPath();
   });
 });

@@ -59,18 +59,24 @@ export type NotificationChannelPayload = {
  *
  * Reads the body through the shared `apiErrorMessage` (`F4.204`), which also
  * handles an array `message` (a Zod validation refusal) that a private parse
- * here used to miss. An empty body keeps the `label status` fallback.
+ * here used to miss. An empty body keeps the `label status` fallback. `sent` is
+ * the request's `RequestInit`, so a 401 clears only its own session (`F4.206`).
  */
-async function failure(res: Response, label: string): Promise<Error> {
-  clearSessionOnAuthFailure(res);
+async function failure(
+  res: Response,
+  sent: Pick<RequestInit, "headers">,
+  label: string,
+): Promise<Error> {
+  clearSessionOnAuthFailure(res, sent);
   const text = await res.text();
   return new Error(text.trim() === "" ? `${label} ${res.status}` : apiErrorMessage(text));
 }
 
 /** GET /api/v1/notifications/channels */
 export async function fetchNotificationChannels(): Promise<NotificationChannelsResponse> {
-  const res = await fetch(`${base}/api/v1/notifications/channels`, withAuth());
-  if (!res.ok) throw await failure(res, "notification-channels");
+  const sent = withAuth();
+  const res = await fetch(`${base}/api/v1/notifications/channels`, sent);
+  if (!res.ok) throw await failure(res, sent, "notification-channels");
   return checkResponse(
     notificationChannelsListResponseSchema,
     await res.json(),
@@ -82,14 +88,15 @@ export async function fetchNotificationChannels(): Promise<NotificationChannelsR
 export async function createNotificationChannel(
   payload: NotificationChannelPayload,
 ): Promise<NotificationChannelDto> {
-  const res = await fetch(`${base}/api/v1/notifications/channels`, {
+  const sent = {
     ...withAuth({
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
     }),
-  });
-  if (!res.ok) throw await failure(res, "notification-channel-create");
+  };
+  const res = await fetch(`${base}/api/v1/notifications/channels`, sent);
+  if (!res.ok) throw await failure(res, sent, "notification-channel-create");
   return checkResponse(
     notificationChannelResponseSchema,
     await res.json(),
@@ -111,14 +118,15 @@ export async function updateNotificationChannel(input: {
   id: string;
   patch: Omit<Partial<NotificationChannelPayload>, "organizationId" | "code">;
 }): Promise<NotificationChannelDto> {
-  const res = await fetch(`${base}/api/v1/notifications/channels/${input.id}`, {
+  const sent = {
     ...withAuth({
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(input.patch),
     }),
-  });
-  if (!res.ok) throw await failure(res, "notification-channel-update");
+  };
+  const res = await fetch(`${base}/api/v1/notifications/channels/${input.id}`, sent);
+  if (!res.ok) throw await failure(res, sent, "notification-channel-update");
   return checkResponse(
     notificationChannelResponseSchema,
     await res.json(),
@@ -128,10 +136,11 @@ export async function updateNotificationChannel(input: {
 
 /** DELETE /api/v1/notifications/channels/:id */
 export async function deleteNotificationChannel(id: string): Promise<{ deleted: true }> {
-  const res = await fetch(`${base}/api/v1/notifications/channels/${id}`, {
+  const sent = {
     ...withAuth({ method: "DELETE" }),
-  });
-  if (!res.ok) throw await failure(res, "notification-channel-delete");
+  };
+  const res = await fetch(`${base}/api/v1/notifications/channels/${id}`, sent);
+  if (!res.ok) throw await failure(res, sent, "notification-channel-delete");
   return checkResponse(
     notificationChannelDeletedResponseSchema,
     await res.json(),
@@ -147,10 +156,11 @@ export async function deleteNotificationChannel(id: string): Promise<{ deleted: 
  * 3am failure met at configuration time.
  */
 export async function testNotificationChannel(id: string): Promise<NotificationTestResult> {
-  const res = await fetch(`${base}/api/v1/notifications/channels/${id}/test`, {
+  const sent = {
     ...withAuth({ method: "POST" }),
-  });
-  if (!res.ok) throw await failure(res, "notification-channel-test");
+  };
+  const res = await fetch(`${base}/api/v1/notifications/channels/${id}/test`, sent);
+  if (!res.ok) throw await failure(res, sent, "notification-channel-test");
   return checkResponse(
     notificationTestResultResponseSchema,
     await res.json(),
@@ -163,8 +173,9 @@ export async function fetchNotificationDeliveries(
   limit = 100,
 ): Promise<NotificationDeliveriesResponse> {
   const params = new URLSearchParams({ limit: String(limit) });
-  const res = await fetch(`${base}/api/v1/notifications/deliveries?${params}`, withAuth());
-  if (!res.ok) throw await failure(res, "notification-deliveries");
+  const sent = withAuth();
+  const res = await fetch(`${base}/api/v1/notifications/deliveries?${params}`, sent);
+  if (!res.ok) throw await failure(res, sent, "notification-deliveries");
   return checkResponse(
     notificationDeliveriesResponseSchema,
     await res.json(),
@@ -174,8 +185,9 @@ export async function fetchNotificationDeliveries(
 
 /** GET /api/v1/notifications/readiness — authenticated, not admin-only. */
 export async function fetchNotificationReadiness(): Promise<NotificationReadinessResponse> {
-  const res = await fetch(`${base}/api/v1/notifications/readiness`, withAuth());
-  if (!res.ok) throw await failure(res, "notification-readiness");
+  const sent = withAuth();
+  const res = await fetch(`${base}/api/v1/notifications/readiness`, sent);
+  if (!res.ok) throw await failure(res, sent, "notification-readiness");
   return checkResponse(
     notificationReadinessResponseSchema,
     await res.json(),
@@ -185,8 +197,9 @@ export async function fetchNotificationReadiness(): Promise<NotificationReadines
 
 /** GET /api/v1/rules/:id/notifications */
 export async function fetchRuleNotifications(ruleId: string): Promise<{ channelIds: string[] }> {
-  const res = await fetch(`${base}/api/v1/rules/${ruleId}/notifications`, withAuth());
-  if (!res.ok) throw await failure(res, "rule-notifications");
+  const sent = withAuth();
+  const res = await fetch(`${base}/api/v1/rules/${ruleId}/notifications`, sent);
+  if (!res.ok) throw await failure(res, sent, "rule-notifications");
   return checkResponse(
     ruleNotificationsResponseSchema,
     await res.json(),
@@ -199,14 +212,15 @@ export async function setRuleNotifications(input: {
   ruleId: string;
   channelIds: string[];
 }): Promise<{ channelIds: string[] }> {
-  const res = await fetch(`${base}/api/v1/rules/${input.ruleId}/notifications`, {
+  const sent = {
     ...withAuth({
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ channelIds: input.channelIds }),
     }),
-  });
-  if (!res.ok) throw await failure(res, "rule-notifications-set");
+  };
+  const res = await fetch(`${base}/api/v1/rules/${input.ruleId}/notifications`, sent);
+  if (!res.ok) throw await failure(res, sent, "rule-notifications-set");
   return checkResponse(
     ruleNotificationsResponseSchema,
     await res.json(),
