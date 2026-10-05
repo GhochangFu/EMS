@@ -22,6 +22,11 @@ import {
   assertConfirmRtuGoesOnWhenTheRtuIsSetUp,
   assertConfirmRtuSaysTheCredentialsAreMissing,
   assertTheProtocolAnswerOffersNoProtocolPastTheRtuStep,
+  assertAnotherRtuOnTheModbusPathIsModbus,
+  assertAnRtuAddedPastThePointKeysOffersNoPointKey,
+  assertConfirmRtuWithNoRtuAsksForAProtocol,
+  assertConfirmMappingsOnAReadyDraftGoesOnToReview,
+  assertConfirmRtuBeforeTheLocationNamesIt,
   assertTheProtocolAnswerOffersProtocolsAtTheRtuStep,
 } from "./onboarding-chat-point-keys.spec";
 
@@ -107,6 +112,26 @@ describe("onboarding chat reply buttons reach their step (F4.199)", () => {
 
   it("Add another RTU adds an RTU on the Modbus path", async () => {
     await assertAddAnotherRtuAddsAnRtuOnTheModbusPath();
+  });
+
+  it("Add another RTU on the Modbus path adds a Modbus RTU", async () => {
+    await assertAnotherRtuOnTheModbusPathIsModbus();
+  });
+
+  it("an RTU added past the point keys offers no Add point key kw", async () => {
+    await assertAnRtuAddedPastThePointKeysOffersNoPointKey();
+  });
+
+  it("confirm rtu with no RTU asks for a protocol", async () => {
+    await assertConfirmRtuWithNoRtuAsksForAProtocol();
+  });
+
+  it("confirm mappings on a ready draft goes on to review", async () => {
+    await assertConfirmMappingsOnAReadyDraftGoesOnToReview();
+  });
+
+  it("confirm rtu before the location is complete names the location step", async () => {
+    await assertConfirmRtuBeforeTheLocationNamesIt();
   });
 
   it("the protocol answer offers protocols at the RTU step", async () => {

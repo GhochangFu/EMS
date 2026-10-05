@@ -91,6 +91,9 @@ const PHASE_ORDER: readonly OnboardingPhase[] = ["location", "rtu", "point_keys"
 /** The protocol replies; each is a protocol `detectProtocol` reads. */
 const PROTOCOL_REPLIES = ["MQTT", "Modbus", "BACnet", "OPC-UA", "SNMP", "REST", "Simulator"];
 
+/** The words `detectProtocol` reads; a message with none of them falls back to MQTT there. */
+const NAMES_A_PROTOCOL = /mqtt|modbus|bacnet|opc|snmp|rest|sim/;
+
 /** F4.199 — the "confirm <step>" replies the guided mode offers, matched whole after trim and lower-casing. */
 const CONFIRM_STEP_REPLIES: ReadonlyMap<string, OnboardingPhase> = new Map([
   ["confirm rtu", "rtu"],
@@ -589,8 +592,13 @@ export class OnboardingChatService {
 
     // F4.199: "Add another RTU" is offered past the RTU step too (a non-MQTT
     // RTU moves the phase on to `point_keys`), so it is matched by its text.
-    if (phase === "rtu" || !draft.rtus?.length || /^add another rtu\b/.test(lower)) {
-      const protocol = this.detectProtocol(lower);
+    // A reply that names no protocol repeats the last RTU's, so a Modbus RTU
+    // is not followed by an MQTT one that waits for credentials.
+    const addAnother = /^add another rtu\b/.test(lower);
+    if (phase === "rtu" || !draft.rtus?.length || addAnother) {
+      const lastProtocol = draft.rtus?.[draft.rtus.length - 1]?.protocol;
+      const protocol =
+        addAnother && lastProtocol && !NAMES_A_PROTOCOL.test(lower) ? lastProtocol : this.detectProtocol(lower);
       const rtuCode = `RTU-${(draft.rtus?.length ?? 0) + 1}`;
       const rtuPatch = {
         code: rtuCode,

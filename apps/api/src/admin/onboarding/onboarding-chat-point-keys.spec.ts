@@ -306,3 +306,54 @@ export async function assertAddAnotherRtuAddsAnRtuOnTheModbusPath(): Promise<voi
   assert(result.draftPatch.rtus?.length === 2, `a second RTU is added, got ${turnSummary(result)}`);
   assert(result.draftPatch.pointKeys === undefined, `no point key is added, got ${JSON.stringify(result.draftPatch.pointKeys)}`);
 }
+
+/** The second RTU repeats the Modbus protocol, so it does not wait for MQTT credentials. */
+export async function assertAnotherRtuOnTheModbusPathIsModbus(): Promise<void> {
+  const first = await ruleBasedTurn("Modbus", { location: PLACE }, "rtu");
+  const draft = mergeDraftPatch({ location: PLACE }, first.draftPatch);
+  const result = await ruleBasedTurn("Add another RTU", draft, first.currentPhase);
+  assert(result.draftPatch.rtus?.[1]?.protocol === "modbus_tcp", `the second RTU is Modbus, got ${JSON.stringify(result.draftPatch.rtus)}`);
+  assert(repliesOf(result) === JSON.stringify(["Add point key kw", "View draft", "Add another RTU"]), turnSummary(result));
+}
+
+/** A Modbus RTU added once a key exists goes past the point keys, so "Add point key kw" is not offered. */
+export async function assertAnRtuAddedPastThePointKeysOffersNoPointKey(): Promise<void> {
+  const draft: OnboardingDraft = { location: PLACE, rtus: [MODBUS_RTU], pointKeys: [KW] };
+  const result = await ruleBasedTurn("Add another RTU", draft, "assets");
+  assert(result.draftPatch.rtus?.length === 2, `a second RTU is added, got ${turnSummary(result)}`);
+  assert(repliesOf(result) === JSON.stringify(["View draft", "Add another RTU"]), turnSummary(result));
+}
+
+/** "confirm rtu" with no RTU asks for a protocol and offers the protocol replies. */
+export async function assertConfirmRtuWithNoRtuAsksForAProtocol(): Promise<void> {
+  const result = await ruleBasedTurn("confirm rtu", { location: PLACE }, "rtu");
+  assert(result.assistantMessage.startsWith("The RTU step is not complete yet. Add an RTU first."), turnSummary(result));
+  assert(result.draftPatch.rtus === undefined, `no RTU is added, got ${JSON.stringify(result.draftPatch.rtus)}`);
+  assert(
+    repliesOf(result) === JSON.stringify(["MQTT", "Modbus", "BACnet", "OPC-UA", "SNMP", "REST", "Simulator"]),
+    turnSummary(result),
+  );
+}
+
+/** "confirm mappings" on a ready draft says the step is complete and offers the review replies. */
+export async function assertConfirmMappingsOnAReadyDraftGoesOnToReview(): Promise<void> {
+  const draft: OnboardingDraft = {
+    location: PLACE,
+    rtus: [MODBUS_RTU],
+    pointKeys: [KW],
+    assets: [PLAIN_ASSET],
+    assetPoints: [{ assetIndex: 0, pointKey: "kw", sourceDataKey: "s09_r01", unit: "kW" }],
+  };
+  const result = await ruleBasedTurn("confirm mappings", draft, "mappings");
+  assert(result.assistantMessage.startsWith("The mappings step is complete."), turnSummary(result));
+  assert(result.currentPhase === "review", turnSummary(result));
+  assert(repliesOf(result) === JSON.stringify(["create it", "View draft"]), turnSummary(result));
+}
+
+/** "confirm rtu" before the location has a type names the location step. */
+export async function assertConfirmRtuBeforeTheLocationNamesIt(): Promise<void> {
+  const result = await ruleBasedTurn("confirm rtu", { location: { name: "Berhampur" } as OnboardingDraft["location"] }, "location");
+  assert(result.assistantMessage.startsWith("The RTU step comes later. The location needs a name and a type"), turnSummary(result));
+  assert(result.draftPatch.location === undefined, `the location is not changed, got ${JSON.stringify(result.draftPatch.location)}`);
+  assert(repliesOf(result) === JSON.stringify(["View draft"]), turnSummary(result));
+}
