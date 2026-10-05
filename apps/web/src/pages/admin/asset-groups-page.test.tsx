@@ -10,6 +10,8 @@ import {
   aRefusedSaveShowsTheSentence,
   addSendsTheAssetId,
   anEmptyVocabularyRendersNoRolesOfItsOwn,
+  cancellingMemberRemoveSendsNothing,
+  confirmingMemberRemoveSendsOneRequest,
   choosingAnOrganizationStaysOnTheScreen,
   createAtAnotherLocationMovesTheFilterThere,
   createSendsTheSelectedLocation,
@@ -116,5 +118,13 @@ describe("F3.37 asset groups page", () => {
 
   it("F4.197: a refused role write shows the server's sentence, not the JSON envelope", async () => {
     await aRefusedRoleWriteShowsTheSentence();
+  });
+
+  it("F4.202: cancelling a member's Remove sends nothing", async () => {
+    await cancellingMemberRemoveSendsNothing();
+  });
+
+  it("F4.202: confirming a member's Remove sends one request", async () => {
+    await confirmingMemberRemoveSendsOneRequest();
   });
 });

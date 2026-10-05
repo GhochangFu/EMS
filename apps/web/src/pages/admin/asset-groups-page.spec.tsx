@@ -132,6 +132,19 @@ const LOCATIONS = {
   ],
 };
 
+/**
+ * `F4.202`: a member's Remove asks first. Clicks the row's Remove, then the dialog's confirm —
+ * the request starts on the confirm.
+ */
+async function removeMemberAndConfirm(assetName: string): Promise<void> {
+  await userEvent.click(await screen.findByRole("button", { name: `Remove ${assetName}` }));
+  const dialog = await screen.findByRole("dialog", { name: `Remove ${assetName} from Electrical train` });
+  await userEvent.click(within(dialog).getByRole("button", { name: "Confirm remove" }));
+}
+
+/** A request starts a tick after the click; "nothing was sent" is read after timers have run. */
+const settle = () => new Promise((resolve) => setTimeout(resolve, 50));
+
 function renderPage(as: AuthUser = user): void {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false } },
@@ -391,7 +404,7 @@ export async function aRefusedRemoveShowsTheSentence(): Promise<void> {
   stubApi({ removeAdminAssetGroupMember: refused });
   renderPage();
   await userEvent.click(await screen.findByRole("button", { name: /Electrical train/ }));
-  await userEvent.click(await screen.findByRole("button", { name: "Remove Transformer 1" }));
+  await removeMemberAndConfirm("Transformer 1");
 
   await expectTheSentenceNotTheEnvelope();
 }
@@ -563,7 +576,7 @@ export async function removeInvalidatesTheMembersQuery(): Promise<void> {
   stubApi();
   renderPage();
   await userEvent.click(await screen.findByRole("button", { name: /Electrical train/ }));
-  await userEvent.click(await screen.findByRole("button", { name: "Remove Transformer 1" }));
+  await removeMemberAndConfirm("Transformer 1");
 
   await waitFor(() => {
     expect(api.removeAdminAssetGroupMember).toHaveBeenCalledWith(
@@ -584,7 +597,7 @@ async function startAPendingRemoval(): Promise<void> {
   stubApi({ removeAdminAssetGroupMember: () => new Promise<never>(() => {}) });
   renderPage();
   await userEvent.click(await screen.findByRole("button", { name: /Electrical train/ }));
-  await userEvent.click(await screen.findByRole("button", { name: "Remove Transformer 1" }));
+  await removeMemberAndConfirm("Transformer 1");
 }
 
 /**
@@ -606,6 +619,35 @@ export async function theOtherRowsKeepTheirName(): Promise<void> {
   await screen.findByRole("button", { name: "Removing Transformer 1…" });
   const other = screen.getByRole("button", { name: "Remove Transformer 3" });
   expect(other).toHaveAttribute("aria-busy", "false");
+}
+
+/**
+ * `F4.202`: Cancel sends nothing. The adjacent positives: the dialog opened and named the asset,
+ * the group and the result; it is gone after Cancel; the row still reads "Remove".
+ */
+export async function cancellingMemberRemoveSendsNothing(): Promise<void> {
+  stubApi();
+  renderPage();
+  await userEvent.click(await screen.findByRole("button", { name: /Electrical train/ }));
+  await userEvent.click(await screen.findByRole("button", { name: "Remove Transformer 1" }));
+  const dialog = await screen.findByRole("dialog", { name: "Remove Transformer 1 from Electrical train" });
+  expect(dialog).toHaveTextContent("Dashboards bound to this group no longer read this asset.");
+  await userEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
+  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  await settle();
+  expect(screen.getByRole("button", { name: "Remove Transformer 1" })).toHaveAttribute("aria-busy", "false");
+  expect(api.removeAdminAssetGroupMember).toHaveBeenCalledTimes(0);
+}
+
+/** `F4.202`: Confirm sends exactly one request — not one on the row click and one on the confirm. */
+export async function confirmingMemberRemoveSendsOneRequest(): Promise<void> {
+  stubApi();
+  renderPage();
+  await userEvent.click(await screen.findByRole("button", { name: /Electrical train/ }));
+  await removeMemberAndConfirm("Transformer 1");
+  await waitFor(() => expect(api.removeAdminAssetGroupMember).toHaveBeenCalled());
+  await settle();
+  expect(api.removeAdminAssetGroupMember).toHaveBeenCalledTimes(1);
 }
 
 /** Edit sends name and description for the group, and never a `code` key. */

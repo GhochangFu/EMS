@@ -47,6 +47,13 @@ import {
   theRoleColumnShowsTheSharedLabel,
   theTargetSelectNamesTheGroupsLocation,
   anAssetGroupGrantRowNamesItsLocation,
+  cancellingDeactivateSendsNothing,
+  cancellingGrantRemoveSendsNothing,
+  confirmingDeactivateSendsOneRequest,
+  confirmingGrantRemoveSendsOneRequest,
+  reactivateSendsAtOnce,
+  temporaryPasswordOpensNoSecondConfirm,
+  theDeactivateConfirmNamesTheUserAndTheResult,
   unlinkedEditIsDisabledWithTheSentence,
 } from "./users-page.spec";
 
@@ -240,5 +247,33 @@ describe("F3.78 users page", () => {
 
   it("F4.201: an asset-group grant row names its location", async () => {
     await anAssetGroupGrantRowNamesItsLocation();
+  });
+
+  it("F4.202: the Deactivate confirm names the user and the result", async () => {
+    await theDeactivateConfirmNamesTheUserAndTheResult();
+  });
+
+  it("F4.202: cancelling Deactivate sends nothing", async () => {
+    await cancellingDeactivateSendsNothing();
+  });
+
+  it("F4.202: confirming Deactivate sends one request", async () => {
+    await confirmingDeactivateSendsOneRequest();
+  });
+
+  it("F4.202: cancelling a grant's Remove sends nothing", async () => {
+    await cancellingGrantRemoveSendsNothing();
+  });
+
+  it("F4.202: confirming a grant's Remove sends one request", async () => {
+    await confirmingGrantRemoveSendsOneRequest();
+  });
+
+  it("F4.202: Reactivate sends at once, with no confirm", async () => {
+    await reactivateSendsAtOnce();
+  });
+
+  it("F4.202: Temporary password keeps its modal and opens no second confirm", async () => {
+    await temporaryPasswordOpensNoSecondConfirm();
   });
 });

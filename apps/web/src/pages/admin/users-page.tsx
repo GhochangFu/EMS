@@ -29,6 +29,7 @@ import {
 } from "../../api/admin/users";
 import { isOidcEnabled } from "../../api/oidc";
 import { MasterDataLayout } from "../../components/admin/master-data-layout";
+import { ConfirmDialog } from "../../components/confirm-dialog";
 import { PageHeader } from "../../components/page-header";
 import { SectionCard } from "../../components/section-card";
 import { StatusPill } from "../../components/status-pill";
@@ -176,18 +177,8 @@ const ROW_ACTION_TEXT: Record<
   { label: string; text: string; pendingLabel: string; pendingText: string }
 > = {
   edit: { label: "Edit", text: "Edit", pendingLabel: "Saving", pendingText: "Saving…" },
-  deactivate: {
-    label: "Deactivate",
-    text: "Deactivate",
-    pendingLabel: "Deactivating",
-    pendingText: "Deactivating…",
-  },
-  reactivate: {
-    label: "Reactivate",
-    text: "Reactivate",
-    pendingLabel: "Reactivating",
-    pendingText: "Reactivating…",
-  },
+  deactivate: { label: "Deactivate", text: "Deactivate", pendingLabel: "Deactivating", pendingText: "Deactivating…" },
+  reactivate: { label: "Reactivate", text: "Reactivate", pendingLabel: "Reactivating", pendingText: "Reactivating…" },
   password: {
     label: "Temporary password for",
     text: "Temporary password",
@@ -209,6 +200,8 @@ function UsersAdminScreen({ user }: UsersAdminPageProps) {
   const [modalFeedback, setModalFeedback] = useState<Feedback | null>(null);
   const [pageFeedback, setPageFeedback] = useState<Feedback | null>(null);
   const [grantsFor, setGrantsFor] = useState<AdminUserDto | null>(null);
+  // `F4.202`: Deactivate ends the user's sessions, so it asks first. Reactivate does not.
+  const [confirmDeactivate, setConfirmDeactivate] = useState<AdminUserDto | null>(null);
 
   const usersQ = useQuery({ queryKey: adminUsersQueryKey, queryFn: fetchAdminUsers });
   const orgsQ = useQuery({
@@ -373,13 +366,7 @@ function UsersAdminScreen({ user }: UsersAdminPageProps) {
                                 run: () => reactivateAdminUser(row.id),
                               });
                             })
-                          : rowAction(row, "deactivate", () => {
-                              setPageFeedback(null);
-                              write.mutate({
-                                row: { userId: row.id, action: "deactivate" },
-                                run: () => deactivateAdminUser(row.id),
-                              });
-                            })}
+                          : rowAction(row, "deactivate", () => setConfirmDeactivate(row))}
                         {rowAction(row, "password", () => {
                           setModalFeedback(null);
                           setModal({ kind: "password", target: row });
@@ -445,6 +432,20 @@ function UsersAdminScreen({ user }: UsersAdminPageProps) {
               run: () => setAdminUserTemporaryPassword(modal.target.id, password),
             })
           }
+        />
+      ) : null}
+      {confirmDeactivate ? (
+        <ConfirmDialog
+          title={`Deactivate ${confirmDeactivate.displayName}`}
+          body="This ends the user's sessions and closes its live connections. You can reactivate the user later."
+          confirmLabel="Confirm deactivate"
+          onClose={() => setConfirmDeactivate(null)}
+          onConfirm={() => {
+            const { id } = confirmDeactivate;
+            setConfirmDeactivate(null);
+            setPageFeedback(null);
+            write.mutate({ row: { userId: id, action: "deactivate" }, run: () => deactivateAdminUser(id) });
+          }}
         />
       ) : null}
       {grantsFor ? (
@@ -828,6 +829,7 @@ function GrantsDrawer({
   const [feedback, setFeedback] = useState<Feedback | null>(null);
   const [kind, setKind] = useState<UserGrantKind>("location");
   const [targetId, setTargetId] = useState("");
+  const [removing, setRemoving] = useState<UserGrantDto | null>(null); // `F4.202`: asks first
 
   const grantsQ = useQuery({
     queryKey: adminUserGrantsQueryKey(target.id),
@@ -923,7 +925,7 @@ function GrantsDrawer({
                   aria-busy={removingThis}
                   disabled={remove.isPending}
                   className="text-xs font-semibold text-critical-ink disabled:opacity-50"
-                  onClick={() => remove.mutate(grant)}
+                  onClick={() => setRemoving(grant)}
                 >
                   Remove
                 </button>
@@ -982,6 +984,15 @@ function GrantsDrawer({
             {add.isPending ? "Adding…" : "Add grant"}
           </button>
         </form>
+        {removing ? (
+          <ConfirmDialog
+            title={`Remove ${KIND_LABELS[removing.kind]} grant ${removing.targetName}`}
+            body="The user loses the access this grant gives."
+            confirmLabel="Confirm remove"
+            onClose={() => setRemoving(null)}
+            onConfirm={() => { setRemoving(null); remove.mutate(removing); }}
+          />
+        ) : null}
       </div>
     </div>
   );

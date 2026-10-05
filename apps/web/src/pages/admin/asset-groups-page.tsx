@@ -20,6 +20,7 @@ import {
   type HierarchySelection,
 } from "../../components/admin/hierarchy-filter-bar";
 import { MasterDataLayout } from "../../components/admin/master-data-layout";
+import { ConfirmDialog } from "../../components/confirm-dialog";
 import { PageHeader } from "../../components/page-header";
 import { SectionCard } from "../../components/section-card";
 import { isMasterDataAdmin } from "../../lib/admin-access";
@@ -57,6 +58,10 @@ export function AssetGroupsAdminPage({ user }: AssetGroupsAdminPageProps) {
   const [modal, setModal] = useState<"create" | "edit" | null>(null);
   const [form, setForm] = useState<GroupForm>(EMPTY_FORM);
   const [addAssetId, setAddAssetId] = useState("");
+  // `F4.202`: a member's Remove asks first; the confirm starts the request and closes the dialog.
+  const [removingMember, setRemovingMember] = useState<{ membershipId: string; assetName: string } | null>(
+    null,
+  );
 
   const locationId = selection.locationId ?? undefined;
 
@@ -377,7 +382,7 @@ export function AssetGroupsAdminPage({ user }: AssetGroupsAdminPageProps) {
                             aria-busy={removingThis}
                             className="surface-button px-2 py-1 text-xs"
                             disabled={removeMember.isPending}
-                            onClick={() => removeMember.mutate(member.membershipId)}
+                            onClick={() => setRemovingMember(member)}
                           >
                             {removingThis ? "Removing…" : "Remove"}
                           </button>
@@ -391,6 +396,19 @@ export function AssetGroupsAdminPage({ user }: AssetGroupsAdminPageProps) {
           ) : null}
         </SectionCard>
       </div>
+
+      {removingMember && selectedGroup ? (
+        <ConfirmDialog
+          title={`Remove ${removingMember.assetName} from ${selectedGroup.name}`}
+          body="Dashboards bound to this group no longer read this asset."
+          confirmLabel="Confirm remove"
+          onClose={() => setRemovingMember(null)}
+          onConfirm={() => {
+            setRemovingMember(null);
+            removeMember.mutate(removingMember.membershipId);
+          }}
+        />
+      ) : null}
 
       {modal !== null ? (
         <div className="fixed inset-0 z-40 flex items-center justify-center bg-scrim/40 p-4">

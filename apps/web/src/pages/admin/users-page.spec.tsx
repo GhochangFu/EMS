@@ -144,6 +144,29 @@ async function openCreateModal() {
   return screen.findByRole("dialog", { name: "Create user" });
 }
 
+/**
+ * `F4.202`: Deactivate asks first. Clicks the row's Deactivate, then the dialog's confirm — the
+ * write starts on the confirm, so every case that deactivated with one click goes through here.
+ */
+async function deactivateAndConfirm(name: string): Promise<void> {
+  await userEvent.click(await screen.findByRole("button", { name: `Deactivate ${name}` }));
+  const dialog = await screen.findByRole("dialog", { name: `Deactivate ${name}` });
+  await userEvent.click(within(dialog).getByRole("button", { name: "Confirm deactivate" }));
+}
+
+/** `F4.202`: a grant's Remove asks first, in a dialog outside the drawer and above it. */
+async function removeGrantAndConfirm(drawer: HTMLElement, grantName: string): Promise<void> {
+  await userEvent.click(await within(drawer).findByRole("button", { name: `Remove ${grantName}` }));
+  const dialog = await screen.findByRole("dialog", { name: `Remove ${grantName}` });
+  await userEvent.click(within(dialog).getByRole("button", { name: "Confirm remove" }));
+}
+
+/**
+ * A request starts a tick after the click that asked for it, so "nothing was sent" is read only
+ * after the timers have had a chance to run.
+ */
+const settle = () => new Promise((resolve) => setTimeout(resolve, 50));
+
 async function fillCreate(dialog: HTMLElement, password: string): Promise<void> {
   await userEvent.type(within(dialog).getByLabelText("Email"), "new.person@example.test");
   await userEvent.type(within(dialog).getByLabelText("Display name"), "New Person");
@@ -310,7 +333,7 @@ export async function rendersKeycloakDisableFailed(): Promise<void> {
     [`POST /api/v1/admin/users/${LINKED_ID}/deactivate`]: { status: 200, body: written(USERS.items[0] as Record<string, unknown>, "keycloak_disable_failed") },
   });
   renderPage();
-  await userEvent.click(await screen.findByRole("button", { name: "Deactivate Ada Linked" }));
+  await deactivateAndConfirm("Ada Linked");
   await expectFollowUp(DISABLE, without(DISABLE));
 }
 
@@ -387,7 +410,7 @@ export async function aSuccessfulWriteReadsTheListAgain(): Promise<void> {
     [`POST /api/v1/admin/users/${LINKED_ID}/deactivate`]: { status: 200, body: written(USERS.items[0] as Record<string, unknown>) },
   });
   renderPage();
-  await userEvent.click(await screen.findByRole("button", { name: "Deactivate Ada Linked" }));
+  await deactivateAndConfirm("Ada Linked");
   await waitFor(() => expect(listReads(calls)).toHaveLength(2));
 }
 
@@ -487,7 +510,7 @@ export async function a404ShowsANotFoundSentence(): Promise<void> {
     [`POST /api/v1/admin/users/${LINKED_ID}/deactivate`]: { status: 404, body: { statusCode: 404, message: "Not Found" } },
   });
   renderPage();
-  await userEvent.click(await screen.findByRole("button", { name: "Deactivate Ada Linked" }));
+  await deactivateAndConfirm("Ada Linked");
   expect(await screen.findByText("This user was not found, or it is outside your scope.")).toBeInTheDocument();
 }
 
@@ -517,7 +540,7 @@ export async function removingAGrantSendsItsIdAndKind(): Promise<void> {
   });
   renderPage();
   const drawer = await openGrants();
-  await userEvent.click(await within(drawer).findByRole("button", { name: "Remove Location grant Plant North" }));
+  await removeGrantAndConfirm(drawer, "Location grant Plant North");
   await waitFor(() => {
     expect(writes(calls)).toEqual([
       { path: `/api/v1/admin/users/${LINKED_ID}/grants/location/${GRANT_A_ID}`, method: "DELETE", body: undefined },
@@ -544,7 +567,7 @@ export async function aPendingRemoveAnnouncesOnlyItsOwnGrant(): Promise<void> {
   );
   renderPage();
   const drawer = await openGrants();
-  await userEvent.click(await within(drawer).findByRole("button", { name: "Remove Location grant Plant North" }));
+  await removeGrantAndConfirm(drawer, "Location grant Plant North");
   const busy = await within(drawer).findByRole("button", { name: "Removing Location grant Plant North" });
   expect(busy).toHaveAttribute("aria-busy", "true");
   const other = within(drawer).getByRole("button", { name: "Remove Location grant Plant South" });
@@ -618,7 +641,7 @@ export async function aPendingDeactivateAnnouncesItselfOnItsRowOnly(): Promise<v
   stubOidc();
   holdWrites();
   renderPage();
-  await userEvent.click(await screen.findByRole("button", { name: "Deactivate Ada Linked" }));
+  await deactivateAndConfirm("Ada Linked");
   const busy = await screen.findByRole("button", { name: "Deactivating Ada Linked…" });
   expect(busy).toHaveAttribute("aria-busy", "true");
   expect(busy).toHaveTextContent("Deactivating…");
@@ -646,7 +669,7 @@ export async function aPendingDeactivateLeavesTheSameActionOnAnotherRowAlone(): 
     ),
   );
   renderPage();
-  await userEvent.click(await screen.findByRole("button", { name: "Deactivate Ada Linked" }));
+  await deactivateAndConfirm("Ada Linked");
   await screen.findByRole("button", { name: "Deactivating Ada Linked…" });
   const other = screen.getByRole("button", { name: "Deactivate Bea Second" });
   expect(other).not.toHaveAttribute("aria-busy", "true");
@@ -834,4 +857,108 @@ export async function theDrawerRoleLineShowsTheSharedLabel(): Promise<void> {
   renderPage();
   const drawer = await openGrants();
   expect(within(drawer).getByText("Role: Viewer")).toBeInTheDocument();
+}
+
+// -- F4.202: confirm before Deactivate and grant Remove -----------------------------------------
+
+const DEACTIVATE_BODY =
+  "This ends the user's sessions and closes its live connections. You can reactivate the user later.";
+
+/** The dialog names the user and the result. */
+export async function theDeactivateConfirmNamesTheUserAndTheResult(): Promise<void> {
+  stubOidc();
+  stubFetch();
+  renderPage();
+  await userEvent.click(await screen.findByRole("button", { name: "Deactivate Ada Linked" }));
+  const dialog = await screen.findByRole("dialog", { name: "Deactivate Ada Linked" });
+  expect(dialog).toHaveTextContent(DEACTIVATE_BODY);
+}
+
+/**
+ * Cancel sends nothing. The adjacent positives: the dialog did open, it is gone after Cancel, and
+ * the row still reads "Deactivate" (not "Deactivating…").
+ */
+export async function cancellingDeactivateSendsNothing(): Promise<void> {
+  stubOidc();
+  const calls = stubFetch();
+  renderPage();
+  await userEvent.click(await screen.findByRole("button", { name: "Deactivate Ada Linked" }));
+  const dialog = await screen.findByRole("dialog", { name: "Deactivate Ada Linked" });
+  await userEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
+  await waitFor(() => expect(screen.queryByRole("dialog", { name: "Deactivate Ada Linked" })).toBeNull());
+  await settle();
+  expect(screen.getByRole("button", { name: "Deactivate Ada Linked" })).toHaveAttribute("aria-busy", "false");
+  expect(writes(calls)).toEqual([]);
+}
+
+/** Confirm sends exactly one request — not one on the row click and another on the confirm. */
+export async function confirmingDeactivateSendsOneRequest(): Promise<void> {
+  stubOidc();
+  const calls = stubFetch({
+    [`POST /api/v1/admin/users/${LINKED_ID}/deactivate`]: { status: 200, body: written(USERS.items[0] as Record<string, unknown>) },
+  });
+  renderPage();
+  await deactivateAndConfirm("Ada Linked");
+  await waitFor(() => expect(writes(calls).length).toBeGreaterThan(0));
+  await settle();
+  expect(writes(calls)).toEqual([{ path: `/api/v1/admin/users/${LINKED_ID}/deactivate`, method: "POST", body: undefined }]);
+}
+
+export async function cancellingGrantRemoveSendsNothing(): Promise<void> {
+  stubOidc();
+  const calls = stubFetch();
+  renderPage();
+  const drawer = await openGrants();
+  await userEvent.click(await within(drawer).findByRole("button", { name: "Remove Location grant Plant North" }));
+  const dialog = await screen.findByRole("dialog", { name: "Remove Location grant Plant North" });
+  expect(dialog).toHaveTextContent("The user loses the access this grant gives.");
+  await userEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
+  await waitFor(() => expect(screen.queryByRole("dialog", { name: "Remove Location grant Plant North" })).toBeNull());
+  await settle();
+  // Positive control: the grant is still listed, and its Remove is not announcing a removal.
+  expect(within(drawer).getByRole("button", { name: "Remove Location grant Plant North" })).toHaveAttribute("aria-busy", "false");
+  expect(writes(calls)).toEqual([]);
+}
+
+export async function confirmingGrantRemoveSendsOneRequest(): Promise<void> {
+  stubOidc();
+  const calls = stubFetch({
+    [`DELETE /api/v1/admin/users/${LINKED_ID}/grants/location/${GRANT_A_ID}`]: { status: 200, body: { items: [GRANTS.items[1]] } },
+  });
+  renderPage();
+  const drawer = await openGrants();
+  await removeGrantAndConfirm(drawer, "Location grant Plant North");
+  await waitFor(() => expect(writes(calls).length).toBeGreaterThan(0));
+  await settle();
+  expect(writes(calls)).toEqual([
+    { path: `/api/v1/admin/users/${LINKED_ID}/grants/location/${GRANT_A_ID}`, method: "DELETE", body: undefined },
+  ]);
+}
+
+/** Reactivate needs no confirm (owner ruling): one click, one request, no dialog. */
+export async function reactivateSendsAtOnce(): Promise<void> {
+  stubOidc();
+  const calls = stubFetch({
+    [`POST /api/v1/admin/users/${DEACTIVATED_ID}/reactivate`]: { status: 200, body: written(USERS.items[2] as Record<string, unknown>) },
+  });
+  renderPage();
+  await userEvent.click(await screen.findByRole("button", { name: "Reactivate Dev Deactivated" }));
+  await waitFor(() => {
+    expect(writes(calls)).toEqual([{ path: `/api/v1/admin/users/${DEACTIVATED_ID}/reactivate`, method: "POST", body: undefined }]);
+  });
+  expect(screen.queryByRole("dialog")).toBeNull();
+}
+
+/** "Temporary password" keeps its modal and gets no second confirm: Set password sends. */
+export async function temporaryPasswordOpensNoSecondConfirm(): Promise<void> {
+  stubOidc();
+  const calls = stubFetch({
+    [`POST /api/v1/admin/users/${LINKED_ID}/temporary-password`]: { status: 200, body: written(USERS.items[0] as Record<string, unknown>) },
+  });
+  renderPage();
+  const { dialog, input } = await openPasswordModal();
+  await userEvent.type(input, "twelvechars!");
+  await userEvent.click(within(dialog).getByRole("button", { name: "Set password" }));
+  await waitFor(() => expect(writes(calls)).toHaveLength(1));
+  expect(screen.queryByRole("button", { name: /^Confirm/ })).toBeNull();
 }
