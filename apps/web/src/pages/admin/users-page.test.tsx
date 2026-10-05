@@ -45,6 +45,8 @@ import {
   theDrawerRoleLineShowsTheSharedLabel,
   theEditRoleSelectShowsTheSharedLabels,
   theRoleColumnShowsTheSharedLabel,
+  theTargetSelectNamesTheGroupsLocation,
+  anAssetGroupGrantRowNamesItsLocation,
   unlinkedEditIsDisabledWithTheSentence,
 } from "./users-page.spec";
 
@@ -230,5 +232,13 @@ describe("F3.78 users page", () => {
 
   it("F4.200: the grants drawer's Role line shows the shared role label", async () => {
     await theDrawerRoleLineShowsTheSharedLabel();
+  });
+
+  it("F4.201: the grant target select names each asset group's location", async () => {
+    await theTargetSelectNamesTheGroupsLocation();
+  });
+
+  it("F4.201: an asset-group grant row names its location", async () => {
+    await anAssetGroupGrantRowNamesItsLocation();
   });
 });

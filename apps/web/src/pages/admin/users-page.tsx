@@ -844,12 +844,13 @@ function GrantsDrawer({
     enabled: kind === "asset_group",
   });
 
-  const options: { id: string; name: string }[] =
+  // `F4.201`: an asset group is "Group · Location" — two locations can each have an "HVAC".
+  const options: { id: string; label: string }[] =
     kind === "organization"
-      ? organizations
+      ? organizations.map((org) => ({ id: org.id, label: org.name }))
       : kind === "location"
-        ? (locationsQ.data?.items ?? [])
-        : (groupsQ.data?.items ?? []);
+        ? (locationsQ.data?.items ?? []).map((loc) => ({ id: loc.id, label: loc.name }))
+        : (groupsQ.data?.items ?? []).map((g) => ({ id: g.id, label: `${g.name} · ${g.locationName ?? "—"}` }));
 
   const settle = {
     onSuccess: (response: { items: UserGrantDto[] }) => {
@@ -907,7 +908,9 @@ function GrantsDrawer({
               <li key={`${grant.kind}-${grant.id}`} className="flex items-start justify-between gap-2 py-2">
                 <div className="text-sm">
                   <span className="block font-semibold">{grant.targetName}</span>
-                  <span className="block text-xs text-ink-muted">{KIND_LABELS[grant.kind]}</span>
+                  <span className="block text-xs text-ink-muted">
+                    {`${KIND_LABELS[grant.kind]}${grant.locationName ? ` · ${grant.locationName}` : ""}`}
+                  </span>
                   {grant.effective ? null : (
                     <span className="block text-xs text-warning-ink">
                       Not used by the {roleLabel(target.role)} role.
@@ -965,7 +968,7 @@ function GrantsDrawer({
               <option value="">Select a target</option>
               {options.map((option) => (
                 <option key={option.id} value={option.id}>
-                  {option.name}
+                  {option.label}
                 </option>
               ))}
             </select>

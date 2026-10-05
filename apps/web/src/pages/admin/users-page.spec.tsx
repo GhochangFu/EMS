@@ -795,6 +795,39 @@ export async function theEditRoleSelectShowsTheSharedLabels(): Promise<void> {
   expect(within(select).getByRole("option", { name: "Location Administrator" })).toBeInTheDocument();
 }
 
+// -- F4.201: grant targets name their location --------------------------------------------------
+
+const GROUP_ID = "88888888-8888-8888-8888-888888888888";
+const OTHER_GROUP_ID = "99999999-9999-9999-9999-999999999999";
+/** Two locations, each with an "HVAC" group: the name alone cannot tell them apart. */
+const ASSET_GROUPS = {
+  items: [
+    { id: GROUP_ID, code: "hvac", name: "HVAC", description: null, locationId: "55555555-5555-5555-5555-555555555555", locationName: "Plant North", organizationId: ORG_ID, memberCount: 2, createdAt: new Date(0).toISOString() },
+    { id: OTHER_GROUP_ID, code: "hvac", name: "HVAC", description: null, locationId: "56565656-5656-5656-5656-565656565656", locationName: "Plant South", organizationId: ORG_ID, memberCount: 1, createdAt: new Date(0).toISOString() },
+  ],
+};
+
+export async function theTargetSelectNamesTheGroupsLocation(): Promise<void> {
+  stubOidc();
+  stubFetch({ "GET /api/v1/admin/asset-groups": { status: 200, body: ASSET_GROUPS } });
+  renderPage();
+  const drawer = await openGrants();
+  await userEvent.selectOptions(within(drawer).getByLabelText("Grant kind"), "asset_group");
+  const target = within(drawer).getByLabelText("Grant target");
+  expect(await within(target).findByRole("option", { name: "HVAC · Plant North" })).toBeInTheDocument();
+  expect(within(target).getByRole("option", { name: "HVAC · Plant South" })).toBeInTheDocument();
+}
+
+export async function anAssetGroupGrantRowNamesItsLocation(): Promise<void> {
+  stubOidc();
+  const groupGrant = { ...grant(GRANT_A_ID, "HVAC", true), kind: "asset_group", targetId: GROUP_ID, locationName: "Plant North" };
+  stubFetch({ [`GET /api/v1/admin/users/${LINKED_ID}/grants`]: { status: 200, body: { items: [groupGrant] } } });
+  renderPage();
+  const drawer = await openGrants();
+  const row = (await within(drawer).findByText("HVAC")).closest("li") as HTMLElement;
+  expect(within(row).getByText("Asset group · Plant North")).toBeInTheDocument();
+}
+
 export async function theDrawerRoleLineShowsTheSharedLabel(): Promise<void> {
   stubOidc();
   stubFetch();

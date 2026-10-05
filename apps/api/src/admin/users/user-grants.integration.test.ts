@@ -65,4 +65,8 @@ describe.skipIf(!connectionString)("F3.78 — grants API on bms_tenant (ADR 0089
   it("(b) positive control: the same delete under the location's organization removes the row", async () => {
     await spec.assertTheSameDeleteUnderTheRightGucRemovesTheRow(superDb);
   });
+
+  it("F4.201: an asset-group grant reads its group's location name", async () => {
+    await spec.assertAnAssetGroupGrantReadsItsLocationName(superDb);
+  });
 });

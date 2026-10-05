@@ -19,6 +19,12 @@ export const userGrantDtoSchema = z.object({
   /** The organization, location or asset group the grant names. */
   targetId: z.string().uuid(),
   targetName: z.string(),
+  /**
+   * `F4.201`: asset_group grants only — the group's location; absent on
+   * organization and location grants. Two locations can each have an "HVAC"
+   * group, and the name alone does not tell them apart.
+   */
+  locationName: z.string().optional(),
   /** The grant target's organization (the organization itself for an organization grant). */
   organizationId: z.string().uuid(),
   /**

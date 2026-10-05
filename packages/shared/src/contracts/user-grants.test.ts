@@ -23,4 +23,12 @@ describe("F3.78 — user grants API contracts (ADR 0089 decision 12)", () => {
   it("the response refuses a grant without effective", () => {
     spec.assertResponseRefusesAGrantWithoutEffective();
   });
+
+  it("F4.201: an asset-group grant keeps its location name", () => {
+    spec.assertAnAssetGroupGrantKeepsItsLocationName();
+  });
+
+  it("F4.201: a grant without a location name still parses", () => {
+    spec.assertAGrantWithoutALocationNameStillParses();
+  });
 });

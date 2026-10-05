@@ -66,6 +66,8 @@ const VIEWER_A_GRANTED_B = user("00000000-0000-4000-8000-0000000000v2", "viewer"
 const VIEWER_TWO_GRANTS = user("00000000-0000-4000-8000-0000000000v3", "viewer", ORG_A);
 const ORG_ADMIN_TARGET = user("00000000-0000-4000-8000-0000000000o2", "organization_admin", ORG_A);
 const UNLINKED_A = user("00000000-0000-4000-8000-0000000000u1", "viewer", ORG_A, { subject: null });
+/** `F4.201`: a viewer with one asset-group grant and one location grant, kept off the D2 fixtures. */
+const VIEWER_GROUP_GRANT = user("00000000-0000-4000-8000-0000000000g1", "viewer", ORG_A);
 
 const USERS = [
   ADMIN_CALLER,
@@ -77,6 +79,7 @@ const USERS = [
   VIEWER_TWO_GRANTS,
   ORG_ADMIN_TARGET,
   UNLINKED_A,
+  VIEWER_GROUP_GRANT,
 ];
 
 type Grant = { id: string; userId: string; kind: UserGrantDto["kind"]; targetId: string; organizationId: string; locationId: string | null };
@@ -88,6 +91,8 @@ const GRANTS: Grant[] = [
   { id: "00000000-0000-4000-8000-0000000003d1", userId: ORG_ADMIN_TARGET.id, kind: "organization", targetId: ORG_A, organizationId: ORG_A, locationId: null },
   { id: "00000000-0000-4000-8000-0000000003d2", userId: ORG_ADMIN_TARGET.id, kind: "location", targetId: LOC_A1, organizationId: ORG_A, locationId: LOC_A1 },
   { id: "00000000-0000-4000-8000-0000000003e1", userId: VIEWER_A.id, kind: "location", targetId: LOC_A1, organizationId: ORG_A, locationId: LOC_A1 },
+  { id: "00000000-0000-4000-8000-0000000003f1", userId: VIEWER_GROUP_GRANT.id, kind: "asset_group", targetId: GROUP_A1, organizationId: ORG_A, locationId: LOC_A1 },
+  { id: "00000000-0000-4000-8000-0000000003f2", userId: VIEWER_GROUP_GRANT.id, kind: "location", targetId: LOC_B1, organizationId: ORG_B, locationId: LOC_B1 },
 ];
 
 const ORGANIZATIONS: Record<string, string> = { [ORG_A]: "Org A", [ORG_B]: "Org B" };
@@ -151,11 +156,19 @@ function harness(options: Options = {}) {
       return GRANTS.filter((g) => g.kind === kind && op.params.includes(g.id) && op.params.includes(g.userId));
     }
     if (op.kind === "execute" && op.text.includes("AS kind")) {
+      // The UNION read: `location_name` is the group's location on an asset_group row and NULL
+      // on the other two branches, as the SQL selects it.
       return GRANTS.filter((g) => op.params.includes(g.userId)).map((g) => ({
         id: g.id,
         kind: g.kind,
         target_id: g.targetId,
-        target_name: g.kind === "organization" ? ORGANIZATIONS[g.targetId] : (LOCATIONS[g.targetId]?.name ?? "?"),
+        target_name:
+          g.kind === "organization"
+            ? ORGANIZATIONS[g.targetId]
+            : g.kind === "asset_group"
+              ? (GROUPS[g.targetId]?.name ?? "?")
+              : (LOCATIONS[g.targetId]?.name ?? "?"),
+        location_name: g.kind === "asset_group" ? (LOCATIONS[GROUPS[g.targetId]?.locationId ?? ""]?.name ?? "?") : null,
         organization_id: g.organizationId,
         created_at: CREATED,
       }));
@@ -285,6 +298,25 @@ export async function assertAViewersOnlyLocationGrantIsEffective(): Promise<void
   const { service, jwt } = harness();
   const { items } = await service.list(jwt, VIEWER_A.id);
   expect(effectiveOf(items, "location")).toEqual([true]);
+}
+
+/** `F4.201`: an asset-group grant names its group's location, so two "HVAC" groups differ. */
+export async function assertAnAssetGroupGrantCarriesItsLocationName(): Promise<void> {
+  const { service, jwt } = harness();
+  const { items } = await service.list(jwt, VIEWER_GROUP_GRANT.id);
+  const group = items.find((item) => item.kind === "asset_group");
+  expect(group?.targetName).toBe("Group A1");
+  expect(group?.locationName).toBe("Site A1");
+}
+
+/** `F4.201`: the field is absent — not null, not undefined-valued — on a location grant. */
+export async function assertALocationGrantCarriesNoLocationName(): Promise<void> {
+  const { service, jwt } = harness();
+  const { items } = await service.list(jwt, VIEWER_GROUP_GRANT.id);
+  const location = items.find((item) => item.kind === "location");
+  // Positive control: the location grant is in the list.
+  expect(location?.targetName).toBe("Site B1");
+  expect("locationName" in (location ?? {})).toBe(false);
 }
 
 export async function assertGrantReadsRunOnTheFleetPool(): Promise<void> {
