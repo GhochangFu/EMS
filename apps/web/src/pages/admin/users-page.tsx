@@ -35,6 +35,8 @@ import { StatusPill } from "../../components/status-pill";
 import { canManageUsers } from "../../lib/admin-access";
 import { ApiError } from "../../lib/api-error";
 import { apiErrorMessage } from "../../lib/api-error-message";
+// `F4.200`: the shell's labels ("Organization Administrator"), not the role code with spaces.
+import { roleLabel } from "../../lib/role-label";
 import type { AuthUser } from "../../stores/auth-store";
 
 type UsersAdminPageProps = { user: AuthUser };
@@ -80,10 +82,6 @@ const KIND_LABELS: Record<UserGrantKind, string> = {
 };
 
 type Feedback = { tone: "error" | "warning"; messages: string[] };
-
-function roleLabel(role: UserRole): string {
-  return role.replace(/_/g, " ");
-}
 
 /** The follow-up an error body carries, if it is one the contract names. */
 function followUpOf(err: unknown): UserWriteFollowUp | null {

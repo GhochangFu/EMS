@@ -34,6 +34,7 @@ const ORG_ID = "33333333-3333-3333-3333-333333333333";
 const LINKED_ID = "11111111-1111-1111-1111-111111111111";
 const UNLINKED_ID = "22222222-2222-2222-2222-222222222222";
 const DEACTIVATED_ID = "44444444-4444-4444-4444-444444444444";
+const ORG_ADMIN_ROW_ID = "77777777-7777-7777-7777-777777777777";
 const GRANT_A_ID = "aaaaaaaa-0000-0000-0000-00000000000a";
 const GRANT_B_ID = "bbbbbbbb-0000-0000-0000-00000000000b";
 
@@ -57,6 +58,9 @@ const USERS = {
     userRow(LINKED_ID, "Ada Linked"),
     userRow(UNLINKED_ID, "Uma Unlinked", { linked: false }),
     userRow(DEACTIVATED_ID, "Dev Deactivated", { disabledAt: new Date(0).toISOString() }),
+    // `F4.200`: a two-word role, so the Role column shows a label the old `replace(/_/g, " ")`
+    // could never produce ("organization admin" against "Organization Administrator").
+    userRow(ORG_ADMIN_ROW_ID, "Ola Organizer", { role: "organization_admin" }),
   ],
 };
 
@@ -498,9 +502,10 @@ export async function anIneffectiveGrantShowsTheNote(): Promise<void> {
   renderPage();
   const drawer = await openGrants();
   expect(await within(drawer).findByText("Plant South")).toBeInTheDocument();
-  expect(within(drawer).getAllByText("Not used by the viewer role.")).toHaveLength(1);
+  // `F4.200`: the shared label, exactly and case-sensitively ("Viewer", never "viewer").
+  expect(within(drawer).getAllByText("Not used by the Viewer role.")).toHaveLength(1);
   const south = within(drawer).getByText("Plant South").closest("li") as HTMLElement;
-  expect(within(south).getByText("Not used by the viewer role.")).toBeInTheDocument();
+  expect(within(south).getByText("Not used by the Viewer role.")).toBeInTheDocument();
   const north = within(drawer).getByText("Plant North").closest("li") as HTMLElement;
   expect(within(north).queryByText(/Not used by/)).not.toBeInTheDocument();
 }
@@ -742,8 +747,8 @@ export async function aGlobalAdminMayCreateAnAdmin(): Promise<void> {
   renderPage(globalAdmin);
   const dialog = await openCreateModal();
   const roles = within(within(dialog).getByLabelText("Role")).getAllByRole("option").map((o) => o.textContent);
-  expect(roles).toContain("admin");
-  expect(roles).toContain("viewer");
+  expect(roles).toContain("Administrator");
+  expect(roles).toContain("Viewer");
 }
 
 export async function anOrganizationAdminIsNotOfferedAdmin(): Promise<void> {
@@ -752,6 +757,48 @@ export async function anOrganizationAdminIsNotOfferedAdmin(): Promise<void> {
   renderPage(orgAdmin);
   const dialog = await openCreateModal();
   const roles = within(within(dialog).getByLabelText("Role")).getAllByRole("option").map((o) => o.textContent);
-  expect(roles).not.toContain("admin");
-  expect(roles).toContain("viewer");
+  // `F4.200`: the options read the shared labels, so the absence is checked on "Administrator"
+  // and the positive control is "Viewer" — the lower-case codes would pass vacuously here.
+  expect(roles).not.toContain("Administrator");
+  expect(roles).toContain("Viewer");
+}
+
+// -- F4.200: the shared role labels -------------------------------------------------------------
+
+/** The Role column reads `lib/role-label.ts`, not the role code with its underscores replaced. */
+export async function theRoleColumnShowsTheSharedLabel(): Promise<void> {
+  stubOidc();
+  stubFetch();
+  renderPage();
+  const row = (await screen.findByText("Ola Organizer")).closest("tr") as HTMLElement;
+  expect(within(row).getByText("Organization Administrator")).toBeInTheDocument();
+  const viewer = screen.getByText("Ada Linked").closest("tr") as HTMLElement;
+  expect(within(viewer).getByText("Viewer")).toBeInTheDocument();
+}
+
+export async function theCreateRoleSelectShowsTheSharedLabels(): Promise<void> {
+  stubOidc();
+  stubFetch();
+  renderPage();
+  const dialog = await openCreateModal();
+  const select = within(dialog).getByLabelText("Role");
+  expect(within(select).getByRole("option", { name: "Location Administrator" })).toBeInTheDocument();
+}
+
+export async function theEditRoleSelectShowsTheSharedLabels(): Promise<void> {
+  stubOidc();
+  stubFetch();
+  renderPage();
+  await userEvent.click(await screen.findByRole("button", { name: "Edit Ada Linked" }));
+  const dialog = await screen.findByRole("dialog", { name: "Edit Ada Linked" });
+  const select = within(dialog).getByLabelText("Role");
+  expect(within(select).getByRole("option", { name: "Location Administrator" })).toBeInTheDocument();
+}
+
+export async function theDrawerRoleLineShowsTheSharedLabel(): Promise<void> {
+  stubOidc();
+  stubFetch();
+  renderPage();
+  const drawer = await openGrants();
+  expect(within(drawer).getByText("Role: Viewer")).toBeInTheDocument();
 }

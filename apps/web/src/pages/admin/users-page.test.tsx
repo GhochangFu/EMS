@@ -41,6 +41,10 @@ import {
   sendsATwelveCharacterPassword,
   showsTheDeactivatedPill,
   showsTheUsersTabToAnOrganizationAdmin,
+  theCreateRoleSelectShowsTheSharedLabels,
+  theDrawerRoleLineShowsTheSharedLabel,
+  theEditRoleSelectShowsTheSharedLabels,
+  theRoleColumnShowsTheSharedLabel,
   unlinkedEditIsDisabledWithTheSentence,
 } from "./users-page.spec";
 
@@ -210,5 +214,21 @@ describe("F3.78 users page", () => {
 
   it("a pending Temporary password announces itself on its row", async () => {
     await aPendingTemporaryPasswordAnnouncesItsRow();
+  });
+
+  it("F4.200: the Role column shows the shared role label", async () => {
+    await theRoleColumnShowsTheSharedLabel();
+  });
+
+  it("F4.200: the create modal's Role select shows the shared role labels", async () => {
+    await theCreateRoleSelectShowsTheSharedLabels();
+  });
+
+  it("F4.200: the edit modal's Role select shows the shared role labels", async () => {
+    await theEditRoleSelectShowsTheSharedLabels();
+  });
+
+  it("F4.200: the grants drawer's Role line shows the shared role label", async () => {
+    await theDrawerRoleLineShowsTheSharedLabel();
   });
 });
