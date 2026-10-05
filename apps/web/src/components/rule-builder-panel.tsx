@@ -670,8 +670,9 @@ function invalidateRules(qc: ReturnType<typeof useQueryClient>) {
  * The `api/rules` functions throw `new Error(text)` with the whole response
  * body, so `err.message` alone rendered the Nest envelope
  * (`{"statusCode":409,...}`). `apiErrorMessage` unwraps it. A non-`Error`
- * rejection now reads "The request failed." — `apiErrorMessage`'s fallback —
- * where this helper used to say "Rule operation failed.".
+ * rejection reads `String(cause)`; only null, undefined or a blank string reads
+ * "The request failed." (`apiErrorMessage`'s fallback), where this helper used
+ * to say "Rule operation failed.".
  */
 function errorMessage(err: unknown): string {
   return apiErrorMessage(err);

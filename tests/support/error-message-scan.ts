@@ -63,8 +63,12 @@ export const RAW_READ_ALLOWLIST: readonly { file: string; read: string; why: str
   },
 ];
 
-const ERROR_TYPES = new Set(["Error", "ApiError"]);
-const QUERY_HOOKS = new Set(["useQuery", "useMutation", "useInfiniteQuery"]);
+/** `Error`, `ApiError`, `TypeError` and every other class name that ends in `Error`. */
+const ERROR_TYPE = /^\w*Error$/;
+/** `useQuery`, `useMutation`, `useInfiniteQuery`, and a named hook such as `useAlarmsQuery`. */
+const QUERY_HOOK = /^use\w*(?:Query|Mutation)$/;
+/** The TanStack fields that hold the query's or mutation's error (S5). */
+const ERROR_FIELDS = new Set(["error", "failureReason"]);
 
 /** What the error is read for: its `.message`, or its whole text through `String` or a template. */
 type Read = "message" | "text";
@@ -76,25 +80,43 @@ function unwrap(expr: ts.Expression): ts.Expression {
   return e;
 }
 
-function typeName(node: ts.TypeNode | undefined, sf: ts.SourceFile): string | undefined {
-  return node?.getText(sf);
+/** The member names of an annotation: `Error | null` is `["Error", "null"]`. */
+function typeNames(node: ts.TypeNode | undefined, sf: ts.SourceFile): string[] {
+  if (!node) return [];
+  if (ts.isUnionTypeNode(node)) return node.types.map((t) => t.getText(sf));
+  return [node.getText(sf)];
 }
 
-/** S3: the function is the value of an `onError:` property, or the argument of `.catch(…)`. */
+/** An annotation with an `Error` class among its members. */
+function isErrorType(node: ts.TypeNode | undefined, sf: ts.SourceFile): boolean {
+  return typeNames(node, sf).some((name) => ERROR_TYPE.test(name));
+}
+
+/**
+ * S3: the function is an `onError` property or method, the argument of `.catch(…)`, or the
+ * second argument of `.then(…)`. An `<img onError>` JSX attribute is an event, not an error.
+ */
 function isErrorCallback(fn: ts.SignatureDeclaration): boolean {
+  if (ts.isMethodDeclaration(fn)) return fn.name.getText() === "onError";
   const parent = fn.parent;
   if (ts.isPropertyAssignment(parent) && parent.initializer === fn) return parent.name.getText() === "onError";
-  if (ts.isCallExpression(parent) && parent.arguments.includes(fn as ts.Expression)) {
+  if (ts.isCallExpression(parent)) {
+    const index = parent.arguments.indexOf(fn as ts.Expression);
     const callee = parent.expression;
-    return ts.isPropertyAccessExpression(callee) && callee.name.text === "catch";
+    if (index < 0 || !ts.isPropertyAccessExpression(callee)) return false;
+    return (callee.name.text === "catch" && index === 0) || (callee.name.text === "then" && index === 1);
   }
   return false;
 }
 
 /**
- * A parameter named `name`: S2 by annotation, S3 by position. `undefined` when none is named so.
- * `unknown` counts for a `.message` read only — reading `.message` off `unknown` needs an `Error`
- * narrowing, but `String(value: unknown)` is how a formatter prints any value.
+ * A parameter named `name`: S2 by annotation, S3 by position, or an `error` prop destructured in
+ * the parameter list. `undefined` when none is named so.
+ *
+ * `unknown` counts for a `.message` read only: a catch-all parameter read for its message is
+ * nearly always an error, but `String(value: unknown)` is how a formatter prints any value. A
+ * DTO parser that narrows `unknown` with a record guard and reads `.message` is a false positive
+ * here; the allowlist is the way out.
  */
 function classifyParameter(
   fn: ts.SignatureDeclaration,
@@ -102,12 +124,16 @@ function classifyParameter(
   sf: ts.SourceFile,
   read: Read,
 ): boolean | undefined {
+  for (const param of fn.parameters) {
+    if (!ts.isObjectBindingPattern(param.name)) continue;
+    const element = param.name.elements.find((el) => ts.isIdentifier(el.name) && el.name.text === name);
+    if (element) return (element.propertyName?.getText(sf) ?? name) === "error" && read === "message";
+  }
   const index = fn.parameters.findIndex((p) => ts.isIdentifier(p.name) && p.name.text === name);
   if (index < 0) return undefined;
   const param = fn.parameters[index];
   if (param.type) {
-    const type = typeName(param.type, sf) ?? "";
-    return ERROR_TYPES.has(type) || (type === "unknown" && read === "message");
+    return isErrorType(param.type, sf) || (param.type.kind === ts.SyntaxKind.UnknownKeyword && read === "message");
   }
   return index === 0 && isErrorCallback(fn);
 }
@@ -119,9 +145,9 @@ function classifyDeclared(statements: readonly ts.Statement[], name: string, sf:
     for (const decl of statement.declarationList.declarations) {
       if (ts.isIdentifier(decl.name)) {
         if (decl.name.text !== name) continue;
-        if (decl.type) return ERROR_TYPES.has(typeName(decl.type, sf) ?? "");
+        if (decl.type) return isErrorType(decl.type, sf);
         const init = decl.initializer && unwrap(decl.initializer);
-        return !!init && ts.isAsExpression(init) && ERROR_TYPES.has(typeName(init.type, sf) ?? "");
+        return !!init && ts.isAsExpression(init) && isErrorType(init.type, sf);
       }
       if (ts.isObjectBindingPattern(decl.name)) {
         const element = decl.name.elements.find((el) => ts.isIdentifier(el.name) && el.name.text === name);
@@ -129,7 +155,7 @@ function classifyDeclared(statements: readonly ts.Statement[], name: string, sf:
         const key = element.propertyName?.getText(sf) ?? name;
         const init = decl.initializer && unwrap(decl.initializer);
         const hook = init && ts.isCallExpression(init) && ts.isIdentifier(init.expression) ? init.expression.text : "";
-        return key === "error" && QUERY_HOOKS.has(hook);
+        return key === "error" && QUERY_HOOK.test(hook);
       }
     }
   }
@@ -156,11 +182,11 @@ function identifierIsError(id: ts.Identifier, sf: ts.SourceFile, read: Read): bo
   return false;
 }
 
-/** S4 a cast to `Error`/`ApiError`, S5 a chain ending in `.error`, else the identifier's declaration. */
+/** S4 a cast to an `Error` class, S5 a chain ending in `.error`/`.failureReason`, else the declaration. */
 function isErrorShaped(expr: ts.Expression, sf: ts.SourceFile, read: Read): boolean {
   const e = unwrap(expr);
-  if (ts.isAsExpression(e)) return ERROR_TYPES.has(typeName(e.type, sf) ?? "");
-  if (ts.isPropertyAccessExpression(e)) return e.name.text === "error";
+  if (ts.isAsExpression(e)) return isErrorType(e.type, sf);
+  if (ts.isPropertyAccessExpression(e)) return ERROR_FIELDS.has(e.name.text);
   if (ts.isIdentifier(e)) return identifierIsError(e, sf, read);
   return false;
 }
@@ -182,6 +208,14 @@ export function rawErrorMessageReads(src: string, file: string): string[] {
       node.expression.text === "String" &&
       node.arguments.length === 1 &&
       isErrorShaped(node.arguments[0], sf, "text")
+    ) {
+      report(node, node.getText(sf));
+    } else if (
+      ts.isCallExpression(node) &&
+      ts.isPropertyAccessExpression(node.expression) &&
+      node.expression.name.text === "toString" &&
+      node.arguments.length === 0 &&
+      isErrorShaped(node.expression.expression, sf, "text")
     ) {
       report(node, node.getText(sf));
     } else if (ts.isTemplateSpan(node) && isErrorShaped(node.expression, sf, "text")) {

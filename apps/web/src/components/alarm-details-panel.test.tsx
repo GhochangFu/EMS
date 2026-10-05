@@ -3,7 +3,7 @@ import { afterEach, describe, it, vi } from "vitest";
 import { cleanup } from "@testing-library/react";
 
 import {
-  detailsLoadFailureShowsTheThrownText,
+  detailsLoadFailureReadsTheEnvelopeSentence,
   enrichmentSaveRefusalShowsTheServerSentence,
   keepsTheClassBlockDistinctFromTheInstanceEnrichment,
   offersNoControlThatCopiesTheClassTextIntoTheForm,
@@ -48,7 +48,7 @@ describe("E2.2 — the class philosophy on the Alarm Details panel", () => {
     await enrichmentSaveRefusalShowsTheServerSentence();
   });
 
-  it("F4.204 shows the thrown text unchanged when the details load fails", async () => {
-    await detailsLoadFailureShowsTheThrownText();
+  it("F4.204 reads the envelope sentence when the details load fails", async () => {
+    await detailsLoadFailureReadsTheEnvelopeSentence();
   });
 });

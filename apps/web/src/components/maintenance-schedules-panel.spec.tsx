@@ -100,6 +100,7 @@ const CREATE_SENTENCE = "A schedule with this title already exists for the asset
 const CONVERT_SENTENCE = "This schedule already has an open work order";
 const UPDATE_SENTENCE = "This schedule was changed by another user";
 
+/** A refused schedule create shows the server sentence, not the JSON envelope. */
 export async function aRefusedCreateShowsTheSentence(): Promise<void> {
   vi.spyOn(maintenanceApi, "createMaintenanceSchedule").mockRejectedValue(envelope(CREATE_SENTENCE));
   await renderPanel();
@@ -112,6 +113,7 @@ export async function aRefusedCreateShowsTheSentence(): Promise<void> {
   await expectTheSentenceNotTheEnvelope(CREATE_SENTENCE);
 }
 
+/** A refused convert-to-work-order shows the server sentence, not the JSON envelope. */
 export async function aRefusedConvertShowsTheSentence(): Promise<void> {
   vi.spyOn(maintenanceApi, "convertMaintenanceSchedule").mockRejectedValue(envelope(CONVERT_SENTENCE));
   await renderPanel();
@@ -121,6 +123,7 @@ export async function aRefusedConvertShowsTheSentence(): Promise<void> {
   await expectTheSentenceNotTheEnvelope(CONVERT_SENTENCE);
 }
 
+/** A refused schedule update shows the server sentence, not the JSON envelope. */
 export async function aRefusedUpdateShowsTheSentence(): Promise<void> {
   vi.spyOn(maintenanceApi, "updateMaintenanceSchedule").mockRejectedValue(envelope(UPDATE_SENTENCE));
   await renderPanel();

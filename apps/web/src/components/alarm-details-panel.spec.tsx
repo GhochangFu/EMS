@@ -229,18 +229,18 @@ export async function enrichmentSaveRefusalShowsTheServerSentence(): Promise<voi
 }
 
 /**
- * `F4.204`, route-only — the details load failure reads through
- * `apiErrorMessage`. `fetchAlarmDetails` throws `alarms/:id/details <status>`,
- * which is not JSON, so it passes through unchanged; this pins that the route
- * does not alter it.
+ * `F4.204`, route-only — the details load failure reads the envelope's sentence.
+ * The load throws `new Error(<raw body>)` with the Nest envelope, so reading
+ * `.message` alone would render JSON; `apiErrorMessage` unwraps it.
  */
-export async function detailsLoadFailureShowsTheThrownText(): Promise<void> {
+export async function detailsLoadFailureReadsTheEnvelopeSentence(): Promise<void> {
   vi.stubGlobal(
     "fetch",
     vi.fn(() => Promise.reject(new Error("no fetch expected"))),
   );
+  const sentence = "Alarm details were not found.";
   vi.spyOn(alarmsApi, "fetchAlarmDetails").mockRejectedValue(
-    new Error("alarms/:id/details 404"),
+    new Error(JSON.stringify({ statusCode: 404, message: sentence, error: "Not Found" })),
   );
   vi.spyOn(assetsApi, "fetchAssets").mockResolvedValue([]);
   vi.spyOn(vocabApi, "fetchVocabularies").mockResolvedValue({
@@ -259,5 +259,6 @@ export async function detailsLoadFailureShowsTheThrownText(): Promise<void> {
   );
 
   const alert = await screen.findByRole("alert");
-  expect(alert.textContent).toBe("alarms/:id/details 404");
+  expect(alert).toHaveTextContent(sentence);
+  expect(alert.textContent).not.toContain('{"');
 }

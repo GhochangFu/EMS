@@ -571,7 +571,7 @@ export async function saysTheOrganizationListFailedRatherThanClaimingThereAreNon
 
 /**
  * `F4.204` — a create refused with the raw Nest envelope reads as its sentence, not as JSON.
- * Route-only page: the three mutation handlers share one `apiErrorMessage` read.
+ * Route-only page: each of the three mutation handlers has its own `apiErrorMessage` read; this case drives the create read only, and `tests/f4.204-raw-error-message-render.test.ts` (T1) holds the other two.
  */
 export async function readsARawEnvelopeRefusalAsItsSentence(): Promise<void> {
   stubApi({

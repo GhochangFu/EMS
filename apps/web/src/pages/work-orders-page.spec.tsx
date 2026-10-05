@@ -140,6 +140,7 @@ const STATUS_SENTENCE = "A closed work order cannot change status";
 const CLOSE_SENTENCE = "This work order was already closed by another user";
 const REORDER_SENTENCE = "The board changed while you were dragging";
 
+/** A refused work-order create shows the server sentence, not the JSON envelope. */
 export async function aRefusedCreateShowsTheSentence(): Promise<void> {
   vi.spyOn(workOrdersApi, "createWorkOrder").mockRejectedValue(envelope(CREATE_SENTENCE));
   await renderPage();
@@ -153,6 +154,7 @@ export async function aRefusedCreateShowsTheSentence(): Promise<void> {
   await expectTheSentenceNotTheEnvelope(CREATE_SENTENCE);
 }
 
+/** A refused status change shows the server sentence, not the JSON envelope. */
 export async function aRefusedStatusChangeShowsTheSentence(): Promise<void> {
   vi.spyOn(workOrdersApi, "updateWorkOrderStatus").mockRejectedValue(envelope(STATUS_SENTENCE));
   await renderPage();
@@ -165,6 +167,7 @@ export async function aRefusedStatusChangeShowsTheSentence(): Promise<void> {
   await expectTheSentenceNotTheEnvelope(STATUS_SENTENCE);
 }
 
+/** A refused close shows the server sentence, not the JSON envelope. */
 export async function aRefusedCloseShowsTheSentence(): Promise<void> {
   vi.spyOn(workOrdersApi, "closeWorkOrder").mockRejectedValue(envelope(CLOSE_SENTENCE));
   await renderPage();
@@ -177,6 +180,7 @@ export async function aRefusedCloseShowsTheSentence(): Promise<void> {
   await expectTheSentenceNotTheEnvelope(CLOSE_SENTENCE);
 }
 
+/** A refused board reorder shows the server sentence, not the JSON envelope. */
 export async function aRefusedReorderShowsTheSentence(): Promise<void> {
   const reorder = vi
     .spyOn(workOrdersApi, "reorderWorkOrders")

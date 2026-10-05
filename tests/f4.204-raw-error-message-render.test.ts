@@ -16,26 +16,36 @@ import { repoRoot } from "./support/source-scan";
  * `test-setup.ts`, the throwers under `api/`, and `lib/api-error-message.ts` (the one place
  * that must read the raw text). Exempt by path, never by a comment marker.
  *
- * **A finding** is `X.message` (or `X?.message`), `String(X)` or `` `${X}` `` where `X` is
- * error-shaped by the parser alone (no type checker — a program over the web tree costs tens of
- * seconds in a suite pinned to two workers):
+ * **A finding** is `X.message` (or `X?.message`), `String(X)`, `X.toString()` or `` `${X}` ``
+ * where `X` is error-shaped by the parser alone (no type checker — a program over the web tree
+ * costs tens of seconds in a suite pinned to two workers):
  *  - S1 a `catch (X)` variable;
- *  - S2 a parameter annotated `Error`, `ApiError` or `unknown`;
- *  - S3 the first parameter of a function under an `onError:` property or passed to `.catch(…)`;
- *  - S4 `(… as Error)` / `(… as ApiError)`, and a variable annotated or initialised that way;
- *  - S5 a property chain ending in `.error` (`query.error`, `m.error?.message`);
- *  - S6 `error` destructured from `useQuery` / `useMutation` / `useInfiniteQuery`.
+ *  - S2 a parameter annotated with an `Error` class (`Error`, `ApiError`, `TypeError`, a union
+ *    that holds one), or `unknown` for a `.message` read;
+ *  - S3 the first parameter of an `onError` property or method, of a `.catch(…)` callback, or of
+ *    the rejection callback of `.then(ok, …)`;
+ *  - S4 `(… as Error)` and the other `Error` classes, and a variable annotated or cast that way;
+ *  - S5 a property chain ending in `.error` or `.failureReason` (`query.error`, `m.error?.message`);
+ *  - S6 `error` destructured from a query hook (`useQuery`, `useMutation`, `useInfiniteQuery`,
+ *    `useAlarmsQuery`), or an `error` prop destructured in a parameter list (`.message` only).
  * The nearest declaration of the name wins, so a shadowing local is not an error.
- * `String(X)` and `` `${X}` `` count because `String(new ApiError(body))` renders
+ * `String(X)`, `toString()` and `` `${X}` `` count because `String(new ApiError(body))` renders
  * `ApiError: {json}` — the same envelope by another road. None exists today.
  *
  * **Allowlisted:** exactly the reads in `RAW_READ_ALLOWLIST`, each a raw read that is not
  * rendered raw. T3 proves the allowlist is the only thing hiding them, T5 that no entry is stale.
+ * An entry matches a file and a read's text, not its use: a second, rendered read of the same
+ * text in the same file fails T5, but an allowlisted read changed in place to a render does not.
  *
- * **Not covered.** An error held in an unannotated variable or in state (`const f = x;
- * f.message`); an `instanceof` guard on a custom subclass; a read through a helper the shapes do
- * not name; a message assembled by concatenation. The parse is syntactic, so a renamed import
- * (`import { ApiError as E }`) is not an `ApiError` annotation.
+ * **False positives** are possible and the allowlist is the way out: S5 matches a DTO field named
+ * `error` read through `String` or a template (`` `${row.error}` ``), and S2 matches a parser that
+ * narrows an `unknown` body with a record guard and reads its `.message`.
+ *
+ * **Not covered.** An error held in an unannotated variable or in state (`const f = q.error;
+ * f.message`); a destructured `message` (`onError: ({ message }) => …`, `catch ({ message })`);
+ * an `instanceof` guard on a custom subclass; a read through a helper the shapes do not name; a
+ * message assembled by concatenation. The parse is syntactic, so a renamed import
+ * (`import { ApiError as E }`) is not an `Error` class annotation.
  */
 
 function reads(src: string): string[] {
@@ -150,6 +160,40 @@ describe("F4.204 — the scanner's shapes", () => {
       "try { run(); } catch (err) { show(String(err)); }",
     ].join("\n");
     expect(reads(src)).toEqual(["fixture.tsx:2 String(err)"]);
+  });
+
+  it("H19 an onError method shorthand's parameter is error-shaped", () => {
+    const src = "useMutation({ onError(err) { setError(err.message); } });";
+    expect(reads(src)).toEqual(["fixture.tsx:1 err.message"]);
+  });
+
+  it("H20 a .then rejection callback's parameter is error-shaped", () => {
+    expect(reads("load().then(ok, (err) => setError(err.message));")).toEqual(["fixture.tsx:1 err.message"]);
+  });
+
+  it("H21 a union with Error and an Error subclass annotation are error-shaped", () => {
+    const src = [
+      "useMutation({ onError: (err: Error | null) => setA(err?.message) });",
+      "function f(err: TypeError) { return err.message; }",
+    ].join("\n");
+    expect(reads(src)).toEqual(["fixture.tsx:1 err?.message", "fixture.tsx:2 err.message"]);
+  });
+
+  it("H22 an error prop destructured in the parameter list is error-shaped", () => {
+    const src = "function Banner({ error }: { error: Error }) { return <p>{error.message}</p>; }";
+    expect(reads(src)).toEqual(["fixture.tsx:1 error.message"]);
+  });
+
+  it("H23 error destructured from a named query hook is error-shaped", () => {
+    const src = ["const { data, error } = useAlarmsQuery();", "const a = <p>{error.message}</p>;"].join("\n");
+    expect(reads(src)).toEqual(["fixture.tsx:2 error.message"]);
+  });
+
+  it("H24 a query's failureReason message and an error's toString() are findings", () => {
+    const src = ["const a = <p>{q.failureReason?.message}</p>;", "load().catch((err) => setError(err.toString()));"].join(
+      "\n",
+    );
+    expect(reads(src)).toEqual(["fixture.tsx:1 q.failureReason?.message", "fixture.tsx:2 err.toString()"]);
   });
 });
 
