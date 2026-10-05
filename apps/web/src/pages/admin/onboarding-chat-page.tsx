@@ -9,12 +9,14 @@ import type {
   OnboardingFieldError,
   OnboardingSessionDto,
 } from "@bms/shared";
+import { MAX_RTU_TOPIC_CHARS } from "@bms/shared/contracts";
 
 import {
   commitOnboardingSession,
   createOnboardingSession,
   downloadOnboardingTemplate,
   fetchOnboardingSession,
+  patchOnboardingDraft,
   sendOnboardingChat,
   setOnboardingCredentials,
   uploadOnboardingExcel,
@@ -200,6 +202,33 @@ export function OnboardingChatPage({ user }: OnboardingChatPageProps) {
       setCredError(apiErrorMessage(err));
       clearCredForm();
     },
+  });
+
+  // F4.208: an MQTT RTU's topic, saved through `PATCH :id/draft`. The server
+  // keeps the stored credential (`mergeDraft` re-attaches it by RTU code). The
+  // client draft is the redacted copy, so a `config` value under a
+  // secret-looking key would go back as `[REDACTED]` — none of host, port, tls
+  // or topic is one, and ADR 0022 keeps secrets out of `config`.
+  const [topicEdits, setTopicEdits] = useState<Record<number, string>>({});
+  const topicMutation = useMutation({
+    mutationFn: (vars: { index: number; topic: string }) =>
+      patchOnboardingDraft(session!.id, {
+        rtus: (session!.draft?.rtus ?? []).map((rtu, i) =>
+          i === vars.index ? { ...rtu, config: { ...rtu.config, topic: vars.topic } } : rtu,
+        ),
+      }),
+    onSuccess: (updated, vars) => {
+      setSession(updated);
+      queryClient.setQueryData(["onboarding", updated.id], updated);
+      setTopicEdits((edits) => {
+        const next = { ...edits };
+        delete next[vars.index];
+        return next;
+      });
+      setCredError(null);
+    },
+    // The drawer's one banner: a refused save reads like a refused credential.
+    onError: (err: Error) => setCredError(apiErrorMessage(err)),
   });
 
   const chatMutation = useMutation({
@@ -562,6 +591,40 @@ export function OnboardingChatPage({ user }: OnboardingChatPageProps) {
                                 </button>
                               )}
                             </div>
+                            {rtu.protocol === "mqtt" && (
+                              <form
+                                className="mt-2 flex gap-1"
+                                onSubmit={(event) => {
+                                  event.preventDefault();
+                                  topicMutation.mutate({ index, topic: (topicEdits[index] ?? "").trim() });
+                                }}
+                              >
+                                <input
+                                  className="min-w-0 flex-1 surface-field px-2 py-1 font-mono text-[11px]"
+                                  aria-label={`Topic for ${rtu.code ?? `RTU ${index + 1}`}`}
+                                  placeholder="MQTT topic"
+                                  autoComplete="off"
+                                  maxLength={MAX_RTU_TOPIC_CHARS}
+                                  value={topicEdits[index] ?? String(rtu.config.topic ?? "")}
+                                  onChange={(event) => {
+                                    const value = event.target.value;
+                                    setTopicEdits((edits) => ({ ...edits, [index]: value }));
+                                  }}
+                                />
+                                <button
+                                  type="submit"
+                                  disabled={
+                                    topicMutation.isPending ||
+                                    topicEdits[index] === undefined ||
+                                    topicEdits[index].trim() === String(rtu.config.topic ?? "")
+                                  }
+                                  aria-busy={topicMutation.isPending}
+                                  className="shrink-0 surface-button px-2 py-1 text-[11px] disabled:opacity-50"
+                                >
+                                  Save topic
+                                </button>
+                              </form>
+                            )}
                             {credRtuIndex === index && (
                               <form
                                 className="mt-2 space-y-1"
