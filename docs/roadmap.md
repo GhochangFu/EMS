@@ -7337,3 +7337,28 @@ it; owner chose the specs).
 `F4.206` (a late 401 from an old session), `F4.207` (move `GrantsDrawer`),
 `F4.208` (guided MQTT topic). `F4.204` (the raw-JSON sweep) stays open. No
 `chore(agents):` change owed.
+
+### `F4.204` — every refusal reaches the screen through `apiErrorMessage` ✅ 2026-10-05
+
+PR #740, squash `8b2f3735`. Web only; no ADR, no API or contract change.
+
+- A parser gate (`tests/f4.204-raw-error-message-render.test.ts`) measured 35
+  raw error reads in 22 files: 20 defects, 12 route-only, 3 allowlisted. All 32
+  now read through `apiErrorMessage`, and the gate refuses a new raw read.
+- `asset-templates-page:368` was a defect the row's grep missed;
+  `duplicate-dashboard-dialog` was not a defect.
+- The private `failure()` parsers in `api/escalation.ts` and
+  `api/notifications.ts` use `apiErrorMessage` (owner ruling), so a Zod
+  array message reads as sentences.
+
+Verified: CI green; web and repo projects locally; four gate mutations, each
+reddening its target; every jsdom defect case red before its fix. Live on the
+stack (bundle `index-DmRlOqH1.js`): Point Keys shows a sentence for a
+duplicate code and an invalid code where the raw bodies were envelopes.
+Reviews: nothing blocking; the scanner was widened for seven missed shapes.
+
+**Cascade:** no row lists `F4.204` in *Depends* except the new rows.
+Raised: `F4.209` (Work Orders re-renders without end while its list has no
+data), `F4.210` (the sign-in callback shows the IdP's `error_description`
+before it checks `state`), `F4.211` (a duplicate point key answers 500). No
+`chore(agents):` change owed.
