@@ -105,6 +105,23 @@ function envelope(sentence: string): Error {
   return new Error(`{"statusCode":409,"message":"${sentence}","error":"Conflict"}`);
 }
 
+/**
+ * `F4.209` commit bound (WO5 below). The bound must stay below React's
+ * 50-nested-passive-update warning, so a mutation run ends before the console
+ * floods. A settled page commits only a handful of times while it loads.
+ */
+const COMMIT_BOUND = 20;
+
+/** Thrown by the `Profiler` past the bound; any other error is not the bound. */
+class CommitBoundExceeded extends Error {}
+
+/**
+ * Renders the page with no cache seed. Until the row paints, a `Profiler` throws
+ * past `COMMIT_BOUND`: a `[rows]` render loop (F4.209) runs synchronously inside
+ * `act` from mount, so without the guard a regression hangs the worker at the
+ * first case instead of failing it. The guard disarms once the row is on screen,
+ * because the cases' own typing and dragging commit many more times.
+ */
 async function renderPage(): Promise<void> {
   vi.stubGlobal(
     "fetch",
@@ -113,14 +130,25 @@ async function renderPage(): Promise<void> {
   vi.spyOn(workOrdersApi, "fetchWorkOrders").mockResolvedValue({ items: [ROW] });
   vi.spyOn(assetsApi, "fetchAssets").mockResolvedValue([ASSET]);
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  let armed = true;
+  let commits = 0;
+  const onRender = (): void => {
+    commits += 1;
+    if (armed && commits > COMMIT_BOUND) {
+      throw new CommitBoundExceeded(`the page committed ${commits} times`);
+    }
+  };
   render(
-    <QueryClientProvider client={queryClient}>
-      <MemoryRouter>
-        <WorkOrdersPage user={user} />
-      </MemoryRouter>
-    </QueryClientProvider>,
+    <Profiler id="work-orders" onRender={onRender}>
+      <QueryClientProvider client={queryClient}>
+        <MemoryRouter>
+          <WorkOrdersPage user={user} />
+        </MemoryRouter>
+      </QueryClientProvider>
+    </Profiler>,
   );
   await screen.findByText(ROW.title);
+  armed = false;
 }
 
 /** The element carrying the refusal, found by its sentence; it must not carry the JSON. */
@@ -209,14 +237,9 @@ export async function aRefusedReorderShowsTheSentence(): Promise<void> {
  * the root and rethrowing it out of `act`; the loop dies with the tree, `render`
  * returns, and the case reddens on the bound.
  *
- * The bound must stay below React's 50-nested-passive-update warning, so a
- * mutation run ends before the console floods. A settled page commits only a
- * handful of times: mount, the assets read, the list refusal, one effect pass.
+ * `COMMIT_BOUND` and `CommitBoundExceeded` sit above `renderPage`, which arms the
+ * same guard for WO1–WO4 until the row paints.
  */
-const COMMIT_BOUND = 20;
-
-/** Thrown by the `Profiler` past the bound; any other error is not the bound. */
-class CommitBoundExceeded extends Error {}
 
 /** Two macrotask turns, so a loop still running after the error paints is counted. */
 async function settle(): Promise<void> {
