@@ -48,7 +48,7 @@ import {
 } from "./onboarding-redaction";
 import type { OnboardingDraftInput } from "./onboarding.schema";
 import { OnboardingProtocolService } from "./onboarding-protocol.service";
-import { OnboardingValidateService } from "./onboarding-validate.service";
+import { draftNeedsPointKeys, OnboardingValidateService } from "./onboarding-validate.service";
 
 export type ChatTurnResult = {
   assistantMessage: string;
@@ -188,7 +188,7 @@ export class OnboardingChatService {
       };
     }
 
-    if (!draft.onboardingMeta?.useExistingPointKeys && (draft.pointKeys?.length ?? 0) === 0) {
+    if (draftNeedsPointKeys(draft)) {
       if (orgPointKeyCodes.length > 0) {
         // `F4.105` site 5, and the one the owner overruled the plan on (ruling
         // 5). This carried a bare literal `8` twice, closed by a bare `, …`
@@ -537,7 +537,9 @@ export class OnboardingChatService {
       );
     }
 
-    if (phase === "point_keys" || !draft.pointKeys?.length) {
+    // F4.195: the phase's own predicate, so a draft whose assets are all
+    // templated, or that uses the existing catalog, is not given `kw`.
+    if (phase === "point_keys" || draftNeedsPointKeys(draft)) {
       patch.pointKeys = [
         ...(draft.pointKeys ?? []),
         { code: "kw", name: "Active Power", domain: "electrical", unit: "kW" },

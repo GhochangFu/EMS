@@ -344,6 +344,34 @@ export async function assertT10RemoveTemplateRemovesAnUnreferencedTemplate(): Pr
   assert(out.actionLine === "Removed template CHILLER", `the action line: ${out.actionLine}`);
 }
 
+/** F4.195 — a point key only the draft declares is not removed while a draft template uses it. */
+export async function assertRemovePointKeyIsRefusedWhileADraftTemplateUsesIt(): Promise<void> {
+  const out = await runOn("remove_point_key", { index: 0 }, baseDraft({ templates: [CHILLER] }));
+  assert(
+    !out.ok && out.error === "Point key 'kw' is used by draft templates: 'CHILLER'. Remove those templates first.",
+    `refused naming the template, got ${out.content}`,
+  );
+  assert(out.state.working.pointKeys?.length === 1, "the point key stays");
+}
+
+/** F4.195 — a key the catalog also holds still resolves at commit, so it can leave the draft. */
+export async function assertRemovePointKeyRemovesAKeyTheCatalogHolds(): Promise<void> {
+  const draft = baseDraft({ templates: [{ ...CHILLER, points: [{ pointKey: "energy_kwh" }] }] });
+  draft.pointKeys!.push({ code: "energy_kwh", name: "Energy", domain: "electrical", unit: "kWh" });
+  const out = await runOn("remove_point_key", { index: 1 }, draft);
+  assert(out.ok && out.actionLine === "Removed point key energy_kwh", `removed, got ${out.content}`);
+  assert(out.state.working.pointKeys?.map((key) => key.code).join() === "kw", "only kw is left");
+}
+
+/** F4.195 — a key no draft template uses is removed beside one that does. */
+export async function assertRemovePointKeyRemovesAKeyNoTemplateUses(): Promise<void> {
+  const draft = baseDraft({ templates: [CHILLER] });
+  draft.pointKeys!.push({ code: "kvar", name: "Reactive Power", domain: "electrical", unit: "kVAr" });
+  const out = await runOn("remove_point_key", { index: 1 }, draft);
+  assert(out.ok && out.actionLine === "Removed point key kvar", `removed, got ${out.content}`);
+  assert(out.state.working.pointKeys?.map((key) => key.code).join() === "kw", "only kw is left");
+}
+
 /** T10 (a code the draft does not hold) */
 export async function assertT10RemoveTemplateRefusesAnUnknownCode(): Promise<void> {
   const out = await runOn("remove_template", { code: "NOPE" }, baseDraft({ templates: [CHILLER] }));

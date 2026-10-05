@@ -36,6 +36,24 @@ export type ValidateResult = {
   suggestedPhase: OnboardingPhase;
 };
 
+/**
+ * Whether the draft still has to declare point keys: it declares none, does not
+ * use the existing catalog, and holds a plain asset or no asset at all.
+ *
+ * F4.192: a templated asset takes its point keys from its template, so a draft
+ * whose every asset is templated needs none; with no asset at all, `every` is
+ * true, so the length is checked first. F4.195: `inferPhase`, the guided
+ * chat's turn and `excelImportFollowUp` ask this one question, so the chat
+ * cannot add a key that the phase skipped.
+ */
+export function draftNeedsPointKeys(draft: OnboardingDraft): boolean {
+  if ((draft.pointKeys?.length ?? 0) > 0 || draft.onboardingMeta?.useExistingPointKeys) {
+    return false;
+  }
+  const assets = draft.assets ?? [];
+  return assets.length === 0 || assets.some((asset) => !asset.template);
+}
+
 /** Validates onboarding draft business rules. */
 @Injectable()
 export class OnboardingValidateService {
@@ -237,14 +255,8 @@ export class OnboardingValidateService {
     if (d.rtus.some((rtu) => this.rtuNeedsMqttSetup(rtu))) {
       return "rtu";
     }
-    // F4.192: a templated asset takes its point keys from its template, so a
-    // draft whose every asset is templated skips this phase; with no asset at
-    // all, `every` is true, so the length is checked first.
-    const allTemplated = (d.assets?.length ?? 0) > 0 && d.assets!.every((asset) => asset.template);
-    if (!d.pointKeys || d.pointKeys.length === 0) {
-      if (!d.onboardingMeta?.useExistingPointKeys && !allTemplated) {
-        return "point_keys";
-      }
+    if (draftNeedsPointKeys(d)) {
+      return "point_keys";
     }
     if (!d.assets || d.assets.length === 0) {
       return "assets";
