@@ -47,6 +47,25 @@ export function topicUnusable(rtu: DraftRtu): boolean {
   return trimmed === "" || trimmed === "-" || topic.length > MAX_RTU_TOPIC_CHARS;
 }
 
+/**
+ * `F4.208` (owner ruling) — the index of the RTU a guided `topic: x` turn
+ * writes to: the first enabled MQTT RTU whose topic is unusable, else the last
+ * enabled MQTT RTU, else `-1`, and the turn appends a new RTU as before.
+ */
+export function rtuInHand(draft: OnboardingDraft): number {
+  const rtus = draft.rtus ?? [];
+  const waiting = rtus.findIndex((rtu) => isEnabledMqttRtu(rtu) && topicUnusable(rtu));
+  if (waiting >= 0) {
+    return waiting;
+  }
+  for (let i = rtus.length - 1; i >= 0; i -= 1) {
+    if (isEnabledMqttRtu(rtus[i])) {
+      return i;
+    }
+  }
+  return -1;
+}
+
 export function mqttSetupTemplate(draft: OnboardingDraft): string {
   const mqttRtus = (draft.rtus ?? []).filter(isEnabledMqttRtu);
   if (mqttRtus.length === 0) {
@@ -54,13 +73,14 @@ export function mqttSetupTemplate(draft: OnboardingDraft): string {
   }
   // `F4.105` site 2. **Capping this costs no working function**, and that is
   // measured rather than assumed: the template already does not do what it
-  // says past the first block. `defaultConfig` reads one *non-global*
-  // `/topic[:\s]+(\S+)/i`, so only the first block's topic is ever taken, and
-  // the `phase === "rtu"` branch of `handleRuleBasedTurn` *appends* an RTU
-  // instead of updating the ones the import created — three imported RTUs,
-  // all three topics filled in and pasted back, produced four RTUs and left
-  // the three originals on `topic: ""`. Pre-existing, filed as its own row,
-  // and deliberately not fixed here (owner ruling 4).
+  // says past the first block. The guided turn reads one *non-global*
+  // `/topic[:\s]+(\S+)/i`, so only the first block's topic is ever taken.
+  // Until `F4.208` the `phase === "rtu"` branch of `handleRuleBasedTurn` also
+  // *appended* an RTU instead of updating the ones the import created; since
+  // then a `topic:` turn that names no protocol sets the topic of the RTU in
+  // hand (`rtuInHand`) — the first one still waiting — so a pasted template
+  // fills one RTU per message. Reading several blocks from one paste stays a
+  // recorded limit (owner ruling, `F4.208`).
   //
   // **The two predicates diverge, and the cap turned that from untidy into an
   // elision — so this list is sorted, not filtered.** `mqttIncomplete` — a

@@ -33,6 +33,7 @@ import {
   formatAssetsByRtuSummary,
   mqttSetupTemplate,
   needsMqttSetup,
+  rtuInHand,
 } from "./onboarding-chat-summaries";
 import * as locationTypes from "./onboarding-location-type-match";
 // F3.21 (ADR 0090): the model no longer returns a draft patch, so the
@@ -614,11 +615,27 @@ export class OnboardingChatService {
       );
     }
 
+    // F4.208: "topic: x" sets the topic of the RTU in hand rather than append
+    // one. Naming a protocol, or "add another rtu", still appends; the protocol
+    // test skips the topic itself, so `site/sim/rtu` is not read as `sim`.
+    const addAnother = /^add another rtu\b/.test(lower);
+    const topicTurn = message.match(/topic[:\s]+(\S+)/i);
+    const rest = topicTurn ? lower.replace(topicTurn[0].toLowerCase(), "") : lower;
+    const inHand = topicTurn && !addAnother && !NAMES_A_PROTOCOL.test(rest) ? rtuInHand(draft) : -1;
+    if (topicTurn && inHand >= 0) {
+      const topic = cutToBound(topicTurn[1], MAX_RTU_TOPIC_CHARS);
+      const rtus = (draft.rtus ?? []).map((rtu, i) => (i === inHand ? { ...rtu, config: { ...rtu.config, topic } } : rtu));
+      patch.rtus = rtus;
+      const merged = mergeDraftPatch(draft, patch);
+      const prompt = stepPrompt(this.validateService.inferPhase(merged, types.map((t) => t.code)), merged, types);
+      const text = `Topic **${quoteCell(topic)}** set on **${quoteCell(rtus[inHand].displayName)}**. ${prompt.text}`;
+      return this.finalizeTurn(text, patch, "rtu", prompt.replies, message, draft, turn);
+    }
+
     // F4.199: "Add another RTU" is offered past the RTU step too (a non-MQTT
     // RTU moves the phase on to `point_keys`), so it is matched by its text.
     // A reply that names no protocol repeats the last RTU's, so a Modbus RTU
     // is not followed by an MQTT one that waits for credentials.
-    const addAnother = /^add another rtu\b/.test(lower);
     if (phase === "rtu" || !draft.rtus?.length || addAnother) {
       const lastProtocol = draft.rtus?.[draft.rtus.length - 1]?.protocol;
       const protocol =
