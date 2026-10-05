@@ -29,12 +29,15 @@ import {
 } from "../../api/admin/users";
 import { isOidcEnabled } from "../../api/oidc";
 import { MasterDataLayout } from "../../components/admin/master-data-layout";
+import { ConfirmDialog } from "../../components/confirm-dialog";
 import { PageHeader } from "../../components/page-header";
 import { SectionCard } from "../../components/section-card";
 import { StatusPill } from "../../components/status-pill";
 import { canManageUsers } from "../../lib/admin-access";
 import { ApiError } from "../../lib/api-error";
 import { apiErrorMessage } from "../../lib/api-error-message";
+// `F4.200`: the shell's labels ("Organization Administrator"), not the role code with spaces.
+import { roleLabel } from "../../lib/role-label";
 import type { AuthUser } from "../../stores/auth-store";
 
 type UsersAdminPageProps = { user: AuthUser };
@@ -80,10 +83,6 @@ const KIND_LABELS: Record<UserGrantKind, string> = {
 };
 
 type Feedback = { tone: "error" | "warning"; messages: string[] };
-
-function roleLabel(role: UserRole): string {
-  return role.replace(/_/g, " ");
-}
 
 /** The follow-up an error body carries, if it is one the contract names. */
 function followUpOf(err: unknown): UserWriteFollowUp | null {
@@ -178,18 +177,8 @@ const ROW_ACTION_TEXT: Record<
   { label: string; text: string; pendingLabel: string; pendingText: string }
 > = {
   edit: { label: "Edit", text: "Edit", pendingLabel: "Saving", pendingText: "Saving…" },
-  deactivate: {
-    label: "Deactivate",
-    text: "Deactivate",
-    pendingLabel: "Deactivating",
-    pendingText: "Deactivating…",
-  },
-  reactivate: {
-    label: "Reactivate",
-    text: "Reactivate",
-    pendingLabel: "Reactivating",
-    pendingText: "Reactivating…",
-  },
+  deactivate: { label: "Deactivate", text: "Deactivate", pendingLabel: "Deactivating", pendingText: "Deactivating…" },
+  reactivate: { label: "Reactivate", text: "Reactivate", pendingLabel: "Reactivating", pendingText: "Reactivating…" },
   password: {
     label: "Temporary password for",
     text: "Temporary password",
@@ -211,6 +200,8 @@ function UsersAdminScreen({ user }: UsersAdminPageProps) {
   const [modalFeedback, setModalFeedback] = useState<Feedback | null>(null);
   const [pageFeedback, setPageFeedback] = useState<Feedback | null>(null);
   const [grantsFor, setGrantsFor] = useState<AdminUserDto | null>(null);
+  // `F4.202`: Deactivate ends the user's sessions, so it asks first. Reactivate does not.
+  const [confirmDeactivate, setConfirmDeactivate] = useState<AdminUserDto | null>(null);
 
   const usersQ = useQuery({ queryKey: adminUsersQueryKey, queryFn: fetchAdminUsers });
   const orgsQ = useQuery({
@@ -375,13 +366,7 @@ function UsersAdminScreen({ user }: UsersAdminPageProps) {
                                 run: () => reactivateAdminUser(row.id),
                               });
                             })
-                          : rowAction(row, "deactivate", () => {
-                              setPageFeedback(null);
-                              write.mutate({
-                                row: { userId: row.id, action: "deactivate" },
-                                run: () => deactivateAdminUser(row.id),
-                              });
-                            })}
+                          : rowAction(row, "deactivate", () => setConfirmDeactivate(row))}
                         {rowAction(row, "password", () => {
                           setModalFeedback(null);
                           setModal({ kind: "password", target: row });
@@ -447,6 +432,20 @@ function UsersAdminScreen({ user }: UsersAdminPageProps) {
               run: () => setAdminUserTemporaryPassword(modal.target.id, password),
             })
           }
+        />
+      ) : null}
+      {confirmDeactivate ? (
+        <ConfirmDialog
+          title={`Deactivate ${confirmDeactivate.displayName}`}
+          body="This ends the user's sessions and closes its live connections. You can reactivate the user later."
+          confirmLabel="Confirm deactivate"
+          onClose={() => setConfirmDeactivate(null)}
+          onConfirm={() => {
+            const { id } = confirmDeactivate;
+            setConfirmDeactivate(null);
+            setPageFeedback(null);
+            write.mutate({ row: { userId: id, action: "deactivate" }, run: () => deactivateAdminUser(id) });
+          }}
         />
       ) : null}
       {grantsFor ? (
@@ -830,6 +829,7 @@ function GrantsDrawer({
   const [feedback, setFeedback] = useState<Feedback | null>(null);
   const [kind, setKind] = useState<UserGrantKind>("location");
   const [targetId, setTargetId] = useState("");
+  const [removing, setRemoving] = useState<UserGrantDto | null>(null); // `F4.202`: asks first
 
   const grantsQ = useQuery({
     queryKey: adminUserGrantsQueryKey(target.id),
@@ -846,12 +846,13 @@ function GrantsDrawer({
     enabled: kind === "asset_group",
   });
 
-  const options: { id: string; name: string }[] =
+  // `F4.201`: an asset group is "Group · Location" — two locations can each have an "HVAC".
+  const options: { id: string; label: string }[] =
     kind === "organization"
-      ? organizations
+      ? organizations.map((org) => ({ id: org.id, label: org.name }))
       : kind === "location"
-        ? (locationsQ.data?.items ?? [])
-        : (groupsQ.data?.items ?? []);
+        ? (locationsQ.data?.items ?? []).map((loc) => ({ id: loc.id, label: loc.name }))
+        : (groupsQ.data?.items ?? []).map((g) => ({ id: g.id, label: `${g.name} · ${g.locationName ?? "—"}` }));
 
   const settle = {
     onSuccess: (response: { items: UserGrantDto[] }) => {
@@ -909,7 +910,9 @@ function GrantsDrawer({
               <li key={`${grant.kind}-${grant.id}`} className="flex items-start justify-between gap-2 py-2">
                 <div className="text-sm">
                   <span className="block font-semibold">{grant.targetName}</span>
-                  <span className="block text-xs text-ink-muted">{KIND_LABELS[grant.kind]}</span>
+                  <span className="block text-xs text-ink-muted">
+                    {`${KIND_LABELS[grant.kind]}${grant.locationName ? ` · ${grant.locationName}` : ""}`}
+                  </span>
                   {grant.effective ? null : (
                     <span className="block text-xs text-warning-ink">
                       Not used by the {roleLabel(target.role)} role.
@@ -922,7 +925,7 @@ function GrantsDrawer({
                   aria-busy={removingThis}
                   disabled={remove.isPending}
                   className="text-xs font-semibold text-critical-ink disabled:opacity-50"
-                  onClick={() => remove.mutate(grant)}
+                  onClick={() => setRemoving(grant)}
                 >
                   Remove
                 </button>
@@ -967,7 +970,7 @@ function GrantsDrawer({
               <option value="">Select a target</option>
               {options.map((option) => (
                 <option key={option.id} value={option.id}>
-                  {option.name}
+                  {option.label}
                 </option>
               ))}
             </select>
@@ -981,6 +984,15 @@ function GrantsDrawer({
             {add.isPending ? "Adding…" : "Add grant"}
           </button>
         </form>
+        {removing ? (
+          <ConfirmDialog
+            title={`Remove ${KIND_LABELS[removing.kind]} grant ${removing.targetName}`}
+            body="The user loses the access this grant gives."
+            confirmLabel="Confirm remove"
+            onClose={() => setRemoving(null)}
+            onConfirm={() => { setRemoving(null); remove.mutate(removing); }}
+          />
+        ) : null}
       </div>
     </div>
   );

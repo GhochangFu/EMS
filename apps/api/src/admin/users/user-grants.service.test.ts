@@ -37,6 +37,14 @@ describe("F3.78 — UserGrantsService.list (ADR 0089 decision 12, plan D2)", () 
     await spec.assertAViewersOnlyLocationGrantIsEffective();
   });
 
+  it("F4.201: an asset-group grant carries its group's location name", async () => {
+    await spec.assertAnAssetGroupGrantCarriesItsLocationName();
+  });
+
+  it("F4.201: a location grant carries no locationName key", async () => {
+    await spec.assertALocationGrantCarriesNoLocationName();
+  });
+
   it("grant reads run on the fleet pool", async () => {
     await spec.assertGrantReadsRunOnTheFleetPool();
   });

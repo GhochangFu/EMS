@@ -4,8 +4,16 @@ import { cleanup } from "@testing-library/react";
 
 import {
   aReadOnlyRoleSeesNoWriteControls,
+  aRefusedAddShowsTheSentence,
+  aRefusedRemoveShowsTheSentence,
+  aRefusedRoleWriteShowsTheSentence,
+  aRefusedSaveShowsTheSentence,
   addSendsTheAssetId,
   anEmptyVocabularyRendersNoRolesOfItsOwn,
+  cancellingMemberRemoveSendsNothing,
+  changingTheFilterClosesTheMemberRemoveDialog,
+  pickingAnotherGroupClosesTheMemberRemoveDialog,
+  confirmingMemberRemoveSendsOneRequest,
   choosingAnOrganizationStaysOnTheScreen,
   createAtAnotherLocationMovesTheFilterThere,
   createSendsTheSelectedLocation,
@@ -96,5 +104,37 @@ describe("F3.37 asset groups page", () => {
 
   it("hides every write control from a role without the write gate", async () => {
     await aReadOnlyRoleSeesNoWriteControls();
+  });
+
+  it("F4.197: a refused save shows the server's sentence, not the JSON envelope", async () => {
+    await aRefusedSaveShowsTheSentence();
+  });
+
+  it("F4.197: a refused add shows the server's sentence, not the JSON envelope", async () => {
+    await aRefusedAddShowsTheSentence();
+  });
+
+  it("F4.197: a refused remove shows the server's sentence, not the JSON envelope", async () => {
+    await aRefusedRemoveShowsTheSentence();
+  });
+
+  it("F4.197: a refused role write shows the server's sentence, not the JSON envelope", async () => {
+    await aRefusedRoleWriteShowsTheSentence();
+  });
+
+  it("F4.202: cancelling a member's Remove sends nothing", async () => {
+    await cancellingMemberRemoveSendsNothing();
+  });
+
+  it("F4.202: confirming a member's Remove sends one request", async () => {
+    await confirmingMemberRemoveSendsOneRequest();
+  });
+
+  it("F4.202: picking another group closes an open member-remove dialog", async () => {
+    await pickingAnotherGroupClosesTheMemberRemoveDialog();
+  });
+
+  it("F4.202: changing the filter closes an open member-remove dialog", async () => {
+    await changingTheFilterClosesTheMemberRemoveDialog();
   });
 });

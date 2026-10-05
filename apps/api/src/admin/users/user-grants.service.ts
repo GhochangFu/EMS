@@ -89,6 +89,8 @@ type RawGrantRow = {
   kind: UserGrantKind;
   target_id: string;
   target_name: string;
+  /** `F4.201`: the asset group's location; NULL on the organization and location branches. */
+  location_name: string | null;
   organization_id: string;
   created_at: Date | string;
 };
@@ -204,16 +206,19 @@ export class UserGrantsService {
   private async grantsOf(user: UserRow): Promise<UserGrantsResponse> {
     const result = await this.fleetDb.execute(sql`
       SELECT a.id, 'organization' AS kind, o.id AS target_id, o.name AS target_name,
-             o.id AS organization_id, a.created_at
+             NULL::text AS location_name, o.id AS organization_id, a.created_at
         FROM bms.user_organization_access a JOIN bms.organizations o ON o.id = a.organization_id
        WHERE a.user_id = ${user.id}
       UNION ALL
-      SELECT a.id, 'location' AS kind, l.id, l.name, l.organization_id, a.created_at
+      SELECT a.id, 'location' AS kind, l.id, l.name, NULL::text, l.organization_id, a.created_at
         FROM bms.user_location_access a JOIN bms.locations l ON l.id = a.location_id
        WHERE a.user_id = ${user.id}
       UNION ALL
-      SELECT a.id, 'asset_group' AS kind, g.id, g.name, g.organization_id, a.created_at
+      SELECT a.id, 'asset_group' AS kind, g.id, g.name, gl.name, g.organization_id, a.created_at
         FROM bms.user_asset_group_access a JOIN bms.asset_groups g ON g.id = a.asset_group_id
+        -- F4.201: LEFT, and in the group's own organization only — a group whose location is in
+        -- another organization keeps its grant row (visible, revocable) and names no location.
+        LEFT JOIN bms.locations gl ON gl.id = g.location_id AND gl.organization_id = g.organization_id
        WHERE a.user_id = ${user.id}
       ORDER BY kind, target_name
     `);
@@ -225,6 +230,8 @@ export class UserGrantsService {
           kind: row.kind,
           targetId: row.target_id,
           targetName: row.target_name,
+          // `F4.201`: present on an asset_group grant only; the key is absent, not null, elsewhere.
+          ...(row.location_name !== null ? { locationName: row.location_name } : {}),
           organizationId: row.organization_id,
           effective: row.kind === source,
           createdAt: new Date(row.created_at).toISOString(),
