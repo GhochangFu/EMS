@@ -1,12 +1,14 @@
 import { Injectable } from "@nestjs/common";
 
 import {
+  MAX_RTU_TOPIC_CHARS,
   type OnboardingDraft,
   type OnboardingFieldError,
   type OnboardingPhase,
 } from "@bms/shared";
 
 import { echoedItems, moreTail, quoteCell } from "../spreadsheet-guard";
+import { needsMqttSetup, rtuTopic } from "./onboarding-chat-summaries";
 import {
   draftAssetPointSchema,
   draftAssetSchema,
@@ -162,6 +164,15 @@ export class OnboardingValidateService {
             });
           }
         }
+        // F4.208: `config` is a `z.record(z.unknown())`, so no schema bounds the
+        // topic; without this an over-long one passes to the commit and fails
+        // on the `varchar(255)` insert.
+        if (rtu.protocol === "mqtt" && rtuTopic(rtu).length > MAX_RTU_TOPIC_CHARS) {
+          errors.push({
+            path: `rtus.${i}.config.topic`,
+            message: `MQTT topic is longer than ${MAX_RTU_TOPIC_CHARS} characters`,
+          });
+        }
       });
     }
 
@@ -253,7 +264,7 @@ export class OnboardingValidateService {
     if (!d.rtus || d.rtus.length === 0 || !d.rtus.every((r) => r.protocol && r.code)) {
       return "rtu";
     }
-    if (d.rtus.some((rtu) => this.rtuNeedsMqttSetup(rtu))) {
+    if (d.rtus.some(needsMqttSetup)) {
       return "rtu";
     }
     if (draftNeedsPointKeys(d)) {
@@ -269,17 +280,6 @@ export class OnboardingValidateService {
       return "mappings";
     }
     return "review";
-  }
-
-  private rtuNeedsMqttSetup(rtu: NonNullable<OnboardingDraft["rtus"]>[number]): boolean {
-    if (rtu.protocol !== "mqtt" || !rtu.ingestEnabled) {
-      return false;
-    }
-    if (!rtu.credentialsSet) {
-      return true;
-    }
-    const topic = String(rtu.config?.topic ?? rtu.config?.mqttTopic ?? "").trim();
-    return !topic || topic === "-";
   }
 }
 

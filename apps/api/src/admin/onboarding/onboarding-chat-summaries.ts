@@ -24,8 +24,27 @@ export function isEnabledMqttRtu(rtu: DraftRtu): boolean {
  * of its RTUs the prose is counting, so that a leading-25 cut keeps them.
  */
 export function needsMqttSetup(rtu: DraftRtu): boolean {
-  const topic = String(rtu.config.topic ?? "").trim();
-  return isEnabledMqttRtu(rtu) && (!rtu.credentialsSet || topic === "" || topic === "-");
+  return isEnabledMqttRtu(rtu) && (!rtu.credentialsSet || topicUnusable(rtu));
+}
+
+/**
+ * `F4.208` — the topic `OnboardingCommitService` writes to `bms.rtus.mqtt_topic`:
+ * `config.topic`, else the legacy `config.mqttTopic`, untrimmed. `inferPhase`
+ * reads unparsed drafts, so `config` may be absent.
+ */
+export function rtuTopic(rtu: DraftRtu): string {
+  return String(rtu.config?.topic ?? rtu.config?.mqttTopic ?? "");
+}
+
+/**
+ * `F4.208` — a topic the RTU cannot ingest with: blank, the `-` placeholder, or
+ * wider than the `varchar(255)` column it commits to. The one predicate behind
+ * `needsMqttSetup`, `inferPhase` and the guided turn's RTU in hand.
+ */
+export function topicUnusable(rtu: DraftRtu): boolean {
+  const topic = rtuTopic(rtu);
+  const trimmed = topic.trim();
+  return trimmed === "" || trimmed === "-" || topic.length > MAX_RTU_TOPIC_CHARS;
 }
 
 export function mqttSetupTemplate(draft: OnboardingDraft): string {
