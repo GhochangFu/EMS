@@ -87,6 +87,9 @@ function carriedBearer(sent: Pick<RequestInit, "headers">): string | null {
  * does nothing. The comparison runs before the return path, the clear and the
  * reason, so a stale 401 does none of them.
  *
+ * The type cannot prove that a site passes the init it actually sent: every
+ * `RequestInit` satisfies it. The PR body records a diff audit of every site.
+ *
  * Residual, by design: `fetchCurrentUser` (`login.ts`) records a reason for its
  * own `/me` 401 and does not pass through here. On the OIDC callback and the
  * local-login path the store is still empty when `/me` runs, so there is no

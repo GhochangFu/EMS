@@ -18,6 +18,7 @@ import {
   runTheStoreKeepsTheFirstReason,
   runAuthFailureTests,
   runLater401KeepsReturnPathTest,
+  runLater401WithTheOldBearerKeepsReturnPathTest,
   runNoReturnPathOffWallTest,
   runNoReturnPathOn403Test,
   runWallReturnPathOn401Test,
@@ -48,6 +49,10 @@ describe("api/http", () => {
 
   it("H4 a later 401 on /login keeps the stored wall URL", () => {
     runLater401KeepsReturnPathTest();
+  });
+
+  it("H4b a later 401 that carried the old bearer keeps the stored wall URL", () => {
+    runLater401WithTheOldBearerKeepsReturnPathTest();
   });
 
   it("adds the bearer token without discarding the caller's headers", () => {

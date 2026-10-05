@@ -148,6 +148,25 @@ export function runLater401KeepsReturnPathTest(): void {
   );
 }
 
+/**
+ * `F3.77` H4, realistic variant — the wall tab's other in-flight requests were
+ * sent with the old bearer, so their 401s land after the first one cleared the
+ * session and the guard moved the tab to `/login`. They carry a bearer the
+ * store no longer holds (`F4.206`), so they must keep the stored wall URL.
+ */
+export function runLater401WithTheOldBearerKeepsReturnPathTest(): void {
+  onPage(`${WALL_PATH}${WALL_SEARCH}`);
+  const first = withAuth();
+  const second = withAuth(); // sent with token-abc, before the first 401 lands
+  clearSessionOnAuthFailure(response(401), first);
+  window.history.replaceState({}, "", "/login");
+  clearSessionOnAuthFailure(response(401), second);
+  assert(
+    window.sessionStorage.getItem(RETURN_PATH_KEY) === `${WALL_PATH}${WALL_SEARCH}`,
+    "a later 401 that carried the old bearer must keep the wall URL the first 401 stored",
+  );
+}
+
 /** `F3.77` H3 — a 403 on a wall URL does neither: no return path, the session kept. */
 export function runNoReturnPathOn403Test(): void {
   onPage(`${WALL_PATH}${WALL_SEARCH}`);
