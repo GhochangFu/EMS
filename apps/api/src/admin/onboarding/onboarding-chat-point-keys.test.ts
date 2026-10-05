@@ -27,6 +27,18 @@ import {
   assertConfirmRtuWithNoRtuAsksForAProtocol,
   assertConfirmMappingsOnAReadyDraftGoesOnToReview,
   assertConfirmRtuBeforeTheLocationNamesIt,
+  assertATypedConfirmAtTheLocationStepChangesNothing,
+  assertATypedConfirmRtuWorksAsTheButton,
+  assertATypedConfirmPointKeysWorksAsTheButton,
+  assertATypedConfirmAssetsWorksAsTheButton,
+  assertATypedConfirmMappingsWorksAsTheButton,
+  assertYesPleaseChangesNothing,
+  assertConfirmAssetsPleaseChangesNothing,
+  assertCreateTheLocationIsNotALocationName,
+  assertConfirmCommitWithAFullStopChangesNothing,
+  assertAnotherRtuNamingAProtocolTakesIt,
+  assertExistingKeysAreNotTakenBeforeThePointKeyStep,
+  assertExistingKeysAreTakenAtThePointKeyStep,
   assertTheProtocolAnswerOffersProtocolsAtTheRtuStep,
 } from "./onboarding-chat-point-keys.spec";
 
@@ -132,6 +144,54 @@ describe("onboarding chat reply buttons reach their step (F4.199)", () => {
 
   it("confirm rtu before the location is complete names the location step", async () => {
     await assertConfirmRtuBeforeTheLocationNamesIt();
+  });
+
+  it("a typed confirm at the location step changes nothing", async () => {
+    await assertATypedConfirmAtTheLocationStepChangesNothing();
+  });
+
+  it("a typed Confirm RTU! works as the button", async () => {
+    await assertATypedConfirmRtuWorksAsTheButton();
+  });
+
+  it("a typed confirm  point keys works as the button", async () => {
+    await assertATypedConfirmPointKeysWorksAsTheButton();
+  });
+
+  it("a typed CONFIRM ASSETS. works as the button", async () => {
+    await assertATypedConfirmAssetsWorksAsTheButton();
+  });
+
+  it("a typed confirm mappings? works as the button", async () => {
+    await assertATypedConfirmMappingsWorksAsTheButton();
+  });
+
+  it("yes please changes nothing", async () => {
+    await assertYesPleaseChangesNothing();
+  });
+
+  it("confirm assets please changes nothing", async () => {
+    await assertConfirmAssetsPleaseChangesNothing();
+  });
+
+  it("create the location is not a location name", async () => {
+    await assertCreateTheLocationIsNotALocationName();
+  });
+
+  it("confirm commit. changes nothing", async () => {
+    await assertConfirmCommitWithAFullStopChangesNothing();
+  });
+
+  it("Add another RTU modbus takes the protocol it names", async () => {
+    await assertAnotherRtuNamingAProtocolTakesIt();
+  });
+
+  it("existing keys are not taken before the point-key step", async () => {
+    await assertExistingKeysAreNotTakenBeforeThePointKeyStep();
+  });
+
+  it("existing keys are taken at the point-key step", async () => {
+    await assertExistingKeysAreTakenAtThePointKeyStep();
   });
 
   it("the protocol answer offers protocols at the RTU step", async () => {

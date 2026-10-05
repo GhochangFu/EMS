@@ -115,10 +115,20 @@ const STEP_NAMES: Readonly<Record<OnboardingPhase, string>> = {
  * F4.199 — what the draft still needs at `phase`, with only replies that the
  * guided mode answers at that phase: each one reaches the branch its text names.
  */
-function stepPrompt(phase: OnboardingPhase, draft: OnboardingDraft): { text: string; replies: string[] } {
+function stepPrompt(
+  phase: OnboardingPhase,
+  draft: OnboardingDraft,
+  types: readonly LocationTypeDto[],
+): { text: string; replies: string[] } {
   switch (phase) {
-    case "location":
+    case "location": {
+      // A named location waits for its type: the location branch reads a type label.
+      const name = draft.location?.name;
+      if (name && !locationTypes.hasActiveLocationType(draft.location, types)) {
+        return { text: locationTypes.locationTypeQuestion(name), replies: types.map((t) => t.label) };
+      }
       return { text: "The location needs a name and a type first. What is the location name?", replies: ["View draft"] };
+    }
     case "rtu": {
       const waiting = (draft.rtus ?? []).filter(needsMqttSetup).length;
       if ((draft.rtus ?? []).length === 0) {
@@ -447,8 +457,16 @@ export class OnboardingChatService {
     const { types } = turn;
     const lower = message.toLowerCase().trim();
     const patch: OnboardingDraftInput = {};
+    // F4.199 (owner ruling 2026-10-05, "normalise, then no-op"): a typed label
+    // works as its button — one space, no trailing `.!?`. The commit phrase in
+    // `OnboardingService.chat` stays exact, so "confirm commit." commits nothing.
+    const intent = lower.replace(/\s+/g, " ").replace(/[.!?]+$/, "").trim();
+    const derived = this.validateService.inferPhase(draft, types.map((t) => t.code));
 
-    if (/use existing keys|confirm point keys/.test(lower) && organizationId) {
+    // Anchored and phase-gated: before the point-key step this switched the
+    // draft to the existing keys from a step it had not reached.
+    const keysReply = /^(use existing keys|confirm point keys)$/.test(intent);
+    if (keysReply && organizationId && derived === "point_keys") {
       const orgKeys = await this.catalogService.listPointKeys(organizationId);
       if (orgKeys.length > 0) {
         patch.onboardingMeta = {
@@ -472,7 +490,7 @@ export class OnboardingChatService {
     // "confirm mappings" reply buttons, so they answered with the commit line
     // and their step never ran. It commits nothing either way: only the typed
     // `confirm commit` phrase or the Commit button commits (ADR 0090 decision 5).
-    if (/^(yes|create|create it|commit|confirm)$/.test(lower)) {
+    if (/^(yes|create|create it|commit|confirm)$/.test(intent)) {
       return this.finalizeTurn(
         "I'll prepare the commit — open the preview to confirm everything looks correct.",
         patch,
@@ -488,9 +506,15 @@ export class OnboardingChatService {
     // phase branches below read the stored phase and not the message, so
     // without this one "confirm rtu" appended an RTU and "confirm point keys"
     // appended `kw`.
-    const confirmedStep = CONFIRM_STEP_REPLIES.get(lower);
+    const confirmedStep = keysReply ? "point_keys" : CONFIRM_STEP_REPLIES.get(intent);
     if (confirmedStep) {
       return this.confirmStepTurn(confirmedStep, message, draft, turn);
+    }
+    // Any other message that starts like a confirm is not a label: it changes
+    // nothing and answers with the step the draft is at.
+    if (/^(yes|confirm|commit|create)\b/.test(intent)) {
+      const prompt = stepPrompt(derived, draft, types);
+      return this.finalizeTurn(`I did not change the draft. ${prompt.text}`, {}, derived, prompt.replies, message, draft, turn);
     }
 
     // F4.162 (plan D9): a stored type that is not active counts as missing, so a
@@ -615,7 +639,7 @@ export class OnboardingChatService {
       // Credentials now arrive only through `POST :id/credentials`.
       return this.finalizeTurn(
         protocol === "mqtt"
-          ? "MQTT RTU added. Add its credentials with the **Credentials** field on the RTU step — never in this chat — or carry on without them for now."
+          ? "MQTT RTU added. Add its credentials with the **Credentials** field on the RTU step — never in this chat — then say **confirm rtu**."
           : `Added ${protocol} RTU. Ingest adapter is not connected yet — config will be stored. Add point keys next?`,
         patch,
         "point_keys",
@@ -776,7 +800,7 @@ export class OnboardingChatService {
         : position === 0
           ? `The ${name} step is not complete yet.`
           : `The ${name} step comes later.`;
-    const prompt = stepPrompt(derived, draft);
+    const prompt = stepPrompt(derived, draft, turn.types);
     return this.finalizeTurn(`${lead} ${prompt.text}`, {}, derived, prompt.replies, message, draft, turn);
   }
 

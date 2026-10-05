@@ -141,6 +141,19 @@ export async function assertConfirmWithNoProposalRepliesWithoutAModelCall(): Pro
   assert((write.messages as unknown[]).length === 2, "the user turn and the reply are stored");
 }
 
+/**
+ * F4.199 second review (owner ruling 2026-10-05): the chat normalises a typed
+ * label, but the commit phrase stays exact. "confirm commit." with a matching
+ * proposal is an ordinary turn and commits nothing.
+ */
+export async function assertConfirmCommitWithAFullStopDoesNotCommit(): Promise<void> {
+  const session = sessionRow(proposed(readyDraft()));
+  const { service, commit, llm } = build({ results: [[session], ORG, [session], ORG] });
+  await service.chat(JWT, "s-1", "confirm commit.");
+  assert(commit.calls.length === 0, `nothing is committed, got ${commit.calls.length}`);
+  assert(llm.calls === 1, `positive control: it went on as an ordinary turn, got ${llm.calls} model calls`);
+}
+
 export async function assertAStaleProposalIsClearedAndNotCommitted(): Promise<void> {
   const before = readyDraft();
   const after = { ...before, pointKeys: [...(before.pointKeys ?? []), { code: "kvar", name: "Reactive" }] } as OnboardingDraft;

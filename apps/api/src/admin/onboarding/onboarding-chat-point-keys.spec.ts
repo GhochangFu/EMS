@@ -241,6 +241,11 @@ export async function assertAnAddedMqttRtuOffersConfirmRtu(): Promise<void> {
   const result = await ruleBasedTurn("MQTT", { location: PLACE }, "rtu");
   assert(result.draftPatch.rtus?.[0]?.protocol === "mqtt", `an MQTT RTU is added, got ${JSON.stringify(result.draftPatch.rtus)}`);
   assert(repliesOf(result) === JSON.stringify(["confirm rtu", "View draft", "Add another RTU"]), turnSummary(result));
+  assert(
+    result.assistantMessage ===
+      "MQTT RTU added. Add its credentials with the **Credentials** field on the RTU step — never in this chat — then say **confirm rtu**.",
+    turnSummary(result),
+  );
 }
 
 /** On the MQTT path, "Add another RTU" adds a second RTU. */
@@ -353,7 +358,120 @@ export async function assertConfirmMappingsOnAReadyDraftGoesOnToReview(): Promis
 /** "confirm rtu" before the location has a type names the location step. */
 export async function assertConfirmRtuBeforeTheLocationNamesIt(): Promise<void> {
   const result = await ruleBasedTurn("confirm rtu", { location: { name: "Berhampur" } as OnboardingDraft["location"] }, "location");
-  assert(result.assistantMessage.startsWith("The RTU step comes later. The location needs a name and a type"), turnSummary(result));
+  assert(result.assistantMessage === "The RTU step comes later. Which type of location is **Berhampur**?", turnSummary(result));
+  assert(result.draftPatch.location === undefined, `the location is not changed, got ${JSON.stringify(result.draftPatch.location)}`);
+  assert(repliesOf(result) === JSON.stringify(["SMOC campus", "RSMOC", "CSMOC", "Pump station"]), turnSummary(result));
+}
+
+// ---------------------------------------------------------------------------
+// F4.199 second review, owner ruling 2026-10-05 "normalise, then no-op": a
+// typed label works as its button (trim, lower case, one space, no trailing
+// `.!?`), and any other message starting with yes / confirm / commit / create
+// changes nothing and answers with the step the draft is at.
+// ---------------------------------------------------------------------------
+
+/** Typed at the location step, "confirm rtu." changes nothing and asks for the name. */
+export async function assertATypedConfirmAtTheLocationStepChangesNothing(): Promise<void> {
+  const result = await ruleBasedTurn("confirm rtu.", {}, "location");
+  assert(result.assistantMessage.startsWith("The RTU step comes later. The location needs a name"), turnSummary(result));
   assert(result.draftPatch.location === undefined, `the location is not changed, got ${JSON.stringify(result.draftPatch.location)}`);
   assert(repliesOf(result) === JSON.stringify(["View draft"]), turnSummary(result));
+}
+
+/** "Confirm RTU!" answers as the confirm rtu button does, and adds no RTU. */
+export async function assertATypedConfirmRtuWorksAsTheButton(): Promise<void> {
+  const result = await ruleBasedTurn("Confirm RTU!", { location: PLACE, rtus: [mqttRtu(false)] }, "rtu");
+  assert(result.assistantMessage.startsWith("The RTU step is not complete yet."), turnSummary(result));
+  assert(result.draftPatch.rtus === undefined, `no RTU is added, got ${JSON.stringify(result.draftPatch.rtus)}`);
+}
+
+/** "confirm  point keys" (two spaces) answers as the button does, and adds no key. */
+export async function assertATypedConfirmPointKeysWorksAsTheButton(): Promise<void> {
+  const result = await ruleBasedTurn("confirm  point keys", { location: PLACE, rtus: [MODBUS_RTU] }, "point_keys");
+  assert(result.assistantMessage.startsWith("The point keys step is not complete yet."), turnSummary(result));
+  assert(result.draftPatch.pointKeys === undefined, `no point key is added, got ${JSON.stringify(result.draftPatch.pointKeys)}`);
+}
+
+/** "CONFIRM ASSETS." answers as the button does, and adds no asset. */
+export async function assertATypedConfirmAssetsWorksAsTheButton(): Promise<void> {
+  const result = await ruleBasedTurn("CONFIRM ASSETS.", { location: PLACE, rtus: [MODBUS_RTU], pointKeys: [KW] }, "assets");
+  assert(result.assistantMessage.startsWith("The assets step is not complete yet."), turnSummary(result));
+  assert(result.draftPatch.assets === undefined, `no asset is added, got ${JSON.stringify(result.draftPatch.assets)}`);
+}
+
+/** "confirm mappings?" on a mapped draft goes on to review, as the button does. */
+export async function assertATypedConfirmMappingsWorksAsTheButton(): Promise<void> {
+  const draft: OnboardingDraft = {
+    location: PLACE,
+    rtus: [MODBUS_RTU],
+    pointKeys: [KW],
+    assets: [PLAIN_ASSET],
+    assetPoints: [{ assetIndex: 0, pointKey: "kw", sourceDataKey: "s09_r01", unit: "kW" }],
+  };
+  const result = await ruleBasedTurn("confirm mappings?", draft, "mappings");
+  assert(result.assistantMessage.startsWith("The mappings step is complete."), turnSummary(result));
+  assert(result.currentPhase === "review", turnSummary(result));
+}
+
+const NO_CHANGE = "I did not change the draft.";
+
+/** "yes please" is not a label: it changes nothing and answers with the RTU step. */
+export async function assertYesPleaseChangesNothing(): Promise<void> {
+  const result = await ruleBasedTurn("yes please", { location: PLACE, rtus: [mqttRtu(false)] }, "rtu");
+  assert(result.assistantMessage.startsWith(`${NO_CHANGE} 1 MQTT RTU(s) still need`), turnSummary(result));
+  assert(result.draftPatch.rtus === undefined, `no RTU is added, got ${JSON.stringify(result.draftPatch.rtus)}`);
+}
+
+/** "confirm assets please" changes nothing and adds no asset. */
+export async function assertConfirmAssetsPleaseChangesNothing(): Promise<void> {
+  const result = await ruleBasedTurn("confirm assets please", { location: PLACE, rtus: [MODBUS_RTU], pointKeys: [KW] }, "assets");
+  assert(result.assistantMessage.startsWith(`${NO_CHANGE} Add an asset`), turnSummary(result));
+  assert(result.draftPatch.assets === undefined, `no asset is added, got ${JSON.stringify(result.draftPatch.assets)}`);
+}
+
+/** "create the location" is not taken as the location's name. */
+export async function assertCreateTheLocationIsNotALocationName(): Promise<void> {
+  const result = await ruleBasedTurn("create the location", {}, "location");
+  assert(result.assistantMessage.startsWith(NO_CHANGE), turnSummary(result));
+  assert(result.draftPatch.location === undefined, `no location is set, got ${JSON.stringify(result.draftPatch.location)}`);
+}
+
+/** "confirm commit." is not the commit phrase upstream, and here it changes nothing. */
+export async function assertConfirmCommitWithAFullStopChangesNothing(): Promise<void> {
+  const result = await ruleBasedTurn("confirm commit.", { location: PLACE, rtus: [mqttRtu(false)] }, "rtu");
+  assert(result.assistantMessage.startsWith(NO_CHANGE), turnSummary(result));
+  assert(result.draftPatch.rtus === undefined, `no RTU is added, got ${JSON.stringify(result.draftPatch.rtus)}`);
+}
+
+/** "Add another RTU modbus" after an MQTT RTU takes the protocol it names, not the last one. */
+export async function assertAnotherRtuNamingAProtocolTakesIt(): Promise<void> {
+  const result = await ruleBasedTurn("Add another RTU modbus", { location: PLACE, rtus: [mqttRtu(false)] }, "rtu");
+  assert(result.draftPatch.rtus?.[1]?.protocol === "modbus_tcp", `the named protocol, got ${JSON.stringify(result.draftPatch.rtus)}`);
+}
+
+/** The guided mode with an organization whose catalog holds one key. */
+async function orgTurn(message: string, draft: OnboardingDraft): Promise<ChatTurnResult> {
+  const service = new OnboardingChatService(
+    new OnboardingValidateService(),
+    {} as never,
+    {} as never,
+    { listPointKeys: async () => [KW], formatPointKeysForChat: () => "`kw`" } as never,
+    { listLocationTypes: async () => [{ code: "smoc_campus", label: "SMOC campus" }] } as never,
+    { resolveForOrganization: async () => ({ kind: "guided", reason: "platform_off" }) } as never,
+    { context: async () => EMPTY_TEMPLATE_CONTEXT } as never,
+  );
+  return service.handleTurn(message, draft, "rtu", "Ion Exchange", "org-1", { sessionId: "s-1", history: [] });
+}
+
+/** Review item 2: at the RTU step "confirm point keys" does not switch the draft to the existing keys. */
+export async function assertExistingKeysAreNotTakenBeforeThePointKeyStep(): Promise<void> {
+  const result = await orgTurn("confirm point keys", { location: PLACE, rtus: [mqttRtu(false)] });
+  assert(result.assistantMessage.startsWith("The point keys step comes later."), turnSummary(result));
+  assert(result.draftPatch.onboardingMeta === undefined, `no draft change, got ${JSON.stringify(result.draftPatch)}`);
+}
+
+/** The positive control: at the point-key step "use existing keys" takes the catalog. */
+export async function assertExistingKeysAreTakenAtThePointKeyStep(): Promise<void> {
+  const result = await orgTurn("use existing keys", { location: PLACE, rtus: [MODBUS_RTU] });
+  assert(result.draftPatch.onboardingMeta?.useExistingPointKeys === true, turnSummary(result));
 }

@@ -4,6 +4,7 @@ import {
   assertACommitRefusalIsAReplyNotAThrow,
   assertACoreConflictIsAReplyNotAThrow,
   assertAMatchingProposalCommitsOnce,
+  assertConfirmCommitWithAFullStopDoesNotCommit,
   assertANonProposingTurnClearsTheProposal,
   assertAProposingTurnStoresAHashOfTheStoredDraft,
   assertAProposingTurnOffersOnlyViewDraft,
@@ -31,6 +32,10 @@ describe("OnboardingService.chat — the confirm path and action messages (F3.21
 
   it("commits once on a matching proposal", async () => {
     await assertAMatchingProposalCommitsOnce();
+  });
+
+  it("F4.199: does not commit on confirm commit. with a full stop", async () => {
+    await assertConfirmCommitWithAFullStopDoesNotCommit();
   });
 
   it("names the template counts in the confirm line (F3.22, ADR 0091 d4)", async () => {
