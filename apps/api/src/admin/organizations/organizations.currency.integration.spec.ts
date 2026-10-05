@@ -1,3 +1,4 @@
+import { ConflictException } from "@nestjs/common";
 import { expect } from "vitest";
 import { ZodError } from "zod";
 import type pg from "pg";
@@ -173,4 +174,28 @@ export async function dtoParsesWithTheSharedContract(ctx: CurrencyCtx): Promise<
   const parsed = adminOrganizationDtoSchema.safeParse(created);
   expect(parsed.success, parsed.success ? "" : JSON.stringify(parsed.error.issues)).toBe(true);
   expect(parsed.success && parsed.data.currency).toBe("INR");
+}
+
+/**
+ * `F4.211` — a second create with a code that exists is a 409 naming the
+ * code, not pg's `23505` as a 500. The first row is registered for cleanup.
+ */
+export async function createWithADuplicateCodeIsA409(ctx: CurrencyCtx): Promise<void> {
+  const parsed = createOrganizationBodySchema.parse({ ...body(ctx, "F4211"), currency: "INR" });
+  const first = await ctx.svc.create(ctx.jwt, parsed);
+  ctx.register(first.id);
+  const err = await ctx.svc.create(ctx.jwt, parsed).then(
+    (dup) => {
+      ctx.register(dup.id);
+      return null;
+    },
+    (e: unknown) => e,
+  );
+  const expected = `An organization with code "${parsed.code}" already exists`;
+  expect(
+    err instanceof ConflictException && err.message === expected,
+    `F4.211: expected ConflictException "${expected}"; got ` +
+      `${(err as Error | null)?.constructor?.name} (code ${(err as { code?: unknown } | null)?.code}) ` +
+      `"${(err as Error | null)?.message}"`,
+  ).toBe(true);
 }

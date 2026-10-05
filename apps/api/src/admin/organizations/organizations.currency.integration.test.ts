@@ -12,6 +12,7 @@ import {
   createRefusesALowercaseCurrency,
   createRefusesAnUnknownCurrency,
   createStoresAKnownCurrency,
+  createWithADuplicateCodeIsA409,
   createWithoutTheKeyIsRefusedAndInsertsNoRow,
   dtoParsesWithTheSharedContract,
   updateChangesAndAbsentKeeps,
@@ -154,5 +155,9 @@ describe.skipIf(!connectionString)("E4.1c — organizations.currency on the admi
 
   it("T6 the DTO parses with adminOrganizationDtoSchema", async () => {
     await dtoParsesWithTheSharedContract(ctx);
+  });
+
+  it("F4.211 — a create with a code that exists is a 409 naming the code", async () => {
+    await createWithADuplicateCodeIsA409(ctx);
   });
 });
