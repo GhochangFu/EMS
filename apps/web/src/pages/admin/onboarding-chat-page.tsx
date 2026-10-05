@@ -476,7 +476,7 @@ export function OnboardingChatPage({ user }: OnboardingChatPageProps) {
                     key={reply}
                     type="button"
                     onClick={() => sendText(reply)}
-                    disabled={!session || startMutation.isPending}
+                    disabled={!session}
                     className="surface-button px-3 py-1 text-xs disabled:opacity-50"
                   >
                     {reply}
