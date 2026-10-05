@@ -71,17 +71,19 @@ export function withAuth(init: RequestInit = {}): RequestInit {
  */
 export function clearSessionOnAuthFailure(res: Response): void {
   if (res.status === 401) {
-    // `F4.203` — keep the reason the 401 gives. Read from a clone, so every
-    // caller can still read the body after this call (none reads it before —
-    // re-verified across the 53 call sites). A used body cannot be cloned; it
-    // skips the reason, never the clear.
-    if (!res.bodyUsed) {
-      void recordAuthFailureReason(res.clone());
-    }
     if (typeof window !== "undefined") {
       rememberWallReturnPath(window.location);
     }
     useAuthStore.getState().clearSession();
+    // `F4.203` — keep the reason the 401 gives, after the clear so nothing here
+    // can stop it. Read from a clone: callers read the body only after this
+    // call returns, so the clone still comes first and they can read it too. A
+    // response that cannot be cloned (a used body) skips the reason only.
+    try {
+      void recordAuthFailureReason(res.clone());
+    } catch {
+      // No reason to record; the session is already cleared.
+    }
   }
 }
 
@@ -92,14 +94,14 @@ export function clearSessionOnAuthFailure(res: Response): void {
  * never rejects. Consumes `res`'s body: pass a clone, or a response nobody
  * reads after.
  */
-export function recordAuthFailureReason(res: Response): Promise<void> {
-  return res
-    .json()
-    .then((body: unknown) => {
-      const parsed = unauthorizedEnvelopeSchema.safeParse(body);
-      if (parsed.success && parsed.data.code) {
-        useAuthStore.getState().rememberAuthFailure(parsed.data.code);
-      }
-    })
-    .catch(() => undefined);
+export async function recordAuthFailureReason(res: Response): Promise<void> {
+  try {
+    const body: unknown = await res.json();
+    const parsed = unauthorizedEnvelopeSchema.safeParse(body);
+    if (parsed.success && parsed.data.code) {
+      useAuthStore.getState().rememberAuthFailure(parsed.data.code);
+    }
+  } catch {
+    // Not JSON, or the read failed: no reason.
+  }
 }

@@ -233,8 +233,12 @@ export async function runPlain401RecordsNoReason(): Promise<void> {
   assert(reason() === null, `a plain 401 must record no reason, got ${String(reason())}`);
 }
 
-/** `F4.203` R3 — with several 401s in flight the first reason wins; a later plain one keeps it. */
-export async function runALaterPlain401KeepsTheFirstReason(): Promise<void> {
+/**
+ * `F4.203` R3 — a later plain 401 does not erase a recorded reason: a plain 401
+ * writes nothing at all. This is not the first-wins gate — the enum has one
+ * member and a plain 401 records nothing, so R3b (the store) holds that rule.
+ */
+export async function runALaterPlain401DoesNotEraseTheReason(): Promise<void> {
   signIn();
   clearSessionOnAuthFailure(json401(DEACTIVATED_BODY));
   await vi.waitFor(() => {
@@ -284,6 +288,30 @@ export async function runAReadBodyStillClearsTheSession(): Promise<void> {
   await res.text();
   clearSessionOnAuthFailure(res);
   assert(useAuthStore.getState().accessToken === null, "a 401 with a used body must still clear the session");
+}
+
+/**
+ * `F4.203` R8 — a 401 whose clone throws still clears the session, records no
+ * reason, and the call returns normally.
+ */
+export async function runAnUnclonableResponseStillClearsTheSession(): Promise<void> {
+  signIn();
+  const res = json401(DEACTIVATED_BODY);
+  Object.defineProperty(res, "clone", {
+    value: () => {
+      throw new TypeError("unclonable");
+    },
+  });
+  let thrown: unknown = null;
+  try {
+    clearSessionOnAuthFailure(res);
+  } catch (err) {
+    thrown = err;
+  }
+  assert(thrown === null, `the call must not throw, got ${String(thrown)}`);
+  assert(useAuthStore.getState().accessToken === null, "an unclonable 401 must still clear the session");
+  await settle();
+  assert(reason() === null, "an unclonable 401 must record no reason");
 }
 
 /** `F4.203` R7 — a new session consumes the reason. */

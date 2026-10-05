@@ -2,7 +2,8 @@
 import { describe, it } from "vitest";
 
 import {
-  runALaterPlain401KeepsTheFirstReason,
+  runALaterPlain401DoesNotEraseTheReason,
+  runAnUnclonableResponseStillClearsTheSession,
   runANonJsonBodyIsIgnored,
   runAReadBodyStillClearsTheSession,
   runDeactivated401RecordsTheReason,
@@ -58,8 +59,8 @@ describe("F4.203 api/http keeps the first auth-failure reason", () => {
     await runPlain401RecordsNoReason();
   });
 
-  it("R3 a later plain 401 keeps the first reason", async () => {
-    await runALaterPlain401KeepsTheFirstReason();
+  it("R3 a later plain 401 does not erase the reason", async () => {
+    await runALaterPlain401DoesNotEraseTheReason();
   });
 
   it("R3b the store keeps the first reason", () => {
@@ -76,6 +77,10 @@ describe("F4.203 api/http keeps the first auth-failure reason", () => {
 
   it("R6 a 401 with a used body still clears the session", async () => {
     await runAReadBodyStillClearsTheSession();
+  });
+
+  it("R8 a 401 whose clone throws still clears the session", async () => {
+    await runAnUnclonableResponseStillClearsTheSession();
   });
 
   it("R7 setSession consumes the reason", async () => {
