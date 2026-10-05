@@ -47,7 +47,7 @@ export function scannedWebFiles(): string[] {
  */
 export const RAW_READ_ALLOWLIST: readonly { file: string; read: string; why: string }[] = [
   {
-    file: "apps/web/src/pages/admin/users-page.tsx",
+    file: "apps/web/src/pages/admin/users-feedback.tsx",
     read: "err.message",
     why: "`JSON.parse` of the body to read the envelope's fields; the sentence is rendered through `apiErrorMessage`.",
   },

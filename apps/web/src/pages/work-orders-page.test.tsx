@@ -3,6 +3,7 @@ import { cleanup } from "@testing-library/react";
 import { afterEach, describe, it, vi } from "vitest";
 
 import {
+  aFailedListReadSettles,
   aRefusedCloseShowsTheSentence,
   aRefusedCreateShowsTheSentence,
   aRefusedReorderShowsTheSentence,
@@ -63,4 +64,17 @@ describe("F4.204 work-order refusals read as a sentence, not the response body",
   it("WO4 a refused kanban reorder shows the server's sentence", async () => {
     await aRefusedReorderShowsTheSentence();
   });
+});
+
+describe("F4.209 the work-orders page settles while its list has no data", () => {
+  afterEach(() => {
+    cleanup();
+    vi.restoreAllMocks();
+    vi.unstubAllGlobals();
+  });
+
+  // The commit bound is the fail-fast gate; the per-test timeout is the backstop.
+  it("WO5 a failed list read settles without a render loop", async () => {
+    await aFailedListReadSettles();
+  }, 10_000);
 });

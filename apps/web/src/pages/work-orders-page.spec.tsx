@@ -1,6 +1,7 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { Profiler } from "react";
 import { MemoryRouter } from "react-router-dom";
 import { expect, vi } from "vitest";
 
@@ -104,6 +105,23 @@ function envelope(sentence: string): Error {
   return new Error(`{"statusCode":409,"message":"${sentence}","error":"Conflict"}`);
 }
 
+/**
+ * `F4.209` commit bound (WO5 below). The bound must stay below React's
+ * 50-nested-passive-update warning, so a mutation run ends before the console
+ * floods. A settled page commits only a handful of times while it loads.
+ */
+const COMMIT_BOUND = 20;
+
+/** Thrown by the `Profiler` past the bound; any other error is not the bound. */
+class CommitBoundExceeded extends Error {}
+
+/**
+ * Renders the page with no cache seed. Until the row paints, a `Profiler` throws
+ * past `COMMIT_BOUND`: a `[rows]` render loop (F4.209) runs synchronously inside
+ * `act` from mount, so without the guard a regression hangs the worker at the
+ * first case instead of failing it. The guard disarms once the row is on screen,
+ * because the cases' own typing and dragging commit many more times.
+ */
 async function renderPage(): Promise<void> {
   vi.stubGlobal(
     "fetch",
@@ -112,20 +130,25 @@ async function renderPage(): Promise<void> {
   vi.spyOn(workOrdersApi, "fetchWorkOrders").mockResolvedValue({ items: [ROW] });
   vi.spyOn(assetsApi, "fetchAssets").mockResolvedValue([ASSET]);
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  // Seeded, not only stubbed. While the list query has no data, `rows` is a fresh `[]` on every
-  // render and the page's `[rows]` effect sets a fresh `[]` into state, so each commit schedules
-  // another render. Observed: without this seed the jsdom worker hangs before any case reports;
-  // with it, every case runs.
-  queryClient.setQueryData(["work-orders", "list"], { items: [ROW] });
-  queryClient.setQueryData(["assets", "list"], [ASSET]);
+  let armed = true;
+  let commits = 0;
+  const onRender = (): void => {
+    commits += 1;
+    if (armed && commits > COMMIT_BOUND) {
+      throw new CommitBoundExceeded(`the page committed ${commits} times`);
+    }
+  };
   render(
-    <QueryClientProvider client={queryClient}>
-      <MemoryRouter>
-        <WorkOrdersPage user={user} />
-      </MemoryRouter>
-    </QueryClientProvider>,
+    <Profiler id="work-orders" onRender={onRender}>
+      <QueryClientProvider client={queryClient}>
+        <MemoryRouter>
+          <WorkOrdersPage user={user} />
+        </MemoryRouter>
+      </QueryClientProvider>
+    </Profiler>,
   );
   await screen.findByText(ROW.title);
+  armed = false;
 }
 
 /** The element carrying the refusal, found by its sentence; it must not carry the JSON. */
@@ -201,4 +224,82 @@ export async function aRefusedReorderShowsTheSentence(): Promise<void> {
   await expectTheSentenceNotTheEnvelope(REORDER_SENTENCE);
   // The adjacent positive: the drop reached the reorder writer, not the close dialog.
   expect(reorder).toHaveBeenCalledTimes(1);
+}
+
+/**
+ * Waits until `count()` holds the same value for `STABLE_TURNS` macrotask turns in
+ * a row, so a loop that starts only after the error paints is still counted: a
+ * running loop never holds still, and the turn cap then ends the wait.
+ */
+const STABLE_TURNS = 5;
+const MAX_TURNS = 200;
+async function settle(count: () => number): Promise<void> {
+  let last = -1;
+  let stable = 0;
+  for (let turn = 0; turn < MAX_TURNS && stable < STABLE_TURNS; turn += 1) {
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    const now = count();
+    stable = now === last ? stable + 1 : 0;
+    last = now;
+  }
+}
+
+/**
+ * `F4.209` — while the list query has no data, `rows` must be a stable reference,
+ * or the page's `[rows]` effect sets a fresh `[]` into state on every commit and
+ * the page re-renders without end. React only warns on that loop (it does not
+ * throw), and under RTL's `render` the loop runs inside `act`, which drains it
+ * synchronously from mount: `render` never returns, no microtask runs, and no
+ * test timeout can fire. So a `Profiler` counts commits and *throws* past the
+ * bound. React catches a commit-phase throw with no error boundary by unmounting
+ * the root and rethrowing it out of `act`; the loop dies with the tree, `render`
+ * returns, and the case reddens on the bound.
+ *
+ * `COMMIT_BOUND` and `CommitBoundExceeded` sit above `renderPage`, which arms the
+ * same guard for WO1–WO4 until the row paints.
+ *
+ * A failed list read with no cache seed shows the error and stops committing.
+ */
+export async function aFailedListReadSettles(): Promise<void> {
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(() => Promise.reject(new Error("work-orders-page.spec: no fetch expected"))),
+  );
+  vi.spyOn(workOrdersApi, "fetchWorkOrders").mockRejectedValue(
+    new Error('{"statusCode":500,"message":"Internal server error"}'),
+  );
+  vi.spyOn(assetsApi, "fetchAssets").mockResolvedValue([ASSET]);
+  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+
+  let commits = 0;
+  const onRender = (): void => {
+    commits += 1;
+    if (commits > COMMIT_BOUND) {
+      throw new CommitBoundExceeded(`the page committed ${commits} times`);
+    }
+  };
+
+  let boundExceeded = false;
+  try {
+    render(
+      <Profiler id="work-orders" onRender={onRender}>
+        <QueryClientProvider client={queryClient}>
+          <MemoryRouter>
+            <WorkOrdersPage user={user} />
+          </MemoryRouter>
+        </QueryClientProvider>
+      </Profiler>,
+    );
+  } catch (error) {
+    if (!(error instanceof CommitBoundExceeded)) {
+      throw error;
+    }
+    boundExceeded = true;
+  }
+
+  if (!boundExceeded) {
+    await screen.findByText("Could not load work orders.", {}, { timeout: 2000 });
+    await settle(() => commits);
+  }
+  expect(commits).toBeLessThanOrEqual(COMMIT_BOUND);
 }
