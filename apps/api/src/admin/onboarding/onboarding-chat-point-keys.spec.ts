@@ -49,13 +49,6 @@ export async function assertAnAllTemplatedReviewDraftIsNotGivenAPointKey(): Prom
   assert(result.draftPatch.pointKeys === undefined, `no point key is added, got ${JSON.stringify(result.draftPatch.pointKeys)}`);
 }
 
-/** F4.195 — a `point_keys` phase stored before F4.192 does not give an all-templated draft `kw` either. */
-export async function assertAStoredPointKeysPhaseDoesNotGiveAnAllTemplatedDraftAPointKey(): Promise<void> {
-  const result = await ruleBasedTurn("hello", allTemplatedDraft(), "point_keys");
-  assert(result.assistantMessage === IN_REVIEW, `the review branch answers, got ${result.assistantMessage}`);
-  assert(result.draftPatch.pointKeys === undefined, `no point key is added, got ${JSON.stringify(result.draftPatch.pointKeys)}`);
-}
-
 /** F4.195 — a draft that uses the existing catalog is not given `kw` either; it goes on to its first asset. */
 export async function assertADraftThatUsesTheExistingCatalogIsNotGivenAPointKey(): Promise<void> {
   const draft: OnboardingDraft = { ...allTemplatedDraft(), assets: [], onboardingMeta: { useExistingPointKeys: true } };

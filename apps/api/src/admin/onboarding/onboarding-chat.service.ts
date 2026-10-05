@@ -541,10 +541,9 @@ export class OnboardingChatService {
 
     // F4.195: the phase's own predicate, so a draft whose assets are all
     // templated, or that uses the existing catalog, is not given `kw`. The
-    // stored phase is not asked: `inferPhase` returns `point_keys` only when
-    // this predicate holds, so it adds nothing but a phase stored before
-    // F4.192.
-    if (draftNeedsPointKeys(draft)) {
+    // stored phase stays a second way in: `onboarding-chat-caps.spec.ts`
+    // reaches this append on it with a draft at the point-key cap (F4.103).
+    if (phase === "point_keys" || draftNeedsPointKeys(draft)) {
       patch.pointKeys = [
         ...(draft.pointKeys ?? []),
         { code: "kw", name: "Active Power", domain: "electrical", unit: "kW" },

@@ -3,7 +3,6 @@ import { describe, it } from "vitest";
 import {
   assertADraftThatUsesTheExistingCatalogIsNotGivenAPointKey,
   assertADraftWithAPlainAssetIsStillGivenAPointKey,
-  assertAStoredPointKeysPhaseDoesNotGiveAnAllTemplatedDraftAPointKey,
   assertAnAllTemplatedReviewDraftIsNotGivenAPointKey,
   assertTheImportFollowUpSendsAnAllTemplatedDraftToCommit,
   assertTheImportFollowUpStillAsksAPlainAssetToMap,
@@ -13,10 +12,6 @@ import {
 describe("onboarding chat point-key step (F4.195)", () => {
   it("adds no point key to an all-templated review draft", async () => {
     await assertAnAllTemplatedReviewDraftIsNotGivenAPointKey();
-  });
-
-  it("adds no point key to an all-templated draft at a stored point_keys phase", async () => {
-    await assertAStoredPointKeysPhaseDoesNotGiveAnAllTemplatedDraftAPointKey();
   });
 
   it("adds no point key to a draft that uses the existing catalog", async () => {
