@@ -4,6 +4,8 @@ import {
   assertADraftThatUsesTheExistingCatalogIsNotGivenAPointKey,
   assertADraftWithAPlainAssetIsStillGivenAPointKey,
   assertAnAllTemplatedReviewDraftIsNotGivenAPointKey,
+  assertTheMappingAddedAnswerOffersCreateItAndViewDraft,
+  assertTheYesAnswerOffersOnlyViewDraft,
   assertTheImportFollowUpSendsAnAllTemplatedDraftToCommit,
   assertTheImportFollowUpStillAsksAPlainAssetToMap,
 } from "./onboarding-chat-point-keys.spec";
@@ -28,5 +30,13 @@ describe("onboarding chat point-key step (F4.195)", () => {
 
   it("still asks an imported plain asset to map", () => {
     assertTheImportFollowUpStillAsksAPlainAssetToMap();
+  });
+
+  it("F4.199: offers only View draft after a yes", async () => {
+    await assertTheYesAnswerOffersOnlyViewDraft();
+  });
+
+  it("F4.199: offers create it and View draft after a mapping is added", async () => {
+    await assertTheMappingAddedAnswerOffersCreateItAndViewDraft();
   });
 });

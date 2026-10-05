@@ -358,7 +358,9 @@ export class OnboardingChatService {
       agent.reply,
       agent.draftPatch,
       phase,
-      agent.commitProposal ? ["confirm commit", "View draft"] : ["View draft"],
+      // F4.199: never "confirm commit" — the client sends a button's text as a
+      // turn, and the typed phrase is the user's own act (ADR 0090 decision 5).
+      ["View draft"],
       message,
       draft,
       turn,
@@ -406,7 +408,7 @@ export class OnboardingChatService {
         "I'll prepare the commit — open the preview to confirm everything looks correct.",
         patch,
         "review",
-        ["View draft", "Validate"],
+        ["View draft"],
         message,
         draft,
         turn,
@@ -633,7 +635,7 @@ export class OnboardingChatService {
         "Mapping added. I've opened the preview — review the draft and say **create it** when ready.",
         patch,
         "review",
-        ["create it", "View draft", "Validate"],
+        ["create it", "View draft"],
         message,
         draft,
         turn,

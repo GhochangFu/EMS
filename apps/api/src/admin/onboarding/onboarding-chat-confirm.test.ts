@@ -6,6 +6,8 @@ import {
   assertAMatchingProposalCommitsOnce,
   assertANonProposingTurnClearsTheProposal,
   assertAProposingTurnStoresAHashOfTheStoredDraft,
+  assertAProposingTurnOffersOnlyViewDraft,
+  assertTheCredentialRefusalOffersOnlyViewDraft,
   assertAStaleProposalIsClearedAndNotCommitted,
   assertActionLinesAreStoredBetweenUserAndAssistant,
   assertConfirmWithNoProposalRepliesWithoutAModelCall,
@@ -49,6 +51,14 @@ describe("OnboardingService.chat — the confirm path and action messages (F3.21
 
   it("binds a new proposal to the hash of the written draft", async () => {
     await assertAProposingTurnStoresAHashOfTheStoredDraft();
+  });
+
+  it("F4.199: offers only View draft on a proposing turn", async () => {
+    await assertAProposingTurnOffersOnlyViewDraft();
+  });
+
+  it("F4.199: offers only View draft after a credential refusal", async () => {
+    await assertTheCredentialRefusalOffersOnlyViewDraft();
   });
 
   it("clears the proposal on a turn that does not propose", async () => {

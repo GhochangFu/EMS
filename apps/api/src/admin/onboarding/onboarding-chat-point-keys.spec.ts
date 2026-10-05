@@ -65,6 +65,33 @@ export async function assertADraftWithAPlainAssetIsStillGivenAPointKey(): Promis
   assert(result.draftPatch.pointKeys?.[0]?.code === "kw", `kw is added, got ${JSON.stringify(result.draftPatch.pointKeys)}`);
 }
 
+/**
+ * `F4.199` — the guided mode's reply lists. The client sends a button's text
+ * as a chat turn, and "Validate" and "Add point key kw" are not turns the
+ * guided mode answers as buttons, so they are no longer offered.
+ */
+function repliesOf(result: { suggestedReplies: string[] }): string {
+  return JSON.stringify(result.suggestedReplies);
+}
+
+export async function assertTheYesAnswerOffersOnlyViewDraft(): Promise<void> {
+  const result = await ruleBasedTurn("yes", {}, "location");
+  assert(
+    result.assistantMessage.startsWith("I'll prepare the commit"),
+    `this case must reach the yes branch, got ${result.assistantMessage}`,
+  );
+  assert(repliesOf(result) === JSON.stringify(["View draft"]), `got ${repliesOf(result)}`);
+}
+
+export async function assertTheMappingAddedAnswerOffersCreateItAndViewDraft(): Promise<void> {
+  const draft = allTemplatedDraft();
+  draft.assets!.push({ rtuIndex: 0, code: "PLAIN-1", name: "Plain 1", siteName: "Lotapata", domain: "electrical" });
+  draft.pointKeys = [{ code: "kw", name: "Active Power", domain: "electrical", unit: "kW" }];
+  const result = await ruleBasedTurn("hello", draft, "mappings");
+  assert(result.assistantMessage.startsWith("Mapping added."), `this case must reach the mapping branch, got ${result.assistantMessage}`);
+  assert(repliesOf(result) === JSON.stringify(["create it", "View draft"]), `got ${repliesOf(result)}`);
+}
+
 const IMPORTED = { locationName: "Lotapata", rtuCount: 1, assetCount: 2 };
 
 /**

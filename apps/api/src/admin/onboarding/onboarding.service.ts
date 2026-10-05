@@ -230,7 +230,7 @@ export class OnboardingService {
           "Credentials never go through this chat — use the **Credentials** field on the " +
           "RTU step and they are encrypted before storage (ADR 0012).",
         session: this.mapSession(session, orgRefused?.code ?? "", orgRefused?.name ?? ""),
-        suggestedReplies: ["View draft", "Add point key kw"],
+        suggestedReplies: ["View draft"],
         validationErrors: [],
         readyToCommit: false,
         autoOpenPreview: false,
