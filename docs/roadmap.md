@@ -7262,3 +7262,27 @@ template `water-ro` v1, assets RO-F4192-1 and RO-F4192-2.
 **Cascade:** no row lists `F4.192`, `F4.193` or `F4.194` in *Depends*.
 Raised: `F4.195` (two onboarding paths still treat an all-templated draft as
 one that needs point keys). No `chore(agents):` change owed.
+
+### `F4.195` — one point-key question for the onboarding paths ✅ 2026-10-05
+
+PR #731, squash `d2aee705`. No ADR, no migration, no contract change.
+
+- `draftNeedsPointKeys`, exported beside `inferPhase`, is the one test for
+  "this draft still has to declare point keys". `inferPhase`, the guided chat's
+  rule-based turn and `excelImportFollowUp` call it, so the chat no longer adds
+  `kw` to an all-templated draft, nor to a draft that chose the existing
+  catalog. The chat keeps its stored-phase term, which the `F4.103` cap spec
+  needs; a review removal of it was reverted after the full suite.
+- `excelImportFollowUp` asks for a mapping only when a plain asset has none.
+- `remove_point_key` refuses a key an authored draft template uses and the
+  catalog does not hold, naming the templates; one copy of a duplicate key can
+  still leave.
+
+Verified: CI green; 10 new `it()`s, 13 mutations run, each reddening its own
+`it()`; the full suite's 8 failures explained (2 specs edited mid-run, 6
+file-scan time-outs that pass alone). Reviews: one Medium (duplicate key)
+fixed, nothing else blocking. No live check: API only, gated by the specs.
+
+**Cascade:** no row lists `F4.195` in *Depends* except the new `F4.196`.
+Raised: `F4.196` (a draft PATCH can drop a point key a draft template uses, and
+the draft still reads as ready). No `chore(agents):` change owed.
