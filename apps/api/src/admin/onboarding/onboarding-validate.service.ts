@@ -3,12 +3,14 @@ import { Injectable } from "@nestjs/common";
 import {
   MAX_RTU_TOPIC_CHARS,
   type OnboardingDraft,
+  type OnboardingDraftAssetPoint,
   type OnboardingFieldError,
   type OnboardingPhase,
 } from "@bms/shared";
 
 import { echoedItems, moreTail, quoteCell } from "../spreadsheet-guard";
 import { needsMqttSetup, rtuTopic, topicHasWildcard } from "./onboarding-chat-summaries";
+import { assetPointProblems } from "./onboarding-mapping-refs";
 import {
   draftAssetPointSchema,
   draftAssetSchema,
@@ -103,6 +105,7 @@ export class OnboardingValidateService {
     this.validateCrossField(d, errors, activeLocationTypeCodes);
     validateDraftTemplates(d, templates, errors);
     validateTemplatedAssets(d, templates, errors);
+    validateAssetPoints(d, templates, errors);
     const phase = this.inferPhase(d, activeLocationTypeCodes);
     const readyToCommit = errors.length === 0 && phase === "review";
     return {
@@ -222,32 +225,6 @@ export class OnboardingValidateService {
           for (const issue of p.error.issues) {
             errors.push({ path: `pointKeys.${i}.${issue.path.join(".")}`, message: issue.message });
           }
-        }
-      });
-    }
-
-    if (d.assetPoints) {
-      const assetCount = d.assets?.length ?? 0;
-      d.assetPoints.forEach((ap, i) => {
-        const p = draftAssetPointSchema.safeParse(ap);
-        if (!p.success) {
-          for (const issue of p.error.issues) {
-            errors.push({ path: `assetPoints.${i}.${issue.path.join(".")}`, message: issue.message });
-          }
-        } else if (ap.assetIndex >= assetCount) {
-          errors.push({
-            path: `assetPoints.${i}.assetIndex`,
-            message: "assetIndex out of range",
-          });
-        } else if (d.assets?.[ap.assetIndex]?.template) {
-          // F3.22 V4: a templated asset's points are the template's; a mapping
-          // onto it would write a second, unplanned row beside them.
-          errors.push({
-            path: `assetPoints.${i}.assetIndex`,
-            message:
-              `Asset ${quoteCell(d.assets[ap.assetIndex].code)} is built from a template; ` +
-              "its points come from the template, so map no point to it",
-          });
         }
       });
     }
@@ -421,6 +398,33 @@ function validateDraftTemplates(d: OnboardingDraft, ctx: ValidateTemplateContext
 /** The points that must resolve to a source key, or the asset cannot be built. */
 function requiredMeasured(ref: TemplateRef): TemplateRef["points"] {
   return ref.points.filter((point) => point.kind === "measured" && point.required);
+}
+
+/**
+ * `F3.23` / ADR 0092 decision 2 (closes `F4.119`) — each mapping row is
+ * schema-checked, then the parsed rows ask `assetPointProblems`, the predicate
+ * `map_point` and `map_points` ask too: the asset exists and is plain (F3.22
+ * V4), the point key resolves against the draft's keys and the fleet catalog,
+ * and no `(asset, point key)` or `(asset, source data key)` pair repeats. A
+ * draft that passes cannot fail at commit as a `23503` or a `23505`.
+ */
+function validateAssetPoints(d: OnboardingDraft, ctx: ValidateTemplateContext, errors: OnboardingFieldError[]): void {
+  const rows: OnboardingDraftAssetPoint[] = [];
+  const at: number[] = [];
+  (d.assetPoints ?? []).forEach((ap, i) => {
+    const p = draftAssetPointSchema.safeParse(ap);
+    if (!p.success) {
+      for (const issue of p.error.issues) {
+        errors.push({ path: `assetPoints.${i}.${issue.path.join(".")}`, message: issue.message });
+      }
+      return;
+    }
+    rows.push(ap);
+    at.push(i);
+  });
+  for (const problem of assetPointProblems([], rows, d, ctx.pointKeys)) {
+    errors.push({ path: `assetPoints.${at[problem.index]}.${problem.field}`, message: problem.message });
+  }
 }
 
 /**
