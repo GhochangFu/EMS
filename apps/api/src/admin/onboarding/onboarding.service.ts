@@ -8,7 +8,7 @@ import {
   NotFoundException,
   ServiceUnavailableException,
 } from "@nestjs/common";
-import { eq, sql } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 
 import { onboardingSessions, organizations } from "@bms/db";
 import type { BmsDb } from "@bms/db";
@@ -65,6 +65,12 @@ import type { RollbackBody, SetCredentialsBody } from "./onboarding.schema";
 import { redactDraftForClient, rtuSecretKey } from "./onboarding-redaction";
 import type { OnboardingDraftInput } from "./onboarding.schema";
 import { OnboardingValidateService } from "./onboarding-validate.service";
+
+/** The 409 of a rollback whose draft moved since the caller read it (ADR 0094 decision 6). */
+const DRAFT_CHANGED_SINCE_LOAD = "The draft changed since this page loaded it. Reload the session and try again.";
+
+/** The 409 of a chat write that found the session no longer a draft (a commit landed during the turn). */
+const SESSION_NO_LONGER_DRAFT = "The session was committed while this turn ran, so the turn was not saved. Reload the session.";
 
 /**
  * Orchestrates onboarding session lifecycle.
@@ -381,7 +387,10 @@ export class OnboardingService {
           "onboarding checkpoint dropped",
         );
       }
-      checkpointWrite = { checkpoints: pushed.ring };
+      // Review finding: a snapshot too large to record ends the history, as a
+      // PATCH does — otherwise the next undo would revert this step and the
+      // one before it together, naming only the older one.
+      checkpointWrite = { checkpoints: pushed.dropped === "too_large" ? null : pushed.ring };
     }
 
     const updated = await withTenant(this.tenantDb, session.organizationId, (tx) =>
@@ -394,10 +403,15 @@ export class OnboardingService {
           ...checkpointWrite,
           updatedAt: sql`now()`,
         })
-        .where(eq(onboardingSessions.id, sessionId))
+        // Review finding (F3.25): a commit may have landed while the model
+        // ran; a turn must not write its draft and ring onto a committed row.
+        .where(and(eq(onboardingSessions.id, sessionId), eq(onboardingSessions.status, "draft")))
         .returning()
         .then(([row]) => row),
     );
+    if (!updated) {
+      throw new ConflictException(SESSION_NO_LONGER_DRAFT);
+    }
 
     const [orgFull] = await this.tenantDb
       .select({ code: organizations.code, name: organizations.name })
@@ -472,7 +486,7 @@ export class OnboardingService {
       throw new ForbiddenException("Session is not editable");
     }
     if (draftHash(session.draft) !== body.draftHash) {
-      throw new ConflictException("The draft changed since this page loaded it. Reload the session and try again.");
+      throw new ConflictException(DRAFT_CHANGED_SINCE_LOAD);
     }
     const target = readCheckpoints(session.checkpoints).find((cp) => cp.id === body.checkpointId);
     if (!target) {
@@ -770,28 +784,55 @@ export class OnboardingService {
     cp: Checkpoint,
     userMessage?: string,
   ): Promise<OnboardingChatResponseDto> {
-    const { draft, credentialsLost } = restoreSections(session.draft as OnboardingDraft, cp, {
-      deriveCredentialsSet: CredentialCryptoService.isConfigured(),
-    });
     const codes = await this.activeLocationTypeCodes();
-    const phase = this.validateService.inferPhase(draft, codes);
-    const ring = cutRingBefore(readCheckpoints(session.checkpoints), cp);
-    const reply = undoReply(cp.label, credentialsLost);
-    const messages = [
-      ...(session.messages as OnboardingChatMessage[]),
-      ...(userMessage === undefined ? [] : [this.chatService.createMessage("user", userMessage)]),
-      this.chatService.createMessage("action", undidActionLine(cp.label)),
-      this.chatService.createMessage("assistant", reply),
-    ];
-    const validation = this.validateService.validate(draft, codes, await this.templateCatalog.context(session.organizationId));
-    const updated = await withTenant(this.tenantDb, session.organizationId, (tx) =>
-      tx
-        .update(onboardingSessions)
-        .set({ draft, currentPhase: phase, messages, checkpoints: ring, updatedAt: sql`now()` })
+    const templateContext = await this.templateCatalog.context(session.organizationId);
+    const deriveCredentialsSet = CredentialCryptoService.isConfigured();
+    const expectedHash = draftHash(session.draft);
+    // Review finding (F3.25): the hash check and the write are one locked
+    // step, as `commitProposed` does it. `chat` writes without a lock, so a
+    // turn — or a commit — that landed after `loadSession` read the row is
+    // seen here, and the restore is built from the row as it now stands.
+    const { updated, draft, reply } = await withTenant(this.tenantDb, session.organizationId, async (tx) => {
+      const [locked] = await tx
+        .select({
+          draft: onboardingSessions.draft,
+          status: onboardingSessions.status,
+          messages: onboardingSessions.messages,
+          checkpoints: onboardingSessions.checkpoints,
+        })
+        .from(onboardingSessions)
         .where(eq(onboardingSessions.id, session.id))
-        .returning()
-        .then(([row]) => row),
-    );
+        .for("update");
+      if (!locked || locked.status !== "draft") {
+        throw new ForbiddenException("Session is not editable");
+      }
+      const ring = readCheckpoints(locked.checkpoints);
+      const target = ring.find((entry) => entry.id === cp.id);
+      if (draftHash(locked.draft) !== expectedHash || !target) {
+        throw new ConflictException(DRAFT_CHANGED_SINCE_LOAD);
+      }
+      const restored = restoreSections(locked.draft as OnboardingDraft, target, { deriveCredentialsSet });
+      const answer = undoReply(target.label, restored.credentialsLost);
+      const messages = [
+        ...(locked.messages as OnboardingChatMessage[]),
+        ...(userMessage === undefined ? [] : [this.chatService.createMessage("user", userMessage)]),
+        this.chatService.createMessage("action", undidActionLine(target.label)),
+        this.chatService.createMessage("assistant", answer),
+      ];
+      const [row] = await tx
+        .update(onboardingSessions)
+        .set({
+          draft: restored.draft,
+          currentPhase: this.validateService.inferPhase(restored.draft, codes),
+          messages,
+          checkpoints: cutRingBefore(ring, target),
+          updatedAt: sql`now()`,
+        })
+        .where(eq(onboardingSessions.id, session.id))
+        .returning();
+      return { updated: row, draft: restored.draft, reply: answer };
+    });
+    const validation = this.validateService.validate(draft, codes, templateContext);
     return {
       assistantMessage: reply,
       session: await this.mapSessionWithOrg(updated),

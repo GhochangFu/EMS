@@ -3,6 +3,7 @@ import type { OnboardingDraft } from "@bms/shared";
 
 import { STOPPED_EARLY_TIME_REPLY } from "./onboarding-agent-loop";
 import { FakeLlmProvider, PLAIN_RTU, calls, toolCall } from "./onboarding-agent-loop.spec";
+import { CONFIRM_STEP_LABELS } from "./onboarding-chat-rule-based";
 import { AGENT_NOT_SET_UP_NOTICE, AGENT_UNAVAILABLE_NOTICE, OnboardingChatService } from "./onboarding-chat.service";
 import type { ResolvedLlm } from "./onboarding-llm-resolver";
 import { OnboardingValidateService } from "./onboarding-validate.service";
@@ -171,10 +172,13 @@ const AT_RTU = {
 export async function assertAStepLabelOnTheAgentPathNeverReachesTheModel(): Promise<void> {
   const llm = new FakeLlmProvider([{ kind: "final", text: "ok" }]);
   const { chat } = service(ready(llm));
-  for (const message of ["confirm rtu", "confirm rtu."]) {
+  // Review finding (2026-10-07): every label, not only the one without an
+  // `s` — a `/s+/` typo in `normaliseReply` passed "confirm rtu" alone.
+  const typed = CONFIRM_STEP_LABELS.flatMap((label) => [label, `${label}.`, label.toUpperCase()]);
+  for (const message of [...typed, "confirm  point keys.", "  Confirm   Assets!  "]) {
     const result = await chat.handleTurn(message, AT_RTU, "rtu", "Ion Exchange", "org-7", CONTEXT);
     assert(llm.calls === 0, `${message}: the model is not called, got ${llm.calls} calls`);
-    assert(result.assistantMessage.startsWith("The RTU step"), `${message}: the step answer, got ${result.assistantMessage}`);
+    assert(/^The .+ step /.test(result.assistantMessage), `${message}: the step answer, got ${result.assistantMessage}`);
     assert(JSON.stringify(result.draftPatch) === "{}", `${message}: the turn writes nothing, got ${JSON.stringify(result.draftPatch)}`);
   }
   await chat.handleTurn("Berhampur", AT_RTU, "rtu", "Ion Exchange", "org-7", CONTEXT);

@@ -204,13 +204,59 @@ export function checkpointSummary(cp: Checkpoint): CheckpointSummary {
 
 type StoredDraft = OnboardingDraft & { _secrets?: Record<string, EncryptedBlob> };
 
+type ConnectionFields = { protocol?: unknown; config?: Record<string, unknown> | null };
+
+/**
+ * Security review M2, as `update_rtu` applies it: the fields whose change
+ * would send a stored credential to another broker.
+ */
+function sameConnection(a: ConnectionFields, b: ConnectionFields): boolean {
+  const same = (field: string) => JSON.stringify(a.config?.[field]) === JSON.stringify(b.config?.[field]);
+  return a.protocol === b.protocol && same("host") && same("port") && same("tls");
+}
+
+function trimmedCode(code: unknown): string | null {
+  return typeof code === "string" && code.trim().length > 0 ? code.trim() : null;
+}
+
+/**
+ * Deletes from `draft._secrets` each blob whose restored RTU is not at the
+ * connection the blob was entered for — the RTU of that code in `current` —
+ * and answers those codes. A blob with no current RTU of its code cannot be
+ * checked, so it goes too (fail closed). `reconcileSecrets` matches by code
+ * alone, so without this a rollback would hand the credential to the
+ * checkpoint's broker.
+ */
+function dropRebindings(draft: StoredDraft, current: OnboardingDraft): string[] {
+  const secrets = draft._secrets;
+  if (!secrets) {
+    return [];
+  }
+  const restored = Array.isArray(draft.rtus) ? draft.rtus : [];
+  const before = Array.isArray(current.rtus) ? current.rtus : [];
+  const dropped: string[] = [];
+  for (const code of Object.keys(secrets)) {
+    const target = restored.find((rtu) => trimmedCode(rtu?.code) === code);
+    if (!target) {
+      continue; // No restored RTU holds it; `reconcileSecrets` drops it.
+    }
+    const held = before.find((rtu) => trimmedCode(rtu?.code) === code);
+    if (!held || !sameConnection(target as ConnectionFields, held as ConnectionFields)) {
+      delete secrets[code];
+      dropped.push(code);
+    }
+  }
+  return dropped;
+}
+
 /**
  * `current` with each of the seven sections assigned from `cp` or deleted,
  * `_commitProposal` removed, `_secrets` kept and then reconciled against the
  * restored RTUs. `current` is not mutated.
  *
  * `credentialsLost` names each restored RTU whose checkpoint said
- * `credentialsSet: true` and whose blob is no longer in the store.
+ * `credentialsSet: true` and whose blob is no longer in the store, and each
+ * whose blob was dropped because the restore moved its connection.
  */
 export function restoreSections(
   current: OnboardingDraft,
@@ -228,10 +274,16 @@ export function restoreSections(
     }
   }
   const claimed = Array.isArray(draft.rtus) ? draft.rtus.map((rtu) => rtu?.credentialsSet === true) : [];
+  const rebound = dropRebindings(draft, current);
   const reconciled = reconcileSecrets(draft, options);
-  const credentialsLost: string[] = [];
+  const credentialsLost: string[] = [...rebound];
   (reconciled.rtus ?? []).forEach((rtu, index) => {
-    if (claimed[index] && rtu?.credentialsSet !== true && typeof rtu?.code === "string") {
+    if (
+      claimed[index] &&
+      rtu?.credentialsSet !== true &&
+      typeof rtu?.code === "string" &&
+      !credentialsLost.includes(rtu.code.trim())
+    ) {
       credentialsLost.push(rtu.code);
     }
   });

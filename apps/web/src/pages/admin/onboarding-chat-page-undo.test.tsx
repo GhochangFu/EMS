@@ -4,6 +4,9 @@ import { afterEach, describe, it, vi } from "vitest";
 
 import { restoreScrolling } from "./onboarding-chat-page.spec";
 import {
+  aConflictWhoseReloadFailsSaysSo,
+  sendIsDisabledWhileAnUndoRuns,
+  undoIsDisabledWhileAChatTurnRuns,
   aBadRequestShowsItsTextWithoutARefetch,
   aConflictReloadsTheSession,
   anUndoReplyIsNeverOffered,
@@ -58,5 +61,17 @@ describe("F3.25 onboarding chat page Undo control", () => {
 
   it("disables Undo when the draft hash is null", async () => {
     await undoIsDisabledWithoutAHash();
+  });
+
+  it("disables Undo and its select while a chat turn runs", async () => {
+    await undoIsDisabledWhileAChatTurnRuns();
+  });
+
+  it("disables Send, the textarea and the reply chips while an undo runs", async () => {
+    await sendIsDisabledWhileAnUndoRuns();
+  });
+
+  it("a 409 whose reload fails says so", async () => {
+    await aConflictWhoseReloadFailsSaysSo();
   });
 });

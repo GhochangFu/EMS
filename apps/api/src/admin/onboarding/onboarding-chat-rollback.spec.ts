@@ -231,3 +231,86 @@ export async function assertTheResponseCarriesTheCutRing(): Promise<void> {
   const seqs = response.session.checkpoints.map((cp) => cp.seq);
   assert(JSON.stringify(seqs) === "[1]", `the response ring, got ${JSON.stringify(seqs)}`);
 }
+
+/**
+ * (11) Review finding (2026-10-07), security review M2: the restored RTU was at
+ * another broker than the one its stored credential was entered for. The blob
+ * goes, `credentialsSet` is false and the reply names the RTU — even though the
+ * checkpoint's RTU never claimed `credentialsSet: true`.
+ */
+export async function assertARestoreToAnotherBrokerDropsTheCredential(): Promise<void> {
+  const atX = { ...rtu("RTU-1"), credentialsSet: false, config: { host: "broker-x", port: 8883, tls: true, topic: "" } };
+  const target = checkpoint(1, { location: PLACE, rtus: [atX] } as OnboardingDraft);
+  const current = { location: PLACE, rtus: [rtu("RTU-1")], _secrets: { "RTU-1": { ...BLOB } } } as OnboardingDraft;
+  const session = sessionWith([target], current);
+  const { service, record } = build({ session, selects: [[session], ORG] });
+  const response = await withCredentialKey(() =>
+    service.rollback(JWT, "s-1", { checkpointId: target.id, draftHash: draftHash(session.draft)! }),
+  );
+  const written = record.updates[0]?.draft as (OnboardingDraft & { _secrets?: Record<string, unknown> }) | undefined;
+  const restored = written?.rtus?.[0];
+  assert(restored?.config?.host === "broker-x", `RTU-1 restored at broker-x, got ${JSON.stringify(restored)}`);
+  assert(restored?.credentialsSet === false, `credentialsSet should be false, got ${String(restored?.credentialsSet)}`);
+  assert(!("RTU-1" in (written?._secrets ?? {})), `the RTU-1 blob is still stored: ${JSON.stringify(written?._secrets)}`);
+  assert(response.assistantMessage.includes("RTU-1"), `the reply names RTU-1: ${response.assistantMessage}`);
+}
+
+/** A ring of three and the row another tab's turn left between the read and the lock. */
+function racedRows() {
+  const ring = ringOfThree();
+  const session = sessionWith(ring);
+  const moved = { location: PLACE, rtus: [plainRtu("RTU-1")] } as OnboardingDraft;
+  return { ring, session, locked: { ...session, draft: moved } as Row };
+}
+
+/** (12) Review finding: the route re-checks the hash on the locked row; a turn written in between is a 409. */
+export async function assertARollbackRacedByAChatTurnIsAConflict(): Promise<void> {
+  const { ring, session, locked } = racedRows();
+  const { service, record } = build({ session, selects: [[session], ORG], locked });
+  const error = await thrown(() =>
+    service.rollback(JWT, "s-1", { checkpointId: ring[1]!.id, draftHash: draftHash(session.draft)! }),
+  );
+  assert(error instanceof ConflictException, `a raced rollback should be a ConflictException, got ${String(error)}`);
+  assert(record.updates.length === 0, `a raced rollback wrote ${record.updates.length} time(s)`);
+}
+
+/** (13) Review finding: a commit that landed between the read and the lock is a 403, and nothing is written. */
+export async function assertARollbackRacedByACommitIsForbidden(): Promise<void> {
+  const { ring, session } = racedRows();
+  const locked = { ...session, status: "committed", checkpoints: null } as Row;
+  const { service, record } = build({ session, selects: [[session], ORG], locked });
+  const error = await thrown(() =>
+    service.rollback(JWT, "s-1", { checkpointId: ring[1]!.id, draftHash: draftHash(session.draft)! }),
+  );
+  assert(error instanceof ForbiddenException, `a rollback over a commit should be a ForbiddenException, got ${String(error)}`);
+  assert(record.updates.length === 0, `a rollback over a commit wrote ${record.updates.length} time(s)`);
+}
+
+/** (14) Review finding: the chat `undo` takes the same lock and the same re-check. */
+export async function assertAChatUndoRacedByAChatTurnIsAConflict(): Promise<void> {
+  const { session, locked } = racedRows();
+  const { service, record } = build({ session, selects: [[session], ORG], locked });
+  const error = await thrown(() => withoutOpenAi(() => service.chat(JWT, "s-1", "undo")));
+  assert(error instanceof ConflictException, `a raced undo should be a ConflictException, got ${String(error)}`);
+  assert(record.updates.length === 0, `a raced undo wrote ${record.updates.length} time(s)`);
+}
+
+/** (15) The adjacent positive: a message written in between with the same draft is kept, as the write builds on the locked row. */
+export async function assertARollbackBuildsOnTheLockedRow(): Promise<void> {
+  const { ring, session } = racedRows();
+  const between = { id: "m-between", role: "assistant", content: "kept", createdAt: "2026-10-06T00:00:01.000Z" };
+  const locked = { ...session, messages: [STORED_USER, between] as never } as Row;
+  const { service, record } = build({ session, selects: [[session], ORG], locked });
+  await service.rollback(JWT, "s-1", { checkpointId: ring[1]!.id, draftHash: draftHash(session.draft)! });
+  const ids = ((record.updates[0]?.messages ?? []) as OnboardingChatMessage[]).map((m) => m.id);
+  assert(record.updates.length === 1, `one write, got ${record.updates.length}`);
+  assert(ids[1] === "m-between", `the message written in between is kept, got ${JSON.stringify(ids)}`);
+}
+
+/** (16) Review finding: a chat write that matches no `draft` row (a commit landed) is a 409, not a crash. */
+export async function assertAChatWriteOverACommitIsAConflict(): Promise<void> {
+  const session = sessionWith(null, { location: PLACE } as OnboardingDraft);
+  const { service } = build({ session, selects: [[session], ORG, ORG], updateReturnsNoRow: true });
+  const error = await thrown(() => withoutOpenAi(() => service.chat(JWT, "s-1", "Add an RTU")));
+  assert(error instanceof ConflictException, `a chat write over a commit should be a ConflictException, got ${String(error)}`);
+}

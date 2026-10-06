@@ -156,3 +156,65 @@ export async function undoIsDisabledWithoutAHash(): Promise<void> {
   await waitFor(() => expect(undoButton(container)).not.toBeNull());
   expect(undoButton(container)).toBeDisabled();
 }
+
+/** A promise the case settles itself, so a mutation stays pending while it asserts. */
+function deferred<T>(): { promise: Promise<T>; resolve: (value: T) => void } {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((r) => {
+    resolve = r;
+  });
+  return { promise, resolve };
+}
+
+/** U7 — review finding: while a chat turn is in flight, Undo and its select are disabled. */
+export async function undoIsDisabledWhileAChatTurnRuns(): Promise<void> {
+  stubStart(WITH_CHECKPOINTS);
+  const turn = deferred<OnboardingChatResponseDto>();
+  vi.spyOn(api, "sendOnboardingChat").mockReturnValue(turn.promise);
+  const rollback = vi.spyOn(api, "rollbackOnboardingSession").mockResolvedValue(response(SESSION));
+  const container = renderPage();
+  await waitFor(() => expect(undoButton(container)).toBeEnabled());
+  await userEvent.type(screen.getByPlaceholderText(/Type a message/), "hello");
+  await userEvent.click(screen.getByRole("button", { name: "Send" }));
+  await screen.findByRole("button", { name: "Sending…" });
+  expect(undoButton(container)).toBeDisabled();
+  expect(container.querySelector('[data-testid="undo-select"]')).toBeDisabled();
+  await userEvent.click(undoButton(container)!);
+  expect(rollback).not.toHaveBeenCalled();
+  turn.resolve(response(WITH_CHECKPOINTS));
+  await waitFor(() => expect(undoButton(container)).toBeEnabled());
+}
+
+/** U8 — review finding: while an undo is in flight, Send, the textarea and the reply chips are disabled. */
+export async function sendIsDisabledWhileAnUndoRuns(): Promise<void> {
+  vi.spyOn(api, "createOnboardingSession").mockResolvedValue(response(WITH_CHECKPOINTS, ["confirm rtu"]));
+  const undo = deferred<OnboardingChatResponseDto>();
+  vi.spyOn(api, "rollbackOnboardingSession").mockReturnValue(undo.promise);
+  const send = vi.spyOn(api, "sendOnboardingChat").mockResolvedValue(response(WITH_CHECKPOINTS));
+  const container = renderPage();
+  const group = await screen.findByRole("group", { name: "Suggested replies" });
+  const chip = within(group).getByRole("button", { name: "confirm rtu" });
+  await waitFor(() => expect(undoButton(container)).toBeEnabled());
+  expect(chip).toBeEnabled();
+  await userEvent.click(undoButton(container)!);
+  await screen.findByRole("button", { name: "Undoing…" });
+  expect(screen.getByRole("button", { name: "Send" })).toBeDisabled();
+  expect(screen.getByPlaceholderText(/Type a message/)).toBeDisabled();
+  expect(chip).toBeDisabled();
+  await userEvent.click(chip);
+  expect(send).not.toHaveBeenCalled();
+  undo.resolve(response(WITH_CHECKPOINTS));
+  await waitFor(() => expect(screen.getByRole("button", { name: "Send" })).toBeEnabled());
+}
+
+/** U9 — review finding: a 409 whose reload fails says so, and does not claim the session was reloaded. */
+export async function aConflictWhoseReloadFailsSaysSo(): Promise<void> {
+  stubStart(WITH_CHECKPOINTS);
+  vi.spyOn(api, "rollbackOnboardingSession").mockRejectedValue(new ApiError("x", 409));
+  vi.spyOn(api, "fetchOnboardingSession").mockRejectedValue(new Error("network down"));
+  const container = renderPage();
+  await waitFor(() => expect(undoButton(container)).not.toBeNull());
+  await userEvent.click(undoButton(container)!);
+  await waitFor(() => expect(screen.getByRole("alert")).toHaveTextContent("network down"));
+  expect(screen.getByRole("alert")).not.toHaveTextContent("The session was reloaded.");
+}

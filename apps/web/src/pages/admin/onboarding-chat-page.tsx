@@ -342,7 +342,16 @@ export function OnboardingChatPage({ user }: OnboardingChatPageProps) {
       if (err instanceof ApiError && err.status === 409) {
         setChatError("The draft changed elsewhere, so nothing was undone. The session was reloaded.");
         setUndoChoice("");
-        void fetchOnboardingSession(session!.id).then(setSession);
+        void fetchOnboardingSession(session!.id)
+          .then((s) => {
+            setSession(s);
+            queryClient.setQueryData(["onboarding", s.id], s);
+          })
+          .catch((e: unknown) =>
+            setChatError(
+              `The draft changed elsewhere, so nothing was undone. The session could not be reloaded: ${apiErrorMessage(e)}`,
+            ),
+          );
         return;
       }
       setChatError(apiErrorMessage(err));
@@ -539,7 +548,7 @@ export function OnboardingChatPage({ user }: OnboardingChatPageProps) {
                   data-testid="undo-select"
                   value={undoTarget}
                   onChange={(e) => setUndoChoice(e.target.value)}
-                  disabled={undoMutation.isPending}
+                  disabled={undoMutation.isPending || chatMutation.isPending}
                   className="surface-field px-2 py-1 text-xs"
                 >
                   {undoCheckpoints.map((c) => (
@@ -552,7 +561,9 @@ export function OnboardingChatPage({ user }: OnboardingChatPageProps) {
                   type="button"
                   data-testid="undo-button"
                   onClick={() => undoMutation.mutate(undoTarget)}
-                  disabled={session.draftHash === null || undoMutation.isPending}
+                  // Review finding (F3.25): one write in flight at a time — a turn
+                  // that overlaps an undo would write its pre-undo draft back.
+                  disabled={session.draftHash === null || undoMutation.isPending || chatMutation.isPending}
                   aria-busy={undoMutation.isPending}
                   className="surface-button px-3 py-1 text-xs disabled:opacity-50"
                 >
@@ -572,7 +583,7 @@ export function OnboardingChatPage({ user }: OnboardingChatPageProps) {
                     key={`${i}-${reply}`}
                     type="button"
                     onClick={() => sendText(reply)}
-                    disabled={!session}
+                    disabled={!session || undoMutation.isPending}
                     className="surface-button px-3 py-1 text-xs disabled:opacity-50"
                   >
                     {reply}
@@ -590,12 +601,12 @@ export function OnboardingChatPage({ user }: OnboardingChatPageProps) {
                   placeholder="Type a message… (Shift+Enter for new line)"
                   rows={10}
                   className="h-52 max-h-72 min-h-[8rem] flex-1 resize-y surface-field px-3 py-2 text-sm"
-                  disabled={!session || chatMutation.isPending || startMutation.isPending}
+                  disabled={!session || chatMutation.isPending || startMutation.isPending || undoMutation.isPending}
                 />
                 <button
                   type="submit"
                   className="shrink-0 surface-button-primary bg-accent px-4 py-2 text-sm font-semibold text-on-accent disabled:opacity-50"
-                  disabled={!session || chatMutation.isPending || startMutation.isPending}
+                  disabled={!session || chatMutation.isPending || startMutation.isPending || undoMutation.isPending}
                   aria-busy={chatMutation.isPending}
                 >
                   {chatMutation.isPending ? "Sending…" : "Send"}

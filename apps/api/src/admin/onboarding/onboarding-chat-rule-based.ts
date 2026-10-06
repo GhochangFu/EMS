@@ -128,13 +128,16 @@ const CONFIRM_STEP_REPLIES: ReadonlyMap<string, OnboardingPhase> = new Map([
   ["confirm mappings", "mappings"],
 ]);
 
+/** The four step labels, for the specs that must cover every one of them. */
+export const CONFIRM_STEP_LABELS: readonly string[] = [...CONFIRM_STEP_REPLIES.keys()];
+
 /**
  * F4.199 (owner ruling 2026-10-05, "normalise, then no-op"): a typed reply is
  * read as its button — lower case, one space, no trailing `.!?`. The commit
  * and undo phrases in `OnboardingService.chat` stay exact.
  */
 export function normaliseReply(message: string): string {
-  return message.toLowerCase().trim().replace(/s+/g, " ").replace(/[.!?]+$/, "").trim();
+  return message.toLowerCase().trim().replace(/\s+/g, " ").replace(/[.!?]+$/, "").trim();
 }
 
 /** F3.25 (ADR 0094 decision 8): the step a `confirm <step>` message names, or `undefined`. */
@@ -238,7 +241,7 @@ export async function handleRuleBasedTurn(
   // F4.199 (owner ruling 2026-10-05, "normalise, then no-op"): a typed label
   // works as its button — one space, no trailing `.!?`. The commit phrase in
   // `OnboardingService.chat` stays exact, so "confirm commit." commits nothing.
-  const intent = lower.replace(/\s+/g, " ").replace(/[.!?]+$/, "").trim();
+  const intent = normaliseReply(message);
   const derived = deps.validateService.inferPhase(draft, types.map((t) => t.code));
   // F3.27 (ADR 0090 Amendment 2 B4, B5): every draft write below runs through
   // `guidedWrite` against this one working copy, so the caps, the depth bound,

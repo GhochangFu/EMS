@@ -1,6 +1,7 @@
 import { describe, it } from "vitest";
 
 import {
+  assertAnOversizedSnapshotEndsTheHistory,
   assertAFullRingDropsTheOldest,
   assertAGarbageColumnReadsAsAnEmptyRing,
   assertAGuidedTurnRecordsThePreTurnDraft,
@@ -57,5 +58,11 @@ describe("ring hygiene on the other draft writes (F3.25, plan Q3)", () => {
 
   it("setting a credential leaves the ring alone", async () => {
     await assertSetCredentialsLeavesTheRing();
+  });
+});
+
+describe("onboarding chat — an oversized snapshot (F3.25 review finding)", () => {
+  it("ends the undo history rather than skipping back past the step", async () => {
+    await assertAnOversizedSnapshotEndsTheHistory();
   });
 });

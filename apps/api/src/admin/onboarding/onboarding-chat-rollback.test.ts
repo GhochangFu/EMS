@@ -1,8 +1,14 @@
 import { describe, it } from "vitest";
 
 import {
+  assertAChatUndoRacedByAChatTurnIsAConflict,
+  assertAChatWriteOverACommitIsAConflict,
+  assertARollbackBuildsOnTheLockedRow,
+  assertARollbackRacedByACommitIsForbidden,
+  assertARollbackRacedByAChatTurnIsAConflict,
   assertACommittedSessionIsForbidden,
   assertAKeptCredentialStaysSet,
+  assertARestoreToAnotherBrokerDropsTheCredential,
   assertALostCredentialIsNamed,
   assertARollbackRestoresAndCutsTheRing,
   assertAStaleHashIsAConflict,
@@ -58,7 +64,33 @@ describe("POST sessions/:id/rollback — hash-bound (F3.25, ADR 0094 decisions 5
     await assertAKeptCredentialStaysSet();
   });
 
+  it("drops a stored credential when the restored RTU points at another broker", async () => {
+    await assertARestoreToAnotherBrokerDropsTheCredential();
+  });
+
   it("answers the cut ring on the response session", async () => {
     await assertTheResponseCarriesTheCutRing();
+  });
+});
+
+describe("rollback and chat writes — locked and status-bound (F3.25 review findings)", () => {
+  it("answers 409 when a chat turn changed the draft between the read and the lock", async () => {
+    await assertARollbackRacedByAChatTurnIsAConflict();
+  });
+
+  it("answers 403 when a commit landed between the read and the lock", async () => {
+    await assertARollbackRacedByACommitIsForbidden();
+  });
+
+  it("re-checks the chat undo on the locked row too", async () => {
+    await assertAChatUndoRacedByAChatTurnIsAConflict();
+  });
+
+  it("builds the write on the locked row", async () => {
+    await assertARollbackBuildsOnTheLockedRow();
+  });
+
+  it("answers 409 when a chat write matches no draft row", async () => {
+    await assertAChatWriteOverACommitIsAConflict();
   });
 });

@@ -37,14 +37,23 @@ export type Row = ReturnType<typeof sessionRow> & { checkpoints?: unknown };
  * response's session DTO is built from what this turn stored. The caps harness
  * answers a row queued before the call, which cannot show the new ring or the
  * new hash. `updatedAt` keeps the row's `Date`: the write's is a `sql` node.
- * Selects answer `selects` in order, then `[]`.
+ * Selects answer `selects` in order, then `[]`. A `SELECT ... FOR UPDATE`
+ * answers `locked` (default `base`) and takes nothing from the queue — the
+ * row as another writer may have left it between the read and the lock.
+ * `updateReturnsNoRow` answers the update as a predicate that matched nothing.
  */
-function echoDb(base: Row, selects: unknown[][], record: Recorder) {
+function echoDb(
+  base: Row,
+  selects: unknown[][],
+  record: Recorder,
+  opts: { locked?: Row; updateReturnsNoRow?: boolean } = {},
+) {
   const queue = [...selects];
   const selectChain = {
     from: () => selectChain,
     where: () => selectChain,
     limit: () => Promise.resolve(queue.shift() ?? []),
+    for: () => Promise.resolve([opts.locked ?? base]),
   };
   let written: Record<string, unknown> = {};
   const updateChain = {
@@ -54,7 +63,8 @@ function echoDb(base: Row, selects: unknown[][], record: Recorder) {
       return updateChain;
     },
     where: () => updateChain,
-    returning: () => Promise.resolve([{ ...base, ...written, updatedAt: base.updatedAt }]),
+    returning: () =>
+      Promise.resolve(opts.updateReturnsNoRow ? [] : [{ ...(opts.locked ?? base), ...written, updatedAt: base.updatedAt }]),
   };
   const db = {
     select: () => selectChain,
@@ -80,9 +90,11 @@ export function build(opts: {
   llm?: FakeLlmProvider;
   excel?: unknown;
   catalog?: unknown;
+  locked?: Row;
+  updateReturnsNoRow?: boolean;
 }) {
   const record: Recorder = { updates: [], transactions: 0 };
-  const db = echoDb(opts.session, opts.selects, record);
+  const db = echoDb(opts.session, opts.selects, record, { locked: opts.locked, updateReturnsNoRow: opts.updateReturnsNoRow });
   const vocabularies = { listLocationTypes: async () => TYPES };
   const resolver = opts.llm
     ? { resolveForOrganization: async () => ({ kind: "ready", provider: opts.llm, source: "platform" }) }
@@ -268,4 +280,18 @@ export async function assertAGarbageColumnReadsAsAnEmptyRing(): Promise<void> {
   const { write } = await guidedTurn(oneRtuSession("garbage"), "modbus please");
   const seqs = ringOf(write).map((cp) => cp.seq);
   assert(JSON.stringify(seqs) === "[1]", `a garbage column starts a fresh ring, got ${JSON.stringify(seqs)}`);
+}
+
+/**
+ * (9) Review finding: a pre-turn draft whose snapshot alone is over the ring
+ * bound cannot be recorded. The turn still writes, so the history ends there
+ * (as a PATCH does): a later undo must not skip back past this step.
+ */
+export async function assertAnOversizedSnapshotEndsTheHistory(): Promise<void> {
+  const session = oneRtuSession(storedRing(2));
+  const huge = { ...session, draft: { ...(session.draft as object), location: { ...PLACE, name: "x".repeat(2_100_000) } } } as Row;
+  const { record, write } = await guidedTurn(huge, "modbus please");
+  assert(record.updates.length === 1, `one write, got ${record.updates.length}`);
+  assert((write?.draft as OnboardingDraft).rtus?.length === 2, "the turn itself appended an RTU (adjacent positive)");
+  assert(write !== undefined && "checkpoints" in write && write.checkpoints === null, `checkpoints written ${JSON.stringify(write?.checkpoints)?.slice(0, 80)}`);
 }
