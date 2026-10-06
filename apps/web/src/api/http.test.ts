@@ -7,6 +7,8 @@ import {
   runALate401RecordsNoReason,
   runAnAnonymous401LeavesALaterSession,
   runAStale401StoresNoReturnPath,
+  runASessionSetDuringThe401BodyReadRecordsNothing,
+  runAStreamed401BodyWithNoNewSessionRecordsTheReason,
   runALaterPlain401DoesNotEraseTheReason,
   runAnUnclonableResponseStillClearsTheSession,
   runANonJsonBodyIsIgnored,
@@ -117,5 +119,15 @@ describe("F4.206 a 401 clears the session only when it carried the current beare
 
   it("L5 a stale 401 on a wall URL stores no return path", () => {
     runAStale401StoresNoReturnPath();
+  });
+});
+
+describe("F4.219 a 401 reason is dropped when a session is set during the body read", () => {
+  it("S1 a session set during the 401 body read records no reason", async () => {
+    await runASessionSetDuringThe401BodyReadRecordsNothing();
+  });
+
+  it("S2 control: a streamed 401 body with no new session records the reason", async () => {
+    await runAStreamed401BodyWithNoNewSessionRecordsTheReason();
   });
 });
