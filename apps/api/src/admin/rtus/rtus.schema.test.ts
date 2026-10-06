@@ -1,6 +1,9 @@
 import { describe, it } from "vitest";
 
-import { assertAnEmptyRtuCodeIsAcceptedByTheUpdateSchema } from "./rtus.schema.spec";
+import {
+  assertAnEmptyMqttTopicIsAcceptedByTheUpdateSchema,
+  assertAnEmptyRtuCodeIsAcceptedByTheUpdateSchema,
+} from "./rtus.schema.spec";
 
 /**
  * `F4.60` — Vitest entry point. Assertions live in the sibling `.spec`
@@ -9,5 +12,11 @@ import { assertAnEmptyRtuCodeIsAcceptedByTheUpdateSchema } from "./rtus.schema.s
 describe("F4.60 — updateRtuBodySchema", () => {
   it("accepts an empty rtuCode, the only way to clear the column", () => {
     assertAnEmptyRtuCodeIsAcceptedByTheUpdateSchema();
+  });
+});
+
+describe("F4.221 — updateRtuBodySchema", () => {
+  it("accepts an empty mqttTopic, the clear path the wildcard refine must not close", () => {
+    assertAnEmptyMqttTopicIsAcceptedByTheUpdateSchema();
   });
 });

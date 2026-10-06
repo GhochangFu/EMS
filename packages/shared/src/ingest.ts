@@ -36,6 +36,20 @@ export const INGEST_PROTOCOLS = [
 export type IngestProtocol = (typeof INGEST_PROTOCOLS)[number];
 
 /**
+ * `F4.221` — whether an MQTT topic holds a wildcard, `#` or `+`.
+ *
+ * A device topic names one device, so a wildcard is always a mistake: `#` would
+ * subscribe to the entire broker. Three readers share this one predicate so they
+ * cannot disagree: the ingest MQTT device schema
+ * (`apps/ingest/src/adapters/mqtt.ts`), the onboarding agent's `topicHasWildcard`
+ * (`apps/api/src/admin/onboarding/onboarding-chat-summaries.ts`), and the admin
+ * RTU routes' `mqttTopic` refine (`apps/api/src/admin/rtus/rtus.schema.ts`).
+ */
+export function mqttTopicHasWildcard(topic: string): boolean {
+  return topic.includes("#") || topic.includes("+");
+}
+
+/**
  * Compile-time drift guard: every ingest protocol must be expressible in
  * onboarding, or `F3.24` could offer a protocol nothing can ingest.
  *

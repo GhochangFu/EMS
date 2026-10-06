@@ -2,6 +2,7 @@ import { z } from "zod";
 
 import mqtt from "mqtt";
 
+import { mqttTopicHasWildcard } from "@bms/shared/ingest";
 import type { AdapterHealth, SourceSample } from "@bms/shared/ingest";
 
 import type {
@@ -66,11 +67,14 @@ export const mqttDeviceSchema = z.object({
    * always a mistake — and `topic: "#"` would subscribe to the entire broker,
    * firehosing the bounded sample queue until its drop-oldest policy started
    * discarding genuine PHE readings.
+   *
+   * `F4.221`: the predicate is `@bms/shared`'s, so the admin RTU routes and the
+   * onboarding agent refuse exactly what this refuses.
    */
   topic: z
     .string()
     .min(1)
-    .refine((topic) => !topic.includes("#") && !topic.includes("+"), {
+    .refine((topic) => !mqttTopicHasWildcard(topic), {
       message: "a device topic must name one device, not a wildcard subscription",
     }),
 });

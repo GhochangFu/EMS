@@ -23,3 +23,12 @@ import { updateRtuBodySchema } from "./rtus.schema";
 export function assertAnEmptyRtuCodeIsAcceptedByTheUpdateSchema(): void {
   expect(updateRtuBodySchema.safeParse({ rtuCode: "" }).success).toBe(true);
 }
+
+/**
+ * `F4.221` — the wildcard refine on `mqttTopic` must leave `""` accepted, for the
+ * same reason as `rtuCode` above: an empty string is how a PATCH clears the topic.
+ * A refine written as "must name a device" (a `.min(1)` in disguise) would close it.
+ */
+export function assertAnEmptyMqttTopicIsAcceptedByTheUpdateSchema(): void {
+  expect(updateRtuBodySchema.safeParse({ mqttTopic: "" }).success).toBe(true);
+}
