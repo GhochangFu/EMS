@@ -666,6 +666,7 @@ export const onboardingSessions = bmsSchema.table("onboarding_sessions", {
     .defaultNow(),
   committedAt: timestamp("committed_at", { withTimezone: true }),
   result: jsonb("result"),
+  checkpoints: jsonb("checkpoints"),
 });
 
 /** Canonical protocol definitions for onboarding and RTU connection config. */
