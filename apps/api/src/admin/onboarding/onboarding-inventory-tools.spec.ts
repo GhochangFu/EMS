@@ -177,3 +177,103 @@ export async function assertACutResultKeepsTheScopeNoteAndTheTail(): Promise<voi
   assert(out.content.includes(JSON.stringify(EXISTING_SCOPE_NOTE)), "the cut result carries the scope note");
   assert(out.content.includes("…and 300 more assets"), "the cut result carries the tail");
 }
+
+type KeyRow = { code: string; name: string; unit: string | null; domain: string | null };
+
+function keyRow(code: string, domain: string | null = "electrical", unit: string | null = "kW", name = `Key ${code}`): KeyRow {
+  return { code, name, unit, domain };
+}
+
+/** A context whose catalog returns `keys` and records the organization the in-use read received. */
+function keyContext(keys: KeyRow[], inUse: string[] = []): { ctx: ToolContext; inUseCalls: string[] } {
+  const inUseCalls: string[] = [];
+  const base = context().ctx;
+  const ctx: ToolContext = {
+    ...base,
+    catalog: {
+      listPointKeys: async () => keys,
+      listInUsePointKeys: async (organizationId: string) => {
+        inUseCalls.push(organizationId);
+        return new Set(inUse);
+      },
+    },
+  };
+  return { ctx, inUseCalls };
+}
+
+type KeyOut = { code: string; inUse: boolean }[];
+
+async function listKeys(args: unknown, keys: KeyRow[], inUse: string[] = []): Promise<{ out: Record<string, unknown>; items: KeyOut }> {
+  const { ctx } = keyContext(keys, inUse);
+  const result = await runTool(call("list_point_keys", args), { working: {} }, ctx);
+  assert(result.ok, `list_point_keys succeeds, got ${result.content}`);
+  const out = parsed(result.content);
+  return { out, items: out.pointKeys as KeyOut };
+}
+
+const ABCD = (): KeyRow[] => [keyRow("a"), keyRow("b"), keyRow("c"), keyRow("d")];
+const codesOf = (items: KeyOut): string => JSON.stringify(items.map((k) => k.code));
+
+/** P1: the keys the organization already maps come first. */
+export async function assertInUseKeysComeFirst(): Promise<void> {
+  const { items } = await listKeys({}, ABCD(), ["c"]);
+  assert(codesOf(items) === '["c","a","b","d"]', `in-use first, got ${codesOf(items)}`);
+}
+
+/** P2: each key carries the flag, true on the in-use key only. */
+export async function assertEachKeyCarriesTheInUseFlag(): Promise<void> {
+  const { items } = await listKeys({}, ABCD(), ["c"]);
+  const flags = JSON.stringify(items.map((k) => [k.code, k.inUse]));
+  assert(flags === '[["c",true],["a",false],["b",false],["d",false]]', `flags, got ${flags}`);
+}
+
+/** P3: the catalog order holds inside each group. */
+export async function assertRankingKeepsTheCatalogOrderInsideEachGroup(): Promise<void> {
+  const { items } = await listKeys({}, ABCD(), ["c", "a"]);
+  assert(codesOf(items) === '["a","c","b","d"]', `stable inside groups, got ${codesOf(items)}`);
+}
+
+/** P4: the domain filter is case-insensitive equality; a null domain never matches. */
+export async function assertDomainFilterIsCaseInsensitiveEquality(): Promise<void> {
+  const keys = [keyRow("a", "electrical"), keyRow("b", "hvac"), keyRow("c", null), keyRow("d", "Electrical")];
+  const exact = await listKeys({ domain: "Electrical" }, keys);
+  assert(codesOf(exact.items) === '["a","d"]', `case-insensitive match, got ${codesOf(exact.items)}`);
+  const prefix = await listKeys({ domain: "electric" }, keys);
+  assert(prefix.items.length === 0, `a prefix matches nothing, got ${codesOf(prefix.items)}`);
+  assert(!exact.items.some((k) => k.code === "c"), "a null domain never matches");
+}
+
+/** P5: the unit filter is case-insensitive equality. */
+export async function assertUnitFilterIsCaseInsensitiveEquality(): Promise<void> {
+  const keys = [keyRow("a", "electrical", "kW"), keyRow("b", "electrical", "kWh"), keyRow("c", "electrical", null)];
+  const { items } = await listKeys({ unit: "kw" }, keys);
+  assert(codesOf(items) === '["a"]', `kw keeps kW only, got ${codesOf(items)}`);
+}
+
+/** P6: search and domain compose; 130 matches show 100 and count 30. */
+export async function assertFiltersComposeWithSearchAndTheCapStays(): Promise<void> {
+  const keys = [keyRow("pump_a", "water", "m3", "Feed"), keyRow("pump_b", "electrical", "kW", "Feed"), keyRow("meter", "water", "m3", "Main")];
+  const composed = await listKeys({ search: "pump", domain: "water" }, keys);
+  assert(codesOf(composed.items) === '["pump_a"]', `search and domain compose, got ${codesOf(composed.items)}`);
+  const many = Array.from({ length: 130 }, (_, i) => keyRow(`k${String(i).padStart(3, "0")}`, "electrical", "kW", "k"));
+  const capped = await listKeys({ search: "k", domain: "electrical" }, many);
+  assert(capped.items.length === 100, `100 shown, got ${capped.items.length}`);
+  assert(capped.out.more === "…and 30 more point keys", `the tail counts 30, got ${String(capped.out.more)}`);
+}
+
+/** P7: the in-use read receives the session organization. */
+export async function assertTheInUseReadIsScopedToTheSessionOrganization(): Promise<void> {
+  const { ctx, inUseCalls } = keyContext(ABCD());
+  const out = await runTool(call("list_point_keys", {}), { working: {} }, ctx);
+  assert(out.ok, "list_point_keys succeeds");
+  assert(JSON.stringify(inUseCalls) === '["org-1"]', `the read names org-1 once, got ${JSON.stringify(inUseCalls)}`);
+}
+
+/** P8: an unknown argument is refused; a known filter beside it succeeds. */
+export async function assertAnUnknownFilterIsRefused(): Promise<void> {
+  const { ctx } = keyContext(ABCD());
+  const refused = await runTool(call("list_point_keys", { kind: "x" }), { working: {} }, ctx);
+  assert(!refused.ok && (refused.error ?? "").startsWith("Invalid arguments"), `kind is refused, got ${refused.content}`);
+  const ok = await runTool(call("list_point_keys", { domain: "electrical" }), { working: {} }, keyContext(ABCD()).ctx);
+  assert(ok.ok, `domain is accepted, got ${ok.content}`);
+}

@@ -186,7 +186,9 @@ const assetArgs = draftAssetSchema.omit({ template: true }).strict();
 
 const TOOL_SCHEMAS = {
   get_draft: noArgs,
-  list_point_keys: z.object({ search: z.string().max(64).optional() }).strict(),
+  list_point_keys: z
+    .object({ search: z.string().max(64).optional(), domain: z.string().max(64).optional(), unit: z.string().max(32).optional() })
+    .strict(),
   // F3.26 (ADR 0095 decision 1): tenant-only read; never in CREDENTIAL_CHECKED_TOOLS (the arguments are never stored).
   find_existing: z
     .object({
@@ -224,7 +226,7 @@ const DESCRIPTIONS: Record<ToolName, string> = {
   ...TEMPLATE_TOOL_DESCRIPTIONS,
   ...MAPPING_TOOL_DESCRIPTIONS,
   get_draft: "Returns the current onboarding draft (credentials redacted).",
-  list_point_keys: "Lists catalog point keys (code, name, unit, domain). Optional `search` filters code and name.",
+  list_point_keys: "Lists catalog point keys (code, name, unit, domain, inUse). Optional `search` filters code and name; `domain` and `unit` match exactly, case-insensitive. Keys this organization already maps come first.",
   find_existing:
     "Lists this organization's existing locations, RTUs or assets (codes, names, protocol, domain, template). " +
     "Call it before you choose a new code, so the draft follows the organization's naming and avoids a code it already holds. " +
@@ -347,11 +349,23 @@ async function dispatch(name: ToolName, args: Record<string, unknown>, state: To
       return succeed({ draft: serialiseDraftForPrompt(draft) });
 
     case "list_point_keys": {
+      // F3.26 (ADR 0095 decision 4): optional exact, case-insensitive domain and
+      // unit filters; the keys this organization already maps come first.
+      const inUse = await ctx.catalog.listInUsePointKeys(ctx.organizationId);
       const search = typeof args.search === "string" ? args.search.toLowerCase() : "";
+      const domain = typeof args.domain === "string" ? args.domain.toLowerCase() : undefined;
+      const unit = typeof args.unit === "string" ? args.unit.toLowerCase() : undefined;
       const rows = (await ctx.catalog.listPointKeys(ctx.organizationId)).filter(
-        (row) => !search || row.code.toLowerCase().includes(search) || row.name.toLowerCase().includes(search),
+        (row) =>
+          (!search || row.code.toLowerCase().includes(search) || row.name.toLowerCase().includes(search)) &&
+          (domain === undefined || (row.domain ?? "").toLowerCase() === domain) &&
+          (unit === undefined || (row.unit ?? "").toLowerCase() === unit),
       );
-      const { shown, omitted } = echoedItems(rows, TOOL_LIST_MAX_ITEMS);
+      const ranked = [...rows.filter((row) => inUse.has(row.code)), ...rows.filter((row) => !inUse.has(row.code))].map((row) => ({
+        ...row,
+        inUse: inUse.has(row.code),
+      }));
+      const { shown, omitted } = echoedItems(ranked, TOOL_LIST_MAX_ITEMS);
       return succeed({ pointKeys: shown, more: moreTail(omitted, "point keys") || undefined });
     }
 
