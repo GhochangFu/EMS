@@ -102,6 +102,7 @@ function build(opts: { results: unknown[][]; llm?: FakeLlmProvider; commit?: Ret
     vocabularies as never,
     { resolveForOrganization: async () => ({ kind: "ready", provider: llm, source: "platform" }) } as never,
     { context: async () => EMPTY_TEMPLATE_CONTEXT } as never,
+    { listExisting: async () => ({ rows: [], total: 0 }) } as never,
   );
   const service = new OnboardingService(
     db,

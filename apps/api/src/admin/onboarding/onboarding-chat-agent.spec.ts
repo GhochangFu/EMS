@@ -31,6 +31,7 @@ function service(resolved: ResolvedLlm): { chat: OnboardingChatService; asked: s
       },
     } as never,
     { context: async () => EMPTY_TEMPLATE_CONTEXT } as never,
+    { listExisting: async () => ({ rows: [], total: 0 }) } as never,
   );
   return { chat, asked };
 }

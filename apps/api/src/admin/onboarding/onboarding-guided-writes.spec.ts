@@ -33,7 +33,7 @@ function assert(condition: boolean, message: string): void {
   }
 }
 
-/** The protocol and catalog reads throw: no guided write may reach them. */
+/** The protocol, catalog and inventory reads throw: no guided write may reach them. */
 function context(): ToolContext {
   return {
     organizationId: "org-1",
@@ -41,6 +41,14 @@ function context(): ToolContext {
     catalog: {
       listPointKeys: async () => {
         throw new Error("a guided write read the catalog");
+      },
+      listInUsePointKeys: async () => {
+        throw new Error("a guided write read the catalog");
+      },
+    },
+    inventory: {
+      listExisting: async () => {
+        throw new Error("a guided write read the inventory");
       },
     },
     protocols: {

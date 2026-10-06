@@ -34,10 +34,11 @@ function context(templates: ValidateTemplateContext): ToolContext {
   return {
     organizationId: "org-1",
     activeTypes: [],
-    catalog: { listPointKeys: async () => [] },
+    catalog: { listPointKeys: async () => [], listInUsePointKeys: async () => new Set<string>() },
     protocols: { getContextForOrganization: async () => ({ catalog: [], orgExamples: [] }), formatForAssistant: () => "" },
     validator: new OnboardingValidateService(),
     templates,
+    inventory: { listExisting: async () => ({ rows: [], total: 0 }) },
   };
 }
 
@@ -66,8 +67,8 @@ const ORG: ValidateTemplateContext = {
 };
 
 /** T21 (with the FORBIDDEN walk in `onboarding-agent-tools.spec.ts`, which covers every tool) */
-export async function assertToolsAre28(): Promise<void> {
-  assert(TOOL_DEFINITIONS.length === 28, `there are 28 tools, got ${TOOL_DEFINITIONS.length}`);
+export async function assertToolsAre29(): Promise<void> {
+  assert(TOOL_DEFINITIONS.length === 29, `there are 29 tools, got ${TOOL_DEFINITIONS.length}`);
   for (const name of [
     "list_templates",
     "get_template",
@@ -228,10 +229,14 @@ function writeContext(templates: ValidateTemplateContext): ToolContext {
   return {
     organizationId: "org-1",
     activeTypes: [{ code: "smoc_campus", label: "SMOC campus" }],
-    catalog: { listPointKeys: async () => [{ code: "energy_kwh", name: "Energy", unit: "kWh", domain: "electrical" }] },
+    catalog: {
+      listPointKeys: async () => [{ code: "energy_kwh", name: "Energy", unit: "kWh", domain: "electrical" }],
+      listInUsePointKeys: async () => new Set<string>(),
+    },
     protocols: { getContextForOrganization: async () => ({ catalog: [], orgExamples: [] }), formatForAssistant: () => "" },
     validator: new OnboardingValidateService(),
     templates,
+    inventory: { listExisting: async () => ({ rows: [], total: 0 }) },
   };
 }
 

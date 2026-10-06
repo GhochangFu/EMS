@@ -133,6 +133,7 @@ export const GUIDED_TOOL_COVERAGE: Readonly<Record<ToolName, GuidedToolCoverage>
   use_existing_point_keys: { mode: "guided", reason: "the use existing keys turn" },
   get_draft: { mode: "agent_only", reason: FIXED_PROMPTS },
   list_point_keys: { mode: "agent_only", reason: FIXED_PROMPTS },
+  find_existing: { mode: "agent_only", reason: "F3.26 / ADR 0095 decision 9: retrieval needs a model; the guided prompts are fixed" },
   list_location_types: { mode: "agent_only", reason: FIXED_PROMPTS },
   list_protocols: { mode: "agent_only", reason: FIXED_PROMPTS },
   remove_rtu: { mode: "agent_only", reason: REMOVE_DEFERRED },

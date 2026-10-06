@@ -37,7 +37,17 @@ async function runTurn(message: string): Promise<{ result: ChatTurnResult; final
     tools: {
       organizationId: "org-1",
       activeTypes: TURN.types,
-      catalog: { listPointKeys: async () => [] },
+      catalog: {
+        listPointKeys: async () => [],
+        listInUsePointKeys: async () => {
+          throw new Error("a guided turn read the in-use point keys");
+        },
+      },
+      inventory: {
+        listExisting: async () => {
+          throw new Error("a guided turn read the inventory");
+        },
+      },
       protocols: {
         getContextForOrganization: async () => {
           throw new Error("a guided turn read the protocols");

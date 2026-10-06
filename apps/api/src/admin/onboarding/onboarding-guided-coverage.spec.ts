@@ -85,7 +85,17 @@ function depsFor(): RuleBasedTurnDeps {
     tools: {
       organizationId: "org-1",
       activeTypes: TURN.types,
-      catalog,
+      catalog: {
+        ...catalog,
+        listInUsePointKeys: async () => {
+          throw new Error("a guided turn read the in-use point keys");
+        },
+      },
+      inventory: {
+        listExisting: async () => {
+          throw new Error("a guided turn read the inventory");
+        },
+      },
       protocols: {
         getContextForOrganization: async () => {
           throw new Error("a guided turn read the protocols");

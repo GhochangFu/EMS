@@ -26,13 +26,14 @@ function context(templates: ValidateTemplateContext = KW_ACTIVE): ToolContext {
   return {
     organizationId: "org-1",
     activeTypes: [{ code: "smoc_campus", label: "SMOC campus" }],
-    catalog: { listPointKeys: async () => [] },
+    catalog: { listPointKeys: async () => [], listInUsePointKeys: async () => new Set<string>() },
     protocols: {
       getContextForOrganization: async () => ({ catalog: [], orgExamples: [] }),
       formatForAssistant: () => "MQTT",
     },
     validator: new OnboardingValidateService(),
     templates,
+    inventory: { listExisting: async () => ({ rows: [], total: 0 }) },
   };
 }
 

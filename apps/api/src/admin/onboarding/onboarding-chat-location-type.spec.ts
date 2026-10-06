@@ -70,6 +70,7 @@ function serviceWith(rows: readonly LocationTypeDto[], llmResolver: unknown = GU
     { listLocationTypes: async () => [...rows] } as never,
     llmResolver as never,
     { context: async () => EMPTY_TEMPLATE_CONTEXT } as never,
+    { listExisting: async () => ({ rows: [], total: 0 }) } as never,
   );
 }
 

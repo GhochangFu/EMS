@@ -70,10 +70,11 @@ export function toolContext(): ToolContext {
   return {
     organizationId: "org-1",
     activeTypes: [{ code: "smoc_campus", label: "SMOC campus" }],
-    catalog: { listPointKeys: async () => [] },
+    catalog: { listPointKeys: async () => [], listInUsePointKeys: async () => new Set<string>() },
     protocols: { getContextForOrganization: async () => ({ catalog: [], orgExamples: [] }), formatForAssistant: () => "MQTT" },
     validator: new OnboardingValidateService(),
     templates: EMPTY_TEMPLATE_CONTEXT,
+    inventory: { listExisting: async () => ({ rows: [], total: 0 }) },
   };
 }
 

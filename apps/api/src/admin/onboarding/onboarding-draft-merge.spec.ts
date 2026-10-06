@@ -140,6 +140,7 @@ export async function assertW13AGuidedTurnLeavesTemplatesIntact(): Promise<void>
     {} as never,
     {} as never,
     {} as never,
+    { listExisting: async () => ({ rows: [], total: 0 }) } as never,
   );
   const merged = service.mergeDraft(stored, turn.draftPatch) as OnboardingDraft;
   assert(
@@ -163,6 +164,7 @@ function mergeThroughService(stored: OnboardingDraft, patch: OnboardingDraft): O
     {} as never,
     {} as never,
     {} as never,
+    { listExisting: async () => ({ rows: [], total: 0 }) } as never,
   );
   return service.mergeDraft(stored, patch) as OnboardingDraft;
 }

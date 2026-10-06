@@ -12,6 +12,7 @@ import { cutToBound, draftCountProblem } from "./onboarding-draft-caps";
 import type { LlmToolCall, LlmToolDefinition } from "./onboarding-llm-port";
 import { deriveLocationPatch } from "./onboarding-location-derive";
 import type { OrgPointKeySummary } from "./onboarding-catalog.service";
+import type { ExistingQuery, ExistingRow } from "./onboarding-inventory.service";
 import { carriesPromptMarker, serialiseDraftForPrompt } from "./onboarding-prompt-budget";
 import type { ProtocolContext } from "./onboarding-protocol.service";
 import { dispatchTemplateTool, isTemplateToolName, TEMPLATE_TOOL_DESCRIPTIONS, TEMPLATE_TOOL_SCHEMAS } from "./onboarding-template-tools";
@@ -141,6 +142,8 @@ export type ToolContext = {
   readonly activeTypes: readonly LocationTypeDto[];
   readonly catalog: {
     listPointKeys(organizationId: string): Promise<OrgPointKeySummary[]>;
+    /** F3.26 (ADR 0095 decision 4): the point keys the organization already maps in `asset_points`. */
+    listInUsePointKeys(organizationId: string): Promise<ReadonlySet<string>>;
   };
   readonly protocols: {
     getContextForOrganization(organizationId: string): Promise<ProtocolContext>;
@@ -155,7 +158,18 @@ export type ToolContext = {
   };
   /** `F3.22`: the organization's template versions and the stock catalog, read once per turn. */
   readonly templates: ValidateTemplateContext;
+  /** F3.26 (ADR 0095 decisions 1–3): the session organization's committed rows; required, so every fake must supply it. */
+  readonly inventory: {
+    listExisting(organizationId: string, query: ExistingQuery): Promise<{ rows: ExistingRow[]; total: number }>;
+  };
 };
+
+/**
+ * F3.26 (ADR 0095 decision 2, F4.109): written by code on every `find_existing`
+ * result. Names no other organization; "already taken" is the commit's own form.
+ */
+export const EXISTING_SCOPE_NOTE =
+  "Only this organization's locations, RTUs and assets are listed. A location slug, an asset code, an MQTT topic, an RTU device id or an external RTU id can still be refused at commit as already taken; the commit result is the only check for that.";
 
 const indexSchema = z.object({ index: z.number().int().min(0) }).strict();
 const noArgs = z.object({}).strict();
@@ -173,6 +187,14 @@ const assetArgs = draftAssetSchema.omit({ template: true }).strict();
 const TOOL_SCHEMAS = {
   get_draft: noArgs,
   list_point_keys: z.object({ search: z.string().max(64).optional() }).strict(),
+  // F3.26 (ADR 0095 decision 1): tenant-only read; never in CREDENTIAL_CHECKED_TOOLS (the arguments are never stored).
+  find_existing: z
+    .object({
+      kind: z.enum(["location", "rtu", "asset"]),
+      search: z.string().max(64).optional(),
+      locationCode: z.string().max(64).optional(),
+    })
+    .strict(),
   list_location_types: noArgs,
   list_protocols: noArgs,
   set_location: draftLocationSchema.partial().required({ name: true }),
@@ -203,6 +225,10 @@ const DESCRIPTIONS: Record<ToolName, string> = {
   ...MAPPING_TOOL_DESCRIPTIONS,
   get_draft: "Returns the current onboarding draft (credentials redacted).",
   list_point_keys: "Lists catalog point keys (code, name, unit, domain). Optional `search` filters code and name.",
+  find_existing:
+    "Lists this organization's existing locations, RTUs or assets (codes, names, protocol, domain, template). " +
+    "Call it before you choose a new code, so the draft follows the organization's naming and avoids a code it already holds. " +
+    "Optional `search` matches code and name; `locationCode` is exact.",
   list_location_types: "Lists the active location type codes and labels. A location's `type` must be one of these codes.",
   list_protocols: "Describes the communication protocols an RTU can use.",
   set_location:
@@ -238,7 +264,7 @@ function jsonSchemaOf(schema: ZodTypeAny): Record<string, unknown> {
   return converted;
 }
 
-/** The 28 tools as the model sees them, in a fixed order. */
+/** The 29 tools as the model sees them, in a fixed order. */
 export const TOOL_DEFINITIONS: readonly LlmToolDefinition[] = (Object.keys(TOOL_SCHEMAS) as ToolName[]).map((name) => ({
   name,
   description: DESCRIPTIONS[name],
@@ -327,6 +353,21 @@ async function dispatch(name: ToolName, args: Record<string, unknown>, state: To
       );
       const { shown, omitted } = echoedItems(rows, TOOL_LIST_MAX_ITEMS);
       return succeed({ pointKeys: shown, more: moreTail(omitted, "point keys") || undefined });
+    }
+
+    case "find_existing": {
+      // F3.26 (ADR 0095 decisions 1, 2, 6): no write and no action line. The
+      // note and the tail come before the items, so a result cut at
+      // TOOL_RESULT_MAX_CHARS loses rows, never the note or the count.
+      const query = args as ExistingQuery;
+      const { rows, total } = await ctx.inventory.listExisting(ctx.organizationId, query);
+      const { shown } = echoedItems(rows, TOOL_LIST_MAX_ITEMS);
+      return succeed({
+        kind: query.kind,
+        note: EXISTING_SCOPE_NOTE,
+        more: moreTail(total - shown.length, `${query.kind}s`) || undefined,
+        items: shown,
+      });
     }
 
     case "list_location_types":

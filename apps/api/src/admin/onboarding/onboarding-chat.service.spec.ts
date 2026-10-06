@@ -36,7 +36,7 @@ function longCell(fill: string): string {
  * services and only one of them would still be the one this file describes.
  */
 export function chatService(): OnboardingChatService {
-  return new OnboardingChatService({} as never, {} as never, {} as never, {} as never, {} as never, {} as never, { context: async () => EMPTY_TEMPLATE_CONTEXT } as never);
+  return new OnboardingChatService({} as never, {} as never, {} as never, {} as never, {} as never, {} as never, { context: async () => EMPTY_TEMPLATE_CONTEXT } as never, { listExisting: async () => ({ rows: [], total: 0 }) } as never);
 }
 
 /** A topic exactly at the bound — the longest one `parseRtus` accepts. */
@@ -436,9 +436,9 @@ function ruleBasedChatService(): OnboardingChatService {
     { listLocationTypes: async () => [...FOUR] } as never,
     { resolveForOrganization: async () => ({ kind: "guided", reason: "platform_off" }) } as never,
     { context: async () => EMPTY_TEMPLATE_CONTEXT } as never,
+    { listExisting: async () => ({ rows: [], total: 0 }) } as never,
   );
 }
-
 
 /**
  * Drives the **real** `handleTurn` into its rule-based branch.
