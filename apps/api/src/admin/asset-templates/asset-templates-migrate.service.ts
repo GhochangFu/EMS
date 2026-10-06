@@ -357,19 +357,18 @@ export class AssetTemplateMigrationService {
       );
       if (rows.length > 0) {
         // `F4.216` — the write-time net. `buildPlan` refuses a source key an
-        // existing row holds, but it reads before this transaction opens, so a
-        // row inserted in between (or two new points of one version resolving
-        // to one key) still reaches the unique index. The throw rolls this
+        // existing row holds, and two new points of one asset resolving to one
+        // key, but it reads before this transaction opens, so a row inserted
+        // in between still reaches the unique index. The throw rolls this
         // transaction back; the caller gets a 409 with a sentence, not a 500.
         await translateConstraintErrors(() => tx.insert(assetPoints).values(rows), {
           onUnique: (err) =>
             constraintOf(err) === "asset_points_asset_source_key_idx"
               ? new ConflictException(
                   "This migration is refused. Nothing was written. A new point's source " +
-                    "key is already used on the same asset — by a point added since the " +
-                    "plan was read, or by another new point of this version (one source " +
-                    "key maps to one point per asset). Check the asset's points and the " +
-                    "new version's source key patterns, then try again.",
+                    "key is already used on the same asset by a point added since the " +
+                    "plan was read (one source key maps to one point per asset). Check " +
+                    "the asset's points, then try again.",
                 )
               : (err as Error),
         });
@@ -743,18 +742,23 @@ export class AssetTemplateMigrationService {
       }
 
       for (const asset of planned) {
+        // No early `continue` for an asset with no existing rows: the new
+        // points are still checked against each other below (`F4.216` review).
         const forAsset = existingByAsset.get(asset.dto.assetId);
-        if (!forAsset) {
-          continue;
-        }
         const holderBySourceKey = holderBySourceKeyByAsset.get(asset.dto.assetId);
+        // `F4.216` review — source key → the first NEW point on this asset
+        // that resolves to it. Two additions of one version whose patterns
+        // resolve to one key would otherwise pass both checks against existing
+        // rows, and preview would say canApply while apply hit the index.
+        const newPointBySourceKey = new Map<string, string>();
         for (const point of asset.newPoints) {
-          const sourceKind = forAsset.get(point.pointKey)?.sourceKind;
+          const sourceKind = forAsset?.get(point.pointKey)?.sourceKind;
           if (sourceKind === undefined) {
             // `F4.216` — no row on this point key, but another point on the
             // asset may already read this source key. Checked only here, so a
             // row that collides on both reports once, as the point-key case.
             const holder = holderBySourceKey?.get(point.sourceDataKey);
+            const earlierNew = newPointBySourceKey.get(point.sourceDataKey);
             if (holder !== undefined) {
               refuse({
                 reason: "source_key_already_used",
@@ -767,6 +771,21 @@ export class AssetTemplateMigrationService {
                   "key maps to one point per asset). Re-key the new version's pattern or " +
                   "remove the existing row first.",
               });
+            } else if (earlierNew !== undefined) {
+              refuse({
+                reason: "source_key_already_used",
+                pointKey: point.pointKey,
+                assetCount: 1,
+                message:
+                  `Asset "${asset.dto.assetCode}": version ${target.version} adds ` +
+                  `"${earlierNew}" and "${point.pointKey}", which both resolve to source ` +
+                  `key "${point.sourceDataKey}" (one source key maps to one point per ` +
+                  "asset). Give one of them a different source key pattern in the new " +
+                  "version.",
+              });
+            }
+            if (earlierNew === undefined) {
+              newPointBySourceKey.set(point.sourceDataKey, point.pointKey);
             }
             continue;
           }

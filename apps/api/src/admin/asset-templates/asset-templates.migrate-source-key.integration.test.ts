@@ -19,7 +19,9 @@ import {
   assertExistingSourceKeyRefusesAMeasuredAddition,
   assertRacedPointKeyIsNotTranslated,
   assertRacedSourceKeyAnswers409,
+  assertTwoAdditionsWithOneSourceKeyAreRefused,
   cleanupSourceKey,
+  SK_POINT_KEYS,
 } from "./asset-templates.migrate-source-key.integration.spec";
 
 /**
@@ -78,8 +80,9 @@ describe.skipIf(!connectionString)("F4.216 — template migration and source key
       ),
     );
     // `F3.39`/`F3.42`: these codes reach template_points and asset_points,
-    // both of which reference point_keys(code).
-    releasePointKeys = await registerFixturePointKeys(created, ["KW", "VOLTS", "KWH"]);
+    // both of which reference point_keys(code). This suite's own codes, never
+    // the migrate suite's — see the spec's docblock on point_keys isolation.
+    releasePointKeys = await registerFixturePointKeys(created, SK_POINT_KEYS);
     fx = await loadFixtures(created);
     await cleanupSourceKey(created);
   });
@@ -103,6 +106,11 @@ describe.skipIf(!connectionString)("F4.216 — template migration and source key
   it("refuses a measured addition whose source key another point on the asset already uses", async () => {
     if (!pool) throw new Error("pool required");
     await assertExistingSourceKeyRefusesAMeasuredAddition(pool, svc, fx);
+  });
+
+  it("refuses two measured additions whose patterns resolve to one source key on an asset", async () => {
+    if (!pool) throw new Error("pool required");
+    await assertTwoAdditionsWithOneSourceKeyAreRefused(pool, svc, fx);
   });
 
   it("answers 409, not 500, when a source key is taken between the plan and the write", async () => {

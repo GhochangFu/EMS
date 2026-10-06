@@ -26,9 +26,22 @@ import {
  * suite's cleanup can remove the other's rows mid-case. Both carry a per-run
  * suffix (`integration-fixture-isolation`), so two instances of this file do
  * not delete each other's committed rows either.
+ *
+ * **`point_keys` isolation.** The point-key codes are this suite's own
+ * (`SK_KW`, `SK_VOLTS`, `SK_KWH`), never the `KW`/`VOLTS`/`KWH` the migrate
+ * suite registers. `registerFixturePointKeys` deletes, on release, every code
+ * its own call inserted; with shared codes, whichever suite registered first
+ * would delete a code at its `afterAll` that the other suite's template_points
+ * and asset_points still reference — a 23503 there, or a later FK failure.
  */
 export const SK_TEMPLATE_CODE = `F4216-SRCKEY-${randomUUID().replace(/-/g, "").slice(0, 8).toUpperCase()}`;
 export const SK_ASSET_PREFIX = `F4216-SK-${randomUUID().replace(/-/g, "").slice(0, 8).toUpperCase()}-`;
+
+export const SK_KW = "F4216SK_KW";
+export const SK_VOLTS = "F4216SK_VOLTS";
+export const SK_KWH = "F4216SK_KWH";
+/** Every `point_keys` code this suite seeds — the wrapper registers exactly these. */
+export const SK_POINT_KEYS: readonly string[] = [SK_KW, SK_VOLTS, SK_KWH];
 
 export async function cleanupSourceKey(pool: pg.Pool): Promise<void> {
   await pool.query(
@@ -81,9 +94,9 @@ async function seedSkAsset(
  * collision — the keys differ — so before this refusal the insert raised 23505
  * inside the transaction and the route answered 500.
  *
- * `VOLTS` is given a pattern that resolves to the key the hand-made `KW` row
- * already reads. Both codes are in the fixture point-key catalog, so the seed
- * passes the 0057/0058 foreign keys.
+ * `SK_VOLTS` is given a pattern that resolves to the key the hand-made `SK_KW`
+ * row already reads. Both codes are registered in the point-key catalog by the
+ * wrapper, so the seed passes the 0057/0058 foreign keys.
  */
 export async function assertExistingSourceKeyRefusesAMeasuredAddition(
   pool: pg.Pool,
@@ -94,14 +107,14 @@ export async function assertExistingSourceKeyRefusesAMeasuredAddition(
   const v1 = await seedVersion(db, fx, {
     code: SK_TEMPLATE_CODE,
     version: 1,
-    points: [{ pointKey: "KW" }],
+    points: [{ pointKey: SK_KW }],
   });
   const v2 = await seedVersion(db, fx, {
     code: SK_TEMPLATE_CODE,
     version: 2,
     points: [
-      { pointKey: "KW" },
-      { pointKey: "VOLTS", sourceDataKeyPattern: "SITE/{asset_code}/KW" },
+      { pointKey: SK_KW },
+      { pointKey: SK_VOLTS, sourceDataKeyPattern: `SITE/{asset_code}/${SK_KW}` },
     ],
   });
   const assetId = await seedSkAsset(db, fx, "SRCKEY", v1);
@@ -109,8 +122,8 @@ export async function assertExistingSourceKeyRefusesAMeasuredAddition(
   await db.insert(assetPoints).values({
     organizationId: fx.organizationId,
     assetId,
-    pointKey: "KW",
-    sourceDataKey: `SITE/${sharedKey}/KW`,
+    pointKey: SK_KW,
+    sourceDataKey: `SITE/${sharedKey}/${SK_KW}`,
     sourceKind: "unmapped",
     rtuId: null,
     active: true,
@@ -127,7 +140,7 @@ export async function assertExistingSourceKeyRefusesAMeasuredAddition(
     `expected a source_key_already_used refusal, got ${JSON.stringify(preview.refusals)}`,
   );
   assert(
-    refusal?.pointKey === "VOLTS",
+    refusal?.pointKey === SK_VOLTS,
     `the refusal must name the new point, not the holder, got ${String(refusal?.pointKey)}`,
   );
   assert(
@@ -135,13 +148,13 @@ export async function assertExistingSourceKeyRefusesAMeasuredAddition(
     `and the asset, got: ${String(refusal?.message)}`,
   );
   assert(
-    refusal?.message.includes(`"SITE/${sharedKey}/KW"`) === true,
+    refusal?.message.includes(`"SITE/${sharedKey}/${SK_KW}"`) === true,
     `and the source key, got: ${String(refusal?.message)}`,
   );
   // Quoted forms, so a sentence that swaps the new point and the holder fails.
   assert(
-    refusal?.message.includes('adds "VOLTS"') === true &&
-      refusal?.message.includes('point "KW" on this asset') === true,
+    refusal?.message.includes(`adds "${SK_VOLTS}"`) === true &&
+      refusal?.message.includes(`point "${SK_KW}" on this asset`) === true,
     `and which point already holds the key, got: ${String(refusal?.message)}`,
   );
   assert(
@@ -161,8 +174,99 @@ export async function assertExistingSourceKeyRefusesAMeasuredAddition(
   );
   const rows = await pointRows(pool, assetId);
   assert(
-    rows.length === 1 && rows[0]?.point_key === "KW",
+    rows.length === 1 && rows[0]?.point_key === SK_KW,
     `the existing row must be the only row, got ${JSON.stringify(rows)}`,
+  );
+}
+
+/**
+ * `F4.216` review — two measured additions of one version whose patterns
+ * resolve to the same source key on one asset are refused at plan time.
+ *
+ * Neither collides with an existing row, so the existing-holder check above
+ * passes both; without a check of the new points against each other, preview
+ * answered `canApply: true` and apply then hit
+ * `asset_points_asset_source_key_idx` inside the transaction — preview and
+ * apply disagreeing for that input every time. The asset has **no**
+ * `asset_points` rows at all, so the check must run for an asset the
+ * existing-row read returned nothing for.
+ *
+ * `forbidden` on the apply is the write-time net's own sentence: the 409 must
+ * be the named plan refusal, not the generic net catching it.
+ */
+export async function assertTwoAdditionsWithOneSourceKeyAreRefused(
+  pool: pg.Pool,
+  svc: AssetTemplateMigrationService,
+  fx: Fixtures,
+): Promise<void> {
+  const db = createDb(pool);
+  const v1 = await seedVersion(db, fx, {
+    code: SK_TEMPLATE_CODE,
+    version: 1,
+    points: [{ pointKey: SK_KW }],
+  });
+  const sharedPattern = `SITE/{asset_code}/${SK_KWH}`;
+  const v2 = await seedVersion(db, fx, {
+    code: SK_TEMPLATE_CODE,
+    version: 2,
+    points: [
+      { pointKey: SK_KW },
+      { pointKey: SK_VOLTS, sourceDataKeyPattern: sharedPattern },
+      { pointKey: SK_KWH, sourceDataKeyPattern: sharedPattern },
+    ],
+  });
+  const assetId = await seedSkAsset(db, fx, "TWONEW", v1);
+  const sharedKey = `SITE/${SK_ASSET_PREFIX}TWONEW/${SK_KWH}`;
+
+  const preview = await svc.previewMigration(fx.adminJwt, v2, {
+    assetIds: [assetId],
+  });
+  const refusals = preview.refusals.filter(
+    (r) => r.reason === "source_key_already_used",
+  );
+  assert(
+    refusals.length === 1,
+    `expected exactly one source_key_already_used refusal (the second of the pair), got ` +
+      JSON.stringify(preview.refusals),
+  );
+  const refusal = refusals[0];
+  assert(
+    refusal?.pointKey === SK_VOLTS || refusal?.pointKey === SK_KWH,
+    `the refusal must name one of the two new points, got ${String(refusal?.pointKey)}`,
+  );
+  assert(
+    refusal?.message.includes(`"${SK_VOLTS}"`) === true &&
+      refusal?.message.includes(`"${SK_KWH}"`) === true,
+    `the sentence must name both new point keys, got: ${String(refusal?.message)}`,
+  );
+  assert(
+    refusal?.message.includes(`"${sharedKey}"`) === true,
+    `and the shared source key, got: ${String(refusal?.message)}`,
+  );
+  assert(
+    refusal?.message.includes("TWONEW") === true,
+    `and the asset, got: ${String(refusal?.message)}`,
+  );
+  assert(
+    preview.canApply === false,
+    "two new points on one source key must make the server's verdict false",
+  );
+
+  await expectRejection(
+    () => svc.migrate(fx.adminJwt, v2, { assetIds: [assetId] }),
+    /both resolve to source key/,
+    "applying a migration whose two new points resolve to one source key",
+    409,
+    /added since the plan was read/,
+  );
+  assert(
+    (await pinnedVersion(pool, assetId)) === 1,
+    "and the asset must stay on its old pin — nothing was written",
+  );
+  const rows = await pointRows(pool, assetId);
+  assert(
+    rows.length === 0,
+    `no asset_points row may be written, got ${JSON.stringify(rows)}`,
   );
 }
 
@@ -176,7 +280,7 @@ export async function assertExistingSourceKeyRefusesAMeasuredAddition(
  *
  * The race is made deterministic by wrapping this instance's `buildPlan`: the
  * plan is built as normal, then the colliding row is inserted before the
- * write runs. The holder uses a different point key (`KWH`) so only
+ * write runs. The holder uses a different point key (`SK_KWH`) so only
  * `asset_points_asset_source_key_idx` can fire.
  */
 export async function assertRacedSourceKeyAnswers409(
@@ -188,12 +292,12 @@ export async function assertRacedSourceKeyAnswers409(
   const v1 = await seedVersion(db, fx, {
     code: SK_TEMPLATE_CODE,
     version: 1,
-    points: [{ pointKey: "KW" }],
+    points: [{ pointKey: SK_KW }],
   });
   const v2 = await seedVersion(db, fx, {
     code: SK_TEMPLATE_CODE,
     version: 2,
-    points: [{ pointKey: "KW" }, { pointKey: "VOLTS" }],
+    points: [{ pointKey: SK_KW }, { pointKey: SK_VOLTS }],
   });
   const assetId = await seedSkAsset(db, fx, "RACE", v1);
 
@@ -204,8 +308,8 @@ export async function assertRacedSourceKeyAnswers409(
       await db.insert(assetPoints).values({
         organizationId: fx.organizationId,
         assetId,
-        pointKey: "KWH",
-        sourceDataKey: `SITE/${SK_ASSET_PREFIX}RACE/VOLTS`,
+        pointKey: SK_KWH,
+        sourceDataKey: `SITE/${SK_ASSET_PREFIX}RACE/${SK_VOLTS}`,
         sourceKind: "unmapped",
         rtuId: null,
         active: true,
@@ -230,7 +334,7 @@ export async function assertRacedSourceKeyAnswers409(
   );
   const rows = await pointRows(pool, assetId);
   assert(
-    rows.length === 1 && rows[0]?.point_key === "KWH",
+    rows.length === 1 && rows[0]?.point_key === SK_KWH,
     `only the raced row may stand, got ${JSON.stringify(rows)}`,
   );
 }
@@ -251,12 +355,12 @@ export async function assertRacedPointKeyIsNotTranslated(
   const v1 = await seedVersion(db, fx, {
     code: SK_TEMPLATE_CODE,
     version: 1,
-    points: [{ pointKey: "KW" }],
+    points: [{ pointKey: SK_KW }],
   });
   const v2 = await seedVersion(db, fx, {
     code: SK_TEMPLATE_CODE,
     version: 2,
-    points: [{ pointKey: "KW" }, { pointKey: "VOLTS" }],
+    points: [{ pointKey: SK_KW }, { pointKey: SK_VOLTS }],
   });
   const assetId = await seedSkAsset(db, fx, "RACEPK", v1);
 
@@ -269,7 +373,7 @@ export async function assertRacedPointKeyIsNotTranslated(
         .values({
           organizationId: fx.organizationId,
           assetId,
-          pointKey: "VOLTS",
+          pointKey: SK_VOLTS,
           sourceDataKey: `SITE/${SK_ASSET_PREFIX}RACEPK/ELSEWHERE`,
           sourceKind: "unmapped",
           rtuId: null,
