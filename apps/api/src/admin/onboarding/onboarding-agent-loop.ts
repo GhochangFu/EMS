@@ -54,6 +54,8 @@ export type AgentTurnResult = {
   readonly draftPatch: OnboardingDraftInput;
   readonly actionLines: readonly string[];
   readonly commitProposal?: { readonly summary: string };
+  /** F3.25 (ADR 0094 decision 9): the replies the model offered, unfiltered; `[]` on a provider error. */
+  readonly suggestedReplies: readonly string[];
   readonly stopReason: AgentStopReason;
   /** `true` only for `provider_error`: the caller runs the guided mode instead. */
   readonly fallback: boolean;
@@ -100,6 +102,7 @@ Location types (location.type must be one of these codes; ask the user when unsu
 Never include password or secret values in a reply. Credentials are NEVER collected through this chat — if the user offers one, tell them to use the Credentials field on the RTU step. Never put a credential in a tool argument.
 To build assets from a template: find it with list_templates or list_stock_templates, read its points and variables with get_template, bring it into the draft with import_stock_template or add_template unless the organization already holds it, then use add_template_assets with a value for every variable.
 You cannot commit. When the draft is ready, use propose_commit; the user then confirms with the Commit button or by typing \`confirm commit\`.
+When you need the user to choose, ask one question per turn and offer the choices with suggest_replies.
 ${PROMPT_MARKER_SENTENCE}
 Draft context (redacted): ${serialiseDraftForPrompt(input.draft)}`;
 }
@@ -161,13 +164,14 @@ export async function runAgentTurn(
       ...(error !== undefined ? errorFacts(error) : {}),
     };
     if (stopReason === "provider_error") {
-      return { reply, draftPatch: {}, actionLines: [], stopReason, fallback: true, record };
+      return { reply, draftPatch: {}, actionLines: [], suggestedReplies: [], stopReason, fallback: true, record };
     }
     return {
       reply,
       draftPatch: diffSections(input.draft, state.working),
       actionLines,
       ...(state.pendingProposal ? { commitProposal: state.pendingProposal } : {}),
+      suggestedReplies: state.suggestedReplies ?? [],
       stopReason,
       fallback: false,
       record,

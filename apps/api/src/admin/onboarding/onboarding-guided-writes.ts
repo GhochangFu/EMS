@@ -121,6 +121,7 @@ export const GUIDED_TOOL_COVERAGE: Readonly<Record<ToolName, GuidedToolCoverage>
   remove_asset_point: { mode: "agent_only", reason: REMOVE_DEFERRED },
   validate_draft: { mode: "agent_only", reason: "finalizeTurn validates every turn" },
   propose_commit: { mode: "agent_only", reason: "B3: the Commit button" },
+  suggest_replies: { mode: "agent_only", reason: "ADR 0094 decision 9: the guided prompts carry their own replies" },
   list_templates: { mode: "agent_only", reason: TEMPLATES_AGENT_ONLY },
   get_template: { mode: "agent_only", reason: TEMPLATES_AGENT_ONLY },
   list_stock_templates: { mode: "agent_only", reason: TEMPLATES_AGENT_ONLY },

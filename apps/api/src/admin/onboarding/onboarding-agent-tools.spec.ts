@@ -79,7 +79,7 @@ const FORBIDDEN = ["credentialsSet", "_secrets", "_commitProposal", "rtuTargetCo
 
 /** Every tool's JSON Schema; none carries a field the agent must never write. */
 export function assertEveryToolHasAJsonSchemaWithNoForbiddenProperty(): void {
-  assert(TOOL_DEFINITIONS.length === 24, `there are 24 tools, got ${TOOL_DEFINITIONS.length}`);
+  assert(TOOL_DEFINITIONS.length === 25, `there are 25 tools, got ${TOOL_DEFINITIONS.length}`);
   for (const tool of TOOL_DEFINITIONS) {
     const text = JSON.stringify(tool.parameters);
     for (const field of FORBIDDEN) {
@@ -396,4 +396,27 @@ export async function assertAFailedOutcomeCarriesItsError(): Promise<void> {
   assert(!out.ok && out.error === "Unknown tool 'x'.", `the error field: ${String(out.error)}`);
   const passed = await runTool(call("add_rtu", PLAIN_RTU), state, context());
   assert(passed.ok && passed.error === undefined, "a passing outcome carries no error");
+}
+
+/** F3.25 (ADR 0094 decision 9): suggest_replies records the chips and changes nothing in the draft. */
+export async function assertSuggestRepliesSetsTheRepliesAndWritesNothing(): Promise<void> {
+  const draft = readyDraft();
+  const state: ToolState = { working: draft };
+  const out = await runTool(call("suggest_replies", { replies: ["MQTT", "Modbus"] }), state, context());
+  assert(out.ok, `the call passes: ${out.content}`);
+  assert(JSON.stringify(state.suggestedReplies) === '["MQTT","Modbus"]', `the replies are recorded, got ${JSON.stringify(state.suggestedReplies)}`);
+  assert(out.actionLine === undefined, "no action line: it changes nothing in the draft");
+  assert(state.working === draft, "the working draft is the same object");
+}
+
+/** F3.25: five replies and an empty reply are invalid arguments, and nothing is recorded. */
+export async function assertSuggestRepliesRefusesFiveAndAnEmptyReply(): Promise<void> {
+  for (const replies of [["a", "b", "c", "d", "e"], [""]]) {
+    const state: ToolState = { working: {} };
+    const out = await runTool(call("suggest_replies", { replies }), state, context());
+    assert(!out.ok && String(out.error).startsWith("Invalid arguments"), `${JSON.stringify(replies)} is refused, got ${out.content}`);
+    assert(state.suggestedReplies === undefined, "a refused call records nothing");
+  }
+  const four = await runTool(call("suggest_replies", { replies: ["a", "b", "c", "d"] }), { working: {} }, context());
+  assert(four.ok, "four replies pass (the adjacent positive)");
 }

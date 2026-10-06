@@ -9,6 +9,8 @@ import {
   assertNoResolvedProviderMeansNoNotice,
   assertTheResolverIsCalledOncePerTurnWithTheSessionsOrganization,
   assertTheTurnLogsOneTextFreeLineWithTheProviderName,
+  assertAStepLabelOnTheAgentPathNeverReachesTheModel,
+  assertAnAgentReplysChipsAreTheFilteredOfferPlusTheStepLabel,
 } from "./onboarding-chat-agent.spec";
 
 /** Vitest entry point — see `admin.schema.test.ts` for the pattern (ADR 0014). One `it()` per claim. */
@@ -43,5 +45,13 @@ describe("OnboardingChatService — the agent branch (F3.21, ADR 0090)", () => {
 
   it("resolves the provider once per turn for the session's organization", async () => {
     await assertTheResolverIsCalledOncePerTurnWithTheSessionsOrganization();
+  });
+
+  it("answers a step label by code on the agent path, never calling the model (F3.25, ADR 0094 decision 8)", async () => {
+    await assertAStepLabelOnTheAgentPathNeverReachesTheModel();
+  });
+
+  it("answers the model's filtered replies plus the step label and View draft (F3.25, ADR 0094 decision 9)", async () => {
+    await assertAnAgentReplysChipsAreTheFilteredOfferPlusTheStepLabel();
   });
 });

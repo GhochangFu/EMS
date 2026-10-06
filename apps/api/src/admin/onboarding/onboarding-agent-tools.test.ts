@@ -31,6 +31,8 @@ import {
   assertSetLocationKeepsStoredIdentifiersForTheSameName,
   assertADeepWriteIsRefused,
   assertAddAssetRefusesATemplate,
+  assertSuggestRepliesRefusesFiveAndAnEmptyReply,
+  assertSuggestRepliesSetsTheRepliesAndWritesNothing,
 } from "./onboarding-agent-tools.spec";
 
 /** Vitest entry point — see `admin.schema.test.ts` for the pattern (ADR 0014). One `it()` per claim. */
@@ -153,5 +155,13 @@ describe("onboarding agent tools (F3.21, ADR 0090 decision 4)", () => {
 
   it("add_asset refuses a template ref (F3.22 decision 2)", async () => {
     await assertAddAssetRefusesATemplate();
+  });
+
+  it("suggest_replies records the replies and changes nothing (F3.25)", async () => {
+    await assertSuggestRepliesSetsTheRepliesAndWritesNothing();
+  });
+
+  it("suggest_replies refuses five replies and an empty reply (F3.25)", async () => {
+    await assertSuggestRepliesRefusesFiveAndAnEmptyReply();
   });
 });

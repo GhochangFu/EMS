@@ -7,6 +7,7 @@ import {
   STOPPED_EARLY_CALLS_REPLY,
   STOPPED_EARLY_TIME_REPLY,
   TURN_DEADLINE_MS,
+  buildSystemPrompt,
   diffSections,
   runAgentTurn,
 } from "./onboarding-agent-loop";
@@ -289,4 +290,30 @@ export function assertW4TheTurnPatchCarriesTemplates(): void {
   const working: OnboardingDraft = { templates: [{ code: "PUMP", name: "Pump", domain: "water", points: [] }] };
   const patch = diffSections({}, working);
   assert(patch.templates?.length === 1, `the patch carries the new template, got ${JSON.stringify(patch)}`);
+}
+
+/** F3.25 (ADR 0094 decision 9): the replies the model offered reach the turn result. */
+export async function assertSuggestedRepliesReachTheResult(): Promise<void> {
+  const llm = new FakeLlmProvider([calls(toolCall("suggest_replies", { replies: ["MQTT", "Modbus"] })), { kind: "final", text: "Which protocol?" }]);
+  const result = await runAgentTurn(turn(llm));
+  assert(result.stopReason === "final", "the turn ends on the final reply");
+  assert(JSON.stringify(result.suggestedReplies) === '["MQTT","Modbus"]', `the offered replies, got ${JSON.stringify(result.suggestedReplies)}`);
+  assert(result.actionLines.length === 0 && Object.keys(result.draftPatch).length === 0, "the call changed nothing in the draft");
+}
+
+/** F3.25: a provider error discards the offered replies with the rest of the turn. */
+export async function assertAProviderErrorDiscardsTheSuggestedReplies(): Promise<void> {
+  const llm = new FakeLlmProvider([calls(toolCall("suggest_replies", { replies: ["MQTT"] })), "reject"]);
+  const result = await runAgentTurn(turn(llm));
+  assert(result.stopReason === "provider_error", "the turn is a provider error");
+  assert(JSON.stringify(result.suggestedReplies) === "[]", `no replies, got ${JSON.stringify(result.suggestedReplies)}`);
+}
+
+/** F3.25: the system prompt tells the model to offer choices through the tool. */
+export function assertThePromptNamesSuggestReplies(): void {
+  const prompt = buildSystemPrompt({ orgName: "Ion Exchange", phase: "rtu", typeCodes: ["smoc_campus"], draft: {} });
+  assert(
+    prompt.includes("When you need the user to choose, ask one question per turn and offer the choices with suggest_replies."),
+    "the prompt carries the suggest_replies sentence",
+  );
 }

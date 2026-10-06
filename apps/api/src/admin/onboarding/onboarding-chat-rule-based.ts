@@ -128,6 +128,30 @@ const CONFIRM_STEP_REPLIES: ReadonlyMap<string, OnboardingPhase> = new Map([
   ["confirm mappings", "mappings"],
 ]);
 
+/**
+ * F4.199 (owner ruling 2026-10-05, "normalise, then no-op"): a typed reply is
+ * read as its button — lower case, one space, no trailing `.!?`. The commit
+ * and undo phrases in `OnboardingService.chat` stay exact.
+ */
+export function normaliseReply(message: string): string {
+  return message.toLowerCase().trim().replace(/s+/g, " ").replace(/[.!?]+$/, "").trim();
+}
+
+/** F3.25 (ADR 0094 decision 8): the step a `confirm <step>` message names, or `undefined`. */
+export function confirmStepFor(message: string): OnboardingPhase | undefined {
+  return CONFIRM_STEP_REPLIES.get(normaliseReply(message));
+}
+
+/** F3.25 (ADR 0094 decision 9): the `confirm <step>` label of `phase`; location and review have none. */
+export function stepLabelFor(phase: OnboardingPhase): string | undefined {
+  for (const [label, step] of CONFIRM_STEP_REPLIES) {
+    if (step === phase) {
+      return label;
+    }
+  }
+  return undefined;
+}
+
 const STEP_NAMES: Readonly<Record<OnboardingPhase, string>> = {
   location: "location",
   rtu: "RTU",
@@ -687,7 +711,7 @@ function addedRtuReplies(deps: RuleBasedTurnDeps, draft: OnboardingDraft, turn: 
  * met: the answer goes on when the draft is past the step and otherwise says
  * what is still missing. The patch is empty — the turn changes nothing.
  */
-function confirmStepTurn(
+export function confirmStepTurn(
   deps: RuleBasedTurnDeps,
   step: OnboardingPhase,
   message: string,
