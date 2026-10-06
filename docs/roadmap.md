@@ -7362,3 +7362,40 @@ Raised: `F4.209` (Work Orders re-renders without end while its list has no
 data), `F4.210` (the sign-in callback shows the IdP's `error_description`
 before it checks `state`), `F4.211` (a duplicate point key answers 500). No
 `chore(agents):` change owed.
+
+### `F4.205`–`F4.211` — seven rows from the 10-05 reviews ✅ 2026-10-06
+
+Four PRs by surface (owner ruling), all squash-merged 2026-10-06; no ADR, no
+migration, no new dependency.
+
+- **#745** (`9d53a074`) — `F4.211`: a duplicate unique key answers 409 with a
+  sentence at 8 write sites in 5 services (owner ruling: all of them here).
+  `F4.205`: validation applies `unresolvedPointKey` to a stock entry's
+  measured, derived and formula keys.
+- **#743** (`e460f5b1`) — `F4.210`: the OIDC callback checks `state` before it
+  reads the IdP error, and never shows `error_description`. `F4.206`: a 401
+  clears the session only when it carried the current bearer (53 sites, 24
+  files, through a required parameter).
+- **#742** (`276efc99`) — `F4.209` (P2, owner set): a stable empty row list
+  stops the Work Orders render loop; a commit-bound Profiler makes a
+  regression fail in seconds instead of hanging. `F4.207`: `GrantsDrawer`
+  and its helpers move out of `users-page.tsx` (999 → 723 lines).
+- **#744** (`c08acaca`) — `F4.208`: a Topic field and a guided `topic:` turn
+  (owner ruling: both); the 255-character bound in `@bms/shared`.
+
+Built with three workflows (plans on Fable, a serial build on Opus in
+worktrees, nine reviewers) and two further `F4.208` fix rounds. Verified: CI
+green on each PR; the four heads merged locally — `main` at `c08acaca` is
+byte-identical to that tree — passed `typecheck`, `typecheck:tests` and the
+full suite with the DB (1014 files; the one real failure, the Save topic
+button's pending name under `F4.168` H15, was fixed in #744; 10 site-layout
+seed cases fail on unchanged `main` against the local DB). Live on images
+built from that tree (bundle `index-D-2Ybxsl.js`): the `F4.210` callback
+shows no attacker text. Other live checks skipped by owner ruling.
+
+**Cascade:** no row lists these seven in *Depends* except the new rows.
+Raised: `F4.212` (mimic pages, effect per render), `F4.213` (`F4.205` tool
+parity), `F4.214` (the `/me` residual of `F4.206`), `F4.215` (wildcard MQTT
+topics), `F4.216` (migrate answers 500 on a duplicate source key), `F4.217`
+(`onboarding-chat.service.ts` at 996 lines), `F4.218` (a colon-less "topic"
+question appends an RTU). No `chore(agents):` change owed.
