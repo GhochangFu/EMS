@@ -13,6 +13,13 @@ and decision 1 with three providers, adds `@anthropic-ai/sdk`, and moves a
 per-organization key screen and its table into this row. It is at the end of
 this record.
 
+**Amendment 2 (2026-10-06, before any implementation code)** records row
+`F3.27`, guided-mode parity, in a narrowed form: a fallback turn writes
+nothing, every guided prompt names only an input the code parses, guided
+writes go through the tool registry with action lines, and a coverage spec
+classifies every tool. It amends decisions 6 and 7, the *Consequences*, and
+ADR 0091 decision 11. It follows Amendment 1.
+
 Implements row `F3.21` (Track E, Wave 2, ⭐). Amends
 [ADR 0011](./0011-ai-onboarding-chat.md) decision 1 (see *Amended records*).
 Keeps [ADR 0022](./0022-onboarding-credential-capture.md) unchanged. Promotes
@@ -472,3 +479,332 @@ A7. **Secret hygiene.** The key never appears in a response, a log line, an
 - **Deferred:** a global-admin platform setting in the UI (the platform
   default stays in `.env`), per-organization cost limits, and model lists
   fetched from the providers.
+
+## Amendment 2 — guided-mode parity, narrowed (`F3.27`, 2026-10-06)
+
+### Status
+
+Accepted — the owner ruled on 2026-10-06, in chat, before any implementation
+code. The Track E decision packet put six questions for this row (D1–D6). The
+owner accepted the recommendation on every one, the re-scope below, this
+record's place as Amendment 2 of ADR 0090 (not a new ADR), and the Track E
+build order `F3.27` → `F3.25` → `F3.23` → `F3.26` → `F3.24a`. So this row is
+built first.
+
+Implements row `F3.27` (Track E, Wave 3, P2, effort 2–3, depends on `F3.21`,
+done). **Supersedes:** the sentence of decision 7 "The rule-based path itself
+does not change in this row", and the *Consequences* bullet "The fallback
+answers a message that was written for the agent". **Amends:** decision 6 (it
+now holds on both paths) and [ADR 0091](./0091-onboarding-agent-asset-templates.md)
+decision 11 (see *Amended records* of this amendment). Every other decision of
+this record and of Amendment 1 stands. No migration, no new dependency, no
+`packages/shared` contract change and no new Nest module or app. Promotes
+nothing out of `AGENTS.md` §6.
+
+### Context
+
+**What the guided path is.** `handleRuleBasedTurn`
+(`apps/api/src/admin/onboarding/onboarding-chat-rule-based.ts:167`) is a step
+machine of fixed defaults. It does not use the tool registry. It is the
+default path, because `.env.example:55` ships `LLM_PROVIDER=` empty (Amendment
+1, A2). It is also the fallback after a provider error. `guidedTurn`
+(`onboarding-chat.service.ts:229`) calls it, and `handleTurn` reaches
+`guidedTurn` in three places: with no organization id (`:304-305`), when the
+resolver answers `guided` (`:308-309`), and when the agent turn sets
+`fallback` (`:342-346`, with `AGENT_UNAVAILABLE_NOTICE`).
+
+**What each step writes today:**
+
+- *location* — the whole message becomes `location.name`, cut to its bound
+  (`onboarding-chat-rule-based.ts:315`). The type is matched or asked for.
+- *rtu* — whole-word protocol detection and `defaultConfig` (`:563`). A
+  `topic: x` turn sets the MQTT topic (`:345`).
+- *point keys* — appends the fixed `kw` (`:408-412`). `use existing keys` sets
+  `useExistingPointKeys` (`:187`).
+- *assets* — writes exactly one asset and replaces the array (`:424`, `:465`).
+- *mappings* — writes one fixed `s09_r01 -> kw` mapping onto the first plain
+  asset (`:489-492`, ADR 0091 decision 11, dated note).
+- `yes`, `create`, `create it`, `commit` and `confirm` move the phase to
+  `review` and write nothing (`:212`, the `F4.199` owner ruling). A
+  `confirm <step>` reply changes nothing (`:229`).
+
+**Defects in the code that this row owns:**
+
+1. **A message written for the agent becomes the location name.** After a
+   provider error on a fresh draft, the whole message becomes `location.name`
+   (`:315`, through `:342-346`). The *Consequences* of this record name it and
+   give it to `F3.27`.
+2. **Prompts promise input that the code does not parse.**
+   - `:475` offers ``source s09_r01 -> point kw``. No parser for that form
+     exists; any message at the mappings step writes the fixed sample.
+   - The mappings prompt (`:160`) and the Excel import follow-up
+     (`onboarding-chat.service.ts:209`) say that `auto map` maps each asset.
+     The code maps one asset. `:209` also offers ``source s01 -> point kw``.
+   - `:414` asks "How many assets should we create on this RTU?". The code
+     always writes one asset.
+   - The Excel import follow-up says "Add assets per RTU in chat"
+     (`onboarding-chat.service.ts:197`). No such path exists.
+   - `:214` answers `create it` with "I'll prepare the commit". The guided
+     path proposes nothing.
+3. **No action lines on the guided path.** `finalizeTurn` returns
+   `actionLines: []` (`onboarding-chat.service.ts:408`), and the type's
+   docblock says "Empty on the guided path" (`onboarding-chat-rule-based.ts:48`).
+   So decision 6 holds on the agent path only.
+4. **The guided path has no equivalent of most tools.** The registry holds 24
+   tools: 17 in `TOOL_SCHEMAS` (`onboarding-agent-tools.ts:142-160`) and the 7
+   template tools (`onboarding-template-tools.ts:62-71`). The guided path has
+   nothing for the template tools, `update_rtu`, the remove tools, a custom
+   `add_point_key`, `add_asset` or `map_point`, `validate_draft` or
+   `propose_commit`. The other no-key routes do not fill the gap: the web page
+   uses `PATCH :id/draft` only for the MQTT topic
+   (`apps/web/src/pages/admin/onboarding-chat-page.tsx:207-215`), and the Excel
+   upload carries no point keys, no mappings and no templates. With no key, an
+   operator cannot onboard real source-key mappings by chat or by upload; the
+   only route is the post-commit asset-points screens (`F2.7`).
+
+**What already exists and needs no model:**
+
+- `runTool(call, state, ctx)` (`onboarding-agent-tools.ts:240`) takes
+  `{ name, arguments }`, a `ToolState` (`onboarding-tool-outcome.ts:26`) and a
+  `ToolContext` (`onboarding-agent-tools.ts:108`). It returns a `ToolOutcome`
+  whose `actionLine` is set by a successful write
+  (`onboarding-tool-outcome.ts:31-37`).
+- `write()` (`onboarding-tool-outcome.ts:65`) already applies
+  `draftCountProblem` (`:67`) and the depth bound (`:74`). `add_rtu` and
+  `update_rtu` already refuse a credential in `config`
+  (`configCarriesCredential`, `onboarding-agent-tools.ts:209`).
+- `ToolContext.organizationId` is a required string, and
+  `bms.onboarding_sessions.organization_id` is `notNull`
+  (`packages/db/src/schema/bms-schema.ts:653-654`). So every stored session can
+  drive `runTool`; the `!organizationId` branch at
+  `onboarding-chat.service.ts:304` is reached only by direct calls in specs.
+- `OnboardingService.chat` already stores each `turn.actionLines` entry as an
+  `action` message (`onboarding.service.ts:318-326`), and the web already shows
+  that role (`onboarding-chat-page.tsx:453`).
+- `TOOL_DEFINITIONS` (`onboarding-agent-tools.ts:199`) and `isToolName`
+  (`:235`) are exported, so a spec can enumerate the registry.
+
+### Re-scope
+
+The row reads "Deterministic rule-based fallback parity (no LLM key)"
+(`docs/BACKLOG.md:610`). Read as parity with every tool, it has no fixed end:
+the registry has 24 tools, `F3.23`–`F3.26` are open and will add tools, and
+free-form arguments (template variables, `sourceDataKeyVars`, `config`
+records) have no deterministic grammar an operator can use. Effort 2–3 cannot
+cover that. **Ruled:** the row is narrowed to a fixed slice that a test can
+gate:
+
+- **(a) Safe fallback.** A fallback turn does not write the message into the
+  draft (B1).
+- **(b) Honest prompts.** Every guided prompt names only an input that the
+  code parses (B2, B3).
+- **(c) Shared write path.** Guided writes go through `runTool` with
+  arguments that code builds, so the caps, the element schemas, the credential
+  refusal and the action lines are the same on both paths. The guided step
+  order and its defaults stay (B4, B5).
+- **(d) A coverage spec.** Every tool is classified as guided-covered or
+  agent-only, with a reason, and a new tool fails the spec until its row
+  classifies it (B7).
+
+Templates in the guided mode, a guided commit proposal and per-adapter RTU
+configuration are out of scope (B3, B6, *Deferred*). The effort 2–3 holds for
+(a)–(d).
+
+### Gate questions
+
+1. **(D1) What does parity mean for this row?** Options: A, safety and honest
+   prompts and the coverage spec only, with the guided writes in their current
+   form; B, A plus a shared write path through `runTool`; C, a deterministic
+   command grammar for all 24 tools; D, defer or close the row. **Ruled as
+   recommended: B.** A is rejected because it leaves the guided writes outside
+   the caps, the schemas and the credential refusal of the tool path, and the
+   action lines would be hand-written in each branch, for a small saving:
+   `write()`, `draftCountProblem` and `actionLine` already exist. C is
+   rejected: it does not fit effort 2–3, `F3.23`–`F3.26` move its target, and
+   free-form arguments have no usable grammar. D is rejected: it leaves defect
+   1 and the misleading prompts live on every keyless deployment.
+2. **(D2) What does the guided mode do with the message after a provider
+   error?** Options: A, keep the current behavior (the message becomes
+   `location.name` on a fresh draft); B, no draft change on a fallback turn;
+   C, write only when the message matches a guided intent (a label, a
+   `topic:` line, a protocol word or a short name-like reply). **Ruled as
+   recommended: B.** The message was written for a model, so no guided reading
+   of it is reliable. A is the defect. C needs a new heuristic for the
+   location name, and its threshold would be one more ruling; B cannot write
+   a wrong value, and the user answers a clear step prompt.
+3. **(D3) Does the guided mode propose a commit?** Options: A, no, the Commit
+   button only, with the misleading reply text fixed; B, `create it` sets a
+   code-written proposal through `commitSummary`
+   (`onboarding-commit-proposal.ts:136`), and the user types `confirm commit`.
+   **Ruled as recommended: A.** The Commit button already gives the no-key
+   user a commit with no extra step. B changes the `F4.199` owner ruling and
+   decision 5, and `F3.25` is due to redesign confirm and rollback.
+4. **(D4) Do templates enter the guided mode?** Options: A, no, and the reply
+   points no-key users to the Asset Templates editor after commit; B, a
+   deterministic stock import (`import stock <code>`, `add <n> assets of
+   <code>`) through `import_stock_template` and `add_template_assets`.
+   **Ruled as recommended: A.** Template variables and patterns are
+   model-shaped input with no grammar today. A post-commit route that needs no
+   key already exists. B raises the effort and changes ADR 0091 decision 11
+   for a P2 row.
+5. **(D5) Does the guided mode write action lines?** Options: A, yes, one
+   code-written line per guided draft write; B, no, `actionLines: []` stays.
+   **Ruled as recommended: A.** With D1 = B the line comes from `runTool` at
+   no extra cost, decision 6 holds on both paths, and the no-key operator gets
+   the same record of draft edits. B is rejected for that reason.
+6. **(D6) When is the row built, given the open `F3.23`–`F3.26`?** Options:
+   A, now, with a tool-coverage spec; B, last, after `F3.23`–`F3.26`, when the
+   tool set is final. **Ruled as recommended: A**, and first in Track E. B is
+   rejected: defect 1 and the misleading prompts stay live on the default path
+   until then. The coverage spec makes "match the tool set" a gate that each
+   later row must pass.
+
+### Decisions
+
+B1. **A fallback turn writes nothing** (D2). When the agent turn sets
+    `fallback` (a provider error or a malformed reply, ruling 6), the guided
+    mode does not read the message. The reply is `AGENT_UNAVAILABLE_NOTICE`
+    and then the step prompt (`stepPrompt`, `onboarding-chat-rule-based.ts:131`)
+    for the phase that `inferPhase` derives from the draft, with that prompt's
+    suggested replies and an empty draft patch. The turn's agent edits are
+    already discarded (ruling 6), so the draft is unchanged. This applies to
+    the fallback only: with no provider, and for an organization whose setting
+    is incomplete, the guided mode reads the message as it does now. A
+    `cap_time` stop is not a fallback (decision 3) and does not change.
+
+B2. **Every guided prompt names only an input the code parses.** This covers
+    the prompts in `onboarding-chat-rule-based.ts` (`:160`, `:414`, `:475`)
+    and the Excel import follow-up in `onboarding-chat.service.ts` (`:197`,
+    `:209`). For each advertised form, the plan either implements it or
+    removes it from the text. The tests pin each changed string, so a revert
+    reddens it.
+
+B3. **The guided mode proposes no commit** (D3). The labels `yes`, `create`,
+    `create it`, `commit` and `confirm` keep moving the phase to `review`
+    and write nothing, as the `F4.199` owner ruling says. Their reply no
+    longer says "I'll prepare the commit" (`:214`); it sends the user to the
+    preview and the Commit button. The guided path sets no
+    `commitProposal`, so the typed `confirm commit` phrase finds no proposal
+    there, as now.
+
+B4. **Guided writes go through the tool registry** (D1). Each guided draft
+    write builds its tool arguments in code and calls `runTool`: `set_location`,
+    `add_rtu`, `add_point_key`, `add_asset`, `map_point` and
+    `use_existing_point_keys`. The guided step order, its defaults (`kw`, one
+    asset, the fixed sample mapping, `defaultConfig`) and its labels stay.
+    - The `F4.104` cut runs before the call, so a long location name or asset
+      code is still sliced, not refused.
+    - A refused write (a count cap, the depth bound, an element schema, the
+      credential refusal or the prompt-marker refusal) never throws and never
+      reaches the user as a raw tool error. The reply says that the draft did
+      not change, names the refusal, and repeats the step prompt; the patch is
+      empty.
+    - The credential refusal now also applies to guided values. A location
+      name, a topic or an RTU `config` value that looks like a credential is
+      refused where the guided mode accepts it today.
+    - The `ToolContext` is the one the agent path builds
+      (`onboarding-chat.service.ts:327-334`), shared by both paths.
+
+B5. **Guided writes add action lines** (D5). Each successful guided write
+    adds the `actionLine` that `runTool` returns, for example
+    `Added RTU RTU-1 (modbus_tcp)`, to the turn's `actionLines`.
+    `OnboardingService.chat` stores them as `action` messages as it does for
+    the agent path; the web already shows them. Decision 6 now holds on both
+    paths. A fallback turn (B1) and a refused write add no line.
+
+B6. **No templates in the guided mode** (D4). The guided mode leaves
+    `templates[]` and `assets[].template` untouched, as ADR 0091 decision 11
+    says. At `review`, the guided reply points the no-key user to the Asset
+    Templates editor and its Instantiate action after commit
+    (`POST` `asset-templates/:id/instantiate`,
+    `apps/api/src/admin/asset-templates/asset-templates.controller.ts:184`).
+
+B7. **A tool-coverage spec** (D6). A spec enumerates `TOOL_DEFINITIONS` and
+    requires a classification for every tool name: *guided-covered* or
+    *agent-only*, each with a non-empty reason. A row that adds a tool
+    (`F3.23`–`F3.26`) fails the spec until its author classifies the new tool.
+    From this amendment on, "parity" means this classified tool set, not every
+    tool in the guided mode. The guided-covered set is the set of tools that
+    B4's guided branches call.
+
+B8. **Delivery.** Two PRs, built first in Track E: PR 1 is B1–B3 and B6 (the
+    fallback and the reply text); PR 2 is B4, B5 and B7. `F4.223` and `F4.224`
+    touch the same guided RTU flow and ship first, separately. The code
+    docblocks that say the guided path does not change, or that action lines
+    are empty on it, change in the feature commits.
+
+**Left to the plan, for an owner ruling before its first task.** The draft
+plan raises four questions that the packet did not put, so this amendment
+does not rule them:
+
+- what happens to the `!organizationId` branch (`onboarding-chat.service.ts:304`),
+  which has no organization id for the `ToolContext`;
+- whether only the offered label writes at the point-key, asset and mapping
+  steps, as B1 does for the fallback (today any message there writes the
+  fixed value: `onboarding-chat-rule-based.ts:408`, `:424`, `:490`);
+- whether `auto map` maps every plain asset that has no mapping, or the text
+  says "the first plain asset" (B2);
+- whether the `topic:` turn goes through `update_rtu`, which would make it
+  guided-covered under B7.
+
+### Dependencies
+
+None. No new npm package and no migration.
+
+### Consequences
+
+- **The default path is safe after a provider error.** A message written for
+  the agent no longer lands in the draft. The user answers a step prompt
+  again, which costs one turn.
+- **The guided path and the agent path share their bounds.** The count caps,
+  the depth bound, the element schemas, the credential refusal and the
+  prompt-marker refusal now gate guided writes too, and each write shows as an
+  action line on both paths.
+- **The guided failure behavior changes.** A value that the guided mode
+  accepts today can now be refused as a tool error (B4). Each refusal needs a
+  guided reply and a test.
+- **The reply text changes, and so do many spec assertions.** The guided
+  specs (`onboarding-chat-rule-based`, `-point-keys`, `-topic`,
+  `onboarding-chat.service`, and others that pin guided text) assert exact
+  reply and suggested-reply text, so the diff in the specs is larger than the
+  diff in the code.
+- **Later Track E rows carry one more gate.** Each tool that `F3.23`–`F3.26`
+  adds must be classified under B7 in the same PR.
+- **The no-key gap stays for real mappings.** With no key, an operator still
+  cannot onboard source-key mappings by chat or by upload; the post-commit
+  asset-points screens (`F2.7`) stay the route. A `source X -> point Y`
+  grammar built here could be redone by `F3.23`.
+- **Deferred:** a guided command grammar for the other tools (the template
+  tools, `update_rtu`, the remove tools, custom point keys, assets and
+  mappings, `validate_draft`, `propose_commit`); templates in the guided mode;
+  a guided commit proposal; per-adapter RTU configuration (`F3.24a`/`F3.24b`);
+  point keys and mappings in the Excel upload.
+
+### Amended records
+
+- **Decision 7 of this record** — "The rule-based path itself does not change
+  in this row; `F3.27` owns its parity" becomes: on a fallback turn the guided
+  mode writes nothing and answers with the notice and the step prompt (B1);
+  its writes go through the tool registry (B4). The discard of the turn's
+  edits and the notice sentence stand.
+- **Decision 6 of this record** — "Each successful draft write and each
+  proposal adds one `action` message" now holds on the guided path as well
+  (B5). Its text does not change.
+- **The *Consequences* bullet "The fallback answers a message that was
+  written for the agent"** — closed by B1.
+- **The *Deferred* bullet of this record** — rule-based parity (`F3.27`) is no
+  longer deferred, in the narrowed form above.
+- **ADR 0091 decision 11 and its dated note** — "The rule-based path
+  (`handleRuleBasedTurn`) does not change" and "Nothing else in
+  `handleRuleBasedTurn` changes" yield to B1–B5 and B7. "It leaves
+  `templates[]` and `assets[].template` untouched" stands (B6), and so does
+  the mapping onto the first plain asset.
+- **ADR 0091 *Consequences*, the *Deferred* bullet** — rule-based parity
+  (`F3.27`) is no longer deferred, in the narrowed form above.
+
+**Confirmed unchanged:** decisions 1–5, 8 and 9 of this record, with
+decision 5 stated again: the guided path proposes no commit, and only the
+Commit button or the typed `confirm commit` against an agent proposal
+commits. Amendment 1. The `F4.199` owner ruling (a label moves to `review`
+only). [ADR 0022](./0022-onboarding-credential-capture.md): its credential
+refusal still runs first, before either path.
