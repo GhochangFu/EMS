@@ -341,3 +341,14 @@ export function assertTheMappingChipsSurviveAndAreNotStepLabels(): void {
     assert(label !== chips[0] && label !== chips[1], `a chip is not the step label of ${phase}`);
   }
 }
+
+/** F3.26 (ADR 0095 decision 5): the prompt tells the model to read existing codes before it chooses new ones. */
+export function assertThePromptTellsTheModelToReadExistingCodesFirst(): void {
+  const prompt = buildSystemPrompt({ orgName: "Ion Exchange", phase: "location", typeCodes: ["smoc_campus"], draft: {} });
+  assert(
+    prompt.includes(
+      "Before you choose a new location, RTU or asset code, call find_existing for that kind and follow the organization's existing naming.",
+    ),
+    "the prompt carries the find_existing sentence",
+  );
+}
