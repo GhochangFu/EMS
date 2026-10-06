@@ -7399,3 +7399,37 @@ parity), `F4.214` (the `/me` residual of `F4.206`), `F4.215` (wildcard MQTT
 topics), `F4.216` (migrate answers 500 on a duplicate source key), `F4.217`
 (`onboarding-chat.service.ts` at 996 lines), `F4.218` (a colon-less "topic"
 question appends an RTU). No `chore(agents):` change owed.
+
+### `F4.212`–`F4.218` — seven rows from the 10-06 reviews ✅ 2026-10-06
+
+Three PRs by surface (owner ruling), all squash-merged 2026-10-06; no ADR, no
+migration, no new dependency. One additive contract value
+(`source_key_already_used`, ADR 0030).
+
+- **#747** (`0a60f2d8`) — `F4.212` (P4, owner set): the mimic pages share
+  `useOrganizationChoice()` with a stable empty list. `F4.214`: a `/me`
+  401 records its reason only when the store did not change during the
+  request or holds the request's token, checked after the body read.
+- **#748** (`e2e0b19b`) — `F4.217`: the guided onboarding mode moves to
+  `onboarding-chat-rule-based.ts` (service 996 → 480 lines). `F4.218`: a
+  topic question in the RTU step changes nothing; the capture needs the
+  colon. `F4.215`: onboarding refuses an MQTT wildcard topic. `F4.213`: the
+  template tools apply the stock point-key rule.
+- **#749** (`0ecd90f6`) — `F4.216`: a migration refuses a duplicate source
+  key at plan time and translates the race at write time.
+
+Built with four workflows (seven plans on Fable, three build chains in
+worktrees, nine reviewers, a fix round with re-reviews). Verified: CI green on
+each PR; the three heads merged locally — `main` at `0ecd90f6` has the same
+tree — passed `typecheck`, `typecheck:tests` and the light repo job; each
+branch passed the full suite with the DB except 10 site-layout seed cases that
+fail on unchanged `main` against the local DB (the one real failure, the
+`F4.104` import gate after the `F4.217` move, was fixed in #748). Live on
+images built from that tree (bundle `index-BKRLOP5D.js`): new code in both
+images, `/health` 200; sign-in checks skipped by owner ruling.
+
+**Cascade:** no row lists these seven in *Depends* except the new rows.
+Raised: `F4.219` (the `F4.206` path checks before the body read), `F4.220`
+(`NAMES_A_PROTOCOL` matches inside words), `F4.221` (the admin RTU route
+accepts a wildcard topic), `F4.222` (a point-key race still answers 500). No
+`chore(agents):` change owed.
