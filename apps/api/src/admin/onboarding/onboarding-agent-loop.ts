@@ -3,6 +3,7 @@ import type { OnboardingChatMessage, OnboardingDraft } from "@bms/shared";
 import { cloneJson } from "../stack-safe-json";
 import { isToolName, runTool, TOOL_DEFINITIONS, type ToolContext, type ToolState } from "./onboarding-agent-tools";
 import { cutToBound } from "./onboarding-draft-caps";
+import { diffSections } from "./onboarding-draft-merge";
 import type { LlmMessage, OnboardingLlmProvider } from "./onboarding-llm-port";
 import { PROMPT_MARKER_SENTENCE, serialiseDraftForPrompt } from "./onboarding-prompt-budget";
 import type { OnboardingDraftInput, OnboardingPhase } from "./onboarding.schema";
@@ -59,7 +60,12 @@ export type AgentTurnResult = {
   readonly record: AgentTurnRecord;
 };
 
-const DRAFT_SECTIONS = ["location", "rtus", "pointKeys", "assets", "assetPoints", "templates", "onboardingMeta"] as const;
+/**
+ * `F3.25` moved `DRAFT_SECTIONS` and `diffSections` to `onboarding-draft-merge.ts`
+ * (the checkpoint module reads them too). Re-exported because
+ * `onboarding-agent-loop.spec.ts` imports `diffSections` from here.
+ */
+export { diffSections };
 
 /**
  * The stored history as provider messages: the last `MAX_HISTORY_MESSAGES`,
@@ -109,17 +115,6 @@ function errorFacts(error: unknown): { errorClass?: string; errorStatus?: number
     ...(typeof name === "string" ? { errorClass: cutToBound(name, 64) } : {}),
     ...(typeof status === "number" ? { errorStatus: status } : {}),
   };
-}
-
-/** The six draft sections that differ, wholesale, so `mergeDraft(stored, patch)` reproduces `working`. */
-export function diffSections(stored: OnboardingDraft, working: OnboardingDraft): OnboardingDraftInput {
-  const patch: Record<string, unknown> = {};
-  for (const section of DRAFT_SECTIONS) {
-    if (JSON.stringify(stored[section]) !== JSON.stringify(working[section])) {
-      patch[section] = working[section];
-    }
-  }
-  return patch as OnboardingDraftInput;
 }
 
 /** Runs one user turn of the agent loop. Never throws; every failure is a stop reason. */
