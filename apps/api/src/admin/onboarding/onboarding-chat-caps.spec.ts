@@ -19,7 +19,7 @@ function times<T>(count: number, build: (index: number) => T): T[] {
   return Array.from({ length: count }, (_unused, index) => build(index));
 }
 
-const JWT: JwtPayload = {
+export const JWT: JwtPayload = {
   sub: "u-1",
   email: "someone@bms.local",
   name: "someone",
@@ -72,7 +72,7 @@ const LOCATION: NonNullable<OnboardingDraft["location"]> = {
   longitude: 28.2,
 };
 
-function sessionRow(draft: OnboardingDraft, currentPhase: string) {
+export function sessionRow(draft: OnboardingDraft, currentPhase: string) {
   return {
     id: "s-1",
     organizationId: "org-1",
@@ -152,7 +152,7 @@ export function fakeDb(results: unknown[][], record: Recorder) {
   return db as never;
 }
 
-const ORG = [{ code: "ESKOM", name: "Eskom" }];
+export const ORG = [{ code: "ESKOM", name: "Eskom" }];
 
 /**
  * `OnboardingService.chat` wired to the **real** `OnboardingChatService` and the
@@ -165,7 +165,7 @@ const ORG = [{ code: "ESKOM", name: "Eskom" }];
  * `{} as never`: neither turn below names a protocol question or the
  * existing-keys phrase, so reaching either of them is itself a failure.
  */
-function buildService(opts: { session: ReturnType<typeof sessionRow>; results?: unknown[][] }) {
+export function buildService(opts: { session: ReturnType<typeof sessionRow>; results?: unknown[][] }) {
   const record: Recorder = { updates: [], transactions: 0 };
   const db = fakeDb(opts.results ?? [[opts.session], ORG], record);
   const accessControl = {
@@ -201,7 +201,7 @@ function buildService(opts: { session: ReturnType<typeof sessionRow>; results?: 
 }
 
 /** Runs `fn` with no OpenAI key, which is what `.env.example` ships. */
-async function withoutOpenAi<T>(fn: () => Promise<T>): Promise<T> {
+export async function withoutOpenAi<T>(fn: () => Promise<T>): Promise<T> {
   const previous = process.env.OPENAI_API_KEY;
   delete process.env.OPENAI_API_KEY;
   try {
@@ -286,26 +286,27 @@ export async function assertAChatTurnGrowsTheDraftByOne(): Promise<void> {
 }
 
 /**
- * `F4.103` — a chat turn that would carry the draft past a cap is refused, and
- * **nothing is written**.
- *
- * Refused rather than truncated, which is the answer `parseUpload` and `commit`
- * already give and the answer both siblings give. The refusal is thrown before
- * the `withTenant` update, so the operator's existing draft, its phase and its
- * message history are exactly as they were: the turn is lost, the session is
- * not. They simply cannot add a 101st RTU by chat.
- *
- * The check runs on the **merged** draft, so a session that is somehow already
- * over a cap refuses every turn, innocuous ones included — the RTU branch
- * appends whatever the message says. `PATCH :id/draft` replaces the arrays
- * wholesale and is the way back out. Unreachable today: `bms.onboarding_sessions`
- * measured `(0 rows)` on 2026-09-08.
+ * The stored draft of the one update a turn wrote, compared as JSON: `mergeDraft`
+ * adds keys set to `undefined`, which a JSON comparison drops and a deep-strict
+ * one would count.
  */
-export async function assertAnOverCapChatTurnIsRefusedAndWritesNothing(): Promise<void> {
+function writtenDraftJson(record: Recorder): string {
+  return JSON.stringify(record.updates[0]?.draft);
+}
+
+/**
+ * `F4.103`, F3.27 (ADR 0090 Amendment 2 B4, B5) — a chat turn that would carry
+ * the draft past a cap is refused **in the reply**, and the draft is not
+ * changed.
+ *
+ * Since F3.27 the guided RTU step writes through the registry's `add_rtu`
+ * (`guidedWrite`), which checks `draftCountProblem` on the merged draft as the
+ * agent path does. So an at-cap session answers 200 with `I did not change the
+ * draft.`, the cap sentence the upload and the commit give, and the step prompt.
+ * The turn and its reply are stored; the draft is stored as it was.
+ */
+export async function assertAnAtCapChatTurnIsRefusedInTheReply(): Promise<void> {
   await withoutOpenAi(async () => {
-    // The full four-answer queue the happy path consumes, so that without the
-    // guard this turn *succeeds* and the failure below is the persisted draft
-    // rather than a database stub running out of rows.
     const { service, record } = buildService({
       session: rtuSession(MAX_ONBOARDING_RTUS),
       results: [
@@ -315,49 +316,31 @@ export async function assertAnOverCapChatTurnIsRefusedAndWritesNothing(): Promis
         ORG,
       ],
     });
-    const error = await rejectionOf(service.chat(JWT, "s-1", APPEND_TURN), record);
-    assert(
-      error instanceof BadRequestException,
-      `an over-cap chat turn is a bad request, got ${String(error)}`,
-    );
+    const response = await service.chat(JWT, "s-1", APPEND_TURN);
 
-    const message = messageOf(error);
     const expected =
       `The draft holds ${MAX_ONBOARDING_RTUS + 1} RTUs, more than the ${MAX_ONBOARDING_RTUS} ` +
       "one onboarding session may commit; remove some and commit the rest in a second session";
     assert(
-      message === expected,
-      `the chat refusal is the same sentence the upload and the commit give, got "${message}"`,
+      response.assistantMessage.startsWith(`I did not change the draft. ${expected} `),
+      `the reply carries the cap sentence, got "${response.assistantMessage}"`,
     );
-
-    // The session is untouched: no `update`, and no transaction opened at all.
+    assert(record.updates.length === 1, `the turn is stored once, got ${record.updates.length} update(s)`);
     assert(
-      record.updates.length === 0,
-      `a refused turn writes nothing, got ${record.updates.length} update(s): ` +
-        JSON.stringify(record.updates.map((update) => Object.keys(update))),
-    );
-    assert(
-      record.transactions === 0,
-      `a refused turn opens no transaction, got ${record.transactions}`,
+      writtenDraftJson(record) === JSON.stringify(rtuSession(MAX_ONBOARDING_RTUS).draft),
+      `the stored draft is unchanged, got ${(record.updates[0]?.draft as OnboardingDraft | undefined)?.rtus?.length} RTUs`,
     );
   });
 }
 
 /**
- * `F4.103` — the **second** appending branch, and a different cap.
+ * `F4.103`, F3.27 — the **second** appending branch, and a different cap.
  *
- * `rtus` is not the only array the rule-based turn concatenates onto:
- * `patch.pointKeys = [...(draft.pointKeys ?? []), { code: "kw", … }]` does the
- * same in the point-keys phase. Asserting only the RTU branch would leave that
- * one covered by a sentence in a docblock, which is how this row's first pass
- * missed a producer. It is also a different member of `CAPPED_DRAFT_ARRAYS`,
- * with a different cap and a different label, so it exercises the loop rather
- * than its first iteration.
- *
- * (`assets` and `assetPoints` assign single-element arrays and cannot grow, so
- * there is nothing to gate for them here.)
+ * `pointKeys` is the other array the guided mode appends to, with a different
+ * cap and a different label, so this exercises `draftCountProblem`'s loop
+ * rather than its first iteration. Its write is `add_point_key`.
  */
-export async function assertAnOverCapPointKeyTurnIsRefused(): Promise<void> {
+export async function assertAnAtCapPointKeyTurnIsRefusedInTheReply(): Promise<void> {
   await withoutOpenAi(async () => {
     const { service, record } = buildService({
       session: pointKeySession(MAX_ONBOARDING_POINT_KEYS),
@@ -368,24 +351,58 @@ export async function assertAnOverCapPointKeyTurnIsRefused(): Promise<void> {
         ORG,
       ],
     });
-    const error = await rejectionOf(service.chat(JWT, "s-1", POINT_KEY_TURN), record);
-    assert(
-      error instanceof BadRequestException,
-      `an over-cap point-key turn is a bad request, got ${String(error)}`,
-    );
+    const response = await service.chat(JWT, "s-1", POINT_KEY_TURN);
 
-    const message = messageOf(error);
     const expected =
       `The draft holds ${MAX_ONBOARDING_POINT_KEYS + 1} point keys, more than the ` +
       `${MAX_ONBOARDING_POINT_KEYS} one onboarding session may commit; remove some and commit ` +
       "the rest in a second session";
     assert(
-      message === expected,
-      `the refusal names the point-key cap, not the RTU one, got "${message}"`,
+      response.assistantMessage.startsWith(`I did not change the draft. ${expected} `),
+      `the reply names the point-key cap, not the RTU one, got "${response.assistantMessage}"`,
     );
+    assert(record.updates.length === 1, `the turn is stored once, got ${record.updates.length} update(s)`);
+    assert(
+      writtenDraftJson(record) === JSON.stringify(pointKeySession(MAX_ONBOARDING_POINT_KEYS).draft),
+      `the stored draft is unchanged, got ${(record.updates[0]?.draft as OnboardingDraft | undefined)?.pointKeys?.length} point keys`,
+    );
+  });
+}
+
+/**
+ * `F4.103` — the defence in depth. A session that is somehow **already over** a
+ * cap refuses every turn with a 400, and **nothing is written**: the guided
+ * write refuses, its empty patch merges to the same over-cap draft, and
+ * `OnboardingService.chat` counts the merged draft before the `withTenant`
+ * update. `PATCH :id/draft` replaces the arrays wholesale and is the way back
+ * out. Unreachable today: `bms.onboarding_sessions` measured `(0 rows)` on
+ * 2026-09-08.
+ */
+export async function assertAnOverCapSessionStillRefusesTheTurn(): Promise<void> {
+  await withoutOpenAi(async () => {
+    const { service, record } = buildService({
+      session: pointKeySession(MAX_ONBOARDING_POINT_KEYS + 1),
+      results: [
+        [pointKeySession(MAX_ONBOARDING_POINT_KEYS + 1)],
+        ORG,
+        [pointKeySession(MAX_ONBOARDING_POINT_KEYS + 1)],
+        ORG,
+      ],
+    });
+    const error = await rejectionOf(service.chat(JWT, "s-1", POINT_KEY_TURN), record);
+    assert(
+      error instanceof BadRequestException,
+      `an over-cap session's turn is a bad request, got ${String(error)}`,
+    );
+    const message = messageOf(error);
+    const expected =
+      `The draft holds ${MAX_ONBOARDING_POINT_KEYS + 1} point keys, more than the ` +
+      `${MAX_ONBOARDING_POINT_KEYS} one onboarding session may commit; remove some and commit ` +
+      "the rest in a second session";
+    assert(message === expected, `the 400 names the session's own count, got "${message}"`);
     assert(
       record.updates.length === 0 && record.transactions === 0,
-      `a refused point-key turn writes nothing, got ${record.updates.length} update(s)`,
+      `a refused turn writes nothing, got ${record.updates.length} update(s)`,
     );
   });
 }

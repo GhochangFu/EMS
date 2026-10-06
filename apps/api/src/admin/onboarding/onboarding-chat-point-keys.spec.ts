@@ -490,3 +490,21 @@ export async function assertExistingKeysAreTakenAtThePointKeyStep(): Promise<voi
   const result = await orgTurn("use existing keys", { location: PLACE, rtus: [MODBUS_RTU] });
   assert(result.draftPatch.onboardingMeta?.useExistingPointKeys === true, turnSummary(result));
 }
+
+/** F3.27 (ADR 0090 Amendment 2 B4, B5) — the point-key step writes through `add_point_key` and answers its action line. */
+export async function assertTheKwTurnAnswersItsActionLine(): Promise<void> {
+  const result = await ruleBasedTurn("kw", { location: PLACE, rtus: [MODBUS_RTU] }, "point_keys");
+  assert(
+    JSON.stringify(result.actionLines) === JSON.stringify(["Added point key kw"]),
+    `the add_point_key action line, got ${JSON.stringify(result.actionLines)}`,
+  );
+}
+
+/** F3.27 — "use existing keys" writes through `use_existing_point_keys` and answers its action line. */
+export async function assertExistingKeysTurnAnswersItsActionLine(): Promise<void> {
+  const result = await orgTurn("use existing keys", { location: PLACE, rtus: [MODBUS_RTU] });
+  assert(
+    JSON.stringify(result.actionLines) === JSON.stringify(["Point keys: using the existing catalog"]),
+    `the use_existing_point_keys action line, got ${JSON.stringify(result.actionLines)}`,
+  );
+}

@@ -2,8 +2,9 @@ import { describe, it } from "vitest";
 
 import {
   assertAChatTurnGrowsTheDraftByOne,
-  assertAnOverCapChatTurnIsRefusedAndWritesNothing,
-  assertAnOverCapPointKeyTurnIsRefused,
+  assertAnAtCapChatTurnIsRefusedInTheReply,
+  assertAnAtCapPointKeyTurnIsRefusedInTheReply,
+  assertAnOverCapSessionStillRefusesTheTurn,
   assertTheCredentialNudgeStillAnswersFirst,
 } from "./onboarding-chat-caps.spec";
 
@@ -19,12 +20,16 @@ describe("onboarding chat count caps (F4.103)", () => {
     await assertAChatTurnGrowsTheDraftByOne();
   });
 
-  it("refuses a turn that would carry the draft past a cap, and writes nothing", async () => {
-    await assertAnOverCapChatTurnIsRefusedAndWritesNothing();
+  it("refuses an at-cap RTU turn in the reply and leaves the draft unchanged (F3.27)", async () => {
+    await assertAnAtCapChatTurnIsRefusedInTheReply();
   });
 
-  it("refuses the point-key branch on its own cap, not the RTU one", async () => {
-    await assertAnOverCapPointKeyTurnIsRefused();
+  it("refuses an at-cap point-key turn on its own cap, not the RTU one (F3.27)", async () => {
+    await assertAnAtCapPointKeyTurnIsRefusedInTheReply();
+  });
+
+  it("still answers 400 and writes nothing for a session already over a cap", async () => {
+    await assertAnOverCapSessionStillRefusesTheTurn();
   });
 
   it("still answers a credential-looking turn with the credentials nudge", async () => {

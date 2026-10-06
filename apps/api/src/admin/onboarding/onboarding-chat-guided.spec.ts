@@ -1,7 +1,11 @@
 import type { OnboardingDraft, OnboardingPhase } from "@bms/shared";
 
+import { CREDENTIAL_TOOL_ERROR } from "./onboarding-agent-tools";
+import { buildService, JWT, ORG, sessionRow, withoutOpenAi } from "./onboarding-chat-caps.spec";
 import { REVIEW_REPLY } from "./onboarding-chat-rule-based";
 import { chatService, ruleBasedTurn } from "./onboarding-chat.service.spec";
+import { PROMPT_OMITTED_MARKER } from "./onboarding-prompt-budget";
+import { DRAFT_TOO_DEEP_MESSAGE, MAX_ONBOARDING_DRAFT_DEPTH } from "./onboarding.schema";
 
 function assert(condition: boolean, message: string): void {
   if (!condition) {
@@ -135,4 +139,103 @@ export async function assertTheOfferedLabelsStillWrite(): Promise<void> {
   assert(asset.draftPatch.assets?.length === 1, `got ${JSON.stringify(asset.draftPatch)}`);
   const map = await ruleBasedTurn("auto map", draftAt("mappings"), "mappings");
   assert(map.draftPatch.assetPoints?.[0]?.sourceDataKey === "s09_r01", `got ${JSON.stringify(map.draftPatch)}`);
+}
+
+function sameLines(actual: readonly string[], expected: readonly string[], what: string): void {
+  assert(JSON.stringify(actual) === JSON.stringify(expected), `${what}: got ${JSON.stringify(actual)}`);
+}
+
+/** U4 (B4, B5) — the asset step writes through `add_asset` and answers its action line. */
+export async function assertTheAssetTurnAnswersItsActionLine(): Promise<void> {
+  const result = await ruleBasedTurn("One asset", draftAt("assets"), "assets");
+  sameLines(result.actionLines, ["Added asset BERHAMPUR-ASSET-1 on RTU RTU-1"], "the add_asset line");
+}
+
+/** U4 (Q-C) — auto map maps every plain asset that has no mapping, one `map_point` and one line each. */
+export async function assertAutoMapMapsEveryUnmappedPlainAsset(): Promise<void> {
+  const second = { ...ASSET, code: "BERHAMPUR-ASSET-2" };
+  const draft = { ...draftAt("mappings"), assets: [ASSET, second] } as OnboardingDraft;
+  const result = await ruleBasedTurn("auto map", draft, "mappings");
+  sameLines(
+    result.actionLines,
+    ["Mapped s09_r01 → kw on asset BERHAMPUR-ASSET-1", "Mapped s09_r01 → kw on asset BERHAMPUR-ASSET-2"],
+    "one map_point line per unmapped plain asset",
+  );
+  const indexes = (result.draftPatch.assetPoints ?? []).map((point) => point.assetIndex);
+  assert(JSON.stringify(indexes) === "[0,1]", `both assets are mapped, got ${JSON.stringify(indexes)}`);
+}
+
+/** U4 (Q-C) — a mapped plain asset and a templated asset are skipped; only the unmapped plain one is mapped. */
+export async function assertAutoMapSkipsMappedAndTemplatedAssets(): Promise<void> {
+  const templated = { ...ASSET, code: "BERHAMPUR-PUMP-1", template: { code: "PUMP" } };
+  const plain = { ...ASSET, code: "BERHAMPUR-ASSET-3" };
+  const draft = { ...draftAt("mappings"), assets: [ASSET, templated, plain], assetPoints: [POINT] } as OnboardingDraft;
+  const result = await ruleBasedTurn("auto map", draft, "mappings");
+  sameLines(result.actionLines, ["Mapped s09_r01 → kw on asset BERHAMPUR-ASSET-3"], "only the unmapped plain asset");
+}
+
+/** The exact refusal reply a guided write answers: the registry's sentence between the lead and the step prompt. */
+function refusalOf(error: string, prompt: string): string {
+  return `I did not change the draft. ${error} ${prompt}`;
+}
+
+const LOCATION_PROMPT = "The location needs a name and a type first. What is the location name?";
+
+async function assertRefused(message: string, draft: OnboardingDraft, phase: OnboardingPhase, expected: string): Promise<void> {
+  const result = await ruleBasedTurn(message, draft, phase);
+  assert(result.assistantMessage === expected, `the refusal reply, got ${result.assistantMessage}`);
+  assert(Object.keys(result.draftPatch).length === 0, `a refused write changes nothing, got ${JSON.stringify(result.draftPatch)}`);
+  sameLines(result.actionLines, [], "a refused write has no action line");
+}
+
+/** U4 (B4) — a draft past the depth bound refuses the next guided write with the `PATCH` sentence. */
+export async function assertTheDepthBoundIsAGuidedRefusal(): Promise<void> {
+  let deep: Record<string, unknown> = { leaf: 1 };
+  for (let i = 0; i < MAX_ONBOARDING_DRAFT_DEPTH; i++) {
+    deep = { child: deep };
+  }
+  const draft = { ...draftAt("point_keys"), rtus: [{ ...RTU, config: { ...RTU.config, extra: deep } }] } as OnboardingDraft;
+  await assertRefused(
+    "kw",
+    draft,
+    "point_keys",
+    refusalOf(DRAFT_TOO_DEEP_MESSAGE, "Add a point key: say **kw** to add the catalog key **kw**."),
+  );
+}
+
+/**
+ * U4 (B5) — a location name that looks like a credential is refused by
+ * `set_location`'s credential walk. Driven through `handleTurn` directly:
+ * `OnboardingService.chat` refuses such a message earlier, with the
+ * credentials nudge, so this is the guided write's own guard.
+ */
+export async function assertACredentialLookingNameIsAGuidedRefusal(): Promise<void> {
+  await assertRefused("Plant password=hunter2", {}, "location", refusalOf(CREDENTIAL_TOOL_ERROR, LOCATION_PROMPT));
+}
+
+/** U4 (B5) — a location name that is the prompt-budget marker is refused. */
+export async function assertAPromptMarkerNameIsAGuidedRefusal(): Promise<void> {
+  await assertRefused(
+    PROMPT_OMITTED_MARKER,
+    {},
+    "location",
+    refusalOf("The arguments carry a withheld-value marker; send real values only.", LOCATION_PROMPT),
+  );
+}
+
+/**
+ * U4 (B4, decision 6) — through `OnboardingService.chat`, a guided RTU turn
+ * stores the code-written action line as an `action` message between the
+ * user's turn and the reply.
+ */
+export async function assertAGuidedTurnStoresItsActionMessage(): Promise<void> {
+  await withoutOpenAi(async () => {
+    const session = sessionRow({ location: PLACE } as OnboardingDraft, "rtu");
+    const { service, record } = buildService({ session, results: [[session], ORG, [session], ORG] });
+    await service.chat(JWT, "s-1", "modbus please");
+    const messages = (record.updates[0]?.messages ?? []) as { role: string; content: string }[];
+    const roles = messages.map((m) => m.role);
+    assert(JSON.stringify(roles) === JSON.stringify(["user", "action", "assistant"]), `the stored roles, got ${JSON.stringify(roles)}`);
+    assert(messages[1]?.content === "Added RTU RTU-1 (modbus_tcp)", `the action text, got ${messages[1]?.content}`);
+  });
 }

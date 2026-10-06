@@ -105,3 +105,12 @@ export async function assertAProtocolFormIsDetected(word: string, protocol: stri
   const got = result.draftPatch.rtus?.[0]?.protocol;
   assert(got === protocol, `"${word}" expected ${protocol}, got ${String(got)}`);
 }
+
+/** F3.27 (ADR 0090 Amendment 2 B4, B5) — the RTU step writes through `add_rtu` and answers its action line. */
+export async function assertANamedProtocolAnswersItsActionLine(): Promise<void> {
+  const { result } = await runTurn("modbus please");
+  assert(
+    JSON.stringify(result.actionLines) === JSON.stringify(["Added RTU RTU-1 (modbus_tcp)"]),
+    `the add_rtu action line, got ${JSON.stringify(result.actionLines)}`,
+  );
+}
