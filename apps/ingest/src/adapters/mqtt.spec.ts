@@ -1,4 +1,4 @@
-import type { SourceSample } from "@bms/shared/ingest";
+import type { MqttConfig, MqttDevice, SourceSample } from "@bms/shared/ingest";
 
 import type { AdapterContext } from "../adapter/types.js";
 import type {
@@ -8,13 +8,10 @@ import type {
 import {
   createMqttAdapter,
   MAX_PAYLOAD_BYTES,
-  mqttDeviceSchema,
   parsePayload,
   samplesFromPayload,
   type MqttClientHandle,
-  type MqttConfig,
   type MqttConnectOptions,
-  type MqttDevice,
   type MqttTransport,
 } from "./mqtt.js";
 
@@ -304,20 +301,9 @@ export async function runMqttAdapterTests(): Promise<void> {
     assert(received.length === 1, "an ordinary payload is unaffected");
   }
 
-  // ---- wildcard device topics are rejected by the schema ------------------
-
-  {
-    for (const topic of ["#", "+", "a/b/#", "a/+/c"]) {
-      assert(
-        !mqttDeviceSchema.safeParse({ topic }).success,
-        `"${topic}" is a wildcard subscription, not one device's topic`,
-      );
-    }
-    assert(
-      mqttDeviceSchema.safeParse({ topic: "Airsprint-1051/Data/1051" }).success,
-      "an ordinary topic still parses",
-    );
-  }
+  // The schema-level wildcard refusal moved with the schema to
+  // `packages/shared/src/ingest-adapters/mqtt.spec.ts` (`F3.24a`, S1 and S2); the
+  // factory-level refusal stays proven by `host/bindings.spec.ts`.
 
   // ---- the host owns reconnect --------------------------------------------
 
