@@ -43,8 +43,8 @@ export type IngestProtocol = (typeof INGEST_PROTOCOLS)[number];
  *
  * A device topic names one device, so a wildcard is always a mistake: `#` would
  * subscribe to the entire broker. Three readers share this one predicate so they
- * cannot disagree: the ingest MQTT device schema
- * (`apps/ingest/src/adapters/mqtt.ts`), the onboarding agent's `topicHasWildcard`
+ * cannot disagree: the MQTT device schema the ingest adapter parses with
+ * (`./ingest-adapters/mqtt`, since `F3.24a`), the onboarding agent's `topicHasWildcard`
  * (`apps/api/src/admin/onboarding/onboarding-chat-summaries.ts`), and the admin
  * RTU routes' `mqttTopic` refine (`apps/api/src/admin/rtus/rtus.schema.ts`).
  */
