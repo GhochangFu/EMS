@@ -201,7 +201,7 @@ export class OnboardingChatService {
     }
 
     if (!draft.assets || draft.assets.length === 0) {
-      lines.push("\nAdd assets per RTU in chat, then say **confirm assets**.");
+      lines.push("\nSay **One asset** to add an asset, then **confirm assets**.");
       return {
         assistantMessage: lines.join("\n"),
         suggestedReplies: ["confirm assets", "View draft"],
@@ -213,7 +213,7 @@ export class OnboardingChatService {
     if (draft.assets.some((asset) => !asset.template) && (!draft.assetPoints || draft.assetPoints.length === 0)) {
       lines.push(
         `\n${formatAssetsByRtuSummary(draft)}\n\n` +
-          "Say **auto map** to map each asset to **kw**, or provide mappings like `source s01 -> point kw`. " +
+          "Map the assets: say **auto map** to map each plain asset to **kw**. " +
           "Then **confirm mappings**.",
       );
       return {

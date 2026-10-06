@@ -3,6 +3,7 @@ import type { OnboardingDraft } from "@bms/shared";
 import { OnboardingChatService } from "./onboarding-chat.service";
 import type { ChatTurnResult } from "./onboarding-chat.service";
 import { chatService, ruleBasedTurn } from "./onboarding-chat.service.spec";
+import { REVIEW_REPLY } from "./onboarding-chat-rule-based";
 import { mergeDraftPatch } from "./onboarding-draft-merge";
 import { EMPTY_TEMPLATE_CONTEXT } from "./onboarding-template-refs";
 import { OnboardingValidateService } from "./onboarding-validate.service";
@@ -45,7 +46,7 @@ function allTemplatedDraft(): OnboardingDraft {
   };
 }
 
-const IN_REVIEW = "We're in review. Say **create it** to commit, or tell me what to change.";
+const IN_REVIEW = REVIEW_REPLY;
 
 /** F4.195 — a turn on an all-templated review draft with no point key adds no `kw` and answers from review. */
 export async function assertAnAllTemplatedReviewDraftIsNotGivenAPointKey(): Promise<void> {
@@ -57,7 +58,7 @@ export async function assertAnAllTemplatedReviewDraftIsNotGivenAPointKey(): Prom
 /** F4.195 — a draft that uses the existing catalog is not given `kw` either; it goes on to its first asset. */
 export async function assertADraftThatUsesTheExistingCatalogIsNotGivenAPointKey(): Promise<void> {
   const draft: OnboardingDraft = { ...allTemplatedDraft(), assets: [], onboardingMeta: { useExistingPointKeys: true } };
-  const result = await ruleBasedTurn("hello", draft, "assets");
+  const result = await ruleBasedTurn("One asset", draft, "assets");
   assert(result.draftPatch.assets?.length === 1, `the assets branch answers, got ${result.assistantMessage}`);
   assert(result.draftPatch.pointKeys === undefined, `no point key is added, got ${JSON.stringify(result.draftPatch.pointKeys)}`);
 }
@@ -66,7 +67,7 @@ export async function assertADraftThatUsesTheExistingCatalogIsNotGivenAPointKey(
 export async function assertADraftWithAPlainAssetIsStillGivenAPointKey(): Promise<void> {
   const draft = allTemplatedDraft();
   draft.assets!.push({ rtuIndex: 0, code: "PLAIN-1", name: "Plain 1", siteName: "Lotapata", domain: "electrical" });
-  const result = await ruleBasedTurn("hello", draft, "review");
+  const result = await ruleBasedTurn("kw", draft, "review");
   assert(result.draftPatch.pointKeys?.[0]?.code === "kw", `kw is added, got ${JSON.stringify(result.draftPatch.pointKeys)}`);
 }
 
@@ -82,7 +83,7 @@ function repliesOf(result: { suggestedReplies?: readonly string[] }): string {
 export async function assertTheYesAnswerOffersOnlyViewDraft(): Promise<void> {
   const result = await ruleBasedTurn("yes", {}, "location");
   assert(
-    result.assistantMessage.startsWith("I'll prepare the commit"),
+    result.assistantMessage.startsWith(REVIEW_REPLY),
     `this case must reach the yes branch, got ${result.assistantMessage}`,
   );
   assert(repliesOf(result) === JSON.stringify(["View draft"]), `got ${repliesOf(result)}`);
@@ -92,7 +93,7 @@ export async function assertTheMappingAddedAnswerOffersCreateItAndViewDraft(): P
   const draft = allTemplatedDraft();
   draft.assets!.push({ rtuIndex: 0, code: "PLAIN-1", name: "Plain 1", siteName: "Lotapata", domain: "electrical" });
   draft.pointKeys = [{ code: "kw", name: "Active Power", domain: "electrical", unit: "kW" }];
-  const result = await ruleBasedTurn("hello", draft, "mappings");
+  const result = await ruleBasedTurn("auto map", draft, "mappings");
   assert(result.assistantMessage.startsWith("Mapping added."), `this case must reach the mapping branch, got ${result.assistantMessage}`);
   assert(repliesOf(result) === JSON.stringify(["create it", "View draft"]), `got ${repliesOf(result)}`);
 }
@@ -225,14 +226,14 @@ export async function assertConfirmingALaterStepNamesTheEarlierOne(): Promise<vo
 /** ADR 0090 decision 5 is untouched: "confirm" alone is still the commit answer, which commits nothing. */
 export async function assertConfirmAloneStillGivesTheCommitAnswer(): Promise<void> {
   const result = await ruleBasedTurn("confirm", { location: PLACE, rtus: [mqttRtu(false)] }, "rtu");
-  assert(result.assistantMessage.startsWith("I'll prepare the commit"), turnSummary(result));
+  assert(result.assistantMessage.startsWith(REVIEW_REPLY), turnSummary(result));
   assert(result.draftPatch.rtus === undefined, `no RTU is added, got ${JSON.stringify(result.draftPatch.rtus)}`);
 }
 
 /** The import follow-up's "Commit" reply goes as text and still gets the commit answer. */
 export async function assertCommitStillGivesTheCommitAnswer(): Promise<void> {
   const result = await ruleBasedTurn("Commit", { location: PLACE, rtus: [mqttRtu(false)] }, "rtu");
-  assert(result.assistantMessage.startsWith("I'll prepare the commit"), turnSummary(result));
+  assert(result.assistantMessage.startsWith(REVIEW_REPLY), turnSummary(result));
   assert(result.draftPatch.rtus === undefined, `no RTU is added, got ${JSON.stringify(result.draftPatch.rtus)}`);
 }
 

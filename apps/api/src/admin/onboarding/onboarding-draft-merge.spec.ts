@@ -13,6 +13,7 @@ import type { OnboardingDraft } from "@bms/shared";
 
 import { draftBeforeAssets, ruleBasedTurn } from "./onboarding-chat.service.spec";
 import { OnboardingChatService } from "./onboarding-chat.service";
+import { REVIEW_REPLY } from "./onboarding-chat-rule-based";
 import { mergeDraftPatch } from "./onboarding-draft-merge";
 import { OnboardingExcelService, type ParsedExcel } from "./onboarding-excel.service";
 import { EMPTY_TEMPLATE_CONTEXT } from "./onboarding-template-refs";
@@ -129,7 +130,7 @@ export async function assertW13AGuidedTurnLeavesTemplatesIntact(): Promise<void>
     templates: [AUTHORED, STOCK],
     assets: [UPLOADED_ASSET, TEMPLATED_ASSET],
   };
-  const turn = await ruleBasedTurn("map it", stored, "mappings");
+  const turn = await ruleBasedTurn("auto map", stored, "mappings");
   assert(turn.draftPatch.assetPoints !== undefined, "the mappings branch ran and wrote assetPoints");
   const service = new OnboardingChatService(
     {} as never,
@@ -186,7 +187,7 @@ export async function assertW13bTheGuidedMappingSkipsATemplatedAsset(): Promise<
     templates: [AUTHORED],
     assets: [TEMPLATED_ASSET, UPLOADED_ASSET],
   };
-  const turn = await ruleBasedTurn("map it", stored, "mappings");
+  const turn = await ruleBasedTurn("auto map", stored, "mappings");
   const mapped = turn.draftPatch.assetPoints ?? [];
   assert(
     mapped.length === 1 && mapped[0].assetIndex === 1,
@@ -214,7 +215,7 @@ export async function assertW13cAGuidedTurnKeepsAnAllTemplatedDraftReady(): Prom
     turn.draftPatch.assetPoints === undefined,
     `the turn writes no mapping, got ${JSON.stringify(turn.draftPatch.assetPoints)}`,
   );
-  assert(turn.assistantMessage.startsWith("We're in review."), `the turn answers from review, got ${turn.assistantMessage}`);
+  assert(turn.assistantMessage.startsWith(REVIEW_REPLY), `the turn answers from review, got ${turn.assistantMessage}`);
   const result = validated(mergeThroughService(stored, turn.draftPatch as OnboardingDraft));
   assert(
     result.readyToCommit && result.errors.length === 0,

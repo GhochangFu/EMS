@@ -124,6 +124,10 @@ const STEP_NAMES: Readonly<Record<OnboardingPhase, string>> = {
   review: "review",
 };
 
+/** ADR 0090 Amendment 2 B3, B6 — the guided answer at review and to a commit word: it sends the user to the Commit button and, after it, to the Asset Templates editor. It proposes no commit. */
+export const REVIEW_REPLY =
+  "The draft is in review. Open the preview and click **Commit**. After the commit, the Asset Templates editor can instantiate templates on this site.";
+
 /**
  * F4.199 — what the draft still needs at `phase`, with only replies that the
  * guided mode answers at that phase: each one reaches the branch its text names.
@@ -157,7 +161,7 @@ function stepPrompt(
     case "assets":
       return { text: "Add an asset: say **One asset** to add one.", replies: ["One asset", "View draft"] };
     case "mappings":
-      return { text: "Map the assets: say **auto map** to map each asset to **kw**.", replies: ["auto map", "View draft"] };
+      return { text: "Map the assets: say **auto map** to map each plain asset to **kw**.", replies: ["auto map", "View draft"] };
     case "review":
       return { text: "Open the preview and click **Commit**, or say **create it**.", replies: ["create it", "View draft"] };
   }
@@ -229,7 +233,7 @@ export async function handleRuleBasedTurn(
   // `confirm commit` phrase or the Commit button commits (ADR 0090 decision 5).
   if (/^(yes|create|create it|commit|confirm)$/.test(intent)) {
     return deps.finalizeTurn(
-      "I'll prepare the commit — open the preview to confirm everything looks correct.",
+      REVIEW_REPLY,
       patch,
       "review",
       ["View draft"],
@@ -424,12 +428,16 @@ export async function handleRuleBasedTurn(
   // stored phase stays a second way in: `onboarding-chat-caps.spec.ts`
   // reaches this append on it with a draft at the point-key cap (F4.103).
   if (phase === "point_keys" || draftNeedsPointKeys(draft)) {
+    // Q-B: only the offered label writes; any other message changes nothing.
+    if (!/^(kw|add point key kw)$/.test(intent)) {
+      return unchangedTurn(deps, message, draft, derived, types, turn);
+    }
     patch.pointKeys = [
       ...(draft.pointKeys ?? []),
       { code: "kw", name: "Active Power", domain: "electrical", unit: "kW" },
     ];
     return deps.finalizeTurn(
-      "Added catalog point key **kw**. How many assets should we create on this RTU?",
+      "Added catalog point key **kw**. Say **One asset** to add one asset on RTU 1.",
       patch,
       "assets",
       ["One asset", "View draft"],
@@ -440,6 +448,9 @@ export async function handleRuleBasedTurn(
   }
 
   if (phase === "assets" || !draft.assets?.length) {
+    if (intent !== "one asset") {
+      return unchangedTurn(deps, message, draft, derived, types, turn);
+    }
     // F4.104, and the one site here that was a live functional bug rather
     // than only an unbounded string. `site` is the **stored** location name,
     // so it reaches this branch from any producer and from any draft written
@@ -490,7 +501,7 @@ export async function handleRuleBasedTurn(
       },
     ];
     return deps.finalizeTurn(
-      "Asset added. Provide a mapping like `source s09_r01 -> point kw`, or say **auto map**.",
+      "Asset added. Say **auto map** to map it to **kw**.",
       patch,
       "mappings",
       ["auto map", "View draft"],
@@ -506,6 +517,9 @@ export async function handleRuleBasedTurn(
   // templated needs no mapping (V11) and goes on to review.
   const plainIndex = draft.assets?.findIndex((asset) => !asset.template) ?? -1;
   if (plainIndex >= 0 && (phase === "mappings" || !draft.assetPoints?.length)) {
+    if (intent !== "auto map") {
+      return unchangedTurn(deps, message, draft, derived, types, turn);
+    }
     patch.assetPoints = [
       { assetIndex: plainIndex, pointKey: "kw", sourceDataKey: "s09_r01", unit: "kW" },
     ];
@@ -521,7 +535,7 @@ export async function handleRuleBasedTurn(
   }
 
   return deps.finalizeTurn(
-    "We're in review. Say **create it** to commit, or tell me what to change.",
+    REVIEW_REPLY,
     patch,
     "review",
     ["create it", "View draft"],
@@ -529,6 +543,19 @@ export async function handleRuleBasedTurn(
     draft,
     turn,
   );
+}
+
+/** Q-B — a message that is not the offered label changes nothing and gets the step prompt (the `I did not change the draft.` shape). */
+function unchangedTurn(
+  deps: RuleBasedTurnDeps,
+  message: string,
+  draft: OnboardingDraft,
+  derived: OnboardingPhase,
+  types: readonly LocationTypeDto[],
+  turn: TurnVocabulary,
+): ChatTurnResult {
+  const prompt = stepPrompt(derived, draft, types);
+  return deps.finalizeTurn(`I did not change the draft. ${prompt.text}`, {}, derived, prompt.replies, message, draft, turn);
 }
 
 /**
