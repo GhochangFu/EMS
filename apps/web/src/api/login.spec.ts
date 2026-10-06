@@ -63,15 +63,43 @@ async function expectMe401(token: string): Promise<void> {
   );
 }
 
+/** A `fetch` stub whose one response the case releases by hand, after the send. */
+function stubDeferredFetch(): {
+  sent: Promise<void>;
+  answer: (res: Response) => void;
+} {
+  let answer: (res: Response) => void = () => undefined;
+  let markSent: () => void = () => undefined;
+  const sent = new Promise<void>((resolve) => {
+    markSent = resolve;
+  });
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(
+      () =>
+        new Promise<Response>((resolve) => {
+          answer = resolve;
+          markSent();
+        }),
+    ),
+  );
+  return { sent, answer: (res) => answer(res) };
+}
+
 /**
- * `F4.214` M1 — a `/me` sent with an old token that answers 401 after a newer
- * session holds the store records no reason, and leaves the new session.
+ * `F4.214` M1 — the store changes MID-REQUEST: `/me` is sent while the store
+ * holds the old token, a newer sign-in lands before the 401 answers, and the
+ * late 401 records no reason and leaves the new session.
  */
 export async function runALateMe401ForAnOldTokenRecordsNothing(): Promise<void> {
-  stubDeactivatedMe();
-  signInAs("token-new", "second@bms.local");
+  const deferred = stubDeferredFetch();
+  signInAs("token-old", "first@bms.local");
 
-  await expectMe401("token-old");
+  const pending = expectMe401("token-old");
+  await deferred.sent;
+  signInAs("token-new", "second@bms.local");
+  deferred.answer(json401(DEACTIVATED_BODY));
+  await pending;
   await settle();
 
   assert(
@@ -113,6 +141,91 @@ export async function runAMe401ForTheCurrentTokenRecordsTheReason(): Promise<voi
     assert(
       reason() === "account_deactivated",
       `a /me 401 for the current token must record the reason, got ${String(reason())}`,
+    );
+  });
+}
+
+/**
+ * `F4.214` review M5 — on `/auth/callback` (a full page load) the store can
+ * rehydrate an OLDER live token A while `/me` goes out for the new sign-in B.
+ * The store did not change during the request, so B's deactivated 401 records
+ * its reason and the callback can show the F4.203 sentence.
+ */
+export async function runAMe401WithAnUnrelatedOlderTokenRecordsTheReason(): Promise<void> {
+  stubDeactivatedMe();
+  signInAs("token-a", "first@bms.local");
+
+  await expectMe401("token-b");
+
+  await vi.waitFor(() => {
+    assert(
+      reason() === "account_deactivated",
+      `a /me 401 for B while the store holds an unchanged A must record the reason, got ${String(reason())}`,
+    );
+  });
+}
+
+/**
+ * `F4.214` review M6 — the check runs after the body read: a `setSession` that
+ * lands between the 401's headers and its body records nothing.
+ */
+export async function runASessionSetDuringTheBodyReadRecordsNothing(): Promise<void> {
+  const deferred = stubDeferredFetch();
+  signInAs("token-a", "first@bms.local");
+
+  let push: (chunk: string) => void = () => undefined;
+  const body = new ReadableStream<Uint8Array>({
+    start(controller) {
+      push = (chunk) => {
+        controller.enqueue(new TextEncoder().encode(chunk));
+        controller.close();
+      };
+    },
+  });
+
+  const pending = expectMe401("token-a");
+  await deferred.sent;
+  deferred.answer(
+    new Response(body, {
+      status: 401,
+      headers: { "Content-Type": "application/json" },
+    }),
+  );
+  // The headers are in; let fetchCurrentUser reach the body read.
+  await settle();
+  signInAs("token-new", "second@bms.local");
+  push(JSON.stringify(DEACTIVATED_BODY));
+  await pending;
+  await settle();
+
+  assert(
+    reason() === null,
+    `a session set during the 401 body read must record no reason, got ${String(reason())}`,
+  );
+  assert(
+    useAuthStore.getState().accessToken === "token-new",
+    "a session set during the 401 body read must stay",
+  );
+}
+
+/**
+ * `F4.214` review M7 — the store changed during the request, but to the token
+ * this `/me` carried: the 401 is about the current session and records.
+ */
+export async function runAStoreChangedToTheRequestTokenRecordsTheReason(): Promise<void> {
+  const deferred = stubDeferredFetch();
+  assert(useAuthStore.getState().accessToken === null, "the store must start empty");
+
+  const pending = expectMe401("token-b");
+  await deferred.sent;
+  signInAs("token-b", "second@bms.local");
+  deferred.answer(json401(DEACTIVATED_BODY));
+  await pending;
+
+  await vi.waitFor(() => {
+    assert(
+      reason() === "account_deactivated",
+      `a /me 401 for the token the store changed to must record the reason, got ${String(reason())}`,
     );
   });
 }

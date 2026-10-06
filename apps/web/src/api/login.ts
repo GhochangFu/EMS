@@ -36,27 +36,33 @@ export async function loginRequest(
  * catch (the `App` reload effect, the OIDC callback) clears a session whose
  * reason is already held. Nothing reads this body after, so no clone.
  *
- * `F4.214` — the reason is recorded only when the store, read when the 401
- * answers, holds no token or holds the token this `/me` was sent with. A store
- * that holds a different token belongs to a newer sign-in, so a slow `/me` for
- * an old token records nothing for it. `null` still records: the OIDC callback
- * and the local-login path run `/me` before `setSession`, so their store is
- * empty. Limit, accepted by the owner (2026-10-06): a late `/me` 401 for an old
- * token that answers while the store is empty — after a sign-out, or before a
- * newer callback's own `setSession` — still records a reason. It cannot clear
- * a session; only the callers' `catch` blocks do that.
+ * `F4.214` — the store's token is read before the send (`atSend`). The reason
+ * is recorded only when the store, read after the 401 body is parsed, still
+ * holds `atSend` (it did not change during the request) or holds the token
+ * this `/me` carried. A store that holds some other token is NOT by itself a
+ * newer session: on `/auth/callback` (a full page load) the store can
+ * rehydrate an older live token while `/me` goes out for the new sign-in, and
+ * that `/me`'s deactivated 401 must still record. Only a store that changed
+ * mid-request to a token other than this one marks a newer sign-in, and then
+ * nothing records. The predicate runs inside `recordAuthFailureReason`, after
+ * the body read, so a `setSession` that lands while the body streams is seen.
+ * Limit, accepted by the owner (2026-10-06): a sign-out and a sign-in that
+ * leave the same token around the request look unchanged, so a late `/me` 401
+ * then still records a reason. It cannot clear a session; only the callers'
+ * `catch` blocks do that.
  */
 export async function fetchCurrentUser(
   accessToken: string,
 ): Promise<CurrentUserResponse> {
+  const atSend = useAuthStore.getState().accessToken;
   const res = await fetch(`${base}/api/v1/auth/me`, {
     headers: { Authorization: `Bearer ${accessToken}` },
   });
   if (res.status === 401) {
-    const current = useAuthStore.getState().accessToken;
-    if (current === null || current === accessToken) {
-      await recordAuthFailureReason(res);
-    }
+    await recordAuthFailureReason(res, () => {
+      const current = useAuthStore.getState().accessToken;
+      return current === atSend || current === accessToken;
+    });
   }
   if (!res.ok) {
     throw new Error(`Current user failed (${res.status})`);
