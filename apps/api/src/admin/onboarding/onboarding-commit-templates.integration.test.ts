@@ -29,6 +29,8 @@ import {
   assertOnlyTheTemplatedAssetsCarryThePin,
   assertTemplatedAssetPointsAreFedByTheNewRtu,
   assertTheAuthoredCommitAnswersTheTemplateCounts,
+  assertTheCommitCloseClearsTheRing,
+  SEEDED_RING,
   assertTheAuthoredCommitWritesTheFourAuditActions,
   assertTheAuthoredTemplateIsPublished,
   assertTheCommitAndTheRouteWriteTheSameColumns,
@@ -199,7 +201,7 @@ describe.skipIf(!connectionString)("F3.22 — the onboarding commit writes templ
       const id = await withTenant(tenantDb, organizationId, async (tx) => {
         const [row] = await tx
           .insert(onboardingSessions)
-          .values({ organizationId, status: "draft", currentPhase: "review", draft })
+          .values({ organizationId, status: "draft", currentPhase: "review", draft, checkpoints: SEEDED_RING })
           .returning({ id: onboardingSessions.id });
         return row.id;
       });
@@ -272,6 +274,10 @@ describe.skipIf(!connectionString)("F3.22 — the onboarding commit writes templ
 
   it("I3: the refused commit wrote nothing and the session is still a draft", async () => {
     await assertTheRefusedCommitWroteNothing(fx);
+  });
+
+  it("F3.25: the commit close clears the checkpoint ring; the refused commit keeps it", async () => {
+    await assertTheCommitCloseClearsTheRing(fx);
   });
 
   it("I4: an organization_admin commits an organization template onto the new RTU", async () => {

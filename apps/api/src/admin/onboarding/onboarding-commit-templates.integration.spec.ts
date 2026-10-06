@@ -340,6 +340,24 @@ export async function assertTheRefusedCommitWroteNothing(fx: Fixtures): Promise<
 }
 
 /**
+ * F3.25 (plan Q8) — every session is seeded with a checkpoint ring. A commit
+ * closes the session, and there is no rollback after commit, so the close
+ * writes `checkpoints = NULL`. The refused commit rolled back, so its session
+ * still holds the ring: the positive that proves the seed wrote one.
+ */
+export const SEEDED_RING = [{ seq: 1, label: "F3.25 seeded checkpoint" }];
+
+export async function assertTheCommitCloseClearsTheRing(fx: Fixtures): Promise<void> {
+  const ring = async (id: string) =>
+    (await fx.fleet.query<{ checkpoints: unknown }>(`SELECT checkpoints FROM bms.onboarding_sessions WHERE id = $1`, [id]))
+      .rows;
+  expect(await ring(fx.sessionIds.collision), "the refused commit keeps the seeded ring").toEqual([
+    { checkpoints: SEEDED_RING },
+  ]);
+  expect(await ring(fx.sessionIds.authored), "the committed session's ring is cleared").toEqual([{ checkpoints: null }]);
+}
+
+/**
  * I4 (decision 5) — an `organization_admin` commits an organization template
  * onto the RTU the same commit writes. With the location check on, the auth
  * pool cannot see that location and the core answers `Target location is

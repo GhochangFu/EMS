@@ -605,6 +605,20 @@ export const onboardingDraftSchema = z.object({
   onboardingMeta: onboardingDraftMetaSchema.optional(),
 });
 
+/**
+ * `F3.25` (ADR 0094 decision 7): what a client sees of one draft checkpoint.
+ * `.strict()` so a summary that leaks the snapshot's `sections` fails the web's
+ * parse rather than riding through (the `F4.185` guard at the client edge).
+ */
+export const onboardingCheckpointSummarySchema = z
+  .object({
+    id: z.string(),
+    seq: z.number().int(),
+    label: z.string(),
+    takenAt: z.string(),
+  })
+  .strict();
+
 export const onboardingSessionDtoSchema = z.object({
   id: z.string(),
   organizationId: z.string(),
@@ -618,6 +632,11 @@ export const onboardingSessionDtoSchema = z.object({
   updatedAt: z.string(),
   committedAt: z.string().nullable(),
   result: z.record(z.unknown()).nullable(),
+  // F3.25 (ADR 0094 decisions 4, 7). Added in place: a flat object, so nothing
+  // is merged. Summaries only — the snapshots never leave the server — and the
+  // SHA-256 of the stored draft minus its proposal, which a rollback binds to.
+  checkpoints: z.array(onboardingCheckpointSummarySchema),
+  draftHash: z.string().nullable(),
 });
 
 export const onboardingChatResponseDtoSchema = z.object({

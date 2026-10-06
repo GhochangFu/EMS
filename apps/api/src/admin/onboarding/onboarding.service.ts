@@ -4,6 +4,7 @@ import {
   ForbiddenException,
   Inject,
   Injectable,
+  Logger,
   NotFoundException,
   ServiceUnavailableException,
 } from "@nestjs/common";
@@ -42,7 +43,16 @@ import {
   readCommitProposal,
   withoutCommitProposal,
 } from "./onboarding-commit-proposal";
+import {
+  checkpointLabel,
+  checkpointSummary,
+  nextSeq,
+  pushCheckpoint,
+  readCheckpoints,
+  takeCheckpoint,
+} from "./onboarding-checkpoints";
 import { draftCountProblem } from "./onboarding-draft-caps";
+import { diffSections } from "./onboarding-draft-merge";
 import { assertPatchLocationTypeIsActive } from "./onboarding-location-type-match";
 import type { SetCredentialsBody } from "./onboarding.schema";
 import { redactDraftForClient, rtuSecretKey } from "./onboarding-redaction";
@@ -63,6 +73,8 @@ import { OnboardingValidateService } from "./onboarding-validate.service";
  */
 @Injectable()
 export class OnboardingService {
+  private readonly logger = new Logger(OnboardingService.name);
+
   constructor(
     @Inject(FLEET_DRIZZLE) private readonly fleetDb: BmsDb,
     @Inject(TENANT_DRIZZLE) private readonly tenantDb: BmsDb,
@@ -329,6 +341,36 @@ export class OnboardingService {
       assistantMsg,
     ];
 
+    // F3.25 (ADR 0094 decision 4): a turn that changes a section records the
+    // draft as it was BEFORE the turn, so `undo` can bring it back. A turn that
+    // changes nothing leaves the column alone rather than rewriting it.
+    const changed =
+      Object.keys(diffSections(session.draft as OnboardingDraft, mergedDraft as OnboardingDraft)).length > 0;
+    let checkpointWrite: { checkpoints: unknown } | Record<string, never> = {};
+    if (changed) {
+      const ring = readCheckpoints(session.checkpoints);
+      const pushed = pushCheckpoint(
+        ring,
+        takeCheckpoint(session.draft as OnboardingDraft, {
+          seq: nextSeq(ring),
+          label: checkpointLabel(
+            actionMsgs.map((m) => m.content),
+            Object.keys(turn.draftPatch),
+          ),
+          userMessageId: userMsg.id,
+          takenAt: new Date().toISOString(),
+        }),
+      );
+      // Ids and counts only, never content (ADR 0090 decision 9; plan Q2).
+      if (pushed.dropped !== "none") {
+        this.logger.log(
+          { sessionId, dropped: pushed.dropped, ringSize: pushed.ring.length },
+          "onboarding checkpoint dropped",
+        );
+      }
+      checkpointWrite = { checkpoints: pushed.ring };
+    }
+
     const updated = await withTenant(this.tenantDb, session.organizationId, (tx) =>
       tx
         .update(onboardingSessions)
@@ -336,6 +378,7 @@ export class OnboardingService {
           draft: mergedDraft,
           currentPhase: turn.currentPhase,
           messages,
+          ...checkpointWrite,
           updatedAt: sql`now()`,
         })
         .where(eq(onboardingSessions.id, sessionId))
@@ -385,6 +428,9 @@ export class OnboardingService {
         .set({
           draft: merged,
           currentPhase: phase,
+          // F3.25 (plan Q3): a write the ring did not checkpoint ends undo
+          // history, so a later rollback cannot silently undo this edit.
+          checkpoints: null,
           updatedAt: sql`now()`,
         })
         .where(eq(onboardingSessions.id, sessionId))
@@ -490,6 +536,8 @@ export class OnboardingService {
           draft: mergedDraft,
           currentPhase: phase,
           messages,
+          // F3.25 (plan Q3): as `patchDraft` — an upload is not checkpointed.
+          checkpoints: null,
           updatedAt: sql`now()`,
         })
         .where(eq(onboardingSessions.id, sessionId))
@@ -662,6 +710,10 @@ export class OnboardingService {
       updatedAt: row.updatedAt.toISOString(),
       committedAt: row.committedAt?.toISOString() ?? null,
       result: (row.result as Record<string, unknown>) ?? null,
+      // F3.25 (ADR 0094 decision 7): summaries only — never the sections — and
+      // the hash a rollback binds to.
+      checkpoints: readCheckpoints(row.checkpoints).map(checkpointSummary),
+      draftHash: draftHash(row.draft),
     };
   }
 }
