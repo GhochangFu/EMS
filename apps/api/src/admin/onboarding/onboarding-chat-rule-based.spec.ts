@@ -1,6 +1,6 @@
 import type { OnboardingDraft } from "@bms/shared";
 
-import { handleRuleBasedTurn, type ChatTurnResult, type RuleBasedTurnDeps } from "./onboarding-chat-rule-based";
+import { handleRuleBasedTurn, NAMES_A_PROTOCOL, type ChatTurnResult, type RuleBasedTurnDeps } from "./onboarding-chat-rule-based";
 import { EMPTY_TEMPLATE_CONTEXT } from "./onboarding-template-refs";
 import { OnboardingValidateService } from "./onboarding-validate.service";
 
@@ -75,6 +75,12 @@ export async function assertAnEmbeddedProtocolWordFallsBackToMqtt(): Promise<voi
   const { result } = await runTurn("restart it please");
   const protocol = result.draftPatch.rtus?.[0]?.protocol;
   assert(protocol === "mqtt", `expected mqtt, got ${String(protocol)}`);
+}
+
+/** C5 (F4.220) — the service intercept's matcher reads a versioned MQTT spelling, and no embedded word. */
+export function assertNamesAProtocol(text: string, expected: boolean): void {
+  const got = NAMES_A_PROTOCOL.test(text.toLowerCase());
+  assert(got === expected, `"${text}" expected ${String(expected)}, got ${String(got)}`);
 }
 
 /** C4 (F4.220) — every spelling the guided mode accepted before the word boundary still maps to its protocol. */

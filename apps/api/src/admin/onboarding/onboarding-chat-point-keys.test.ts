@@ -203,7 +203,10 @@ describe("onboarding chat reply buttons reach their step (F4.199)", () => {
     await assertTheProtocolAnswerOffersNoProtocolPastTheRtuStep();
   });
 
-  it("F4.220: an embedded rest (restriction) is not a protocol question", async () => {
+});
+
+describe("onboarding chat protocol question needs a whole word (F4.220)", () => {
+  it("an embedded rest (restriction) is not a protocol question", async () => {
     await assertAnEmbeddedRestIsNotAProtocolQuestion();
   });
 });

@@ -277,7 +277,10 @@ export async function assertAddPointKeyAddsKwOnTheModbusPath(): Promise<void> {
  * The protocol answer, which needs an organization. It returns before the
  * provider is resolved, so the resolver, crypto and catalog are never read.
  */
-async function protocolTurn(draft: OnboardingDraft, message = "which protocols are available?"): Promise<ChatTurnResult> {
+async function protocolTurn(
+  draft: OnboardingDraft,
+  message = "which protocols are available?",
+): Promise<ChatTurnResult> {
   const service = new OnboardingChatService(
     new OnboardingValidateService(),
     {} as never,

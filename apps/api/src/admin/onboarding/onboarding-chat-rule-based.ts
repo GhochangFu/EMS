@@ -94,17 +94,17 @@ const PROTOCOL_REPLIES = ["MQTT", "Modbus", "BACnet", "OPC-UA", "SNMP", "REST", 
  * them falls back to MQTT there. `mqtt` is not listed: it is the fallback.
  */
 const PROTOCOL_WORDS: ReadonlyArray<readonly [RegExp, OnboardingProtocol]> = [
-  [/\bmodbus(?:[ _-]?tcp)?\b/, "modbus_tcp"],
+  [/\bmodbus(?:[ _/-]?(?:tcp|rtu))?\b/, "modbus_tcp"],
   [/\bbacnet(?:[ _/-]?ip)?\b/, "bacnet"],
   [/\bopc(?:[ _-]?ua)?\b/, "opc_ua"],
-  [/\bsnmp\b/, "snmp"],
-  [/\brest(?:[ _-]?poller)?\b/, "rest_poller"],
-  [/\bsim(?:ulator)?\b/, "simulator"],
+  [/\bsnmp(?:v[123]c?)?\b/, "snmp"],
+  [/\brest(?:[ _-]?poller|ful)?\b/, "rest_poller"],
+  [/\bsim(?:ulat\w*)?\b/, "simulator"],
 ];
 
-/** True when the text names a protocol as a whole word (`mqtt` and `mqtts` count). Exported for the service intercept. */
+/** True when the text names a protocol as a whole word (`mqtt`, `mqtts`, `mqtt5`, `mqttv3` count). Exported for the service intercept. */
 export const NAMES_A_PROTOCOL = new RegExp(
-  [...PROTOCOL_WORDS.map(([re]) => re.source), "\\bmqtts?\\b"].join("|"),
+  [...PROTOCOL_WORDS.map(([re]) => re.source), "\\bmqtt(?:s|v?[35])?\\b"].join("|"),
 );
 
 /** F4.199 — the "confirm <step>" replies the guided mode offers, matched whole after trim and lower-casing. */

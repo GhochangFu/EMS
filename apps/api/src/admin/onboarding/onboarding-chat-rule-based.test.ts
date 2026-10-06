@@ -3,6 +3,7 @@ import { describe, it } from "vitest";
 import {
   assertAnEmbeddedProtocolWordFallsBackToMqtt,
   assertAProtocolFormIsDetected,
+  assertNamesAProtocol,
   assertAConfirmStepAnswersThroughFinalizeWithNoPatch,
   assertAMqttMessageCarriesItsTopicIntoTheConfig,
   assertANamedProtocolAppendsAnRtuWithItsDefaultConfig,
@@ -42,7 +43,32 @@ describe("the guided onboarding mode, as a module (F4.217)", () => {
     ["bacnet/ip", "bacnet"],
     ["SNMP", "snmp"],
     ["MQTTS", "mqtt"],
+    ["SNMPv3", "snmp"],
+    ["SNMPv2c", "snmp"],
+    ["simulated", "simulator"],
+    ["simulation", "simulator"],
+    ["RESTful", "rest_poller"],
+    ["modbus_rtu", "modbus_tcp"],
+    ["modbus rtu", "modbus_tcp"],
+    ["modbus/rtu", "modbus_tcp"],
+    ["simple", "mqtt"],
+    ["restriction", "mqtt"],
+    ["restore", "mqtt"],
+    ["restart", "mqtt"],
+    ["interest", "mqtt"],
   ])("detects the form %s as %s", async (word, protocol) => {
     await assertAProtocolFormIsDetected(word, protocol);
+  });
+
+  it.each([
+    ["mqtt5", true],
+    ["MQTTv3", true],
+    ["mqttv5", true],
+    ["mqtts", true],
+    ["mqttx", false],
+    ["restore", false],
+    ["restart", false],
+  ])("the service intercept matcher reads %s as %s", (text, expected) => {
+    assertNamesAProtocol(text, expected);
   });
 });
