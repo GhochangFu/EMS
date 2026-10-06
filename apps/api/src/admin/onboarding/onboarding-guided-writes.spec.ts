@@ -5,6 +5,7 @@ import {
   GUIDED_CREDENTIAL_REFUSAL,
   GUIDED_DEPTH_REFUSAL,
   GUIDED_EXISTING_KEYS_REFUSAL,
+  GUIDED_KW_INACTIVE_REFUSAL,
   GUIDED_MARKER_REFUSAL,
   GUIDED_OTHER_REFUSAL,
   GUIDED_SCHEMA_REFUSAL,
@@ -139,5 +140,18 @@ export async function assertUseExistingKeysWithoutKwIsRefusedOnTheGuidedPath(): 
   const state: ToolState = { working: {} };
   const out = await guidedWrite("use_existing_point_keys", { value: true }, state, context());
   assert(!out.ok && out.error === GUIDED_EXISTING_KEYS_REFUSAL, `the guided refusal: ${JSON.stringify(out)}`);
+  assert(state.working.onboardingMeta === undefined, "nothing was written");
+}
+
+/**
+ * F3.23 review — a catalog that holds `kw` inactive answers its own sentence, which never says "Say kw":
+ * a draft declaration of `kw` would land and auto map's `map_point` would then refuse it, a loop.
+ */
+export async function assertUseExistingKeysWithAnInactiveKwIsRefusedWithoutTheSayKwLoop(): Promise<void> {
+  const state: ToolState = { working: {} };
+  const ctx = { ...context(), templates: { ...EMPTY_TEMPLATE_CONTEXT, pointKeys: new Map([["kw", false]]) } };
+  const out = await guidedWrite("use_existing_point_keys", { value: true }, state, ctx);
+  assert(!out.ok && out.error === GUIDED_KW_INACTIVE_REFUSAL, `the inactive-kw refusal: ${JSON.stringify(out)}`);
+  assert(!out.ok && !out.error.includes("Say **kw**"), "the sentence does not point to the declaration loop");
   assert(state.working.onboardingMeta === undefined, "nothing was written");
 }

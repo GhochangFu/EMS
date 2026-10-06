@@ -270,17 +270,21 @@ export async function assertP6TheDraftCapBindsThroughWrite(): Promise<void> {
   assert(state.working.assetPoints?.length === 4_900, "nothing is written");
 }
 
-/** P7 — a row carrying its own `assetIndex` still lands on the call's asset. */
-export async function assertP7ARowsOwnAssetIndexIsStripped(): Promise<void> {
+/**
+ * P7 — a row carrying its own `assetIndex` is refused, naming the element, and nothing is written: a
+ * batch across two assets must be one call per asset, never silently folded onto the call's asset.
+ */
+export async function assertP7ARowsOwnAssetIndexIsRefused(): Promise<void> {
   const state: ToolState = { working: baseDraft({ pointKeys: FORTY_KEYS }) };
+  const before = snapshot(state);
   const out = await runTool(
     call("map_points", { assetIndex: 0, points: [{ assetIndex: 1, pointKey: "kw", sourceDataKey: "s01" }] }),
     state,
     context(),
   );
-  assert(out.ok, `the call succeeds: ${out.content}`);
-  assert(state.working.assetPoints?.length === 1, "one row is written");
-  assert(state.working.assetPoints?.[0]?.assetIndex === 0, `the row takes the call's assetIndex, not its own: ${state.working.assetPoints?.[0]?.assetIndex}`);
+  assert(!out.ok && (out.error ?? "").startsWith("Invalid arguments: "), `a schema refusal: ${out.content}`);
+  assert((out.error ?? "").includes("points.0"), `the refusal names the element: ${out.error}`);
+  assert(snapshot(state) === before, "nothing is written");
 }
 
 // ---------------------------------------------------------------- get_asset_points

@@ -15,7 +15,7 @@ import {
   assertP5ACredentialInARowIsRefused,
   assertP6OneRowPastTheBoundIsASchemaRefusal,
   assertP6TheDraftCapBindsThroughWrite,
-  assertP7ARowsOwnAssetIndexIsStripped,
+  assertP7ARowsOwnAssetIndexIsRefused,
   assertR1GetAssetPointsListsTheRowsWithDraftIndexes,
   assertR2AnUnknownAssetIndexFails,
   assertR3GetAssetPointsIsBoundedAtOneHundred,
@@ -65,8 +65,8 @@ describe("onboarding batch mapping tools (F3.23, ADR 0092 decision 4)", () => {
   it("P6 the draft cap binds through write()", async () => {
     await assertP6TheDraftCapBindsThroughWrite();
   });
-  it("P7 a row's own assetIndex is stripped", async () => {
-    await assertP7ARowsOwnAssetIndexIsStripped();
+  it("P7 refuses a row that carries its own assetIndex", async () => {
+    await assertP7ARowsOwnAssetIndexIsRefused();
   });
   it("R1 get_asset_points lists the rows with their draft-wide indexes", async () => {
     await assertR1GetAssetPointsListsTheRowsWithDraftIndexes();

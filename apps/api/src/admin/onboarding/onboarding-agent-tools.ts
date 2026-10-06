@@ -122,6 +122,16 @@ export const PROMPT_MARKER_TOOL_ERROR = "The arguments carry a withheld-value ma
 export const EXISTING_KEYS_NEED_KW_ERROR =
   "The catalog holds no active point key 'kw', so the existing catalog cannot be used here; declare the point keys in this draft.";
 
+/**
+ * `F3.23` review: the catalog holds `kw` but inactive. Declaring `kw` in the
+ * draft does not help (`map_point` refuses an inactive catalog key, ADR 0092
+ * decision 2), so this refusal names reactivation instead. Exported so
+ * `guidedRefusal` classifies it by identity.
+ */
+export const EXISTING_KEYS_KW_INACTIVE_ERROR =
+  "The catalog holds the point key 'kw' as inactive, so neither the existing catalog nor a draft declaration of 'kw' can map it. " +
+  "Tell the user to reactivate 'kw' in Point Keys, or map other point keys.";
+
 export const CREDENTIAL_TOOL_ERROR =
   "Credentials are never set through this chat. Tell the user to use the Credentials field on the RTU step.";
 
@@ -520,6 +530,9 @@ async function dispatch(name: ToolName, args: Record<string, unknown>, state: To
 
     case "use_existing_point_keys": {
       const value = (args as { value: boolean }).value;
+      if (value && ctx.templates.pointKeys.get("kw") === false) {
+        return fail(EXISTING_KEYS_KW_INACTIVE_ERROR);
+      }
       if (value && ctx.templates.pointKeys.get("kw") !== true) {
         return fail(EXISTING_KEYS_NEED_KW_ERROR);
       }

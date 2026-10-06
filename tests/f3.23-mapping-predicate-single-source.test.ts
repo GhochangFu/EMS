@@ -14,8 +14,12 @@ const ONBOARDING = "apps/api/src/admin/onboarding";
  * disagree and a `readyToCommit` draft could fail at commit.
  */
 
-function occurrences(text: string, needle: string): number {
-  return text.split(needle).length - 1;
+/** Occurrences on code lines only: a docblock or `//` line that spells the call does not count as one. */
+function codeOccurrences(text: string, needle: string): number {
+  return text
+    .split(/\r?\n/)
+    .filter((line) => !/^\s*(\*|\/\*|\/\/)/.test(line))
+    .reduce((sum, line) => sum + line.split(needle).length - 1, 0);
 }
 
 /** Non-spec, non-test `.ts` files in the onboarding folder, read from the listing. */
@@ -35,8 +39,15 @@ describe("the mapping predicate is stated once (F3.23, ADR 0092 decision 2)", ()
   it("is called from the validator, the single tools and the batch tool, and nowhere else", () => {
     for (const site of SITES) {
       const text = readFileSync(join(repoRoot, site.file), "utf8");
-      expect(occurrences(text, "assetPointProblems("), site.file).toBe(site.count);
+      expect(codeOccurrences(text, "assetPointProblems("), site.file).toBe(site.count);
     }
+    // "Nowhere else": the definition file plus the three call sites, and no other onboarding file.
+    expect(filesHolding("assetPointProblems(").sort()).toEqual([
+      "onboarding-agent-tools.ts",
+      "onboarding-mapping-refs.ts",
+      "onboarding-mapping-tools.ts",
+      "onboarding-validate.service.ts",
+    ]);
   });
 
   it("keeps the two unique-conflict sentences in one file", () => {

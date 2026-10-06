@@ -31,12 +31,13 @@ const LINE_ITEMS = 10;
 
 export const MAPPING_TOOL_SCHEMAS = {
   add_point_keys: z.object({ keys: z.array(draftPointKeySchema).min(1).max(MAX_POINT_KEYS_PER_CALL) }).strict(),
-  // The rows omit `assetIndex`, and the row schema is not strict, so a row's own
-  // index is stripped: every row lands on the call's asset.
+  // The rows omit `assetIndex` and are strict, so a row that carries its own
+  // index is refused rather than folded onto the call's asset: a batch across
+  // two assets is one call per asset (F3.23 review).
   map_points: z
     .object({
       assetIndex: draftAssetPointSchema.shape.assetIndex,
-      points: z.array(draftAssetPointSchema.omit({ assetIndex: true })).min(1).max(MAX_ASSET_POINTS_PER_CALL),
+      points: z.array(draftAssetPointSchema.omit({ assetIndex: true }).strict()).min(1).max(MAX_ASSET_POINTS_PER_CALL),
     })
     .strict(),
   get_asset_points: z.object({ assetIndex: z.number().int().min(0) }).strict(),
@@ -57,6 +58,7 @@ export const MAPPING_TOOL_DESCRIPTIONS: Record<MappingToolName, string> = {
     "Lists the mappings of the asset at `assetIndex`, each with its draft-wide `index` (the one remove_asset_point takes).",
 };
 
+/** Whether `name` is one of the three F3.23 mapping tools. */
 export function isMappingToolName(name: string): name is MappingToolName {
   return Object.prototype.hasOwnProperty.call(MAPPING_TOOL_SCHEMAS, name);
 }
@@ -72,6 +74,7 @@ function listOf(items: readonly string[], noun: string): string {
   return [...shown, moreTail(omitted, noun)].filter(Boolean).join(", ");
 }
 
+/** Runs one validated mapping-tool call against the working draft (ADR 0092 decision 4). */
 export function dispatchMappingTool(
   name: MappingToolName,
   args: Record<string, unknown>,

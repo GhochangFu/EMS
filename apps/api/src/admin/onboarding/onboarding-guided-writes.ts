@@ -2,6 +2,7 @@ import { MAX_ONBOARDING_ASSET_POINTS, MAX_ONBOARDING_ASSETS, MAX_ONBOARDING_POIN
 
 import {
   CREDENTIAL_TOOL_ERROR,
+  EXISTING_KEYS_KW_INACTIVE_ERROR,
   EXISTING_KEYS_NEED_KW_ERROR,
   PROMPT_MARKER_TOOL_ERROR,
   runTool,
@@ -40,6 +41,13 @@ export const GUIDED_LOCATION_NAME_REFUSAL = "A location name needs at least 2 ch
 /** F3.23 (ADR 0092 decision 3) — the guided answer when "use existing keys" meets a catalog with no active `kw`. */
 export const GUIDED_EXISTING_KEYS_REFUSAL = "The point-key catalog is not ready for this site. Say **kw** to declare the key in this draft.";
 
+/**
+ * F3.23 review — the guided answer when the catalog holds `kw` inactive. "Say **kw**" would loop: the
+ * declaration lands, then auto map's `map_point` refuses the inactive key. Reactivation is the only way out.
+ */
+export const GUIDED_KW_INACTIVE_REFUSAL =
+  "The point-key catalog holds **kw** as inactive, so this site cannot map it. Reactivate **kw** in Point Keys, then try again.";
+
 /** B4 — the guided answer to any other element-schema refusal. */
 export const GUIDED_SCHEMA_REFUSAL = "That value is not valid for this step. Open the preview to check the draft.";
 
@@ -73,6 +81,9 @@ export function guidedRefusal(name: ToolName, error: string): string {
   }
   if (error === DRAFT_TOO_DEEP_MESSAGE) {
     return GUIDED_DEPTH_REFUSAL;
+  }
+  if (error === EXISTING_KEYS_KW_INACTIVE_ERROR) {
+    return GUIDED_KW_INACTIVE_REFUSAL;
   }
   if (error === EXISTING_KEYS_NEED_KW_ERROR) {
     return GUIDED_EXISTING_KEYS_REFUSAL;

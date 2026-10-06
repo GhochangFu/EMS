@@ -137,13 +137,16 @@ export function commitSummary(draft: OnboardingDraft, templates: ValidateTemplat
   const rtus = draft.rtus ?? [];
   const { shown, omitted } = echoedItems(rtus.map((rtu) => quoteCell(rtu.code)));
   const codes = [...shown, moreTail(omitted, "RTUs")].filter(Boolean).join(", ");
-  const fresh = (draft.pointKeys ?? []).filter((k) => templates.pointKeys.get(k.code) === undefined).length;
+  // Distinct codes: a code declared twice is one catalog row at commit (F3.23 review).
+  const newToCatalogCount = new Set(
+    (draft.pointKeys ?? []).filter((key) => templates.pointKeys.get(key.code) === undefined).map((key) => key.code),
+  ).size;
   const parts = [
     `location ${quoteCell(draft.location?.name ?? "")}`,
     rtus.length > 0 ? `${countOf(rtus.length, "RTU")} (${codes})` : countOf(0, "RTU"),
     draft.onboardingMeta?.useExistingPointKeys && (draft.pointKeys?.length ?? 0) === 0
       ? "the existing point-key catalog"
-      : `${countOf(draft.pointKeys?.length ?? 0, "point key")}${fresh > 0 ? ` (${fresh} new to the catalog)` : ""}`,
+      : `${countOf(draft.pointKeys?.length ?? 0, "point key")}${newToCatalogCount > 0 ? ` (${newToCatalogCount} new to the catalog)` : ""}`,
     countOf(draft.assets?.length ?? 0, "asset"),
     countOf(draft.assetPoints?.length ?? 0, "mapping"),
   ];

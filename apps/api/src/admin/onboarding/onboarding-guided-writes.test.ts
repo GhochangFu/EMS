@@ -10,6 +10,7 @@ import {
   assertEveryToolIsClassified,
   assertTheDepthBoundIsRefused,
   assertTheExistingKeysRefusalIsItsGuidedSentence,
+  assertUseExistingKeysWithAnInactiveKwIsRefusedWithoutTheSayKwLoop,
   assertUseExistingKeysWithoutKwIsRefusedOnTheGuidedPath,
 } from "./onboarding-guided-writes.spec";
 
@@ -53,5 +54,9 @@ describe("guidedWrite over the tool registry (F3.27 U3)", () => {
 
   it("refuses use existing keys on the guided path without an active kw (F3.23)", async () => {
     await assertUseExistingKeysWithoutKwIsRefusedOnTheGuidedPath();
+  });
+
+  it("refuses use existing keys on an inactive kw without the say-kw loop (F3.23 review)", async () => {
+    await assertUseExistingKeysWithAnInactiveKwIsRefusedWithoutTheSayKwLoop();
   });
 });

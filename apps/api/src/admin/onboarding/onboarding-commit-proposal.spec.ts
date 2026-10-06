@@ -149,6 +149,14 @@ export function assertSummaryNamesTheKeysNewToTheCatalog(): void {
   assert(all.includes("2 point keys, ") && !all.includes("new to the catalog"), `S2 control: no parenthesis: ${all}`);
 }
 
+/** F3.23 review S3: a code declared twice is one catalog row at commit, so it counts once as new. */
+export function assertSummaryCountsADuplicatedNewKeyOnce(): void {
+  const foo = { code: "foo", name: "Foo", domain: "electrical", unit: "kW" };
+  const draft = { ...readyDraft(), pointKeys: [foo, { ...foo }] } as OnboardingDraft;
+  const summary = commitSummary(draft, { ...EMPTY_TEMPLATE_CONTEXT, pointKeys: new Map([["kw", true]]) });
+  assert(summary.includes("(1 new to the catalog)"), `S3 counts the distinct code once: ${summary}`);
+}
+
 /** The client view never carries the proposal or its hash. */
 export function assertRedactDraftForClientDropsTheCommitProposal(): void {
   const stored = attachCommitProposal(readyDraft(), proposal() as never);

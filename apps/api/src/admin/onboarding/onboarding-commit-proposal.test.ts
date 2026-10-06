@@ -2,6 +2,7 @@ import { describe, it } from "vitest";
 
 import {
   assertCommitSummaryIsBoundedAndCodeWritten,
+  assertSummaryCountsADuplicatedNewKeyOnce,
   assertSummaryNamesTheKeysNewToTheCatalog,
   assertConfirmPhraseIsExact,
   assertDraftHashChangesWithSecrets,
@@ -46,6 +47,10 @@ describe("onboarding commit proposal (F3.21, ADR 0090 decision 5)", () => {
 
   it("names the point keys new to the catalog in the summary", () => {
     assertSummaryNamesTheKeysNewToTheCatalog();
+  });
+
+  it("counts a duplicated new key once in the summary (F3.23 review)", () => {
+    assertSummaryCountsADuplicatedNewKeyOnce();
   });
 
   it("drops the proposal from the client view", () => {
