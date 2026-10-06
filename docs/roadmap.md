@@ -7433,3 +7433,30 @@ Raised: `F4.219` (the `F4.206` path checks before the body read), `F4.220`
 (`NAMES_A_PROTOCOL` matches inside words), `F4.221` (the admin RTU route
 accepts a wildcard topic), `F4.222` (a point-key race still answers 500). No
 `chore(agents):` change owed.
+
+### `F4.219`–`F4.222` — four rows from the F4.212–F4.218 reviews ✅ 2026-10-06
+
+Two PRs, web and API (owner ruling), both squash-merged 2026-10-06; no ADR,
+no migration, no new dependency. One new shared export
+(`mqttTopicHasWildcard`, `@bms/shared/ingest`).
+
+- **#751** (`a1aad868`) — `F4.219`: a 401's reason records only when the
+  store is still cleared after the body parse.
+- **#752** (`a0295d9b`) — `F4.220`: one whole-word protocol table for the
+  guided mode and the intercept, every old spelling kept. `F4.221`: one
+  wildcard predicate for ingest, onboarding and the admin RTU routes, which
+  now answer 400. `F4.222`: a raced point-key collision answers 409.
+
+Built with two workflows (four plans on Fable; build, review and fix per row
+in four worktrees) and a hand-run review of `F4.220`, whose result the
+workflow skipped. Verified: CI green on both PRs; one full suite on the merged
+tree — `main` at `a0295d9b` has the same tree — 1022 files passed, with the
+10 site-layout seed cases that fail on unchanged `main` against the local DB
+and one integration case green alone. Live on images built from that tree
+(bundle `index-B6Vod4_w.js`): new code in the image, `/health` 200; sign-in
+checks skipped by owner ruling.
+
+**Cascade:** no row lists these four in *Depends* except the new rows.
+Raised: `F4.223` (an empty MQTT topic stored as `''` collides on the index),
+`F4.224` (the intercept's question words match inside other words). No
+`chore(agents):` change owed.
