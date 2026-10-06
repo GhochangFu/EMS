@@ -11,6 +11,7 @@ import {
   patternGrammarProblem,
   resolveTemplateForAsset,
   templateSourceKeyMessage,
+  templateRefPointKeys,
   templateSourceKeyProblem,
   templateVariables,
   unresolvedPointKey,
@@ -126,6 +127,29 @@ function highestPublished(refs: readonly TemplateRef[]): TemplateRef | undefined
 function listOf(items: readonly string[], noun: string, max: number = 10): string {
   const { shown, omitted } = echoedItems(items, max);
   return [...shown, moreTail(omitted, noun)].filter(Boolean).join(", ");
+}
+
+/**
+ * `F4.196`/`F4.213` — the validator's rule (`unresolvedPointKey`) over the keys
+ * a template entry needs, against the draft's declarations and the context's
+ * catalog, so a tool cannot accept what validation refuses. Each key that does
+ * not resolve is named in the validator's own sentence, which tells an
+ * inactive key from a missing one; only a missing key is fixed by
+ * `add_point_key`. `null` when every key resolves.
+ */
+function unresolvedKeysProblem(subject: string, keys: Iterable<string>, draft: OnboardingDraft, ctx: ValidateTemplateContext): string | null {
+  const declared = new Set((draft.pointKeys ?? []).map((key) => key.code));
+  const problems = [...new Set(keys)]
+    .map((key) => unresolvedPointKey(key, declared, ctx.pointKeys))
+    .filter((problem): problem is string => problem !== null);
+  if (problems.length === 0) {
+    return null;
+  }
+  const { shown, omitted } = echoedItems(problems, 10);
+  return (
+    `${subject} that do not resolve at commit: ${[...shown, moreTail(omitted, "point keys")].filter(Boolean).join("; ")}. ` +
+    "Add a missing key with add_point_key first; an inactive key cannot be used."
+  );
 }
 
 /**
@@ -262,17 +286,15 @@ export async function dispatchTemplateTool(
       if (held !== null) {
         return fail(held);
       }
-      // F4.196: the validator's own rule, against the context's catalog, so the
-      // tool cannot accept a key (an inactive one) that validation refuses.
-      const draftKeys = new Set((draft.pointKeys ?? []).map((key) => key.code));
-      const unknown = [...new Set(entry.points.map((point) => point.pointKey))].filter(
-        (key) => unresolvedPointKey(key, draftKeys, ctx.templates.pointKeys) !== null,
+      // F4.196/F4.213: the validator's own rule and sentence (an authored entry has no formulas).
+      const unresolved = unresolvedKeysProblem(
+        `Template ${quoteCell(entry.code)} names point keys`,
+        entry.points.map((point) => point.pointKey),
+        draft,
+        ctx.templates,
       );
-      if (unknown.length > 0) {
-        return fail(
-          `Template ${quoteCell(entry.code)} names point keys that are neither in this draft nor active in the catalog: ` +
-            `${listOf(unknown.map((key) => quoteCell(key)), "point keys")}. Add them with add_point_key first.`,
-        );
+      if (unresolved !== null) {
+        return fail(unresolved);
       }
       const grammar = grammarProblem(entry.points.map((point) => point.sourceDataKeyPattern));
       if (grammar !== null) {
@@ -300,6 +322,12 @@ export async function dispatchTemplateTool(
           `${listOf(strangers.map((key) => quoteCell(key)), "keys")}: not a measured point of stock template ${quoteCell(stock.code)}. ` +
             "A pattern is given only for a measured point.",
         );
+      }
+      // F4.213: the import's `assertPointKeysActive` checks the points' keys and
+      // the keys the formulas name, as validation does since F4.205.
+      const unresolved = unresolvedKeysProblem(`Stock template ${quoteCell(stock.code)} needs point keys`, templateRefPointKeys(stock), draft, ctx.templates);
+      if (unresolved !== null) {
+        return fail(unresolved);
       }
       const grammar = grammarProblem(Object.values(patterns));
       if (grammar !== null) {

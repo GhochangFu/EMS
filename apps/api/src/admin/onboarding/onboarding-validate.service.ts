@@ -26,6 +26,7 @@ import {
   resolveTemplateForAsset,
   templateSourceKeyMessage,
   templateSourceKeyProblem,
+  templateRefPointKeys,
   templateVariables,
   unresolvedPointKey,
   type TemplateRef,
@@ -356,7 +357,7 @@ function validateDraftTemplates(d: OnboardingDraft, ctx: ValidateTemplateContext
         }
         // F4.205: the import's `assertPointKeysActive` checks the points' keys
         // and the keys their formulas name; the same rule as an authored point.
-        const keys = new Set([...stock.points.map((p) => p.pointKey), ...stock.formulaPointKeys]);
+        const keys = templateRefPointKeys(stock);
         for (const key of keys) {
           const unresolved = unresolvedPointKey(key, declared, ctx.pointKeys);
           if (unresolved !== null) {

@@ -95,8 +95,9 @@ export const EMPTY_TEMPLATE_CONTEXT: ValidateTemplateContext = Object.freeze({
  * resolves when it is active in the catalog, or when the draft declares it and
  * the catalog does not hold it. Checked here because a `PATCH :id/draft` can
  * drop a declaration that `remove_point_key` (`F4.195`) would refuse. The
- * validator and both template-key tools (`add_template`, `remove_point_key`)
- * ask this one question, so a tool cannot accept what validation refuses.
+ * validator and the three template-key tools (`add_template`,
+ * `import_stock_template`, `remove_point_key`) ask this one question, so a
+ * tool cannot accept what validation refuses.
  */
 export function unresolvedPointKey(key: string, declared: ReadonlySet<string>, catalog: ReadonlyMap<string, boolean>): string | null {
   const active = catalog.get(key);
@@ -106,6 +107,16 @@ export function unresolvedPointKey(key: string, declared: ReadonlySet<string>, c
   return active === false
     ? `Point key ${quoteCell(key)} is inactive in the catalog`
     : `Point key ${quoteCell(key)} is neither in this draft nor in the catalog`;
+}
+
+/**
+ * `F4.205`/`F4.213` — every key a template import asks `assertPointKeysActive`
+ * for: its points' keys and the keys its formulas name, once each. Validation
+ * and the two stock-reading tools (`import_stock_template`, `remove_point_key`)
+ * read it.
+ */
+export function templateRefPointKeys(ref: TemplateRef): ReadonlySet<string> {
+  return new Set([...ref.points.map((point) => point.pointKey), ...ref.formulaPointKeys]);
 }
 
 /** A stock import, as opposed to an authored template: the union's stock branch carries `stockCode`. */
