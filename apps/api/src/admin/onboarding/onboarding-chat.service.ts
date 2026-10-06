@@ -19,7 +19,14 @@ import { OnboardingCatalogService } from "./onboarding-catalog.service";
 import { OnboardingTemplateCatalogService } from "./onboarding-template-catalog.service";
 import { mergeDraftPatch } from "./onboarding-draft-merge";
 import { formatAssetsByRtuSummary, mqttSetupTemplate, needsMqttSetup } from "./onboarding-chat-summaries";
-import { handleRuleBasedTurn, NAMES_A_PROTOCOL, type ChatTurnResult, type TurnVocabulary } from "./onboarding-chat-rule-based";
+import {
+  fallbackTurn,
+  handleRuleBasedTurn,
+  NAMES_A_PROTOCOL,
+  type ChatTurnResult,
+  type RuleBasedTurnDeps,
+  type TurnVocabulary,
+} from "./onboarding-chat-rule-based";
 // F3.21 (ADR 0090): the model no longer returns a draft patch, so the
 // prompt-budget guards live where the draft and the arguments now pass — the
 // agent loop's system prompt and the tool registry.
@@ -223,9 +230,19 @@ export class OnboardingChatService {
   }
 
   /**
-   * The guided mode (`onboarding-chat-rule-based.ts`, F4.217). The arrow keeps
-   * `this`: an unbound `finalizeTurn` would throw on `this.validateService`.
+   * What the guided mode and the fallback turn (`onboarding-chat-rule-based.ts`,
+   * F4.217) read from this service. The arrow keeps `this`: an unbound
+   * `finalizeTurn` would throw on `this.validateService`.
    */
+  private ruleBasedDeps(): RuleBasedTurnDeps {
+    return {
+      validateService: this.validateService,
+      catalogService: this.catalogService,
+      finalizeTurn: (...args) => this.finalizeTurn(...args),
+    };
+  }
+
+  /** The guided mode (`onboarding-chat-rule-based.ts`, F4.217). */
   private guidedTurn(
     message: string,
     draft: OnboardingDraft,
@@ -235,11 +252,7 @@ export class OnboardingChatService {
     organizationId?: string,
   ): Promise<ChatTurnResult> {
     return handleRuleBasedTurn(
-      {
-        validateService: this.validateService,
-        catalogService: this.catalogService,
-        finalizeTurn: (...args) => this.finalizeTurn(...args),
-      },
+      this.ruleBasedDeps(),
       message,
       draft,
       phase,
@@ -340,10 +353,12 @@ export class OnboardingChatService {
       "onboarding agent turn",
     );
     if (agent.fallback) {
-      // Ruling 6: the turn's edits are already discarded; the guided mode
-      // answers the same message, and the user is told why.
-      const guided = await this.guidedTurn(message, draft, phase, orgName, turn, organizationId);
-      return { ...guided, assistantMessage: `${AGENT_UNAVAILABLE_NOTICE}\n\n${guided.assistantMessage}` };
+      // Ruling 6: the turn's edits are already discarded, and the user is told
+      // why. ADR 0090 Amendment 2 B1: the guided mode does not read the
+      // message — it was written for the model — so the turn writes nothing
+      // and answers the step prompt for the phase the draft is at.
+      const fallback = fallbackTurn(this.ruleBasedDeps(), message, draft, turn);
+      return { ...fallback, assistantMessage: `${AGENT_UNAVAILABLE_NOTICE}\n\n${fallback.assistantMessage}` };
     }
     const result = this.finalizeTurn(
       agent.reply,

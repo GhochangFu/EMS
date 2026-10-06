@@ -163,6 +163,24 @@ function stepPrompt(
   }
 }
 
+/**
+ * ADR 0090 Amendment 2 B1 — the answer to an agent turn that fell back after a
+ * provider error. The message was written for the model, so the guided mode
+ * does not read it: the turn writes nothing and answers the step prompt for the
+ * phase the draft is at. The caller puts `AGENT_UNAVAILABLE_NOTICE` before it.
+ */
+export function fallbackTurn(
+  deps: RuleBasedTurnDeps,
+  message: string,
+  draft: OnboardingDraft,
+  turn: TurnVocabulary,
+): ChatTurnResult {
+  const { types } = turn;
+  const derived = deps.validateService.inferPhase(draft, types.map((t) => t.code));
+  const prompt = stepPrompt(derived, draft, types);
+  return deps.finalizeTurn(prompt.text, {}, derived, prompt.replies, message, draft, turn);
+}
+
 /** Runs one guided (rule-based) chat turn: `deps` supplies validateService.inferPhase, catalogService (point-key listing) and finalizeTurn; resolves to the `ChatTurnResult` that `deps.finalizeTurn` builds. */
 export async function handleRuleBasedTurn(
   deps: RuleBasedTurnDeps,

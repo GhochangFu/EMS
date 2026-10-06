@@ -45,12 +45,42 @@ async function turn(chat: OnboardingChatService, message = "Berhampur") {
   return chat.handleTurn(message, {} as OnboardingDraft, "location", "Ion Exchange", "org-7", CONTEXT);
 }
 
+/**
+ * ADR 0090 Amendment 2 B1: a fallback turn writes nothing. The message was
+ * written for the model, so the guided mode does not read it — the reply is the
+ * notice and the step prompt. On a fresh draft the guided mode would take this
+ * message as the location name, so an empty patch is the proof it did not run.
+ */
 export async function assertAProviderErrorFallsBackWithTheNotice(): Promise<void> {
   const llm = new FakeLlmProvider([calls(toolCall("add_rtu", PLAIN_RTU)), "reject"]);
-  const result = await turn(service(ready(llm)).chat);
+  const result = await turn(service(ready(llm)).chat, "add an MQTT RTU with two meters");
+  assert(Object.keys(result.draftPatch).length === 0, `the fallback writes nothing, got ${JSON.stringify(result.draftPatch)}`);
+  assert(result.actionLines.length === 0, "the agent's RTU is discarded and no action line is written");
   assert(result.assistantMessage.startsWith(AGENT_UNAVAILABLE_NOTICE), "the reply starts with the unavailable notice");
-  assert(result.draftPatch.location?.name === "Berhampur", "the guided mode answered the same message");
-  assert(result.draftPatch.rtus === undefined && result.actionLines.length === 0, "the agent's RTU is discarded");
+  assert(
+    result.assistantMessage.includes("The location needs a name and a type first."),
+    `the reply holds the location step prompt, got ${result.assistantMessage}`,
+  );
+  assert(JSON.stringify(result.suggestedReplies) === '["View draft"]', `the location step's replies, got ${JSON.stringify(result.suggestedReplies)}`);
+  assert(result.currentPhase === "location", `the phase is derived from the draft, got ${result.currentPhase}`);
+}
+
+/** B1 at the RTU step: the guided mode would add a Modbus RTU for this message; the fallback adds nothing. */
+export async function assertAProviderErrorAtTheRtuStepAnswersTheRtuPrompt(): Promise<void> {
+  const llm = new FakeLlmProvider([calls(toolCall("add_rtu", PLAIN_RTU)), "reject"]);
+  const draft = {
+    location: { name: "Berhampur", slug: "berhampur", code: "BERHAMPUR", type: "smoc_campus", latitude: 19.3, longitude: 84.8 },
+  } as OnboardingDraft;
+  const result = await service(ready(llm)).chat.handleTurn("modbus please", draft, "rtu", "Ion Exchange", "org-7", CONTEXT);
+  assert(Object.keys(result.draftPatch).length === 0, `the fallback writes nothing, got ${JSON.stringify(result.draftPatch)}`);
+  assert(result.actionLines.length === 0, "no action line");
+  assert(result.assistantMessage.startsWith(AGENT_UNAVAILABLE_NOTICE), "the reply starts with the unavailable notice");
+  assert(result.assistantMessage.includes("Add an RTU first."), `the reply holds the RTU step prompt, got ${result.assistantMessage}`);
+  assert(
+    JSON.stringify(result.suggestedReplies) === JSON.stringify(["MQTT", "Modbus", "BACnet", "OPC-UA", "SNMP", "REST", "Simulator"]),
+    `the protocol replies, got ${JSON.stringify(result.suggestedReplies)}`,
+  );
+  assert(result.currentPhase === "rtu", `the RTU step, got ${result.currentPhase}`);
 }
 
 export async function assertNoResolvedProviderMeansNoNotice(): Promise<void> {
