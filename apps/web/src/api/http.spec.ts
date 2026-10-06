@@ -421,3 +421,69 @@ export function runAStale401StoresNoReturnPath(): void {
     "a stale 401 must store no return path",
   );
 }
+
+/*
+ * `F4.219` — the bearer check runs before the clear, but the reason is written
+ * after an async read of the 401 body. A `setSession` that lands in that gap
+ * must not receive the old token's reason.
+ */
+
+/** A 401 whose JSON body arrives only when the spec calls `push`. */
+function streamed401(): { res: Response; push: (chunk: string) => void } {
+  let push: (chunk: string) => void = () => undefined;
+  const body = new ReadableStream<Uint8Array>({
+    start(controller) {
+      push = (chunk) => {
+        controller.enqueue(new TextEncoder().encode(chunk));
+        controller.close();
+      };
+    },
+  });
+  const res = new Response(body, {
+    status: 401,
+    headers: { "Content-Type": "application/json" },
+  });
+  return { res, push };
+}
+
+/** S1 — a session set while the 401 body streams gets no reason, and keeps its token. */
+export async function runASessionSetDuringThe401BodyReadRecordsNothing(): Promise<void> {
+  signIn();
+  const sent = withAuth();
+  const { res, push } = streamed401();
+  clearSessionOnAuthFailure(res, sent);
+  assert(
+    useAuthStore.getState().accessToken === null,
+    "the clear must stay synchronous",
+  );
+  signInAs("token-new", "second@bms.local");
+  push(JSON.stringify(DEACTIVATED_BODY));
+  await settle();
+  assert(
+    reason() === null,
+    `a session set during the 401 body read must record no reason, got ${String(reason())}`,
+  );
+  assert(
+    useAuthStore.getState().accessToken === "token-new",
+    "a session set during the 401 body read must stay",
+  );
+}
+
+/**
+ * S2 — control for S1: the same streamed body with no sign-in during the read
+ * records the reason. Without it, a stream that stopped parsing would keep S1
+ * green under every mutation.
+ */
+export async function runAStreamed401BodyWithNoNewSessionRecordsTheReason(): Promise<void> {
+  signIn();
+  const sent = withAuth();
+  const { res, push } = streamed401();
+  clearSessionOnAuthFailure(res, sent);
+  push(JSON.stringify(DEACTIVATED_BODY));
+  await vi.waitFor(() => {
+    assert(
+      reason() === "account_deactivated",
+      `a streamed 401 body with no new session must record the reason, got ${String(reason())}`,
+    );
+  });
+}

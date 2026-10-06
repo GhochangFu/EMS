@@ -87,6 +87,11 @@ function carriedBearer(sent: Pick<RequestInit, "headers">): string | null {
  * does nothing. The comparison runs before the return path, the clear and the
  * reason, so a stale 401 does none of them.
  *
+ * **`F4.219`** — the clear stays synchronous, but the reason is written after
+ * an async read of the 401 body. It is re-gated after the parse: it records
+ * only when the store is still empty, so a `setSession` that lands while the
+ * body streams does not inherit the old token's reason.
+ *
  * The type cannot prove that a site passes the init it actually sent: every
  * `RequestInit` satisfies it. The PR body records a diff audit of every site.
  *
@@ -117,8 +122,19 @@ export function clearSessionOnAuthFailure(
     // can stop it. Read from a clone: callers read the body only after this
     // call returns, so the clone still comes first and they can read it too. A
     // response that cannot be cloned (a used body) skips the reason only.
+    //
+    // `F4.219` — the predicate runs after the body parse, so a `setSession`
+    // that lands while the body streams is seen and gets no reason. It asks
+    // "is the store still empty", not "does it still hold the carried bearer":
+    // the clear above has already emptied the store, so a bearer comparison
+    // would always be false and no reason would ever record. A sign-out and
+    // nothing else during the read still looks empty and records, which is
+    // the same signed-out user this 401 belongs to.
     try {
-      void recordAuthFailureReason(res.clone());
+      void recordAuthFailureReason(
+        res.clone(),
+        () => useAuthStore.getState().accessToken === null,
+      );
     } catch {
       // No reason to record; the session is already cleared.
     }
@@ -132,22 +148,20 @@ export function clearSessionOnAuthFailure(
  * never rejects. Consumes `res`'s body: pass a clone, or a response nobody
  * reads after.
  *
- * `F4.214` — `shouldRecord`, when given, runs after the body parse, in the
- * same synchronous step as `rememberAuthFailure`, so a `setSession` that lands
- * while the body streams is seen. Omitted, the reason always records.
+ * `F4.214` — `shouldRecord` runs after the body parse, in the same synchronous
+ * step as `rememberAuthFailure`, so a `setSession` that lands while the body
+ * streams is seen. Since `F4.219` it is **required**: both callers pass one,
+ * and a caller that forgot it would record a reason for a newer session with
+ * no compiler error.
  */
 export async function recordAuthFailureReason(
   res: Response,
-  shouldRecord?: () => boolean,
+  shouldRecord: () => boolean,
 ): Promise<void> {
   try {
     const body: unknown = await res.json();
     const parsed = unauthorizedEnvelopeSchema.safeParse(body);
-    if (
-      parsed.success &&
-      parsed.data.code &&
-      (shouldRecord === undefined || shouldRecord())
-    ) {
+    if (parsed.success && parsed.data.code && shouldRecord()) {
       useAuthStore.getState().rememberAuthFailure(parsed.data.code);
     }
   } catch {
