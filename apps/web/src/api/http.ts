@@ -90,12 +90,13 @@ function carriedBearer(sent: Pick<RequestInit, "headers">): string | null {
  * The type cannot prove that a site passes the init it actually sent: every
  * `RequestInit` satisfies it. The PR body records a diff audit of every site.
  *
- * Residual, by design: `fetchCurrentUser` (`login.ts`) records a reason for its
- * own `/me` 401 and does not pass through here. On the OIDC callback and the
- * local-login path the store is still empty when `/me` runs, so there is no
- * current token to compare with, and its callers clear only in a guarded
- * `catch`. A late `/me` 401 for an old token can therefore still record a
- * reason; it cannot clear a session.
+ * `fetchCurrentUser` (`login.ts`) records a reason for its own `/me` 401 and
+ * does not pass through here; its callers clear only in a guarded `catch`.
+ * Since `F4.214` it skips the reason when the store holds a different token. A
+ * null store still records, because the OIDC callback and the local-login path
+ * run `/me` before `setSession`; so a late `/me` 401 for an old token that
+ * answers while the store is empty can still record a reason. It cannot clear
+ * a session.
  */
 export function clearSessionOnAuthFailure(
   res: Response,
