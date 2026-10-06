@@ -6,6 +6,7 @@ import {
   type OnboardingDraftAssetPoint,
   type OnboardingFieldError,
   type OnboardingPhase,
+  protocolCatalogEntry,
 } from "@bms/shared";
 
 import { echoedItems, moreTail, quoteCell } from "../spreadsheet-guard";
@@ -198,6 +199,27 @@ export class OnboardingValidateService {
             path: `rtus.${i}.config.device.topic`,
             message: "MQTT topic must name one device; # and + are wildcards",
           });
+        }
+        // F3.24a (ADR 0093 decisions 5, 6): the protocol's draft schema from the
+        // code catalog checks every present config field; a protocol with no
+        // adapter accepts any config. Paths only: an issue at a path a
+        // hand-written check above already reported is dropped, so the
+        // owner-ruled sentence is the one shown. Gated on `r.success`, so the
+        // catalog lookup never sees a protocol outside the enum.
+        if (r.success) {
+          const reported = new Set(
+            errors.filter((e) => e.path.startsWith(`rtus.${i}.config`)).map((e) => e.path),
+          );
+          const parsed = protocolCatalogEntry(r.data.protocol).draftConfigSchema.safeParse(rtu.config ?? {});
+          if (!parsed.success) {
+            for (const issue of parsed.error.issues) {
+              const path = `rtus.${i}.config.${issue.path.join(".")}`;
+              if (!reported.has(path)) {
+                errors.push({ path, message: issue.message });
+                reported.add(path);
+              }
+            }
+          }
         }
       });
     }
