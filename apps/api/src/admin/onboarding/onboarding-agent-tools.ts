@@ -64,6 +64,9 @@ export type { ToolOutcome, ToolState };
  *
  * **Action lines are written by code** from the validated, applied values —
  * never the raw arguments and never the model's text (decision 6).
+ *
+ * The guided mode calls `runTool` too (F3.27, ADR 0090 Amendment 2 B4), through
+ * `guidedWrite`, so these refusals and action lines hold on both paths.
  */
 
 /**

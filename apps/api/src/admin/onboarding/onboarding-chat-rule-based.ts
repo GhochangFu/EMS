@@ -1,6 +1,12 @@
 /**
  * F4.217 — the guided (rule-based) onboarding mode, moved verbatim from
  * `onboarding-chat.service.ts`; the agent path and `finalizeTurn` stay there.
+ *
+ * F3.27 (ADR 0090 Amendment 2): the step order, labels and defaults are
+ * unchanged, but every draft write now goes through `guidedWrite` (the tool
+ * registry's `runTool`) and answers a code-written action line. A fallback
+ * turn (`fallbackTurn`) writes nothing. `GUIDED_TOOL_COVERAGE` classifies
+ * every registry tool (B7).
  */
 import type {
   LocationTypeDto,
