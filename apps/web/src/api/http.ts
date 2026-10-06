@@ -90,12 +90,16 @@ function carriedBearer(sent: Pick<RequestInit, "headers">): string | null {
  * The type cannot prove that a site passes the init it actually sent: every
  * `RequestInit` satisfies it. The PR body records a diff audit of every site.
  *
- * Residual, by design: `fetchCurrentUser` (`login.ts`) records a reason for its
- * own `/me` 401 and does not pass through here. On the OIDC callback and the
- * local-login path the store is still empty when `/me` runs, so there is no
- * current token to compare with, and its callers clear only in a guarded
- * `catch`. A late `/me` 401 for an old token can therefore still record a
- * reason; it cannot clear a session.
+ * `fetchCurrentUser` (`login.ts`) records a reason for its own `/me` 401 and
+ * does not pass through here; its callers clear only in a guarded `catch`.
+ * Since `F4.214` it records the reason only when the store, read after the 401
+ * body is parsed, still holds the token it held when `/me` was sent, or holds
+ * the token `/me` carried. A different stored token is not proof of a newer
+ * session — `/auth/callback` can rehydrate an older live token while `/me`
+ * goes out for the new sign-in — so the test is "did the store change during
+ * the request". A sign-out and a later sign-in with the same token both look
+ * unchanged, so a late `/me` 401 can still record a reason then. It cannot
+ * clear a session.
  */
 export function clearSessionOnAuthFailure(
   res: Response,
@@ -127,12 +131,23 @@ export function clearSessionOnAuthFailure(
  * store). A plain 401, a non-JSON body or a failed read records nothing and
  * never rejects. Consumes `res`'s body: pass a clone, or a response nobody
  * reads after.
+ *
+ * `F4.214` — `shouldRecord`, when given, runs after the body parse, in the
+ * same synchronous step as `rememberAuthFailure`, so a `setSession` that lands
+ * while the body streams is seen. Omitted, the reason always records.
  */
-export async function recordAuthFailureReason(res: Response): Promise<void> {
+export async function recordAuthFailureReason(
+  res: Response,
+  shouldRecord?: () => boolean,
+): Promise<void> {
   try {
     const body: unknown = await res.json();
     const parsed = unauthorizedEnvelopeSchema.safeParse(body);
-    if (parsed.success && parsed.data.code) {
+    if (
+      parsed.success &&
+      parsed.data.code &&
+      (shouldRecord === undefined || shouldRecord())
+    ) {
       useAuthStore.getState().rememberAuthFailure(parsed.data.code);
     }
   } catch {

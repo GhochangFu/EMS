@@ -9,7 +9,6 @@ import type {
 } from "@bms/shared";
 import { MIMIC_LAYOUT_STALE_MESSAGE, mimicPresetSchema } from "@bms/shared/contracts";
 
-import { fetchAdminOrganizations } from "../../api/admin/organizations";
 import { createMimicLayout, fetchMimicLayout, replaceMimicLayout } from "../../api/mimic-layouts";
 import { MasterDataLayout } from "../../components/admin/master-data-layout";
 import { MimicEditorCanvas } from "../../components/mimic-editor/canvas";
@@ -18,6 +17,7 @@ import { MimicEditorPalette } from "../../components/mimic-editor/palette";
 import { PageHeader } from "../../components/page-header";
 import { SectionCard } from "../../components/section-card";
 import { useMimicSymbolLibraries } from "../../hooks/use-mimic-symbol-libraries";
+import { useOrganizationChoice } from "../../hooks/use-organization-choice";
 import { canManageMimicLayouts } from "../../lib/admin-access";
 import { ApiError } from "../../lib/api-error";
 import { apiErrorMessage } from "../../lib/api-error-message";
@@ -82,24 +82,10 @@ function NewLayoutEditor() {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
-  const [organizationId, setOrganizationId] = useState("");
+  const { organizations, organizationId, setOrganizationId } = useOrganizationChoice();
   // Any preset of the closed enum starts from its copy; an absent or unknown one is blank (plan D9).
   const preset = mimicPresetSchema.safeParse(searchParams.get("preset"));
   const initial = preset.success ? fromPreset(preset.data) : emptyEditorLayout();
-
-  const orgsQ = useQuery({
-    queryKey: ["admin", "organizations", "true"],
-    queryFn: () => fetchAdminOrganizations("true"),
-  });
-  const organizations = orgsQ.data?.items ?? [];
-
-  // One organization (an organization admin's own) is the only choice; select it.
-  useEffect(() => {
-    const only = organizations.length === 1 ? organizations[0] : undefined;
-    if (organizationId === "" && only !== undefined) {
-      setOrganizationId(only.id);
-    }
-  }, [organizations, organizationId]);
 
   // The catalog of the chosen organization; no read starts until one is chosen.
   const catalogQ = useMimicSymbolLibraries(organizationId === "" ? undefined : organizationId, {

@@ -1,5 +1,5 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useEffect, useState, type FormEvent } from "react";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useState, type FormEvent } from "react";
 import {
   MIMIC_SYMBOL_GROUP_CODES,
   type MimicGlobalLibraryStatusDto,
@@ -11,7 +11,6 @@ import {
   type MimicSymbolStyle,
 } from "@bms/shared";
 
-import { fetchAdminOrganizations } from "../../api/admin/organizations";
 import {
   createMimicOrgSymbolLibrary,
   putMimicLibrarySetting,
@@ -22,6 +21,7 @@ import {
 } from "../../api/mimic-symbol-libraries";
 import { MasterDataLayout } from "../../components/admin/master-data-layout";
 import { PageHeader } from "../../components/page-header";
+import { useOrganizationChoice } from "../../hooks/use-organization-choice";
 import { SectionCard } from "../../components/section-card";
 import { StatusPill } from "../../components/status-pill";
 import { MimicGlyph } from "../../components/widgets/mimic-glyphs";
@@ -81,21 +81,7 @@ export function MimicSymbolLibrariesPage({ user }: MimicSymbolLibrariesPageProps
 
 function SymbolLibrariesAdmin({ globalAdmin }: { globalAdmin: boolean }) {
   const queryClient = useQueryClient();
-  const [organizationId, setOrganizationId] = useState("");
-
-  const orgsQ = useQuery({
-    queryKey: ["admin", "organizations", "true"],
-    queryFn: () => fetchAdminOrganizations("true"),
-  });
-  const organizations = orgsQ.data?.items ?? [];
-
-  // One organization (an organization admin's own) is the only choice; select it.
-  useEffect(() => {
-    const only = organizations.length === 1 ? organizations[0] : undefined;
-    if (organizationId === "" && only !== undefined) {
-      setOrganizationId(only.id);
-    }
-  }, [organizations, organizationId]);
+  const { organizations, organizationId, setOrganizationId } = useOrganizationChoice();
 
   const catalogQ = useMimicSymbolLibraries(organizationId === "" ? undefined : organizationId, {
     enabled: organizationId !== "",
