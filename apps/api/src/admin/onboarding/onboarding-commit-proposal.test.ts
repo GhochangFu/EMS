@@ -2,6 +2,7 @@ import { describe, it } from "vitest";
 
 import {
   assertCommitSummaryIsBoundedAndCodeWritten,
+  assertSummaryNamesTheKeysNewToTheCatalog,
   assertConfirmPhraseIsExact,
   assertDraftHashChangesWithSecrets,
   assertDraftHashExcludesTheProposalItself,
@@ -41,6 +42,10 @@ describe("onboarding commit proposal (F3.21, ADR 0090 decision 5)", () => {
 
   it("writes a bounded summary from the draft", () => {
     assertCommitSummaryIsBoundedAndCodeWritten();
+  });
+
+  it("names the point keys new to the catalog in the summary", () => {
+    assertSummaryNamesTheKeysNewToTheCatalog();
   });
 
   it("drops the proposal from the client view", () => {

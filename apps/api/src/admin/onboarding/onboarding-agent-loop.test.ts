@@ -21,6 +21,8 @@ import {
   assertAProviderErrorDiscardsTheSuggestedReplies,
   assertSuggestedRepliesReachTheResult,
   assertThePromptNamesSuggestReplies,
+  assertThePromptCarriesTheMappingQuestionLoop,
+  assertTheMappingChipsSurviveAndAreNotStepLabels,
 } from "./onboarding-agent-loop.spec";
 
 /** Vitest entry point — see `admin.schema.test.ts` for the pattern (ADR 0014). One `it()` per claim. */
@@ -107,5 +109,15 @@ describe("runAgentTurn — suggest_replies (F3.25, ADR 0094 decision 9)", () => 
 
   it("tells the model to offer choices with suggest_replies", () => {
     assertThePromptNamesSuggestReplies();
+  });
+});
+
+describe("the mapping question loop (F3.23, ADR 0092 decision 5)", () => {
+  it("puts the write-after-agreement rule in the prompt", () => {
+    assertThePromptCarriesTheMappingQuestionLoop();
+  });
+
+  it("offers chips that pass the filter and are not step labels", () => {
+    assertTheMappingChipsSurviveAndAreNotStepLabels();
   });
 });
