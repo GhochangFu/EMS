@@ -48,7 +48,7 @@ export const TEST_TEMPLATE_CODE = "F26-MIGRATE-TEST";
 export const TEST_ASSET_PREFIX = "F26-MIG-TEST-";
 const OTHER_TEMPLATE_CODE = "F26-MIGRATE-OTHER";
 
-function assert(condition: boolean, message: string): void {
+export function assert(condition: boolean, message: string): void {
   if (!condition) {
     throw new Error(message);
   }
@@ -68,7 +68,7 @@ function assert(condition: boolean, message: string): void {
  * reveals. A positive match on "2 assets in this batch" still passes over a
  * body that names all of them, so the negative is the assertion that gates.
  */
-async function expectRejection(
+export async function expectRejection(
   run: () => Promise<unknown>,
   match: RegExp,
   what: string,
@@ -153,7 +153,7 @@ type PointSpec = {
   calcIntervalSeconds?: number | null;
 };
 
-async function seedVersion(
+export async function seedVersion(
   db: BmsDb,
   fx: Fixtures,
   opts: {
@@ -201,7 +201,7 @@ async function seedVersion(
   return template.id;
 }
 
-async function seedAsset(
+export async function seedAsset(
   db: BmsDb,
   fx: Fixtures,
   suffix: string,
@@ -225,7 +225,7 @@ async function seedAsset(
 
 // --- independent SQL readers ------------------------------------------------
 
-async function pinnedVersion(pool: pg.Pool, assetId: string): Promise<number | null> {
+export async function pinnedVersion(pool: pg.Pool, assetId: string): Promise<number | null> {
   const { rows } = await pool.query<{ version: number | null }>(
     `SELECT t.version FROM bms.assets a
        LEFT JOIN bms.asset_templates t ON t.id = a.template_id
@@ -235,7 +235,7 @@ async function pinnedVersion(pool: pg.Pool, assetId: string): Promise<number | n
   return rows[0]?.version ?? null;
 }
 
-async function pointRows(
+export async function pointRows(
   pool: pg.Pool,
   assetId: string,
 ): Promise<

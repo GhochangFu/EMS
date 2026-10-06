@@ -31,6 +31,10 @@ import { CalcDependencyService } from "../../calc/calc-dependency.service";
 import { SOURCE_DATA_KEY_MAX_LENGTH } from "../../calc/computed-source-data-key";
 import { FLEET_DRIZZLE, TENANT_DRIZZLE } from "../../database/database.tokens";
 import { withTenant } from "../../database/tenant-context";
+import {
+  constraintOf,
+  translateConstraintErrors,
+} from "../../database/translate-constraint-errors";
 import { MasterDataAuditService } from "../master-data-audit.service";
 // `F2.9` Task 12b, widened at the PR 2 review — two of the override endpoint's
 // three gates, imported rather than restated. See that file's docblock.
@@ -352,7 +356,23 @@ export class AssetTemplateMigrationService {
         })),
       );
       if (rows.length > 0) {
-        await tx.insert(assetPoints).values(rows);
+        // `F4.216` — the write-time net. `buildPlan` refuses a source key an
+        // existing row holds, but it reads before this transaction opens, so a
+        // row inserted in between (or two new points of one version resolving
+        // to one key) still reaches the unique index. The throw rolls this
+        // transaction back; the caller gets a 409 with a sentence, not a 500.
+        await translateConstraintErrors(() => tx.insert(assetPoints).values(rows), {
+          onUnique: (err) =>
+            constraintOf(err) === "asset_points_asset_source_key_idx"
+              ? new ConflictException(
+                  "This migration is refused. Nothing was written. A new point's source " +
+                    "key is already used on the same asset — by a point added since the " +
+                    "plan was read, or by another new point of this version (one source " +
+                    "key maps to one point per asset). Check the asset's points and the " +
+                    "new version's source key patterns, then try again.",
+                )
+              : (err as Error),
+        });
       }
 
       // The open `tx`, not a second client. `MasterDataAuditService.write`'s
@@ -667,13 +687,16 @@ export class AssetTemplateMigrationService {
     // transaction: nothing is written, but the operator gets a driver error
     // naming no point and no asset, from a service whose own contract is that
     // every fallible decision is made before the transaction opens. So the
-    // collision is read here and refused by name.
+    // collision is read here and refused by name. `F4.216`: the second unique
+    // index, `asset_points_asset_source_key_idx` on `(asset_id,
+    // source_data_key)`, is read in the same pass and refused the same way.
     //
     // Refused rather than merged. `onConflictDoNothing` would report the point
     // as created while leaving a `computed` row standing in for physical
     // wiring, which is exactly the quiet wrongness this feature exists to stop.
     //
-    // **One read, two checks** (`F2.9` Task 12b). The collision check below
+    // **One read, three checks** (`F2.9` Task 12b; `F4.216` adds the source
+    // key). The collision check below
     // needs the assets that create a point; the override re-validation after it
     // needs *every* migrating asset, and the first set is a subset of the
     // second. Two batched reads of one table in one plan would be two round
@@ -691,6 +714,8 @@ export class AssetTemplateMigrationService {
           assetId: assetPoints.assetId,
           pointKey: assetPoints.pointKey,
           sourceKind: assetPoints.sourceKind,
+          // `F4.216` — the second unique index's column.
+          sourceDataKey: assetPoints.sourceDataKey,
           // The five calc override columns — ADR 0039 decision 6's coalesce
           // reads exactly these off this table. There is no
           // `asset_points.min_coverage_ratio` and there must not be one:
@@ -706,10 +731,15 @@ export class AssetTemplateMigrationService {
 
       type ExistingPointRow = (typeof existingRows)[number];
       const existingByAsset = new Map<string, Map<string, ExistingPointRow>>();
+      // `F4.216` — asset id → source_data_key → the point key that holds it.
+      const holderBySourceKeyByAsset = new Map<string, Map<string, string>>();
       for (const row of existingRows) {
         const forAsset = existingByAsset.get(row.assetId) ?? new Map<string, ExistingPointRow>();
         forAsset.set(row.pointKey, row);
         existingByAsset.set(row.assetId, forAsset);
+        const holders = holderBySourceKeyByAsset.get(row.assetId) ?? new Map<string, string>();
+        holders.set(row.sourceDataKey, row.pointKey);
+        holderBySourceKeyByAsset.set(row.assetId, holders);
       }
 
       for (const asset of planned) {
@@ -717,9 +747,27 @@ export class AssetTemplateMigrationService {
         if (!forAsset) {
           continue;
         }
+        const holderBySourceKey = holderBySourceKeyByAsset.get(asset.dto.assetId);
         for (const point of asset.newPoints) {
           const sourceKind = forAsset.get(point.pointKey)?.sourceKind;
           if (sourceKind === undefined) {
+            // `F4.216` — no row on this point key, but another point on the
+            // asset may already read this source key. Checked only here, so a
+            // row that collides on both reports once, as the point-key case.
+            const holder = holderBySourceKey?.get(point.sourceDataKey);
+            if (holder !== undefined) {
+              refuse({
+                reason: "source_key_already_used",
+                pointKey: point.pointKey,
+                assetCount: 1,
+                message:
+                  `Asset "${asset.dto.assetCode}": version ${target.version} adds ` +
+                  `"${point.pointKey}" with source key "${point.sourceDataKey}", but ` +
+                  `point "${holder}" on this asset already reads that key (one source ` +
+                  "key maps to one point per asset). Re-key the new version's pattern or " +
+                  "remove the existing row first.",
+              });
+            }
             continue;
           }
           refuse({

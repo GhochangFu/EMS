@@ -656,6 +656,18 @@ export const templateMigrationRefusalReasonSchema = z.enum([
    */
   "point_key_already_mapped",
   /**
+   * `F4.216` — the target version adds a measured point whose resolved
+   * `source_data_key` an existing `asset_points` row on the asset already
+   * holds under another point key.
+   *
+   * `asset_points_asset_source_key_idx` (migration 0015) makes
+   * `(asset_id, source_data_key)` unique: one source key feeds one point per
+   * asset. Without this refusal the insert raised 23505 inside the transaction
+   * and the route answered 500. Refused rather than re-pointed: which of the
+   * two points the key really belongs to is the operator's call.
+   */
+  "source_key_already_used",
+  /**
    * `F2.9` — the asset's own calc override, merged over the **target**
    * version's declaration of the same derived point, is not a pair this engine
    * will run (findings 31 and 34; ADR 0039 decision 2, "no blind apply").
