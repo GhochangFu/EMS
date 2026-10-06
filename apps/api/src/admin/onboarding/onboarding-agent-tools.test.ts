@@ -33,6 +33,16 @@ import {
   assertAddAssetRefusesATemplate,
   assertSuggestRepliesRefusesFiveAndAnEmptyReply,
   assertSuggestRepliesSetsTheRepliesAndWritesNothing,
+  assertMapPointRefusesAnUndeclaredKey,
+  assertMapPointAppendsADeclaredKeyWithAQuotedLine,
+  assertMapPointRefusesADuplicatePointKeyOnTheAsset,
+  assertMapPointRefusesATemplatedAsset,
+  assertRemovePointKeyIsRefusedWhileAMappingUsesIt,
+  assertRemovePointKeyRemovesAKeyTheCatalogStillResolves,
+  assertUseExistingPointKeysIsRefusedWithoutAnActiveKw,
+  assertUseExistingPointKeysFalsePassesWithoutAnActiveKw,
+  assertAddPointKeyLineIsQuoted,
+  assertRemoveAssetPointLineIsQuoted,
 } from "./onboarding-agent-tools.spec";
 
 /** Vitest entry point — see `admin.schema.test.ts` for the pattern (ADR 0014). One `it()` per claim. */
@@ -163,5 +173,45 @@ describe("onboarding agent tools (F3.21, ADR 0090 decision 4)", () => {
 
   it("suggest_replies refuses five replies and an empty reply (F3.25)", async () => {
     await assertSuggestRepliesRefusesFiveAndAnEmptyReply();
+  });
+
+  it("refuses map_point on a key that resolves nowhere (F3.23)", async () => {
+    await assertMapPointRefusesAnUndeclaredKey();
+  });
+
+  it("appends a declared mapping with a quoted line (F3.23)", async () => {
+    await assertMapPointAppendsADeclaredKeyWithAQuotedLine();
+  });
+
+  it("refuses a duplicate point key on one asset (F3.23)", async () => {
+    await assertMapPointRefusesADuplicatePointKeyOnTheAsset();
+  });
+
+  it("refuses a mapping on a templated asset (F3.23)", async () => {
+    await assertMapPointRefusesATemplatedAsset();
+  });
+
+  it("refuses to remove a point key a mapping needs (F3.23)", async () => {
+    await assertRemovePointKeyIsRefusedWhileAMappingUsesIt();
+  });
+
+  it("removes a point key the catalog still resolves (F3.23)", async () => {
+    await assertRemovePointKeyRemovesAKeyTheCatalogStillResolves();
+  });
+
+  it("refuses the existing catalog without an active kw (F3.23)", async () => {
+    await assertUseExistingPointKeysIsRefusedWithoutAnActiveKw();
+  });
+
+  it("declares keys in the draft without an active kw (F3.23)", async () => {
+    await assertUseExistingPointKeysFalsePassesWithoutAnActiveKw();
+  });
+
+  it("quotes the add_point_key action line (F3.23)", async () => {
+    await assertAddPointKeyLineIsQuoted();
+  });
+
+  it("quotes the remove_asset_point action line (F3.23)", async () => {
+    await assertRemoveAssetPointLineIsQuoted();
   });
 });

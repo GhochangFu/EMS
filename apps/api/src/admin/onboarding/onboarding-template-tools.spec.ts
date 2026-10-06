@@ -412,7 +412,8 @@ export async function assertT10RemoveTemplateRemovesAnUnreferencedTemplate(): Pr
 
 /** F4.195 — a point key only the draft declares is not removed while a draft template uses it. */
 export async function assertRemovePointKeyIsRefusedWhileADraftTemplateUsesIt(): Promise<void> {
-  const out = await runOn("remove_point_key", { index: 0 }, baseDraft({ templates: [CHILLER] }));
+  // F3.23: no mapping uses `kw` here, so the template is what holds the key (a mapping is refused first).
+  const out = await runOn("remove_point_key", { index: 0 }, baseDraft({ templates: [CHILLER], assetPoints: [] }));
   assert(
     !out.ok && out.error === "Point key 'kw' is used by draft templates: 'CHILLER'. Remove those templates first.",
     `refused naming the template, got ${out.content}`,
@@ -425,7 +426,7 @@ export async function assertRemovePointKeyRemovesAKeyTheCatalogHolds(): Promise<
   const draft = baseDraft({ templates: [{ ...CHILLER, points: [{ pointKey: "energy_kwh" }] }] });
   draft.pointKeys!.push({ code: "energy_kwh", name: "Energy", domain: "electrical", unit: "kWh" });
   const out = await runOn("remove_point_key", { index: 1 }, draft);
-  assert(out.ok && out.actionLine === "Removed point key energy_kwh", `removed, got ${out.content}`);
+  assert(out.ok && out.actionLine === "Removed point key 'energy_kwh'", `removed, got ${out.content}`);
   assert(out.state.working.pointKeys?.map((key) => key.code).join() === "kw", "only kw is left");
 }
 
@@ -434,7 +435,7 @@ export async function assertRemovePointKeyRemovesAKeyNoTemplateUses(): Promise<v
   const draft = baseDraft({ templates: [CHILLER] });
   draft.pointKeys!.push({ code: "kvar", name: "Reactive Power", domain: "electrical", unit: "kVAr" });
   const out = await runOn("remove_point_key", { index: 1 }, draft);
-  assert(out.ok && out.actionLine === "Removed point key kvar", `removed, got ${out.content}`);
+  assert(out.ok && out.actionLine === "Removed point key 'kvar'", `removed, got ${out.content}`);
   assert(out.state.working.pointKeys?.map((key) => key.code).join() === "kw", "only kw is left");
 }
 
@@ -443,7 +444,7 @@ export async function assertRemovePointKeyRemovesOneCopyOfADuplicateKey(): Promi
   const draft = baseDraft({ templates: [CHILLER] });
   draft.pointKeys!.push({ code: "kw", name: "Active Power", domain: "electrical", unit: "W" });
   const out = await runOn("remove_point_key", { index: 1 }, draft);
-  assert(out.ok && out.actionLine === "Removed point key kw", `removed, got ${out.content}`);
+  assert(out.ok && out.actionLine === "Removed point key 'kw'", `removed, got ${out.content}`);
   assert(out.state.working.pointKeys?.map((key) => key.unit).join() === "kW", "the first copy is left");
 }
 
@@ -467,7 +468,7 @@ export async function assertF4213RemovePointKeyIsRefusedWhileAStockEntryNeedsIt(
 export async function assertF4213RemovePointKeyRemovesAKeyAStockEntryResolvesFromTheCatalog(): Promise<void> {
   const draft = baseDraft({ pointKeys: [{ code: "flow", name: "Flow" }], templates: [{ stockCode: "WTP-PUMP" }] });
   const out = await runOn("remove_point_key", { index: 0 }, draft);
-  assert(out.ok && out.actionLine === "Removed point key flow", `removed, got ${out.content}`);
+  assert(out.ok && out.actionLine === "Removed point key 'flow'", `removed, got ${out.content}`);
 }
 
 /** F4.196 — a key that already does not resolve (held inactive) can leave: removing it breaks nothing more. */
@@ -475,7 +476,7 @@ export async function assertRemovePointKeyRemovesAKeyThatAlreadyDoesNotResolve()
   const draft = baseDraft({ templates: [{ ...CHILLER, points: [{ pointKey: "old_kw" }] }] });
   draft.pointKeys!.push({ code: "old_kw", name: "Old" });
   const out = await runOn("remove_point_key", { index: 1 }, draft);
-  assert(out.ok && out.actionLine === "Removed point key old_kw", `removed, got ${out.content}`);
+  assert(out.ok && out.actionLine === "Removed point key 'old_kw'", `removed, got ${out.content}`);
 }
 
 /** T10 (a code the draft does not hold) */

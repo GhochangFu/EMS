@@ -2,6 +2,7 @@ import { MAX_ONBOARDING_ASSET_POINTS, MAX_ONBOARDING_ASSETS, MAX_ONBOARDING_POIN
 
 import {
   CREDENTIAL_TOOL_ERROR,
+  EXISTING_KEYS_NEED_KW_ERROR,
   PROMPT_MARKER_TOOL_ERROR,
   runTool,
   type ToolContext,
@@ -36,6 +37,9 @@ export const GUIDED_DEPTH_REFUSAL =
 /** B4 — the guided answer when `set_location`'s element schema refuses the name (a one-character or blank reply). */
 export const GUIDED_LOCATION_NAME_REFUSAL = "A location name needs at least 2 characters.";
 
+/** F3.23 (ADR 0092 decision 3) — the guided answer when "use existing keys" meets a catalog with no active `kw`. */
+export const GUIDED_EXISTING_KEYS_REFUSAL = "The point-key catalog is not ready for this site. Say **kw** to declare the key in this draft.";
+
 /** B4 — the guided answer to any other element-schema refusal. */
 export const GUIDED_SCHEMA_REFUSAL = "That value is not valid for this step. Open the preview to check the draft.";
 
@@ -69,6 +73,9 @@ export function guidedRefusal(name: ToolName, error: string): string {
   }
   if (error === DRAFT_TOO_DEEP_MESSAGE) {
     return GUIDED_DEPTH_REFUSAL;
+  }
+  if (error === EXISTING_KEYS_NEED_KW_ERROR) {
+    return GUIDED_EXISTING_KEYS_REFUSAL;
   }
   if (error.startsWith("Invalid arguments: ")) {
     return name === "set_location" ? GUIDED_LOCATION_NAME_REFUSAL : GUIDED_SCHEMA_REFUSAL;

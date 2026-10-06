@@ -19,7 +19,8 @@ function assert(condition: boolean, message: string): void {
 }
 
 const ACTIVE_TYPE = { code: "smoc_campus", label: "SMOC campus" } as never;
-const TURN = { types: [ACTIVE_TYPE], templates: EMPTY_TEMPLATE_CONTEXT };
+// F3.23 (ADR 0092 decision 3): "use existing keys" needs `kw` active in the fleet catalog, as the global seed holds it.
+const TURN = { types: [ACTIVE_TYPE], templates: { ...EMPTY_TEMPLATE_CONTEXT, pointKeys: new Map([["kw", true]]) } };
 
 const PLACE = { name: "Berhampur", slug: "berhampur", code: "BERHAMPUR", type: "smoc_campus", latitude: 22.3, longitude: 87.3 };
 const MODBUS_RTU = { code: "RTU-1", displayName: "RTU-1", protocol: "modbus_tcp", config: { host: "127.0.0.1", port: 502, unitId: 1, pollIntervalMs: 5000 }, credentialsSet: false, ingestEnabled: false };

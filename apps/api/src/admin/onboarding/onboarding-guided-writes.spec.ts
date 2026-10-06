@@ -1,14 +1,16 @@
 import { MAX_ONBOARDING_RTUS, type OnboardingDraft } from "@bms/shared";
 
-import { CREDENTIAL_TOOL_ERROR, TOOL_DEFINITIONS, type ToolContext, type ToolState } from "./onboarding-agent-tools";
+import { CREDENTIAL_TOOL_ERROR, EXISTING_KEYS_NEED_KW_ERROR, TOOL_DEFINITIONS, type ToolContext, type ToolState } from "./onboarding-agent-tools";
 import {
   GUIDED_CREDENTIAL_REFUSAL,
   GUIDED_DEPTH_REFUSAL,
+  GUIDED_EXISTING_KEYS_REFUSAL,
   GUIDED_MARKER_REFUSAL,
   GUIDED_OTHER_REFUSAL,
   GUIDED_SCHEMA_REFUSAL,
   GUIDED_TOOL_COVERAGE,
   guidedCapRefusal,
+  guidedRefusal,
   guidedWrite,
 } from "./onboarding-guided-writes";
 import { PROMPT_OMITTED_MARKER } from "./onboarding-prompt-budget";
@@ -124,4 +126,18 @@ export function assertEveryToolIsClassified(): void {
     (name) => !Object.prototype.hasOwnProperty.call(GUIDED_TOOL_COVERAGE, name),
   );
   assert(missing.length === 0, `unclassified tools: ${missing.join(", ")}`);
+}
+
+/** F3.23 G1 (ADR 0092 decision 3): the no-active-kw refusal answers its own guided sentence, not the fallback. */
+export function assertTheExistingKeysRefusalIsItsGuidedSentence(): void {
+  const sentence = guidedRefusal("use_existing_point_keys", EXISTING_KEYS_NEED_KW_ERROR);
+  assert(sentence === GUIDED_EXISTING_KEYS_REFUSAL, `the guided sentence, got ${sentence}`);
+}
+
+/** F3.23 G1, driven: "use existing keys" on a catalog with no active kw writes nothing and answers that sentence. */
+export async function assertUseExistingKeysWithoutKwIsRefusedOnTheGuidedPath(): Promise<void> {
+  const state: ToolState = { working: {} };
+  const out = await guidedWrite("use_existing_point_keys", { value: true }, state, context());
+  assert(!out.ok && out.error === GUIDED_EXISTING_KEYS_REFUSAL, `the guided refusal: ${JSON.stringify(out)}`);
+  assert(state.working.onboardingMeta === undefined, "nothing was written");
 }

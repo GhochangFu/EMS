@@ -6,6 +6,7 @@ import { echoedItems, moreTail, quoteCell } from "../spreadsheet-guard";
 import { isJsonContainer, rebuildDeep } from "../stack-safe-json";
 import { commitSummary } from "./onboarding-commit-proposal";
 import { looksLikeCredential } from "./onboarding-credential-detect";
+import { assetPointProblems } from "./onboarding-mapping-refs";
 import { cutToBound, draftCountProblem } from "./onboarding-draft-caps";
 import type { LlmToolCall, LlmToolDefinition } from "./onboarding-llm-port";
 import { deriveLocationPatch } from "./onboarding-location-derive";
@@ -109,6 +110,14 @@ export const CREDENTIALED_CONNECTION_ERROR =
 /** The refusal of an argument that echoes the prompt-budget marker; exported so `guidedWrite` classifies it by identity. */
 export const PROMPT_MARKER_TOOL_ERROR = "The arguments carry a withheld-value marker; send real values only.";
 
+/**
+ * `F3.23` (ADR 0092 decision 3): the existing catalog stands in for the draft's
+ * keys only when it holds `kw`, the key every guided sample maps. Exported so
+ * `guidedRefusal` classifies it by identity.
+ */
+export const EXISTING_KEYS_NEED_KW_ERROR =
+  "The catalog holds no active point key 'kw', so the existing catalog cannot be used here; declare the point keys in this draft.";
+
 export const CREDENTIAL_TOOL_ERROR =
   "Credentials are never set through this chat. Tell the user to use the Credentials field on the RTU step.";
 
@@ -186,12 +195,16 @@ const DESCRIPTIONS: Record<ToolName, string> = {
   update_rtu: "Changes fields of the RTU at `index`. Never put a credential in `config`.",
   remove_rtu: "Removes the RTU at `index`.",
   add_point_key: "Declares a point key in this draft.",
-  remove_point_key: "Removes the draft point key at `index`. Refused while a draft template uses it and the catalog does not hold it active.",
+  remove_point_key:
+    "Removes the draft point key at `index`. Refused while a draft mapping or template uses it and the catalog does not hold it active.",
   add_asset: "Adds an asset on the RTU at `rtuIndex`.",
   remove_asset: "Removes the asset at `index`.",
-  map_point: "Maps a source data key on the asset at `assetIndex` to a point key.",
+  map_point:
+    "Maps a source data key on the asset at `assetIndex` to a point key. Refused when the asset is missing or built from a template, " +
+    "when the key is neither declared in this draft nor active in the catalog, or when the asset already maps that point key or source data key.",
   remove_asset_point: "Removes the mapping at `index`.",
-  use_existing_point_keys: "Sets whether the draft uses the existing point-key catalog instead of declaring new keys.",
+  use_existing_point_keys:
+    "Sets whether the draft uses the existing point-key catalog instead of declaring new keys. `true` is refused when the catalog holds no active `kw`.",
   validate_draft: "Validates the draft and returns the errors and whether it is ready to commit.",
   propose_commit:
     "Proposes the commit of a ready draft. You cannot commit: the user confirms with the Commit button or by typing `confirm commit`.",
@@ -386,7 +399,7 @@ async function dispatch(name: ToolName, args: Record<string, unknown>, state: To
 
     case "add_point_key": {
       const key = args as z.infer<typeof draftPointKeySchema>;
-      return write(state, { pointKeys: [...(draft.pointKeys ?? []), key] }, `Added point key ${key.code}`);
+      return write(state, { pointKeys: [...(draft.pointKeys ?? []), key] }, `Added point key ${quoteCell(key.code)}`);
     }
 
     case "remove_point_key": {
@@ -409,6 +422,21 @@ async function dispatch(name: ToolName, args: Record<string, unknown>, state: To
       const before = new Set((draft.pointKeys ?? []).map((key) => key.code));
       const after = new Set(hit.rest.map((key) => key.code));
       const breaks = unresolvedPointKey(code, before, catalog) === null && unresolvedPointKey(code, after, catalog) !== null;
+      // F3.23 (ADR 0092 decision 2, F4.195 left open): the mappings that lose
+      // their key are the ones the mapping rule refuses once it is gone.
+      const rows = draft.assetPoints ?? [];
+      const mappings = !breaks
+        ? []
+        : assetPointProblems([], rows, { assets: draft.assets, pointKeys: hit.rest }, catalog)
+            .filter((problem) => problem.kind === "key" && rows[problem.index]?.pointKey === code)
+            .map((problem) => quoteCell(rows[problem.index]!.sourceDataKey));
+      if (mappings.length > 0) {
+        const { shown, omitted } = echoedItems(mappings, 10);
+        return fail(
+          `Point key ${quoteCell(code)} is used by mappings: ${[...shown, moreTail(omitted, "mappings")].filter(Boolean).join(", ")}. ` +
+            "Remove those mappings first.",
+        );
+      }
       const users = !breaks
         ? []
         : (draft.templates ?? [])
@@ -427,7 +455,7 @@ async function dispatch(name: ToolName, args: Record<string, unknown>, state: To
             "Remove those templates first.",
         );
       }
-      return write(state, { pointKeys: hit.rest }, `Removed point key ${code}`);
+      return write(state, { pointKeys: hit.rest }, `Removed point key ${quoteCell(code)}`);
     }
 
     case "add_asset": {
@@ -459,24 +487,33 @@ async function dispatch(name: ToolName, args: Record<string, unknown>, state: To
     }
 
     case "map_point": {
+      // F3.23 (ADR 0092 decision 2): the validator's mapping rule, so a
+      // mapping written here cannot fail the commit as 23503 or 23505.
       const point = args as z.infer<typeof draftAssetPointSchema>;
-      const asset = draft.assets?.[point.assetIndex];
+      const problems = assetPointProblems(draft.assetPoints ?? [], [point], draft, ctx.templates.pointKeys);
+      if (problems.length > 0) {
+        return fail(problems[0]!.message);
+      }
+      const asset = draft.assets![point.assetIndex]!;
       return write(
         state,
         { assetPoints: [...(draft.assetPoints ?? []), point] },
-        `Mapped ${point.sourceDataKey} → ${point.pointKey} on asset ${asset?.code ?? `#${point.assetIndex}`}`,
+        `Mapped ${quoteCell(point.sourceDataKey)} → ${quoteCell(point.pointKey)} on asset ${quoteCell(asset.code)}`,
       );
     }
 
     case "remove_asset_point": {
       const hit = removeAt(draft.assetPoints, (args as { index: number }).index);
       return hit
-        ? write(state, { assetPoints: hit.rest }, `Removed mapping ${hit.removed.sourceDataKey} → ${hit.removed.pointKey}`)
+        ? write(state, { assetPoints: hit.rest }, `Removed mapping ${quoteCell(hit.removed.sourceDataKey)} → ${quoteCell(hit.removed.pointKey)}`)
         : fail("There is no mapping at that index.");
     }
 
     case "use_existing_point_keys": {
       const value = (args as { value: boolean }).value;
+      if (value && ctx.templates.pointKeys.get("kw") !== true) {
+        return fail(EXISTING_KEYS_NEED_KW_ERROR);
+      }
       return write(
         state,
         { onboardingMeta: { useExistingPointKeys: value } },
