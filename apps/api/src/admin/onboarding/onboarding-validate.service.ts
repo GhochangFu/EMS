@@ -185,6 +185,17 @@ export class OnboardingValidateService {
             message: "MQTT topic must name one device; # and + are wildcards",
           });
         }
+        // Ingest builds the device as `{ topic: head.mqtt_topic, ...device }`
+        // (`apps/ingest/src/host/bindings.ts`), so a string `config.device.topic`
+        // overrides the head topic and must not be a wildcard either.
+        const device: unknown = rtu.config?.device;
+        const nested = typeof device === "object" && device !== null ? (device as { topic?: unknown }).topic : undefined;
+        if (rtu.protocol === "mqtt" && typeof nested === "string" && topicHasWildcard(nested)) {
+          errors.push({
+            path: `rtus.${i}.config.device.topic`,
+            message: "MQTT topic must name one device; # and + are wildcards",
+          });
+        }
       });
     }
 

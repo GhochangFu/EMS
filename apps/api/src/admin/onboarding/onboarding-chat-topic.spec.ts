@@ -610,3 +610,29 @@ export function assertAWildcardOnAModbusRtuIsNotAnError(): void {
   const messages = result.errors.filter((error) => error.path === "rtus.0.config.topic").map((error) => error.message);
   assert(messages.length === 0, `a wildcard on a Modbus RTU is not an error, got ${JSON.stringify(messages)}`);
 }
+
+/** W6 (F4.215) — a guided `topic: site/#` turn writes nothing and the reply names the wildcard. */
+export async function assertAWildcardTopicTurnIsRefused(): Promise<void> {
+  const draft = waitingForATopic();
+  const result = await ruleBasedTurn("topic: site/#", draft, "rtu");
+  const topics = mergedTopics(draft, result);
+  assert(topics[0] === "", `the topic stays unchanged, got ${JSON.stringify(topics)}`);
+  assert(/wildcard/i.test(result.assistantMessage), `the reply names the wildcard, got ${result.assistantMessage}`);
+  assert(!result.assistantMessage.includes("set on"), `the reply does not claim the topic was set, got ${result.assistantMessage}`);
+}
+
+/** W7 (F4.215) — ingest lets `config.device.topic` override the head topic, so a nested wildcard is refused. */
+export function assertANestedDeviceWildcardIsAValidationError(): void {
+  const rtu = credentialedRtu("plant/a", { config: { host: "h", port: 8883, tls: true, topic: "plant/a", device: { topic: "plant/#" } } });
+  const result = new OnboardingValidateService().validate(draftWith(rtu), ACTIVE_TYPES, EMPTY_TEMPLATE_CONTEXT);
+  const messages = result.errors.filter((error) => error.path === "rtus.0.config.device.topic").map((error) => error.message);
+  assert(messages.includes(WILDCARD_MESSAGE), `a nested device.topic wildcard is refused, got ${JSON.stringify(messages)}`);
+}
+
+/** B3d (F4.218) — the plural question leaves one RTU, as the singular does. */
+export async function assertAPluralTopicQuestionAppendsNoRtu(): Promise<void> {
+  const draft = waitingForATopic();
+  const result = await ruleBasedTurn("which topics can I use", draft, "rtu");
+  const count = (mergeDraftPatch(draft, result.draftPatch).rtus ?? []).length;
+  assert(count === 1, `a plural topic question leaves one RTU, got ${count}`);
+}

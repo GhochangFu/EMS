@@ -384,7 +384,7 @@ export function assertDisplayNameFixListIsCapped(): void {
  *
  * **Capping it costs no working function, and that is measured rather than
  * assumed.** The template already does not do what it says past the first
- * block: `defaultConfig` reads one **non-global** `/topic[:\s]+(\S+)/i`, so
+ * block: `defaultConfig` reads one **non-global** `TOPIC_TURN` (`/\btopic\s*:\s*(\S+)/i`), so
  * only the first block's topic is ever taken, and the `phase === "rtu"` branch
  * of `handleRuleBasedTurn` *appends* an RTU rather than updating the ones the
  * import created. Three imported RTUs with blank topics, all three filled in

@@ -206,7 +206,7 @@ export function mqttSetupTemplate(draft: OnboardingDraft): string {
     // `topic:` is the one echo site `quoteCell` cannot cover — the operator
     // copies this block, edits it and pastes it back, and the quotes would be
     // captured into the stored topic by the guided turn's
-    // `/\btopic\s*:\s*(\S+)/i` (or `defaultConfig`'s `/topic[:\s]+(\S+)/i` when
+    // `/\btopic\s*:\s*(\S+)/i` (or `defaultConfig`'s `TOPIC_TURN` when
     // the turn appends). So it is bounded by *length* instead, against the
     // same `MAX_RTU_TOPIC_CHARS` the sheet is refused on, and an unusable
     // value falls back to the placeholder rather than being cut: a truncated

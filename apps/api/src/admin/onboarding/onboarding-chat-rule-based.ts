@@ -30,6 +30,7 @@ import {
   protocolTestText,
   rtuForTopicTurn,
   TOPIC_TURN,
+  topicHasWildcard,
 } from "./onboarding-chat-summaries";
 import type { ValidateTemplateContext } from "./onboarding-template-refs";
 import type { OnboardingDraftInput } from "./onboarding.schema";
@@ -146,6 +147,7 @@ function stepPrompt(
   }
 }
 
+/** Runs one guided (rule-based) chat turn: `deps` supplies validate and finalizeTurn; resolves to the `ChatTurnResult` that `deps.finalizeTurn` builds. */
 export async function handleRuleBasedTurn(
   deps: RuleBasedTurnDeps,
   message: string,
@@ -326,6 +328,12 @@ export async function handleRuleBasedTurn(
   const inHand = topicTurn && !addAnother && !NAMES_A_PROTOCOL.test(rest) ? rtuForTopicTurn(message, draft) : -1;
   if (topicTurn && inHand >= 0) {
     const topic = cutToBound(topicTurn[1], MAX_RTU_TOPIC_CHARS);
+    // F4.215: ingest refuses a wildcard topic, so the turn stores nothing.
+    if (topicHasWildcard(topic)) {
+      const waiting = stepPrompt(derived, draft, types);
+      const refusal = `I did not change the draft. A topic must name one device; # and + are wildcards. ${waiting.text}`;
+      return deps.finalizeTurn(refusal, {}, derived, waiting.replies, message, draft, turn);
+    }
     const rtus = (draft.rtus ?? []).map((rtu, i) => (i === inHand ? { ...rtu, config: { ...rtu.config, topic } } : rtu));
     patch.rtus = rtus;
     const merged = mergeDraftPatch(draft, patch);
@@ -337,7 +345,7 @@ export async function handleRuleBasedTurn(
   // F4.218: in the RTU step a message that mentions a topic without `topic:`
   // is a question, not a value. It changes nothing and gets the step prompt;
   // naming a protocol, or "add another rtu", still appends.
-  if (derived === "rtu" && !topicTurn && !addAnother && /\btopic\b/i.test(message) && !NAMES_A_PROTOCOL.test(lower)) {
+  if (derived === "rtu" && !topicTurn && !addAnother && /\btopics?\b/i.test(message) && !NAMES_A_PROTOCOL.test(lower)) {
     const prompt = stepPrompt(derived, draft, types);
     return deps.finalizeTurn(`I did not change the draft. ${prompt.text}`, {}, derived, prompt.replies, message, draft, turn);
   }

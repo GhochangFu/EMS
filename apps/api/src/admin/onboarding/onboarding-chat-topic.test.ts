@@ -29,6 +29,9 @@ import {
   assertATopicAtTheBoundDoesNotNeedSetup,
   assertATopicQuestionDoesNotUpdate,
   assertATopicQuestionAppendsNoRtu,
+  assertAPluralTopicQuestionAppendsNoRtu,
+  assertAWildcardTopicTurnIsRefused,
+  assertANestedDeviceWildcardIsAValidationError,
   assertATopicQuestionIsAnsweredWithTheColonForm,
   assertAForgottenColonWithAProtocolWordStillAppends,
   assertAddAnotherRtuWithoutAColonStoresNoTopic,
@@ -128,6 +131,10 @@ describe("F4.208 — the guided `topic: x` turn sets the topic of the RTU in han
 
   it("B3: a topic question appends no RTU", async () => {
     await assertATopicQuestionAppendsNoRtu();
+  });
+
+  it("B3d: a plural topics question appends no RTU", async () => {
+    await assertAPluralTopicQuestionAppendsNoRtu();
   });
 
   it("B3b: a topic question is answered with the colon form", async () => {
@@ -246,5 +253,13 @@ describe("F4.215 — a wildcard topic is unusable", () => {
 
   it("W5: a wildcard on a Modbus RTU is not an error", () => {
     assertAWildcardOnAModbusRtuIsNotAnError();
+  });
+
+  it("W6: a wildcard topic turn is refused and the draft unchanged", async () => {
+    await assertAWildcardTopicTurnIsRefused();
+  });
+
+  it("W7: a nested device.topic wildcard is a validation error", () => {
+    assertANestedDeviceWildcardIsAValidationError();
   });
 });
