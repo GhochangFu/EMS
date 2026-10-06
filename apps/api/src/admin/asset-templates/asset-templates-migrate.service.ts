@@ -704,11 +704,12 @@ export class AssetTemplateMigrationService {
     // override endpoint. A version that turns a derived point measured collides
     // with a row the operator does not think of as a mapping at all.
     //
-    // `asset_points_asset_id_point_key_unique` would raise 23505 *inside* the
-    // transaction: nothing is written, but the operator gets a driver error
-    // naming no point and no asset, from a service whose own contract is that
-    // every fallible decision is made before the transaction opens. So the
-    // collision is read here and refused by name. `F4.216`: the second unique
+    // `asset_points_asset_id_point_key_unique` would still raise 23505 *inside*
+    // the transaction: nothing is written, but, since `F4.216`/`F4.222`, the
+    // write-time net (`translateAssetPointInsertUnique`) turns it into a generic
+    // 409 that names no point, no asset and no existing `source_kind`, from a
+    // service whose own contract is that every fallible decision is made before
+    // the transaction opens. So the collision is read here and refused by name. `F4.216`: the second unique
     // index, `asset_points_asset_source_key_idx` on `(asset_id,
     // source_data_key)`, is read in the same pass and refused the same way.
     //

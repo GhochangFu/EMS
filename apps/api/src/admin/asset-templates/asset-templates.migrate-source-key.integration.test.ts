@@ -40,7 +40,7 @@ const connectionString = requireIntegrationDb({
     "Neither the refusal nor the rollback is observable without the real index.",
 });
 
-describe.skipIf(!connectionString)("F4.216 — template migration and source keys", () => {
+describe.skipIf(!connectionString)("F4.216 / F4.222 — template migration: source-key and point-key collisions", () => {
   let pool: pg.Pool | undefined;
   let authPool: pg.Pool | undefined;
   let tenantPool: pg.Pool | undefined;
