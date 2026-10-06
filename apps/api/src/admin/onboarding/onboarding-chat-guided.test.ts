@@ -7,6 +7,9 @@ import {
   assertTheDepthBoundIsAGuidedRefusal,
   assertACredentialLookingNameIsAGuidedRefusal,
   assertAPromptMarkerNameIsAGuidedRefusal,
+  assertASchemaRefusedNameIsAGuidedRefusal,
+  assertTheNonMqttRtuReplyNamesTheKwLabel,
+  assertYesBeforeReviewDoesNotSayInReview,
   assertAGuidedTurnStoresItsActionMessage,
   assertAnythingButTheLabelWritesNothing,
   assertNoGuidedReplyNamesAnInputTheCodeDoesNotParse,
@@ -33,6 +36,14 @@ describe("the guided onboarding prompts and label-only writes (F3.27 U2)", () =>
 
   it("the review reply points at the Asset Templates editor", async () => {
     await assertTheReviewReplyPointsAtTheAssetTemplatesEditor();
+  });
+
+  it("yes before review does not say the draft is in review", async () => {
+    await assertYesBeforeReviewDoesNotSayInReview();
+  });
+
+  it("the non-MQTT RTU reply names the kw label", async () => {
+    await assertTheNonMqttRtuReplyNamesTheKwLabel();
   });
 
   it("the import follow-ups are exact", () => {
@@ -71,6 +82,10 @@ describe("the guided writes run through the tool registry (F3.27 U4: B4, B5, Q-C
 
   it("a prompt-marker location name is a guided refusal", async () => {
     await assertAPromptMarkerNameIsAGuidedRefusal();
+  });
+
+  it("a schema-refused location name is a guided refusal", async () => {
+    await assertASchemaRefusedNameIsAGuidedRefusal();
   });
 
   it("a guided turn stores its action message through OnboardingService.chat", async () => {

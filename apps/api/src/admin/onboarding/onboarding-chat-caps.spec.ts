@@ -5,6 +5,7 @@ import type { JwtPayload, OnboardingDraft } from "@bms/shared";
 
 import { CredentialCryptoService } from "../../security/credential-crypto.service";
 import { OnboardingChatService } from "./onboarding-chat.service";
+import { guidedCapRefusal } from "./onboarding-guided-writes";
 import { OnboardingService } from "./onboarding.service";
 import { OnboardingValidateService } from "./onboarding-validate.service";
 import { EMPTY_TEMPLATE_CONTEXT } from "./onboarding-template-refs";
@@ -302,7 +303,8 @@ function writtenDraftJson(record: Recorder): string {
  * Since F3.27 the guided RTU step writes through the registry's `add_rtu`
  * (`guidedWrite`), which checks `draftCountProblem` on the merged draft as the
  * agent path does. So an at-cap session answers 200 with `I did not change the
- * draft.`, the cap sentence the upload and the commit give, and the step prompt.
+ * draft.`, the guided cap sentence (`guidedCapRefusal`, not the registry's
+ * model-facing count) and the step prompt.
  * The turn and its reply are stored; the draft is stored as it was.
  */
 export async function assertAnAtCapChatTurnIsRefusedInTheReply(): Promise<void> {
@@ -318,12 +320,14 @@ export async function assertAnAtCapChatTurnIsRefusedInTheReply(): Promise<void> 
     });
     const response = await service.chat(JWT, "s-1", APPEND_TURN);
 
-    const expected =
-      `The draft holds ${MAX_ONBOARDING_RTUS + 1} RTUs, more than the ${MAX_ONBOARDING_RTUS} ` +
-      "one onboarding session may commit; remove some and commit the rest in a second session";
+    const expected = guidedCapRefusal("RTUs", MAX_ONBOARDING_RTUS);
     assert(
       response.assistantMessage.startsWith(`I did not change the draft. ${expected} `),
       `the reply carries the cap sentence, got "${response.assistantMessage}"`,
+    );
+    assert(
+      !response.assistantMessage.includes(`${MAX_ONBOARDING_RTUS + 1}`),
+      `the reply names no count the draft does not hold, got "${response.assistantMessage}"`,
     );
     assert(record.updates.length === 1, `the turn is stored once, got ${record.updates.length} update(s)`);
     assert(
@@ -353,10 +357,7 @@ export async function assertAnAtCapPointKeyTurnIsRefusedInTheReply(): Promise<vo
     });
     const response = await service.chat(JWT, "s-1", POINT_KEY_TURN);
 
-    const expected =
-      `The draft holds ${MAX_ONBOARDING_POINT_KEYS + 1} point keys, more than the ` +
-      `${MAX_ONBOARDING_POINT_KEYS} one onboarding session may commit; remove some and commit ` +
-      "the rest in a second session";
+    const expected = guidedCapRefusal("point keys", MAX_ONBOARDING_POINT_KEYS);
     assert(
       response.assistantMessage.startsWith(`I did not change the draft. ${expected} `),
       `the reply names the point-key cap, not the RTU one, got "${response.assistantMessage}"`,

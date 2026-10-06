@@ -238,10 +238,10 @@ export async function handleRuleBasedTurn(
         return refused(written.error);
       }
       const result = deps.finalizeTurn(
-        `Using existing organization point keys:\n\n${deps.catalogService.formatPointKeysForChat(orgKeys)}\n\nSay **confirm assets** or add assets per RTU.`,
+        `Using existing organization point keys:\n\n${deps.catalogService.formatPointKeysForChat(orgKeys)}\n\nSay **One asset** to add an asset, then **confirm assets**.`,
         { onboardingMeta: state.working.onboardingMeta },
         "assets",
-        ["confirm assets", "View draft"],
+        ["One asset", "confirm assets", "View draft"],
         message,
         draft,
         turn,
@@ -255,7 +255,12 @@ export async function handleRuleBasedTurn(
   // "confirm mappings" reply buttons, so they answered with the commit line
   // and their step never ran. It commits nothing either way: only the typed
   // `confirm commit` phrase or the Commit button commits (ADR 0090 decision 5).
+  // F3.27 (B3): the review reply only when the draft is in review; before it,
+  // "yes" (the answer to an old "... next?" prompt) gets the step prompt.
   if (/^(yes|create|create it|commit|confirm)$/.test(intent)) {
+    if (derived !== "review") {
+      return unchangedTurn(deps, message, draft, derived, types, turn);
+    }
     return deps.finalizeTurn(
       REVIEW_REPLY,
       patch,
@@ -291,11 +296,10 @@ export async function handleRuleBasedTurn(
     const { type, kept } = locationTypes.resolveLocationTurn(message, draft.location, types);
     // F4.104 — **this branch is the draft's default producer, not a
     // fallback.** `.env.example` ships `LLM_PROVIDER=` empty (`F3.21`), so
-    // `handleTurn` reaches here on every turn of an ordinary deployment. And
-    // unlike the old single-shot model branch (removed by `F3.21`), which passed the model's patch through
-    // `onboardingDraftSchema.safeParse`, this method assembles its patch in
-    // code and parses nothing: a bound on the schema binds only the producers
-    // that parse it, and this is not one of them. Four sites derive a draft
+    // `handleTurn` reaches here on every turn of an ordinary deployment. Since
+    // F3.27 every guided write goes through `runTool` and its element schemas
+    // (`guidedWrite`), but a schema refusal is a dead end in the middle of a
+    // conversation, so each string is still cut before the call. Four sites derive a draft
     // string from the chat message — here, `assets[].code`/`siteName` below,
     // `defaultConfig`'s `topic`, F4.208's topic turn — and each is cut to the same imported
     // bound the schema carries. `code` was already `.slice(0, 64)`; the
@@ -359,6 +363,14 @@ export async function handleRuleBasedTurn(
     // both go through it anyway, so reordering the two steps cannot
     // reintroduce the split.
     const name = kept?.name ?? cutToBound(message.trim(), ONBOARDING_DRAFT_STRING_MAX["location.name"]);
+    // F3.27 (decision 6): a kept location with no type matched is a re-ask, not
+    // a write, so it records no action line. The patch keeps the stored fields
+    // and leaves the stored type out (F4.162 R6: `kept` carries none); the merge keeps it.
+    if (kept && !type) {
+      patch.location = kept as OnboardingDraftInput["location"];
+      const labels = types.map((row) => row.label);
+      return deps.finalizeTurn(locationTypes.locationTypeQuestion(name), patch, "location", labels, message, draft, turn);
+    }
     // A kept location's non-empty slug and code win; an empty one (a blank
     // workbook cell, a `PATCH` that cleared it) is derived from the name.
     // F3.27: the cut above runs before the call, and `set_location` derives
@@ -468,7 +480,7 @@ export async function handleRuleBasedTurn(
     const result = deps.finalizeTurn(
       protocol === "mqtt"
         ? MQTT_RTU_ADDED_REPLY
-        : `Added ${protocol} RTU. Ingest adapter is not connected yet — config will be stored. Add point keys next?`,
+        : `Added ${protocol} RTU. Ingest adapter is not connected yet — config will be stored. Say **kw** to add the catalog key **kw**.`,
       patch,
       "point_keys",
       addedRtuReplies(deps, state.working, turn),

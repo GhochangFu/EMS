@@ -14,6 +14,7 @@ import {
   assertAgentSystemPromptNamesIonsiteNexus,
   assertStoredInactiveTypeIsAskedFor,
   assertStoredInactiveTypeIsNotPatched,
+  assertStoredInactiveTypeTurnHasNoActionLine,
   assertStoredTypeIsNotAskedFor,
   assertStoredTypeKeepsTheNameThroughTwoTurns,
   assertStoredTypeReportsNoMissingType,
@@ -128,6 +129,10 @@ describe("OnboardingChatService.handleTurn — a stored location type (F4.157 re
 
   it("does not copy a stored inactive type into the patch", async () => {
     await assertStoredInactiveTypeIsNotPatched();
+  });
+
+  it("records no action line for the re-ask (F3.27)", async () => {
+    await assertStoredInactiveTypeTurnHasNoActionLine();
   });
 });
 

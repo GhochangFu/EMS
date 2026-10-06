@@ -80,10 +80,11 @@ function repliesOf(result: { suggestedReplies?: readonly string[] }): string {
   return JSON.stringify(result.suggestedReplies);
 }
 
+/** F3.27 (B3) — "yes" before review changes nothing and answers the step the draft is at, never the review reply. */
 export async function assertTheYesAnswerOffersOnlyViewDraft(): Promise<void> {
   const result = await ruleBasedTurn("yes", {}, "location");
   assert(
-    result.assistantMessage.startsWith(REVIEW_REPLY),
+    result.assistantMessage === "I did not change the draft. The location needs a name and a type first. What is the location name?",
     `this case must reach the yes branch, got ${result.assistantMessage}`,
   );
   assert(repliesOf(result) === JSON.stringify(["View draft"]), `got ${repliesOf(result)}`);
@@ -223,17 +224,20 @@ export async function assertConfirmingALaterStepNamesTheEarlierOne(): Promise<vo
   );
 }
 
-/** ADR 0090 decision 5 is untouched: "confirm" alone is still the commit answer, which commits nothing. */
+/** ADR 0090 decision 5 is untouched: "confirm" alone commits nothing; before review (F3.27 B3) it answers the step, not the review reply. */
 export async function assertConfirmAloneStillGivesTheCommitAnswer(): Promise<void> {
   const result = await ruleBasedTurn("confirm", { location: PLACE, rtus: [mqttRtu(false)] }, "rtu");
-  assert(result.assistantMessage.startsWith(REVIEW_REPLY), turnSummary(result));
+  assert(result.assistantMessage.startsWith("I did not change the draft. "), turnSummary(result));
+  assert(!result.assistantMessage.includes("in review"), turnSummary(result));
   assert(result.draftPatch.rtus === undefined, `no RTU is added, got ${JSON.stringify(result.draftPatch.rtus)}`);
 }
 
-/** The import follow-up's "Commit" reply goes as text and still gets the commit answer. */
+/** The import follow-up's "Commit" reply goes as text and commits nothing; at review it gets the review reply. */
 export async function assertCommitStillGivesTheCommitAnswer(): Promise<void> {
   const result = await ruleBasedTurn("Commit", { location: PLACE, rtus: [mqttRtu(false)] }, "rtu");
-  assert(result.assistantMessage.startsWith(REVIEW_REPLY), turnSummary(result));
+  assert(result.assistantMessage.startsWith("I did not change the draft. "), turnSummary(result));
+  const atReview = await ruleBasedTurn("Commit", allTemplatedDraft(), "review");
+  assert(atReview.assistantMessage === REVIEW_REPLY, turnSummary(atReview));
   assert(result.draftPatch.rtus === undefined, `no RTU is added, got ${JSON.stringify(result.draftPatch.rtus)}`);
 }
 
@@ -498,6 +502,24 @@ export async function assertTheKwTurnAnswersItsActionLine(): Promise<void> {
     JSON.stringify(result.actionLines) === JSON.stringify(["Added point key kw"]),
     `the add_point_key action line, got ${JSON.stringify(result.actionLines)}`,
   );
+}
+
+/** The "use existing keys" turn at the point-key step, on a draft with one Modbus RTU and an organization catalog. */
+export async function existingKeysTurn(message: string): Promise<ChatTurnResult> {
+  return orgTurn(message, { location: PLACE, rtus: [MODBUS_RTU] });
+}
+
+/** F3.27 (B2) — the catalog reply names "One asset", the label the asset step parses, and offers it. */
+export async function assertTheExistingKeysReplyNamesOneAsset(): Promise<void> {
+  const result = await existingKeysTurn("use existing keys");
+  assert(
+    result.assistantMessage.endsWith("\n\nSay **One asset** to add an asset, then **confirm assets**."),
+    turnSummary(result),
+  );
+  assert(repliesOf(result) === JSON.stringify(["One asset", "confirm assets", "View draft"]), `got ${repliesOf(result)}`);
+  const draft = { location: PLACE, rtus: [MODBUS_RTU], onboardingMeta: result.draftPatch.onboardingMeta } as OnboardingDraft;
+  const next = await ruleBasedTurn("One asset", draft, result.currentPhase);
+  assert(next.draftPatch.assets?.length === 1, `"One asset" then adds an asset, ${turnSummary(next)}`);
 }
 
 /** F3.27 — "use existing keys" writes through `use_existing_point_keys` and answers its action line. */

@@ -461,6 +461,16 @@ export async function assertStoredInactiveTypeIsNotPatched(): Promise<void> {
 }
 
 /**
+ * F3.27 (decision 6, B5) — the same turn writes nothing, so it records no
+ * action line: an action line stands for a write, and a re-ask is not one.
+ */
+export async function assertStoredInactiveTypeTurnHasNoActionLine(): Promise<void> {
+  const { turn } = await storedTurn("not sure", NAMED_INACTIVE_TYPE, "location");
+  assert(turn.actionLines.length === 0, `a re-ask records no action line, got ${JSON.stringify(turn.actionLines)}`);
+  assert(turn.assistantMessage === "Which type of location is **Lotapata**?", `the turn still asks, got "${turn.assistantMessage}"`);
+}
+
+/**
  * R5 — the OpenAI branch validates the draft `mergeDraft` will store. The
  * stored draft has an active type and `code: ""`; the model's patch supplies
  * the code and no type, so only the merged draft is complete and the phase

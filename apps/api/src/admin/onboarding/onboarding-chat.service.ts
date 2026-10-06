@@ -194,7 +194,7 @@ export class OnboardingChatService {
           suggestedReplies: ["use existing keys", "confirm point keys", "View draft"],
         };
       }
-      lines.push("\nAdd point keys (e.g. **kw**), then say **confirm point keys**.");
+      lines.push("\nSay **kw** to add the catalog key **kw**, then **confirm point keys**.");
       return {
         assistantMessage: lines.join("\n"),
         suggestedReplies: ["kw", "confirm point keys", "View draft"],

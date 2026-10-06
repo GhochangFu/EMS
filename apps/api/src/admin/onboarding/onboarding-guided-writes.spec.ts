@@ -1,8 +1,16 @@
 import { MAX_ONBOARDING_RTUS, type OnboardingDraft } from "@bms/shared";
 
 import { CREDENTIAL_TOOL_ERROR, TOOL_DEFINITIONS, type ToolContext, type ToolState } from "./onboarding-agent-tools";
-import { draftCountProblem } from "./onboarding-draft-caps";
-import { GUIDED_TOOL_COVERAGE, guidedWrite } from "./onboarding-guided-writes";
+import {
+  GUIDED_CREDENTIAL_REFUSAL,
+  GUIDED_DEPTH_REFUSAL,
+  GUIDED_MARKER_REFUSAL,
+  GUIDED_OTHER_REFUSAL,
+  GUIDED_SCHEMA_REFUSAL,
+  GUIDED_TOOL_COVERAGE,
+  guidedCapRefusal,
+  guidedWrite,
+} from "./onboarding-guided-writes";
 import { PROMPT_OMITTED_MARKER } from "./onboarding-prompt-budget";
 import { EMPTY_TEMPLATE_CONTEXT } from "./onboarding-template-refs";
 import { OnboardingValidateService } from "./onboarding-validate.service";
@@ -47,22 +55,22 @@ function context(): ToolContext {
 
 const MQTT_RTU = { code: "RTU-1", displayName: "RTU-1", protocol: "mqtt" as const, config: { host: "broker", port: 8883, tls: true, topic: "a/b" } };
 
-/** A count cap refuses with the `draftCountProblem` sentence, and the working draft keeps its RTUs. */
+/** A count cap refuses with the guided cap sentence (the cap, not the over-cap count), and the working draft keeps its RTUs. */
 export async function assertACountCapIsRefusedWithTheCapSentence(): Promise<void> {
   const rtus = Array.from({ length: MAX_ONBOARDING_RTUS }, (_, i) => ({ ...MQTT_RTU, code: `RTU-${i}`, credentialsSet: false }));
   const state: ToolState = { working: { rtus } as OnboardingDraft };
   const out = await guidedWrite("add_rtu", { ...MQTT_RTU, code: "RTU-X" }, state, context());
-  const expected = draftCountProblem({ rtus: [...rtus, { ...MQTT_RTU, code: "RTU-X", credentialsSet: false }] } as OnboardingDraft);
-  assert(expected !== null, "the fixture is over the cap");
+  const expected = guidedCapRefusal("RTUs", MAX_ONBOARDING_RTUS);
   assert(!out.ok && out.error === expected, `the cap sentence is the error: ${JSON.stringify(out)}`);
   assert(state.working.rtus?.length === MAX_ONBOARDING_RTUS, "the working draft still holds the cap");
 }
 
-/** A credential in an RTU config is refused with the registry's sentence. */
+/** A credential in an RTU config is refused with the guided sentence, never the model-facing one. */
 export async function assertACredentialIsRefused(): Promise<void> {
   const state: ToolState = { working: {} };
   const out = await guidedWrite("add_rtu", { ...MQTT_RTU, config: { ...MQTT_RTU.config, password: "x" } }, state, context());
-  assert(!out.ok && out.error === CREDENTIAL_TOOL_ERROR, `the credential error: ${JSON.stringify(out)}`);
+  assert(!out.ok && out.error === GUIDED_CREDENTIAL_REFUSAL, `the credential error: ${JSON.stringify(out)}`);
+  assert(out.ok || out.error !== CREDENTIAL_TOOL_ERROR, "the model-facing sentence does not reach the guided reply");
   assert((state.working.rtus?.length ?? 0) === 0, "nothing was written");
 }
 
@@ -70,7 +78,7 @@ export async function assertACredentialIsRefused(): Promise<void> {
 export async function assertAPromptMarkerIsRefused(): Promise<void> {
   const state: ToolState = { working: {} };
   const out = await guidedWrite("set_location", { name: PROMPT_OMITTED_MARKER }, state, context());
-  assert(!out.ok && out.error.includes("withheld-value marker"), `the marker error: ${JSON.stringify(out)}`);
+  assert(!out.ok && out.error === GUIDED_MARKER_REFUSAL, `the marker error: ${JSON.stringify(out)}`);
   assert(state.working.location === undefined, "nothing was written");
 }
 
@@ -91,8 +99,23 @@ export async function assertTheDepthBoundIsRefused(): Promise<void> {
   const draft = { rtus: [{ ...MQTT_RTU, credentialsSet: false, config: { ...MQTT_RTU.config, extra: deep } }] } as OnboardingDraft;
   const state: ToolState = { working: draft };
   const out = await guidedWrite("add_point_key", { code: "kw", name: "Active Power", domain: "electrical", unit: "kW" }, state, context());
-  assert(!out.ok && out.error === DRAFT_TOO_DEEP_MESSAGE, `the depth error: ${JSON.stringify(out)}`);
+  assert(!out.ok && out.error === GUIDED_DEPTH_REFUSAL, `the depth error: ${JSON.stringify(out)}`);
+  assert(out.ok || out.error !== DRAFT_TOO_DEEP_MESSAGE, "the PATCH sentence does not reach the guided reply");
   assert((state.working.pointKeys?.length ?? 0) === 0, "nothing was written");
+}
+
+/** A schema refusal outside `set_location` answers the generic schema sentence, never zod text. */
+export async function assertASchemaRefusalIsTheGuidedSentence(): Promise<void> {
+  const state: ToolState = { working: {} };
+  const out = await guidedWrite("add_point_key", { code: "kw" }, state, context());
+  assert(!out.ok && out.error === GUIDED_SCHEMA_REFUSAL, `the schema error: ${JSON.stringify(out)}`);
+}
+
+/** A refusal `guidedRefusal` does not classify fails closed to the generic sentence, not the registry text. */
+export async function assertAnUnclassifiedRefusalFailsClosed(): Promise<void> {
+  const state: ToolState = { working: {} };
+  const out = await guidedWrite("update_rtu", { index: 3, patch: {} }, state, context());
+  assert(!out.ok && out.error === GUIDED_OTHER_REFUSAL, `the fallback error: ${JSON.stringify(out)}`);
 }
 
 /** Every registry tool is classified (U5 deepens this into the B7 coverage spec). */
