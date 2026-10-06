@@ -372,13 +372,16 @@ async function dispatch(name: ToolName, args: Record<string, unknown>, state: To
     case "find_existing": {
       // F3.26 (ADR 0095 decisions 1, 2, 6): no write and no action line. The
       // note and the tail come before the items, so a result cut at
-      // TOOL_RESULT_MAX_CHARS loses rows, never the note or the count.
+      // TOOL_RESULT_MAX_CHARS loses rows, never the note or the count. `total`
+      // is exact, so it still counts the rows the cut hides when `more` is
+      // absent (F3.26 review L2).
       const query = args as ExistingQuery;
       const { rows, total } = await ctx.inventory.listExisting(ctx.organizationId, query);
       const { shown } = echoedItems(rows, TOOL_LIST_MAX_ITEMS);
       return succeed({
         kind: query.kind,
         note: EXISTING_SCOPE_NOTE,
+        total,
         more: moreTail(total - shown.length, `${query.kind}s`) || undefined,
         items: shown,
       });

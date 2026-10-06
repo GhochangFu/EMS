@@ -71,8 +71,8 @@ function tinyRows(count: number): ExistingRow[] {
 }
 
 const ASSET_ROWS: ExistingRow[] = [
-  { code: "HQ-PUMP-1", name: "Feed pump", domain: "water", locationCode: "HQ", rtuCode: "HQ-RTU-1", templateCode: null, templateVersion: null },
-  { code: "HQ-MTR-1", name: "Main meter", domain: "electrical", locationCode: "HQ", rtuCode: null, templateCode: "MFM", templateVersion: 2 },
+  { code: "HQ-PUMP-1", name: "Feed pump", domain: "water", locationCode: "HQ", rtu: "HQ-RTU-1", templateCode: null, templateVersion: null },
+  { code: "HQ-MTR-1", name: "Main meter", domain: "electrical", locationCode: "HQ", rtu: null, templateCode: "MFM", templateVersion: 2 },
 ];
 
 function draft(): OnboardingDraft {
@@ -176,6 +176,22 @@ export async function assertACutResultKeepsTheScopeNoteAndTheTail(): Promise<voi
   assert(out.content.length > TOOL_RESULT_MAX_CHARS, `the realistic result is cut, length ${out.content.length}`);
   assert(out.content.includes(JSON.stringify(EXISTING_SCOPE_NOTE)), "the cut result carries the scope note");
   assert(out.content.includes("…and 300 more assets"), "the cut result carries the tail");
+}
+
+/**
+ * T10 (review L2): the exact total survives the cut. 100 realistic rows of 100
+ * have no tail, yet the cut hides some of them; the total tells the model how
+ * many codes exist.
+ */
+export async function assertACutResultKeepsTheExactTotal(): Promise<void> {
+  const rows = Array.from({ length: 100 }, (_, i) => ({ ...ASSET_ROWS[1], code: `HQ-MTR-${i}`, name: `Main meter ${i}` }) as ExistingRow);
+  const whole = await runTool(call("find_existing", { kind: "asset" }), { working: {} }, context({ rows, total: 100 }).ctx);
+  assert(whole.ok, "find_existing succeeds");
+  assert(whole.content.length > TOOL_RESULT_MAX_CHARS, `the realistic result is cut, length ${whole.content.length}`);
+  assert(!whole.content.includes("more assets"), "100 of 100 has no tail");
+  assert(whole.content.includes('"total":100'), "the cut result carries the exact total");
+  const capped = await runTool(call("find_existing", { kind: "asset" }), { working: {} }, context({ rows, total: 400 }).ctx);
+  assert(capped.content.includes('"total":400'), "the capped and cut result carries the exact total");
 }
 
 type KeyRow = { code: string; name: string; unit: string | null; domain: string | null };

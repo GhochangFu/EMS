@@ -76,7 +76,12 @@ export function assertTheProofMapCoversEveryGuidedTool(): void {
   assert(JSON.stringify(proved) === JSON.stringify(guidedNames()), `PROOF ${JSON.stringify(proved)} vs guided ${JSON.stringify(guidedNames())}`);
 }
 
-function depsFor(): RuleBasedTurnDeps {
+/**
+ * The tool context's reads throw, but `runTool` turns a throw into a refusal
+ * that `guidedWrite` maps to a generic one, so the throw alone proves nothing.
+ * Each fake also records its call in `reads` (F3.26 review L4).
+ */
+function depsFor(reads: string[] = []): RuleBasedTurnDeps {
   const validator = new OnboardingValidateService();
   const catalog = { listPointKeys: async () => [{ code: "kw", name: "Active Power", domain: "electrical", unit: "kW" }] };
   return {
@@ -88,19 +93,23 @@ function depsFor(): RuleBasedTurnDeps {
       catalog: {
         ...catalog,
         listInUsePointKeys: async () => {
+          reads.push("listInUsePointKeys");
           throw new Error("a guided turn read the in-use point keys");
         },
       },
       inventory: {
         listExisting: async () => {
+          reads.push("listExisting");
           throw new Error("a guided turn read the inventory");
         },
       },
       protocols: {
         getContextForOrganization: async () => {
+          reads.push("getContextForOrganization");
           throw new Error("a guided turn read the protocols");
         },
         formatForAssistant: () => {
+          reads.push("formatForAssistant");
           throw new Error("a guided turn formatted the protocols");
         },
       },
@@ -115,6 +124,23 @@ function depsFor(): RuleBasedTurnDeps {
       actionLines: [],
     }),
   };
+}
+
+/**
+ * Claim 3c (F3.26 review L4) — no guided turn reads the inventory, the in-use
+ * point keys or the protocols, even through a `guidedWrite` that would swallow
+ * the throw. The adjacent positive: the turn answered its action line.
+ */
+export async function assertNoGuidedTurnReadsTheOrganization(): Promise<void> {
+  for (const [name, proof] of Object.entries(PROOF) as [ToolName, Proof][]) {
+    const reads: string[] = [];
+    const result = await handleRuleBasedTurn(depsFor(reads), proof.message, proof.draft as OnboardingDraft, proof.phase, "Eskom", TURN);
+    assert(
+      result.actionLines.some((line) => line.startsWith(proof.linePrefix)),
+      `${name}: no action line starts with "${proof.linePrefix}", got ${JSON.stringify(result.actionLines)}`,
+    );
+    assert(reads.length === 0, `${name}: a guided turn read ${JSON.stringify(reads)}`);
+  }
 }
 
 /** Claim 3b — each guided tool's branch answers an action line with its prefix. */

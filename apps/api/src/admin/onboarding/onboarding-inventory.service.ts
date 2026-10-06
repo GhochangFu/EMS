@@ -41,12 +41,17 @@ export type ExistingRtu = {
   active: boolean;
 };
 
+/**
+ * `rtu` is the asset's RTU's own `code` (the RTU row's `code`), not the
+ * `F4.182` device id — named apart from `ExistingRtu.rtuCode` so one key never
+ * carries two meanings in one tool's results (F3.26 review M1).
+ */
 export type ExistingAsset = {
   code: string;
   name: string;
   domain: string;
   locationCode: string;
-  rtuCode: string | null;
+  rtu: string | null;
   templateCode: string | null;
   templateVersion: number | null;
 };
@@ -73,6 +78,13 @@ export type ExistingResult = { rows: ExistingRow[]; total: number };
  *
  * Decision 1 / plan Q-E: at most `TOOL_LIST_MAX_ITEMS` rows, plus one
  * `COUNT(*)` under the same predicates so the tool's tail is exact.
+ *
+ * Every join carries the organization predicate in its `ON` clause, not only
+ * the base table's `WHERE`: nothing in the database makes a child row and its
+ * parent share one organization, so on this pool the join predicate is the
+ * only thing that keeps another organization's RTU code or RTU count out of a
+ * result (F3.26 review L6). In `ON`, not `WHERE`, so a left join stays a left
+ * join.
  */
 @Injectable()
 export class OnboardingInventoryService {
@@ -106,7 +118,7 @@ export class OnboardingInventoryService {
         rtuCount: count(rtus.id),
       })
       .from(locations)
-      .leftJoin(rtus, eq(rtus.locationId, locations.id))
+      .leftJoin(rtus, and(eq(rtus.locationId, locations.id), eq(rtus.organizationId, organizationId)))
       .where(where)
       .groupBy(locations.id)
       .orderBy(asc(locations.code))
@@ -134,8 +146,11 @@ export class OnboardingInventoryService {
         active: rtus.active,
       })
       .from(rtus)
-      .innerJoin(locations, eq(rtus.locationId, locations.id))
-      .leftJoin(rtuConnectionConfigs, eq(rtuConnectionConfigs.rtuId, rtus.id))
+      .innerJoin(locations, sameOrgLocation(rtus.locationId, organizationId))
+      .leftJoin(
+        rtuConnectionConfigs,
+        and(eq(rtuConnectionConfigs.rtuId, rtus.id), eq(rtuConnectionConfigs.organizationId, organizationId)),
+      )
       .where(where)
       .orderBy(asc(locations.code), asc(rtus.code))
       .limit(TOOL_LIST_MAX_ITEMS);
@@ -143,7 +158,7 @@ export class OnboardingInventoryService {
     const [counted] = await this.db
       .select({ total: count() })
       .from(rtus)
-      .innerJoin(locations, eq(rtus.locationId, locations.id))
+      .innerJoin(locations, sameOrgLocation(rtus.locationId, organizationId))
       .where(where);
     return { rows, total: counted?.total ?? 0 };
   }
@@ -160,13 +175,13 @@ export class OnboardingInventoryService {
         name: assets.name,
         domain: assets.domain,
         locationCode: locations.code,
-        rtuCode: rtus.code,
+        rtu: rtus.code,
         templateCode: assetTemplates.code,
         templateVersion: assetTemplates.version,
       })
       .from(assets)
-      .innerJoin(locations, eq(assets.locationId, locations.id))
-      .leftJoin(rtus, eq(assets.rtuId, rtus.id))
+      .innerJoin(locations, sameOrgLocation(assets.locationId, organizationId))
+      .leftJoin(rtus, and(eq(assets.rtuId, rtus.id), eq(rtus.organizationId, organizationId)))
       .leftJoin(
         assetTemplates,
         and(eq(assets.templateId, assetTemplates.id), eq(assetTemplates.organizationId, organizationId)),
@@ -178,10 +193,15 @@ export class OnboardingInventoryService {
     const [counted] = await this.db
       .select({ total: count() })
       .from(assets)
-      .innerJoin(locations, eq(assets.locationId, locations.id))
+      .innerJoin(locations, sameOrgLocation(assets.locationId, organizationId))
       .where(where);
     return { rows, total: counted?.total ?? 0 };
   }
+}
+
+/** The `locations` join condition, with the session organization in `ON` (review L6). */
+function sameOrgLocation(locationId: AnyPgColumn, organizationId: string): SQL | undefined {
+  return and(eq(locationId, locations.id), eq(locations.organizationId, organizationId));
 }
 
 /** `code ILIKE %search% OR name ILIKE %search%`, or no predicate when no search is given. */

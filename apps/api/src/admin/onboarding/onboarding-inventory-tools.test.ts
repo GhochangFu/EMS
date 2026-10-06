@@ -1,6 +1,7 @@
 import { describe, it } from "vitest";
 
 import {
+  assertACutResultKeepsTheExactTotal,
   assertACutResultKeepsTheScopeNoteAndTheTail,
   assertAFailedInventoryReadIsAToolError,
   assertFindExistingAsksTheServiceForTheSessionOrganization,
@@ -48,6 +49,9 @@ describe("onboarding find_existing (F3.26, ADR 0095)", () => {
   });
   it("T9 a cut result keeps the scope note and the tail", async () => {
     await assertACutResultKeepsTheScopeNoteAndTheTail();
+  });
+  it("T10 a cut result keeps the exact total", async () => {
+    await assertACutResultKeepsTheExactTotal();
   });
 });
 

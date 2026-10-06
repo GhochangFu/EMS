@@ -3,6 +3,7 @@ import { describe, it } from "vitest";
 import {
   assertEveryAgentOnlyToolHasAReason,
   assertEveryGuidedToolAnswersItsActionLine,
+  assertNoGuidedTurnReadsTheOrganization,
   assertTheProofMapCoversEveryGuidedTool,
   assertTheTableAndTheRegistryNameTheSameTools,
 } from "./onboarding-guided-coverage.spec";
@@ -23,5 +24,9 @@ describe("guided-mode tool coverage (F3.27 U5, B7)", () => {
 
   it("answers each guided tool's action line from its branch", async () => {
     await assertEveryGuidedToolAnswersItsActionLine();
+  });
+
+  it("reads nothing of the organization on any guided tool's turn (F3.26 review L4)", async () => {
+    await assertNoGuidedTurnReadsTheOrganization();
   });
 });

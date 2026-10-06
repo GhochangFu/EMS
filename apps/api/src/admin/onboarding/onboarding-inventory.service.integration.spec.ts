@@ -270,13 +270,15 @@ export async function assertNoRowCarriesTheConfigOrMetaSentinel(ctx: InventoryCt
 /**
  * I5 — ADR 0095 decision 3, "a test holds each list". The RTU list carries
  * `rtuCode`: the plan's Q-B flips to yes because `draftRtuSchema` has an
- * `rtuCode` field (`onboarding.schema.ts:106`).
+ * `rtuCode` field (`onboarding.schema.ts:106`). The asset list names its
+ * RTU as `rtu` (the RTU's own `code`), never `rtuCode`: one key, one meaning
+ * across the kinds (F3.26 review M1).
  */
 export async function assertResultKeysArePerKindAllowlists(ctx: InventoryCtx): Promise<void> {
   const expected: Record<ExistingKind, string[]> = {
     location: ["active", "code", "name", "rtuCount", "slug", "type"],
     rtu: ["active", "code", "displayName", "locationCode", "protocol", "rtuCode"],
-    asset: ["code", "domain", "locationCode", "name", "rtuCode", "templateCode", "templateVersion"],
+    asset: ["code", "domain", "locationCode", "name", "rtu", "templateCode", "templateVersion"],
   };
   await withRollback(ctx.fleetDb, async (tx) => {
     const { a } = await seedFamily(tx, ctx.run);
@@ -420,6 +422,111 @@ export async function assertInUsePointKeysAreTenantScoped(ctx: InventoryCtx): Pr
     const inB = await catalog.listInUsePointKeys(b.organizationId);
     assert.deepEqual([...inA].sort(), [keys.kw, keys.kwh].sort());
     assert.deepEqual([...inB], [keys.flow]);
+    tx.rollback();
+  });
+}
+
+async function insertLocation(tx: Tx, owner: OrgFixture, code: string, slug: string): Promise<string> {
+  return first(
+    await tx
+      .insert(locations)
+      .values({
+        organizationId: owner.organizationId,
+        code,
+        slug,
+        name: `F3.26 ${code}`,
+        type: "smoc_campus",
+        latitude: 0,
+        longitude: 0,
+      })
+      .returning({ id: locations.id }),
+    `location ${code}`,
+  ).id;
+}
+
+/** I12 (review L3) — `rtuCount` counts each location's RTUs: 1, and 0 for a location with none. Mutation: `count()`. */
+export async function assertRtuCountCountsEachLocationsRtus(ctx: InventoryCtx): Promise<void> {
+  await withRollback(ctx.fleetDb, async (tx) => {
+    const { a } = await seedFamily(tx, ctx.run);
+    const emptyCode = `F326-LOC-A3-${ctx.run}`;
+    await insertLocation(tx, a, emptyCode, `f326-loc-a3-${ctx.run}`);
+    const { rows } = await service(tx).listExisting(a.organizationId, { kind: "location" });
+    const counts = Object.fromEntries(rows.map((row) => [row.code, (row as { rtuCount: number }).rtuCount]));
+    assert.deepEqual(counts, { [a.locationCode]: 1, [emptyCode]: 0 });
+    tx.rollback();
+  });
+}
+
+/** I13 (review L3) — an asset row carries its template's code and version, and its RTU's own code as `rtu`. */
+export async function assertAssetRowsCarryTheirTemplateAndRtu(ctx: InventoryCtx): Promise<void> {
+  await withRollback(ctx.fleetDb, async (tx) => {
+    const { a } = await seedFamily(tx, ctx.run);
+    const bare = `F326-BARE-${ctx.run}`;
+    await addAsset(tx, a, bare, "Bare asset");
+    const { rows } = await service(tx).listExisting(a.organizationId, { kind: "asset" });
+    const pick = (row: ExistingRow | undefined) => {
+      const r = row as { rtu?: unknown; templateCode?: unknown; templateVersion?: unknown } | undefined;
+      return { rtu: r?.rtu, templateCode: r?.templateCode, templateVersion: r?.templateVersion };
+    };
+    assert.deepEqual(pick(rows.find((row) => row.code === a.assetCode)), {
+      rtu: a.rtuCode,
+      templateCode: `F326-TPL-${ctx.run}`,
+      templateVersion: 1,
+    });
+    assert.deepEqual(pick(rows.find((row) => row.code === bare)), { rtu: null, templateCode: null, templateVersion: null });
+    tx.rollback();
+  });
+}
+
+/**
+ * I14 (review L6) — a joined row of another organization is never read, even
+ * when a broken invariant points at it: B's RTU on A's location is not counted
+ * into A's `rtuCount`; an A asset whose `rtu_id` is B's RTU shows `rtu: null`;
+ * an A RTU on B's location is not listed. The fleet pool bypasses RLS, so the
+ * join predicate is the only boundary.
+ */
+export async function assertJoinsNeverReadAnotherOrganizationsRows(ctx: InventoryCtx): Promise<void> {
+  await withRollback(ctx.fleetDb, async (tx) => {
+    const { a, b } = await seedFamily(tx, ctx.run);
+    await tx.insert(rtus).values({
+      organizationId: b.organizationId,
+      locationId: a.locationId,
+      code: "F326-RTU-B-ON-A",
+      displayName: "F3.26 B's RTU on A's location",
+    });
+    await tx.insert(rtus).values({
+      organizationId: a.organizationId,
+      locationId: b.locationId,
+      code: "F326-RTU-A-ON-B",
+      displayName: "F3.26 A's RTU on B's location",
+    });
+    const crossed = `F326-CROSS-${ctx.run}`;
+    await tx.insert(assets).values({
+      organizationId: a.organizationId,
+      code: crossed,
+      name: "F3.26 crossed asset",
+      siteName: "F3.26 site",
+      locationId: a.locationId,
+      rtuId: b.rtuId,
+      domain: "electrical",
+    });
+    const svc = service(tx);
+
+    const located = await svc.listExisting(a.organizationId, { kind: "location" });
+    const rtuCounts = Object.fromEntries(located.rows.map((row) => [row.code, (row as { rtuCount: number }).rtuCount]));
+    assert.deepEqual(rtuCounts, { [a.locationCode]: 1 }, "B's RTU is not counted into A's location");
+
+    const assetRows = await svc.listExisting(a.organizationId, { kind: "asset" });
+    const rtuOf = Object.fromEntries(assetRows.rows.map((row) => [row.code, (row as { rtu: string | null }).rtu]));
+    assert.equal(rtuOf[a.assetCode], a.rtuCode, "the adjacent positive: A's own asset names A's RTU");
+    assert.equal(rtuOf[crossed], null, "an asset pointing at B's RTU does not read B's RTU code");
+    assert.equal(assetRows.total, assetRows.rows.length, "the asset total matches the rows");
+
+    const rtuRows = await svc.listExisting(a.organizationId, { kind: "rtu" });
+    const text = JSON.stringify(rtuRows);
+    assert.ok(text.includes(a.rtuCode), "the adjacent positive: A's RTU is listed");
+    assert.ok(!text.includes(b.locationCode), "no RTU row carries B's location code");
+    assert.equal(rtuRows.total, rtuRows.rows.length, "the RTU total matches the rows");
     tx.rollback();
   });
 }

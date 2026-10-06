@@ -6,13 +6,16 @@ import { createDb } from "@bms/db";
 import { openIntegrationPool, requireIntegrationDb } from "../../testing/integration-db-gate";
 import { asRole } from "../../testing/role-urls";
 import {
+  assertAssetRowsCarryTheirTemplateAndRtu,
   assertAssetsListOnlyTheSessionOrganization,
   assertInactiveRowsAreListedWithTheFlag,
   assertInUsePointKeysAreTenantScoped,
+  assertJoinsNeverReadAnotherOrganizationsRows,
   assertLocationCodeFilterIsExact,
   assertLocationsListOnlyTheSessionOrganization,
   assertNoRowCarriesTheConfigOrMetaSentinel,
   assertResultKeysArePerKindAllowlists,
+  assertRtuCountCountsEachLocationsRtus,
   assertRtusListOnlyTheSessionOrganization,
   assertSearchEscapesLikeWildcards,
   assertSearchIsACaseInsensitiveSubstringOnCodeAndName,
@@ -99,5 +102,17 @@ describe.skipIf(!connectionString)("F3.26 — onboarding inventory reads (ADR 00
 
   it("I11 assertInUsePointKeysAreTenantScoped", async () => {
     await assertInUsePointKeysAreTenantScoped(ctx);
+  });
+
+  it("I12 assertRtuCountCountsEachLocationsRtus", async () => {
+    await assertRtuCountCountsEachLocationsRtus(ctx);
+  });
+
+  it("I13 assertAssetRowsCarryTheirTemplateAndRtu", async () => {
+    await assertAssetRowsCarryTheirTemplateAndRtu(ctx);
+  });
+
+  it("I14 assertJoinsNeverReadAnotherOrganizationsRows", async () => {
+    await assertJoinsNeverReadAnotherOrganizationsRows(ctx);
   });
 });
