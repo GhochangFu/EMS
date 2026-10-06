@@ -33,7 +33,7 @@ import type { BmsTx } from "../database/tenant-context";
  *
  * ## Positive membership, not a list of exclusions
  *
- * The admin vocabulary (`rtus/rtus.schema.ts:3`) has three values and only one
+ * The admin vocabulary (`rtuSourceTypeSchema` in `rtus/rtus.schema.ts`) has three values and only one
  * of them has an adapter today. An earlier draft of this predicate tested
  * `!== 'catalog'` and so handed every `simulator` RTU's assets to a host that
  * will never bind them — 99 of the 147 RTU-attached assets in the seeded fleet,

@@ -93,7 +93,7 @@ describe("F4.60 rtus.rtu_code partial unique index (ADR 0016 §3)", () => {
       "0071's predicate must exclude ''. The backlog row asks for " +
         "`WHERE rtu_code IS NOT NULL` alone, and that spelling is wrong: " +
         "apps/ingest/src/host/bindings.ts:414 skips '' as missing-rtu-code, so '' " +
-        "means NO code, and rtus.schema.ts:13 makes '' the only way a PATCH can " +
+        "means NO code, and rtus.schema.ts's rtuCode field makes '' the only way a PATCH can " +
         "clear the column. Under the row's predicate two cleared RTUs collide.",
     ).toBe(true);
   });

@@ -20,8 +20,9 @@ export const createRtuBodySchema = z
     domain: z.string().max(64).optional(),
     externalRtuId: z.number().int().optional(),
     rtuCode: z.string().max(64).optional(),
-    // F4.221: field-level refine, `.describe()` right after it, `.optional()` last —
-    // the order the OpenAPI contract and strict-body ledger gates read.
+    // F4.221: field-level refine, `.describe()` right after it, `.optional()` last.
+    // tests/adr-0029-openapi-contract.test.ts (ADR 0029 decision 10) needs the
+    // `.describe()` directly after the `.refine()`.
     mqttTopic: z
       .string()
       .max(255)
