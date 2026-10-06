@@ -277,17 +277,27 @@ export async function assertAddPointKeyAddsKwOnTheModbusPath(): Promise<void> {
  * The protocol answer, which needs an organization. It returns before the
  * provider is resolved, so the resolver, crypto and catalog are never read.
  */
-async function protocolTurn(draft: OnboardingDraft): Promise<ChatTurnResult> {
+async function protocolTurn(draft: OnboardingDraft, message = "which protocols are available?"): Promise<ChatTurnResult> {
   const service = new OnboardingChatService(
     new OnboardingValidateService(),
     {} as never,
     { getContextForOrganization: async () => ({}), formatForAssistant: () => "MQTT, Modbus TCP" } as never,
     {} as never,
     { listLocationTypes: async () => [{ code: "smoc_campus", label: "SMOC campus" }] } as never,
-    {} as never,
+    { resolveForOrganization: async () => ({ kind: "guided", reason: "platform_off" }) } as never,
     { context: async () => EMPTY_TEMPLATE_CONTEXT } as never,
   );
-  return service.handleTurn("which protocols are available?", draft, "rtu", "Ion Exchange", "org-1", { sessionId: "s-1", history: [] });
+  return service.handleTurn(message, draft, "rtu", "Ion Exchange", "org-1", { sessionId: "s-1", history: [] });
+}
+
+/** F4.220 — "restriction" holds `rest` and "what" is a question word, yet it asks for no protocol list: the guided topic guard answers. */
+export async function assertAnEmbeddedRestIsNotAProtocolQuestion(): Promise<void> {
+  const waiting = {
+    location: PLACE,
+    rtus: [{ code: "RTU-1", displayName: "RTU-1", protocol: "mqtt", ingestEnabled: true, credentialsSet: true, config: { host: "h", port: 8883, tls: true, topic: "" } }],
+  } as OnboardingDraft;
+  const result = await protocolTurn(waiting, "what restriction applies to the topic");
+  assert(result.assistantMessage.startsWith("I did not change the draft."), turnSummary(result));
 }
 
 /** At the RTU step the protocol answer offers protocol replies, which add an RTU there. */

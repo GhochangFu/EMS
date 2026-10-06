@@ -19,7 +19,7 @@ import { OnboardingCatalogService } from "./onboarding-catalog.service";
 import { OnboardingTemplateCatalogService } from "./onboarding-template-catalog.service";
 import { mergeDraftPatch } from "./onboarding-draft-merge";
 import { formatAssetsByRtuSummary, mqttSetupTemplate, needsMqttSetup } from "./onboarding-chat-summaries";
-import { handleRuleBasedTurn, type ChatTurnResult, type TurnVocabulary } from "./onboarding-chat-rule-based";
+import { handleRuleBasedTurn, NAMES_A_PROTOCOL, type ChatTurnResult, type TurnVocabulary } from "./onboarding-chat-rule-based";
 // F3.21 (ADR 0090): the model no longer returns a draft patch, so the
 // prompt-budget guards live where the draft and the arguments now pass — the
 // agent loop's system prompt and the tool registry.
@@ -278,7 +278,8 @@ export class OnboardingChatService {
     const lower = message.toLowerCase().trim();
     if (
       organizationId &&
-      /protocol|modbus|bacnet|mqtt|opc|snmp|rest|simulator/.test(lower) &&
+      // F4.220: whole words, so "restriction" is not a protocol question.
+      (NAMES_A_PROTOCOL.test(lower) || /\bprotocols?\b/.test(lower)) &&
       /what|which|available|list|show|support/.test(lower)
     ) {
       const protocolContext = await this.protocolService.getContextForOrganization(organizationId);

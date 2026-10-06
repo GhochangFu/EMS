@@ -21,6 +21,7 @@ import {
   assertConfirmPointKeysSaysAKeyIsMissing,
   assertConfirmRtuGoesOnWhenTheRtuIsSetUp,
   assertConfirmRtuSaysTheCredentialsAreMissing,
+  assertAnEmbeddedRestIsNotAProtocolQuestion,
   assertTheProtocolAnswerOffersNoProtocolPastTheRtuStep,
   assertAnotherRtuOnTheModbusPathIsModbus,
   assertAnRtuAddedPastThePointKeysOffersNoPointKey,
@@ -200,5 +201,9 @@ describe("onboarding chat reply buttons reach their step (F4.199)", () => {
 
   it("the protocol answer offers no protocol past the RTU step", async () => {
     await assertTheProtocolAnswerOffersNoProtocolPastTheRtuStep();
+  });
+
+  it("F4.220: an embedded rest (restriction) is not a protocol question", async () => {
+    await assertAnEmbeddedRestIsNotAProtocolQuestion();
   });
 });

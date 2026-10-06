@@ -69,3 +69,17 @@ export async function assertAConfirmStepAnswersThroughFinalizeWithNoPatch(): Pro
   assert(result.assistantMessage.startsWith("The RTU step is not complete yet."), `expected the step lead, got ${result.assistantMessage}`);
   assert(result.draftPatch.rtus === undefined, "a confirm reply must not append an RTU");
 }
+
+/** C3 (F4.220) — "restart" holds `rest` inside a word; it names no protocol, so the append falls back to MQTT. */
+export async function assertAnEmbeddedProtocolWordFallsBackToMqtt(): Promise<void> {
+  const { result } = await runTurn("restart it please");
+  const protocol = result.draftPatch.rtus?.[0]?.protocol;
+  assert(protocol === "mqtt", `expected mqtt, got ${String(protocol)}`);
+}
+
+/** C4 (F4.220) — every spelling the guided mode accepted before the word boundary still maps to its protocol. */
+export async function assertAProtocolFormIsDetected(word: string, protocol: string): Promise<void> {
+  const { result } = await runTurn(word);
+  const got = result.draftPatch.rtus?.[0]?.protocol;
+  assert(got === protocol, `"${word}" expected ${protocol}, got ${String(got)}`);
+}

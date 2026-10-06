@@ -2,6 +2,9 @@ import { describe, it } from "vitest";
 
 import {
   assertAddAnotherRtuWithATopicAppends,
+  assertAnEmbeddedRestAppendsNoRtu,
+  assertAnEmbeddedSimAppendsNoRtu,
+  assertAnEmbeddedSimIsAnsweredAsAQuestion,
   assertAnOverLongTopicTurnIsCut,
   assertATopicNamingAProtocolStillUpdates,
   assertATopicOnlyPatchKeepsCredentialsSet,
@@ -131,6 +134,18 @@ describe("F4.208 — the guided `topic: x` turn sets the topic of the RTU in han
 
   it("B3: a topic question appends no RTU", async () => {
     await assertATopicQuestionAppendsNoRtu();
+  });
+
+  it("C1: an embedded sim (simple) appends no RTU", async () => {
+    await assertAnEmbeddedSimAppendsNoRtu();
+  });
+
+  it("C2: an embedded rest (restriction) appends no RTU", async () => {
+    await assertAnEmbeddedRestAppendsNoRtu();
+  });
+
+  it("C2b: an embedded sim is answered as a question", async () => {
+    await assertAnEmbeddedSimIsAnsweredAsAQuestion();
   });
 
   it("B3d: a plural topics question appends no RTU", async () => {

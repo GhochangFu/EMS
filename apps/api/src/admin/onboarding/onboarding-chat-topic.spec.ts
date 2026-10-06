@@ -253,6 +253,31 @@ export async function assertATopicQuestionAppendsNoRtu(): Promise<void> {
   assert(count === 1, `a topic question leaves one RTU, got ${count}`);
 }
 
+/** C1 (F4.220) — "simple" holds `sim` inside a word; it names no protocol, so no RTU is appended. */
+export async function assertAnEmbeddedSimAppendsNoRtu(): Promise<void> {
+  const draft = waitingForATopic();
+  const result = await ruleBasedTurn("is there a simple topic format?", draft, "rtu");
+  const count = (mergeDraftPatch(draft, result.draftPatch).rtus ?? []).length;
+  assert(count === 1, `"simple" appends no RTU, got ${count} RTU(s)`);
+}
+
+/** C2 (F4.220) — "restriction" holds `rest` inside a word; it names no protocol, so no RTU is appended. */
+export async function assertAnEmbeddedRestAppendsNoRtu(): Promise<void> {
+  const draft = waitingForATopic();
+  const result = await ruleBasedTurn("what restriction applies to the topic", draft, "rtu");
+  const count = (mergeDraftPatch(draft, result.draftPatch).rtus ?? []).length;
+  assert(count === 1, `"restriction" appends no RTU, got ${count} RTU(s)`);
+}
+
+/** C2b — the positive partner of C1: the sentence is answered, the draft untouched. */
+export async function assertAnEmbeddedSimIsAnsweredAsAQuestion(): Promise<void> {
+  const result = await ruleBasedTurn("is there a simple topic format?", waitingForATopic(), "rtu");
+  assert(
+    result.assistantMessage.startsWith("I did not change the draft."),
+    `the reply says the draft is unchanged, got ${result.assistantMessage}`,
+  );
+}
+
 /** B3b — the positive partner of B3: the question is answered with the colon form, the draft untouched. */
 export async function assertATopicQuestionIsAnsweredWithTheColonForm(): Promise<void> {
   const result = await ruleBasedTurn("what topic should I use", waitingForATopic(), "rtu");
