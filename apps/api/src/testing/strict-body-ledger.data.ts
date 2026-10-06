@@ -500,6 +500,7 @@ export const STRICTNESS_LEDGER: Record<string, LedgerEntry> = {
       "would have `roleCode` stripped, CLEAR the role instead, and answer 200 — a " +
       "destructive read of an additive intent (`F3.37`, ADR 0049 decision 5).",
   ),
+  rollbackBodySchema: STRICT(CALLER_ERROR),
   setCredentialsBodySchema: STRICT(ALREADY),
   setEscalationDefaultsBodySchema: STRICT(CALLER_ERROR),
   "setEscalationDefaultsBodySchema/items[]": STRICT(ESCALATION_MAP_ITEM),

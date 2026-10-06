@@ -2,6 +2,7 @@ import { describe, it } from "vitest";
 
 import {
   assertApiDraftLocationParsesWithoutType,
+  assertRollbackBodyIsBoundAndStrict,
   assertApiStockPatternCountIsCapped,
   assertApiTemplatePointCountIsCapped,
   assertApiTemplateVarCountIsCapped,
@@ -98,5 +99,11 @@ describe("onboarding.schema — the nested template counts on the write path (F3
 
   it("caps the pattern overlay of a stock entry", () => {
     assertApiStockPatternCountIsCapped();
+  });
+});
+
+describe("onboarding.schema — the rollback body (F3.25, ADR 0094 decision 6)", () => {
+  it("refuses a non-hex hash, a non-uuid id and an extra key", () => {
+    assertRollbackBodyIsBoundAndStrict();
   });
 });

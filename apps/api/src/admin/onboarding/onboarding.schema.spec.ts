@@ -17,6 +17,7 @@ import {
   MAX_ONBOARDING_DRAFT_DEPTH,
   onboardingDraftSchema,
   patchDraftBodySchema,
+  rollbackBodySchema,
 } from "./onboarding.schema";
 
 export function assert(condition: boolean, message: string): void {
@@ -644,4 +645,22 @@ export function assertApiStockPatternCountIsCapped(): void {
     "one pattern over the cap must be refused on draft.templates[0].patterns: " +
       JSON.stringify(issue),
   );
+}
+
+/**
+ * `POST :id/rollback` (F3.25, ADR 0094 decision 6): a uuid, a 64-hex hash and
+ * nothing else. The valid body is the adjacent positive for each refusal.
+ */
+export function assertRollbackBodyIsBoundAndStrict(): void {
+  const valid = { checkpointId: "00000000-0000-4000-8000-000000000001", draftHash: "a".repeat(64) };
+  assert(rollbackBodySchema.safeParse(valid).success, "the valid rollback body must parse");
+  assert(
+    !rollbackBodySchema.safeParse({ ...valid, draftHash: "g".repeat(64) }).success,
+    "a non-hex draftHash must be refused",
+  );
+  assert(
+    !rollbackBodySchema.safeParse({ ...valid, checkpointId: "not-a-uuid" }).success,
+    "a non-uuid checkpointId must be refused",
+  );
+  assert(!rollbackBodySchema.safeParse({ ...valid, force: true }).success, "an extra key must be refused");
 }

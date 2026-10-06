@@ -18,7 +18,7 @@ function assert(condition: boolean, message: string): void {
 
 const TYPES = [{ code: "smoc_campus", label: "SMOC campus" }];
 
-const PLACE: NonNullable<OnboardingDraft["location"]> = {
+export const PLACE: NonNullable<OnboardingDraft["location"]> = {
   name: "Berhampur",
   slug: "berhampur",
   code: "BERHAMPUR",
@@ -27,9 +27,9 @@ const PLACE: NonNullable<OnboardingDraft["location"]> = {
   longitude: 84.8,
 };
 
-const BLOB = { c: "Y2lwaGVy", iv: "aXY=", v: 1 };
+export const BLOB = { c: "Y2lwaGVy", iv: "aXY=", v: 1 };
 
-type Row = ReturnType<typeof sessionRow> & { checkpoints?: unknown };
+export type Row = ReturnType<typeof sessionRow> & { checkpoints?: unknown };
 
 /**
  * A fake database whose `update(...).returning()` answers the row **as
@@ -74,7 +74,7 @@ function echoDb(base: Row, selects: unknown[][], record: Recorder) {
  * `llm` the resolver answers ready with it, the agent path. `excel` and
  * `catalog` stand in for the upload's two collaborators.
  */
-function build(opts: {
+export function build(opts: {
   session: Row;
   selects: unknown[][];
   llm?: FakeLlmProvider;
@@ -114,7 +114,7 @@ function build(opts: {
   return { service, record };
 }
 
-function rtu(code: string) {
+export function rtu(code: string) {
   return {
     code,
     displayName: code,
@@ -186,7 +186,7 @@ export async function assertAnAgentTurnRecordsOneCheckpoint(): Promise<void> {
   assert(((ring[0]?.sections.rtus ?? []) as unknown[]).length === 1, "taken before the tool's write");
 }
 
-function storedRing(count: number): Checkpoint[] {
+export function storedRing(count: number): Checkpoint[] {
   return Array.from({ length: count }, (_unused, index) =>
     takeCheckpoint({ location: PLACE } as OnboardingDraft, {
       seq: index + 1,

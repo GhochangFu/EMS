@@ -62,6 +62,7 @@ import {
   chatBodySchema,
   createSessionBodySchema,
   patchDraftBodySchema,
+  rollbackBodySchema,
   setCredentialsBodySchema,
 } from "../admin/onboarding/onboarding.schema";
 import {
@@ -342,6 +343,8 @@ export const BODY_SCHEMAS: Record<string, ZodTypeAny> = {
   temporaryPasswordBodySchema,
   updateAssetGroupBodySchema,
   updateUserBodySchema,
+  // F3.25 (ADR 0094 decision 6): `.strict()` — a stray key beside the hash is a caller error.
+  rollbackBodySchema,
   setCredentialsBodySchema,
   setRuleNotificationsBodySchema,
   updateAssetBodySchema,

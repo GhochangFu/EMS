@@ -44,17 +44,24 @@ import {
   withoutCommitProposal,
 } from "./onboarding-commit-proposal";
 import {
+  NOTHING_TO_UNDO_REPLY,
   checkpointLabel,
   checkpointSummary,
+  cutRingBefore,
+  isUndoPhrase,
   nextSeq,
   pushCheckpoint,
   readCheckpoints,
+  restoreSections,
   takeCheckpoint,
+  undidActionLine,
+  undoReply,
+  type Checkpoint,
 } from "./onboarding-checkpoints";
 import { draftCountProblem } from "./onboarding-draft-caps";
 import { diffSections } from "./onboarding-draft-merge";
 import { assertPatchLocationTypeIsActive } from "./onboarding-location-type-match";
-import type { SetCredentialsBody } from "./onboarding.schema";
+import type { RollbackBody, SetCredentialsBody } from "./onboarding.schema";
 import { redactDraftForClient, rtuSecretKey } from "./onboarding-redaction";
 import type { OnboardingDraftInput } from "./onboarding.schema";
 import { OnboardingValidateService } from "./onboarding-validate.service";
@@ -257,6 +264,12 @@ export class OnboardingService {
       return this.confirmCommit(jwt, session, message);
     }
 
+    // F3.25 (ADR 0094 decision 6): the undo phrase is matched by code too —
+    // after the ADR 0022 refusal above, before any model call below.
+    if (isUndoPhrase(message)) {
+      return this.undoLastStep(session, message);
+    }
+
     const draft = session.draft as OnboardingDraft;
     const phase = session.currentPhase as OnboardingPhase;
     const [org] = await this.tenantDb
@@ -445,6 +458,27 @@ export class OnboardingService {
       .limit(1);
 
     return this.mapSession(updated, org?.code ?? "", org?.name ?? "");
+  }
+
+  /**
+   * `POST :id/rollback` (F3.25, ADR 0094 decisions 5 and 6). Bound to the
+   * draft hash the client last saw: `chat` writes without a lock, so a client
+   * that read the draft before another tab's turn must not restore over it. A
+   * mismatch is a 409 and nothing is written.
+   */
+  async rollback(jwt: JwtPayload, sessionId: string, body: RollbackBody): Promise<OnboardingChatResponseDto> {
+    const session = await this.loadSession(jwt, sessionId);
+    if (session.status !== "draft") {
+      throw new ForbiddenException("Session is not editable");
+    }
+    if (draftHash(session.draft) !== body.draftHash) {
+      throw new ConflictException("The draft changed since this page loaded it. Reload the session and try again.");
+    }
+    const target = readCheckpoints(session.checkpoints).find((cp) => cp.id === body.checkpointId);
+    if (!target) {
+      throw new NotFoundException("Checkpoint not found");
+    }
+    return this.restoreTo(session, target);
   }
 
   /** Validates draft without committing. */
@@ -688,6 +722,93 @@ export class OnboardingService {
       autoOpenPreview: false,
       autoOpenReason: undefined,
     };
+  }
+
+  /**
+   * The chat `undo` (ADR 0094 decision 6): the newest checkpoint, or — with an
+   * empty ring — the two messages and nothing else.
+   */
+  private async undoLastStep(
+    session: typeof onboardingSessions.$inferSelect,
+    message: string,
+  ): Promise<OnboardingChatResponseDto> {
+    const newest = readCheckpoints(session.checkpoints).at(-1);
+    if (newest) {
+      return this.restoreTo(session, newest, message);
+    }
+    const messages = [
+      ...(session.messages as OnboardingChatMessage[]),
+      this.chatService.createMessage("user", message),
+      this.chatService.createMessage("assistant", NOTHING_TO_UNDO_REPLY),
+    ];
+    const updated = await withTenant(this.tenantDb, session.organizationId, (tx) =>
+      tx
+        .update(onboardingSessions)
+        .set({ messages, updatedAt: sql`now()` })
+        .where(eq(onboardingSessions.id, session.id))
+        .returning()
+        .then(([row]) => row),
+    );
+    return {
+      assistantMessage: NOTHING_TO_UNDO_REPLY,
+      session: await this.mapSessionWithOrg(updated),
+      suggestedReplies: ["View draft"],
+      validationErrors: [],
+      readyToCommit: false,
+      autoOpenPreview: false,
+    };
+  }
+
+  /**
+   * Restores `cp` wholesale (ADR 0094 decision 5): the proposal goes, the phase
+   * is re-derived, and the ring is cut to the entries before `cp` — a rollback
+   * records no checkpoint, so there is no redo (plan Q4). `userMessage` is the
+   * chat `undo`; the route adds no user message.
+   */
+  private async restoreTo(
+    session: typeof onboardingSessions.$inferSelect,
+    cp: Checkpoint,
+    userMessage?: string,
+  ): Promise<OnboardingChatResponseDto> {
+    const { draft, credentialsLost } = restoreSections(session.draft as OnboardingDraft, cp, {
+      deriveCredentialsSet: CredentialCryptoService.isConfigured(),
+    });
+    const codes = await this.activeLocationTypeCodes();
+    const phase = this.validateService.inferPhase(draft, codes);
+    const ring = cutRingBefore(readCheckpoints(session.checkpoints), cp);
+    const reply = undoReply(cp.label, credentialsLost);
+    const messages = [
+      ...(session.messages as OnboardingChatMessage[]),
+      ...(userMessage === undefined ? [] : [this.chatService.createMessage("user", userMessage)]),
+      this.chatService.createMessage("action", undidActionLine(cp.label)),
+      this.chatService.createMessage("assistant", reply),
+    ];
+    const validation = this.validateService.validate(draft, codes, await this.templateCatalog.context(session.organizationId));
+    const updated = await withTenant(this.tenantDb, session.organizationId, (tx) =>
+      tx
+        .update(onboardingSessions)
+        .set({ draft, currentPhase: phase, messages, checkpoints: ring, updatedAt: sql`now()` })
+        .where(eq(onboardingSessions.id, session.id))
+        .returning()
+        .then(([row]) => row),
+    );
+    return {
+      assistantMessage: reply,
+      session: await this.mapSessionWithOrg(updated),
+      suggestedReplies: ["View draft"],
+      validationErrors: validation.errors,
+      readyToCommit: validation.readyToCommit,
+      autoOpenPreview: false,
+    };
+  }
+
+  private async mapSessionWithOrg(row: typeof onboardingSessions.$inferSelect): Promise<OnboardingSessionDto> {
+    const [org] = await this.tenantDb
+      .select({ code: organizations.code, name: organizations.name })
+      .from(organizations)
+      .where(eq(organizations.id, row.organizationId))
+      .limit(1);
+    return this.mapSession(row, org?.code ?? "", org?.name ?? "");
   }
 
   private mapSession(
