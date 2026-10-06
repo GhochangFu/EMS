@@ -153,6 +153,36 @@ type MigrationPlan = {
 };
 
 /**
+ * `F4.216`/`F4.222` — turns a unique violation on the migration's `asset_points`
+ * insert into a 409 with a sentence. `buildPlan` refuses a source key an
+ * existing row holds, and two new points of one asset resolving to one key, but
+ * it reads before the write transaction opens, so a row inserted in between
+ * still reaches the index. The source key and the point key each get their own
+ * sentence (the operator must not be told the wrong key); any other constraint
+ * is returned unchanged for `translateConstraintErrors` to rethrow raw.
+ */
+export function translateAssetPointInsertUnique(err: unknown): Error {
+  switch (constraintOf(err)) {
+    case "asset_points_asset_source_key_idx":
+      return new ConflictException(
+        "This migration is refused. Nothing was written. A new point's source " +
+          "key is already used on the same asset by a point added since the " +
+          "plan was read (one source key maps to one point per asset). Check " +
+          "the asset's points, then try again.",
+      );
+    case "asset_points_asset_id_point_key_unique":
+      return new ConflictException(
+        "This migration is refused. Nothing was written. A new point's point " +
+          "key is already used on the same asset by a point added since the " +
+          "plan was read (a point key appears once per asset). Check the " +
+          "asset's points, then try again.",
+      );
+    default:
+      return err as Error;
+  }
+}
+
+/**
  * `F4.16` / ADR 0043 — `asset_templates` and `point_keys` carry `ENABLE ROW
  * LEVEL SECURITY` (migration `0040`); reads against them run on `fleetDb`,
  * trusting the scope filter this service already applies via
@@ -356,21 +386,13 @@ export class AssetTemplateMigrationService {
         })),
       );
       if (rows.length > 0) {
-        // `F4.216` — the write-time net. `buildPlan` refuses a source key an
-        // existing row holds, and two new points of one asset resolving to one
-        // key, but it reads before this transaction opens, so a row inserted
-        // in between still reaches the unique index. The throw rolls this
-        // transaction back; the caller gets a 409 with a sentence, not a 500.
+        // `F4.216`/`F4.222` — the write-time net. `buildPlan` reads before this
+        // transaction opens, so a row inserted in between can still reach the
+        // source-key index or the point-key unique. Each becomes a 409 with its
+        // own sentence; any other constraint is rethrown raw. The throw rolls
+        // this transaction back.
         await translateConstraintErrors(() => tx.insert(assetPoints).values(rows), {
-          onUnique: (err) =>
-            constraintOf(err) === "asset_points_asset_source_key_idx"
-              ? new ConflictException(
-                  "This migration is refused. Nothing was written. A new point's source " +
-                    "key is already used on the same asset by a point added since the " +
-                    "plan was read (one source key maps to one point per asset). Check " +
-                    "the asset's points, then try again.",
-                )
-              : (err as Error),
+          onUnique: translateAssetPointInsertUnique,
         });
       }
 
@@ -682,11 +704,12 @@ export class AssetTemplateMigrationService {
     // override endpoint. A version that turns a derived point measured collides
     // with a row the operator does not think of as a mapping at all.
     //
-    // `asset_points_asset_id_point_key_unique` would raise 23505 *inside* the
-    // transaction: nothing is written, but the operator gets a driver error
-    // naming no point and no asset, from a service whose own contract is that
-    // every fallible decision is made before the transaction opens. So the
-    // collision is read here and refused by name. `F4.216`: the second unique
+    // `asset_points_asset_id_point_key_unique` would still raise 23505 *inside*
+    // the transaction: nothing is written, but, since `F4.216`/`F4.222`, the
+    // write-time net (`translateAssetPointInsertUnique`) turns it into a generic
+    // 409 that names no point, no asset and no existing `source_kind`, from a
+    // service whose own contract is that every fallible decision is made before
+    // the transaction opens. So the collision is read here and refused by name. `F4.216`: the second unique
     // index, `asset_points_asset_source_key_idx` on `(asset_id,
     // source_data_key)`, is read in the same pass and refused the same way.
     //

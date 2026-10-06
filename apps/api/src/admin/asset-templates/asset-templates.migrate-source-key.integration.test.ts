@@ -17,7 +17,7 @@ import { AssetTemplateMigrationService } from "./asset-templates-migrate.service
 import { loadFixtures, type Fixtures } from "./asset-templates.instantiate.integration.spec";
 import {
   assertExistingSourceKeyRefusesAMeasuredAddition,
-  assertRacedPointKeyIsNotTranslated,
+  assertRacedPointKeyAnswers409,
   assertRacedSourceKeyAnswers409,
   assertTwoAdditionsWithOneSourceKeyAreRefused,
   cleanupSourceKey,
@@ -40,7 +40,7 @@ const connectionString = requireIntegrationDb({
     "Neither the refusal nor the rollback is observable without the real index.",
 });
 
-describe.skipIf(!connectionString)("F4.216 — template migration and source keys", () => {
+describe.skipIf(!connectionString)("F4.216 / F4.222 — template migration: source-key and point-key collisions", () => {
   let pool: pg.Pool | undefined;
   let authPool: pg.Pool | undefined;
   let tenantPool: pg.Pool | undefined;
@@ -118,8 +118,8 @@ describe.skipIf(!connectionString)("F4.216 — template migration and source key
     await assertRacedSourceKeyAnswers409(pool, svc, fx);
   });
 
-  it("leaves a raced point-key collision untranslated — the net covers the source key only", async () => {
+  it("answers 409, not 500, when a point key is taken between the plan and the write", async () => {
     if (!pool) throw new Error("pool required");
-    await assertRacedPointKeyIsNotTranslated(pool, svc, fx);
+    await assertRacedPointKeyAnswers409(pool, svc, fx);
   });
 });

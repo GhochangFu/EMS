@@ -1,6 +1,6 @@
 import type { OnboardingDraft } from "@bms/shared";
 
-import { handleRuleBasedTurn, type ChatTurnResult, type RuleBasedTurnDeps } from "./onboarding-chat-rule-based";
+import { handleRuleBasedTurn, NAMES_A_PROTOCOL, type ChatTurnResult, type RuleBasedTurnDeps } from "./onboarding-chat-rule-based";
 import { EMPTY_TEMPLATE_CONTEXT } from "./onboarding-template-refs";
 import { OnboardingValidateService } from "./onboarding-validate.service";
 
@@ -68,4 +68,24 @@ export async function assertAConfirmStepAnswersThroughFinalizeWithNoPatch(): Pro
   // The generic "starts like a confirm" guard also answers with an empty patch; only `confirmStepTurn` names the step.
   assert(result.assistantMessage.startsWith("The RTU step is not complete yet."), `expected the step lead, got ${result.assistantMessage}`);
   assert(result.draftPatch.rtus === undefined, "a confirm reply must not append an RTU");
+}
+
+/** C3 (F4.220) — "restart" holds `rest` inside a word; it names no protocol, so the append falls back to MQTT. */
+export async function assertAnEmbeddedProtocolWordFallsBackToMqtt(): Promise<void> {
+  const { result } = await runTurn("restart it please");
+  const protocol = result.draftPatch.rtus?.[0]?.protocol;
+  assert(protocol === "mqtt", `expected mqtt, got ${String(protocol)}`);
+}
+
+/** C5 (F4.220) — the service intercept's matcher reads a versioned MQTT spelling, and no embedded word. */
+export function assertNamesAProtocol(text: string, expected: boolean): void {
+  const got = NAMES_A_PROTOCOL.test(text.toLowerCase());
+  assert(got === expected, `"${text}" expected ${String(expected)}, got ${String(got)}`);
+}
+
+/** C4 (F4.220) — every spelling the guided mode accepted before the word boundary still maps to its protocol. */
+export async function assertAProtocolFormIsDetected(word: string, protocol: string): Promise<void> {
+  const { result } = await runTurn(word);
+  const got = result.draftPatch.rtus?.[0]?.protocol;
+  assert(got === protocol, `"${word}" expected ${protocol}, got ${String(got)}`);
 }

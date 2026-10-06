@@ -23,3 +23,14 @@ import { updateRtuBodySchema } from "./rtus.schema";
 export function assertAnEmptyRtuCodeIsAcceptedByTheUpdateSchema(): void {
   expect(updateRtuBodySchema.safeParse({ rtuCode: "" }).success).toBe(true);
 }
+
+/**
+ * `F4.221` — the wildcard refine on `mqttTopic` refuses `#` and `+` and nothing
+ * else, so it must not refuse `""` (a refine written as "must name a device" is a
+ * `.min(1)` in disguise). Unlike `rtuCode`, this is not a working clear path:
+ * `rtus_mqtt_topic_idx` (migration `0016`) is only `WHERE mqtt_topic IS NOT NULL`
+ * and does not exclude `""`, so a second RTU that stores `""` gets the 409.
+ */
+export function assertAnEmptyMqttTopicIsAcceptedByTheUpdateSchema(): void {
+  expect(updateRtuBodySchema.safeParse({ mqttTopic: "" }).success).toBe(true);
+}

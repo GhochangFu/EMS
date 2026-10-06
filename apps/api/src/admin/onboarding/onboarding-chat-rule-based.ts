@@ -88,8 +88,24 @@ const PHASE_ORDER: readonly OnboardingPhase[] = ["location", "rtu", "point_keys"
 /** The protocol replies; each is a protocol `detectProtocol` reads. */
 const PROTOCOL_REPLIES = ["MQTT", "Modbus", "BACnet", "OPC-UA", "SNMP", "REST", "Simulator"];
 
-/** The words `detectProtocol` reads; a message with none of them falls back to MQTT there. */
-const NAMES_A_PROTOCOL = /mqtt|modbus|bacnet|opc|snmp|rest|sim/;
+/**
+ * F4.220 — the protocol words `detectProtocol` reads, in its order, each a
+ * whole word: `simple` and `restriction` name none. A message with none of
+ * them falls back to MQTT there. `mqtt` is not listed: it is the fallback.
+ */
+const PROTOCOL_WORDS: ReadonlyArray<readonly [RegExp, OnboardingProtocol]> = [
+  [/\bmodbus(?:[ _/-]?(?:tcp|rtu))?\b/, "modbus_tcp"],
+  [/\bbacnet(?:[ _/-]?ip)?\b/, "bacnet"],
+  [/\bopc(?:[ _-]?ua)?\b/, "opc_ua"],
+  [/\bsnmp(?:v[123]c?)?\b/, "snmp"],
+  [/\brest(?:[ _-]?poller|ful)?\b/, "rest_poller"],
+  [/\bsim(?:ulat\w*)?\b/, "simulator"],
+];
+
+/** True when the text names a protocol as a whole word (`mqtt`, `mqtts`, `mqtt5`, `mqttv3` count). Exported for the service intercept. */
+export const NAMES_A_PROTOCOL = new RegExp(
+  [...PROTOCOL_WORDS.map(([re]) => re.source), "\\bmqtt(?:s|v?[35])?\\b"].join("|"),
+);
 
 /** F4.199 — the "confirm <step>" replies the guided mode offers, matched whole after trim and lower-casing. */
 const CONFIRM_STEP_REPLIES: ReadonlyMap<string, OnboardingPhase> = new Map([
@@ -541,13 +557,7 @@ function confirmStepTurn(
 }
 
 function detectProtocol(lower: string): OnboardingProtocol {
-  if (lower.includes("modbus")) return "modbus_tcp";
-  if (lower.includes("bacnet")) return "bacnet";
-  if (lower.includes("opc")) return "opc_ua";
-  if (lower.includes("snmp")) return "snmp";
-  if (lower.includes("rest")) return "rest_poller";
-  if (lower.includes("sim")) return "simulator";
-  return "mqtt";
+  return PROTOCOL_WORDS.find(([re]) => re.test(lower))?.[1] ?? "mqtt";
 }
 
 function defaultConfig(protocol: OnboardingProtocol, message: string): Record<string, unknown> {

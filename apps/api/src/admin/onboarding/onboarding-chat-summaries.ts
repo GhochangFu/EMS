@@ -1,3 +1,4 @@
+import { mqttTopicHasWildcard } from "@bms/shared";
 import type { OnboardingDraft } from "@bms/shared";
 
 // F4.105: `quoteCell` bounds how long each echoed cell is; `echoedItems` and
@@ -50,9 +51,12 @@ export const MQTT_TOPIC_PLACEHOLDER = "your/topic/here";
  * `F4.215` (owner ruling) — a topic holding an MQTT wildcard, `#` or `+`. Ingest
  * refuses it (`apps/ingest/src/adapters/mqtt.ts` refine) and the host skips the
  * RTU with `invalid-device-config`, so an RTU committed with one never ingests.
+ *
+ * `F4.221`: the predicate is `@bms/shared`'s `mqttTopicHasWildcard`, the one ingest
+ * and the admin RTU routes read too; this name stays for its importers.
  */
 export function topicHasWildcard(topic: string): boolean {
-  return topic.includes("#") || topic.includes("+");
+  return mqttTopicHasWildcard(topic);
 }
 
 /**

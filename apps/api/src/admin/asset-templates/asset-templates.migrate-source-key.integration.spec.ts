@@ -322,6 +322,7 @@ export async function assertRacedSourceKeyAnswers409(
         /source key/,
         "a migration whose new point's source key was taken after the plan read",
         409,
+        /point key/,
       ),
   );
   assert(
@@ -340,13 +341,13 @@ export async function assertRacedSourceKeyAnswers409(
 }
 
 /**
- * `F4.216` — the write-time net translates the source-key index and nothing
- * else. A raced row on the new point's **point key** (another source key)
- * trips `asset_points_asset_id_point_key_unique`; the net must rethrow that
- * driver error unchanged rather than dress it as a source-key 409, which would
+ * `F4.222` — the write-time net also translates the point-key unique. A raced
+ * row on the new point's **point key** (another source key) trips
+ * `asset_points_asset_id_point_key_unique`; the caller gets a 409 with the
+ * point-key sentence, not a 500 and not the source-key sentence, which would
  * tell the operator the wrong thing.
  */
-export async function assertRacedPointKeyIsNotTranslated(
+export async function assertRacedPointKeyAnswers409(
   pool: pg.Pool,
   svc: AssetTemplateMigrationService,
   fx: Fixtures,
@@ -364,43 +365,33 @@ export async function assertRacedPointKeyIsNotTranslated(
   });
   const assetId = await seedSkAsset(db, fx, "RACEPK", v1);
 
-  let caught: unknown = undefined;
+  let raced = false;
   await withRowInsertedAfterPlan(
     svc,
-    () =>
-      db
-        .insert(assetPoints)
-        .values({
-          organizationId: fx.organizationId,
-          assetId,
-          pointKey: SK_VOLTS,
-          sourceDataKey: `SITE/${SK_ASSET_PREFIX}RACEPK/ELSEWHERE`,
-          sourceKind: "unmapped",
-          rtuId: null,
-          active: true,
-        })
-        .then(() => undefined),
     async () => {
-      try {
-        await svc.migrate(fx.adminJwt, v2, { assetIds: [assetId] });
-      } catch (err) {
-        caught = err;
-      }
+      await db.insert(assetPoints).values({
+        organizationId: fx.organizationId,
+        assetId,
+        pointKey: SK_VOLTS,
+        sourceDataKey: `SITE/${SK_ASSET_PREFIX}RACEPK/ELSEWHERE`,
+        sourceKind: "unmapped",
+        rtuId: null,
+        active: true,
+      });
+      raced = true;
     },
+    () =>
+      expectRejection(
+        () => svc.migrate(fx.adminJwt, v2, { assetIds: [assetId] }),
+        /point key/,
+        "a migration whose new point's point key was taken after the plan read",
+        409,
+        /source key/,
+      ),
   );
   assert(
-    caught !== undefined,
-    "the raced point-key collision must still fail the write",
-  );
-  const constraint = (caught as { constraint?: unknown }).constraint;
-  assert(
-    constraint === "asset_points_asset_id_point_key_unique",
-    `the driver error must reach the caller unchanged, got constraint ${String(constraint)} ` +
-      `from ${String(caught)}`,
-  );
-  assert(
-    typeof (caught as { getStatus?: unknown }).getStatus !== "function",
-    `a point-key collision must not be answered as an HTTP exception, got ${String(caught)}`,
+    raced,
+    "the race fixture must have inserted the colliding row after the plan",
   );
   assert(
     (await pinnedVersion(pool, assetId)) === 1,
