@@ -17,6 +17,7 @@ import {
   downloadOnboardingTemplate,
   fetchOnboardingSession,
   patchOnboardingDraft,
+  rollbackOnboardingSession,
   sendOnboardingChat,
   setOnboardingCredentials,
   uploadOnboardingExcel,
@@ -109,12 +110,15 @@ function AssistantText({ text }: { text: string }) {
   );
 }
 
-/** `F4.199`: the one phrase the client never offers as a button (ADR 0090 decision 5). */
-const NEVER_OFFERED_REPLY = "confirm commit";
+/**
+ * `F4.199`: the phrases the client never offers as a button — "confirm commit"
+ * (ADR 0090 decision 5) and "undo" (ADR 0094 decision 9: undo has its own control).
+ */
+const NEVER_OFFERED_REPLIES: readonly string[] = ["confirm commit", "undo"];
 
-/** The replies to render: the server's list, minus any "confirm commit" (trim, lower case). */
+/** The replies to render: the server's list, minus the acting phrases (trim, lower case). */
 function offeredReplies(replies: readonly string[] | undefined): string[] {
-  return (replies ?? []).filter((r) => r.trim().toLowerCase() !== NEVER_OFFERED_REPLY);
+  return (replies ?? []).filter((r) => !NEVER_OFFERED_REPLIES.includes(r.trim().toLowerCase()));
 }
 
 /** Where a committed session lands — one target for the Commit button and a chat commit. */
@@ -147,6 +151,8 @@ export function OnboardingChatPage({ user }: OnboardingChatPageProps) {
   // F4.194 resume path (`openSession` with a stored session) carries none, so a
   // reloaded page shows no buttons until the next turn.
   const [replies, setReplies] = useState<string[]>([]);
+  // F3.25: the checkpoint the Undo button rolls back to; empty means the newest.
+  const [undoChoice, setUndoChoice] = useState<string>("");
   const threadRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const startedRef = useRef(false);
@@ -154,14 +160,11 @@ export function OnboardingChatPage({ user }: OnboardingChatPageProps) {
   const startMutation = useMutation({
     mutationFn: () => openSession(orgId!, searchParams.get(SESSION_PARAM)),
     onSuccess: (data) => {
-      setSession(data.session);
+      applyChatResponse(data);
       // F4.194: replace, not push, so Back does not step through the bare URL.
       if (searchParams.get(SESSION_PARAM) !== data.session.id) {
         setSearchParams({ [SESSION_PARAM]: data.session.id }, { replace: true });
       }
-      setValidationErrors(data.validationErrors ?? []);
-      setReplies(offeredReplies(data.suggestedReplies));
-      applyAutoOpen(data.autoOpenPreview, data.autoOpenReason);
     },
     onError: (err: Error) => setChatError(apiErrorMessage(err)),
   });
@@ -235,11 +238,8 @@ export function OnboardingChatPage({ user }: OnboardingChatPageProps) {
     mutationFn: (message: string) => sendOnboardingChat(session!.id, message),
     onSuccess: (data) => {
       const grew = data.session.messages.length > (session?.messages.length ?? 0);
-      setSession(data.session);
+      applyChatResponse(data);
       queryClient.setQueryData(["onboarding", data.session.id], data.session);
-      setValidationErrors(data.validationErrors ?? []);
-      setReplies(offeredReplies(data.suggestedReplies));
-      applyAutoOpen(data.autoOpenPreview, data.autoOpenReason);
 
       // ADR 0022 decision 2 refuses a credential-bearing turn by storing
       // nothing — so the transcript does not grow and the assistant's reply
@@ -315,6 +315,40 @@ export function OnboardingChatPage({ user }: OnboardingChatPageProps) {
     [dismissedReason],
   );
 
+  /** The success handling every turn-shaped response shares: the session, the lists and the drawer. */
+  function applyChatResponse(data: OnboardingChatResponseDto): void {
+    setSession(data.session);
+    setValidationErrors(data.validationErrors ?? []);
+    setReplies(offeredReplies(data.suggestedReplies));
+    applyAutoOpen(data.autoOpenPreview, data.autoOpenReason);
+  }
+
+  // F3.25 (ADR 0094 decision 6): bound to the checkpoint and the draft hash this
+  // page last saw. A 409 means the draft changed elsewhere: nothing was written.
+  const undoMutation = useMutation({
+    mutationFn: (checkpointId: string) =>
+      rollbackOnboardingSession(session!.id, checkpointId, session!.draftHash!),
+    onSuccess: (data) => {
+      applyChatResponse(data);
+      queryClient.setQueryData(["onboarding", data.session.id], data.session);
+      setUndoChoice("");
+      setChatError(
+        data.validationErrors?.length
+          ? `Validation found ${data.validationErrors.length} issue(s) — fix them in chat before commit.`
+          : null,
+      );
+    },
+    onError: (err: Error) => {
+      if (err instanceof ApiError && err.status === 409) {
+        setChatError("The draft changed elsewhere, so nothing was undone. The session was reloaded.");
+        setUndoChoice("");
+        void fetchOnboardingSession(session!.id).then(setSession);
+        return;
+      }
+      setChatError(apiErrorMessage(err));
+    },
+  });
+
   useEffect(() => {
     threadRef.current?.scrollTo({ top: threadRef.current.scrollHeight });
   }, [session?.messages.length, chatMutation.isPending]);
@@ -359,6 +393,13 @@ export function OnboardingChatPage({ user }: OnboardingChatPageProps) {
       setDismissedReason("review");
     }
   };
+
+  // Newest first; the select's default is the newest.
+  const undoCheckpoints = [...(session?.checkpoints ?? [])].reverse();
+  const showUndo = session?.status === "draft" && undoCheckpoints.length > 0;
+  const undoTarget = undoCheckpoints.some((c) => c.id === undoChoice)
+    ? undoChoice
+    : (undoCheckpoints[0]?.id ?? "");
 
   const messages: OnboardingChatMessage[] = session?.messages ?? [];
 
@@ -415,10 +456,7 @@ export function OnboardingChatPage({ user }: OnboardingChatPageProps) {
               setUploadBusy(true);
               uploadOnboardingExcel(session.id, file)
                 .then((data) => {
-                  setSession(data.session);
-                  setReplies(offeredReplies(data.suggestedReplies));
-                  applyAutoOpen(data.autoOpenPreview, data.autoOpenReason);
-                  setValidationErrors(data.validationErrors ?? []);
+                  applyChatResponse(data);
                   setChatError(
                     data.validationErrors?.length
                       ? `Validation found ${data.validationErrors.length} issue(s) — fix them in chat before commit.`
@@ -493,6 +531,35 @@ export function OnboardingChatPage({ user }: OnboardingChatPageProps) {
                 </div>
               )}
             </div>
+
+            {showUndo && (
+              <div className="flex flex-wrap items-center gap-2 border-t border-line px-4 pt-3">
+                <select
+                  aria-label="Undo to"
+                  data-testid="undo-select"
+                  value={undoTarget}
+                  onChange={(e) => setUndoChoice(e.target.value)}
+                  disabled={undoMutation.isPending}
+                  className="surface-field px-2 py-1 text-xs"
+                >
+                  {undoCheckpoints.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {`Step ${c.seq}: ${c.label}`}
+                    </option>
+                  ))}
+                </select>
+                <button
+                  type="button"
+                  data-testid="undo-button"
+                  onClick={() => undoMutation.mutate(undoTarget)}
+                  disabled={session.draftHash === null || undoMutation.isPending}
+                  aria-busy={undoMutation.isPending}
+                  className="surface-button px-3 py-1 text-xs disabled:opacity-50"
+                >
+                  {undoMutation.isPending ? "Undoing…" : "Undo"}
+                </button>
+              </div>
+            )}
 
             {replies.length > 0 && !chatMutation.isPending && (
               <div
