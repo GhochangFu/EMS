@@ -32,7 +32,12 @@ import {
   assertRemovePointKeyRemovesAKeyTheCatalogHolds,
   assertRemovePointKeyRemovesAKeyNoTemplateUses,
   assertRemovePointKeyRemovesOneCopyOfADuplicateKey,
-  assertRemovePointKeyReadsPastAStockTemplate,
+  assertF4213RemovePointKeyIsRefusedWhileAStockEntryNeedsIt,
+  assertF4213RemovePointKeyRemovesAKeyAStockEntryResolvesFromTheCatalog,
+  assertF4213AddTemplateNamesEachUnresolvedKeyInTheValidatorsSentence,
+  assertF4213ImportStockTemplateRefusesAnInactiveKey,
+  assertF4213ImportStockTemplateRefusesAFormulaKeyThatDoesNotResolve,
+  assertF4213ImportStockTemplateAcceptsADraftDeclaredKey,
   assertRemovePointKeyRemovesAKeyThatAlreadyDoesNotResolve,
   assertT4AddTemplateRefusesAnInactiveCatalogKey,
   assertT11AddTemplateAssetsAppendsTemplatedAssets,
@@ -144,8 +149,23 @@ describe("onboarding template write tools and the proposal (F3.22, ADR 0091 deci
   it("F4.195 remove point key removes one copy of a duplicate key", async () => {
     await assertRemovePointKeyRemovesOneCopyOfADuplicateKey();
   });
-  it("F4.195 remove point key reads past a stock template", async () => {
-    await assertRemovePointKeyReadsPastAStockTemplate();
+  it("F4.213 remove point key is refused while a stock entry needs it", async () => {
+    await assertF4213RemovePointKeyIsRefusedWhileAStockEntryNeedsIt();
+  });
+  it("F4.213 remove point key removes a key a stock entry resolves from the catalog", async () => {
+    await assertF4213RemovePointKeyRemovesAKeyAStockEntryResolvesFromTheCatalog();
+  });
+  it("F4.213 add template names each unresolved key in the validator's sentence", async () => {
+    await assertF4213AddTemplateNamesEachUnresolvedKeyInTheValidatorsSentence();
+  });
+  it("F4.213 import stock template refuses an inactive point key", async () => {
+    await assertF4213ImportStockTemplateRefusesAnInactiveKey();
+  });
+  it("F4.213 import stock template refuses a formula key that does not resolve", async () => {
+    await assertF4213ImportStockTemplateRefusesAFormulaKeyThatDoesNotResolve();
+  });
+  it("F4.213 import stock template accepts a draft declared key", async () => {
+    await assertF4213ImportStockTemplateAcceptsADraftDeclaredKey();
   });
   it("F4.196 remove point key removes a key that already does not resolve", async () => {
     await assertRemovePointKeyRemovesAKeyThatAlreadyDoesNotResolve();

@@ -245,6 +245,47 @@ export async function assertATopicQuestionDoesNotUpdate(): Promise<void> {
   assert(topics[0] === "", `RTU-1 keeps its empty topic, got ${JSON.stringify(topics)}`);
 }
 
+/** B3 (F4.218) — the same sentence appends no RTU, where it used to add RTU-2 with topic `should`. */
+export async function assertATopicQuestionAppendsNoRtu(): Promise<void> {
+  const draft = waitingForATopic();
+  const result = await ruleBasedTurn("what topic should I use", draft, "rtu");
+  const count = (mergeDraftPatch(draft, result.draftPatch).rtus ?? []).length;
+  assert(count === 1, `a topic question leaves one RTU, got ${count}`);
+}
+
+/** B3b — the positive partner of B3: the question is answered with the colon form, the draft untouched. */
+export async function assertATopicQuestionIsAnsweredWithTheColonForm(): Promise<void> {
+  const result = await ruleBasedTurn("what topic should I use", waitingForATopic(), "rtu");
+  assert(
+    result.assistantMessage.startsWith("I did not change the draft."),
+    `the reply says the draft is unchanged, got ${result.assistantMessage}`,
+  );
+  assert(result.assistantMessage.includes("topic: <topic>"), `the reply shows the colon form, got ${result.assistantMessage}`);
+  assert(result.currentPhase === "rtu", `the phase stays at rtu, got ${result.currentPhase}`);
+}
+
+/** B3c — guard boundary: a protocol reply that forgot the colon is still an append. */
+export async function assertAForgottenColonWithAProtocolWordStillAppends(): Promise<void> {
+  const draft = waitingForATopic();
+  const result = await ruleBasedTurn("mqtt topic plant/x", draft, "rtu");
+  const count = (mergeDraftPatch(draft, result.draftPatch).rtus ?? []).length;
+  assert(count === 2, `"mqtt topic plant/x" appends an RTU, got ${count} RTU(s)`);
+}
+
+/** B4 (F4.218) — the append-time capture needs the colon: `topic plant/b` stores no topic. */
+export async function assertAddAnotherRtuWithoutAColonStoresNoTopic(): Promise<void> {
+  const result = await ruleBasedTurn("add another rtu topic plant/b", waitingForATopic(), "rtu");
+  const topic = patchedRtus(result)[1]?.config.topic;
+  assert(topic === "", `no colon, no topic, got ${JSON.stringify(topic)}`);
+}
+
+/** B5 — the positive control of B4: with the colon the append stores the topic. */
+export async function assertAddAnotherRtuWithAColonStoresTheTopic(): Promise<void> {
+  const result = await ruleBasedTurn("add another rtu topic: plant/b", waitingForATopic(), "rtu");
+  const topic = patchedRtus(result)[1]?.config.topic;
+  assert(topic === "plant/b", `the colon form stores the topic, got ${JSON.stringify(topic)}`);
+}
+
 /** B2 — "topic: x" past the RTU step changes no RTU's topic. */
 export async function assertATopicTurnPastTheRtuStepDoesNotUpdate(): Promise<void> {
   const draft = threeRtus(["plant/a", "plant/b", "plant/c"]);
@@ -520,4 +561,78 @@ export function assertATopicOnlyPatchKeepsCredentialsSet(): void {
   const next = mergeATopicOnlyPatch();
   assert(next.rtus?.[0]?.credentialsSet === true, "RTU-1 still reads credentialsSet: true");
   assert(next.rtus?.[0]?.config.topic === "plant/a", "RTU-1 carries the patched topic");
+}
+
+// ---------------------------------------------------------------------------
+// F4.215 — a wildcard topic is unusable (ingest refuses it: mqtt.ts refine)
+// ---------------------------------------------------------------------------
+
+const WILDCARDS = ["#", "+", "plant/a/#", "plant/+/rtu-1"];
+const WILDCARD_MESSAGE = "MQTT topic must name one device; # and + are wildcards";
+
+/** W1 — a wildcard topic counts as unusable, credential or not. */
+export function assertAWildcardTopicNeedsSetup(): void {
+  for (const topic of WILDCARDS) {
+    assert(needsMqttSetup(credentialedRtu(topic)), `a credentialed MQTT RTU with topic "${topic}" still needs MQTT setup`);
+  }
+}
+
+/** W2 — `inferPhase` keeps such a draft on the RTU step. */
+export function assertAWildcardTopicKeepsTheRtuStep(): void {
+  const phase = new OnboardingValidateService().inferPhase(draftWith(credentialedRtu("plant/a/#")), ACTIVE_TYPES);
+  assert(phase === "rtu", `a wildcard topic keeps the phase at rtu, got ${phase}`);
+}
+
+/** W3 — `validate` names the wildcard with exactly one message (not the length or required one). */
+export function assertAWildcardTopicIsAValidationError(): void {
+  for (const topic of WILDCARDS) {
+    const messages = topicErrors(topic);
+    assert(
+      JSON.stringify(messages) === JSON.stringify([WILDCARD_MESSAGE]),
+      `validate reports only the wildcard message for "${topic}", got ${JSON.stringify(messages)}`,
+    );
+  }
+}
+
+/** W4 — the wildcard RTU is the one in hand, so the next `topic:` turn repairs it. */
+export function assertAWildcardTopicIsInHand(): void {
+  const index = rtuInHand(draftWith(credentialedRtu("plant/#"), credentialedRtu("ok/topic", { code: "RTU-2" })));
+  assert(index === 0, `the RTU with the wildcard topic is in hand, got index ${index}`);
+}
+
+/** W5 — the refusal is gated on `mqtt`: a wildcard on a Modbus RTU is not an error. */
+export function assertAWildcardOnAModbusRtuIsNotAnError(): void {
+  const result = new OnboardingValidateService().validate(
+    draftWith(credentialedRtu("plant/#", { protocol: "modbus_tcp", ingestEnabled: false, credentialsSet: false })),
+    ACTIVE_TYPES,
+    EMPTY_TEMPLATE_CONTEXT,
+  );
+  const messages = result.errors.filter((error) => error.path === "rtus.0.config.topic").map((error) => error.message);
+  assert(messages.length === 0, `a wildcard on a Modbus RTU is not an error, got ${JSON.stringify(messages)}`);
+}
+
+/** W6 (F4.215) — a guided `topic: site/#` turn writes nothing and the reply names the wildcard. */
+export async function assertAWildcardTopicTurnIsRefused(): Promise<void> {
+  const draft = waitingForATopic();
+  const result = await ruleBasedTurn("topic: site/#", draft, "rtu");
+  const topics = mergedTopics(draft, result);
+  assert(topics[0] === "", `the topic stays unchanged, got ${JSON.stringify(topics)}`);
+  assert(/wildcard/i.test(result.assistantMessage), `the reply names the wildcard, got ${result.assistantMessage}`);
+  assert(!result.assistantMessage.includes("set on"), `the reply does not claim the topic was set, got ${result.assistantMessage}`);
+}
+
+/** W7 (F4.215) — ingest lets `config.device.topic` override the head topic, so a nested wildcard is refused. */
+export function assertANestedDeviceWildcardIsAValidationError(): void {
+  const rtu = credentialedRtu("plant/a", { config: { host: "h", port: 8883, tls: true, topic: "plant/a", device: { topic: "plant/#" } } });
+  const result = new OnboardingValidateService().validate(draftWith(rtu), ACTIVE_TYPES, EMPTY_TEMPLATE_CONTEXT);
+  const messages = result.errors.filter((error) => error.path === "rtus.0.config.device.topic").map((error) => error.message);
+  assert(messages.includes(WILDCARD_MESSAGE), `a nested device.topic wildcard is refused, got ${JSON.stringify(messages)}`);
+}
+
+/** B3d (F4.218) — the plural question leaves one RTU, as the singular does. */
+export async function assertAPluralTopicQuestionAppendsNoRtu(): Promise<void> {
+  const draft = waitingForATopic();
+  const result = await ruleBasedTurn("which topics can I use", draft, "rtu");
+  const count = (mergeDraftPatch(draft, result.draftPatch).rtus ?? []).length;
+  assert(count === 1, `a plural topic question leaves one RTU, got ${count}`);
 }

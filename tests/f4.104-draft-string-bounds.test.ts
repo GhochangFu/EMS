@@ -13,7 +13,8 @@ const read = (rel: string): string => readFileSync(join(repoRoot, rel), "utf8");
 const API_REL = "apps/api/src/admin/onboarding/onboarding.schema.ts";
 const SHARED_REL = "packages/shared/src/contracts/onboarding.ts";
 const EXCEL_REL = "apps/api/src/admin/onboarding/onboarding-excel.service.ts";
-const CHAT_REL = "apps/api/src/admin/onboarding/onboarding-chat.service.ts";
+// F4.217 moved the guided mode, and its two cutToBound reads, out of onboarding-chat.service.ts.
+const CHAT_REL = "apps/api/src/admin/onboarding/onboarding-chat-rule-based.ts";
 
 const RECORD = "ONBOARDING_DRAFT_STRING_MAX";
 /** `assets.domain` is bounded by a vocabulary schema, not by a `.max()`. */

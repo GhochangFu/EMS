@@ -47,8 +47,18 @@ export function rtuTopic(rtu: DraftRtu): string {
 export const MQTT_TOPIC_PLACEHOLDER = "your/topic/here";
 
 /**
- * `F4.208` — a topic the RTU cannot ingest with: blank, the `-` placeholder, or
- * wider than the `varchar(255)` column it commits to. The topic half of
+ * `F4.215` (owner ruling) — a topic holding an MQTT wildcard, `#` or `+`. Ingest
+ * refuses it (`apps/ingest/src/adapters/mqtt.ts` refine) and the host skips the
+ * RTU with `invalid-device-config`, so an RTU committed with one never ingests.
+ */
+export function topicHasWildcard(topic: string): boolean {
+  return topic.includes("#") || topic.includes("+");
+}
+
+/**
+ * `F4.208` — a topic the RTU cannot ingest with: blank, the `-` placeholder,
+ * wider than the `varchar(255)` column it commits to, or (`F4.215`) a wildcard.
+ * The topic half of
  * `needsMqttSetup`, which `inferPhase` and `rtuInHand` read.
  */
 export function topicUnusable(rtu: DraftRtu): boolean {
@@ -58,7 +68,8 @@ export function topicUnusable(rtu: DraftRtu): boolean {
     trimmed === "" ||
     trimmed === "-" ||
     trimmed === MQTT_TOPIC_PLACEHOLDER ||
-    topic.length > MAX_RTU_TOPIC_CHARS
+    topic.length > MAX_RTU_TOPIC_CHARS ||
+    topicHasWildcard(trimmed)
   );
 }
 
@@ -86,7 +97,11 @@ export function rtuInHand(draft: OnboardingDraft): number {
 /** An `RTU:` line of `mqttSetupTemplate`; group 1 is the name it carries. */
 const RTU_LINE = /^[ \t]*RTU:[ \t]*(.*?)[ \t]*$/gim;
 
-/** The guided turn's `topic: x` — non-global there, so only the first is taken. */
+/**
+ * The guided turn's `topic: x` — non-global there, so only the first is taken.
+ * Since F4.218 it is also the append-time capture (`defaultConfig`), so a topic
+ * without the colon is stored nowhere.
+ */
 export const TOPIC_TURN = /\btopic\s*:\s*(\S+)/i;
 
 /**
@@ -191,7 +206,7 @@ export function mqttSetupTemplate(draft: OnboardingDraft): string {
     // `topic:` is the one echo site `quoteCell` cannot cover — the operator
     // copies this block, edits it and pastes it back, and the quotes would be
     // captured into the stored topic by the guided turn's
-    // `/\btopic\s*:\s*(\S+)/i` (or `defaultConfig`'s `/topic[:\s]+(\S+)/i` when
+    // `/\btopic\s*:\s*(\S+)/i` (or `defaultConfig`'s `TOPIC_TURN` when
     // the turn appends). So it is bounded by *length* instead, against the
     // same `MAX_RTU_TOPIC_CHARS` the sheet is refused on, and an unusable
     // value falls back to the placeholder rather than being cut: a truncated

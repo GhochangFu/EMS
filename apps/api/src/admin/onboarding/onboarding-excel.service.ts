@@ -118,7 +118,7 @@ export function onboardingSheetRangeProblem(range: XLSX.Range): string | null {
  * with `quoteCell`, which leaves the data whole. `topic` cannot be: it is
  * printed unquoted by `mqttSetupTemplate` for the operator
  * to edit and paste back, so a quote character would end up inside the stored
- * topic (the paste-back parser is `/topic[:\s]+(\S+)/i`). Truncating instead is
+ * topic (the paste-back parser is `TOPIC_TURN`, `/\btopic\s*:\s*(\S+)/i`). Truncating instead is
  * worse than refusing — a shortened topic subscribes to a topic nobody asked
  * for, the RTU commits, and no telemetry ever arrives. Past this bound the sheet
  * is wrong, and saying so is the only answer that does not invent a result.

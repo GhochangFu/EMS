@@ -162,8 +162,8 @@ function derived(pointKey: string): TemplatePointRef {
   return { pointKey, kind: "derived", required: false, sourceDataKeyPattern: null };
 }
 
-function stockRef(code: string, stockVersion: number, points: TemplatePointRef[]): StockTemplateRef {
-  return { ...ref(code, null, null, points, `${code} stock`), domain: "water", stockVersion };
+function stockRef(code: string, stockVersion: number, points: TemplatePointRef[], formulaPointKeys: string[] = []): StockTemplateRef {
+  return { ...ref(code, null, null, points, `${code} stock`), domain: "water", stockVersion, formulaPointKeys };
 }
 
 /** METER held in three versions; one stock entry with a required, an optional and a derived point. */
@@ -173,7 +173,13 @@ const WRITE: ValidateTemplateContext = {
     ref("METER", 2, "published", [point("kw", "{asset_code}-kw"), point("kvar", "{asset_code}-{phase}")]),
     ref("METER", 3, "draft", []),
   ],
-  stock: [stockRef("WTP-PUMP", 3, [point("flow"), optional("level"), derived("efficiency")])],
+  // F4.213: WTP-OLD names the inactive `old_kw`; WTP-FX's formula names `nope_key`, which neither the
+  // catalog nor `baseDraft` holds. Each stock entry is read through its ref (points + formula keys).
+  stock: [
+    stockRef("WTP-PUMP", 3, [point("flow"), optional("level"), derived("efficiency")]),
+    stockRef("WTP-OLD", 1, [point("old_kw")]),
+    stockRef("WTP-FX", 1, [point("flow")], ["nope_key"]),
+  ],
   // F4.196: the catalog `add_template`, `remove_point_key` and the validator read; `old_kw` is held inactive.
   // F4.205: `flow`, `level` and `efficiency` are the stock WTP-PUMP's keys, active, as the import requires.
   pointKeys: new Map([
@@ -344,6 +350,50 @@ export async function assertT9ImportStockTemplateRefusesABadPatternGrammar(): Pr
   assert(!out.ok && out.error.includes("'F{x'") && out.error.includes("brace outside"), `refused, got ${out.content}`);
 }
 
+/** F4.213 — add_template names each key that does not resolve in `unresolvedPointKey`'s own sentence: inactive is told from missing. */
+export async function assertF4213AddTemplateNamesEachUnresolvedKeyInTheValidatorsSentence(): Promise<void> {
+  const out = await runOn("add_template", { ...CHILLER, points: [{ pointKey: "old_kw" }, { pointKey: "nope_key" }] }, baseDraft());
+  assert(
+    !out.ok &&
+      out.error ===
+        "Template 'CHILLER' names point keys that do not resolve at commit: Point key 'old_kw' is inactive in the catalog; " +
+          "Point key 'nope_key' is neither in this draft nor in the catalog. Add a missing key with add_point_key first; an inactive key cannot be used.",
+    `refused in the validator's sentences, got ${out.content}`,
+  );
+  assert(out.state.working.templates === undefined, "nothing is written");
+}
+
+/** F4.213 — import_stock_template refuses a stock entry whose point key the catalog holds inactive. */
+export async function assertF4213ImportStockTemplateRefusesAnInactiveKey(): Promise<void> {
+  const out = await runOn("import_stock_template", { stockCode: "WTP-OLD" }, baseDraft());
+  assert(
+    !out.ok &&
+      out.error ===
+        "Stock template 'WTP-OLD' needs point keys that do not resolve at commit: Point key 'old_kw' is inactive in the catalog. " +
+          "Add a missing key with add_point_key first; an inactive key cannot be used.",
+    `refused naming the key, got ${out.content}`,
+  );
+  assert(out.state.working.templates === undefined, "nothing is written");
+}
+
+/** F4.213 — a key only a stock formula names is checked too. */
+export async function assertF4213ImportStockTemplateRefusesAFormulaKeyThatDoesNotResolve(): Promise<void> {
+  const out = await runOn("import_stock_template", { stockCode: "WTP-FX" }, baseDraft());
+  assert(
+    !out.ok && out.error.startsWith("Stock template 'WTP-FX' needs point keys that do not resolve at commit: Point key 'nope_key' is neither in this draft nor in the catalog."),
+    `refused naming the formula key, got ${out.content}`,
+  );
+  assert(out.state.working.templates === undefined, "nothing is written");
+}
+
+/** F4.213 — a key the draft declares and the catalog does not hold resolves: the commit inserts it first. */
+export async function assertF4213ImportStockTemplateAcceptsADraftDeclaredKey(): Promise<void> {
+  const draft = baseDraft();
+  draft.pointKeys!.push({ code: "nope_key", name: "Nope" });
+  const out = await runOn("import_stock_template", { stockCode: "WTP-FX" }, draft);
+  assert(out.ok && out.actionLine?.startsWith("Imported stock template WTP-FX") === true, `imported, got ${out.content}`);
+}
+
 /** T10 (refused while referenced) */
 export async function assertT10RemoveTemplateIsRefusedWhileAnAssetReferencesIt(): Promise<void> {
   const draft = baseDraft({ templates: [CHILLER] });
@@ -398,16 +448,26 @@ export async function assertRemovePointKeyRemovesOneCopyOfADuplicateKey(): Promi
 }
 
 /**
- * F4.195 — pins what `remove_point_key` does today: it skips stock template
- * entries, so a key is removable while a stock entry is in the draft. This is
- * NOT a claim that the removal is safe. Since F4.205, validation reads stock
- * entries' point keys, so a draft-declared key a stock entry needs can be
- * removed here and validation then refuses the draft. Tool parity is a
- * proposed separate row; when it lands, this case changes with it.
+ * F4.213 — a draft-declared key a stock entry needs cannot leave, as
+ * validation (F4.205) would then refuse the draft. `nope_key` is a formula key
+ * of WTP-FX, not a point key, so this case also reddens when the tool reads
+ * the stock ref's points only.
  */
-export async function assertRemovePointKeyReadsPastAStockTemplate(): Promise<void> {
-  const out = await runOn("remove_point_key", { index: 0 }, baseDraft({ templates: [{ stockCode: "WTP-PUMP" }] }));
-  assert(out.ok && out.actionLine === "Removed point key kw", `removed, got ${out.content}`);
+export async function assertF4213RemovePointKeyIsRefusedWhileAStockEntryNeedsIt(): Promise<void> {
+  const draft = baseDraft({ pointKeys: [{ code: "nope_key", name: "Nope" }], templates: [{ stockCode: "WTP-FX" }] });
+  const out = await runOn("remove_point_key", { index: 0 }, draft);
+  assert(
+    !out.ok && out.error === "Point key 'nope_key' is used by draft templates: 'WTP-FX'. Remove those templates first.",
+    `refused naming the stock entry, got ${out.content}`,
+  );
+  assert(out.state.working.pointKeys?.length === 1, "the point key stays");
+}
+
+/** F4.213 — a key the catalog holds active still resolves a stock entry, so it can leave the draft. */
+export async function assertF4213RemovePointKeyRemovesAKeyAStockEntryResolvesFromTheCatalog(): Promise<void> {
+  const draft = baseDraft({ pointKeys: [{ code: "flow", name: "Flow" }], templates: [{ stockCode: "WTP-PUMP" }] });
+  const out = await runOn("remove_point_key", { index: 0 }, draft);
+  assert(out.ok && out.actionLine === "Removed point key flow", `removed, got ${out.content}`);
 }
 
 /** F4.196 — a key that already does not resolve (held inactive) can leave: removing it breaks nothing more. */

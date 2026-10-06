@@ -8,7 +8,7 @@ import {
 } from "@bms/shared";
 
 import { echoedItems, moreTail, quoteCell } from "../spreadsheet-guard";
-import { needsMqttSetup, rtuTopic } from "./onboarding-chat-summaries";
+import { needsMqttSetup, rtuTopic, topicHasWildcard } from "./onboarding-chat-summaries";
 import {
   draftAssetPointSchema,
   draftAssetSchema,
@@ -26,6 +26,7 @@ import {
   resolveTemplateForAsset,
   templateSourceKeyMessage,
   templateSourceKeyProblem,
+  templateRefPointKeys,
   templateVariables,
   unresolvedPointKey,
   type TemplateRef,
@@ -173,6 +174,26 @@ export class OnboardingValidateService {
           errors.push({
             path: `rtus.${i}.config.topic`,
             message: `MQTT topic is longer than ${MAX_RTU_TOPIC_CHARS} characters`,
+          });
+        }
+        // F4.215 (owner ruling): ingest refuses a `#` or `+` topic
+        // (`apps/ingest/src/adapters/mqtt.ts` refine) and skips the RTU, so it
+        // would commit and never ingest. Gated on `mqtt`: only that protocol subscribes.
+        if (rtu.protocol === "mqtt" && topicHasWildcard(rtuTopic(rtu))) {
+          errors.push({
+            path: `rtus.${i}.config.topic`,
+            message: "MQTT topic must name one device; # and + are wildcards",
+          });
+        }
+        // Ingest builds the device as `{ topic: head.mqtt_topic, ...device }`
+        // (`apps/ingest/src/host/bindings.ts`), so a string `config.device.topic`
+        // overrides the head topic and must not be a wildcard either.
+        const device: unknown = rtu.config?.device;
+        const nested = typeof device === "object" && device !== null ? (device as { topic?: unknown }).topic : undefined;
+        if (rtu.protocol === "mqtt" && typeof nested === "string" && topicHasWildcard(nested)) {
+          errors.push({
+            path: `rtus.${i}.config.device.topic`,
+            message: "MQTT topic must name one device; # and + are wildcards",
           });
         }
       });
@@ -347,7 +368,7 @@ function validateDraftTemplates(d: OnboardingDraft, ctx: ValidateTemplateContext
         }
         // F4.205: the import's `assertPointKeysActive` checks the points' keys
         // and the keys their formulas name; the same rule as an authored point.
-        const keys = new Set([...stock.points.map((p) => p.pointKey), ...stock.formulaPointKeys]);
+        const keys = templateRefPointKeys(stock);
         for (const key of keys) {
           const unresolved = unresolvedPointKey(key, declared, ctx.pointKeys);
           if (unresolved !== null) {

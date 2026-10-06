@@ -13,7 +13,7 @@ import type { OrgPointKeySummary } from "./onboarding-catalog.service";
 import { carriesPromptMarker, serialiseDraftForPrompt } from "./onboarding-prompt-budget";
 import type { ProtocolContext } from "./onboarding-protocol.service";
 import { dispatchTemplateTool, isTemplateToolName, TEMPLATE_TOOL_DESCRIPTIONS, TEMPLATE_TOOL_SCHEMAS } from "./onboarding-template-tools";
-import { draftTemplateCode, isStockEntry, unresolvedPointKey, type ValidateTemplateContext } from "./onboarding-template-refs";
+import { draftTemplateCode, isStockEntry, templateRefPointKeys, unresolvedPointKey, type ValidateTemplateContext } from "./onboarding-template-refs";
 import {
   fail,
   issuesOf,
@@ -387,10 +387,9 @@ async function dispatch(name: ToolName, args: Record<string, unknown>, state: To
       // second declaration of the same code keeps it resolved, so one copy of a
       // duplicate can leave. F4.196: the validator's rule (`unresolvedPointKey`)
       // against the context's catalog decides whether the key still resolves.
-      // The scan below skips stock entries, but since F4.205 validation does
-      // not: a key a stock entry needs can be removed here and validation then
-      // refuses the draft. The tool and validation therefore do NOT agree on
-      // stock entries yet; tool parity is a proposed separate row.
+      // F4.213: a stock entry is read through its catalog ref (its points' keys
+      // and its formulas' keys), as validation reads it since F4.205; a stock
+      // code the catalog does not ship needs nothing here (validation names it).
       const code = hit.removed.code;
       const catalog = ctx.templates.pointKeys;
       const before = new Set((draft.pointKeys ?? []).map((key) => key.code));
@@ -399,7 +398,13 @@ async function dispatch(name: ToolName, args: Record<string, unknown>, state: To
       const users = !breaks
         ? []
         : (draft.templates ?? [])
-            .filter((entry) => !isStockEntry(entry) && entry.points.some((point) => point.pointKey === code))
+            .filter((entry) => {
+              if (!isStockEntry(entry)) {
+                return entry.points.some((point) => point.pointKey === code);
+              }
+              const stock = ctx.templates.stock.find((ref) => ref.code === entry.stockCode);
+              return stock !== undefined && templateRefPointKeys(stock).has(code);
+            })
             .map((entry) => quoteCell(draftTemplateCode(entry)));
       if (users.length > 0) {
         const { shown, omitted } = echoedItems(users, 10);
