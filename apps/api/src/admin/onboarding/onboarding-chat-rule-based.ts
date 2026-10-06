@@ -147,7 +147,7 @@ function stepPrompt(
   }
 }
 
-/** Runs one guided (rule-based) chat turn: `deps` supplies validate and finalizeTurn; resolves to the `ChatTurnResult` that `deps.finalizeTurn` builds. */
+/** Runs one guided (rule-based) chat turn: `deps` supplies validateService.inferPhase, catalogService (point-key listing) and finalizeTurn; resolves to the `ChatTurnResult` that `deps.finalizeTurn` builds. */
 export async function handleRuleBasedTurn(
   deps: RuleBasedTurnDeps,
   message: string,

@@ -385,12 +385,13 @@ export function assertDisplayNameFixListIsCapped(): void {
  * **Capping it costs no working function, and that is measured rather than
  * assumed.** The template already does not do what it says past the first
  * block: `defaultConfig` reads one **non-global** `TOPIC_TURN` (`/\btopic\s*:\s*(\S+)/i`), so
- * only the first block's topic is ever taken, and the `phase === "rtu"` branch
- * of `handleRuleBasedTurn` *appends* an RTU rather than updating the ones the
- * import created. Three imported RTUs with blank topics, all three filled in
- * and pasted back, produced **four** RTUs — the three originals still holding
- * `topic: ""`. Pre-existing, filed as its own row, and deliberately not fixed
- * here (owner ruling 4).
+ * only the first block's topic is ever taken. Measured before `F4.208`: the
+ * `phase === "rtu"` branch of `handleRuleBasedTurn` *appended* an RTU rather
+ * than updating the ones the import created. Three imported RTUs with blank
+ * topics, all three filled in and pasted back, produced **four** RTUs — the
+ * three originals still holding `topic: ""`. Since `F4.208` a pasted block with
+ * `topic:` goes to the topic turn, which updates the RTU its first `RTU:` line
+ * names; the other blocks are still not read (owner ruling 4).
  *
  * **The tail counts omissions from the template's own list, never from
  * `mqttIncomplete`.** The two are different predicates: `mqttIncomplete` also
