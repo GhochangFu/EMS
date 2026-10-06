@@ -656,9 +656,8 @@ export const templateMigrationRefusalReasonSchema = z.enum([
    */
   "point_key_already_mapped",
   /**
-   * `F4.216` — the target version adds a measured point whose resolved
-   * `source_data_key` an existing `asset_points` row on the asset already
-   * holds under another point key.
+   * `F4.216` — a new measured point's resolved `source_data_key` is already
+   * held on the asset by another row, or by a second addition of the version.
    *
    * `asset_points_asset_source_key_idx` (migration 0015) makes
    * `(asset_id, source_data_key)` unique: one source key feeds one point per
