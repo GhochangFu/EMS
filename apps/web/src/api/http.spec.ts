@@ -472,7 +472,9 @@ export async function runASessionSetDuringThe401BodyReadRecordsNothing(): Promis
 /**
  * S2 — control for S1: the same streamed body with no sign-in during the read
  * records the reason. Without it, a stream that stopped parsing would keep S1
- * green under every mutation.
+ * green under every mutation. It waits with the same `settle()` as S1, not
+ * `vi.waitFor`: the control must prove the parse lands inside the exact window
+ * S1's absence assertion reads, or a slow parse would keep S1 green unproved.
  */
 export async function runAStreamed401BodyWithNoNewSessionRecordsTheReason(): Promise<void> {
   signIn();
@@ -480,10 +482,9 @@ export async function runAStreamed401BodyWithNoNewSessionRecordsTheReason(): Pro
   const { res, push } = streamed401();
   clearSessionOnAuthFailure(res, sent);
   push(JSON.stringify(DEACTIVATED_BODY));
-  await vi.waitFor(() => {
-    assert(
-      reason() === "account_deactivated",
-      `a streamed 401 body with no new session must record the reason, got ${String(reason())}`,
-    );
-  });
+  await settle();
+  assert(
+    reason() === "account_deactivated",
+    `a streamed 401 body with no new session must record the reason, got ${String(reason())}`,
+  );
 }
