@@ -84,7 +84,7 @@ const FORBIDDEN = ["credentialsSet", "_secrets", "_commitProposal", "rtuTargetCo
 
 /** Every tool's JSON Schema; none carries a field the agent must never write. */
 export function assertEveryToolHasAJsonSchemaWithNoForbiddenProperty(): void {
-  assert(TOOL_DEFINITIONS.length === 25, `there are 25 tools, got ${TOOL_DEFINITIONS.length}`);
+  assert(TOOL_DEFINITIONS.length === 28, `there are 28 tools, got ${TOOL_DEFINITIONS.length}`);
   for (const tool of TOOL_DEFINITIONS) {
     const text = JSON.stringify(tool.parameters);
     for (const field of FORBIDDEN) {

@@ -103,6 +103,8 @@ export type GuidedToolCoverage = { readonly mode: "guided" | "agent_only"; reado
 const FIXED_PROMPTS = "the guided mode has fixed prompts";
 const REMOVE_DEFERRED = "deferred, ADR 0090 Amendment 2";
 const TEMPLATES_AGENT_ONLY = "B6 / ADR 0091 decision 11: templates are the Asset Templates editor's in guided mode";
+const MAPPINGS_AGENT_ONLY =
+  "F3.23 / ADR 0092 decision 6: bulk point keys and mappings are agent-only; the guided mode keeps its kw sample";
 
 /**
  * ADR 0090 Amendment 2 B7 — every registry tool is either covered by a guided
@@ -136,4 +138,7 @@ export const GUIDED_TOOL_COVERAGE: Readonly<Record<ToolName, GuidedToolCoverage>
   import_stock_template: { mode: "agent_only", reason: TEMPLATES_AGENT_ONLY },
   remove_template: { mode: "agent_only", reason: TEMPLATES_AGENT_ONLY },
   add_template_assets: { mode: "agent_only", reason: TEMPLATES_AGENT_ONLY },
+  add_point_keys: { mode: "agent_only", reason: MAPPINGS_AGENT_ONLY },
+  map_points: { mode: "agent_only", reason: MAPPINGS_AGENT_ONLY },
+  get_asset_points: { mode: "agent_only", reason: MAPPINGS_AGENT_ONLY },
 };

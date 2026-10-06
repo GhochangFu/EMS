@@ -7,6 +7,7 @@ import { isJsonContainer, rebuildDeep } from "../stack-safe-json";
 import { commitSummary } from "./onboarding-commit-proposal";
 import { looksLikeCredential } from "./onboarding-credential-detect";
 import { assetPointProblems } from "./onboarding-mapping-refs";
+import { dispatchMappingTool, isMappingToolName, MAPPING_TOOL_DESCRIPTIONS, MAPPING_TOOL_SCHEMAS } from "./onboarding-mapping-tools";
 import { cutToBound, draftCountProblem } from "./onboarding-draft-caps";
 import type { LlmToolCall, LlmToolDefinition } from "./onboarding-llm-port";
 import { deriveLocationPatch } from "./onboarding-location-derive";
@@ -91,6 +92,7 @@ function agentSecretKey(key: string): boolean {
 /**
  * The tools whose arguments are walked for credentials (decision 4, and security review L2 for the two `meta` carriers).
  * `F3.22` (ADR 0091 decision 9): the three template writes join, so every label, pattern and variable value is walked.
+ * `F3.23` (ADR 0092 decision 4): the two batch writes join, so every key and mapping row is walked.
  */
 const CREDENTIAL_CHECKED_TOOLS: ReadonlySet<string> = new Set([
   "add_rtu",
@@ -100,6 +102,8 @@ const CREDENTIAL_CHECKED_TOOLS: ReadonlySet<string> = new Set([
   "add_template",
   "import_stock_template",
   "add_template_assets",
+  "add_point_keys",
+  "map_points",
 ]);
 
 /** Security review M2: an RTU with stored credentials keeps its connection, so the credential cannot be sent elsewhere. */
@@ -179,12 +183,14 @@ const TOOL_SCHEMAS = {
     .object({ replies: z.array(z.string().min(1).max(MAX_SUGGESTED_REPLY_CHARS)).min(1).max(MAX_MODEL_REPLIES) })
     .strict(),
   ...TEMPLATE_TOOL_SCHEMAS,
+  ...MAPPING_TOOL_SCHEMAS,
 } as const satisfies Record<string, ZodTypeAny>;
 
 export type ToolName = keyof typeof TOOL_SCHEMAS;
 
 const DESCRIPTIONS: Record<ToolName, string> = {
   ...TEMPLATE_TOOL_DESCRIPTIONS,
+  ...MAPPING_TOOL_DESCRIPTIONS,
   get_draft: "Returns the current onboarding draft (credentials redacted).",
   list_point_keys: "Lists catalog point keys (code, name, unit, domain). Optional `search` filters code and name.",
   list_location_types: "Lists the active location type codes and labels. A location's `type` must be one of these codes.",
@@ -222,7 +228,7 @@ function jsonSchemaOf(schema: ZodTypeAny): Record<string, unknown> {
   return converted;
 }
 
-/** The 25 tools as the model sees them, in a fixed order. */
+/** The 28 tools as the model sees them, in a fixed order. */
 export const TOOL_DEFINITIONS: readonly LlmToolDefinition[] = (Object.keys(TOOL_SCHEMAS) as ToolName[]).map((name) => ({
   name,
   description: DESCRIPTIONS[name],
@@ -295,6 +301,9 @@ export async function runTool(call: LlmToolCall, state: ToolState, ctx: ToolCont
 async function dispatch(name: ToolName, args: Record<string, unknown>, state: ToolState, ctx: ToolContext): Promise<ToolOutcome> {
   if (isTemplateToolName(name)) {
     return dispatchTemplateTool(name, args, state, ctx);
+  }
+  if (isMappingToolName(name)) {
+    return dispatchMappingTool(name, args, state, ctx);
   }
   const draft = state.working;
   switch (name) {

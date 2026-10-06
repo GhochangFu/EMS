@@ -10,7 +10,7 @@ import {
   assertListStockTemplatesFiltersCodeAndName,
   assertListTemplatesIsBoundedAtOneHundred,
   assertListTemplatesIsPublishedOnlyWithHighestVersion,
-  assertToolsAre25,
+  assertToolsAre28,
   assertT1AddTemplateAppendsAnAuthoredEntry,
   assertT2AddTemplateRefusesACodeTheDraftHolds,
   assertT3AddTemplateRefusesACodeTheOrganizationHoldsNamingTheVersions,
@@ -59,8 +59,8 @@ import {
 
 /** Vitest entry point (ADR 0014). One `it()` per claim. */
 describe("onboarding template read tools (F3.22, ADR 0091 decision 3)", () => {
-  it("T21 registers 25 tools", async () => {
-    await assertToolsAre25();
+  it("T21 registers 28 tools", async () => {
+    await assertToolsAre28();
   });
   it("R1 lists published templates only, at the highest version", async () => {
     await assertListTemplatesIsPublishedOnlyWithHighestVersion();
