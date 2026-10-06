@@ -18,6 +18,7 @@ import {
   assertSetLocationDerivesSlugAndCode,
   assertSetLocationRefusesAnInactiveTypeNamingTheActiveCodes,
   assertUnknownToolAndBadArgumentsAreToolErrors,
+  assertAFailedOutcomeCarriesItsError,
   assertUpdateRtuKeepsCredentialsSet,
   assertUpdateRtuRefusesTheSameTwoShapes,
   assertUseExistingPointKeysWritesOnlyThatFlag,
@@ -104,6 +105,10 @@ describe("onboarding agent tools (F3.21, ADR 0090 decision 4)", () => {
 
   it("returns unknown tools and bad arguments as tool errors", async () => {
     await assertUnknownToolAndBadArgumentsAreToolErrors();
+  });
+
+  it("carries a refusal's sentence as the outcome's error (F3.27)", async () => {
+    await assertAFailedOutcomeCarriesItsError();
   });
 
   it("refuses an argument that echoes the withheld-value marker", async () => {

@@ -50,13 +50,23 @@ const WITH_DISTINCT_LABEL: readonly LocationTypeDto[] = [
   { code: "wtp", label: "Water treatment plant" },
 ];
 
-/** A chat service whose vocabulary is `rows`, with the real validator behind it. */
-function serviceWith(rows: readonly LocationTypeDto[], llmResolver: unknown = {}): OnboardingChatService {
+/** F3.27 (Q-A): every turn passes an organization, so the default resolver answers the guided mode. */
+const GUIDED_RESOLVER = { resolveForOrganization: async () => ({ kind: "guided", reason: "platform_off" }) };
+
+/**
+ * A chat service whose vocabulary is `rows`, with the real validator behind it.
+ * The protocol service throws, so an accidental protocol-question intercept
+ * reddens a case instead of answering it.
+ */
+function serviceWith(rows: readonly LocationTypeDto[], llmResolver: unknown = GUIDED_RESOLVER): OnboardingChatService {
+  const intercepted = (): never => {
+    throw new Error("the protocol-question intercept answered a location-type case");
+  };
   return new OnboardingChatService(
     new OnboardingValidateService(),
     {} as never,
-    {} as never,
-    {} as never,
+    { getContextForOrganization: intercepted, formatForAssistant: intercepted } as never,
+    { listPointKeys: async () => [] } as never,
     { listLocationTypes: async () => [...rows] } as never,
     llmResolver as never,
     { context: async () => EMPTY_TEMPLATE_CONTEXT } as never,
@@ -73,7 +83,7 @@ async function ruleBasedTurn(
   const savedKey = process.env.OPENAI_API_KEY;
   delete process.env.OPENAI_API_KEY;
   try {
-    return await serviceWith(rows).handleTurn(message, draft, phase, "Ion Exchange", undefined, {
+    return await serviceWith(rows).handleTurn(message, draft, phase, "Ion Exchange", "org-1", {
       sessionId: "s-1",
       history: [],
     });

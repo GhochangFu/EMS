@@ -33,13 +33,29 @@ async function runTurn(message: string): Promise<{ result: ChatTurnResult; final
   const deps: RuleBasedTurnDeps = {
     validateService: new OnboardingValidateService(),
     catalogService: { listPointKeys: async () => [], formatPointKeysForChat: () => "" } as never,
+    // F3.27 (B4 seam): the guided writes' tool context; its organization is the turn's.
+    tools: {
+      organizationId: "org-1",
+      activeTypes: TURN.types,
+      catalog: { listPointKeys: async () => [] },
+      protocols: {
+        getContextForOrganization: async () => {
+          throw new Error("a guided turn read the protocols");
+        },
+        formatForAssistant: () => {
+          throw new Error("a guided turn formatted the protocols");
+        },
+      },
+      validator: new OnboardingValidateService(),
+      templates: TURN.templates,
+    },
     finalizeTurn: (...args) => {
       finalized.push(args);
       const [assistantMessage, draftPatch, currentPhase, suggestedReplies] = args;
       return { assistantMessage, draftPatch, currentPhase, suggestedReplies, actionLines: [] };
     },
   };
-  const result = await handleRuleBasedTurn(deps, message, locationOnlyDraft(), "rtu", "Eskom", TURN, "org-1");
+  const result = await handleRuleBasedTurn(deps, message, locationOnlyDraft(), "rtu", "Eskom", TURN);
   return { result, finalized };
 }
 

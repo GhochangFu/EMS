@@ -34,6 +34,12 @@ export type ToolOutcome = {
   readonly content: string;
   /** Set only by a successful write or a proposal. */
   readonly actionLine?: string;
+  /**
+   * Set only by `fail`: the refusal's sentence, the same text `content` carries.
+   * F3.27 (ADR 0090 Amendment 2 B4): the guided mode answers it to the user, so
+   * no caller parses `content` back.
+   */
+  readonly error?: string;
 };
 
 /** A result as the model receives it: JSON, cut on a whole character with a fixed tail. */
@@ -43,7 +49,7 @@ export function toolResultContent(result: unknown): string {
 }
 
 export function fail(error: string): ToolOutcome {
-  return { ok: false, content: toolResultContent({ ok: false, error }) };
+  return { ok: false, content: toolResultContent({ ok: false, error }), error };
 }
 
 export function succeed(result: Record<string, unknown>, actionLine?: string): ToolOutcome {

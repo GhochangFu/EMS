@@ -17,6 +17,7 @@ import type {
 import { ONBOARDING_DRAFT_STRING_MAX } from "@bms/shared";
 
 import { quoteCell } from "../spreadsheet-guard";
+import type { ToolContext } from "./onboarding-agent-tools";
 import type { OnboardingCatalogService } from "./onboarding-catalog.service";
 import { catalogCodeFromLocationName, cutToBound } from "./onboarding-draft-caps";
 import { mergeDraftPatch } from "./onboarding-draft-merge";
@@ -70,6 +71,13 @@ export type TurnVocabulary = {
  */
 export type RuleBasedTurnDeps = {
   readonly validateService: Pick<OnboardingValidateService, "inferPhase">;
+  /**
+   * F3.27 (ADR 0090 Amendment 2 B4): the context the agent's tools run in,
+   * built by the same `OnboardingChatService.toolContext`, so a guided write
+   * through `guidedWrite` meets the agent path's checks. Its `organizationId`
+   * is the turn's organization.
+   */
+  readonly tools: ToolContext;
   readonly catalogService: Pick<OnboardingCatalogService, "listPointKeys" | "formatPointKeysForChat">;
   readonly finalizeTurn: (
     assistantMessage: string,
@@ -193,9 +201,9 @@ export async function handleRuleBasedTurn(
   phase: OnboardingPhase,
   orgName: string,
   turn: TurnVocabulary,
-  organizationId?: string,
 ): Promise<ChatTurnResult> {
   const { types } = turn;
+  const { organizationId } = deps.tools;
   const lower = message.toLowerCase().trim();
   const patch: OnboardingDraftInput = {};
   // F4.199 (owner ruling 2026-10-05, "normalise, then no-op"): a typed label
@@ -207,7 +215,7 @@ export async function handleRuleBasedTurn(
   // Anchored and phase-gated: before the point-key step this switched the
   // draft to the existing keys from a step it had not reached.
   const keysReply = /^(use existing keys|confirm point keys)$/.test(intent);
-  if (keysReply && organizationId && derived === "point_keys") {
+  if (keysReply && derived === "point_keys") {
     const orgKeys = await deps.catalogService.listPointKeys(organizationId);
     if (orgKeys.length > 0) {
       patch.onboardingMeta = {
