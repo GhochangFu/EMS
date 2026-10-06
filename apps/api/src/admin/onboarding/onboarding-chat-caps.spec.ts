@@ -239,7 +239,7 @@ function messageOf(error: unknown): string {
 /**
  * `F4.103` — the **fourth** draft producer, and the one the first pass missed.
  *
- * `OnboardingChatService.handleRuleBasedTurn` is not a fallback. `.env.example`
+ * `handleRuleBasedTurn` (`onboarding-chat-rule-based.ts`) is not a fallback. `.env.example`
  * ships `OPENAI_API_KEY=` empty, so it is the branch that runs by default, and
  * it builds its patch in code without ever reaching
  * `onboardingDraftSchema.safeParse` — that call guards the *model* branch alone.
