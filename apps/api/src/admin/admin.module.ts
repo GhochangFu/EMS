@@ -53,6 +53,7 @@ import { AiAssistantSettingsController } from "./ai-assistant/ai-assistant-setti
 import { AiAssistantSettingsService } from "./ai-assistant/ai-assistant-settings.service";
 import { OnboardingController } from "./onboarding/onboarding.controller";
 import { OnboardingCatalogService } from "./onboarding/onboarding-catalog.service";
+import { OnboardingInventoryService } from "./onboarding/onboarding-inventory.service";
 import { OnboardingChatService } from "./onboarding/onboarding-chat.service";
 import { OnboardingCommitService } from "./onboarding/onboarding-commit.service";
 import { OnboardingExcelService } from "./onboarding/onboarding-excel.service";
@@ -128,6 +129,8 @@ import { UsersService } from "./users/users.service";
     OnboardingValidateService,
     OnboardingProtocolService,
     OnboardingCatalogService,
+    // F3.26 / ADR 0095 — the agent's find_existing read.
+    OnboardingInventoryService,
     OnboardingTemplateCatalogService,
     OnboardingExcelService,
     OnboardingLlmResolver,

@@ -1,7 +1,7 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { asc } from "drizzle-orm";
+import { asc, eq } from "drizzle-orm";
 
-import { pointKeys } from "@bms/db";
+import { assetPoints, pointKeys } from "@bms/db";
 import type { BmsDb } from "@bms/db";
 
 import { FLEET_DRIZZLE } from "../../database/database.tokens";
@@ -48,6 +48,23 @@ export class OnboardingCatalogService {
       .from(pointKeys)
       .orderBy(asc(pointKeys.code));
     return rows.filter((row) => row.code.length > 0);
+  }
+
+  /**
+   * The point keys this organization already maps in `asset_points`
+   * (`F3.26` / ADR 0095 decision 4), for `list_point_keys` to rank first.
+   *
+   * Unlike `listPointKeys`, this read is per-organization: `asset_points` is a
+   * tenant table, and on the BYPASSRLS fleet pool the `organization_id`
+   * predicate is the only boundary. `organizationId` is authorized upstream,
+   * as for every method here.
+   */
+  async listInUsePointKeys(organizationId: string): Promise<ReadonlySet<string>> {
+    const rows = await this.db
+      .selectDistinct({ pointKey: assetPoints.pointKey })
+      .from(assetPoints)
+      .where(eq(assetPoints.organizationId, organizationId));
+    return new Set(rows.map((row) => row.pointKey));
   }
 
   /**
