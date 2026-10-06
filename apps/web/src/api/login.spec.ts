@@ -209,6 +209,44 @@ export async function runASessionSetDuringTheBodyReadRecordsNothing(): Promise<v
 }
 
 /**
+ * `F4.214` review M6 control — the same streamed body with no sign-in during
+ * the read records the reason. Without it, a stream that stopped parsing
+ * would leave M6 green under the check-before-read mutation.
+ */
+export async function runAStreamedBodyWithNoNewSessionRecordsTheReason(): Promise<void> {
+  const deferred = stubDeferredFetch();
+  signInAs("token-a", "first@bms.local");
+
+  let push: (chunk: string) => void = () => undefined;
+  const body = new ReadableStream<Uint8Array>({
+    start(controller) {
+      push = (chunk) => {
+        controller.enqueue(new TextEncoder().encode(chunk));
+        controller.close();
+      };
+    },
+  });
+
+  const pending = expectMe401("token-a");
+  await deferred.sent;
+  deferred.answer(
+    new Response(body, {
+      status: 401,
+      headers: { "Content-Type": "application/json" },
+    }),
+  );
+  await settle();
+  push(JSON.stringify(DEACTIVATED_BODY));
+  await pending;
+  await settle();
+
+  assert(
+    reason() === "account_deactivated",
+    `a streamed 401 body with no new session must record the reason, got ${String(reason())}`,
+  );
+}
+
+/**
  * `F4.214` review M7 — the store changed during the request, but to the token
  * this `/me` carried: the 401 is about the current session and records.
  */

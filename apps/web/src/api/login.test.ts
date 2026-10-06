@@ -7,6 +7,7 @@ import {
   runAMe401WithAnEmptyStoreRecordsTheReason,
   runAMe401WithAnUnrelatedOlderTokenRecordsTheReason,
   runASessionSetDuringTheBodyReadRecordsNothing,
+  runAStreamedBodyWithNoNewSessionRecordsTheReason,
   runAStoreChangedToTheRequestTokenRecordsTheReason,
   runTheRequestCarriesTheTokenItWasGiven,
 } from "./login.spec";
@@ -50,6 +51,10 @@ describe("F4.214 fetchCurrentUser records a /me 401 reason only when the store d
 
   it("M6 a session set between the 401 headers and the body read records nothing", async () => {
     await runASessionSetDuringTheBodyReadRecordsNothing();
+  });
+
+  it("M6 control: the same streamed 401 body with no new session records the reason", async () => {
+    await runAStreamedBodyWithNoNewSessionRecordsTheReason();
   });
 
   it("M7 a store that changed to the request's own token records the reason", async () => {
