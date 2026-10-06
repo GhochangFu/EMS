@@ -115,7 +115,7 @@ const NO_COLUMN = [
   "rule_categories",
   "alarm_severities",
   "alarm_skills",
-  "protocol_catalog",
+  "protocol_catalog", // never created; its Drizzle declaration went in F3.24a (ADR 0093)
   "notification_channel_kinds",
   "location_types",
   "point_key_states",

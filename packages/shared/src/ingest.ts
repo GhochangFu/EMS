@@ -54,6 +54,9 @@ export function mqttTopicHasWildcard(topic: string): boolean {
 
 // `F3.24a` (ADR 0093 decision 4): the MQTT config, device and draft schemas.
 export * from "./ingest-adapters/mqtt";
+// `F3.24a` (ADR 0093 decisions 2, 3): the code-defined protocol catalog. After
+// the MQTT schemas, because the catalog reads `mqttDraftConfigSchema` at load.
+export * from "./protocol-catalog";
 
 /**
  * Compile-time drift guard: every ingest protocol must be expressible in
