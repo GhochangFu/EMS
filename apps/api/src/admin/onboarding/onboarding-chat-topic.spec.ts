@@ -562,3 +562,51 @@ export function assertATopicOnlyPatchKeepsCredentialsSet(): void {
   assert(next.rtus?.[0]?.credentialsSet === true, "RTU-1 still reads credentialsSet: true");
   assert(next.rtus?.[0]?.config.topic === "plant/a", "RTU-1 carries the patched topic");
 }
+
+// ---------------------------------------------------------------------------
+// F4.215 — a wildcard topic is unusable (ingest refuses it: mqtt.ts refine)
+// ---------------------------------------------------------------------------
+
+const WILDCARDS = ["#", "+", "plant/a/#", "plant/+/rtu-1"];
+const WILDCARD_MESSAGE = "MQTT topic must name one device; # and + are wildcards";
+
+/** W1 — a wildcard topic counts as unusable, credential or not. */
+export function assertAWildcardTopicNeedsSetup(): void {
+  for (const topic of WILDCARDS) {
+    assert(needsMqttSetup(credentialedRtu(topic)), `a credentialed MQTT RTU with topic "${topic}" still needs MQTT setup`);
+  }
+}
+
+/** W2 — `inferPhase` keeps such a draft on the RTU step. */
+export function assertAWildcardTopicKeepsTheRtuStep(): void {
+  const phase = new OnboardingValidateService().inferPhase(draftWith(credentialedRtu("plant/a/#")), ACTIVE_TYPES);
+  assert(phase === "rtu", `a wildcard topic keeps the phase at rtu, got ${phase}`);
+}
+
+/** W3 — `validate` names the wildcard with exactly one message (not the length or required one). */
+export function assertAWildcardTopicIsAValidationError(): void {
+  for (const topic of WILDCARDS) {
+    const messages = topicErrors(topic);
+    assert(
+      JSON.stringify(messages) === JSON.stringify([WILDCARD_MESSAGE]),
+      `validate reports only the wildcard message for "${topic}", got ${JSON.stringify(messages)}`,
+    );
+  }
+}
+
+/** W4 — the wildcard RTU is the one in hand, so the next `topic:` turn repairs it. */
+export function assertAWildcardTopicIsInHand(): void {
+  const index = rtuInHand(draftWith(credentialedRtu("plant/#"), credentialedRtu("ok/topic", { code: "RTU-2" })));
+  assert(index === 0, `the RTU with the wildcard topic is in hand, got index ${index}`);
+}
+
+/** W5 — the refusal is gated on `mqtt`: a wildcard on a Modbus RTU is not an error. */
+export function assertAWildcardOnAModbusRtuIsNotAnError(): void {
+  const result = new OnboardingValidateService().validate(
+    draftWith(credentialedRtu("plant/#", { protocol: "modbus_tcp", ingestEnabled: false, credentialsSet: false })),
+    ACTIVE_TYPES,
+    EMPTY_TEMPLATE_CONTEXT,
+  );
+  const messages = result.errors.filter((error) => error.path === "rtus.0.config.topic").map((error) => error.message);
+  assert(messages.length === 0, `a wildcard on a Modbus RTU is not an error, got ${JSON.stringify(messages)}`);
+}

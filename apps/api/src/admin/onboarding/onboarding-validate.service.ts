@@ -8,7 +8,7 @@ import {
 } from "@bms/shared";
 
 import { echoedItems, moreTail, quoteCell } from "../spreadsheet-guard";
-import { needsMqttSetup, rtuTopic } from "./onboarding-chat-summaries";
+import { needsMqttSetup, rtuTopic, topicHasWildcard } from "./onboarding-chat-summaries";
 import {
   draftAssetPointSchema,
   draftAssetSchema,
@@ -173,6 +173,15 @@ export class OnboardingValidateService {
           errors.push({
             path: `rtus.${i}.config.topic`,
             message: `MQTT topic is longer than ${MAX_RTU_TOPIC_CHARS} characters`,
+          });
+        }
+        // F4.215 (owner ruling): ingest refuses a `#` or `+` topic
+        // (`apps/ingest/src/adapters/mqtt.ts` refine) and skips the RTU, so it
+        // would commit and never ingest. Gated on `mqtt`: only that protocol subscribes.
+        if (rtu.protocol === "mqtt" && topicHasWildcard(rtuTopic(rtu))) {
+          errors.push({
+            path: `rtus.${i}.config.topic`,
+            message: "MQTT topic must name one device; # and + are wildcards",
           });
         }
       });

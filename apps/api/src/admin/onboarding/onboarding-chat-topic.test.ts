@@ -43,6 +43,11 @@ import {
   assertASharedNameFallsBackToTheRtuInHand,
   assertThePlaceholderTopicNeedsSetup,
   assertAnUneditedBlockKeepsTheRtuStep,
+  assertAWildcardTopicNeedsSetup,
+  assertAWildcardTopicKeepsTheRtuStep,
+  assertAWildcardTopicIsAValidationError,
+  assertAWildcardTopicIsInHand,
+  assertAWildcardOnAModbusRtuIsNotAnError,
 } from "./onboarding-chat-topic.spec";
 
 /** Vitest entry point — see `admin.schema.test.ts` for the pattern (ADR 0014). One `it()` per claim. */
@@ -219,5 +224,27 @@ describe("F4.208 — a topic-only PATCH keeps the stored credential (regression 
 
   it("A5b: credentialsSet stays true", () => {
     assertATopicOnlyPatchKeepsCredentialsSet();
+  });
+});
+
+describe("F4.215 — a wildcard topic is unusable", () => {
+  it("W1: a wildcard topic needs MQTT setup", () => {
+    assertAWildcardTopicNeedsSetup();
+  });
+
+  it("W2: a wildcard topic keeps the phase at rtu", () => {
+    assertAWildcardTopicKeepsTheRtuStep();
+  });
+
+  it("W3: a wildcard topic is a validation error", () => {
+    assertAWildcardTopicIsAValidationError();
+  });
+
+  it("W4: the wildcard RTU is the RTU in hand", () => {
+    assertAWildcardTopicIsInHand();
+  });
+
+  it("W5: a wildcard on a Modbus RTU is not an error", () => {
+    assertAWildcardOnAModbusRtuIsNotAnError();
   });
 });

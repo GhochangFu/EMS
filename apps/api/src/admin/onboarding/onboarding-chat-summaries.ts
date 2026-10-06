@@ -47,8 +47,18 @@ export function rtuTopic(rtu: DraftRtu): string {
 export const MQTT_TOPIC_PLACEHOLDER = "your/topic/here";
 
 /**
- * `F4.208` — a topic the RTU cannot ingest with: blank, the `-` placeholder, or
- * wider than the `varchar(255)` column it commits to. The topic half of
+ * `F4.215` (owner ruling) — a topic holding an MQTT wildcard, `#` or `+`. Ingest
+ * refuses it (`apps/ingest/src/adapters/mqtt.ts` refine) and the host skips the
+ * RTU with `invalid-device-config`, so an RTU committed with one never ingests.
+ */
+export function topicHasWildcard(topic: string): boolean {
+  return topic.includes("#") || topic.includes("+");
+}
+
+/**
+ * `F4.208` — a topic the RTU cannot ingest with: blank, the `-` placeholder,
+ * wider than the `varchar(255)` column it commits to, or (`F4.215`) a wildcard.
+ * The topic half of
  * `needsMqttSetup`, which `inferPhase` and `rtuInHand` read.
  */
 export function topicUnusable(rtu: DraftRtu): boolean {
@@ -58,7 +68,8 @@ export function topicUnusable(rtu: DraftRtu): boolean {
     trimmed === "" ||
     trimmed === "-" ||
     trimmed === MQTT_TOPIC_PLACEHOLDER ||
-    topic.length > MAX_RTU_TOPIC_CHARS
+    topic.length > MAX_RTU_TOPIC_CHARS ||
+    topicHasWildcard(trimmed)
   );
 }
 
