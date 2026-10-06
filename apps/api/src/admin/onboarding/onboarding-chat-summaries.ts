@@ -86,7 +86,11 @@ export function rtuInHand(draft: OnboardingDraft): number {
 /** An `RTU:` line of `mqttSetupTemplate`; group 1 is the name it carries. */
 const RTU_LINE = /^[ \t]*RTU:[ \t]*(.*?)[ \t]*$/gim;
 
-/** The guided turn's `topic: x` — non-global there, so only the first is taken. */
+/**
+ * The guided turn's `topic: x` — non-global there, so only the first is taken.
+ * Since F4.218 it is also the append-time capture (`defaultConfig`), so a topic
+ * without the colon is stored nowhere.
+ */
 export const TOPIC_TURN = /\btopic\s*:\s*(\S+)/i;
 
 /**

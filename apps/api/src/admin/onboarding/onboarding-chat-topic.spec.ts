@@ -245,6 +245,47 @@ export async function assertATopicQuestionDoesNotUpdate(): Promise<void> {
   assert(topics[0] === "", `RTU-1 keeps its empty topic, got ${JSON.stringify(topics)}`);
 }
 
+/** B3 (F4.218) — the same sentence appends no RTU, where it used to add RTU-2 with topic `should`. */
+export async function assertATopicQuestionAppendsNoRtu(): Promise<void> {
+  const draft = waitingForATopic();
+  const result = await ruleBasedTurn("what topic should I use", draft, "rtu");
+  const count = (mergeDraftPatch(draft, result.draftPatch).rtus ?? []).length;
+  assert(count === 1, `a topic question leaves one RTU, got ${count}`);
+}
+
+/** B3b — the positive partner of B3: the question is answered with the colon form, the draft untouched. */
+export async function assertATopicQuestionIsAnsweredWithTheColonForm(): Promise<void> {
+  const result = await ruleBasedTurn("what topic should I use", waitingForATopic(), "rtu");
+  assert(
+    result.assistantMessage.startsWith("I did not change the draft."),
+    `the reply says the draft is unchanged, got ${result.assistantMessage}`,
+  );
+  assert(result.assistantMessage.includes("topic: <topic>"), `the reply shows the colon form, got ${result.assistantMessage}`);
+  assert(result.currentPhase === "rtu", `the phase stays at rtu, got ${result.currentPhase}`);
+}
+
+/** B3c — guard boundary: a protocol reply that forgot the colon is still an append. */
+export async function assertAForgottenColonWithAProtocolWordStillAppends(): Promise<void> {
+  const draft = waitingForATopic();
+  const result = await ruleBasedTurn("mqtt topic plant/x", draft, "rtu");
+  const count = (mergeDraftPatch(draft, result.draftPatch).rtus ?? []).length;
+  assert(count === 2, `"mqtt topic plant/x" appends an RTU, got ${count} RTU(s)`);
+}
+
+/** B4 (F4.218) — the append-time capture needs the colon: `topic plant/b` stores no topic. */
+export async function assertAddAnotherRtuWithoutAColonStoresNoTopic(): Promise<void> {
+  const result = await ruleBasedTurn("add another rtu topic plant/b", waitingForATopic(), "rtu");
+  const topic = patchedRtus(result)[1]?.config.topic;
+  assert(topic === "", `no colon, no topic, got ${JSON.stringify(topic)}`);
+}
+
+/** B5 — the positive control of B4: with the colon the append stores the topic. */
+export async function assertAddAnotherRtuWithAColonStoresTheTopic(): Promise<void> {
+  const result = await ruleBasedTurn("add another rtu topic: plant/b", waitingForATopic(), "rtu");
+  const topic = patchedRtus(result)[1]?.config.topic;
+  assert(topic === "plant/b", `the colon form stores the topic, got ${JSON.stringify(topic)}`);
+}
+
 /** B2 — "topic: x" past the RTU step changes no RTU's topic. */
 export async function assertATopicTurnPastTheRtuStepDoesNotUpdate(): Promise<void> {
   const draft = threeRtus(["plant/a", "plant/b", "plant/c"]);

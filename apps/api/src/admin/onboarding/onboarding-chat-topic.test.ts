@@ -28,6 +28,11 @@ import {
   assertAPastedTemplateSetsItsFirstBlocksRtu,
   assertATopicAtTheBoundDoesNotNeedSetup,
   assertATopicQuestionDoesNotUpdate,
+  assertATopicQuestionAppendsNoRtu,
+  assertATopicQuestionIsAnsweredWithTheColonForm,
+  assertAForgottenColonWithAProtocolWordStillAppends,
+  assertAddAnotherRtuWithoutAColonStoresNoTopic,
+  assertAddAnotherRtuWithAColonStoresTheTopic,
   assertATopicTurnPastTheRtuStepDoesNotUpdate,
   assertABareTopicLandsOnTheRtuMissingATopic,
   assertAPastedBlockNamingAProtocolWordSetsItsRtu,
@@ -114,6 +119,26 @@ describe("F4.208 — the guided `topic: x` turn sets the topic of the RTU in han
 
   it("B1: a sentence mentioning a topic without a colon does not update", async () => {
     await assertATopicQuestionDoesNotUpdate();
+  });
+
+  it("B3: a topic question appends no RTU", async () => {
+    await assertATopicQuestionAppendsNoRtu();
+  });
+
+  it("B3b: a topic question is answered with the colon form", async () => {
+    await assertATopicQuestionIsAnsweredWithTheColonForm();
+  });
+
+  it("B3c: a protocol word with a forgotten colon still appends", async () => {
+    await assertAForgottenColonWithAProtocolWordStillAppends();
+  });
+
+  it("B4: add another rtu without a colon stores no topic", async () => {
+    await assertAddAnotherRtuWithoutAColonStoresNoTopic();
+  });
+
+  it("B5: add another rtu with a colon stores the topic", async () => {
+    await assertAddAnotherRtuWithAColonStoresTheTopic();
   });
 
   it("B2: topic: x past the RTU step does not update", async () => {

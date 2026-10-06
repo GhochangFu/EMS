@@ -315,7 +315,7 @@ export async function handleRuleBasedTurn(
     );
   }
 
-  // F4.208: while the derived phase is `rtu`, "topic: x" (the colon is
+  // F4.208 (F4.218 names the colon rule): while the derived phase is `rtu`, "topic: x" (the colon is
   // required) sets the topic of `rtuForTopicTurn`'s RTU rather than append
   // one. Naming a protocol, or "add another rtu", still appends; the protocol
   // test skips topics and `RTU:` lines (`protocolTestText`), so neither
@@ -332,6 +332,14 @@ export async function handleRuleBasedTurn(
     const prompt = stepPrompt(deps.validateService.inferPhase(merged, types.map((t) => t.code)), merged, types);
     const text = `Topic **${quoteCell(topic)}** set on **${quoteCell(rtus[inHand].displayName)}**. ${prompt.text}`;
     return deps.finalizeTurn(text, patch, "rtu", prompt.replies, message, draft, turn);
+  }
+
+  // F4.218: in the RTU step a message that mentions a topic without `topic:`
+  // is a question, not a value. It changes nothing and gets the step prompt;
+  // naming a protocol, or "add another rtu", still appends.
+  if (derived === "rtu" && !topicTurn && !addAnother && /\btopic\b/i.test(message) && !NAMES_A_PROTOCOL.test(lower)) {
+    const prompt = stepPrompt(derived, draft, types);
+    return deps.finalizeTurn(`I did not change the draft. ${prompt.text}`, {}, derived, prompt.replies, message, draft, turn);
   }
 
   // F4.199: "Add another RTU" is offered past the RTU step too (a non-MQTT
@@ -535,7 +543,8 @@ function detectProtocol(lower: string): OnboardingProtocol {
 }
 
 function defaultConfig(protocol: OnboardingProtocol, message: string): Record<string, unknown> {
-  const topicMatch = message.match(/topic[:\s]+(\S+)/i);
+  // F4.218: the colon is required, as on the topic turn (`TOPIC_TURN`).
+  const topicMatch = message.match(TOPIC_TURN);
   if (protocol === "mqtt") {
     return {
       // `host` and `port` are environment or literal and `tls` is a constant;
