@@ -363,3 +363,10 @@ export async function assertK2AddPointKeysAcceptsAnAgreeingBatch(): Promise<void
   const out = await runTool(call("add_point_keys", { keys: [key("flow"), key("kw", { unit: "kW" })] }), state, context(KW_FIELDS));
   assert(out.ok && state.working.pointKeys?.length === 2, `K2 both keys land, got ${JSON.stringify(out)}`);
 }
+
+/** F4.225 K3 — only the appended keys are judged: a contradiction already in the draft is the validator's to report. */
+export async function assertK3AddPointKeysJudgesOnlyTheAppendedKeys(): Promise<void> {
+  const state: ToolState = { working: baseDraft({ pointKeys: [key("kw", { unit: "MW" })] }) };
+  const out = await runTool(call("add_point_keys", { keys: [key("flow")] }), state, context(KW_FIELDS));
+  assert(out.ok && state.working.pointKeys?.length === 2, `K3 flow lands beside the earlier kw, got ${JSON.stringify(out)}`);
+}

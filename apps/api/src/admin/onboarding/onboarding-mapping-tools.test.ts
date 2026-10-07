@@ -3,6 +3,7 @@ import { describe, it } from "vitest";
 import {
   assertK1AddPointKeysRefusesACatalogContradictionAtItsCallIndex,
   assertK2AddPointKeysAcceptsAnAgreeingBatch,
+  assertK3AddPointKeysJudgesOnlyTheAppendedKeys,
   assertK1AddPointKeysAppendsInOrderAndNamesTheNewOnes,
   assertK2ARepeatedCodeRefusesTheBatch,
   assertK3AnAlreadyDeclaredCodeRefusesTheBatch,
@@ -88,5 +89,9 @@ describe("add_point_keys against the catalog unit and domain (F4.225)", () => {
 
   it("K2 accepts a batch that agrees with the catalog", async () => {
     await assertK2AddPointKeysAcceptsAnAgreeingBatch();
+  });
+
+  it("K3 judges only the appended keys, not a contradiction already in the draft", async () => {
+    await assertK3AddPointKeysJudgesOnlyTheAppendedKeys();
   });
 });
