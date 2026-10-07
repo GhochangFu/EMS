@@ -281,11 +281,6 @@ approved:
   `get_asset_points`). `F3.25` may add a tool first, so the plan states the
   absolute count at build time and edits the assertions that pin it.
 
-Ruled at the plan gate 2026-10-07: Q1 caps 100/200; Q2 `get_asset_points`
-added; Q3 deferred to row F4.225; Q4 the batch refuses repeated, declared and
-inactive codes, `add_point_key` unchanged; Q5 the summary names the new-key
-count; Q6 the `tests/` invariant; the count at build time is 28.
-
 ## Open boundary — `F3.26` decision D4
 
 The accepted packet rules for `F3.26` (D4) that "F3.23 reads the point level"
