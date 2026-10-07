@@ -332,6 +332,11 @@ each, and the owner rules them before any code:
   never stored. The prompt-marker refusal runs on every tool in any case.
 - **Q-D.** The exact text of the scope note (decision 2).
 
+**Owner rulings at the PR gate, 2026-10-07** (on #759, in chat). Plan
+questions Q-A, Q-C, Q-D and Q-E are accepted as recommended. Q-B was reversed
+in the build and the reversal is accepted: the RTU row lists `rtuCode` (the
+`F4.182` device id), because the draft RTU schema carries it.
+
 ## Amended records
 
 - **ADR 0090 ruling 7 and decision 4** — the tool set gains `find_existing`

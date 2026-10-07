@@ -747,6 +747,14 @@ does not rule them:
 - whether the `topic:` turn goes through `update_rtu`, which would make it
   guided-covered under B7.
 
+**Owner rulings at the PR gate, 2026-10-07** (on #755, in chat). B8: one PR is
+accepted for `F3.27` (#755); the two-PR split and the order that puts `F4.223`
+and `F4.224` first are waived for this row. The four plan questions above are
+accepted as recommended: Q-A `handleTurn` requires an `organizationId`; Q-B
+only the offered label writes at the point-key, asset and mapping steps; Q-C
+`auto map` maps every unmapped plain asset; Q-D the `topic:` turn goes through
+`update_rtu`.
+
 ### Dependencies
 
 None. No new npm package and no migration.
