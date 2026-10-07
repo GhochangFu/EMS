@@ -2,7 +2,8 @@
 
 ## Status
 
-Proposed — 2026-10-07. The owner asked, in chat on 2026-10-07, for this
+Accepted — 2026-10-07 (PR #767, merged `eb93f90a`). Amended the same day
+by *Amendment 1* (the ingest host). The owner asked, in chat on 2026-10-07, for this
 repository to be deployed to the AWS host behind `bms.demosites.co.in` and for
 a CI/CD pipeline that deploys it automatically from then on. Four questions
 were put to the owner the same day, each with options and a recommendation;
@@ -103,7 +104,7 @@ with `admin123`.
 | # | Question | Ruling (owner, 2026-10-07) |
 |---|----------|----------------------------|
 | G1 | The host has 2.4 GiB free and no swap. | Add a 4 GB swapfile and per-container memory limits. |
-| G2 | Login mode and data on a public URL. | Keycloak (OIDC) with the seeded demo data, every default secret replaced, **plus the simulator, which the owner can start and stop at will** (`bms-ctl sim`, and the "AWS demo simulator" workflow). |
+| G2 | Login mode and data on a public URL. | Keycloak (OIDC) with the seeded demo data, every default secret replaced, **plus the simulator, which the owner can start and stop at will** (`bms-ctl sim`, and the "AWS demo simulator" workflow — "AWS demo services" since Amendment 1). |
 | G3 | Which SSH key GitHub holds. | A new deploy-only key for a restricted `bmsdeploy` user; `EuphoriaKey.pem` never leaves the owner's PC. |
 | G4 | When the pipeline deploys. | Every push to `main`, after `CI` passes on it; also by hand ("Run workflow"). |
 
@@ -122,8 +123,8 @@ with `admin123`.
 - **Keycloak runs `start-dev`**, as in the root compose file: its store is
   the H2 database on the `keycloak-data` volume. That is a demo posture, not a
   production one.
-- **No observability, no `ingest`.** Neither profile is deployed. The host's
-  MQTT ingest stays where ADR 0007 and ADR 0016 put it.
+- **No observability.** The profile is not deployed. (`ingest` was not
+  deployed either; *Amendment 1* adds it.)
 - **Actions minutes.** The build runs on every green `main` push, docs-only
   ones included; the GitHub Actions cache keeps an unchanged image to a cache
   hit.
@@ -134,4 +135,52 @@ with `admin123`.
 - `deploy/aws/bms-ctl.sh`, `deploy/aws/bms-ctl-ssh.sh`,
   `deploy/aws/setup-server.sh`, `deploy/aws/known_hosts`
 - `.github/workflows/deploy-aws.yml`, `.github/workflows/aws-simulator.yml`
+  (renamed `aws-services.yml` by Amendment 1)
 - `docs/runbooks/aws-demo-deployment.md`
+
+## Amendment 1 — the ingest host, on the live PHE broker (2026-10-07)
+
+**Ruling (owner, 2026-10-07, in chat).** After the first deploy the owner asked
+for `ingest` on the demo host too, "managed from the actions tab like the sim".
+One question was put first, because the demo database seeds the five PHE pilot
+MQTT RTUs (`Airsprint-1051/Data/...`, organization `PHEWB`) and holds no
+`rtu_connection_configs` row, so every RTU falls back to `MQTT_HOST`:
+
+| # | Question | Ruling |
+|---|----------|--------|
+| G5 | Which broker `ingest` on the demo host uses. | **The live PHE pilot broker**, `phe.thinkiot.co.in:8883`, with the pilot's MQTT login. |
+
+This is the `AGENTS.md` §6 step "running the host against a production
+deployment", and G5 is the owner's named instruction for it on this host. It
+does not generalise to any other host or broker.
+
+**Decisions.**
+
+1. **A fourth image, `ems-ingest`** (`apps/ingest/Dockerfile`, `linux/arm64`),
+   built by the same matrix and tagged with the same SHA.
+2. **`ingest` is an optional service, like `sim`.** It is the compose profile
+   `ingest`, off until `bms-ctl ingest start`; `bms-ctl` records the choice in
+   `state/ingest-enabled` and keeps it across deploys. `bms-ctl sim` and
+   `bms-ctl ingest` share one implementation.
+3. **One workflow for both**, "AWS demo services" (`aws-services.yml`, renamed
+   from `aws-simulator.yml`): service `sim` or `ingest`, action
+   `start`, `stop` or `status`.
+4. **The broker login lives in `/var/www/bms/.env`** (`MQTT_USERNAME`,
+   `MQTT_PASSWORD`), like every other secret. The compose file reads them as
+   optional, so a missing one cannot stop the rest of the stack, and
+   `bms-ctl ingest start` refuses to start while either is empty.
+5. **The network split of ADR 0016 Amendment 8, Decision 2 is kept.**
+   `ingest` joins only the `ingest` network, which it shares with `postgres`;
+   its unauthenticated health endpoint is not reachable from `web` or `api`.
+6. **A second subscriber, not a replacement.** The pilot's own ingest host
+   keeps running. The MQTT adapter passes no client id, so mqtt.js generates
+   a random one per connection and the two hosts never take each other's
+   session. Both write to their own database.
+
+**Consequences.**
+
+- Real PHE telemetry appears on the public demo URL, behind the Keycloak
+  login, for every user whose scope includes `PHEWB`.
+- `ingest` uses 256 MiB at most (`mem_limit`).
+- An edit to `bms-ctl.sh` reaches the host only through `setup-server.sh`
+  (decision 7 above); this amendment needs that re-run once after it merges.

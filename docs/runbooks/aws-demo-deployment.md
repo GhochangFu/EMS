@@ -27,8 +27,9 @@ Use the GitHub Actions tab for these:
 
 - **Deploy again, or deploy an older `main` commit (rollback):** "Deploy to AWS
   demo" → Run workflow → enter the SHA, or leave it empty for the latest.
-- **Start or stop the simulator:** "AWS demo simulator" → Run workflow →
-  `start`, `stop` or `status`. The choice survives later deploys.
+- **Start or stop the simulator or the ingest host:** "AWS demo services" →
+  Run workflow → choose `sim` or `ingest`, then `start`, `stop` or `status`.
+  The choice survives later deploys.
 
 On the host, as the administrator:
 
@@ -46,6 +47,10 @@ sudo bms-ctl rollback
 
 ```bash
 sudo bms-ctl sim start
+```
+
+```bash
+sudo bms-ctl ingest status
 ```
 
 ## Logins
@@ -66,6 +71,10 @@ the same file. The Keycloak admin console is not published.
 All secrets are in `/var/www/bms/.env` (root, mode 0600). `setup-server.sh`
 generated them and never overwrites the file. To add an LLM provider for the
 onboarding agent, set `LLM_PROVIDER` and its key in that file. Then re-deploy.
+
+The ingest host uses the PHE pilot broker login, `MQTT_USERNAME` and
+`MQTT_PASSWORD` in the same file ([ADR 0096 Amendment 1](../adr/0096-aws-demo-deployment-and-continuous-deployment.md#amendment-1--the-ingest-host-on-the-live-phe-broker-2026-10-07)).
+`bms-ctl ingest start` refuses to start while either is empty.
 
 CAUTION: Do not change a database password in `.env` after the first deploy.
 The roles keep their old passwords, and the API then cannot connect.

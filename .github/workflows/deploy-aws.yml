@@ -6,7 +6,7 @@
 # pull_request: the repository is public, and this workflow holds the deploy
 # key.
 #
-# 1. build  — three arm64 images (the host is Graviton) pushed to GHCR, tagged
+# 1. build  — four arm64 images (the host is Graviton) pushed to GHCR, tagged
 #             with the commit SHA. Nothing is ever built on the host: it shares
 #             7.6 GiB with ~18 other applications.
 # 2. deploy — SSH as `bmsdeploy`, whose key can run only bms-ctl
@@ -72,6 +72,10 @@ jobs:
               VITE_OIDC_REDIRECT_URI=https://bms.demosites.co.in/auth/callback
           - image: sim
             dockerfile: apps/sim/Dockerfile
+            build-args: ""
+          # ADR 0096 Amendment 1.
+          - image: ingest
+            dockerfile: apps/ingest/Dockerfile
             build-args: ""
     steps:
       - name: Validate the SHA
