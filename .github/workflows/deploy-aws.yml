@@ -1,0 +1,166 @@
+# ADR 0096 — continuous deployment of main to the AWS demo host
+# (https://bms.demosites.co.in).
+#
+# Trigger: CI finishing green on a push to main, or "Run workflow" by hand
+# (optionally with an older main SHA, which is a rollback). Never on
+# pull_request: the repository is public, and this workflow holds the deploy
+# key.
+#
+# 1. build  — three arm64 images (the host is Graviton) pushed to GHCR, tagged
+#             with the commit SHA. Nothing is ever built on the host: it shares
+#             7.6 GiB with ~18 other applications.
+# 2. deploy — SSH as `bmsdeploy`, whose key can run only bms-ctl
+#             (deploy/aws/bms-ctl.sh). The job's short-lived GITHUB_TOKEN goes
+#             over stdin so the host can pull; nothing on the host keeps it.
+#
+# Secret: BMS_DEPLOY_SSH_KEY (the private half of the bmsdeploy key).
+# Runbook: docs/runbooks/aws-demo-deployment.md.
+name: Deploy to AWS demo
+
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      sha:
+        description: "Commit SHA on main to deploy (empty: the commit this run is started on)"
+        required: false
+        default: ""
+
+concurrency:
+  group: deploy-aws-demo
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  PUBLIC_HOST: bms.demosites.co.in
+  DEPLOY_USER: bmsdeploy
+  IMAGE_PREFIX: ghcr.io/ghochangfu/ems
+  SHA: ${{ github.event.workflow_run.head_sha || inputs.sha || github.sha }}
+
+jobs:
+  build:
+    name: Build ${{ matrix.image }} (arm64)
+    if: >-
+      github.event_name != 'workflow_run' ||
+      (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push')
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          - image: api
+            dockerfile: apps/api/Dockerfile
+            build-args: ""
+          - image: web
+            dockerfile: apps/web/Dockerfile
+            # Baked into the bundle: the one public origin (deploy/aws/nginx.conf).
+            build-args: |
+              VITE_API_URL=https://bms.demosites.co.in
+              VITE_WS_URL=wss://bms.demosites.co.in
+              VITE_AUTH_MODE=oidc
+              VITE_OIDC_ISSUER=https://bms.demosites.co.in/realms/bms
+              VITE_OIDC_CLIENT_ID=bms-web
+              VITE_OIDC_REDIRECT_URI=https://bms.demosites.co.in/auth/callback
+          - image: sim
+            dockerfile: apps/sim/Dockerfile
+            build-args: ""
+    steps:
+      - name: Validate the SHA
+        run: |
+          [[ "$SHA" =~ ^[0-9a-f]{40}$ ]] || { echo "::error::'$SHA' is not a full commit SHA"; exit 1; }
+
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.SHA }}
+
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ${{ matrix.dockerfile }}
+          platforms: linux/arm64
+          push: true
+          provenance: false
+          build-args: ${{ matrix.build-args }}
+          tags: ${{ env.IMAGE_PREFIX }}-${{ matrix.image }}:${{ env.SHA }}
+          labels: |
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.revision=${{ env.SHA }}
+          cache-from: type=gha,scope=ems-${{ matrix.image }}
+          cache-to: type=gha,mode=max,scope=ems-${{ matrix.image }}
+
+  deploy:
+    name: Deploy to bms.demosites.co.in
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment:
+      name: aws-demo
+      url: https://bms.demosites.co.in
+    permissions:
+      contents: read
+      packages: read
+    steps:
+      - name: Checkout the pinned host key
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.SHA }}
+          sparse-checkout: deploy/aws
+          sparse-checkout-cone-mode: false
+
+      - name: Install the deploy key
+        env:
+          DEPLOY_KEY: ${{ secrets.BMS_DEPLOY_SSH_KEY }}
+        run: |
+          [ -n "$DEPLOY_KEY" ] || { echo "::error::secret BMS_DEPLOY_SSH_KEY is not set"; exit 1; }
+          install -d -m 700 ~/.ssh
+          printf '%s\n' "$DEPLOY_KEY" > ~/.ssh/bms_deploy
+          chmod 600 ~/.ssh/bms_deploy
+
+      - name: Deploy ${{ env.SHA }}
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          printf '%s\n' "$GHCR_TOKEN" | ssh -i ~/.ssh/bms_deploy \
+            -o UserKnownHostsFile=deploy/aws/known_hosts \
+            -o StrictHostKeyChecking=yes \
+            -o BatchMode=yes \
+            -o ServerAliveInterval=30 \
+            "$DEPLOY_USER@$PUBLIC_HOST" deploy "$SHA"
+
+      - name: Check the public site
+        run: |
+          for i in $(seq 1 12); do
+            if curl -fsS -o /dev/null "https://$PUBLIC_HOST/health" \
+              && curl -fsS "https://$PUBLIC_HOST/" | grep -q '<div id="root">'; then
+              echo "https://$PUBLIC_HOST is up at $SHA"
+              exit 0
+            fi
+            sleep 5
+          done
+          echo "::error::https://$PUBLIC_HOST did not answer after the deploy"
+          exit 1
+
+      - name: Remove the deploy key
+        if: always()
+        run: rm -f ~/.ssh/bms_deploy

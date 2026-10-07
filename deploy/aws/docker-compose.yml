@@ -1,0 +1,277 @@
+# ADR 0096 — the demo deployment on the shared AWS host (bms.demosites.co.in).
+#
+# Standalone, not an override of the root docker-compose.yml: the root file
+# builds from source and publishes every port on 0.0.0.0, and this host runs
+# about 18 other client applications. Here nothing is built — every image is
+# pulled from GHCR at the commit SHA the deploy workflow built
+# (`IMAGE_TAG`) — and exactly one port is published, on loopback:
+# 127.0.0.1:5175, which Caddy (/etc/caddy/sites/bms.demosites.co.in.caddy)
+# terminates TLS for. The `web` container is the one origin: it serves the SPA
+# and routes /api, /socket.io, /health, /realms and /resources to `api` and
+# `keycloak` (deploy/aws/nginx.conf).
+#
+# Every secret is interpolated from /var/www/bms/.env, which the server
+# bootstrap (deploy/aws/setup-server.sh) generates once and which never enters
+# the repository. `${VAR:?}` makes a missing one refuse the whole `up`.
+#
+# Memory: the host has 7.6 GiB shared with the other applications, so every
+# service carries a `mem_limit` (ADR 0096 decision 4).
+#
+# Run only through bms-ctl (deploy/aws/bms-ctl.sh); the project name is `bms`.
+
+x-db-roles: &db-roles
+  DATABASE_URL_AUTH: postgres://bms_auth:${BMS_AUTH_PASSWORD:?}@postgres:5432/bms
+  DATABASE_URL_TENANT: postgres://bms_tenant:${BMS_TENANT_PASSWORD:?}@postgres:5432/bms
+  DATABASE_URL_FLEET: postgres://bms_fleet:${BMS_FLEET_PASSWORD:?}@postgres:5432/bms
+
+x-object-storage: &object-storage
+  OBJECT_STORAGE_ENDPOINT: http://minio:9000
+  OBJECT_STORAGE_BUCKET: bms-asset-images
+  OBJECT_STORAGE_ACCESS_KEY: ${MINIO_ROOT_USER:?}
+  OBJECT_STORAGE_SECRET_KEY: ${MINIO_ROOT_PASSWORD:?}
+  OBJECT_STORAGE_REGION: us-east-1
+  OBJECT_STORAGE_FORCE_PATH_STYLE: "true"
+  # ADR 0066 decision 8 refuses plain http without this. MinIO is reached only
+  # on the compose network and publishes no port, so http never leaves the host.
+  OBJECT_STORAGE_ALLOW_INSECURE: "true"
+
+x-credential-key: &credential-key
+  CREDENTIAL_ENCRYPTION_KEY: ${CREDENTIAL_ENCRYPTION_KEY:?}
+  CREDENTIAL_ENCRYPTION_KEY_PREVIOUS: ${CREDENTIAL_ENCRYPTION_KEY_PREVIOUS:-}
+  CREDENTIAL_ENCRYPTION_KEY_VERSION: ${CREDENTIAL_ENCRYPTION_KEY_VERSION:-}
+
+x-api-image: &api-image ghcr.io/${IMAGE_OWNER:?}/ems-api:${IMAGE_TAG:?}
+
+name: bms
+
+services:
+  postgres:
+    # Same pin as the root compose file — read ADR 0023 before moving it.
+    image: timescale/timescaledb:2.29.1-pg16
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: bms
+      POSTGRES_USER: bms_app
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?}
+    # max_worker_processes: ADR 0024 (see the root compose file). The memory
+    # settings size the engine for its 1 GiB limit.
+    command:
+      - postgres
+      - -c
+      - max_worker_processes=24
+      - -c
+      - shared_buffers=256MB
+      - -c
+      - effective_cache_size=512MB
+      - -c
+      - work_mem=8MB
+      - -c
+      - maintenance_work_mem=64MB
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./runtime/docker-init:/docker-entrypoint-initdb.d:ro
+    mem_limit: 1g
+    shm_size: 256m
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U bms_app -d bms"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes", "--maxmemory-policy", "noeviction"]
+    volumes:
+      - redis-data:/data
+    mem_limit: 256m
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  minio:
+    image: pgsty/minio:RELEASE.2026-08-04T00-00-00Z
+    restart: unless-stopped
+    command: ["server", "/data"]
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:?}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?}
+    volumes:
+      - minio-data:/data
+    mem_limit: 384m
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  keycloak:
+    image: quay.io/keycloak/keycloak:24.0
+    restart: unless-stopped
+    # start-dev, as in the root compose file: the realm and its sessions live
+    # in the H2 store on the keycloak-data volume. Behind two proxies (Caddy,
+    # then web's nginx), so the public origin comes from X-Forwarded-*.
+    command: ["start-dev", "--import-realm"]
+    environment:
+      KEYCLOAK_ADMIN: admin
+      KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:?}
+      KC_HOSTNAME_STRICT: "false"
+      KC_HTTP_ENABLED: "true"
+      KC_PROXY_HEADERS: xforwarded
+      JAVA_OPTS_KC_HEAP: "-XX:MaxHeapFreeRatio=30 -Xms128m -Xmx512m"
+    volumes:
+      - keycloak-data:/opt/keycloak/data
+      # Rendered by bms-ctl from infra/keycloak/bms-realm.json with the demo
+      # passwords replaced. Read on the first boot only (an existing realm is
+      # never re-imported).
+      - ./runtime/keycloak-import:/opt/keycloak/data/import:ro
+    mem_limit: 768m
+
+  keycloak-provision:
+    image: *api-image
+    command: ["node", "dist/identity/provision/provision-cli.js"]
+    restart: "no"
+    environment:
+      KEYCLOAK_ADMIN_URL: http://keycloak:8080
+      KEYCLOAK_ADMIN_REALM: bms
+      KEYCLOAK_ADMIN_CLIENT_ID: bms-api-admin
+      KEYCLOAK_ADMIN_CLIENT_SECRET: ${KEYCLOAK_ADMIN_CLIENT_SECRET:?}
+      KEYCLOAK_ADMIN: admin
+      KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:?}
+      DATABASE_URL_AUTH: postgres://bms_auth:${BMS_AUTH_PASSWORD:?}@postgres:5432/bms
+    mem_limit: 384m
+    depends_on:
+      keycloak:
+        condition: service_started
+      migrate:
+        condition: service_completed_successfully
+
+  migrate:
+    image: *api-image
+    working_dir: /app
+    restart: "no"
+    # ADR 0045 decision 6: roles first, then migrate, then seed (see the root
+    # compose file for the two-connection split).
+    command: sh -c "pnpm --filter @bms/db roles && pnpm db:migrate && pnpm db:seed"
+    environment:
+      <<: *db-roles
+      DATABASE_URL: postgres://bms_owner:${BMS_OWNER_PASSWORD:?}@postgres:5432/bms
+      DATABASE_URL_SUPERUSER: postgres://bms_app:${POSTGRES_PASSWORD:?}@postgres:5432/bms
+      BMS_OWNER_PASSWORD: ${BMS_OWNER_PASSWORD:?}
+      BMS_TENANT_PASSWORD: ${BMS_TENANT_PASSWORD:?}
+      BMS_FLEET_PASSWORD: ${BMS_FLEET_PASSWORD:?}
+      BMS_AUTH_PASSWORD: ${BMS_AUTH_PASSWORD:?}
+    mem_limit: 768m
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  api:
+    # ONE process — see the root compose file (F3.47's in-memory throttle).
+    image: *api-image
+    restart: unless-stopped
+    environment:
+      <<: [*db-roles, *object-storage, *credential-key]
+      NODE_OPTIONS: --max-old-space-size=512
+      JWT_SECRET: ${JWT_SECRET:?}
+      JWT_TTL: 8h
+      PORT: 4000
+      LOG_LEVEL: info
+      REDIS_URL: redis://redis:6379
+      AUTH_MODE: oidc
+      # The issuer is the public string the browser's tokens carry; the JWKS
+      # and the admin API are reached inside the network.
+      OIDC_ISSUER: https://${PUBLIC_HOST:?}/realms/bms
+      OIDC_JWKS_URI: http://keycloak:8080/realms/bms/protocol/openid-connect/certs
+      OIDC_CLIENT_ID: bms-web
+      KEYCLOAK_ADMIN_URL: http://keycloak:8080
+      KEYCLOAK_ADMIN_REALM: bms
+      KEYCLOAK_ADMIN_CLIENT_ID: bms-api-admin
+      KEYCLOAK_ADMIN_CLIENT_SECRET: ${KEYCLOAK_ADMIN_CLIENT_SECRET:?}
+      OTEL_SERVICE_NAME: bms-api
+      OTEL_SDK_DISABLED: "true"
+      LLM_PROVIDER: ${LLM_PROVIDER:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OPENAI_MODEL: ${OPENAI_MODEL:-}
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
+      OPENROUTER_MODEL: ${OPENROUTER_MODEL:-}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      ANTHROPIC_MODEL: ${ANTHROPIC_MODEL:-}
+    mem_limit: 768m
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+      keycloak:
+        condition: service_started
+      migrate:
+        condition: service_completed_successfully
+
+  worker:
+    image: *api-image
+    restart: unless-stopped
+    command: ["node", "dist/worker.js"]
+    environment:
+      <<: [*db-roles, *object-storage, *credential-key]
+      NODE_OPTIONS: --max-old-space-size=384
+      REDIS_URL: redis://redis:6379
+      WORKER_PORT: 4100
+      LOG_LEVEL: info
+      OTEL_SERVICE_NAME: bms-worker
+      OTEL_SDK_DISABLED: "true"
+    mem_limit: 512m
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+
+  web:
+    # The VITE_* values are baked into this image at build time by the deploy
+    # workflow, for https://bms.demosites.co.in.
+    image: ghcr.io/${IMAGE_OWNER:?}/ems-web:${IMAGE_TAG:?}
+    restart: unless-stopped
+    volumes:
+      - ./runtime/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+    ports:
+      - "127.0.0.1:5175:80"
+    mem_limit: 64m
+    depends_on:
+      api:
+        condition: service_started
+      keycloak:
+        condition: service_started
+
+  # Off by default. `bms-ctl sim start|stop` (or the "AWS simulator" workflow)
+  # turns it on or off; bms-ctl remembers the choice across deploys.
+  sim:
+    profiles: ["sim"]
+    image: ghcr.io/${IMAGE_OWNER:?}/ems-sim:${IMAGE_TAG:?}
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgres://bms_owner:${BMS_OWNER_PASSWORD:?}@postgres:5432/bms
+      SIM_RATE_HZ: 0.2
+      SIM_ASSET_COUNT: all
+      SIM_SITE_NAMES: RSMOC Western Cape,CSMOC Gauteng,RSMOC KwaZulu-Natal,Ion Exchange Demo Plant
+      SIM_METRICS_PORT: 9101
+    mem_limit: 256m
+    depends_on:
+      postgres:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+
+volumes:
+  postgres-data:
+  redis-data:
+  minio-data:
+  keycloak-data:
