@@ -1,6 +1,7 @@
 import { describe, it } from "vitest";
 
 import {
+  assertLocationTurnsAnswerTheirActionLines,
   assertAwaitingTypeReplyKeepsTheStoredName,
   assertNameMessageDerivesTheCode,
   assertNameMessageRenamesATypedLocation,
@@ -13,6 +14,7 @@ import {
   assertAgentSystemPromptNamesIonsiteNexus,
   assertStoredInactiveTypeIsAskedFor,
   assertStoredInactiveTypeIsNotPatched,
+  assertStoredInactiveTypeTurnHasNoActionLine,
   assertStoredTypeIsNotAskedFor,
   assertStoredTypeKeepsTheNameThroughTwoTurns,
   assertStoredTypeReportsNoMissingType,
@@ -128,6 +130,10 @@ describe("OnboardingChatService.handleTurn — a stored location type (F4.157 re
   it("does not copy a stored inactive type into the patch", async () => {
     await assertStoredInactiveTypeIsNotPatched();
   });
+
+  it("records no action line for the re-ask (F3.27)", async () => {
+    await assertStoredInactiveTypeTurnHasNoActionLine();
+  });
 });
 
 describe("OnboardingChatService.handleTurn — the location type (F4.157), agent branch (F3.21)", () => {
@@ -179,5 +185,11 @@ describe("OnboardingChatService.handleTurn — a stored type retired after it wa
 
   it("keeps a complete draft whose type is not active from being ready to commit", async () => {
     await assertRetiredTypeTurnIsNotReadyToCommit();
+  });
+});
+
+describe("the location step answers its action line (F3.27 B4, B5)", () => {
+  it("a name turn, then a type turn, each answer the set_location line", async () => {
+    await assertLocationTurnsAnswerTheirActionLines();
   });
 });

@@ -661,3 +661,12 @@ export async function assertAPluralTopicQuestionAppendsNoRtu(): Promise<void> {
   const count = (mergeDraftPatch(draft, result.draftPatch).rtus ?? []).length;
   assert(count === 1, `a plural topic question leaves one RTU, got ${count}`);
 }
+
+/** F3.27 (ADR 0090 Amendment 2 Q-D) — the topic turn writes through `update_rtu` and answers its action line; the tool quotes each field name (`quoteCell`). */
+export async function assertATopicTurnAnswersItsActionLine(): Promise<void> {
+  const result = await ruleBasedTurn("topic: plant/a/rtu-1", waitingForATopic(), "rtu");
+  assert(
+    JSON.stringify(result.actionLines) === JSON.stringify(["Updated RTU RTU-1: 'config.topic'"]),
+    `the update_rtu action line, got ${JSON.stringify(result.actionLines)}`,
+  );
+}

@@ -419,21 +419,22 @@ const FOUR = [
  * `finalizeTurn` calls `validateService.validate`, so that one cannot be a stub
  * — and it is the service that re-parses the merged draft through
  * `onboardingDraftSchema`, i.e. the thing that turns an over-long derived string
- * into the operator's permanent validation error. The other three are untouched
- * on every path below: `crypto` only inside `mergeDraft`, and `catalogService`
- * and `protocolService` only when an `organizationId` is passed.
- *
- * The fifth is the vocabulary `handleTurn` reads once per turn (`F4.157`,
- * `F4.162`): a fake answering the four seeded `bms.location_types` rows.
+ * into the operator's permanent validation error. F3.27 (Q-A): `org-1` is passed,
+ * so the resolver answers the guided mode, the catalog is empty, and the protocol
+ * service throws — an accidental protocol-question intercept reddens the case.
+ * The vocabulary is the four seeded `bms.location_types` rows (`F4.157`, `F4.162`).
  */
 function ruleBasedChatService(): OnboardingChatService {
+  const intercepted = (): never => {
+    throw new Error("the protocol-question intercept answered a guided-mode case");
+  };
   return new OnboardingChatService(
     new OnboardingValidateService(),
     {} as never,
-    {} as never,
-    {} as never,
+    { getContextForOrganization: intercepted, formatForAssistant: intercepted } as never,
+    { listPointKeys: async () => [] } as never,
     { listLocationTypes: async () => [...FOUR] } as never,
-    {} as never, // F3.21: no organization is passed, so the resolver is never asked.
+    { resolveForOrganization: async () => ({ kind: "guided", reason: "platform_off" }) } as never,
     { context: async () => EMPTY_TEMPLATE_CONTEXT } as never,
   );
 }
@@ -450,9 +451,8 @@ function ruleBasedChatService(): OnboardingChatService {
  *    asserting nothing about the branch this row is about. The key is removed
  *    for the call and restored after it, and each case also pins a value only
  *    the rule-based branch produces.
- * 2. `organizationId` is left undefined. With one, a message mentioning a
- *    protocol *and* a question word is answered by `protocolService` before the
- *    dispatch below is reached.
+ * 2. A protocol word plus a question word is answered by `protocolService` before
+ *    the dispatch below; the builder's throwing fake turns that into a failure.
  */
 export async function ruleBasedTurn(
   message: string,
@@ -462,7 +462,7 @@ export async function ruleBasedTurn(
   const savedKey = process.env.OPENAI_API_KEY;
   delete process.env.OPENAI_API_KEY;
   try {
-    return await ruleBasedChatService().handleTurn(message, draft, phase, "Ion Exchange", undefined, { sessionId: "s-1", history: [] });
+    return await ruleBasedChatService().handleTurn(message, draft, phase, "Ion Exchange", "org-1", { sessionId: "s-1", history: [] });
   } finally {
     if (savedKey === undefined) {
       delete process.env.OPENAI_API_KEY;

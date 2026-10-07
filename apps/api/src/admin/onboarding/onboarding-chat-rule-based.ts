@@ -1,6 +1,12 @@
 /**
  * F4.217 — the guided (rule-based) onboarding mode, moved verbatim from
  * `onboarding-chat.service.ts`; the agent path and `finalizeTurn` stay there.
+ *
+ * F3.27 (ADR 0090 Amendment 2): the step order, labels and defaults are
+ * unchanged, but every draft write now goes through `guidedWrite` (the tool
+ * registry's `runTool`) and answers a code-written action line. A fallback
+ * turn (`fallbackTurn`) writes nothing. `GUIDED_TOOL_COVERAGE` classifies
+ * every registry tool (B7).
  */
 import type {
   LocationTypeDto,
@@ -17,11 +23,10 @@ import type {
 import { ONBOARDING_DRAFT_STRING_MAX } from "@bms/shared";
 
 import { quoteCell } from "../spreadsheet-guard";
+import type { ToolContext, ToolState } from "./onboarding-agent-tools";
 import type { OnboardingCatalogService } from "./onboarding-catalog.service";
 import { catalogCodeFromLocationName, cutToBound } from "./onboarding-draft-caps";
-import { mergeDraftPatch } from "./onboarding-draft-merge";
 import { MAX_RTU_TOPIC_CHARS } from "./onboarding-excel.service";
-import { deriveLocationPatch } from "./onboarding-location-derive";
 import * as locationTypes from "./onboarding-location-type-match";
 import {
   MQTT_RTU_ADDED_REPLY,
@@ -32,6 +37,7 @@ import {
   TOPIC_TURN,
   topicHasWildcard,
 } from "./onboarding-chat-summaries";
+import { guidedWrite } from "./onboarding-guided-writes";
 import type { ValidateTemplateContext } from "./onboarding-template-refs";
 import type { OnboardingDraftInput } from "./onboarding.schema";
 import { draftNeedsPointKeys, type OnboardingValidateService } from "./onboarding-validate.service";
@@ -45,7 +51,7 @@ export type ChatTurnResult = {
   readyToCommit?: boolean;
   autoOpenPreview?: boolean;
   autoOpenReason?: OnboardingAutoOpenReason;
-  /** F3.21 decision 6: code-written lines for each draft write the agent made. Empty on the guided path. */
+  /** F3.21 decision 6: code-written lines for each draft write, on the agent path and (F3.27, ADR 0090 Amendment 2 B4) the guided one. */
   actionLines: string[];
   /** F3.21 decision 5: set when the agent proposed a commit; the caller binds it to the stored draft's hash. */
   commitProposal?: { summary: string };
@@ -70,6 +76,13 @@ export type TurnVocabulary = {
  */
 export type RuleBasedTurnDeps = {
   readonly validateService: Pick<OnboardingValidateService, "inferPhase">;
+  /**
+   * F3.27 (ADR 0090 Amendment 2 B4): the context the agent's tools run in,
+   * built by the same `OnboardingChatService.toolContext`, so a guided write
+   * through `guidedWrite` meets the agent path's checks. Its `organizationId`
+   * is the turn's organization.
+   */
+  readonly tools: ToolContext;
   readonly catalogService: Pick<OnboardingCatalogService, "listPointKeys" | "formatPointKeysForChat">;
   readonly finalizeTurn: (
     assistantMessage: string,
@@ -124,6 +137,10 @@ const STEP_NAMES: Readonly<Record<OnboardingPhase, string>> = {
   review: "review",
 };
 
+/** ADR 0090 Amendment 2 B3, B6 — the guided answer at review and to a commit word: it sends the user to the Commit button and, after it, to the Asset Templates editor. It proposes no commit. */
+export const REVIEW_REPLY =
+  "The draft is in review. Open the preview and click **Commit**. After the commit, the Asset Templates editor can instantiate templates on this site.";
+
 /**
  * F4.199 — what the draft still needs at `phase`, with only replies that the
  * guided mode answers at that phase: each one reaches the branch its text names.
@@ -157,10 +174,28 @@ function stepPrompt(
     case "assets":
       return { text: "Add an asset: say **One asset** to add one.", replies: ["One asset", "View draft"] };
     case "mappings":
-      return { text: "Map the assets: say **auto map** to map each asset to **kw**.", replies: ["auto map", "View draft"] };
+      return { text: "Map the assets: say **auto map** to map each plain asset to **kw**.", replies: ["auto map", "View draft"] };
     case "review":
       return { text: "Open the preview and click **Commit**, or say **create it**.", replies: ["create it", "View draft"] };
   }
+}
+
+/**
+ * ADR 0090 Amendment 2 B1 — the answer to an agent turn that fell back after a
+ * provider error. The message was written for the model, so the guided mode
+ * does not read it: the turn writes nothing and answers the step prompt for the
+ * phase the draft is at. The caller puts `AGENT_UNAVAILABLE_NOTICE` before it.
+ */
+export function fallbackTurn(
+  deps: RuleBasedTurnDeps,
+  message: string,
+  draft: OnboardingDraft,
+  turn: TurnVocabulary,
+): ChatTurnResult {
+  const { types } = turn;
+  const derived = deps.validateService.inferPhase(draft, types.map((t) => t.code));
+  const prompt = stepPrompt(derived, draft, types);
+  return deps.finalizeTurn(prompt.text, {}, derived, prompt.replies, message, draft, turn);
 }
 
 /** Runs one guided (rule-based) chat turn: `deps` supplies validateService.inferPhase, catalogService (point-key listing) and finalizeTurn; resolves to the `ChatTurnResult` that `deps.finalizeTurn` builds. */
@@ -171,9 +206,9 @@ export async function handleRuleBasedTurn(
   phase: OnboardingPhase,
   orgName: string,
   turn: TurnVocabulary,
-  organizationId?: string,
 ): Promise<ChatTurnResult> {
   const { types } = turn;
+  const { organizationId } = deps.tools;
   const lower = message.toLowerCase().trim();
   const patch: OnboardingDraftInput = {};
   // F4.199 (owner ruling 2026-10-05, "normalise, then no-op"): a typed label
@@ -181,26 +216,37 @@ export async function handleRuleBasedTurn(
   // `OnboardingService.chat` stays exact, so "confirm commit." commits nothing.
   const intent = lower.replace(/\s+/g, " ").replace(/[.!?]+$/, "").trim();
   const derived = deps.validateService.inferPhase(draft, types.map((t) => t.code));
+  // F3.27 (ADR 0090 Amendment 2 B4, B5): every draft write below runs through
+  // `guidedWrite` against this one working copy, so the caps, the depth bound,
+  // the element schemas and the credential and prompt-marker refusals are the
+  // agent path's own. A refusal changes nothing and answers its sentence.
+  const state: ToolState = { working: draft };
+  const refused = (error: string): ChatTurnResult => {
+    const prompt = stepPrompt(derived, draft, types);
+    return deps.finalizeTurn(`I did not change the draft. ${error} ${prompt.text}`, {}, derived, prompt.replies, message, draft, turn);
+  };
 
   // Anchored and phase-gated: before the point-key step this switched the
   // draft to the existing keys from a step it had not reached.
   const keysReply = /^(use existing keys|confirm point keys)$/.test(intent);
-  if (keysReply && organizationId && derived === "point_keys") {
+  if (keysReply && derived === "point_keys") {
     const orgKeys = await deps.catalogService.listPointKeys(organizationId);
     if (orgKeys.length > 0) {
-      patch.onboardingMeta = {
-        ...(draft.onboardingMeta ?? {}),
-        useExistingPointKeys: true,
-      };
-      return deps.finalizeTurn(
-        `Using existing organization point keys:\n\n${deps.catalogService.formatPointKeysForChat(orgKeys)}\n\nSay **confirm assets** or add assets per RTU.`,
-        patch,
+      // `mergeDraftPatch` merges `onboardingMeta` field by field, so the other meta fields survive.
+      const written = await guidedWrite("use_existing_point_keys", { value: true }, state, deps.tools);
+      if (!written.ok) {
+        return refused(written.error);
+      }
+      const result = deps.finalizeTurn(
+        `Using existing organization point keys:\n\n${deps.catalogService.formatPointKeysForChat(orgKeys)}\n\nSay **One asset** to add an asset, then **confirm assets**.`,
+        { onboardingMeta: state.working.onboardingMeta },
         "assets",
-        ["confirm assets", "View draft"],
+        ["One asset", "confirm assets", "View draft"],
         message,
         draft,
         turn,
       );
+      return { ...result, actionLines: [written.actionLine] };
     }
   }
 
@@ -209,9 +255,14 @@ export async function handleRuleBasedTurn(
   // "confirm mappings" reply buttons, so they answered with the commit line
   // and their step never ran. It commits nothing either way: only the typed
   // `confirm commit` phrase or the Commit button commits (ADR 0090 decision 5).
+  // F3.27 (B3): the review reply only when the draft is in review; before it,
+  // "yes" (the answer to an old "... next?" prompt) gets the step prompt.
   if (/^(yes|create|create it|commit|confirm)$/.test(intent)) {
+    if (derived !== "review") {
+      return unchangedTurn(deps, message, draft, derived, types, turn);
+    }
     return deps.finalizeTurn(
-      "I'll prepare the commit — open the preview to confirm everything looks correct.",
+      REVIEW_REPLY,
       patch,
       "review",
       ["View draft"],
@@ -245,11 +296,10 @@ export async function handleRuleBasedTurn(
     const { type, kept } = locationTypes.resolveLocationTurn(message, draft.location, types);
     // F4.104 — **this branch is the draft's default producer, not a
     // fallback.** `.env.example` ships `LLM_PROVIDER=` empty (`F3.21`), so
-    // `handleTurn` reaches here on every turn of an ordinary deployment. And
-    // unlike the old single-shot model branch (removed by `F3.21`), which passed the model's patch through
-    // `onboardingDraftSchema.safeParse`, this method assembles its patch in
-    // code and parses nothing: a bound on the schema binds only the producers
-    // that parse it, and this is not one of them. Four sites derive a draft
+    // `handleTurn` reaches here on every turn of an ordinary deployment. Since
+    // F3.27 every guided write goes through `runTool` and its element schemas
+    // (`guidedWrite`), but a schema refusal is a dead end in the middle of a
+    // conversation, so each string is still cut before the call. Four sites derive a draft
     // string from the chat message — here, `assets[].code`/`siteName` below,
     // `defaultConfig`'s `topic`, F4.208's topic turn — and each is cut to the same imported
     // bound the schema carries. `code` was already `.slice(0, 64)`; the
@@ -313,16 +363,44 @@ export async function handleRuleBasedTurn(
     // both go through it anyway, so reordering the two steps cannot
     // reintroduce the split.
     const name = kept?.name ?? cutToBound(message.trim(), ONBOARDING_DRAFT_STRING_MAX["location.name"]);
+    // F3.27 (decision 6): a kept location with no type matched is a re-ask, not
+    // a write, so it records no action line. The patch keeps the stored fields
+    // and leaves the stored type out (F4.162 R6: `kept` carries none); the merge keeps it.
+    if (kept && !type) {
+      patch.location = kept as OnboardingDraftInput["location"];
+      const labels = types.map((row) => row.label);
+      return deps.finalizeTurn(locationTypes.locationTypeQuestion(name), patch, "location", labels, message, draft, turn);
+    }
     // A kept location's non-empty slug and code win; an empty one (a blank
     // workbook cell, a `PATCH` that cleared it) is derived from the name.
-    // `F3.21`: the derivation is shared with the agent's `set_location` tool.
-    patch.location = deriveLocationPatch({ name, stored: draft.location, kept, type });
+    // F3.27: the cut above runs before the call, and `set_location` derives
+    // the rest with the same `deriveLocationPatch`. It also keeps the stored
+    // slug and code when the name is unchanged (F3.21 code review #4).
+    const written = await guidedWrite(
+      "set_location",
+      {
+        name,
+        ...(type ? { type } : {}),
+        ...(kept?.slug ? { slug: kept.slug } : {}),
+        ...(kept?.code ? { code: kept.code } : {}),
+      },
+      state,
+      deps.tools,
+    );
+    if (!written.ok) {
+      return refused(written.error);
+    }
+    // With no type matched the patch carries none: a stored inactive type is
+    // not copied back into it (F4.162 R6); the merge keeps the stored field.
+    const { type: _unmatched, ...untyped } = state.working.location ?? { name };
+    patch.location = type ? state.working.location : (untyped as OnboardingDraftInput["location"]);
+    const actionLines = [written.actionLine];
     if (!type) {
       const ask = locationTypes.locationTypeQuestion(name);
       const labels = types.map((row) => row.label);
-      return deps.finalizeTurn(ask, patch, "location", labels, message, draft, turn);
+      return { ...deps.finalizeTurn(ask, patch, "location", labels, message, draft, turn), actionLines };
     }
-    return deps.finalizeTurn(
+    const result = deps.finalizeTurn(
       `Got it — location **${name}**. Which communication protocol will RTU 1 use?`,
       patch,
       "rtu",
@@ -331,6 +409,7 @@ export async function handleRuleBasedTurn(
       draft,
       turn,
     );
+    return { ...result, actionLines };
   }
 
   // F4.208 (F4.218 names the colon rule): while the derived phase is `rtu`, "topic: x" (the colon is
@@ -350,12 +429,18 @@ export async function handleRuleBasedTurn(
       const refusal = `I did not change the draft. A topic must name one device; # and + are wildcards. ${waiting.text}`;
       return deps.finalizeTurn(refusal, {}, derived, waiting.replies, message, draft, turn);
     }
-    const rtus = (draft.rtus ?? []).map((rtu, i) => (i === inHand ? { ...rtu, config: { ...rtu.config, topic } } : rtu));
+    // F3.27 (Amendment 2 Q-D): `update_rtu` merges `config` one level deep,
+    // so host, port and TLS stay, and the credentialed-connection check passes.
+    const written = await guidedWrite("update_rtu", { index: inHand, patch: { config: { topic } } }, state, deps.tools);
+    if (!written.ok) {
+      return refused(written.error);
+    }
+    const merged = state.working;
+    const rtus = merged.rtus ?? [];
     patch.rtus = rtus;
-    const merged = mergeDraftPatch(draft, patch);
     const prompt = stepPrompt(deps.validateService.inferPhase(merged, types.map((t) => t.code)), merged, types);
     const text = `Topic **${quoteCell(topic)}** set on **${quoteCell(rtus[inHand].displayName)}**. ${prompt.text}`;
-    return deps.finalizeTurn(text, patch, "rtu", prompt.replies, message, draft, turn);
+    return { ...deps.finalizeTurn(text, patch, "rtu", prompt.replies, message, draft, turn), actionLines: [written.actionLine] };
   }
 
   // F4.218: in the RTU step a message that mentions a topic without `topic:`
@@ -375,30 +460,35 @@ export async function handleRuleBasedTurn(
     const protocol =
       addAnother && lastProtocol && !NAMES_A_PROTOCOL.test(lower) ? lastProtocol : detectProtocol(lower);
     const rtuCode = `RTU-${(draft.rtus?.length ?? 0) + 1}`;
-    const rtuPatch = {
+    // F3.27: no `credentialsSet` here — `add_rtu` sets it to false itself.
+    const rtuArgs = {
       code: rtuCode,
       displayName: rtuCode,
       protocol,
       config: defaultConfig(protocol, message),
-      credentialsSet: false,
       ingestEnabled: protocol === "mqtt",
     };
-    patch.rtus = [...(draft.rtus ?? []), rtuPatch];
+    const written = await guidedWrite("add_rtu", rtuArgs, state, deps.tools);
+    if (!written.ok) {
+      return refused(written.error);
+    }
+    patch.rtus = state.working.rtus;
     // ADR 0022 decision 2: this used to say "Share username and password"
     // and `extractCredentials` parsed them straight out of the turn, which
     // is what put plaintext secrets into `onboarding_sessions.messages`.
     // Credentials now arrive only through `POST :id/credentials`.
-    return deps.finalizeTurn(
+    const result = deps.finalizeTurn(
       protocol === "mqtt"
         ? MQTT_RTU_ADDED_REPLY
-        : `Added ${protocol} RTU. Ingest adapter is not connected yet — config will be stored. Add point keys next?`,
+        : `Added ${protocol} RTU. Ingest adapter is not connected yet — config will be stored. Say **kw** to add the catalog key **kw**.`,
       patch,
       "point_keys",
-      addedRtuReplies(deps, mergeDraftPatch(draft, patch), turn),
+      addedRtuReplies(deps, state.working, turn),
       message,
       draft,
       turn,
     );
+    return { ...result, actionLines: [written.actionLine] };
   }
 
   // F4.195: the phase's own predicate, so a draft whose assets are all
@@ -406,12 +496,22 @@ export async function handleRuleBasedTurn(
   // stored phase stays a second way in: `onboarding-chat-caps.spec.ts`
   // reaches this append on it with a draft at the point-key cap (F4.103).
   if (phase === "point_keys" || draftNeedsPointKeys(draft)) {
-    patch.pointKeys = [
-      ...(draft.pointKeys ?? []),
+    // Q-B: only the offered label writes; any other message changes nothing.
+    if (!/^(kw|add point key kw)$/.test(intent)) {
+      return unchangedTurn(deps, message, draft, derived, types, turn);
+    }
+    const written = await guidedWrite(
+      "add_point_key",
       { code: "kw", name: "Active Power", domain: "electrical", unit: "kW" },
-    ];
-    return deps.finalizeTurn(
-      "Added catalog point key **kw**. How many assets should we create on this RTU?",
+      state,
+      deps.tools,
+    );
+    if (!written.ok) {
+      return refused(written.error);
+    }
+    patch.pointKeys = state.working.pointKeys;
+    const result = deps.finalizeTurn(
+      "Added catalog point key **kw**. Say **One asset** to add one asset on RTU 1.",
       patch,
       "assets",
       ["One asset", "View draft"],
@@ -419,9 +519,13 @@ export async function handleRuleBasedTurn(
       draft,
       turn,
     );
+    return { ...result, actionLines: [written.actionLine] };
   }
 
   if (phase === "assets" || !draft.assets?.length) {
+    if (intent !== "one asset") {
+      return unchangedTurn(deps, message, draft, derived, types, turn);
+    }
     // F4.104, and the one site here that was a live functional bug rather
     // than only an unbounded string. `site` is the **stored** location name,
     // so it reaches this branch from any producer and from any draft written
@@ -461,8 +565,12 @@ export async function handleRuleBasedTurn(
     // `cutToBoundWithHashSuffix` appends is `-` plus upper-case hex, inside the
     // class, so the composition stays legal. A name with nothing inside the
     // class yields `-ASSET-1` alone: legal, and the operator's to rename.
+    //
+    // F3.27: the code and site name are cut before the call. `add_asset`
+    // appends, where this branch once replaced the array.
     const site = draft.location?.name ?? orgName;
-    patch.assets = [
+    const written = await guidedWrite(
+      "add_asset",
       {
         rtuIndex: 0,
         code: catalogCodeFromLocationName(site),
@@ -470,9 +578,15 @@ export async function handleRuleBasedTurn(
         siteName: cutToBound(site, ONBOARDING_DRAFT_STRING_MAX["assets.siteName"]),
         domain: "electrical",
       },
-    ];
-    return deps.finalizeTurn(
-      "Asset added. Provide a mapping like `source s09_r01 -> point kw`, or say **auto map**.",
+      state,
+      deps.tools,
+    );
+    if (!written.ok) {
+      return refused(written.error);
+    }
+    patch.assets = state.working.assets;
+    const result = deps.finalizeTurn(
+      "Asset added. Say **auto map** to map it to **kw**.",
       patch,
       "mappings",
       ["auto map", "View draft"],
@@ -480,6 +594,7 @@ export async function handleRuleBasedTurn(
       draft,
       turn,
     );
+    return { ...result, actionLines: [written.actionLine] };
   }
 
   // F3.22 (ADR 0091 decision 11, code review): the sample mapping goes onto
@@ -488,10 +603,32 @@ export async function handleRuleBasedTurn(
   // templated needs no mapping (V11) and goes on to review.
   const plainIndex = draft.assets?.findIndex((asset) => !asset.template) ?? -1;
   if (plainIndex >= 0 && (phase === "mappings" || !draft.assetPoints?.length)) {
-    patch.assetPoints = [
-      { assetIndex: plainIndex, pointKey: "kw", sourceDataKey: "s09_r01", unit: "kW" },
-    ];
-    return deps.finalizeTurn(
+    if (intent !== "auto map") {
+      return unchangedTurn(deps, message, draft, derived, types, turn);
+    }
+    // F3.27 (Amendment 2 Q-C): one `map_point` per plain asset that has no
+    // mapping yet. All or nothing: at the first refusal the working copy is
+    // dropped, so "I did not change the draft" stays true.
+    const mapped = new Set((draft.assetPoints ?? []).map((point) => point.assetIndex));
+    const unmapped = (draft.assets ?? []).flatMap((asset, index) => (!asset.template && !mapped.has(index) ? [index] : []));
+    if (unmapped.length === 0) {
+      return unchangedTurn(deps, message, draft, derived, types, turn);
+    }
+    const actionLines: string[] = [];
+    for (const assetIndex of unmapped) {
+      const written = await guidedWrite(
+        "map_point",
+        { assetIndex, pointKey: "kw", sourceDataKey: "s09_r01", unit: "kW" },
+        state,
+        deps.tools,
+      );
+      if (!written.ok) {
+        return refused(written.error);
+      }
+      actionLines.push(written.actionLine);
+    }
+    patch.assetPoints = state.working.assetPoints;
+    const result = deps.finalizeTurn(
       "Mapping added. I've opened the preview — review the draft and say **create it** when ready.",
       patch,
       "review",
@@ -500,10 +637,11 @@ export async function handleRuleBasedTurn(
       draft,
       turn,
     );
+    return { ...result, actionLines };
   }
 
   return deps.finalizeTurn(
-    "We're in review. Say **create it** to commit, or tell me what to change.",
+    REVIEW_REPLY,
     patch,
     "review",
     ["create it", "View draft"],
@@ -511,6 +649,19 @@ export async function handleRuleBasedTurn(
     draft,
     turn,
   );
+}
+
+/** Q-B — a message that is not the offered label changes nothing and gets the step prompt (the `I did not change the draft.` shape). */
+function unchangedTurn(
+  deps: RuleBasedTurnDeps,
+  message: string,
+  draft: OnboardingDraft,
+  derived: OnboardingPhase,
+  types: readonly LocationTypeDto[],
+  turn: TurnVocabulary,
+): ChatTurnResult {
+  const prompt = stepPrompt(derived, draft, types);
+  return deps.finalizeTurn(`I did not change the draft. ${prompt.text}`, {}, derived, prompt.replies, message, draft, turn);
 }
 
 /**

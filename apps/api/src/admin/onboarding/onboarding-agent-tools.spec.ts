@@ -388,3 +388,12 @@ export async function assertADeepWriteIsRefused(): Promise<void> {
   assert(!out.ok && String(parsed(out.content).error).startsWith("The draft nests deeper than"), "the depth bound holds");
   assert((state.working.rtus?.length ?? 0) === 0, "nothing was written");
 }
+
+/** F3.27 (U3): a refusal carries its sentence as `error`, so the guided mode never parses `content`. */
+export async function assertAFailedOutcomeCarriesItsError(): Promise<void> {
+  const state: ToolState = { working: {} };
+  const out = await runTool(call("x", {}), state, context());
+  assert(!out.ok && out.error === "Unknown tool 'x'.", `the error field: ${String(out.error)}`);
+  const passed = await runTool(call("add_rtu", PLAIN_RTU), state, context());
+  assert(passed.ok && passed.error === undefined, "a passing outcome carries no error");
+}

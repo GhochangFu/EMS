@@ -33,13 +33,29 @@ async function runTurn(message: string): Promise<{ result: ChatTurnResult; final
   const deps: RuleBasedTurnDeps = {
     validateService: new OnboardingValidateService(),
     catalogService: { listPointKeys: async () => [], formatPointKeysForChat: () => "" } as never,
+    // F3.27 (B4 seam): the guided writes' tool context; its organization is the turn's.
+    tools: {
+      organizationId: "org-1",
+      activeTypes: TURN.types,
+      catalog: { listPointKeys: async () => [] },
+      protocols: {
+        getContextForOrganization: async () => {
+          throw new Error("a guided turn read the protocols");
+        },
+        formatForAssistant: () => {
+          throw new Error("a guided turn formatted the protocols");
+        },
+      },
+      validator: new OnboardingValidateService(),
+      templates: TURN.templates,
+    },
     finalizeTurn: (...args) => {
       finalized.push(args);
       const [assistantMessage, draftPatch, currentPhase, suggestedReplies] = args;
       return { assistantMessage, draftPatch, currentPhase, suggestedReplies, actionLines: [] };
     },
   };
-  const result = await handleRuleBasedTurn(deps, message, locationOnlyDraft(), "rtu", "Eskom", TURN, "org-1");
+  const result = await handleRuleBasedTurn(deps, message, locationOnlyDraft(), "rtu", "Eskom", TURN);
   return { result, finalized };
 }
 
@@ -88,4 +104,13 @@ export async function assertAProtocolFormIsDetected(word: string, protocol: stri
   const { result } = await runTurn(word);
   const got = result.draftPatch.rtus?.[0]?.protocol;
   assert(got === protocol, `"${word}" expected ${protocol}, got ${String(got)}`);
+}
+
+/** F3.27 (ADR 0090 Amendment 2 B4, B5) — the RTU step writes through `add_rtu` and answers its action line. */
+export async function assertANamedProtocolAnswersItsActionLine(): Promise<void> {
+  const { result } = await runTurn("modbus please");
+  assert(
+    JSON.stringify(result.actionLines) === JSON.stringify(["Added RTU RTU-1 (modbus_tcp)"]),
+    `the add_rtu action line, got ${JSON.stringify(result.actionLines)}`,
+  );
 }

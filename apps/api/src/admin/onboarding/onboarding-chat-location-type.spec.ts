@@ -50,13 +50,23 @@ const WITH_DISTINCT_LABEL: readonly LocationTypeDto[] = [
   { code: "wtp", label: "Water treatment plant" },
 ];
 
-/** A chat service whose vocabulary is `rows`, with the real validator behind it. */
-function serviceWith(rows: readonly LocationTypeDto[], llmResolver: unknown = {}): OnboardingChatService {
+/** F3.27 (Q-A): every turn passes an organization, so the default resolver answers the guided mode. */
+const GUIDED_RESOLVER = { resolveForOrganization: async () => ({ kind: "guided", reason: "platform_off" }) };
+
+/**
+ * A chat service whose vocabulary is `rows`, with the real validator behind it.
+ * The protocol service throws, so an accidental protocol-question intercept
+ * reddens a case instead of answering it.
+ */
+function serviceWith(rows: readonly LocationTypeDto[], llmResolver: unknown = GUIDED_RESOLVER): OnboardingChatService {
+  const intercepted = (): never => {
+    throw new Error("the protocol-question intercept answered a location-type case");
+  };
   return new OnboardingChatService(
     new OnboardingValidateService(),
     {} as never,
-    {} as never,
-    {} as never,
+    { getContextForOrganization: intercepted, formatForAssistant: intercepted } as never,
+    { listPointKeys: async () => [] } as never,
     { listLocationTypes: async () => [...rows] } as never,
     llmResolver as never,
     { context: async () => EMPTY_TEMPLATE_CONTEXT } as never,
@@ -73,7 +83,7 @@ async function ruleBasedTurn(
   const savedKey = process.env.OPENAI_API_KEY;
   delete process.env.OPENAI_API_KEY;
   try {
-    return await serviceWith(rows).handleTurn(message, draft, phase, "Ion Exchange", undefined, {
+    return await serviceWith(rows).handleTurn(message, draft, phase, "Ion Exchange", "org-1", {
       sessionId: "s-1",
       history: [],
     });
@@ -451,6 +461,16 @@ export async function assertStoredInactiveTypeIsNotPatched(): Promise<void> {
 }
 
 /**
+ * F3.27 (decision 6, B5) — the same turn writes nothing, so it records no
+ * action line: an action line stands for a write, and a re-ask is not one.
+ */
+export async function assertStoredInactiveTypeTurnHasNoActionLine(): Promise<void> {
+  const { turn } = await storedTurn("not sure", NAMED_INACTIVE_TYPE, "location");
+  assert(turn.actionLines.length === 0, `a re-ask records no action line, got ${JSON.stringify(turn.actionLines)}`);
+  assert(turn.assistantMessage === "Which type of location is **Lotapata**?", `the turn still asks, got "${turn.assistantMessage}"`);
+}
+
+/**
  * R5 — the OpenAI branch validates the draft `mergeDraft` will store. The
  * stored draft has an active type and `code: ""`; the model's patch supplies
  * the code and no type, so only the merged draft is complete and the phase
@@ -596,4 +616,22 @@ const COMPLETE_INACTIVE_TYPE = {
 export async function assertRetiredTypeTurnIsNotReadyToCommit(): Promise<void> {
   const { turn } = await storedTurn("Lotapata", COMPLETE_INACTIVE_TYPE, "review");
   assert(turn.readyToCommit === false, "a draft whose type is not active is never ready to commit");
+}
+
+/**
+ * F3.27 (ADR 0090 Amendment 2 B4, B5) — the location step writes through
+ * `set_location`, so each turn answers the registry's code-written action
+ * line: the name alone first, then the same name with the type it was given.
+ */
+export async function assertLocationTurnsAnswerTheirActionLines(): Promise<void> {
+  const first = await ruleBasedTurn("Berhampur", {}, "location");
+  assert(
+    JSON.stringify(first.actionLines) === JSON.stringify(["Set location Berhampur (type not set)"]),
+    `the name turn's action line, got ${JSON.stringify(first.actionLines)}`,
+  );
+  const second = await ruleBasedTurn("SMOC campus", { location: first.draftPatch.location } as OnboardingDraft, "location");
+  assert(
+    JSON.stringify(second.actionLines) === JSON.stringify(["Set location Berhampur (smoc_campus)"]),
+    `the type turn's action line, got ${JSON.stringify(second.actionLines)}`,
+  );
 }

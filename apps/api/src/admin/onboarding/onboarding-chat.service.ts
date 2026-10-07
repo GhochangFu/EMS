@@ -19,11 +19,19 @@ import { OnboardingCatalogService } from "./onboarding-catalog.service";
 import { OnboardingTemplateCatalogService } from "./onboarding-template-catalog.service";
 import { mergeDraftPatch } from "./onboarding-draft-merge";
 import { formatAssetsByRtuSummary, mqttSetupTemplate, needsMqttSetup } from "./onboarding-chat-summaries";
-import { handleRuleBasedTurn, NAMES_A_PROTOCOL, type ChatTurnResult, type TurnVocabulary } from "./onboarding-chat-rule-based";
+import {
+  fallbackTurn,
+  handleRuleBasedTurn,
+  NAMES_A_PROTOCOL,
+  type ChatTurnResult,
+  type RuleBasedTurnDeps,
+  type TurnVocabulary,
+} from "./onboarding-chat-rule-based";
 // F3.21 (ADR 0090): the model no longer returns a draft patch, so the
 // prompt-budget guards live where the draft and the arguments now pass — the
 // agent loop's system prompt and the tool registry.
 import { runAgentTurn } from "./onboarding-agent-loop";
+import type { ToolContext } from "./onboarding-agent-tools";
 import { scrubMessages } from "./onboarding-credential-detect";
 import { OnboardingLlmResolver } from "./onboarding-llm-resolver";
 import {
@@ -186,7 +194,7 @@ export class OnboardingChatService {
           suggestedReplies: ["use existing keys", "confirm point keys", "View draft"],
         };
       }
-      lines.push("\nAdd point keys (e.g. **kw**), then say **confirm point keys**.");
+      lines.push("\nSay **kw** to add the catalog key **kw**, then **confirm point keys**.");
       return {
         assistantMessage: lines.join("\n"),
         suggestedReplies: ["kw", "confirm point keys", "View draft"],
@@ -194,7 +202,7 @@ export class OnboardingChatService {
     }
 
     if (!draft.assets || draft.assets.length === 0) {
-      lines.push("\nAdd assets per RTU in chat, then say **confirm assets**.");
+      lines.push("\nSay **One asset** to add an asset, then **confirm assets**.");
       return {
         assistantMessage: lines.join("\n"),
         suggestedReplies: ["confirm assets", "View draft"],
@@ -206,7 +214,7 @@ export class OnboardingChatService {
     if (draft.assets.some((asset) => !asset.template) && (!draft.assetPoints || draft.assetPoints.length === 0)) {
       lines.push(
         `\n${formatAssetsByRtuSummary(draft)}\n\n` +
-          "Say **auto map** to map each asset to **kw**, or provide mappings like `source s01 -> point kw`. " +
+          "Map the assets: say **auto map** to map each plain asset to **kw**. " +
           "Then **confirm mappings**.",
       );
       return {
@@ -223,30 +231,44 @@ export class OnboardingChatService {
   }
 
   /**
-   * The guided mode (`onboarding-chat-rule-based.ts`, F4.217). The arrow keeps
-   * `this`: an unbound `finalizeTurn` would throw on `this.validateService`.
+   * What the guided mode and the fallback turn (`onboarding-chat-rule-based.ts`,
+   * F4.217) read from this service. The arrow keeps `this`: an unbound
+   * `finalizeTurn` would throw on `this.validateService`.
    */
+  private ruleBasedDeps(organizationId: string, turn: TurnVocabulary): RuleBasedTurnDeps {
+    return {
+      validateService: this.validateService,
+      catalogService: this.catalogService,
+      tools: this.toolContext(organizationId, turn),
+      finalizeTurn: (...args) => this.finalizeTurn(...args),
+    };
+  }
+
+  /**
+   * The one context the tools run in, for the agent loop and for the guided
+   * mode's writes alike (F3.27, ADR 0090 Amendment 2 B4).
+   */
+  private toolContext(organizationId: string, turn: TurnVocabulary): ToolContext {
+    return {
+      organizationId,
+      activeTypes: turn.types,
+      catalog: this.catalogService,
+      protocols: this.protocolService,
+      validator: this.validateService,
+      templates: turn.templates,
+    };
+  }
+
+  /** The guided mode (`onboarding-chat-rule-based.ts`, F4.217). */
   private guidedTurn(
     message: string,
     draft: OnboardingDraft,
     phase: OnboardingPhase,
     orgName: string,
     turn: TurnVocabulary,
-    organizationId?: string,
+    organizationId: string,
   ): Promise<ChatTurnResult> {
-    return handleRuleBasedTurn(
-      {
-        validateService: this.validateService,
-        catalogService: this.catalogService,
-        finalizeTurn: (...args) => this.finalizeTurn(...args),
-      },
-      message,
-      draft,
-      phase,
-      orgName,
-      turn,
-      organizationId,
-    );
+    return handleRuleBasedTurn(this.ruleBasedDeps(organizationId, turn), message, draft, phase, orgName, turn);
   }
 
   /**
@@ -263,7 +285,7 @@ export class OnboardingChatService {
     draft: OnboardingDraft,
     phase: OnboardingPhase,
     orgName: string,
-    organizationId: string | undefined,
+    organizationId: string,
     context: { readonly sessionId: string; readonly history: readonly OnboardingChatMessage[] },
   ): Promise<ChatTurnResult> {
     // F4.162 (plan D9): the active types, read once per turn. Every branch and
@@ -272,12 +294,11 @@ export class OnboardingChatService {
     const types = await this.vocabularies.listLocationTypes();
     // F3.22 (ADR 0091): the template context, read once per turn beside the
     // types, so the agent tools and every `finalizeTurn` validate against one
-    // read. With no organization only the stock catalog is listed.
+    // read.
     const templates = await this.templateCatalog.context(organizationId);
     const turn: TurnVocabulary = { types, templates };
     const lower = message.toLowerCase().trim();
     if (
-      organizationId &&
       // F4.220: whole words, so "restriction" is not a protocol question.
       (NAMES_A_PROTOCOL.test(lower) || /\bprotocols?\b/.test(lower)) &&
       /what|which|available|list|show|support/.test(lower)
@@ -301,9 +322,6 @@ export class OnboardingChatService {
       );
     }
 
-    if (!organizationId) {
-      return await this.guidedTurn(message, draft, phase, orgName, turn, organizationId);
-    }
     const resolved = await this.llmResolver.resolveForOrganization(organizationId);
     if (resolved.kind === "guided") {
       const guided = await this.guidedTurn(message, draft, phase, orgName, turn, organizationId);
@@ -324,14 +342,7 @@ export class OnboardingChatService {
       // scrub as every client read.
       history: scrubMessages(context.history),
       llm: resolved.provider,
-      tools: {
-        organizationId,
-        activeTypes: types,
-        catalog: this.catalogService,
-        protocols: this.protocolService,
-        validator: this.validateService,
-        templates,
-      },
+      tools: this.toolContext(organizationId, turn),
     });
     // Decision 9 and plan ruling 10: ids, names and counts — never the
     // message, the arguments, the draft, the summary, the model or a key.
@@ -340,10 +351,12 @@ export class OnboardingChatService {
       "onboarding agent turn",
     );
     if (agent.fallback) {
-      // Ruling 6: the turn's edits are already discarded; the guided mode
-      // answers the same message, and the user is told why.
-      const guided = await this.guidedTurn(message, draft, phase, orgName, turn, organizationId);
-      return { ...guided, assistantMessage: `${AGENT_UNAVAILABLE_NOTICE}\n\n${guided.assistantMessage}` };
+      // Ruling 6: the turn's edits are already discarded, and the user is told
+      // why. ADR 0090 Amendment 2 B1: the guided mode does not read the
+      // message — it was written for the model — so the turn writes nothing
+      // and answers the step prompt for the phase the draft is at.
+      const fallback = fallbackTurn(this.ruleBasedDeps(organizationId, turn), message, draft, turn);
+      return { ...fallback, assistantMessage: `${AGENT_UNAVAILABLE_NOTICE}\n\n${fallback.assistantMessage}` };
     }
     const result = this.finalizeTurn(
       agent.reply,

@@ -64,6 +64,9 @@ export type { ToolOutcome, ToolState };
  *
  * **Action lines are written by code** from the validated, applied values —
  * never the raw arguments and never the model's text (decision 6).
+ *
+ * The guided mode calls `runTool` too (F3.27, ADR 0090 Amendment 2 B4), through
+ * `guidedWrite`, so these refusals and action lines hold on both paths.
  */
 
 /**
@@ -100,6 +103,9 @@ const CREDENTIAL_CHECKED_TOOLS: ReadonlySet<string> = new Set([
 export const CREDENTIALED_CONNECTION_ERROR =
   "This RTU has stored credentials, so its code, protocol, host, port and TLS cannot change in this chat. " +
   "Change them on the RTU step, where the credentials are entered.";
+
+/** The refusal of an argument that echoes the prompt-budget marker; exported so `guidedWrite` classifies it by identity. */
+export const PROMPT_MARKER_TOOL_ERROR = "The arguments carry a withheld-value marker; send real values only.";
 
 export const CREDENTIAL_TOOL_ERROR =
   "Credentials are never set through this chat. Tell the user to use the Credentials field on the RTU step.";
@@ -249,7 +255,7 @@ export async function runTool(call: LlmToolCall, state: ToolState, ctx: ToolCont
     return fail("The arguments are not valid JSON.");
   }
   if (carriesPromptMarker(raw)) {
-    return fail("The arguments carry a withheld-value marker; send real values only.");
+    return fail(PROMPT_MARKER_TOOL_ERROR);
   }
   if (CREDENTIAL_CHECKED_TOOLS.has(name) && configCarriesCredential(raw)) {
     return fail(CREDENTIAL_TOOL_ERROR);

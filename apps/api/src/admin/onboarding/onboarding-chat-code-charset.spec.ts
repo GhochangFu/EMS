@@ -189,7 +189,9 @@ export async function assertDistinctNamesNoLongerShareADerivedCode(): Promise<vo
     "Plant_1",
     "कारखाना",
     "工厂",
-    "İ",
+    // F3.27: two characters, not one — `add_asset` now refuses a one-character
+    // `siteName` (min 2), as the validator did. Still a name the slug empties.
+    "İİ",
     "İstanbul Works",
     "St. Mary's Works",
     "Straße Works",

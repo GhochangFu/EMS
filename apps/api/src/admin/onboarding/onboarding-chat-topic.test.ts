@@ -16,6 +16,7 @@ import {
   assertATopicTurnUpdatesTheRtuInHand,
   assertATopicTurnWithNoRtuAppends,
   assertATopicTurnWritesTheTopic,
+  assertATopicTurnAnswersItsActionLine,
   assertConfirmRtuIsCompleteAfterATopicTurn,
   assertTheFirstWaitingRtuIsInHand,
   assertTheLastRtuIsInHandWhenNoneWaits,
@@ -82,6 +83,10 @@ describe("F4.208 — the guided `topic: x` turn sets the topic of the RTU in han
 
   it("T2: writes the topic into config.topic", async () => {
     await assertATopicTurnWritesTheTopic();
+  });
+
+  it("T2b: the topic turn answers the update_rtu action line (F3.27 Q-D)", async () => {
+    await assertATopicTurnAnswersItsActionLine();
   });
 
   it("T3: keeps the rest of the config", async () => {

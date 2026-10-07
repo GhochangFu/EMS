@@ -40,6 +40,9 @@ import {
   assertAnotherRtuNamingAProtocolTakesIt,
   assertExistingKeysAreNotTakenBeforeThePointKeyStep,
   assertExistingKeysAreTakenAtThePointKeyStep,
+  assertExistingKeysTurnAnswersItsActionLine,
+  assertTheExistingKeysReplyNamesOneAsset,
+  assertTheKwTurnAnswersItsActionLine,
   assertTheProtocolAnswerOffersProtocolsAtTheRtuStep,
 } from "./onboarding-chat-point-keys.spec";
 
@@ -193,6 +196,18 @@ describe("onboarding chat reply buttons reach their step (F4.199)", () => {
 
   it("existing keys are taken at the point-key step", async () => {
     await assertExistingKeysAreTakenAtThePointKeyStep();
+  });
+
+  it("use existing keys answers the use_existing_point_keys action line (F3.27)", async () => {
+    await assertExistingKeysTurnAnswersItsActionLine();
+  });
+
+  it("the use existing keys reply names One asset and offers it (F3.27)", async () => {
+    await assertTheExistingKeysReplyNamesOneAsset();
+  });
+
+  it("the kw turn answers the add_point_key action line (F3.27)", async () => {
+    await assertTheKwTurnAnswersItsActionLine();
   });
 
   it("the protocol answer offers protocols at the RTU step", async () => {

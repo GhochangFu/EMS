@@ -1,6 +1,7 @@
 import { describe, it } from "vitest";
 
 import {
+  assertAProviderErrorAtTheRtuStepAnswersTheRtuPrompt,
   assertAProviderErrorFallsBackWithTheNotice,
   assertAnIncompleteOrgRowIsGuidedModeWithTheSetupNotice,
   assertCapTimeDoesNotFallBack,
@@ -12,8 +13,12 @@ import {
 
 /** Vitest entry point — see `admin.schema.test.ts` for the pattern (ADR 0014). One `it()` per claim. */
 describe("OnboardingChatService — the agent branch (F3.21, ADR 0090)", () => {
-  it("falls back to the guided mode with a notice on a provider error", async () => {
+  it("answers a provider error with the notice and the step prompt, and writes nothing (Amendment 2 B1)", async () => {
     await assertAProviderErrorFallsBackWithTheNotice();
+  });
+
+  it("answers a provider error at the RTU step with the RTU prompt, and writes nothing (Amendment 2 B1)", async () => {
+    await assertAProviderErrorAtTheRtuStepAnswersTheRtuPrompt();
   });
 
   it("answers in the guided mode with no notice when no provider resolves", async () => {

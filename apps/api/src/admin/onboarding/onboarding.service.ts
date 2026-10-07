@@ -281,18 +281,15 @@ export class OnboardingService {
     // the one the first pass of this row missed.
     //
     // `handleRuleBasedTurn` is not a fallback: `.env.example` ships
-    // `LLM_PROVIDER=` empty (`F3.21`), so it is the branch that runs by default. It
-    // assembles its patch in code and never reaches
-    // `onboardingDraftSchema.safeParse` — that call guarded the old single-shot
-    // model branch, and `F3.21`'s tools parse each element schema — and two of its branches concatenate rather than replace
-    // (`patch.rtus = [...(draft.rtus ?? []), …]`, and the same shape for
-    // `pointKeys`). `mergeDraft` then takes `patch.rtus ?? base.rtus`, which
-    // replaces the stored array wholesale and is exactly why a `PATCH :id/draft`
-    // body cannot accumulate — but here the growth already happened upstream, so
-    // the replacement faithfully stores an array one longer than the one before
-    // it. One turn, one more RTU, no ceiling.
+    // `LLM_PROVIDER=` empty (`F3.21`), so it is the branch that runs by default.
+    // Since F3.27 its writes go through `runTool` and its element schemas
+    // (`guidedWrite`), whose `add_rtu` and `add_point_key` append to the working
+    // draft and refuse a count past a cap in the reply. `mergeDraft` takes
+    // `patch.rtus ?? base.rtus`, which replaces the stored array wholesale, so
+    // an appended array is stored one longer than the one before it.
     //
-    // Refused rather than truncated, and refused **before** the write below, so
+    // This check stays as the defence in depth for a draft that is already
+    // over a cap. Refused rather than truncated, and refused **before** the write below, so
     // the session is left exactly as it was: draft, phase and message history
     // unchanged. The turn is lost; the session is not. An operator cannot add a
     // 101st RTU by chat, which is the intent.
