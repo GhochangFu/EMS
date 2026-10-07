@@ -518,6 +518,18 @@ export async function assertAnEditRepairsALegacyEmptyMqttTopic(
   jwt: JwtPayload,
 ): Promise<void> {
   const code = tag();
+  // rtus_mqtt_topic_idx is unique fleet-wide on a non-NULL value, so a second
+  // '' row would fail this fixture with 23505, not on the cell's claim. Say so.
+  const leftover = await ctx.fixturePool.query<{ id: string }>(
+    `SELECT id FROM bms.rtus WHERE mqtt_topic = '' LIMIT 1`,
+  );
+  if (leftover.rows.length > 0) {
+    throw new Error(
+      `F4.223: fixture precondition failed. bms.rtus row ${leftover.rows[0].id} already holds mqtt_topic = '', ` +
+        `a leftover of the onboarding commit producer (F4.228). Repair it to NULL, then re-run; ` +
+        `inserting a second '' row would fail with 23505 instead of testing the claim.`,
+    );
+  }
   const res = await ctx.fixturePool.query<{ id: string }>(
     `INSERT INTO bms.rtus (organization_id, location_id, code, display_name, source_type, mqtt_topic, ingest_enabled, active)
      VALUES ($1, $2, $3, $4, 'catalog', '', false, true) RETURNING id`,
