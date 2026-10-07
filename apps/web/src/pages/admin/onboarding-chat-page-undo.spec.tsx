@@ -185,7 +185,11 @@ export async function undoIsDisabledWhileAChatTurnRuns(): Promise<void> {
   await waitFor(() => expect(undoButton(container)).toBeEnabled());
 }
 
-/** U8 — review finding: while an undo is in flight, Send, the textarea and the reply chips are disabled. */
+/**
+ * U8 — review finding: while an undo is in flight, Send and the textarea are disabled and the
+ * reply chips are withdrawn, as they are during a chat turn (F4.168: a chip's name cannot say
+ * "pending", so it is hidden rather than disabled). The chips come back when the undo settles.
+ */
 export async function sendIsDisabledWhileAnUndoRuns(): Promise<void> {
   vi.spyOn(api, "createOnboardingSession").mockResolvedValue(response(WITH_CHECKPOINTS, ["confirm rtu"]));
   const undo = deferred<OnboardingChatResponseDto>();
@@ -200,11 +204,12 @@ export async function sendIsDisabledWhileAnUndoRuns(): Promise<void> {
   await screen.findByRole("button", { name: "Undoing…" });
   expect(screen.getByRole("button", { name: "Send" })).toBeDisabled();
   expect(screen.getByPlaceholderText(/Type a message/)).toBeDisabled();
-  expect(chip).toBeDisabled();
-  await userEvent.click(chip);
+  expect(screen.queryByRole("group", { name: "Suggested replies" })).toBeNull();
   expect(send).not.toHaveBeenCalled();
-  undo.resolve(response(WITH_CHECKPOINTS));
+  undo.resolve(response(WITH_CHECKPOINTS, ["confirm rtu"]));
   await waitFor(() => expect(screen.getByRole("button", { name: "Send" })).toBeEnabled());
+  const back = await screen.findByRole("group", { name: "Suggested replies" });
+  expect(within(back).getByRole("button", { name: "confirm rtu" })).toBeEnabled();
 }
 
 /** U9 — review finding: a 409 whose reload fails says so, and does not claim the session was reloaded. */

@@ -572,7 +572,7 @@ export function OnboardingChatPage({ user }: OnboardingChatPageProps) {
               </div>
             )}
 
-            {replies.length > 0 && !chatMutation.isPending && (
+            {replies.length > 0 && !chatMutation.isPending && !undoMutation.isPending && (
               <div
                 role="group"
                 aria-label="Suggested replies"
@@ -583,7 +583,7 @@ export function OnboardingChatPage({ user }: OnboardingChatPageProps) {
                     key={`${i}-${reply}`}
                     type="button"
                     onClick={() => sendText(reply)}
-                    disabled={!session || undoMutation.isPending}
+                    disabled={!session}
                     className="surface-button px-3 py-1 text-xs disabled:opacity-50"
                   >
                     {reply}

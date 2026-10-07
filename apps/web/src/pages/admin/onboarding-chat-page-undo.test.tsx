@@ -67,7 +67,7 @@ describe("F3.25 onboarding chat page Undo control", () => {
     await undoIsDisabledWhileAChatTurnRuns();
   });
 
-  it("disables Send, the textarea and the reply chips while an undo runs", async () => {
+  it("disables Send and the textarea and withdraws the reply chips while an undo runs", async () => {
     await sendIsDisabledWhileAnUndoRuns();
   });
 
