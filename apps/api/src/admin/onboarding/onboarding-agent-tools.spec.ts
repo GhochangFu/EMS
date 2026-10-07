@@ -14,6 +14,7 @@ import {
 } from "./onboarding-agent-tools";
 import { COMMIT_UNIQUE_CONFLICTS } from "./onboarding-commit-conflict";
 import { commitSummary } from "./onboarding-commit-proposal";
+import { pointKeyConflictMessage } from "./onboarding-point-key-conflict";
 import { PROMPT_OMITTED_MARKER } from "./onboarding-prompt-budget";
 import { EMPTY_TEMPLATE_CONTEXT, unresolvedPointKey, type ValidateTemplateContext } from "./onboarding-template-refs";
 import { OnboardingValidateService } from "./onboarding-validate.service";
@@ -511,4 +512,37 @@ export async function assertAddPointKeyLineIsQuoted(): Promise<void> {
 export async function assertRemoveAssetPointLineIsQuoted(): Promise<void> {
   const removed = await runTool(call("remove_asset_point", { index: 0 }), { working: readyDraft() }, context());
   assert(removed.ok && removed.actionLine === "Removed mapping 's01' → 'kw'", `the remove line: ${removed.actionLine}`);
+}
+
+// ---------------------------------------------------------------- F4.225
+
+/** F4.225: the catalog holds `kw` active with unit `kW` and domain `electrical`, as the global seed does. */
+const KW_FIELDS: ValidateTemplateContext = { ...KW_ACTIVE, pointKeyFields: new Map([["kw", { unit: "kW", domain: "electrical" }]]) };
+
+/** F4.225 A1 — add_point_key refuses a unit the catalog contradicts, with the commit's sentence, and writes nothing. */
+export async function assertA1AddPointKeyRefusesACatalogContradiction(): Promise<void> {
+  const state: ToolState = { working: {} };
+  const before = JSON.stringify(state.working);
+  const out = await runTool(call("add_point_key", { code: "kw", name: "Active Power", unit: "MW" }), state, context({ templates: KW_FIELDS }));
+  const expected = pointKeyConflictMessage("kw", { field: "unit", declared: "MW", existing: "kW" }, "catalog");
+  assert(!out.ok && out.error === expected, `A1 the catalog sentence, got ${JSON.stringify(out)}`);
+  assert(JSON.stringify(state.working) === before, "A1 nothing was written");
+}
+
+/** F4.225 A2 — the adjacent positive: a declaration that agrees with the catalog lands. */
+export async function assertA2AddPointKeyAcceptsAnAgreeingDeclaration(): Promise<void> {
+  const state: ToolState = { working: {} };
+  const out = await runTool(
+    call("add_point_key", { code: "kw", name: "Active Power", unit: "kW", domain: "electrical" }),
+    state,
+    context({ templates: KW_FIELDS }),
+  );
+  assert(out.ok && state.working.pointKeys?.length === 1, `A2 the key lands, got ${JSON.stringify(out)}`);
+}
+
+/** F4.225 A3 — only the appended key is judged: a contradiction already in the draft is the validator's to report. */
+export async function assertA3OnlyTheAppendedKeyIsJudged(): Promise<void> {
+  const state: ToolState = { working: { pointKeys: [{ code: "kw", name: "Active Power", unit: "MW" }] } as OnboardingDraft };
+  const out = await runTool(call("add_point_key", { code: "flow", name: "Flow" }), state, context({ templates: KW_FIELDS }));
+  assert(out.ok && state.working.pointKeys?.length === 2, `A3 flow lands beside the earlier kw, got ${JSON.stringify(out)}`);
 }

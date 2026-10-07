@@ -306,8 +306,9 @@ export class OnboardingChatService {
     const lower = message.toLowerCase().trim();
     if (
       // F4.220: whole words, so "restriction" is not a protocol question.
+      // F4.224: the question words too, so "listed as P-1" is not `list`.
       (NAMES_A_PROTOCOL.test(lower) || /\bprotocols?\b/.test(lower)) &&
-      /what|which|available|list|show|support/.test(lower)
+      /\b(?:what|which|available|list|show|support)\b/.test(lower)
     ) {
       const protocolContext = await this.protocolService.getContextForOrganization(organizationId);
       const exampleRtu = draft.location?.name

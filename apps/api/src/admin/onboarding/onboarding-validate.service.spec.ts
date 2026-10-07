@@ -254,6 +254,7 @@ const TEMPLATES: ValidateTemplateContext = {
     ["turbidity", true],
     ["score", true],
   ]),
+  pointKeyFields: new Map(),
 };
 
 /**

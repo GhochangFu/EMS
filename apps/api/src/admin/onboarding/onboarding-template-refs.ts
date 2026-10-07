@@ -28,6 +28,7 @@ import {
 // stays pure (no Nest or database import).
 import { SOURCE_DATA_KEY_MAX_LENGTH as SOURCE_DATA_KEY_MAX } from "../../calc/computed-source-data-key";
 import { quoteCell } from "../spreadsheet-guard";
+import type { CatalogPointKeyFields } from "./onboarding-point-key-conflict";
 
 export type TemplatePointRef = {
   readonly pointKey: string;
@@ -78,6 +79,14 @@ export type ValidateTemplateContext = {
    * the draft declares, so validation reads the same rule as the commit.
    */
   readonly pointKeys: ReadonlyMap<string, boolean>;
+  /**
+   * `F4.225`: the unit and domain the catalog holds per code, every row
+   * whatever its `active` flag, read with `pointKeys` in one select. A draft
+   * declaration that contradicts them is refused at commit, so the declaring
+   * tools and validation ask the same `pointKeyDeclarationProblems` question.
+   * Required, so every builder states it (the `formulaPointKeys` precedent).
+   */
+  readonly pointKeyFields: CatalogPointKeyFields;
 };
 
 /** For a caller with no organization and no catalog — a spec, or a draft that names no template. */
@@ -85,6 +94,7 @@ export const EMPTY_TEMPLATE_CONTEXT: ValidateTemplateContext = Object.freeze({
   organization: Object.freeze([]) as readonly TemplateRef[],
   stock: Object.freeze([]) as readonly TemplateRef[],
   pointKeys: new Map<string, boolean>() as ReadonlyMap<string, boolean>,
+  pointKeyFields: new Map() as CatalogPointKeyFields,
 });
 
 /**

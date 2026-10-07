@@ -1,7 +1,9 @@
 import {
   conflictingPointKeyDeclaration,
   pointKeyConflictMessage,
+  pointKeyDeclarationProblems,
   type CatalogPointKey,
+  type CatalogPointKeyFields,
 } from "./onboarding-point-key-conflict";
 
 /**
@@ -94,5 +96,67 @@ export function runOnboardingPointKeyConflictTests(): void {
   assert(
     !draftMessage.includes("global administrator"),
     "the in-draft case is fixed by the author, not by a global administrator",
+  );
+}
+
+// ── F4.225 — the commit walk, without the writes ─────────────────────────
+// One exported claim per `it()`: `assert` throws, so a claim that shared a
+// runner with another would hide behind the first one to fail.
+
+const FIELDS: CatalogPointKeyFields = new Map([["kw", { unit: "kW", domain: "electrical" }]]);
+
+/** P1 — a declaration that contradicts the catalog row is the commit's catalog sentence. */
+export function assertP1ACatalogContradictionIsTheCatalogSentence(): void {
+  const problems = pointKeyDeclarationProblems([{ code: "kw", unit: "MW" }], FIELDS);
+  const expected = pointKeyConflictMessage("kw", { field: "unit", declared: "MW", existing: "kW" }, "catalog");
+  assert(problems.length === 1 && problems[0].message === expected, `P1 the catalog sentence, got ${JSON.stringify(problems)}`);
+}
+
+/** P2 — a declaration that states nothing reuses the catalog row. */
+export function assertP2ADeclarationThatStatesNothingHasNoProblem(): void {
+  const problems = pointKeyDeclarationProblems([{ code: "kw" }], FIELDS);
+  assert(problems.length === 0, `P2 no problem, got ${JSON.stringify(problems)}`);
+}
+
+/** P3 — a code new to the catalog declared twice with two units is the draft sentence, at the second index. */
+export function assertP3ATwiceDeclaredNewCodeIsTheDraftSentence(): void {
+  const problems = pointKeyDeclarationProblems([{ code: "flow", unit: "m3/h" }, { code: "flow", unit: "L/s" }], new Map());
+  const expected = pointKeyConflictMessage("flow", { field: "unit", declared: "L/s", existing: "m3/h" }, "draft");
+  assert(
+    problems.length === 1 && problems[0].index === 1 && problems[0].message === expected,
+    `P3 the draft sentence at index 1, got ${JSON.stringify(problems)}`,
+  );
+}
+
+/** P4 — the problem carries the index of the declaration, not of the first key. */
+export function assertP4TheProblemCarriesItsIndex(): void {
+  const problems = pointKeyDeclarationProblems([{ code: "ok" }, { code: "kw", unit: "MW" }], FIELDS);
+  assert(problems.length === 1 && problems[0].index === 1, `P4 one problem at index 1, got ${JSON.stringify(problems)}`);
+}
+
+/** P5 — the problem names the field that disagreed. */
+export function assertP5TheProblemNamesTheDomainField(): void {
+  const problems = pointKeyDeclarationProblems([{ code: "kw", domain: "hvac" }], FIELDS);
+  assert(problems.length === 1 && problems[0].field === "domain", `P5 a domain problem, got ${JSON.stringify(problems)}`);
+}
+
+/** P6 — a duplicate that agrees is tolerated, as the commit tolerates it. */
+export function assertP6AnAgreeingDuplicateIsTolerated(): void {
+  const problems = pointKeyDeclarationProblems([{ code: "kw", unit: "kW" }, { code: "kw", unit: "kW" }], FIELDS);
+  assert(problems.length === 0, `P6 no problem, got ${JSON.stringify(problems)}`);
+}
+
+/**
+ * P7 — after a catalog contradiction, a later duplicate that agrees with the
+ * first declaration is compared with the catalog again: it gets the catalog
+ * sentence, not a "declared twice" sentence about a unit the draft never stated.
+ */
+export function assertP7ADuplicateAfterACatalogClashIsTheCatalogSentence(): void {
+  const problems = pointKeyDeclarationProblems([{ code: "kw", unit: "MW" }, { code: "kw", unit: "MW" }], FIELDS);
+  const expected = pointKeyConflictMessage("kw", { field: "unit", declared: "MW", existing: "kW" }, "catalog");
+  const second = problems.find((problem) => problem.index === 1);
+  assert(
+    second !== undefined && second.message === expected,
+    `P7 the catalog sentence at index 1, got ${JSON.stringify(problems)}`,
   );
 }

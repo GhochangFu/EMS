@@ -64,6 +64,7 @@ const ORG: ValidateTemplateContext = {
   ],
   stock: [ref("STOCK-A", null, null, [point("flow")], "Flow meter"), ref("STOCK-B", null, null, [point("level")], "Level probe")],
   pointKeys: new Map(),
+  pointKeyFields: new Map(),
 };
 
 /** T21 (with the FORBIDDEN walk in `onboarding-agent-tools.spec.ts`, which covers every tool) */
@@ -97,7 +98,7 @@ export async function assertListTemplatesIsPublishedOnlyWithHighestVersion(): Pr
 /** R2 */
 export async function assertListTemplatesIsBoundedAtOneHundred(): Promise<void> {
   const organization = Array.from({ length: TOOL_LIST_MAX_ITEMS + 1 }, (_, i) => ref(`T${String(i).padStart(3, "0")}`, 1, "published", [point("kw")]));
-  const out = await run("list_templates", {}, { organization, stock: [], pointKeys: new Map() });
+  const out = await run("list_templates", {}, { organization, stock: [], pointKeys: new Map(), pointKeyFields: new Map() });
   assert((out.body.templates as unknown[]).length === TOOL_LIST_MAX_ITEMS, "100 are shown");
   assert(typeof out.body.more === "string" && out.body.more.includes("1"), `a more tail counts the rest, got ${String(out.body.more)}`);
 }
@@ -146,7 +147,7 @@ export async function assertListStockTemplatesFiltersCodeAndName(): Promise<void
 /** R7 */
 export async function assertABigTemplateResultIsCut(): Promise<void> {
   const points = Array.from({ length: 300 }, (_, i) => point(`point_${i}`, `{asset_code}-s${i}`));
-  const out = await run("get_template", { code: "BIG" }, { organization: [ref("BIG", 1, "published", points)], stock: [], pointKeys: new Map() });
+  const out = await run("get_template", { code: "BIG" }, { organization: [ref("BIG", 1, "published", points)], stock: [], pointKeys: new Map(), pointKeyFields: new Map() });
   assert(out.content.endsWith(TOOL_RESULT_CUT_TAIL), "a 300-point result ends with the fixed tail");
   assert(out.content.length <= TOOL_RESULT_MAX_CHARS + TOOL_RESULT_CUT_TAIL.length, "and is bounded");
 }
@@ -190,6 +191,7 @@ const WRITE: ValidateTemplateContext = {
     ["level", true],
     ["efficiency", true],
   ]),
+  pointKeyFields: new Map(),
 };
 
 const RTU = {
@@ -675,7 +677,7 @@ export function assertT19TheCountsReadTheTemplatePerAsset(): void {
   for (const code of ["P-1", "P-2"]) {
     draft.assets!.push({ rtuIndex: 0, code, name: "Pump", siteName: "Berhampur", domain: "electrical", template: { code: "PUMP", version: 1 } });
   }
-  const summary = commitSummary(draft, { organization: [pump], stock: [], pointKeys: new Map() });
+  const summary = commitSummary(draft, { organization: [pump], stock: [], pointKeys: new Map(), pointKeyFields: new Map() });
   // A whole comma-separated part, not a substring: "12 dashboards" — the
   // widget-row count — contains "2 dashboards".
   const parts = summary.split(", ");
@@ -692,6 +694,6 @@ export function assertT19TheCountsSkipAKeyOverTheLengthLimit(): void {
   const draft = baseDraft();
   const vars = { phase: "p".repeat(128) };
   draft.assets!.push({ rtuIndex: 0, code: "P-1", name: "Pump", siteName: "Berhampur", domain: "electrical", template: { code: "PUMP", version: 1, sourceDataKeyVars: vars } });
-  const summary = commitSummary(draft, { organization: [pump], stock: [], pointKeys: new Map() });
+  const summary = commitSummary(draft, { organization: [pump], stock: [], pointKeys: new Map(), pointKeyFields: new Map() });
   assert(summary.includes("1 templated asset") && summary.includes("1 asset point"), `only kw counts, got ${summary}`);
 }
