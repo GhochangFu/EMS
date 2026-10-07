@@ -2,6 +2,8 @@ import { MAX_ONBOARDING_ASSET_POINTS, MAX_ONBOARDING_ASSETS, MAX_ONBOARDING_POIN
 
 import {
   CREDENTIAL_TOOL_ERROR,
+  EXISTING_KEYS_KW_INACTIVE_ERROR,
+  EXISTING_KEYS_NEED_KW_ERROR,
   PROMPT_MARKER_TOOL_ERROR,
   runTool,
   type ToolContext,
@@ -35,6 +37,16 @@ export const GUIDED_DEPTH_REFUSAL =
 
 /** B4 — the guided answer when `set_location`'s element schema refuses the name (a one-character or blank reply). */
 export const GUIDED_LOCATION_NAME_REFUSAL = "A location name needs at least 2 characters.";
+
+/** F3.23 (ADR 0092 decision 3) — the guided answer when "use existing keys" meets a catalog with no active `kw`. */
+export const GUIDED_EXISTING_KEYS_REFUSAL = "The point-key catalog is not ready for this site. Say **kw** to declare the key in this draft.";
+
+/**
+ * F3.23 review — the guided answer when the catalog holds `kw` inactive. "Say **kw**" would loop: the
+ * declaration lands, then auto map's `map_point` refuses the inactive key. Reactivation is the only way out.
+ */
+export const GUIDED_KW_INACTIVE_REFUSAL =
+  "The point-key catalog holds **kw** as inactive, so this site cannot map it. Reactivate **kw** in Point Keys, then try again.";
 
 /** B4 — the guided answer to any other element-schema refusal. */
 export const GUIDED_SCHEMA_REFUSAL = "That value is not valid for this step. Open the preview to check the draft.";
@@ -70,6 +82,12 @@ export function guidedRefusal(name: ToolName, error: string): string {
   if (error === DRAFT_TOO_DEEP_MESSAGE) {
     return GUIDED_DEPTH_REFUSAL;
   }
+  if (error === EXISTING_KEYS_KW_INACTIVE_ERROR) {
+    return GUIDED_KW_INACTIVE_REFUSAL;
+  }
+  if (error === EXISTING_KEYS_NEED_KW_ERROR) {
+    return GUIDED_EXISTING_KEYS_REFUSAL;
+  }
   if (error.startsWith("Invalid arguments: ")) {
     return name === "set_location" ? GUIDED_LOCATION_NAME_REFUSAL : GUIDED_SCHEMA_REFUSAL;
   }
@@ -96,6 +114,8 @@ export type GuidedToolCoverage = { readonly mode: "guided" | "agent_only"; reado
 const FIXED_PROMPTS = "the guided mode has fixed prompts";
 const REMOVE_DEFERRED = "deferred, ADR 0090 Amendment 2";
 const TEMPLATES_AGENT_ONLY = "B6 / ADR 0091 decision 11: templates are the Asset Templates editor's in guided mode";
+const MAPPINGS_AGENT_ONLY =
+  "F3.23 / ADR 0092 decision 6: bulk point keys and mappings are agent-only; the guided mode keeps its kw sample";
 
 /**
  * ADR 0090 Amendment 2 B7 — every registry tool is either covered by a guided
@@ -129,4 +149,7 @@ export const GUIDED_TOOL_COVERAGE: Readonly<Record<ToolName, GuidedToolCoverage>
   import_stock_template: { mode: "agent_only", reason: TEMPLATES_AGENT_ONLY },
   remove_template: { mode: "agent_only", reason: TEMPLATES_AGENT_ONLY },
   add_template_assets: { mode: "agent_only", reason: TEMPLATES_AGENT_ONLY },
+  add_point_keys: { mode: "agent_only", reason: MAPPINGS_AGENT_ONLY },
+  map_points: { mode: "agent_only", reason: MAPPINGS_AGENT_ONLY },
+  get_asset_points: { mode: "agent_only", reason: MAPPINGS_AGENT_ONLY },
 };

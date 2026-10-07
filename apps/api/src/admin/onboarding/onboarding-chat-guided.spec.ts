@@ -214,7 +214,7 @@ export async function assertAutoMapMapsEveryUnmappedPlainAsset(): Promise<void> 
   const result = await ruleBasedTurn("auto map", draft, "mappings");
   sameLines(
     result.actionLines,
-    ["Mapped s09_r01 → kw on asset BERHAMPUR-ASSET-1", "Mapped s09_r01 → kw on asset BERHAMPUR-ASSET-2"],
+    ["Mapped 's09_r01' → 'kw' on asset 'BERHAMPUR-ASSET-1'", "Mapped 's09_r01' → 'kw' on asset 'BERHAMPUR-ASSET-2'"],
     "one map_point line per unmapped plain asset",
   );
   const indexes = (result.draftPatch.assetPoints ?? []).map((point) => point.assetIndex);
@@ -227,7 +227,7 @@ export async function assertAutoMapSkipsMappedAndTemplatedAssets(): Promise<void
   const plain = { ...ASSET, code: "BERHAMPUR-ASSET-3" };
   const draft = { ...draftAt("mappings"), assets: [ASSET, templated, plain], assetPoints: [POINT] } as OnboardingDraft;
   const result = await ruleBasedTurn("auto map", draft, "mappings");
-  sameLines(result.actionLines, ["Mapped s09_r01 → kw on asset BERHAMPUR-ASSET-3"], "only the unmapped plain asset");
+  sameLines(result.actionLines, ["Mapped 's09_r01' → 'kw' on asset 'BERHAMPUR-ASSET-3'"], "only the unmapped plain asset");
 }
 
 /** The exact refusal reply a guided write answers: the guided sentence between the lead and the step prompt. */

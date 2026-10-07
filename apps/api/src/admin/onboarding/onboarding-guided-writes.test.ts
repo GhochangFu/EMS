@@ -9,6 +9,9 @@ import {
   assertAnUnclassifiedRefusalFailsClosed,
   assertEveryToolIsClassified,
   assertTheDepthBoundIsRefused,
+  assertTheExistingKeysRefusalIsItsGuidedSentence,
+  assertUseExistingKeysWithAnInactiveKwIsRefusedWithoutTheSayKwLoop,
+  assertUseExistingKeysWithoutKwIsRefusedOnTheGuidedPath,
 } from "./onboarding-guided-writes.spec";
 
 /** Vitest entry point — see `admin.schema.test.ts` for the pattern (ADR 0014). One `it()` per claim. */
@@ -43,5 +46,17 @@ describe("guidedWrite over the tool registry (F3.27 U3)", () => {
 
   it("classifies every registry tool", () => {
     assertEveryToolIsClassified();
+  });
+
+  it("answers the no-active-kw refusal with its guided sentence (F3.23)", () => {
+    assertTheExistingKeysRefusalIsItsGuidedSentence();
+  });
+
+  it("refuses use existing keys on the guided path without an active kw (F3.23)", async () => {
+    await assertUseExistingKeysWithoutKwIsRefusedOnTheGuidedPath();
+  });
+
+  it("refuses use existing keys on an inactive kw without the say-kw loop (F3.23 review)", async () => {
+    await assertUseExistingKeysWithAnInactiveKwIsRefusedWithoutTheSayKwLoop();
   });
 });

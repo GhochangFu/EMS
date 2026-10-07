@@ -13,6 +13,8 @@ import {
 } from "./onboarding-agent-loop";
 import { TOOL_RESULT_MAX_CHARS, type ToolContext } from "./onboarding-agent-tools";
 import type { LlmMessage, LlmReply, LlmToolCall, OnboardingLlmProvider } from "./onboarding-llm-port";
+import { stepLabelFor } from "./onboarding-chat-rule-based";
+import { filterSuggestedReplies } from "./onboarding-suggested-replies";
 import { EMPTY_TEMPLATE_CONTEXT } from "./onboarding-template-refs";
 import { OnboardingValidateService } from "./onboarding-validate.service";
 
@@ -316,4 +318,25 @@ export function assertThePromptNamesSuggestReplies(): void {
     prompt.includes("When you need the user to choose, ask one question per turn and offer the choices with suggest_replies."),
     "the prompt carries the suggest_replies sentence",
   );
+}
+
+/** F3.23 (ADR 0092 decision 5): the prompt carries the question loop. */
+export function assertThePromptCarriesTheMappingQuestionLoop(): void {
+  const prompt = buildSystemPrompt({ orgName: "Ion Exchange", phase: "mappings", typeCodes: ["smoc_campus"], draft: {} });
+  assert(
+    prompt.includes("Write only after the user agrees: declare missing keys with add_point_keys, then write the rows with map_points."),
+    "the prompt carries the write-after-agreement sentence",
+  );
+  assert(prompt.includes("Say which keys are new to the catalog."), "the prompt carries the new-keys sentence");
+}
+
+/** F3.23 Q9: the two chips survive the filter and are not step labels the F3.25 intercept answers by code. */
+export function assertTheMappingChipsSurviveAndAreNotStepLabels(): void {
+  const chips = ["Write these mappings", "Change the table"];
+  assert(JSON.stringify(filterSuggestedReplies(chips)) === JSON.stringify(chips), "both chips pass the filter");
+  const phases = ["location", "rtu", "point_keys", "assets", "mappings", "review"] as const;
+  for (const phase of phases) {
+    const label = stepLabelFor(phase);
+    assert(label !== chips[0] && label !== chips[1], `a chip is not the step label of ${phase}`);
+  }
 }

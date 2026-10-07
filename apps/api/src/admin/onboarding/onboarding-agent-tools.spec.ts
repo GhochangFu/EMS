@@ -3,6 +3,7 @@ import type { OnboardingDraft } from "@bms/shared";
 import {
   CREDENTIALED_CONNECTION_ERROR,
   CREDENTIAL_TOOL_ERROR,
+  EXISTING_KEYS_NEED_KW_ERROR,
   TOOL_DEFINITIONS,
   TOOL_LIST_MAX_ITEMS,
   TOOL_RESULT_CUT_TAIL,
@@ -11,9 +12,10 @@ import {
   type ToolContext,
   type ToolState,
 } from "./onboarding-agent-tools";
+import { COMMIT_UNIQUE_CONFLICTS } from "./onboarding-commit-conflict";
 import { commitSummary } from "./onboarding-commit-proposal";
 import { PROMPT_OMITTED_MARKER } from "./onboarding-prompt-budget";
-import { EMPTY_TEMPLATE_CONTEXT } from "./onboarding-template-refs";
+import { EMPTY_TEMPLATE_CONTEXT, unresolvedPointKey, type ValidateTemplateContext } from "./onboarding-template-refs";
 import { OnboardingValidateService } from "./onboarding-validate.service";
 
 function assert(condition: boolean, message: string): void {
@@ -67,6 +69,9 @@ function readyDraft(): OnboardingDraft {
   } as OnboardingDraft;
 }
 
+/** F3.23: a fleet catalog that holds `kw` active, as the global seed does. */
+const KW_ACTIVE: ValidateTemplateContext = { ...EMPTY_TEMPLATE_CONTEXT, pointKeys: new Map([["kw", true]]) };
+
 function call(name: string, args: unknown): { id: string; name: string; arguments: string } {
   return { id: "c1", name, arguments: typeof args === "string" ? args : JSON.stringify(args) };
 }
@@ -79,7 +84,7 @@ const FORBIDDEN = ["credentialsSet", "_secrets", "_commitProposal", "rtuTargetCo
 
 /** Every tool's JSON Schema; none carries a field the agent must never write. */
 export function assertEveryToolHasAJsonSchemaWithNoForbiddenProperty(): void {
-  assert(TOOL_DEFINITIONS.length === 25, `there are 25 tools, got ${TOOL_DEFINITIONS.length}`);
+  assert(TOOL_DEFINITIONS.length === 28, `there are 28 tools, got ${TOOL_DEFINITIONS.length}`);
   for (const tool of TOOL_DEFINITIONS) {
     const text = JSON.stringify(tool.parameters);
     for (const field of FORBIDDEN) {
@@ -168,11 +173,11 @@ export async function assertSetLocationDerivesSlugAndCode(): Promise<void> {
 
 export async function assertUseExistingPointKeysWritesOnlyThatFlag(): Promise<void> {
   const state: ToolState = { working: { onboardingMeta: { importedFromExcel: true } } as OnboardingDraft };
-  const out = await runTool(call("use_existing_point_keys", { value: true }), state, context());
+  const out = await runTool(call("use_existing_point_keys", { value: true }), state, context({ templates: KW_ACTIVE }));
   assert(out.ok, "the flag is set");
   assert(state.working.onboardingMeta?.useExistingPointKeys === true, "useExistingPointKeys flips");
   assert(state.working.onboardingMeta?.importedFromExcel === true, "the other meta field survives");
-  const extra = await runTool(call("use_existing_point_keys", { value: true, rtuTargetCount: 9 }), state, context());
+  const extra = await runTool(call("use_existing_point_keys", { value: true, rtuTargetCount: 9 }), state, context({ templates: KW_ACTIVE }));
   assert(!extra.ok, "no other meta field can ride along");
 }
 
@@ -419,4 +424,89 @@ export async function assertSuggestRepliesRefusesFiveAndAnEmptyReply(): Promise<
   }
   const four = await runTool(call("suggest_replies", { replies: ["a", "b", "c", "d"] }), { working: {} }, context());
   assert(four.ok, "four replies pass (the adjacent positive)");
+}
+
+/** F3.23 T-A (ADR 0092 decision 2): map_point refuses a key that resolves nowhere, with the validator's sentence. */
+export async function assertMapPointRefusesAnUndeclaredKey(): Promise<void> {
+  const state: ToolState = { working: readyDraft() };
+  const out = await runTool(call("map_point", { assetIndex: 0, pointKey: "kvar", sourceDataKey: "s02" }), state, context());
+  const sentence = unresolvedPointKey("kvar", new Set(["kw"]), new Map());
+  assert(!out.ok && out.error === sentence, `refused with the unresolved-key sentence, got ${out.content}`);
+  assert(state.working.assetPoints?.length === 1, "the mappings are unchanged");
+  assert(out.actionLine === undefined, "a refused call writes no action line");
+}
+
+/** F3.23 T-A control: a declared key appends, and the line quotes every model string. */
+export async function assertMapPointAppendsADeclaredKeyWithAQuotedLine(): Promise<void> {
+  const state: ToolState = { working: { ...readyDraft(), assetPoints: [] } };
+  const out = await runTool(call("map_point", { assetIndex: 0, pointKey: "kw", sourceDataKey: "s02" }), state, context());
+  assert(out.ok && state.working.assetPoints?.length === 1, `the mapping is appended, got ${out.content}`);
+  assert(out.actionLine === "Mapped 's02' → 'kw' on asset 'BERHAMPUR-ASSET-1'", `the quoted line: ${out.actionLine}`);
+}
+
+/** F3.23 T-B: a second mapping of one point key on one asset is the commit's unique conflict, refused before it. */
+export async function assertMapPointRefusesADuplicatePointKeyOnTheAsset(): Promise<void> {
+  const state: ToolState = { working: readyDraft() };
+  const out = await runTool(call("map_point", { assetIndex: 0, pointKey: "kw", sourceDataKey: "s02" }), state, context());
+  const sentence = COMMIT_UNIQUE_CONFLICTS.get("asset_points_asset_id_point_key_unique")?.message;
+  assert(sentence !== undefined && !out.ok && out.error === sentence, `refused with the unique-conflict sentence, got ${out.content}`);
+  assert(state.working.assetPoints?.length === 1, "the mappings are unchanged");
+}
+
+/** F3.23 T-C: a templated asset takes no mapping (the F3.22 V4 sentence). */
+export async function assertMapPointRefusesATemplatedAsset(): Promise<void> {
+  const draft: OnboardingDraft = { ...readyDraft(), assetPoints: [] };
+  draft.assets = [{ ...draft.assets![0]!, template: { code: "PUMP" } }];
+  const state: ToolState = { working: draft };
+  const out = await runTool(call("map_point", { assetIndex: 0, pointKey: "kw", sourceDataKey: "s02" }), state, context());
+  const sentence = "Asset 'BERHAMPUR-ASSET-1' is built from a template; its points come from the template, so map no point to it";
+  assert(!out.ok && out.error === sentence, `refused with the V4 sentence, got ${out.content}`);
+  assert(state.working.assetPoints?.length === 0, "nothing is written");
+}
+
+/** F3.23 T-D (F4.195 left open): a key only the draft declares cannot leave while a mapping uses it. */
+export async function assertRemovePointKeyIsRefusedWhileAMappingUsesIt(): Promise<void> {
+  const state: ToolState = { working: readyDraft() };
+  const out = await runTool(call("remove_point_key", { index: 0 }), state, context());
+  assert(
+    !out.ok && out.error === "Point key 'kw' is used by mappings: 's01'. Remove those mappings first.",
+    `refused naming the mapping, got ${out.content}`,
+  );
+  assert(state.working.pointKeys?.length === 1, "the point key stays");
+}
+
+/** F3.23 T-D control: with `kw` active in the catalog the mapping still resolves, so the key leaves. */
+export async function assertRemovePointKeyRemovesAKeyTheCatalogStillResolves(): Promise<void> {
+  const state: ToolState = { working: readyDraft() };
+  const out = await runTool(call("remove_point_key", { index: 0 }), state, context({ templates: KW_ACTIVE }));
+  assert(out.ok && state.working.pointKeys?.length === 0, `removed, got ${out.content}`);
+  assert(out.actionLine === "Removed point key 'kw'", `the quoted line: ${out.actionLine}`);
+  assert(state.working.assetPoints?.length === 1, "the mapping stays");
+}
+
+/** F3.23 T-E (ADR 0092 decision 3): the existing catalog cannot be chosen when it holds no active `kw`. */
+export async function assertUseExistingPointKeysIsRefusedWithoutAnActiveKw(): Promise<void> {
+  const state: ToolState = { working: { onboardingMeta: { importedFromExcel: true } } as OnboardingDraft };
+  const out = await runTool(call("use_existing_point_keys", { value: true }), state, context());
+  assert(!out.ok && out.error === EXISTING_KEYS_NEED_KW_ERROR, `refused, got ${out.content}`);
+  assert(JSON.stringify(state.working.onboardingMeta) === '{"importedFromExcel":true}', "onboardingMeta is unchanged");
+}
+
+/** F3.23 T-E control: declaring the keys in the draft is never refused, whatever the catalog holds. */
+export async function assertUseExistingPointKeysFalsePassesWithoutAnActiveKw(): Promise<void> {
+  const state: ToolState = { working: { onboardingMeta: { importedFromExcel: true } } as OnboardingDraft };
+  const out = await runTool(call("use_existing_point_keys", { value: false }), state, context());
+  assert(out.ok && state.working.onboardingMeta?.useExistingPointKeys === false, `the flag is set, got ${out.content}`);
+}
+
+/** F3.23 T-F (F4.195 left open): the add_point_key line quotes the code. */
+export async function assertAddPointKeyLineIsQuoted(): Promise<void> {
+  const added = await runTool(call("add_point_key", { code: "kw", name: "Active Power" }), { working: {} }, context());
+  assert(added.ok && added.actionLine === "Added point key 'kw'", `the add line: ${added.actionLine}`);
+}
+
+/** F3.23 T-F: the remove_asset_point line quotes both keys. */
+export async function assertRemoveAssetPointLineIsQuoted(): Promise<void> {
+  const removed = await runTool(call("remove_asset_point", { index: 0 }), { working: readyDraft() }, context());
+  assert(removed.ok && removed.actionLine === "Removed mapping 's01' → 'kw'", `the remove line: ${removed.actionLine}`);
 }

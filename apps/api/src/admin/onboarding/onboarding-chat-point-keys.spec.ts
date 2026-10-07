@@ -468,6 +468,9 @@ export async function assertAnotherRtuNamingAProtocolTakesIt(): Promise<void> {
   assert(result.draftPatch.rtus?.[1]?.protocol === "modbus_tcp", `the named protocol, got ${JSON.stringify(result.draftPatch.rtus)}`);
 }
 
+/** F3.23: a fleet catalog that holds `kw` active. */
+const KW_ACTIVE = { ...EMPTY_TEMPLATE_CONTEXT, pointKeys: new Map([["kw", true]]) };
+
 /** The guided mode with an organization whose catalog holds one key. */
 async function orgTurn(message: string, draft: OnboardingDraft): Promise<ChatTurnResult> {
   const service = new OnboardingChatService(
@@ -477,7 +480,8 @@ async function orgTurn(message: string, draft: OnboardingDraft): Promise<ChatTur
     { listPointKeys: async () => [KW], formatPointKeysForChat: () => "`kw`" } as never,
     { listLocationTypes: async () => [{ code: "smoc_campus", label: "SMOC campus" }] } as never,
     { resolveForOrganization: async () => ({ kind: "guided", reason: "platform_off" }) } as never,
-    { context: async () => EMPTY_TEMPLATE_CONTEXT } as never,
+    // F3.23 (ADR 0092 decision 3): the fleet catalog holds `kw` active, as the global seed does.
+    { context: async () => KW_ACTIVE } as never,
   );
   return service.handleTurn(message, draft, "rtu", "Ion Exchange", "org-1", { sessionId: "s-1", history: [] });
 }
@@ -499,7 +503,7 @@ export async function assertExistingKeysAreTakenAtThePointKeyStep(): Promise<voi
 export async function assertTheKwTurnAnswersItsActionLine(): Promise<void> {
   const result = await ruleBasedTurn("kw", { location: PLACE, rtus: [MODBUS_RTU] }, "point_keys");
   assert(
-    JSON.stringify(result.actionLines) === JSON.stringify(["Added point key kw"]),
+    JSON.stringify(result.actionLines) === JSON.stringify(["Added point key 'kw'"]),
     `the add_point_key action line, got ${JSON.stringify(result.actionLines)}`,
   );
 }

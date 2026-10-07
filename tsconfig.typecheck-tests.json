@@ -126,6 +126,7 @@
     "tests/e4.3-water-balance-roles-schema.test.ts",
     "tests/e4.3-demo-water-plant.test.ts",
     "tests/f3.28-offline-bound-single-source.test.ts",
+    "tests/f3.23-mapping-predicate-single-source.test.ts",
     "tests/f4.156-query-cache-session-wiring.test.ts",
     "tests/f3.67-site-control-room-views-schema.test.ts",
     "tests/f3.67-site-control-room-views-schema.integration.test.ts",

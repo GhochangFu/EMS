@@ -316,7 +316,7 @@ export async function assertActionLinesAreStoredBetweenUserAndAssistant(): Promi
   await service.chat(JWT, "s-1", "add kvar and pf");
   const stored = (record.updates[0]?.messages ?? []) as OnboardingChatMessage[];
   assert(stored.map((m) => m.role).join(",") === "user,action,action,assistant", `got ${stored.map((m) => m.role).join(",")}`);
-  assert(stored[1].content === "Added point key kvar" && stored[2].content === "Added point key pf", "the code-written lines, in order");
+  assert(stored[1].content === "Added point key 'kvar'" && stored[2].content === "Added point key 'pf'", "the code-written lines, in order");
 }
 
 export async function assertPatchDraftClearsTheProposal(): Promise<void> {
@@ -358,7 +358,8 @@ export async function assertHistoryAndActionLinesAreScrubbed(): Promise<void> {
     { id: "u", role: "user", content: "password: hunter2", createdAt: "x" },
     { id: "a", role: "assistant", content: "noted", createdAt: "x" },
   ];
-  const session = sessionRow(readyDraft(), history);
+  // F3.23: no mapping yet, so this map_point passes the mapping rule and writes its line.
+  const session = sessionRow({ ...readyDraft(), assetPoints: [] }, history);
   const llm = new FakeLlmProvider([
     calls(toolCall("map_point", { assetIndex: 0, pointKey: "kw", sourceDataKey: "password=hunter2" })),
     { kind: "final", text: "ok" },

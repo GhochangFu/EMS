@@ -125,9 +125,36 @@ export function assertCommitSummaryIsBoundedAndCodeWritten(): void {
   assert(summary.length <= 4000, `the summary fits the stored bound (${summary.length})`);
   const one = commitSummary(draft, EMPTY_TEMPLATE_CONTEXT);
   assert(
-    one === "location 'Berhampur', 1 RTU ('RTU-1'), 1 point key, 1 asset, 1 mapping",
+    one === "location 'Berhampur', 1 RTU ('RTU-1'), 1 point key (1 new to the catalog), 1 asset, 1 mapping",
     `the one-of-each summary is exact: ${one}`,
   );
+}
+
+/** F3.23 (ADR 0092 decision 5): the summary names how many declared keys the catalog lacks. */
+export function assertSummaryNamesTheKeysNewToTheCatalog(): void {
+  const keys = [
+    { code: "kw", name: "Active Power", domain: "electrical", unit: "kW" },
+    { code: "kvar", name: "Reactive Power", domain: "electrical", unit: "kvar" },
+  ];
+  const draft = { ...readyDraft(), pointKeys: keys } as OnboardingDraft;
+  const some = commitSummary(draft, { ...EMPTY_TEMPLATE_CONTEXT, pointKeys: new Map([["kw", true]]) });
+  assert(some.includes("2 point keys (1 new to the catalog), "), `S1 names the one new key: ${some}`);
+  const all = commitSummary(draft, {
+    ...EMPTY_TEMPLATE_CONTEXT,
+    pointKeys: new Map([
+      ["kw", true],
+      ["kvar", true],
+    ]),
+  });
+  assert(all.includes("2 point keys, ") && !all.includes("new to the catalog"), `S2 control: no parenthesis: ${all}`);
+}
+
+/** F3.23 review S3: a code declared twice is one catalog row at commit, so it counts once as new. */
+export function assertSummaryCountsADuplicatedNewKeyOnce(): void {
+  const foo = { code: "foo", name: "Foo", domain: "electrical", unit: "kW" };
+  const draft = { ...readyDraft(), pointKeys: [foo, { ...foo }] } as OnboardingDraft;
+  const summary = commitSummary(draft, { ...EMPTY_TEMPLATE_CONTEXT, pointKeys: new Map([["kw", true]]) });
+  assert(summary.includes("(1 new to the catalog)"), `S3 counts the distinct code once: ${summary}`);
 }
 
 /** The client view never carries the proposal or its hash. */
