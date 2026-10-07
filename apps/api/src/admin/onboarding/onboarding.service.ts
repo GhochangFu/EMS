@@ -366,7 +366,7 @@ export class OnboardingService {
     const changed =
       Object.keys(diffSections(session.draft as OnboardingDraft, mergedDraft as OnboardingDraft)).length > 0;
     const updated = await withTenant(this.tenantDb, session.organizationId, async (tx) => {
-      // Lock placement is gated by the live psql race, not by a spec: the fake answers `.for()` with a static row.
+      // Lock placement is gated by onboarding-chat-lock.integration.test.ts (real Postgres): the unit fakes answer `.for()` with a static row.
       const locked = await this.lockSession(tx, sessionId);
       if (!locked || locked.status !== "draft") {
         // A commit landed while the model ran.
