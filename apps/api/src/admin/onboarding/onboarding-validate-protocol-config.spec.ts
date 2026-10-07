@@ -95,6 +95,25 @@ export function assertAHeadTopicWildcardIsReportedOnce(): void {
   assert(errors[0].message === WILDCARD_MESSAGE, `the F4.215 sentence, got ${errors[0].message}`);
 }
 
+/**
+ * V4b (F3.24a review L1) — a wildcard in the `mqttTopic` fallback is one fault and
+ * gives one row: the F4.215 sentence at `config.topic`, where `rtuTopic` reads it,
+ * and no schema row at `config.mqttTopic`.
+ */
+export function assertAFallbackTopicWildcardIsReportedOnce(): void {
+  const rows = configErrors(errorsOf(mqttRtu({ mqttTopic: "a/#" })), 0);
+  assert(rows.length === 1, `exactly one config error, got ${JSON.stringify(rows)}`);
+  assert(rows[0].path === "rtus.0.config.topic", `the row is at rtus.0.config.topic, got ${rows[0].path}`);
+  assert(rows[0].message === WILDCARD_MESSAGE, `the F4.215 sentence, got ${rows[0].message}`);
+}
+
+/** V4c — with `topic` set, `rtuTopic` does not read `mqttTopic`, so a wildcard there keeps its schema row. */
+export function assertAShadowedFallbackWildcardKeepsItsSchemaRow(): void {
+  const rows = configErrors(errorsOf(mqttRtu({ topic: "a/b", mqttTopic: "a/#" })), 0);
+  assert(rows.length === 1, `exactly one config error, got ${JSON.stringify(rows)}`);
+  assert(rows[0].path === "rtus.0.config.mqttTopic", `the row is at rtus.0.config.mqttTopic, got ${rows[0].path}`);
+}
+
 /** V5 — a draft that sets `rejectUnauthorized` is refused (plan Q1): ingest would skip the RTU. */
 export function assertRejectUnauthorizedIsRefused(): void {
   const errors = errorsOf(mqttRtu({ topic: "a/b", rejectUnauthorized: false })).filter(

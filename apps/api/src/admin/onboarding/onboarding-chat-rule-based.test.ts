@@ -10,6 +10,7 @@ import {
   assertANamedProtocolAnswersItsActionLine,
   assertANonMqttDefaultConfigIsTheCatalogExample,
   assertAGuidedTurnReadsNothingOfTheOrganization,
+  assertAWildcardTopicOnTheAddBranchAnswersTheWildcardSentence,
 } from "./onboarding-chat-rule-based.spec";
 
 /** Vitest entry point — see `admin.schema.test.ts` for the pattern (ADR 0014). One `it()` per claim. */
@@ -32,6 +33,10 @@ describe("the guided onboarding mode, as a module (F4.217)", () => {
 
   it("carries a typed MQTT topic into the config", async () => {
     await assertAMqttMessageCarriesItsTopicIntoTheConfig();
+  });
+
+  it("a wildcard topic on the add branch answers the wildcard sentence and adds no RTU (F3.24a review M1)", async () => {
+    await assertAWildcardTopicOnTheAddBranchAnswersTheWildcardSentence();
   });
 
   it("answers a confirm step through finalizeTurn with an empty patch", async () => {

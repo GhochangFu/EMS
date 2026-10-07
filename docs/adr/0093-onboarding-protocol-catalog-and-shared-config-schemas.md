@@ -414,6 +414,9 @@ of a table that no database holds.
 - **ADR 0090 *Consequences*, the *Deferred* bullet** — "protocol discovery
   (`F3.24`)" becomes: live discovery (`F3.24b`) only; the protocol prompts
   and checks are no longer deferred.
+- **ADR 0043 decision 5** — `protocol_catalog` is not a table: the protocol
+  catalog is code in `@bms/shared/ingest` (decision 3), so the vocabulary
+  table list no longer names a table that exists.
 
 **Confirmed unchanged:** ADR 0016 §1 (the interface, including the optional
 `discover()` and `supportsDiscovery`), §3's binding and skip-and-log rules,

@@ -210,10 +210,22 @@ export class OnboardingValidateService {
           const reported = new Set(
             errors.filter((e) => e.path.startsWith(`rtus.${i}.config`)).map((e) => e.path),
           );
-          const parsed = protocolCatalogEntry(r.data.protocol).draftConfigSchema.safeParse(rtu.config ?? {});
+          // F3.24a review L1: `rtuTopic` falls back to `mqttTopic` when `topic` is
+          // not a string, so a hand-written row at `config.topic` then reports the
+          // `mqttTopic` value, and its schema issue is the same fault.
+          const config = rtu.config ?? {};
+          if (
+            reported.has(`rtus.${i}.config.topic`) &&
+            typeof config.topic !== "string" &&
+            typeof config.mqttTopic === "string"
+          ) {
+            reported.add(`rtus.${i}.config.mqttTopic`);
+          }
+          const parsed = protocolCatalogEntry(r.data.protocol).draftConfigSchema.safeParse(config);
           if (!parsed.success) {
             for (const issue of parsed.error.issues) {
-              const path = `rtus.${i}.config.${issue.path.join(".")}`;
+              // A root-level issue has an empty path; joining the segments leaves no trailing dot.
+              const path = [`rtus.${i}.config`, ...issue.path].join(".");
               if (!reported.has(path)) {
                 errors.push({ path, message: issue.message });
                 reported.add(path);

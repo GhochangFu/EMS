@@ -1,16 +1,10 @@
 import { expect } from "vitest";
 
 import { onboardingProtocolSchema } from "./contracts/onboarding";
-// Through `./ingest`, the module tree's entry: `./ingest-adapters/mqtt` imports
-// `./ingest` back at runtime, so entering at `./protocol-catalog` would build the
-// catalog before the MQTT draft schema exists.
-import {
-  INGEST_WIRED_PROTOCOLS,
-  PROTOCOL_CATALOG,
-  describeProtocol,
-  mqttDraftConfigSchema,
-  protocolCatalogEntry,
-} from "./ingest";
+import { mqttDraftConfigSchema } from "./ingest-adapters/mqtt";
+// Entered at the module itself, not through `./ingest`: no runtime import cycle
+// remains (`F3.24a` review), so the catalog builds in any entry order.
+import { INGEST_WIRED_PROTOCOLS, PROTOCOL_CATALOG, describeProtocol, protocolCatalogEntry } from "./protocol-catalog";
 
 /**
  * `F3.24a` / ADR 0093 decisions 2 and 3 — the code-defined protocol catalog.
@@ -24,7 +18,7 @@ import {
  * A **copy** of the API's credential-key vocabulary, because `packages/shared`
  * cannot import `apps/api`. Two sources:
  * - `SECRET_FRAGMENTS`, `apps/api/src/admin/onboarding/onboarding-redaction.ts`
- *   (25 fragments, matched as substrings of the normalised key);
+ *   (24 fragments, matched as substrings of the normalised key);
  * - `AGENT_SECRET_KEY_NAMES`, `apps/api/src/admin/onboarding/onboarding-agent-tools.ts`
  *   (exact normalised names), plus that file's `includes("auth")` rule.
  * `onboarding-protocol.service.spec.ts` runs the **real** predicate,
@@ -86,13 +80,15 @@ function keysDeep(value: unknown): string[] {
   return [];
 }
 
-/** C1 — one entry per onboarding protocol, no duplicate, MQTT first. */
+/** C1 — one entry per onboarding protocol, no duplicate, MQTT first, in declaration order. */
 export function assertOneEntryPerOnboardingProtocolInDeclarationOrder(): void {
   const codes = PROTOCOL_CATALOG.map((e) => e.code);
   expect(new Set(codes)).toEqual(new Set(onboardingProtocolSchema.options));
   expect(new Set(codes).size).toBe(codes.length);
   expect(codes).toHaveLength(8);
   expect(codes[0]).toBe("mqtt");
+  // Declaration order is display order (`protocol-catalog.ts`), so the whole order is pinned.
+  expect(codes).toEqual(["mqtt", "simulator", "catalog", "modbus_tcp", "bacnet", "opc_ua", "snmp", "rest_poller"]);
 }
 
 /** C2 — `ingestWired` is derived from the wired list, and the list is MQTT alone today. */

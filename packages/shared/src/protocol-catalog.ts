@@ -20,9 +20,6 @@ import { mqttDraftConfigSchema } from "./ingest-adapters/mqtt";
  * No field name or example key is a credential: the model and the guided reply
  * echo these, and a credential goes on the RTU step, never in chat. The
  * catalog spec and `onboarding-protocol.service.spec.ts` gate that rule.
- *
- * Reached through `./ingest`, which re-exports it: enter the module tree there,
- * because `./ingest-adapters/mqtt` imports `./ingest` back at runtime.
  */
 
 /**

@@ -38,24 +38,13 @@ export const INGEST_PROTOCOLS = [
 
 export type IngestProtocol = (typeof INGEST_PROTOCOLS)[number];
 
-/**
- * `F4.221` — whether an MQTT topic holds a wildcard, `#` or `+`.
- *
- * A device topic names one device, so a wildcard is always a mistake: `#` would
- * subscribe to the entire broker. Three readers share this one predicate so they
- * cannot disagree: the MQTT device schema the ingest adapter parses with
- * (`./ingest-adapters/mqtt`, since `F3.24a`), the onboarding agent's `topicHasWildcard`
- * (`apps/api/src/admin/onboarding/onboarding-chat-summaries.ts`), and the admin
- * RTU routes' `mqttTopic` refine (`apps/api/src/admin/rtus/rtus.schema.ts`).
- */
-export function mqttTopicHasWildcard(topic: string): boolean {
-  return topic.includes("#") || topic.includes("+");
-}
+// `F4.221`: the one MQTT wildcard predicate. A leaf module, so the MQTT schemas
+// below import it without importing this module back (`F3.24a` review).
+export { mqttTopicHasWildcard } from "./mqtt-topic";
 
 // `F3.24a` (ADR 0093 decision 4): the MQTT config, device and draft schemas.
 export * from "./ingest-adapters/mqtt";
-// `F3.24a` (ADR 0093 decisions 2, 3): the code-defined protocol catalog. After
-// the MQTT schemas, because the catalog reads `mqttDraftConfigSchema` at load.
+// `F3.24a` (ADR 0093 decisions 2, 3): the code-defined protocol catalog.
 export * from "./protocol-catalog";
 
 /**

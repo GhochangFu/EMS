@@ -1,10 +1,8 @@
 import { z } from "zod";
 
-// A runtime import of the module that re-exports this one (`ingest.ts` has
-// `export * from "./ingest-adapters/mqtt"`). The cycle is safe: the predicate is
-// read only inside the `refine` callback, at parse time, never while either
-// module is still loading.
-import { mqttTopicHasWildcard } from "../ingest";
+// The leaf module, not `../ingest`: that module re-exports this one, and a
+// runtime import back from it would make the catalog depend on entry order.
+import { mqttTopicHasWildcard } from "../mqtt-topic";
 
 /**
  * The MQTT adapter's config and device schemas (ADR 0016 §6), and the onboarding

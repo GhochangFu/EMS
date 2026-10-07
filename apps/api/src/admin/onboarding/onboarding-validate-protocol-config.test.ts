@@ -1,7 +1,9 @@
 import { describe, it } from "vitest";
 
 import {
+  assertAFallbackTopicWildcardIsReportedOnce,
   assertAHeadTopicWildcardIsReportedOnce,
+  assertAShadowedFallbackWildcardKeepsItsSchemaRow,
   assertAModbusRtuAcceptsAnyConfig,
   assertANestedDeviceWildcardIsReportedOnce,
   assertANumericPortHasNoConfigError,
@@ -20,6 +22,9 @@ describe("validate — rtus[].config against the protocol's draft schema (F3.24a
   it("accepts an absent host and port", () => assertAnAbsentHostAndPortStillPass());
   it("reports a nested device wildcard once", () => assertANestedDeviceWildcardIsReportedOnce());
   it("reports a head-topic wildcard once", () => assertAHeadTopicWildcardIsReportedOnce());
+  it("reports a mqttTopic fallback wildcard once (F3.24a review L1)", () => assertAFallbackTopicWildcardIsReportedOnce());
+  it("keeps the schema row for a mqttTopic wildcard that topic shadows", () =>
+    assertAShadowedFallbackWildcardKeepsItsSchemaRow());
   it("refuses rejectUnauthorized", () => assertRejectUnauthorizedIsRefused());
   it("accepts any config on modbus_tcp", () => assertAModbusRtuAcceptsAnyConfig());
   it("accepts an empty config on simulator", () => assertASimulatorRtuAcceptsAnEmptyConfig());

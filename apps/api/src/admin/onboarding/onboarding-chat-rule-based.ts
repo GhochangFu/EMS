@@ -487,12 +487,21 @@ export async function handleRuleBasedTurn(
     const protocol =
       addAnother && lastProtocol && !NAMES_A_PROTOCOL.test(lower) ? lastProtocol : detectProtocol(lower);
     const rtuCode = `RTU-${(draft.rtus?.length ?? 0) + 1}`;
+    const config = defaultConfig(protocol, message);
+    // F3.24a review M1: `add_rtu` refuses a wildcard topic through the protocol
+    // schema, which `guidedRefusal` would answer with the generic config sentence.
+    // The topic turn's F4.215 sentence names the cause, so this branch answers it too.
+    if (protocol === "mqtt" && typeof config.topic === "string" && topicHasWildcard(config.topic)) {
+      const waiting = stepPrompt(derived, draft, types);
+      const refusal = `I did not change the draft. A topic must name one device; # and + are wildcards. ${waiting.text}`;
+      return deps.finalizeTurn(refusal, {}, derived, waiting.replies, message, draft, turn);
+    }
     // F3.27: no `credentialsSet` here — `add_rtu` sets it to false itself.
     const rtuArgs = {
       code: rtuCode,
       displayName: rtuCode,
       protocol,
-      config: defaultConfig(protocol, message),
+      config,
       ingestEnabled: protocol === "mqtt",
     };
     const written = await guidedWrite("add_rtu", rtuArgs, state, deps.tools);

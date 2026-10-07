@@ -91,6 +91,21 @@ export async function assertAMqttMessageCarriesItsTopicIntoTheConfig(): Promise<
   assert(rtu?.ingestEnabled === true, "an MQTT RTU must be ingest-enabled");
 }
 
+/** F3.24a review M1 — a wildcard topic on the add branch answers the F4.215 sentence, not the config refusal, and adds no RTU. */
+export async function assertAWildcardTopicOnTheAddBranchAnswersTheWildcardSentence(): Promise<void> {
+  const { result } = await runTurn("mqtt topic: plant/#");
+  assert(
+    result.assistantMessage.includes("A topic must name one device; # and + are wildcards."),
+    `expected the wildcard sentence, got ${result.assistantMessage}`,
+  );
+  assert(result.draftPatch.rtus === undefined, `a wildcard topic must add no RTU, got ${JSON.stringify(result.draftPatch.rtus)}`);
+  assert(
+    !result.assistantMessage.includes("That RTU setting is not valid for its protocol."),
+    `the generic config refusal must not answer a wildcard, got ${result.assistantMessage}`,
+  );
+  assert(result.actionLines === undefined || result.actionLines.length === 0, `no write, got ${JSON.stringify(result.actionLines)}`);
+}
+
 /** R3 — `confirmStepTurn` and `stepPrompt` answer through the passed-in `finalizeTurn`, with an empty patch. */
 export async function assertAConfirmStepAnswersThroughFinalizeWithNoPatch(): Promise<void> {
   const { result, finalized } = await runTurn("confirm rtu");
