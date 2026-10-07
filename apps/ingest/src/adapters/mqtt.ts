@@ -1,9 +1,7 @@
-import { z } from "zod";
-
 import mqtt from "mqtt";
 
-import { mqttTopicHasWildcard } from "@bms/shared/ingest";
-import type { AdapterHealth, SourceSample } from "@bms/shared/ingest";
+import { mqttConfigSchema, mqttDeviceSchema } from "@bms/shared/ingest";
+import type { AdapterHealth, MqttConfig, MqttDevice, SourceSample } from "@bms/shared/ingest";
 
 import type {
   AdapterContext,
@@ -23,23 +21,11 @@ import type {
  * What genuinely changes is what the adapter *stops* doing: no Postgres, no
  * point-key resolution, no NOTIFY, no `process.env`, and no reconnect timer.
  * All of that is the host's (§2, §5).
+ *
+ * The config and device schemas it parses with (`mqttConfigSchema`,
+ * `mqttDeviceSchema`) live in `@bms/shared/ingest` since `F3.24a` (ADR 0093
+ * decision 4), so onboarding checks a draft with the same schema.
  */
-
-/** Connection-level config. Non-secret by definition — credentials arrive separately. */
-export const mqttConfigSchema = z.object({
-  /** Broker hostname. Supplied by the host, which owns the pilot's env fallback (§4). */
-  host: z.string().min(1),
-  /** Broker TLS port; 8883 for the PHE pilot. */
-  port: z.number().int().positive(),
-  /**
-   * TLS peer verification. Defaults to on, matching `index.js`'s
-   * `MQTT_TLS_REJECT_UNAUTHORIZED !== "false"`. The host reads that env var —
-   * the adapter must not (§4).
-   */
-  rejectUnauthorized: z.boolean().default(true),
-});
-
-export type MqttConfig = z.infer<typeof mqttConfigSchema>;
 
 /**
  * Largest payload this adapter will parse, in bytes.
@@ -57,29 +43,6 @@ export type MqttConfig = z.infer<typeof mqttConfigSchema>;
  * below anything that takes measurable time to parse.
  */
 export const MAX_PAYLOAD_BYTES = 256 * 1024;
-
-/** Per-device config. `topic` comes from the `bms.rtus.mqtt_topic` shim until it is backfilled (§3). */
-export const mqttDeviceSchema = z.object({
-  /**
-   * The ThinkIoT topic this RTU publishes on, e.g. `Airsprint-1051/Data/<devid>`.
-   *
-   * Wildcards are rejected. This is one *device's* topic, so `#` or `+` is
-   * always a mistake — and `topic: "#"` would subscribe to the entire broker,
-   * firehosing the bounded sample queue until its drop-oldest policy started
-   * discarding genuine PHE readings.
-   *
-   * `F4.221`: the predicate is `@bms/shared`'s, so the admin RTU routes and the
-   * onboarding agent refuse exactly what this refuses.
-   */
-  topic: z
-    .string()
-    .min(1)
-    .refine((topic) => !mqttTopicHasWildcard(topic), {
-      message: "a device topic must name one device, not a wildcard subscription",
-    }),
-});
-
-export type MqttDevice = z.infer<typeof mqttDeviceSchema>;
 
 /** The slice of an MQTT client this adapter uses. A fake satisfies it in tests. */
 export type MqttClientHandle = {

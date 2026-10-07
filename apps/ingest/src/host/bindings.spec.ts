@@ -1,9 +1,9 @@
 import { z } from "zod";
 
-import type { IngestProtocol } from "@bms/shared/ingest";
+import type { IngestProtocol, MqttDevice } from "@bms/shared/ingest";
 
 import type { IngestAdapterFactory } from "../adapter/types.js";
-import { mqttAdapterFactory, type MqttDevice } from "../adapters/mqtt.js";
+import { mqttAdapterFactory } from "../adapters/mqtt.js";
 import {
   BINDING_QUERY,
   planEndpoints,

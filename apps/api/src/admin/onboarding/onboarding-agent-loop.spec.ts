@@ -352,3 +352,14 @@ export function assertThePromptTellsTheModelToReadExistingCodesFirst(): void {
     "the prompt carries the find_existing sentence",
   );
 }
+
+/** F3.24a (ADR 0093 decision 5): the prompt tells the model to read the catalog before it adds a non-MQTT RTU. */
+export function assertThePromptTellsTheModelToReadTheCatalogBeforeANonMqttRtu(): void {
+  const prompt = buildSystemPrompt({ orgName: "Ion Exchange", phase: "rtu", typeCodes: ["smoc_campus"], draft: {} });
+  assert(
+    prompt.includes(
+      "Before you add an RTU on any protocol other than mqtt, call list_protocols and ask the user only for the config fields it lists for that protocol. A protocol marked config only is stored but not ingested; say so. Never ask for a credential value in this chat.",
+    ),
+    "the prompt carries the list_protocols sentence",
+  );
+}

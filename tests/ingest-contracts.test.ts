@@ -66,6 +66,19 @@ describe("ADR 0016 ingest contracts", () => {
     );
   });
 
+  it("publishes the MQTT config, device and draft schemas through ./ingest", () => {
+    // `F3.24a` (ADR 0093 decision 4): the ingest host and this project load
+    // `dist/ingest.js` through the subpath, not the source, so a schema the
+    // source exports but the built subpath does not would pass every
+    // source-level spec and break the ingest host at boot.
+    const ingest = require_("@bms/shared/ingest") as Record<string, unknown>;
+    for (const name of ["mqttConfigSchema", "mqttDeviceSchema", "mqttDraftConfigSchema"]) {
+      const schema = ingest[name] as { safeParse?: unknown } | undefined;
+      expect(typeof schema, `${name} is not exported by @bms/shared/ingest`).toBe("object");
+      expect(typeof schema?.safeParse, `${name} has no safeParse function`).toBe("function");
+    }
+  });
+
   it("publishes ./ingest under both import and require conditions", () => {
     // ADR 0016 §8 calls this out specifically: `apps/sim` consumes @bms/shared
     // through `createRequire(import.meta.url)`, so an import-only condition

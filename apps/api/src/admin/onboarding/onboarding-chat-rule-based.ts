@@ -20,7 +20,7 @@ import type {
 // shared contract's copy of the draft schema and imported here as a value.
 // `@bms/shared` and not `@bms/shared/contracts` — apps/api compiles with
 // moduleResolution "node" and ignores the exports map (ADR 0030 Amendment 2).
-import { ONBOARDING_DRAFT_STRING_MAX } from "@bms/shared";
+import { ONBOARDING_DRAFT_STRING_MAX, protocolCatalogEntry } from "@bms/shared";
 
 import { quoteCell } from "../spreadsheet-guard";
 import type { ToolContext, ToolState } from "./onboarding-agent-tools";
@@ -487,12 +487,21 @@ export async function handleRuleBasedTurn(
     const protocol =
       addAnother && lastProtocol && !NAMES_A_PROTOCOL.test(lower) ? lastProtocol : detectProtocol(lower);
     const rtuCode = `RTU-${(draft.rtus?.length ?? 0) + 1}`;
+    const config = defaultConfig(protocol, message);
+    // F3.24a review M1: `add_rtu` refuses a wildcard topic through the protocol
+    // schema, which `guidedRefusal` would answer with the generic config sentence.
+    // The topic turn's F4.215 sentence names the cause, so this branch answers it too.
+    if (protocol === "mqtt" && typeof config.topic === "string" && topicHasWildcard(config.topic)) {
+      const waiting = stepPrompt(derived, draft, types);
+      const refusal = `I did not change the draft. A topic must name one device; # and + are wildcards. ${waiting.text}`;
+      return deps.finalizeTurn(refusal, {}, derived, waiting.replies, message, draft, turn);
+    }
     // F3.27: no `credentialsSet` here — `add_rtu` sets it to false itself.
     const rtuArgs = {
       code: rtuCode,
       displayName: rtuCode,
       protocol,
-      config: defaultConfig(protocol, message),
+      config,
       ingestEnabled: protocol === "mqtt",
     };
     const written = await guidedWrite("add_rtu", rtuArgs, state, deps.tools);
@@ -770,8 +779,6 @@ function defaultConfig(protocol: OnboardingProtocol, message: string): Record<st
       topic: cutToBound(topicMatch?.[1] ?? "", MAX_RTU_TOPIC_CHARS),
     };
   }
-  if (protocol === "modbus_tcp") {
-    return { host: "127.0.0.1", port: 502, unitId: 1, pollIntervalMs: 5000 };
-  }
-  return {};
+  // F3.24a (ADR 0093 decision 5): every other protocol reads the catalog's example config.
+  return { ...protocolCatalogEntry(protocol).exampleConfig };
 }

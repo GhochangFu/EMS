@@ -1,24 +1,13 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { asc, eq, sql } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 
-import {
-  locations,
-  protocolCatalog,
-  rtuConnectionConfigs,
-  rtus,
-} from "@bms/db";
+import { locations, rtuConnectionConfigs, rtus } from "@bms/db";
 import type { BmsDb } from "@bms/db";
-import type { OnboardingProtocol } from "@bms/shared";
+import { PROTOCOL_CATALOG, type ProtocolCatalogEntry } from "@bms/shared";
 
-import { FLEET_DRIZZLE, TENANT_DRIZZLE } from "../../database/database.tokens";
+import { FLEET_DRIZZLE } from "../../database/database.tokens";
 
-export type ProtocolCatalogEntry = {
-  code: OnboardingProtocol;
-  label: string;
-  description: string | null;
-  ingestWired: boolean;
-  exampleConfig: Record<string, unknown>;
-};
+export type { ProtocolCatalogEntry } from "@bms/shared";
 
 export type OrgProtocolExample = {
   protocol: string;
@@ -29,44 +18,29 @@ export type OrgProtocolExample = {
 };
 
 export type ProtocolContext = {
-  catalog: ProtocolCatalogEntry[];
+  catalog: readonly ProtocolCatalogEntry[];
   orgExamples: OrgProtocolExample[];
 };
 
 /**
  * Loads protocol catalog and org-scoped RTU examples for onboarding chat.
  *
- * `F4.16` / ADR 0043 — `protocol_catalog` carries no policy, so `listCatalog`
- * stays on `tenantDb`. `getContextForOrganization` joins `locations` (RLS
- * since migration `0040`) and runs on `fleetDb` instead; `organizationId` is
+ * `F3.24a` (ADR 0093 decision 3) — the catalog is code, `PROTOCOL_CATALOG` in
+ * `@bms/shared/ingest`; no database is read for it.
+ *
+ * `F4.16` / ADR 0043 — `getContextForOrganization` joins `locations` (RLS
+ * since migration `0040`) and runs on `fleetDb`; `organizationId` is
  * always a value the caller has already been authorized against upstream in
  * `OnboardingService`, so this is a pool change, not a new authorization
  * surface.
  */
 @Injectable()
 export class OnboardingProtocolService {
-  constructor(
-    @Inject(FLEET_DRIZZLE) private readonly fleetDb: BmsDb,
-    @Inject(TENANT_DRIZZLE) private readonly tenantDb: BmsDb,
-  ) {}
+  constructor(@Inject(FLEET_DRIZZLE) private readonly fleetDb: BmsDb) {}
 
-  /** Returns catalog rows ordered for display. */
-  async listCatalog(): Promise<ProtocolCatalogEntry[]> {
-    try {
-      const rows = await this.tenantDb
-        .select()
-        .from(protocolCatalog)
-        .orderBy(asc(protocolCatalog.sortOrder));
-      return rows.map((row) => ({
-        code: row.code as OnboardingProtocol,
-        label: row.label,
-        description: row.description,
-        ingestWired: row.ingestWired,
-        exampleConfig: (row.exampleConfig as Record<string, unknown>) ?? {},
-      }));
-    } catch {
-      return [];
-    }
+  /** Returns the code-defined catalog in display order. Kept `async` so its callers do not change. */
+  async listCatalog(): Promise<readonly ProtocolCatalogEntry[]> {
+    return PROTOCOL_CATALOG;
   }
 
   /** Returns catalog plus live examples from RTUs in the organization. */
@@ -103,8 +77,11 @@ export class OnboardingProtocolService {
   formatForAssistant(context: ProtocolContext, exampleRtuName: string): string {
     const lines = context.catalog.map((entry) => {
       const wired = entry.ingestWired ? "live ingest" : "config only";
+      const required = entry.requiredFields.join(", ") || "none";
+      const optional = entry.optionalFields.join(", ") || "none";
+      const browse = entry.supportsDiscovery ? "yes" : "no";
       const example = JSON.stringify(entry.exampleConfig);
-      return `- **${entry.label}** (\`${entry.code}\`, ${wired}): ${entry.description ?? ""} Example config: ${example}`;
+      return `- **${entry.label}** (\`${entry.code}\`, ${wired}): ${entry.description} Required: ${required} · Optional: ${optional} · Browse: ${browse} · Example config: ${example}`;
     });
 
     const orgLines =

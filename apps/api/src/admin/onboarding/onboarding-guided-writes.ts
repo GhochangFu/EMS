@@ -4,6 +4,7 @@ import {
   CREDENTIAL_TOOL_ERROR,
   EXISTING_KEYS_KW_INACTIVE_ERROR,
   EXISTING_KEYS_NEED_KW_ERROR,
+  INVALID_CONFIG_PREFIX,
   PROMPT_MARKER_TOOL_ERROR,
   runTool,
   type ToolContext,
@@ -48,6 +49,9 @@ export const GUIDED_EXISTING_KEYS_REFUSAL = "The point-key catalog is not ready 
 export const GUIDED_KW_INACTIVE_REFUSAL =
   "The point-key catalog holds **kw** as inactive, so this site cannot map it. Reactivate **kw** in Point Keys, then try again.";
 
+/** F3.24a (ADR 0093 decision 5) — the guided answer when the protocol's draft schema refuses an RTU config. */
+export const GUIDED_CONFIG_REFUSAL = "That RTU setting is not valid for its protocol. Open the preview to check the RTU's config.";
+
 /** B4 — the guided answer to any other element-schema refusal. */
 export const GUIDED_SCHEMA_REFUSAL = "That value is not valid for this step. Open the preview to check the draft.";
 
@@ -87,6 +91,9 @@ export function guidedRefusal(name: ToolName, error: string): string {
   }
   if (error === EXISTING_KEYS_NEED_KW_ERROR) {
     return GUIDED_EXISTING_KEYS_REFUSAL;
+  }
+  if (error.startsWith(INVALID_CONFIG_PREFIX)) {
+    return GUIDED_CONFIG_REFUSAL;
   }
   if (error.startsWith("Invalid arguments: ")) {
     return name === "set_location" ? GUIDED_LOCATION_NAME_REFUSAL : GUIDED_SCHEMA_REFUSAL;

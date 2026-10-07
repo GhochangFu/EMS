@@ -1,4 +1,4 @@
-import type { LocationTypeDto } from "@bms/shared";
+import { describeProtocol, protocolCatalogEntry, type LocationTypeDto, type OnboardingProtocol } from "@bms/shared";
 import { z, type ZodTypeAny } from "zod";
 import { zodToJsonSchema } from "zod-to-json-schema";
 
@@ -67,6 +67,9 @@ export type { ToolOutcome, ToolState };
  * `credentialsSet`, `_commitProposal` or an `onboardingMeta` field other than
  * `useExistingPointKeys`.
  *
+ * `add_rtu` and `update_rtu` check `rtus[].config` with the protocol's draft
+ * schema from the catalog (F3.24a, ADR 0093), reporting paths only.
+ *
  * **Action lines are written by code** from the validated, applied values —
  * never the raw arguments and never the model's text (decision 6).
  *
@@ -132,6 +135,27 @@ export const EXISTING_KEYS_NEED_KW_ERROR =
 export const EXISTING_KEYS_KW_INACTIVE_ERROR =
   "The catalog holds the point key 'kw' as inactive, so neither the existing catalog nor a draft declaration of 'kw' can map it. " +
   "Tell the user to reactivate 'kw' in Point Keys, or map other point keys.";
+
+/**
+ * `F3.24a` (ADR 0093 decision 5): the prefix of the refusal of an RTU config
+ * the protocol's draft schema refuses. Exported so `guidedRefusal` classifies
+ * it. The rest of the sentence is the protocol code and the issue paths with
+ * the shared schema's messages, which carry no value.
+ */
+export const INVALID_CONFIG_PREFIX = "Invalid config for ";
+
+/** The tail of an RTU action line for a protocol no ingest adapter serves (ADR 0093 decision 6). */
+const CONFIG_ONLY_TAIL = " (config only, not ingested)";
+
+/** The refusal of `config` under `protocol`'s draft schema, or `null` when it passes. */
+function configProblem(protocol: OnboardingProtocol, config: Record<string, unknown> | undefined): string | null {
+  const parsed = protocolCatalogEntry(protocol).draftConfigSchema.safeParse(config ?? {});
+  return parsed.success ? null : `${INVALID_CONFIG_PREFIX}${protocol}: ${issuesOf(parsed.error)}`;
+}
+
+function rtuActionTail(protocol: OnboardingProtocol): string {
+  return protocolCatalogEntry(protocol).ingestWired ? "" : CONFIG_ONLY_TAIL;
+}
 
 export const CREDENTIAL_TOOL_ERROR =
   "Credentials are never set through this chat. Tell the user to use the Credentials field on the RTU step.";
@@ -232,11 +256,17 @@ const DESCRIPTIONS: Record<ToolName, string> = {
     "Call it before you choose a new code, so the draft follows the organization's naming and avoids a code it already holds. " +
     "Optional `search` matches code and name; `locationCode` is exact.",
   list_location_types: "Lists the active location type codes and labels. A location's `type` must be one of these codes.",
-  list_protocols: "Describes the communication protocols an RTU can use.",
+  list_protocols:
+    "Describes the eight protocols an RTU can use: label, whether ingest serves it (config only otherwise), " +
+    "the required and optional config fields and an example config. Call it before add_rtu for any protocol other than mqtt.",
   set_location:
     "Sets the location. `name` is required; `slug` and `code` are derived from it when omitted. `type` must be an active location type code.",
-  add_rtu: "Adds an RTU. Never put a username, password, token or key in `config`: credentials are set on the RTU step only.",
-  update_rtu: "Changes fields of the RTU at `index`. Never put a credential in `config`.",
+  add_rtu:
+    "Adds an RTU. Never put a username, password, token or key in `config`: credentials are set on the RTU step only. " +
+    "A config that fails the protocol's schema is refused with the field path.",
+  update_rtu:
+    "Changes fields of the RTU at `index`. Never put a credential in `config`. " +
+    "A config that fails the protocol's schema is refused with the field path.",
   remove_rtu: "Removes the RTU at `index`.",
   add_point_key: "Declares a point key in this draft.",
   remove_point_key:
@@ -395,7 +425,8 @@ async function dispatch(name: ToolName, args: Record<string, unknown>, state: To
       const example = draft.location?.name
         ? `${draft.location.name.toUpperCase().replace(/[^A-Z0-9]+/g, "-")}-RTU-1`
         : "LOCATION-RTU-1";
-      return succeed({ protocols: ctx.protocols.formatForAssistant(context, example) });
+      // F3.24a (ADR 0093 decision 5): the catalog's fields, without the schema object.
+      return succeed({ catalog: context.catalog.map(describeProtocol), protocols: ctx.protocols.formatForAssistant(context, example) });
     }
 
     case "set_location": {
@@ -427,7 +458,12 @@ async function dispatch(name: ToolName, args: Record<string, unknown>, state: To
       if (Object.prototype.hasOwnProperty.call(secrets, code) && !(draft.rtus ?? []).some((r) => r.code.trim() === code)) {
         return fail(`RTU code ${quoteCell(code)} still holds stored credentials from a removed RTU. Use another code.`);
       }
-      return write(state, { rtus: [...(draft.rtus ?? []), rtu] }, `Added RTU ${rtu.code} (${rtu.protocol})`);
+      // F3.24a (ADR 0093 decision 5): a config ingest would refuse never enters the draft.
+      const problem = configProblem(rtu.protocol, rtu.config);
+      if (problem) {
+        return fail(problem);
+      }
+      return write(state, { rtus: [...(draft.rtus ?? []), rtu] }, `Added RTU ${rtu.code} (${rtu.protocol})${rtuActionTail(rtu.protocol)}`);
     }
 
     case "update_rtu": {
@@ -447,6 +483,11 @@ async function dispatch(name: ToolName, args: Record<string, unknown>, state: To
           return fail(CREDENTIALED_CONNECTION_ERROR);
         }
       }
+      // F3.24a (ADR 0093 decision 5): after the freeze, the merged config is checked against the patched protocol.
+      const problem = configProblem(updated.protocol, config);
+      if (problem) {
+        return fail(problem);
+      }
       // Security review M2: the line names what changed, and the new host.
       const changed = Object.keys(patch).flatMap((key) =>
         key === "config" ? Object.keys(patch.config ?? {}).map((field) => `config.${field}`) : [key],
@@ -454,7 +495,7 @@ async function dispatch(name: ToolName, args: Record<string, unknown>, state: To
       const { shown, omitted } = echoedItems(changed.map((field) => quoteCell(field)), 10);
       const fields = [...shown, moreTail(omitted, "fields")].filter(Boolean).join(", ") || "no fields";
       const host = patch.config && "host" in patch.config ? `, host ${quoteCell(String(config?.host ?? ""))}` : "";
-      return write(state, { rtus: rtus.map((rtu, i) => (i === index ? updated : rtu)) }, `Updated RTU ${updated.code}: ${fields}${host}`);
+      return write(state, { rtus: rtus.map((rtu, i) => (i === index ? updated : rtu)) }, `Updated RTU ${updated.code}: ${fields}${host}${rtuActionTail(updated.protocol)}`);
     }
 
     case "remove_rtu": {

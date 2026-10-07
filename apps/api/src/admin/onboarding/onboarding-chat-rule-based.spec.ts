@@ -1,4 +1,4 @@
-import type { OnboardingDraft } from "@bms/shared";
+import { protocolCatalogEntry, type OnboardingDraft } from "@bms/shared";
 
 import { handleRuleBasedTurn, NAMES_A_PROTOCOL, type ChatTurnResult, type RuleBasedTurnDeps } from "./onboarding-chat-rule-based";
 import { EMPTY_TEMPLATE_CONTEXT } from "./onboarding-template-refs";
@@ -91,6 +91,21 @@ export async function assertAMqttMessageCarriesItsTopicIntoTheConfig(): Promise<
   assert(rtu?.ingestEnabled === true, "an MQTT RTU must be ingest-enabled");
 }
 
+/** F3.24a review M1 — a wildcard topic on the add branch answers the F4.215 sentence, not the config refusal, and adds no RTU. */
+export async function assertAWildcardTopicOnTheAddBranchAnswersTheWildcardSentence(): Promise<void> {
+  const { result } = await runTurn("mqtt topic: plant/#");
+  assert(
+    result.assistantMessage.includes("A topic must name one device; # and + are wildcards."),
+    `expected the wildcard sentence, got ${result.assistantMessage}`,
+  );
+  assert(result.draftPatch.rtus === undefined, `a wildcard topic must add no RTU, got ${JSON.stringify(result.draftPatch.rtus)}`);
+  assert(
+    !result.assistantMessage.includes("That RTU setting is not valid for its protocol."),
+    `the generic config refusal must not answer a wildcard, got ${result.assistantMessage}`,
+  );
+  assert(result.actionLines === undefined || result.actionLines.length === 0, `no write, got ${JSON.stringify(result.actionLines)}`);
+}
+
 /** R3 — `confirmStepTurn` and `stepPrompt` answer through the passed-in `finalizeTurn`, with an empty patch. */
 export async function assertAConfirmStepAnswersThroughFinalizeWithNoPatch(): Promise<void> {
   const { result, finalized } = await runTurn("confirm rtu");
@@ -126,7 +141,7 @@ export async function assertAProtocolFormIsDetected(word: string, protocol: stri
 export async function assertANamedProtocolAnswersItsActionLine(): Promise<void> {
   const { result } = await runTurn("modbus please");
   assert(
-    JSON.stringify(result.actionLines) === JSON.stringify(["Added RTU RTU-1 (modbus_tcp)"]),
+    JSON.stringify(result.actionLines) === JSON.stringify(["Added RTU RTU-1 (modbus_tcp) (config only, not ingested)"]),
     `the add_rtu action line, got ${JSON.stringify(result.actionLines)}`,
   );
 }
@@ -136,4 +151,16 @@ export async function assertAGuidedTurnReadsNothingOfTheOrganization(): Promise<
   const { result, reads } = await runTurn("modbus please");
   assert(result.actionLines.length === 1, `the turn answered its action line, got ${JSON.stringify(result.actionLines)}`);
   assert(reads.length === 0, `a guided turn read ${JSON.stringify(reads)}`);
+}
+
+/** F3.24a R3 (ADR 0093 decision 5) - a non-MQTT default config is the catalog's example config. */
+export async function assertANonMqttDefaultConfigIsTheCatalogExample(): Promise<void> {
+  const { result } = await runTurn("a bacnet please");
+  const config = result.draftPatch.rtus?.[0]?.config;
+  assert(
+    JSON.stringify(config) === JSON.stringify(protocolCatalogEntry("bacnet").exampleConfig),
+    `expected the bacnet example config, got ${JSON.stringify(config)}`,
+  );
+  // The catalog is also the expected value above, so a changed example would move both sides; the literal pins it.
+  assert(config?.port === 47808, `expected the BACnet port 47808, got ${String(config?.port)}`);
 }

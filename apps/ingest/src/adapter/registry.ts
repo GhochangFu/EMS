@@ -1,4 +1,4 @@
-import type { IngestProtocol } from "@bms/shared/ingest";
+import type { IngestProtocol, IngestWiredProtocol } from "@bms/shared/ingest";
 
 import { mqttAdapterFactory } from "../adapters/mqtt.js";
 import type { IngestAdapterFactory } from "./types.js";
@@ -12,8 +12,9 @@ import type { IngestAdapterFactory } from "./types.js";
  * three times. `bms.protocol_catalog` was the other candidate and was rejected
  * on evidence: it has no migration and no seed, and `listCatalog()` swallows
  * the missing relation, so the catalog has been silently reading empty since
- * ADR 0011. It becomes metadata *seeded from* this map, never the runtime
- * source of truth.
+ * ADR 0011. Since `F3.24a` (ADR 0093 decision 2) the catalog is code in
+ * `@bms/shared/ingest`: `INGEST_WIRED_PROTOCOLS` declares which protocols have
+ * an adapter, and this map is checked against that list at compile time.
  *
  * **This is the one file every F1.2–F1.6 agent touches.**
  * `docs/build-operating-model.md` §3 forbids two agents editing the same file;
@@ -21,16 +22,18 @@ import type { IngestAdapterFactory } from "./types.js";
  * each. Keep the keys alphabetically ordered so a merge conflict stays
  * mechanically resolvable.
  *
- * `Partial<Record<…>>` because most protocols have no adapter yet;
- * `satisfies` because an unknown key must be a compile error rather than a
- * protocol nothing can serve.
+ * `satisfies Record<IngestWiredProtocol, …>`: a wired protocol with no adapter
+ * is a missing property, and an adapter the wired list lacks is an excess
+ * property — either is a compile error, so the catalog's `ingestWired` cannot
+ * disagree with what this map serves. An adapter PR adds its code to
+ * `INGEST_WIRED_PROTOCOLS` and its line here together.
  */
 const ADAPTERS = {
   mqtt: mqttAdapterFactory,
   // F1.2 adds `modbus_tcp:`, F1.3 `bacnet:`, F1.4 `opc_ua:`, F1.5 `snmp:` and
   // `rest_poller:`, F1.6 its own. One line and one import each — nothing else
   // in this file changes.
-} satisfies Partial<Record<IngestProtocol, IngestAdapterFactory>>;
+} satisfies Record<IngestWiredProtocol, IngestAdapterFactory>;
 
 /** Protocols that actually have an adapter, as opposed to a name in the union. */
 export const REGISTERED_PROTOCOLS = Object.keys(ADAPTERS) as readonly IngestProtocol[];

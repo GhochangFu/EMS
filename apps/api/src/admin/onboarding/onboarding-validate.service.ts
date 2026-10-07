@@ -6,6 +6,7 @@ import {
   type OnboardingDraftAssetPoint,
   type OnboardingFieldError,
   type OnboardingPhase,
+  protocolCatalogEntry,
 } from "@bms/shared";
 
 import { echoedItems, moreTail, quoteCell } from "../spreadsheet-guard";
@@ -198,6 +199,39 @@ export class OnboardingValidateService {
             path: `rtus.${i}.config.device.topic`,
             message: "MQTT topic must name one device; # and + are wildcards",
           });
+        }
+        // F3.24a (ADR 0093 decisions 5, 6): the protocol's draft schema from the
+        // code catalog checks every present config field; a protocol with no
+        // adapter accepts any config. Paths only: an issue at a path a
+        // hand-written check above already reported is dropped, so the
+        // owner-ruled sentence is the one shown. Gated on `r.success`, so the
+        // catalog lookup never sees a protocol outside the enum.
+        if (r.success) {
+          const reported = new Set(
+            errors.filter((e) => e.path.startsWith(`rtus.${i}.config`)).map((e) => e.path),
+          );
+          // F3.24a review L1: `rtuTopic` falls back to `mqttTopic` when `topic` is
+          // not a string, so a hand-written row at `config.topic` then reports the
+          // `mqttTopic` value, and its schema issue is the same fault.
+          const config = rtu.config ?? {};
+          if (
+            reported.has(`rtus.${i}.config.topic`) &&
+            typeof config.topic !== "string" &&
+            typeof config.mqttTopic === "string"
+          ) {
+            reported.add(`rtus.${i}.config.mqttTopic`);
+          }
+          const parsed = protocolCatalogEntry(r.data.protocol).draftConfigSchema.safeParse(config);
+          if (!parsed.success) {
+            for (const issue of parsed.error.issues) {
+              // A root-level issue has an empty path; joining the segments leaves no trailing dot.
+              const path = [`rtus.${i}.config`, ...issue.path].join(".");
+              if (!reported.has(path)) {
+                errors.push({ path, message: issue.message });
+                reported.add(path);
+              }
+            }
+          }
         }
       });
     }

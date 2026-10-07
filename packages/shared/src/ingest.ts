@@ -3,9 +3,12 @@ import type { OnboardingProtocol } from "./index";
 /**
  * Ingest data contracts (ADR 0016, backlog `F1.1`).
  *
- * These are the types consumed **outside** `apps/ingest` — `F3.24`'s onboarding
+ * These are the types consumed **outside** `apps/ingest` — `F3.24a`'s onboarding
  * agent and the `/admin/*` RTU screens need to name protocols and describe
- * config shapes. The adapter interface itself (`IngestAdapter`,
+ * config shapes. Since `F3.24a` (ADR 0093 decision 4) the module also carries
+ * zod schemas: the MQTT adapter's config and device schemas live in
+ * `./ingest-adapters/mqtt` and are re-exported here, so the ingest adapter and
+ * the onboarding validator and tools read one schema. The adapter interface itself (`IngestAdapter`,
  * `AdapterContext`, `RtuBinding`) deliberately lives in
  * `apps/ingest/src/adapter/types.ts`: nothing outside `apps/ingest` implements
  * or calls it, and exporting it would widen the shared surface for no consumer
@@ -35,23 +38,18 @@ export const INGEST_PROTOCOLS = [
 
 export type IngestProtocol = (typeof INGEST_PROTOCOLS)[number];
 
-/**
- * `F4.221` — whether an MQTT topic holds a wildcard, `#` or `+`.
- *
- * A device topic names one device, so a wildcard is always a mistake: `#` would
- * subscribe to the entire broker. Three readers share this one predicate so they
- * cannot disagree: the ingest MQTT device schema
- * (`apps/ingest/src/adapters/mqtt.ts`), the onboarding agent's `topicHasWildcard`
- * (`apps/api/src/admin/onboarding/onboarding-chat-summaries.ts`), and the admin
- * RTU routes' `mqttTopic` refine (`apps/api/src/admin/rtus/rtus.schema.ts`).
- */
-export function mqttTopicHasWildcard(topic: string): boolean {
-  return topic.includes("#") || topic.includes("+");
-}
+// `F4.221`: the one MQTT wildcard predicate. A leaf module, so the MQTT schemas
+// below import it without importing this module back (`F3.24a` review).
+export { mqttTopicHasWildcard } from "./mqtt-topic";
+
+// `F3.24a` (ADR 0093 decision 4): the MQTT config, device and draft schemas.
+export * from "./ingest-adapters/mqtt";
+// `F3.24a` (ADR 0093 decisions 2, 3): the code-defined protocol catalog.
+export * from "./protocol-catalog";
 
 /**
  * Compile-time drift guard: every ingest protocol must be expressible in
- * onboarding, or `F3.24` could offer a protocol nothing can ingest.
+ * onboarding, or `F3.24a` could offer a protocol nothing can ingest.
  *
  * The converse does not hold — `simulator` and `catalog` are onboarding
  * sources with no adapter, which is why this is an assignment and not an
@@ -145,7 +143,7 @@ export type AdapterHealth = {
  * A point an adapter found by browsing, for protocols that can browse (OPC-UA
  * can, an SNMP walk can, Modbus generally cannot).
  *
- * `discover()` is optional; `F3.24` filters on the factory's
+ * `discover()` is optional; `F3.24b` filters on the factory's
  * `supportsDiscovery` flag so it never has to construct an instance to find
  * out.
  */
@@ -153,7 +151,7 @@ export type DiscoveredPoint = {
   readonly sourceKey: string;
   readonly label?: string;
   readonly unit?: string;
-  /** A live reading, so `F3.24` can show an operator the value while they map the point. */
+  /** A live reading, so `F3.24b` can show an operator the value while they map the point. */
   readonly sampleValue?: number;
 };
 
