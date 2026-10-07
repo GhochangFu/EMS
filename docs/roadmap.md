@@ -7460,3 +7460,43 @@ checks skipped by owner ruling.
 Raised: `F4.223` (an empty MQTT topic stored as `''` collides on the index),
 `F4.224` (the intercept's question words match inside other words). No
 `chore(agents):` change owed.
+
+### Track E — `F3.27`, `F3.25`, `F3.23`, `F3.26`, `F3.24a` and two test and bug rows ✅ 2026-10-07
+
+Seven PRs, squash-merged 2026-10-07 in the owner's build order
+(`F3.27` → `F3.25` → `F3.23` → `F3.26` → `F3.24a`). One docs PR first, then one
+PR per row; one migration (`0101`), no new dependency.
+
+- **#754** (`3b4f8a7f`) — ADR 0092–0095 and ADR 0090 Amendment 2; the decision
+  record for the whole track (docs).
+- **#755** (`c658156a`) — `F3.27`: a provider error writes nothing; guided
+  writes go through the tool registry; a spec classifies every tool as guided
+  or agent-only.
+- **#756** (`e59140ec`) — `F3.25`: draft checkpoints (ring of 10), hash-bound
+  `POST sessions/:id/rollback`, the phrase `undo`, `suggest_replies`; migration
+  `0101_onboarding_session_checkpoints`.
+- **#757** (`d487e924`) — `F3.23`: one mapping predicate for the tools and the
+  validator; `add_point_keys`, `map_points`, `get_asset_points`. Closes
+  `F4.119`.
+- **#758** (`6206d275`) — `F4.226`: the tenant-context fleet test asserts a
+  superset. `main` was red after #756 because parallel integration suites add
+  organizations; this PR fixes the test, not the code.
+- **#759** (`85c7fba5`) — `F3.26`: `find_existing`, a tenant-only read of the
+  organization's inventory; `list_point_keys` filters and `inUse`.
+- **#760** (`7e1cf1e8`) — `F3.24a`: the protocol catalog in code and shared
+  MQTT config schemas; fixes the empty `listCatalog` caused by the table that
+  no migration ever created.
+
+The agent tool registry went from 24 to 29 tools. Owner rulings at each PR gate
+are recorded in the ADRs (0090 Amendment 2, 0092–0095). The `F3.25` ruling
+corrected ADR 0094 decision 6: the chat write is not hash-bound, so a
+two-tab race stays open as `F4.227`.
+
+**Open follow-ups:** `F3.24b` (live discovery, waits for `F1.4` or `F1.5` and
+its own ADR); `F4.223` and `F4.224` (the guided RTU flow; `F4.224` lands after
+`F3.24a` as its own PR); `F4.225` (the unit and domain check at tool time);
+`F4.227` (hash-bind the chat write).
+
+**Owed:** a `chore(agents):` sweep PR. AGENTS.md says "24 tools" and the
+registry has 29; AGENTS.md still lists `protocol_catalog` as a vocabulary
+table, and it is now code in `@bms/shared/ingest`.

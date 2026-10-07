@@ -208,8 +208,9 @@ credentials.
    - *Model tool* rejected: a prompt-injected model could undo silently. The
      tool does not exist in the guided mode (an `F3.27` gap), and it counts
      against the eight calls per turn.
-   - *Route only* or *phrase only* rejected: the route covers the race on the
-     unlocked `chat` write. The phrase gives guided-mode parity at no cost.
+   - *Route only* or *phrase only* rejected: the route is the path with the
+     hash bind (decision 6 states what the bind covers). The phrase gives
+     guided-mode parity at no cost.
 
 6. **What does per-step confirm mean on the agent path?** Options: labels only,
    the `F4.199` `confirm <step>` replies offered on the agent path too;
@@ -277,7 +278,14 @@ credentials.
    - `POST /api/v1/admin/onboarding/sessions/:id/rollback`, with a strict body
      that carries the checkpoint id and the draft hash that the client last
      saw. The server answers **409** when the stored draft's hash differs, and
-     writes nothing. This also covers the race with the unlocked `chat` write.
+     writes nothing. The hash is re-checked under `FOR UPDATE`, so two
+     rollbacks cannot both write. The unlocked
+     `chat` write is **not** hash-bound: a chat turn in another tab that loaded
+     the row before the rollback can still write its pre-undo merge after the
+     rollback commits (row `F4.227`). The web closes the same-tab case by
+     disabling Send and withdrawing the reply chips while an undo runs. *(Corrected
+     2026-10-07; the text first said the route "also covers the race with the
+     unlocked `chat` write".)*
      The route uses `loadSession`, so the existing access gates apply. (Plan
      detail: an unknown checkpoint id answers 404.)
    - The web chat page gains an Undo control that lists the checkpoints and
@@ -343,6 +351,14 @@ names each as a question and gates the answer with a test:
 Plan details, not rulings, are marked "(Plan detail: …)" under *Decision*.
 One more: the draft plan nulls `checkpoints` when the commit closes the
 session, because the snapshots hold RTU `config`.
+
+**Owner rulings at the PR gate, 2026-10-07** (on #756, in chat). Plan
+questions Q1–Q8 are accepted as recommended. Decision 6 is corrected to the
+guarantee the code gives: the rollback is hash-bound and re-checked under
+`FOR UPDATE`; a chat turn in another tab that loaded the row earlier can still
+write after the rollback. Row `F4.227` hash-binds the chat write. `draftHash`
+on the session DTO is accepted as it is (security rated it Low; an HMAC or a
+version column would be a design change under this record).
 
 ## Dependencies
 

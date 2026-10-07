@@ -340,6 +340,13 @@ The row splits in two:
      action line, asserted with `javascript_tool` through the
      `browser-verifier` agent.
 
+**Owner rulings at the PR gate, 2026-10-07** (on #760, in chat). Plan
+questions Q1–Q4 are accepted as recommended: Q1 a draft MQTT config with a
+`rejectUnauthorized` key is refused; Q2 `F4.224` lands after this row as its
+own PR; Q3 the catalog text as proposed in plan unit U2; Q4 the guided sentence
+for a refused config. The *Amended records* bullet for ADR 0043 decision 5
+(`protocol_catalog` is not a table) stays.
+
 ## Dependencies
 
 None. No new npm package. `zod` is already a runtime dependency of

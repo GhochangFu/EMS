@@ -293,6 +293,11 @@ asset's points. The packet's D4 wording and this record differ, so the owner
 confirms that reading. Until a later row rules otherwise, the `F2.7`
 mapping-sheet export is the read path for committed mappings.
 
+**Owner rulings at the PR gate, 2026-10-07** (on #757, in chat). Plan
+questions Q1–Q9 are accepted as recommended. The credential walk does not
+cover `add_point_key` and `map_point`; the owner accepted this as built, so
+decision 4 stays as written.
+
 ## Dependencies
 
 None. No new npm package, no migration, no contract change in
