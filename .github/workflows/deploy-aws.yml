@@ -28,11 +28,6 @@ on:
         description: "Commit SHA on main to deploy (empty: the commit this run is started on)"
         required: false
         default: ""
-  # TEMPORARY — bootstrap only, removed before this branch merges: build the
-  # images from the branch so the first deploy can be done by hand. The deploy
-  # job never runs on this event.
-  push:
-    branches: [ops/aws-deploy]
 
 concurrency:
   group: deploy-aws-demo
@@ -117,7 +112,6 @@ jobs:
   deploy:
     name: Deploy to bms.demosites.co.in
     needs: build
-    if: github.event_name != 'push'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     environment:
