@@ -134,7 +134,9 @@ export type PointKeyDeclarationProblem = { index: number; field: "unit" | "domai
  * refuse, with the sentence it would refuse it with. The walk is the commit's,
  * without the writes: a code this list already resolved is compared with that
  * resolution (the `draft` sentence; an agreeing duplicate passes), a code the
- * catalog holds is compared with the catalog row (the `catalog` sentence), and
+ * catalog holds is compared with the catalog row (the `catalog` sentence; a
+ * contradicting declaration does not resolve the code, so a later duplicate of
+ * it meets the catalog again rather than a unit the draft never stated), and
  * a code new to both resolves to what the commit's INSERT would store.
  *
  * Every problem is returned, so a tool can judge only the keys it appends and
@@ -161,7 +163,11 @@ export function pointKeyDeclarationProblems(
     if (row !== undefined) {
       const clash = conflictingPointKeyDeclaration(key, row);
       if (clash !== null) {
+        // Left unresolved: the commit throws here, so there is no "first
+        // declaration" a later duplicate could contradict. Each one is compared
+        // with the catalog again and gets the catalog sentence.
         problems.push({ index, field: clash.field, message: pointKeyConflictMessage(key.code, clash, "catalog") });
+        return;
       }
       resolved.set(key.code, row);
       return;

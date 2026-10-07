@@ -145,3 +145,18 @@ export function assertP6AnAgreeingDuplicateIsTolerated(): void {
   const problems = pointKeyDeclarationProblems([{ code: "kw", unit: "kW" }, { code: "kw", unit: "kW" }], FIELDS);
   assert(problems.length === 0, `P6 no problem, got ${JSON.stringify(problems)}`);
 }
+
+/**
+ * P7 — after a catalog contradiction, a later duplicate that agrees with the
+ * first declaration is compared with the catalog again: it gets the catalog
+ * sentence, not a "declared twice" sentence about a unit the draft never stated.
+ */
+export function assertP7ADuplicateAfterACatalogClashIsTheCatalogSentence(): void {
+  const problems = pointKeyDeclarationProblems([{ code: "kw", unit: "MW" }, { code: "kw", unit: "MW" }], FIELDS);
+  const expected = pointKeyConflictMessage("kw", { field: "unit", declared: "MW", existing: "kW" }, "catalog");
+  const second = problems.find((problem) => problem.index === 1);
+  assert(
+    second !== undefined && second.message === expected,
+    `P7 the catalog sentence at index 1, got ${JSON.stringify(problems)}`,
+  );
+}

@@ -7,6 +7,7 @@ import {
   assertP4TheProblemCarriesItsIndex,
   assertP5TheProblemNamesTheDomainField,
   assertP6AnAgreeingDuplicateIsTolerated,
+  assertP7ADuplicateAfterACatalogClashIsTheCatalogSentence,
   runOnboardingPointKeyConflictTests,
 } from "./onboarding-point-key-conflict.spec";
 
@@ -26,4 +27,6 @@ describe("pointKeyDeclarationProblems (F4.225)", () => {
   it("P4 the problem carries its declaration's index", () => assertP4TheProblemCarriesItsIndex());
   it("P5 the problem names the domain field", () => assertP5TheProblemNamesTheDomainField());
   it("P6 an agreeing duplicate is tolerated", () => assertP6AnAgreeingDuplicateIsTolerated());
+  it("P7 a duplicate after a catalog clash is the catalog sentence", () =>
+    assertP7ADuplicateAfterACatalogClashIsTheCatalogSentence());
 });
