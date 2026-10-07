@@ -1,6 +1,9 @@
 import { describe, it } from "vitest";
 
 import {
+  assertAChatTurnBuildsOnTheLockedRow,
+  assertAChatTurnRacedByACommitIsAConflict,
+  assertAChatTurnRacedByARollbackIsAConflict,
   assertAChatUndoRacedByAChatTurnIsAConflict,
   assertAChatWriteOverACommitIsAConflict,
   assertARollbackBuildsOnTheLockedRow,
@@ -92,5 +95,19 @@ describe("rollback and chat writes — locked and status-bound (F3.25 review fin
 
   it("answers 409 when a chat write matches no draft row", async () => {
     await assertAChatWriteOverACommitIsAConflict();
+  });
+});
+
+describe("onboarding chat — the hash-bound chat write (F4.227)", () => {
+  it("answers 409 and writes nothing when a rollback changed the draft during the turn", async () => {
+    await assertAChatTurnRacedByARollbackIsAConflict();
+  });
+
+  it("answers 409 and writes nothing when a commit landed before the lock", async () => {
+    await assertAChatTurnRacedByACommitIsAConflict();
+  });
+
+  it("writes once, built on the locked row's messages, when the draft is unchanged", async () => {
+    await assertAChatTurnBuildsOnTheLockedRow();
   });
 });

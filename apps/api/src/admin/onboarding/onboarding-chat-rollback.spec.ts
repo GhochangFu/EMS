@@ -8,6 +8,7 @@ import { BLOB, PLACE, build, rtu, type Row } from "./onboarding-chat-checkpoints
 import { JWT, ORG, sessionRow, withoutOpenAi } from "./onboarding-chat-caps.spec";
 import { NOTHING_TO_UNDO_REPLY, takeCheckpoint, type Checkpoint } from "./onboarding-checkpoints";
 import { attachCommitProposal, draftHash, readCommitProposal } from "./onboarding-commit-proposal";
+import { DRAFT_CHANGED_DURING_TURN, SESSION_NO_LONGER_DRAFT } from "./onboarding.service";
 import { OnboardingValidateService } from "./onboarding-validate.service";
 
 function assert(condition: boolean, message: string): void {
@@ -313,4 +314,43 @@ export async function assertAChatWriteOverACommitIsAConflict(): Promise<void> {
   const { service } = build({ session, selects: [[session], ORG, ORG], updateReturnsNoRow: true });
   const error = await thrown(() => withoutOpenAi(() => service.chat(JWT, "s-1", "Add an RTU")));
   assert(error instanceof ConflictException, `a chat write over a commit should be a ConflictException, got ${String(error)}`);
+}
+
+/** (17) F4.227: a chat turn whose draft was rolled back under it is a 409 and writes nothing. */
+export async function assertAChatTurnRacedByARollbackIsAConflict(): Promise<void> {
+  const { session, locked } = racedRows();
+  const { service, record } = build({ session, selects: [[session], ORG, ORG], locked });
+  const error = await thrown(() => withoutOpenAi(() => service.chat(JWT, "s-1", "Add an RTU")));
+  assert(error instanceof ConflictException, `a raced chat turn should be a ConflictException, got ${String(error)}`);
+  assert(
+    (error as Error).message === DRAFT_CHANGED_DURING_TURN,
+    `the hash guard should have fired, got ${(error as Error).message}`,
+  );
+  assert(record.updates.length === 0, `a raced chat turn wrote ${record.updates.length} time(s)`);
+}
+
+/** (18) F4.227: a commit that landed before the lock is a 409 from the lock-level status check. */
+export async function assertAChatTurnRacedByACommitIsAConflict(): Promise<void> {
+  const { session } = racedRows();
+  const locked = { ...session, status: "committed", checkpoints: null } as Row;
+  const { service, record } = build({ session, selects: [[session], ORG, ORG], locked });
+  const error = await thrown(() => withoutOpenAi(() => service.chat(JWT, "s-1", "Add an RTU")));
+  assert(error instanceof ConflictException, `a chat turn over a commit should be a ConflictException, got ${String(error)}`);
+  assert(
+    (error as Error).message === SESSION_NO_LONGER_DRAFT,
+    `the status guard should have fired, got ${(error as Error).message}`,
+  );
+  assert(record.updates.length === 0, `a chat turn over a commit wrote ${record.updates.length} time(s)`);
+}
+
+/** (19) F4.227: the adjacent positive: an equal hash writes once, built on the locked row's messages. */
+export async function assertAChatTurnBuildsOnTheLockedRow(): Promise<void> {
+  const { session } = racedRows();
+  const between = { id: "m-between", role: "assistant", content: "kept", createdAt: "2026-10-06T00:00:01.000Z" };
+  const locked = { ...session, messages: [STORED_USER, between] as never } as Row;
+  const { service, record } = build({ session, selects: [[session], ORG, ORG], locked });
+  await withoutOpenAi(() => service.chat(JWT, "s-1", "Add an RTU"));
+  assert(record.updates.length === 1, `an unchanged draft writes once, got ${record.updates.length}`);
+  const ids = ((record.updates[0]?.messages ?? []) as OnboardingChatMessage[]).map((m) => m.id);
+  assert(ids[1] === "m-between", `the message written in between is kept, got ${JSON.stringify(ids)}`);
 }
