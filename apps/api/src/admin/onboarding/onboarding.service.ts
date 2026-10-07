@@ -365,35 +365,8 @@ export class OnboardingService {
     // changes nothing leaves the column alone rather than rewriting it.
     const changed =
       Object.keys(diffSections(session.draft as OnboardingDraft, mergedDraft as OnboardingDraft)).length > 0;
-    let checkpointWrite: { checkpoints: unknown } | Record<string, never> = {};
-    if (changed) {
-      const ring = readCheckpoints(session.checkpoints);
-      const pushed = pushCheckpoint(
-        ring,
-        takeCheckpoint(session.draft as OnboardingDraft, {
-          seq: nextSeq(ring),
-          label: checkpointLabel(
-            actionMsgs.map((m) => m.content),
-            Object.keys(turn.draftPatch),
-          ),
-          userMessageId: userMsg.id,
-          takenAt: new Date().toISOString(),
-        }),
-      );
-      // Ids and counts only, never content (ADR 0090 decision 9; plan Q2).
-      if (pushed.dropped !== "none") {
-        this.logger.log(
-          { sessionId, dropped: pushed.dropped, ringSize: pushed.ring.length },
-          "onboarding checkpoint dropped",
-        );
-      }
-      // Review finding: a snapshot too large to record ends the history, as a
-      // PATCH does — otherwise the next undo would revert this step and the
-      // one before it together, naming only the older one.
-      checkpointWrite = { checkpoints: pushed.dropped === "too_large" ? null : pushed.ring };
-    }
-
     const updated = await withTenant(this.tenantDb, session.organizationId, async (tx) => {
+      // Lock placement is gated by the live psql race, not by a spec: the fake answers `.for()` with a static row.
       const locked = await this.lockSession(tx, sessionId);
       if (!locked || locked.status !== "draft") {
         // A commit landed while the model ran.
@@ -403,6 +376,35 @@ export class OnboardingService {
       // (a draft over the depth bound) cannot be matched, so it fails closed.
       if (expectedHash === null || draftHash(locked.draft) !== expectedHash) {
         throw new ConflictException(DRAFT_CHANGED_DURING_TURN);
+      }
+      // F3.25 / F4.227: the ring is built on the locked row's ring, as `messages`
+      // is, so a ring written in between is not overwritten with a stale one.
+      let checkpointWrite: { checkpoints: unknown } | Record<string, never> = {};
+      if (changed) {
+        const ring = readCheckpoints(locked.checkpoints);
+        const pushed = pushCheckpoint(
+          ring,
+          takeCheckpoint(session.draft as OnboardingDraft, {
+            seq: nextSeq(ring),
+            label: checkpointLabel(
+              actionMsgs.map((m) => m.content),
+              Object.keys(turn.draftPatch),
+            ),
+            userMessageId: userMsg.id,
+            takenAt: new Date().toISOString(),
+          }),
+        );
+        // Ids and counts only, never content (ADR 0090 decision 9; plan Q2).
+        if (pushed.dropped !== "none") {
+          this.logger.log(
+            { sessionId, dropped: pushed.dropped, ringSize: pushed.ring.length },
+            "onboarding checkpoint dropped",
+          );
+        }
+        // Review finding: a snapshot too large to record ends the history, as a
+        // PATCH does — otherwise the next undo would revert this step and the
+        // one before it together, naming only the older one.
+        checkpointWrite = { checkpoints: pushed.dropped === "too_large" ? null : pushed.ring };
       }
       // Built on the locked row: a message written in between (a turn that
       // changed nothing, an empty-ring `undo`) does not change the hash.

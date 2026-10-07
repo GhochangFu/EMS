@@ -2,6 +2,7 @@ import { describe, it } from "vitest";
 
 import {
   assertAChatTurnBuildsOnTheLockedRow,
+  assertAChatTurnBuildsTheRingOnTheLockedRow,
   assertAChatTurnRacedByACommitIsAConflict,
   assertAChatTurnRacedByARollbackIsAConflict,
   assertAChatUndoRacedByAChatTurnIsAConflict,
@@ -109,5 +110,9 @@ describe("onboarding chat — the hash-bound chat write (F4.227)", () => {
 
   it("writes once, built on the locked row's messages, when the draft is unchanged", async () => {
     await assertAChatTurnBuildsOnTheLockedRow();
+  });
+
+  it("builds the checkpoint ring on the locked row's ring", async () => {
+    await assertAChatTurnBuildsTheRingOnTheLockedRow();
   });
 });

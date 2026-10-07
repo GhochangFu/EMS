@@ -354,3 +354,17 @@ export async function assertAChatTurnBuildsOnTheLockedRow(): Promise<void> {
   const ids = ((record.updates[0]?.messages ?? []) as OnboardingChatMessage[]).map((m) => m.id);
   assert(ids[1] === "m-between", `the message written in between is kept, got ${JSON.stringify(ids)}`);
 }
+
+/** (20) F4.227: the checkpoint ring is built on the locked row's ring, not the one `loadSession` read. */
+export async function assertAChatTurnBuildsTheRingOnTheLockedRow(): Promise<void> {
+  // A guided turn at `rtu` appends a second RTU, so the turn changes a section.
+  const draft = { location: PLACE, rtus: [rtu("RTU-1")], _secrets: { "RTU-1": { ...BLOB } } } as OnboardingDraft;
+  const session = { ...sessionRow(draft, "rtu"), checkpoints: ringOfThree() } as Row;
+  const lockedRing = [checkpoint(9, { location: PLACE } as OnboardingDraft)];
+  const locked = { ...session, checkpoints: lockedRing } as Row;
+  const { service, record } = build({ session, selects: [[session], ORG, ORG], locked });
+  await withoutOpenAi(() => service.chat(JWT, "s-1", "modbus please"));
+  assert(record.updates.length === 1, `an equal hash writes once, got ${record.updates.length}`);
+  const seqs = ((record.updates[0]?.checkpoints ?? []) as Checkpoint[]).map((cp) => cp.seq);
+  assert(JSON.stringify(seqs) === "[9,10]", `the ring derives from the locked one (9 then 10), got ${JSON.stringify(seqs)}`);
+}

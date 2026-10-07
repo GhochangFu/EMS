@@ -289,8 +289,8 @@ credentials.
      *(Amended 2026-10-07, `F4.227`: the `chat` write is now hash-bound. It
      re-reads the row under `FOR UPDATE`, compares the draft hash that the
      turn loaded, and on a mismatch answers 409 and writes nothing. It builds
-     `messages` on the locked row. `patchDraft` and the Excel upload stay
-     unbound.)*
+     `messages` and the checkpoint ring on the locked row. `patchDraft` and
+     the Excel upload stay unbound.)*
      The route uses `loadSession`, so the existing access gates apply. (Plan
      detail: an unknown checkpoint id answers 404.)
    - The web chat page gains an Undo control that lists the checkpoints and
