@@ -28,8 +28,10 @@ function locationOnlyDraft(): OnboardingDraft {
   return { location: { name: "Berhampur", slug: "berhampur", code: "BERHAMPUR", type: "smoc_campus", latitude: 22.3, longitude: 87.3 } } as never;
 }
 
-async function runTurn(message: string): Promise<{ result: ChatTurnResult; finalized: Finalized[] }> {
+async function runTurn(message: string): Promise<{ result: ChatTurnResult; finalized: Finalized[]; reads: string[] }> {
   const finalized: Finalized[] = [];
+  // F3.26 review L4: `runTool` swallows the fakes' throws, so each also records its call.
+  const reads: string[] = [];
   const deps: RuleBasedTurnDeps = {
     validateService: new OnboardingValidateService(),
     catalogService: { listPointKeys: async () => [], formatPointKeysForChat: () => "" } as never,
@@ -37,12 +39,26 @@ async function runTurn(message: string): Promise<{ result: ChatTurnResult; final
     tools: {
       organizationId: "org-1",
       activeTypes: TURN.types,
-      catalog: { listPointKeys: async () => [] },
+      catalog: {
+        listPointKeys: async () => [],
+        listInUsePointKeys: async () => {
+          reads.push("listInUsePointKeys");
+          throw new Error("a guided turn read the in-use point keys");
+        },
+      },
+      inventory: {
+        listExisting: async () => {
+          reads.push("listExisting");
+          throw new Error("a guided turn read the inventory");
+        },
+      },
       protocols: {
         getContextForOrganization: async () => {
+          reads.push("getContextForOrganization");
           throw new Error("a guided turn read the protocols");
         },
         formatForAssistant: () => {
+          reads.push("formatForAssistant");
           throw new Error("a guided turn formatted the protocols");
         },
       },
@@ -56,7 +72,7 @@ async function runTurn(message: string): Promise<{ result: ChatTurnResult; final
     },
   };
   const result = await handleRuleBasedTurn(deps, message, locationOnlyDraft(), "rtu", "Eskom", TURN);
-  return { result, finalized };
+  return { result, finalized, reads };
 }
 
 /** R1 — the append branch, `detectProtocol` and `defaultConfig` moved intact. */
@@ -113,4 +129,11 @@ export async function assertANamedProtocolAnswersItsActionLine(): Promise<void> 
     JSON.stringify(result.actionLines) === JSON.stringify(["Added RTU RTU-1 (modbus_tcp)"]),
     `the add_rtu action line, got ${JSON.stringify(result.actionLines)}`,
   );
+}
+
+/** F3.26 review L4 — the add_rtu turn answers its action line and reads nothing of the organization. */
+export async function assertAGuidedTurnReadsNothingOfTheOrganization(): Promise<void> {
+  const { result, reads } = await runTurn("modbus please");
+  assert(result.actionLines.length === 1, `the turn answered its action line, got ${JSON.stringify(result.actionLines)}`);
+  assert(reads.length === 0, `a guided turn read ${JSON.stringify(reads)}`);
 }

@@ -8,6 +8,7 @@ import {
   assertAMqttMessageCarriesItsTopicIntoTheConfig,
   assertANamedProtocolAppendsAnRtuWithItsDefaultConfig,
   assertANamedProtocolAnswersItsActionLine,
+  assertAGuidedTurnReadsNothingOfTheOrganization,
 } from "./onboarding-chat-rule-based.spec";
 
 /** Vitest entry point — see `admin.schema.test.ts` for the pattern (ADR 0014). One `it()` per claim. */
@@ -18,6 +19,10 @@ describe("the guided onboarding mode, as a module (F4.217)", () => {
 
   it("a named protocol answers the add_rtu action line (F3.27)", async () => {
     await assertANamedProtocolAnswersItsActionLine();
+  });
+
+  it("a guided turn reads nothing of the organization (F3.26 review L4)", async () => {
+    await assertAGuidedTurnReadsNothingOfTheOrganization();
   });
 
   it("carries a typed MQTT topic into the config", async () => {

@@ -38,6 +38,7 @@ function catalog(count = 3): ToolContext["catalog"] {
         unit: null,
         domain: null,
       })),
+    listInUsePointKeys: async () => new Set<string>(),
   };
 }
 
@@ -52,6 +53,7 @@ function context(overrides: Partial<ToolContext> = {}): ToolContext {
     },
     validator: new OnboardingValidateService(),
     templates: EMPTY_TEMPLATE_CONTEXT,
+    inventory: { listExisting: async () => ({ rows: [], total: 0 }) },
     ...overrides,
   };
 }
@@ -84,7 +86,7 @@ const FORBIDDEN = ["credentialsSet", "_secrets", "_commitProposal", "rtuTargetCo
 
 /** Every tool's JSON Schema; none carries a field the agent must never write. */
 export function assertEveryToolHasAJsonSchemaWithNoForbiddenProperty(): void {
-  assert(TOOL_DEFINITIONS.length === 28, `there are 28 tools, got ${TOOL_DEFINITIONS.length}`);
+  assert(TOOL_DEFINITIONS.length === 29, `there are 29 tools, got ${TOOL_DEFINITIONS.length}`);
   for (const tool of TOOL_DEFINITIONS) {
     const text = JSON.stringify(tool.parameters);
     for (const field of FORBIDDEN) {

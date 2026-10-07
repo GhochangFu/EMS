@@ -107,6 +107,7 @@ export function build(opts: {
     vocabularies as never,
     resolver as never,
     { context: async () => EMPTY_TEMPLATE_CONTEXT } as never,
+    { listExisting: async () => ({ rows: [], total: 0 }) } as never,
   );
   const service = new OnboardingService(
     db,

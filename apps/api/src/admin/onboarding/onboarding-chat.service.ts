@@ -16,6 +16,7 @@ import { VocabulariesService } from "../../vocabularies/vocabularies.service";
 import { echoedItems, moreTail, quoteCell } from "../spreadsheet-guard";
 import { cloneJson } from "../stack-safe-json";
 import { OnboardingCatalogService } from "./onboarding-catalog.service";
+import { OnboardingInventoryService } from "./onboarding-inventory.service";
 import { OnboardingTemplateCatalogService } from "./onboarding-template-catalog.service";
 import { mergeDraftPatch } from "./onboarding-draft-merge";
 import { formatAssetsByRtuSummary, mqttSetupTemplate, needsMqttSetup } from "./onboarding-chat-summaries";
@@ -70,6 +71,7 @@ export class OnboardingChatService {
     private readonly vocabularies: VocabulariesService,
     private readonly llmResolver: OnboardingLlmResolver,
     private readonly templateCatalog: OnboardingTemplateCatalogService,
+    private readonly inventoryService: OnboardingInventoryService,
   ) {}
 
   private readonly logger = new Logger(OnboardingChatService.name);
@@ -259,6 +261,7 @@ export class OnboardingChatService {
       protocols: this.protocolService,
       validator: this.validateService,
       templates: turn.templates,
+      inventory: this.inventoryService,
     };
   }
 

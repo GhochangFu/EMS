@@ -70,10 +70,11 @@ export function toolContext(): ToolContext {
   return {
     organizationId: "org-1",
     activeTypes: [{ code: "smoc_campus", label: "SMOC campus" }],
-    catalog: { listPointKeys: async () => [] },
+    catalog: { listPointKeys: async () => [], listInUsePointKeys: async () => new Set<string>() },
     protocols: { getContextForOrganization: async () => ({ catalog: [], orgExamples: [] }), formatForAssistant: () => "MQTT" },
     validator: new OnboardingValidateService(),
     templates: EMPTY_TEMPLATE_CONTEXT,
+    inventory: { listExisting: async () => ({ rows: [], total: 0 }) },
   };
 }
 
@@ -339,4 +340,15 @@ export function assertTheMappingChipsSurviveAndAreNotStepLabels(): void {
     const label = stepLabelFor(phase);
     assert(label !== chips[0] && label !== chips[1], `a chip is not the step label of ${phase}`);
   }
+}
+
+/** F3.26 (ADR 0095 decision 5): the prompt tells the model to read existing codes before it chooses new ones. */
+export function assertThePromptTellsTheModelToReadExistingCodesFirst(): void {
+  const prompt = buildSystemPrompt({ orgName: "Ion Exchange", phase: "location", typeCodes: ["smoc_campus"], draft: {} });
+  assert(
+    prompt.includes(
+      "Before you choose a new location, RTU or asset code, call find_existing for that kind and follow the organization's existing naming.",
+    ),
+    "the prompt carries the find_existing sentence",
+  );
 }

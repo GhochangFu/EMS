@@ -185,6 +185,7 @@ export function buildService(opts: { session: ReturnType<typeof sessionRow>; res
     // answers — the producer these cases are about.
     { resolveForOrganization: async () => ({ kind: "guided", reason: "platform_off" }) } as never,
     { context: async () => EMPTY_TEMPLATE_CONTEXT } as never,
+    { listExisting: async () => ({ rows: [], total: 0 }) } as never,
   );
   const service = new OnboardingService(
     db,
