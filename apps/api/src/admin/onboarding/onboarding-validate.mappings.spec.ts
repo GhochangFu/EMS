@@ -11,6 +11,7 @@ import type { OnboardingDraft, OnboardingFieldError } from "@bms/shared";
 
 import { quoteCell } from "../spreadsheet-guard";
 import { COMMIT_UNIQUE_CONFLICTS } from "./onboarding-commit-conflict";
+import { pointKeyConflictMessage } from "./onboarding-point-key-conflict";
 import { EMPTY_TEMPLATE_CONTEXT, unresolvedPointKey, type ValidateTemplateContext } from "./onboarding-template-refs";
 import { OnboardingValidateService, type ValidateResult } from "./onboarding-validate.service";
 
@@ -191,4 +192,39 @@ export function assertV6ControlTheSameKeyOutsideTheCatalogIsAnError(): void {
     result.errors.some((error) => error.path === "assetPoints.0.pointKey"),
     `the same key outside the catalog must be an error, got ${JSON.stringify(result.errors)}`,
   );
+}
+
+// ---------------------------------------------------------------- F4.225
+
+/** F4.225: the catalog holds `kw` active with unit `kW` and domain `electrical`. */
+const KW_FIELDS: ValidateTemplateContext = {
+  ...EMPTY_TEMPLATE_CONTEXT,
+  pointKeys: new Map([["kw", true]]),
+  pointKeyFields: new Map([["kw", { unit: "kW", domain: "electrical" }]]),
+};
+
+function declaring(kw: Partial<{ unit: string; domain: string }>): OnboardingDraft {
+  const draft = readyDraft();
+  return { ...draft, pointKeys: [{ ...draft.pointKeys![0], ...kw }] };
+}
+
+/** F4.225 V1 — a declared unit the catalog contradicts is the commit's sentence at its field, and the draft is not ready. */
+export function assertV1ACatalogContradictionIsAnErrorAndNotReady(): void {
+  const result = validate(declaring({ unit: "MW" }), KW_FIELDS);
+  const expected = { path: "pointKeys.0.unit", message: pointKeyConflictMessage("kw", { field: "unit", declared: "MW", existing: "kW" }, "catalog") };
+  assert(result.errors.some((error) => JSON.stringify(error) === JSON.stringify(expected)), `V1 the catalog error, got ${JSON.stringify(result.errors)}`);
+  assert(!result.readyToCommit, "V1 not ready to commit");
+}
+
+/** F4.225 V2 — the adjacent positive: the same draft declaring the catalog's unit is ready. */
+export function assertV2AnAgreeingDeclarationIsReady(): void {
+  const result = validate(declaring({ unit: "kW" }), KW_FIELDS);
+  assert(result.readyToCommit && result.errors.length === 0, `V2 ready with no error, got ${JSON.stringify(result.errors)}`);
+}
+
+/** F4.225 V3 — the path names the field that disagreed. */
+export function assertV3ADomainContradictionNamesTheDomainPath(): void {
+  const result = validate(declaring({ domain: "hvac" }), KW_FIELDS);
+  const paths = result.errors.filter((error) => error.path.startsWith("pointKeys.")).map((error) => error.path);
+  assert(JSON.stringify(paths) === JSON.stringify(["pointKeys.0.domain"]), `V3 the domain path, got ${JSON.stringify(paths)}`);
 }

@@ -1,6 +1,9 @@
 import { describe, it } from "vitest";
 
 import {
+  assertA1AddPointKeyRefusesACatalogContradiction,
+  assertA2AddPointKeyAcceptsAnAgreeingDeclaration,
+  assertA3OnlyTheAppendedKeyIsJudged,
   assertAListResultIsBoundedAtOneHundredAndCountsTheRest,
   assertAMarkerInArgumentsIsRefused,
   assertASuccessfulWriteDropsThePendingProposal,
@@ -213,5 +216,19 @@ describe("onboarding agent tools (F3.21, ADR 0090 decision 4)", () => {
 
   it("quotes the remove_asset_point action line (F3.23)", async () => {
     await assertRemoveAssetPointLineIsQuoted();
+  });
+});
+
+describe("add_point_key against the catalog unit and domain (F4.225)", () => {
+  it("A1 refuses a unit the catalog contradicts and writes nothing", async () => {
+    await assertA1AddPointKeyRefusesACatalogContradiction();
+  });
+
+  it("A2 accepts a declaration that agrees with the catalog", async () => {
+    await assertA2AddPointKeyAcceptsAnAgreeingDeclaration();
+  });
+
+  it("A3 judges only the appended key", async () => {
+    await assertA3OnlyTheAppendedKeyIsJudged();
   });
 });

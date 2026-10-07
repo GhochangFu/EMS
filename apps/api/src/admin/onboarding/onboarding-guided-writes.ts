@@ -11,6 +11,7 @@ import {
   type ToolName,
   type ToolState,
 } from "./onboarding-agent-tools";
+import { CATALOG_CONFLICT_LEAD } from "./onboarding-point-key-conflict";
 import { DRAFT_TOO_DEEP_MESSAGE } from "./onboarding.schema";
 
 /**
@@ -48,6 +49,14 @@ export const GUIDED_EXISTING_KEYS_REFUSAL = "The point-key catalog is not ready 
  */
 export const GUIDED_KW_INACTIVE_REFUSAL =
   "The point-key catalog holds **kw** as inactive, so this site cannot map it. Reactivate **kw** in Point Keys, then try again.";
+
+/**
+ * F4.225 — the guided answer when the catalog holds `kw` with a unit or domain the guided step's fixed
+ * declaration contradicts. The registry's sentence says "drop the unit from the draft", which a guided
+ * user cannot do; reconciling the catalog row is the way out.
+ */
+export const GUIDED_KW_CONFLICT_REFUSAL =
+  "The point-key catalog holds **kw** with a different unit or domain, so this site cannot declare it. Reconcile **kw** in Point Keys, then try again.";
 
 /** F3.24a (ADR 0093 decision 5) — the guided answer when the protocol's draft schema refuses an RTU config. */
 export const GUIDED_CONFIG_REFUSAL = "That RTU setting is not valid for its protocol. Open the preview to check the RTU's config.";
@@ -91,6 +100,9 @@ export function guidedRefusal(name: ToolName, error: string): string {
   }
   if (error === EXISTING_KEYS_NEED_KW_ERROR) {
     return GUIDED_EXISTING_KEYS_REFUSAL;
+  }
+  if (name === "add_point_key" && error.includes(CATALOG_CONFLICT_LEAD)) {
+    return GUIDED_KW_CONFLICT_REFUSAL;
   }
   if (error.startsWith(INVALID_CONFIG_PREFIX)) {
     return GUIDED_CONFIG_REFUSAL;

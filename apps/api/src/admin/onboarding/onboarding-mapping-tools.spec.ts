@@ -4,6 +4,7 @@ import { CREDENTIAL_TOOL_ERROR, runTool, type ToolContext, type ToolState } from
 import { COMMIT_UNIQUE_CONFLICTS } from "./onboarding-commit-conflict";
 import { draftCountProblem } from "./onboarding-draft-caps";
 import { MAX_ASSET_POINTS_PER_CALL, MAX_POINT_KEYS_PER_CALL } from "./onboarding-mapping-tools";
+import { pointKeyConflictMessage } from "./onboarding-point-key-conflict";
 import { EMPTY_TEMPLATE_CONTEXT, unresolvedPointKey, type ValidateTemplateContext } from "./onboarding-template-refs";
 import { OnboardingValidateService } from "./onboarding-validate.service";
 
@@ -336,4 +337,29 @@ export async function assertR3GetAssetPointsIsBoundedAtOneHundred(): Promise<voi
   const result = parsed(out.content);
   assert(out.ok && (result.points as unknown[]).length === 100, "100 rows are shown");
   assert(result.more === "…and 1 more mappings", `the rest is counted: ${String(result.more)}`);
+}
+
+// ---------------------------------------------------------------- F4.225
+
+/** F4.225: the catalog holds `kw` active with unit `kW` and domain `electrical`. */
+const KW_FIELDS: ValidateTemplateContext = { ...KW_ACTIVE, pointKeyFields: new Map([["kw", { unit: "kW", domain: "electrical" }]]) };
+
+/**
+ * F4.225 K1 — add_point_keys refuses a unit the catalog contradicts, all or none, at the index in the call.
+ * The draft holds two keys already, so a draft-wide index (`keys.3`) would not match.
+ */
+export async function assertK1AddPointKeysRefusesACatalogContradictionAtItsCallIndex(): Promise<void> {
+  const state: ToolState = { working: baseDraft({ pointKeys: [key("v"), key("a")] }) };
+  const before = snapshot(state);
+  const out = await runTool(call("add_point_keys", { keys: [key("flow"), key("kw", { unit: "MW" })] }), state, context(KW_FIELDS));
+  const expected = `keys.1: ${pointKeyConflictMessage("kw", { field: "unit", declared: "MW", existing: "kW" }, "catalog")}`;
+  assert(!out.ok && out.error === expected, `K1 the catalog sentence at keys.1, got ${JSON.stringify(out)}`);
+  assert(snapshot(state) === before, "K1 nothing was written");
+}
+
+/** F4.225 K2 — the adjacent positive: a batch whose kw agrees with the catalog lands. */
+export async function assertK2AddPointKeysAcceptsAnAgreeingBatch(): Promise<void> {
+  const state: ToolState = { working: baseDraft() };
+  const out = await runTool(call("add_point_keys", { keys: [key("flow"), key("kw", { unit: "kW" })] }), state, context(KW_FIELDS));
+  assert(out.ok && state.working.pointKeys?.length === 2, `K2 both keys land, got ${JSON.stringify(out)}`);
 }

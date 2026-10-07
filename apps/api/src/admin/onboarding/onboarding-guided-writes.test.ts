@@ -1,6 +1,8 @@
 import { describe, it } from "vitest";
 
 import {
+  assertAnAddPointKeySchemaRefusalIsNotTheConflictSentence,
+  assertTheGuidedKwStepAnswersItsConflictSentence,
   assertAConfigRefusalAnswersItsGuidedSentence,
   assertACountCapIsRefusedWithTheCapSentence,
   assertAnUnrelatedRefusalIsNotTheConfigSentence,
@@ -68,5 +70,15 @@ describe("guidedWrite over the tool registry (F3.27 U3)", () => {
 
   it("keeps an unrelated refusal on the fail-closed sentence (F3.24a)", () => {
     assertAnUnrelatedRefusalIsNotTheConfigSentence();
+  });
+});
+
+describe("the guided kw step on a catalog conflict (F4.225)", () => {
+  it("G1 answers its own sentence and writes nothing", async () => {
+    await assertTheGuidedKwStepAnswersItsConflictSentence();
+  });
+
+  it("G2 keeps an add_point_key schema refusal on the schema sentence", () => {
+    assertAnAddPointKeySchemaRefusalIsNotTheConflictSentence();
   });
 });

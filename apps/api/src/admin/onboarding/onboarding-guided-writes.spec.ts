@@ -6,6 +6,7 @@ import {
   GUIDED_CREDENTIAL_REFUSAL,
   GUIDED_DEPTH_REFUSAL,
   GUIDED_EXISTING_KEYS_REFUSAL,
+  GUIDED_KW_CONFLICT_REFUSAL,
   GUIDED_KW_INACTIVE_REFUSAL,
   GUIDED_MARKER_REFUSAL,
   GUIDED_OTHER_REFUSAL,
@@ -175,4 +176,22 @@ export function assertAConfigRefusalAnswersItsGuidedSentence(): void {
 export function assertAnUnrelatedRefusalIsNotTheConfigSentence(): void {
   const sentence = guidedRefusal("add_rtu", "Something else went wrong.");
   assert(sentence === GUIDED_OTHER_REFUSAL, `the fallback, got ${sentence}`);
+}
+
+/**
+ * F4.225 G1 — the guided kw step on a catalog that holds `kw` with another unit answers its own
+ * sentence (reconcile the catalog), not the fail-closed fallback, and writes nothing.
+ */
+export async function assertTheGuidedKwStepAnswersItsConflictSentence(): Promise<void> {
+  const state: ToolState = { working: {} };
+  const ctx = { ...context(), templates: { ...EMPTY_TEMPLATE_CONTEXT, pointKeyFields: new Map([["kw", { unit: "MW", domain: "electrical" }]]) } };
+  const out = await guidedWrite("add_point_key", { code: "kw", name: "Active Power", domain: "electrical", unit: "kW" }, state, ctx);
+  assert(!out.ok && out.error === GUIDED_KW_CONFLICT_REFUSAL, `G1 the conflict sentence, got ${JSON.stringify(out)}`);
+  assert(state.working.pointKeys === undefined, "G1 nothing was written");
+}
+
+/** F4.225 G2 — the adjacent negative: an add_point_key schema refusal stays the schema sentence. */
+export function assertAnAddPointKeySchemaRefusalIsNotTheConflictSentence(): void {
+  const sentence = guidedRefusal("add_point_key", "Invalid arguments: x");
+  assert(sentence === GUIDED_SCHEMA_REFUSAL, `G2 the schema sentence, got ${sentence}`);
 }

@@ -1,6 +1,8 @@
 import { describe, it } from "vitest";
 
 import {
+  assertK1AddPointKeysRefusesACatalogContradictionAtItsCallIndex,
+  assertK2AddPointKeysAcceptsAnAgreeingBatch,
   assertK1AddPointKeysAppendsInOrderAndNamesTheNewOnes,
   assertK2ARepeatedCodeRefusesTheBatch,
   assertK3AnAlreadyDeclaredCodeRefusesTheBatch,
@@ -76,5 +78,15 @@ describe("onboarding batch mapping tools (F3.23, ADR 0092 decision 4)", () => {
   });
   it("R3 get_asset_points is bounded at 100", async () => {
     await assertR3GetAssetPointsIsBoundedAtOneHundred();
+  });
+});
+
+describe("add_point_keys against the catalog unit and domain (F4.225)", () => {
+  it("K1 refuses a unit the catalog contradicts, all or none, at its index in the call", async () => {
+    await assertK1AddPointKeysRefusesACatalogContradictionAtItsCallIndex();
+  });
+
+  it("K2 accepts a batch that agrees with the catalog", async () => {
+    await assertK2AddPointKeysAcceptsAnAgreeingBatch();
   });
 });
