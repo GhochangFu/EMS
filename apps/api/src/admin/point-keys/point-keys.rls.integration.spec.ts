@@ -291,12 +291,39 @@ export async function assertCreateAuditRowIsOrgLess(
  * The counts and the duplicate check stay on `ownerPool` on purpose — they are
  * the ground truth the tenant reads are compared against, and a bypassing
  * reader is the right thing to establish ground truth with.
+ *
+ * **ONE SNAPSHOT (`F4.229`).** The suite shares its database with every other
+ * integration suite, and some of them add and remove point keys. The ground
+ * truth and each tenant read were separate statements, so a key deleted between
+ * them showed as "a partial catalog" (CI on #763: 653 against 654). The owner
+ * read now holds a `REPEATABLE READ` transaction and exports its snapshot; each
+ * tenant read imports it (`SET TRANSACTION SNAPSHOT`), so every count sees the
+ * same rows and a concurrent write cannot split them. A tenant policy still
+ * filters inside the imported snapshot, so restoring `tenant_isolation` still
+ * reddens the loop.
  */
 export async function assertEveryOrganizationSeesEveryCode(
   ownerPool: pg.Pool,
   tenantPool: pg.Pool,
 ): Promise<void> {
-  const { rows: all } = await ownerPool.query<{ n: string }>(
+  const owner = await ownerPool.connect();
+  try {
+    await owner.query("BEGIN ISOLATION LEVEL REPEATABLE READ");
+    const { rows: snap } = await owner.query<{ id: string }>("SELECT pg_export_snapshot() AS id");
+    const snapshot = snap[0]!.id;
+    await assertEveryOrganizationSeesEveryCodeIn(owner, snapshot, tenantPool);
+  } finally {
+    await owner.query("ROLLBACK").catch(() => undefined);
+    owner.release();
+  }
+}
+
+async function assertEveryOrganizationSeesEveryCodeIn(
+  owner: pg.PoolClient,
+  snapshot: string,
+  tenantPool: pg.Pool,
+): Promise<void> {
+  const { rows: all } = await owner.query<{ n: string }>(
     "SELECT COUNT(*)::text AS n FROM bms.point_keys",
   );
   const total = Number(all[0]?.n ?? "0");
@@ -305,7 +332,7 @@ export async function assertEveryOrganizationSeesEveryCode(
     "the point key catalog is empty with no tenant context set — run pnpm db:seed",
   ).toBeGreaterThan(0);
 
-  const { rows: orgs } = await ownerPool.query<{ id: string }>(
+  const { rows: orgs } = await owner.query<{ id: string }>(
     "SELECT id FROM bms.organizations ORDER BY code",
   );
   assert(orgs.length >= 2, "F3.39: need two organizations to prove the merge.");
@@ -313,7 +340,8 @@ export async function assertEveryOrganizationSeesEveryCode(
   for (const org of orgs) {
     const client = await tenantPool.connect();
     try {
-      await client.query("BEGIN");
+      await client.query("BEGIN ISOLATION LEVEL REPEATABLE READ");
+      await client.query(`SET TRANSACTION SNAPSHOT '${snapshot.replace(/'/g, "''")}'`);
       await client.query("SELECT set_config('app.current_organization', $1, true)", [org.id]);
       const { rows } = await client.query<{ n: string }>(
         "SELECT COUNT(*)::text AS n FROM bms.point_keys",
@@ -330,7 +358,7 @@ export async function assertEveryOrganizationSeesEveryCode(
     }
   }
 
-  const { rows: dupes } = await ownerPool.query<{ code: string }>(
+  const { rows: dupes } = await owner.query<{ code: string }>(
     "SELECT code FROM bms.point_keys GROUP BY code HAVING COUNT(*) > 1",
   );
   expect(
