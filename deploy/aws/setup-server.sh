@@ -94,6 +94,10 @@ MINIO_ROOT_PASSWORD=$(hex 24)
 CREDENTIAL_ENCRYPTION_KEY=$(openssl rand -base64 32)
 # Password of every seeded demo login (admin@bms.local, operator@bms.local, ...).
 DEMO_PASSWORD=Nexus-$(hex 6)
+# The ingest host's fallback broker login (ADR 0096 Amendment 1). Set by hand;
+# `bms-ctl ingest start` refuses to start while either is empty.
+MQTT_USERNAME=
+MQTT_PASSWORD=
 # Optional: the onboarding agent's model provider (ADR 0090).
 LLM_PROVIDER=
 OPENAI_API_KEY=

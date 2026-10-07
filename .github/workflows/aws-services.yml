@@ -1,15 +1,23 @@
-# ADR 0096 — start or stop the telemetry simulator on the AWS demo host.
+# ADR 0096 — start or stop an optional service on the AWS demo host.
 #
-# Actions tab -> "AWS demo simulator" -> Run workflow -> start | stop | status.
-# bms-ctl remembers the choice, so a later deploy keeps the simulator in the
-# state chosen here. Same deploy key and forced command as deploy-aws.yml.
-name: AWS demo simulator
+# Actions tab -> "AWS demo services" -> Run workflow -> choose the service
+# (sim: the telemetry simulator; ingest: the MQTT ingest host, Amendment 1)
+# and the action (start | stop | status). bms-ctl remembers the choice, so a
+# later deploy keeps the service in the state chosen here. Same deploy key and
+# forced command as deploy-aws.yml.
+name: AWS demo services
 
 on:
   workflow_dispatch:
     inputs:
+      service:
+        description: "Service"
+        required: true
+        type: choice
+        options: [sim, ingest]
+        default: sim
       action:
-        description: "Simulator action"
+        description: "Action"
         required: true
         type: choice
         options: [start, stop, status]
@@ -23,8 +31,8 @@ permissions:
   contents: read
 
 jobs:
-  simulator:
-    name: Simulator ${{ inputs.action }}
+  service:
+    name: ${{ inputs.service }} ${{ inputs.action }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     environment:
@@ -37,9 +45,10 @@ jobs:
           sparse-checkout: deploy/aws
           sparse-checkout-cone-mode: false
 
-      - name: Run bms-ctl sim ${{ inputs.action }}
+      - name: Run bms-ctl ${{ inputs.service }} ${{ inputs.action }}
         env:
           DEPLOY_KEY: ${{ secrets.BMS_DEPLOY_SSH_KEY }}
+          SERVICE: ${{ inputs.service }}
           ACTION: ${{ inputs.action }}
         run: |
           [ -n "$DEPLOY_KEY" ] || { echo "::error::secret BMS_DEPLOY_SSH_KEY is not set"; exit 1; }
@@ -51,4 +60,4 @@ jobs:
             -o UserKnownHostsFile=deploy/aws/known_hosts \
             -o StrictHostKeyChecking=yes \
             -o BatchMode=yes \
-            bmsdeploy@bms.demosites.co.in sim "$ACTION" </dev/null
+            bmsdeploy@bms.demosites.co.in "$SERVICE" "$ACTION" </dev/null

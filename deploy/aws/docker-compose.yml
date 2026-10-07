@@ -72,6 +72,12 @@ services:
       - ./runtime/docker-init:/docker-entrypoint-initdb.d:ro
     mem_limit: 1g
     shm_size: 256m
+    # ADR 0016 Amendment 8, Decision 2 (F4.61), as in the root compose file:
+    # `ingest` shares a network with the database only, because its health
+    # endpoint is unauthenticated and names every enabled RTU.
+    networks:
+      - default
+      - ingest
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U bms_app -d bms"]
       interval: 10s
@@ -270,8 +276,44 @@ services:
       migrate:
         condition: service_completed_successfully
 
+  # Off by default. `bms-ctl ingest start|stop` (or the "AWS demo services"
+  # workflow) turns it on or off; bms-ctl remembers the choice across deploys.
+  # ADR 0096 Amendment 1: it subscribes to the live PHE pilot broker — every
+  # RTU without its own connection config falls back to MQTT_HOST — beside the
+  # pilot's own ingest host. mqtt.js gives each connection a random client id,
+  # so the two subscribers do not disconnect each other.
+  ingest:
+    profiles: ["ingest"]
+    image: ghcr.io/${IMAGE_OWNER:?}/ems-ingest:${IMAGE_TAG:?}
+    restart: unless-stopped
+    environment:
+      <<: *credential-key
+      DATABASE_URL: postgres://bms_fleet:${BMS_FLEET_PASSWORD:?}@postgres:5432/bms
+      MQTT_HOST: phe.thinkiot.co.in
+      MQTT_PORT: 8883
+      # Empty here so that a missing value does not break every other service.
+      # `bms-ctl ingest start` refuses to start without both.
+      MQTT_USERNAME: ${MQTT_USERNAME:-}
+      MQTT_PASSWORD: ${MQTT_PASSWORD:-}
+      INGEST_HOST_HEALTH_PORT: 9102
+      INGEST_BUFFER_DIR: /var/lib/bms-ingest
+    volumes:
+      - ingest-buffer:/var/lib/bms-ingest
+    networks:
+      - ingest
+    mem_limit: 256m
+    depends_on:
+      postgres:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+
+networks:
+  ingest: {}
+
 volumes:
   postgres-data:
   redis-data:
   minio-data:
   keycloak-data:
+  ingest-buffer:
