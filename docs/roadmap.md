@@ -7500,3 +7500,27 @@ its own ADR); `F4.223` and `F4.224` (the guided RTU flow; `F4.224` lands after
 **Owed:** a `chore(agents):` sweep PR. AGENTS.md says "24 tools" and the
 registry has 29; AGENTS.md still lists `protocol_catalog` as a vocabulary
 table, and it is now code in `@bms/shared/ingest`.
+
+### `F4.223`, `F4.224`, `F4.225`, `F4.227`, `F4.229` — the Track E follow-ups ✅ 2026-10-07
+
+Three PRs, squash-merged 2026-10-07; no migration, no new dependency, no web
+change. Two ADR amendment notes, text approved at the plan gate (ADR 0092
+decision 8, ADR 0094 decision 6).
+
+- **#764** (`69053afd`) — `F4.227`: the onboarding chat write is
+  hash-bound under `FOR UPDATE` and builds its messages and checkpoint ring
+  on the locked row; a real-Postgres case gates the lock. `F4.224`: the
+  intercept's question words match as whole words. `F4.225`: one predicate
+  refuses a point key whose unit or domain contradicts the catalog at the
+  tool and the validator, not only at the confirm.
+- **#765** (`8c10ee6a`) — `F4.229`: the point-key catalog RLS test reads
+  in one exported snapshot; it had failed #763's CI on a parallel suite's
+  write.
+- **#763** (`0922bfa4`) — `F4.223`: the admin RTU routes store an empty
+  MQTT topic as NULL.
+
+Live: `bms-api` and `bms-worker` rebuilt with `--no-cache` from `main` `0922bfa4` and restarted; the new code is in the image (`emptyTopicAsNull`, `pointKeyDeclarationProblems`, `GUIDED_KW_CONFLICT_REFUSAL`, the 409 sentence) and `/health` answers 200. Sign-in checks not done (owner ruling 2026-10-07).
+
+Raised: `F4.228` (onboarding still stores an empty topic as `''`),
+`F4.230` (the null-hash branch has no spec), `F4.231` (the empty-ring undo
+writes without a lock). No `chore(agents):` change owed.
