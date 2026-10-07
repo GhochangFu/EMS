@@ -166,8 +166,9 @@ describe.skipIf(!connectionString)("F4.227 — the chat write locks the session 
     await Promise.all([fleetPool?.end(), tenantPool?.end(), authPool?.end(), holderPool?.end()]);
   }, 60_000);
 
-  // One claim per `it`: `expect` throws, so a later claim in the same block
-  // would never run on an earlier one's failure.
+  // One claim group per `it`: `expect` throws, so the groups stay apart and a
+  // failed group does not hide the next one (within a group, the first failed
+  // `expect` hides the rest).
   it("race 1 control — the turn blocked on the holder's FOR UPDATE until it committed", () => {
     assertTheTurnWaitedOnTheHolder(ctx);
   });

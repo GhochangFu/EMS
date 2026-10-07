@@ -22,14 +22,22 @@ import { DRAFT_CHANGED_DURING_TURN, type OnboardingService } from "./onboarding.
 /** The guided turn that appends an RTU at `phase === "rtu"` (no model call). */
 export const APPEND_TURN = "Add another RTU";
 
-/** How long a race waits for the turn to block on the holder before it fails by name. */
-const BLOCK_WAIT_MS = 5_000;
+/**
+ * How long a race waits for the turn to block on the holder before it fails by
+ * name. A ceiling with an early exit, so a pass costs no more for its size;
+ * sized for CI contention at `maxWorkers: 2` (`vitest.config.ts`).
+ */
+const BLOCK_WAIT_MS = 15_000;
 
 export type StoredSession = { draft: OnboardingDraft; messageCount: number };
 
 /** What one race observed. `blocked` and `hit` are the controls that it ran as described. */
 export type RaceOutcome = {
-  /** Backends seen waiting on the holder (`pg_blocking_pids`) before it committed. */
+  /**
+   * Backends seen waiting on the holder (`pg_blocking_pids`) in a
+   * `SELECT ... FOR UPDATE` before it committed. The statement filter matters:
+   * without the lock the turn still waits, but only at its final `UPDATE`.
+   */
   blocked: number;
   /** Rows the holder's competing UPDATE touched (`null` when it ran none). */
   hit: number | null;
@@ -62,20 +70,35 @@ async function storedSession(pool: pg.Pool, sessionId: string): Promise<StoredSe
   return { draft: rows[0].draft, messageCount: rows[0].n };
 }
 
-async function pollUntilBlockedOn(pool: pg.Pool, pid: number, what: string): Promise<number> {
+async function pollUntilBlockedOn(
+  pool: pg.Pool,
+  pid: number,
+  what: string,
+  turn: () => { done: boolean; error: unknown },
+): Promise<number> {
   let blocked = 0;
   const deadline = Date.now() + BLOCK_WAIT_MS;
-  while (blocked === 0 && Date.now() < deadline) {
+  while (blocked === 0 && Date.now() < deadline && !turn().done) {
     const { rows } = await pool.query<{ n: number }>(
       `SELECT count(*)::int AS n FROM pg_stat_activity
-        WHERE wait_event_type = 'Lock' AND $1 = ANY(pg_blocking_pids(pid))`,
+        WHERE wait_event_type = 'Lock' AND $1 = ANY(pg_blocking_pids(pid))
+          AND query ILIKE '%for update%'`,
       [pid],
     );
     blocked = rows[0]?.n ?? 0;
     if (blocked === 0) await new Promise((resolve) => setTimeout(resolve, 25));
   }
   if (blocked === 0) {
-    throw new Error(`${what}: the chat turn never waited on the holder within ${BLOCK_WAIT_MS} ms`);
+    const { done, error } = turn();
+    if (done) {
+      throw new Error(
+        `${what}: the chat turn settled before it waited on the holder's FOR UPDATE` +
+          (error === undefined ? "" : ` (it failed: ${error instanceof Error ? error.message : String(error)})`),
+      );
+    }
+    // A turn still pending here waits somewhere else (without the lock, at its
+    // final UPDATE). Return 0 so the race runs on and the control `it` reddens
+    // by name, beside the cases that show what the turn then wrote.
   }
   return blocked;
 }
@@ -115,7 +138,7 @@ export async function raceTheChatWrite(
       },
     );
 
-    const blocked = await pollUntilBlockedOn(ctx.holderPool, pid, what);
+    const blocked = await pollUntilBlockedOn(ctx.holderPool, pid, what, () => ({ done, error }));
     const settledBeforeCommit = done;
     const hit = competing ? await competing(holder) : null;
     await holder.query("COMMIT");
