@@ -10,11 +10,14 @@ import { asRole } from "../../testing/role-urls";
 import { MasterDataAuditService } from "../master-data-audit.service";
 import { RtusAdminService } from "./rtus.service";
 import {
+  assertAnEditRepairsALegacyEmptyMqttTopic,
+  assertClearingMqttTopicOnTwoRtusDoesNotCollide,
   assertClearingRtuCodeOnTwoRtusDoesNotCollide,
   assertCreateRefusesATakenCodeAtTheSameLocation,
   assertCreateRefusesATakenExternalRtuId,
   assertCreateRefusesATakenMqttTopic,
   assertCreateRefusesATakenRtuCode,
+  assertCreatingTwoRtusWithAnEmptyMqttTopicDoesNotCollide,
   assertUpdateDoesNotSelfCollideOnAnUnchangedRtuCode,
   assertUpdateRefusesATakenCodeAtTheSameLocation,
   assertUpdateRefusesATakenExternalRtuId,
@@ -38,7 +41,8 @@ const connectionString = requireIntegrationDb({
     "rtus_external_rtu_idx, rtus_mqtt_topic_idx or rtus_location_code_unique, " +
     "that Drizzle's rollback re-throws the driver's own object with that field " +
     "intact, and that an update restating an unchanged rtu_code does not " +
-    "collide with itself. None of these can be seen from a fake tx, and all " +
+    "collide with itself, and that an empty mqttTopic is stored as NULL, which " +
+    "the index's IS NOT NULL predicate needs for two cleared RTUs to coexist. None of these can be seen from a fake tx, and all " +
     "fail silently: a 500 on a value the operator chose, or every edit of an " +
     "ingest-bound RTU refused.",
 });
@@ -163,6 +167,18 @@ describe.skipIf(!connectionString)(
 
     it("refuses an update whose mqttTopic is already held, and writes no part of it", async () => {
       await assertUpdateRefusesATakenMqttTopic(ctx, jwt);
+    }, 30_000);
+
+    it("lets two RTUs be created with an empty mqttTopic, stored as NULL", async () => {
+      await assertCreatingTwoRtusWithAnEmptyMqttTopicDoesNotCollide(ctx, jwt);
+    }, 30_000);
+
+    it("lets two RTUs clear their mqttTopic, stored as NULL", async () => {
+      await assertClearingMqttTopicOnTwoRtusDoesNotCollide(ctx, jwt);
+    }, 30_000);
+
+    it("repairs a legacy '' mqttTopic on the next edit", async () => {
+      await assertAnEditRepairsALegacyEmptyMqttTopic(ctx, jwt);
     }, 30_000);
 
     it("refuses a create whose code is already used at the same location", async () => {

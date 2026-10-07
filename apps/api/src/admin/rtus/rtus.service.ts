@@ -26,6 +26,20 @@ export const RTU_ORG_MISMATCH_MESSAGE =
   "RTU organization does not match its location's organization";
 
 /**
+ * `F4.223` — an empty topic is stored as NULL, never `''`.
+ * `rtus_mqtt_topic_idx` (migration 0016) is `WHERE mqtt_topic IS NOT NULL` with no
+ * `<> ''` arm, unlike `rtus_rtu_code_idx` (0071), so a stored `''` is a value two
+ * rows cannot share: the second RTU with no topic answered the F4.141 409.
+ * `''` stays accepted by the schema (`rtus.schema.test.ts`, F4.221) because it is the
+ * only clear path; it is the stored value that changes. Applied to the restated
+ * `existing.mqttTopic` too, so a row written before this fix is repaired on its
+ * next edit. The audit payload keeps the body as sent.
+ */
+function emptyTopicAsNull(topic: string | null): string | null {
+  return topic === "" ? null : topic;
+}
+
+/**
  * `F4.16` / `E7.1b` / ADR 0043 — `rtus` gains `organization_id` + a
  * `tenant_isolation` policy + `FORCE` in migration `0047`.
  *
@@ -144,7 +158,7 @@ export class RtusAdminService {
           domain: body.domain ?? null,
           externalRtuId: body.externalRtuId ?? null,
           rtuCode: body.rtuCode ?? null,
-          mqttTopic: body.mqttTopic ?? null,
+          mqttTopic: emptyTopicAsNull(body.mqttTopic ?? null),
           stationCode: body.stationCode ?? null,
           stationName: body.stationName ?? null,
           // `F4.59` — `update` moves the RTU's assets' `meta.telemetrySource`
@@ -258,7 +272,9 @@ export class RtusAdminService {
         externalRtuId:
           body.externalRtuId !== undefined ? body.externalRtuId : existing.externalRtuId,
         rtuCode: body.rtuCode !== undefined ? body.rtuCode : existing.rtuCode,
-        mqttTopic: body.mqttTopic !== undefined ? body.mqttTopic : existing.mqttTopic,
+        mqttTopic: emptyTopicAsNull(
+          body.mqttTopic !== undefined ? body.mqttTopic : existing.mqttTopic,
+        ),
         stationCode:
           body.stationCode !== undefined ? body.stationCode : existing.stationCode,
         stationName:

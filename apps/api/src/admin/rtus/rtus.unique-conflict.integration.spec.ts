@@ -37,6 +37,11 @@ import type { RtusAdminService } from "./rtus.service";
  * It also holds the one claim no unit test can express: an `update` that
  * restates an RTU's existing `rtu_code` must **not** collide with itself.
  *
+ * `F4.223` added three cells for `rtus_mqtt_topic_idx`'s `IS NOT NULL`
+ * predicate, which — unlike `0071`'s — does not exclude `''`; the service
+ * stores an empty topic as NULL, so the read-back below is `null`, where the
+ * rtu_code cell reads `''`.
+ *
  * The suite runs on the production role wiring — `bms_tenant` for writes,
  * `bms_fleet` for the fixture rows and read-back. Counting as `bms_fleet`
  * matters: under `FORCE ROW LEVEL SECURITY` a count as `bms_owner` returns 0
@@ -461,6 +466,72 @@ export async function assertUpdateRefusesATakenMqttTopic(
   expect({ mqttTopic: row.mqtt_topic, displayName: row.display_name }).toEqual({
     mqttTopic: mine,
     displayName: `F4.60 ${target.code}`,
+  });
+}
+
+/**
+ * `F4.223` — two RTUs created with an empty `mqttTopic` both save. A stored
+ * `''` makes the second create throw inside `createRtu` (the 409 with
+ * `RTU_MQTT_TOPIC_TAKEN_MESSAGE`), which is the red this cell exists for. The
+ * two `toBeNull` are positive: they pin the chosen fix (NULL at the write)
+ * against the alternative (an index that excludes `''`, under which both rows
+ * would save as `''`).
+ */
+export async function assertCreatingTwoRtusWithAnEmptyMqttTopicDoesNotCollide(
+  ctx: RtuUniqueConflictCtx,
+  jwt: JwtPayload,
+): Promise<void> {
+  const first = await createRtu(ctx, jwt, { mqttTopic: "" });
+  const second = await createRtu(ctx, jwt, { mqttTopic: "" });
+  expect((await readRow(ctx, first.id)).mqtt_topic).toBeNull();
+  expect((await readRow(ctx, second.id)).mqtt_topic).toBeNull();
+}
+
+/**
+ * `F4.223` — two RTUs clearing their `mqttTopic` both save. Distinct non-empty
+ * topics first, so each clear is a real write (same reasoning as
+ * `assertClearingRtuCodeOnTwoRtusDoesNotCollide`). `''` is the only clear path
+ * (`updateRtuBodySchema` is optional-but-not-nullable).
+ */
+export async function assertClearingMqttTopicOnTwoRtusDoesNotCollide(
+  ctx: RtuUniqueConflictCtx,
+  jwt: JwtPayload,
+): Promise<void> {
+  const first = await createRtu(ctx, jwt, { mqttTopic: `${tag()}/topic` });
+  const second = await createRtu(ctx, jwt, { mqttTopic: `${tag()}/topic` });
+  await ctx.svc.update(jwt, first.id, { mqttTopic: "" });
+  await ctx.svc.update(jwt, second.id, { mqttTopic: "" });
+  expect((await readRow(ctx, first.id)).mqtt_topic).toBeNull();
+  expect((await readRow(ctx, second.id)).mqtt_topic).toBeNull();
+}
+
+/**
+ * `F4.223` — an edit that does not mention `mqttTopic` repairs a legacy `''`.
+ * `update` restates every column, so the restated value is what repairs the row
+ * (the F4.59 "postcondition, not delta" argument). The fixture is inserted as
+ * `bms_fleet` because the service can no longer write `''`. The `displayName`
+ * half is the positive proof the statement ran. The id is pushed before the
+ * service call so `afterAll` deletes it on a failed case.
+ */
+export async function assertAnEditRepairsALegacyEmptyMqttTopic(
+  ctx: RtuUniqueConflictCtx,
+  jwt: JwtPayload,
+): Promise<void> {
+  const code = tag();
+  const res = await ctx.fixturePool.query<{ id: string }>(
+    `INSERT INTO bms.rtus (organization_id, location_id, code, display_name, source_type, mqtt_topic, ingest_enabled, active)
+     VALUES ($1, $2, $3, $4, 'catalog', '', false, true) RETURNING id`,
+    [ctx.organizationId, ctx.locationId, code, `F4.60 ${code}`],
+  );
+  const id = res.rows[0].id;
+  ctx.createdRtuIds.push(id);
+
+  await ctx.svc.update(jwt, id, { displayName: "F4.223 renamed, mqttTopic untouched" });
+
+  const row = await readRow(ctx, id);
+  expect({ mqttTopic: row.mqtt_topic, displayName: row.display_name }).toEqual({
+    mqttTopic: null,
+    displayName: "F4.223 renamed, mqttTopic untouched",
   });
 }
 
