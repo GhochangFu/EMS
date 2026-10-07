@@ -1,4 +1,4 @@
-import type { OnboardingDraft } from "@bms/shared";
+import { protocolCatalogEntry, type OnboardingDraft } from "@bms/shared";
 
 import { handleRuleBasedTurn, NAMES_A_PROTOCOL, type ChatTurnResult, type RuleBasedTurnDeps } from "./onboarding-chat-rule-based";
 import { EMPTY_TEMPLATE_CONTEXT } from "./onboarding-template-refs";
@@ -136,4 +136,16 @@ export async function assertAGuidedTurnReadsNothingOfTheOrganization(): Promise<
   const { result, reads } = await runTurn("modbus please");
   assert(result.actionLines.length === 1, `the turn answered its action line, got ${JSON.stringify(result.actionLines)}`);
   assert(reads.length === 0, `a guided turn read ${JSON.stringify(reads)}`);
+}
+
+/** F3.24a R3 (ADR 0093 decision 5) - a non-MQTT default config is the catalog's example config. */
+export async function assertANonMqttDefaultConfigIsTheCatalogExample(): Promise<void> {
+  const { result } = await runTurn("a bacnet please");
+  const config = result.draftPatch.rtus?.[0]?.config;
+  assert(
+    JSON.stringify(config) === JSON.stringify(protocolCatalogEntry("bacnet").exampleConfig),
+    `expected the bacnet example config, got ${JSON.stringify(config)}`,
+  );
+  // The catalog is also the expected value above, so a changed example would move both sides; the literal pins it.
+  assert(config?.port === 47808, `expected the BACnet port 47808, got ${String(config?.port)}`);
 }

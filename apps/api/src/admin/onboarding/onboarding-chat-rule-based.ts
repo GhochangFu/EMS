@@ -20,7 +20,7 @@ import type {
 // shared contract's copy of the draft schema and imported here as a value.
 // `@bms/shared` and not `@bms/shared/contracts` — apps/api compiles with
 // moduleResolution "node" and ignores the exports map (ADR 0030 Amendment 2).
-import { ONBOARDING_DRAFT_STRING_MAX } from "@bms/shared";
+import { ONBOARDING_DRAFT_STRING_MAX, protocolCatalogEntry } from "@bms/shared";
 
 import { quoteCell } from "../spreadsheet-guard";
 import type { ToolContext, ToolState } from "./onboarding-agent-tools";
@@ -770,8 +770,6 @@ function defaultConfig(protocol: OnboardingProtocol, message: string): Record<st
       topic: cutToBound(topicMatch?.[1] ?? "", MAX_RTU_TOPIC_CHARS),
     };
   }
-  if (protocol === "modbus_tcp") {
-    return { host: "127.0.0.1", port: 502, unitId: 1, pollIntervalMs: 5000 };
-  }
-  return {};
+  // F3.24a (ADR 0093 decision 5): every other protocol reads the catalog's example config.
+  return { ...protocolCatalogEntry(protocol).exampleConfig };
 }

@@ -8,6 +8,7 @@ import {
   assertAMqttMessageCarriesItsTopicIntoTheConfig,
   assertANamedProtocolAppendsAnRtuWithItsDefaultConfig,
   assertANamedProtocolAnswersItsActionLine,
+  assertANonMqttDefaultConfigIsTheCatalogExample,
   assertAGuidedTurnReadsNothingOfTheOrganization,
 } from "./onboarding-chat-rule-based.spec";
 
@@ -19,6 +20,10 @@ describe("the guided onboarding mode, as a module (F4.217)", () => {
 
   it("a named protocol answers the add_rtu action line (F3.27)", async () => {
     await assertANamedProtocolAnswersItsActionLine();
+  });
+
+  it("a non-MQTT default config is the catalog example (F3.24a)", async () => {
+    await assertANonMqttDefaultConfigIsTheCatalogExample();
   });
 
   it("a guided turn reads nothing of the organization (F3.26 review L4)", async () => {

@@ -19,7 +19,7 @@ import type {
  * Deliberately not in `@bms/shared`: nothing outside `apps/ingest` implements
  * or invokes these, and exporting them would widen the shared surface for no
  * consumer (ADR 0016 §8). The data contracts an adapter *emits* live in
- * `@bms/shared/ingest`, because `F3.24` and the `/admin/*` RTU screens consume
+ * `@bms/shared/ingest`, because `F3.24a` and the `/admin/*` RTU screens consume
  * them.
  *
  * **The clause that makes six adapters safe to build in parallel:** an
@@ -72,7 +72,7 @@ type IngestAdapterBase<TConfig, TDevice> = {
   disconnect(): Promise<void>;
   /** Synchronous, cheap, never throws — callable before connect and after disconnect. */
   health(): AdapterHealth;
-  /** Optional point discovery for F3.24 onboarding. Omit when the protocol cannot browse. */
+  /** Optional point discovery for F3.24b onboarding. Omit when the protocol cannot browse. */
   discover?(): Promise<readonly DiscoveredPoint[]>;
 };
 
@@ -129,7 +129,7 @@ export type IngestAdapterFactory<TConfig = unknown, TDevice = unknown> = {
    * would only ever be derivable from it.
    */
   endpointKey(config: TConfig, rtuId: string): string;
-  /** Lets F3.24 filter for browsable protocols without constructing an instance. */
+  /** Lets F3.24b filter for browsable protocols without constructing an instance. */
   readonly supportsDiscovery?: boolean;
   create(): IngestAdapter<TConfig, TDevice>;
 };

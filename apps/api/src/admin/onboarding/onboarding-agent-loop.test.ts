@@ -24,6 +24,7 @@ import {
   assertThePromptCarriesTheMappingQuestionLoop,
   assertTheMappingChipsSurviveAndAreNotStepLabels,
   assertThePromptTellsTheModelToReadExistingCodesFirst,
+  assertThePromptTellsTheModelToReadTheCatalogBeforeANonMqttRtu,
 } from "./onboarding-agent-loop.spec";
 
 /** Vitest entry point — see `admin.schema.test.ts` for the pattern (ADR 0014). One `it()` per claim. */
@@ -126,5 +127,11 @@ describe("the mapping question loop (F3.23, ADR 0092 decision 5)", () => {
 describe("the organization inventory sentence (F3.26, ADR 0095 decision 5)", () => {
   it("tells the model to call find_existing before it chooses a new code", () => {
     assertThePromptTellsTheModelToReadExistingCodesFirst();
+  });
+});
+
+describe("the protocol catalog sentence (F3.24a, ADR 0093 decision 5)", () => {
+  it("tells the model to call list_protocols before it adds a non-MQTT RTU", () => {
+    assertThePromptTellsTheModelToReadTheCatalogBeforeANonMqttRtu();
   });
 });

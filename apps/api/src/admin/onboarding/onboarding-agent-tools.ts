@@ -67,6 +67,9 @@ export type { ToolOutcome, ToolState };
  * `credentialsSet`, `_commitProposal` or an `onboardingMeta` field other than
  * `useExistingPointKeys`.
  *
+ * `add_rtu` and `update_rtu` check `rtus[].config` with the protocol's draft
+ * schema from the catalog (F3.24a, ADR 0093), reporting paths only.
+ *
  * **Action lines are written by code** from the validated, applied values —
  * never the raw arguments and never the model's text (decision 6).
  *
