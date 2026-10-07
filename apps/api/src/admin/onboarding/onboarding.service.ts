@@ -70,7 +70,10 @@ import { OnboardingValidateService } from "./onboarding-validate.service";
 const DRAFT_CHANGED_SINCE_LOAD = "The draft changed since this page loaded it. Reload the session and try again.";
 
 /** The 409 of a chat write that found the session no longer a draft (a commit landed during the turn). */
-const SESSION_NO_LONGER_DRAFT = "The session was committed while this turn ran, so the turn was not saved. Reload the session.";
+export const SESSION_NO_LONGER_DRAFT = "The session was committed while this turn ran, so the turn was not saved. Reload the session.";
+
+/** The 409 of a chat write whose draft moved while the turn ran (`F4.227`, ADR 0094 decision 6). */
+export const DRAFT_CHANGED_DURING_TURN = "The draft changed while this turn ran, so the turn was not saved. Reload the session.";
 
 /**
  * Orchestrates onboarding session lifecycle.
@@ -237,6 +240,9 @@ export class OnboardingService {
     if (session.status !== "draft") {
       throw new ForbiddenException("Session is not editable");
     }
+    // F4.227: taken before any collaborator runs, so nothing downstream can
+    // touch the object it hashes. The write re-checks it under `FOR UPDATE`.
+    const expectedHash = draftHash(session.draft);
 
     // ADR 0022 decision 2. Checked before ANY side effect: the turn is not
     // stored in `messages` and never reaches the model (`F3.21`: nor the
@@ -353,12 +359,6 @@ export class OnboardingService {
         looksLikeCredential(line) ? "[REDACTED] — an action line looked like it contained a credential (ADR 0022)" : line,
       ),
     );
-    const messages = [
-      ...(session.messages as OnboardingChatMessage[]),
-      userMsg,
-      ...actionMsgs,
-      assistantMsg,
-    ];
 
     // F3.25 (ADR 0094 decision 4): a turn that changes a section records the
     // draft as it was BEFORE the turn, so `undo` can bring it back. A turn that
@@ -393,8 +393,26 @@ export class OnboardingService {
       checkpointWrite = { checkpoints: pushed.dropped === "too_large" ? null : pushed.ring };
     }
 
-    const updated = await withTenant(this.tenantDb, session.organizationId, (tx) =>
-      tx
+    const updated = await withTenant(this.tenantDb, session.organizationId, async (tx) => {
+      const locked = await this.lockSession(tx, sessionId);
+      if (!locked || locked.status !== "draft") {
+        // A commit landed while the model ran.
+        throw new ConflictException(SESSION_NO_LONGER_DRAFT);
+      }
+      // F4.227: the write is bound to the draft this turn loaded. A null hash
+      // (a draft over the depth bound) cannot be matched, so it fails closed.
+      if (expectedHash === null || draftHash(locked.draft) !== expectedHash) {
+        throw new ConflictException(DRAFT_CHANGED_DURING_TURN);
+      }
+      // Built on the locked row: a message written in between (a turn that
+      // changed nothing, an empty-ring `undo`) does not change the hash.
+      const messages = [
+        ...(locked.messages as OnboardingChatMessage[]),
+        userMsg,
+        ...actionMsgs,
+        assistantMsg,
+      ];
+      const [row] = await tx
         .update(onboardingSessions)
         .set({
           draft: mergedDraft,
@@ -403,12 +421,11 @@ export class OnboardingService {
           ...checkpointWrite,
           updatedAt: sql`now()`,
         })
-        // Review finding (F3.25): a commit may have landed while the model
-        // ran; a turn must not write its draft and ring onto a committed row.
+        // Defence in depth behind the lock's status check above.
         .where(and(eq(onboardingSessions.id, sessionId), eq(onboardingSessions.status, "draft")))
-        .returning()
-        .then(([row]) => row),
-    );
+        .returning();
+      return row;
+    });
     if (!updated) {
       throw new ConflictException(SESSION_NO_LONGER_DRAFT);
     }
@@ -789,20 +806,12 @@ export class OnboardingService {
     const deriveCredentialsSet = CredentialCryptoService.isConfigured();
     const expectedHash = draftHash(session.draft);
     // Review finding (F3.25): the hash check and the write are one locked
-    // step, as `commitProposed` does it. `chat` writes without a lock, so a
-    // turn — or a commit — that landed after `loadSession` read the row is
-    // seen here, and the restore is built from the row as it now stands.
+    // step, as `commitProposed` does it. `chat` takes the same lock and the
+    // same check since `F4.227`; a turn or a commit that landed after
+    // `loadSession` read the row is seen here, and the restore is built from
+    // the row as it now stands.
     const { updated, draft, reply } = await withTenant(this.tenantDb, session.organizationId, async (tx) => {
-      const [locked] = await tx
-        .select({
-          draft: onboardingSessions.draft,
-          status: onboardingSessions.status,
-          messages: onboardingSessions.messages,
-          checkpoints: onboardingSessions.checkpoints,
-        })
-        .from(onboardingSessions)
-        .where(eq(onboardingSessions.id, session.id))
-        .for("update");
+      const locked = await this.lockSession(tx, session.id);
       if (!locked || locked.status !== "draft") {
         throw new ForbiddenException("Session is not editable");
       }
@@ -841,6 +850,21 @@ export class OnboardingService {
       readyToCommit: validation.readyToCommit,
       autoOpenPreview: false,
     };
+  }
+
+  /** `SELECT ... FOR UPDATE` of the columns a locked write compares and builds on (`restoreTo`, `chat`). */
+  private lockSession(tx: Parameters<Parameters<typeof withTenant>[2]>[0], sessionId: string) {
+    return tx
+      .select({
+        draft: onboardingSessions.draft,
+        status: onboardingSessions.status,
+        messages: onboardingSessions.messages,
+        checkpoints: onboardingSessions.checkpoints,
+      })
+      .from(onboardingSessions)
+      .where(eq(onboardingSessions.id, sessionId))
+      .for("update")
+      .then(([row]) => row);
   }
 
   private async mapSessionWithOrg(row: typeof onboardingSessions.$inferSelect): Promise<OnboardingSessionDto> {
