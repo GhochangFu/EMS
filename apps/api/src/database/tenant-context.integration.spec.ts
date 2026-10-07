@@ -96,7 +96,17 @@ export async function assertTenantWithoutContextSeesNothing(
   }
 }
 
-/** `bms_fleet` carries BYPASSRLS, so it sees both organizations at once. */
+/**
+ * `bms_fleet` carries BYPASSRLS, so it sees both organizations at once.
+ *
+ * `F4.226` — a superset, not an exact list: about twenty integration suites
+ * create organizations with locations of their own, and with two workers one
+ * of them can hold its rows while this read runs, so an exact match failed on
+ * `main` after #756 at the same code that passed on its PR. The claim is the
+ * bypass, and seeing both seeded organizations with no tenant context proves
+ * it; a tenant-bound read with no context sees none
+ * (`assertTenantWithoutContextSeesNothing`).
+ */
 export async function assertFleetSeesEveryOrganization(
   fleetPool: pg.Pool,
   organizationIds: string[],
@@ -104,7 +114,8 @@ export async function assertFleetSeesEveryOrganization(
   const { rows } = await fleetPool.query<{ organization_id: string }>(
     "select distinct organization_id from bms.locations",
   );
-  expect(rows.map((r) => r.organization_id).sort()).toEqual([...organizationIds].sort());
+  expect(organizationIds.length).toBeGreaterThan(1);
+  expect(rows.map((r) => r.organization_id)).toEqual(expect.arrayContaining(organizationIds));
 }
 
 /**
