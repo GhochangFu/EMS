@@ -167,7 +167,7 @@ export class OnboardingTemplateCatalogService {
     return {
       organization: organizationId === undefined ? [] : await this.listOrganizationTemplates(organizationId),
       stock: this.listStock(),
-      pointKeys: await this.listPointKeyCatalog(),
+      ...(await this.listPointKeyCatalog()),
     };
   }
 
@@ -176,9 +176,18 @@ export class OnboardingTemplateCatalogService {
    * template point whose key is not active (`assertPointKeysActive`), and a
    * key the draft declares that the catalog already holds reuses that row, so
    * validation needs the inactive codes as well as the active ones.
+   *
+   * `F4.225`: the same read carries each code's `unit` and `domain`, which the
+   * commit compares with a draft declaration of that code. One read, two
+   * projections, so the two maps cannot come from two catalog states.
    */
-  private async listPointKeyCatalog(): Promise<ReadonlyMap<string, boolean>> {
-    const rows = await this.db.select({ code: pointKeys.code, active: pointKeys.active }).from(pointKeys);
-    return new Map(rows.map((row) => [row.code, row.active]));
+  private async listPointKeyCatalog(): Promise<Pick<ValidateTemplateContext, "pointKeys" | "pointKeyFields">> {
+    const rows = await this.db
+      .select({ code: pointKeys.code, active: pointKeys.active, unit: pointKeys.unit, domain: pointKeys.domain })
+      .from(pointKeys);
+    return {
+      pointKeys: new Map(rows.map((row) => [row.code, row.active])),
+      pointKeyFields: new Map(rows.map((row) => [row.code, { unit: row.unit, domain: row.domain }])),
+    };
   }
 }

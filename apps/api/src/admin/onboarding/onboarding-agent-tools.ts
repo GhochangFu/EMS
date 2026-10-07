@@ -11,6 +11,7 @@ import { dispatchMappingTool, isMappingToolName, MAPPING_TOOL_DESCRIPTIONS, MAPP
 import { cutToBound, draftCountProblem } from "./onboarding-draft-caps";
 import type { LlmToolCall, LlmToolDefinition } from "./onboarding-llm-port";
 import { deriveLocationPatch } from "./onboarding-location-derive";
+import { pointKeyDeclarationProblems } from "./onboarding-point-key-conflict";
 import type { OrgPointKeySummary } from "./onboarding-catalog.service";
 import type { ExistingQuery, ExistingRow } from "./onboarding-inventory.service";
 import { carriesPromptMarker, serialiseDraftForPrompt } from "./onboarding-prompt-budget";
@@ -268,7 +269,9 @@ const DESCRIPTIONS: Record<ToolName, string> = {
     "Changes fields of the RTU at `index`. Never put a credential in `config`. " +
     "A config that fails the protocol's schema is refused with the field path.",
   remove_rtu: "Removes the RTU at `index`.",
-  add_point_key: "Declares a point key in this draft.",
+  add_point_key:
+    "Declares a point key in this draft. Refused when the catalog already holds the code with a different unit or domain; " +
+    "declare such a code without unit and domain to accept the catalog's.",
   remove_point_key:
     "Removes the draft point key at `index`. Refused while a draft mapping or template uses it and the catalog does not hold it active.",
   add_asset: "Adds an asset on the RTU at `rtuIndex`.",
@@ -517,7 +520,18 @@ async function dispatch(name: ToolName, args: Record<string, unknown>, state: To
 
     case "add_point_key": {
       const key = args as z.infer<typeof draftPointKeySchema>;
-      return write(state, { pointKeys: [...(draft.pointKeys ?? []), key] }, `Added point key ${quoteCell(key.code)}`);
+      const existing = draft.pointKeys ?? [];
+      // F4.225: the commit refuses a declared unit or domain that the catalog,
+      // or an earlier declaration of the same code, contradicts. Only the
+      // appended key is judged; a contradiction already in the draft (a PATCH
+      // can put one there) is the validator's to report.
+      const problem = pointKeyDeclarationProblems([...existing, key], ctx.templates.pointKeyFields).find(
+        (candidate) => candidate.index === existing.length,
+      );
+      if (problem) {
+        return fail(problem.message);
+      }
+      return write(state, { pointKeys: [...existing, key] }, `Added point key ${quoteCell(key.code)}`);
     }
 
     case "remove_point_key": {

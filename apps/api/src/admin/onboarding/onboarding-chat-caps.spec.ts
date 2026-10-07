@@ -126,11 +126,17 @@ export type Recorder = {
  */
 export function fakeDb(results: unknown[][], record: Recorder) {
   const queue = [...results];
+  const loaded = queue[0] ?? [];
   const next = () => queue.shift() ?? [];
   const selectChain = {
     from: () => selectChain,
     where: () => selectChain,
     limit: () => Promise.resolve(next()),
+    // F4.227: a `SELECT ... FOR UPDATE` answers the row `loadSession` read and
+    // shifts nothing, so the lock re-check sees an unchanged row in every case
+    // here. The raced cases live in `onboarding-chat-rollback.spec.ts` over
+    // `echoDb`'s `locked`.
+    for: () => Promise.resolve(loaded),
   };
   const updateChain = {
     set: (values: Record<string, unknown>) => {

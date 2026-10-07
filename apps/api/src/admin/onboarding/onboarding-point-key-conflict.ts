@@ -108,10 +108,71 @@ export function pointKeyConflictMessage(
     );
   }
   return (
-    `Point key '${code}' already exists in the fleet-wide catalog with ${held}, and this draft ` +
+    `Point key '${code}' ${CATALOG_CONFLICT_LEAD} ${held}, and this draft ` +
     `declares ${conflict.field} '${conflict.declared}'. Every organization shares that row, so ` +
     `onboarding may add a code the platform does not have but may not change one it does. Ask a ` +
     `global administrator to reconcile the catalog entry, or drop the ${conflict.field} from the ` +
     `draft to accept the catalog's.`
   );
+}
+
+/**
+ * `F4.225` — the words that open the catalog sentence after the code. Spelled
+ * once, here, so the guided path can recognise the refusal without restating it.
+ */
+export const CATALOG_CONFLICT_LEAD = "already exists in the fleet-wide catalog with";
+
+/** `F4.225` — the catalog's `unit` and `domain` per code, every row whatever its `active` flag. */
+export type CatalogPointKeyFields = ReadonlyMap<string, CatalogPointKey>;
+
+/** `F4.225` — one declaration the commit would refuse: its index in the list, the field, and the commit's sentence. */
+export type PointKeyDeclarationProblem = { index: number; field: "unit" | "domain"; message: string };
+
+/**
+ * `F4.225` (ADR 0092 decision 8, amended) — every declaration in `keys` that
+ * the commit's point-key loop (`OnboardingCommitService.commitWith`) would
+ * refuse, with the sentence it would refuse it with. The walk is the commit's,
+ * without the writes: a code this list already resolved is compared with that
+ * resolution (the `draft` sentence; an agreeing duplicate passes), a code the
+ * catalog holds is compared with the catalog row (the `catalog` sentence; a
+ * contradicting declaration does not resolve the code, so a later duplicate of
+ * it meets the catalog again rather than a unit the draft never stated), and
+ * a code new to both resolves to what the commit's INSERT would store.
+ *
+ * Every problem is returned, so a tool can judge only the keys it appends and
+ * the validator can report them all. The commit keeps its own comparison
+ * inside the transaction: it reads the catalog there, so it stays the last
+ * line against a catalog edit made after this check ran.
+ */
+export function pointKeyDeclarationProblems(
+  keys: readonly ({ code: string } & DeclaredPointKey)[],
+  catalog: CatalogPointKeyFields,
+): PointKeyDeclarationProblem[] {
+  const problems: PointKeyDeclarationProblem[] = [];
+  const resolved = new Map<string, CatalogPointKey>();
+  keys.forEach((key, index) => {
+    const already = resolved.get(key.code);
+    if (already !== undefined) {
+      const clash = conflictingPointKeyDeclaration(key, already);
+      if (clash !== null) {
+        problems.push({ index, field: clash.field, message: pointKeyConflictMessage(key.code, clash, "draft") });
+      }
+      return;
+    }
+    const row = catalog.get(key.code);
+    if (row !== undefined) {
+      const clash = conflictingPointKeyDeclaration(key, row);
+      if (clash !== null) {
+        // Left unresolved: the commit throws here, so there is no "first
+        // declaration" a later duplicate could contradict. Each one is compared
+        // with the catalog again and gets the catalog sentence.
+        problems.push({ index, field: clash.field, message: pointKeyConflictMessage(key.code, clash, "catalog") });
+        return;
+      }
+      resolved.set(key.code, row);
+      return;
+    }
+    resolved.set(key.code, { unit: key.unit ?? null, domain: key.domain ?? null });
+  });
+  return problems;
 }

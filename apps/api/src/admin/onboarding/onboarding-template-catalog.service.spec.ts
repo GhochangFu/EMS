@@ -208,8 +208,8 @@ export async function assertTheContextWithNoOrganizationReadsOnlyTheStock(): Pro
  */
 async function catalogContext(): Promise<{ context: Awaited<ReturnType<OnboardingTemplateCatalogService["context"]>>; selects: Select[] }> {
   const { db, selects } = fakeDb([], [], [
-    { code: "kw", active: true },
-    { code: "retired", active: false },
+    { code: "kw", active: true, unit: "kW", domain: "electrical" },
+    { code: "retired", active: false, unit: null, domain: null },
   ]);
   return { context: await new OnboardingTemplateCatalogService(db, NO_STOCK).context(undefined), selects };
 }
@@ -219,9 +219,19 @@ export async function assertTheContextCarriesThePointKeyCatalogWithItsActiveFlag
   assert(JSON.stringify([...context.pointKeys]) === JSON.stringify([["kw", true], ["retired", false]]), `got ${JSON.stringify([...context.pointKeys])}`);
 }
 
-/** `F4.196` — that catalog is one unfiltered `code, active` read. */
+/** `F4.196` — that catalog is one unfiltered read; `F4.225` widens it to `code, active, unit, domain`. */
 export async function assertThePointKeyCatalogIsOneUnfilteredRead(): Promise<void> {
   const { selects } = await catalogContext();
   const read = selects.find((select) => select.table === pointKeys);
-  assert(read !== undefined && read.where === null && read.fields.join() === "code,active", `one unfiltered code,active read, got ${read === undefined ? "none" : `${read.fields.join()} where ${JSON.stringify(read.where)}`}`);
+  assert(read !== undefined && read.where === null && read.fields.join() === "code,active,unit,domain", `one unfiltered code,active,unit,domain read, got ${read === undefined ? "none" : `${read.fields.join()} where ${JSON.stringify(read.where)}`}`);
+}
+
+/** `F4.225` C1 — the same read carries the unit and domain of every code, inactive ones too. */
+export async function assertTheContextCarriesTheUnitAndDomainPerCode(): Promise<void> {
+  const { context } = await catalogContext();
+  const fields = JSON.stringify([...context.pointKeyFields]);
+  assert(
+    fields === JSON.stringify([["kw", { unit: "kW", domain: "electrical" }], ["retired", { unit: null, domain: null }]]),
+    `C1 the unit and domain per code, got ${fields}`,
+  );
 }

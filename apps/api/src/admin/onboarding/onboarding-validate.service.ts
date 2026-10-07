@@ -12,6 +12,7 @@ import {
 import { echoedItems, moreTail, quoteCell } from "../spreadsheet-guard";
 import { needsMqttSetup, rtuTopic, topicHasWildcard } from "./onboarding-chat-summaries";
 import { assetPointProblems } from "./onboarding-mapping-refs";
+import { pointKeyDeclarationProblems } from "./onboarding-point-key-conflict";
 import {
   draftAssetPointSchema,
   draftAssetSchema,
@@ -107,6 +108,11 @@ export class OnboardingValidateService {
     validateDraftTemplates(d, templates, errors);
     validateTemplatedAssets(d, templates, errors);
     validateAssetPoints(d, templates, errors);
+    // F4.225: the commit's unit and domain comparison of each declared point
+    // key, before the transaction, so `readyToCommit` and the commit agree.
+    for (const problem of pointKeyDeclarationProblems(d.pointKeys ?? [], templates.pointKeyFields)) {
+      errors.push({ path: `pointKeys.${problem.index}.${problem.field}`, message: problem.message });
+    }
     const phase = this.inferPhase(d, activeLocationTypeCodes);
     const readyToCommit = errors.length === 0 && phase === "review";
     return {

@@ -255,6 +255,11 @@ migration: the draft is `jsonb`.
    (`pointKeyConflictMessage`) stays a refusal at commit; D3 does not include
    it.
 
+   *(Amended 2026-10-07, `F4.225`: the tools and the validator now refuse
+   this contradiction too, with the predicate the commit uses. The template
+   context carries the catalog unit and domain of each key
+   (`pointKeyFields`). The commit keeps its in-transaction comparison.)*
+
 ## Left to the plan
 
 The draft plan proposes these items. The owner did not rule them on
@@ -317,6 +322,8 @@ None. No new npm package, no migration, no contract change in
 - **A conversation can extend the global point-key catalog** in bulk at commit
   (ADR 0051 Amendment 1). The unit and domain contradiction refusal still
   applies, at commit only.
+  *(Amended 2026-10-07, `F4.225`: the tools and the validator refuse it as
+  well; the commit check stays.)*
 - **The guided path refuses more.** After `F3.27`, a guided `map_point` or
   `use_existing_point_keys` that the commit would refuse is refused at the
   tool. This is a behavior change on the guided path, with no new grammar.

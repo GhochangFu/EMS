@@ -1,6 +1,9 @@
 import { describe, it } from "vitest";
 
 import {
+  assertV1ACatalogContradictionIsAnErrorAndNotReady,
+  assertV2AnAgreeingDeclarationIsReady,
+  assertV3ADomainContradictionNamesTheDomainPath,
   assertV1AnUndeclaredMappingKeyIsAnError,
   assertV1AnUndeclaredMappingKeyIsNotReady,
   assertV1ControlDeclaringTheKeyMakesItReady,
@@ -26,4 +29,10 @@ describe("onboarding validate: draft mappings (F3.23, ADR 0092 decision 2, F4.11
     assertV5ControlTheSameRowInRangeReportsTheKeyAndSource());
   it("V6 an active catalog key passes undeclared", () => assertV6AnActiveCatalogKeyPassesUndeclared());
   it("V6 control: the same key outside the catalog is an error", () => assertV6ControlTheSameKeyOutsideTheCatalogIsAnError());
+});
+
+describe("onboarding validate: a point key the catalog contradicts (F4.225)", () => {
+  it("V1 a contradicted unit is an error at its field and the draft is not ready", () => assertV1ACatalogContradictionIsAnErrorAndNotReady());
+  it("V2 control: the catalog's unit is ready", () => assertV2AnAgreeingDeclarationIsReady());
+  it("V3 a contradicted domain names the domain path", () => assertV3ADomainContradictionNamesTheDomainPath());
 });

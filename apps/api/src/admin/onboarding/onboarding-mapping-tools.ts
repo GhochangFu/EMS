@@ -3,6 +3,7 @@ import { z, type ZodTypeAny } from "zod";
 import { echoedItems, moreTail, quoteCell } from "../spreadsheet-guard";
 import { countOf } from "./onboarding-commit-proposal";
 import { assetPointProblems } from "./onboarding-mapping-refs";
+import { pointKeyDeclarationProblems } from "./onboarding-point-key-conflict";
 import { unresolvedPointKey, type ValidateTemplateContext } from "./onboarding-template-refs";
 import { fail, succeed, TOOL_LIST_MAX_ITEMS, write, type ToolOutcome, type ToolState } from "./onboarding-tool-outcome";
 import { draftAssetPointSchema, draftPointKeySchema } from "./onboarding.schema";
@@ -48,7 +49,9 @@ export type MappingToolName = keyof typeof MAPPING_TOOL_SCHEMAS;
 export const MAPPING_TOOL_DESCRIPTIONS: Record<MappingToolName, string> = {
   add_point_keys:
     `Declares up to ${MAX_POINT_KEYS_PER_CALL} point keys in this draft in one call, all or none. ` +
-    "Refused when a code repeats in the call, is already declared in this draft, or is inactive in the catalog. " +
+    "Refused when a code repeats in the call, is already declared in this draft, or is inactive in the catalog, " +
+    "or when the catalog already holds the code with a different unit or domain (declare such a code without unit and domain " +
+    "to accept the catalog's). " +
     "Call it before map_points for the keys the catalog does not hold; the result names the keys new to the catalog.",
   map_points:
     `Maps up to ${MAX_ASSET_POINTS_PER_CALL} source data keys on the plain asset at \`assetIndex\` to point keys in one call, all or none. ` +
@@ -104,6 +107,16 @@ export function dispatchMappingTool(
         if (unresolved !== null) {
           return fail(`keys.${index}: ${unresolved}`);
         }
+      }
+      // F4.225: the commit refuses a declared unit or domain the catalog
+      // contradicts. The loop above already refuses a repeated or
+      // already-declared code, so only the catalog sentence fires here; the
+      // index is the key's place in this call.
+      const conflict = pointKeyDeclarationProblems([...existing, ...keys], ctx.templates.pointKeyFields).find(
+        (candidate) => candidate.index >= existing.length,
+      );
+      if (conflict) {
+        return fail(`keys.${conflict.index - existing.length}: ${conflict.message}`);
       }
       const newToCatalog = keys.filter((key) => catalog.get(key.code) === undefined).map((key) => key.code);
       const fresh = newToCatalog.length > 0 ? ` (${newToCatalog.length} new to the catalog)` : "";

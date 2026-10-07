@@ -8,6 +8,7 @@ import {
   assertS2TheStockProjectionHasNoVersion,
   assertTheContextWithNoOrganizationReadsOnlyTheStock,
   assertTheContextCarriesThePointKeyCatalogWithItsActiveFlag,
+  assertTheContextCarriesTheUnitAndDomainPerCode,
   assertThePointKeyCatalogIsOneUnfilteredRead,
 } from "./onboarding-template-catalog.service.spec";
 
@@ -43,5 +44,9 @@ describe("OnboardingTemplateCatalogService (F3.22, ADR 0091)", () => {
 
   it("F4.196 reads the point-key catalog in one unfiltered select", async () => {
     await assertThePointKeyCatalogIsOneUnfilteredRead();
+  });
+
+  it("F4.225 C1 carries the catalog unit and domain per code", async () => {
+    await assertTheContextCarriesTheUnitAndDomainPerCode();
   });
 });
