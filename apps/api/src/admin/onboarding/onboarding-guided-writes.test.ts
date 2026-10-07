@@ -1,7 +1,9 @@
 import { describe, it } from "vitest";
 
 import {
+  assertAConfigRefusalAnswersItsGuidedSentence,
   assertACountCapIsRefusedWithTheCapSentence,
+  assertAnUnrelatedRefusalIsNotTheConfigSentence,
   assertACredentialIsRefused,
   assertAPassingWriteAnswersItsActionLine,
   assertAPromptMarkerIsRefused,
@@ -58,5 +60,13 @@ describe("guidedWrite over the tool registry (F3.27 U3)", () => {
 
   it("refuses use existing keys on an inactive kw without the say-kw loop (F3.23 review)", async () => {
     await assertUseExistingKeysWithAnInactiveKwIsRefusedWithoutTheSayKwLoop();
+  });
+
+  it("answers a protocol-config refusal with its guided sentence (F3.24a)", () => {
+    assertAConfigRefusalAnswersItsGuidedSentence();
+  });
+
+  it("keeps an unrelated refusal on the fail-closed sentence (F3.24a)", () => {
+    assertAnUnrelatedRefusalIsNotTheConfigSentence();
   });
 });

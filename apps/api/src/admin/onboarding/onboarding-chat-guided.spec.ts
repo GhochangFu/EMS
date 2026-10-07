@@ -307,6 +307,6 @@ export async function assertAGuidedTurnStoresItsActionMessage(): Promise<void> {
     const messages = (record.updates[0]?.messages ?? []) as { role: string; content: string }[];
     const roles = messages.map((m) => m.role);
     assert(JSON.stringify(roles) === JSON.stringify(["user", "action", "assistant"]), `the stored roles, got ${JSON.stringify(roles)}`);
-    assert(messages[1]?.content === "Added RTU RTU-1 (modbus_tcp)", `the action text, got ${messages[1]?.content}`);
+    assert(messages[1]?.content === "Added RTU RTU-1 (modbus_tcp) (config only, not ingested)", `the action text, got ${messages[1]?.content}`);
   });
 }

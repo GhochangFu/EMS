@@ -1,7 +1,8 @@
 import { MAX_ONBOARDING_RTUS, type OnboardingDraft } from "@bms/shared";
 
-import { CREDENTIAL_TOOL_ERROR, EXISTING_KEYS_NEED_KW_ERROR, TOOL_DEFINITIONS, type ToolContext, type ToolState } from "./onboarding-agent-tools";
+import { CREDENTIAL_TOOL_ERROR, EXISTING_KEYS_NEED_KW_ERROR, INVALID_CONFIG_PREFIX, TOOL_DEFINITIONS, type ToolContext, type ToolState } from "./onboarding-agent-tools";
 import {
+  GUIDED_CONFIG_REFUSAL,
   GUIDED_CREDENTIAL_REFUSAL,
   GUIDED_DEPTH_REFUSAL,
   GUIDED_EXISTING_KEYS_REFUSAL,
@@ -162,4 +163,16 @@ export async function assertUseExistingKeysWithAnInactiveKwIsRefusedWithoutTheSa
   assert(!out.ok && out.error === GUIDED_KW_INACTIVE_REFUSAL, `the inactive-kw refusal: ${JSON.stringify(out)}`);
   assert(!out.ok && !out.error.includes("Say **kw**"), "the sentence does not point to the declaration loop");
   assert(state.working.onboardingMeta === undefined, "nothing was written");
+}
+
+/** F3.24a G1 (ADR 0093 decision 5, plan Q4): a protocol-config refusal answers its own guided sentence. */
+export function assertAConfigRefusalAnswersItsGuidedSentence(): void {
+  const sentence = guidedRefusal("add_rtu", `${INVALID_CONFIG_PREFIX}mqtt: port: Expected number`);
+  assert(sentence === GUIDED_CONFIG_REFUSAL, `the config sentence, got ${sentence}`);
+}
+
+/** G1's adjacent negative: an unrelated refusal still fails closed. */
+export function assertAnUnrelatedRefusalIsNotTheConfigSentence(): void {
+  const sentence = guidedRefusal("add_rtu", "Something else went wrong.");
+  assert(sentence === GUIDED_OTHER_REFUSAL, `the fallback, got ${sentence}`);
 }
