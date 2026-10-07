@@ -18,6 +18,9 @@ import {
   assertToolCallsAreRunAndResultsReturnedToTheModel,
   assertAnUnknownToolNameIsRecordedAsUnknown,
   assertAProviderErrorRecordsItsClassAndStatus,
+  assertAProviderErrorDiscardsTheSuggestedReplies,
+  assertSuggestedRepliesReachTheResult,
+  assertThePromptNamesSuggestReplies,
 } from "./onboarding-agent-loop.spec";
 
 /** Vitest entry point — see `admin.schema.test.ts` for the pattern (ADR 0014). One `it()` per claim. */
@@ -90,5 +93,19 @@ describe("onboarding agent loop (F3.21, ADR 0090 decisions 2, 3, 7, 9)", () => {
 describe("runAgentTurn — templates[] (F3.22, ADR 0091 decision 2)", () => {
   it("W4 the turn patch carries a changed templates section", () => {
     assertW4TheTurnPatchCarriesTemplates();
+  });
+});
+
+describe("runAgentTurn — suggest_replies (F3.25, ADR 0094 decision 9)", () => {
+  it("carries the offered replies to the result", async () => {
+    await assertSuggestedRepliesReachTheResult();
+  });
+
+  it("drops the offered replies on a provider error", async () => {
+    await assertAProviderErrorDiscardsTheSuggestedReplies();
+  });
+
+  it("tells the model to offer choices with suggest_replies", () => {
+    assertThePromptNamesSuggestReplies();
   });
 });

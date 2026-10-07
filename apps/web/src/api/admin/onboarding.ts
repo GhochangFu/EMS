@@ -50,6 +50,22 @@ export async function sendOnboardingChat(
 }
 
 /**
+ * F3.25 (ADR 0094 decision 6): rolls the draft back to a checkpoint. Bound to the
+ * checkpoint id and the draft hash this client last saw; a stale hash is a 409.
+ */
+export async function rollbackOnboardingSession(
+  sessionId: string,
+  checkpointId: string,
+  draftHash: string,
+): Promise<OnboardingChatResponseDto> {
+  return adminFetch(`/admin/onboarding/sessions/${sessionId}/rollback`, onboardingChatResponseDtoSchema, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ checkpointId, draftHash }),
+  });
+}
+
+/**
  * Stores RTU credentials for a draft session (ADR 0022).
  *
  * The only path credentials may take. They are never typed into the chat: the

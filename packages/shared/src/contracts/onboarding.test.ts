@@ -17,6 +17,10 @@ import {
   assertDraftStringBoundsAreEnforced,
   assertSessionDtoCarriesTheCaps,
   assertSessionDtoCarriesTheStringBounds,
+  assertASummaryCarryingSectionsIsRefused,
+  assertSessionDtoParsesWithAHash,
+  assertSessionDtoParsesWithSummariesAndNoHash,
+  assertSessionDtoRequiresTheCheckpointFields,
 } from "./onboarding.spec";
 
 /** Vitest entry point — assertions live in the sibling `.spec` (ADR 0014). */
@@ -95,5 +99,23 @@ describe("F3.22 — the commit result reports templates (ADR 0091 decision 4)", 
 
   it("refuses a result missing any one of them", () => {
     assertCommitResponseRequiresEachTemplateField();
+  });
+});
+
+describe("F3.25 — checkpoint summaries and the draft hash on the session DTO (ADR 0094 decisions 4, 7)", () => {
+  it("parses a session carrying one summary and a null hash", () => {
+    assertSessionDtoParsesWithSummariesAndNoHash();
+  });
+
+  it("parses a session carrying a 64-hex hash", () => {
+    assertSessionDtoParsesWithAHash();
+  });
+
+  it("refuses a summary that carries sections (strict, the F4.185 guard)", () => {
+    assertASummaryCarryingSectionsIsRefused();
+  });
+
+  it("refuses a session missing checkpoints or draftHash", () => {
+    assertSessionDtoRequiresTheCheckpointFields();
   });
 });

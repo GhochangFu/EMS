@@ -579,6 +579,8 @@ export class OnboardingCommitService {
           committedAt: sql`now()`,
           updatedAt: sql`now()`,
           result,
+          // F3.25 (plan Q8): no rollback after commit, so the ring goes.
+          checkpoints: null,
         })
         .where(eq(onboardingSessions.id, sessionId));
 

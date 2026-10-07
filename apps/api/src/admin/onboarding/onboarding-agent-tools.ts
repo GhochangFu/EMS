@@ -17,6 +17,8 @@ import { draftTemplateCode, isStockEntry, templateRefPointKeys, unresolvedPointK
 import {
   fail,
   issuesOf,
+  MAX_MODEL_REPLIES,
+  MAX_SUGGESTED_REPLY_CHARS,
   removeAt,
   succeed,
   toolResultContent,
@@ -163,6 +165,10 @@ const TOOL_SCHEMAS = {
   use_existing_point_keys: z.object({ value: z.boolean() }).strict(),
   validate_draft: noArgs,
   propose_commit: noArgs,
+  // F3.25 (ADR 0094 decision 9): code filters the offered replies before any reaches the client.
+  suggest_replies: z
+    .object({ replies: z.array(z.string().min(1).max(MAX_SUGGESTED_REPLY_CHARS)).min(1).max(MAX_MODEL_REPLIES) })
+    .strict(),
   ...TEMPLATE_TOOL_SCHEMAS,
 } as const satisfies Record<string, ZodTypeAny>;
 
@@ -189,6 +195,8 @@ const DESCRIPTIONS: Record<ToolName, string> = {
   validate_draft: "Validates the draft and returns the errors and whether it is ready to commit.",
   propose_commit:
     "Proposes the commit of a ready draft. You cannot commit: the user confirms with the Commit button or by typing `confirm commit`.",
+  suggest_replies:
+    "Offers up to 4 short replies the user can click to answer your question. Use it when you ask the user to choose. It changes nothing in the draft.",
 };
 
 function jsonSchemaOf(schema: ZodTypeAny): Record<string, unknown> {
@@ -201,7 +209,7 @@ function jsonSchemaOf(schema: ZodTypeAny): Record<string, unknown> {
   return converted;
 }
 
-/** The 24 tools as the model sees them, in a fixed order. */
+/** The 25 tools as the model sees them, in a fixed order. */
 export const TOOL_DEFINITIONS: readonly LlmToolDefinition[] = (Object.keys(TOOL_SCHEMAS) as ToolName[]).map((name) => ({
   name,
   description: DESCRIPTIONS[name],
@@ -499,6 +507,14 @@ async function dispatch(name: ToolName, args: Record<string, unknown>, state: To
         { proposed: true, summary, next: "Tell the user to type `confirm commit` or use the Commit button. You cannot commit." },
         `Proposed commit: ${summary}`,
       );
+    }
+
+    case "suggest_replies": {
+      // F3.25 (ADR 0094 decision 9): no action line and no write. The last call
+      // wins; `agentReplies` filters the list before it reaches the client.
+      const { replies } = args as z.infer<(typeof TOOL_SCHEMAS)["suggest_replies"]>;
+      state.suggestedReplies = [...replies];
+      return succeed({ replies });
     }
   }
 }

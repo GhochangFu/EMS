@@ -3,6 +3,7 @@ import type { OnboardingChatMessage, OnboardingDraft } from "@bms/shared";
 import { cloneJson } from "../stack-safe-json";
 import { isToolName, runTool, TOOL_DEFINITIONS, type ToolContext, type ToolState } from "./onboarding-agent-tools";
 import { cutToBound } from "./onboarding-draft-caps";
+import { diffSections } from "./onboarding-draft-merge";
 import type { LlmMessage, OnboardingLlmProvider } from "./onboarding-llm-port";
 import { PROMPT_MARKER_SENTENCE, serialiseDraftForPrompt } from "./onboarding-prompt-budget";
 import type { OnboardingDraftInput, OnboardingPhase } from "./onboarding.schema";
@@ -53,13 +54,20 @@ export type AgentTurnResult = {
   readonly draftPatch: OnboardingDraftInput;
   readonly actionLines: readonly string[];
   readonly commitProposal?: { readonly summary: string };
+  /** F3.25 (ADR 0094 decision 9): the replies the model offered, unfiltered; `[]` on a provider error. */
+  readonly suggestedReplies: readonly string[];
   readonly stopReason: AgentStopReason;
   /** `true` only for `provider_error`: the caller runs the guided mode instead. */
   readonly fallback: boolean;
   readonly record: AgentTurnRecord;
 };
 
-const DRAFT_SECTIONS = ["location", "rtus", "pointKeys", "assets", "assetPoints", "templates", "onboardingMeta"] as const;
+/**
+ * `F3.25` moved `DRAFT_SECTIONS` and `diffSections` to `onboarding-draft-merge.ts`
+ * (the checkpoint module reads them too). Re-exported because
+ * `onboarding-agent-loop.spec.ts` imports `diffSections` from here.
+ */
+export { diffSections };
 
 /**
  * The stored history as provider messages: the last `MAX_HISTORY_MESSAGES`,
@@ -94,6 +102,7 @@ Location types (location.type must be one of these codes; ask the user when unsu
 Never include password or secret values in a reply. Credentials are NEVER collected through this chat — if the user offers one, tell them to use the Credentials field on the RTU step. Never put a credential in a tool argument.
 To build assets from a template: find it with list_templates or list_stock_templates, read its points and variables with get_template, bring it into the draft with import_stock_template or add_template unless the organization already holds it, then use add_template_assets with a value for every variable.
 You cannot commit. When the draft is ready, use propose_commit; the user then confirms with the Commit button or by typing \`confirm commit\`.
+When you need the user to choose, ask one question per turn and offer the choices with suggest_replies.
 ${PROMPT_MARKER_SENTENCE}
 Draft context (redacted): ${serialiseDraftForPrompt(input.draft)}`;
 }
@@ -109,17 +118,6 @@ function errorFacts(error: unknown): { errorClass?: string; errorStatus?: number
     ...(typeof name === "string" ? { errorClass: cutToBound(name, 64) } : {}),
     ...(typeof status === "number" ? { errorStatus: status } : {}),
   };
-}
-
-/** The six draft sections that differ, wholesale, so `mergeDraft(stored, patch)` reproduces `working`. */
-export function diffSections(stored: OnboardingDraft, working: OnboardingDraft): OnboardingDraftInput {
-  const patch: Record<string, unknown> = {};
-  for (const section of DRAFT_SECTIONS) {
-    if (JSON.stringify(stored[section]) !== JSON.stringify(working[section])) {
-      patch[section] = working[section];
-    }
-  }
-  return patch as OnboardingDraftInput;
 }
 
 /** Runs one user turn of the agent loop. Never throws; every failure is a stop reason. */
@@ -166,13 +164,14 @@ export async function runAgentTurn(
       ...(error !== undefined ? errorFacts(error) : {}),
     };
     if (stopReason === "provider_error") {
-      return { reply, draftPatch: {}, actionLines: [], stopReason, fallback: true, record };
+      return { reply, draftPatch: {}, actionLines: [], suggestedReplies: [], stopReason, fallback: true, record };
     }
     return {
       reply,
       draftPatch: diffSections(input.draft, state.working),
       actionLines,
       ...(state.pendingProposal ? { commitProposal: state.pendingProposal } : {}),
+      suggestedReplies: state.suggestedReplies ?? [],
       stopReason,
       fallback: false,
       record,

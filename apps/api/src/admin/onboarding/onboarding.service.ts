@@ -4,10 +4,11 @@ import {
   ForbiddenException,
   Inject,
   Injectable,
+  Logger,
   NotFoundException,
   ServiceUnavailableException,
 } from "@nestjs/common";
-import { eq, sql } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 
 import { onboardingSessions, organizations } from "@bms/db";
 import type { BmsDb } from "@bms/db";
@@ -42,12 +43,34 @@ import {
   readCommitProposal,
   withoutCommitProposal,
 } from "./onboarding-commit-proposal";
+import {
+  NOTHING_TO_UNDO_REPLY,
+  checkpointLabel,
+  checkpointSummary,
+  cutRingBefore,
+  isUndoPhrase,
+  nextSeq,
+  pushCheckpoint,
+  readCheckpoints,
+  restoreSections,
+  takeCheckpoint,
+  undidActionLine,
+  undoReply,
+  type Checkpoint,
+} from "./onboarding-checkpoints";
 import { draftCountProblem } from "./onboarding-draft-caps";
+import { diffSections } from "./onboarding-draft-merge";
 import { assertPatchLocationTypeIsActive } from "./onboarding-location-type-match";
-import type { SetCredentialsBody } from "./onboarding.schema";
+import type { RollbackBody, SetCredentialsBody } from "./onboarding.schema";
 import { redactDraftForClient, rtuSecretKey } from "./onboarding-redaction";
 import type { OnboardingDraftInput } from "./onboarding.schema";
 import { OnboardingValidateService } from "./onboarding-validate.service";
+
+/** The 409 of a rollback whose draft moved since the caller read it (ADR 0094 decision 6). */
+const DRAFT_CHANGED_SINCE_LOAD = "The draft changed since this page loaded it. Reload the session and try again.";
+
+/** The 409 of a chat write that found the session no longer a draft (a commit landed during the turn). */
+const SESSION_NO_LONGER_DRAFT = "The session was committed while this turn ran, so the turn was not saved. Reload the session.";
 
 /**
  * Orchestrates onboarding session lifecycle.
@@ -63,6 +86,8 @@ import { OnboardingValidateService } from "./onboarding-validate.service";
  */
 @Injectable()
 export class OnboardingService {
+  private readonly logger = new Logger(OnboardingService.name);
+
   constructor(
     @Inject(FLEET_DRIZZLE) private readonly fleetDb: BmsDb,
     @Inject(TENANT_DRIZZLE) private readonly tenantDb: BmsDb,
@@ -245,6 +270,12 @@ export class OnboardingService {
       return this.confirmCommit(jwt, session, message);
     }
 
+    // F3.25 (ADR 0094 decision 6): the undo phrase is matched by code too —
+    // after the ADR 0022 refusal above, before any model call below.
+    if (isUndoPhrase(message)) {
+      return this.undoLastStep(session, message);
+    }
+
     const draft = session.draft as OnboardingDraft;
     const phase = session.currentPhase as OnboardingPhase;
     const [org] = await this.tenantDb
@@ -329,6 +360,39 @@ export class OnboardingService {
       assistantMsg,
     ];
 
+    // F3.25 (ADR 0094 decision 4): a turn that changes a section records the
+    // draft as it was BEFORE the turn, so `undo` can bring it back. A turn that
+    // changes nothing leaves the column alone rather than rewriting it.
+    const changed =
+      Object.keys(diffSections(session.draft as OnboardingDraft, mergedDraft as OnboardingDraft)).length > 0;
+    let checkpointWrite: { checkpoints: unknown } | Record<string, never> = {};
+    if (changed) {
+      const ring = readCheckpoints(session.checkpoints);
+      const pushed = pushCheckpoint(
+        ring,
+        takeCheckpoint(session.draft as OnboardingDraft, {
+          seq: nextSeq(ring),
+          label: checkpointLabel(
+            actionMsgs.map((m) => m.content),
+            Object.keys(turn.draftPatch),
+          ),
+          userMessageId: userMsg.id,
+          takenAt: new Date().toISOString(),
+        }),
+      );
+      // Ids and counts only, never content (ADR 0090 decision 9; plan Q2).
+      if (pushed.dropped !== "none") {
+        this.logger.log(
+          { sessionId, dropped: pushed.dropped, ringSize: pushed.ring.length },
+          "onboarding checkpoint dropped",
+        );
+      }
+      // Review finding: a snapshot too large to record ends the history, as a
+      // PATCH does — otherwise the next undo would revert this step and the
+      // one before it together, naming only the older one.
+      checkpointWrite = { checkpoints: pushed.dropped === "too_large" ? null : pushed.ring };
+    }
+
     const updated = await withTenant(this.tenantDb, session.organizationId, (tx) =>
       tx
         .update(onboardingSessions)
@@ -336,12 +400,18 @@ export class OnboardingService {
           draft: mergedDraft,
           currentPhase: turn.currentPhase,
           messages,
+          ...checkpointWrite,
           updatedAt: sql`now()`,
         })
-        .where(eq(onboardingSessions.id, sessionId))
+        // Review finding (F3.25): a commit may have landed while the model
+        // ran; a turn must not write its draft and ring onto a committed row.
+        .where(and(eq(onboardingSessions.id, sessionId), eq(onboardingSessions.status, "draft")))
         .returning()
         .then(([row]) => row),
     );
+    if (!updated) {
+      throw new ConflictException(SESSION_NO_LONGER_DRAFT);
+    }
 
     const [orgFull] = await this.tenantDb
       .select({ code: organizations.code, name: organizations.name })
@@ -385,6 +455,9 @@ export class OnboardingService {
         .set({
           draft: merged,
           currentPhase: phase,
+          // F3.25 (plan Q3): a write the ring did not checkpoint ends undo
+          // history, so a later rollback cannot silently undo this edit.
+          checkpoints: null,
           updatedAt: sql`now()`,
         })
         .where(eq(onboardingSessions.id, sessionId))
@@ -399,6 +472,27 @@ export class OnboardingService {
       .limit(1);
 
     return this.mapSession(updated, org?.code ?? "", org?.name ?? "");
+  }
+
+  /**
+   * `POST :id/rollback` (F3.25, ADR 0094 decisions 5 and 6). Bound to the
+   * draft hash the client last saw: `chat` writes without a lock, so a client
+   * that read the draft before another tab's turn must not restore over it. A
+   * mismatch is a 409 and nothing is written.
+   */
+  async rollback(jwt: JwtPayload, sessionId: string, body: RollbackBody): Promise<OnboardingChatResponseDto> {
+    const session = await this.loadSession(jwt, sessionId);
+    if (session.status !== "draft") {
+      throw new ForbiddenException("Session is not editable");
+    }
+    if (draftHash(session.draft) !== body.draftHash) {
+      throw new ConflictException(DRAFT_CHANGED_SINCE_LOAD);
+    }
+    const target = readCheckpoints(session.checkpoints).find((cp) => cp.id === body.checkpointId);
+    if (!target) {
+      throw new NotFoundException("Checkpoint not found");
+    }
+    return this.restoreTo(session, target);
   }
 
   /** Validates draft without committing. */
@@ -490,6 +584,8 @@ export class OnboardingService {
           draft: mergedDraft,
           currentPhase: phase,
           messages,
+          // F3.25 (plan Q3): as `patchDraft` — an upload is not checkpointed.
+          checkpoints: null,
           updatedAt: sql`now()`,
         })
         .where(eq(onboardingSessions.id, sessionId))
@@ -642,6 +738,120 @@ export class OnboardingService {
     };
   }
 
+  /**
+   * The chat `undo` (ADR 0094 decision 6): the newest checkpoint, or — with an
+   * empty ring — the two messages and nothing else.
+   */
+  private async undoLastStep(
+    session: typeof onboardingSessions.$inferSelect,
+    message: string,
+  ): Promise<OnboardingChatResponseDto> {
+    const newest = readCheckpoints(session.checkpoints).at(-1);
+    if (newest) {
+      return this.restoreTo(session, newest, message);
+    }
+    const messages = [
+      ...(session.messages as OnboardingChatMessage[]),
+      this.chatService.createMessage("user", message),
+      this.chatService.createMessage("assistant", NOTHING_TO_UNDO_REPLY),
+    ];
+    const updated = await withTenant(this.tenantDb, session.organizationId, (tx) =>
+      tx
+        .update(onboardingSessions)
+        .set({ messages, updatedAt: sql`now()` })
+        .where(eq(onboardingSessions.id, session.id))
+        .returning()
+        .then(([row]) => row),
+    );
+    return {
+      assistantMessage: NOTHING_TO_UNDO_REPLY,
+      session: await this.mapSessionWithOrg(updated),
+      suggestedReplies: ["View draft"],
+      validationErrors: [],
+      readyToCommit: false,
+      autoOpenPreview: false,
+    };
+  }
+
+  /**
+   * Restores `cp` wholesale (ADR 0094 decision 5): the proposal goes, the phase
+   * is re-derived, and the ring is cut to the entries before `cp` — a rollback
+   * records no checkpoint, so there is no redo (plan Q4). `userMessage` is the
+   * chat `undo`; the route adds no user message.
+   */
+  private async restoreTo(
+    session: typeof onboardingSessions.$inferSelect,
+    cp: Checkpoint,
+    userMessage?: string,
+  ): Promise<OnboardingChatResponseDto> {
+    const codes = await this.activeLocationTypeCodes();
+    const templateContext = await this.templateCatalog.context(session.organizationId);
+    const deriveCredentialsSet = CredentialCryptoService.isConfigured();
+    const expectedHash = draftHash(session.draft);
+    // Review finding (F3.25): the hash check and the write are one locked
+    // step, as `commitProposed` does it. `chat` writes without a lock, so a
+    // turn — or a commit — that landed after `loadSession` read the row is
+    // seen here, and the restore is built from the row as it now stands.
+    const { updated, draft, reply } = await withTenant(this.tenantDb, session.organizationId, async (tx) => {
+      const [locked] = await tx
+        .select({
+          draft: onboardingSessions.draft,
+          status: onboardingSessions.status,
+          messages: onboardingSessions.messages,
+          checkpoints: onboardingSessions.checkpoints,
+        })
+        .from(onboardingSessions)
+        .where(eq(onboardingSessions.id, session.id))
+        .for("update");
+      if (!locked || locked.status !== "draft") {
+        throw new ForbiddenException("Session is not editable");
+      }
+      const ring = readCheckpoints(locked.checkpoints);
+      const target = ring.find((entry) => entry.id === cp.id);
+      if (draftHash(locked.draft) !== expectedHash || !target) {
+        throw new ConflictException(DRAFT_CHANGED_SINCE_LOAD);
+      }
+      const restored = restoreSections(locked.draft as OnboardingDraft, target, { deriveCredentialsSet });
+      const answer = undoReply(target.label, restored.credentialsLost);
+      const messages = [
+        ...(locked.messages as OnboardingChatMessage[]),
+        ...(userMessage === undefined ? [] : [this.chatService.createMessage("user", userMessage)]),
+        this.chatService.createMessage("action", undidActionLine(target.label)),
+        this.chatService.createMessage("assistant", answer),
+      ];
+      const [row] = await tx
+        .update(onboardingSessions)
+        .set({
+          draft: restored.draft,
+          currentPhase: this.validateService.inferPhase(restored.draft, codes),
+          messages,
+          checkpoints: cutRingBefore(ring, target),
+          updatedAt: sql`now()`,
+        })
+        .where(eq(onboardingSessions.id, session.id))
+        .returning();
+      return { updated: row, draft: restored.draft, reply: answer };
+    });
+    const validation = this.validateService.validate(draft, codes, templateContext);
+    return {
+      assistantMessage: reply,
+      session: await this.mapSessionWithOrg(updated),
+      suggestedReplies: ["View draft"],
+      validationErrors: validation.errors,
+      readyToCommit: validation.readyToCommit,
+      autoOpenPreview: false,
+    };
+  }
+
+  private async mapSessionWithOrg(row: typeof onboardingSessions.$inferSelect): Promise<OnboardingSessionDto> {
+    const [org] = await this.tenantDb
+      .select({ code: organizations.code, name: organizations.name })
+      .from(organizations)
+      .where(eq(organizations.id, row.organizationId))
+      .limit(1);
+    return this.mapSession(row, org?.code ?? "", org?.name ?? "");
+  }
+
   private mapSession(
     row: typeof onboardingSessions.$inferSelect,
     organizationCode: string,
@@ -662,6 +872,10 @@ export class OnboardingService {
       updatedAt: row.updatedAt.toISOString(),
       committedAt: row.committedAt?.toISOString() ?? null,
       result: (row.result as Record<string, unknown>) ?? null,
+      // F3.25 (ADR 0094 decision 7): summaries only — never the sections — and
+      // the hash a rollback binds to.
+      checkpoints: readCheckpoints(row.checkpoints).map(checkpointSummary),
+      draftHash: draftHash(row.draft),
     };
   }
 }

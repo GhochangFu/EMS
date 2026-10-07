@@ -535,6 +535,20 @@ export const setCredentialsBodySchema = z
 
 export type SetCredentialsBody = z.infer<typeof setCredentialsBodySchema>;
 
+/**
+ * `POST :id/rollback` (F3.25, ADR 0094 decisions 5 and 6). Bound to the
+ * checkpoint and to the draft hash the client last saw: a mismatch is a 409
+ * and nothing is written.
+ */
+export const rollbackBodySchema = z
+  .object({
+    checkpointId: z.string().uuid(),
+    draftHash: z.string().regex(/^[0-9a-f]{64}$/),
+  })
+  .strict();
+
+export type RollbackBody = z.infer<typeof rollbackBodySchema>;
+
 export const patchDraftBodySchema = z
   .object({
     draft: onboardingDraftSchema,

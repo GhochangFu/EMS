@@ -22,10 +22,22 @@ export const TOOL_RESULT_CUT_TAIL = `…[cut to ${TOOL_RESULT_MAX_CHARS} charact
 /** Plan ruling 1: one list result names at most this many items. */
 export const TOOL_LIST_MAX_ITEMS = 100;
 
+/**
+ * F3.25 (ADR 0094 decision 9): the bounds of a `suggest_replies` call. Declared
+ * here, beside the other tool bounds, so the registry reads them without
+ * importing `onboarding-suggested-replies.ts` (which imports the guided mode,
+ * which imports the registry). That module re-exports them.
+ */
+export const MAX_MODEL_REPLIES = 4;
+/** The longest reply a chip may carry. A longer one is dropped, never cut: a cut chip would send a cut message. */
+export const MAX_SUGGESTED_REPLY_CHARS = 40;
+
 /** The turn's working state; `runTool` replaces `working` only after a write passes every check. */
 export type ToolState = {
   working: OnboardingDraft;
   pendingProposal?: { summary: string };
+  /** F3.25 (ADR 0094 decision 9): the replies the last `suggest_replies` call offered; code filters them. */
+  suggestedReplies?: string[];
 };
 
 export type ToolOutcome = {

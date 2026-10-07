@@ -698,6 +698,8 @@ export type OnboardingDraftStockTemplate = z.infer<typeof Ob.onboardingDraftStoc
 export type OnboardingDraftTemplatePoint = z.infer<typeof Ob.onboardingDraftTemplatePointSchema>;
 export type OnboardingDraftAssetPoint = z.infer<typeof Ob.onboardingDraftAssetPointSchema>;
 export type OnboardingDraftMeta = z.infer<typeof Ob.onboardingDraftMetaSchema>;
+/** F3.25 (ADR 0094 decision 7): a checkpoint as the client sees it; never its sections. */
+export type OnboardingCheckpointSummary = z.infer<typeof Ob.onboardingCheckpointSummarySchema>;
 export type OnboardingDraft = z.infer<typeof Ob.onboardingDraftSchema>;
 export type OnboardingSessionDto = z.infer<typeof Ob.onboardingSessionDtoSchema>;
 export type OnboardingChatResponseDto = z.infer<typeof Ob.onboardingChatResponseDtoSchema>;

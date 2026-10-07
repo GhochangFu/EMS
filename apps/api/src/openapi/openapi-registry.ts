@@ -60,6 +60,7 @@ import {
   chatBodySchema,
   createSessionBodySchema,
   patchDraftBodySchema,
+  rollbackBodySchema,
   setCredentialsBodySchema,
 } from "../admin/onboarding/onboarding.schema";
 import {
@@ -340,6 +341,7 @@ export const REQUEST_SCHEMAS: Record<string, ZodTypeAny> = {
   OnboardingController_chat: chatBodySchema,
   OnboardingController_createSession: createSessionBodySchema,
   OnboardingController_patchDraft: patchDraftBodySchema,
+  OnboardingController_rollback: rollbackBodySchema,
   OnboardingController_setCredentials: setCredentialsBodySchema,
   OrganizationsAdminController_create: createOrganizationBodySchema,
   OrganizationsAdminController_update: updateOrganizationBodySchema,

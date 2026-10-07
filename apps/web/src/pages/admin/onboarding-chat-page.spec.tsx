@@ -78,6 +78,8 @@ export const SESSION: OnboardingSessionDto = {
   updatedAt: new Date(0).toISOString(),
   committedAt: null,
   result: null,
+  checkpoints: [],
+  draftHash: null,
 };
 
 /** A session whose one RTU still needs credentials, so the drawer offers the form. */

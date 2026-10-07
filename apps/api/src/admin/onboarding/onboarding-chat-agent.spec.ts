@@ -3,6 +3,7 @@ import type { OnboardingDraft } from "@bms/shared";
 
 import { STOPPED_EARLY_TIME_REPLY } from "./onboarding-agent-loop";
 import { FakeLlmProvider, PLAIN_RTU, calls, toolCall } from "./onboarding-agent-loop.spec";
+import { CONFIRM_STEP_LABELS } from "./onboarding-chat-rule-based";
 import { AGENT_NOT_SET_UP_NOTICE, AGENT_UNAVAILABLE_NOTICE, OnboardingChatService } from "./onboarding-chat.service";
 import type { ResolvedLlm } from "./onboarding-llm-resolver";
 import { OnboardingValidateService } from "./onboarding-validate.service";
@@ -157,4 +158,46 @@ export async function assertTheResolverIsCalledOncePerTurnWithTheSessionsOrganiz
   const { chat, asked } = service(ready(llm));
   await turn(chat);
   assert(JSON.stringify(asked) === '["org-7"]', `one resolve for the session's organization, got ${JSON.stringify(asked)}`);
+}
+
+const AT_RTU = {
+  location: { name: "Berhampur", slug: "berhampur", code: "BERHAMPUR", type: "smoc_campus", latitude: 19.3, longitude: 84.8 },
+} as OnboardingDraft;
+
+/**
+ * F3.25 (ADR 0094 decision 8, plan Q6): a step label is answered by code on
+ * the agent path too, typed or with a trailing stop, and never reaches the
+ * model. The adjacent positive: a plain message on the same build does.
+ */
+export async function assertAStepLabelOnTheAgentPathNeverReachesTheModel(): Promise<void> {
+  const llm = new FakeLlmProvider([{ kind: "final", text: "ok" }]);
+  const { chat } = service(ready(llm));
+  // Review finding (2026-10-07): every label, not only the one without an
+  // `s` — a `/s+/` typo in `normaliseReply` passed "confirm rtu" alone.
+  const typed = CONFIRM_STEP_LABELS.flatMap((label) => [label, `${label}.`, label.toUpperCase()]);
+  for (const message of [...typed, "confirm  point keys.", "  Confirm   Assets!  "]) {
+    const result = await chat.handleTurn(message, AT_RTU, "rtu", "Ion Exchange", "org-7", CONTEXT);
+    assert(llm.calls === 0, `${message}: the model is not called, got ${llm.calls} calls`);
+    assert(/^The .+ step /.test(result.assistantMessage), `${message}: the step answer, got ${result.assistantMessage}`);
+    assert(JSON.stringify(result.draftPatch) === "{}", `${message}: the turn writes nothing, got ${JSON.stringify(result.draftPatch)}`);
+  }
+  await chat.handleTurn("Berhampur", AT_RTU, "rtu", "Ion Exchange", "org-7", CONTEXT);
+  assert(llm.calls === 1, `a plain message reaches the model once, got ${llm.calls}`);
+}
+
+/**
+ * F3.25 (ADR 0094 decision 9): the chips of an agent reply are the model's
+ * offer, filtered, then the step label and View draft. The commit phrase the
+ * model offered is gone; the protocol it offered stays.
+ */
+export async function assertAnAgentReplysChipsAreTheFilteredOfferPlusTheStepLabel(): Promise<void> {
+  const llm = new FakeLlmProvider([
+    calls(toolCall("suggest_replies", { replies: ["MQTT", "confirm commit"] })),
+    { kind: "final", text: "Which protocol will RTU 1 use?" },
+  ]);
+  const result = await service(ready(llm)).chat.handleTurn("add an RTU", AT_RTU, "rtu", "Ion Exchange", "org-7", CONTEXT);
+  const chips = result.suggestedReplies ?? [];
+  assert(chips.includes("MQTT"), `the offered protocol stays, got ${JSON.stringify(chips)}`);
+  assert(!chips.some((chip) => chip.toLowerCase() === "confirm commit"), `the commit phrase is dropped, got ${JSON.stringify(chips)}`);
+  assert(JSON.stringify(chips) === '["MQTT","confirm rtu","View draft"]', `the full list, got ${JSON.stringify(chips)}`);
 }

@@ -10,6 +10,7 @@ import {
   MAX_ONBOARDING_TEMPLATES,
   ONBOARDING_DRAFT_STRING_MAX,
   onboardingChatMessageSchema,
+  onboardingCheckpointSummarySchema,
   onboardingCommitResponseDtoSchema,
   onboardingDraftAssetPointSchema,
   onboardingDraftAssetSchema,
@@ -171,6 +172,8 @@ export function assertSessionDtoCarriesTheCaps(): void {
     updatedAt: "2026-09-08T00:00:00.000Z",
     committedAt: null,
     result: null,
+    checkpoints: [],
+    draftHash: null,
   });
 
   assert(
@@ -522,6 +525,8 @@ export function assertSessionDtoCarriesTheStringBounds(): void {
     updatedAt: "2026-09-08T00:00:00.000Z",
     committedAt: null,
     result: null,
+    checkpoints: [],
+    draftHash: null,
   });
 
   assert(
@@ -731,6 +736,92 @@ export function assertCommitResponseRequiresEachTemplateField(): void {
     assert(
       typeof issue !== "string" && issue.code === "invalid_type",
       `a commit result without \`${key}\` must be refused at \`${key}\`: ${JSON.stringify(issue)}`,
+    );
+  }
+}
+
+/* -------------------------------------------------------------------------- *
+ * `F3.25` — checkpoint summaries and the draft hash (ADR 0094 decisions 4, 7). *
+ * -------------------------------------------------------------------------- */
+
+const SUMMARY = {
+  id: "0b6b0a2e-6a2f-4f7e-9a59-6c1d3c1c2d11",
+  seq: 1,
+  label: "Added RTU RTU-1 (mqtt)",
+  takenAt: "2026-10-06T00:00:00.000Z",
+};
+
+function sessionWith(extra: Record<string, unknown>): Record<string, unknown> {
+  return {
+    id: "s1",
+    organizationId: "o1",
+    organizationCode: "ORG",
+    organizationName: "Org",
+    status: "draft",
+    currentPhase: "rtu",
+    draft: {},
+    messages: [],
+    createdAt: "2026-10-06T00:00:00.000Z",
+    updatedAt: "2026-10-06T00:00:00.000Z",
+    committedAt: null,
+    result: null,
+    ...extra,
+  };
+}
+
+/** A session DTO with one summary and no hash parses, and keeps the summary. */
+export function assertSessionDtoParsesWithSummariesAndNoHash(): void {
+  const parsed = onboardingSessionDtoSchema.safeParse(sessionWith({ checkpoints: [SUMMARY], draftHash: null }));
+  assert(
+    parsed.success && parsed.data.checkpoints[0]?.id === SUMMARY.id && parsed.data.draftHash === null,
+    "a session DTO with one checkpoint summary and a null hash must parse: " +
+      (parsed.success ? JSON.stringify(parsed.data) : JSON.stringify(parsed.error.issues)),
+  );
+}
+
+/** A session DTO with a 64-hex draft hash parses and keeps it. */
+export function assertSessionDtoParsesWithAHash(): void {
+  const hash = "a".repeat(64);
+  const parsed = onboardingSessionDtoSchema.safeParse(sessionWith({ checkpoints: [], draftHash: hash }));
+  assert(
+    parsed.success && parsed.data.draftHash === hash,
+    "a session DTO with a 64-hex hash must parse: " +
+      (parsed.success ? JSON.stringify(parsed.data) : JSON.stringify(parsed.error.issues)),
+  );
+}
+
+/**
+ * A summary that carries `sections` is refused, at the session DTO and at the
+ * summary schema itself: the client edge refuses a leaked snapshot (the
+ * `F4.185` guard). The adjacent positive is the summary without it.
+ */
+export function assertASummaryCarryingSectionsIsRefused(): void {
+  assert(onboardingCheckpointSummarySchema.safeParse(SUMMARY).success, "the plain summary must parse");
+  const leaked = { ...SUMMARY, sections: {} };
+  assert(
+    !onboardingCheckpointSummarySchema.safeParse(leaked).success,
+    "a summary carrying `sections` must be refused by the summary schema",
+  );
+  const issue = issueAt(
+    onboardingSessionDtoSchema.safeParse(sessionWith({ checkpoints: [leaked], draftHash: null })),
+    "checkpoints.0",
+  );
+  assert(
+    typeof issue !== "string" && issue.code === "unrecognized_keys",
+    `a session DTO whose summary carries \`sections\` must be refused at checkpoints.0: ${JSON.stringify(issue)}`,
+  );
+}
+
+/** Each of the two fields is required: a DTO missing one is refused, naming it. */
+export function assertSessionDtoRequiresTheCheckpointFields(): void {
+  const full = sessionWith({ checkpoints: [], draftHash: null });
+  assert(onboardingSessionDtoSchema.safeParse(full).success, "the full DTO must parse");
+  for (const key of ["checkpoints", "draftHash"] as const) {
+    const { [key]: _omitted, ...without } = full;
+    const issue = issueAt(onboardingSessionDtoSchema.safeParse(without), key);
+    assert(
+      typeof issue !== "string" && issue.code === "invalid_type",
+      `a session DTO without \`${key}\` must be refused at \`${key}\`: ${JSON.stringify(issue)}`,
     );
   }
 }

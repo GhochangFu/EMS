@@ -20,6 +20,8 @@ import { OnboardingTemplateCatalogService } from "./onboarding-template-catalog.
 import { mergeDraftPatch } from "./onboarding-draft-merge";
 import { formatAssetsByRtuSummary, mqttSetupTemplate, needsMqttSetup } from "./onboarding-chat-summaries";
 import {
+  confirmStepFor,
+  confirmStepTurn,
   fallbackTurn,
   handleRuleBasedTurn,
   NAMES_A_PROTOCOL,
@@ -33,6 +35,7 @@ import {
 import { runAgentTurn } from "./onboarding-agent-loop";
 import type { ToolContext } from "./onboarding-agent-tools";
 import { scrubMessages } from "./onboarding-credential-detect";
+import { agentReplies } from "./onboarding-suggested-replies";
 import { OnboardingLlmResolver } from "./onboarding-llm-resolver";
 import {
   attachEncryptedCredentials,
@@ -333,6 +336,15 @@ export class OnboardingChatService {
         : guided;
     }
 
+    // F3.25 (ADR 0094 decision 8, plan Q6): a `confirm <step>` label is
+    // answered by code and never reaches the model. Here, on the agent path
+    // only: the guided mode keeps its own match, where `confirm point keys`
+    // at the point-key step writes `use_existing_point_keys` (F4.195).
+    const step = confirmStepFor(message);
+    if (step) {
+      return confirmStepTurn(this.ruleBasedDeps(organizationId, turn), step, message, draft, turn);
+    }
+
     const agent = await runAgentTurn({
       message,
       draft,
@@ -358,19 +370,14 @@ export class OnboardingChatService {
       const fallback = fallbackTurn(this.ruleBasedDeps(organizationId, turn), message, draft, turn);
       return { ...fallback, assistantMessage: `${AGENT_UNAVAILABLE_NOTICE}\n\n${fallback.assistantMessage}` };
     }
-    const result = this.finalizeTurn(
-      agent.reply,
-      agent.draftPatch,
-      phase,
-      // F4.199: never "confirm commit" — the client sends a button's text as a
-      // turn, and the typed phrase is the user's own act (ADR 0090 decision 5).
-      ["View draft"],
-      message,
-      draft,
-      turn,
-    );
+    const result = this.finalizeTurn(agent.reply, agent.draftPatch, phase, undefined, message, draft, turn);
     return {
       ...result,
+      // F3.25 (ADR 0094 decision 9): the model's offer, filtered by code, then
+      // the step label of the phase the turn ends at and "View draft". Never
+      // "confirm commit" or "undo": the client sends a chip's text as a turn,
+      // and those phrases are the user's own typed acts (ADR 0090 decision 5).
+      suggestedReplies: agentReplies(agent.suggestedReplies, result.currentPhase),
       actionLines: [...agent.actionLines],
       ...(agent.commitProposal ? { commitProposal: { summary: agent.commitProposal.summary } } : {}),
     };

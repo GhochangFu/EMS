@@ -27,6 +27,7 @@ import {
   chatBodySchema,
   createSessionBodySchema,
   patchDraftBodySchema,
+  rollbackBodySchema,
   setCredentialsBodySchema,
 } from "./onboarding.schema";
 import { OnboardingService } from "./onboarding.service";
@@ -149,6 +150,27 @@ export class OnboardingController {
         idParamSchema.parse(id),
         setCredentialsBodySchema.parse(body),
       );
+    } catch (err) {
+      if (err instanceof ZodError) {
+        throw new BadRequestException(err.flatten());
+      }
+      throw err;
+    }
+  }
+
+  /**
+   * F3.25 (ADR 0094 decisions 5 and 6): restore a checkpoint, bound to the
+   * checkpoint id and the draft hash the client last saw (409 on a mismatch).
+   */
+  @Post("sessions/:id/rollback")
+  @HttpCode(HttpStatus.OK)
+  async rollback(
+    @Param("id") id: string,
+    @Body() body: unknown,
+    @CurrentUser() user: JwtPayload,
+  ) {
+    try {
+      return await this.service.rollback(user, idParamSchema.parse(id), rollbackBodySchema.parse(body));
     } catch (err) {
       if (err instanceof ZodError) {
         throw new BadRequestException(err.flatten());
