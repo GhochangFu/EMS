@@ -7522,5 +7522,5 @@ decision 8, ADR 0094 decision 6).
 Live: `bms-api` and `bms-worker` rebuilt with `--no-cache` from `main` `0922bfa4` and restarted; the new code is in the image (`emptyTopicAsNull`, `pointKeyDeclarationProblems`, `GUIDED_KW_CONFLICT_REFUSAL`, the 409 sentence) and `/health` answers 200. Sign-in checks not done (owner ruling 2026-10-07).
 
 Raised: `F4.228` (onboarding still stores an empty topic as `''`),
-`F4.230` (the null-hash branch has no spec), `F4.231` (the empty-ring undo
+`F4.230` (the null-hash check has no spec), `F4.231` (the empty-ring undo
 writes without a lock). No `chore(agents):` change owed.
