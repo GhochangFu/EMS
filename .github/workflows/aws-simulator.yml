@@ -1,0 +1,54 @@
+# ADR 0096 — start or stop the telemetry simulator on the AWS demo host.
+#
+# Actions tab -> "AWS demo simulator" -> Run workflow -> start | stop | status.
+# bms-ctl remembers the choice, so a later deploy keeps the simulator in the
+# state chosen here. Same deploy key and forced command as deploy-aws.yml.
+name: AWS demo simulator
+
+on:
+  workflow_dispatch:
+    inputs:
+      action:
+        description: "Simulator action"
+        required: true
+        type: choice
+        options: [start, stop, status]
+        default: status
+
+concurrency:
+  group: deploy-aws-demo
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  simulator:
+    name: Simulator ${{ inputs.action }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment:
+      name: aws-demo
+      url: https://bms.demosites.co.in
+    steps:
+      - name: Checkout the pinned host key
+        uses: actions/checkout@v4
+        with:
+          sparse-checkout: deploy/aws
+          sparse-checkout-cone-mode: false
+
+      - name: Run bms-ctl sim ${{ inputs.action }}
+        env:
+          DEPLOY_KEY: ${{ secrets.BMS_DEPLOY_SSH_KEY }}
+          ACTION: ${{ inputs.action }}
+        run: |
+          [ -n "$DEPLOY_KEY" ] || { echo "::error::secret BMS_DEPLOY_SSH_KEY is not set"; exit 1; }
+          install -d -m 700 ~/.ssh
+          printf '%s\n' "$DEPLOY_KEY" > ~/.ssh/bms_deploy
+          chmod 600 ~/.ssh/bms_deploy
+          trap 'rm -f ~/.ssh/bms_deploy' EXIT
+          ssh -i ~/.ssh/bms_deploy \
+            -o UserKnownHostsFile=deploy/aws/known_hosts \
+            -o StrictHostKeyChecking=yes \
+            -o BatchMode=yes \
+            bmsdeploy@bms.demosites.co.in sim "$ACTION" </dev/null
