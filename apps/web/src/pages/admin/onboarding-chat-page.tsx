@@ -214,7 +214,10 @@ export function OnboardingChatPage({ user }: OnboardingChatPageProps) {
   // secret-looking key would go back as `[REDACTED]` — none of host, port, tls
   // or topic is one, and ADR 0022 keeps secrets out of `config`. F4.236: the
   // field reads the topic as `rtuTopic` does; Save still writes `config.topic`
-  // and leaves a legacy `mqttTopic` beside it, which every reader takes second.
+  // and leaves a legacy `mqttTopic` beside it, which the topic readers
+  // (`rtuTopic`, the commit, the Summary, this field) take second; the
+  // validator's protocol-schema check still reads a shadowed `mqttTopic` and
+  // refuses a wildcard in it (spec V4c).
   const [topicEdits, setTopicEdits] = useState<Record<number, string>>({});
   const topicMutation = useMutation({
     mutationFn: (vars: { index: number; topic: string }) =>
