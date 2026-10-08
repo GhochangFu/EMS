@@ -160,26 +160,53 @@ export function validateMergedPointMetadata(
   override: PointMetadataFields,
   template: PointMetadataFields,
 ): string[] {
-  const merged: PointMetadataFields = {
-    scaleMultiplier: override.scaleMultiplier ?? template.scaleMultiplier,
-    scaleOffset: override.scaleOffset ?? template.scaleOffset,
-    engMin: override.engMin ?? template.engMin,
-    engMax: override.engMax ?? template.engMax,
-    qualityPolicy: override.qualityPolicy ?? template.qualityPolicy,
-  };
-  const inherited = (field: keyof PointMetadataFields): string =>
-    override[field] === null ? " (inherited from the template)" : "";
+  const empty = findEmptyEngineeringRange(override, template);
+  const inherited = (yes: boolean): string => (yes ? " (inherited from the template)" : "");
 
   const problems: string[] = [];
 
-  if (merged.engMin !== null && merged.engMax !== null && merged.engMin >= merged.engMax) {
+  if (empty !== null) {
     problems.push(
-      `The resolved engineering range is empty: eng_min ${merged.engMin}` +
-        `${inherited("engMin")}, eng_max ${merged.engMax}${inherited("engMax")}. ` +
+      `The resolved engineering range is empty: eng_min ${empty.engMin}` +
+        `${inherited(empty.engMinInherited)}, eng_max ${empty.engMax}${inherited(empty.engMaxInherited)}. ` +
         "The lower bound must be below the upper one — state both together, or clear " +
         "the one this request sets.",
     );
   }
 
   return problems;
+}
+
+/** A merged engineering band that admits no reading, and which side supplied each bound. */
+export type EmptyEngineeringRange = {
+  readonly engMin: number;
+  readonly engMax: number;
+  /** `true` when the override leaves `eng_min` unset, so the template's value is the one in force. */
+  readonly engMinInherited: boolean;
+  /** `true` when the override leaves `eng_max` unset, so the template's value is the one in force. */
+  readonly engMaxInherited: boolean;
+};
+
+/**
+ * The merged-pair rule itself, as data: `coalesce(override, template)` per
+ * bound, and the band is empty when `eng_min >= eng_max`. Each caller words
+ * the problem for its own surface — {@link validateMergedPointMetadata} for an
+ * asset-side request, the template migrate gate for a version move.
+ *
+ * @returns the empty band, or `null` when the merged band is usable or open
+ */
+export function findEmptyEngineeringRange(
+  override: PointMetadataFields,
+  template: PointMetadataFields,
+): EmptyEngineeringRange | null {
+  const engMin = override.engMin ?? template.engMin;
+  const engMax = override.engMax ?? template.engMax;
+  // `>=`, not `<` negated: the comparison the validator has always made.
+  if (engMin === null || engMax === null || !(engMin >= engMax)) return null;
+  return {
+    engMin,
+    engMax,
+    engMinInherited: override.engMin === null,
+    engMaxInherited: override.engMax === null,
+  };
 }

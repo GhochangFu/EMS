@@ -92,7 +92,18 @@ export function assertAnOverrideTheTargetDefaultInvertsRefuses(): void {
     message.includes("(inherited from the template)"),
     `the message must mark the bound the override's author never typed, got "${message}"`,
   );
-  assert(message.includes("Version 2"), `the message must name the target version, got "${message}"`);
+  assert(message.includes("version 2"), `the message must name the target version, got "${message}"`);
+  // The migrate wording is its own: the asset side's "state both together, or
+  // clear the one this request sets" speaks to a request a migrate has not got.
+  // Mutation: the shared validator's text interpolated → red here.
+  assert(
+    !message.includes("this request") && !message.includes("state both together"),
+    `the migrate refusal must not reuse the asset-side request wording, got "${message}"`,
+  );
+  assert(
+    message.includes("bulk editor") && message.includes("then migrate"),
+    `the message must name the repair path (bulk editor, then migrate), got "${message}"`,
+  );
 }
 
 /** A legal merged pair refuses nothing. Mutation: "refuse every row with metadata". */

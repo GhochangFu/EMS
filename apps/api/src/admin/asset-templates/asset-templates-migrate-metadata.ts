@@ -1,7 +1,7 @@
 import { POINT_METADATA_FIELDS } from "@bms/shared";
 import type { TemplateMigrationRefusalDto } from "@bms/shared";
 
-import { validateMergedPointMetadata } from "../asset-points/point-metadata.schema";
+import { findEmptyEngineeringRange } from "../asset-points/point-metadata.schema";
 import { pointMetadataOf, type StoredTemplatePoint } from "./template-version-delta";
 
 /**
@@ -26,10 +26,13 @@ import { pointMetadataOf, type StoredTemplatePoint } from "./template-version-de
  * opens** — that service's contract is that every fallible decision is made
  * first, so a refusal moves no pin.
  *
- * **One rule, imported.** `validateMergedPointMetadata` is the function the
- * asset side runs; restating it here would be two copies of one rule, which is
- * how two paths drift. It runs regardless of `active`, for parity with the
- * asset side, which checks every patch.
+ * **One rule, imported; its own words.** `findEmptyEngineeringRange` is the
+ * rule `validateMergedPointMetadata` runs on the asset side; restating it here
+ * would be two copies of one rule, which is how two paths drift. The message is
+ * this gate's own: the asset side's "state both together, or clear the one this
+ * request sets" speaks to a request, and a migrate has none — its repair is the
+ * bulk editor, then migrate again. It runs regardless of `active`, for parity
+ * with the asset side, which checks every patch.
  *
  * Pure and synchronous: `buildPlan` reads the rows and the target points, and
  * this decides only which of them refuse.
@@ -51,20 +54,33 @@ export type MigratingAssetMetadata = {
   readonly rows: ReadonlyMap<string, MigratingMetadataRow>;
 };
 
+/** What the `F2.30` gate reads: the migrating assets, the target version, and where refusals go. */
 export type MetadataSurvivalInput = {
+  /** Every migrating asset with its existing `asset_points` rows. */
   readonly assets: readonly MigratingAssetMetadata[];
   /** The **target** version's points — the defaults the merged pair resolves against. */
   readonly targetPoints: readonly StoredTemplatePoint[];
+  /** The target version number, named in every refusal message. */
   readonly targetVersion: number;
   /** `buildPlan`'s own capped collector — the count keeps rising after the list stops. */
   readonly refuse: (refusal: TemplateMigrationRefusalDto) => void;
 };
 
+/**
+ * Refuses, one refusal per asset and point, every stored metadata override
+ * whose merge with the target version's defaults leaves an empty engineering
+ * band (`metadata_override_invalid_on_target`).
+ *
+ * @param input the migrating assets, the target's points and version, and the
+ *   collector the refusals go to
+ */
 export function refuseMetadataOverridesThatDoNotSurvive(input: MetadataSurvivalInput): void {
   const { targetPoints, targetVersion, refuse } = input;
   const measuredByKey = new Map(
     targetPoints.filter((point) => point.kind === "measured").map((point) => [point.pointKey, point]),
   );
+  const source = (inherited: boolean): string =>
+    inherited ? " (inherited from the template)" : "";
 
   for (const asset of input.assets) {
     for (const [pointKey, row] of asset.rows) {
@@ -79,17 +95,19 @@ export function refuseMetadataOverridesThatDoNotSurvive(input: MetadataSurvivalI
       // `template_points_eng_range_check` already guarantees. A cost guard.
       if (!POINT_METADATA_FIELDS.some((field) => row[field] !== null)) continue;
 
-      for (const problem of validateMergedPointMetadata(pointMetadataOf(row), pointMetadataOf(target))) {
-        refuse({
-          reason: "metadata_override_invalid_on_target",
-          pointKey,
-          assetCount: 1,
-          message:
-            `Asset "${asset.assetCode}": point "${pointKey}" — ${problem} ` +
-            `Version ${targetVersion} sets the default this override collides with. Clear or ` +
-            "restate the override on the asset (Asset Points, bulk editor), then migrate.",
-        });
-      }
+      const empty = findEmptyEngineeringRange(pointMetadataOf(row), pointMetadataOf(target));
+      if (empty === null) continue;
+      refuse({
+        reason: "metadata_override_invalid_on_target",
+        pointKey,
+        assetCount: 1,
+        message:
+          `Asset "${asset.assetCode}": point "${pointKey}" would have an empty engineering range ` +
+          `on version ${targetVersion} — eng_min ${empty.engMin}${source(empty.engMinInherited)}, ` +
+          `eng_max ${empty.engMax}${source(empty.engMaxInherited)}. The ingest host would ` +
+          "discard every reading of the point. Clear or restate the override on the asset " +
+          `(Asset Points, bulk editor), then migrate to version ${targetVersion}.`,
+      });
     }
   }
 }
