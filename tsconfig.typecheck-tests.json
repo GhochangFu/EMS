@@ -158,6 +158,7 @@
     "tests/f4.169-f4.170-seed-owned-rows.integration.test.ts",
     "tests/f4.169-f4.170-seed-location-identity.integration.test.ts",
     "tests/f4.169-f4.170-seed-ambiguous-identity.integration.test.ts",
+    "tests/f2.32-baseline-per-role.integration.test.ts",
     "tests/f3.32-mimic-widget.test.ts",
     "tests/f3.65c-theme-gates.test.ts",
     "tests/f3.32c-mimic-layouts-schema.test.ts",
