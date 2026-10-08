@@ -126,8 +126,10 @@ export const templateMigrationRefusalReasonSchema = z.enum([
    * **target** version's class defaults for the same measured point, resolves
    * to a band that admits no reading (`eng_min >= eng_max`).
    *
-   * The same `validateMergedPointMetadata` the asset-side `update` and
-   * `bulk-update` run, imported rather than restated. Checked **at migrate**,
+   * The same rule (`findEmptyEngineeringRange`) the asset-side `update` and
+   * `bulk-update` run through `validateMergedPointMetadata`, imported rather
+   * than restated; the message is this refusal's own, because the asset
+   * side's wording speaks to a request a migrate has not got. Checked **at migrate**,
    * because that is the one moment a class default meets a stored override: a
    * template's points are editable only on a draft, and no asset can be pinned
    * to a draft, so no template save can change any pinned asset's resolved
