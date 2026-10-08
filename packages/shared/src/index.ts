@@ -61,6 +61,7 @@ import type * as SW from "./contracts/site-widgets";
 import type * as Ss from "./contracts/system-status";
 import type * as Te from "./contracts/telemetry-entry";
 import type * as Ti from "./contracts/telemetry-import";
+import type * as TM from "./contracts/template-migration";
 import type * as AGW from "./contracts/asset-group-writes";
 import type * as UG from "./contracts/user-grants";
 import type * as Us from "./contracts/users";
@@ -648,27 +649,27 @@ export type AssetPointCalcOverrideFields = z.infer<
 /** One derived point of one asset: template, override and resolved values. */
 export type AssetPointCalcConfigDto = z.infer<typeof A.assetPointCalcConfigDtoSchema>;
 /** One version of a template code, with how much of the estate sits on it. */
-export type TemplateVersionSummaryDto = z.infer<typeof A.templateVersionSummaryDtoSchema>;
+export type TemplateVersionSummaryDto = z.infer<typeof TM.templateVersionSummaryDtoSchema>;
 export type TemplateMigrationRefusalReason = z.infer<
-  typeof A.templateMigrationRefusalReasonSchema
+  typeof TM.templateMigrationRefusalReasonSchema
 >;
 export type TemplateMigrationRefusalDto = z.infer<
-  typeof A.templateMigrationRefusalDtoSchema
+  typeof TM.templateMigrationRefusalDtoSchema
 >;
 export type TemplateMeasuredAdditionDto = z.infer<
-  typeof A.templateMeasuredAdditionDtoSchema
+  typeof TM.templateMeasuredAdditionDtoSchema
 >;
-export type TemplateMeasuredChangeDto = z.infer<typeof A.templateMeasuredChangeDtoSchema>;
+export type TemplateMeasuredChangeDto = z.infer<typeof TM.templateMeasuredChangeDtoSchema>;
 /** Which of the five calc fields moved between two versions. */
-export type TemplateCalcField = z.infer<typeof A.templateCalcFieldSchema>;
-export type TemplateDerivedChangeDto = z.infer<typeof A.templateDerivedChangeDtoSchema>;
-export type TemplateDerivedAdditionDto = z.infer<typeof A.templateDerivedAdditionDtoSchema>;
-export type TemplateDerivedRemovalDto = z.infer<typeof A.templateDerivedRemovalDtoSchema>;
+export type TemplateCalcField = z.infer<typeof TM.templateCalcFieldSchema>;
+export type TemplateDerivedChangeDto = z.infer<typeof TM.templateDerivedChangeDtoSchema>;
+export type TemplateDerivedAdditionDto = z.infer<typeof TM.templateDerivedAdditionDtoSchema>;
+export type TemplateDerivedRemovalDto = z.infer<typeof TM.templateDerivedRemovalDtoSchema>;
 /** Keyed on `point_key` throughout, never on `template_points.id` (D-4). */
-export type TemplateVersionDeltaDto = z.infer<typeof A.templateVersionDeltaDtoSchema>;
-export type TemplateMigrationAssetDto = z.infer<typeof A.templateMigrationAssetDtoSchema>;
+export type TemplateVersionDeltaDto = z.infer<typeof TM.templateVersionDeltaDtoSchema>;
+export type TemplateMigrationAssetDto = z.infer<typeof TM.templateMigrationAssetDtoSchema>;
 export type TemplateMigrationSkippedPointDto = z.infer<
-  typeof A.templateMigrationSkippedPointDtoSchema
+  typeof TM.templateMigrationSkippedPointDtoSchema
 >;
 
 // ---------------------------------------------------------------------------

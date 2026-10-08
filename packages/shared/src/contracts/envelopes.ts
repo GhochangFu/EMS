@@ -28,12 +28,14 @@ import {
   calcParameterDtoSchema,
   calcParameterKeyDtoSchema,
   stockAssetTemplateDtoSchema,
+} from "./admin";
+import {
   templateMigrationAssetDtoSchema,
   templateMigrationRefusalDtoSchema,
   templateMigrationSkippedPointDtoSchema,
   templateVersionDeltaDtoSchema,
   templateVersionSummaryDtoSchema,
-} from "./admin";
+} from "./template-migration";
 import { dashboardSummaryDtoSchema } from "./dashboard-dto";
 import { dashboardTemplateSummaryDtoSchema, stockDashboardTemplateDtoSchema } from "./dashboard-templates";
 import {
