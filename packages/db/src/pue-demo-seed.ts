@@ -18,8 +18,8 @@ import { HEALTH_BASELINE_CONTENT } from "./asset-template-health-seed";
  * `BASELINE-ELECTRICAL` declares seven measured points and nothing derived, so
  * the only way the engine ever sees `site_kw`, `it_kw` and `pue` on an incomer
  * is a template that declares them, pinned to that incomer. This module writes
- * that template — `BASELINE-ELECTRICAL-INCOMER` — as a copy of the electrical
- * baseline's measured points (so the nine assets keep their health band and
+ * that template — `BASELINE-ELECTRICAL-INCOMER` — as a copy of the incomer role
+ * template's measured points (so the nine assets keep their health band and
  * E1.3's donut loses nothing) plus the three derived rows.
  *
  * **Why `it_kw` reads `rack_kw` here and `kw` in the stock entry (plan §3.1).**
@@ -62,7 +62,7 @@ import { HEALTH_BASELINE_CONTENT } from "./asset-template-health-seed";
  *    key the baseline itself refused), plus the three derived rows. The
  *    dialect is a **parameter** (`CALC_DIALECT_V2`), never a literal.
  * 3. `PUE_DEMO_PIN_SQL` — moves each `incoming-supply` asset from
- *    `BASELINE-ELECTRICAL` to the incomer template. The role is the selector
+ *    `BASELINE-ELECTRICAL-INCOMING_SUPPLY` to the incomer template. The role is the selector
  *    (ruling 1 read off data, §11 decision 3); naming the source template is
  *    what leaves an operator's own migration alone.
  * 4. `PUE_DEMO_VERIFY_SQL` — reads every write back, including the `rack_kw`
@@ -95,8 +95,19 @@ import { HEALTH_BASELINE_CONTENT } from "./asset-template-health-seed";
 /** The incomer template's code — the fifth `BASELINE-*` row, not a domain baseline. */
 export const PUE_DEMO_TEMPLATE_CODE = "BASELINE-ELECTRICAL-INCOMER";
 
-/** The domain baseline the measured points are copied from and the pin moves off. */
-export const PUE_DEMO_SOURCE_TEMPLATE_CODE = "BASELINE-ELECTRICAL";
+/**
+ * The baseline the measured points are copied from and the pin moves off.
+ *
+ * Since `F2.32` (ADR 0058 Amendment 3) this is the `incoming-supply` ROLE
+ * template, not the domain baseline: `seedAssetTemplateHealth` now pins each
+ * roled asset to `BASELINE-<DOMAIN>-<ROLE>` before the domain pin runs, so on
+ * a cold database the nine incomers sit there, not on `BASELINE-ELECTRICAL`,
+ * when this module runs. The copy then carries the incomers' own measured keys
+ * rather than the electrical union. A database seeded before `F2.32` keeps its
+ * incomer template as it was: version 1 is published and therefore immutable
+ * (ADR 0015), and its incomers are already on it, so the pin matches nothing.
+ */
+export const PUE_DEMO_SOURCE_TEMPLATE_CODE = "BASELINE-ELECTRICAL-INCOMING_SUPPLY";
 
 /** Ruling 1: the PUE point lives on "the site's `incoming-supply` asset". */
 export const PUE_DEMO_INCOMER_ROLE = "incoming-supply";
@@ -286,8 +297,8 @@ ON CONFLICT (template_id, point_key) DO NOTHING
 `;
 
 /**
- * Moves an `incoming-supply` asset from the domain baseline to the incomer
- * template. Only a `BASELINE-ELECTRICAL` pin moves: an asset an operator has
+ * Moves an `incoming-supply` asset from its role baseline to the incomer
+ * template. Only a `BASELINE-ELECTRICAL-INCOMING_SUPPLY` pin moves: an asset an operator has
  * migrated elsewhere (ADR 0039's explicit, previewed and audited path) keeps
  * that pin, and one already on the incomer template matches nothing.
  * `incomer.domain = a.domain` is the same cross-domain guard
@@ -340,7 +351,7 @@ WHERE a.organization_id = $1
  *   already had. Whether the mapping is active is the administrator's business;
  *   that a row exists is the seed's.
  * - **A version-free `incomers_still_on_the_baseline`.** `PUE_DEMO_PIN_SQL`
- *   moves a pin off `BASELINE-ELECTRICAL` **version 1** only, so the check names
+ *   moves a pin off its source template **version 1** only, so the check names
  *   version 1 too. Without it, a database whose administrator published a v2 of
  *   the electrical baseline and migrated the incomers onto it — ADR 0039's
  *   explicit, previewed and audited path, which the pin's own `WHERE` exists to

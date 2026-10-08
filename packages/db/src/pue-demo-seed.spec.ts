@@ -181,7 +181,8 @@ export function assertReSeedingNeverRewritesAPublishedVersion(): void {
 }
 
 /**
- * The pin moves only a `BASELINE-ELECTRICAL` pin, and selects the incomer by
+ * The pin moves only a `BASELINE-ELECTRICAL-INCOMING_SUPPLY` pin (the role
+ * template `F2.32` pins the incomers to first), and selects the incomer by
  * its role.
  *
  * Ruling 1 names "the site's `incoming-supply` asset", and `demoRoleForAsset`
@@ -192,7 +193,7 @@ export function assertReSeedingNeverRewritesAPublishedVersion(): void {
  * touched, and one already on the incomer template is a no-op.
  */
 export function assertThePinMovesOnlyABaselinePinOfAnIncomer(): void {
-  expect(PUE_DEMO_PIN_SQL).toContain("baseline.code = 'BASELINE-ELECTRICAL'");
+  expect(PUE_DEMO_PIN_SQL).toContain("baseline.code = 'BASELINE-ELECTRICAL-INCOMING_SUPPLY'");
   expect(PUE_DEMO_PIN_SQL).toContain("a.template_id = baseline.id");
   expect(PUE_DEMO_PIN_SQL).toContain("agm.role = 'incoming-supply'");
   expect(PUE_DEMO_PIN_SQL).toContain("incomer.domain = a.domain");
@@ -341,7 +342,7 @@ export function assertTheRackKwRowsAreSeededBeforeTheHealthBaselines(): void {
   ).toBeLessThan(healthAt);
   expect(
     healthAt,
-    "seedPueDemo copies BASELINE-ELECTRICAL's measured points and moves its pin, so it still runs after the baselines",
+    "seedPueDemo copies BASELINE-ELECTRICAL-INCOMING_SUPPLY's measured points and moves its pin, so it still runs after the baselines",
   ).toBeLessThan(pueAt);
 }
 
@@ -387,7 +388,7 @@ export function assertADeactivatedRackKwRowCannotLockTheBoot(): void {
  * **The verify matches the pin, version for version** — the code review's
  * finding C.
  *
- * `PUE_DEMO_PIN_SQL` moves a pin off `BASELINE-ELECTRICAL` **version 1** only.
+ * `PUE_DEMO_PIN_SQL` moves a pin off its source template **version 1** only.
  * `incomers_still_on_the_baseline` matched the code at any version, so a
  * database whose administrator published a v2 of the electrical baseline and
  * migrated the incomers onto it — ADR 0039's explicit, previewed and audited
@@ -398,7 +399,7 @@ export function assertADeactivatedRackKwRowCannotLockTheBoot(): void {
 export function assertTheVerifyAgreesWithThePinOnTheBaselineVersion(): void {
   expect(PUE_DEMO_PIN_SQL).toContain("baseline.version = 1");
   const subquery = subqueryAliased(PUE_DEMO_VERIFY_SQL, "incomers_still_on_the_baseline");
-  expect(subquery).toContain("t.code = 'BASELINE-ELECTRICAL'");
+  expect(subquery).toContain("t.code = 'BASELINE-ELECTRICAL-INCOMING_SUPPLY'");
   expect(
     subquery,
     "the verify must count only the version the pin can move, or an operator-published v2 of " +
