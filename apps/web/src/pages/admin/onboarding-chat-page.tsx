@@ -29,6 +29,7 @@ import { ApiError } from "../../lib/api-error";
 import { apiErrorMessage } from "../../lib/api-error-message";
 import { boldSegments } from "../../lib/bold-segments";
 import {
+  draftRtuTopic,
   formatOnboardingDraftSummary,
   formatOnboardingValidationErrors,
 } from "../../lib/onboarding-draft-summary";
@@ -211,7 +212,9 @@ export function OnboardingChatPage({ user }: OnboardingChatPageProps) {
   // keeps the stored credential (`mergeDraft` re-attaches it by RTU code). The
   // client draft is the redacted copy, so a `config` value under a
   // secret-looking key would go back as `[REDACTED]` — none of host, port, tls
-  // or topic is one, and ADR 0022 keeps secrets out of `config`.
+  // or topic is one, and ADR 0022 keeps secrets out of `config`. F4.236: the
+  // field reads the topic as `rtuTopic` does; Save still writes `config.topic`
+  // and leaves a legacy `mqttTopic` beside it, which every reader takes second.
   const [topicEdits, setTopicEdits] = useState<Record<number, string>>({});
   const topicMutation = useMutation({
     mutationFn: (vars: { index: number; topic: string }) =>
@@ -683,7 +686,7 @@ export function OnboardingChatPage({ user }: OnboardingChatPageProps) {
                                   placeholder="MQTT topic"
                                   autoComplete="off"
                                   maxLength={MAX_RTU_TOPIC_CHARS}
-                                  value={topicEdits[index] ?? String(rtu.config.topic ?? "")}
+                                  value={topicEdits[index] ?? draftRtuTopic(rtu.config)}
                                   onChange={(event) => {
                                     const value = event.target.value;
                                     setTopicEdits((edits) => ({ ...edits, [index]: value }));
@@ -698,7 +701,7 @@ export function OnboardingChatPage({ user }: OnboardingChatPageProps) {
                                     chatMutation.isPending ||
                                     credentialsMutation.isPending ||
                                     topicEdits[index] === undefined ||
-                                    topicEdits[index].trim() === String(rtu.config.topic ?? "")
+                                    topicEdits[index].trim() === draftRtuTopic(rtu.config)
                                   }
                                   aria-busy={topicMutation.isPending}
                                   className="shrink-0 surface-button px-2 py-1 text-[11px] disabled:opacity-50"

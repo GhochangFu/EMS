@@ -149,3 +149,43 @@ export async function theTopicSaveWaitsForACredentialSave(): Promise<void> {
   await userEvent.click(screen.getByRole("button", { name: "Save encrypted" }));
   await waitFor(() => expect(save).toBeDisabled());
 }
+
+/** Opens the drawer on one MQTT RTU whose config is `config`, and returns its Topic field. */
+async function fieldFor(config: Record<string, unknown>): Promise<HTMLElement> {
+  stubStart({ ...SESSION, draft: { rtus: [{ ...MQTT_RTU, config }] } });
+  renderPage();
+  await openPreview();
+  return topicField();
+}
+
+/** E1 (F4.236) — a legacy `mqttTopic` fills the field, as it fills the Summary. */
+export async function aLegacyTopicFillsTheField(): Promise<void> {
+  expect(await fieldFor({ mqttTopic: "a/b" })).toHaveValue("a/b");
+}
+
+/** E2 — `topic` wins over `mqttTopic` in the field, as `rtuTopic` reads. */
+export async function theTopicKeyWinsInTheField(): Promise<void> {
+  expect(await fieldFor({ topic: "x/y", mqttTopic: "a/b" })).toHaveValue("x/y");
+}
+
+/** E3 — an empty `topic` beside a legacy key shows empty: a string wins, as in `rtuTopic`. */
+export async function anEmptyTopicBesideALegacyKeyShowsEmpty(): Promise<void> {
+  expect(await fieldFor({ topic: "", mqttTopic: "a/b" })).toHaveValue("");
+}
+
+/** E4 — an absent topic shows empty (the placeholder), not the Summary's "-". */
+export async function anAbsentTopicShowsEmptyNotADash(): Promise<void> {
+  expect(await fieldFor({ host: "h" })).toHaveValue("");
+}
+
+/** E5 — whitespace is shown as sent: the field does not trim (F4.234). */
+export async function aWhitespaceTopicIsShownAsSent(): Promise<void> {
+  expect(await fieldFor({ topic: "  " })).toHaveValue("  ");
+}
+
+/** E6 — Save topic stays disabled when the edit equals the legacy topic. */
+export async function saveIsDisabledWhenTheEditEqualsTheLegacyTopic(): Promise<void> {
+  const field = await fieldFor({ mqttTopic: "a/b" });
+  await userEvent.type(field, "x{backspace}");
+  expect(screen.getByRole("button", { name: "Save topic" })).toBeDisabled();
+}
