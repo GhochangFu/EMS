@@ -7545,3 +7545,22 @@ Live: `bms-api` and `bms-worker` rebuilt with `--no-cache` from `main` `54487a61
 Raised: `F4.233` (the Excel upload and the credential route still write
 without the lock), `F4.234` (the validator's required-topic check reads
 the legacy key). No `chore(agents):` change owed.
+
+### `F4.233`, `F4.234` — the upload and credential writes under the row lock; the required-topic check ✅ 2026-10-08
+
+Two PRs, squash-merged 2026-10-08; no migration, no new dependency. One
+ADR amendment note, text approved at the plan gate (ADR 0094 decision 6).
+
+- **#772** (`8b301104`) — `F4.233`: `lockSession` and the re-checks
+  move to `onboarding-locked-writes.ts` (pure move first); the Excel
+  upload and the credential route write under `FOR UPDATE` and build on
+  the locked row; the credential route re-checks the draft hash, so a
+  password cannot bind to another RTU.
+- **#773** (`207254fb`) — `F4.234`: the validator's required-topic
+  check reads `rtuTopic`, so `""` beside a legacy `mqttTopic` is
+  refused; the web draft summary reads the topic the same way.
+
+Live 2026-10-08: `bms-api-1`, `bms-worker-1` and `bms-web-1` rebuilt with `--no-cache` from `main` `207254fb` and restarted; both API containers hold `onboarding-locked-writes.js` with one `.for("update")` (none left in `onboarding.service.js`, six `lockSession` call lines) and `rtuTopic(rtu) === ""` in the validator; the served web bundle's summary reads `[topic, mqttTopic]` through `topicOf`; `/health` 200. Database: no schema change. Not done: sign-in checks (owner ruling). Browser: N/A.
+
+Raised: `F4.235` (`patchDraft` locks nothing), `F4.236` (the topic edit
+field reads only `config.topic`). No `chore(agents):` change owed.
