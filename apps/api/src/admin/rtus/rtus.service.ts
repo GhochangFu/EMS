@@ -259,6 +259,9 @@ export class RtusAdminService {
         externalRtuId:
           body.externalRtuId !== undefined ? body.externalRtuId : existing.externalRtuId,
         rtuCode: body.rtuCode !== undefined ? body.rtuCode : existing.rtuCode,
+        // Applied to the restated `existing.mqttTopic` too, so a row written
+        // before F4.223 is repaired on its next edit. The audit payload keeps
+        // the body as sent.
         mqttTopic: emptyTopicAsNull(
           body.mqttTopic !== undefined ? body.mqttTopic : existing.mqttTopic,
         ),

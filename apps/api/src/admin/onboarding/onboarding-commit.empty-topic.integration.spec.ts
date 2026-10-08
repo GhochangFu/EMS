@@ -40,7 +40,10 @@ export async function assertASecondOnboardedRtuWithAnEmptyTopicSaves(
   expect(ctx.committed.second.rtuIds.length, "the second empty-topic RTU committed").toBe(1);
 }
 
-/** E2 — measures the rows the commits wrote, not the value they returned. */
+/**
+ * E2 — measures the rows the commits wrote, not the value they returned. It reads
+ * `committed.second`, which E1 stores, so it runs after E1 and not alone.
+ */
 export async function assertBothOnboardedEmptyTopicsAreNull(ctx: OnboardingEmptyTopicCtx): Promise<void> {
   const ids = [ctx.committed.first?.rtuIds[0], ctx.committed.second?.rtuIds[0]].filter(
     (id): id is string => id !== undefined,

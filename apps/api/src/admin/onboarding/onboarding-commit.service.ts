@@ -429,9 +429,11 @@ export class OnboardingCommitService {
         const config = rtuDraft.config ?? {};
         // F4.228: an empty topic is stored as NULL, never '' — rtus_mqtt_topic_idx
         // has no `<> ''` arm. Applied to the result of the `??` chain, not to an
-        // arm: `""` is not nullish, so the validator (`rtuTopic`) sees `""` when the
-        // draft carries `topic: ""` beside a legacy `mqttTopic`, and this write must
-        // agree with it rather than resurface the legacy key.
+        // arm: `""` is not nullish, so the validator's length and wildcard checks
+        // (`rtuTopic`) see `""` when the draft carries `topic: ""` beside a legacy
+        // `mqttTopic`, and this write must agree with them rather than resurface the
+        // legacy key. The required-topic check reads `config.topic` and
+        // `config.mqttTopic` by truthiness, not through `rtuTopic`.
         const mqttTopic = emptyTopicAsNull(
           (typeof config.topic === "string" ? config.topic : null) ??
             (typeof config.mqttTopic === "string" ? config.mqttTopic : null),
