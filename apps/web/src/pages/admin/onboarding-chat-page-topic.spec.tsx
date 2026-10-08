@@ -183,6 +183,44 @@ export async function aWhitespaceTopicIsShownAsSent(): Promise<void> {
   expect(await fieldFor({ topic: "  " })).toHaveValue("  ");
 }
 
+/**
+ * Opens the drawer on one MQTT RTU whose config is `config`, replaces the
+ * field with `a/b`, saves, and returns the config the PATCH sent.
+ */
+async function saveABOver(config: Record<string, unknown>): Promise<Record<string, unknown>> {
+  const patch = vi
+    .spyOn(api, "patchOnboardingDraft")
+    .mockResolvedValue({ ...SESSION, draft: { rtus: [{ ...MQTT_RTU, config: { host: "h", topic: "a/b" } }] } });
+  const field = await fieldFor(config);
+  await userEvent.clear(field);
+  await userEvent.type(field, "a/b");
+  await userEvent.click(screen.getByRole("button", { name: "Save topic" }));
+  await waitFor(() => expect(patch).toHaveBeenCalledTimes(1));
+  const body = patch.mock.calls[0][1] as { rtus: DraftRtu[] };
+  return body.rtus[0].config;
+}
+
+const LEGACY_WILDCARD = { host: "h", mqttTopic: "a/#" };
+
+/** E7a (F4.236, owner ruling Q4) — Save over a legacy key sends the typed topic. */
+export async function theSaveOverALegacyKeySendsTheTopic(): Promise<void> {
+  expect((await saveABOver(LEGACY_WILDCARD)).topic).toBe("a/b");
+}
+
+/** E8 (F4.236) — Save over a stored topic sends the typed one, not the stored one. */
+export async function theSaveOverAStoredTopicSendsTheTypedOne(): Promise<void> {
+  expect((await saveABOver({ host: "h", topic: "old/x" })).topic).toBe("a/b");
+}
+
+/**
+ * E7b (F4.236, owner ruling Q4) — Save drops the legacy `mqttTopic`: the
+ * validator's schema check still reads a shadowed one (spec V4c), so a
+ * wildcard left there would refuse the draft on a key the page cannot edit.
+ */
+export async function theSaveOverALegacyKeyDropsIt(): Promise<void> {
+  expect(await saveABOver(LEGACY_WILDCARD)).not.toHaveProperty("mqttTopic");
+}
+
 /** E6 — Save topic stays disabled when the edit equals the legacy topic. */
 export async function saveIsDisabledWhenTheEditEqualsTheLegacyTopic(): Promise<void> {
   const field = await fieldFor({ mqttTopic: "a/b" });

@@ -10,6 +10,9 @@ import {
   aWhitespaceTopicIsShownAsSent,
   saveIsDisabledWhenTheEditEqualsTheLegacyTopic,
   theTopicKeyWinsInTheField,
+  theSaveOverALegacyKeyDropsIt,
+  theSaveOverALegacyKeySendsTheTopic,
+  theSaveOverAStoredTopicSendsTheTypedOne,
   aRefusedTopicSaveShowsTheReason,
   theSavedTopicReachesTheSummary,
   theTopicFieldIsBoundedAt255,
@@ -90,5 +93,17 @@ describe("F4.208 the Topic field beside an MQTT RTU's credentials", () => {
 
   it("E6: Save topic is disabled when the edit equals the legacy topic", async () => {
     await saveIsDisabledWhenTheEditEqualsTheLegacyTopic();
+  });
+
+  it("E7a: Save over a legacy key sends the typed topic", async () => {
+    await theSaveOverALegacyKeySendsTheTopic();
+  });
+
+  it("E7b: Save over a legacy key drops the legacy mqttTopic", async () => {
+    await theSaveOverALegacyKeyDropsIt();
+  });
+
+  it("E8: Save over a stored topic sends the typed one", async () => {
+    await theSaveOverAStoredTopicSendsTheTypedOne();
   });
 });

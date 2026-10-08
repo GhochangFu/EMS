@@ -122,6 +122,18 @@ function offeredReplies(replies: readonly string[] | undefined): string[] {
   return (replies ?? []).filter((r) => !NEVER_OFFERED_REPLIES.includes(r.trim().toLowerCase()));
 }
 
+/**
+ * The config a Save topic writes (`F4.236`, owner ruling): the typed topic, and
+ * no legacy `mqttTopic`. The topic readers take that key second, but the
+ * validator's protocol-schema check still reads a shadowed one (spec V4c), so a
+ * wildcard left there would refuse the draft on a key this page cannot edit.
+ */
+function withSavedTopic(config: Record<string, unknown>, topic: string): Record<string, unknown> {
+  const next: Record<string, unknown> = { ...config, topic };
+  delete next.mqttTopic;
+  return next;
+}
+
 /** Where a committed session lands — one target for the Commit button and a chat commit. */
 function rtusPathFor(locationId: string): string {
   return `/admin/locations/${locationId}/rtus`;
@@ -213,17 +225,14 @@ export function OnboardingChatPage({ user }: OnboardingChatPageProps) {
   // client draft is the redacted copy, so a `config` value under a
   // secret-looking key would go back as `[REDACTED]` — none of host, port, tls
   // or topic is one, and ADR 0022 keeps secrets out of `config`. F4.236: the
-  // field reads the topic as `rtuTopic` does; Save still writes `config.topic`
-  // and leaves a legacy `mqttTopic` beside it, which the topic readers
-  // (`rtuTopic`, the commit, the Summary, this field) take second; the
-  // validator's protocol-schema check still reads a shadowed `mqttTopic` and
-  // refuses a wildcard in it (spec V4c).
+  // field reads the topic as `rtuTopic` does, and Save writes `config.topic`
+  // and drops a legacy `mqttTopic` (`withSavedTopic`).
   const [topicEdits, setTopicEdits] = useState<Record<number, string>>({});
   const topicMutation = useMutation({
     mutationFn: (vars: { index: number; topic: string }) =>
       patchOnboardingDraft(session!.id, {
         rtus: (session!.draft?.rtus ?? []).map((rtu, i) =>
-          i === vars.index ? { ...rtu, config: { ...rtu.config, topic: vars.topic } } : rtu,
+          i === vars.index ? { ...rtu, config: withSavedTopic(rtu.config, vars.topic) } : rtu,
         ),
       }),
     onSuccess: (updated, vars) => {
