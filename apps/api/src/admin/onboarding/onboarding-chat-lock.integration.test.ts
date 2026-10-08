@@ -27,6 +27,10 @@ import {
   assertACredentialOverAChangedDraftAnswers409,
   assertAMessageCommittedUnderTheLockSurvivesTheUpload,
   assertAnUploadOverACommittedRowAnswers409,
+  assertAPatchOverACommittedRowAnswers409,
+  assertAPatchOverAChangedDraftStillWrites,
+  assertThePatchWaitedOnTheCommittingHolder,
+  PATCH_POINT_KEY,
   assertTheCredentialWriteWaitedOnTheHolder,
   assertTheUploadWaitedOnTheCommittingHolder,
   assertTheUploadWaitedOnTheHolder,
@@ -57,7 +61,8 @@ import { OnboardingService } from "./onboarding.service";
  * (ADR 0014); this file owns the database lifecycle. Every race runs once in
  * `beforeAll`, one after the other, each on its own session row; every row is
  * committed, so `afterAll` deletes them by id. `F4.231` adds races 3 to 8 and
- * case 9 (the empty-ring `undo` and the typed confirm).
+ * case 9 (the empty-ring `undo` and the typed confirm); `F4.235` adds 14 and 15
+ * (the PATCH draft).
  */
 const connectionString = requireIntegrationDb({
   item: "F4.227",
@@ -368,6 +373,29 @@ describe.skipIf(!connectionString)("F4.227 — the chat write locks the session 
       APPEND_TURN,
       () => service.setCredentials(jwt, credentialsKeptId, credentials),
     );
+
+    const patchBody = {
+      pointKeys: [{ code: PATCH_POINT_KEY, name: "Patched kW", domain: "electrical", unit: "kW" }],
+    };
+    const patchCommittedId = await seedSession("PCM");
+    ctx.patchCommitted = await raceTheChatWrite(
+      ctx,
+      patchCommittedId,
+      "race 14 (PATCH draft, row committed under the lock)",
+      markCommitted(patchCommittedId),
+      APPEND_TURN,
+      () => service.patchDraft(jwt, patchCommittedId, patchBody as never),
+    );
+
+    const patchChangedId = await seedSession("PCH");
+    ctx.patchChanged = await raceTheChatWrite(
+      ctx,
+      patchChangedId,
+      "race 15 (PATCH draft, draft changed under the lock)",
+      changeTheName(patchChangedId),
+      APPEND_TURN,
+      () => service.patchDraft(jwt, patchChangedId, patchBody as never),
+    );
   }, 200_000);
 
   afterAll(async () => {
@@ -456,6 +484,18 @@ describe.skipIf(!connectionString)("F4.227 — the chat write locks the session 
 
   it("race 13 — a credential write keeps a message committed under the lock and stores the secret", () => {
     assertACredentialKeepsAMessageCommittedUnderTheLock(ctx);
+  });
+
+  it("race 14 control — the PATCH blocked on a holder that committed the session", () => {
+    assertThePatchWaitedOnTheCommittingHolder(ctx);
+  });
+
+  it("race 14 — a PATCH over a row committed under the lock answers 409 SESSION_NO_LONGER_DRAFT and writes nothing", () => {
+    assertAPatchOverACommittedRowAnswers409(ctx);
+  });
+
+  it("race 15 — a PATCH over a draft changed under the lock still writes (hash-unbound, F4.227) and merges on the locked row", () => {
+    assertAPatchOverAChangedDraftStillWrites(ctx);
   });
 
   it("case 9 — a committing confirm appends its messages to the row its own commit marked committed", () => {

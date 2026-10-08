@@ -460,7 +460,15 @@ export class OnboardingService {
     };
   }
 
-  /** Patches draft from inline editor. */
+  /**
+   * Patches the draft from the inline editor. Since `F4.235` it writes under
+   * `lockSession` and re-checks the status (409 `SESSION_NO_LONGER_DRAFT` when a
+   * commit landed in between); hash-unbound by the `F4.227` ruling; merges on
+   * the locked row, so a section written in between survives unless the PATCH
+   * names it. The pre-lock 403 stays for a row already committed when loaded.
+   * The 409 sentence reads "turn" on a PATCH: chat wording, as on the credential
+   * route (`F4.233`).
+   */
   async patchDraft(
     jwt: JwtPayload,
     sessionId: string,
@@ -476,24 +484,30 @@ export class OnboardingService {
     // gate, so a caller outside it learns nothing, and only when the body names
     // a type, so a draft whose stored type was retired can still be repaired.
     await assertPatchLocationTypeIsActive(draft, this.vocabularies);
-    const merged = this.chatService.mergeDraft(session.draft, draft);
-    const phase = this.validateService.inferPhase(merged, await this.activeLocationTypeCodes());
-
-    const updated = await withTenant(this.tenantDb, session.organizationId, (tx) =>
-      tx
+    const locationTypeCodes = await this.activeLocationTypeCodes();
+    const updated = await withTenant(this.tenantDb, session.organizationId, async (tx) => {
+      // Lock placement is gated by onboarding-chat-lock.integration.test.ts (real Postgres).
+      const locked = await lockSession(tx, sessionId);
+      assertSessionStillDraft(locked);
+      const merged = this.chatService.mergeDraft(locked.draft, draft);
+      const [row] = await tx
         .update(onboardingSessions)
         .set({
           draft: merged,
-          currentPhase: phase,
+          currentPhase: this.validateService.inferPhase(merged, locationTypeCodes),
           // F3.25 (plan Q3): a write the ring did not checkpoint ends undo
           // history, so a later rollback cannot silently undo this edit.
           checkpoints: null,
           updatedAt: sql`now()`,
         })
-        .where(eq(onboardingSessions.id, sessionId))
-        .returning()
-        .then(([row]) => row),
-    );
+        // Defence in depth behind the lock's status check above.
+        .where(and(eq(onboardingSessions.id, sessionId), eq(onboardingSessions.status, "draft")))
+        .returning();
+      return row;
+    });
+    if (!updated) {
+      throw new ConflictException(SESSION_NO_LONGER_DRAFT);
+    }
 
     const [org] = await this.tenantDb
       .select({ code: organizations.code, name: organizations.name })
@@ -506,9 +520,9 @@ export class OnboardingService {
 
   /**
    * `POST :id/rollback` (F3.25, ADR 0094 decisions 5 and 6). Bound to the
-   * draft hash the client last saw: `chat` writes without a lock, so a client
-   * that read the draft before another tab's turn must not restore over it. A
-   * mismatch is a 409 and nothing is written.
+   * draft hash the client last saw: the row lock orders the writes but cannot
+   * tell a stale client, so a client that read the draft before another tab's
+   * turn must not restore over it. A mismatch is a 409 and nothing is written.
    */
   async rollback(jwt: JwtPayload, sessionId: string, body: RollbackBody): Promise<OnboardingChatResponseDto> {
     const session = await this.loadSession(jwt, sessionId);

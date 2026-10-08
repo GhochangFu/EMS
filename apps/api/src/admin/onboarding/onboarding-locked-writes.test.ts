@@ -10,10 +10,15 @@ import {
   assertTheUploadOverAChangedDraftStillWrites,
   assertTheUploadOverACommittedRowAnswers409,
   assertTheUploadWhoseUpdateMatchesNothingAnswers409,
+  assertThePatchOverACommittedRowAnswers409,
+  assertThePatchWhoseUpdateMatchesNothingAnswers409,
+  assertThePatchOverAChangedDraftStillWrites,
+  assertThePatchInfersThePhaseOnTheLockedMerge,
+  assertThePatchOverALoadedCommittedRowAnswers403,
 } from "./onboarding-locked-writes.spec";
 
 /** Vitest entry point — assertions live in the sibling `.spec` (ADR 0014). One `it()` per claim. */
-describe("onboarding upload and credential writes under the row lock (F4.233, ADR 0094 decision 6)", () => {
+describe("onboarding upload, credential and PATCH draft writes under the row lock (F4.233, F4.235, ADR 0094 decision 6)", () => {
   it("builds the upload's messages on the locked row", async () => {
     await assertTheUploadBuildsMessagesOnTheLockedRow();
   });
@@ -48,5 +53,25 @@ describe("onboarding upload and credential writes under the row lock (F4.233, AD
 
   it("answers 409 DRAFT_TOO_DEEP_FOR_TURN to a credential write over an over-deep draft", async () => {
     await assertSetCredentialsOverAnOverDeepDraftAnswers409ByName();
+  });
+
+  it("answers 409 to a PATCH over a row committed under the lock", async () => {
+    await assertThePatchOverACommittedRowAnswers409();
+  });
+
+  it("answers 409 to a PATCH whose update matches no row", async () => {
+    await assertThePatchWhoseUpdateMatchesNothingAnswers409();
+  });
+
+  it("still writes a PATCH over a draft that changed and merges on the locked row (F4.227, F4.235)", async () => {
+    await assertThePatchOverAChangedDraftStillWrites();
+  });
+
+  it("infers a PATCH's phase on the merge over the locked draft (F4.235)", async () => {
+    await assertThePatchInfersThePhaseOnTheLockedMerge();
+  });
+
+  it("answers 403 to a PATCH over a row already committed when loaded", async () => {
+    await assertThePatchOverALoadedCommittedRowAnswers403();
   });
 });
