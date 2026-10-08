@@ -8,7 +8,7 @@ import {
 } from "@nestjs/common";
 import { and, asc, eq, inArray } from "drizzle-orm";
 
-import { assetPoints, assets, locations, rtus } from "@bms/db";
+import { assetPoints, assets, rtus } from "@bms/db";
 import type { BmsDb } from "@bms/db";
 import type { AdminAssetPointDto, JwtPayload, PointMetadataFields, QualityPolicy } from "@bms/shared";
 
@@ -20,7 +20,7 @@ import {
   translateConstraintErrors,
 } from "../../database/translate-constraint-errors";
 import { MasterDataAuditService } from "../master-data-audit.service";
-import { mapAssetPointRow, type AssetPointRow } from "./asset-point-row";
+import { mapAssetPointRow, selectAssetPointRows, type AssetPointRow } from "./asset-point-row";
 import type {
   AssetPointBulkPatch,
   AssetPointBulkUpdateBody,
@@ -95,17 +95,7 @@ export class AssetPointsAdminService {
       conditions.push(eq(assetPoints.active, false));
     }
 
-    const rows = await this.fleetDb
-      .select({
-        point: assetPoints,
-        assetCode: assets.code,
-        assetName: assets.name,
-        locationId: assets.locationId,
-        locationName: locations.name,
-      })
-      .from(assetPoints)
-      .innerJoin(assets, eq(assetPoints.assetId, assets.id))
-      .leftJoin(locations, eq(assets.locationId, locations.id))
+    const rows = await selectAssetPointRows(this.fleetDb)
       .where(conditions.length > 0 ? and(...conditions) : undefined)
       .orderBy(asc(assetPoints.pointKey));
 
@@ -679,17 +669,7 @@ export class AssetPointsAdminService {
     if (ids.length === 0) {
       return [];
     }
-    const rows = await this.fleetDb
-      .select({
-        point: assetPoints,
-        assetCode: assets.code,
-        assetName: assets.name,
-        locationId: assets.locationId,
-        locationName: locations.name,
-      })
-      .from(assetPoints)
-      .innerJoin(assets, eq(assetPoints.assetId, assets.id))
-      .leftJoin(locations, eq(assets.locationId, locations.id))
+    const rows = await selectAssetPointRows(this.fleetDb)
       .where(inArray(assetPoints.id, [...ids]))
       .orderBy(asc(assets.code), asc(assetPoints.pointKey));
     return rows.map((row) => this.mapRow(row));

@@ -384,3 +384,66 @@ export async function assertRtuIdWiresAndUnwiresOnUpdate(
   expect(refusal.status).toBe(400);
   expect(refusal.message).toContain("RTU must belong to the selected location");
 }
+
+/**
+ * (g) ADR 0056 Amendment 3 part A (`F2.25`) — every admin read carries the
+ * pinned template's five as `templateDefaults`, through the one
+ * `selectAssetPointRows` join. Four claims, each its own read site or its own
+ * nullability rule:
+ *
+ * 1. `list` on the templated asset: the `keys.measured` item reads the
+ *    template's `eng_max = 100` and a `null` `engMin` (declared, no default).
+ * 2. The `computed` row's key is declared with no defaults at all, so
+ *    `templateDefaults` is an object of five `null` — **not** `null`. This is
+ *    the drizzle trap: a left-joined nested object whose every column is null
+ *    reads as `null`, which is why the join selects `template_points.id`.
+ * 3. `list` on the hand-created asset (no template): every item is `null`.
+ * 4. The DTO `update` returns, read back through `fetchRows`, carries it too.
+ *
+ * The pinned-version rule (join on `assets.template_id`, not the newest
+ * version) is the loader's rule; this fixture has one version, so it is not
+ * re-proved here.
+ */
+export async function assertReadsCarryTheTemplateDefaults(
+  ctx: MetadataFixtures,
+  jwt: JwtPayload,
+): Promise<void> {
+  // Case (c) may already have created the `keys.measured` row; the pair
+  // (asset, point key) is unique, so reuse it rather than create a second.
+  const before = await ctx.svc.list(jwt, ctx.templatedAssetId);
+  const measuredId =
+    before.items.find((item) => item.pointKey === ctx.keys.measured)?.id ??
+    (
+      await ctx.svc.create(jwt, {
+        assetId: ctx.templatedAssetId,
+        pointKey: ctx.keys.measured,
+        sourceDataKey: `${ctx.keys.measured}/RAW`,
+      })
+    ).id;
+
+  const { items } = await ctx.svc.list(jwt, ctx.templatedAssetId);
+  const measured = items.find((item) => item.id === measuredId);
+  expect(measured?.templateDefaults?.engMax).toBe(100);
+  expect(measured?.templateDefaults?.engMin).toBeNull();
+
+  const computed = items.find((item) => item.id === ctx.computedPointId);
+  expect(computed).toBeDefined();
+  expect(computed?.templateDefaults).toEqual({
+    scaleMultiplier: null,
+    scaleOffset: null,
+    engMin: null,
+    engMax: null,
+    qualityPolicy: null,
+  });
+
+  const hand = await ctx.svc.list(jwt, ctx.handAssetId);
+  expect(hand.items.length).toBeGreaterThan(0);
+  for (const item of hand.items) {
+    expect(item.templateDefaults).toBeNull();
+  }
+
+  const updated = await ctx.svc.update(jwt, measuredId, { engMin: 1 });
+  expect(updated.engMin).toBe(1);
+  expect(updated.templateDefaults?.engMax).toBe(100);
+  await ctx.svc.update(jwt, measuredId, { engMin: null });
+}

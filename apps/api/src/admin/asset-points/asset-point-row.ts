@@ -1,4 +1,7 @@
-import type { assetPoints } from "@bms/db";
+import { and, eq } from "drizzle-orm";
+
+import { assetPoints, assets, locations, templatePoints } from "@bms/db";
+import type { BmsDb } from "@bms/db";
 import type { AdminAssetPointDto, AssetPointPickerRow, QualityPolicy } from "@bms/shared";
 
 /**
@@ -11,7 +14,56 @@ export type AssetPointRow = {
   assetName: string;
   locationId: string | null;
   locationName: string | null;
+  /**
+   * ADR 0056 Amendment 3 part A (`F2.25`) — the pinned template's point for
+   * this key, LEFT-joined, so `null` = no template or the key is not declared.
+   * `id` is never emitted; it is selected so drizzle cannot fold a declared
+   * key whose five defaults are all `NULL` into a `null` object.
+   */
+  template: {
+    id: string;
+    scaleMultiplier: number | null;
+    scaleOffset: number | null;
+    engMin: number | null;
+    engMax: number | null;
+    qualityPolicy: string | null;
+  } | null;
 };
+
+/**
+ * ADR 0056 Amendment 3 part A (`F2.25`) — the one select every asset-point
+ * read starts from: the point, its asset, the asset's location, and the
+ * **pinned** template's point for the same key (`assets.template_id`, not the
+ * template's newest version — the rule `loadTemplatePointDefaults` applies).
+ * `template_points_template_point_key_unique` (migration 0024) makes the
+ * template join at most one row. Callers append `.where()` / `.orderBy()`.
+ */
+export function selectAssetPointRows(db: BmsDb) {
+  return db
+    .select({
+      point: assetPoints,
+      assetCode: assets.code,
+      assetName: assets.name,
+      locationId: assets.locationId,
+      locationName: locations.name,
+      template: {
+        // Selected on purpose — see `AssetPointRow.template`.
+        id: templatePoints.id,
+        scaleMultiplier: templatePoints.scaleMultiplier,
+        scaleOffset: templatePoints.scaleOffset,
+        engMin: templatePoints.engMin,
+        engMax: templatePoints.engMax,
+        qualityPolicy: templatePoints.qualityPolicy,
+      },
+    })
+    .from(assetPoints)
+    .innerJoin(assets, eq(assetPoints.assetId, assets.id))
+    .leftJoin(locations, eq(assets.locationId, locations.id))
+    .leftJoin(
+      templatePoints,
+      and(eq(templatePoints.templateId, assets.templateId), eq(templatePoints.pointKey, assetPoints.pointKey)),
+    );
+}
 
 /**
  * `F3.63` (ADR 0047 Amendment 6 §Q1 point 3) — the one projection from a
@@ -52,6 +104,19 @@ export function mapAssetPointRow(row: AssetPointRow): AdminAssetPointDto {
     engMin: point.engMin,
     engMax: point.engMax,
     qualityPolicy: point.qualityPolicy as QualityPolicy | null,
+    // ADR 0056 Amendment 3 part A (`F2.25`) — the pinned template's five, as
+    // declared; `null` = nothing to inherit. The effective value the ingest
+    // host applies is `coalesce(asset, template)` per field; the web derives
+    // it and the "inherited" marker from these two.
+    templateDefaults: row.template
+      ? {
+          scaleMultiplier: row.template.scaleMultiplier,
+          scaleOffset: row.template.scaleOffset,
+          engMin: row.template.engMin,
+          engMax: row.template.engMax,
+          qualityPolicy: row.template.qualityPolicy as QualityPolicy | null,
+        }
+      : null,
   };
 }
 
