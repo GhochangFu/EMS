@@ -221,6 +221,17 @@ export async function assertThePatchOverAChangedDraftStillWrites(): Promise<void
   assert(draft.location?.name === "Renamed in between", `the in-between name survives, got ${draft.location?.name}`);
 }
 
+/** (U14) F4.235 Q1: the phase is inferred on the merge over the LOCKED draft, not on the loaded one. */
+export async function assertThePatchInfersThePhaseOnTheLockedMerge(): Promise<void> {
+  const session = patchSession();
+  const locked = { ...session, draft: rtuDraft("") } as Row;
+  const { service, record } = patchBuild(session, { locked });
+  await service.patchDraft(JWT, "s-1", PATCH_BODY);
+  assert(record.updates.length === 1, `one write, got ${record.updates.length}`);
+  const phase = record.updates[0]?.currentPhase;
+  assert(phase === "location", `phase follows the locked merge (no location name), got ${phase}`);
+}
+
 /** (U13) Adjacent negative: a row already committed when loaded keeps the 403, nothing written. */
 export async function assertThePatchOverALoadedCommittedRowAnswers403(): Promise<void> {
   const session = { ...patchSession(), status: "committed" } as Row;

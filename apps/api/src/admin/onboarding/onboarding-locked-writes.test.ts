@@ -13,6 +13,7 @@ import {
   assertThePatchOverACommittedRowAnswers409,
   assertThePatchWhoseUpdateMatchesNothingAnswers409,
   assertThePatchOverAChangedDraftStillWrites,
+  assertThePatchInfersThePhaseOnTheLockedMerge,
   assertThePatchOverALoadedCommittedRowAnswers403,
 } from "./onboarding-locked-writes.spec";
 
@@ -64,6 +65,10 @@ describe("onboarding upload, credential and PATCH draft writes under the row loc
 
   it("still writes a PATCH over a draft that changed and merges on the locked row (F4.227, F4.235)", async () => {
     await assertThePatchOverAChangedDraftStillWrites();
+  });
+
+  it("infers a PATCH's phase on the merge over the locked draft (F4.235)", async () => {
+    await assertThePatchInfersThePhaseOnTheLockedMerge();
   });
 
   it("answers 403 to a PATCH over a row already committed when loaded", async () => {
