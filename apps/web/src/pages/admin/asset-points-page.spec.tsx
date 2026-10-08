@@ -1,7 +1,8 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
+import type { AdminAssetPointDto } from "@bms/shared";
 import { expect, vi } from "vitest";
 
 import * as api from "../../api/admin/asset-points";
@@ -99,4 +100,69 @@ export async function aRefusedCreateShowsTheSentence(): Promise<void> {
   expect(create).toHaveBeenCalledTimes(1);
   expect(banner.textContent).not.toContain('{"');
   expect(banner.textContent).toBe(SENTENCE);
+}
+
+/** One list row, every field stated; a case overrides what it is about. */
+export function pointItem(overrides: Partial<AdminAssetPointDto>): AdminAssetPointDto {
+  return {
+    id: "c1000000-0000-4000-8000-000000000001",
+    assetId: "c1000000-0000-4000-8000-0000000000a1",
+    assetCode: "C1-PUMP",
+    assetName: "C1 pump",
+    locationId: "c1000000-0000-4000-8000-0000000000l1",
+    locationName: "C1 site",
+    pointKey: POINT_KEY,
+    sourceDataKey: "C1_RAW",
+    sensorCode: null,
+    unit: "kW",
+    active: true,
+    sourceKind: "unmapped",
+    rtuId: null,
+    createdAt: new Date(0).toISOString(),
+    scaleMultiplier: null,
+    scaleOffset: null,
+    engMin: null,
+    engMax: null,
+    qualityPolicy: null,
+    templateDefaults: null,
+    ...overrides,
+  };
+}
+
+/** The `<tr>` of one list row, found by its select checkbox. */
+export function rowOf(item: AdminAssetPointDto): HTMLElement {
+  const row = screen.getByLabelText(`Select ${item.assetCode} ${item.pointKey}`).closest("tr");
+  if (!row) throw new Error(`no row for ${item.assetCode} ${item.pointKey}`);
+  return row;
+}
+
+/**
+ * F2.25 (ADR 0056 Amendment 3 part A) — the Range cell shows the effective
+ * value and marks it inherited; a row with its own value carries no marker.
+ * Scoped to each row: the footer says "inherited" too.
+ */
+export async function theListShowsTheInheritedEffectiveRange(): Promise<void> {
+  stubApi();
+  const inheriting = pointItem({
+    id: "c1000000-0000-4000-8000-000000000011",
+    assetCode: "C1-INH",
+    templateDefaults: { scaleMultiplier: null, scaleOffset: null, engMin: null, engMax: 100, qualityPolicy: null },
+  });
+  const own = pointItem({
+    id: "c1000000-0000-4000-8000-000000000012",
+    assetCode: "C1-OWN",
+    engMax: 9,
+    templateDefaults: { scaleMultiplier: null, scaleOffset: null, engMin: null, engMax: 100, qualityPolicy: null },
+  });
+  vi.mocked(api.fetchAdminAssetPoints).mockResolvedValue({ items: [inheriting, own] });
+  renderPage();
+  await screen.findByLabelText("Select C1-INH " + POINT_KEY);
+
+  const inheritingRow = rowOf(inheriting);
+  expect(within(inheritingRow).getByText("≤ 100")).toBeTruthy();
+  expect(within(inheritingRow).getByText("inherited").getAttribute("title")).toContain("engMax");
+
+  const ownRow = rowOf(own);
+  expect(within(ownRow).getByText("≤ 9")).toBeTruthy();
+  expect(within(ownRow).queryByText(/inherited/)).toBeNull();
 }

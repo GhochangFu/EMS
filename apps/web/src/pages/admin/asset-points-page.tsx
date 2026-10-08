@@ -36,6 +36,19 @@ import { PointCalcOverridePanel } from "../../components/assets/point-calc-overr
 import { SectionCard } from "../../components/section-card";
 import { apiErrorMessage } from "../../lib/api-error-message";
 import {
+  effectivePointMetadata,
+  inheritedFields,
+  inheritedParts,
+  qualityCell,
+  rangeCell,
+  scaleCell,
+  QUALITY_FIELDS,
+  RANGE_FIELDS,
+  SCALE_FIELDS,
+  type EffectivePointMetadata,
+  type MetadataField,
+} from "../../lib/asset-point-effective";
+import {
   calcRuntimePillLabel,
   draftFromConfig,
   draftToBody,
@@ -139,22 +152,46 @@ function metadataWriteFrom(form: MetadataForm, mode: "create" | "edit"): Metadat
   return write;
 }
 
-/** `×1.5 +2` — the stored scaling, or a dash where the row follows its template. */
-function scaleCell(item: AdminAssetPointDto): string {
-  const parts: string[] = [];
-  if (item.scaleMultiplier !== null) parts.push(`×${item.scaleMultiplier}`);
-  if (item.scaleOffset !== null) {
-    parts.push(item.scaleOffset < 0 ? `−${Math.abs(item.scaleOffset)}` : `+${item.scaleOffset}`);
-  }
-  return parts.length > 0 ? parts.join(" ") : "—";
+/**
+ * ADR 0056 Amendment 3 part A (`F2.25`) — one metadata cell: the effective
+ * value, and an "inherited" marker where the shown value comes from the
+ * asset's template. The title names the template-supplied fields.
+ */
+function MetadataCell({
+  text,
+  effective,
+  fields,
+}: {
+  text: string;
+  effective: EffectivePointMetadata;
+  fields: readonly MetadataField[];
+}) {
+  const parts = inheritedParts(effective, fields);
+  return (
+    <td className="px-2 py-2 text-xs">
+      {text}
+      {parts === "none" ? null : (
+        <span
+          className="ml-1 rounded bg-accent/10 px-1 text-[10px] text-accent-strong"
+          title={`From the template: ${inheritedFields(effective, fields).join(", ")}`}
+        >
+          {parts === "all" ? "inherited" : "partly inherited"}
+        </span>
+      )}
+    </td>
+  );
 }
 
-/** `0 – 100`, or one bound alone, or a dash. */
-function rangeCell(item: AdminAssetPointDto): string {
-  if (item.engMin !== null && item.engMax !== null) return `${item.engMin} – ${item.engMax}`;
-  if (item.engMin !== null) return `≥ ${item.engMin}`;
-  if (item.engMax !== null) return `≤ ${item.engMax}`;
-  return "—";
+/** The Scale, Range and Quality cells of one row, from the effective five. */
+function EffectiveMetadataCells({ item }: { item: AdminAssetPointDto }) {
+  const effective = effectivePointMetadata(item);
+  return (
+    <>
+      <MetadataCell text={scaleCell(effective.value)} effective={effective} fields={SCALE_FIELDS} />
+      <MetadataCell text={rangeCell(effective.value)} effective={effective} fields={RANGE_FIELDS} />
+      <MetadataCell text={qualityCell(effective.value)} effective={effective} fields={QUALITY_FIELDS} />
+    </>
+  );
 }
 
 type AssetPointsAdminPageProps = { user: AuthUser };
@@ -464,13 +501,7 @@ export function AssetPointsAdminPage({ user }: AssetPointsAdminPageProps) {
                 <td className="px-2 py-2 font-mono">{item.sourceDataKey}</td>
                 <td className="px-2 py-2">{item.sensorCode ?? "—"}</td>
                 <td className="px-2 py-2">{item.unit ?? "—"}</td>
-                {/* The three metadata columns show what this row **stores**, not
-                    what it resolves to: a dash means the row follows its
-                    template default (§"Deferred" item 3 owns the effective
-                    value, which needs a `template_points` join in `list()`). */}
-                <td className="px-2 py-2 text-xs">{scaleCell(item)}</td>
-                <td className="px-2 py-2 text-xs">{rangeCell(item)}</td>
-                <td className="px-2 py-2 text-xs">{item.qualityPolicy ?? "—"}</td>
+                <EffectiveMetadataCells item={item} />
                 <td className="px-2 py-2">
                   <StatusPill
                     label={item.active ? "Active" : "Inactive"}
@@ -511,8 +542,8 @@ export function AssetPointsAdminPage({ user }: AssetPointsAdminPageProps) {
           </tbody>
         </table>
         <p className="text-xs text-ink-muted">
-          Scale, Range and Quality show what each point stores. A dash means the point follows its
-          asset template&apos;s default.
+          Scale, Range and Quality show the value applied to readings. <em>inherited</em> means the
+          asset follows its template&apos;s default.
         </p>
       </SectionCard>
 

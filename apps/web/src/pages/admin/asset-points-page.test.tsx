@@ -2,7 +2,10 @@
 import { cleanup } from "@testing-library/react";
 import { afterEach, describe, it, vi } from "vitest";
 
-import { aRefusedCreateShowsTheSentence } from "./asset-points-page.spec";
+import {
+  aRefusedCreateShowsTheSentence,
+  theListShowsTheInheritedEffectiveRange,
+} from "./asset-points-page.spec";
 
 /**
  * Vitest entry point — assertions live in the sibling `.spec` (ADR 0014).
@@ -25,5 +28,9 @@ describe("F4.204 asset points page — a refusal reads as a sentence", () => {
 
   it("F4.204 a refused add-mapping save shows the sentence, not the envelope", async () => {
     await aRefusedCreateShowsTheSentence();
+  }, CASE_TIMEOUT_MS);
+
+  it("F2.25 the Range cell shows the template's bound, marked inherited; an own bound is not", async () => {
+    await theListShowsTheInheritedEffectiveRange();
   }, CASE_TIMEOUT_MS);
 });
