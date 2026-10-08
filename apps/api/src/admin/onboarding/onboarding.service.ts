@@ -61,7 +61,7 @@ import {
 import { draftCountProblem } from "./onboarding-draft-caps";
 import { diffSections } from "./onboarding-draft-merge";
 import { assertPatchLocationTypeIsActive } from "./onboarding-location-type-match";
-import type { RollbackBody, SetCredentialsBody } from "./onboarding.schema";
+import { MAX_ONBOARDING_DRAFT_DEPTH, type RollbackBody, type SetCredentialsBody } from "./onboarding.schema";
 import { redactDraftForClient, rtuSecretKey } from "./onboarding-redaction";
 import type { OnboardingDraftInput } from "./onboarding.schema";
 import { OnboardingValidateService } from "./onboarding-validate.service";
@@ -74,6 +74,11 @@ export const SESSION_NO_LONGER_DRAFT = "The session was committed while this tur
 
 /** The 409 of a chat write whose draft moved while the turn ran (`F4.227`, ADR 0094 decision 6). */
 export const DRAFT_CHANGED_DURING_TURN = "The draft changed while this turn ran, so the turn was not saved. Reload the session.";
+
+/** The 409 of a chat write whose stored draft has no hash (`F4.230`): deeper than the bound, so the bind cannot be checked. */
+export const DRAFT_TOO_DEEP_FOR_TURN =
+  `The stored draft nests deeper than ${MAX_ONBOARDING_DRAFT_DEPTH} levels, so this turn could not be bound to it and was not saved. ` +
+  "Repair the draft with the draft editor (PATCH sessions/:id/draft) and send the turn again.";
 
 /**
  * Orchestrates onboarding session lifecycle.
@@ -368,15 +373,9 @@ export class OnboardingService {
     const updated = await withTenant(this.tenantDb, session.organizationId, async (tx) => {
       // Lock placement is gated by onboarding-chat-lock.integration.test.ts (real Postgres): the unit fakes answer `.for()` with a static row.
       const locked = await this.lockSession(tx, sessionId);
-      if (!locked || locked.status !== "draft") {
-        // A commit landed while the model ran.
-        throw new ConflictException(SESSION_NO_LONGER_DRAFT);
-      }
-      // F4.227: the write is bound to the draft this turn loaded. A null hash
-      // (a draft over the depth bound) cannot be matched, so it fails closed.
-      if (expectedHash === null || draftHash(locked.draft) !== expectedHash) {
-        throw new ConflictException(DRAFT_CHANGED_DURING_TURN);
-      }
+      // F4.227 / F4.230: a commit that landed while the model ran, a stored
+      // draft with no hash, a draft that moved — each a 409 with its own sentence.
+      this.assertTurnStillBound(locked, expectedHash);
       // F3.25 / F4.227: the ring is built on the locked row's ring, as `messages`
       // is, so a ring written in between is not overwritten with a stale one.
       let checkpointWrite: { checkpoints: unknown } | Record<string, never> = {};
@@ -679,23 +678,31 @@ export class OnboardingService {
    * and do not commit. A match: the existing commit service commits, with its
    * own access checks, caps, transaction and audit rows. A refusal from it is a
    * reply, not a 400 (plan ruling 5); access errors still propagate.
+   *
+   * Every branch writes under `FOR UPDATE` and builds `messages` on the locked
+   * row; the non-commit branches are hash-bound as `chat` is (`F4.231`); the
+   * commit branch takes its lock after the commit service's own transaction
+   * has committed, so it checks only that the row exists.
    */
   private async confirmCommit(
     jwt: JwtPayload,
     session: typeof onboardingSessions.$inferSelect,
     message: string,
   ): Promise<OnboardingChatResponseDto> {
+    // Taken before any collaborator runs, as in `chat`.
+    const expectedHash = draftHash(session.draft);
     const proposal = readCommitProposal(session.draft);
-    const stale = proposal !== null && draftHash(session.draft) !== proposal.draftHash;
+    const stale = proposal !== null && expectedHash !== proposal.draftHash;
     let reply: string;
     let actionLine: string | null = null;
     let committed = false;
-    let draftWrite: unknown;
+    // The stale and refused branches clear the proposal, from the locked row.
+    let clearProposal = false;
     if (proposal === null) {
       reply = NO_PROPOSAL_REPLY;
     } else if (stale) {
       reply = STALE_PROPOSAL_REPLY;
-      draftWrite = withoutCommitProposal(session.draft);
+      clearProposal = true;
     } else {
       try {
         const result = await this.commitService.commitProposed(jwt, session.id, proposal.draftHash);
@@ -720,27 +727,50 @@ export class OnboardingService {
           throw error;
         }
         reply = `Commit refused: ${error.message}`;
-        draftWrite = withoutCommitProposal(session.draft);
+        clearProposal = true;
       }
     }
-    const messages = [
-      ...(session.messages as OnboardingChatMessage[]),
+    const added = [
       this.chatService.createMessage("user", message),
       ...(actionLine ? [this.chatService.createMessage("action", actionLine)] : []),
       this.chatService.createMessage("assistant", reply),
     ];
-    const updated = await withTenant(this.tenantDb, session.organizationId, (tx) =>
-      tx
+    const updated = await withTenant(this.tenantDb, session.organizationId, async (tx) => {
+      // Lock placement is gated by onboarding-chat-lock.integration.test.ts (real Postgres).
+      const locked = await this.lockSession(tx, session.id);
+      if (committed) {
+        // The row is `committed` by this very call: a draft-status guard here
+        // would refuse its own commit, and a `status = 'draft'` predicate
+        // would match nothing. Only "the row exists".
+        if (!locked) {
+          throw new NotFoundException("Onboarding session not found");
+        }
+      } else {
+        // No proposal, stale, refused: the same re-checks as `chat`. A stale
+        // proposal is not re-evaluated on the locked row (ADR 0090 decision 5).
+        this.assertTurnStillBound(locked, expectedHash);
+      }
+      const messages = [...(locked.messages as OnboardingChatMessage[]), ...added];
+      const [row] = await tx
         .update(onboardingSessions)
         .set({
-          ...(draftWrite !== undefined ? { draft: draftWrite } : {}),
+          ...(clearProposal ? { draft: withoutCommitProposal(locked.draft) } : {}),
           messages,
           updatedAt: sql`now()`,
         })
-        .where(eq(onboardingSessions.id, session.id))
-        .returning()
-        .then(([row]) => row),
-    );
+        .where(
+          committed
+            ? eq(onboardingSessions.id, session.id)
+            : and(eq(onboardingSessions.id, session.id), eq(onboardingSessions.status, "draft")),
+        )
+        .returning();
+      return row;
+    });
+    if (!updated) {
+      throw committed
+        ? new NotFoundException("Onboarding session not found")
+        : new ConflictException(SESSION_NO_LONGER_DRAFT);
+    }
     const [org] = await this.tenantDb
       .select({ code: organizations.code, name: organizations.name })
       .from(organizations)
@@ -759,7 +789,11 @@ export class OnboardingService {
 
   /**
    * The chat `undo` (ADR 0094 decision 6): the newest checkpoint, or — with an
-   * empty ring — the two messages and nothing else.
+   * empty ring — the two messages and nothing else. `F4.231`: the empty-ring
+   * write takes the same `FOR UPDATE` and the same re-checks as `chat`, and
+   * builds `messages` on the locked row. A ring that appeared in between came
+   * with a draft change, so the hash re-check answers 409 rather than a stale
+   * "nothing to undo".
    */
   private async undoLastStep(
     session: typeof onboardingSessions.$inferSelect,
@@ -769,19 +803,27 @@ export class OnboardingService {
     if (newest) {
       return this.restoreTo(session, newest, message);
     }
-    const messages = [
-      ...(session.messages as OnboardingChatMessage[]),
-      this.chatService.createMessage("user", message),
-      this.chatService.createMessage("assistant", NOTHING_TO_UNDO_REPLY),
-    ];
-    const updated = await withTenant(this.tenantDb, session.organizationId, (tx) =>
-      tx
+    const expectedHash = draftHash(session.draft);
+    const updated = await withTenant(this.tenantDb, session.organizationId, async (tx) => {
+      // Lock placement is gated by onboarding-chat-lock.integration.test.ts (real Postgres).
+      const locked = await this.lockSession(tx, session.id);
+      this.assertTurnStillBound(locked, expectedHash);
+      const messages = [
+        ...(locked.messages as OnboardingChatMessage[]),
+        this.chatService.createMessage("user", message),
+        this.chatService.createMessage("assistant", NOTHING_TO_UNDO_REPLY),
+      ];
+      const [row] = await tx
         .update(onboardingSessions)
         .set({ messages, updatedAt: sql`now()` })
-        .where(eq(onboardingSessions.id, session.id))
-        .returning()
-        .then(([row]) => row),
-    );
+        // Defence in depth behind the lock's status check above.
+        .where(and(eq(onboardingSessions.id, session.id), eq(onboardingSessions.status, "draft")))
+        .returning();
+      return row;
+    });
+    if (!updated) {
+      throw new ConflictException(SESSION_NO_LONGER_DRAFT);
+    }
     return {
       assistantMessage: NOTHING_TO_UNDO_REPLY,
       session: await this.mapSessionWithOrg(updated),
@@ -816,6 +858,12 @@ export class OnboardingService {
       const locked = await this.lockSession(tx, session.id);
       if (!locked || locked.status !== "draft") {
         throw new ForbiddenException("Session is not editable");
+      }
+      // F4.230: two over-deep drafts both hash to `null`, so the comparison
+      // below would pass. Reachable by the chat `undo` only: the route's
+      // `draftHash` is 64 hex, never `null`.
+      if (expectedHash === null) {
+        throw new ConflictException(DRAFT_TOO_DEEP_FOR_TURN);
       }
       const ring = readCheckpoints(locked.checkpoints);
       const target = ring.find((entry) => entry.id === cp.id);
@@ -854,7 +902,28 @@ export class OnboardingService {
     };
   }
 
-  /** `SELECT ... FOR UPDATE` of the columns a locked write compares and builds on (`restoreTo`, `chat`). */
+  /**
+   * The re-checks of a chat write under `FOR UPDATE` (`F4.227`, `F4.230`),
+   * each with its own sentence. The order is the point: two over-deep drafts
+   * both hash to `null`, so the null check must run before the comparison,
+   * which would otherwise pass.
+   */
+  private assertTurnStillBound(
+    locked: Awaited<ReturnType<OnboardingService["lockSession"]>>,
+    expectedHash: string | null,
+  ): asserts locked is NonNullable<typeof locked> {
+    if (!locked || locked.status !== "draft") {
+      throw new ConflictException(SESSION_NO_LONGER_DRAFT);
+    }
+    if (expectedHash === null) {
+      throw new ConflictException(DRAFT_TOO_DEEP_FOR_TURN);
+    }
+    if (draftHash(locked.draft) !== expectedHash) {
+      throw new ConflictException(DRAFT_CHANGED_DURING_TURN);
+    }
+  }
+
+  /** `SELECT ... FOR UPDATE` of the columns a locked write compares and builds on (`chat`, `undoLastStep`, `restoreTo`, `confirmCommit`). */
   private lockSession(tx: Parameters<Parameters<typeof withTenant>[2]>[0], sessionId: string) {
     return tx
       .select({

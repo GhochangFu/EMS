@@ -1,14 +1,24 @@
 import { randomUUID } from "node:crypto";
 
-import { ConflictException, ForbiddenException, NotFoundException } from "@nestjs/common";
+import { BadRequestException, ConflictException, ForbiddenException, NotFoundException } from "@nestjs/common";
 import type { OnboardingChatMessage, OnboardingDraft } from "@bms/shared";
 
 import { FakeLlmProvider, readyDraft } from "./onboarding-agent-loop.spec";
 import { BLOB, PLACE, build, rtu, type Row } from "./onboarding-chat-checkpoints.spec";
 import { JWT, ORG, sessionRow, withoutOpenAi } from "./onboarding-chat-caps.spec";
+import { commitService } from "./onboarding-chat-confirm.spec";
 import { NOTHING_TO_UNDO_REPLY, takeCheckpoint, type Checkpoint } from "./onboarding-checkpoints";
-import { attachCommitProposal, draftHash, readCommitProposal } from "./onboarding-commit-proposal";
-import { DRAFT_CHANGED_DURING_TURN, SESSION_NO_LONGER_DRAFT } from "./onboarding.service";
+import {
+  COMMIT_PROPOSAL_KEY,
+  NO_PROPOSAL_REPLY,
+  STALE_PROPOSAL_REPLY,
+  attachCommitProposal,
+  draftHash,
+  readCommitProposal,
+} from "./onboarding-commit-proposal";
+import { PROPOSED_DRAFT_CHANGED } from "./onboarding-commit.service";
+import { DRAFT_CHANGED_DURING_TURN, DRAFT_TOO_DEEP_FOR_TURN, SESSION_NO_LONGER_DRAFT } from "./onboarding.service";
+import { MAX_ONBOARDING_DRAFT_DEPTH } from "./onboarding.schema";
 import { OnboardingValidateService } from "./onboarding-validate.service";
 
 function assert(condition: boolean, message: string): void {
@@ -367,4 +377,345 @@ export async function assertAChatTurnBuildsTheRingOnTheLockedRow(): Promise<void
   assert(record.updates.length === 1, `an equal hash writes once, got ${record.updates.length}`);
   const seqs = ((record.updates[0]?.checkpoints ?? []) as Checkpoint[]).map((cp) => cp.seq);
   assert(JSON.stringify(seqs) === "[9,10]", `the ring derives from the locked one (9 then 10), got ${JSON.stringify(seqs)}`);
+}
+
+/** `{ leaf: 1 }` wrapped `wraps` times: the value an RTU config's `extra` nests. */
+function nested(wraps: number): Record<string, unknown> {
+  let node: Record<string, unknown> = { leaf: 1 };
+  for (let i = 0; i < wraps; i++) {
+    node = { child: node };
+  }
+  return node;
+}
+
+/** A draft whose RTU config nests `nested(wraps)`; the leaf sits at level `6 + wraps`. */
+function draftNesting(wraps: number): OnboardingDraft {
+  const base = rtu("RTU-1");
+  return { location: PLACE, rtus: [{ ...base, config: { ...base.config, extra: nested(wraps) } }] } as OnboardingDraft;
+}
+
+/** The wraps that put the leaf at level 10: the deepest draft that still hashes. */
+const AT_THE_BOUND = MAX_ONBOARDING_DRAFT_DEPTH - 6;
+
+/** (21) F4.230: a stored draft over the depth bound has no hash, so the turn is a 409 that names the depth. */
+export async function assertAnOverDeepStoredDraftRefusesTheTurnByName(): Promise<void> {
+  const draft = draftNesting(MAX_ONBOARDING_DRAFT_DEPTH + 5);
+  assert(draftHash(draft) === null, "the fixture is over the depth bound");
+  const session = { ...sessionRow(draft, "rtu"), checkpoints: null } as Row;
+  const { service, record } = build({ session, selects: [[session], ORG, ORG] });
+  const error = await thrown(() => withoutOpenAi(() => service.chat(JWT, "s-1", "Add another RTU")));
+  assert(error instanceof ConflictException, `an over-deep draft should be a ConflictException, got ${String(error)}`);
+  assert(
+    (error as Error).message === DRAFT_TOO_DEEP_FOR_TURN,
+    `the null-hash guard should have fired, got ${(error as Error).message}`,
+  );
+  assert((error as Error).message !== DRAFT_CHANGED_DURING_TURN, "the mismatch sentence names the wrong cause");
+  assert(record.updates.length === 0, `an over-deep draft wrote ${record.updates.length} time(s)`);
+}
+
+/** (22) F4.230: the adjacent positive — a draft exactly at the depth bound still hashes and writes. */
+export async function assertADraftAtTheDepthBoundStillWrites(): Promise<void> {
+  const draft = draftNesting(AT_THE_BOUND);
+  assert(draftHash(draft) !== null, "the fixture sits at the depth bound and hashes");
+  assert(draftHash(draftNesting(AT_THE_BOUND + 1)) === null, "one more level is over the bound");
+  const session = { ...sessionRow(draft, "rtu"), checkpoints: null } as Row;
+  const { service, record } = build({ session, selects: [[session], ORG, ORG] });
+  await withoutOpenAi(() => service.chat(JWT, "s-1", "Add another RTU"));
+  assert(record.updates.length === 1, `a draft at the bound writes once, got ${record.updates.length}`);
+  assert("messages" in (record.updates[0] ?? {}), "the write carries the turn's messages");
+}
+
+/** (27) F4.230: a chat `undo` over an over-deep draft with a ring is a 409 that names the depth; nothing is restored. */
+export async function assertAnUndoOverAnOverDeepDraftRefusesByName(): Promise<void> {
+  const session = sessionWith(ringOfThree(), draftNesting(MAX_ONBOARDING_DRAFT_DEPTH + 5));
+  assert(draftHash(session.draft) === null, "the fixture is over the depth bound");
+  const { service, record } = build({ session, selects: [[session], ORG] });
+  const error = await thrown(() => withoutOpenAi(() => service.chat(JWT, "s-1", "undo")));
+  assert(error instanceof ConflictException, `an over-deep restore should be a ConflictException, got ${String(error)}`);
+  assert(
+    (error as Error).message === DRAFT_TOO_DEEP_FOR_TURN,
+    `the null-hash guard should have fired, got ${(error as Error).message}`,
+  );
+  assert(record.updates.length === 0, `an over-deep restore wrote ${record.updates.length} time(s)`);
+}
+
+/** (37) F4.230: an empty-ring `undo` over an over-deep stored draft is a 409 that names the depth; nothing is written. */
+export async function assertAnEmptyRingUndoOverAnOverDeepDraftRefusesByName(): Promise<void> {
+  const session = sessionWith(null, draftNesting(MAX_ONBOARDING_DRAFT_DEPTH + 5));
+  assert(draftHash(session.draft) === null, "the fixture is over the depth bound");
+  const { service, record } = build({ session, selects: [[session], ORG] });
+  const error = await thrown(() => withoutOpenAi(() => service.chat(JWT, "s-1", "undo")));
+  assert(
+    (error as Error | null)?.message === DRAFT_TOO_DEEP_FOR_TURN,
+    `the null-hash guard should have fired, got ${String((error as Error | null)?.message)}`,
+  );
+  assert(error instanceof ConflictException, `an over-deep empty-ring undo should be a ConflictException, got ${String(error)}`);
+  assert(record.updates.length === 0, `an over-deep empty-ring undo wrote ${record.updates.length} time(s)`);
+}
+
+/** (38) F4.230: a typed confirm with no proposal over an over-deep stored draft is a 409 that names the depth; nothing is written. */
+export async function assertAConfirmWithNoProposalOverAnOverDeepDraftRefusesByName(): Promise<void> {
+  const session = sessionWith(null, draftNesting(MAX_ONBOARDING_DRAFT_DEPTH + 5));
+  assert(draftHash(session.draft) === null, "the fixture is over the depth bound");
+  const { service, record } = build({ session, selects: [[session], ORG], commit: commitService() });
+  const error = await thrown(() => service.chat(JWT, "s-1", "confirm commit"));
+  assert(
+    (error as Error | null)?.message === DRAFT_TOO_DEEP_FOR_TURN,
+    `the null-hash guard should have fired, got ${String((error as Error | null)?.message)}`,
+  );
+  assert(error instanceof ConflictException, `an over-deep confirm should be a ConflictException, got ${String(error)}`);
+  assert(record.updates.length === 0, `an over-deep confirm wrote ${record.updates.length} time(s)`);
+}
+
+/** A message another writer appended between the read and the lock. */
+const BETWEEN = { id: "m-between", role: "assistant", content: "kept", createdAt: "2026-10-06T00:00:01.000Z" };
+
+/** (23) F4.231: an empty-ring `undo` builds its two messages on the locked row's messages. */
+export async function assertAnEmptyRingUndoBuildsOnTheLockedRow(): Promise<void> {
+  const session = sessionWith(null);
+  const locked = { ...session, messages: [STORED_USER, BETWEEN] as never } as Row;
+  const { service, record } = build({ session, selects: [[session], ORG], locked });
+  const response = await withoutOpenAi(() => service.chat(JWT, "s-1", "undo"));
+  assert(record.updates.length === 1, `one write, got ${record.updates.length}`);
+  const write = record.updates[0]!;
+  assert(!("draft" in write), `the write carries a draft key: ${JSON.stringify(write)}`);
+  const ids = ((write.messages ?? []) as OnboardingChatMessage[]).map((m) => m.id);
+  assert(ids[1] === "m-between", `the message written in between is kept, got ${JSON.stringify(ids)}`);
+  assert(ids.length === 4, `the locked row's two messages and the undo's two, got ${ids.length}`);
+  assert(response.assistantMessage === NOTHING_TO_UNDO_REPLY, `the reply, got ${response.assistantMessage}`);
+}
+
+/** (24) F4.231: an empty-ring `undo` whose draft moved under the lock is a 409 and writes nothing. */
+export async function assertAnEmptyRingUndoRacedByADraftChangeIsAConflict(): Promise<void> {
+  const session = sessionWith(null);
+  const locked = { ...session, draft: { location: { ...PLACE, name: "Elsewhere" } } } as Row;
+  const { service, record } = build({ session, selects: [[session], ORG], locked });
+  const error = await thrown(() => withoutOpenAi(() => service.chat(JWT, "s-1", "undo")));
+  assert(error instanceof ConflictException, `a raced undo should be a ConflictException, got ${String(error)}`);
+  assert(
+    (error as Error).message === DRAFT_CHANGED_DURING_TURN,
+    `the hash guard should have fired, got ${(error as Error).message}`,
+  );
+  assert((error as Error).message !== DRAFT_TOO_DEEP_FOR_TURN, "the depth sentence names the wrong cause");
+  assert(record.updates.length === 0, `a raced undo wrote ${record.updates.length} time(s)`);
+}
+
+/** (25) F4.231: an empty-ring `undo` after a commit landed before the lock is a 409 and writes nothing. */
+export async function assertAnEmptyRingUndoRacedByACommitIsAConflict(): Promise<void> {
+  const session = sessionWith(null);
+  const locked = { ...session, status: "committed" } as Row;
+  const { service, record } = build({ session, selects: [[session], ORG], locked });
+  const error = await thrown(() => withoutOpenAi(() => service.chat(JWT, "s-1", "undo")));
+  assert(error instanceof ConflictException, `an undo over a commit should be a ConflictException, got ${String(error)}`);
+  assert(
+    (error as Error).message === SESSION_NO_LONGER_DRAFT,
+    `the status guard should have fired, got ${(error as Error).message}`,
+  );
+  assert(record.updates.length === 0, `an undo over a commit wrote ${record.updates.length} time(s)`);
+}
+
+/** (26) F4.231: an empty-ring `undo` whose write matches no `draft` row is a 409, not a crash. */
+export async function assertAnEmptyRingUndoOverACommitIsAConflict(): Promise<void> {
+  const session = sessionWith(null);
+  const { service } = build({ session, selects: [[session], ORG], updateReturnsNoRow: true });
+  const error = await thrown(() => withoutOpenAi(() => service.chat(JWT, "s-1", "undo")));
+  assert(error instanceof ConflictException, `an undo write over a commit should be a ConflictException, got ${String(error)}`);
+  assert(
+    (error as Error).message === SESSION_NO_LONGER_DRAFT,
+    `the empty-write guard should have fired, got ${(error as Error).message}`,
+  );
+}
+
+/** A stored proposal bound to `hash`. */
+function proposalFor(draft: OnboardingDraft, hash: string): OnboardingDraft {
+  return attachCommitProposal(draft as object, {
+    draftHash: hash,
+    summary: "location 'Berhampur', 1 RTU",
+    proposedAt: "2026-10-06T00:00:00.000Z",
+  }) as OnboardingDraft;
+}
+
+/** The typed-confirm rows: no proposal, a matching proposal, a stale one; all at `review`, ring empty. */
+function confirmRows() {
+  const ready = readyDraft();
+  const session = sessionWith(null, ready);
+  const proposedSession = { ...session, draft: proposalFor(ready, draftHash(ready)!) } as Row;
+  const staleSession = { ...session, draft: proposalFor(ready, "0".repeat(64)) } as Row;
+  const moved = { ...ready, location: { ...ready.location!, name: "Elsewhere" } } as OnboardingDraft;
+  return { ready, session, proposedSession, staleSession, moved };
+}
+
+function messageIds(write: Record<string, unknown> | undefined): string[] {
+  return ((write?.messages ?? []) as OnboardingChatMessage[]).map((m) => m.id);
+}
+
+/** (28) F4.231: a confirm with no proposal builds its two messages on the locked row. */
+export async function assertAConfirmWithNoProposalBuildsOnTheLockedRow(): Promise<void> {
+  const { session } = confirmRows();
+  const locked = { ...session, messages: [STORED_USER, BETWEEN] as never } as Row;
+  const commit = commitService();
+  const { service, record } = build({ session, selects: [[session], ORG], locked, commit });
+  const response = await service.chat(JWT, "s-1", "confirm commit");
+  assert(record.updates.length === 1, `one write, got ${record.updates.length}`);
+  const write = record.updates[0];
+  assert(!("draft" in (write ?? {})), `the write carries a draft key: ${JSON.stringify(write)}`);
+  const ids = messageIds(write);
+  assert(ids[1] === "m-between", `the message written in between is kept, got ${JSON.stringify(ids)}`);
+  assert(ids.length === 4, `the locked row's two messages and the confirm's two, got ${ids.length}`);
+  assert(commit.calls.length === 0, `no proposal commits nothing, got ${commit.calls.length} call(s)`);
+  assert(response.assistantMessage === NO_PROPOSAL_REPLY, `the reply, got ${response.assistantMessage}`);
+}
+
+/** (29) F4.231: a confirm with no proposal whose draft moved under the lock is a 409 and writes nothing. */
+export async function assertAConfirmWithNoProposalRacedByADraftChangeIsAConflict(): Promise<void> {
+  const { session, moved } = confirmRows();
+  const locked = { ...session, draft: moved } as Row;
+  const { service, record } = build({ session, selects: [[session], ORG], locked, commit: commitService() });
+  const error = await thrown(() => service.chat(JWT, "s-1", "confirm commit"));
+  assert(error instanceof ConflictException, `a raced confirm should be a ConflictException, got ${String(error)}`);
+  assert(
+    (error as Error).message === DRAFT_CHANGED_DURING_TURN,
+    `the hash guard should have fired, got ${(error as Error).message}`,
+  );
+  assert((error as Error).message !== DRAFT_TOO_DEEP_FOR_TURN, "the depth sentence names the wrong cause");
+  assert(record.updates.length === 0, `a raced confirm wrote ${record.updates.length} time(s)`);
+}
+
+/** (30) F4.231: a confirm with no proposal after a commit landed before the lock is a 409 and writes nothing. */
+export async function assertAConfirmWithNoProposalRacedByACommitIsAConflict(): Promise<void> {
+  const { session } = confirmRows();
+  const locked = { ...session, status: "committed" } as Row;
+  const commit = commitService();
+  const { service, record } = build({ session, selects: [[session], ORG], locked, commit });
+  const error = await thrown(() => service.chat(JWT, "s-1", "confirm commit"));
+  assert(error instanceof ConflictException, `a confirm over a commit should be a ConflictException, got ${String(error)}`);
+  assert(
+    (error as Error).message === SESSION_NO_LONGER_DRAFT,
+    `the status guard should have fired, got ${(error as Error).message}`,
+  );
+  assert(record.updates.length === 0, `a confirm over a commit wrote ${record.updates.length} time(s)`);
+  assert(commit.calls.length === 0, `no proposal commits nothing, got ${commit.calls.length} call(s)`);
+}
+
+/**
+ * (31) F4.231: a stale confirm keeps a message written in between. The locked
+ * row carries a fresh proposal that matches its draft (owner ruling B6): the
+ * verdict stays "stale", the proposal is cleared from the locked row, and
+ * nothing is re-evaluated into a commit.
+ */
+export async function assertAStaleConfirmKeepsAMessageWrittenInBetween(): Promise<void> {
+  const { ready, staleSession } = confirmRows();
+  const locked = {
+    ...staleSession,
+    draft: proposalFor(ready, draftHash(ready)!),
+    messages: [STORED_USER, BETWEEN] as never,
+  } as Row;
+  const commit = commitService();
+  const { service, record } = build({ session: staleSession, selects: [[staleSession], ORG], locked, commit });
+  const response = await service.chat(JWT, "s-1", "confirm commit");
+  assert(record.updates.length === 1, `one write, got ${record.updates.length}`);
+  const write = record.updates[0];
+  const ids = messageIds(write);
+  assert(ids[1] === "m-between", `the message written in between is kept, got ${JSON.stringify(ids)}`);
+  assert(
+    !(COMMIT_PROPOSAL_KEY in ((write?.draft ?? {}) as object)),
+    `the proposal is still stored: ${JSON.stringify(write?.draft)}`,
+  );
+  assert(commit.calls.length === 0, `a stale confirm commits nothing, got ${commit.calls.length} call(s)`);
+  assert(response.assistantMessage === STALE_PROPOSAL_REPLY, `the reply, got ${response.assistantMessage}`);
+}
+
+/** (32) F4.231: a stale confirm whose draft moved under the lock is a 409 and writes nothing — the newer draft is not overwritten. */
+export async function assertAStaleConfirmRacedByADraftChangeIsAConflict(): Promise<void> {
+  const { staleSession, moved } = confirmRows();
+  const locked = { ...staleSession, draft: proposalFor(moved, "0".repeat(64)) } as Row;
+  const { service, record } = build({
+    session: staleSession,
+    selects: [[staleSession], ORG],
+    locked,
+    commit: commitService(),
+  });
+  const error = await thrown(() => service.chat(JWT, "s-1", "confirm commit"));
+  assert(error instanceof ConflictException, `a raced stale confirm should be a ConflictException, got ${String(error)}`);
+  assert(
+    (error as Error).message === DRAFT_CHANGED_DURING_TURN,
+    `the hash guard should have fired, got ${(error as Error).message}`,
+  );
+  assert(record.updates.length === 0, `a raced stale confirm wrote ${record.updates.length} time(s)`);
+}
+
+/** (33) F4.231 (owner ruling B5): a refused commit whose draft moved under the lock is a 409 and stores nothing. */
+export async function assertARefusedCommitRacedByADraftChangeIsAConflict(): Promise<void> {
+  const { proposedSession, moved } = confirmRows();
+  const locked = { ...proposedSession, draft: moved } as Row;
+  const commit = commitService(new BadRequestException(PROPOSED_DRAFT_CHANGED));
+  const { service, record } = build({
+    session: proposedSession,
+    selects: [[proposedSession], ORG],
+    locked,
+    commit,
+  });
+  const error = await thrown(() => service.chat(JWT, "s-1", "confirm commit"));
+  assert(commit.calls.length === 1, `control: the commit service was called once, got ${commit.calls.length}`);
+  assert(error instanceof ConflictException, `a raced refused commit should be a ConflictException, got ${String(error)}`);
+  assert(
+    (error as Error).message === DRAFT_CHANGED_DURING_TURN,
+    `the hash guard should have fired, got ${(error as Error).message}`,
+  );
+  assert(record.updates.length === 0, `a raced refused commit wrote ${record.updates.length} time(s)`);
+}
+
+/** (34) F4.231: a committing confirm builds its three messages on the locked row. */
+export async function assertACommittingConfirmBuildsItsMessagesOnTheLockedRow(): Promise<void> {
+  const { proposedSession } = confirmRows();
+  const locked = { ...proposedSession, messages: [STORED_USER, BETWEEN] as never } as Row;
+  const commit = commitService();
+  const { service, record } = build({
+    session: proposedSession,
+    selects: [[proposedSession], ORG],
+    locked,
+    commit,
+  });
+  await service.chat(JWT, "s-1", "confirm commit");
+  assert(commit.calls.length === 1, `one commit call, got ${commit.calls.length}`);
+  assert(record.updates.length === 1, `one write, got ${record.updates.length}`);
+  const write = record.updates[0];
+  const ids = messageIds(write);
+  assert(ids[1] === "m-between", `the message written in between is kept, got ${JSON.stringify(ids)}`);
+  const roles = newMessages(write, 2).map((m) => m.role).join(",");
+  assert(roles === "user,action,assistant", `the confirm's messages, got ${roles}`);
+  assert(!("draft" in (write ?? {})), `a committing confirm writes no draft: ${JSON.stringify(write)}`);
+}
+
+/** (35) F4.231: a committing confirm writes its messages to the row its own commit just marked `committed`. */
+export async function assertACommittingConfirmWritesToTheCommittedRow(): Promise<void> {
+  const { proposedSession } = confirmRows();
+  const locked = { ...proposedSession, status: "committed", checkpoints: null } as Row;
+  const { service, record } = build({
+    session: proposedSession,
+    selects: [[proposedSession], ORG],
+    locked,
+    commit: commitService(),
+  });
+  let readyToCommit: boolean | undefined;
+  const error = await thrown(async () => {
+    readyToCommit = (await service.chat(JWT, "s-1", "confirm commit")).readyToCommit;
+  });
+  assert(error === null, `a committing confirm refused its own commit: ${String(error)}`);
+  assert(record.updates.length === 1, `one write, got ${record.updates.length}`);
+  const added = newMessages(record.updates[0], 1);
+  assert(added[1]?.content.startsWith("Committed:") === true, `the action line, got ${added[1]?.content}`);
+  assert(readyToCommit === false, `readyToCommit, got ${String(readyToCommit)}`);
+}
+
+/** (36) F4.231: a confirm write that matches no `draft` row is a 409, not a crash. */
+export async function assertAConfirmWriteOverACommitIsAConflict(): Promise<void> {
+  const { session } = confirmRows();
+  const { service } = build({ session, selects: [[session], ORG], updateReturnsNoRow: true, commit: commitService() });
+  const error = await thrown(() => service.chat(JWT, "s-1", "confirm commit"));
+  assert(error instanceof ConflictException, `a confirm write over a commit should be a ConflictException, got ${String(error)}`);
+  assert(
+    (error as Error).message === SESSION_NO_LONGER_DRAFT,
+    `the empty-write guard should have fired, got ${(error as Error).message}`,
+  );
 }

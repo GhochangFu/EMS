@@ -82,7 +82,8 @@ function echoDb(
  * `OnboardingService` over the echo database with the real chat and validate
  * services. Guided by default (no provider, as `.env.example` ships); with
  * `llm` the resolver answers ready with it, the agent path. `excel` and
- * `catalog` stand in for the upload's two collaborators.
+ * `catalog` stand in for the upload's two collaborators, `commit` for the
+ * commit service the typed confirm calls.
  */
 export function build(opts: {
   session: Row;
@@ -90,6 +91,7 @@ export function build(opts: {
   llm?: FakeLlmProvider;
   excel?: unknown;
   catalog?: unknown;
+  commit?: unknown;
   locked?: Row;
   updateReturnsNoRow?: boolean;
 }) {
@@ -118,7 +120,7 @@ export function build(opts: {
     } as never,
     chat,
     new OnboardingValidateService(),
-    {} as never,
+    (opts.commit ?? {}) as never,
     (opts.excel ?? {}) as never,
     (opts.catalog ?? {}) as never,
     vocabularies as never,
