@@ -6,6 +6,7 @@ import {
   runPointMetadataShapeTests,
   runQualityPolicyVocabularyTests,
   runStockShapeTests,
+  runTemplateDefaultsTests,
 } from "./point-metadata.spec";
 
 /** Vitest entry point — assertions live in the sibling `.spec` (ADR 0014). */
@@ -20,6 +21,10 @@ describe("F2.7 — point metadata on the read side (ADR 0056 decisions 1, 3)", (
 
   it("spreads the five into the asset-point and template-point DTOs as required keys", () => {
     runDtoSpreadTests();
+  });
+
+  it("carries the pinned template's five as templateDefaults on the asset-point DTO (ADR 0056 Amendment 3)", () => {
+    runTemplateDefaultsTests();
   });
 
   it("carries the five as optional keys on the stock write shape", () => {

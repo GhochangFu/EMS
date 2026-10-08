@@ -123,10 +123,11 @@ export const adminAssetPointDtoSchema = z.object({
    */
   rtuId: z.string().nullable(),
   createdAt: z.string(),
-  // `F2.7` / ADR 0056 decision 1 — the per-asset **override** of the five
-  // metadata columns, as stored: `null` = inherit the template default. Spread,
-  // not merged: this DTO is not an intersection type (`point-metadata.ts`).
+  // ADR 0056 decision 1: the five per-asset overrides as stored (`null` = inherit), spread, not merged.
+  // ADR 0056 Amendment 3 part A (`F2.25`): `templateDefaults` = the pinned template's five for
+  // this key; `null` = nothing to inherit (`mapAssetPointRow`). Effective = coalesce(asset, template).
   ...pointMetadataShape,
+  templateDefaults: pointMetadataFieldsSchema.nullable(),
 });
 
 export const adminOrganizationSummaryDtoSchema = z.object({
