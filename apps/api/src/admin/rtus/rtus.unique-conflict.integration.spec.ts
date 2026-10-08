@@ -526,7 +526,7 @@ export async function assertAnEditRepairsALegacyEmptyMqttTopic(
   if (leftover.rows.length > 0) {
     throw new Error(
       `F4.223: fixture precondition failed. bms.rtus row ${leftover.rows[0].id} already holds mqtt_topic = '', ` +
-        `a leftover of the onboarding commit producer (F4.228). Repair it to NULL, then re-run; ` +
+        `pre-F4.228 data (the onboarding commit now stores an empty topic as NULL). Repair it to NULL, then re-run; ` +
         `inserting a second '' row would fail with 23505 instead of testing the claim.`,
     );
   }

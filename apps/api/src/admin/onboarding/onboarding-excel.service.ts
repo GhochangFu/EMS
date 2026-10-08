@@ -109,7 +109,8 @@ export function onboardingSheetRangeProblem(range: XLSX.Range): string | null {
  *
  * **Derived from the column it commits to, not invented.** `bms.rtus.mqtt_topic`
  * is `character varying(255)` (`packages/db/src/schema/bms-schema.ts`), and
- * `OnboardingCommitService` writes this exact value there, so a longer topic can
+ * `OnboardingCommitService` writes this exact value there (an empty one as NULL,
+ * `F4.228`), so a longer topic can
  * never reach a committed RTU — it can only be carried around the draft, echoed
  * into chat, and refused by Postgres at the end.
  *
