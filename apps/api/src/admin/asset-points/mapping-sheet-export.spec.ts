@@ -409,10 +409,87 @@ export function assertATemplateSharedByTwoAssetsIsListedOnce(): void {
 }
 
 /**
+ * Two versions of one class in use, v2 and v10, list v2 first: the version sorts
+ * as a number. A text compare puts "10" before "2". A local snapshot — the shared
+ * fixture has one version per code, so the version key never decides its order.
+ */
+export function assertTemplateVersionsSortNumerically(): void {
+  const T10 = "t10";
+  const snap: ExportSnapshot = {
+    assetsByCode: new Map<string, SnapshotAsset>([
+      ["TX01", { id: "a1", name: "Transformer 1", active: true, templateId: T1, rtuId: null }],
+      ["TX02", { id: "a2", name: "Transformer 2", active: true, templateId: T10, rtuId: null }],
+    ]),
+    existingByAssetPoint: new Map(),
+    rtuCodesById: new Map(),
+    activeRtuIds: new Set(),
+    catalog: new Map(),
+    // The v10 point is inserted first, so the input order cannot pass for the sort.
+    templatePoints: new Map([
+      [
+        assetPointKey(T10, "kw"),
+        { templateId: T10, pointKey: "kw", kind: "measured", unit: null, sourceDataKeyPattern: null, defaults: FIVE_NULL },
+      ],
+      [
+        assetPointKey(T1, "kw"),
+        { templateId: T1, pointKey: "kw", kind: "measured", unit: null, sourceDataKeyPattern: null, defaults: FIVE_NULL },
+      ],
+    ]),
+    templatesById: new Map([
+      [T10, { code: "TX-CLASS", version: 10, name: "Transformer" }],
+      [T1, { code: "TX-CLASS", version: 2, name: "Transformer" }],
+    ]),
+  };
+  const versions = buildTemplatesSheetRows(snap)
+    .slice(1)
+    .map((r) => r[1]);
+  assert(JSON.stringify(versions) === JSON.stringify([2, 10]), `v2 before v10, got ${JSON.stringify(versions)}`);
+}
+
+/**
+ * A pinned template id with no `templatesById` entry writes no row, and the
+ * versions that do resolve are still listed. Not reachable through the loader
+ * (`assets.template_id` is a foreign key and both reads carry the same RLS
+ * predicate); this pins the skip so a change to it is a decision.
+ */
+export function assertATemplateWithNoIdentityIsSkipped(): void {
+  const snap: ExportSnapshot = {
+    assetsByCode: new Map<string, SnapshotAsset>([
+      ["TX01", { id: "a1", name: "Transformer 1", active: true, templateId: T1, rtuId: null }],
+      ["CH01", { id: "a2", name: "Chiller 1", active: true, templateId: T2, rtuId: null }],
+    ]),
+    existingByAssetPoint: new Map(),
+    rtuCodesById: new Map(),
+    activeRtuIds: new Set(),
+    catalog: new Map(),
+    templatePoints: new Map([
+      [
+        assetPointKey(T1, "kw"),
+        { templateId: T1, pointKey: "kw", kind: "measured", unit: null, sourceDataKeyPattern: null, defaults: FIVE_NULL },
+      ],
+      [
+        assetPointKey(T2, "chw_supply_t"),
+        { templateId: T2, pointKey: "chw_supply_t", kind: "measured", unit: null, sourceDataKeyPattern: null, defaults: FIVE_NULL },
+      ],
+    ]),
+    templatesById: new Map([[T2, { code: "CH-CLASS", version: 1, name: "Chiller" }]]),
+  };
+  const data = buildTemplatesSheetRows(snap).slice(1);
+  assert(
+    JSON.stringify(data.map((r) => `${String(r[0])}|${String(r[3])}`)) === JSON.stringify(["CH-CLASS|chw_supply_t"]),
+    `only the resolved version is listed, got ${JSON.stringify(data)}`,
+  );
+}
+
+/**
  * `F2.26` — the export workbook is `MAPPINGS` then `TEMPLATES`, the second
  * sheet carries literals only (ADR 0026, as the first), and the import still
- * reads the workbook as its `MAPPINGS` rows — the second sheet changes nothing
- * the parser sees.
+ * reads the workbook as its `MAPPINGS` rows.
+ *
+ * This does **not** gate by-name sheet selection: `MAPPINGS` is the first
+ * sheet here, so a parser that read `SheetNames[0]` passes too.
+ * `assertATemplatesSheetIsIgnoredOnImport` (`mapping-sheet-rows.spec.ts`) puts
+ * `TEMPLATES` first and is the gate for that.
  */
 export function assertTheWorkbookCarriesTemplatesSecondAndParsesAsMappings(): void {
   const s = snapshot();

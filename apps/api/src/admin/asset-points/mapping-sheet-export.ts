@@ -179,7 +179,8 @@ export function buildTemplatesSheetRows(snapshot: ExportSnapshot): MappingSheetC
     }
     // `assets.template_id` references `asset_templates.id`, so a pinned id the
     // loader read always has its row; a miss would be a loader defect, and a
-    // row with no code to name it by is not written.
+    // row with no code to name it by is not written. Unreachable in practice:
+    // the FK holds and both reads carry the same RLS predicate.
     const template = snapshot.templatesById.get(point.templateId);
     if (template === undefined) {
       continue;
