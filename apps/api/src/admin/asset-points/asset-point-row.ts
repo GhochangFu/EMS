@@ -17,8 +17,10 @@ export type AssetPointRow = {
   /**
    * ADR 0056 Amendment 3 part A (`F2.25`) — the pinned template's point for
    * this key, LEFT-joined, so `null` = no template or the key is not declared.
-   * `id` is never emitted; it is selected so drizzle cannot fold a declared
-   * key whose five defaults are all `NULL` into a `null` object.
+   * `id` is never emitted. drizzle 0.38's `mapResultRow` nulls a left-joined
+   * nested object when its **first** selected column is null, so `id` (never
+   * null on a matched row) is selected first and must stay the first key —
+   * otherwise a declared key with no `scaleMultiplier` reads as "no template".
    */
   template: {
     id: string;
@@ -47,7 +49,7 @@ export function selectAssetPointRows(db: BmsDb) {
       locationId: assets.locationId,
       locationName: locations.name,
       template: {
-        // Selected on purpose — see `AssetPointRow.template`.
+        // First on purpose, and must stay first — see `AssetPointRow.template`.
         id: templatePoints.id,
         scaleMultiplier: templatePoints.scaleMultiplier,
         scaleOffset: templatePoints.scaleOffset,

@@ -395,8 +395,10 @@ export async function assertRtuIdWiresAndUnwiresOnUpdate(
  *    template's `eng_max = 100` and a `null` `engMin` (declared, no default).
  * 2. The `computed` row's key is declared with no defaults at all, so
  *    `templateDefaults` is an object of five `null` — **not** `null`. This is
- *    the drizzle trap: a left-joined nested object whose every column is null
- *    reads as `null`, which is why the join selects `template_points.id`.
+ *    the drizzle trap: a left-joined nested object whose **first** selected
+ *    column is null reads as `null`, which is why the join selects
+ *    `template_points.id` first. Mutation run: dropping `id` reddens claim 1
+ *    already (the first column becomes `scaleMultiplier`, null on that row).
  * 3. `list` on the hand-created asset (no template): every item is `null`.
  * 4. The DTO `update` returns, read back through `fetchRows`, carries it too.
  *
