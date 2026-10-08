@@ -461,8 +461,8 @@ never stored with a mark.
 
 ## Amendment 3 — the single-row form, the workbook header, and the merged pair at migrate (`F2.25`–`F2.28`, `F2.30`, `F2.31`)
 
-**Status: Proposed — 2026-10-08.** Source: owner rulings 2026-10-08, the Track B
-batch. Drafted before any implementation code; it becomes *Accepted* on the
+**Status: Accepted — 2026-10-09** (owner, after review; proposed 2026-10-08). Source: owner rulings 2026-10-08, the Track B
+batch. Drafted before any implementation code and accepted on the
 owner's word, as this record did. One amendment carries three parts because
 the three build clusters share this record and land in that order of
 dependence: part A is the Asset Points form (`F2.25`, `F2.27`, `F2.31`), part B

@@ -2,11 +2,11 @@
 
 ## Status
 
-**Proposed — 2026-10-08.** Source: owner rulings 2026-10-08, the Track B batch.
-Drafted before any implementation code; it becomes *Accepted* on the owner's
+**Accepted — 2026-10-09** (owner; proposed 2026-10-08). Source: owner rulings 2026-10-08, the Track B batch.
+Drafted before any implementation code and accepted on the owner's
 word. The owner ruled six questions; each is a numbered decision below. Where a
 decision needed a detail the rulings do not give, the detail is listed under
-*Ruled here without a question* so the owner can confirm or change it at
+*Ruled here without a question*; the owner confirmed each one at
 acceptance. The build starts after the three Track B clusters (`C1`–`C3`, ADR
 0056 Amendment 3) merge. Line citations are to `main` at `c60b8e00`.
 
@@ -196,7 +196,7 @@ number and two counts, never the members behind them.
 
 ## Ruled here without a question
 
-Drafter's choices, for the owner to confirm or change at acceptance.
+Drafter's choices, confirmed by the owner at acceptance (2026-10-09).
 
 - **The default window.** `windowMinutes` defaults to `15` and is bounded at
   `60`, the values of `GET /telemetry/points/latest`

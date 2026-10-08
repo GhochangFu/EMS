@@ -573,8 +573,8 @@ sweep that closed `F3.49` (`01b1fdb6`).
 
 ## Amendment 3 — a seeded baseline per domain and role (`F2.32`)
 
-**Status: Proposed — 2026-10-08.** Source: owner rulings 2026-10-08, the Track B
-batch. Drafted before any implementation code; it becomes *Accepted* on the
+**Status: Accepted — 2026-10-09** (owner, after review; proposed 2026-10-08). Source: owner rulings 2026-10-08, the Track B
+batch. Drafted before any implementation code and accepted on the
 owner's word. It answers the question Amendment 2 filed as `F2.32`. Line
 citations are to `main` at `c60b8e00`.
 
@@ -616,12 +616,15 @@ added in migration `0051`), and `pue-demo-seed.ts` already selects by it
    else to its domain baseline. An asset an operator has migrated (ADR 0039)
    is never touched, as today.
 
-4. **An already-seeded database re-pins once.** On a database seeded before
-   this amendment — the AWS demo host, every developer stack — the seed moves
-   an asset **only** when it is still on `BASELINE-<DOMAIN>` version 1 and its
-   role template exists. After the move the predicate no longer matches, so a
-   second seed moves nothing. Without this, only a cold start would narrow the
-   baselines.
+4. **An already-seeded database re-pins once — in the run that creates the
+   role templates, and never again.** On a database seeded before this
+   amendment — the AWS demo host, every developer stack — the seed moves an
+   asset **only** when it is still on `BASELINE-<DOMAIN>` version 1 **and** its
+   role template was inserted by that same seed run. A later seed run inserts no
+   role template, so it moves nothing, whatever pin an operator has since
+   chosen. Without this, only a cold start would narrow the baselines.
+   *(Owner ruling 2026-10-09, after review found that the seed is not the only
+   writer of a version 1 domain-baseline pin — see below.)*
 
 5. **Amendment 2's measured figures are superseded.** "`BASELINE-ELECTRICAL`
    41 assets, 8 template points", the three cross-domain keys and
@@ -631,8 +634,8 @@ added in migration `0051`), and `pue-demo-seed.ts` already selects by it
 
 ### Ruled here without a question
 
-These the rulings do not cover. Each is the drafter's choice, for the owner
-to confirm or change at acceptance.
+These the rulings do not cover. Each was the drafter's choice; the owner
+confirmed all of them at acceptance (2026-10-09).
 
 - **The `<ROLE>` segment.** Role codes carry hyphens (`incoming-supply`,
   `lt-panel`, `leak-sensor`, …). The segment is the role code upper-cased; the
@@ -656,19 +659,30 @@ to confirm or change at acceptance.
   decision 1 is the other way to keep the gate; it was not chosen because it
   leaves the incomer template copying the domain-wide union.
 
-### The re-pin's safety argument, and its one gap
+### Why the re-pin is bound to the run that creates the role templates
 
-Decision 4 treats a pin to `BASELINE-<DOMAIN>` v1 as the seed's own. That is
-true of the seed's writes, but `migrate` does not refuse a move to a **lower**
-version of the same code: `buildPlan` checks only that the source and target
-share organization and code (`apps/api/src/admin/asset-templates/asset-templates-migrate.service.ts:559-567`;
-nothing compares the two version numbers)
-and that the target is published (`:473`). An operator who published
-`BASELINE-<DOMAIN>` v2, migrated an asset onto it and back onto v1 holds a pin
-the re-pin cannot tell from the seed's, and it is moved once. This is accepted:
-the seeded baselines carry no wiring patterns and no metadata defaults
-(`HEALTH_TEMPLATE_POINTS_SQL` writes neither), so the move changes the asset's
-template points and nothing an operator configured.
+The seed is **not** the only writer of a `BASELINE-<DOMAIN>` v1 pin.
+`migrate` does not refuse a move to a **lower** version of the same code:
+`buildPlan` checks only that the source and target share organization and
+code (`apps/api/src/admin/asset-templates/asset-templates-migrate.service.ts:559-567`;
+nothing compares the two version numbers) and that the target is published
+(`:473`), and instantiation from a published v1 also writes the pin. A pin the
+re-pin cannot tell from the seed's therefore exists after any such operator
+action. A re-pin keyed on the pin alone would move that asset on **every**
+later seed run, silently. Decision 4 keys it on the role template's insert
+instead: the move happens once, in the run that creates the role templates,
+and an operator's later choice stands. Within that one run the move changes
+only the asset's template points: the seeded baselines carry no wiring
+patterns and no metadata defaults (`HEALTH_TEMPLATE_POINTS_SQL` writes
+neither).
+
+**A warm database keeps the old incomer template.** On a database seeded
+before this amendment, the published `BASELINE-ELECTRICAL-INCOMER` version 1
+already exists and a published version never changes, so it keeps the
+domain-wide electrical union it copied (8 keys at the time of the review). A
+fresh install copies only the `incoming-supply` role's keys. The two differ
+until the warm volume is recreated; this is demo data only and is accepted
+(owner ruling 2026-10-09).
 
 A consequence of the move, recorded rather than solved: a re-pinned asset is
 on a **different template code**, and ADR 0039 migration moves an asset only

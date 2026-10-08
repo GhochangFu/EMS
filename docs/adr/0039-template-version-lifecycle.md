@@ -240,8 +240,8 @@ CHECK**, matching the precedent `template_points` set for `formula` /
 
 ## Amendment 1 — the asset stores its pattern variables (`F2.29`)
 
-**Status: Proposed — 2026-10-08.** Source: owner rulings 2026-10-08, the Track B
-batch. Drafted before any implementation code; it becomes *Accepted* on the
+**Status: Accepted — 2026-10-09** (owner, after review; proposed 2026-10-08). Source: owner rulings 2026-10-08, the Track B
+batch. Drafted before any implementation code and accepted on the
 owner's word. It is a schema change, so it lands before the migration it
 describes (§10). Line citations are to `main` at `c60b8e00`.
 
