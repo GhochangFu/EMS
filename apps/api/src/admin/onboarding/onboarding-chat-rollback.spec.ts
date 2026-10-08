@@ -1,13 +1,22 @@
 import { randomUUID } from "node:crypto";
 
-import { ConflictException, ForbiddenException, NotFoundException } from "@nestjs/common";
+import { BadRequestException, ConflictException, ForbiddenException, NotFoundException } from "@nestjs/common";
 import type { OnboardingChatMessage, OnboardingDraft } from "@bms/shared";
 
 import { FakeLlmProvider, readyDraft } from "./onboarding-agent-loop.spec";
 import { BLOB, PLACE, build, rtu, type Row } from "./onboarding-chat-checkpoints.spec";
 import { JWT, ORG, sessionRow, withoutOpenAi } from "./onboarding-chat-caps.spec";
+import { commitService } from "./onboarding-chat-confirm.spec";
 import { NOTHING_TO_UNDO_REPLY, takeCheckpoint, type Checkpoint } from "./onboarding-checkpoints";
-import { attachCommitProposal, draftHash, readCommitProposal } from "./onboarding-commit-proposal";
+import {
+  COMMIT_PROPOSAL_KEY,
+  NO_PROPOSAL_REPLY,
+  STALE_PROPOSAL_REPLY,
+  attachCommitProposal,
+  draftHash,
+  readCommitProposal,
+} from "./onboarding-commit-proposal";
+import { PROPOSED_DRAFT_CHANGED } from "./onboarding-commit.service";
 import { DRAFT_CHANGED_DURING_TURN, DRAFT_TOO_DEEP_FOR_TURN, SESSION_NO_LONGER_DRAFT } from "./onboarding.service";
 import { MAX_ONBOARDING_DRAFT_DEPTH } from "./onboarding.schema";
 import { OnboardingValidateService } from "./onboarding-validate.service";
@@ -483,6 +492,200 @@ export async function assertAnEmptyRingUndoOverACommitIsAConflict(): Promise<voi
   const { service } = build({ session, selects: [[session], ORG], updateReturnsNoRow: true });
   const error = await thrown(() => withoutOpenAi(() => service.chat(JWT, "s-1", "undo")));
   assert(error instanceof ConflictException, `an undo write over a commit should be a ConflictException, got ${String(error)}`);
+  assert(
+    (error as Error).message === SESSION_NO_LONGER_DRAFT,
+    `the empty-write guard should have fired, got ${(error as Error).message}`,
+  );
+}
+
+/** A stored proposal bound to `hash`. */
+function proposalFor(draft: OnboardingDraft, hash: string): OnboardingDraft {
+  return attachCommitProposal(draft as object, {
+    draftHash: hash,
+    summary: "location 'Berhampur', 1 RTU",
+    proposedAt: "2026-10-06T00:00:00.000Z",
+  }) as OnboardingDraft;
+}
+
+/** The typed-confirm rows: no proposal, a matching proposal, a stale one; all at `review`, ring empty. */
+function confirmRows() {
+  const ready = readyDraft();
+  const session = sessionWith(null, ready);
+  const proposedSession = { ...session, draft: proposalFor(ready, draftHash(ready)!) } as Row;
+  const staleSession = { ...session, draft: proposalFor(ready, "0".repeat(64)) } as Row;
+  const moved = { ...ready, location: { ...ready.location!, name: "Elsewhere" } } as OnboardingDraft;
+  return { ready, session, proposedSession, staleSession, moved };
+}
+
+function messageIds(write: Record<string, unknown> | undefined): string[] {
+  return ((write?.messages ?? []) as OnboardingChatMessage[]).map((m) => m.id);
+}
+
+/** (28) F4.231: a confirm with no proposal builds its two messages on the locked row. */
+export async function assertAConfirmWithNoProposalBuildsOnTheLockedRow(): Promise<void> {
+  const { session } = confirmRows();
+  const locked = { ...session, messages: [STORED_USER, BETWEEN] as never } as Row;
+  const commit = commitService();
+  const { service, record } = build({ session, selects: [[session], ORG], locked, commit });
+  const response = await service.chat(JWT, "s-1", "confirm commit");
+  assert(record.updates.length === 1, `one write, got ${record.updates.length}`);
+  const write = record.updates[0];
+  assert(!("draft" in (write ?? {})), `the write carries a draft key: ${JSON.stringify(write)}`);
+  const ids = messageIds(write);
+  assert(ids[1] === "m-between", `the message written in between is kept, got ${JSON.stringify(ids)}`);
+  assert(ids.length === 4, `the locked row's two messages and the confirm's two, got ${ids.length}`);
+  assert(commit.calls.length === 0, `no proposal commits nothing, got ${commit.calls.length} call(s)`);
+  assert(response.assistantMessage === NO_PROPOSAL_REPLY, `the reply, got ${response.assistantMessage}`);
+}
+
+/** (29) F4.231: a confirm with no proposal whose draft moved under the lock is a 409 and writes nothing. */
+export async function assertAConfirmWithNoProposalRacedByADraftChangeIsAConflict(): Promise<void> {
+  const { session, moved } = confirmRows();
+  const locked = { ...session, draft: moved } as Row;
+  const { service, record } = build({ session, selects: [[session], ORG], locked, commit: commitService() });
+  const error = await thrown(() => service.chat(JWT, "s-1", "confirm commit"));
+  assert(error instanceof ConflictException, `a raced confirm should be a ConflictException, got ${String(error)}`);
+  assert(
+    (error as Error).message === DRAFT_CHANGED_DURING_TURN,
+    `the hash guard should have fired, got ${(error as Error).message}`,
+  );
+  assert((error as Error).message !== DRAFT_TOO_DEEP_FOR_TURN, "the depth sentence names the wrong cause");
+  assert(record.updates.length === 0, `a raced confirm wrote ${record.updates.length} time(s)`);
+}
+
+/** (30) F4.231: a confirm with no proposal after a commit landed before the lock is a 409 and writes nothing. */
+export async function assertAConfirmWithNoProposalRacedByACommitIsAConflict(): Promise<void> {
+  const { session } = confirmRows();
+  const locked = { ...session, status: "committed" } as Row;
+  const commit = commitService();
+  const { service, record } = build({ session, selects: [[session], ORG], locked, commit });
+  const error = await thrown(() => service.chat(JWT, "s-1", "confirm commit"));
+  assert(error instanceof ConflictException, `a confirm over a commit should be a ConflictException, got ${String(error)}`);
+  assert(
+    (error as Error).message === SESSION_NO_LONGER_DRAFT,
+    `the status guard should have fired, got ${(error as Error).message}`,
+  );
+  assert(record.updates.length === 0, `a confirm over a commit wrote ${record.updates.length} time(s)`);
+  assert(commit.calls.length === 0, `no proposal commits nothing, got ${commit.calls.length} call(s)`);
+}
+
+/**
+ * (31) F4.231: a stale confirm keeps a message written in between. The locked
+ * row carries a fresh proposal that matches its draft (owner ruling B6): the
+ * verdict stays "stale", the proposal is cleared from the locked row, and
+ * nothing is re-evaluated into a commit.
+ */
+export async function assertAStaleConfirmKeepsAMessageWrittenInBetween(): Promise<void> {
+  const { ready, staleSession } = confirmRows();
+  const locked = {
+    ...staleSession,
+    draft: proposalFor(ready, draftHash(ready)!),
+    messages: [STORED_USER, BETWEEN] as never,
+  } as Row;
+  const commit = commitService();
+  const { service, record } = build({ session: staleSession, selects: [[staleSession], ORG], locked, commit });
+  const response = await service.chat(JWT, "s-1", "confirm commit");
+  assert(record.updates.length === 1, `one write, got ${record.updates.length}`);
+  const write = record.updates[0];
+  const ids = messageIds(write);
+  assert(ids[1] === "m-between", `the message written in between is kept, got ${JSON.stringify(ids)}`);
+  assert(
+    !(COMMIT_PROPOSAL_KEY in ((write?.draft ?? {}) as object)),
+    `the proposal is still stored: ${JSON.stringify(write?.draft)}`,
+  );
+  assert(commit.calls.length === 0, `a stale confirm commits nothing, got ${commit.calls.length} call(s)`);
+  assert(response.assistantMessage === STALE_PROPOSAL_REPLY, `the reply, got ${response.assistantMessage}`);
+}
+
+/** (32) F4.231: a stale confirm whose draft moved under the lock is a 409 and writes nothing — the newer draft is not overwritten. */
+export async function assertAStaleConfirmRacedByADraftChangeIsAConflict(): Promise<void> {
+  const { staleSession, moved } = confirmRows();
+  const locked = { ...staleSession, draft: proposalFor(moved, "0".repeat(64)) } as Row;
+  const { service, record } = build({
+    session: staleSession,
+    selects: [[staleSession], ORG],
+    locked,
+    commit: commitService(),
+  });
+  const error = await thrown(() => service.chat(JWT, "s-1", "confirm commit"));
+  assert(error instanceof ConflictException, `a raced stale confirm should be a ConflictException, got ${String(error)}`);
+  assert(
+    (error as Error).message === DRAFT_CHANGED_DURING_TURN,
+    `the hash guard should have fired, got ${(error as Error).message}`,
+  );
+  assert(record.updates.length === 0, `a raced stale confirm wrote ${record.updates.length} time(s)`);
+}
+
+/** (33) F4.231 (owner ruling B5): a refused commit whose draft moved under the lock is a 409 and stores nothing. */
+export async function assertARefusedCommitRacedByADraftChangeIsAConflict(): Promise<void> {
+  const { proposedSession, moved } = confirmRows();
+  const locked = { ...proposedSession, draft: moved } as Row;
+  const commit = commitService(new BadRequestException(PROPOSED_DRAFT_CHANGED));
+  const { service, record } = build({
+    session: proposedSession,
+    selects: [[proposedSession], ORG],
+    locked,
+    commit,
+  });
+  const error = await thrown(() => service.chat(JWT, "s-1", "confirm commit"));
+  assert(commit.calls.length === 1, `control: the commit service was called once, got ${commit.calls.length}`);
+  assert(error instanceof ConflictException, `a raced refused commit should be a ConflictException, got ${String(error)}`);
+  assert(
+    (error as Error).message === DRAFT_CHANGED_DURING_TURN,
+    `the hash guard should have fired, got ${(error as Error).message}`,
+  );
+  assert(record.updates.length === 0, `a raced refused commit wrote ${record.updates.length} time(s)`);
+}
+
+/** (34) F4.231: a committing confirm builds its three messages on the locked row. */
+export async function assertACommittingConfirmBuildsItsMessagesOnTheLockedRow(): Promise<void> {
+  const { proposedSession } = confirmRows();
+  const locked = { ...proposedSession, messages: [STORED_USER, BETWEEN] as never } as Row;
+  const commit = commitService();
+  const { service, record } = build({
+    session: proposedSession,
+    selects: [[proposedSession], ORG],
+    locked,
+    commit,
+  });
+  await service.chat(JWT, "s-1", "confirm commit");
+  assert(commit.calls.length === 1, `one commit call, got ${commit.calls.length}`);
+  assert(record.updates.length === 1, `one write, got ${record.updates.length}`);
+  const write = record.updates[0];
+  const ids = messageIds(write);
+  assert(ids[1] === "m-between", `the message written in between is kept, got ${JSON.stringify(ids)}`);
+  const roles = newMessages(write, 2).map((m) => m.role).join(",");
+  assert(roles === "user,action,assistant", `the confirm's messages, got ${roles}`);
+  assert(!("draft" in (write ?? {})), `a committing confirm writes no draft: ${JSON.stringify(write)}`);
+}
+
+/** (35) F4.231: a committing confirm writes its messages to the row its own commit just marked `committed`. */
+export async function assertACommittingConfirmWritesToTheCommittedRow(): Promise<void> {
+  const { proposedSession } = confirmRows();
+  const locked = { ...proposedSession, status: "committed", checkpoints: null } as Row;
+  const { service, record } = build({
+    session: proposedSession,
+    selects: [[proposedSession], ORG],
+    locked,
+    commit: commitService(),
+  });
+  let readyToCommit: boolean | undefined;
+  const error = await thrown(async () => {
+    readyToCommit = (await service.chat(JWT, "s-1", "confirm commit")).readyToCommit;
+  });
+  assert(error === null, `a committing confirm refused its own commit: ${String(error)}`);
+  assert(record.updates.length === 1, `one write, got ${record.updates.length}`);
+  const added = newMessages(record.updates[0], 1);
+  assert(added[1]?.content.startsWith("Committed:") === true, `the action line, got ${added[1]?.content}`);
+  assert(readyToCommit === false, `readyToCommit, got ${String(readyToCommit)}`);
+}
+
+/** (36) F4.231: a confirm write that matches no `draft` row is a 409, not a crash. */
+export async function assertAConfirmWriteOverACommitIsAConflict(): Promise<void> {
+  const { session } = confirmRows();
+  const { service } = build({ session, selects: [[session], ORG], updateReturnsNoRow: true, commit: commitService() });
+  const error = await thrown(() => service.chat(JWT, "s-1", "confirm commit"));
+  assert(error instanceof ConflictException, `a confirm write over a commit should be a ConflictException, got ${String(error)}`);
   assert(
     (error as Error).message === SESSION_NO_LONGER_DRAFT,
     `the empty-write guard should have fired, got ${(error as Error).message}`,

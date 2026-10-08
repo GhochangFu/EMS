@@ -60,7 +60,7 @@ const NO_TEMPLATES: TemplateCounts = {
 };
 
 /** A recording commit service: it records each call and answers, or throws, as told. */
-function commitService(behaviour: "ok" | Error = "ok", counts: TemplateCounts = NO_TEMPLATES, assetIds = ["a"]) {
+export function commitService(behaviour: "ok" | Error = "ok", counts: TemplateCounts = NO_TEMPLATES, assetIds = ["a"]) {
   const calls: unknown[][] = [];
   return {
     calls,

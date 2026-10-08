@@ -678,23 +678,31 @@ export class OnboardingService {
    * and do not commit. A match: the existing commit service commits, with its
    * own access checks, caps, transaction and audit rows. A refusal from it is a
    * reply, not a 400 (plan ruling 5); access errors still propagate.
+   *
+   * Every branch writes under `FOR UPDATE` and builds `messages` on the locked
+   * row; the non-commit branches are hash-bound as `chat` is (`F4.231`); the
+   * commit branch takes its lock after the commit service's own transaction
+   * has committed, so it checks only that the row exists.
    */
   private async confirmCommit(
     jwt: JwtPayload,
     session: typeof onboardingSessions.$inferSelect,
     message: string,
   ): Promise<OnboardingChatResponseDto> {
+    // Taken before any collaborator runs, as in `chat`.
+    const expectedHash = draftHash(session.draft);
     const proposal = readCommitProposal(session.draft);
-    const stale = proposal !== null && draftHash(session.draft) !== proposal.draftHash;
+    const stale = proposal !== null && expectedHash !== proposal.draftHash;
     let reply: string;
     let actionLine: string | null = null;
     let committed = false;
-    let draftWrite: unknown;
+    // The stale and refused branches clear the proposal, from the locked row.
+    let clearProposal = false;
     if (proposal === null) {
       reply = NO_PROPOSAL_REPLY;
     } else if (stale) {
       reply = STALE_PROPOSAL_REPLY;
-      draftWrite = withoutCommitProposal(session.draft);
+      clearProposal = true;
     } else {
       try {
         const result = await this.commitService.commitProposed(jwt, session.id, proposal.draftHash);
@@ -719,27 +727,50 @@ export class OnboardingService {
           throw error;
         }
         reply = `Commit refused: ${error.message}`;
-        draftWrite = withoutCommitProposal(session.draft);
+        clearProposal = true;
       }
     }
-    const messages = [
-      ...(session.messages as OnboardingChatMessage[]),
+    const added = [
       this.chatService.createMessage("user", message),
       ...(actionLine ? [this.chatService.createMessage("action", actionLine)] : []),
       this.chatService.createMessage("assistant", reply),
     ];
-    const updated = await withTenant(this.tenantDb, session.organizationId, (tx) =>
-      tx
+    const updated = await withTenant(this.tenantDb, session.organizationId, async (tx) => {
+      // Lock placement is gated by onboarding-chat-lock.integration.test.ts (real Postgres).
+      const locked = await this.lockSession(tx, session.id);
+      if (committed) {
+        // The row is `committed` by this very call: a draft-status guard here
+        // would refuse its own commit, and a `status = 'draft'` predicate
+        // would match nothing. Only "the row exists".
+        if (!locked) {
+          throw new NotFoundException("Onboarding session not found");
+        }
+      } else {
+        // No proposal, stale, refused: the same re-checks as `chat`. A stale
+        // proposal is not re-evaluated on the locked row (ADR 0090 decision 5).
+        this.assertTurnStillBound(locked, expectedHash);
+      }
+      const messages = [...(locked.messages as OnboardingChatMessage[]), ...added];
+      const [row] = await tx
         .update(onboardingSessions)
         .set({
-          ...(draftWrite !== undefined ? { draft: draftWrite } : {}),
+          ...(clearProposal ? { draft: withoutCommitProposal(locked.draft) } : {}),
           messages,
           updatedAt: sql`now()`,
         })
-        .where(eq(onboardingSessions.id, session.id))
-        .returning()
-        .then(([row]) => row),
-    );
+        .where(
+          committed
+            ? eq(onboardingSessions.id, session.id)
+            : and(eq(onboardingSessions.id, session.id), eq(onboardingSessions.status, "draft")),
+        )
+        .returning();
+      return row;
+    });
+    if (!updated) {
+      throw committed
+        ? new NotFoundException("Onboarding session not found")
+        : new ConflictException(SESSION_NO_LONGER_DRAFT);
+    }
     const [org] = await this.tenantDb
       .select({ code: organizations.code, name: organizations.name })
       .from(organizations)
@@ -892,7 +923,7 @@ export class OnboardingService {
     }
   }
 
-  /** `SELECT ... FOR UPDATE` of the columns a locked write compares and builds on (`chat`, `undoLastStep`, `restoreTo`). */
+  /** `SELECT ... FOR UPDATE` of the columns a locked write compares and builds on (`chat`, `undoLastStep`, `restoreTo`, `confirmCommit`). */
   private lockSession(tx: Parameters<Parameters<typeof withTenant>[2]>[0], sessionId: string) {
     return tx
       .select({
