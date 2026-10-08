@@ -17,6 +17,7 @@ import { AccessControlService } from "../../auth/access-control.service";
 import { FLEET_DRIZZLE, TENANT_DRIZZLE } from "../../database/database.tokens";
 import { withTenant } from "../../database/tenant-context";
 import { MasterDataAuditService } from "../master-data-audit.service";
+import { emptyTopicAsNull } from "../rtu-topic";
 import { resolveTelemetrySource } from "../telemetry-source";
 import { translateRtuUniqueConflict } from "./rtus-conflict";
 import type { CreateRtuBody, UpdateRtuBody } from "./rtus.schema";
@@ -24,20 +25,6 @@ import type { CreateRtuBody, UpdateRtuBody } from "./rtus.schema";
 /** `F4.138` — the 500 a write answers when the RTU's org and its location's disagree. */
 export const RTU_ORG_MISMATCH_MESSAGE =
   "RTU organization does not match its location's organization";
-
-/**
- * `F4.223` — an empty topic is stored as NULL, never `''`.
- * `rtus_mqtt_topic_idx` (migration 0016) is `WHERE mqtt_topic IS NOT NULL` with no
- * `<> ''` arm, unlike `rtus_rtu_code_idx` (0071), so a stored `''` is a value two
- * rows cannot share: the second RTU with no topic answered the F4.141 409.
- * `''` stays accepted by the schema (`rtus.schema.test.ts`, F4.221) because it is the
- * only clear path; it is the stored value that changes. Applied to the restated
- * `existing.mqttTopic` too, so a row written before this fix is repaired on its
- * next edit. The audit payload keeps the body as sent.
- */
-function emptyTopicAsNull(topic: string | null): string | null {
-  return topic === "" ? null : topic;
-}
 
 /**
  * `F4.16` / `E7.1b` / ADR 0043 — `rtus` gains `organization_id` + a
@@ -272,6 +259,10 @@ export class RtusAdminService {
         externalRtuId:
           body.externalRtuId !== undefined ? body.externalRtuId : existing.externalRtuId,
         rtuCode: body.rtuCode !== undefined ? body.rtuCode : existing.rtuCode,
+        // Applied to the restated `existing.mqttTopic` too, so a row written
+        // with a stored '' (before F4.223 here, or by the onboarding commit
+        // before F4.228) is repaired on its next edit. The audit payload keeps
+        // the body as sent.
         mqttTopic: emptyTopicAsNull(
           body.mqttTopic !== undefined ? body.mqttTopic : existing.mqttTopic,
         ),

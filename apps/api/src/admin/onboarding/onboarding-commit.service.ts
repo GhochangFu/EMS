@@ -31,6 +31,7 @@ import { CredentialCryptoService } from "../../security/credential-crypto.servic
 import { VocabulariesService } from "../../vocabularies/vocabularies.service";
 import { requestMetaForCreate } from "../locations/location-seed-key";
 import { MasterDataAuditService } from "../master-data-audit.service";
+import { emptyTopicAsNull } from "../rtu-topic";
 import { resolveTelemetrySource, withTelemetrySource, type TelemetrySource } from "../telemetry-source";
 import { AssetTemplatesAdminService } from "../asset-templates/asset-templates.service";
 import { translateAssetCodeCollision } from "../asset-templates/asset-templates-instantiate-guards";
@@ -426,9 +427,17 @@ export class OnboardingCommitService {
       for (let i = 0; i < (draft.rtus ?? []).length; i++) {
         const rtuDraft = draft.rtus![i];
         const config = rtuDraft.config ?? {};
-        const mqttTopic =
+        // F4.228: an empty topic is stored as NULL, never '' — rtus_mqtt_topic_idx
+        // has no `<> ''` arm. Applied to the result of the `??` chain, not to an
+        // arm: `""` is not nullish, so the validator's length and wildcard checks
+        // (`rtuTopic`) see `""` when the draft carries `topic: ""` beside a legacy
+        // `mqttTopic`, and this write must agree with them rather than resurface the
+        // legacy key. The required-topic check reads `config.topic` and
+        // `config.mqttTopic` by truthiness, not through `rtuTopic`.
+        const mqttTopic = emptyTopicAsNull(
           (typeof config.topic === "string" ? config.topic : null) ??
-          (typeof config.mqttTopic === "string" ? config.mqttTopic : null);
+            (typeof config.mqttTopic === "string" ? config.mqttTopic : null),
+        );
 
         const [rtuRow] = await tx
           .insert(rtus)

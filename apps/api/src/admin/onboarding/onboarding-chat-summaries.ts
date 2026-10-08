@@ -32,7 +32,8 @@ export function needsMqttSetup(rtu: DraftRtu): boolean {
  * `F4.208` — the topic `OnboardingCommitService` writes to `bms.rtus.mqtt_topic`,
  * read the way it reads it: a string `config.topic`, else a string legacy
  * `config.mqttTopic`, untrimmed; any other value counts as absent. The commit
- * writes it for every protocol, so this does not look at the protocol.
+ * writes it for every protocol, so this does not look at the protocol. An empty
+ * string is stored as NULL, never `''` (`F4.228`).
  * `inferPhase` reads unparsed drafts, so `config` may be absent.
  */
 export function rtuTopic(rtu: DraftRtu): string {
