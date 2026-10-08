@@ -31,6 +31,9 @@ import { DRAFT_CHANGED_DURING_TURN, SESSION_NO_LONGER_DRAFT, type OnboardingServ
  * re-check on its own is gated by the unit case U2
  * (`onboarding-locked-writes.test.ts`). The cells assert on `_secrets` keys
  * only, never on the stored blob.
+ *
+ * `F4.235` races the PATCH draft (14, 15). Race 14 is gated by the predicate AND
+ * the re-check together, as race 11; the re-check alone is U10.
  */
 
 /** The guided turn that appends an RTU at `phase === "rtu"` (no model call). */
@@ -108,7 +111,14 @@ export type ChatLockCtx = {
   credentialsChanged: RaceOutcome;
   /** Race 13: a credential write; the holder appends a message. */
   credentialsKept: RaceOutcome;
+  /** Race 14: a PATCH draft; the holder marks the row committed. */
+  patchCommitted: RaceOutcome;
+  /** Race 15: a PATCH draft; the holder changes the name. */
+  patchChanged: RaceOutcome;
 };
+
+/** The point key the PATCH body adds (`F4.235`). */
+export const PATCH_POINT_KEY = "patched_kw";
 
 /** The point key the upload's stub parser adds (`F4.233`). */
 export const UPLOAD_POINT_KEY = "kw";
@@ -461,4 +471,29 @@ export function assertACredentialKeepsAMessageCommittedUnderTheLock(ctx: ChatLoc
   expect(stored.draft.rtus?.[0]?.credentialsSet).toBe(true);
   expect(stored.messages.map((m) => m.id), "the message the holder committed under the lock").toContain(ctx.holderMessageId);
   expect(stored.messageCount, "the holder's message only; the route writes none").toBe(1);
+}
+
+/** Race 14, control: the PATCH waited on a holder that committed the session. */
+export function assertThePatchWaitedOnTheCommittingHolder(ctx: ChatLockCtx): void {
+  expectTheWriteWaited(ctx.patchCommitted);
+}
+
+/** Race 14: a PATCH over a row committed under the lock answers 409 SESSION_NO_LONGER_DRAFT and writes nothing. */
+export function assertAPatchOverACommittedRowAnswers409(ctx: ChatLockCtx): void {
+  const { stored } = ctx.patchCommitted;
+  expectA409(ctx.patchCommitted, SESSION_NO_LONGER_DRAFT);
+  expect(stored.draft.pointKeys ?? [], "the PATCH's point key was not stored").toHaveLength(0);
+  expect(stored.status).toBe("committed");
+  expect(stored.messageCount, "the PATCH writes no message").toBe(0);
+}
+
+/** Race 15, adjacent positive: a PATCH over a draft changed under the lock still writes and merges on the locked row. */
+export function assertAPatchOverAChangedDraftStillWrites(ctx: ChatLockCtx): void {
+  const { blocked, error, resolved, settledBeforeCommit, stored } = ctx.patchChanged;
+  expect(blocked, "control: a backend waited on the holder in a FOR UPDATE").toBeGreaterThan(0);
+  expect(settledBeforeCommit, "the PATCH settled while the holder still held the lock").toBe(false);
+  expect(error, "the hash-unbound PATCH refused a changed draft").toBeUndefined();
+  expect(resolved).toBe(true);
+  expect((stored.draft.pointKeys ?? []).map((k) => k.code), "the PATCH's point key was stored").toContain(PATCH_POINT_KEY);
+  expect(stored.draft.location?.name, "the holder's name survives: the PATCH merges on the locked row").toBe(ctx.holderName);
 }

@@ -1,4 +1,4 @@
-import { ConflictException } from "@nestjs/common";
+import { ConflictException, ForbiddenException } from "@nestjs/common";
 
 import type { OnboardingChatMessage, OnboardingDraft } from "@bms/shared";
 
@@ -8,7 +8,8 @@ import { MAX_ONBOARDING_DRAFT_DEPTH } from "./onboarding.schema";
 import { DRAFT_CHANGED_DURING_TURN, DRAFT_TOO_DEEP_FOR_TURN, SESSION_NO_LONGER_DRAFT } from "./onboarding-locked-writes";
 
 /**
- * `F4.233` — the Excel upload and the credential route write under the row
+ * `F4.233` — the Excel upload and the credential route (and, F4.235, the PATCH
+ * draft) write under the row
  * lock (ADR 0094 decision 6). The fake's `.for()` answers `locked`, the row as
  * another writer may have left it between the read and the lock. The lock
  * placement itself is gated by `onboarding-chat-lock.integration.test.ts`.
@@ -176,4 +177,61 @@ export async function assertSetCredentialsOverAnOverDeepDraftAnswers409ByName():
     assert(sentence !== DRAFT_CHANGED_DURING_TURN, "not the hash sentence");
     assert(record.updates.length === 0, `nothing written, got ${record.updates.length} updates`);
   });
+}
+
+/** The PATCH body the topic editor sends (the shape onboarding-chat-checkpoints.spec.ts sends too). */
+const PATCH_BODY = { pointKeys: [{ code: "kw", name: "Active Power" }] };
+
+function patchSession(): Row {
+  return sessionRow(rtuDraft(), "rtu") as Row;
+}
+
+function patchBuild(session: Row, extra: { locked?: Row; updateReturnsNoRow?: boolean } = {}) {
+  return build({ session, selects: [[session], ORG], ...extra });
+}
+
+/** (U10) F4.235: a commit that landed under the lock refuses the PATCH with the commit sentence, nothing written. */
+export async function assertThePatchOverACommittedRowAnswers409(): Promise<void> {
+  const session = patchSession();
+  const { service, record } = patchBuild(session, { locked: { ...session, status: "committed" } as Row });
+  const sentence = await conflictOf(() => service.patchDraft(JWT, "s-1", PATCH_BODY));
+  assert(sentence === SESSION_NO_LONGER_DRAFT, `409 SESSION_NO_LONGER_DRAFT, got ${sentence}`);
+  assert(sentence !== DRAFT_CHANGED_DURING_TURN, "not the hash sentence");
+  assert(record.updates.length === 0, `nothing written, got ${record.updates.length} updates`);
+}
+
+/** (U11) A PATCH whose UPDATE matched no row answers 409, not a crash on `undefined`. */
+export async function assertThePatchWhoseUpdateMatchesNothingAnswers409(): Promise<void> {
+  const { service } = patchBuild(patchSession(), { updateReturnsNoRow: true });
+  const sentence = await conflictOf(() => service.patchDraft(JWT, "s-1", PATCH_BODY));
+  assert(sentence === SESSION_NO_LONGER_DRAFT, `409 SESSION_NO_LONGER_DRAFT, got ${sentence}`);
+}
+
+/** (U12) Adjacent positive (F4.227 ruling, F4.235 Q1): hash-unbound, merges on the locked row, ends undo history. */
+export async function assertThePatchOverAChangedDraftStillWrites(): Promise<void> {
+  const session = patchSession();
+  const locked = { ...session, draft: rtuDraft("Renamed in between") } as Row;
+  const { service, record } = patchBuild(session, { locked });
+  await service.patchDraft(JWT, "s-1", PATCH_BODY);
+  assert(record.updates.length === 1, `one write, got ${record.updates.length}`);
+  const write = record.updates[0] ?? {};
+  const draft = write.draft as OnboardingDraft;
+  assert(draft.pointKeys?.[0]?.code === "kw", "the PATCH's point key is stored");
+  assert("checkpoints" in write && write.checkpoints === null, "the checkpoint ring is cleared");
+  assert(draft.location?.name === "Renamed in between", `the in-between name survives, got ${draft.location?.name}`);
+}
+
+/** (U13) Adjacent negative: a row already committed when loaded keeps the 403, nothing written. */
+export async function assertThePatchOverALoadedCommittedRowAnswers403(): Promise<void> {
+  const session = { ...patchSession(), status: "committed" } as Row;
+  const { service, record } = patchBuild(session);
+  let status: number | null = null;
+  try {
+    await service.patchDraft(JWT, "s-1", PATCH_BODY);
+  } catch (error) {
+    if (!(error instanceof ForbiddenException)) throw error;
+    status = error.getStatus();
+  }
+  assert(status === 403, `403 Forbidden, got ${status}`);
+  assert(record.updates.length === 0, `nothing written, got ${record.updates.length} updates`);
 }
