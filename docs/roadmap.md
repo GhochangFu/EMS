@@ -7564,3 +7564,18 @@ Live 2026-10-08: `bms-api-1`, `bms-worker-1` and `bms-web-1` rebuilt with `--no-
 
 Raised: `F4.235` (`patchDraft` locks nothing), `F4.236` (the topic edit
 field reads only `config.topic`). No `chore(agents):` change owed.
+
+### `F4.235`, `F4.236` — the PATCH draft under the row lock; the topic edit field ✅ 2026-10-08
+
+Two PRs, squash-merged 2026-10-08; no migration, no new dependency. One
+ADR amendment note, text approved at the plan gate (ADR 0094 decision 6).
+
+- **#775** (`0f6ec31c`) — `F4.235`: `PATCH sessions/:id/draft` takes
+  `FOR UPDATE`, re-checks the status and merges on the locked draft, so
+  every in-draft session write now takes the lock.
+- **#776** (`4714627c`) — `F4.236`: the topic edit field reads the
+  topic as the validator does, and Save drops a legacy `mqttTopic`.
+
+Live 2026-10-08: `bms-api-1`, `bms-worker-1` and `bms-web-1` rebuilt with `--no-cache` from `main` `4714627c` and restarted; both API containers hold seven `lockSession` call lines and two `assertSessionStillDraft` calls in `onboarding.service.js`; the served web bundle reads `[topic, mqttTopic]`, deletes `mqttTopic` on Save and tests the shadowed key; `/health` 200. Database: no schema change. Not done: sign-in checks (owner ruling). Browser: N/A.
+
+Raised: none. No `chore(agents):` change owed.
