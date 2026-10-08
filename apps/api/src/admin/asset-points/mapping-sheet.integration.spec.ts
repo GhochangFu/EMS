@@ -1,8 +1,9 @@
 import { HttpException } from "@nestjs/common";
 import pg from "pg";
 import { expect } from "vitest";
+import * as XLSX from "xlsx";
 
-import { MAPPING_SHEET_HEADERS } from "@bms/shared";
+import { MAPPING_SHEET_HEADERS, TEMPLATES_SHEET_NAME } from "@bms/shared";
 import type { JwtPayload, MappingSheetErrorCode, MappingSheetErrorDto } from "@bms/shared";
 
 import { csvDocument, csvNumberCell, csvTextCell } from "../../serialise/csv";
@@ -42,6 +43,8 @@ export type MappingSheetFixtures = {
   fleetPool: pg.Pool;
   locationId: string;
   locationCode: string;
+  /** The code of the one template version every fixture asset pins (version 1). */
+  templateCode: string;
   /** Every fixture code this run created starts with it; also what the audit query joins on. */
   assetPrefix: string;
   /** An active RTU of the fixture location. */
@@ -629,4 +632,36 @@ export async function assertARetiredRtuRoundTripsButCannotBeNewlyWired(
     (await pointsOf(ctx.fleetPool, ctx.assets.retired)).get(ctx.keys.kw),
     "the refused create never landed",
   ).toBeUndefined();
+}
+
+/* -------------------------------------------------------------------------- */
+/* (9) The TEMPLATES sheet                                                     */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * `F2.26` / ADR 0056 Amendment 3 — the export is `MAPPINGS` then `TEMPLATES`,
+ * and `TEMPLATES` lists the fixture template's three measured points under its
+ * code and version, the pattern as written. A service that did not load the
+ * template identity writes no row (or no code); one that substituted the pattern
+ * writes the asset's key. `assertExportThenImportIsIdentity` is the gate that
+ * the second sheet does not break the round trip.
+ */
+export async function assertTheExportCarriesTheTemplatesSheet(
+  ctx: MappingSheetFixtures,
+  jwt: JwtPayload,
+): Promise<void> {
+  const { buffer } = await ctx.svc.exportSheet(jwt, ctx.locationId);
+  const book = XLSX.read(buffer, { type: "buffer" });
+  expect(book.SheetNames).toEqual(["MAPPINGS", TEMPLATES_SHEET_NAME]);
+
+  const sheet = book.Sheets[TEMPLATES_SHEET_NAME] as XLSX.WorkSheet;
+  const rows = XLSX.utils.sheet_to_json<unknown[]>(sheet, { header: 1, defval: "" });
+  const data = rows.slice(1);
+  expect(data, "one row per measured template point, listed once").toHaveLength(3);
+  for (const row of data) {
+    expect(row[0], "template_code").toBe(ctx.templateCode);
+    expect(row[1], "template_version").toBe(1);
+  }
+  const kw = data.find((row) => row[3] === ctx.keys.kw);
+  expect(kw?.[5], "the kw pattern, not substituted").toBe("{asset_code}_KW");
 }

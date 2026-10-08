@@ -1,8 +1,9 @@
-import { MAPPING_SHEET_HEADERS, MAPPING_SHEET_NAME, TEMPLATES_SHEET_HEADERS } from "@bms/shared";
+import { MAPPING_SHEET_HEADERS, MAPPING_SHEET_NAME, TEMPLATES_SHEET_HEADERS, TEMPLATES_SHEET_NAME } from "@bms/shared";
 import type { PointMetadataFields } from "@bms/shared";
 import * as XLSX from "xlsx";
 
-import { buildMappingSheetRows, buildTemplatesSheetRows, mappingSheetToBuffer } from "./mapping-sheet-export";
+import { buildMappingSheetRows, buildTemplatesSheetRows, mappingSheetToBuffer, mappingWorkbookToBuffer } from "./mapping-sheet-export";
+import { parseMappingSheet } from "./mapping-sheet-rows";
 import { assetPointKey } from "./mapping-sheet-snapshot";
 import type { ExistingRow, ExportSnapshot, SnapshotAsset, SnapshotTemplate, SnapshotTemplatePoint } from "./mapping-sheet-snapshot";
 
@@ -405,4 +406,41 @@ export function assertATemplateSharedByTwoAssetsIsListedOnce(): void {
   };
   const data = buildTemplatesSheetRows(snap).slice(1);
   assert(data.length === 1, `one template version, one measured point → one data row, got ${JSON.stringify(data)}`);
+}
+
+/**
+ * `F2.26` — the export workbook is `MAPPINGS` then `TEMPLATES`, the second
+ * sheet carries literals only (ADR 0026, as the first), and the import still
+ * reads the workbook as its `MAPPINGS` rows — the second sheet changes nothing
+ * the parser sees.
+ */
+export function assertTheWorkbookCarriesTemplatesSecondAndParsesAsMappings(): void {
+  const s = snapshot();
+  const mappings = buildMappingSheetRows(s);
+  const buffer = mappingWorkbookToBuffer(mappings, buildTemplatesSheetRows(s));
+
+  const book = XLSX.read(buffer, { type: "buffer" });
+  assert(
+    JSON.stringify(book.SheetNames) === JSON.stringify([MAPPING_SHEET_NAME, TEMPLATES_SHEET_NAME]),
+    `the workbook is MAPPINGS then TEMPLATES, got ${JSON.stringify(book.SheetNames)}`,
+  );
+  const templates = book.Sheets[TEMPLATES_SHEET_NAME];
+  assert(templates !== undefined, "the TEMPLATES sheet is readable");
+  let cells = 0;
+  for (const [address, cell] of Object.entries(templates ?? {})) {
+    if (address.startsWith("!")) {
+      continue;
+    }
+    cells += 1;
+    const typed = cell as XLSX.CellObject;
+    assert(typed.f === undefined, `TEMPLATES cell ${address} carries a formula: ${String(typed.f)}`);
+  }
+  assert(cells > TEMPLATES_SHEET_HEADERS.length, `the scan saw the header and data cells, got ${cells}`);
+
+  const parsed = parseMappingSheet(buffer);
+  assert(parsed.ok, `the two-sheet workbook parses, got ${parsed.ok ? "" : JSON.stringify(parsed.error)}`);
+  assert(
+    parsed.ok && parsed.rows.length === mappings.length - 1,
+    `the parser reads the MAPPINGS rows, got ${parsed.ok ? parsed.rows.length : "a refusal"} for ${mappings.length - 1}`,
+  );
 }

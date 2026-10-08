@@ -514,3 +514,25 @@ export function assertCellsAreReadAsText(): void {
   const padded = parseOk(buildBuffer([HEADER, row({ asset_code: "  TX01  ", point_key: " kw ", unit: " kW " })]), "padded cells");
   assert(padded.rows[0]?.cells.asset_code === "TX01" && padded.rows[0].cells.point_key === "kw" && padded.rows[0].cells.unit === "kW", "cells are trimmed");
 }
+
+/**
+ * `F2.26` — the import reads `MAPPINGS` **by name**: a workbook whose first
+ * sheet is `TEMPLATES` still parses as its `MAPPINGS` rows, and a workbook with
+ * `TEMPLATES` only is `sheet_missing`. A parser that fell back to the first
+ * sheet of an `.xlsx` would read the reference sheet as the import.
+ */
+export function assertATemplatesSheetIsIgnoredOnImport(): void {
+  const templatesRows: Cell[][] = [
+    ["template_code", "template_version", "template_name", "point_key"],
+    ["TX-CLASS", 2, "Transformer", "kw"],
+  ];
+  const book = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(book, XLSX.utils.aoa_to_sheet(templatesRows), "TEMPLATES");
+  XLSX.utils.book_append_sheet(book, XLSX.utils.aoa_to_sheet([HEADER, row()]), "MAPPINGS");
+  const both = parseOk(XLSX.write(book, { type: "buffer", bookType: "xlsx" }) as Buffer, "TEMPLATES first, MAPPINGS second");
+  assert(both.rows.length === 1, `the MAPPINGS row is read, got ${both.rows.length}`);
+  assert(both.rows[0]?.cells.asset_code === "TX01", `the row is the MAPPINGS row, got ${JSON.stringify(both.rows[0]?.cells)}`);
+
+  const templatesOnly = parseFile(buildBuffer(templatesRows, "xlsx", "TEMPLATES"), "a TEMPLATES-only workbook");
+  assert(templatesOnly.code === "sheet_missing", `TEMPLATES alone → sheet_missing, got ${templatesOnly.code}`);
+}

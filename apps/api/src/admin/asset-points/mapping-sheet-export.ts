@@ -3,6 +3,7 @@ import {
   MAPPING_SHEET_NAME,
   SOURCE_KEY_RESERVED_VAR,
   TEMPLATES_SHEET_HEADERS,
+  TEMPLATES_SHEET_NAME,
   substituteSourceKeyPattern,
 } from "@bms/shared";
 import * as XLSX from "xlsx";
@@ -208,7 +209,8 @@ export function buildTemplatesSheetRows(snapshot: ExportSnapshot): MappingSheetC
 
 /**
  * The rows as an `.xlsx` buffer with one sheet, `MAPPINGS`, every cell a
- * literal.
+ * literal. **Single-sheet** — the upload fixtures' writer; the export uses
+ * `mappingWorkbookToBuffer`, which adds the `TEMPLATES` sheet (`F2.26`).
  *
  * **Deflated** (post-merge code review, finding 2). `XLSX.write` stores every
  * zip entry uncompressed unless told otherwise, and a mapping sheet is mostly
@@ -221,9 +223,30 @@ export function buildTemplatesSheetRows(snapshot: ExportSnapshot): MappingSheetC
  * `mapping-sheet-export.spec.ts` asserts the sheet part's zip method rather
  * than a byte count, because the ratio depends on how full the cells are.
  */
-export function mappingSheetToBuffer(rows: ReadonlyArray<ReadonlyArray<MappingSheetCell>>): Buffer {
-  const sheet = XLSX.utils.aoa_to_sheet(rows.map((row) => [...row]));
+export function mappingSheetToBuffer(rows: SheetRows): Buffer {
+  return writeWorkbook([[MAPPING_SHEET_NAME, rows]]);
+}
+
+/**
+ * The export workbook (`F2.26`, ADR 0056 Amendment 3): `MAPPINGS` first, so
+ * Excel opens on the sheet a person edits, then the read-only `TEMPLATES`
+ * reference sheet. Deflated and literal-only, as `mappingSheetToBuffer`. The
+ * import reads `MAPPINGS` by name, so the second sheet is never read back.
+ */
+export function mappingWorkbookToBuffer(mappings: SheetRows, templates: SheetRows): Buffer {
+  return writeWorkbook([
+    [MAPPING_SHEET_NAME, mappings],
+    [TEMPLATES_SHEET_NAME, templates],
+  ]);
+}
+
+type SheetRows = ReadonlyArray<ReadonlyArray<MappingSheetCell>>;
+
+/** The named sheets, in order, as one deflated `.xlsx` buffer of literals. */
+function writeWorkbook(sheets: ReadonlyArray<readonly [name: string, rows: SheetRows]>): Buffer {
   const book = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(book, sheet, MAPPING_SHEET_NAME);
+  for (const [name, rows] of sheets) {
+    XLSX.utils.book_append_sheet(book, XLSX.utils.aoa_to_sheet(rows.map((row) => [...row])), name);
+  }
   return XLSX.write(book, { type: "buffer", bookType: "xlsx", compression: true }) as Buffer;
 }

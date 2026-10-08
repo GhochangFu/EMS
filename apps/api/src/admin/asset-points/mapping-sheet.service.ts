@@ -19,7 +19,7 @@ import { AccessControlService } from "../../auth/access-control.service";
 import { FLEET_DRIZZLE, TENANT_DRIZZLE } from "../../database/database.tokens";
 import { withTenant, type BmsTx } from "../../database/tenant-context";
 import { MasterDataAuditService, type AuditInput } from "../master-data-audit.service";
-import { buildMappingSheetRows, mappingSheetToBuffer } from "./mapping-sheet-export";
+import { buildMappingSheetRows, buildTemplatesSheetRows, mappingWorkbookToBuffer } from "./mapping-sheet-export";
 import { planMappingSheet } from "./mapping-sheet-plan";
 import type { MappingSheetPlan, PlannedCreate, PlannedUpdate } from "./mapping-sheet-plan";
 import { parseMappingSheet } from "./mapping-sheet-rows";
@@ -65,14 +65,17 @@ export class MappingSheetService {
     private readonly audit: MasterDataAuditService,
   ) {}
 
-  /** One location's current mappings and template pre-fill as a `MAPPINGS` workbook. */
+  /**
+   * One location's current mappings and template pre-fill as a `MAPPINGS` +
+   * `TEMPLATES` workbook — the second sheet read-only reference (`F2.26`).
+   */
   async exportSheet(jwt: JwtPayload, locationId: string): Promise<{ buffer: Buffer; filename: string }> {
     const location = await this.resolveLocation(jwt, locationId);
     const snapshot = await withTenant(this.tenantDb, location.organizationId, (tx) =>
       this.loadSnapshot(tx, locationId),
     );
     return {
-      buffer: mappingSheetToBuffer(buildMappingSheetRows(snapshot)),
+      buffer: mappingWorkbookToBuffer(buildMappingSheetRows(snapshot), buildTemplatesSheetRows(snapshot)),
       filename: `mapping-sheet-${safeFilenamePart(location.code)}.xlsx`,
     };
   }

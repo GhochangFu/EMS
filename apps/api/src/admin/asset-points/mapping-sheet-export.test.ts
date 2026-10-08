@@ -9,6 +9,7 @@ import {
   assertRowsAreSorted,
   assertTemplatesSheetListsMeasuredPointsOfTemplatesInUse,
   assertTheBufferIsDeflatedAndStillParses,
+  assertTheWorkbookCarriesTemplatesSecondAndParsesAsMappings,
 } from "./mapping-sheet-export.spec";
 
 /** `F2.7` G3 — Vitest entry point. Assertions live in the sibling `.spec` (ADR 0014). */
@@ -48,5 +49,9 @@ describe("F2.7 — the MAPPINGS export row set (ADR 0056 decision 6)", () => {
 
   it("F2.26 — lists a template version shared by two active assets once", () => {
     assertATemplateSharedByTwoAssetsIsListedOnce();
+  });
+
+  it("F2.26 — writes MAPPINGS then TEMPLATES, no formula cell, and the workbook still parses as its MAPPINGS rows", () => {
+    assertTheWorkbookCarriesTemplatesSecondAndParsesAsMappings();
   });
 });
