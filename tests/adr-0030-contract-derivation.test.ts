@@ -48,14 +48,38 @@ describe("ADR 0030 — contracts stay single-source", () => {
       "no `export type X = …` found in index.ts — this scan is broken and passing means nothing",
     ).toBeGreaterThan(40);
 
-    const offenders = declarations
-      .filter(([, , body]) => !/\bz\.infer</.test(body ?? ""))
-      .map(([, name]) => name as string);
+    const offenders = () =>
+      declarations
+        .filter(([, , body]) => !/\bz\.infer</.test(body ?? ""))
+        .map(([, name]) => name as string);
+
+    // F2.24: `index.ts` sits at the AGENTS.md §4.5 cap, so derivation blocks
+    // move out to `src/types/*.ts` and are re-exported. A moved block must not
+    // leave the scan with it — every file there is read under the same rule.
+    const typesDir = join(sharedSrc, "types");
+    const typeFiles = readdirSync(typesDir).filter((f) => f.endsWith(".ts"));
+    expect(
+      typeFiles,
+      "src/types/ holds no derivation file — this walk is broken and passing means nothing",
+    ).toContain("template-migration.ts");
+    for (const file of typeFiles) {
+      const moved = [
+        ...readFileSync(join(typesDir, file), "utf8").matchAll(
+          /^export type (\w+)\s*=\s*([\s\S]*?);$/gm,
+        ),
+      ];
+      expect(moved.length, `no \`export type X = …\` found in types/${file}`).toBeGreaterThan(0);
+      declarations.push(...moved);
+      expect(
+        source,
+        `index.ts must re-export types/${file}, or its types leave the package`,
+      ).toContain(`export type * from "./types/${file.replace(/\.ts$/, "")}";`);
+    }
 
     expect(
-      offenders,
+      offenders(),
       `these types in packages/shared/src/index.ts are written by hand rather than derived:\n` +
-        `${offenders.join(", ")}\n\n` +
+        `${offenders().join(", ")}\n\n` +
         "Every response contract must be `z.infer<typeof someSchema>` over a schema in " +
         "`./contracts` (ADR 0030 decision 2). A hand-written type beside a schema is the " +
         "second description ADR 0029 decision 1 rejected: it is believed, and nothing " +
