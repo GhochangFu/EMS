@@ -34,12 +34,12 @@ const T3 = "t3";
 const R1 = "r1";
 
 const assets: ReadonlyArray<readonly [string, SnapshotAsset]> = [
-  ["TX01", { id: "a1", name: "Transformer 1", active: true, templateId: T1, rtuId: R1 }],
-  ["CH01", { id: "a2", name: "Chiller 1", active: true, templateId: T2, rtuId: null }],
-  ["OLD1", { id: "a3", name: "Retired", active: false, templateId: T1, rtuId: R1 }],
-  ["=1+1", { id: "a4", name: "Formula-looking code", active: true, templateId: null, rtuId: R1 }],
+  ["TX01", { id: "a1", name: "Transformer 1", active: true, templateId: T1, rtuId: R1, sourceDataKeyVars: null }],
+  ["CH01", { id: "a2", name: "Chiller 1", active: true, templateId: T2, rtuId: null, sourceDataKeyVars: null }],
+  ["OLD1", { id: "a3", name: "Retired", active: false, templateId: T1, rtuId: R1, sourceDataKeyVars: null }],
+  ["=1+1", { id: "a4", name: "Formula-looking code", active: true, templateId: null, rtuId: R1, sourceDataKeyVars: null }],
   // F2.26: the only asset pinned to T3 is inactive, so T3 is not "in use".
-  ["OLD2", { id: "a6", name: "Retired on T3", active: false, templateId: T3, rtuId: null }],
+  ["OLD2", { id: "a6", name: "Retired on T3", active: false, templateId: T3, rtuId: null, sourceDataKeyVars: null }],
 ];
 
 const existing: readonly ExistingRow[] = [
@@ -146,6 +146,28 @@ export function assertPreFillRowsFromTheTemplate(): void {
   assert(!rows.some((r) => r[0] === "TX01" && r[2] === "kw" && r[11] === ""), "a template point with an existing row is not pre-filled twice");
 }
 
+/**
+ * `F2.29` (ADR 0039 Amendment 1 decision 4) — the pre-fill substitutes every
+ * variable the asset stores, beside `{asset_code}`; a sibling asset on the same
+ * version that stores `NULL` keeps the token literal.
+ */
+export function assertPreFillSubstitutesStoredVariables(): void {
+  const base = snapshot();
+  const snap: ExportSnapshot = {
+    ...base,
+    assetsByCode: new Map([
+      ...base.assetsByCode,
+      ["CH01", { id: "a2", name: "Chiller 1", active: true, templateId: T2, rtuId: null, sourceDataKeyVars: { unit: "03" } }],
+      ["CH09", { id: "a9", name: "Chiller 9", active: true, templateId: T2, rtuId: null, sourceDataKeyVars: null }],
+    ]),
+  };
+  const rows = buildMappingSheetRows(snap);
+  const stored = rows.find((r) => r[0] === "CH01" && r[2] === "chw_supply_t");
+  assert(stored?.[4] === "CH03_CHW_SUPPLY_T", `a stored {unit} is substituted, got ${JSON.stringify(stored)}`);
+  const legacy = rows.find((r) => r[0] === "CH09" && r[2] === "chw_supply_t");
+  assert(legacy?.[4] === "CH{unit}_CHW_SUPPLY_T", `a NULL-variables asset keeps the token literal, got ${JSON.stringify(legacy)}`);
+}
+
 /** Rows are sorted by asset code then point key, code-point order. */
 export function assertRowsAreSorted(): void {
   const rows = buildMappingSheetRows(snapshot()).slice(1);
@@ -229,7 +251,7 @@ function bulkSnapshot(count: number): ExportSnapshot {
   const bulkExisting: ExistingRow[] = [];
   for (let i = 0; i < count; i += 1) {
     const code = `TX${String(i).padStart(5, "0")}`;
-    bulkAssets.push([code, { id: `a-${i}`, name: `Transformer ${i}`, active: true, templateId: null, rtuId: R1 }]);
+    bulkAssets.push([code, { id: `a-${i}`, name: `Transformer ${i}`, active: true, templateId: null, rtuId: R1, sourceDataKeyVars: null }]);
     bulkExisting.push({
       id: `p-${i}`,
       assetId: `a-${i}`,
@@ -318,7 +340,7 @@ export function assertARetiredGatewayIsNotPreFilled(): void {
     ...base,
     assetsByCode: new Map([
       ...base.assetsByCode,
-      ["CH02", { id: "a5", name: "Chiller 2", active: true, templateId: T2, rtuId: retiredId }],
+      ["CH02", { id: "a5", name: "Chiller 2", active: true, templateId: T2, rtuId: retiredId, sourceDataKeyVars: null }],
     ]),
     existingByAssetPoint: new Map([...base.existingByAssetPoint, [assetPointKey("a5", "kw"), wired]]),
     // Every RTU of the location by id, retired included; the active set is the
@@ -389,8 +411,8 @@ export function assertTemplatesSheetListsMeasuredPointsOfTemplatesInUse(): void 
 export function assertATemplateSharedByTwoAssetsIsListedOnce(): void {
   const snap: ExportSnapshot = {
     assetsByCode: new Map<string, SnapshotAsset>([
-      ["TX01", { id: "a1", name: "Transformer 1", active: true, templateId: T1, rtuId: null }],
-      ["TX02", { id: "a2", name: "Transformer 2", active: true, templateId: T1, rtuId: null }],
+      ["TX01", { id: "a1", name: "Transformer 1", active: true, templateId: T1, rtuId: null, sourceDataKeyVars: null }],
+      ["TX02", { id: "a2", name: "Transformer 2", active: true, templateId: T1, rtuId: null, sourceDataKeyVars: null }],
     ]),
     existingByAssetPoint: new Map(),
     rtuCodesById: new Map(),

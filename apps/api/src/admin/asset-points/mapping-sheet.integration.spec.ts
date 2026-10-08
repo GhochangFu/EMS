@@ -702,3 +702,59 @@ export async function assertAReorderedHeaderStillWritesTheRow(
   const written = (await pointsOf(ctx.fleetPool, ctx.assets.creates)).get(ctx.keys.pressure);
   expect(written?.source_data_key).toBe(`${ctx.assets.creates}_REORDER`);
 }
+
+/* -------------------------------------------------------------------------- */
+/* (11) The pre-fill reads the stored variables                                */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * `F2.29` (ADR 0039 Amendment 1 decision 4) — the service loads
+ * `assets.source_data_key_vars` into the snapshot, so an exported pre-fill row
+ * substitutes a stored `{unit}`; a sibling asset on the same version that
+ * stores `NULL` keeps the token literal. Self-contained: its own template
+ * version and two assets under the run prefix, removed before it returns, so
+ * no earlier case's counts move.
+ */
+export async function assertThePreFillSubstitutesTheStoredVariables(
+  ctx: MappingSheetFixtures,
+  jwt: JwtPayload,
+): Promise<void> {
+  const pool = ctx.fleetPool;
+  const { rows: base } = await pool.query<{ organization_id: string; domain: string }>(
+    `SELECT organization_id, domain FROM bms.assets WHERE code = $1`,
+    [ctx.assets.bare],
+  );
+  const { organization_id: organizationId, domain } = base[0] as { organization_id: string; domain: string };
+  const templateCode = `${ctx.assetPrefix}VARS-TPL`;
+  const withVars = `${ctx.assetPrefix}VARS1`;
+  const withNone = `${ctx.assetPrefix}VARS0`;
+  const { rows: tpl } = await pool.query<{ id: string }>(
+    `INSERT INTO bms.asset_templates (organization_id, code, version, name, asset_type, domain, status, published_at)
+     VALUES ($1, $2, 1, 'F2.29 vars fixture', 'test_rig', $3, 'published', now()) RETURNING id`,
+    [organizationId, templateCode, domain],
+  );
+  const templateId = (tpl[0] as { id: string }).id;
+  try {
+    await pool.query(
+      `INSERT INTO bms.template_points (organization_id, template_id, point_key, kind, source_data_key_pattern, required, sort_order)
+       VALUES ($1, $2, $3, 'measured', '{asset_code}_P{unit}', true, 0)`,
+      [organizationId, templateId, ctx.keys.pressure],
+    );
+    await pool.query(
+      `INSERT INTO bms.assets (organization_id, code, name, site_name, location_id, domain, template_id, active, source_data_key_vars)
+       VALUES ($1, $2, 'F2.29 stores unit', 'F2.29 Site', $4, $5, $6, true, '{"unit":"7"}'::jsonb),
+              ($1, $3, 'F2.29 stores none', 'F2.29 Site', $4, $5, $6, true, NULL)`,
+      [organizationId, withVars, withNone, ctx.locationId, domain, templateId],
+    );
+
+    const { buffer } = await ctx.svc.exportSheet(jwt, ctx.locationId);
+    const book = XLSX.read(buffer, { type: "buffer" });
+    const rows = XLSX.utils.sheet_to_json<unknown[]>(book.Sheets.MAPPINGS as XLSX.WorkSheet, { header: 1, defval: "" });
+    const preFill = (code: string): unknown => rows.find((row) => row[0] === code && row[2] === ctx.keys.pressure)?.[4];
+    expect(preFill(withVars), "a stored {unit} is substituted").toBe(`${withVars}_P7`);
+    expect(preFill(withNone), "a NULL-variables asset keeps {unit} literal").toBe(`${withNone}_P{unit}`);
+  } finally {
+    await pool.query(`DELETE FROM bms.assets WHERE code = ANY($1)`, [[withVars, withNone]]);
+    await pool.query(`DELETE FROM bms.asset_templates WHERE id = $1`, [templateId]);
+  }
+}

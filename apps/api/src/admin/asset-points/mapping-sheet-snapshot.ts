@@ -22,6 +22,12 @@ export type SnapshotAsset = {
   readonly templateId: string | null;
   /** The asset's own RTU — what a pre-fill row's `rtu_code` names. */
   readonly rtuId: string | null;
+  /**
+   * `F2.29` (ADR 0039 Amendment 1 decision 4) — `assets.source_data_key_vars`,
+   * the variables written at instantiation; the pre-fill substitutes them.
+   * `null` for an asset built before that column or with no variables.
+   */
+  readonly sourceDataKeyVars: Readonly<Record<string, string>> | null;
 };
 
 /** One `bms.asset_points` row, every column the sheet reads or writes. */

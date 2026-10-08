@@ -6,6 +6,7 @@ import {
   assertBufferHasNoFormulaCells,
   assertExistingRowsAreWrittenAsStored,
   assertPreFillRowsFromTheTemplate,
+  assertPreFillSubstitutesStoredVariables,
   assertRowsAreSorted,
   assertTemplatesSheetListsMeasuredPointsOfTemplatesInUse,
   assertTheBufferIsDeflatedAndStillParses,
@@ -22,6 +23,10 @@ describe("F2.7 — the MAPPINGS export row set (ADR 0056 decision 6)", () => {
 
   it("pre-fills a measured template point with no row: {asset_code} substituted, other tokens literal, active blank", () => {
     assertPreFillRowsFromTheTemplate();
+  });
+
+  it("F2.29 — pre-fills with every variable the asset stores; a NULL-variables asset keeps the token literal", () => {
+    assertPreFillSubstitutesStoredVariables();
   });
 
   it("sorts by asset code then point key", () => {
