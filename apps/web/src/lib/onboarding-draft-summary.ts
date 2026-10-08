@@ -8,6 +8,16 @@ export function formatOnboardingValidationErrors(errors: OnboardingFieldError[])
   return errors.map((error) => `${error.path}: ${error.message}`).join("\n");
 }
 
+/**
+ * F4.234: the topic as the API's `rtuTopic` reads it � the first key that is a
+ * string, `topic` then `mqttTopic`, else "" � shown as "-" when empty. Web cannot
+ * import apps/api, so the rule is repeated here.
+ */
+function topicOf(config: Record<string, unknown>): string {
+  const topic = [config.topic, config.mqttTopic].find((value) => typeof value === "string");
+  return typeof topic === "string" && topic !== "" ? topic : "-";
+}
+
 /** Human-readable draft layout showing RTU → asset → mapping relationships. */
 export function formatOnboardingDraftSummary(draft: OnboardingDraft): string {
   const lines: string[] = [];
@@ -18,7 +28,7 @@ export function formatOnboardingDraftSummary(draft: OnboardingDraft): string {
     lines.push("RTUs:");
     draft.rtus.forEach((rtu, index) => {
       lines.push(
-        `  ${index + 1}. ${rtu.displayName} · ${rtu.protocol} · topic ${String(rtu.config.topic ?? "-")}`,
+        `  ${index + 1}. ${rtu.displayName} · ${rtu.protocol} · topic ${topicOf(rtu.config)}`,
       );
     });
   }
