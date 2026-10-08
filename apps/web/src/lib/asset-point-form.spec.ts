@@ -57,6 +57,7 @@ export function runEditDiffTests(): void {
   assertBody(editBodyFrom(LOADED, { ...form, engMin: "abc" }), {}, "(d) a non-number is not sent");
   assertBody(editBodyFrom(LOADED, { ...form, engMin: "5.0" }), {}, "a number equal to the stored one is no change");
   assertBody(editBodyFrom(LOADED, { ...form, pointKey: "" }), {}, "(e) a required field is never cleared");
+  assertBody(editBodyFrom(LOADED, { ...form, pointKey: "other_kw" }), { pointKey: "other_kw" }, "a re-key is sent");
   assertBody(editBodyFrom(LOADED, { ...form, sourceDataKey: "" }), {}, "(e) nor the source data key");
   assertBody(
     editBodyFrom(LOADED, { ...form, sourceDataKey: "C1_RAW2" }),
@@ -64,6 +65,11 @@ export function runEditDiffTests(): void {
     "a changed source data key",
   );
   assertBody(editBodyFrom(LOADED, { ...form, sensorCode: "S2" }), { sensorCode: "S2" }, "(f) a changed sensor code");
+  assertBody(editBodyFrom(LOADED, { ...form, unit: "A" }), { unit: "A" }, "a changed unit");
+  // Each of the four numbers on its own, so dropping one from `NUMBER_FIELDS`
+  // loses that field's edit here rather than silently in the dialog.
+  assertBody(editBodyFrom(LOADED, { ...form, scaleMultiplier: "1.5" }), { scaleMultiplier: 1.5 }, "a typed multiplier");
+  assertBody(editBodyFrom(LOADED, { ...form, scaleOffset: "-2" }), { scaleOffset: -2 }, "a typed offset");
   // The PATCH body has `sensorCode` / `unit` optional, not nullable: an emptied
   // box is omitted, as before this change (a recorded gap, not a clear).
   assertBody(editBodyFrom(LOADED, { ...form, sensorCode: "" }), {}, "an emptied sensor code is omitted");
@@ -112,8 +118,27 @@ export function runCreateBodyTests(): void {
     "an empty create sends the three required fields only",
   );
   assertBody(
-    createBodyFrom({ ...form, rtuId: RTU_A, engMax: "100", engMin: "x", qualityPolicy: "accept_bad", unit: "kW" }),
-    { assetId: "asset-1", pointKey: "power_kw", sourceDataKey: "RAW", rtuId: RTU_A, engMax: 100, qualityPolicy: "accept_bad", unit: "kW" },
+    createBodyFrom({
+      ...form,
+      rtuId: RTU_A,
+      engMax: "100",
+      engMin: "x",
+      scaleMultiplier: "1.5",
+      scaleOffset: "-2",
+      qualityPolicy: "accept_bad",
+      unit: "kW",
+    }),
+    {
+      assetId: "asset-1",
+      pointKey: "power_kw",
+      sourceDataKey: "RAW",
+      rtuId: RTU_A,
+      engMax: 100,
+      scaleMultiplier: 1.5,
+      scaleOffset: -2,
+      qualityPolicy: "accept_bad",
+      unit: "kW",
+    },
     "a create sends what was filled in, and drops a non-number",
   );
 }
