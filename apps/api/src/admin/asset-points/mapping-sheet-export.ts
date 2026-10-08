@@ -33,7 +33,9 @@ import type { ExportSnapshot, SnapshotTemplatePoint } from "./mapping-sheet-snap
  *   and `active` **blank** — design decision 4 / Q-B: a blank `active` on a
  *   row with no mapping is "suggestion not taken", which is the only reading
  *   under which this pre-fill and decision 7's round trip (zero creates, zero
- *   updates) both hold with the fixed twelve-column header.
+ *   updates) both hold with the twelve-column set — no column marks a
+ *   suggestion (the import takes the twelve in any order since F2.28, but no
+ *   more of them).
  *
  * Cells are literals — strings and numbers — through `aoa_to_sheet`. Per
  * ADR 0026's XLSX finding the safety is the absence of any `<f>` element:
