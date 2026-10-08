@@ -22,6 +22,7 @@ import {
 } from "../../api/admin/asset-points";
 import { fetchAdminAssetSummary } from "../../api/admin/assets";
 import { fetchAdminPointKeys } from "../../api/admin/point-keys";
+import { fetchAdminRtus } from "../../api/admin/rtus";
 import { ActiveFilterBar } from "../../components/admin/active-filter-bar";
 import {
   HierarchyFilterBar,
@@ -213,6 +214,23 @@ export function AssetPointsAdminPage({ user }: AssetPointsAdminPageProps) {
     queryFn: () => fetchAdminPointKeys("true"),
     enabled: modalOpen,
   });
+
+  // ADR 0056 Amendment 3 part A (`F2.27`) — the dialog's RTU picker lists the
+  // RTUs of the asset's location: the row's own on Edit, the routed asset's
+  // or the filter's on Add. Unknown → the select is disabled with a hint.
+  const formLocationId =
+    editing?.locationId ?? assetSummaryQ.data?.locationId ?? selection.locationId ?? null;
+  const rtusQ = useQuery({
+    queryKey: ["admin", "rtus", "all", formLocationId],
+    queryFn: () => fetchAdminRtus("all", formLocationId ?? undefined),
+    enabled: modalOpen && formLocationId !== null,
+  });
+  const rtuOptions = rtusQ.data?.items ?? [];
+  // The stored RTU may be one the location list no longer holds (moved or
+  // deleted). Without an option holding it, the controlled `<select>` shows
+  // blank, and the operator reads the point as unwired when it is not.
+  const storedRtuMissing =
+    editing?.rtuId != null && !rtuOptions.some((option) => option.id === editing.rtuId);
 
   const listQ = useQuery({
     queryKey: ["admin", "asset-points", activeFilter, assetId, selection.locationId],
@@ -605,6 +623,40 @@ export function AssetPointsAdminPage({ user }: AssetPointsAdminPageProps) {
                   value={form.unit}
                   onChange={(event) => setForm({ ...form, unit: event.target.value })}
                 />
+              </label>
+              {/* `F2.27` / ADR 0056 Amendment 3 part A. Blank on Add is omitted
+                  (the point follows the asset's gateway); blank on Edit is
+                  `rtuId: null` (unwire) — sent only when changed
+                  (`editBodyFrom`), so a computed row stays editable. */}
+              <label className="block text-xs font-semibold text-ink-muted">
+                RTU
+                <select
+                  aria-label="RTU"
+                  className="mt-1 w-full surface-field px-3 py-2 text-sm"
+                  value={form.rtuId}
+                  disabled={formLocationId === null}
+                  onChange={(event) => setForm({ ...form, rtuId: event.target.value })}
+                >
+                  <option value="">{editing ? "Unwired" : "Inherit the asset's gateway"}</option>
+                  {rtuOptions.map((option) => (
+                    <option key={option.id} value={option.id}>
+                      {option.code} · {option.displayName}
+                      {option.active ? "" : " (inactive)"}
+                    </option>
+                  ))}
+                  {storedRtuMissing && editing?.rtuId ? (
+                    <option value={editing.rtuId}>
+                      {editing.rtuId} ({rtusQ.isSuccess ? "not in this location" : "loading"})
+                    </option>
+                  ) : null}
+                </select>
+                <span className="mt-1 block text-[11px] font-normal">
+                  {formLocationId === null
+                    ? "Choose a location to pick an RTU"
+                    : editing
+                      ? "On an existing mapping, blank unwires the point (a measured point becomes unmapped)."
+                      : "Blank keeps the asset's own gateway."}
+                </span>
               </label>
               {/* `F2.7` / ADR 0056 decision 1 — the per-asset override of the
                   five. Empty means "follow the template", which is an omitted

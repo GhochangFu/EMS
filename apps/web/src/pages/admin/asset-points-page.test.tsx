@@ -4,8 +4,13 @@ import { afterEach, describe, it, vi } from "vitest";
 
 import {
   aRefusedCreateShowsTheSentence,
+  aStoredRtuOutsideTheListKeepsItsOption,
+  addPicksAnRtuOfTheAssetsLocation,
+  addWithNoLocationDisablesTheRtuSelect,
   anEditSendsOnlyTheChangedField,
   anUntouchedEditSendsNothing,
+  choosingUnwiredSendsNull,
+  theEditRtuSelectShowsTheStoredRtu,
   theListShowsTheInheritedEffectiveRange,
 } from "./asset-points-page.spec";
 
@@ -21,7 +26,7 @@ import {
  */
 const CASE_TIMEOUT_MS = 15_000;
 
-describe("F4.204 asset points page — a refusal reads as a sentence", () => {
+describe("asset points page — refusals, effective metadata, the Add/Edit dialog", () => {
   afterEach(() => {
     cleanup();
     vi.restoreAllMocks();
@@ -42,5 +47,25 @@ describe("F4.204 asset points page — a refusal reads as a sentence", () => {
 
   it("F2.31 an untouched edit closes the dialog without a request", async () => {
     await anUntouchedEditSendsNothing();
+  }, CASE_TIMEOUT_MS);
+
+  it("F2.27 (1) Edit lists the location's RTUs, shows the stored one, and sends no untouched rtuId", async () => {
+    await theEditRtuSelectShowsTheStoredRtu();
+  }, CASE_TIMEOUT_MS);
+
+  it("F2.27 (2) choosing Unwired on Edit sends rtuId: null", async () => {
+    await choosingUnwiredSendsNull();
+  }, CASE_TIMEOUT_MS);
+
+  it("F2.27 (3) a stored RTU outside the location list keeps its option and its value", async () => {
+    await aStoredRtuOutsideTheListKeepsItsOption();
+  }, CASE_TIMEOUT_MS);
+
+  it("F2.27 (4) Add omits a blank RTU and sends a chosen one of the asset's location", async () => {
+    await addPicksAnRtuOfTheAssetsLocation();
+  }, CASE_TIMEOUT_MS);
+
+  it("F2.27 (5) Add with no location known disables the RTU select and says why", async () => {
+    await addWithNoLocationDisablesTheRtuSelect();
   }, CASE_TIMEOUT_MS);
 });

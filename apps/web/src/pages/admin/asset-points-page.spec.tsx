@@ -1,8 +1,8 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { MemoryRouter } from "react-router-dom";
-import type { AdminAssetPointDto } from "@bms/shared";
+import { MemoryRouter, Route, Routes } from "react-router-dom";
+import type { AdminAssetPointDto, AdminRtuDto } from "@bms/shared";
 import { expect, vi } from "vitest";
 
 import * as api from "../../api/admin/asset-points";
@@ -69,14 +69,21 @@ function stubApi() {
   };
 }
 
-function renderPage(): void {
+/**
+ * Without a path the page has no `:assetId`, so the asset-summary query stays
+ * disabled. With one, the page is mounted under a route that supplies it.
+ */
+function renderPage(assetPath?: string): void {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   });
   render(
     <QueryClientProvider client={queryClient}>
-      <MemoryRouter initialEntries={["/admin/asset-points"]}>
-        <AssetPointsAdminPage user={admin} />
+      <MemoryRouter initialEntries={[assetPath ?? "/admin/asset-points"]}>
+        <Routes>
+          <Route path="/admin/asset-points" element={<AssetPointsAdminPage user={admin} />} />
+          <Route path="/admin/assets/:assetId/points" element={<AssetPointsAdminPage user={admin} />} />
+        </Routes>
       </MemoryRouter>
     </QueryClientProvider>,
   );
@@ -197,4 +204,150 @@ export async function anUntouchedEditSendsNothing(): Promise<void> {
   await userEvent.click(screen.getByRole("button", { name: "Save" }));
   await vi.waitFor(() => expect(screen.queryByRole("heading", { name: "Edit mapping" })).toBeNull());
   expect(update).not.toHaveBeenCalled();
+}
+
+const LOCATION = "c1000000-0000-4000-8000-0000000000l1";
+const RTU_A = "c1000000-0000-4000-8000-0000000000ra";
+const RTU_B = "c1000000-0000-4000-8000-0000000000rb";
+const RTU_Z = "c1000000-0000-4000-8000-0000000000rz";
+
+function rtu(id: string, code: string, active: boolean): AdminRtuDto {
+  return {
+    id,
+    locationId: LOCATION,
+    locationName: "C1 site",
+    organizationCode: "C1",
+    code,
+    displayName: `${code} gateway`,
+    sourceType: "mqtt",
+    domain: null,
+    externalRtuId: null,
+    rtuCode: null,
+    mqttTopic: null,
+    stationCode: null,
+    stationName: null,
+    ingestEnabled: true,
+    active,
+    meta: null,
+    createdAt: new Date(0).toISOString(),
+  };
+}
+
+/** The dialog's RTU select — the filter bar has an unlabelled RTU select of its own. */
+function rtuSelect(): HTMLSelectElement {
+  return screen.getByLabelText("RTU") as HTMLSelectElement;
+}
+
+function stubRtus() {
+  return vi
+    .mocked(rtusApi.fetchAdminRtus)
+    .mockResolvedValue({ items: [rtu(RTU_A, "RTU-A", true), rtu(RTU_B, "RTU-B", false)] });
+}
+
+/**
+ * F2.27 (1) — Edit lists the RTUs of the row's location, shows the stored one,
+ * labels an inactive one, and a save that touched another field sends no `rtuId`.
+ */
+export async function theEditRtuSelectShowsTheStoredRtu(): Promise<void> {
+  stubApi();
+  const fetchRtus = stubRtus();
+  const item = pointItem({ locationId: LOCATION, rtuId: RTU_A, sourceKind: "measured" });
+  const { update } = await openEdit(item);
+  await within(rtuSelect()).findByRole("option", { name: /RTU-A/ });
+  expect(fetchRtus).toHaveBeenCalledWith("all", LOCATION);
+  expect(rtuSelect().value).toBe(RTU_A);
+  expect(within(rtuSelect()).getByRole("option", { name: /RTU-B/ }).textContent).toContain("(inactive)");
+  expect(within(rtuSelect()).getByRole("option", { name: /RTU-A/ }).textContent).not.toContain("(inactive)");
+  await userEvent.type(screen.getByLabelText("Sensor code"), "S9");
+  await userEvent.click(screen.getByRole("button", { name: "Save" }));
+  await vi.waitFor(() => expect(update).toHaveBeenCalledTimes(1));
+  expect(update).toHaveBeenCalledWith(item.id, { sensorCode: "S9" });
+}
+
+/** F2.27 (2) — the blank option on Edit unwires: `rtuId: null`. */
+export async function choosingUnwiredSendsNull(): Promise<void> {
+  stubApi();
+  stubRtus();
+  const item = pointItem({ locationId: LOCATION, rtuId: RTU_A, sourceKind: "measured" });
+  const { update } = await openEdit(item);
+  await within(rtuSelect()).findByRole("option", { name: /RTU-A/ });
+  await userEvent.selectOptions(rtuSelect(), within(rtuSelect()).getByRole("option", { name: "Unwired" }));
+  await userEvent.click(screen.getByRole("button", { name: "Save" }));
+  await vi.waitFor(() => expect(update).toHaveBeenCalledTimes(1));
+  expect(update).toHaveBeenCalledWith(item.id, { rtuId: null });
+}
+
+/**
+ * F2.27 (3) — a stored RTU the location list no longer holds keeps a synthetic
+ * option, so the controlled select shows it rather than falling to blank.
+ * Mutation run: removing the option reddens the option lookup. The body
+ * assertion alone would not catch it — React state keeps `Z` when the DOM
+ * falls back, so the diff stays empty; the visible value is what breaks.
+ */
+export async function aStoredRtuOutsideTheListKeepsItsOption(): Promise<void> {
+  stubApi();
+  stubRtus();
+  const item = pointItem({ locationId: LOCATION, rtuId: RTU_Z, sourceKind: "measured" });
+  const { update } = await openEdit(item);
+  await within(rtuSelect()).findByRole("option", { name: /RTU-A/ });
+  const synthetic = within(rtuSelect()).getByRole("option", {
+    name: /not in this location/,
+  }) as HTMLOptionElement;
+  expect(synthetic.value).toBe(RTU_Z);
+  expect(rtuSelect().value).toBe(RTU_Z);
+  await userEvent.type(screen.getByLabelText("Sensor code"), "S9");
+  await userEvent.click(screen.getByRole("button", { name: "Save" }));
+  await vi.waitFor(() => expect(update).toHaveBeenCalledTimes(1));
+  expect(update).toHaveBeenCalledWith(item.id, { sensorCode: "S9" });
+}
+
+/**
+ * F2.27 (4) — Add on an asset's page lists that asset's location's RTUs; a
+ * blank RTU is omitted from the create body, a chosen one is sent.
+ */
+export async function addPicksAnRtuOfTheAssetsLocation(): Promise<void> {
+  const { create } = stubApi();
+  const fetchRtus = stubRtus();
+  vi.mocked(assetsAdminApi.fetchAdminAssetSummary).mockResolvedValue({
+    id: "c1000000-0000-4000-8000-0000000000a1",
+    code: "C1-PUMP",
+    name: "C1 pump",
+    locationId: LOCATION,
+    locationName: "C1 site",
+    rtuId: null,
+    rtuDisplayName: null,
+    organizationId: null,
+    organizationCode: null,
+  });
+  renderPage("/admin/assets/c1000000-0000-4000-8000-0000000000a1/points");
+  await userEvent.click(await screen.findByRole("button", { name: "Add mapping" }));
+  await within(rtuSelect()).findByRole("option", { name: /RTU-A/ });
+  expect(fetchRtus).toHaveBeenCalledWith("all", LOCATION);
+  expect(within(rtuSelect()).getByRole("option", { name: "Inherit the asset's gateway" })).toBeTruthy();
+  await screen.findByText(`${POINT_KEY} · Spec power`);
+  await userEvent.selectOptions(screen.getByDisplayValue("Select catalog point key"), POINT_KEY);
+  await userEvent.type(screen.getByLabelText("Source data key"), "spec_kw_raw");
+  await userEvent.click(screen.getByRole("button", { name: "Save" }));
+  await vi.waitFor(() => expect(create).toHaveBeenCalledTimes(1));
+  expect(create.mock.calls[0][0].sourceDataKey).toBe("spec_kw_raw");
+  expect(Object.keys(create.mock.calls[0][0])).not.toContain("rtuId");
+
+  await userEvent.click(await screen.findByRole("button", { name: "Add mapping" }));
+  await within(rtuSelect()).findByRole("option", { name: /RTU-A/ });
+  await screen.findByText(`${POINT_KEY} · Spec power`);
+  await userEvent.selectOptions(screen.getByDisplayValue("Select catalog point key"), POINT_KEY);
+  await userEvent.type(screen.getByLabelText("Source data key"), "spec_kw_raw2");
+  await userEvent.selectOptions(rtuSelect(), RTU_A);
+  await userEvent.click(screen.getByRole("button", { name: "Save" }));
+  await vi.waitFor(() => expect(create).toHaveBeenCalledTimes(2));
+  expect(create.mock.calls[1][0].rtuId).toBe(RTU_A);
+}
+
+/** F2.27 (5) — no location known: the select is disabled and says why. */
+export async function addWithNoLocationDisablesTheRtuSelect(): Promise<void> {
+  stubApi();
+  renderPage();
+  await userEvent.click(await screen.findByRole("button", { name: "Add mapping" }));
+  expect(rtuSelect().disabled).toBe(true);
+  expect(screen.getByText("Choose a location to pick an RTU")).toBeTruthy();
 }
