@@ -2,21 +2,23 @@ import { randomUUID } from "node:crypto";
 
 import type pg from "pg";
 
-import { assetTemplates, assets, createDb, templatePoints } from "@bms/db";
+import { assetPoints, assetTemplates, assets, createDb, templatePoints } from "@bms/db";
 import type { BmsDb } from "@bms/db";
 import {
   CALC_DIALECT_V2,
   POINT_METADATA_FIELDS,
   templateMigrationPreviewResponseSchema,
 } from "@bms/shared";
-import type { PointMetadataFields } from "@bms/shared";
+import type { PointMetadataFields, TemplateMigrationRefusalDto } from "@bms/shared";
 
 import type { AssetTemplateMigrationService } from "./asset-templates-migrate.service";
 import type { Fixtures } from "./asset-templates.instantiate.integration.spec";
 
 /**
  * `F2.24` — what a template version bump does to the five instrument-metadata
- * defaults (ADR 0056 decision 1), as `migration-preview` reports it.
+ * defaults (ADR 0056 decision 1), as `migration-preview` reports it; and
+ * `F2.30` — what `migrate` does when the target's default would invert an
+ * asset's own stored override (refusal `metadata_override_invalid_on_target`).
  *
  * ## A sibling file, not more cases in the override suite
  *
@@ -151,6 +153,32 @@ async function seedAsset(
   return asset.id;
 }
 
+/**
+ * A per-asset metadata override on the measured point.
+ *
+ * `source_kind = 'manual'` with a `manual` source key and no `rtu_id`:
+ * `asset_points_source_ref_check` requires an RTU for `measured`, and the
+ * subject here is the five columns, not the wiring.
+ */
+async function seedOverrideRow(
+  db: BmsDb,
+  fx: Fixtures,
+  assetId: string,
+  override: Partial<PointMetadataFields>,
+): Promise<void> {
+  await db.insert(assetPoints).values({
+    assetId,
+    organizationId: fx.organizationId,
+    pointKey: MEASURED_KEY,
+    sourceDataKey: "manual",
+    sourceKind: "manual",
+    rtuId: null,
+    active: true,
+    unit: null,
+    ...override,
+  });
+}
+
 // --- independent SQL readers ------------------------------------------------
 
 export async function pinnedVersion(pool: pg.Pool, assetId: string): Promise<number | null> {
@@ -256,5 +284,137 @@ export async function assertAllFiveDefaultsAreReadByPreview(
   assert(
     changed?.to.qualityPolicy === "accept_bad" && changed?.to.engMax === 100,
     `the target side must carry the stored values, got ${JSON.stringify(changed?.to)}`,
+  );
+}
+
+async function storedEngMin(pool: pg.Pool, assetId: string): Promise<number | null | undefined> {
+  const { rows } = await pool.query<{ eng_min: number | null }>(
+    `SELECT eng_min FROM bms.asset_points WHERE asset_id = $1 AND point_key = $2`,
+    [assetId, MEASURED_KEY],
+  );
+  return rows[0]?.eng_min;
+}
+
+/**
+ * Runs a migration that must be refused, and returns the refusals it carried.
+ * The class is asserted as well as the text: a 400 with the right words in it
+ * passes every message-only check. (A copy of the override suite's helper —
+ * that file is not this one's to export from.)
+ */
+async function expectRefusal(
+  run: () => Promise<unknown>,
+  what: string,
+): Promise<TemplateMigrationRefusalDto[]> {
+  let status: number | null = null;
+  let refusals: TemplateMigrationRefusalDto[] | null = null;
+  let message = "";
+  try {
+    await run();
+  } catch (err) {
+    const getStatus = (err as { getStatus?: () => number } | null)?.getStatus;
+    status = typeof getStatus === "function" ? getStatus.call(err) : null;
+    const response = (err as { response?: unknown } | null)?.response as
+      | { message?: unknown; refusals?: unknown }
+      | undefined;
+    refusals = Array.isArray(response?.refusals)
+      ? (response?.refusals as TemplateMigrationRefusalDto[])
+      : null;
+    message =
+      typeof response?.message === "string"
+        ? response.message
+        : err instanceof Error
+          ? err.message
+          : String(err);
+  }
+  assert(refusals !== null || message !== "", `${what}: expected a rejection, the call succeeded`);
+  assert(
+    status === 409,
+    `${what}: expected HTTP 409 with a refusal body, got ${String(status)} and "${message}"`,
+  );
+  assert(refusals !== null, `${what}: the 409 carried no refusals array — got "${message}"`);
+  return refusals ?? [];
+}
+
+/**
+ * **`F2.30`, the case the row exists for.** Asset A holds `eng_min 150` — legal
+ * on version 1, which sets no `eng_max`. Version 2 sets `eng_max 100`, so the
+ * merged band is empty. Preview says so, `migrate` answers 409, and — read by
+ * independent SQL, because no response body can see it — **no pin moves**, not
+ * even the control B's in the same batch (all-or-nothing). B alone, whose
+ * `eng_min 50` is legal under 100, then migrates: without that, a gate that
+ * refused every row with metadata would pass every assertion above it.
+ */
+export async function assertAMetadataOverrideInvalidOnTargetRefusesAndPinsNothing(
+  pool: pg.Pool,
+  svc: AssetTemplateMigrationService,
+  fx: Fixtures,
+): Promise<void> {
+  const db = createDb(pool);
+  const v1 = await seedVersion(db, fx, { version: 1, measuredMetadata: { engMax: null } });
+  const v2 = await seedVersion(db, fx, { version: 2, measuredMetadata: { engMax: 100 } });
+  const bad = await seedAsset(db, fx, "BAD", v1);
+  const good = await seedAsset(db, fx, "GOOD", v1);
+  await seedOverrideRow(db, fx, bad, { engMin: 150 });
+  await seedOverrideRow(db, fx, good, { engMin: 50 });
+
+  const preview = templateMigrationPreviewResponseSchema.parse(
+    await svc.previewMigration(fx.adminJwt, v2, { assetIds: [bad, good] }),
+  );
+  assert(
+    preview.canApply === false,
+    "migration-preview must report canApply: false — an operator shown a green preview and " +
+      "a 409 on apply has been told the server changed its mind",
+  );
+  const shown = preview.refusals.filter((r) => r.reason === "metadata_override_invalid_on_target");
+  assert(
+    shown.length === 1,
+    `the preview must carry exactly one metadata refusal (A only, not B), got ` +
+      `[${preview.refusals.map((r) => r.reason).join(", ")}]`,
+  );
+  const message = shown[0]?.message ?? "";
+  assert(
+    shown[0]?.pointKey === MEASURED_KEY,
+    `the refusal must name the point, got ${String(shown[0]?.pointKey)}`,
+  );
+  assert(
+    message.includes(`${TEST_ASSET_PREFIX}BAD`) && !message.includes(`${TEST_ASSET_PREFIX}GOOD`),
+    `the refusal must name asset A and not B, got "${message}"`,
+  );
+  assert(
+    message.includes("150") && message.includes("100"),
+    `the refusal must name both bounds, got "${message}"`,
+  );
+
+  const refusals = await expectRefusal(
+    () => svc.migrate(fx.adminJwt, v2, { assetIds: [bad, good] }),
+    "an override the target default inverts",
+  );
+  assert(
+    refusals.some((r) => r.reason === "metadata_override_invalid_on_target"),
+    `migrate must refuse with metadata_override_invalid_on_target, got ` +
+      `[${refusals.map((r) => r.reason).join(", ")}]`,
+  );
+  assert(
+    (await pinnedVersion(pool, bad)) === 1 && (await pinnedVersion(pool, good)) === 1,
+    "a refused migrate must move no pin — A's or B's. A 409 with a pin already moved is the " +
+      "failure this case exists to stop, and no assertion on the response body can see it.",
+  );
+  assert(
+    (await storedEngMin(pool, bad)) === 150,
+    "a refused migrate must leave A's override row as it was",
+  );
+
+  const alone = templateMigrationPreviewResponseSchema.parse(
+    await svc.previewMigration(fx.adminJwt, v2, { assetIds: [good] }),
+  );
+  assert(
+    alone.canApply === true,
+    `B alone holds a legal override and must be applicable, got ` +
+      `[${alone.refusals.map((r) => r.reason).join(", ")}]`,
+  );
+  await svc.migrate(fx.adminJwt, v2, { assetIds: [good] });
+  assert(
+    (await pinnedVersion(pool, good)) === 2,
+    "B alone must migrate — otherwise the gate refuses every row with metadata",
   );
 }

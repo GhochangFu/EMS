@@ -19,13 +19,14 @@ import {
   DERIVED_KEY,
   MEASURED_KEY,
   assertAMetadataDefaultOnlyChangeIsReportedByPreview,
+  assertAMetadataOverrideInvalidOnTargetRefusesAndPinsNothing,
   assertAllFiveDefaultsAreReadByPreview,
   cleanup,
 } from "./asset-templates.migrate-metadata.integration.spec";
 
 /**
- * `F2.24` — Vitest entry point for the measured-metadata side of a template
- * migration. Assertions live in the sibling `.spec` (ADR 0014); this file owns
+ * `F2.24` / `F2.30` — Vitest entry point for the measured-metadata side of a
+ * template migration. Assertions live in the sibling `.spec` (ADR 0014); this file owns
  * the database lifecycle.
  */
 const connectionString = requireIntegrationDb({
@@ -106,5 +107,10 @@ describe.skipIf(!connectionString)("F2.24 — migration reads the five metadata 
   it("reads every one of the five defaults, so a change to any of them is reported (F2.24)", async () => {
     if (!pool) throw new Error("pool required");
     await assertAllFiveDefaultsAreReadByPreview(pool, svc, fx);
+  });
+
+  it("refuses a migrate whose target default inverts an asset's own override, and moves no pin (F2.30)", async () => {
+    if (!pool) throw new Error("pool required");
+    await assertAMetadataOverrideInvalidOnTargetRefusesAndPinsNothing(pool, svc, fx);
   });
 });

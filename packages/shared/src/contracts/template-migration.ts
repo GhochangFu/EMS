@@ -120,6 +120,25 @@ export const templateMigrationRefusalReasonSchema = z.enum([
    * once the pin moves, which only the service can see.
    */
   "calc_override_invalid_on_target",
+  /**
+   * `F2.30` (ADR 0056 decision 2's merged-pair rule, template side) — the
+   * asset's own instrument-metadata override, merged per column over the
+   * **target** version's class defaults for the same measured point, resolves
+   * to a band that admits no reading (`eng_min >= eng_max`).
+   *
+   * The same `validateMergedPointMetadata` the asset-side `update` and
+   * `bulk-update` run, imported rather than restated. Checked **at migrate**,
+   * because that is the one moment a class default meets a stored override: a
+   * template's points are editable only on a draft, and no asset can be pinned
+   * to a draft, so no template save can change any pinned asset's resolved
+   * band. Not inside the delta, for the reason `calc_override_invalid_on_target`
+   * is not: the delta is pure over two template versions and never reads an
+   * override row. Refused rather than applied, because a pin that moved would
+   * make the ingest host discard every sample of the point until the override
+   * is repaired. The operator clears or restates the override on the asset
+   * (Asset Points, bulk editor), then migrates.
+   */
+  "metadata_override_invalid_on_target",
 ]);
 
 export const templateMigrationRefusalDtoSchema = z.object({

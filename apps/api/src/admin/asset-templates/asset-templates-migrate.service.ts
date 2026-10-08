@@ -36,6 +36,8 @@ import { MasterDataAuditService } from "../master-data-audit.service";
 // `F2.9` Task 12b, widened at the PR 2 review — two of the override endpoint's
 // three gates, imported rather than restated. See that file's docblock.
 import { refuseOverridesThatDoNotSurvive } from "./asset-templates-migrate-calc";
+// `F2.30` — the metadata override's merged pair, re-validated against the target.
+import { refuseMetadataOverridesThatDoNotSurvive } from "./asset-templates-migrate-metadata";
 // `F4.216`/`F4.222` — the insert's unique-violation sentences, in a sibling
 // for AGENTS.md §4.5's cap.
 import { translateAssetPointInsertUnique } from "./asset-templates-migrate-constraints";
@@ -717,6 +719,13 @@ export class AssetTemplateMigrationService {
           calcTrigger: assetPoints.calcTrigger,
           calcIntervalSeconds: assetPoints.calcIntervalSeconds,
           maxInputAgeSeconds: assetPoints.maxInputAgeSeconds,
+          // `F2.30` — the five metadata override columns, merged over the
+          // target version's defaults by the gate after the calc one.
+          scaleMultiplier: assetPoints.scaleMultiplier,
+          scaleOffset: assetPoints.scaleOffset,
+          engMin: assetPoints.engMin,
+          engMax: assetPoints.engMax,
+          qualityPolicy: assetPoints.qualityPolicy,
         })
         .from(assetPoints)
         .where(inArray(assetPoints.assetId, plannedAssetIds));
@@ -808,14 +817,15 @@ export class AssetTemplateMigrationService {
       // endpoint's own two checks rather than restating them, and exactly
       // what parity with that endpoint does and does not claim. Called here,
       // before the transaction opens, like every other fallible decision.
+      const withRows = planned
+        .filter((asset) => existingByAsset.has(asset.dto.assetId))
+        .map((asset) => ({
+          assetId: asset.dto.assetId,
+          assetCode: asset.dto.assetCode,
+          rows: existingByAsset.get(asset.dto.assetId) as Map<string, ExistingPointRow>,
+        }));
       await refuseOverridesThatDoNotSurvive({
-        assets: planned
-          .filter((asset) => existingByAsset.has(asset.dto.assetId))
-          .map((asset) => ({
-            assetId: asset.dto.assetId,
-            assetCode: asset.dto.assetCode,
-            rows: existingByAsset.get(asset.dto.assetId) as Map<string, ExistingPointRow>,
-          })),
+        assets: withRows,
         targetPoints,
         // Read only when some migrating asset actually carries a `computed`
         // row. Most migrations have no override at all, and this service does
@@ -827,6 +837,14 @@ export class AssetTemplateMigrationService {
           : new Map<string, string>(),
         targetVersion: target.version,
         dependencies: this.dependencies,
+        refuse,
+      });
+      // `F2.30` — an asset's metadata override the target's default would
+      // invert. Still before the transaction; see that file's docblock.
+      refuseMetadataOverridesThatDoNotSurvive({
+        assets: withRows,
+        targetPoints,
+        targetVersion: target.version,
         refuse,
       });
     }
