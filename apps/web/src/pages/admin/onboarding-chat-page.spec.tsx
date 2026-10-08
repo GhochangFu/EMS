@@ -7,6 +7,7 @@ import { expect, vi } from "vitest";
 import type { OnboardingChatResponseDto, OnboardingFieldError, OnboardingSessionDto } from "@bms/shared";
 
 import * as api from "../../api/admin/onboarding";
+import * as systemStatusApi from "../../api/system-status";
 import { ApiError } from "../../lib/api-error";
 import type { AuthUser } from "../../stores/auth-store";
 import { OnboardingChatPage } from "./onboarding-chat-page";
@@ -157,6 +158,8 @@ function LocationProbe() {
  */
 export function renderPage(search = ""): HTMLElement {
   stubScrolling();
+  // F4.160: AppShell polls the system status; keep the harness off the real API on :4000.
+  vi.spyOn(systemStatusApi, "fetchSystemStatus").mockRejectedValue(new Error("not under test"));
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   const view = render(
     <QueryClientProvider client={queryClient}>
