@@ -134,6 +134,15 @@ function withSavedTopic(config: Record<string, unknown>, topic: string): Record<
   return next;
 }
 
+/**
+ * A string `topic` with a legacy `mqttTopic` beside it — the state V4c refuses.
+ * Save topic stays enabled on it even when the edit equals the topic, so one
+ * save repairs it (`F4.236`, owner ruling). A legacy key alone is not shadowed.
+ */
+function hasShadowedLegacyTopic(config: Record<string, unknown>): boolean {
+  return typeof config.topic === "string" && "mqttTopic" in config;
+}
+
 /** Where a committed session lands — one target for the Commit button and a chat commit. */
 function rtusPathFor(locationId: string): string {
   return `/admin/locations/${locationId}/rtus`;
@@ -713,7 +722,8 @@ export function OnboardingChatPage({ user }: OnboardingChatPageProps) {
                                     chatMutation.isPending ||
                                     credentialsMutation.isPending ||
                                     topicEdits[index] === undefined ||
-                                    topicEdits[index].trim() === draftRtuTopic(rtu.config)
+                                    (topicEdits[index].trim() === draftRtuTopic(rtu.config) &&
+                                      !hasShadowedLegacyTopic(rtu.config))
                                   }
                                   aria-busy={topicMutation.isPending}
                                   className="shrink-0 surface-button px-2 py-1 text-[11px] disabled:opacity-50"

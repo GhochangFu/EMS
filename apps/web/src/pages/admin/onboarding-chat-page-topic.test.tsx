@@ -13,6 +13,8 @@ import {
   theSaveOverALegacyKeyDropsIt,
   theSaveOverALegacyKeySendsTheTopic,
   theSaveOverAStoredTopicSendsTheTypedOne,
+  theSameTopicOverAShadowedKeyDropsIt,
+  theSameTopicOverAShadowedKeyKeepsTheTopic,
   aRefusedTopicSaveShowsTheReason,
   theSavedTopicReachesTheSummary,
   theTopicFieldIsBoundedAt255,
@@ -105,5 +107,13 @@ describe("F4.208 the Topic field beside an MQTT RTU's credentials", () => {
 
   it("E8: Save over a stored topic sends the typed one", async () => {
     await theSaveOverAStoredTopicSendsTheTypedOne();
+  });
+
+  it("E9a: re-saving the same topic over a shadowed mqttTopic drops it", async () => {
+    await theSameTopicOverAShadowedKeyDropsIt();
+  });
+
+  it("E9b: that save still sends the kept topic", async () => {
+    await theSameTopicOverAShadowedKeyKeepsTheTopic();
   });
 });

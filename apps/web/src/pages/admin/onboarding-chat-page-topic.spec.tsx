@@ -221,6 +221,33 @@ export async function theSaveOverALegacyKeyDropsIt(): Promise<void> {
   expect(await saveABOver(LEGACY_WILDCARD)).not.toHaveProperty("mqttTopic");
 }
 
+/**
+ * Opens the drawer on `{ topic: "a/b", mqttTopic: "a/#" }` — the shadowed
+ * state V4c refuses — re-enters the same topic, saves, and returns the config
+ * the PATCH sent. Save must be enabled here, or the repair takes two saves.
+ */
+async function saveTheSameTopicOverAShadowedKey(): Promise<Record<string, unknown>> {
+  const patch = vi
+    .spyOn(api, "patchOnboardingDraft")
+    .mockResolvedValue({ ...SESSION, draft: { rtus: [{ ...MQTT_RTU, config: { host: "h", topic: "a/b" } }] } });
+  const field = await fieldFor({ host: "h", topic: "a/b", mqttTopic: "a/#" });
+  await userEvent.type(field, "x{backspace}");
+  await userEvent.click(screen.getByRole("button", { name: "Save topic" }));
+  await waitFor(() => expect(patch).toHaveBeenCalledTimes(1));
+  const body = patch.mock.calls[0][1] as { rtus: DraftRtu[] };
+  return body.rtus[0].config;
+}
+
+/** E9a (F4.236, owner ruling) — re-saving the same topic over a shadowed key drops the key. */
+export async function theSameTopicOverAShadowedKeyDropsIt(): Promise<void> {
+  expect(await saveTheSameTopicOverAShadowedKey()).not.toHaveProperty("mqttTopic");
+}
+
+/** E9b (F4.236) — that save still sends the topic it kept. */
+export async function theSameTopicOverAShadowedKeyKeepsTheTopic(): Promise<void> {
+  expect((await saveTheSameTopicOverAShadowedKey()).topic).toBe("a/b");
+}
+
 /** E6 — Save topic stays disabled when the edit equals the legacy topic. */
 export async function saveIsDisabledWhenTheEditEqualsTheLegacyTopic(): Promise<void> {
   const field = await fieldFor({ mqttTopic: "a/b" });
