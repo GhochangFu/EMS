@@ -27,10 +27,18 @@ type Role = "admin" | "organization_admin" | "location_admin" | "operator";
 function fakeDb(results: unknown[][]) {
   const queue = [...results];
   const next = () => queue.shift() ?? [];
+  // `F4.233`: the credential write locks the row (`.for("update")`) and answers
+  // the row the load read, taking nothing from the queue.
+  let loaded: unknown[] | undefined;
   const selectChain = {
     from: () => selectChain,
     where: () => selectChain,
-    limit: () => Promise.resolve(next()),
+    limit: () => {
+      const rows = next();
+      loaded ??= rows;
+      return Promise.resolve(rows);
+    },
+    for: () => Promise.resolve(loaded ?? []),
   };
   const updateChain = {
     set: () => updateChain,

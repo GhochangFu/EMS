@@ -21,6 +21,13 @@ export const DRAFT_TOO_DEEP_FOR_TURN =
   `The stored draft nests deeper than ${MAX_ONBOARDING_DRAFT_DEPTH} levels, so this turn could not be bound to it and was not saved. ` +
   "Repair the draft with the draft editor (PATCH sessions/:id/draft) and send the turn again.";
 
+/** The status re-check of a write under `FOR UPDATE`: a commit that landed in between answers 409 (`F4.233`). */
+export function assertSessionStillDraft(locked: LockedSession): asserts locked is NonNullable<LockedSession> {
+  if (!locked || locked.status !== "draft") {
+    throw new ConflictException(SESSION_NO_LONGER_DRAFT);
+  }
+}
+
 /**
  * The re-checks of a chat write under `FOR UPDATE` (`F4.227`, `F4.230`),
  * each with its own sentence. The order is the point: two over-deep drafts
@@ -31,9 +38,7 @@ export function assertTurnStillBound(
   locked: LockedSession,
   expectedHash: string | null,
 ): asserts locked is NonNullable<LockedSession> {
-  if (!locked || locked.status !== "draft") {
-    throw new ConflictException(SESSION_NO_LONGER_DRAFT);
-  }
+  assertSessionStillDraft(locked);
   if (expectedHash === null) {
     throw new ConflictException(DRAFT_TOO_DEEP_FOR_TURN);
   }

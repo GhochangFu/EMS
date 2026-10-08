@@ -69,6 +69,7 @@ import {
   DRAFT_CHANGED_SINCE_LOAD,
   DRAFT_TOO_DEEP_FOR_TURN,
   SESSION_NO_LONGER_DRAFT,
+  assertSessionStillDraft,
   assertTurnStillBound,
   lockSession,
 } from "./onboarding-locked-writes";
@@ -165,6 +166,13 @@ export class OnboardingService {
    * `onboarding_sessions.messages` and sent it to the LLM. Here the plaintext
    * lives only in the request body, is encrypted through the ADR 0012 path, and
    * is never echoed back — the response is the ordinary redacted session.
+   *
+   * `F4.233`: the write takes the `FOR UPDATE` and re-checks status and draft
+   * hash under it (`assertTurnStillBound`, 409 `DRAFT_CHANGED_DURING_TURN`,
+   * nothing written). `_secrets` is keyed by the code at `rtuIndex`, so a
+   * reorder in between would bind the password to another RTU; the hash
+   * refuses it. Merging on `locked.draft` rather than `session.draft` is not
+   * gated by design: an equal hash means an equal draft, `_secrets` included.
    */
   async setCredentials(
     jwt: JwtPayload,
@@ -207,19 +215,26 @@ export class OnboardingService {
       );
     }
 
-    const mergedDraft = this.chatService.mergeDraft(session.draft, {}, {
-      rtuIndex: body.rtuIndex,
-      credentials: body.credentials,
-    });
-
-    const updated = await withTenant(this.tenantDb, session.organizationId, (tx) =>
-      tx
+    const expectedHash = draftHash(session.draft);
+    const updated = await withTenant(this.tenantDb, session.organizationId, async (tx) => {
+      // Lock placement is gated by onboarding-chat-lock.integration.test.ts (real Postgres).
+      const locked = await lockSession(tx, sessionId);
+      assertTurnStillBound(locked, expectedHash);
+      const mergedDraft = this.chatService.mergeDraft(locked.draft, {}, {
+        rtuIndex: body.rtuIndex,
+        credentials: body.credentials,
+      });
+      const [row] = await tx
         .update(onboardingSessions)
         .set({ draft: mergedDraft, updatedAt: sql`now()` })
-        .where(eq(onboardingSessions.id, sessionId))
-        .returning()
-        .then(([row]) => row),
-    );
+        // Defence in depth behind the lock's status check above.
+        .where(and(eq(onboardingSessions.id, sessionId), eq(onboardingSessions.status, "draft")))
+        .returning();
+      return row;
+    });
+    if (!updated) {
+      throw new ConflictException(SESSION_NO_LONGER_DRAFT);
+    }
 
     const [org] = await this.tenantDb
       .select({ code: organizations.code, name: organizations.name })
@@ -544,7 +559,14 @@ export class OnboardingService {
     return this.excelService.buildTemplateBuffer("Berhampur");
   }
 
-  /** Parses an Excel upload and merges rows into the session draft. */
+  /**
+   * Parses an Excel upload and merges rows into the session draft.
+   *
+   * `F4.233`: `messages` is built on the locked row and the status is
+   * re-checked under the lock (409 `SESSION_NO_LONGER_DRAFT`), so a message
+   * committed in between survives. The draft stays hash-unbound (`F4.227`
+   * ruling), so a draft change in between is overwritten by this merge.
+   */
   async uploadExcel(
     jwt: JwtPayload,
     sessionId: string,
@@ -584,14 +606,13 @@ export class OnboardingService {
 
     const userMsg = this.chatService.createMessage("user", "[Uploaded Excel workbook]");
     const assistantMsg = this.chatService.createMessage("assistant", assistantText);
-    const messages = [
-      ...(session.messages as OnboardingChatMessage[]),
-      userMsg,
-      assistantMsg,
-    ];
 
-    const updated = await withTenant(this.tenantDb, session.organizationId, (tx) =>
-      tx
+    const updated = await withTenant(this.tenantDb, session.organizationId, async (tx) => {
+      // Lock placement is gated by onboarding-chat-lock.integration.test.ts (real Postgres).
+      const locked = await lockSession(tx, sessionId);
+      assertSessionStillDraft(locked);
+      const messages = [...(locked.messages as OnboardingChatMessage[]), userMsg, assistantMsg];
+      const [row] = await tx
         .update(onboardingSessions)
         .set({
           draft: mergedDraft,
@@ -601,10 +622,14 @@ export class OnboardingService {
           checkpoints: null,
           updatedAt: sql`now()`,
         })
-        .where(eq(onboardingSessions.id, sessionId))
-        .returning()
-        .then(([row]) => row),
-    );
+        // Defence in depth behind the lock's status check above.
+        .where(and(eq(onboardingSessions.id, sessionId), eq(onboardingSessions.status, "draft")))
+        .returning();
+      return row;
+    });
+    if (!updated) {
+      throw new ConflictException(SESSION_NO_LONGER_DRAFT);
+    }
 
     const [orgFull] = await this.tenantDb
       .select({ code: organizations.code, name: organizations.name })
