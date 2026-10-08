@@ -19,7 +19,6 @@ import {
   reactivateAdminAssetPoint,
   setAdminAssetPointCalcOverride,
   updateAdminAssetPoint,
-  type UpdateAdminAssetPointInput,
 } from "../../api/admin/asset-points";
 import { fetchAdminAssetSummary } from "../../api/admin/assets";
 import { fetchAdminPointKeys } from "../../api/admin/point-keys";
@@ -35,6 +34,13 @@ import { MappingSheetPanel } from "../../components/assets/mapping-sheet-panel";
 import { PointCalcOverridePanel } from "../../components/assets/point-calc-override-panel";
 import { SectionCard } from "../../components/section-card";
 import { apiErrorMessage } from "../../lib/api-error-message";
+import {
+  createBodyFrom,
+  editBodyFrom,
+  emptyAssetPointForm,
+  formFrom,
+  type AssetPointForm,
+} from "../../lib/asset-point-form";
 import {
   effectivePointMetadata,
   inheritedFields,
@@ -78,78 +84,6 @@ function CalcRuntimePill({ runtime }: { runtime: AssetPointCalcConfigDto["runtim
   const tone =
     runtime?.lastOutcome === "skipped" ? "bg-critical-wash-strong text-critical-ink-strong" : "bg-accent/10 text-accent-strong";
   return <span className={`rounded px-2 py-0.5 font-semibold ${tone}`}>{label}</span>;
-}
-
-/**
- * `F2.7` / ADR 0056 decision 1 — the five metadata fields as the Add/Edit form
- * holds them: text, because an `<input type="number">` reports an empty box as
- * `""` and that is the state the five need a spelling for.
- */
-type MetadataForm = {
-  scaleMultiplier: string;
-  scaleOffset: string;
-  engMin: string;
-  engMax: string;
-  qualityPolicy: QualityPolicy | "";
-};
-
-const EMPTY_METADATA_FORM: MetadataForm = {
-  scaleMultiplier: "",
-  scaleOffset: "",
-  engMin: "",
-  engMax: "",
-  qualityPolicy: "",
-};
-
-/** The four numeric ones, so the walkers below cannot skip one silently. */
-const METADATA_NUMBER_FIELDS = ["scaleMultiplier", "scaleOffset", "engMin", "engMax"] as const;
-
-type MetadataWrite = Pick<
-  UpdateAdminAssetPointInput,
-  "scaleMultiplier" | "scaleOffset" | "engMin" | "engMax" | "qualityPolicy"
->;
-
-/** The five as the row stores them, for the Edit form. `null` (inherit) reads as an empty box. */
-function metadataFormFrom(item: AdminAssetPointDto): MetadataForm {
-  return {
-    scaleMultiplier: item.scaleMultiplier === null ? "" : String(item.scaleMultiplier),
-    scaleOffset: item.scaleOffset === null ? "" : String(item.scaleOffset),
-    engMin: item.engMin === null ? "" : String(item.engMin),
-    engMax: item.engMax === null ? "" : String(item.engMax),
-    qualityPolicy: item.qualityPolicy ?? "",
-  };
-}
-
-/**
- * The five as a write.
- *
- * The two modes differ by exactly one thing and it matters: an empty box is
- * **omitted** on a create (there is nothing to clear, and the request keeps the
- * shape it had before `F2.7`) and **`null`** on an edit, which is the explicit
- * clear that puts the row back on its template default. One shared payload
- * cannot say both, and both typecheck — so they are built separately.
- *
- * A box holding something that is not a finite number is omitted rather than
- * sent: `JSON.stringify(NaN)` is `null`, which would read as a clear nobody
- * asked for.
- */
-function metadataWriteFrom(form: MetadataForm, mode: "create" | "edit"): MetadataWrite {
-  const write: MetadataWrite = {};
-  for (const field of METADATA_NUMBER_FIELDS) {
-    const text = form[field].trim();
-    if (text === "") {
-      if (mode === "edit") write[field] = null;
-      continue;
-    }
-    const value = Number(text);
-    if (Number.isFinite(value)) write[field] = value;
-  }
-  if (form.qualityPolicy !== "") {
-    write.qualityPolicy = form.qualityPolicy;
-  } else if (mode === "edit") {
-    write.qualityPolicy = null;
-  }
-  return write;
 }
 
 /**
@@ -205,14 +139,7 @@ export function AssetPointsAdminPage({ user }: AssetPointsAdminPageProps) {
   const [search, setSearch] = useState("");
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState<AdminAssetPointDto | null>(null);
-  const [form, setForm] = useState({
-    assetId: assetId ?? "",
-    pointKey: "",
-    sourceDataKey: "",
-    sensorCode: "",
-    unit: "",
-    ...EMPTY_METADATA_FORM,
-  });
+  const [form, setForm] = useState<AssetPointForm>(() => emptyAssetPointForm(assetId ?? ""));
   const [error, setError] = useState<string | null>(null);
   // `F2.7` / ADR 0056 decision 8 — the rows "Edit selected" applies to.
   const [selectedIds, setSelectedIds] = useState<ReadonlySet<string>>(new Set());
@@ -342,32 +269,26 @@ export function AssetPointsAdminPage({ user }: AssetPointsAdminPageProps) {
 
   const saveMutation = useMutation({
     mutationFn: async () => {
+      // ADR 0056 Amendment 3 part A (`F2.31`): an edit sends the diff against
+      // the loaded row (`editBodyFrom`), so the API's `statedPointMetadata`
+      // sees only what the operator changed.
       if (editing) {
-        return updateAdminAssetPoint(editing.id, {
-          pointKey: form.pointKey,
-          sourceDataKey: form.sourceDataKey,
-          sensorCode: form.sensorCode || undefined,
-          unit: form.unit || undefined,
-          ...metadataWriteFrom(form, "edit"),
-        });
+        return updateAdminAssetPoint(editing.id, editBodyFrom(editing, form));
       }
-      return createAdminAssetPoint({
-        assetId: form.assetId,
-        pointKey: form.pointKey,
-        sourceDataKey: form.sourceDataKey,
-        sensorCode: form.sensorCode || undefined,
-        unit: form.unit || undefined,
-        ...metadataWriteFrom(form, "create"),
-      });
+      return createAdminAssetPoint(createBodyFrom(form));
     },
     onSuccess: async () => {
-      setModalOpen(false);
-      setEditing(null);
-      setError(null);
+      closeDialog();
       await queryClient.invalidateQueries({ queryKey: ["admin", "asset-points"] });
     },
     onError: (err: unknown) => setError(apiErrorMessage(err)),
   });
+
+  function closeDialog(): void {
+    setModalOpen(false);
+    setEditing(null);
+    setError(null);
+  }
 
   const toggleMutation = useMutation({
     mutationFn: async (item: AdminAssetPointDto) =>
@@ -398,14 +319,7 @@ export function AssetPointsAdminPage({ user }: AssetPointsAdminPageProps) {
               className="surface-button-primary bg-accent px-3 py-2 text-xs font-semibold text-on-accent"
               onClick={() => {
                 setEditing(null);
-                setForm({
-                  assetId: assetId ?? selection.assetId ?? "",
-                  pointKey: "",
-                  sourceDataKey: "",
-                  sensorCode: "",
-                  unit: "",
-                  ...EMPTY_METADATA_FORM,
-                });
+                setForm(emptyAssetPointForm(assetId ?? selection.assetId ?? ""));
                 setModalOpen(true);
               }}
             >
@@ -515,14 +429,7 @@ export function AssetPointsAdminPage({ user }: AssetPointsAdminPageProps) {
                       className="text-xs font-semibold text-accent-strong"
                       onClick={() => {
                         setEditing(item);
-                        setForm({
-                          assetId: item.assetId,
-                          pointKey: item.pointKey,
-                          sourceDataKey: item.sourceDataKey,
-                          sensorCode: item.sensorCode ?? "",
-                          unit: item.unit ?? "",
-                          ...metadataFormFrom(item),
-                        });
+                        setForm(formFrom(item));
                         setModalOpen(true);
                       }}
                     >
@@ -637,6 +544,11 @@ export function AssetPointsAdminPage({ user }: AssetPointsAdminPageProps) {
             className="w-full max-w-lg surface-dialog p-4"
             onSubmit={(event: FormEvent) => {
               event.preventDefault();
+              // `F2.31`: an edit that changed nothing has nothing to send.
+              if (editing && Object.keys(editBodyFrom(editing, form)).length === 0) {
+                closeDialog();
+                return;
+              }
               saveMutation.mutate();
             }}
           >
@@ -697,7 +609,7 @@ export function AssetPointsAdminPage({ user }: AssetPointsAdminPageProps) {
               {/* `F2.7` / ADR 0056 decision 1 — the per-asset override of the
                   five. Empty means "follow the template", which is an omitted
                   field on a create and an explicit `null` on an edit
-                  (`metadataWriteFrom`). */}
+                  (`asset-point-form.ts`; an edit sends only a changed box). */}
               <p className="text-[11px] text-ink-muted">
                 Leave a field below empty to follow this asset&apos;s template default. Clearing one
                 on an existing mapping puts it back on the template.

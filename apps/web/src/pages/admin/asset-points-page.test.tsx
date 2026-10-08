@@ -4,6 +4,8 @@ import { afterEach, describe, it, vi } from "vitest";
 
 import {
   aRefusedCreateShowsTheSentence,
+  anEditSendsOnlyTheChangedField,
+  anUntouchedEditSendsNothing,
   theListShowsTheInheritedEffectiveRange,
 } from "./asset-points-page.spec";
 
@@ -32,5 +34,13 @@ describe("F4.204 asset points page — a refusal reads as a sentence", () => {
 
   it("F2.25 the Range cell shows the template's bound, marked inherited; an own bound is not", async () => {
     await theListShowsTheInheritedEffectiveRange();
+  }, CASE_TIMEOUT_MS);
+
+  it("F2.31 an edit sends only the field that changed", async () => {
+    await anEditSendsOnlyTheChangedField();
+  }, CASE_TIMEOUT_MS);
+
+  it("F2.31 an untouched edit closes the dialog without a request", async () => {
+    await anUntouchedEditSendsNothing();
   }, CASE_TIMEOUT_MS);
 });

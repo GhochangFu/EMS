@@ -166,3 +166,35 @@ export async function theListShowsTheInheritedEffectiveRange(): Promise<void> {
   expect(within(ownRow).getByText("≤ 9")).toBeTruthy();
   expect(within(ownRow).queryByText(/inherited/)).toBeNull();
 }
+
+/** Stubs the list with one row and opens its Edit dialog. */
+async function openEdit(item: AdminAssetPointDto) {
+  const update = vi.spyOn(api, "updateAdminAssetPoint").mockResolvedValue(item);
+  vi.mocked(api.fetchAdminAssetPoints).mockResolvedValue({ items: [item] });
+  renderPage();
+  await screen.findByLabelText(`Select ${item.assetCode} ${item.pointKey}`);
+  await userEvent.click(within(rowOf(item)).getByRole("button", { name: "Edit" }));
+  await screen.findByRole("heading", { name: "Edit mapping" });
+  return { update };
+}
+
+/** F2.31 — a save after typing into one box sends that one field. */
+export async function anEditSendsOnlyTheChangedField(): Promise<void> {
+  stubApi();
+  const item = pointItem({ engMin: 5, sensorCode: "S1" });
+  const { update } = await openEdit(item);
+  await userEvent.type(screen.getByLabelText("Engineering maximum"), "9");
+  await userEvent.click(screen.getByRole("button", { name: "Save" }));
+  await vi.waitFor(() => expect(update).toHaveBeenCalledTimes(1));
+  expect(update).toHaveBeenCalledWith(item.id, { engMax: 9 });
+}
+
+/** F2.31 — an untouched save closes the dialog without a request. */
+export async function anUntouchedEditSendsNothing(): Promise<void> {
+  stubApi();
+  const item = pointItem({ engMin: 5 });
+  const { update } = await openEdit(item);
+  await userEvent.click(screen.getByRole("button", { name: "Save" }));
+  await vi.waitFor(() => expect(screen.queryByRole("heading", { name: "Edit mapping" })).toBeNull());
+  expect(update).not.toHaveBeenCalled();
+}
