@@ -16,6 +16,8 @@ import { MasterDataAuditService } from "../master-data-audit.service";
 import { AssetTemplateMigrationService } from "./asset-templates-migrate.service";
 import { loadFixtures, type Fixtures } from "./asset-templates.instantiate.integration.spec";
 import {
+  assertAStoredVariableResolvesAMeasuredAddition,
+  assertAnAssetWithNoStoredVariablesIsStillRefused,
   assertExistingSourceKeyRefusesAMeasuredAddition,
   assertRacedPointKeyAnswers409,
   assertRacedSourceKeyAnswers409,
@@ -101,6 +103,14 @@ describe.skipIf(!connectionString)("F4.216 / F4.222 — template migration: sour
     if (pool) {
       await cleanupSourceKey(pool);
     }
+  });
+
+  it("resolves a measured addition from the asset's stored variables (F2.29)", async () => {
+    await assertAStoredVariableResolvesAMeasuredAddition(pool as pg.Pool, svc, fx);
+  });
+
+  it("still refuses an asset that stores no variables, and says why (F2.29)", async () => {
+    await assertAnAssetWithNoStoredVariablesIsStillRefused(pool as pg.Pool, svc, fx);
   });
 
   it("refuses a measured addition whose source key another point on the asset already uses", async () => {

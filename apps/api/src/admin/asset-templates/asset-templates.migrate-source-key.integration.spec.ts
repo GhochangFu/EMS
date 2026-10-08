@@ -69,6 +69,7 @@ async function seedSkAsset(
   fx: Fixtures,
   suffix: string,
   templateId: string,
+  sourceDataKeyVars: Record<string, string> | null = null,
 ): Promise<string> {
   const [asset] = await db
     .insert(assets)
@@ -80,6 +81,7 @@ async function seedSkAsset(
       locationId: fx.otherLocationId,
       domain: "electrical",
       templateId,
+      sourceDataKeyVars,
     })
     .returning({ id: assets.id });
   return asset.id;
@@ -403,6 +405,79 @@ export async function assertRacedPointKeyAnswers409(
       rows[0]?.source_data_key.endsWith("/ELSEWHERE") === true,
     `only the raced row may stand, got ${JSON.stringify(rows)}`,
   );
+}
+
+/**
+ * `F2.29` (ADR 0039 Amendment 1 decision 4) — v2 adds a **required** measured
+ * point whose pattern takes `{unit}`. An asset that stores `{unit: "07"}`
+ * previews with no refusal and migrates, and the new `asset_points` row
+ * carries the key resolved from the stored variable.
+ */
+export async function assertAStoredVariableResolvesAMeasuredAddition(
+  pool: pg.Pool,
+  svc: AssetTemplateMigrationService,
+  fx: Fixtures,
+): Promise<void> {
+  const db = createDb(pool);
+  const v1 = await seedVersion(db, fx, { code: SK_TEMPLATE_CODE, version: 1, points: [{ pointKey: SK_KW }] });
+  const v2 = await seedVersion(db, fx, {
+    code: SK_TEMPLATE_CODE,
+    version: 2,
+    points: [{ pointKey: SK_KW }, { pointKey: SK_VOLTS, sourceDataKeyPattern: "CH{unit}_B", required: true }],
+  });
+  const assetId = await seedSkAsset(db, fx, "VARS", v1, { unit: "07" });
+
+  const preview = await svc.previewMigration(fx.adminJwt, v2, { assetIds: [assetId] });
+  assert(
+    preview.refusals.length === 0,
+    `a stored {unit} must resolve the addition, got refusals ${JSON.stringify(preview.refusals)}`,
+  );
+  assert(preview.canApply === true, "the server's verdict must be true");
+
+  await svc.migrate(fx.adminJwt, v2, { assetIds: [assetId] });
+  assert((await pinnedVersion(pool, assetId)) === 2, "the asset must move to v2");
+  const added = (await pointRows(pool, assetId)).filter((row) => row.point_key === SK_VOLTS);
+  assert(
+    added.length === 1 && added[0]?.source_data_key === "CH07_B",
+    `the new row must carry the key resolved from the stored variable, got ${JSON.stringify(added)}`,
+  );
+}
+
+/**
+ * `F2.29` (ADR 0039 Amendment 1 decision 5) — the same v2, previewed for an
+ * asset that stores NULL beside one that stores `{unit}`. Only the NULL asset
+ * is refused, and its sentence says why it stores no variables.
+ */
+export async function assertAnAssetWithNoStoredVariablesIsStillRefused(
+  pool: pg.Pool,
+  svc: AssetTemplateMigrationService,
+  fx: Fixtures,
+): Promise<void> {
+  const db = createDb(pool);
+  const v1 = await seedVersion(db, fx, { code: SK_TEMPLATE_CODE, version: 1, points: [{ pointKey: SK_KW }] });
+  const v2 = await seedVersion(db, fx, {
+    code: SK_TEMPLATE_CODE,
+    version: 2,
+    points: [{ pointKey: SK_KW }, { pointKey: SK_VOLTS, sourceDataKeyPattern: "CH{unit}_B", required: true }],
+  });
+  const legacyId = await seedSkAsset(db, fx, "LEGACY", v1, null);
+  const storedId = await seedSkAsset(db, fx, "STORED", v1, { unit: "08" });
+
+  const preview = await svc.previewMigration(fx.adminJwt, v2, { assetIds: [legacyId, storedId] });
+  const refusals = preview.refusals.filter((r) => r.reason === "unresolvable_source_data_key");
+  assert(
+    refusals.length === 1,
+    `expected exactly one unresolvable_source_data_key refusal (the NULL asset), got ${JSON.stringify(preview.refusals)}`,
+  );
+  const message = refusals[0]?.message ?? "";
+  assert(message.includes(`${SK_ASSET_PREFIX}LEGACY`), `the refusal must name the NULL asset, got: ${message}`);
+  assert(!message.includes(`${SK_ASSET_PREFIX}STORED`), `and not the asset that stores {unit}, got: ${message}`);
+  assert(message.includes("{unit}"), `the refusal must name the token, got: ${message}`);
+  assert(
+    message.includes("This asset stores no variables — it was built before variables were kept, or with none"),
+    `the refusal must say why the asset stores none, got: ${message}`,
+  );
+  assert(preview.canApply === false, "a refusal must make the server's verdict false");
 }
 
 /**
