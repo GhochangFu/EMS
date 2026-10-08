@@ -29,6 +29,7 @@ import { ApiError } from "../../lib/api-error";
 import { apiErrorMessage } from "../../lib/api-error-message";
 import { boldSegments } from "../../lib/bold-segments";
 import {
+  draftRtuTopic,
   formatOnboardingDraftSummary,
   formatOnboardingValidationErrors,
 } from "../../lib/onboarding-draft-summary";
@@ -121,6 +122,27 @@ function offeredReplies(replies: readonly string[] | undefined): string[] {
   return (replies ?? []).filter((r) => !NEVER_OFFERED_REPLIES.includes(r.trim().toLowerCase()));
 }
 
+/**
+ * The config a Save topic writes (`F4.236`, owner ruling): the typed topic, and
+ * no legacy `mqttTopic`. The topic readers take that key second, but the
+ * validator's protocol-schema check still reads a shadowed one (spec V4c), so a
+ * wildcard left there would refuse the draft on a key this page cannot edit.
+ */
+function withSavedTopic(config: Record<string, unknown>, topic: string): Record<string, unknown> {
+  const next: Record<string, unknown> = { ...config, topic };
+  delete next.mqttTopic;
+  return next;
+}
+
+/**
+ * A string `topic` with a legacy `mqttTopic` beside it — the state V4c refuses.
+ * Save topic stays enabled on it even when the edit equals the topic, so one
+ * save repairs it (`F4.236`, owner ruling). A legacy key alone is not shadowed.
+ */
+function hasShadowedLegacyTopic(config: Record<string, unknown>): boolean {
+  return typeof config.topic === "string" && "mqttTopic" in config;
+}
+
 /** Where a committed session lands — one target for the Commit button and a chat commit. */
 function rtusPathFor(locationId: string): string {
   return `/admin/locations/${locationId}/rtus`;
@@ -211,13 +233,15 @@ export function OnboardingChatPage({ user }: OnboardingChatPageProps) {
   // keeps the stored credential (`mergeDraft` re-attaches it by RTU code). The
   // client draft is the redacted copy, so a `config` value under a
   // secret-looking key would go back as `[REDACTED]` — none of host, port, tls
-  // or topic is one, and ADR 0022 keeps secrets out of `config`.
+  // or topic is one, and ADR 0022 keeps secrets out of `config`. F4.236: the
+  // field reads the topic as `rtuTopic` does, and Save writes `config.topic`
+  // and drops a legacy `mqttTopic` (`withSavedTopic`).
   const [topicEdits, setTopicEdits] = useState<Record<number, string>>({});
   const topicMutation = useMutation({
     mutationFn: (vars: { index: number; topic: string }) =>
       patchOnboardingDraft(session!.id, {
         rtus: (session!.draft?.rtus ?? []).map((rtu, i) =>
-          i === vars.index ? { ...rtu, config: { ...rtu.config, topic: vars.topic } } : rtu,
+          i === vars.index ? { ...rtu, config: withSavedTopic(rtu.config, vars.topic) } : rtu,
         ),
       }),
     onSuccess: (updated, vars) => {
@@ -683,7 +707,7 @@ export function OnboardingChatPage({ user }: OnboardingChatPageProps) {
                                   placeholder="MQTT topic"
                                   autoComplete="off"
                                   maxLength={MAX_RTU_TOPIC_CHARS}
-                                  value={topicEdits[index] ?? String(rtu.config.topic ?? "")}
+                                  value={topicEdits[index] ?? draftRtuTopic(rtu.config)}
                                   onChange={(event) => {
                                     const value = event.target.value;
                                     setTopicEdits((edits) => ({ ...edits, [index]: value }));
@@ -698,7 +722,8 @@ export function OnboardingChatPage({ user }: OnboardingChatPageProps) {
                                     chatMutation.isPending ||
                                     credentialsMutation.isPending ||
                                     topicEdits[index] === undefined ||
-                                    topicEdits[index].trim() === String(rtu.config.topic ?? "")
+                                    (topicEdits[index].trim() === draftRtuTopic(rtu.config) &&
+                                      !hasShadowedLegacyTopic(rtu.config))
                                   }
                                   aria-busy={topicMutation.isPending}
                                   className="shrink-0 surface-button px-2 py-1 text-[11px] disabled:opacity-50"

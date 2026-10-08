@@ -9,13 +9,20 @@ export function formatOnboardingValidationErrors(errors: OnboardingFieldError[])
 }
 
 /**
- * F4.234: the topic as the API's `rtuTopic` reads it — the first key that is a
- * string, `topic` then `mqttTopic`, else "" — shown as "-" when empty. Web cannot
- * import apps/api, so the rule is repeated here.
+ * F4.236: the topic as the API's `rtuTopic` reads it — the first key that is a
+ * string, `topic` then `mqttTopic`, else "". Raw: no trim, no "-" (whitespace is
+ * kept as sent, F4.234). Web cannot import apps/api, so the rule is repeated here;
+ * the edit field, the Save comparison and the summary all read through this.
  */
-function topicOf(config: Record<string, unknown>): string {
+export function draftRtuTopic(config: Record<string, unknown>): string {
   const topic = [config.topic, config.mqttTopic].find((value) => typeof value === "string");
-  return typeof topic === "string" && topic !== "" ? topic : "-";
+  return typeof topic === "string" ? topic : "";
+}
+
+/** F4.234: the Summary shows an empty topic as "-". */
+function topicOf(config: Record<string, unknown>): string {
+  const topic = draftRtuTopic(config);
+  return topic === "" ? "-" : topic;
 }
 
 /** Human-readable draft layout showing RTU → asset → mapping relationships. */
