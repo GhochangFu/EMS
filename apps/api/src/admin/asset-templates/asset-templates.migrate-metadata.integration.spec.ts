@@ -247,10 +247,12 @@ export async function assertAMetadataDefaultOnlyChangeIsReportedByPreview(
 /**
  * **Every one of the five is projected, not only the one the first case moves.**
  *
- * The case above stays green if `loadPoints` forgets `engMax` or
- * `qualityPolicy`. Here v1 states none of the five and v2 states all five, so
- * the delta must name all five in `POINT_METADATA_FIELDS` order. The mutation
- * this reddens: drop any single field from `loadPoints`'s projection.
+ * A field `loadPoints` forgets reads `undefined` in an entry's `from`/`to`,
+ * and `templateMigrationPreviewResponseSchema.parse` refuses that — so the
+ * parse, in every case of this file, is what reddens when one field is dropped
+ * from the projection (run as a mutation: a `ZodError` naming the field). This
+ * case pins the other half: v1 states none of the five and v2 states all five,
+ * so the delta must *name* all five, in `POINT_METADATA_FIELDS` order.
  */
 export async function assertAllFiveDefaultsAreReadByPreview(
   pool: pg.Pool,
@@ -381,8 +383,9 @@ export async function assertAMetadataOverrideInvalidOnTargetRefusesAndPinsNothin
     `the refusal must name asset A and not B, got "${message}"`,
   );
   assert(
-    message.includes("150") && message.includes("100"),
-    `the refusal must name both bounds, got "${message}"`,
+    message.includes("eng_min 150,") &&
+      message.includes("eng_max 100 (inherited from the template)"),
+    `the refusal must name both bounds and mark the inherited one, got "${message}"`,
   );
 
   const refusals = await expectRefusal(
