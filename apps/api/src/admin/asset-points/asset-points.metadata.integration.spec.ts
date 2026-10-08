@@ -399,7 +399,12 @@ export async function assertRtuIdWiresAndUnwiresOnUpdate(
  *    column is null reads as `null`, which is why the join selects
  *    `template_points.id` first. Mutation run: dropping `id` reddens claim 1
  *    already (the first column becomes `scaleMultiplier`, null on that row).
- * 3. `list` on the hand-created asset (no template): every item is `null`.
+ * 3. `list` on the hand-created asset (no template): every item is `null` —
+ *    including a row on `keys.measured`, a key the fixture template declares,
+ *    so a join that drops the `template_id` predicate reads `eng_max = 100`
+ *    there and reddens. Both lists also hold one row per point (unique ids):
+ *    a join that drops the `point_key` predicate fans one point out across
+ *    every point of its template.
  * 4. The DTO `update` returns, read back through `fetchRows`, carries it too.
  *
  * The pinned-version rule (join on `assets.template_id`, not the newest
@@ -424,6 +429,7 @@ export async function assertReadsCarryTheTemplateDefaults(
     ).id;
 
   const { items } = await ctx.svc.list(jwt, ctx.templatedAssetId);
+  expect(new Set(items.map((item) => item.id)).size).toBe(items.length);
   const measured = items.find((item) => item.id === measuredId);
   expect(measured?.templateDefaults?.engMax).toBe(100);
   expect(measured?.templateDefaults?.engMin).toBeNull();
@@ -447,8 +453,17 @@ export async function assertReadsCarryTheTemplateDefaults(
       sourceDataKey: `${ctx.keys.withMetadata}/G`,
     });
   }
+  // A hand row on a key the fixture template declares: nothing pins this
+  // asset to that template, so it inherits nothing.
+  const handMeasured = await ctx.svc.create(jwt, {
+    assetId: ctx.handAssetId,
+    pointKey: ctx.keys.measured,
+    sourceDataKey: `${ctx.keys.measured}/HAND`,
+  });
   const hand = await ctx.svc.list(jwt, ctx.handAssetId);
-  expect(hand.items.length).toBeGreaterThan(0);
+  expect(hand.items.length).toBeGreaterThan(1);
+  expect(new Set(hand.items.map((item) => item.id)).size).toBe(hand.items.length);
+  expect(hand.items.find((item) => item.id === handMeasured.id)?.templateDefaults).toBeNull();
   for (const item of hand.items) {
     expect(item.templateDefaults).toBeNull();
   }
