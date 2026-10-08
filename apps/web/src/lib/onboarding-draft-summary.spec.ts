@@ -130,3 +130,8 @@ export function anAbsentTopicPrintsADash(): void {
 export function aNonStringTopicFallsBackToTheLegacyKey(): void {
   expect(topicLine({ topic: 42, mqttTopic: "a/b" })).toBe(`${LINE}a/b`);
 }
+
+/** W6 (F4.234) — a whitespace-only `topic` is printed as sent; only "" prints `-` (OQ1, OQ2). */
+export function aWhitespaceTopicIsPrintedAsSent(): void {
+  expect(topicLine({ topic: "  " })).toBe(`${LINE}  `);
+}

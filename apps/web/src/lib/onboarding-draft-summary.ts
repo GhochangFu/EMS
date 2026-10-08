@@ -9,8 +9,8 @@ export function formatOnboardingValidationErrors(errors: OnboardingFieldError[])
 }
 
 /**
- * F4.234: the topic as the API's `rtuTopic` reads it — the first key that is a
- * string, `topic` then `mqttTopic`, else "" — shown as "-" when empty. Web cannot
+ * F4.234: the topic as the API's `rtuTopic` reads it â€” the first key that is a
+ * string, `topic` then `mqttTopic`, else "" â€” shown as "-" when empty. Web cannot
  * import apps/api, so the rule is repeated here.
  */
 function topicOf(config: Record<string, unknown>): string {

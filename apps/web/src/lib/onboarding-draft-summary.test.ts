@@ -6,6 +6,7 @@ import {
   theTopicKeyWinsOverTheLegacyKey,
   anAbsentTopicPrintsADash,
   aNonStringTopicFallsBackToTheLegacyKey,
+  aWhitespaceTopicIsPrintedAsSent,
   aPlainAssetLineIsUnchanged,
   aStockEntryListsItsPatterns,
   aStockEntryRendersItsLine,
@@ -58,5 +59,9 @@ describe("F3.22 onboarding draft summary", () => {
 
   it("skips a non-string topic (F4.234)", () => {
     aNonStringTopicFallsBackToTheLegacyKey();
+  });
+
+  it("prints a whitespace-only topic as sent (F4.234)", () => {
+    aWhitespaceTopicIsPrintedAsSent();
   });
 });
