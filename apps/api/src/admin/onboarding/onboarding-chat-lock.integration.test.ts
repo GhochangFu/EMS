@@ -19,9 +19,18 @@ import { asRole } from "../../testing/role-urls";
 import { jwtFor, primeSeededSubjects } from "../../testing/seeded-subjects";
 import { OnboardingChatService } from "./onboarding-chat.service";
 import {
+  APPEND_TURN,
   CONFIRM_TURN,
   UNDO_TURN,
   assertAChangedDraftAnswers409,
+  assertACredentialKeepsAMessageCommittedUnderTheLock,
+  assertACredentialOverAChangedDraftAnswers409,
+  assertAMessageCommittedUnderTheLockSurvivesTheUpload,
+  assertAnUploadOverACommittedRowAnswers409,
+  assertTheCredentialWriteWaitedOnTheHolder,
+  assertTheUploadWaitedOnTheCommittingHolder,
+  assertTheUploadWaitedOnTheHolder,
+  CREDENTIAL_RTU_CODE,
   assertACommittingConfirmAppendsToTheCommittedRow,
   assertACommittingConfirmKeepsAMessageCommittedUnderTheLock,
   assertAConfirmWithNoProposalKeepsAMessageCommittedUnderTheLock,
@@ -66,6 +75,15 @@ const HOLDER_NAME = `F4.227 Holder ${RUN}`;
 const TYPES = [{ code: "smoc_campus", label: "SMOC campus" }];
 const HOLDER_MESSAGE_ID = randomUUID();
 
+/** `F4.233`: the upload's stub collaborators and a 32-byte key for the credential route. */
+const EXCEL_STUB = {
+  parseUpload: () => ({ location: { name: SEEDED_NAME }, rtus: [], assets: [], rtuCredentials: [], displayNameFixes: [] }),
+  toDraftPatch: () => ({ pointKeys: [{ code: "kw", name: "Active Power", domain: "electrical", unit: "kW" }] }),
+};
+const CATALOG_STUB = { listPointKeys: async () => [] };
+const CREDENTIAL_KEY = Buffer.alloc(32, 0x02).toString("base64");
+const UPLOAD_BUFFER = Buffer.from("x");
+
 function seededDraft(suffix: string): OnboardingDraft {
   return {
     location: {
@@ -80,6 +98,7 @@ function seededDraft(suffix: string): OnboardingDraft {
 }
 
 describe.skipIf(!connectionString)("F4.227 — the chat write locks the session row (real Postgres)", () => {
+  let previousKey: string | undefined;
   let fleetPool: pg.Pool;
   let tenantPool: pg.Pool;
   let authPool: pg.Pool;
@@ -88,6 +107,8 @@ describe.skipIf(!connectionString)("F4.227 — the chat write locks the session 
   const ctx = {} as ChatLockCtx;
 
   beforeAll(async () => {
+    previousKey = process.env.CREDENTIAL_ENCRYPTION_KEY;
+    process.env.CREDENTIAL_ENCRYPTION_KEY = CREDENTIAL_KEY;
     const url = connectionString as string;
     fleetPool = await openIntegrationPool(url, "F4.227");
     tenantPool = await openIntegrationPool(
@@ -183,8 +204,8 @@ describe.skipIf(!connectionString)("F4.227 — the chat write locks the session 
       chat,
       new OnboardingValidateService(),
       commitStub as never,
-      {} as never,
-      {} as never,
+      EXCEL_STUB as never,
+      CATALOG_STUB as never,
       vocabularies as never,
       { context: async () => EMPTY_TEMPLATE_CONTEXT } as never,
     );
@@ -215,6 +236,13 @@ describe.skipIf(!connectionString)("F4.227 — the chat write locks the session 
         id,
         JSON.stringify([message]),
       ]);
+      return res.rowCount;
+    };
+    const markCommitted = (id: string) => async (holder: pg.PoolClient) => {
+      const res = await holder.query(
+        "UPDATE bms.onboarding_sessions SET status = 'committed', committed_at = now() WHERE id = $1",
+        [id],
+      );
       return res.rowCount;
     };
     const withProposal = (suffix: string, hash: string) =>
@@ -289,9 +317,62 @@ describe.skipIf(!connectionString)("F4.227 — the chat write locks the session 
     } finally {
       commitStub.mode = "touch-nothing";
     }
-  }, 150_000);
+
+    const uploadKeptId = await seedSession("UPK");
+    ctx.uploadKept = await raceTheChatWrite(
+      ctx,
+      uploadKeptId,
+      "race 10 (upload, message committed under the lock)",
+      appendAMessage(uploadKeptId),
+      APPEND_TURN,
+      () => service.uploadExcel(jwt, uploadKeptId, UPLOAD_BUFFER),
+    );
+
+    const uploadCommittedId = await seedSession("UPC");
+    ctx.uploadCommitted = await raceTheChatWrite(
+      ctx,
+      uploadCommittedId,
+      "race 11 (upload, row committed under the lock)",
+      markCommitted(uploadCommittedId),
+      APPEND_TURN,
+      () => service.uploadExcel(jwt, uploadCommittedId, UPLOAD_BUFFER),
+    );
+
+    const credentialRtu = {
+      code: CREDENTIAL_RTU_CODE,
+      displayName: CREDENTIAL_RTU_CODE,
+      protocol: "mqtt",
+      config: { host: "broker", port: 8883, tls: true, topic: "a/b" },
+      credentialsSet: false,
+      ingestEnabled: true,
+    };
+    const credentialDraft = (suffix: string) => ({ ...seededDraft(suffix), rtus: [credentialRtu] });
+    const credentials = { rtuIndex: 0, credentials: { username: "u", password: "p" } };
+
+    const credentialsChangedId = await seedSession("CRC", credentialDraft("CRC"));
+    ctx.credentialsChanged = await raceTheChatWrite(
+      ctx,
+      credentialsChangedId,
+      "race 12 (credential, draft changed)",
+      changeTheName(credentialsChangedId),
+      APPEND_TURN,
+      () => service.setCredentials(jwt, credentialsChangedId, credentials),
+    );
+
+    const credentialsKeptId = await seedSession("CRK", credentialDraft("CRK"));
+    ctx.credentialsKept = await raceTheChatWrite(
+      ctx,
+      credentialsKeptId,
+      "race 13 (credential, message committed under the lock)",
+      appendAMessage(credentialsKeptId),
+      APPEND_TURN,
+      () => service.setCredentials(jwt, credentialsKeptId, credentials),
+    );
+  }, 200_000);
 
   afterAll(async () => {
+    if (previousKey === undefined) delete process.env.CREDENTIAL_ENCRYPTION_KEY;
+    else process.env.CREDENTIAL_ENCRYPTION_KEY = previousKey;
     if (holderPool && sessionIds.length > 0) {
       await holderPool.query("DELETE FROM bms.onboarding_sessions WHERE id = ANY($1)", [sessionIds]);
     }
@@ -347,6 +428,34 @@ describe.skipIf(!connectionString)("F4.227 — the chat write locks the session 
 
   it("race 8 — a committing confirm keeps a message committed under the lock", () => {
     assertACommittingConfirmKeepsAMessageCommittedUnderTheLock(ctx);
+  });
+
+  it("race 10 control — the upload blocked on the holder's FOR UPDATE until it committed", () => {
+    assertTheUploadWaitedOnTheHolder(ctx);
+  });
+
+  it("race 10 — a message committed under the lock survives the upload", () => {
+    assertAMessageCommittedUnderTheLockSurvivesTheUpload(ctx);
+  });
+
+  it("race 11 control — the upload blocked on a holder that committed the session", () => {
+    assertTheUploadWaitedOnTheCommittingHolder(ctx);
+  });
+
+  it("race 11 — an upload over a row committed under the lock answers 409 SESSION_NO_LONGER_DRAFT and writes nothing", () => {
+    assertAnUploadOverACommittedRowAnswers409(ctx);
+  });
+
+  it("race 12 control — the credential write blocked on a holder that changed the draft", () => {
+    assertTheCredentialWriteWaitedOnTheHolder(ctx);
+  });
+
+  it("race 12 — a credential write over a draft changed under the lock answers 409 and stores no secret", () => {
+    assertACredentialOverAChangedDraftAnswers409(ctx);
+  });
+
+  it("race 13 — a credential write keeps a message committed under the lock and stores the secret", () => {
+    assertACredentialKeepsAMessageCommittedUnderTheLock(ctx);
   });
 
   it("case 9 — a committing confirm appends its messages to the row its own commit marked committed", () => {
