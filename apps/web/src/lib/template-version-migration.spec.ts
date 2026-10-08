@@ -28,6 +28,7 @@ const EMPTY_DELTA: TemplateVersionDeltaDto = {
   measuredAdded: [],
   measuredRemoved: [],
   measuredReKeyed: [],
+  measuredMetadataChanged: [],
   derivedAdded: [],
   derivedRemoved: [],
   derivedChanged: [],

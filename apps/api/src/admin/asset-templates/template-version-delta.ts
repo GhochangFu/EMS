@@ -163,6 +163,7 @@ export function computeTemplateVersionDelta(
     measuredAdded: [],
     measuredRemoved: [],
     measuredReKeyed: [],
+    measuredMetadataChanged: [],
     derivedAdded: [],
     derivedRemoved: [],
     derivedChanged: [],

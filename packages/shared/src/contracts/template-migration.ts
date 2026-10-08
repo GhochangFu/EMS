@@ -10,6 +10,7 @@
 import { z } from "zod";
 
 import { assetPointCalcOverrideFieldsSchema, assetTemplateStatusSchema } from "./admin";
+import { pointMetadataFieldNameSchema, pointMetadataFieldsSchema } from "./point-metadata";
 
 /**
  * One version of a template code, for the Versions view `F2.5`'s detail page
@@ -231,12 +232,36 @@ export const templateDerivedRemovalDtoSchema = z.object({
   from: assetPointCalcOverrideFieldsSchema,
 });
 
+/**
+ * `F2.24` (ADR 0056 decision 1) — a measured point whose class defaults for
+ * the five instrument-metadata fields differ between the two versions.
+ *
+ * **Reported, never refused.** ADR 0056 decision 3 refuses a wiring change
+ * (removal, re-key) only; a default that moves is the finding-31 shape of
+ * `F2.9` on the measured side — the operator sees it before migrating, it does
+ * not block. The migrated asset resolves `coalesce(asset, template)` per
+ * column, so every asset without its own override picks the new value up on
+ * the ingest host's next reload. (An asset that *does* override is `F2.30`'s
+ * concern, gated at migrate by `metadata_override_invalid_on_target`.)
+ *
+ * `from`/`to` nest `pointMetadataFieldsSchema` whole, as
+ * `templateDerivedChangeDtoSchema` nests `assetPointCalcOverrideFieldsSchema`;
+ * `changedFields` lists the moved names in `POINT_METADATA_FIELDS` order.
+ */
+export const templateMeasuredMetadataChangeDtoSchema = z.object({
+  pointKey: z.string(),
+  changedFields: z.array(pointMetadataFieldNameSchema),
+  from: pointMetadataFieldsSchema,
+  to: pointMetadataFieldsSchema,
+});
+
 export const templateVersionDeltaDtoSchema = z.object({
   fromVersion: z.number(),
   toVersion: z.number(),
   measuredAdded: z.array(templateMeasuredAdditionDtoSchema),
   measuredRemoved: z.array(templateMeasuredChangeDtoSchema),
   measuredReKeyed: z.array(templateMeasuredChangeDtoSchema),
+  measuredMetadataChanged: z.array(templateMeasuredMetadataChangeDtoSchema),
   derivedAdded: z.array(templateDerivedAdditionDtoSchema),
   derivedRemoved: z.array(templateDerivedRemovalDtoSchema),
   derivedChanged: z.array(templateDerivedChangeDtoSchema),

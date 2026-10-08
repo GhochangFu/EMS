@@ -482,6 +482,7 @@ export type AdminAssetPointDto = z.infer<typeof A.adminAssetPointDtoSchema>;
  * itself is `./ingest`'s, re-exported below with the rest of that module.
  */
 export type PointMetadataFields = z.infer<typeof PM.pointMetadataFieldsSchema>;
+export type PointMetadataFieldName = z.infer<typeof PM.pointMetadataFieldNameSchema>;
 /** `F3.37` (ADR 0049) — one `bms.asset_groups` row for the admin surface. */
 export type AdminAssetGroupDto = z.infer<typeof A.adminAssetGroupDtoSchema>;
 export type AdminAssetGroupListResponse = z.infer<
@@ -666,6 +667,7 @@ export type TemplateDerivedChangeDto = z.infer<typeof TM.templateDerivedChangeDt
 export type TemplateDerivedAdditionDto = z.infer<typeof TM.templateDerivedAdditionDtoSchema>;
 export type TemplateDerivedRemovalDto = z.infer<typeof TM.templateDerivedRemovalDtoSchema>;
 /** Keyed on `point_key` throughout, never on `template_points.id` (D-4). */
+export type TemplateMeasuredMetadataChangeDto = z.infer<typeof TM.templateMeasuredMetadataChangeDtoSchema>;
 export type TemplateVersionDeltaDto = z.infer<typeof TM.templateVersionDeltaDtoSchema>;
 export type TemplateMigrationAssetDto = z.infer<typeof TM.templateMigrationAssetDtoSchema>;
 export type TemplateMigrationSkippedPointDto = z.infer<
