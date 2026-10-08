@@ -9,6 +9,7 @@ import {
   assertKindFlipsAreClassifiedExplicitly,
   assertMeasuredAdditionDoesNotRefuse,
   assertMeasuredReKeyRefuses,
+  assertAReKeyWithAMovedDefaultReportsBoth,
   assertMeasuredRemovalRefuses,
 } from "./template-version-delta.spec";
 
@@ -48,5 +49,9 @@ describe("F2.6 — template version delta", () => {
 
   it("reports a metadata-default-only change and never refuses it (F2.24)", () => {
     assertAMetadataDefaultOnlyChangeIsReported();
+  });
+
+  it("reports both the re-key and the moved default of one measured point (F2.24)", () => {
+    assertAReKeyWithAMovedDefaultReportsBoth();
   });
 });

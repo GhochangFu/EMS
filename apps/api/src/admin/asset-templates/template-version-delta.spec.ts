@@ -448,3 +448,39 @@ export function assertAMetadataDefaultOnlyChangeIsReported(): void {
     `a derived point's five must never be reported, got ${JSON.stringify(derivedMoved.measuredMetadataChanged)}`,
   );
 }
+
+/**
+ * `F2.24` — a measured point that is re-keyed **and** whose metadata default
+ * moved reports **both** entries: the re-key refusal does not hide the default
+ * change, and the default change does not soften the refusal. Mutation: a
+ * `continue` after the `measured_rekeyed` refusal → no metadata entry.
+ */
+export function assertAReKeyWithAMovedDefaultReportsBoth(): void {
+  const delta = computeTemplateVersionDelta(
+    [measured("KW", { sourceDataKeyPattern: "OLD/{asset_code}/KW", engMax: 100 })],
+    [measured("KW", { sourceDataKeyPattern: "NEW/{asset_code}/KW", engMax: 200 })],
+    OPTIONS,
+  );
+  assert(
+    delta.measuredReKeyed.length === 1 && delta.measuredReKeyed[0]?.pointKey === "KW",
+    `the re-key must be reported once for KW, got ${JSON.stringify(delta.measuredReKeyed)}`,
+  );
+  const moved = delta.measuredMetadataChanged;
+  assert(
+    moved.length === 1 && moved[0]?.pointKey === "KW",
+    `the moved default must be reported once for KW beside the re-key, got ${JSON.stringify(moved)}`,
+  );
+  assert(
+    JSON.stringify(moved[0]?.changedFields) === JSON.stringify(["engMax"]),
+    `changedFields must name engMax alone, got ${JSON.stringify(moved[0]?.changedFields)}`,
+  );
+  assert(
+    moved[0]?.from.engMax === 100 && moved[0]?.to.engMax === 200,
+    `from/to must read 100 -> 200, got ${String(moved[0]?.from.engMax)} -> ${String(moved[0]?.to.engMax)}`,
+  );
+  assert(
+    delta.refusals.length === 1 && delta.refusals[0]?.reason === "measured_rekeyed",
+    `exactly one refusal, measured_rekeyed — the moved default adds none, got ` +
+      `[${delta.refusals.map((r) => r.reason).join(", ")}]`,
+  );
+}
