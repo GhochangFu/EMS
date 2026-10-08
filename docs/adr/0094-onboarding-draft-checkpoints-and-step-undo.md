@@ -291,6 +291,24 @@ credentials.
      turn loaded, and on a mismatch answers 409 and writes nothing. It builds
      `messages` and the checkpoint ring on the locked row. `patchDraft` and
      the Excel upload stay unbound.)*
+     *(Amended 2026-10-08, `F4.230` and `F4.231`: the hash bind fails closed
+     on a stored draft deeper than `MAX_ONBOARDING_DRAFT_DEPTH`. Such a draft
+     has no hash, so the chat write, the empty-ring `undo` and the rollback
+     restore answer 409 with a sentence that names the depth and write
+     nothing; `PATCH sessions/:id/draft` is the way to repair it. The
+     empty-ring `undo` and the typed `confirm commit` now take the same
+     `FOR UPDATE` as the chat write and build `messages` on the locked row, so
+     a message committed under the lock survives them. The no-proposal,
+     stale-proposal and refused-commit branches of the confirm re-check status
+     and hash under the lock and answer 409 on a mismatch — a stale proposal
+     is cleared only from the row as it now stands, and never re-evaluated
+     into a commit the user did not see. The committing branch takes its lock
+     after the commit service's own transaction has committed and checks only
+     that the row exists; a draft-status guard there would refuse its own
+     commit. The Excel upload's message write and the credential route's
+     draft write still build on the loaded row with no lock (row `F4.233`);
+     `patchDraft` and the Excel upload's draft stay unbound by the `F4.227`
+     ruling.)*
      The route uses `loadSession`, so the existing access gates apply. (Plan
      detail: an unknown checkpoint id answers 404.)
    - The web chat page gains an Undo control that lists the checkpoints and
