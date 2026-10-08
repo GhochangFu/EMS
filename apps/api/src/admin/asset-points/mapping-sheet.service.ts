@@ -3,7 +3,7 @@ import { randomUUID } from "node:crypto";
 import { BadRequestException, ForbiddenException, Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { eq, inArray } from "drizzle-orm";
 
-import { assetPoints, assets, locations, pointKeys, rtus, templatePoints } from "@bms/db";
+import { assetPoints, assetTemplates, assets, locations, pointKeys, rtus, templatePoints } from "@bms/db";
 import type { BmsDb } from "@bms/db";
 import type {
   JwtPayload,
@@ -29,6 +29,7 @@ import type {
   PlanSnapshot,
   SnapshotAsset,
   SnapshotCatalogEntry,
+  SnapshotTemplate,
   SnapshotTemplatePoint,
 } from "./mapping-sheet-snapshot";
 
@@ -202,7 +203,7 @@ export class MappingSheetService {
   /**
    * One location's picture, read on the open tenant transaction.
    *
-   * Five queries, and each one's breadth is a decision:
+   * Six queries, and each one's breadth is a decision:
    *
    * - **every asset of the location, inactive included.** The export drops the
    *   inactive ones itself; the planner needs them so a row naming one reports
@@ -223,6 +224,10 @@ export class MappingSheetService {
    *   export needs it too.
    * - **the pinned template versions' points**, for the pre-fill, the
    *   `derived` refusal and the five defaults the merged band resolves against.
+   * - **the pinned versions' identity** (code, version, name), for the
+   *   `TEMPLATES` sheet (`F2.26`, ADR 0056 Amendment 3) — the same `templateIds`
+   *   as the points, inactive assets' pins included; the export filters by the
+   *   asset's `active` itself, as it does for `MAPPINGS`.
    */
   private async loadSnapshot(tx: BmsTx, locationId: string): Promise<PlanSnapshot> {
     const assetRows = await tx
@@ -337,6 +342,17 @@ export class MappingSheetService {
       ]),
     );
 
+    const templateIdentityRows =
+      templateIds.length === 0
+        ? []
+        : await tx
+            .select({ id: assetTemplates.id, code: assetTemplates.code, version: assetTemplates.version, name: assetTemplates.name })
+            .from(assetTemplates)
+            .where(inArray(assetTemplates.id, templateIds));
+    const templatesById = new Map<string, SnapshotTemplate>(
+      templateIdentityRows.map((row) => [row.id, { code: row.code, version: row.version, name: row.name }]),
+    );
+
     return {
       assetsByCode,
       existingByAssetPoint,
@@ -346,6 +362,7 @@ export class MappingSheetService {
       activeRtuIds,
       catalog,
       templatePoints: templatePointsByKey,
+      templatesById,
     };
   }
 

@@ -50,6 +50,16 @@ export type SnapshotTemplatePoint = {
   readonly defaults: PointMetadataFields;
 };
 
+/**
+ * One `bms.asset_templates` row a location's asset pins — the identity the
+ * `TEMPLATES` sheet names a version by (`F2.26`, ADR 0056 Amendment 3).
+ */
+export type SnapshotTemplate = {
+  readonly code: string;
+  readonly version: number;
+  readonly name: string;
+};
+
 /** One `bms.point_keys` row — the catalog unit a create falls back to, and whether the key is live. */
 export type SnapshotCatalogEntry = {
   readonly unit: string | null;
@@ -60,8 +70,11 @@ export type SnapshotCatalogEntry = {
  * What the export needs: the location's assets by code, its non-computed
  * `asset_points` rows by `(assetId, pointKey)`, every RTU's code by id (active
  * or not — an existing row wired to a retired RTU still names it), which of
- * those RTUs are active, the catalog and the pinned template points by
- * `(templateId, pointKey)`.
+ * those RTUs are active, the catalog, the pinned template points by
+ * `(templateId, pointKey)` and, sixth, the pinned template versions themselves
+ * by id — the `TEMPLATES` sheet's code, version and name (`F2.26`). Required,
+ * not optional: an optional field would stay invisible to tsc at the loader
+ * and in every fixture.
  */
 export type ExportSnapshot = {
   readonly assetsByCode: ReadonlyMap<string, SnapshotAsset>;
@@ -77,6 +90,7 @@ export type ExportSnapshot = {
   readonly activeRtuIds: ReadonlySet<string>;
   readonly catalog: ReadonlyMap<string, SnapshotCatalogEntry>;
   readonly templatePoints: ReadonlyMap<string, SnapshotTemplatePoint>;
+  readonly templatesById: ReadonlyMap<string, SnapshotTemplate>;
 };
 
 /**

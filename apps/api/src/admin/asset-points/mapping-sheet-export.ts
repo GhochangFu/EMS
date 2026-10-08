@@ -1,4 +1,10 @@
-import { MAPPING_SHEET_HEADERS, MAPPING_SHEET_NAME, SOURCE_KEY_RESERVED_VAR, substituteSourceKeyPattern } from "@bms/shared";
+import {
+  MAPPING_SHEET_HEADERS,
+  MAPPING_SHEET_NAME,
+  SOURCE_KEY_RESERVED_VAR,
+  TEMPLATES_SHEET_HEADERS,
+  substituteSourceKeyPattern,
+} from "@bms/shared";
 import * as XLSX from "xlsx";
 
 import { assetPointKey } from "./mapping-sheet-snapshot";
@@ -141,6 +147,63 @@ export function buildMappingSheetRows(snapshot: ExportSnapshot): MappingSheetCel
   entries.sort((a, b) => compareText(a.assetCode, b.assetCode) || compareText(a.pointKey, b.pointKey));
 
   return [[...MAPPING_SHEET_HEADERS], ...entries.map((entry) => entry.cells)];
+}
+
+/**
+ * The read-only `TEMPLATES` sheet (`F2.26`, ADR 0056 Amendment 3): the header
+ * row followed by one row per **measured** point of each template version
+ * **in use** — pinned by an active asset of the location, the same asset set
+ * the `MAPPINGS` rows come from. A version two assets share is listed once:
+ * rows are per template, not per asset. Every row has exactly eleven cells in
+ * `TEMPLATES_SHEET_HEADERS` order; `source_data_key_pattern` is the pattern as
+ * written (no substitution — it is the class, not an asset), and the five are
+ * the class defaults, numbers or blank. Sorted by template code, then version
+ * numerically, then point key. The import reads `MAPPINGS` by name, so nothing
+ * here is ever read back.
+ */
+export function buildTemplatesSheetRows(snapshot: ExportSnapshot): MappingSheetCell[][] {
+  const inUse = new Set<string>();
+  for (const asset of snapshot.assetsByCode.values()) {
+    if (asset.active && asset.templateId !== null) {
+      inUse.add(asset.templateId);
+    }
+  }
+
+  const entries: { code: string; version: number; pointKey: string; cells: MappingSheetCell[] }[] = [];
+  for (const point of snapshot.templatePoints.values()) {
+    if (point.kind !== "measured" || !inUse.has(point.templateId)) {
+      continue;
+    }
+    // `assets.template_id` references `asset_templates.id`, so a pinned id the
+    // loader read always has its row; a miss would be a loader defect, and a
+    // row with no code to name it by is not written.
+    const template = snapshot.templatesById.get(point.templateId);
+    if (template === undefined) {
+      continue;
+    }
+    entries.push({
+      code: template.code,
+      version: template.version,
+      pointKey: point.pointKey,
+      cells: [
+        template.code,
+        template.version,
+        template.name,
+        point.pointKey,
+        point.unit ?? "",
+        point.sourceDataKeyPattern ?? "",
+        numberCell(point.defaults.scaleMultiplier),
+        numberCell(point.defaults.scaleOffset),
+        numberCell(point.defaults.engMin),
+        numberCell(point.defaults.engMax),
+        point.defaults.qualityPolicy ?? "",
+      ],
+    });
+  }
+
+  entries.sort((a, b) => compareText(a.code, b.code) || a.version - b.version || compareText(a.pointKey, b.pointKey));
+
+  return [[...TEMPLATES_SHEET_HEADERS], ...entries.map((entry) => entry.cells)];
 }
 
 /**

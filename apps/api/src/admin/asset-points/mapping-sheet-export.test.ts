@@ -2,10 +2,12 @@ import { describe, it } from "vitest";
 
 import {
   assertARetiredGatewayIsNotPreFilled,
+  assertATemplateSharedByTwoAssetsIsListedOnce,
   assertBufferHasNoFormulaCells,
   assertExistingRowsAreWrittenAsStored,
   assertPreFillRowsFromTheTemplate,
   assertRowsAreSorted,
+  assertTemplatesSheetListsMeasuredPointsOfTemplatesInUse,
   assertTheBufferIsDeflatedAndStillParses,
 } from "./mapping-sheet-export.spec";
 
@@ -38,5 +40,13 @@ describe("F2.7 — the MAPPINGS export row set (ADR 0056 decision 6)", () => {
 
   it("leaves rtu_code blank on a pre-fill row whose asset sits on a retired gateway, and keeps it on a stored row", () => {
     assertARetiredGatewayIsNotPreFilled();
+  });
+
+  it("F2.26 — lists the measured points of each template version an active asset pins, pattern literal, defaults as numbers, sorted", () => {
+    assertTemplatesSheetListsMeasuredPointsOfTemplatesInUse();
+  });
+
+  it("F2.26 — lists a template version shared by two active assets once", () => {
+    assertATemplateSharedByTwoAssetsIsListedOnce();
   });
 });
