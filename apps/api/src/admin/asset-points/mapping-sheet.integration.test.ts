@@ -15,6 +15,7 @@ import {
   assertADuplicateSourceKeyIsARowErrorAndTheRestStillLand,
   assertAFailedAuditRollsBackEveryWrittenRow,
   assertAnOutOfScopeCallerIsRefusedBeforeTheFileIsRead,
+  assertAReorderedHeaderStillWritesTheRow,
   assertARetiredRtuRoundTripsButCannotBeNewlyWired,
   assertAThirteenthColumnRefusesTheWholeFile,
   assertExportThenImportIsIdentity,
@@ -444,5 +445,9 @@ describe.skipIf(!connectionString)("F2.7 — the MAPPINGS sheet: export, preview
 
   it("(9) exports MAPPINGS then TEMPLATES, listing the pinned version's measured points once (F2.26)", async () => {
     await assertTheExportCarriesTheTemplatesSheet(ctx, jwt);
+  });
+
+  it("(10) writes the row of a sheet whose header columns are reordered (F2.28)", async () => {
+    await assertAReorderedHeaderStillWritesTheRow(ctx, jwt);
   });
 });

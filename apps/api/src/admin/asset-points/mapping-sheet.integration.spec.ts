@@ -665,3 +665,40 @@ export async function assertTheExportCarriesTheTemplatesSheet(
   const kw = data.find((row) => row[3] === ctx.keys.kw);
   expect(kw?.[5], "the kw pattern, not substituted").toBe("{asset_code}_KW");
 }
+
+/* -------------------------------------------------------------------------- */
+/* (10) The tolerant header                                                    */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * `F2.28` / ADR 0056 Amendment 3 — a header with `asset_code` and `point_key`
+ * swapped (and the cells under them) still writes its row. Read by position,
+ * the asset code would be looked up as a point key and the row would stop at
+ * `asset_not_found` with nothing written.
+ *
+ * The target is `pressure` on the create asset: case (2) has already created
+ * `temp` there, and `pressure` is template-only, so the row is a create
+ * whatever order the cases ran in — checked first, not assumed.
+ */
+export async function assertAReorderedHeaderStillWritesTheRow(
+  ctx: MappingSheetFixtures,
+  jwt: JwtPayload,
+): Promise<void> {
+  expect((await pointsOf(ctx.fleetPool, ctx.assets.creates)).has(ctx.keys.pressure), "precondition: no pressure row yet").toBe(false);
+
+  const order: Column[] = [...MAPPING_SHEET_HEADERS];
+  [order[0], order[2]] = [order[2] as Column, order[0] as Column];
+  const cells = sheetRow({
+    asset_code: ctx.assets.creates,
+    point_key: ctx.keys.pressure,
+    source_data_key: `${ctx.assets.creates}_REORDER`,
+    active: "TRUE",
+  });
+  const buffer = mappingSheetToBuffer([order, order.map((column) => cells[column])]);
+
+  const commit = await ctx.svc.commit(jwt, ctx.locationId, buffer);
+  expect(commit.skipped).toEqual([]);
+  expect(commit.applied).toEqual({ created: 1, updated: 0 });
+  const written = (await pointsOf(ctx.fleetPool, ctx.assets.creates)).get(ctx.keys.pressure);
+  expect(written?.source_data_key).toBe(`${ctx.assets.creates}_REORDER`);
+}

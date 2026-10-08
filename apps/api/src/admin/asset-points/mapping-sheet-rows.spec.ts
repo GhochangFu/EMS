@@ -1,15 +1,15 @@
-import { MAPPING_SHEET_HEADERS } from "@bms/shared";
+import { MAPPING_SHEET_HEADERS, MAPPING_SHEET_OPTIONAL_HEADERS } from "@bms/shared";
 import type { MappingSheetErrorDto } from "@bms/shared";
 import * as XLSX from "xlsx";
 
 import { syntheticZip } from "../../testing/synthetic-zip";
 import { MAX_IMPORT_ROWS, SHEET_ROWS_BOUND } from "../telemetry-import/telemetry-import-rows";
-import { MAX_IMPORT_FILE_BYTES, parseMappingSheet } from "./mapping-sheet-rows";
+import { MAX_IMPORT_FILE_BYTES, parseMappingSheet, resolveHeader } from "./mapping-sheet-rows";
 import type { ParsedMappingRow } from "./mapping-sheet-rows";
 
 /**
  * `F2.7` G2 — `parseMappingSheet`, the pure half of the import: sheet
- * selection, the strict header, and the row errors that need no database
+ * selection, the tolerant header (F2.28), and the row errors that need no database
  * (steps 1–4 final, steps 10–12 attached to the row for the planner to raise
  * in order). Buffers are built with `aoa_to_sheet` the way
  * `telemetry-import-rows.spec.ts` builds them.
@@ -99,8 +99,12 @@ function parseFile(buffer: Buffer, what: string): MappingSheetErrorDto {
   return result.error;
 }
 
-/** The header must be the twelve, in order, case- and space-insensitively; anything else names the offender. */
-export function assertHeaderIsStrictAndNamesTheOffender(): void {
+/**
+ * `F2.28` / ADR 0056 Amendment 3 — the header is the twelve in **any order**,
+ * case- and space-insensitively; an unknown or blank header, a duplicate, or a
+ * missing name is `header_mismatch` naming the offender.
+ */
+export function assertHeaderAcceptsAnyOrderAndRefusesUnknownDuplicateOrMissing(): void {
   const good = parseOk(buildBuffer([HEADER, row()]), "a correct header");
   assert(good.rows.length === 1 && good.errors.length === 0, "one good row, no errors");
   assert(good.totalRows === 1, `totalRows counts the non-blank data rows, got ${good.totalRows}`);
@@ -123,14 +127,66 @@ export function assertHeaderIsStrictAndNamesTheOffender(): void {
   assert(thirteenth.row === null && thirteenth.column === null, "a header problem is file-level: row and column null");
   assert(thirteenth.message.includes("sensor_code"), `the message names the offending header, got "${thirteenth.message}"`);
 
-  const reordered = [...HEADER];
-  [reordered[0], reordered[1]] = [reordered[1] as Cell, reordered[0] as Cell];
-  const reorderedError = parseFile(buildBuffer([reordered, row()]), "a reordered header");
-  assert(reorderedError.code === "header_mismatch", `reordered → header_mismatch, got ${reorderedError.code}`);
-  assert(reorderedError.message.includes("asset_name"), `the message names the first misplaced header, got "${reorderedError.message}"`);
+  // asset_code and point_key swapped in the header AND the data: read by
+  // position, the point key would land under asset_code.
+  const swap = <T,>(cells: T[]): T[] => {
+    const out = [...cells];
+    [out[0], out[2]] = [out[2] as T, out[0] as T];
+    return out;
+  };
+  const reordered = parseOk(buildBuffer([swap(HEADER), swap(row())]), "a reordered header");
+  assert(reordered.rows.length === 1 && reordered.errors.length === 0, "the reordered sheet yields its one row");
+  assert(
+    reordered.rows[0]?.cells.asset_code === "TX01" && reordered.rows[0].cells.point_key === "kw",
+    `cells are read by header name, not position, got ${JSON.stringify(reordered.rows[0]?.cells)}`,
+  );
+
+  const duplicate = parseFile(buildBuffer([[...HEADER, "asset_code"], [...row(), "TX02"]]), "asset_code twice");
+  assert(duplicate.code === "header_mismatch", `a duplicate header → header_mismatch, got ${duplicate.code}`);
+  assert(duplicate.row === null && duplicate.column === null, "a duplicate header is file-level");
+  assert(
+    duplicate.message.includes("'asset_code'") && duplicate.message.includes("Columns 1 and 13"),
+    `the message names the duplicate and both column numbers, got "${duplicate.message}"`,
+  );
+
+  const blankBetween = [HEADER[0] as Cell, "", ...HEADER.slice(1)];
+  const blank = parseFile(buildBuffer([blankBetween, [row()[0] as Cell, "", ...row().slice(1)]]), "a blank header between two known");
+  assert(blank.code === "header_mismatch", `a blank header cell → header_mismatch, got ${blank.code}`);
+  assert(blank.message.includes("Column 2") && blank.message.includes("blank"), `the message names the blank column, got "${blank.message}"`);
 
   const missingLast = parseFile(buildBuffer([HEADER.slice(0, 11), row().slice(0, 11)]), "eleven columns");
-  assert(missingLast.code === "header_mismatch" && missingLast.message.includes("active"), "a missing column is named");
+  assert(missingLast.code === "header_mismatch" && missingLast.message.includes("'active'"), `a missing column is named, got "${missingLast.message}"`);
+}
+
+/**
+ * `F2.28` — the optional-column lever no real column pulls yet, driven through
+ * `resolveHeader` by a **hypothetical** thirteenth known name: listed as
+ * optional, a header without it resolves; not listed, the same header is
+ * refused naming it. Generate-and-grep cannot gate this — the set is empty
+ * today — so the set is a parameter here.
+ */
+export function assertAnOptionalKnownColumnMayBeAbsent(): void {
+  const known = [...MAPPING_SHEET_HEADERS, "sensor_code"] as const;
+  const twelve: string[] = [...MAPPING_SHEET_HEADERS];
+
+  const optional = resolveHeader(twelve, known, new Set<(typeof known)[number]>(["sensor_code"]));
+  assert(optional.ok, `an absent optional column is accepted, got ${optional.ok ? "" : optional.problem}`);
+  if (optional.ok) {
+    assert(!optional.columnIndex.has("sensor_code"), "an absent optional column has no index");
+    assert(optional.columnIndex.get("active") === 11, `the twelve keep their indexes, got ${optional.columnIndex.get("active")}`);
+  }
+
+  const present = resolveHeader([...twelve, "sensor_code"], known, new Set<(typeof known)[number]>(["sensor_code"]));
+  assert(present.ok && present.columnIndex.get("sensor_code") === 12, "a present optional column is indexed where it stands");
+
+  const required = resolveHeader(twelve, known, new Set<(typeof known)[number]>());
+  assert(!required.ok, "the same header is refused when the column is not optional");
+  assert(
+    !required.ok && required.problem.includes("'sensor_code'"),
+    `the refusal names the missing column, got "${required.ok ? "" : required.problem}"`,
+  );
+
+  assert(MAPPING_SHEET_OPTIONAL_HEADERS.size === 0, "no real column is optional today");
 }
 
 /** A `.csv` has one unnamed sheet and it is used; an `.xlsx` must carry `MAPPINGS`. */
@@ -436,8 +492,8 @@ export function assertOnlyDecimalLiteralsAreNumbers(): void {
  * bound itself, structurally.
  *
  * A stray cell far right in the header row is the discriminator. Unbounded, the
- * scan reaches it, the trailing-blank `pop` stops at it, and `headerProblem`
- * refuses the file as having a thirteenth column. Bounded, the twelve are read
+ * scan reaches it, the trailing-blank `pop` stops at it, and the header check
+ * (`resolveHeader` since F2.28) refuses the file over the blank columns before it. Bounded, the twelve are read
  * and the file parses. That is a deliberate behaviour change and it is the
  * kinder one: a stray cell Excel left behind in the header row no longer
  * refuses an otherwise-correct sheet.
@@ -463,13 +519,13 @@ export function assertTheHeaderScanIsBoundedByTheTwelve(): void {
     assert(result.rows[0]?.rowNumber === 2, `the data row keeps its Excel number, got ${result.rows[0]?.rowNumber}`);
   }
 
-  // And the thirteenth-column refusal still fires when the thirteenth is really
-  // the thirteenth — the bound reads one past the twelve for exactly this.
+  // And the unknown-column refusal still fires when the thirteenth is really
+  // there — the bound reads one past the twelve for exactly this.
   const thirteenth = parseMappingSheet(buildBuffer([[...HEADER, "extra"], [...row(), ""]]));
   assert(!thirteenth.ok, "a real thirteenth column must still be refused");
   assert(
-    thirteenth.ok === false && thirteenth.error.message.includes("thirteenth"),
-    `the refusal must still name it a thirteenth, got ${thirteenth.ok === false ? thirteenth.error.message : ""}`,
+    thirteenth.ok === false && thirteenth.error.message.includes("extra"),
+    `the refusal must still name the extra column, got ${thirteenth.ok === false ? thirteenth.error.message : ""}`,
   );
 
   // A CSV whose first thirteen header cells are blank but which carries content

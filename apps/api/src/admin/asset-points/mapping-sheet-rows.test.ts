@@ -11,7 +11,8 @@ import {
   assertEchoedCellTextIsBounded,
   assertOnlyDecimalLiteralsAreNumbers,
   assertRowNumbersAreAbsoluteWhenTheRangeStartsBelowRowOne,
-  assertHeaderIsStrictAndNamesTheOffender,
+  assertAnOptionalKnownColumnMayBeAbsent,
+  assertHeaderAcceptsAnyOrderAndRefusesUnknownDuplicateOrMissing,
   assertRequiredCellsAndDuplicateRows,
   assertRowCap,
   assertSheetSelection,
@@ -21,8 +22,12 @@ import {
 
 /** `F2.7` G2 — Vitest entry point. Assertions live in the sibling `.spec` (ADR 0014). */
 describe("F2.7 — parseMappingSheet, the pure half of the import", () => {
-  it("accepts the twelve in order (any case, trimmed) and names the offending header otherwise", () => {
-    assertHeaderIsStrictAndNamesTheOffender();
+  it("accepts the twelve in any order (any case, trimmed) and names an unknown, blank, duplicate or missing header (F2.28)", () => {
+    assertHeaderAcceptsAnyOrderAndRefusesUnknownDuplicateOrMissing();
+  });
+
+  it("F2.28 — lets a column listed as optional be absent, and refuses the same header when it is not listed", () => {
+    assertAnOptionalKnownColumnMayBeAbsent();
   });
 
   it("reads a CSV's one sheet, requires MAPPINGS in an xlsx, and refuses an empty, header-only or oversized file", () => {

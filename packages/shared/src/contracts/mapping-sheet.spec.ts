@@ -61,7 +61,7 @@ const fileError = {
   row: null,
   column: null,
   code: "header_mismatch",
-  message: "Column 13 is 'sensor_code'; the header must be exactly the twelve",
+  message: "Column 13 is 'sensor_code'; it is not a known column",
 };
 
 const create = {
