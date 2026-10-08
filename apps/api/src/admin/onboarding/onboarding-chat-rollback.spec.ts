@@ -439,7 +439,7 @@ export async function assertAnUndoOverAnOverDeepDraftRefusesByName(): Promise<vo
   assert(record.updates.length === 0, `an over-deep restore wrote ${record.updates.length} time(s)`);
 }
 
-/** (31) F4.230: an empty-ring `undo` over an over-deep stored draft is a 409 that names the depth; nothing is written. */
+/** (37) F4.230: an empty-ring `undo` over an over-deep stored draft is a 409 that names the depth; nothing is written. */
 export async function assertAnEmptyRingUndoOverAnOverDeepDraftRefusesByName(): Promise<void> {
   const session = sessionWith(null, draftNesting(MAX_ONBOARDING_DRAFT_DEPTH + 5));
   assert(draftHash(session.draft) === null, "the fixture is over the depth bound");
@@ -453,7 +453,7 @@ export async function assertAnEmptyRingUndoOverAnOverDeepDraftRefusesByName(): P
   assert(record.updates.length === 0, `an over-deep empty-ring undo wrote ${record.updates.length} time(s)`);
 }
 
-/** (32) F4.230: a typed confirm with no proposal over an over-deep stored draft is a 409 that names the depth; nothing is written. */
+/** (38) F4.230: a typed confirm with no proposal over an over-deep stored draft is a 409 that names the depth; nothing is written. */
 export async function assertAConfirmWithNoProposalOverAnOverDeepDraftRefusesByName(): Promise<void> {
   const session = sessionWith(null, draftNesting(MAX_ONBOARDING_DRAFT_DEPTH + 5));
   assert(draftHash(session.draft) === null, "the fixture is over the depth bound");
