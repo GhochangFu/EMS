@@ -2,6 +2,7 @@ import { describe, it } from "vitest";
 
 import {
   assertSetCredentialsOverAMovedDraftAnswers409,
+  assertSetCredentialsOverAnOverDeepDraftAnswers409ByName,
   assertSetCredentialsOverACommittedRowAnswers409,
   assertSetCredentialsOverAnUnchangedRowWritesTheSecret,
   assertSetCredentialsWhoseUpdateMatchesNothingAnswers409,
@@ -43,5 +44,9 @@ describe("onboarding upload and credential writes under the row lock (F4.233, AD
 
   it("writes the secret and nothing else for a credential over an unchanged row", async () => {
     await assertSetCredentialsOverAnUnchangedRowWritesTheSecret();
+  });
+
+  it("answers 409 DRAFT_TOO_DEEP_FOR_TURN to a credential write over an over-deep draft", async () => {
+    await assertSetCredentialsOverAnOverDeepDraftAnswers409ByName();
   });
 });

@@ -169,7 +169,9 @@ export class OnboardingService {
    *
    * `F4.233`: the write takes the `FOR UPDATE` and re-checks status and draft
    * hash under it (`assertTurnStillBound`, 409 `DRAFT_CHANGED_DURING_TURN`,
-   * nothing written). `_secrets` is keyed by the code at `rtuIndex`, so a
+   * nothing written; a commit in between answers 409 `SESSION_NO_LONGER_DRAFT`,
+   * and a stored draft deeper than the depth bound has no hash, so it answers
+   * 409 `DRAFT_TOO_DEEP_FOR_TURN` and stores nothing). `_secrets` is keyed by the code at `rtuIndex`, so a
    * reorder in between would bind the password to another RTU; the hash
    * refuses it. Merging on `locked.draft` rather than `session.draft` is not
    * gated by design: an equal hash means an equal draft, `_secrets` included.

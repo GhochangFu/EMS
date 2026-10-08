@@ -4,6 +4,7 @@ import type { OnboardingChatMessage, OnboardingDraft } from "@bms/shared";
 
 import { JWT, ORG, sessionRow } from "./onboarding-chat-caps.spec";
 import { PLACE, build, rtu, type Row } from "./onboarding-chat-checkpoints.spec";
+import { MAX_ONBOARDING_DRAFT_DEPTH } from "./onboarding.schema";
 import { DRAFT_CHANGED_DURING_TURN, DRAFT_TOO_DEEP_FOR_TURN, SESSION_NO_LONGER_DRAFT } from "./onboarding-locked-writes";
 
 /**
@@ -154,5 +155,25 @@ export async function assertSetCredentialsOverAnUnchangedRowWritesTheSecret(): P
     assert(keys === "RTU-1", `the secret key is the RTU code, got ${keys}`);
     assert(draft.rtus?.[0]?.credentialsSet === true, "credentialsSet is true");
     assert(!("messages" in write) && !("checkpoints" in write), "no messages and no checkpoints key");
+  });
+}
+
+/** A credential-ready draft that nests past the depth bound, so `draftHash` answers null. */
+function overDeepDraft(): OnboardingDraft {
+  let leaf: Record<string, unknown> = { v: 1 };
+  for (let i = 0; i < MAX_ONBOARDING_DRAFT_DEPTH + 5; i++) leaf = { n: leaf };
+  const base = rtuDraft();
+  return { ...base, rtus: [{ ...base.rtus?.[0], config: { extra: leaf } }] } as unknown as OnboardingDraft;
+}
+
+/** (U9) F4.233: an over-deep stored draft has no hash, so the credential write answers the depth sentence and stores nothing. */
+export async function assertSetCredentialsOverAnOverDeepDraftAnswers409ByName(): Promise<void> {
+  await withCredentialKey(async () => {
+    const session = sessionRow(overDeepDraft(), "rtu") as Row;
+    const { service, record } = build({ session, selects: [[session], ORG] });
+    const sentence = await conflictOf(() => service.setCredentials(JWT, "s-1", CREDENTIALS));
+    assert(sentence === DRAFT_TOO_DEEP_FOR_TURN, `409 DRAFT_TOO_DEEP_FOR_TURN, got ${sentence}`);
+    assert(sentence !== DRAFT_CHANGED_DURING_TURN, "not the hash sentence");
+    assert(record.updates.length === 0, `nothing written, got ${record.updates.length} updates`);
   });
 }

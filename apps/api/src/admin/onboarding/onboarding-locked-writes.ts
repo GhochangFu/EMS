@@ -29,8 +29,10 @@ export function assertSessionStillDraft(locked: LockedSession): asserts locked i
 }
 
 /**
- * The re-checks of a chat write under `FOR UPDATE` (`F4.227`, `F4.230`),
- * each with its own sentence. The order is the point: two over-deep drafts
+ * The re-checks of a hash-bound write under `FOR UPDATE` (`F4.227`, `F4.230`):
+ * the chat turn and, since `F4.233`, the credential route (`setCredentials`),
+ * each with its own sentence. The too-deep sentence reads as chat wording
+ * ("send the turn again") when the credential route returns it. The order is the point: two over-deep drafts
  * both hash to `null`, so the null check must run before the comparison,
  * which would otherwise pass.
  */
@@ -47,7 +49,7 @@ export function assertTurnStillBound(
   }
 }
 
-/** `SELECT ... FOR UPDATE` of the columns a locked write compares and builds on (`chat`, `undoLastStep`, `restoreTo`, `confirmCommit`). */
+/** `SELECT ... FOR UPDATE` of the columns a locked write compares and builds on (every onboarding session write except `patchDraft`: `chat`, `undoLastStep`, `restoreTo`, `confirmCommit`, `setCredentials`, `uploadExcel`). */
 export function lockSession(tx: Parameters<Parameters<typeof withTenant>[2]>[0], sessionId: string) {
   return tx
     .select({
