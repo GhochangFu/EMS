@@ -439,6 +439,34 @@ export async function assertAnUndoOverAnOverDeepDraftRefusesByName(): Promise<vo
   assert(record.updates.length === 0, `an over-deep restore wrote ${record.updates.length} time(s)`);
 }
 
+/** (31) F4.230: an empty-ring `undo` over an over-deep stored draft is a 409 that names the depth; nothing is written. */
+export async function assertAnEmptyRingUndoOverAnOverDeepDraftRefusesByName(): Promise<void> {
+  const session = sessionWith(null, draftNesting(MAX_ONBOARDING_DRAFT_DEPTH + 5));
+  assert(draftHash(session.draft) === null, "the fixture is over the depth bound");
+  const { service, record } = build({ session, selects: [[session], ORG] });
+  const error = await thrown(() => withoutOpenAi(() => service.chat(JWT, "s-1", "undo")));
+  assert(
+    (error as Error | null)?.message === DRAFT_TOO_DEEP_FOR_TURN,
+    `the null-hash guard should have fired, got ${String((error as Error | null)?.message)}`,
+  );
+  assert(error instanceof ConflictException, `an over-deep empty-ring undo should be a ConflictException, got ${String(error)}`);
+  assert(record.updates.length === 0, `an over-deep empty-ring undo wrote ${record.updates.length} time(s)`);
+}
+
+/** (32) F4.230: a typed confirm with no proposal over an over-deep stored draft is a 409 that names the depth; nothing is written. */
+export async function assertAConfirmWithNoProposalOverAnOverDeepDraftRefusesByName(): Promise<void> {
+  const session = sessionWith(null, draftNesting(MAX_ONBOARDING_DRAFT_DEPTH + 5));
+  assert(draftHash(session.draft) === null, "the fixture is over the depth bound");
+  const { service, record } = build({ session, selects: [[session], ORG], commit: commitService() });
+  const error = await thrown(() => service.chat(JWT, "s-1", "confirm commit"));
+  assert(
+    (error as Error | null)?.message === DRAFT_TOO_DEEP_FOR_TURN,
+    `the null-hash guard should have fired, got ${String((error as Error | null)?.message)}`,
+  );
+  assert(error instanceof ConflictException, `an over-deep confirm should be a ConflictException, got ${String(error)}`);
+  assert(record.updates.length === 0, `an over-deep confirm wrote ${record.updates.length} time(s)`);
+}
+
 /** A message another writer appended between the read and the lock. */
 const BETWEEN = { id: "m-between", role: "assistant", content: "kept", createdAt: "2026-10-06T00:00:01.000Z" };
 

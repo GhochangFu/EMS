@@ -11,6 +11,8 @@ import {
   assertAnOverDeepStoredDraftRefusesTheTurnByName,
   assertAnUndoOverAnOverDeepDraftRefusesByName,
   assertAnEmptyRingUndoBuildsOnTheLockedRow,
+  assertAnEmptyRingUndoOverAnOverDeepDraftRefusesByName,
+  assertAConfirmWithNoProposalOverAnOverDeepDraftRefusesByName,
   assertAnEmptyRingUndoOverACommitIsAConflict,
   assertAnEmptyRingUndoRacedByACommitIsAConflict,
   assertAnEmptyRingUndoRacedByADraftChangeIsAConflict,
@@ -144,6 +146,14 @@ describe("onboarding chat — the fail-closed null-hash guard (F4.230)", () => {
 
   it("answers 409 DRAFT_TOO_DEEP_FOR_TURN and restores nothing on an undo over a draft past the depth bound", async () => {
     await assertAnUndoOverAnOverDeepDraftRefusesByName();
+  });
+
+  it("answers 409 DRAFT_TOO_DEEP_FOR_TURN and writes nothing on an empty-ring undo over a draft past the depth bound", async () => {
+    await assertAnEmptyRingUndoOverAnOverDeepDraftRefusesByName();
+  });
+
+  it("answers 409 DRAFT_TOO_DEEP_FOR_TURN and writes nothing on a typed confirm with no proposal over a draft past the depth bound", async () => {
+    await assertAConfirmWithNoProposalOverAnOverDeepDraftRefusesByName();
   });
 });
 

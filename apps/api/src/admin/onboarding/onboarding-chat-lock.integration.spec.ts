@@ -324,8 +324,10 @@ export function assertAConfirmWithNoProposalKeepsAMessageCommittedUnderTheLock(c
 
 /** Race 6: a stale confirm over a draft changed under the lock answers 409; the newer draft and its proposal stand. */
 export function assertAStaleConfirmOverAChangedDraftAnswers409(ctx: ChatLockCtx): void {
-  const { blocked, error, resolved, stored } = ctx.confirmStaleChanged;
+  const { blocked, error, hit, resolved, settledBeforeCommit, stored } = ctx.confirmStaleChanged;
+  expect(hit, "control: the holder's UPDATE hit the session row").toBe(1);
   expect(blocked, "control: a backend waited on the holder in a FOR UPDATE").toBeGreaterThan(0);
+  expect(settledBeforeCommit, "the stale confirm settled while the holder still held the lock").toBe(false);
   expect(resolved, "the stale confirm wrote over the holder's draft instead of refusing").toBe(false);
   expect(error).toBeInstanceOf(ConflictException);
   expect((error as ConflictException).getStatus()).toBe(409);
@@ -338,7 +340,9 @@ export function assertAStaleConfirmOverAChangedDraftAnswers409(ctx: ChatLockCtx)
 /** Race 7: a stale confirm waited on the holder, kept its message and cleared the proposal. */
 export function assertAStaleConfirmKeepsAMessageCommittedUnderTheLock(ctx: ChatLockCtx): void {
   const outcome = ctx.confirmStaleKept;
+  expect(outcome.hit, "control: the holder's UPDATE hit the session row").toBe(1);
   expect(outcome.blocked, "control: a backend waited on the holder in a FOR UPDATE").toBeGreaterThan(0);
+  expect(outcome.settledBeforeCommit, "the stale confirm settled while the holder still held the lock").toBe(false);
   expectTheHolderMessageKept(ctx, outcome, 2);
   expect(COMMIT_PROPOSAL_KEY in (outcome.stored.draft as object), "the stale proposal was cleared").toBe(false);
   expect(outcome.stored.draft.location?.name).toBe(ctx.seededName);
