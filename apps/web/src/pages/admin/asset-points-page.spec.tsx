@@ -174,6 +174,46 @@ export async function theListShowsTheInheritedEffectiveRange(): Promise<void> {
   expect(within(ownRow).queryByText(/inherited/)).toBeNull();
 }
 
+/**
+ * F2.25 — the Scale and Quality cells read the effective value too, not the
+ * row's own: an inheriting row shows the template's multiplier and policy, and
+ * a row with its own shows its own, never the template's.
+ */
+export async function theListShowsTheInheritedEffectiveScaleAndQuality(): Promise<void> {
+  stubApi();
+  const defaults = { scaleMultiplier: 2, scaleOffset: null, engMin: null, engMax: null, qualityPolicy: "accept_bad" as const };
+  const inheriting = pointItem({
+    id: "c1000000-0000-4000-8000-000000000021",
+    assetCode: "C1-INH-SQ",
+    templateDefaults: defaults,
+  });
+  const own = pointItem({
+    id: "c1000000-0000-4000-8000-000000000022",
+    assetCode: "C1-OWN-SQ",
+    scaleMultiplier: 3,
+    qualityPolicy: "discard_bad",
+    templateDefaults: defaults,
+  });
+  vi.mocked(api.fetchAdminAssetPoints).mockResolvedValue({ items: [inheriting, own] });
+  renderPage();
+  await screen.findByLabelText("Select C1-INH-SQ " + POINT_KEY);
+
+  const inheritingRow = rowOf(inheriting);
+  expect(within(inheritingRow).getByText("×2")).toBeTruthy();
+  expect(within(inheritingRow).getByText("accept_bad")).toBeTruthy();
+  const titles = within(inheritingRow)
+    .getAllByText("inherited")
+    .map((marker) => marker.getAttribute("title"));
+  expect(titles).toEqual(["From the template: scaleMultiplier", "From the template: qualityPolicy"]);
+
+  const ownRow = rowOf(own);
+  expect(within(ownRow).getByText("×3")).toBeTruthy();
+  expect(within(ownRow).getByText("discard_bad")).toBeTruthy();
+  expect(within(ownRow).queryByText("×2")).toBeNull();
+  expect(within(ownRow).queryByText("accept_bad")).toBeNull();
+  expect(within(ownRow).queryByText(/inherited/)).toBeNull();
+}
+
 /** Stubs the list with one row and opens its Edit dialog. */
 async function openEdit(item: AdminAssetPointDto) {
   const update = vi.spyOn(api, "updateAdminAssetPoint").mockResolvedValue(item);

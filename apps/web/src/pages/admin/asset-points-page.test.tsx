@@ -12,6 +12,7 @@ import {
   choosingUnwiredSendsNull,
   theEditRtuSelectShowsTheStoredRtu,
   theListShowsTheInheritedEffectiveRange,
+  theListShowsTheInheritedEffectiveScaleAndQuality,
 } from "./asset-points-page.spec";
 
 /**
@@ -39,6 +40,10 @@ describe("asset points page — refusals, effective metadata, the Add/Edit dialo
 
   it("F2.25 the Range cell shows the template's bound, marked inherited; an own bound is not", async () => {
     await theListShowsTheInheritedEffectiveRange();
+  }, CASE_TIMEOUT_MS);
+
+  it("F2.25 the Scale and Quality cells show the template's values, marked inherited; own values win", async () => {
+    await theListShowsTheInheritedEffectiveScaleAndQuality();
   }, CASE_TIMEOUT_MS);
 
   it("F2.31 an edit sends only the field that changed", async () => {
