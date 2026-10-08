@@ -237,3 +237,106 @@ CHECK**, matching the precedent `template_points` set for `formula` /
   remains blocked on A1/A3.
 - **The `no backfill` hazard is now written down in two places** rather than
   implied by ADR 0037's absence of a backfill mechanism.
+
+## Amendment 1 — the asset stores its pattern variables (`F2.29`)
+
+**Status: Proposed — 2026-10-08.** Source: owner rulings 2026-10-08, the Track B
+batch. Drafted before any implementation code; it becomes *Accepted* on the
+owner's word. It is a schema change, so it lands before the migration it
+describes (§10). Line citations are to `main` at `c60b8e00`.
+
+### What it amends
+
+Not a numbered decision of this record: the plan-gate ruling **Q-A** of
+2026-08-22 (`docs/plans/f2.6-template-version-lifecycle.md:83-108`), which the
+migrate service restates (`apps/api/src/admin/asset-templates/asset-templates-migrate.service.ts:71-78`).
+Q-A held that a measured *addition* resolves its `source_data_key` from
+`{asset_code}` alone, because "instantiation takes its other variables per
+request and never stores them". So a required addition whose pattern uses any
+other token is refused with "Rebuild these assets"
+(`asset-templates-migrate.service.ts:664-680`), and an optional one is skipped
+and reported (`:682`).
+The accepted cost was that "a template whose patterns use richer tokens can
+never be migrated". This amendment removes the reason for that cost, for
+assets built after it.
+
+What exists today:
+
+- the instantiate body accepts `sourceDataKeyVars: z.record(z.string().max(128)).optional()`
+  (`asset-templates.schema.ts:420`), and `resolveSourceDataKey` spreads the
+  variables, then sets the reserved `asset_code` last so a caller cannot
+  override it (`asset-templates-instantiate-guards.ts:472-485`);
+- the one `bms.assets` insert (`asset-templates-instantiate-core.ts:229-248`)
+  writes no variable. Both producers reach it: the instantiate route, and the
+  onboarding commit, which builds the same body
+  (`apps/api/src/admin/onboarding/onboarding-commit-templates.ts:204`) and calls
+  `instantiateInTransaction` (`:340`);
+- migration substitutes `{asset_code}` only (`asset-templates-migrate.service.ts:636`,
+  `:977-991`), and the mapping sheet's pre-fill does the same
+  (`apps/api/src/admin/asset-points/mapping-sheet-export.ts:131`).
+
+### Decision
+
+1. **A new nullable column, `bms.assets.source_data_key_vars jsonb`, with a
+   CHECK that it is `NULL` or a JSON object** (`jsonb_typeof(...) =
+   'object'`). It is migration `0102` at `c60b8e00` — the number is recorded
+   because the owner ruled it, against this record's own *Dependencies* rule of
+   taking the number from the directory when the file is written; if another
+   migration lands first, the next free number is used and this sentence is
+   not the authority. The migration changes no policy and no grant: the row level security on
+   `bms.assets` (enabled and forced in `0047`) is
+   table-level and already gates a new column, which is what migration `0101`
+   states for the column it adds.
+
+2. **Written once, at instantiation.** The core insert stores the request's
+   variables without the reserved `asset_code` key (it is `assets.code`, never
+   stored twice); an absent or empty record stores `NULL`. Because both
+   producers share that insert, the onboarding commit stores its draft's
+   variables too.
+
+3. **Never written again.** No `PATCH` field — and so no create field either,
+   because `updateAssetBodySchema` is `createAssetBodySchema.partial()`
+   (`apps/api/src/admin/assets/assets.schema.ts:53`). Not on the asset DTO
+   (`adminAssetDtoSchema`, `packages/shared/src/contracts/admin.ts:73`), so no
+   response contract changes. A variable that could change after the tags
+   were written would disagree with the `source_data_key`s already resolved
+   from it, and re-keying those is what decision 3 refuses. The correction path
+   for a wrongly resolved tag stays the mapping sheet (ADR 0056 decision 10).
+
+4. **Two readers.** The migrate service resolves a measured addition from the
+   stored variables plus `{asset_code}` (reserved last, as at instantiation),
+   so a later version that adds a patterned point migrates onto an asset that
+   stores the token. The mapping sheet's pre-fill substitutes the same set, so
+   a pre-fill row for such an asset shows a resolved tag rather than a literal
+   `{unit}`.
+
+5. **Assets instantiated before this amendment keep `NULL`, and migration
+   still refuses them** — with a message that says why: the asset stores no
+   variables because it was built before variables were kept, or with none.
+   "Rebuild" stays the remedy for them. There is no backfill: the variables of
+   an asset built earlier exist nowhere to recover. An asset that stores some
+   variables but not the token a new pattern needs is refused the same way,
+   and the message names the missing token.
+
+### Why a column and not `assets.meta`
+
+`assets.meta` is a caller-writable bag: the asset `PATCH` stores `body.meta`
+as sent (`apps/api/src/admin/assets/assets.service.ts:209-224`), so one asset
+edit would erase the variables with no error, and a key inside a bag cannot
+carry a CHECK.
+
+### Amended records
+
+- **Plan Q-A** — "a template whose patterns use tokens beyond `asset_code`
+  can never be migrated" now reads "…unless the asset stores its variables;
+  assets built before ADR 0039 Amendment 1 still cannot".
+- **ADR 0056 decision 10** ("The vars are still not persisted") and **decision
+  6** ("every other token left literal") — true now only for an asset with
+  `NULL` variables. ADR 0056 Amendment 3 points here.
+
+### Verification owed
+
+A migration-reviewer pass on `0102`; a cold start (`roles`, `migrate`,
+`seed` on an empty volume) with the seed's counts unchanged; an integration
+case where a stored `{unit}` resolves a required addition, beside one where a
+`NULL` asset is still refused with the new message.

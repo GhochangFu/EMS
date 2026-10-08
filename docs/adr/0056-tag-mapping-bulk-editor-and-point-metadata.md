@@ -458,3 +458,176 @@ which reads every cell as text and parses a number, is exactly such a writer;
 it now also accepts only a plain decimal literal (`0x10` is `number_invalid`,
 not 16). Decision 5 is unchanged: a non-finite value is refused at the door,
 never stored with a mark.
+
+## Amendment 3 — the single-row form, the workbook header, and the merged pair at migrate (`F2.25`–`F2.28`, `F2.30`, `F2.31`)
+
+**Status: Proposed — 2026-10-08.** Source: owner rulings 2026-10-08, the Track B
+batch. Drafted before any implementation code; it becomes *Accepted* on the
+owner's word, as this record did. One amendment carries three parts because
+the three build clusters share this record and land in that order of
+dependence: part A is the Asset Points form (`F2.25`, `F2.27`, `F2.31`), part B
+is the workbook (`F2.26`, `F2.28`), part C is the template side (`F2.30`). It
+lands in its own docs-only pull request first, and each cluster branch starts
+from it. Line citations are to `main` at `c60b8e00`.
+
+`F2.24` (the version delta reports a changed default) needs no amendment:
+decision 2 of ADR 0039 ("no blind apply") already covers it, as it covered the
+`F2.9` finding-31 shape on the derived side.
+
+### Part A — the Asset Points form reads and writes what the host applies
+
+**A1 — the read DTO carries the pinned template's five (`F2.25`).**
+`adminAssetPointDtoSchema` (`packages/shared/src/contracts/admin.ts:104`)
+today spreads `pointMetadataShape`: the asset's own override, as stored, `null`
+meaning "inherit". It gains one field, `templateDefaults:
+pointMetadataFieldsSchema.nullable()` — the five defaults the asset's
+**pinned** template version declares for that `point_key`, nested and not
+spread, because the five names are already taken by the override. `null` means
+there is nothing to inherit: the asset has no template, or its pinned version
+does not declare the key. An object of five `null`s means the key is declared
+with no defaults. The response carries the two inputs and not their result;
+the web derives the effective value `coalesce(own, template)` per field — the
+rule `BINDING_QUERY` applies (`apps/ingest/src/host/bindings.ts:123-127`) —
+and an "inherited" marker where the shown value came from the template. This
+was a technical default the owner took without a question.
+
+Every asset-point read projects through `mapAssetPointRow`
+(`apps/api/src/admin/asset-points/asset-point-row.ts:26`), and the join to
+`bms.template_points` is on `(assets.template_id, point_key)`, which
+`template_points_template_point_key_unique` (migration `0024`) makes at most
+one row. The non-admin read (`AssetsService.listPoints`,
+`apps/api/src/assets/assets.service.ts:108`) narrows the DTO with
+`pickAssetPointPickerRow` and does not gain the field.
+
+**A2 — a location-scoped RTU select on the Add/Edit dialog (`F2.27`).** The
+dialog offers the RTUs of the asset's location. On **create**, blank means
+omit, and the create route already inherits the asset's own gateway
+(`asset-points.service.ts:182`, `body.rtuId ?? ownerAsset.rtuId`). On **edit**,
+blank means `rtuId: null`, which unwires the point (Amendment 1;
+`resolveUpdatedWiring`, `asset-points.service.ts:617-622`) — **and the dialog
+sends it only when the field is dirty.** The update route refuses `rtuId` on a
+`computed` row on presence, `null` included (`asset-points.service.ts:280`),
+so a dialog that always sent the field would make every computed row
+uneditable. A stored RTU that is no longer among the location's RTUs is kept
+as a selectable option, so a controlled select does not fall back to blank and
+unwire the point on an untouched save.
+
+**A3 — the dialog sends a dirty-field diff (`F2.31`).** Today the edit dialog
+states all five metadata fields on every save
+(`apps/web/src/pages/admin/asset-points-page.tsx:314`, `metadataWriteFrom(form,
+"edit")`, which writes `null` for every empty box, `:123-140`). The service
+writes only the fields a body states (`statedPointMetadata`,
+`asset-points.service.ts:749`), so two concurrent edits of different fields
+do not overwrite each other — but a form save states every field and loses
+that protection. The dialog now compares the form with the loaded row and
+sends only the keys that changed. An emptied box on a field that held a value
+sends `null`; a required field (`pointKey`, `sourceDataKey`) is never sent
+empty; an unchanged form sends no request.
+
+**Not changed by part A.** The `PATCH` body (`sensorCode` and `unit` stay
+`optional`, not `nullable`, so the dialog still cannot clear them — a gap the
+C1 plan records for a later row), the bulk editor (decision 8), and the five
+inputs' placeholders.
+
+### Part B — the workbook
+
+**B1 — decision 7's exact-header rule is replaced by a tolerant header
+(`F2.28`).** Decision 7 reads "The header row must match decision 6's
+exactly". The parser enforces that position by position
+(`headerProblem`, `apps/api/src/admin/asset-points/mapping-sheet-rows.ts:136`),
+and `MAPPING_SHEET_HEADERS`' docblock says the same
+(`packages/shared/src/contracts/mapping-sheet.ts:27-32`). The rule becomes:
+
+1. every known column may appear in **any order**; the import reads each
+   cell by the column's resolved index, not by its position;
+2. an **unknown** header is refused, and so is a blank header cell between two
+   known ones — trailing blank header cells stay ignored, as today
+   (`mapping-sheet-rows.ts:130-133`), because Excel adds them on a re-save;
+3. a **duplicate** header is refused;
+4. a **missing** known column is refused, unless the column is listed in a new
+   constant `MAPPING_SHEET_OPTIONAL_HEADERS` in `@bms/shared`. The set is
+   **empty** today. It is the lever a later row pulls when it adds a column
+   (for example `sensor_code`), so that a sheet saved before that row still
+   imports.
+
+Every refusal is still `header_mismatch` on the file, never on a row, and its
+message still names only the offending header (§9.6). The error vocabulary
+does not grow. "Unknown refused" keeps the property decision 7 was written
+for: a misspelt header can never be read as a blank column. Decision 6's
+export order is unchanged; it is now the order the export writes, not the only
+order the import accepts. A `.csv` upload follows the same rule.
+
+A version marker (a sheet-name suffix such as `MAPPINGS_V1`, or a tag in the
+first row) was the alternative the `F2.28` row named. It was not taken: a
+`.csv` has no sheet name to carry a suffix, a first-row tag shifts every row
+number in every error, and neither answers what a later column means for a
+sheet saved before it.
+
+**B2 — a read-only `TEMPLATES` sheet, which the import ignores (`F2.26`).**
+Decision 6's "One sheet, `MAPPINGS`" gains a second sheet, written after
+`MAPPINGS` so that Excel opens on the editable one. It lists, once per
+template version pinned by an **active** asset of the location, that
+version's `measured` points with their `source_data_key_pattern` written
+literally (no token substituted) and the five class defaults. Gate question Q4
+recorded this option as one that "can be added later without a decision";
+this part records it rather than rules it. The import already selects the
+sheet by name for an `.xlsx` (`mapping-sheet-rows.ts:323`,
+`book.Sheets[MAPPING_SHEET_NAME]`), so a `TEMPLATES` sheet is ignored by
+construction; the build makes that a test, including a workbook with
+`TEMPLATES` first. The cells are literals, under the same no-formula rule as
+`MAPPINGS` (decision 6, ADR 0026).
+
+### Part C — the merged pair is re-checked at migrate (`F2.30`)
+
+**C1 — the decision.** When `migrate` moves an asset onto a version, the
+asset's stored metadata override is re-validated against the **target**
+version's defaults, with the same `validateMergedPointMetadata`
+(`apps/api/src/admin/asset-points/point-metadata.schema.ts:159`) the
+asset-side update and bulk update run (`asset-points.service.ts:313`, `:466`),
+imported and not restated. An override whose merged pair the target inverts
+is a refusal with the new reason **`metadata_override_invalid_on_target`**.
+The preview names the asset, the point and both bounds, and says that the
+repair is to clear or restate the override (Asset Points, bulk editor) and
+then migrate. `migrate` answers 409 and **no pin moves** — the existing rule
+that a refused plan writes nothing (`asset-templates-migrate.service.ts:320-330`).
+The check runs in `buildPlan`, before any transaction opens, beside the calc
+precedent of the same shape, `refuseOverridesThatDoNotSurvive` (`F2.9` Task
+12b; `asset-templates-migrate.service.ts:841`; reason
+`calc_override_invalid_on_target`, `admin.ts:717`). A `computed` row is not
+checked (it carries no instrument metadata, `asset-points.service.ts:280`),
+nor a key the target does not declare `measured`.
+
+**C2 — why the template save is not the place.** The `F2.30` row offered
+"refuse the template save naming the assets". At save time there are no
+affected assets, and the code makes that a fact rather than a likelihood:
+
+- a template's points can be edited only on a draft (`assertDraft`,
+  `apps/api/src/admin/asset-templates/asset-templates.service.ts:517`, called
+  by `update` at `:231`);
+- an asset can be instantiated only from a published version
+  (`asset-templates-instantiate-core.ts:132`), and migrated only onto one
+  (`asset-templates-migrate.service.ts:473`);
+- in `apps/api`, the only write of `assets.template_id` after the insert is
+  `migrate` (`asset-templates-migrate.service.ts:357`).
+
+So a new default reaches a stored override at exactly one moment: when
+`migrate` moves the pin onto the version that carries it. A check at save time
+would be an advisory about a migration that may never happen, and the migrate
+check would still be needed. Accepting the migration and listing the affected
+rows for repair afterwards was the other option, and it was not taken: from
+the pin move until the repair, the ingest host would discard every sample of
+that point as out of range (decision 4), and the bulk editor would refuse even
+a bare `{ active: false }` on that row (`F2.7` plan correction 48).
+
+### Amended records
+
+- **Decision 7** — its exact-header sentence is replaced by B1.
+- **Decision 6** — "One sheet, `MAPPINGS`" gains the `TEMPLATES` sheet of B2.
+- **Decision 2** — its merged-pair check, asked "from the asset side only",
+  gains a second run at migrate (C1). The row CHECKs are unchanged.
+- **Decision 10** and decision 6's "every other token left literal" are
+  qualified by ADR 0039 Amendment 1 (`F2.29`, same batch), for assets that
+  store their variables. That amendment carries the change; this one only
+  points to it.
+- **ADR 0092** names `F2.28` twice (a rejected option and its *Deferred*
+  list). Neither binds this answer, and ADR 0092 is not amended.

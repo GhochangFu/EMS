@@ -568,3 +568,123 @@ make the picker a strict subset of the validator again, which is the drift this
 amendment exists to remove. Whether a baseline template should be a domain-wide
 union at all is a separate question, filed as **`F2.32`** by the `chore(agents):`
 sweep that closed `F3.49` (`01b1fdb6`).
+
+---
+
+## Amendment 3 — a seeded baseline per domain and role (`F2.32`)
+
+**Status: Proposed — 2026-10-08.** Source: owner rulings 2026-10-08, the Track B
+batch. Drafted before any implementation code; it becomes *Accepted* on the
+owner's word. It answers the question Amendment 2 filed as `F2.32`. Line
+citations are to `main` at `c60b8e00`.
+
+### What the seed does today
+
+`HEALTH_TEMPLATE_POINTS_SQL` (`packages/db/src/asset-template-health-seed.ts:205-233`)
+declares on each `BASELINE-<DOMAIN>` version 1 every active, non-computed
+`asset_points.point_key` of every active asset in that domain.
+`HEALTH_TEMPLATE_PIN_SQL` (`:244-255`) pins each active asset whose
+`template_id IS NULL` to its domain's baseline. The seed runs for the `ESKOM`
+organization only (`packages/db/src/seed.ts:325`). The seed already keeps a
+class axis per asset: `demoRoleForAsset` (`packages/db/src/asset-groups-seed.ts:142-212`)
+writes one of fourteen role codes onto `bms.asset_group_members.role` (column
+added in migration `0051`), and `pue-demo-seed.ts` already selects by it
+(`agm.role = 'incoming-supply'`, `:297-316`).
+
+### Decision
+
+1. **One baseline per seeded domain and role:
+   `BASELINE-<DOMAIN>-<ROLE>`.** For each `(domain, role)` that the seeded
+   estate carries, the seed writes a published version 1 whose points are the
+   keys of **that class's own assets** — the same selection
+   `HEALTH_TEMPLATE_POINTS_SQL` makes today (active, non-computed, the seeded
+   organization's rows), narrowed to the assets holding that role. It carries
+   the same `content` (the health bands, `HEALTH_BASELINE_CONTENT`, `:108`) and
+   the same `asset_type`, so no band and no health score moves (ADR 0050): the
+   score reads the asset's `asset_points`
+   (`apps/api/src/asset-health/asset-health.service.ts:332-335`), and the band
+   reads the pinned template's `content` (`:488-497`), which is identical. A transformer then offers transformer keys in
+   the rule picker; *picker == validator* (Amendment 2) is unchanged, because
+   both read the pinned template.
+
+2. **`BASELINE-<DOMAIN>` stays, as the fallback for unroled assets.** An
+   asset with no role keeps the domain baseline, with its current content and
+   its current domain-wide point set. `BASELINE-WATER` keeps its present state.
+
+3. **The pin prefers the role template.** An unpinned asset (`template_id IS
+   NULL`, the guard of `:250`) is pinned to its role template when one exists,
+   else to its domain baseline. An asset an operator has migrated (ADR 0039)
+   is never touched, as today.
+
+4. **An already-seeded database re-pins once.** On a database seeded before
+   this amendment — the AWS demo host, every developer stack — the seed moves
+   an asset **only** when it is still on `BASELINE-<DOMAIN>` version 1 and its
+   role template exists. After the move the predicate no longer matches, so a
+   second seed moves nothing. Without this, only a cold start would narrow the
+   baselines.
+
+5. **Amendment 2's measured figures are superseded.** "`BASELINE-ELECTRICAL`
+   41 assets, 8 template points", the three cross-domain keys and
+   `EC-CR-UTILITY`'s twelve were measured on the domain-wide union. They
+   describe the database before this amendment, not after; no replacement
+   figure is recorded here — the build measures it.
+
+### Ruled here without a question
+
+These the rulings do not cover. Each is the drafter's choice, for the owner
+to confirm or change at acceptance.
+
+- **The `<ROLE>` segment.** Role codes carry hyphens (`incoming-supply`,
+  `lt-panel`, `leak-sensor`, …). The segment is the role code upper-cased; the
+  plan's spelling replaces `-` with `_` (`BASELINE-ELECTRICAL-INCOMING_SUPPLY`)
+  so the role segment is visibly one token. Either spelling is deterministic
+  and distinct from `BASELINE-ELECTRICAL-INCOMER`.
+- **An asset with more than one role.** `asset_group_members` allows an
+  asset in several groups. The seed takes one role per asset,
+  deterministically (the plan: the lowest role code), and that one role
+  decides both the class template its keys feed and the pin. Two roles would
+  put the asset's keys on two class templates while it is pinned to one.
+- **The PUE incomer.** `PUE_DEMO_PIN_SQL` moves an `incoming-supply` asset
+  **only** from `BASELINE-ELECTRICAL` (`pue-demo-seed.ts:99`, and `:310`
+  `a.template_id = baseline.id`), and its points are a copy of that baseline.
+  If decision 3 pins the incomers to the `incoming-supply` role template first,
+  that predicate matches nothing, the nine incomers never reach
+  `BASELINE-ELECTRICAL-INCOMER`, and the boot gate that counts them there
+  fails (`packages/db/src/verify-hierarchy-seed.ts:348`, `:535-539`). The copy source and
+  the pin predicate therefore follow the `incoming-supply` role template
+  (`PUE_DEMO_SOURCE_TEMPLATE_CODE` changes). Excluding `incoming-supply` from
+  decision 1 is the other way to keep the gate; it was not chosen because it
+  leaves the incomer template copying the domain-wide union.
+
+### The re-pin's safety argument, and its one gap
+
+Decision 4 treats a pin to `BASELINE-<DOMAIN>` v1 as the seed's own. That is
+true of the seed's writes, but `migrate` does not refuse a move to a **lower**
+version of the same code: `buildPlan` checks only that the source and target
+share organization and code (`apps/api/src/admin/asset-templates/asset-templates-migrate.service.ts:559-567`;
+nothing compares the two version numbers)
+and that the target is published (`:473`). An operator who published
+`BASELINE-<DOMAIN>` v2, migrated an asset onto it and back onto v1 holds a pin
+the re-pin cannot tell from the seed's, and it is moved once. This is accepted:
+the seeded baselines carry no wiring patterns and no metadata defaults
+(`HEALTH_TEMPLATE_POINTS_SQL` writes neither), so the move changes the asset's
+template points and nothing an operator configured.
+
+A consequence of the move, recorded rather than solved: a re-pinned asset is
+on a **different template code**, and ADR 0039 migration moves an asset only
+between versions of one code (`:559-567`). An operator cannot migrate it back
+onto `BASELINE-<DOMAIN>`.
+
+### What this amendment does not do
+
+- No schema change, no API or web code, no contract change. The picker and
+  the validator (`rule-points.ts`) are unchanged.
+- No change for a customer organization: the health seed runs for `ESKOM`
+  only, so a real tenant never gets a `BASELINE-*` template.
+- The stock catalog's per-class templates (ADR 0049) are not used as seeded
+  baselines. They are wiring templates, imported per organization as drafts
+  that must then be published, and the health seed's docblock already rules
+  out a wiring template as a band carrier
+  (`asset-template-health-seed.ts:50-58`): a pattern on a baseline point would
+  claim, or alias, a tag. The role templates are built from the keys the
+  seeded assets actually carry, so they offer no key without a row.
