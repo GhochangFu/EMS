@@ -40,9 +40,10 @@ import type {
  * What the dialog's rows hold — free text, before any rule is applied.
  *
  * `vars` holds one entry per distinct `{token}` the pinned version's measured
- * points ask for (`templateVariables`), keyed by variable name. These are
- * **not persisted** — ADR 0039 Q-A stands: migration resolves only the
- * reserved `{asset_code}`. A tag instantiated with the wrong variable is
+ * points ask for (`templateVariables`), keyed by variable name. Since `F2.29`
+ * (ADR 0039 Amendment 1) the server stores them on the asset row, once, at
+ * instantiation — migration and the mapping sheet's pre-fill read them — and
+ * no form edits them afterwards. A tag instantiated with the wrong variable is
  * corrected through the mapping sheet, not by re-running instantiate.
  */
 export type InstantiateRow = {
