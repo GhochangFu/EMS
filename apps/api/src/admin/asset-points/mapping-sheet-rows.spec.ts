@@ -592,3 +592,27 @@ export function assertATemplatesSheetIsIgnoredOnImport(): void {
   const templatesOnly = parseFile(buildBuffer(templatesRows, "xlsx", "TEMPLATES"), "a TEMPLATES-only workbook");
   assert(templatesOnly.code === "sheet_missing", `TEMPLATES alone → sheet_missing, got ${templatesOnly.code}`);
 }
+
+/**
+ * `F2.28` — the header can start right of column A (a blank column A left in
+ * front of the table): each cell is read at `range.s.c` plus its header
+ * position. A parser that read at the header position alone would read one
+ * column to the left — column A is blank, so every row would stop at
+ * `asset_code_required`.
+ */
+export function assertAHeaderStartingAtColumnBIsReadAtItsOwnColumns(): void {
+  const sheet = XLSX.utils.aoa_to_sheet([[]]);
+  XLSX.utils.sheet_add_aoa(sheet, [HEADER, row()], { origin: "B1" });
+  sheet["!ref"] = XLSX.utils.encode_range({ s: { r: 0, c: 1 }, e: { r: 1, c: HEADER.length } });
+  const book = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(book, sheet, "MAPPINGS");
+  const result = parseOk(XLSX.write(book, { type: "buffer", bookType: "xlsx" }) as Buffer, "a header from column B");
+  assert(result.errors.length === 0, `no row error, got ${JSON.stringify(result.errors)}`);
+  const only = result.rows[0];
+  assert(result.rows.length === 1, `the one data row is read, got ${result.rows.length}`);
+  assert(
+    only?.cells.asset_code === "TX01" && only.cells.point_key === "kw" && only.cells.source_data_key === "TX01_KW",
+    `cells are read at their own sheet column, got ${JSON.stringify(only?.cells)}`,
+  );
+  assert(only?.active === true, `active is read from the last column, got ${String(only?.active)}`);
+}

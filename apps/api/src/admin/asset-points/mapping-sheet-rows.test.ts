@@ -2,6 +2,7 @@ import { describe, it } from "vitest";
 
 import {
   assertActiveSpellings,
+  assertAHeaderStartingAtColumnBIsReadAtItsOwnColumns,
   assertATemplatesSheetIsIgnoredOnImport,
   assertBlankRowsKeepTheExcelNumbering,
   assertCellErrorsAreDeferredInOrder,
@@ -102,5 +103,9 @@ describe("F2.7 — parseMappingSheet, the pure half of the import", () => {
 
   it("F2.26 — reads MAPPINGS by name: a TEMPLATES sheet first is ignored, and TEMPLATES alone is sheet_missing", () => {
     assertATemplatesSheetIsIgnoredOnImport();
+  });
+
+  it("F2.28 — reads a header that starts at column B at its own sheet columns", () => {
+    assertAHeaderStartingAtColumnBIsReadAtItsOwnColumns();
   });
 });
