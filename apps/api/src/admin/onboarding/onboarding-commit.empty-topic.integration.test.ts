@@ -202,18 +202,10 @@ describe.skipIf(!connectionString)("F4.228 — the onboarding commit stores an e
 
     ctx = { ownerPool, commitSvc, jwt, secondSessionId, thirdSessionId, committed };
 
-    // rtus_mqtt_topic_idx is unique fleet-wide on a non-NULL value, so a leftover ''
-    // row would fail the first commit with 23505, not on the cells' claim. Say so.
-    const leftover = await ownerPool.query<{ id: string }>(
-      `SELECT id FROM bms.rtus WHERE mqtt_topic = '' LIMIT 1`,
-    );
-    if (leftover.rows.length > 0) {
-      throw new Error(
-        `F4.228: fixture precondition failed. bms.rtus row ${leftover.rows[0].id} already holds mqtt_topic = '', ` +
-          `pre-F4.228 data. Repair it to NULL, then re-run; the first commit would fail with 23505 ` +
-          `instead of testing the claim.`,
-      );
-    }
+    // No leftover-'' precondition (unlike F4.223's T3, which inserts '' itself):
+    // with the fix in place every commit here stores NULL, so a pre-F4.228 ''
+    // row elsewhere in the database cannot collide on rtus_mqtt_topic_idx. Only
+    // a fix-reverted run collides, and it fails in this hook with 23505.
     committed.first = await commitSvc.commit(jwt, firstSessionId);
   }, 60_000);
 
