@@ -7,6 +7,9 @@ import {
   assertAChatTurnRacedByARollbackIsAConflict,
   assertAChatUndoRacedByAChatTurnIsAConflict,
   assertAChatWriteOverACommitIsAConflict,
+  assertADraftAtTheDepthBoundStillWrites,
+  assertAnOverDeepStoredDraftRefusesTheTurnByName,
+  assertAnUndoOverAnOverDeepDraftRefusesByName,
   assertARollbackBuildsOnTheLockedRow,
   assertARollbackRacedByACommitIsForbidden,
   assertARollbackRacedByAChatTurnIsAConflict,
@@ -114,5 +117,19 @@ describe("onboarding chat — the hash-bound chat write (F4.227)", () => {
 
   it("builds the checkpoint ring on the locked row's ring", async () => {
     await assertAChatTurnBuildsTheRingOnTheLockedRow();
+  });
+});
+
+describe("onboarding chat — the fail-closed null-hash guard (F4.230)", () => {
+  it("answers 409 DRAFT_TOO_DEEP_FOR_TURN and writes nothing over a stored draft past the depth bound", async () => {
+    await assertAnOverDeepStoredDraftRefusesTheTurnByName();
+  });
+
+  it("writes a turn over a draft exactly at the depth bound", async () => {
+    await assertADraftAtTheDepthBoundStillWrites();
+  });
+
+  it("answers 409 DRAFT_TOO_DEEP_FOR_TURN and restores nothing on an undo over a draft past the depth bound", async () => {
+    await assertAnUndoOverAnOverDeepDraftRefusesByName();
   });
 });

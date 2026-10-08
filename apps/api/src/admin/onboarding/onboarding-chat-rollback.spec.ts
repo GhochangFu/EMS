@@ -8,7 +8,8 @@ import { BLOB, PLACE, build, rtu, type Row } from "./onboarding-chat-checkpoints
 import { JWT, ORG, sessionRow, withoutOpenAi } from "./onboarding-chat-caps.spec";
 import { NOTHING_TO_UNDO_REPLY, takeCheckpoint, type Checkpoint } from "./onboarding-checkpoints";
 import { attachCommitProposal, draftHash, readCommitProposal } from "./onboarding-commit-proposal";
-import { DRAFT_CHANGED_DURING_TURN, SESSION_NO_LONGER_DRAFT } from "./onboarding.service";
+import { DRAFT_CHANGED_DURING_TURN, DRAFT_TOO_DEEP_FOR_TURN, SESSION_NO_LONGER_DRAFT } from "./onboarding.service";
+import { MAX_ONBOARDING_DRAFT_DEPTH } from "./onboarding.schema";
 import { OnboardingValidateService } from "./onboarding-validate.service";
 
 function assert(condition: boolean, message: string): void {
@@ -367,4 +368,64 @@ export async function assertAChatTurnBuildsTheRingOnTheLockedRow(): Promise<void
   assert(record.updates.length === 1, `an equal hash writes once, got ${record.updates.length}`);
   const seqs = ((record.updates[0]?.checkpoints ?? []) as Checkpoint[]).map((cp) => cp.seq);
   assert(JSON.stringify(seqs) === "[9,10]", `the ring derives from the locked one (9 then 10), got ${JSON.stringify(seqs)}`);
+}
+
+/** `{ leaf: 1 }` wrapped `wraps` times: the value an RTU config's `extra` nests. */
+function nested(wraps: number): Record<string, unknown> {
+  let node: Record<string, unknown> = { leaf: 1 };
+  for (let i = 0; i < wraps; i++) {
+    node = { child: node };
+  }
+  return node;
+}
+
+/** A draft whose RTU config nests `nested(wraps)`; the leaf sits at level `6 + wraps`. */
+function draftNesting(wraps: number): OnboardingDraft {
+  const base = rtu("RTU-1");
+  return { location: PLACE, rtus: [{ ...base, config: { ...base.config, extra: nested(wraps) } }] } as OnboardingDraft;
+}
+
+/** The wraps that put the leaf at level 10: the deepest draft that still hashes. */
+const AT_THE_BOUND = MAX_ONBOARDING_DRAFT_DEPTH - 6;
+
+/** (21) F4.230: a stored draft over the depth bound has no hash, so the turn is a 409 that names the depth. */
+export async function assertAnOverDeepStoredDraftRefusesTheTurnByName(): Promise<void> {
+  const draft = draftNesting(MAX_ONBOARDING_DRAFT_DEPTH + 5);
+  assert(draftHash(draft) === null, "the fixture is over the depth bound");
+  const session = { ...sessionRow(draft, "rtu"), checkpoints: null } as Row;
+  const { service, record } = build({ session, selects: [[session], ORG, ORG] });
+  const error = await thrown(() => withoutOpenAi(() => service.chat(JWT, "s-1", "Add another RTU")));
+  assert(error instanceof ConflictException, `an over-deep draft should be a ConflictException, got ${String(error)}`);
+  assert(
+    (error as Error).message === DRAFT_TOO_DEEP_FOR_TURN,
+    `the null-hash guard should have fired, got ${(error as Error).message}`,
+  );
+  assert((error as Error).message !== DRAFT_CHANGED_DURING_TURN, "the mismatch sentence names the wrong cause");
+  assert(record.updates.length === 0, `an over-deep draft wrote ${record.updates.length} time(s)`);
+}
+
+/** (22) F4.230: the adjacent positive — a draft exactly at the depth bound still hashes and writes. */
+export async function assertADraftAtTheDepthBoundStillWrites(): Promise<void> {
+  const draft = draftNesting(AT_THE_BOUND);
+  assert(draftHash(draft) !== null, "the fixture sits at the depth bound and hashes");
+  assert(draftHash(draftNesting(AT_THE_BOUND + 1)) === null, "one more level is over the bound");
+  const session = { ...sessionRow(draft, "rtu"), checkpoints: null } as Row;
+  const { service, record } = build({ session, selects: [[session], ORG, ORG] });
+  await withoutOpenAi(() => service.chat(JWT, "s-1", "Add another RTU"));
+  assert(record.updates.length === 1, `a draft at the bound writes once, got ${record.updates.length}`);
+  assert("messages" in (record.updates[0] ?? {}), "the write carries the turn's messages");
+}
+
+/** (27) F4.230: a chat `undo` over an over-deep draft with a ring is a 409 that names the depth; nothing is restored. */
+export async function assertAnUndoOverAnOverDeepDraftRefusesByName(): Promise<void> {
+  const session = sessionWith(ringOfThree(), draftNesting(MAX_ONBOARDING_DRAFT_DEPTH + 5));
+  assert(draftHash(session.draft) === null, "the fixture is over the depth bound");
+  const { service, record } = build({ session, selects: [[session], ORG] });
+  const error = await thrown(() => withoutOpenAi(() => service.chat(JWT, "s-1", "undo")));
+  assert(error instanceof ConflictException, `an over-deep restore should be a ConflictException, got ${String(error)}`);
+  assert(
+    (error as Error).message === DRAFT_TOO_DEEP_FOR_TURN,
+    `the null-hash guard should have fired, got ${(error as Error).message}`,
+  );
+  assert(record.updates.length === 0, `an over-deep restore wrote ${record.updates.length} time(s)`);
 }
