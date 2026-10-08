@@ -485,6 +485,24 @@ export function resolveSourceDataKey(
 }
 
 /**
+ * `F2.29` (ADR 0039 Amendment 1 decision 2) — what the instantiate insert
+ * stores in `bms.assets.source_data_key_vars`: the request's variables without
+ * the reserved `asset_code` (it is `assets.code`, never stored twice), or
+ * `null` for an absent or empty record. Copied as entries, not by assignment,
+ * so a `__proto__` key parsed from JSON stays a plain own key rather than
+ * reaching the prototype setter.
+ */
+export function storedSourceDataKeyVars(
+  vars: Readonly<Record<string, string>> | undefined,
+): Record<string, string> | null {
+  if (!vars) {
+    return null;
+  }
+  const kept = Object.entries(vars).filter(([name]) => name !== SOURCE_KEY_RESERVED_VAR);
+  return kept.length === 0 ? null : Object.fromEntries(kept);
+}
+
+/**
  * Backstop for a code taken between a pre-check and the insert — for an asset
  * code, and since `E2.4` for a seeded rule code too.
  *

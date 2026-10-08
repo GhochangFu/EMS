@@ -28,6 +28,7 @@ import {
   assertAnOrganizationAdminCommitsAnOrganizationTemplate,
   assertOnlyTheTemplatedAssetsCarryThePin,
   assertTemplatedAssetPointsAreFedByTheNewRtu,
+  assertATemplatedDraftAssetStoresItsVariables,
   assertTheAuthoredCommitAnswersTheTemplateCounts,
   assertTheCommitCloseClearsTheRing,
   SEEDED_RING,
@@ -282,6 +283,10 @@ describe.skipIf(!connectionString)("F3.22 — the onboarding commit writes templ
 
   it("I4: an organization_admin commits an organization template onto the new RTU", async () => {
     await assertAnOrganizationAdminCommitsAnOrganizationTemplate(fx);
+  });
+
+  it("F2.29: a templated draft asset stores its variables; one without stores NULL", async () => {
+    await assertATemplatedDraftAssetStoresItsVariables(fx);
   });
 
   it("I5: each templated asset has one point per measured template point, on the new RTU", async () => {
