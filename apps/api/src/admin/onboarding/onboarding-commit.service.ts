@@ -432,8 +432,8 @@ export class OnboardingCommitService {
         // arm: `""` is not nullish, so the validator's length and wildcard checks
         // (`rtuTopic`) see `""` when the draft carries `topic: ""` beside a legacy
         // `mqttTopic`, and this write must agree with them rather than resurface the
-        // legacy key. The required-topic check reads `config.topic` and
-        // `config.mqttTopic` by truthiness, not through `rtuTopic`.
+        // legacy key. The required-topic check reads through `rtuTopic` too
+        // (F4.234).
         const mqttTopic = emptyTopicAsNull(
           (typeof config.topic === "string" ? config.topic : null) ??
             (typeof config.mqttTopic === "string" ? config.mqttTopic : null),

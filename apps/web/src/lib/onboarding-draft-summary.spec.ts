@@ -96,3 +96,42 @@ export function aPlainAssetLineIsUnchanged(): void {
 export function anEmptyDraftSaysSo(): void {
   expect(formatOnboardingDraftSummary({} as OnboardingDraft)).toBe("Draft is empty.");
 }
+
+function topicLine(config: Record<string, unknown>): string {
+  const text = formatOnboardingDraftSummary({
+    rtus: [{ displayName: "RTU-1", protocol: "mqtt", config }],
+  } as unknown as OnboardingDraft);
+  return text.split("\n")[1];
+}
+
+const LINE = "  1. RTU-1 · mqtt · topic ";
+
+/** W1 (F4.234) — an RTU with only a legacy `mqttTopic` prints it. */
+export function aLegacyTopicIsPrinted(): void {
+  expect(topicLine({ mqttTopic: "a/b" })).toBe(`${LINE}a/b`);
+}
+
+/** W2 (F4.234) — an empty `topic` beside a legacy key prints `-`, as the validator refuses it. */
+export function anEmptyTopicBesideALegacyKeyPrintsADash(): void {
+  expect(topicLine({ topic: "", mqttTopic: "a/b" })).toBe(`${LINE}-`);
+}
+
+/** W3 (F4.234) — `topic` wins over `mqttTopic`. */
+export function theTopicKeyWinsOverTheLegacyKey(): void {
+  expect(topicLine({ topic: "x/y", mqttTopic: "a/b" })).toBe(`${LINE}x/y`);
+}
+
+/** W4 (F4.234) — no topic key prints `-`. */
+export function anAbsentTopicPrintsADash(): void {
+  expect(topicLine({})).toBe(`${LINE}-`);
+}
+
+/** W5 (F4.234) — a non-string `topic` is skipped, as `rtuTopic` does. */
+export function aNonStringTopicFallsBackToTheLegacyKey(): void {
+  expect(topicLine({ topic: 42, mqttTopic: "a/b" })).toBe(`${LINE}a/b`);
+}
+
+/** W6 (F4.234) — a whitespace-only `topic` is printed as sent; only "" prints `-` (OQ1, OQ2). */
+export function aWhitespaceTopicIsPrintedAsSent(): void {
+  expect(topicLine({ topic: "  " })).toBe(`${LINE}  `);
+}

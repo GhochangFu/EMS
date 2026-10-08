@@ -1,6 +1,12 @@
 import { describe, it } from "vitest";
 
 import {
+  aLegacyTopicIsPrinted,
+  anEmptyTopicBesideALegacyKeyPrintsADash,
+  theTopicKeyWinsOverTheLegacyKey,
+  anAbsentTopicPrintsADash,
+  aNonStringTopicFallsBackToTheLegacyKey,
+  aWhitespaceTopicIsPrintedAsSent,
   aPlainAssetLineIsUnchanged,
   aStockEntryListsItsPatterns,
   aStockEntryRendersItsLine,
@@ -33,5 +39,29 @@ describe("F3.22 onboarding draft summary", () => {
 
   it("renders an empty draft as empty", () => {
     anEmptyDraftSaysSo();
+  });
+
+  it("prints a legacy mqttTopic (F4.234)", () => {
+    aLegacyTopicIsPrinted();
+  });
+
+  it("prints a dash for an empty topic beside a legacy key (F4.234)", () => {
+    anEmptyTopicBesideALegacyKeyPrintsADash();
+  });
+
+  it("prefers topic over mqttTopic (F4.234)", () => {
+    theTopicKeyWinsOverTheLegacyKey();
+  });
+
+  it("prints a dash for an absent topic (F4.234)", () => {
+    anAbsentTopicPrintsADash();
+  });
+
+  it("skips a non-string topic (F4.234)", () => {
+    aNonStringTopicFallsBackToTheLegacyKey();
+  });
+
+  it("prints a whitespace-only topic as sent (F4.234)", () => {
+    aWhitespaceTopicIsPrintedAsSent();
   });
 });

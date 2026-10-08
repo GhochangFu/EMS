@@ -178,3 +178,70 @@ export function assertTheCredentialsRequiredRowStays(): void {
     `the credentials row at rtus.0.credentialsSet, got ${JSON.stringify(errors)}`,
   );
 }
+
+const REQUIRED_MESSAGE = "MQTT topic is required";
+
+function requiredRows(config: Record<string, unknown>): { path: string; message: string }[] {
+  return errorsOf(mqttRtu(config)).filter(
+    (error) => error.path === "rtus.0.config.topic" && error.message === REQUIRED_MESSAGE,
+  );
+}
+
+/** R1a (F4.234) — an empty `topic` beside a legacy `mqttTopic` is an empty topic: the required row appears. */
+export function assertAnEmptyTopicBesideALegacyKeyIsRequired(): void {
+  const rows = requiredRows({ topic: "", mqttTopic: "a/b" });
+  assert(rows.length >= 1, `the required row at rtus.0.config.topic, got ${JSON.stringify(rows)}`);
+}
+
+/** R1b (F4.234) — that fault gives exactly one config row, so a second row at the path cannot hide. */
+export function assertAnEmptyTopicBesideALegacyKeyGivesOneConfigRow(): void {
+  const rows = configErrors(errorsOf(mqttRtu({ topic: "", mqttTopic: "a/b" })), 0);
+  assert(rows.length === 1, `exactly one config error, got ${JSON.stringify(rows)}`);
+}
+
+/** R2 (F4.234), the adjacent positive — a legacy `mqttTopic` alone leaves no config error. */
+export function assertALegacyTopicAloneHasNoConfigError(): void {
+  const rows = configErrors(errorsOf(mqttRtu({ mqttTopic: "a/b" })), 0);
+  assert(rows.length === 0, `no config error, got ${JSON.stringify(rows)}`);
+}
+
+/** R3a (F4.234) — an MQTT RTU with no topic key at all gets the required row. */
+export function assertAnAbsentTopicIsRequired(): void {
+  const rows = requiredRows({});
+  assert(rows.length >= 1, `the required row at rtus.0.config.topic, got ${JSON.stringify(rows)}`);
+}
+
+/** R3b (F4.234) — and exactly one config row. */
+export function assertAnAbsentTopicGivesOneConfigRow(): void {
+  const rows = configErrors(errorsOf(mqttRtu({})), 0);
+  assert(rows.length === 1, `exactly one config error, got ${JSON.stringify(rows)}`);
+}
+
+/** R4 (F4.234), the adjacent positive — a plain `topic` leaves no config error. */
+export function assertAPlainTopicHasNoConfigError(): void {
+  const rows = configErrors(errorsOf(mqttRtu({ topic: "a/b" })), 0);
+  assert(rows.length === 0, `no config error, got ${JSON.stringify(rows)}`);
+}
+
+/**
+ * R5 (F4.234, owner ruling OQ1) — a whitespace-only topic is kept as sent, so the
+ * required check does not fire (R5a); `needsMqttSetup` holds the draft at the
+ * `rtu` phase (R5b). One claim per cell, so a trim in either place reddens its own.
+ */
+function validateAWhitespaceTopic() {
+  const draft: OnboardingDraft = { location: { ...LOCATION }, rtus: [mqttRtu({ topic: "  " })] };
+  return new OnboardingValidateService().validate(draft, ACTIVE_TYPES, EMPTY_TEMPLATE_CONTEXT);
+}
+
+export function assertAWhitespaceTopicPassesTheRequiredCheck(): void {
+  const result = validateAWhitespaceTopic();
+  assert(
+    !result.errors.some((error) => error.message === REQUIRED_MESSAGE),
+    `no required row for a whitespace topic, got ${JSON.stringify(result.errors)}`,
+  );
+}
+
+export function assertAWhitespaceTopicHoldsTheDraftAtTheRtuPhase(): void {
+  const result = validateAWhitespaceTopic();
+  assert(result.suggestedPhase === "rtu", `the draft stays at phase rtu, got ${String(result.suggestedPhase)}`);
+}
