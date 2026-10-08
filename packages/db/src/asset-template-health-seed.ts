@@ -56,12 +56,14 @@ import type pg from "pg";
  * `BASELINE-WATER` already does: a set that followed the pins would differ
  * between a cold and a re-seeded database.
  *
- * **A database seeded before `F2.32` is re-pinned once (ruling Q2).**
- * `HEALTH_ROLE_TEMPLATE_REPIN_SQL` moves an asset from version 1 of its own
- * `BASELINE-<DOMAIN>` to its role template when that template exists. The
- * guard is the reason this does not break the pin's own rule below: the seed
- * is the only writer of a version 1 domain-baseline pin, because an operator's
- * migration moves an asset *off* that row and never onto it.
+ * **A database seeded before `F2.32` is re-pinned (ruling Q2), and the
+ * statement runs on every seed, not once.** `HEALTH_ROLE_TEMPLATE_REPIN_SQL`
+ * moves any active asset of the seeded org from version 1 of its own
+ * `BASELINE-<DOMAIN>` to its role template when that template exists. The seed
+ * is *not* the only writer of that pin: an operator can instantiate from the
+ * baseline row, and migrate checks the code but not the direction, so it can
+ * move an asset back to version 1. Such an asset is moved at the next seed if
+ * it has a role (which `seedAssetGroups` fills on every boot), with no audit row.
  *
  * **Each template declares points, because `publish()` refuses one that does
  * not.** `AssetTemplatesService.publish` throws *"A template with no points
@@ -395,12 +397,13 @@ WHERE a.organization_id = $1
 `;
 
 /**
- * Ruling Q2: a database seeded before `F2.32` moves, once, each asset still on
- * version 1 of its own `BASELINE-<DOMAIN>` to its role template, when that
- * template exists. Only a seed-owned pin matches: the seed is the only writer
- * of a version 1 domain-baseline pin, so an asset an operator migrated
- * elsewhere (or to a later version) keeps its pin. Once moved, an asset no
- * longer matches, so a second seed re-pins nothing.
+ * Ruling Q2: on every seed, each active asset on version 1 of its own
+ * `BASELINE-<DOMAIN>` moves to its role template, when that template exists.
+ * The predicate does not tell a seed-owned pin from an operator's: an asset an
+ * operator instantiated from, or migrated back to, that version 1 row moves
+ * too, with no audit row. An asset on a later version or another code keeps its
+ * pin. A moved asset no longer matches, so a second seed re-pins nothing new
+ * unless an asset has landed on version 1 since.
  */
 export const HEALTH_ROLE_TEMPLATE_REPIN_SQL = `
 UPDATE bms.assets a
