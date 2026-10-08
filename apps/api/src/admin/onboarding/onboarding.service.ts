@@ -520,9 +520,9 @@ export class OnboardingService {
 
   /**
    * `POST :id/rollback` (F3.25, ADR 0094 decisions 5 and 6). Bound to the
-   * draft hash the client last saw: `chat` writes without a lock, so a client
-   * that read the draft before another tab's turn must not restore over it. A
-   * mismatch is a 409 and nothing is written.
+   * draft hash the client last saw: the row lock orders the writes but cannot
+   * tell a stale client, so a client that read the draft before another tab's
+   * turn must not restore over it. A mismatch is a 409 and nothing is written.
    */
   async rollback(jwt: JwtPayload, sessionId: string, body: RollbackBody): Promise<OnboardingChatResponseDto> {
     const session = await this.loadSession(jwt, sessionId);
