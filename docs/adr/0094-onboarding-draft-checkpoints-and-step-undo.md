@@ -309,6 +309,7 @@ credentials.
      draft write still build on the loaded row with no lock (row `F4.233`);
      `patchDraft` and the Excel upload's draft stay unbound by the `F4.227`
      ruling.)*
+     *(Amended 2026-10-08, `F4.233`: the Excel upload and the credential route take the same `FOR UPDATE` as the chat write. The upload re-checks the status under the lock, builds `messages` on the locked row and writes with `status = 'draft'`; its draft stays hash-unbound by the `F4.227` ruling, so a draft change that lands in between is overwritten by the upload's merge. The credential route re-checks status and draft hash under the lock, answers 409 `DRAFT_CHANGED_DURING_TURN` on a mismatch and writes nothing; `_secrets` is inside the hash, so a credential set for another RTU in between is a mismatch too, and the write is merged on the locked row's draft. `patchDraft` is the one write that still locks nothing, and it stays unbound by the `F4.227` ruling.)*
      The route uses `loadSession`, so the existing access gates apply. (Plan
      detail: an unknown checkpoint id answers 404.)
    - The web chat page gains an Undo control that lists the checkpoints and
