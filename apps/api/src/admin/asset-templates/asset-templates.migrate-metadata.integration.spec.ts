@@ -4,7 +4,11 @@ import type pg from "pg";
 
 import { assetTemplates, assets, createDb, templatePoints } from "@bms/db";
 import type { BmsDb } from "@bms/db";
-import { CALC_DIALECT_V2, templateMigrationPreviewResponseSchema } from "@bms/shared";
+import {
+  CALC_DIALECT_V2,
+  POINT_METADATA_FIELDS,
+  templateMigrationPreviewResponseSchema,
+} from "@bms/shared";
 import type { PointMetadataFields } from "@bms/shared";
 
 import type { AssetTemplateMigrationService } from "./asset-templates-migrate.service";
@@ -209,5 +213,48 @@ export async function assertAMetadataDefaultOnlyChangeIsReportedByPreview(
   assert(
     (await pinnedVersion(pool, asset)) === 1,
     "a preview writes nothing: the asset must still be pinned to version 1",
+  );
+}
+
+/**
+ * **Every one of the five is projected, not only the one the first case moves.**
+ *
+ * The case above stays green if `loadPoints` forgets `engMax` or
+ * `qualityPolicy`. Here v1 states none of the five and v2 states all five, so
+ * the delta must name all five in `POINT_METADATA_FIELDS` order. The mutation
+ * this reddens: drop any single field from `loadPoints`'s projection.
+ */
+export async function assertAllFiveDefaultsAreReadByPreview(
+  pool: pg.Pool,
+  svc: AssetTemplateMigrationService,
+  fx: Fixtures,
+): Promise<void> {
+  const db = createDb(pool);
+  const v1 = await seedVersion(db, fx, { version: 1 });
+  const v2 = await seedVersion(db, fx, {
+    version: 2,
+    measuredMetadata: {
+      scaleMultiplier: 0.1,
+      scaleOffset: -40,
+      engMin: 0,
+      engMax: 100,
+      qualityPolicy: "accept_bad",
+    },
+  });
+  const asset = await seedAsset(db, fx, "ALL5", v1);
+
+  const preview = templateMigrationPreviewResponseSchema.parse(
+    await svc.previewMigration(fx.adminJwt, v2, { assetIds: [asset] }),
+  );
+  const delta = preview.deltas.find((d) => d.fromVersion === 1 && d.toVersion === 2);
+  const changed = delta?.measuredMetadataChanged.find((c) => c.pointKey === MEASURED_KEY);
+  assert(
+    JSON.stringify(changed?.changedFields) === JSON.stringify(POINT_METADATA_FIELDS),
+    `all five defaults moved, so all five must be named — a field missing here is a field ` +
+      `loadPoints does not project. Got ${JSON.stringify(changed?.changedFields)}`,
+  );
+  assert(
+    changed?.to.qualityPolicy === "accept_bad" && changed?.to.engMax === 100,
+    `the target side must carry the stored values, got ${JSON.stringify(changed?.to)}`,
   );
 }

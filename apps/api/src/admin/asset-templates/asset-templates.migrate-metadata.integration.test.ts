@@ -19,6 +19,7 @@ import {
   DERIVED_KEY,
   MEASURED_KEY,
   assertAMetadataDefaultOnlyChangeIsReportedByPreview,
+  assertAllFiveDefaultsAreReadByPreview,
   cleanup,
 } from "./asset-templates.migrate-metadata.integration.spec";
 
@@ -100,5 +101,10 @@ describe.skipIf(!connectionString)("F2.24 — migration reads the five metadata 
   it("reports a metadata-default-only version change in migration-preview (F2.24)", async () => {
     if (!pool) throw new Error("pool required");
     await assertAMetadataDefaultOnlyChangeIsReportedByPreview(pool, svc, fx);
+  });
+
+  it("reads every one of the five defaults, so a change to any of them is reported (F2.24)", async () => {
+    if (!pool) throw new Error("pool required");
+    await assertAllFiveDefaultsAreReadByPreview(pool, svc, fx);
   });
 });
