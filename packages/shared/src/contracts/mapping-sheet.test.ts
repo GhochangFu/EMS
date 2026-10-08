@@ -7,12 +7,17 @@ import {
   assertErrorDtoAcceptsBothLevels,
   assertHeaderIsTheTwelveInOrder,
   assertPreviewAndCommitDtos,
+  assertTemplatesSheetHeaderIsTheElevenInOrder,
 } from "./mapping-sheet.spec";
 
 /** Vitest entry point — assertions live in the sibling `.spec` (ADR 0014). */
 describe("F2.7 — the MAPPINGS sheet contract (ADR 0056 decisions 6, 7)", () => {
   it("names the twelve columns in the ADR's order and the one sheet", () => {
     assertHeaderIsTheTwelveInOrder();
+  });
+
+  it("names the read-only TEMPLATES sheet and its eleven columns in order (F2.26)", () => {
+    assertTemplatesSheetHeaderIsTheElevenInOrder();
   });
 
   it("lists exactly 24 distinct error codes and derives the schema from them", () => {

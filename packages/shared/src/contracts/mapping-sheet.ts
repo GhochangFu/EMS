@@ -25,10 +25,11 @@ import { pointMetadataShape } from "./point-metadata";
 export const MAPPING_SHEET_NAME = "MAPPINGS";
 
 /**
- * The header row, exactly this order, lower-case. A header with anything else —
- * a thirteenth column, a reordering, a missing name — is `header_mismatch` on
- * the file, not on a row: the sheet is `.strict()` in the same sense the bodies
- * are (ADR 0056 decision 7).
+ * The header row, lower-case, in the export order; the import accepts the known
+ * names in any order (`F2.28`, ADR 0056 Amendment 3, replacing decision 7's
+ * exact-header rule). An unknown or blank header, a duplicate, or a missing name
+ * not listed in `MAPPING_SHEET_OPTIONAL_HEADERS` is `header_mismatch` on the
+ * file, not on a row: a misspelt header can never be read as a blank column.
  */
 export const MAPPING_SHEET_HEADERS = [
   "asset_code",
@@ -43,6 +44,41 @@ export const MAPPING_SHEET_HEADERS = [
   "eng_max",
   "quality_policy",
   "active",
+] as const;
+
+/**
+ * `F2.28` / ADR 0056 Amendment 3 — the known columns a header may omit. Empty
+ * today: every one of the twelve is required. The row that adds a column a sheet
+ * saved before it cannot carry lists that column here, so the older sheet still
+ * imports.
+ */
+export const MAPPING_SHEET_OPTIONAL_HEADERS: ReadonlySet<(typeof MAPPING_SHEET_HEADERS)[number]> = new Set();
+
+/**
+ * `F2.26` / ADR 0056 Amendment 3 — the second, read-only sheet of the export:
+ * reference material while a person edits `MAPPINGS`. The import reads
+ * `MAPPINGS` by name, so this sheet is never read back.
+ */
+export const TEMPLATES_SHEET_NAME = "TEMPLATES";
+
+/**
+ * The `TEMPLATES` header, in order: one row per **measured** point of each
+ * template version pinned by an active asset of the location. Derived points
+ * are absent by construction, as in `MAPPINGS`, so there is no `kind` column;
+ * `source_data_key_pattern` is the template's pattern, not substituted.
+ */
+export const TEMPLATES_SHEET_HEADERS = [
+  "template_code",
+  "template_version",
+  "template_name",
+  "point_key",
+  "unit",
+  "source_data_key_pattern",
+  "scale_multiplier",
+  "scale_offset",
+  "eng_min",
+  "eng_max",
+  "quality_policy",
 ] as const;
 
 /** One of the twelve column names — what an error's `column` may name. */
