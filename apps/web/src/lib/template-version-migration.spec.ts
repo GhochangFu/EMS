@@ -220,6 +220,15 @@ export function runDeltaLineTests(): void {
     measuredRemoved: [
       { pointKey: "VOLTS", fromSourceDataKeyPattern: "OLD", toSourceDataKeyPattern: null },
     ],
+    // `F2.24` — a measured point whose class default moved between the versions.
+    measuredMetadataChanged: [
+      {
+        pointKey: "KW",
+        changedFields: ["scaleMultiplier"],
+        from: { scaleMultiplier: null, scaleOffset: null, engMin: null, engMax: null, qualityPolicy: null },
+        to: { scaleMultiplier: 10, scaleOffset: null, engMin: null, engMax: null, qualityPolicy: null },
+      },
+    ],
     derivedChanged: [
       {
         pointKey: "KWH",
@@ -234,7 +243,7 @@ export function runDeltaLineTests(): void {
     ],
   });
 
-  assert(lines.length === 3, `expected 3 lines, got ${lines.length}`);
+  assert(lines.length === 4, `expected 4 lines, got ${lines.length}`);
   assert(
     lines[0]?.kind === "measured-removed",
     "a refusing change must come first — a reader scanning a long delta has to see what " +
@@ -249,6 +258,22 @@ export function runDeltaLineTests(): void {
     lines.find((l) => l.pointKey === "KWH")?.detail === "formula, calcIntervalSeconds changed",
     "a derived change must name the fields, not merely say 'changed' — decision 5 does not " +
       "recompute history, so which fields moved is what makes the series readable afterwards",
+  );
+
+  const kw = lines.find((l) => l.pointKey === "KW");
+  assert(
+    kw?.kind === "measured-metadata-changed",
+    `a changed metadata default must be its own line kind, got ${String(kw?.kind)}`,
+  );
+  assert(
+    kw?.detail ===
+      "scaleMultiplier default changed — applies to every migrated asset that does not override it",
+    `a changed default must name the field and who it reaches (F2.24), got "${String(kw?.detail)}"`,
+  );
+  assert(
+    lines.findIndex((l) => l.pointKey === "CURRENT") < lines.findIndex((l) => l.pointKey === "KW") &&
+      lines.findIndex((l) => l.pointKey === "KW") < lines.findIndex((l) => l.pointKey === "KWH"),
+    "the metadata line sits with the measured changes, after the additions and before the derived ones",
   );
 
   assert(deltaLines(EMPTY_DELTA).length === 0, "an empty delta produces no lines");
