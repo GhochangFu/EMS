@@ -7524,3 +7524,24 @@ Live: `bms-api` and `bms-worker` rebuilt with `--no-cache` from `main` `0922bfa4
 Raised: `F4.228` (onboarding still stores an empty topic as `''`),
 `F4.230` (the null-hash check has no spec), `F4.231` (the empty-ring undo
 writes without a lock). No `chore(agents):` change owed.
+
+### `F4.228`, `F4.230`, `F4.231` — the onboarding topic and the chat writes under the row lock ✅ 2026-10-08
+
+Two PRs, squash-merged 2026-10-08; no migration, no new dependency, no web
+change. One ADR amendment note, text approved at the plan gate (ADR 0094
+decision 6).
+
+- **#769** (`2216b27d`) — `F4.228`: the onboarding confirm stores an
+  empty RTU topic as NULL through the helper the admin routes use, now in
+  `apps/api/src/admin/rtu-topic.ts`.
+- **#770** (`54487a61`) — `F4.230`: a stored draft too deep to hash
+  answers 409 with a sentence that names the depth, on the chat write, the
+  undo and the confirm. `F4.231`: the empty-ring undo and, by owner ruling,
+  every path of the typed confirm write under `FOR UPDATE` and build on the
+  locked row; a real-Postgres harness gates the lock.
+
+Live: `bms-api` and `bms-worker` rebuilt with `--no-cache` from `main` `54487a61` and restarted; the new code is in both images (the depth sentence, `assertTurnStillBound` 4 times, `NotFoundException` 3 times, one `FOR UPDATE` in `lockSession`, `emptyTopicAsNull` in `rtu-topic`, the commit and the RTU service) and `/health` answers 200. Sign-in checks not done (owner ruling). Browser: N/A (no web file).
+
+Raised: `F4.233` (the Excel upload and the credential route still write
+without the lock), `F4.234` (the validator's required-topic check reads
+the legacy key). No `chore(agents):` change owed.
