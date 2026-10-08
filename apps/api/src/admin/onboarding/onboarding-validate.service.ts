@@ -168,7 +168,7 @@ export class OnboardingValidateService {
         }
         // F4.234: read through `rtuTopic`, as the length and wildcard checks below
         // and the commit do, so `{ topic: "", mqttTopic: "a/b" }` is an empty topic,
-        // not the legacy key. `rtuTopic` answers "" for a missing or non-string key.
+        // not the legacy key. `rtuTopic` answers "" when neither key holds a string.
         if (rtu.protocol === "mqtt" && rtuTopic(rtu) === "") {
           errors.push({
             path: `rtus.${i}.config.topic`,

@@ -225,14 +225,23 @@ export function assertAPlainTopicHasNoConfigError(): void {
 
 /**
  * R5 (F4.234, owner ruling OQ1) — a whitespace-only topic is kept as sent, so the
- * required check does not fire; `needsMqttSetup` holds the draft at the `rtu` phase.
+ * required check does not fire (R5a); `needsMqttSetup` holds the draft at the
+ * `rtu` phase (R5b). One claim per cell, so a trim in either place reddens its own.
  */
-export function assertAWhitespaceTopicPassesTheRequiredCheck(): void {
+function validateAWhitespaceTopic() {
   const draft: OnboardingDraft = { location: { ...LOCATION }, rtus: [mqttRtu({ topic: "  " })] };
-  const result = new OnboardingValidateService().validate(draft, ACTIVE_TYPES, EMPTY_TEMPLATE_CONTEXT);
+  return new OnboardingValidateService().validate(draft, ACTIVE_TYPES, EMPTY_TEMPLATE_CONTEXT);
+}
+
+export function assertAWhitespaceTopicPassesTheRequiredCheck(): void {
+  const result = validateAWhitespaceTopic();
   assert(
     !result.errors.some((error) => error.message === REQUIRED_MESSAGE),
     `no required row for a whitespace topic, got ${JSON.stringify(result.errors)}`,
   );
+}
+
+export function assertAWhitespaceTopicHoldsTheDraftAtTheRtuPhase(): void {
+  const result = validateAWhitespaceTopic();
   assert(result.suggestedPhase === "rtu", `the draft stays at phase rtu, got ${String(result.suggestedPhase)}`);
 }

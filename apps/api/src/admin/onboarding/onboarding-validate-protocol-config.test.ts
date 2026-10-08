@@ -8,6 +8,7 @@ import {
   assertAnAbsentTopicGivesOneConfigRow,
   assertAPlainTopicHasNoConfigError,
   assertAWhitespaceTopicPassesTheRequiredCheck,
+  assertAWhitespaceTopicHoldsTheDraftAtTheRtuPhase,
   assertAFallbackTopicWildcardIsReportedOnce,
   assertAHeadTopicWildcardIsReportedOnce,
   assertAShadowedFallbackWildcardKeepsItsSchemaRow,
@@ -45,4 +46,5 @@ describe("validate — rtus[].config against the protocol's draft schema (F3.24a
   it("gives one config row for an absent topic (F4.234)", () => assertAnAbsentTopicGivesOneConfigRow());
   it("accepts a plain topic (F4.234)", () => assertAPlainTopicHasNoConfigError());
   it("keeps a whitespace topic passing the required check (F4.234)", () => assertAWhitespaceTopicPassesTheRequiredCheck());
+  it("holds a whitespace-topic draft at the rtu phase (F4.234)", () => assertAWhitespaceTopicHoldsTheDraftAtTheRtuPhase());
 });
