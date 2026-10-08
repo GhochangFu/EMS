@@ -896,6 +896,13 @@ export class AssetTemplateMigrationService {
       // `derivedChanged`, so `migration-preview` said "no changes" while the
       // migrated asset picked the new value up on its next sweep.
       minCoverageRatio: row.minCoverageRatio,
+      // `F2.24` — the five metadata defaults, projected because the delta compares
+      // them; one left out reads `undefined` on both sides and goes unreported.
+      scaleMultiplier: row.scaleMultiplier,
+      scaleOffset: row.scaleOffset,
+      engMin: row.engMin,
+      engMax: row.engMax,
+      qualityPolicy: row.qualityPolicy,
     }));
   }
 

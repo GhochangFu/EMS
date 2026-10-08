@@ -1,5 +1,8 @@
+import { POINT_METADATA_FIELDS } from "@bms/shared";
 import type {
   AssetPointCalcOverrideFields,
+  PointMetadataFields,
+  QualityPolicy,
   TemplateCalcField,
   TemplateMigrationRefusalDto,
   TemplateVersionDeltaDto,
@@ -56,6 +59,21 @@ import type {
  * has never read, and `AssetTemplateMigrationService` answers it with
  * `validateMergedCalcOverride` (`F2.9` Task 12b, refusal
  * `calc_override_invalid_on_target`).
+ *
+ * ## The five metadata defaults are compared, and reported only (`F2.24`)
+ *
+ * ADR 0056 decision 1's `scale_multiplier`, `scale_offset`, `eng_min`,
+ * `eng_max` and `quality_policy` are class defaults on a *measured* point.
+ * Before `F2.24` a version bump that moved only one of them produced an empty
+ * delta — the finding-31 shape on the measured side — and every migrated asset
+ * without its own override picked the new value up on the ingest host's next
+ * reload with no operator having seen it. They are compared per field and
+ * listed in `measuredMetadataChanged`; decision 3 refuses wiring changes only,
+ * so they never refuse here. A derived point carries none of the five
+ * (`templatePointBodySchema` refuses them), so its are never compared. Whether
+ * one asset's stored override survives the new default is, again, a question
+ * about a row this function never reads: `F2.30`'s
+ * `metadata_override_invalid_on_target` in the migration service.
  */
 
 /** The subset of a stored `template_points` row this function reads. */
@@ -79,6 +97,18 @@ export interface StoredTemplatePoint {
    * goes unreported exactly as it did before finding 31.
    */
   minCoverageRatio: number | null;
+  /**
+   * `F2.24` — the five instrument-metadata class defaults (ADR 0056 decision 1).
+   * Required, not optional, for the reason `minCoverageRatio` is: a caller that
+   * forgot to project one compares `undefined` to `undefined` and the change
+   * goes unreported. `qualityPolicy` is drizzle's raw varchar; `pointMetadataOf`
+   * narrows it.
+   */
+  scaleMultiplier: number | null;
+  scaleOffset: number | null;
+  engMin: number | null;
+  engMax: number | null;
+  qualityPolicy: string | null;
 }
 
 export interface TemplateVersionDeltaOptions {
@@ -137,6 +167,31 @@ export function calcFieldsOf(point: {
     calcTrigger: point.calcTrigger as AssetPointCalcOverrideFields["calcTrigger"],
     calcIntervalSeconds: point.calcIntervalSeconds,
     maxInputAgeSeconds: point.maxInputAgeSeconds,
+  };
+}
+
+/**
+ * `F2.24` — the five metadata columns of one stored row, in the shared shape.
+ *
+ * The sibling of `calcFieldsOf`, structural and exported for the same reason:
+ * `template_points` and `asset_points` name the five identically, and the
+ * migration service's `F2.30` gate shapes both sides of one merge with it.
+ */
+export function pointMetadataOf(point: {
+  scaleMultiplier: number | null;
+  scaleOffset: number | null;
+  engMin: number | null;
+  engMax: number | null;
+  qualityPolicy: string | null;
+}): PointMetadataFields {
+  return {
+    scaleMultiplier: point.scaleMultiplier,
+    scaleOffset: point.scaleOffset,
+    engMin: point.engMin,
+    engMax: point.engMax,
+    // The `*_quality_policy_check` constraints guarantee the vocabulary; drizzle
+    // types the column as its raw varchar (as `template-point-defaults.ts` does).
+    qualityPolicy: point.qualityPolicy as QualityPolicy | null,
   };
 }
 
@@ -249,6 +304,18 @@ export function computeTemplateVersionDelta(
           `carries the old key and ingest is writing through it (ADR 0039 decision 3). ` +
           `${options.assetCount} asset(s) carry it. Rebuild the assets instead.`,
       );
+    }
+
+    // `F2.24` — independent of the re-key above: a re-keyed point whose default
+    // also moved reports both, and the re-key refusal still stands.
+    const metadataChanged = POINT_METADATA_FIELDS.filter((field) => before[field] !== after[field]);
+    if (metadataChanged.length > 0) {
+      delta.measuredMetadataChanged.push({
+        pointKey,
+        changedFields: metadataChanged,
+        from: pointMetadataOf(before),
+        to: pointMetadataOf(after),
+      });
     }
   }
 

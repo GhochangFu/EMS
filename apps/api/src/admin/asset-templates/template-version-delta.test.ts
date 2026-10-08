@@ -3,6 +3,7 @@ import { describe, it } from "vitest";
 import {
   assertACoverageRatioOnlyChangeIsReported,
   assertDerivedChangesAreReportedNeverRefused,
+  assertAMetadataDefaultOnlyChangeIsReported,
   assertDifferentRowIdentitiesWithSameKeysAreNoChange,
   assertIdenticalVersionsProduceAnEmptyDelta,
   assertKindFlipsAreClassifiedExplicitly,
@@ -43,5 +44,9 @@ describe("F2.6 — template version delta", () => {
 
   it("classifies a kind flip explicitly in both directions", () => {
     assertKindFlipsAreClassifiedExplicitly();
+  });
+
+  it("reports a metadata-default-only change and never refuses it (F2.24)", () => {
+    assertAMetadataDefaultOnlyChangeIsReported();
   });
 });
