@@ -104,23 +104,10 @@ describe.skipIf(!ownerUrl)("F2.32 — a seeded health baseline per domain and ro
     expect(keys).toContain("backup_min");
   });
 
-  it("no active roled ESKOM asset is left on its domain baseline v1 while its role template exists", async () => {
-    const rows = await (probePool as IntegrationPool).query<{ n: number }>(
-      `SELECT count(*)::int AS n
-         FROM bms.assets a
-         JOIN bms.asset_templates dom ON dom.id = a.template_id
-        WHERE a.organization_id = $1 AND a.active = true
-          AND dom.code = 'BASELINE-' || upper(a.domain) AND dom.version = 1
-          AND EXISTS (
-            SELECT 1 FROM bms.asset_templates role_t
-             WHERE role_t.organization_id = $1 AND role_t.domain = a.domain AND role_t.version = 1
-               AND role_t.code = 'BASELINE-' || upper(a.domain) || '-' || upper(replace(
-                 (SELECT min(agm.role) FROM bms.asset_group_members agm WHERE agm.asset_id = a.id),
-                 '-', '_')))`,
-      [eskomOrgId],
-    );
-    expect(rows.rows[0]?.n).toBe(0);
-  });
+  // No read case asserts "no roled asset is on its domain baseline v1": ADR
+  // 0058 Amendment 3 decision 4 makes that a legal state once an operator
+  // instantiates from, or migrates back to, that row, and the seed leaves it.
+  // The rolled-back cases below hold the seed's side of it.
 
   it("every ESKOM asset on a role template holds that template's role, and some do", async () => {
     const rows = await (probePool as IntegrationPool).query<{ on_role: number; mismatched: number }>(
@@ -145,17 +132,33 @@ describe.skipIf(!ownerUrl)("F2.32 — a seeded health baseline per domain and ro
     pool: SeedPool;
     transformerId: string;
     batteryId: string;
+    domainId: string;
     operatorTemplateId: string;
     templateCodeOf: (assetId: string) => Promise<string>;
   };
 
   /**
-   * In one rolled-back ESKOM transaction: puts a seeded transformer back on
-   * `BASELINE-ELECTRICAL` v1 (the pre-`F2.32` state), migrates a seeded
-   * battery to an operator's own template (ADR 0039's path), runs the health
-   * seed, and hands both to `body`. The `ROLLBACK` is in a `finally`.
+   * In one rolled-back ESKOM transaction: puts a seeded transformer on
+   * `BASELINE-ELECTRICAL` v1, migrates a seeded battery to an operator's own
+   * template (ADR 0039's path), and hands both to `body`. The `ROLLBACK` is
+   * in a `finally`.
+   *
+   * `preF232` makes the transaction look like a database seeded before
+   * `F2.32`: it renames the seeded `BASELINE-ELECTRICAL-TRANSFORMER`, so the
+   * next seed run inserts that role template afresh — the one run decision 4
+   * lets re-pin. A rename rather than a delete, because three tables hold a
+   * foreign key to `asset_templates` with `NO ACTION`.
+   *
+   * Every assertion reads an asset or a template this fixture owns, never an
+   * org-wide count of pins or templates: under READ COMMITTED another suite
+   * can commit an unpinned ESKOM asset between two statements here, and the
+   * pin would count it. `repinned` stays exact, because a run moves an asset
+   * only to a role template that the same run inserted.
    */
-  async function withRepinFixture(body: (fixture: RepinFixture) => Promise<void>): Promise<void> {
+  async function withRepinFixture(
+    options: { preF232: boolean },
+    body: (fixture: RepinFixture) => Promise<void>,
+  ): Promise<void> {
     const pool = seedPool as SeedPool;
     await pool.query("BEGIN");
     try {
@@ -192,6 +195,15 @@ describe.skipIf(!ownerUrl)("F2.32 — a seeded health baseline per domain and ro
       );
       const operatorTemplateId = operator.rows[0]?.id as string;
 
+      if (options.preF232) {
+        const renamed = await pool.query(
+          `UPDATE bms.asset_templates SET code = code || $2
+            WHERE organization_id = $1 AND code = 'BASELINE-ELECTRICAL-TRANSFORMER'`,
+          [eskomOrgId, `-PRE-${RUN_ID}`],
+        );
+        assert((renamed.rowCount ?? 0) >= 1, "BASELINE-ELECTRICAL-TRANSFORMER is not seeded — run pnpm db:seed.");
+      }
+
       await pool.query(`UPDATE bms.assets SET template_id = $1 WHERE id = $2`, [domainId, transformerId]);
       await pool.query(`UPDATE bms.assets SET template_id = $1 WHERE id = $2`, [
         operatorTemplateId,
@@ -202,6 +214,7 @@ describe.skipIf(!ownerUrl)("F2.32 — a seeded health baseline per domain and ro
         pool,
         transformerId,
         batteryId,
+        domainId: domainId as string,
         operatorTemplateId,
         templateCodeOf: async (assetId) => {
           const row = await pool.query<{ code: string }>(
@@ -217,8 +230,8 @@ describe.skipIf(!ownerUrl)("F2.32 — a seeded health baseline per domain and ro
     }
   }
 
-  it("re-pins a transformer left on BASELINE-ELECTRICAL v1 to BASELINE-ELECTRICAL-TRANSFORMER", async () => {
-    await withRepinFixture(async ({ pool, transformerId, templateCodeOf }) => {
+  it("re-pins a transformer on BASELINE-ELECTRICAL v1 in the run that inserts BASELINE-ELECTRICAL-TRANSFORMER", async () => {
+    await withRepinFixture({ preF232: true }, async ({ pool, transformerId, templateCodeOf }) => {
       expect(await templateCodeOf(transformerId)).toBe("BASELINE-ELECTRICAL");
       const result = await seedAssetTemplateHealth(pool, eskomOrgId);
       expect(result.repinned).toBeGreaterThanOrEqual(1);
@@ -227,7 +240,7 @@ describe.skipIf(!ownerUrl)("F2.32 — a seeded health baseline per domain and ro
   }, 60_000);
 
   it("leaves an operator's migration alone while the same run re-pins the transformer", async () => {
-    await withRepinFixture(async ({ pool, transformerId, batteryId, templateCodeOf }) => {
+    await withRepinFixture({ preF232: true }, async ({ pool, transformerId, batteryId, templateCodeOf }) => {
       await seedAssetTemplateHealth(pool, eskomOrgId);
       // The positive first: this run did re-pin, so the absence below is not
       // the absence of a re-pin at all.
@@ -236,14 +249,30 @@ describe.skipIf(!ownerUrl)("F2.32 — a seeded health baseline per domain and ro
     });
   }, 60_000);
 
-  it("re-pins once: a second run in the same transaction writes no template, pin or re-pin", async () => {
-    await withRepinFixture(async ({ pool }) => {
+  it("re-pins once: after the inserting run, an asset an operator moves back to v1 stays there", async () => {
+    await withRepinFixture({ preF232: true }, async ({ pool, transformerId, domainId, templateCodeOf }) => {
       await seedAssetTemplateHealth(pool, eskomOrgId);
-      await expect(seedAssetTemplateHealth(pool, eskomOrgId)).resolves.toEqual({
-        templates: 0,
-        pinned: 0,
-        repinned: 0,
-      });
+      // The positive: run 1 moved it, so run 2's absence is decision 4's.
+      expect(await templateCodeOf(transformerId)).toBe("BASELINE-ELECTRICAL-TRANSFORMER");
+      await pool.query(`UPDATE bms.assets SET template_id = $1 WHERE id = $2`, [domainId, transformerId]);
+      const second = await seedAssetTemplateHealth(pool, eskomOrgId);
+      expect(second.repinned).toBe(0);
+      expect(await templateCodeOf(transformerId)).toBe("BASELINE-ELECTRICAL");
+    });
+  }, 60_000);
+
+  it("on a database whose role templates exist, an asset on BASELINE-ELECTRICAL v1 stays and the verify passes", async () => {
+    await withRepinFixture({ preF232: false }, async ({ pool, transformerId, templateCodeOf }) => {
+      // The role template exists, so the absence below is not a missing target.
+      const target = await pool.query(
+        `SELECT 1 FROM bms.asset_templates
+          WHERE organization_id = $1 AND code = 'BASELINE-ELECTRICAL-TRANSFORMER' AND version = 1`,
+        [eskomOrgId],
+      );
+      expect(target.rowCount).toBe(1);
+      const result = await seedAssetTemplateHealth(pool, eskomOrgId);
+      expect(result.repinned).toBe(0);
+      expect(await templateCodeOf(transformerId)).toBe("BASELINE-ELECTRICAL");
     });
   }, 60_000);
 });

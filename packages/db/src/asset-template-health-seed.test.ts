@@ -16,7 +16,9 @@ import {
   assertTheDeclaredPointsClaimNoWiring,
   assertTheInsertAndTheVerifySelectTheSameTemplates,
   assertThePinNeverReversesAnOperatorsMigration,
-  assertTheRepinTouchesOnlySeedOwnedPins,
+  assertTheRepinAndTheVerifyGetTheInsertedRoleTemplateIds,
+  assertTheRepinIsBoundToTheRoleTemplatesThisRunInserted,
+  assertTheRepinMovesOnlyADomainBaselineV1Pin,
   assertTheResultCountsEachWriteOnce,
   assertTheStatementsRunInTheirLoadBearingOrder,
   assertTheVerifyCountsRoledAssetsLeftOnTheDomainBaseline,
@@ -78,8 +80,12 @@ describe("F2.32 — a seeded baseline per domain and role (ADR 0058 Amendment 3)
     assertEveryRoleStatementNamesTheTemplateTheSameWay();
   });
 
-  it("re-pins only a seed-owned version 1 domain-baseline pin", () => {
-    assertTheRepinTouchesOnlySeedOwnedPins();
+  it("re-pins only an asset on version 1 of its domain baseline", () => {
+    assertTheRepinMovesOnlyADomainBaselineV1Pin();
+  });
+
+  it("binds the re-pin and the verify to the role templates this run inserted", () => {
+    assertTheRepinIsBoundToTheRoleTemplatesThisRunInserted();
   });
 
   it("verifies that no roled asset is left on its domain baseline", () => {
@@ -96,6 +102,10 @@ describe("F2.32 — a seeded baseline per domain and role (ADR 0058 Amendment 3)
 
   it("counts templates, pins and re-pins separately", async () => {
     await assertTheResultCountsEachWriteOnce();
+  });
+
+  it("passes the inserted role template ids to the re-pin and the verify", async () => {
+    await assertTheRepinAndTheVerifyGetTheInsertedRoleTemplateIds();
   });
 
   it("throws when a roled asset is left on its domain baseline", async () => {

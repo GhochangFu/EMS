@@ -524,8 +524,9 @@ export async function readEskomChecks(
   // each).
   // Nine incomers: one `*-CR-UTILITY*` asset per RSMOC site, each carrying
   // `role = 'incoming-supply'` from `demoRoleForAsset`; CSMOC Gauteng has
-  // no incomer and the decommissioned substation's one asset has no role,
-  // so both stay on `BASELINE-ELECTRICAL`. Fourteen IT assets: one at each
+  // no incomer, so its assets stay on their own role templates (`F2.32`),
+  // and the decommissioned substation's one asset has no role, so it stays
+  // on `BASELINE-ELECTRICAL`. Fourteen IT assets: one at each
   // of eight RSMOC sites and six at Western Cape, each a member of its
   // site's `IT_LOAD` group and each with one `rack_kw` catalog row — the
   // row `readScopeMembers` needs before `sum({rack_kw} @group('IT_LOAD'))`

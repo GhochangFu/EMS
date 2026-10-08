@@ -265,17 +265,34 @@ export function assertEveryRoleStatementNamesTheTemplateTheSameWay(): void {
 }
 
 /**
- * The re-pin (ruling Q2) moves only a pin the seed itself wrote: version 1 of
- * the asset's own `BASELINE-<DOMAIN>`. An operator's migration moves an asset
- * *off* that row, never onto it, so this cannot reverse one. A bare
- * `template_id IS NOT NULL` would.
+ * The re-pin moves only an asset on version 1 of its own `BASELINE-<DOMAIN>`.
+ * That predicate alone cannot tell a seed-written pin from an operator's —
+ * migrate refuses no move to a lower version, and instantiation from v1 writes
+ * the same pin (ADR 0058 Amendment 3) — so the bound to this run's role
+ * templates below is what protects the operator. A bare
+ * `template_id IS NOT NULL` would also move an asset on another code.
  */
-export function assertTheRepinTouchesOnlySeedOwnedPins(): void {
+export function assertTheRepinMovesOnlyADomainBaselineV1Pin(): void {
   expect(HEALTH_ROLE_TEMPLATE_REPIN_SQL).toContain("a.template_id = dom.id");
   expect(HEALTH_ROLE_TEMPLATE_REPIN_SQL).toContain("dom.code = 'BASELINE-' || upper(a.domain)");
   expect(HEALTH_ROLE_TEMPLATE_REPIN_SQL).toContain("dom.version = 1");
   expect(HEALTH_ROLE_TEMPLATE_REPIN_SQL).toContain("role_t.version = 1");
   expect(HEALTH_ROLE_TEMPLATE_REPIN_SQL).not.toContain("template_id IS NOT NULL");
+}
+
+/**
+ * ADR 0058 Amendment 3 decision 4: the re-pin moves an asset only to a role
+ * template THIS run inserted, so a later run, which inserts none, moves
+ * nothing — even an asset an operator has put back on `BASELINE-<DOMAIN>` v1.
+ * The insert returns the ids it wrote (`DO NOTHING` returns none for a row
+ * that already existed), and the re-pin and the verify are bound to them. The
+ * verify must share the bound: unbound, it would count the operator's legal v1
+ * pin and stop the boot.
+ */
+export function assertTheRepinIsBoundToTheRoleTemplatesThisRunInserted(): void {
+  expect(HEALTH_ROLE_TEMPLATE_SQL).toContain("DO NOTHING\nRETURNING id");
+  expect(HEALTH_ROLE_TEMPLATE_REPIN_SQL).toContain("role_t.id = ANY($2::uuid[])");
+  expect(HEALTH_TEMPLATE_VERIFY_SQL).toContain("role_t.id = ANY($2::uuid[])");
 }
 
 /**
@@ -290,15 +307,38 @@ export function assertTheVerifyCountsRoledAssetsLeftOnTheDomainBaseline(): void 
 
 type Recorded = { sql: string; params: unknown[] | undefined };
 
+/** The ids the fake role-template insert reports it wrote. */
+const INSERTED_ROLE_TEMPLATE_IDS = ["role-t-1", "role-t-2"];
+
+/**
+ * Each write answers a distinct power of two, so a result field that read the
+ * wrong statement, or summed a wrong pair, changes the total.
+ */
+const ROW_COUNTS = new Map<string, number>([
+  [HEALTH_TEMPLATE_SQL, 1],
+  [HEALTH_TEMPLATE_POINTS_SQL, 64],
+  [HEALTH_ROLE_TEMPLATE_POINTS_SQL, 128],
+  [HEALTH_ROLE_TEMPLATE_REPIN_SQL, 4],
+  [HEALTH_ROLE_TEMPLATE_PIN_SQL, 8],
+  [HEALTH_TEMPLATE_PIN_SQL, 16],
+]);
+
 /** A pool that records each statement and answers the verify with `verifyRow`. */
 function recordingPool(verifyRow: Record<string, number>): { pool: pg.Pool; calls: Recorded[] } {
   const calls: Recorded[] = [];
   const pool = {
     query: async (sql: string, params?: unknown[]) => {
       calls.push({ sql, params });
-      return sql === HEALTH_TEMPLATE_VERIFY_SQL
-        ? { rows: [verifyRow], rowCount: 1 }
-        : { rows: [], rowCount: 2 };
+      if (sql === HEALTH_TEMPLATE_VERIFY_SQL) {
+        return { rows: [verifyRow], rowCount: 1 };
+      }
+      if (sql === HEALTH_ROLE_TEMPLATE_SQL) {
+        return {
+          rows: INSERTED_ROLE_TEMPLATE_IDS.map((id) => ({ id })),
+          rowCount: INSERTED_ROLE_TEMPLATE_IDS.length,
+        };
+      }
+      return { rows: [], rowCount: ROW_COUNTS.get(sql) ?? 0 };
     },
   } as unknown as pg.Pool;
   return { pool, calls };
@@ -339,14 +379,26 @@ export async function assertEveryStatementGetsTheOrganizationAndTheBands(): Prom
   expect(calls.find((call) => call.sql === HEALTH_TEMPLATE_SQL)?.params).toEqual(["org-1", content]);
 }
 
-/** Two template inserts and two pins are summed; the re-pin is counted on its own. */
+/**
+ * Two template inserts (1 + 2) and two pins (8 + 16) are summed; the re-pin
+ * (4) is counted on its own. The points inserts (64, 128) are in no field.
+ */
 export async function assertTheResultCountsEachWriteOnce(): Promise<void> {
   const { pool } = recordingPool(CLEAN);
   await expect(seedAssetTemplateHealth(pool, "org-1")).resolves.toEqual({
-    templates: 4,
-    pinned: 4,
-    repinned: 2,
+    templates: 3,
+    pinned: 24,
+    repinned: 4,
   });
+}
+
+/** The re-pin and the verify receive exactly the ids the role insert returned. */
+export async function assertTheRepinAndTheVerifyGetTheInsertedRoleTemplateIds(): Promise<void> {
+  const { pool, calls } = recordingPool(CLEAN);
+  await seedAssetTemplateHealth(pool, "org-1");
+  const bound = ["org-1", INSERTED_ROLE_TEMPLATE_IDS];
+  expect(calls.find((call) => call.sql === HEALTH_ROLE_TEMPLATE_REPIN_SQL)?.params).toEqual(bound);
+  expect(calls.find((call) => call.sql === HEALTH_TEMPLATE_VERIFY_SQL)?.params).toEqual(bound);
 }
 
 /** A roled asset left on its domain baseline is a thrown boot, and the message says so. */

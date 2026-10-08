@@ -31,9 +31,10 @@ import type pg from "pg";
  * copies the template's domain onto the asset precisely so the two cannot
  * disagree. One more `BASELINE-*` row exists since `F2.8` —
  * `BASELINE-ELECTRICAL-INCOMER`, written by `pue-demo-seed.ts` *after* this
- * module. It is not a domain baseline: it carries the same bands and the same
- * seven measured points as `BASELINE-ELECTRICAL`, plus three `bms-calc-v2`
- * derived points, and only the nine `incoming-supply` assets move to it. This
+ * module. It is not a domain baseline: it carries the same bands and a copy of
+ * the measured points of `BASELINE-ELECTRICAL-INCOMING_SUPPLY` (since `F2.32`),
+ * plus three `bms-calc-v2` derived points, and only the nine `incoming-supply`
+ * assets move to it. This
  * module never writes to it (its code is not `'BASELINE-' || upper(domain)`)
  * and never moves an asset off it (the pin below guards on `template_id IS
  * NULL`).
@@ -56,14 +57,17 @@ import type pg from "pg";
  * `BASELINE-WATER` already does: a set that followed the pins would differ
  * between a cold and a re-seeded database.
  *
- * **A database seeded before `F2.32` is re-pinned (ruling Q2), and the
- * statement runs on every seed, not once.** `HEALTH_ROLE_TEMPLATE_REPIN_SQL`
- * moves any active asset of the seeded org from version 1 of its own
- * `BASELINE-<DOMAIN>` to its role template when that template exists. The seed
- * is *not* the only writer of that pin: an operator can instantiate from the
- * baseline row, and migrate checks the code but not the direction, so it can
- * move an asset back to version 1. Such an asset is moved at the next seed if
- * it has a role (which `seedAssetGroups` fills on every boot), with no audit row.
+ * **A database seeded before `F2.32` is re-pinned once, in the first run
+ * (Amendment 3 decision 4).** `HEALTH_ROLE_TEMPLATE_REPIN_SQL` moves an active
+ * asset of the seeded org from version 1 of its own `BASELINE-<DOMAIN>` to its
+ * role template only when that template was inserted by the same seed run. The
+ * seed is *not* the only writer of that pin: an operator can instantiate from
+ * the baseline row, and migrate checks the code but not the direction, so it
+ * can move an asset back to version 1. A later run inserts no role template,
+ * so it moves nothing, and that operator's pin stands. On such a database the
+ * published `BASELINE-ELECTRICAL-INCOMER` version 1 already exists and keeps
+ * the domain-wide union it copied; only a fresh install copies the incomer
+ * role's own keys (accepted, ruling 2026-10-09).
  *
  * **Each template declares points, because `publish()` refuses one that does
  * not.** `AssetTemplatesService.publish` throws *"A template with no points
@@ -343,6 +347,7 @@ JOIN bms.asset_domains d ON d.code = c.domain
 JOIN bms.asset_roles r ON r.code = c.role
 WHERE c.code IS NOT NULL
 ON CONFLICT (organization_id, code, version) DO NOTHING
+RETURNING id
 `;
 
 /**
@@ -397,13 +402,15 @@ WHERE a.organization_id = $1
 `;
 
 /**
- * Ruling Q2: on every seed, each active asset on version 1 of its own
- * `BASELINE-<DOMAIN>` moves to its role template, when that template exists.
- * The predicate does not tell a seed-owned pin from an operator's: an asset an
- * operator instantiated from, or migrated back to, that version 1 row moves
- * too, with no audit row. An asset on a later version or another code keeps its
- * pin. A moved asset no longer matches, so a second seed re-pins nothing new
- * unless an asset has landed on version 1 since.
+ * ADR 0058 Amendment 3 decision 4: each active asset on version 1 of its own
+ * `BASELINE-<DOMAIN>` moves to its role template **only when this seed run
+ * inserted that template** — `$2` is the ids `HEALTH_ROLE_TEMPLATE_SQL`
+ * returned, and `DO NOTHING` returns no id for a row that already existed.
+ * So the move happens once, in the run that creates the role templates, and a
+ * later run, which inserts none, moves nothing. That bound is what leaves an
+ * operator's pin alone: the v1 predicate cannot tell the seed's pin from one an
+ * operator wrote by instantiating from, or migrating back to, that row. An
+ * asset on a later version or another code keeps its pin.
  */
 export const HEALTH_ROLE_TEMPLATE_REPIN_SQL = `
 UPDATE bms.assets a
@@ -421,6 +428,7 @@ WHERE a.organization_id = $1
   AND role_t.domain = a.domain
   AND role_t.code = ${ROLE_TEMPLATE_CODE_EXPR}
   AND role_t.version = 1
+  AND role_t.id = ANY($2::uuid[])
 `;
 
 /**
@@ -442,9 +450,12 @@ WHERE a.organization_id = $1
  * because it is what `publish()` refuses.
  *
  * `left_on_domain_baseline` (`F2.32`) asks the re-pin's own question with the
- * re-pin's own predicates: an active asset still on version 1 of its domain
- * baseline although its role template exists. It covers the role pin as well,
- * because an asset the role pin missed falls to the domain pin and lands here.
+ * re-pin's own predicates, including its bound: an active asset still on
+ * version 1 of its domain baseline although this run inserted its role
+ * template. It covers the role pin as well, because an asset the role pin
+ * missed falls to the domain pin and lands here. Unbound, it would count an
+ * asset an operator has put back on version 1 — a legal state since decision
+ * 4 — and stop every later boot.
  */
 export const HEALTH_TEMPLATE_VERIFY_SQL = `
 SELECT
@@ -486,6 +497,7 @@ SELECT
           AND role_t.domain = a.domain
           AND role_t.code = ${ROLE_TEMPLATE_CODE_EXPR}
           AND role_t.version = 1
+          AND role_t.id = ANY($2::uuid[])
       )
   ) AS left_on_domain_baseline
 `;
@@ -498,7 +510,8 @@ SELECT
  * are what the point declaration reads.
  *
  * The order is load-bearing (`F2.32`): both template sets and their points
- * first, then the re-pin and the role pin, which read the role templates, and
+ * first — the role insert returns the ids the re-pin and the verify are bound
+ * to — then the re-pin and the role pin, which read the role templates, and
  * the domain pin last, because it takes every `template_id IS NULL` asset the
  * role pin left.
  *
@@ -513,9 +526,10 @@ export async function seedAssetTemplateHealth(
   const content = JSON.stringify(HEALTH_BASELINE_CONTENT);
   const domainTemplates = await pool.query(HEALTH_TEMPLATE_SQL, [organizationId, content]);
   await pool.query(HEALTH_TEMPLATE_POINTS_SQL, [organizationId]);
-  const roleTemplates = await pool.query(HEALTH_ROLE_TEMPLATE_SQL, [organizationId, content]);
+  const roleTemplates = await pool.query<{ id: string }>(HEALTH_ROLE_TEMPLATE_SQL, [organizationId, content]);
+  const insertedRoleTemplateIds = roleTemplates.rows.map((row) => row.id);
   await pool.query(HEALTH_ROLE_TEMPLATE_POINTS_SQL, [organizationId]);
-  const repinned = await pool.query(HEALTH_ROLE_TEMPLATE_REPIN_SQL, [organizationId]);
+  const repinned = await pool.query(HEALTH_ROLE_TEMPLATE_REPIN_SQL, [organizationId, insertedRoleTemplateIds]);
   const rolePinned = await pool.query(HEALTH_ROLE_TEMPLATE_PIN_SQL, [organizationId]);
   const domainPinned = await pool.query(HEALTH_TEMPLATE_PIN_SQL, [organizationId]);
 
@@ -523,7 +537,7 @@ export async function seedAssetTemplateHealth(
     unpinned: number;
     unusable: number;
     left_on_domain_baseline: number;
-  }>(HEALTH_TEMPLATE_VERIFY_SQL, [organizationId]);
+  }>(HEALTH_TEMPLATE_VERIFY_SQL, [organizationId, insertedRoleTemplateIds]);
   const unpinned = check.rows[0]?.unpinned ?? -1;
   const unusable = check.rows[0]?.unusable ?? -1;
   const leftOnDomain = check.rows[0]?.left_on_domain_baseline ?? -1;
@@ -531,8 +545,8 @@ export async function seedAssetTemplateHealth(
     throw new Error(
       `seedAssetTemplateHealth: ${unpinned} active asset(s) are pinned to no template of their ` +
         `own domain, ${unusable} baseline template(s) cannot produce a band, and ` +
-        `${leftOnDomain} roled asset(s) are still on their domain baseline although their role ` +
-        "template exists. A FORCE-RLS write can drop rows without raising, and a malformed " +
+        `${leftOnDomain} roled asset(s) are still on their domain baseline although this run ` +
+        "inserted their role template. A FORCE-RLS write can drop rows without raising, and a malformed " +
         "health block reads back as no band at all, so all three are checked rather than " +
         "inferred from the statements completing.",
     );

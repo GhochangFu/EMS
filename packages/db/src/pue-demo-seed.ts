@@ -15,7 +15,9 @@ import { HEALTH_BASELINE_CONTENT } from "./asset-template-health-seed";
  * version's declaration of this point", and `calc-definitions.service` builds
  * every definition from `template_points WHERE kind = 'derived'` INNER JOINed
  * on `assets.template_id`, with `asset_points` only LEFT-joined as a coalesce.
- * `BASELINE-ELECTRICAL` declares seven measured points and nothing derived, so
+ * The seeded baselines (`BASELINE-ELECTRICAL` and, since `F2.32`, its role
+ * templates such as `BASELINE-ELECTRICAL-INCOMING_SUPPLY`) declare only
+ * measured points and nothing derived, so
  * the only way the engine ever sees `site_kw`, `it_kw` and `pue` on an incomer
  * is a template that declares them, pinned to that incomer. This module writes
  * that template — `BASELINE-ELECTRICAL-INCOMER` — as a copy of the incomer role
