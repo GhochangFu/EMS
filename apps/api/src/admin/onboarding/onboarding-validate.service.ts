@@ -166,14 +166,14 @@ export class OnboardingValidateService {
             message: "MQTT ingest requires credentials",
           });
         }
-        if (rtu.protocol === "mqtt" && !rtu.config.topic && !rtu.config.mqttTopic) {
-          const topic = rtu.config.topic ?? rtu.config.mqttTopic;
-          if (!topic) {
-            errors.push({
-              path: `rtus.${i}.config.topic`,
-              message: "MQTT topic is required",
-            });
-          }
+        // F4.234: read through `rtuTopic`, as the length and wildcard checks below
+        // and the commit do, so `{ topic: "", mqttTopic: "a/b" }` is an empty topic,
+        // not the legacy key. `rtuTopic` answers "" for a missing or non-string key.
+        if (rtu.protocol === "mqtt" && rtuTopic(rtu) === "") {
+          errors.push({
+            path: `rtus.${i}.config.topic`,
+            message: "MQTT topic is required",
+          });
         }
         // F4.208: `config` is a `z.record(z.unknown())`, so no schema bounds the
         // topic; without this an over-long one passes to the commit and fails
