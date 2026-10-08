@@ -429,3 +429,62 @@ export async function assertAnUndoOverAnOverDeepDraftRefusesByName(): Promise<vo
   );
   assert(record.updates.length === 0, `an over-deep restore wrote ${record.updates.length} time(s)`);
 }
+
+/** A message another writer appended between the read and the lock. */
+const BETWEEN = { id: "m-between", role: "assistant", content: "kept", createdAt: "2026-10-06T00:00:01.000Z" };
+
+/** (23) F4.231: an empty-ring `undo` builds its two messages on the locked row's messages. */
+export async function assertAnEmptyRingUndoBuildsOnTheLockedRow(): Promise<void> {
+  const session = sessionWith(null);
+  const locked = { ...session, messages: [STORED_USER, BETWEEN] as never } as Row;
+  const { service, record } = build({ session, selects: [[session], ORG], locked });
+  const response = await withoutOpenAi(() => service.chat(JWT, "s-1", "undo"));
+  assert(record.updates.length === 1, `one write, got ${record.updates.length}`);
+  const write = record.updates[0]!;
+  assert(!("draft" in write), `the write carries a draft key: ${JSON.stringify(write)}`);
+  const ids = ((write.messages ?? []) as OnboardingChatMessage[]).map((m) => m.id);
+  assert(ids[1] === "m-between", `the message written in between is kept, got ${JSON.stringify(ids)}`);
+  assert(ids.length === 4, `the locked row's two messages and the undo's two, got ${ids.length}`);
+  assert(response.assistantMessage === NOTHING_TO_UNDO_REPLY, `the reply, got ${response.assistantMessage}`);
+}
+
+/** (24) F4.231: an empty-ring `undo` whose draft moved under the lock is a 409 and writes nothing. */
+export async function assertAnEmptyRingUndoRacedByADraftChangeIsAConflict(): Promise<void> {
+  const session = sessionWith(null);
+  const locked = { ...session, draft: { location: { ...PLACE, name: "Elsewhere" } } } as Row;
+  const { service, record } = build({ session, selects: [[session], ORG], locked });
+  const error = await thrown(() => withoutOpenAi(() => service.chat(JWT, "s-1", "undo")));
+  assert(error instanceof ConflictException, `a raced undo should be a ConflictException, got ${String(error)}`);
+  assert(
+    (error as Error).message === DRAFT_CHANGED_DURING_TURN,
+    `the hash guard should have fired, got ${(error as Error).message}`,
+  );
+  assert((error as Error).message !== DRAFT_TOO_DEEP_FOR_TURN, "the depth sentence names the wrong cause");
+  assert(record.updates.length === 0, `a raced undo wrote ${record.updates.length} time(s)`);
+}
+
+/** (25) F4.231: an empty-ring `undo` after a commit landed before the lock is a 409 and writes nothing. */
+export async function assertAnEmptyRingUndoRacedByACommitIsAConflict(): Promise<void> {
+  const session = sessionWith(null);
+  const locked = { ...session, status: "committed" } as Row;
+  const { service, record } = build({ session, selects: [[session], ORG], locked });
+  const error = await thrown(() => withoutOpenAi(() => service.chat(JWT, "s-1", "undo")));
+  assert(error instanceof ConflictException, `an undo over a commit should be a ConflictException, got ${String(error)}`);
+  assert(
+    (error as Error).message === SESSION_NO_LONGER_DRAFT,
+    `the status guard should have fired, got ${(error as Error).message}`,
+  );
+  assert(record.updates.length === 0, `an undo over a commit wrote ${record.updates.length} time(s)`);
+}
+
+/** (26) F4.231: an empty-ring `undo` whose write matches no `draft` row is a 409, not a crash. */
+export async function assertAnEmptyRingUndoOverACommitIsAConflict(): Promise<void> {
+  const session = sessionWith(null);
+  const { service } = build({ session, selects: [[session], ORG], updateReturnsNoRow: true });
+  const error = await thrown(() => withoutOpenAi(() => service.chat(JWT, "s-1", "undo")));
+  assert(error instanceof ConflictException, `an undo write over a commit should be a ConflictException, got ${String(error)}`);
+  assert(
+    (error as Error).message === SESSION_NO_LONGER_DRAFT,
+    `the empty-write guard should have fired, got ${(error as Error).message}`,
+  );
+}

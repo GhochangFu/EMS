@@ -10,6 +10,10 @@ import {
   assertADraftAtTheDepthBoundStillWrites,
   assertAnOverDeepStoredDraftRefusesTheTurnByName,
   assertAnUndoOverAnOverDeepDraftRefusesByName,
+  assertAnEmptyRingUndoBuildsOnTheLockedRow,
+  assertAnEmptyRingUndoOverACommitIsAConflict,
+  assertAnEmptyRingUndoRacedByACommitIsAConflict,
+  assertAnEmptyRingUndoRacedByADraftChangeIsAConflict,
   assertARollbackBuildsOnTheLockedRow,
   assertARollbackRacedByACommitIsForbidden,
   assertARollbackRacedByAChatTurnIsAConflict,
@@ -131,5 +135,23 @@ describe("onboarding chat — the fail-closed null-hash guard (F4.230)", () => {
 
   it("answers 409 DRAFT_TOO_DEEP_FOR_TURN and restores nothing on an undo over a draft past the depth bound", async () => {
     await assertAnUndoOverAnOverDeepDraftRefusesByName();
+  });
+});
+
+describe("onboarding chat — the empty-ring undo under the row lock (F4.231)", () => {
+  it("builds its two messages on the locked row's messages", async () => {
+    await assertAnEmptyRingUndoBuildsOnTheLockedRow();
+  });
+
+  it("answers 409 DRAFT_CHANGED_DURING_TURN and writes nothing when the draft moved under the lock", async () => {
+    await assertAnEmptyRingUndoRacedByADraftChangeIsAConflict();
+  });
+
+  it("answers 409 SESSION_NO_LONGER_DRAFT and writes nothing when a commit landed before the lock", async () => {
+    await assertAnEmptyRingUndoRacedByACommitIsAConflict();
+  });
+
+  it("answers 409 when its write matches no draft row", async () => {
+    await assertAnEmptyRingUndoOverACommitIsAConflict();
   });
 });

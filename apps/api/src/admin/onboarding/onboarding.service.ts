@@ -758,7 +758,11 @@ export class OnboardingService {
 
   /**
    * The chat `undo` (ADR 0094 decision 6): the newest checkpoint, or — with an
-   * empty ring — the two messages and nothing else.
+   * empty ring — the two messages and nothing else. `F4.231`: the empty-ring
+   * write takes the same `FOR UPDATE` and the same re-checks as `chat`, and
+   * builds `messages` on the locked row. A ring that appeared in between came
+   * with a draft change, so the hash re-check answers 409 rather than a stale
+   * "nothing to undo".
    */
   private async undoLastStep(
     session: typeof onboardingSessions.$inferSelect,
@@ -768,19 +772,27 @@ export class OnboardingService {
     if (newest) {
       return this.restoreTo(session, newest, message);
     }
-    const messages = [
-      ...(session.messages as OnboardingChatMessage[]),
-      this.chatService.createMessage("user", message),
-      this.chatService.createMessage("assistant", NOTHING_TO_UNDO_REPLY),
-    ];
-    const updated = await withTenant(this.tenantDb, session.organizationId, (tx) =>
-      tx
+    const expectedHash = draftHash(session.draft);
+    const updated = await withTenant(this.tenantDb, session.organizationId, async (tx) => {
+      // Lock placement is gated by onboarding-chat-lock.integration.test.ts (real Postgres).
+      const locked = await this.lockSession(tx, session.id);
+      this.assertTurnStillBound(locked, expectedHash);
+      const messages = [
+        ...(locked.messages as OnboardingChatMessage[]),
+        this.chatService.createMessage("user", message),
+        this.chatService.createMessage("assistant", NOTHING_TO_UNDO_REPLY),
+      ];
+      const [row] = await tx
         .update(onboardingSessions)
         .set({ messages, updatedAt: sql`now()` })
-        .where(eq(onboardingSessions.id, session.id))
-        .returning()
-        .then(([row]) => row),
-    );
+        // Defence in depth behind the lock's status check above.
+        .where(and(eq(onboardingSessions.id, session.id), eq(onboardingSessions.status, "draft")))
+        .returning();
+      return row;
+    });
+    if (!updated) {
+      throw new ConflictException(SESSION_NO_LONGER_DRAFT);
+    }
     return {
       assistantMessage: NOTHING_TO_UNDO_REPLY,
       session: await this.mapSessionWithOrg(updated),
@@ -880,7 +892,7 @@ export class OnboardingService {
     }
   }
 
-  /** `SELECT ... FOR UPDATE` of the columns a locked write compares and builds on (`restoreTo`, `chat`). */
+  /** `SELECT ... FOR UPDATE` of the columns a locked write compares and builds on (`chat`, `undoLastStep`, `restoreTo`). */
   private lockSession(tx: Parameters<Parameters<typeof withTenant>[2]>[0], sessionId: string) {
     return tx
       .select({
