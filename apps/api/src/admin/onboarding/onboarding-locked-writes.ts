@@ -10,7 +10,7 @@ import { MAX_ONBOARDING_DRAFT_DEPTH } from "./onboarding.schema";
 /** The 409 of a rollback whose draft moved since the caller read it (ADR 0094 decision 6). */
 export const DRAFT_CHANGED_SINCE_LOAD = "The draft changed since this page loaded it. Reload the session and try again.";
 
-/** The 409 of a locked write (the chat turn and, since `F4.233`, the upload and the credential route) that found the session no longer a draft (a commit landed in between). */
+/** The 409 of a locked write (the chat turn, since `F4.233` the upload and the credential route, and since `F4.235` the PATCH draft) that found the session no longer a draft (a commit landed in between). */
 export const SESSION_NO_LONGER_DRAFT = "The session was committed while this turn ran, so the turn was not saved. Reload the session.";
 
 /** The 409 of a hash-bound locked write (the chat turn and, since `F4.233`, the credential route) whose draft moved in between (`F4.227`, ADR 0094 decision 6). */
@@ -49,7 +49,7 @@ export function assertTurnStillBound(
   }
 }
 
-/** `SELECT ... FOR UPDATE` of the columns a locked write compares and builds on (every in-draft session write except `patchDraft`; the commit service takes its own `FOR UPDATE`: `chat`, `undoLastStep`, `restoreTo`, `confirmCommit`, `setCredentials`, `uploadExcel`). */
+/** `SELECT ... FOR UPDATE` of the columns a locked write compares and builds on (every in-draft session write; the commit service takes its own `FOR UPDATE`: `chat`, `undoLastStep`, `restoreTo`, `confirmCommit`, `setCredentials`, `uploadExcel`, `patchDraft`). */
 export function lockSession(tx: Parameters<Parameters<typeof withTenant>[2]>[0], sessionId: string) {
   return tx
     .select({
