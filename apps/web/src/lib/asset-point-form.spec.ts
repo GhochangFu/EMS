@@ -9,8 +9,9 @@ function assert(condition: boolean, message: string): void {
 }
 
 function assertBody(actual: object, expected: object, message: string): void {
-  // Key order and value both: `{ engMax: 9 }` must be exactly that, so a body
-  // that restates an unchanged field fails here rather than passing a subset check.
+  // Key set and values both, key order ignored (both sides are sorted first):
+  // `{ engMax: 9 }` must be exactly that, so a body that restates an unchanged
+  // field fails here rather than passing a subset check.
   const sort = (value: object) => JSON.stringify(Object.fromEntries(Object.entries(value).sort()));
   assert(sort(actual) === sort(expected), `${message} — expected ${sort(expected)}, got ${sort(actual)}`);
   assert(
