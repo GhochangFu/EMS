@@ -438,6 +438,15 @@ export async function assertReadsCarryTheTemplateDefaults(
     qualityPolicy: null,
   });
 
+  // Cases (a) and (b) leave rows on the hand asset; create one if this case
+  // runs alone, so an empty list cannot pass the loop below vacuously.
+  if ((await ctx.svc.list(jwt, ctx.handAssetId)).items.length === 0) {
+    await ctx.svc.create(jwt, {
+      assetId: ctx.handAssetId,
+      pointKey: ctx.keys.withMetadata,
+      sourceDataKey: `${ctx.keys.withMetadata}/G`,
+    });
+  }
   const hand = await ctx.svc.list(jwt, ctx.handAssetId);
   expect(hand.items.length).toBeGreaterThan(0);
   for (const item of hand.items) {

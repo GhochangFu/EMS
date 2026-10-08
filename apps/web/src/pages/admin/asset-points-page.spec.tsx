@@ -194,6 +194,8 @@ export async function anEditSendsOnlyTheChangedField(): Promise<void> {
   await userEvent.click(screen.getByRole("button", { name: "Save" }));
   await vi.waitFor(() => expect(update).toHaveBeenCalledTimes(1));
   expect(update).toHaveBeenCalledWith(item.id, { engMax: 9 });
+  // `toHaveBeenCalledWith` reads an `undefined` key as absent; the key list does not.
+  expect(Object.keys(update.mock.calls[0][1])).toEqual(["engMax"]);
 }
 
 /** F2.31 — an untouched save closes the dialog without a request. */
@@ -262,6 +264,8 @@ export async function theEditRtuSelectShowsTheStoredRtu(): Promise<void> {
   await userEvent.click(screen.getByRole("button", { name: "Save" }));
   await vi.waitFor(() => expect(update).toHaveBeenCalledTimes(1));
   expect(update).toHaveBeenCalledWith(item.id, { sensorCode: "S9" });
+  // `toHaveBeenCalledWith` reads an `undefined` key as absent; the key list does not.
+  expect(Object.keys(update.mock.calls[0][1])).toEqual(["sensorCode"]);
 }
 
 /** F2.27 (2) — the blank option on Edit unwires: `rtuId: null`. */
@@ -299,6 +303,8 @@ export async function aStoredRtuOutsideTheListKeepsItsOption(): Promise<void> {
   await userEvent.click(screen.getByRole("button", { name: "Save" }));
   await vi.waitFor(() => expect(update).toHaveBeenCalledTimes(1));
   expect(update).toHaveBeenCalledWith(item.id, { sensorCode: "S9" });
+  // `toHaveBeenCalledWith` reads an `undefined` key as absent; the key list does not.
+  expect(Object.keys(update.mock.calls[0][1])).toEqual(["sensorCode"]);
 }
 
 /**
