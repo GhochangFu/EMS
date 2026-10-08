@@ -5,7 +5,7 @@ import { expect } from "vitest";
 import type { OnboardingDraft } from "@bms/shared";
 
 import { COMMIT_PROPOSAL_KEY } from "./onboarding-commit-proposal";
-import { DRAFT_CHANGED_DURING_TURN, type OnboardingService } from "./onboarding.service";
+import { DRAFT_CHANGED_DURING_TURN, SESSION_NO_LONGER_DRAFT, type OnboardingService } from "./onboarding.service";
 
 /**
  * `F4.227` — assertions for where `OnboardingService.chat` takes its row lock.
@@ -24,6 +24,13 @@ import { DRAFT_CHANGED_DURING_TURN, type OnboardingService } from "./onboarding.
  * is built on the locked row; a holder that changes the draft shows the hash
  * re-check. Case 9 is not a race: the commit branch writes to the row its own
  * commit just marked `committed`.
+ *
+ * `F4.233` races the Excel upload (10, 11) and the credential route (12, 13)
+ * the same way. Race 11 is gated by the `status = 'draft'` predicate AND the
+ * status re-check together: the predicate alone keeps it green, so the
+ * re-check on its own is gated by the unit case U2
+ * (`onboarding-locked-writes.test.ts`). The cells assert on `_secrets` keys
+ * only, never on the stored blob.
  */
 
 /** The guided turn that appends an RTU at `phase === "rtu"` (no model call). */
@@ -93,7 +100,21 @@ export type ChatLockCtx = {
   confirmCommitKept: RaceOutcome;
   /** Case 9, no race: a committing confirm whose commit stub marks the row committed. */
   confirmCommitted: RaceOutcome;
+  /** Race 10: an Excel upload; the holder appends a message. */
+  uploadKept: RaceOutcome;
+  /** Race 11: an Excel upload; the holder marks the row committed. */
+  uploadCommitted: RaceOutcome;
+  /** Race 12: a credential write; the holder changes the draft. */
+  credentialsChanged: RaceOutcome;
+  /** Race 13: a credential write; the holder appends a message. */
+  credentialsKept: RaceOutcome;
 };
+
+/** The point key the upload's stub parser adds (`F4.233`). */
+export const UPLOAD_POINT_KEY = "kw";
+
+/** The code of the one RTU the credential sessions are seeded with. */
+export const CREDENTIAL_RTU_CODE = "RTU-1";
 
 async function storedSession(pool: pg.Pool, sessionId: string): Promise<StoredSession> {
   const { rows } = await pool.query<{
@@ -158,6 +179,7 @@ export async function raceTheChatWrite(
   what: string,
   competing: ((holder: pg.PoolClient) => Promise<number | null>) | null,
   message: string = APPEND_TURN,
+  run: () => Promise<unknown> = () => ctx.service.chat(ctx.jwt, sessionId, message),
 ): Promise<RaceOutcome> {
   const holder = await ctx.holderPool.connect();
   let open = false;
@@ -172,7 +194,7 @@ export async function raceTheChatWrite(
     let done = false;
     let error: unknown;
     let resolved = false;
-    settled = ctx.service.chat(ctx.jwt, sessionId, message).then(
+    settled = run().then(
       () => {
         resolved = true;
         done = true;
@@ -365,4 +387,78 @@ export function assertACommittingConfirmAppendsToTheCommittedRow(ctx: ChatLockCt
   expect(stored.status).toBe("committed");
   expect(stored.messageCount, "user, action and assistant messages were appended").toBe(3);
   expect(rolesOf(stored)).toBe("user,action,assistant");
+}
+
+function expectA409(outcome: RaceOutcome, sentence: string): void {
+  expect(outcome.resolved, "the write went through instead of refusing").toBe(false);
+  expect(outcome.error).toBeInstanceOf(ConflictException);
+  expect((outcome.error as ConflictException).getStatus()).toBe(409);
+  expect((outcome.error as ConflictException).message).toBe(sentence);
+}
+
+function expectTheWriteWaited(outcome: RaceOutcome): void {
+  expect(outcome.hit, "control: the holder's UPDATE hit the session row").toBe(1);
+  expect(outcome.blocked, "control: a backend waited on the holder in a FOR UPDATE").toBeGreaterThan(0);
+  expect(outcome.settledBeforeCommit, "the write settled while the holder still held the lock").toBe(false);
+}
+
+/** The keys of the stored `_secrets`, never its values. */
+function secretKeys(stored: StoredSession): string[] {
+  return Object.keys((stored.draft as { _secrets?: object })._secrets ?? {});
+}
+
+/** Race 10, control: the upload waited on the holder in a `FOR UPDATE`. */
+export function assertTheUploadWaitedOnTheHolder(ctx: ChatLockCtx): void {
+  expectTheWriteWaited(ctx.uploadKept);
+}
+
+/** Race 10: a message committed under the lock survives the upload. */
+export function assertAMessageCommittedUnderTheLockSurvivesTheUpload(ctx: ChatLockCtx): void {
+  const { error, resolved, stored } = ctx.uploadKept;
+  expect(error, "the upload refused an unchanged draft").toBeUndefined();
+  expect(resolved).toBe(true);
+  expect(stored.messages.map((m) => m.id), "the message the holder committed under the lock").toContain(ctx.holderMessageId);
+  expect(stored.messageCount, "the holder's message and the upload's two").toBe(3);
+  expect((stored.draft.pointKeys ?? []).map((k) => k.code), "the upload's point key was stored").toContain(UPLOAD_POINT_KEY);
+}
+
+/** Race 11, control: the upload waited on a holder that committed the session. */
+export function assertTheUploadWaitedOnTheCommittingHolder(ctx: ChatLockCtx): void {
+  expectTheWriteWaited(ctx.uploadCommitted);
+}
+
+/** Race 11: an upload over a row committed under the lock answers 409 SESSION_NO_LONGER_DRAFT and writes nothing. */
+export function assertAnUploadOverACommittedRowAnswers409(ctx: ChatLockCtx): void {
+  const { stored } = ctx.uploadCommitted;
+  expectA409(ctx.uploadCommitted, SESSION_NO_LONGER_DRAFT);
+  expect(stored.messageCount, "no message was appended").toBe(0);
+  expect(stored.draft.pointKeys ?? [], "the upload's point key was not stored").toHaveLength(0);
+  expect(stored.status).toBe("committed");
+}
+
+/** Race 12, control: the credential write waited on a holder that changed the draft. */
+export function assertTheCredentialWriteWaitedOnTheHolder(ctx: ChatLockCtx): void {
+  expectTheWriteWaited(ctx.credentialsChanged);
+}
+
+/** Race 12: a credential write over a draft changed under the lock answers 409 and stores no secret. */
+export function assertACredentialOverAChangedDraftAnswers409(ctx: ChatLockCtx): void {
+  const { stored } = ctx.credentialsChanged;
+  expectA409(ctx.credentialsChanged, DRAFT_CHANGED_DURING_TURN);
+  expect(stored.draft.location?.name, "the holder's committed name").toBe(ctx.holderName);
+  expect(secretKeys(stored), "no secret was stored").toHaveLength(0);
+  expect(stored.draft.rtus?.[0]?.credentialsSet, "credentialsSet was not set").not.toBe(true);
+}
+
+/** Race 13, adjacent positive: a message committed under the lock does not refuse the credential. */
+export function assertACredentialKeepsAMessageCommittedUnderTheLock(ctx: ChatLockCtx): void {
+  const { blocked, error, resolved, settledBeforeCommit, stored } = ctx.credentialsKept;
+  expect(blocked, "control: a backend waited on the holder in a FOR UPDATE").toBeGreaterThan(0);
+  expect(settledBeforeCommit, "the write settled while the holder still held the lock").toBe(false);
+  expect(error, "the credential write refused a hash-neutral change").toBeUndefined();
+  expect(resolved).toBe(true);
+  expect(secretKeys(stored)).toContain(CREDENTIAL_RTU_CODE);
+  expect(stored.draft.rtus?.[0]?.credentialsSet).toBe(true);
+  expect(stored.messages.map((m) => m.id), "the message the holder committed under the lock").toContain(ctx.holderMessageId);
+  expect(stored.messageCount, "the holder's message only; the route writes none").toBe(1);
 }
