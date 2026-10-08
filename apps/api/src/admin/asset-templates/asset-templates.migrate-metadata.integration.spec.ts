@@ -387,6 +387,12 @@ export async function assertAMetadataOverrideInvalidOnTargetRefusesAndPinsNothin
       message.includes("eng_max 100 (inherited from the template)"),
     `the refusal must name both bounds and mark the inherited one, got "${message}"`,
   );
+  // The unit spec hardcodes the version; only this case can catch the source
+  // version (1) passed where the target's belongs.
+  assert(
+    message.includes("on version 2 —") && message.includes("then migrate to version 2."),
+    `the refusal must name the target version 2, got "${message}"`,
+  );
 
   const refusals = await expectRefusal(
     () => svc.migrate(fx.adminJwt, v2, { assetIds: [bad, good] }),
