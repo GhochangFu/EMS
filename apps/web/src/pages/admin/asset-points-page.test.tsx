@@ -3,6 +3,7 @@ import { cleanup } from "@testing-library/react";
 import { afterEach, describe, it, vi } from "vitest";
 
 import {
+  aFailedRtuFetchLabelsTheStoredRtuUnknown,
   aRefusedCreateShowsTheSentence,
   aStoredRtuOutsideTheListKeepsItsOption,
   addPicksAnRtuOfTheAssetsLocation,
@@ -64,6 +65,10 @@ describe("asset points page — refusals, effective metadata, the Add/Edit dialo
 
   it("F2.27 (3) a stored RTU outside the location list keeps its option and its value", async () => {
     await aStoredRtuOutsideTheListKeepsItsOption();
+  }, CASE_TIMEOUT_MS);
+
+  it("F2.27 (3b) a failed RTU fetch labels the stored RTU unknown and keeps its value", async () => {
+    await aFailedRtuFetchLabelsTheStoredRtuUnknown();
   }, CASE_TIMEOUT_MS);
 
   it("F2.27 (4) Add omits a blank RTU and sends a chosen one of the asset's location", async () => {

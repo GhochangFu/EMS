@@ -322,6 +322,30 @@ export async function choosingUnwiredSendsNull(): Promise<void> {
 }
 
 /**
+ * F2.27 (3b) — a failed RTU fetch labels the synthetic option "(unknown RTU)",
+ * not "(loading)" for good, and the stored value is still the select's value
+ * and still absent from an edit of another field.
+ */
+export async function aFailedRtuFetchLabelsTheStoredRtuUnknown(): Promise<void> {
+  stubApi();
+  const fetchRtus = vi.mocked(rtusApi.fetchAdminRtus).mockRejectedValue(new Error("rtus down"));
+  const item = pointItem({ locationId: LOCATION, rtuId: RTU_Z, sourceKind: "measured" });
+  const { update } = await openEdit(item);
+  const synthetic = (await within(rtuSelect()).findByRole("option", {
+    name: /unknown RTU/,
+  })) as HTMLOptionElement;
+  expect(fetchRtus).toHaveBeenCalledWith("all", LOCATION);
+  expect(synthetic.textContent).toBe(`${RTU_Z} (unknown RTU)`);
+  expect(within(rtuSelect()).queryByRole("option", { name: /loading/ })).toBeNull();
+  expect(synthetic.value).toBe(RTU_Z);
+  expect(rtuSelect().value).toBe(RTU_Z);
+  await userEvent.type(screen.getByLabelText("Sensor code"), "S9");
+  await userEvent.click(screen.getByRole("button", { name: "Save" }));
+  await vi.waitFor(() => expect(update).toHaveBeenCalledTimes(1));
+  expect(Object.keys(update.mock.calls[0][1])).toEqual(["sensorCode"]);
+}
+
+/**
  * F2.27 (3) — a stored RTU the location list no longer holds keeps a synthetic
  * option, so the controlled select shows it rather than falling to blank.
  * Mutation run: removing the option reddens the option lookup. The body

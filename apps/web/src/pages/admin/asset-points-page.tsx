@@ -92,6 +92,16 @@ function CalcRuntimePill({ runtime }: { runtime: AssetPointCalcConfigDto["runtim
  * value, and an "inherited" marker where the shown value comes from the
  * asset's template. The title names the template-supplied fields.
  */
+/**
+ * The suffix on the synthetic option that holds a stored RTU the location list
+ * does not. "loading" only while the fetch runs: a query that is disabled (no
+ * location) or failed never succeeds, and "loading" there would read as forever.
+ */
+function storedRtuLabel(rtusQ: { isSuccess: boolean; isFetching: boolean }): string {
+  if (rtusQ.isSuccess) return "not in this location";
+  return rtusQ.isFetching ? "loading" : "unknown RTU";
+}
+
 function MetadataCell({
   text,
   effective,
@@ -646,7 +656,7 @@ export function AssetPointsAdminPage({ user }: AssetPointsAdminPageProps) {
                   ))}
                   {storedRtuMissing && editing?.rtuId ? (
                     <option value={editing.rtuId}>
-                      {editing.rtuId} ({rtusQ.isSuccess ? "not in this location" : "loading"})
+                      {editing.rtuId} ({storedRtuLabel(rtusQ)})
                     </option>
                   ) : null}
                 </select>
