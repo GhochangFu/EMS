@@ -186,7 +186,7 @@ export async function unvalidatedIsListedNotEvaluated(): Promise<void> {
       item.value === null &&
       item.state === "unvalidated" &&
       item.inputAsOf === null &&
-      item.excluded === 0 &&
+      item.excluded === null &&
       item.memberCount === 0,
     `an unvalidated KPI is listed with no value; got ${JSON.stringify(item)}`,
   );
@@ -252,6 +252,27 @@ export async function v2MissingMemberIsCountedNeverNamed(): Promise<void> {
   );
   const body = JSON.stringify(response);
   assert(MEMBERS.every((id) => !body.includes(id)), "no member id may appear anywhere in the body (decision 6)");
+}
+
+/**
+ * A stale LOCAL input refuses before the member read, so no member was
+ * classified: `excluded` is `null`, never a "0 excluded" nobody measured
+ * (code review, 2026-10-09). Every member is fresh, so a host that defaulted
+ * the count would report 0 here, not 3 — the null is the only right answer.
+ */
+export async function aRefusalBeforeTheMemberReadHasNoExcludedCount(): Promise<void> {
+  const h = harness({
+    kpis: [{ code: "mixed", name: "Mixed", pointKeys: ["kw"], expression: "{kw} + sum({kw} @site)", dialect: V2 }],
+    membership: siteMembership(),
+    samples: new Map([
+      [inputKey(ASSET, "kw"), { value: 9, timeMs: NOW_MS - WINDOW_MINUTES * 60_000 - 1_000 }],
+      ...MEMBERS.map((id): [string, CalcInputSample] => [inputKey(id, "kw"), { value: 1, timeMs: NOW_MS }]),
+    ]),
+  });
+  const [item] = (await run(h)).items;
+  assert(item?.state === "stale_input" && item.memberCount === 3, `a stale local input refuses; got ${JSON.stringify(item)}`);
+  assert(h.pairCalls.length === 0, "the refusal came before the member read");
+  assert(item.excluded === null, `no member was classified, so excluded is null; got ${String(item.excluded)}`);
 }
 
 export async function v2AllFreshIsTheSum(): Promise<void> {

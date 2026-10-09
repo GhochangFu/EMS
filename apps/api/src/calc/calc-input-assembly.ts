@@ -79,14 +79,16 @@ export type AssemblyRefusalReason = Extract<
  *   alone (no read).
  * - `membersNotFresh`: of those, the ones stale or missing — classified over
  *   **every** member of **every** aggregate from the one batched pairs read,
- *   before the declared-order refusal loop (ADR 0097 decision 3). `0` when the
- *   pairs read never ran (a refusal above it).
+ *   before the declared-order refusal loop (ADR 0097 decision 3). `null`
+ *   when no member was classified: a refusal above the pairs read, or a
+ *   definition with no cross reference. A count of `0` therefore always
+ *   means "measured, and all fresh".
  * - `oldestInputMs`: the minimum `timeMs` over every sample this call read —
  *   local, qualified and member, fresh or stale; `null` when none was read.
  */
 export type AssemblyReading = {
   readonly memberCount: number;
-  readonly membersNotFresh: number;
+  readonly membersNotFresh: number | null;
   readonly oldestInputMs: number | null;
 };
 
@@ -110,7 +112,7 @@ export type CalcInputAssemblyDeps = {
 type Pair = { readonly assetId: string; readonly pointKey: string };
 
 /** The mutable side of {@link AssemblyReading}, filled as the reads happen. */
-type ReadingState = { memberCount: number; membersNotFresh: number; oldestInputMs: number | null };
+type ReadingState = { memberCount: number; membersNotFresh: number | null; oldestInputMs: number | null };
 
 function noteSamples(state: ReadingState, samples: Iterable<CalcInputSample>): void {
   for (const sample of samples) {
@@ -215,14 +217,16 @@ async function resolveCrossInputs(
 
   // ADR 0097 decision 3: every declared member of every aggregate, classified
   // before the declared-order loop below can return at the first refusal.
+  let notFresh = 0;
   for (const { ref, pairs } of reads) {
     if (ref.kind === "qref") continue;
     for (const pair of pairs) {
       if (classifyInput(sampleOf(pair), nowMs, def.maxInputAgeSeconds) !== "fresh") {
-        state.membersNotFresh += 1;
+        notFresh += 1;
       }
     }
   }
+  state.membersNotFresh = notFresh;
 
   const values = new Map<string, number>();
   let excluded = 0;
@@ -277,7 +281,7 @@ export async function assembleInputs(
   windows: ReadonlyMap<string, WindowReadResult>,
   windowEndMs: number,
 ): Promise<AssembledInputs | AssemblyRefusal> {
-  const state: ReadingState = { memberCount: countDeclaredMembers(def, membership), membersNotFresh: 0, oldestInputMs: null };
+  const state: ReadingState = { memberCount: countDeclaredMembers(def, membership), membersNotFresh: null, oldestInputMs: null };
 
   // Parameters first (ADR 0070 decision 2): a `$key` with no row in scope is
   // `parameter_unset` before any input is read, so a missing parameter never

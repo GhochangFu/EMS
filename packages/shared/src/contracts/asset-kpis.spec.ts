@@ -76,3 +76,15 @@ export function assertOptionalFieldsMayBeAbsent(): void {
   const { unit: _unit, higherIsBetter: _hib, ...bare } = ITEM;
   assert(assetKpiValueSchema.safeParse(bare).success, "unit and higherIsBetter are optional");
 }
+
+/** `excluded: null` is "no member was classified" (code review, 2026-10-09) — it parses. */
+export function assertExcludedNullParses(): void {
+  const parsed = assetKpiValueSchema.safeParse({ ...ITEM, value: null, state: "stale_input", excluded: null });
+  assert(parsed.success, `excluded: null must parse: ${JSON.stringify(parsed.error?.issues)}`);
+}
+
+/** Nullable, not optional: the host always states the count or its absence. */
+export function assertExcludedAbsentIsRefused(): void {
+  const { excluded: _excluded, ...bare } = ITEM;
+  assert(!assetKpiValueSchema.safeParse(bare).success, "an item with no excluded key must be refused");
+}

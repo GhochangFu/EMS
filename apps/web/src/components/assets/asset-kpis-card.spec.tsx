@@ -63,9 +63,9 @@ export function itemsKeepTheirOrder(): void {
   expect(names).toEqual(["Bravo", "Alpha"]);
 }
 
-/** A refusal before the member read carries `excluded: 0` for members nobody read — no freshness claim. */
+/** A refusal before the member read carries `excluded: null` — no count, and no freshness claim. */
 export function aRefusalBeforeTheMemberReadClaimsNoFreshness(): void {
-  renderCard([item({ code: "site", name: "Site kW", state: "stale_input", excluded: 0, memberCount: 3 })]);
+  renderCard([item({ code: "site", name: "Site kW", state: "stale_input", excluded: null, memberCount: 3 })]);
   expect(within(row("Site kW")).queryByText(/members/)).not.toBeInTheDocument();
 }
 

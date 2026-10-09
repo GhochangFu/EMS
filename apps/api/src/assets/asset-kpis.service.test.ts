@@ -12,6 +12,7 @@ describe("F2.33 — the KPI read host (ADR 0097)", () => {
   it("a sample exactly windowMinutes old is fresh", () => spec.sampleAtTheWindowEdgeIsFresh());
   it("a sample one second past windowMinutes is stale and keeps its time", () => spec.sampleOneSecondPastTheWindowIsStale());
   it("v2: a silent member is counted as excluded and never named", () => spec.v2MissingMemberIsCountedNeverNamed());
+  it("a refusal before the member read carries excluded: null", () => spec.aRefusalBeforeTheMemberReadHasNoExcludedCount());
   it("v2: every member fresh gives the sum", () => spec.v2AllFreshIsTheSum());
   it("v2: inputAsOf is the oldest member read", () => spec.v2InputAsOfIsTheOldestMember());
   it("v3: an unset $key is parameter_unset", () => spec.v3ParameterUnset());

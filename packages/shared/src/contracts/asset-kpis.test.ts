@@ -13,4 +13,6 @@ describe("F2.33 — the asset KPI response contract (ADR 0097, ADR 0030)", () =>
   it("refuses a bare date as inputAsOf", () => spec.assertBareDateIsRefused());
   it("leaves the value/state pairing to the host", () => spec.assertNullValueWithOkParsesAtSchemaLevel());
   it("makes unit and higherIsBetter optional", () => spec.assertOptionalFieldsMayBeAbsent());
+  it("parses excluded: null", () => spec.assertExcludedNullParses());
+  it("refuses an item with no excluded key", () => spec.assertExcludedAbsentIsRefused());
 });

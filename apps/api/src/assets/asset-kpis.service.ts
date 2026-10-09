@@ -132,10 +132,15 @@ function toEvaluable(assetId: string, kpi: StoredKpi, windowMinutes: number): Ev
  * throws propagates: a read route has no "refuse every formula this sweep" to
  * contain it in.
  *
- * Disclosure (decision 6): an item carries counts, never a member's id, code
- * or value. `excluded` is the declared aggregate members that were stale or
- * missing, classified over every member; `memberCount` is every declared
- * member.
+ * Disclosure (decision 6, Amendment 1): an item carries counts, never a
+ * member's id or code, and never per-member values as a list. The value can
+ * still equal one asset's reading (a qualified reference, a one-member
+ * aggregate), and `inputAsOf` can be a member's sample time — what a stored
+ * `v2` point with the same reference already shows behind `canReadAsset`.
+ * `excluded` is the declared aggregate members that were stale or missing,
+ * classified over every member — `null` when no member was classified (a
+ * refusal before the member read, a KPI with no cross reference, an
+ * `unvalidated` KPI); `memberCount` is every declared member.
  */
 export async function evaluateAssetKpis(
   deps: AssetKpisDeps,
@@ -173,7 +178,7 @@ export async function evaluateAssetKpis(
   for (const kpi of stored) {
     const entry = byKpi.get(kpi);
     if (entry === undefined) {
-      items.push({ ...identityOf(kpi), value: null, state: "unvalidated", inputAsOf: null, excluded: 0, memberCount: 0 });
+      items.push({ ...identityOf(kpi), value: null, state: "unvalidated", inputAsOf: null, excluded: null, memberCount: 0 });
       continue;
     }
     const assembled = await assembleInputs(deps, entry.def, nowMs, membership, NO_OVERLAY, parameters, windows, endMs);
