@@ -11,7 +11,8 @@ import type { MetricCatalogService } from "./metric-catalog.service";
  *
  * The tree: campus (asset C, 1 kWh) → siteA (asset SA, 10 kWh), siteB (asset SB, 100 kWh); the
  * values are distinct powers of ten so every sum names the assets it took. One campus
- * dashboard carries every binding.
+ * dashboard carries every binding but one; a second dashboard, at siteA, carries the
+ * `groupDepth: 1` binding of owner ruling P1.
  *
  * **The depth-two case cannot prove grouping on this fixture**: the tree is two levels deep, so
  * depth 2 and "no groupDepth" both list the three nodes. It proves B2 (the campus, shallower
