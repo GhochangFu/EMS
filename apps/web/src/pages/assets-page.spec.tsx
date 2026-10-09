@@ -5,9 +5,10 @@ import { MemoryRouter } from "react-router-dom";
 import { expect, vi } from "vitest";
 
 import { assetHealthResponseSchema, assetListRowSchema } from "@bms/shared/contracts";
-import type { AssetHealthResponse, AssetListRow, DashboardsListResponse, UserRole } from "@bms/shared";
+import type { AssetHealthResponse, AssetKpisResponse, AssetListRow, DashboardsListResponse, UserRole } from "@bms/shared";
 
 import * as assetHealthApi from "../api/asset-health";
+import * as assetKpisApi from "../api/asset-kpis";
 import * as assetsApi from "../api/assets";
 import * as dashboardsApi from "../api/dashboards";
 import * as vocabApi from "../api/vocabularies";
@@ -141,7 +142,18 @@ const DASHBOARDS: DashboardsListResponse = {
   ],
 };
 
+/** `F2.33` — one computed KPI. Stubbed in `stubApi`: every panel case renders the KPI card, and an
+ * unstubbed fetch would reach the real API on :4000. */
+const KPIS: AssetKpisResponse = {
+  assetId: "11111111-1111-4111-8111-111111111111",
+  windowMinutes: 15,
+  items: [
+    { code: "kw_now", name: "Pump kW", unit: "kW", value: 7.5, state: "ok", inputAsOf: null, excluded: 0, memberCount: 0 },
+  ],
+};
+
 function stubApi(dashboards: DashboardsListResponse = DASHBOARDS) {
+  vi.spyOn(assetKpisApi, "fetchAssetKpis").mockResolvedValue(KPIS);
   vi.spyOn(assetsApi, "fetchAssets").mockResolvedValue([WIRED, UNWIRED]);
   vi.spyOn(vocabApi, "fetchVocabularies").mockResolvedValue(VOCABULARIES as never);
   vi.spyOn(assetHealthApi, "fetchAssetHealth").mockResolvedValue(HEALTH);
@@ -288,6 +300,19 @@ export async function panelShowsTheHealthCard(): Promise<void> {
   expect(await screen.findByRole("heading", { name: "Health" })).toBeInTheDocument();
   expect(await screen.findByText("87%")).toBeInTheDocument();
   expect(fetchHealth).toHaveBeenCalledWith(UNWIRED.id);
+}
+
+/** P10 (`F2.33`) — the KPI hook is wired: the card heading and the stubbed value render. */
+export async function panelShowsTheKpisCard(): Promise<void> {
+  const fetchKpis = vi.spyOn(assetKpisApi, "fetchAssetKpis");
+  stubApi();
+  renderPage();
+
+  await clickRow("FEED-PUMP-2");
+
+  expect(await screen.findByRole("heading", { name: "KPIs" })).toBeInTheDocument();
+  expect(await screen.findByText("7.5 kW")).toBeInTheDocument();
+  expect(fetchKpis).toHaveBeenCalledWith(UNWIRED.id);
 }
 
 /** P6 — the domain select and the text input both narrow the table. */
