@@ -181,7 +181,7 @@ export class ReportSchedulesService {
     return toReportScheduleDto(row);
   }
 
-  /** The read scope's `locationIds` (and `assertWriteScope`'s `held`) are the subtree closure since `F2.10`. */
+  /** For a `location_admin`, the read scope's `locationIds` (and `assertWriteScope`'s `held`) are the subtree closure since `F2.10`. */
   async list(jwt: JwtPayload): Promise<ReportScheduleDto[]> {
     const scope = await this.accessControl.reportFileReadScope(jwt);
     if (scope.kind === "location" && scope.locationIds.length === 0) {

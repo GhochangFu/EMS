@@ -51,9 +51,10 @@ import { waterBalanceRow } from "./water-balance";
 /**
  * What a resolver may reach for beyond the transaction.
  *
- * Passed explicitly rather than bound as `this`. Nine of the ten entries need nothing here,
- * and a `this`-bound map would have to be cast to reach the service's injected dependency — a cast
- * on the one path that calls another module's service.
+ * Passed explicitly rather than bound as `this`. Eight of the ten entries need nothing here
+ * (`assets.health.score` reads `health`; `sustainability.by_location` reads
+ * `readableLocationIds` since `F2.10`), and a `this`-bound map would have to be cast to reach
+ * the service's injected dependency — a cast on the one path that calls another module's service.
  */
 type ResolverDeps = {
   readonly health: AssetHealthService;
@@ -72,7 +73,8 @@ type ResolverDeps = {
  * `params` is the binding's stored `params` AFTER `METRIC_CATALOG_PARAMS_WRITE[key]` has
  * parsed it (`E4.2`): `{}` for the five Stage C entries and the two `F3.73` asset entries,
  * `{ pointKey, aggregate }` and an
- * optional `balanceRole` (`E4.3`) for the two sustainability entries, and `{ period }` for
+ * optional `balanceRole` (`E4.3`) for the two sustainability entries — plus an optional
+ * `groupDepth` on `by_location` since `F2.10` — and `{ period }` for
  * `water.balance`. Positional and required
  * rather than optional, so a resolver that reads a field cannot compile against a call that
  * never passes one.
@@ -132,7 +134,8 @@ type WaterBalanceParams = { readonly period: WaterBalancePeriod };
  * entries declare no fields, so there is no parameter for them to read — a dataset's row cap
  * comes from `MAX_DATASET_ROWS`, not from a request. The two `sustainability.*` entries
  * (`E4.2`, ADR 0072 decision 2) take `{ pointKey, aggregate }` and, since `E4.3` (ADR 0073
- * decision 2), an optional `balanceRole` that narrows the carrying set; `water.balance` (`E4.3`,
+ * decision 2), an optional `balanceRole` that narrows the carrying set — `by_location` also
+ * takes an optional `groupDepth` since `F2.10` (ADR 0098 Amendment 1, C); `water.balance` (`E4.3`,
  * ADR 0073 decision 3) takes `{ period }`. The stored row is re-parsed
  * through `METRIC_CATALOG_PARAMS_WRITE` before a resolver sees it, and a row that fails to
  * parse is SKIPPED with one warning naming the field path (§4.3) — never thrown, because one
