@@ -8,6 +8,7 @@ import { fetchAdminOrganizations } from "../../api/admin/organizations";
 import { fetchAdminRtus } from "../../api/admin/rtus";
 import { isGlobalAdmin } from "../../lib/admin-access";
 import { isAssetLevelReady, resolveEffectiveOrganizationId } from "../../lib/hierarchy-filter";
+import { locationTreeOptions } from "../../lib/location-tree";
 import type { AuthUser } from "../../stores/auth-store";
 
 export type HierarchySelection = {
@@ -133,9 +134,10 @@ export function HierarchyFilterBar({
           }}
         >
           <option value="">Select location</option>
-          {(locationsQ.data?.items ?? []).map((location) => (
-            <option key={location.id} value={location.id}>
-              {location.name}
+          {/* `F2.10` (ADR 0098 B5) — the tree depth-first, one `— ` per level; any node is selectable. */}
+          {locationTreeOptions(locationsQ.data?.items ?? []).map((option) => (
+            <option key={option.id} value={option.id}>
+              {option.label}
             </option>
           ))}
         </select>
