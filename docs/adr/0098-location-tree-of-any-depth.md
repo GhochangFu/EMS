@@ -2,7 +2,7 @@
 
 ## Status
 
-**Proposed — 2026-10-09.** Source: owner rulings 2026-10-09, sixteen questions
+**Accepted — 2026-10-09** (owner, with every drafter choice below; proposed the same day). Source: owner rulings 2026-10-09, sixteen questions
 put one at a time; each was ruled for the recommended option. Ruling 11
 supersedes the pin rule of ruling 9. Rulings 12 and 13 were asked after the
 security review of the first draft found that ruling 8's "manage rights on the
