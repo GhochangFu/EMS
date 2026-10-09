@@ -16,8 +16,9 @@ import { useAuthStore, type AuthUser } from "./stores/auth-store";
  * Assertions live here; `app.test.tsx` is the Vitest entry point and carries
  * the `@vitest-environment jsdom` docblock (ADR 0014, ADR 0042 decision 2).
  *
- * The effect runs only while the store holds an access token and no scope. It
- * re-sets the session with the fresh `/me` user and scope. It used to call
+ * The effect runs on every load with an access token (`F2.10`, ADR 0098 B9; it
+ * used to run only while no scope was stored). It re-sets the session with the
+ * fresh `/me` user and scope. It used to call
  * `setSession` with three arguments, and the store defaulted the fourth
  * (`oidcIdToken`) to `null` — so the re-set erased the id token, and a later
  * logout reached Keycloak without an `id_token_hint`. `setSession` now requires
@@ -236,4 +237,78 @@ export async function aPlainMeOnLoadShowsNothing(): Promise<void> {
   expect(screen.getByRole("heading", { level: 2, name: "Sign in to IONSiTE NEXUS" })).toBeInTheDocument();
   expect(useAuthStore.getState().authFailureReason).toBeNull();
   expect(screen.queryByText(DEACTIVATED_SENTENCE)).toBeNull();
+}
+
+/** A scope as `/me` serves it after a location was created or moved elsewhere. */
+const FRESH_SCOPE: AccessibleScope = {
+  kind: "location",
+  locations: [
+    { id: "loc-r", code: "R", slug: "r", name: "Root", type: "site", province: null, parentId: null },
+    { id: "loc-c", code: "C", slug: "c", name: "Child", type: "site", province: null, parentId: "loc-r" },
+  ],
+  assetGroups: [],
+  assetIds: [],
+};
+
+/** The persisted copy from an earlier session: the same user, no Child yet. */
+const STALE_SCOPE: AccessibleScope = {
+  ...FRESH_SCOPE,
+  locations: [FRESH_SCOPE.locations[0]!],
+};
+
+/**
+ * `F2.10` (ADR 0098 B9) — `/me` is refetched on every load with a token, even with a stored scope,
+ * and the served scope replaces the persisted one. The id token is kept (`F4.156`).
+ */
+export async function aStoredScopeIsReplacedOnLoad(): Promise<void> {
+  const accessToken = unexpiredAccessToken();
+  const fetchCurrentUser = vi
+    .spyOn(loginApi, "fetchCurrentUser")
+    .mockResolvedValue({ user: USER, scope: FRESH_SCOPE });
+  useAuthStore.setState({ accessToken, oidcIdToken: ID_TOKEN, user: USER, scope: STALE_SCOPE });
+
+  render(
+    <QueryClientProvider client={new QueryClient()}>
+      <MemoryRouter initialEntries={["/login"]}>
+        <App />
+      </MemoryRouter>
+    </QueryClientProvider>,
+  );
+
+  await waitFor(() => {
+    expect(useAuthStore.getState().scope).toEqual(FRESH_SCOPE);
+  });
+  expect(fetchCurrentUser).toHaveBeenCalledWith(accessToken);
+  expect(useAuthStore.getState().oidcIdToken).toBe(ID_TOKEN);
+}
+
+/**
+ * `F2.10` (plan O1) — a failed refetch with a stored scope keeps the session: the stored copy
+ * stands. A dead token is caught by `isJwtExpired` and by the next call's 401.
+ */
+export async function aFailedRefetchKeepsAStoredSession(): Promise<void> {
+  const accessToken = unexpiredAccessToken();
+  let reject: (err: Error) => void = () => undefined;
+  const fetchCurrentUser = vi.spyOn(loginApi, "fetchCurrentUser").mockReturnValue(
+    new Promise((_resolve, r) => {
+      reject = r;
+    }),
+  );
+  useAuthStore.setState({ accessToken, oidcIdToken: ID_TOKEN, user: USER, scope: STALE_SCOPE });
+
+  render(
+    <QueryClientProvider client={new QueryClient()}>
+      <MemoryRouter initialEntries={["/login"]}>
+        <App />
+      </MemoryRouter>
+    </QueryClientProvider>,
+  );
+
+  await waitFor(() => {
+    expect(fetchCurrentUser, "control: the /me effect ran").toHaveBeenCalled();
+  });
+  reject(new Error("Current user failed (503)"));
+  await new Promise((resolve) => setTimeout(resolve, 25));
+  expect(useAuthStore.getState().accessToken).toBe(accessToken);
+  expect(useAuthStore.getState().scope).toEqual(STALE_SCOPE);
 }
