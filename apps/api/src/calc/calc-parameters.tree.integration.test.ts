@@ -10,6 +10,7 @@ import { buildTreeFixture, type TreeFixture } from "../auth/location-tree.integr
 import { openIntegrationPool, requireIntegrationDb } from "../testing/integration-db-gate";
 import {
   aCampusRowServesADeeperAssetWithNoRowOfItsOwn,
+  anAssetPointingAtAForeignNodeGetsNoChainThere,
   aPlantedCrossOrgEdgeIsNotWalked,
   aPlantedCycleTerminatesAndStillResolves,
   aSiblingSubtreeRowIsNotServed,
@@ -76,5 +77,9 @@ describe.skipIf(!connectionString)("F2.10 — calc parameters resolve nearest-fi
 
   it("a planted cycle terminates at the bound and the organization row still resolves", async () => {
     await aPlantedCycleTerminatesAndStillResolves(svc, pool as pg.Pool, fx, run);
+  });
+
+  it("an asset pointing at another organization's node gets no chain there, with that organization in the batch", async () => {
+    await anAssetPointingAtAForeignNodeGetsNoChainThere(svc, pool as pg.Pool, fx, run);
   });
 });

@@ -45,12 +45,14 @@ export type TreeExecutor = Pick<BmsDb, "execute"> | Pick<BmsTx, "execute">;
 /**
  * Where a walk may start: the node ids, and the organizations they must lie in.
  *
- * **`organizationIds` is always the caller's own authority, never a request
- * parameter**: the tenant transaction's organization, the organizations of the
- * caller's own grant rows, or the organizations the caller reads — values the
- * server computed. A client-supplied organization id would let the client name
- * the bound it is bounded by. Empty means "no organization", and the walk
- * answers nothing without a query.
+ * **`organizationIds` is always server-authorized**: the tenant transaction's
+ * organization (even when the request named it — the locations create path
+ * passes `body.organizationId` only after `canManageOrganization` accepted it,
+ * and its transaction is opened for that organization), the organizations of
+ * the caller's own grant rows, or the organizations the caller reads. An
+ * organization id the server did not authorize would let the client name the
+ * bound it is bounded by. Empty means "no organization", and the walk answers
+ * nothing without a query.
  */
 export type TreeAnchors = { readonly organizationIds: readonly string[]; readonly ids: readonly string[] };
 
@@ -168,27 +170,33 @@ export async function locationDepthAndHeight(
 
 /**
  * A `WITH RECURSIVE anc (node_id, ancestor_id, parent_id, organization_id,
- * steps)` prefix: for every node `anchors.nodeIds` yields inside an
- * organization `anchors.organizationIds` yields, the node itself at `steps`
- * 0, then each ancestor nearest-first. The same anchor and per-step
- * organization predicates, `UNION` and depth bound as every walk here, so a
- * foreign node starts no chain, a planted cross-organization edge stops the
- * chain and a cycle stops at the bound.
+ * steps)` prefix: for every `(node id, organization id)` pair `anchors.pairs`
+ * yields that names a row, the node itself at `steps` 0, then each ancestor
+ * nearest-first. The same anchor and per-step organization predicates,
+ * `UNION` and depth bound as every walk here, so a node paired with an
+ * organization that does not hold it starts no chain, a planted
+ * cross-organization edge stops the chain and a cycle stops at the bound.
  *
- * Both fields are SQL that yields one uuid column (`SELECT unnest(…)`, or a
- * subquery over `bms.assets`), so the calc walk can bound each asset's node by
- * the asset's own organization in the same statement. The caller appends its
- * own `SELECT` that reads `anc` in the same statement — ADR 0098 decision 10's
- * calc walk is one statement, and the sustainability grouping reads hundreds
- * of chains in one.
+ * `anchors.pairs` is SQL that yields two uuid columns, node then organization.
+ * The calc walk passes each asset's own `(location_id, organization_id)`, so an
+ * asset's node is bounded by that asset's organization — not by the set of
+ * every organization in the batch (security review Low 2). `locationAncestorChains`
+ * passes the cross product of its ids and its organizations. The caller
+ * appends its own `SELECT` that reads `anc` in the same statement — ADR 0098
+ * decision 10's calc walk is one statement, and the sustainability grouping
+ * reads hundreds of chains in one.
+ *
+ * The chains are keyed by `node_id` alone: two assets on one node share its
+ * chain, whatever their organizations. The calc statement's
+ * `cp.organization_id = a.organization_id` is what keeps a parameter row in
+ * its asset's organization.
  */
-export function ancestorChainsCte(anchors: { readonly organizationIds: SQL; readonly nodeIds: SQL }): SQL {
+export function ancestorChainsCte(anchors: { readonly pairs: SQL }): SQL {
   return sql`
     WITH RECURSIVE anc (node_id, ancestor_id, parent_id, organization_id, steps) AS (
       SELECT l.id, l.id, l.parent_id, l.organization_id, 0
         FROM bms.locations l
-       WHERE l.id IN (${anchors.nodeIds})
-         AND l.organization_id IN (${anchors.organizationIds})
+       WHERE (l.id, l.organization_id) IN (${anchors.pairs})
       UNION
       SELECT anc.node_id, p.id, p.parent_id, p.organization_id, anc.steps + 1
         FROM bms.locations p
@@ -212,8 +220,9 @@ export async function locationAncestorChains(
   }
   const result = await db.execute<{ node_id: string; ancestor_id: string; organization_id: string; steps: number | string }>(sql`
     ${ancestorChainsCte({
-      organizationIds: sql`SELECT unnest(${sql.param([...anchors.organizationIds])}::uuid[])`,
-      nodeIds: sql`SELECT unnest(${sql.param([...anchors.ids])}::uuid[])`,
+      pairs: sql`SELECT n.id, o.id
+                   FROM unnest(${sql.param([...anchors.ids])}::uuid[]) AS n(id)
+                  CROSS JOIN unnest(${sql.param([...anchors.organizationIds])}::uuid[]) AS o(id)`,
     })}
     SELECT node_id, ancestor_id, organization_id, steps FROM anc ORDER BY node_id, steps`);
   return result.rows.map((row) => ({

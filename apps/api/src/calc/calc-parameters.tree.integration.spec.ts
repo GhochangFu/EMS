@@ -234,3 +234,34 @@ export async function aPlantedCycleTerminatesAndStillResolves(
     });
   }
 }
+
+/**
+ * Security review Low 2: the anchor is the assets' (location_id, organization_id) PAIRS, not two
+ * independent sets. With the foreign keys and triggers off, A1a (org A) is pointed at X (org B)
+ * and an org-A row is placed on X. X1's asset (org B) is in the same batch, so org B is in the
+ * batch's organizations and X is in its nodes: an anchor on two sets would start X's chain and
+ * serve A1a the 7. The pair (X, A) names no row, so A1a gets no chain on X. X1's asset sits on X1,
+ * not on X, so its own chain is keyed to X1 and cannot reach A1a through the join.
+ */
+export async function anAssetPointingAtAForeignNodeGetsNoChainThere(
+  svc: CalcParametersService,
+  db: Pg,
+  fx: TreeFixture,
+  run: string,
+): Promise<void> {
+  const key = `f210_${run}_pair`;
+  await inSavepoint(db, "pair", async () => {
+    await insertKey(db, key);
+    await db.query("SET LOCAL session_replication_role = replica");
+    await db.query("UPDATE bms.assets SET location_id = $1 WHERE id = $2", [fx.nodes.X, fx.assets.A1a]);
+    await insertRow(db, { organizationId: fx.orgA, key, locationId: fx.nodes.X, value: 7 });
+    await db.query("SET LOCAL session_replication_role = origin");
+
+    const control = await db.query<{ asset_id: string; value: number }>(UNGUARDED_RESOLVE, [[fx.assets.A1a], key]);
+    if (control.rows[0]?.value !== 7) {
+      fail(`positive control: the unguarded resolve for A1a returned ${JSON.stringify(control.rows)} — the plant did not land`);
+    }
+    const values = await resolve(svc, [fx.assets.A1a, fx.assets.X1], key);
+    expectValue(values, fx.assets.A1a, key, undefined, "A1a (org A) on X (org B), beside an org-B asset in the batch");
+  });
+}
