@@ -59,7 +59,7 @@ import {
  * **No `tx.rollback()` in this file, and no read of `bms.assets`.** The
  * first would put it in scope of `tests/integration-fixture-isolation.test.ts`'s
  * rollback scan; the location-scope expectation comes through
- * `fx.assetIdsOfLocation` (F3.5a's technique), read after the render.
+ * `fx.assetIdsOfSubtree` (F3.5a's technique), read after the render.
  *
  * **Two connections, two jobs (the F3.5a shape).** `bms_fleet` is
  * `BYPASSRLS`: it inserts the fixtures, counts and sweeps, and proves nothing
@@ -515,17 +515,31 @@ export async function aRetrySkipsTheExistingFormatAndRendersTheMissingOne(fx: Re
   assert(xlsxAgain !== undefined && xlsxAgain.id !== xlsx!.id, "the xlsx row must be a new row");
 }
 
-/** `location_ids = {WC}`: the asset scope the renderer received is a non-empty subset of RSMOC-WC's seeded assets. */
+/**
+ * `location_ids = {WC}`: the asset scope the renderer received is a non-empty subset of RSMOC-WC's
+ * CURRENT subtree (ADR 0098 decision 7) — on the seed the subtree is the node alone — and carries no
+ * asset of another ESKOM site (the positive control that the scope is narrower than the organization).
+ */
 export async function aLocationScopedScheduleReadsOnlyItsAssets(fx: RenderIntegrationFixtures): Promise<void> {
   const scheduleId = await insertSchedule(fx, { locationIds: [fx.base.wcId] });
   const { svc } = service(fx);
+  // Read before AND after the render, the expectation their union: a fixture
+  // asset a concurrent suite commits in RSMOC-WC during the render lands in
+  // the after read, and one it deletes during the render (F3.37's afterAll,
+  // which took three of 46 in CI) is still in the before read. The ⊆ holds
+  // either way, and an asset in neither was never in the subtree.
+  const wcBefore = await fx.base.assetIdsOfSubtree(fx.base.wcId);
   const outcome = rendered(await run(fx, svc, payloadFor(scheduleId, PERIOD_1, fx.base.eskomId)));
-  // Read after the render, so a fixture asset a concurrent suite commits in
-  // RSMOC-WC lands in the expectation only and the ⊆ still holds.
-  const wcAssets = await fx.base.assetIdsOfLocation(fx.base.wcId);
+  const wcAssets = new Set([...wcBefore, ...(await fx.base.assetIdsOfSubtree(fx.base.wcId))]);
+  const eskomAssets = await fx.base.assetIdsOfOrganization(fx.base.eskomId);
   assert(outcome.assetIds.length > 0, "the positive control failed: the location-scoped render resolved no asset");
+  const outsideWc = [...eskomAssets].filter((id) => !wcAssets.has(id));
+  assert(outsideWc.length > 0, "the positive control failed: ESKOM holds no asset outside RSMOC-WC's subtree");
   const foreign = outcome.assetIds.filter((id) => !wcAssets.has(id));
-  assert(foreign.length === 0, `the render must read only RSMOC-WC's assets; ${foreign.length} of ${outcome.assetIds.length} are outside it`);
+  assert(
+    foreign.length === 0,
+    `the render must read only RSMOC-WC's subtree's assets; ${foreign.length} of ${outcome.assetIds.length} are outside it: ${await fx.base.describeAssets(foreign)}`,
+  );
   const [row] = await readFileRows(fx.base.fleetDb, scheduleId);
   assert(row !== undefined && row.location_ids.length === 1 && row.location_ids[0] === fx.base.wcId, "the row must copy the schedule's location_ids");
 }

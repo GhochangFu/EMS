@@ -67,7 +67,7 @@ import { primeSeededSubjects } from "../testing/seeded-subjects";
  * AGENTS.md §4.5's 1000-line cap, and the policy rows sit in the second file
  * because `tests/integration-fixture-isolation.test.ts` scans a
  * rollback-isolated spec for any `bms.assets` read — the render-scope row
- * here reads one as its expectation (see `assetIdsOfLocation`).
+ * here reads one as its expectation (see `assetIdsOfSubtree`).
  *
  * **The cap row costs two saves, not fifty.** It builds its own service with
  * `REPORT_FILES_CONFIG = { onDemandCap: 2 }` in the open's own cap
@@ -109,16 +109,22 @@ export type ReportFileIntegrationFixtures = {
    */
   readonly capOrganizationId: string;
   /**
-   * The seeded asset ids of one location, read as `bms_fleet` at call time —
-   * the independent expectation for the render-scope row. It is an
+   * The asset ids of one location's CURRENT subtree (ADR 0098 decisions 4
+   * and 7: a grant and a schedule's node both mean the subtree), read as
+   * `bms_fleet` at call time by a recursive walk written here rather than
+   * `expandLocationSubtrees`, so a defect in the walk under test is not
+   * also the expectation's. On the seed the subtree is the node alone. It
+   * is the independent expectation for the render-scope rows. It is an
    * expectation over seed rows, not a fixture: nothing in this suite writes a
    * row that references these ids, so the `23503` class
    * `tests/integration-fixture-isolation.test.ts` guards against cannot
-   * occur here. Read **after** the render scope it is compared with, so a
-   * fixture asset a concurrent suite commits in RSMOC-WC lands in this set
-   * only and the `⊆` still holds.
+   * occur here. Read **before and after** the render scope it is compared
+   * with and unioned, so a fixture asset a concurrent suite commits or
+   * deletes in RSMOC-WC meanwhile cannot break the `⊆`.
    */
-  readonly assetIdsOfLocation: (locationId: string) => Promise<Set<string>>;
+  readonly assetIdsOfSubtree: (locationId: string) => Promise<Set<string>>;
+  /** `code @ location (parent location)` of each asset id, so a scope failure names the suite that wrote the row. */
+  readonly describeAssets: (assetIds: readonly string[]) => Promise<string>;
   /** The same read keyed by `organization_id` — the whole-organization render's tenant bound (F3.5b Amendment 2 item 7 E). */
   readonly assetIdsOfOrganization: (organizationId: string) => Promise<Set<string>>;
   /** Every file id a row created, for the `afterAll` sweep of rows and audit rows. */
@@ -480,7 +486,11 @@ type LocationAdminRun = {
   readonly stored: StoredColumns;
   /** `readableAssetIdsInOrganization(wc-admin, ESKOM)` — what the render was bounded by. */
   readonly scoped: readonly string[];
-  /** The seeded assets of RSMOC-WC, read **after** `scoped` so a concurrent fixture commit lands in this set only. */
+  /**
+   * RSMOC-WC's subtree's assets, read before AND after `scoped` and unioned: a
+   * concurrent fixture commit lands in the after read, a concurrent fixture
+   * delete (F3.37's afterAll) is still in the before read.
+   */
   readonly wcAssets: ReadonlySet<string>;
   readonly topConsumerAssetIds: readonly string[];
 };
@@ -499,8 +509,9 @@ async function runLocationAdminSave(fx: ReportFileIntegrationFixtures): Promise<
   try {
     const stored = await readStoredColumns(fx.fleetDb, dto.id);
     assert(stored !== null, "the positive control failed: the fleet read found no row for the location admin's file");
+    const wcBefore = await fx.assetIdsOfSubtree(fx.wcId);
     const scoped = await fx.accessControl.readableAssetIdsInOrganization(wcAdmin(), fx.eskomId);
-    const wcAssets = await fx.assetIdsOfLocation(fx.wcId);
+    const wcAssets = new Set([...wcBefore, ...(await fx.assetIdsOfSubtree(fx.wcId))]);
     const preview = await fx.reports.energyPreview({ ...PERIOD }, [...scoped]);
     return {
       stored: stored as StoredColumns,
@@ -533,9 +544,9 @@ export async function locationAdminRendersUnderItsLocationsAssets(fx: ReportFile
   const run = await runLocationAdminSave(fx);
   assert(run.scoped.length > 0, "the positive control failed: wc-admin's ESKOM render scope is empty");
   const outside = run.scoped.filter((id) => !run.wcAssets.has(id));
-  assert(outside.length === 0, `the render scope carries ${outside.length} asset(s) outside RSMOC-WC`);
+  assert(outside.length === 0, `the render scope carries ${outside.length} asset(s) outside RSMOC-WC's subtree: ${await fx.describeAssets(outside)}`);
   const foreign = run.topConsumerAssetIds.filter((id) => !run.wcAssets.has(id));
-  assert(foreign.length === 0, `the preview's top consumers carry ${foreign.length} asset(s) outside RSMOC-WC`);
+  assert(foreign.length === 0, `the preview's top consumers carry ${foreign.length} asset(s) outside RSMOC-WC's subtree: ${await fx.describeAssets(foreign)}`);
 }
 
 // ---------------------------------------------------------------------------
@@ -820,14 +831,34 @@ export async function openReportFileFixtures(
     wcId,
     adminUserId,
     capOrganizationId,
-    // Seed rows nothing writes to; read at call time so a fixture asset a
-    // concurrent suite commits in RSMOC-WC cannot sit between the read and
-    // the render scope it is compared with.
-    assetIdsOfLocation: async (locationId) => {
-      const { rows } = await fleetPool.query<{ id: string }>(`SELECT id FROM bms.assets WHERE location_id = $1`, [
-        locationId,
-      ]);
+    // Read at call time. Concurrent suites commit and delete fixture assets
+    // in RSMOC-WC (F3.37, F3.78 pr4, E2.4's seed-rules), so a caller reads
+    // it on both sides of the scope it compares and unions the two.
+    assetIdsOfSubtree: async (locationId) => {
+      const { rows } = await fleetPool.query<{ id: string }>(
+        `WITH RECURSIVE sub (id, organization_id, depth) AS (
+           SELECT id, organization_id, 1 FROM bms.locations WHERE id = $1
+           UNION
+           SELECT c.id, c.organization_id, sub.depth + 1
+             FROM bms.locations c JOIN sub ON c.parent_id = sub.id AND c.organization_id = sub.organization_id
+            WHERE sub.depth < 16
+         )
+         SELECT a.id FROM bms.assets a JOIN sub ON a.location_id = sub.id`,
+        [locationId],
+      );
       return new Set(rows.map((row) => row.id));
+    },
+    describeAssets: async (assetIds) => {
+      if (assetIds.length === 0) return "[]";
+      const { rows } = await fleetPool.query<{ line: string }>(
+        `SELECT coalesce(a.code, '<gone ' || x.id || '>') || ' @ ' || coalesce(l.code, '?') || ' (parent ' || coalesce(p.code, '-') || ')' AS line
+           FROM unnest($1::uuid[]) AS x(id)
+           LEFT JOIN bms.assets a ON a.id = x.id
+           LEFT JOIN bms.locations l ON l.id = a.location_id
+           LEFT JOIN bms.locations p ON p.id = l.parent_id`,
+        [[...assetIds]],
+      );
+      return JSON.stringify(rows.map((row) => row.line));
     },
     assetIdsOfOrganization: async (organizationId) => {
       const { rows } = await fleetPool.query<{ id: string }>(`SELECT id FROM bms.assets WHERE organization_id = $1`, [
