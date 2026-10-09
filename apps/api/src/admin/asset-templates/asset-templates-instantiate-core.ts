@@ -28,6 +28,7 @@ import {
   assertRuleCodesFree,
   parseTemplateContentForInstantiate,
   planAsset,
+  storedSourceDataKeyVars,
 } from "./asset-templates-instantiate-guards";
 import type { InstantiationTarget } from "./asset-templates-instantiate-guards";
 import { fetchTemplateRow } from "./asset-templates-write-guards";
@@ -242,6 +243,9 @@ export async function instantiateTemplateCore(
         // has no `meta` field, so an instantiated asset's bag is exactly
         // this key or nothing at all.
         meta: telemetrySource === null ? null : withTelemetrySource(undefined, telemetrySource),
+        // `F2.29` (ADR 0039 Amendment 1 decision 2) — written here and nowhere
+        // else; both producers (the route and the onboarding commit) reach it.
+        sourceDataKeyVars: storedSourceDataKeyVars(plan.entry.sourceDataKeyVars),
         active: true,
       })),
     )

@@ -25,6 +25,8 @@ import {
   assertPrototypeTokensDoNotResolve,
   assertRequiredPointAbortsWholeBatch,
   assertRtuPathProducesMeasuredPoints,
+  assertAnAssetWithNoVariablesStoresNull,
+  assertVariablesArePersistedOnTheAssetRow,
   cleanup,
   loadFixtures,
   publishFixtureTemplate,
@@ -180,5 +182,13 @@ describe.skipIf(!connectionString)("F2.2 — asset template instantiation", () =
 
   it("treats a prototype-inherited pattern token as unresolved", async () => {
     await assertPrototypeTokensDoNotResolve(svc, fx, pool as pg.Pool);
+  });
+
+  it("stores the request's variables on the asset row, without asset_code (F2.29)", async () => {
+    await assertVariablesArePersistedOnTheAssetRow(svc, fx, pool as pg.Pool, template.id);
+  });
+
+  it("stores NULL for an asset built with no variables (F2.29)", async () => {
+    await assertAnAssetWithNoVariablesStoresNull(svc, fx, pool as pg.Pool);
   });
 });

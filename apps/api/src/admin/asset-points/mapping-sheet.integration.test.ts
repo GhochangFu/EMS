@@ -16,6 +16,7 @@ import {
   assertAFailedAuditRollsBackEveryWrittenRow,
   assertAnOutOfScopeCallerIsRefusedBeforeTheFileIsRead,
   assertAReorderedHeaderStillWritesTheRow,
+  assertThePreFillSubstitutesTheStoredVariables,
   assertARetiredRtuRoundTripsButCannotBeNewlyWired,
   assertAThirteenthColumnRefusesTheWholeFile,
   assertExportThenImportIsIdentity,
@@ -449,5 +450,9 @@ describe.skipIf(!connectionString)("F2.7 — the MAPPINGS sheet: export, preview
 
   it("(10) writes the row of a sheet whose header columns are reordered (F2.28)", async () => {
     await assertAReorderedHeaderStillWritesTheRow(ctx, jwt);
+  });
+
+  it("(11) pre-fills with the variables an asset stores; a NULL-variables asset keeps the token literal (F2.29)", async () => {
+    await assertThePreFillSubstitutesTheStoredVariables(ctx, jwt);
   });
 });

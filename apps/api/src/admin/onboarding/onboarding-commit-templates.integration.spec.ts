@@ -132,7 +132,9 @@ export function stockDraft(entry: StockAssetTemplateEntry): OnboardingDraft {
   const patterns = Object.fromEntries(
     entry.points
       .filter((point) => (point.kind ?? "measured") === "measured")
-      .map((point, index) => [point.pointKey, `{asset_code}_P${index}`]),
+      // F2.29: the first pattern also takes `{unit}`, so the templated asset
+      // supplies a variable the commit must store on its row.
+      .map((point, index) => [point.pointKey, index === 0 ? "{asset_code}_U{unit}_P0" : `{asset_code}_P${index}`]),
   );
   return {
     location: location(c.location),
@@ -146,7 +148,7 @@ export function stockDraft(entry: StockAssetTemplateEntry): OnboardingDraft {
         name: "Stock templated",
         siteName: "F3.22 Site",
         domain: entry.domain,
-        template: { code: c.template },
+        template: { code: c.template, sourceDataKeyVars: { unit: "07" } },
       },
     ],
   } as OnboardingDraft;
@@ -371,6 +373,24 @@ export async function assertAnOrganizationAdminCommitsAnOrganizationTemplate(fx:
     [result.assetIds],
   );
   expect(rows).toEqual([{ code: CODES.organization.templated, rtu_id: result.rtuIds[0] }]);
+}
+
+/**
+ * F2.29 (ADR 0039 Amendment 1 decision 2) — the commit reaches the core insert,
+ * so a templated draft asset stores its variables (I2's stock asset supplies
+ * `{unit}`), and one built with none stores NULL (I1's), read in one query.
+ */
+export async function assertATemplatedDraftAssetStoresItsVariables(fx: Fixtures): Promise<void> {
+  const codes = [CODES.stock.templated, ...CODES.authored.templated];
+  const { rows } = await fx.fleet.query<{ code: string; source_data_key_vars: unknown }>(
+    `SELECT code, source_data_key_vars FROM bms.assets WHERE code = ANY($1)`,
+    [codes],
+  );
+  const byCode = new Map(rows.map((row) => [row.code, row.source_data_key_vars]));
+  expect(byCode.size).toBe(3);
+  expect(byCode.get(CODES.stock.templated)).toEqual({ unit: "07" });
+  expect(byCode.get(CODES.authored.templated[0])).toBeNull();
+  expect(byCode.get(CODES.authored.templated[1])).toBeNull();
 }
 
 /** I5 (decision 10) — one asset point per measured template point, fed by the RTU this commit wrote. */

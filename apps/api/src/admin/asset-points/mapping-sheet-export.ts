@@ -23,9 +23,11 @@ import type { ExportSnapshot, SnapshotTemplatePoint } from "./mapping-sheet-snap
  *   blank, `active` as `TRUE`/`FALSE`;
  * - **the pre-fill**: every `measured` template point of the asset's pinned
  *   version with no `asset_points` row for `(asset_id, point_key)` —
- *   `source_data_key` is the pattern with `{asset_code}` substituted and every
- *   other token left literal (`CH{unit}_CHW_SUPPLY_T` for the person to
- *   finish), blank when the pattern is `NULL`; `rtu_code` the asset's own RTU
+ *   `source_data_key` is the pattern with `{asset_code}` and every variable
+ *   the asset stores substituted (`F2.29`, ADR 0039 Amendment 1 decision 4 —
+ *   `{asset_code}` set last, as at instantiation) and every other token left
+ *   literal (`CH{unit}_CHW_SUPPLY_T` on an asset whose variables are `NULL`,
+ *   for the person to finish), blank when the pattern is `NULL`; `rtu_code` the asset's own RTU
  *   when that gateway is **active** and blank otherwise (the import refuses a
  *   retired code on a row that does not already carry it, so pre-filling one
  *   would write a cell the import rejects); `unit = template.unit ??
@@ -137,7 +139,10 @@ export function buildMappingSheetRows(snapshot: ExportSnapshot): MappingSheetCel
       const sourceDataKey =
         point.sourceDataKeyPattern === null
           ? ""
-          : substituteSourceKeyPattern(point.sourceDataKeyPattern, { [SOURCE_KEY_RESERVED_VAR]: code }).key;
+          : substituteSourceKeyPattern(point.sourceDataKeyPattern, {
+              ...(asset.sourceDataKeyVars ?? {}),
+              [SOURCE_KEY_RESERVED_VAR]: code,
+            }).key;
       const unit = point.unit ?? snapshot.catalog.get(point.pointKey)?.unit ?? "";
       entries.push({
         assetCode: code,

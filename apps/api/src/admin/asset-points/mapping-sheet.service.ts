@@ -241,6 +241,7 @@ export class MappingSheetService {
         active: assets.active,
         templateId: assets.templateId,
         rtuId: assets.rtuId,
+        sourceDataKeyVars: assets.sourceDataKeyVars,
       })
       .from(assets)
       .where(eq(assets.locationId, locationId));
@@ -248,7 +249,14 @@ export class MappingSheetService {
     const assetsByCode = new Map<string, SnapshotAsset>(
       assetRows.map((row) => [
         row.code,
-        { id: row.id, name: row.name, active: row.active, templateId: row.templateId, rtuId: row.rtuId },
+        {
+          id: row.id,
+          name: row.name,
+          active: row.active,
+          templateId: row.templateId,
+          rtuId: row.rtuId,
+          sourceDataKeyVars: row.sourceDataKeyVars,
+        },
       ]),
     );
     const assetIds = assetRows.map((row) => row.id);

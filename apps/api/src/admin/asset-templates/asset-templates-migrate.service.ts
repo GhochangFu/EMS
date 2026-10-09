@@ -10,7 +10,6 @@ import { and, asc, count, desc, eq, inArray } from "drizzle-orm";
 
 import { assetPoints, assetTemplates, assets, pointKeys, templatePoints } from "@bms/db";
 import type { BmsDb } from "@bms/db";
-import { SOURCE_KEY_RESERVED_VAR, substituteSourceKeyPattern } from "@bms/shared";
 import type {
   JwtPayload,
   TemplateMigrationAssetDto,
@@ -41,6 +40,10 @@ import { refuseMetadataOverridesThatDoNotSurvive } from "./asset-templates-migra
 // `F4.216`/`F4.222` — the insert's unique-violation sentences, in a sibling
 // for AGENTS.md §4.5's cap.
 import { translateAssetPointInsertUnique } from "./asset-templates-migrate-constraints";
+import {
+  resolveAdditionSourceDataKey,
+  unresolvableAdditionMessage,
+} from "./asset-templates-migrate-source-key";
 import type { MigrateAssetsBody } from "./asset-templates-migrate.schema";
 import { computeTemplateVersionDelta, type StoredTemplatePoint } from "./template-version-delta";
 
@@ -70,14 +73,15 @@ import { computeTemplateVersionDelta, type StoredTemplatePoint } from "./templat
  * - **Decision 3** — a delta that removes or re-keys a measured point. The
  *   `asset_points` row is physical wiring `apps/ingest` and the rule engine
  *   read, and no automatic reconciliation of it is honest.
- * - **Q-A, ruled 2026-08-22** — a *required* measured addition whose
- *   `source_data_key_pattern` uses any token beyond `{asset_code}`. Migration
- *   has no `sourceDataKeyVars`: instantiation takes them per request and never
- *   persists them, so there is nothing to recover for an asset built months
- *   ago. Only `{asset_code}` can be reconstructed, from `assets.code`. An
- *   *optional* such point is skipped and reported, exactly as at instantiation.
- *   The accepted cost is that a template whose patterns use richer tokens can
- *   never be migrated — those assets must be rebuilt.
+ * - **Q-A, ruled 2026-08-22, amended by ADR 0039 Amendment 1 (`F2.29`)** — a
+ *   *required* measured addition whose `source_data_key_pattern` uses a token
+ *   the asset cannot supply. Migration resolves from
+ *   `assets.source_data_key_vars` (written once at instantiation) plus
+ *   `{asset_code}`; an asset built before that column, or with no variables,
+ *   stores `NULL` and resolves `{asset_code}` alone. An *optional* such point
+ *   is skipped and reported, exactly as at instantiation. The accepted cost is
+ *   that such an asset cannot be migrated onto a richer pattern — it must be
+ *   rebuilt; there is no backfill.
  * - **Q-B, ruled 2026-08-22** — the target version declares a different
  *   `domain`. A domain change moves assets between plant-domain views, rule
  *   categories (ADR 0031) and dashboards, and `assets_domain_fk` would not
@@ -462,6 +466,9 @@ export class AssetTemplateMigrationService {
         // `F4.64` — the access check filters on this in memory rather than
         // asking the database once per asset. Free: this row is already read.
         locationId: assets.locationId,
+        // `F2.29` (ADR 0039 Amendment 1 decision 4) — the variables written at
+        // instantiation; a measured addition resolves from them.
+        sourceDataKeyVars: assets.sourceDataKeyVars,
       })
       .from(assets)
       .where(inArray(assets.id, body.assetIds));
@@ -605,7 +612,11 @@ export class AssetTemplateMigrationService {
         const skipped: TemplateMigrationSkippedPointDto[] = [];
 
         for (const addition of delta.measuredAdded) {
-          const resolved = this.resolveSourceDataKey(addition.sourceDataKeyPattern, asset.code);
+          const resolved = resolveAdditionSourceDataKey(
+            addition.sourceDataKeyPattern,
+            asset.code,
+            asset.sourceDataKeyVars,
+          );
           if (resolved.ok) {
             if (resolved.sourceDataKey.length > SOURCE_DATA_KEY_MAX) {
               refuse({
@@ -634,20 +645,21 @@ export class AssetTemplateMigrationService {
           }
 
           if (addition.required) {
-            // Q-A. Refused before the transaction opens, naming everything the
-            // operator needs to act: which point, which asset, and which tokens
-            // migration cannot supply.
+            // Q-A as amended (ADR 0039 Amendment 1 decision 5). Refused before
+            // the transaction opens, naming everything the operator needs to
+            // act: which point, which asset, which tokens migration cannot
+            // supply, and why this asset does not store them.
             refuse({
               reason: "unresolvable_source_data_key",
               pointKey: addition.pointKey,
               assetCount: 1,
-              message:
-                `Asset "${asset.code}": required point "${addition.pointKey}" has pattern ` +
-                `${addition.sourceDataKeyPattern === null ? "(none set)" : `"${addition.sourceDataKeyPattern}"`}` +
-                `, and migration cannot resolve ${resolved.unresolved.length > 0 ? `{${resolved.unresolved.join("}, {")}}` : "it"}. ` +
-                "Only {asset_code} survives — instantiation takes its other variables per " +
-                "request and never stores them, so there is nothing to recover for an asset " +
-                "built earlier. Rebuild these assets from the new version instead.",
+              message: unresolvableAdditionMessage({
+                assetCode: asset.code,
+                pointKey: addition.pointKey,
+                pattern: addition.sourceDataKeyPattern,
+                unresolved: resolved.unresolved,
+                storedVars: asset.sourceDataKeyVars,
+              }),
             });
             continue;
           }
@@ -947,41 +959,5 @@ export class AssetTemplateMigrationService {
       // `F3.39`: fleet-wide catalog, so the lookup is by code alone.
       .where(inArray(pointKeys.code, codes));
     return new Map(rows.map((row) => [row.code, row.unit]));
-  }
-
-  /**
-   * Substitutes `{token}`s using only `{asset_code}` — Q-A's ruling.
-   *
-   * Returns the unresolved token names rather than just failing, because
-   * "migration cannot resolve {panel}" is actionable and "the pattern did not
-   * resolve" is not. Never returns a partially substituted key: a
-   * plausible-looking string pointing at nothing is the failure
-   * `AssetTemplateInstantiationService.resolveSourceDataKey` also refuses to
-   * produce.
-   *
-   * **`F2.7` — the grammar is `@bms/shared`'s** (ADR 0056 decision 10, "one
-   * vocabulary, wired twice"). This service used to carry its own copy of the
-   * token regex and of the reserved variable name, beside the instantiate
-   * service's copy of both; a duplicated grammar is the drift AGENTS.md §4.8
-   * names, and the sheet's pre-fill is now a third reader. Behaviour is
-   * unchanged: `vars` holds `asset_code` alone, so any other token comes back
-   * unresolved exactly as before, and the empty-key guard stays — a pattern of
-   * nothing but the reserved token on an asset with no code would otherwise
-   * produce an empty `source_data_key`.
-   */
-  private resolveSourceDataKey(
-    pattern: string | null,
-    assetCode: string,
-  ): { ok: true; sourceDataKey: string } | { ok: false; unresolved: string[] } {
-    if (!pattern) {
-      return { ok: false, unresolved: [] };
-    }
-    const { key, unresolved } = substituteSourceKeyPattern(pattern, {
-      [SOURCE_KEY_RESERVED_VAR]: assetCode,
-    });
-    if (unresolved.length > 0 || key.length === 0) {
-      return { ok: false, unresolved };
-    }
-    return { ok: true, sourceDataKey: key };
   }
 }

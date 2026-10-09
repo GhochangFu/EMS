@@ -45,10 +45,10 @@ function pointId(n: number): string {
 }
 
 const assets: ReadonlyArray<readonly [string, SnapshotAsset]> = [
-  ["TX01", { id: "a1", name: "Transformer 1", active: true, templateId: T1, rtuId: R1 }],
-  ["TX02", { id: "a2", name: "Transformer 2", active: true, templateId: T1, rtuId: null }],
-  ["OLD1", { id: "a3", name: "Retired", active: false, templateId: T1, rtuId: R1 }],
-  ["NOTPL", { id: "a4", name: "No template", active: true, templateId: null, rtuId: R1 }],
+  ["TX01", { id: "a1", name: "Transformer 1", active: true, templateId: T1, rtuId: R1, sourceDataKeyVars: null }],
+  ["TX02", { id: "a2", name: "Transformer 2", active: true, templateId: T1, rtuId: null, sourceDataKeyVars: null }],
+  ["OLD1", { id: "a3", name: "Retired", active: false, templateId: T1, rtuId: R1, sourceDataKeyVars: null }],
+  ["NOTPL", { id: "a4", name: "No template", active: true, templateId: null, rtuId: R1, sourceDataKeyVars: null }],
 ];
 
 const existing: readonly ExistingRow[] = [
@@ -564,7 +564,7 @@ export function assertAPreFillRowOnARetiredGatewayImportsAsACreate(): void {
     ...base,
     assetsByCode: new Map([
       ...base.assetsByCode,
-      ["CH02", { id: "a5", name: "Chiller 2", active: true, templateId: T1, rtuId: R3 }],
+      ["CH02", { id: "a5", name: "Chiller 2", active: true, templateId: T1, rtuId: R3, sourceDataKeyVars: null }],
     ]),
   };
 

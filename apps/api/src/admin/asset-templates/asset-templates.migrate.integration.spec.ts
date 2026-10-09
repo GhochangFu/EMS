@@ -557,7 +557,9 @@ export async function assertMeasuredReKeyRefuses(
 
 /**
  * Q-A — a **required** measured addition whose pattern needs a token beyond
- * `{asset_code}` refuses the whole migration, before the transaction opens.
+ * `{asset_code}` refuses the whole migration, before the transaction opens,
+ * on an asset that stores no variables (`seedAsset` writes
+ * `source_data_key_vars` as NULL; ADR 0039 Amendment 1 decision 5).
  *
  * The mirror case matters as much: an **optional** one is skipped and reported,
  * and the migration proceeds.

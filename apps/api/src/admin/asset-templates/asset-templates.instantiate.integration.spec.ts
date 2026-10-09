@@ -812,6 +812,105 @@ export async function assertPrototypeTokensDoNotResolve(
   await cleanupAssets(pool);
 }
 
+/** Reads `source_data_key_vars` per asset code, by independent SQL. */
+async function storedVarsByCode(
+  pool: pg.Pool,
+  codes: readonly string[],
+): Promise<Map<string, Record<string, string> | null>> {
+  const { rows } = await pool.query<{ code: string; source_data_key_vars: Record<string, string> | null }>(
+    `SELECT code, source_data_key_vars FROM bms.assets WHERE code = ANY($1::text[]) ORDER BY code`,
+    [codes],
+  );
+  return new Map(rows.map((row) => [row.code, row.source_data_key_vars]));
+}
+
+/**
+ * `F2.29` (ADR 0039 Amendment 1 decision 2) — the instantiate insert stores the
+ * request's variables on the asset row, without the reserved `asset_code`.
+ */
+export async function assertVariablesArePersistedOnTheAssetRow(
+  svc: Services,
+  fx: Fixtures,
+  pool: pg.Pool,
+  templateId: string,
+): Promise<void> {
+  const first = `${TEST_ASSET_PREFIX}01`;
+  const second = `${TEST_ASSET_PREFIX}02`;
+  await svc.instantiate(fx.adminJwt, templateId, {
+    rtuId: fx.rtuId,
+    assets: [
+      { code: first, name: "Skid 01", sourceDataKeyVars: { unit: "01", asset_code: "IGNORED" } },
+      { code: second, name: "Skid 02", sourceDataKeyVars: { unit: "02" } },
+    ],
+  });
+
+  const stored = await storedVarsByCode(pool, [first, second]);
+  assert(stored.size === 2, `expected 2 asset rows, found ${stored.size}`);
+  assert(
+    JSON.stringify(stored.get(first)) === JSON.stringify({ unit: "01" }),
+    `${first}: expected {"unit":"01"} with asset_code dropped, got ${JSON.stringify(stored.get(first))}`,
+  );
+  assert(
+    JSON.stringify(stored.get(second)) === JSON.stringify({ unit: "02" }),
+    `${second}: expected {"unit":"02"}, got ${JSON.stringify(stored.get(second))}`,
+  );
+
+  await cleanupAssets(pool);
+}
+
+/**
+ * `F2.29` — an absent or empty variable record stores `NULL`, read through the
+ * same handle as an adjacent asset that stores one (so "no row" cannot pass as
+ * "null"). A second template is needed: the main fixture's `{unit}` point is
+ * required, so an asset without `{unit}` cannot be built from it.
+ */
+export async function assertAnAssetWithNoVariablesStoresNull(
+  svc: Services,
+  fx: Fixtures,
+  pool: pg.Pool,
+): Promise<void> {
+  const draft = await svc.templates.create(fx.adminJwt, {
+    organizationId: fx.organizationId,
+    code: `${TEST_TEMPLATE_CODE}-NOVARS`,
+    name: "No-variables fixture",
+    assetType: "test_skid",
+    domain: "water",
+    points: [
+      {
+        pointKey: fx.pointKeys[0].code,
+        kind: "measured",
+        required: true,
+        sortOrder: 0,
+        sourceDataKeyPattern: "{asset_code}_FEED_P",
+      },
+    ],
+  });
+  const published = await svc.templates.publish(fx.adminJwt, draft.id);
+
+  const absent = `${TEST_ASSET_PREFIX}96`;
+  const empty = `${TEST_ASSET_PREFIX}97`;
+  const withVars = `${TEST_ASSET_PREFIX}98`;
+  await svc.instantiate(fx.adminJwt, published.id, {
+    rtuId: fx.rtuId,
+    assets: [
+      { code: absent, name: "No vars" },
+      { code: empty, name: "Empty vars", sourceDataKeyVars: {} },
+      { code: withVars, name: "Unused vars", sourceDataKeyVars: { unit: "98" } },
+    ],
+  });
+
+  const stored = await storedVarsByCode(pool, [absent, empty, withVars]);
+  assert(stored.size === 3, `expected 3 asset rows, found ${stored.size}`);
+  assert(
+    JSON.stringify(stored.get(withVars)) === JSON.stringify({ unit: "98" }),
+    `${withVars}: a supplied variable is stored even when no pattern uses it, got ${JSON.stringify(stored.get(withVars))}`,
+  );
+  assert(stored.get(absent) === null, `${absent}: absent vars must store NULL, got ${JSON.stringify(stored.get(absent))}`);
+  assert(stored.get(empty) === null, `${empty}: empty vars must store NULL, got ${JSON.stringify(stored.get(empty))}`);
+
+  await cleanupAssets(pool);
+}
+
 /** Removes this suite's assets between cases, leaving the template in place. */
 async function cleanupAssets(pool: pg.Pool): Promise<void> {
   await pool.query(
