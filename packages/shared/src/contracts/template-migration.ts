@@ -40,7 +40,11 @@ export const templateMigrationRefusalReasonSchema = z.enum([
   "measured_removed",
   /** Decision 3 — a measured point's `source_data_key_pattern` changed. */
   "measured_rekeyed",
-  /** Q-A — a required measured addition's pattern uses a token beyond `asset_code`. */
+  /**
+   * Q-A (ADR 0039 Amendment 1 decision 5) — a required measured addition's
+   * pattern uses a token the asset does not store (neither `asset_code` nor a
+   * key of `bms.assets.source_data_key_vars`).
+   */
   "unresolvable_source_data_key",
   /** Q-B — the target version declares a different plant domain. */
   "domain_changed",
