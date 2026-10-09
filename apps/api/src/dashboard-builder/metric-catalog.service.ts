@@ -723,7 +723,7 @@ export const RESOLVERS: Record<MetricCatalogKey, Resolver> = {
       const inScope = await locationRead;
       const groups = await groupLocationsAtDepth(
         tx,
-        inScope.map((location) => location.id),
+        { organizationIds: [organizationId], ids: inScope.map((location) => location.id) },
         groupDepth,
         deps.readableLocationIds,
         deps.scopeLocationId,

@@ -18,7 +18,7 @@ import {
   selectReadScopeSource,
   type ReadScopeSource,
 } from "./access-scope";
-import { expandLocationSubtrees } from "./location-tree";
+import { expandLocationSubtrees, type TreeAnchors } from "./location-tree";
 
 /**
  * The read-scope query branches of `AccessControlService`, moved here whole
@@ -73,6 +73,25 @@ export async function directLocationIds(fleetDb: BmsDb, userId: string): Promise
     .from(userLocationAccess)
     .where(eq(userLocationAccess.userId, userId));
   return rows.map((row) => row.id);
+}
+
+/**
+ * `F2.10` owner ruling P3 — this user's direct `user_location_access` grants
+ * as tree anchors: the granted ids, and the organizations of those same
+ * granted rows as the anchor's organization bound. Both come from the actor's
+ * own grant rows, never a request (ADR 0098 *Security* 2).
+ */
+export async function directLocationGrants(fleetDb: BmsDb, userId: string): Promise<TreeAnchors> {
+  // fleetDb: pre-tenant grant walk keyed by the actor's own userId (Amendment 2/3).
+  const rows = await fleetDb
+    .select({ id: locations.id, organizationId: locations.organizationId })
+    .from(userLocationAccess)
+    .innerJoin(locations, eq(userLocationAccess.locationId, locations.id))
+    .where(eq(userLocationAccess.userId, userId));
+  return {
+    organizationIds: [...new Set(rows.map((row) => row.organizationId))],
+    ids: rows.map((row) => row.id),
+  };
 }
 
 type ScopeLocation = AccessibleScope["locations"][number];
@@ -175,7 +194,7 @@ export async function scopeFromSource(
     // fleetDb: pre-tenant resolution keyed by the actor's own userId (Amendment 2/3).
     // F2.10 / ADR 0098 decision 4: the grant means the subtree, so the rows are
     // the closure of the direct grants, filtered to active nodes.
-    const closure = await expandLocationSubtrees(fleetDb, await directLocationIds(fleetDb, user.id));
+    const closure = await expandLocationSubtrees(fleetDb, await directLocationGrants(fleetDb, user.id));
     const locationRows =
       closure.length > 0
         ? await fleetDb

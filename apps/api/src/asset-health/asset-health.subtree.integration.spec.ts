@@ -32,6 +32,7 @@ import { AssetHealthService } from "./asset-health.service";
  */
 
 type Fx = {
+  readonly organizationId: string;
   readonly campus: string;
   readonly site: string;
   readonly room: string;
@@ -92,18 +93,23 @@ async function buildTree(
   await asset(site);
   const roomAsset = await asset(room);
   const siblingAsset = await asset(sibling);
-  return { campus, site, room, sibling, roomAsset, siblingAsset };
+  return { organizationId, campus, site, room, sibling, roomAsset, siblingAsset };
 }
 
+/** `reader` null is the unrestricted admin; else the caller's readable locations and organizations. */
 async function assetCount(
   client: pg.PoolClient,
   assetIds: readonly string[] | null,
   locationId: string,
-  readableLocationIds: readonly string[] | null,
+  reader: { readonly locations: readonly string[]; readonly organizations: readonly string[] } | null,
 ): Promise<number> {
   const service = new AssetHealthService(createDb(client as unknown as pg.Pool));
-  return (await service.summary(assetIds, { id: locationId, readableLocationIds }, WINDOW_MINUTES, new Date()))
-    .assetCount;
+  const location = {
+    id: locationId,
+    readableLocationIds: reader?.locations ?? null,
+    readableOrganizationIds: reader?.organizations ?? null,
+  };
+  return (await service.summary(assetIds, location, WINDOW_MINUTES, new Date())).assetCount;
 }
 
 /** A campus filter counts the campus, site and room assets — the whole subtree. */
@@ -143,7 +149,10 @@ export async function assertASiblingSubtreeIsExcluded(pool: pg.Pool): Promise<vo
 export async function assertTheFilterNarrowsAndNeverWidens(pool: pg.Pool): Promise<void> {
   await withRolledBackClient(pool, async (client) => {
     const fx = await buildFixture(client);
-    const count = await assetCount(client, [fx.roomAsset], fx.campus, [fx.campus, fx.site, fx.room]);
+    const count = await assetCount(client, [fx.roomAsset], fx.campus, {
+      locations: [fx.campus, fx.site, fx.room],
+      organizations: [fx.organizationId],
+    });
     if (count !== 1) fail(`summary([roomAsset], campus).assetCount = ${count}; expected 1 — the filter must not widen the readable set`);
   });
 }
@@ -170,7 +179,7 @@ export async function assertAnUnreadableAncestorOrForeignNodeIsEmpty(pool: pg.Po
       other.rows[0]?.id ?? fail("the second organization was not inserted"),
       run,
     );
-    const readable = [fx.room];
+    const readable = { locations: [fx.room], organizations: [fx.organizationId] };
     const assetIds = [fx.roomAsset, foreign.roomAsset];
 
     const control = await assetCount(client, assetIds, fx.room, readable);
@@ -183,6 +192,32 @@ export async function assertAnUnreadableAncestorOrForeignNodeIsEmpty(pool: pg.Po
     if (foreignCount !== 0) {
       fail(`summary(.., foreign room) for a room-only reader = ${foreignCount}; expected 0 — another organization's node must answer empty`);
     }
+  });
+}
+
+/**
+ * Owner ruling P3: a node id passed with an organization bound that does not
+ * hold it starts no walk. A reader who reads the foreign tree's room but whose
+ * organization bound is only the fixture's own organization counts nothing
+ * there; the same reader with the foreign organization in the bound counts 1
+ * (the positive control). The readable-location check passes in both, so only
+ * the anchor's organization predicate decides.
+ */
+export async function assertAForeignAnchorOutsideTheBoundCountsNothing(pool: pg.Pool): Promise<void> {
+  await withRolledBackClient(pool, async (client) => {
+    const fx = await buildFixture(client);
+    const foreign = await buildFixture(client);
+    const assetIds = [foreign.roomAsset];
+    const control = await assetCount(client, assetIds, foreign.room, {
+      locations: [foreign.room],
+      organizations: [foreign.organizationId],
+    });
+    if (control !== 1) fail(`positive control: the foreign room under its own organization = ${control}; expected 1`);
+    const count = await assetCount(client, assetIds, foreign.room, {
+      locations: [foreign.room],
+      organizations: [fx.organizationId],
+    });
+    if (count !== 0) fail(`the foreign room under another organization's bound = ${count}; expected 0 — the anchor must filter on the bound`);
   });
 }
 

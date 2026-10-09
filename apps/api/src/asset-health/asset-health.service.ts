@@ -7,6 +7,7 @@ import {
   assetPoints,
   assetTemplates,
   assets,
+  organizations,
   pointInRange1d,
   pointInRange1h,
   pointInRange1m,
@@ -98,13 +99,16 @@ function parseHealth(content: unknown): TemplateHealth | undefined {
 
 /**
  * The health summary's location filter (ADR 0098 decision 7): the node, and the
- * caller's readable location ids (`AccessControlService.readableLocationIds`,
- * `null` for an unrestricted admin). Required together, so no caller can
- * filter by a node without saying whose read it is (owner ruling P2).
+ * caller's readable location ids (`AccessControlService.readableLocationIds`)
+ * and readable organization ids (`readableOrganizationIds`), each `null` for
+ * an unrestricted admin. Required together, so no caller can filter by a node
+ * without saying whose read it is (owner ruling P2) and which organizations
+ * the walk may start in (owner ruling P3).
  */
 export type HealthLocationFilter = {
   readonly id: string;
   readonly readableLocationIds: readonly string[] | null;
+  readonly readableOrganizationIds: readonly string[] | null;
 };
 
 @Injectable()
@@ -488,7 +492,12 @@ export class AssetHealthService {
     if (location !== undefined) {
       // ADR 0098 decision 7: the node and every node under it. An id that names
       // no row expands to `[]`, which drizzle emits as `false` — an empty donut.
-      filters.push(inArray(assets.locationId, await expandLocationSubtrees(this.db, [location.id])));
+      // Owner ruling P3: the anchor is bounded by the caller's readable
+      // organizations — every organization for an unrestricted admin.
+      const organizationIds = location.readableOrganizationIds ?? (await this.everyOrganizationId());
+      filters.push(
+        inArray(assets.locationId, await expandLocationSubtrees(this.db, { organizationIds, ids: [location.id] })),
+      );
     }
     // **`orderBy` is not cosmetic.** `summariseAssets` takes a band's `label`
     // and `minScore` from its first occurrence in this order, so without a
@@ -501,6 +510,19 @@ export class AssetHealthService {
       .from(assets)
       .where(and(...filters))
       .orderBy(assets.id);
+    return rows.map((row) => row.id);
+  }
+
+  /**
+   * Every organization's id — the anchor bound of an unrestricted admin's
+   * location filter, who reads every organization.
+   *
+   * §4.3 fleet-read reason: an id list with no tenant context; the caller is
+   * the global admin whose `readableOrganizationIds` is `null`, so the
+   * result is exactly what that caller may already read.
+   */
+  private async everyOrganizationId(): Promise<string[]> {
+    const rows = await this.db.select({ id: organizations.id }).from(organizations);
     return rows.map((row) => row.id);
   }
 

@@ -100,6 +100,7 @@ export class AssetHealthController {
         : {
             id: parsed.data.locationId,
             readableLocationIds: await this.accessControl.readableLocationIds(user),
+            readableOrganizationIds: await this.accessControl.readableOrganizationIds(user),
           };
     return this.health.summary(
       assetIds,

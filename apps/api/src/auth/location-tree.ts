@@ -18,12 +18,17 @@ export { LOCATION_TREE_MAX_DEPTH } from "@bms/shared";
  * - **one `WITH RECURSIVE` per statement, joined by `UNION`** — never
  *   `UNION ALL`, so a cycle the trigger failed to refuse cannot double every
  *   row until the bound stops it;
- * - **the organization predicate on the recursive term** — `c.organization_id
- *   = t.organization_id`, so a step never crosses an edge into another
- *   tenant even if the composite foreign key were missing. A predicate on the
- *   anchor alone would filter the start and then walk any edge the data
- *   holds (the tripwire's assertion 6 plants exactly that edge with the
- *   foreign key switched off);
+ * - **the organization predicate on the anchor AND on the recursive term**
+ *   (Security 2; owner ruling P3, 2026-10-09). The anchor keeps only the
+ *   starting nodes inside the organizations the caller's own authority names
+ *   (`TreeAnchors.organizationIds`), so a node id from another tenant starts
+ *   nothing. The recursive term's `c.organization_id = t.organization_id`
+ *   keeps every later step in the anchor's organization even if the
+ *   composite foreign key were missing. Either alone is not enough: a
+ *   predicate on the anchor alone filters the start and then walks any edge
+ *   the data holds (the tripwire's assertion 6 plants exactly that edge with
+ *   the foreign key switched off), and the recursive term alone starts
+ *   wherever the id points;
  * - **the depth bound `< LOCATION_TREE_MAX_DEPTH`** on the recursive term, so
  *   every walk returns in at most that many steps whatever the data holds.
  *
@@ -38,23 +43,37 @@ export { LOCATION_TREE_MAX_DEPTH } from "@bms/shared";
 export type TreeExecutor = Pick<BmsDb, "execute"> | Pick<BmsTx, "execute">;
 
 /**
- * The ids of `rootIds` and every descendant — the subtree closure a grant
- * means since ADR 0018 — any `active`, roots included, in no particular
- * order and without duplicates. `[]` for `[]`, and an id that names no row
- * contributes nothing.
+ * Where a walk may start: the node ids, and the organizations they must lie in.
+ *
+ * **`organizationIds` is always the caller's own authority, never a request
+ * parameter**: the tenant transaction's organization, the organizations of the
+ * caller's own grant rows, or the organizations the caller reads — values the
+ * server computed. A client-supplied organization id would let the client name
+ * the bound it is bounded by. Empty means "no organization", and the walk
+ * answers nothing without a query.
  */
-export async function expandLocationSubtrees(
-  db: TreeExecutor,
-  rootIds: readonly string[],
-): Promise<string[]> {
-  if (rootIds.length === 0) {
+export type TreeAnchors = { readonly organizationIds: readonly string[]; readonly ids: readonly string[] };
+
+/** One starting node and its organization bound — `TreeAnchors` for the single-node walks. */
+export type TreeAnchor = { readonly organizationIds: readonly string[]; readonly id: string };
+
+/**
+ * The ids of `anchors.ids` and every descendant — the subtree closure a grant
+ * means since ADR 0018 — any `active`, roots included, in no particular
+ * order and without duplicates. `[]` for no ids or no organizations; an id
+ * that names no row, or a row outside `anchors.organizationIds`, contributes
+ * nothing.
+ */
+export async function expandLocationSubtrees(db: TreeExecutor, anchors: TreeAnchors): Promise<string[]> {
+  if (anchors.ids.length === 0 || anchors.organizationIds.length === 0) {
     return [];
   }
   const result = await db.execute<{ id: string }>(sql`
     WITH RECURSIVE subtree (id, organization_id, depth) AS (
       SELECT l.id, l.organization_id, 1
         FROM bms.locations l
-       WHERE l.id = ANY(${sql.param([...rootIds])}::uuid[])
+       WHERE l.id = ANY(${sql.param([...anchors.ids])}::uuid[])
+         AND l.organization_id = ANY(${sql.param([...anchors.organizationIds])}::uuid[])
       UNION
       SELECT c.id, c.organization_id, subtree.depth + 1
         FROM bms.locations c
@@ -67,18 +86,23 @@ export async function expandLocationSubtrees(
 
 /**
  * The node itself at `depth` 0, then its ancestors nearest-first, each with
- * its organization. `[]` when `locationId` names no row. On a cycle the walk
- * stops at the depth bound rather than looping.
+ * its organization. `[]` when `anchor.id` names no row in
+ * `anchor.organizationIds`. On a cycle the walk stops at the depth bound
+ * rather than looping.
  */
 export async function locationAncestors(
   db: TreeExecutor,
-  locationId: string,
+  anchor: TreeAnchor,
 ): Promise<Array<{ id: string; organizationId: string; depth: number }>> {
+  if (anchor.organizationIds.length === 0) {
+    return [];
+  }
   const result = await db.execute<{ id: string; organization_id: string; depth: number }>(sql`
     WITH RECURSIVE up (id, organization_id, parent_id, depth) AS (
       SELECT l.id, l.organization_id, l.parent_id, 0
         FROM bms.locations l
-       WHERE l.id = ${locationId}
+       WHERE l.id = ${anchor.id}
+         AND l.organization_id = ANY(${sql.param([...anchor.organizationIds])}::uuid[])
       UNION
       SELECT p.id, p.organization_id, p.parent_id, up.depth + 1
         FROM bms.locations p
@@ -95,20 +119,25 @@ export async function locationAncestors(
 
 /**
  * The node's `depth` (a root is 1) and `height` (a leaf is 1), or `null` when
- * `locationId` names no row. Two statements, one recursive CTE each: the
- * ancestor walk gives the depth, the descendant walk the height. The
- * locations admin service's placement check adds the two across the proposed
- * edge and compares with `LOCATION_TREE_MAX_DEPTH`.
+ * `anchor.id` names no row in `anchor.organizationIds`. Two statements, one
+ * recursive CTE each: the ancestor walk gives the depth, the descendant walk
+ * the height. The locations admin service's placement check adds the two
+ * across the proposed edge and compares with `LOCATION_TREE_MAX_DEPTH`.
  */
 export async function locationDepthAndHeight(
   db: TreeExecutor,
-  locationId: string,
+  anchor: TreeAnchor,
 ): Promise<{ depth: number; height: number } | null> {
+  if (anchor.organizationIds.length === 0) {
+    return null;
+  }
+  const organizationIds = sql.param([...anchor.organizationIds]);
   const depth = await db.execute<{ depth: number | string | null }>(sql`
     WITH RECURSIVE up (id, organization_id, parent_id, depth) AS (
       SELECT l.id, l.organization_id, l.parent_id, 1
         FROM bms.locations l
-       WHERE l.id = ${locationId}
+       WHERE l.id = ${anchor.id}
+         AND l.organization_id = ANY(${organizationIds}::uuid[])
       UNION
       SELECT p.id, p.organization_id, p.parent_id, up.depth + 1
         FROM bms.locations p
@@ -124,7 +153,8 @@ export async function locationDepthAndHeight(
     WITH RECURSIVE down (id, organization_id, height) AS (
       SELECT l.id, l.organization_id, 1
         FROM bms.locations l
-       WHERE l.id = ${locationId}
+       WHERE l.id = ${anchor.id}
+         AND l.organization_id = ANY(${organizationIds}::uuid[])
       UNION
       SELECT c.id, c.organization_id, down.height + 1
         FROM bms.locations c
@@ -138,22 +168,27 @@ export async function locationDepthAndHeight(
 
 /**
  * A `WITH RECURSIVE anc (node_id, ancestor_id, parent_id, organization_id,
- * steps)` prefix: for every node `nodeIds` yields, the node itself at
- * `steps` 0, then each ancestor nearest-first. The same per-step organization
- * predicate, `UNION` and depth bound as every walk here, so a planted
- * cross-organization edge stops the chain and a cycle stops at the bound.
+ * steps)` prefix: for every node `anchors.nodeIds` yields inside an
+ * organization `anchors.organizationIds` yields, the node itself at `steps`
+ * 0, then each ancestor nearest-first. The same anchor and per-step
+ * organization predicates, `UNION` and depth bound as every walk here, so a
+ * foreign node starts no chain, a planted cross-organization edge stops the
+ * chain and a cycle stops at the bound.
  *
- * `nodeIds` is any SQL that yields one uuid column (`SELECT unnest(…)`, or a
- * subquery over `bms.assets`). The caller appends its own `SELECT` that reads
- * `anc` in the same statement — ADR 0098 decision 10's calc walk is one
- * statement, and the sustainability grouping reads hundreds of chains in one.
+ * Both fields are SQL that yields one uuid column (`SELECT unnest(…)`, or a
+ * subquery over `bms.assets`), so the calc walk can bound each asset's node by
+ * the asset's own organization in the same statement. The caller appends its
+ * own `SELECT` that reads `anc` in the same statement — ADR 0098 decision 10's
+ * calc walk is one statement, and the sustainability grouping reads hundreds
+ * of chains in one.
  */
-export function ancestorChainsCte(nodeIds: SQL): SQL {
+export function ancestorChainsCte(anchors: { readonly organizationIds: SQL; readonly nodeIds: SQL }): SQL {
   return sql`
     WITH RECURSIVE anc (node_id, ancestor_id, parent_id, organization_id, steps) AS (
       SELECT l.id, l.id, l.parent_id, l.organization_id, 0
         FROM bms.locations l
-       WHERE l.id IN (${nodeIds})
+       WHERE l.id IN (${anchors.nodeIds})
+         AND l.organization_id IN (${anchors.organizationIds})
       UNION
       SELECT anc.node_id, p.id, p.parent_id, p.organization_id, anc.steps + 1
         FROM bms.locations p
@@ -163,19 +198,23 @@ export function ancestorChainsCte(nodeIds: SQL): SQL {
 }
 
 /**
- * Each of `nodeIds` at `steps` 0, then its ancestors nearest-first, ordered by
- * node then steps — one statement for any number of nodes. `[]` for `[]`
- * without a query; an id that names no row contributes nothing.
+ * Each of `anchors.ids` at `steps` 0, then its ancestors nearest-first,
+ * ordered by node then steps — one statement for any number of nodes. `[]`
+ * for no ids or no organizations without a query; an id that names no row in
+ * `anchors.organizationIds` contributes nothing.
  */
 export async function locationAncestorChains(
   db: TreeExecutor,
-  nodeIds: readonly string[],
+  anchors: TreeAnchors,
 ): Promise<Array<{ nodeId: string; ancestorId: string; organizationId: string; steps: number }>> {
-  if (nodeIds.length === 0) {
+  if (anchors.ids.length === 0 || anchors.organizationIds.length === 0) {
     return [];
   }
   const result = await db.execute<{ node_id: string; ancestor_id: string; organization_id: string; steps: number | string }>(sql`
-    ${ancestorChainsCte(sql`SELECT unnest(${sql.param([...nodeIds])}::uuid[])`)}
+    ${ancestorChainsCte({
+      organizationIds: sql`SELECT unnest(${sql.param([...anchors.organizationIds])}::uuid[])`,
+      nodeIds: sql`SELECT unnest(${sql.param([...anchors.ids])}::uuid[])`,
+    })}
     SELECT node_id, ancestor_id, organization_id, steps FROM anc ORDER BY node_id, steps`);
   return result.rows.map((row) => ({
     nodeId: row.node_id,

@@ -94,6 +94,7 @@ function accessStub(opts: {
   readableAssetIds?: readonly string[] | null;
   inOrganization?: readonly string[];
   readableLocationIds?: readonly string[] | null;
+  readableOrganizationIds?: readonly string[] | null;
 }) {
   const canReadAssetCalls: string[] = [];
   const inOrganizationCalls: { user: JwtPayload; organizationId: string }[] = [];
@@ -112,6 +113,7 @@ function accessStub(opts: {
       readableLocationIdsCalls.push(1);
       return opts.readableLocationIds ?? null;
     },
+    readableOrganizationIds: async () => opts.readableOrganizationIds ?? null,
     readableAssetIdsInOrganization: async (user: JwtPayload, organizationId: string) => {
       inOrganizationCalls.push({ user, organizationId });
       return opts.inOrganization ?? [];
@@ -239,7 +241,12 @@ export async function assertAMalformedSummaryQueryIsABadRequestBeforeAccessContr
 export async function assertLocationIdIsPassedThroughOrUndefined(): Promise<void> {
   const { service, summaryCalls } = serviceStub();
   const readable = [LOCATION_ID];
-  const { access, readableLocationIdsCalls } = accessStub({ readableAssetIds: SCOPE, readableLocationIds: readable });
+  const readableOrganizations = [ORGANIZATION_ID];
+  const { access, readableLocationIdsCalls } = accessStub({
+    readableAssetIds: SCOPE,
+    readableLocationIds: readable,
+    readableOrganizationIds: readableOrganizations,
+  });
   const controller = new AssetHealthController(service, access);
 
   await controller.summary(USER, { locationId: LOCATION_ID });
@@ -250,6 +257,10 @@ export async function assertLocationIdIsPassedThroughOrUndefined(): Promise<void
   assert(
     summaryCalls[0]?.location?.readableLocationIds === readable,
     "the service must receive the exact readableLocationIds() array beside the locationId",
+  );
+  assert(
+    summaryCalls[0]?.location?.readableOrganizationIds === readableOrganizations,
+    "the service must receive the exact readableOrganizationIds() array as the walk's anchor bound (owner ruling P3)",
   );
 
   await controller.summary(USER, {});

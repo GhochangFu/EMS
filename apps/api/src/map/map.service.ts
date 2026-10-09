@@ -215,7 +215,15 @@ export class MapService {
       if (scoped && !(allowedLocationIds?.includes(parentLocationId) ?? false)) {
         return [];
       }
-      const subtree = new Set(await expandLocationSubtrees(this.fleetDb, [parentLocationId]));
+      // Owner ruling P3: the walk's anchor is bounded by the organizations of the pins this
+      // caller already sees — computed above from the caller's own scope, never a request value.
+      // A parent in any other organization starts nothing.
+      const organizationIds = [
+        ...new Set(scopedLocs.flatMap((loc) => (loc.org_id === null ? [] : [loc.org_id]))),
+      ];
+      const subtree = new Set(
+        await expandLocationSubtrees(this.fleetDb, { organizationIds, ids: [parentLocationId] }),
+      );
       visibleLocs = scopedLocs.filter(
         (loc) => loc.canonical_location_id !== null && subtree.has(loc.canonical_location_id),
       );

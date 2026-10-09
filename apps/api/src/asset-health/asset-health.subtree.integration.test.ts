@@ -6,6 +6,7 @@ import {
   assertACampusFilterCountsTheWholeSubtree,
   assertAnUnknownNodeCountsNothing,
   assertAnUnreadableAncestorOrForeignNodeIsEmpty,
+  assertAForeignAnchorOutsideTheBoundCountsNothing,
   assertASiblingSubtreeIsExcluded,
   assertASiteFilterCountsItsOwnSubtreeOnly,
   assertTheFilterNarrowsAndNeverWidens,
@@ -55,6 +56,10 @@ describe.skipIf(!connectionString)("F2.10 — the health summary's locationId me
 
   it("an unreadable ancestor or another organization's node answers the empty summary (owner ruling P2)", async () => {
     await assertAnUnreadableAncestorOrForeignNodeIsEmpty(pool);
+  }, 60_000);
+
+  it("a node outside the organization bound starts no walk (owner ruling P3)", async () => {
+    await assertAForeignAnchorOutsideTheBoundCountsNothing(pool);
   }, 60_000);
 
   it("an unknown location id answers an empty donut", async () => {

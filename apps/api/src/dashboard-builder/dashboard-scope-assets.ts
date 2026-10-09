@@ -75,7 +75,7 @@ export function scopeKeyFor(
  * combination.
  *
  * `F2.10` (ADR 0098 decision 7, B1): `options.subtree` widens the LOCATION arm to the node and
- * every node under it (`expandLocationSubtrees` on `tx`, so under RLS). Only the two
+ * every node under it (`expandLocationSubtrees` on `tx`, so under RLS, anchored in `organizationId`). Only the two
  * sustainability entries pass it; every other caller — the site widgets included — omits it
  * and stays per node. The organization predicate stays either way.
  */
@@ -106,7 +106,10 @@ export async function resolveAssetScope(
       .where(
         and(
           options?.subtree === true
-            ? inArray(assets.locationId, await expandLocationSubtrees(tx, [dashboard.locationId]))
+            ? inArray(
+                assets.locationId,
+                await expandLocationSubtrees(tx, { organizationIds: [organizationId], ids: [dashboard.locationId] }),
+              )
             : eq(assets.locationId, dashboard.locationId),
           // EXPLICIT, never delegated to RLS. This runs on the tenant pool today, but
           // `dashboard-source-scope.ts`'s docblock records why that is not a reason to omit

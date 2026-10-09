@@ -14,6 +14,7 @@ import {
   assertChainsListEachNodeThenItsAncestorsNearestFirst,
   assertCrossOrgEdgeFailsOnTheCompositeFk,
   assertEmptyChainsRunNoQuery,
+  assertAForeignAnchorStartsNoWalk,
   assertExactClosureForAGrantedNode,
   assertForeignOrganizationAdminIsNotOrganizationLevel,
   assertPerStepPredicateHoldsWithoutTheFk,
@@ -127,7 +128,11 @@ describe.skipIf(!connectionString)("F2.10 — a location grant is exactly its su
     await assertChainsListEachNodeThenItsAncestorsNearestFirst(superDb, fx);
   });
 
-  it("10. locationAncestorChains([]) returns [] without a query", async () => {
+  it("10. locationAncestorChains with no ids or no organizations returns [] without a query", async () => {
     await assertEmptyChainsRunNoQuery();
+  });
+
+  it("11. a node of organization B under organization A's bound starts no walk in any helper (owner ruling P3)", async () => {
+    await assertAForeignAnchorStartsNoWalk(superDb, fx);
   });
 });

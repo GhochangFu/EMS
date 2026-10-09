@@ -21,6 +21,7 @@ import type {
 import { AUTH_DRIZZLE, FLEET_DRIZZLE } from "../database/database.tokens";
 import { type ReadScopeSource, isMasterDataRole } from "./access-scope";
 import {
+  directLocationGrants,
   directLocationIds,
   directOrganizationIds,
   scopeFromSource,
@@ -202,8 +203,8 @@ export class AccessControlService {
    * descendant rule) every id is one they hold means the **subtree closure**
    * of their direct `user_location_access` grants: the granted nodes and every
    * descendant, inactive nodes included, walked by
-   * {@link expandLocationSubtrees} with the organization predicate on every
-   * step. The direct grants themselves are {@link grantedLocationIds}.
+   * {@link expandLocationSubtrees} with the organization predicate on the
+   * anchor (the grant rows' organizations) and on every step. The direct grants themselves are {@link grantedLocationIds}.
    */
   async writableLocationIds(jwt: JwtPayload): Promise<string[] | null> {
     const user = await this.resolveDbUser(jwt);
@@ -225,8 +226,9 @@ export class AccessControlService {
         .where(inArray(locations.organizationId, orgIds));
       return rows.map((row) => row.id);
     }
-    // fleetDb: the closure is keyed by the actor's own grant rows (Amendment 2/3).
-    return expandLocationSubtrees(this.fleetDb, await this.directLocationIds(user.id));
+    // fleetDb: the closure is keyed by the actor's own grant rows (Amendment 2/3), and the
+    // anchors are bounded by those rows' own organizations (owner ruling P3).
+    return expandLocationSubtrees(this.fleetDb, await directLocationGrants(this.fleetDb, user.id));
   }
 
   /**

@@ -2,7 +2,7 @@ import { inArray } from "drizzle-orm";
 
 import { locations } from "@bms/db";
 
-import { locationAncestorChains } from "../auth/location-tree";
+import { locationAncestorChains, type TreeAnchors } from "../auth/location-tree";
 import type { BmsTx } from "../database/tenant-context";
 
 /**
@@ -61,8 +61,9 @@ export function groupNodeFor(
 export type GroupNode = { readonly id: string; readonly code: string; readonly name: string };
 
 /**
- * Maps every one of `locationIds` to its group node, never above `capId` (the dashboard's own
- * node, `groupNodeFor`): `locationAncestorChains(tx, ids)` once,
+ * Maps every one of `locations.ids` to its group node, never above `capId` (the dashboard's own
+ * node, `groupNodeFor`): `locationAncestorChains(tx, locations)` once — anchored in
+ * `locations.organizationIds`, the dashboard's organization (owner ruling P3) —
  * `groupNodeFor` per node, then one `bms.locations` read on `tx` for the labels. The labels are
  * of nodes the reader can read or owns in scope, never an unreadable ancestor's (Drafter
  * choice 8's rule applied here). On `tx`, so under RLS: a node or ancestor of another
@@ -74,16 +75,17 @@ export type GroupNode = { readonly id: string; readonly code: string; readonly n
  */
 export async function groupLocationsAtDepth(
   tx: BmsTx,
-  locationIds: readonly string[],
+  anchors: TreeAnchors,
   groupDepth: number,
   readable: ReadonlySet<string> | null,
   capId: string | null,
 ): Promise<Map<string, GroupNode>> {
+  const locationIds = anchors.ids;
   if (locationIds.length === 0) {
     return new Map();
   }
   const chains = new Map<string, ChainRow[]>();
-  for (const row of await locationAncestorChains(tx, locationIds)) {
+  for (const row of await locationAncestorChains(tx, anchors)) {
     const chain = chains.get(row.nodeId) ?? [];
     chain.push({ ancestorId: row.ancestorId, steps: row.steps });
     chains.set(row.nodeId, chain);

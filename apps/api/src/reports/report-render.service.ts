@@ -9,7 +9,7 @@ import { REPORT_FILE_FORMATS, reportTemplateIdSchema } from "@bms/shared";
 import type { EnergyReportPreview, ReportDeliveryStatus, ReportFileFormat } from "@bms/shared";
 
 import { requireStorageConfigured } from "../assets/require-storage";
-import { expandLocationSubtrees } from "../auth/location-tree";
+import { expandLocationSubtrees, type TreeAnchors } from "../auth/location-tree";
 import { TENANT_DRIZZLE } from "../database/database.tokens";
 import { withTenant } from "../database/tenant-context";
 import type { BmsTx } from "../database/tenant-context";
@@ -210,7 +210,7 @@ export class ReportRenderService {
       return { kind: "skipped", reason: "disabled" };
     }
 
-    const assetIds = await resolveAssetIds(tx, schedule.locationIds);
+    const assetIds = await resolveAssetIds(tx, { organizationIds: [organizationId], ids: schedule.locationIds });
     const formats = REPORT_FILE_FORMATS.filter((format) => schedule.formats.includes(format));
     const query = { startDate: periodStart, endDate: periodEnd };
 
@@ -469,21 +469,19 @@ type StoredChannelRow = Parameters<ChannelsService["toChannelRow"]>[0];
  * `sql` template expands a JS array to `($1, $2)`, which `any(…)` refuses as
  * a row constructor (measured at U8). Both reads on `tx`, never the fleet
  * pool, so a location id that names another organization's location is
- * invisible, expands to nothing and resolves nothing.
+ * invisible, expands to nothing and resolves nothing. The walk's anchor is
+ * bounded by the job's organization, the one `tx` is opened for (owner
+ * ruling P3).
  *
  * "Every asset" is decided on the STORED list being empty, never on the
  * expansion: a schedule whose nodes were all deleted expands to `[]`, and
  * `inArray(…, [])` is `false` — it renders nothing, not the organization.
  */
-async function resolveAssetIds(tx: BmsTx, locationIds: readonly string[]): Promise<string[]> {
+async function resolveAssetIds(tx: BmsTx, nodes: TreeAnchors): Promise<string[]> {
   const rows = await tx
     .select({ assetId: assets.id })
     .from(assets)
-    .where(
-      locationIds.length === 0
-        ? undefined
-        : inArray(assets.locationId, await expandLocationSubtrees(tx, [...locationIds])),
-    );
+    .where(nodes.ids.length === 0 ? undefined : inArray(assets.locationId, await expandLocationSubtrees(tx, nodes)));
   return rows.map((row) => row.assetId);
 }
 

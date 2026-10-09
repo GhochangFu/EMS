@@ -64,13 +64,17 @@ export type CalcParameterKeyRow = {
  */
 /**
  * The ancestor chains of the owning nodes of `assetIds` — the one recursive
- * walk, declared in `location-tree.ts`. Module level on purpose: ADR 0070
+ * walk, declared in `location-tree.ts`. The anchor is bounded by the assets'
+ * own organizations (owner ruling P3). Module level on purpose: ADR 0070
  * part (d)'s extractor takes the first `sql` template after
  * `resolveForAssets(`, so nothing may sit between that head and the main
  * statement.
  */
 const chainsOfAssets = (assetIds: readonly string[]): SQL =>
-  ancestorChainsCte(sql`SELECT a.location_id FROM bms.assets a WHERE a.id = ANY(${sql.param([...assetIds])}::uuid[])`);
+  ancestorChainsCte({
+    organizationIds: sql`SELECT a.organization_id FROM bms.assets a WHERE a.id = ANY(${sql.param([...assetIds])}::uuid[])`,
+    nodeIds: sql`SELECT a.location_id FROM bms.assets a WHERE a.id = ANY(${sql.param([...assetIds])}::uuid[])`,
+  });
 
 @Injectable()
 export class CalcParametersService {
