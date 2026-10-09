@@ -93,6 +93,7 @@ function snapshot(): PlanSnapshot {
       ["dead", { unit: null, active: false }],
     ]),
     templatePoints: new Map(templatePoints.map((tp) => [assetPointKey(tp.templateId, tp.pointKey), tp])),
+    templatesById: new Map(),
   };
 }
 

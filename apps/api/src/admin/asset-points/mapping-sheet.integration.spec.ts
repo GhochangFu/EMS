@@ -1,8 +1,9 @@
 import { HttpException } from "@nestjs/common";
 import pg from "pg";
 import { expect } from "vitest";
+import * as XLSX from "xlsx";
 
-import { MAPPING_SHEET_HEADERS } from "@bms/shared";
+import { MAPPING_SHEET_HEADERS, TEMPLATES_SHEET_NAME } from "@bms/shared";
 import type { JwtPayload, MappingSheetErrorCode, MappingSheetErrorDto } from "@bms/shared";
 
 import { csvDocument, csvNumberCell, csvTextCell } from "../../serialise/csv";
@@ -42,6 +43,8 @@ export type MappingSheetFixtures = {
   fleetPool: pg.Pool;
   locationId: string;
   locationCode: string;
+  /** The code of the one template version every fixture asset pins (version 1). */
+  templateCode: string;
   /** Every fixture code this run created starts with it; also what the audit query joins on. */
   assetPrefix: string;
   /** An active RTU of the fixture location. */
@@ -629,4 +632,73 @@ export async function assertARetiredRtuRoundTripsButCannotBeNewlyWired(
     (await pointsOf(ctx.fleetPool, ctx.assets.retired)).get(ctx.keys.kw),
     "the refused create never landed",
   ).toBeUndefined();
+}
+
+/* -------------------------------------------------------------------------- */
+/* (9) The TEMPLATES sheet                                                     */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * `F2.26` / ADR 0056 Amendment 3 — the export is `MAPPINGS` then `TEMPLATES`,
+ * and `TEMPLATES` lists the fixture template's three measured points under its
+ * code and version, the pattern as written. A service that did not load the
+ * template identity writes no row (or no code); one that substituted the pattern
+ * writes the asset's key. `assertExportThenImportIsIdentity` is the gate that
+ * the second sheet does not break the round trip.
+ */
+export async function assertTheExportCarriesTheTemplatesSheet(
+  ctx: MappingSheetFixtures,
+  jwt: JwtPayload,
+): Promise<void> {
+  const { buffer } = await ctx.svc.exportSheet(jwt, ctx.locationId);
+  const book = XLSX.read(buffer, { type: "buffer" });
+  expect(book.SheetNames).toEqual(["MAPPINGS", TEMPLATES_SHEET_NAME]);
+
+  const sheet = book.Sheets[TEMPLATES_SHEET_NAME] as XLSX.WorkSheet;
+  const rows = XLSX.utils.sheet_to_json<unknown[]>(sheet, { header: 1, defval: "" });
+  const data = rows.slice(1);
+  expect(data, "one row per measured template point, listed once").toHaveLength(3);
+  for (const row of data) {
+    expect(row[0], "template_code").toBe(ctx.templateCode);
+    expect(row[1], "template_version").toBe(1);
+  }
+  const kw = data.find((row) => row[3] === ctx.keys.kw);
+  expect(kw?.[5], "the kw pattern, not substituted").toBe("{asset_code}_KW");
+}
+
+/* -------------------------------------------------------------------------- */
+/* (10) The tolerant header                                                    */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * `F2.28` / ADR 0056 Amendment 3 — a header with `asset_code` and `point_key`
+ * swapped (and the cells under them) still writes its row. Read by position,
+ * the asset code would be looked up as a point key and the row would stop at
+ * `asset_not_found` with nothing written.
+ *
+ * The target is `pressure` on the create asset: case (2) has already created
+ * `temp` there, and `pressure` is template-only, so the row is a create
+ * whatever order the cases ran in — checked first, not assumed.
+ */
+export async function assertAReorderedHeaderStillWritesTheRow(
+  ctx: MappingSheetFixtures,
+  jwt: JwtPayload,
+): Promise<void> {
+  expect((await pointsOf(ctx.fleetPool, ctx.assets.creates)).has(ctx.keys.pressure), "precondition: no pressure row yet").toBe(false);
+
+  const order: Column[] = [...MAPPING_SHEET_HEADERS];
+  [order[0], order[2]] = [order[2] as Column, order[0] as Column];
+  const cells = sheetRow({
+    asset_code: ctx.assets.creates,
+    point_key: ctx.keys.pressure,
+    source_data_key: `${ctx.assets.creates}_REORDER`,
+    active: "TRUE",
+  });
+  const buffer = mappingSheetToBuffer([order, order.map((column) => cells[column])]);
+
+  const commit = await ctx.svc.commit(jwt, ctx.locationId, buffer);
+  expect(commit.skipped).toEqual([]);
+  expect(commit.applied).toEqual({ created: 1, updated: 0 });
+  const written = (await pointsOf(ctx.fleetPool, ctx.assets.creates)).get(ctx.keys.pressure);
+  expect(written?.source_data_key).toBe(`${ctx.assets.creates}_REORDER`);
 }

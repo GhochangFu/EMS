@@ -3,6 +3,9 @@ import {
   MAPPING_SHEET_FIELDS,
   MAPPING_SHEET_HEADERS,
   MAPPING_SHEET_NAME,
+  MAPPING_SHEET_OPTIONAL_HEADERS,
+  TEMPLATES_SHEET_HEADERS,
+  TEMPLATES_SHEET_NAME,
   mappingSheetChangeDtoSchema,
   mappingSheetColumnSchema,
   mappingSheetCommitDtoSchema,
@@ -58,7 +61,7 @@ const fileError = {
   row: null,
   column: null,
   code: "header_mismatch",
-  message: "Column 13 is 'sensor_code'; the header must be exactly the twelve",
+  message: "Column 13 is 'sensor_code'; it is not a known column",
 };
 
 const create = {
@@ -129,6 +132,36 @@ export function assertHeaderIsTheTwelveInOrder(): void {
   );
   expectRejects(mappingSheetColumnSchema, "sensor_code", "a thirteenth column name is not a column");
   expectRejects(mappingSheetColumnSchema, "Asset_Code", "the column vocabulary is lower-case");
+  assert(
+    MAPPING_SHEET_OPTIONAL_HEADERS.size === 0,
+    `no optional column today; the row that adds one lists it here, got ${JSON.stringify([...MAPPING_SHEET_OPTIONAL_HEADERS])}`,
+  );
+}
+
+/**
+ * `F2.26` / ADR 0056 Amendment 3 — the read-only `TEMPLATES` sheet: its name and
+ * its eleven columns, in order. A literal copy, as the twelve are: a test that
+ * imports the tuple cannot see it shrink.
+ */
+export function assertTemplatesSheetHeaderIsTheElevenInOrder(): void {
+  assert(TEMPLATES_SHEET_NAME === "TEMPLATES", `the second sheet is named TEMPLATES, got ${TEMPLATES_SHEET_NAME}`);
+  const expected = [
+    "template_code",
+    "template_version",
+    "template_name",
+    "point_key",
+    "unit",
+    "source_data_key_pattern",
+    "scale_multiplier",
+    "scale_offset",
+    "eng_min",
+    "eng_max",
+    "quality_policy",
+  ];
+  assert(
+    JSON.stringify(TEMPLATES_SHEET_HEADERS) === JSON.stringify(expected),
+    `TEMPLATES_SHEET_HEADERS must be the eleven in order, got ${JSON.stringify(TEMPLATES_SHEET_HEADERS)}`,
+  );
 }
 
 /** The error-code list has exactly 24 distinct entries and the schema is built from it. */

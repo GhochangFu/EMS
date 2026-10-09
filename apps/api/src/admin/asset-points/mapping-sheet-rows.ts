@@ -1,4 +1,10 @@
-import { MAPPING_SHEET_HEADERS, MAPPING_SHEET_NAME, QUALITY_POLICIES, patternTokens } from "@bms/shared";
+import {
+  MAPPING_SHEET_HEADERS,
+  MAPPING_SHEET_NAME,
+  MAPPING_SHEET_OPTIONAL_HEADERS,
+  QUALITY_POLICIES,
+  patternTokens,
+} from "@bms/shared";
 import type {
   MappingSheetColumn,
   MappingSheetErrorCode,
@@ -21,8 +27,11 @@ import { MAX_IMPORT_FILE_BYTES } from "../telemetry-import/telemetry-import.sche
  * before the row cap is checked — and a sheet that reached that bound is then
  * refused, never imported as the part of itself that survived the cut — never
  * `cellDates`. What is different is the
- * contract: the header is **strict** (the twelve, in order — anything else is a
- * file-level `header_mismatch`), every problem carries a stable code from
+ * contract: the header is **tolerant** but closed (`F2.28`, ADR 0056
+ * Amendment 3, replacing decision 7's exact-header rule) — the twelve in any
+ * order, cells read by header name; an unknown or blank header, a duplicate, or
+ * a missing name not in `MAPPING_SHEET_OPTIONAL_HEADERS` is a file-level
+ * `header_mismatch` (`resolveHeader`) — every problem carries a stable code from
  * `MAPPING_SHEET_ERROR_CODES`, and the row errors split in two:
  *
  * - **Steps 1–4** of the plan's evaluation order (`asset_code_required`,
@@ -127,29 +136,65 @@ function cellText(sheet: XLSX.WorkSheet, r: number, c: number): string {
   return String(cell.v).trim();
 }
 
+/** What `resolveHeader` makes of a header row: each known column's position in it, or the first problem. */
+export type ResolvedHeader<C extends string> =
+  | { readonly ok: true; readonly columnIndex: ReadonlyMap<C, number> }
+  | { readonly ok: false; readonly problem: string };
+
 /**
- * Compares the header row to the twelve and names the first thing wrong with it:
- * a misplaced or misspelt header, a missing one, or a thirteenth. Trailing
- * blank header cells are ignored (an exported sheet re-saved by Excel often
- * carries them). Returns `null` when the header is exactly right.
+ * `F2.28` / ADR 0056 Amendment 3 — the tolerant header: the `known` names in
+ * any order. `headers` is the scanned row, lower-cased and trimmed, trailing
+ * blank cells already dropped (an exported sheet re-saved by Excel often
+ * carries them). Three checks, in this order, the first problem named:
+ *
+ * 1. **unknown** — a header that is not a known name, or a blank one between
+ *    two names, by first column number. A blank is not "an absent optional
+ *    column": it is a column with no name, and its cells would be read as
+ *    nothing. This is the strictness that matters: a misspelt header can never
+ *    be read as a blank column.
+ * 2. **duplicate** — a known name twice; which of the two to read is not a
+ *    question the import answers.
+ * 3. **missing** — a known name absent and not in `optional`, in `known` order.
+ *
+ * `columnIndex` holds each present column's position in `headers`. Generic so
+ * a spec can drive it with a hypothetical optional column; `parseMappingSheet`
+ * passes `MAPPING_SHEET_HEADERS` and `MAPPING_SHEET_OPTIONAL_HEADERS`
+ * explicitly — no defaults. Messages name only the offending header, through
+ * `quoteCell`, and the fixed vocabulary.
  */
-function headerProblem(headers: readonly string[]): string | null {
-  const expected: readonly string[] = MAPPING_SHEET_HEADERS;
-  for (let i = 0; i < Math.max(headers.length, expected.length); i += 1) {
-    const got = headers[i];
-    const want = expected[i];
-    if (got === want) {
-      continue;
+export function resolveHeader<C extends string>(
+  headers: readonly string[],
+  known: readonly C[],
+  optional: ReadonlySet<C>,
+): ResolvedHeader<C> {
+  const knownNames: ReadonlySet<string> = new Set(known);
+  for (let i = 0; i < headers.length; i += 1) {
+    const got = headers[i] ?? "";
+    if (got === "") {
+      return { ok: false, problem: `Column ${i + 1} is blank; every column up to the last must be named (known: ${known.join(", ")})` };
     }
-    if (want === undefined) {
-      return `Column ${i + 1} is ${quoteCell(got ?? "")}; the header must be exactly the twelve columns and this is a thirteenth`;
+    if (!knownNames.has(got)) {
+      return { ok: false, problem: `Column ${i + 1} is ${quoteCell(got)}; it is not a known column (known: ${known.join(", ")})` };
     }
-    if (got === undefined) {
-      return `Column ${i + 1} is missing; expected '${want}'`;
-    }
-    return `Column ${i + 1} is ${quoteCell(got)}; expected '${want}' (the header must be exactly: ${expected.join(", ")})`;
   }
-  return null;
+
+  const columnIndex = new Map<C, number>();
+  for (let i = 0; i < headers.length; i += 1) {
+    // Every header is a known name past the loop above.
+    const name = headers[i] as C;
+    const first = columnIndex.get(name);
+    if (first !== undefined) {
+      return { ok: false, problem: `Columns ${first + 1} and ${i + 1} are both '${name}'; each column may appear once` };
+    }
+    columnIndex.set(name, i);
+  }
+
+  for (const name of known) {
+    if (!columnIndex.has(name) && !optional.has(name)) {
+      return { ok: false, problem: `Column '${name}' is missing; the header must name every one of: ${known.join(", ")}` };
+    }
+  }
+  return { ok: true, columnIndex };
 }
 
 /** `true`/`false` per the spellings, `null` for blank, `undefined` for anything else. */
@@ -362,8 +407,9 @@ export function parseMappingSheet(buffer: Buffer): ParseMappingSheetResult {
   // not apply here and this parser looked safe: the header scan alone is the
   // amplifier, and it runs BEFORE `cutAtTheReadingBound`.
   //
-  // One column past the twelve, so `headerProblem` can still say "this is a
-  // thirteenth"; nothing beyond that was ever read.
+  // One column past the twelve known names: the widest header `resolveHeader`
+  // can name a problem in — twelve known plus one unknown (F2.28, ADR 0056
+  // Amendment 3); nothing beyond that was ever read.
   const lastHeaderColumn = Math.min(range.e.c, range.s.c + MAPPING_SHEET_HEADERS.length);
   const headers: string[] = [];
   for (let c = range.s.c; c <= lastHeaderColumn; c += 1) {
@@ -384,9 +430,14 @@ export function parseMappingSheet(buffer: Buffer): ParseMappingSheetResult {
     // one blank cell; that is not a file with a wrong header, it is no file.
     return { ok: false, error: fileError("file_unreadable", "The uploaded file is empty or is not CSV or Excel") };
   }
-  const problem = headerProblem(headers);
-  if (problem !== null) {
-    return { ok: false, error: fileError("header_mismatch", problem) };
+  const header = resolveHeader(headers, MAPPING_SHEET_HEADERS, MAPPING_SHEET_OPTIONAL_HEADERS);
+  if (!header.ok) {
+    return { ok: false, error: fileError("header_mismatch", header.problem) };
+  }
+  // Each column's absolute sheet column — the header scan started at `range.s.c`.
+  const sheetColumnOf = new Map<MappingSheetColumn, number>();
+  for (const [column, position] of header.columnIndex) {
+    sheetColumnOf.set(column, range.s.c + position);
   }
 
   // Every sheet row after the header, blanks included — that is what makes the
@@ -429,7 +480,11 @@ export function parseMappingSheet(buffer: Buffer): ParseMappingSheetResult {
     // reported row number would send the person to the wrong line (PR 2 code
     // review, finding 3).
     const rowNumber = r + 1;
-    const texts = MAPPING_SHEET_HEADERS.map((_, c) => cellText(sheet, r, range.s.c + c));
+    // Read by header name, not position (F2.28); an absent optional column reads blank.
+    const texts = MAPPING_SHEET_HEADERS.map((column) => {
+      const c = sheetColumnOf.get(column);
+      return c === undefined ? "" : cellText(sheet, r, c);
+    });
     if (texts.every((text) => text === "")) {
       continue; // a spacer row — skipped, but it keeps its Excel number
     }

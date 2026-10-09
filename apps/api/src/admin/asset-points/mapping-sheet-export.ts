@@ -1,4 +1,11 @@
-import { MAPPING_SHEET_HEADERS, MAPPING_SHEET_NAME, SOURCE_KEY_RESERVED_VAR, substituteSourceKeyPattern } from "@bms/shared";
+import {
+  MAPPING_SHEET_HEADERS,
+  MAPPING_SHEET_NAME,
+  SOURCE_KEY_RESERVED_VAR,
+  TEMPLATES_SHEET_HEADERS,
+  TEMPLATES_SHEET_NAME,
+  substituteSourceKeyPattern,
+} from "@bms/shared";
 import * as XLSX from "xlsx";
 
 import { assetPointKey } from "./mapping-sheet-snapshot";
@@ -26,7 +33,9 @@ import type { ExportSnapshot, SnapshotTemplatePoint } from "./mapping-sheet-snap
  *   and `active` **blank** — design decision 4 / Q-B: a blank `active` on a
  *   row with no mapping is "suggestion not taken", which is the only reading
  *   under which this pre-fill and decision 7's round trip (zero creates, zero
- *   updates) both hold with the fixed twelve-column header.
+ *   updates) both hold with the twelve-column set — no column marks a
+ *   suggestion (the import takes the twelve in any order since F2.28, but no
+ *   more of them).
  *
  * Cells are literals — strings and numbers — through `aoa_to_sheet`. Per
  * ADR 0026's XLSX finding the safety is the absence of any `<f>` element:
@@ -144,8 +153,67 @@ export function buildMappingSheetRows(snapshot: ExportSnapshot): MappingSheetCel
 }
 
 /**
+ * The read-only `TEMPLATES` sheet (`F2.26`, ADR 0056 Amendment 3): the header
+ * row followed by one row per **measured** point of each template version
+ * **in use** — pinned by an active asset of the location, the same asset set
+ * the `MAPPINGS` rows come from. A version two assets share is listed once:
+ * rows are per template, not per asset. Every row has exactly eleven cells in
+ * `TEMPLATES_SHEET_HEADERS` order; `source_data_key_pattern` is the pattern as
+ * written (no substitution — it is the class, not an asset), and the five are
+ * the class defaults, numbers or blank. Sorted by template code, then version
+ * numerically, then point key. The import reads `MAPPINGS` by name, so nothing
+ * here is ever read back.
+ */
+export function buildTemplatesSheetRows(snapshot: ExportSnapshot): MappingSheetCell[][] {
+  const inUse = new Set<string>();
+  for (const asset of snapshot.assetsByCode.values()) {
+    if (asset.active && asset.templateId !== null) {
+      inUse.add(asset.templateId);
+    }
+  }
+
+  const entries: { code: string; version: number; pointKey: string; cells: MappingSheetCell[] }[] = [];
+  for (const point of snapshot.templatePoints.values()) {
+    if (point.kind !== "measured" || !inUse.has(point.templateId)) {
+      continue;
+    }
+    // `assets.template_id` references `asset_templates.id`, so a pinned id the
+    // loader read always has its row; a miss would be a loader defect, and a
+    // row with no code to name it by is not written. Unreachable in practice:
+    // the FK holds and both reads carry the same RLS predicate.
+    const template = snapshot.templatesById.get(point.templateId);
+    if (template === undefined) {
+      continue;
+    }
+    entries.push({
+      code: template.code,
+      version: template.version,
+      pointKey: point.pointKey,
+      cells: [
+        template.code,
+        template.version,
+        template.name,
+        point.pointKey,
+        point.unit ?? "",
+        point.sourceDataKeyPattern ?? "",
+        numberCell(point.defaults.scaleMultiplier),
+        numberCell(point.defaults.scaleOffset),
+        numberCell(point.defaults.engMin),
+        numberCell(point.defaults.engMax),
+        point.defaults.qualityPolicy ?? "",
+      ],
+    });
+  }
+
+  entries.sort((a, b) => compareText(a.code, b.code) || a.version - b.version || compareText(a.pointKey, b.pointKey));
+
+  return [[...TEMPLATES_SHEET_HEADERS], ...entries.map((entry) => entry.cells)];
+}
+
+/**
  * The rows as an `.xlsx` buffer with one sheet, `MAPPINGS`, every cell a
- * literal.
+ * literal. **Single-sheet** — the upload fixtures' writer; the export uses
+ * `mappingWorkbookToBuffer`, which adds the `TEMPLATES` sheet (`F2.26`).
  *
  * **Deflated** (post-merge code review, finding 2). `XLSX.write` stores every
  * zip entry uncompressed unless told otherwise, and a mapping sheet is mostly
@@ -158,9 +226,30 @@ export function buildMappingSheetRows(snapshot: ExportSnapshot): MappingSheetCel
  * `mapping-sheet-export.spec.ts` asserts the sheet part's zip method rather
  * than a byte count, because the ratio depends on how full the cells are.
  */
-export function mappingSheetToBuffer(rows: ReadonlyArray<ReadonlyArray<MappingSheetCell>>): Buffer {
-  const sheet = XLSX.utils.aoa_to_sheet(rows.map((row) => [...row]));
+export function mappingSheetToBuffer(rows: SheetRows): Buffer {
+  return writeWorkbook([[MAPPING_SHEET_NAME, rows]]);
+}
+
+/**
+ * The export workbook (`F2.26`, ADR 0056 Amendment 3): `MAPPINGS` first, so
+ * Excel opens on the sheet a person edits, then the read-only `TEMPLATES`
+ * reference sheet. Deflated and literal-only, as `mappingSheetToBuffer`. The
+ * import reads `MAPPINGS` by name, so the second sheet is never read back.
+ */
+export function mappingWorkbookToBuffer(mappings: SheetRows, templates: SheetRows): Buffer {
+  return writeWorkbook([
+    [MAPPING_SHEET_NAME, mappings],
+    [TEMPLATES_SHEET_NAME, templates],
+  ]);
+}
+
+type SheetRows = ReadonlyArray<ReadonlyArray<MappingSheetCell>>;
+
+/** The named sheets, in order, as one deflated `.xlsx` buffer of literals. */
+function writeWorkbook(sheets: ReadonlyArray<readonly [name: string, rows: SheetRows]>): Buffer {
   const book = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(book, sheet, MAPPING_SHEET_NAME);
+  for (const [name, rows] of sheets) {
+    XLSX.utils.book_append_sheet(book, XLSX.utils.aoa_to_sheet(rows.map((row) => [...row])), name);
+  }
   return XLSX.write(book, { type: "buffer", bookType: "xlsx", compression: true }) as Buffer;
 }

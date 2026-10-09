@@ -2,6 +2,8 @@ import { describe, it } from "vitest";
 
 import {
   assertActiveSpellings,
+  assertAHeaderStartingAtColumnBIsReadAtItsOwnColumns,
+  assertATemplatesSheetIsIgnoredOnImport,
   assertBlankRowsKeepTheExcelNumbering,
   assertCellErrorsAreDeferredInOrder,
   assertADeclaredZipBombIsRefusedBeforeRead,
@@ -10,7 +12,8 @@ import {
   assertEchoedCellTextIsBounded,
   assertOnlyDecimalLiteralsAreNumbers,
   assertRowNumbersAreAbsoluteWhenTheRangeStartsBelowRowOne,
-  assertHeaderIsStrictAndNamesTheOffender,
+  assertAnOptionalKnownColumnMayBeAbsent,
+  assertHeaderAcceptsAnyOrderAndRefusesUnknownDuplicateOrMissing,
   assertRequiredCellsAndDuplicateRows,
   assertRowCap,
   assertSheetSelection,
@@ -20,8 +23,12 @@ import {
 
 /** `F2.7` G2 — Vitest entry point. Assertions live in the sibling `.spec` (ADR 0014). */
 describe("F2.7 — parseMappingSheet, the pure half of the import", () => {
-  it("accepts the twelve in order (any case, trimmed) and names the offending header otherwise", () => {
-    assertHeaderIsStrictAndNamesTheOffender();
+  it("accepts the twelve in any order (any case, trimmed) and names an unknown, blank, duplicate or missing header (F2.28)", () => {
+    assertHeaderAcceptsAnyOrderAndRefusesUnknownDuplicateOrMissing();
+  });
+
+  it("F2.28 — lets a column listed as optional be absent, and refuses the same header when it is not listed", () => {
+    assertAnOptionalKnownColumnMayBeAbsent();
   });
 
   it("reads a CSV's one sheet, requires MAPPINGS in an xlsx, and refuses an empty, header-only or oversized file", () => {
@@ -92,5 +99,13 @@ describe("F2.7 — parseMappingSheet, the pure half of the import", () => {
 
   it("scans the header row over the twelve columns it has, not the width the file declares (F4.101)", () => {
     assertTheHeaderScanIsBoundedByTheTwelve();
+  });
+
+  it("F2.26 — reads MAPPINGS by name: a TEMPLATES sheet first is ignored, and TEMPLATES alone is sheet_missing", () => {
+    assertATemplatesSheetIsIgnoredOnImport();
+  });
+
+  it("F2.28 — reads a header that starts at column B at its own sheet columns", () => {
+    assertAHeaderStartingAtColumnBIsReadAtItsOwnColumns();
   });
 });

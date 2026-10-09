@@ -1,10 +1,11 @@
-import { MAPPING_SHEET_HEADERS, MAPPING_SHEET_NAME } from "@bms/shared";
+import { MAPPING_SHEET_HEADERS, MAPPING_SHEET_NAME, TEMPLATES_SHEET_HEADERS, TEMPLATES_SHEET_NAME } from "@bms/shared";
 import type { PointMetadataFields } from "@bms/shared";
 import * as XLSX from "xlsx";
 
-import { buildMappingSheetRows, mappingSheetToBuffer } from "./mapping-sheet-export";
+import { buildMappingSheetRows, buildTemplatesSheetRows, mappingSheetToBuffer, mappingWorkbookToBuffer } from "./mapping-sheet-export";
+import { parseMappingSheet } from "./mapping-sheet-rows";
 import { assetPointKey } from "./mapping-sheet-snapshot";
-import type { ExistingRow, ExportSnapshot, SnapshotAsset, SnapshotTemplatePoint } from "./mapping-sheet-snapshot";
+import type { ExistingRow, ExportSnapshot, SnapshotAsset, SnapshotTemplate, SnapshotTemplatePoint } from "./mapping-sheet-snapshot";
 
 /**
  * `F2.7` G3 — `buildMappingSheetRows` and `mappingSheetToBuffer`: the export
@@ -29,6 +30,7 @@ const FIVE_NULL: PointMetadataFields = {
 
 const T1 = "t1";
 const T2 = "t2";
+const T3 = "t3";
 const R1 = "r1";
 
 const assets: ReadonlyArray<readonly [string, SnapshotAsset]> = [
@@ -36,6 +38,8 @@ const assets: ReadonlyArray<readonly [string, SnapshotAsset]> = [
   ["CH01", { id: "a2", name: "Chiller 1", active: true, templateId: T2, rtuId: null }],
   ["OLD1", { id: "a3", name: "Retired", active: false, templateId: T1, rtuId: R1 }],
   ["=1+1", { id: "a4", name: "Formula-looking code", active: true, templateId: null, rtuId: R1 }],
+  // F2.26: the only asset pinned to T3 is inactive, so T3 is not "in use".
+  ["OLD2", { id: "a6", name: "Retired on T3", active: false, templateId: T3, rtuId: null }],
 ];
 
 const existing: readonly ExistingRow[] = [
@@ -60,8 +64,24 @@ const templatePoints: readonly SnapshotTemplatePoint[] = [
   { templateId: T1, pointKey: "kw", kind: "measured", unit: null, sourceDataKeyPattern: "{asset_code}_KW", defaults: FIVE_NULL },
   { templateId: T1, pointKey: "kwh", kind: "measured", unit: "kWh", sourceDataKeyPattern: "{asset_code}_KWH", defaults: FIVE_NULL },
   { templateId: T1, pointKey: "pf", kind: "derived", unit: null, sourceDataKeyPattern: null, defaults: FIVE_NULL },
-  { templateId: T1, pointKey: "status", kind: "measured", unit: null, sourceDataKeyPattern: null, defaults: FIVE_NULL },
+  // F2.26: the class defaults the TEMPLATES sheet writes. The MAPPINGS pre-fill
+  // leaves the five blank whatever they are, so they change no MAPPINGS row.
+  {
+    templateId: T1,
+    pointKey: "status",
+    kind: "measured",
+    unit: null,
+    sourceDataKeyPattern: null,
+    defaults: { scaleMultiplier: 0.1, scaleOffset: -40, engMin: 0, engMax: 100, qualityPolicy: "accept_bad" },
+  },
   { templateId: T2, pointKey: "chw_supply_t", kind: "measured", unit: null, sourceDataKeyPattern: "CH{unit}_CHW_SUPPLY_T", defaults: FIVE_NULL },
+  { templateId: T3, pointKey: "flow", kind: "measured", unit: "m3/h", sourceDataKeyPattern: "{asset_code}_FLOW", defaults: FIVE_NULL },
+];
+
+const templatesById: ReadonlyArray<readonly [string, SnapshotTemplate]> = [
+  [T1, { code: "TX-CLASS", version: 2, name: "Transformer" }],
+  [T2, { code: "CH-CLASS", version: 1, name: "Chiller" }],
+  [T3, { code: "T3-CODE", version: 1, name: "Pinned by a retired asset only" }],
 ];
 
 function snapshot(): ExportSnapshot {
@@ -76,6 +96,7 @@ function snapshot(): ExportSnapshot {
       ["chw_supply_t", { unit: "degC", active: true }],
     ]),
     templatePoints: new Map(templatePoints.map((tp) => [assetPointKey(tp.templateId, tp.pointKey), tp])),
+    templatesById: new Map(templatesById),
   };
 }
 
@@ -228,6 +249,7 @@ function bulkSnapshot(count: number): ExportSnapshot {
     activeRtuIds: new Set([R1]),
     catalog: new Map([["kw", { unit: "kW", active: true }]]),
     templatePoints: new Map(),
+    templatesById: new Map(),
   };
 }
 
@@ -319,4 +341,183 @@ export function assertARetiredGatewayIsNotPreFilled(): void {
   // The live gateway is untouched by the rule: TX01's pre-fill still names it.
   const live = rows.find((r) => r[0] === "TX01" && r[2] === "kwh");
   assert(live?.[3] === "WC-RTU-1", `a pre-fill row on an active gateway still names it, got ${JSON.stringify(live?.[3])}`);
+}
+
+/**
+ * `F2.26` / ADR 0056 Amendment 3 — the `TEMPLATES` sheet: for every template
+ * version pinned by an **active** asset, its **measured** points with the pattern
+ * as written and the five class defaults, sorted by code, version, point key.
+ */
+export function assertTemplatesSheetListsMeasuredPointsOfTemplatesInUse(): void {
+  const rows = buildTemplatesSheetRows(snapshot());
+  assert(JSON.stringify(rows[0]) === JSON.stringify(TEMPLATES_SHEET_HEADERS), `row 1 is the TEMPLATES header, got ${JSON.stringify(rows[0])}`);
+  const data = rows.slice(1);
+
+  const t1Keys = data.filter((r) => r[0] === "TX-CLASS").map((r) => r[3]);
+  assert(
+    JSON.stringify(t1Keys) === JSON.stringify(["kw", "kwh", "status"]),
+    `T1 lists its measured points only — the derived pf is absent, got ${JSON.stringify(t1Keys)}`,
+  );
+
+  const kw = data.find((r) => r[0] === "TX-CLASS" && r[3] === "kw");
+  assert(
+    JSON.stringify(kw) === JSON.stringify(["TX-CLASS", 2, "Transformer", "kw", "", "{asset_code}_KW", "", "", "", "", ""]),
+    `the kw row: the pattern literal, not substituted; a null unit and null defaults blank — got ${JSON.stringify(kw)}`,
+  );
+
+  const status = data.find((r) => r[0] === "TX-CLASS" && r[3] === "status");
+  assert(
+    JSON.stringify(status) === JSON.stringify(["TX-CLASS", 2, "Transformer", "status", "", "", 0.1, -40, 0, 100, "accept_bad"]),
+    `the status row: a null pattern blank, the five defaults as numbers and the policy — got ${JSON.stringify(status)}`,
+  );
+
+  assert(
+    !data.some((r) => r[0] === "T3-CODE"),
+    "a template pinned only by an inactive asset is not in use and contributes no rows",
+  );
+
+  const order = data.map((r) => `${String(r[0])}|${String(r[1])}|${String(r[3])}`);
+  const expected = ["CH-CLASS|1|chw_supply_t", "TX-CLASS|2|kw", "TX-CLASS|2|kwh", "TX-CLASS|2|status"];
+  assert(JSON.stringify(order) === JSON.stringify(expected), `sorted by code, version, point key, got ${JSON.stringify(order)}`);
+}
+
+/**
+ * Two active assets on one template version list its points **once** — rows are
+ * per template, not per asset. A local snapshot, not the shared one: the shared
+ * fixture pins one active asset per template, so it cannot see this class.
+ */
+export function assertATemplateSharedByTwoAssetsIsListedOnce(): void {
+  const snap: ExportSnapshot = {
+    assetsByCode: new Map<string, SnapshotAsset>([
+      ["TX01", { id: "a1", name: "Transformer 1", active: true, templateId: T1, rtuId: null }],
+      ["TX02", { id: "a2", name: "Transformer 2", active: true, templateId: T1, rtuId: null }],
+    ]),
+    existingByAssetPoint: new Map(),
+    rtuCodesById: new Map(),
+    activeRtuIds: new Set(),
+    catalog: new Map(),
+    templatePoints: new Map([
+      [
+        assetPointKey(T1, "kw"),
+        { templateId: T1, pointKey: "kw", kind: "measured", unit: "kW", sourceDataKeyPattern: "{asset_code}_KW", defaults: FIVE_NULL },
+      ],
+    ]),
+    templatesById: new Map([[T1, { code: "TX-CLASS", version: 2, name: "Transformer" }]]),
+  };
+  const data = buildTemplatesSheetRows(snap).slice(1);
+  assert(data.length === 1, `one template version, one measured point → one data row, got ${JSON.stringify(data)}`);
+}
+
+/**
+ * Two versions of one class in use, v2 and v10, list v2 first: the version sorts
+ * as a number. A text compare puts "10" before "2". A local snapshot — the shared
+ * fixture has one version per code, so the version key never decides its order.
+ */
+export function assertTemplateVersionsSortNumerically(): void {
+  const T10 = "t10";
+  const snap: ExportSnapshot = {
+    assetsByCode: new Map<string, SnapshotAsset>([
+      ["TX01", { id: "a1", name: "Transformer 1", active: true, templateId: T1, rtuId: null }],
+      ["TX02", { id: "a2", name: "Transformer 2", active: true, templateId: T10, rtuId: null }],
+    ]),
+    existingByAssetPoint: new Map(),
+    rtuCodesById: new Map(),
+    activeRtuIds: new Set(),
+    catalog: new Map(),
+    // The v10 point is inserted first, so the input order cannot pass for the sort.
+    templatePoints: new Map([
+      [
+        assetPointKey(T10, "kw"),
+        { templateId: T10, pointKey: "kw", kind: "measured", unit: null, sourceDataKeyPattern: null, defaults: FIVE_NULL },
+      ],
+      [
+        assetPointKey(T1, "kw"),
+        { templateId: T1, pointKey: "kw", kind: "measured", unit: null, sourceDataKeyPattern: null, defaults: FIVE_NULL },
+      ],
+    ]),
+    templatesById: new Map([
+      [T10, { code: "TX-CLASS", version: 10, name: "Transformer" }],
+      [T1, { code: "TX-CLASS", version: 2, name: "Transformer" }],
+    ]),
+  };
+  const versions = buildTemplatesSheetRows(snap)
+    .slice(1)
+    .map((r) => r[1]);
+  assert(JSON.stringify(versions) === JSON.stringify([2, 10]), `v2 before v10, got ${JSON.stringify(versions)}`);
+}
+
+/**
+ * A pinned template id with no `templatesById` entry writes no row, and the
+ * versions that do resolve are still listed. Not reachable through the loader
+ * (`assets.template_id` is a foreign key and both reads carry the same RLS
+ * predicate); this pins the skip so a change to it is a decision.
+ */
+export function assertATemplateWithNoIdentityIsSkipped(): void {
+  const snap: ExportSnapshot = {
+    assetsByCode: new Map<string, SnapshotAsset>([
+      ["TX01", { id: "a1", name: "Transformer 1", active: true, templateId: T1, rtuId: null }],
+      ["CH01", { id: "a2", name: "Chiller 1", active: true, templateId: T2, rtuId: null }],
+    ]),
+    existingByAssetPoint: new Map(),
+    rtuCodesById: new Map(),
+    activeRtuIds: new Set(),
+    catalog: new Map(),
+    templatePoints: new Map([
+      [
+        assetPointKey(T1, "kw"),
+        { templateId: T1, pointKey: "kw", kind: "measured", unit: null, sourceDataKeyPattern: null, defaults: FIVE_NULL },
+      ],
+      [
+        assetPointKey(T2, "chw_supply_t"),
+        { templateId: T2, pointKey: "chw_supply_t", kind: "measured", unit: null, sourceDataKeyPattern: null, defaults: FIVE_NULL },
+      ],
+    ]),
+    templatesById: new Map([[T2, { code: "CH-CLASS", version: 1, name: "Chiller" }]]),
+  };
+  const data = buildTemplatesSheetRows(snap).slice(1);
+  assert(
+    JSON.stringify(data.map((r) => `${String(r[0])}|${String(r[3])}`)) === JSON.stringify(["CH-CLASS|chw_supply_t"]),
+    `only the resolved version is listed, got ${JSON.stringify(data)}`,
+  );
+}
+
+/**
+ * `F2.26` — the export workbook is `MAPPINGS` then `TEMPLATES`, the second
+ * sheet carries literals only (ADR 0026, as the first), and the import still
+ * reads the workbook as its `MAPPINGS` rows.
+ *
+ * This does **not** gate by-name sheet selection: `MAPPINGS` is the first
+ * sheet here, so a parser that read `SheetNames[0]` passes too.
+ * `assertATemplatesSheetIsIgnoredOnImport` (`mapping-sheet-rows.spec.ts`) puts
+ * `TEMPLATES` first and is the gate for that.
+ */
+export function assertTheWorkbookCarriesTemplatesSecondAndParsesAsMappings(): void {
+  const s = snapshot();
+  const mappings = buildMappingSheetRows(s);
+  const buffer = mappingWorkbookToBuffer(mappings, buildTemplatesSheetRows(s));
+
+  const book = XLSX.read(buffer, { type: "buffer" });
+  assert(
+    JSON.stringify(book.SheetNames) === JSON.stringify([MAPPING_SHEET_NAME, TEMPLATES_SHEET_NAME]),
+    `the workbook is MAPPINGS then TEMPLATES, got ${JSON.stringify(book.SheetNames)}`,
+  );
+  const templates = book.Sheets[TEMPLATES_SHEET_NAME];
+  assert(templates !== undefined, "the TEMPLATES sheet is readable");
+  let cells = 0;
+  for (const [address, cell] of Object.entries(templates ?? {})) {
+    if (address.startsWith("!")) {
+      continue;
+    }
+    cells += 1;
+    const typed = cell as XLSX.CellObject;
+    assert(typed.f === undefined, `TEMPLATES cell ${address} carries a formula: ${String(typed.f)}`);
+  }
+  assert(cells > TEMPLATES_SHEET_HEADERS.length, `the scan saw the header and data cells, got ${cells}`);
+
+  const parsed = parseMappingSheet(buffer);
+  assert(parsed.ok, `the two-sheet workbook parses, got ${parsed.ok ? "" : JSON.stringify(parsed.error)}`);
+  assert(
+    parsed.ok && parsed.rows.length === mappings.length - 1,
+    `the parser reads the MAPPINGS rows, got ${parsed.ok ? parsed.rows.length : "a refusal"} for ${mappings.length - 1}`,
+  );
 }

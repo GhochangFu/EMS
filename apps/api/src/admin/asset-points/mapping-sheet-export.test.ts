@@ -2,11 +2,16 @@ import { describe, it } from "vitest";
 
 import {
   assertARetiredGatewayIsNotPreFilled,
+  assertATemplateSharedByTwoAssetsIsListedOnce,
   assertBufferHasNoFormulaCells,
   assertExistingRowsAreWrittenAsStored,
   assertPreFillRowsFromTheTemplate,
   assertRowsAreSorted,
+  assertTemplatesSheetListsMeasuredPointsOfTemplatesInUse,
   assertTheBufferIsDeflatedAndStillParses,
+  assertTheWorkbookCarriesTemplatesSecondAndParsesAsMappings,
+  assertATemplateWithNoIdentityIsSkipped,
+  assertTemplateVersionsSortNumerically,
 } from "./mapping-sheet-export.spec";
 
 /** `F2.7` G3 — Vitest entry point. Assertions live in the sibling `.spec` (ADR 0014). */
@@ -38,5 +43,25 @@ describe("F2.7 — the MAPPINGS export row set (ADR 0056 decision 6)", () => {
 
   it("leaves rtu_code blank on a pre-fill row whose asset sits on a retired gateway, and keeps it on a stored row", () => {
     assertARetiredGatewayIsNotPreFilled();
+  });
+
+  it("F2.26 — lists the measured points of each template version an active asset pins, pattern literal, defaults as numbers, sorted", () => {
+    assertTemplatesSheetListsMeasuredPointsOfTemplatesInUse();
+  });
+
+  it("F2.26 — lists a template version shared by two active assets once", () => {
+    assertATemplateSharedByTwoAssetsIsListedOnce();
+  });
+
+  it("F2.26 — writes MAPPINGS then TEMPLATES, no formula cell, and the workbook still parses as its MAPPINGS rows", () => {
+    assertTheWorkbookCarriesTemplatesSecondAndParsesAsMappings();
+  });
+
+  it("F2.26 — sorts template versions numerically: v2 before v10", () => {
+    assertTemplateVersionsSortNumerically();
+  });
+
+  it("F2.26 — skips a pinned template id with no template identity and lists the rest", () => {
+    assertATemplateWithNoIdentityIsSkipped();
   });
 });

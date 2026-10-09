@@ -3,7 +3,7 @@ import { randomUUID } from "node:crypto";
 import { BadRequestException, ForbiddenException, Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { eq, inArray } from "drizzle-orm";
 
-import { assetPoints, assets, locations, pointKeys, rtus, templatePoints } from "@bms/db";
+import { assetPoints, assetTemplates, assets, locations, pointKeys, rtus, templatePoints } from "@bms/db";
 import type { BmsDb } from "@bms/db";
 import type {
   JwtPayload,
@@ -19,7 +19,7 @@ import { AccessControlService } from "../../auth/access-control.service";
 import { FLEET_DRIZZLE, TENANT_DRIZZLE } from "../../database/database.tokens";
 import { withTenant, type BmsTx } from "../../database/tenant-context";
 import { MasterDataAuditService, type AuditInput } from "../master-data-audit.service";
-import { buildMappingSheetRows, mappingSheetToBuffer } from "./mapping-sheet-export";
+import { buildMappingSheetRows, buildTemplatesSheetRows, mappingWorkbookToBuffer } from "./mapping-sheet-export";
 import { planMappingSheet } from "./mapping-sheet-plan";
 import type { MappingSheetPlan, PlannedCreate, PlannedUpdate } from "./mapping-sheet-plan";
 import { parseMappingSheet } from "./mapping-sheet-rows";
@@ -29,6 +29,7 @@ import type {
   PlanSnapshot,
   SnapshotAsset,
   SnapshotCatalogEntry,
+  SnapshotTemplate,
   SnapshotTemplatePoint,
 } from "./mapping-sheet-snapshot";
 
@@ -64,14 +65,17 @@ export class MappingSheetService {
     private readonly audit: MasterDataAuditService,
   ) {}
 
-  /** One location's current mappings and template pre-fill as a `MAPPINGS` workbook. */
+  /**
+   * One location's current mappings and template pre-fill as a `MAPPINGS` +
+   * `TEMPLATES` workbook — the second sheet read-only reference (`F2.26`).
+   */
   async exportSheet(jwt: JwtPayload, locationId: string): Promise<{ buffer: Buffer; filename: string }> {
     const location = await this.resolveLocation(jwt, locationId);
     const snapshot = await withTenant(this.tenantDb, location.organizationId, (tx) =>
       this.loadSnapshot(tx, locationId),
     );
     return {
-      buffer: mappingSheetToBuffer(buildMappingSheetRows(snapshot)),
+      buffer: mappingWorkbookToBuffer(buildMappingSheetRows(snapshot), buildTemplatesSheetRows(snapshot)),
       filename: `mapping-sheet-${safeFilenamePart(location.code)}.xlsx`,
     };
   }
@@ -202,7 +206,7 @@ export class MappingSheetService {
   /**
    * One location's picture, read on the open tenant transaction.
    *
-   * Five queries, and each one's breadth is a decision:
+   * Six queries, and each one's breadth is a decision:
    *
    * - **every asset of the location, inactive included.** The export drops the
    *   inactive ones itself; the planner needs them so a row naming one reports
@@ -223,6 +227,10 @@ export class MappingSheetService {
    *   export needs it too.
    * - **the pinned template versions' points**, for the pre-fill, the
    *   `derived` refusal and the five defaults the merged band resolves against.
+   * - **the pinned versions' identity** (code, version, name), for the
+   *   `TEMPLATES` sheet (`F2.26`, ADR 0056 Amendment 3) — the same `templateIds`
+   *   as the points, inactive assets' pins included; the export filters by the
+   *   asset's `active` itself, as it does for `MAPPINGS`.
    */
   private async loadSnapshot(tx: BmsTx, locationId: string): Promise<PlanSnapshot> {
     const assetRows = await tx
@@ -337,6 +345,17 @@ export class MappingSheetService {
       ]),
     );
 
+    const templateIdentityRows =
+      templateIds.length === 0
+        ? []
+        : await tx
+            .select({ id: assetTemplates.id, code: assetTemplates.code, version: assetTemplates.version, name: assetTemplates.name })
+            .from(assetTemplates)
+            .where(inArray(assetTemplates.id, templateIds));
+    const templatesById = new Map<string, SnapshotTemplate>(
+      templateIdentityRows.map((row) => [row.id, { code: row.code, version: row.version, name: row.name }]),
+    );
+
     return {
       assetsByCode,
       existingByAssetPoint,
@@ -346,6 +365,7 @@ export class MappingSheetService {
       activeRtuIds,
       catalog,
       templatePoints: templatePointsByKey,
+      templatesById,
     };
   }
 

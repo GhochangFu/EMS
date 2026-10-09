@@ -15,10 +15,12 @@ import {
   assertADuplicateSourceKeyIsARowErrorAndTheRestStillLand,
   assertAFailedAuditRollsBackEveryWrittenRow,
   assertAnOutOfScopeCallerIsRefusedBeforeTheFileIsRead,
+  assertAReorderedHeaderStillWritesTheRow,
   assertARetiredRtuRoundTripsButCannotBeNewlyWired,
   assertAThirteenthColumnRefusesTheWholeFile,
   assertExportThenImportIsIdentity,
   assertPreviewListsErrorsAndCommitWritesTheValidRows,
+  assertTheExportCarriesTheTemplatesSheet,
   assertTwoRowsSwapTheirSourceKeysInOneCommit,
   type MappingSheetFixtures,
 } from "./mapping-sheet.integration.spec";
@@ -360,6 +362,7 @@ describe.skipIf(!connectionString)("F2.7 — the MAPPINGS sheet: export, preview
       fleetPool,
       locationId,
       locationCode: LOCATION_CODE,
+      templateCode: TEMPLATE_CODE,
       assetPrefix: ASSET_PREFIX,
       rtuCode: RTU_CODE,
       retiredRtuCode: RETIRED_RTU_CODE,
@@ -438,5 +441,13 @@ describe.skipIf(!connectionString)("F2.7 — the MAPPINGS sheet: export, preview
 
   it("(8) round-trips a retired RTU's code but refuses a new wiring to it (correction 39)", async () => {
     await assertARetiredRtuRoundTripsButCannotBeNewlyWired(ctx, jwt);
+  });
+
+  it("(9) exports MAPPINGS then TEMPLATES, listing the pinned version's measured points once (F2.26)", async () => {
+    await assertTheExportCarriesTheTemplatesSheet(ctx, jwt);
+  });
+
+  it("(10) writes the row of a sheet whose header columns are reordered (F2.28)", async () => {
+    await assertAReorderedHeaderStillWritesTheRow(ctx, jwt);
   });
 });
