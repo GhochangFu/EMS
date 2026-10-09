@@ -1,9 +1,9 @@
 import { randomUUID } from "node:crypto";
 import type { Readable } from "node:stream";
 
-import { sql } from "drizzle-orm";
+import { inArray, sql } from "drizzle-orm";
 
-import { notificationChannels } from "@bms/db";
+import { assets, notificationChannels } from "@bms/db";
 import type { BmsDb } from "@bms/db";
 
 import { withTenant } from "../database/tenant-context";
@@ -201,8 +201,15 @@ export async function openRenderFixtures(
       }
       // After the schedules and their files: a schedule holds an FK to its organization.
       for (const tree of fx.treeOrganizations) {
+        // A drizzle builder write by this run's own ids — the form
+        // `tests/integration-fixture-isolation.test.ts` allows (the rule is
+        // about reading `bms.assets`; its raw-SQL pattern also matches a
+        // `delete from`).
         if (tree.assetIds.length > 0) {
-          await fleet.execute(sql`delete from bms.assets where id = any(${pgArray(tree.assetIds)}::uuid[])`);
+          const removedAssets = await fleet.delete(assets).where(inArray(assets.id, tree.assetIds));
+          if (removedAssets.rowCount !== tree.assetIds.length) {
+            failures.push(`expected the sweep to delete ${tree.assetIds.length} F2.10 tree asset(s), got ${removedAssets.rowCount}`);
+          }
         }
         for (const locationId of [...tree.locationIds].reverse()) {
           await fleet.execute(sql`delete from bms.locations where id = ${locationId}::uuid`);
