@@ -1,4 +1,8 @@
-import { DASHBOARD_GRID, SUSTAINABILITY_WATER_POINT_KEYS } from "@bms/shared";
+import {
+  DASHBOARD_GRID,
+  LOCATION_TREE_MAX_DEPTH,
+  SUSTAINABILITY_WATER_POINT_KEYS,
+} from "@bms/shared";
 
 import type { SectionTemplateWidgetInput } from "../../api/admin/dashboard-templates";
 import { METRIC_CATALOG_PRESENTATION, metricCatalogLabel } from "../../lib/metric-catalog";
@@ -22,6 +26,12 @@ import { MetricSourcePicker } from "../dashboards/metric-source-picker";
  */
 const WATER_INTAKE_VOLUME_KEYS: ReadonlySet<string> = new Set(
   SUSTAINABILITY_WATER_POINT_KEYS.filter((key) => key.startsWith("kl_")),
+);
+
+/** `F2.10` — the depths `groupDepth` may take, root = 1 (ADR 0098 Amendment 1, C). */
+const GROUP_DEPTHS: readonly number[] = Array.from(
+  { length: LOCATION_TREE_MAX_DEPTH },
+  (_, index) => index + 1,
 );
 
 /**
@@ -204,6 +214,18 @@ export function WidgetEditor({
                 typeof pointKey === "string" &&
                 WATER_INTAKE_VOLUME_KEYS.has(pointKey) &&
                 source.params?.balanceRole === undefined;
+              // `F2.10` (ADR 0098 Amendment 1, C) — by_location may group its rows by the
+              // ancestor at a depth; unset is one row per site. A number, never a string: the
+              // write schema is `z.number().int()`.
+              const groupsByLocation = source.catalogKey === "sustainability.by_location";
+              const groupDepth = source.params?.groupDepth;
+              const setGroupDepth = (value: string): void => {
+                const { groupDepth: _dropped, ...rest } = source.params ?? {};
+                const next = value === "" ? rest : { ...rest, groupDepth: Number(value) };
+                onChange({
+                  sources: sources.map((s, i) => (i === index ? { ...s, params: next } : s)),
+                });
+              };
               return (
                 <li
                   key={`${source.catalogKey}-${index}`}
@@ -227,6 +249,28 @@ export function WidgetEditor({
                       </button>
                     ) : null}
                   </div>
+                  {groupsByLocation && editable ? (
+                    <label className="mt-1 flex items-center gap-2 text-[11px] text-ink-muted">
+                      Group by
+                      <select
+                        className="surface-field px-2 py-1 text-[11px]"
+                        value={typeof groupDepth === "number" ? String(groupDepth) : ""}
+                        onChange={(event) => setGroupDepth(event.target.value)}
+                      >
+                        <option value="">Each site</option>
+                        {GROUP_DEPTHS.map((depth) => (
+                          <option key={depth} value={String(depth)}>
+                            {`Ancestor at depth ${depth}`}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                  ) : null}
+                  {groupsByLocation && !editable && typeof groupDepth === "number" ? (
+                    <p className="mt-1 text-[11px] text-ink-muted">
+                      {`Grouped by ancestor depth ${groupDepth}`}
+                    </p>
+                  ) : null}
                   {showsWaterBalanceNote ? (
                     <p className="mt-1 text-[11px] text-ink-muted">
                       {METRIC_CATALOG_PRESENTATION[source.catalogKey].description}

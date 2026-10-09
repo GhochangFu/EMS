@@ -1,7 +1,8 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, vi } from "vitest";
+import { LOCATION_TREE_MAX_DEPTH } from "@bms/shared";
 
 import type {
   SectionTemplateBindingInput,
@@ -262,4 +263,69 @@ export function showsTheWaterBalanceNoteReadOnlyToo(): void {
   renderEditor(tile({ sources: [KL_TODAY_NO_ROLE] }), false);
 
   expect(screen.getByText(NOTE_TEXT)).toBeInTheDocument();
+}
+
+// ---- `F2.10` (ADR 0098 Amendment 1, C) — the `groupDepth` control for `sustainability.by_location`.
+
+const BY_LOCATION: SectionTemplateSourceInput = {
+  catalogKey: "sustainability.by_location",
+  params: { pointKey: "kwh_today", aggregate: "sum" },
+  sortOrder: 0,
+};
+const TOTAL: SectionTemplateSourceInput = {
+  catalogKey: "sustainability.total",
+  params: { pointKey: "kwh_today", aggregate: "sum" },
+  sortOrder: 1,
+};
+
+/** G1 — the Group by select renders for the by_location source and not for the total beside it. */
+export function theGroupBySelectRendersOnlyForByLocation(): void {
+  renderEditor(tableWidget({ sources: [BY_LOCATION, TOTAL] }), true);
+  const selects = screen.getAllByRole("combobox", { name: "Group by" });
+  expect(selects).toHaveLength(1);
+  const byLocationItem = screen.getByText("Sustainability by site").closest("li")!;
+  const totalItem = screen.getByText("Sustainability total").closest("li")!;
+  expect(within(byLocationItem).getByRole("combobox", { name: "Group by" })).toBe(selects[0]);
+  expect(within(totalItem).queryByRole("combobox", { name: "Group by" })).toBeNull();
+}
+
+/** G2 — choosing depth 2 patches only `sources`, that source's params gaining a number. */
+export async function choosingADepthPatchesOnlyThatSource(): Promise<void> {
+  const { onChange } = renderEditor(tableWidget({ sources: [BY_LOCATION, TOTAL] }), true);
+  await userEvent.selectOptions(screen.getByRole("combobox", { name: "Group by" }), "2");
+  expect(onChange).toHaveBeenCalledTimes(1);
+  expect(onChange.mock.calls[0]![0]).toEqual({
+    sources: [
+      { ...BY_LOCATION, params: { pointKey: "kwh_today", aggregate: "sum", groupDepth: 2 } },
+      TOTAL,
+    ],
+  });
+}
+
+/** G3 — "Each site" removes the key. */
+export async function eachSiteRemovesTheKey(): Promise<void> {
+  const grouped = { ...BY_LOCATION, params: { ...BY_LOCATION.params, groupDepth: 3 } };
+  const { onChange } = renderEditor(tableWidget({ sources: [grouped] }), true);
+  await userEvent.selectOptions(screen.getByRole("combobox", { name: "Group by" }), "");
+  expect(onChange.mock.calls[0]![0]).toEqual({ sources: [BY_LOCATION] });
+}
+
+/** G4 — read-only shows the depth as text and no select. */
+export function readOnlyShowsTheDepthAsText(): void {
+  const grouped = { ...BY_LOCATION, params: { ...BY_LOCATION.params, groupDepth: 2 } };
+  renderEditor(tableWidget({ sources: [grouped] }), false);
+  expect(screen.getByText("Grouped by ancestor depth 2")).toBeInTheDocument();
+  expect(screen.queryByRole("combobox", { name: "Group by" })).toBeNull();
+}
+
+/** G5 — the options run from 1 to LOCATION_TREE_MAX_DEPTH, after "Each site". */
+export function theOptionsRunToTheMaxDepth(): void {
+  renderEditor(tableWidget({ sources: [BY_LOCATION] }), true);
+  const values = within(screen.getByRole("combobox", { name: "Group by" }))
+    .getAllByRole("option")
+    .map((o) => (o as HTMLOptionElement).value);
+  expect(values).toEqual([
+    "",
+    ...Array.from({ length: LOCATION_TREE_MAX_DEPTH }, (_, i) => String(i + 1)),
+  ]);
 }
