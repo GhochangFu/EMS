@@ -481,6 +481,7 @@ export type AdminAssetPointDto = z.infer<typeof A.adminAssetPointDtoSchema>;
  * itself is `./ingest`'s, re-exported below with the rest of that module.
  */
 export type PointMetadataFields = z.infer<typeof PM.pointMetadataFieldsSchema>;
+export type PointMetadataFieldName = z.infer<typeof PM.pointMetadataFieldNameSchema>;
 /** `F3.37` (ADR 0049) — one `bms.asset_groups` row for the admin surface. */
 export type AdminAssetGroupDto = z.infer<typeof A.adminAssetGroupDtoSchema>;
 export type AdminAssetGroupListResponse = z.infer<
@@ -640,36 +641,8 @@ export type DefaultDashboardsBackfillResultDto = z.infer<
   typeof AD.defaultDashboardsBackfillResultDtoSchema
 >;
 
-// `F2.6` template version lifecycle (ADR 0039).
-/** The five calc columns — the same shape as template value, override and effective. */
-export type AssetPointCalcOverrideFields = z.infer<
-  typeof A.assetPointCalcOverrideFieldsSchema
->;
-/** One derived point of one asset: template, override and resolved values. */
-export type AssetPointCalcConfigDto = z.infer<typeof A.assetPointCalcConfigDtoSchema>;
-/** One version of a template code, with how much of the estate sits on it. */
-export type TemplateVersionSummaryDto = z.infer<typeof A.templateVersionSummaryDtoSchema>;
-export type TemplateMigrationRefusalReason = z.infer<
-  typeof A.templateMigrationRefusalReasonSchema
->;
-export type TemplateMigrationRefusalDto = z.infer<
-  typeof A.templateMigrationRefusalDtoSchema
->;
-export type TemplateMeasuredAdditionDto = z.infer<
-  typeof A.templateMeasuredAdditionDtoSchema
->;
-export type TemplateMeasuredChangeDto = z.infer<typeof A.templateMeasuredChangeDtoSchema>;
-/** Which of the five calc fields moved between two versions. */
-export type TemplateCalcField = z.infer<typeof A.templateCalcFieldSchema>;
-export type TemplateDerivedChangeDto = z.infer<typeof A.templateDerivedChangeDtoSchema>;
-export type TemplateDerivedAdditionDto = z.infer<typeof A.templateDerivedAdditionDtoSchema>;
-export type TemplateDerivedRemovalDto = z.infer<typeof A.templateDerivedRemovalDtoSchema>;
-/** Keyed on `point_key` throughout, never on `template_points.id` (D-4). */
-export type TemplateVersionDeltaDto = z.infer<typeof A.templateVersionDeltaDtoSchema>;
-export type TemplateMigrationAssetDto = z.infer<typeof A.templateMigrationAssetDtoSchema>;
-export type TemplateMigrationSkippedPointDto = z.infer<
-  typeof A.templateMigrationSkippedPointDtoSchema
->;
+// `F2.6` template version lifecycle (ADR 0039) — derived in `./types/` (§4.5 cap).
+export type * from "./types/template-migration";
 
 // ---------------------------------------------------------------------------
 // AI onboarding wizard (ADR 0011, ADR 0022)

@@ -6,10 +6,12 @@ import {
 } from "./admin";
 import {
   POINT_METADATA_FIELDS,
+  pointMetadataFieldNameSchema,
   pointMetadataFieldsSchema,
   pointMetadataShape,
   qualityPolicySchema,
 } from "./point-metadata";
+import { templateMeasuredMetadataChangeDtoSchema } from "./template-migration";
 
 /**
  * `F2.7` / ADR 0056 decisions 1 and 3 — the five point-metadata fields on the
@@ -196,5 +198,26 @@ export function runStockShapeTests(): void {
     stockTemplatePointDtoSchema,
     { ...stockPoint, scaleMultiplier: "0.1" },
     "stock point refuses a string where a number is due",
+  );
+}
+
+/**
+ * `F2.24` — the five field names as a schema, so the version delta's
+ * `changedFields` is built from the one list rather than a second literal.
+ * A literal enum that dropped or renamed one of the five fails the
+ * deep-equality; a delta entry naming a sixth field is refused.
+ */
+export function runFieldNameVocabularyTests(): void {
+  const options: readonly string[] = pointMetadataFieldNameSchema.options;
+  assert(
+    JSON.stringify(options) === JSON.stringify(POINT_METADATA_FIELDS),
+    `expected the field-name enum to be POINT_METADATA_FIELDS, got ${JSON.stringify(options)}`,
+  );
+  const entry = { pointKey: "KW", changedFields: ["scaleMultiplier"], from: FIVE_NULL, to: FIVE_SET };
+  expectAccepts(templateMeasuredMetadataChangeDtoSchema, entry, "a metadata-change entry naming one of the five");
+  expectRejects(
+    templateMeasuredMetadataChangeDtoSchema,
+    { ...entry, changedFields: ["unit"] },
+    "a metadata-change entry naming a field outside the five",
   );
 }

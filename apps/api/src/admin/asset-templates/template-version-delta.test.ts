@@ -3,11 +3,13 @@ import { describe, it } from "vitest";
 import {
   assertACoverageRatioOnlyChangeIsReported,
   assertDerivedChangesAreReportedNeverRefused,
+  assertAMetadataDefaultOnlyChangeIsReported,
   assertDifferentRowIdentitiesWithSameKeysAreNoChange,
   assertIdenticalVersionsProduceAnEmptyDelta,
   assertKindFlipsAreClassifiedExplicitly,
   assertMeasuredAdditionDoesNotRefuse,
   assertMeasuredReKeyRefuses,
+  assertAReKeyWithAMovedDefaultReportsBoth,
   assertMeasuredRemovalRefuses,
 } from "./template-version-delta.spec";
 
@@ -43,5 +45,13 @@ describe("F2.6 — template version delta", () => {
 
   it("classifies a kind flip explicitly in both directions", () => {
     assertKindFlipsAreClassifiedExplicitly();
+  });
+
+  it("reports a metadata-default-only change and never refuses it (F2.24)", () => {
+    assertAMetadataDefaultOnlyChangeIsReported();
+  });
+
+  it("reports both the re-key and the moved default of one measured point (F2.24)", () => {
+    assertAReKeyWithAMovedDefaultReportsBoth();
   });
 });

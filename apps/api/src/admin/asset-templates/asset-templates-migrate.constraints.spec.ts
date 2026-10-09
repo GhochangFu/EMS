@@ -1,6 +1,6 @@
 import { ConflictException } from "@nestjs/common";
 
-import { translateAssetPointInsertUnique } from "./asset-templates-migrate.service";
+import { translateAssetPointInsertUnique } from "./asset-templates-migrate-constraints";
 
 function assert(condition: boolean, message: string): void {
   if (!condition) {

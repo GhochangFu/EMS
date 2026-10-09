@@ -42,6 +42,12 @@ export const POINT_METADATA_FIELDS = [
   "qualityPolicy",
 ] as const;
 
+/**
+ * `F2.24` — the five names as a schema: the vocabulary of the template version
+ * delta's `changedFields`, built from `POINT_METADATA_FIELDS` and never restated.
+ */
+export const pointMetadataFieldNameSchema = z.enum(POINT_METADATA_FIELDS);
+
 /** The five read-side fields, spread into a DTO's `z.object({...})` literal. */
 export const pointMetadataShape = {
   /** engineering value = raw × multiplier + offset; `null` reads as `1`. */

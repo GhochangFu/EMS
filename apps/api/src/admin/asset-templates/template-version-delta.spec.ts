@@ -1,3 +1,5 @@
+import { POINT_METADATA_FIELDS } from "@bms/shared";
+
 import {
   computeTemplateVersionDelta,
   type StoredTemplatePoint,
@@ -24,6 +26,11 @@ function measured(pointKey: string, overrides: Partial<StoredTemplatePoint> = {}
     calcIntervalSeconds: null,
     maxInputAgeSeconds: null,
     minCoverageRatio: null,
+    scaleMultiplier: null,
+    scaleOffset: null,
+    engMin: null,
+    engMax: null,
+    qualityPolicy: null,
     ...overrides,
   };
 }
@@ -41,6 +48,11 @@ function derived(pointKey: string, overrides: Partial<StoredTemplatePoint> = {})
     calcIntervalSeconds: 60,
     maxInputAgeSeconds: 300,
     minCoverageRatio: null,
+    scaleMultiplier: null,
+    scaleOffset: null,
+    engMin: null,
+    engMax: null,
+    qualityPolicy: null,
     ...overrides,
   };
 }
@@ -53,6 +65,7 @@ export function assertIdenticalVersionsProduceAnEmptyDelta(): void {
   assert(delta.measuredAdded.length === 0, "no measured additions expected");
   assert(delta.measuredRemoved.length === 0, "no measured removals expected");
   assert(delta.measuredReKeyed.length === 0, "no re-keys expected");
+  assert(delta.measuredMetadataChanged.length === 0, "no metadata-default changes expected");
   assert(delta.derivedAdded.length === 0, "no derived additions expected");
   assert(delta.derivedRemoved.length === 0, "no derived removals expected");
   assert(delta.derivedChanged.length === 0, "no derived changes expected");
@@ -344,5 +357,130 @@ export function assertKindFlipsAreClassifiedExplicitly(): void {
     toMeasured.refusals.length === 0,
     "derived -> measured must NOT refuse: nothing physical is destroyed, and decision 4 " +
       "creates the new asset_points row",
+  );
+}
+
+/**
+ * `F2.24` — a version bump that moves only one of the five instrument-metadata
+ * defaults (ADR 0056 decision 1) is **reported**, never refused: the finding-31
+ * shape of `F2.9` on the measured side. Before this, such a bump produced an
+ * empty delta, `migration-preview` said "no changes", and every migrated asset
+ * without its own override picked the new scale or range up at once.
+ *
+ * One block per claim, each with its own message, so the mutation that breaks
+ * one names the case it broke.
+ */
+export function assertAMetadataDefaultOnlyChangeIsReported(): void {
+  // 1. One field moves from inherit to set. Mutation: the comparison dropped →
+  //    no entry; `from`/`to` swapped → the values read backwards.
+  const raised = computeTemplateVersionDelta(
+    [measured("KW", { scaleMultiplier: null })],
+    [measured("KW", { scaleMultiplier: 10 })],
+    OPTIONS,
+  );
+  const one = raised.measuredMetadataChanged[0];
+  assert(
+    raised.measuredMetadataChanged.length === 1 && one?.pointKey === "KW",
+    `a scaleMultiplier-only change must be one entry for KW, got ${JSON.stringify(raised.measuredMetadataChanged)}`,
+  );
+  assert(
+    JSON.stringify(one?.changedFields) === JSON.stringify(["scaleMultiplier"]),
+    `changedFields must name scaleMultiplier alone, got ${JSON.stringify(one?.changedFields)}`,
+  );
+  assert(
+    one?.from.scaleMultiplier === null && one?.to.scaleMultiplier === 10,
+    `from/to must read null -> 10, got ${String(one?.from.scaleMultiplier)} -> ${String(one?.to.scaleMultiplier)}`,
+  );
+  assert(raised.refusals.length === 0, "a metadata-default change must never refuse (decision 3 is wiring only)");
+  assert(
+    raised.measuredReKeyed.length === 0 && raised.measuredRemoved.length === 0,
+    "a metadata-default change is neither a re-key nor a removal",
+  );
+
+  // 2. The loosening direction — a bound removed, so a range test disappears.
+  const loosened = computeTemplateVersionDelta(
+    [measured("KW", { engMax: 100 })],
+    [measured("KW", { engMax: null })],
+    OPTIONS,
+  );
+  assert(
+    JSON.stringify(loosened.measuredMetadataChanged[0]?.changedFields) === JSON.stringify(["engMax"]),
+    `an engMax 100 -> null change must be reported as ["engMax"], got ${JSON.stringify(loosened.measuredMetadataChanged)}`,
+  );
+  assert(loosened.refusals.length === 0, "a loosened bound must not refuse");
+
+  // 3. Two fields move: both listed, in POINT_METADATA_FIELDS order.
+  //    Mutation: `.find` for `.filter` → one name.
+  const two = computeTemplateVersionDelta(
+    [measured("KW", { engMin: null, qualityPolicy: null })],
+    [measured("KW", { engMin: 0, qualityPolicy: "accept_bad" })],
+    OPTIONS,
+  );
+  const fields = two.measuredMetadataChanged[0]?.changedFields ?? [];
+  assert(
+    JSON.stringify(fields) === JSON.stringify(POINT_METADATA_FIELDS.filter((f) => f === "engMin" || f === "qualityPolicy")),
+    `two moved fields must both be listed in POINT_METADATA_FIELDS order, got ${JSON.stringify(fields)}`,
+  );
+  assert(two.refusals.length === 0, "two moved defaults must not refuse");
+
+  // 5. Identical five → nothing. Without this, cases 1–3 pass on a delta that
+  //    reports every measured point. Mutation: `!==` replaced by `true`.
+  const same = computeTemplateVersionDelta(
+    [measured("KW", { scaleMultiplier: 10, engMin: 0, engMax: 100 })],
+    [measured("KW", { scaleMultiplier: 10, engMin: 0, engMax: 100 })],
+    OPTIONS,
+  );
+  assert(
+    same.measuredMetadataChanged.length === 0,
+    `identical defaults must report nothing, got ${JSON.stringify(same.measuredMetadataChanged)}`,
+  );
+
+  // 6. A derived point carries no instrument metadata (templatePointBodySchema
+  //    refuses the five on one), so its five are never compared. Mutation: the
+  //    comparison moved above the derived branch → an entry for KWH.
+  const derivedMoved = computeTemplateVersionDelta(
+    [derived("KWH", { scaleMultiplier: null })],
+    [derived("KWH", { scaleMultiplier: 10 })],
+    OPTIONS,
+  );
+  assert(
+    derivedMoved.measuredMetadataChanged.length === 0,
+    `a derived point's five must never be reported, got ${JSON.stringify(derivedMoved.measuredMetadataChanged)}`,
+  );
+}
+
+/**
+ * `F2.24` — a measured point that is re-keyed **and** whose metadata default
+ * moved reports **both** entries: the re-key refusal does not hide the default
+ * change, and the default change does not soften the refusal. Mutation: a
+ * `continue` after the `measured_rekeyed` refusal → no metadata entry.
+ */
+export function assertAReKeyWithAMovedDefaultReportsBoth(): void {
+  const delta = computeTemplateVersionDelta(
+    [measured("KW", { sourceDataKeyPattern: "OLD/{asset_code}/KW", engMax: 100 })],
+    [measured("KW", { sourceDataKeyPattern: "NEW/{asset_code}/KW", engMax: 200 })],
+    OPTIONS,
+  );
+  assert(
+    delta.measuredReKeyed.length === 1 && delta.measuredReKeyed[0]?.pointKey === "KW",
+    `the re-key must be reported once for KW, got ${JSON.stringify(delta.measuredReKeyed)}`,
+  );
+  const moved = delta.measuredMetadataChanged;
+  assert(
+    moved.length === 1 && moved[0]?.pointKey === "KW",
+    `the moved default must be reported once for KW beside the re-key, got ${JSON.stringify(moved)}`,
+  );
+  assert(
+    JSON.stringify(moved[0]?.changedFields) === JSON.stringify(["engMax"]),
+    `changedFields must name engMax alone, got ${JSON.stringify(moved[0]?.changedFields)}`,
+  );
+  assert(
+    moved[0]?.from.engMax === 100 && moved[0]?.to.engMax === 200,
+    `from/to must read 100 -> 200, got ${String(moved[0]?.from.engMax)} -> ${String(moved[0]?.to.engMax)}`,
+  );
+  assert(
+    delta.refusals.length === 1 && delta.refusals[0]?.reason === "measured_rekeyed",
+    `exactly one refusal, measured_rekeyed — the moved default adds none, got ` +
+      `[${delta.refusals.map((r) => r.reason).join(", ")}]`,
   );
 }

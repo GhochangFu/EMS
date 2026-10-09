@@ -31,14 +31,16 @@ import { CalcDependencyService } from "../../calc/calc-dependency.service";
 import { SOURCE_DATA_KEY_MAX_LENGTH } from "../../calc/computed-source-data-key";
 import { FLEET_DRIZZLE, TENANT_DRIZZLE } from "../../database/database.tokens";
 import { withTenant } from "../../database/tenant-context";
-import {
-  constraintOf,
-  translateConstraintErrors,
-} from "../../database/translate-constraint-errors";
+import { translateConstraintErrors } from "../../database/translate-constraint-errors";
 import { MasterDataAuditService } from "../master-data-audit.service";
 // `F2.9` Task 12b, widened at the PR 2 review — two of the override endpoint's
 // three gates, imported rather than restated. See that file's docblock.
 import { refuseOverridesThatDoNotSurvive } from "./asset-templates-migrate-calc";
+// `F2.30` — the metadata override's merged pair, re-validated against the target.
+import { refuseMetadataOverridesThatDoNotSurvive } from "./asset-templates-migrate-metadata";
+// `F4.216`/`F4.222` — the insert's unique-violation sentences, in a sibling
+// for AGENTS.md §4.5's cap.
+import { translateAssetPointInsertUnique } from "./asset-templates-migrate-constraints";
 import type { MigrateAssetsBody } from "./asset-templates-migrate.schema";
 import { computeTemplateVersionDelta, type StoredTemplatePoint } from "./template-version-delta";
 
@@ -151,36 +153,6 @@ type MigrationPlan = {
   refusalCount: number;
   fromVersions: number[];
 };
-
-/**
- * `F4.216`/`F4.222` — turns a unique violation on the migration's `asset_points`
- * insert into a 409 with a sentence. `buildPlan` refuses a source key an
- * existing row holds, and two new points of one asset resolving to one key, but
- * it reads before the write transaction opens, so a row inserted in between
- * still reaches the index. The source key and the point key each get their own
- * sentence (the operator must not be told the wrong key); any other constraint
- * is returned unchanged for `translateConstraintErrors` to rethrow raw.
- */
-export function translateAssetPointInsertUnique(err: unknown): Error {
-  switch (constraintOf(err)) {
-    case "asset_points_asset_source_key_idx":
-      return new ConflictException(
-        "This migration is refused. Nothing was written. A new point's source " +
-          "key is already used on the same asset by a point added since the " +
-          "plan was read (one source key maps to one point per asset). Check " +
-          "the asset's points, then try again.",
-      );
-    case "asset_points_asset_id_point_key_unique":
-      return new ConflictException(
-        "This migration is refused. Nothing was written. A new point's point " +
-          "key is already used on the same asset by a point added since the " +
-          "plan was read (a point key appears once per asset). Check the " +
-          "asset's points, then try again.",
-      );
-    default:
-      return err as Error;
-  }
-}
 
 /**
  * `F4.16` / ADR 0043 — `asset_templates` and `point_keys` carry `ENABLE ROW
@@ -747,6 +719,13 @@ export class AssetTemplateMigrationService {
           calcTrigger: assetPoints.calcTrigger,
           calcIntervalSeconds: assetPoints.calcIntervalSeconds,
           maxInputAgeSeconds: assetPoints.maxInputAgeSeconds,
+          // `F2.30` — the five metadata override columns, merged over the
+          // target version's defaults by the gate after the calc one.
+          scaleMultiplier: assetPoints.scaleMultiplier,
+          scaleOffset: assetPoints.scaleOffset,
+          engMin: assetPoints.engMin,
+          engMax: assetPoints.engMax,
+          qualityPolicy: assetPoints.qualityPolicy,
         })
         .from(assetPoints)
         .where(inArray(assetPoints.assetId, plannedAssetIds));
@@ -838,14 +817,15 @@ export class AssetTemplateMigrationService {
       // endpoint's own two checks rather than restating them, and exactly
       // what parity with that endpoint does and does not claim. Called here,
       // before the transaction opens, like every other fallible decision.
+      const withRows = planned
+        .filter((asset) => existingByAsset.has(asset.dto.assetId))
+        .map((asset) => ({
+          assetId: asset.dto.assetId,
+          assetCode: asset.dto.assetCode,
+          rows: existingByAsset.get(asset.dto.assetId) as Map<string, ExistingPointRow>,
+        }));
       await refuseOverridesThatDoNotSurvive({
-        assets: planned
-          .filter((asset) => existingByAsset.has(asset.dto.assetId))
-          .map((asset) => ({
-            assetId: asset.dto.assetId,
-            assetCode: asset.dto.assetCode,
-            rows: existingByAsset.get(asset.dto.assetId) as Map<string, ExistingPointRow>,
-          })),
+        assets: withRows,
         targetPoints,
         // Read only when some migrating asset actually carries a `computed`
         // row. Most migrations have no override at all, and this service does
@@ -857,6 +837,14 @@ export class AssetTemplateMigrationService {
           : new Map<string, string>(),
         targetVersion: target.version,
         dependencies: this.dependencies,
+        refuse,
+      });
+      // `F2.30` — an asset's metadata override the target's default would
+      // invert. Still before the transaction; see that file's docblock.
+      refuseMetadataOverridesThatDoNotSurvive({
+        assets: withRows,
+        targetPoints,
+        targetVersion: target.version,
         refuse,
       });
     }
@@ -926,6 +914,13 @@ export class AssetTemplateMigrationService {
       // `derivedChanged`, so `migration-preview` said "no changes" while the
       // migrated asset picked the new value up on its next sweep.
       minCoverageRatio: row.minCoverageRatio,
+      // `F2.24` — the five metadata defaults, projected because the delta compares
+      // them; one left out reads `undefined` on both sides and goes unreported.
+      scaleMultiplier: row.scaleMultiplier,
+      scaleOffset: row.scaleOffset,
+      engMin: row.engMin,
+      engMax: row.engMax,
+      qualityPolicy: row.qualityPolicy,
     }));
   }
 

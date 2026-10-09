@@ -135,7 +135,14 @@ export function partitionSelection(
 
 /** One line of the delta summary, ready to render. */
 export type DeltaLine = {
-  kind: "measured-added" | "measured-removed" | "measured-rekeyed" | "derived-added" | "derived-removed" | "derived-changed";
+  kind:
+    | "measured-added"
+    | "measured-removed"
+    | "measured-rekeyed"
+    | "measured-metadata-changed"
+    | "derived-added"
+    | "derived-removed"
+    | "derived-changed";
   pointKey: string;
   detail: string;
 };
@@ -171,6 +178,16 @@ export function deltaLines(delta: TemplateVersionDeltaDto): DeltaLine[] {
       kind: "measured-added",
       pointKey: entry.pointKey,
       detail: `added${entry.required ? "" : " (optional)"} — a telemetry point will be created`,
+    });
+  }
+  for (const entry of delta.measuredMetadataChanged) {
+    lines.push({
+      kind: "measured-metadata-changed",
+      pointKey: entry.pointKey,
+      // `F2.24` — reported, never refusing: the migrated asset resolves
+      // `coalesce(asset, template)`, so the new default reaches every asset
+      // that does not override the field.
+      detail: `${entry.changedFields.join(", ")} default changed — applies to every migrated asset that does not override it`,
     });
   }
   for (const entry of delta.derivedAdded) {

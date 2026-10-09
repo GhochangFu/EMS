@@ -2,6 +2,7 @@ import { describe, it } from "vitest";
 
 import {
   runDtoSpreadTests,
+  runFieldNameVocabularyTests,
   runPointMetadataShapeTests,
   runQualityPolicyVocabularyTests,
   runStockShapeTests,
@@ -23,5 +24,9 @@ describe("F2.7 — point metadata on the read side (ADR 0056 decisions 1, 3)", (
 
   it("carries the five as optional keys on the stock write shape", () => {
     runStockShapeTests();
+  });
+
+  it("F2.24 — declares the five field names once, as the delta's changedFields vocabulary", () => {
+    runFieldNameVocabularyTests();
   });
 });
