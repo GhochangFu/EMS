@@ -10,6 +10,7 @@ import { cleanup } from "@testing-library/react";
 
 import {
   adminHasTheOrganizationRadio,
+  theLocationPickerListsTheTree,
   deleteAsksBeforeSending,
   deletingRowAnnouncesDeleting,
   siblingRowsAreNotBusy,
@@ -82,5 +83,16 @@ describe("E4.1a calc parameters page", () => {
 
   it("B2 sibling rows' Delete buttons are not busy", async () => {
     await siblingRowsAreNotBusy();
+  });
+});
+
+describe("F2.10 calc parameters — the Location picker lists the tree (B11)", () => {
+  afterEach(() => {
+    cleanup();
+    vi.restoreAllMocks();
+  });
+
+  it("lists a child after its parent with the code inside the dashes", async () => {
+    await theLocationPickerListsTheTree();
   });
 });

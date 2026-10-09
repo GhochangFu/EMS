@@ -15,6 +15,7 @@ import {
   type UpdateReportScheduleBody,
 } from "../api/reports";
 import { apiErrorMessage } from "../lib/api-error-message";
+import { locationTreeOptions } from "../lib/location-tree";
 import { formatLabel } from "../lib/report-files-view";
 import {
   cadenceLabel,
@@ -464,9 +465,10 @@ export function ReportSchedules({ user }: ReportSchedulesProps): JSX.Element {
               onChange={onLocationsChange}
             >
               {offersWholeOrganization ? <option value="">Whole organization</option> : null}
-              {locations.map((location) => (
-                <option key={location.id} value={location.id}>
-                  {location.name}
+              {/* `F2.10` (ADR 0098 B11) — the tree depth-first, one `— ` per level. */}
+              {locationTreeOptions(locations).map((option) => (
+                <option key={option.id} value={option.id}>
+                  {option.label}
                 </option>
               ))}
             </select>

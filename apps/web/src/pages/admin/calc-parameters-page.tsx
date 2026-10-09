@@ -25,6 +25,7 @@ import {
 } from "../../lib/admin-access";
 import { toLocalDateTimeInputValue } from "../../lib/alarm-details";
 import { apiErrorMessage } from "../../lib/api-error-message";
+import { locationTreeOptions } from "../../lib/location-tree";
 import type { AuthUser } from "../../stores/auth-store";
 
 type CalcParametersAdminPageProps = { user: AuthUser };
@@ -507,9 +508,13 @@ function CalcParameterForm({
                 }
               >
                 <option value="">Select location</option>
-                {(locationsQ.data?.items ?? []).map((location) => (
-                  <option key={location.id} value={location.id}>
-                    {location.code} · {location.name}
+                {/* `F2.10` (ADR 0098 B11) — the tree depth-first, the code inside the dashes. */}
+                {locationTreeOptions(
+                  locationsQ.data?.items ?? [],
+                  (location) => `${location.code} · ${location.name}`,
+                ).map((option) => (
+                  <option key={option.id} value={option.id}>
+                    {option.label}
                   </option>
                 ))}
               </select>
