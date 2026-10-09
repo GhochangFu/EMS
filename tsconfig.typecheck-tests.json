@@ -100,6 +100,7 @@
     "tests/f3.60-withrollback-cases-roll-back.test.ts",
     "tests/f4.24-worker-imports-no-api-loop.test.ts",
     "tests/f2.22-editor-mirrors-server-wording.test.ts",
+    "tests/f2.33-kpi-evaluation.test.ts",
     "tests/f2.23-catalog-code-charset.test.ts",
     "tests/f2.23-catalog-code-charset.integration.test.ts",
     "tests/f4.60-rtu-code-unique.test.ts",
