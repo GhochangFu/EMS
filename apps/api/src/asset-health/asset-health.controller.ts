@@ -67,7 +67,8 @@ export class AssetHealthController {
    * The plant and enterprise donut.
    *
    * **The scope always comes from the caller's readable set.** They get the
-   * assets they can already read, optionally narrowed to one location.
+   * assets they can already read, optionally narrowed to one location's
+   * subtree (the node and every node under it, ADR 0098 decision 7).
    *
    * `F3.72` (the `F3.66` rule): an optional `organizationId` narrows the same
    * way. When present, `readableAssetIdsInOrganization` replaces

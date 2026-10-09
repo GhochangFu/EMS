@@ -14,6 +14,7 @@ import {
 } from "@bms/db";
 
 import { templateHealthSchema } from "../admin/asset-templates/asset-templates-content.schema";
+import { expandLocationSubtrees } from "../auth/location-tree";
 import { FLEET_DRIZZLE } from "../database/database.tokens";
 import { type AggregateLevel, bucketSeconds } from "../telemetry/point-aggregates";
 import {
@@ -439,7 +440,9 @@ export class AssetHealthService {
   }
 
   /**
-   * The asset ids to score: the readable set, optionally narrowed to a plant.
+   * The asset ids to score: the readable set, optionally narrowed to a node
+   * and every node under it (ADR 0098 decision 7, Amendment 1 A7: a filter,
+   * no grouping).
    *
    * §4.3 fleet-read reason: `bms.assets` is RLS-bearing and this runs on the
    * BYPASSRLS pool, so the containment is that `assetIds` is what
@@ -459,7 +462,9 @@ export class AssetHealthService {
       filters.push(inArray(assets.id, [...assetIds]));
     }
     if (locationId !== undefined) {
-      filters.push(eq(assets.locationId, locationId));
+      // ADR 0098 decision 7: the node and every node under it. An id that names
+      // no row expands to `[]`, which drizzle emits as `false` — an empty donut.
+      filters.push(inArray(assets.locationId, await expandLocationSubtrees(this.db, [locationId])));
     }
     // **`orderBy` is not cosmetic.** `summariseAssets` takes a band's `label`
     // and `minScore` from its first occurrence in this order, so without a

@@ -45,7 +45,7 @@ export type AssetHealthQuery = z.infer<typeof assetHealthQuerySchema>;
  * before access control runs.
  */
 export const healthSummaryQuerySchema = assetHealthQuerySchema.extend({
-  locationId: z.string().uuid().optional(),
+  locationId: z.string().uuid().optional().describe("the node and every node under it (ADR 0098 decision 7)"),
   organizationId: z.string().uuid().optional(),
 });
 
