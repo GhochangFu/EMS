@@ -459,8 +459,8 @@ export function assertTemplateVersionsSortNumerically(): void {
   const T10 = "t10";
   const snap: ExportSnapshot = {
     assetsByCode: new Map<string, SnapshotAsset>([
-      ["TX01", { id: "a1", name: "Transformer 1", active: true, templateId: T1, rtuId: null }],
-      ["TX02", { id: "a2", name: "Transformer 2", active: true, templateId: T10, rtuId: null }],
+      ["TX01", { id: "a1", name: "Transformer 1", active: true, templateId: T1, rtuId: null, sourceDataKeyVars: null }],
+      ["TX02", { id: "a2", name: "Transformer 2", active: true, templateId: T10, rtuId: null, sourceDataKeyVars: null }],
     ]),
     existingByAssetPoint: new Map(),
     rtuCodesById: new Map(),
@@ -497,8 +497,8 @@ export function assertTemplateVersionsSortNumerically(): void {
 export function assertATemplateWithNoIdentityIsSkipped(): void {
   const snap: ExportSnapshot = {
     assetsByCode: new Map<string, SnapshotAsset>([
-      ["TX01", { id: "a1", name: "Transformer 1", active: true, templateId: T1, rtuId: null }],
-      ["CH01", { id: "a2", name: "Chiller 1", active: true, templateId: T2, rtuId: null }],
+      ["TX01", { id: "a1", name: "Transformer 1", active: true, templateId: T1, rtuId: null, sourceDataKeyVars: null }],
+      ["CH01", { id: "a2", name: "Chiller 1", active: true, templateId: T2, rtuId: null, sourceDataKeyVars: null }],
     ]),
     existingByAssetPoint: new Map(),
     rtuCodesById: new Map(),
