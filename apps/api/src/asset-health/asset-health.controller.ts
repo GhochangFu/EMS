@@ -76,10 +76,13 @@ export class AssetHealthController {
    * organization's assets, so it can only shrink the scope. Nothing here may
    * use `organizationId` in place of the readable set.
    *
-   * `locationId` and `organizationId` narrow and cannot widen: an unreadable
-   * one simply intersects to nothing and returns an empty donut, which is the
-   * correct answer and not an error. Answering 403 instead would confirm the
-   * id exists.
+   * `locationId` and `organizationId` narrow and cannot widen. A `locationId`
+   * outside a scoped caller's readable locations answers the empty donut
+   * outright (owner ruling P2, the map's `parentLocationId` rule): its
+   * subtree may hold a node they read, and intersecting alone would then
+   * confirm the hidden parent link. An unreadable `organizationId` intersects
+   * to nothing. Either is an empty donut, the correct answer and not an error;
+   * answering 403 instead would confirm the id exists.
    */
   @Get("summary")
   async summary(@CurrentUser() user: JwtPayload, @Query() query: Record<string, unknown>) {
@@ -91,9 +94,16 @@ export class AssetHealthController {
     const assetIds = parsed.data.organizationId
       ? await this.accessControl.readableAssetIdsInOrganization(user, parsed.data.organizationId)
       : await this.accessControl.readableAssetIds(user);
+    const location =
+      parsed.data.locationId === undefined
+        ? undefined
+        : {
+            id: parsed.data.locationId,
+            readableLocationIds: await this.accessControl.readableLocationIds(user),
+          };
     return this.health.summary(
       assetIds,
-      parsed.data.locationId,
+      location,
       parsed.data.windowMinutes,
       new Date(),
     );

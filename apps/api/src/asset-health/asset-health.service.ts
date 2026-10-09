@@ -96,6 +96,17 @@ function parseHealth(content: unknown): TemplateHealth | undefined {
   return parsed.success ? parsed.data : undefined;
 }
 
+/**
+ * The health summary's location filter (ADR 0098 decision 7): the node, and the
+ * caller's readable location ids (`AccessControlService.readableLocationIds`,
+ * `null` for an unrestricted admin). Required together, so no caller can
+ * filter by a node without saying whose read it is (owner ruling P2).
+ */
+export type HealthLocationFilter = {
+  readonly id: string;
+  readonly readableLocationIds: readonly string[] | null;
+};
+
 @Injectable()
 export class AssetHealthService {
   constructor(@Inject(FLEET_DRIZZLE) private readonly db: BmsDb) {}
@@ -137,12 +148,12 @@ export class AssetHealthService {
    */
   async summary(
     assetIds: readonly string[] | null,
-    locationId: string | undefined,
+    location: HealthLocationFilter | undefined,
     windowMinutes: number,
     now: Date,
   ): Promise<HealthSummaryResponse> {
     const { level, from, to } = this.resolveWindow(windowMinutes, now);
-    const inScope = await this.assetsInScope(assetIds, locationId);
+    const inScope = await this.assetsInScope(assetIds, location);
 
     // An empty scope is answered without touching the counter relations.
     //
@@ -448,12 +459,25 @@ export class AssetHealthService {
    * BYPASSRLS pool, so the containment is that `assetIds` is what
    * `AccessControlService.readableAssetIds` already computed for this caller —
    * the "bypass, then trust a computed grant" shape ADR 0043 Amendment 2/3
-   * allows. `locationId` can only intersect that set, never widen it.
+   * allows. `location` can only intersect that set, never widen it.
+   *
+   * Owner ruling P2 (2026-10-09): a scoped caller whose readable locations do
+   * not hold `location.id` gets nothing, before any walk — the rule
+   * `map.service.ts` applies to `parentLocationId`. Intersecting alone would
+   * answer an unreadable ancestor of a readable node with that node's assets,
+   * confirming a parent link `/auth/me` hides (Drafter choice 8).
    */
   private async assetsInScope(
     assetIds: readonly string[] | null,
-    locationId: string | undefined,
+    location: HealthLocationFilter | undefined,
   ): Promise<string[]> {
+    if (
+      location !== undefined &&
+      location.readableLocationIds !== null &&
+      !location.readableLocationIds.includes(location.id)
+    ) {
+      return [];
+    }
     const filters = [eq(assets.active, true)];
     if (assetIds !== null) {
       if (assetIds.length === 0) {
@@ -461,10 +485,10 @@ export class AssetHealthService {
       }
       filters.push(inArray(assets.id, [...assetIds]));
     }
-    if (locationId !== undefined) {
+    if (location !== undefined) {
       // ADR 0098 decision 7: the node and every node under it. An id that names
       // no row expands to `[]`, which drizzle emits as `false` — an empty donut.
-      filters.push(inArray(assets.locationId, await expandLocationSubtrees(this.db, [locationId])));
+      filters.push(inArray(assets.locationId, await expandLocationSubtrees(this.db, [location.id])));
     }
     // **`orderBy` is not cosmetic.** `summariseAssets` takes a band's `label`
     // and `minScore` from its first occurrence in this order, so without a

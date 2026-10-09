@@ -5,6 +5,7 @@ import { afterAll, beforeAll, describe, it } from "vitest";
 import {
   assertACampusFilterCountsTheWholeSubtree,
   assertAnUnknownNodeCountsNothing,
+  assertAnUnreadableAncestorOrForeignNodeIsEmpty,
   assertASiblingSubtreeIsExcluded,
   assertASiteFilterCountsItsOwnSubtreeOnly,
   assertTheFilterNarrowsAndNeverWidens,
@@ -50,6 +51,10 @@ describe.skipIf(!connectionString)("F2.10 — the health summary's locationId me
 
   it("the subtree narrows the readable set and never widens it", async () => {
     await assertTheFilterNarrowsAndNeverWidens(pool);
+  }, 60_000);
+
+  it("an unreadable ancestor or another organization's node answers the empty summary (owner ruling P2)", async () => {
+    await assertAnUnreadableAncestorOrForeignNodeIsEmpty(pool);
   }, 60_000);
 
   it("an unknown location id answers an empty donut", async () => {
