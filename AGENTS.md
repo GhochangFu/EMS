@@ -1082,6 +1082,17 @@
 > plus `{asset_code}`, set last, and the mapping-sheet pre-fill substitutes the
 > same set. An asset built before `0102` stores `NULL` and a richer token is
 > still refused for it, with a message that says why; there is no backfill.
+> **`F2.32`** (#781 `6b52f5f7`, **ADR 0058 Amendment 3**; seed data only, the
+> `ESKOM` organization): the health seed writes one `BASELINE-<DOMAIN>-<ROLE>`
+> per seeded class (the asset's `min(role)`, hyphens as `_`) from that class's
+> own keys, with the domain baseline's health content, and pins roled assets to
+> it, so the rule picker offers a transformer only transformer keys;
+> `BASELINE-<DOMAIN>` stays the fallback for an unroled asset, and the PUE
+> incomer copies from the `incoming-supply` role template. A database seeded
+> earlier re-pins **once** — in the run that inserts the role templates, and
+> only from `BASELINE-<DOMAIN>` version 1 — so an operator's later pin stands; a
+> warm database keeps its old `BASELINE-ELECTRICAL-INCOMER` version 1. A
+> re-pinned asset is on another template code and cannot be migrated back.
 > Next: `F4.160` is open (of the three spec files the row names, two remain,
 > `dashboard-builder-page` and `dashboard-builder-edit-page`, because `F3.70`
 > took the overview spec off `AppShell`); `F4.161` is closed (#578).
