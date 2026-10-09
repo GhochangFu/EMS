@@ -168,7 +168,7 @@ describe.skipIf(!ownerUrl)("F2.32 — a seeded health baseline per domain and ro
           `SELECT a.id FROM bms.assets a
             WHERE a.organization_id = $1 AND a.active = true AND a.domain = 'electrical'
               AND (SELECT min(agm.role) FROM bms.asset_group_members agm WHERE agm.asset_id = a.id) = $2
-            ORDER BY a.code LIMIT 1 FOR UPDATE`,
+            ORDER BY a.created_at, a.id LIMIT 1 FOR UPDATE`,
           [eskomOrgId, role],
         );
         const id = found.rows[0]?.id;
