@@ -620,6 +620,28 @@ export async function aRootScheduleExcludesASiblingRoot(fx: RenderIntegrationFix
   assert(!outcome.assetIds.includes(siblingAsset), "a sibling root's asset must not be rendered");
 }
 
+/**
+ * "Every asset" is decided on the STORED list, never on the expansion (`resolveAssetIds`): a
+ * schedule whose only node was deleted after the save expands to `[]` and renders no asset —
+ * not the organization. The other root's asset is the control: a render that tested the
+ * expansion's length would read it as a whole-organization schedule and render that asset.
+ */
+export async function aScheduleWhoseOnlyNodeWasDeletedRendersNoAsset(fx: RenderIntegrationFixtures): Promise<void> {
+  const tree = await treeOrganization(fx);
+  const other = await treeLocation(fx, tree, null);
+  const otherAsset = await treeAsset(fx, tree, other);
+  const gone = await treeLocation(fx, tree, null);
+  const scheduleId = await insertSchedule(fx, { organizationId: tree.organizationId, locationIds: [gone] });
+  const removed = await fx.base.fleetDb.execute(sql`delete from bms.locations where id = ${gone}::uuid`);
+  assert(removed.rowCount === 1, `expected to delete the schedule's node, got ${removed.rowCount}`);
+  tree.locationIds.splice(tree.locationIds.indexOf(gone), 1);
+  const { svc } = service(fx);
+
+  const outcome = rendered(await run(fx, svc, payloadFor(scheduleId, PERIOD_1, tree.organizationId)));
+  assert(!outcome.assetIds.includes(otherAsset), "a deleted node must not widen the schedule to the organization");
+  sameSet(outcome.assetIds, [], "a schedule whose only node was deleted renders no asset");
+}
+
 /** `0078`: an ESKOM schedule rendered under PHEWB's GUC is absent — `skipped/absent`, zero rows. */
 export async function theTenantPolicyHidesAForeignSchedule(fx: RenderIntegrationFixtures): Promise<void> {
   const scheduleId = await insertSchedule(fx);

@@ -8,6 +8,7 @@ import {
   aLocationScopedScheduleReadsOnlyItsAssets,
   aRootScheduleExcludesASiblingRoot,
   aRootScheduleIncludesASiteAddedAfterItWasSaved,
+  aScheduleWhoseOnlyNodeWasDeletedRendersNoAsset,
   theTenantPolicyHidesAForeignSchedule,
   aDisabledScheduleWritesNoRow,
   aDeletedScheduleWritesNoRow,
@@ -88,6 +89,10 @@ describe.skipIf(!connectionString || !storageConfig)("F3.5b — the render job a
 
   it("aRootScheduleExcludesASiblingRoot (F2.10)", async () => {
     await aRootScheduleExcludesASiblingRoot(fx);
+  });
+
+  it("aScheduleWhoseOnlyNodeWasDeletedRendersNoAsset (F2.10 — the stored list decides 'every asset')", async () => {
+    await aScheduleWhoseOnlyNodeWasDeletedRendersNoAsset(fx);
   });
 
   it("theTenantPolicyHidesAForeignSchedule", async () => {
