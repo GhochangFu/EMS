@@ -5,6 +5,9 @@ import { cleanup } from "@testing-library/react";
 import { useAuthStore } from "../../stores/auth-store";
 import {
   aChangedParentOpensTheDialog,
+  aCreateRefreshesTheScope,
+  aParentTheFilterHidesIsNotCalledARoot,
+  switchingTheOrganizationDropsThePickedParent,
   aLocationAdminSaveSendsNoParentKey,
   aLocationAdminSeesTheParentAsText,
   aMoveRefreshesTheScope,
@@ -96,5 +99,17 @@ describe("F2.10 locations page — the tree", () => {
 
   it("P15 a refused move shows the server's sentence in the open form", async () => {
     await aRefusedMoveShowsTheSentenceInTheForm();
+  });
+
+  it("P16 switching the organization on create drops the picked parent", async () => {
+    await switchingTheOrganizationDropsThePickedParent();
+  });
+
+  it("P17 a create reads /auth/me and replaces the stored scope", async () => {
+    await aCreateRefreshesTheScope();
+  });
+
+  it("P18 under Status = Inactive a hidden parent reads '(not in this list)', not '—'", async () => {
+    await aParentTheFilterHidesIsNotCalledARoot();
   });
 });

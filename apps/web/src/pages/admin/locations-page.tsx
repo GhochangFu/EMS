@@ -185,8 +185,9 @@ export function LocationsAdminPage({ user }: LocationsAdminPageProps) {
   }, [listQ.data?.items, search]);
 
   // `F2.10` (ADR 0098 B10) — the rows in tree order, siblings in the API's name order; a search
-  // keeps the relative order. The Parent column names from the whole list, so a search that
-  // hides the parent still names it.
+  // keeps the relative order. The Parent column names from the status-filtered list before the
+  // search, so a search that hides the parent still names it; a parent the status filter hides
+  // reads "(not in this list)", and its child is drawn at the top level of this list.
   const rows = useMemo(() => {
     const byItemId = new Map(filtered.map((item) => [item.id, item]));
     return locationTreeOptions(filtered).map((option) => ({
@@ -358,7 +359,9 @@ export function LocationsAdminPage({ user }: LocationsAdminPageProps) {
                 <td className="px-2 py-2 font-mono">{item.code}</td>
                 <td className="px-2 py-2 font-semibold text-accent-strong">{label}</td>
                 <td className="px-2 py-2">
-                  {(item.parentId ? byId.get(item.parentId)?.name : undefined) ?? "—"}
+                  {item.parentId
+                    ? (byId.get(item.parentId)?.name ?? "(not in this list)")
+                    : "—"}
                 </td>
                 <td className="px-2 py-2 font-mono text-xs">{item.slug}</td>
                 <td className="px-2 py-2 font-mono text-xs">{item.timezone ?? "—"}</td>
@@ -418,7 +421,8 @@ export function LocationsAdminPage({ user }: LocationsAdminPageProps) {
                     value={form.organizationId}
                     required
                     onChange={(event) =>
-                      setForm({ ...form, organizationId: event.target.value })
+                      // `F2.10` — a parent picked in another organization is not an option here.
+                      setForm({ ...form, organizationId: event.target.value, parentId: "" })
                     }
                   >
                     <option value="">Select organization</option>

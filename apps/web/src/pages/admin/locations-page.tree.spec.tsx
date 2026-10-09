@@ -389,3 +389,81 @@ export async function aRefusedMoveShowsTheSentenceInTheForm(): Promise<void> {
   ).toBeTruthy();
   expect(screen.getByRole("heading", { name: "Edit location" })).toBeTruthy();
 }
+
+const ORG_B = "55555555-5555-5555-5555-555555555555";
+
+/**
+ * P16 — a parent picked in one organization is dropped when the create switches organization:
+ * the other organization does not offer it, so the POST names no parent.
+ */
+export async function switchingTheOrganizationDropsThePickedParent(): Promise<void> {
+  stubApi();
+  vi.mocked(orgApi.fetchAdminOrganizations).mockResolvedValue({
+    items: [
+      { id: ORG, code: "F210", name: "F2.10 org", active: true, meta: null, createdAt: new Date(0).toISOString() },
+      { id: ORG_B, code: "F210B", name: "F2.10 org B", active: true, meta: null, createdAt: new Date(0).toISOString() },
+    ],
+  } as never);
+  vi.mocked(api.fetchAdminLocations).mockImplementation(
+    async (active?: MasterDataActiveFilter, organizationId?: string) => ({
+      items:
+        organizationId === ORG_B ? [] : active === "true" && organizationId === ORG ? ACTIVE : ALL,
+    }),
+  );
+  renderPage();
+  await openCreate();
+  const select = await parentSelect("— Child");
+  await userEvent.selectOptions(select, C);
+  expect(select.value).toBe(C);
+  await userEvent.selectOptions(screen.getByLabelText("Organization"), ORG_B);
+  await waitFor(() => {
+    expect(within(screen.getByLabelText("Parent")).queryByRole("option", { name: "— Child" })).toBeNull();
+  });
+  await userEvent.click(screen.getByRole("button", { name: "Save" }));
+  await waitFor(() => {
+    expect(api.createAdminLocation).toHaveBeenCalledTimes(1);
+  });
+  const body = vi.mocked(api.createAdminLocation).mock.calls[0]![0];
+  expect(body).toHaveProperty("organizationId", ORG_B);
+  expect(body).toHaveProperty("parentId", null);
+}
+
+/** P17 — after a create, `/auth/me` is read and replaces the stored scope (B8). */
+export async function aCreateRefreshesTheScope(): Promise<void> {
+  useAuthStore.setState({ accessToken: "tok-p17", scope: null });
+  const fetchSpy = stubApi();
+  renderPage();
+  await openCreate();
+  await parentSelect("Sibling");
+  await userEvent.click(screen.getByRole("button", { name: "Save" }));
+  await waitFor(() => {
+    expect(api.createAdminLocation).toHaveBeenCalledTimes(1);
+  });
+  await waitFor(() => {
+    expect(JSON.stringify(useAuthStore.getState().scope)).toBe(JSON.stringify(FRESH_SCOPE));
+  });
+  const meCall = fetchSpy.mock.calls.find(([url]) => String(url).endsWith("/api/v1/auth/me"));
+  expect(new Headers(meCall?.[1]?.headers).get("Authorization")).toBe("Bearer tok-p17");
+}
+
+/**
+ * P18 — under Status = Inactive the list holds no active parent: the inactive child's Parent
+ * cell says its parent is not in this list, not "—", which would call it a root.
+ */
+export async function aParentTheFilterHidesIsNotCalledARoot(): Promise<void> {
+  stubApi();
+  vi.mocked(api.fetchAdminLocations).mockImplementation(async (active?: MasterDataActiveFilter) => ({
+    items: active === "false" ? ALL.filter((l) => !l.active) : ALL,
+  }));
+  renderPage();
+  const headers = screen.getAllByRole("columnheader").map((h) => h.textContent);
+  const parentIndex = headers.indexOf("Parent");
+  expect(within(await rowOf("Child")).getAllByRole("cell")[parentIndex]!.textContent).toBe("Root");
+  await userEvent.click(screen.getByRole("tab", { name: "Inactive" }));
+  await waitFor(() => {
+    expect(screen.queryByText("Root")).toBeNull();
+  });
+  expect(within(await rowOf("Inactive")).getAllByRole("cell")[parentIndex]!.textContent).toBe(
+    "(not in this list)",
+  );
+}
