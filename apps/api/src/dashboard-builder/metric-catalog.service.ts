@@ -33,6 +33,7 @@ import {
   type DashboardAssetScope,
 } from "./dashboard-scope-assets";
 import { resolveWidgetSources } from "./dashboard-source-scope";
+import { groupLocationsAtDepth } from "./sustainability-grouping";
 import { METRIC_CATALOG_PARAMS_WRITE } from "./dashboards.schema";
 import {
   capRows,
@@ -91,6 +92,9 @@ type SustainabilityParams = {
   readonly aggregate: SustainabilityAggregate;
   /** `E4.3` / ADR 0073 decision 2 — narrows the carrying set to one water balance role. */
   readonly balanceRole?: string;
+  /** `F2.10` (ADR 0098 Amendment 1, C) — `by_location` only: group rows by the ancestor at
+   * this depth (root = 1). The write schema admits it on no other entry. */
+  readonly groupDepth?: number;
 };
 
 /** `E4.3` — the parsed shape of a `water.balance` binding's params. */
@@ -682,21 +686,53 @@ export const RESOLVERS: Record<MetricCatalogKey, Resolver> = {
    * (ADR 0072 ruling 3). `coverage` is the string `"fresh/carrying"` because a dataset cell is
    * a scalar (plan OQ4). Capped like its dataset siblings: the location query reads
    * `MAX_DATASET_ROWS + 1` and `capRows` decides `truncated` from what came back.
+   *
+   * `F2.10` (ADR 0098 decision 7, A6, B2, C; amends ADR 0072 decision 2): with `groupDepth`
+   * set, each location folds into its group node (`groupLocationsAtDepth`) and the rows are the
+   * distinct group nodes in `code` order, labelled with the GROUP's code and name. The location
+   * read is then UNCAPPED — a cap on the fold's input would truncate it silently — and
+   * `capRows` applies to the grouped rows.
    */
-  "sustainability.by_location": async (tx, organizationId, scope, _deps, params) => {
+  "sustainability.by_location": async (tx, organizationId, scope, deps, params) => {
     if (scopeIsEmpty(scope)) return datasetValue("sustainability.by_location", [], false);
-    const { pointKey, aggregate, balanceRole } = params as SustainabilityParams;
+    const { pointKey, aggregate, balanceRole, groupDepth } = params as SustainabilityParams;
     // The ROW set is not narrowed by `balanceRole` (E4.2 OQ7 stands): a location owning an
     // asset in scope is a row even when none of its assets has the role — it reads `0/0`.
-    const inScope = await tx
+    const locationRead = tx
       .select({ id: locations.id, code: locations.code, name: locations.name })
       .from(assets)
       .innerJoin(locations, eq(locations.id, assets.locationId))
       .where(and(eq(assets.organizationId, organizationId), scopedTo(assets.id, scope)))
       .groupBy(locations.id, locations.code, locations.name)
-      .orderBy(asc(locations.code))
-      .limit(MAX_DATASET_ROWS + 1);
+      .orderBy(asc(locations.code));
     const carrying = await readRollupRows(tx, organizationId, scope, pointKey, balanceRole);
+    if (groupDepth !== undefined) {
+      const inScope = await locationRead;
+      const groups = await groupLocationsAtDepth(
+        tx,
+        inScope.map((location) => location.id),
+        groupDepth,
+        deps.readableLocationIds,
+      );
+      const groupNodes = [...new Map([...groups.values()].map((group) => [group.id, group])).values()].sort(
+        (a, b) => (a.code < b.code ? -1 : a.code > b.code ? 1 : 0),
+      );
+      const capped = capRows(groupNodes);
+      const rows = capped.rows.map((group) => {
+        const { value, coverage } = rollup(
+          carrying.filter((row) => groups.get(row.locationId)?.id === group.id),
+          aggregate,
+        );
+        return {
+          locationCode: group.code,
+          locationName: group.name,
+          value,
+          coverage: `${coverage.fresh}/${coverage.carrying}`,
+        };
+      });
+      return datasetValue("sustainability.by_location", rows, capped.truncated);
+    }
+    const inScope = await locationRead.limit(MAX_DATASET_ROWS + 1);
     const capped = capRows(inScope);
     const rows = capped.rows.map((location) => {
       const { value, coverage } = rollup(

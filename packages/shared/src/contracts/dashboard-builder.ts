@@ -729,7 +729,8 @@ export const METRIC_CATALOG: Record<z.infer<typeof metricCatalogKeySchema>, Cata
   "sustainability.by_location": {
     shape: "dataset",
     columns: ["locationCode", "locationName", "value", "coverage"],
-    params: ["pointKey", "aggregate", "balanceRole"],
+    // `F2.10` (ADR 0098 Amendment 1, C) — groupDepth groups the rows by an ancestor.
+    params: ["pointKey", "aggregate", "balanceRole", "groupDepth"],
   },
   // `E4.3` / ADR 0073 decision 3 — one row per site owning an asset with an `intake`,
   // `reuse` or `discharge` role.

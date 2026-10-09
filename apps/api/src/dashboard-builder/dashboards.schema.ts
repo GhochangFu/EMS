@@ -24,6 +24,7 @@ import {
   gaugeThresholdSchema,
   DASHBOARD_GRID,
   GAUGE_RANGE_MESSAGE,
+  LOCATION_TREE_MAX_DEPTH,
   MAX_DASHBOARD_TABS,
   MAX_DASHBOARD_WIDGETS,
   MAX_GAUGE_THRESHOLDS,
@@ -356,7 +357,12 @@ export const METRIC_CATALOG_PARAMS_WRITE: Record<MetricCatalogKey, z.AnyZodObjec
   "workorders.open": z.object({}).strict(),
   "assets.health.score": z.object({}).strict(),
   "sustainability.total": z.object({ ...sustainabilityParamsFields }).strict(),
-  "sustainability.by_location": z.object({ ...sustainabilityParamsFields }).strict(),
+  // `F2.10` (ADR 0098 Amendment 1, C) — an optional grouping depth, root = 1; a count, not an
+  // id. Kept as one `z.object(` token: the f3.35 containment scan finds the entry by it.
+  "sustainability.by_location": z.object({
+    ...sustainabilityParamsFields,
+    groupDepth: z.number().int().min(1).max(LOCATION_TREE_MAX_DEPTH).optional(),
+  }).strict(),
   // `E4.3` / ADR 0073 decision 3 — one row per balance-carrying site for one calendar period.
   "water.balance": z.object({ period: waterBalancePeriodSchema }).strict(),
   // `F3.73` — both resolve over the dashboard's (or the tab's) scope and take no params.
@@ -398,7 +404,10 @@ const sourceBindingWriteSchema = z
       "`{ pointKey, aggregate }` (ADR 0072) plus an optional `balanceRole`, a " +
       "`bms.water_balance_roles` code that narrows the carrying assets to that role (ADR 0073 " +
       "decision 2; without it, every asset carrying the point counts, so a water total sums " +
-      "every stage's inlet), and `water.balance` " +
+      "every stage's inlet); `sustainability.by_location` also takes an optional integer " +
+      "`groupDepth` (1 = the root; ADR 0098 Amendment 1) that groups its rows by the ancestor at " +
+      "that depth — a node shallower than the depth is its own row, and an unset depth is one row " +
+      "per node; and `water.balance` " +
       "requires `{ period }` (ADR 0073 decision 3; today / this_month / this_year) — " +
       "zod-to-json-schema emits nothing for a " +
       "refinement, so without this line the document would promise that any record of scalars " +
