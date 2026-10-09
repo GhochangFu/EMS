@@ -19,8 +19,8 @@ import { CalcWriteService } from "./calc-write.service";
  * `TelemetryModule` needs importing here, for `TelemetryBroadcastHub`.
  *
  * No controller — this module exposes no HTTP route; both hosts start with
- * the API process via their own `onModuleInit`. **Two** things are exported and
- * nothing else crosses this boundary — the two evaluation hosts stay private:
+ * the API process via their own `onModuleInit`. The two evaluation hosts stay
+ * private; what crosses this boundary is the list in `exports` below:
  *
  * - `CalcDependencyService`, the save-time cycle detector (`F2.9`, ADR 0055
  *   decision 8), which `AdminModule`'s two authoring paths call before they
@@ -29,7 +29,13 @@ import { CalcWriteService } from "./calc-write.service";
  *   both hosts write to and `AssetPointCalcOverrideService.listCalcPoints`
  *   reads. Exporting the registry rather than a host is the point: the read
  *   side gets the last outcome per formula instance and no ability to run,
- *   schedule or refuse anything.
+ *   schedule or refuse anything;
+ * - `CalcParametersService` (`E4.1a`), whose `unknownKeys` the admin services
+ *   run at save time;
+ * - `CalcScopeService`, `CalcInputsService` and `CalcWindowsService` (`F2.33`,
+ *   ADR 0097 decision 5) — the resolvers the KPI read host in `AssetsModule`
+ *   calls through `calc-input-assembly.ts`. Resolvers only: none of them can
+ *   run, schedule, write or refuse a formula.
  *
  * ---
  *
@@ -112,6 +118,16 @@ import { CalcWriteService } from "./calc-write.service";
     CalcStreamingService,
     CalcSchedulerService,
   ],
-  exports: [CalcDependencyService, CalcStatusRegistry, CalcParametersService],
+  // `F2.33` (ADR 0097 decision 5) — the KPI read host in `AssetsModule` calls the
+  // same membership, latest-sample and window resolvers the scheduler does, through
+  // `calc-input-assembly.ts`. Exported as resolvers only: the two hosts stay private.
+  exports: [
+    CalcDependencyService,
+    CalcStatusRegistry,
+    CalcParametersService,
+    CalcScopeService,
+    CalcInputsService,
+    CalcWindowsService,
+  ],
 })
 export class CalcModule {}

@@ -9,6 +9,7 @@ import { methodBody } from "../testing/source-scan";
 import type { AssetRoleSummaryService, RoleSummaryGroupScope } from "./asset-role-summary.service";
 import { AssetsController } from "./assets.controller";
 import type { AssetsService } from "./assets.service";
+import type { AssetKpisService } from "./asset-kpis.service";
 
 /**
  * `F3.63` (ADR 0047 Amendment 6 §Q1 point 3) — `GET /assets/:assetId/points`,
@@ -49,20 +50,11 @@ function listBody(text: string): string {
   return methodBody(text, "async list(", '@Get("role-summary")');
 }
 
-/** `listPoints` is the last handler, so its body runs to the end of the file — which holds ONLY
- * while it stays last (post-merge sweep). A handler appended after it would fold into this slice
- * and every scan below would read the wrong body, so the slice is refused when a later route
- * decorator sits inside it: anchor this helper on that decorator, as `listBody` does, the day one
- * is added. */
+/** `listPoints` runs from its `async listPoints(` to the next route's decorator — `:assetId/kpis`
+ * since `F2.33`. The "last handler" guard moved with the last handler, to
+ * `assets.controller.kpis.spec.ts`. */
 function listPointsBody(text: string): string {
-  const from = text.indexOf("async listPoints(");
-  assert(from > -1, "the controller must declare async listPoints(");
-  const body = text.slice(from);
-  assert(
-    !/@(Get|Post|Patch|Put|Delete)\(/.test(body),
-    "listPoints is no longer the last handler — anchor listPointsBody on the next route decorator",
-  );
-  return body;
+  return methodBody(text, "async listPoints(", '@Get(":assetId/kpis")');
 }
 
 // ---------------------------------------------------------------------------
@@ -80,6 +72,9 @@ const POINT: AssetPointPickerRow = {
   pointKey: "supply_temp",
   unit: "°C",
 };
+
+/** The KPI route has its own sibling spec; no case here reaches it. */
+const NO_KPIS = {} as unknown as AssetKpisService;
 
 const NO_SCOPE: AccessibleScope = { kind: "none", locations: [], assetGroups: [], assetIds: [] };
 
@@ -149,7 +144,7 @@ function errorName(err: unknown): string {
 async function runDenied() {
   const { access } = accessStub({ canReadAsset: false });
   const { assets, calls } = assetsStub();
-  const controller = new AssetsController(assets, access, roleSummaryStub().roleSummary);
+  const controller = new AssetsController(assets, access, roleSummaryStub().roleSummary, NO_KPIS);
   const err = await rejects(() => controller.listPoints(USER, ASSET_ID));
   return { err, calls };
 }
@@ -168,7 +163,7 @@ export async function assertDeniedAssetNeverReachesTheService(): Promise<void> {
 export async function assertAllowedAssetReachesTheServiceOnce(): Promise<void> {
   const { access } = accessStub({ canReadAsset: true });
   const { assets, calls } = assetsStub();
-  const controller = new AssetsController(assets, access, roleSummaryStub().roleSummary);
+  const controller = new AssetsController(assets, access, roleSummaryStub().roleSummary, NO_KPIS);
   const result = await controller.listPoints(USER, ASSET_ID);
   assert(
     calls.length === 1 && calls[0] === `listPoints ${ASSET_ID}` && result.items.length === 1,
@@ -180,7 +175,7 @@ export async function assertAllowedAssetReachesTheServiceOnce(): Promise<void> {
 export async function assertAllowedAssetReachesTheGuardOnce(): Promise<void> {
   const { access, canReadAssetCalls } = accessStub({ canReadAsset: true });
   const { assets } = assetsStub();
-  const controller = new AssetsController(assets, access, roleSummaryStub().roleSummary);
+  const controller = new AssetsController(assets, access, roleSummaryStub().roleSummary, NO_KPIS);
   await controller.listPoints(USER, ASSET_ID);
   assert(
     canReadAssetCalls.length === 1 && canReadAssetCalls[0] === ASSET_ID,
@@ -191,7 +186,7 @@ export async function assertAllowedAssetReachesTheGuardOnce(): Promise<void> {
 async function runNonUuid() {
   const { access, canReadAssetCalls } = accessStub({ canReadAsset: true });
   const { assets, calls } = assetsStub();
-  const controller = new AssetsController(assets, access, roleSummaryStub().roleSummary);
+  const controller = new AssetsController(assets, access, roleSummaryStub().roleSummary, NO_KPIS);
   const err = await rejects(() => controller.listPoints(USER, "not-a-uuid"));
   return { err, canReadAssetCalls, calls };
 }
@@ -246,7 +241,7 @@ const FOREIGN_ID = "44444444-4444-4444-8444-444444444444";
 export async function assertRoleSummaryDropsAForeignRequestedId(): Promise<void> {
   const { access } = accessStub({ canReadAsset: true, readable: [ASSET_ID] });
   const { roleSummary, calls } = roleSummaryStub();
-  const controller = new AssetsController(assetsStub().assets, access, roleSummary);
+  const controller = new AssetsController(assetsStub().assets, access, roleSummary, NO_KPIS);
   await controller.listRoleSummary(USER, { assetIds: [ASSET_ID, FOREIGN_ID] });
   assert(
     calls.length === 1 && JSON.stringify(calls[0]) === JSON.stringify([ASSET_ID]),
@@ -258,7 +253,7 @@ export async function assertRoleSummaryDropsAForeignRequestedId(): Promise<void>
 export async function assertRoleSummaryUnrestrictedReaderPassesNull(): Promise<void> {
   const { access } = accessStub({ canReadAsset: true, readable: null });
   const { roleSummary, calls } = roleSummaryStub();
-  const controller = new AssetsController(assetsStub().assets, access, roleSummary);
+  const controller = new AssetsController(assetsStub().assets, access, roleSummary, NO_KPIS);
   await controller.listRoleSummary(USER, {});
   assert(
     calls.length === 1 && calls[0] === null,
@@ -274,7 +269,7 @@ const GROUP = { id: GROUP_ID, locationId: LOCATION_ID, code: "G1", name: "Group 
 async function groupsPassedFor(scope: AccessibleScope): Promise<RoleSummaryGroupScope[]> {
   const { access } = accessStub({ canReadAsset: true, readable: [ASSET_ID], scope });
   const { roleSummary, groupCalls } = roleSummaryStub();
-  const controller = new AssetsController(assetsStub().assets, access, roleSummary);
+  const controller = new AssetsController(assetsStub().assets, access, roleSummary, NO_KPIS);
   await controller.listRoleSummary(USER, {});
   return groupCalls;
 }
@@ -315,7 +310,7 @@ export async function assertRoleSummaryLocationCallerPassesItsLocations(): Promi
 export async function assertRoleSummaryUnrestrictedReaderPassesNullGroups(): Promise<void> {
   const { access, currentUserCalls } = accessStub({ canReadAsset: true, readable: null });
   const { roleSummary, groupCalls } = roleSummaryStub();
-  const controller = new AssetsController(assetsStub().assets, access, roleSummary);
+  const controller = new AssetsController(assetsStub().assets, access, roleSummary, NO_KPIS);
   await controller.listRoleSummary(USER, {});
   assert(
     groupCalls.length === 1 && groupCalls[0] === null && currentUserCalls.length === 0,
@@ -326,7 +321,7 @@ export async function assertRoleSummaryUnrestrictedReaderPassesNullGroups(): Pro
 async function runUnknownKey() {
   const { access } = accessStub({ canReadAsset: true, readable: [ASSET_ID] });
   const { roleSummary, calls } = roleSummaryStub();
-  const controller = new AssetsController(assetsStub().assets, access, roleSummary);
+  const controller = new AssetsController(assetsStub().assets, access, roleSummary, NO_KPIS);
   const err = await rejects(() => controller.listRoleSummary(USER, { assetId: ASSET_ID }));
   return { err, calls };
 }

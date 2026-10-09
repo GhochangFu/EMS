@@ -836,6 +836,8 @@ describe("ADR 0055 part (e) — each evaluation host counts a refusal in exactly
 const READ_ONLY_CALC_FILES: readonly { rel: string; mustContain: string }[] = [
   // Anti-vacuity: the module really is the assembly, not an empty file.
   { rel: "apps/api/src/calc/calc-input-assembly.ts", mustContain: "classifyInput(" },
+  // Anti-vacuity: the KPI host really calls the shared assembly.
+  { rel: "apps/api/src/assets/asset-kpis.service.ts", mustContain: "assembleInputs(" },
 ];
 
 describe("ADR 0097 — the input assembly and the KPI host never count or record a refusal", () => {

@@ -9,6 +9,7 @@ import {
 } from "@nestjs/common";
 import { z, ZodError } from "zod";
 import type {
+  AssetKpisResponse,
   AssetPointPickerListResponse,
   AssetRoleSummaryResponse,
   JwtPayload,
@@ -18,8 +19,9 @@ import { AccessControlService } from "../auth/access-control.service";
 import { intersectReadable } from "../auth/asset-scope";
 import { CurrentUser } from "../auth/current-user.decorator";
 import { JwtAuthGuard } from "../auth/jwt-auth.guard";
+import { AssetKpisService } from "./asset-kpis.service";
 import { AssetRoleSummaryService, readableGroupScope } from "./asset-role-summary.service";
-import { assetRoleSummaryQuerySchema } from "./assets.schema";
+import { assetKpisQuerySchema, assetRoleSummaryQuerySchema } from "./assets.schema";
 import { AssetsService } from "./assets.service";
 
 /** Same shape as `idParamSchema` (`admin/admin.schema.ts`), kept local rather
@@ -52,6 +54,7 @@ export class AssetsController {
     private readonly assets: AssetsService,
     private readonly accessControl: AccessControlService,
     private readonly roleSummary: AssetRoleSummaryService,
+    private readonly kpis: AssetKpisService,
   ) {}
 
   /**
@@ -136,5 +139,34 @@ export class AssetsController {
       throw new ForbiddenException("Asset is outside your access scope");
     }
     return this.assets.listPoints(id);
+  }
+
+  /**
+   * `GET /api/v1/assets/:assetId/kpis?windowMinutes=15` (`F2.33`, ADR 0097) — every KPI of
+   * the asset's pinned template, evaluated at read time. The `listPoints` order: parse the
+   * id, then guard, then the query, then the service. The body carries counts and never a
+   * member id (decision 6), because the membership read runs on the fleet connection and a
+   * `@site` aggregate can include assets this reader cannot read.
+   */
+  @Get(":assetId/kpis")
+  async listKpis(
+    @CurrentUser() user: JwtPayload,
+    @Param("assetId") assetId: string,
+    @Query() query: Record<string, unknown>,
+  ): Promise<AssetKpisResponse> {
+    const id = assetIdParamSchema.parse(assetId);
+    if (!(await this.accessControl.canReadAsset(user, id))) {
+      throw new ForbiddenException("Asset is outside your access scope");
+    }
+    let windowMinutes: number;
+    try {
+      ({ windowMinutes } = assetKpisQuerySchema.parse(query));
+    } catch (err) {
+      if (err instanceof ZodError) {
+        throw new BadRequestException(err.flatten());
+      }
+      throw err;
+    }
+    return this.kpis.listKpis(id, windowMinutes, new Date());
   }
 }
