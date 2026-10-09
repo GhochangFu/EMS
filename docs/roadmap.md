@@ -7579,3 +7579,19 @@ ADR amendment note, text approved at the plan gate (ADR 0094 decision 6).
 Live 2026-10-08: `bms-api-1`, `bms-worker-1` and `bms-web-1` rebuilt with `--no-cache` from `main` `4714627c` and restarted; both API containers hold seven `lockSession` call lines and two `assertSessionStillDraft` calls in `onboarding.service.js`; the served web bundle reads `[topic, mqttTopic]`, deletes `mqttTopic` on Save and tests the shadowed key; `/health` 200. Database: no schema change. Not done: sign-in checks (owner ruling). Browser: N/A.
 
 Raised: none. No `chore(agents):` change owed.
+
+### Track B — `F2.24`–`F2.33` (`F2.10` stays open) ✅ 2026-10-09
+
+Seven PRs, squash-merged 2026-10-09, after the ADR PR. One migration (`0102`), no new dependency.
+
+- **#778** (`a5de22e5`) — ADR 0056 Amendment 3, ADR 0039 Amendment 1, ADR 0058 Amendment 3, ADR 0097 (owner rulings 2026-10-08/09).
+- **#779** (`fc2ab4ff`) — `F2.24` the version delta sees the five metadata defaults; `F2.30` migrate refuses an override the target default inverts.
+- **#780** (`1339bc04`) — `F2.26` a read-only TEMPLATES sheet; `F2.28` a tolerant MAPPINGS header.
+- **#781** (`6b52f5f7`) — `F2.32` a seeded baseline per domain and role; the re-pin runs once.
+- **#782** (`823e3c7d`) — `F2.25` effective metadata on the Asset Points list; `F2.27` an RTU picker; `F2.31` the dialog sends only what changed.
+- **#783** (`8d79a28e`) — `F2.29` the asset stores its pattern variables (migration `0102`).
+- **#784** (`065531a8`) — `F2.33` template KPIs evaluate at read time (`v1`, `v2`, `v3`); ADR 0097 Amendment 1.
+
+Live 2026-10-09: `bms-api-1`, `bms-worker-1` and `bms-web-1` rebuilt with `--no-cache` from `main` `065531a8`; the migrate job applied `0102` and the seed re-pinned 90 ESKOM assets onto 22 role templates (`verifyHierarchySeed` passed); the API boots with `GET /api/v1/assets/:assetId/kpis` mapped (401 without a token); the web bundle carries "inherited", "unknown RTU" and `windows_unresolved` and is an OIDC build; `/health` 200. Browser (owner signed in, two fixtures reverted after): the inherited marker, both RTU selects and the KPI card (`4.56 kW`, `ok`) as ruled; two console exceptions reading `Object` on `/asset-browser` not traced.
+
+`F2.10` stays open: the owner ruled to wait for the client's site list (C22a). Raised: `F4.237` (the dialog cannot clear `sensorCode` or `unit`), `F4.238` (the Asset Points asset filter does not narrow the list; older than Track B). A `chore(agents):` sweep is owed in its own PR: AGENTS.md still says a richer-token addition is refused because instantiation never stores the variables, and that the pre-fill substitutes only `{asset_code}` (both false since `F2.29`).
