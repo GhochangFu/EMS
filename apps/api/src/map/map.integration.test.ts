@@ -24,6 +24,7 @@ import {
   assertAnInteriorNodeHoldingAnActiveAssetIsAPin,
   assertAnInteriorNodeWithNoAssetIsNotAPin,
   assertAParentWhoseOnlyChildIsInactiveIsAPin,
+  assertAnInteriorNodeHoldingOnlyAnInactiveAssetIsNotAPin,
   assertAScopedCallerWithAnUnreadableAncestorSeesNothing,
   assertAScopedCallerWithAnUnreadableParentSeesNothing,
   assertNoF210MapFixtureRowsRemain,
@@ -174,6 +175,10 @@ describe.skipIf(!connectionString)("F3.79 — every active location is a map pin
 
   it("P3: a parent whose only child is inactive is a pin", async () => {
     await assertAParentWhoseOnlyChildIsInactiveIsAPin(pool);
+  }, 60_000);
+
+  it("P9: an interior node holding only an inactive asset is not a pin", async () => {
+    await assertAnInteriorNodeHoldingOnlyAnInactiveAssetIsNotAPin(pool);
   }, 60_000);
 
   it("P4: the map_locations arm follows the pin rule; an unjoined row stays", async () => {

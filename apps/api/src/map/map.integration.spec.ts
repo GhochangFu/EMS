@@ -590,19 +590,25 @@ export async function assertNoF379MapFixtureRowsRemain(pool: pg.Pool): Promise<v
  * organization, so never a seeded one):
  *
  *     campus (no asset) ── siteA (asset)
- *                       └─ siteB (asset) ── inactive child
+ *                       └─ siteB (no asset) ── inactive child
  *     secondCampus (asset) ── secondSite (asset)
+ *     dormant (inactive asset only) ── dormantSite (asset)
  *     seededCampus (no asset, joined by a map_locations row) ── seededSite (asset)
  *
  * plus a `map_locations` row that joins no location (a reference station). `seededCampus` is
  * its own node rather than `campus` so each arm has an asset-less interior node of its own: arm 2
- * never lists a node a `map_locations` row joins, so one node cannot gate both arms.
+ * never lists a node a `map_locations` row joins, so one node cannot gate both arms. `siteB` holds
+ * no asset so it is a pin by the leaf half of `PIN_RULE` alone — an asset would make it a pin
+ * whatever its child's `active` flag is, and P3 would gate nothing. `dormant` is its own root so
+ * its inactive asset (P9) does not touch P5's set under `campus`.
  */
 type TreeMapFixture = {
   readonly campus: string;
   readonly siteA: string;
   readonly siteB: string;
   readonly secondCampus: string;
+  readonly dormant: string;
+  readonly dormantSite: string;
   readonly seededCampus: string;
   readonly seededSlug: string;
   readonly stationSlug: string;
@@ -639,7 +645,11 @@ async function insertTreeMapFixture(client: pg.PoolClient): Promise<TreeMapFixtu
   const secondSite = await node("secondsite", secondCampus);
   const seededCampus = await node("seeded", null);
   const seededSite = await node("seededsite", seededCampus);
-  for (const id of [siteA, siteB, secondCampus, secondSite, seededSite]) await asset(id);
+  const dormant = await node("dormant", null);
+  const dormantSite = await node("dormantsite", dormant);
+  for (const id of [siteA, secondCampus, secondSite, seededSite, dormantSite, dormant]) await asset(id);
+  // The last asset is dormant's own, and the only one it holds: inactive (P9).
+  await client.query(`UPDATE bms.assets SET active = false WHERE id = $1`, [assetIds[assetIds.length - 1]]);
 
   const seededSlug = `f210m-${run}-seeded`;
   const stationSlug = `f210m-${run}-station`;
@@ -653,7 +663,7 @@ async function insertTreeMapFixture(client: pg.PoolClient): Promise<TreeMapFixtu
      VALUES ($1, $2, 'eskom_station', $2, 0, 0)`,
     [stationSlug, `F2.10 map station ${run}`],
   );
-  return { campus, siteA, siteB, secondCampus, seededCampus, seededSlug, stationSlug, assetIds };
+  return { campus, siteA, siteB, secondCampus, dormant, dormantSite, seededCampus, seededSlug, stationSlug, assetIds };
 }
 
 async function treeSites(
@@ -687,10 +697,19 @@ export async function assertAnInteriorNodeHoldingAnActiveAssetIsAPin(pool: pg.Po
   });
 }
 
-/** P3 — a parent whose only child is inactive counts as a leaf: siteB is a pin. */
+/** P3 — a parent whose only child is inactive counts as a leaf: siteB (no asset of its own) is a pin. */
 export async function assertAParentWhoseOnlyChildIsInactiveIsAPin(pool: pg.Pool): Promise<void> {
   await treeSites(pool, async (service, fx) => {
     expect(locationIdsOf(await service.sitesLive()), "an inactive child does not make a parent").toContain(fx.siteB);
+  });
+}
+
+/** P9 — an interior node whose only asset is inactive is not a pin; its active child site is (the control). */
+export async function assertAnInteriorNodeHoldingOnlyAnInactiveAssetIsNotAPin(pool: pg.Pool): Promise<void> {
+  await treeSites(pool, async (service, fx) => {
+    const ids = locationIdsOf(await service.sitesLive());
+    expect(ids, "control: the dormant root's child site is a pin").toContain(fx.dormantSite);
+    expect(ids, "an inactive asset does not make an interior node a pin").not.toContain(fx.dormant);
   });
 }
 
