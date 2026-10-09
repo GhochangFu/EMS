@@ -47,6 +47,7 @@ const ORGANIZATIONS = [
 
 const LOCATION = {
   id: "loc-1",
+  parentId: null,
   organizationId: "org-1",
   organizationCode: "IONX",
   organizationName: "Ion Exchange",
@@ -234,7 +235,7 @@ function signInAsAssetGroupAdmin(): void {
     scope: {
       kind: "asset_group",
       locations: [
-        { id: "loc-1", code: "WC", slug: "western-cape", name: "Western Cape", type: "smoc_campus", province: null },
+        { id: "loc-1", code: "WC", slug: "western-cape", name: "Western Cape", type: "smoc_campus", province: null, parentId: null },
       ],
       assetGroups: [{ id: "grp-1", locationId: "loc-1", code: "hvac", name: "Hvac", organizationId: "org-1" }],
       assetIds: ["a1"],

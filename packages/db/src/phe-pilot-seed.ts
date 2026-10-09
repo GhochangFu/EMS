@@ -1,7 +1,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
-import { and, eq } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import type pg from "pg";
 
 import type { BmsDb } from "./client";
@@ -236,6 +236,36 @@ export function loadPheCatalog(): PheCatalogFile {
 }
 
 /** Seeds PHEWB catalog: Station → location, EdgeRTU → rtus, devices → assets. */
+/**
+ * Re-asserts an existing seeded station's `bms.locations` row from `values`.
+ *
+ * `F2.10` (ADR 0098 decision 5): `active` is re-asserted only where the tree
+ * allows it, whatever `values.active` says — an operator may have moved this
+ * station under a parent and deactivated both, and reactivating it there
+ * raises `location_parent_inactive` and stops the boot. The outer row is named
+ * by hand as "locations": a bare "parent_id" in the subquery binds to `p`.
+ * Exported so `tests/f2.10-seed-under-inactive-parent` can drive this one
+ * statement in a rolled-back transaction without the whole catalog's locks.
+ */
+export async function updatePheStationLocation(
+  db: BmsDb,
+  locationId: string,
+  values: Partial<typeof locations.$inferInsert>,
+): Promise<void> {
+  // A named object, not a literal in `.set()`: `typecheck:tests` compiles
+  // this file non-strict through `tests/f1.7-seed-ownership`, and there the
+  // literal's `active` fails the excess-property check (TS2353).
+  const updateValues = {
+    ...values,
+    active: sql<boolean>`CASE
+      WHEN "locations"."parent_id" IS NULL THEN true
+      WHEN (SELECT p.active FROM bms.locations p WHERE p.id = "locations"."parent_id") THEN true
+      ELSE "locations"."active"
+    END`,
+  };
+  await db.update(locations).set(updateValues).where(eq(locations.id, locationId));
+}
+
 export async function seedPheCatalog(db: BmsDb, pool: pg.Pool): Promise<void> {
   const catalog = loadPheCatalog();
   const phewbOrgId = await getOrganizationId(pool, "PHEWB");
@@ -289,7 +319,7 @@ export async function seedPheCatalog(db: BmsDb, pool: pg.Pool): Promise<void> {
     };
 
     if (locationId) {
-      await db.update(locations).set(locationValues).where(eq(locations.id, locationId));
+      await updatePheStationLocation(db, locationId, locationValues);
     } else {
       const [created] = await db
         .insert(locations)

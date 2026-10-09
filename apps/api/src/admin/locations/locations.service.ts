@@ -28,6 +28,28 @@ import { VocabulariesService } from "../../vocabularies/vocabularies.service";
 import { MasterDataAuditService } from "../master-data-audit.service";
 import { requestMetaForCreate, requestMetaForUpdate } from "./location-seed-key";
 import type { CreateLocationBody, UpdateLocationBody } from "./locations.schema";
+import {
+  assertNoActiveChildren,
+  assertParentPlacement,
+  takeLocationTreeLock,
+  treeGuardRefusal,
+} from "./locations-tree-guards";
+
+/** `F2.10` (ADR 0098 decision 12) — the 403 a move answers to anyone below the organization level. */
+export const LOCATION_MOVE_FORBIDDEN = "Only an organization-level administrator may move a location";
+
+/**
+ * Runs a tree write and answers the tree-guard trigger's refusal with the
+ * pre-check's exception (ADR 0098 Amendment 1, C): the trigger still fires
+ * when a concurrent write changed the tree after the pre-check read it.
+ */
+async function mapTreeGuard<T>(write: () => Promise<T>): Promise<T> {
+  try {
+    return await write();
+  } catch (err) {
+    throw treeGuardRefusal(err) ?? err;
+  }
+}
 
 /**
  * `F4.16` / ADR 0043 — `locations` is one of the five tables `F4.16` routes on
@@ -101,7 +123,11 @@ export class LocationsAdminService {
       .where(conditions.length > 0 ? and(...conditions) : undefined)
       .orderBy(asc(locations.name));
 
-    return { items: rows.map((row) => this.mapRow(row)) };
+    // ADR 0098 Drafter choice 8 (Amendment 1): a parent outside the caller's
+    // closure is named `null`. The set is the closure, not the rows returned,
+    // so `activeOnly` never hides a parent the caller may read.
+    const visible = writableIds === null ? null : new Set(writableIds);
+    return { items: rows.map((row) => this.mapRow(row, visible)) };
   }
 
   /** Returns one location summary when in scope. */
@@ -150,11 +176,25 @@ export class LocationsAdminService {
     // a 500 (plan D11).
     await this.vocabularies.assertLocationType(body.type);
 
+    const parentId = body.parentId ?? null;
     const insertRow = () => withTenant(this.tenantDb, body.organizationId, async (tx) => {
+      // `F2.10` (ADR 0098 decision 5, Drafter choice 3): the organization's
+      // tree lock first, so the placement read below holds until commit; the
+      // parent is read `FOR SHARE` (Amendment 1, A5).
+      await takeLocationTreeLock(tx, body.organizationId);
+      if (parentId !== null) {
+        await assertParentPlacement(tx, {
+          organizationId: body.organizationId,
+          nodeId: null,
+          parentId,
+          nodeActive: true,
+        });
+      }
       const [row] = await tx
         .insert(locations)
         .values({
           organizationId: body.organizationId,
+          parentId,
           code: body.code,
           slug: body.slug,
           name: body.name,
@@ -190,11 +230,13 @@ export class LocationsAdminService {
       return row;
     });
     // F4.211 — a taken code or slug is a 409 that names it, not a 500.
-    const created = await translateConstraintErrors(insertRow, {
-      onUnique: (err) => locationConflict(err, body.code, body.slug),
-    });
+    const created = await mapTreeGuard(() =>
+      translateConstraintErrors(insertRow, {
+        onUnique: (err) => locationConflict(err, body.code, body.slug),
+      }),
+    );
 
-    return this.fetchRow(created.id);
+    return this.fetchRow(jwt, created.id);
   }
 
   /** Updates a location in scope. */
@@ -204,10 +246,14 @@ export class LocationsAdminService {
     body: UpdateLocationBody,
   ): Promise<AdminLocationDto> {
     await this.accessControl.requireMasterDataUser(jwt);
+
+    // Scope first, before anything is read: an unknown id and an id in
+    // another organization answer the same 403, so this path is no existence
+    // oracle (the reason ADR 0098 Amendment 1 A3 dropped a cross-organization
+    // reason code).
     if (!(await this.accessControl.canManageLocation(jwt, id))) {
       throw new ForbiddenException("Location is outside your access scope");
     }
-
     const [existing] = await this.fleetDb
       .select()
       .from(locations)
@@ -216,6 +262,17 @@ export class LocationsAdminService {
     if (!existing) {
       throw new NotFoundException("Location not found");
     }
+    // `F2.10` (ADR 0098 decision 12): `PATCH :id { parentId }` is the move, and
+    // only an organization-level administrator of the node's organization
+    // makes it. Any body that names `parentId` is refused below that level,
+    // whatever the value: comparing it with the stored parent first would
+    // answer differently for the real parent, and a location admin's granted
+    // node may have a parent it cannot read (Drafter choice 8). A client
+    // below the organization level omits `parentId`.
+    if (body.parentId !== undefined && !(await this.accessControl.isOrganizationLevelAdmin(jwt, existing.organizationId))) {
+      throw new ForbiddenException(LOCATION_MOVE_FORBIDDEN);
+    }
+    const isMove = body.parentId !== undefined && body.parentId !== existing.parentId;
     if (typeof body.timezone === "string") {
       await this.assertKnownTimezone(body.timezone);
     }
@@ -232,17 +289,33 @@ export class LocationsAdminService {
       // not taken from `existing`. `existing` is a fleet read made before this
       // transaction, so a key the seed writes in between (a first keyed boot)
       // would be written away by a `meta` built from it.
+      //
+      // `F2.10`: the tree lock comes first, so the parent and active state
+      // read here and checked below hold until commit; `fromParentId` is the
+      // locked row's, not the fleet read's.
+      await takeLocationTreeLock(tx, existing.organizationId);
       const [locked] = await tx
-        .select({ meta: locations.meta })
+        .select({ meta: locations.meta, parentId: locations.parentId, active: locations.active })
         .from(locations)
         .where(eq(locations.id, id))
         .for("update");
       if (!locked) {
         throw new NotFoundException("Location not found");
       }
+      const moving = isMove && body.parentId !== locked.parentId;
+      const toParentId = moving ? (body.parentId ?? null) : locked.parentId;
+      if (moving && toParentId !== null) {
+        await assertParentPlacement(tx, {
+          organizationId: existing.organizationId,
+          nodeId: id,
+          parentId: toParentId,
+          nodeActive: locked.active,
+        });
+      }
       const [written] = await tx
         .update(locations)
         .set({
+          parentId: toParentId,
           code: nextCode,
           slug: nextSlug,
           name: body.name ?? existing.name,
@@ -260,29 +333,60 @@ export class LocationsAdminService {
         .where(eq(locations.id, id))
         .returning({ meta: locations.meta });
 
-      await this.audit.write(
-        {
-          actor: jwt,
-          action: "master.location.update",
-          entityType: "location",
-          entityId: id,
-          organizationId: existing.organizationId,
-          // `F4.170` (compliance review B2): a PATCH that sends `meta` is
-          // audited with the `meta` stored — the row's own `seedKey` included,
-          // the request's never — as the create is.
-          payload: body.meta !== undefined ? { ...body, meta: written?.meta ?? null } : body,
-        },
-        tx,
-      );
+      // `F2.10` (ADR 0098 decision 12): a move is its own audit row. The
+      // update row is written as before for every PATCH that is not a move,
+      // and for a move that also changes another field.
+      if (moving) {
+        await this.audit.write(
+          {
+            actor: jwt,
+            action: "master.location.move",
+            entityType: "location",
+            entityId: id,
+            organizationId: existing.organizationId,
+            payload: { fromParentId: locked.parentId, toParentId },
+          },
+          tx,
+        );
+      }
+      const { parentId: _parentId, ...otherFields } = body;
+      if (!isMove || Object.keys(otherFields).length > 0) {
+        const fields = isMove ? otherFields : body;
+        await this.audit.write(
+          {
+            actor: jwt,
+            action: "master.location.update",
+            entityType: "location",
+            entityId: id,
+            organizationId: existing.organizationId,
+            // `F4.170` (compliance review B2): a PATCH that sends `meta` is
+            // audited with the `meta` stored — the row's own `seedKey` included,
+            // the request's never — as the create is.
+            payload: body.meta !== undefined ? { ...fields, meta: written?.meta ?? null } : fields,
+          },
+          tx,
+        );
+      }
     });
     // F4.211 — a taken code or slug is a 409 that names it, not a 500.
-    await translateConstraintErrors(updateRow, {
-      onUnique: (err) => locationConflict(err, nextCode, nextSlug),
-    });
-    return this.fetchRow(id);
+    await mapTreeGuard(() =>
+      translateConstraintErrors(updateRow, {
+        onUnique: (err) => locationConflict(err, nextCode, nextSlug),
+      }),
+    );
+    return this.fetchRow(jwt, id);
   }
 
-  /** Deactivates a location when no active RTUs or assets remain. */
+  /**
+   * Deactivates a location when no active child, RTU or asset remains.
+   *
+   * `F2.10` (ADR 0098 decision 5 (d), Amendment 1 A5): one transaction that
+   * locks the row `FOR UPDATE` **before** it counts. Before `F2.10` the counts
+   * ran in one transaction and the update in a second, so an asset created
+   * between the two landed on a location that was then retired; now a writer
+   * that holds the row (the `FOR SHARE` read of an asset or RTU create) is
+   * waited for, and the counts see what it committed.
+   */
   async deactivate(jwt: JwtPayload, id: string): Promise<AdminLocationDto> {
     if (!(await this.accessControl.canManageLocation(jwt, id))) {
       throw new ForbiddenException("Location is outside your access scope");
@@ -302,10 +406,19 @@ export class LocationsAdminService {
     // with no `SET LOCAL` they return 0 and the guard never fires, deactivating a
     // location that still has active RTUs or assets. `rtus.service.deactivate`
     // counts inside its own GUC for the same reason; this matches it.
-    const { activeRtu, activeAsset } = await withTenant(
-      this.tenantDb,
-      existing.organizationId,
-      async (tx) => {
+    await mapTreeGuard(() =>
+      withTenant(this.tenantDb, existing.organizationId, async (tx) => {
+        await takeLocationTreeLock(tx, existing.organizationId);
+        const [locked] = await tx
+          .select({ id: locations.id })
+          .from(locations)
+          .where(eq(locations.id, id))
+          .for("update");
+        if (!locked) {
+          throw new NotFoundException("Location not found");
+        }
+        await assertNoActiveChildren(tx, id, existing.organizationId);
+
         const [activeRtu] = await tx
           .select({ count: sql<number>`count(*)::int` })
           .from(rtus)
@@ -316,34 +429,35 @@ export class LocationsAdminService {
           .from(assets)
           .where(and(eq(assets.locationId, id), eq(assets.active, true)))
           .limit(1);
-        return { activeRtu, activeAsset };
-      },
+        if ((activeRtu?.count ?? 0) > 0 || (activeAsset?.count ?? 0) > 0) {
+          throw new ConflictException("Cannot deactivate location with active RTUs or assets");
+        }
+
+        await tx
+          .update(locations)
+          .set({ active: false, updatedAt: new Date() })
+          .where(eq(locations.id, id));
+
+        await this.audit.write(
+          {
+            actor: jwt,
+            action: "master.location.deactivate",
+            entityType: "location",
+            entityId: id,
+            organizationId: existing.organizationId,
+          },
+          tx,
+        );
+      }),
     );
-    if ((activeRtu?.count ?? 0) > 0 || (activeAsset?.count ?? 0) > 0) {
-      throw new ConflictException("Cannot deactivate location with active RTUs or assets");
-    }
-
-    await withTenant(this.tenantDb, existing.organizationId, async (tx) => {
-      await tx
-        .update(locations)
-        .set({ active: false, updatedAt: new Date() })
-        .where(eq(locations.id, id));
-
-      await this.audit.write(
-        {
-          actor: jwt,
-          action: "master.location.deactivate",
-          entityType: "location",
-          entityId: id,
-          organizationId: existing.organizationId,
-        },
-        tx,
-      );
-    });
-    return this.fetchRow(id);
+    return this.fetchRow(jwt, id);
   }
 
-  /** Reactivates a location. */
+  /**
+   * Reactivates a location. `F2.10` (ADR 0098 decision 5 (b)): under an
+   * inactive parent it is 409 `location_parent_inactive`; the parent is read
+   * `FOR SHARE` after the organization's tree lock (Amendment 1, A5).
+   */
   async reactivate(jwt: JwtPayload, id: string): Promise<AdminLocationDto> {
     if (!(await this.accessControl.canManageLocation(jwt, id))) {
       throw new ForbiddenException("Location is outside your access scope");
@@ -358,24 +472,44 @@ export class LocationsAdminService {
       throw new NotFoundException("Location not found");
     }
 
-    await withTenant(this.tenantDb, existing.organizationId, async (tx) => {
-      await tx
-        .update(locations)
-        .set({ active: true, updatedAt: new Date() })
-        .where(eq(locations.id, id));
+    await mapTreeGuard(() =>
+      withTenant(this.tenantDb, existing.organizationId, async (tx) => {
+        await takeLocationTreeLock(tx, existing.organizationId);
+        const [locked] = await tx
+          .select({ parentId: locations.parentId })
+          .from(locations)
+          .where(eq(locations.id, id))
+          .for("update");
+        if (!locked) {
+          throw new NotFoundException("Location not found");
+        }
+        if (locked.parentId !== null) {
+          await assertParentPlacement(tx, {
+            organizationId: existing.organizationId,
+            nodeId: id,
+            parentId: locked.parentId,
+            nodeActive: true,
+          });
+        }
 
-      await this.audit.write(
-        {
-          actor: jwt,
-          action: "master.location.reactivate",
-          entityType: "location",
-          entityId: id,
-          organizationId: existing.organizationId,
-        },
-        tx,
-      );
-    });
-    return this.fetchRow(id);
+        await tx
+          .update(locations)
+          .set({ active: true, updatedAt: new Date() })
+          .where(eq(locations.id, id));
+
+        await this.audit.write(
+          {
+            actor: jwt,
+            action: "master.location.reactivate",
+            entityType: "location",
+            entityId: id,
+            organizationId: existing.organizationId,
+          },
+          tx,
+        );
+      }),
+    );
+    return this.fetchRow(jwt, id);
   }
 
   /**
@@ -410,7 +544,13 @@ export class LocationsAdminService {
     }
   }
 
-  private async fetchRow(id: string): Promise<AdminLocationDto> {
+  /**
+   * One row as the caller sees it after a write. The parent is hidden by the
+   * caller's own closure (ADR 0098 Drafter choice 8, Amendment 1): a
+   * `location_admin` editing its granted node is not told the node above.
+   */
+  private async fetchRow(jwt: JwtPayload, id: string): Promise<AdminLocationDto> {
+    const writableIds = await this.accessControl.writableLocationIds(jwt);
     const [row] = await this.fleetDb
       .select({
         location: locations,
@@ -426,9 +566,13 @@ export class LocationsAdminService {
     if (!row) {
       throw new NotFoundException("Location not found");
     }
-    return this.mapRow(row);
+    return this.mapRow(row, writableIds === null ? null : new Set(writableIds));
   }
 
+  /**
+   * `visible` is the set of location ids the caller may read, or `null` for
+   * every id; a `parentId` outside it is answered `null`, as `/auth/me` does.
+   */
   private mapRow(row: {
     location: typeof locations.$inferSelect;
     organizationCode: string;
@@ -436,7 +580,7 @@ export class LocationsAdminService {
     // A LEFT JOIN types this nullable even though the FK makes the null arm
     // unreachable in practice (F4.162, ADR 0077 Amendment 1, plan D3).
     typeLabel: string | null;
-  }): AdminLocationDto {
+  }, visible: ReadonlySet<string> | null): AdminLocationDto {
     const loc = row.location;
     return {
       id: loc.id,
@@ -448,6 +592,8 @@ export class LocationsAdminService {
       name: loc.name,
       type: loc.type,
       typeLabel: row.typeLabel ?? loc.type,
+      parentId:
+        loc.parentId !== null && (visible === null || visible.has(loc.parentId)) ? loc.parentId : null,
       province: loc.province,
       capital: loc.capital,
       timezone: loc.timezone,

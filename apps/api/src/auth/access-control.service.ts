@@ -21,11 +21,18 @@ import type {
 import { AUTH_DRIZZLE, FLEET_DRIZZLE } from "../database/database.tokens";
 import { type ReadScopeSource, isMasterDataRole } from "./access-scope";
 import {
+  directLocationIds,
   directOrganizationIds,
   scopeFromSource,
   selectReadScopeSourceFor,
 } from "./access-scope-sources";
 import { recalledIdentity, resolveIdentity } from "./identity-resolver";
+import { expandLocationSubtrees } from "./location-tree";
+import {
+  canReadReportFileFor,
+  reportFileReadScopeFor,
+  type ReportFileReadScope,
+} from "./report-file-read-scope";
 import {
   canPerformOperationsWrite,
   operationsWriteDenialReason,
@@ -174,7 +181,16 @@ export class AccessControlService {
     return ids === null || ids.includes(organizationId);
   }
 
-  /** Location ids the user may manage; `null` means unrestricted (global admin). */
+  /**
+   * Location ids the user may manage; `null` means unrestricted (global admin).
+   *
+   * For a `location_admin`, since `F2.10` (ADR 0098 decision 4, ADR 0018's
+   * descendant rule) every id is one they hold means the **subtree closure**
+   * of their direct `user_location_access` grants: the granted nodes and every
+   * descendant, inactive nodes included, walked by
+   * {@link expandLocationSubtrees} with the organization predicate on every
+   * step. The direct grants themselves are {@link grantedLocationIds}.
+   */
   async writableLocationIds(jwt: JwtPayload): Promise<string[] | null> {
     const user = await this.resolveDbUser(jwt);
     this.assertMasterDataRole(user.role);
@@ -195,16 +211,58 @@ export class AccessControlService {
         .where(inArray(locations.organizationId, orgIds));
       return rows.map((row) => row.id);
     }
-    // fleetDb: pre-tenant resolution keyed by the actor's own userId (Amendment 2/3).
-    const rows = await this.fleetDb
-      .select({ id: locations.id })
-      .from(userLocationAccess)
-      .innerJoin(locations, eq(userLocationAccess.locationId, locations.id))
-      .where(eq(userLocationAccess.userId, user.id));
-    return rows.map((row) => row.id);
+    // fleetDb: the closure is keyed by the actor's own grant rows (Amendment 2/3).
+    return expandLocationSubtrees(this.fleetDb, await this.directLocationIds(user.id));
   }
 
-  /** Whether the user may manage the given location. */
+  /**
+   * `F2.10` / ADR 0098 Drafter choice 9 — the user's **direct** location
+   * grants, never the closure: `null` for a global admin, `[]` for an
+   * `organization_admin` (whose report-file stamp is the empty array, ADR 0071
+   * Amendment 1 item 2), the `user_location_access` ids for a
+   * `location_admin`. The on-demand report save stamps these, so a file
+   * records the nodes the author holds and expands to the current subtree at
+   * read time — a later move changes who may read it, not what was stamped.
+   */
+  async grantedLocationIds(jwt: JwtPayload): Promise<string[] | null> {
+    const user = await this.resolveDbUser(jwt);
+    this.assertMasterDataRole(user.role);
+    if (user.role === "admin") {
+      return null;
+    }
+    if (user.role === "organization_admin") {
+      return [];
+    }
+    return this.directLocationIds(user.id);
+  }
+
+  /**
+   * `F2.10` / ADR 0098 decision 12 — whether the user administers
+   * `organizationId` at the organization level: the global `admin` role, or an
+   * `organization_admin` holding a **direct** `user_organization_access` row
+   * for that organization. The move of a location (`PATCH :id { parentId }`)
+   * is gated on this and on nothing weaker.
+   *
+   * **Never `canManageOrganization`**, and never anything location-derived:
+   * `writableOrganizationIds` answers `true` for a `location_admin` in every
+   * organization where they hold one node, which is exactly the actor a move
+   * must refuse (security review High on the ADR). A `location_admin`,
+   * `asset_group_admin`, `operator` or `viewer` is `false` from the role alone
+   * — no grant is read — and `false` rather than a throw, because the caller
+   * owns the 403 and its sentence.
+   */
+  async isOrganizationLevelAdmin(jwt: JwtPayload, organizationId: string): Promise<boolean> {
+    const user = await this.resolveDbUser(jwt);
+    if (user.role === "admin") {
+      return true;
+    }
+    if (user.role !== "organization_admin") {
+      return false;
+    }
+    return (await this.directOrganizationIds(user.id)).includes(organizationId);
+  }
+
+  /** Whether the user may manage the given location (the subtree closure since `F2.10`). */
   async canManageLocation(jwt: JwtPayload, locationId: string): Promise<boolean> {
     const ids = await this.writableLocationIds(jwt);
     return ids === null || ids.includes(locationId);
@@ -213,69 +271,21 @@ export class AccessControlService {
   /**
    * The inputs the report-file list route turns into a SQL predicate (`F3.5a`,
    * ADR 0071 decision 6 / Amendment 1 item 3): one shape per master-data role.
-   *
-   * - `admin` → `global`: every organization, no filter.
-   * - `organization_admin` → the organizations of their **direct**
-   *   `user_organization_access` grants. `writableOrganizationIds` would give
-   *   the same list for this role, but it is *location-derived* for a
-   *   `location_admin`, which is why this method branches on the role itself
-   *   rather than on that helper's output.
-   * - `location_admin` → their `user_location_access` rows (the same set
-   *   `writableLocationIds` returns, inactive locations included) plus the
-   *   organizations those locations belong to, so the route can bound the
-   *   organization filter before applying `location_ids <@ $writable`.
-   *
-   * `asset_group_admin`, `operator` and `viewer` are refused by
-   * `assertMasterDataRole` **before** any grant is read: a report file's scope
-   * is a set of location ids, and a role with no location set has nothing to
-   * match it against (decision 6's `wc-hvac-admin` case). The row verdict
-   * {@link canReadReportFile} is derived from this same scope so the two can
-   * never disagree about a file the list shows but the download refuses.
+   * The shapes and the reasoning live with {@link reportFileReadScopeFor} in
+   * `report-file-read-scope.ts` (§4.5 move ahead of `F2.10`); this keeps the
+   * role gate, which runs **before** any grant is read.
    */
-  async reportFileReadScope(
-    jwt: JwtPayload,
-  ): Promise<
-    | { kind: "global" }
-    | { kind: "organization"; organizationIds: string[] }
-    | { kind: "location"; organizationIds: string[]; locationIds: string[] }
-  > {
+  async reportFileReadScope(jwt: JwtPayload): Promise<ReportFileReadScope> {
     const user = await this.resolveDbUser(jwt);
     this.assertMasterDataRole(user.role);
-    if (user.role === "admin") {
-      return { kind: "global" };
-    }
-    if (user.role === "organization_admin") {
-      return { kind: "organization", organizationIds: await this.directOrganizationIds(user.id) };
-    }
-    // fleetDb: pre-tenant resolution keyed by the actor's own userId (ADR 0043 Amendment 2/3).
-    const rows = await this.fleetDb
-      .select({ id: locations.id, organizationId: locations.organizationId })
-      .from(userLocationAccess)
-      .innerJoin(locations, eq(userLocationAccess.locationId, locations.id))
-      .where(eq(userLocationAccess.userId, user.id));
-    return {
-      kind: "location",
-      organizationIds: [...new Set(rows.map((row) => row.organizationId))],
-      locationIds: rows.map((row) => row.id),
-    };
+    return reportFileReadScopeFor(this.fleetDb, user);
   }
 
   /**
    * Whether the user may download or delete a report file (`F3.5a`, ADR 0071
-   * decision 6 / Amendment 1 item 3): its readers are the users whose manage
-   * scope covers its `location_ids`.
-   *
-   * - `admin` reads everything.
-   * - `organization_admin` reads a file of an organization they hold directly.
-   *   `canManageOrganization` is deliberately **not** used: for a
-   *   `location_admin` it is location-derived, so it would admit a location
-   *   admin to every file of an organization in which they hold one location.
-   * - `location_admin` reads a file only when `location_ids` is non-empty and
-   *   **every** id is one they hold. The empty array means "the whole
-   *   organization" — the shape an admin's or organization admin's save
-   *   stamps (Amendment 1 item 2) — and that requires organization-level
-   *   rights a location admin does not have. `every`, not `some`: a file
-   *   covering two locations is readable only by someone who holds both.
+   * decision 6 / Amendment 1 item 3): the verdict {@link canReadReportFileFor}
+   * derives from {@link reportFileReadScope}, so the two can never disagree
+   * about a file the list shows but the download refuses.
    *
    * Any other role throws 403 through `assertMasterDataRole` inside
    * {@link reportFileReadScope}, with that guard's sentence — not the
@@ -285,24 +295,7 @@ export class AccessControlService {
     jwt: JwtPayload,
     file: { organizationId: string; locationIds: readonly string[] },
   ): Promise<boolean> {
-    const scope = await this.reportFileReadScope(jwt);
-    if (scope.kind === "global") {
-      return true;
-    }
-    if (scope.kind === "organization") {
-      return scope.organizationIds.includes(file.organizationId);
-    }
-    // Step-5 security L1: the organization is checked here too. A location
-    // id is unique fleet-wide, so a row that carries this admin's ids under a
-    // foreign `organization_id` is one no honest writer produces — but the
-    // verdict is the read gate, and it fails closed on the organization
-    // rather than trusting the writer.
-    const held = new Set(scope.locationIds);
-    return (
-      scope.organizationIds.includes(file.organizationId) &&
-      file.locationIds.length > 0 &&
-      file.locationIds.every((id) => held.has(id))
-    );
+    return canReadReportFileFor(await this.reportFileReadScope(jwt), file);
   }
 
   /**
@@ -902,6 +895,11 @@ export class AccessControlService {
   /** Organization ids from this user's direct `user_organization_access` grants. */
   private directOrganizationIds(userId: string): Promise<string[]> {
     return directOrganizationIds(this.fleetDb, userId);
+  }
+
+  /** Location ids from this user's direct `user_location_access` grants — never the closure. */
+  private directLocationIds(userId: string): Promise<string[]> {
+    return directLocationIds(this.fleetDb, userId);
   }
 
   /** Organization ids implied by this user's `user_location_access` grants. */

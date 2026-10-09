@@ -67,6 +67,116 @@ function serviceFor(role: string, ownOrgIds: string[] = [OWN_ORG_ID]): AccessCon
 }
 
 /**
+ * A fake `fleetDb` that refuses every query — for the cases whose claim is
+ * "answered from the role alone, no grant walk". A `select` here is the
+ * failure, not a value the case could compare against.
+ */
+function refusingFleetDb(why: string): Ctor[1] {
+  return {
+    select: () => {
+      throw new Error(`unexpected fleet query: ${why}`);
+    },
+  } as unknown as Ctor[1];
+}
+
+const jwtOf = (role: "admin" | "organization_admin" | "location_admin" | "viewer") => ({
+  sub: USER_ID,
+  email: USER_EMAIL,
+  name: "U1",
+  role,
+});
+
+/**
+ * `F2.10` / ADR 0098 decision 12 — `isOrganizationLevelAdmin` answers from the
+ * role and, for an `organization_admin`, from the **direct**
+ * `user_organization_access` row for that organization. Never from
+ * `canManageOrganization`, which is location-derived for a `location_admin`.
+ *
+ * The `Y` case is the one a role-only implementation fails: an
+ * `organization_admin` holding X must be refused on Y, and the live twin
+ * (`location-tree.integration.spec.ts`, `assertForeignOrganizationAdminIsNotOrganizationLevel`)
+ * proves it against real grant rows.
+ */
+export async function runIsOrganizationLevelAdminTests(): Promise<void> {
+  {
+    const svc = new AccessControlService(fakeAuthDb("admin"), refusingFleetDb("admin is role-only"));
+    assert(
+      (await svc.isOrganizationLevelAdmin(jwtOf("admin"), OWN_ORG_ID)) === true,
+      "a global admin is organization-level for any organization",
+    );
+    assert(
+      (await svc.isOrganizationLevelAdmin(jwtOf("admin"), OTHER_ORG_ID)) === true,
+      "a global admin is organization-level for an organization nobody granted",
+    );
+  }
+  {
+    const svc = serviceFor("organization_admin", [OWN_ORG_ID]);
+    assert(
+      (await svc.isOrganizationLevelAdmin(jwtOf("organization_admin"), OWN_ORG_ID)) === true,
+      "an organization_admin with a direct row for X is organization-level for X",
+    );
+    assert(
+      (await svc.isOrganizationLevelAdmin(jwtOf("organization_admin"), OTHER_ORG_ID)) === false,
+      "an organization_admin with a direct row for X is NOT organization-level for Y — " +
+        "a role-only answer is the ADR 0098 decision 12 defect",
+    );
+  }
+  {
+    const svc = new AccessControlService(
+      fakeAuthDb("location_admin"),
+      refusingFleetDb("location_admin is refused from the role alone"),
+    );
+    assert(
+      (await svc.isOrganizationLevelAdmin(jwtOf("location_admin"), OWN_ORG_ID)) === false,
+      "a location_admin is never organization-level, and no grant is walked to decide it",
+    );
+  }
+  {
+    const svc = new AccessControlService(fakeAuthDb("viewer"), refusingFleetDb("viewer is refused from the role alone"));
+    assert(
+      (await svc.isOrganizationLevelAdmin(jwtOf("viewer"), OWN_ORG_ID)) === false,
+      "a viewer is false, not a throw — the caller decides the 403",
+    );
+  }
+}
+
+/**
+ * `F2.10` / ADR 0098 Drafter choice 9 — `grantedLocationIds` is the direct
+ * grant set, never the closure: `null` for `admin`, `[]` for an
+ * `organization_admin` (whose stamp is the empty array, Amendment 1 item 2).
+ * The `location_admin` answer needs real grant rows and is proved in
+ * `location-tree.integration.spec.ts`.
+ */
+export async function runGrantedLocationIdsTests(): Promise<void> {
+  {
+    const svc = new AccessControlService(fakeAuthDb("admin"), refusingFleetDb("admin holds no grant row"));
+    assert(
+      (await svc.grantedLocationIds(jwtOf("admin"))) === null,
+      "a global admin's granted set is the unrestricted sentinel",
+    );
+  }
+  {
+    const svc = new AccessControlService(
+      fakeAuthDb("organization_admin"),
+      refusingFleetDb("organization_admin holds no location grant row"),
+    );
+    const granted = await svc.grantedLocationIds(jwtOf("organization_admin"));
+    assert(
+      Array.isArray(granted) && granted.length === 0,
+      `an organization_admin's granted set is [], got ${JSON.stringify(granted)}`,
+    );
+  }
+  {
+    const svc = new AccessControlService(fakeAuthDb("viewer"), refusingFleetDb("viewer is refused first"));
+    await rejectsWith(
+      () => svc.grantedLocationIds(jwtOf("viewer")),
+      (e) => e instanceof ForbiddenException,
+      "a viewer is refused master-data administration before any grant is read",
+    );
+  }
+}
+
+/**
  * `E7.1c` (ADR 0043 Amendment 5, decision 7) — the four cases
  * `canManageNotificationChannel` must answer, mirroring `canManagePointKey`'s
  * own four (`point-keys.service.ts`) exactly but for the one deviation: a

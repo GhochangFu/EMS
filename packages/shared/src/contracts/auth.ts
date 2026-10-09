@@ -65,6 +65,12 @@ export const accessLocationSchema = z.object({
   name: z.string(),
   type: locationTypeCodeSchema,
   province: z.string().nullable(),
+  /**
+   * `F2.10` (ADR 0098 Drafter choice 8). The parent location's id, or `null`
+   * when the node is a root OR when the caller cannot read the parent — the
+   * server hides an unreadable parent, so the id never leaks.
+   */
+  parentId: z.string().nullable(),
 });
 
 export const accessAssetGroupSchema = z.object({

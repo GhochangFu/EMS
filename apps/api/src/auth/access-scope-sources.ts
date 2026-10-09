@@ -18,6 +18,7 @@ import {
   selectReadScopeSource,
   type ReadScopeSource,
 } from "./access-scope";
+import { expandLocationSubtrees } from "./location-tree";
 
 /**
  * The read-scope query branches of `AccessControlService`, moved here whole
@@ -64,6 +65,35 @@ export async function directOrganizationIds(fleetDb: BmsDb, userId: string): Pro
   return rows.map((row) => row.id);
 }
 
+/** Location ids from this user's direct `user_location_access` grants — the roots of the closure, never the closure. */
+export async function directLocationIds(fleetDb: BmsDb, userId: string): Promise<string[]> {
+  // fleetDb: pre-tenant grant walk keyed by the actor's own userId (Amendment 2/3).
+  const rows = await fleetDb
+    .select({ id: userLocationAccess.locationId })
+    .from(userLocationAccess)
+    .where(eq(userLocationAccess.userId, userId));
+  return rows.map((row) => row.id);
+}
+
+type ScopeLocation = AccessibleScope["locations"][number];
+type LocationRow = Omit<ScopeLocation, "type"> & { type: string };
+
+/**
+ * `F2.10` / ADR 0098 Drafter choice 8 — the one place a scope's `parentId` is
+ * decided. A parent the caller can read is named; a parent outside the
+ * caller's own rows is `null`, the same value a root carries, so `/auth/me`
+ * never leaks the id of a node its reader cannot see. "Readable" is the row
+ * set the branch itself resolved — nothing is re-read to decide it.
+ */
+function withVisibleParents(rows: LocationRow[]): ScopeLocation[] {
+  const readable = new Set(rows.map((row) => row.id));
+  return rows.map((row) => ({
+    ...row,
+    parentId: row.parentId !== null && readable.has(row.parentId) ? row.parentId : null,
+    type: row.type as ScopeLocation["type"],
+  }));
+}
+
 /**
  * Resolves one grant source into a scope. `selectReadScopeSourceFor` picks the
  * source (`F4.161`); `AccessControlService.scopeForUser` then calls this once
@@ -84,6 +114,7 @@ export async function scopeFromSource(
           name: locations.name,
           type: locations.type,
           province: locations.province,
+          parentId: locations.parentId,
         })
         .from(locations)
         .where(eq(locations.active, true))
@@ -92,10 +123,7 @@ export async function scopeFromSource(
     ]);
     return {
       kind: "global",
-      locations: locationRows.map((row) => ({
-        ...row,
-        type: row.type as AccessibleScope["locations"][number]["type"],
-      })),
+      locations: withVisibleParents(locationRows),
       assetGroups: [],
       assetIds: assetRows.map((row) => row.id),
     };
@@ -114,6 +142,7 @@ export async function scopeFromSource(
               name: locations.name,
               type: locations.type,
               province: locations.province,
+              parentId: locations.parentId,
             })
             .from(locations)
             .where(
@@ -136,10 +165,7 @@ export async function scopeFromSource(
         : [];
     return {
       kind: "location",
-      locations: locationRows.map((row) => ({
-        ...row,
-        type: row.type as AccessibleScope["locations"][number]["type"],
-      })),
+      locations: withVisibleParents(locationRows),
       assetGroups: [],
       assetIds: assetRows.map((row) => row.id),
     };
@@ -147,24 +173,25 @@ export async function scopeFromSource(
 
   if (source === "location") {
     // fleetDb: pre-tenant resolution keyed by the actor's own userId (Amendment 2/3).
-    const locationRows = await fleetDb
-      .select({
-        id: locations.id,
-        code: locations.code,
-        slug: locations.slug,
-        name: locations.name,
-        type: locations.type,
-        province: locations.province,
-      })
-      .from(userLocationAccess)
-      .innerJoin(locations, eq(userLocationAccess.locationId, locations.id))
-      .where(
-        and(
-          eq(userLocationAccess.userId, user.id),
-          eq(locations.active, true),
-        ),
-      )
-      .orderBy(asc(locations.name));
+    // F2.10 / ADR 0098 decision 4: the grant means the subtree, so the rows are
+    // the closure of the direct grants, filtered to active nodes.
+    const closure = await expandLocationSubtrees(fleetDb, await directLocationIds(fleetDb, user.id));
+    const locationRows =
+      closure.length > 0
+        ? await fleetDb
+            .select({
+              id: locations.id,
+              code: locations.code,
+              slug: locations.slug,
+              name: locations.name,
+              type: locations.type,
+              province: locations.province,
+              parentId: locations.parentId,
+            })
+            .from(locations)
+            .where(and(inArray(locations.id, closure), eq(locations.active, true)))
+            .orderBy(asc(locations.name))
+        : [];
     const locationIds = locationRows.map((row) => row.id);
     // fleetDb: assets gains a policy in 0047; filtered by locationIds derived
     // from the actor's own grants above (Amendment 2/3).
@@ -177,10 +204,7 @@ export async function scopeFromSource(
         : [];
     return {
       kind: "location",
-      locations: locationRows.map((row) => ({
-        ...row,
-        type: row.type as AccessibleScope["locations"][number]["type"],
-      })),
+      locations: withVisibleParents(locationRows),
       assetGroups: [],
       assetIds: assetRows.map((row) => row.id),
     };
@@ -219,16 +243,12 @@ export async function scopeFromSource(
               name: locations.name,
               type: locations.type,
               province: locations.province,
+              parentId: locations.parentId,
             })
             .from(locations)
             .where(and(inArray(locations.id, locationIds), eq(locations.active, true)))
         : [];
-    const locationById = new Map(
-      locationRows.map((row) => [
-        row.id,
-        { ...row, type: row.type as AccessibleScope["locations"][number]["type"] },
-      ]),
-    );
+    const locationById = new Map(withVisibleParents(locationRows).map((row) => [row.id, row]));
 
     // Matches the original INNER JOIN + `active = true` filter: a group whose
     // location is inactive (or, in principle, gone) drops out here.

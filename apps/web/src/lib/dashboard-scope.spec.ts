@@ -244,7 +244,7 @@ export function aDifferentAssetGroupValueIsChanged(): void {
 const SCOPE_FIXTURE: AccessibleScope = {
   kind: "asset_group",
   locations: [
-    { id: "loc-1", code: "WC", slug: "western-cape", name: "Western Cape", type: "smoc_campus", province: null },
+    { id: "loc-1", code: "WC", slug: "western-cape", name: "Western Cape", type: "smoc_campus", province: null, parentId: null },
   ],
   assetGroups: [
     { id: "grp-1", locationId: "loc-1", code: "hvac", name: "Hvac", organizationId: "org-1" },

@@ -151,13 +151,17 @@ export class ReportFilesService {
     requireStorageConfigured(this.client);
 
     // Decision 6: the role gate, before any other read.
-    const writableLocations = await this.accessControl.writableLocationIds(jwt);
+    await this.accessControl.writableLocationIds(jwt);
     const organizationId = await resolveReportOrganization(
       { accessControl: this.accessControl, fleetDb: this.fleetDb },
       jwt,
       body.organizationId,
     );
-    const locationIds = await this.resolveLocationStamp(jwt, organizationId, writableLocations);
+    // F2.10 / ADR 0098 Drafter choice 9: the stamp is the caller's direct grants,
+    // never the subtree closure `writableLocationIds` answers — a file records
+    // the nodes its author holds and expands to the current subtree at read time.
+    const granted = await this.accessControl.grantedLocationIds(jwt);
+    const locationIds = await this.resolveLocationStamp(jwt, organizationId, granted);
 
     // R-11: the cheap refusal, before the render and before any storage call.
     this.refuseAtCap(await countFiles(this.fleetDb, organizationId));
@@ -343,14 +347,14 @@ export class ReportFilesService {
     }
   }
 
-  /** Amendment 1 item 2 — `{}` for a global or organization admin; the intersection for a location admin. */
+  /** Amendment 1 item 2 — `{}` for a global or organization admin; the granted nodes ∩ the organization for a location admin (`F2.10`). */
   private async resolveLocationStamp(
     jwt: JwtPayload,
     organizationId: string,
-    writableLocations: string[] | null,
+    grantedLocations: string[] | null,
   ): Promise<string[]> {
     const scope = await this.accessControl.reportFileReadScope(jwt);
-    if (scope.kind !== "location" || writableLocations === null) {
+    if (scope.kind !== "location" || grantedLocations === null) {
       return [];
     }
     // fleetDb: the organization's own locations; the id was resolved from the actor's grants.
@@ -359,7 +363,7 @@ export class ReportFilesService {
       .from(locations)
       .where(eq(locations.organizationId, organizationId));
     const inOrganization = new Set(rows.map((row) => row.locationId));
-    const stamp = writableLocations.filter((id) => inOrganization.has(id));
+    const stamp = grantedLocations.filter((id) => inOrganization.has(id));
     if (stamp.length === 0) {
       throw new ForbiddenException("No location scope in this organization to record for the report");
     }

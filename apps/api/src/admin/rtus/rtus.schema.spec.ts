@@ -34,3 +34,19 @@ export function assertAnEmptyRtuCodeIsAcceptedByTheUpdateSchema(): void {
 export function assertAnEmptyMqttTopicIsAcceptedByTheUpdateSchema(): void {
   expect(updateRtuBodySchema.safeParse({ mqttTopic: "" }).success).toBe(true);
 }
+
+/**
+ * `F2.10` (ADR 0098 Amendment 1, A4) — the RTU update cannot move an RTU:
+ * `locationId` is omitted from the update schema and the object is strict, so
+ * a body naming it is refused before the service runs. That is why A4's
+ * inactive-location check has no RTU-update arm; if this ever accepts a
+ * `locationId`, `RtusAdminService.update` needs `assertLocationActive` too.
+ * The positive control keeps the refusal from being a schema that refuses
+ * everything.
+ */
+export function assertTheUpdateSchemaRefusesALocationId(): void {
+  expect(updateRtuBodySchema.safeParse({ displayName: "F2.10 control" }).success).toBe(true);
+  expect(
+    updateRtuBodySchema.safeParse({ locationId: "00000000-0000-4000-8000-000000000000" }).success,
+  ).toBe(false);
+}

@@ -17,6 +17,9 @@ export const createLocationBodySchema = z
       .regex(/^[a-z0-9-]+$/),
     name: z.string().min(2).max(255),
     type: locationTypeSchema,
+    // F2.10 (ADR 0098): the parent location. null = a root; absent on create = a root.
+    // On update, `parentId` IS the move (organization-level administrators only).
+    parentId: z.string().uuid().nullable().optional(),
     // E4.1b review C1: the form sends null for an empty field; null clears, absent leaves it.
     province: z.string().max(64).nullable().optional(),
     capital: z.string().max(128).nullable().optional(),

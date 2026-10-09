@@ -20,6 +20,7 @@ import type { LocationTypeDto } from "@bms/shared";
 import {
   assertPatchLocationTypeIsActive,
   hasActiveLocationType,
+  matchLocationType,
 } from "./onboarding-location-type-match";
 import type { OnboardingDraftInput } from "./onboarding.schema";
 
@@ -119,4 +120,56 @@ export async function assertPatchWithoutLocationIsNotChecked(): Promise<void> {
   const { vocabularies, calls } = countingVocabulary();
   await rejectionOf(assertPatchLocationTypeIsActive({ rtus: [] }, vocabularies));
   assert(calls.length === 0, `a patch without a location must make no call, got ${JSON.stringify(calls)}`);
+}
+
+/**
+ * `F2.10` (ADR 0098 ruling 14) — the eight active rows of `bms.location_types`
+ * once migration `0103` has added its four, in `sort_order`.
+ */
+const EIGHT: readonly LocationTypeDto[] = [
+  ...FOUR,
+  { code: "campus", label: "Campus" },
+  { code: "township", label: "Township" },
+  { code: "building", label: "Building" },
+  { code: "plant", label: "Plant" },
+];
+
+/** The code `message` resolves to against `EIGHT` is `expected`. */
+function expectMatch(message: string, expected: string): void {
+  const got = matchLocationType(message, EIGHT);
+  assert(got === expected, `"${message}" must read as ${expected}, got ${String(got)}`);
+}
+
+/** M5 — "treatment plant" names the `plant` type. */
+export function assertPlantIsMatched(): void {
+  expectMatch("add the Thane treatment plant", "plant");
+}
+
+/** M5 — "campus" names `campus`, not `smoc_campus` (whose phrases need "smoc" too). */
+export function assertCampusIsMatched(): void {
+  expectMatch("a new campus at Hosur", "campus");
+}
+
+/** M5 — "township" names `township`; "pump house" is not "pump station". */
+export function assertTownshipIsMatched(): void {
+  expectMatch("the Ambernath township pump house", "township");
+}
+
+/** M5 — "Building 4" names `building`. */
+export function assertBuildingIsMatched(): void {
+  expectMatch("Building 4 at Patancheru", "building");
+}
+
+/**
+ * M5 — the false match ruling 14 accepts: the verb "building" reads as the
+ * type, and the user corrects it in the draft preview. Pinned so that a change
+ * to the matcher which removes it is a decision, not an accident.
+ */
+export function assertTheAcceptedFalseMatchOnBuilding(): void {
+  expectMatch("we are building a site", "building");
+}
+
+/** M5 — two types in one message: the longer phrase wins, so "pump station" beats "plant". */
+export function assertTheLongerPhraseWins(): void {
+  expectMatch("the pump station of the Thane plant", "pump_station");
 }

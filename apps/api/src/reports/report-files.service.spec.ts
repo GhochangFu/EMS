@@ -193,6 +193,8 @@ export type Scenario = {
   client?: StorageClient;
   /** The `AccessControlService` answers. Defaults are the global admin's. */
   writableLocationIds?: string[] | null;
+  /** `F2.10` — the direct grants the stamp records (Drafter choice 9); default `null`, the global admin's. */
+  grantedLocationIds?: string[] | null;
   writableOrganizationIds?: string[] | null;
   /** Whether the fleet `{ organizationId }` existence read finds the body's organization; default true. */
   organizationExists?: boolean;
@@ -383,6 +385,10 @@ export function harness(scenario: Scenario = {}): Harness {
       access.calls.push("writableLocationIds");
       return scenario.writableLocationIds === undefined ? null : scenario.writableLocationIds;
     },
+    grantedLocationIds: async () => {
+      access.calls.push("grantedLocationIds");
+      return scenario.grantedLocationIds === undefined ? null : scenario.grantedLocationIds;
+    },
     writableOrganizationIds: async () => {
       access.calls.push("writableOrganizationIds");
       return scenario.writableOrganizationIds === undefined ? null : scenario.writableOrganizationIds;
@@ -458,6 +464,7 @@ export const BODY: SaveEnergyReportFileBody = { startDate: "2026-09-01", endDate
 
 const LOCATION_ADMIN: Scenario = {
   writableLocationIds: [WC, FOREIGN_LOCATION],
+  grantedLocationIds: [WC, FOREIGN_LOCATION],
   writableOrganizationIds: [ORG_ID],
   readScope: { kind: "location", organizationIds: [ORG_ID], locationIds: [WC, FOREIGN_LOCATION] },
   organizationLocations: [WC, OTHER_LOCATION],
@@ -465,6 +472,7 @@ const LOCATION_ADMIN: Scenario = {
 
 export const ORGANIZATION_ADMIN: Scenario = {
   writableLocationIds: [WC, OTHER_LOCATION],
+  grantedLocationIds: [],
   writableOrganizationIds: [ORG_ID],
   readScope: { kind: "organization", organizationIds: [ORG_ID] },
 };
@@ -537,6 +545,36 @@ export async function assertLocationAdminStampsTheIntersection(): Promise<void> 
   assert(
     JSON.stringify(dto.locationIds) === JSON.stringify([WC]),
     `a location admin stamped ${JSON.stringify(dto.locationIds)}; expected exactly [WC] — the foreign location leaked or the own one was dropped`,
+  );
+}
+
+/**
+ * `F2.10` / ADR 0098 Drafter choice 9 (owned by PR 1 per Amendment 1): the row
+ * stamps the caller's **granted** nodes, never the subtree closure
+ * `writableLocationIds` now answers. `OTHER_LOCATION` plays the child of `WC`
+ * here — in the closure, in the organization, in the read scope — and must
+ * not reach the row. Decision 6's role gate still runs first.
+ */
+export async function assertLocationAdminStampsTheGrantedNodesNotTheClosure(): Promise<void> {
+  const h = harness({
+    writableLocationIds: [WC, OTHER_LOCATION],
+    grantedLocationIds: [WC],
+    writableOrganizationIds: [ORG_ID],
+    readScope: { kind: "location", organizationIds: [ORG_ID], locationIds: [WC, OTHER_LOCATION] },
+    organizationLocations: [WC, OTHER_LOCATION],
+  });
+  const dto = await save(h, { ...BODY, organizationId: undefined });
+  assert(
+    JSON.stringify(dto.locationIds) === JSON.stringify([WC]),
+    `a location admin holding WC stamped ${JSON.stringify(dto.locationIds)}; expected exactly [WC] — the closure reached the row`,
+  );
+  assert(
+    h.access.calls[0] === "writableLocationIds",
+    `the role gate is not first: access control saw ${h.access.calls.join(",")}`,
+  );
+  assert(
+    h.access.calls.includes("grantedLocationIds"),
+    `the stamp never asked for the granted nodes: ${h.access.calls.join(",")}`,
   );
 }
 
