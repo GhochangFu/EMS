@@ -34,6 +34,9 @@ export type TreeFixture = {
   readonly byNodeSourceId: string;
   readonly depthOneSourceId: string;
   readonly depthTwoSourceId: string;
+  /** A second dashboard, at siteA, with one `by_location { groupDepth: 1 }` binding (owner ruling P1). */
+  readonly siteADashboardId: string;
+  readonly siteADepthOneSourceId: string;
   readonly assetsListSourceId: string;
   /** Hand-inserted past the write schema: `groupDepth` = `LOCATION_TREE_MAX_DEPTH + 1`. */
   readonly tooDeepSourceId: string;
@@ -117,6 +120,19 @@ export async function aReaderGrantedSiteAGroupsByItselfAtDepthOne(f: TreeFixture
   const labels = rows.flatMap((row) => [row.locationCode, row.locationName]);
   expect(labels, "an unreadable ancestor's code must never label a row").not.toContain(f.campusCode);
   expect(labels, "an unreadable ancestor's name must never label a row").not.toContain(f.campusName);
+}
+
+/**
+ * Owner ruling P1: on the siteA dashboard, read as admin, depth 1 is capped at the dashboard's
+ * own node — one row labelled siteA carrying siteA's 10, never the campus label over a value
+ * that is not the campus's.
+ */
+export async function aSiteADashboardAtDepthOneLabelsSiteANeverTheCampus(f: TreeFixture): Promise<void> {
+  const response = await f.service.resolveForDashboard(f.orgId, f.siteADashboardId, null, null);
+  const rows = rowsOf(response, f.siteADepthOneSourceId);
+  expect(rows.map((row) => [row.locationCode, row.locationName, row.value])).toEqual([
+    [f.siteACode, f.siteAName, 10],
+  ]);
 }
 
 /** C: `groupDepth` outside `1..LOCATION_TREE_MAX_DEPTH` fails the write schema and is skipped. */

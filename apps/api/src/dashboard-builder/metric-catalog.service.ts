@@ -63,6 +63,11 @@ type ResolverDeps = {
    * `groupDepth` reads it: a group label is never an ancestor the reader cannot read (A6).
    */
   readonly readableLocationIds: ReadonlySet<string> | null;
+  /**
+   * `F2.10` owner ruling P1 — the resolve's own location node (its scope's `locationId`), `null`
+   * for a group-tab, asset or organization scope. `by_location`'s group never goes above it.
+   */
+  readonly scopeLocationId: string | null;
 };
 
 /**
@@ -297,7 +302,11 @@ export class MetricCatalogService {
             tx,
             organizationId,
             scope,
-            { health: this.health, readableLocationIds: readableLocations },
+            {
+              health: this.health,
+              readableLocationIds: readableLocations,
+              scopeLocationId: planned.scope.locationId,
+            },
             planned.params,
           ),
         );
@@ -692,7 +701,8 @@ export const RESOLVERS: Record<MetricCatalogKey, Resolver> = {
    *
    * `F2.10` (ADR 0098 decision 7, A6, B2, C; amends ADR 0072 decision 2): with `groupDepth`
    * set, each location folds into its group node (`groupLocationsAtDepth`) and the rows are the
-   * distinct group nodes in `code` order, labelled with the GROUP's code and name. The location
+   * distinct group nodes in `code` order, labelled with the GROUP's code and name — never a node
+   * above the dashboard's own (`scopeLocationId`, owner ruling P1). The location
    * read is then UNCAPPED — a cap on the fold's input would truncate it silently — and
    * `capRows` applies to the grouped rows.
    */
@@ -716,6 +726,7 @@ export const RESOLVERS: Record<MetricCatalogKey, Resolver> = {
         inScope.map((location) => location.id),
         groupDepth,
         deps.readableLocationIds,
+        deps.scopeLocationId,
       );
       const groupNodes = [...new Map([...groups.values()].map((group) => [group.id, group])).values()].sort(
         (a, b) => (a.code < b.code ? -1 : a.code > b.code ? 1 : 0),

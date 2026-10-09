@@ -17,6 +17,7 @@ import { MetricCatalogService } from "./metric-catalog.service";
 import {
   aCampusDashboardTotalSumsTheSubtree,
   aReaderGrantedSiteAGroupsByItselfAtDepthOne,
+  aSiteADashboardAtDepthOneLabelsSiteANeverTheCampus,
   anOutOfRangeGroupDepthBindingIsSkippedNotThrown,
   assetsListOnTheSameDashboardStaysPerNode,
   byLocationAtDepthOneIsOneCampusRowWhoseValueEqualsTheTotal,
@@ -61,6 +62,7 @@ describe.skipIf(!connectionString)("F2.10 U2 — sustainability over a location 
   const locationIds: string[] = [];
   const assetIds: string[] = [];
   let dashboardId = "";
+  let siteADashboardId = "";
 
   beforeAll(async () => {
     const url = connectionString as string;
@@ -145,11 +147,17 @@ describe.skipIf(!connectionString)("F2.10 U2 — sustainability over a location 
       [orgId, `f210s-${RUN}`, `F2.10 U2 campus ${RUN}`, campus.id],
     );
     dashboardId = dash.rows[0]?.id ?? "";
-    const bind = async (index: number, widgetType: string, catalogKey: string, params: unknown): Promise<string> => {
+    const bind = async (
+      index: number,
+      widgetType: string,
+      catalogKey: string,
+      params: unknown,
+      onDashboard: string = dashboardId,
+    ): Promise<string> => {
       const widget = await fleetPool.query<{ id: string }>(
         `INSERT INTO bms.dashboard_widgets (organization_id, dashboard_id, widget_type, grid_x, grid_y, grid_w, grid_h)
          VALUES ($1, $2, $3, 0, $4, 3, 2) RETURNING id`,
-        [orgId, dashboardId, widgetType, index * 2],
+        [orgId, onDashboard, widgetType, index * 2],
       );
       const source = await fleetPool.query<{ id: string }>(
         `INSERT INTO bms.dashboard_widget_sources (organization_id, widget_id, catalog_key, params)
@@ -171,6 +179,20 @@ describe.skipIf(!connectionString)("F2.10 U2 — sustainability over a location 
     });
     const zeroDepthSourceId = await bind(6, "table", "sustainability.by_location", { ...sum, groupDepth: 0 });
 
+    // Owner ruling P1: a dashboard one level down, so a depth-1 group would be the campus above it.
+    const siteADash = await fleetPool.query<{ id: string }>(
+      `INSERT INTO bms.dashboards (organization_id, slug, name, location_id) VALUES ($1, $2, $3, $4) RETURNING id`,
+      [orgId, `f210s-${RUN}-sitea`, `F2.10 U2 siteA ${RUN}`, siteA.id],
+    );
+    siteADashboardId = siteADash.rows[0]?.id ?? "";
+    const siteADepthOneSourceId = await bind(
+      0,
+      "table",
+      "sustainability.by_location",
+      { ...sum, groupDepth: 1 },
+      siteADashboardId,
+    );
+
     fixture = {
       service,
       orgId,
@@ -187,6 +209,8 @@ describe.skipIf(!connectionString)("F2.10 U2 — sustainability over a location 
       byNodeSourceId,
       depthOneSourceId,
       depthTwoSourceId,
+      siteADashboardId,
+      siteADepthOneSourceId,
       assetsListSourceId,
       tooDeepSourceId,
       zeroDepthSourceId,
@@ -197,6 +221,7 @@ describe.skipIf(!connectionString)("F2.10 U2 — sustainability over a location 
     // Guarded on truthiness: `beforeAll` can fail partway.
     try {
       if (dashboardId) await fleetPool.query(`DELETE FROM bms.dashboards WHERE id = $1`, [dashboardId]);
+      if (siteADashboardId) await fleetPool.query(`DELETE FROM bms.dashboards WHERE id = $1`, [siteADashboardId]);
       const assets = assetIds.filter(Boolean);
       if (assets.length > 0) {
         await fleetPool.query(
@@ -242,6 +267,10 @@ describe.skipIf(!connectionString)("F2.10 U2 — sustainability over a location 
 
   it("a reader granted siteA alone groups by siteA at depth 1, never the unreadable campus (A6)", async () => {
     await aReaderGrantedSiteAGroupsByItselfAtDepthOne(fixture);
+  });
+
+  it("a siteA dashboard at depth 1 labels siteA, never the campus above it (owner ruling P1)", async () => {
+    await aSiteADashboardAtDepthOneLabelsSiteANeverTheCampus(fixture);
   });
 
   it("an out-of-range groupDepth binding is skipped, not thrown (C)", async () => {

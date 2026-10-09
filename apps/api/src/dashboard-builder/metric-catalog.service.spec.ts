@@ -42,7 +42,7 @@ const refusingDb = (): BmsDb =>
     },
   });
 
-const noDeps = { health: new AssetHealthService(refusingDb()), readableLocationIds: null } as Parameters<
+const noDeps = { health: new AssetHealthService(refusingDb()), readableLocationIds: null, scopeLocationId: null } as Parameters<
   (typeof RESOLVERS)["sustainability.total"]
 >[3];
 
