@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, vi } from "vitest";
 import type { AdminLocationDto, ReportScheduleDto } from "@bms/shared";
@@ -158,13 +158,14 @@ export async function confirmWaitsForTheScheduleRead(): Promise<void> {
     }),
   );
   renderDialog();
-  const move = screen.getByRole("button", { name: "Move" }) as HTMLButtonElement;
+  const pending = screen.getByRole("button", { name: "Checking schedules…" }) as HTMLButtonElement;
   expect(screen.getByText("Checking report schedules…")).toBeTruthy();
-  expect(move.disabled).toBe(true);
+  expect(pending.disabled).toBe(true);
+  expect(pending.getAttribute("aria-busy")).toBe("true");
   resolve([]);
-  await waitFor(() => {
-    expect(move.disabled).toBe(false);
-  });
+  const move = (await screen.findByRole("button", { name: "Move" })) as HTMLButtonElement;
+  expect(move.disabled).toBe(false);
+  expect(move.getAttribute("aria-busy")).toBe("false");
 }
 
 /** M7 — a failed read enables Confirm and says the schedules could not be read. */

@@ -333,10 +333,8 @@ export async function aChangedParentOpensTheDialog(): Promise<void> {
 export async function confirmSendsTheNewParent(): Promise<void> {
   await moveChildToSibling();
   const dialog = await screen.findByRole("dialog", { name: "Move Child under Sibling" });
-  const move = within(dialog).getByRole("button", { name: "Move" }) as HTMLButtonElement;
-  await waitFor(() => {
-    expect(move.disabled).toBe(false);
-  });
+  const move = (await within(dialog).findByRole("button", { name: "Move" })) as HTMLButtonElement;
+  expect(move.disabled).toBe(false);
   await userEvent.click(move);
   await waitFor(() => {
     expect(api.updateAdminLocation).toHaveBeenCalledTimes(1);
@@ -363,10 +361,8 @@ export async function aMoveRefreshesTheScope(): Promise<void> {
   await moveChildToSibling();
   const fetchSpy = vi.mocked(globalThis.fetch);
   const dialog = await screen.findByRole("dialog", { name: "Move Child under Sibling" });
-  const move = within(dialog).getByRole("button", { name: "Move" }) as HTMLButtonElement;
-  await waitFor(() => {
-    expect(move.disabled).toBe(false);
-  });
+  const move = (await within(dialog).findByRole("button", { name: "Move" })) as HTMLButtonElement;
+  expect(move.disabled).toBe(false);
   await userEvent.click(move);
   await waitFor(() => {
     expect(JSON.stringify(useAuthStore.getState().scope)).toBe(JSON.stringify(FRESH_SCOPE));
@@ -385,10 +381,8 @@ export async function aRefusedMoveShowsTheSentenceInTheForm(): Promise<void> {
     ),
   );
   const dialog = await screen.findByRole("dialog", { name: "Move Child under Sibling" });
-  const move = within(dialog).getByRole("button", { name: "Move" }) as HTMLButtonElement;
-  await waitFor(() => {
-    expect(move.disabled).toBe(false);
-  });
+  const move = (await within(dialog).findByRole("button", { name: "Move" })) as HTMLButtonElement;
+  expect(move.disabled).toBe(false);
   await userEvent.click(move);
   expect(
     await screen.findByText("A location tree may be at most 8 levels deep"),

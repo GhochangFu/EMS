@@ -29,7 +29,8 @@ type LocationMoveDialogProps = {
  * web filters `GET /reports/schedules` by the chain). A move to the top level gains no
  * ancestor, so it reads nothing (O4).
  *
- * Confirm (`Move`) waits for the schedule read and is enabled after it succeeds or fails (B7).
+ * Confirm (`Move`) waits for the schedule read and is enabled after it succeeds or fails (B7);
+ * while it waits its name is "Checking schedules…" (`F4.168`).
  * The `confirm-dialog.tsx` shape: a portal into `document.body` at `z-[60]`, above the edit
  * modal's `z-50`; Escape and Cancel close. Its own component because it holds a query.
  */
@@ -132,13 +133,15 @@ export function LocationMoveDialog({
           <button type="button" autoFocus onClick={onClose} className="surface-button px-3 py-1.5">
             Cancel
           </button>
+          {/* `F4.168` — disabled while pending, so the name says why and `aria-busy` is set. */}
           <button
             type="button"
             disabled={checking}
+            aria-busy={checking}
             onClick={onConfirm}
             className="surface-button-primary bg-accent px-3 py-1.5 text-xs font-semibold text-on-accent disabled:opacity-50"
           >
-            Move
+            {checking ? "Checking schedules…" : "Move"}
           </button>
         </div>
       </div>
