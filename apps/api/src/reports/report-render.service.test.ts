@@ -12,7 +12,9 @@ describe("F3.5b ReportRenderService — the gate, the schedule, the scope (R-9)"
   it("resolves the assets on the transaction, not a fleet pool", spec.assertAssetsResolveOnTheTransaction);
   it("structural control: slot 1 is STORAGE_CLIENT — the service injects no fleet handle", spec.assertStorageClientIsSlotOne);
   it("location_ids = {} selects every asset the policy shows", spec.assertEmptyLocationIdsSelectsEveryAsset);
-  it("named locations filter the assets with location_id = ANY($ids)", spec.assertNamedLocationsFilterTheAssets);
+  it("named locations filter the assets on their expanded subtree (ADR 0098 decision 7)", spec.assertNamedLocationsFilterTheAssets);
+  it("the subtree walk starts at the stored ids, bounded by the job's organization (owner ruling P3)", spec.assertTheWalkStartsAtTheStoredIdsInTheJobsOrganization);
+  it("a stored id that expands to nothing filters to no asset, never every asset", spec.assertAForeignAnchorExpandsToNothing);
   it("the schedule is read by its id on the transaction", spec.assertTheScheduleIsReadByItsId);
   it("the render receives the period and the resolved asset ids", spec.assertTheRenderReceivesTheResolvedAssetIds);
 });

@@ -52,6 +52,8 @@ export const SCHEDULE_ID = "44444444-4444-4444-8444-444444444444";
 export const CHANNEL_ID = "77777777-7777-4777-8777-777777777777";
 export const WC = "22222222-2222-4222-8222-222222222222";
 export const OTHER_LOCATION = "23232323-2323-4232-8232-232323232323";
+/** A child node of `WC` — in the expansion, never in the stored list. */
+const WC_CHILD = "24242424-2424-4242-8242-242424242424";
 const ASSET_A = "66666666-6666-4666-8666-666666666666";
 export const ASSET_B = "67676767-6767-4676-8676-676767676767";
 export const PRUNED_A = "88888888-8888-4888-8888-888888888888";
@@ -267,6 +269,13 @@ export type Scenario = {
   /** The insert that throws (0-based), if any. */
   insertErrorAt?: number;
   deliverable?: DeliverableFixture[];
+  /**
+   * The rows the subtree walk (`expandLocationSubtrees`, the one `WITH RECURSIVE` statement the
+   * service runs) answers. `undefined` = `[]`. The fake does not walk: the stored ids and the
+   * organization bound the statement binds are asserted on `executed`, the expansion's use on
+   * `assetWheres`.
+   */
+  subtree?: string[];
   channel?: ChannelFixture | null;
   emailResult?: DeliveryResult;
   deleteObject?: () => Promise<void>;
@@ -318,7 +327,8 @@ export function harness(scenario: Scenario = {}): Harness {
       const rendered = renderWhere(statement);
       executed.push(rendered);
       calls.push(rendered.sql.includes("set_config") ? "tx:setTenant" : "tx:execute");
-      return undefined;
+      const rows = /WITH RECURSIVE/i.test(rendered.sql) ? (scenario.subtree ?? []).map((id) => ({ id })) : [];
+      return { rows };
     },
     select: (projection?: Record<string, unknown>) => {
       const shape = shapeOf(projection);
@@ -619,18 +629,50 @@ export async function assertEmptyLocationIdsSelectsEveryAsset(): Promise<void> {
   assert(h.assetWheres.length === 1 && h.assetWheres[0]?.sql === "", `expected an unfiltered asset select, got ${JSON.stringify(h.assetWheres)}`);
 }
 
+/** The one subtree walk the render ran, rendered: its SQL and params. */
+function subtreeWalk(h: Harness): { sql: string; params: unknown[] } | undefined {
+  const walks = h.executed.filter((statement) => /WITH RECURSIVE/i.test(statement.sql));
+  assert(walks.length === 1, `expected exactly one subtree walk, got ${walks.length}`);
+  return walks[0];
+}
+
+/**
+ * ADR 0098 decision 7: the stored nodes expand to their CURRENT subtree, and the asset filter
+ * binds the expansion — `WC`'s child is in it though the schedule never named it.
+ */
 export async function assertNamedLocationsFilterTheAssets(): Promise<void> {
-  const h = harness({ schedule: schedule({ locationIds: [WC, OTHER_LOCATION] }) });
+  const h = harness({ schedule: schedule({ locationIds: [WC, OTHER_LOCATION] }), subtree: [WC, WC_CHILD, OTHER_LOCATION] });
   await render(h);
   const where = h.assetWheres[0];
   assert(
     where !== undefined &&
-      /"location_id" in \(\$1, \$2\)/.test(where.sql) &&
-      where.params.length === 2 &&
-      where.params.includes(WC) &&
-      where.params.includes(OTHER_LOCATION),
-    `expected location_id in ($1, $2) bound to the two location ids, got ${JSON.stringify(where)}`,
+      /"location_id" in \(\$1, \$2, \$3\)/.test(where.sql) &&
+      JSON.stringify([...where.params].sort()) === JSON.stringify([WC, WC_CHILD, OTHER_LOCATION].sort()),
+    `expected location_id in ($1, $2, $3) bound to the expanded subtree, got ${JSON.stringify(where)}`,
   );
+}
+
+/** The walk starts at the STORED ids, bounded by the job's organization alone (owner ruling P3). */
+export async function assertTheWalkStartsAtTheStoredIdsInTheJobsOrganization(): Promise<void> {
+  const h = harness({ schedule: schedule({ locationIds: [WC, OTHER_LOCATION] }), subtree: [WC] });
+  await render(h);
+  const walk = subtreeWalk(h);
+  const arrays = (walk?.params ?? []).filter((param) => Array.isArray(param)).map((param) => JSON.stringify(param));
+  assert(
+    arrays.length === 2 && arrays[0] === JSON.stringify([WC, OTHER_LOCATION]) && arrays[1] === JSON.stringify([ORG_ID]),
+    `expected the walk to bind the stored ids then [ORG_ID], got ${JSON.stringify(walk?.params)}`,
+  );
+}
+
+/**
+ * A stored id outside the job's organization starts no walk, so it expands to nothing: the
+ * asset filter is drizzle's `false` (no asset), never `""` (every asset of the organization).
+ */
+export async function assertAForeignAnchorExpandsToNothing(): Promise<void> {
+  const h = harness({ schedule: schedule({ locationIds: [OTHER_LOCATION] }), subtree: [] });
+  await render(h);
+  const where = h.assetWheres[0];
+  assert(where !== undefined && where.sql === "false" && where.params.length === 0, `expected the asset filter false, got ${JSON.stringify(where)}`);
 }
 
 export async function assertTheScheduleIsReadByItsId(): Promise<void> {
