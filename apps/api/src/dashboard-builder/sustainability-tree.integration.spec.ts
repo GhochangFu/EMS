@@ -13,7 +13,8 @@ import type { MetricCatalogService } from "./metric-catalog.service";
  * values are distinct powers of ten so every sum names the assets it took. One campus
  * dashboard carries every binding but two; a second dashboard, at siteA, carries the two
  * `groupDepth: 1` bindings of owner ruling P1 — one on the dashboard, one in a group tab whose
- * asset group (at siteA) holds asset SA.
+ * asset group (at siteA) holds asset SA. A third dashboard is scoped to that asset group and a
+ * fourth to asset SA, each with one `groupDepth: 1` binding (owner ruling P4 and its control).
  *
  * **The depth-two case cannot prove grouping on this fixture**: the tree is two levels deep, so
  * depth 2 and "no groupDepth" both list the three nodes. It proves B2 (the campus, shallower
@@ -41,6 +42,12 @@ export type TreeFixture = {
   readonly siteADepthOneSourceId: string;
   /** On the siteA dashboard, in a group tab: a `by_location { groupDepth: 1 }` binding (P1). */
   readonly siteAGroupTabDepthOneSourceId: string;
+  /** A third dashboard, scoped to the siteA asset group, with one depth-1 binding (owner ruling P4). */
+  readonly groupDashboardId: string;
+  readonly groupDashboardDepthOneSourceId: string;
+  /** A fourth dashboard, scoped to asset SA, with one depth-1 binding (P4's uncapped control). */
+  readonly assetDashboardId: string;
+  readonly assetDashboardDepthOneSourceId: string;
   readonly assetsListSourceId: string;
   /** Hand-inserted past the write schema: `groupDepth` = `LOCATION_TREE_MAX_DEPTH + 1`. */
   readonly tooDeepSourceId: string;
@@ -160,5 +167,31 @@ export async function aGroupTabOnTheSiteADashboardAtDepthOneLabelsSiteANeverTheC
   const rows = rowsOf(response, f.siteAGroupTabDepthOneSourceId);
   expect(rows.map((row) => [row.locationCode, row.locationName, row.value])).toEqual([
     [f.siteACode, f.siteAName, 10],
+  ]);
+}
+
+/**
+ * Owner ruling P4: a dashboard scoped to the asset group at siteA caps its depth-1 row at the
+ * GROUP's location — one row labelled siteA carrying SA's 10, never the campus. The cap is read
+ * from `asset_groups.location_id`; the dashboard row carries no location of its own.
+ */
+export async function aGroupScopedDashboardAtDepthOneLabelsTheGroupsSiteNeverTheCampus(f: TreeFixture): Promise<void> {
+  const response = await f.service.resolveForDashboard(f.orgId, f.groupDashboardId, null, null);
+  const rows = rowsOf(response, f.groupDashboardDepthOneSourceId);
+  expect(rows.map((row) => [row.locationCode, row.locationName, row.value])).toEqual([
+    [f.siteACode, f.siteAName, 10],
+  ]);
+}
+
+/**
+ * P4's positive control: an asset-scoped dashboard (asset SA) keeps no cap, so the same depth-1
+ * fold over the same asset reaches the campus. It proves the fixture's chain does go above
+ * siteA, so the group case's siteA label is the cap and not the tree's shape.
+ */
+export async function anAssetScopedDashboardAtDepthOneStaysUncappedAndLabelsTheCampus(f: TreeFixture): Promise<void> {
+  const response = await f.service.resolveForDashboard(f.orgId, f.assetDashboardId, null, null);
+  const rows = rowsOf(response, f.assetDashboardDepthOneSourceId);
+  expect(rows.map((row) => [row.locationCode, row.locationName, row.value])).toEqual([
+    [f.campusCode, f.campusName, 10],
   ]);
 }

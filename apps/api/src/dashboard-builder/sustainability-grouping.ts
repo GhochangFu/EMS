@@ -25,8 +25,9 @@ type ChainRow = { readonly ancestorId: string; readonly steps: number };
  *
  * `capId` is the dashboard's own node (owner ruling P1, 2026-10-09): the target never goes above
  * it, so on a site dashboard depth 1 labels the site, not the campus over it — a row never names
- * a node wider than the value it carries. A6 then searches from the capped target down. `null`
- * (a group-tab or asset dashboard, or a non-location scope) caps nothing. A cap that is not on
+ * a node wider than the value it carries; a group-scoped dashboard's node is its group's
+ * location (owner ruling P4). A6 then searches from the capped target down. `null` (an asset- or
+ * organization-scoped dashboard) caps nothing. A cap that is not on
  * the chain means the node is outside the dashboard's subtree, and it groups by itself.
  *
  * An empty chain names no node and is refused: the caller maps such a node to itself.

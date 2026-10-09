@@ -3,6 +3,7 @@ import { and, asc, desc, eq, inArray, isNull, notInArray, sql, type SQL } from "
 
 import {
   alarms,
+  assetGroups,
   assets,
   dashboards,
   dashboardTabs,
@@ -64,8 +65,9 @@ type ResolverDeps = {
    */
   readonly readableLocationIds: ReadonlySet<string> | null;
   /**
-   * `F2.10` owner ruling P1 — the dashboard's own location node, for every widget on it (a
-   * group tab's widget included); `null` for an asset-, group- or organization-scoped
+   * `F2.10` owner rulings P1 and P4 — the dashboard's own location node, for every widget on
+   * it (a group tab's widget included): its `locationId`, or for a group-scoped dashboard the
+   * GROUP's `location_id` read from the database; `null` for an asset- or organization-scoped
    * dashboard. `by_location`'s group never goes above it.
    */
   readonly scopeLocationId: string | null;
@@ -234,6 +236,24 @@ export class MetricCatalogService {
       if (!dashboard) {
         return { values: [], resolvedAt: new Date().toISOString() };
       }
+      // Owner rulings P1 and P4: the cap on a grouped `by_location` row is the dashboard's own
+      // node. A group-scoped dashboard's node is its GROUP's location — read here, never taken
+      // from the request, with the organization predicate explicit (`resolveAssetScope`'s
+      // reason). `dashboards_scope_check` allows one scope column; an asset-scoped dashboard
+      // stays uncapped.
+      const capLocationId =
+        dashboard.locationId ??
+        (dashboard.assetGroupId === null
+          ? null
+          : ((
+              await tx
+                .select({ locationId: assetGroups.locationId })
+                .from(assetGroups)
+                .where(
+                  and(eq(assetGroups.id, dashboard.assetGroupId), eq(assetGroups.organizationId, organizationId)),
+                )
+                .limit(1)
+            )[0]?.locationId ?? null));
 
       // `F3.73` — each widget's tab, and the group that tab binds (NULL for the Overview and
       // for a legacy widget with no tab). The join carries its own organization predicate,
@@ -306,11 +326,10 @@ export class MetricCatalogService {
             {
               health: this.health,
               readableLocationIds: readableLocations,
-              // Owner ruling P1: the cap is the DASHBOARD's node, not the resolve's scope — a
-              // group tab's widget resolves with `locationId` null yet sits on this dashboard.
-              // `dashboards_scope_check` allows one scope column, so an asset- or group-scoped
-              // dashboard carries `null` here and stays uncapped.
-              scopeLocationId: dashboard.locationId,
+              // Owner rulings P1 and P4: the cap is the DASHBOARD's node, not the resolve's
+              // scope — a group tab's widget resolves with `locationId` null yet sits on this
+              // dashboard. `capLocationId`'s own comment says how it is read.
+              scopeLocationId: capLocationId,
             },
             planned.params,
           ),
@@ -707,7 +726,7 @@ export const RESOLVERS: Record<MetricCatalogKey, Resolver> = {
    * `F2.10` (ADR 0098 decision 7, A6, B2, C; amends ADR 0072 decision 2): with `groupDepth`
    * set, each location folds into its group node (`groupLocationsAtDepth`) and the rows are the
    * distinct group nodes in `code` order, labelled with the GROUP's code and name — never a node
-   * above the dashboard's own (`scopeLocationId`, owner ruling P1). The location
+   * above the dashboard's own (`scopeLocationId`, owner rulings P1 and P4). The location
    * read is then UNCAPPED — a cap on the fold's input would truncate it silently — and
    * `capRows` applies to the grouped rows.
    */

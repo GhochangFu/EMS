@@ -17,7 +17,9 @@ import { MetricCatalogService } from "./metric-catalog.service";
 import {
   aCampusDashboardTotalSumsTheSubtree,
   aReaderGrantedSiteAGroupsByItselfAtDepthOne,
+  aGroupScopedDashboardAtDepthOneLabelsTheGroupsSiteNeverTheCampus,
   aGroupTabOnTheSiteADashboardAtDepthOneLabelsSiteANeverTheCampus,
+  anAssetScopedDashboardAtDepthOneStaysUncappedAndLabelsTheCampus,
   aSiteADashboardAtDepthOneLabelsSiteANeverTheCampus,
   anOutOfRangeGroupDepthBindingIsSkippedNotThrown,
   assetsListOnTheSameDashboardStaysPerNode,
@@ -65,6 +67,8 @@ describe.skipIf(!connectionString)("F2.10 U2 — sustainability over a location 
   let dashboardId = "";
   let siteADashboardId = "";
   let groupId = "";
+  let groupDashboardId = "";
+  let assetDashboardId = "";
 
   beforeAll(async () => {
     const url = connectionString as string;
@@ -219,6 +223,32 @@ describe.skipIf(!connectionString)("F2.10 U2 — sustainability over a location 
       siteADashboardId,
       groupTab.rows[0]?.id ?? null,
     );
+    // Owner ruling P4: a dashboard scoped to that group (no location of its own), and its
+    // control, a dashboard scoped to asset SA, which keeps no cap.
+    const groupDash = await fleetPool.query<{ id: string }>(
+      `INSERT INTO bms.dashboards (organization_id, slug, name, asset_group_id) VALUES ($1, $2, $3, $4) RETURNING id`,
+      [orgId, `f210s-${RUN}-group`, `F2.10 U2 group dashboard ${RUN}`, groupId],
+    );
+    groupDashboardId = groupDash.rows[0]?.id ?? "";
+    const groupDashboardDepthOneSourceId = await bind(
+      0,
+      "table",
+      "sustainability.by_location",
+      { ...sum, groupDepth: 1 },
+      groupDashboardId,
+    );
+    const assetDash = await fleetPool.query<{ id: string }>(
+      `INSERT INTO bms.dashboards (organization_id, slug, name, asset_id) VALUES ($1, $2, $3, $4) RETURNING id`,
+      [orgId, `f210s-${RUN}-asset`, `F2.10 U2 asset dashboard ${RUN}`, siteAAsset],
+    );
+    assetDashboardId = assetDash.rows[0]?.id ?? "";
+    const assetDashboardDepthOneSourceId = await bind(
+      0,
+      "table",
+      "sustainability.by_location",
+      { ...sum, groupDepth: 1 },
+      assetDashboardId,
+    );
 
     fixture = {
       service,
@@ -239,6 +269,10 @@ describe.skipIf(!connectionString)("F2.10 U2 — sustainability over a location 
       siteADashboardId,
       siteADepthOneSourceId,
       siteAGroupTabDepthOneSourceId,
+      groupDashboardId,
+      groupDashboardDepthOneSourceId,
+      assetDashboardId,
+      assetDashboardDepthOneSourceId,
       assetsListSourceId,
       tooDeepSourceId,
       zeroDepthSourceId,
@@ -250,6 +284,8 @@ describe.skipIf(!connectionString)("F2.10 U2 — sustainability over a location 
     try {
       if (dashboardId) await fleetPool.query(`DELETE FROM bms.dashboards WHERE id = $1`, [dashboardId]);
       if (siteADashboardId) await fleetPool.query(`DELETE FROM bms.dashboards WHERE id = $1`, [siteADashboardId]);
+      if (groupDashboardId) await fleetPool.query(`DELETE FROM bms.dashboards WHERE id = $1`, [groupDashboardId]);
+      if (assetDashboardId) await fleetPool.query(`DELETE FROM bms.dashboards WHERE id = $1`, [assetDashboardId]);
       if (groupId) {
         await fleetPool.query(`DELETE FROM bms.asset_group_members WHERE asset_group_id = $1`, [groupId]);
         await fleetPool.query(`DELETE FROM bms.asset_groups WHERE id = $1`, [groupId]);
@@ -307,6 +343,14 @@ describe.skipIf(!connectionString)("F2.10 U2 — sustainability over a location 
 
   it("a group tab on the siteA dashboard at depth 1 labels siteA, never the campus (owner ruling P1)", async () => {
     await aGroupTabOnTheSiteADashboardAtDepthOneLabelsSiteANeverTheCampus(fixture);
+  });
+
+  it("a group-scoped dashboard at depth 1 labels the group's site, never the campus (owner ruling P4)", async () => {
+    await aGroupScopedDashboardAtDepthOneLabelsTheGroupsSiteNeverTheCampus(fixture);
+  });
+
+  it("an asset-scoped dashboard at depth 1 stays uncapped and labels the campus (P4's control)", async () => {
+    await anAssetScopedDashboardAtDepthOneStaysUncappedAndLabelsTheCampus(fixture);
   });
 
   it("an out-of-range groupDepth binding is skipped, not thrown (C)", async () => {
