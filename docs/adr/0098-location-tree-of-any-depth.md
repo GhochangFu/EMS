@@ -2,12 +2,14 @@
 
 ## Status
 
-**Proposed — 2026-10-09.** Source: owner rulings 2026-10-09, thirteen questions
+**Proposed — 2026-10-09.** Source: owner rulings 2026-10-09, sixteen questions
 put one at a time; each was ruled for the recommended option. Ruling 11
 supersedes the pin rule of ruling 9. Rulings 12 and 13 were asked after the
 security review of the first draft found that ruling 8's "manage rights on the
 old and the new parent" let a location administrator take over a root; ruling
-12 supersedes that clause. Each ruling is a numbered decision below.
+12 supersedes that clause. Rulings 14–16 closed three alternatives the first
+draft left open among its drafter choices. Each ruling maps to a numbered
+decision below.
 Where a decision needed a detail the rulings do not give, the detail is listed
 under *Drafter choices (not asked)* for the owner to confirm at acceptance.
 Drafted before any implementation code. Line citations are to `main` at
@@ -38,6 +40,9 @@ Promotes nothing out of `AGENTS.md` §6: §6 does not list location depth.
 | 11 — map pins: a node is a pin if it is a leaf **or** holds an active asset; a parent is a filter that zooms to its subtree | 11 |
 | 12 — only an organization-level administrator moves a node: a global `admin`, or an `organization_admin` with a direct grant on the node's organization — never `canManageOrganization`, which is true for a location administrator | 12 |
 | 13 — creating a node keeps today's rule: a location administrator creates none (`locations.service.ts:139-141`), roots and children alike | 12 |
+| 14 — the seeded type codes are `campus`, `township`, `building`, `plant`, accepting that the onboarding chat's whole-word match reads "building" in "we are building a site" (the user corrects it in the draft preview) | 2 (*Drafter choices* 4) |
+| 15 — plain asset and RTU create and reactivate refuse an inactive node, as instantiation already does | 5 |
+| 16 — a schedule follows its node's current subtree, not its author's access; the move dialog names the schedules on the new ancestors | 7 (*Drafter choices* 16) |
 
 ## Context
 
@@ -186,12 +191,14 @@ inactive node never has an active child node, at any time. The per-row
 `active` filters the consumers use today stay correct for the tree with no
 ancestor walk: a hidden campus never leaves a visible site under it.
 
-The asset and RTU half is weaker, and this ADR does not change it: the refusal
-at `:323` runs only when the node is deactivated. Afterwards, only template
+**The asset and RTU half is closed too (ruling 15).** Today the refusal at
+`:323` runs only when the node is deactivated; afterwards only template
 instantiation refuses an inactive location
-(`apps/api/src/admin/asset-templates/asset-templates-instantiate-core.ts:501-506`);
-the plain asset and RTU create and reactivate paths do not check the location's
-`active` (see *Drafter choices* 14).
+(`apps/api/src/admin/asset-templates/asset-templates-instantiate-core.ts:501-506`),
+and the plain asset and RTU create and reactivate paths do not check the
+location's `active`. This build adds the same refusal to those paths (409,
+`location_inactive`), so an inactive node holds nothing active at any time,
+not only at the moment of deactivation.
 
 Rejected in one line: a cascade that deactivates the subtree (one click hides
 a whole campus, and reactivation cannot know which children were inactive
@@ -467,6 +474,11 @@ Each line was checked against the record.
 - **ADR 0040 ruling 5** (`0040-e5.1-water-pack-provisional-authoring.md:164-176`)
   and **ADR 0053 decision 9** (`0053-e5.2-mechanical-pack-provisional-authoring.md:161-166`)
   — **unchanged.** Asset groups stay the subsystem and the train (decision 6).
+- **ADR 0089** (user administration) — relates; **unchanged.** Decision 12
+  rests on its rule that only `admin` and `organization_admin` change access
+  (`apps/api/src/admin/users/user-management-rules.ts:12`): a move changes
+  access, so it stays with them. Grant listing and revocation stay on the
+  direct rows (*Security*).
 - **`F3.79` ruling 4** (no ADR; its record is the `F3.79` row in
   `docs/BACKLOG.md`) — **amended** by decision 11.
 - **ADR 0071** (`0071-scheduled-energy-reports.md`) — **decision 7 amended**: a
@@ -519,7 +531,8 @@ For the owner to confirm at acceptance.
    parent is the node or one of its descendants), `location_depth_exceeded`
    (400), `location_parent_inactive` (409; refusals a, b, c), and
    `location_has_active_children` (409; refusal d — 409 as today's deactivation
-   refusal is).
+   refusal is), and `location_inactive` (409; an asset or RTU created or
+   reactivated on an inactive node, ruling 15).
 3. **The race-proof backstop.** Two concurrent writes can each pass a service
    pre-check and together break the cycle guard, the depth cap or decision 5's
    invariant. So migration `0103` adds a `BEFORE INSERT OR UPDATE OF parent_id,
@@ -529,8 +542,13 @@ For the owner to confirm at acceptance.
    the advisory lock in `report-files.service.ts`. The service keeps its own
    pre-check for the structured 4xx; the trigger is the backstop under it, as
    ADR 0070's `EXCLUDE` is under the parameter write's 409. Also a `CHECK
-   (parent_id IS DISTINCT FROM id)`. Settled by the migration and security
-   reviews of the first draft, which asked it as an open question:
+   (parent_id IS DISTINCT FROM id)`. The first draft left the security mode
+   open. The migration review recommended `SECURITY INVOKER`; the security
+   review first proposed `SECURITY DEFINER` owned by a role that bypasses RLS,
+   then, given the `WITH CHECK` argument below, confirmed `INVOKER` and
+   withdrew the proposal — `WITH CHECK` runs after the `BEFORE ROW` triggers on
+   the final row, so no write path lets the trigger see part of the row's
+   organization and still commit:
    - **`SECURITY INVOKER`, `VOLATILE`, `SET search_path = pg_catalog,
      pg_temp`**, with `bms.locations` fully qualified; the migration asserts
      after creation that the function is not `SECURITY DEFINER` and that its
@@ -574,10 +592,10 @@ For the owner to confirm at acceptance.
    every active code and label as whole words in free text, so after `0103`
    "add the Thane treatment plant" is typed `plant` and "we are building a
    site" is typed `building`, where today the chat asks a question. The first
-   is wanted; the second is a false match, and the chat's confirmation step is
-   where the user corrects it. The build adds one matcher spec per new code,
-   including a false-match case. The owner may prefer codes that collide with
-   no common word.
+   is wanted; the second is a false match, which the user corrects in the
+   draft preview (`View draft`, saved through `PATCH :id/draft`) before the
+   commit. The build adds one matcher spec per new code, including a
+   false-match case.
 5. **Audit actions.** A move is its own action, `master.location.move`, with
    `{ fromParentId, toParentId }` in the audit body, written in the same
    transaction; a PATCH that changes `parent_id` and other fields writes both
@@ -619,11 +637,9 @@ For the owner to confirm at acceptance.
     its citations are corrected here, not in it: "ADR 0072 decision 8" is
     Context item 8 (see *Amends and relates to*), and the tripwire spans
     `:639-713`, not `:640-700`.
-14. **No new refusal for assets and RTUs on an inactive node.** Decision 5
-    does not add one: asset and RTU create and reactivate keep today's
-    behaviour, and only instantiation refuses an inactive location. The owner
-    may add the refusal; it would make "an inactive node holds nothing active"
-    true at all times, not only at deactivation.
+14. *(Ruled — owner ruling 15, decision 5.)* The first draft added no refusal
+    for assets and RTUs on an inactive node; the owner ruled to add it. The
+    reason code `location_inactive` (409) is the drafter's.
 15. **The map change reaches `/map`.** `F3.79`'s browser check recorded `/map`
     as unchanged; under choice 11 an interior node with no asset of its own
     stops being a pin on `/map` as well.
@@ -635,9 +651,11 @@ For the owner to confirm at acceptance.
     *N* — as today for a flat location — and, new with the tree, also sends a
     node an administrator later moves under *N*. Tenancy holds: the expansion
     runs on the render's tenant `tx` under RLS, never `fleetDb`, and the FK
-    keeps the tree in one organization. Accepted, and the move dialog names
-    the schedules on the new ancestors. The other option, a render-time
-    re-check of the author's closure, is a later row if the owner wants it.
+    keeps the tree in one organization. **Accepted by owner ruling 16**: only
+    organization-level administrators move nodes (decision 12), and the move
+    dialog names the schedules on the new ancestors. A render-time re-check of
+    the author's closure was rejected (it would also change today's flat
+    schedules).
 17. **The FK actions** are `ON DELETE NO ACTION ON UPDATE NO ACTION`
     (decision 1).
 
@@ -705,7 +723,8 @@ reviewer and a cold start gate it. One contract field in
   row's figure assumed one campus tier, not a general tree. Bottom-up from the
   table above, at S ≈ 0.5 and M ≈ 1–1.5: seven M rows (7–10.5), three S rows
   (1.5), the map at S–M (0.5–1), and the trigger with the tripwire fixture
-  (about 0.5) — 9.5–13.5, stated as 10–14. Rulings 7 and 10 do not add to the
+  (about 0.5), and ruling 15's asset and RTU refusal (about 0.5) — 10–14.
+  Rulings 7 and 10 do not add to the
   research's sizes: its table already sizes the calc-parameter walk,
   sustainability's grouping by an ancestor and the reports change at M each.
   The row's effort is edited at closure, per #778.
@@ -737,6 +756,8 @@ reviewer and a cold start gate it. One contract field in
   parents and one that moves a root under its own node; a move writes
   `master.location.move` with both parents; `/auth/me` never returns an
   unreadable parent's id.
+- **Assets and RTUs.** Plain create and reactivate on an inactive node are
+  409 `location_inactive` (ruling 15).
 - **Onboarding.** One `matchLocationType` spec per seeded code, with a
   false-match case (*Drafter choices* 4).
 - **Consumers.** A schedule saved on a campus includes a site added after it;
