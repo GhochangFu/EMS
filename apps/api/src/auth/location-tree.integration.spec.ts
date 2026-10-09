@@ -8,6 +8,7 @@ import type { AccessControlService } from "./access-control.service";
 import {
   expandLocationSubtrees,
   LOCATION_TREE_MAX_DEPTH,
+  locationAncestorChains,
   locationAncestors,
   locationDepthAndHeight,
 } from "./location-tree";
@@ -466,6 +467,15 @@ const UNGUARDED_SUBTREE = `
   )
   SELECT id FROM t`;
 
+/** The ancestor chain without its per-step organization predicate — the positive control for `locationAncestorChains`. */
+const UNGUARDED_CHAIN = `
+  WITH RECURSIVE t (id, parent_id, steps) AS (
+    SELECT l.id, l.parent_id, 0 FROM bms.locations l WHERE l.id = $1
+    UNION
+    SELECT p.id, p.parent_id, t.steps + 1 FROM bms.locations p JOIN t ON p.id = t.parent_id WHERE t.steps < ${LOCATION_TREE_MAX_DEPTH}
+  )
+  SELECT id FROM t`;
+
 /**
  * Inside the superuser transaction: plant `X1.parent_id = A1` with the foreign
  * key and the trigger switched off (`session_replication_role = replica`).
@@ -514,6 +524,16 @@ export async function assertPerStepPredicateHoldsWithoutTheFk(
     if (ancestors.length !== 1 || ancestors[0]?.id !== fx.nodes.X1) {
       fail(`locationAncestors(X1) = ${show(ancestors.map((a) => a.id))}; the walk must stop at X1 and never reach A1`);
     }
+    // PR 2: the batched chain walk. Positive control first — without the
+    // per-step predicate the chain from X1 climbs into organization A.
+    const unguardedChain = setOf((await db.query<{ id: string }>(UNGUARDED_CHAIN, [fx.nodes.X1])).rows.map((r) => r.id));
+    if (!unguardedChain.has(fx.nodes.A1) || !unguardedChain.has(fx.nodes.R)) {
+      fail(`positive control: the unguarded chain from X1 = ${show(unguardedChain)} did not reach A1 and R — the plant did not land`);
+    }
+    const chain = await locationAncestorChains(exec, [fx.nodes.X1]);
+    if (chain.length !== 1 || chain[0]?.ancestorId !== fx.nodes.X1 || chain[0]?.steps !== 0) {
+      fail(`locationAncestorChains([X1]) = ${JSON.stringify(chain)}; the chain must stop at X1 (steps 0) and never reach A1`);
+    }
     const after = await locationDepthAndHeight(exec, fx.nodes.A1);
     if (after?.height !== before.height) fail(`A1's height became ${String(after?.height)} through the planted edge; expected ${before.height}`);
   } finally {
@@ -541,6 +561,10 @@ export async function assertPerStepPredicateHoldsWithoutTheFk(
     const cycleAncestors = await locationAncestors(exec, fx.nodes.X1).catch(unbounded("locationAncestors(X1)"));
     if (cycleAncestors.length !== LOCATION_TREE_MAX_DEPTH + 1) {
       fail(`locationAncestors(X1) on the cycle returned ${cycleAncestors.length} rows; expected ${LOCATION_TREE_MAX_DEPTH + 1} (depth 0 … ${LOCATION_TREE_MAX_DEPTH})`);
+    }
+    const cycleChain = await locationAncestorChains(exec, [fx.nodes.X1]).catch(unbounded("locationAncestorChains([X1])"));
+    if (cycleChain.length !== LOCATION_TREE_MAX_DEPTH + 1) {
+      fail(`locationAncestorChains([X1]) on the cycle returned ${cycleChain.length} rows; expected ${LOCATION_TREE_MAX_DEPTH + 1} (steps 0 … ${LOCATION_TREE_MAX_DEPTH})`);
     }
     const cycleDepth = await locationDepthAndHeight(exec, fx.nodes.X).catch(unbounded("locationDepthAndHeight(X)"));
     if (cycleDepth?.depth !== LOCATION_TREE_MAX_DEPTH || cycleDepth.height !== LOCATION_TREE_MAX_DEPTH) {
@@ -590,4 +614,33 @@ export async function assertForeignOrganizationAdminIsNotOrganizationLevel(svc: 
   if (!(await svc.isOrganizationLevelAdmin(fx.foreignOrgAdmin, fx.orgB))) {
     fail("isOrganizationLevelAdmin(foreignOrgAdmin, F210-B) is false although the direct row exists");
   }
+}
+
+// ---------------------------------------------------------------------------
+// 9–10. The batched ancestor chains (PR 2)
+// ---------------------------------------------------------------------------
+
+/** 9. `locationAncestorChains([A1a, B1])` lists each node at steps 0, then its ancestors nearest-first, and nothing else. */
+export async function assertChainsListEachNodeThenItsAncestorsNearestFirst(exec: Executor, fx: TreeFixture): Promise<void> {
+  const chains = await locationAncestorChains(exec, [fx.nodes.A1a, fx.nodes.B1]);
+  const got = chains.map((c) => `${c.nodeId}>${c.ancestorId}@${c.steps}`).sort();
+  const expected = [
+    ...(["A1a", "A1", "A", "R"] as const).map((n, steps) => `${fx.nodes.A1a}>${fx.nodes[n]}@${steps}`),
+    ...(["B1", "B", "R"] as const).map((n, steps) => `${fx.nodes.B1}>${fx.nodes[n]}@${steps}`),
+  ].sort();
+  if (JSON.stringify(got) !== JSON.stringify(expected)) {
+    fail(`locationAncestorChains([A1a, B1]) = ${JSON.stringify(got)}; expected ${JSON.stringify(expected)}`);
+  }
+  if (chains.some((c) => c.organizationId !== fx.orgA)) fail("a chain row carries an organization other than F210-A");
+}
+
+/** 10. An empty id list returns `[]` without a round trip. */
+export async function assertEmptyChainsRunNoQuery(): Promise<void> {
+  const throwing: Executor = {
+    execute: (() => {
+      throw new Error("locationAncestorChains([]) ran a query");
+    }) as unknown as Executor["execute"],
+  };
+  const chains = await locationAncestorChains(throwing, []);
+  if (chains.length !== 0) fail(`locationAncestorChains([]) = ${JSON.stringify(chains)}; expected []`);
 }

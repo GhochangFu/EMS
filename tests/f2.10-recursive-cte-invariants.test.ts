@@ -20,14 +20,14 @@ import { repoRoot, walk, withoutComments } from "./support/source-scan";
  * keeps a cycle from doubling every row until the depth bound stops it, and the
  * depth bound is what stops it at all.
  *
- * The count is pinned: a fifth recursive CTE anywhere under `apps/api/src`, or
+ * The count is pinned: a sixth recursive CTE anywhere under `apps/api/src`, or
  * one outside `auth/location-tree.ts`, fails here and is reviewed into this
  * file by hand — the helpers exist so nothing else walks the tree.
  */
 
 const API_SRC = join(repoRoot, "apps", "api", "src");
 const TREE_MODULE = "apps/api/src/auth/location-tree.ts";
-const EXPECTED_STATEMENTS = 4;
+const EXPECTED_STATEMENTS = 5;
 
 const rel = (file: string): string => relative(repoRoot, file).split("\\").join("/");
 

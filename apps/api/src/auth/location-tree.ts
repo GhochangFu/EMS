@@ -1,4 +1,4 @@
-import { sql } from "drizzle-orm";
+import { type SQL, sql } from "drizzle-orm";
 
 import type { BmsDb } from "@bms/db";
 import { LOCATION_TREE_MAX_DEPTH } from "@bms/shared";
@@ -9,8 +9,11 @@ export { LOCATION_TREE_MAX_DEPTH } from "@bms/shared";
 
 /**
  * `F2.10` / ADR 0098 decision 4 and *Security* 2–3 — the only recursive CTEs
- * over `bms.locations` in `apps/api`. `tests/f2.10-recursive-cte-invariants.test.ts`
- * pins their count to this file and checks each one's shape:
+ * over `bms.locations` in `apps/api`: five statements, the fifth
+ * (`ancestorChainsCte`) a fragment that callers embed in their own statement
+ * so a batched ancestor walk never needs a second `WITH RECURSIVE` elsewhere.
+ * `tests/f2.10-recursive-cte-invariants.test.ts` pins their count to this file
+ * and checks each one's shape:
  *
  * - **one `WITH RECURSIVE` per statement, joined by `UNION`** — never
  *   `UNION ALL`, so a cycle the trigger failed to refuse cannot double every
@@ -131,4 +134,53 @@ export async function locationDepthAndHeight(
     SELECT max(height) AS height FROM down`);
   const heightValue = height.rows[0]?.height;
   return { depth: Number(depthValue), height: Number(heightValue ?? 1) };
+}
+
+/**
+ * A `WITH RECURSIVE anc (node_id, ancestor_id, parent_id, organization_id,
+ * steps)` prefix: for every node `nodeIds` yields, the node itself at
+ * `steps` 0, then each ancestor nearest-first. The same per-step organization
+ * predicate, `UNION` and depth bound as every walk here, so a planted
+ * cross-organization edge stops the chain and a cycle stops at the bound.
+ *
+ * `nodeIds` is any SQL that yields one uuid column (`SELECT unnest(…)`, or a
+ * subquery over `bms.assets`). The caller appends its own `SELECT` that reads
+ * `anc` in the same statement — ADR 0098 decision 10's calc walk is one
+ * statement, and the sustainability grouping reads hundreds of chains in one.
+ */
+export function ancestorChainsCte(nodeIds: SQL): SQL {
+  return sql`
+    WITH RECURSIVE anc (node_id, ancestor_id, parent_id, organization_id, steps) AS (
+      SELECT l.id, l.id, l.parent_id, l.organization_id, 0
+        FROM bms.locations l
+       WHERE l.id IN (${nodeIds})
+      UNION
+      SELECT anc.node_id, p.id, p.parent_id, p.organization_id, anc.steps + 1
+        FROM bms.locations p
+        JOIN anc ON p.id = anc.parent_id AND p.organization_id = anc.organization_id
+       WHERE anc.steps < ${LOCATION_TREE_MAX_DEPTH}
+    )`;
+}
+
+/**
+ * Each of `nodeIds` at `steps` 0, then its ancestors nearest-first, ordered by
+ * node then steps — one statement for any number of nodes. `[]` for `[]`
+ * without a query; an id that names no row contributes nothing.
+ */
+export async function locationAncestorChains(
+  db: TreeExecutor,
+  nodeIds: readonly string[],
+): Promise<Array<{ nodeId: string; ancestorId: string; organizationId: string; steps: number }>> {
+  if (nodeIds.length === 0) {
+    return [];
+  }
+  const result = await db.execute<{ node_id: string; ancestor_id: string; organization_id: string; steps: number | string }>(sql`
+    ${ancestorChainsCte(sql`SELECT unnest(${sql.param([...nodeIds])}::uuid[])`)}
+    SELECT node_id, ancestor_id, organization_id, steps FROM anc ORDER BY node_id, steps`);
+  return result.rows.map((row) => ({
+    nodeId: row.node_id,
+    ancestorId: row.ancestor_id,
+    organizationId: row.organization_id,
+    steps: Number(row.steps),
+  }));
 }
