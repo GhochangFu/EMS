@@ -194,6 +194,13 @@ The only containment is the `canReadAsset` gate on the owning asset, ADR 0055
 decision 12's location filter, and this decision: a reader sees one aggregate
 number and two counts, never the members behind them.
 
+**The item's identity fields** *(owner ruling 2026-10-09, at the build plan)*.
+Beside the value, the state, the two counts and `inputAsOf`, each item carries
+the stored KPI's `code`, `name`, `unit?` and `higherIsBetter?` — what the card
+renders, and nothing else. The `expression`, the `pointKeys` and the `dialect`
+stay off the read route: a reader of the asset is not an author of its
+template, and the admin template route is where those belong.
+
 ## Ruled here without a question
 
 Drafter's choices, confirmed by the owner at acceptance (2026-10-09).
@@ -208,8 +215,12 @@ Drafter's choices, confirmed by the owner at acceptance (2026-10-09).
 - **`state`** is a closed `z.enum`: `ok`; the runtime refusal reasons the
   evaluation can reach (`missing_input`, `stale_input`, `no_members`,
   `unknown_asset_reference`, `parameter_unset`, `window_empty`,
-  `window_sparse`, `timezone_unset`, `non_finite`, a subset of
-  `CalcRuntimeSkipReason`, `apps/api/src/observability/metrics.service.ts:52-67`);
+  `window_sparse`, `windows_unresolved`, `timezone_unset`, `non_finite`, a
+  subset of `CalcRuntimeSkipReason`,
+  `apps/api/src/observability/metrics.service.ts:52-67`);
+  `windows_unresolved` — the window-read budget refusal
+  (`MAX_WINDOW_BUCKETS`, `calc-windows.service.ts:41`) — was added by the
+  owner on 2026-10-09 at the build plan, because a `v3` KPI can reach it;
   and `unvalidated` for a KPI whose dialect is `"unvalidated"`, which is listed
   with `value: null` and is never evaluated.
 - **The window end** for a `v3` window read is the request time floored to the
