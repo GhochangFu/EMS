@@ -23,11 +23,12 @@ type LocationMoveDialogProps = {
  * `F2.10` (ADR 0098 Drafter choice 12, ruling 16, B3, B7) — asks before a location moves.
  *
  * A move changes who can read the node and everything under it, at once: a grant on the old
- * parent or its ancestors stops covering it, a grant on the new ones starts to. The dialog says
- * so with the names of both chains. It also names the report schedules on the new parent and
- * its ancestors, which will start to render the moved subtree (B3: no API for this list — the
- * web filters `GET /reports/schedules` by the chain). A move to the top level gains no
- * ancestor, so it reads nothing (O4).
+ * parent or its ancestors stops covering it, a grant on the new ones starts to. The dialog names
+ * only the difference of the two chains: an ancestor on both (a move inside one root) neither
+ * loses nor gains the node. It also names the report schedules on the gained ancestors, which
+ * will start to render the moved subtree (B3: no API for this list — the web filters
+ * `GET /reports/schedules` by the gained ids). A move that gains no ancestor — to the top level
+ * (O4), or up inside one root — reads nothing.
  *
  * Confirm (`Move`) waits for the schedule read and is enabled after it succeeds or fails (B7);
  * while it waits its name is "Checking schedules…" (`F4.168`).
@@ -64,7 +65,12 @@ export function LocationMoveDialog({
       ? `Move ${node.name} to the top level`
       : `Move ${node.name} under ${newParentName ?? "the new parent"}`;
 
-  const readsSchedules = toParentId !== null;
+  const newSet = new Set(newChain);
+  const oldSet = new Set(oldChain);
+  const lost = oldChain.filter((id) => !newSet.has(id));
+  const gained = newChain.filter((id) => !oldSet.has(id));
+
+  const readsSchedules = gained.length > 0;
   const schedulesQ = useQuery({
     queryKey: ["reports", "schedules"],
     queryFn: fetchReportSchedules,
@@ -73,7 +79,7 @@ export function LocationMoveDialog({
   // A disabled query stays `isPending` for ever, so the read only counts when it runs.
   const checking = readsSchedules && schedulesQ.isPending;
 
-  const covering = new Set(newChain);
+  const covering = new Set(gained);
   const matches = readsSchedules
     ? (schedulesQ.data ?? [])
         .filter(
@@ -84,8 +90,8 @@ export function LocationMoveDialog({
         .sort((a, b) => a.name.localeCompare(b.name))
     : [];
 
-  const oldNames = names(oldChain);
-  const newNames = names(newChain);
+  const lostNames = names(lost);
+  const gainedNames = names(gained);
 
   return createPortal(
     <div className="fixed inset-0 z-[60] flex items-center justify-center bg-scrim/30 p-4">
@@ -98,14 +104,18 @@ export function LocationMoveDialog({
         <h2 className="font-condensed text-base font-bold text-ink">{title}</h2>
         <div className="max-w-prose space-y-1 text-xs text-ink-muted">
           <p>
-            {oldNames
-              ? `Users granted ${oldNames} lose access to ${node.name} and every node under it.`
-              : `${node.name} was at the top level.`}
+            {fromParentId === null
+              ? `${node.name} was at the top level.`
+              : lostNames
+                ? `Users granted ${lostNames} lose access to ${node.name} and every node under it.`
+                : `No user loses access to ${node.name}.`}
           </p>
           <p>
-            {newNames
-              ? `Users granted ${newNames} gain it.`
-              : `${node.name} will be at the top level.`}
+            {toParentId === null
+              ? `${node.name} will be at the top level.`
+              : gainedNames
+                ? `Users granted ${gainedNames} gain it.`
+                : `No user gains access to ${node.name}.`}
           </p>
           <p>The change applies at once.</p>
         </div>
@@ -117,7 +127,7 @@ export function LocationMoveDialog({
               {`Report schedules could not be read. ${apiErrorMessage(schedulesQ.error)}`}
             </p>
           ) : matches.length === 0 ? (
-            <p>No report schedule covers the new parent or its ancestors.</p>
+            <p>No report schedule gains it.</p>
           ) : (
             <>
               <p>These report schedules will include it from their next run:</p>

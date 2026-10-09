@@ -4,6 +4,8 @@ import { cleanup } from "@testing-library/react";
 
 import {
   aFailedReadEnablesConfirmWithTheErrorLine,
+  aMoveDownInsideOneRootListsOnlyTheGainedSchedules,
+  aMoveUpInsideOneRootNamesOnlyTheDifference,
   aTopLevelMoveReadsNothingAndConfirmIsEnabled,
   confirmWaitsForTheScheduleRead,
   escapeCallsOnClose,
@@ -59,5 +61,13 @@ describe("F2.10 LocationMoveDialog", () => {
 
   it("M8 Escape calls onClose and not onConfirm", async () => {
     await escapeCallsOnClose();
+  });
+
+  it("M9 a move up inside one root names only the lost ancestor and reads nothing", async () => {
+    await aMoveUpInsideOneRootNamesOnlyTheDifference();
+  });
+
+  it("M10 a move down inside one root lists only the schedules on the gained ancestor", async () => {
+    await aMoveDownInsideOneRootListsOnlyTheGainedSchedules();
   });
 });

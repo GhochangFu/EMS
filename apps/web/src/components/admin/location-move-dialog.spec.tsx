@@ -145,7 +145,7 @@ export async function noMatchingScheduleShowsTheEmptySentence(): Promise<void> {
   vi.spyOn(reportsApi, "fetchReportSchedules").mockResolvedValue([schedule("Old", [R])]);
   renderDialog();
   expect(
-    await screen.findByText("No report schedule covers the new parent or its ancestors."),
+    await screen.findByText("No report schedule gains it."),
   ).toBeTruthy();
 }
 
@@ -185,7 +185,7 @@ export async function aTopLevelMoveReadsNothingAndConfirmIsEnabled(): Promise<vo
   renderDialog({ toParentId: null });
   const move = screen.getByRole("button", { name: "Move" }) as HTMLButtonElement;
   expect(move.disabled).toBe(false);
-  expect(screen.getByText("No report schedule covers the new parent or its ancestors.")).toBeTruthy();
+  expect(screen.getByText("No report schedule gains it.")).toBeTruthy();
   expect(read).not.toHaveBeenCalled();
 }
 
@@ -198,4 +198,39 @@ export async function escapeCallsOnClose(): Promise<void> {
   await userEvent.keyboard("{Escape}");
   expect(onClose).toHaveBeenCalledTimes(1);
   expect(onConfirm).not.toHaveBeenCalled();
+}
+
+/**
+ * M9 — a move up inside one root: Child goes from Sibling to Top, Sibling's parent. Top is on
+ * both chains, so only Sibling loses the node, nobody gains it, and nothing is read — a schedule
+ * on Top already covers it.
+ */
+export async function aMoveUpInsideOneRootNamesOnlyTheDifference(): Promise<void> {
+  const read = vi
+    .spyOn(reportsApi, "fetchReportSchedules")
+    .mockResolvedValue([schedule("On the shared ancestor", [T])]);
+  renderDialog({ fromParentId: S, toParentId: T });
+  expect(
+    screen.getByText("Users granted Sibling lose access to Child and every node under it."),
+  ).toBeTruthy();
+  expect(screen.getByText("No user gains access to Child.")).toBeTruthy();
+  expect(screen.getByText("No report schedule gains it.")).toBeTruthy();
+  expect(screen.queryByText("On the shared ancestor")).toBeNull();
+  expect(read).not.toHaveBeenCalled();
+}
+
+/**
+ * M10 — a move down inside one root: Child goes from Top to Sibling. Top is on both chains, so
+ * nobody loses the node, Sibling gains it, and only the schedule on Sibling is listed.
+ */
+export async function aMoveDownInsideOneRootListsOnlyTheGainedSchedules(): Promise<void> {
+  vi.spyOn(reportsApi, "fetchReportSchedules").mockResolvedValue([
+    schedule("On the gained parent", [S]),
+    schedule("On the shared ancestor", [T]),
+  ]);
+  renderDialog({ fromParentId: T, toParentId: S });
+  expect(screen.getByText("No user loses access to Child.")).toBeTruthy();
+  expect(screen.getByText("Users granted Sibling gain it.")).toBeTruthy();
+  await screen.findByText("On the gained parent");
+  expect(screen.queryByText("On the shared ancestor")).toBeNull();
 }
