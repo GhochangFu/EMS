@@ -168,6 +168,26 @@ export function assertPreFillSubstitutesStoredVariables(): void {
   assert(legacy?.[4] === "CH{unit}_CHW_SUPPLY_T", `a NULL-variables asset keeps the token literal, got ${JSON.stringify(legacy)}`);
 }
 
+/**
+ * `F2.29` — the pre-fill spreads the stored variables FIRST and sets
+ * `{asset_code}` LAST, as instantiation does. A stored `asset_code` key (the
+ * instantiation guard refuses one, but the column is jsonb and the export must
+ * not trust it) loses to the asset's real code.
+ */
+export function assertPreFillAssetCodeBeatsAStoredAssetCodeKey(): void {
+  const base = snapshot();
+  const snap: ExportSnapshot = {
+    ...base,
+    assetsByCode: new Map([
+      ...base.assetsByCode,
+      ["TX07", { id: "a7", name: "Transformer 7", active: true, templateId: T1, rtuId: R1, sourceDataKeyVars: { asset_code: "SPOOF" } }],
+    ]),
+  };
+  const rows = buildMappingSheetRows(snap);
+  const row = rows.find((r) => r[0] === "TX07" && r[2] === "kwh");
+  assert(row?.[4] === "TX07_KWH", `the real asset code must win over a stored asset_code key, got ${JSON.stringify(row)}`);
+}
+
 /** Rows are sorted by asset code then point key, code-point order. */
 export function assertRowsAreSorted(): void {
   const rows = buildMappingSheetRows(snapshot()).slice(1);

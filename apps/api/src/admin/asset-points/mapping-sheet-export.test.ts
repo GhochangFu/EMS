@@ -5,6 +5,7 @@ import {
   assertATemplateSharedByTwoAssetsIsListedOnce,
   assertBufferHasNoFormulaCells,
   assertExistingRowsAreWrittenAsStored,
+  assertPreFillAssetCodeBeatsAStoredAssetCodeKey,
   assertPreFillRowsFromTheTemplate,
   assertPreFillSubstitutesStoredVariables,
   assertRowsAreSorted,
@@ -27,6 +28,10 @@ describe("F2.7 — the MAPPINGS export row set (ADR 0056 decision 6)", () => {
 
   it("F2.29 — pre-fills with every variable the asset stores; a NULL-variables asset keeps the token literal", () => {
     assertPreFillSubstitutesStoredVariables();
+  });
+
+  it("F2.29 — the pre-fill sets {asset_code} last: a stored asset_code key loses to the real code", () => {
+    assertPreFillAssetCodeBeatsAStoredAssetCodeKey();
   });
 
   it("sorts by asset code then point key", () => {
