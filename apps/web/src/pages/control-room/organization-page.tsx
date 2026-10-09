@@ -19,7 +19,8 @@ import {
   organizationEntryTarget,
 } from "../../lib/control-room-levels";
 import { groupByOrganization } from "../../lib/location-kpi-groups";
-import type { AuthUser } from "../../stores/auth-store";
+import { organizationNodes } from "../../lib/map-site";
+import { useAuthStore, type AuthUser } from "../../stores/auth-store";
 
 type ControlRoomOrganizationPageProps = {
   user: AuthUser;
@@ -110,6 +111,8 @@ type OrganizationOverviewProps = {
 };
 
 function OrganizationOverview({ items, organizationId }: OrganizationOverviewProps) {
+  // `F2.10` (ADR 0098 B12) — the site map's parent filter offers this organization's nodes.
+  const scopeLocations = useAuthStore((s) => s.scope)?.locations ?? [];
   // Sorted by name, as `/` sorts a section (`groupByOrganization`).
   const sites = groupByOrganization(
     items.filter((item) => item.organization.id === organizationId),
@@ -124,7 +127,11 @@ function OrganizationOverview({ items, organizationId }: OrganizationOverviewPro
         title={card.organization.name}
         subtitle={`${card.organization.code} · ${card.siteCount} sites · ${card.sitesOnline} online · ${card.openAlarms} alarms`}
       />
-      <OrganizationSiteMap key={organizationId} organizationId={organizationId} />
+      <OrganizationSiteMap
+        key={organizationId}
+        organizationId={organizationId}
+        nodes={organizationNodes(scopeLocations, items, organizationId)}
+      />
       <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_320px]">
         <div data-testid="control-room-sites" className="grid content-start gap-3 md:grid-cols-2">
           {sites.map((location) => (

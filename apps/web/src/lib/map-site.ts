@@ -1,4 +1,4 @@
-import type { MapSiteDto } from "@bms/shared";
+import type { AccessLocation, MapSiteDto } from "@bms/shared";
 
 import { siteAssetsPath } from "./smoc-pages";
 
@@ -67,6 +67,21 @@ export function organizationPins(
   organizationId: string,
 ): MapSiteDto[] {
   return sites.filter((site) => site.organization?.id === organizationId);
+}
+
+/**
+ * `F2.10` (ADR 0098 B12, plan O2) — the org site map's filter nodes: the caller's scope nodes
+ * that are KPI rows of this organization. `GET /dashboard/locations` lists every active node the
+ * caller reads, so a parent with no pin of its own is still offered; the pins (which shrink under
+ * a filter) are not the source.
+ */
+export function organizationNodes(
+  nodes: readonly AccessLocation[],
+  kpis: readonly { id: string; organization: { id: string } }[],
+  organizationId: string,
+): AccessLocation[] {
+  const ids = new Set(kpis.filter((k) => k.organization.id === organizationId).map((k) => k.id));
+  return nodes.filter((n) => ids.has(n.id));
 }
 
 /** The link at the foot of a map pin's popup. */
