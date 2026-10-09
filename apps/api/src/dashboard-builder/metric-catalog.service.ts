@@ -64,8 +64,9 @@ type ResolverDeps = {
    */
   readonly readableLocationIds: ReadonlySet<string> | null;
   /**
-   * `F2.10` owner ruling P1 — the resolve's own location node (its scope's `locationId`), `null`
-   * for a group-tab, asset or organization scope. `by_location`'s group never goes above it.
+   * `F2.10` owner ruling P1 — the dashboard's own location node, for every widget on it (a
+   * group tab's widget included); `null` for an asset-, group- or organization-scoped
+   * dashboard. `by_location`'s group never goes above it.
    */
   readonly scopeLocationId: string | null;
 };
@@ -305,7 +306,11 @@ export class MetricCatalogService {
             {
               health: this.health,
               readableLocationIds: readableLocations,
-              scopeLocationId: planned.scope.locationId,
+              // Owner ruling P1: the cap is the DASHBOARD's node, not the resolve's scope — a
+              // group tab's widget resolves with `locationId` null yet sits on this dashboard.
+              // `dashboards_scope_check` allows one scope column, so an asset- or group-scoped
+              // dashboard carries `null` here and stays uncapped.
+              scopeLocationId: dashboard.locationId,
             },
             planned.params,
           ),

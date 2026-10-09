@@ -11,8 +11,9 @@ import type { MetricCatalogService } from "./metric-catalog.service";
  *
  * The tree: campus (asset C, 1 kWh) → siteA (asset SA, 10 kWh), siteB (asset SB, 100 kWh); the
  * values are distinct powers of ten so every sum names the assets it took. One campus
- * dashboard carries every binding but one; a second dashboard, at siteA, carries the
- * `groupDepth: 1` binding of owner ruling P1.
+ * dashboard carries every binding but two; a second dashboard, at siteA, carries the two
+ * `groupDepth: 1` bindings of owner ruling P1 — one on the dashboard, one in a group tab whose
+ * asset group (at siteA) holds asset SA.
  *
  * **The depth-two case cannot prove grouping on this fixture**: the tree is two levels deep, so
  * depth 2 and "no groupDepth" both list the three nodes. It proves B2 (the campus, shallower
@@ -38,6 +39,8 @@ export type TreeFixture = {
   /** A second dashboard, at siteA, with one `by_location { groupDepth: 1 }` binding (owner ruling P1). */
   readonly siteADashboardId: string;
   readonly siteADepthOneSourceId: string;
+  /** On the siteA dashboard, in a group tab: a `by_location { groupDepth: 1 }` binding (P1). */
+  readonly siteAGroupTabDepthOneSourceId: string;
   readonly assetsListSourceId: string;
   /** Hand-inserted past the write schema: `groupDepth` = `LOCATION_TREE_MAX_DEPTH + 1`. */
   readonly tooDeepSourceId: string;
@@ -145,4 +148,17 @@ export async function anOutOfRangeGroupDepthBindingIsSkippedNotThrown(f: TreeFix
   );
   expect(sourceIds, "groupDepth above the bound must be skipped").not.toContain(f.tooDeepSourceId);
   expect(sourceIds, "groupDepth 0 must be skipped").not.toContain(f.zeroDepthSourceId);
+}
+
+/**
+ * Owner ruling P1 as written, for a group tab: the tab's widget resolves over the GROUP (scope
+ * `locationId` null), yet it sits on the siteA dashboard, so its depth-1 row is capped at siteA
+ * too — one row labelled siteA carrying SA's 10, never the campus.
+ */
+export async function aGroupTabOnTheSiteADashboardAtDepthOneLabelsSiteANeverTheCampus(f: TreeFixture): Promise<void> {
+  const response = await f.service.resolveForDashboard(f.orgId, f.siteADashboardId, null, null);
+  const rows = rowsOf(response, f.siteAGroupTabDepthOneSourceId);
+  expect(rows.map((row) => [row.locationCode, row.locationName, row.value])).toEqual([
+    [f.siteACode, f.siteAName, 10],
+  ]);
 }

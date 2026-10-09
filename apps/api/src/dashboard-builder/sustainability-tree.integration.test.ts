@@ -17,6 +17,7 @@ import { MetricCatalogService } from "./metric-catalog.service";
 import {
   aCampusDashboardTotalSumsTheSubtree,
   aReaderGrantedSiteAGroupsByItselfAtDepthOne,
+  aGroupTabOnTheSiteADashboardAtDepthOneLabelsSiteANeverTheCampus,
   aSiteADashboardAtDepthOneLabelsSiteANeverTheCampus,
   anOutOfRangeGroupDepthBindingIsSkippedNotThrown,
   assetsListOnTheSameDashboardStaysPerNode,
@@ -63,6 +64,7 @@ describe.skipIf(!connectionString)("F2.10 U2 — sustainability over a location 
   const assetIds: string[] = [];
   let dashboardId = "";
   let siteADashboardId = "";
+  let groupId = "";
 
   beforeAll(async () => {
     const url = connectionString as string;
@@ -153,11 +155,12 @@ describe.skipIf(!connectionString)("F2.10 U2 — sustainability over a location 
       catalogKey: string,
       params: unknown,
       onDashboard: string = dashboardId,
+      tabId: string | null = null,
     ): Promise<string> => {
       const widget = await fleetPool.query<{ id: string }>(
-        `INSERT INTO bms.dashboard_widgets (organization_id, dashboard_id, widget_type, grid_x, grid_y, grid_w, grid_h)
-         VALUES ($1, $2, $3, 0, $4, 3, 2) RETURNING id`,
-        [orgId, onDashboard, widgetType, index * 2],
+        `INSERT INTO bms.dashboard_widgets (organization_id, dashboard_id, tab_id, widget_type, grid_x, grid_y, grid_w, grid_h)
+         VALUES ($1, $2, $3, $4, 0, $5, 3, 2) RETURNING id`,
+        [orgId, onDashboard, tabId, widgetType, index * 2],
       );
       const source = await fleetPool.query<{ id: string }>(
         `INSERT INTO bms.dashboard_widget_sources (organization_id, widget_id, catalog_key, params)
@@ -192,6 +195,30 @@ describe.skipIf(!connectionString)("F2.10 U2 — sustainability over a location 
       { ...sum, groupDepth: 1 },
       siteADashboardId,
     );
+    // P1 for a group tab: a group at siteA holding SA, and a tab on the siteA dashboard bound to
+    // it (the F3.73 shape). The tab's widget resolves over the group, with no location of its own.
+    const group = await fleetPool.query<{ id: string }>(
+      `INSERT INTO bms.asset_groups (organization_id, location_id, code, name) VALUES ($1, $2, $3, $4) RETURNING id`,
+      [orgId, siteA.id, `f210s-${RUN}-grp`, `F2.10 U2 group ${RUN}`],
+    );
+    groupId = group.rows[0]?.id ?? "";
+    await fleetPool.query(`INSERT INTO bms.asset_group_members (asset_group_id, asset_id) VALUES ($1, $2)`, [
+      groupId,
+      siteAAsset,
+    ]);
+    const groupTab = await fleetPool.query<{ id: string }>(
+      `INSERT INTO bms.dashboard_tabs (organization_id, dashboard_id, location_id, asset_group_id, tab_key, label, sort_order)
+       VALUES ($1, $2, $3, $4, 'grp', 'Group', 1) RETURNING id`,
+      [orgId, siteADashboardId, siteA.id, groupId],
+    );
+    const siteAGroupTabDepthOneSourceId = await bind(
+      1,
+      "table",
+      "sustainability.by_location",
+      { ...sum, groupDepth: 1 },
+      siteADashboardId,
+      groupTab.rows[0]?.id ?? null,
+    );
 
     fixture = {
       service,
@@ -211,6 +238,7 @@ describe.skipIf(!connectionString)("F2.10 U2 — sustainability over a location 
       depthTwoSourceId,
       siteADashboardId,
       siteADepthOneSourceId,
+      siteAGroupTabDepthOneSourceId,
       assetsListSourceId,
       tooDeepSourceId,
       zeroDepthSourceId,
@@ -222,6 +250,10 @@ describe.skipIf(!connectionString)("F2.10 U2 — sustainability over a location 
     try {
       if (dashboardId) await fleetPool.query(`DELETE FROM bms.dashboards WHERE id = $1`, [dashboardId]);
       if (siteADashboardId) await fleetPool.query(`DELETE FROM bms.dashboards WHERE id = $1`, [siteADashboardId]);
+      if (groupId) {
+        await fleetPool.query(`DELETE FROM bms.asset_group_members WHERE asset_group_id = $1`, [groupId]);
+        await fleetPool.query(`DELETE FROM bms.asset_groups WHERE id = $1`, [groupId]);
+      }
       const assets = assetIds.filter(Boolean);
       if (assets.length > 0) {
         await fleetPool.query(
@@ -271,6 +303,10 @@ describe.skipIf(!connectionString)("F2.10 U2 — sustainability over a location 
 
   it("a siteA dashboard at depth 1 labels siteA, never the campus above it (owner ruling P1)", async () => {
     await aSiteADashboardAtDepthOneLabelsSiteANeverTheCampus(fixture);
+  });
+
+  it("a group tab on the siteA dashboard at depth 1 labels siteA, never the campus (owner ruling P1)", async () => {
+    await aGroupTabOnTheSiteADashboardAtDepthOneLabelsSiteANeverTheCampus(fixture);
   });
 
   it("an out-of-range groupDepth binding is skipped, not thrown (C)", async () => {
