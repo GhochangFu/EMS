@@ -67,7 +67,11 @@ export type CalcParameterKeyRow = {
  * walk, declared in `location-tree.ts`. The anchor is each asset's own
  * `(location_id, organization_id)` pair (owner ruling P3; security review Low
  * 2), so an asset whose node lies in another organization starts no chain
- * there, even when another asset of that organization is in the batch. Module level on purpose: ADR 0070
+ * there of its own. Another asset of that organization on a DIFFERENT node
+ * does not start one for it either; one on the SAME node starts that node's
+ * chain, which every asset on the node shares (`anc` is keyed by node alone),
+ * and `cp.organization_id = a.organization_id` then keeps the served row in
+ * the asset's own organization. Module level on purpose: ADR 0070
  * part (d)'s extractor takes the first `sql` template after
  * `resolveForAssets(`, so nothing may sit between that head and the main
  * statement.
