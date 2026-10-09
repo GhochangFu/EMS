@@ -5,7 +5,8 @@ import { afterAll, beforeAll, describe, it } from "vitest";
 import {
   assertACampusFilterCountsTheWholeSubtree,
   assertAnUnknownNodeCountsNothing,
-  assertAnUnreadableAncestorOrForeignNodeIsEmpty,
+  assertAForeignNodeIsEmpty,
+  assertAnUnreadableAncestorIsEmpty,
   assertAForeignAnchorOutsideTheBoundCountsNothing,
   assertASiblingSubtreeIsExcluded,
   assertASiteFilterCountsItsOwnSubtreeOnly,
@@ -54,8 +55,12 @@ describe.skipIf(!connectionString)("F2.10 — the health summary's locationId me
     await assertTheFilterNarrowsAndNeverWidens(pool);
   }, 60_000);
 
-  it("an unreadable ancestor or another organization's node answers the empty summary (owner ruling P2)", async () => {
-    await assertAnUnreadableAncestorOrForeignNodeIsEmpty(pool);
+  it("an unreadable ancestor answers the empty summary (owner ruling P2)", async () => {
+    await assertAnUnreadableAncestorIsEmpty(pool);
+  }, 60_000);
+
+  it("another organization's node answers the empty summary, with that organization in the bound (owner ruling P2)", async () => {
+    await assertAForeignNodeIsEmpty(pool);
   }, 60_000);
 
   it("a node outside the organization bound starts no walk (owner ruling P3)", async () => {

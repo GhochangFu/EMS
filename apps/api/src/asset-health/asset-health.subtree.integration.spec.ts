@@ -160,12 +160,34 @@ export async function assertTheFilterNarrowsAndNeverWidens(pool: pg.Pool): Promi
 /**
  * Owner ruling P2, the map's P8 case for health: a caller who reads only the
  * room gets the empty summary for the campus above it (an unreadable
- * ancestor) and for another organization's node, never the room's asset. The
- * foreign node's asset is in the caller's asset list on purpose, so the
- * intersection alone would count it: only the readable-location check
- * answers empty. Positive control first: the room itself counts 1.
+ * ancestor), never the room's asset. The room's asset is in the caller's
+ * asset list, so the intersection alone would count it under the campus:
+ * only the readable-location check answers empty. Positive control first:
+ * the room itself counts 1.
  */
-export async function assertAnUnreadableAncestorOrForeignNodeIsEmpty(pool: pg.Pool): Promise<void> {
+export async function assertAnUnreadableAncestorIsEmpty(pool: pg.Pool): Promise<void> {
+  await withRolledBackClient(pool, async (client) => {
+    const fx = await buildFixture(client);
+    const readable = { locations: [fx.room], organizations: [fx.organizationId] };
+
+    const control = await assetCount(client, [fx.roomAsset], fx.room, readable);
+    if (control !== 1) fail(`positive control: summary([roomAsset], room).assetCount = ${control}; expected 1`);
+    const ancestor = await assetCount(client, [fx.roomAsset], fx.campus, readable);
+    if (ancestor !== 0) {
+      fail(`summary(.., campus) for a room-only reader = ${ancestor}; expected 0 — an unreadable ancestor must answer empty`);
+    }
+  });
+}
+
+/**
+ * Owner ruling P2 for another organization's node: a caller who reads only
+ * the room gets the empty summary for a foreign room. The reader's
+ * organization bound holds BOTH organizations and the foreign asset is in
+ * the caller's asset list, so the P3 anchor would start the walk and the
+ * intersection would count the asset: only the readable-location check
+ * answers empty. Positive control first: the reader's own room counts 1.
+ */
+export async function assertAForeignNodeIsEmpty(pool: pg.Pool): Promise<void> {
   await withRolledBackClient(pool, async (client) => {
     const fx = await buildFixture(client);
     const run = randomUUID().slice(0, 8);
@@ -173,21 +195,13 @@ export async function assertAnUnreadableAncestorOrForeignNodeIsEmpty(pool: pg.Po
       `INSERT INTO bms.organizations (code, name, currency) VALUES ($1, $2, 'INR') RETURNING id`,
       [`F210H-${run}`, `F2.10 health other ${run}`],
     );
-    const foreign = await buildTree(
-      client,
-      createDb(client as unknown as pg.Pool),
-      other.rows[0]?.id ?? fail("the second organization was not inserted"),
-      run,
-    );
-    const readable = { locations: [fx.room], organizations: [fx.organizationId] };
+    const otherOrganizationId = other.rows[0]?.id ?? fail("the second organization was not inserted");
+    const foreign = await buildTree(client, createDb(client as unknown as pg.Pool), otherOrganizationId, run);
+    const readable = { locations: [fx.room], organizations: [fx.organizationId, otherOrganizationId] };
     const assetIds = [fx.roomAsset, foreign.roomAsset];
 
     const control = await assetCount(client, assetIds, fx.room, readable);
     if (control !== 1) fail(`positive control: summary([roomAsset, foreignRoomAsset], room).assetCount = ${control}; expected 1`);
-    const ancestor = await assetCount(client, assetIds, fx.campus, readable);
-    if (ancestor !== 0) {
-      fail(`summary(.., campus) for a room-only reader = ${ancestor}; expected 0 — an unreadable ancestor must answer empty`);
-    }
     const foreignCount = await assetCount(client, assetIds, foreign.room, readable);
     if (foreignCount !== 0) {
       fail(`summary(.., foreign room) for a room-only reader = ${foreignCount}; expected 0 — another organization's node must answer empty`);
