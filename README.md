@@ -179,3 +179,9 @@ paused for everything else — no EMQX, and every other protocol still needs its
 own ADR; Phase 6 Three.js visuals remain later and
 AI Copilot remains deferred. See [`docs/roadmap.md`](./docs/roadmap.md)
 for the full phase breakdown.
+
+## License
+
+Proprietary. Copyright (c) 2026 Euphoria Infotech India Limited. All rights
+reserved. No license is granted to use, copy, modify or distribute this
+software; see [`LICENSE.md`](./LICENSE.md).
