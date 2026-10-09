@@ -14,6 +14,7 @@ import {
   masterDataTabs,
   visibleMasterDataTabs,
   canCreateLocations,
+  canMoveLocations,
   canWriteOrganizations,
   canReadPointKeyCatalog,
   canWritePointKeys,
@@ -429,5 +430,18 @@ export function runCanManageAiAssistantAdminsTest(): void {
 export function runCanManageAiAssistantOthersTest(): void {
   for (const role of ["location_admin", "asset_group_admin", "operator", "viewer"] as const) {
     assert(!canManageAiAssistant(role), `${role} must not manage the AI assistant`);
+  }
+}
+
+/** `F2.10` (ADR 0098 decision 12) — only admin and organization_admin move a location. */
+export function runCanMoveLocationsAdminsTest(): void {
+  assert(canMoveLocations("admin"), "admin moves locations");
+  assert(canMoveLocations("organization_admin"), "organization_admin moves locations");
+}
+
+/** `F2.10` — location_admin manages its subtree yet may not move a node; the API answers 403. */
+export function runCanMoveLocationsOthersTest(): void {
+  for (const role of ["location_admin", "asset_group_admin", "operator", "viewer"] as const) {
+    assert(!canMoveLocations(role), `${role} must not move locations`);
   }
 }

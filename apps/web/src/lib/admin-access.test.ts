@@ -2,6 +2,8 @@ import { describe, it } from "vitest";
 
 import {
   runAdminAccessTests,
+  runCanMoveLocationsAdminsTest,
+  runCanMoveLocationsOthersTest,
   runAssetGroupScopePredicateTests,
   runAssetTemplateTabTests,
   runCanManageAiAssistantAdminsTest,
@@ -93,5 +95,13 @@ describe("admin-access", () => {
 
   it("canManageAiAssistant refuses every other role (F3.21)", () => {
     runCanManageAiAssistantOthersTest();
+  });
+
+  it("canMoveLocations admits admin and organization_admin (F2.10 decision 12)", () => {
+    runCanMoveLocationsAdminsTest();
+  });
+
+  it("canMoveLocations refuses every other role (F2.10 decision 12)", () => {
+    runCanMoveLocationsOthersTest();
   });
 });

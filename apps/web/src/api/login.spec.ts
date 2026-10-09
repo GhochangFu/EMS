@@ -1,6 +1,6 @@
 import { vi } from "vitest";
 
-import { fetchCurrentUser } from "./login";
+import { fetchCurrentUser, refreshScope } from "./login";
 import { useAuthStore } from "../stores/auth-store";
 
 function assert(condition: boolean, message: string): void {
@@ -283,5 +283,43 @@ export async function runTheRequestCarriesTheTokenItWasGiven(): Promise<void> {
   assert(
     auth === "Bearer token-old",
     `/me must carry the token it was given, got ${String(auth)}`,
+  );
+}
+
+/**
+ * `F2.10` (ADR 0098 B8) — `refreshScope` reads `/auth/me` with the token it was given and
+ * replaces the stored scope with the served one (a create or a move changed the tree).
+ */
+export async function runRefreshScopeReplacesTheStoredScope(): Promise<void> {
+  signInAs("tok-r", "r@example.test");
+  const fresh = {
+    kind: "location" as const,
+    locations: [
+      { id: "loc-r", code: "R", slug: "r", name: "Root", type: "site", province: null, parentId: null },
+      { id: "loc-c", code: "C", slug: "c", name: "Child", type: "site", province: null, parentId: "loc-r" },
+    ],
+    assetGroups: [],
+    assetIds: [],
+  };
+  const fetchMock = vi.fn((_url: string, _init?: RequestInit) =>
+    Promise.resolve(
+      new Response(
+        JSON.stringify({
+          user: { id: "id-tok-r", email: "r@example.test", displayName: "r", role: "location_admin" },
+          scope: fresh,
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      ),
+    ),
+  );
+  vi.stubGlobal("fetch", fetchMock);
+  await refreshScope("tok-r");
+  const [url, init] = fetchMock.mock.calls[0] ?? [];
+  assert(String(url).endsWith("/api/v1/auth/me"), `expected the /me URL, got ${String(url)}`);
+  const auth = new Headers(init?.headers).get("Authorization");
+  assert(auth === "Bearer tok-r", `expected the given token, got ${String(auth)}`);
+  assert(
+    JSON.stringify(useAuthStore.getState().scope) === JSON.stringify(fresh),
+    "expected the stored scope to equal the served one",
   );
 }
