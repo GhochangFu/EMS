@@ -17,6 +17,7 @@ import { AssetTemplateMigrationService } from "./asset-templates-migrate.service
 import { loadFixtures, type Fixtures } from "./asset-templates.instantiate.integration.spec";
 import {
   assertAStoredVariableResolvesAMeasuredAddition,
+  assertAnAssetMissingAStoredTokenNamesWhatItStores,
   assertAnAssetWithNoStoredVariablesIsStillRefused,
   assertExistingSourceKeyRefusesAMeasuredAddition,
   assertRacedPointKeyAnswers409,
@@ -111,6 +112,10 @@ describe.skipIf(!connectionString)("F4.216 / F4.222 — template migration: sour
 
   it("still refuses an asset that stores no variables, and says why (F2.29)", async () => {
     await assertAnAssetWithNoStoredVariablesIsStillRefused(pool as pg.Pool, svc, fx);
+  });
+
+  it("refuses an asset that stores {unit} but not {bay}, and names both (F2.29)", async () => {
+    await assertAnAssetMissingAStoredTokenNamesWhatItStores(pool as pg.Pool, svc, fx);
   });
 
   it("refuses a measured addition whose source key another point on the asset already uses", async () => {

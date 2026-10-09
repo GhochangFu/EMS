@@ -481,6 +481,42 @@ export async function assertAnAssetWithNoStoredVariablesIsStillRefused(
 }
 
 /**
+ * `F2.29` (ADR 0039 Amendment 1 decision 5) — an asset that STORES variables,
+ * but not the one a required addition's pattern needs: it stores `{unit}` and
+ * the pattern is `CH{unit}_{bay}`. The refusal names what the asset stores and
+ * what it lacks — the service must hand the stored variables to the message,
+ * or the sentence falls back to "stores no variables", which is false here.
+ */
+export async function assertAnAssetMissingAStoredTokenNamesWhatItStores(
+  pool: pg.Pool,
+  svc: AssetTemplateMigrationService,
+  fx: Fixtures,
+): Promise<void> {
+  const db = createDb(pool);
+  const v1 = await seedVersion(db, fx, { code: SK_TEMPLATE_CODE, version: 1, points: [{ pointKey: SK_KW }] });
+  const v2 = await seedVersion(db, fx, {
+    code: SK_TEMPLATE_CODE,
+    version: 2,
+    points: [{ pointKey: SK_KW }, { pointKey: SK_VOLTS, sourceDataKeyPattern: "CH{unit}_{bay}", required: true }],
+  });
+  const assetId = await seedSkAsset(db, fx, "PARTIAL", v1, { unit: "07" });
+
+  const preview = await svc.previewMigration(fx.adminJwt, v2, { assetIds: [assetId] });
+  const refusals = preview.refusals.filter((r) => r.reason === "unresolvable_source_data_key");
+  assert(
+    refusals.length === 1,
+    `expected one unresolvable_source_data_key refusal, got ${JSON.stringify(preview.refusals)}`,
+  );
+  const message = refusals[0]?.message ?? "";
+  assert(
+    message.includes("This asset stores {unit} but not {bay}"),
+    `the refusal must name the stored variable and the missing one, got: ${message}`,
+  );
+  assert(!message.includes("stores no variables"), `an asset that stores {unit} stores variables, got: ${message}`);
+  assert(preview.canApply === false, "a refusal must make the server's verdict false");
+}
+
+/**
  * Runs `act` with this instance's private `buildPlan` wrapped so `race` runs
  * after the plan is built and before the write — the plan-to-write race, made
  * deterministic. An own property shadows the prototype method; deleting it
