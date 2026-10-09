@@ -65,6 +65,7 @@ const POINT: AdminAssetPointDto = {
   engMin: null,
   engMax: null,
   qualityPolicy: null,
+  templateDefaults: null,
 };
 
 /** `fetchAssetPoints`'s real row (`assetPointPickerRowSchema`) — the five fields

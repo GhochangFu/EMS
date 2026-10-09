@@ -384,3 +384,92 @@ export async function assertRtuIdWiresAndUnwiresOnUpdate(
   expect(refusal.status).toBe(400);
   expect(refusal.message).toContain("RTU must belong to the selected location");
 }
+
+/**
+ * (g) ADR 0056 Amendment 3 part A (`F2.25`) — every admin read carries the
+ * pinned template's five as `templateDefaults`, through the one
+ * `selectAssetPointRows` join. Four claims, each its own read site or its own
+ * nullability rule:
+ *
+ * 1. `list` on the templated asset: the `keys.measured` item reads the
+ *    template's `eng_max = 100` and a `null` `engMin` (declared, no default).
+ * 2. The `computed` row's key is declared with no defaults at all, so
+ *    `templateDefaults` is an object of five `null` — **not** `null`. This is
+ *    the drizzle trap: a left-joined nested object whose **first** selected
+ *    column is null reads as `null`, which is why the join selects
+ *    `template_points.id` first. Mutation run: dropping `id` reddens claim 1
+ *    already (the first column becomes `scaleMultiplier`, null on that row).
+ * 3. `list` on the hand-created asset (no template): every item is `null` —
+ *    including a row on `keys.measured`, a key the fixture template declares,
+ *    so a join that drops the `template_id` predicate reads `eng_max = 100`
+ *    there and reddens. Both lists also hold one row per point (unique ids):
+ *    a join that drops the `point_key` predicate fans one point out across
+ *    every point of its template.
+ * 4. The DTO `update` returns, read back through `fetchRows`, carries it too.
+ *
+ * The pinned-version rule (join on `assets.template_id`, not the newest
+ * version) is the loader's rule; this fixture has one version, so it is not
+ * re-proved here.
+ */
+export async function assertReadsCarryTheTemplateDefaults(
+  ctx: MetadataFixtures,
+  jwt: JwtPayload,
+): Promise<void> {
+  // Case (c) may already have created the `keys.measured` row; the pair
+  // (asset, point key) is unique, so reuse it rather than create a second.
+  const before = await ctx.svc.list(jwt, ctx.templatedAssetId);
+  const measuredId =
+    before.items.find((item) => item.pointKey === ctx.keys.measured)?.id ??
+    (
+      await ctx.svc.create(jwt, {
+        assetId: ctx.templatedAssetId,
+        pointKey: ctx.keys.measured,
+        sourceDataKey: `${ctx.keys.measured}/RAW`,
+      })
+    ).id;
+
+  const { items } = await ctx.svc.list(jwt, ctx.templatedAssetId);
+  expect(new Set(items.map((item) => item.id)).size).toBe(items.length);
+  const measured = items.find((item) => item.id === measuredId);
+  expect(measured?.templateDefaults?.engMax).toBe(100);
+  expect(measured?.templateDefaults?.engMin).toBeNull();
+
+  const computed = items.find((item) => item.id === ctx.computedPointId);
+  expect(computed).toBeDefined();
+  expect(computed?.templateDefaults).toEqual({
+    scaleMultiplier: null,
+    scaleOffset: null,
+    engMin: null,
+    engMax: null,
+    qualityPolicy: null,
+  });
+
+  // Cases (a) and (b) leave rows on the hand asset; create one if this case
+  // runs alone, so an empty list cannot pass the loop below vacuously.
+  if ((await ctx.svc.list(jwt, ctx.handAssetId)).items.length === 0) {
+    await ctx.svc.create(jwt, {
+      assetId: ctx.handAssetId,
+      pointKey: ctx.keys.withMetadata,
+      sourceDataKey: `${ctx.keys.withMetadata}/G`,
+    });
+  }
+  // A hand row on a key the fixture template declares: nothing pins this
+  // asset to that template, so it inherits nothing.
+  const handMeasured = await ctx.svc.create(jwt, {
+    assetId: ctx.handAssetId,
+    pointKey: ctx.keys.measured,
+    sourceDataKey: `${ctx.keys.measured}/HAND`,
+  });
+  const hand = await ctx.svc.list(jwt, ctx.handAssetId);
+  expect(hand.items.length).toBeGreaterThan(1);
+  expect(new Set(hand.items.map((item) => item.id)).size).toBe(hand.items.length);
+  expect(hand.items.find((item) => item.id === handMeasured.id)?.templateDefaults).toBeNull();
+  for (const item of hand.items) {
+    expect(item.templateDefaults).toBeNull();
+  }
+
+  const updated = await ctx.svc.update(jwt, measuredId, { engMin: 1 });
+  expect(updated.engMin).toBe(1);
+  expect(updated.templateDefaults?.engMax).toBe(100);
+  await ctx.svc.update(jwt, measuredId, { engMin: null });
+}

@@ -17,6 +17,7 @@ import {
   assertCreateRefusesATemplateDerivedKey,
   assertCreateWiresAnRtuOfTheAssetsOwnLocation,
   assertCreateWritesTheFiveMetadataColumns,
+  assertReadsCarryTheTemplateDefaults,
   assertRtuIdWiresAndUnwiresOnUpdate,
   assertTheMergedPairRefusalNamesTheInheritedBound,
   type MetadataFixtures,
@@ -378,5 +379,9 @@ describe.skipIf(!connectionString)("F2.7 — asset-point metadata and RTU wiring
 
   it("(f) Q-H — rtuId wires, null unwires, and a manual row stays manual", async () => {
     await assertRtuIdWiresAndUnwiresOnUpdate(ctx, jwt);
+  });
+
+  it("(g) list and fetchRow carry the template's five (ADR 0056 Amendment 3)", async () => {
+    await assertReadsCarryTheTemplateDefaults(ctx, jwt);
   });
 });

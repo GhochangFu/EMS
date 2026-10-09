@@ -19,10 +19,10 @@ import {
   reactivateAdminAssetPoint,
   setAdminAssetPointCalcOverride,
   updateAdminAssetPoint,
-  type UpdateAdminAssetPointInput,
 } from "../../api/admin/asset-points";
 import { fetchAdminAssetSummary } from "../../api/admin/assets";
 import { fetchAdminPointKeys } from "../../api/admin/point-keys";
+import { fetchAdminRtus } from "../../api/admin/rtus";
 import { ActiveFilterBar } from "../../components/admin/active-filter-bar";
 import {
   HierarchyFilterBar,
@@ -35,6 +35,26 @@ import { MappingSheetPanel } from "../../components/assets/mapping-sheet-panel";
 import { PointCalcOverridePanel } from "../../components/assets/point-calc-override-panel";
 import { SectionCard } from "../../components/section-card";
 import { apiErrorMessage } from "../../lib/api-error-message";
+import {
+  createBodyFrom,
+  editBodyFrom,
+  emptyAssetPointForm,
+  formFrom,
+  type AssetPointForm,
+} from "../../lib/asset-point-form";
+import {
+  effectivePointMetadata,
+  inheritedFields,
+  inheritedParts,
+  qualityCell,
+  rangeCell,
+  scaleCell,
+  QUALITY_FIELDS,
+  RANGE_FIELDS,
+  SCALE_FIELDS,
+  type EffectivePointMetadata,
+  type MetadataField,
+} from "../../lib/asset-point-effective";
 import {
   calcRuntimePillLabel,
   draftFromConfig,
@@ -68,93 +88,55 @@ function CalcRuntimePill({ runtime }: { runtime: AssetPointCalcConfigDto["runtim
 }
 
 /**
- * `F2.7` / ADR 0056 decision 1 — the five metadata fields as the Add/Edit form
- * holds them: text, because an `<input type="number">` reports an empty box as
- * `""` and that is the state the five need a spelling for.
+ * ADR 0056 Amendment 3 part A (`F2.25`) — one metadata cell: the effective
+ * value, and an "inherited" marker where the shown value comes from the
+ * asset's template. The title names the template-supplied fields.
  */
-type MetadataForm = {
-  scaleMultiplier: string;
-  scaleOffset: string;
-  engMin: string;
-  engMax: string;
-  qualityPolicy: QualityPolicy | "";
-};
-
-const EMPTY_METADATA_FORM: MetadataForm = {
-  scaleMultiplier: "",
-  scaleOffset: "",
-  engMin: "",
-  engMax: "",
-  qualityPolicy: "",
-};
-
-/** The four numeric ones, so the walkers below cannot skip one silently. */
-const METADATA_NUMBER_FIELDS = ["scaleMultiplier", "scaleOffset", "engMin", "engMax"] as const;
-
-type MetadataWrite = Pick<
-  UpdateAdminAssetPointInput,
-  "scaleMultiplier" | "scaleOffset" | "engMin" | "engMax" | "qualityPolicy"
->;
-
-/** The five as the row stores them, for the Edit form. `null` (inherit) reads as an empty box. */
-function metadataFormFrom(item: AdminAssetPointDto): MetadataForm {
-  return {
-    scaleMultiplier: item.scaleMultiplier === null ? "" : String(item.scaleMultiplier),
-    scaleOffset: item.scaleOffset === null ? "" : String(item.scaleOffset),
-    engMin: item.engMin === null ? "" : String(item.engMin),
-    engMax: item.engMax === null ? "" : String(item.engMax),
-    qualityPolicy: item.qualityPolicy ?? "",
-  };
-}
-
 /**
- * The five as a write.
- *
- * The two modes differ by exactly one thing and it matters: an empty box is
- * **omitted** on a create (there is nothing to clear, and the request keeps the
- * shape it had before `F2.7`) and **`null`** on an edit, which is the explicit
- * clear that puts the row back on its template default. One shared payload
- * cannot say both, and both typecheck — so they are built separately.
- *
- * A box holding something that is not a finite number is omitted rather than
- * sent: `JSON.stringify(NaN)` is `null`, which would read as a clear nobody
- * asked for.
+ * The suffix on the synthetic option that holds a stored RTU the location list
+ * does not. "loading" only while the fetch runs: a query that is disabled (no
+ * location) or failed never succeeds, and "loading" there would read as forever.
  */
-function metadataWriteFrom(form: MetadataForm, mode: "create" | "edit"): MetadataWrite {
-  const write: MetadataWrite = {};
-  for (const field of METADATA_NUMBER_FIELDS) {
-    const text = form[field].trim();
-    if (text === "") {
-      if (mode === "edit") write[field] = null;
-      continue;
-    }
-    const value = Number(text);
-    if (Number.isFinite(value)) write[field] = value;
-  }
-  if (form.qualityPolicy !== "") {
-    write.qualityPolicy = form.qualityPolicy;
-  } else if (mode === "edit") {
-    write.qualityPolicy = null;
-  }
-  return write;
+function storedRtuLabel(rtusQ: { isSuccess: boolean; isFetching: boolean }): string {
+  if (rtusQ.isSuccess) return "not in this location";
+  return rtusQ.isFetching ? "loading" : "unknown RTU";
 }
 
-/** `×1.5 +2` — the stored scaling, or a dash where the row follows its template. */
-function scaleCell(item: AdminAssetPointDto): string {
-  const parts: string[] = [];
-  if (item.scaleMultiplier !== null) parts.push(`×${item.scaleMultiplier}`);
-  if (item.scaleOffset !== null) {
-    parts.push(item.scaleOffset < 0 ? `−${Math.abs(item.scaleOffset)}` : `+${item.scaleOffset}`);
-  }
-  return parts.length > 0 ? parts.join(" ") : "—";
+function MetadataCell({
+  text,
+  effective,
+  fields,
+}: {
+  text: string;
+  effective: EffectivePointMetadata;
+  fields: readonly MetadataField[];
+}) {
+  const parts = inheritedParts(effective, fields);
+  return (
+    <td className="px-2 py-2 text-xs">
+      {text}
+      {parts === "none" ? null : (
+        <span
+          className="ml-1 rounded bg-accent/10 px-1 text-[10px] text-accent-strong"
+          title={`From the template: ${inheritedFields(effective, fields).join(", ")}`}
+        >
+          {parts === "all" ? "inherited" : "partly inherited"}
+        </span>
+      )}
+    </td>
+  );
 }
 
-/** `0 – 100`, or one bound alone, or a dash. */
-function rangeCell(item: AdminAssetPointDto): string {
-  if (item.engMin !== null && item.engMax !== null) return `${item.engMin} – ${item.engMax}`;
-  if (item.engMin !== null) return `≥ ${item.engMin}`;
-  if (item.engMax !== null) return `≤ ${item.engMax}`;
-  return "—";
+/** The Scale, Range and Quality cells of one row, from the effective five. */
+function EffectiveMetadataCells({ item }: { item: AdminAssetPointDto }) {
+  const effective = effectivePointMetadata(item);
+  return (
+    <>
+      <MetadataCell text={scaleCell(effective.value)} effective={effective} fields={SCALE_FIELDS} />
+      <MetadataCell text={rangeCell(effective.value)} effective={effective} fields={RANGE_FIELDS} />
+      <MetadataCell text={qualityCell(effective.value)} effective={effective} fields={QUALITY_FIELDS} />
+    </>
+  );
 }
 
 type AssetPointsAdminPageProps = { user: AuthUser };
@@ -168,14 +150,7 @@ export function AssetPointsAdminPage({ user }: AssetPointsAdminPageProps) {
   const [search, setSearch] = useState("");
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState<AdminAssetPointDto | null>(null);
-  const [form, setForm] = useState({
-    assetId: assetId ?? "",
-    pointKey: "",
-    sourceDataKey: "",
-    sensorCode: "",
-    unit: "",
-    ...EMPTY_METADATA_FORM,
-  });
+  const [form, setForm] = useState<AssetPointForm>(() => emptyAssetPointForm(assetId ?? ""));
   const [error, setError] = useState<string | null>(null);
   // `F2.7` / ADR 0056 decision 8 — the rows "Edit selected" applies to.
   const [selectedIds, setSelectedIds] = useState<ReadonlySet<string>>(new Set());
@@ -250,6 +225,23 @@ export function AssetPointsAdminPage({ user }: AssetPointsAdminPageProps) {
     enabled: modalOpen,
   });
 
+  // ADR 0056 Amendment 3 part A (`F2.27`) — the dialog's RTU picker lists the
+  // RTUs of the asset's location: the row's own on Edit, the routed asset's
+  // or the filter's on Add. Unknown → the select is disabled with a hint.
+  const formLocationId =
+    editing?.locationId ?? assetSummaryQ.data?.locationId ?? selection.locationId ?? null;
+  const rtusQ = useQuery({
+    queryKey: ["admin", "rtus", "all", formLocationId],
+    queryFn: () => fetchAdminRtus("all", formLocationId ?? undefined),
+    enabled: modalOpen && formLocationId !== null,
+  });
+  const rtuOptions = rtusQ.data?.items ?? [];
+  // The stored RTU may be one the location list no longer holds (moved or
+  // deleted). Without an option holding it, the controlled `<select>` shows
+  // blank, and the operator reads the point as unwired when it is not.
+  const storedRtuMissing =
+    editing?.rtuId != null && !rtuOptions.some((option) => option.id === editing.rtuId);
+
   const listQ = useQuery({
     queryKey: ["admin", "asset-points", activeFilter, assetId, selection.locationId],
     queryFn: () =>
@@ -305,32 +297,26 @@ export function AssetPointsAdminPage({ user }: AssetPointsAdminPageProps) {
 
   const saveMutation = useMutation({
     mutationFn: async () => {
+      // ADR 0056 Amendment 3 part A (`F2.31`): an edit sends the diff against
+      // the loaded row (`editBodyFrom`), so the API's `statedPointMetadata`
+      // sees only what the operator changed.
       if (editing) {
-        return updateAdminAssetPoint(editing.id, {
-          pointKey: form.pointKey,
-          sourceDataKey: form.sourceDataKey,
-          sensorCode: form.sensorCode || undefined,
-          unit: form.unit || undefined,
-          ...metadataWriteFrom(form, "edit"),
-        });
+        return updateAdminAssetPoint(editing.id, editBodyFrom(editing, form));
       }
-      return createAdminAssetPoint({
-        assetId: form.assetId,
-        pointKey: form.pointKey,
-        sourceDataKey: form.sourceDataKey,
-        sensorCode: form.sensorCode || undefined,
-        unit: form.unit || undefined,
-        ...metadataWriteFrom(form, "create"),
-      });
+      return createAdminAssetPoint(createBodyFrom(form));
     },
     onSuccess: async () => {
-      setModalOpen(false);
-      setEditing(null);
-      setError(null);
+      closeDialog();
       await queryClient.invalidateQueries({ queryKey: ["admin", "asset-points"] });
     },
     onError: (err: unknown) => setError(apiErrorMessage(err)),
   });
+
+  function closeDialog(): void {
+    setModalOpen(false);
+    setEditing(null);
+    setError(null);
+  }
 
   const toggleMutation = useMutation({
     mutationFn: async (item: AdminAssetPointDto) =>
@@ -361,14 +347,7 @@ export function AssetPointsAdminPage({ user }: AssetPointsAdminPageProps) {
               className="surface-button-primary bg-accent px-3 py-2 text-xs font-semibold text-on-accent"
               onClick={() => {
                 setEditing(null);
-                setForm({
-                  assetId: assetId ?? selection.assetId ?? "",
-                  pointKey: "",
-                  sourceDataKey: "",
-                  sensorCode: "",
-                  unit: "",
-                  ...EMPTY_METADATA_FORM,
-                });
+                setForm(emptyAssetPointForm(assetId ?? selection.assetId ?? ""));
                 setModalOpen(true);
               }}
             >
@@ -464,13 +443,7 @@ export function AssetPointsAdminPage({ user }: AssetPointsAdminPageProps) {
                 <td className="px-2 py-2 font-mono">{item.sourceDataKey}</td>
                 <td className="px-2 py-2">{item.sensorCode ?? "—"}</td>
                 <td className="px-2 py-2">{item.unit ?? "—"}</td>
-                {/* The three metadata columns show what this row **stores**, not
-                    what it resolves to: a dash means the row follows its
-                    template default (§"Deferred" item 3 owns the effective
-                    value, which needs a `template_points` join in `list()`). */}
-                <td className="px-2 py-2 text-xs">{scaleCell(item)}</td>
-                <td className="px-2 py-2 text-xs">{rangeCell(item)}</td>
-                <td className="px-2 py-2 text-xs">{item.qualityPolicy ?? "—"}</td>
+                <EffectiveMetadataCells item={item} />
                 <td className="px-2 py-2">
                   <StatusPill
                     label={item.active ? "Active" : "Inactive"}
@@ -484,14 +457,7 @@ export function AssetPointsAdminPage({ user }: AssetPointsAdminPageProps) {
                       className="text-xs font-semibold text-accent-strong"
                       onClick={() => {
                         setEditing(item);
-                        setForm({
-                          assetId: item.assetId,
-                          pointKey: item.pointKey,
-                          sourceDataKey: item.sourceDataKey,
-                          sensorCode: item.sensorCode ?? "",
-                          unit: item.unit ?? "",
-                          ...metadataFormFrom(item),
-                        });
+                        setForm(formFrom(item));
                         setModalOpen(true);
                       }}
                     >
@@ -511,8 +477,8 @@ export function AssetPointsAdminPage({ user }: AssetPointsAdminPageProps) {
           </tbody>
         </table>
         <p className="text-xs text-ink-muted">
-          Scale, Range and Quality show what each point stores. A dash means the point follows its
-          asset template&apos;s default.
+          Scale, Range and Quality show the value applied to readings. <em>inherited</em> means the
+          asset follows its template&apos;s default.
         </p>
       </SectionCard>
 
@@ -606,6 +572,11 @@ export function AssetPointsAdminPage({ user }: AssetPointsAdminPageProps) {
             className="w-full max-w-lg surface-dialog p-4"
             onSubmit={(event: FormEvent) => {
               event.preventDefault();
+              // `F2.31`: an edit that changed nothing has nothing to send.
+              if (editing && Object.keys(editBodyFrom(editing, form)).length === 0) {
+                closeDialog();
+                return;
+              }
               saveMutation.mutate();
             }}
           >
@@ -663,10 +634,44 @@ export function AssetPointsAdminPage({ user }: AssetPointsAdminPageProps) {
                   onChange={(event) => setForm({ ...form, unit: event.target.value })}
                 />
               </label>
+              {/* `F2.27` / ADR 0056 Amendment 3 part A. Blank on Add is omitted
+                  (the point follows the asset's gateway); blank on Edit is
+                  `rtuId: null` (unwire) — sent only when changed
+                  (`editBodyFrom`), so a computed row stays editable. */}
+              <label className="block text-xs font-semibold text-ink-muted">
+                RTU
+                <select
+                  aria-label="RTU"
+                  className="mt-1 w-full surface-field px-3 py-2 text-sm"
+                  value={form.rtuId}
+                  disabled={formLocationId === null}
+                  onChange={(event) => setForm({ ...form, rtuId: event.target.value })}
+                >
+                  <option value="">{editing ? "Unwired" : "Inherit the asset's gateway"}</option>
+                  {rtuOptions.map((option) => (
+                    <option key={option.id} value={option.id}>
+                      {option.code} · {option.displayName}
+                      {option.active ? "" : " (inactive)"}
+                    </option>
+                  ))}
+                  {storedRtuMissing && editing?.rtuId ? (
+                    <option value={editing.rtuId}>
+                      {editing.rtuId} ({storedRtuLabel(rtusQ)})
+                    </option>
+                  ) : null}
+                </select>
+                <span className="mt-1 block text-[11px] font-normal">
+                  {formLocationId === null
+                    ? "Choose a location to pick an RTU"
+                    : editing
+                      ? "On an existing mapping, blank unwires the point (a measured point becomes unmapped)."
+                      : "Blank keeps the asset's own gateway."}
+                </span>
+              </label>
               {/* `F2.7` / ADR 0056 decision 1 — the per-asset override of the
                   five. Empty means "follow the template", which is an omitted
                   field on a create and an explicit `null` on an edit
-                  (`metadataWriteFrom`). */}
+                  (`asset-point-form.ts`; an edit sends only a changed box). */}
               <p className="text-[11px] text-ink-muted">
                 Leave a field below empty to follow this asset&apos;s template default. Clearing one
                 on an existing mapping puts it back on the template.

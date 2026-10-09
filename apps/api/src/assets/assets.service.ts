@@ -5,7 +5,11 @@ import { assetPoints, assets, locations, rtus } from "@bms/db";
 import type { BmsDb } from "@bms/db";
 import type { AssetPointPickerListResponse } from "@bms/shared";
 
-import { mapAssetPointRow, pickAssetPointPickerRow } from "../admin/asset-points/asset-point-row";
+import {
+  mapAssetPointRow,
+  pickAssetPointPickerRow,
+  selectAssetPointRows,
+} from "../admin/asset-points/asset-point-row";
 import { FLEET_DRIZZLE } from "../database/database.tokens";
 
 /**
@@ -115,17 +119,7 @@ export class AssetsService {
       throw new NotFoundException("Asset not found");
     }
 
-    const rows = await this.db
-      .select({
-        point: assetPoints,
-        assetCode: assets.code,
-        assetName: assets.name,
-        locationId: assets.locationId,
-        locationName: locations.name,
-      })
-      .from(assetPoints)
-      .innerJoin(assets, eq(assetPoints.assetId, assets.id))
-      .leftJoin(locations, eq(assets.locationId, locations.id))
+    const rows = await selectAssetPointRows(this.db)
       .where(and(eq(assetPoints.assetId, assetId), eq(assetPoints.active, true)))
       .orderBy(asc(assetPoints.pointKey));
 

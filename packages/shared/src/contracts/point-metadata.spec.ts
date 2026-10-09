@@ -59,7 +59,7 @@ const FIVE_SET = {
   qualityPolicy: "accept_bad",
 };
 
-const assetPoint = {
+const assetPointWithoutTemplateDefaults = {
   id: "11111111-1111-4111-8111-111111111111",
   assetId: "22222222-2222-4222-8222-222222222222",
   assetCode: "TX01",
@@ -77,6 +77,10 @@ const assetPoint = {
   rtuId: "33333333-3333-4333-8333-333333333333",
   createdAt: "2026-09-06T00:00:00.000Z",
 };
+
+// ADR 0056 Amendment 3 part A (F2.25) — the pinned template's five ride on
+// the read DTO; `null` = nothing to inherit.
+const assetPoint = { ...assetPointWithoutTemplateDefaults, templateDefaults: null };
 
 const templatePoint = {
   id: "33333333-3333-4333-8333-333333333333",
@@ -173,6 +177,38 @@ export function runDtoSpreadTests(): void {
     "template point refuses an unknown policy",
   );
   expectRejects(adminTemplatePointDtoSchema, templatePoint, "template point without the five is refused");
+}
+
+/**
+ * ADR 0056 Amendment 3 part A (F2.25) — `templateDefaults` is the pinned
+ * template's five, nested and nullable, and a required key.
+ */
+export function runTemplateDefaultsTests(): void {
+  expectAccepts(
+    adminAssetPointDtoSchema,
+    { ...assetPoint, ...FIVE_NULL, templateDefaults: FIVE_SET },
+    "asset point with template defaults",
+  );
+  expectAccepts(
+    adminAssetPointDtoSchema,
+    { ...assetPoint, ...FIVE_NULL, templateDefaults: null },
+    "asset point with no template to inherit from",
+  );
+  expectAccepts(
+    adminAssetPointDtoSchema,
+    { ...assetPoint, ...FIVE_NULL, templateDefaults: FIVE_NULL },
+    "asset point whose template declares the key with no defaults",
+  );
+  expectRejects(
+    adminAssetPointDtoSchema,
+    { ...assetPointWithoutTemplateDefaults, ...FIVE_NULL },
+    "a mapper that forgot templateDefaults",
+  );
+  expectRejects(
+    adminAssetPointDtoSchema,
+    { ...assetPoint, ...FIVE_NULL, templateDefaults: { ...FIVE_SET, qualityPolicy: "clamp" } },
+    "templateDefaults refuses an unknown policy",
+  );
 }
 
 /**
