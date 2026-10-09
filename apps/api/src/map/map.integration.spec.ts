@@ -51,6 +51,11 @@ async function withRolledBackClient<T>(
   }
 }
 
+/** The service over one checked-out client: the raw pool and the drizzle tree executor share the connection. */
+function mapService(client: pg.PoolClient): MapService {
+  return new MapService(client as unknown as pg.Pool, createDb(client as unknown as pg.Pool));
+}
+
 type Fixture = { locationId: string; organizationId: string; assetId: string; slug: string };
 
 /** The dashboard spec's fixture plus the `map_locations` row that makes the location a map site. */
@@ -103,7 +108,7 @@ export async function assertSiteOpenAlarmsFollowClearedAt(pool: pg.Pool): Promis
   await withRolledBackClient(pool, async (client) => {
     const run = randomUUID().slice(0, 8);
     const { locationId, assetId, slug } = await insertFixture(client, run);
-    const service = new MapService(client as unknown as pg.Pool);
+    const service = mapService(client);
 
     // Scoped to the fixture asset, so every other site reads 0 and the
     // fixture site's numbers are its own.
@@ -144,7 +149,7 @@ export async function assertCommStatusCountsNonKwFresh(pool: pg.Pool): Promise<v
        VALUES (now() - interval '5 seconds', $1, 'humidity_pct', 42, 'pct')`,
       [freshAssetId],
     );
-    const service = new MapService(client as unknown as pg.Pool);
+    const service = mapService(client);
 
     // Scoped to only the new, alarm-free asset: insertFixture's own asset and
     // its alarms fall outside `assetIds`, so this site's counts and status
@@ -187,7 +192,7 @@ export async function assertCommStatusLeavesAStaleAssetOut(pool: pg.Pool): Promi
               (now() - make_interval(secs => 5), $2, 'humidity_pct', 42, 'pct')`,
       [staleAssetId, freshAssetId],
     );
-    const service = new MapService(client as unknown as pg.Pool);
+    const service = mapService(client);
 
     const sites = await service.sitesLive({ assetIds: [freshAssetId, staleAssetId] });
     const site = sites.find((candidate) => candidate.slug === slug);
@@ -251,7 +256,7 @@ async function insertPumpStationFixture(
 async function pumpStationSite(pool: pg.Pool, pinKind: string): Promise<MapSiteDto | undefined> {
   return withRolledBackClient(pool, async (client) => {
     const { assetId, slug } = await insertPumpStationFixture(client, randomUUID().slice(0, 8), pinKind);
-    const sites = await new MapService(client as unknown as pg.Pool).sitesLive({ assetIds: [assetId] });
+    const sites = await mapService(client).sitesLive({ assetIds: [assetId] });
     const site = sites.find((candidate) => candidate.slug === slug);
     expect(site, "the fixture map location is listed").toBeDefined();
     return site;
@@ -314,7 +319,7 @@ async function unjoinedStationSite(pool: pg.Pool): Promise<MapSiteDto | undefine
        VALUES ($1, $2, 'eskom_station', 0, 0, 'op')`,
       [slug, `F4.157 map station fixture ${run}`],
     );
-    const sites = await new MapService(client as unknown as pg.Pool).sitesLive();
+    const sites = await mapService(client).sitesLive();
     const site = sites.find((candidate) => candidate.slug === slug);
     expect(site, "the fixture station pin is listed").toBeDefined();
     expect(site?.canonicalLocationId, "the station pin joins no location").toBeNull();
@@ -404,7 +409,7 @@ async function insertUnpinnedLocation(
 export async function assertAnUnpinnedActiveLocationIsAPin(pool: pg.Pool): Promise<void> {
   await withRolledBackClient(pool, async (client) => {
     const fx = await insertUnpinnedLocation(client, randomUUID().slice(0, 8), { active: true, pin: false });
-    const sites = await new MapService(client as unknown as pg.Pool).sitesLive({ assetIds: [fx.assetId] });
+    const sites = await mapService(client).sitesLive({ assetIds: [fx.assetId] });
     const site = sites.find((candidate) => candidate.canonicalLocationId === fx.locationId);
     expect(site, "an active location with no map_locations row must be listed").toBeDefined();
     expect({
@@ -441,7 +446,7 @@ export async function assertAnUnpinnedActiveLocationIsAPin(pool: pg.Pool): Promi
 export async function assertAnUnpinnedInactiveLocationIsNotAPin(pool: pg.Pool): Promise<void> {
   await withRolledBackClient(pool, async (client) => {
     const fx = await insertUnpinnedLocation(client, randomUUID().slice(0, 8), { active: false, pin: false });
-    const sites = await new MapService(client as unknown as pg.Pool).sitesLive({ assetIds: [fx.assetId] });
+    const sites = await mapService(client).sitesLive({ assetIds: [fx.assetId] });
     expect(
       sites.filter((candidate) => candidate.canonicalLocationId === fx.locationId),
       "an inactive location must not become a pin",
@@ -453,7 +458,7 @@ export async function assertAnUnpinnedInactiveLocationIsNotAPin(pool: pg.Pool): 
 export async function assertAPinnedLocationIsListedOnce(pool: pg.Pool): Promise<void> {
   await withRolledBackClient(pool, async (client) => {
     const fx = await insertUnpinnedLocation(client, randomUUID().slice(0, 8), { active: true, pin: true });
-    const sites = await new MapService(client as unknown as pg.Pool).sitesLive({ assetIds: [fx.assetId] });
+    const sites = await mapService(client).sitesLive({ assetIds: [fx.assetId] });
     const matches = sites.filter((candidate) => candidate.canonicalLocationId === fx.locationId);
     expect(matches, "the pinned location is listed exactly once").toHaveLength(1);
     expect(matches[0]?.id, "from its map_locations row, not as a second, location-built pin").not.toBe(
@@ -470,7 +475,7 @@ export async function assertAPinnedLocationIsListedOnce(pool: pg.Pool): Promise<
 export async function assertTheScopeFilterKeepsTheNewPinById(pool: pg.Pool): Promise<void> {
   await withRolledBackClient(pool, async (client) => {
     const fx = await insertUnpinnedLocation(client, randomUUID().slice(0, 8), { active: true, pin: false });
-    const service = new MapService(client as unknown as pg.Pool);
+    const service = mapService(client);
     const inScope = await service.sitesLive({
       allowedSiteNames: [fx.name],
       allowedLocationIds: [fx.locationId],
@@ -515,7 +520,7 @@ export async function assertASameNamedLocationOfAnotherOrganizationIsNotSeen(
     );
     const theirLocationId = theirs.rows[0]?.id as string;
 
-    const sites = await new MapService(client as unknown as pg.Pool).sitesLive({
+    const sites = await mapService(client).sitesLive({
       allowedSiteNames: [mine.name],
       allowedLocationIds: [mine.locationId],
       assetIds: [mine.assetId],
@@ -542,7 +547,7 @@ export async function assertAnUnjoinedPinIsStillScopedByName(pool: pg.Pool): Pro
        VALUES ($1, $2, 'eskom_station', $3, 0, 0)`,
       [slug, `F3.79 station ${run}`, siteName],
     );
-    const service = new MapService(client as unknown as pg.Pool);
+    const service = mapService(client);
     const named = await service.sitesLive({ allowedSiteNames: [siteName], allowedLocationIds: [] });
     expect(
       named.some((candidate) => candidate.slug === slug),
@@ -574,4 +579,191 @@ export async function assertNoF379MapFixtureRowsRemain(pool: pg.Pool): Promise<v
     pins: 0,
     organizations: 0,
   });
+}
+
+// ---------------------------------------------------------------------------
+// F2.10 — the pin rule on both arms, and the parent filter (ADR 0098 decision 11, B4, B12)
+// ---------------------------------------------------------------------------
+
+/**
+ * One organization the case creates (`F210M-<run>`; the tree guard's advisory lock is per
+ * organization, so never a seeded one):
+ *
+ *     campus (no asset) ── siteA (asset)
+ *                       └─ siteB (asset) ── inactive child
+ *     secondCampus (asset) ── secondSite (asset)
+ *     seededCampus (no asset, joined by a map_locations row) ── seededSite (asset)
+ *
+ * plus a `map_locations` row that joins no location (a reference station). `seededCampus` is
+ * its own node rather than `campus` so each arm has an asset-less interior node of its own: arm 2
+ * never lists a node a `map_locations` row joins, so one node cannot gate both arms.
+ */
+type TreeMapFixture = {
+  readonly campus: string;
+  readonly siteA: string;
+  readonly siteB: string;
+  readonly secondCampus: string;
+  readonly seededCampus: string;
+  readonly seededSlug: string;
+  readonly stationSlug: string;
+  readonly assetIds: string[];
+};
+
+async function insertTreeMapFixture(client: pg.PoolClient): Promise<TreeMapFixture> {
+  const run = randomUUID().slice(0, 8);
+  const db = createDb(client as unknown as pg.Pool);
+  const org = await client.query<{ id: string }>(
+    `INSERT INTO bms.organizations (code, name, currency) VALUES ($1, $2, 'INR') RETURNING id`,
+    [`F210M-${run}`, `F2.10 map ${run}`],
+  );
+  const organizationId = org.rows[0]?.id as string;
+  const node = async (name: string, parentId: string | null, active = true): Promise<string> => {
+    const { rows } = await client.query<{ id: string }>(
+      `INSERT INTO bms.locations (organization_id, code, slug, name, type, latitude, longitude, parent_id, active)
+       VALUES ($1, $2, $3, $4, 'smoc_campus', 19.1, 72.9, $5, $6) RETURNING id`,
+      [organizationId, `F210M-${run}-${name}`, `f210m-${run}-${name}`, `F2.10 map ${name} ${run}`, parentId, active],
+    );
+    return rows[0]?.id as string;
+  };
+  const assetIds: string[] = [];
+  const asset = async (locationId: string): Promise<void> => {
+    const [id] = await createFixtureAssets(db, 1, "F210M", { locationId, organizationId });
+    if (!id) throw new Error("F2.10: no fixture asset");
+    assetIds.push(id);
+  };
+  const campus = await node("campus", null);
+  const siteA = await node("sitea", campus);
+  const siteB = await node("siteb", campus);
+  await node("inactive", siteB, false);
+  const secondCampus = await node("second", null);
+  const secondSite = await node("secondsite", secondCampus);
+  const seededCampus = await node("seeded", null);
+  const seededSite = await node("seededsite", seededCampus);
+  for (const id of [siteA, siteB, secondCampus, secondSite, seededSite]) await asset(id);
+
+  const seededSlug = `f210m-${run}-seeded`;
+  const stationSlug = `f210m-${run}-station`;
+  await client.query(
+    `INSERT INTO bms.map_locations (slug, name, kind, site_name, latitude, longitude)
+     VALUES ($1, $2, 'smoc_campus', $2, 19.1, 72.9)`,
+    [seededSlug, `F2.10 map seeded pin ${run}`],
+  );
+  await client.query(
+    `INSERT INTO bms.map_locations (slug, name, kind, site_name, latitude, longitude)
+     VALUES ($1, $2, 'eskom_station', $2, 0, 0)`,
+    [stationSlug, `F2.10 map station ${run}`],
+  );
+  return { campus, siteA, siteB, secondCampus, seededCampus, seededSlug, stationSlug, assetIds };
+}
+
+async function treeSites(
+  pool: pg.Pool,
+  run: (service: MapService, fx: TreeMapFixture) => Promise<void>,
+): Promise<void> {
+  await withRolledBackClient(pool, async (client) => {
+    const fx = await insertTreeMapFixture(client);
+    await run(mapService(client), fx);
+  });
+}
+
+const locationIdsOf = (sites: readonly MapSiteDto[]): Array<string | null> =>
+  sites.map((site) => site.canonicalLocationId);
+
+/** P1 — an interior node with no asset of its own (the campus, arm 2) is a filter, not a pin. */
+export async function assertAnInteriorNodeWithNoAssetIsNotAPin(pool: pg.Pool): Promise<void> {
+  await treeSites(pool, async (service, fx) => {
+    const ids = locationIdsOf(await service.sitesLive());
+    expect(ids, "control: the campus's leaf siteA is a pin").toContain(fx.siteA);
+    expect(ids, "an asset-less interior node is not a pin").not.toContain(fx.campus);
+  });
+}
+
+/** P2 — an interior node that holds an active asset is a pin. */
+export async function assertAnInteriorNodeHoldingAnActiveAssetIsAPin(pool: pg.Pool): Promise<void> {
+  await treeSites(pool, async (service, fx) => {
+    expect(locationIdsOf(await service.sitesLive()), "an interior node holding an asset is a pin").toContain(
+      fx.secondCampus,
+    );
+  });
+}
+
+/** P3 — a parent whose only child is inactive counts as a leaf: siteB is a pin. */
+export async function assertAParentWhoseOnlyChildIsInactiveIsAPin(pool: pg.Pool): Promise<void> {
+  await treeSites(pool, async (service, fx) => {
+    expect(locationIdsOf(await service.sitesLive()), "an inactive child does not make a parent").toContain(fx.siteB);
+  });
+}
+
+/** P4 — arm 1: a `map_locations` row joined to an asset-less interior node is dropped; the unjoined station row is not. */
+export async function assertTheSeededArmFollowsThePinRule(pool: pg.Pool): Promise<void> {
+  await treeSites(pool, async (service, fx) => {
+    const sites = await service.sitesLive();
+    const slugs = sites.map((site) => site.slug);
+    expect(slugs, "control: an unjoined map_locations row stays").toContain(fx.stationSlug);
+    expect(slugs, "a map_locations row joined to an asset-less interior node is not a pin").not.toContain(
+      fx.seededSlug,
+    );
+    expect(locationIdsOf(sites), "nor is the node listed through arm 2").not.toContain(fx.seededCampus);
+  });
+}
+
+/** P5 — `parentLocationId: campus` keeps exactly the campus subtree's pins: siteA and siteB. */
+export async function assertTheParentFilterKeepsOnlyTheSubtreesPins(pool: pg.Pool): Promise<void> {
+  await treeSites(pool, async (service, fx) => {
+    const sites = await service.sitesLive({ parentLocationId: fx.campus });
+    expect(new Set(locationIdsOf(sites)), "exactly the campus subtree's pins").toEqual(new Set([fx.siteA, fx.siteB]));
+  });
+}
+
+/** P6 — with a parent filter, a pin that joins no location is dropped (B4); without one it is listed. */
+export async function assertTheParentFilterDropsUnjoinedStationPins(pool: pg.Pool): Promise<void> {
+  await treeSites(pool, async (service, fx) => {
+    const unfiltered = (await service.sitesLive()).map((site) => site.slug);
+    expect(unfiltered, "control: the station pin is listed without a filter").toContain(fx.stationSlug);
+    const filtered = await service.sitesLive({ parentLocationId: fx.campus });
+    expect(filtered.map((site) => site.slug), "the station pin is dropped under a filter").not.toContain(fx.stationSlug);
+    expect(filtered.length, "control: the filter still lists the subtree's pins").toBeGreaterThan(0);
+    expect(filtered.every((site) => site.canonicalLocationId !== null), "no unjoined pin under a filter").toBe(true);
+  });
+}
+
+/** P7 — a caller scoped to siteA asking for a foreign root's subtree sees nothing. */
+export async function assertAScopedCallerWithAnUnreadableParentSeesNothing(pool: pg.Pool): Promise<void> {
+  await treeSites(pool, async (service, fx) => {
+    const scope = { allowedSiteNames: [], allowedLocationIds: [fx.siteA], assetIds: fx.assetIds };
+    expect(locationIdsOf(await service.sitesLive(scope)), "control: the scoped caller sees siteA").toContain(fx.siteA);
+    const sites = await service.sitesLive({ ...scope, parentLocationId: fx.secondCampus });
+    expect(sites, "an unreadable parent answers []").toEqual([]);
+  });
+}
+
+/**
+ * P8 — a caller scoped to siteA asking for siteA's unreadable **ancestor** sees nothing. Intersecting
+ * the subtree with the scope alone would answer [siteA] here and confirm a parent link that
+ * `/auth/me` hides; the filter refuses a parent outside the readable set first.
+ */
+export async function assertAScopedCallerWithAnUnreadableAncestorSeesNothing(pool: pg.Pool): Promise<void> {
+  await treeSites(pool, async (service, fx) => {
+    const scope = { allowedSiteNames: [], allowedLocationIds: [fx.siteA], assetIds: fx.assetIds };
+    const own = await service.sitesLive({ ...scope, parentLocationId: fx.siteA });
+    expect(locationIdsOf(own), "control: a readable parent keeps its own pin").toEqual([fx.siteA]);
+    const sites = await service.sitesLive({ ...scope, parentLocationId: fx.campus });
+    expect(sites, "an unreadable ancestor of a readable node answers []").toEqual([]);
+  });
+}
+
+/** No `F210M` fixture row survives the rolled-back cases (counted as `bms_fleet`). */
+export async function assertNoF210MapFixtureRowsRemain(pool: pg.Pool): Promise<void> {
+  const result = await pool.query<{ role: string; locations: number; pins: number; organizations: number }>(
+    `SELECT current_user AS role,
+            (SELECT COUNT(*)::int FROM bms.locations WHERE code LIKE 'F210M-%') AS locations,
+            (SELECT COUNT(*)::int FROM bms.map_locations WHERE slug LIKE 'f210m-%') AS pins,
+            (SELECT COUNT(*)::int FROM bms.organizations WHERE code LIKE 'F210M-%') AS organizations`,
+  );
+  const row = result.rows[0];
+  expect(row?.role, "counted as bms_fleet, which FORCE RLS does not hide rows from").toBe("bms_fleet");
+  expect(
+    { locations: row?.locations, pins: row?.pins, organizations: row?.organizations },
+    "no F210M fixture row remains",
+  ).toEqual({ locations: 0, pins: 0, organizations: 0 });
 }

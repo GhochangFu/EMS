@@ -1,3 +1,4 @@
+import { BadRequestException } from "@nestjs/common";
 import { expect } from "vitest";
 
 import type { JwtPayload } from "@bms/shared";
@@ -45,12 +46,13 @@ export async function aScopedCallerSendsItsLocationIds(): Promise<void> {
     assetIds: ["asset-1"],
   });
 
-  await controller.sites(JWT);
+  await controller.sites(JWT, {});
   expect(calls).toEqual([
     {
       allowedSiteNames: ["Plant 1", "Plant 2"],
       allowedLocationIds: ["loc-a", "loc-b"],
       assetIds: ["asset-1"],
+      parentLocationId: null,
     },
   ]);
 }
@@ -64,6 +66,30 @@ export async function aGlobalCallerSendsNoScope(): Promise<void> {
     assetIds: [],
   });
 
-  await controller.sites(JWT);
-  expect(calls).toEqual([{ allowedSiteNames: null, allowedLocationIds: null, assetIds: null }]);
+  await controller.sites(JWT, {});
+  expect(calls).toEqual([{ allowedSiteNames: null, allowedLocationIds: null, assetIds: null, parentLocationId: null }]);
+}
+
+const GLOBAL_SCOPE = { kind: "global", locations: [], assetGroups: [], assetIds: [] };
+const PARENT = "7b405d8b-31a7-472d-b97f-4b62cbe9111e";
+
+/** C3 — `F2.10` (ADR 0098 decision 11, B12): a valid `parentLocationId` reaches `sitesLive` unchanged. */
+export async function aValidParentLocationIdIsPassedThrough(): Promise<void> {
+  const { controller, calls } = controllerFor(GLOBAL_SCOPE);
+  await controller.sites(JWT, { parentLocationId: PARENT });
+  expect(calls).toEqual([{ allowedSiteNames: null, allowedLocationIds: null, assetIds: null, parentLocationId: PARENT }]);
+}
+
+/** C4 — a malformed `parentLocationId` is a 400 before the service runs. */
+export async function aMalformedParentLocationIdIs400(): Promise<void> {
+  const { controller, calls } = controllerFor(GLOBAL_SCOPE);
+  await expect(controller.sites(JWT, { parentLocationId: "x" })).rejects.toBeInstanceOf(BadRequestException);
+  expect(calls).toEqual([]);
+}
+
+/** C5 — the query schema is `.strict()`: an unknown key is a 400 before the service runs. */
+export async function anUnknownQueryKeyIs400(): Promise<void> {
+  const { controller, calls } = controllerFor(GLOBAL_SCOPE);
+  await expect(controller.sites(JWT, { foo: "1" })).rejects.toBeInstanceOf(BadRequestException);
+  expect(calls).toEqual([]);
 }

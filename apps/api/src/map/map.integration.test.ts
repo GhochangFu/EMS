@@ -21,6 +21,15 @@ import {
   assertAnUnjoinedPinIsStillScopedByName,
   assertUnjoinedStationPinKindLabelIsStation,
   assertUnjoinedStationPinStatusIsItsOperatingStatus,
+  assertAnInteriorNodeHoldingAnActiveAssetIsAPin,
+  assertAnInteriorNodeWithNoAssetIsNotAPin,
+  assertAParentWhoseOnlyChildIsInactiveIsAPin,
+  assertAScopedCallerWithAnUnreadableAncestorSeesNothing,
+  assertAScopedCallerWithAnUnreadableParentSeesNothing,
+  assertNoF210MapFixtureRowsRemain,
+  assertTheParentFilterDropsUnjoinedStationPins,
+  assertTheParentFilterKeepsOnlyTheSubtreesPins,
+  assertTheSeededArmFollowsThePinRule,
 } from "./map.integration.spec";
 import { openIntegrationPool, requireIntegrationDb } from "../testing/integration-db-gate";
 
@@ -152,5 +161,42 @@ describe.skipIf(!connectionString)("F3.79 — every active location is a map pin
 
   it("leaves no F379M fixture row behind (counted as bms_fleet)", async () => {
     await assertNoF379MapFixtureRowsRemain(pool);
+  }, 60_000);
+
+  // F2.10 — ADR 0098 decision 11, B4, B12.
+  it("P1: an interior node with no asset is not a pin (arm 2)", async () => {
+    await assertAnInteriorNodeWithNoAssetIsNotAPin(pool);
+  }, 60_000);
+
+  it("P2: an interior node holding an active asset is a pin", async () => {
+    await assertAnInteriorNodeHoldingAnActiveAssetIsAPin(pool);
+  }, 60_000);
+
+  it("P3: a parent whose only child is inactive is a pin", async () => {
+    await assertAParentWhoseOnlyChildIsInactiveIsAPin(pool);
+  }, 60_000);
+
+  it("P4: the map_locations arm follows the pin rule; an unjoined row stays", async () => {
+    await assertTheSeededArmFollowsThePinRule(pool);
+  }, 60_000);
+
+  it("P5: parentLocationId keeps exactly the subtree's pins", async () => {
+    await assertTheParentFilterKeepsOnlyTheSubtreesPins(pool);
+  }, 60_000);
+
+  it("P6: parentLocationId drops unjoined station pins (B4)", async () => {
+    await assertTheParentFilterDropsUnjoinedStationPins(pool);
+  }, 60_000);
+
+  it("P7: a scoped caller with an unreadable parent sees nothing", async () => {
+    await assertAScopedCallerWithAnUnreadableParentSeesNothing(pool);
+  }, 60_000);
+
+  it("P8: a scoped caller with an unreadable ancestor of a readable node sees nothing", async () => {
+    await assertAScopedCallerWithAnUnreadableAncestorSeesNothing(pool);
+  }, 60_000);
+
+  it("leaves no F210M fixture row behind (counted as bms_fleet)", async () => {
+    await assertNoF210MapFixtureRowsRemain(pool);
   }, 60_000);
 });
