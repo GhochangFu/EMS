@@ -89,6 +89,7 @@ export * from "./sustainability-point-keys";
 
 /** The schemas themselves. See the note above on why they are re-exported. */
 export * from "./contracts";
+export type * from "./types/asset-kpis";
 
 /** The `bms-calc-v1` grammar (ADR 0036, `F2.3`) — tokenizer, parser, AST
  * types, and the pure `parseFormula`/`validateFormula` surface. No `./calc-dsl`
