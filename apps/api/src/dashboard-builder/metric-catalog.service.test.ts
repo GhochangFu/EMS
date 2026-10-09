@@ -5,6 +5,7 @@ import {
   anAssetListBindingOnTheSameDashboardKeepsTheNodeScope,
   assetsEntriesOnAnEmptyScopeAnswerZeroAndEmpty,
   byLocationOnAnEmptyScopeBuildsNoSql,
+  catalogValuesPassesEachReadableSetInItsOwnPosition,
   everyEntryOnAnEmptyScopeBuildsNoSql,
   overviewAndGroupTabAreTwoResolves,
   sameKeyOnOneTabIsOneResolve,
@@ -62,5 +63,11 @@ describe("F2.10 — the two sustainability entries resolve a location dashboard 
 
   it("assets.list on the same dashboard keeps location:<id> — two distinct scope keys", () => {
     anAssetListBindingOnTheSameDashboardKeepsTheNodeScope();
+  });
+});
+
+describe("F2.10 — catalogValues passes the reader's two readable sets in their own positions (A6, no database)", () => {
+  it("resolveForDashboard gets readableAssetIds third and readableLocationIds fourth", async () => {
+    await catalogValuesPassesEachReadableSetInItsOwnPosition();
   });
 });
