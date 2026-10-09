@@ -332,6 +332,11 @@ export const assets = bmsSchema.table("assets", {
   tripCause: varchar("trip_cause", { length: 128 }),
   active: boolean("active").notNull().default(true),
   meta: jsonb("meta"),
+  // F2.29 / ADR 0039 Amendment 1 (migration 0102) — the `{token}` variables the
+  // instantiation request supplied, without the reserved `asset_code`. Write-once
+  // at instantiation; no PATCH field and not on the asset DTO. NULL = built
+  // before F2.29 or with no variables. A CHECK holds it to NULL or an object.
+  sourceDataKeyVars: jsonb("source_data_key_vars").$type<Record<string, string>>(),
   createdAt: timestamp("created_at", { withTimezone: true })
     .notNull()
     .defaultNow(),

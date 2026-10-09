@@ -708,6 +708,13 @@
       "when": 1791304082881,
       "tag": "0101_onboarding_session_checkpoints",
       "breakpoints": true
+    },
+    {
+      "idx": 103,
+      "version": "7",
+      "when": 1791498208458,
+      "tag": "0102_asset_source_data_key_vars",
+      "breakpoints": true
     }
   ]
 }
