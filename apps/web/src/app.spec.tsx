@@ -280,6 +280,41 @@ export async function aStoredScopeIsReplacedOnLoad(): Promise<void> {
   });
   expect(fetchCurrentUser).toHaveBeenCalledWith(accessToken);
   expect(useAuthStore.getState().oidcIdToken).toBe(ID_TOKEN);
+  // The effect must not re-run on its own `setSession`: give a re-run time to start.
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  expect(fetchCurrentUser).toHaveBeenCalledTimes(1);
+}
+
+/**
+ * `F2.10` (B8, B9) — a scope written while the load `/me` is in flight (a create or a move
+ * refreshed it) is newer: the late load answer does not replace it.
+ */
+export async function aLateLoadAnswerDoesNotReplaceANewerScope(): Promise<void> {
+  const accessToken = unexpiredAccessToken();
+  let resolve: (value: { user: AuthUser; scope: AccessibleScope }) => void = () => undefined;
+  const fetchCurrentUser = vi.spyOn(loginApi, "fetchCurrentUser").mockReturnValue(
+    new Promise((r) => {
+      resolve = r;
+    }),
+  );
+  useAuthStore.setState({ accessToken, oidcIdToken: ID_TOKEN, user: USER, scope: STALE_SCOPE });
+
+  render(
+    <QueryClientProvider client={new QueryClient()}>
+      <MemoryRouter initialEntries={["/login"]}>
+        <App />
+      </MemoryRouter>
+    </QueryClientProvider>,
+  );
+
+  await waitFor(() => {
+    expect(fetchCurrentUser).toHaveBeenCalledWith(accessToken);
+  });
+  const newer: AccessibleScope = { ...FRESH_SCOPE };
+  useAuthStore.setState({ scope: newer });
+  resolve({ user: USER, scope: STALE_SCOPE });
+  await new Promise((r) => setTimeout(r, 50));
+  expect(useAuthStore.getState().scope).toBe(newer);
 }
 
 /**

@@ -100,15 +100,17 @@ export function App() {
   // `F2.10` (ADR 0098 B9) — `/me` is read on every load with a token, not only when no scope
   // is stored: a location created or moved since the last sign-in must show without a sign-out.
   // The persisted scope renders meanwhile. `scope` is not a dependency: `setSession` sets it,
-  // so it would re-run this effect on its own result.
+  // so it would re-run this effect on its own result. A scope written while the read is in
+  // flight (a create or a move refreshes it, B8) is newer, so the late answer does not replace it.
   useEffect(() => {
     if (!accessToken) {
       return;
     }
     let cancelled = false;
+    const scopeAtSend = useAuthStore.getState().scope;
     fetchCurrentUser(accessToken)
       .then((current) => {
-        if (!cancelled) {
+        if (!cancelled && useAuthStore.getState().scope === scopeAtSend) {
           // Keep the stored OIDC id token: logout sends it as
           // `id_token_hint`, and this re-set must not erase it (F4.156).
           setSession(
