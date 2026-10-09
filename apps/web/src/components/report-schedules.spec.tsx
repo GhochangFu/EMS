@@ -51,6 +51,7 @@ function userWithRole(role: AuthUser["role"]): AuthUser {
 
 export const WESTERN_CAPE: AdminLocationDto = {
   id: "7d3e2f1a-3333-4a5b-8c4d-000000000021",
+  parentId: null,
   organizationId: ESKOM_ID,
   organizationCode: "ESKOM",
   organizationName: "Eskom SMOC",

@@ -160,6 +160,7 @@ const validLocation = {
   name: "Lotapata",
   type: "pump_station",
   typeLabel: "Pump station",
+  parentId: null,
   province: null,
   capital: null,
   timezone: null,
@@ -190,6 +191,23 @@ export function runAdminLocationDtoRequiresTypeLabelTest(): void {
 
   const { typeLabel: _typeLabel, ...withoutTypeLabel } = validLocation;
   expectRejects(adminLocationDtoSchema, withoutTypeLabel, "a row missing typeLabel");
+}
+
+/**
+ * `F2.10` (ADR 0098) — `parentId` is required and nullable: null for a root
+ * (or a parent the caller cannot read), a string for a child. Mutation: make
+ * the field `.optional()`, or drop `.nullable()`.
+ */
+export function runAdminLocationDtoParentIdTests(): void {
+  expectAccepts(adminLocationDtoSchema, validLocation, "a root row with parentId: null");
+  expectAccepts(
+    adminLocationDtoSchema,
+    { ...validLocation, parentId: "77777777-7777-4777-8777-777777777777" },
+    "a child row with a string parentId",
+  );
+
+  const { parentId: _parentId, ...withoutParentId } = validLocation;
+  expectRejects(adminLocationDtoSchema, withoutParentId, "a row missing parentId");
 }
 
 /**

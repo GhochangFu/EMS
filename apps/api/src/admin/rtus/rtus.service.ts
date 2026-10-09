@@ -16,6 +16,7 @@ import type { AdminRtuDto, AdminRtuSummaryDto, JwtPayload } from "@bms/shared";
 import { AccessControlService } from "../../auth/access-control.service";
 import { FLEET_DRIZZLE, TENANT_DRIZZLE } from "../../database/database.tokens";
 import { withTenant } from "../../database/tenant-context";
+import { assertLocationActive } from "../locations/assert-location-active";
 import { MasterDataAuditService } from "../master-data-audit.service";
 import { emptyTopicAsNull } from "../rtu-topic";
 import { resolveTelemetrySource } from "../telemetry-source";
@@ -189,6 +190,13 @@ export class RtusAdminService {
           active: true,
         })
         .returning();
+
+      // F2.10 / ADR 0098 ruling 15, Amendment 1 A5 — no RTU on an inactive
+      // location. After the insert, in the same transaction, so a duplicate
+      // code still answers its own 409 first; the refusal rolls the insert
+      // back. The read is FOR SHARE, so a concurrent deactivate waits for this
+      // transaction and then counts the new RTU.
+      await assertLocationActive(tx, body.locationId);
 
       // E7.1c (item D): folded into this transaction so the stamped
       // organizationId matches the GUC the strict WITH CHECK now demands.
@@ -471,6 +479,8 @@ export class RtusAdminService {
 
     const organizationId = await this.resolveAgreedOrg(existing);
     await withTenant(this.tenantDb, organizationId, async (tx) => {
+      // F2.10 / ADR 0098 ruling 15 — an RTU is not restored onto an inactive location.
+      await assertLocationActive(tx, existing.locationId);
       await tx.update(rtus).set({ active: true }).where(eq(rtus.id, id));
       await this.audit.write(
         {

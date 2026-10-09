@@ -33,7 +33,7 @@ Promotes nothing out of `AGENTS.md` §6: §6 does not list location depth.
 | 4 — access: a grant covers the subtree, read and manage (ADR 0018); re-point the flat tripwire; prove sibling refusal and no cross-org edge | 4 |
 | 5 — deactivation is refused while an active child node exists (bottom-up) | 5 |
 | 6 — the subsystem is the asset group; `parent_asset_id` stays out (its own later row, the v2 plant train) | 6 |
-| 7 — reports and schedules store nodes and expand to the current subtree at run time; health and sustainability filter on a subtree and can group by an ancestor; no code names a level; the control room stays per node (a campus view is a later row) | 7 |
+| 7 — reports and schedules store nodes and expand to the current subtree at run time; health and sustainability filter on a subtree, and sustainability can group by an ancestor (Amendment 1, A7); no code names a level; the control room stays per node (a campus view is a later row) | 7 |
 | 8 — moves are allowed within one organization; ~~manage rights on the old and the new parent~~ *(superseded by 12)*; audited with the old and new parent; no effective dating | 8 |
 | 9 — coordinates stay `NOT NULL` on every node *(its pin rule is superseded by 11)* | 9 |
 | 10 — calc parameters walk the ancestors: asset → own location → parent … → root → organization; nearest wins | 10 |
@@ -764,3 +764,56 @@ reviewer and a cold start gate it. One contract field in
   a campus tariff resolves for a site with no row of its own and loses to the
   site's own row; health and `by_location` over a campus cover its subtree.
 - **Browser.** The parent picker, the tree picker and the map filter.
+
+## Amendment 1 — build rulings (owner, 2026-10-09)
+
+The plan for the first build PR (the tree core) found places where this
+record's text and the source disagree, and asked the owner. Each ruling below
+names the decision or choice whose text it changes; where it conflicts with
+the text above, this amendment wins.
+
+- **A1 — Drafter choice 3, "A parent row the function cannot read raises".**
+  Now: the function returns `NEW`, and the composite foreign key refuses the
+  same statement with SQLSTATE `23503`. A raise there would give a caller an
+  existence oracle for a row in another organization. The active-children
+  check runs before the parent lookup, so deactivating a node with an active
+  child is refused whatever the caller can see.
+- **A2 — Drafter choice 3, the isolation check.** A root `INSERT` exits before
+  the isolation check: a root has no parent to race on. The sentence "No code
+  sets an isolation level today" is wrong:
+  `apps/api/src/dashboard/kpi-prior.integration.spec.ts` sets
+  `REPEATABLE READ` and inserts a root location. Every other path, a child
+  insert or an update of `parent_id`, `active` or `organization_id`, still
+  raises under any level but `READ COMMITTED`.
+- **A3 — Drafter choice 2, the reason codes.** `location_parent_cross_org` is
+  dropped. A foreign or unknown parent is 400 `location_parent_not_found`: a
+  pre-check bound by row-level security cannot tell the two apart, and must
+  not become an existence oracle.
+- **A4 — Decision 5, the asset half.** The asset `PATCH` that changes
+  `locationId` is also 409 `location_inactive`. A rename on an inactive node
+  stays allowed. The RTU update body has no `locationId`, so that arm does not
+  exist.
+- **A5 — Decision 5, locking.** Create, reactivate and move-in read the
+  location `FOR SHARE` in the caller's transaction. `locations.deactivate`
+  locks its own row `FOR UPDATE` before it counts, and counts and updates in
+  one transaction (today it uses two).
+- **A6 — Decision 7, `by_location`.** It groups by the highest ancestor the
+  reader can read (built in PR 2).
+- **A7 — Decision 7, health.** Health filters on the subtree and does not
+  group. The row for ruling 7 in the table at the top is corrected to say so (in place).
+- **C — defaults that change the record's text.**
+  - The trigger raises SQLSTATE `23514` with `CONSTRAINT = 'locations_tree_guard'`
+    and the reason code as the message; the service maps it to the same 4xx
+    as its own pre-check.
+  - The composite foreign key is added after `RESET ROLE`, as migration `0085`
+    placed `locations_type_fk`. The not-self `CHECK` and the
+    `(organization_id, parent_id)` index are SQL-only in the Drizzle schema.
+  - A move is `PATCH /admin/locations/:id { parentId }`. The summary DTO
+    (`AdminLocationSummaryDto`) is unchanged.
+  - PR 1 owns the report-file location stamp: the on-demand save stamps the
+    caller's direct grants (`grantedLocationIds`), never the closure.
+  - `LOCATION_TREE_MAX_DEPTH` is declared once, in `@bms/shared`.
+  - Drafter choice 8's hide rule also applies to `GET /admin/locations` and to
+    every `AdminLocationDto` the locations service returns: `parentId` is
+    `null` when the caller cannot read the parent.
+  - The tripwire lives in `apps/api/src/auth/location-tree.integration.spec.ts`.

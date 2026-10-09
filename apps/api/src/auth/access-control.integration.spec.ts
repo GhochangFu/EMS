@@ -13,9 +13,11 @@ import { jwtFor, jwtForUnprovisioned, SEEDED, SYNTHETIC_SUB } from "../testing/s
  * function, and `access-scope.spec.ts` proves which *sources* a role resolves
  * from. Neither executes a query. Everything below lives in the gap between
  * them: `scopeFromSource`'s four query branches, the precedence walk in
- * `scopeForUser`, and `resolveDbUser`'s choice of authority. Codegraph reports
- * no covering tests on `writableLocationIds` (5 callers), `canManageLocation`
- * (15 callers) or `scopeFromSource` — this file is that coverage.
+ * `scopeForUser`, and `resolveDbUser`'s choice of authority. This file is the
+ * coverage of `writableLocationIds`, `canManageLocation` and `scopeFromSource`
+ * on the seeded (root-only) fixtures; since `F2.10` the subtree closure a
+ * grant means is proved by `location-tree.integration.spec.ts`, which
+ * replaced the flat-management tripwire that used to live here.
  *
  * **Every expectation is computed with independent SQL through the pool**, not
  * read back from the service. Asserting a service against its own queries
@@ -634,82 +636,6 @@ export async function assertUngrantedRolesFailClosed(
   );
   // …but keeps today's work.
   await svc.assertOperationsWriteRole(operator, "operational");
-}
-
-/**
- * Location management is **flat today**, and this pins that fact deliberately.
- *
- * ADR 0018 recorded the decision that a grant on a parent location *does* imply
- * its descendants, to be implemented by the companion location-depth ADR. That
- * change turns `writableLocationIds` from a direct `user_location_access`
- * lookup into a transitive closure, silently widening all 15 `canManageLocation`
- * callers. ADR 0018's own words: "it silently widens access, which is the
- * failure mode that will not announce itself."
- *
- * So this assertion is the announcement. When the companion ADR lands it will
- * fail, and whoever is holding it must then prove the widening is exactly the
- * intended subtree and nothing more. Do not relax it to make depth compile.
- */
-export async function assertLocationManagementIsFlat(
-  svc: AccessControlService,
-  pool: pg.Pool,
-): Promise<void> {
-  const jwt = jwtFor(SEEDED.locationAdmin, "location_admin");
-
-  const granted = await pool.query<{ id: string }>(
-    `SELECT l.id FROM bms.locations l
-       JOIN bms.user_location_access ula ON ula.location_id = l.id
-       JOIN bms.users u ON u.id = ula.user_id
-      WHERE u.email = $1`,
-    [SEEDED.locationAdmin],
-  );
-  const expected = ids(granted.rows);
-  if (expected.size === 0) {
-    throw new Error(
-      "location admin has no grants — the size comparison below would be 0 === 0 " +
-        "and this tripwire would pass while proving nothing",
-    );
-  }
-  const writable = await svc.writableLocationIds(jwt);
-  if (writable === null) {
-    throw new Error("location admin writableLocationIds must be a list, not unrestricted");
-  }
-
-  const actual = new Set(writable);
-  if (actual.size !== expected.size) {
-    throw new Error(
-      `writableLocationIds returned ${actual.size} location(s) for ${expected.size} grant row(s). ` +
-        "If the companion location-depth ADR just landed this is the expected subtree widening — " +
-        "re-point this assertion at the intended closure and prove it stops there. " +
-        "Otherwise it is an unintended scope widening.",
-    );
-  }
-  for (const id of expected) {
-    if (!actual.has(id)) throw new Error(`writableLocationIds dropped granted location ${id}`);
-  }
-
-  // Every ungranted location must be refused, one at a time — `canManageLocation`
-  // is what 15 call sites actually invoke, and it can drift from the bulk list.
-  const ungranted = await pool.query<{ id: string }>(
-    `SELECT id FROM bms.locations WHERE id <> ALL($1) LIMIT 10`,
-    [[...expected]],
-  );
-  if (ungranted.rowCount === 0) {
-    throw new Error("no ungranted location exists — denial cannot be proven");
-  }
-  for (const row of ungranted.rows) {
-    if (await svc.canManageLocation(jwt, row.id)) {
-      throw new Error(
-        `canManageLocation allowed ungranted location ${row.id}. No location has a parent ` +
-          "today, so no subtree rule can justify this — it is a scope leak.",
-      );
-    }
-  }
-  for (const id of expected) {
-    if (!(await svc.canManageLocation(jwt, id))) {
-      throw new Error(`canManageLocation refused granted location ${id}`);
-    }
-  }
 }
 
 /**

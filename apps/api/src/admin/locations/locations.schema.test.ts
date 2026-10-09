@@ -2,9 +2,12 @@ import { describe, it } from "vitest";
 
 import {
   createAdmitsNullProvince,
+  createAdmitsParentId,
   createAdmitsPumpStationType,
   createMetaDescribesTheSeedKey,
+  createRefusesNonUuidParentId,
   updateAdmitsNullCapital,
+  updateAdmitsParentIdAlone,
   updateMetaDescribesTheSeedKey,
 } from "./locations.schema.spec";
 
@@ -32,5 +35,19 @@ describe("F4.170 — the OpenAPI document says meta.seedKey is seed-owned (compl
 
   it("D2 — the update body's meta description", () => {
     updateMetaDescribesTheSeedKey();
+  });
+});
+
+describe("F2.10 — the location body schemas carry parentId (ADR 0098)", () => {
+  it("P1 — create admits a uuid, null and absent", () => {
+    createAdmitsParentId();
+  });
+
+  it("P2 — create refuses a non-uuid parentId", () => {
+    createRefusesNonUuidParentId();
+  });
+
+  it("P3 — update admits { parentId: null } alone (the move)", () => {
+    updateAdmitsParentIdAlone();
   });
 });

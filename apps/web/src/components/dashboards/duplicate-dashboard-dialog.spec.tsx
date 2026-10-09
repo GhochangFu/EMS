@@ -64,6 +64,7 @@ const LOCATIONS = [
     name: "Site 1",
     type: "smoc_campus" as const,
     typeLabel: "SMOC campus",
+    parentId: null,
     province: null,
     capital: null,
     timezone: null,
@@ -189,7 +190,7 @@ function signInAsAssetGroupAdmin(): void {
     scope: {
       kind: "asset_group",
       locations: [
-        { id: "loc-1", code: "WC", slug: "western-cape", name: "Western Cape", type: "smoc_campus", province: null },
+        { id: "loc-1", code: "WC", slug: "western-cape", name: "Western Cape", type: "smoc_campus", province: null, parentId: null },
       ],
       assetGroups: [{ id: "grp-1", locationId: "loc-1", code: "hvac", name: "Hvac", organizationId: SOURCE_ORG }],
       assetIds: ["a1"],

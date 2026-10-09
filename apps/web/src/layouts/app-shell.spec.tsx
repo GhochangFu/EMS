@@ -53,6 +53,7 @@ const LOCATION: AccessibleScope = {
   locations: [
     {
       id: "55555555-5555-4555-8555-555555555555",
+      parentId: null,
       code: "PHE-1",
       slug: "phe-1",
       name: "PHE plant",

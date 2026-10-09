@@ -2,6 +2,12 @@ import { describe, it } from "vitest";
 
 import {
   assertActiveStoredCodeIsActive,
+  assertBuildingIsMatched,
+  assertCampusIsMatched,
+  assertPlantIsMatched,
+  assertTheAcceptedFalseMatchOnBuilding,
+  assertTheLongerPhraseWins,
+  assertTownshipIsMatched,
   assertPatchLocationWithoutTypeIsNotChecked,
   assertPatchNamingATypeIsChecked,
   assertPatchNamingAnInactiveTypeIsRefused,
@@ -35,5 +41,31 @@ describe("assertPatchLocationTypeIsActive (F4.162)", () => {
 
   it("asks nothing when the patch has no location", async () => {
     await assertPatchWithoutLocationIsNotChecked();
+  });
+});
+
+describe("matchLocationType over the F2.10 types (ADR 0098 ruling 14)", () => {
+  it("reads plant", () => {
+    assertPlantIsMatched();
+  });
+
+  it("reads campus", () => {
+    assertCampusIsMatched();
+  });
+
+  it("reads township", () => {
+    assertTownshipIsMatched();
+  });
+
+  it("reads building", () => {
+    assertBuildingIsMatched();
+  });
+
+  it("reads the verb building as the type (the accepted false match)", () => {
+    assertTheAcceptedFalseMatchOnBuilding();
+  });
+
+  it("prefers the longer phrase", () => {
+    assertTheLongerPhraseWins();
   });
 });

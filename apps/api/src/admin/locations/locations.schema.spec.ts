@@ -66,3 +66,26 @@ export function createMetaDescribesTheSeedKey(): void {
 export function updateMetaDescribesTheSeedKey(): void {
   expect(metaDescription(updateLocationBodySchema, "updateLocationBody")).toMatch(/seedKey.*seed-owned.*ignored/s);
 }
+
+const PARENT_UUID = "44444444-4444-4444-4444-444444444444";
+
+/** P1 (`F2.10`) — a create body admits a uuid parent, null (a root) and an absent key. */
+export function createAdmitsParentId(): void {
+  for (const parentId of [PARENT_UUID, null, undefined]) {
+    const body = parentId === undefined ? CREATE_BASE : { ...CREATE_BASE, parentId };
+    const parsed = createLocationBodySchema.safeParse(body);
+    expect(parsed.success, parsed.success ? "" : JSON.stringify(parsed.error.issues)).toBe(true);
+  }
+}
+
+/** P2 — a create body refuses a parentId that is not a uuid. */
+export function createRefusesNonUuidParentId(): void {
+  expect(createLocationBodySchema.safeParse({ ...CREATE_BASE, parentId: "not-a-uuid" }).success).toBe(false);
+}
+
+/** P3 — an update body is the move: `{ parentId: null }` alone parses (inherited via omit().partial()). */
+export function updateAdmitsParentIdAlone(): void {
+  const parsed = updateLocationBodySchema.safeParse({ parentId: null });
+  expect(parsed.success, parsed.success ? "" : JSON.stringify(parsed.error.issues)).toBe(true);
+  expect(updateLocationBodySchema.safeParse({ parentId: PARENT_UUID }).success).toBe(true);
+}

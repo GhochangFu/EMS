@@ -39,6 +39,8 @@ export const adminLocationDtoSchema = z.object({
   name: z.string(),
   type: locationTypeCodeSchema,
   typeLabel: z.string(), // F4.162 (ADR 0077 Amendment 1, OQ2) — the joined bms.location_types.label.
+  /** `F2.10` (ADR 0098 Amendment 1): null = root OR a parent the caller cannot read. */
+  parentId: z.string().nullable(),
   province: z.string().nullable(),
   capital: z.string().nullable(),
   timezone: z.string().nullable(),
@@ -48,6 +50,25 @@ export const adminLocationDtoSchema = z.object({
   meta: z.record(z.unknown()).nullable(),
   createdAt: z.string(),
   updatedAt: z.string(),
+});
+
+/**
+ * `F2.10` (ADR 0098 Drafter choice 2, Amendment 1 A3): why a location tree
+ * write was refused. There is no `location_parent_cross_org` — a foreign or
+ * unknown parent is `location_parent_not_found`, so the check is no oracle.
+ */
+export const locationWriteRefusalReasonSchema = z.enum([
+  "location_parent_not_found",
+  "location_parent_cycle",
+  "location_depth_exceeded",
+  "location_parent_inactive",
+  "location_has_active_children",
+  "location_inactive",
+]);
+
+export const locationWriteRefusalSchema = z.object({
+  message: z.string(),
+  reason: locationWriteRefusalReasonSchema,
 });
 
 export const adminRtuDtoSchema = z.object({

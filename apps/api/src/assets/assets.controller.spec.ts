@@ -263,7 +263,7 @@ export async function assertRoleSummaryUnrestrictedReaderPassesNull(): Promise<v
 
 const LOCATION_ID = "44444444-4444-4444-8444-444444444444";
 const GROUP_ID = "55555555-5555-4555-8555-555555555555";
-const LOCATION = { id: LOCATION_ID, code: "L1", slug: "l1", name: "Site 1", type: "rsmoc" as const, province: null };
+const LOCATION = { id: LOCATION_ID, code: "L1", slug: "l1", name: "Site 1", type: "rsmoc" as const, province: null, parentId: null };
 const GROUP = { id: GROUP_ID, locationId: LOCATION_ID, code: "G1", name: "Group 1", organizationId: "org-1" };
 
 async function groupsPassedFor(scope: AccessibleScope): Promise<RoleSummaryGroupScope[]> {

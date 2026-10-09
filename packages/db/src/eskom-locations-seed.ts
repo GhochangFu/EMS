@@ -474,15 +474,27 @@ export async function seedEskomLocations(
       // candidate.
     } else if (claim.id !== null) {
       // The row was found in `eskomOrgId`, so its organization is not written.
+      //
+      // `F2.10` (ADR 0098 decision 5): `active` is re-asserted only where the
+      // tree allows it. An operator may move a seeded row under a new parent
+      // and deactivate both bottom-up; reactivating the row under that
+      // inactive parent would raise `location_parent_inactive` and stop the
+      // boot. The subquery names the target through its alias `l`: a bare
+      // `parent_id` inside it would bind to `p`.
       await pool.query(
         `
-        UPDATE bms.locations SET
-          slug = CASE WHEN $2::boolean THEN $3 ELSE slug END,
-          code = CASE WHEN $4::boolean THEN $5 ELSE code END,
+        UPDATE bms.locations AS l SET
+          slug = CASE WHEN $2::boolean THEN $3 ELSE l.slug END,
+          code = CASE WHEN $4::boolean THEN $5 ELSE l.code END,
           name = $6, type = $7, province = $8, capital = $9,
-          latitude = $10, longitude = $11, timezone = $12, active = true,
+          latitude = $10, longitude = $11, timezone = $12,
+          active = CASE
+            WHEN l.parent_id IS NULL THEN true
+            WHEN (SELECT p.active FROM bms.locations p WHERE p.id = l.parent_id) THEN true
+            ELSE l.active
+          END,
           meta = $13::jsonb, updated_at = now()
-        WHERE id = $1
+        WHERE l.id = $1
         `,
         [
           claim.id,

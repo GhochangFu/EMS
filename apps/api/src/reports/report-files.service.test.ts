@@ -15,6 +15,7 @@ describe("F3.5a ReportFilesService — the location_ids stamp (Amendment 1 item 
   it("an organization admin stamps {}", spec.assertOrganizationAdminStampsTheEmptyArray);
   it("a location admin stamps writableLocationIds ∩ the organization's locations", spec.assertLocationAdminStampsTheIntersection);
   it("a location admin with no intersection is 403 before the render", spec.assertLocationAdminWithNoIntersectionIs403);
+  it("F2.10: a location admin stamps the granted nodes, never the subtree closure", spec.assertLocationAdminStampsTheGrantedNodesNotTheClosure);
 });
 
 describe("F3.5a ReportFilesService — render, hash, object then row", () => {

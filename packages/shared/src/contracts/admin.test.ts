@@ -2,6 +2,7 @@ import { describe, it } from "vitest";
 
 import {
   runAdminLocationDtoAcceptsPumpStationTest,
+  runAdminLocationDtoParentIdTests,
   runAdminLocationDtoRequiresTypeLabelTest,
   runAssetInstantiationResultDashboardFieldsTests,
   runAssetInstantiationResultSeededRulesTests,
@@ -39,5 +40,11 @@ describe("F4.157 — adminLocationDtoSchema.type widens off the closed enum (ADR
 describe("F4.162 — adminLocationDtoSchema.typeLabel (ADR 0077 Amendment 1, OQ2)", () => {
   it("C10 — refuses a row without typeLabel", () => {
     runAdminLocationDtoRequiresTypeLabelTest();
+  });
+});
+
+describe("F2.10 — adminLocationDtoSchema.parentId (ADR 0098)", () => {
+  it("accepts null and a string parentId, and refuses a row without it", () => {
+    runAdminLocationDtoParentIdTests();
   });
 });

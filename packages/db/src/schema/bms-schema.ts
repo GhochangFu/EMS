@@ -2,6 +2,7 @@ import {
   boolean,
   char,
   doublePrecision,
+  foreignKey,
   integer,
   jsonb,
   pgSchema,
@@ -102,6 +103,9 @@ export const locations = bmsSchema.table("locations", {
   organizationId: uuid("organization_id")
     .notNull()
     .references(() => organizations.id),
+  // F2.10 (ADR 0098, migration 0103): NULL = a root. No `.references()` — the
+  // same-organization composite foreign key is declared in the callback below.
+  parentId: uuid("parent_id"),
   code: varchar("code", { length: 64 }).notNull(),
   slug: varchar("slug", { length: 64 }).notNull().unique(),
   name: varchar("name", { length: 255 }).notNull(),
@@ -124,6 +128,18 @@ export const locations = bmsSchema.table("locations", {
   updatedAt: timestamp("updated_at", { withTimezone: true })
     .notNull()
     .defaultNow(),
+}, (t) => {
+  // F2.10 (migration 0103). The not-self CHECK and the (organization_id,
+  // parent_id) index are SQL-only, like locations_org_code_idx. Block body so
+  // the e4.1b / f4.157 text slices still end at the first `});`.
+  return {
+    idOrganizationKey: unique("locations_id_organization_key").on(t.id, t.organizationId),
+    parentOrganizationFk: foreignKey({
+      name: "locations_parent_id_organization_id_fkey",
+      columns: [t.parentId, t.organizationId],
+      foreignColumns: [t.id, t.organizationId],
+    }),
+  };
 });
 
 /** RTU / gateway under a location (PHE EdgeRTU or Eskom domain simulator). */

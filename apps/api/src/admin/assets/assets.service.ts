@@ -17,6 +17,7 @@ import { FLEET_DRIZZLE, TENANT_DRIZZLE } from "../../database/database.tokens";
 import { withTenant, type BmsTx } from "../../database/tenant-context";
 import { translateConstraintErrors } from "../../database/translate-constraint-errors";
 import { VocabulariesService } from "../../vocabularies/vocabularies.service";
+import { assertLocationActive } from "../locations/assert-location-active";
 import { MasterDataAuditService } from "../master-data-audit.service";
 import {
   omitTelemetrySource,
@@ -193,6 +194,9 @@ export class AssetsAdminService {
     const organizationId = await this.resolveLocationOrg(body.locationId);
 
     const insertRow = () => withTenant(this.tenantDb, organizationId, async (tx) => {
+      // F2.10 / ADR 0098 ruling 15, Amendment 1 A5 — no asset on an inactive
+      // location; the read is FOR SHARE so a concurrent deactivate waits.
+      await assertLocationActive(tx, body.locationId);
       const rtu = await this.assertRtuLocation(body.rtuId, body.locationId, tx);
       // `F4.139` — an asset attached to an RTU takes its `telemetrySource` from
       // that RTU, never from the caller: see `admin/telemetry-source.ts` for the
@@ -334,6 +338,12 @@ export class AssetsAdminService {
 
     const nextCode = body.code ?? existing.code;
     const updateRow = () => withTenant(this.tenantDb, organizationId, async (tx) => {
+      // F2.10 / ADR 0098 Amendment 1 A4 — a move onto an inactive location is
+      // refused; an edit that leaves the asset where it is (a rename on an
+      // inactive node included) is not a move and is not checked.
+      if (body.locationId !== undefined && body.locationId !== existing.locationId) {
+        await assertLocationActive(tx, body.locationId);
+      }
       const rtu = await this.assertRtuLocation(nextRtuId, nextLocationId, tx);
       // `F4.139` — restated on every update that leaves an RTU attached, not
       // only on the ones that mention `rtuId`: the invariant is a postcondition,
@@ -480,6 +490,18 @@ export class AssetsAdminService {
 
     const organizationId = await this.resolveAssetOrg(id);
     await withTenant(this.tenantDb, organizationId, async (tx) => {
+      // F2.10 / ADR 0098 ruling 15 — an asset is not restored onto an inactive
+      // location. Its location id is read here rather than by widening
+      // `resolveAssetOrg`, which `deactivate` shares.
+      const [current] = await tx
+        .select({ locationId: assets.locationId })
+        .from(assets)
+        .where(eq(assets.id, id))
+        .limit(1);
+      if (!current) {
+        throw new NotFoundException("Asset not found");
+      }
+      await assertLocationActive(tx, current.locationId);
       await tx.update(assets).set({ active: true }).where(eq(assets.id, id));
       await this.audit.write(
         {

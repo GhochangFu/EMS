@@ -13,7 +13,6 @@ import {
   assertFixturesPresent,
   assertGlobalAdminScope,
   assertJwtForFailsClosed,
-  assertLocationManagementIsFlat,
   assertLocationScope,
   assertOrganizationScope,
   assertUngrantedRolesFailClosed,
@@ -137,10 +136,6 @@ describe.skipIf(!connectionString)("F4.10 — access control against a real data
 
   it("walks all four sources and fails closed for an ungranted operator/viewer", async () => {
     await assertUngrantedRolesFailClosed(svc);
-  });
-
-  it("keeps location management flat — the companion depth ADR's tripwire", async () => {
-    await assertLocationManagementIsFlat(svc, pool as pg.Pool);
   });
 
   it("resolves asset management through location_id (ADR 0018)", async () => {

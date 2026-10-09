@@ -82,6 +82,7 @@ const PICKER_POINT: AssetPointPickerRow = {
 /** The one location the master-data chain lists — `fetchAdminLocations`'s real DTO shape. */
 const LOCATION = {
   id: "loc-1",
+  parentId: null,
   organizationId: ORG,
   organizationCode: "IONX",
   organizationName: "Ion Exchange",

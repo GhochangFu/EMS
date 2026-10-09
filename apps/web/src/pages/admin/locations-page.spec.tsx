@@ -53,6 +53,7 @@ const ORGANIZATIONS = {
 function location(overrides: Partial<AdminLocationDto>): AdminLocationDto {
   return {
     id: "11111111-1111-1111-1111-111111111111",
+    parentId: null,
     organizationId: ORG_ID,
     organizationCode: "PHEWB",
     organizationName: "PHE West Bengal",
