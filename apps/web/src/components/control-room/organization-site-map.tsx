@@ -26,7 +26,7 @@ type OrganizationSiteMapProps = {
 export function OrganizationSiteMap({ organizationId }: OrganizationSiteMapProps) {
   const query = useQuery({
     queryKey: ["map", "sites"],
-    queryFn: fetchMapSites,
+    queryFn: () => fetchMapSites(),
     refetchInterval: 8000,
   });
   const pins = query.data ? organizationPins(query.data, organizationId) : [];

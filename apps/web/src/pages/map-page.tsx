@@ -20,7 +20,7 @@ export function MapPage({ user }: MapPageProps) {
   const accessToken = useAuthStore((state) => state.accessToken);
   const q = useQuery({
     queryKey: ["map", "sites"],
-    queryFn: fetchMapSites,
+    queryFn: () => fetchMapSites(),
     refetchInterval: 8000,
   });
 
