@@ -1,6 +1,8 @@
 import { Module } from "@nestjs/common";
 
 import { MasterDataAuditService } from "../admin/master-data-audit.service";
+import { CalcModule } from "../calc/calc.module";
+import { AssetKpisService } from "./asset-kpis.service";
 import { AssetImagesController } from "./asset-images.controller";
 import { AssetImagesService } from "./asset-images.service";
 import { AssetImagesWriteController } from "./asset-images-write.controller";
@@ -12,8 +14,11 @@ import { AssetsService } from "./assets.service";
 /**
  * `AccessControlService` resolves through the `@Global()` `AccessControlModule`,
  * the pool tokens through the global database module, and `STORAGE_CLIENT`
- * through the `@Global()` `StorageModule` (`F3.3`, ADR 0066 decision 6) — so
- * no `imports:` here.
+ * through the `@Global()` `StorageModule` (`F3.3`, ADR 0066 decision 6).
+ *
+ * `CalcModule` is imported for `F2.33` (ADR 0097 decision 5): `AssetKpisService`
+ * evaluates a template's KPIs through the resolvers it exports. Nothing under
+ * `calc/` imports from `assets/`, so the module graph stays acyclic.
  *
  * `MasterDataAuditService` is provided here rather than imported (`F3.4`,
  * ADR 0066 decision 7) — it is stateless (reads its Drizzle handles from the
@@ -23,12 +28,14 @@ import { AssetsService } from "./assets.service";
  * sharing one; `AdminModule` does not export it.
  */
 @Module({
+  imports: [CalcModule],
   controllers: [AssetsController, AssetImagesController, AssetImagesWriteController],
   providers: [
     AssetsService,
     AssetImagesService,
     AssetImagesWriteService,
     AssetRoleSummaryService,
+    AssetKpisService,
     MasterDataAuditService,
   ],
 })

@@ -1,17 +1,16 @@
 import { Injectable, Logger, type OnModuleDestroy, type OnModuleInit } from "@nestjs/common";
 
-import type { CalcCrossRef } from "@bms/shared";
-import { CALC_DIALECT, crossRefKey, evaluate, windowKey } from "@bms/shared";
+import { CALC_DIALECT, evaluate } from "@bms/shared";
 
 import { sleep } from "../telemetry/sleep";
 import { MetricsService, type CalcRuntimeSkipReason } from "../observability/metrics.service";
 import { runSweepLoop } from "../scheduling/sweep-loop";
-import { resolveAggregate } from "./calc-aggregate";
 import { defKey, inputKey } from "./calc-batch";
 import type { CalcDefinition } from "./calc-definition";
 import { CalcDefinitionsService } from "./calc-definitions.service";
 import { buildCalcGraph, topologicalOrder, type Membership, type NodeId } from "./calc-graph";
-import { classifyInput, type CalcInputSample } from "./calc-inputs";
+import { assembleInputs, planWindowRequests, type ComputedThisTick } from "./calc-input-assembly";
+import type { CalcInputSample } from "./calc-inputs";
 import { CalcInputsService } from "./calc-inputs.service";
 import { CalcParametersService } from "./calc-parameters.service";
 import { bucketTimeMs, isDue } from "./calc-schedule";
@@ -72,149 +71,26 @@ function noteWritten(deps: CalcSchedulerDeps, def: CalcDefinition, nowMs: number
   deps.status.record(def.assetId, def.templatePointId, { outcome: "written", reason: null, atMs: nowMs });
 }
 
-/**
- * The values computed earlier in **this** sweep, keyed by `inputKey` — the
- * `computedThisTick` overlay of plan design decision 7. Consulted before every
- * read, so a same-tick chain propagates within the tick while the write stays
- * one batch at the end.
- *
- * An entry's `timeMs` is the **bucketed** time the write will carry, never
- * `nowMs` (plan correction 60): the overlay is a read-through of a write that
- * is about to happen, not a second freshness claim about the same number. A
- * downstream formula whose `max_input_age_seconds` is tighter than its input's
- * own interval therefore reads `stale_input` here exactly as it would from the
- * stored row one tick later — decision 5 reporting a real misconfiguration,
- * rather than the overlay hiding it on the tick the member was recomputed.
- */
-type ComputedThisTick = ReadonlyMap<NodeId, CalcInputSample>;
-
-type Pair = { readonly assetId: string; readonly pointKey: string };
-
 const EMPTY_MEMBERSHIP: Membership = { qualified: new Map(), members: new Map() };
 const EMPTY_PARAMETERS: ReadonlyMap<string, number> = new Map();
 const EMPTY_WINDOWS: ReadonlyMap<string, WindowReadResult> = new Map();
 
 /**
- * The samples for `pairs`, overlay first and one batched read for the rest.
- * Keyed by `inputKey`, like the pairs read itself.
- */
-async function readPairSamples(
-  deps: CalcSchedulerDeps,
-  pairs: readonly Pair[],
-  computedThisTick: ComputedThisTick,
-): Promise<Map<string, CalcInputSample>> {
-  const samples = new Map<string, CalcInputSample>();
-  const unread: Pair[] = [];
-  for (const pair of pairs) {
-    const key = inputKey(pair.assetId, pair.pointKey);
-    const computed = computedThisTick.get(key);
-    if (computed) {
-      samples.set(key, computed);
-    } else {
-      unread.push(pair);
-    }
-  }
-  if (unread.length > 0) {
-    for (const [key, sample] of await deps.inputs.getLatestSamplesForPairs(unread)) {
-      samples.set(key, sample);
-    }
-  }
-  return samples;
-}
-
-/** One cross reference and the `(assetId, pointKey)` pairs it reads. */
-type CrossRead = { readonly ref: CalcCrossRef; readonly key: string; readonly pairs: readonly Pair[] };
-
-/**
- * What one definition's cross references resolved to: the values keyed by
- * `crossRefKey`, and the members every aggregate in the formula excluded.
- *
- * **`excluded` is carried out rather than counted here**, which is the whole
- * point of the shape. `bms_api_calc_aggregate_members_excluded_total`'s own
- * help text says "excluded … from a value that was still written", so the
- * count belongs to the *write*, not to the aggregate that happened to resolve
- * first. Counted inside the loop below it moved for a formula that then
- * refused on a later reference — a stale `{CODE.key}` after the aggregate, a
- * second aggregate below the coverage floor, a `non_finite` result — and the
- * counter reported exclusions from values that were never written.
- */
-type CrossInputs = { readonly values: Map<string, number>; readonly excluded: number };
-
-/**
- * `crossInputs` for one `v2` definition (ADR 0055 decisions 11 and 12), or
- * `null` after counting the refusal. A `{CODE.key}` whose code resolved to
- * nothing at the owner's location is `unknown_asset_reference`; a resolved one
- * is classified exactly like a local input. Each aggregate goes through
- * `resolveAggregate` over its declared members, and its exclusions are
- * **totalled and returned**, for `runScheduledSweep` to count beside
- * `noteWritten` once the formula has actually produced a value.
- *
- * `null` stays the failure sentinel, so every `return refuse(…)` site below is
- * untouched.
- */
-async function resolveCrossInputs(
-  deps: CalcSchedulerDeps,
-  def: CalcDefinition,
-  nowMs: number,
-  membership: Membership,
-  computedThisTick: ComputedThisTick,
-): Promise<CrossInputs | null> {
-  const qualified = membership.qualified.get(def.assetId);
-  const members = membership.members.get(def.assetId);
-
-  const reads: CrossRead[] = [];
-  for (const ref of def.crossRefs) {
-    const key = crossRefKey(ref);
-    if (ref.kind === "qref") {
-      const assetId = qualified?.get(ref.assetCode);
-      if (assetId === null || assetId === undefined) {
-        return refuse(deps, def, "unknown_asset_reference", nowMs);
-      }
-      reads.push({ ref, key, pairs: [{ assetId, pointKey: ref.pointKey }] });
-    } else {
-      reads.push({ ref, key, pairs: members?.get(key) ?? [] });
-    }
-  }
-
-  const samples = await readPairSamples(
-    deps,
-    reads.flatMap((read) => read.pairs),
-    computedThisTick,
-  );
-  const sampleOf = (pair: Pair): CalcInputSample | undefined => samples.get(inputKey(pair.assetId, pair.pointKey));
-
-  const values = new Map<string, number>();
-  let excluded = 0;
-  for (const { ref, key, pairs } of reads) {
-    if (ref.kind === "qref") {
-      const sample = sampleOf(pairs[0]);
-      const classification = classifyInput(sample, nowMs, def.maxInputAgeSeconds);
-      if (classification !== "fresh" || !sample) {
-        return refuse(deps, def, classification === "missing" ? "missing_input" : "stale_input", nowMs);
-      }
-      values.set(key, sample.value);
-      continue;
-    }
-    const result = resolveAggregate(ref.fn, pairs.map(sampleOf), nowMs, def.maxInputAgeSeconds, def.minCoverageRatio);
-    if (!result.ok) {
-      return refuse(deps, def, result.reason, nowMs);
-    }
-    // Accumulated, never counted here — see {@link CrossInputs}. A refusal from
-    // a later reference in this same loop discards the total with the map.
-    excluded += result.excluded;
-    values.set(key, result.value);
-  }
-  return { values, excluded };
-}
-
-/**
  * One formula's successful pass: the row to write, and the aggregate members
  * that were excluded from it. Both, together, because the counter's meaning is
- * "excluded from a value that was still written" — see {@link CrossInputs}.
- * `null` remains the failure sentinel, so the refusal sites are unchanged.
+ * "excluded from a value that was still written" — see `CrossInputs` in
+ * `calc-input-assembly.ts`. `null` remains the failure sentinel, so the
+ * refusal sites are unchanged.
  */
 type ScheduledOutcome = { readonly write: CalcWriteInput; readonly excluded: number };
 
+/**
+ * The input assembly — parameters, local references, cross references and
+ * window reads, in that order — lives in `calc-input-assembly.ts` (ADR 0097
+ * decision 5), which the KPI read host calls too. It returns a refusal rather
+ * than calling {@link refuse}; this function hands the reason to `refuse`, so
+ * every refusal is still counted and recorded in one place.
+ */
 async function evaluateOneScheduledFormula(
   deps: CalcSchedulerDeps,
   def: CalcDefinition,
@@ -224,77 +100,20 @@ async function evaluateOneScheduledFormula(
   parameters: ReadonlyMap<string, number>,
   windows: ReadonlyMap<string, WindowReadResult>,
 ): Promise<ScheduledOutcome | null> {
-  // Parameters first (ADR 0070 decision 2): a `$key` with no row in scope is
-  // `parameter_unset` before any input is read, so a missing parameter never
-  // pays a pairs read. `parameters` is keyed by `inputKey(assetId, key)` and
-  // an absent key is absent — the resolver never defaults, and neither does
-  // this: the fourth map is built only from what resolved.
-  const params = new Map<string, number>();
-  for (const key of def.paramRefs) {
-    const value = parameters.get(inputKey(def.assetId, key));
-    if (value === undefined) {
-      return refuse(deps, def, "parameter_unset", nowMs);
-    }
-    params.set(key, value);
+  const assembled = await assembleInputs(
+    deps,
+    def,
+    nowMs,
+    membership,
+    computedThisTick,
+    parameters,
+    windows,
+    windowEndMs(nowMs, def.intervalSeconds ?? 0),
+  );
+  if (!assembled.ok) {
+    return refuse(deps, def, assembled.reason, nowMs);
   }
-
-  // Local references: the overlay first, then one batched read for the rest —
-  // a `v1` formula never hits the overlay (its refs are never derived, which
-  // `v1_references_derived` holds at read time), so its read is unchanged.
-  const samples = new Map<string, CalcInputSample>();
-  const unread: string[] = [];
-  for (const ref of def.refs) {
-    const computed = computedThisTick.get(inputKey(def.assetId, ref));
-    if (computed) {
-      samples.set(ref, computed);
-    } else {
-      unread.push(ref);
-    }
-  }
-  if (unread.length > 0) {
-    for (const [ref, sample] of await deps.inputs.getLatestSamples(def.assetId, unread)) {
-      samples.set(ref, sample);
-    }
-  }
-  const inputs = new Map<string, number>();
-  for (const ref of def.refs) {
-    const sample = samples.get(ref);
-    const classification = classifyInput(sample, nowMs, def.maxInputAgeSeconds);
-    if (classification !== "fresh" || !sample) {
-      return refuse(deps, def, classification === "missing" ? "missing_input" : "stale_input", nowMs);
-    }
-    inputs.set(ref, sample.value);
-  }
-
-  let crossInputs: Map<string, number> | undefined;
-  let excluded = 0;
-  if (def.crossRefs.length > 0) {
-    const resolved = await resolveCrossInputs(deps, def, nowMs, membership, computedThisTick);
-    if (resolved === null) {
-      return null;
-    }
-    crossInputs = resolved.values;
-    excluded = resolved.excluded;
-  }
-
-  // Window reads last (`E4.1b`, design decision 10): the point inside a
-  // window is in `refs`/`crossRefs` and was classified above, so a meter
-  // with no reading at all is `missing_input` and a stale one `stale_input`
-  // — as a `v1` formula over it would be — and only a LIVE meter with
-  // nothing inside the window reaches `window_empty`. `windows` is keyed by
-  // `windowRequestKey`; an answer absent from the batch is a failed read,
-  // never a value.
-  const windowValues = new Map<string, number>();
-  for (const node of def.windowReads) {
-    const answer = windows.get(windowRequestKey(def.assetId, node, windowEndMs(nowMs, def.intervalSeconds ?? 0)));
-    if (answer === undefined) {
-      return refuse(deps, def, "windows_unresolved", nowMs);
-    }
-    if (!answer.ok) {
-      return refuse(deps, def, answer.reason, nowMs);
-    }
-    windowValues.set(windowKey(node), answer.value);
-  }
+  const { inputs, crossInputs, params, windowValues, excluded } = assembled;
 
   const result = evaluate(def.ast, inputs, crossInputs, params, windowValues);
   if (!result.ok) {
@@ -485,13 +304,8 @@ export async function runScheduledSweep(
       continue;
     }
     const endMs = windowEndMs(nowMs, def.intervalSeconds);
-    for (const node of def.windowReads) {
-      let readAssetId: string | null | undefined = def.assetId;
-      if (node.kind === "window" && node.ref.kind === "qref") {
-        readAssetId = membership?.qualified.get(def.assetId)?.get(node.ref.assetCode);
-      }
-      if (readAssetId === null || readAssetId === undefined) continue;
-      windowRequests.set(windowRequestKey(def.assetId, node, endMs), { ownerAssetId: def.assetId, readAssetId, node, endMs });
+    for (const request of planWindowRequests(def, membership ?? EMPTY_MEMBERSHIP, endMs)) {
+      windowRequests.set(windowRequestKey(request.ownerAssetId, request.node, request.endMs), request);
     }
   }
   let windows: ReadonlyMap<string, WindowReadResult> | null = EMPTY_WINDOWS;

@@ -4,23 +4,27 @@ import { Link } from "react-router-dom";
 import type { AssetRow } from "../../api/assets";
 import { fetchDashboards } from "../../api/dashboards";
 import { useAssetHealth } from "../../hooks/use-asset-health";
+import { useAssetKpis } from "../../hooks/use-asset-kpis";
 import { apiErrorMessage } from "../../lib/api-error-message";
 import { activeLabel, NONE, noDashboardsSentence } from "../../lib/asset-browser";
 import { AssetHealthCard } from "../asset-health/asset-health-card";
 import { StatusPill } from "../status-pill";
+import { AssetKpisCard } from "./asset-kpis-card";
 
 /**
  * `F3.31` — the read-only detail panel of the `/asset-browser` route (ADR 0068
  * decision 3, ruling 5): a right-docked `<aside>` on the same route, the
  * `asset-images-panel.tsx` shape.
  *
- * Three reads and one filter, nothing written:
+ * Four reads and one filter, nothing written:
  *
  * - the row's own columns, from the `AssetRow` the list already holds —
  *   **no second asset fetch**;
  * - health through `useAssetHealth`, rendered by `AssetHealthCard`, which
  *   already prints ADR 0050's three absences as distinct sentences rather
  *   than a zero;
+ * - the template's KPIs through `useAssetKpis` (`F2.33`, ADR 0097), computed
+ *   at read time and rendered by `AssetKpisCard` under the health card;
  * - the asset's `F3.2` default dashboards through `GET /dashboards?assetId=`
  *   (decision 4), each a link to `/dashboards/<slug>`; an empty list reads
  *   `noDashboardsSentence`, which says why when the asset has no template.
@@ -38,6 +42,7 @@ export type AssetDetailPanelProps = {
 
 export function AssetDetailPanel({ asset, domainLabel, onClose }: AssetDetailPanelProps): JSX.Element {
   const healthQ = useAssetHealth(asset.id);
+  const kpisQ = useAssetKpis(asset.id);
   const dashboardsQ = useQuery({
     queryKey: ["dashboards", "list", { assetId: asset.id }],
     queryFn: () => fetchDashboards(undefined, asset.id),
@@ -86,6 +91,14 @@ export function AssetDetailPanel({ asset, domainLabel, onClose }: AssetDetailPan
           </p>
         ) : null}
         {healthQ.data ? <AssetHealthCard title="Health" data={healthQ.data} /> : null}
+
+        {kpisQ.isLoading ? <p className="text-xs text-ink-muted">Loading KPIs…</p> : null}
+        {kpisQ.isError ? (
+          <p className="rounded border border-critical-line bg-critical-wash p-2 text-xs text-critical-ink-strong">
+            KPIs could not be read. {apiErrorMessage(kpisQ.error as Error)}
+          </p>
+        ) : null}
+        {kpisQ.data ? <AssetKpisCard data={kpisQ.data} /> : null}
 
         <section className="border-t border-line pt-3">
           <h3 className="text-[11px] font-medium uppercase tracking-wide text-ink-muted">Dashboards</h3>

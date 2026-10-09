@@ -117,7 +117,7 @@ import {
 import { alarmAckBodySchema } from "../alarms/ack.schema";
 import { alarmListQuerySchema, alarmSummaryQuerySchema } from "../alarms/alarm-list.schema";
 import { alarmEnrichmentUpsertBodySchema } from "../alarms/enrichment.schema";
-import { assetRoleSummaryQuerySchema } from "../assets/assets.schema";
+import { assetKpisQuerySchema, assetRoleSummaryQuerySchema } from "../assets/assets.schema";
 import { loginBodySchema } from "../auth/login.schema";
 import { loadTrendQuerySchema, locationDashboardQuerySchema } from "../dashboard/dashboard.schema";
 import {
@@ -250,6 +250,8 @@ export const REQUEST_SCHEMAS: Record<string, ZodTypeAny> = {
   // `F4.20` reason every entry here exists: an undocumented scope parameter
   // and its `MAX_SCOPE_ASSET_IDS` bound are exactly that finding's omission.
   AssetsController_listRoleSummary: assetRoleSummaryQuerySchema,
+  // `F2.33` (ADR 0097 decision 2) — the KPI read's staleness window and its 60-minute bound.
+  AssetsController_listKpis: assetKpisQuerySchema,
   AssetHealthController_forAsset: assetHealthQuerySchema,
   AssetHealthController_summary: healthSummaryQuerySchema,
   AssetsAdminController_create: createAssetBodySchema,

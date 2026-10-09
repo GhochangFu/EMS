@@ -184,7 +184,8 @@ scheduler's specs must stay green unchanged.
 ### 6. Disclosure: counts, never members
 
 Per KPI the response carries the value, the state, the excluded count and the
-member count. It never carries a member's asset id, code or value. The reason
+member count. It never carries a member's asset id, code or value (see
+Amendment 1). The reason
 is containment. The membership read and the parameter read run on the fleet
 connection with no tenant actor (`calc-scope.service.ts:57`,
 `calc-parameters.service.ts:59`), and `telemetry.point_values` carries no row
@@ -289,3 +290,20 @@ Touched by the build: `apps/api/src/calc/` (the carve-out and the new module),
 - **Browser.** The card on the asset detail panel shows the value and the
   stale state; the KPIs tab no longer says no KPI is evaluated.
 - **Database.** N/A — no DDL.
+
+## Amendment 1 — what decision 6 guarantees (owner ruling 2026-10-09)
+
+The security review of the build found that decision 6's "never carries a
+member's asset id, code or value" is false in two cases, and the owner ruled
+to correct the wording, not the behaviour.
+
+- **What the route never returns:** a member's asset id or code, or
+  per-member values as a list.
+- **What it can return:** the KPI value equals one asset's reading when the
+  expression is a qualified reference (`{TX_01.kwh}`) or an aggregate with a
+  single member; and `inputAsOf` can be a member's sample time.
+
+That is the exposure a stored `v2` point with the same reference already has
+(ADR 0055), behind the same `canReadAsset` gate, so it adds no new class of
+exposure. The owner chose this over refusing such KPIs for a reader without
+global scope.

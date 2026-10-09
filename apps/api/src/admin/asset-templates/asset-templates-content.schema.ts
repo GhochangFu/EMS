@@ -288,7 +288,7 @@ const KPI_NO_REFERENCES =
  * (`crossRefs` is always `[]` under `v1`); only the issue code moves from
  * `too_small` to `custom`.
  */
-const templateKpiSchema = z
+export const templateKpiSchema = z
   .object({
     code: z.string().min(1).max(64),
     name: z.string().min(1).max(255),

@@ -12,6 +12,7 @@ import {
   panelCarriesNoWriteAffordance,
   panelListsDashboardsWithSlugLinks,
   panelShowsTheHealthCard,
+  panelShowsTheKpisCard,
   viewerSeesAssetsUnderOperations,
 } from "./assets-page.spec";
 
@@ -64,5 +65,9 @@ describe("F3.31 assets browser page", () => {
 
   it("P9 — an empty filter result says so in the table", async () => {
     await anEmptyFilterResultSaysSo();
+  });
+
+  it("P10 — the panel shows the KPI card (F2.33)", async () => {
+    await panelShowsTheKpisCard();
   });
 });

@@ -823,3 +823,36 @@ describe("ADR 0055 part (e) — each evaluation host counts a refusal in exactly
     expect(strayCountLines(noHelper)).toBeNull();
   });
 });
+
+/**
+ * Part (e)'s complement (ADR 0097 decision 5 and "Verification owed — Part
+ * (e)'s reach"). The input assembly moved out of the scheduler into a module
+ * both the scheduler and the KPI read host call, and neither that module nor
+ * the KPI host may count a skip or record a status: a refusal there is a
+ * returned value, and a KPI is not a calc point. Adding these files to
+ * `CALC_HOSTS` would fail that list's "exactly once" rule — they must call it
+ * **zero** times — so they are their own list.
+ */
+const READ_ONLY_CALC_FILES: readonly { rel: string; mustContain: string }[] = [
+  // Anti-vacuity: the module really is the assembly, not an empty file.
+  { rel: "apps/api/src/calc/calc-input-assembly.ts", mustContain: "classifyInput(" },
+  // Anti-vacuity: the KPI host really calls the shared assembly.
+  { rel: "apps/api/src/assets/asset-kpis.service.ts", mustContain: "assembleInputs(" },
+];
+
+describe("ADR 0097 — the input assembly and the KPI host never count or record a refusal", () => {
+  it.each(READ_ONLY_CALC_FILES)("$rel calls no countCalcSkipped, no CalcStatusRegistry, no .record(", ({ rel, mustContain }) => {
+    const lines = readFileSync(join(repoRoot, rel), "utf8").split("\n");
+    const code = lines.filter((line) => !isCommentLine(line));
+    expect(code.join("\n"), `${rel} is not the file this scan believes it is`).toContain(mustContain);
+    const offenders = code.filter(
+      (line) => line.includes("countCalcSkipped(") || line.includes("CalcStatusRegistry") || line.includes(".record("),
+    );
+    expect(
+      offenders,
+      `${rel} counts or records a refusal. The scheduler's refuse() is the one place a scheduled ` +
+        "refusal counts and records (part (e)); a KPI read is not a skipped tick and has no " +
+        "templatePointId to record under (ADR 0097 decision 5).",
+    ).toEqual([]);
+  });
+});

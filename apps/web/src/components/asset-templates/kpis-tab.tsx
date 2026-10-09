@@ -40,9 +40,9 @@
  *
  * A KPI is a read-time display value. It has no write path and no staleness
  * policy, so ADR 0037's `calcTrigger` and friends do not apply — that split is
- * ADR 0038 decision 4's, and the Calculations tab owns those fields. No KPI is
- * evaluated anywhere yet — `F2.33`. Nothing on this tab may read as a computed
- * value.
+ * ADR 0038 decision 4's, and the Calculations tab owns those fields. A KPI
+ * computes at read time on the asset page (`GET /assets/:assetId/kpis`, ADR
+ * 0097, `F2.33`). Nothing on this tab may read as a computed value.
  */
 import { useEffect, useState } from "react";
 import { useMutation } from "@tanstack/react-query";

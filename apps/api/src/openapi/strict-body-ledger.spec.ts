@@ -98,7 +98,7 @@ import { manualReadingsBodySchema } from "../admin/telemetry-entry/manual-readin
 import { alarmAckBodySchema } from "../alarms/ack.schema";
 import { alarmListQuerySchema, alarmSummaryQuerySchema } from "../alarms/alarm-list.schema";
 import { alarmEnrichmentUpsertBodySchema } from "../alarms/enrichment.schema";
-import { assetRoleSummaryQuerySchema } from "../assets/assets.schema";
+import { assetKpisQuerySchema, assetRoleSummaryQuerySchema } from "../assets/assets.schema";
 import { loginBodySchema } from "../auth/login.schema";
 import { loadTrendQuerySchema, locationDashboardQuerySchema } from "../dashboard/dashboard.schema";
 import {
@@ -424,6 +424,10 @@ export const QUERY_SCHEMAS: Record<string, ZodTypeAny> = {
   // (`GET /dashboards/:id/site-widgets?tab=`, plan D9) — `.strict()`, no body,
   // no ledger entry, the same precedent.
   siteWidgetsQuerySchema,
+  // 25 -> 26: `F2.33` registered `assetKpisQuerySchema`
+  // (`GET /assets/:assetId/kpis?windowMinutes=`, ADR 0097 decision 2) — `.strict()`,
+  // no body, no ledger entry, the same precedent.
+  assetKpisQuerySchema,
   mappingSheetQuerySchema,
   // `E4.1a`: `GET /admin/calc-parameters?organizationId=&key=` — `.strict()`,
   // no ledger entry, the `mappingSheetQuerySchema` precedent.
@@ -933,6 +937,9 @@ export function testEveryRegisteredSchemaIsUnderAudit(): void {
   // (`GET /dashboards/:id/site-widgets?tab=`, plan D9): one optional tab key,
   // `.strict()`, no body — the `mappingSheetQuerySchema` precedent.
   //
+  // 25 -> 26: `F2.33` registered `assetKpisQuerySchema` (ADR 0097): one bounded
+  // `windowMinutes`, `.strict()`, no body — the same precedent.
+  //
   // Note that `healthSummaryQuerySchema` is `assetHealthQuerySchema.extend(...)`
   // — legal here, since the ADR 0030 combinator ban applies inside
   // `packages/shared/src/contracts/`, not to an `apps/api` query schema. The
@@ -942,7 +949,7 @@ export function testEveryRegisteredSchemaIsUnderAudit(): void {
     "QUERY_SCHEMAS is the deliberately-excluded list, not an escape hatch. If a genuinely " +
       "new query schema was registered, widen this number and say so; if a BODY schema was " +
       "put here to quiet the assertion below, put it in BODY_SCHEMAS and decide it.",
-  ).toBe(25);
+  ).toBe(26);
 
   const missing = Object.entries(REQUEST_SCHEMAS)
     .filter(([, schema]) => !known.has(schema))
