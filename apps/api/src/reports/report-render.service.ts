@@ -9,6 +9,7 @@ import { REPORT_FILE_FORMATS, reportTemplateIdSchema } from "@bms/shared";
 import type { EnergyReportPreview, ReportDeliveryStatus, ReportFileFormat } from "@bms/shared";
 
 import { requireStorageConfigured } from "../assets/require-storage";
+import { expandLocationSubtrees } from "../auth/location-tree";
 import { TENANT_DRIZZLE } from "../database/database.tokens";
 import { withTenant } from "../database/tenant-context";
 import type { BmsTx } from "../database/tenant-context";
@@ -94,7 +95,10 @@ type DeliverableRow = {
  * row is absent — and an absent or disabled row is one `info` with counts
  * and the `skipped` outcome; nothing is written. `location_ids = {}` means
  * every asset the policy shows this organization; else the assets whose
- * `location_id = ANY(location_ids)` — both on `tx`, never the fleet pool
+ * `location_id` is in the CURRENT subtree of `location_ids` (`F2.10`, ADR 0098
+ * decision 7, Drafter choice 16; amends ADR 0071 decision 7 — a site added
+ * under a scheduled node after the save is in the next render) — both on
+ * `tx`, never the fleet pool
  * (the service injects no fleet handle; `fleet-read-wiring.spec.ts` pins
  * slot 0). Then, for each format in `REPORT_FILE_FORMATS` order the row
  * names: a `(schedule_id, period_end, format)` row already present counts
@@ -106,7 +110,8 @@ type DeliverableRow = {
  * not escaped, so its only inputs are two bounded dates and an enum) — the
  * object is put under `buildReportObjectKey`, the row inserted on `tx` with
  * `created_by = NULL` (a schedule runs as the system, not as its author),
- * `schedule_id`, the row's `location_ids` copied and `delivery_status =
+ * `schedule_id`, the row's `location_ids` copied (the stored nodes, never
+ * the expansion) and `delivery_status =
  * 'none'`, and `countReportFileWritten(format)` ticks. The prune then
  * selects this schedule's rows beyond the newest `retentionPerSchedule`
  * (`ORDER BY created_at DESC, id DESC OFFSET n`) and deletes the rows on
@@ -458,18 +463,27 @@ type StoredChannelRow = Parameters<ChannelsService["toChannelRow"]>[0];
 
 /**
  * `{}` → every asset the policy shows (the `FORCE` policy on `bms.assets`
- * bounds the read to the organization); else the plan's `location_id =
- * ANY($ids)`, spelled as drizzle's `inArray` (`location_id IN ($1, …)`) —
- * a raw `sql` template expands a JS array to `($1, $2)`, which `any(…)`
- * refuses as a row constructor (measured at U8). On `tx`, never the fleet
- * pool, so a location id that names another organization's location
- * resolves to nothing.
+ * bounds the read to the organization); else the assets of every node in the
+ * stored nodes' CURRENT subtree (`F2.10`, ADR 0098 decision 7, Drafter choice
+ * 16), spelled as drizzle's `inArray` (`location_id IN ($1, …)`) — a raw
+ * `sql` template expands a JS array to `($1, $2)`, which `any(…)` refuses as
+ * a row constructor (measured at U8). Both reads on `tx`, never the fleet
+ * pool, so a location id that names another organization's location is
+ * invisible, expands to nothing and resolves nothing.
+ *
+ * "Every asset" is decided on the STORED list being empty, never on the
+ * expansion: a schedule whose nodes were all deleted expands to `[]`, and
+ * `inArray(…, [])` is `false` — it renders nothing, not the organization.
  */
 async function resolveAssetIds(tx: BmsTx, locationIds: readonly string[]): Promise<string[]> {
   const rows = await tx
     .select({ assetId: assets.id })
     .from(assets)
-    .where(locationIds.length === 0 ? undefined : inArray(assets.locationId, [...locationIds]));
+    .where(
+      locationIds.length === 0
+        ? undefined
+        : inArray(assets.locationId, await expandLocationSubtrees(tx, [...locationIds])),
+    );
   return rows.map((row) => row.assetId);
 }
 

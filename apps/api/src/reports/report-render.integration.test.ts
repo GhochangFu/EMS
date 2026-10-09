@@ -6,6 +6,8 @@ import {
   rendersBothFormatsForAWholeOrganizationSchedule,
   aRetrySkipsTheExistingFormatAndRendersTheMissingOne,
   aLocationScopedScheduleReadsOnlyItsAssets,
+  aRootScheduleExcludesASiblingRoot,
+  aRootScheduleIncludesASiteAddedAfterItWasSaved,
   theTenantPolicyHidesAForeignSchedule,
   aDisabledScheduleWritesNoRow,
   aDeletedScheduleWritesNoRow,
@@ -78,6 +80,14 @@ describe.skipIf(!connectionString || !storageConfig)("F3.5b — the render job a
 
   it("aLocationScopedScheduleReadsOnlyItsAssets", async () => {
     await aLocationScopedScheduleReadsOnlyItsAssets(fx);
+  });
+
+  it("aRootScheduleIncludesASiteAddedAfterItWasSaved (F2.10 — the current subtree at render)", async () => {
+    await aRootScheduleIncludesASiteAddedAfterItWasSaved(fx);
+  });
+
+  it("aRootScheduleExcludesASiblingRoot (F2.10)", async () => {
+    await aRootScheduleExcludesASiblingRoot(fx);
   });
 
   it("theTenantPolicyHidesAForeignSchedule", async () => {

@@ -105,6 +105,18 @@ export type RenderIntegrationFixtures = {
   readonly deletedScheduleIds: string[];
   /** Every channel this run inserted, deleted in `afterAll`. */
   readonly channelIds: string[];
+  /**
+   * `F2.10` — every organization a tree case created, with its locations in insertion order
+   * (parents first) and its assets; swept after the schedules, leaf-first, the organization last.
+   */
+  readonly treeOrganizations: TreeOrganization[];
+};
+
+/** One `F2.10` fixture organization and the rows a tree case put in it. */
+export type TreeOrganization = {
+  readonly organizationId: string;
+  readonly locationIds: string[];
+  readonly assetIds: string[];
 };
 
 export type OpenRenderFixtures = {
@@ -140,6 +152,7 @@ export async function openRenderFixtures(
     scheduleIds: [],
     deletedScheduleIds: [],
     channelIds: [],
+    treeOrganizations: [],
   };
 
   const close = async (): Promise<void> => {
@@ -184,6 +197,19 @@ export async function openRenderFixtures(
               failures.push("an object of this run is still in the bucket after the sweep");
             }
           }
+        }
+      }
+      // After the schedules and their files: a schedule holds an FK to its organization.
+      for (const tree of fx.treeOrganizations) {
+        if (tree.assetIds.length > 0) {
+          await fleet.execute(sql`delete from bms.assets where id = any(${pgArray(tree.assetIds)}::uuid[])`);
+        }
+        for (const locationId of [...tree.locationIds].reverse()) {
+          await fleet.execute(sql`delete from bms.locations where id = ${locationId}::uuid`);
+        }
+        const removed = await fleet.execute(sql`delete from bms.organizations where id = ${tree.organizationId}::uuid`);
+        if (removed.rowCount !== 1) {
+          failures.push(`expected the sweep to delete the F2.10 tree organization, got ${removed.rowCount}`);
         }
       }
       if (fx.channelIds.length > 0) {
@@ -495,6 +521,103 @@ export async function aLocationScopedScheduleReadsOnlyItsAssets(fx: RenderIntegr
   assert(foreign.length === 0, `the render must read only RSMOC-WC's assets; ${foreign.length} of ${outcome.assetIds.length} are outside it`);
   const [row] = await readFileRows(fx.base.fleetDb, scheduleId);
   assert(row !== undefined && row.location_ids.length === 1 && row.location_ids[0] === fx.base.wcId, "the row must copy the schedule's location_ids");
+}
+
+// ---------------------------------------------------------------------------
+// F2.10 — a schedule's nodes expand to their CURRENT subtree at render
+// ---------------------------------------------------------------------------
+
+/** A committed `F210R-<run>` organization as `bms_fleet`, recorded for the sweep. */
+async function treeOrganization(fx: RenderIntegrationFixtures): Promise<TreeOrganization> {
+  const code = `F210R-${randomUUID().slice(0, 8)}`;
+  const result = await fx.base.fleetDb.execute<{ id: string }>(
+    sql`insert into bms.organizations (code, name, currency) values (${code}, ${`F2.10 render ${code}`}, 'INR') returning id::text as id`,
+  );
+  const organizationId = result.rows[0]?.id;
+  assert(organizationId !== undefined, `the tree organization ${code} was not created`);
+  const tree: TreeOrganization = { organizationId: organizationId as string, locationIds: [], assetIds: [] };
+  fx.treeOrganizations.push(tree);
+  return tree;
+}
+
+/** A location under `parentId` (or a root), as `bms_fleet`. */
+async function treeLocation(fx: RenderIntegrationFixtures, tree: TreeOrganization, parentId: string | null): Promise<string> {
+  const code = `F210R-${randomUUID().slice(0, 8)}`;
+  const result = await fx.base.fleetDb.execute<{ id: string }>(sql`
+    insert into bms.locations (organization_id, code, slug, name, type, latitude, longitude, parent_id)
+    values (${tree.organizationId}::uuid, ${code}, ${code.toLowerCase()}, ${`F2.10 ${code}`}, 'smoc_campus', 0, 0, ${parentId}::uuid)
+    returning id::text as id
+  `);
+  const id = result.rows[0]?.id;
+  assert(id !== undefined, `location ${code} was not created`);
+  tree.locationIds.push(id as string);
+  return id as string;
+}
+
+/** One active asset at `locationId`, as `bms_fleet`. */
+async function treeAsset(fx: RenderIntegrationFixtures, tree: TreeOrganization, locationId: string): Promise<string> {
+  const code = `F210R-${randomUUID().slice(0, 8)}`;
+  const result = await fx.base.fleetDb.execute<{ id: string }>(sql`
+    insert into bms.assets (organization_id, location_id, code, name, site_name, domain)
+    values (${tree.organizationId}::uuid, ${locationId}::uuid, ${code}, ${`F2.10 ${code}`}, 'F2.10',
+            (select code from bms.asset_domains order by code limit 1))
+    returning id::text as id
+  `);
+  const id = result.rows[0]?.id;
+  assert(id !== undefined, `asset ${code} was not created`);
+  tree.assetIds.push(id as string);
+  return id as string;
+}
+
+const sameSet = (actual: readonly string[], expected: readonly string[], what: string): void => {
+  const a = [...actual].sort();
+  const e = [...expected].sort();
+  assert(JSON.stringify(a) === JSON.stringify(e), `${what}: expected ${JSON.stringify(e)}, got ${JSON.stringify(a)}`);
+};
+
+/**
+ * ADR 0098 decision 7, Drafter choice 16 (amends ADR 0071 decision 7): a schedule saved on a root
+ * renders the root's CURRENT subtree. The root holds no asset, so a render that read the stored
+ * node alone resolves nothing; a site added after the save is in the next render; the file rows
+ * keep the stored node, never the expansion.
+ */
+export async function aRootScheduleIncludesASiteAddedAfterItWasSaved(fx: RenderIntegrationFixtures): Promise<void> {
+  const tree = await treeOrganization(fx);
+  const root = await treeLocation(fx, tree, null);
+  const site1 = await treeLocation(fx, tree, root);
+  const site1Asset = await treeAsset(fx, tree, site1);
+  const scheduleId = await insertSchedule(fx, { organizationId: tree.organizationId, locationIds: [root] });
+  const { svc } = service(fx);
+
+  const first = rendered(await run(fx, svc, payloadFor(scheduleId, PERIOD_1, tree.organizationId)));
+  sameSet(first.assetIds, [site1Asset], "PERIOD_1: the root schedule's assets are its subtree's");
+
+  const site2 = await treeLocation(fx, tree, root);
+  const site2Asset = await treeAsset(fx, tree, site2);
+  const second = rendered(await run(fx, svc, payloadFor(scheduleId, PERIOD_2, tree.organizationId)));
+  sameSet(second.assetIds, [site1Asset, site2Asset], "PERIOD_2: a site added after the save is rendered");
+
+  const rows = await readFileRows(fx.base.fleetDb, scheduleId);
+  assert(rows.length === 2, `expected one file row per period; got ${rows.length}`);
+  for (const row of rows) {
+    sameSet(row.location_ids, [root], `file row ${row.id} (${row.period_end}) must store the schedule's node, not the expansion`);
+  }
+}
+
+/** A second root in the same organization, with its own asset, is not under the first root. */
+export async function aRootScheduleExcludesASiblingRoot(fx: RenderIntegrationFixtures): Promise<void> {
+  const tree = await treeOrganization(fx);
+  const root = await treeLocation(fx, tree, null);
+  const site = await treeLocation(fx, tree, root);
+  const siteAsset = await treeAsset(fx, tree, site);
+  const sibling = await treeLocation(fx, tree, null);
+  const siblingAsset = await treeAsset(fx, tree, sibling);
+  const scheduleId = await insertSchedule(fx, { organizationId: tree.organizationId, locationIds: [root] });
+  const { svc } = service(fx);
+
+  const outcome = rendered(await run(fx, svc, payloadFor(scheduleId, PERIOD_1, tree.organizationId)));
+  sameSet(outcome.assetIds, [siteAsset], "the root schedule's assets");
+  assert(!outcome.assetIds.includes(siblingAsset), "a sibling root's asset must not be rendered");
 }
 
 /** `0078`: an ESKOM schedule rendered under PHEWB's GUC is absent — `skipped/absent`, zero rows. */
