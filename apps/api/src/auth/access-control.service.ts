@@ -112,6 +112,20 @@ export class AccessControlService {
     return scope.assetIds;
   }
 
+  /**
+   * The location ids the user reads (`/auth/me`'s list, the subtree closure
+   * since `F2.10`); `null` means unrestricted admin — the same convention as
+   * `readableAssetIds`.
+   */
+  async readableLocationIds(jwt: JwtPayload): Promise<string[] | null> {
+    const user = await this.resolveDbUser(jwt);
+    if (user.role === "admin") {
+      return null;
+    }
+    const scope = await this.scopeForUser(user);
+    return scope.locations.map((location) => location.id);
+  }
+
   /** Checks whether a user can read the requested asset id. */
   async canReadAsset(jwt: JwtPayload, assetId: string): Promise<boolean> {
     const ids = await this.readableAssetIds(jwt);

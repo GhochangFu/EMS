@@ -54,7 +54,14 @@ import { waterBalanceRow } from "./water-balance";
  * and a `this`-bound map would have to be cast to reach the service's injected dependency — a cast
  * on the one path that calls another module's service.
  */
-type ResolverDeps = { readonly health: AssetHealthService };
+type ResolverDeps = {
+  readonly health: AssetHealthService;
+  /**
+   * `F2.10` — the reader's location ids, `null` when unrestricted. Only `by_location`'s
+   * `groupDepth` reads it: a group label is never an ancestor the reader cannot read (A6).
+   */
+  readonly readableLocationIds: ReadonlySet<string> | null;
+};
 
 /**
  * How the catalog's entries resolve: six are SQL here (the four Stage C reads and the two
@@ -182,6 +189,7 @@ export class MetricCatalogService {
       row.organizationId,
       dashboardId,
       await this.accessControl.readableAssetIds(jwt),
+      await this.accessControl.readableLocationIds(jwt),
     );
   }
 
@@ -190,12 +198,20 @@ export class MetricCatalogService {
    *
    * `readableAssetIds` is the caller's own scope — `null` means "every asset in the
    * organization", matching `AccessControlService.readableAssetIds`' own convention.
+   * `readableLocationIds` (`F2.10`) is the same caller's location list under the same
+   * convention. Required, not defaulted: a permissive default at this seam would be invisible
+   * to the compiler and read every ancestor as readable.
    */
   async resolveForDashboard(
     organizationId: string,
     dashboardId: string,
     readableAssetIds: readonly string[] | null,
+    readableLocationIds: readonly string[] | null,
   ): Promise<DashboardCatalogValuesResponse> {
+    // Never `?? null`: an `undefined` that slipped past the compiler must fail closed (an empty
+    // set), not read as "every location".
+    const readableLocations: ReadonlySet<string> | null =
+      readableLocationIds === null ? null : new Set(readableLocationIds);
     return withTenant(this.tenantDb, organizationId, async (tx) => {
       const [dashboard] = await tx
         .select()
@@ -268,7 +284,13 @@ export class MetricCatalogService {
         }
         byKey.set(
           resolveKey,
-          await resolver(tx, organizationId, scope, { health: this.health }, planned.params),
+          await resolver(
+            tx,
+            organizationId,
+            scope,
+            { health: this.health, readableLocationIds: readableLocations },
+            planned.params,
+          ),
         );
       }
       const resolveKeyOf = plan.resolveKeyOf;

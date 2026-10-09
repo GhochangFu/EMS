@@ -4,6 +4,7 @@ import {
   runAccessControlServiceTests,
   runGrantedLocationIdsTests,
   runIsOrganizationLevelAdminTests,
+  runReadableLocationIdsTests,
 } from "./access-control.service.spec";
 
 /** Vitest entry point — assertions live in the sibling `.spec` (ADR 0014). */
@@ -20,5 +21,11 @@ describe("F2.10 isOrganizationLevelAdmin and grantedLocationIds (ADR 0098 decisi
 
   it("grantedLocationIds: null for admin, [] for organization_admin, 403 for a viewer", async () => {
     await runGrantedLocationIdsTests();
+  });
+});
+
+describe("F2.10 readableLocationIds (PR 2 U2 — the catalog's reader location set)", () => {
+  it("readableLocationIds: null for admin; a location admin reads exactly its scope's location ids", async () => {
+    await runReadableLocationIdsTests();
   });
 });
