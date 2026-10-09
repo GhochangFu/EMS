@@ -143,6 +143,43 @@ export async function everyMemberIsClassified(): Promise<void> {
   );
 }
 
+/** A pure `v2` aggregate: no local ref, so only the members can set `oldestInputMs`. */
+function pureAggregate(oldestMs: number) {
+  const formula = def({ ...V2, formula: "sum({kw} @site)" });
+  const [kw] = aggregateKeys(formula);
+  const members = ["A", "B", "C"].map((assetId) => ({ assetId, pointKey: "kw" }));
+  const membership = membershipOf([], [["asset-1", [[kw, members]]]]);
+  const { deps } = fakes(
+    new Map([
+      [inputKey("A", "kw"), fresh(1, NOW)],
+      [inputKey("B", "kw"), fresh(2, oldestMs)],
+      [inputKey("C", "kw"), fresh(3, NOW - 5_000)],
+    ]),
+  );
+  return { formula, membership, deps };
+}
+
+export async function v2OldestInputIsTheOldestMember(): Promise<void> {
+  const oldest = NOW - 30_000;
+  const { formula, membership, deps } = pureAggregate(oldest);
+  const result = await assembleInputs(deps, formula, NOW, membership, NO_OVERLAY, NO_PARAMETERS, NO_WINDOWS, END);
+  assert(result.ok, `three fresh members must assemble; got ${JSON.stringify(result)}`);
+  assert(
+    result.oldestInputMs === oldest,
+    `a pure aggregate's oldestInputMs is the OLDEST member (${oldest}); got ${String(result.oldestInputMs)}`,
+  );
+}
+
+export async function v2StaleMemberRefusalKeepsItsTime(): Promise<void> {
+  const { formula, membership, deps } = pureAggregate(STALE_MS);
+  const result = await assembleInputs(deps, formula, NOW, membership, NO_OVERLAY, NO_PARAMETERS, NO_WINDOWS, END);
+  assert(!result.ok && result.reason === "stale_input", `a stale member refuses stale_input; got ${JSON.stringify(result)}`);
+  assert(
+    result.oldestInputMs === STALE_MS,
+    `a member refusal still carries the stale member's time (${STALE_MS}); got ${String(result.oldestInputMs)}`,
+  );
+}
+
 export async function excludedOnSuccessUnderARatio(): Promise<void> {
   const formula = def({ ...V2, formula: "sum({kw} @site)", minCoverageRatio: 0.5 });
   const [kw] = aggregateKeys(formula);

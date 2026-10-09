@@ -264,6 +264,21 @@ export async function v2AllFreshIsTheSum(): Promise<void> {
   assert(item?.value === 6 && item.state === "ok" && item.excluded === 0, `all fresh → the sum; got ${JSON.stringify(item)}`);
 }
 
+export async function v2InputAsOfIsTheOldestMember(): Promise<void> {
+  const times = [NOW_MS - 10_000, NOW_MS - 90_000, NOW_MS - 30_000];
+  const h = harness({
+    kpis: [SITE_KW],
+    membership: siteMembership(),
+    samples: new Map(MEMBERS.map((id, index) => [inputKey(id, "kw"), { value: index + 1, timeMs: times[index] }])),
+  });
+  const [item] = (await run(h)).items;
+  assert(item?.state === "ok", `three fresh members evaluate; got ${JSON.stringify(item)}`);
+  assert(
+    item.inputAsOf === new Date(NOW_MS - 90_000).toISOString(),
+    `a pure aggregate's inputAsOf is the OLDEST member read; got ${String(item.inputAsOf)}`,
+  );
+}
+
 export async function v3ParameterUnset(): Promise<void> {
   const h = harness({
     kpis: [{ code: "cost", name: "Cost", pointKeys: ["kw"], expression: "{kw} * $tariff", dialect: V3 }],

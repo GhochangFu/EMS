@@ -10,6 +10,8 @@ describe("calc input assembly — the composition both hosts call (ADR 0097 deci
   it("parameter_unset refuses before any read", () => spec.parameterUnsetBeforeAnyRead());
   it("the computedThisTick overlay is read before the store", () => spec.overlayIsReadFirst());
   it("v2: every declared member of every aggregate is classified", () => spec.everyMemberIsClassified());
+  it("v2: a pure aggregate's oldestInputMs is the oldest member", () => spec.v2OldestInputIsTheOldestMember());
+  it("v2: a stale-member refusal keeps the member's time", () => spec.v2StaleMemberRefusalKeepsItsTime());
   it("v2: excluded and membersNotFresh under a coverage ratio", () => spec.excludedOnSuccessUnderARatio());
   it("v2: an unresolved code is unknown_asset_reference", () => spec.unresolvedCodeIsUnknown());
   it("v2: an empty member set is no_members", () => spec.emptyAggregateIsNoMembers());
