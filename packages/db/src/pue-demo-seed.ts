@@ -305,6 +305,10 @@ ON CONFLICT (template_id, point_key) DO NOTHING
  * that pin, and one already on the incomer template matches nothing.
  * `incomer.domain = a.domain` is the same cross-domain guard
  * `HEALTH_TEMPLATE_PIN_SQL` carries.
+ *
+ * It selects an incomer by `EXISTS(role = 'incoming-supply')`, while the health
+ * seed classes an asset by `min(role)`; the two agree while no incomer carries
+ * a second role that sorts before `incoming-supply`.
  */
 export const PUE_DEMO_PIN_SQL = `
 UPDATE bms.assets a

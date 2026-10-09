@@ -284,6 +284,7 @@ async function main(): Promise<void> {
       // members, `breaker_trip`, the nameplates and `sld-demo-rsmoc-wc`. After `seedAssetGroups`
       // (the group) and `seedPointKeyCatalog` (the key), and before `seedAssetTemplateHealth`, so
       // `BASELINE-ELECTRICAL` declares `breaker_trip` on the first boot as on every later one.
+      // (On a cold database only the unroled electrical assets stay on `BASELINE-ELECTRICAL`; roled ones move to their role template.)
       await seedBreakerDemo(pool, eskomOrgId, westernCapeId);
       // `F2.8`, first half — the fourteen `rack_kw` catalog rows, and NOTHING
       // ELSE. It sits here, between the ruled-point catalog and the health

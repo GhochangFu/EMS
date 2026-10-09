@@ -227,7 +227,7 @@ ON CONFLICT (organization_id, code, version) DO NOTHING
  * `it_kw` and `pue` on each of the nine incomers. Those rows are the engine's
  * *outputs*; read back here without the predicate, the next `compose up`
  * would declare all three as MEASURED points on `BASELINE-ELECTRICAL`, the
- * template the other 41 electrical assets stay pinned to. Nothing would fail:
+ * template the electrical assets that carry no role stay pinned to. Nothing would fail:
  * `publish()` is not involved, the FK holds, and the baseline would simply
  * claim three tags no electrical asset carries. The predicate is what keeps
  * the engine's own rows from feeding back into a baseline through the seed,
@@ -453,7 +453,9 @@ WHERE a.organization_id = $1
  * re-pin's own predicates, including its bound: an active asset still on
  * version 1 of its domain baseline although this run inserted its role
  * template. It covers the role pin as well, because an asset the role pin
- * missed falls to the domain pin and lands here. Unbound, it would count an
+ * missed falls to the domain pin and lands here. It covers the role pin only in the run that inserts the
+ * role templates, because the count is bound to that run's inserted ids: on a
+ * later run the list is empty and the role pin is not checked. Unbound, it would count an
  * asset an operator has put back on version 1 — a legal state since decision
  * 4 — and stop every later boot.
  */
