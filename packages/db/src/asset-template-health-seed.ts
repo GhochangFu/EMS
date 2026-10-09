@@ -31,12 +31,43 @@ import type pg from "pg";
  * copies the template's domain onto the asset precisely so the two cannot
  * disagree. One more `BASELINE-*` row exists since `F2.8` —
  * `BASELINE-ELECTRICAL-INCOMER`, written by `pue-demo-seed.ts` *after* this
- * module. It is not a domain baseline: it carries the same bands and the same
- * seven measured points as `BASELINE-ELECTRICAL`, plus three `bms-calc-v2`
- * derived points, and only the nine `incoming-supply` assets move to it. This
+ * module. It is not a domain baseline: it carries the same bands and a copy of
+ * the measured points of `BASELINE-ELECTRICAL-INCOMING_SUPPLY` (since `F2.32`),
+ * plus three `bms-calc-v2` derived points, and only the nine `incoming-supply`
+ * assets move to it. This
  * module never writes to it (its code is not `'BASELINE-' || upper(domain)`)
  * and never moves an asset off it (the pin below guards on `template_id IS
  * NULL`).
+ *
+ * **And since `F2.32`, a baseline per domain AND role (ADR 0058 Amendment 3).**
+ * A domain baseline declares the union of its domain's keys, so a transformer
+ * pinned to `BASELINE-ELECTRICAL` was offered `backup_min` by the rule picker
+ * (Amendment 2 measured 41 assets on a row of 8 keys; that figure is
+ * superseded). The class axis already exists on data —
+ * `bms.asset_group_members.role`, written by `demoRoleForAsset` and already
+ * the PUE pin's selector — so this module also writes one
+ * `BASELINE-<DOMAIN>-<ROLE>` per `(domain, role)` whose assets carry a point,
+ * declaring only that class's keys, and pins a roled asset to it before the
+ * domain pin runs. The domain baseline stays, unchanged, as the fallback for
+ * an unroled asset and for a role whose assets carry no point. Two choices in
+ * that sentence are deliberate. The role is `min(role)` over the asset's
+ * memberships, so an asset with two roles still has one class. And the
+ * template set does not depend on where the assets are pinned, so the five
+ * water classes get role templates that pin nothing, exactly as
+ * `BASELINE-WATER` already does: a set that followed the pins would differ
+ * between a cold and a re-seeded database.
+ *
+ * **A database seeded before `F2.32` is re-pinned once, in the first run
+ * (Amendment 3 decision 4).** `HEALTH_ROLE_TEMPLATE_REPIN_SQL` moves an active
+ * asset of the seeded org from version 1 of its own `BASELINE-<DOMAIN>` to its
+ * role template only when that template was inserted by the same seed run. The
+ * seed is *not* the only writer of that pin: an operator can instantiate from
+ * the baseline row, and migrate checks the code but not the direction, so it
+ * can move an asset back to version 1. A later run inserts no role template,
+ * so it moves nothing, and that operator's pin stands. On such a database the
+ * published `BASELINE-ELECTRICAL-INCOMER` version 1 already exists and keeps
+ * the domain-wide union it copied; only a fresh install copies the incomer
+ * role's own keys (accepted, ruling 2026-10-09).
  *
  * **Each template declares points, because `publish()` refuses one that does
  * not.** `AssetTemplatesService.publish` throws *"A template with no points
@@ -196,7 +227,7 @@ ON CONFLICT (organization_id, code, version) DO NOTHING
  * `it_kw` and `pue` on each of the nine incomers. Those rows are the engine's
  * *outputs*; read back here without the predicate, the next `compose up`
  * would declare all three as MEASURED points on `BASELINE-ELECTRICAL`, the
- * template the other 41 electrical assets stay pinned to. Nothing would fail:
+ * template the electrical assets that carry no role stay pinned to. Nothing would fail:
  * `publish()` is not involved, the FK holds, and the baseline would simply
  * claim three tags no electrical asset carries. The predicate is what keeps
  * the engine's own rows from feeding back into a baseline through the seed,
@@ -255,6 +286,152 @@ WHERE a.organization_id = $1
 `;
 
 /**
+ * The asset's class: the smallest role among its group memberships, or NULL
+ * for an asset with no role. `min` makes the choice deterministic for an asset
+ * that holds several. `asset_group_members` has no organization column; the
+ * read is bounded through `a`, which every statement below bounds to `$1`.
+ */
+const ROLE_EXPR = `(SELECT min(agm.role) FROM bms.asset_group_members agm WHERE agm.asset_id = a.id)`;
+
+/**
+ * `F2.32` (ADR 0058 Amendment 3) — `BASELINE-ELECTRICAL-TRANSFORMER`,
+ * `BASELINE-IT-IT_RACK`, and so on. Hyphens in the role become underscores so
+ * the code still splits on its last hyphen into domain and class. NULL for an
+ * unroled asset, and a NULL code matches no template, so such an asset falls
+ * through to the domain pin.
+ *
+ * **One expression, five statements.** The template insert, its points, the
+ * pin, the re-pin and the verify all name the role template through this
+ * value. If two of them drifted, a template would be written that no pin
+ * finds, or the verify would inspect a different template from the one the
+ * re-pin moved assets to, and report a success it had not established.
+ */
+export const ROLE_TEMPLATE_CODE_EXPR = `('BASELINE-' || upper(a.domain) || '-' || upper(replace(${ROLE_EXPR}, '-', '_')))`;
+
+/**
+ * One published role template per `(domain, role)` whose active assets carry
+ * an active, non-computed point — the same rows `HEALTH_ROLE_TEMPLATE_POINTS_SQL`
+ * reads, so every row written here gets at least one point and `unusable`
+ * cannot trip on a pointless class. `DO NOTHING` for the reason
+ * `HEALTH_TEMPLATE_SQL` gives.
+ */
+export const HEALTH_ROLE_TEMPLATE_SQL = `
+INSERT INTO bms.asset_templates
+  (organization_id, code, version, name, asset_type, domain, description, status,
+   content, published_at)
+SELECT DISTINCT
+  $1::uuid,
+  c.code,
+  1,
+  d.label || ' ' || r.label || ' Baseline',
+  '${TEMPLATE_ASSET_TYPE}',
+  c.domain,
+  'Seeded demo baseline for one class of asset. Carries the health bands E1.3 renders, and declares only the points this class''s assets already carry.',
+  'published',
+  $2::jsonb,
+  now()
+FROM (
+  SELECT a.domain, ${ROLE_EXPR} AS role, ${ROLE_TEMPLATE_CODE_EXPR} AS code
+  FROM bms.assets a
+  WHERE a.organization_id = $1
+    AND a.active = true
+    AND EXISTS (
+      SELECT 1 FROM bms.asset_points ap
+      WHERE ap.asset_id = a.id
+        AND ap.organization_id = $1
+        AND ap.active = true
+        AND ap.source_kind <> 'computed'
+    )
+) c
+JOIN bms.asset_domains d ON d.code = c.domain
+JOIN bms.asset_roles r ON r.code = c.role
+WHERE c.code IS NOT NULL
+ON CONFLICT (organization_id, code, version) DO NOTHING
+RETURNING id
+`;
+
+/**
+ * Every point key a class's assets carry, declared on that class's template.
+ * The body is `HEALTH_TEMPLATE_POINTS_SQL`'s, joined through the role instead
+ * of the domain, so it keeps the `computed` predicate (`F2.8`) and the
+ * no-wiring shape for the same reasons.
+ */
+export const HEALTH_ROLE_TEMPLATE_POINTS_SQL = `
+INSERT INTO bms.template_points
+  (organization_id, template_id, point_key, unit, kind, source_data_key_pattern,
+   required, sort_order)
+SELECT DISTINCT ON (t.id, ap.point_key)
+  $1::uuid,
+  t.id,
+  ap.point_key,
+  NULL,
+  'measured',
+  NULL,
+  false,
+  0
+FROM bms.asset_points ap
+JOIN bms.assets a ON a.id = ap.asset_id
+JOIN bms.asset_templates t
+  ON t.organization_id = $1
+ AND t.code = ${ROLE_TEMPLATE_CODE_EXPR}
+ AND t.version = 1
+WHERE ap.organization_id = $1
+  AND ap.active = true
+  AND ap.source_kind <> 'computed'
+  AND a.active = true
+ORDER BY t.id, ap.point_key, ap.source_data_key
+ON CONFLICT (template_id, point_key) DO NOTHING
+`;
+
+/**
+ * Pins an unpinned roled asset to its role template. Runs BEFORE
+ * `HEALTH_TEMPLATE_PIN_SQL`, which takes every `template_id IS NULL` asset that
+ * is left; the same guard, for the same reason.
+ */
+export const HEALTH_ROLE_TEMPLATE_PIN_SQL = `
+UPDATE bms.assets a
+SET template_id = t.id
+FROM bms.asset_templates t
+WHERE a.organization_id = $1
+  AND a.active = true
+  AND a.template_id IS NULL
+  AND t.organization_id = $1
+  AND t.domain = a.domain
+  AND t.code = ${ROLE_TEMPLATE_CODE_EXPR}
+  AND t.version = 1
+`;
+
+/**
+ * ADR 0058 Amendment 3 decision 4: each active asset on version 1 of its own
+ * `BASELINE-<DOMAIN>` moves to its role template **only when this seed run
+ * inserted that template** — `$2` is the ids `HEALTH_ROLE_TEMPLATE_SQL`
+ * returned, and `DO NOTHING` returns no id for a row that already existed.
+ * So the move happens once, in the run that creates the role templates, and a
+ * later run, which inserts none, moves nothing. That bound is what leaves an
+ * operator's pin alone: the v1 predicate cannot tell the seed's pin from one an
+ * operator wrote by instantiating from, or migrating back to, that row. An
+ * asset on a later version or another code keeps its pin.
+ */
+export const HEALTH_ROLE_TEMPLATE_REPIN_SQL = `
+UPDATE bms.assets a
+SET template_id = role_t.id
+FROM bms.asset_templates dom,
+     bms.asset_templates role_t
+WHERE a.organization_id = $1
+  AND a.active = true
+  AND dom.organization_id = $1
+  AND dom.domain = a.domain
+  AND dom.code = ${TEMPLATE_CODE_EXPR}
+  AND dom.version = 1
+  AND a.template_id = dom.id
+  AND role_t.organization_id = $1
+  AND role_t.domain = a.domain
+  AND role_t.code = ${ROLE_TEMPLATE_CODE_EXPR}
+  AND role_t.version = 1
+  AND role_t.id = ANY($2::uuid[])
+`;
+
+/**
  * The post-condition, and the reason it is a `SELECT` and not a `rowCount`.
  *
  * The seed connects as `bms_owner` under `FORCE ROW LEVEL SECURITY`, where a
@@ -271,6 +448,16 @@ WHERE a.organization_id = $1
  * are the two that make `resolveBand` return `null`: no bands at all, and a
  * lowest band that does not start at `0`. The point count is checked beside them
  * because it is what `publish()` refuses.
+ *
+ * `left_on_domain_baseline` (`F2.32`) asks the re-pin's own question with the
+ * re-pin's own predicates, including its bound: an active asset still on
+ * version 1 of its domain baseline although this run inserted its role
+ * template. It covers the role pin as well, because an asset the role pin
+ * missed falls to the domain pin and lands here. It covers the role pin only in the run that inserts the
+ * role templates, because the count is bound to that run's inserted ids: on a
+ * later run the list is empty and the role pin is not checked. Unbound, it would count an
+ * asset an operator has put back on version 1 — a legal state since decision
+ * 4 — and stop every later boot.
  */
 export const HEALTH_TEMPLATE_VERIFY_SQL = `
 SELECT
@@ -295,7 +482,26 @@ SELECT
         OR (t.content -> 'health' -> 'bands' -> -1 ->> 'minScore')::numeric IS DISTINCT FROM 0
         OR NOT EXISTS (SELECT 1 FROM bms.template_points tp WHERE tp.template_id = t.id)
       )
-  ) AS unusable
+  ) AS unusable,
+  (
+    SELECT count(*)::int
+    FROM bms.assets a
+    JOIN bms.asset_templates dom ON dom.id = a.template_id
+    WHERE a.organization_id = $1
+      AND a.active = true
+      AND dom.organization_id = $1
+      AND dom.domain = a.domain
+      AND dom.code = ${TEMPLATE_CODE_EXPR}
+      AND dom.version = 1
+      AND EXISTS (
+        SELECT 1 FROM bms.asset_templates role_t
+        WHERE role_t.organization_id = $1
+          AND role_t.domain = a.domain
+          AND role_t.code = ${ROLE_TEMPLATE_CODE_EXPR}
+          AND role_t.version = 1
+          AND role_t.id = ANY($2::uuid[])
+      )
+  ) AS left_on_domain_baseline
 `;
 
 /**
@@ -305,33 +511,52 @@ SELECT
  * `withOrganization` bracket, after `seedRuledPointCatalog`, whose catalog rows
  * are what the point declaration reads.
  *
- * @returns how many templates and how many pins this call wrote. Zero and zero
- * is the correct answer on a re-seed and is not a failure; the post-condition is
- * what fails.
+ * The order is load-bearing (`F2.32`): both template sets and their points
+ * first — the role insert returns the ids the re-pin and the verify are bound
+ * to — then the re-pin and the role pin, which read the role templates, and
+ * the domain pin last, because it takes every `template_id IS NULL` asset the
+ * role pin left.
+ *
+ * @returns how many templates (domain and role), pins (role and domain) and
+ * re-pins this call wrote. Zero for all three is the correct answer on a
+ * re-seed and is not a failure; the post-condition is what fails.
  */
 export async function seedAssetTemplateHealth(
   pool: pg.Pool,
   organizationId: string,
-): Promise<{ templates: number; pinned: number }> {
+): Promise<{ templates: number; pinned: number; repinned: number }> {
   const content = JSON.stringify(HEALTH_BASELINE_CONTENT);
-  const templates = await pool.query(HEALTH_TEMPLATE_SQL, [organizationId, content]);
+  const domainTemplates = await pool.query(HEALTH_TEMPLATE_SQL, [organizationId, content]);
   await pool.query(HEALTH_TEMPLATE_POINTS_SQL, [organizationId]);
-  const pinned = await pool.query(HEALTH_TEMPLATE_PIN_SQL, [organizationId]);
+  const roleTemplates = await pool.query<{ id: string }>(HEALTH_ROLE_TEMPLATE_SQL, [organizationId, content]);
+  const insertedRoleTemplateIds = roleTemplates.rows.map((row) => row.id);
+  await pool.query(HEALTH_ROLE_TEMPLATE_POINTS_SQL, [organizationId]);
+  const repinned = await pool.query(HEALTH_ROLE_TEMPLATE_REPIN_SQL, [organizationId, insertedRoleTemplateIds]);
+  const rolePinned = await pool.query(HEALTH_ROLE_TEMPLATE_PIN_SQL, [organizationId]);
+  const domainPinned = await pool.query(HEALTH_TEMPLATE_PIN_SQL, [organizationId]);
 
-  const check = await pool.query<{ unpinned: number; unusable: number }>(
-    HEALTH_TEMPLATE_VERIFY_SQL,
-    [organizationId],
-  );
+  const check = await pool.query<{
+    unpinned: number;
+    unusable: number;
+    left_on_domain_baseline: number;
+  }>(HEALTH_TEMPLATE_VERIFY_SQL, [organizationId, insertedRoleTemplateIds]);
   const unpinned = check.rows[0]?.unpinned ?? -1;
   const unusable = check.rows[0]?.unusable ?? -1;
-  if (unpinned !== 0 || unusable !== 0) {
+  const leftOnDomain = check.rows[0]?.left_on_domain_baseline ?? -1;
+  if (unpinned !== 0 || unusable !== 0 || leftOnDomain !== 0) {
     throw new Error(
       `seedAssetTemplateHealth: ${unpinned} active asset(s) are pinned to no template of their ` +
-        `own domain, and ${unusable} baseline template(s) cannot produce a band. A FORCE-RLS ` +
-        "write can drop rows without raising, and a malformed health block reads back as no " +
-        "band at all, so both are checked rather than inferred from the statements completing.",
+        `own domain, ${unusable} baseline template(s) cannot produce a band, and ` +
+        `${leftOnDomain} roled asset(s) are still on their domain baseline although this run ` +
+        "inserted their role template. A FORCE-RLS write can drop rows without raising, and a malformed " +
+        "health block reads back as no band at all, so all three are checked rather than " +
+        "inferred from the statements completing.",
     );
   }
 
-  return { templates: templates.rowCount ?? 0, pinned: pinned.rowCount ?? 0 };
+  return {
+    templates: (domainTemplates.rowCount ?? 0) + (roleTemplates.rowCount ?? 0),
+    pinned: (rolePinned.rowCount ?? 0) + (domainPinned.rowCount ?? 0),
+    repinned: repinned.rowCount ?? 0,
+  };
 }

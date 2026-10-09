@@ -284,6 +284,7 @@ async function main(): Promise<void> {
       // members, `breaker_trip`, the nameplates and `sld-demo-rsmoc-wc`. After `seedAssetGroups`
       // (the group) and `seedPointKeyCatalog` (the key), and before `seedAssetTemplateHealth`, so
       // `BASELINE-ELECTRICAL` declares `breaker_trip` on the first boot as on every later one.
+      // (On a cold database only the unroled electrical assets stay on `BASELINE-ELECTRICAL`; roled ones move to their role template.)
       await seedBreakerDemo(pool, eskomOrgId, westernCapeId);
       // `F2.8`, first half — the fourteen `rack_kw` catalog rows, and NOTHING
       // ELSE. It sits here, between the ruled-point catalog and the health
@@ -303,7 +304,8 @@ async function main(): Promise<void> {
       // load-bearing. After `seedPointKeyCatalog`, because every flow and
       // volume key is an FK into `bms.point_keys`. BEFORE
       // `seedAssetTemplateHealth`, because that module pins every
-      // `template_id IS NULL` asset of a domain to `BASELINE-<DOMAIN>`: run
+      // `template_id IS NULL` asset of a domain to its role template
+      // (`F2.32`) or, failing one, to `BASELINE-<DOMAIN>`: run
       // after it on a cold database, the five water assets would be pinned
       // to a `BASELINE-WATER` that declares no point (the flow rows below do
       // not exist yet), and `seedAssetTemplateHealth` would throw
@@ -329,8 +331,9 @@ async function main(): Promise<void> {
       // (the `incoming-supply` role is the pin's selector, and `IT_LOAD` is the
       // group `it_kw` resolves through), after `seedPointKeyCatalog`
       // (`site_kw`, `it_kw` and `pue` are FKs into `bms.point_keys`), and after
-      // `seedAssetTemplateHealth` (the copy source of the seven measured
-      // points, and the `BASELINE-ELECTRICAL` pin the nine incomers move off).
+      // `seedAssetTemplateHealth` (since `F2.32`, its
+      // `BASELINE-ELECTRICAL-INCOMING_SUPPLY` role template is both the copy
+      // source of the measured points and the pin the nine incomers move off).
       // Put this call above any of them and `verifyHierarchySeed`'s three ESKOM
       // PUE counts fail on a cold database with 0 of 9 / 0 of 14 / 0 of 14 —
       // and only on a cold one, which is why the cold-start gate exists.

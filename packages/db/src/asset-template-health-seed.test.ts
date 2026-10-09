@@ -1,6 +1,12 @@
 import { describe, it } from "vitest";
 
 import {
+  assertACleanVerifyDoesNotThrow,
+  assertARoledAssetLeftOnTheDomainBaselineThrows,
+  assertARoleTemplateIsBuiltFromItsOwnClassOnly,
+  assertARoleTemplateIsWrittenOnlyForAClassWithPoints,
+  assertEveryRoleStatementNamesTheTemplateTheSameWay,
+  assertEveryStatementGetsTheOrganizationAndTheBands,
   assertEveryStatementIsBoundedToOneOrganization,
   assertNoAssetIsPinnedAcrossDomains,
   assertReSeedingNeverRewritesAPublishedVersion,
@@ -10,6 +16,12 @@ import {
   assertTheDeclaredPointsClaimNoWiring,
   assertTheInsertAndTheVerifySelectTheSameTemplates,
   assertThePinNeverReversesAnOperatorsMigration,
+  assertTheRepinAndTheVerifyGetTheInsertedRoleTemplateIds,
+  assertTheRepinIsBoundToTheRoleTemplatesThisRunInserted,
+  assertTheRepinMovesOnlyADomainBaselineV1Pin,
+  assertTheResultCountsEachWriteOnce,
+  assertTheStatementsRunInTheirLoadBearingOrder,
+  assertTheVerifyCountsRoledAssetsLeftOnTheDomainBaseline,
   assertTheVerifyReadsBackWhatMakesABandNull,
 } from "./asset-template-health-seed.spec";
 
@@ -52,5 +64,55 @@ describe("F4.75 — a seeded health baseline per domain", () => {
 
   it("reads back the states that would make every band null", () => {
     assertTheVerifyReadsBackWhatMakesABandNull();
+  });
+});
+
+describe("F2.32 — a seeded baseline per domain and role (ADR 0058 Amendment 3)", () => {
+  it("builds a role template from its own class's keys only", () => {
+    assertARoleTemplateIsBuiltFromItsOwnClassOnly();
+  });
+
+  it("writes a role template only for a class that carries a point", () => {
+    assertARoleTemplateIsWrittenOnlyForAClassWithPoints();
+  });
+
+  it("names the role template the same way in the insert, the pins and the verify", () => {
+    assertEveryRoleStatementNamesTheTemplateTheSameWay();
+  });
+
+  it("re-pins only an asset on version 1 of its domain baseline", () => {
+    assertTheRepinMovesOnlyADomainBaselineV1Pin();
+  });
+
+  it("binds the re-pin and the verify to the role templates this run inserted", () => {
+    assertTheRepinIsBoundToTheRoleTemplatesThisRunInserted();
+  });
+
+  it("verifies that no roled asset is left on its domain baseline", () => {
+    assertTheVerifyCountsRoledAssetsLeftOnTheDomainBaseline();
+  });
+
+  it("runs the statements in their load-bearing order", async () => {
+    await assertTheStatementsRunInTheirLoadBearingOrder();
+  });
+
+  it("passes the organization to every statement and the bands to both inserts", async () => {
+    await assertEveryStatementGetsTheOrganizationAndTheBands();
+  });
+
+  it("counts templates, pins and re-pins separately", async () => {
+    await assertTheResultCountsEachWriteOnce();
+  });
+
+  it("passes the inserted role template ids to the re-pin and the verify", async () => {
+    await assertTheRepinAndTheVerifyGetTheInsertedRoleTemplateIds();
+  });
+
+  it("throws when a roled asset is left on its domain baseline", async () => {
+    await assertARoledAssetLeftOnTheDomainBaselineThrows();
+  });
+
+  it("does not throw on a clean verify", async () => {
+    await assertACleanVerifyDoesNotThrow();
   });
 });
