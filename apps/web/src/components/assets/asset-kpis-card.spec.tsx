@@ -62,3 +62,15 @@ export function itemsKeepTheirOrder(): void {
   const names = screen.getAllByRole("listitem").map((li) => li.querySelector("[data-kpi-name]")?.textContent);
   expect(names).toEqual(["Bravo", "Alpha"]);
 }
+
+/** A refusal before the member read carries `excluded: 0` for members nobody read — no freshness claim. */
+export function aRefusalBeforeTheMemberReadClaimsNoFreshness(): void {
+  renderCard([item({ code: "site", name: "Site kW", state: "stale_input", excluded: 0, memberCount: 3 })]);
+  expect(within(row("Site kW")).queryByText(/members/)).not.toBeInTheDocument();
+}
+
+/** The positive beside it: an `ok` aggregate under a null ratio had every member fresh, and says so. */
+export function anOkAggregateSaysEveryMemberWasFresh(): void {
+  renderCard([item({ code: "site", name: "Site kW", value: 6, state: "ok", excluded: 0, memberCount: 3 })]);
+  expect(within(row("Site kW")).getByText("All 3 members fresh")).toBeInTheDocument();
+}

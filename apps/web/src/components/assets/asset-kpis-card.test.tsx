@@ -21,4 +21,6 @@ describe("F2.33 asset KPI card", () => {
   it("an unvalidated item shows its sentence and no member count", () => spec.anUnvalidatedItemShowsItsSentenceAndNoCount());
   it("no items says so under the KPIs heading", () => spec.noItemsSaysSo());
   it("items keep the template's declared order", () => spec.itemsKeepTheirOrder());
+  it("a refusal before the member read claims no freshness", () => spec.aRefusalBeforeTheMemberReadClaimsNoFreshness());
+  it("an ok aggregate says every member was fresh", () => spec.anOkAggregateSaysEveryMemberWasFresh());
 });

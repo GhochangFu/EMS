@@ -338,3 +338,11 @@ export async function responseCarriesOnlyTheRuledFields(): Promise<void> {
     `an item carries the ruled fields and nothing else (decision 6); got ${keys}`,
   );
 }
+
+/** The window is the caller's, not the default: at 5 minutes a 6-minute-old sample is stale. */
+export async function theCallersWindowIsTheStalenessBudget(): Promise<void> {
+  const h = harness({ kpis: [KW_NOW], samples: new Map([[inputKey(ASSET, "kw"), { value: 4, timeMs: NOW_MS - 6 * 60_000 }]]) });
+  const response = await evaluateAssetKpis(h.deps, ASSET, 5, NOW);
+  assert(response.windowMinutes === 5, `the envelope echoes the caller's window; got ${response.windowMinutes}`);
+  assert(response.items[0]?.state === "stale_input", `6 min old under a 5-min window is stale; got ${JSON.stringify(response.items[0])}`);
+}

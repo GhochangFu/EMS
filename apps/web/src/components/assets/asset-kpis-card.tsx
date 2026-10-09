@@ -32,7 +32,10 @@ export function AssetKpisCard({ data }: AssetKpisCardProps) {
                 </span>
               </div>
               {kpi.state !== "ok" ? <p className="text-ink-muted">{KPI_STATE_SENTENCE[kpi.state]}</p> : null}
-              {kpi.memberCount > 0 ? (
+              {/* The count is measured only when the member read ran: a refusal above it (a
+                  stale local input, an unset parameter) carries `excluded: 0` for members
+                  nobody read, so "all fresh" is said only for `ok`, where it is true. */}
+              {kpi.memberCount > 0 && (kpi.excluded > 0 || kpi.state === "ok") ? (
                 <p className="text-ink-muted">{excludedSentence(kpi.excluded, kpi.memberCount)}</p>
               ) : null}
               {kpi.inputAsOf !== null ? <p className="text-ink-muted">{inputAsOfSentence(kpi.inputAsOf)}</p> : null}

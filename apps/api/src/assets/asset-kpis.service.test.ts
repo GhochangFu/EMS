@@ -19,4 +19,5 @@ describe("F2.33 — the KPI read host (ADR 0097)", () => {
   it("items keep the template's declared order", () => spec.declaredOrderIsKept());
   it("one membership call serves every KPI", () => spec.oneMembershipCallForEveryKpi());
   it("an item carries the ruled fields and nothing else", () => spec.responseCarriesOnlyTheRuledFields());
+  it("the caller's windowMinutes is the staleness budget", () => spec.theCallersWindowIsTheStalenessBudget());
 });
