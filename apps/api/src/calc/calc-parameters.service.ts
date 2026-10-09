@@ -1,8 +1,9 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { sql } from "drizzle-orm";
+import { type SQL, sql } from "drizzle-orm";
 
 import type { BmsDb } from "@bms/db";
 
+import { ancestorChainsCte } from "../auth/location-tree";
 import { FLEET_DRIZZLE } from "../database/database.tokens";
 import { inputKey } from "./calc-batch";
 
@@ -37,9 +38,16 @@ export type CalcParameterKeyRow = {
  *
  * **Nearest scope wins, and validity is half-open** (plan design decision
  * 10): among the rows whose `[effective_from, effective_to)` contains `at`,
- * the asset-scope row beats the location-scope row beats the
- * organization-scope row. That is one `ORDER BY` on nullness with `LIMIT 1`
- * per pair, not three queries.
+ * the asset-scope row beats a location-scope row, which beats the
+ * organization-scope row. Since `F2.10` a location-scope row is the asset's
+ * own node **or any ancestor of it**, and the nearest node wins: asset → own
+ * node → parent → … → root → organization (ADR 0098 decision 10, which
+ * amends ADR 0070 decision 2). The ancestors come from `ancestorChainsCte`,
+ * the one recursive walk `auth/location-tree.ts` declares, embedded as the
+ * statement's prefix — so this is still one statement per sweep, and the
+ * walk carries the per-step organization predicate. That is one `ORDER BY`
+ * on nullness then on `anc.steps`, with `LIMIT 1` per pair, not a query per
+ * level.
  *
  * **No default value anywhere.** A pair with no row in scope is *absent from
  * the map* — never `0`, never `null`, never an env var. The host turns an
@@ -54,6 +62,16 @@ export type CalcParameterKeyRow = {
  * LATERAL … LIMIT 1`, the shape `getLatestSamplesForPairs` measured against
  * the `IN (unnest…)` form). Empty pairs → no query.
  */
+/**
+ * The ancestor chains of the owning nodes of `assetIds` — the one recursive
+ * walk, declared in `location-tree.ts`. Module level on purpose: ADR 0070
+ * part (d)'s extractor takes the first `sql` template after
+ * `resolveForAssets(`, so nothing may sit between that head and the main
+ * statement.
+ */
+const chainsOfAssets = (assetIds: readonly string[]): SQL =>
+  ancestorChainsCte(sql`SELECT a.location_id FROM bms.assets a WHERE a.id = ANY(${sql.param([...assetIds])}::uuid[])`);
+
 @Injectable()
 export class CalcParametersService {
   constructor(@Inject(FLEET_DRIZZLE) private readonly fleetDb: BmsDb) {}
@@ -75,8 +93,10 @@ export class CalcParametersService {
       return out;
     }
     const wanted = [...distinct.values()];
+    const chains = chainsOfAssets(wanted.map((p) => p.assetId));
     const result = await this.fleetDb.execute<{ asset_id: string; key: string; value: number | string }>(
-      sql`SELECT p.asset_id, p.key, s.value
+      sql`${chains}
+          SELECT p.asset_id, p.key, s.value
             FROM unnest(
                    ${sql.param(wanted.map((p) => p.assetId))}::uuid[],
                    ${sql.param(wanted.map((p) => p.key))}::varchar[]
@@ -85,14 +105,15 @@ export class CalcParametersService {
             CROSS JOIN LATERAL (
               SELECT cp.value
                 FROM bms.calc_parameters cp
+                LEFT JOIN anc ON anc.node_id = a.location_id AND anc.ancestor_id = cp.location_id
                WHERE cp.organization_id = a.organization_id
                  AND cp.key = p.key
                  AND cp.effective_from <= ${sql.param(at.toISOString())}::timestamptz
                  AND (cp.effective_to IS NULL OR cp.effective_to > ${sql.param(at.toISOString())}::timestamptz)
                  AND (cp.asset_id = a.id
-                      OR (cp.asset_id IS NULL AND cp.location_id = a.location_id)
+                      OR (cp.asset_id IS NULL AND anc.ancestor_id IS NOT NULL)
                       OR (cp.asset_id IS NULL AND cp.location_id IS NULL))
-               ORDER BY (cp.asset_id IS NOT NULL) DESC, (cp.location_id IS NOT NULL) DESC
+               ORDER BY (cp.asset_id IS NOT NULL) DESC, (cp.location_id IS NOT NULL) DESC, anc.steps ASC
                LIMIT 1
             ) s`,
     );
