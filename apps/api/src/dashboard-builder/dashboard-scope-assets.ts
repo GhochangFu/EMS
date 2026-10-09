@@ -1,7 +1,8 @@
-import { and, eq } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 
 import { assetGroupMembers, assets } from "@bms/db";
 
+import { expandLocationSubtrees } from "../auth/location-tree";
 import type { BmsTx } from "../database/tenant-context";
 
 /**
@@ -26,10 +27,21 @@ export type DashboardAssetScope = {
  * through the same arm to the same id share a key (a group-scoped dashboard and a tab on the same
  * group are one scope) and two that do not never collide. The catalog's dedupe key and its
  * one-resolution-per-scope memo both key on it.
+ *
+ * `F2.10` (ADR 0098 decision 7, B1): `subtree` marks a resolve over the location's whole
+ * subtree, keyed `location-subtree:<id>` so it never shares a memo entry with the per-node
+ * `location:<id>` scope of the same dashboard. It changes only the location arm.
  */
-export function scopeKeyFor(scope: DashboardAssetScope): string {
+export function scopeKeyFor(
+  scope: DashboardAssetScope,
+  options?: { readonly subtree?: boolean },
+): string {
   if (scope.assetId !== null) return `asset:${scope.assetId}`;
-  if (scope.locationId !== null) return `location:${scope.locationId}`;
+  if (scope.locationId !== null) {
+    return options?.subtree === true
+      ? `location-subtree:${scope.locationId}`
+      : `location:${scope.locationId}`;
+  }
   if (scope.assetGroupId !== null) return `group:${scope.assetGroupId}`;
   return "organization";
 }
@@ -61,12 +73,18 @@ export function scopeKeyFor(scope: DashboardAssetScope): string {
  * location and no two of the three scope columns can be set at once
  * (`dashboards_scope_check`; `asset_id` is the F3.2 third axis). One branch each, no
  * combination.
+ *
+ * `F2.10` (ADR 0098 decision 7, B1): `options.subtree` widens the LOCATION arm to the node and
+ * every node under it (`expandLocationSubtrees` on `tx`, so under RLS). Only the two
+ * sustainability entries pass it; every other caller — the site widgets included — omits it
+ * and stays per node. The organization predicate stays either way.
  */
 export async function resolveAssetScope(
   tx: BmsTx,
   organizationId: string,
   dashboard: DashboardAssetScope,
   readableAssetIds: readonly string[] | null,
+  options?: { readonly subtree?: boolean },
 ): Promise<readonly string[]> {
   let fromDashboard: string[] | null = null;
 
@@ -87,7 +105,9 @@ export async function resolveAssetScope(
       .from(assets)
       .where(
         and(
-          eq(assets.locationId, dashboard.locationId),
+          options?.subtree === true
+            ? inArray(assets.locationId, await expandLocationSubtrees(tx, [dashboard.locationId]))
+            : eq(assets.locationId, dashboard.locationId),
           // EXPLICIT, never delegated to RLS. This runs on the tenant pool today, but
           // `dashboard-source-scope.ts`'s docblock records why that is not a reason to omit
           // it: the predicate is what makes the read correct on any pool.

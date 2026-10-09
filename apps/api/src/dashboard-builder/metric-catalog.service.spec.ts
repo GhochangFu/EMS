@@ -194,6 +194,60 @@ export function scopeKeyFollowsTheResolverArmOrder(): void {
   );
 }
 
+/**
+ * `F2.10` / ADR 0098 decision 7, B1 — on a location dashboard the two sustainability entries
+ * resolve over the node's SUBTREE, so their scope key is `location-subtree:<id>`, never the
+ * per-node `location:<id>` they would otherwise share with the per-node entries.
+ */
+const sustainabilitySource = (id: string, widgetId: string, catalogKey: string) => ({
+  id,
+  widgetId,
+  catalogKey,
+  params: { pointKey: "kwh_today", aggregate: "sum" },
+});
+
+export function aSustainabilityBindingOnALocationDashboardPlansASubtreeScope(): void {
+  const plan = planResolves(
+    [
+      sustainabilitySource("s1", "w1", "sustainability.total"),
+      sustainabilitySource("s2", "w2", "sustainability.by_location"),
+    ],
+    () => siteScope,
+    () => {
+      throw new Error("no binding in this fixture fails its write schema");
+    },
+  );
+  same(
+    [...plan.resolves.values()].map((resolve) => [resolve.key, resolve.scopeKey, resolve.subtree]),
+    [
+      ["sustainability.total", `location-subtree:${TAB_SITE}`, true],
+      ["sustainability.by_location", `location-subtree:${TAB_SITE}`, true],
+    ],
+    "sustainability resolves on a location dashboard",
+  );
+}
+
+/** B1's negative: `assets.list` beside them on the same dashboard keeps the per-node key. */
+export function anAssetListBindingOnTheSameDashboardKeepsTheNodeScope(): void {
+  const plan = planResolves(
+    [
+      sustainabilitySource("s1", "w1", "sustainability.total"),
+      { id: "s2", widgetId: "w2", catalogKey: "assets.list", params: {} },
+    ],
+    () => siteScope,
+    () => {
+      throw new Error("no binding in this fixture fails its write schema");
+    },
+  );
+  const keys = [...plan.resolves.values()].map((resolve) => resolve.scopeKey);
+  same(
+    keys,
+    [`location-subtree:${TAB_SITE}`, `location:${TAB_SITE}`],
+    "a subtree entry and a per-node entry on one location dashboard",
+  );
+  assert(new Set(keys).size === 2, "the two scopes must be two distinct keys");
+}
+
 /** `F3.73` Task 3.3 — `assets.offline.count` over `[]` is `0` and `assets.list` an empty
  * dataset of its four declared columns, both before any SQL (the `scopeIsEmpty` claim). The
  * enumerating claim above holds that no SQL runs; this one holds the ANSWER. */

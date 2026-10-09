@@ -279,7 +279,9 @@ export class MetricCatalogService {
         if (resolver === undefined) continue;
         let scope = scopeByKey.get(planned.scopeKey);
         if (scope === undefined) {
-          scope = await resolveAssetScope(tx, organizationId, planned.scope, readableAssetIds);
+          scope = await resolveAssetScope(tx, organizationId, planned.scope, readableAssetIds, {
+            subtree: planned.subtree,
+          });
           scopeByKey.set(planned.scopeKey, scope);
         }
         byKey.set(
@@ -348,7 +350,19 @@ export type PlannedResolve = {
   readonly params: unknown;
   readonly scope: DashboardAssetScope;
   readonly scopeKey: string;
+  /** `F2.10` — a location scope resolves over the node's subtree (`SUBTREE_SCOPED_KEYS`). */
+  readonly subtree: boolean;
 };
+
+/**
+ * `F2.10` / ADR 0098 decision 7, B1 — the entries whose location scope is the node's SUBTREE.
+ * Every other entry (the alarm and work-order reads, `assets.*`, `water.balance`) stays per
+ * node: a campus dashboard's alarm list is the campus's own, not its sites'.
+ */
+const SUBTREE_SCOPED_KEYS: ReadonlySet<MetricCatalogKey> = new Set<MetricCatalogKey>([
+  "sustainability.total",
+  "sustainability.by_location",
+]);
 
 /**
  * Groups a dashboard's bindings into DISTINCT resolves, keyed `(catalogKey, canonical params,
@@ -384,11 +398,12 @@ export function planResolves(
       continue;
     }
     const scope = scopeOfWidget(source.widgetId);
-    const scopeKey = scopeKeyFor(scope);
+    const subtree = SUBTREE_SCOPED_KEYS.has(key);
+    const scopeKey = scopeKeyFor(scope, { subtree });
     const resolveKey = `${key}\u0000${canonicalJson(parsed.data)}\u0000${scopeKey}`;
     resolveKeyOf.set(source.id, resolveKey);
     if (!resolves.has(resolveKey)) {
-      resolves.set(resolveKey, { key, params: parsed.data, scope, scopeKey });
+      resolves.set(resolveKey, { key, params: parsed.data, scope, scopeKey, subtree });
     }
   }
   return { resolveKeyOf, resolves };
