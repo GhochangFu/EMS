@@ -1,9 +1,9 @@
 import { randomUUID } from "node:crypto";
 import type { Readable } from "node:stream";
 
-import { inArray, sql } from "drizzle-orm";
+import { sql } from "drizzle-orm";
 
-import { assets, notificationChannels } from "@bms/db";
+import { notificationChannels } from "@bms/db";
 import type { BmsDb } from "@bms/db";
 
 import { withTenant } from "../database/tenant-context";
@@ -14,6 +14,14 @@ import { MetricsService } from "../observability/metrics.service";
 import { CredentialCryptoService } from "../security/credential-crypto.service";
 import { getObject, headObject, type S3Ops, type StorageClient } from "../storage/storage-client";
 import type { ConfiguredStorageConfig } from "../testing/integration-storage-gate";
+import {
+  sameSet,
+  sweepTreeOrganizations,
+  treeAsset,
+  treeLocation,
+  treeOrganization,
+  type TreeOrganization,
+} from "../testing/render-tree-organization";
 import type { ReportFilesConfig } from "./report-files-config";
 import {
   assert,
@@ -58,8 +66,9 @@ import {
  *
  * **No `tx.rollback()` in this file, and no read of `bms.assets`.** The
  * first would put it in scope of `tests/integration-fixture-isolation.test.ts`'s
- * rollback scan; the location-scope expectation comes through
- * a tree in this run's own organization (`treeOrganization`).
+ * rollback scan; every asset-set expectation (the whole-organization row
+ * and the location-scope rows) comes through an organization this run
+ * creates (`treeOrganization`, `../testing/render-tree-organization.ts`).
  *
  * **Two connections, two jobs (the F3.5a shape).** `bms_fleet` is
  * `BYPASSRLS`: it inserts the fixtures, counts and sweeps, and proves nothing
@@ -110,13 +119,6 @@ export type RenderIntegrationFixtures = {
    * (parents first) and its assets; swept after the schedules, leaf-first, the organization last.
    */
   readonly treeOrganizations: TreeOrganization[];
-};
-
-/** One `F2.10` fixture organization and the rows a tree case put in it. */
-export type TreeOrganization = {
-  readonly organizationId: string;
-  readonly locationIds: string[];
-  readonly assetIds: string[];
 };
 
 export type OpenRenderFixtures = {
@@ -200,25 +202,7 @@ export async function openRenderFixtures(
         }
       }
       // After the schedules and their files: a schedule holds an FK to its organization.
-      for (const tree of fx.treeOrganizations) {
-        // A drizzle builder write by this run's own ids — the form
-        // `tests/integration-fixture-isolation.test.ts` allows (the rule is
-        // about reading `bms.assets`; its raw-SQL pattern also matches a
-        // `delete from`).
-        if (tree.assetIds.length > 0) {
-          const removedAssets = await fleet.delete(assets).where(inArray(assets.id, tree.assetIds));
-          if (removedAssets.rowCount !== tree.assetIds.length) {
-            failures.push(`expected the sweep to delete ${tree.assetIds.length} F2.10 tree asset(s), got ${removedAssets.rowCount}`);
-          }
-        }
-        for (const locationId of [...tree.locationIds].reverse()) {
-          await fleet.execute(sql`delete from bms.locations where id = ${locationId}::uuid`);
-        }
-        const removed = await fleet.execute(sql`delete from bms.organizations where id = ${tree.organizationId}::uuid`);
-        if (removed.rowCount !== 1) {
-          failures.push(`expected the sweep to delete the F2.10 tree organization, got ${removed.rowCount}`);
-        }
-      }
+      await sweepTreeOrganizations(fleet, fx.treeOrganizations, failures);
       if (fx.channelIds.length > 0) {
         const deletedChannels = await fleet.execute(
           sql`delete from bms.notification_channels where id = any(${pgArray(fx.channelIds)}::uuid[])`,
@@ -458,23 +442,35 @@ function rendered(outcome: RenderOutcome): Extract<RenderOutcome, { kind: "rende
 /**
  * Both formats: two rows stamped with the schedule, no author, `{}`; each
  * object's length and hash equal the row's. The asset scope is
- * tenant-bounded (Amendment 2 item 7 E): every id the renderer received is
- * an ESKOM asset and none is PHEWB's, read after the render.
+ * tenant-bounded (Amendment 2 item 7 E): the renderer receives EXACTLY the
+ * organization's assets, and another organization's asset is not among them.
+ *
+ * Both organizations are this run's own (`treeOrganization`), never ESKOM and
+ * PHEWB: other suites commit and delete fixture assets in ESKOM while the
+ * render runs (F3.37's asset-group rows), so an ESKOM asset set read before or
+ * after the render can differ from the one the render read — in CI, "15 of
+ * 120 are outside it". The organization's assets sit on two nodes, so a
+ * whole-organization render that read one node would miss one.
  */
 export async function rendersBothFormatsForAWholeOrganizationSchedule(fx: RenderIntegrationFixtures): Promise<void> {
-  const scheduleId = await insertSchedule(fx, { formats: ["pdf", "xlsx"] });
+  const tree = await treeOrganization(fx);
+  const root = await treeLocation(fx, tree, null);
+  const rootAsset = await treeAsset(fx, tree, root);
+  const site = await treeLocation(fx, tree, root);
+  const siteAsset = await treeAsset(fx, tree, site);
+  const other = await treeOrganization(fx);
+  const otherAsset = await treeAsset(fx, other, await treeLocation(fx, other, null));
+  const scheduleId = await insertSchedule(fx, { organizationId: tree.organizationId, formats: ["pdf", "xlsx"] });
   const { svc } = service(fx);
-  const outcome = rendered(await run(fx, svc, payloadFor(scheduleId, PERIOD_1, fx.base.eskomId)));
+  const outcome = rendered(await run(fx, svc, payloadFor(scheduleId, PERIOD_1, tree.organizationId)));
   assert(outcome.written === 2 && outcome.skippedExisting === 0, `expected written=2 skippedExisting=0; got ${outcome.written}/${outcome.skippedExisting}`);
 
-  const eskomAssets = await fx.base.assetIdsOfOrganization(fx.base.eskomId);
-  const phewbAssets = await fx.base.assetIdsOfOrganization(fx.base.phewbId);
-  assert(outcome.assetIds.length > 0, "the positive control failed: the whole-organization render resolved no asset");
-  assert(phewbAssets.size > 0, "the positive control failed: PHEWB has no seeded asset to be excluded");
-  const outside = outcome.assetIds.filter((id) => !eskomAssets.has(id));
-  const foreign = outcome.assetIds.filter((id) => phewbAssets.has(id));
-  assert(outside.length === 0, `the render must read only ESKOM's assets; ${outside.length} of ${outcome.assetIds.length} are outside it`);
-  assert(foreign.length === 0, `the render must read none of PHEWB's assets; ${foreign.length} of ${outcome.assetIds.length} are PHEWB's`);
+  assert(outcome.assetIds.includes(rootAsset), "the positive control failed: the whole-organization render did not resolve the organization's asset");
+  assert(
+    !outcome.assetIds.includes(otherAsset),
+    `the render must read none of another organization's assets; it read ${outcome.assetIds.length} asset(s): ${await fx.base.describeAssets(outcome.assetIds)}`,
+  );
+  sameSet(outcome.assetIds, [rootAsset, siteAsset], "the whole-organization schedule's assets are exactly its organization's");
 
   const rows = await readFileRows(fx.base.fleetDb, scheduleId);
   assert(rows.map((r) => r.format).join(",") === "pdf,xlsx", `expected one pdf and one xlsx row; got ${rows.map((r) => r.format).join(",")}`);
@@ -548,54 +544,6 @@ export async function aLocationScopedScheduleReadsOnlyItsAssets(fx: RenderIntegr
 // ---------------------------------------------------------------------------
 // F2.10 — a schedule's nodes expand to their CURRENT subtree at render
 // ---------------------------------------------------------------------------
-
-/** A committed `F210R-<run>` organization as `bms_fleet`, recorded for the sweep. */
-async function treeOrganization(fx: RenderIntegrationFixtures): Promise<TreeOrganization> {
-  const code = `F210R-${randomUUID().slice(0, 8)}`;
-  const result = await fx.base.fleetDb.execute<{ id: string }>(
-    sql`insert into bms.organizations (code, name, currency) values (${code}, ${`F2.10 render ${code}`}, 'INR') returning id::text as id`,
-  );
-  const organizationId = result.rows[0]?.id;
-  assert(organizationId !== undefined, `the tree organization ${code} was not created`);
-  const tree: TreeOrganization = { organizationId: organizationId as string, locationIds: [], assetIds: [] };
-  fx.treeOrganizations.push(tree);
-  return tree;
-}
-
-/** A location under `parentId` (or a root), as `bms_fleet`. */
-async function treeLocation(fx: RenderIntegrationFixtures, tree: TreeOrganization, parentId: string | null): Promise<string> {
-  const code = `F210R-${randomUUID().slice(0, 8)}`;
-  const result = await fx.base.fleetDb.execute<{ id: string }>(sql`
-    insert into bms.locations (organization_id, code, slug, name, type, latitude, longitude, parent_id)
-    values (${tree.organizationId}::uuid, ${code}, ${code.toLowerCase()}, ${`F2.10 ${code}`}, 'smoc_campus', 0, 0, ${parentId}::uuid)
-    returning id::text as id
-  `);
-  const id = result.rows[0]?.id;
-  assert(id !== undefined, `location ${code} was not created`);
-  tree.locationIds.push(id as string);
-  return id as string;
-}
-
-/** One active asset at `locationId`, as `bms_fleet`. */
-async function treeAsset(fx: RenderIntegrationFixtures, tree: TreeOrganization, locationId: string): Promise<string> {
-  const code = `F210R-${randomUUID().slice(0, 8)}`;
-  const result = await fx.base.fleetDb.execute<{ id: string }>(sql`
-    insert into bms.assets (organization_id, location_id, code, name, site_name, domain)
-    values (${tree.organizationId}::uuid, ${locationId}::uuid, ${code}, ${`F2.10 ${code}`}, 'F2.10',
-            (select code from bms.asset_domains order by code limit 1))
-    returning id::text as id
-  `);
-  const id = result.rows[0]?.id;
-  assert(id !== undefined, `asset ${code} was not created`);
-  tree.assetIds.push(id as string);
-  return id as string;
-}
-
-const sameSet = (actual: readonly string[], expected: readonly string[], what: string): void => {
-  const a = [...actual].sort();
-  const e = [...expected].sort();
-  assert(JSON.stringify(a) === JSON.stringify(e), `${what}: expected ${JSON.stringify(e)}, got ${JSON.stringify(a)}`);
-};
 
 /**
  * ADR 0098 decision 7, Drafter choice 16 (amends ADR 0071 decision 7): a schedule saved on a root

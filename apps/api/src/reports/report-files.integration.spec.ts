@@ -68,7 +68,7 @@ import { primeSeededSubjects } from "../testing/seeded-subjects";
  * AGENTS.md §4.5's 1000-line cap, and the policy rows sit in the second file
  * because `tests/integration-fixture-isolation.test.ts` scans a
  * rollback-isolated spec for any `bms.assets` read — this file's fixture
- * reads them (see `assetIdsOfOrganization` and `describeAssets`).
+ * reads them (see `describeAssets`).
  *
  * **The cap row costs two saves, not fifty.** It builds its own service with
  * `REPORT_FILES_CONFIG = { onDemandCap: 2 }` in the open's own cap
@@ -111,8 +111,6 @@ export type ReportFileIntegrationFixtures = {
   readonly capOrganizationId: string;
   /** `code @ location (parent location)` of each asset id, so a scope failure names the suite that wrote the row. */
   readonly describeAssets: (assetIds: readonly string[]) => Promise<string>;
-  /** The asset ids of one organization, read as `bms_fleet` at call time — the whole-organization render's tenant bound (F3.5b Amendment 2 item 7 E). */
-  readonly assetIdsOfOrganization: (organizationId: string) => Promise<Set<string>>;
   /** Every file id a row created, for the `afterAll` sweep of rows and audit rows. */
   readonly createdFileIds: string[];
   /** Every key a row put, for the `afterAll` sweep of the bucket. */
@@ -852,12 +850,6 @@ export async function openReportFileFixtures(
         [[...assetIds]],
       );
       return JSON.stringify(rows.map((row) => row.line));
-    },
-    assetIdsOfOrganization: async (organizationId) => {
-      const { rows } = await fleetPool.query<{ id: string }>(`SELECT id FROM bms.assets WHERE organization_id = $1`, [
-        organizationId,
-      ]);
-      return new Set(rows.map((row) => row.id));
     },
     createdFileIds: [],
     putKeys: [],
