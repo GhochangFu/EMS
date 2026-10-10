@@ -6,7 +6,7 @@ import type { LlmProviderName } from "@bms/shared";
  *
  * Messages and tool definitions go in; tool calls or a final text come out. The
  * port knows nothing about the draft, and nothing here reads the environment:
- * `OnboardingLlmResolver` decides, once per turn, whether a provider exists and
+ * `LlmResolver` decides, once per turn, whether a provider exists and
  * builds it with its key and model (A4). An adapter that reads `process.env`
  * would let a platform key reach an organization that set its own provider,
  * which A4 forbids.
@@ -54,7 +54,7 @@ export type LlmReply =
     }
   | { readonly kind: "final"; readonly text: string };
 
-export interface OnboardingLlmProvider {
+export interface LlmProvider {
   readonly name: LlmProviderName;
   complete(input: {
     readonly messages: readonly LlmMessage[];

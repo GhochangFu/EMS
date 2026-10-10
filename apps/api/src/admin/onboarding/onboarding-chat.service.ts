@@ -37,7 +37,7 @@ import { runAgentTurn } from "./onboarding-agent-loop";
 import type { ToolContext } from "./onboarding-agent-tools";
 import { scrubMessages } from "./onboarding-credential-detect";
 import { agentReplies } from "./onboarding-suggested-replies";
-import { OnboardingLlmResolver } from "./onboarding-llm-resolver";
+import { LlmResolver } from "../../llm/llm-resolver";
 import {
   attachEncryptedCredentials,
   reconcileSecrets,
@@ -69,7 +69,7 @@ export class OnboardingChatService {
     private readonly protocolService: OnboardingProtocolService,
     private readonly catalogService: OnboardingCatalogService,
     private readonly vocabularies: VocabulariesService,
-    private readonly llmResolver: OnboardingLlmResolver,
+    private readonly llmResolver: LlmResolver,
     private readonly templateCatalog: OnboardingTemplateCatalogService,
     private readonly inventoryService: OnboardingInventoryService,
   ) {}

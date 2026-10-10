@@ -5,11 +5,11 @@ import { organizationLlmSettings } from "@bms/db";
 import type { BmsDb } from "@bms/db";
 import type { LlmProviderName } from "@bms/shared";
 
-import { TENANT_DRIZZLE } from "../../database/database.tokens";
-import { withTenant } from "../../database/tenant-context";
-import { CredentialCryptoService } from "../../security/credential-crypto.service";
-import { createLlmProvider } from "./onboarding-llm-factory";
-import type { OnboardingLlmProvider } from "./onboarding-llm-port";
+import { TENANT_DRIZZLE } from "../database/database.tokens";
+import { withTenant } from "../database/tenant-context";
+import { CredentialCryptoService } from "../security/credential-crypto.service";
+import { createLlmProvider } from "./llm-factory";
+import type { LlmProvider } from "./llm-port";
 
 /** Amendment 1 A2 / ruling 3: the model a provider uses when its `*_MODEL` is empty. */
 export const DEFAULT_MODELS: Readonly<Record<LlmProviderName, string | null>> = {
@@ -40,7 +40,7 @@ export type PlatformLlmDefault =
   | { readonly state: "ready"; readonly provider: LlmProviderName; readonly model: string; readonly apiKey: string };
 
 export type ResolvedLlm =
-  | { readonly kind: "ready"; readonly provider: OnboardingLlmProvider; readonly source: "organization" | "platform" }
+  | { readonly kind: "ready"; readonly provider: LlmProvider; readonly source: "organization" | "platform" }
   | {
       readonly kind: "guided";
       /** `organization_incomplete` is the one reason the chat states to the user (plan ruling 13). */
@@ -64,8 +64,8 @@ function env(name: string): string {
  * decrypted key lives in the provider instance for one turn and is not cached.
  */
 @Injectable()
-export class OnboardingLlmResolver implements OnModuleInit {
-  private readonly logger = new Logger(OnboardingLlmResolver.name);
+export class LlmResolver implements OnModuleInit {
+  private readonly logger = new Logger(LlmResolver.name);
 
   /** Replaced in specs to record what would be built; production uses the factory. */
   buildProvider: typeof createLlmProvider = createLlmProvider;

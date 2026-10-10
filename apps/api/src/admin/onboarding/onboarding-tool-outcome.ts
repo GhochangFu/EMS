@@ -1,8 +1,17 @@
 import type { OnboardingDraft } from "@bms/shared";
-import type { z } from "zod";
 
+import {
+  fail,
+  issuesOf,
+  succeed,
+  toolResultContent,
+  TOOL_LIST_MAX_ITEMS,
+  TOOL_RESULT_CUT_TAIL,
+  TOOL_RESULT_MAX_CHARS,
+  type ToolOutcome,
+} from "../../llm/tool-result";
 import { exceedsDepth } from "../stack-safe-json";
-import { cutToBound, draftCountProblem } from "./onboarding-draft-caps";
+import { draftCountProblem } from "./onboarding-draft-caps";
 import { mergeDraftPatch } from "./onboarding-draft-merge";
 import { DRAFT_TOO_DEEP_MESSAGE, MAX_ONBOARDING_DRAFT_DEPTH, type OnboardingDraftInput } from "./onboarding.schema";
 
@@ -11,16 +20,14 @@ import { DRAFT_TOO_DEEP_MESSAGE, MAX_ONBOARDING_DRAFT_DEPTH, type OnboardingDraf
  *
  * Moved verbatim out of `onboarding-agent-tools.ts` so the template tools can
  * build outcomes without importing the registry that imports them.
+ *
+ * `F3.85` (ADR 0099) moved the generic half — the result bounds, `ToolOutcome`,
+ * `toolResultContent`, `fail`, `succeed` and `issuesOf` — to
+ * `llm/tool-result.ts`; they are re-exported here so every onboarding importer
+ * stays unchanged.
  */
-
-/** Decision 3: one tool result in the prompt is cut to this many characters. */
-export const TOOL_RESULT_MAX_CHARS = 8_000;
-
-/** The fixed tail of a cut tool result. */
-export const TOOL_RESULT_CUT_TAIL = `…[cut to ${TOOL_RESULT_MAX_CHARS} characters]`;
-
-/** Plan ruling 1: one list result names at most this many items. */
-export const TOOL_LIST_MAX_ITEMS = 100;
+export { fail, issuesOf, succeed, toolResultContent, TOOL_LIST_MAX_ITEMS, TOOL_RESULT_CUT_TAIL, TOOL_RESULT_MAX_CHARS };
+export type { ToolOutcome };
 
 /**
  * F3.25 (ADR 0094 decision 9): the bounds of a `suggest_replies` call. Declared
@@ -39,41 +46,6 @@ export type ToolState = {
   /** F3.25 (ADR 0094 decision 9): the replies the last `suggest_replies` call offered; code filters them. */
   suggestedReplies?: string[];
 };
-
-export type ToolOutcome = {
-  readonly ok: boolean;
-  /** The tool result as the model receives it: JSON, cut to `TOOL_RESULT_MAX_CHARS`. */
-  readonly content: string;
-  /** Set only by a successful write or a proposal. */
-  readonly actionLine?: string;
-  /**
-   * Set only by `fail`: the refusal's sentence, the same text `content` carries.
-   * F3.27 (ADR 0090 Amendment 2 B4): the guided mode answers it to the user, so
-   * no caller parses `content` back.
-   */
-  readonly error?: string;
-};
-
-/** A result as the model receives it: JSON, cut on a whole character with a fixed tail. */
-export function toolResultContent(result: unknown): string {
-  const text = JSON.stringify(result) ?? "null";
-  return text.length <= TOOL_RESULT_MAX_CHARS ? text : `${cutToBound(text, TOOL_RESULT_MAX_CHARS)}${TOOL_RESULT_CUT_TAIL}`;
-}
-
-export function fail(error: string): ToolOutcome {
-  return { ok: false, content: toolResultContent({ ok: false, error }), error };
-}
-
-export function succeed(result: Record<string, unknown>, actionLine?: string): ToolOutcome {
-  return { ok: true, content: toolResultContent({ ok: true, ...result }), ...(actionLine ? { actionLine } : {}) };
-}
-
-export function issuesOf(error: z.ZodError): string {
-  return error.issues
-    .slice(0, 10)
-    .map((issue) => cutToBound(`${issue.path.join(".") || "(arguments)"}: ${issue.message}`, 200))
-    .join("; ");
-}
 
 /**
  * Applies `patch` to the working draft only when the merged draft passes the

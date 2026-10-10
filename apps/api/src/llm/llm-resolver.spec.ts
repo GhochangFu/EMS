@@ -1,8 +1,8 @@
 import { Logger } from "@nestjs/common";
 
-import { CredentialCryptoService } from "../../security/credential-crypto.service";
-import type { OnboardingLlmProvider } from "./onboarding-llm-port";
-import { OnboardingLlmResolver } from "./onboarding-llm-resolver";
+import { CredentialCryptoService } from "../security/credential-crypto.service";
+import type { LlmProvider } from "./llm-port";
+import { LlmResolver } from "./llm-resolver";
 
 function assert(condition: boolean, message: string): void {
   if (!condition) {
@@ -44,16 +44,16 @@ async function withEnv<T>(vars: Partial<Record<(typeof LLM_VARS)[number], string
 }
 
 type Built = { name: string; apiKey: string; model: string };
-type Row = Parameters<OnboardingLlmResolver["decryptKey"]>[0];
+type Row = Parameters<LlmResolver["decryptKey"]>[0];
 
 /**
  * A resolver whose tenant read returns `row` and whose factory records what it
  * would build. The read itself is covered by the RLS integration suite.
  */
-function resolver(row: Row | null): { r: OnboardingLlmResolver; built: Built[]; decrypts: { n: number } } {
+function resolver(row: Row | null): { r: LlmResolver; built: Built[]; decrypts: { n: number } } {
   const crypto = new CredentialCryptoService();
   const decrypts = { n: 0 };
-  const r = new OnboardingLlmResolver({} as never, crypto);
+  const r = new LlmResolver({} as never, crypto);
   r.readSetting = async () => row;
   const original = r.decryptKey.bind(r);
   r.decryptKey = (stored) => {
@@ -63,7 +63,7 @@ function resolver(row: Row | null): { r: OnboardingLlmResolver; built: Built[]; 
   const built: Built[] = [];
   r.buildProvider = (name, options) => {
     built.push({ name, ...options });
-    return { name } as OnboardingLlmProvider;
+    return { name } as LlmProvider;
   };
   return { r, built, decrypts };
 }

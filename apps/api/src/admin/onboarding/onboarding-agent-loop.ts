@@ -4,7 +4,15 @@ import { cloneJson } from "../stack-safe-json";
 import { isToolName, runTool, TOOL_DEFINITIONS, type ToolContext, type ToolState } from "./onboarding-agent-tools";
 import { cutToBound } from "./onboarding-draft-caps";
 import { diffSections } from "./onboarding-draft-merge";
-import type { LlmMessage, OnboardingLlmProvider } from "./onboarding-llm-port";
+import {
+  errorFacts,
+  MAX_TOOL_CALLS_PER_TURN,
+  runAgentLoop,
+  TURN_DEADLINE_MS,
+  type AgentStopReason,
+  type AgentTurnRecord,
+} from "../../llm/agent-loop";
+import type { LlmMessage, LlmProvider } from "../../llm/llm-port";
 import { PROMPT_MARKER_SENTENCE, serialiseDraftForPrompt } from "./onboarding-prompt-budget";
 import type { OnboardingDraftInput, OnboardingPhase } from "./onboarding.schema";
 
@@ -20,10 +28,15 @@ import type { OnboardingDraftInput, OnboardingPhase } from "./onboarding.schema"
  *   completed, and the guided mode does not run (ruling 3);
  * - **anything else** (`provider_error`) discards every edit of the turn, and
  *   the caller runs the guided mode on the same message (ruling 6).
+ *
+ * `F3.85` (ADR 0099): the loop itself — the caps, the deadline, the turn record
+ * — moved to `llm/agent-loop.ts`. This file builds the prompt, owns the draft
+ * state and the stop replies, and re-exports the constants and types it used to
+ * own so existing importers compile.
  */
 
-export const MAX_TOOL_CALLS_PER_TURN = 8;
-export const TURN_DEADLINE_MS = 45_000;
+export { MAX_TOOL_CALLS_PER_TURN, TURN_DEADLINE_MS };
+export type { AgentStopReason, AgentTurnRecord };
 export const MAX_HISTORY_MESSAGES = 20;
 export const MAX_HISTORY_MESSAGE_CHARS = 2_000;
 
@@ -32,22 +45,6 @@ export const STOPPED_EARLY_CALLS_REPLY =
 
 export const STOPPED_EARLY_TIME_REPLY =
   "I stopped early because the turn reached its time limit. The changes made so far are in the draft.";
-
-export type AgentStopReason = "final" | "cap_calls" | "cap_time" | "provider_error";
-
-/** Decision 9: ids, names and counts only — never message text, arguments, the draft or the summary. */
-export type AgentTurnRecord = {
-  readonly toolCalls: number;
-  readonly tools: readonly string[];
-  readonly stopReason: AgentStopReason;
-  readonly durationMs: number;
-  /**
-   * Code review #5: on `provider_error` only, the error's class name and HTTP
-   * status, so a bad key and a bug in the loop are told apart. Never the message.
-   */
-  readonly errorClass?: string;
-  readonly errorStatus?: number;
-};
 
 export type AgentTurnResult = {
   readonly reply: string;
@@ -110,19 +107,6 @@ ${PROMPT_MARKER_SENTENCE}
 Draft context (redacted): ${serialiseDraftForPrompt(input.draft)}`;
 }
 
-/** The class name and HTTP status of a failure, for the turn record; never its message. */
-function errorFacts(error: unknown): { errorClass?: string; errorStatus?: number } {
-  if (typeof error !== "object" || error === null) {
-    return { errorClass: typeof error };
-  }
-  const name = (error as { constructor?: { name?: unknown } }).constructor?.name;
-  const status = (error as { status?: unknown }).status;
-  return {
-    ...(typeof name === "string" ? { errorClass: cutToBound(name, 64) } : {}),
-    ...(typeof status === "number" ? { errorStatus: status } : {}),
-  };
-}
-
 /** Runs one user turn of the agent loop. Never throws; every failure is a stop reason. */
 export async function runAgentTurn(
   input: {
@@ -131,17 +115,12 @@ export async function runAgentTurn(
     readonly phase: OnboardingPhase;
     readonly orgName: string;
     readonly history: readonly OnboardingChatMessage[];
-    readonly llm: OnboardingLlmProvider;
+    readonly llm: LlmProvider;
     readonly tools: ToolContext;
   },
   options: { readonly maxToolCalls?: number; readonly deadlineMs?: number } = {},
 ): Promise<AgentTurnResult> {
-  const maxToolCalls = options.maxToolCalls ?? MAX_TOOL_CALLS_PER_TURN;
-  const deadlineMs = options.deadlineMs ?? TURN_DEADLINE_MS;
-  const started = Date.now();
   const state: ToolState = { working: cloneJson(input.draft) };
-  const actionLines: string[] = [];
-  const tools: string[] = [];
   const messages: LlmMessage[] = [
     {
       role: "system",
@@ -155,68 +134,43 @@ export async function runAgentTurn(
     ...buildHistory(input.history),
     { role: "user", content: input.message },
   ];
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), deadlineMs);
-
-  const finish = (stopReason: AgentStopReason, reply: string, error?: unknown): AgentTurnResult => {
-    const record: AgentTurnRecord = {
-      toolCalls: tools.length,
-      tools,
-      stopReason,
-      durationMs: Date.now() - started,
-      ...(error !== undefined ? errorFacts(error) : {}),
-    };
-    if (stopReason === "provider_error") {
-      return { reply, draftPatch: {}, actionLines: [], suggestedReplies: [], stopReason, fallback: true, record };
-    }
-    return {
-      reply,
-      draftPatch: diffSections(input.draft, state.working),
-      actionLines,
-      ...(state.pendingProposal ? { commitProposal: state.pendingProposal } : {}),
-      suggestedReplies: state.suggestedReplies ?? [],
-      stopReason,
-      fallback: false,
-      record,
-    };
-  };
-
-  try {
-    for (;;) {
-      if (controller.signal.aborted) {
-        return finish("cap_time", STOPPED_EARLY_TIME_REPLY);
-      }
-      const reply = await input.llm.complete({ messages, tools: TOOL_DEFINITIONS, signal: controller.signal });
-      if (reply.kind === "final") {
-        return finish("final", reply.text.trim() || "Done.");
-      }
-      messages.push({
-        role: "assistant",
-        content: reply.content,
-        toolCalls: reply.calls,
-        ...(reply.providerContent !== undefined ? { providerContent: reply.providerContent } : {}),
-      });
-      for (const call of reply.calls) {
-        if (tools.length >= maxToolCalls) {
-          return finish("cap_calls", STOPPED_EARLY_CALLS_REPLY);
-        }
-        if (controller.signal.aborted) {
-          return finish("cap_time", STOPPED_EARLY_TIME_REPLY);
-        }
-        // Security review L3: a name the model made up is logged as `unknown`.
-        tools.push(isToolName(call.name) ? call.name : "unknown");
-        const outcome = await runTool(call, state, input.tools);
-        if (outcome.actionLine) {
-          actionLines.push(outcome.actionLine);
-        }
-        messages.push({ role: "tool", toolCallId: call.id, content: outcome.content, isError: !outcome.ok });
-      }
-    }
-  } catch (error) {
-    return controller.signal.aborted
-      ? finish("cap_time", STOPPED_EARLY_TIME_REPLY)
-      : finish("provider_error", "", error);
-  } finally {
-    clearTimeout(timer);
+  const { reply, stopReason, record, actionLines } = await runAgentLoop(
+    {
+      messages,
+      tools: { definitions: TOOL_DEFINITIONS, isToolName },
+      runTool: (call) => runTool(call, state, input.tools),
+      llm: input.llm,
+    },
+    options,
+  );
+  if (stopReason === "provider_error") {
+    return { reply: "", draftPatch: {}, actionLines: [], suggestedReplies: [], stopReason, fallback: true, record };
   }
+  // F3.85 review: `diffSections` stringifies the stored sections, and a draft
+  // too deep for `JSON.stringify` throws a RangeError. Before the extraction it
+  // ran inside the loop's `try`; it is still a provider error, never a throw.
+  let draftPatch: OnboardingDraftInput;
+  try {
+    draftPatch = diffSections(input.draft, state.working);
+  } catch (error) {
+    return {
+      reply: "",
+      draftPatch: {},
+      actionLines: [],
+      suggestedReplies: [],
+      stopReason: "provider_error",
+      fallback: true,
+      record: { ...record, stopReason: "provider_error", ...errorFacts(error) },
+    };
+  }
+  return {
+    reply: stopReason === "final" ? reply : stopReason === "cap_calls" ? STOPPED_EARLY_CALLS_REPLY : STOPPED_EARLY_TIME_REPLY,
+    draftPatch,
+    actionLines,
+    ...(state.pendingProposal ? { commitProposal: state.pendingProposal } : {}),
+    suggestedReplies: state.suggestedReplies ?? [],
+    stopReason,
+    fallback: false,
+    record,
+  };
 }

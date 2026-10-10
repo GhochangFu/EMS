@@ -57,7 +57,7 @@ import { OnboardingInventoryService } from "./onboarding/onboarding-inventory.se
 import { OnboardingChatService } from "./onboarding/onboarding-chat.service";
 import { OnboardingCommitService } from "./onboarding/onboarding-commit.service";
 import { OnboardingExcelService } from "./onboarding/onboarding-excel.service";
-import { OnboardingLlmResolver } from "./onboarding/onboarding-llm-resolver";
+import { LlmModule } from "../llm/llm.module";
 import { OnboardingProtocolService } from "./onboarding/onboarding-protocol.service";
 import { OnboardingService } from "./onboarding/onboarding.service";
 import { OnboardingTemplateCatalogService } from "./onboarding/onboarding-template-catalog.service";
@@ -93,7 +93,7 @@ import { UsersService } from "./users/users.service";
   // `F3.78` (ADR 0089 decision 5) — `IdentityAdminModule` provides `IDENTITY_ADMIN`
   // to `UsersService`; it is not global. Unconfigured, the token is the
   // `NotConfiguredIdentityAdmin`, so the module still boots and user writes answer 503.
-  imports: [VocabulariesModule, CalcModule, ControlRoomModule, IdentityAdminModule],
+  imports: [VocabulariesModule, CalcModule, ControlRoomModule, IdentityAdminModule, LlmModule],
   controllers: [
     OrganizationsAdminController,
     LocationsAdminController,
@@ -133,7 +133,6 @@ import { UsersService } from "./users/users.service";
     OnboardingInventoryService,
     OnboardingTemplateCatalogService,
     OnboardingExcelService,
-    OnboardingLlmResolver,
     AiAssistantSettingsService,
     OnboardingChatService,
     OnboardingCommitService,

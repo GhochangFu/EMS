@@ -1,6 +1,5 @@
 import { describeProtocol, protocolCatalogEntry, type LocationTypeDto, type OnboardingProtocol } from "@bms/shared";
 import { z, type ZodTypeAny } from "zod";
-import { zodToJsonSchema } from "zod-to-json-schema";
 
 import { echoedItems, moreTail, quoteCell } from "../spreadsheet-guard";
 import { isJsonContainer, rebuildDeep } from "../stack-safe-json";
@@ -9,7 +8,8 @@ import { looksLikeCredential } from "./onboarding-credential-detect";
 import { assetPointProblems } from "./onboarding-mapping-refs";
 import { dispatchMappingTool, isMappingToolName, MAPPING_TOOL_DESCRIPTIONS, MAPPING_TOOL_SCHEMAS } from "./onboarding-mapping-tools";
 import { cutToBound, draftCountProblem } from "./onboarding-draft-caps";
-import type { LlmToolCall, LlmToolDefinition } from "./onboarding-llm-port";
+import type { LlmToolCall, LlmToolDefinition } from "../../llm/llm-port";
+import { defineToolRegistry, runToolCall, type ToolGuard } from "../../llm/tool-registry";
 import { deriveLocationPatch } from "./onboarding-location-derive";
 import { pointKeyDeclarationProblems } from "./onboarding-point-key-conflict";
 import type { OrgPointKeySummary } from "./onboarding-catalog.service";
@@ -289,22 +289,11 @@ const DESCRIPTIONS: Record<ToolName, string> = {
     "Offers up to 4 short replies the user can click to answer your question. Use it when you ask the user to choose. It changes nothing in the draft.",
 };
 
-function jsonSchemaOf(schema: ZodTypeAny): Record<string, unknown> {
-  const converted = zodToJsonSchema(schema, { $refStrategy: "none", target: "jsonSchema7" }) as Record<string, unknown>;
-  delete converted.$schema;
-  // A union (`get_template`) converts to a bare `anyOf`; providers read the root as an object schema.
-  if (converted.type === undefined) {
-    converted.type = "object";
-  }
-  return converted;
-}
+/** `F3.85` (ADR 0099): the name → schema map and its definitions, built by the generic registry in `llm/`. */
+const TOOL_REGISTRY = defineToolRegistry(TOOL_SCHEMAS, DESCRIPTIONS);
 
 /** The 29 tools as the model sees them, in a fixed order. */
-export const TOOL_DEFINITIONS: readonly LlmToolDefinition[] = (Object.keys(TOOL_SCHEMAS) as ToolName[]).map((name) => ({
-  name,
-  description: DESCRIPTIONS[name],
-  parameters: jsonSchemaOf(TOOL_SCHEMAS[name]),
-}));
+export const TOOL_DEFINITIONS: readonly LlmToolDefinition[] = TOOL_REGISTRY.definitions;
 
 /**
  * Whether an RTU argument carries a credential anywhere. Walked with the shared
@@ -337,36 +326,22 @@ function activeCodes(ctx: ToolContext): string[] {
 
 /** Whether `name` is one of the registry's tools; the turn record logs any other name as `unknown` (security review L3). */
 export function isToolName(name: string): name is ToolName {
-  return Object.prototype.hasOwnProperty.call(TOOL_SCHEMAS, name);
+  return TOOL_REGISTRY.isToolName(name);
 }
 
-/** Runs one tool call against the turn's state. Never throws. */
+/**
+ * The checks every call's arguments meet before the schema, in this order: the
+ * withheld-value marker on every tool, then the credential walk on
+ * `CREDENTIAL_CHECKED_TOOLS` only.
+ */
+const TOOL_GUARDS: readonly ToolGuard<ToolName>[] = [
+  (_name, raw) => (carriesPromptMarker(raw) ? PROMPT_MARKER_TOOL_ERROR : null),
+  (name, raw) => (CREDENTIAL_CHECKED_TOOLS.has(name) && configCarriesCredential(raw) ? CREDENTIAL_TOOL_ERROR : null),
+];
+
+/** Runs one tool call against the turn's state. Never throws (`runToolCall`, `F3.85`). */
 export async function runTool(call: LlmToolCall, state: ToolState, ctx: ToolContext): Promise<ToolOutcome> {
-  if (!isToolName(call.name)) {
-    return fail(`Unknown tool ${quoteCell(call.name)}.`);
-  }
-  const name = call.name as ToolName;
-  let raw: unknown;
-  try {
-    raw = call.arguments.trim() === "" ? {} : JSON.parse(call.arguments);
-  } catch {
-    return fail("The arguments are not valid JSON.");
-  }
-  if (carriesPromptMarker(raw)) {
-    return fail(PROMPT_MARKER_TOOL_ERROR);
-  }
-  if (CREDENTIAL_CHECKED_TOOLS.has(name) && configCarriesCredential(raw)) {
-    return fail(CREDENTIAL_TOOL_ERROR);
-  }
-  const parsed = TOOL_SCHEMAS[name].safeParse(raw);
-  if (!parsed.success) {
-    return fail(`Invalid arguments: ${issuesOf(parsed.error)}`);
-  }
-  try {
-    return await dispatch(name, parsed.data as never, state, ctx);
-  } catch {
-    return fail("The tool failed. Try again or continue without it.");
-  }
+  return runToolCall(TOOL_REGISTRY, call, (name, args) => dispatch(name, args, state, ctx), TOOL_GUARDS);
 }
 
 async function dispatch(name: ToolName, args: Record<string, unknown>, state: ToolState, ctx: ToolContext): Promise<ToolOutcome> {

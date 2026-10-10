@@ -1,6 +1,6 @@
-import { createLlmProvider } from "./onboarding-llm-factory";
-import { LlmProviderError, type LlmToolDefinition, type OnboardingLlmProvider } from "./onboarding-llm-port";
-import { OPENAI_BASE_URL, OPENROUTER_BASE_URL, OpenAiCompatibleProvider } from "./onboarding-openai-provider";
+import { createLlmProvider } from "./llm-factory";
+import { LlmProviderError, type LlmToolDefinition, type LlmProvider } from "./llm-port";
+import { OPENAI_BASE_URL, OPENROUTER_BASE_URL, OpenAiCompatibleProvider } from "./openai-provider";
 
 function assert(condition: boolean, message: string): void {
   if (!condition) {
@@ -36,7 +36,7 @@ function reset(capture: OpenAiCapture, reply: unknown): void {
  * the factory supplies is what the assertion sees (a constructor call would
  * hand the URL in itself and could not catch the factory dropping it).
  */
-function provider(name: "openai" | "openrouter" = "openai"): OnboardingLlmProvider {
+function provider(name: "openai" | "openrouter" = "openai"): LlmProvider {
   return name === "openrouter"
     ? createLlmProvider("openrouter", { apiKey: "ctor-key", model: "z-ai/glm-5.3-flash" })
     : new OpenAiCompatibleProvider("openai", { apiKey: "ctor-key", model: "gpt-4o-mini" });

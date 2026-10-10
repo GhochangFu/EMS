@@ -5,7 +5,7 @@ import { STOPPED_EARLY_TIME_REPLY } from "./onboarding-agent-loop";
 import { FakeLlmProvider, PLAIN_RTU, calls, toolCall } from "./onboarding-agent-loop.spec";
 import { CONFIRM_STEP_LABELS } from "./onboarding-chat-rule-based";
 import { AGENT_NOT_SET_UP_NOTICE, AGENT_UNAVAILABLE_NOTICE, OnboardingChatService } from "./onboarding-chat.service";
-import type { ResolvedLlm } from "./onboarding-llm-resolver";
+import type { ResolvedLlm } from "../../llm/llm-resolver";
 import { OnboardingValidateService } from "./onboarding-validate.service";
 import { EMPTY_TEMPLATE_CONTEXT } from "./onboarding-template-refs";
 

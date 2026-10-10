@@ -1,8 +1,8 @@
 import type { AiAssistantTestStatus, LlmProviderName } from "@bms/shared";
 
-import { AnthropicProvider } from "./onboarding-anthropic-provider";
-import type { OnboardingLlmProvider } from "./onboarding-llm-port";
-import { OPENROUTER_BASE_URL, OpenAiCompatibleProvider } from "./onboarding-openai-provider";
+import { AnthropicProvider } from "./anthropic-provider";
+import type { LlmProvider } from "./llm-port";
+import { OPENROUTER_BASE_URL, OpenAiCompatibleProvider } from "./openai-provider";
 
 /**
  * The one switch over the three adapters (ADR 0090 Amendment 1 A1). The
@@ -12,7 +12,7 @@ import { OPENROUTER_BASE_URL, OpenAiCompatibleProvider } from "./onboarding-open
 export function createLlmProvider(
   name: LlmProviderName,
   options: { readonly apiKey: string; readonly model: string },
-): OnboardingLlmProvider {
+): LlmProvider {
   switch (name) {
     case "openai":
       return new OpenAiCompatibleProvider("openai", options);

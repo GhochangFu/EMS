@@ -30,7 +30,7 @@ import {
   assertTextOnlyIsFinal,
   assertTheCallShapeIsTheAmendmentsOne,
   assertToolUseBlocksBecomeToolCallsWithStringifiedInput,
-} from "./onboarding-anthropic-provider.spec";
+} from "./anthropic-provider.spec";
 
 /** Vitest entry point — see `admin.schema.test.ts` for the pattern (ADR 0014). One `it()` per claim. */
 describe("Anthropic provider (F3.21, ADR 0090 Amendment 1 A1)", () => {

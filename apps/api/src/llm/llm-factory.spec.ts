@@ -1,6 +1,6 @@
-import { AnthropicProvider } from "./onboarding-anthropic-provider";
-import { classifyProviderError, createLlmProvider } from "./onboarding-llm-factory";
-import { OpenAiCompatibleProvider } from "./onboarding-openai-provider";
+import { AnthropicProvider } from "./anthropic-provider";
+import { classifyProviderError, createLlmProvider } from "./llm-factory";
+import { OpenAiCompatibleProvider } from "./openai-provider";
 
 function assert(condition: boolean, message: string): void {
   if (!condition) {
