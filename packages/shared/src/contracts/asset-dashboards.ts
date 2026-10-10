@@ -7,8 +7,8 @@ import { templateWidgetResolutionDtoSchema } from "./dashboard-templates";
  * decisions 3 and 5 — the report each per-asset default-dashboard view carries,
  * and the on-demand backfill's response.
  *
- * `admin.ts` is 950 lines (its own docblock records why new content goes in a
- * new file); this file holds the dashboard-instantiation report shapes and
+ * `admin.ts` was 950 lines when this file was written, so new content went in
+ * a new file; this file holds the dashboard-instantiation report shapes and
  * imports `templateWidgetResolutionDtoSchema` from `dashboard-templates.ts`
  * rather than restating it — a template widget has no key of its own, so the
  * per-widget resolution is reported the same way ADR 0049's is, keyed

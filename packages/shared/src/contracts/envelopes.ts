@@ -20,15 +20,17 @@ import { z } from "zod";
 import {
   adminAssetDtoSchema,
   adminAssetPointDtoSchema,
-  adminAssetTemplateSummaryDtoSchema,
   adminLocationDtoSchema,
   adminOrganizationDtoSchema,
   adminRtuDtoSchema,
-  assetPointCalcConfigDtoSchema,
   calcParameterDtoSchema,
   calcParameterKeyDtoSchema,
-  stockAssetTemplateDtoSchema,
 } from "./admin";
+import {
+  adminAssetTemplateSummaryDtoSchema,
+  assetPointCalcConfigDtoSchema,
+  stockAssetTemplateDtoSchema,
+} from "./asset-templates";
 import {
   templateMigrationAssetDtoSchema,
   templateMigrationRefusalDtoSchema,
@@ -148,7 +150,8 @@ export const templateDraftDeletedResponseSchema = z.object({ deleted: z.literal(
  * lives — `admin.ts` holds no `…ResponseSchema` at all. Splitting the rule
  * "row DTOs in `admin.ts`, envelopes in `envelopes.ts`" for four new routes
  * would leave the next reader guessing which file to look in. The DTOs
- * themselves are in `admin.ts` as the plan says.
+ * themselves are in `asset-templates.ts` and `template-migration.ts` now —
+ * both moved out of `admin.ts` on §4.5 grounds (`F4.150`, `F2.24`).
  */
 export const assetPointCalcConfigListResponseSchema = itemsOf(assetPointCalcConfigDtoSchema);
 export const templateVersionsListResponseSchema = itemsOf(templateVersionSummaryDtoSchema);

@@ -341,7 +341,7 @@ export function checkEntry(entry: StockAssetTemplateEntry): void {
   // shared schema lacks and stays green. A count check catches only the
   // shared-permits/API-refuses direction; this catches the other one: `F2.12`
   // adds a field to `templatePointBodySchema` and forgets the DTO mirror in
-  // `packages/shared/src/contracts/admin.ts`, and `GET stock` silently omits
+  // `packages/shared/src/contracts/asset-templates.ts`, and `GET stock` silently omits
   // what the import writes. Found by the `F2.13` code review.
   if (listed.success) {
     assertSameKeys(entry.code, "entry", entry, listed.data);

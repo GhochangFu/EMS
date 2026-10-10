@@ -1,9 +1,6 @@
 import { QUALITY_POLICIES } from "../ingest";
-import {
-  adminAssetPointDtoSchema,
-  adminTemplatePointDtoSchema,
-  stockTemplatePointDtoSchema,
-} from "./admin";
+import { adminAssetPointDtoSchema } from "./admin";
+import { adminTemplatePointDtoSchema, stockTemplatePointDtoSchema } from "./asset-templates";
 import {
   POINT_METADATA_FIELDS,
   pointMetadataFieldNameSchema,

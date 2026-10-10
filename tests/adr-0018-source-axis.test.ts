@@ -228,7 +228,7 @@ describe("ADR 0018 — source axis separation", () => {
     );
     // Scoped to the single statement, not "the rest of the file" — a bare
     // `[\s\S]*?` here would fire on the NEXT `.extract(["measured", ...])`
-    // anyone writes below this line (there is already one, in admin.ts),
+    // anyone writes below this line (there is already one, in asset-templates.ts),
     // blaming writableSourceKindSchema for a match that has nothing to do
     // with it.
     const statementMatch = contract.match(/writableSourceKindSchema = [^\n]+;/);

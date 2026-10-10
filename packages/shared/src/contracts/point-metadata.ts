@@ -12,7 +12,7 @@ import { QUALITY_POLICIES } from "../ingest";
  * `NULL` = inherit, and a resolved `NULL` = today's behaviour: multiplier `1`,
  * offset `0`, no range test, `discard_bad`. Every existing row reads unchanged.
  *
- * **No bounds here**, the rule `admin.ts` states at
+ * **No bounds here**, the rule `asset-templates.ts` states at
  * `assetPointCalcOverrideFieldsSchema`: this is a read-side shape over stored
  * rows, and a read schema that rejects a row the database holds lies about the
  * estate. ADR 0056 decision 2's bounds (`scale_multiplier <> 0`,

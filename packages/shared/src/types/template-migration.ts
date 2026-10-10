@@ -8,15 +8,15 @@
  */
 import type { z } from "zod";
 
-import type * as A from "../contracts/admin";
+import type * as AT from "../contracts/asset-templates";
 import type * as TM from "../contracts/template-migration";
 
 /** The five calc columns — the same shape as template value, override and effective. */
 export type AssetPointCalcOverrideFields = z.infer<
-  typeof A.assetPointCalcOverrideFieldsSchema
+  typeof AT.assetPointCalcOverrideFieldsSchema
 >;
 /** One derived point of one asset: template, override and resolved values. */
-export type AssetPointCalcConfigDto = z.infer<typeof A.assetPointCalcConfigDtoSchema>;
+export type AssetPointCalcConfigDto = z.infer<typeof AT.assetPointCalcConfigDtoSchema>;
 /** One version of a template code, with how much of the estate sits on it. */
 export type TemplateVersionSummaryDto = z.infer<typeof TM.templateVersionSummaryDtoSchema>;
 export type TemplateMigrationRefusalReason = z.infer<
