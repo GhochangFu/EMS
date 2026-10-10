@@ -5,6 +5,7 @@ import { isToolName, runTool, TOOL_DEFINITIONS, type ToolContext, type ToolState
 import { cutToBound } from "./onboarding-draft-caps";
 import { diffSections } from "./onboarding-draft-merge";
 import {
+  errorFacts,
   MAX_TOOL_CALLS_PER_TURN,
   runAgentLoop,
   TURN_DEADLINE_MS,
@@ -145,9 +146,26 @@ export async function runAgentTurn(
   if (stopReason === "provider_error") {
     return { reply: "", draftPatch: {}, actionLines: [], suggestedReplies: [], stopReason, fallback: true, record };
   }
+  // F3.85 review: `diffSections` stringifies the stored sections, and a draft
+  // too deep for `JSON.stringify` throws a RangeError. Before the extraction it
+  // ran inside the loop's `try`; it is still a provider error, never a throw.
+  let draftPatch: OnboardingDraftInput;
+  try {
+    draftPatch = diffSections(input.draft, state.working);
+  } catch (error) {
+    return {
+      reply: "",
+      draftPatch: {},
+      actionLines: [],
+      suggestedReplies: [],
+      stopReason: "provider_error",
+      fallback: true,
+      record: { ...record, stopReason: "provider_error", ...errorFacts(error) },
+    };
+  }
   return {
     reply: stopReason === "final" ? reply : stopReason === "cap_calls" ? STOPPED_EARLY_CALLS_REPLY : STOPPED_EARLY_TIME_REPLY,
-    draftPatch: diffSections(input.draft, state.working),
+    draftPatch,
     actionLines,
     ...(state.pendingProposal ? { commitProposal: state.pendingProposal } : {}),
     suggestedReplies: state.suggestedReplies ?? [],

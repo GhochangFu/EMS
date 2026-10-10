@@ -167,6 +167,34 @@ export async function assertTheDeadlineKeepsCompletedEdits(): Promise<void> {
   assert(result.fallback === false, "the guided mode does not run");
 }
 
+/**
+ * F3.85 review: a stored draft too deep for `JSON.stringify` makes the result's
+ * `diffSections` throw a `RangeError`. Before the loop moved to `llm/`, that ran
+ * inside the loop's `try` and became `provider_error`; it must still, so the
+ * turn falls back to the guided mode instead of a 500.
+ */
+export async function assertADraftTooDeepToDiffFallsBackInsteadOfThrowing(): Promise<void> {
+  const root: Record<string, unknown> = {};
+  let node = root;
+  for (let i = 0; i < 20_000; i++) {
+    const child: Record<string, unknown> = {};
+    node.next = child;
+    node = child;
+  }
+  const draft = { rtus: [{ ...PLAIN_RTU, config: root, credentialsSet: false, ingestEnabled: false }] } as unknown as OnboardingDraft;
+  const llm = new FakeLlmProvider([{ kind: "final", text: "ok" }]);
+  let result: Awaited<ReturnType<typeof runAgentTurn>> | undefined;
+  let thrown: unknown;
+  try {
+    result = await runAgentTurn(turn(llm, { draft }));
+  } catch (error) {
+    thrown = error;
+  }
+  assert(thrown === undefined, `runAgentTurn does not throw on a deep draft: ${String(thrown)}`);
+  assert(result?.stopReason === "provider_error" && result.fallback === true, `a deep draft is a provider error with fallback: ${result?.stopReason}`);
+  assert(result?.record.stopReason === "provider_error", `the record names provider_error: ${result?.record.stopReason}`);
+}
+
 export async function assertAProviderRejectionDiscardsTheTurn(): Promise<void> {
   const llm = new FakeLlmProvider([calls(toolCall("add_rtu", PLAIN_RTU)), "reject"]);
   const result = await runAgentTurn(turn(llm));

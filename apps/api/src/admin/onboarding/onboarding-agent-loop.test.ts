@@ -3,6 +3,7 @@ import { describe, it } from "vitest";
 import {
   assertAFinalReplyWithNoToolsEndsTheTurn,
   assertALaterWriteDropsThePendingProposal,
+  assertADraftTooDeepToDiffFallsBackInsteadOfThrowing,
   assertAProviderRejectionDiscardsTheTurn,
   assertAToolErrorGoesBackAsAResultNotAThrow,
   assertActionMessagesReachTheModelAsAssistantText,
@@ -51,6 +52,10 @@ describe("onboarding agent loop (F3.21, ADR 0090 decisions 2, 3, 7, 9)", () => {
 
   it("keeps completed edits at the deadline without falling back", async () => {
     await assertTheDeadlineKeepsCompletedEdits();
+  });
+
+  it("falls back instead of throwing when the draft is too deep to diff", async () => {
+    await assertADraftTooDeepToDiffFallsBackInsteadOfThrowing();
   });
 
   it("discards the turn on a provider rejection", async () => {
