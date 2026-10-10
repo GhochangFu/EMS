@@ -7618,3 +7618,13 @@ Closed by an owner ruling. All eight children were done: `F3.32a` (#629), `F3.32
 The five items the row still held moved to their own P3 rows, each behind its own ADR: `F3.80` (network mimics beyond `lv_single_line`), `F3.81` (layouts in dashboard templates), `F3.82` (KPI overlays), `F3.83` (layouts shared across organizations) and `F3.84` (the unit-level reference preset). The other items that ADR 0081 decision 10 and ADR 0082 decision 7 left under `F3.32` (free shapes and lines, per-unit colours, the SMOC pages on a mimic, connector styles per domain, a stored symbol group, new seed data, the "Pipe mode" rename) have no row and stay out.
 
 Verified: N/A for code, database, API and browser; this closure changes only the backlog and this file. **Cascade:** no row lists `F3.32` in *Depends*. A `chore(agents):` sweep is owed in its own PR: AGENTS.md still says `F3.32` "still stands".
+
+### `F4.150` — the asset-template contracts move out of `admin.ts` ✅ 2026-10-10
+
+One PR, squash-merged 2026-10-10; no migration, no new dependency, no behaviour change.
+
+- **#799** (`e7efcb04`) — the asset-template block of `contracts/admin.ts` moves byte-identical to `contracts/asset-templates.ts` (`admin.ts` 765 → 352 lines, the new file 424); every importer repointed, no exported name changed.
+
+Owner ruling 2026-10-10: split anyway, although `F2.24` had already cut the file, to leave room for the `F3.86` master-data body schemas. CI was red once on the timing test at `dashboard-builder-edit-page-tabs.spec.tsx:451` and green on re-run with no change. Verified: the whole suite locally and CI; database, API and browser N/A (no runtime change, so no container rebuild).
+
+Raised: none. **Cascade:** `F3.85` is now eligible. A `chore(agents):` sweep is owed in its own PR: AGENTS.md still says `F3.85` waits on `F4.150`, and its §3 tree gives `admin.ts` as 765 lines with no `asset-templates.ts` entry.
