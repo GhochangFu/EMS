@@ -1,4 +1,5 @@
-import { Module } from "@nestjs/common";
+import { type MiddlewareConsumer, Module, type NestModule } from "@nestjs/common";
+import { APP_INTERCEPTOR } from "@nestjs/core";
 
 import { MasterDataAuditService } from "../admin/master-data-audit.service";
 import { AuthModule } from "../auth/auth.module";
@@ -6,6 +7,9 @@ import { DatabaseModule } from "../database/database.module";
 import { CopilotAccessController } from "./copilot-access.controller";
 import { CopilotAccessService } from "./copilot-access.service";
 import { CopilotAvailabilityService } from "./copilot-availability.service";
+import { CopilotChangeInterceptor } from "./copilot-change.interceptor";
+import { CopilotContextMiddleware } from "./copilot-context.middleware";
+import { CopilotPendingChangesService } from "./copilot-pending-changes.service";
 import { CopilotStatusController } from "./copilot-status.controller";
 
 /**
@@ -18,11 +22,28 @@ import { CopilotStatusController } from "./copilot-status.controller";
  * `AuthModule` for `AccessControlService` and the guard, and its own
  * `MasterDataAuditService` (stateless). `CopilotAvailabilityService` is
  * exported for the turn service that later PRs add.
+ *
+ * PR 4 (decision 4.5) adds the seam every confirmed change passes through:
+ * `CopilotChangeInterceptor` as a global interceptor (`APP_INTERCEPTOR`), and
+ * `CopilotContextMiddleware` on every route (`configure`, the
+ * `ObservabilityModule` form), which opens the per-request store the
+ * interceptor marks and `MasterDataAuditService` reads.
+ * `tests/f3.85-copilot-interceptor-wiring.test.ts` pins both registrations.
  */
 @Module({
   imports: [DatabaseModule, AuthModule],
   controllers: [CopilotAccessController, CopilotStatusController],
-  providers: [CopilotAccessService, CopilotAvailabilityService, MasterDataAuditService],
-  exports: [CopilotAvailabilityService],
+  providers: [
+    CopilotAccessService,
+    CopilotAvailabilityService,
+    CopilotPendingChangesService,
+    MasterDataAuditService,
+    { provide: APP_INTERCEPTOR, useClass: CopilotChangeInterceptor },
+  ],
+  exports: [CopilotAvailabilityService, CopilotPendingChangesService],
 })
-export class CopilotModule {}
+export class CopilotModule implements NestModule {
+  configure(consumer: MiddlewareConsumer): void {
+    consumer.apply(CopilotContextMiddleware).forRoutes("*");
+  }
+}
