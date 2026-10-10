@@ -1153,8 +1153,25 @@
 > Next: `F4.160` is open (of the three spec files the row names, two remain,
 > `dashboard-builder-page` and `dashboard-builder-edit-page`, because `F3.70`
 > took the overview spec off `AppShell`); `F4.161` is closed (#578).
-> General
-> site-wide AI copilot, EMQX, and the **non-MQTT**
+> And **a site-wide copilot for administrators** is promoted (**ADR 0099**,
+> accepted 2026-10-10 in #797 `1de15f33` after twenty owner rulings; rows
+> `F3.85`–`F3.87`, **not built yet** — `F3.85` waits on `F4.150`). It promotes
+> §6's general copilot item for `admin`, `organization_admin`, `location_admin`
+> and `asset_group_admin` only; operators and viewers get none. It answers
+> read-only questions within the user's own read scope and proposes admin
+> writes from an action catalog in `packages/shared/src/copilot/`; the model
+> never writes — the server validates a proposal against the existing Zod
+> contract and stores a pending change, and on Confirm the browser sends the
+> real REST call with the user's own token (`X-Copilot-Change`, claimed
+> atomically by a global interceptor), so every controller check, RLS policy
+> and audit write runs unchanged. One API write = one Confirm; no hard delete
+> except a grant revoke or a group-member removal; never the global `admin`
+> role. Per-user history (30 days, per-user RLS, no `bms_fleet` grant), an
+> availability chain (organization switch → role switches → named exceptions;
+> a new organization starts off), daily usage limits, and ADR 0090
+> Amendment 1's key rule kept for every organization. The onboarding agent
+> becomes a copilot skill in `F3.86`.
+> EMQX and the **non-MQTT**
 > protocol adapters remain deferred — the framework, the host and the MQTT
 > adapter are promoted; each further protocol still needs its own ADR (§9.4).
 > **Product brand:** on screen the product is **IONSiTE NEXUS** (**ADR 0083**,
@@ -1230,8 +1247,10 @@ real-ingestion pilot** (ADR 0007, 0012) added `apps/ingest`, an MQTT TLS
 subscriber for West Bengal PHE pump houses, plus AES-256-GCM encrypted RTU
 connection credentials. **ADR 0007 Amendment 1 (accepted 2026-08-22, `F1.7`)
 superseded decision 4's one-RTU limit: live ingest now covers five of the twelve
-catalogued RTUs**, measured rather than chosen. These promotions are partial and scoped: general
-site-wide AI copilot, EMQX, and non-MQTT protocol adapters remain out of scope.
+catalogued RTUs**, measured rather than chosen. These promotions are partial and scoped: EMQX
+and non-MQTT protocol adapters remain out of scope, and a site-wide AI copilot
+is promoted for the four administrator roles only (**ADR 0099**, rows
+`F3.85`–`F3.87`, not built yet).
 
 ---
 
@@ -1290,9 +1309,12 @@ The current planning direction is:
    since Amendment 2, so a dev `.env` sets it and a stale one fails the boot
    loudly.
 14. Plan Phase 6 as Three.js Control Room only.
-15. Keep general AI Copilot / chatbot out of scope for site navigation. The
-   **scoped AI onboarding wizard** (admin ingestion only, ADR 0011) is merged
-   to `main` and in scope.
+15. Keep a general AI copilot out of scope for operators and viewers. For the
+   four administrator roles a **site-wide copilot is promoted** (ADR 0099,
+   rows `F3.85`–`F3.87`): read-only answers, and admin writes the model only
+   proposes and the admin confirms one API write at a time. The **scoped AI
+   onboarding wizard** (admin ingestion only, ADR 0011) is merged to `main`
+   and in scope; it becomes a copilot skill in `F3.86`.
 16. Treat the **hierarchical master-data admin** (ADR 0008–0010) as in scope:
    organization, location, RTU and asset CRUD under `/admin/*` over the
    chain Organization → Location tree → Asset — the locations a tree of any
@@ -3721,17 +3743,21 @@ These are intentionally deferred. Do not implement them yet:
   `energy_consumption`
 - Complex drag-and-drop node graph rule builders
 - Three.js Control Room 3D
-- General site-wide AI Copilot / chatbot (the **scoped admin onboarding
-  wizard is promoted** via ADR 0011, and since ADR 0090 it runs a tool-calling
-  loop over the session draft; since ADR 0091 that loop also onboards asset
-  templates; since ADR 0092–0095 it also maps source tags, reads the
-  organization's inventory, checks protocol config and undoes a draft step;
-  general copilot remains out of scope, and so do
-  streaming replies, per-organization cost limits, a platform AI setting in the
-  UI and model lists fetched from the providers, and — by ADR 0091 — template
-  content authored in chat, template assets on a committed RTU or location or
-  with no gateway, and new template versions or migrations from chat; live
-  device discovery per adapter, `F3.24b`, is deferred to its own ADR)
+- General site-wide AI Copilot / chatbot **for operators and viewers** (since
+  ADR 0099, 2026-10-10, a site-wide copilot is **promoted for the four
+  administrator roles**, rows `F3.85`–`F3.87`, not built yet; the **scoped admin
+  onboarding wizard is promoted** via ADR 0011, and since ADR 0090 it runs a
+  tool-calling loop over the session draft; since ADR 0091 that loop also
+  onboards asset templates; since ADR 0092–0095 it also maps source tags, reads
+  the organization's inventory, checks protocol config and undoes a draft step;
+  it becomes a copilot skill in `F3.86`. Still out: streaming replies, a
+  platform AI setting in the UI and model lists fetched from the providers;
+  per-organization cost limits are answered in part by ADR 0099's daily usage
+  limits. By ADR 0091 the onboarding chat still does not author template
+  content, place template assets on a committed RTU or location or with no
+  gateway, or make new template versions or migrations; the administrator
+  copilot may propose KPI content and calc formulas (ADR 0099 decision 3).
+  Live device discovery per adapter, `F3.24b`, is deferred to its own ADR)
 - NERSA / ISO compliance reports
 - Kubernetes production manifests
 
@@ -3778,8 +3804,9 @@ force-changeover, sensor calibration/test execution, real-ingestion rules,
 and complex node graph builders remain out of scope
 until their specific sprint is promoted. **The job queue itself is promoted
 (ADR 0063) and carries one queue, `heartbeat`; scheduled rule evaluation on
-it is `F3.11`, the command path `F3.12`, and each is still its own row.** General site-wide AI Copilot /
-chatbot remains deferred, but the scoped admin onboarding wizard (ADR 0011;
+it is `F3.11`, the command path `F3.12`, and each is still its own row.** A general AI copilot
+remains deferred for operators and viewers; for the four administrator roles
+ADR 0099 promotes a site-wide copilot (`F3.85`–`F3.87`). The scoped admin onboarding wizard (ADR 0011;
 its tool-calling loop since ADR 0090, its template onboarding since ADR 0091, its mapping, inventory,
 protocol-catalog and undo tools since ADR 0092–0095),
 the hierarchical master-data admin (ADR 0008–0010), and the PHE MQTT ingest

@@ -5058,8 +5058,10 @@ each row, as `F4.100`–`F4.102` did. No dependency, no DDL, no §6 promotion.
 - **Highlights:** GLB/GLTF model of the SMOC control room, live data
   bound to 3D screens, alarm indicators, and clickable zones/assets that
   navigate back to existing 2D screens.
-- **Explicit deferral:** AI Copilot / chatbot remains out of scope and is
-  not part of this Phase 6 plan.
+- **Explicit deferral:** AI Copilot / chatbot is not part of this Phase 6
+  plan. *(Since 2026-10-10, ADR 0099 promotes a site-wide copilot for the
+  four administrator roles only, as rows `F3.85`–`F3.87`; operators and
+  viewers stay without one.)*
 
 #### Phase 6 Sprint A — 3D feasibility
 - **Status:** pending
@@ -5118,7 +5120,7 @@ each row, as `F4.100`–`F4.102` did. No dependency, no DDL, no §6 promotion.
 | Maintenance / work orders / rule-engine UI | Phase 5 |
 | Energy reports (PDF/XLSX) | Phase 5 |
 | Three.js Control Room 3D | Phase 6 |
-| AI Copilot | Deferred; not included in the current Phase 6 plan |
+| AI Copilot | Administrators only: promoted by ADR 0099 (2026-10-10), rows `F3.85`–`F3.87`; not in the Phase 6 plan; still out for operators and viewers |
 | NERSA / ISO compliance reports | Phase 7 |
 | Docker, Kubernetes, CI/CD, Prometheus / Grafana / Loki | Phase 1 |
 
