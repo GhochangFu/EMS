@@ -7,6 +7,8 @@ import { expect, vi } from "vitest";
 import type { AiAssistantSettingsDto } from "@bms/shared";
 
 import * as api from "../../api/admin/ai-assistant";
+import * as copilotApi from "../../api/admin/copilot-access";
+import * as usersApi from "../../api/admin/users";
 import { ApiError } from "../../lib/api-error";
 import type { AuthUser } from "../../stores/auth-store";
 import { AiAssistantPage } from "./ai-assistant-page";
@@ -63,6 +65,15 @@ const NO_ENCRYPTION_KEY_MESSAGE =
   "CREDENTIAL_ENCRYPTION_KEY is not configured, so the key cannot be stored encrypted. Nothing was saved.";
 
 function renderPage(): void {
+  // `F3.85` PR 3: the page also renders the Copilot access card, which reads the copilot
+  // setting and the users list. Stubbed here so no case reaches the real API.
+  vi.spyOn(copilotApi, "fetchCopilotAccess").mockResolvedValue({
+    organizationId: ORG_ID,
+    enabled: false,
+    roles: { location_admin: true, asset_group_admin: true },
+    overrides: [],
+  });
+  vi.spyOn(usersApi, "fetchAdminUsers").mockResolvedValue({ items: [] });
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   render(
     <QueryClientProvider client={queryClient}>

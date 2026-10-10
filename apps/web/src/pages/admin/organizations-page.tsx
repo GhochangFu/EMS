@@ -12,6 +12,7 @@ import {
   updateAdminOrganization,
 } from "../../api/admin/organizations";
 import { ActiveFilterBar } from "../../components/admin/active-filter-bar";
+import { CopilotOrgSwitch } from "../../components/admin/copilot-org-switch";
 import { MasterDataLayout } from "../../components/admin/master-data-layout";
 import { PageHeader } from "../../components/page-header";
 import { SectionCard } from "../../components/section-card";
@@ -20,6 +21,7 @@ import {
   canAccessOnboarding,
   canManageAiAssistant,
   canWriteOrganizations,
+  isGlobalAdmin,
 } from "../../lib/admin-access";
 import { apiErrorMessage } from "../../lib/api-error-message";
 import type { AuthUser } from "../../stores/auth-store";
@@ -45,6 +47,7 @@ export function OrganizationsAdminPage({ user }: OrganizationsAdminPageProps) {
   const canWrite = canWriteOrganizations(user.role);
   const canOnboard = canAccessOnboarding(user.role);
   const canManageAi = canManageAiAssistant(user.role);
+  const canSwitchCopilot = isGlobalAdmin(user.role);
   const [activeFilter, setActiveFilter] = useState<MasterDataActiveFilter>("all");
   const [search, setSearch] = useState("");
   const [modalOpen, setModalOpen] = useState(false);
@@ -212,6 +215,7 @@ export function OrganizationsAdminPage({ user }: OrganizationsAdminPageProps) {
                               AI assistant
                             </button>
                           ) : null}
+                          {canSwitchCopilot ? <CopilotOrgSwitch orgId={item.id} orgName={item.name} /> : null}
                           {canWrite ? (
                             <>
                               <button

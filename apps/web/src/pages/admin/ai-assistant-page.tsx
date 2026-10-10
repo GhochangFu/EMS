@@ -10,6 +10,7 @@ import {
   putAiAssistantSettings,
   testAiAssistant,
 } from "../../api/admin/ai-assistant";
+import { CopilotAccessCard } from "../../components/admin/copilot-access-card";
 import { PageHeader } from "../../components/page-header";
 import { SectionCard } from "../../components/section-card";
 import { AppShell } from "../../layouts/app-shell";
@@ -71,6 +72,7 @@ export function AiAssistantPage({ user }: AiAssistantPageProps) {
         ) : settingsQ.data ? (
           <SettingsForm orgId={orgId} settings={settingsQ.data} />
         ) : null}
+        {orgId !== "" ? <CopilotAccessCard orgId={orgId} user={user} /> : null}
       </div>
     </AppShell>
   );
