@@ -19,9 +19,9 @@ function assert(condition: boolean, message: string): void {
 
 /**
  * `F3.73` (plan D2, Task 1.4) — the tabs half of `PUT /dashboards/:id/widgets`. A new sibling
- * file, not an addition to `dashboards.schema.spec.ts`: that file is at 990 lines against the
- * repo's 1000-line cap (§4.5), and `dashboards.schema.mimic.spec.ts` is the precedent for the
- * split. Assertions live here; `dashboards.schema.tabs.test.ts` is the Vitest entry point
+ * file, not an addition to `dashboard-writes.spec.ts`: that file is at 990 lines against the
+ * repo's 1000-line cap (§4.5), and `dashboard-writes.mimic.spec.ts` is the precedent for the
+ * split. Assertions live here; `dashboard-writes.tabs.test.ts` is the Vitest entry point
  * (ADR 0014). One exported function per claim, so a failing claim cannot hide the next.
  */
 

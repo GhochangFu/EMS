@@ -181,7 +181,7 @@ export function runDraftSeedingTests(): void {
  * with or without a formula. The API accepts both halves alone
  * (`assertFormulaAloneInheritsTheDialect`,
  * `assertADialectOnlyUpgradeOfAValidFormulaIsAccepted` in
- * `asset-point-calc-override.schema.spec.ts`).
+ * `calc-override-writes.spec.ts`).
  */
 export function runDraftToBodyTests(): void {
   const blank = draftToBody(EMPTY_DRAFT);

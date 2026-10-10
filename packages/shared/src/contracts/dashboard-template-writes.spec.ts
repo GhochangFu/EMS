@@ -29,7 +29,7 @@ import {
  * One exported function per claim, one `it()` per function in the sibling
  * `.test.ts` — so a failing claim reddens only its own `it()`.
  *
- * Assertions live here; `dashboard-templates.schema.test.ts` is the vitest
+ * Assertions live here; `dashboard-template-writes.test.ts` is the vitest
  * entry point (ADR 0014).
  */
 

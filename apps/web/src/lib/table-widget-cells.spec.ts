@@ -28,7 +28,7 @@ export function runProjectColumnsTests(): void {
 
   // A name the dataset does not declare is DROPPED, not rendered as an empty column. This is
   // the state a released catalog change leaves behind in a stored config, and the write-path
-  // rule in `dashboards.schema.ts` cannot reach a config that was already saved.
+  // rule in `dashboard-writes.ts` cannot reach a config that was already saved.
   expect(projectColumns(declared, ["assetCode", "notAColumn", "severity"])).toEqual([
     "assetCode",
     "severity",

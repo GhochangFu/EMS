@@ -47,9 +47,9 @@ type MetricCatalogKey = z.infer<typeof metricCatalogKeySchema>;
 /**
  * `F3.1b` — the dashboard request bodies (ADR 0047).
  *
- * **Request bodies do NOT live in `packages/shared/src/contracts/`.** That is ADR 0030's
- * response home; every request body in this repo lives in an `apps/api/src/**\/*.schema.ts`,
- * and this is the dashboard one. `packages/shared`'s `dashboard-builder.ts` still owns the
+ * **Moved here from `apps/api/src/dashboard-builder/dashboards.schema.ts` (`F3.85` PR 1).** The
+ * admin copilot's action catalog needs the write bodies in `@bms/shared`; the other request bodies
+ * still live in `apps/api/src/**` `*.schema.ts` files. `dashboard-builder.ts` still owns the
  * vocabulary — `widgetTypeSchema`, `WIDGET_POINT_CARDINALITY`, `MAX_DASHBOARD_WIDGETS`, the four
  * config schemas — and every schema below imports rather than restates it.
  *
@@ -783,7 +783,7 @@ const eachTableColumnIsDeclared = (
     // refinement only on `aborted` — so a `PUT` carrying `sources: []` AND `config.columns`
     // reaches this line with `binding === undefined`. Without the guard, `binding.catalogKey`
     // throws a `TypeError` out of `safeParse`: a 500 where `sourcesFieldFor`'s `min: 1` should
-    // have answered 400. Reproduced by deleting the guard, and `dashboards.schema.spec.ts` now
+    // have answered 400. Reproduced by deleting the guard, and `dashboard-writes.spec.ts` now
     // sends exactly that payload — the suite reached every other branch here and never this one.
     const [binding] = widget.sources;
     if (binding === undefined) {

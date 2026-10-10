@@ -106,7 +106,7 @@ export function metricCatalogLabel(key: MetricCatalogKey): string {
  * cardinality is a count (`{min: 0, max: 1}`), which a `dataset` entry satisfies exactly as well
  * as a `metric` one — so a picker built from the cardinality alone would offer "Active alarm
  * list" for a tile that draws one number. `WIDGET_SOURCE_SHAPES` is what narrows it, and the
- * write path reads the same record (`eachSourceFitsTheWidget` in `dashboards.schema.ts`), so
+ * write path reads the same record (`eachSourceFitsTheWidget` in `dashboard-writes.ts`), so
  * this list and the 400 cannot disagree.
  *
  * Returns `[]` for a type that binds no catalog entry — a gauge, a tank, a chart — which is the

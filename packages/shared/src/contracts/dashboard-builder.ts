@@ -281,11 +281,11 @@ export const tankLevelConfigSchema = z
  *
  * **`F3.35` Stage A added six fields, and every one of them is FLAT. That is a
  * rule, not a style.** Both write surfaces compose this schema with `.strict()`
- * — `apps/api/src/dashboard-builder/dashboards.schema.ts` and
+ * — `packages/shared/src/contracts/dashboard-writes.ts` and
  * `apps/api/src/admin/asset-templates/asset-templates-content.schema.ts` — and
  * **`.strict()` does not descend**. A nested `compare: z.object({ … })` would
  * leave its inner object permissive on both write paths, which is exactly why
- * `dashboards.schema.ts` had to restate the gauge `thresholds[]` array. Keeping
+ * `dashboard-writes.ts` had to restate the gauge `thresholds[]` array. Keeping
  * every field flat is what lets those two files stay untouched.
  *
  * `aggregate` absent means the tile keeps its original behaviour — the latest
@@ -354,7 +354,7 @@ export const chartConfigSchema = z
  *
  * The real bound is the bound dataset's own `METRIC_CATALOG[key].columns`, which is a
  * cross-field rule between `config` and `sources` and therefore lives on both write paths —
- * `dashboards.schema.ts` and the template contract's `sectionTemplateWidgetSchema` (`F3.61`) —
+ * `dashboard-writes.ts` and the template contract's `sectionTemplateWidgetSchema` (`F3.61`) —
  * exactly where `eachSourceFitsTheWidget` lives. This number only
  * refuses an absurd payload before that rule runs, so it is set above the longest declared
  * list (six, `workorders.open`) with headroom rather than at it — tightening it to six would
@@ -479,7 +479,7 @@ export const WIDGET_POINT_CARDINALITY: Record<
   // `F3.35` Stage C lowered this from `{min: 1}`. ADR 0048 decision 2 gives the tile a second
   // binding kind — "a `value_tile` binds a metric" — so a tile with no point is now a legal
   // authored state rather than a broken one. The rule that replaces the old minimum is
-  // *exactly one kind*, and it lives on write in `dashboards.schema.ts`, not here: it is a
+  // *exactly one kind*, and it lives on write in `dashboard-writes.ts`, not here: it is a
   // cross-field rule between `points` and `sources`, which a per-type number cannot express.
   value_tile: { min: 0, max: 1 },
   chart: { min: 1, max: MAX_WIDGET_POINTS },
@@ -545,7 +545,7 @@ export const WIDGET_SOURCE_CARDINALITY: Record<
  *
  * Derived from the two cardinality records rather than naming `"mimic"`, so the exception is a
  * property of the numbers the write path already reads. `exactlyOneBindingKind` in
- * `apps/api/src/dashboard-builder/dashboards.schema.ts` returns early on it — without that, a
+ * `packages/shared/src/contracts/dashboard-writes.ts` returns early on it — without that, a
  * mimic's empty arrays read as "neither kind bound" and every save answers 400.
  */
 export const widgetTypeBindsNothing = (type: z.infer<typeof widgetTypeSchema>): boolean =>
@@ -903,7 +903,7 @@ export const dashboardWidgetPointDtoSchema = z
  * **What holds it, and what does not.** The database's
  * `dashboard_widget_sources_params_object_check` (migration `0054`) is a *floor*: it refuses a
  * scalar or an array at the top level and accepts `{"locationId": "<any uuid>"}`. The control is
- * `METRIC_CATALOG_PARAMS_WRITE` in `apps/api/src/dashboard-builder/dashboards.schema.ts` — one
+ * `METRIC_CATALOG_PARAMS_WRITE` in `packages/shared/src/contracts/dashboard-writes.ts` — one
  * `.strict()` schema per catalog entry, none declaring an id — and
  * `tests/f3.35-metric-catalog-containment.test.ts`, which scans that map and fails the build on
  * `.uuid(`, on the id spellings that evade it, and on any entry losing `.strict()`.

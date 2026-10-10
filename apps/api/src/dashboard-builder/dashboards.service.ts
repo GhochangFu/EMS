@@ -426,7 +426,7 @@ export class DashboardsService {
     // Counted, not written pairwise: `F3.2` made this three axes, and the three pairwise
     // comparisons a reader is tempted to write here are exactly what migration 0073 replaced
     // in SQL with `(location_id IS NOT NULL)::int + … <= 1`. The sentence is IMPORTED from
-    // `dashboards.schema.ts` rather than restated — it used to be restated verbatim, and one
+    // `dashboard-writes.ts` rather than restated — it used to be restated verbatim, and one
     // rule stated twice is one reword away from two different 400s.
     if ([nextLocationId, nextAssetGroupId, nextAssetId].filter((value) => value !== null).length > 1) {
       throw new BadRequestException(SCOPE_REFUSAL_MESSAGE);

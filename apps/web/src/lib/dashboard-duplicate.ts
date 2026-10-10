@@ -16,7 +16,7 @@ import {
  * discipline Unit 4's own file docblock states for `widget-config-form.ts`.
  */
 
-/** `dashboardFieldsSchema.slug` (`apps/api/src/dashboard-builder/dashboards.schema.ts`) caps a
+/** `dashboardFieldsSchema.slug` (`packages/shared/src/contracts/dashboard-writes.ts`) caps a
  * slug at 64 characters. `base` is already a stored, valid slug and so is at most that long, but
  * appending `-copy` or `-copy-<n>` can push the total over it — truncating `base` to leave room
  * for the suffix keeps every candidate this function proposes inside the bound the API accepts,
@@ -70,7 +70,7 @@ export type DuplicateDashboardTarget = {
   name: string;
 };
 
-/** Mirrors `CreateDashboardBody` (`apps/api/src/dashboard-builder/dashboards.schema.ts`) field
+/** Mirrors `CreateDashboardBody` (`packages/shared/src/contracts/dashboard-writes.ts`) field
  * for field, the same local-mirror shape `dashboard-builder-form.ts`'s own `WidgetWritePayload`
  * uses for `PutDashboardWidgetsBody`. */
 export type DuplicateDashboardCreateBody = {

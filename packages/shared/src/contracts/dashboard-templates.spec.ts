@@ -48,7 +48,7 @@ function expectAccepts(schema: SafeParseable, value: unknown, what: string): voi
 }
 
 /** Asserts the schema refuses `value` with an issue whose `path` matches exactly, and whose
- * message matches `pattern`. Ported from `apps/api/src/dashboard-builder/dashboards.schema.spec.ts`
+ * message matches `pattern`. Ported from `packages/shared/src/contracts/dashboard-writes.spec.ts`
  * so case 7 asserts the `["sources"]` issue rather than being satisfied by the deeper shape
  * issue that fires on the same parse. */
 function expectRejectsAt(
@@ -281,7 +281,7 @@ export function acceptsATableWithNoSourceAndNoColumns(): void {
   );
 }
 
-/** The R7 guard (dashboards.schema.ts:582-588's own load-bearing guard,
+/** The R7 guard (dashboard-writes.ts:582-588's own load-bearing guard,
  * mirrored here): `config.columns` set with no source bound must not throw
  * out of `safeParse`. Not a numbered plan case — found reviewing the guard
  * while building R7, reported per the caller's TDD instruction. Kept as its

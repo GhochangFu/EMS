@@ -14,7 +14,7 @@ import { AssetPointsAdminService } from "./asset-points.service";
  * `F2.6` U7 — per-asset calc overrides against a real database
  * (ADR 0039 decisions 6, 7 and 8).
  *
- * `asset-point-calc-override.schema.spec.ts` already proves D-1 and the bounds
+ * `calc-override-writes.spec.ts` already proves D-1 and the bounds
  * as pure functions. Everything here is a *database* outcome: which
  * `asset_points` row exists afterwards, what `source_kind` and
  * `source_data_key` it carries, that `asset_points_source_ref_check` accepts

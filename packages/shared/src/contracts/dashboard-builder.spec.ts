@@ -337,8 +337,8 @@ export function runWidgetPointCardinalityTests(): void {
   // something, which is what this loop keeps. The stronger per-widget rule — a stored widget
   // binds exactly one KIND, never both and never neither — is a cross-field rule between two
   // arrays on one arm, so it cannot live on a `z.discriminatedUnion` arm at all
-  // (`dashboards.schema.ts` records why). It is enforced on write, by `exactlyOneBindingKind`
-  // in `apps/api/src/dashboard-builder/dashboards.schema.ts`, and asserted by
+  // (`dashboard-writes.ts` records why). It is enforced on write, by `exactlyOneBindingKind`
+  // in `packages/shared/src/contracts/dashboard-writes.ts`, and asserted by
   // `runDashboardsSchemaSourceShapeTests` in that file's spec. Deleting an assertion without
   // naming its replacement is how a weakening reads as a refactor, so both halves are stated
   // here.
@@ -705,7 +705,7 @@ export function runStageATileBoundsTests(): void {
 /**
  * **The propagation assertion, and the reason `apps/api` needs no edit at all.**
  *
- * `dashboards.schema.ts` and `asset-templates-content.schema.ts` both compose
+ * `dashboard-writes.ts` and `asset-templates-content.schema.ts` both compose
  * these schemas as `.strict()`. That composition is performed here, on the exact
  * same schemas, so a field added to `packages/shared` is proved to survive both
  * write paths rather than assumed to.

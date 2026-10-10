@@ -359,7 +359,7 @@ export class DashboardTemplatesService {
         // requires `{ period }` (`E4.3`, ADR 0073 decision 3). The risk it
         // closes is not hypothetical in shape: an author could otherwise persist
         // `{"locationId": "<foreign uuid>"}` into `dashboard_widget_sources.params`,
-        // which `dashboards.schema.ts` calls "an id inside jsonb that no foreign
+        // which `dashboard-writes.ts` calls "an id inside jsonb that no foreign
         // key covers and no orphan check can report" — and since `E4.2` a
         // resolve path does read a param, so a stored one is no longer latent.
         const paramsSchema = METRIC_CATALOG_PARAMS_WRITE[source.catalogKey];

@@ -20,7 +20,7 @@ const base = import.meta.env.VITE_API_URL ?? "http://localhost:4000";
  *
  * The read side is `adminFetch` against the `@bms/shared` contracts, the
  * `point-keys.ts` shape. The write bodies mirror
- * `apps/api/src/admin/calc-parameters/calc-parameters.schema.ts`: `create`
+ * `packages/shared/src/contracts/calc-parameter-writes.ts`: `create`
  * names the organization, the key, at most one of `locationId` / `assetId`
  * and the window; `update` carries `value`, `effectiveFrom`, `effectiveTo`
  * only — key and scope are immutable (plan design decision 12) and the API's
