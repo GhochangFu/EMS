@@ -23,6 +23,7 @@ import { asRole } from "../testing/role-urls";
 import type { ReportFilesConfig } from "./report-files-config";
 import { OUT_OF_SCOPE_SENTENCE, ReportFilesService } from "./report-files.service";
 import { ReportsService } from "./reports.service";
+import { buildReportScopeTree } from "../testing/report-scope-tree";
 import { primeSeededSubjects } from "../testing/seeded-subjects";
 
 /**
@@ -66,8 +67,8 @@ import { primeSeededSubjects } from "../testing/seeded-subjects";
  * (the one rollback-isolated case) and the lifecycle rows. The split is
  * AGENTS.md §4.5's 1000-line cap, and the policy rows sit in the second file
  * because `tests/integration-fixture-isolation.test.ts` scans a
- * rollback-isolated spec for any `bms.assets` read — the render-scope row
- * here reads one as its expectation (see `assetIdsOfSubtree`).
+ * rollback-isolated spec for any `bms.assets` read — this file's fixture
+ * reads them (see `assetIdsOfOrganization` and `describeAssets`).
  *
  * **The cap row costs two saves, not fifty.** It builds its own service with
  * `REPORT_FILES_CONFIG = { onDemandCap: 2 }` in the open's own cap
@@ -108,24 +109,9 @@ export type ReportFileIntegrationFixtures = {
    * deletes it by id after the file, schedule and audit sweeps (FK order).
    */
   readonly capOrganizationId: string;
-  /**
-   * The asset ids of one location's CURRENT subtree (ADR 0098 decisions 4
-   * and 7: a grant and a schedule's node both mean the subtree), read as
-   * `bms_fleet` at call time by a recursive walk written here rather than
-   * `expandLocationSubtrees`, so a defect in the walk under test is not
-   * also the expectation's. On the seed the subtree is the node alone. It
-   * is the independent expectation for the render-scope rows. It is an
-   * expectation over seed rows, not a fixture: nothing in this suite writes a
-   * row that references these ids, so the `23503` class
-   * `tests/integration-fixture-isolation.test.ts` guards against cannot
-   * occur here. Read **before and after** the render scope it is compared
-   * with and unioned, so a fixture asset a concurrent suite commits or
-   * deletes in RSMOC-WC meanwhile cannot break the `⊆`.
-   */
-  readonly assetIdsOfSubtree: (locationId: string) => Promise<Set<string>>;
   /** `code @ location (parent location)` of each asset id, so a scope failure names the suite that wrote the row. */
   readonly describeAssets: (assetIds: readonly string[]) => Promise<string>;
-  /** The same read keyed by `organization_id` — the whole-organization render's tenant bound (F3.5b Amendment 2 item 7 E). */
+  /** The asset ids of one organization, read as `bms_fleet` at call time — the whole-organization render's tenant bound (F3.5b Amendment 2 item 7 E). */
   readonly assetIdsOfOrganization: (organizationId: string) => Promise<Set<string>>;
   /** Every file id a row created, for the `afterAll` sweep of rows and audit rows. */
   readonly createdFileIds: string[];
@@ -484,39 +470,34 @@ export async function adminSavePutsTheXlsxTheRowDescribes(fx: ReportFileIntegrat
 
 type LocationAdminRun = {
   readonly stored: StoredColumns;
-  /** `readableAssetIdsInOrganization(wc-admin, ESKOM)` — what the render was bounded by. */
+  /** `readableAssetIdsInOrganization(admin, organization)` — what the render was bounded by. */
   readonly scoped: readonly string[];
-  /**
-   * RSMOC-WC's subtree's assets, read before AND after `scoped` and unioned: a
-   * concurrent fixture commit lands in the after read, a concurrent fixture
-   * delete (F3.37's afterAll) is still in the before read.
-   */
-  readonly wcAssets: ReadonlySet<string>;
   readonly topConsumerAssetIds: readonly string[];
 };
 
 /**
- * `wc-admin` (one organization, one location) saves without a body id. The
+ * A one-organization, one-location admin (`wc-admin` unless `who` names
+ * another) saves without a body id. The
  * render scope is asserted through `readableAssetIdsInOrganization` and
  * `ReportsService.energyPreview` with the same ids — the cheaper gate; the
  * PDF bytes are not re-rendered for identity because `generatedAt` differs.
  */
-async function runLocationAdminSave(fx: ReportFileIntegrationFixtures): Promise<LocationAdminRun> {
+async function runLocationAdminSave(
+  fx: ReportFileIntegrationFixtures,
+  who: { jwt: JwtPayload; organizationId: string } = { jwt: wcAdmin(), organizationId: fx.eskomId },
+): Promise<LocationAdminRun> {
   const recorder = recordingClient(fx);
   const svc = service(fx, recorder.client);
-  const dto = await svc.saveOnDemand(wcAdmin(), { ...PERIOD, format: "pdf" });
+  const dto = await svc.saveOnDemand(who.jwt, { ...PERIOD, format: "pdf" });
   fx.createdFileIds.push(dto.id);
   try {
     const stored = await readStoredColumns(fx.fleetDb, dto.id);
     assert(stored !== null, "the positive control failed: the fleet read found no row for the location admin's file");
-    const wcBefore = await fx.assetIdsOfSubtree(fx.wcId);
-    const scoped = await fx.accessControl.readableAssetIdsInOrganization(wcAdmin(), fx.eskomId);
-    const wcAssets = new Set([...wcBefore, ...(await fx.assetIdsOfSubtree(fx.wcId))]);
+    const scoped = await fx.accessControl.readableAssetIdsInOrganization(who.jwt, who.organizationId);
     const preview = await fx.reports.energyPreview({ ...PERIOD }, [...scoped]);
     return {
       stored: stored as StoredColumns,
       scoped,
-      wcAssets,
       topConsumerAssetIds: preview.topConsumers.map((row) => row.assetId),
     };
   } finally {
@@ -539,14 +520,33 @@ export async function locationAdminStampsItsLocation(fx: ReportFileIntegrationFi
   );
 }
 
-/** Amendment 1 item 1: the render scope, and the preview it yields, carry no asset outside RSMOC-WC. */
+/**
+ * Amendment 1 item 1, on a tree this run owns (`buildReportScopeTree` says why not RSMOC-WC): the
+ * render scope of a location admin granted one site is EXACTLY that site's subtree — the child
+ * node's asset in, the sibling site's out — the row stamps the site, and the preview's top
+ * consumers lie inside the scope.
+ */
 export async function locationAdminRendersUnderItsLocationsAssets(fx: ReportFileIntegrationFixtures): Promise<void> {
-  const run = await runLocationAdminSave(fx);
-  assert(run.scoped.length > 0, "the positive control failed: wc-admin's ESKOM render scope is empty");
-  const outside = run.scoped.filter((id) => !run.wcAssets.has(id));
-  assert(outside.length === 0, `the render scope carries ${outside.length} asset(s) outside RSMOC-WC's subtree: ${await fx.describeAssets(outside)}`);
-  const foreign = run.topConsumerAssetIds.filter((id) => !run.wcAssets.has(id));
-  assert(foreign.length === 0, `the preview's top consumers carry ${foreign.length} asset(s) outside RSMOC-WC's subtree: ${await fx.describeAssets(foreign)}`);
+  const tree = await buildReportScopeTree("F3.5a");
+  try {
+    const run = await runLocationAdminSave(fx, { jwt: tree.locationAdmin, organizationId: tree.organizationId });
+    assert(run.stored.organization_id === tree.organizationId, `the row must belong to the tree's organization; got ${run.stored.organization_id}`);
+    assert(JSON.stringify(run.stored.location_ids) === JSON.stringify([tree.siteId]), `location_ids must be exactly [site]; stored ${JSON.stringify(run.stored.location_ids)}`);
+    assert(
+      !run.scoped.includes(tree.siblingAssetId),
+      `the positive control failed: the sibling site's asset is in the scope: ${await fx.describeAssets(run.scoped)}`,
+    );
+    assert(run.scoped.includes(tree.childAssetId), "the child node's asset must be in the scope: a grant means the subtree");
+    const expected = [tree.siteAssetId, tree.childAssetId].sort();
+    assert(
+      JSON.stringify([...run.scoped].sort()) === JSON.stringify(expected),
+      `the render scope must be exactly the site's subtree ${JSON.stringify(expected)}; got ${await fx.describeAssets(run.scoped)}`,
+    );
+    const foreign = run.topConsumerAssetIds.filter((id) => !expected.includes(id));
+    assert(foreign.length === 0, `the preview's top consumers carry ${foreign.length} asset(s) outside the scope: ${await fx.describeAssets(foreign)}`);
+  } finally {
+    await tree.drop();
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -831,23 +831,7 @@ export async function openReportFileFixtures(
     wcId,
     adminUserId,
     capOrganizationId,
-    // Read at call time. Concurrent suites commit and delete fixture assets
-    // in RSMOC-WC (F3.37, F3.78 pr4, E2.4's seed-rules), so a caller reads
-    // it on both sides of the scope it compares and unions the two.
-    assetIdsOfSubtree: async (locationId) => {
-      const { rows } = await fleetPool.query<{ id: string }>(
-        `WITH RECURSIVE sub (id, organization_id, depth) AS (
-           SELECT id, organization_id, 1 FROM bms.locations WHERE id = $1
-           UNION
-           SELECT c.id, c.organization_id, sub.depth + 1
-             FROM bms.locations c JOIN sub ON c.parent_id = sub.id AND c.organization_id = sub.organization_id
-            WHERE sub.depth < 16
-         )
-         SELECT a.id FROM bms.assets a JOIN sub ON a.location_id = sub.id`,
-        [locationId],
-      );
-      return new Set(rows.map((row) => row.id));
-    },
+    // Read at call time; a row deleted meanwhile prints as `<gone id>`.
     describeAssets: async (assetIds) => {
       if (assetIds.length === 0) return "[]";
       const { rows } = await fleetPool.query<{ line: string }>(

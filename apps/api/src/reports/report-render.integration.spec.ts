@@ -59,7 +59,7 @@ import {
  * **No `tx.rollback()` in this file, and no read of `bms.assets`.** The
  * first would put it in scope of `tests/integration-fixture-isolation.test.ts`'s
  * rollback scan; the location-scope expectation comes through
- * `fx.assetIdsOfSubtree` (F3.5a's technique), read after the render.
+ * a tree in this run's own organization (`treeOrganization`).
  *
  * **Two connections, two jobs (the F3.5a shape).** `bms_fleet` is
  * `BYPASSRLS`: it inserts the fixtures, counts and sweeps, and proves nothing
@@ -459,8 +459,7 @@ function rendered(outcome: RenderOutcome): Extract<RenderOutcome, { kind: "rende
  * Both formats: two rows stamped with the schedule, no author, `{}`; each
  * object's length and hash equal the row's. The asset scope is
  * tenant-bounded (Amendment 2 item 7 E): every id the renderer received is
- * an ESKOM asset and none is PHEWB's — read after the render, the
- * `aLocationScopedScheduleReadsOnlyItsAssets` technique.
+ * an ESKOM asset and none is PHEWB's, read after the render.
  */
 export async function rendersBothFormatsForAWholeOrganizationSchedule(fx: RenderIntegrationFixtures): Promise<void> {
   const scheduleId = await insertSchedule(fx, { formats: ["pdf", "xlsx"] });
@@ -516,32 +515,34 @@ export async function aRetrySkipsTheExistingFormatAndRendersTheMissingOne(fx: Re
 }
 
 /**
- * `location_ids = {WC}`: the asset scope the renderer received is a non-empty subset of RSMOC-WC's
- * CURRENT subtree (ADR 0098 decision 7) — on the seed the subtree is the node alone — and carries no
- * asset of another ESKOM site (the positive control that the scope is narrower than the organization).
+ * A schedule scoped to one site renders EXACTLY that site's current subtree (ADR 0098 decision 7):
+ * the site's asset and its child node's asset, never its sibling's. The tree is this run's own
+ * organization (`treeOrganization`), never a seeded location: other suites commit and delete
+ * fixture assets in RSMOC-WC (F3.37, F3.78, E2.4, ...), and in CI three of them existed during a
+ * render and were gone before any read after it, so no expectation read from a shared location
+ * can be race-free.
  */
 export async function aLocationScopedScheduleReadsOnlyItsAssets(fx: RenderIntegrationFixtures): Promise<void> {
-  const scheduleId = await insertSchedule(fx, { locationIds: [fx.base.wcId] });
+  const tree = await treeOrganization(fx);
+  const root = await treeLocation(fx, tree, null);
+  const site = await treeLocation(fx, tree, root);
+  const siteAsset = await treeAsset(fx, tree, site);
+  const child = await treeLocation(fx, tree, site);
+  const childAsset = await treeAsset(fx, tree, child);
+  const sibling = await treeLocation(fx, tree, root);
+  const siblingAsset = await treeAsset(fx, tree, sibling);
+  const scheduleId = await insertSchedule(fx, { organizationId: tree.organizationId, locationIds: [site] });
   const { svc } = service(fx);
-  // Read before AND after the render, the expectation their union: a fixture
-  // asset a concurrent suite commits in RSMOC-WC during the render lands in
-  // the after read, and one it deletes during the render (F3.37's afterAll,
-  // which took three of 46 in CI) is still in the before read. The ⊆ holds
-  // either way, and an asset in neither was never in the subtree.
-  const wcBefore = await fx.base.assetIdsOfSubtree(fx.base.wcId);
-  const outcome = rendered(await run(fx, svc, payloadFor(scheduleId, PERIOD_1, fx.base.eskomId)));
-  const wcAssets = new Set([...wcBefore, ...(await fx.base.assetIdsOfSubtree(fx.base.wcId))]);
-  const eskomAssets = await fx.base.assetIdsOfOrganization(fx.base.eskomId);
-  assert(outcome.assetIds.length > 0, "the positive control failed: the location-scoped render resolved no asset");
-  const outsideWc = [...eskomAssets].filter((id) => !wcAssets.has(id));
-  assert(outsideWc.length > 0, "the positive control failed: ESKOM holds no asset outside RSMOC-WC's subtree");
-  const foreign = outcome.assetIds.filter((id) => !wcAssets.has(id));
+
+  const outcome = rendered(await run(fx, svc, payloadFor(scheduleId, PERIOD_1, tree.organizationId)));
   assert(
-    foreign.length === 0,
-    `the render must read only RSMOC-WC's subtree's assets; ${foreign.length} of ${outcome.assetIds.length} are outside it: ${await fx.base.describeAssets(foreign)}`,
+    !outcome.assetIds.includes(siblingAsset),
+    `the positive control failed: the sibling site's asset was rendered: ${await fx.base.describeAssets(outcome.assetIds)}`,
   );
+  assert(outcome.assetIds.includes(childAsset), "the child node's asset must be rendered: the scope is the site's subtree");
+  sameSet(outcome.assetIds, [siteAsset, childAsset], "the site schedule's assets are exactly its subtree's");
   const [row] = await readFileRows(fx.base.fleetDb, scheduleId);
-  assert(row !== undefined && row.location_ids.length === 1 && row.location_ids[0] === fx.base.wcId, "the row must copy the schedule's location_ids");
+  assert(row !== undefined && row.location_ids.length === 1 && row.location_ids[0] === site, "the row must copy the schedule's location_ids");
 }
 
 // ---------------------------------------------------------------------------
