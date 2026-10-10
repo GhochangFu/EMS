@@ -61,8 +61,12 @@ const KNOWN = "known_tool";
 
 type Harness = { readonly ran: string[]; run(llm: LlmProvider, deadlineMs?: number): Promise<AgentLoopResult> };
 
-/** A loop with one known tool name; every call succeeds with an action line naming its id. */
-function harness(): Harness {
+/**
+ * A loop with one known tool name; every call succeeds with an action line
+ * naming its id. `firstToolDelayMs` makes the first tool call slow, so the
+ * deadline fires while a tool runs and not inside a provider call.
+ */
+function harness(firstToolDelayMs = 0): Harness {
   const ran: string[] = [];
   return {
     ran,
@@ -73,6 +77,9 @@ function harness(): Harness {
           tools: { definitions: [], isToolName: (name) => name === KNOWN },
           runTool: async (c): Promise<ToolOutcome> => {
             ran.push(c.id);
+            if (ran.length === 1 && firstToolDelayMs > 0) {
+              await new Promise((resolve) => setTimeout(resolve, firstToolDelayMs));
+            }
             return { ok: true, content: "{\"ok\":true}", actionLine: `did ${c.id}` };
           },
           llm,
@@ -126,6 +133,35 @@ export async function assertCapTimeKeepsTheCompletedActionLines(): Promise<void>
     result.actionLines.length === 1 && result.actionLines[0] === `did ${h.ran[0]}`,
     `the first tool's action line is kept: ${JSON.stringify(result.actionLines)}`,
   );
+}
+
+// (3b) the deadline, met while a tool runs ---------------------------------------
+
+/**
+ * Gates the per-call check: the deadline fires during the first of two calls in
+ * one reply, so the second call must not run. Without the check the second
+ * call runs and the loop-top check stops the turn one call too late.
+ */
+export async function assertADeadlineDuringAToolSkipsTheNextCallInTheReply(): Promise<void> {
+  const h = harness(40);
+  const provider = new ScriptedProvider([toolCalls(call(KNOWN), call(KNOWN))]);
+  const result = await h.run(provider, 20);
+  assert(result.stopReason === "cap_time", `a deadline during a tool is cap_time: ${result.stopReason}`);
+  assert(h.ran.length === 1, `the second call in the reply is not run: ${h.ran.length} ran`);
+  assert(provider.calls === 1, `no further provider call is made: ${provider.calls} calls`);
+}
+
+/**
+ * Gates the loop-top check: the deadline fires during the last call of a round,
+ * and the provider would answer the next round at once (it ignores the signal).
+ * The loop must stop with cap_time before it calls the provider again.
+ */
+export async function assertADeadlineDuringTheLastToolOfARoundMakesNoFurtherProviderCall(): Promise<void> {
+  const h = harness(40);
+  const provider = new ScriptedProvider([toolCalls(call(KNOWN)), { kind: "final", text: "late final" }]);
+  const result = await h.run(provider, 20);
+  assert(provider.calls === 1, `no provider call after the deadline: ${provider.calls} calls`);
+  assert(result.stopReason === "cap_time", `the round's end after the deadline is cap_time: ${result.stopReason}`);
 }
 
 // (4) a provider error ---------------------------------------------------------

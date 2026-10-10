@@ -1,6 +1,8 @@
 import { describe, it } from "vitest";
 
 import {
+  assertADeadlineDuringAToolSkipsTheNextCallInTheReply,
+  assertADeadlineDuringTheLastToolOfARoundMakesNoFurtherProviderCall,
   assertADeadlineInsideAProviderCallIsCapTime,
   assertAFinalReplyStopsWithFinalAndNoCalls,
   assertAMadeUpNameIsRecordedAsUnknown,
@@ -33,6 +35,14 @@ describe("the generic agent loop (F3.85, ADR 0099)", () => {
 
   it("keeps the completed calls' action lines on cap_time", async () => {
     await assertCapTimeKeepsTheCompletedActionLines();
+  });
+
+  it("skips the next call in a reply when the deadline fires during a tool", async () => {
+    await assertADeadlineDuringAToolSkipsTheNextCallInTheReply();
+  });
+
+  it("makes no further provider call when the deadline fires during a round's last tool", async () => {
+    await assertADeadlineDuringTheLastToolOfARoundMakesNoFurtherProviderCall();
   });
 
   it("records a provider error's class and status", async () => {
