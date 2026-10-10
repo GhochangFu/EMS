@@ -7,7 +7,7 @@ import { describe, expect, it } from "vitest";
 const repoRoot = fileURLToPath(new URL("..", import.meta.url));
 const read = (rel: string): string => readFileSync(join(repoRoot, rel), "utf8");
 
-const SCHEMA_REL = "apps/api/src/dashboard-builder/dashboards.schema.ts";
+const SCHEMA_REL = "packages/shared/src/contracts/dashboard-writes.ts";
 const CONTRACT_REL = "packages/shared/src/contracts/dashboard-builder.ts";
 const MIGRATION_REL = "packages/db/drizzle/0054_dashboard_widget_sources.sql";
 

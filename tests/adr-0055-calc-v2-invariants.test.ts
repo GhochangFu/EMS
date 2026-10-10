@@ -412,7 +412,7 @@ describe("ADR 0055 part (c) — no endpoint restates the calc dialect as a v1 li
   it.each([
     "packages/shared/src/contracts/asset-templates.ts",
     "apps/api/src/admin/asset-templates/asset-templates.schema.ts",
-    "apps/api/src/admin/asset-points/asset-point-calc-override.schema.ts",
+    "packages/shared/src/contracts/calc-override-writes.ts",
   ])("%s is in the scanned set and derives the dialect from CALC_DIALECTS", (rel) => {
     expect(scannedFiles.map((file) => relative(file)), `${rel} is not being scanned`).toContain(rel);
     const source = readFileSync(join(repoRoot, rel), "utf8");

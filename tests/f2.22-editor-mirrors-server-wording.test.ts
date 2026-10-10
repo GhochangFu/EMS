@@ -27,7 +27,7 @@ const repoRoot = fileURLToPath(new URL("..", import.meta.url));
 const FILES = {
   templateSchema: "apps/api/src/admin/asset-templates/asset-templates.schema.ts",
   templateContentSchema: "apps/api/src/admin/asset-templates/asset-templates-content.schema.ts",
-  overrideSchema: "apps/api/src/admin/asset-points/asset-point-calc-override.schema.ts",
+  overrideSchema: "packages/shared/src/contracts/calc-override-writes.ts",
   overrideService: "apps/api/src/admin/asset-points/asset-point-calc-override.service.ts",
   templateCalcConfig: "apps/web/src/lib/template-calc-config.ts",
   overrideLib: "apps/web/src/lib/asset-point-calc-override.ts",
@@ -101,7 +101,7 @@ describe("F2.22 T9 — the editor's six copies of server wording, gated against 
     const server2 = normalise(
       dropTrailingPeriod(
         joinConcatenatedLiteral(
-          extractExactlyOne(source.overrideSchema, RE, "asset-point-calc-override.schema.ts"),
+          extractExactlyOne(source.overrideSchema, RE, "calc-override-writes.ts"),
         ),
       ),
     );
