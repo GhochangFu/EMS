@@ -340,7 +340,10 @@
 > ADR 0047 decision 6's boundary stood for `F3.28`, `F3.32`, `F4.41` and the
 > dark canvas. *(That sentence read "stands" until 2026-09-24: `F3.28` is
 > delivered under ADR 0074 and the dark-canvas gate is resolved — see the ADR
-> 0074 paragraph below — while `F3.32` and `F4.41` still stand.)*
+> 0074 paragraph below — while `F4.41` still stands. It also named `F3.32`
+> until 2026-10-10: that umbrella closed when its eight children were done
+> (ADR 0079, 0081, 0082, 0084, 0086), and its five open items moved to
+> `F3.80`–`F3.84`, each behind its own ADR.)*
 > And **an operator-facing Assets browser** — a read-only `/asset-browser`
 > route under *Operations*, open to every authenticated user within
 > `readableAssetIds`: a table of Code · Name · Site · Domain · RTU · Source ·
@@ -3615,8 +3618,9 @@ These are intentionally deferred. Do not implement them yet:
   `F3.28`, `F3.32`, `F4.41` and the §5 dark canvas all stayed out. *(That
   sentence read "stay out" until 2026-09-24: `F3.28` closed under ADR 0074 —
   the light canvas stays the default and the dark-canvas gate is resolved,
-  with the user switch as its own row, `F3.65` — while `F3.32` and `F4.41`
-  are still out.)* **Three of
+  with the user switch as its own row, `F3.65` — while `F4.41` is still out.
+  It also named `F3.32` until 2026-10-10, when that umbrella closed and its
+  five open items moved to `F3.80`–`F3.84`.)* **Three of
   those are not §6 items and must not become ones** — `F3.2`, `F3.28` and
   `F3.32` are deferred backlog rows whose `F3.1` blocker this closure clears,
   and `F4.41` waits on a second frontend rather than on `F3.1` at all
