@@ -68,7 +68,7 @@ const metricOf = (response: DashboardCatalogValuesResponse, sourceId: string) =>
 };
 
 const resolveWide = (f: RollupFixture, dashboardId: string) =>
-  f.service.resolveForDashboard(f.orgId, dashboardId, [...f.fixtureAssets]);
+  f.service.resolveForDashboard(f.orgId, dashboardId, [...f.fixtureAssets], null);
 
 /** L1-scoped `{ kl_today, sum }` = A 10 + B 20, both fresh: 30 with coverage 2/2. */
 export async function l1SumIsThirtyWithFullCoverage(f: RollupFixture): Promise<void> {
@@ -184,7 +184,7 @@ export async function olderMetricEmitsNoCoverageOrCurrency(f: RollupFixture): Pr
 
 /** Caller scope ∩: reading the org-wide table as a caller who can read only A gives L1 `{10, "1/1"}` and no L2. */
 export async function callerScopeIntersectsTheTable(f: RollupFixture): Promise<void> {
-  const response = await f.service.resolveForDashboard(f.orgId, f.wideTableDashboardId, [f.assetA]);
+  const response = await f.service.resolveForDashboard(f.orgId, f.wideTableDashboardId, [f.assetA], null);
   const table = valueOf(response, f.wideTableSourceId);
   if (table.shape !== "dataset") throw new Error("by_location must resolve to a dataset");
   const rows = table.rows.filter((row) => row.locationCode === f.l1Code || row.locationCode === f.l2Code);
@@ -224,7 +224,7 @@ export type CapFixture = {
  * control above stays green under both.
  */
 export async function byLocationOverTheCapIsTruncated(f: CapFixture): Promise<void> {
-  const response = await f.service.resolveForDashboard(f.orgId, f.dashboardId, [...f.assetIds]);
+  const response = await f.service.resolveForDashboard(f.orgId, f.dashboardId, [...f.assetIds], null);
   const table = valueOf(response, f.sourceId);
   if (table.shape !== "dataset") throw new Error("by_location must resolve to a dataset");
   expect({ rows: table.rows.length, truncated: table.truncated }).toEqual({
@@ -337,7 +337,7 @@ const balanceRows = async (
   readable: readonly string[] = f.fixtureAssets,
   dashboardId: string = f.dashboardId,
 ): Promise<Record<string, BalanceCell>[]> => {
-  const response = await f.service.resolveForDashboard(f.orgId, dashboardId, [...readable]);
+  const response = await f.service.resolveForDashboard(f.orgId, dashboardId, [...readable], null);
   const table = valueOf(response, sourceId);
   if (table.shape !== "dataset") throw new Error(`binding ${sourceId} is not a dataset`);
   return table.rows;

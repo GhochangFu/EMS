@@ -101,7 +101,7 @@ describe("E4.2 — the sustainability catalog entries and the roll-up fields", (
     byLocationDeclaresTheFourColumns();
   });
 
-  it("declares params [pointKey, aggregate, balanceRole] on both entries and on no older one", () => {
+  it("declares params [pointKey, aggregate, balanceRole] on both entries, plus groupDepth on by_location, and on no older one", () => {
     bothEntriesDeclarePointKeyAndAggregate();
   });
 

@@ -813,12 +813,19 @@ export function byLocationDeclaresTheFourColumns(): void {
 }
 
 /**
- * Both entries declare the same three params, in the same order, and no older entry declares any
- * (`balanceRole` is ADR 0073 decision 2's, optional on the write schema).
+ * Both entries declare `pointKey`, `aggregate` and `balanceRole`, in that order, and no older
+ * entry declares any (`balanceRole` is ADR 0073 decision 2's, optional on the write schema).
+ * `sustainability.by_location` alone appends `groupDepth` (F2.10, ADR 0098 Amendment 1, C) —
+ * the total is one figure, so it has no rows to group.
  */
 export function bothEntriesDeclarePointKeyAndAggregate(): void {
-  const expected = ["pointKey", "aggregate", "balanceRole"];
+  const shared = ["pointKey", "aggregate", "balanceRole"];
+  const expectedByKey = {
+    "sustainability.total": shared,
+    "sustainability.by_location": [...shared, "groupDepth"],
+  } as const;
   for (const key of ["sustainability.total", "sustainability.by_location"] as const) {
+    const expected = expectedByKey[key];
     assert(
       JSON.stringify(METRIC_CATALOG[key].params) === JSON.stringify(expected),
       `${key} must declare params ${JSON.stringify(expected)}, got ${JSON.stringify(METRIC_CATALOG[key].params)}`,

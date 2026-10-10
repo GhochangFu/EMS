@@ -119,6 +119,7 @@ import { alarmListQuerySchema, alarmSummaryQuerySchema } from "../alarms/alarm-l
 import { alarmEnrichmentUpsertBodySchema } from "../alarms/enrichment.schema";
 import { assetKpisQuerySchema, assetRoleSummaryQuerySchema } from "../assets/assets.schema";
 import { loginBodySchema } from "../auth/login.schema";
+import { mapSitesQuerySchema } from "../map/map.schema";
 import { loadTrendQuerySchema, locationDashboardQuerySchema } from "../dashboard/dashboard.schema";
 import {
   createDashboardBodySchema,
@@ -254,6 +255,8 @@ export const REQUEST_SCHEMAS: Record<string, ZodTypeAny> = {
   AssetsController_listKpis: assetKpisQuerySchema,
   AssetHealthController_forAsset: assetHealthQuerySchema,
   AssetHealthController_summary: healthSummaryQuerySchema,
+  // `F2.10` (ADR 0098 decision 11, B4, B12) — the org map's optional subtree filter.
+  MapController_sites: mapSitesQuerySchema,
   AssetsAdminController_create: createAssetBodySchema,
   AssetsAdminController_update: updateAssetBodySchema,
   AssetTemplatesAdminController_create: createAssetTemplateBodySchema,

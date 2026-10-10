@@ -1,10 +1,18 @@
 import { Inject, Injectable } from "@nestjs/common";
 import type { Pool } from "pg";
 
+import type { BmsDb } from "@bms/db";
 import type { MapSiteDto, MapSiteLive } from "@bms/shared";
 
-import { FLEET_POOL } from "../database/database.tokens";
+import { expandLocationSubtrees } from "../auth/location-tree";
+import { FLEET_DRIZZLE, FLEET_POOL } from "../database/database.tokens";
 import { LIVE_ASSETS_CTE_SQL } from "../telemetry/telemetry-freshness";
+
+/**
+ * `F2.10` / ADR 0098 decision 11 — a location is a pin when it has no active child node or holds
+ * an active asset. Correlated on the alias `l` (`bms.locations`) of whichever arm embeds it.
+ */
+const PIN_RULE = `(NOT EXISTS (SELECT 1 FROM bms.locations c WHERE c.parent_id = l.id AND c.organization_id = l.organization_id AND c.active) OR EXISTS (SELECT 1 FROM bms.assets a WHERE a.location_id = l.id AND a.active))`;
 
 type LocRow = {
   id: string;
@@ -44,10 +52,23 @@ type LocRow = {
  * own, built from its own columns: its id is the location id, its `siteName`
  * is the location name, and it carries campus live health like any joined pin.
  * A scoped caller sees a joined pin by its location id, never by its name.
+ *
+ * `F2.10` / ADR 0098 decision 11 (Drafter choices 11 and 15) — a location is
+ * a pin when it has no active child node **or** holds an active asset; an
+ * interior node with no asset of its own is only a filter. `PIN_RULE` applies
+ * on both arms: a `map_locations` row that joins such a node is dropped too,
+ * while a row that joins no location (a reference station) is untouched by
+ * the rule. A parent is a filter: `parentLocationId` keeps only the pins whose
+ * location is in that node's subtree and drops every unjoined pin (B4). `/map`
+ * and the Control Room organization map are this one query (B12).
  */
 @Injectable()
 export class MapService {
-  constructor(@Inject(FLEET_POOL) private readonly pool: Pool) {}
+  constructor(
+    @Inject(FLEET_POOL) private readonly pool: Pool,
+    /** The tree walk's executor (`expandLocationSubtrees`): the same fleet database as `pool`. */
+    @Inject(FLEET_DRIZZLE) private readonly fleetDb: BmsDb,
+  ) {}
 
   /** All visible map locations with per-site live health derived from alarms + telemetry freshness. */
   async sitesLive(opts?: {
@@ -56,6 +77,11 @@ export class MapService {
     /** A scoped caller's location ids: matched against a pin that joins a location. */
     allowedLocationIds?: string[] | null;
     assetIds?: string[] | null;
+    /**
+     * `F2.10`: keep only pins whose location is in this node's subtree; unjoined pins are dropped
+     * (B4). A scoped caller whose readable set does not hold the node gets `[]`, never a 403.
+     */
+    parentLocationId?: string | null;
   }): Promise<MapSiteDto[]> {
     const locs = await this.pool.query<LocRow>(
       `SELECT ml.id,
@@ -80,6 +106,7 @@ export class MapService {
        LEFT JOIN bms.locations l ON l.slug = ml.slug
        LEFT JOIN bms.location_types lt ON lt.code = l.type
        LEFT JOIN bms.organizations o ON o.id = l.organization_id
+       WHERE (l.id IS NULL OR ${PIN_RULE})
        UNION ALL
        -- F3.79: an active location that no map_locations row joins is a pin of its own.
        SELECT l.id,
@@ -105,6 +132,7 @@ export class MapService {
        LEFT JOIN bms.organizations o ON o.id = l.organization_id
        WHERE l.active
          AND NOT EXISTS (SELECT 1 FROM bms.map_locations ml WHERE ml.slug = l.slug)
+         AND ${PIN_RULE}
        ORDER BY kind DESC, name ASC`,
     );
 
@@ -169,13 +197,37 @@ export class MapService {
     const allowedSiteNames = opts?.allowedSiteNames ?? null;
     const allowedLocationIds = opts?.allowedLocationIds ?? null;
     const scoped = allowedSiteNames !== null || allowedLocationIds !== null;
-    const visibleLocs = scoped
+    const scopedLocs = scoped
       ? locs.rows.filter((loc) =>
           loc.canonical_location_id !== null
             ? (allowedLocationIds?.includes(loc.canonical_location_id) ?? false)
             : loc.site_name !== null && (allowedSiteNames?.includes(loc.site_name) ?? false),
         )
       : locs.rows;
+
+    // F2.10 (B4, B12): a parent is a filter over the scope above, never a widening. A scoped
+    // caller whose readable set lacks the parent gets nothing — intersecting alone would answer
+    // an unreadable ancestor of a readable node with that node's pins, confirming a parent link
+    // `/auth/me` hides. Unjoined pins have no location in any subtree, so they are dropped.
+    const parentLocationId = opts?.parentLocationId ?? null;
+    let visibleLocs = scopedLocs;
+    if (parentLocationId !== null) {
+      if (scoped && !(allowedLocationIds?.includes(parentLocationId) ?? false)) {
+        return [];
+      }
+      // Owner ruling P3: the walk's anchor is bounded by the organizations of the pins this
+      // caller already sees — computed above from the caller's own scope, never a request value.
+      // A parent in any other organization starts nothing.
+      const organizationIds = [
+        ...new Set(scopedLocs.flatMap((loc) => (loc.org_id === null ? [] : [loc.org_id]))),
+      ];
+      const subtree = new Set(
+        await expandLocationSubtrees(this.fleetDb, { organizationIds, ids: [parentLocationId] }),
+      );
+      visibleLocs = scopedLocs.filter(
+        (loc) => loc.canonical_location_id !== null && subtree.has(loc.canonical_location_id),
+      );
+    }
 
     return visibleLocs.map((loc) => {
       const organization =

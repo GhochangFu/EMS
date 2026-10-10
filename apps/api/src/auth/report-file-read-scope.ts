@@ -71,14 +71,16 @@ export async function reportFileReadScopeFor(
     .where(eq(userLocationAccess.userId, user.id));
   // F2.10 / ADR 0098 decision 4: the readable set is the closure of the granted
   // nodes; the organizations are those of the granted rows (a descendant is in
-  // its ancestor's organization by the composite foreign key).
+  // its ancestor's organization by the composite foreign key), and they bound
+  // the walk's anchor too (owner ruling P3).
+  const organizationIds = [...new Set(granted.map((row) => row.organizationId))];
   return {
     kind: "location",
-    organizationIds: [...new Set(granted.map((row) => row.organizationId))],
-    locationIds: await expandLocationSubtrees(
-      fleetDb,
-      granted.map((row) => row.id),
-    ),
+    organizationIds,
+    locationIds: await expandLocationSubtrees(fleetDb, {
+      organizationIds,
+      ids: granted.map((row) => row.id),
+    }),
   };
 }
 

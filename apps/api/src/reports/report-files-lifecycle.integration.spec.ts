@@ -45,7 +45,7 @@ import {
  * file crossed AGENTS.md §4.5's 1000-line cap, and the split is by subject
  * (rows 1–6 there are the save, the scope and the list; rows 7–14 here are
  * the policy and the lifecycle), and the rollback-isolated policy case sits
- * here so the first file's seed-expectation read of `bms.assets` stays
+ * here so the first file's diagnostic read of `bms.assets` (`describeAssets`) stays
  * outside `tests/integration-fixture-isolation.test.ts`'s scan. Each spec
  * has its own `.test.ts` wrapper over the one shared lifecycle
  * (`openReportFileFixtures`); every count is scoped to this run's own ids,

@@ -11,7 +11,10 @@ import { AccessControlService } from "./access-control.service";
 import {
   assertAMoveReChecks,
   assertAssetGroupScopeHidesAnUnreadableParent,
+  assertChainsListEachNodeThenItsAncestorsNearestFirst,
   assertCrossOrgEdgeFailsOnTheCompositeFk,
+  assertEmptyChainsRunNoQuery,
+  assertAForeignAnchorStartsNoWalk,
   assertExactClosureForAGrantedNode,
   assertForeignOrganizationAdminIsNotOrganizationLevel,
   assertPerStepPredicateHoldsWithoutTheFk,
@@ -109,7 +112,7 @@ describe.skipIf(!connectionString)("F2.10 — a location grant is exactly its su
     await assertTriggerRefusalsWithoutTheService(fleetDb, fleetPool as pg.Pool, run);
   });
 
-  it("6. with the foreign key off, a planted cross-organization edge reaches no surface, and a planted cycle stays bounded", async () => {
+  it("6. with the foreign key off, a planted cross-organization edge reaches no surface (the ancestor chains included), and a planted cycle stays bounded", async () => {
     await assertPerStepPredicateHoldsWithoutTheFk(svc, superPool as pg.Pool, superDb, fx);
   });
 
@@ -119,5 +122,17 @@ describe.skipIf(!connectionString)("F2.10 — a location grant is exactly its su
 
   it("8. an organization_admin with a direct row on F210-B is organization-level for B and not for A", async () => {
     await assertForeignOrganizationAdminIsNotOrganizationLevel(svc, fx);
+  });
+
+  it("9. locationAncestorChains lists each node at steps 0, then its ancestors nearest-first", async () => {
+    await assertChainsListEachNodeThenItsAncestorsNearestFirst(superDb, fx);
+  });
+
+  it("10. locationAncestorChains with no ids or no organizations returns [] without a query", async () => {
+    await assertEmptyChainsRunNoQuery();
+  });
+
+  it("11. a node of organization B under organization A's bound starts no walk in any helper (owner ruling P3)", async () => {
+    await assertAForeignAnchorStartsNoWalk(superDb, fx);
   });
 });

@@ -1,10 +1,11 @@
 import type { BmsDb } from "@bms/db";
-import { METRIC_CATALOG } from "@bms/shared";
+import { METRIC_CATALOG, type JwtPayload } from "@bms/shared";
 
 import { AssetHealthService } from "../asset-health/asset-health.service";
+import type { AccessControlService } from "../auth/access-control.service";
 import type { BmsTx } from "../database/tenant-context";
 import { scopeKeyFor } from "./dashboard-scope-assets";
-import { planResolves, RESOLVERS } from "./metric-catalog.service";
+import { MetricCatalogService, planResolves, RESOLVERS } from "./metric-catalog.service";
 
 /**
  * `E4.2` PR 1 sweep — the catalog's resolvers, pure claims (no database). Assertions live
@@ -41,7 +42,7 @@ const refusingDb = (): BmsDb =>
     },
   });
 
-const noDeps = { health: new AssetHealthService(refusingDb()) } as Parameters<
+const noDeps = { health: new AssetHealthService(refusingDb()), readableLocationIds: null, scopeLocationId: null } as Parameters<
   (typeof RESOLVERS)["sustainability.total"]
 >[3];
 
@@ -194,6 +195,60 @@ export function scopeKeyFollowsTheResolverArmOrder(): void {
   );
 }
 
+/**
+ * `F2.10` / ADR 0098 decision 7, B1 — on a location dashboard the two sustainability entries
+ * resolve over the node's SUBTREE, so their scope key is `location-subtree:<id>`, never the
+ * per-node `location:<id>` they would otherwise share with the per-node entries.
+ */
+const sustainabilitySource = (id: string, widgetId: string, catalogKey: string) => ({
+  id,
+  widgetId,
+  catalogKey,
+  params: { pointKey: "kwh_today", aggregate: "sum" },
+});
+
+export function aSustainabilityBindingOnALocationDashboardPlansASubtreeScope(): void {
+  const plan = planResolves(
+    [
+      sustainabilitySource("s1", "w1", "sustainability.total"),
+      sustainabilitySource("s2", "w2", "sustainability.by_location"),
+    ],
+    () => siteScope,
+    () => {
+      throw new Error("no binding in this fixture fails its write schema");
+    },
+  );
+  same(
+    [...plan.resolves.values()].map((resolve) => [resolve.key, resolve.scopeKey, resolve.subtree]),
+    [
+      ["sustainability.total", `location-subtree:${TAB_SITE}`, true],
+      ["sustainability.by_location", `location-subtree:${TAB_SITE}`, true],
+    ],
+    "sustainability resolves on a location dashboard",
+  );
+}
+
+/** B1's negative: `assets.list` beside them on the same dashboard keeps the per-node key. */
+export function anAssetListBindingOnTheSameDashboardKeepsTheNodeScope(): void {
+  const plan = planResolves(
+    [
+      sustainabilitySource("s1", "w1", "sustainability.total"),
+      { id: "s2", widgetId: "w2", catalogKey: "assets.list", params: {} },
+    ],
+    () => siteScope,
+    () => {
+      throw new Error("no binding in this fixture fails its write schema");
+    },
+  );
+  const keys = [...plan.resolves.values()].map((resolve) => resolve.scopeKey);
+  same(
+    keys,
+    [`location-subtree:${TAB_SITE}`, `location:${TAB_SITE}`],
+    "a subtree entry and a per-node entry on one location dashboard",
+  );
+  assert(new Set(keys).size === 2, "the two scopes must be two distinct keys");
+}
+
 /** `F3.73` Task 3.3 — `assets.offline.count` over `[]` is `0` and `assets.list` an empty
  * dataset of its four declared columns, both before any SQL (the `scopeIsEmpty` claim). The
  * enumerating claim above holds that no SQL runs; this one holds the ANSWER. */
@@ -225,4 +280,43 @@ export async function waterBalanceOnAnEmptyScopeBuildsNoSql(): Promise<void> {
     { columns: 7, rows: [] },
     "water.balance over []",
   );
+}
+
+/**
+ * `F2.10` (A6, Drafter choice 8) — `catalogValues`, the HTTP entry point, hands the caller's
+ * asset set and location set to `resolveForDashboard` each in its own position. The integration
+ * case drives `resolveForDashboard` directly, so this is the only gate on the call: passing
+ * `null` for the location set would label a row with a node the caller cannot read, and a swap
+ * would resolve over the wrong ids. The two sentinels differ in VALUE, so a swap reddens here.
+ */
+export async function catalogValuesPassesEachReadableSetInItsOwnPosition(): Promise<void> {
+  const assetSentinel = ["asset-sentinel"];
+  const locationSentinel = ["location-sentinel"];
+  const accessControl = {
+    readableOrganizationIds: async () => null,
+    readableAssetIds: async () => assetSentinel,
+    readableLocationIds: async () => locationSentinel,
+  } as unknown as AccessControlService;
+  // `select().from().where().limit()` on the fleet pool answers the dashboard row.
+  const chain = {
+    from: () => chain,
+    where: () => chain,
+    limit: async () => [{ id: "dash-1", organizationId: "org-1" }],
+  };
+  const fleetDb = { select: () => chain } as unknown as BmsDb;
+  const service = new MetricCatalogService(refusingDb(), fleetDb, accessControl, new AssetHealthService(refusingDb()));
+
+  const calls: unknown[][] = [];
+  (service as unknown as { resolveForDashboard: (...args: unknown[]) => Promise<unknown> }).resolveForDashboard =
+    async (...args: unknown[]) => {
+      calls.push(args);
+      return { values: [], resolvedAt: "" };
+    };
+  await service.catalogValues({ sub: "reader" } as unknown as JwtPayload, "dash-1");
+
+  assert(calls.length === 1, `resolveForDashboard called ${calls.length} times; expected 1`);
+  const [organizationId, dashboardId, readableAssetIds, readableLocationIds] = calls[0] as unknown[];
+  same([organizationId, dashboardId], ["org-1", "dash-1"], "the dashboard row's organization and id");
+  same(readableAssetIds, assetSentinel, "position 3 is readableAssetIds");
+  same(readableLocationIds, locationSentinel, "position 4 is readableLocationIds, never null and never the asset set");
 }

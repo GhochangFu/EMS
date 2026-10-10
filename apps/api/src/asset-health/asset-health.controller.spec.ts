@@ -4,7 +4,7 @@ import type { AssetHealthResponse, HealthSummaryResponse, JwtPayload } from "@bm
 
 import type { AccessControlService } from "../auth/access-control.service";
 import { AssetHealthController } from "./asset-health.controller";
-import type { AssetHealthService } from "./asset-health.service";
+import type { AssetHealthService, HealthLocationFilter } from "./asset-health.service";
 
 /**
  * Closes a review-found gap: `asset-health.controller.ts` had no test at all.
@@ -75,14 +75,14 @@ const SCOPE = [ASSET_ID, "77777777-7777-4777-8777-777777777777"];
 /** Records every call so a test can assert a read did NOT happen, not only that it threw. */
 function serviceStub() {
   const forAssetCalls: { assetId: string; windowMinutes: number }[] = [];
-  const summaryCalls: { assetIds: readonly string[] | null; locationId: string | undefined }[] = [];
+  const summaryCalls: { assetIds: readonly string[] | null; location: HealthLocationFilter | undefined }[] = [];
   const service = {
     forAsset: async (assetId: string, windowMinutes: number) => {
       forAssetCalls.push({ assetId, windowMinutes });
       return FOR_ASSET_RESPONSE;
     },
-    summary: async (assetIds: readonly string[] | null, locationId: string | undefined) => {
-      summaryCalls.push({ assetIds, locationId });
+    summary: async (assetIds: readonly string[] | null, location: HealthLocationFilter | undefined) => {
+      summaryCalls.push({ assetIds, location });
       return SUMMARY_RESPONSE;
     },
   } as unknown as AssetHealthService;
@@ -93,10 +93,13 @@ function accessStub(opts: {
   canReadAsset?: boolean;
   readableAssetIds?: readonly string[] | null;
   inOrganization?: readonly string[];
+  readableLocationIds?: readonly string[] | null;
+  readableOrganizationIds?: readonly string[] | null;
 }) {
   const canReadAssetCalls: string[] = [];
   const inOrganizationCalls: { user: JwtPayload; organizationId: string }[] = [];
   const readableAssetIdsCalls: number[] = [];
+  const readableLocationIdsCalls: number[] = [];
   const access = {
     canReadAsset: async (_user: JwtPayload, assetId: string) => {
       canReadAssetCalls.push(assetId);
@@ -106,12 +109,17 @@ function accessStub(opts: {
       readableAssetIdsCalls.push(1);
       return opts.readableAssetIds ?? null;
     },
+    readableLocationIds: async () => {
+      readableLocationIdsCalls.push(1);
+      return opts.readableLocationIds ?? null;
+    },
+    readableOrganizationIds: async () => opts.readableOrganizationIds ?? null,
     readableAssetIdsInOrganization: async (user: JwtPayload, organizationId: string) => {
       inOrganizationCalls.push({ user, organizationId });
       return opts.inOrganization ?? [];
     },
   } as unknown as AccessControlService;
-  return { access, canReadAssetCalls, readableAssetIdsCalls, inOrganizationCalls };
+  return { access, canReadAssetCalls, readableAssetIdsCalls, readableLocationIdsCalls, inOrganizationCalls };
 }
 
 /**
@@ -222,26 +230,47 @@ export async function assertAMalformedSummaryQueryIsABadRequestBeforeAccessContr
 }
 
 /**
- * **Assertion 4 — `locationId` reaches the service unchanged when valid, and
+ * **Assertion 4 — `locationId` reaches the service unchanged when valid, with
+ * the caller's own readable locations beside it, and the filter is
  * `undefined` when absent.** Read together with assertion 2: the scope comes
  * from access control, but the narrowing filter is ordinary query input, and
- * the two must not be conflated.
+ * the two must not be conflated. The readable list is asserted by `===`, so a
+ * handler that passed `null` ("unrestricted") in its place fails here (owner
+ * ruling P2: the service refuses an unreadable node on that list).
  */
 export async function assertLocationIdIsPassedThroughOrUndefined(): Promise<void> {
   const { service, summaryCalls } = serviceStub();
-  const { access } = accessStub({ readableAssetIds: SCOPE });
+  const readable = [LOCATION_ID];
+  const readableOrganizations = [ORGANIZATION_ID];
+  const { access, readableLocationIdsCalls } = accessStub({
+    readableAssetIds: SCOPE,
+    readableLocationIds: readable,
+    readableOrganizationIds: readableOrganizations,
+  });
   const controller = new AssetHealthController(service, access);
 
   await controller.summary(USER, { locationId: LOCATION_ID });
   assert(
-    summaryCalls[0]?.locationId === LOCATION_ID,
-    `a valid locationId must reach the service unchanged, got ${String(summaryCalls[0]?.locationId)}`,
+    summaryCalls[0]?.location?.id === LOCATION_ID,
+    `a valid locationId must reach the service unchanged, got ${String(summaryCalls[0]?.location?.id)}`,
+  );
+  assert(
+    summaryCalls[0]?.location?.readableLocationIds === readable,
+    "the service must receive the exact readableLocationIds() array beside the locationId",
+  );
+  assert(
+    summaryCalls[0]?.location?.readableOrganizationIds === readableOrganizations,
+    "the service must receive the exact readableOrganizationIds() array as the walk's anchor bound (owner ruling P3)",
   );
 
   await controller.summary(USER, {});
   assert(
-    summaryCalls[1]?.locationId === undefined,
-    `an absent locationId must reach the service as undefined, got ${String(summaryCalls[1]?.locationId)}`,
+    summaryCalls[1]?.location === undefined,
+    `an absent locationId must reach the service as undefined, got ${JSON.stringify(summaryCalls[1]?.location)}`,
+  );
+  assert(
+    readableLocationIdsCalls.length === 1,
+    `readableLocationIds must be read only for a locationId filter; called ${readableLocationIdsCalls.length} time(s)`,
   );
 }
 

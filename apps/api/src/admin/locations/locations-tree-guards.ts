@@ -134,15 +134,18 @@ export async function assertParentPlacement(
     if (input.nodeId === input.parentId) {
       throw refusal("location_parent_cycle");
     }
-    const subtree = await expandLocationSubtrees(tx, [input.nodeId]);
+    const subtree = await expandLocationSubtrees(tx, { organizationIds: [input.organizationId], ids: [input.nodeId] });
     if (subtree.includes(input.parentId)) {
       throw refusal("location_parent_cycle");
     }
   }
 
-  const parentShape = await locationDepthAndHeight(tx, input.parentId);
+  const organizationIds = [input.organizationId];
+  const parentShape = await locationDepthAndHeight(tx, { organizationIds, id: input.parentId });
   const height =
-    input.nodeId === null ? 1 : (await locationDepthAndHeight(tx, input.nodeId))?.height ?? Number.NaN;
+    input.nodeId === null
+      ? 1
+      : (await locationDepthAndHeight(tx, { organizationIds, id: input.nodeId }))?.height ?? Number.NaN;
   if (depthExceeded(parentShape?.depth, height)) {
     throw refusal("location_depth_exceeded");
   }

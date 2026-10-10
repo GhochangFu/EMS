@@ -35,7 +35,7 @@ export async function assertLocationScopeNarrowsTheCount(
 ): Promise<void> {
   const scoped = await service.resolveForDashboard(organizationId, scopedDashboardId, [
     ...callerScope,
-  ]);
+  ], null);
   const scopedValue = scoped.values[0]?.resolved;
   expect(scopedValue?.shape, "the binding must resolve as a metric").toBe("metric");
   expect(
@@ -48,7 +48,7 @@ export async function assertLocationScopeNarrowsTheCount(
   // would pass the assertion above. An organization-wide dashboard must still see everything.
   const wide = await service.resolveForDashboard(organizationId, wideDashboardId, [
     ...callerScope,
-  ]);
+  ], null);
   const wideValue = wide.values[0]?.resolved;
   expect(
     wideValue?.shape === "metric" ? wideValue.value : undefined,
@@ -80,7 +80,7 @@ export async function assertGroupTabNarrowsItsTile(
 ): Promise<void> {
   const resolved = await service.resolveForDashboard(organizationId, tabbedDashboardId, [
     ...callerScope,
-  ]);
+  ], null);
   const valueOf = (widgetId: string) => {
     const entry = resolved.values.find((value) => value.widgetId === widgetId)?.resolved;
     return entry?.shape === "metric" ? entry.value : undefined;
@@ -109,7 +109,7 @@ export async function assertCallerScopeIntersects(
 ): Promise<void> {
   const resolved = await service.resolveForDashboard(organizationId, wideDashboardId, [
     ...readableAssetIds,
-  ]);
+  ], null);
   const value = resolved.values[0]?.resolved;
   expect(
     value?.shape === "metric" ? value.value : undefined,
@@ -120,7 +120,7 @@ export async function assertCallerScopeIntersects(
   // An empty readable set is a real state (a user scoped to an asset group with no assets), and
   // `inArray(x, [])` is a Postgres syntax error rather than an empty result — the trap
   // `AssetHealthService.summary` records. Zero, not a 500.
-  const none = await service.resolveForDashboard(organizationId, wideDashboardId, []);
+  const none = await service.resolveForDashboard(organizationId, wideDashboardId, [], null);
   const noneValue = none.values[0]?.resolved;
   expect(
     noneValue?.shape === "metric" ? noneValue.value : undefined,
@@ -138,7 +138,7 @@ export async function assertDatasetShapeAndClamp(
 ): Promise<void> {
   const resolved = await service.resolveForDashboard(organizationId, datasetDashboardId, [
     ...callerScope,
-  ]);
+  ], null);
   const value = resolved.values[0]?.resolved;
   expect(value?.shape, "alarms.active must resolve as a dataset").toBe("dataset");
   if (value?.shape !== "dataset") return;
@@ -164,7 +164,7 @@ export async function assertHealthScoreDelegates(
   organizationId: string,
   healthDashboardId: string,
 ): Promise<void> {
-  const resolved = await service.resolveForDashboard(organizationId, healthDashboardId, null);
+  const resolved = await service.resolveForDashboard(organizationId, healthDashboardId, null, null);
   const value = resolved.values[0]?.resolved;
   expect(value?.shape).toBe("metric");
   if (value?.shape !== "metric") return;
@@ -220,7 +220,7 @@ export async function assertUnnarrowedScopeStaysInsideTheOrganization(
    */
   foreignIdsIn: (scope: readonly string[]) => Promise<readonly string[]>,
 ): Promise<void> {
-  await serviceWithCapturingHealth.resolveForDashboard(organizationId, healthDashboardId, null);
+  await serviceWithCapturingHealth.resolveForDashboard(organizationId, healthDashboardId, null, null);
   const scope = capturedScope();
 
   expect(
@@ -259,12 +259,12 @@ export async function assertDeletedWidgetDropsItsBinding(
   dashboardId: string,
   widgetId: string,
 ): Promise<void> {
-  const before = await service.resolveForDashboard(organizationId, dashboardId, null);
+  const before = await service.resolveForDashboard(organizationId, dashboardId, null, null);
   expect(before.values.length).toBeGreaterThan(0);
 
   await fleetDb.execute(sql`DELETE FROM bms.dashboard_widgets WHERE id = ${widgetId}`);
 
-  const after = await service.resolveForDashboard(organizationId, dashboardId, null);
+  const after = await service.resolveForDashboard(organizationId, dashboardId, null, null);
   expect(
     after.values.some((entry) => entry.sourceId === before.values[0]?.sourceId),
     "a binding whose widget cascaded away must not resolve",
@@ -277,7 +277,7 @@ export async function assertNoBindingsResolvesEmpty(
   organizationId: string,
   emptyDashboardId: string,
 ): Promise<void> {
-  const resolved = await service.resolveForDashboard(organizationId, emptyDashboardId, null);
+  const resolved = await service.resolveForDashboard(organizationId, emptyDashboardId, null, null);
   expect(resolved.values).toEqual([]);
   expect(
     Number.isNaN(Date.parse(resolved.resolvedAt)),
@@ -307,7 +307,7 @@ export async function assertOfflineCountAndAssetList(
 ): Promise<void> {
   const resolved = await service.resolveForDashboard(organizationId, dashboardId, [
     ...callerScope,
-  ]);
+  ], null);
   const valueOf = (widgetId: string) =>
     resolved.values.find((value) => value.widgetId === widgetId)?.resolved;
 

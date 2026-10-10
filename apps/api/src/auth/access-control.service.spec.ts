@@ -177,6 +177,46 @@ export async function runGrantedLocationIdsTests(): Promise<void> {
 }
 
 /**
+ * `F2.10` U2 — `readableLocationIds` is `/auth/me`'s location list: `null` for
+ * a global admin with no grant walk, and exactly the ids `scopeForUser`
+ * returns for anyone else. `scopeForUser` is stubbed on the instance: its
+ * grant walk (`selectReadScopeSourceFor` + `scopeFromSource`) has its own
+ * integration suite, and the claim here is only that this method hands that
+ * scope's ids through — not `null`, not the asset list, not a re-derivation.
+ */
+export async function runReadableLocationIdsTests(): Promise<void> {
+  {
+    const svc = new AccessControlService(fakeAuthDb("admin"), refusingFleetDb("admin reads everything"));
+    assert(
+      (await svc.readableLocationIds(jwtOf("admin"))) === null,
+      "a global admin's readable location set is the unrestricted sentinel",
+    );
+  }
+  {
+    const svc = new AccessControlService(
+      fakeAuthDb("location_admin"),
+      refusingFleetDb("the scope is stubbed"),
+    );
+    const stubbed = svc as unknown as { scopeForUser: () => Promise<unknown> };
+    stubbed.scopeForUser = async () => ({
+      kind: "locations",
+      organizations: [],
+      locations: [
+        { id: "loc-a", code: "A", name: "A", organizationId: OWN_ORG_ID, parentId: null },
+        { id: "loc-a1", code: "A1", name: "A1", organizationId: OWN_ORG_ID, parentId: "loc-a" },
+      ],
+      assetGroups: [],
+      assetIds: ["asset-1"],
+    });
+    const ids = await svc.readableLocationIds(jwtOf("location_admin"));
+    assert(
+      JSON.stringify(ids) === JSON.stringify(["loc-a", "loc-a1"]),
+      `a location admin reads exactly its scope's location ids, got ${JSON.stringify(ids)}`,
+    );
+  }
+}
+
+/**
  * `E7.1c` (ADR 0043 Amendment 5, decision 7) — the four cases
  * `canManageNotificationChannel` must answer, mirroring `canManagePointKey`'s
  * own four (`point-keys.service.ts`) exactly but for the one deviation: a

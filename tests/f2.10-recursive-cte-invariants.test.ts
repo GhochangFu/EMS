@@ -7,27 +7,33 @@ import { repoRoot, walk, withoutComments } from "./support/source-scan";
 
 /**
  * `F2.10` / ADR 0098 *Security* 2–3 — every recursive CTE over `bms.locations`
- * in `apps/api` carries the organization predicate **on the recursive term**,
- * joins its steps with `UNION` (never `UNION ALL`) and bounds the walk with
- * `LOCATION_TREE_MAX_DEPTH`.
+ * in `apps/api` carries the organization predicate **on the anchor and on the
+ * recursive term**, joins its steps with `UNION` (never `UNION ALL`) and
+ * bounds the walk with `LOCATION_TREE_MAX_DEPTH`.
  *
- * Why the recursive term and not the statement: an `organization_id =` in the
- * anchor alone filters the starting rows and then walks across any edge the
- * data holds, so a planted cross-organization edge (the integration tripwire's
- * assertion 6 plants one with the foreign key switched off) widens the closure
- * into another tenant. The scan therefore splits each statement at its one
- * `UNION` and tests the half after it. `UNION` rather than `UNION ALL` is what
+ * Why both halves: an `organization_id =` in the anchor alone filters the
+ * starting rows and then walks across any edge the data holds, so a planted
+ * cross-organization edge (the integration tripwire's assertion 6 plants one
+ * with the foreign key switched off) widens the closure into another tenant;
+ * the recursive term alone starts wherever the given id points, another
+ * tenant's node included (owner ruling P3, 2026-10-09). The scan therefore
+ * splits each statement at its one `UNION` and tests each half: the anchor
+ * (before it) must filter `<alias>.organization_id` against the caller's bound
+ * (`= ANY(…)`, `IN (…)`, or the pair `(<alias>.id, <alias>.organization_id) IN (…)`)
+ * and never against itself, and the recursive term (after it) must equate two
+ * aliases' `organization_id`. The scan proves a predicate is there, not that
+ * its bound is trusted: that is a property of each caller. `UNION` rather than `UNION ALL` is what
  * keeps a cycle from doubling every row until the depth bound stops it, and the
  * depth bound is what stops it at all.
  *
- * The count is pinned: a fifth recursive CTE anywhere under `apps/api/src`, or
+ * The count is pinned: a sixth recursive CTE anywhere under `apps/api/src`, or
  * one outside `auth/location-tree.ts`, fails here and is reviewed into this
  * file by hand — the helpers exist so nothing else walks the tree.
  */
 
 const API_SRC = join(repoRoot, "apps", "api", "src");
 const TREE_MODULE = "apps/api/src/auth/location-tree.ts";
-const EXPECTED_STATEMENTS = 4;
+const EXPECTED_STATEMENTS = 5;
 
 const rel = (file: string): string => relative(repoRoot, file).split("\\").join("/");
 
@@ -65,6 +71,21 @@ export function judge(statement: string): Verdict {
   if (halves.length !== 2) {
     return { ok: false, reason: `has ${halves.length - 1} UNION keyword(s), expected exactly one` };
   }
+  const anchor = halves[0] as string;
+  // The anchor's bound: `l.organization_id = ANY(${…})`, `l.organization_id IN (${…})`, or the
+  // pair `(l.id, l.organization_id) IN (${…})`. An alias is required, so the CTE's column list
+  // `(id, organization_id, …)` does not count, and so does an operator, so the SELECT list's
+  // `l.organization_id,` does not either. An `=` whose right side is the SAME alias's
+  // `organization_id` is the tautology `l.organization_id = l.organization_id`, which bounds
+  // nothing, so it does not count (the recursive term's two-alias rule, applied to the anchor).
+  const equalities = [...anchor.matchAll(/\b(\w+)\.organization_id\s*=\s*(?:(\w+)\.organization_id\b)?/gi)];
+  const bounded =
+    equalities.some((m) => m[2] === undefined || m[2].toLowerCase() !== (m[1] as string).toLowerCase()) ||
+    /\b\w+\.organization_id\s*IN\s*\(/i.test(anchor) ||
+    /\(\s*\w+\.id\s*,\s*\w+\.organization_id\s*\)\s*IN\s*\(/i.test(anchor);
+  if (!bounded) {
+    return { ok: false, reason: "the anchor carries no organization_id predicate (= or IN) bounding its starting rows" };
+  }
   const recursiveTerm = halves[1] as string;
   // Two different aliases: the joined row against the walk's row. A bare
   // `organization_id =` would accept the tautology `c.organization_id =
@@ -79,7 +100,7 @@ export function judge(statement: string): Verdict {
   return { ok: true };
 }
 
-describe("F2.10 — every recursive CTE over bms.locations is organization-bounded at the recursive term", () => {
+describe("F2.10 — every recursive CTE over bms.locations is organization-bounded at the anchor and the recursive term", () => {
   const found = productionSources().flatMap((file) =>
     recursiveStatements(readFileSync(file, "utf8")).map((statement) => ({ file: rel(file), statement })),
   );
@@ -91,7 +112,7 @@ describe("F2.10 — every recursive CTE over bms.locations is organization-bound
     ).toEqual(Array<string>(EXPECTED_STATEMENTS).fill(TREE_MODULE));
   });
 
-  it("each statement has one UNION, never UNION ALL, and the recursive term carries organization_id = and the depth bound", () => {
+  it("each statement has one UNION, never UNION ALL, an organization predicate on the anchor, and the recursive term carries organization_id = and the depth bound", () => {
     const offenders = found
       .map(({ file, statement }) => ({ file, verdict: judge(statement), head: statement.slice(0, 60).replace(/\s+/g, " ") }))
       .filter((f) => !f.verdict.ok)
@@ -100,7 +121,10 @@ describe("F2.10 — every recursive CTE over bms.locations is organization-bound
     expect(offenders).toEqual([]);
   });
 
-  // Positive controls: the shapes the rule exists to catch are reported.
+  // Positive controls: the shapes the rule exists to catch are reported. The real anchor
+  // predicate is the default, so each control below breaks exactly one thing.
+  const ANCHOR = "AND l.organization_id = ANY(${orgIds})";
+  const STEP = "AND c.organization_id = t.organization_id";
   const base = (anchorPredicate: string, recursivePredicate: string, union = "UNION") => `
     WITH RECURSIVE t (id, organization_id, depth) AS (
       SELECT l.id, l.organization_id, 1 FROM bms.locations l WHERE l.id = ANY(\${roots}) ${anchorPredicate}
@@ -112,36 +136,66 @@ describe("F2.10 — every recursive CTE over bms.locations is organization-bound
     SELECT id FROM t`;
 
   it("positive control: the real shape passes", () => {
-    expect(judge(base("", "AND c.organization_id = t.organization_id"))).toEqual({ ok: true });
+    expect(judge(base(ANCHOR, STEP))).toEqual({ ok: true });
+  });
+
+  it("positive control: the fragment's IN (subquery) anchor shape passes", () => {
+    expect(judge(base("AND l.organization_id IN (${anchors.organizationIds})", STEP))).toEqual({ ok: true });
+  });
+
+  it("positive control: a predicate on the recursive term alone — an anchor with no organization bound — is reported", () => {
+    const verdict = judge(base("", STEP));
+    expect(verdict.ok).toBe(false);
+    expect((verdict as { reason: string }).reason).toContain("the anchor carries no organization_id predicate");
+  });
+
+  it("positive control: a tautological predicate on the anchor's one alias is reported", () => {
+    const verdict = judge(base("AND l.organization_id = l.organization_id", STEP));
+    expect(verdict.ok).toBe(false);
+    expect((verdict as { reason: string }).reason).toContain("the anchor carries no organization_id predicate");
+  });
+
+  it("positive control: the pair anchor (l.id, l.organization_id) IN (…) passes", () => {
+    const pair = base("", STEP).replace("WHERE l.id = ANY(${roots})", "WHERE (l.id, l.organization_id) IN (${anchors.pairs})");
+    expect(pair).toContain("(l.id, l.organization_id) IN (");
+    expect(judge(pair)).toEqual({ ok: true });
+  });
+
+  it("positive control: a pair-shaped anchor without organization_id is reported", () => {
+    const idOnly = base("", STEP).replace("WHERE l.id = ANY(${roots})", "WHERE (l.id) IN (${anchors.ids})");
+    expect(idOnly).toContain("(l.id) IN (");
+    const verdict = judge(idOnly);
+    expect(verdict.ok).toBe(false);
+    expect((verdict as { reason: string }).reason).toContain("the anchor carries no organization_id predicate");
   });
 
   it("positive control: a predicate on the anchor alone is reported", () => {
-    const verdict = judge(base("AND l.organization_id = ${orgId}", ""));
+    const verdict = judge(base(ANCHOR, ""));
     expect(verdict.ok).toBe(false);
     expect((verdict as { reason: string }).reason).toContain("recursive term carries no organization_id");
   });
 
   it("positive control: a tautological predicate on one alias is reported", () => {
-    const verdict = judge(base("", "AND c.organization_id = c.organization_id"));
+    const verdict = judge(base(ANCHOR, "AND c.organization_id = c.organization_id"));
     expect(verdict.ok).toBe(false);
     expect((verdict as { reason: string }).reason).toContain("between two aliases");
   });
 
   it("positive control: UNION ALL is reported", () => {
-    const verdict = judge(base("", "AND c.organization_id = t.organization_id", "UNION ALL"));
+    const verdict = judge(base(ANCHOR, STEP, "UNION ALL"));
     expect(verdict.ok).toBe(false);
     expect((verdict as { reason: string }).reason).toContain("UNION ALL");
   });
 
   it("positive control: a missing depth bound is reported", () => {
-    const unbounded = base("", "AND c.organization_id = t.organization_id").replace("WHERE t.depth < ${LOCATION_TREE_MAX_DEPTH}", "");
+    const unbounded = base(ANCHOR, STEP).replace("WHERE t.depth < ${LOCATION_TREE_MAX_DEPTH}", "");
     const verdict = judge(unbounded);
     expect(verdict.ok).toBe(false);
     expect((verdict as { reason: string }).reason).toContain("LOCATION_TREE_MAX_DEPTH");
   });
 
   it("positive control: the statement extractor finds one statement per WITH RECURSIVE and stops at the template's end", () => {
-    const source = "const a = sql`" + base("", "AND c.organization_id = t.organization_id") + "`;\nconst b = sql`WITH RECURSIVE u AS (SELECT 1) SELECT 1`;";
+    const source = "const a = sql`" + base(ANCHOR, STEP) + "`;\nconst b = sql`WITH RECURSIVE u AS (SELECT 1) SELECT 1`;";
     const statements = recursiveStatements(source);
     expect(statements).toHaveLength(2);
     expect(statements[0]).not.toContain("const b");

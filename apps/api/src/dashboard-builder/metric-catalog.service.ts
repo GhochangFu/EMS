@@ -3,6 +3,7 @@ import { and, asc, desc, eq, inArray, isNull, notInArray, sql, type SQL } from "
 
 import {
   alarms,
+  assetGroups,
   assets,
   dashboards,
   dashboardTabs,
@@ -33,6 +34,7 @@ import {
   type DashboardAssetScope,
 } from "./dashboard-scope-assets";
 import { resolveWidgetSources } from "./dashboard-source-scope";
+import { groupLocationsAtDepth } from "./sustainability-grouping";
 import { METRIC_CATALOG_PARAMS_WRITE } from "./dashboards.schema";
 import {
   capRows,
@@ -50,11 +52,26 @@ import { waterBalanceRow } from "./water-balance";
 /**
  * What a resolver may reach for beyond the transaction.
  *
- * Passed explicitly rather than bound as `this`. Nine of the ten entries need nothing here,
- * and a `this`-bound map would have to be cast to reach the service's injected dependency — a cast
- * on the one path that calls another module's service.
+ * Passed explicitly rather than bound as `this`. Eight of the ten entries need nothing here
+ * (`assets.health.score` reads `health`; `sustainability.by_location` reads
+ * `readableLocationIds` since `F2.10`), and a `this`-bound map would have to be cast to reach
+ * the service's injected dependency — a cast on the one path that calls another module's service.
  */
-type ResolverDeps = { readonly health: AssetHealthService };
+type ResolverDeps = {
+  readonly health: AssetHealthService;
+  /**
+   * `F2.10` — the reader's location ids, `null` when unrestricted. Only `by_location`'s
+   * `groupDepth` reads it: a group label is never an ancestor the reader cannot read (A6).
+   */
+  readonly readableLocationIds: ReadonlySet<string> | null;
+  /**
+   * `F2.10` owner rulings P1 and P4 — the dashboard's own location node, for every widget on
+   * it (a group tab's widget included): its `locationId`, or for a group-scoped dashboard the
+   * GROUP's `location_id` read from the database; `null` for an asset- or organization-scoped
+   * dashboard. `by_location`'s group never goes above it.
+   */
+  readonly scopeLocationId: string | null;
+};
 
 /**
  * How the catalog's entries resolve: six are SQL here (the four Stage C reads and the two
@@ -64,7 +81,8 @@ type ResolverDeps = { readonly health: AssetHealthService };
  * `params` is the binding's stored `params` AFTER `METRIC_CATALOG_PARAMS_WRITE[key]` has
  * parsed it (`E4.2`): `{}` for the five Stage C entries and the two `F3.73` asset entries,
  * `{ pointKey, aggregate }` and an
- * optional `balanceRole` (`E4.3`) for the two sustainability entries, and `{ period }` for
+ * optional `balanceRole` (`E4.3`) for the two sustainability entries — plus an optional
+ * `groupDepth` on `by_location` since `F2.10` — and `{ period }` for
  * `water.balance`. Positional and required
  * rather than optional, so a resolver that reads a field cannot compile against a call that
  * never passes one.
@@ -84,6 +102,9 @@ type SustainabilityParams = {
   readonly aggregate: SustainabilityAggregate;
   /** `E4.3` / ADR 0073 decision 2 — narrows the carrying set to one water balance role. */
   readonly balanceRole?: string;
+  /** `F2.10` (ADR 0098 Amendment 1, C) — `by_location` only: group rows by the ancestor at
+   * this depth (root = 1). The write schema admits it on no other entry. */
+  readonly groupDepth?: number;
 };
 
 /** `E4.3` — the parsed shape of a `water.balance` binding's params. */
@@ -121,7 +142,8 @@ type WaterBalanceParams = { readonly period: WaterBalancePeriod };
  * entries declare no fields, so there is no parameter for them to read — a dataset's row cap
  * comes from `MAX_DATASET_ROWS`, not from a request. The two `sustainability.*` entries
  * (`E4.2`, ADR 0072 decision 2) take `{ pointKey, aggregate }` and, since `E4.3` (ADR 0073
- * decision 2), an optional `balanceRole` that narrows the carrying set; `water.balance` (`E4.3`,
+ * decision 2), an optional `balanceRole` that narrows the carrying set — `by_location` also
+ * takes an optional `groupDepth` since `F2.10` (ADR 0098 Amendment 1, C); `water.balance` (`E4.3`,
  * ADR 0073 decision 3) takes `{ period }`. The stored row is re-parsed
  * through `METRIC_CATALOG_PARAMS_WRITE` before a resolver sees it, and a row that fails to
  * parse is SKIPPED with one warning naming the field path (§4.3) — never thrown, because one
@@ -182,6 +204,7 @@ export class MetricCatalogService {
       row.organizationId,
       dashboardId,
       await this.accessControl.readableAssetIds(jwt),
+      await this.accessControl.readableLocationIds(jwt),
     );
   }
 
@@ -190,12 +213,20 @@ export class MetricCatalogService {
    *
    * `readableAssetIds` is the caller's own scope — `null` means "every asset in the
    * organization", matching `AccessControlService.readableAssetIds`' own convention.
+   * `readableLocationIds` (`F2.10`) is the same caller's location list under the same
+   * convention. Required, not defaulted: a permissive default at this seam would be invisible
+   * to the compiler and read every ancestor as readable.
    */
   async resolveForDashboard(
     organizationId: string,
     dashboardId: string,
     readableAssetIds: readonly string[] | null,
+    readableLocationIds: readonly string[] | null,
   ): Promise<DashboardCatalogValuesResponse> {
+    // Never `?? null`: an `undefined` that slipped past the compiler must fail closed (an empty
+    // set), not read as "every location".
+    const readableLocations: ReadonlySet<string> | null =
+      readableLocationIds === null ? null : new Set(readableLocationIds);
     return withTenant(this.tenantDb, organizationId, async (tx) => {
       const [dashboard] = await tx
         .select()
@@ -205,6 +236,24 @@ export class MetricCatalogService {
       if (!dashboard) {
         return { values: [], resolvedAt: new Date().toISOString() };
       }
+      // Owner rulings P1 and P4: the cap on a grouped `by_location` row is the dashboard's own
+      // node. A group-scoped dashboard's node is its GROUP's location — read here, never taken
+      // from the request, with the organization predicate explicit (`resolveAssetScope`'s
+      // reason). `dashboards_scope_check` allows one scope column; an asset-scoped dashboard
+      // stays uncapped.
+      const capLocationId =
+        dashboard.locationId ??
+        (dashboard.assetGroupId === null
+          ? null
+          : ((
+              await tx
+                .select({ locationId: assetGroups.locationId })
+                .from(assetGroups)
+                .where(
+                  and(eq(assetGroups.id, dashboard.assetGroupId), eq(assetGroups.organizationId, organizationId)),
+                )
+                .limit(1)
+            )[0]?.locationId ?? null));
 
       // `F3.73` — each widget's tab, and the group that tab binds (NULL for the Overview and
       // for a legacy widget with no tab). The join carries its own organization predicate,
@@ -263,12 +312,27 @@ export class MetricCatalogService {
         if (resolver === undefined) continue;
         let scope = scopeByKey.get(planned.scopeKey);
         if (scope === undefined) {
-          scope = await resolveAssetScope(tx, organizationId, planned.scope, readableAssetIds);
+          scope = await resolveAssetScope(tx, organizationId, planned.scope, readableAssetIds, {
+            subtree: planned.subtree,
+          });
           scopeByKey.set(planned.scopeKey, scope);
         }
         byKey.set(
           resolveKey,
-          await resolver(tx, organizationId, scope, { health: this.health }, planned.params),
+          await resolver(
+            tx,
+            organizationId,
+            scope,
+            {
+              health: this.health,
+              readableLocationIds: readableLocations,
+              // Owner rulings P1 and P4: the cap is the DASHBOARD's node, not the resolve's
+              // scope — a group tab's widget resolves with `locationId` null yet sits on this
+              // dashboard. `capLocationId`'s own comment says how it is read.
+              scopeLocationId: capLocationId,
+            },
+            planned.params,
+          ),
         );
       }
       const resolveKeyOf = plan.resolveKeyOf;
@@ -326,7 +390,19 @@ export type PlannedResolve = {
   readonly params: unknown;
   readonly scope: DashboardAssetScope;
   readonly scopeKey: string;
+  /** `F2.10` — a location scope resolves over the node's subtree (`SUBTREE_SCOPED_KEYS`). */
+  readonly subtree: boolean;
 };
+
+/**
+ * `F2.10` / ADR 0098 decision 7, B1 — the entries whose location scope is the node's SUBTREE.
+ * Every other entry (the alarm and work-order reads, `assets.*`, `water.balance`) stays per
+ * node: a campus dashboard's alarm list is the campus's own, not its sites'.
+ */
+const SUBTREE_SCOPED_KEYS: ReadonlySet<MetricCatalogKey> = new Set<MetricCatalogKey>([
+  "sustainability.total",
+  "sustainability.by_location",
+]);
 
 /**
  * Groups a dashboard's bindings into DISTINCT resolves, keyed `(catalogKey, canonical params,
@@ -362,11 +438,12 @@ export function planResolves(
       continue;
     }
     const scope = scopeOfWidget(source.widgetId);
-    const scopeKey = scopeKeyFor(scope);
+    const subtree = SUBTREE_SCOPED_KEYS.has(key);
+    const scopeKey = scopeKeyFor(scope, { subtree });
     const resolveKey = `${key}\u0000${canonicalJson(parsed.data)}\u0000${scopeKey}`;
     resolveKeyOf.set(source.id, resolveKey);
     if (!resolves.has(resolveKey)) {
-      resolves.set(resolveKey, { key, params: parsed.data, scope, scopeKey });
+      resolves.set(resolveKey, { key, params: parsed.data, scope, scopeKey, subtree });
     }
   }
   return { resolveKeyOf, resolves };
@@ -645,21 +722,55 @@ export const RESOLVERS: Record<MetricCatalogKey, Resolver> = {
    * (ADR 0072 ruling 3). `coverage` is the string `"fresh/carrying"` because a dataset cell is
    * a scalar (plan OQ4). Capped like its dataset siblings: the location query reads
    * `MAX_DATASET_ROWS + 1` and `capRows` decides `truncated` from what came back.
+   *
+   * `F2.10` (ADR 0098 decision 7, A6, B2, C; amends ADR 0072 decision 2): with `groupDepth`
+   * set, each location folds into its group node (`groupLocationsAtDepth`) and the rows are the
+   * distinct group nodes in `code` order, labelled with the GROUP's code and name — never a node
+   * above the dashboard's own (`scopeLocationId`, owner rulings P1 and P4). The location
+   * read is then UNCAPPED — a cap on the fold's input would truncate it silently — and
+   * `capRows` applies to the grouped rows.
    */
-  "sustainability.by_location": async (tx, organizationId, scope, _deps, params) => {
+  "sustainability.by_location": async (tx, organizationId, scope, deps, params) => {
     if (scopeIsEmpty(scope)) return datasetValue("sustainability.by_location", [], false);
-    const { pointKey, aggregate, balanceRole } = params as SustainabilityParams;
+    const { pointKey, aggregate, balanceRole, groupDepth } = params as SustainabilityParams;
     // The ROW set is not narrowed by `balanceRole` (E4.2 OQ7 stands): a location owning an
     // asset in scope is a row even when none of its assets has the role — it reads `0/0`.
-    const inScope = await tx
+    const locationRead = tx
       .select({ id: locations.id, code: locations.code, name: locations.name })
       .from(assets)
       .innerJoin(locations, eq(locations.id, assets.locationId))
       .where(and(eq(assets.organizationId, organizationId), scopedTo(assets.id, scope)))
       .groupBy(locations.id, locations.code, locations.name)
-      .orderBy(asc(locations.code))
-      .limit(MAX_DATASET_ROWS + 1);
+      .orderBy(asc(locations.code));
     const carrying = await readRollupRows(tx, organizationId, scope, pointKey, balanceRole);
+    if (groupDepth !== undefined) {
+      const inScope = await locationRead;
+      const groups = await groupLocationsAtDepth(
+        tx,
+        { organizationIds: [organizationId], ids: inScope.map((location) => location.id) },
+        groupDepth,
+        deps.readableLocationIds,
+        deps.scopeLocationId,
+      );
+      const groupNodes = [...new Map([...groups.values()].map((group) => [group.id, group])).values()].sort(
+        (a, b) => (a.code < b.code ? -1 : a.code > b.code ? 1 : 0),
+      );
+      const capped = capRows(groupNodes);
+      const rows = capped.rows.map((group) => {
+        const { value, coverage } = rollup(
+          carrying.filter((row) => groups.get(row.locationId)?.id === group.id),
+          aggregate,
+        );
+        return {
+          locationCode: group.code,
+          locationName: group.name,
+          value,
+          coverage: `${coverage.fresh}/${coverage.carrying}`,
+        };
+      });
+      return datasetValue("sustainability.by_location", rows, capped.truncated);
+    }
+    const inScope = await locationRead.limit(MAX_DATASET_ROWS + 1);
     const capped = capRows(inScope);
     const rows = capped.rows.map((location) => {
       const { value, coverage } = rollup(

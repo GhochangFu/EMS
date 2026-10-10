@@ -1,8 +1,11 @@
 import { describe, it } from "vitest";
 
 import {
+  aSustainabilityBindingOnALocationDashboardPlansASubtreeScope,
+  anAssetListBindingOnTheSameDashboardKeepsTheNodeScope,
   assetsEntriesOnAnEmptyScopeAnswerZeroAndEmpty,
   byLocationOnAnEmptyScopeBuildsNoSql,
+  catalogValuesPassesEachReadableSetInItsOwnPosition,
   everyEntryOnAnEmptyScopeBuildsNoSql,
   overviewAndGroupTabAreTwoResolves,
   sameKeyOnOneTabIsOneResolve,
@@ -50,5 +53,21 @@ describe("F3.73 — the catalog dedupe key carries the widget's scope (no databa
 
   it("scopeKeyFor follows resolveAssetScope's arm order", () => {
     scopeKeyFollowsTheResolverArmOrder();
+  });
+});
+
+describe("F2.10 — the two sustainability entries resolve a location dashboard over its subtree (B1, no database)", () => {
+  it("sustainability.total and by_location on a location dashboard plan location-subtree:<id>", () => {
+    aSustainabilityBindingOnALocationDashboardPlansASubtreeScope();
+  });
+
+  it("assets.list on the same dashboard keeps location:<id> — two distinct scope keys", () => {
+    anAssetListBindingOnTheSameDashboardKeepsTheNodeScope();
+  });
+});
+
+describe("F2.10 — catalogValues passes the reader's two readable sets in their own positions (A6, no database)", () => {
+  it("resolveForDashboard gets readableAssetIds third and readableLocationIds fourth", async () => {
+    await catalogValuesPassesEachReadableSetInItsOwnPosition();
   });
 });
