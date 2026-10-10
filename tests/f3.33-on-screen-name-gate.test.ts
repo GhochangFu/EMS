@@ -20,7 +20,9 @@ import { repoRoot, walk } from "./support/source-scan";
  *  - every `.ts` / `.tsx` / `.css` file under `apps/web/src`, minus specs, tests and
  *    `test-setup.ts` (`webColourSourceFiles()`) — N1;
  *  - `apps/web/index.html` — N2b, and its `<title>` text — N2a;
- *  - every `.ts` file under `apps/api/src`, minus `*.spec.ts`, `*.test.ts` and `src/testing/` — N3;
+ *  - every `.ts` file under `apps/api/src`, minus `*.spec.ts`, `*.test.ts` and `src/testing/`, plus every
+ *    `packages/shared/src/contracts/*-writes.ts` (the API's write bodies and their refusal
+ *    messages, moved there by F3.85) — N3, N9b;
  *  - `infra/keycloak/bms-realm.json` — its parsed `displayName` only (N4);
  *  - the OpenAPI title and the Swagger site title as exact literals (N10a, N10b), because the
  *    OpenAPI document needs a Nest app and is not unit-testable here (§4.6, `F4.20`);
@@ -35,12 +37,13 @@ import { repoRoot, walk } from "./support/source-scan";
  *
  * **Liveness** of the scanner itself: N5 (the regex finds the two allowlisted sites), N6 and N6f
  * (comments do not count), N6b–N6e, N6g, N6h (comment markers inside strings, JSX text and HTML
- * attributes are text), N7 (the match is case-insensitive), N9 (the walkers reach the real trees).
+ * attributes are text), N7 (the match is case-insensitive), N9 and N9b (the walkers reach the real trees and the contracts write bodies).
  *
  * **Not covered.**
  *  - The realm JSON is not text-scanned as a whole; only `displayName` is checked.
  *  - A name built at runtime or by concatenation (`"TRI" + "NETRA"`) is invisible.
- *  - Everything outside decision 4: `apps/sim`, `apps/ingest`, `packages/*`, seeds, specs, tests,
+ *  - Everything outside decision 4: `apps/sim`, `apps/ingest`, `packages/*` (except the
+ *    contracts `*-writes.ts` above), seeds, specs, tests,
  *    `apps/api/src/testing/`, and repository documents (decision 5).
  *  - A Keycloak realm that is already imported keeps "TRINETRA" until an admin edits it (OQ8).
  *  - The scan matches text, not meaning: a code identifier or file name spelling the old name
@@ -146,11 +149,18 @@ function webFiles(): string[] {
   return webList;
 }
 
-/** Every api source file the gate scans, repo-relative; walked once per run. */
+/**
+ * Every api source file the gate scans, repo-relative; walked once per run. The `*-writes.ts`
+ * contracts are included: the API's write bodies moved there (F3.85), and their refusal messages
+ * reach the screen in a 400. The rest of `packages/shared` is not, since ADR 0083 keeps the internal name there.
+ */
 function apiFiles(): string[] {
-  apiList ??= walk(join(repoRoot, "apps/api/src"))
-    .filter((f) => /\.ts$/.test(f) && !/\.(spec|test)\.ts$/.test(f) && !/[\\/]src[\\/]testing[\\/]/.test(f))
-    .map(rel);
+  apiList ??= [
+    ...walk(join(repoRoot, "apps/api/src")).filter(
+      (f) => /\.ts$/.test(f) && !/\.(spec|test)\.ts$/.test(f) && !/[\\/]src[\\/]testing[\\/]/.test(f),
+    ),
+    ...walk(join(repoRoot, "packages/shared/src/contracts")).filter((f) => /[\\/][^\\/]+-writes\.ts$/.test(f)),
+  ].map(rel);
   return apiList;
 }
 
@@ -240,6 +250,11 @@ describe("F3.33 the on-screen name gate", () => {
   it("N9 the walkers reach the real web and api trees", () => {
     expect(webFiles().length).toBeGreaterThanOrEqual(300);
     expect(apiFiles()).toContain("apps/api/src/reports/report-render.service.ts");
+  });
+
+  it("N9b the api walk reaches the contracts write bodies the API returns refusal text from", () => {
+    expect(apiFiles()).toContain("packages/shared/src/contracts/dashboard-writes.ts");
+    expect(apiFiles().filter((f) => f.startsWith("packages/")).every((f) => /\/contracts\/[^/]+-writes\.ts$/.test(f))).toBe(true);
   });
 
   it("N10a the OpenAPI document title is IONSiTE NEXUS Enterprise EMS API", () => {
