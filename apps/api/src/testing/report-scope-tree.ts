@@ -4,7 +4,6 @@ import type pg from "pg";
 
 import type { JwtPayload } from "@bms/shared";
 
-import { openIntegrationPool, resolveIntegrationRoleUrl } from "./integration-db-gate";
 import { jwtFor, rememberSubject } from "./seeded-subjects";
 
 /**
@@ -24,8 +23,9 @@ import { jwtFor, rememberSubject } from "./seeded-subjects";
  * `site`'s subtree: the child's asset is in it (a grant means the subtree,
  * ADR 0018 / ADR 0098 decision 4) and the sibling's is not.
  *
- * Users need the superuser pool (`bms_fleet` has no grant on `bms.users`), so
- * the module opens one per tree and `drop` ends it.
+ * Users need the superuser pool (`bms_fleet` has no grant on `bms.users`). The
+ * caller opens and ends it: ADR 0045 lets only a test file import the
+ * integration gate that resolves that URL.
  */
 export type ReportScopeTree = {
   readonly organizationId: string;
@@ -35,7 +35,7 @@ export type ReportScopeTree = {
   readonly siblingAssetId: string;
   /** A `location_admin` of the organization granted `site` only. */
   readonly locationAdmin: JwtPayload;
-  /** Deletes every row the tree and a save in it wrote, then ends the pool. */
+  /** Deletes every row the tree and a save in it wrote. */
   drop(): Promise<void>;
 };
 
@@ -43,32 +43,24 @@ function fail(message: string): never {
   throw new Error(message);
 }
 
-export async function buildReportScopeTree(label: string): Promise<ReportScopeTree> {
-  const url = process.env.DATABASE_URL ?? fail(`${label}: DATABASE_URL is unset`);
-  const pool: pg.Pool = await openIntegrationPool(resolveIntegrationRoleUrl(url, "superuser", process.env), label, {
-    max: 1,
-  });
+export async function buildReportScopeTree(pool: pg.Pool, label: string): Promise<ReportScopeTree> {
   const run = randomUUID().slice(0, 8).toUpperCase();
   const code = `RSCOPE-${run}`;
   const email = `rscope-${run.toLowerCase()}@integration.invalid`;
   let organizationId = "";
 
   const drop = async (): Promise<void> => {
-    try {
-      if (organizationId === "") return;
-      const org = [organizationId];
-      await pool.query(`DELETE FROM bms.audit_log WHERE organization_id = $1`, org);
-      await pool.query(`DELETE FROM bms.report_files WHERE organization_id = $1`, org);
-      await pool.query(`DELETE FROM bms.user_location_access WHERE user_id IN (SELECT id FROM bms.users WHERE email = $1)`, [email]);
-      await pool.query(`DELETE FROM bms.users WHERE email = $1`, [email]);
-      await pool.query(`DELETE FROM bms.assets WHERE organization_id = $1`, org);
-      // One statement: the composite parent FK is checked at the statement's end.
-      await pool.query(`DELETE FROM bms.locations WHERE organization_id = $1`, org);
-      const removed = await pool.query(`DELETE FROM bms.organizations WHERE id = $1`, org);
-      if (removed.rowCount !== 1) throw new Error(`${label}: expected to delete organization ${code}, deleted ${removed.rowCount}`);
-    } finally {
-      await pool.end();
-    }
+    if (organizationId === "") return;
+    const org = [organizationId];
+    await pool.query(`DELETE FROM bms.audit_log WHERE organization_id = $1`, org);
+    await pool.query(`DELETE FROM bms.report_files WHERE organization_id = $1`, org);
+    await pool.query(`DELETE FROM bms.user_location_access WHERE user_id IN (SELECT id FROM bms.users WHERE email = $1)`, [email]);
+    await pool.query(`DELETE FROM bms.users WHERE email = $1`, [email]);
+    await pool.query(`DELETE FROM bms.assets WHERE organization_id = $1`, org);
+    // One statement: the composite parent FK is checked at the statement's end.
+    await pool.query(`DELETE FROM bms.locations WHERE organization_id = $1`, org);
+    const removed = await pool.query(`DELETE FROM bms.organizations WHERE id = $1`, org);
+    if (removed.rowCount !== 1) throw new Error(`${label}: expected to delete organization ${code}, deleted ${removed.rowCount}`);
   };
 
   try {

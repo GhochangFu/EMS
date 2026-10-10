@@ -17,7 +17,7 @@ import type { BmsTx } from "../database/tenant-context";
 import { createAwsS3Ops } from "../storage/aws-s3-ops";
 import { buildReportObjectKey } from "../storage/object-key";
 import { createStorageClient, deleteObject, ensureBucket, headObject, type S3Ops, type StorageClient } from "../storage/storage-client";
-import { openIntegrationPool } from "../testing/integration-db-gate";
+import { openIntegrationPool, resolveIntegrationRoleUrl } from "../testing/integration-db-gate";
 import type { ConfiguredStorageConfig } from "../testing/integration-storage-gate";
 import { asRole } from "../testing/role-urls";
 import type { ReportFilesConfig } from "./report-files-config";
@@ -527,7 +527,12 @@ export async function locationAdminStampsItsLocation(fx: ReportFileIntegrationFi
  * consumers lie inside the scope.
  */
 export async function locationAdminRendersUnderItsLocationsAssets(fx: ReportFileIntegrationFixtures): Promise<void> {
-  const tree = await buildReportScopeTree("F3.5a");
+  const superUrl = resolveIntegrationRoleUrl(process.env.DATABASE_URL ?? "", "superuser", process.env);
+  const superPool = await openIntegrationPool(superUrl, "F3.5a", { max: 1 });
+  const tree = await buildReportScopeTree(superPool, "F3.5a").catch(async (err: unknown) => {
+    await superPool.end();
+    throw err;
+  });
   try {
     const run = await runLocationAdminSave(fx, { jwt: tree.locationAdmin, organizationId: tree.organizationId });
     assert(run.stored.organization_id === tree.organizationId, `the row must belong to the tree's organization; got ${run.stored.organization_id}`);
@@ -545,7 +550,11 @@ export async function locationAdminRendersUnderItsLocationsAssets(fx: ReportFile
     const foreign = run.topConsumerAssetIds.filter((id) => !expected.includes(id));
     assert(foreign.length === 0, `the preview's top consumers carry ${foreign.length} asset(s) outside the scope: ${await fx.describeAssets(foreign)}`);
   } finally {
-    await tree.drop();
+    try {
+      await tree.drop();
+    } finally {
+      await superPool.end();
+    }
   }
 }
 
