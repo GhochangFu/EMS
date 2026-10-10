@@ -1,6 +1,9 @@
-import { ASSET_GROUP_TEMPLATE_TABS_MESSAGE, SITE_TEMPLATE_TOP_LEVEL_MESSAGE } from "@bms/shared";
+import {
+  ASSET_GROUP_TEMPLATE_TABS_MESSAGE,
+  SITE_TEMPLATE_TOP_LEVEL_MESSAGE,
+} from "./dashboard-templates";
 
-import { TAB_TARGET_UNKNOWN_MESSAGE } from "../../dashboard-builder/dashboards.schema";
+import { TAB_TARGET_UNKNOWN_MESSAGE } from "./dashboard-writes";
 
 import {
   createDashboardTemplateBodySchema,
@@ -10,7 +13,7 @@ import {
   TEMPLATE_TARGET_BODY_MESSAGE,
   templateTargetBodyMessage,
   updateDashboardTemplateBodySchema,
-} from "./dashboard-templates.schema";
+} from "./dashboard-template-writes";
 
 /**
  * `F3.61` Task 2 — the `PATCH` request boundary reaches the shared contract's

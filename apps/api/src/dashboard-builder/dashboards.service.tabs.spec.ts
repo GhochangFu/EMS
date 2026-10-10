@@ -1,18 +1,22 @@
 import { BadRequestException } from "@nestjs/common";
 
-import { dashboardWidgetDtoSchema } from "@bms/shared";
-import type { BmsDb } from "@bms/db";
-import type { JwtPayload } from "@bms/shared";
-
-import type { AccessControlService } from "../auth/access-control.service";
-import type { MasterDataAuditService } from "../admin/master-data-audit.service";
 import {
+  dashboardWidgetDtoSchema,
   MIMIC_SCOPE_MESSAGE,
   TAB_GROUP_SCOPE_MESSAGE,
   TAB_ID_UNKNOWN_MESSAGE,
   TAB_LOCATION_MOVE_MESSAGE,
-} from "./dashboards.schema";
-import type { PutDashboardWidgetsBody, TabWriteBody, WidgetWriteBody } from "./dashboards.schema";
+} from "@bms/shared";
+import type { BmsDb } from "@bms/db";
+import type {
+  JwtPayload,
+  PutDashboardWidgetsBody,
+  TabWriteBody,
+  WidgetWriteBody,
+} from "@bms/shared";
+
+import type { AccessControlService } from "../auth/access-control.service";
+import type { MasterDataAuditService } from "../admin/master-data-audit.service";
 import { diffTabs, diffWidgets, mapDashboardWidget, tabIdsByKey, type StoredWidgetForDiff } from "./dashboards.pure";
 import { DashboardsService } from "./dashboards.service";
 

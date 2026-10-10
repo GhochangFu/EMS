@@ -1,9 +1,9 @@
-import { expectAccepts, expectRejectsAt, POINT_A } from "./dashboards.schema.spec";
+import { expectAccepts, expectRejectsAt, POINT_A } from "./dashboard-writes.spec";
 
 import {
   putDashboardWidgetsBodySchema,
   TAB_TARGET_UNKNOWN_MESSAGE,
-} from "./dashboards.schema";
+} from "./dashboard-writes";
 
 /**
  * `F3.73` (plan Task 3.2) — the five site widgets on `PUT /dashboards/:id/widgets`, and the two

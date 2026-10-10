@@ -6,7 +6,7 @@ import type { BmsDb } from "@bms/db";
 import type { JwtPayload } from "@bms/shared";
 
 import type { CountingDb, CountingDbMethod } from "../testing/counting-db";
-import { MIMIC_LAYOUT_ORG_MESSAGE, putDashboardWidgetsBodySchema } from "./dashboards.schema";
+import { MIMIC_LAYOUT_ORG_MESSAGE, putDashboardWidgetsBodySchema } from "@bms/shared";
 import type { DashboardsService } from "./dashboards.service";
 
 /**

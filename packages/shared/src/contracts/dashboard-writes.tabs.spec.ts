@@ -1,8 +1,7 @@
-import { strict as assert } from "node:assert";
+import { MAX_DASHBOARD_TABS } from "./dashboard-tabs";
+import { MAX_DASHBOARD_WIDGETS } from "./dashboard-builder";
 
-import { MAX_DASHBOARD_TABS, MAX_DASHBOARD_WIDGETS } from "@bms/shared";
-
-import { expectAccepts, expectRejectsAt, POINT_A } from "./dashboards.schema.spec";
+import { expectAccepts, expectRejectsAt, POINT_A } from "./dashboard-writes.spec";
 
 import {
   DUPLICATE_TAB_ID_MESSAGE,
@@ -10,7 +9,13 @@ import {
   putDashboardWidgetsBodySchema,
   TAB_KEY_REQUIRED_MESSAGE,
   TAB_KEY_UNKNOWN_MESSAGE,
-} from "./dashboards.schema";
+} from "./dashboard-writes";
+
+function assert(condition: boolean, message: string): void {
+  if (!condition) {
+    throw new Error(message);
+  }
+}
 
 /**
  * `F3.73` (plan D2, Task 1.4) — the tabs half of `PUT /dashboards/:id/widgets`. A new sibling

@@ -6,13 +6,26 @@ import {
   temporaryPasswordBodySchema,
   updateAssetGroupBodySchema,
   updateUserBodySchema,
+  assetPointCalcOverrideBodySchema,
+  createDashboardTemplateBodySchema,
+  importStockTemplateBodySchema,
+  instantiateSectionTemplateBodySchema,
+  listDashboardTemplatesQuerySchema,
+  updateDashboardTemplateBodySchema,
+  createCalcParameterBodySchema,
+  listCalcParametersQuerySchema,
+  updateCalcParameterBodySchema,
+  createDashboardBodySchema,
+  getDashboardQuerySchema,
+  listDashboardsQuerySchema,
+  putDashboardWidgetsBodySchema,
+  updateDashboardBodySchema,
 } from "@bms/shared";
 import { expect } from "vitest";
 import { z } from "zod";
 import type { ZodTypeAny } from "zod";
 
 import { setAssetGroupMemberRoleBodySchema } from "../admin/asset-groups/asset-groups.schema";
-import { assetPointCalcOverrideBodySchema } from "../admin/asset-points/asset-point-calc-override.schema";
 import {
   assetPointBulkUpdateBodySchema,
   createAssetPointBodySchema,
@@ -27,13 +40,6 @@ import {
   templateStatusQuerySchema,
   updateAssetTemplateBodySchema,
 } from "../admin/asset-templates/asset-templates.schema";
-import {
-  createDashboardTemplateBodySchema,
-  importStockTemplateBodySchema,
-  instantiateSectionTemplateBodySchema,
-  listDashboardTemplatesQuerySchema,
-  updateDashboardTemplateBodySchema,
-} from "../admin/dashboard-templates/dashboard-templates.schema";
 import {
   createAssetBodySchema,
   updateAssetBodySchema,
@@ -66,11 +72,6 @@ import {
   setCredentialsBodySchema,
 } from "../admin/onboarding/onboarding.schema";
 import {
-  createCalcParameterBodySchema,
-  listCalcParametersQuerySchema,
-  updateCalcParameterBodySchema,
-} from "../admin/calc-parameters/calc-parameters.schema";
-import {
   createOrganizationBodySchema,
   updateOrganizationBodySchema,
 } from "../admin/organizations/organizations.schema";
@@ -102,13 +103,6 @@ import { assetKpisQuerySchema, assetRoleSummaryQuerySchema } from "../assets/ass
 import { loginBodySchema } from "../auth/login.schema";
 import { mapSitesQuerySchema } from "../map/map.schema";
 import { loadTrendQuerySchema, locationDashboardQuerySchema } from "../dashboard/dashboard.schema";
-import {
-  createDashboardBodySchema,
-  getDashboardQuerySchema,
-  listDashboardsQuerySchema,
-  putDashboardWidgetsBodySchema,
-  updateDashboardBodySchema,
-} from "../dashboard-builder/dashboards.schema";
 import { siteWidgetsQuerySchema } from "../dashboard-builder/site-widgets.schema";
 import {
   convertMaintenanceBodySchema,

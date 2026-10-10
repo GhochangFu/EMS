@@ -23,7 +23,7 @@ import {
   createCalcParameterBodySchema,
   listCalcParametersQuerySchema,
   updateCalcParameterBodySchema,
-} from "./calc-parameters.schema";
+} from "@bms/shared";
 import { CalcParametersAdminService } from "./calc-parameters.service";
 
 /**

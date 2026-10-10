@@ -1,8 +1,8 @@
-import { MIMIC_LAYOUT_ID_CASE_MESSAGE } from "@bms/shared";
+import { MIMIC_LAYOUT_ID_CASE_MESSAGE } from "./mimic-config";
 
-import { expectAccepts, expectRejectsAt, POINT_A } from "./dashboards.schema.spec";
+import { expectAccepts, expectRejectsAt, POINT_A } from "./dashboard-writes.spec";
 
-import { putDashboardWidgetsBodySchema } from "./dashboards.schema";
+import { putDashboardWidgetsBodySchema } from "./dashboard-writes";
 
 /**
  * A `mimic` (`F3.32`, ADR 0079). It binds nothing: its nodes resolve at read time from the

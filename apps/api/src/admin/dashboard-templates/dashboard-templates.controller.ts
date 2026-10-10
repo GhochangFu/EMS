@@ -28,7 +28,7 @@ import {
   instantiateSectionTemplateBodySchema,
   listDashboardTemplatesQuerySchema,
   updateDashboardTemplateBodySchema,
-} from "./dashboard-templates.schema";
+} from "@bms/shared";
 import { DashboardTemplatesService } from "./dashboard-templates.service";
 
 /**

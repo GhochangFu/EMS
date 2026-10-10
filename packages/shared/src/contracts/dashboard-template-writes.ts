@@ -1,14 +1,15 @@
+import { dashboardSectionCodeSchema } from "./operations";
 import {
-  dashboardSectionCodeSchema,
   dashboardTemplateTargetSchema,
   sectionTemplateContentSchema,
-  templateLifecycleStatusSchema,
   templateTargetContentMessage,
-} from "@bms/shared";
-import type { DashboardTemplateTarget } from "@bms/shared";
+} from "./dashboard-templates";
+import { templateLifecycleStatusSchema } from "./template-lifecycle";
 import { z } from "zod";
 
-import { TAB_TARGET_UNKNOWN_MESSAGE } from "../../dashboard-builder/dashboards.schema";
+import { TAB_TARGET_UNKNOWN_MESSAGE } from "./dashboard-writes";
+
+type DashboardTemplateTarget = z.infer<typeof dashboardTemplateTargetSchema>;
 
 /**
  * Write contracts for the section dashboard template admin surface — `F3.36`,

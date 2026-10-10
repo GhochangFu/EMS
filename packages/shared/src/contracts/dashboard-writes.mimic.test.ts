@@ -8,7 +8,7 @@ import {
   refusesALayoutArmWithoutALayoutId,
   refusesAnUnknownSource,
   runDashboardsSchemaMimicSourceShapeTests,
-} from "./dashboards.schema.mimic.spec";
+} from "./dashboard-writes.mimic.spec";
 
 /** Vitest entry point — assertions live in the sibling `.spec` (ADR 0014). */
 describe("F3.32 — the mimic widget binds nothing (ADR 0079)", () => {

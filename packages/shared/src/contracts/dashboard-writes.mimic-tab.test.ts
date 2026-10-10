@@ -7,7 +7,7 @@ import {
   theLayoutArmKeepsTabKey,
   thePresetArmKeepsCompact,
   thePresetArmKeepsTabKey,
-} from "./dashboards.schema.mimic-tab.spec";
+} from "./dashboard-writes.mimic-tab.spec";
 
 /** Vitest entry point — assertions live in the sibling `.spec` (ADR 0014). One `it()` per claim. */
 describe("F3.74 — a mimic config names a tab and may be compact", () => {

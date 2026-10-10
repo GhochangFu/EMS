@@ -6,7 +6,12 @@ import {
   dashboardWidgetPointDtoSchema,
 } from "@bms/shared";
 import type { BmsDb } from "@bms/db";
-import type { JwtPayload } from "@bms/shared";
+import type {
+  JwtPayload,
+  CreateDashboardBody,
+  UpdateDashboardBody,
+  WidgetWriteBody,
+} from "@bms/shared";
 
 import type { AccessControlService } from "../auth/access-control.service";
 import type { MasterDataAuditService } from "../admin/master-data-audit.service";
@@ -17,7 +22,6 @@ import {
   DashboardsService,
   type StoredWidgetForDiff,
 } from "./dashboards.service";
-import type { CreateDashboardBody, UpdateDashboardBody, WidgetWriteBody } from "./dashboards.schema";
 
 function assert(condition: boolean, message: string): void {
   if (!condition) {

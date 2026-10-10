@@ -27,6 +27,8 @@ import {
   sectionTemplateContentSchema,
   templateTargetContentMessage,
   templateWidgets,
+  METRIC_CATALOG_PARAMS_WRITE,
+  SITE_TEMPLATE_PATCH_TABS_MESSAGE,
 } from "@bms/shared";
 import type {
   DashboardTemplateDto,
@@ -36,6 +38,9 @@ import type {
   SectionTemplateContent,
   TemplateDraftRequiredVerb,
   TemplateLifecycleStatus,
+  CreateDashboardTemplateBody,
+  ListDashboardTemplatesQuery,
+  UpdateDashboardTemplateBody,
 } from "@bms/shared";
 
 import { AccessControlService } from "../../auth/access-control.service";
@@ -45,7 +50,6 @@ import { resolveActorId } from "../../auth/identity-resolver";
 // contract. That is a server fault, and it has to say so explicitly or the
 // global `ZodErrorFilter` would report it as the caller's bad request.
 import { parseStoredContract } from "../../common/parse-stored-contract";
-import { METRIC_CATALOG_PARAMS_WRITE } from "../../dashboard-builder/dashboards.schema";
 import {
   assertSourceParamsBalanceRolesActive,
   assertSourceParamsPointKeysActive,
@@ -54,12 +58,6 @@ import { FLEET_DRIZZLE, TENANT_DRIZZLE } from "../../database/database.tokens";
 import { withTenant } from "../../database/tenant-context";
 import { VocabulariesService } from "../../vocabularies/vocabularies.service";
 import { MasterDataAuditService } from "../master-data-audit.service";
-import { SITE_TEMPLATE_PATCH_TABS_MESSAGE } from "./dashboard-templates.schema";
-import type {
-  CreateDashboardTemplateBody,
-  ListDashboardTemplatesQuery,
-  UpdateDashboardTemplateBody,
-} from "./dashboard-templates.schema";
 
 /**
  * The **section dashboard template** version lifecycle — `F3.36`, migration

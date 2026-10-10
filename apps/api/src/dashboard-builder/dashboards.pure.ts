@@ -1,8 +1,14 @@
 import { dashboards, dashboardTabs, dashboardWidgets } from "@bms/db";
-import type { DashboardSummaryDto, DashboardTabDto, DashboardWidgetDto, DashboardWidgetSourceDto } from "@bms/shared";
+import type {
+  DashboardSummaryDto,
+  DashboardTabDto,
+  DashboardWidgetDto,
+  DashboardWidgetSourceDto,
+  TabWriteBody,
+  WidgetWriteBody,
+} from "@bms/shared";
 
 import type { ResolvedBoundPoint } from "./dashboard-point-scope";
-import type { TabWriteBody, WidgetWriteBody } from "./dashboards.schema";
 
 export type DashboardRow = typeof dashboards.$inferSelect;
 export type WidgetRow = typeof dashboardWidgets.$inferSelect;

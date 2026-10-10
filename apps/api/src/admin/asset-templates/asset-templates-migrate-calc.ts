@@ -1,8 +1,12 @@
-import { CALC_DIALECTS, isCrossAssetDialect, parseFormula } from "@bms/shared";
+import {
+  CALC_DIALECTS,
+  isCrossAssetDialect,
+  parseFormula,
+  validateMergedCalcOverride,
+} from "@bms/shared";
 import type { TemplateMigrationRefusalDto } from "@bms/shared";
 
 import type { CalcCandidate, CalcDependencyService } from "../../calc/calc-dependency.service";
-import { validateMergedCalcOverride } from "../asset-points/asset-point-calc-override.schema";
 import { CALC_FIELDS, calcFieldsOf, type StoredTemplatePoint } from "./template-version-delta";
 
 /**

@@ -5,7 +5,7 @@ import { sql } from "drizzle-orm";
 import type { BmsDb } from "@bms/db";
 import type { JwtPayload } from "@bms/shared";
 
-import { putDashboardWidgetsBodySchema } from "./dashboards.schema";
+import { putDashboardWidgetsBodySchema } from "@bms/shared";
 import type { DashboardsService } from "./dashboards.service";
 
 /**

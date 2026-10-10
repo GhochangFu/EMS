@@ -3,11 +3,10 @@ import { and, eq, inArray } from "drizzle-orm";
 
 import { pointKeys, waterBalanceRoles } from "@bms/db";
 import type { BmsDb } from "@bms/db";
-import { METRIC_CATALOG } from "@bms/shared";
+import { METRIC_CATALOG, METRIC_CATALOG_PARAMS_WRITE } from "@bms/shared";
 import type { MetricCatalogKey } from "@bms/shared";
 
 import { boundedMissingPointKeys } from "../admin/asset-templates/asset-templates-cross-refs";
-import { METRIC_CATALOG_PARAMS_WRITE } from "./dashboards.schema";
 
 /**
  * `E4.2` U3 — the point key a catalog binding names must be an ACTIVE code of the point-key

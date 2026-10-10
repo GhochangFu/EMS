@@ -7,16 +7,13 @@ import {
   criticalSystemsListConfigSchema,
   moduleSummaryCardConfigSchema,
   stateLegendConfigSchema,
+} from "./site-widgets";
+import {
   bindingExclusiveMessage,
   bindingRequiredMessage,
   bindingShapeMessage,
-  CATALOG_CODE_MESSAGE,
-  CATALOG_CODE_PATTERN,
-  dashboardSectionCodeSchema,
-  dashboardTabKeySchema,
   sustainabilityAggregateSchema,
   waterBalancePeriodSchema,
-  waterBalanceRoleCodeSchema,
   chartConfigSchema,
   tableConfigSchema,
   commonConfigFields,
@@ -24,16 +21,12 @@ import {
   gaugeThresholdSchema,
   DASHBOARD_GRID,
   GAUGE_RANGE_MESSAGE,
-  LOCATION_TREE_MAX_DEPTH,
-  MAX_DASHBOARD_TABS,
   MAX_DASHBOARD_WIDGETS,
   MAX_GAUGE_THRESHOLDS,
   tankLevelConfigSchema,
   valueTileConfigSchema,
   widgetPointRoleSchema,
   metricCatalogKeySchema,
-  mimicLayoutConfigSchema,
-  mimicPresetConfigSchema,
   widgetTypeBindsNothing,
   widgetTypeSchema,
   METRIC_CATALOG,
@@ -42,8 +35,14 @@ import {
   WIDGET_POINT_CARDINALITY,
   WIDGET_SOURCE_CARDINALITY,
   WIDGET_SOURCE_SHAPES,
-} from "@bms/shared";
-import type { MetricCatalogKey } from "@bms/shared";
+} from "./dashboard-builder";
+import { CATALOG_CODE_MESSAGE, CATALOG_CODE_PATTERN } from "../constants";
+import { dashboardSectionCodeSchema, waterBalanceRoleCodeSchema } from "./operations";
+import { dashboardTabKeySchema, MAX_DASHBOARD_TABS } from "./dashboard-tabs";
+import { LOCATION_TREE_MAX_DEPTH } from "../location-tree";
+import { mimicLayoutConfigSchema, mimicPresetConfigSchema } from "./mimic-config";
+
+type MetricCatalogKey = z.infer<typeof metricCatalogKeySchema>;
 
 /**
  * `F3.1b` — the dashboard request bodies (ADR 0047).

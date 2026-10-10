@@ -1,10 +1,9 @@
 import { BadRequestException } from "@nestjs/common";
 import { expect } from "vitest";
 
-import { MIMIC_TAB_MESSAGE } from "@bms/shared";
+import { MIMIC_TAB_MESSAGE, putDashboardWidgetsBodySchema } from "@bms/shared";
 import type { JwtPayload } from "@bms/shared";
 
-import { putDashboardWidgetsBodySchema } from "./dashboards.schema";
 import type { DashboardsService } from "./dashboards.service";
 import type { MimicNodesService } from "./mimic-nodes.service";
 

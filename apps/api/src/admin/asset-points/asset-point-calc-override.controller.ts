@@ -17,10 +17,7 @@ import type { JwtPayload } from "@bms/shared";
 import { CurrentUser } from "../../auth/current-user.decorator";
 import { JwtAuthGuard } from "../../auth/jwt-auth.guard";
 import { idParamSchema } from "../admin.schema";
-import {
-  assetPointCalcOverrideBodySchema,
-  calcPointKeyParamSchema,
-} from "./asset-point-calc-override.schema";
+import { assetPointCalcOverrideBodySchema, calcPointKeyParamSchema } from "@bms/shared";
 import { AssetPointCalcOverrideService } from "./asset-point-calc-override.service";
 
 /**

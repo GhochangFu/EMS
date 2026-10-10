@@ -1,6 +1,6 @@
-import { expectRejectsAt } from "./dashboards.schema.spec";
+import { expectRejectsAt } from "./dashboard-writes.spec";
 
-import { putDashboardWidgetsBodySchema } from "./dashboards.schema";
+import { putDashboardWidgetsBodySchema } from "./dashboard-writes";
 
 /**
  * `F3.74` (plan D7, Task 2.3) — a mimic's config may name the tab it resolves through

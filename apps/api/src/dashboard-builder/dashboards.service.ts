@@ -18,12 +18,21 @@ import {
   dashboardWidgets,
 } from "@bms/db";
 import type { BmsDb } from "@bms/db";
-import { MIMIC_TAB_MESSAGE } from "@bms/shared";
+import {
+  MIMIC_TAB_MESSAGE,
+  MIMIC_SCOPE_MESSAGE,
+  SCOPE_REFUSAL_MESSAGE,
+  TAB_GROUP_SCOPE_MESSAGE,
+  TAB_LOCATION_MOVE_MESSAGE,
+} from "@bms/shared";
 import type {
   DashboardDto,
   DashboardSummaryDto,
   DashboardWidgetSourceDto,
   JwtPayload,
+  CreateDashboardBody,
+  PutDashboardWidgetsBody,
+  UpdateDashboardBody,
 } from "@bms/shared";
 
 import { MasterDataAuditService } from "../admin/master-data-audit.service";
@@ -35,12 +44,6 @@ import { assertBoundPointsInOrganization, resolveBoundPoints, type ResolvedBound
 import { resolveWidgetSources, type ResolvedWidgetSource } from "./dashboard-source-scope";
 import { assertMimicLayoutsInOrganization } from "./dashboards.mimic-guards";
 import {
-  MIMIC_SCOPE_MESSAGE,
-  SCOPE_REFUSAL_MESSAGE,
-  TAB_GROUP_SCOPE_MESSAGE,
-  TAB_LOCATION_MOVE_MESSAGE,
-} from "./dashboards.schema";
-import {
   assertTabGroupsAtSite,
   assertTabIdsStored,
   readDashboardTabs,
@@ -50,7 +53,6 @@ import {
   assertSourceParamsBalanceRolesActive,
   assertSourceParamsPointKeysActive,
 } from "./source-params-point-keys";
-import type { CreateDashboardBody, PutDashboardWidgetsBody, UpdateDashboardBody } from "./dashboards.schema";
 
 import {
   diffTabs,

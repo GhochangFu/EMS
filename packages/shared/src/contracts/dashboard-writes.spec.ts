@@ -1,3 +1,5 @@
+import type { z } from "zod";
+
 import {
   DASHBOARD_GRID,
   GAUGE_RANGE_MESSAGE,
@@ -11,9 +13,11 @@ import {
   bindingShapeMessage,
   columnNotDeclaredMessage,
   duplicateColumnMessage,
+  metricCatalogKeySchema,
   widgetTypeSchema,
-} from "@bms/shared";
-import type { MetricCatalogKey } from "@bms/shared";
+} from "./dashboard-builder";
+
+type MetricCatalogKey = z.infer<typeof metricCatalogKeySchema>;
 
 import {
   createDashboardBodySchema,
@@ -23,7 +27,7 @@ import {
   SCOPE_REFUSAL_MESSAGE,
   updateDashboardBodySchema,
   widgetWriteSchema,
-} from "./dashboards.schema";
+} from "./dashboard-writes";
 
 function assert(condition: boolean, message: string): void {
   if (!condition) {

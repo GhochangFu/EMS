@@ -20,6 +20,7 @@ import {
   type MetricCatalogValueDto,
   type SustainabilityAggregate,
   type WaterBalancePeriod,
+  METRIC_CATALOG_PARAMS_WRITE,
 } from "@bms/shared";
 import type { JwtPayload } from "@bms/shared";
 
@@ -35,7 +36,6 @@ import {
 } from "./dashboard-scope-assets";
 import { resolveWidgetSources } from "./dashboard-source-scope";
 import { groupLocationsAtDepth } from "./sustainability-grouping";
-import { METRIC_CATALOG_PARAMS_WRITE } from "./dashboards.schema";
 import {
   capRows,
   isMoneyPointKey,

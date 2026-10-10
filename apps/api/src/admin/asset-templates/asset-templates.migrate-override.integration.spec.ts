@@ -4,10 +4,14 @@ import type pg from "pg";
 
 import { assetPoints, assetTemplates, assets, createDb, templatePoints } from "@bms/db";
 import type { BmsDb } from "@bms/db";
-import { CALC_DIALECT, CALC_DIALECT_V2, templateMigrationPreviewResponseSchema } from "@bms/shared";
+import {
+  CALC_DIALECT,
+  CALC_DIALECT_V2,
+  templateMigrationPreviewResponseSchema,
+  validateMergedCalcOverride,
+} from "@bms/shared";
 import type { AssetPointCalcOverrideFields, TemplateMigrationRefusalDto } from "@bms/shared";
 
-import { validateMergedCalcOverride } from "../asset-points/asset-point-calc-override.schema";
 import type { AssetTemplateMigrationService } from "./asset-templates-migrate.service";
 import type { Fixtures } from "./asset-templates.instantiate.integration.spec";
 

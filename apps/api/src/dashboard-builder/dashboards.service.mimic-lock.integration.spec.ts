@@ -4,7 +4,7 @@ import type pg from "pg";
 
 import type { JwtPayload } from "@bms/shared";
 
-import { MIMIC_LAYOUT_ORG_MESSAGE, putDashboardWidgetsBodySchema } from "./dashboards.schema";
+import { MIMIC_LAYOUT_ORG_MESSAGE, putDashboardWidgetsBodySchema } from "@bms/shared";
 import type { DashboardsService } from "./dashboards.service";
 
 /**
