@@ -16,7 +16,7 @@ import type { DatasetRow } from "./widget-catalog";
  * projection an author picked (ADR 0048 decision 2), so its order is a choice and sorting it
  * would silently discard the whole picker. But a name the bound dataset does not declare must
  * not become a column of empty cells: a released catalog change can remove a column while a
- * stored config still names it, and the write-path rule in `dashboards.schema.ts` cannot reach
+ * stored config still names it, and the write-path rule in `dashboard-writes.ts` cannot reach
  * a config that was already saved.
  *
  * **Absent or empty means every declared column**, matching `tableConfigSchema`. That is what

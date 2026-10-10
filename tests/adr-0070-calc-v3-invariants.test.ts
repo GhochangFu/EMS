@@ -295,7 +295,7 @@ describe("ADR 0070 part (a′) — the v3 stock literals read only 0074's parame
  * literal (`CALC_DIALECT_V(2|3)` / `"bms-calc-v(2|3)"`) rather than adding a
  * second, near-identical scan.
  */
-const DIALECT_GATE_ROOTS = ["apps/api/src", "apps/web/src", "packages/db/src"];
+const DIALECT_GATE_ROOTS = ["apps/api/src", "apps/web/src", "packages/db/src", "packages/shared/src/contracts"];
 const DIALECT_GATE_ALLOWLIST = new Set([
   "packages/shared/src/calc-dsl/limits.ts",
   "packages/shared/src/calc-dsl/tokenizer.ts",
@@ -348,6 +348,8 @@ describe("ADR 0070 part (b)/(b′) — no dialect gate outside the grammar files
   it("scans a real tree, so the rule below is not silently vacuous", () => {
     expect(files.length).toBeGreaterThan(200);
     expect(files.some((f) => relativeTo(f) === "apps/api/src/admin/asset-templates/asset-templates.schema.ts")).toBe(true);
+    // The override schema moved to contracts (F3.85 PR 1) and carries the capability logic this gate guards.
+    expect(files.map(relativeTo)).toContain("packages/shared/src/contracts/calc-override-writes.ts");
   });
 
   it("the regex matches both operator orders and nothing else, for both v2 and v3", () => {

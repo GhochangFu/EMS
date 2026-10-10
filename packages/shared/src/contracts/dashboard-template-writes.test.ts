@@ -26,7 +26,7 @@ import {
   rejectsAPatchBodyWhoseWidgetCarriesBothKinds,
   stillRejectsAnInstantiateBodyWhoseAssetGroupIsNotAUuid,
   theInstantiateSlugTakesTheSameCharsetAsTheDashboardWriteDoor,
-} from "./dashboard-templates.schema.spec";
+} from "./dashboard-template-writes.spec";
 
 /** `F3.61` Task 2 — Vitest entry point. Assertions live in the sibling `.spec`
  * (ADR 0014). One `it()` per claim, so a failing claim reddens only its own

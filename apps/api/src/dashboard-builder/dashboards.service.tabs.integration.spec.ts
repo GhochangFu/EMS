@@ -4,7 +4,11 @@ import { expect } from "vitest";
 
 import type { JwtPayload } from "@bms/shared";
 
-import { putDashboardWidgetsBodySchema, TAB_GROUP_SCOPE_MESSAGE, TAB_LOCATION_MOVE_MESSAGE } from "./dashboards.schema";
+import {
+  putDashboardWidgetsBodySchema,
+  TAB_GROUP_SCOPE_MESSAGE,
+  TAB_LOCATION_MOVE_MESSAGE,
+} from "@bms/shared";
 import type { DashboardsService } from "./dashboards.service";
 
 /**

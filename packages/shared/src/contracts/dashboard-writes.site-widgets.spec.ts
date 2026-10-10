@@ -1,15 +1,15 @@
-import { expectAccepts, expectRejectsAt, POINT_A } from "./dashboards.schema.spec";
+import { expectAccepts, expectRejectsAt, POINT_A } from "./dashboard-writes.spec";
 
 import {
   putDashboardWidgetsBodySchema,
   TAB_TARGET_UNKNOWN_MESSAGE,
-} from "./dashboards.schema";
+} from "./dashboard-writes";
 
 /**
  * `F3.73` (plan Task 3.2) — the five site widgets on `PUT /dashboards/:id/widgets`, and the two
- * catalog entries' write params. A sibling of `dashboards.schema.tabs.spec.ts` for the same
- * reason: `dashboards.schema.spec.ts` is at 990 of the 1000 lines. Assertions live here;
- * `dashboards.schema.site-widgets.test.ts` is the Vitest entry point (ADR 0014).
+ * catalog entries' write params. A sibling of `dashboard-writes.tabs.spec.ts` for the same
+ * reason: `dashboard-writes.spec.ts` is at 994 of the 1000 lines. Assertions live here;
+ * `dashboard-writes.site-widgets.test.ts` is the Vitest entry point (ADR 0014).
  */
 
 // `points: []` is sent, as the mimic spec does: `points` has no default, only `sources` does.

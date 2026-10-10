@@ -1,9 +1,9 @@
-import type { AssetPointCalcOverrideFields } from "@bms/shared";
+import type { AssetPointCalcOverrideFields } from "../types/template-migration";
 
 import {
   assetPointCalcOverrideBodySchema,
   validateMergedCalcOverride,
-} from "./asset-point-calc-override.schema";
+} from "./calc-override-writes";
 
 function assert(condition: boolean, message: string): void {
   if (!condition) {

@@ -100,7 +100,7 @@ export type DashboardWidgetSourceRow = {
 
 /** The whole widget set, ready for `PUT /dashboards/:id/widgets`. Declared locally rather than
  * imported from `apps/api` — `apps/web` does not and must not depend on `apps/api` — but it
- * mirrors `PutDashboardWidgetsBody` (`apps/api/src/dashboard-builder/dashboards.schema.ts`)
+ * mirrors `PutDashboardWidgetsBody` (`packages/shared/src/contracts/dashboard-writes.ts`)
  * field for field, the same way `rules.ts`'s `RuleDraftPayload` mirrors its own request body
  * rather than importing it. */
 export type PointWritePayload = {

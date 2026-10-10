@@ -6,7 +6,7 @@ import type { BmsDb } from "@bms/db";
 import type { JwtPayload } from "@bms/shared";
 
 import type { DashboardTemplatesService } from "../admin/dashboard-templates/dashboard-templates.service";
-import { putDashboardWidgetsBodySchema } from "./dashboards.schema";
+import { putDashboardWidgetsBodySchema } from "@bms/shared";
 import type { DashboardsService } from "./dashboards.service";
 
 /**

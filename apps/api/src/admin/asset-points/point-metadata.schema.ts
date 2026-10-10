@@ -20,7 +20,7 @@ import { z } from "zod";
  *   message names the inherited value: "eng_min must be below eng_max" is not
  *   actionable to an author who never typed an eng_max and cannot see the one
  *   they collide with. Same argument, same shape, as
- *   `validateMergedCalcOverride` in `asset-point-calc-override.schema.ts`.
+ *   `validateMergedCalcOverride` in `calc-override-writes.ts`.
  *
  * Pure, and separate from the services, so every combination is enumerable in a
  * unit test with no database (`point-metadata.schema.spec.ts`).

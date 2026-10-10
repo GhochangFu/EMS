@@ -4,8 +4,8 @@ import { and, asc, eq, inArray, type SQL } from "drizzle-orm";
 import { assetGroups, dashboardTabs, dashboardWidgets } from "@bms/db";
 
 import type { BmsTx } from "../database/tenant-context";
-import { TAB_GROUP_SCOPE_MESSAGE, TAB_ID_UNKNOWN_MESSAGE } from "./dashboards.schema";
-import type { TabWriteBody } from "./dashboards.schema";
+import { TAB_GROUP_SCOPE_MESSAGE, TAB_ID_UNKNOWN_MESSAGE } from "@bms/shared";
+import type { TabWriteBody } from "@bms/shared";
 import type { TabRow, TabSyncDiff } from "./dashboards.pure";
 
 /**

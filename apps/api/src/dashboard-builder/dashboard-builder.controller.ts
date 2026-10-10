@@ -26,7 +26,7 @@ import {
   listDashboardsQuerySchema,
   putDashboardWidgetsBodySchema,
   updateDashboardBodySchema,
-} from "./dashboards.schema";
+} from "@bms/shared";
 import { DashboardsService } from "./dashboards.service";
 import { MetricCatalogService } from "./metric-catalog.service";
 import { MimicNodesService } from "./mimic-nodes.service";

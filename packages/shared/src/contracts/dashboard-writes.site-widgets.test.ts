@@ -13,7 +13,7 @@ import {
   refusesAnUnknownKeyInABreakerTableConfig,
   refusesARailBeyondTwentyRows,
   refusesParamsOnTheTwoAssetsCatalogEntries,
-} from "./dashboards.schema.site-widgets.spec";
+} from "./dashboard-writes.site-widgets.spec";
 
 /** Vitest entry point — assertions live in the sibling `.spec` (ADR 0014). One `it()` per claim. */
 describe("F3.73 — the five site widgets on PUT /dashboards/:id/widgets", () => {

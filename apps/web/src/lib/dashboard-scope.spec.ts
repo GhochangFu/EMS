@@ -120,7 +120,7 @@ export function aLocationValueYieldsTheLocationColumn(): void {
 }
 
 /** The organization-wide body is two explicit nulls — the create page now sends them rather
- * than omitting `locationId`; both spellings are legal to `dashboards.schema.ts`. */
+ * than omitting `locationId`; both spellings are legal to `dashboard-writes.ts`. */
 export function anOrganizationValueYieldsTwoNulls(): void {
   same(
     scopeColumns({ kind: "organization", organizationId: "org-1" }),

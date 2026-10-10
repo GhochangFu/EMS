@@ -6,17 +6,33 @@ import { describe, expect, it } from "vitest";
 
 const repoRoot = fileURLToPath(new URL("..", import.meta.url));
 
+/**
+ * The request-body schemas. The `*.schema.ts` files under `apps/api/src` are the controllers' own;
+ * the four `contracts/*-writes.ts` files are the release-1 write bodies that moved
+ * to `@bms/shared` (`F3.85` PR 1). A wider root that kept only `.schema.ts` would
+ * scan none of them and their refinement sites would leave this gate silently.
+ * The second walk keeps `-writes.ts` only, not every `contracts/*.ts`: four older
+ * refinements there have no `.describe()` yet.
+ */
+const MOVED_WRITE_BODIES = [
+  "packages/shared/src/contracts/dashboard-writes.ts",
+  "packages/shared/src/contracts/dashboard-template-writes.ts",
+  "packages/shared/src/contracts/calc-parameter-writes.ts",
+  "packages/shared/src/contracts/calc-override-writes.ts",
+];
+
 function schemaFiles(): string[] {
   const found: string[] = [];
-  const walk = (dir: string): void => {
+  const walk = (dir: string, keep: (name: string) => boolean): void => {
     for (const entry of readdirSync(dir, { withFileTypes: true })) {
       if (entry.name === "node_modules" || entry.name === "dist") continue;
       const full = join(dir, entry.name);
-      if (entry.isDirectory()) walk(full);
-      else if (entry.name.endsWith(".schema.ts")) found.push(full);
+      if (entry.isDirectory()) walk(full, keep);
+      else if (keep(entry.name)) found.push(full);
     }
   };
-  walk(join(repoRoot, "apps", "api", "src"));
+  walk(join(repoRoot, "apps", "api", "src"), (name) => name.endsWith(".schema.ts"));
+  walk(join(repoRoot, "packages", "shared", "src", "contracts"), (name) => /-writes\.ts$/.test(name));
   return found;
 }
 
@@ -125,6 +141,13 @@ describe("ADR 0029 decision 10 — refinements explain themselves", () => {
         "lands on the inner schema and is silently discarded, which is why this checks " +
         "order and not merely presence.",
     ).toEqual([]);
+  });
+
+  it("scans the four write-body schemas that moved to contracts (positive control)", () => {
+    const scanned = schemaFiles().map((file) => relative(repoRoot, file).replace(/\\/g, "/"));
+    for (const moved of MOVED_WRITE_BODIES) {
+      expect(scanned, `${moved} left the refinement scan`).toContain(moved);
+    }
   });
 
   /**

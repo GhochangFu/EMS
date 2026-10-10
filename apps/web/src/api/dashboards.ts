@@ -73,7 +73,7 @@ function jsonInit(method: "POST" | "PATCH" | "PUT", body: unknown): RequestInit 
 
 /** `POST /dashboards`'s body. Declared locally rather than imported from `apps/api` — `apps/web`
  * does not depend on `apps/api` — mirroring `CreateDashboardBody`
- * (`apps/api/src/dashboard-builder/dashboards.schema.ts`) field for field, the same shape
+ * (`packages/shared/src/contracts/dashboard-writes.ts`) field for field, the same shape
  * `rules.ts`'s `RuleDraftPayload` uses for its own request body. */
 export type CreateDashboardPayload = {
   organizationId: string;

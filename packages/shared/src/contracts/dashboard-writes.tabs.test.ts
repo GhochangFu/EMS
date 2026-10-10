@@ -14,7 +14,7 @@ import {
   refusesTheReservedAssetsKey,
   refusesTwoTabsWithOneId,
   refusesTwoTabsWithOneKey,
-} from "./dashboards.schema.tabs.spec";
+} from "./dashboard-writes.tabs.spec";
 
 /** Vitest entry point — assertions live in the sibling `.spec` (ADR 0014). One `it()` per claim. */
 describe("F3.73 — PUT /dashboards/:id/widgets carries tabs (plan D2)", () => {

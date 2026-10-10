@@ -1,4 +1,4 @@
-import type { TabWriteBody } from "./dashboards.schema";
+import type { TabWriteBody } from "@bms/shared";
 import { mimicGroupFor } from "./dashboards.pure";
 
 /**

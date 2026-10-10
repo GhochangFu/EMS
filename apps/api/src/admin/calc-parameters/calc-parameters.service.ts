@@ -15,6 +15,9 @@ import type {
   CalcParameterKeysListResponse,
   CalcParametersListResponse,
   JwtPayload,
+  CreateCalcParameterBody,
+  ListCalcParametersQuery,
+  UpdateCalcParameterBody,
 } from "@bms/shared";
 
 import { AccessControlService } from "../../auth/access-control.service";
@@ -22,11 +25,6 @@ import { CalcParametersService } from "../../calc/calc-parameters.service";
 import { FLEET_DRIZZLE, TENANT_DRIZZLE } from "../../database/database.tokens";
 import { withTenant, type BmsTx } from "../../database/tenant-context";
 import { MasterDataAuditService } from "../master-data-audit.service";
-import type {
-  CreateCalcParameterBody,
-  ListCalcParametersQuery,
-  UpdateCalcParameterBody,
-} from "./calc-parameters.schema";
 
 /** The scope of one row: at most one of the two ids is set; both `null` is the organization. */
 type Scope = {

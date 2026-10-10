@@ -163,13 +163,13 @@ export const sectionTemplateWidgetIdentitySchema = z
    * instantiate back with a raw constraint name in front of an administrator.
    * It is two keystrokes away in the authoring UI:
    * `AssetRoleBindingPicker.add()` clears the point key and keeps the role.
-   * `dashboards.schema.ts` holds `noDuplicateBindings` for the same reason one
+   * `dashboard-writes.ts` holds `noDuplicateBindings` for the same reason one
    * level down. Found by the `F3.36` correctness review.
    *
    * **Rule 3 exists because `F3.61` gives the editor two pickers.** The screen
    * hides one when the other is used, and this is the rule that stops a
    * `PATCH` from storing what the screen cannot draw —
-   * `dashboards.schema.ts`'s `exactlyOneBindingKind` one level up, minus the
+   * `dashboard-writes.ts`'s `exactlyOneBindingKind` one level up, minus the
    * *neither* half, because *Add widget* creates that state.
    */
   .superRefine((widget, ctx) => {
@@ -271,7 +271,7 @@ export const sectionTemplateWidgetSchema = z
     if (chosen === undefined || chosen.length === 0) {
       return;
     }
-    // Load-bearing, not defensive — the same guard `dashboards.schema.ts`'s
+    // Load-bearing, not defensive — the same guard `dashboard-writes.ts`'s
     // `eachTableColumnIsDeclared` carries. A `sources: []` widget with
     // `config.columns` set reaches this line with no binding; without the
     // guard `binding.catalogKey` below throws a TypeError out of `safeParse`
@@ -346,7 +346,7 @@ export const dashboardTemplateTargetSchema = z.enum(["asset_group", "site"]);
  * `MAX_DASHBOARD_WIDGETS` together, and each tab is its own canvas.
  */
 export const siteTemplateTabSchema = z.object({
-  // `.describe()` AFTER the shared refinement (ADR 0029 decision 10), as `dashboards.schema.ts`
+  // `.describe()` AFTER the shared refinement (ADR 0029 decision 10), as `dashboard-writes.ts`
   // does for the same schema: the document emits nothing for the reserved-key refusal.
   key: dashboardTabKeySchema.describe(
     "Lowercase letters, digits and hyphens, 1 to 64 characters. `assets` is reserved: it is " +

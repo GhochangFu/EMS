@@ -58,7 +58,7 @@ function asOk(result: ParseResult): Extract<ParseResult, { ok: true }> {
  * - **(c) — no `z.literal(CALC_DIALECT)` anywhere under
  *   `packages/shared/src/contracts` or `apps/api/src`. No exemptions remain:
  *   Task 6 converted `asset-templates.schema.ts` and Task 7
- *   `asset-point-calc-override.schema.ts`.**
+ *   `calc-override-writes.ts`.**
  * - **(d) — `calc-scope.service.ts`'s qualified-code statement contains a
  *   `location_id` filter**, checked against a mutated copy first — `Task 11`.
  * - **(e) — neither evaluation host calls `countCalcSkipped(` outside its own
@@ -338,7 +338,7 @@ describe("ADR 0055 part (f) — the stock catalog's bms-calc-v2 literals", () =>
  * **The scan now covers every file, and there is no exemption list.** Two files
  * were exempt while the guard changes that had to travel with their widening
  * were still unbuilt — `asset-templates.schema.ts` (`F2.9` Task 6) and
- * `asset-point-calc-override.schema.ts` (Task 7). The exemption was by filename
+ * `calc-override-writes.ts` (Task 7). The exemption was by filename
  * and **self-removing**: a companion test asserted each exempt file *still*
  * contained the literal, so converting one turned this file red and forced the
  * entry out rather than letting it rot into a permanent hole. Both have landed,
@@ -412,7 +412,7 @@ describe("ADR 0055 part (c) — no endpoint restates the calc dialect as a v1 li
   it.each([
     "packages/shared/src/contracts/asset-templates.ts",
     "apps/api/src/admin/asset-templates/asset-templates.schema.ts",
-    "apps/api/src/admin/asset-points/asset-point-calc-override.schema.ts",
+    "packages/shared/src/contracts/calc-override-writes.ts",
   ])("%s is in the scanned set and derives the dialect from CALC_DIALECTS", (rel) => {
     expect(scannedFiles.map((file) => relative(file)), `${rel} is not being scanned`).toContain(rel);
     const source = readFileSync(join(repoRoot, rel), "utf8");

@@ -27,6 +27,8 @@ import {
   sectionTemplateContentSchema,
   templateTargetContentMessage,
   templateWidgets,
+  METRIC_CATALOG_PARAMS_WRITE,
+  SITE_TEMPLATE_PATCH_TABS_MESSAGE,
 } from "@bms/shared";
 import type {
   DashboardTemplateDto,
@@ -36,6 +38,9 @@ import type {
   SectionTemplateContent,
   TemplateDraftRequiredVerb,
   TemplateLifecycleStatus,
+  CreateDashboardTemplateBody,
+  ListDashboardTemplatesQuery,
+  UpdateDashboardTemplateBody,
 } from "@bms/shared";
 
 import { AccessControlService } from "../../auth/access-control.service";
@@ -45,7 +50,6 @@ import { resolveActorId } from "../../auth/identity-resolver";
 // contract. That is a server fault, and it has to say so explicitly or the
 // global `ZodErrorFilter` would report it as the caller's bad request.
 import { parseStoredContract } from "../../common/parse-stored-contract";
-import { METRIC_CATALOG_PARAMS_WRITE } from "../../dashboard-builder/dashboards.schema";
 import {
   assertSourceParamsBalanceRolesActive,
   assertSourceParamsPointKeysActive,
@@ -54,12 +58,6 @@ import { FLEET_DRIZZLE, TENANT_DRIZZLE } from "../../database/database.tokens";
 import { withTenant } from "../../database/tenant-context";
 import { VocabulariesService } from "../../vocabularies/vocabularies.service";
 import { MasterDataAuditService } from "../master-data-audit.service";
-import { SITE_TEMPLATE_PATCH_TABS_MESSAGE } from "./dashboard-templates.schema";
-import type {
-  CreateDashboardTemplateBody,
-  ListDashboardTemplatesQuery,
-  UpdateDashboardTemplateBody,
-} from "./dashboard-templates.schema";
 
 /**
  * The **section dashboard template** version lifecycle — `F3.36`, migration
@@ -361,7 +359,7 @@ export class DashboardTemplatesService {
         // requires `{ period }` (`E4.3`, ADR 0073 decision 3). The risk it
         // closes is not hypothetical in shape: an author could otherwise persist
         // `{"locationId": "<foreign uuid>"}` into `dashboard_widget_sources.params`,
-        // which `dashboards.schema.ts` calls "an id inside jsonb that no foreign
+        // which `dashboard-writes.ts` calls "an id inside jsonb that no foreign
         // key covers and no orphan check can report" — and since `E4.2` a
         // resolve path does read a param, so a stored one is no longer latent.
         const paramsSchema = METRIC_CATALOG_PARAMS_WRITE[source.catalogKey];

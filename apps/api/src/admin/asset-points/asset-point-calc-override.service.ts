@@ -10,7 +10,13 @@ import { and, asc, eq } from "drizzle-orm";
 
 import { assetPoints, assets, templatePoints } from "@bms/db";
 import type { BmsDb } from "@bms/db";
-import { CALC_DIALECTS, isCrossAssetDialect, parseFormula } from "@bms/shared";
+import {
+  CALC_DIALECTS,
+  isCrossAssetDialect,
+  parseFormula,
+  validateMergedCalcOverride,
+  type AssetPointCalcOverrideBody,
+} from "@bms/shared";
 import type {
   AssetPointCalcConfigDto,
   AssetPointCalcConfigListResponse,
@@ -27,10 +33,6 @@ import { FLEET_DRIZZLE, TENANT_DRIZZLE } from "../../database/database.tokens";
 import { withTenant } from "../../database/tenant-context";
 import { unknownParameterKeysMessage } from "../asset-templates/asset-templates-param-refs";
 import { MasterDataAuditService } from "../master-data-audit.service";
-import {
-  validateMergedCalcOverride,
-  type AssetPointCalcOverrideBody,
-} from "./asset-point-calc-override.schema";
 
 /**
  * `F2.6` — per-asset calc overrides (ADR 0039 decisions 6, 7 and 8).

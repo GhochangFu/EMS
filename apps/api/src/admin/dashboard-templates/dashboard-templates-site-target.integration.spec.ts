@@ -2,7 +2,12 @@ import { BadRequestException, ForbiddenException, NotImplementedException } from
 import type pg from "pg";
 import { expect } from "vitest";
 
-import { SITE_TEMPLATE_TOP_LEVEL_MESSAGE } from "@bms/shared";
+import {
+  SITE_TEMPLATE_TOP_LEVEL_MESSAGE,
+  SITE_TEMPLATE_PATCH_TABS_MESSAGE,
+  TEMPLATE_TARGET_BODY_MESSAGE,
+  updateDashboardTemplateBodySchema,
+} from "@bms/shared";
 import type { JwtPayload } from "@bms/shared";
 
 import type {
@@ -10,11 +15,6 @@ import type {
   SiteTemplateArm,
 } from "./dashboard-templates-instantiate.service";
 import { SITE_ARM_NOT_WIRED_MESSAGE } from "./dashboard-templates-instantiate.service";
-import {
-  SITE_TEMPLATE_PATCH_TABS_MESSAGE,
-  TEMPLATE_TARGET_BODY_MESSAGE,
-  updateDashboardTemplateBodySchema,
-} from "./dashboard-templates.schema";
 import type { DashboardTemplatesService } from "./dashboard-templates.service";
 
 /**

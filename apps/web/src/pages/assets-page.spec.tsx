@@ -258,7 +258,7 @@ export async function panelListsDashboardsWithSlugLinks(): Promise<void> {
 
   const link = await screen.findByRole("link", { name: /Feed Pump 2 · overview/ });
   // `?organizationId=` rides on the link as it does on the dashboards page:
-  // the fleet pool can hold one slug in two organizations (dashboards.schema.ts
+  // the fleet pool can hold one slug in two organizations (dashboard-writes.ts
   // D5), and the viewer disambiguates by that query.
   expect(link).toHaveAttribute(
     "href",

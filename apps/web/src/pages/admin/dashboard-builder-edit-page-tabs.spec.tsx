@@ -33,7 +33,7 @@ import {
  * 401 and clears the session).
  */
 
-/** `TAB_LOCATION_MOVE_MESSAGE` (`apps/api/src/dashboard-builder/dashboards.schema.ts`), restated:
+/** `TAB_LOCATION_MOVE_MESSAGE` (`packages/shared/src/contracts/dashboard-writes.ts`), restated:
  * `apps/web` does not import from `apps/api`. */
 const TAB_LOCATION_MOVE_MESSAGE =
   "this dashboard has tabs bound to asset groups at its site, so it cannot leave that site — " +

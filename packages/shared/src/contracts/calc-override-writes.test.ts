@@ -19,7 +19,7 @@ import {
   assertV2OverrideAdmitsADerivedSiblingAndAnAggregate,
   assertV2StreamingIsRefusedOnTheMergedPair,
   assertV3OverrideIsAdmittedScheduledOnly,
-} from "./asset-point-calc-override.schema.spec";
+} from "./calc-override-writes.spec";
 
 /** `F2.6` U7 — Vitest entry point. Assertions live in the sibling `.spec` (ADR 0014). */
 describe("F2.6 — asset point calc override contract", () => {

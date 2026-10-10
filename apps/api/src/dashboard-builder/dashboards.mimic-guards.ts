@@ -4,8 +4,8 @@ import { and, eq, inArray } from "drizzle-orm";
 import { mimicLayouts } from "@bms/db";
 
 import type { BmsTx } from "../database/tenant-context";
-import { MIMIC_LAYOUT_ORG_MESSAGE } from "./dashboards.schema";
-import type { PutDashboardWidgetsBody } from "./dashboards.schema";
+import { MIMIC_LAYOUT_ORG_MESSAGE } from "@bms/shared";
+import type { PutDashboardWidgetsBody } from "@bms/shared";
 
 /**
  * `F3.32c` / ADR 0081 decision 5 — every layout a layout-arm `mimic` widget names must be a

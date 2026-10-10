@@ -30,6 +30,7 @@ import {
   planTemplateWidget,
   sectionTemplateContentSchema,
   siteLayoutDashboardSlug,
+  TEMPLATE_TARGET_BODY_MESSAGE,
 } from "@bms/shared";
 import type {
   JwtPayload,
@@ -45,7 +46,6 @@ import type {
 } from "@bms/shared";
 
 import type { SiteTemplateArm } from "../admin/dashboard-templates/dashboard-templates-instantiate.service";
-import { TEMPLATE_TARGET_BODY_MESSAGE } from "../admin/dashboard-templates/dashboard-templates.schema";
 import { loadActivePoints, loadMembersByRole } from "../admin/dashboard-templates/template-resolution.reads";
 import { MasterDataAuditService } from "../admin/master-data-audit.service";
 import { AccessControlService } from "../auth/access-control.service";

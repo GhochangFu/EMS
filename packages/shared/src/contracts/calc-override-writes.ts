@@ -9,11 +9,11 @@ import {
   MAX_FORMULA_LENGTH,
   MAX_INPUT_AGE_SECONDS_BOUND,
   MIN_CALC_INTERVAL_SECONDS,
-  calcDialectSchema,
   formatCalcError,
   validateFormula,
-} from "@bms/shared";
-import type { AssetPointCalcOverrideFields } from "@bms/shared";
+} from "../calc-dsl";
+import { calcDialectSchema } from "./asset-templates";
+import type { AssetPointCalcOverrideFields } from "../types/template-migration";
 
 /**
  * `F2.6` — one asset's override of the calc configuration its pinned template

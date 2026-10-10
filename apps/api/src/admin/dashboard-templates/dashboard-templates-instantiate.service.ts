@@ -23,6 +23,8 @@ import {
   planTemplateWidget,
   sectionTemplateContentSchema,
   templateWidgets,
+  MIMIC_SCOPE_MESSAGE,
+  templateTargetBodyMessage,
 } from "@bms/shared";
 import type {
   DashboardTemplateTarget,
@@ -30,6 +32,9 @@ import type {
   InstantiateSectionTemplateResponse,
   JwtPayload,
   SectionTemplateContent,
+  InstantiateGroupTemplateBody,
+  InstantiateSectionTemplateBody,
+  InstantiateSiteTemplateBody,
 } from "@bms/shared";
 
 import { AccessControlService } from "../../auth/access-control.service";
@@ -40,14 +45,7 @@ import { parseStoredContract } from "../../common/parse-stored-contract";
 import { FLEET_DRIZZLE, TENANT_DRIZZLE } from "../../database/database.tokens";
 import { withTenant } from "../../database/tenant-context";
 import { resolveBoundPoints } from "../../dashboard-builder/dashboard-point-scope";
-import { MIMIC_SCOPE_MESSAGE } from "../../dashboard-builder/dashboards.schema";
 import { MasterDataAuditService } from "../master-data-audit.service";
-import { templateTargetBodyMessage } from "./dashboard-templates.schema";
-import type {
-  InstantiateGroupTemplateBody,
-  InstantiateSectionTemplateBody,
-  InstantiateSiteTemplateBody,
-} from "./dashboard-templates.schema";
 import { DashboardTemplatesService } from "./dashboard-templates.service";
 import { loadActivePoints, loadMembersByRole } from "./template-resolution.reads";
 
