@@ -100,7 +100,8 @@ vi.mock("../../components/control-room/scoped-dashboards-list", () => ({
 const siteMapMounts = vi.hoisted(() => ({ count: 0 }));
 
 vi.mock("../../components/control-room/organization-site-map", () => ({
-  OrganizationSiteMap: ({ organizationId }: { organizationId: string }) => {
+  // `F2.10` — the real map also takes `nodes` (its parent filter); the stand-in ignores it.
+  OrganizationSiteMap: ({ organizationId }: { organizationId: string; nodes: readonly unknown[] }) => {
     useEffect(() => {
       siteMapMounts.count += 1;
     }, []);

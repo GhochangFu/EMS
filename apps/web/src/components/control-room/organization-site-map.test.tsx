@@ -10,6 +10,7 @@ import {
   scrollWheelZoomIsOffAndTheMapHasItsHeight,
   showsOnlyThisOrganizationsPins,
   theMapFitsThisOrganizationsSites,
+  theOrgMapFilterReadsTheSubtree,
   thePopupOpensTheSiteLevel,
 } from "./organization-site-map.spec";
 
@@ -52,5 +53,9 @@ describe("F3.79 OrganizationSiteMap", () => {
 
   it("S8 keeps the map when a poll fails after a good read", async () => {
     await aFailedPollKeepsTheMap();
+  });
+
+  it("F6 the filter lists the nodes it is handed and reads the chosen subtree (F2.10)", async () => {
+    await theOrgMapFilterReadsTheSubtree();
   });
 });

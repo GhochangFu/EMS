@@ -4,11 +4,14 @@ import { cleanup } from "@testing-library/react";
 
 import { useAuthStore } from "./stores/auth-store";
 import {
+  aLateLoadAnswerDoesNotReplaceANewerScope,
   aDeactivatedMeOnLoadRecordsTheReason,
   aDeactivatedMeOnLoadShowsTheSentence,
+  aFailedRefetchKeepsAStoredSession,
   aPlainMeOnLoadShowsNothing,
   aRefusedMeOnAWallUrlKeepsTheReturnPath,
   anExpiredTokenOnAWallUrlKeepsTheReturnPath,
+  aStoredScopeIsReplacedOnLoad,
   aViewerReachesTheAttributionsPage,
   theMeEffectKeepsTheStoredIdToken,
 } from "./app.spec";
@@ -33,6 +36,18 @@ describe("F4.156 App /me effect", () => {
 
   it("A1 a signed-in viewer reaches /attributions", async () => {
     await aViewerReachesTheAttributionsPage();
+  });
+
+  it("B9a a stored scope is replaced by the one /me serves on load (F2.10)", async () => {
+    await aStoredScopeIsReplacedOnLoad();
+  });
+
+  it("B9c a late load /me answer does not replace a newer scope (F2.10, B8)", async () => {
+    await aLateLoadAnswerDoesNotReplaceANewerScope();
+  });
+
+  it("B9b a failed refetch with a stored scope keeps the session (F2.10, O1)", async () => {
+    await aFailedRefetchKeepsAStoredSession();
   });
 });
 

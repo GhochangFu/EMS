@@ -4,6 +4,7 @@ import {
   runControlRoomSiteLinkOpensTheSiteLevelTest,
   runEstateSiteLinkOpensTheAssetsTabTest,
   runMapTileAttributionTest,
+  runOrganizationNodesKeepsOnlyThisOrganizationTest,
   runOrganizationPinsEmptyForAnOrganizationWithNoPinTest,
   runOrganizationPinsKeepsOnlyThisOrganizationTest,
   runMapTileIsOpenStreetMapTest,
@@ -58,5 +59,9 @@ describe("map-site", () => {
 
   it("links the org site map popup to the site's Control Room level (F3.79 L2)", () => {
     runControlRoomSiteLinkOpensTheSiteLevelTest();
+  });
+
+  it("keeps only this organization's scope nodes for the org map filter (F2.10 S1)", () => {
+    runOrganizationNodesKeepsOnlyThisOrganizationTest();
   });
 });

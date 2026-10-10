@@ -67,8 +67,25 @@ export function canManageNotificationChannels(role: UserRole): boolean {
   return role === "admin" || role === "organization_admin";
 }
 
-/** Whether the role may create new top-level locations. */
+/** Whether the role may create locations, roots and children (ADR 0098 decision 12, ruling 13). */
 export function canCreateLocations(role: UserRole): boolean {
+  return role === "admin" || role === "organization_admin";
+}
+
+/**
+ * Whether the role is offered the Parent control on an existing location — a move (`F2.10`,
+ * ADR 0098 decision 12).
+ *
+ * The web half only: `LocationsService.update` refuses any PATCH that names `parentId` below
+ * the organization level (`isOrganizationLevelAdmin` — a global `admin`, or an
+ * `organization_admin` with a direct grant on the node's organization). A `location_admin`
+ * manages its subtree yet may not move a node, so the control is absent for it, not disabled.
+ *
+ * Deliberately its own predicate rather than a reuse of `canCreateLocations`, whose body is
+ * identical today, for the `canManageNotificationChannels` reason: the two answer different
+ * questions and the API gates them through different checks.
+ */
+export function canMoveLocations(role: UserRole): boolean {
   return role === "admin" || role === "organization_admin";
 }
 

@@ -510,3 +510,27 @@ export async function saveIsDisabledBesideTheBlockedSentence(): Promise<void> {
   expect(saveButton()).toBeDisabled();
   expect(screen.getByText("Enter a name")).toBeInTheDocument();
 }
+
+/**
+ * `F2.10` (ADR 0098 B11) — the Locations picker lists the tree depth-first. The API's name order
+ * puts the child ("Cape Town CBD") before its sibling root "Gauteng" and after its parent; a
+ * flat render would put it between them unindented.
+ */
+export async function theLocationsPickerListsTheTree(): Promise<void> {
+  renderSchedules("admin");
+  vi.mocked(locationsApi.fetchAdminLocations).mockResolvedValue({
+    items: [
+      { ...WESTERN_CAPE, id: "7d3e2f1a-3333-4a5b-8c4d-000000000029", code: "CBD", slug: "cbd", name: "Cape Town CBD", parentId: WESTERN_CAPE.id },
+      GAUTENG,
+      WESTERN_CAPE,
+    ],
+  });
+  await chooseEskom();
+  const select = await screen.findByLabelText("Locations");
+  await within(select).findByRole("option", { name: "— Cape Town CBD" });
+  const names = within(select)
+    .getAllByRole("option")
+    .map((o) => o.textContent)
+    .filter((name) => name !== "Whole organization");
+  expect(names).toEqual(["Gauteng", "Western Cape", "— Cape Town CBD"]);
+}

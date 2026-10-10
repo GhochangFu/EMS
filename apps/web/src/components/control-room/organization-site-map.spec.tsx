@@ -4,7 +4,7 @@ import type { ReactNode } from "react";
 import { MemoryRouter } from "react-router-dom";
 import { expect, vi } from "vitest";
 
-import type { MapSiteDto } from "@bms/shared";
+import type { AccessLocation, MapSiteDto } from "@bms/shared";
 
 import * as mapApi from "../../api/map";
 import { mapSite } from "../../lib/map-site.spec";
@@ -89,12 +89,12 @@ function stubFetch(): void {
   );
 }
 
-function renderMap(organizationId: string): QueryClient {
+function renderMap(organizationId: string, nodes: readonly AccessLocation[] = []): QueryClient {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   render(
     <QueryClientProvider client={queryClient}>
       <MemoryRouter>
-        <OrganizationSiteMap organizationId={organizationId} />
+        <OrganizationSiteMap organizationId={organizationId} nodes={nodes} />
       </MemoryRouter>
     </QueryClientProvider>,
   );
@@ -182,7 +182,8 @@ export async function aFailedPollKeepsTheMap(): Promise<void> {
     await new Promise((resolve) => setTimeout(resolve, 0));
   });
   expect(read, "control: the poll ran and failed").toHaveBeenCalledTimes(2);
-  expect(queryClient.getQueryState(["map", "sites"])?.status).toBe("error");
+  // `F2.10` — the key carries the parent filter; `null` is "All sites".
+  expect(queryClient.getQueryState(["map", "sites", null])?.status).toBe("error");
   expect(screen.getByTestId("leaflet-map")).toBeInTheDocument();
   expect(screen.getAllByTestId("map-pin")).toHaveLength(2);
   expect(screen.queryByText("The site map could not be read.")).toBeNull();
@@ -229,4 +230,28 @@ export function cleanupSiteMap(): void {
   fitBounds.mockReset();
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
+}
+
+/**
+ * F6 (`F2.10`, ADR 0098 B12) — the org map's filter lists the nodes it is handed, which
+ * `organization-page.tsx` narrows to this organization (`organizationNodes`); choosing one
+ * reads its subtree.
+ */
+export async function theOrgMapFilterReadsTheSubtree(): Promise<void> {
+  stubFetch();
+  const read = vi.spyOn(mapApi, "fetchMapSites").mockResolvedValue(PINS);
+  const node = (id: string, name: string, parentId: string | null): AccessLocation => ({
+    id, code: id.toUpperCase(), slug: id, name, type: "site", province: null, parentId,
+  });
+  renderMap(ORG_A.id, [node("loc-a", "Alpha Campus", null), node("loc-a1", "Alpha One", "loc-a")]);
+  const select = await screen.findByLabelText("Zoom to");
+  expect(within(select).getAllByRole("option").map((o) => o.textContent)).toEqual([
+    "All sites",
+    "Alpha Campus",
+  ]);
+  await act(async () => {
+    (select as HTMLSelectElement).value = "loc-a";
+    select.dispatchEvent(new Event("change", { bubbles: true }));
+  });
+  await waitFor(() => expect(read).toHaveBeenLastCalledWith("loc-a"));
 }

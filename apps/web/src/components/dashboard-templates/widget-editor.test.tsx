@@ -4,6 +4,11 @@ import { cleanup } from "@testing-library/react";
 
 import {
   addingAMetricPatchesSourcesWithEmptyParams,
+  choosingADepthPatchesOnlyThatSource,
+  eachSiteRemovesTheKey,
+  readOnlyShowsTheDepthAsText,
+  theGroupBySelectRendersOnlyForByLocation,
+  theOptionsRunToTheMaxDepth,
   hidesTheBlockForATypeThatBindsNoMetric,
   hidesTheMetricPickerAtTheCardinalityMax,
   hidesTheMetricPickerOnceARoleIsBound,
@@ -78,5 +83,32 @@ describe("F3.61 — the template WidgetEditor's Named metric block", () => {
 
   it("shows the water-balance note read-only too (the stock viewer)", () => {
     showsTheWaterBalanceNoteReadOnlyToo();
+  });
+});
+
+describe("F2.10 WidgetEditor — groupDepth for sustainability.by_location", () => {
+  afterEach(() => {
+    cleanup();
+    vi.restoreAllMocks();
+  });
+
+  it("G1 renders Group by for the by_location source, not for the total beside it", () => {
+    theGroupBySelectRendersOnlyForByLocation();
+  });
+
+  it("G2 choosing depth 2 patches only sources, with groupDepth a number", async () => {
+    await choosingADepthPatchesOnlyThatSource();
+  });
+
+  it("G3 Each site removes groupDepth", async () => {
+    await eachSiteRemovesTheKey();
+  });
+
+  it("G4 read-only shows the depth as text and no select", () => {
+    readOnlyShowsTheDepthAsText();
+  });
+
+  it("G5 the options run from 1 to LOCATION_TREE_MAX_DEPTH", () => {
+    theOptionsRunToTheMaxDepth();
   });
 });

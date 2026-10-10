@@ -71,7 +71,8 @@ export const METRIC_CATALOG_PRESENTATION: Readonly<
     label: "Sustainability by site",
     description:
       "The same roll-up, one row per site in scope, with its coverage. Without balanceRole, " +
-      "every asset carrying the point counts, so a water total sums every stage's inlet.",
+      "every asset carrying the point counts, so a water total sums every stage's inlet. " +
+      "With groupDepth set, one row per ancestor at that depth.",
   },
   // `E4.3` / ADR 0073 decision 3. Hidden from the picker too (`catalogKeysFor` hides any entry
   // with `params`).

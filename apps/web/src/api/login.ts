@@ -69,3 +69,12 @@ export async function fetchCurrentUser(
   }
   return checkResponse(currentUserResponseSchema, await res.json(), "auth/me");
 }
+
+/**
+ * `F2.10` (ADR 0098 B8) — re-reads `/auth/me` and replaces the stored scope, so a location
+ * the caller just created or moved shows in every scope-fed picker without a sign-out.
+ */
+export async function refreshScope(accessToken: string): Promise<void> {
+  const current = await fetchCurrentUser(accessToken);
+  useAuthStore.getState().setScope(current.scope);
+}

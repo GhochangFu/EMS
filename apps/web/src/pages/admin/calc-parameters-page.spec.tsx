@@ -511,3 +511,28 @@ export async function siblingRowsAreNotBusy(): Promise<void> {
   expect(busy).toEqual(["false", "false"]);
   done();
 }
+
+/**
+ * `F2.10` (ADR 0098 B11) — the Location picker lists the tree depth-first: a child follows its
+ * parent with one `— ` per level, the code inside the dashes. The API's name order puts the
+ * child ("Annex") first; the tree puts it after "Spec Plant".
+ */
+export async function theLocationPickerListsTheTree(): Promise<void> {
+  stubApi();
+  vi.mocked(locationsApi.fetchAdminLocations).mockResolvedValue({
+    items: [
+      { ...LOCATIONS.items[0], id: "f2100000-0000-4000-8000-000000000001", code: "ANX", name: "Annex", parentId: LOCATION_ID },
+      { ...LOCATIONS.items[0], parentId: null },
+    ],
+  } as never);
+  renderPage(admin);
+  await openCreateForm();
+  await userEvent.click(screen.getByRole("radio", { name: "Location" }));
+  const select = await screen.findByRole("combobox", { name: "Location" });
+  await within(select).findByRole("option", { name: "— ANX · Annex" });
+  expect(within(select).getAllByRole("option").map((o) => o.textContent)).toEqual([
+    "Select location",
+    "SPEC1 · Spec Plant",
+    "— ANX · Annex",
+  ]);
+}

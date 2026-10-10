@@ -85,7 +85,6 @@ function isJwtExpired(token: string): boolean {
 export function App() {
   const accessToken = useAuthStore((s) => s.accessToken);
   const user = useAuthStore((s) => s.user);
-  const scope = useAuthStore((s) => s.scope);
   const clearSession = useAuthStore((s) => s.clearSession);
   const setSession = useAuthStore((s) => s.setSession);
 
@@ -98,14 +97,20 @@ export function App() {
     }
   }, [accessToken, clearSession]);
 
+  // `F2.10` (ADR 0098 B9) — `/me` is read on every load with a token, not only when no scope
+  // is stored: a location created or moved since the last sign-in must show without a sign-out.
+  // The persisted scope renders meanwhile. `scope` is not a dependency: `setSession` sets it,
+  // so it would re-run this effect on its own result. A scope written while the read is in
+  // flight (a create or a move refreshes it, B8) is newer, so the late answer does not replace it.
   useEffect(() => {
-    if (!accessToken || scope) {
+    if (!accessToken) {
       return;
     }
     let cancelled = false;
+    const scopeAtSend = useAuthStore.getState().scope;
     fetchCurrentUser(accessToken)
       .then((current) => {
-        if (!cancelled) {
+        if (!cancelled && useAuthStore.getState().scope === scopeAtSend) {
           // Keep the stored OIDC id token: logout sends it as
           // `id_token_hint`, and this re-set must not erase it (F4.156).
           setSession(
@@ -117,7 +122,10 @@ export function App() {
         }
       })
       .catch(() => {
-        if (!cancelled) {
+        // `F2.10` (plan O1) — a failed refetch over a stored scope keeps the session: the stored
+        // copy stands, and a dead token is caught by `isJwtExpired` above and by the next call's
+        // 401 (`http.ts`). With no scope there is nothing to render, so it signs out as before.
+        if (!cancelled && useAuthStore.getState().scope === null) {
           rememberWallReturnPath(window.location);
           clearSession();
         }
@@ -125,7 +133,7 @@ export function App() {
     return () => {
       cancelled = true;
     };
-  }, [accessToken, clearSession, scope, setSession]);
+  }, [accessToken, clearSession, setSession]);
 
   return (
     <Routes>

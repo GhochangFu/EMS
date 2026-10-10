@@ -5,6 +5,7 @@ import {
   estateSiteLink,
   isOperationalSite,
   MAP_TILE,
+  organizationNodes,
   organizationPins,
   siteBounds,
 } from "./map-site";
@@ -173,5 +174,26 @@ export function runControlRoomSiteLinkOpensTheSiteLevelTest(): void {
   assert(
     link.label === "Open site" && link.to === "/control-room/site/loc-1",
     `expected Open site -> /control-room/site/loc-1, got ${JSON.stringify(link)}`,
+  );
+}
+
+/**
+ * `F2.10` (plan T7, O2) — the org site map's filter nodes are the scope's nodes that are KPI rows
+ * of this organization (`GET /dashboard/locations` lists every active readable node). Org A's
+ * node is the positive control for the one it drops.
+ */
+export function runOrganizationNodesKeepsOnlyThisOrganizationTest(): void {
+  const nodes = [
+    { id: "loc-a1", code: "A1", slug: "a1", name: "A1", type: "site", province: null, parentId: null },
+    { id: "loc-b1", code: "B1", slug: "b1", name: "B1", type: "site", province: null, parentId: null },
+  ];
+  const kpis = [
+    { id: "loc-a1", organization: ORG_A },
+    { id: "loc-b1", organization: ORG_B },
+  ];
+  const kept = organizationNodes(nodes, kpis, ORG_A.id).map((n) => n.id);
+  assert(
+    JSON.stringify(kept) === JSON.stringify(["loc-a1"]),
+    `expected only org A's node, got ${JSON.stringify(kept)}`,
   );
 }

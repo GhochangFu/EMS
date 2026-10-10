@@ -29,6 +29,7 @@ import {
   twoDeletesInFlightKeepBothButtonsPending,
   twoSchedulesRenderTwoRows,
   updateSendsOnlyTheChangedKey,
+  theLocationsPickerListsTheTree,
 } from "./report-schedules.spec";
 
 /**
@@ -144,5 +145,16 @@ describe("F3.5b report schedules section", () => {
 
   it("Save is disabled beside the blocked sentence", async () => {
     await saveIsDisabledBesideTheBlockedSentence();
+  });
+});
+
+describe("F2.10 report schedules — the Locations picker lists the tree (B11)", () => {
+  afterEach(() => {
+    cleanup();
+    vi.restoreAllMocks();
+  });
+
+  it("lists a child after its parent with the tree's dash", async () => {
+    await theLocationsPickerListsTheTree();
   });
 });

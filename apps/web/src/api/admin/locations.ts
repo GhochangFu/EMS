@@ -55,6 +55,8 @@ export async function createAdminLocation(input: {
   latitude: number;
   longitude: number;
   meta?: Record<string, unknown>;
+  /** `F2.10` (ADR 0098): the parent node; `null` or absent makes a root. */
+  parentId?: string | null;
 }): Promise<AdminLocationDto> {
   return adminFetch("/admin/locations", adminLocationDtoSchema, {
     method: "POST",
@@ -75,6 +77,11 @@ export async function updateAdminLocation(
     timezone: string | null;
     latitude: number;
     longitude: number;
+    /**
+     * `F2.10` (ADR 0098 decision 12) — a move. Send the key only when the parent changed and the
+     * role may move: any body that names it is a 403 below the organization level.
+     */
+    parentId: string | null;
   }>,
 ): Promise<AdminLocationDto> {
   return adminFetch(`/admin/locations/${id}`, adminLocationDtoSchema, {

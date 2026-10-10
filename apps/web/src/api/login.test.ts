@@ -9,6 +9,7 @@ import {
   runASessionSetDuringTheBodyReadRecordsNothing,
   runAStreamedBodyWithNoNewSessionRecordsTheReason,
   runAStoreChangedToTheRequestTokenRecordsTheReason,
+  runRefreshScopeReplacesTheStoredScope,
   runTheRequestCarriesTheTokenItWasGiven,
 } from "./login.spec";
 import { useAuthStore } from "../stores/auth-store";
@@ -59,5 +60,11 @@ describe("F4.214 fetchCurrentUser records a /me 401 reason only when the store d
 
   it("M7 a store that changed to the request's own token records the reason", async () => {
     await runAStoreChangedToTheRequestTokenRecordsTheReason();
+  });
+});
+
+describe("F2.10 refreshScope", () => {
+  it("R1 reads /me with the given token and replaces the stored scope (B8)", async () => {
+    await runRefreshScopeReplacesTheStoredScope();
   });
 });

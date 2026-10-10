@@ -212,10 +212,14 @@ export async function listRendersDashForANullTimezone(): Promise<void> {
   const zoned = screen.getByText("Johannesburg station").closest("tr")!;
 
   expect(screen.getByRole("columnheader", { name: "Timezone" })).toBeInTheDocument();
-  expect(within(unzoned).getByText("—")).toBeInTheDocument();
+  // `F2.10` — the Parent column also reads "—" for a root, so read the Timezone cell by index.
+  const timezoneIndex = screen
+    .getAllByRole("columnheader")
+    .findIndex((header) => header.textContent === "Timezone");
+  const timezoneCell = (row: HTMLElement) => within(row).getAllByRole("cell")[timezoneIndex]!;
+  expect(timezoneCell(unzoned).textContent).toBe("—");
   // Positive control: the same column carries the zone where one is set.
-  expect(within(zoned).getByText("Africa/Johannesburg")).toBeInTheDocument();
-  expect(within(zoned).queryByText("—")).toBeNull();
+  expect(timezoneCell(zoned).textContent).toBe("Africa/Johannesburg");
 }
 
 /** P1 (`F4.157` D9) — the Type select has four options, text the labels and value the codes,

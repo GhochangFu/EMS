@@ -17,17 +17,20 @@ import {
   updateAdminLocation,
 } from "../../api/admin/locations";
 import { fetchDashboards } from "../../api/dashboards";
+import { refreshScope } from "../../api/login";
 import { ActiveFilterBar } from "../../components/admin/active-filter-bar";
 import { ControlRoomViewField } from "../../components/admin/control-room-view-field";
 import {
   HierarchyFilterBar,
   type HierarchySelection,
 } from "../../components/admin/hierarchy-filter-bar";
+import { LocationMoveDialog } from "../../components/admin/location-move-dialog";
 import { MasterDataLayout } from "../../components/admin/master-data-layout";
 import { PageHeader } from "../../components/page-header";
 import { SectionCard } from "../../components/section-card";
 import { StatusPill } from "../../components/status-pill";
-import { canCreateLocations, isGlobalAdmin } from "../../lib/admin-access";
+import { canCreateLocations, canMoveLocations, isGlobalAdmin } from "../../lib/admin-access";
+import { locationTreeOptions, subtreeIds } from "../../lib/location-tree";
 import {
   isEligibleSiteViewDashboard,
   siteViewDraftChanged,
@@ -36,7 +39,7 @@ import {
   type SiteViewDraft,
 } from "../../lib/site-control-room-view";
 import { apiErrorMessage } from "../../lib/api-error-message";
-import type { AuthUser } from "../../stores/auth-store";
+import { useAuthStore, type AuthUser } from "../../stores/auth-store";
 
 type LocationsAdminPageProps = { user: AuthUser };
 
@@ -53,6 +56,8 @@ const emptyForm = {
   // and a pin at (0,0) sat in the Gulf of Guinea and stretched the map's box.
   latitude: "19.076",
   longitude: "72.8777",
+  /** `F2.10` (ADR 0098) — the parent's id; `""` is a root. */
+  parentId: "",
 };
 
 /**
@@ -71,6 +76,8 @@ export function LocationsAdminPage({ user }: LocationsAdminPageProps) {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const canCreate = canCreateLocations(user.role);
+  /** `F2.10` (ADR 0098 decision 12) — only an organization-level administrator moves a node. */
+  const canMove = canMoveLocations(user.role);
   const [activeFilter, setActiveFilter] = useState<MasterDataActiveFilter>("all");
   const [selection, setSelection] = useState<HierarchySelection>({ organizationId: orgId });
   const [search, setSearch] = useState("");
@@ -78,6 +85,10 @@ export function LocationsAdminPage({ user }: LocationsAdminPageProps) {
   const [editing, setEditing] = useState<AdminLocationDto | null>(null);
   const [form, setForm] = useState(emptyForm);
   const [error, setError] = useState<string | null>(null);
+  /** `F2.10` (decision 5) — a refused deactivate or reactivate, in the server's sentence. */
+  const [listError, setListError] = useState<string | null>(null);
+  /** `F2.10` — the move the administrator is asked to confirm; `null` while none is pending. */
+  const [pendingMove, setPendingMove] = useState<{ toParentId: string | null } | null>(null);
   /** `F3.67` — `null` until the admin touches the Control Room view field, so an untouched
    * field is never "changed" and never `PUT`. */
   const [viewDraft, setViewDraft] = useState<SiteViewDraft | null>(null);
@@ -110,6 +121,25 @@ export function LocationsAdminPage({ user }: LocationsAdminPageProps) {
    * code — feeds both the `<select value>` and the create/update payload, so the two never
    * disagree about what an untouched form submits. */
   const resolvedType = form.type || types[0]?.code || "";
+
+  // `F2.10` (ADR 0098 B6) — the Parent select's vocabulary: the organization's ACTIVE nodes (an
+  // inactive parent is a guaranteed 409). On edit only a role that may move reads it. The move
+  // dialog reads its chains from the same list, never from the filtered page list.
+  const parentsEnabled = modalOpen && Boolean(form.organizationId) && (!editing || canMove);
+  const parentsQ = useQuery({
+    queryKey: ["admin", "locations", "true", form.organizationId],
+    queryFn: () => fetchAdminLocations("true", form.organizationId),
+    enabled: parentsEnabled,
+  });
+  const parentNodes = useMemo(() => parentsQ.data?.items ?? [], [parentsQ.data?.items]);
+  const parentOptions = useMemo(() => {
+    // Editing: never the node itself or one of its descendants (the server refuses a cycle too).
+    const excluded = editing ? subtreeIds(parentNodes, editing.id) : new Set<string>();
+    return locationTreeOptions(parentNodes.filter((n) => !excluded.has(n.id)));
+  }, [editing, parentNodes]);
+  /** On edit, whether the administrator picked another parent — the only save that sends `parentId`. */
+  const parentChanged =
+    editing !== null && canMove && form.parentId !== (editing.parentId ?? "");
 
   // `F3.67` / ADR 0076 decision 3 — the Control Room view field, Edit modal only. The
   // setting's key sits under `["admin", "locations"]`, so the save's invalidation refreshes it.
@@ -154,8 +184,29 @@ export function LocationsAdminPage({ user }: LocationsAdminPageProps) {
     );
   }, [listQ.data?.items, search]);
 
+  // `F2.10` (ADR 0098 B10) — the rows in tree order, siblings in the API's name order; a search
+  // keeps the relative order. The Parent column names from the status-filtered list before the
+  // search, so a search that hides the parent still names it; a parent the status filter hides
+  // reads "(not in this list)", and its child is drawn at the top level of this list.
+  const rows = useMemo(() => {
+    const byItemId = new Map(filtered.map((item) => [item.id, item]));
+    return locationTreeOptions(filtered).map((option) => ({
+      item: byItemId.get(option.id)!,
+      label: option.label,
+    }));
+  }, [filtered]);
+  const byId = useMemo(
+    () => new Map((listQ.data?.items ?? []).map((item) => [item.id, item])),
+    [listQ.data?.items],
+  );
+
   const saveMutation = useMutation({
-    mutationFn: async () => {
+    /**
+     * `toParentId` is `undefined` for every save but a confirmed move: the PATCH then has no
+     * `parentId` key, which any role may send. A body that names `parentId`, whatever the value,
+     * is a 403 below the organization level (ADR 0098 decision 12).
+     */
+    mutationFn: async (toParentId: string | null | undefined) => {
       const payload = {
         organizationId: form.organizationId,
         code: form.code,
@@ -172,22 +223,32 @@ export function LocationsAdminPage({ user }: LocationsAdminPageProps) {
         const { organizationId: _org, type: _type, ...rest } = payload;
         // D8 (F4.162) — send `type` only when the administrator changed it; an untouched
         // retired current type must not be re-posted, since it is not among the active codes.
-        const updatePayload =
+        const typedPayload =
           resolvedType === editing.type ? rest : { ...rest, type: resolvedType };
+        // `F2.10` — a move rides in the same body as the other changed fields (Drafter choice 5).
+        const updatePayload =
+          toParentId === undefined ? typedPayload : { ...typedPayload, parentId: toParentId };
         const updated = await updateAdminLocation(editing.id, updatePayload);
         if (storedView && viewDraft && siteViewDraftChanged(storedView, viewDraft)) {
           await putSiteControlRoomView(editing.id, siteViewPayloadFromDraft(viewDraft));
         }
         return updated;
       }
-      return createAdminLocation(payload);
+      return createAdminLocation({ ...payload, parentId: form.parentId || null });
     },
-    onSuccess: async () => {
+    onSuccess: async (_data, toParentId) => {
+      const createdOrMoved = !editing || toParentId !== undefined;
       setModalOpen(false);
       setEditing(null);
       setForm(emptyForm);
       setError(null);
       await queryClient.invalidateQueries({ queryKey: ["admin", "locations"] });
+      // `F2.10` (B8) — the tree changed, so the scope every picker reads is stale. A failed
+      // refresh never fails the save; the next app load refreshes it (B9).
+      const accessToken = useAuthStore.getState().accessToken;
+      if (createdOrMoved && accessToken) {
+        await refreshScope(accessToken).catch(() => undefined);
+      }
     },
     onError: async (err: unknown) => {
       setError(apiErrorMessage(err));
@@ -200,8 +261,11 @@ export function LocationsAdminPage({ user }: LocationsAdminPageProps) {
     mutationFn: async (item: AdminLocationDto) =>
       item.active ? deactivateAdminLocation(item.id) : reactivateAdminLocation(item.id),
     onSuccess: async () => {
+      setListError(null);
       await queryClient.invalidateQueries({ queryKey: ["admin", "locations"] });
     },
+    // `F2.10` (ADR 0098 decision 5) — e.g. a deactivate refused while an active child exists.
+    onError: (err: unknown) => setListError(apiErrorMessage(err)),
   });
 
   function openCreate(): void {
@@ -225,6 +289,7 @@ export function LocationsAdminPage({ user }: LocationsAdminPageProps) {
       timezone: item.timezone ?? "",
       latitude: String(item.latitude),
       longitude: String(item.longitude),
+      parentId: item.parentId ?? "",
     });
     setViewDraft(null);
     setError(null);
@@ -236,7 +301,7 @@ export function LocationsAdminPage({ user }: LocationsAdminPageProps) {
       <PageHeader
         eyebrow="Administration"
         title="Locations"
-        subtitle="Stations and SMOC campuses under organizations"
+        subtitle="Sites, campuses and the nodes under them, per organization"
         actions={
           canCreate ? (
             <button
@@ -265,12 +330,18 @@ export function LocationsAdminPage({ user }: LocationsAdminPageProps) {
             onChange={(event) => setSearch(event.target.value)}
           />
         </div>
+        {listError ? (
+          <div role="alert" className="text-xs text-critical-ink">
+            {listError}
+          </div>
+        ) : null}
         <table className="min-w-full text-sm">
           <thead>
             <tr className="border-b text-left text-xs uppercase text-ink-muted">
               <th className="px-2 py-2">Org</th>
               <th className="px-2 py-2">Code</th>
               <th className="px-2 py-2">Name</th>
+              <th className="px-2 py-2">Parent</th>
               <th className="px-2 py-2">Slug</th>
               <th className="px-2 py-2">Timezone</th>
               <th className="px-2 py-2">Status</th>
@@ -278,7 +349,7 @@ export function LocationsAdminPage({ user }: LocationsAdminPageProps) {
             </tr>
           </thead>
           <tbody>
-            {filtered.map((item) => (
+            {rows.map(({ item, label }) => (
               <tr
                 key={item.id}
                 className="cursor-pointer border-b border-well-deep hover:bg-well"
@@ -286,7 +357,12 @@ export function LocationsAdminPage({ user }: LocationsAdminPageProps) {
               >
                 <td className="px-2 py-2">{item.organizationCode}</td>
                 <td className="px-2 py-2 font-mono">{item.code}</td>
-                <td className="px-2 py-2 font-semibold text-accent-strong">{item.name}</td>
+                <td className="px-2 py-2 font-semibold text-accent-strong">{label}</td>
+                <td className="px-2 py-2">
+                  {item.parentId
+                    ? (byId.get(item.parentId)?.name ?? "(not in this list)")
+                    : "—"}
+                </td>
                 <td className="px-2 py-2 font-mono text-xs">{item.slug}</td>
                 <td className="px-2 py-2 font-mono text-xs">{item.timezone ?? "—"}</td>
                 <td className="px-2 py-2">
@@ -325,7 +401,12 @@ export function LocationsAdminPage({ user }: LocationsAdminPageProps) {
             className="max-h-[90vh] w-full max-w-lg overflow-y-auto surface-dialog p-4"
             onSubmit={(event: FormEvent) => {
               event.preventDefault();
-              saveMutation.mutate();
+              // `F2.10` — a changed parent is confirmed in the move dialog first.
+              if (parentChanged) {
+                setPendingMove({ toParentId: form.parentId || null });
+                return;
+              }
+              saveMutation.mutate(undefined);
             }}
           >
             <h2 className="font-condensed text-lg font-bold">
@@ -340,7 +421,8 @@ export function LocationsAdminPage({ user }: LocationsAdminPageProps) {
                     value={form.organizationId}
                     required
                     onChange={(event) =>
-                      setForm({ ...form, organizationId: event.target.value })
+                      // `F2.10` — a parent picked in another organization is not an option here.
+                      setForm({ ...form, organizationId: event.target.value, parentId: "" })
                     }
                   >
                     <option value="">Select organization</option>
@@ -352,6 +434,28 @@ export function LocationsAdminPage({ user }: LocationsAdminPageProps) {
                   </select>
                 </label>
               ) : null}
+              {!editing || canMove ? (
+                <label className="block text-xs font-semibold text-ink-muted sm:col-span-2">
+                  Parent
+                  <select
+                    className="mt-1 w-full surface-field px-3 py-2 text-sm"
+                    value={form.parentId}
+                    disabled={!form.organizationId}
+                    onChange={(event) => setForm({ ...form, parentId: event.target.value })}
+                  >
+                    <option value="">No parent (root)</option>
+                    {parentOptions.map((option) => (
+                      <option key={option.id} value={option.id}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              ) : (
+                <div className="text-xs text-ink-muted sm:col-span-2">
+                  {`Parent: ${(editing.parentId ? byId.get(editing.parentId)?.name : undefined) ?? "—"}`}
+                </div>
+              )}
               {(["code", "slug", "name"] as const).map((field) => (
                 <label key={field} className="block text-xs font-semibold text-ink-muted">
                   {field}
@@ -464,6 +568,21 @@ export function LocationsAdminPage({ user }: LocationsAdminPageProps) {
             </div>
           </form>
         </div>
+      ) : null}
+
+      {pendingMove && editing ? (
+        <LocationMoveDialog
+          node={{ id: editing.id, name: editing.name, organizationId: editing.organizationId }}
+          fromParentId={editing.parentId}
+          toParentId={pendingMove.toParentId}
+          nodes={parentNodes}
+          onClose={() => setPendingMove(null)}
+          onConfirm={() => {
+            const { toParentId } = pendingMove;
+            setPendingMove(null);
+            saveMutation.mutate(toParentId);
+          }}
+        />
       ) : null}
     </MasterDataLayout>
   );
