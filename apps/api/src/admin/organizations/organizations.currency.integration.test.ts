@@ -15,6 +15,7 @@ import {
   createWithADuplicateCodeIsA409,
   createWithoutTheKeyIsRefusedAndInsertsNoRow,
   dtoParsesWithTheSharedContract,
+  timezoneDefaultsStoresAndUpdates,
   updateChangesAndAbsentKeeps,
   type CurrencyCtx,
 } from "./organizations.currency.integration.spec";
@@ -155,6 +156,10 @@ describe.skipIf(!connectionString)("E4.1c — organizations.currency on the admi
 
   it("T6 the DTO parses with adminOrganizationDtoSchema", async () => {
     await dtoParsesWithTheSharedContract(ctx);
+  });
+
+  it("F3.85 T7 timezone defaults to UTC, stores a zone, updates and keeps", async () => {
+    await timezoneDefaultsStoresAndUpdates(ctx);
   });
 
   it("F4.211 — a create with a code that exists is a 409 naming the code", async () => {

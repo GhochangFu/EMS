@@ -331,6 +331,10 @@ services:
       OPENROUTER_MODEL: ${OPENROUTER_MODEL:-}
       ANTHROPIC_API_KEY: "${ANTHROPIC_API_KEY:-}"
       ANTHROPIC_MODEL: ${ANTHROPIC_MODEL:-}
+      # `F3.85` / ADR 0099 decision 11 — the copilot's daily turn limits (per user,
+      # per organization). Empty = the default (150, 1500); see .env.example.
+      COPILOT_USER_DAILY_TURNS: ${COPILOT_USER_DAILY_TURNS:-}
+      COPILOT_ORG_DAILY_TURNS: ${COPILOT_ORG_DAILY_TURNS:-}
       # `F3.3` / ADR 0066 decision 3. All six, or none: an endpoint with a
       # missing bucket or key is a boot error, not a half-configured API
       # (`readStorageConfig`). Unset entirely — a native run without MinIO —
@@ -449,6 +453,9 @@ services:
       OPENROUTER_MODEL: ${OPENROUTER_MODEL:-}
       ANTHROPIC_API_KEY: "${ANTHROPIC_API_KEY:-}"
       ANTHROPIC_MODEL: ${ANTHROPIC_MODEL:-}
+      # `F3.85` — identical to `api` above: the counters are shared, so the limits must be too.
+      COPILOT_USER_DAILY_TURNS: ${COPILOT_USER_DAILY_TURNS:-}
+      COPILOT_ORG_DAILY_TURNS: ${COPILOT_ORG_DAILY_TURNS:-}
       # Identical to `api` above (ADR 0066 decisions 3 and 8). The replica is
       # a second API process against the same database and the same bucket:
       # `ensureBucket` is idempotent and a `BucketAlreadyOwnedByYou` from a

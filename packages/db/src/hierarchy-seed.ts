@@ -142,14 +142,22 @@ export const SEED_ORGANIZATION_CODES: readonly string[] = ["ESKOM", "PHEWB"];
  * E4.1c / ADR 0070 decision 7: the SEED owns `currency` — migration `0076`
  * backfills the two codes once, and every re-seed restates them here, so a
  * hand edit on the demo database is reverted the way `name` is.
+ *
+ * `F3.85` PR 6 / ADR 0099 A2: `timezone` is NOT restated. An organization
+ * keeps its zone until an administrator sets it, and the organizations form
+ * writes this column, so the seed only fills it while it still holds the
+ * `0106` default `'UTC'` (a database that predates `0106`, or a fresh row).
+ * An administrator who deliberately chooses `'UTC'` is therefore overwritten
+ * on the next re-seed — the one value this rule cannot tell apart.
  */
 export async function ensureOrganizations(pool: pg.Pool): Promise<void> {
   await pool.query(`
-    INSERT INTO bms.organizations (code, name, meta, currency)
+    INSERT INTO bms.organizations (code, name, meta, currency, timezone)
     VALUES
-      ('ESKOM', 'Eskom SMOC', '{"tenant":"demo"}'::jsonb, 'ZAR'),
-      ('PHEWB', 'Public Health Engineering — West Bengal', '{"orgId":10}'::jsonb, 'INR')
-    ON CONFLICT (code) DO UPDATE SET name = EXCLUDED.name, currency = EXCLUDED.currency
+      ('ESKOM', 'Eskom SMOC', '{"tenant":"demo"}'::jsonb, 'ZAR', 'Africa/Johannesburg'),
+      ('PHEWB', 'Public Health Engineering — West Bengal', '{"orgId":10}'::jsonb, 'INR', 'Asia/Kolkata')
+    ON CONFLICT (code) DO UPDATE SET name = EXCLUDED.name, currency = EXCLUDED.currency,
+      timezone = CASE WHEN bms.organizations.timezone = 'UTC' THEN EXCLUDED.timezone ELSE bms.organizations.timezone END
   `);
 }
 

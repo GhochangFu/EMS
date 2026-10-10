@@ -65,7 +65,7 @@ const USERS = {
 };
 
 const ORGS = {
-  items: [{ id: ORG_ID, code: "ACME", name: "Acme Works", active: true, currency: "INR", meta: null, createdAt: new Date(0).toISOString() }],
+  items: [{ id: ORG_ID, code: "ACME", name: "Acme Works", active: true, currency: "INR", timezone: "Asia/Kolkata", meta: null, createdAt: new Date(0).toISOString() }],
 };
 
 function grant(id: string, targetName: string, effective: boolean) {

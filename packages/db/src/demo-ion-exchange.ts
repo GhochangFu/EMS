@@ -169,8 +169,8 @@ export function ionxShortfalls(tenant: IonxTenantCounts, identity: IonxIdentityC
 }
 
 const ORG_INSERT_SQL = `
-INSERT INTO bms.organizations (code, name, meta, currency)
-VALUES ($1, $2, '{"tenant":"demo","createdBy":"demo:ion-exchange"}'::jsonb, $3)
+INSERT INTO bms.organizations (code, name, meta, currency, timezone)
+VALUES ($1, $2, '{"tenant":"demo","createdBy":"demo:ion-exchange"}'::jsonb, $3, $4)
 ON CONFLICT (code) DO NOTHING
 `;
 
@@ -358,7 +358,7 @@ export async function runIonExchangeDemo(pool: pg.Pool, superuserPool: pg.Pool):
   let written = 0;
 
   // Pre-tenant: `bms.organizations` carries no policy.
-  written += await count(pool, ORG_INSERT_SQL, [IONX_ORG_CODE, IONX_ORG_NAME, IONX_ORG_CURRENCY]);
+  written += await count(pool, ORG_INSERT_SQL, [IONX_ORG_CODE, IONX_ORG_NAME, IONX_ORG_CURRENCY, IONX_SITE_TIMEZONE]);
   const organizationId = await oneId(pool, ORG_ID_SQL, [IONX_ORG_CODE], `organization ${IONX_ORG_CODE}`);
 
   const tenant = await withOrganization(pool, organizationId, async () => {

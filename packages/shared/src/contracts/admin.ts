@@ -20,6 +20,8 @@ export const adminOrganizationDtoSchema = z.object({
   name: z.string(),
   active: z.boolean(),
   currency: z.string(),
+  /** F3.85 (ADR 0099 A2): an IANA zone name or "UTC"; governs the copilot's usage-day boundary. */
+  timezone: z.string(),
   meta: z.record(z.unknown()).nullable(),
   createdAt: z.string(),
 });

@@ -108,6 +108,8 @@ export class OrganizationsAdminService {
             code: body.code,
             name: body.name,
             currency: body.currency,
+            // F3.85: absent → the column default ('UTC').
+            ...(body.timezone !== undefined ? { timezone: body.timezone } : {}),
             meta: body.meta ?? null,
             active: true,
           })
@@ -156,6 +158,7 @@ export class OrganizationsAdminService {
       .set({
         name: body.name ?? existing.name,
         currency: body.currency ?? existing.currency,
+        timezone: body.timezone ?? existing.timezone,
         meta: body.meta !== undefined ? body.meta : existing.meta,
       })
       .where(eq(organizations.id, id))
@@ -254,6 +257,7 @@ export class OrganizationsAdminService {
       name: row.name,
       active: row.active,
       currency: row.currency,
+      timezone: row.timezone,
       meta: (row.meta as Record<string, unknown> | null) ?? null,
       createdAt: row.createdAt.toISOString(),
     };

@@ -7,6 +7,7 @@ import {
   IONX_EXPECTED,
   IONX_GROUP_UPSERT_SQL,
   IONX_ROLE_BY_ASSET_CODE,
+  IONX_SITE_TIMEZONE,
   IONX_WIDGET_CONFIG,
   ionxAssetCodeFor,
   runIonExchangeDemo,
@@ -126,6 +127,31 @@ export async function assertTheCommandResizesItsOwnDashboardsWidget(): Promise<v
   await expect(runIonExchangeDemo(pool, pool)).rejects.toBe(stop);
   const resizes = calls.filter((c) => c.sql === DEMO_MIMIC_WIDGET_RESIZE_SQL);
   expect(resizes.map((c) => c.values)).toEqual([["org-id", "dashboard-id"]]);
+}
+
+/**
+ * `F3.85` PR 6 / ADR 0099 A2 — the organization insert binds the zone its sites use, so a change
+ * to `IONX_SITE_TIMEZONE` moves the organization's day boundary with them. The run stops at the
+ * organization id read, after the insert.
+ */
+export async function assertTheOrganizationInsertBindsTheSiteTimezone(): Promise<void> {
+  const { pool, calls } = recordingSeedPool({ organization: "org-id", dashboard: "dashboard-id", other: "other-id" });
+  const stop = new Error("stop after the organization insert");
+  const recording = pool.query.bind(pool) as (sql: string, values?: unknown[]) => Promise<unknown>;
+  (pool as unknown as { query: unknown }).query = async (sql: string, values?: unknown[]) => {
+    const result = await recording(sql, values);
+    if (/INSERT INTO bms.organizations/.test(sql)) {
+      throw stop;
+    }
+    return result;
+  };
+  await expect(runIonExchangeDemo(pool, pool)).rejects.toBe(stop);
+  const inserts = calls.filter((c) => /INSERT INTO bms.organizations/.test(c.sql));
+  expect(inserts).toHaveLength(1);
+  const [insert] = inserts;
+  expect(insert?.sql, "the zone is a bound parameter, not a literal").not.toContain("'Asia/Kolkata'");
+  expect(insert?.sql.replace(/s+/g, " ")).toContain(", $3, $4)");
+  expect(insert?.values?.[3]).toBe(IONX_SITE_TIMEZONE);
 }
 
 /**

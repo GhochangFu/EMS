@@ -15,6 +15,7 @@ import {
   assertTheCommandResizesItsOwnDashboardsWidget,
   assertTheWidgetConfigParsesUnderMimicConfigSchema,
   assertTheIonxGroupIsAWaterDomainGroup,
+  assertTheOrganizationInsertBindsTheSiteTimezone,
 } from "./demo-ion-exchange.spec";
 
 describe("F3.32 / ADR 0079 Amendment 1 — the Ion Exchange demo command's pure parts", () => {
@@ -74,5 +75,9 @@ describe("F3.32 / ADR 0079 Amendment 1 — the Ion Exchange demo command's pure 
 describe("F3.73 D12 — the IONX demo group carries the water domain", () => {
   it("writes domain water and gives an existing row one only while it has none", () => {
     assertTheIonxGroupIsAWaterDomainGroup();
+  });
+
+  it("the organization insert binds IONX_SITE_TIMEZONE (ADR 0099 A2)", async () => {
+    await assertTheOrganizationInsertBindsTheSiteTimezone();
   });
 });

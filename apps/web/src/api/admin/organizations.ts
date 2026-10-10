@@ -34,6 +34,8 @@ export async function createAdminOrganization(input: {
   name: string;
   /** ISO 4217, upper-case; required — the API refuses a create without it (E4.1c). */
   currency: string;
+  /** IANA zone or "UTC" (F3.85); the API defaults to UTC when absent. */
+  timezone?: string;
 }): Promise<AdminOrganizationDto> {
   return adminFetch("/admin/organizations", adminOrganizationDtoSchema, {
     method: "POST",
@@ -44,7 +46,7 @@ export async function createAdminOrganization(input: {
 
 export async function updateAdminOrganization(
   id: string,
-  input: { name: string; currency?: string },
+  input: { name: string; currency?: string; timezone?: string },
 ): Promise<AdminOrganizationDto> {
   return adminFetch(`/admin/organizations/${id}`, adminOrganizationDtoSchema, {
     method: "PATCH",
