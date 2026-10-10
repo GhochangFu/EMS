@@ -5,6 +5,7 @@ import type { BmsDb } from "@bms/db";
 import type { JwtPayload } from "@bms/shared";
 
 import { resolveActorId } from "../auth/identity-resolver";
+import { withCopilotMark } from "../copilot/copilot-request-context";
 import { FLEET_DRIZZLE, TENANT_DRIZZLE } from "../database/database.tokens";
 
 export type AuditInput = {
@@ -106,6 +107,10 @@ export class MasterDataAuditService {
    * lookup never contends with an open tenant transaction on `executor`. That
    * split survives E7.1c unchanged: only the insert's `organization_id` and
    * its `executor` changed, never the actor lookup.
+   *
+   * `F3.85` PR 4 (ADR 0099 decision 4.5) — when the request applies a
+   * confirmed copilot change, the payload gains `via: "copilot"` and the
+   * change's id (`withCopilotMark`); otherwise it is written unchanged.
    */
   async write(input: AuditInput, executor: BmsDb = this.db): Promise<void> {
     const actorId = await resolveActorId(this.fleetDb, input.actor);
@@ -117,7 +122,7 @@ export class MasterDataAuditService {
       entityType: input.entityType,
       entityId: input.entityId,
       reason: input.reason ?? null,
-      payload: input.payload ?? null,
+      payload: withCopilotMark(input.payload) ?? null,
     });
   }
 
@@ -141,6 +146,8 @@ export class MasterDataAuditService {
    * **An empty array writes nothing and never touches the database** — a commit
    * of a sheet that changes nothing (the identity round trip) is exactly that
    * case, and `insert().values([])` is a runtime error rather than a no-op.
+   *
+   * Each row carries the copilot mark exactly as {@link write} does.
    */
   async writeMany(inputs: readonly AuditInput[], executor: BmsDb = this.db): Promise<void> {
     const [first] = inputs;
@@ -184,7 +191,7 @@ export class MasterDataAuditService {
           entityType: input.entityType,
           entityId: input.entityId,
           reason: input.reason ?? null,
-          payload: input.payload ?? null,
+          payload: withCopilotMark(input.payload) ?? null,
         })),
       );
     }

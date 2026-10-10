@@ -29,6 +29,11 @@
       "types": "./dist/site-templates.d.ts",
       "import": "./dist/site-templates.js",
       "require": "./dist/site-templates.js"
+    },
+    "./copilot": {
+      "types": "./dist/copilot/index.d.ts",
+      "import": "./dist/copilot/index.js",
+      "require": "./dist/copilot/index.js"
     }
   },
   "scripts": {
@@ -44,6 +49,9 @@
     "*": {
       "site-templates": [
         "./dist/site-templates.d.ts"
+      ],
+      "copilot": [
+        "./dist/copilot/index.d.ts"
       ]
     }
   }

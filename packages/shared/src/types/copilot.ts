@@ -13,3 +13,5 @@ export type CopilotSwitchableRole = z.infer<typeof C.copilotSwitchableRoleSchema
 export type CopilotStatusDto = z.infer<typeof C.copilotStatusDtoSchema>;
 export type CopilotUserOverrideDto = z.infer<typeof C.copilotUserOverrideDtoSchema>;
 export type CopilotAccessDto = z.infer<typeof C.copilotAccessDtoSchema>;
+export type CopilotChangeRisk = z.infer<typeof C.copilotChangeRiskSchema>;
+export type CopilotPendingChangeDto = z.infer<typeof C.copilotPendingChangeDtoSchema>;

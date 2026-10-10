@@ -34,6 +34,10 @@ export default defineConfig({
         find: "@bms/shared/ingest",
         replacement: resolve(dir, "../../packages/shared/src/ingest.ts"),
       },
+      {
+        find: "@bms/shared/copilot",
+        replacement: resolve(dir, "../../packages/shared/src/copilot/index.ts"),
+      },
       { find: "@bms/shared", replacement: resolve(dir, "../../packages/shared/src/index.ts") },
     ],
   },

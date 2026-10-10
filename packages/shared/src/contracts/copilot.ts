@@ -69,3 +69,32 @@ export const copilotAccessDtoSchema = z
     overrides: z.array(copilotUserOverrideDtoSchema),
   })
   .strict();
+
+/**
+ * How much a proposed change can do (`F3.85` PR 4, ADR 0099 decision 4): the
+ * Confirm card shows it, and the `copilot_pending_changes_risk_check` CHECK
+ * holds the same four.
+ */
+export const copilotChangeRiskSchema = z.enum(["create", "edit", "deactivate", "access"]);
+
+/**
+ * A change the model proposed, waiting for the user's Confirm (decision 4.5).
+ * The browser sends `method path` with `body` and the `X-Copilot-Change: id`
+ * header; the server applies it only if the method, the path and the body's
+ * canonical hash match what it stored. `body` is `{}` for a catalog entry
+ * that takes no body (plan §6.4).
+ */
+export const copilotPendingChangeDtoSchema = z
+  .object({
+    id: z.string(),
+    catalogId: z.string(),
+    method: z.enum(["POST", "PUT", "PATCH", "DELETE"]),
+    // Always an API path on the same origin: the executor joins it to the API base.
+    path: z.string().regex(/^\/api\/v1\//),
+    body: z.record(z.string(), z.unknown()),
+    summary: z.string(),
+    risk: copilotChangeRiskSchema,
+    proposedAt: z.string(),
+    expiresAt: z.string(),
+  })
+  .strict();
