@@ -722,6 +722,13 @@
       "when": 1791529667092,
       "tag": "0103_location_tree",
       "breakpoints": true
+    },
+    {
+      "idx": 105,
+      "version": "7",
+      "when": 1791637140496,
+      "tag": "0104_copilot_access",
+      "breakpoints": true
     }
   ]
 }

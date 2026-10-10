@@ -32,6 +32,7 @@ import { seedPueDemo, seedPueDemoRackKwPoints } from "./pue-demo-seed";
 import { seedWaterMimicDemo } from "./water-mimic-demo-seed";
 import { seedWaterPlantDemo } from "./water-plant-demo-seed";
 import { seedCalcParametersDemo } from "./calc-parameters-demo-seed";
+import { seedCopilotDemo } from "./copilot-demo-seed";
 import {
   seedDemoAlarms,
   seedDemoWorkOrders,
@@ -345,6 +346,11 @@ async function main(): Promise<void> {
       // and the `energy_tariff_per_kwh` vocabulary row, which migration `0074`
       // writes — so `roles → migrate → seed` puts it there on every environment.
       await seedCalcParametersDemo(pool, eskomOrgId);
+      // `F3.85` plan Q5 — the demo organization's copilot switch, on. ESKOM only,
+      // insert-if-absent (the module header says why both); inside this bracket
+      // because `bms.copilot_org_settings` is FORCE-RLS. Order-free: it references
+      // only the organization.
+      await seedCopilotDemo(pool, eskomOrgId);
       // `F3.73` plan D12 — LAST, so the order is one fact: the SMOC standard site layout copies
       // bind the groups, domains and roles both `seedAssetGroups` passes wrote, the second water
       // group `seedWaterMimicDemo` wrote, and the points every writer above wrote.
