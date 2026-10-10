@@ -2,6 +2,7 @@ import { Module } from "@nestjs/common";
 import { LoggerModule } from "nestjs-pino";
 
 import { AccessControlModule } from "./auth/access-control.module";
+import { CopilotPurgeModule } from "./copilot/copilot-purge.module";
 import { DatabaseModule } from "./database/database.module";
 import { HealthModule } from "./health/health.module";
 import { pinoHttpOptions } from "./logger.options";
@@ -43,6 +44,12 @@ import { StorageModule } from "./storage/storage.module";
  * closure reaches `reports.service.ts` and `energy-pdf.ts`, so the worker
  * process also loads `xlsx` and the `pdfmake` singleton at start.
  *
+ * **`F3.85` PR 5 (ADR 0099 decision 8) adds `CopilotPurgeModule`**, the
+ * copilot history's 30-day purge: a leaf that imports `DatabaseModule` only.
+ * `CopilotModule` (the routes, the change interceptor, the LLM path) is
+ * never imported here; `tests/f4.24` rule 8 keeps every `copilot/` file but
+ * the purge leaves out of this closure.
+ *
  * **`WORKER_CONFIG` is a second, deterministic read of the environment
  * `worker.ts` already validated.** `readWorkerConfig` ran before any Nest
  * context existed and refused a bad `REDIS_URL`, `WORKER_PORT` or
@@ -78,6 +85,8 @@ import { StorageModule } from "./storage/storage.module";
     // `F3.5b` — R-3: the render job puts, gets and deletes report objects.
     StorageModule,
     ReportsCoreModule,
+    // `F3.85` PR 5 — the copilot history purge (ADR 0099 decision 8).
+    CopilotPurgeModule,
   ],
   providers: [
     WorkerHostService,

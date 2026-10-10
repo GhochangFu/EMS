@@ -55,6 +55,8 @@ import {
   assertHeartbeatRegistrationReceivedTheFleetSentinelAsFleetDb,
   assertHeartbeatRegistrationReceivedTheTenantSentinelAsTenantDb,
   assertNoQueueIsStartedTwice,
+  assertPurgeHandlerRanThePurgeOnce,
+  assertPurgeScheduleUpsertedAtTheConfiguredInterval,
   assertRenderHandlerRenderedOnTheTransactionItWasGiven,
   assertRenderHandlerReturnsAContinuationThatFinishesTheOutcome,
   assertStartedQueueNamesEqualAllQueues,
@@ -65,12 +67,13 @@ import {
   assertSweepScheduleUpsertedAtTheConfiguredInterval,
   initWorkerHost,
   invokeDispatchHandler,
+  invokePurgeHandler,
   invokeRenderHandler,
   invokeSweepHandler,
   type WorkerHostProbe,
 } from "./worker-host.service.spec";
 
-describe("F4.24 / F3.11 / F3.5b — WorkerHostService registers one processor per declared queue, with the pools by slot", () => {
+describe("F4.24 / F3.11 / F3.5b / F3.85 — WorkerHostService registers one processor per declared queue, with the pools by slot", () => {
   let probe: WorkerHostProbe;
 
   beforeAll(async () => {
@@ -146,6 +149,20 @@ describe("F4.24 / F3.11 / F3.5b — WorkerHostService registers one processor pe
 
     it("resolves a continuation whose afterCommit() hands finish the very outcome render returned", async () => {
       await assertRenderHandlerReturnsAContinuationThatFinishesTheOutcome(probe, resolved);
+    });
+  });
+
+  it('upsertSchedule received ("copilot-purge", { schedulerId: "copilot-purge", everyMs: 34567 }) — the configured interval, not another queue\'s and not a constant', () => {
+    assertPurgeScheduleUpsertedAtTheConfiguredInterval(recorded.upsertScheduleCalls);
+  });
+
+  describe("the copilot-purge handler, invoked with ({}, { db: FLEET_SENTINEL }) as runProcessor would for a fleet queue", () => {
+    beforeAll(async () => {
+      await invokePurgeHandler(recorded.runProcessorCalls);
+    });
+
+    it("runs CopilotPurgeService.purge once", () => {
+      assertPurgeHandlerRanThePurgeOnce(probe);
     });
   });
 });

@@ -71,6 +71,14 @@ const apiSrc = join(repoRoot, "apps", "api", "src");
  * are unchanged: the new bodies are reached by the API too, through
  * `ReportsModule`, so they are leaves, not consumers, and the core mounts no
  * route.
+ *
+ * `F3.85` PR 5 (ADR 0099 decision 8) adds three leaves: the `copilot-purge`
+ * queue declaration, `CopilotPurgeModule` (imports `DatabaseModule` only) and
+ * `CopilotPurgeService`. Rule 8 widens to match: the worker's closure holds no
+ * `copilot/` file except those two purge files, so `CopilotModule`, its
+ * controllers and the LLM path stay on the API. `CONSUMER_FILES` and
+ * `WORKER_CONTROLLERS` are unchanged: the purge service starts no worker and
+ * the module mounts no route.
  */
 
 // ---------------------------------------------------------------------------
@@ -169,7 +177,16 @@ const WORKER_LEAVES = [
   "calc/calc-parameters.service.ts",
   "queue/reports-dispatch.ts",
   "queue/reports-render.ts",
+  // F3.85 PR 5 (ADR 0099 decision 8): the copilot history purge — the queue
+  // declaration and the two purge leaves, the only copilot/ files rule 8
+  // admits into the worker.
+  "queue/copilot-purge.ts",
+  "copilot/copilot-purge.module.ts",
+  "copilot/copilot-purge.service.ts",
 ] as const;
+
+/** Rule 8: the only `copilot/` files the worker's closure may hold. */
+const WORKER_COPILOT_FILES = ["copilot/copilot-purge.module.ts", "copilot/copilot-purge.service.ts"] as const;
 
 /**
  * Rule 6: the two controllers the worker serves on `WORKER_PORT` — liveness
@@ -336,7 +353,7 @@ describe("F4.24 — the worker imports no API loop (ADR 0063 decision 3, Amendme
     it("WORKER_LEAVES names every leaf file: the count is pinned here so the docblock carries no number that can drift", () => {
       // F3.5b post-merge sweep (ADR 0071 Amendment 2 item 7 F): the docblock
       // once said "the nine files" against a list of twenty-six.
-      expect(WORKER_LEAVES.length).toBe(26);
+      expect(WORKER_LEAVES.length).toBe(29);
     });
 
     it("reaches the modules WorkerModule is built from (the walker follows something)", () => {
@@ -548,6 +565,38 @@ describe("F4.24 — the worker imports no API loop (ADR 0063 decision 3, Amendme
         closure("app.module.ts").files.has("llm/llm-resolver.ts"),
         "the API's closure does not reach llm/llm-resolver.ts — either the resolver moved " +
           "(update this row) or the walker follows nothing and the row above passed vacuously",
+      ).toBe(true);
+    });
+
+    it("worker.ts's closure contains no copilot/ file except the purge leaves (F3.85 PR 5)", () => {
+      const allowed = new Set<string>(WORKER_COPILOT_FILES);
+      const offending = [...closure("worker.ts").files]
+        .filter((p) => p.startsWith("copilot/") && !allowed.has(p))
+        .sort();
+      expect(
+        offending,
+        "the worker's import closure reaches copilot/ files beyond the purge leaves — the copilot " +
+          "routes, interceptor and LLM path belong to the API; CopilotPurgeService must stay " +
+          "self-contained:\n" +
+          offending.join("\n"),
+      ).toEqual([]);
+    });
+
+    it("positive control: worker.ts's closure reaches both purge leaves", () => {
+      const missing = absent(closure("worker.ts"), WORKER_COPILOT_FILES);
+      expect(
+        missing,
+        "purge leaves the worker's closure does not reach — either WorkerModule lost " +
+          "CopilotPurgeModule or the walker follows nothing and the row above passed vacuously:\n" +
+          missing.join("\n"),
+      ).toEqual([]);
+    });
+
+    it("positive control: app.module.ts's closure reaches copilot/copilot.module.ts", () => {
+      expect(
+        closure("app.module.ts").files.has("copilot/copilot.module.ts"),
+        "the API's closure does not reach copilot/copilot.module.ts — either the module moved " +
+          "(update this row) or the walker follows nothing",
       ).toBe(true);
     });
   });

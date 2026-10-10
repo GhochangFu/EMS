@@ -98,3 +98,56 @@ export const copilotPendingChangeDtoSchema = z
     expiresAt: z.string(),
   })
   .strict();
+
+/** The two ends of a conversation turn, and the audit line for a confirmed change (migration 0105 CHECK). */
+export const copilotMessageRoleSchema = z.enum(["user", "assistant", "action"]);
+
+/**
+ * One saved conversation (`F3.85` PR 5, ADR 0099 decision 8). `organizationId`
+ * is the organization the conversation is bound to, `null` for a global
+ * administrator's cross-organization conversation.
+ */
+export const copilotConversationDtoSchema = z
+  .object({
+    id: z.string(),
+    organizationId: z.string().nullable(),
+    title: z.string().nullable(),
+    createdAt: z.string(),
+    lastTurnAt: z.string(),
+  })
+  .strict();
+
+/** One saved message; `organizationIds` names the organizations whose data the turn read (decision 8). */
+export const copilotMessageDtoSchema = z
+  .object({
+    id: z.string(),
+    conversationId: z.string(),
+    role: copilotMessageRoleSchema,
+    content: z.string(),
+    organizationIds: z.array(z.string()),
+    createdAt: z.string(),
+  })
+  .strict();
+
+/** `GET /api/v1/copilot/conversations/:id` — the conversation and its messages, oldest first. */
+export const copilotConversationDetailDtoSchema = z
+  .object({
+    id: z.string(),
+    organizationId: z.string().nullable(),
+    title: z.string().nullable(),
+    createdAt: z.string(),
+    lastTurnAt: z.string(),
+    messages: z.array(copilotMessageDtoSchema),
+  })
+  .strict();
+
+/**
+ * `POST /api/v1/copilot/conversations`. A scoped administrator's conversation
+ * is bound to the home organization whatever this says (plan Q9); the global
+ * administrator may pass `null` or any existing organization.
+ */
+export const copilotCreateConversationBodySchema = z
+  .object({
+    organizationId: z.string().uuid().nullable(),
+  })
+  .strict();

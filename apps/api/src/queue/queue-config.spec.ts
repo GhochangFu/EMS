@@ -364,3 +364,35 @@ export function assertMissingRedisUrlRefusalFiresBeforeReportDispatchGuard(): vo
     `the missing-REDIS_URL refusal must not also name REPORT_DISPATCH — got "${errorMessage(err)}"`,
   );
 }
+
+/**
+ * `COPILOT_PURGE_INTERVAL_MS` (`F3.85` PR 5, ADR 0099 decision 8). Unlike the
+ * two readers above it **never refuses**: unset, blank, non-integer, zero or
+ * negative all read as the 24 h default — a retention tick that runs late is
+ * harmless, and `0` must never reach `upsertSchedule` as a hot loop.
+ */
+export function assertCopilotPurgeIntervalDefaultsTo86400000(): void {
+  const config = readWorkerConfig({ REDIS_URL: "redis://r" });
+  assert(
+    config.copilotPurgeIntervalMs === 86_400_000,
+    `expected default copilotPurgeIntervalMs 86400000, got ${config.copilotPurgeIntervalMs}`,
+  );
+}
+
+export const FALLBACK_COPILOT_PURGE_INTERVALS = ["", "   ", "abc", "0", "-5", "1.5", "NaN"] as const;
+
+export function assertCopilotPurgeIntervalFallsBackToTheDefault(raw: string): void {
+  const config = readWorkerConfig({ REDIS_URL: "redis://r", COPILOT_PURGE_INTERVAL_MS: raw });
+  assert(
+    config.copilotPurgeIntervalMs === 86_400_000,
+    `expected COPILOT_PURGE_INTERVAL_MS=${JSON.stringify(raw)} to fall back to 86400000, got ${config.copilotPurgeIntervalMs}`,
+  );
+}
+
+export function assertCopilotPurgeIntervalHonoursAPositiveInteger(): void {
+  const config = readWorkerConfig({ REDIS_URL: "redis://r", COPILOT_PURGE_INTERVAL_MS: "60000" });
+  assert(
+    config.copilotPurgeIntervalMs === 60_000,
+    `expected COPILOT_PURGE_INTERVAL_MS=60000 to be honoured, got ${config.copilotPurgeIntervalMs}`,
+  );
+}

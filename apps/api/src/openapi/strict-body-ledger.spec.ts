@@ -13,6 +13,7 @@ import {
   listDashboardTemplatesQuerySchema,
   updateDashboardTemplateBodySchema,
   createCalcParameterBodySchema,
+  copilotCreateConversationBodySchema,
   listCalcParametersQuerySchema,
   updateCalcParameterBodySchema,
   createDashboardBodySchema,
@@ -287,6 +288,9 @@ export const BODY_SCHEMAS: Record<string, ZodTypeAny> = {
   // `F3.85` PR 3 (ADR 0099 decision 5). Strict at every level: the response's own
   // fields (`organizationId`, `overrides`) sent back must be a 400.
   putCopilotAccessBodySchema,
+  // `F3.85` PR 5 (ADR 0099 decision 8). Strict: the response's own fields
+  // (`id`, `title`) sent back must be a 400.
+  copilotCreateConversationBodySchema,
   createRtuBodySchema,
   createSessionBodySchema,
   createWorkOrderBodySchema,

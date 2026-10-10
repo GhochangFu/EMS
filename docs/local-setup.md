@@ -264,6 +264,11 @@ LOG_LEVEL=info
 # REDIS_URL=redis://localhost:6379
 # WORKER_PORT=4100
 # RULE_SWEEP_INTERVAL_MS=60000
+# F3.85 (ADR 0099 decision 8): how often the worker's copilot-purge queue
+# deletes copilot history untouched for 30 days. Default 86400000 (one day);
+# blank, 0, negative or not a number falls back to the default. Shorten it
+# to see a hand-aged conversation go during a local check.
+# COPILOT_PURGE_INTERVAL_MS=86400000
 
 # Object storage (`F3.3`, ADR 0066 decisions 3 and 8). All commented, and an
 # unset endpoint is a supported state: the API boots, `/health` reads

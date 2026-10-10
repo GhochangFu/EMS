@@ -512,6 +512,10 @@ services:
       # it (`readWorkerConfig` throws `QueueConfigError` before Nest boots).
       REDIS_URL: redis://redis:6379
       WORKER_PORT: 4100
+      # F3.85 (ADR 0099 decision 8): the copilot history purge's interval.
+      # Empty (the default) or any non-positive value reads as 86400000, one
+      # day; see `.env.example`.
+      COPILOT_PURGE_INTERVAL_MS: ${COPILOT_PURGE_INTERVAL_MS:-}
       LOG_LEVEL: info
       OTEL_SERVICE_NAME: bms-worker
       # No `AUTH_MODE`, no `OIDC_ISSUER`/`OIDC_JWKS_URI`, no `JWT_SECRET` —

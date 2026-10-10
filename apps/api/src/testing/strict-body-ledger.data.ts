@@ -386,6 +386,7 @@ export const STRICTNESS_LEDGER: Record<string, LedgerEntry> = {
   putCopilotAccessBodySchema: STRICT(CALLER_ERROR),
   "putCopilotAccessBodySchema/roles": STRICT(CALLER_ERROR),
   "putCopilotAccessBodySchema/override": STRICT(CALLER_ERROR),
+  copilotCreateConversationBodySchema: STRICT(CALLER_ERROR),
   createPointKeyBodySchema: STRICT(CALLER_ERROR),
   createRtuBodySchema: STRICT(CALLER_ERROR),
   createSessionBodySchema: STRICT(CALLER_ERROR),

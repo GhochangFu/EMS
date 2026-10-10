@@ -1,3 +1,4 @@
+import { copilotPurgeQueue } from "./copilot-purge";
 import { heartbeatQueue } from "./heartbeat";
 import type { QueueDeclaration } from "./queue-registry";
 import { reportsDispatchQueue } from "./reports-dispatch";
@@ -9,12 +10,14 @@ import { rulesSweepQueue } from "./rules-sweep";
  * declares, in one place. `QueueModule` (Unit 4) builds a `QueueClient` from
  * it, and the worker host registers a processor for each entry.
  *
- * Four entries — `heartbeatQueue` (`./heartbeat`), the decision 10
+ * Five entries — `heartbeatQueue` (`./heartbeat`), the decision 10
  * repeatable job; `rulesSweepQueue` (`./rules-sweep`, `F3.11`, ADR 0064
  * decision 2), the scheduled rule evaluation; `reportsDispatchQueue`
  * (`./reports-dispatch`, `F3.5b`, ADR 0071 decision 8), the scheduled
  * report tick; and `reportsRenderQueue` (`./reports-render`, `F3.5b`, ADR
- * 0071 decision 8), one render job per due schedule. `F3.12` appends its
+ * 0071 decision 8), one render job per due schedule; and
+ * `copilotPurgeQueue` (`./copilot-purge`, `F3.85`, ADR 0099 decision 8),
+ * the copilot history's 30-day retention tick. `F3.12` appends its
  * own here, with its own tenancy, payload schema and retry policy, and
  * nowhere else.
  *
@@ -33,4 +36,5 @@ export const ALL_QUEUES = [
   rulesSweepQueue,
   reportsDispatchQueue,
   reportsRenderQueue,
+  copilotPurgeQueue,
 ] as const satisfies readonly QueueDeclaration[];

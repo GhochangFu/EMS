@@ -8,11 +8,13 @@ import {
 } from "@nestjs/common";
 import { Worker } from "bullmq";
 
+import { CopilotPurgeService } from "../copilot/copilot-purge.service";
 import { FLEET_DRIZZLE, TENANT_DRIZZLE } from "../database/database.tokens";
 import { MetricsService } from "../observability/metrics.service";
 import { ReportDispatchService } from "../reports/report-dispatch.service";
 import { ReportRenderService } from "../reports/report-render.service";
 import { RuleSweepService } from "../rules/rule-sweep.service";
+import { COPILOT_PURGE_SCHEDULER_ID, copilotPurgeQueue } from "./copilot-purge";
 import {
   HEARTBEAT_EVERY_MS,
   HEARTBEAT_SCHEDULER_ID,
@@ -47,18 +49,20 @@ import { QUEUE_CLIENT, WORKER_CONFIG } from "./queue.tokens";
  * upserts one repeatable job per scheduled queue — the heartbeat's every
  * `HEARTBEAT_EVERY_MS`, the rules sweep's every
  * `config.ruleSweepIntervalMs`, the report dispatch tick's every
- * `config.reportDispatchIntervalMs` — and starts one `Worker` per registered
+ * `config.reportDispatchIntervalMs`, the copilot purge's every
+ * `config.copilotPurgeIntervalMs` — and starts one `Worker` per registered
  * processor; on `onModuleDestroy` it closes them (`worker.ts` enables
  * shutdown hooks for exactly this).
  *
  * **Constructor order is a contract**: `(client, tenantDb, fleetDb,
- * metrics, ruleSweep, config, reportDispatch, reportRender)`. `runProcessor`
+ * metrics, ruleSweep, config, reportDispatch, reportRender, copilotPurge)`. `runProcessor`
  * receives `{ tenantDb, fleetDb }` and a `tenant` queue's handler runs
  * inside `withTenant(tenantDb, …)` — swap the two pools and every tenant job
  * runs on the BYPASSRLS pool with a GUC nobody reads. No test boots
  * `WorkerModule` (Amendment 1), so `database/fleet-read-wiring.spec.ts` pins
  * slots 1 and 2 by token; `F3.11` **appended** slots 4 and 5 and `F3.5b`
- * **appended** slots 6 and 7, each moving nothing before them.
+ * **appended** slots 6 and 7, and `F3.85` PR 5 **appended** slot 8, each
+ * moving nothing before them.
  *
  * **Every consumer is registered here, beside `ALL_QUEUES`'s declarations,
  * and not in a host of its own inside the module that owns the body.** One
@@ -69,7 +73,9 @@ import { QUEUE_CLIENT, WORKER_CONFIG } from "./queue.tokens";
  * same way. The cost is this file's `queue/ → rules/` import
  * (`RuleSweepService`) and, since `F3.5b`, its second such edge, `queue/ →
  * reports/` (`ReportDispatchService`, `ReportRenderService`) — both recorded
- * here so nobody reads them as a layering slip.
+ * here so nobody reads them as a layering slip. `F3.85` PR 5 adds a third,
+ * `queue/ → copilot/` (`CopilotPurgeService` only — `tests/f4.24` rule 8
+ * keeps every other `copilot/` file out of the worker).
  *
  * **The heartbeat processor never touches Postgres.** `pg.Pool` connects
  * lazily and the handler ignores `ctx.db`, which is what made ADR 0063
@@ -107,6 +113,12 @@ import { QUEUE_CLIENT, WORKER_CONFIG } from "./queue.tokens";
  * in `startQueueWorkers` keeps a slow sweep from overlapping the next
  * (decision 7).
  *
+ * **What the purge handler does.** `CopilotPurgeService.purge()` — the
+ * service injects both pools itself (it lists users on the fleet pool and
+ * writes per user inside `withUser` on the tenant pool), so the handler
+ * hands it nothing — then one `info` line with counts only: no user id, no
+ * conversation id, no content.
+ *
  * Nest wiring, uncovered like `main.ts`; `worker-host.spec.ts`,
  * `heartbeat.spec.ts`, `rules-sweep.spec.ts` and `queue-registry.spec.ts`
  * gate what it composes, and `worker-host.service.spec.ts` what it registers.
@@ -125,6 +137,7 @@ export class WorkerHostService implements OnModuleInit, OnModuleDestroy {
     @Inject(WORKER_CONFIG) private readonly config: WorkerConfig,
     private readonly reportDispatch: ReportDispatchService,
     private readonly reportRender: ReportRenderService,
+    private readonly copilotPurge: CopilotPurgeService,
   ) {}
 
   async onModuleInit(): Promise<void> {
@@ -146,7 +159,13 @@ export class WorkerHostService implements OnModuleInit, OnModuleDestroy {
       { schedulerId: REPORT_DISPATCH_SCHEDULER_ID, everyMs: this.config.reportDispatchIntervalMs },
       {},
     );
-    // All three upserts passed, so the client is configured; `requireConfigured`
+    await upsertSchedule(
+      this.client,
+      copilotPurgeQueue,
+      { schedulerId: COPILOT_PURGE_SCHEDULER_ID, everyMs: this.config.copilotPurgeIntervalMs },
+      {},
+    );
+    // All four upserts passed, so the client is configured; `requireConfigured`
     // is the same refusal they applied, kept for the type narrowing.
     const { prefix } = requireConfigured(this.client);
     const dbs: ProcessorDbs = { tenantDb: this.tenantDb, fleetDb: this.fleetDb };
@@ -178,8 +197,14 @@ export class WorkerHostService implements OnModuleInit, OnModuleDestroy {
       const outcome = await this.reportRender.render(payload, ctx.tx);
       return { afterCommit: () => this.reportRender.finish(outcome) };
     });
+    const purge = runProcessor(copilotPurgeQueue, dbs, async () => {
+      const s = await this.copilotPurge.purge();
+      this.logger.log(
+        `copilot-purge finished: users=${s.users} conversationsDeleted=${s.conversationsDeleted} pendingChangesDeleted=${s.pendingChangesDeleted} claimsFailed=${s.claimsFailed} durationMs=${s.durationMs}`,
+      );
+    });
 
-    this.host = startQueueWorkers(this.client, [heartbeat, sweep, dispatch, render], {
+    this.host = startQueueWorkers(this.client, [heartbeat, sweep, dispatch, render, purge], {
       createWorker: (name, process, opts) => new Worker(name, process, opts),
       metrics: this.metrics,
       logger: this.logger,
