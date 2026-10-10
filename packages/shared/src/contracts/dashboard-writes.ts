@@ -48,8 +48,8 @@ type MetricCatalogKey = z.infer<typeof metricCatalogKeySchema>;
  * `F3.1b` — the dashboard request bodies (ADR 0047).
  *
  * **Moved here from `apps/api/src/dashboard-builder/dashboards.schema.ts` (`F3.85` PR 1).** The
- * admin copilot's action catalog needs the write bodies in `@bms/shared`; the other request bodies
- * still live in `apps/api/src/**` `*.schema.ts` files. `dashboard-builder.ts` still owns the
+ * admin copilot's action catalog needs the write bodies in `@bms/shared`; most other request bodies
+ * still live in `apps/api/src/**` `*.schema.ts` files (`asset-group-writes.ts` was the first here). `dashboard-builder.ts` still owns the
  * vocabulary — `widgetTypeSchema`, `WIDGET_POINT_CARDINALITY`, `MAX_DASHBOARD_WIDGETS`, the four
  * config schemas — and every schema below imports rather than restates it.
  *

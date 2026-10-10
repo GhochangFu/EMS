@@ -8,7 +8,7 @@ import {
 /**
  * `F3.73` (plan Task 3.2) — the five site widgets on `PUT /dashboards/:id/widgets`, and the two
  * catalog entries' write params. A sibling of `dashboard-writes.tabs.spec.ts` for the same
- * reason: `dashboard-writes.spec.ts` is at 990 of the 1000 lines. Assertions live here;
+ * reason: `dashboard-writes.spec.ts` is at 994 of the 1000 lines. Assertions live here;
  * `dashboard-writes.site-widgets.test.ts` is the Vitest entry point (ADR 0014).
  */
 

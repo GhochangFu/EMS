@@ -5,7 +5,7 @@ import { putDashboardWidgetsBodySchema } from "./dashboard-writes";
 /**
  * `F3.74` (plan D7, Task 2.3) — a mimic's config may name the tab it resolves through
  * (`tabKey`, both arms) and ask to be drawn compact (`compact`, the preset arm). A new sibling of
- * `dashboard-writes.spec.ts` (990 lines, plan D13); `dashboard-writes.mimic-tab.test.ts` is the
+ * `dashboard-writes.spec.ts` (994 lines, plan D13); `dashboard-writes.mimic-tab.test.ts` is the
  * Vitest entry point (ADR 0014). Each claim parses the body and reads the parsed config back, so
  * a field the write surface stripped instead of keeping fails here too.
  */

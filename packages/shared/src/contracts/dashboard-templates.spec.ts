@@ -281,7 +281,7 @@ export function acceptsATableWithNoSourceAndNoColumns(): void {
   );
 }
 
-/** The R7 guard (dashboard-writes.ts:582-588's own load-bearing guard,
+/** The R7 guard (the `if (binding === undefined)` guard in dashboard-writes.ts,
  * mirrored here): `config.columns` set with no source bound must not throw
  * out of `safeParse`. Not a numbered plan case — found reviewing the guard
  * while building R7, reported per the caller's TDD instruction. Kept as its
