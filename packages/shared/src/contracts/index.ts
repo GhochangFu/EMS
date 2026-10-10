@@ -27,6 +27,7 @@ export * from "./asset-images";
 export * from "./asset-kpis";
 export * from "./asset-templates";
 export * from "./auth";
+export * from "./copilot";
 export * from "./dashboard";
 export * from "./dashboard-builder";
 export * from "./dashboard-dto";

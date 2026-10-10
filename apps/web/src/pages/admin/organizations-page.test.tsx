@@ -12,7 +12,10 @@ import {
   theAiAssistantActionIsHiddenWithoutAccess,
   theAiAssistantActionNavigatesToTheSubPage,
   typedCurrencyIsUppercasedAndSubmitted,
+  aRefusedRowSwitchShowsTheSentence,
   aRefusedSaveShowsTheSentence,
+  theCopilotSwitchIsAbsentForEveryoneButTheGlobalAdmin,
+  theGlobalAdminSwitchesARowsCopilotOn,
 } from "./organizations-page.spec";
 
 /**
@@ -66,5 +69,17 @@ describe("E4.1c organizations page — the Currency field", () => {
 
   it("F4.204 a refused save shows the sentence, not the envelope", async () => {
     await aRefusedSaveShowsTheSentence();
+  });
+
+  it("F3.85 the global admin switches a row's copilot on", async () => {
+    await theGlobalAdminSwitchesARowsCopilotOn();
+  });
+
+  it("F3.85 the copilot switch is absent for everyone but the global admin", async () => {
+    await theCopilotSwitchIsAbsentForEveryoneButTheGlobalAdmin();
+  });
+
+  it("F3.85 a refused row switch shows the server sentence", async () => {
+    await aRefusedRowSwitchShowsTheSentence();
   });
 });

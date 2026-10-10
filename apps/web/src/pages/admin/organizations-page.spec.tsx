@@ -1,10 +1,11 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Route, Routes, useParams } from "react-router-dom";
 import { expect, vi } from "vitest";
 import type { AdminOrganizationDto, UserRole } from "@bms/shared";
 
+import * as copilotApi from "../../api/admin/copilot-access";
 import * as api from "../../api/admin/organizations";
 import { ApiError } from "../../lib/api-error";
 import type { AuthUser } from "../../stores/auth-store";
@@ -73,6 +74,20 @@ function stubApi(): void {
   vi.spyOn(api, "fetchAdminOrganizations").mockResolvedValue(ORGANIZATIONS);
   vi.spyOn(api, "createAdminOrganization").mockResolvedValue(ORGANIZATIONS.items[0]!);
   vi.spyOn(api, "updateAdminOrganization").mockResolvedValue(ORGANIZATIONS.items[0]!);
+  // `F3.85` PR 3: the global admin's rows carry a Copilot switch that reads its organization's
+  // setting. Stubbed for every case, so no render reaches the real API.
+  vi.spyOn(copilotApi, "fetchCopilotAccess").mockImplementation(async (orgId) => ({
+    organizationId: orgId,
+    enabled: false,
+    roles: { location_admin: true, asset_group_admin: true },
+    overrides: [],
+  }));
+  vi.spyOn(copilotApi, "putCopilotAccess").mockImplementation(async (orgId, body) => ({
+    organizationId: orgId,
+    enabled: body.enabled ?? false,
+    roles: { location_admin: true, asset_group_admin: true },
+    overrides: [],
+  }));
 }
 
 async function openCreateForm(): Promise<void> {
@@ -270,4 +285,65 @@ export async function aRefusedSaveShowsTheSentence(): Promise<void> {
   await userEvent.click(screen.getByRole("button", { name: "Save" }));
   const banner = await screen.findByText(/An organization with that code already exists/);
   expect(banner.textContent).not.toContain('{"');
+}
+
+/**
+ * `F3.85` PR 3 (ADR 0099 decision 5) — the global admin switches an
+ * organization's copilot from its row: the PUT names that row's organization
+ * and carries `{ enabled: true }` only.
+ */
+export async function theGlobalAdminSwitchesARowsCopilotOn(): Promise<void> {
+  stubApi();
+  renderPageAs("admin");
+  const toggle = (await screen.findByLabelText("Copilot for Rupee organization")) as HTMLInputElement;
+  await waitFor(() => expect(toggle.disabled).toBe(false));
+  expect(toggle.checked).toBe(false);
+
+  await userEvent.click(toggle);
+
+  await waitFor(() =>
+    expect(copilotApi.putCopilotAccess).toHaveBeenCalledWith("22222222-2222-2222-2222-222222222222", { enabled: true }),
+  );
+  await waitFor(() => expect(toggle.checked).toBe(true));
+}
+
+/**
+ * `F3.85` PR 3 — no Copilot switch for anyone but the global admin, and no
+ * read of the setting either. The AI assistant action on the same row is the
+ * control for the organization admin; "View only" for the location admin.
+ */
+export async function theCopilotSwitchIsAbsentForEveryoneButTheGlobalAdmin(): Promise<void> {
+  for (const role of ["organization_admin", "location_admin"] as const) {
+    stubApi();
+    renderPageAs(role);
+    const row = (await screen.findByText("Rupee organization")).closest("tr")!;
+    expect(
+      role === "organization_admin"
+        ? within(row).getByRole("button", { name: "AI assistant" })
+        : within(row).getByText("View only"),
+    ).toBeInTheDocument();
+    expect(within(row).queryByLabelText("Copilot for Rupee organization"), role).toBeNull();
+    expect(copilotApi.fetchCopilotAccess, role).not.toHaveBeenCalled();
+    cleanup();
+    vi.restoreAllMocks();
+  }
+}
+
+/**
+ * Code review (PR 3): a refused or failed save on the row switch puts the
+ * check back, so it must also say why — the server's sentence, not the JSON
+ * envelope. Mutation: drop the switch's `onError` → red.
+ */
+export async function aRefusedRowSwitchShowsTheSentence(): Promise<void> {
+  stubApi();
+  vi.mocked(copilotApi.putCopilotAccess).mockRejectedValue(
+    new ApiError('{"statusCode":403,"message":"Organization is outside your access scope","error":"Forbidden"}', 403),
+  );
+  renderPageAs("admin");
+  const toggle = (await screen.findByLabelText("Copilot for Rupee organization")) as HTMLInputElement;
+  await waitFor(() => expect(toggle.disabled).toBe(false));
+  await userEvent.click(toggle);
+  const banner = await screen.findByText("Organization is outside your access scope");
+  expect(banner.textContent).not.toContain('{"');
+  expect(toggle.checked).toBe(false);
 }

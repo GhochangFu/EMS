@@ -48,6 +48,16 @@ export const FORCED_TABLES = [
   // F3.21 (ADR 0090 Amendment 1 A3, migration 0100): the per-organization LLM
   // setting holds an encrypted provider key, so it is FORCE like every tenant table.
   "organization_llm_settings",
+  // `F3.85` PR 3 (ADR 0099 decision 5, migration 0104). The live
+  // `relforcerowsecurity` check covers all three. The count-0 check below is
+  // non-vacuous only for `copilot_org_settings`, whose demo-organization row the
+  // seed writes (plan Q5); it is VACUOUS for the other two until an admin writes
+  // a row, because 0 is what an unforced empty table answers too.
+  // `copilot-access.rls.integration.spec.ts` holds the non-vacuous half for
+  // them against committed rows.
+  "copilot_org_settings",
+  "copilot_role_settings",
+  "copilot_user_overrides",
 ] as const;
 
 function assert(condition: boolean, message: string): void {
