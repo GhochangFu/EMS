@@ -58,6 +58,16 @@ export const FORCED_TABLES = [
   "copilot_org_settings",
   "copilot_role_settings",
   "copilot_user_overrides",
+  // `F3.85` PR 4 (ADR 0099 decision 8, migration 0105). Not tenant tables: their
+  // policy is `user_isolation` on `app.current_user`, which this file never
+  // sets, so the count-0 check below holds for them too. It is VACUOUS for all
+  // three — the seed writes no conversation, message or pending change.
+  // `user-context.integration.spec.ts` and
+  // `copilot-pending-changes.integration.spec.ts` hold the non-vacuous half
+  // against committed rows.
+  "copilot_conversations",
+  "copilot_messages",
+  "copilot_pending_changes",
 ] as const;
 
 function assert(condition: boolean, message: string): void {

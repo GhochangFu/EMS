@@ -729,6 +729,13 @@
       "when": 1791637140496,
       "tag": "0104_copilot_access",
       "breakpoints": true
+    },
+    {
+      "idx": 106,
+      "version": "7",
+      "when": 1791644146795,
+      "tag": "0105_copilot_history",
+      "breakpoints": true
     }
   ]
 }
