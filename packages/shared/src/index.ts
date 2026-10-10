@@ -25,10 +25,10 @@
 import type { z } from "zod";
 
 import type * as A from "./contracts/admin";
-import type * as AT from "./contracts/asset-templates";
 import type * as Aia from "./contracts/ai-assistant";
 import type * as AD from "./contracts/asset-dashboards";
 import type * as AI from "./contracts/asset-images";
+import type * as AT from "./contracts/asset-templates";
 import type * as Au from "./contracts/auth";
 import type * as D from "./contracts/dashboard";
 import type * as Db from "./contracts/dashboard-builder";
