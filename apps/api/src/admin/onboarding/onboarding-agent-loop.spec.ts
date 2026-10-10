@@ -12,7 +12,7 @@ import {
   runAgentTurn,
 } from "./onboarding-agent-loop";
 import { TOOL_RESULT_MAX_CHARS, type ToolContext } from "./onboarding-agent-tools";
-import type { LlmMessage, LlmReply, LlmToolCall, OnboardingLlmProvider } from "./onboarding-llm-port";
+import type { LlmMessage, LlmReply, LlmToolCall, LlmProvider } from "../../llm/llm-port";
 import { stepLabelFor } from "./onboarding-chat-rule-based";
 import { filterSuggestedReplies } from "./onboarding-suggested-replies";
 import { EMPTY_TEMPLATE_CONTEXT } from "./onboarding-template-refs";
@@ -29,7 +29,7 @@ function assert(condition: boolean, message: string): void {
  * as an SDK rejection would; `"hang"` waits until the turn's signal fires and
  * then rejects, as the SDKs do on abort. Every `messages` array is recorded.
  */
-export class FakeLlmProvider implements OnboardingLlmProvider {
+export class FakeLlmProvider implements LlmProvider {
   readonly name = "openrouter" as const;
   readonly seen: LlmMessage[][] = [];
 
@@ -271,7 +271,7 @@ export async function assertAProviderErrorRecordsItsClassAndStatus(): Promise<vo
   class AuthenticationError extends Error {
     readonly status = 401;
   }
-  const llm: OnboardingLlmProvider = {
+  const llm: LlmProvider = {
     name: "openrouter",
     complete: async () => {
       throw new AuthenticationError("401 bad key sk-or-secret-1234");

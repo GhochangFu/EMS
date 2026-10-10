@@ -10,8 +10,8 @@ import { TENANT_DRIZZLE } from "../../database/database.tokens";
 import { type BmsTx, withTenant } from "../../database/tenant-context";
 import { CredentialCryptoService } from "../../security/credential-crypto.service";
 import { MasterDataAuditService } from "../master-data-audit.service";
-import { classifyProviderError, createLlmProvider } from "../onboarding/onboarding-llm-factory";
-import { OnboardingLlmResolver } from "../onboarding/onboarding-llm-resolver";
+import { classifyProviderError, createLlmProvider } from "../../llm/llm-factory";
+import { LlmResolver } from "../../llm/llm-resolver";
 import type { PutAiAssistantSettingsBody, TestAiAssistantBody } from "./ai-assistant-settings.schema";
 
 /** The Test button's one call may take this long (A5). */
@@ -41,7 +41,7 @@ export class AiAssistantSettingsService {
     private readonly accessControl: AccessControlService,
     private readonly audit: MasterDataAuditService,
     private readonly crypto: CredentialCryptoService,
-    private readonly resolver: OnboardingLlmResolver,
+    private readonly resolver: LlmResolver,
   ) {}
 
   /**

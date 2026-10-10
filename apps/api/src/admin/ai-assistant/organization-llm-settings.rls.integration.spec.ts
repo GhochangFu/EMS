@@ -6,7 +6,7 @@ import type { BmsDb } from "@bms/db";
 
 import { withTenant } from "../../database/tenant-context";
 import { CredentialCryptoService } from "../../security/credential-crypto.service";
-import { OnboardingLlmResolver } from "../onboarding/onboarding-llm-resolver";
+import { LlmResolver } from "../../llm/llm-resolver";
 import { AiAssistantSettingsService } from "./ai-assistant-settings.service";
 
 /**
@@ -245,7 +245,7 @@ function realService(
   inTransaction?: (tx: BmsDb) => Promise<void>,
 ): { service: AiAssistantSettingsService; audits: RecordedAudit[] } {
   const crypto = new CredentialCryptoService();
-  const resolver = new OnboardingLlmResolver(ctx.tenantDb, crypto);
+  const resolver = new LlmResolver(ctx.tenantDb, crypto);
   const access = {
     // A null actor keeps `updated_by` clear of the users FK; the gate is not under test.
     requireMasterDataUser: async () => ({ id: null, role: "admin" }),

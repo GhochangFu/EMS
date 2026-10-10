@@ -12,8 +12,8 @@ import {
   type LlmReply,
   type LlmToolCall,
   type LlmToolDefinition,
-  type OnboardingLlmProvider,
-} from "./onboarding-llm-port";
+  type LlmProvider,
+} from "./llm-port";
 
 /**
  * The beta that gates the scalar `fallbacks: "default"` form. The array form
@@ -45,7 +45,7 @@ export const ANTHROPIC_BASE_URL = "https://api.anthropic.com";
  * It reads no environment variable: the key and the model come from the
  * resolver.
  */
-export class AnthropicProvider implements OnboardingLlmProvider {
+export class AnthropicProvider implements LlmProvider {
   readonly name = "anthropic" as const;
 
   constructor(private readonly options: { readonly apiKey: string; readonly model: string }) {}

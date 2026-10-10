@@ -3,7 +3,7 @@ import { describe, it } from "vitest";
 import {
   assertClassifyProviderErrorMapsTheTypedClasses,
   assertEachNameBuildsItsAdapter,
-} from "./onboarding-llm-factory.spec";
+} from "./llm-factory.spec";
 
 /** Vitest entry point — see `admin.schema.test.ts` for the pattern (ADR 0014). One `it()` per claim. */
 describe("LLM provider factory (F3.21, ADR 0090 Amendment 1 A1/A5)", () => {

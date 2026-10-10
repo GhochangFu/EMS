@@ -8,8 +8,8 @@ import {
   type LlmMessage,
   type LlmReply,
   type LlmToolDefinition,
-  type OnboardingLlmProvider,
-} from "./onboarding-llm-port";
+  type LlmProvider,
+} from "./llm-port";
 
 /** Amendment 1 A1: OpenRouter is the `openai` package at this base URL. */
 export const OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1";
@@ -27,7 +27,7 @@ export const OPENAI_BASE_URL = "https://api.openai.com/v1";
  * SDK rejections are rethrown as they are; the loop classifies them by whether
  * the turn's deadline fired.
  */
-export class OpenAiCompatibleProvider implements OnboardingLlmProvider {
+export class OpenAiCompatibleProvider implements LlmProvider {
   constructor(
     readonly name: "openai" | "openrouter",
     private readonly options: { readonly apiKey: string; readonly model: string; readonly baseURL?: string },

@@ -9,7 +9,7 @@ import { looksLikeCredential } from "./onboarding-credential-detect";
 import { assetPointProblems } from "./onboarding-mapping-refs";
 import { dispatchMappingTool, isMappingToolName, MAPPING_TOOL_DESCRIPTIONS, MAPPING_TOOL_SCHEMAS } from "./onboarding-mapping-tools";
 import { cutToBound, draftCountProblem } from "./onboarding-draft-caps";
-import type { LlmToolCall, LlmToolDefinition } from "./onboarding-llm-port";
+import type { LlmToolCall, LlmToolDefinition } from "../../llm/llm-port";
 import { deriveLocationPatch } from "./onboarding-location-derive";
 import { pointKeyDeclarationProblems } from "./onboarding-point-key-conflict";
 import type { OrgPointKeySummary } from "./onboarding-catalog.service";

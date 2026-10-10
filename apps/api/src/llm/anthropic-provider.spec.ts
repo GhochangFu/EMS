@@ -1,5 +1,5 @@
-import { ANTHROPIC_BASE_URL, ANTHROPIC_FALLBACK_BETA, AnthropicProvider } from "./onboarding-anthropic-provider";
-import { LlmProviderError, type LlmMessage, type LlmToolDefinition } from "./onboarding-llm-port";
+import { ANTHROPIC_BASE_URL, ANTHROPIC_FALLBACK_BETA, AnthropicProvider } from "./anthropic-provider";
+import { LlmProviderError, type LlmMessage, type LlmToolDefinition } from "./llm-port";
 
 function assert(condition: boolean, message: string): void {
   if (!condition) {

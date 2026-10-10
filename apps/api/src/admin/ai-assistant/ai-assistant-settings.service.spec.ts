@@ -1,8 +1,8 @@
 import { BadRequestException, ForbiddenException } from "@nestjs/common";
 
 import { CredentialCryptoService } from "../../security/credential-crypto.service";
-import type { LlmToolDefinition, OnboardingLlmProvider } from "../onboarding/onboarding-llm-port";
-import { OnboardingLlmResolver } from "../onboarding/onboarding-llm-resolver";
+import type { LlmToolDefinition, LlmProvider } from "../../llm/llm-port";
+import { LlmResolver } from "../../llm/llm-resolver";
 import { AiAssistantSettingsService, NO_ENCRYPTION_KEY_MESSAGE } from "./ai-assistant-settings.service";
 
 function assert(condition: boolean, message: string): void {
@@ -17,7 +17,7 @@ const KEY = Buffer.alloc(32, 0x01).toString("base64");
 const ORG_KEY = "sk-or-org-key-abcdxyz9";
 const PLATFORM_KEY = "sk-platform-key-0000";
 
-type Row = Parameters<OnboardingLlmResolver["decryptKey"]>[0];
+type Row = Parameters<LlmResolver["decryptKey"]>[0];
 
 const ENV_NAMES = ["LLM_PROVIDER", "OPENROUTER_API_KEY", "OPENROUTER_MODEL", "OPENAI_API_KEY", "OPENAI_MODEL", "ANTHROPIC_API_KEY", "ANTHROPIC_MODEL", "CREDENTIAL_ENCRYPTION_KEY", "CREDENTIAL_ENCRYPTION_KEY_VERSION"];
 
@@ -89,7 +89,7 @@ function harness(opts: { row?: Row | null; inScope?: boolean; testError?: unknow
   };
   const db = { transaction: async (fn: (t: unknown) => Promise<unknown>) => fn(tx), execute: async () => undefined };
   const crypto = new CredentialCryptoService();
-  const resolver = new OnboardingLlmResolver(db as never, crypto);
+  const resolver = new LlmResolver(db as never, crypto);
   resolver.readSetting = async () => (store.row ? { ...store.row } : null);
   const access = {
     requireMasterDataUser: async () => ({ id: "user-1", role: opts.role ?? "organization_admin" }),
@@ -99,7 +99,7 @@ function harness(opts: { row?: Row | null; inScope?: boolean; testError?: unknow
   const service = new AiAssistantSettingsService(db as never, access as never, audit as never, crypto, resolver);
   const built: Built[] = [];
   service.buildProvider = (name, options) => {
-    const provider: OnboardingLlmProvider = {
+    const provider: LlmProvider = {
       name,
       complete: async (input) => {
         built.push({ name, ...options, tools: input.tools });
@@ -113,7 +113,7 @@ function harness(opts: { row?: Row | null; inScope?: boolean; testError?: unknow
 }
 
 /** F4.187: remove() decides from its own DELETE, so a read outside its transaction fails the case by name. */
-function forbidReadOutsideTransaction(resolver: OnboardingLlmResolver): void {
+function forbidReadOutsideTransaction(resolver: LlmResolver): void {
   resolver.readSetting = async () => {
     throw new Error("remove() must not read the row outside its transaction");
   };

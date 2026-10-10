@@ -4,7 +4,7 @@ import { cloneJson } from "../stack-safe-json";
 import { isToolName, runTool, TOOL_DEFINITIONS, type ToolContext, type ToolState } from "./onboarding-agent-tools";
 import { cutToBound } from "./onboarding-draft-caps";
 import { diffSections } from "./onboarding-draft-merge";
-import type { LlmMessage, OnboardingLlmProvider } from "./onboarding-llm-port";
+import type { LlmMessage, LlmProvider } from "../../llm/llm-port";
 import { PROMPT_MARKER_SENTENCE, serialiseDraftForPrompt } from "./onboarding-prompt-budget";
 import type { OnboardingDraftInput, OnboardingPhase } from "./onboarding.schema";
 
@@ -131,7 +131,7 @@ export async function runAgentTurn(
     readonly phase: OnboardingPhase;
     readonly orgName: string;
     readonly history: readonly OnboardingChatMessage[];
-    readonly llm: OnboardingLlmProvider;
+    readonly llm: LlmProvider;
     readonly tools: ToolContext;
   },
   options: { readonly maxToolCalls?: number; readonly deadlineMs?: number } = {},
