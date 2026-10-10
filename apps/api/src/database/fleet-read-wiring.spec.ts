@@ -9,6 +9,7 @@ import { TelemetryImportService } from "../admin/telemetry-import/telemetry-impo
 import { AssetImagesService } from "../assets/asset-images.service";
 import { AssetImagesWriteService } from "../assets/asset-images-write.service";
 import { CalcDefinitionsService } from "../calc/calc-definitions.service";
+import { CopilotPurgeService } from "../copilot/copilot-purge.service";
 import { DashboardService } from "../dashboard/dashboard.service";
 import { MaintenanceService } from "../maintenance/maintenance.service";
 import { QUEUE_CLIENT } from "../queue/queue.tokens";
@@ -232,4 +233,21 @@ export function assertReportSchedulesServiceTenantSlot(): void {
 
 export function assertReportSchedulesServiceFleetSlot(): void {
   expect(injectedToken(ReportSchedulesService, 1)).toBe(FLEET_DRIZZLE);
+}
+
+/**
+ * `F3.85` PR 5 — `CopilotPurgeService(tenantDb, fleetDb)` (ADR 0099
+ * decision 8). Unlike `ReportDispatchService`, it injects both pools: the
+ * fleet pool only lists `users.id` (0105 revokes the copilot tables from
+ * `bms_fleet`), and every delete runs on slot 0 inside `withUser`. A swap
+ * would run the deletes on the BYPASSRLS pool, where `user_isolation` binds
+ * nothing. `WorkerHostService` appended the service in slot 8; the slot-1/2
+ * rows above are re-run unchanged. Two claims, one function each.
+ */
+export function assertCopilotPurgeServiceTenantSlot(): void {
+  expect(injectedToken(CopilotPurgeService, 0)).toBe(TENANT_DRIZZLE);
+}
+
+export function assertCopilotPurgeServiceFleetSlot(): void {
+  expect(injectedToken(CopilotPurgeService, 1)).toBe(FLEET_DRIZZLE);
 }

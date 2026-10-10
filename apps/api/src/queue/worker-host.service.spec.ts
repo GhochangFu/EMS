@@ -3,11 +3,13 @@ import "reflect-metadata";
 import type { BmsDb } from "@bms/db";
 import type { RuleSweepSummary } from "@bms/shared";
 
+import type { CopilotPurgeService, CopilotPurgeSummary } from "../copilot/copilot-purge.service";
 import type { BmsTx } from "../database/tenant-context";
 import type { MetricsService } from "../observability/metrics.service";
 import type { ReportDispatchService, ReportDispatchSummary } from "../reports/report-dispatch.service";
 import type { RenderOutcome, ReportRenderService } from "../reports/report-render.service";
 import type { RuleSweepService } from "../rules/rule-sweep.service";
+import { copilotPurgeQueue } from "./copilot-purge";
 import type { ProcessorContinuation, ProcessorDbs, ProcessorHandler } from "./queue-processor";
 import type { QueueClient, QueueHandle } from "./queue-registry";
 import { ALL_QUEUES } from "./queues";
@@ -76,6 +78,13 @@ import { WorkerHostService } from "./worker-host.service";
  * against `reportsDispatchQueue` is the tick: swap the two *handlers*
  * between the `runProcessor` calls and both rows redden.
  *
+ * **`F3.85` PR 5 (ADR 0099 decision 8) appended slot 8** —
+ * `CopilotPurgeService` — and one registration: the purge schedule's
+ * cadence is `config.copilotPurgeIntervalMs` (a third sentinel, distinct
+ * from the other two), and the handler runs the purge once. The service
+ * injects both pools itself, so the handler hands it nothing;
+ * `fleet-read-wiring.spec.ts` pins its two slots.
+ *
  * The `.test.ts` wrapper `vi.mock`s `./queue-processor`, `./queue-registry`'s
  * `upsertSchedule` and `./worker-host` so `onModuleInit` runs without Redis,
  * and hands the recorded calls across. One claim per function — `assert`
@@ -105,6 +114,18 @@ export const CONFIGURED_SWEEP_INTERVAL_MS = 12_345;
 
 /** A second sentinel, distinct from the sweep's, so the two intervals cannot be crossed. */
 export const CONFIGURED_DISPATCH_INTERVAL_MS = 23_456;
+
+/** A third sentinel, distinct from the sweep's and the dispatch's, so no two intervals can be crossed. */
+export const CONFIGURED_PURGE_INTERVAL_MS = 34_567;
+
+/** What the fake `CopilotPurgeService.purge` resolves; the host interpolates the counts into its log line. */
+export const PURGE_SUMMARY: CopilotPurgeSummary = {
+  users: 4,
+  conversationsDeleted: 3,
+  pendingChangesDeleted: 2,
+  claimsFailed: 1,
+  durationMs: 78,
+};
 
 /** The tenant transaction the render handler is invoked with; opaque, compared by identity. */
 export const TX_SENTINEL = { tx: "tx-sentinel" } as unknown as BmsTx;
@@ -152,6 +173,8 @@ export type WorkerHostProbe = {
   readonly renderTxs: readonly unknown[];
   /** Every outcome handed to the fake `ReportRenderService.finish`. */
   readonly finishedOutcomes: readonly unknown[];
+  /** How many times the fake `CopilotPurgeService.purge` ran. */
+  readonly purgeRuns: () => number;
 };
 
 /** A `QueueHandle` whose `client` resolves to a Redis fake that records `set`. */
@@ -172,6 +195,7 @@ export async function initWorkerHost(): Promise<WorkerHostProbe> {
   const dispatchTicks: unknown[] = [];
   const renderTxs: unknown[] = [];
   const finishedOutcomes: unknown[] = [];
+  let purgeRuns = 0;
   const client: QueueClient = {
     kind: "configured",
     prefix: PREFIX,
@@ -201,6 +225,12 @@ export async function initWorkerHost(): Promise<WorkerHostProbe> {
       finishedOutcomes.push(outcome);
     },
   } as unknown as ReportRenderService;
+  const copilotPurge = {
+    purge: async () => {
+      purgeRuns += 1;
+      return PURGE_SUMMARY;
+    },
+  } as unknown as CopilotPurgeService;
   const service = new WorkerHostService(
     client,
     TENANT_SENTINEL,
@@ -212,12 +242,14 @@ export async function initWorkerHost(): Promise<WorkerHostProbe> {
       port: 4100,
       ruleSweepIntervalMs: CONFIGURED_SWEEP_INTERVAL_MS,
       reportDispatchIntervalMs: CONFIGURED_DISPATCH_INTERVAL_MS,
+      copilotPurgeIntervalMs: CONFIGURED_PURGE_INTERVAL_MS,
     },
     reportDispatch,
     reportRender,
+    copilotPurge,
   );
   await service.onModuleInit();
-  return { sweepRuns, keyWrites, dispatchTicks, renderTxs, finishedOutcomes };
+  return { sweepRuns, keyWrites, dispatchTicks, renderTxs, finishedOutcomes, purgeRuns: () => purgeRuns };
 }
 
 function declNameOf(call: RecordedRunProcessorCall): string {
@@ -422,5 +454,36 @@ export async function assertRenderHandlerReturnsAContinuationThatFinishesTheOutc
   assert(
     probe.finishedOutcomes.length === 1 && probe.finishedOutcomes[0] === RENDER_OUTCOME,
     `expected afterCommit() to hand ReportRenderService.finish the very outcome render returned, once; finished=${probe.finishedOutcomes.length}, identical=${probe.finishedOutcomes[0] === RENDER_OUTCOME}`,
+  );
+}
+
+/** ADR 0099 decision 8: the purge scheduler runs at the configured interval, under the declared id. */
+export function assertPurgeScheduleUpsertedAtTheConfiguredInterval(
+  upserts: readonly RecordedUpsertScheduleCall[],
+): void {
+  const found = upserts.filter(([name]) => name === copilotPurgeQueue.name);
+  const expected = JSON.stringify({
+    schedulerId: "copilot-purge",
+    everyMs: CONFIGURED_PURGE_INTERVAL_MS,
+  });
+  const actual = found.map(([, schedule]) =>
+    JSON.stringify({ schedulerId: schedule.schedulerId, everyMs: schedule.everyMs }),
+  );
+  assert(
+    actual.length === 1 && actual[0] === expected,
+    `expected upsertSchedule("copilot-purge", ${expected}) exactly once — the interval is hard-coded, crossed with another queue's, or the scheduler id drifted; got [${actual.join(", ")}] (all upserts: ${upserts.map(([name]) => name).join(", ")})`,
+  );
+}
+
+/** Runs the recorded `copilot-purge` handler the way `runProcessor` would for a `fleet` queue. */
+export async function invokePurgeHandler(calls: readonly RecordedRunProcessorCall[]): Promise<void> {
+  const handler = registrationOf(calls, copilotPurgeQueue.name)[2] as ProcessorHandler<typeof copilotPurgeQueue>;
+  await handler({}, { db: FLEET_SENTINEL });
+}
+
+export function assertPurgeHandlerRanThePurgeOnce(probe: WorkerHostProbe): void {
+  assert(
+    probe.purgeRuns() === 1,
+    `expected CopilotPurgeService.purge to run exactly once per tick — the handler never purges, or another queue's body is registered against copilot-purge; runs=${probe.purgeRuns()}`,
   );
 }

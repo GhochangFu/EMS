@@ -13,6 +13,7 @@ import {
   listDashboardTemplatesQuerySchema,
   updateDashboardTemplateBodySchema,
   createCalcParameterBodySchema,
+  copilotCreateConversationBodySchema,
   listCalcParametersQuerySchema,
   updateCalcParameterBodySchema,
   createDashboardBodySchema,
@@ -349,6 +350,9 @@ export const REQUEST_SCHEMAS: Record<string, ZodTypeAny> = {
   AiAssistantSettingsController_put: putAiAssistantSettingsBodySchema,
   AiAssistantSettingsController_test: testAiAssistantBodySchema,
   CopilotAccessController_put: putCopilotAccessBodySchema,
+  // `F3.85` PR 5 (ADR 0099 decision 8). `_list` and `_get` take no body and no
+  // query (one path parameter on `_get`).
+  CopilotConversationsController_create: copilotCreateConversationBodySchema,
   PointKeysAdminController_create: createPointKeyBodySchema,
   PointKeysAdminController_update: updatePointKeyBodySchema,
   // `F3.5a` (ADR 0071 decision 11). `_download` and `_remove` are absent —

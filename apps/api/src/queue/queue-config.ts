@@ -12,6 +12,8 @@
  * Its guards run in order: `REDIS_URL` → `WORKER_PORT` →
  * `RULE_SWEEP_INTERVAL_MS` → `REPORT_DISPATCH_INTERVAL_MS` (ADR 0071
  * decision 8, R-14) — updated for `REPORT_DISPATCH_INTERVAL_MS` in F3.5b.
+ * `COPILOT_PURGE_INTERVAL_MS` (`F3.85` PR 5) is read last and never
+ * refuses: anything but a positive integer reads as the 24 h default.
  *
  * A `redis://` URL can carry a password, so `redisOptionsFromUrl` never
  * includes the raw input in a thrown message (AGENTS.md §9.6).
@@ -46,6 +48,16 @@ export const MAX_RULE_SWEEP_INTERVAL_MS: number = 3_600_000;
 export const DEFAULT_REPORT_DISPATCH_INTERVAL_MS: number = 60_000;
 export const MIN_REPORT_DISPATCH_INTERVAL_MS: number = 10_000;
 export const MAX_REPORT_DISPATCH_INTERVAL_MS: number = 3_600_000;
+
+/**
+ * `COPILOT_PURGE_INTERVAL_MS` (`F3.85` PR 5, ADR 0099 decision 8) — the
+ * copilot history's 30-day retention tick, once a day by default. No MIN or
+ * MAX and no refusal: a purge that runs late keeps rows a little longer,
+ * which is harmless, so a bad value falls back to the default rather than
+ * stopping the worker. The one value that must never pass is `0` (or a
+ * negative), which `upsertSchedule` would turn into a hot loop.
+ */
+export const DEFAULT_COPILOT_PURGE_INTERVAL_MS: number = 86_400_000;
 
 export type RedisConnectionOptions = {
   host: string;
@@ -139,6 +151,7 @@ export type WorkerConfig = {
   readonly port: number;
   readonly ruleSweepIntervalMs: number;
   readonly reportDispatchIntervalMs: number;
+  readonly copilotPurgeIntervalMs: number;
 };
 
 const MAX_PORT = 65535;
@@ -211,13 +224,28 @@ function readReportDispatchInterval(raw: string | undefined): number {
 }
 
 /**
+ * `COPILOT_PURGE_INTERVAL_MS` (`F3.85` PR 5). Unset, blank, non-integer,
+ * zero or negative read as `DEFAULT_COPILOT_PURGE_INTERVAL_MS`; a positive
+ * integer is honoured. Never throws (see the constant's docblock).
+ */
+function readCopilotPurgeInterval(raw: string | undefined): number {
+  const trimmed = raw?.trim() ?? "";
+  if (!/^\d+$/.test(trimmed)) {
+    return DEFAULT_COPILOT_PURGE_INTERVAL_MS;
+  }
+  const value = Number(trimmed);
+  return Number.isSafeInteger(value) && value > 0 ? value : DEFAULT_COPILOT_PURGE_INTERVAL_MS;
+}
+
+/**
  * `readQueueConfig` runs first, so a missing `REDIS_URL` is refused before
  * `WORKER_PORT` is even looked at — the plan's table rules out the port
  * guard firing first on an otherwise-unconfigured worker. `WORKER_PORT` is
  * read before `RULE_SWEEP_INTERVAL_MS`, and `RULE_SWEEP_INTERVAL_MS` before
  * `REPORT_DISPATCH_INTERVAL_MS`, for the same reason: guard order is
  * `REDIS_URL` → `WORKER_PORT` → `RULE_SWEEP_INTERVAL_MS` →
- * `REPORT_DISPATCH_INTERVAL_MS`.
+ * `REPORT_DISPATCH_INTERVAL_MS`. `COPILOT_PURGE_INTERVAL_MS` comes last and
+ * cannot refuse, so it never changes which guard fires first.
  */
 export function readWorkerConfig(
   env: Record<string, string | undefined>,
@@ -234,5 +262,6 @@ export function readWorkerConfig(
     port,
     ruleSweepIntervalMs: readRuleSweepInterval(env.RULE_SWEEP_INTERVAL_MS),
     reportDispatchIntervalMs: readReportDispatchInterval(env.REPORT_DISPATCH_INTERVAL_MS),
+    copilotPurgeIntervalMs: readCopilotPurgeInterval(env.COPILOT_PURGE_INTERVAL_MS),
   };
 }

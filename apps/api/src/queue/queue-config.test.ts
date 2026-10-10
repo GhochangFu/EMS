@@ -4,6 +4,9 @@ import {
   assertBlankRedisUrlIsUnconfigured,
   assertBlankRuleSweepIntervalIsUnset,
   assertCredentialRefusalDoesNotEchoThePassword,
+  assertCopilotPurgeIntervalDefaultsTo86400000,
+  assertCopilotPurgeIntervalFallsBackToTheDefault,
+  assertCopilotPurgeIntervalHonoursAPositiveInteger,
   assertCredentialsAndDbAreParsed,
   assertInvalidReportDispatchIntervalThrowsNamingOnlyItself,
   assertInvalidRuleSweepIntervalThrowsNamingOnlyRuleSweep,
@@ -24,6 +27,7 @@ import {
   assertWorkerConfigDefaultsPortTo4100,
   assertWorkerConfigHonoursExplicitPort,
   assertWorkerConfigRefusesMissingRedisUrlNamingOnlyRedisUrl,
+  FALLBACK_COPILOT_PURGE_INTERVALS,
   INVALID_REPORT_DISPATCH_INTERVALS,
   INVALID_RULE_SWEEP_INTERVALS,
   INVALID_URL_ROWS,
@@ -138,5 +142,20 @@ describe("F4.24 — queue and worker configuration readers", () => {
 
   it("refuses a missing REDIS_URL before checking REPORT_DISPATCH_INTERVAL_MS", () => {
     assertMissingRedisUrlRefusalFiresBeforeReportDispatchGuard();
+  });
+
+  it("defaults copilotPurgeIntervalMs to 86400000 (F3.85)", () => {
+    assertCopilotPurgeIntervalDefaultsTo86400000();
+  });
+
+  it.each(FALLBACK_COPILOT_PURGE_INTERVALS)(
+    "reads COPILOT_PURGE_INTERVAL_MS=%j as the 86400000 default, never 0 and never a refusal",
+    (raw) => {
+      assertCopilotPurgeIntervalFallsBackToTheDefault(raw);
+    },
+  );
+
+  it("honours a positive integer COPILOT_PURGE_INTERVAL_MS", () => {
+    assertCopilotPurgeIntervalHonoursAPositiveInteger();
   });
 });
