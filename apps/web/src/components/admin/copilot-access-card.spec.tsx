@@ -137,6 +137,29 @@ export async function thePickerOffersOnlyThisOrganizationsAdministrators(): Prom
   );
 }
 
+/**
+ * Code review (PR 3): once a pick is saved, the user leaves the picker's
+ * options, so the selection must reset too — a kept selection left Allow and
+ * Deny enabled for a user the picker no longer shows. Here the PUT mock returns
+ * the new exception, as the server does. Mutation: drop the reset → red.
+ */
+export async function aSavedPickResetsThePicker(): Promise<void> {
+  renderCard("organization_admin");
+  vi.mocked(copilotApi.putCopilotAccess).mockImplementation(async (_orgId, body) => ({
+    ...ACCESS,
+    overrides: body.override && body.override.allow !== null ? [{ userId: body.override.userId, allow: body.override.allow }] : [],
+  }));
+  const picker = (await screen.findByLabelText("Administrator")) as HTMLSelectElement;
+  await waitFor(() => expect(picker.options.length).toBe(2));
+  await userEvent.selectOptions(picker, "aaaaaaaa-0000-4000-8000-000000000001");
+  await userEvent.click(screen.getByRole("button", { name: "Allow" }));
+
+  expect(await screen.findByText("Allowed")).toBeInTheDocument();
+  expect(picker.value).toBe("");
+  expect((screen.getByRole("button", { name: "Allow" }) as HTMLButtonElement).disabled).toBe(true);
+  expect((screen.getByRole("button", { name: "Deny" }) as HTMLButtonElement).disabled).toBe(true);
+}
+
 /** An existing exception is listed by name and removed with `allow: null`. */
 export async function anExceptionIsListedAndRemoved(): Promise<void> {
   renderCard("organization_admin", {

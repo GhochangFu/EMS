@@ -48,6 +48,8 @@ export function CopilotAccessCard({ orgId, user }: CopilotAccessCardProps) {
     onSuccess: (dto: CopilotAccessDto) => {
       queryClient.setQueryData(copilotAccessQueryKey(orgId), dto);
       setError(null);
+      // A saved pick leaves the options; a kept selection would leave Allow and Deny live for it.
+      setPickedUser("");
     },
     onError: (err: unknown) => setError(apiErrorMessage(err)),
   });
@@ -119,9 +121,10 @@ export function CopilotAccessCard({ orgId, user }: CopilotAccessCardProps) {
                       type="button"
                       className="text-xs font-semibold text-critical-ink disabled:opacity-60"
                       disabled={busy}
+                      aria-busy={busy}
                       onClick={() => saveMutation.mutate({ override: { userId: override.userId, allow: null } })}
                     >
-                      Remove exception for {nameOf(override.userId)}
+                      {busy ? "Saving…" : `Remove exception for ${nameOf(override.userId)}`}
                     </button>
                   </li>
                 ))}
@@ -147,17 +150,19 @@ export function CopilotAccessCard({ orgId, user }: CopilotAccessCardProps) {
                 type="button"
                 className="surface-button px-3 py-2 text-xs font-semibold disabled:opacity-60"
                 disabled={pickedUser === "" || busy}
+                aria-busy={busy}
                 onClick={() => saveMutation.mutate({ override: { userId: pickedUser, allow: true } })}
               >
-                Allow
+                {busy ? "Saving…" : "Allow"}
               </button>
               <button
                 type="button"
                 className="surface-button px-3 py-2 text-xs font-semibold disabled:opacity-60"
                 disabled={pickedUser === "" || busy}
+                aria-busy={busy}
                 onClick={() => saveMutation.mutate({ override: { userId: pickedUser, allow: false } })}
               >
-                Deny
+                {busy ? "Saving…" : "Deny"}
               </button>
             </div>
           </fieldset>

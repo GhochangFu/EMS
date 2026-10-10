@@ -156,3 +156,28 @@ export async function assertAnExceptionForANonAdministratorIsRefused(): Promise<
   await refused(() => service.put(jwt("organization_admin"), ORG_A, { override: { userId: "user-op", allow: true } }));
   expect(calls).toEqual(["target:user-op"]);
 }
+
+/**
+ * Security and code review (PR 3): removing an exception only narrows, so it
+ * must not depend on the user still qualifying — a user demoted or moved away
+ * left a stale row that the card listed and could not remove. A remove passes
+ * the gate and reaches the transaction without reading the target.
+ * Mutation: check the target on a remove too → red.
+ */
+export async function assertAStaleExceptionCanBeRemoved(): Promise<void> {
+  const demoted: OverrideTarget = { organizationId: ORG_A, role: "operator" };
+  const { service, calls } = harness({ "user-demoted": demoted });
+  await expect(
+    service.put(jwt("organization_admin"), ORG_A, { override: { userId: "user-demoted", allow: null } }),
+  ).rejects.toThrow("the refusal must come before any tenant transaction");
+  expect(calls).toEqual(["transaction"]);
+}
+
+/** A scoped administrator cannot set the organization switch either. */
+export async function assertScopedAdministratorsCannotSetTheOrganizationSwitch(): Promise<void> {
+  for (const role of ["location_admin", "asset_group_admin"] as const) {
+    const { service, calls } = harness();
+    await refused(() => service.put(jwt(role), ORG_A, { enabled: true }));
+    expect(calls, role).toEqual([]);
+  }
+}

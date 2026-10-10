@@ -328,3 +328,22 @@ export async function theCopilotSwitchIsAbsentForEveryoneButTheGlobalAdmin(): Pr
     vi.restoreAllMocks();
   }
 }
+
+/**
+ * Code review (PR 3): a refused or failed save on the row switch puts the
+ * check back, so it must also say why — the server's sentence, not the JSON
+ * envelope. Mutation: drop the switch's `onError` → red.
+ */
+export async function aRefusedRowSwitchShowsTheSentence(): Promise<void> {
+  stubApi();
+  vi.mocked(copilotApi.putCopilotAccess).mockRejectedValue(
+    new ApiError('{"statusCode":403,"message":"Organization is outside your access scope","error":"Forbidden"}', 403),
+  );
+  renderPageAs("admin");
+  const toggle = (await screen.findByLabelText("Copilot for Rupee organization")) as HTMLInputElement;
+  await waitFor(() => expect(toggle.disabled).toBe(false));
+  await userEvent.click(toggle);
+  const banner = await screen.findByText("Organization is outside your access scope");
+  expect(banner.textContent).not.toContain('{"');
+  expect(toggle.checked).toBe(false);
+}

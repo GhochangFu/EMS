@@ -48,6 +48,11 @@ async function sweepStaleRuns(pool: pg.Pool): Promise<void> {
       `DELETE FROM bms.organizations WHERE code LIKE $1 AND created_at < now() - interval '30 minutes'`,
       [FAMILY_PATTERN],
     );
+    // The writing admin has no organization, so the deletes above never reach it; a run
+    // killed before afterAll would otherwise leave an active global admin behind.
+    await pool.query(
+      `DELETE FROM bms.users WHERE email LIKE 'f385-copilot-%-admin@example.test' AND created_at < now() - interval '30 minutes'`,
+    );
   } catch (err) {
     process.stderr.write(
       `[F3.85] could not sweep stale fixture rows: ${err instanceof Error ? err.message : String(err)}\n`,
@@ -95,13 +100,19 @@ describe.skipIf(!connectionString)("F3.85 — the copilot availability tables (m
     );
     const userA = rows[0]?.id;
     if (!userA) throw new Error("F3.85: fixture user was not created");
+    const other = await superPool.query<{ id: string }>(
+      "INSERT INTO bms.users (organization_id, email, display_name, role) VALUES ($1, $2, 'F3.85 B', 'location_admin') RETURNING id",
+      [orgB, `${FAMILY.toLowerCase()}-b@example.test`],
+    );
+    const userB = other.rows[0]?.id;
+    if (!userB) throw new Error("F3.85: fixture user B was not created");
     const actor = await superPool.query<{ id: string }>(
       "INSERT INTO bms.users (organization_id, email, display_name, role) VALUES (NULL, $1, 'F3.85 admin', 'admin') RETURNING id",
       [`${FAMILY.toLowerCase()}-admin@example.test`],
     );
     const actorId = actor.rows[0]?.id;
     if (!actorId) throw new Error("F3.85: fixture admin was not created");
-    ctx = { tenantDb: createDb(tenantPool), fleetPool, ownerPool, superPool, orgA, orgB, userA, actorId };
+    ctx = { tenantDb: createDb(tenantPool), fleetPool, ownerPool, superPool, orgA, orgB, userA, userB, actorId };
   });
 
   afterAll(async () => {

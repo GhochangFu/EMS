@@ -15,6 +15,12 @@ import { bmsSchema, organizations, users } from "./bms-schema";
  * policy. The role CHECK (`copilot_role_settings_role_check`) is not mirrored
  * here; the migration owns it and `tests/f3.85-copilot-access-schema.test.ts`
  * pins it by name.
+ *
+ * `bms_fleet` keeps 0041's default DML on all three (the 0100 model). The
+ * migration's header gives a "fleet read" by the Organizations page as the reason;
+ * no such read exists — every read and write in `F3.85` PR 3 goes through
+ * `withTenant` on `bms_tenant`. The header cannot be edited (frozen migrations),
+ * so the correction lives here.
  */
 
 /** One organization's switch. No row means off (ruling 15). */

@@ -32,6 +32,8 @@ export type CopilotAccessCtx = {
   orgB: string;
   /** A `location_admin` whose home organization is A. */
   userA: string;
+  /** A `location_admin` whose home organization is B — an exception in A naming it survives A's user deletes. */
+  userB: string;
   /**
    * The global admin who writes the switches — no home organization, so the
    * cascade case can delete A and its users while `updated_by` (no ON DELETE,
@@ -192,10 +194,12 @@ export async function theAvailabilityServiceReadsTheRealSwitches(ctx: CopilotAcc
 }
 
 /**
- * 6 — the access service writes through the composite conflict targets: a
- * second PUT updates rather than duplicates, `allow: null` removes the
- * exception, and the DTO reads back what was written. The gate and the audit
- * are faked (the unit spec owns the gate); the SQL is real.
+ * 6 — the access service writes through every conflict target, on both the
+ * insert and the update branch: a role switch and an exception are each
+ * written twice and stay one row, `allow: null` removes the exception, the
+ * organization switch is inserted in B (which has no row yet) and updated in A,
+ * and the DTO reads back what was written. The gate and the audit are faked
+ * (the unit spec owns the gate); the SQL is real.
  */
 export async function theAccessServiceWritesAndReadsBack(ctx: CopilotAccessCtx): Promise<void> {
   const audits: unknown[] = [];
@@ -214,18 +218,45 @@ export async function theAccessServiceWritesAndReadsBack(ctx: CopilotAccessCtx):
   expect(second.roles).toEqual({ location_admin: true, asset_group_admin: true });
   expect(await fleetCount(ctx, "copilot_role_settings", ctx.orgA), "updated, not duplicated").toBe(2);
 
+  // Case 1 left an allow row for userA; the override target is the composite (organization, user).
+  await service.put(admin, ctx.orgA, { override: { userId: ctx.userA, allow: false } });
+  const denied = await service.put(admin, ctx.orgA, { override: { userId: ctx.userA, allow: false } });
+  expect(denied.overrides).toEqual([{ userId: ctx.userA, allow: false }]);
+  expect(await fleetCount(ctx, "copilot_user_overrides", ctx.orgA), "updated, not duplicated").toBe(1);
+
   const cleared = await service.put(admin, ctx.orgA, { override: { userId: ctx.userA, allow: null } });
   expect(cleared.overrides).toEqual([]);
   expect(await fleetCount(ctx, "copilot_user_overrides", ctx.orgA)).toBe(0);
 
+  // The insert branch of the organization switch: B has no row (case 5 read it as off).
+  expect(await fleetCount(ctx, "copilot_org_settings", ctx.orgB)).toBe(0);
+  const onB = await service.put(admin, ctx.orgB, { enabled: true });
+  expect(onB.enabled).toBe(true);
+  expect(await fleetCount(ctx, "copilot_org_settings", ctx.orgB)).toBe(1);
+
+  // The update branch: A's row exists since case 1.
   const off = await service.put(admin, ctx.orgA, { enabled: false });
   expect(off.enabled).toBe(false);
-  expect(audits, "one audit row per PUT").toHaveLength(4);
+  expect(await fleetCount(ctx, "copilot_org_settings", ctx.orgA)).toBe(1);
+  expect(audits, "one audit row per PUT").toHaveLength(7);
 }
 
-/** 7 — deleting the organization removes its three kinds of row. */
+/**
+ * 7 — deleting the organization removes its three kinds of row. The exception
+ * names userB, whose home is B, so deleting A's users does not remove it; only
+ * the organization cascade can. Each table holds a row before the delete.
+ */
 export async function deletingTheOrganizationCascades(ctx: CopilotAccessCtx): Promise<void> {
+  await withTenant(ctx.tenantDb, ctx.orgA, (tx) =>
+    tx.execute(
+      sql`INSERT INTO bms.copilot_user_overrides (organization_id, user_id, allow) VALUES (${ctx.orgA}, ${ctx.userB}, true)`,
+    ),
+  );
+  for (const table of TABLES) {
+    expect(await fleetCount(ctx, table, ctx.orgA), `control: ${table} holds a row for A`).toBeGreaterThan(0);
+  }
   await ctx.superPool.query("DELETE FROM bms.users WHERE organization_id = $1", [ctx.orgA]);
+  expect(await fleetCount(ctx, "copilot_user_overrides", ctx.orgA), "userB's exception outlives A's users").toBe(1);
   await ctx.fleetPool.query("DELETE FROM bms.organizations WHERE id = $1", [ctx.orgA]);
   for (const table of TABLES) {
     expect(await fleetCount(ctx, table, ctx.orgA), `${table} cascades`).toBe(0);

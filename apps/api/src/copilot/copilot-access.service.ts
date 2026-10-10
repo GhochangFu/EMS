@@ -107,7 +107,10 @@ export class CopilotAccessService {
     if (body.enabled !== undefined && actor.role !== "admin") {
       throw new ForbiddenException(COPILOT_ORG_SWITCH_MESSAGE);
     }
-    if (body.override !== undefined) {
+    // A remove only narrows, so it never depends on the user still qualifying:
+    // a demoted or moved user's stale row must stay removable. The delete is
+    // bounded to this organization by its predicate and by RLS.
+    if (body.override !== undefined && body.override.allow !== null) {
       const target = await this.loadOverrideTarget(body.override.userId);
       if (!target || target.organizationId !== organizationId || !EXCEPTION_ROLES.includes(target.role)) {
         throw new ForbiddenException(COPILOT_EXCEPTION_TARGET_MESSAGE);

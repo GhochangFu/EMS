@@ -12,6 +12,7 @@ import {
   theAiAssistantActionIsHiddenWithoutAccess,
   theAiAssistantActionNavigatesToTheSubPage,
   typedCurrencyIsUppercasedAndSubmitted,
+  aRefusedRowSwitchShowsTheSentence,
   aRefusedSaveShowsTheSentence,
   theCopilotSwitchIsAbsentForEveryoneButTheGlobalAdmin,
   theGlobalAdminSwitchesARowsCopilotOn,
@@ -76,5 +77,9 @@ describe("E4.1c organizations page — the Currency field", () => {
 
   it("F3.85 the copilot switch is absent for everyone but the global admin", async () => {
     await theCopilotSwitchIsAbsentForEveryoneButTheGlobalAdmin();
+  });
+
+  it("F3.85 a refused row switch shows the server sentence", async () => {
+    await aRefusedRowSwitchShowsTheSentence();
   });
 });
