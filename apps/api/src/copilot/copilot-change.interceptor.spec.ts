@@ -1,5 +1,6 @@
 import { BadRequestException, ConflictException, ForbiddenException, InternalServerErrorException } from "@nestjs/common";
 import type { CallHandler, ExecutionContext } from "@nestjs/common";
+import { HTTP_CODE_METADATA } from "@nestjs/common/constants";
 import { Reflector } from "@nestjs/core";
 import { defer, from, lastValueFrom } from "rxjs";
 import { expect, vi } from "vitest";
@@ -57,6 +58,9 @@ type Options = {
   type?: string;
   stored?: Partial<ClaimedChange>;
   handlerResult?: () => Promise<unknown>;
+  /** The route's `@HttpCode`, set on the handler as Nest's decorator sets it. */
+  httpCode?: number;
+  contentType?: string;
 };
 
 function harness(options: Options = {}): Harness {
@@ -68,11 +72,15 @@ function harness(options: Options = {}): Harness {
     method,
     path,
     originalUrl: options.originalUrl ?? path,
-    headers: "header" in options ? { "x-copilot-change": options.header } : { "x-copilot-change": CHANGE_ID },
+    headers: {
+      "x-copilot-change": "header" in options ? options.header : CHANGE_ID,
+      "content-type": options.contentType ?? "application/json",
+    },
     body: "body" in options ? options.body : BODY,
     user: options.authenticated === false ? undefined : user,
   };
   const handlerFn = function create(): void {};
+  if (options.httpCode !== undefined) Reflect.defineMetadata(HTTP_CODE_METADATA, options.httpCode, handlerFn);
   const context = {
     getType: () => options.type ?? "http",
     switchToHttp: () => ({ getRequest: () => req }),
@@ -169,6 +177,14 @@ export async function aQueryStringIs409(): Promise<void> {
   expect(h.pending.claim).not.toHaveBeenCalled();
 }
 
+/** A multipart body is parsed after this interceptor, so its hash could not cover the upload: refused. */
+export async function aMultipartRequestIs409(): Promise<void> {
+  const h = harness({ contentType: "multipart/form-data; boundary=x" });
+  expect(await refused(h)).toBeInstanceOf(ConflictException);
+  expect(h.pending.peek).not.toHaveBeenCalled();
+  expect(h.handler).not.toHaveBeenCalled();
+}
+
 export async function anUnknownChangeIs409AndNothingIsClaimed(): Promise<void> {
   const h = harness();
   h.pending.peek.mockResolvedValueOnce(null);
@@ -250,6 +266,40 @@ export async function aPutRecords200AndNoResource(): Promise<void> {
   const h = harness({ method: "PUT", stored: { method: "PUT" }, handlerResult: async () => ({ ok: true }) });
   await run(h);
   expect(h.pending.record).toHaveBeenCalledWith(expect.any(String), CHANGE_ID, "applied", 200, null);
+}
+
+/** A route's `@HttpCode` decides the recorded status: a publish POST answers 200, not the POST default 201. */
+export async function theRoutesHttpCodeIsRecorded(): Promise<void> {
+  const h = harness({ httpCode: 200, handlerResult: async () => ({ id: "tpl-1" }) });
+  await run(h);
+  expect(h.pending.record).toHaveBeenCalledWith(expect.any(String), CHANGE_ID, "applied", 200, "tpl-1");
+}
+
+/**
+ * The outcome is recorded before the response leaves — on success and on
+ * error. `record` is held open by hand: while it is unresolved, the request
+ * must not settle. A fire-and-forget record settles at once and turns this red.
+ */
+export async function theOutcomeIsRecordedBeforeTheResponse(): Promise<void> {
+  for (const failing of [false, true]) {
+    const h = harness(failing ? { handlerResult: async () => Promise.reject(new BadRequestException("no")) } : {});
+    let release: () => void = () => undefined;
+    h.pending.record.mockImplementationOnce(() => new Promise<void>((resolve) => (release = resolve)));
+    let settled = false;
+    const done = run(h).then(
+      () => (settled = true),
+      () => (settled = true),
+    );
+    for (let i = 0; i < 5 && h.pending.record.mock.calls.length === 0; i += 1) {
+      await new Promise((r) => setTimeout(r, 5));
+    }
+    expect(h.pending.record, failing ? "error path" : "success path").toHaveBeenCalledTimes(1);
+    await new Promise((r) => setTimeout(r, 20));
+    expect(settled, `${failing ? "error" : "success"} path settled before the record finished`).toBe(false);
+    release();
+    await done;
+    expect(settled).toBe(true);
+  }
 }
 
 /** A refused write is recorded `failed` with the status the client sees, and the same error reaches the client. */

@@ -59,7 +59,9 @@ export function statusOf(err: unknown): number {
  * 2. The caller's role (read from the database this request, by the guard)
  *    is one of the four copilot roles, else 403.
  * 3. The request carries no query string (no release-1 catalog route reads
- *    one), else 409.
+ *    one) and is not multipart, else 409. A multipart body is parsed by a
+ *    route-level interceptor that runs after this global one, so its hash
+ *    would cover `{}` and never the upload; no catalog entry is multipart.
  * 4. The change is this user's, pending and unexpired (a read), else 409.
  * 5. The copilot is available to the caller in the change's organization
  *    now, else 403 — the row stays `pending`.
@@ -100,6 +102,10 @@ export class CopilotChangeInterceptor implements NestInterceptor {
       throw new ForbiddenException(COPILOT_UNAVAILABLE);
     }
     if (req.originalUrl.includes("?")) throw new ConflictException(CHANGE_REFUSED);
+    const contentType = req.headers["content-type"];
+    if (typeof contentType === "string" && /^multipart\//i.test(contentType.trim())) {
+      throw new ConflictException(CHANGE_REFUSED);
+    }
 
     const store = copilotContext.getStore();
     if (store === undefined) {

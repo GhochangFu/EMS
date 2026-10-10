@@ -66,6 +66,22 @@ export async function aBodylessChangeSendsBraces(): Promise<void> {
   expect(seen().init.method).toBe("PUT");
 }
 
+/** A path that is not an `/api/v1/` path never reaches `fetch`, so the token cannot leave the API origin. */
+export async function aNonApiPathIsRefusedBeforeFetch(): Promise<void> {
+  const fetchSpy = vi.fn();
+  vi.stubGlobal("fetch", fetchSpy);
+  for (const path of [".attacker.example/x", "@attacker.example/x", "//attacker.example/x", "/api/v1//attacker.example", "/api/v1/\\x", "/api/v1/@attacker.example"]) {
+    let caught: unknown;
+    try {
+      await confirmCopilotChange({ ...CHANGE, path });
+    } catch (err) {
+      caught = err;
+    }
+    expect(caught, path).toBeInstanceOf(ApiError);
+  }
+  expect(fetchSpy).not.toHaveBeenCalled();
+}
+
 /** A refusal is an `ApiError` with the server's status and text. */
 export async function aRefusalIsAnApiError(): Promise<void> {
   capture(() => new Response('{"message":"This copilot change cannot be applied","statusCode":409}', { status: 409 }));

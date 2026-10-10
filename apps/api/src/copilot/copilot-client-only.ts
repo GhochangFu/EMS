@@ -10,6 +10,7 @@
  */
 const CLIENT_ONLY: ReadonlyMap<string, readonly string[]> = new Map();
 
+/** The body keys a catalog entry takes from the Confirm card rather than from the model; none for an unknown entry. */
 export function clientOnlyKeysFor(catalogId: string): readonly string[] {
   return CLIENT_ONLY.get(catalogId) ?? [];
 }

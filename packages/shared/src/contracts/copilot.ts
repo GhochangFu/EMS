@@ -89,7 +89,8 @@ export const copilotPendingChangeDtoSchema = z
     id: z.string(),
     catalogId: z.string(),
     method: z.enum(["POST", "PUT", "PATCH", "DELETE"]),
-    path: z.string(),
+    // Always an API path on the same origin: the executor joins it to the API base.
+    path: z.string().regex(/^\/api\/v1\//),
     body: z.record(z.string(), z.unknown()),
     summary: z.string(),
     risk: copilotChangeRiskSchema,

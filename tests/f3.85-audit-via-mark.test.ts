@@ -43,7 +43,8 @@ const CATALOG_DIRS = [
   "calc",
 ] as const;
 
-const DIRECT_INSERT = /\binsert\(\s*auditLog\s*\)/;
+/** The drizzle form and the raw-SQL form. */
+const DIRECT_INSERT = /\binsert\(\s*auditLog\s*\)|\binsert\s+into\s+(bms\.)?audit_log\b/i;
 
 function sourceFiles(dir: string): string[] {
   const out: string[] = [];

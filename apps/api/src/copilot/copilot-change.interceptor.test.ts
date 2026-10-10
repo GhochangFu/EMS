@@ -12,6 +12,7 @@ import {
   aMalformedHeaderIs409,
   aMatchingChangeIsAppliedMarkedAndRecorded,
   aMissingStoreFailsClosed,
+  aMultipartRequestIs409,
   aNonHttpContextPassesThrough,
   anAbsentBodyMatchesABodylessEntry,
   anUnauthenticatedRequestIs409,
@@ -20,6 +21,8 @@ import {
   aPutRecords200AndNoResource,
   aQueryStringIs409,
   aZodErrorIsRecordedAs400,
+  theOutcomeIsRecordedBeforeTheResponse,
+  theRoutesHttpCodeIsRecorded,
   noHeaderPassesThroughUntouched,
 } from "./copilot-change.interceptor.spec";
 
@@ -31,6 +34,7 @@ describe("F3.85 — the X-Copilot-Change interceptor (ADR 0099 decision 4.5)", (
   it("answers an unauthenticated request with 409", () => anUnauthenticatedRequestIs409());
   it("answers a demoted caller with 403 and reads nothing", () => aDemotedCallerIs403AndNothingIsRead());
   it("answers a query string with 409", () => aQueryStringIs409());
+  it("answers a multipart request with 409", () => aMultipartRequestIs409());
   it("answers an unknown change with 409 and claims nothing", () => anUnknownChangeIs409AndNothingIsClaimed());
   it("answers an unavailable copilot with 403 before the claim", () => anUnavailableCopilotIs403BeforeTheClaim());
   it("answers a lost claim with 409", () => aLostClaimIs409());
@@ -41,6 +45,8 @@ describe("F3.85 — the X-Copilot-Change interceptor (ADR 0099 decision 4.5)", (
   it("matches an absent body to a bodyless entry", () => anAbsentBodyMatchesABodylessEntry());
   it("applies a matching change, marks it and records it", () => aMatchingChangeIsAppliedMarkedAndRecorded());
   it("records 200 and no resource for a PUT without an id", () => aPutRecords200AndNoResource());
+  it("records the route's @HttpCode status", () => theRoutesHttpCodeIsRecorded());
+  it("records the outcome before the response leaves", () => theOutcomeIsRecordedBeforeTheResponse());
   it("records a handler error as failed and rethrows it", () => aHandlerErrorIsRecordedAndRethrown());
   it("records a ZodError as 400", () => aZodErrorIsRecordedAs400());
   it("fails closed without the request store", () => aMissingStoreFailsClosed());
