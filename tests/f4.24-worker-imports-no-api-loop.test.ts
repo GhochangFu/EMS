@@ -531,4 +531,24 @@ describe("F4.24 — the worker imports no API loop (ADR 0063 decision 3, Amendme
       ).toEqual([]);
     });
   });
+
+  describe("rule 8 — the worker never reaches the LLM core (F3.85, ADR 0099)", () => {
+    it("worker.ts's closure contains no file under llm/", () => {
+      const offending = [...closure("worker.ts").files].filter((p) => p.startsWith("llm/")).sort();
+      expect(
+        offending,
+        "the worker's import closure reaches the LLM core — a provider SDK and the key resolver " +
+          "have no job on the worker:\n" +
+          offending.join("\n"),
+      ).toEqual([]);
+    });
+
+    it("positive control: app.module.ts's closure reaches llm/llm-resolver.ts", () => {
+      expect(
+        closure("app.module.ts").files.has("llm/llm-resolver.ts"),
+        "the API's closure does not reach llm/llm-resolver.ts — either the resolver moved " +
+          "(update this row) or the walker follows nothing and the row above passed vacuously",
+      ).toBe(true);
+    });
+  });
 });
