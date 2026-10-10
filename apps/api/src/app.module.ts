@@ -8,6 +8,7 @@ import { AssetsModule } from "./assets/assets.module";
 import { AuthModule } from "./auth/auth.module";
 import { CalcModule } from "./calc/calc.module";
 import { ControlRoomModule } from "./control-room/control-room.module";
+import { CopilotModule } from "./copilot/copilot.module";
 import { DashboardModule } from "./dashboard/dashboard.module";
 import { DashboardBuilderModule } from "./dashboard-builder/dashboard-builder.module";
 import { DatabaseModule } from "./database/database.module";
@@ -58,6 +59,7 @@ import { WorkOrdersModule } from "./work-orders/work-orders.module";
     MapModule,
     VocabulariesModule,
     NotificationsModule,
+    CopilotModule,
   ],
 })
 export class AppModule {}

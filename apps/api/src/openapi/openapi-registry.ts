@@ -77,6 +77,7 @@ import {
   putAiAssistantSettingsBodySchema,
   testAiAssistantBodySchema,
 } from "../admin/ai-assistant/ai-assistant-settings.schema";
+import { putCopilotAccessBodySchema } from "../copilot/copilot-access.schema";
 import {
   createPointKeyBodySchema,
   updatePointKeyBodySchema,
@@ -347,6 +348,7 @@ export const REQUEST_SCHEMAS: Record<string, ZodTypeAny> = {
   // `F3.21` (ADR 0090 Amendment 1 A5). `_get` and `_remove` take no body.
   AiAssistantSettingsController_put: putAiAssistantSettingsBodySchema,
   AiAssistantSettingsController_test: testAiAssistantBodySchema,
+  CopilotAccessController_put: putCopilotAccessBodySchema,
   PointKeysAdminController_create: createPointKeyBodySchema,
   PointKeysAdminController_update: updatePointKeyBodySchema,
   // `F3.5a` (ADR 0071 decision 11). `_download` and `_remove` are absent —

@@ -79,6 +79,7 @@ import {
   putAiAssistantSettingsBodySchema,
   testAiAssistantBodySchema,
 } from "../admin/ai-assistant/ai-assistant-settings.schema";
+import { putCopilotAccessBodySchema } from "../copilot/copilot-access.schema";
 import {
   createPointKeyBodySchema,
   updatePointKeyBodySchema,
@@ -283,6 +284,9 @@ export const BODY_SCHEMAS: Record<string, ZodTypeAny> = {
   // silently dropped.
   putAiAssistantSettingsBodySchema,
   testAiAssistantBodySchema,
+  // `F3.85` PR 3 (ADR 0099 decision 5). Strict at every level: the response's own
+  // fields (`organizationId`, `overrides`) sent back must be a 400.
+  putCopilotAccessBodySchema,
   createRtuBodySchema,
   createSessionBodySchema,
   createWorkOrderBodySchema,

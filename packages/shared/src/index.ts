@@ -647,6 +647,7 @@ export type DefaultDashboardsBackfillResultDto = z.infer<
 
 // `F2.6` template version lifecycle (ADR 0039) — derived in `./types/` (§4.5 cap).
 export type * from "./types/template-migration";
+export type * from "./types/copilot";
 
 // ---------------------------------------------------------------------------
 // AI onboarding wizard (ADR 0011, ADR 0022)
