@@ -71,7 +71,7 @@ and keys) are encrypted before they reach the database.
   `notifications/channels.service.ts` reads a webhook secret at its stored
   version, `security/credential-rotation.service.ts` decrypts each row it
   rotates so it can re-encrypt it (both since ADR 0062), and
-  `admin/onboarding/onboarding-llm-resolver.ts` `decryptKey` decrypts the
+  `llm/llm-resolver.ts` `decryptKey` (moved from onboarding by `F3.85`) decrypts the
   organization LLM key on every onboarding chat turn and for the AI-assistant
   Test button (ADR 0090 Amendment 1). Onboarding commit still only moves
   ciphertext and IV across tables — it does not decrypt.
@@ -318,7 +318,7 @@ version neither key holds is a loud, named error, not a silent skip.
    turns that row into a loud `CredentialKeyVersionError` on its next read,
    not a silent skip. The organization LLM key fails more quietly: unlike the
    channel read, whose warn line names the error class,
-   `OnboardingLlmResolver.decryptKey` swallows the error, the chat falls to the
+   `LlmResolver.decryptKey` swallows the error, the chat falls to the
    guided mode, and the warn line says only that the setting is "incomplete".
    **A clean report covers
    `rtu_connection_configs`, `notification_channels` and
