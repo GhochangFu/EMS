@@ -1155,7 +1155,8 @@
 > took the overview spec off `AppShell`); `F4.161` is closed (#578).
 > And **a site-wide copilot for administrators** is promoted (**ADR 0099**,
 > accepted 2026-10-10 in #797 `1de15f33` after twenty owner rulings; rows
-> `F3.85`–`F3.87`, **not built yet** — `F3.85` waits on `F4.150`). It promotes
+> `F3.85`–`F3.87`, **not built yet** — `F3.85` is eligible since `F4.150`
+> closed, #799 `e7efcb04`). It promotes
 > §6's general copilot item for `admin`, `organization_admin`, `location_admin`
 > and `asset_group_admin` only; operators and viewers get none. It answers
 > read-only questions within the user's own read scope and proposes admin
@@ -1776,7 +1777,9 @@ bms/
 │   │                            (ADR 0056 Amendment 3) moved the template-
 │   │                            migration DTOs out to contracts/template-
 │   │                            migration.ts for the same reason (admin.ts was
-│   │                            744 lines then, 765 since F2.10). contracts/
+│   │                            744 lines then); F4.150 moved the asset-
+│   │                            template DTOs to contracts/asset-templates.ts
+│   │                            (admin.ts 765 → 352 lines). contracts/
 │   │                            location-types.ts also holds F4.162's
 │   │                            adminLocationTypeDtoSchema.
 │   │                            src/types/ holds z.infer derivations moved out
