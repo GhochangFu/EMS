@@ -23,6 +23,11 @@ bookkeeping*.
 Creates rows `F3.85` (release 1), `F3.86` (release 2) and `F3.87` (release 3)
 in Track E.
 
+**Amended 2026-10-10 — Amendment 1** (owner-approved; the `F3.85` plan-gate
+rulings Q2, Q3 and Q8): the usage counters, the day boundary, and the reading
+of "access only narrows". Where Amendment 1 conflicts with the text above, it
+wins.
+
 | # | Question | Options put | Ruled | Decision |
 | --- | --- | --- | --- | --- |
 | 1 | Copilot or narrow assistant | narrow admin assistant; general copilot; no change | **general copilot** (owner's own choice) | 1 |
@@ -463,3 +468,67 @@ None. The providers already use `openai` and `@anthropic-ai/sdk`
   dashboard create and widget save write audit rows whose payload names the
   copilot change; a rejected card writes nothing; an operator sees no dock and
   gets 403 from every copilot route.
+
+## Amendment 1 — usage counters, the day boundary, and Q2 (owner, 2026-10-10)
+
+The `F3.85` step-3 plan (`docs/plans/f3.85-admin-copilot-release-1.md`, §0)
+found that decision 11's one usage table cannot work under decision 8's
+per-user policy, and asked the owner three questions this record left open.
+The owner ruled each one at the plan gate on 2026-10-10 (Q8 against the
+plan's recommendation) and approved this amendment the same day. Each item names the decision or choice whose text it changes.
+
+- **A1 — Decision 11 and decision 8: two counter tables (Q3).** Decision 11's
+  `bms.copilot_usage (user_id, organization_id, day, turns)` is replaced by:
+  - `bms.copilot_usage (user_id, day, turns)`, primary key `(user_id, day)`,
+    under decision 8's per-user policy (`user_id =
+    current_setting('app.current_user')::uuid`), FORCE row-level security,
+    and **no grant to `bms_fleet`** (decision 8's revoke applies);
+  - `bms.copilot_org_usage (organization_id, day, turns)`, primary key
+    `(organization_id, day)`, under the strict `tenant_isolation` policy
+    (`USING` and `WITH CHECK` on `app.current_organization`), FORCE, and
+    **no grant to `bms_fleet`** either. It holds a count and no conversation
+    text.
+
+  Why two tables: decision 8 requires every copilot policy to bind
+  `user_id`, so one table keyed by user cannot add up an organization's
+  turns; and a key of `(user_id, organization_id, day)` gave the global admin
+  150 turns **per organization**. With `(user_id, day)` the user limit
+  (drafter choice 2: 150) is per user per day across all organizations.
+
+  A turn increments both counters **in one transaction** that sets
+  `app.current_user` and `app.current_organization`; a turn over either limit
+  is refused before any model call and the transaction rolls back, so a
+  refused turn counts nowhere. A cross-organization turn (no bound
+  organization) increments the user counter only, as drafter choice 2 says.
+  The 30-day erase (decision 8, drafter choice 8) also removes counter rows
+  older than 30 days. Decision 8's table list gains `bms.copilot_org_usage`.
+
+- **A2 — Decision 11: the day boundary is the organization's timezone (Q8,
+  against the plan's recommendation of UTC; follow-up ruling: a new column).**
+  - `bms.organizations` gains `timezone varchar(64) NOT NULL DEFAULT 'UTC'`,
+    an IANA zone name. The API validates it on write against the runtime's
+    IANA list, as the location timezone is validated since `E4.1b` (ADR 0070
+    decision 6); the organization DTO and the organization form gain the
+    field, written by whoever writes organizations today. The seed sets the
+    demo organization's zone; every other organization keeps `'UTC'` until an
+    administrator sets it.
+  - The organization counter's `day` is the calendar date in **that
+    organization's** zone. The user counter's `day` is the date in the zone of
+    the **user's home organization**; the global admin, who has no home
+    organization, counts in UTC.
+  - The refusal names the reset time as an instant; the browser shows it in
+    the user's locale.
+  - This is a schema change to `bms.organizations` (AGENTS.md §10); it ships
+    in the usage-limits build PR (`F3.85` plan PR 6), not before.
+
+- **A3 — Decision 5: what "Access only narrows down the chain" means (Q2).**
+  The organization switch always wins: when it is off (or absent), no role
+  switch and no exception can give anyone the copilot in that organization.
+  Below it, a role switch with no row is **on**, and a named-user exception
+  works **in both directions** — `allow = true` re-enables one user whose role
+  switch is off, `allow = false` denies one user whose role switch is on. An
+  exception still reaches only a user whose current database role is
+  `organization_admin`, `location_admin` or `asset_group_admin` and whose
+  home organization is the exception's (decision 5's own rule), and an
+  `organization_admin` is narrowed by a deny only. Built in `F3.85` PR 3
+  (#804).
