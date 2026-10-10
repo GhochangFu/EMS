@@ -25,6 +25,7 @@ export * from "./ai-assistant";
 export * from "./asset-dashboards";
 export * from "./asset-images";
 export * from "./asset-kpis";
+export * from "./asset-templates";
 export * from "./auth";
 export * from "./dashboard";
 export * from "./dashboard-builder";

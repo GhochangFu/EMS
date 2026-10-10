@@ -332,7 +332,8 @@ describe("ADR 0055 part (f) — the stock catalog's bms-calc-v2 literals", () =>
  * restates a vocabulary" shape (`tests/f3.37-asset-role-vocabulary.test.ts`,
  * `tests/rule-vocabulary.test.ts`), in its source form: the vocabulary is
  * `CALC_DIALECTS`, and `calcDialectSchema` in
- * `packages/shared/src/contracts/admin.ts` is the one derivation of it.
+ * `packages/shared/src/contracts/asset-templates.ts` is the one derivation of it
+ * (it moved there from `admin.ts` with the template DTOs, `F4.150`).
  *
  * **The scan now covers every file, and there is no exemption list.** Two files
  * were exempt while the guard changes that had to travel with their widening
@@ -396,7 +397,7 @@ describe("ADR 0055 part (c) — no endpoint restates the calc dialect as a v1 li
       offenders,
       `these files spell z.literal(CALC_DIALECT) instead of deriving from CALC_DIALECTS:\n` +
         `${offenders.join("\n")}\n\n` +
-        "Use `calcDialectSchema` from `packages/shared/src/contracts/admin.ts`. A literal here " +
+        "Use `calcDialectSchema` from `packages/shared/src/contracts/asset-templates.ts`. A literal here " +
         "refuses `bms-calc-v2` at one endpoint while every other endpoint accepts it, so the " +
         "same stored row reads back on one page and 400s on another (ADR 0055 decision 2).",
     ).toEqual([]);
@@ -409,7 +410,7 @@ describe("ADR 0055 part (c) — no endpoint restates the calc dialect as a v1 li
    * here rather than a silent hole.
    */
   it.each([
-    "packages/shared/src/contracts/admin.ts",
+    "packages/shared/src/contracts/asset-templates.ts",
     "apps/api/src/admin/asset-templates/asset-templates.schema.ts",
     "apps/api/src/admin/asset-points/asset-point-calc-override.schema.ts",
   ])("%s is in the scanned set and derives the dialect from CALC_DIALECTS", (rel) => {

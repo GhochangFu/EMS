@@ -1,8 +1,5 @@
-import {
-  adminLocationDtoSchema,
-  assetInstantiationResultDtoSchema,
-  instantiatedAssetDtoSchema,
-} from "./admin";
+import { adminLocationDtoSchema } from "./admin";
+import { assetInstantiationResultDtoSchema, instantiatedAssetDtoSchema } from "./asset-templates";
 import { seededRuleDtoSchema, seededRuleValuesSchema } from "./seeded-rules";
 
 /**

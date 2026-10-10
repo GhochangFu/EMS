@@ -28,6 +28,7 @@ import type * as A from "./contracts/admin";
 import type * as Aia from "./contracts/ai-assistant";
 import type * as AD from "./contracts/asset-dashboards";
 import type * as AI from "./contracts/asset-images";
+import type * as AT from "./contracts/asset-templates";
 import type * as Au from "./contracts/auth";
 import type * as D from "./contracts/dashboard";
 import type * as Db from "./contracts/dashboard-builder";
@@ -600,27 +601,27 @@ export type AuditLogListResponse = z.infer<typeof A.auditLogListResponseSchema>;
 // ---------------------------------------------------------------------------
 
 /** Lifecycle of an asset template version (ADR 0015). */
-export type AssetTemplateStatus = z.infer<typeof A.assetTemplateStatusSchema>;
+export type AssetTemplateStatus = z.infer<typeof AT.assetTemplateStatusSchema>;
 /** Whether instantiation emits an `asset_points` row for this point. */
-export type TemplatePointKind = z.infer<typeof A.templatePointKindSchema>;
-export type AdminTemplatePointDto = z.infer<typeof A.adminTemplatePointDtoSchema>;
-export type AdminAssetTemplateDto = z.infer<typeof A.adminAssetTemplateDtoSchema>;
+export type TemplatePointKind = z.infer<typeof AT.templatePointKindSchema>;
+export type AdminTemplatePointDto = z.infer<typeof AT.adminTemplatePointDtoSchema>;
+export type AdminAssetTemplateDto = z.infer<typeof AT.adminAssetTemplateDtoSchema>;
 /** List rows omit `points` — the editor fetches them per template. */
 export type AdminAssetTemplateSummaryDto = z.infer<
-  typeof A.adminAssetTemplateSummaryDtoSchema
+  typeof AT.adminAssetTemplateSummaryDtoSchema
 >;
 /** `F2.13` / ADR 0052 — one point of a stock catalog entry, the write shape. */
-export type StockTemplatePointDto = z.infer<typeof A.stockTemplatePointDtoSchema>;
+export type StockTemplatePointDto = z.infer<typeof AT.stockTemplatePointDtoSchema>;
 /** `F2.13` / ADR 0052 — one entry of the asset-template stock catalog. */
-export type StockAssetTemplateDto = z.infer<typeof A.stockAssetTemplateDtoSchema>;
+export type StockAssetTemplateDto = z.infer<typeof AT.stockAssetTemplateDtoSchema>;
 /** `E4.1a` / ADR 0070 decision 2 — one row of the calc parameter vocabulary. */
 export type CalcParameterKeyDto = z.infer<typeof A.calcParameterKeyDtoSchema>;
 /** `E4.1a` / ADR 0070 decision 2 — one `bms.calc_parameters` row with its scope labels. */
 export type CalcParameterDto = z.infer<typeof A.calcParameterDtoSchema>;
-export type InstantiatedAssetDto = z.infer<typeof A.instantiatedAssetDtoSchema>;
+export type InstantiatedAssetDto = z.infer<typeof AT.instantiatedAssetDtoSchema>;
 /** The result of one instantiate call — the whole batch or nothing. */
 export type AssetInstantiationResultDto = z.infer<
-  typeof A.assetInstantiationResultDtoSchema
+  typeof AT.assetInstantiationResultDtoSchema
 >;
 /** `E2.4` / ADR 0058 — the resolved values a template alarm seeds a rule with. */
 export type SeededRuleValues = z.infer<typeof SR.seededRuleValuesSchema>;

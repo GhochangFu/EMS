@@ -1,6 +1,7 @@
 /**
  * `F3.78` / ADR 0089 decision 7 — the asset-group write bodies. They live
- * beside `admin.ts`, not in it: that file sits at the AGENTS.md §4.5 line cap.
+ * beside `admin.ts`, not in it: that file sat at the AGENTS.md §4.5 line cap
+ * when they were written (`F4.150` has since split it).
  * All plain objects, so no `.merge()`, `z.intersection` or `.readonly()` is
  * needed (ADR 0030).
  */

@@ -20,15 +20,17 @@ import { z } from "zod";
 import {
   adminAssetDtoSchema,
   adminAssetPointDtoSchema,
-  adminAssetTemplateSummaryDtoSchema,
   adminLocationDtoSchema,
   adminOrganizationDtoSchema,
   adminRtuDtoSchema,
-  assetPointCalcConfigDtoSchema,
   calcParameterDtoSchema,
   calcParameterKeyDtoSchema,
-  stockAssetTemplateDtoSchema,
 } from "./admin";
+import {
+  adminAssetTemplateSummaryDtoSchema,
+  assetPointCalcConfigDtoSchema,
+  stockAssetTemplateDtoSchema,
+} from "./asset-templates";
 import {
   templateMigrationAssetDtoSchema,
   templateMigrationRefusalDtoSchema,
@@ -144,11 +146,12 @@ export const templateDraftDeletedResponseSchema = z.object({ deleted: z.literal(
  * `F2.6` template version lifecycle (ADR 0039).
  *
  * These sit here rather than in `admin.ts` where the step-3 plan listed them,
- * because this module is where every response envelope in the package already
- * lives — `admin.ts` holds no `…ResponseSchema` at all. Splitting the rule
+ * because this module is where the package's `itemsOf` response envelopes
+ * live — `admin.ts` holds only the audit and asset-group ones. Splitting the rule
  * "row DTOs in `admin.ts`, envelopes in `envelopes.ts`" for four new routes
  * would leave the next reader guessing which file to look in. The DTOs
- * themselves are in `admin.ts` as the plan says.
+ * themselves are in `asset-templates.ts` and `template-migration.ts` now —
+ * both moved out of `admin.ts` on §4.5 grounds (`F4.150`, `F2.24`).
  */
 export const assetPointCalcConfigListResponseSchema = itemsOf(assetPointCalcConfigDtoSchema);
 export const templateVersionsListResponseSchema = itemsOf(templateVersionSummaryDtoSchema);

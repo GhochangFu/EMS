@@ -4,12 +4,13 @@
  * refusal vocabulary and the per-asset migration rows.
  *
  * Moved out of `admin.ts` whole when it reached 998 lines (AGENTS.md §4.5).
- * The dependency is one-way: this file imports from `./admin`, and `admin.ts`
+ * The dependency is one-way: this file imports from `./asset-templates` (where
+ * `F4.150` moved the template DTOs), and `asset-templates.ts`
  * must never import back.
  */
 import { z } from "zod";
 
-import { assetPointCalcOverrideFieldsSchema, assetTemplateStatusSchema } from "./admin";
+import { assetPointCalcOverrideFieldsSchema, assetTemplateStatusSchema } from "./asset-templates";
 import { pointMetadataFieldNameSchema, pointMetadataFieldsSchema } from "./point-metadata";
 
 /**
