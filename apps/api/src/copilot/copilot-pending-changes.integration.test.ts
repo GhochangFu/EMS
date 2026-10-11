@@ -8,8 +8,16 @@ import { asRole } from "../testing/role-urls";
 import {
   anExpiredChangeCannotBePeekedOrClaimed,
   anotherUserCannotPeekOrClaim,
+  aProposalIsOpenForItsUserUntilRejected,
   concurrentClaimsApplyOnce,
+  discardRejectsOnlyPendingRows,
+  finishedReadsOnlyAFinishedChange,
+  newConversation,
+  openMeansPendingAndUnexpiredOrApplying,
   type PendingCtx,
+  type ProposeCtx,
+  theResolverChecksACreatesOrganizationAndRefs,
+  theResolverReadsATargetOnlyInTheAllowedSet,
   recordMovesOnlyAnApplyingRow,
   releaseReturnsAClaimToPending,
   theOwnerIsBoundOnMessagesAndPendingChanges,
@@ -41,7 +49,9 @@ describe.skipIf(!connectionString)("F3.85 — the copilot pending-change claim (
   let tenantPool: pg.Pool;
   let superPool: pg.Pool;
   let ctx: PendingCtx;
+  let proposeCtx: ProposeCtx;
   let orgId: string | undefined;
+  let orgBId: string | undefined;
 
   beforeAll(async () => {
     const url = connectionString as string;
@@ -55,6 +65,8 @@ describe.skipIf(!connectionString)("F3.85 — the copilot pending-change claim (
     const stale = `SELECT id FROM bms.organizations WHERE code LIKE $1 AND created_at < now() - interval '30 minutes'`;
     await superPool.query(`DELETE FROM bms.audit_log WHERE organization_id IN (${stale})`, [FAMILY_PATTERN]);
     await superPool.query(`DELETE FROM bms.users WHERE organization_id IN (${stale})`, [FAMILY_PATTERN]);
+    await superPool.query(`DELETE FROM bms.dashboard_templates WHERE organization_id IN (${stale})`, [FAMILY_PATTERN]);
+    await superPool.query(`DELETE FROM bms.locations WHERE organization_id IN (${stale})`, [FAMILY_PATTERN]);
     await superPool.query(`DELETE FROM bms.organizations WHERE id IN (${stale})`, [FAMILY_PATTERN]);
     const org = await superPool.query<{ id: string }>(
       "INSERT INTO bms.organizations (code, name, currency) VALUES ($1, 'F3.85 pending changes', 'INR') RETURNING id",
@@ -72,13 +84,49 @@ describe.skipIf(!connectionString)("F3.85 — the copilot pending-change claim (
       return id;
     };
     ctx = { tenantDb: createDb(tenantPool), ownerPool, orgA: orgId, userA: await user("a"), userB: await user("b") };
+
+    // F3.85 PR 8: a second organization, a template and a location in each, and a conversation of A's.
+    const orgB = await superPool.query<{ id: string }>(
+      "INSERT INTO bms.organizations (code, name, currency) VALUES ($1, 'F3.85 pending changes B', 'INR') RETURNING id",
+      [`${FAMILY}-B`],
+    );
+    orgBId = orgB.rows[0]?.id;
+    if (!orgBId) throw new Error("F3.85: fixture organization B was not created");
+    const template = async (org: string, suffix: string): Promise<string> => {
+      const { rows } = await superPool.query<{ id: string }>(
+        "INSERT INTO bms.dashboard_templates (organization_id, code, name, section) VALUES ($1, $2, $3, 'electrical') RETURNING id",
+        [org, `f385-t-${suffix.toLowerCase()}`, `F385 template ${suffix}`],
+      );
+      return rows[0]?.id as string;
+    };
+    const location = async (org: string, suffix: string): Promise<string> => {
+      const code = `${FAMILY}-L${suffix}`.toLowerCase();
+      const { rows } = await superPool.query<{ id: string }>(
+        "INSERT INTO bms.locations (organization_id, code, slug, name, type, latitude, longitude) VALUES ($1, $2, $2, $3, 'pump_station', 0, 0) RETURNING id",
+        [org, code, `F3.85 site ${suffix}`],
+      );
+      return rows[0]?.id as string;
+    };
+    const base = { ...ctx, orgB: orgBId, conversationA: "" };
+    proposeCtx = {
+      ...base,
+      conversationA: await newConversation(base),
+      templateA: await template(orgId, "A"),
+      templateB: await template(orgBId, "B"),
+      locationA: await location(orgId, "A"),
+      locationB: await location(orgBId, "B"),
+    };
   });
 
   afterAll(async () => {
-    if (orgId) {
-      await superPool.query("DELETE FROM bms.audit_log WHERE organization_id = $1", [orgId]);
-      await superPool.query("DELETE FROM bms.users WHERE organization_id = $1", [orgId]);
-      await superPool.query("DELETE FROM bms.organizations WHERE id = $1", [orgId]);
+    for (const id of [orgId, orgBId]) {
+      if (!id) continue;
+      await superPool.query("DELETE FROM bms.audit_log WHERE organization_id = $1", [id]);
+      await superPool.query("DELETE FROM bms.copilot_pending_changes WHERE organization_id = $1", [id]);
+      await superPool.query("DELETE FROM bms.users WHERE organization_id = $1", [id]);
+      await superPool.query("DELETE FROM bms.dashboard_templates WHERE organization_id = $1", [id]);
+      await superPool.query("DELETE FROM bms.locations WHERE organization_id = $1", [id]);
+      await superPool.query("DELETE FROM bms.organizations WHERE id = $1", [id]);
     }
     await Promise.all([ownerPool?.end(), tenantPool?.end(), superPool?.end()]);
   });
@@ -103,5 +151,23 @@ describe.skipIf(!connectionString)("F3.85 — the copilot pending-change claim (
   });
   it("theOwnerIsBoundOnMessagesAndPendingChanges", async () => {
     await theOwnerIsBoundOnMessagesAndPendingChanges(ctx);
+  });
+  it("aProposalIsOpenForItsUserUntilRejected", async () => {
+    await aProposalIsOpenForItsUserUntilRejected(proposeCtx);
+  });
+  it("openMeansPendingAndUnexpiredOrApplying", async () => {
+    await openMeansPendingAndUnexpiredOrApplying(proposeCtx);
+  });
+  it("finishedReadsOnlyAFinishedChange", async () => {
+    await finishedReadsOnlyAFinishedChange(proposeCtx);
+  });
+  it("discardRejectsOnlyPendingRows", async () => {
+    await discardRejectsOnlyPendingRows(proposeCtx);
+  });
+  it("theResolverReadsATargetOnlyInTheAllowedSet", async () => {
+    await theResolverReadsATargetOnlyInTheAllowedSet(proposeCtx);
+  });
+  it("theResolverChecksACreatesOrganizationAndRefs", async () => {
+    await theResolverChecksACreatesOrganizationAndRefs(proposeCtx);
   });
 });

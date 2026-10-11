@@ -16,13 +16,16 @@ import { CopilotAccessGuard } from "./copilot-access.guard";
 import { CopilotAccessService } from "./copilot-access.service";
 import { CopilotAvailabilityService } from "./copilot-availability.service";
 import { CopilotChangeInterceptor } from "./copilot-change.interceptor";
+import { CopilotChangesController } from "./copilot-changes.controller";
 import { COPILOT_USAGE_LIMITS, readCopilotUsageLimits } from "./copilot-config";
 import { CopilotContextMiddleware } from "./copilot-context.middleware";
 import { CopilotConversationsController } from "./copilot-conversations.controller";
 import { CopilotConversationsService } from "./copilot-conversations.service";
 import { CopilotPendingChangesService } from "./copilot-pending-changes.service";
+import { COPILOT_PROPOSE_TOOLS, CopilotProposeToolSet } from "./copilot-propose-tools";
 import { COPILOT_READ_TOOLS } from "./copilot-read-tools";
 import { CopilotStatusController } from "./copilot-status.controller";
+import { COPILOT_TARGETS, CopilotTargetResolver } from "./copilot-target-resolver";
 import { CopilotTurnService } from "./copilot-turn.service";
 import { CopilotUsageService } from "./copilot-usage.service";
 import { CopilotReadToolSet } from "./tools/copilot-read-tool-set";
@@ -69,6 +72,14 @@ import { CopilotReadToolSet } from "./tools/copilot-read-tool-set";
  * handles come from `DatabaseModule`'s tokens), and it needs only
  * `VocabulariesModule` beyond what this module has. None of those modules
  * imports this one, so the graph stays acyclic.
+ *
+ * PR 8 adds the action catalog's server side (decisions 2, 4): the propose
+ * tools behind `COPILOT_PROPOSE_TOOLS` (`CopilotProposeToolSet`), which store a
+ * pending change and never write it; `CopilotTargetResolver` behind
+ * `COPILOT_TARGETS`, which reads a target inside the turn's allowed set with
+ * `AccessControlService`'s manage checks; and `CopilotChangesController`, the
+ * Reject button's route. The interceptor starts the follow-up turn
+ * (`CopilotTurnService.followUp`) after it records an outcome.
  */
 @Module({
   imports: [
@@ -81,7 +92,7 @@ import { CopilotReadToolSet } from "./tools/copilot-read-tool-set";
     DashboardBuilderModule,
     VocabulariesModule,
   ],
-  controllers: [CopilotAccessController, CopilotConversationsController, CopilotStatusController],
+  controllers: [CopilotAccessController, CopilotChangesController, CopilotConversationsController, CopilotStatusController],
   providers: [
     CopilotAccessGuard,
     CopilotAccessService,
@@ -93,6 +104,10 @@ import { CopilotReadToolSet } from "./tools/copilot-read-tool-set";
     LocationsAdminService,
     CopilotReadToolSet,
     { provide: COPILOT_READ_TOOLS, useExisting: CopilotReadToolSet },
+    CopilotTargetResolver,
+    { provide: COPILOT_TARGETS, useExisting: CopilotTargetResolver },
+    CopilotProposeToolSet,
+    { provide: COPILOT_PROPOSE_TOOLS, useExisting: CopilotProposeToolSet },
     { provide: COPILOT_USAGE_LIMITS, useFactory: () => readCopilotUsageLimits(process.env) },
     MasterDataAuditService,
     { provide: APP_INTERCEPTOR, useClass: CopilotChangeInterceptor },

@@ -90,7 +90,8 @@ export class CopilotConversationsService {
    * distinct `created_at` — `clock_timestamp()` or an explicit increasing
    * value — and pin that in its own test, or a migration adds an ordinal.
    */
-  async get(userId: string, conversationId: string): Promise<CopilotConversationDetailDto | null> {
+  /** The conversation and its messages; the controller adds its open changes (`pendingChanges`, F3.85 PR 8). */
+  async get(userId: string, conversationId: string): Promise<Omit<CopilotConversationDetailDto, "pendingChanges"> | null> {
     const found = await withUser(this.tenantDb, userId, async (tx) => {
       const [conversation] = await tx
         .select()

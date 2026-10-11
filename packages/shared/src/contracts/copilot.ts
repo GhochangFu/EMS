@@ -138,6 +138,8 @@ export const copilotConversationDetailDtoSchema = z
     createdAt: z.string(),
     lastTurnAt: z.string(),
     messages: z.array(copilotMessageDtoSchema),
+    /** `F3.85` PR 8: the conversation's changes still waiting for a Confirm (pending and unexpired), oldest first. */
+    pendingChanges: z.array(copilotPendingChangeDtoSchema),
   })
   .strict();
 
@@ -164,6 +166,19 @@ export const COPILOT_TURN_MESSAGE_MAX = 8_000;
 export const copilotTurnBodySchema = z
   .object({
     message: z.string().min(1).max(COPILOT_TURN_MESSAGE_MAX),
+  })
+  .strict();
+
+/**
+ * `F3.85` PR 8 (plan §10.2): the `fill_step` tool's output — values for one
+ * step of the wizard for `catalogId`, checked against that step's fields.
+ * The dock hands them to an open wizard; nothing is stored or sent.
+ */
+export const copilotFillStepDtoSchema = z
+  .object({
+    catalogId: z.string(),
+    stepId: z.string(),
+    values: z.record(z.string(), z.unknown()),
   })
   .strict();
 
@@ -195,5 +210,22 @@ export const copilotTurnResponseDtoSchema = z
     reply: z.string(),
     messages: z.array(copilotMessageDtoSchema),
     navigateTo: z.string().nullable(),
+    /** `F3.85` PR 8: the changes this turn proposed, each waiting for the user's Confirm or Reject. */
+    pendingChanges: z.array(copilotPendingChangeDtoSchema),
+    /** `F3.85` PR 8: values a `fill_step` tool gave an open wizard step, or `null`. It writes nothing. */
+    fillStep: copilotFillStepDtoSchema.nullable(),
+  })
+  .strict();
+
+/**
+ * `POST /api/v1/copilot/changes/:id/reject` (`F3.85` PR 8, decision 4): the
+ * change is `rejected`; `messages` holds the action line stored in its
+ * conversation (empty when the change has none).
+ */
+export const copilotRejectResponseDtoSchema = z
+  .object({
+    id: z.string(),
+    status: z.literal("rejected"),
+    messages: z.array(copilotMessageDtoSchema),
   })
   .strict();

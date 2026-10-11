@@ -23,3 +23,5 @@ export type CopilotCreateConversationBody = z.infer<typeof C.copilotCreateConver
 export type CopilotTurnBody = z.infer<typeof C.copilotTurnBodySchema>;
 export type CopilotTurnOutcome = z.infer<typeof C.copilotTurnOutcomeSchema>;
 export type CopilotTurnResponseDto = z.infer<typeof C.copilotTurnResponseDtoSchema>;
+export type CopilotFillStepDto = z.infer<typeof C.copilotFillStepDtoSchema>;
+export type CopilotRejectResponseDto = z.infer<typeof C.copilotRejectResponseDtoSchema>;

@@ -14,6 +14,7 @@ import type { CopilotAvailabilityService } from "./copilot-availability.service"
 import { CHANGE_REFUSED, CopilotChangeInterceptor } from "./copilot-change.interceptor";
 import type { ClaimedChange, CopilotPendingChangesService } from "./copilot-pending-changes.service";
 import { copilotContext, currentCopilotChange } from "./copilot-request-context";
+import type { CopilotTurnService } from "./copilot-turn.service";
 
 /**
  * `F3.85` PR 4 / ADR 0099 decision 4.5 — the `X-Copilot-Change` interceptor,
@@ -45,6 +46,8 @@ type Harness = {
   };
   decide: ReturnType<typeof vi.fn>;
   seen: Array<unknown>;
+  followUp: ReturnType<typeof vi.fn>;
+  order: string[];
 };
 
 type Options = {
@@ -104,15 +107,22 @@ function harness(options: Options = {}): Harness {
     peek: vi.fn(async () => ({ organizationId: stored.organizationId })),
     claim: vi.fn(async () => stored),
     release: vi.fn(async () => undefined),
-    record: vi.fn(async () => undefined),
+    record: vi.fn(async () => {
+      order.push("record");
+    }),
   };
   const decide = vi.fn(async () => ({ available: true }));
+  const order: string[] = [];
+  const followUp = vi.fn(async () => {
+    order.push("followUp");
+  });
   const interceptor = new CopilotChangeInterceptor(
     pending as unknown as CopilotPendingChangesService,
     { decide } as unknown as CopilotAvailabilityService,
     new Reflector(),
+    { followUp } as unknown as CopilotTurnService,
   );
-  return { interceptor, context, next, handler, pending, decide, seen };
+  return { interceptor, context, next, handler, pending, decide, seen, followUp, order };
 }
 
 /** Runs one request inside a fresh store, as the middleware opens it. */
@@ -338,4 +348,35 @@ export async function aFailedRecordDoesNotChangeTheResponse(): Promise<void> {
   const h = harness();
   h.pending.record.mockRejectedValueOnce(new Error("connection lost"));
   expect(await run(h)).toEqual({ id: "dash-1", title: "Ops" });
+}
+
+/** Waits for the un-awaited follow-up the record starts. */
+const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
+
+/** `F3.85` PR 8, decision 4.7: an applied change starts one follow-up turn, after its outcome is recorded. */
+export async function anAppliedChangeStartsOneFollowUpAfterTheRecord(): Promise<void> {
+  const h = harness();
+  await run(h);
+  await settle();
+  expect(h.followUp).toHaveBeenCalledTimes(1);
+  expect(h.followUp.mock.calls[0]?.[1]).toBe(CHANGE_ID);
+  expect((h.followUp.mock.calls[0]?.[0] as { identity: { id: string } }).identity.id).toBe("55555555-5555-4555-8555-555555555555");
+  expect(h.order).toEqual(["record", "followUp"]);
+}
+
+/** A failed change starts the follow-up too, so the model can say what went wrong. */
+export async function aFailedChangeStartsAFollowUpToo(): Promise<void> {
+  const h = harness({ handlerResult: () => Promise.reject(new BadRequestException("no")) });
+  await refused(h);
+  await settle();
+  expect(h.order).toEqual(["record", "followUp"]);
+}
+
+/** A refused claim records nothing and starts no follow-up. */
+export async function aRefusedChangeStartsNoFollowUp(): Promise<void> {
+  const h = harness();
+  h.pending.claim.mockResolvedValueOnce(null);
+  expect(await refused(h)).toBeInstanceOf(ConflictException);
+  await settle();
+  expect(h.followUp).not.toHaveBeenCalled();
 }

@@ -8,7 +8,13 @@ import {
   assertACredentialIsRefusedBeforeAnySideEffect,
   assertACrossOrganizationTurnUsesThePlatformScope,
   assertAMissingConversationIs404,
-  assertAnInjectedProposeCallIsUnknownAndStoresNoAction,
+  assertAnObeyedInjectionYieldsOnlyAPendingCard,
+  assertAProposalIsReturnedAsACard,
+  assertAFailedTurnDiscardsItsProposals,
+  assertFillStepReachesTheResponse,
+  assertAFollowUpTurnRunsOnTheChangesOutcome,
+  assertAFollowUpThatFailsStoresTheOutcomeOnly,
+  assertAFollowUpWithoutAFinishedChangeDoesNothing,
   assertAPlainMessageRunsEveryStep,
   assertAProviderFailureStoresNothing,
   assertARefusedTurnIs429BeforeTheProvider,
@@ -83,8 +89,8 @@ describe("F3.85 PR 7 — the copilot turn, in order (ADR 0099 decisions 1, 9, 10
   it("6 · a credential argument never reaches a tool", async () => {
     await assertACredentialArgumentNeverReachesATool();
   });
-  it("6 · an injected propose call is unknown and stores no action", async () => {
-    await assertAnInjectedProposeCallIsUnknownAndStoresNoAction();
+  it("6 · an obeyed injection yields one pending card and no write", async () => {
+    await assertAnObeyedInjectionYieldsOnlyAPendingCard();
   });
   it("6 · the turn log carries no text", async () => {
     await assertTheTurnLogCarriesNoText();
@@ -104,7 +110,28 @@ describe("F3.85 PR 7 — the copilot turn, in order (ADR 0099 decisions 1, 9, 10
   it("isConfigured resolves the scope a turn would", async () => {
     await assertIsConfiguredResolvesTheTurnsScope();
   });
-  it("CopilotModule wires the turn service, LlmModule and the read-tool token", () => {
+  it("CopilotModule wires the turn service, LlmModule and the read- and propose-tool tokens", () => {
     assertTheModuleWiresTheTurnService();
+  });
+});
+
+describe("F3.85 PR 8 — proposals and the follow-up turn (ADR 0099 decisions 2, 4, 4.7)", () => {
+  it("returns a proposal as a card", async () => {
+    await assertAProposalIsReturnedAsACard();
+  });
+  it("rejects the proposals of a turn that fails", async () => {
+    await assertAFailedTurnDiscardsItsProposals();
+  });
+  it("returns fill_step values for the open wizard", async () => {
+    await assertFillStepReachesTheResponse();
+  });
+  it("runs a follow-up turn on the change's outcome", async () => {
+    await assertAFollowUpTurnRunsOnTheChangesOutcome();
+  });
+  it("stores only the outcome when a follow-up fails", async () => {
+    await assertAFollowUpThatFailsStoresTheOutcomeOnly();
+  });
+  it("does nothing without a finished change", async () => {
+    await assertAFollowUpWithoutAFinishedChangeDoesNothing();
   });
 });

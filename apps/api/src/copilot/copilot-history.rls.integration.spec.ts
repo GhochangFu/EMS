@@ -155,6 +155,8 @@ export async function aBodyNamingAnotherOrganizationNeverCountsIt(ctx: HistoryCt
     { resolveForOrganization: async () => ({ kind: "ready", provider: llm, source: "organization" }) } as never,
     usage,
     EMPTY_COPILOT_READ_TOOLS,
+    EMPTY_COPILOT_READ_TOOLS,
+    new CopilotPendingChangesService(ctx.tenantDb),
   );
   const controller = new CopilotConversationsController(
     store,
@@ -199,6 +201,8 @@ function turnService(ctx: HistoryCtx, llm: FakeLlmProvider, counted: Array<strin
       },
     } as never,
     EMPTY_COPILOT_READ_TOOLS,
+    EMPTY_COPILOT_READ_TOOLS,
+    new CopilotPendingChangesService(ctx.tenantDb),
   );
 }
 
