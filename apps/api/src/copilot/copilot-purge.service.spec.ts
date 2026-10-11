@@ -23,6 +23,13 @@ import { CopilotPurgeService, type CopilotPurgeSummary } from "./copilot-purge.s
  * its head; the cut-off is the statement's bound parameter, so a service
  * that computes the wrong cut-off moves rows across the 30-day line.
  *
+ * **And the two usage counters (`F3.85` PR 6, ADR 0099 Amendment 1 A1).**
+ * `copilot_usage` is modelled under the same `user_isolation`;
+ * `copilot_org_usage` under `tenant_isolation` — the fake also records each
+ * transaction's `set_config('app.current_organization', …)`, and a counter
+ * DELETE acts only on rows of the organization set there. Their cut-off is
+ * a calendar date, the statement's bound parameter.
+ *
  * What the fake cannot see — the exact predicates against the real schema,
  * the real cascade and `SET NULL`, the owner bound by FORCE — is
  * `copilot-purge.integration.spec.ts`'s.
@@ -44,6 +51,19 @@ export const USER_B = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
 /** A user the fleet list does not return — its rows must survive, whatever their age. */
 export const USER_UNLISTED = "cccccccc-cccc-4ccc-8ccc-cccccccccccc";
 
+export const ORG_A = "dddddddd-dddd-4ddd-8ddd-dddddddddddd";
+export const ORG_B = "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee";
+/** An organization the fleet list does not return — its counters must survive, whatever their age. */
+export const ORG_UNLISTED = "ffffffff-ffff-4fff-8fff-ffffffffffff";
+
+/** The UTC calendar date `days` before the tick, the `day` key's shape. */
+const dayAgo = (days: number): string => daysAgo(days).toISOString().slice(0, 10);
+
+type FakeUsage = { id: string; userId: string; day: string };
+type FakeOrgUsage = { id: string; organizationId: string; day: string };
+/** One tenant transaction's two settings (null: that one was not set). */
+type FakeTx = { user: string | null; org: string | null };
+
 type FakeConversation = { id: string; userId: string; lastTurnAt: Date };
 type FakeMessage = { id: string; conversationId: string; userId: string };
 type FakeChange = {
@@ -61,8 +81,10 @@ export type PurgeHarness = {
   readonly conversations: FakeConversation[];
   readonly messages: FakeMessage[];
   readonly changes: FakeChange[];
-  /** The `app.current_user` value of every tenant transaction, in order (null: none was set). */
-  readonly transactions: (string | null)[];
+  readonly usage: FakeUsage[];
+  readonly orgUsage: FakeOrgUsage[];
+  /** The two settings of every tenant transaction, in order. */
+  readonly transactions: FakeTx[];
   /** Statements the tenant pool ran outside a transaction. */
   readonly tenantOutsideTx: string[];
   /** Statements the fleet pool ran. */
@@ -86,9 +108,16 @@ function head(text: string): string {
  *   `pending` at 29 days and `failed` at 31 days (kept);
  * - A's `applying` claims at 31 days (failed) and 29 days (kept);
  * - B's `conv-b-old` (31 days, deleted in B's own transaction);
- * - the unlisted user's `conv-unlisted-old` (31 days, kept).
+ * - the unlisted user's `conv-unlisted-old` (31 days, kept);
+ * - user counters: A's at 31 days (deleted) and exactly 30 days (kept, the boundary), B's at 31
+ *   days (deleted in B's own transaction);
+ * - organization counters: A's at 31 days (deleted) and exactly 30 days (kept, the boundary), the
+ *   unlisted organization's at 31 days (kept). B is listed with no counter.
  */
-export function makeHarness(listedUsers: readonly string[] = [USER_A, USER_B]): PurgeHarness {
+export function makeHarness(
+  listedUsers: readonly string[] = [USER_A, USER_B],
+  listedOrgs: readonly string[] = [ORG_A, ORG_B],
+): PurgeHarness {
   const conversations: FakeConversation[] = [
     { id: "conv-old", userId: USER_A, lastTurnAt: daysAgo(31) },
     { id: "conv-young", userId: USER_A, lastTurnAt: daysAgo(29) },
@@ -125,18 +154,47 @@ export function makeHarness(listedUsers: readonly string[] = [USER_A, USER_B]): 
     change("chg-applying-31", null, "applying", 31, 31),
     change("chg-applying-29", null, "applying", 29, 29),
   ];
-  const transactions: (string | null)[] = [];
+  const usage: FakeUsage[] = [
+    { id: "usage-a-31", userId: USER_A, day: dayAgo(31) },
+    { id: "usage-a-30", userId: USER_A, day: dayAgo(30) },
+    { id: "usage-b-31", userId: USER_B, day: dayAgo(31) },
+  ];
+  const orgUsage: FakeOrgUsage[] = [
+    { id: "org-usage-a-31", organizationId: ORG_A, day: dayAgo(31) },
+    { id: "org-usage-a-30", organizationId: ORG_A, day: dayAgo(30) },
+    { id: "org-usage-unlisted-31", organizationId: ORG_UNLISTED, day: dayAgo(31) },
+  ];
+  const transactions: FakeTx[] = [];
   const tenantOutsideTx: string[] = [];
   const fleetStatements: string[] = [];
 
-  const run = (user: string | null, statement: SQL): { rows: unknown[]; rowCount: number } => {
+  /** `setting` is the transaction's record (null outside one, where nothing is set). */
+  const run = (setting: FakeTx | null, statement: SQL): { rows: unknown[]; rowCount: number } => {
     const rendered = dialect.sqlToQuery(statement);
     const text = head(rendered.sql);
+    const user = setting?.user ?? null;
+    const org = setting?.org ?? null;
     const cutoff = (): Date => new Date(String(rendered.params[0]));
+    /** A `date` cut-off: `YYYY-MM-DD` strings order as their dates do. */
+    const cutoffDay = (): string => String(rendered.params[0]);
     const mine = (row: { userId: string }) => user !== null && row.userId === user;
     if (text.startsWith("select set_config('app.current_user'")) {
-      transactions[transactions.length - 1] = String(rendered.params[0]);
+      if (setting) setting.user = String(rendered.params[0]);
       return { rows: [], rowCount: 1 };
+    }
+    if (text.startsWith("select set_config('app.current_organization'")) {
+      if (setting) setting.org = String(rendered.params[0]);
+      return { rows: [], rowCount: 1 };
+    }
+    if (text.startsWith("delete from bms.copilot_usage")) {
+      const doomed = usage.filter((u) => mine(u) && u.day < cutoffDay());
+      for (const u of doomed) usage.splice(usage.indexOf(u), 1);
+      return { rows: [], rowCount: doomed.length };
+    }
+    if (text.startsWith("delete from bms.copilot_org_usage")) {
+      const doomed = orgUsage.filter((u) => org !== null && u.organizationId === org && u.day < cutoffDay());
+      for (const u of doomed) orgUsage.splice(orgUsage.indexOf(u), 1);
+      return { rows: [], rowCount: doomed.length };
     }
     if (text.startsWith("delete from bms.copilot_conversations")) {
       const doomed = conversations.filter((c) => mine(c) && c.lastTurnAt < cutoff());
@@ -177,9 +235,9 @@ export function makeHarness(listedUsers: readonly string[] = [USER_A, USER_B]): 
 
   const tenantDb = {
     transaction: async <T>(fn: (tx: unknown) => Promise<T>): Promise<T> => {
-      transactions.push(null);
-      const index = transactions.length - 1;
-      const tx = { execute: async (statement: SQL) => run(transactions[index] ?? null, statement) };
+      const setting: FakeTx = { user: null, org: null };
+      transactions.push(setting);
+      const tx = { execute: async (statement: SQL) => run(setting, statement) };
       return fn(tx);
     },
     execute: async (statement: SQL) => {
@@ -192,10 +250,16 @@ export function makeHarness(listedUsers: readonly string[] = [USER_A, USER_B]): 
     execute: async (statement: SQL) => {
       const rendered = dialect.sqlToQuery(statement);
       fleetStatements.push(rendered.sql);
-      if (!head(rendered.sql).startsWith("select id from bms.users")) {
+      const text = head(rendered.sql);
+      const listed = text.startsWith("select id from bms.users")
+        ? listedUsers
+        : text.startsWith("select id from bms.organizations")
+          ? listedOrgs
+          : undefined;
+      if (listed === undefined) {
         throw new Error(`fake fleet pool: unexpected statement ${rendered.sql}`);
       }
-      return { rows: listedUsers.map((id) => ({ id })), rowCount: listedUsers.length };
+      return { rows: listed.map((id) => ({ id })), rowCount: listed.length };
     },
   } as unknown as BmsDb;
 
@@ -204,6 +268,8 @@ export function makeHarness(listedUsers: readonly string[] = [USER_A, USER_B]): 
     conversations,
     messages,
     changes,
+    usage,
+    orgUsage,
     transactions,
     tenantOutsideTx,
     fleetStatements,
@@ -282,9 +348,13 @@ export function assertAYoungApplyingClaimIsUntouched(h: PurgeHarness): void {
   );
 }
 
+/** The transactions that set no organization — the per-user ones (or one that set nothing at all). */
+const userTransactions = (h: PurgeHarness): (string | null)[] =>
+  h.transactions.filter((t) => t.org === null).map((t) => t.user);
+
 export function assertOneTransactionPerListedUserInOrder(h: PurgeHarness): void {
   assert(
-    JSON.stringify(h.transactions) === JSON.stringify([USER_A, USER_B]),
+    JSON.stringify(userTransactions(h)) === JSON.stringify([USER_A, USER_B]),
     `expected one tenant transaction per listed user, each naming its user — got ${JSON.stringify(h.transactions)}`,
   );
 }
@@ -304,9 +374,74 @@ export function assertAnUnlistedUsersRowsSurvive(h: PurgeHarness): void {
 }
 
 export function assertTheUserListIsReadOnTheFleetPoolOnly(h: PurgeHarness): void {
+  const heads = h.fleetStatements.map((s) => head(s).split(" ").slice(0, 4).join(" "));
   assert(
-    h.fleetStatements.length === 1 && h.tenantOutsideTx.length === 0,
-    `expected one fleet read and no tenant statement outside withUser; fleet=${JSON.stringify(h.fleetStatements)} tenantOutsideTx=${JSON.stringify(h.tenantOutsideTx)}`,
+    JSON.stringify(heads) === JSON.stringify(["select id from bms.users", "select id from bms.organizations"]) &&
+      h.tenantOutsideTx.length === 0,
+    `expected two fleet reads (users, then organizations) and no tenant statement outside a transaction; fleet=${JSON.stringify(h.fleetStatements)} tenantOutsideTx=${JSON.stringify(h.tenantOutsideTx)}`,
+  );
+}
+
+const usageIds = (h: PurgeHarness): string => ids(h.usage);
+const orgUsageIds = (h: PurgeHarness): string => ids(h.orgUsage);
+
+export function assertAnOldUserCounterIsDeleted(h: PurgeHarness): void {
+  assert(
+    !h.usage.some((u) => u.id === "usage-a-31"),
+    `expected A's 31-day usage counter deleted; counters left: ${usageIds(h)}`,
+  );
+}
+
+export function assertAYoungUserCounterSurvives(h: PurgeHarness): void {
+  assert(
+    h.usage.some((u) => u.id === "usage-a-30"),
+    `expected A's counter dated exactly 30 days ago kept — only a day before the cut-off date goes; counters left: ${usageIds(h)}`,
+  );
+}
+
+export function assertTheSecondUsersOldCounterIsDeletedInTheirOwnTransaction(h: PurgeHarness): void {
+  assert(
+    !h.usage.some((u) => u.id === "usage-b-31"),
+    `expected B's 31-day usage counter deleted under B's own setting; counters left: ${usageIds(h)}`,
+  );
+}
+
+export function assertAnOldOrgCounterIsDeleted(h: PurgeHarness): void {
+  assert(
+    !h.orgUsage.some((u) => u.id === "org-usage-a-31"),
+    `expected organization A's 31-day counter deleted under A's tenant setting; counters left: ${orgUsageIds(h)}`,
+  );
+}
+
+export function assertAYoungOrgCounterSurvives(h: PurgeHarness): void {
+  assert(
+    h.orgUsage.some((u) => u.id === "org-usage-a-30"),
+    `expected organization A's counter dated exactly 30 days ago kept — only a day before the cut-off date goes; counters left: ${orgUsageIds(h)}`,
+  );
+}
+
+export function assertAnUnlistedOrgsCounterSurvives(h: PurgeHarness): void {
+  assert(
+    h.orgUsage.some((u) => u.id === "org-usage-unlisted-31"),
+    `expected the unlisted organization's 31-day counter kept — the purge reached an organization the fleet list did not name; counters left: ${orgUsageIds(h)}`,
+  );
+}
+
+/** The transactions that named an organization and no user — `withTenant`'s shape. */
+export function assertOneWithTenantTransactionPerListedOrgInOrder(h: PurgeHarness): void {
+  const orgTransactions = h.transactions.filter((t) => t.user === null && t.org !== null).map((t) => t.org);
+  assert(
+    JSON.stringify(orgTransactions) === JSON.stringify([ORG_A, ORG_B]),
+    `expected one withTenant transaction per listed organization, each naming it and no user — got ${JSON.stringify(h.transactions)}`,
+  );
+}
+
+export function assertTheSummaryCountsTheCountersPurged(summary: CopilotPurgeSummary): void {
+  // usage-a-31, usage-b-31; org-usage-a-31.
+  const counts = { usageRowsDeleted: summary.usageRowsDeleted, orgUsageRowsDeleted: summary.orgUsageRowsDeleted };
+  assert(
+    JSON.stringify(counts) === JSON.stringify({ usageRowsDeleted: 2, orgUsageRowsDeleted: 1 }),
+    `expected the summary to count 2 user counters and 1 organization counter; got ${JSON.stringify(counts)}`,
   );
 }
 
@@ -328,7 +463,7 @@ export function assertTheSummaryCountsWhatWasPurged(summary: CopilotPurgeSummary
 
 export function assertNoListedUserMeansNoTransaction(h: PurgeHarness, summary: CopilotPurgeSummary): void {
   assert(
-    h.transactions.length === 0 && summary.users === 0 && summary.conversationsDeleted === 0,
-    `expected an empty user list to open no transaction and purge nothing; transactions=${h.transactions.length} summary=${JSON.stringify(summary)}`,
+    userTransactions(h).length === 0 && summary.users === 0 && summary.conversationsDeleted === 0,
+    `expected an empty user list to open no per-user transaction and purge nothing; transactions=${JSON.stringify(h.transactions)} summary=${JSON.stringify(summary)}`,
   );
 }

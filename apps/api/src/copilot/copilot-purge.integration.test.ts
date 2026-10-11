@@ -10,8 +10,12 @@ import {
   type PurgeCtx,
   type PurgeFixture,
   runThePurge,
+  seedCounterFixture,
   seedPurgeFixture,
   theAppliedChangeSurvivesWithANullConversation,
+  theCountersAreSeeded,
+  theOldOrgCounterIsGoneAndTheYoungOneStays,
+  theOldUserCounterIsGoneAndTheYoungOneStays,
   theOldApplyingClaimIsFailedAndTheYoungOneStays,
   theOldConversationAndItsMessageAreGone,
   theOldOrphanPendingChangeIsGoneAndTheYoungOneStays,
@@ -41,7 +45,7 @@ const superuserConnectionString = requireIntegrationDb({
 const FAMILY = `F385-PURGE-${Date.now()}`;
 const FAMILY_PATTERN = "F385-PURGE-%";
 
-describe.skipIf(!connectionString)("F3.85 — the copilot history purge (migration 0105)", () => {
+describe.skipIf(!connectionString)("F3.85 — the copilot history purge (migrations 0105, 0106)", () => {
   let ownerPool: pg.Pool;
   let tenantPool: pg.Pool;
   let fleetPool: pg.Pool;
@@ -85,11 +89,13 @@ describe.skipIf(!connectionString)("F3.85 — the copilot history purge (migrati
       tenantDb: createDb(tenantPool),
       fleetDb: createDb(fleetPool),
       ownerPool,
+      superPool,
       orgA: orgId,
       userA: await user("a"),
       userB: await user("b"),
     };
     fixture = await seedPurgeFixture(ctx);
+    await seedCounterFixture(ctx);
   });
 
   afterAll(async () => {
@@ -102,6 +108,9 @@ describe.skipIf(!connectionString)("F3.85 — the copilot history purge (migrati
 
   it("the owner with no app.current_user deletes nothing (FORCE)", async () => {
     await theOwnerWithNoSettingDeletesNothing(ctx, fixture);
+  });
+  it("before the purge, the user and organization counters at 31, 30 and 29 days are there", async () => {
+    await theCountersAreSeeded(ctx);
   });
 
   describe("after one purge", () => {
@@ -132,6 +141,12 @@ describe.skipIf(!connectionString)("F3.85 — the copilot history purge (migrati
     });
     it("the second user's 31-day conversation is gone, in that user's own transaction", async () => {
       await theSecondUsersOldConversationIsGone(ctx, fixture);
+    });
+    it("the user's 31-day usage counter is gone; the 30- and 29-day ones stay (A1)", async () => {
+      await theOldUserCounterIsGoneAndTheYoungOneStays(ctx);
+    });
+    it("the organization's 31-day usage counter is gone under withTenant; the 30- and 29-day ones stay (A1)", async () => {
+      await theOldOrgCounterIsGoneAndTheYoungOneStays(ctx);
     });
   });
 });

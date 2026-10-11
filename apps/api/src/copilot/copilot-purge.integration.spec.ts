@@ -12,7 +12,9 @@ import { CopilotPurgeService } from "./copilot-purge.service";
  * migration `0105` on a real database: the users listed on `bms_fleet`, the
  * deletes run as `bms_tenant` inside `withUser`, the real `ON DELETE
  * CASCADE` to messages and the real `SET NULL` on pending changes, and the
- * owner bound by FORCE. Vitest entry point: the sibling `.test.ts` (ADR
+ * owner bound by FORCE. Since PR 6, also the two `0106` usage counters:
+ * the user's under `withUser`, the organization's under `withTenant`.
+ * Vitest entry point: the sibling `.test.ts` (ADR
  * 0014).
  *
  * **The database is shared.** The purge walks every user, so every claim
@@ -24,6 +26,8 @@ export type PurgeCtx = {
   fleetDb: BmsDb;
   /** `bms_owner` — bound by the policy only through FORCE. */
   ownerPool: pg.Pool;
+  /** The superuser — inserts and reads the usage counters past both policies (PR 6). */
+  superPool: pg.Pool;
   orgA: string;
   userA: string;
   userB: string;
@@ -45,6 +49,49 @@ export type PurgeFixture = {
   applyingYoung: string;
   convBOld: string;
 };
+
+/**
+ * `F3.85` PR 6 / ADR 0099 Amendment 1 A1 — the usage counters, dated in UTC
+ * days before today: user A's and organization A's at 31, 30 and 29 days —
+ * 30 is the boundary, kept, because only a day before the cut-off date goes. Inserted as the superuser; the rows go with the fixture user and
+ * organization (`ON DELETE CASCADE`).
+ */
+export async function seedCounterFixture(ctx: PurgeCtx): Promise<void> {
+  const today = "(now() AT TIME ZONE 'UTC')::date";
+  await ctx.superPool.query(
+    `INSERT INTO bms.copilot_usage (user_id, day, turns) VALUES ($1, ${today} - 31, 1), ($1, ${today} - 30, 1), ($1, ${today} - 29, 1)`,
+    [ctx.userA],
+  );
+  await ctx.superPool.query(
+    `INSERT INTO bms.copilot_org_usage (organization_id, day, turns) VALUES ($1, ${today} - 31, 1), ($1, ${today} - 30, 1), ($1, ${today} - 29, 1)`,
+    [ctx.orgA],
+  );
+}
+
+/** Days before today (UTC) of the rows left, oldest first. */
+async function counterAges(ctx: PurgeCtx, table: "copilot_usage" | "copilot_org_usage", column: string, id: string) {
+  const { rows } = await ctx.superPool.query<{ age: number }>(
+    `SELECT ((now() AT TIME ZONE 'UTC')::date - day) AS age FROM bms.${table} WHERE ${column} = $1 ORDER BY day`,
+    [id],
+  );
+  return rows.map((r) => r.age);
+}
+
+/** Positive control, before the purge: both ages of both counters are there, so a later `[30, 29]` is the purge. */
+export async function theCountersAreSeeded(ctx: PurgeCtx): Promise<void> {
+  expect({
+    user: await counterAges(ctx, "copilot_usage", "user_id", ctx.userA),
+    org: await counterAges(ctx, "copilot_org_usage", "organization_id", ctx.orgA),
+  }).toEqual({ user: [31, 30, 29], org: [31, 30, 29] });
+}
+
+export async function theOldUserCounterIsGoneAndTheYoungOneStays(ctx: PurgeCtx): Promise<void> {
+  expect(await counterAges(ctx, "copilot_usage", "user_id", ctx.userA)).toEqual([30, 29]);
+}
+
+export async function theOldOrgCounterIsGoneAndTheYoungOneStays(ctx: PurgeCtx): Promise<void> {
+  expect(await counterAges(ctx, "copilot_org_usage", "organization_id", ctx.orgA)).toEqual([30, 29]);
+}
 
 async function insertConversation(ctx: PurgeCtx, userId: string, age: string): Promise<string> {
   const { rows } = await withUser(ctx.tenantDb, userId, (tx) =>
@@ -141,8 +188,10 @@ export async function theOwnerWithNoSettingDeletesNothing(ctx: PurgeCtx, f: Purg
   }
 }
 
+/** Runs one tick on the database's clock, so the fixture's `now()` days and the cut-off date agree even at UTC midnight. */
 export async function runThePurge(ctx: PurgeCtx): Promise<void> {
-  await new CopilotPurgeService(ctx.tenantDb, ctx.fleetDb).purge();
+  const { rows } = await ctx.superPool.query<{ now: Date }>("SELECT now() AS now");
+  await new CopilotPurgeService(ctx.tenantDb, ctx.fleetDb).purge(rows[0]!.now);
 }
 
 async function readAs(ctx: PurgeCtx, userId: string, query: ReturnType<typeof sql>): Promise<Record<string, unknown>[]> {
