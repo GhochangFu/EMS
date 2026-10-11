@@ -3,8 +3,8 @@ import { createPortal } from "react-dom";
 
 /**
  * `F4.202` — asks once before an action that one stray click must not take: Deactivate a user,
- * Remove a grant, Remove a group member. Same shape as `ArchiveConfirmDialog`
- * (`dashboard-template-detail-page.tsx`), which stays where it is.
+ * Remove a grant, Remove a group member. (The dashboard template Archive confirm it was shaped
+ * on became the `dashboardTemplate.archive` `WizardShell` in `F3.85` PR 10b.)
  *
  * **No pending prop, on purpose.** The confirm closes the dialog in the same click that starts
  * the request, so the dialog never holds a pending state. The row button that opened it keeps

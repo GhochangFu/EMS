@@ -44,11 +44,6 @@ const NOT_YET: Readonly<Record<string, string>> = {
   // PR 10a
 
   // PR 10b
-  "dashboardTemplate.publish": "10b",
-  "dashboardTemplate.archive": "10b",
-  "dashboardTemplate.draft": "10b",
-  "dashboardTemplate.instantiate": "10b",
-  "dashboardTemplate.applyToSites": "10b",
 
   // PR 11b
 };

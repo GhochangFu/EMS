@@ -10,23 +10,15 @@ import {
   draftShowsPublishAndDelete,
   publishedShowsArchiveAndInstantiate,
   refusedDeleteStaysOnThePage,
-  aTypedNameLeavesTheInstantiateButtonDisabled,
-  organizationWideOptionSendsANullAssetGroup,
   deleteDraftIsDisabledWhilePublishPends,
   deleteDraftKeepsItsNameWhilePublishPends,
   publishAnnouncesPublishing,
-  resolutionReportNamesAPartialWidget,
   roleFreeTemplateOffersTheOrganizationWideOption,
   saveCanvasSendsTheStoredTabsBack,
   applyToAllSitesShowsOnlyForAPublishedSiteTemplate,
-  applyResultTableListsASkippedSitesReason,
-  siteTemplateInstantiatePicksALocation,
-  madeSummaryCountsTheTilesLeftOut,
   siteTemplateCountsAndListsItsTabWidgets,
   groupTemplateCountAndEmptyMessageAreUnchanged,
-  archiveAsksBeforeArchiving,
   archiveIsNotAPrimaryFill,
-  confirmedArchiveAnnouncesArchiving,
   readOnlyNoticeGivesAPlainReason,
   saveCanvasOpensTheUpdateWizard,
   saveWizardAloneSendsNoCopilotHeader,
@@ -60,10 +52,6 @@ describe("F3.36 dashboard template detail page", () => {
     await publishedShowsArchiveAndInstantiate();
   });
 
-  it("the instantiate dialog names a partial widget with its counts (ADR 0049 Amendment 2)", async () => {
-    await resolutionReportNamesAPartialWidget();
-  });
-
   it("adding a widget grows the canvas with a vocabulary-fed role picker", async () => {
     await addWidgetAddsAWidgetEditor();
   });
@@ -88,14 +76,6 @@ describe("F3.36 dashboard template detail page", () => {
     await bindingTemplateHidesTheOrganizationWideOption();
   });
 
-  it("choosing Organization-wide sends assetGroupId null", async () => {
-    await organizationWideOptionSendsANullAssetGroup();
-  });
-
-  it("refuses to submit a typed name as a slug (PR 2 sweep)", async () => {
-    await aTypedNameLeavesTheInstantiateButtonDisabled();
-  });
-
   it("B3 Publish announces Publishing… with aria-busy", async () => {
     await publishAnnouncesPublishing();
   });
@@ -116,32 +96,12 @@ describe("F3.36 dashboard template detail page", () => {
     await applyToAllSitesShowsOnlyForAPublishedSiteTemplate();
   });
 
-  it("the apply-to-sites result lists a skipped site with its reason (F3.73)", async () => {
-    await applyResultTableListsASkippedSitesReason();
-  });
-
-  it("a site template's instantiate dialog picks a location (F3.73)", async () => {
-    await siteTemplateInstantiatePicksALocation();
-  });
-
-  it("the made summary counts the role tiles a copy left out (ADR 0087 Amendment 2)", async () => {
-    await madeSummaryCountsTheTilesLeftOut();
-  });
-
   it("a site template counts its tab widgets and lists its tabs (F3.73)", async () => {
     await siteTemplateCountsAndListsItsTabWidgets();
   });
 
   it("a group template keeps its own count and empty message (F3.73)", async () => {
     await groupTemplateCountAndEmptyMessageAreUnchanged();
-  });
-
-  it("Archive asks for a confirm before it archives (F3.73 critique)", async () => {
-    await archiveAsksBeforeArchiving();
-  });
-
-  it("a confirmed archive shows Archiving… with aria-busy on the page's Archive (F4.168)", async () => {
-    await confirmedArchiveAnnouncesArchiving();
   });
 
   it("Archive is not a primary-filled button (F3.73 critique)", async () => {

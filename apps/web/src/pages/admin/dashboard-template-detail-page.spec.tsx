@@ -29,9 +29,9 @@ const admin: AuthUser = {
   role: "admin",
 } as unknown as AuthUser;
 
-const TEMPLATE_ID = "11111111-1111-1111-1111-111111111111";
+export const TEMPLATE_ID = "11111111-1111-1111-1111-111111111111";
 
-function draftTemplate() {
+export function draftTemplate() {
   return {
     id: TEMPLATE_ID,
     organizationId: "org-1",
@@ -52,7 +52,7 @@ function draftTemplate() {
   };
 }
 
-function publishedTemplate() {
+export function publishedTemplate() {
   return {
     ...draftTemplate(),
     status: "published",
@@ -78,7 +78,7 @@ function publishedTemplate() {
 }
 
 /** `E4.2` — the published fixture with its one binding removed. */
-function roleFreeTemplate() {
+export function roleFreeTemplate() {
   return {
     ...publishedTemplate(),
     section: "sustainability",
@@ -95,7 +95,12 @@ function roleFreeTemplate() {
   };
 }
 
-const GROUPS = { items: [{ id: "grp-1", name: "Electrical train", locationName: "Plant 1", memberCount: 2 }] };
+/** Uuids: the instantiate wizard checks each step against the body schema (`F3.85` PR 10b). */
+export const GROUP_ID = "22222222-2222-4222-8222-222222222222";
+export const LOC_1 = "33333333-3333-4333-8333-333333333331";
+export const LOC_2 = "33333333-3333-4333-8333-333333333332";
+
+const GROUPS = { items: [{ id: GROUP_ID, name: "Electrical train", locationName: "Plant 1", memberCount: 2 }] };
 
 const VOCABULARIES = {
   ruleCategories: [],
@@ -107,7 +112,7 @@ const VOCABULARIES = {
   waterBalanceRoles: [],
 };
 
-function stubApi(overrides: Partial<Record<string, unknown>> = {}): void {
+export function stubApi(overrides: Partial<Record<string, unknown>> = {}): void {
   // The layout's status read: unstubbed, it reaches a live API on :4000, whose 401 clears the session.
   vi.spyOn(systemStatusApi, "fetchSystemStatus").mockResolvedValue(OPERATIONAL);
   vi.spyOn(groupsApi, "fetchAdminAssetGroups").mockResolvedValue(GROUPS as never);
@@ -130,7 +135,7 @@ function ListLanding() {
   return <div>{LIST_LANDING_TEXT}</div>;
 }
 
-function renderPage(): void {
+export function renderPage(): void {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   vi.spyOn(copilotApi, "fetchCopilotStatus").mockResolvedValue({ available: false, configured: false });
   render(
@@ -168,45 +173,6 @@ export async function publishedShowsArchiveAndInstantiate(): Promise<void> {
   expect(screen.getByRole("button", { name: "Instantiate" })).toBeInTheDocument();
   expect(screen.queryByRole("button", { name: "Publish" })).not.toBeInTheDocument();
   expect(screen.queryByRole("button", { name: "Delete draft" })).not.toBeInTheDocument();
-}
-
-/**
- * The load-bearing assertion: a `partial` widget is named, with its
- * `matchedMembers` and `boundPoints`, inside the instantiate dialog itself —
- * ADR 0049 Amendment 2 decisions 1 and 6.
- */
-export async function resolutionReportNamesAPartialWidget(): Promise<void> {
-  stubApi({
-    fetchAdminDashboardTemplate: () => Promise.resolve(publishedTemplate()),
-    instantiateAdminDashboardTemplate: () =>
-      Promise.resolve({
-        dashboard: { id: "d1", name: "Electrical train dashboard" },
-        resolutions: [
-          { widgetKey: "w1", assetRoleCodes: ["incoming-supply"], matchedMembers: 3, boundPoints: 2, outcome: "partial" },
-        ],
-      }),
-  });
-  renderPage();
-
-  await userEvent.click(await screen.findByRole("button", { name: "Instantiate" }));
-  await userEvent.selectOptions(
-    await screen.findByRole("combobox", { name: "Asset group" }),
-    "grp-1",
-  );
-  await userEvent.type(screen.getByRole("textbox", { name: "Slug" }), "electrical-p1");
-  await userEvent.click(screen.getByRole("button", { name: "Confirm instantiate" }));
-
-  // `getByRole("cell", …)` rather than `getByText("w1")`: the widget editor
-  // below the (still-mounted) dialog also shows the key "w1" as a label, and
-  // the resolution table is what must name it — that is the assertion, so it
-  // is scoped to the table cell rather than to any element with that text.
-  await waitFor(() => {
-    expect(screen.getByRole("cell", { name: "w1" })).toBeInTheDocument();
-  });
-  expect(screen.getByRole("cell", { name: "3" })).toBeInTheDocument();
-  expect(screen.getByRole("cell", { name: "2" })).toBeInTheDocument();
-  expect(screen.getByText(/Partial/)).toBeInTheDocument();
-  expect(screen.getByText(/Electrical train dashboard/)).toBeInTheDocument();
 }
 
 /** Adding a widget grows the canvas, and its role picker is vocabulary-fed. */
@@ -336,73 +302,10 @@ export async function bindingTemplateHidesTheOrganizationWideOption(): Promise<v
   ).not.toBeInTheDocument();
 }
 
-/** The dialog sends `assetGroupId: null` when the organization-wide option is
- * chosen — the sentinel `__organization_wide__` is a `<select>` value and must
- * never reach the wire. */
-export async function organizationWideOptionSendsANullAssetGroup(): Promise<void> {
-  const calls: unknown[] = [];
-  stubApi({
-    fetchAdminDashboardTemplate: () => Promise.resolve(roleFreeTemplate()),
-    instantiateAdminDashboardTemplate: (_id: string, input: unknown) => {
-      calls.push(input);
-      return Promise.resolve({ dashboard: { id: "d1", name: "Sustainability" }, resolutions: [] });
-    },
-  });
-  renderPage();
-
-  await userEvent.click(await screen.findByRole("button", { name: "Instantiate" }));
-  await userEvent.selectOptions(
-    await screen.findByRole("combobox", { name: "Asset group" }),
-    "__organization_wide__",
-  );
-  await userEvent.type(screen.getByRole("textbox", { name: "Slug" }), "enterprise");
-  await userEvent.click(screen.getByRole("button", { name: "Confirm instantiate" }));
-
-  await waitFor(() => {
-    expect(calls).toHaveLength(1);
-  });
-  expect((calls[0] as { assetGroupId: unknown }).assetGroupId).toBeNull();
-}
-
 /**
- * `E4.2` PR 2 sweep — **the dialog gates on the slug RULE, not on emptiness.**
- *
- * PR 2 tightened `instantiateSectionTemplateBodySchema.slug` to
- * `.min(2).max(64)` on `/^[a-z0-9-]+$/` and left `canSubmit` asking only for a
- * character, so an administrator who typed a name filled the whole form and got
- * a 400 on submit.
- *
- * The enabled half is the adjacent positive control, and it is in this function
- * on purpose: a dialog whose button was disabled for an unrelated reason (a
- * group never chosen, a mutation in flight) would pass the refusal alone.
- */
-export async function aTypedNameLeavesTheInstantiateButtonDisabled(): Promise<void> {
-  stubApi({ fetchAdminDashboardTemplate: () => Promise.resolve(roleFreeTemplate()) });
-  renderPage();
-
-  await userEvent.click(await screen.findByRole("button", { name: "Instantiate" }));
-  await userEvent.selectOptions(
-    await screen.findByRole("combobox", { name: "Asset group" }),
-    "__organization_wide__",
-  );
-  const slugField = screen.getByRole("textbox", { name: "Slug" });
-  await userEvent.type(slugField, "Sustainability Overview");
-  expect(
-    screen.getByRole("button", { name: "Confirm instantiate" }),
-    "a capital and a space are a 400 from the API — the form must not offer to send them",
-  ).toBeDisabled();
-
-  await userEvent.clear(slugField);
-  await userEvent.type(slugField, "sustainability-overview");
-  expect(
-    screen.getByRole("button", { name: "Confirm instantiate" }),
-    "the positive control — the same form with a valid slug submits",
-  ).toBeEnabled();
-}
-
-/**
- * `F4.168` B3 arrange — a draft template; Publish is clicked and `publishM`
- * held pending. Resolves with the button once "Publishing…" shows.
+ * `F4.168` B3 arrange — a draft template; Publish is clicked, its wizard's
+ * Submit (`F3.85` PR 10b) sends, and `publishM` is held pending. Resolves with
+ * the page's button once "Publishing…" shows.
  */
 async function publishHeldPending(): Promise<HTMLElement> {
   stubApi({
@@ -412,6 +315,7 @@ async function publishHeldPending(): Promise<HTMLElement> {
   renderPage();
 
   await userEvent.click(await screen.findByRole("button", { name: "Publish" }));
+  await userEvent.click(screen.getByRole("button", { name: "Submit" }));
   return screen.findByRole("button", { name: "Publishing…" });
 }
 
@@ -457,19 +361,19 @@ function siteDraftTemplate() {
   };
 }
 
-function publishedSiteTemplate() {
+export function publishedSiteTemplate() {
   return { ...siteDraftTemplate(), status: "published", publishedAt: new Date(0).toISOString() };
 }
 
 const SITE_LOCATIONS = {
   items: [
-    { id: "loc-1", name: "Plant 1", slug: "plant-1", active: true },
-    { id: "loc-2", name: "Plant 2", slug: "plant-2", active: true },
+    { id: LOC_1, name: "Plant 1", slug: "plant-1", active: true },
+    { id: LOC_2, name: "Plant 2", slug: "plant-2", active: true },
   ],
 };
 
 /** The site arm reads the organization's locations; unstubbed it would reach :4000. */
-function stubSiteApi(overrides: Partial<Record<string, unknown>> = {}): void {
+export function stubSiteApi(overrides: Partial<Record<string, unknown>> = {}): void {
   vi.spyOn(locationsApi, "fetchAdminLocations").mockResolvedValue(SITE_LOCATIONS as never);
   stubApi(overrides);
 }
@@ -505,105 +409,6 @@ export async function applyToAllSitesShowsOnlyForAPublishedSiteTemplate(): Promi
   ).not.toBeInTheDocument();
 }
 
-/** The bulk action names a made site and a skipped site with its reason, and posts once. */
-export async function applyResultTableListsASkippedSitesReason(): Promise<void> {
-  const calls: string[] = [];
-  stubSiteApi({
-    fetchAdminDashboardTemplate: () => Promise.resolve(publishedSiteTemplate()),
-    applySiteTemplate: (id: string) => {
-      calls.push(id);
-      return Promise.resolve({
-        made: [
-          {
-            locationId: "loc-1",
-            dashboardId: "d1",
-            dashboardSlug: "site-layout-plant-1",
-            omittedTabs: [],
-            droppedCards: [],
-            omittedTiles: [],
-            resolution: [],
-          },
-        ],
-        skipped: [{ locationId: "loc-2", reason: "has_view" }],
-      });
-    },
-  });
-  renderPage();
-
-  await userEvent.click(await screen.findByRole("button", { name: "Apply to all sites" }));
-  expect(calls, "the click posted before the confirm dialog was answered").toHaveLength(0);
-  await userEvent.click(await screen.findByRole("button", { name: "Confirm apply to all sites" }));
-
-  expect(await screen.findByRole("cell", { name: "Plant 2" })).toBeInTheDocument();
-  expect(screen.getByRole("cell", { name: /already has a site view/i })).toBeInTheDocument();
-  expect(screen.getByRole("cell", { name: "Plant 1" })).toBeInTheDocument();
-  expect(screen.getByRole("cell", { name: /made/i })).toBeInTheDocument();
-  expect(calls).toEqual([TEMPLATE_ID]);
-}
-
-/** A site template's instantiate dialog picks a location, sends `{ locationId }`, no group. */
-export async function siteTemplateInstantiatePicksALocation(): Promise<void> {
-  const calls: unknown[][] = [];
-  stubSiteApi({
-    fetchAdminDashboardTemplate: () => Promise.resolve(publishedSiteTemplate()),
-    instantiateSiteTemplate: (...args: unknown[]) => {
-      calls.push(args);
-      return Promise.resolve({
-        locationId: "loc-2",
-        dashboardId: "d1",
-        dashboardSlug: "site-layout-plant-2",
-        omittedTabs: [],
-        droppedCards: [],
-        omittedTiles: [],
-        resolution: [],
-      });
-    },
-  });
-  renderPage();
-
-  await userEvent.click(await screen.findByRole("button", { name: "Instantiate" }));
-  expect(screen.queryByRole("combobox", { name: "Asset group" })).not.toBeInTheDocument();
-  await userEvent.selectOptions(await screen.findByRole("combobox", { name: "Location" }), "loc-2");
-  await userEvent.click(screen.getByRole("button", { name: "Confirm instantiate" }));
-
-  await waitFor(() => {
-    expect(calls).toHaveLength(1);
-  });
-  expect(calls[0]?.slice(0, 2)).toEqual([TEMPLATE_ID, "loc-2"]);
-  expect(await screen.findByText(/site-layout-plant-2/)).toBeInTheDocument();
-  expect(screen.queryByText(/left out/), "a copy that left out no tile said it did").not.toBeInTheDocument();
-}
-
-/**
- * ADR 0087 Amendment 2 — the answer names the role tiles a copy left out, and the summary counts
- * them. The adjacent case answers `omittedTiles: []`, and its summary says nothing about tiles.
- */
-export async function madeSummaryCountsTheTilesLeftOut(): Promise<void> {
-  stubSiteApi({
-    fetchAdminDashboardTemplate: () => Promise.resolve(publishedSiteTemplate()),
-    instantiateSiteTemplate: () =>
-      Promise.resolve({
-        locationId: "loc-2",
-        dashboardId: "d1",
-        dashboardSlug: "site-layout-plant-2",
-        omittedTabs: [],
-        droppedCards: [],
-        omittedTiles: [
-          { tabKey: "sld", widgetKey: "sld-pf-tile" },
-          { tabKey: "env", widgetKey: "env-humidity-tile" },
-        ],
-        resolution: [],
-      }),
-  });
-  renderPage();
-
-  await userEvent.click(await screen.findByRole("button", { name: "Instantiate" }));
-  await userEvent.selectOptions(await screen.findByRole("combobox", { name: "Location" }), "loc-2");
-  await userEvent.click(screen.getByRole("button", { name: "Confirm instantiate" }));
-
-  expect(await screen.findByText(/2 tiles left out \(no point at the site\)/)).toBeInTheDocument();
-}
-
 /**
  * A published site template (0 top-level widgets, two tabs of one widget each) reads "2 widgets"
  * and lists its tabs with label, domain and count — never the empty-canvas message. The adjacent
@@ -636,58 +441,6 @@ export async function groupTemplateCountAndEmptyMessageAreUnchanged(): Promise<v
   renderPage();
   expect(await screen.findByText(/electrical · 0 widgets/)).toBeInTheDocument();
   expect(screen.getByText("This template has no widgets yet.")).toBeInTheDocument();
-}
-
-/**
- * `F3.73` critique — Archive asks before it archives. The click opens a confirm dialog and posts
- * nothing; the dialog's own button posts once. Cancel closes it with no post (the adjacent
- * negative, so a dialog that archived on open or on cancel goes red).
- */
-export async function archiveAsksBeforeArchiving(): Promise<void> {
-  const calls: string[] = [];
-  stubApi({
-    fetchAdminDashboardTemplate: () => Promise.resolve(publishedTemplate()),
-    archiveAdminDashboardTemplate: (id: string) => {
-      calls.push(id);
-      return Promise.resolve({ ...publishedTemplate(), status: "archived" });
-    },
-  });
-  renderPage();
-
-  await userEvent.click(await screen.findByRole("button", { name: "Archive" }));
-  expect(calls, "the click archived before the confirm was answered").toHaveLength(0);
-  await userEvent.click(await screen.findByRole("button", { name: "Cancel" }));
-  expect(calls, "Cancel archived the template").toHaveLength(0);
-  expect(screen.queryByRole("button", { name: "Confirm archive" })).not.toBeInTheDocument();
-
-  await userEvent.click(screen.getByRole("button", { name: "Archive" }));
-  await userEvent.click(await screen.findByRole("button", { name: "Confirm archive" }));
-  await waitFor(() => {
-    expect(calls).toEqual([TEMPLATE_ID]);
-  });
-}
-
-/**
- * `F4.168` H15 for the `F3.73` critique's confirm — the confirm closes the dialog and the post
- * then pends. The page's Archive button announces it: named "Archiving…", `aria-busy="true"` and
- * disabled, so the dialog cannot reopen while the post is in flight.
- */
-export async function confirmedArchiveAnnouncesArchiving(): Promise<void> {
-  stubApi({
-    fetchAdminDashboardTemplate: () => Promise.resolve(publishedTemplate()),
-    archiveAdminDashboardTemplate: () => new Promise<never>(() => {}),
-  });
-  renderPage();
-
-  const archive = await screen.findByRole("button", { name: "Archive" });
-  await userEvent.click(archive);
-  await userEvent.click(await screen.findByRole("button", { name: "Confirm archive" }));
-  await waitFor(() => {
-    expect(archive).toHaveAccessibleName("Archiving…");
-  });
-  expect(archive).toHaveAttribute("aria-busy", "true");
-  expect(archive).toBeDisabled();
-  expect(screen.queryByRole("button", { name: "Confirm archive" })).not.toBeInTheDocument();
 }
 
 /**
@@ -754,9 +507,9 @@ export async function saveCanvasSendsTheStoredTabsBack(): Promise<void> {
  * stored values beside the new ones.
  * ------------------------------------------------------------------------ */
 
-const BASE = import.meta.env.VITE_API_URL ?? "http://localhost:4000";
+export const BASE = import.meta.env.VITE_API_URL ?? "http://localhost:4000";
 
-function stepTitles(): string[] {
+export function stepTitles(): string[] {
   const list = screen.getByRole("list", { name: "Steps" });
   return within(list)
     .getAllByRole("listitem")
