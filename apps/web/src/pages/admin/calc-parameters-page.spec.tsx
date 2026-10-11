@@ -198,10 +198,44 @@ function stubApi(overrides: Partial<Record<ApiFn, unknown>> = {}): void {
   }
 }
 
-/** Opens the create form and resolves once its key `<select>` is on screen. */
+/** Opens the create wizard and resolves once its key `<select>` (the Basics step) is on screen. */
 async function openCreateForm(): Promise<HTMLSelectElement> {
   await userEvent.click(await screen.findByRole("button", { name: "Add parameter" }));
   return (await screen.findByRole("combobox", { name: "Key" })) as HTMLSelectElement;
+}
+
+/** `F3.85` PR 11b — presses the wizard's Next. */
+async function next(): Promise<void> {
+  await userEvent.click(screen.getByRole("button", { name: "Next" }));
+}
+
+/** The wizard's step list, as rendered: "1. Basics", … */
+function stepTitles(): string[] {
+  return within(screen.getByRole("list", { name: "Steps" }))
+    .getAllByRole("listitem")
+    .map((item) => item.textContent ?? "");
+}
+
+/** The step the wizard has open (`aria-current="step"`). */
+function currentStep(): string {
+  const list = screen.getByRole("list", { name: "Steps" });
+  return list.querySelector('[aria-current="step"]')?.textContent ?? "";
+}
+
+/** Opens the create wizard and walks Basics → Scope. */
+async function openCreateScopeStep(): Promise<void> {
+  await openCreateForm();
+  await next();
+  await screen.findByRole("group", { name: "Scope" });
+}
+
+/** Opens Edit on the asset-scoped row (the third) and resolves on the Value step. */
+async function openEditOfAssetRow(): Promise<HTMLElement> {
+  const table = await screen.findByRole("table");
+  await within(table).findByText("Asset · SPEC-TRF-01");
+  await userEvent.click(within(table).getAllByRole("button", { name: "Edit" })[2] as HTMLElement);
+  await screen.findByRole("spinbutton", { name: "Value" });
+  return table;
 }
 
 /**
@@ -232,7 +266,7 @@ export async function rendersRowsWithAllThreeScopeLabels(): Promise<void> {
 export async function locationAdminHasNoOrganizationRadio(): Promise<void> {
   stubApi();
   renderPage(locationAdmin);
-  await openCreateForm();
+  await openCreateScopeStep();
 
   // Waited for the Location radio to be checked, not for an input: the form
   // renders before the queries resolve, so an input is on screen at once and
@@ -246,7 +280,7 @@ export async function locationAdminHasNoOrganizationRadio(): Promise<void> {
 export async function locationAdminDefaultsToLocationScope(): Promise<void> {
   stubApi();
   renderPage(locationAdmin);
-  await openCreateForm();
+  await openCreateScopeStep();
 
   const location = (await screen.findByRole("radio", { name: "Location" })) as HTMLInputElement;
   await waitFor(() => expect(location.checked).toBe(true));
@@ -261,7 +295,7 @@ export async function locationAdminDefaultsToLocationScope(): Promise<void> {
 export async function adminHasTheOrganizationRadio(): Promise<void> {
   stubApi();
   renderPage(admin);
-  await openCreateForm();
+  await openCreateScopeStep();
 
   const organization = (await screen.findByRole("radio", {
     name: "Organization",
@@ -292,6 +326,99 @@ export async function keySelectOffersExactlyTheFetchedKeys(): Promise<void> {
 }
 
 /**
+ * Walks the create wizard to Review: Basics (key, value) → Scope (Asset, its
+ * location, the asset) → Effective dates → Review. The Asset scope is the one
+ * that needs the location `<select>` as a picker but sends no `locationId`.
+ */
+async function walkCreateToReview(): Promise<void> {
+  await openCreateForm();
+  await userEvent.selectOptions(
+    await screen.findByRole("combobox", { name: "Key" }),
+    "e41a_spec_factor",
+  );
+  fireEvent.change(screen.getByRole("spinbutton", { name: "Value" }), { target: { value: "0.85" } });
+  await next();
+
+  await userEvent.click(await screen.findByRole("radio", { name: "Asset" }));
+  await userEvent.selectOptions(
+    await screen.findByRole("combobox", { name: "Location" }),
+    LOCATION_ID,
+  );
+  const asset = await screen.findByRole("combobox", { name: "Asset" });
+  await within(asset).findByRole("option", { name: "SPEC-TRF-01 · Spec Transformer" });
+  await userEvent.selectOptions(asset, ASSET_ID);
+  await next();
+
+  fireEvent.change(await screen.findByLabelText("Effective from"), {
+    target: { value: "2026-04-01T08:30" },
+  });
+  fireEvent.change(screen.getByLabelText("Effective to"), { target: { value: "2026-05-01T08:30" } });
+  await next();
+  await screen.findByRole("button", { name: "Submit" });
+}
+
+/**
+ * `F3.85` PR 11b (ADR 0099 decision 6) — the create wizard's steps are the
+ * catalog entry's, in its order, then Review.
+ */
+export async function createStepsAreBasicsScopeDatesReview(): Promise<void> {
+  stubApi();
+  renderPage(admin);
+  await openCreateForm();
+  expect(stepTitles()).toEqual(["1. Basics", "2. Scope", "3. Effective dates", "4. Review"]);
+}
+
+/**
+ * The chosen scope with nothing picked holds the wizard on Scope. Without
+ * this, an empty Location pick would leave the body with neither id and
+ * Review would accept it as an ORGANIZATION-scoped row — a row the author
+ * never chose (the old form's `scopeReady` gate).
+ */
+export async function anUnpickedLocationHoldsTheScopeStep(): Promise<void> {
+  stubApi();
+  renderPage(locationAdmin);
+  await openCreateScopeStep();
+  const location = (await screen.findByRole("radio", { name: "Location" })) as HTMLInputElement;
+  await waitFor(() => expect(location.checked).toBe(true));
+  await next();
+  await screen.findByRole("alert");
+  expect(currentStep()).toBe("2. Scope");
+}
+
+/**
+ * `F3.85` PR 11b, the header rule (plan §10.5 as built): the wizard used
+ * alone sends the plain request — no `X-Copilot-Change`. Read on the wire:
+ * `fetch` is stubbed and the REAL `createAdminCalcParameter` runs. The
+ * positive sits beside the absence: the POST did go out, to the route, with
+ * the body Review showed.
+ */
+export async function theCreateWizardSendsNoCopilotHeader(): Promise<void> {
+  stubApi();
+  vi.mocked(api.createAdminCalcParameter).mockRestore();
+  const calls: Array<{ url: string; init: RequestInit }> = [];
+  vi.stubGlobal("fetch", async (url: string, init: RequestInit) => {
+    calls.push({ url, init });
+    return new Response(JSON.stringify(ROWS.items[2]), { status: 201 });
+  });
+  renderPage(admin);
+  await walkCreateToReview();
+  await userEvent.click(screen.getByRole("button", { name: "Submit" }));
+
+  const base = import.meta.env.VITE_API_URL ?? "http://localhost:4000";
+  await waitFor(() => expect(calls.some((call) => call.init.method === "POST")).toBe(true));
+  const post = calls.find((call) => call.init.method === "POST") as { url: string; init: RequestInit };
+  expect(post.url).toBe(`${base}/api/v1/admin/calc-parameters`);
+  expect(JSON.parse(post.init.body as string)).toMatchObject({
+    organizationId: ORG_ID,
+    key: "e41a_spec_factor",
+    assetId: ASSET_ID,
+    locationId: null,
+    value: 0.85,
+  });
+  expect(new Headers(post.init.headers).get("X-Copilot-Change")).toBeNull();
+}
+
+/**
  * Submitting creates with the chosen scope and ISO instants WITH an offset.
  *
  * The `datetime-local` value is an unzoned wall-clock string; the API's
@@ -303,27 +430,9 @@ export async function keySelectOffersExactlyTheFetchedKeys(): Promise<void> {
 export async function submitsTheChosenScopeAndIsoDates(): Promise<void> {
   stubApi();
   renderPage(admin);
-  await openCreateForm();
 
-  await userEvent.selectOptions(
-    await screen.findByRole("combobox", { name: "Key" }),
-    "e41a_spec_factor",
-  );
-  await userEvent.click(screen.getByRole("radio", { name: "Asset" }));
-  await userEvent.selectOptions(
-    await screen.findByRole("combobox", { name: "Location" }),
-    LOCATION_ID,
-  );
-  await userEvent.selectOptions(await screen.findByRole("combobox", { name: "Asset" }), ASSET_ID);
-
-  const value = screen.getByRole("spinbutton", { name: "Value" });
-  fireEvent.change(value, { target: { value: "0.85" } });
-  const from = screen.getByLabelText("Effective from");
-  fireEvent.change(from, { target: { value: "2026-04-01T08:30" } });
-  const to = screen.getByLabelText("Effective to");
-  fireEvent.change(to, { target: { value: "2026-05-01T08:30" } });
-
-  await userEvent.click(screen.getByRole("button", { name: "Save" }));
+  await walkCreateToReview();
+  await userEvent.click(screen.getByRole("button", { name: "Submit" }));
 
   await waitFor(() => expect(api.createAdminCalcParameter).toHaveBeenCalledTimes(1));
   const [body] = vi.mocked(api.createAdminCalcParameter).mock.calls[0] as [
@@ -362,56 +471,50 @@ export async function rendersTheServerConflictSentenceVerbatim(): Promise<void> 
       )) as never,
   });
   renderPage(admin);
-  await openCreateForm();
-
-  await userEvent.selectOptions(
-    await screen.findByRole("combobox", { name: "Key" }),
-    "e41a_spec_tariff",
-  );
-  const value = screen.getByRole("spinbutton", { name: "Value" });
-  fireEvent.change(value, { target: { value: "2.5" } });
-  const from = screen.getByLabelText("Effective from");
-  fireEvent.change(from, { target: { value: "2026-01-01T00:00" } });
-  await userEvent.click(screen.getByRole("button", { name: "Save" }));
+  await walkCreateToReview();
+  await userEvent.click(screen.getByRole("button", { name: "Submit" }));
 
   const alert = await screen.findByRole("alert");
   expect(alert.textContent).toBe(CONFLICT_SENTENCE);
-  // The form stays open so the author can change the dates.
-  expect(screen.getByRole("combobox", { name: "Key" })).toBeInTheDocument();
+  // The wizard stays on Review so the author can go back and change the dates.
+  expect(screen.getByRole("button", { name: "Submit" })).toBeInTheDocument();
 }
 
 /**
- * Edit opens the form with key and scope disabled (plan design decision 12):
- * the API's PATCH body has no such field, so an enabled control would be a
- * 400 behind Save. The value and both dates stay editable, and a value-only
- * edit sends the value ALONE: the minute-granular input cannot round-trip a
- * stored instant's seconds, so an unchanged date must not travel (PR 2 code
- * review). Changing the end date sends that one field beside the value.
+ * Edit is the `calcParameter.update` wizard: Value, Effective dates, Review.
+ * Key and scope are not steps — the PATCH body has no such field (plan design
+ * decision 12) — so they are restated as text, never as a control.
  */
-export async function editDisablesKeyAndScope(): Promise<void> {
+export async function editStepsAreValueDatesReview(): Promise<void> {
   stubApi();
   renderPage(admin);
+  await openEditOfAssetRow();
+  expect(stepTitles()).toEqual(["1. Value", "2. Effective dates", "3. Review"]);
+}
 
-  const table = await screen.findByRole("table");
-  await within(table).findByText("Asset · SPEC-TRF-01");
-  await userEvent.click(within(table).getAllByRole("button", { name: "Edit" })[2] as HTMLElement);
+/** The edit wizard offers no key `<select>` and no scope radio: they cannot change. */
+export async function editHasNoKeyOrScopeControl(): Promise<void> {
+  stubApi();
+  renderPage(admin);
+  await openEditOfAssetRow();
+  expect(screen.getByText(/Asset · SPEC-TRF-01 — to move a value to another scope/)).toBeInTheDocument();
+  expect(screen.queryByRole("combobox", { name: "Key" })).toBeNull();
+  expect(screen.queryByRole("radio")).toBeNull();
+}
 
-  const key = (await screen.findByRole("combobox", { name: "Key" })) as HTMLSelectElement;
-  expect(key.disabled).toBe(true);
-  expect(key.value).toBe("e41a_spec_factor");
-  const asset = (await screen.findByRole("radio", { name: "Asset" })) as HTMLInputElement;
-  await waitFor(() => expect(asset.checked).toBe(true));
-  expect(asset.disabled).toBe(true);
-  expect((screen.getByRole("radio", { name: "Organization" }) as HTMLInputElement).disabled).toBe(
-    true,
-  );
-  expect((screen.getByRole("spinbutton", { name: "Value" }) as HTMLInputElement).disabled).toBe(
-    false,
-  );
-
-  const value = screen.getByRole("spinbutton", { name: "Value" });
-  fireEvent.change(value, { target: { value: "0.95" } });
-  await userEvent.click(screen.getByRole("button", { name: "Save" }));
+/**
+ * A value-only edit sends the value ALONE: the minute-granular input cannot
+ * round-trip a stored instant's seconds, so an unchanged date must not travel
+ * (PR 2 code review).
+ */
+export async function aValueOnlyEditSendsTheValueAlone(): Promise<void> {
+  stubApi();
+  renderPage(admin);
+  await openEditOfAssetRow();
+  fireEvent.change(screen.getByRole("spinbutton", { name: "Value" }), { target: { value: "0.95" } });
+  await next();
+  await next();
+  await userEvent.click(await screen.findByRole("button", { name: "Submit" }));
 
   await waitFor(() => expect(api.updateAdminCalcParameter).toHaveBeenCalledTimes(1));
   const [id, body] = vi.mocked(api.updateAdminCalcParameter).mock.calls[0] as [
@@ -419,18 +522,88 @@ export async function editDisablesKeyAndScope(): Promise<void> {
     Record<string, unknown>,
   ];
   expect(id).toBe("aaaa1111-0000-0000-0000-000000000003");
-  expect(body.value).toBe(0.95);
-  expect(Object.keys(body).sort()).toEqual(["value"]);
+  expect(body).toEqual({ value: 0.95 });
+}
 
-  // The positive control: an edited end date travels, the untouched start does not.
-  await userEvent.click(within(table).getAllByRole("button", { name: "Edit" })[2] as HTMLElement);
-  const to = (await screen.findByLabelText("Effective to")) as HTMLInputElement;
-  fireEvent.change(to, { target: { value: "2031-12-31T23:59" } });
-  await userEvent.click(screen.getByRole("button", { name: "Save" }));
-  await waitFor(() => expect(api.updateAdminCalcParameter).toHaveBeenCalledTimes(2));
-  const [, second] = vi.mocked(api.updateAdminCalcParameter).mock.calls[1] as [string, Record<string, unknown>];
-  expect(Object.keys(second).sort()).toEqual(["effectiveTo", "value"]);
-  expect(new Date(second.effectiveTo as string).getTime()).toBe(new Date("2031-12-31T23:59").getTime());
+/**
+ * `F3.85` PR 11b review (code:F4) — an emptied "Effective from" on edit is
+ * refused at the Effective dates step, as create refuses it, and nothing is
+ * sent. The old input's `required` blocked Save inside a `<form>`; the wizard
+ * is not a form, so an empty field must reach the schema as `""`, not vanish
+ * from the PATCH. The positive beside the absence: the step names an error.
+ */
+export async function anEmptiedStartDateHoldsTheDatesStep(): Promise<void> {
+  stubApi();
+  renderPage(admin);
+  await openEditOfAssetRow();
+  await next();
+  fireEvent.change(await screen.findByLabelText("Effective from"), { target: { value: "" } });
+  await next();
+  await screen.findByRole("alert");
+  expect(currentStep()).toBe("2. Effective dates");
+  expect(api.updateAdminCalcParameter).not.toHaveBeenCalled();
+}
+
+/** The positive control: an edited end date travels, the untouched start does not. */
+export async function aChangedEndDateTravelsBesideTheValue(): Promise<void> {
+  stubApi();
+  renderPage(admin);
+  await openEditOfAssetRow();
+  await next();
+  fireEvent.change(await screen.findByLabelText("Effective to"), {
+    target: { value: "2031-12-31T23:59" },
+  });
+  await next();
+  await userEvent.click(await screen.findByRole("button", { name: "Submit" }));
+
+  await waitFor(() => expect(api.updateAdminCalcParameter).toHaveBeenCalledTimes(1));
+  const [, body] = vi.mocked(api.updateAdminCalcParameter).mock.calls[0] as [string, Record<string, unknown>];
+  expect(Object.keys(body).sort()).toEqual(["effectiveTo", "value"]);
+  expect(new Date(body.effectiveTo as string).getTime()).toBe(new Date("2031-12-31T23:59").getTime());
+}
+
+/**
+ * The edit's Review shows the stored value beside the new one (ADR 0099
+ * decision 6, `current`): the card has a "Now" column, and the Value row
+ * reads 0.9 → 0.95.
+ */
+export async function theEditReviewShowsNowBesideAfter(): Promise<void> {
+  stubApi();
+  renderPage(admin);
+  await openEditOfAssetRow();
+  fireEvent.change(screen.getByRole("spinbutton", { name: "Value" }), { target: { value: "0.95" } });
+  await next();
+  await next();
+  const card = await screen.findByRole("region", { name: "Edit a calculation parameter" });
+  const row = within(card).getByRole("row", { name: /^Value/ });
+  expect(within(row).getAllByRole("cell").map((cell) => cell.textContent)).toEqual(["0.9", "0.95"]);
+}
+
+/**
+ * The header rule for the edit wizard, on the wire: the PATCH goes out with
+ * the value, and without `X-Copilot-Change`.
+ */
+export async function theEditWizardSendsNoCopilotHeader(): Promise<void> {
+  stubApi();
+  vi.mocked(api.updateAdminCalcParameter).mockRestore();
+  const calls: Array<{ url: string; init: RequestInit }> = [];
+  vi.stubGlobal("fetch", async (url: string, init: RequestInit) => {
+    calls.push({ url, init });
+    return new Response(JSON.stringify({ ...ROWS.items[2], value: 0.95 }), { status: 200 });
+  });
+  renderPage(admin);
+  await openEditOfAssetRow();
+  fireEvent.change(screen.getByRole("spinbutton", { name: "Value" }), { target: { value: "0.95" } });
+  await next();
+  await next();
+  await userEvent.click(await screen.findByRole("button", { name: "Submit" }));
+
+  const base = import.meta.env.VITE_API_URL ?? "http://localhost:4000";
+  await waitFor(() => expect(calls.some((call) => call.init.method === "PATCH")).toBe(true));
+  const patch = calls.find((call) => call.init.method === "PATCH") as { url: string; init: RequestInit };
+  expect(patch.url).toBe(`${base}/api/v1/admin/calc-parameters/aaaa1111-0000-0000-0000-000000000003`);
+  expect(JSON.parse(patch.init.body as string)).toEqual({ value: 0.95 });
+  expect(new Headers(patch.init.headers).get("X-Copilot-Change")).toBeNull();
 }
 
 /** Delete asks first; a declined `confirm()` sends nothing, an accepted one sends the id. */
@@ -528,7 +701,7 @@ export async function theLocationPickerListsTheTree(): Promise<void> {
     ],
   } as never);
   renderPage(admin);
-  await openCreateForm();
+  await openCreateScopeStep();
   await userEvent.click(screen.getByRole("radio", { name: "Location" }));
   const select = await screen.findByRole("combobox", { name: "Location" });
   await within(select).findByRole("option", { name: "— ANX · Annex" });

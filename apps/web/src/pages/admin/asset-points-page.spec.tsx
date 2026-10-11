@@ -1,8 +1,9 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen, within } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
-import type { AdminAssetPointDto, AdminRtuDto } from "@bms/shared";
+import type { AdminAssetPointDto, AdminRtuDto, AssetPointCalcConfigDto } from "@bms/shared";
+import { assetPointCalcConfigDtoSchema } from "@bms/shared/contracts";
 import { expect, vi } from "vitest";
 
 import * as api from "../../api/admin/asset-points";
@@ -413,6 +414,262 @@ export async function addPicksAnRtuOfTheAssetsLocation(): Promise<void> {
   await userEvent.click(screen.getByRole("button", { name: "Save" }));
   await vi.waitFor(() => expect(create).toHaveBeenCalledTimes(2));
   expect(create.mock.calls[1][0].rtuId).toBe(RTU_A);
+}
+
+// ---- F3.85 PR 11b: the calc override is the `calcOverride.set` wizard -------
+
+const OVERRIDE_ASSET = "f3850000-0000-4000-8000-0000000000a1";
+const CALC_KEY = "KWH";
+const FORMULA_SENTENCE = 'Unknown point key "NOPE" in the formula for KWH';
+const OVERRIDE_TITLE = "Override an asset's calculated point";
+
+/** A `v1` scheduled template point `KWH` (every 300 s), with `override` stored on this asset. */
+function calcConfig(override: Partial<AssetPointCalcConfigDto["override"]> = {}): AssetPointCalcConfigDto {
+  const template = {
+    formula: "{KW} * 2",
+    formulaDialect: "bms-calc-v1",
+    calcTrigger: "scheduled",
+    calcIntervalSeconds: 300,
+    maxInputAgeSeconds: 600,
+  };
+  const stored = {
+    formula: null,
+    formulaDialect: null,
+    calcTrigger: null,
+    calcIntervalSeconds: null,
+    maxInputAgeSeconds: null,
+    ...override,
+  };
+  return assetPointCalcConfigDtoSchema.parse({
+    pointKey: CALC_KEY,
+    templatePointId: "tp-1",
+    label: "Energy",
+    unit: "kWh",
+    assetPointId: Object.values(stored).some((value) => value !== null) ? "ap-1" : null,
+    template,
+    override: stored,
+    effective: {
+      formula: stored.formula ?? template.formula,
+      formulaDialect: stored.formulaDialect ?? template.formulaDialect,
+      calcTrigger: stored.calcTrigger ?? template.calcTrigger,
+      calcIntervalSeconds: stored.calcIntervalSeconds ?? template.calcIntervalSeconds,
+      maxInputAgeSeconds: stored.maxInputAgeSeconds ?? template.maxInputAgeSeconds,
+    },
+    minCoverageRatio: null,
+    runtime: null,
+  });
+}
+
+/** The asset drill-down with one derived point, and its override wizard open on Formula. */
+async function openOverrideWizard(config: AssetPointCalcConfigDto = calcConfig()): Promise<void> {
+  vi.mocked(api.fetchAdminAssetCalcPoints).mockResolvedValue({ items: [config] } as never);
+  renderPage(`/admin/assets/${OVERRIDE_ASSET}/points`);
+  const open = await screen.findByRole("button", { name: /^(Override|Edit override)$/ });
+  await userEvent.click(open);
+  await screen.findByLabelText(`Formula for ${CALC_KEY}`);
+}
+
+async function next(): Promise<void> {
+  await userEvent.click(screen.getByRole("button", { name: "Next" }));
+}
+
+/** Types a formula on the Formula step and walks Schedule → Review. */
+async function formulaToReview(formula: string): Promise<void> {
+  fireEvent.change(screen.getByLabelText(`Formula for ${CALC_KEY}`), { target: { value: formula } });
+  await next();
+  await screen.findByLabelText(`Runs for ${CALC_KEY}`);
+  await next();
+  await screen.findByRole("region", { name: OVERRIDE_TITLE });
+}
+
+/** The override wizard's steps are the catalog entry's — Formula, Schedule — then Review. */
+export async function theOverrideStepsAreFormulaScheduleReview(): Promise<void> {
+  stubApi();
+  await openOverrideWizard();
+  const steps = within(screen.getByRole("list", { name: "Steps" }))
+    .getAllByRole("listitem")
+    .map((item) => item.textContent);
+  expect(steps).toEqual(["1. Formula", "2. Schedule", "3. Review"]);
+}
+
+/** Submit sends the draft as the PUT body: every column, empty as `null` (`draftToBody`). */
+export async function theOverrideSubmitsTheDraftAsTheBody(): Promise<void> {
+  stubApi();
+  const set = vi.spyOn(api, "setAdminAssetPointCalcOverride").mockResolvedValue(calcConfig() as never);
+  await openOverrideWizard();
+  await formulaToReview("{KW} * 3");
+  await userEvent.click(screen.getByRole("button", { name: "Submit" }));
+  await waitFor(() => expect(set).toHaveBeenCalledTimes(1));
+  expect(set.mock.calls[0]).toEqual([
+    OVERRIDE_ASSET,
+    CALC_KEY,
+    {
+      formula: "{KW} * 3",
+      formulaDialect: null,
+      calcTrigger: null,
+      calcIntervalSeconds: null,
+      maxInputAgeSeconds: null,
+    },
+  ]);
+}
+
+/**
+ * A formula the server refuses (its 400 — an unknown key the browser cannot
+ * see) still renders its sentence, now on the Review card, and the wizard
+ * stays there.
+ */
+export async function aRefusedFormulaShowsTheServerSentence(): Promise<void> {
+  stubApi();
+  vi.spyOn(api, "setAdminAssetPointCalcOverride").mockRejectedValue(
+    new ApiError(JSON.stringify({ statusCode: 400, message: FORMULA_SENTENCE, error: "Bad Request" }), 400),
+  );
+  await openOverrideWizard();
+  await formulaToReview("{NOPE} * 2");
+  await userEvent.click(screen.getByRole("button", { name: "Submit" }));
+  const alert = await screen.findByRole("alert");
+  expect(alert.textContent).toBe(FORMULA_SENTENCE);
+}
+
+/**
+ * D-1 is still refused before the request: the old panel disabled Save on a
+ * `draftProblems` sentence, the wizard's Review names it and Submit sends
+ * nothing. The positive beside the absence: the D-1 sentence is on the card
+ * and Submit was pressed.
+ */
+export async function aD1DraftIsNamedAndNotSent(): Promise<void> {
+  stubApi();
+  const set = vi.spyOn(api, "setAdminAssetPointCalcOverride").mockResolvedValue(calcConfig() as never);
+  await openOverrideWizard();
+  await next();
+  // `userEvent`, not `fireEvent.change`: a browser fires `input` before
+  // `change`, and the shell re-renders on `input` (its dirty flag). The first
+  // pick in a clean wizard is the case that loses its value when the step's
+  // elements are rebuilt inside `renderStep`.
+  await userEvent.selectOptions(await screen.findByLabelText(`Runs for ${CALC_KEY}`), "streaming");
+  await next();
+  const card = await screen.findByRole("region", { name: OVERRIDE_TITLE });
+  await userEvent.click(within(card).getByRole("button", { name: "Submit" }));
+  expect(within(card).getByRole("alert").textContent).toMatch(/Runs is "streaming" but the interval is 300s/);
+  expect(set).not.toHaveBeenCalled();
+}
+
+/**
+ * The header rule, on the wire: `fetch` is stubbed and the REAL
+ * `setAdminAssetPointCalcOverride` runs. The PUT goes out to the point's
+ * route with the draft's body, and without `X-Copilot-Change`.
+ */
+export async function theOverrideWizardSendsNoCopilotHeader(): Promise<void> {
+  stubApi();
+  const calls: Array<{ url: string; init: RequestInit }> = [];
+  vi.stubGlobal("fetch", async (url: string, init: RequestInit) => {
+    calls.push({ url, init });
+    return new Response(JSON.stringify(calcConfig({ formula: "{KW} * 3" })), { status: 200 });
+  });
+  await openOverrideWizard();
+  await formulaToReview("{KW} * 3");
+  await userEvent.click(screen.getByRole("button", { name: "Submit" }));
+
+  const base = import.meta.env.VITE_API_URL ?? "http://localhost:4000";
+  await waitFor(() => expect(calls.some((call) => call.init.method === "PUT")).toBe(true));
+  const put = calls.find((call) => call.init.method === "PUT") as { url: string; init: RequestInit };
+  expect(put.url).toBe(`${base}/api/v1/admin/assets/${OVERRIDE_ASSET}/calc-points/${CALC_KEY}`);
+  expect(JSON.parse(put.init.body as string)).toEqual({
+    formula: "{KW} * 3",
+    formulaDialect: null,
+    calcTrigger: null,
+    calcIntervalSeconds: null,
+    maxInputAgeSeconds: null,
+  });
+  expect(new Headers(put.init.headers).get("X-Copilot-Change")).toBeNull();
+}
+
+/** Clear is not a catalog route and stays beside the wizard: it sends the DELETE for the point. */
+export async function clearOverrideStaysBesideTheWizard(): Promise<void> {
+  stubApi();
+  const clear = vi.spyOn(api, "clearAdminAssetPointCalcOverride").mockResolvedValue(calcConfig() as never);
+  await openOverrideWizard(calcConfig({ formula: "{KW} * 9" }));
+  await userEvent.click(screen.getByRole("button", { name: "Clear override" }));
+  await waitFor(() => expect(clear).toHaveBeenCalledWith(OVERRIDE_ASSET, CALC_KEY));
+}
+
+/** A promise held open until the case calls `release` — a request left in flight. */
+function heldOpen<T>(): { promise: Promise<T>; release: (value: T) => void; refuse: (cause: Error) => void } {
+  let release: (value: T) => void = () => undefined;
+  let refuse: (cause: Error) => void = () => undefined;
+  const promise = new Promise<T>((resolve, reject) => {
+    release = resolve;
+    refuse = reject;
+  });
+  return { promise, release, refuse };
+}
+
+/**
+ * `F3.85` PR 11b review (code:F1) — the PUT and the DELETE stay mutually
+ * exclusive, as the old panel's shared `busy` held them (F4.168 OQ-3). With a
+ * Clear in flight, Submit on Review sends nothing. The positive beside the
+ * absence: the Clear is in flight (its button reads "Clearing override…",
+ * `aria-busy`) and Submit was pressed on Review.
+ */
+export async function submitSendsNothingWhileAClearIsInFlight(): Promise<void> {
+  stubApi();
+  const held = heldOpen<AssetPointCalcConfigDto>();
+  const clear = vi.spyOn(api, "clearAdminAssetPointCalcOverride").mockReturnValue(held.promise as never);
+  const set = vi.spyOn(api, "setAdminAssetPointCalcOverride").mockResolvedValue(calcConfig() as never);
+  await openOverrideWizard(calcConfig({ formula: "{KW} * 9" }));
+  await next();
+  await screen.findByLabelText(`Runs for ${CALC_KEY}`);
+  await next();
+  const card = await screen.findByRole("region", { name: OVERRIDE_TITLE });
+  await userEvent.click(screen.getByRole("button", { name: "Clear override" }));
+  const clearing = await screen.findByRole("button", { name: "Clearing override…" });
+  expect(clearing.getAttribute("aria-busy")).toBe("true");
+  expect(clear).toHaveBeenCalledTimes(1);
+  await userEvent.click(within(card).getByRole("button", { name: "Submit" }));
+  expect(set).not.toHaveBeenCalled();
+  held.release(calcConfig());
+}
+
+/**
+ * `F3.85` PR 11b review (code:F2) — Cancel is refused while the PUT is in
+ * flight, as the old panel's Close was disabled under `busy`. A refusal that
+ * arrives after the author pressed Cancel and "Discard and leave" still renders
+ * its sentence on the Review card, because the wizard stayed open.
+ */
+export async function cancelWhileTheSaveIsInFlightKeepsTheWizard(): Promise<void> {
+  stubApi();
+  const held = heldOpen<AssetPointCalcConfigDto>();
+  const set = vi.spyOn(api, "setAdminAssetPointCalcOverride").mockReturnValue(held.promise as never);
+  await openOverrideWizard();
+  await formulaToReview("{NOPE} * 2");
+  await userEvent.click(screen.getByRole("button", { name: "Submit" }));
+  await waitFor(() => expect(set).toHaveBeenCalledTimes(1));
+  await userEvent.click(screen.getByRole("button", { name: "Cancel" }));
+  // A dirty shell asks first, and its confirm is what calls the page's onCancel;
+  // a clean one calls it at once (`fireEvent.change` does not set the shell's
+  // dirty flag). Either way the page's onCancel runs.
+  const leave = screen.queryByRole("alertdialog", { name: "Leave the wizard" });
+  if (leave) await userEvent.click(within(leave).getByRole("button", { name: /Discard/ }));
+  held.refuse(
+    new ApiError(JSON.stringify({ statusCode: 400, message: FORMULA_SENTENCE, error: "Bad Request" }), 400),
+  );
+  const card = await screen.findByRole("region", { name: OVERRIDE_TITLE });
+  await waitFor(() => expect(within(card).getByRole("alert").textContent).toBe(FORMULA_SENTENCE));
+}
+
+/**
+ * `F3.85` PR 11b review (code:F3) — Clear is disabled while the PUT is in
+ * flight (the old panel's shared `busy`). The positive: the PUT did go out.
+ */
+export async function clearIsDisabledWhileTheSaveIsInFlight(): Promise<void> {
+  stubApi();
+  const held = heldOpen<AssetPointCalcConfigDto>();
+  const set = vi.spyOn(api, "setAdminAssetPointCalcOverride").mockReturnValue(held.promise as never);
+  await openOverrideWizard(calcConfig({ formula: "{KW} * 9" }));
+  await formulaToReview("{KW} * 3");
+  await userEvent.click(screen.getByRole("button", { name: "Submit" }));
+  await waitFor(() => expect(set).toHaveBeenCalledTimes(1));
+  expect((screen.getByRole("button", { name: "Clear override" }) as HTMLButtonElement).disabled).toBe(true);
+  held.release(calcConfig());
 }
 
 /** F2.27 (5) — no location known: the select is disabled and says why. */

@@ -1,23 +1,26 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import type { FormEvent } from "react";
 import { useState } from "react";
 import type { CalcParameterDto, CalcParameterKeyDto } from "@bms/shared";
+import { type CatalogEntry, catalogEntry } from "@bms/shared/copilot";
 
 import { fetchAdminAssets } from "../../api/admin/assets";
 import {
   calcParameterKeysQueryKey,
   calcParametersQueryKey,
   createAdminCalcParameter,
+  type CreateCalcParameterInput,
   deleteAdminCalcParameter,
   fetchAdminCalcParameters,
   fetchCalcParameterKeys,
   updateAdminCalcParameter,
+  type UpdateCalcParameterInput,
 } from "../../api/admin/calc-parameters";
 import { fetchAdminLocations } from "../../api/admin/locations";
 import { fetchAdminOrganizations } from "../../api/admin/organizations";
 import { MasterDataLayout } from "../../components/admin/master-data-layout";
 import { PageHeader } from "../../components/page-header";
 import { SectionCard } from "../../components/section-card";
+import { WizardShell } from "../../components/wizard/wizard-shell";
 import {
   canWriteCalcParameters,
   canWriteOrganizationScopedCalcParameter,
@@ -77,9 +80,116 @@ function keyOptionLabel(key: CalcParameterKeyDto): string {
  * `z.string().datetime({ offset: true })` refuses it as-is, so the browser's
  * own zone is applied here — `new Date("YYYY-MM-DDTHH:mm")` reads local time —
  * and the instant is sent as UTC with the `Z` offset.
+ *
+ * An empty input is `undefined` (not set yet — the wizard's Review names it),
+ * and an unreadable one is passed through as typed, so the body's schema
+ * refuses it rather than `toISOString()` throwing during render.
  */
-function localInputToIso(local: string): string {
-  return new Date(local).toISOString();
+function localInputToIso(local: string): string | undefined {
+  if (local === "") return undefined;
+  const at = new Date(local);
+  return Number.isNaN(at.getTime()) ? local : at.toISOString();
+}
+
+/** The number the Value input holds; empty is `undefined`, never `Number("") === 0`. */
+function valueOf(text: string): number | undefined {
+  return text.trim() === "" ? undefined : Number(text);
+}
+
+/**
+ * `F3.85` PR 11b (ADR 0099 decision 6) — the catalog entry a modal wizard
+ * submits. The modal writes the literal id on the `entry` prop
+ * (`entry={wizardEntry("calcParameter.create")}`), the form PR 9's stepper
+ * gate detects. A missing entry is a build defect, so it throws rather than
+ * rendering a shell with no steps.
+ */
+function wizardEntry(id: string): CatalogEntry {
+  const entry = catalogEntry(id);
+  if (!entry) throw new Error(`F3.85: the catalog has no entry "${id}"`);
+  return entry;
+}
+
+/**
+ * The `calcParameter.create` wizard's values, from the form's text.
+ *
+ * The scope NOT chosen is `null`, as before (at most one scope column; the
+ * API's `superRefine` refuses both). The scope chosen with nothing picked
+ * stays `""`, never `undefined`: `""` fails the uuid check and holds the
+ * wizard on Scope, where `undefined` would drop the key and Review would
+ * accept the body as an ORGANIZATION-scoped row the author never chose (the
+ * old form's `scopeReady` gate).
+ */
+function createValues(form: FormState, organizationId: string): Record<string, unknown> {
+  return {
+    key: form.key === "" ? undefined : form.key,
+    value: valueOf(form.value),
+    organizationId,
+    locationId: form.scope === "location" ? form.locationId : null,
+    assetId: form.scope === "asset" ? form.assetId : null,
+    effectiveFrom: localInputToIso(form.effectiveFrom),
+    effectiveTo: form.effectiveTo === "" ? null : localInputToIso(form.effectiveTo),
+  };
+}
+
+/**
+ * The `calcParameter.update` wizard's values. A `datetime-local` input holds
+ * minutes, so a stored 10:30:45 comes back as 10:30 — a PATCH that always sent
+ * both dates would move the boundary 45 s earlier on a value-only edit and
+ * could 409 against an abutting neighbour (PR 2 code review). A date is a
+ * value only when the input differs from the stored instant's own round trip.
+ *
+ * An emptied start stays `""`, never `undefined`: the start is required, and
+ * `undefined` would drop the key, so the PATCH would keep the stored start and
+ * the author's edit would vanish without a message (the old input's `required`
+ * blocked Save inside a `<form>`; the wizard is not one). `""` fails the
+ * instant schema and holds the wizard on Effective dates, as create does.
+ */
+function updateValues(form: FormState, editing: CalcParameterDto): Record<string, unknown> {
+  const fromUnchanged = form.effectiveFrom === toLocalDateTimeInputValue(editing.effectiveFrom);
+  const toUnchanged =
+    form.effectiveTo === (editing.effectiveTo ? toLocalDateTimeInputValue(editing.effectiveTo) : "");
+  let effectiveFrom: string | undefined;
+  if (!fromUnchanged) effectiveFrom = form.effectiveFrom === "" ? "" : localInputToIso(form.effectiveFrom);
+  return {
+    value: valueOf(form.value),
+    effectiveFrom,
+    effectiveTo: toUnchanged ? undefined : form.effectiveTo === "" ? null : localInputToIso(form.effectiveTo),
+  };
+}
+
+/**
+ * The copilot's `fill_step` values (`WizardShell` merges them into the named
+ * step and hands the whole set back) written into the form's text. A field
+ * the fill did not carry, or carried with the wrong type, keeps its text.
+ * A scope follows the id that was filled.
+ */
+function formWithValues(form: FormState, values: Readonly<Record<string, unknown>>): FormState {
+  const next = { ...form };
+  if (typeof values.key === "string") next.key = values.key;
+  if (typeof values.value === "number") next.value = String(values.value);
+  if (typeof values.assetId === "string" && values.assetId !== "" && values.assetId !== form.assetId) {
+    next.scope = "asset";
+    next.assetId = values.assetId;
+  } else if (
+    typeof values.locationId === "string" &&
+    values.locationId !== "" &&
+    values.locationId !== form.locationId
+  ) {
+    next.scope = "location";
+    next.locationId = values.locationId;
+    next.assetId = "";
+  }
+  // `""` is the edit's emptied start (`updateValues`); it stays empty rather
+  // than becoming `toLocalDateTimeInputValue("")`'s "NaN-NaN-…".
+  if (values.effectiveFrom === "") next.effectiveFrom = "";
+  else if (typeof values.effectiveFrom === "string" && localInputToIso(form.effectiveFrom) !== values.effectiveFrom) {
+    next.effectiveFrom = toLocalDateTimeInputValue(values.effectiveFrom);
+  }
+  if (values.effectiveTo === null) next.effectiveTo = "";
+  else if (typeof values.effectiveTo === "string" && localInputToIso(form.effectiveTo) !== values.effectiveTo) {
+    next.effectiveTo = toLocalDateTimeInputValue(values.effectiveTo);
+  }
+  return next;
 }
 
 function emptyForm(canOrgScope: boolean): FormState {
@@ -112,9 +222,10 @@ function emptyForm(canOrgScope: boolean): FormState {
  * absent from the DOM) is held by the jsdom spec alone, and a scan cannot
  * hold it (post-merge sweep F1: an unconditional radio kept the scan green).
  *
- * **Edit keeps key and scope disabled** (design decision 12): the PATCH body
+ * **Edit cannot change key or scope** (design decision 12): the PATCH body
  * carries `value`, `effectiveFrom`, `effectiveTo` only and is `.strict()`,
- * so a re-scope is delete + create.
+ * so a re-scope is delete + create. Since `F3.85` PR 11b the modal is a
+ * wizard on the shared shell (ADR 0099 decision 6) — see `CalcParameterForm`.
  *
  * The organization `<select>` is hidden for a single-organization user, the
  * rule `HierarchyFilterBar` applies (`orgLocked`); that bar itself is not
@@ -159,36 +270,16 @@ export function CalcParametersAdminPage({ user }: CalcParametersAdminPageProps) 
     await queryClient.invalidateQueries({ queryKey: ["admin", "calc-parameters"] });
   }
 
+  // `F3.85` PR 11b — the wizard's Review parsed `body` against the catalog
+  // entry's schema, and the request is that body: what Review showed is what
+  // is sent. No `X-Copilot-Change` — a wizard used alone is not a copilot
+  // change (plan §10.5 as built).
   const saveMutation = useMutation({
-    mutationFn: async () => {
-      const edit = {
-        value: Number(form.value),
-        effectiveFrom: localInputToIso(form.effectiveFrom),
-        effectiveTo: form.effectiveTo ? localInputToIso(form.effectiveTo) : null,
-      };
+    mutationFn: async (body: Record<string, unknown>) => {
       if (editing) {
-        // A `datetime-local` input holds minutes, so a stored 10:30:45 comes
-        // back as 10:30 — a PATCH that always sent both dates would move the
-        // boundary 45 s earlier on a value-only edit and could 409 against an
-        // abutting neighbour (PR 2 code review). A date is sent only when the
-        // input differs from the stored instant's own round trip.
-        const fromUnchanged = form.effectiveFrom === toLocalDateTimeInputValue(editing.effectiveFrom);
-        const toUnchanged =
-          form.effectiveTo === (editing.effectiveTo ? toLocalDateTimeInputValue(editing.effectiveTo) : "");
-        return updateAdminCalcParameter(editing.id, {
-          value: edit.value,
-          ...(fromUnchanged ? {} : { effectiveFrom: edit.effectiveFrom }),
-          ...(toUnchanged ? {} : { effectiveTo: edit.effectiveTo }),
-        });
+        return updateAdminCalcParameter(editing.id, body as UpdateCalcParameterInput);
       }
-      return createAdminCalcParameter({
-        organizationId,
-        key: form.key,
-        // At most one scope column; the API's `superRefine` refuses both.
-        locationId: form.scope === "location" ? form.locationId : null,
-        assetId: form.scope === "asset" ? form.assetId : null,
-        ...edit,
-      });
+      return createAdminCalcParameter(body as CreateCalcParameterInput);
     },
     onSuccess: async () => {
       setModalOpen(false);
@@ -369,11 +460,15 @@ export function CalcParametersAdminPage({ user }: CalcParametersAdminPageProps) 
           organizationId={organizationId}
           canOrgScope={canOrgScope}
           form={form}
-          setForm={setForm}
+          setForm={(next) => {
+            // A refusal names the values it refused; once they change it is stale.
+            setError(null);
+            setForm(next);
+          }}
           error={error}
           pending={saveMutation.isPending}
           onCancel={() => setModalOpen(false)}
-          onSubmit={() => saveMutation.mutate()}
+          onSubmit={(body) => saveMutation.mutate(body)}
         />
       ) : null}
     </MasterDataLayout>
@@ -390,16 +485,24 @@ type CalcParameterFormProps = {
   error: string | null;
   pending: boolean;
   onCancel: () => void;
-  onSubmit: () => void;
+  onSubmit: (body: Record<string, unknown>) => void;
 };
 
 /**
- * The modal form. Its own component so the location and asset reads are
- * mounted only while the form is open, and only for the scope that needs them.
+ * The modal. Its own component so the location and asset reads are mounted
+ * only while it is open, and only for the scope that needs them.
  *
- * In edit mode the key `<select>` and every scope control are `disabled`
- * (design decision 12) and the row's scope is restated as text, because an
- * asset-scoped row carries no `locationId` to seed the location `<select>`.
+ * `F3.85` PR 11b (ADR 0099 decision 6) — the modal is a wizard on the shared
+ * shell: Add is `calcParameter.create` (Basics → Scope → Effective dates →
+ * Review), Edit is `calcParameter.update` (Value → Effective dates → Review,
+ * the stored value beside the new one). The page keeps the form's text in
+ * `FormState`; the wizard's values are mapped from it on every render, and a
+ * copilot fill is mapped back. A refused request's sentence is the Review
+ * card's error.
+ *
+ * Edit has no key or scope step (design decision 12): the PATCH body carries
+ * `value`, `effectiveFrom`, `effectiveTo` only and is `.strict()`, so the row's
+ * key and scope are restated as text, because a re-scope is delete + create.
  */
 function CalcParameterForm({
   editing,
@@ -434,168 +537,200 @@ function CalcParameterForm({
     { value: "asset" as const, label: "Asset" },
   ];
 
-  const scopeReady =
-    form.scope === "organization" ||
-    (form.scope === "location" && form.locationId !== "") ||
-    (form.scope === "asset" && form.assetId !== "");
+  const keyField = (
+    <label className="block text-xs font-semibold text-ink-muted">
+      Key
+      <select
+        className="mt-1 surface-field w-full px-3 py-2 text-sm"
+        value={form.key}
+        required
+        onChange={(event) => setForm({ ...form, key: event.target.value })}
+      >
+        <option value="">Select key</option>
+        {keys.map((key) => (
+          <option key={key.code} value={key.code}>
+            {keyOptionLabel(key)}
+          </option>
+        ))}
+      </select>
+    </label>
+  );
 
+  const valueField = (
+    <label className="block text-xs font-semibold text-ink-muted">
+      Value
+      <input
+        type="number"
+        step="any"
+        className="mt-1 w-full surface-field px-3 py-2 text-sm"
+        value={form.value}
+        required
+        onChange={(event) => setForm({ ...form, value: event.target.value })}
+      />
+    </label>
+  );
+
+  const scopeFields = (
+    <>
+      <fieldset>
+        <legend className="text-xs font-semibold text-ink-muted">Scope</legend>
+        <div className="mt-1 flex flex-wrap gap-4">
+          {scopeOptions.map((option) => (
+            <label key={option.value} className="flex items-center gap-1 text-sm">
+              <input
+                type="radio"
+                name="scope"
+                value={option.value}
+                checked={form.scope === option.value}
+                onChange={() => setForm({ ...form, scope: option.value, locationId: "", assetId: "" })}
+              />
+              {option.label}
+            </label>
+          ))}
+        </div>
+      </fieldset>
+
+      {form.scope !== "organization" ? (
+        <label className="block text-xs font-semibold text-ink-muted">
+          Location
+          <select
+            className="mt-1 w-full surface-field px-3 py-2 text-sm"
+            value={form.locationId}
+            required
+            onChange={(event) => setForm({ ...form, locationId: event.target.value, assetId: "" })}
+          >
+            <option value="">Select location</option>
+            {/* `F2.10` (ADR 0098 B11) — the tree depth-first, the code inside the dashes. */}
+            {locationTreeOptions(
+              locationsQ.data?.items ?? [],
+              (location) => `${location.code} · ${location.name}`,
+            ).map((option) => (
+              <option key={option.id} value={option.id}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+        </label>
+      ) : null}
+
+      {form.scope === "asset" ? (
+        <label className="block text-xs font-semibold text-ink-muted">
+          Asset
+          <select
+            className="mt-1 w-full surface-field px-3 py-2 text-sm"
+            value={form.assetId}
+            required
+            disabled={form.locationId === ""}
+            onChange={(event) => setForm({ ...form, assetId: event.target.value })}
+          >
+            <option value="">{form.locationId === "" ? "Select a location first" : "Select asset"}</option>
+            {(assetsQ.data?.items ?? []).map((asset) => (
+              <option key={asset.id} value={asset.id}>
+                {asset.code} · {asset.name}
+              </option>
+            ))}
+          </select>
+        </label>
+      ) : null}
+    </>
+  );
+
+  const dateFields = (
+    <>
+      <label className="block text-xs font-semibold text-ink-muted">
+        Effective from
+        <input
+          type="datetime-local"
+          className="mt-1 w-full surface-field px-3 py-2 text-sm"
+          value={form.effectiveFrom}
+          required
+          onChange={(event) => setForm({ ...form, effectiveFrom: event.target.value })}
+        />
+      </label>
+      <div>
+        <label className="block text-xs font-semibold text-ink-muted">
+          Effective to
+          <input
+            type="datetime-local"
+            className="mt-1 w-full surface-field px-3 py-2 text-sm"
+            value={form.effectiveTo}
+            onChange={(event) => setForm({ ...form, effectiveTo: event.target.value })}
+          />
+        </label>
+        <p className="mt-1 text-[11px] text-ink-muted">Leave empty for an open-ended value.</p>
+      </div>
+    </>
+  );
+
+  const basicsFields = (
+    <>
+      {keyField}
+      {valueField}
+    </>
+  );
+
+  // Every step's elements are built above, in this render, and `renderStep`
+  // only picks one. Built inside `renderStep`, they would be new elements on
+  // every shell render — and the shell re-renders on the `input` event that
+  // comes before a `<select>`'s `change` (its `dirty` flag), which re-commits
+  // the controlled value and loses the first pick in a clean wizard.
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-scrim/40 p-4">
-      <form
+      <div
+        role="dialog"
+        aria-label={editing ? "Edit parameter value" : "Add parameter value"}
         className="max-h-[90vh] w-full max-w-lg overflow-y-auto surface-dialog p-4"
-        onSubmit={(event: FormEvent) => {
-          event.preventDefault();
-          onSubmit();
-        }}
       >
         <h2 className="font-condensed text-lg font-bold">
           {editing ? "Edit parameter value" : "Add parameter value"}
         </h2>
-        <div className="mt-3 grid gap-3 sm:grid-cols-2">
-          <label className="block text-xs font-semibold text-ink-muted sm:col-span-2">
-            Key
-            <select
-              className="mt-1 surface-field w-full px-3 py-2 text-sm disabled:opacity-60"
-              value={form.key}
-              disabled={locked}
-              required
-              onChange={(event) => setForm({ ...form, key: event.target.value })}
-            >
-              <option value="">Select key</option>
-              {keys.map((key) => (
-                <option key={key.code} value={key.code}>
-                  {keyOptionLabel(key)}
-                </option>
-              ))}
-            </select>
-          </label>
-
-          <fieldset className="sm:col-span-2">
-            <legend className="text-xs font-semibold text-ink-muted">Scope</legend>
-            <div className="mt-1 flex flex-wrap gap-4">
-              {scopeOptions.map((option) => (
-                <label key={option.value} className="flex items-center gap-1 text-sm">
-                  <input
-                    type="radio"
-                    name="scope"
-                    value={option.value}
-                    checked={form.scope === option.value}
-                    disabled={locked}
-                    onChange={() =>
-                      setForm({ ...form, scope: option.value, locationId: "", assetId: "" })
-                    }
-                  />
-                  {option.label}
-                </label>
-              ))}
-            </div>
-            {locked && editing ? (
-              <p className="mt-1 text-xs text-ink-muted">
-                {scopeLabel(editing)} — to move a value to another scope, delete it and add it again.
-              </p>
-            ) : null}
-          </fieldset>
-
-          {!locked && form.scope !== "organization" ? (
-            <label className="block text-xs font-semibold text-ink-muted">
-              Location
-              <select
-                className="mt-1 w-full surface-field px-3 py-2 text-sm"
-                value={form.locationId}
-                required
-                onChange={(event) =>
-                  setForm({ ...form, locationId: event.target.value, assetId: "" })
-                }
-              >
-                <option value="">Select location</option>
-                {/* `F2.10` (ADR 0098 B11) — the tree depth-first, the code inside the dashes. */}
-                {locationTreeOptions(
-                  locationsQ.data?.items ?? [],
-                  (location) => `${location.code} · ${location.name}`,
-                ).map((option) => (
-                  <option key={option.id} value={option.id}>
-                    {option.label}
-                  </option>
-                ))}
-              </select>
-            </label>
-          ) : null}
-
-          {!locked && form.scope === "asset" ? (
-            <label className="block text-xs font-semibold text-ink-muted">
-              Asset
-              <select
-                className="mt-1 w-full surface-field px-3 py-2 text-sm"
-                value={form.assetId}
-                required
-                disabled={form.locationId === ""}
-                onChange={(event) => setForm({ ...form, assetId: event.target.value })}
-              >
-                <option value="">
-                  {form.locationId === "" ? "Select a location first" : "Select asset"}
-                </option>
-                {(assetsQ.data?.items ?? []).map((asset) => (
-                  <option key={asset.id} value={asset.id}>
-                    {asset.code} · {asset.name}
-                  </option>
-                ))}
-              </select>
-            </label>
-          ) : null}
-
-          <label className="block text-xs font-semibold text-ink-muted sm:col-span-2">
-            Value
-            <input
-              type="number"
-              step="any"
-              className="mt-1 w-full surface-field px-3 py-2 text-sm"
-              value={form.value}
-              required
-              onChange={(event) => setForm({ ...form, value: event.target.value })}
-            />
-          </label>
-          <label className="block text-xs font-semibold text-ink-muted">
-            Effective from
-            <input
-              type="datetime-local"
-              className="mt-1 w-full surface-field px-3 py-2 text-sm"
-              value={form.effectiveFrom}
-              required
-              onChange={(event) => setForm({ ...form, effectiveFrom: event.target.value })}
-            />
-          </label>
-          <div>
-            <label className="block text-xs font-semibold text-ink-muted">
-              Effective to
-              <input
-                type="datetime-local"
-                className="mt-1 w-full surface-field px-3 py-2 text-sm"
-                value={form.effectiveTo}
-                onChange={(event) => setForm({ ...form, effectiveTo: event.target.value })}
+        {editing ? (
+          <>
+            <p className="mt-1 text-xs text-ink-muted">
+              {keys.find((key) => key.code === editing.key)?.label ?? editing.key} ·{" "}
+              <code>{editing.key}</code>
+            </p>
+            <p className="mt-1 text-xs text-ink-muted">
+              {scopeLabel(editing)} — to move a value to another scope, delete it and add it again.
+            </p>
+            <div className="mt-3">
+              <WizardShell
+                key={`update-${editing.id}`}
+                entry={wizardEntry("calcParameter.update")}
+                values={updateValues(form, editing)}
+                onChange={(values) => setForm(formWithValues(form, values))}
+                renderStep={(step) => (step.id === "value" ? valueField : dateFields)}
+                onSubmit={onSubmit}
+                onCancel={onCancel}
+                submitting={pending}
+                submitError={error}
+                current={{
+                  value: editing.value,
+                  effectiveFrom: editing.effectiveFrom,
+                  effectiveTo: editing.effectiveTo,
+                }}
               />
-            </label>
-            <p className="mt-1 text-[11px] text-ink-muted">Leave empty for an open-ended value.</p>
+            </div>
+          </>
+        ) : (
+          <div className="mt-3">
+            <WizardShell
+              key="create"
+              entry={wizardEntry("calcParameter.create")}
+              values={createValues(form, organizationId)}
+              onChange={(values) => setForm(formWithValues(form, values))}
+              renderStep={(step) => {
+                if (step.id === "basics") return basicsFields;
+                return step.id === "scope" ? scopeFields : dateFields;
+              }}
+              onSubmit={onSubmit}
+              onCancel={onCancel}
+              submitting={pending}
+              submitError={error}
+            />
           </div>
-        </div>
-        {error ? (
-          <div role="alert" className="mt-2 text-xs text-critical-ink">
-            {error}
-          </div>
-        ) : null}
-        <div className="mt-4 flex justify-end gap-2">
-          <button type="button" className="surface-button px-3 py-2" onClick={onCancel}>
-            Cancel
-          </button>
-          <button
-            type="submit"
-            className="surface-button-primary bg-accent px-3 py-2 text-xs font-semibold text-on-accent disabled:opacity-50"
-            disabled={pending || (!locked && !scopeReady)}
-            aria-busy={pending}
-          >
-            {pending ? "Saving…" : "Save"}
-          </button>
-        </div>
-      </form>
+        )}
+      </div>
     </div>
   );
 }
