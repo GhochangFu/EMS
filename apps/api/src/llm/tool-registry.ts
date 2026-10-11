@@ -47,6 +47,22 @@ export function defineToolRegistry<Name extends string>(
   return { definitions, schemas, isToolName };
 }
 
+/** Two registries as one, in order; a name in both is a programming error and throws. */
+export function combineToolRegistries<Name extends string>(
+  first: ToolRegistry<Name>,
+  second: ToolRegistry<Name>,
+): ToolRegistry<Name> {
+  for (const name of Object.keys(second.schemas)) {
+    if (first.isToolName(name)) throw new Error(`a tool named ${name} is in both registries`);
+  }
+  const schemas = { ...first.schemas, ...second.schemas } as Readonly<Record<Name, ZodTypeAny>>;
+  return {
+    definitions: [...first.definitions, ...second.definitions],
+    schemas,
+    isToolName: (name: string): name is Name => first.isToolName(name) || second.isToolName(name),
+  };
+}
+
 /**
  * A check on a call's parsed-but-unvalidated arguments, run before the schema.
  * Returns the refusal's sentence, or `null` to pass. **Name-scoped**: a guard

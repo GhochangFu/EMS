@@ -1,4 +1,4 @@
-import type { JwtPayload } from "@bms/shared";
+import type { CopilotFillStepDto, CopilotPendingChangeDto, JwtPayload } from "@bms/shared";
 
 import type { ResolvedIdentity } from "../auth/identity-resolver";
 import { defineToolRegistry, type ToolRegistry } from "../llm/tool-registry";
@@ -54,6 +54,10 @@ export type CopilotToolResult =
       readonly organizationIds: readonly string[];
       /** `open_page` only: an app route from the allow-list, for the dock's router. */
       readonly navigateTo?: string;
+      /** A propose tool only (`F3.85` PR 8): the change it stored, for the Confirm card. */
+      readonly pendingChange?: CopilotPendingChangeDto;
+      /** `fill_step` only (`F3.85` PR 8): the values for an open wizard step. */
+      readonly fillStep?: CopilotFillStepDto;
     }
   | { readonly ok: false; readonly error: string };
 

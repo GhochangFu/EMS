@@ -1,6 +1,9 @@
 import { describe, it } from "vitest";
 
 import {
+  aFailedChangeStartsAFollowUpToo,
+  anAppliedChangeStartsOneFollowUpAfterTheRecord,
+  aRefusedChangeStartsNoFollowUp,
   aBodyOnABodylessEntryIs409,
   aChangedBodyIs409AndReleased,
   aDemotedCallerIs403AndNothingIsRead,
@@ -51,4 +54,7 @@ describe("F3.85 — the X-Copilot-Change interceptor (ADR 0099 decision 4.5)", (
   it("records a ZodError as 400", () => aZodErrorIsRecordedAs400());
   it("fails closed without the request store", () => aMissingStoreFailsClosed());
   it("keeps the response when the record fails", () => aFailedRecordDoesNotChangeTheResponse());
+  it("starts one follow-up turn after recording an applied change", () => anAppliedChangeStartsOneFollowUpAfterTheRecord());
+  it("starts a follow-up turn after recording a failed change", () => aFailedChangeStartsAFollowUpToo());
+  it("starts no follow-up for a refused change", () => aRefusedChangeStartsNoFollowUp());
 });

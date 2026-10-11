@@ -23,6 +23,7 @@ import { CopilotAvailabilityService } from "./copilot-availability.service";
 import { clientOnlyKeysFor } from "./copilot-client-only";
 import { CopilotPendingChangesService, type PendingChangeOutcome } from "./copilot-pending-changes.service";
 import { copilotContext } from "./copilot-request-context";
+import { CopilotTurnService } from "./copilot-turn.service";
 
 /** The header, lower-cased as Node delivers it. */
 const HEADER = "x-copilot-change";
@@ -73,6 +74,10 @@ export function statusOf(err: unknown): number {
  *    writes carries `via: "copilot"` and the change id; the outcome is
  *    recorded (`applied` with the resource id, or `failed` with the status
  *    the client saw) before the response leaves.
+ * 9. `F3.85` PR 8, decision 4.7: once the outcome is recorded, the follow-up
+ *    turn starts (`CopilotTurnService.followUp`) without being awaited — the
+ *    response does not wait for a model, and the dock polls the conversation
+ *    for the reply. It never throws.
  *
  * A record that fails is logged and does not change the response: the row
  * stays `applying`, and the sweep resolves it from the audit log.
@@ -85,6 +90,7 @@ export class CopilotChangeInterceptor implements NestInterceptor {
     private readonly pending: CopilotPendingChangesService,
     private readonly availability: CopilotAvailabilityService,
     private readonly reflector: Reflector,
+    private readonly turns: CopilotTurnService,
   ) {}
 
   async intercept(context: ExecutionContext, next: CallHandler): Promise<Observable<unknown>> {
@@ -130,12 +136,18 @@ export class CopilotChangeInterceptor implements NestInterceptor {
     const success =
       this.reflector.get<number | undefined>(HTTP_CODE_METADATA, context.getHandler()) ??
       (req.method === "POST" ? 201 : 200);
+    const user = req.user;
     const record = (outcome: PendingChangeOutcome, status: number, resourceId: string | null) =>
-      this.pending.record(identity.id, changeId, outcome, status, resourceId).catch((err: unknown) => {
-        this.logger.warn(
-          `could not record copilot change ${changeId} as ${outcome}: ${err instanceof Error ? err.message : String(err)}`,
-        );
-      });
+      this.pending
+        .record(identity.id, changeId, outcome, status, resourceId)
+        .then(() => {
+          void this.turns.followUp({ identity, user }, changeId);
+        })
+        .catch((err: unknown) => {
+          this.logger.warn(
+            `could not record copilot change ${changeId} as ${outcome}: ${err instanceof Error ? err.message : String(err)}`,
+          );
+        });
 
     return next.handle().pipe(
       concatMap((body: unknown) => {

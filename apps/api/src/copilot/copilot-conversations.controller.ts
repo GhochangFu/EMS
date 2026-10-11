@@ -86,7 +86,8 @@ export class CopilotConversationsController {
     if (!parsed.success) throw new NotFoundException("Conversation not found");
     const found = await this.conversations.get(identity.id, parsed.data);
     if (!found) throw new NotFoundException("Conversation not found");
-    return found;
+    // F3.85 PR 8: the cards still waiting, so a remount or the poll after a Confirm shows a follow-up's proposal.
+    return { ...found, pendingChanges: await this.pendingChanges.listOpen(identity.id, parsed.data) };
   }
 
   /**

@@ -18,8 +18,13 @@ const read = (rel: string): string => readFileSync(join(repoRoot, rel), "utf8");
  * `MasterDataAuditService` (a positive control — a renamed or moved file turns
  * this red rather than passing by absence), no file in a catalog directory
  * inserts into the audit log directly, and both of the service's inserts
- * apply the mark. The catalog itself arrives in PR 8; until then the catalog
- * is the plan's §6.3 list, named here by file.
+ * apply the mark.
+ *
+ * PR 8: the catalog (`@bms/shared/copilot`) names routes, not files, so the
+ * writers stay named here by file — every service a catalog entry's handler
+ * reaches. `apply-to-sites` and the site arm of `instantiate` write through
+ * `SiteLayoutService` in `control-room/`, so that file and directory join
+ * the lists.
  */
 const CATALOG_WRITERS = [
   "apps/api/src/dashboard-builder/dashboards.service.ts",
@@ -31,6 +36,7 @@ const CATALOG_WRITERS = [
   "apps/api/src/admin/asset-templates/asset-templates-instantiate-core.ts",
   "apps/api/src/admin/calc-parameters/calc-parameters.service.ts",
   "apps/api/src/admin/asset-points/asset-point-calc-override.service.ts",
+  "apps/api/src/control-room/site-layout.service.ts",
 ] as const;
 
 /** Directories whose write routes the release-1 catalog covers; no file in them may insert into the audit log itself. */
@@ -41,6 +47,7 @@ const CATALOG_DIRS = [
   "admin/calc-parameters",
   "admin/asset-points",
   "calc",
+  "control-room",
 ] as const;
 
 /** The drizzle form and the raw-SQL form. */
