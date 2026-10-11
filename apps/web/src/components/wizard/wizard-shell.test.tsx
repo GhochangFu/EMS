@@ -5,7 +5,12 @@ import { afterEach, describe, it, vi } from "vitest";
 import { resetWizardStore } from "../../stores/wizard-store";
 import {
   aBodylessRouteIsReviewAlone,
+  aCleanPageLeavesAtOnce,
+  aDirtyPageAsksBeforeLeaving,
   aFillForThisEntryFillsItsStep,
+  aSelectFirstPickReachesThePage,
+  aSelectFirstPickStaysPicked,
+  aSelectPickArmsTheLeavePrompt,
   cancelAsksBeforeLeavingAChangedWizard,
   cancelAsksOnlyWhenChanged,
   nextStaysOnAWrongStep,
@@ -30,4 +35,9 @@ describe("F3.85 PR 8 wizard shell — every catalog route is a stepper (ADR 0099
   it("takes a copilot fill for its own entry only", () => aFillForThisEntryFillsItsStep());
   it("leaves a clean wizard at once", () => cancelAsksOnlyWhenChanged());
   it("asks before leaving a changed wizard", () => cancelAsksBeforeLeavingAChangedWizard());
+  it("gives the page the new value of a select-first pick", () => aSelectFirstPickReachesThePage());
+  it("keeps a select-first pick on display and in the values", () => aSelectFirstPickStaysPicked());
+  it("asks before leaving after a select pick", () => aSelectPickArmsTheLeavePrompt());
+  it("asks before leaving when the page says it is dirty", () => aDirtyPageAsksBeforeLeaving());
+  it("leaves at once when the page says it is clean and nothing was typed", () => aCleanPageLeavesAtOnce());
 });
