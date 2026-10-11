@@ -3,6 +3,15 @@ import { cleanup } from "@testing-library/react";
 import { afterEach, describe, it, vi } from "vitest";
 
 import {
+  aD1DraftIsNamedAndNotSent,
+  aRefusedFormulaShowsTheServerSentence,
+  cancelWhileTheSaveIsInFlightKeepsTheWizard,
+  clearIsDisabledWhileTheSaveIsInFlight,
+  clearOverrideStaysBesideTheWizard,
+  submitSendsNothingWhileAClearIsInFlight,
+  theOverrideStepsAreFormulaScheduleReview,
+  theOverrideSubmitsTheDraftAsTheBody,
+  theOverrideWizardSendsNoCopilotHeader,
   aFailedRtuFetchLabelsTheStoredRtuUnknown,
   aRefusedCreateShowsTheSentence,
   aStoredRtuOutsideTheListKeepsItsOption,
@@ -77,5 +86,49 @@ describe("asset points page — refusals, effective metadata, the Add/Edit dialo
 
   it("F2.27 (5) Add with no location known disables the RTU select and says why", async () => {
     await addWithNoLocationDisablesTheRtuSelect();
+  }, CASE_TIMEOUT_MS);
+});
+
+describe("F3.85 PR 11b asset points — the calc override is the calcOverride.set wizard", () => {
+  afterEach(() => {
+    cleanup();
+    vi.restoreAllMocks();
+    vi.unstubAllGlobals();
+  });
+
+  it("the steps are Formula, Schedule, Review", async () => {
+    await theOverrideStepsAreFormulaScheduleReview();
+  }, CASE_TIMEOUT_MS);
+
+  it("Submit sends the draft as the PUT body, empty columns as null", async () => {
+    await theOverrideSubmitsTheDraftAsTheBody();
+  }, CASE_TIMEOUT_MS);
+
+  it("a refused formula's 400 sentence renders on the Review card", async () => {
+    await aRefusedFormulaShowsTheServerSentence();
+  }, CASE_TIMEOUT_MS);
+
+  it("a D-1 draft is named on Review and Submit sends nothing", async () => {
+    await aD1DraftIsNamedAndNotSent();
+  }, CASE_TIMEOUT_MS);
+
+  it("the wizard alone sends its PUT without X-Copilot-Change", async () => {
+    await theOverrideWizardSendsNoCopilotHeader();
+  }, CASE_TIMEOUT_MS);
+
+  it("Clear override stays beside the wizard and sends the DELETE", async () => {
+    await clearOverrideStaysBesideTheWizard();
+  }, CASE_TIMEOUT_MS);
+
+  it("review code:F1 Submit sends nothing while a Clear is in flight", async () => {
+    await submitSendsNothingWhileAClearIsInFlight();
+  }, CASE_TIMEOUT_MS);
+
+  it("review code:F2 Cancel during a pending save keeps the wizard, so a later 400 still renders", async () => {
+    await cancelWhileTheSaveIsInFlightKeepsTheWizard();
+  }, CASE_TIMEOUT_MS);
+
+  it("review code:F3 Clear is disabled while the save is in flight", async () => {
+    await clearIsDisabledWhileTheSaveIsInFlight();
   }, CASE_TIMEOUT_MS);
 });

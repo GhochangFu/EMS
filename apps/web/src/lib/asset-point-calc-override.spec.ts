@@ -9,6 +9,7 @@ import {
   columnOrigin,
   coverageRatioDisplay,
   draftFromConfig,
+  draftFromFields,
   draftProblems,
   draftToBody,
   hasAnyOverride,
@@ -141,6 +142,33 @@ export function runFieldRowTests(): void {
     unsetRows.every((row) => row.templateValue === "—"),
     "an unset value renders as a dash, not as 'null'",
   );
+}
+
+/**
+ * `F3.85` PR 11b — the override wizard's values are `draftToBody(draft)`, and a
+ * copilot fill hands the whole set back; `draftFromFields` is the way back.
+ */
+export function runDraftFromFieldsRoundTripTests(): void {
+  const draft = {
+    formula: "{KW} * 3",
+    formulaDialect: CALC_DIALECT_V2,
+    calcTrigger: "scheduled",
+    calcIntervalSeconds: "60",
+    maxInputAgeSeconds: "",
+  };
+  const back = draftFromFields(draftToBody(draft));
+  assert(
+    JSON.stringify(back) === JSON.stringify(draft),
+    `draftFromFields(draftToBody(d)) must be d, got ${JSON.stringify(back)}`,
+  );
+}
+
+/** A filled value of the wrong type is not a draft value: it reads as empty (inherit). */
+export function runDraftFromFieldsTypeTests(): void {
+  const back = draftFromFields({ formula: 7, calcIntervalSeconds: "60", maxInputAgeSeconds: Number.NaN });
+  assert(back.formula === "", `a number is not a formula, got ${JSON.stringify(back.formula)}`);
+  assert(back.calcIntervalSeconds === "", `a string is not an interval, got ${JSON.stringify(back.calcIntervalSeconds)}`);
+  assert(back.maxInputAgeSeconds === "", `NaN is not a number of seconds, got ${JSON.stringify(back.maxInputAgeSeconds)}`);
 }
 
 /** The form seeds from the existing override, so editing is not retyping. */

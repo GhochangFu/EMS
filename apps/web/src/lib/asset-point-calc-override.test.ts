@@ -7,6 +7,8 @@ import {
   runCoverageRatioDisplayTests,
   runD1IsCaughtBeforeSubmitTests,
   runDialectMirrorTests,
+  runDraftFromFieldsRoundTripTests,
+  runDraftFromFieldsTypeTests,
   runDraftSeedingTests,
   runDraftToBodyTests,
   runEmptySubmitIsRefusedTests,
@@ -68,5 +70,13 @@ describe("F2.6 — per-point calc override panel rules", () => {
 
   it("labels the calc-points status pill from what the engine last did (F2.9 Task 16)", () => {
     runRuntimePillLabelTests();
+  });
+
+  it("reads the wizard's typed values back into the draft, the inverse of draftToBody (F3.85 PR 11b)", () => {
+    runDraftFromFieldsRoundTripTests();
+  });
+
+  it("keeps a wrongly typed filled value out of the draft (F3.85 PR 11b)", () => {
+    runDraftFromFieldsTypeTests();
   });
 });

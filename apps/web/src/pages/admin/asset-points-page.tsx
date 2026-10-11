@@ -6,9 +6,11 @@ import { QUALITY_POLICIES } from "@bms/shared";
 import type {
   AdminAssetPointDto,
   AssetPointCalcConfigDto,
+  AssetPointCalcOverrideFields,
   MasterDataActiveFilter,
   QualityPolicy,
 } from "@bms/shared";
+import { type CatalogEntry, catalogEntry } from "@bms/shared/copilot";
 
 import {
   clearAdminAssetPointCalcOverride,
@@ -32,8 +34,15 @@ import { MasterDataLayout } from "../../components/admin/master-data-layout";
 import { PageHeader } from "../../components/page-header";
 import { AssetPointBulkEditPanel } from "../../components/assets/asset-point-bulk-edit-panel";
 import { MappingSheetPanel } from "../../components/assets/mapping-sheet-panel";
-import { PointCalcOverridePanel } from "../../components/assets/point-calc-override-panel";
+import {
+  PointCalcDraftProblems,
+  PointCalcFormulaFields,
+  PointCalcHeading,
+  PointCalcScheduleFields,
+  PointCalcSettingsTable,
+} from "../../components/assets/point-calc-override-panel";
 import { SectionCard } from "../../components/section-card";
+import { WizardShell } from "../../components/wizard/wizard-shell";
 import { apiErrorMessage } from "../../lib/api-error-message";
 import {
   createBodyFrom,
@@ -57,7 +66,10 @@ import {
 } from "../../lib/asset-point-effective";
 import {
   calcRuntimePillLabel,
+  canClear,
   draftFromConfig,
+  draftFromFields,
+  draftProblems,
   draftToBody,
   hasAnyOverride,
   EMPTY_DRAFT,
@@ -139,6 +151,125 @@ function EffectiveMetadataCells({ item }: { item: AdminAssetPointDto }) {
   );
 }
 
+/**
+ * `F3.85` PR 11b (ADR 0099 decision 6) — the catalog entry a wizard submits.
+ * The page writes the literal id on the `entry` prop
+ * (`entry={wizardEntry("calcOverride.set")}`), the form PR 9's stepper gate
+ * detects. A missing entry is a build defect, so it throws rather than
+ * rendering a shell with no steps.
+ */
+function wizardEntry(id: string): CatalogEntry {
+  const entry = catalogEntry(id);
+  if (!entry) throw new Error(`F3.85: the catalog has no entry "${id}"`);
+  return entry;
+}
+
+type CalcOverrideWizardProps = {
+  config: AssetPointCalcConfigDto;
+  draft: OverrideDraft;
+  saving: boolean;
+  clearing: boolean;
+  saveError: string | null;
+  onDraftChange: (next: OverrideDraft) => void;
+  onSubmit: (body: Record<string, unknown>) => void;
+  onClear: () => void;
+  onCancel: () => void;
+};
+
+/**
+ * `F3.85` PR 11b (ADR 0099 decision 6) — one point's calc override as the
+ * `calcOverride.set` wizard: Formula (Grammar, Formula) → Schedule (Runs,
+ * Every, Inputs valid for) → Review, the stored override beside the new one.
+ * The controls are `PointCalcOverridePanel`'s own parts, so the panel's
+ * teaching and `v2` rules are unchanged.
+ *
+ * The page keeps the text draft; the wizard's values are `draftToBody(draft)`
+ * and a copilot fill comes back through `draftFromFields`. D-1
+ * (`draftProblems`) is listed on both steps as the panel listed it, and at
+ * Review it is the card's error and Submit sends nothing — the panel's Save
+ * was disabled on the same sentences. A server refusal (an unknown key, a
+ * cycle the browser cannot see) is the Review card's error in its own words.
+ *
+ * Clear is a `DELETE`, not a catalog route, so it stays a button beside the
+ * wizard.
+ */
+function CalcOverrideWizard({
+  config,
+  draft,
+  saving,
+  clearing,
+  saveError,
+  onDraftChange,
+  onSubmit,
+  onClear,
+  onCancel,
+}: CalcOverrideWizardProps) {
+  const busy = saving || clearing;
+  const problems = draftProblems(draft, config);
+  const fields = { config, draft, busy, onDraftChange };
+  // The step elements are built HERE and `renderStep` returns the same
+  // references. Built inside `renderStep`, they are new elements on every
+  // shell render — and the shell re-renders on the `input` event that comes
+  // before a `<select>`'s `change` (its `dirty` flag), which re-commits the
+  // controlled value and loses the first pick in a clean wizard.
+  const formulaStep = (
+    <>
+      <div className="grid gap-2 sm:grid-cols-2">
+        <PointCalcFormulaFields {...fields} />
+      </div>
+      <PointCalcDraftProblems problems={problems} />
+    </>
+  );
+  const scheduleStep = (
+    <>
+      <div className="grid gap-2 sm:grid-cols-2">
+        <PointCalcScheduleFields {...fields} />
+      </div>
+      <PointCalcDraftProblems problems={problems} />
+    </>
+  );
+  return (
+    <div className="surface-raised-sm flex flex-col gap-3 p-3">
+      <div>
+        <PointCalcHeading config={config} />
+        <PointCalcSettingsTable config={config} />
+      </div>
+      <WizardShell
+        entry={wizardEntry("calcOverride.set")}
+        values={draftToBody(draft)}
+        onChange={(values) => onDraftChange(draftFromFields(values))}
+        renderStep={(step) => (step.id === "formula" ? formulaStep : scheduleStep)}
+        // A Clear in flight refuses Submit, and a request in flight refuses
+        // Cancel: the old panel disabled Save and Close under the shared `busy`
+        // (F4.168 OQ-3). The shell is shared, so the guard is here, and Submit
+        // keeps its own label — `submitting` is the PUT alone.
+        onSubmit={(body) => {
+          if (problems.length === 0 && !clearing) onSubmit(body);
+        }}
+        onCancel={() => {
+          if (!busy) onCancel();
+        }}
+        submitting={saving}
+        submitError={saveError ?? (problems.length > 0 ? problems.join(" ") : null)}
+        current={config.override}
+      />
+      <div className="flex justify-end">
+        <button
+          type="button"
+          // Disabled with nothing overridden: the API returns 404, and an error
+          // that says nothing went wrong is the worst kind.
+          disabled={busy || !canClear(config)}
+          aria-busy={clearing}
+          onClick={onClear}
+          className="surface-button border border-critical-line px-3 py-1.5 text-xs text-critical-ink disabled:opacity-60"
+        >
+          {clearing ? "Clearing override…" : "Clear override"}
+        </button>
+      </div>
+    </div>
+  );
+}
+
 type AssetPointsAdminPageProps = { user: AuthUser };
 
 /** Admin screen for asset point mappings with asset drill-down. */
@@ -185,7 +316,10 @@ export function AssetPointsAdminPage({ user }: AssetPointsAdminPageProps) {
   // asset to attach it to.
   const [openPointKey, setOpenPointKey] = useState<string | null>(null);
   const [draft, setDraft] = useState<OverrideDraft>(EMPTY_DRAFT);
+  // A refused Clear shows above the list; a refused set is the wizard's Review
+  // error (`F3.85` PR 11b) — two states, so one sentence never renders twice.
   const [overrideError, setOverrideError] = useState<string | null>(null);
+  const [overrideSaveError, setOverrideSaveError] = useState<string | null>(null);
 
   const calcPointsQ = useQuery({
     queryKey: ["admin", "asset-calc-points", assetId],
@@ -198,17 +332,21 @@ export function AssetPointsAdminPage({ user }: AssetPointsAdminPageProps) {
     setOpenPointKey(null);
     setDraft(EMPTY_DRAFT);
     setOverrideError(null);
+    setOverrideSaveError(null);
     void queryClient.invalidateQueries({ queryKey: ["admin", "asset-calc-points"] });
     // The eager create (decision 7) adds an `asset_points` row, so the mapping
     // table above is stale too.
     void queryClient.invalidateQueries({ queryKey: ["admin", "asset-points"] });
   }
 
+  // `F3.85` PR 11b — the body is the one the wizard's Review parsed against
+  // `calcOverride.set`'s schema (`draftToBody(draft)`), sent as shown. No
+  // `X-Copilot-Change`: a wizard used alone is not a copilot change.
   const setOverrideM = useMutation({
-    mutationFn: (pointKey: string) =>
-      setAdminAssetPointCalcOverride(assetId ?? "", pointKey, draftToBody(draft)),
+    mutationFn: ({ pointKey, body }: { pointKey: string; body: Record<string, unknown> }) =>
+      setAdminAssetPointCalcOverride(assetId ?? "", pointKey, body as AssetPointCalcOverrideFields),
     onSuccess: afterOverride,
-    onError: (cause: Error) => setOverrideError(apiErrorMessage(cause)),
+    onError: (cause: Error) => setOverrideSaveError(apiErrorMessage(cause)),
   });
 
   const clearOverrideM = useMutation({
@@ -507,18 +645,24 @@ export function AssetPointsAdminPage({ user }: AssetPointsAdminPageProps) {
           {overrideError ? <p className="text-xs text-critical-ink">{overrideError}</p> : null}
           {calcPoints.map((config) =>
             openPointKey === config.pointKey ? (
-              <PointCalcOverridePanel
+              <CalcOverrideWizard
                 key={config.pointKey}
                 config={config}
                 draft={draft}
                 saving={setOverrideM.isPending}
                 clearing={clearOverrideM.isPending}
-                onDraftChange={setDraft}
-                onSave={() => setOverrideM.mutate(config.pointKey)}
+                saveError={overrideSaveError}
+                onDraftChange={(next) => {
+                  // A refusal names the draft it refused; once it changes it is stale.
+                  setOverrideSaveError(null);
+                  setDraft(next);
+                }}
+                onSubmit={(body) => setOverrideM.mutate({ pointKey: config.pointKey, body })}
                 onClear={() => clearOverrideM.mutate(config.pointKey)}
                 onCancel={() => {
                   setOpenPointKey(null);
                   setOverrideError(null);
+                  setOverrideSaveError(null);
                 }}
               />
             ) : (
@@ -554,6 +698,7 @@ export function AssetPointsAdminPage({ user }: AssetPointsAdminPageProps) {
                       setDraft(draftFromConfig(config));
                       setOpenPointKey(config.pointKey);
                       setOverrideError(null);
+                      setOverrideSaveError(null);
                     }}
                     className="surface-button px-3 py-1"
                   >

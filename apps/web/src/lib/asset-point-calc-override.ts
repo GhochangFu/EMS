@@ -147,14 +147,27 @@ export const EMPTY_DRAFT: OverrideDraft = {
 
 /** Seeds the form from what is already overridden, so an edit is not a retype. */
 export function draftFromConfig(config: AssetPointCalcConfigDto): OverrideDraft {
+  return draftFromFields(config.override);
+}
+
+/**
+ * The draft for a set of typed columns — the inverse of {@link draftToBody}.
+ *
+ * `F3.85` PR 11b: the override wizard's values are `draftToBody(draft)`, and a
+ * copilot `fill_step` hands the merged set back as `unknown`s. A value of the
+ * wrong type (a string interval, `NaN`) reads as empty — inherit — rather than
+ * as text the draft would later send.
+ */
+export function draftFromFields(fields: Readonly<Record<string, unknown>>): OverrideDraft {
+  const text = (value: unknown): string => (typeof value === "string" ? value : "");
+  const seconds = (value: unknown): string =>
+    typeof value === "number" && Number.isFinite(value) ? String(value) : "";
   return {
-    formula: config.override.formula ?? "",
-    formulaDialect: config.override.formulaDialect ?? "",
-    calcTrigger: config.override.calcTrigger ?? "",
-    calcIntervalSeconds:
-      config.override.calcIntervalSeconds === null ? "" : String(config.override.calcIntervalSeconds),
-    maxInputAgeSeconds:
-      config.override.maxInputAgeSeconds === null ? "" : String(config.override.maxInputAgeSeconds),
+    formula: text(fields.formula),
+    formulaDialect: text(fields.formulaDialect),
+    calcTrigger: text(fields.calcTrigger),
+    calcIntervalSeconds: seconds(fields.calcIntervalSeconds),
+    maxInputAgeSeconds: seconds(fields.maxInputAgeSeconds),
   };
 }
 

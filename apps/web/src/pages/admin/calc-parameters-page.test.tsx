@@ -10,12 +10,21 @@ import { cleanup } from "@testing-library/react";
 
 import {
   adminHasTheOrganizationRadio,
+  aChangedEndDateTravelsBesideTheValue,
+  anEmptiedStartDateHoldsTheDatesStep,
+  anUnpickedLocationHoldsTheScopeStep,
+  aValueOnlyEditSendsTheValueAlone,
+  createStepsAreBasicsScopeDatesReview,
+  editHasNoKeyOrScopeControl,
+  editStepsAreValueDatesReview,
+  theCreateWizardSendsNoCopilotHeader,
+  theEditReviewShowsNowBesideAfter,
+  theEditWizardSendsNoCopilotHeader,
   theLocationPickerListsTheTree,
   deleteAsksBeforeSending,
   deletingRowAnnouncesDeleting,
   siblingRowsAreNotBusy,
   siblingRowsKeepTheirDeleteName,
-  editDisablesKeyAndScope,
   keySelectOffersExactlyTheFetchedKeys,
   locationAdminDefaultsToLocationScope,
   locationAdminHasNoOrganizationRadio,
@@ -61,12 +70,24 @@ describe("E4.1a calc parameters page", () => {
     await submitsTheChosenScopeAndIsoDates();
   });
 
-  it("renders the server's 409 sentence verbatim under the form", async () => {
+  it("renders the server's 409 sentence verbatim on the Review step", async () => {
     await rendersTheServerConflictSentenceVerbatim();
   });
 
-  it("edit opens the form with key and scope disabled and sends only the editable fields", async () => {
-    await editDisablesKeyAndScope();
+  it("edit is a wizard of Value, Effective dates, Review", async () => {
+    await editStepsAreValueDatesReview();
+  });
+
+  it("edit restates key and scope as text and offers no control for them", async () => {
+    await editHasNoKeyOrScopeControl();
+  });
+
+  it("a value-only edit sends the value alone", async () => {
+    await aValueOnlyEditSendsTheValueAlone();
+  });
+
+  it("an edited end date travels beside the value; the untouched start does not", async () => {
+    await aChangedEndDateTravelsBesideTheValue();
   });
 
   it("delete asks with confirm() before sending", async () => {
@@ -94,5 +115,37 @@ describe("F2.10 calc parameters — the Location picker lists the tree (B11)", (
 
   it("lists a child after its parent with the code inside the dashes", async () => {
     await theLocationPickerListsTheTree();
+  });
+});
+
+describe("F3.85 PR 11b calc parameters — the create and edit wizards", () => {
+  afterEach(() => {
+    cleanup();
+    vi.restoreAllMocks();
+    vi.unstubAllGlobals();
+  });
+
+  it("create is a wizard of Basics, Scope, Effective dates, Review", async () => {
+    await createStepsAreBasicsScopeDatesReview();
+  });
+
+  it("a chosen Location scope with no location picked holds the wizard on Scope", async () => {
+    await anUnpickedLocationHoldsTheScopeStep();
+  });
+
+  it("the edit Review shows the stored value beside the new one", async () => {
+    await theEditReviewShowsNowBesideAfter();
+  });
+
+  it("the create wizard alone sends its POST without X-Copilot-Change", async () => {
+    await theCreateWizardSendsNoCopilotHeader();
+  });
+
+  it("the edit wizard alone sends its PATCH without X-Copilot-Change", async () => {
+    await theEditWizardSendsNoCopilotHeader();
+  });
+
+  it("review code:F4 an emptied start date on edit holds the Effective dates step and sends nothing", async () => {
+    await anEmptiedStartDateHoldsTheDatesStep();
   });
 });
