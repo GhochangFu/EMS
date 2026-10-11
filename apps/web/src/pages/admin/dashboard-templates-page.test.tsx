@@ -5,6 +5,7 @@ import { cleanup } from "@testing-library/react";
 import {
   aFailedStockFetchDoesNotCountZeroDefaults,
   anotherEntryKeepsItsNameWhileOneImports,
+  createReviewShowsTheTrimmedValues,
   createWizardAloneSendsNoCopilotHeader,
   createWizardSendsNothingBeforeSubmit,
   createWizardSendsTheTrimmedBody,
@@ -89,6 +90,10 @@ describe("F3.85 PR 10a dashboard template wizards on the list page", () => {
 
   it("the create wizard's Submit sends the trimmed body with a null blank description", async () => {
     await createWizardSendsTheTrimmedBody();
+  });
+
+  it("the create Review shows the code and name trimmed, as Submit sends them", async () => {
+    await createReviewShowsTheTrimmedValues();
   });
 
   it("the create wizard sends nothing before Review's Submit", async () => {

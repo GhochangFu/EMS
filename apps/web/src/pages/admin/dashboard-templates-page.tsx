@@ -246,6 +246,8 @@ export function DashboardTemplatesAdminPage({ user }: DashboardTemplatesAdminPag
         <input
           value={textOf(form, field)}
           onChange={(event) => updateForm(withField(form, field, event.target.value))}
+          // Trimmed when the field is left, so Review shows what Submit sends (`createInput` trims too).
+          onBlur={(event) => setForm(withField(form, field, event.target.value.trim()))}
           placeholder={placeholder}
           className="mt-1 w-full surface-field px-2 py-1 text-xs font-normal"
         />

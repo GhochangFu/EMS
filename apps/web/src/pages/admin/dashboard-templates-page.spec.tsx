@@ -354,6 +354,27 @@ export async function createWizardSendsTheTrimmedBody(): Promise<void> {
   });
 }
 
+/**
+ * Review shows what Submit sends: Code and Name are trimmed when the field is left, so the
+ * Review rows hold the trimmed values (the positive: the rows are there). Mutation: drop the
+ * `onBlur` trim → the Name row reads " Electrical overview " → red.
+ */
+export async function createReviewShowsTheTrimmedValues(): Promise<void> {
+  stubApi();
+  renderPage();
+  await fillCreateBasics();
+  fireEvent.blur(screen.getByRole("textbox", { name: "Code" }));
+  fireEvent.blur(screen.getByRole("textbox", { name: "Name" }));
+  await userEvent.click(screen.getByRole("button", { name: "Next" }));
+  await userEvent.click(screen.getByRole("button", { name: "Next" }));
+
+  const cells = screen.getAllByRole("cell").map((cell) => cell.textContent);
+  expect(cells).toContain("ELEC");
+  expect(cells).toContain("Electrical overview");
+  expect(cells).not.toContain("  ELEC ");
+  expect(cells).not.toContain(" Electrical overview ");
+}
+
 /** Nothing is sent before Review's Submit: Next through the steps never creates. */
 export async function createWizardSendsNothingBeforeSubmit(): Promise<void> {
   stubApi();
