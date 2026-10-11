@@ -1,4 +1,5 @@
 import { act, fireEvent, render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { useState } from "react";
 import { expect, vi } from "vitest";
 
@@ -22,12 +23,26 @@ function entry(id: string) {
   return found;
 }
 
-type Harness = { onSubmit: ReturnType<typeof vi.fn>; onCancel: ReturnType<typeof vi.fn>; values: () => Record<string, unknown> };
+type Harness = {
+  onSubmit: ReturnType<typeof vi.fn>;
+  onCancel: ReturnType<typeof vi.fn>;
+  /** The page's own `onChange` of the `select` field, when one is asked for. */
+  onSelect: ReturnType<typeof vi.fn>;
+  values: () => Record<string, unknown>;
+};
+
+type HarnessOptions = {
+  /** Passed through as the shell's `dirty` prop. */
+  dirty?: boolean;
+  /** This field renders as a controlled `<select>` (options `a` and `b`) instead of a text input. */
+  select?: string;
+};
 
 /** A page over the shell: one text input per field of the open step. */
-function renderWizard(id: string, initial: Record<string, unknown> = {}): Harness {
+function renderWizard(id: string, initial: Record<string, unknown> = {}, options: HarnessOptions = {}): Harness {
   const onSubmit = vi.fn();
   const onCancel = vi.fn();
+  const onSelect = vi.fn();
   let latest = initial;
   function Page() {
     const [values, setValues] = useState<Record<string, unknown>>(initial);
@@ -40,21 +55,37 @@ function renderWizard(id: string, initial: Record<string, unknown> = {}): Harnes
         onSubmit={onSubmit}
         onCancel={onCancel}
         submitting={false}
+        dirty={options.dirty}
         renderStep={(step) =>
-          step.fields.map((field) => (
-            <input
-              key={field}
-              aria-label={field}
-              value={typeof values[field] === "string" ? (values[field] as string) : ""}
-              onChange={(e) => setValues({ ...values, [field]: e.target.value })}
-            />
-          ))
+          step.fields.map((field) =>
+            field === options.select ? (
+              <select
+                key={field}
+                aria-label={field}
+                value={typeof values[field] === "string" ? (values[field] as string) : "a"}
+                onChange={(e) => {
+                  onSelect(e.target.value);
+                  setValues({ ...values, [field]: e.target.value });
+                }}
+              >
+                <option value="a">a</option>
+                <option value="b">b</option>
+              </select>
+            ) : (
+              <input
+                key={field}
+                aria-label={field}
+                value={typeof values[field] === "string" ? (values[field] as string) : ""}
+                onChange={(e) => setValues({ ...values, [field]: e.target.value })}
+              />
+            ),
+          )
         }
       />
     );
   }
   render(<Page />);
-  return { onSubmit, onCancel, values: () => latest };
+  return { onSubmit, onCancel, onSelect, values: () => latest };
 }
 
 const stepNames = () => screen.getAllByRole("listitem").map((li) => li.textContent);
@@ -156,4 +187,52 @@ export function cancelAsksBeforeLeavingAChangedWizard(): void {
   fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
   fireEvent.click(screen.getByRole("button", { name: "Discard and leave" }));
   expect(h.onCancel).toHaveBeenCalledTimes(1);
+}
+
+/**
+ * `F3.85` PR 9 shell fix — the first edit in a fresh wizard is a select pick, and the page's
+ * `onChange` gets the NEW value. The shell marked itself changed on `input`; that re-render landed
+ * between the select's `input` and `change` events and gave the controlled select its old value
+ * back before `change` read it. Mutation: mark changed on `onInput` again => red.
+ */
+export async function aSelectFirstPickReachesThePage(): Promise<void> {
+  const h = renderWizard("dashboard.create", {}, { select: "name" });
+  await userEvent.selectOptions(screen.getByRole("combobox", { name: "name" }), "b");
+  expect(h.onSelect).toHaveBeenCalledWith("b");
+}
+
+/** The display half: the select shows the picked value, and the page's values hold it. */
+export async function aSelectFirstPickStaysPicked(): Promise<void> {
+  const h = renderWizard("dashboard.create", {}, { select: "name" });
+  await userEvent.selectOptions(screen.getByRole("combobox", { name: "name" }), "b");
+  expect((screen.getByRole("combobox", { name: "name" }) as HTMLSelectElement).value).toBe("b");
+  expect(h.values().name).toBe("b");
+}
+
+/** A select pick arms the leave prompt too (it is a `change`, which the shell now marks). */
+export async function aSelectPickArmsTheLeavePrompt(): Promise<void> {
+  const h = renderWizard("dashboard.create", {}, { select: "name" });
+  await userEvent.selectOptions(screen.getByRole("combobox", { name: "name" }), "b");
+  fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+  expect(h.onCancel).not.toHaveBeenCalled();
+  expect(screen.getByRole("alertdialog", { name: "Leave the wizard" })).toBeInTheDocument();
+}
+
+/**
+ * The page's own `dirty` (work done by clicks, which no field event reports) arms the leave
+ * prompt with no input at all. Mutation: ignore the prop in Cancel => red.
+ */
+export function aDirtyPageAsksBeforeLeaving(): void {
+  const h = renderWizard("dashboard.create", {}, { dirty: true });
+  fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+  expect(h.onCancel).not.toHaveBeenCalled();
+  expect(screen.getByRole("alertdialog", { name: "Leave the wizard" })).toBeInTheDocument();
+}
+
+/** The positive control: `dirty={false}` and no input leaves at once. */
+export function aCleanPageLeavesAtOnce(): void {
+  const h = renderWizard("dashboard.create", {}, { dirty: false });
+  fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+  expect(h.onCancel).toHaveBeenCalledTimes(1);
+  expect(screen.queryByRole("alertdialog")).toBeNull();
 }

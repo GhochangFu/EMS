@@ -101,13 +101,18 @@ export async function aTurnsMessagesHaveDistinctIncreasingCreatedAt(ctx: History
   ]);
   const [user, assistant] = stored;
   expect(user?.createdAt).toBeDefined();
-  expect(Date.parse(assistant?.createdAt ?? "") > Date.parse(user?.createdAt ?? "")).toBe(true);
+  // The DTO's `createdAt` is a JS Date (milliseconds); two inserts can share a millisecond on a
+  // fast runner. "Strictly later" is compared in the database, at its microsecond precision.
+  expect(Date.parse(assistant?.createdAt ?? "") >= Date.parse(user?.createdAt ?? "")).toBe(true);
   const { rows } = await withUser(ctx.tenantDb, ctx.userA, (tx) =>
-    tx.execute<{ distinct_at: number }>(
-      sql`SELECT count(DISTINCT created_at)::int AS distinct_at FROM bms.copilot_messages WHERE conversation_id = ${conversation.id}`,
+    tx.execute<{ distinct_at: number; reply_later: boolean }>(
+      sql`SELECT count(DISTINCT created_at)::int AS distinct_at,
+                 max(created_at) FILTER (WHERE role = 'assistant') > max(created_at) FILTER (WHERE role = 'user') AS reply_later
+            FROM bms.copilot_messages WHERE conversation_id = ${conversation.id}`,
     ),
   );
   expect(rows[0]?.distinct_at, "the two rows never tie").toBe(2);
+  expect(rows[0]?.reply_later, "the reply is strictly later than the user's message").toBe(true);
   const detail = await store.get(ctx.userA, conversation.id);
   expect(detail?.messages.map((m) => m.content)).toEqual(["first", "second"]);
   expect(detail?.messages[1]?.organizationIds).toEqual([ctx.orgA]);

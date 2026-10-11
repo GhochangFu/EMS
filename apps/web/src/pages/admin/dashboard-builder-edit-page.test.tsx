@@ -3,6 +3,7 @@ import { afterEach, describe, it, vi } from "vitest";
 import { cleanup } from "@testing-library/react";
 
 import { useAuthStore } from "../../stores/auth-store";
+import { resetWizardStore } from "../../stores/wizard-store";
 import {
   aLocationDashboardDoesNotFetchAssets,
   anAssetScopedDashboardNamesItsAsset,
@@ -47,6 +48,8 @@ describe("F3.1d dashboard builder edit page", () => {
     // The role cases sign an `asset_group_admin` scope into the store; reset it here, where a
     // failing `expect` cannot skip it.
     useAuthStore.setState({ scope: null });
+    // A copilot fill a case left waiting must not reach the next case's wizard.
+    resetWizardStore();
   });
 
   it("renaming a group-scoped dashboard keeps its group (F3.34)", async () => {

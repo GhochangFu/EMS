@@ -36,6 +36,12 @@ type WizardShellProps = {
   current?: Record<string, unknown> | null;
   /** The Review card's sentence; the entry's title when absent. */
   summary?: string;
+  /**
+   * The page's own "changed", for work done by clicks — for example adding or dragging
+   * widgets — which no field `change` event reports. Cancel asks first when this is true or
+   * when the shell saw a change itself.
+   */
+  dirty?: boolean;
 };
 
 /**
@@ -49,8 +55,12 @@ type WizardShellProps = {
  * included, before **Submit** can send it.
  *
  * Leaving with values the user typed asks first (the `guardTabSwitch` rule;
- * typing in a step's inputs marks the wizard changed);
- * moving between steps never does. Values the copilot's `fill_step` gave this
+ * a field's React `onChange`, bubbled to the shell, marks the wizard changed;
+ * the page's `dirty` prop covers work done by clicks);
+ * moving between steps never does. The shell marks itself on `change`, not on
+ * `input` (`F3.85` PR 9): an `input` re-render landed between a `<select>`'s
+ * `input` and `change` events, gave the controlled select its old value back,
+ * and lost a select-first pick; the bubbled `onChange` batches with the page's. Values the copilot's `fill_step` gave this
  * entry (`useWizardStore`) are merged into the named step's fields only, and
  * mark the wizard as changed.
  */
@@ -91,13 +101,13 @@ export function WizardShell(props: WizardShellProps) {
   }
 
   function cancel(): void {
-    const decision = guardWizardLeave(dirty, entry.title);
+    const decision = guardWizardLeave(dirty || props.dirty === true, entry.title);
     if (decision.allow) props.onCancel();
     else setLeave(decision);
   }
 
   return (
-    <div className="flex flex-col gap-3" onInput={() => setDirty(true)}>
+    <div className="flex flex-col gap-3" onChange={() => setDirty(true)}>
       <ol aria-label="Steps" className="flex flex-wrap gap-2 text-xs">
         {steps.map((candidate, position) => (
           <li

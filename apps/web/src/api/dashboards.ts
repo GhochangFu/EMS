@@ -4,7 +4,13 @@ import {
   dashboardDtoSchema,
   dashboardsListResponseSchema,
 } from "@bms/shared/contracts";
-import type { Contract, ContractSchema } from "@bms/shared/contracts";
+import type {
+  Contract,
+  ContractSchema,
+  // `F3.85` PR 9 (plan §11.1) — the shared `z.infer` request types, not a local mirror.
+  CreateDashboardBody,
+  UpdateDashboardBody,
+} from "@bms/shared/contracts";
 import type {
   DashboardCatalogValuesResponse,
   DashboardDeletedResponse,
@@ -71,24 +77,6 @@ function jsonInit(method: "POST" | "PATCH" | "PUT", body: unknown): RequestInit 
   };
 }
 
-/** `POST /dashboards`'s body. Declared locally rather than imported from `apps/api` — `apps/web`
- * does not depend on `apps/api` — mirroring `CreateDashboardBody`
- * (`packages/shared/src/contracts/dashboard-writes.ts`) field for field, the same shape
- * `rules.ts`'s `RuleDraftPayload` uses for its own request body. */
-export type CreateDashboardPayload = {
-  organizationId: string;
-  slug: string;
-  name: string;
-  description?: string | null;
-  locationId?: string | null;
-  assetGroupId?: string | null;
-};
-
-/** `PATCH /dashboards/:id`'s body — every field optional, `organizationId` omitted entirely
- * (a dashboard's tenant is fixed at creation; `UpdateDashboardBody` rejects the field rather
- * than silently ignoring it). */
-export type UpdateDashboardPayload = Partial<Omit<CreateDashboardPayload, "organizationId">>;
-
 /** `GET /dashboards`, optionally narrowed to one organization and/or one asset. An
  * admin/multi-organization caller sees every readable organization's dashboards when
  * `organizationId` is omitted — `Amendment 4`'s read visibility, unchanged by this client.
@@ -143,12 +131,13 @@ export async function fetchDashboardCatalogValues(
 /** `POST /dashboards`. A 403 here is `"You may not create a dashboard with this scope"`
  * (`dashboards.service.ts:295`) — the inline-403 render §6.2 requires depends on the thrown
  * `ApiError.status` surviving to the caller. */
-export async function createDashboard(body: CreateDashboardPayload): Promise<DashboardDto> {
+export async function createDashboard(body: CreateDashboardBody): Promise<DashboardDto> {
   return dashboardsFetch("/dashboards", dashboardDtoSchema, "dashboards", jsonInit("POST", body));
 }
 
-/** `PATCH /dashboards/:id`. */
-export async function updateDashboard(id: string, body: UpdateDashboardPayload): Promise<DashboardDto> {
+/** `PATCH /dashboards/:id` — every field optional; `organizationId` is not a field
+ * (`UpdateDashboardBody` refuses it: a dashboard's tenant is fixed at creation). */
+export async function updateDashboard(id: string, body: UpdateDashboardBody): Promise<DashboardDto> {
   return dashboardsFetch(
     `/dashboards/${encodeURIComponent(id)}`,
     dashboardDtoSchema,

@@ -134,6 +134,26 @@ function assetGroupLabel(group: ScopeAssetGroupOption): string {
  * asset from `assets`, falling back to the id. It is never clamped for any role;
  * the edit page's `scopePatch` omits both scope columns for it.
  */
+/**
+ * The clamp below, as a pure function: the value a role not offered `value.kind` is moved to (its
+ * first offered kind, unchosen), or `null` when the role is offered the kind. `F3.85` PR 9: the
+ * edit page's wizard shows these fields on its Scope step only, so the page applies the same clamp
+ * to its prefill rather than wait for the step to mount.
+ */
+export function clampScopeToRole(role: UserRole, value: DashboardScopeValue): ChosenScopeValue | null {
+  const canLocation = canChooseLocationDashboardScope(role);
+  const kindNotOffered =
+    (!canCreateOrganizationWideDashboard(role) && value.kind === "organization") ||
+    (!canLocation && value.kind === "location") ||
+    (!canChooseAssetGroupDashboardScope(role) && value.kind === "assetGroup");
+  if (!kindNotOffered) {
+    return null;
+  }
+  return canLocation
+    ? { kind: "location", organizationId: value.organizationId, locationId: "" }
+    : { kind: "assetGroup", organizationId: value.organizationId, assetGroupId: "" };
+}
+
 export function DashboardScopeFields({
   role,
   value,
@@ -162,18 +182,11 @@ export function DashboardScopeFields({
   // `asset` kind is absent from the disjunction on purpose: no role is offered it, and it is
   // never clamped.
   useEffect(() => {
-    const kindNotOffered =
-      (!canOrgWide && value.kind === "organization") ||
-      (!canLocation && value.kind === "location") ||
-      (!canGroup && value.kind === "assetGroup");
-    if (kindNotOffered) {
-      onChange(
-        canLocation
-          ? { kind: "location", organizationId: value.organizationId, locationId: "" }
-          : { kind: "assetGroup", organizationId: value.organizationId, assetGroupId: "" },
-      );
+    const clamped = clampScopeToRole(role, value);
+    if (clamped !== null) {
+      onChange(clamped);
     }
-  }, [canOrgWide, canLocation, canGroup, value, onChange]);
+  }, [role, value, onChange]);
 
   // After the hook, so the hook count is the same on every render.
   if (value.kind === "asset") {
