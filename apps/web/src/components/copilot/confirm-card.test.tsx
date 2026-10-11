@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { focusManager } from "@tanstack/react-query";
 import { cleanup } from "@testing-library/react";
 import { afterEach, describe, it, vi } from "vitest";
 
@@ -21,6 +22,7 @@ afterEach(() => {
   vi.restoreAllMocks();
   resetCopilotStore();
   resetWizardStore();
+  focusManager.setFocused(undefined);
   window.localStorage.clear();
 });
 

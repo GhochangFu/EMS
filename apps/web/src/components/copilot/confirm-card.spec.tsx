@@ -1,4 +1,4 @@
-import { QueryClient } from "@tanstack/react-query";
+import { focusManager, QueryClient } from "@tanstack/react-query";
 import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { expect, vi } from "vitest";
 
@@ -86,7 +86,9 @@ export async function confirmSendsTheProposedChange(): Promise<void> {
 /**
  * The poll stops on the follow-up's outcome line, and shows its reply and its
  * next card (review #7): the indicator goes, Send comes back, and the reads
- * stop. While it waits, Send waits too (review #2).
+ * stop. While it waits, Send waits too (review #2). It polls with the window
+ * unfocused (a user who switched tab after Confirm — found in the step-6
+ * browser run, where TanStack Query paused the interval in a hidden tab).
  */
 export async function thePollStopsOnTheFollowUpsOutcome(): Promise<void> {
   const pending = change();
@@ -105,6 +107,7 @@ export async function thePollStopsOnTheFollowUpsOutcome(): Promise<void> {
   await proposed(pending);
   const card = await screen.findByRole("region", { name: "Publish a dashboard template" });
   fireEvent.change(screen.getByRole("textbox", { name: "Message the copilot" }), { target: { value: "thanks" } });
+  focusManager.setFocused(false);
   fireEvent.click(within(card).getByRole("button", { name: "Confirm" }));
   // Waiting: Send is held, under its own name.
   const waiting = await screen.findByRole("button", { name: "Waiting…" });
@@ -127,6 +130,7 @@ export async function thePollStopsOnTheFollowUpsOutcome(): Promise<void> {
   const reads = reload.mock.calls.length;
   await new Promise((resolve) => setTimeout(resolve, 2_500));
   expect(reload.mock.calls.length).toBe(reads);
+  focusManager.setFocused(undefined);
 }
 
 /** A 409 says the change is gone, closes the card and reloads the conversation. */

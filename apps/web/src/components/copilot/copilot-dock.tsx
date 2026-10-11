@@ -207,6 +207,8 @@ function DockPanel({ user, homeConfigured }: CopilotDockProps & { homeConfigured
     enabled: conversationId !== null,
     staleTime: Infinity,
     refetchInterval: followUp === null ? false : FOLLOW_UP_POLL_MS,
+    // A user who switches tab after a Confirm must still get the follow-up: the poll is bounded, so it may run hidden.
+    refetchIntervalInBackground: true,
   });
   const messages = conversationId === null ? [] : (thread.data?.messages ?? []);
   const pendingChanges = conversationId === null ? [] : (thread.data?.pendingChanges ?? []);
@@ -257,9 +259,13 @@ function DockPanel({ user, homeConfigured }: CopilotDockProps & { homeConfigured
       return;
     }
     const left = FOLLOW_UP_WAIT_MS - (Date.now() - followUp.since);
-    const timer = setTimeout(() => setFollowUp(null), Math.max(0, left));
+    const timer = setTimeout(() => {
+      setFollowUp(null);
+      // One last read: a follow-up that finished just after the last poll still shows.
+      if (conversationId !== null) void queryClient.invalidateQueries({ queryKey: copilotConversationKey(conversationId) });
+    }, Math.max(0, left));
     return () => clearTimeout(timer);
-  }, [followUp, messages.length]);
+  }, [followUp, messages, conversationId, queryClient]);
 
   /** Writes into the thread's cache entry: the dock unmounts on navigation, the cache does not. */
   function updateThread(change: (prev: CopilotConversationDetailDto) => CopilotConversationDetailDto): void {
