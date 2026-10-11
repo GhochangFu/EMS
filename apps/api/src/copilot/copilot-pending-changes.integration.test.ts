@@ -7,9 +7,11 @@ import { openIntegrationPool, requireIntegrationDb } from "../testing/integratio
 import { asRole } from "../testing/role-urls";
 import {
   anExpiredChangeCannotBePeekedOrClaimed,
+  aThrowingManageCheckIsTheSameRefusal,
   anotherUserCannotPeekOrClaim,
   aProposalIsOpenForItsUserUntilRejected,
   concurrentClaimsApplyOnce,
+  concurrentProposalsStoreOne,
   discardRejectsOnlyPendingRows,
   finishedReadsOnlyAFinishedChange,
   newConversation,
@@ -161,6 +163,9 @@ describe.skipIf(!connectionString)("F3.85 — the copilot pending-change claim (
   it("finishedReadsOnlyAFinishedChange", async () => {
     await finishedReadsOnlyAFinishedChange(proposeCtx);
   });
+  it("concurrentProposalsStoreOne", async () => {
+    await concurrentProposalsStoreOne(proposeCtx);
+  });
   it("discardRejectsOnlyPendingRows", async () => {
     await discardRejectsOnlyPendingRows(proposeCtx);
   });
@@ -169,5 +174,8 @@ describe.skipIf(!connectionString)("F3.85 — the copilot pending-change claim (
   });
   it("theResolverChecksACreatesOrganizationAndRefs", async () => {
     await theResolverChecksACreatesOrganizationAndRefs(proposeCtx);
+  });
+  it("aThrowingManageCheckIsTheSameRefusal", async () => {
+    await aThrowingManageCheckIsTheSameRefusal(proposeCtx);
   });
 });

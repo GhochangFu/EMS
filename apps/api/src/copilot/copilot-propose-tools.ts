@@ -198,6 +198,8 @@ export function createCopilotProposeTools(
       summary,
       risk: entry.risk,
     });
+    // Another turn stored a change between the check above and this insert.
+    if (change === null) return { ok: false, error: PROPOSE_OPEN_CHANGE_ERROR };
     return {
       ok: true,
       result: { changeId: change.id, summary, status: "waiting for the user's Confirm" },

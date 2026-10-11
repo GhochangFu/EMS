@@ -20,13 +20,15 @@ export type CatalogMethod = "POST" | "PUT" | "PATCH";
  * Where a change's organization comes from. Every target row is
  * `organization_id NOT NULL`, so a change always has one organization.
  *
- * - `organization`: the body's `organizationId` (a create);
+ * - `organization`: the body's `organizationId` (a create); `manage` names
+ *   the route's own authority check for it (a dashboard checks its body
+ *   scope, a template the organization, a parameter its body scope);
  * - `dashboard`, `dashboardTemplate`, `calcParameter`: the row the path
  *   parameter `id` names;
  * - `asset`: the asset the path parameter `assetId` names.
  */
 export type CatalogTarget =
-  | { readonly kind: "organization" }
+  | { readonly kind: "organization"; readonly manage: "dashboard" | "template" | "calcParameter" }
   | { readonly kind: "dashboard" | "dashboardTemplate" | "calcParameter"; readonly param: "id" }
   | { readonly kind: "asset"; readonly param: "assetId" };
 

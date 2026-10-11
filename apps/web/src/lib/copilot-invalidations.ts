@@ -6,7 +6,7 @@ import type { QueryKey } from "@tanstack/react-query";
  * every query that starts with it, so `["dashboards"]` reaches the list, the
  * detail, the control-room list and the mimic nodes alike.
  *
- * An entry with no row here invalidates nothing; `copilot-invalidations.spec.ts`
+ * An entry with no row here invalidates nothing; `copilot-card-logic.spec.ts`
  * requires a row for every catalog entry, so a new entry cannot ship without
  * one.
  */
@@ -15,6 +15,7 @@ const TEMPLATES: QueryKey = ["admin", "dashboard-templates"];
 const TEMPLATE: QueryKey = ["admin", "dashboard-template"];
 const CALC_PARAMETERS: QueryKey = ["admin", "calc-parameters"];
 const ASSET_CALC_POINTS: QueryKey = ["admin", "asset-calc-points"];
+const ASSET_GROUPS: QueryKey = ["admin", "asset-groups"];
 
 const BY_ENTRY: Readonly<Record<string, readonly QueryKey[]>> = {
   "dashboard.create": [DASHBOARDS],
@@ -25,10 +26,10 @@ const BY_ENTRY: Readonly<Record<string, readonly QueryKey[]>> = {
   "dashboardTemplate.publish": [TEMPLATES, TEMPLATE],
   "dashboardTemplate.archive": [TEMPLATES, TEMPLATE],
   "dashboardTemplate.draft": [TEMPLATES, TEMPLATE],
-  // Instantiating makes dashboards; a site layout also makes asset groups and sets the control-room view.
-  "dashboardTemplate.instantiate": [TEMPLATES, TEMPLATE, DASHBOARDS],
+  // Instantiating makes dashboards; a site layout also makes asset groups.
+  "dashboardTemplate.instantiate": [TEMPLATES, TEMPLATE, DASHBOARDS, ASSET_GROUPS],
   "dashboardTemplate.importStock": [TEMPLATES],
-  "dashboardTemplate.applyToSites": [TEMPLATES, TEMPLATE, DASHBOARDS],
+  "dashboardTemplate.applyToSites": [TEMPLATES, TEMPLATE, DASHBOARDS, ASSET_GROUPS],
   "calcParameter.create": [CALC_PARAMETERS],
   "calcParameter.update": [CALC_PARAMETERS],
   "calcOverride.set": [ASSET_CALC_POINTS],

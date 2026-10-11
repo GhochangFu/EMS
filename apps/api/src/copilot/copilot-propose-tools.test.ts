@@ -11,6 +11,7 @@ import {
   anInvalidBodyStoresNothing,
   anInvalidFormulaStoresNothing,
   aPathParameterIsStoredEncoded,
+  aProposalThatLosesTheRaceIsRefused,
   aSecondProposalWhileOneIsOpenIsRefused,
   aTargetOutsideTheAllowedSetStoresNothing,
   aValidBodyStoresTheCanonicalHash,
@@ -24,6 +25,7 @@ describe("F3.85 PR 8 — the copilot propose tools (ADR 0099 decisions 2, 3, 4, 
   it("stores a valid body with its canonical hash", () => aValidBodyStoresTheCanonicalHash());
   it("stores nothing for an invalid body", () => anInvalidBodyStoresNothing());
   it("refuses a second proposal while one is open", () => aSecondProposalWhileOneIsOpenIsRefused());
+  it("refuses a proposal that loses the race to another turn", () => aProposalThatLosesTheRaceIsRefused());
   it("stores nothing for an invalid formula", () => anInvalidFormulaStoresNothing());
   it("stores nothing for a target outside the allowed set", () => aTargetOutsideTheAllowedSetStoresNothing());
   it("resolves a cross-organization proposal in the platform scope", () => aCrossOrganizationProposalUsesTheAllowedSet());

@@ -1,3 +1,4 @@
+import { QueryClient } from "@tanstack/react-query";
 import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { expect, vi } from "vitest";
 
@@ -50,6 +51,7 @@ export async function confirmSendsTheProposedChange(): Promise<void> {
   const pending = change();
   const sent = vi.spyOn(confirmApi, "confirmCopilotChange").mockResolvedValue({ id: TEMPLATE });
   const reject = vi.spyOn(copilotApi, "rejectCopilotChange");
+  const invalidated = vi.spyOn(QueryClient.prototype, "invalidateQueries");
   const reload = vi.spyOn(copilotApi, "fetchCopilotConversation").mockResolvedValue({
     id: CONVERSATION_ID,
     organizationId: null,
@@ -65,11 +67,66 @@ export async function confirmSendsTheProposedChange(): Promise<void> {
   fireEvent.click(within(card).getByRole("button", { name: "Confirm" }));
   await waitFor(() => expect(sent).toHaveBeenCalledTimes(1));
   expect(sent.mock.calls[0]?.[0]).toEqual(pending);
+  // The entry's query keys are made stale (lib/copilot-invalidations).
+  await waitFor(() =>
+    expect(invalidated.mock.calls.map((call) => (call[0] as { queryKey?: unknown }).queryKey)).toEqual(
+      expect.arrayContaining([
+        ["admin", "dashboard-templates"],
+        ["admin", "dashboard-template"],
+      ]),
+    ),
+  );
   await waitFor(() => expect(screen.queryByRole("region", { name: "Publish a dashboard template" })).toBeNull());
   expect(await screen.findByText("Applied. Waiting for the copilot…")).toBeTruthy();
   // The follow-up poll reads the conversation.
   await waitFor(() => expect(reload).toHaveBeenCalled(), { timeout: 4_000 });
   expect(reject).not.toHaveBeenCalled();
+}
+
+/**
+ * The poll stops on the follow-up's outcome line, and shows its reply and its
+ * next card (review #7): the indicator goes, Send comes back, and the reads
+ * stop. While it waits, Send waits too (review #2).
+ */
+export async function thePollStopsOnTheFollowUpsOutcome(): Promise<void> {
+  const pending = change();
+  vi.spyOn(confirmApi, "confirmCopilotChange").mockResolvedValue({ id: TEMPLATE });
+  const next = change({ id: "55555555-5555-4555-8555-555555555555", summary: 'Archive the dashboard template "Old".' });
+  const before = [message("user", "publish Feeder", 1), message("assistant", "Confirm the card to publish it.", 2)];
+  const reload = vi.spyOn(copilotApi, "fetchCopilotConversation").mockResolvedValue({
+    id: CONVERSATION_ID,
+    organizationId: null,
+    title: null,
+    createdAt: "2026-10-11T10:00:00.000Z",
+    lastTurnAt: "2026-10-11T10:00:00.000Z",
+    messages: before,
+    pendingChanges: [],
+  });
+  await proposed(pending);
+  const card = await screen.findByRole("region", { name: "Publish a dashboard template" });
+  fireEvent.change(screen.getByRole("textbox", { name: "Message the copilot" }), { target: { value: "thanks" } });
+  fireEvent.click(within(card).getByRole("button", { name: "Confirm" }));
+  // Waiting: Send is held, under its own name.
+  const waiting = await screen.findByRole("button", { name: "Waiting…" });
+  expect((waiting as HTMLButtonElement).disabled).toBe(true);
+  await waitFor(() => expect(reload).toHaveBeenCalled(), { timeout: 4_000 });
+  // The follow-up lands: its outcome line, its reply and its next card.
+  reload.mockResolvedValue({
+    id: CONVERSATION_ID,
+    organizationId: null,
+    title: null,
+    createdAt: "2026-10-11T10:00:00.000Z",
+    lastTurnAt: "2026-10-11T10:00:00.000Z",
+    messages: [...before, message("action", `Applied: ${pending.summary}`, 3), message("assistant", "Published. Archive Old next?", 4)],
+    pendingChanges: [next],
+  });
+  expect(await screen.findByText("Published. Archive Old next?", undefined, { timeout: 5_000 })).toBeTruthy();
+  expect(await screen.findByRole("region", { name: "Publish a dashboard template" })).toBeTruthy();
+  await waitFor(() => expect(screen.queryByText("Applied. Waiting for the copilot…")).toBeNull());
+  expect(await screen.findByRole("button", { name: "Send" })).toBeTruthy();
+  const reads = reload.mock.calls.length;
+  await new Promise((resolve) => setTimeout(resolve, 2_500));
+  expect(reload.mock.calls.length).toBe(reads);
 }
 
 /** A 409 says the change is gone, closes the card and reloads the conversation. */

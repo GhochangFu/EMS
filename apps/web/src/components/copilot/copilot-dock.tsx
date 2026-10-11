@@ -76,9 +76,18 @@ import { ConfirmCard } from "./confirm-card";
  * unmounted. A page reload empties both and starts a new conversation.
  */
 
-/** How often, and for how long, the dock reads the conversation after a Confirm (the follow-up turn). */
+/**
+ * How often, and for how long, the dock reads the conversation after a
+ * Confirm. The wait outlasts the follow-up turn's own 45-second deadline
+ * (`TURN_DEADLINE_MS`, `apps/api/src/llm/agent-loop.ts`) with a margin.
+ */
 export const FOLLOW_UP_POLL_MS = 2_000;
-export const FOLLOW_UP_WAIT_MS = 30_000;
+export const FOLLOW_UP_WAIT_MS = 60_000;
+
+/** The follow-up turn has finished when its outcome line is stored (`changeOutcomeLine` on the server). */
+function isOutcomeLine(message: CopilotMessageDto): boolean {
+  return message.role === "action" && (message.content.startsWith("Applied: ") || message.content.startsWith("Failed"));
+}
 
 /** The `localStorage` key that holds whether the panel is open. */
 export const COPILOT_OPEN_KEY = "bms-copilot-open";
@@ -238,10 +247,12 @@ function DockPanel({ user, homeConfigured }: CopilotDockProps & { homeConfigured
     }
   }, [messages, pendingChanges.length, banner]);
 
-  // The follow-up arrived (the thread grew), or the wait ran out: stop polling.
+  // The follow-up's outcome line arrived, or the wait ran out: stop polling. Not "the thread
+  // grew": the follow-up stores its outcome and its reply in one write, and nothing else may write
+  // meanwhile — Send waits too, so a user turn cannot race the follow-up's proposal.
   useEffect(() => {
     if (followUp === null) return;
-    if (messages.length > followUp.baseline) {
+    if (messages.slice(followUp.baseline).some(isOutcomeLine)) {
       setFollowUp(null);
       return;
     }
@@ -345,7 +356,7 @@ function DockPanel({ user, homeConfigured }: CopilotDockProps & { homeConfigured
 
   function submit(): void {
     const text = input.trim();
-    if (!text || turn.isPending) {
+    if (!text || turn.isPending || followUp !== null) {
       return;
     }
     setInput("");
@@ -494,11 +505,11 @@ function DockPanel({ user, homeConfigured }: CopilotDockProps & { homeConfigured
                 />
                 <button
                   type="submit"
-                  disabled={turn.isPending || input.trim() === ""}
-                  aria-busy={turn.isPending}
+                  disabled={turn.isPending || followUp !== null || input.trim() === ""}
+                  aria-busy={turn.isPending || followUp !== null}
                   className="surface-button px-3 py-1 text-xs disabled:opacity-50"
                 >
-                  {turn.isPending ? "Sending…" : "Send"}
+                  {turn.isPending ? "Sending…" : followUp !== null ? "Waiting…" : "Send"}
                 </button>
               </div>
             </form>

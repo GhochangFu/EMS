@@ -15,6 +15,9 @@ import {
   assertAFollowUpTurnRunsOnTheChangesOutcome,
   assertAFollowUpThatFailsStoresTheOutcomeOnly,
   assertAFollowUpWithoutAFinishedChangeDoesNothing,
+  assertAFollowUpOutsideTheScopeStoresTheOutcomeOnly,
+  assertAFailedStoreDiscardsTheTurnsProposals,
+  assertActionLinesReachTheModelAsMarkedData,
   assertAPlainMessageRunsEveryStep,
   assertAProviderFailureStoresNothing,
   assertARefusedTurnIs429BeforeTheProvider,
@@ -133,5 +136,14 @@ describe("F3.85 PR 8 — proposals and the follow-up turn (ADR 0099 decisions 2,
   });
   it("does nothing without a finished change", async () => {
     await assertAFollowUpWithoutAFinishedChangeDoesNothing();
+  });
+  it("stores only the outcome when the change's organization left the key scope", async () => {
+    await assertAFollowUpOutsideTheScopeStoresTheOutcomeOnly();
+  });
+  it("rejects the proposals of a turn whose store fails", async () => {
+    await assertAFailedStoreDiscardsTheTurnsProposals();
+  });
+  it("replays action lines as marked data", async () => {
+    await assertActionLinesReachTheModelAsMarkedData();
   });
 });

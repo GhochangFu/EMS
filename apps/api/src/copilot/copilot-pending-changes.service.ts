@@ -143,10 +143,26 @@ export class CopilotPendingChangesService {
     );
   }
 
-  /** `F3.85` PR 8 — stores one proposal as `pending`, confirmable for {@link PENDING_CHANGE_TTL_MINUTES} minutes. */
-  async propose(userId: string, change: NewPendingChange): Promise<CopilotPendingChangeDto> {
-    const [row] = await withUser(this.tenantDb, userId, (tx) =>
-      tx
+  /**
+   * `F3.85` PR 8 — stores one proposal as `pending`, confirmable for
+   * {@link PENDING_CHANGE_TTL_MINUTES} minutes, **unless the conversation
+   * already has a change in flight**: then it stores nothing and answers
+   * `null`. The check and the insert run in one transaction under a
+   * transaction-scoped advisory lock on the conversation, so two turns that
+   * propose at once (a follow-up and a user turn, or two tabs) store one row,
+   * not two (review L5).
+   */
+  async propose(userId: string, change: NewPendingChange): Promise<CopilotPendingChangeDto | null> {
+    const [row] = await withUser(this.tenantDb, userId, async (tx) => {
+      await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtextextended(${change.conversationId}, 3085))`);
+      const { rows } = await tx.execute<{ open: boolean }>(sql`
+        SELECT EXISTS (
+          SELECT 1 FROM bms.copilot_pending_changes
+           WHERE user_id = ${userId} AND conversation_id = ${change.conversationId}
+             AND (status = 'applying' OR (status = 'pending' AND expires_at > now()))
+        ) AS open`);
+      if (rows[0]?.open === true) return [];
+      return tx
         .insert(copilotPendingChanges)
         .values({
           userId,
@@ -162,10 +178,9 @@ export class CopilotPendingChangesService {
           status: "pending",
           expiresAt: sql`now() + make_interval(mins => ${PENDING_CHANGE_TTL_MINUTES})`,
         })
-        .returning(),
-    );
-    if (!row) throw new Error("F3.85: a pending change was not stored");
-    return toPendingChangeDto(row);
+        .returning();
+    });
+    return row ? toPendingChangeDto(row) : null;
   }
 
   /**

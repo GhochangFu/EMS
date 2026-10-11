@@ -18,7 +18,7 @@ export const DASHBOARD_ENTRIES: readonly CatalogEntry[] = [
     bodyName: "createDashboardBodySchema",
     clientOnly: [],
     risk: "create",
-    target: { kind: "organization" },
+    target: { kind: "organization", manage: "dashboard" },
     refs: [
       { field: "locationId", kind: "location" },
       { field: "assetGroupId", kind: "assetGroup" },

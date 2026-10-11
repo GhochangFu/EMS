@@ -4,6 +4,16 @@ import { fieldList, quoted, text, uuidParam } from "./summary-text";
 import type { CatalogEntry } from "./types";
 
 /**
+ * The controller's `calcPointKeyParamSchema`, less the two values a browser
+ * resolves as path segments: `fetch` turns `.../calc-points/..` into
+ * `.../`, so the request never matches the stored path (the interceptor
+ * answers 409). Refused at propose time instead.
+ */
+const pointKeyParam = calcPointKeyParamSchema.refine((key) => key !== "." && key !== "..", {
+  message: "a point key cannot be . or ..",
+});
+
+/**
  * `F3.85` PR 8 — the KPI writes that exist today (ruling 18): calc parameters
  * and an asset's calc override. PR 11 adds `assetTemplate.update` and
  * `assetTemplate.publish` here and builds the wizards.
@@ -19,7 +29,7 @@ export const KPI_ENTRIES: readonly CatalogEntry[] = [
     bodyName: "createCalcParameterBodySchema",
     clientOnly: [],
     risk: "create",
-    target: { kind: "organization" },
+    target: { kind: "organization", manage: "calcParameter" },
     refs: [
       { field: "locationId", kind: "location" },
       { field: "assetId", kind: "asset" },
@@ -57,7 +67,7 @@ export const KPI_ENTRIES: readonly CatalogEntry[] = [
     title: "Override an asset's calculated point",
     method: "PUT",
     path: "/admin/assets/:assetId/calc-points/:pointKey",
-    params: { assetId: uuidParam, pointKey: calcPointKeyParamSchema },
+    params: { assetId: uuidParam, pointKey: pointKeyParam },
     body: assetPointCalcOverrideBodySchema,
     bodyName: "assetPointCalcOverrideBodySchema",
     clientOnly: [],

@@ -3,7 +3,7 @@ import type pg from "pg";
 import { expect } from "vitest";
 
 import type { BmsDb } from "@bms/db";
-import type { JwtPayload } from "@bms/shared";
+import type { CopilotPendingChangeDto, JwtPayload } from "@bms/shared";
 import { catalogEntry } from "@bms/shared/copilot";
 
 import { withTenant } from "../database/tenant-context";
@@ -216,6 +216,13 @@ function change(ctx: ProposeCtx, conversationId = ctx.conversationA, summary = "
   };
 }
 
+/** `propose`, which must store (the conversation has nothing open). */
+async function proposed(ctx: PendingCtx, change: NewPendingChange): Promise<CopilotPendingChangeDto> {
+  const dto = await service(ctx).propose(ctx.userA, change);
+  if (dto === null) throw new Error("F3.85: the proposal was refused as open");
+  return dto;
+}
+
 /** A conversation of user A bound to organization A. */
 export async function newConversation(ctx: PendingCtx): Promise<string> {
   const { rows } = await withUser(ctx.tenantDb, ctx.userA, (tx) =>
@@ -234,7 +241,7 @@ export async function newConversation(ctx: PendingCtx): Promise<string> {
  * user only, and it is then neither listed, open nor claimable.
  */
 export async function aProposalIsOpenForItsUserUntilRejected(ctx: ProposeCtx): Promise<void> {
-  const dto = await service(ctx).propose(ctx.userA, change(ctx));
+  const dto = await proposed(ctx, change(ctx));
   const minutes = (Date.parse(dto.expiresAt) - Date.parse(dto.proposedAt)) / 60_000;
   expect(minutes).toBeCloseTo(PENDING_CHANGE_TTL_MINUTES, 0);
   expect((await service(ctx).listOpen(ctx.userA, ctx.conversationA)).map((c) => c.id)).toContain(dto.id);
@@ -257,14 +264,14 @@ export async function aProposalIsOpenForItsUserUntilRejected(ctx: ProposeCtx): P
 /** An `applying` change keeps the conversation open but is no card; an expired one is neither. */
 export async function openMeansPendingAndUnexpiredOrApplying(ctx: ProposeCtx): Promise<void> {
   const conversation = await newConversation(ctx);
-  const expired = await service(ctx).propose(ctx.userA, change(ctx, conversation));
+  const expired = await proposed(ctx, change(ctx, conversation));
   await withUser(ctx.tenantDb, ctx.userA, (tx) =>
     tx.execute(sql`UPDATE bms.copilot_pending_changes SET expires_at = now() - interval '1 minute' WHERE id = ${expired.id}`),
   );
   expect(await service(ctx).hasOpen(ctx.userA, conversation)).toBe(false);
   expect(await service(ctx).listOpen(ctx.userA, conversation)).toEqual([]);
 
-  const applying = await service(ctx).propose(ctx.userA, change(ctx, conversation));
+  const applying = await proposed(ctx, change(ctx, conversation));
   expect(await service(ctx).claim(ctx.userA, applying.id)).not.toBeNull();
   expect(await service(ctx).hasOpen(ctx.userA, conversation)).toBe(true);
   expect(await service(ctx).listOpen(ctx.userA, conversation)).toEqual([]);
@@ -273,7 +280,7 @@ export async function openMeansPendingAndUnexpiredOrApplying(ctx: ProposeCtx): P
 /** `finished` reads only an applied or failed change, with what the follow-up needs, for its user. */
 export async function finishedReadsOnlyAFinishedChange(ctx: ProposeCtx): Promise<void> {
   const conversation = await newConversation(ctx);
-  const dto = await service(ctx).propose(ctx.userA, change(ctx, conversation, "finished probe"));
+  const dto = await proposed(ctx, change(ctx, conversation, "finished probe"));
   expect(await service(ctx).finished(ctx.userA, dto.id)).toBeNull();
   await service(ctx).claim(ctx.userA, dto.id);
   expect(await service(ctx).finished(ctx.userA, dto.id)).toBeNull();
@@ -290,11 +297,26 @@ export async function finishedReadsOnlyAFinishedChange(ctx: ProposeCtx): Promise
   });
 }
 
+/**
+ * The one-card rule holds under concurrency (review L5): five proposals at
+ * once in one conversation store one row; the others answer `null`. A second
+ * conversation is not blocked by the first.
+ */
+export async function concurrentProposalsStoreOne(ctx: ProposeCtx): Promise<void> {
+  const conversation = await newConversation(ctx);
+  const results = await Promise.all(Array.from({ length: 5 }, () => service(ctx).propose(ctx.userA, change(ctx, conversation))));
+  expect(results.filter((r) => r !== null)).toHaveLength(1);
+  const { rows } = await withUser(ctx.tenantDb, ctx.userA, (tx) =>
+    tx.execute<{ n: number }>(sql`SELECT count(*)::int AS n FROM bms.copilot_pending_changes WHERE conversation_id = ${conversation}`),
+  );
+  expect(rows[0]?.n).toBe(1);
+  expect(await service(ctx).propose(ctx.userA, change(ctx, await newConversation(ctx)))).not.toBeNull();
+}
+
 /** `discard` rejects the turn's pending rows and leaves an applying one alone. */
 export async function discardRejectsOnlyPendingRows(ctx: ProposeCtx): Promise<void> {
-  const conversation = await newConversation(ctx);
-  const pending = await service(ctx).propose(ctx.userA, change(ctx, conversation));
-  const applying = await service(ctx).propose(ctx.userA, change(ctx, conversation));
+  const pending = await proposed(ctx, change(ctx, await newConversation(ctx)));
+  const applying = await proposed(ctx, change(ctx, await newConversation(ctx)));
   await service(ctx).claim(ctx.userA, applying.id);
   await service(ctx).discard(ctx.userA, [pending.id, applying.id]);
   expect(await statusOf(ctx, pending.id)).toMatchObject({ status: "rejected" });
@@ -350,4 +372,24 @@ export async function theResolverChecksACreatesOrganizationAndRefs(ctx: ProposeC
   });
   expect(await resolver.resolve(create, {}, body(ctx.locationB), [ctx.orgA, ctx.orgB], jwt)).toBeNull();
   expect(await resolver.resolve(create, {}, { ...body(ctx.locationA), organizationId: ctx.orgB }, [ctx.orgA], jwt)).toBeNull();
+  // A create the caller may not make is refused like a missing row (review L2).
+  const denied = new CopilotTargetResolver(ctx.tenantDb, always(false));
+  expect(await denied.resolve(create, {}, body(ctx.locationA), [ctx.orgA], jwt)).toBeNull();
+}
+
+/** A manage check that throws (an `asset_group_admin` on a master-data check) is the same refusal (review L1). */
+export async function aThrowingManageCheckIsTheSameRefusal(ctx: ProposeCtx): Promise<void> {
+  const throwing = {
+    canManageDashboard: async () => {
+      throw new Error("403");
+    },
+    canManageTemplate: async () => {
+      throw new Error("403");
+    },
+  } as never;
+  const resolver = new CopilotTargetResolver(ctx.tenantDb, throwing);
+  const jwt = { sub: ctx.userA } as JwtPayload;
+  expect(await resolver.resolve(entry("dashboardTemplate.archive"), { id: ctx.templateA }, {}, [ctx.orgA], jwt)).toBeNull();
+  const create = { organizationId: ctx.orgA, code: "x", name: "X", section: "electrical" };
+  expect(await resolver.resolve(entry("dashboardTemplate.create"), {}, create, [ctx.orgA], jwt)).toBeNull();
 }

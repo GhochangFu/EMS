@@ -51,7 +51,7 @@ function fixtureEntry(over: Partial<CatalogEntry>): CatalogEntry {
     bodyName: "fixtureBodySchema",
     clientOnly: [],
     risk: "create",
-    target: { kind: "organization" },
+    target: { kind: "organization", manage: "template" },
     refs: [],
     formulas: [],
     steps: [{ id: "all", title: "All", fields: ["a", "b"] }],
@@ -69,7 +69,13 @@ const CLIENT_ONLY_ENTRY = fixtureEntry({
   steps: [{ id: "user", title: "User", fields: ["userId"] }],
 });
 
-type Options = { target?: ResolvedTarget | null; open?: boolean; catalog?: readonly CatalogEntry[] };
+type Options = {
+  target?: ResolvedTarget | null;
+  open?: boolean;
+  /** Another turn stored a change between `hasOpen` and the insert: the store answers `null`. */
+  raced?: boolean;
+  catalog?: readonly CatalogEntry[];
+};
 
 export function proposeHarness(options: Options = {}) {
   const stored: NewPendingChange[] = [];
@@ -86,7 +92,8 @@ export function proposeHarness(options: Options = {}) {
       },
       pending: {
         hasOpen: async () => options.open === true,
-        propose: async (_userId, change): Promise<CopilotPendingChangeDto> => {
+        propose: async (_userId, change): Promise<CopilotPendingChangeDto | null> => {
+          if (options.raced) return null;
           stored.push(change);
           return {
             id: "44444444-4444-4444-8444-444444444444",
@@ -161,6 +168,14 @@ export async function aSecondProposalWhileOneIsOpenIsRefused(): Promise<void> {
   const outcome = await h.call(proposeToolName(VECTOR_ENTRY), { body: VECTOR });
   expect(outcome.error).toBe(PROPOSE_OPEN_CHANGE_ERROR);
   expect(h.stored).toEqual([]);
+}
+
+/** The store's own check (one transaction, under a lock) refuses a change another turn opened first. */
+export async function aProposalThatLosesTheRaceIsRefused(): Promise<void> {
+  const h = proposeHarness({ catalog: [VECTOR_ENTRY], raced: true });
+  const outcome = await h.call(proposeToolName(VECTOR_ENTRY), { body: VECTOR });
+  expect(outcome.error).toBe(PROPOSE_OPEN_CHANGE_ERROR);
+  expect(h.lastResult()?.ok).toBe(false);
 }
 
 /** A formula that fails `validateFormula` under its dialect stores nothing; the adjacent valid one stores. */

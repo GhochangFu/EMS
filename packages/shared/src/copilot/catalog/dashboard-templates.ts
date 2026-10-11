@@ -30,7 +30,7 @@ export const DASHBOARD_TEMPLATE_ENTRIES: readonly CatalogEntry[] = [
     bodyName: "createDashboardTemplateBodySchema",
     clientOnly: [],
     risk: "create",
-    target: { kind: "organization" },
+    target: { kind: "organization", manage: "template" },
     refs: [],
     formulas: [],
     steps: [
@@ -142,7 +142,7 @@ export const DASHBOARD_TEMPLATE_ENTRIES: readonly CatalogEntry[] = [
     bodyName: "importStockTemplateBodySchema",
     clientOnly: [],
     risk: "create",
-    target: { kind: "organization" },
+    target: { kind: "organization", manage: "template" },
     refs: [],
     formulas: [],
     steps: [{ id: "organization", title: "Organization", fields: ["organizationId"] }],

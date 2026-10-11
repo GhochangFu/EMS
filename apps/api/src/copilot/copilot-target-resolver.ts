@@ -56,8 +56,9 @@ type Scope = { locationId: string | null; assetGroupId: string | null; assetId: 
  * **Only inside the turn's allowed set.** A row named by id is looked for in
  * each allowed organization in turn, under `withTenant` (every target table
  * has FORCE RLS and a tenant policy) and with an explicit organization
- * filter. A row that is in none of them, a row the caller may not manage,
- * and a row that does not exist all answer `null` — one refusal, so the tool
+ * filter. A row that is in none of them, a row (or, for a create, an
+ * organization and scope) the caller may not manage, and a row that does not
+ * exist all answer `null` — one refusal, so the tool
  * never tells a model that another tenant's id exists, and never reads a
  * name from outside the scope the turn's key may send.
  *
@@ -86,11 +87,12 @@ export class CopilotTargetResolver implements CopilotTargets {
       if (typeof organizationId !== "string" || !allowedOrganizationIds.includes(organizationId)) return null;
       const name = await this.organizationName(organizationId);
       found = name === null ? null : { organizationId, name };
+      if (found !== null && !(await this.safely(() => this.mayCreate(target.manage, organizationId, body, user)))) found = null;
     } else {
       const id = params[target.param];
       if (id === undefined) return null;
       found = await this.findRow(target.kind, id, allowedOrganizationIds);
-      if (found !== null && !(await this.mayManage(target.kind, id, found, user))) found = null;
+      if (found !== null && !(await this.safely(() => this.mayManage(target.kind, id, found as Found, user)))) found = null;
     }
     if (found === null) return null;
     for (const ref of entry.refs) {
@@ -191,6 +193,46 @@ export class CopilotTargetResolver implements CopilotTargets {
           .from(assetPoints)
           .where(and(eq(assetPoints.assetId, id), eq(assetPoints.organizationId, organizationId)));
         return { organizationId, name: row.name, pointKeys: points.map((point) => point.pointKey) };
+      }
+    }
+  }
+
+  /**
+   * A manage check that throws (`assertMasterDataRole` refuses an
+   * `asset_group_admin` with a 403) is a `false`: otherwise the tool's answer
+   * would differ between "not found" and "found but forbidden" (review L1).
+   */
+  private async safely(check: () => Promise<boolean>): Promise<boolean> {
+    try {
+      return await check();
+    } catch {
+      return false;
+    }
+  }
+
+  /** A create's authority: the route's own check, on the body's organization and scope. */
+  private async mayCreate(
+    manage: Extract<CatalogEntry["target"], { kind: "organization" }>["manage"],
+    organizationId: string,
+    body: Readonly<Record<string, unknown>>,
+    user: JwtPayload,
+  ): Promise<boolean> {
+    const id = (key: string): string | null => (typeof body[key] === "string" ? (body[key] as string) : null);
+    switch (manage) {
+      case "dashboard":
+        return this.access.canManageDashboard(user, organizationId, {
+          locationId: id("locationId"),
+          assetGroupId: id("assetGroupId"),
+          assetId: id("assetId"),
+        });
+      case "template":
+        return this.access.canManageTemplate(user, organizationId);
+      case "calcParameter": {
+        const assetId = id("assetId");
+        const locationId = id("locationId");
+        if (assetId !== null) return this.access.canManageAsset(user, assetId);
+        if (locationId !== null) return this.access.canManageLocation(user, locationId);
+        return this.access.canManageOrganization(user, organizationId);
       }
     }
   }

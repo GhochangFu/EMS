@@ -16,6 +16,8 @@ import {
   pathParamsAndTheirSchemasAgree,
   refsAndFormulasNameBodyFields,
   theWidgetSummaryCountsRemovedWidgets,
+  everyBodyObjectIsStrict,
+  aDotSegmentIsNotAPointKey,
 } from "./catalog.spec";
 
 /** Vitest entry point — assertions live in the sibling `.spec` (ADR 0014). */
@@ -35,4 +37,6 @@ describe("F3.85 PR 8 — the copilot action catalog (ADR 0099 decisions 2, 3, 6)
   it("checks a step partially and strictly", () => aStepSchemaIsPartialAndStrict());
   it("stores a path the browser sends unchanged", () => aStoredPathSurvivesTheBrowserUnchanged());
   it("counts the widgets a widget save removes", () => theWidgetSummaryCountsRemovedWidgets());
+  it("holds strict body objects only", () => everyBodyObjectIsStrict());
+  it("refuses a dot segment as a point key", () => aDotSegmentIsNotAPointKey());
 });

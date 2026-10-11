@@ -190,6 +190,31 @@ export function aStoredPathSurvivesTheBrowserUnchanged(): void {
   expect(catalogParamsOf(entry, `/api/v1/admin/assets/${ROW}/calc-points/%E0%A4%A`)).toBeNull();
 }
 
+/**
+ * Every body object is `.strict()`: the stored body is the one the model sent,
+ * so a key the schema does not name must fail the parse rather than be
+ * stripped and still stored (the `clientOnly` rule depends on it).
+ */
+export function everyBodyObjectIsStrict(): void {
+  for (const entry of COPILOT_CATALOG) {
+    let current: ZodTypeAny = entry.body;
+    while (current instanceof z.ZodEffects) current = current._def.schema as ZodTypeAny;
+    const members = current instanceof z.ZodUnion ? (current.options as ZodTypeAny[]) : [current];
+    for (const member of members) {
+      let object: ZodTypeAny = member;
+      while (object instanceof z.ZodEffects) object = object._def.schema as ZodTypeAny;
+      expect((object as z.AnyZodObject)._def.unknownKeys, entry.id).toBe("strict");
+    }
+  }
+}
+
+/** A dot segment is refused as a point key: the browser would resolve it away. */
+export function aDotSegmentIsNotAPointKey(): void {
+  const params = catalogEntry("calcOverride.set")?.params ?? {};
+  for (const bad of [".", ".."]) expect((params.pointKey as ZodTypeAny).safeParse(bad).success, bad).toBe(false);
+  expect((params.pointKey as ZodTypeAny).safeParse("kw.total").success).toBe(true);
+}
+
 /** Decision 4.9: a widget save says how many current widgets it removes. */
 export function theWidgetSummaryCountsRemovedWidgets(): void {
   const entry = catalogEntry("dashboard.widgets.replace");
