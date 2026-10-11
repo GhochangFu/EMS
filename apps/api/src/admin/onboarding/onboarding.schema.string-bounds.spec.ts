@@ -365,7 +365,9 @@ export function runDraftStringBoundTests(): void {
 
   // F3.22 — `templates.description` likewise: `bms.asset_templates.description` is
   // `text`, and the number is the template route's own bound on the same column.
-  const templateDescription = asZodString(createAssetTemplateBodySchema.shape.description);
+  // `.innerType()`: since F3.85 PR 11a the route's body is the shared object plus an outer
+  // cycle refine, so the shape sits one wrapper down.
+  const templateDescription = asZodString(createAssetTemplateBodySchema.innerType().shape.description);
   assert(
     templateDescription !== null &&
       templateDescription.maxLength === bounds["templates.description"],

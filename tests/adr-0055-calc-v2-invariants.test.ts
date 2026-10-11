@@ -408,10 +408,15 @@ describe("ADR 0055 part (c) — no endpoint restates the calc dialect as a v1 li
    * cover, and "no offenders" is also what an empty scan says. Named
    * explicitly, so a refactor that moves or renames either one is a failure
    * here rather than a silent hole.
+   *
+   * `F3.85` PR 11a moved the template point body — the field this row pinned —
+   * from `apps/api/src/admin/asset-templates/asset-templates.schema.ts` to
+   * `packages/shared/src/contracts/asset-template-writes.ts`, so the row follows
+   * it. The api file keeps the cycle check only, pinned in part (d) below.
    */
   it.each([
     "packages/shared/src/contracts/asset-templates.ts",
-    "apps/api/src/admin/asset-templates/asset-templates.schema.ts",
+    "packages/shared/src/contracts/asset-template-writes.ts",
     "packages/shared/src/contracts/calc-override-writes.ts",
   ])("%s is in the scanned set and derives the dialect from CALC_DIALECTS", (rel) => {
     expect(scannedFiles.map((file) => relative(file)), `${rel} is not being scanned`).toContain(rel);

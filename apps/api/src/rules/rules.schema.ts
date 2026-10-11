@@ -1,4 +1,5 @@
 import {
+  automationRuleOperatorSchema,
   automationRuleSeveritySchema,
   DEFAULT_RULE_CATEGORY_CODE,
   ruleCategoryCodeSchema,
@@ -32,7 +33,14 @@ import { z } from "zod";
  */
 export const categorySchema = ruleCategoryCodeSchema;
 const ruleTypeSchema = z.enum(["threshold", "time_window"]);
-export const operatorSchema = z.enum(["gt", "gte", "lt", "lte", "eq"]);
+/**
+ * A threshold rule's comparison. Re-exported from `@bms/shared`'s
+ * `automationRuleOperatorSchema` rather than declared here since `F3.85`
+ * PR 11a: the template `content.alarms` contract moved to `packages/shared`
+ * and binds the same vocabulary, and a second `z.enum` would be a copy that
+ * drifts. The five values and their order are unchanged.
+ */
+export const operatorSchema = automationRuleOperatorSchema;
 /**
  * A rule's severity (ADR 0032) — shape only, and re-exported rather than
  * declared here for the same reason `categorySchema` is.

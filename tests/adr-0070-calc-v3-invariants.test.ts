@@ -350,6 +350,8 @@ describe("ADR 0070 part (b)/(b′) — no dialect gate outside the grammar files
     expect(files.some((f) => relativeTo(f) === "apps/api/src/admin/asset-templates/asset-templates.schema.ts")).toBe(true);
     // The override schema moved to contracts (F3.85 PR 1) and carries the capability logic this gate guards.
     expect(files.map(relativeTo)).toContain("packages/shared/src/contracts/calc-override-writes.ts");
+    // The template point body moved to contracts too (F3.85 PR 11a), with its capability gates.
+    expect(files.map(relativeTo)).toContain("packages/shared/src/contracts/asset-template-writes.ts");
   });
 
   it("the regex matches both operator orders and nothing else, for both v2 and v3", () => {
@@ -401,7 +403,8 @@ describe("ADR 0070 part (b)/(b′) — no dialect gate outside the grammar files
 
 // --- part (c) — the dialect vocabulary has exactly three members, and KPI_DIALECTS derives from it ---
 
-const ASSET_TEMPLATES_CONTENT_SCHEMA = "apps/api/src/admin/asset-templates/asset-templates-content.schema.ts";
+// F3.85 PR 11a moved the template content schema (and KPI_DIALECTS with it) to packages/shared.
+const ASSET_TEMPLATES_CONTENT_SCHEMA = "packages/shared/src/contracts/asset-template-content-writes.ts";
 
 describe("ADR 0070 part (c) — CALC_DIALECTS names all three dialects, and KPI_DIALECTS derives from it", () => {
   it("CALC_DIALECTS has exactly three members", () => {
@@ -410,7 +413,7 @@ describe("ADR 0070 part (c) — CALC_DIALECTS names all three dialects, and KPI_
     expect(CALC_DIALECTS).toContain(CALC_DIALECT_V3);
   });
 
-  it("asset-templates-content.schema.ts spreads CALC_DIALECTS into KPI_DIALECTS", () => {
+  it("asset-template-content-writes.ts spreads CALC_DIALECTS into KPI_DIALECTS", () => {
     const source = readFileSync(join(repoRoot, ASSET_TEMPLATES_CONTENT_SCHEMA), "utf8");
     expect(
       source.includes("...CALC_DIALECTS"),

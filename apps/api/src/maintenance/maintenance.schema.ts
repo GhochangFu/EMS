@@ -1,41 +1,28 @@
+import {
+  maintenanceGenerationModeSchema as sharedMaintenanceGenerationModeSchema,
+  maintenanceScheduleCategorySchema,
+  workOrderPrioritySchema,
+} from "@bms/shared";
 import type { WorkOrderPriority } from "@bms/shared";
 import { z } from "zod";
 
-export const maintenanceCategorySchema = z.enum([
-  "preventive",
-  "predictive",
-  "condition_based",
-  "compliance",
-  "amc",
-  "calibration",
-  "runtime_based",
-  "seasonal",
-  "inspection_round",
-  "corrective_follow_up",
-  "deferred_backlog",
-  "shutdown_outage",
-  "energy_optimization",
-  "safety_critical",
-]);
+/**
+ * The three maintenance vocabularies, re-exported from `@bms/shared` rather than
+ * declared here since `F3.85` PR 11a. ADR 0019 §4 binds a template's
+ * `content.maintenance` to them, and that contract moved to
+ * `packages/shared/src/contracts/asset-template-content-writes.ts`; the shared
+ * definitions already existed with the same values in the same order
+ * (`contracts/operations.ts`), so a second `z.enum` here would be a copy that
+ * drifts. ADR 0030 gave `@bms/shared` its `zod` runtime, which retired the
+ * reason this file used to declare them (ADR 0019 §8).
+ */
+export const maintenanceCategorySchema = maintenanceScheduleCategorySchema;
 
-/** Extracted and exported for the same reason as the category enum — ADR 0019
- * §4 binds a template's `content.maintenance` to this vocabulary.
- *
- * `@bms/shared`'s `WorkOrderPriority` is the *type-level* source for this
- * vocabulary, but it cannot be the runtime source: `@bms/shared` has no runtime
- * dependencies by design, so a Zod enum there would add one — the manifest
- * change AGENTS.md §9.4 gates. That is ADR 0019 §8, which supersedes ADR 0015
- * resolved-decision 2 on where the schema lives. The two are bound by the
- * assertion at the foot of this file instead. */
-export const maintenancePrioritySchema = z.enum(["low", "medium", "high", "critical"]);
+/** The *type-level* `WorkOrderPriority` and this runtime schema are still bound
+ * by the assertion at the foot of this file. */
+export const maintenancePrioritySchema = workOrderPrioritySchema;
 
-export const maintenanceGenerationModeSchema = z.enum([
-  "manual",
-  "calendar",
-  "runtime",
-  "condition",
-  "predictive",
-]);
+export const maintenanceGenerationModeSchema = sharedMaintenanceGenerationModeSchema;
 
 export const listMaintenanceQuerySchema = z.object({
   assetId: z.string().uuid().optional(),
