@@ -51,9 +51,6 @@ const NOT_YET: Readonly<Record<string, string>> = {
   "dashboardTemplate.applyToSites": "10b",
 
   // PR 11b
-  "calcParameter.create": "11b",
-  "calcParameter.update": "11b",
-  "calcOverride.set": "11b",
 };
 
 const WEB_SRC = "apps/web/src";
