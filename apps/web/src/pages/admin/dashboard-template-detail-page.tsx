@@ -13,13 +13,20 @@
  * the rule** — `tests/f3.36-template-lifecycle-single-source.test.ts` fails
  * the build on a restated status array.
  *
- * **The instantiate dialog renders the resolution report unconditionally on
+ * **The instantiate wizard renders the resolution report unconditionally on
  * success** (ADR 0049 Amendment 2 decision 1) — every widget's
  * `matchedMembers`, `boundPoints` and `outcome`, named by `widgetKey`. Decision
  * 6 names this dialog as where an administrator maps an unresolved widget by
  * hand: *"a page that can list exactly which ones need it"*. A report the
  * administrator never sees is the silent success the amendment exists to
- * prevent.
+ * prevent. The report is drawn here and handed to `InstantiateWizard`.
+ *
+ * `F3.85` PR 10b / ADR 0099 decision 6 (plan §11.2) — Publish, Archive and the
+ * new draft each open their catalog entry's `WizardShell`: a bodyless entry, so
+ * Review alone, whose Submit runs the same mutation the button ran (Archive's
+ * card is the red `deactivate` one). Instantiate and Apply to all sites are
+ * steppers in `components/dashboard-templates`. Delete draft stays a plain
+ * DELETE (it is not a catalog route). No wizard sends `X-Copilot-Change`.
  */
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
@@ -33,7 +40,6 @@ import {
 import type {
   DashboardTemplateDto,
   InstantiateSectionTemplateResponse,
-  SiteLayoutResultDto,
   TemplateWidgetResolutionDto,
 } from "@bms/shared";
 
@@ -42,8 +48,6 @@ import {
   createDraftFromAdminDashboardTemplate,
   deleteAdminDashboardTemplateDraft,
   fetchAdminDashboardTemplate,
-  instantiateAdminDashboardTemplate,
-  instantiateSiteTemplate,
   publishAdminDashboardTemplate,
   updateAdminDashboardTemplate,
 } from "../../api/admin/dashboard-templates";
@@ -54,26 +58,15 @@ import type {
 import { type CatalogEntry, catalogEntry } from "@bms/shared/copilot";
 import { WizardShell } from "../../components/wizard/wizard-shell";
 import type { WizardStep } from "../../lib/wizard-steps";
-import { fetchAdminAssetGroups } from "../../api/admin/asset-groups";
 import { DashboardCanvas } from "../../components/dashboards/dashboard-canvas";
 import { MasterDataLayout } from "../../components/admin/master-data-layout";
-import {
-  ApplyToSitesDialog,
-  madeSummary,
-  useSiteLocations,
-} from "../../components/dashboard-templates/apply-to-sites-dialog";
+import { ApplyToSitesDialog } from "../../components/dashboard-templates/apply-to-sites-dialog";
+import { InstantiateWizard } from "../../components/dashboard-templates/instantiate-wizard";
 import {
   WidgetEditor,
   renderTemplateTile,
 } from "../../components/dashboard-templates/widget-editor";
 import { apiErrorMessage } from "../../lib/api-error-message";
-import {
-  DASHBOARD_SLUG_HINT,
-  DASHBOARD_SLUG_MAX,
-  DASHBOARD_SLUG_MIN,
-  DASHBOARD_SLUG_PATTERN,
-  isDashboardSlug,
-} from "../../lib/dashboard-slug";
 import { PageHeader } from "../../components/page-header";
 import { SectionCard } from "../../components/section-card";
 import { StatusPill } from "../../components/status-pill";
@@ -98,6 +91,12 @@ function wizardEntry(id: string): CatalogEntry {
   if (found === undefined) throw new Error(`No copilot catalog entry "${id}".`);
   return found;
 }
+
+/** A bodyless wizard's values (publish, archive, draft): it has no field to fill. */
+const NO_VALUES: Record<string, unknown> = {};
+
+/** The lifecycle action whose Review-only wizard is open. */
+type LifecycleAction = "publish" | "archive" | "draft";
 
 /** `values` with `field` set, or removed when the input is cleared — a wizard sends no key it left unset. */
 function withField(values: Record<string, unknown>, field: string, raw: string): Record<string, unknown> {
@@ -151,7 +150,8 @@ export function DashboardTemplateDetailPage({ user }: DashboardTemplateDetailPag
   const [actionError, setActionError] = useState<string | null>(null);
   const [instantiateOpen, setInstantiateOpen] = useState(false);
   const [applyOpen, setApplyOpen] = useState(false);
-  const [archiveOpen, setArchiveOpen] = useState(false);
+  // `F3.85` PR 10b — the open lifecycle wizard; null when none is.
+  const [lifecycle, setLifecycle] = useState<LifecycleAction | null>(null);
   // `F3.85` PR 10a — the open `dashboardTemplate.update` wizard's values; null when closed.
   const [saveValues, setSaveValues] = useState<Record<string, unknown> | null>(null);
 
@@ -177,20 +177,25 @@ export function DashboardTemplateDetailPage({ user }: DashboardTemplateDetailPag
   }
 
   const onActionError = (cause: Error) => setActionError(apiErrorMessage(cause));
+  // A lifecycle wizard stays open while its call pends, and closes on success (10a's Save pattern).
+  const afterLifecycle = (next: DashboardTemplateDto) => {
+    setLifecycle(null);
+    afterChange(next);
+  };
 
   const publishM = useMutation({
     mutationFn: () => publishAdminDashboardTemplate(templateId ?? ""),
-    onSuccess: afterChange,
+    onSuccess: afterLifecycle,
     onError: onActionError,
   });
   const archiveM = useMutation({
     mutationFn: () => archiveAdminDashboardTemplate(templateId ?? ""),
-    onSuccess: afterChange,
+    onSuccess: afterLifecycle,
     onError: onActionError,
   });
   const draftM = useMutation({
     mutationFn: () => createDraftFromAdminDashboardTemplate(templateId ?? ""),
-    onSuccess: afterChange,
+    onSuccess: afterLifecycle,
     onError: onActionError,
   });
   const deleteM = useMutation({
@@ -336,6 +341,28 @@ export function DashboardTemplateDetailPage({ user }: DashboardTemplateDetailPag
 
   const busy = publishM.isPending || archiveM.isPending || draftM.isPending || deleteM.isPending;
 
+  function openLifecycle(action: LifecycleAction): void {
+    setActionError(null);
+    setLifecycle(action);
+  }
+
+  // The props the three Review-only lifecycle wizards share; each names its own entry.
+  const lifecycleProps = (mutation: { mutate: () => void; isPending: boolean }) => ({
+    values: NO_VALUES,
+    onChange: () => undefined,
+    renderStep: () => null,
+    onSubmit: () => mutation.mutate(),
+    onCancel: () => setLifecycle(null),
+    submitting: mutation.isPending,
+    submitError: actionError,
+  });
+  const summaryContext = { body: {}, params: { id: template.id }, targetName: template.name, organizationName: "" };
+  const LIFECYCLE_HEADINGS: Record<LifecycleAction, string> = {
+    publish: "Publish",
+    archive: "Archive",
+    draft: template.status === "archived" ? "Revive as a new draft:" : "New draft of",
+  };
+
   function addWidget(): void {
     setRows((current) => [
       ...current,
@@ -413,7 +440,7 @@ export function DashboardTemplateDetailPage({ user }: DashboardTemplateDetailPag
                 type="button"
                 disabled={busy}
                 aria-busy={publishM.isPending}
-                onClick={() => publishM.mutate()}
+                onClick={() => openLifecycle("publish")}
                 className="rounded bg-accent px-3 py-1.5 text-xs font-semibold text-on-accent disabled:opacity-60"
               >
                 {publishM.isPending ? "Publishing…" : "Publish"}
@@ -424,7 +451,7 @@ export function DashboardTemplateDetailPage({ user }: DashboardTemplateDetailPag
                 type="button"
                 disabled={busy}
                 aria-busy={archiveM.isPending}
-                onClick={() => setArchiveOpen(true)}
+                onClick={() => openLifecycle("archive")}
                 className="rounded border border-critical-line px-3 py-1.5 text-xs font-semibold text-critical-ink disabled:opacity-60"
               >
                 {archiveM.isPending ? "Archiving…" : "Archive"}
@@ -435,7 +462,7 @@ export function DashboardTemplateDetailPage({ user }: DashboardTemplateDetailPag
                 type="button"
                 disabled={busy}
                 aria-busy={draftM.isPending}
-                onClick={() => draftM.mutate()}
+                onClick={() => openLifecycle("draft")}
                 className="surface-button px-3 py-1.5 disabled:opacity-60"
               >
                 {draftM.isPending
@@ -480,7 +507,8 @@ export function DashboardTemplateDetailPage({ user }: DashboardTemplateDetailPag
         }
       />
 
-      {actionError ? (
+      {/* An open wizard shows the refusal on its own card (`submitError`); the banner behind it would say it twice. */}
+      {actionError && !(saveValues !== null && editable) && !(lifecycle !== null && mayAuthor) ? (
         <p className="rounded border border-critical-line bg-critical-wash p-3 text-sm text-critical-ink-strong">
           {actionError}
         </p>
@@ -512,6 +540,44 @@ export function DashboardTemplateDetailPage({ user }: DashboardTemplateDetailPag
                 organizationName: "",
               })}
             />
+          </div>
+        </div>
+      ) : null}
+
+      {lifecycle !== null && mayAuthor ? (
+        <div className="fixed inset-0 z-40 flex items-center justify-center bg-scrim/30 p-4">
+          <div className="w-full max-w-2xl space-y-3 surface-dialog p-4">
+            <h2 className="font-condensed text-base font-bold text-ink">
+              {LIFECYCLE_HEADINGS[lifecycle]} {template.code} v{template.version}
+            </h2>
+            {lifecycle === "publish" ? (
+              <WizardShell
+                entry={wizardEntry("dashboardTemplate.publish")}
+                {...lifecycleProps(publishM)}
+                summary={wizardEntry("dashboardTemplate.publish").summary(summaryContext)}
+              />
+            ) : null}
+            {lifecycle === "archive" ? (
+              <>
+                {/* `F3.73` critique — Archive asks first: it takes the template out of use. */}
+                <p className="max-w-prose text-xs text-ink-muted">
+                  An archived version can no longer be instantiated. Dashboards already made from it are
+                  not changed. You can revive it later as a new draft.
+                </p>
+                <WizardShell
+                  entry={wizardEntry("dashboardTemplate.archive")}
+                  {...lifecycleProps(archiveM)}
+                  summary={wizardEntry("dashboardTemplate.archive").summary(summaryContext)}
+                />
+              </>
+            ) : null}
+            {lifecycle === "draft" ? (
+              <WizardShell
+                entry={wizardEntry("dashboardTemplate.draft")}
+                {...lifecycleProps(draftM)}
+                summary={wizardEntry("dashboardTemplate.draft").summary(summaryContext)}
+              />
+            ) : null}
           </div>
         </div>
       ) : null}
@@ -572,348 +638,16 @@ export function DashboardTemplateDetailPage({ user }: DashboardTemplateDetailPag
       </SectionCard>
 
       {instantiateOpen ? (
-        isSiteTemplate ? (
-          <SiteInstantiateDialog template={template} onClose={() => setInstantiateOpen(false)} />
-        ) : (
-          <InstantiateDialog template={template} onClose={() => setInstantiateOpen(false)} />
-        )
+        <InstantiateWizard
+          template={template}
+          onClose={() => setInstantiateOpen(false)}
+          renderReport={(result) => <ResolutionReport result={result} />}
+        />
       ) : null}
       {applyOpen ? (
         <ApplyToSitesDialog template={template} onClose={() => setApplyOpen(false)} />
       ) : null}
-      {archiveOpen ? (
-        <ArchiveConfirmDialog
-          template={template}
-          onConfirm={() => {
-            setArchiveOpen(false);
-            archiveM.mutate();
-          }}
-          onClose={() => setArchiveOpen(false)}
-        />
-      ) : null}
     </MasterDataLayout>
-  );
-}
-
-/**
- * `F3.73` critique — Archive asks first. It sits beside Instantiate and takes the template out of
- * use, so one stray click must not do it. Same shape as the Apply-to-all-sites confirm.
- *
- * It takes no pending flag: the confirm closes the dialog in the same click that starts the
- * post, and the page's Archive button (disabled while any lifecycle call pends, so the dialog
- * cannot reopen) is the one that announces "Archiving…" with `aria-busy`.
- */
-function ArchiveConfirmDialog({
-  template,
-  onConfirm,
-  onClose,
-}: {
-  template: DashboardTemplateDto;
-  onConfirm: () => void;
-  onClose: () => void;
-}) {
-  return (
-    <div className="fixed inset-0 z-40 flex items-center justify-center bg-scrim/30 p-4">
-      <div className="w-full max-w-2xl space-y-3 surface-dialog p-4">
-        <h2 className="font-condensed text-base font-bold text-ink">
-          Archive {template.code} v{template.version}
-        </h2>
-        <p className="max-w-prose text-xs text-ink-muted">
-          An archived version can no longer be instantiated. Dashboards already made from it are not
-          changed. You can revive it later as a new draft.
-        </p>
-        <div className="flex justify-end gap-2">
-          <button type="button" onClick={onClose} className="surface-button px-3 py-1.5">
-            Cancel
-          </button>
-          <button
-            type="button"
-            aria-label="Confirm archive"
-            onClick={onConfirm}
-            className="rounded border border-critical-line px-3 py-1.5 text-xs font-semibold text-critical-ink"
-          >
-            Archive
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-/**
- * Instantiates the published template against one asset group, and shows the
- * resolution report unconditionally on success — ADR 0049 Amendment 2
- * decision 1.
- */
-function InstantiateDialog({
-  template,
-  onClose,
-}: {
-  template: DashboardTemplateDto;
-  onClose: () => void;
-}) {
-  const [assetGroupId, setAssetGroupId] = useState("");
-  const [slug, setSlug] = useState("");
-  const [name, setName] = useState(`${template.name} dashboard`);
-  const [error, setError] = useState<string | null>(null);
-  const [result, setResult] = useState<InstantiateSectionTemplateResponse | null>(null);
-
-  const groupsQ = useQuery({
-    queryKey: ["admin", "asset-groups", "all"],
-    queryFn: () => fetchAdminAssetGroups(),
-  });
-  const groups = groupsQ.data?.items ?? [];
-
-  const instantiateM = useMutation({
-    mutationFn: () =>
-      instantiateAdminDashboardTemplate(template.id, {
-        assetGroupId: assetGroupId === ORGANIZATION_WIDE ? null : assetGroupId,
-        slug: slug.trim(),
-        name: name.trim(),
-      }),
-    onSuccess: (response) => {
-      setError(null);
-      setResult(response);
-    },
-    onError: (cause: Error) => setError(apiErrorMessage(cause)),
-  });
-
-  /**
-   * **`E4.2`, ADR 0072 decision 1 — the organization-wide option, offered only
-   * when the template binds no role.**
-   *
-   * A binding resolves against the target asset group's members (ADR 0049
-   * decision 4), so a template that binds one cannot instantiate without a group
-   * and the API refuses it with a 400. Offering the option anyway would put a
-   * choice in front of an administrator that is always an error — and the 400
-   * arrives after the slug and the name have been typed.
-   *
-   * Read from `template.content`, which the detail response already carries, so
-   * this costs no second fetch.
-   */
-  const bindsARole = template.content.widgets.some((widget) => widget.bindings.length > 0);
-  /** The sentinel the select uses for "no group". `""` is already taken by the
-   * "select one…" placeholder, which must stay unsubmittable. */
-  const ORGANIZATION_WIDE = "__organization_wide__";
-
-  // `E4.2` PR 2 sweep — the slug rule, not just non-emptiness. PR 2 tightened
-  // `instantiateSectionTemplateBodySchema.slug` to `.min(2).max(64)` on
-  // `/^[a-z0-9-]+$/`, and this gate still only asked for one character: an
-  // administrator who typed "Sustainability Overview" filled the whole form and
-  // got a 400 on submit. The rule is stated once in `lib/dashboard-slug.ts`.
-  const canSubmit = assetGroupId !== "" && isDashboardSlug(slug.trim()) && name.trim() !== "";
-
-  return (
-    <div className="fixed inset-0 z-40 flex items-center justify-center bg-scrim/30 p-4">
-      <div className="w-full max-w-2xl space-y-3 surface-dialog p-4">
-        <h2 className="font-condensed text-base font-bold text-ink">
-          Instantiate {template.code} v{template.version}
-        </h2>
-
-        {result ? (
-          <ResolutionReport result={result} />
-        ) : (
-          <>
-            <label className="block text-xs font-semibold text-ink">
-              Asset group
-              <select
-                required
-                value={assetGroupId}
-                onChange={(event) => setAssetGroupId(event.target.value)}
-                className="mt-1 w-full surface-field px-2 py-1 text-xs font-normal"
-              >
-                <option value="">Select an asset group…</option>
-                {/* `E4.2` / ADR 0072 decision 1 — see `bindsARole` above. */}
-                {bindsARole ? null : (
-                  <option value={ORGANIZATION_WIDE}>Organization-wide (no group)</option>
-                )}
-                {/**
-                 * **The location qualifier is not decoration.** This rendered
-                 * `group.name` alone, and a multi-location organization names
-                 * its groups by function — PHEWB has six groups all called
-                 * "Electrical", one per site. The picker offered six identical
-                 * options and an administrator could not tell which site they
-                 * were about to instantiate into. Found by the `F3.36` browser
-                 * verification, which hit the ambiguity itself and had to
-                 * resolve the target by uuid.
-                 *
-                 * `memberCount` is shown too, because the roles a template
-                 * resolves against live on the memberships: a group with no
-                 * members produces an all-`unresolved` report, and seeing the
-                 * count beforehand is what stops that being a surprise.
-                 */}
-                {groups.map((group) => (
-                  <option key={group.id} value={group.id}>
-                    {group.locationName ? `${group.name} — ${group.locationName}` : group.name}
-                    {` (${group.memberCount} member${group.memberCount === 1 ? "" : "s"})`}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <div className="grid gap-3 sm:grid-cols-2">
-              {/**
-               * **The hint is a sibling of the `<label>`, never inside it.** A
-               * wrapping label contributes ALL of its text to the control's
-               * accessible name, so a hint inside it renames the field from
-               * "Slug" to "Slug Lowercase letters, digits and hyphens…" — which
-               * broke three existing `getByRole("textbox", { name: "Slug" })`
-               * cases the moment it was nested. `aria-describedby` is what ties
-               * it to the field instead.
-               */}
-              <div>
-                <label className="block text-xs font-semibold text-ink">
-                  Slug
-                  <input
-                    required
-                    value={slug}
-                    onChange={(event) => setSlug(event.target.value)}
-                    placeholder="electrical-plant-1"
-                    pattern={DASHBOARD_SLUG_PATTERN}
-                    minLength={DASHBOARD_SLUG_MIN}
-                    maxLength={DASHBOARD_SLUG_MAX}
-                    title={DASHBOARD_SLUG_HINT}
-                    aria-describedby="instantiate-slug-hint"
-                    className="mt-1 w-full surface-field px-2 py-1 text-xs font-normal"
-                  />
-                </label>
-                <span id="instantiate-slug-hint" className="mt-1 block text-[11px] text-ink-muted">
-                  {DASHBOARD_SLUG_HINT}
-                </span>
-              </div>
-              <label className="block text-xs font-semibold text-ink">
-                Name
-                <input
-                  required
-                  value={name}
-                  onChange={(event) => setName(event.target.value)}
-                  className="mt-1 w-full surface-field px-2 py-1 text-xs font-normal"
-                />
-              </label>
-            </div>
-
-            {error ? (
-              <p className="rounded border border-critical-line bg-critical-wash p-2 text-xs text-critical-ink-strong">
-                {error}
-              </p>
-            ) : null}
-          </>
-        )}
-
-        <div className="flex justify-end gap-2">
-          <button
-            type="button"
-            onClick={onClose}
-            className="surface-button px-3 py-1.5"
-          >
-            {result ? "Close" : "Cancel"}
-          </button>
-          {!result ? (
-            <button
-              type="button"
-              // Distinct from the page header's own "Instantiate" button that
-              // opens this dialog — `getByRole` cannot otherwise tell the two
-              // apart.
-              aria-label={instantiateM.isPending ? "Instantiating…" : "Confirm instantiate"}
-              disabled={!canSubmit || instantiateM.isPending}
-              aria-busy={instantiateM.isPending}
-              onClick={() => {
-                setError(null);
-                instantiateM.mutate();
-              }}
-              className="rounded bg-accent px-3 py-1.5 text-xs font-semibold text-on-accent disabled:opacity-60"
-            >
-              {instantiateM.isPending ? "Instantiating…" : "Instantiate"}
-            </button>
-          ) : null}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-/**
- * `F3.73` ruling Q3a — the site arm of the instantiate dialog: a published SITE template copies
- * onto one location. There is no slug and no name (the copy is named for its site), and no
- * resolution report: the answer is the one site's copy.
- */
-function SiteInstantiateDialog({
-  template,
-  onClose,
-}: {
-  template: DashboardTemplateDto;
-  onClose: () => void;
-}) {
-  const [locationId, setLocationId] = useState("");
-  const [error, setError] = useState<string | null>(null);
-  const [result, setResult] = useState<SiteLayoutResultDto | null>(null);
-  const locationsQ = useSiteLocations(template);
-
-  const instantiateM = useMutation({
-    mutationFn: () => instantiateSiteTemplate(template.id, locationId),
-    onSuccess: (response) => {
-      setError(null);
-      setResult(response);
-    },
-    onError: (cause: Error) => setError(apiErrorMessage(cause)),
-  });
-
-  return (
-    <div className="fixed inset-0 z-40 flex items-center justify-center bg-scrim/30 p-4">
-      <div className="w-full max-w-2xl space-y-3 surface-dialog p-4">
-        <h2 className="font-condensed text-base font-bold text-ink">
-          Instantiate {template.code} v{template.version}
-        </h2>
-        {result ? (
-          <p className="rounded border border-accent/20 bg-ok-wash p-2 text-xs text-ok-ink">
-            Created the site layout <strong>{result.dashboardSlug}</strong>. {madeSummary(result)}.
-          </p>
-        ) : (
-          <>
-            <label className="block text-xs font-semibold text-ink">
-              Location
-              <select
-                required
-                value={locationId}
-                onChange={(event) => setLocationId(event.target.value)}
-                className="mt-1 w-full surface-field px-2 py-1 text-xs font-normal"
-              >
-                <option value="">Select a location…</option>
-                {(locationsQ.data?.items ?? []).map((location) => (
-                  <option key={location.id} value={location.id}>
-                    {location.name}
-                  </option>
-                ))}
-              </select>
-            </label>
-            {error ? (
-              <p className="rounded border border-critical-line bg-critical-wash p-2 text-xs text-critical-ink-strong">
-                {error}
-              </p>
-            ) : null}
-          </>
-        )}
-        <div className="flex justify-end gap-2">
-          <button type="button" onClick={onClose} className="surface-button px-3 py-1.5">
-            {result ? "Close" : "Cancel"}
-          </button>
-          {!result ? (
-            <button
-              type="button"
-              aria-label={instantiateM.isPending ? "Instantiating…" : "Confirm instantiate"}
-              disabled={locationId === "" || instantiateM.isPending}
-              aria-busy={instantiateM.isPending}
-              onClick={() => {
-                setError(null);
-                instantiateM.mutate();
-              }}
-              className="rounded bg-accent px-3 py-1.5 text-xs font-semibold text-on-accent disabled:opacity-60"
-            >
-              {instantiateM.isPending ? "Instantiating…" : "Instantiate"}
-            </button>
-          ) : null}
-        </div>
-      </div>
-    </div>
   );
 }
 

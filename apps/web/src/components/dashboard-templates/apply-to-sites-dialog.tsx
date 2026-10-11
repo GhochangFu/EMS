@@ -4,11 +4,16 @@
  *
  * Moved out of `dashboard-template-detail-page.tsx` to keep that page under the AGENTS.md §4
  * file cap, with no change in behaviour. `madeSummary` and `useSiteLocations` live here because
- * this dialog is their main caller; the page's single-site instantiate dialog imports both, so
- * one site's copy reads the same in both places and the two dialogs share one locations query.
+ * this dialog is their main caller; the instantiate wizard (`instantiate-wizard.tsx`) imports both,
+ * so one site's copy reads the same in both places and the two share one locations query.
+ *
+ * `F3.85` PR 10b / ADR 0099 decision 6 — the confirm is the `dashboardTemplate.applyToSites`
+ * stepper on the shared `WizardShell`: a bodyless entry, so Review alone. Its Submit makes the
+ * same body-less POST the client always made, with no `X-Copilot-Change` header (plan §10.5).
  */
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
+import { catalogEntry } from "@bms/shared/copilot";
 import type {
   DashboardTemplateDto,
   SiteLayoutResultDto,
@@ -18,12 +23,18 @@ import type {
 import { applySiteTemplate } from "../../api/admin/dashboard-templates";
 import { fetchAdminLocations } from "../../api/admin/locations";
 import { apiErrorMessage } from "../../lib/api-error-message";
+import { WizardShell } from "../wizard/wizard-shell";
 
-/** The sites an organization holds, for the site arm's picker and its result's names. */
-export function useSiteLocations(template: DashboardTemplateDto) {
+/** A bodyless wizard's values: it has no field to fill. */
+const NO_VALUES: Record<string, unknown> = {};
+
+/** The sites an organization holds, for the site arm's picker and its result's names; `enabled`
+ * false (a group template's instantiate) reads nothing. */
+export function useSiteLocations(template: DashboardTemplateDto, enabled = true) {
   return useQuery({
     queryKey: ["admin", "locations", "true", template.organizationId],
     queryFn: () => fetchAdminLocations("true", template.organizationId),
+    enabled,
   });
 }
 
@@ -48,7 +59,7 @@ export function madeSummary(made: SiteLayoutResultDto): string {
 }
 
 /**
- * `F3.73` ruling Q4 — "Apply to all sites": confirm, then one POST. The answer lists every site
+ * `F3.73` ruling Q4 — "Apply to all sites": the Review, then one POST. The answer lists every site
  * the action made a copy for and every site it skipped, each skip with its reason — a skipped
  * site is a normal outcome of the action, not an error, and a report that hid it would read as
  * every site done.
@@ -119,33 +130,35 @@ export function ApplyToSitesDialog({
               time. A site that already has a site view, has no assets, or has a tab that matches
               two or more asset groups is skipped and listed.
             </p>
-            {error ? (
-              <p className="rounded border border-critical-line bg-critical-wash p-2 text-xs text-critical-ink-strong">
-                {error}
-              </p>
-            ) : null}
-          </>
-        )}
-        <div className="flex justify-end gap-2">
-          <button type="button" onClick={onClose} className="surface-button px-3 py-1.5">
-            {result ? "Close" : "Cancel"}
-          </button>
-          {!result ? (
-            <button
-              type="button"
-              aria-label={applyM.isPending ? "Applying…" : "Confirm apply to all sites"}
-              disabled={applyM.isPending}
-              aria-busy={applyM.isPending}
-              onClick={() => {
+            <WizardShell
+              entry={catalogEntry("dashboardTemplate.applyToSites")!}
+              values={NO_VALUES}
+              onChange={() => undefined}
+              renderStep={() => null}
+              onSubmit={() => {
                 setError(null);
                 applyM.mutate();
               }}
-              className="rounded bg-accent px-3 py-1.5 text-xs font-semibold text-on-accent disabled:opacity-60"
-            >
-              {applyM.isPending ? "Applying…" : "Apply"}
+              onCancel={onClose}
+              submitting={applyM.isPending}
+              submitError={error}
+              // The template carries no organization name; the sentence names it by its place.
+              summary={catalogEntry("dashboardTemplate.applyToSites")!.summary({
+                body: {},
+                params: { id: template.id },
+                targetName: template.name,
+                organizationName: "its organization",
+              })}
+            />
+          </>
+        )}
+        {result ? (
+          <div className="flex justify-end">
+            <button type="button" onClick={onClose} className="surface-button px-3 py-1.5">
+              Close
             </button>
-          ) : null}
-        </div>
+          </div>
+        ) : null}
       </div>
     </div>
   );
