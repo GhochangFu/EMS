@@ -2,7 +2,15 @@ import { expect } from "vitest";
 import { z, type ZodTypeAny } from "zod";
 
 import * as contracts from "../../contracts";
-import { catalogEntry, catalogPath, COPILOT_CATALOG, EXCLUDED_ROUTES, pathParamsOf, proposeToolName } from "./index";
+import {
+  catalogEntry,
+  catalogParamsOf,
+  catalogPath,
+  COPILOT_CATALOG,
+  EXCLUDED_ROUTES,
+  pathParamsOf,
+  proposeToolName,
+} from "./index";
 import { bodyFieldsOf, objectShapeOf, stepValuesSchema } from "./object-shape";
 import { emptyBody } from "./summary-text";
 import type { CatalogEntry } from "./types";
@@ -176,6 +184,10 @@ export function aStoredPathSurvivesTheBrowserUnchanged(): void {
   expect(path).toBe(`/api/v1/admin/assets/${ROW}/calc-points/kw%20total%25%2Fx'(y)`);
   expect(new URL(path, "http://api.local").pathname).toBe(path);
   expect(() => catalogPath(entry, { assetId: ROW })).toThrow(/pointKey/);
+  // The inverse: the card reads the parameters back from the stored path.
+  expect(catalogParamsOf(entry, path)).toEqual({ assetId: ROW, pointKey: "kw total%/x'(y)" });
+  expect(catalogParamsOf(entry, `/api/v1/admin/assets/${ROW}/calc-points`)).toBeNull();
+  expect(catalogParamsOf(entry, `/api/v1/admin/assets/${ROW}/calc-points/%E0%A4%A`)).toBeNull();
 }
 
 /** Decision 4.9: a widget save says how many current widgets it removes. */

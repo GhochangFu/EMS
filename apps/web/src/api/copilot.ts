@@ -1,12 +1,14 @@
 import {
   copilotConversationDetailDtoSchema,
   copilotConversationDtoSchema,
+  copilotRejectResponseDtoSchema,
   copilotStatusDtoSchema,
   copilotTurnResponseDtoSchema,
 } from "@bms/shared/contracts";
 import type {
   CopilotConversationDetailDto,
   CopilotConversationDto,
+  CopilotRejectResponseDto,
   CopilotStatusDto,
   CopilotTurnResponseDto,
 } from "@bms/shared";
@@ -64,6 +66,18 @@ export async function sendCopilotTurn(conversationId: string, message: string): 
       body: JSON.stringify({ message }),
     },
   );
+}
+
+/**
+ * `POST /api/v1/copilot/changes/:id/reject` (`F3.85` PR 8, decision 4) — the
+ * Confirm card's Reject. The change is never applied after this; `messages`
+ * holds the `Rejected: …` line stored in its conversation. A change that is
+ * no longer pending answers 409.
+ */
+export async function rejectCopilotChange(changeId: string): Promise<CopilotRejectResponseDto> {
+  return adminFetch(`/copilot/changes/${encodeURIComponent(changeId)}/reject`, copilotRejectResponseDtoSchema, {
+    method: "POST",
+  });
 }
 
 /** A refused turn's daily limit (ADR 0099 Amendment 1): whose limit, and when it resets. */

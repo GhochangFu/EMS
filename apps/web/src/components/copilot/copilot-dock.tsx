@@ -2,7 +2,12 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { FormEvent, KeyboardEvent } from "react";
 import { useEffect, useRef, useState } from "react";
 import { matchPath, useLocation, useNavigate } from "react-router-dom";
-import type { CopilotConversationDetailDto, CopilotTurnResponseDto } from "@bms/shared";
+import type {
+  CopilotConversationDetailDto,
+  CopilotMessageDto,
+  CopilotPendingChangeDto,
+  CopilotTurnResponseDto,
+} from "@bms/shared";
 import { COPILOT_TURN_MESSAGE_MAX } from "@bms/shared/contracts";
 
 import { fetchAdminOrganizations } from "../../api/admin/organizations";
@@ -23,7 +28,9 @@ import {
   useCopilotSession,
   useCopilotStore,
 } from "../../stores/copilot-store";
+import { useWizardStore } from "../../stores/wizard-store";
 import { AssistantText } from "./assistant-text";
+import { ConfirmCard } from "./confirm-card";
 
 /**
  * `F3.85` PR 7 (ADR 0099 decisions 1, 5, 10; plan §9.2) — the administrator
@@ -52,6 +59,14 @@ import { AssistantText } from "./assistant-text";
  *
  * **`open_page` navigates through the router only**, never `window.location`.
  *
+ * **Changes are cards** (`F3.85` PR 8, decision 4). A turn's
+ * `pendingChanges` and the conversation's own open changes render as
+ * Confirm cards below the thread; Confirm sends the real request, Reject the
+ * reject route. After a Confirm the dock polls the conversation every
+ * {@link FOLLOW_UP_POLL_MS} ms, for at most {@link FOLLOW_UP_WAIT_MS} ms, until
+ * the follow-up turn's messages arrive (decision 4.7) — with any next card. A
+ * turn's `fillStep` goes to `useWizardStore` for an open wizard.
+ *
  * **The session survives a route change.** Each page renders its own
  * `AppShell`, so a navigation — `open_page`'s own included — unmounts the
  * dock. The conversation and the pick live in `useCopilotStore`, and the
@@ -60,6 +75,10 @@ import { AssistantText } from "./assistant-text";
  * loads them only when that cache entry was evicted while the dock was
  * unmounted. A page reload empties both and starts a new conversation.
  */
+
+/** How often, and for how long, the dock reads the conversation after a Confirm (the follow-up turn). */
+export const FOLLOW_UP_POLL_MS = 2_000;
+export const FOLLOW_UP_WAIT_MS = 30_000;
 
 /** The `localStorage` key that holds whether the panel is open. */
 export const COPILOT_OPEN_KEY = "bms-copilot-open";
@@ -171,13 +190,18 @@ function DockPanel({ user, homeConfigured }: CopilotDockProps & { homeConfigured
   const setConversation = useCopilotStore((s) => s.setConversation);
   // The turn writes its messages into this cache entry, so it is fresh for the
   // tab; the server load is the fallback for an entry evicted while unmounted.
+  // After a Confirm: when the wait began, and how many messages there were then.
+  const [followUp, setFollowUp] = useState<{ since: number; baseline: number } | null>(null);
   const thread = useQuery({
     queryKey: copilotConversationKey(conversationId),
     queryFn: () => fetchCopilotConversation(conversationId as string),
     enabled: conversationId !== null,
     staleTime: Infinity,
+    refetchInterval: followUp === null ? false : FOLLOW_UP_POLL_MS,
   });
   const messages = conversationId === null ? [] : (thread.data?.messages ?? []);
+  const pendingChanges = conversationId === null ? [] : (thread.data?.pendingChanges ?? []);
+  const receiveFill = useWizardStore((s) => s.receiveFill);
   const [input, setInput] = useState("");
   const [banner, setBanner] = useState<string | null>(null);
   const [turnNotConfigured, setTurnNotConfigured] = useState(false);
@@ -212,7 +236,44 @@ function DockPanel({ user, homeConfigured }: CopilotDockProps & { homeConfigured
     if (thread) {
       thread.scrollTop = thread.scrollHeight;
     }
-  }, [messages, banner]);
+  }, [messages, pendingChanges.length, banner]);
+
+  // The follow-up arrived (the thread grew), or the wait ran out: stop polling.
+  useEffect(() => {
+    if (followUp === null) return;
+    if (messages.length > followUp.baseline) {
+      setFollowUp(null);
+      return;
+    }
+    const left = FOLLOW_UP_WAIT_MS - (Date.now() - followUp.since);
+    const timer = setTimeout(() => setFollowUp(null), Math.max(0, left));
+    return () => clearTimeout(timer);
+  }, [followUp, messages.length]);
+
+  /** Writes into the thread's cache entry: the dock unmounts on navigation, the cache does not. */
+  function updateThread(change: (prev: CopilotConversationDetailDto) => CopilotConversationDetailDto): void {
+    if (conversationId === null) return;
+    queryClient.setQueryData<CopilotConversationDetailDto>(copilotConversationKey(conversationId), (prev) =>
+      prev ? change(prev) : prev,
+    );
+  }
+
+  function withoutChange(prev: CopilotConversationDetailDto, id: string): CopilotConversationDetailDto {
+    return { ...prev, pendingChanges: prev.pendingChanges.filter((c) => c.id !== id) };
+  }
+
+  function applied(change: CopilotPendingChangeDto): void {
+    updateThread((prev) => withoutChange(prev, change.id));
+    setFollowUp({ since: Date.now(), baseline: messages.length });
+  }
+
+  function rejected(change: CopilotPendingChangeDto, stored: CopilotMessageDto[]): void {
+    updateThread((prev) => ({ ...withoutChange(prev, change.id), messages: [...prev.messages, ...stored] }));
+  }
+
+  function gone(): void {
+    if (conversationId !== null) void queryClient.invalidateQueries({ queryKey: copilotConversationKey(conversationId) });
+  }
 
   const turn = useMutation({
     mutationFn: async (message: string): Promise<CopilotTurnResponseDto> => {
@@ -224,6 +285,7 @@ function DockPanel({ user, homeConfigured }: CopilotDockProps & { homeConfigured
         queryClient.setQueryData<CopilotConversationDetailDto>(copilotConversationKey(id), {
           ...created,
           messages: [],
+          pendingChanges: [],
         });
         setConversation(user.id, id);
       }
@@ -244,8 +306,20 @@ function DockPanel({ user, homeConfigured }: CopilotDockProps & { homeConfigured
       setBanner(null);
       // Into the cache, not component state: `navigate` below unmounts this dock.
       queryClient.setQueryData<CopilotConversationDetailDto>(copilotConversationKey(data.conversationId), (prev) =>
-        prev ? { ...prev, messages: [...prev.messages, ...data.messages] } : prev,
+        prev
+          ? {
+              ...prev,
+              messages: [...prev.messages, ...data.messages],
+              pendingChanges: [
+                ...prev.pendingChanges.filter((c) => !data.pendingChanges.some((n) => n.id === c.id)),
+                ...data.pendingChanges,
+              ],
+            }
+          : prev,
       );
+      if (data.fillStep !== null) {
+        receiveFill(data.fillStep);
+      }
       if (data.navigateTo !== null && APP_ROUTE.test(data.navigateTo)) {
         navigate(data.navigateTo);
       }
@@ -357,8 +431,8 @@ function DockPanel({ user, homeConfigured }: CopilotDockProps & { homeConfigured
           >
             {messages.length === 0 && !turn.isPending && (
               <p className="text-xs text-ink-muted">
-                Ask about alarms, assets, KPIs, locations, dashboards or health. Nothing can be changed from here
-                in this release.
+                Ask about alarms, assets, KPIs, locations, dashboards or health, or ask for a change to a dashboard,
+                a dashboard template or a KPI setting. A change is applied only when you confirm its card.
               </p>
             )}
             {messages.map((m) => (
@@ -383,7 +457,13 @@ function DockPanel({ user, homeConfigured }: CopilotDockProps & { homeConfigured
                 </div>
               </div>
             ))}
+            {pendingChanges.map((change) => (
+              <ConfirmCard key={change.id} change={change} onApplied={applied} onRejected={rejected} onGone={gone} />
+            ))}
             {turn.isPending && <div className="text-xs text-ink-muted">Copilot is thinking…</div>}
+            {followUp !== null && !turn.isPending && (
+              <div className="text-xs text-ink-muted">Applied. Waiting for the copilot…</div>
+            )}
           </div>
 
           {banner && (

@@ -3,7 +3,13 @@ import { act, fireEvent, render, screen, waitFor, within } from "@testing-librar
 import { MemoryRouter, Route, Routes, useLocation } from "react-router-dom";
 import { expect, vi } from "vitest";
 
-import type { CopilotMessageDto, CopilotStatusDto, CopilotTurnResponseDto, UserRole } from "@bms/shared";
+import type {
+  CopilotMessageDto,
+  CopilotPendingChangeDto,
+  CopilotStatusDto,
+  CopilotTurnResponseDto,
+  UserRole,
+} from "@bms/shared";
 
 import * as organizationsApi from "../../api/admin/organizations";
 import * as copilotApi from "../../api/copilot";
@@ -25,17 +31,17 @@ import { COPILOT_OPEN_KEY, CopilotDock, formatCopilotReset } from "./copilot-doc
  * API on `:4000` (`F4.160`).
  */
 
-const CONVERSATION_ID = "11111111-1111-4111-8111-111111111111";
+export const CONVERSATION_ID = "11111111-1111-4111-8111-111111111111";
 const ORG_ID = "22222222-2222-4222-8222-222222222222";
 
 export const COPILOT_OFF: CopilotStatusDto = { available: false, configured: false };
-const READY: CopilotStatusDto = { available: true, configured: true };
+export const READY: CopilotStatusDto = { available: true, configured: true };
 
 function asUser(role: UserRole): AuthUser {
   return { id: "u1", email: `${role}@bms.local`, displayName: role, role } as unknown as AuthUser;
 }
 
-function message(role: CopilotMessageDto["role"], content: string, n: number): CopilotMessageDto {
+export function message(role: CopilotMessageDto["role"], content: string, n: number): CopilotMessageDto {
   return {
     id: `00000000-0000-4000-8000-00000000000${n}`,
     conversationId: CONVERSATION_ID,
@@ -46,7 +52,12 @@ function message(role: CopilotMessageDto["role"], content: string, n: number): C
   };
 }
 
-function answered(question: string, reply: string, navigateTo: string | null = null): CopilotTurnResponseDto {
+export function answered(
+  question: string,
+  reply: string,
+  navigateTo: string | null = null,
+  pendingChanges: CopilotPendingChangeDto[] = [],
+): CopilotTurnResponseDto {
   return {
     conversationId: CONVERSATION_ID,
     outcome: "answered",
@@ -54,6 +65,8 @@ function answered(question: string, reply: string, navigateTo: string | null = n
     reply,
     messages: [message("user", question, 1), message("assistant", reply, 2)],
     navigateTo,
+    pendingChanges,
+    fillStep: null,
   };
 }
 
@@ -70,7 +83,7 @@ type Stubs = {
   organizations: ReturnType<typeof vi.spyOn>;
 };
 
-function stub(status: CopilotStatusDto = READY): Stubs {
+export function stub(status: CopilotStatusDto = READY): Stubs {
   return {
     status: vi.spyOn(copilotApi, "fetchCopilotStatus").mockResolvedValue(status),
     create: vi.spyOn(copilotApi, "createCopilotConversation").mockResolvedValue({
@@ -97,7 +110,7 @@ function stub(status: CopilotStatusDto = READY): Stubs {
   };
 }
 
-function renderDock(role: UserRole, path = "/"): void {
+export function renderDock(role: UserRole, path = "/"): void {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   render(
     <QueryClientProvider client={client}>
@@ -120,19 +133,19 @@ function renderDock(role: UserRole, path = "/"): void {
 
 const OPEN_BUTTON = { name: "Open the copilot" } as const;
 
-async function openPanel(): Promise<void> {
+export async function openPanel(): Promise<void> {
   fireEvent.click(await screen.findByRole("button", OPEN_BUTTON));
   await screen.findByRole("complementary", { name: "Copilot" });
 }
 
-async function send(text: string): Promise<void> {
+export async function send(text: string): Promise<void> {
   const box = await screen.findByRole("textbox", { name: "Message the copilot" });
   fireEvent.change(box, { target: { value: text } });
   fireEvent.keyDown(box, { key: "Enter" });
 }
 
 /** Lets every settled query render; an absence check runs only after this. */
-async function settle(): Promise<void> {
+export async function settle(): Promise<void> {
   await act(async () => {
     await new Promise((resolve) => setTimeout(resolve, 0));
   });
@@ -373,6 +386,7 @@ export async function keepsTheThreadAndThePickAcrossAnOpenPageNavigation(): Prom
     createdAt: "2026-10-11T10:00:00.000Z",
     lastTurnAt: "2026-10-11T10:00:00.000Z",
     messages: [],
+    pendingChanges: [],
   });
   stubs.turn.mockResolvedValueOnce(answered("Show me the alarms", "Opening the Alarm Centre.", "/alarms"));
   useAuthStore.setState({ scope: { kind: "global", locations: [], assetGroups: [], assetIds: [] } });

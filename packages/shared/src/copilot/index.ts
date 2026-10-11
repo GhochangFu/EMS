@@ -9,6 +9,7 @@
 export { canonicalJson } from "./canonical-json";
 export {
   catalogEntry,
+  catalogParamsOf,
   catalogPath,
   COPILOT_API_PREFIX,
   COPILOT_CATALOG,

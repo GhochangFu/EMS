@@ -73,6 +73,29 @@ export function pathParamsOf(path: string): string[] {
 }
 
 /**
+ * The decoded path parameters of a stored path, read back against the entry's
+ * template (the inverse of {@link catalogPath}); `null` when the path is not
+ * one of the entry's.
+ */
+export function catalogParamsOf(entry: Pick<CatalogEntry, "path">, path: string): Record<string, string> | null {
+  const names = pathParamsOf(entry.path);
+  const pattern = new RegExp(
+    `^${COPILOT_API_PREFIX}${entry.path.replace(/[.*+?^${}()|[\]\\]/g, "\\$&").replace(/:([A-Za-z]+)/g, "([^/]+)")}$`,
+  );
+  const match = pattern.exec(path);
+  if (!match) return null;
+  const params: Record<string, string> = {};
+  try {
+    names.forEach((name, index) => {
+      params[name] = decodeURIComponent(match[index + 1] as string);
+    });
+  } catch {
+    return null;
+  }
+  return params;
+}
+
+/**
  * The stored path of a change: the global prefix and the template with each
  * parameter `encodeURIComponent`-encoded — exactly the raw `req.path` the
  * interceptor compares, and what the browser's `fetch` sends unchanged.
