@@ -194,10 +194,6 @@ export function DashboardTemplatesAdminPage({ user }: DashboardTemplatesAdminPag
     setImportValues(next);
   }
 
-  // A wizard's `<select>` takes its value on `input` as well as `change`: the
-  // shell marks itself changed on the first `input` and re-renders before the
-  // `change` event, and that re-render put the controlled select back to its
-  // old value, so the first pick in a fresh wizard was lost.
   function organizationSelect(values: Record<string, unknown>, onChange: (next: Record<string, unknown>) => void) {
     const pick = (event: { currentTarget: HTMLSelectElement }) =>
       onChange(withField(values, "organizationId", event.currentTarget.value));
@@ -206,7 +202,6 @@ export function DashboardTemplatesAdminPage({ user }: DashboardTemplatesAdminPag
         Organization
         <select
           value={textOf(values, "organizationId")}
-          onInput={pick}
           onChange={pick}
           className="mt-1 w-full surface-field px-2 py-1 text-xs font-normal"
         >
@@ -266,7 +261,6 @@ export function DashboardTemplatesAdminPage({ user }: DashboardTemplatesAdminPag
             Section
             <select
               value={textOf(form, "section")}
-              onInput={(event) => updateForm(withField(form, "section", event.currentTarget.value))}
               onChange={(event) => updateForm(withField(form, "section", event.currentTarget.value))}
               className="mt-1 w-full surface-field px-2 py-1 text-xs font-normal"
             >
