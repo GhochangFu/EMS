@@ -7628,3 +7628,28 @@ One PR, squash-merged 2026-10-10; no migration, no new dependency, no behaviour 
 Owner ruling 2026-10-10: split anyway, although `F2.24` had already cut the file, to leave room for the `F3.86` master-data body schemas. CI was red once on the timing test at `dashboard-builder-edit-page-tabs.spec.tsx:451` and green on re-run with no change. Verified: the whole suite locally and CI; database, API and browser N/A (no runtime change, so no container rebuild).
 
 Raised: none. **Cascade:** `F3.85` is now eligible. A `chore(agents):` sweep is owed in its own PR: AGENTS.md still says `F3.85` waits on `F4.150`, and its §3 tree gives `admin.ts` as 765 lines with no `asset-templates.ts` entry.
+
+### `F3.85` — the site-wide administrator copilot, release 1 ✅ 2026-10-12
+
+Fourteen PRs, squash-merged 2026-10-10 to 2026-10-12, after ADR 0099 (#797) and its sweep (#798). Three migrations (`0104`, `0105`, `0106`), no new dependency. Plan: `docs/plans/f3.85-admin-copilot-release-1.md`.
+
+- **#802** (`381bf200`) — the release-1 write body schemas move to `packages/shared/src/contracts/`; the plan.
+- **#803** (`d4f8e650`) — the generic LLM core moves out of onboarding to `apps/api/src/llm/`.
+- **#804** (`f4349f51`) — availability: migration `0104`, the organization switch, role switches and named-user exceptions; `GET /copilot/status`.
+- **#805** (`eb85237e`) — ADR 0099 Amendment 1: two usage counter tables, `organizations.timezone`, the Q2 meaning.
+- **#806** (`eb904299`) — pending changes and history: migration `0105`, `withUser`, the request context, the global interceptor that claims `X-Copilot-Change` atomically, the `via` audit mark, the web executor.
+- **#807** (`aeb5b82b`) — history routes and the 30-day purge worker job.
+- **#808** (`d7f0f29d`) — daily usage limits per user and per organization, at the organization's midnight: migration `0106`.
+- **#809** (`b06b237b`) — read-only Q&A on the user's own read scope, key-scope binding, the dock with its organization picker.
+- **#810** (`4cda8dba`) — the action catalog (`@bms/shared/copilot`), one propose tool per route, Confirm and Reject, the follow-up turn, the wizard shell.
+- **#811** (`7e23f081`) — dashboard wizards, the stepper coverage gate, two shell fixes (a select-first pick was lost; click-only work did not arm the leave prompt).
+- **#812** (`56c204b1`) — dashboard template create, import and save wizards.
+- **#813** (`88cf64cc`) — the asset-template write schemas move to shared; `assetTemplate.update` and `.publish` join the catalog; the KPI proposal is merged over the stored content at propose time (Q10).
+- **#814** (`8828d9c2`) — calc parameter and calc override wizards.
+- **#815** (`32fab953`) — the dashboard template lifecycle wizards; the stepper gate's `NOT_YET` list is empty.
+
+Each PR ran the whole suite with coverage on a cold-started scratch database before its push, and a step-6 check against its own API and web (local auth): the PR 8 live run proved a copilot-proposed create and widget save end to end (Confirm 201, the audit row carrying `via: copilot` and the change id; a rejected card writes nothing; two Confirms in one tick apply once), and each wizard PR proved its wizard-alone writes carry no `via`. Platform model `z-ai/glm-5.3` on OpenRouter (owner, 2026-10-11, after a 10-run trial).
+
+Live 2026-10-12: `bms-migrate-1`, `bms-api-1`, `bms-worker-1` and `bms-web-1` rebuilt with `--no-cache` from `main` `32fab953` and recreated; the migrate job exited 0 (migrate and seed; it printed the two old F4.94 warnings about this local database's `0074` row, not caused by this row); the eight `bms.copilot_*` tables and `organizations.timezone` are present; `/health` 200; `GET /api/v1/copilot/status` 401 without a token; the API image carries the propose tools with the Q10 merge, and its environment the OpenRouter provider with `z-ai/glm-5.3`; the web bundle is an OIDC build and carries the wizard titles of PRs 9–11b. The browser layer ran per PR against each branch's own API (local auth); the OIDC stack's login is the owner's. The AWS demo deploys each green `main` (the `8828d9c2` deploy passed; its `.env` sets the same provider and model).
+
+Raised: `F4.244` (the dock resumes a follow-up after a reload), `F4.245` (a fill names its record; a layout fill reaches the canvas), `F4.246` (formulas in full on the card, the asset template now, a draft check at propose), `F4.247` (`If-Match` for list PUTs), `F4.248` (describe four refinements, widen the ADR 0029 scan), `F4.249` (prompt caching), `F4.250` (the template page follows a new draft to its id — an older defect PR 10b's browser run found), `F4.251` (retire the unmounted override panel and the removed confirm labels), `F4.252` (instantiate wizard messages). A `chore(agents):` sweep is owed in its own PR: AGENTS.md still says the copilot is not built.
