@@ -42,9 +42,6 @@ const { COPILOT_CATALOG } = require_("@bms/shared/copilot") as {
  */
 const NOT_YET: Readonly<Record<string, string>> = {
   // PR 10a
-  "dashboardTemplate.create": "10a",
-  "dashboardTemplate.update": "10a",
-  "dashboardTemplate.importStock": "10a",
 
   // PR 10b
   "dashboardTemplate.publish": "10b",

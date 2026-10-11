@@ -28,6 +28,17 @@ import {
   archiveIsNotAPrimaryFill,
   confirmedArchiveAnnouncesArchiving,
   readOnlyNoticeGivesAPlainReason,
+  saveCanvasOpensTheUpdateWizard,
+  saveWizardAloneSendsNoCopilotHeader,
+  updateReviewShowsCurrentBesideNew,
+  saveCanvasSendsTheEditedWidgets,
+  saveSendsATrimmedName,
+  saveSendsNoNameForABlankOne,
+  aValueChangeClearsTheSaveRefusal,
+  aValueChangeShowsTheNewReviewAfterARefusal,
+  saveContentStepDescribesAFilledContent,
+  saveBasicsShowsAFilledSection,
+  reviewShowsTheTrimmedNameAfterBlur,
 } from "./dashboard-template-detail-page.spec";
 
 /**
@@ -139,5 +150,57 @@ describe("F3.36 dashboard template detail page", () => {
 
   it("the read-only notice gives a plain reason, no ADR number (F3.73 critique)", async () => {
     await readOnlyNoticeGivesAPlainReason();
+  });
+});
+
+describe("F3.85 PR 10a the canvas save is the dashboardTemplate.update wizard", () => {
+  afterEach(() => {
+    cleanup();
+    vi.restoreAllMocks();
+    vi.unstubAllGlobals();
+  });
+
+  it("Save canvas opens Basics, Content, Review and sends nothing yet", async () => {
+    await saveCanvasOpensTheUpdateWizard();
+  });
+
+  it("the Review card shows the stored value under Now beside the new one", async () => {
+    await updateReviewShowsCurrentBesideNew();
+  });
+
+  it("the update wizard alone sends the PATCH with no X-Copilot-Change header", async () => {
+    await saveWizardAloneSendsNoCopilotHeader();
+  });
+
+  it("the PATCH sends the canvas as edited, a widget added before Save included", async () => {
+    await saveCanvasSendsTheEditedWidgets();
+  });
+
+  it("a padded name is sent trimmed", async () => {
+    await saveSendsATrimmedName();
+  });
+
+  it("leaving the Name field trims it, so Review shows the name Submit sends", async () => {
+    await reviewShowsTheTrimmedNameAfterBlur();
+  });
+
+  it("a name of spaces is not sent", async () => {
+    await saveSendsNoNameForABlankOne();
+  });
+
+  it("a value change after a refused Save clears the old error from Review", async () => {
+    await aValueChangeClearsTheSaveRefusal();
+  });
+
+  it("the Review reached after a refusal shows the new value", async () => {
+    await aValueChangeShowsTheNewReviewAfterARefusal();
+  });
+
+  it("the Content step counts a content the copilot filled, not the canvas", async () => {
+    await saveContentStepDescribesAFilledContent();
+  });
+
+  it("the Basics step shows a section the copilot filled", async () => {
+    await saveBasicsShowsAFilledSection();
   });
 });

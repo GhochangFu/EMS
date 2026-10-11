@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { expect, vi } from "vitest";
@@ -11,6 +11,7 @@ import * as systemStatusApi from "../../api/system-status";
 import * as vocabApi from "../../api/vocabularies";
 import { OPERATIONAL } from "../../components/system-status-indicator.spec";
 import type { AuthUser } from "../../stores/auth-store";
+import { resetWizardStore, useWizardStore } from "../../stores/wizard-store";
 import { DashboardTemplateDetailPage } from "./dashboard-template-detail-page";
 import * as copilotApi from "../../api/copilot";
 
@@ -734,11 +735,261 @@ export async function saveCanvasSendsTheStoredTabsBack(): Promise<void> {
   renderPage();
 
   await userEvent.click(await screen.findByRole("button", { name: "Save canvas" }));
+  // `F3.85` PR 10a — Save opens the update wizard; Review's Submit sends the request.
+  await userEvent.click(screen.getByRole("button", { name: "Next" }));
+  await userEvent.click(screen.getByRole("button", { name: "Next" }));
+  await userEvent.click(screen.getByRole("button", { name: "Submit" }));
 
   await waitFor(() => {
     expect(calls).toHaveLength(1);
   });
   expect((calls[0] as { content: { tabs?: unknown } }).content.tabs).toEqual(
     siteDraftTemplate().content.tabs,
+  );
+}
+
+/* --------------------------------------------------------------------------
+ * `F3.85` PR 10a / ADR 0099 decision 6 (plan §11.2) — Save canvas is the
+ * `dashboardTemplate.update` stepper: Basics, Content, then a Review with the
+ * stored values beside the new ones.
+ * ------------------------------------------------------------------------ */
+
+const BASE = import.meta.env.VITE_API_URL ?? "http://localhost:4000";
+
+function stepTitles(): string[] {
+  const list = screen.getByRole("list", { name: "Steps" });
+  return within(list)
+    .getAllByRole("listitem")
+    .map((item) => item.textContent ?? "");
+}
+
+/** Save canvas opens the update wizard — Basics, Content, Review — and sends nothing yet. */
+export async function saveCanvasOpensTheUpdateWizard(): Promise<void> {
+  const update = vi.fn(() => Promise.resolve(draftTemplate()));
+  stubApi({ fetchAdminDashboardTemplate: () => Promise.resolve(draftTemplate()), updateAdminDashboardTemplate: update });
+  renderPage();
+
+  await userEvent.click(await screen.findByRole("button", { name: "Save canvas" }));
+
+  expect(stepTitles()).toEqual(["1. Basics", "2. Content", "3. Review"]);
+  expect(update).not.toHaveBeenCalled();
+}
+
+/** The Review card shows the stored value under Now beside the new one, for a field the user changed. */
+export async function updateReviewShowsCurrentBesideNew(): Promise<void> {
+  stubApi({
+    fetchAdminDashboardTemplate: () => Promise.resolve(draftTemplate()),
+    updateAdminDashboardTemplate: () => Promise.resolve(draftTemplate()),
+  });
+  renderPage();
+
+  await userEvent.click(await screen.findByRole("button", { name: "Save canvas" }));
+  fireEvent.change(screen.getByRole("textbox", { name: "Name" }), { target: { value: "Renamed overview" } });
+  await userEvent.click(screen.getByRole("button", { name: "Next" }));
+  await userEvent.click(screen.getByRole("button", { name: "Next" }));
+
+  const card = screen.getByRole("region", { name: "Edit a dashboard template" });
+  expect(within(card).getByRole("columnheader", { name: "Now" })).toBeInTheDocument();
+  const nameRow = within(card).getByRole("rowheader", { name: "Name" }).closest("tr") as HTMLElement;
+  expect(within(nameRow).getAllByRole("cell").map((cell) => cell.textContent)).toEqual([
+    "Electrical overview",
+    "Renamed overview",
+  ]);
+}
+
+/**
+ * The update wizard alone sends the PATCH with the canvas (the positive) and
+ * no `X-Copilot-Change` header (plan §10.5). The write is not spied, so the
+ * real `adminFetch` puts it on the wire.
+ */
+export async function saveWizardAloneSendsNoCopilotHeader(): Promise<void> {
+  stubApi({ fetchAdminDashboardTemplate: () => Promise.resolve(draftTemplate()) });
+  const seen: { url: string; init: RequestInit }[] = [];
+  vi.stubGlobal("fetch", async (url: string, init: RequestInit = {}) => {
+    seen.push({ url, init });
+    return new Response(JSON.stringify(draftTemplate()), { status: 200, headers: { "Content-Type": "application/json" } });
+  });
+  renderPage();
+
+  await userEvent.click(await screen.findByRole("button", { name: "Save canvas" }));
+  await userEvent.click(screen.getByRole("button", { name: "Next" }));
+  await userEvent.click(screen.getByRole("button", { name: "Next" }));
+  await userEvent.click(screen.getByRole("button", { name: "Submit" }));
+
+  await waitFor(() => expect(seen.filter((call) => call.init.method === "PATCH")).toHaveLength(1));
+  const patch = seen.find((call) => call.init.method === "PATCH") as { url: string; init: RequestInit };
+  expect(patch.url).toBe(`${BASE}/api/v1/admin/dashboard-templates/${TEMPLATE_ID}`);
+  expect(JSON.parse(patch.init.body as string)).toEqual({ content: { widgets: [], tabs: [] } });
+  expect(new Headers(patch.init.headers).get("X-Copilot-Change")).toBeNull();
+}
+
+/** Stubs the reads and a spied update, and returns the inputs the update is called with. */
+function spyUpdate(template = draftTemplate()): unknown[] {
+  const calls: unknown[] = [];
+  stubApi({
+    fetchAdminDashboardTemplate: () => Promise.resolve(template),
+    updateAdminDashboardTemplate: (_id: string, input: unknown) => {
+      calls.push(input);
+      return Promise.resolve(template);
+    },
+  });
+  return calls;
+}
+
+async function nextNextSubmit(): Promise<void> {
+  await userEvent.click(screen.getByRole("button", { name: "Next" }));
+  await userEvent.click(screen.getByRole("button", { name: "Next" }));
+  await userEvent.click(screen.getByRole("button", { name: "Submit" }));
+}
+
+/**
+ * Review finding F1 — the canvas the PATCH sends is the one edited on this
+ * screen: a widget added before Save canvas is in `content.widgets`. The
+ * draft fixture starts with none, so a seed from the stored row sends `[]`.
+ */
+export async function saveCanvasSendsTheEditedWidgets(): Promise<void> {
+  const calls = spyUpdate();
+  renderPage();
+
+  await userEvent.click(await screen.findByRole("button", { name: "Add widget" }));
+  await userEvent.click(screen.getByRole("button", { name: "Save canvas" }));
+  await nextNextSubmit();
+
+  await waitFor(() => expect(calls).toHaveLength(1));
+  expect((calls[0] as { content: { widgets: unknown[] } }).content.widgets).toHaveLength(1);
+}
+
+/** Review finding C3 — a padded name is sent trimmed, as the create path trims it. */
+export async function saveSendsATrimmedName(): Promise<void> {
+  const calls = spyUpdate();
+  renderPage();
+
+  await userEvent.click(await screen.findByRole("button", { name: "Save canvas" }));
+  fireEvent.change(screen.getByRole("textbox", { name: "Name" }), { target: { value: " Renamed overview " } });
+  await nextNextSubmit();
+
+  await waitFor(() => expect(calls).toHaveLength(1));
+  expect((calls[0] as { name?: unknown }).name).toBe("Renamed overview");
+}
+
+/** Leaving the Name field trims it, so the Review row shows the name Submit sends. */
+export async function reviewShowsTheTrimmedNameAfterBlur(): Promise<void> {
+  spyUpdate();
+  renderPage();
+
+  await userEvent.click(await screen.findByRole("button", { name: "Save canvas" }));
+  const name = screen.getByRole("textbox", { name: "Name" });
+  fireEvent.change(name, { target: { value: " Renamed overview " } });
+  fireEvent.blur(name);
+  await userEvent.click(screen.getByRole("button", { name: "Next" }));
+  await userEvent.click(screen.getByRole("button", { name: "Next" }));
+
+  const card = screen.getByRole("region", { name: "Edit a dashboard template" });
+  const nameRow = within(card).getByRole("rowheader", { name: "Name" }).closest("tr") as HTMLElement;
+  expect(within(nameRow).getAllByRole("cell").map((cell) => cell.textContent)).toEqual([
+    "Electrical overview",
+    "Renamed overview",
+  ]);
+}
+
+/**
+ * Review finding PR10a-2 — a name of spaces is not sent: the PATCH keeps the
+ * stored name. The positive: the request fired, with the canvas.
+ */
+export async function saveSendsNoNameForABlankOne(): Promise<void> {
+  const calls = spyUpdate();
+  renderPage();
+
+  await userEvent.click(await screen.findByRole("button", { name: "Save canvas" }));
+  fireEvent.change(screen.getByRole("textbox", { name: "Name" }), { target: { value: "   " } });
+  await nextNextSubmit();
+
+  await waitFor(() => expect(calls).toHaveLength(1));
+  expect(calls[0]).toEqual({ content: { widgets: [], tabs: [] } });
+}
+
+/** A refused Save, then Back to Basics and a new name, then on to Review again. */
+async function refuseSaveThenRename(): Promise<HTMLElement> {
+  stubApi({
+    fetchAdminDashboardTemplate: () => Promise.resolve(draftTemplate()),
+    updateAdminDashboardTemplate: () => Promise.reject(new Error("The name is taken")),
+  });
+  renderPage();
+
+  await userEvent.click(await screen.findByRole("button", { name: "Save canvas" }));
+  await nextNextSubmit();
+  await screen.findAllByText("The name is taken");
+  await userEvent.click(screen.getByRole("button", { name: "Back" }));
+  await userEvent.click(screen.getByRole("button", { name: "Back" }));
+  fireEvent.change(screen.getByRole("textbox", { name: "Name" }), { target: { value: "Another name" } });
+  await userEvent.click(screen.getByRole("button", { name: "Next" }));
+  await userEvent.click(screen.getByRole("button", { name: "Next" }));
+  return screen.getByRole("region", { name: "Edit a dashboard template" });
+}
+
+/**
+ * Review finding C1 — a value change clears the last refusal: after a failed
+ * Submit, Back and a new name, Review no longer shows the old server error.
+ */
+export async function aValueChangeClearsTheSaveRefusal(): Promise<void> {
+  const card = await refuseSaveThenRename();
+  expect(within(card).queryByText("The name is taken")).toBeNull();
+}
+
+/** The positive beside the absence above: the Review reached after the refusal shows the new name. */
+export async function aValueChangeShowsTheNewReviewAfterARefusal(): Promise<void> {
+  const card = await refuseSaveThenRename();
+  const nameRow = within(card).getByRole("rowheader", { name: "Name" }).closest("tr") as HTMLElement;
+  expect(within(nameRow).getByText("Another name")).toBeInTheDocument();
+}
+
+/**
+ * Review findings C2 / PR10a-3 — the Content step describes what Submit
+ * sends: a copilot fill that replaces `content` is counted, and named as not
+ * the canvas on this screen.
+ */
+export async function saveContentStepDescribesAFilledContent(): Promise<void> {
+  resetWizardStore();
+  spyUpdate();
+  renderPage();
+
+  await userEvent.click(await screen.findByRole("button", { name: "Save canvas" }));
+  act(() => {
+    useWizardStore.getState().receiveFill({
+      catalogId: "dashboardTemplate.update",
+      stepId: "content",
+      // One top-level widget and one in a tab: the count is both, as the header counts.
+      values: {
+        content: {
+          widgets: publishedTemplate().content.widgets,
+          tabs: [{ key: "t1", title: "Tab", widgets: publishedTemplate().content.widgets }],
+        },
+      },
+    });
+  });
+  await userEvent.click(screen.getByRole("button", { name: "Next" }));
+
+  expect(screen.getByRole("region", { name: "Content" }).textContent).toContain(
+    "The content to save: 2 widgets. It is not the canvas on this screen (0 widgets).",
+  );
+}
+
+/** Review finding PR10a-3 — a `section` the copilot filled is shown on Basics, which has no input for it. */
+export async function saveBasicsShowsAFilledSection(): Promise<void> {
+  resetWizardStore();
+  spyUpdate();
+  renderPage();
+
+  await userEvent.click(await screen.findByRole("button", { name: "Save canvas" }));
+  act(() => {
+    useWizardStore.getState().receiveFill({
+      catalogId: "dashboardTemplate.update",
+      stepId: "basics",
+      values: { section: "water" },
+    });
+  });
+
+  expect(screen.getByRole("region", { name: "Basics" }).textContent).toContain(
+    "Section: water (filled by the copilot; now electrical).",
   );
 }
