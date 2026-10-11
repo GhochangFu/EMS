@@ -316,3 +316,24 @@ export function assertTheControllerCarriesBothGuards(): void {
   const guards = Reflect.getMetadata("__guards__", CopilotConversationsController) as unknown[];
   expect(guards).toEqual([JwtAuthGuard, CopilotAccessGuard]);
 }
+
+/** `F3.85` PR 8: the detail carries the conversation's open changes, read for the caller and that conversation. */
+export async function assertTheDetailCarriesTheOpenChanges(): Promise<void> {
+  const conversationId = "33333333-3333-4333-8333-333333333333";
+  const card = { id: "c-1", catalogId: "dashboardTemplate.publish" };
+  const asked: Array<[string, string]> = [];
+  const conversations = {
+    get: async () => ({ id: conversationId, organizationId: null, title: null, createdAt: "x", lastTurnAt: "x", messages: [] }),
+  } as unknown as CopilotConversationsService;
+  const pending = {
+    sweepStuck: async () => 0,
+    listOpen: async (userId: string, id: string) => {
+      asked.push([userId, id]);
+      return [card];
+    },
+  } as unknown as CopilotPendingChangesService;
+  const controller = new CopilotConversationsController(conversations, availabilityFake().service, pending, turnsFake().service);
+  const detail = await controller.get(conversationId, identityFor("admin", null));
+  expect(detail.pendingChanges).toEqual([card]);
+  expect(asked).toEqual([[USER_ID, conversationId]]);
+}

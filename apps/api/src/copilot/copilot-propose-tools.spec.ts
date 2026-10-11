@@ -223,6 +223,22 @@ export async function aCrossOrganizationProposalUsesTheAllowedSet(): Promise<voi
   expect(h.stored[0]?.organizationId).toBe(ORG_Y);
 }
 
+/**
+ * The two scope checks, each alone (mutations M1, M7): a cross-organization
+ * turn whose resolver strays outside the allowed set, and a bound turn whose
+ * resolver names another allowed organization. Each must refuse by itself.
+ */
+export async function eachScopeCheckRefusesAlone(): Promise<void> {
+  const stray = proposeHarness({ target: { organizationId: ORG_Y, organizationName: "Org Y", targetName: "Y-T" } });
+  const cross = await stray.call("propose_dashboardTemplate_archive", { id: ROW }, { conversationOrganizationId: null, allowedOrganizationIds: [ORG_X] });
+  expect(cross.error).toBe(PROPOSE_TARGET_ERROR);
+  expect(stray.stored).toEqual([]);
+  const other = proposeHarness({ target: { organizationId: ORG_Y, organizationName: "Org Y", targetName: "Y-T" } });
+  const bound = await other.call("propose_dashboardTemplate_archive", { id: ROW }, { conversationOrganizationId: ORG_X, allowedOrganizationIds: [ORG_X, ORG_Y] });
+  expect(bound.error).toBe(PROPOSE_TARGET_ERROR);
+  expect(other.stored).toEqual([]);
+}
+
 export async function aMissingTargetStoresNothing(): Promise<void> {
   const h = proposeHarness({ target: null });
   expect((await h.call("propose_dashboardTemplate_archive", { id: ROW })).error).toBe(PROPOSE_TARGET_ERROR);

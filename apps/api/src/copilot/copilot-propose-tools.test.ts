@@ -16,6 +16,7 @@ import {
   aTargetOutsideTheAllowedSetStoresNothing,
   aValidBodyStoresTheCanonicalHash,
   describeChangeReadsAPartOfTheBody,
+  eachScopeCheckRefusesAlone,
   everyEntryHasOneSlimProposeTool,
   fillStepChecksOneStepAndWritesNothing,
 } from "./copilot-propose-tools.spec";
@@ -29,6 +30,7 @@ describe("F3.85 PR 8 — the copilot propose tools (ADR 0099 decisions 2, 3, 4, 
   it("stores nothing for an invalid formula", () => anInvalidFormulaStoresNothing());
   it("stores nothing for a target outside the allowed set", () => aTargetOutsideTheAllowedSetStoresNothing());
   it("resolves a cross-organization proposal in the platform scope", () => aCrossOrganizationProposalUsesTheAllowedSet());
+  it("refuses with each scope check alone", () => eachScopeCheckRefusesAlone());
   it("stores nothing for a missing target", () => aMissingTargetStoresNothing());
   it("refuses a credential in a propose argument", () => aCredentialInAProposeArgumentIsRefused());
   it("stores {} for a bodyless entry", () => aBodylessEntryStoresTheEmptyObject());

@@ -372,6 +372,8 @@ export async function theResolverChecksACreatesOrganizationAndRefs(ctx: ProposeC
   });
   expect(await resolver.resolve(create, {}, body(ctx.locationB), [ctx.orgA, ctx.orgB], jwt)).toBeNull();
   expect(await resolver.resolve(create, {}, { ...body(ctx.locationA), organizationId: ctx.orgB }, [ctx.orgA], jwt)).toBeNull();
+  // A create in an organization outside the allowed set, with no ref to catch it (mutation M15).
+  expect(await resolver.resolve(create, {}, { organizationId: ctx.orgB, slug: "x", name: "X" }, [ctx.orgA], jwt)).toBeNull();
   // A create the caller may not make is refused like a missing row (review L2).
   const denied = new CopilotTargetResolver(ctx.tenantDb, always(false));
   expect(await denied.resolve(create, {}, body(ctx.locationA), [ctx.orgA], jwt)).toBeNull();
