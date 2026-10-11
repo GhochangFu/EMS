@@ -599,5 +599,25 @@ describe("F4.24 — the worker imports no API loop (ADR 0063 decision 3, Amendme
           "(update this row) or the walker follows nothing",
       ).toBe(true);
     });
+
+    it("worker.ts's closure reaches neither copilot-turn.service.ts nor copilot/tools/ (F3.85 PR 7)", () => {
+      const offending = [...closure("worker.ts").files]
+        .filter((p) => p === "copilot/copilot-turn.service.ts" || p.startsWith("copilot/tools/"))
+        .sort();
+      expect(
+        offending,
+        "the worker's import closure reaches the copilot turn or its read tools — the model call and " +
+          "the tenant reads it makes belong to the API alone:\n" +
+          offending.join("\n"),
+      ).toEqual([]);
+    });
+
+    it("positive control: app.module.ts's closure reaches copilot/copilot-turn.service.ts", () => {
+      expect(
+        closure("app.module.ts").files.has("copilot/copilot-turn.service.ts"),
+        "the API's closure does not reach copilot/copilot-turn.service.ts — either the turn service " +
+          "moved (update this row) or the walker follows nothing and the row above passed vacuously",
+      ).toBe(true);
+    });
   });
 });

@@ -34,7 +34,7 @@ export const copilotAvailabilityReasonSchema = z.enum([
 /** The two roles that carry a role switch; `organization_admin`'s switch is the organization's. */
 export const copilotSwitchableRoleSchema = z.enum(["location_admin", "asset_group_admin"]);
 
-/** `GET /api/v1/copilot/status`. `configured` stays `false` until the model wiring lands. */
+/** `GET /api/v1/copilot/status`. `configured`: a key resolves for the scope asked about (`F3.85` PR 7, decision 10). */
 export const copilotStatusDtoSchema = z
   .object({
     available: z.boolean(),
@@ -149,5 +149,51 @@ export const copilotConversationDetailDtoSchema = z
 export const copilotCreateConversationBodySchema = z
   .object({
     organizationId: z.string().uuid().nullable(),
+  })
+  .strict();
+
+/** The most characters one copilot turn's message may hold (`F3.85` plan §9.1). */
+export const COPILOT_TURN_MESSAGE_MAX = 8_000;
+
+/**
+ * `POST /api/v1/copilot/conversations/:id/turns` (`F3.85` PR 7, ADR 0099
+ * decisions 1, 9, 10). The message only: the organization a turn reads and is
+ * counted against is the conversation's own, read on the server (decision 10),
+ * so a body naming one is a 400, never a hint.
+ */
+export const copilotTurnBodySchema = z
+  .object({
+    message: z.string().min(1).max(COPILOT_TURN_MESSAGE_MAX),
+  })
+  .strict();
+
+/**
+ * How a turn ended.
+ *
+ * - `answered`: the model answered; `messages` holds what was stored.
+ * - `credential_refused`: the message looked like it held a credential (ADR
+ *   0022); nothing was stored, sent or counted.
+ * - `not_configured`: no key resolved for the conversation's scope (decision
+ *   10); nothing was stored, sent or counted.
+ * - `failed`: the model call failed or a cap stopped it; the turn was counted
+ *   and nothing was stored.
+ */
+export const copilotTurnOutcomeSchema = z.enum(["answered", "credential_refused", "not_configured", "failed"]);
+
+/**
+ * The answer to one turn. `reply` is the text the dock shows; `messages` are
+ * the rows this turn stored, oldest first — empty unless `outcome` is
+ * `answered`, so "the transcript did not grow" is the refusal signal the
+ * onboarding chat uses. `configured` is `false` only on `not_configured`.
+ * `navigateTo` is an app route an `open_page` tool returned, or `null`.
+ */
+export const copilotTurnResponseDtoSchema = z
+  .object({
+    conversationId: z.string(),
+    outcome: copilotTurnOutcomeSchema,
+    configured: z.boolean(),
+    reply: z.string(),
+    messages: z.array(copilotMessageDtoSchema),
+    navigateTo: z.string().nullable(),
   })
   .strict();

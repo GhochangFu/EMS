@@ -1,7 +1,7 @@
 import { Inject, Injectable, Logger, type OnModuleInit } from "@nestjs/common";
-import { eq } from "drizzle-orm";
+import { asc, eq } from "drizzle-orm";
 
-import { organizationLlmSettings } from "@bms/db";
+import { organizationLlmSettings, organizations } from "@bms/db";
 import type { BmsDb } from "@bms/db";
 import type { LlmProviderName } from "@bms/shared";
 
@@ -46,6 +46,20 @@ export type ResolvedLlm =
       /** `organization_incomplete` is the one reason the chat states to the user (plan ruling 13). */
       readonly reason: "organization_off" | "organization_incomplete" | "platform_off" | "platform_incomplete";
     };
+
+/**
+ * `F3.85` / ADR 0099 decision 10 — a cross-organization turn's key scope: the
+ * platform key, and the organizations whose data that key may be sent.
+ */
+export type ResolvedPlatformScope =
+  | {
+      readonly kind: "ready";
+      readonly provider: LlmProvider;
+      readonly source: "platform";
+      /** Every organization with no `organization_llm_settings` row and its copilot switch on. */
+      readonly allowedOrganizationIds: readonly string[];
+    }
+  | { readonly kind: "guided"; readonly reason: "platform_off" | "platform_incomplete" };
 
 function env(name: string): string {
   return (process.env[name] ?? "").trim();
@@ -177,6 +191,52 @@ export class LlmResolver implements OnModuleInit {
       kind: "ready",
       provider: this.buildProvider(platform.provider, { apiKey: platform.apiKey, model: platform.model }),
       source: "platform",
+    };
+  }
+
+  /** Every organization's id, in a fixed order. `bms.organizations` carries no row-level security. */
+  async listOrganizationIds(): Promise<string[]> {
+    const rows = await this.tenantDb.select({ id: organizations.id }).from(organizations).orderBy(asc(organizations.id));
+    return rows.map((row) => row.id);
+  }
+
+  /**
+   * `F3.85` / ADR 0099 decision 10 — the key scope of a cross-organization
+   * turn (the global admin, a conversation bound to no organization).
+   *
+   * The platform default must be ready. The allowed set is every organization
+   * that would itself resolve to that same key — **no** `organization_llm_settings`
+   * row, read per organization in `withTenant` — **and** whose copilot switch
+   * is on. An organization with its own key, or in the guided mode, is
+   * excluded and never sent ("an organization row never uses the platform
+   * key", ADR 0090 Amendment 1).
+   *
+   * `switchOn` is the caller's: this module is the generic LLM core and knows
+   * nothing of the copilot's switches.
+   */
+  async resolvePlatformScope(switchOn: (organizationId: string) => Promise<boolean>): Promise<ResolvedPlatformScope> {
+    const platform = this.platformDefault();
+    if (platform.state === "off") {
+      return { kind: "guided", reason: "platform_off" };
+    }
+    if (platform.state === "incomplete") {
+      return { kind: "guided", reason: "platform_incomplete" };
+    }
+    const allowedOrganizationIds: string[] = [];
+    for (const organizationId of await this.listOrganizationIds()) {
+      if ((await this.readSetting(organizationId)) !== null) {
+        continue;
+      }
+      if (!(await switchOn(organizationId))) {
+        continue;
+      }
+      allowedOrganizationIds.push(organizationId);
+    }
+    return {
+      kind: "ready",
+      provider: this.buildProvider(platform.provider, { apiKey: platform.apiKey, model: platform.model }),
+      source: "platform",
+      allowedOrganizationIds,
     };
   }
 }

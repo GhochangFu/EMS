@@ -9,6 +9,7 @@ import { CopilotConversationsController } from "./copilot-conversations.controll
 import { CopilotConversationsService } from "./copilot-conversations.service";
 import type { CopilotAvailabilityService } from "./copilot-availability.service";
 import { CopilotPendingChangesService } from "./copilot-pending-changes.service";
+import type { CopilotTurnService } from "./copilot-turn.service";
 
 /**
  * `F3.85` PR 5 / ADR 0099 decision 8 — the conversation routes against migration
@@ -31,6 +32,8 @@ function controller(ctx: ConversationsCtx) {
     new CopilotConversationsService(ctx.tenantDb),
     available,
     new CopilotPendingChangesService(ctx.tenantDb),
+    // These cases never reach the turn route (`copilot-history.rls.integration.spec.ts` does).
+    {} as CopilotTurnService,
   );
 }
 

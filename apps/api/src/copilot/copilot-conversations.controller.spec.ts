@@ -11,6 +11,7 @@ import type { CopilotAvailabilityService } from "./copilot-availability.service"
 import { CopilotConversationsController } from "./copilot-conversations.controller";
 import { CopilotConversationsService } from "./copilot-conversations.service";
 import type { CopilotPendingChangesService } from "./copilot-pending-changes.service";
+import type { CopilotTurnService } from "./copilot-turn.service";
 
 /** Vitest entry point lives in the sibling `.test.ts` (ADR 0014). */
 
@@ -90,6 +91,18 @@ function conversationsFake(options: { organizations?: Array<{ id: string }> } = 
   return { service, inserted };
 }
 
+/** A `CopilotTurnService` double: the turn's order is its own spec's; the route is tested for the HTTP rules only. */
+function turnsFake() {
+  const turned: Array<{ identityId: string; user: JwtPayload; conversationId: string; message: string; kind: string }> = [];
+  const service = {
+    turn: async (caller: { identity: ResolvedIdentity; user: JwtPayload }, conversationId: string, message: string, kind: string) => {
+      turned.push({ identityId: caller.identity.id, user: caller.user, conversationId, message, kind });
+      return { conversationId, outcome: "answered", configured: true, reply: "ok", messages: [], navigateTo: null };
+    },
+  } as unknown as CopilotTurnService;
+  return { service, turned };
+}
+
 function controllerWith(
   role: Role,
   options: { answer?: CopilotAvailability; organizations?: Array<{ id: string }> } = {},
@@ -97,8 +110,16 @@ function controllerWith(
   const availability = availabilityFake(options.answer);
   const sweep = sweepFake();
   const fake = conversationsFake({ organizations: options.organizations });
-  const controller = new CopilotConversationsController(fake.service, availability.service, sweep.service);
-  return { controller, identity: identityFor(role), inserted: fake.inserted, asked: availability.asked, swept: sweep.swept };
+  const turns = turnsFake();
+  const controller = new CopilotConversationsController(fake.service, availability.service, sweep.service, turns.service);
+  return {
+    controller,
+    identity: identityFor(role),
+    inserted: fake.inserted,
+    asked: availability.asked,
+    swept: sweep.swept,
+    turned: turns.turned,
+  };
 }
 
 async function rejectsWith<E>(run: () => Promise<unknown>, type: new (...args: never[]) => E): Promise<void> {
@@ -243,6 +264,51 @@ export function assertTheControllerTouchesNoDatabase(): void {
   // Positive control: the reader sees a token where one is declared.
   const serviceTokens = Reflect.getMetadata("self:paramtypes", CopilotConversationsService) as Array<{ index: number }>;
   expect(serviceTokens.map((t) => t.index)).toEqual([0]);
+}
+
+const CONVERSATION = "33333333-3333-4333-8333-333333333333";
+
+/** PR 7: the turn route sweeps, then hands the parsed message, the caller and the id to the turn service as a `user` turn. */
+export async function assertTheTurnRoutePassesTheCallerAndTheMessage(): Promise<void> {
+  const h = controllerWith("organization_admin");
+  const jwt = tokenFor("organization_admin");
+  const response = await h.controller.turn(CONVERSATION, { message: "any alarms?" }, h.identity, jwt);
+  expect(response.outcome).toBe("answered");
+  expect(h.swept).toEqual([USER_ID]);
+  expect(h.turned).toEqual([{ identityId: USER_ID, user: jwt, conversationId: CONVERSATION, message: "any alarms?", kind: "user" }]);
+}
+
+/**
+ * The body is the message alone (decision 10): a body naming an organization,
+ * an empty message and one over 8,000 characters are each a 400 and no turn
+ * runs. The positive control is the same message without the extra field.
+ */
+export async function assertATurnBodyNamingAnOrganizationIs400(): Promise<void> {
+  const h = controllerWith("admin");
+  const jwt = tokenFor("admin", null);
+  await rejectsWith(() => h.controller.turn(CONVERSATION, { message: "hi", organizationId: OTHER }, h.identity, jwt), BadRequestException);
+  await rejectsWith(() => h.controller.turn(CONVERSATION, { message: "" }, h.identity, jwt), BadRequestException);
+  await rejectsWith(() => h.controller.turn(CONVERSATION, { message: "x".repeat(8_001) }, h.identity, jwt), BadRequestException);
+  await rejectsWith(() => h.controller.turn(CONVERSATION, {}, h.identity, jwt), BadRequestException);
+  expect(h.turned).toEqual([]);
+  await h.controller.turn(CONVERSATION, { message: "hi" }, h.identity, jwt);
+  expect(h.turned).toHaveLength(1);
+}
+
+/** A non-uuid id on the turn route is a 404, after the sweep, and no turn runs. */
+export async function assertATurnOnANonUuidIdIs404(): Promise<void> {
+  const h = controllerWith("admin");
+  await rejectsWith(() => h.controller.turn("not-a-uuid", { message: "hi" }, h.identity, tokenFor("admin", null)), NotFoundException);
+  expect(h.swept).toEqual([USER_ID]);
+  expect(h.turned).toEqual([]);
+}
+
+/** The turn route answers 200, not Nest's POST default 201. */
+export function assertTheTurnRouteAnswers200(): void {
+  const code = Reflect.getMetadata("__httpCode__", CopilotConversationsController.prototype.turn) as number | undefined;
+  expect(code).toBe(200);
+  // Positive control: the reader sees the create route's declared 201.
+  expect(Reflect.getMetadata("__httpCode__", CopilotConversationsController.prototype.create)).toBe(201);
 }
 
 /** The guards sit on the controller itself, JWT first, and the guard is the route-level one. */

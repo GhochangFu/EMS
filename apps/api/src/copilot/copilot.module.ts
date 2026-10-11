@@ -1,9 +1,16 @@
 import { type MiddlewareConsumer, Module, type NestModule } from "@nestjs/common";
 import { APP_INTERCEPTOR } from "@nestjs/core";
 
+import { LocationsAdminService } from "../admin/locations/locations.service";
 import { MasterDataAuditService } from "../admin/master-data-audit.service";
+import { AlarmsModule } from "../alarms/alarms.module";
+import { AssetHealthModule } from "../asset-health/asset-health.module";
+import { AssetsModule } from "../assets/assets.module";
 import { AuthModule } from "../auth/auth.module";
+import { DashboardBuilderModule } from "../dashboard-builder/dashboard-builder.module";
 import { DatabaseModule } from "../database/database.module";
+import { LlmModule } from "../llm/llm.module";
+import { VocabulariesModule } from "../vocabularies/vocabularies.module";
 import { CopilotAccessController } from "./copilot-access.controller";
 import { CopilotAccessGuard } from "./copilot-access.guard";
 import { CopilotAccessService } from "./copilot-access.service";
@@ -14,8 +21,11 @@ import { CopilotContextMiddleware } from "./copilot-context.middleware";
 import { CopilotConversationsController } from "./copilot-conversations.controller";
 import { CopilotConversationsService } from "./copilot-conversations.service";
 import { CopilotPendingChangesService } from "./copilot-pending-changes.service";
+import { COPILOT_READ_TOOLS } from "./copilot-read-tools";
 import { CopilotStatusController } from "./copilot-status.controller";
+import { CopilotTurnService } from "./copilot-turn.service";
 import { CopilotUsageService } from "./copilot-usage.service";
+import { CopilotReadToolSet } from "./tools/copilot-read-tool-set";
 
 /**
  * `F3.85` / ADR 0099 — the administrator copilot. PR 3 holds availability:
@@ -43,9 +53,34 @@ import { CopilotUsageService } from "./copilot-usage.service";
  * PR 6 adds `CopilotUsageService` (the daily turn limits, Amendment 1 A1/A2),
  * exported for the turn service, and its limits read once from the environment
  * through the `COPILOT_USAGE_LIMITS` token.
+ *
+ * PR 7 adds `CopilotTurnService` (the read-only turn, decisions 1, 9, 10, 11)
+ * and imports `LlmModule` for `LlmResolver`. The read tools reach it through
+ * the `COPILOT_READ_TOOLS` token (`copilot-read-tools.ts` states the seam).
+ *
+ * The token is bound to `CopilotReadToolSet` (`tools/`), which calls each
+ * read through the service that owns it: `AlarmsService` (`AlarmsModule`,
+ * exported — it holds the socket gateway, so it is never provided twice),
+ * `AssetsService` and `AssetKpisService` (`AssetsModule`, exported),
+ * `DashboardsService` (`DashboardBuilderModule`, exported) and
+ * `AssetHealthService` (`AssetHealthModule` already exports it).
+ * `LocationsAdminService` is provided here rather than exported from
+ * `AdminModule`: it is stateless the way `MasterDataAuditService` is (its
+ * handles come from `DatabaseModule`'s tokens), and it needs only
+ * `VocabulariesModule` beyond what this module has. None of those modules
+ * imports this one, so the graph stays acyclic.
  */
 @Module({
-  imports: [DatabaseModule, AuthModule],
+  imports: [
+    DatabaseModule,
+    AuthModule,
+    LlmModule,
+    AlarmsModule,
+    AssetsModule,
+    AssetHealthModule,
+    DashboardBuilderModule,
+    VocabulariesModule,
+  ],
   controllers: [CopilotAccessController, CopilotConversationsController, CopilotStatusController],
   providers: [
     CopilotAccessGuard,
@@ -54,6 +89,10 @@ import { CopilotUsageService } from "./copilot-usage.service";
     CopilotConversationsService,
     CopilotPendingChangesService,
     CopilotUsageService,
+    CopilotTurnService,
+    LocationsAdminService,
+    CopilotReadToolSet,
+    { provide: COPILOT_READ_TOOLS, useExisting: CopilotReadToolSet },
     { provide: COPILOT_USAGE_LIMITS, useFactory: () => readCopilotUsageLimits(process.env) },
     MasterDataAuditService,
     { provide: APP_INTERCEPTOR, useClass: CopilotChangeInterceptor },

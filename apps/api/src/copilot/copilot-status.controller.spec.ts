@@ -7,6 +7,7 @@ import { type ResolvedIdentity, rememberIdentity } from "../auth/identity-resolv
 import type { CopilotAvailability } from "./copilot-availability";
 import type { CopilotAvailabilityService } from "./copilot-availability.service";
 import { CopilotStatusController } from "./copilot-status.controller";
+import type { CopilotTurnService } from "./copilot-turn.service";
 
 /** Vitest entry point lives in the sibling `.test.ts` (ADR 0014). */
 
@@ -35,15 +36,22 @@ const noRows = {
   select: () => ({ from: () => ({ where: () => ({ limit: async () => [] }) }) }),
 };
 
-function harness(answer: CopilotAvailability = { available: true }) {
+function harness(answer: CopilotAvailability = { available: true }, configured = false) {
   const asked: Array<string | null> = [];
+  const configuredAsked: Array<string | null> = [];
   const availability = {
     decide: async (_identity: ResolvedIdentity | null, organizationId: string | null) => {
       asked.push(organizationId);
       return answer;
     },
   } as unknown as CopilotAvailabilityService;
-  return { controller: new CopilotStatusController(noRows as never, availability), asked };
+  const turns = {
+    isConfigured: async (organizationId: string | null) => {
+      configuredAsked.push(organizationId);
+      return configured;
+    },
+  } as unknown as CopilotTurnService;
+  return { controller: new CopilotStatusController(noRows as never, availability, turns), asked, configuredAsked };
 }
 
 async function rejectsWith<E>(run: () => Promise<unknown>, type: new (...args: never[]) => E): Promise<void> {
@@ -97,16 +105,36 @@ export async function assertTheDefaultOrganizationFollowsTheRole(): Promise<void
   expect(named.asked).toEqual([OTHER]);
 }
 
-/** The decision maps onto the DTO; `configured` stays false until PR 7. */
+/** The decision maps onto the DTO; an unavailable copilot is never `configured`, and its key is not resolved. */
 export async function assertTheDecisionMapsOntoTheDto(): Promise<void> {
   const on = harness({ available: true });
   expect(await on.controller.get({}, tokenFor("admin"))).toEqual({ available: true, configured: false });
-  const off = harness({ available: false, reason: "role_off" });
+  const off = harness({ available: false, reason: "role_off" }, true);
   expect(await off.controller.get({}, tokenFor("location_admin"))).toEqual({
     available: false,
     reason: "role_off",
     configured: false,
   });
+  expect(off.configuredAsked).toEqual([]);
+}
+
+/**
+ * PR 7: `configured` is the resolver's answer for the scope asked about — the
+ * organization's for a scoped admin, the platform scope (`null`) for the
+ * global admin with none named. Mutation: hard-code `false` → red.
+ */
+export async function assertConfiguredComesFromTheResolver(): Promise<void> {
+  const scoped = harness({ available: true }, true);
+  expect(await scoped.controller.get({}, tokenFor("location_admin", HOME))).toEqual({ available: true, configured: true });
+  expect(scoped.configuredAsked).toEqual([HOME]);
+
+  const global = harness({ available: true }, true);
+  expect(await global.controller.get({}, tokenFor("admin", HOME))).toEqual({ available: true, configured: true });
+  expect(global.configuredAsked).toEqual([null]);
+
+  const none = harness({ available: true }, false);
+  expect(await none.controller.get({ organizationId: OTHER }, tokenFor("admin", null))).toEqual({ available: true, configured: false });
+  expect(none.configuredAsked).toEqual([OTHER]);
 }
 
 /** A malformed query is a 400 before anything is resolved or decided. */

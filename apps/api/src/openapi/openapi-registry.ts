@@ -14,6 +14,7 @@ import {
   updateDashboardTemplateBodySchema,
   createCalcParameterBodySchema,
   copilotCreateConversationBodySchema,
+  copilotTurnBodySchema,
   listCalcParametersQuerySchema,
   updateCalcParameterBodySchema,
   createDashboardBodySchema,
@@ -353,6 +354,8 @@ export const REQUEST_SCHEMAS: Record<string, ZodTypeAny> = {
   // `F3.85` PR 5 (ADR 0099 decision 8). `_list` and `_get` take no body and no
   // query (one path parameter on `_get`).
   CopilotConversationsController_create: copilotCreateConversationBodySchema,
+  // `F3.85` PR 7 (ADR 0099 decisions 1, 9, 10): the message only, plus one path parameter.
+  CopilotConversationsController_turn: copilotTurnBodySchema,
   PointKeysAdminController_create: createPointKeyBodySchema,
   PointKeysAdminController_update: updatePointKeyBodySchema,
   // `F3.5a` (ADR 0071 decision 11). `_download` and `_remove` are absent —

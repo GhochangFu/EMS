@@ -1,5 +1,5 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { and, asc, desc, eq } from "drizzle-orm";
+import { and, asc, desc, eq, sql } from "drizzle-orm";
 
 import { type BmsDb, copilotConversations, copilotMessages, organizations } from "@bms/db";
 import type { CopilotConversationDetailDto, CopilotConversationDto, CopilotMessageDto } from "@bms/shared";
@@ -107,5 +107,77 @@ export class CopilotConversationsService {
     });
     if (!found) return null;
     return { ...toConversation(found.conversation), messages: found.messages.map(toMessage) };
+  }
+
+  /**
+   * `F3.85` PR 7 — the caller's conversation and its bound organization, or
+   * null when the policy hides it or it does not exist. The turn service
+   * reads a turn's organization **here and nowhere else** (decision 10).
+   */
+  async findConversation(
+    userId: string,
+    conversationId: string,
+  ): Promise<{ id: string; organizationId: string | null } | null> {
+    const [row] = await withUser(this.tenantDb, userId, (tx) =>
+      tx
+        .select({ id: copilotConversations.id, organizationId: copilotConversations.organizationId })
+        .from(copilotConversations)
+        .where(and(eq(copilotConversations.id, conversationId), eq(copilotConversations.userId, userId)))
+        .limit(1),
+    );
+    return row ?? null;
+  }
+
+  /** The conversation's last `limit` messages, oldest first. */
+  async recentMessages(userId: string, conversationId: string, limit: number): Promise<CopilotMessageDto[]> {
+    const rows = await withUser(this.tenantDb, userId, (tx) =>
+      tx
+        .select()
+        .from(copilotMessages)
+        .where(eq(copilotMessages.conversationId, conversationId))
+        .orderBy(desc(copilotMessages.createdAt))
+        .limit(limit),
+    );
+    return rows.reverse().map(toMessage);
+  }
+
+  /**
+   * `F3.85` PR 7 — stores one turn's messages in the order given, in one
+   * `withUser` transaction, and moves the conversation's `last_turn_at`.
+   *
+   * Each row is its own `INSERT` with `created_at = clock_timestamp()`, set
+   * explicitly: the column default `now()` is fixed at transaction start, so
+   * the user's message and the reply would tie and `get` (ordered by
+   * `created_at`, no tie-breaker) could read them back reversed.
+   * `copilot-history.rls.integration.spec.ts` pins the order on a real database.
+   */
+  async appendTurn(
+    userId: string,
+    conversationId: string,
+    messages: ReadonlyArray<{ role: CopilotMessageDto["role"]; content: string; organizationIds: readonly string[] }>,
+  ): Promise<CopilotMessageDto[]> {
+    return withUser(this.tenantDb, userId, async (tx) => {
+      const stored: CopilotMessageDto[] = [];
+      for (const message of messages) {
+        const [row] = await tx
+          .insert(copilotMessages)
+          .values({
+            conversationId,
+            userId,
+            role: message.role,
+            content: message.content,
+            organizationIds: [...message.organizationIds],
+            createdAt: sql`clock_timestamp()`,
+          })
+          .returning();
+        if (!row) throw new Error("F3.85: a copilot message was not stored");
+        stored.push(toMessage(row));
+      }
+      await tx
+        .update(copilotConversations)
+        .set({ lastTurnAt: sql`clock_timestamp()` })
+        .where(and(eq(copilotConversations.id, conversationId), eq(copilotConversations.userId, userId)));
+      return stored;
+    });
   }
 }

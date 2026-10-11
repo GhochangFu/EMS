@@ -9,6 +9,11 @@ import {
   assertNoRowUsesThePlatformDefault,
   assertOffLogsNoWarning,
   assertOpenRouterNeedsAModelAndTheOthersDefault,
+  assertPlatformScopeExcludesAnOffRow,
+  assertPlatformScopeExcludesAnOwnKeyRow,
+  assertPlatformScopeExcludesASwitchedOffOrganization,
+  assertPlatformScopeIncludesAnOpenOrganization,
+  assertPlatformScopeIsGuidedWithoutThePlatformKey,
   assertTheBootWarningNamesTheVariableAndNoValue,
   assertTheKeyIsNotCached,
 } from "./llm-resolver.spec";
@@ -53,5 +58,27 @@ describe("LLM resolver (F3.21, ADR 0090 Amendment 1 A2/A4)", () => {
 
   it("decrypts the key on every turn", async () => {
     await assertTheKeyIsNotCached();
+  });
+});
+
+describe("LLM resolver — the platform key scope of a cross-organization turn (F3.85, ADR 0099 decision 10)", () => {
+  it("allows an organization with no row and its copilot switch on", async () => {
+    await assertPlatformScopeIncludesAnOpenOrganization();
+  });
+
+  it("excludes an organization whose row is off", async () => {
+    await assertPlatformScopeExcludesAnOffRow();
+  });
+
+  it("excludes an organization with its own key", async () => {
+    await assertPlatformScopeExcludesAnOwnKeyRow();
+  });
+
+  it("excludes an organization whose copilot switch is off", async () => {
+    await assertPlatformScopeExcludesASwitchedOffOrganization();
+  });
+
+  it("is the guided mode when the platform key is off or incomplete", async () => {
+    await assertPlatformScopeIsGuidedWithoutThePlatformKey();
   });
 });

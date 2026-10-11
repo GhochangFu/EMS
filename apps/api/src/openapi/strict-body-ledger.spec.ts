@@ -14,6 +14,7 @@ import {
   updateDashboardTemplateBodySchema,
   createCalcParameterBodySchema,
   copilotCreateConversationBodySchema,
+  copilotTurnBodySchema,
   listCalcParametersQuerySchema,
   updateCalcParameterBodySchema,
   createDashboardBodySchema,
@@ -291,6 +292,9 @@ export const BODY_SCHEMAS: Record<string, ZodTypeAny> = {
   // `F3.85` PR 5 (ADR 0099 decision 8). Strict: the response's own fields
   // (`id`, `title`) sent back must be a 400.
   copilotCreateConversationBodySchema,
+  // `F3.85` PR 7. Strict: a body naming an organization must be a 400 — the turn's
+  // organization is the conversation row's alone (decision 10).
+  copilotTurnBodySchema,
   createRtuBodySchema,
   createSessionBodySchema,
   createWorkOrderBodySchema,

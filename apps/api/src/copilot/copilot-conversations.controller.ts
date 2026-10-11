@@ -16,15 +16,20 @@ import {
   type CopilotConversationDetailDto,
   type CopilotConversationDto,
   copilotCreateConversationBodySchema,
+  copilotTurnBodySchema,
+  type CopilotTurnResponseDto,
+  type JwtPayload,
 } from "@bms/shared";
 
 import { idParamSchema } from "../admin/admin.schema";
+import { CurrentUser } from "../auth/current-user.decorator";
 import type { ResolvedIdentity } from "../auth/identity-resolver";
 import { JwtAuthGuard } from "../auth/jwt-auth.guard";
 import { COPILOT_UNAVAILABLE_MESSAGE, CopilotAccessGuard, CopilotIdentity } from "./copilot-access.guard";
 import { CopilotAvailabilityService } from "./copilot-availability.service";
 import { CopilotConversationsService } from "./copilot-conversations.service";
 import { CopilotPendingChangesService } from "./copilot-pending-changes.service";
+import { CopilotTurnService } from "./copilot-turn.service";
 
 /**
  * The caller's saved conversations (`F3.85` PR 5, ADR 0099 decision 8). The
@@ -41,6 +46,7 @@ export class CopilotConversationsController {
     private readonly conversations: CopilotConversationsService,
     private readonly availability: CopilotAvailabilityService,
     private readonly pendingChanges: CopilotPendingChangesService,
+    private readonly turns: CopilotTurnService,
   ) {}
 
   @Post()
@@ -81,5 +87,33 @@ export class CopilotConversationsController {
     const found = await this.conversations.get(identity.id, parsed.data);
     if (!found) throw new NotFoundException("Conversation not found");
     return found;
+  }
+
+  /**
+   * `F3.85` PR 7 — one read-only turn (ADR 0099 decisions 1, 9, 10, 11). The
+   * body is the message alone; the organization comes from the conversation
+   * row (`CopilotTurnService`), so another user's id or a non-uuid is a 404.
+   * 200, not Nest's POST default 201: a turn creates no resource the caller
+   * addresses.
+   */
+  @Post(":id/turns")
+  @HttpCode(200)
+  async turn(
+    @Param("id") id: string,
+    @Body() body: unknown,
+    @CopilotIdentity() identity: ResolvedIdentity,
+    @CurrentUser() user: JwtPayload,
+  ): Promise<CopilotTurnResponseDto> {
+    await this.pendingChanges.sweepStuck(identity.id);
+    const parsed = idParamSchema.safeParse(id);
+    if (!parsed.success) throw new NotFoundException("Conversation not found");
+    let message: string;
+    try {
+      message = copilotTurnBodySchema.parse(body).message;
+    } catch (err) {
+      if (err instanceof ZodError) throw new BadRequestException(err.flatten());
+      throw err;
+    }
+    return this.turns.turn({ identity, user }, parsed.data, message, "user");
   }
 }

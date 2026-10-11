@@ -82,6 +82,20 @@ const ASSET_IMAGES_SERVICE = "apps/api/src/assets/asset-images.service.ts";
 const REPORT_FILES_SERVICE = "apps/api/src/reports/report-files.service.ts";
 const REPORT_SCHEDULES_SERVICE = "apps/api/src/reports/report-schedules.service.ts";
 const SITE_LAYOUT_SERVICE = "apps/api/src/control-room/site-layout.service.ts";
+/**
+ * `F3.85` PR 7 — the six copilot read tools parse a service's contract-typed
+ * answer, which is this application's own output, so each routes through
+ * parseStoredContract (a 500 that runToolCall turns into a tool failure).
+ */
+const COPILOT_TOOLS = "apps/api/src/copilot/tools";
+const COPILOT_TOOL_FILES = {
+  copilotGetAssetKpis: `${COPILOT_TOOLS}/get-asset-kpis.tool.ts`,
+  copilotGetHealthSummary: `${COPILOT_TOOLS}/get-health-summary.tool.ts`,
+  copilotListAlarms: `${COPILOT_TOOLS}/list-alarms.tool.ts`,
+  copilotListAssets: `${COPILOT_TOOLS}/list-assets.tool.ts`,
+  copilotListDashboards: `${COPILOT_TOOLS}/list-dashboards.tool.ts`,
+  copilotListLocations: `${COPILOT_TOOLS}/list-locations.tool.ts`,
+} as const;
 const HELPER = "apps/api/src/common/parse-stored-contract.ts";
 
 /**
@@ -516,14 +530,14 @@ describe("F4.108 / ADR 0060 — a stored-data parse never reaches the ZodError f
   /**
    * The eight actually moved — the ninth `F3.3` added, the tenth `F3.5a`, and
    * the eleventh `F3.5b`, the twelfth `F3.73` (the site template content the site-layout
-   * copy reads back).
+   * copy reads back), and the six `F3.85` PR 7 copilot read tools.
    *
    * The absence assertion above goes quiet either way: once a site reads
    * `parseStoredContract(schema, …)` there is no `.parse(` left at it to find,
    * so "no offenders" is equally true of eleven converted sites and of eleven
    * sites deleted. This counts the positive.
    */
-  it("routes all twelve stored-data parses through parseStoredContract", () => {
+  it("routes all eighteen stored-data parses through parseStoredContract", () => {
     const occurrences = (rel: string): number =>
       (blankCommentsAndStrings(read(rel)).match(/parseStoredContract\(/g) ?? []).length;
 
@@ -536,16 +550,28 @@ describe("F4.108 / ADR 0060 — a stored-data parse never reaches the ZodError f
         reportFiles: occurrences(REPORT_FILES_SERVICE),
         reportSchedules: occurrences(REPORT_SCHEDULES_SERVICE),
         siteLayout: occurrences(SITE_LAYOUT_SERVICE),
+        ...Object.fromEntries(
+          Object.entries(COPILOT_TOOL_FILES).map(([key, rel]) => [key, occurrences(rel)]),
+        ),
       },
       "ADR 0060 Amendment 1 enumerates eight stored-data parses: one in the stock service, " +
         "five in dashboard-templates.service.ts and two in the instantiate service; F3.3 " +
         "added a ninth, the whole-DTO parse in asset-images.service.ts; F3.5a a tenth, the " +
         "whole-DTO parse in report-files.service.ts; F3.5b an eleventh, the whole-DTO parse " +
         "in report-schedules.service.ts; F3.73 a twelfth, the site template content in " +
-        "site-layout.service.ts. A site reverted to " +
+        "site-layout.service.ts; F3.85 PR 7 six more, one per copilot read tool. A site reverted to " +
         "a bare .parse() answers 400 under the filter, which is ruling 2's failure mode " +
         "exactly.",
-    ).toEqual({ stock: 1, templates: 5, instantiate: 2, assetImages: 1, reportFiles: 1, reportSchedules: 1, siteLayout: 1 });
+    ).toEqual({
+      stock: 1,
+      templates: 5,
+      instantiate: 2,
+      assetImages: 1,
+      reportFiles: 1,
+      reportSchedules: 1,
+      siteLayout: 1,
+      ...Object.fromEntries(Object.keys(COPILOT_TOOL_FILES).map((key) => [key, 1])),
+    });
   });
 
   /**
@@ -567,7 +593,7 @@ describe("F4.108 / ADR 0060 — a stored-data parse never reaches the ZodError f
       declared.length,
       "the StoredContractContext union no longer parses as a list of string literals, so the " +
         "per-site counts below would be vacuous",
-    ).toBe(12);
+    ).toBe(18);
 
     const callSites = [
       STOCK_SERVICE,
@@ -577,6 +603,7 @@ describe("F4.108 / ADR 0060 — a stored-data parse never reaches the ZodError f
       REPORT_FILES_SERVICE,
       REPORT_SCHEDULES_SERVICE,
       SITE_LAYOUT_SERVICE,
+      ...Object.values(COPILOT_TOOL_FILES),
     ]
       .map((rel) => blankCommentsAndStrings(read(rel), false))
       .join("\n");

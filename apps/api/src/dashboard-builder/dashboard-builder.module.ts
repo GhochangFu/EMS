@@ -48,5 +48,7 @@ import { SiteWidgetsService } from "./site-widgets.service";
     SiteWidgetsService,
     AssetRoleSummaryService,
   ],
+  // `F3.85` PR 7: the copilot's `list_dashboards` read tool.
+  exports: [DashboardsService],
 })
 export class DashboardBuilderModule {}
