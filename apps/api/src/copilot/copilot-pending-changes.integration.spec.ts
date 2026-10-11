@@ -4,7 +4,7 @@ import { expect } from "vitest";
 
 import type { BmsDb } from "@bms/db";
 import type { CopilotPendingChangeDto, JwtPayload } from "@bms/shared";
-import { catalogEntry } from "@bms/shared/copilot";
+import { catalogEntry, proposeToolName } from "@bms/shared/copilot";
 
 import { withTenant } from "../database/tenant-context";
 import { withUser } from "../database/user-context";
@@ -13,6 +13,8 @@ import {
   type NewPendingChange,
   PENDING_CHANGE_TTL_MINUTES,
 } from "./copilot-pending-changes.service";
+import { createCopilotProposeTools, PROPOSE_TARGET_ERROR } from "./copilot-propose-tools";
+import type { CopilotToolContext } from "./copilot-read-tools";
 import { CopilotTargetResolver } from "./copilot-target-resolver";
 
 /**
@@ -394,4 +396,116 @@ export async function aThrowingManageCheckIsTheSameRefusal(ctx: ProposeCtx): Pro
   expect(await resolver.resolve(entry("dashboardTemplate.archive"), { id: ctx.templateA }, {}, [ctx.orgA], jwt)).toBeNull();
   const create = { organizationId: ctx.orgA, code: "x", name: "X", section: "electrical" };
   expect(await resolver.resolve(entry("dashboardTemplate.create"), {}, create, [ctx.orgA], jwt)).toBeNull();
+}
+
+// --- F3.85 PR 11a: the assetTemplate target and the Q10 merge ----------------
+
+/** The stored `content` of `assetTemplateA`: one section a KPI-only proposal must not delete (ruling Q10). */
+export const ASSET_TEMPLATE_A_CONTENT = {
+  alarms: [{ code: "HI-LOAD", pointKey: "kw", severity: "major", message: "F3.85 high load" }],
+} as const;
+
+/** What the PR 11a cases add: an asset template in each organization; A's `content` is `ASSET_TEMPLATE_A_CONTENT`. */
+export type AssetTemplateCtx = ProposeCtx & { assetTemplateA: string; assetTemplateB: string };
+
+const MISSING_ID = "99999999-9999-4999-8999-999999999999";
+
+/** The propose tools over the real resolver (with `access` standing in for `AccessControlService`) and the real service. */
+function proposeTools(ctx: AssetTemplateCtx, access: never) {
+  return createCopilotProposeTools({
+    targets: new CopilotTargetResolver(ctx.tenantDb, access),
+    pending: service(ctx),
+  });
+}
+
+/** A turn of user A in a fresh conversation (`hasOpen` runs before the target check), bound to `organizationId`. */
+async function turn(ctx: AssetTemplateCtx, organizationId: string): Promise<CopilotToolContext> {
+  return {
+    identity: { id: ctx.userA } as never,
+    user: { sub: ctx.userA } as JwtPayload,
+    conversationId: await newConversation(ctx),
+    conversationOrganizationId: organizationId,
+    allowedOrganizationIds: [organizationId],
+    turnKind: "user",
+    now: new Date(),
+  };
+}
+
+async function pendingBodiesOf(ctx: PendingCtx, conversationId: string): Promise<Record<string, unknown>[]> {
+  const { rows } = await withUser(ctx.tenantDb, ctx.userA, (tx) =>
+    tx.execute<{ body: Record<string, unknown> }>(
+      sql`SELECT body FROM bms.copilot_pending_changes WHERE conversation_id = ${conversationId}`,
+    ),
+  );
+  return rows.map((row) => row.body);
+}
+
+const UPDATE = "assetTemplate.update";
+const PUBLISH = "assetTemplate.publish";
+
+/** Case 1: an asset template of an allowed organization resolves, with that row's organization and name. */
+export async function anAssetTemplateResolvesInAnAllowedOrganization(ctx: AssetTemplateCtx): Promise<void> {
+  const resolver = new CopilotTargetResolver(ctx.tenantDb, always(true));
+  const jwt = { sub: ctx.userA } as JwtPayload;
+  expect(await resolver.resolve(entry(UPDATE), { id: ctx.assetTemplateB }, {}, [ctx.orgA, ctx.orgB], jwt)).toMatchObject({
+    organizationId: ctx.orgB,
+    targetName: "F385 asset template B",
+    organizationName: "F3.85 pending changes B",
+  });
+}
+
+/** Case 2, the resolver's own guard: the same id outside the allowed set is `null` (the propose tool's later checks would mask a resolver mutation). */
+export async function theResolverDoesNotFindAnAssetTemplateOutsideTheAllowedSet(ctx: AssetTemplateCtx): Promise<void> {
+  const resolver = new CopilotTargetResolver(ctx.tenantDb, always(true));
+  const jwt = { sub: ctx.userA } as JwtPayload;
+  expect(await resolver.resolve(entry(UPDATE), { id: ctx.assetTemplateA }, {}, [ctx.orgB], jwt)).toBeNull();
+}
+
+/** Case 2, end to end: a conversation of organization B naming A's asset template gets the single refusal and stores nothing. */
+export async function anAssetTemplateOutsideTheAllowedSetIsTheSingleRefusal(ctx: AssetTemplateCtx): Promise<void> {
+  const tools = proposeTools(ctx, always(true));
+  const at = await turn(ctx, ctx.orgB);
+  const answer = await tools.dispatch(proposeToolName(entry(UPDATE)), { id: ctx.assetTemplateA, body: { name: "X" } }, at);
+  expect(answer).toEqual({ ok: false, error: PROPOSE_TARGET_ERROR });
+  expect(await pendingBodiesOf(ctx, at.conversationId)).toEqual([]);
+}
+
+/** Case 3: a template id that does not exist is the same refusal text, and stores nothing. */
+export async function aMissingAssetTemplateIsTheSameRefusal(ctx: AssetTemplateCtx): Promise<void> {
+  const tools = proposeTools(ctx, always(true));
+  const at = await turn(ctx, ctx.orgA);
+  const answer = await tools.dispatch(proposeToolName(entry(UPDATE)), { id: MISSING_ID, body: { name: "X" } }, at);
+  expect(answer).toEqual({ ok: false, error: PROPOSE_TARGET_ERROR });
+  expect(await pendingBodiesOf(ctx, at.conversationId)).toEqual([]);
+}
+
+/**
+ * Case 4: a caller for whom `canManageTemplate` is false gets the same refusal on a row of its own
+ * organization. The fake stands in for `AccessControlService`, so only the manage guard can refuse.
+ */
+export async function anAssetTemplateTheCallerMayNotManageIsTheSameRefusal(ctx: AssetTemplateCtx): Promise<void> {
+  const tools = proposeTools(ctx, always(false));
+  const at = await turn(ctx, ctx.orgA);
+  const answer = await tools.dispatch(proposeToolName(entry(UPDATE)), { id: ctx.assetTemplateA, body: { name: "X" } }, at);
+  expect(answer).toEqual({ ok: false, error: PROPOSE_TARGET_ERROR });
+  expect(await pendingBodiesOf(ctx, at.conversationId)).toEqual([]);
+}
+
+/** Case 5: the bodyless publish of an allowed draft stores `{}`. */
+export async function aPublishOfAnAllowedDraftStoresAnEmptyBody(ctx: AssetTemplateCtx): Promise<void> {
+  const tools = proposeTools(ctx, always(true));
+  const at = await turn(ctx, ctx.orgA);
+  const answer = await tools.dispatch(proposeToolName(entry(PUBLISH)), { id: ctx.assetTemplateA }, at);
+  expect(answer).toMatchObject({ ok: true, organizationIds: [ctx.orgA] });
+  expect(await pendingBodiesOf(ctx, at.conversationId)).toEqual([{}]);
+}
+
+/** Case 6, ruling Q10: a KPI-only proposal is stored merged over the stored content — the alarms stay, the KPIs are added. */
+export async function aKpiOnlyProposalKeepsTheStoredSections(ctx: AssetTemplateCtx): Promise<void> {
+  const tools = proposeTools(ctx, always(true));
+  const at = await turn(ctx, ctx.orgA);
+  const kpis = [{ code: "LOAD", name: "Load", pointKeys: ["kw"], expression: "{kw}", dialect: "unvalidated" }];
+  const answer = await tools.dispatch(proposeToolName(entry(UPDATE)), { id: ctx.assetTemplateA, body: { content: { kpis } } }, at);
+  expect(answer).toMatchObject({ ok: true });
+  expect(await pendingBodiesOf(ctx, at.conversationId)).toEqual([{ content: { ...ASSET_TEMPLATE_A_CONTENT, kpis } }]);
 }

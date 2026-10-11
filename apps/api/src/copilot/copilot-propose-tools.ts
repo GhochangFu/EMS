@@ -1,12 +1,14 @@
 import { Inject, Injectable } from "@nestjs/common";
 import { z, type ZodTypeAny } from "zod";
 
-import { type CalcDialect, formatCalcError, validateFormula } from "@bms/shared";
+import { CALC_DIALECTS, type CalcDialect, formatCalcError, validateFormula } from "@bms/shared";
 import {
   bodyFieldsOf,
   type CatalogEntry,
   catalogPath,
   COPILOT_CATALOG,
+  formulaRefsOf,
+  formulaSitesOf,
   proposeToolName,
   stepValuesSchema,
 } from "@bms/shared/copilot";
@@ -32,6 +34,35 @@ export const PROPOSE_ACCESS_ON_FOLLOW_UP_ERROR =
 export const UNKNOWN_CHANGE_ERROR = "There is no such change in the catalog.";
 export const UNKNOWN_STEP_ERROR = "That wizard has no such step.";
 export const UNKNOWN_PATH_ERROR = "That path is not in the body's shape.";
+export const PROPOSE_STORED_CONTENT_ERROR =
+  "The template's saved content cannot be written back as it is, so this change could never apply. Tell the user which part:";
+
+/** The keys a merge never copies (`safeKeySchema` refuses them; the web merge drops them the same way). */
+const UNSAFE_CONTENT_KEYS = ["__proto__", "constructor", "prototype"];
+
+/**
+ * `F3.85` PR 11a, ruling Q10 — the template content a PATCH will store: the
+ * current content with each section the proposal names replaced. The route
+ * replaces `content` wholesale, so a proposal of `{ kpis }` alone would
+ * otherwise delete every other section. The server-side twin of the web's
+ * `mergeTemplateContent` (`apps/web/src/lib/template-content-merge.ts`),
+ * which `apps/api` cannot import: a filtered loop, not a spread, so a stored
+ * own `__proto__` never reaches an assignment.
+ */
+export function mergeTemplateSections(
+  current: Readonly<Record<string, unknown>>,
+  sections: Readonly<Record<string, unknown>>,
+): Record<string, unknown> {
+  const merged: Record<string, unknown> = {};
+  for (const source of [current, sections]) {
+    for (const key of Object.keys(source)) {
+      if (!UNSAFE_CONTENT_KEYS.includes(key)) merged[key] = source[key];
+    }
+  }
+  return merged;
+}
+
+const isCalcDialect = (value: unknown): value is CalcDialect => (CALC_DIALECTS as readonly unknown[]).includes(value);
 
 /**
  * `describe_change` reads per turn. A live follow-up turn (2026-10-11) read
@@ -167,7 +198,7 @@ export function createCopilotProposeTools(
     const parsed = modelBodySchema(entry).safeParse(raw);
     if (!parsed.success) return { ok: false, error: `Invalid body: ${issuesOf(parsed.error)}` };
     // The JSON image is what is stored, hashed and sent: one object on all three sides.
-    const body = JSON.parse(JSON.stringify(raw)) as Record<string, unknown>;
+    let body = JSON.parse(JSON.stringify(raw)) as Record<string, unknown>;
 
     if (await services.pending.hasOpen(ctx.identity.id, ctx.conversationId)) {
       return { ok: false, error: PROPOSE_OPEN_CHANGE_ERROR };
@@ -180,15 +211,24 @@ export function createCopilotProposeTools(
     ) {
       return { ok: false, error: PROPOSE_TARGET_ERROR };
     }
+    // Ruling Q10: the card shows, and Confirm sends, the whole content the PATCH stores.
+    const content = body.content;
+    if (target.currentContent !== undefined && typeof content === "object" && content !== null && !Array.isArray(content)) {
+      body = { ...body, content: mergeTemplateSections(target.currentContent, content as Record<string, unknown>) };
+      const merged = modelBodySchema(entry).safeParse(body);
+      if (!merged.success) return { ok: false, error: `${PROPOSE_STORED_CONTENT_ERROR} ${issuesOf(merged.error)}` };
+    }
     for (const formula of entry.formulas) {
-      const expression = body[formula.field];
-      const dialect = body[formula.dialectField];
-      // A null dialect inherits the template point's; the route's merged check decides that case on Confirm.
-      if (typeof expression !== "string" || typeof dialect !== "string") continue;
-      const result = validateFormula(expression, target.pointKeys ?? [], { dialect: dialect as CalcDialect });
-      if (!result.ok) {
-        const first = result.errors[0];
-        return { ok: false, error: `The formula in ${formula.field} is not valid: ${first ? formatCalcError(first) : "unknown error"}` };
+      const refs = formulaRefsOf(body, formula) ?? target.pointKeys ?? [];
+      for (const site of formulaSitesOf(body, formula)) {
+        // A null dialect inherits the template point's, and a KPI's "unvalidated" is not parsed;
+        // the route's own check decides both on Confirm.
+        if (typeof site.expression !== "string" || !isCalcDialect(site.dialect)) continue;
+        const result = validateFormula(site.expression, refs, { dialect: site.dialect });
+        if (!result.ok) {
+          const first = result.errors[0];
+          return { ok: false, error: `The formula in ${site.path} is not valid: ${first ? formatCalcError(first) : "unknown error"}` };
+        }
       }
     }
 

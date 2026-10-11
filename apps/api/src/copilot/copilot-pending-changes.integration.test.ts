@@ -6,7 +6,15 @@ import { createDb } from "@bms/db";
 import { openIntegrationPool, requireIntegrationDb } from "../testing/integration-db-gate";
 import { asRole } from "../testing/role-urls";
 import {
+  aKpiOnlyProposalKeepsTheStoredSections,
+  aMissingAssetTemplateIsTheSameRefusal,
+  anAssetTemplateOutsideTheAllowedSetIsTheSingleRefusal,
+  anAssetTemplateResolvesInAnAllowedOrganization,
+  anAssetTemplateTheCallerMayNotManageIsTheSameRefusal,
   anExpiredChangeCannotBePeekedOrClaimed,
+  aPublishOfAnAllowedDraftStoresAnEmptyBody,
+  ASSET_TEMPLATE_A_CONTENT,
+  type AssetTemplateCtx,
   aThrowingManageCheckIsTheSameRefusal,
   anotherUserCannotPeekOrClaim,
   aProposalIsOpenForItsUserUntilRejected,
@@ -19,6 +27,7 @@ import {
   type PendingCtx,
   type ProposeCtx,
   theResolverChecksACreatesOrganizationAndRefs,
+  theResolverDoesNotFindAnAssetTemplateOutsideTheAllowedSet,
   theResolverReadsATargetOnlyInTheAllowedSet,
   recordMovesOnlyAnApplyingRow,
   releaseReturnsAClaimToPending,
@@ -52,6 +61,7 @@ describe.skipIf(!connectionString)("F3.85 — the copilot pending-change claim (
   let superPool: pg.Pool;
   let ctx: PendingCtx;
   let proposeCtx: ProposeCtx;
+  let assetTemplateCtx: AssetTemplateCtx;
   let orgId: string | undefined;
   let orgBId: string | undefined;
 
@@ -68,6 +78,7 @@ describe.skipIf(!connectionString)("F3.85 — the copilot pending-change claim (
     await superPool.query(`DELETE FROM bms.audit_log WHERE organization_id IN (${stale})`, [FAMILY_PATTERN]);
     await superPool.query(`DELETE FROM bms.users WHERE organization_id IN (${stale})`, [FAMILY_PATTERN]);
     await superPool.query(`DELETE FROM bms.dashboard_templates WHERE organization_id IN (${stale})`, [FAMILY_PATTERN]);
+    await superPool.query(`DELETE FROM bms.asset_templates WHERE organization_id IN (${stale})`, [FAMILY_PATTERN]);
     await superPool.query(`DELETE FROM bms.locations WHERE organization_id IN (${stale})`, [FAMILY_PATTERN]);
     await superPool.query(`DELETE FROM bms.organizations WHERE id IN (${stale})`, [FAMILY_PATTERN]);
     const org = await superPool.query<{ id: string }>(
@@ -118,6 +129,22 @@ describe.skipIf(!connectionString)("F3.85 — the copilot pending-change claim (
       locationA: await location(orgId, "A"),
       locationB: await location(orgBId, "B"),
     };
+
+    // F3.85 PR 11a: an asset template in each organization; A holds an alarms section (ruling Q10).
+    const assetTemplate = async (org: string, suffix: string, content: object): Promise<string> => {
+      const { rows } = await superPool.query<{ id: string }>(
+        "INSERT INTO bms.asset_templates (organization_id, code, name, asset_type, domain, content) VALUES ($1, $2, $3, 'meter', 'electrical', $4) RETURNING id",
+        [org, `f385-at-${suffix.toLowerCase()}`, `F385 asset template ${suffix}`, JSON.stringify(content)],
+      );
+      const id = rows[0]?.id;
+      if (!id) throw new Error(`F3.85: fixture asset template ${suffix} was not created`);
+      return id;
+    };
+    assetTemplateCtx = {
+      ...proposeCtx,
+      assetTemplateA: await assetTemplate(orgId, "A", ASSET_TEMPLATE_A_CONTENT),
+      assetTemplateB: await assetTemplate(orgBId, "B", {}),
+    };
   });
 
   afterAll(async () => {
@@ -127,6 +154,7 @@ describe.skipIf(!connectionString)("F3.85 — the copilot pending-change claim (
       await superPool.query("DELETE FROM bms.copilot_pending_changes WHERE organization_id = $1", [id]);
       await superPool.query("DELETE FROM bms.users WHERE organization_id = $1", [id]);
       await superPool.query("DELETE FROM bms.dashboard_templates WHERE organization_id = $1", [id]);
+      await superPool.query("DELETE FROM bms.asset_templates WHERE organization_id = $1", [id]);
       await superPool.query("DELETE FROM bms.locations WHERE organization_id = $1", [id]);
       await superPool.query("DELETE FROM bms.organizations WHERE id = $1", [id]);
     }
@@ -177,5 +205,26 @@ describe.skipIf(!connectionString)("F3.85 — the copilot pending-change claim (
   });
   it("aThrowingManageCheckIsTheSameRefusal", async () => {
     await aThrowingManageCheckIsTheSameRefusal(proposeCtx);
+  });
+  it("anAssetTemplateResolvesInAnAllowedOrganization", async () => {
+    await anAssetTemplateResolvesInAnAllowedOrganization(assetTemplateCtx);
+  });
+  it("theResolverDoesNotFindAnAssetTemplateOutsideTheAllowedSet", async () => {
+    await theResolverDoesNotFindAnAssetTemplateOutsideTheAllowedSet(assetTemplateCtx);
+  });
+  it("anAssetTemplateOutsideTheAllowedSetIsTheSingleRefusal", async () => {
+    await anAssetTemplateOutsideTheAllowedSetIsTheSingleRefusal(assetTemplateCtx);
+  });
+  it("aMissingAssetTemplateIsTheSameRefusal", async () => {
+    await aMissingAssetTemplateIsTheSameRefusal(assetTemplateCtx);
+  });
+  it("anAssetTemplateTheCallerMayNotManageIsTheSameRefusal", async () => {
+    await anAssetTemplateTheCallerMayNotManageIsTheSameRefusal(assetTemplateCtx);
+  });
+  it("aPublishOfAnAllowedDraftStoresAnEmptyBody", async () => {
+    await aPublishOfAnAllowedDraftStoresAnEmptyBody(assetTemplateCtx);
+  });
+  it("aKpiOnlyProposalKeepsTheStoredSections", async () => {
+    await aKpiOnlyProposalKeepsTheStoredSections(assetTemplateCtx);
   });
 });

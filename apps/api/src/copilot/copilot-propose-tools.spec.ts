@@ -18,6 +18,7 @@ import {
   modelBodySchema,
   PROPOSE_ACCESS_ON_FOLLOW_UP_ERROR,
   PROPOSE_OPEN_CHANGE_ERROR,
+  PROPOSE_STORED_CONTENT_ERROR,
   PROPOSE_TARGET_ERROR,
 } from "./copilot-propose-tools";
 import type { CopilotToolContext, CopilotToolResult } from "./copilot-read-tools";
@@ -366,4 +367,137 @@ export async function fillStepChecksOneStepAndWritesNothing(): Promise<void> {
   expect((await h.call(FILL_STEP_TOOL, { catalogId: "dashboard.create", stepId: "nope", values: {} })).ok).toBe(false);
   expect(h.stored).toEqual([]);
   expect(h.resolved).toEqual([]);
+}
+
+/* ---------- F3.85 PR 11a — the asset-template entries (plan §11.3 Unit 2, ruling Q10) ---------- */
+
+const KW = { pointKey: "kw", kind: "measured" };
+const derived = (formula: string) => ({
+  pointKey: "pf",
+  kind: "derived",
+  formula,
+  formulaDialect: "bms-calc-v1",
+  calcTrigger: "streaming",
+});
+const kpi = (pointKeys: string[], expression: string) => ({
+  code: "k1",
+  name: "KPI one",
+  pointKeys,
+  expression,
+  dialect: "bms-calc-v1",
+});
+const templateTarget = (over: Partial<ResolvedTarget> = {}): ResolvedTarget => ({
+  organizationId: ORG_X,
+  organizationName: "Org X",
+  targetName: "Pump template",
+  pointKeys: ["kw"],
+  currentContent: {},
+  ...over,
+});
+const escapeRegExp = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+/** An invalid `points[0].formula` stores nothing (the shared body refuses it at its path); the valid one beside it stores. */
+export async function anInvalidTemplatePointFormulaStoresNothing(): Promise<void> {
+  const bad = proposeHarness({ target: templateTarget() });
+  const refused = await bad.call("propose_assetTemplate_update", { id: ROW, body: { points: [derived("{kw} / {missing}"), KW] } });
+  expect(refused.error).toMatch(/^Invalid body: .*points\.0\.formula/);
+  expect(bad.stored).toEqual([]);
+  const good = proposeHarness({ target: templateTarget() });
+  expect((await good.call("propose_assetTemplate_update", { id: ROW, body: { points: [derived("{kw} * 2"), KW] } })).ok).toBe(true);
+  expect(good.stored).toHaveLength(1);
+}
+
+/** An invalid `content.kpis[0].expression` stores nothing; the valid one beside it stores. */
+export async function anInvalidTemplateKpiExpressionStoresNothing(): Promise<void> {
+  const bad = proposeHarness({ target: templateTarget() });
+  const refused = await bad.call("propose_assetTemplate_update", { id: ROW, body: { content: { kpis: [kpi(["kw"], "{kw} +")] } } });
+  expect(refused.error).toMatch(/^Invalid body: .*content\.kpis\.0\.expression/);
+  expect(bad.stored).toEqual([]);
+  const good = proposeHarness({ target: templateTarget() });
+  expect((await good.call("propose_assetTemplate_update", { id: ROW, body: { content: { kpis: [kpi(["kw"], "{kw}")] } } })).ok).toBe(true);
+  expect(good.stored).toHaveLength(1);
+}
+
+/**
+ * A KPI naming a point the template does not declare stores nothing: the one
+ * check the body schema cannot make (the route's `assertContentRefsResolve`
+ * answers 400 on Confirm). The names are the template's points now.
+ */
+export async function aKpiNamingAPointTheTemplateLacksStoresNothing(): Promise<void> {
+  const body = { content: { kpis: [kpi(["ghost"], "{ghost}")] } };
+  const bad = proposeHarness({ target: templateTarget({ pointKeys: ["kw"] }) });
+  const refused = await bad.call("propose_assetTemplate_update", { id: ROW, body });
+  expect(refused.error).toMatch(/^The formula in content\.kpis\.0\.expression is not valid/);
+  expect(bad.stored).toEqual([]);
+  const good = proposeHarness({ target: templateTarget({ pointKeys: ["kw", "ghost"] }) });
+  expect((await good.call("propose_assetTemplate_update", { id: ROW, body })).ok).toBe(true);
+  expect(good.stored).toHaveLength(1);
+}
+
+/** A body that replaces `points` names the points a KPI may reference, beyond the template's stored ones. */
+export async function aKpiMayNameAPointTheBodyDeclares(): Promise<void> {
+  const declared = proposeHarness({ target: templateTarget({ pointKeys: ["kw"] }) });
+  const body = { points: [{ pointKey: "ghost", kind: "measured" }], content: { kpis: [kpi(["ghost"], "{ghost}")] } };
+  expect((await declared.call("propose_assetTemplate_update", { id: ROW, body })).ok).toBe(true);
+  expect(declared.stored).toHaveLength(1);
+}
+
+/** A body that replaces `points` drops the stored ones: a KPI naming only a stored point stores nothing. */
+export async function aKpiMayNotNameAStoredPointTheBodyDrops(): Promise<void> {
+  const stale = proposeHarness({ target: templateTarget({ pointKeys: ["ghost"] }) });
+  const dropped = { points: [KW], content: { kpis: [kpi(["ghost"], "{ghost}")] } };
+  expect((await stale.call("propose_assetTemplate_update", { id: ROW, body: dropped })).error).toMatch(
+    /^The formula in content\.kpis\.0\.expression is not valid/,
+  );
+  expect(stale.stored).toEqual([]);
+}
+
+/** Ruling Q10: a KPI proposal stores the full merged body, and its hash is the merged body's. */
+export async function aKpiProposalStoresTheMergedBody(): Promise<void> {
+  const current = { contentVersion: 1, kpis: [kpi(["kw"], "{kw}")], maintenance: [] };
+  const h = proposeHarness({ target: templateTarget({ currentContent: current }) });
+  const next = kpi(["kw"], "{kw} * 2");
+  expect((await h.call("propose_assetTemplate_update", { id: ROW, body: { content: { kpis: [next] } } })).ok).toBe(true);
+  const merged = { content: { contentVersion: 1, kpis: [next], maintenance: [] } };
+  expect(h.stored[0]?.body).toEqual(merged);
+  expect(h.stored[0]?.bodyHash).toBe(bodyHash(merged));
+  expect(h.stored[0]?.path).toBe(`/api/v1/admin/asset-templates/${ROW}`);
+}
+
+/** A body that does not touch `content` stores no content: the merge never adds a section. */
+export async function aBodyWithoutContentStoresNoContent(): Promise<void> {
+  const h = proposeHarness({ target: templateTarget({ currentContent: { kpis: [] } }) });
+  expect((await h.call("propose_assetTemplate_update", { id: ROW, body: { name: "Pump v2" } })).ok).toBe(true);
+  expect(h.stored[0]?.body).toEqual({ name: "Pump v2" });
+}
+
+/** A stored prototype-pollution key is not carried into the merged body (the web merge drops it the same way). */
+export async function aStoredUnsafeKeyIsNotCarried(): Promise<void> {
+  const current = JSON.parse('{"constructor":{"x":1},"maintenance":[]}') as Record<string, unknown>;
+  const h = proposeHarness({ target: templateTarget({ currentContent: current }) });
+  expect((await h.call("propose_assetTemplate_update", { id: ROW, body: { content: { kpis: [] } } })).ok).toBe(true);
+  expect(h.stored[0]?.body).toEqual({ content: { maintenance: [], kpis: [] } });
+}
+
+/** Stored content the contract refuses (a reserved key) stores nothing: the card could never apply; clean content stores. */
+export async function storedContentThatCannotBeWrittenBackStoresNothing(): Promise<void> {
+  const bad = proposeHarness({ target: templateTarget({ currentContent: { optimisation: {} } }) });
+  const refused = await bad.call("propose_assetTemplate_update", { id: ROW, body: { content: { kpis: [] } } });
+  expect(refused.error).toMatch(new RegExp(`^${escapeRegExp(PROPOSE_STORED_CONTENT_ERROR)}`));
+  expect(bad.stored).toEqual([]);
+  const good = proposeHarness({ target: templateTarget({ currentContent: {} }) });
+  expect((await good.call("propose_assetTemplate_update", { id: ROW, body: { content: { kpis: [] } } })).ok).toBe(true);
+  expect(good.stored).toHaveLength(1);
+}
+
+/** Publishing a template is bodyless: `{}` on its own path. */
+export async function aTemplatePublishStoresTheEmptyObject(): Promise<void> {
+  const h = proposeHarness({ target: templateTarget() });
+  expect((await h.call("propose_assetTemplate_publish", { id: ROW })).ok).toBe(true);
+  expect(h.stored[0]).toMatchObject({
+    body: {},
+    bodyHash: EMPTY_SHA256,
+    method: "POST",
+    path: `/api/v1/admin/asset-templates/${ROW}/publish`,
+  });
 }

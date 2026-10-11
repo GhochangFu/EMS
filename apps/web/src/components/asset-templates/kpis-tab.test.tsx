@@ -3,9 +3,17 @@ import { afterEach, describe, it, vi } from "vitest";
 import { cleanup } from "@testing-library/react";
 
 import {
+  aCopilotContentFillKeepsEveryOtherStoredSection,
   aFrozenVersionDisablesEveryControl,
+  aRefetchedKpiSectionReseedsACleanTab,
+  aRefetchKeepsAnEditInProgress,
   aRefusedGrammarChangeLeavesTheRowAlone,
   aStoredV2KpiRendersAsChecked,
+  saveOpensTheWizardAndSendsNothing,
+  submitSendsTheMergedContentAlone,
+  theContentStepShowsEveryExpressionInFull,
+  theReviewShowsTheStoredContentBesideTheNew,
+  theWizardAloneSendsNoCopilotHeader,
   validateUpgradesToTheChosenGrammar,
 } from "./kpis-tab.spec";
 
@@ -38,5 +46,51 @@ describe("F2.22 KPIs tab — a bms-calc-v2 KPI is checked, and Grammar (ADR 0055
 
   it("disables every control on a frozen version and offers no Save", async () => {
     await aFrozenVersionDisablesEveryControl();
+  });
+});
+
+describe("F3.85 PR 11a KPIs tab — Save is the assetTemplate.update wizard (ADR 0099 decision 6)", () => {
+  afterEach(() => {
+    cleanup();
+    vi.restoreAllMocks();
+  });
+
+  it("opens the wizard on Save and sends nothing yet", async () => {
+    await saveOpensTheWizardAndSendsNothing();
+  });
+
+  it("lists every KPI expression in full on the content step", async () => {
+    await theContentStepShowsEveryExpressionInFull();
+  });
+
+  it("submits the merged content alone", async () => {
+    await submitSendsTheMergedContentAlone();
+  });
+
+  it("reviews the stored content beside the new", async () => {
+    await theReviewShowsTheStoredContentBesideTheNew();
+  });
+
+  it("sends the PATCH with no X-Copilot-Change header", async () => {
+    await theWizardAloneSendsNoCopilotHeader();
+  });
+
+  it("merges a copilot content fill over the stored sections, so maintenance survives", async () => {
+    await aCopilotContentFillKeepsEveryOtherStoredSection();
+  });
+});
+
+describe("F3.85 PR 11a KPIs tab — a refetched KPI section (review finding C2)", () => {
+  afterEach(() => {
+    cleanup();
+    vi.restoreAllMocks();
+  });
+
+  it("reseeds a clean tab when the stored KPI section changes, and stays clean", async () => {
+    await aRefetchedKpiSectionReseedsACleanTab();
+  });
+
+  it("keeps an edit in progress when the stored KPI section changes", async () => {
+    await aRefetchKeepsAnEditInProgress();
   });
 });

@@ -1,7 +1,7 @@
 import { DASHBOARD_TEMPLATE_ENTRIES } from "./dashboard-templates";
 import { DASHBOARD_ENTRIES } from "./dashboards";
 import { KPI_ENTRIES } from "./kpis";
-import type { CatalogEntry, ExcludedRoute } from "./types";
+import type { CatalogEntry, CatalogFormula, ExcludedRoute } from "./types";
 
 /**
  * `F3.85` PR 8 / ADR 0099 decision 2 — the action catalog: every write route
@@ -47,9 +47,8 @@ export const EXCLUDED_ROUTES: readonly ExcludedRoute[] = [
   { method: "POST", path: "/admin/asset-templates/:id/default-dashboards", reason: F3_86 },
   { method: "POST", path: "/admin/asset-templates/:id/migration-preview", reason: F3_86 },
   { method: "POST", path: "/admin/asset-templates/:id/migrate", reason: F3_86 },
-  // PR 11 moves these two to catalog entries (plan §10.1).
-  { method: "PATCH", path: "/admin/asset-templates/:id", reason: "PR 11" },
-  { method: "POST", path: "/admin/asset-templates/:id/publish", reason: "PR 11" },
+  // `PATCH /admin/asset-templates/:id` and `POST /admin/asset-templates/:id/publish`
+  // are catalog entries since PR 11a (`kpis.ts`, plan §10.1).
 ];
 
 /** The API's global prefix; a stored change's path starts with it (`copilotPendingChangeDtoSchema`). */
@@ -109,4 +108,72 @@ export function catalogPath(entry: Pick<CatalogEntry, "path">, params: Readonly<
       return encodeURIComponent(value);
     })
   );
+}
+
+/** One place a formula sits in a body: its issue path, the expression and the dialect from the same item. */
+export type FormulaSite = { readonly path: string; readonly expression: unknown; readonly dialect: unknown };
+
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === "object" && value !== null && !Array.isArray(value);
+
+/** A catalog path split at its last `[]`: the items it walks (`""` for the body itself) and the key in each item. */
+function splitFormulaPath(path: string): { items: string; leaf: string } {
+  const at = path.lastIndexOf("[].");
+  return at === -1 ? { items: "", leaf: path } : { items: path.slice(0, at + 2), leaf: path.slice(at + 3) };
+}
+
+/** Every item an items path reaches, each with its issue path (`content.kpis.0`). Own keys only. */
+function itemsAt(body: unknown, items: string): Array<{ path: string; item: unknown }> {
+  let level: Array<{ path: string; item: unknown }> = [{ path: "", item: body }];
+  if (items === "") return level;
+  for (const segment of items.split(".")) {
+    const many = segment.endsWith("[]");
+    const key = many ? segment.slice(0, -2) : segment;
+    const next: Array<{ path: string; item: unknown }> = [];
+    for (const { path, item } of level) {
+      if (!isRecord(item) || !Object.prototype.hasOwnProperty.call(item, key)) continue;
+      const value = item[key];
+      const at = path === "" ? key : `${path}.${key}`;
+      if (!many) next.push({ path: at, item: value });
+      else if (Array.isArray(value)) value.forEach((element, index) => next.push({ path: `${at}.${index}`, item: element }));
+    }
+    level = next;
+  }
+  return level;
+}
+
+/**
+ * `F3.85` PR 11a — every place a catalog formula sits in a body, with the
+ * dialect beside it. A formula in an array (`points[].formula`) has one site
+ * per item; its dialect must be in the same item, or the catalog is wrong.
+ */
+export function formulaSitesOf(body: unknown, formula: CatalogFormula): FormulaSite[] {
+  const field = splitFormulaPath(formula.field);
+  const dialect = splitFormulaPath(formula.dialectField);
+  if (field.items !== dialect.items) {
+    throw new Error(`F3.85: ${formula.field} and ${formula.dialectField} are not in the same item`);
+  }
+  return itemsAt(body, field.items).flatMap(({ path, item }) =>
+    isRecord(item) && Object.prototype.hasOwnProperty.call(item, field.leaf)
+      ? [{ path: path === "" ? field.leaf : `${path}.${field.leaf}`, expression: item[field.leaf], dialect: item[dialect.leaf] }]
+      : [],
+  );
+}
+
+/**
+ * The point keys a formula may name, from the body: every string at
+ * `refsField` (`points[].pointKey`). `null` when the formula names no refs
+ * path or the body does not carry it — the target's point keys apply then.
+ */
+export function formulaRefsOf(body: unknown, formula: CatalogFormula): string[] | null {
+  if (formula.refsField === undefined) return null;
+  const root = formula.refsField.split(/[.[]/)[0] as string;
+  if (!isRecord(body) || !Object.prototype.hasOwnProperty.call(body, root)) return null;
+  const refs = splitFormulaPath(formula.refsField);
+  const names: string[] = [];
+  for (const { item } of itemsAt(body, refs.items)) {
+    const value = isRecord(item) ? item[refs.leaf] : undefined;
+    for (const name of Array.isArray(value) ? value : [value]) if (typeof name === "string") names.push(name);
+  }
+  return names;
 }

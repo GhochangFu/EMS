@@ -16,6 +16,9 @@ const TEMPLATE: QueryKey = ["admin", "dashboard-template"];
 const CALC_PARAMETERS: QueryKey = ["admin", "calc-parameters"];
 const ASSET_CALC_POINTS: QueryKey = ["admin", "asset-calc-points"];
 const ASSET_GROUPS: QueryKey = ["admin", "asset-groups"];
+// The pair `asset-template-detail-page.tsx`'s own `afterChange` invalidates.
+const ASSET_TEMPLATES: QueryKey = ["admin", "asset-templates"];
+const ASSET_TEMPLATE: QueryKey = ["admin", "asset-template"];
 
 const BY_ENTRY: Readonly<Record<string, readonly QueryKey[]>> = {
   "dashboard.create": [DASHBOARDS],
@@ -33,6 +36,8 @@ const BY_ENTRY: Readonly<Record<string, readonly QueryKey[]>> = {
   "calcParameter.create": [CALC_PARAMETERS],
   "calcParameter.update": [CALC_PARAMETERS],
   "calcOverride.set": [ASSET_CALC_POINTS],
+  "assetTemplate.update": [ASSET_TEMPLATES, ASSET_TEMPLATE],
+  "assetTemplate.publish": [ASSET_TEMPLATES, ASSET_TEMPLATE],
 };
 
 /** The query-key prefixes to invalidate after the change `catalogId` is applied. */

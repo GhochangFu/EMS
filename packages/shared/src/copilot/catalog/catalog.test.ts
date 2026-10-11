@@ -18,6 +18,14 @@ import {
   theWidgetSummaryCountsRemovedWidgets,
   everyBodyObjectIsStrict,
   aDotSegmentIsNotAPointKey,
+  aFormulaPathTheBodyLacksResolvesToNothing,
+  aFormulaPathNamesOneSitePerItem,
+  aRefsPathCollectsEveryName,
+  aBodyWithoutTheFormulaPathHasNoSite,
+  aBodyWithoutTheRefsPathHasNoRefs,
+  aTopLevelFormulaIsOneSite,
+  aFormulaWithoutARefsPathHasNoRefs,
+  aDialectOutsideTheFormulasItemIsAnError,
 } from "./catalog.spec";
 
 /** Vitest entry point — assertions live in the sibling `.spec` (ADR 0014). */
@@ -39,4 +47,15 @@ describe("F3.85 PR 8 — the copilot action catalog (ADR 0099 decisions 2, 3, 6)
   it("counts the widgets a widget save removes", () => theWidgetSummaryCountsRemovedWidgets());
   it("holds strict body objects only", () => everyBodyObjectIsStrict());
   it("refuses a dot segment as a point key", () => aDotSegmentIsNotAPointKey());
+});
+
+describe("F3.85 PR 11a — formula paths into array items (plan §11.3 Unit 2)", () => {
+  it("resolves a misspelled formula path to nothing", () => aFormulaPathTheBodyLacksResolvesToNothing());
+  it("names one site per array item", () => aFormulaPathNamesOneSitePerItem());
+  it("collects every name at a refs path", () => aRefsPathCollectsEveryName());
+  it("has no site in a body without the formula path", () => aBodyWithoutTheFormulaPathHasNoSite());
+  it("has no refs in a body without the refs path", () => aBodyWithoutTheRefsPathHasNoRefs());
+  it("treats a top-level formula as one site", () => aTopLevelFormulaIsOneSite());
+  it("has no refs for a formula without a refs path", () => aFormulaWithoutARefsPathHasNoRefs());
+  it("refuses a dialect outside the formula's item", () => aDialectOutsideTheFormulasItemIsAnError());
 });

@@ -25,8 +25,11 @@ import { describe, expect, it } from "vitest";
 const repoRoot = fileURLToPath(new URL("..", import.meta.url));
 
 const FILES = {
+  // The cycle sentence stays in the api file (templateCycles is api-only); every other
+  // template message moved with the structural schemas to packages/shared in F3.85 PR 11a.
   templateSchema: "apps/api/src/admin/asset-templates/asset-templates.schema.ts",
-  templateContentSchema: "apps/api/src/admin/asset-templates/asset-templates-content.schema.ts",
+  sharedTemplateSchema: "packages/shared/src/contracts/asset-template-writes.ts",
+  templateContentSchema: "packages/shared/src/contracts/asset-template-content-writes.ts",
   overrideSchema: "packages/shared/src/contracts/calc-override-writes.ts",
   overrideService: "apps/api/src/admin/asset-points/asset-point-calc-override.service.ts",
   templateCalcConfig: "apps/web/src/lib/template-calc-config.ts",
@@ -95,7 +98,7 @@ describe("F2.22 T9 — the editor's six copies of server wording, gated against 
     const normalise = (literal: string): string => literal.replace(/\$\{[\w.]+\}/, "${DIALECT}");
     const server1 = normalise(
       dropTrailingPeriod(
-        joinConcatenatedLiteral(extractExactlyOne(source.templateSchema, RE, "asset-templates.schema.ts")),
+        joinConcatenatedLiteral(extractExactlyOne(source.sharedTemplateSchema, RE, "asset-template-writes.ts")),
       ),
     );
     const server2 = normalise(
@@ -135,7 +138,7 @@ describe("F2.22 T9 — the editor's six copies of server wording, gated against 
     const SERVER_RE = /"This point's formula references itself[\s\S]*?measured points"/;
     const WEB_RE = /DERIVED_SELF_REFERENCE_MESSAGE\s*=\s*\n?\s*"([^"]*)"/;
 
-    const serverRaw = extractExactlyOne(source.templateSchema, SERVER_RE, "asset-templates.schema.ts (self)");
+    const serverRaw = extractExactlyOne(source.sharedTemplateSchema, SERVER_RE, "asset-template-writes.ts (self)");
     const server = joinConcatenatedLiteral(serverRaw);
 
     const webGlobal = new RegExp(WEB_RE.source, "g");
@@ -154,9 +157,9 @@ describe("F2.22 T9 — the editor's six copies of server wording, gated against 
     const WEB_RE = /DERIVED_SIBLING_REFERENCE_MESSAGE\s*=\s*\n?\s*"([^"]*)"/;
 
     const serverRaw = extractExactlyOne(
-      source.templateSchema,
+      source.sharedTemplateSchema,
       SERVER_RE,
-      "asset-templates.schema.ts (sibling)",
+      "asset-template-writes.ts (sibling)",
     );
     const server = joinConcatenatedLiteral(serverRaw);
 
@@ -209,7 +212,7 @@ describe("F2.22 T9 — the editor's six copies of server wording, gated against 
     const RE =
       /minCoverageRatio applies only to a derived point in a cross-asset dialect[\s\S]*?must be fresh/;
     const server = joinConcatenatedLiteral(
-      extractExactlyOne(source.templateSchema, RE, "asset-templates.schema.ts (ratio)"),
+      extractExactlyOne(source.sharedTemplateSchema, RE, "asset-template-writes.ts (ratio)"),
     );
     const web = joinConcatenatedLiteral(
       extractExactlyOne(source.templateCalcConfig, RE, "template-calc-config.ts (ratio)"),
@@ -234,7 +237,7 @@ describe("F2.22 T9 — the editor's six copies of server wording, gated against 
     const serverRaw = extractExactlyOne(
       source.templateContentSchema,
       SERVER_RE,
-      "asset-templates-content.schema.ts (unused pointKeys)",
+      "asset-template-content-writes.ts (unused pointKeys)",
     );
     const server = joinConcatenatedLiteral(
       serverRaw.replace(/^message:\s*/, ""),

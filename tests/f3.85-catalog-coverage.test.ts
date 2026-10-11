@@ -96,6 +96,49 @@ function sharedImports(file: string): Set<string> {
   return names;
 }
 
+/**
+ * `F3.85` PR 11a (plan §10.1, §13) — the one entry whose controller parses a
+ * local wrapper of the shared body: `updateAssetTemplateBodySchema` is the
+ * shared export plus the api-only cycle check (`calc-graph.ts` stays in
+ * `apps/api`). The allowance is exact: this controller imports this name from
+ * this wrapper, and the wrapper imports the shared export under this alias.
+ * `asset-templates.schema-move.spec.ts` proves `_def.schema` is the shared
+ * export by identity.
+ */
+const LOCAL_WRAPPERS: ReadonlyArray<{ entryId: string; bodyName: string; controller: string; wrapper: string; alias: string }> = [
+  {
+    entryId: "assetTemplate.update",
+    bodyName: "updateAssetTemplateBodySchema",
+    controller: "apps/api/src/admin/asset-templates/asset-templates.controller.ts",
+    wrapper: "apps/api/src/admin/asset-templates/asset-templates.schema.ts",
+    alias: "sharedUpdateAssetTemplateBodySchema",
+  },
+];
+
+/** The names a file imports from one module specifier (`./asset-templates.schema`). */
+function importsFrom(file: string, specifier: string): Set<string> {
+  const names = new Set<string>();
+  const escaped = specifier.replace(/[.*+?^${}()|[\]\\/]/g, "\\$&");
+  for (const match of read(file).matchAll(new RegExp(`import\\s*(?:type\\s*)?\\{([^}]*)\\}\\s*from\\s*"${escaped}"`, "g"))) {
+    for (const name of (match[1] as string).split(",")) {
+      const clean = name.replace(/^\s*type\s+/, "").trim();
+      if (clean) names.add(clean);
+    }
+  }
+  return names;
+}
+
+/** Whether an entry's handler reaches the shared body through its declared local wrapper. */
+function viaLocalWrapper(entry: Entry, file: string): boolean {
+  const wrapper = LOCAL_WRAPPERS.find((w) => w.entryId === entry.id && w.bodyName === entry.bodyName && w.controller === file);
+  if (!wrapper) return false;
+  return (
+    importsFrom(wrapper.controller, "./asset-templates.schema").has(wrapper.bodyName) &&
+    sharedImports(wrapper.wrapper).has(`${wrapper.bodyName} as ${wrapper.alias}`) &&
+    new RegExp(`export const ${wrapper.bodyName} = ${wrapper.alias}\\b`).test(read(wrapper.wrapper))
+  );
+}
+
 const key = (route: Route) => `${route.method} ${route.path}`;
 const walked = CONTROLLERS.flatMap((controller) => walk(controller.file));
 const byKey = new Map(walked.map((route) => [key(route), route]));
@@ -139,8 +182,19 @@ describe("F3.85 PR 8 — the copilot action catalog covers the write routes (ADR
         expect(route.handler, entry.id).not.toMatch(/@Body\(/);
       } else {
         expect(route.handler, entry.id).toMatch(new RegExp(`\\b${entry.bodyName}\\b`));
-        expect(sharedImports(route.file).has(entry.bodyName), `${entry.id}: ${entry.bodyName} from @bms/shared`).toBe(true);
+        const shared = sharedImports(route.file).has(entry.bodyName) || viaLocalWrapper(entry, route.file);
+        expect(shared, `${entry.id}: ${entry.bodyName} from @bms/shared`).toBe(true);
       }
     }
+  });
+
+  it("matches the local-wrapper allowance exactly once, and only for its own entry (positive control)", () => {
+    const matched = COPILOT_CATALOG.filter((entry) => {
+      const route = byKey.get(key(entry));
+      return route !== undefined && viaLocalWrapper(entry, route.file);
+    }).map((entry) => entry.id);
+    expect(matched).toEqual(["assetTemplate.update"]);
+    const other = COPILOT_CATALOG.find((entry) => entry.id === "dashboardTemplate.update") as Entry;
+    expect(viaLocalWrapper({ ...other, bodyName: "updateAssetTemplateBodySchema" }, LOCAL_WRAPPERS[0]?.controller as string)).toBe(false);
   });
 });

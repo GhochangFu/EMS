@@ -28,9 +28,12 @@ const read = (rel: string): string => readFileSync(join(repoRoot, rel), "utf8");
 
 const ONBOARDING_DIR = "apps/api/src/admin/onboarding";
 const ADMIN_DIR = "apps/api/src/admin";
-const TEMPLATE_SCHEMA_REL = "apps/api/src/admin/asset-templates/asset-templates-content.schema.ts";
+// `F3.85` PR 11a (plan §11.3 Unit 1) moved the template content schema and the walker to
+// `packages/shared`; the api files of the same names re-export them.
+const TEMPLATE_SCHEMA_REL = "packages/shared/src/contracts/asset-template-content-writes.ts";
 const DRAFT_SCHEMA_REL = "apps/api/src/admin/onboarding/onboarding.schema.ts";
-const SHARED_WALKER_REL = "apps/api/src/admin/stack-safe-json.ts";
+const SHARED_WALKER_REL = "packages/shared/src/stack-safe-json.ts";
+const SHARED_SRC_DIR = "packages/shared/src";
 const REDACTION_REL = "apps/api/src/admin/onboarding/onboarding-redaction.ts";
 
 /**
@@ -92,16 +95,27 @@ describe("F4.115 — the onboarding draft's walkers stay iterative", () => {
    * rather than the three files listed, so a fourth site added later is caught
    * by this test rather than by a production 500.
    */
-  it("has no structuredClone left in the onboarding module", () => {
-    const files = productionFilesUnder(ONBOARDING_DIR);
+  it("has no structuredClone left in the onboarding module or in packages/shared/src", () => {
+    const onboarding = productionFilesUnder(ONBOARDING_DIR);
+    const shared = productionFilesUnder(SHARED_SRC_DIR);
 
     // A broken walk must fail loudly rather than pass having scanned nothing.
     expect(
-      files.length,
+      onboarding.length,
       "the walk over the onboarding module found almost no files — it is broken, and an " +
         "empty offender list below would mean nothing",
     ).toBeGreaterThanOrEqual(8);
+    // ...and the same for the second root. Since F3.85 PR 11a the walker the onboarding
+    // module calls lives there, so the walk must reach it.
+    expect(
+      shared.length,
+      "the walk over packages/shared/src found almost no files — it is broken",
+    ).toBeGreaterThanOrEqual(50);
+    expect(shared, `the walk over packages/shared/src did not reach ${SHARED_WALKER_REL}`).toContain(
+      SHARED_WALKER_REL,
+    );
 
+    const files = [...onboarding, ...shared];
     const offenders = files.filter((rel) => read(rel).includes("structuredClone("));
 
     expect(
@@ -109,7 +123,7 @@ describe("F4.115 — the onboarding draft's walkers stay iterative", () => {
       `structuredClone survives in:\n${offenders.join("\n")}\n\n` +
         "It recurses, and every value in this module came from JSON.parse of a request body " +
         "or of a jsonb column, so its depth is whatever a caller chose. Use `cloneJson` from " +
-        "`apps/api/src/admin/stack-safe-json.ts`. A RangeError is neither a ZodError nor an " +
+        "`packages/shared/src/stack-safe-json.ts`. A RangeError is neither a ZodError nor an " +
         "HttpException, so the route answers 500 — on reads, and on the PATCH that would " +
         "have repaired the draft.",
     ).toEqual([]);
@@ -128,7 +142,7 @@ describe("F4.115 — the onboarding draft's walkers stay iterative", () => {
     expect(
       /function\s+exceedsDepth\s*\(/.test(source),
       `${TEMPLATE_SCHEMA_REL} declares its own exceedsDepth again. It moved to ` +
-        "apps/api/src/admin/stack-safe-json.ts in F4.115 so the onboarding draft could use " +
+        "packages/shared/src/stack-safe-json.ts (F4.115, then F3.85 PR 11a) so the onboarding draft could use " +
         "the same walk; a second copy is a second thing to fix.",
     ).toBe(false);
 
@@ -157,14 +171,25 @@ describe("F4.115 — the onboarding draft's walkers stay iterative", () => {
    * about what either caller descends into.
    */
   it("keeps one rebuild traversal, imported from the shared module", () => {
-    const files = productionFilesUnder(ADMIN_DIR);
+    const admin = productionFilesUnder(ADMIN_DIR);
+    const shared = productionFilesUnder(SHARED_SRC_DIR);
 
     // A broken walk must fail loudly rather than pass having scanned nothing.
     expect(
-      files.length,
+      admin.length,
       "the walk over apps/api/src/admin found far too few files — it is broken, and the " +
         "single-match assertion below would mean nothing",
     ).toBeGreaterThanOrEqual(40);
+    // The walker moved to packages/shared/src in F3.85 PR 11a, so that root is walked too —
+    // and must reach the walker, or the single-match assertion below could only ever fail.
+    expect(
+      shared.length,
+      "the walk over packages/shared/src found far too few files — it is broken",
+    ).toBeGreaterThanOrEqual(50);
+    expect(shared, `the walk over packages/shared/src did not reach ${SHARED_WALKER_REL}`).toContain(
+      SHARED_WALKER_REL,
+    );
+    const files = [...admin, ...shared];
 
     // ...and a regex that no longer matches the shared walker would make the
     // same assertion vacuous without the walk being broken at all.
@@ -177,9 +202,9 @@ describe("F4.115 — the onboarding draft's walkers stay iterative", () => {
 
     expect(
       files.filter((rel) => REBUILD_FRAME.test(read(rel))),
-      "more than one file under apps/api/src/admin declares a {source, target} rebuild stack. " +
-        "cloneJson and scrubSecrets were two copies of that walk in F4.115 and were merged into " +
-        "rebuildDeep in apps/api/src/admin/stack-safe-json.ts; a second copy is a second thing " +
+      "more than one file under apps/api/src/admin or packages/shared/src declares a {source, " +
+        "target} rebuild stack. cloneJson and scrubSecrets were two copies of that walk in F4.115 " +
+        "and were merged into rebuildDeep in packages/shared/src/stack-safe-json.ts; a second copy is a second thing " +
         "to fix when one of them is wrong (§4.8).",
     ).toEqual([SHARED_WALKER_REL]);
 

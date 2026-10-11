@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, vi } from "vitest";
 
@@ -7,6 +7,7 @@ import { adminAssetTemplateDtoSchema } from "@bms/shared/contracts";
 import type { AdminAssetTemplateDto, TemplateKpi } from "@bms/shared";
 
 import * as templateApi from "../../api/admin/asset-templates";
+import { resetWizardStore, useWizardStore } from "../../stores/wizard-store";
 import type { FormulaEditorProps } from "./formula-editor-lazy";
 import { KpisTab } from "./kpis-tab";
 
@@ -160,6 +161,20 @@ const sentKpis = (save: { mock: { calls: unknown[][] } }): TemplateKpi[] => {
 };
 
 /**
+ * `F3.85` PR 11a (ADR 0099 decision 6, plan §11.3 unit 3) — **Save KPIs**
+ * opens the `assetTemplate.update` wizard, and only its Review's **Submit**
+ * sends. The entry's field steps are content, points and details, so three
+ * **Next** clicks reach Review.
+ */
+async function submitThroughTheWizard(): Promise<void> {
+  await userEvent.click(screen.getByRole("button", { name: SAVE }));
+  for (let step = 0; step < 3; step += 1) {
+    await userEvent.click(screen.getByRole("button", { name: "Next" }));
+  }
+  await userEvent.click(screen.getByRole("button", { name: "Submit" }));
+}
+
+/**
  * Case 1 — a stored `v2` KPI renders as checked: "Checked · reads nothing" (its
  * one reference is cross-asset, so the derived local list is empty), no manual
  * `Points this KPI reads` select, no Validate button, Grammar reading
@@ -206,9 +221,8 @@ export async function validateUpgradesToTheChosenGrammar(): Promise<void> {
   expect(readsSelectIn(double)).toBeNull();
   expect(grammarFor("double").value).toBe(V2);
 
-  const saveButton = screen.getByRole("button", { name: SAVE });
-  expect(saveButton).toBeEnabled();
-  await userEvent.click(saveButton);
+  expect(screen.getByRole("button", { name: SAVE })).toBeEnabled();
+  await submitThroughTheWizard();
   await waitFor(() => {
     expect(save).toHaveBeenCalledTimes(1);
   });
@@ -245,9 +259,8 @@ export async function aRefusedGrammarChangeLeavesTheRowAlone(): Promise<void> {
   await userEvent.type(within(rowOf("double")).getByRole("textbox", { name: "Name" }), " x");
   expect(onDirtyChange).toHaveBeenLastCalledWith(true);
 
-  const saveButton = screen.getByRole("button", { name: SAVE });
-  expect(saveButton).toBeEnabled();
-  await userEvent.click(saveButton);
+  expect(screen.getByRole("button", { name: SAVE })).toBeEnabled();
+  await submitThroughTheWizard();
   await waitFor(() => {
     expect(save).toHaveBeenCalledTimes(1);
   });
@@ -291,4 +304,207 @@ export async function aFrozenVersionDisablesEveryControl(): Promise<void> {
   expect(expressionFor("double")).toHaveAttribute("readonly");
   expect(screen.queryByRole("button", { name: SAVE })).toBeNull();
   expect(screen.queryByRole("button", { name: VALIDATE })).toBeNull();
+}
+
+/** The one edit the wizard cases make: a name on the unvalidated row. */
+async function renameDouble(): Promise<void> {
+  await userEvent.type(within(rowOf("double")).getByRole("textbox", { name: "Name" }), " x");
+}
+
+const RENAMED_BODY = { content: { kpis: [SITE_LOAD, { ...DOUBLE, name: "Double x" }] } };
+
+/**
+ * Case 5 — **Save KPIs** opens the wizard on its first step and sends nothing.
+ * The absence (no call) sits beside its positive: the wizard's step list is
+ * on screen with the first step current.
+ */
+export async function saveOpensTheWizardAndSendsNothing(): Promise<void> {
+  const dto = fixture();
+  const save = vi.spyOn(templateApi, "updateAdminAssetTemplate").mockResolvedValue(dto);
+  renderTab(dto, true);
+  await renameDouble();
+
+  await userEvent.click(screen.getByRole("button", { name: SAVE }));
+
+  const steps = screen.getByRole("list", { name: "Steps" });
+  expect(within(steps).getByText(/KPIs and content/)).toHaveAttribute("aria-current", "step");
+  expect(save).not.toHaveBeenCalled();
+}
+
+/**
+ * Case 6 — the wizard's content step lists every KPI with its expression in
+ * full (the Review card's JSON cell is cut at 160 characters; this step is not).
+ */
+export async function theContentStepShowsEveryExpressionInFull(): Promise<void> {
+  renderTab(fixture(), true);
+  await renameDouble();
+
+  await userEvent.click(screen.getByRole("button", { name: SAVE }));
+
+  const step = screen.getByRole("region", { name: "KPIs and content" });
+  expect(within(step).getByText(SITE_LOAD.expression)).toBeInTheDocument();
+  expect(within(step).getByText(DOUBLE.expression)).toBeInTheDocument();
+}
+
+/**
+ * Case 7 — Submit sends exactly the merged body: `content` alone, with the
+ * stored KPI unchanged and the edited one renamed.
+ */
+export async function submitSendsTheMergedContentAlone(): Promise<void> {
+  const dto = fixture();
+  const save = vi.spyOn(templateApi, "updateAdminAssetTemplate").mockResolvedValue(dto);
+  renderTab(dto, true);
+  await renameDouble();
+
+  await submitThroughTheWizard();
+  await waitFor(() => {
+    expect(save).toHaveBeenCalledTimes(1);
+  });
+
+  expect(save.mock.calls[0]).toEqual(["t1", RENAMED_BODY]);
+}
+
+/**
+ * Case 8 — the Review shows the stored content beside the new: the card has a
+ * **Now** column, which `ChangeCard` renders only when a row carries a before.
+ */
+export async function theReviewShowsTheStoredContentBesideTheNew(): Promise<void> {
+  renderTab(fixture(), true);
+  await renameDouble();
+
+  await userEvent.click(screen.getByRole("button", { name: SAVE }));
+  for (let step = 0; step < 3; step += 1) {
+    await userEvent.click(screen.getByRole("button", { name: "Next" }));
+  }
+
+  expect(screen.getByRole("columnheader", { name: "Now" })).toBeInTheDocument();
+  expect(screen.getByRole("columnheader", { name: "After" })).toBeInTheDocument();
+}
+
+/**
+ * Case 9 — the wizard alone sends **no** `X-Copilot-Change` header (plan §10.5
+ * as built: a copilot write goes only through the dock's ConfirmCard). The
+ * global `fetch` is stubbed, not the wrapper, because the header is only
+ * observable on the request. The positive comes first: the `PATCH` fired, at
+ * this template, with the merged body.
+ */
+export async function theWizardAloneSendsNoCopilotHeader(): Promise<void> {
+  const dto = fixture();
+  const seen: { url: string; init: RequestInit }[] = [];
+  vi.stubGlobal("fetch", async (url: string, init: RequestInit) => {
+    seen.push({ url, init });
+    return new Response(JSON.stringify(dto), { status: 200 });
+  });
+  try {
+    renderTab(dto, true);
+    await renameDouble();
+
+    await submitThroughTheWizard();
+    await waitFor(() => {
+      expect(seen).toHaveLength(1);
+    });
+
+    const [{ url, init }] = seen;
+    expect(url).toMatch(/\/api\/v1\/admin\/asset-templates\/t1$/);
+    expect(init.method).toBe("PATCH");
+    expect(JSON.parse(init.body as string)).toEqual(RENAMED_BODY);
+    const headers = new Headers(init.headers);
+    expect([...headers.keys()].filter((name) => name.toLowerCase() === "x-copilot-change")).toEqual([]);
+  } finally {
+    vi.unstubAllGlobals();
+  }
+}
+
+/** A stored non-KPI section — the one a wholesale content fill would delete. */
+const STORED_MAINTENANCE = [{ title: "Quarterly check", intervalDays: 90 }];
+/** The KPI a copilot fill names. */
+const FILLED: TemplateKpi = { ...DOUBLE, code: "filled", name: "Filled" };
+
+function fixtureWith(content: Record<string, unknown>): AdminAssetTemplateDto {
+  return adminAssetTemplateDtoSchema.parse({ ...fixture(), content });
+}
+
+/**
+ * Case 10 — review finding C1. A copilot `fill_step` on the content step that
+ * names only `kpis` replaces that section and carries every other stored
+ * section: the `PATCH` still holds `maintenance`. The positive sits beside
+ * it: the body's KPIs are the filled list, so the fill did reach the body.
+ */
+export async function aCopilotContentFillKeepsEveryOtherStoredSection(): Promise<void> {
+  resetWizardStore();
+  const dto = fixtureWith({ kpis: [SITE_LOAD, DOUBLE], maintenance: STORED_MAINTENANCE });
+  const save = vi.spyOn(templateApi, "updateAdminAssetTemplate").mockResolvedValue(dto);
+  try {
+    renderTab(dto, true);
+    await renameDouble();
+    await userEvent.click(screen.getByRole("button", { name: SAVE }));
+
+    act(() => {
+      useWizardStore.getState().receiveFill({
+        catalogId: "assetTemplate.update",
+        stepId: "content",
+        values: { content: { kpis: [FILLED] } },
+      });
+    });
+    for (let step = 0; step < 3; step += 1) {
+      await userEvent.click(screen.getByRole("button", { name: "Next" }));
+    }
+    await userEvent.click(screen.getByRole("button", { name: "Submit" }));
+    await waitFor(() => {
+      expect(save).toHaveBeenCalledTimes(1);
+    });
+
+    const [, body] = save.mock.calls[0] as [string, { content: Record<string, unknown> }];
+    expect(body.content.kpis).toEqual([FILLED]);
+    expect(body.content.maintenance).toEqual(STORED_MAINTENANCE);
+  } finally {
+    resetWizardStore();
+  }
+}
+
+const EXTRA: TemplateKpi = { ...DOUBLE, code: "extra", name: "Extra" };
+
+/** The tab, rendered so a spec can hand it a refetched template. */
+function renderRefetchable(dto: AdminAssetTemplateDto, onDirtyChange: (dirty: boolean) => void) {
+  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  const tree = (template: AdminAssetTemplateDto) => (
+    <QueryClientProvider client={queryClient}>
+      <KpisTab template={template} editable onSaved={vi.fn()} onDirtyChange={onDirtyChange} />
+    </QueryClientProvider>
+  );
+  const { rerender } = render(tree(dto));
+  return (next: AdminAssetTemplateDto) => rerender(tree(next));
+}
+
+/**
+ * Case 11 — review finding C2. A clean tab handed a refetched template whose
+ * KPI section gained an entry (a dock Confirm, same id and status) shows the
+ * new row and stays clean.
+ */
+export async function aRefetchedKpiSectionReseedsACleanTab(): Promise<void> {
+  const onDirtyChange = vi.fn();
+  const refetch = renderRefetchable(fixture(), onDirtyChange);
+
+  refetch(fixtureWith({ kpis: [SITE_LOAD, DOUBLE, EXTRA] }));
+
+  expect(await screen.findByRole("combobox", { name: "Grammar for extra" })).toBeInTheDocument();
+  expect(onDirtyChange).toHaveBeenLastCalledWith(false);
+  expect(screen.getByRole("button", { name: SAVE })).toBeDisabled();
+}
+
+/**
+ * Case 12 — the other half of C2: a refetch never overwrites an edit in
+ * progress. The rename survives (the positive) and the new stored row is not
+ * pulled in.
+ */
+export async function aRefetchKeepsAnEditInProgress(): Promise<void> {
+  const onDirtyChange = vi.fn();
+  const refetch = renderRefetchable(fixture(), onDirtyChange);
+  await renameDouble();
+
+  refetch(fixtureWith({ kpis: [SITE_LOAD, DOUBLE, EXTRA] }));
+
+  expect(within(rowOf("double")).getByRole("textbox", { name: "Name" })).toHaveValue("Double x");
+  expect(screen.queryByRole("combobox", { name: "Grammar for extra" })).toBeNull();
+  expect(onDirtyChange).toHaveBeenLastCalledWith(true);
 }

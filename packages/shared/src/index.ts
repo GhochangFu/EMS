@@ -120,6 +120,12 @@ export * from "./source-key-pattern";
  * barrel stays safe for `apps/web` to bundle.
  */
 export * from "./credential-keys";
+/**
+ * `F4.115`'s stack-safe JSON walker, moved here from `apps/api/src/admin` by
+ * `F3.85` PR 11a so the asset-template content schema in `./contracts` can keep
+ * its depth guard first. No imports and no Node global — safe to bundle.
+ */
+export * from "./stack-safe-json";
 
 // ---------------------------------------------------------------------------
 // Auth and access scope
