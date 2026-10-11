@@ -16,8 +16,8 @@ const { COPILOT_CATALOG } = require_("@bms/shared/copilot") as {
 
 /**
  * `F3.85` PR 9 / ADR 0099 decision 6 (plan §11.0, owner ruling Q6) — the stepper coverage gate:
- * every catalog entry is the `entry` of a `WizardShell` somewhere in the web app, except the ids
- * on `NOT_YET`, each named with the PR that owns it.
+ * every catalog entry is the `entry` of a `WizardShell` somewhere in the web app. A new catalog
+ * entry (release 2, `F3.86`) ships with its wizard or this gate fails.
  *
  * **What counts as wired** (the pattern the pages follow):
  *
@@ -34,19 +34,11 @@ const { COPILOT_CATALOG } = require_("@bms/shared/copilot") as {
  * A commented-out wizard — on one line or on several — is not a wiring. The negative control
  * below holds both shapes. The blanking keeps the newlines, so the line split is unchanged.
  *
- * **`NOT_YET` is strict both ways**: an id on it that IS wired fails (the list is stale), and an
- * id on it that is not in the catalog fails. Each PR deletes its own lines; the last to merge
- * empties it, and PR 12 deletes it.
+ * The `NOT_YET` list PRs 9–11 kept while the wizards landed in parallel was emptied by PR 10b
+ * (#815) and deleted with the closure (PR 12).
  *
  * Assertions inline (§4.6 carves out `tests/`).
  */
-const NOT_YET: Readonly<Record<string, string>> = {
-  // PR 10a
-
-  // PR 10b
-
-  // PR 11b
-};
 
 const WEB_SRC = "apps/web/src";
 const BLOCK_COMMENT = /\/\*[\s\S]*?\*\//g;
@@ -129,21 +121,10 @@ describe("F3.85 stepper coverage — every catalog entry has a WizardShell (plan
     expect(CATALOG_IDS.length).toBeGreaterThan(0);
   });
 
-  it("every catalog id is wired as a WizardShell entry or is on NOT_YET", () => {
+  it("every catalog id is wired as a WizardShell entry", () => {
     const found = wired();
-    const missing = CATALOG_IDS.filter((id) => !found.has(id) && NOT_YET[id] === undefined);
+    const missing = CATALOG_IDS.filter((id) => !found.has(id));
     expect(missing).toEqual([]);
-  });
-
-  it("no NOT_YET id is already wired (a stale list fails)", () => {
-    const found = wired();
-    const stale = Object.keys(NOT_YET).filter((id) => found.has(id));
-    expect(stale).toEqual([]);
-  });
-
-  it("every NOT_YET id is a catalog id", () => {
-    const unknown = Object.keys(NOT_YET).filter((id) => !CATALOG_IDS.includes(id));
-    expect(unknown).toEqual([]);
   });
 
   it("every wired id is a catalog id (a typo in a page fails here, not at render)", () => {

@@ -532,3 +532,23 @@ plan's recommendation) and approved this amendment the same day. Each item names
   home organization is the exception's (decision 5's own rule), and an
   `organization_admin` is narrowed by a deny only. Built in `F3.85` PR 3
   (#804).
+
+## Erratum (2026-10-12, with the `F3.85` closure)
+
+Two references in the text above were wrong when written; the decisions do
+not change.
+
+- **Decision 1** cites `access-control.service.ts:903` for `resolveDbUser`.
+  The method is at `:885` (it was there when the ADR was accepted).
+- **Decision 4.5** names `asset-templates.service.ts` and
+  `calc-write.service.ts` as direct writers of `bms.audit_log`. Neither is:
+  `asset-templates.service.ts` writes through `MasterDataAuditService`, and
+  `calc-write.service.ts` writes no audit row (ADR 0037 decision 10 — the
+  calc engine has no user to attribute). The `via` mark therefore reaches
+  every audited copilot write through `master-data-audit.service.ts` and the
+  writers `tests/f3.85-audit-via-mark` enumerates by the insert call (it
+  added `control-room/site-layout.service.ts` in PR 8).
+
+Release 1 closed 2026-10-12 (`F3.85`): the per-PR record is in
+`docs/plans/f3.85-admin-copilot-release-1.md` §10.5, §11.1a, §11.2a, §11.2b,
+§11.3a and §11.3b.
