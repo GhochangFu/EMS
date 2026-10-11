@@ -8,6 +8,7 @@ import type { DashboardsListResponse, UserRole } from "@bms/shared";
 import * as dashboardsApi from "../api/dashboards";
 import type { AuthUser } from "../stores/auth-store";
 import { DashboardsPage } from "./dashboards-page";
+import * as copilotApi from "../api/copilot";
 
 /**
  * `F3.1d` Unit 6 — the read-only dashboard list.
@@ -55,6 +56,7 @@ const RESPONSE: DashboardsListResponse = {
 
 function renderPage(user: AuthUser): void {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  vi.spyOn(copilotApi, "fetchCopilotStatus").mockResolvedValue({ available: false, configured: false });
   render(
     <QueryClientProvider client={queryClient}>
       <MemoryRouter>
@@ -228,6 +230,7 @@ function renderAt(
 ): void {
   vi.spyOn(dashboardsApi, "fetchDashboards").mockResolvedValue(response);
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  vi.spyOn(copilotApi, "fetchCopilotStatus").mockResolvedValue({ available: false, configured: false });
   render(
     <QueryClientProvider client={queryClient}>
       <MemoryRouter initialEntries={[url]}>
@@ -360,14 +363,16 @@ export async function theSectionIsPartOfTheQueryKey(): Promise<void> {
       Promise.resolve(section === "sustainability" ? { items: [] } : RESPONSE),
     );
 
-  const renderThrough = (url: string) =>
-    render(
+  const renderThrough = (url: string) => {
+    vi.spyOn(copilotApi, "fetchCopilotStatus").mockResolvedValue({ available: false, configured: false });
+    return render(
       <QueryClientProvider client={queryClient}>
         <MemoryRouter initialEntries={[url]}>
           <DashboardsPage user={asUser("admin")} />
         </MemoryRouter>
       </QueryClientProvider>,
     );
+  };
 
   const first = renderThrough("/dashboards");
   await waitFor(() => {

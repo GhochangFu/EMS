@@ -10,6 +10,7 @@ import * as api from "../../api/admin/organizations";
 import { ApiError } from "../../lib/api-error";
 import type { AuthUser } from "../../stores/auth-store";
 import { OrganizationsAdminPage } from "./organizations-page";
+import * as copilotDockApi from "../../api/copilot";
 
 /**
  * `E4.1c` / ADR 0070 decision 8 — the organization form's Currency field,
@@ -63,6 +64,7 @@ const ORGANIZATIONS = {
 
 function renderPage(): void {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  vi.spyOn(copilotDockApi, "fetchCopilotStatus").mockResolvedValue({ available: false, configured: false });
   render(
     <QueryClientProvider client={queryClient}>
       <MemoryRouter>
@@ -291,6 +293,7 @@ function AiAssistantRouteProbe() {
 /** Renders the list as `role`, beside a probe on the AI assistant sub-page route. */
 function renderPageAs(role: UserRole): void {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  vi.spyOn(copilotDockApi, "fetchCopilotStatus").mockResolvedValue({ available: false, configured: false });
   render(
     <QueryClientProvider client={queryClient}>
       <MemoryRouter initialEntries={["/admin/organizations"]}>

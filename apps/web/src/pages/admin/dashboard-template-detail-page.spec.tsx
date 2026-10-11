@@ -12,6 +12,7 @@ import * as vocabApi from "../../api/vocabularies";
 import { OPERATIONAL } from "../../components/system-status-indicator.spec";
 import type { AuthUser } from "../../stores/auth-store";
 import { DashboardTemplateDetailPage } from "./dashboard-template-detail-page";
+import * as copilotApi from "../../api/copilot";
 
 /**
  * `F3.36` Part F — the section template detail screen, rendered (ADR 0042).
@@ -130,6 +131,7 @@ function ListLanding() {
 
 function renderPage(): void {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  vi.spyOn(copilotApi, "fetchCopilotStatus").mockResolvedValue({ available: false, configured: false });
   render(
     <QueryClientProvider client={queryClient}>
       <MemoryRouter initialEntries={[`/admin/dashboard-templates/${TEMPLATE_ID}`]}>

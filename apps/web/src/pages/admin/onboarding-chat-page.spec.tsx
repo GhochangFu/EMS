@@ -11,6 +11,7 @@ import * as systemStatusApi from "../../api/system-status";
 import { ApiError } from "../../lib/api-error";
 import type { AuthUser } from "../../stores/auth-store";
 import { OnboardingChatPage } from "./onboarding-chat-page";
+import * as copilotApi from "../../api/copilot";
 
 /**
  * `F4.106` — the onboarding wizard's seven error surfaces, rendered (ADR 0042).
@@ -161,6 +162,7 @@ export function renderPage(search = ""): HTMLElement {
   // F4.160: AppShell polls the system status; keep the harness off the real API on :4000.
   vi.spyOn(systemStatusApi, "fetchSystemStatus").mockRejectedValue(new Error("not under test"));
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  vi.spyOn(copilotApi, "fetchCopilotStatus").mockResolvedValue({ available: false, configured: false });
   const view = render(
     <QueryClientProvider client={queryClient}>
       <MemoryRouter initialEntries={[`/admin/organizations/${ORG_ID}/onboarding${search}`]}>

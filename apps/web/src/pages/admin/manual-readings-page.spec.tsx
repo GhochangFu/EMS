@@ -15,6 +15,7 @@ import * as systemStatusApi from "../../api/system-status";
 import { ApiError } from "../../lib/api-error";
 import type { AuthUser } from "../../stores/auth-store";
 import { ManualReadingsPage } from "./manual-readings-page";
+import * as copilotApi from "../../api/copilot";
 
 /**
  * `F4.204` — the Manual Entry page reads a refused submit through
@@ -81,6 +82,7 @@ function renderPage(): void {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   });
+  vi.spyOn(copilotApi, "fetchCopilotStatus").mockResolvedValue({ available: false, configured: false });
   render(
     <QueryClientProvider client={queryClient}>
       <MemoryRouter initialEntries={["/admin/manual-readings"]}>

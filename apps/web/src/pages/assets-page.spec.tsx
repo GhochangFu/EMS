@@ -14,6 +14,7 @@ import * as dashboardsApi from "../api/dashboards";
 import * as vocabApi from "../api/vocabularies";
 import type { AuthUser } from "../stores/auth-store";
 import { AssetsPage } from "./assets-page";
+import * as copilotApi from "../api/copilot";
 
 /**
  * `F3.31` — the `/asset-browser` operator browser (ADR 0068 decisions 1, 3 and 5).
@@ -162,6 +163,7 @@ function stubApi(dashboards: DashboardsListResponse = DASHBOARDS) {
 
 function renderPage(user: AuthUser = asUser("viewer")) {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  vi.spyOn(copilotApi, "fetchCopilotStatus").mockResolvedValue({ available: false, configured: false });
   return render(
     <QueryClientProvider client={queryClient}>
       <MemoryRouter>

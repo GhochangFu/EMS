@@ -10,6 +10,7 @@ import * as alarmsApi from "../api/alarms";
 import * as vocabApi from "../api/vocabularies";
 import type { AuthUser } from "../stores/auth-store";
 import { AlarmsPage } from "./alarms-page";
+import * as copilotApi from "../api/copilot";
 
 /**
  * `F3.10` U9 — the alarm grid derives the four states of ADR 0057 decision 1.
@@ -117,6 +118,7 @@ async function renderPage(items: AlarmListItem[] = FOUR_STATES): Promise<void> {
   vi.spyOn(alarmsApi, "fetchAlarmsPage").mockResolvedValue({ items, nextCursor: null });
   vi.spyOn(vocabApi, "fetchVocabularies").mockResolvedValue(VOCABULARIES);
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  vi.spyOn(copilotApi, "fetchCopilotStatus").mockResolvedValue({ available: false, configured: false });
   render(
     <QueryClientProvider client={queryClient}>
       <MemoryRouter>

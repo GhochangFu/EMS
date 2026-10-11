@@ -1,6 +1,6 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import type { FormEvent, KeyboardEvent } from "react";
-import { Fragment, useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import type {
   OnboardingAutoOpenReason,
@@ -23,11 +23,11 @@ import {
   uploadOnboardingExcel,
   validateOnboardingSession,
 } from "../../api/admin/onboarding";
+import { AssistantText } from "../../components/copilot/assistant-text";
 import { StatusPill } from "../../components/status-pill";
 import { AppShell } from "../../layouts/app-shell";
 import { ApiError } from "../../lib/api-error";
 import { apiErrorMessage } from "../../lib/api-error-message";
-import { boldSegments } from "../../lib/bold-segments";
 import {
   draftRtuTopic,
   formatOnboardingDraftSummary,
@@ -94,21 +94,6 @@ async function openSession(orgId: string, resumeId: string | null): Promise<Onbo
     };
   }
   return createOnboardingSession(orgId);
-}
-
-/**
- * `F4.198` — an assistant bubble's text with its `**bold**` pairs as `<strong>`.
- * Agent-mode text is untrusted LLM output: every segment is a React text node,
- * never markup, so a message carrying HTML renders as visible text.
- */
-function AssistantText({ text }: { text: string }) {
-  return (
-    <>
-      {boldSegments(text).map((segment, i) =>
-        segment.bold ? <strong key={i}>{segment.text}</strong> : <Fragment key={i}>{segment.text}</Fragment>,
-      )}
-    </>
-  );
 }
 
 /**

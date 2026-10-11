@@ -9,6 +9,7 @@ import * as orgApi from "../../api/admin/organizations";
 import * as vocabApi from "../../api/vocabularies";
 import type { AuthUser } from "../../stores/auth-store";
 import { DashboardTemplatesAdminPage } from "./dashboard-templates-page";
+import * as copilotApi from "../../api/copilot";
 
 /**
  * `F3.36` Part F — the section template list, rendered (ADR 0042).
@@ -88,6 +89,7 @@ function stubApi(): void {
 
 function renderPage(): void {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  vi.spyOn(copilotApi, "fetchCopilotStatus").mockResolvedValue({ available: false, configured: false });
   render(
     <QueryClientProvider client={queryClient}>
       <MemoryRouter>

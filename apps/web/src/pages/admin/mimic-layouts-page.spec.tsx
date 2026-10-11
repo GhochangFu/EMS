@@ -12,6 +12,7 @@ import { OPERATIONAL } from "../../components/system-status-indicator.spec";
 import { ApiError } from "../../lib/api-error";
 import type { AuthUser } from "../../stores/auth-store";
 import { MimicLayoutsPage } from "./mimic-layouts-page";
+import * as copilotApi from "../../api/copilot";
 
 /**
  * `F3.32c` U6c — the mimic layout library page, rendered. `mimic-layouts-page.test.tsx` is the
@@ -54,6 +55,7 @@ function renderPage(
     .spyOn(api, "deleteMimicLayout")
     .mockRejectedValue(new ApiError(JSON.stringify({ message: IN_USE, error: "Conflict", statusCode: 409 }), 409));
   const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
+  vi.spyOn(copilotApi, "fetchCopilotStatus").mockResolvedValue({ available: false, configured: false });
   render(
     <QueryClientProvider client={client}>
       <MemoryRouter initialEntries={["/admin/mimic-layouts"]}>

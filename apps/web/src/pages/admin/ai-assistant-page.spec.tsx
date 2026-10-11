@@ -12,6 +12,7 @@ import * as usersApi from "../../api/admin/users";
 import { ApiError } from "../../lib/api-error";
 import type { AuthUser } from "../../stores/auth-store";
 import { AiAssistantPage } from "./ai-assistant-page";
+import * as copilotDockApi from "../../api/copilot";
 
 /**
  * `F3.21` (ADR 0090 Amendment 1 A6, A7) — the AI assistant page, rendered
@@ -75,6 +76,7 @@ function renderPage(): void {
   });
   vi.spyOn(usersApi, "fetchAdminUsers").mockResolvedValue({ items: [] });
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  vi.spyOn(copilotDockApi, "fetchCopilotStatus").mockResolvedValue({ available: false, configured: false });
   render(
     <QueryClientProvider client={queryClient}>
       <MemoryRouter initialEntries={[`/admin/organizations/${ORG_ID}/ai-assistant`]}>

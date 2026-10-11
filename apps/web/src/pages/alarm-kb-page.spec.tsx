@@ -9,6 +9,7 @@ import type { AlarmKbClass, AlarmKbResponse } from "@bms/shared";
 import * as api from "../api/alarm-kb";
 import type { AuthUser } from "../stores/auth-store";
 import { AlarmKbPage } from "./alarm-kb-page";
+import * as copilotApi from "../api/copilot";
 
 /**
  * `E2.2` PR 2 (ADR 0059 decision 4) — the browsable alarm philosophy KB page.
@@ -81,6 +82,7 @@ const WATER_CLASS = kbClass({
 async function renderPage(payload: AlarmKbResponse): Promise<void> {
   vi.spyOn(api, "fetchAlarmKb").mockResolvedValue(payload);
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  vi.spyOn(copilotApi, "fetchCopilotStatus").mockResolvedValue({ available: false, configured: false });
   render(
     <MemoryRouter>
       <QueryClientProvider client={qc}>

@@ -10,6 +10,7 @@ import * as systemStatusApi from "../../api/system-status";
 import { describeImportUploadError } from "../../lib/telemetry-import-preview";
 import type { AuthUser } from "../../stores/auth-store";
 import { TelemetryImportPage } from "./telemetry-import-page";
+import * as copilotApi from "../../api/copilot";
 
 /**
  * `F4.204` — the Import Telemetry page reads a refused upload through
@@ -43,6 +44,7 @@ function renderPage(): HTMLElement {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   });
+  vi.spyOn(copilotApi, "fetchCopilotStatus").mockResolvedValue({ available: false, configured: false });
   return render(
     <QueryClientProvider client={queryClient}>
       <MemoryRouter initialEntries={["/admin/telemetry-import"]}>

@@ -14,6 +14,7 @@ import { STOCK_CATALOG_COLLAPSE_KEY } from "../../lib/stock-catalog-collapse";
 import { groupStockByDomain } from "../../lib/stock-catalog-groups";
 import type { AuthUser } from "../../stores/auth-store";
 import { AssetTemplatesAdminPage } from "./asset-templates-page";
+import * as copilotApi from "../../api/copilot";
 
 /**
  * `F2.13` — the asset templates list page imports from the stock catalog
@@ -273,6 +274,7 @@ const STOCK_TAB = "/admin/asset-templates?tab=stock";
 
 function renderPage(user: AuthUser = admin, entry = "/admin/asset-templates"): void {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  vi.spyOn(copilotApi, "fetchCopilotStatus").mockResolvedValue({ available: false, configured: false });
   render(
     <QueryClientProvider client={queryClient}>
       <MemoryRouter initialEntries={[entry]}>
@@ -570,6 +572,7 @@ export async function aBlockedStoreRendersEveryGroupOpen(): Promise<void> {
     throw new DOMException("The operation is insecure.", "SecurityError");
   });
 
+  vi.spyOn(copilotApi, "fetchCopilotStatus").mockResolvedValue({ available: false, configured: false });
   render(
     <StockCatalogAccordion
       groups={groups}

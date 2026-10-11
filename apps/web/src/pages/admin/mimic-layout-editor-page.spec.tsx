@@ -27,6 +27,7 @@ import type { AuthUser } from "../../stores/auth-store";
 import { MIMIC_LAYOUT_STALE_MESSAGE as STALE_SERVER_MESSAGE } from "@bms/shared/contracts";
 
 import { MimicLayoutEditorPage, STALE_LAYOUT_BANNER } from "./mimic-layout-editor-page";
+import * as copilotApi from "../../api/copilot";
 
 /**
  * `F3.32c` U6c — the mimic layout editor page, rendered: POST on a new layout with the
@@ -108,6 +109,7 @@ function stubAll(orgs: OrganizationsListResponse): Stubs {
 }
 
 function mount(client: QueryClient, path: string, as: AuthUser): ReturnType<typeof render> {
+  vi.spyOn(copilotApi, "fetchCopilotStatus").mockResolvedValue({ available: false, configured: false });
   return render(
     <QueryClientProvider client={client}>
       <MemoryRouter initialEntries={[path]}>

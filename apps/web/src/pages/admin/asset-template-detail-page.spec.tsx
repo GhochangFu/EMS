@@ -13,6 +13,7 @@ import * as rtusApi from "../../api/admin/rtus";
 import * as vocabApi from "../../api/vocabularies";
 import type { AuthUser } from "../../stores/auth-store";
 import { AssetTemplateDetailPage } from "./asset-template-detail-page";
+import * as copilotApi from "../../api/copilot";
 
 /**
  * `F3.2` — the asset-template detail page's two new surfaces (ADR 0067
@@ -108,6 +109,7 @@ function stubApi(overrides: Partial<Record<string, unknown>> = {}): void {
 
 function renderPage(user: AuthUser): void {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  vi.spyOn(copilotApi, "fetchCopilotStatus").mockResolvedValue({ available: false, configured: false });
   render(
     <QueryClientProvider client={queryClient}>
       <MemoryRouter initialEntries={[`/admin/asset-templates/${TEMPLATE_ID}`]}>

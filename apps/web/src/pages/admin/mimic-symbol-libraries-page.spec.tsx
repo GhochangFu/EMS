@@ -15,6 +15,7 @@ import { ApiError } from "../../lib/api-error";
 import { orgCatalogFixture, orgSymbolFixture } from "../../lib/mimic-symbols.spec";
 import type { AuthUser } from "../../stores/auth-store";
 import { MimicSymbolLibrariesPage } from "./mimic-symbol-libraries-page";
+import * as copilotApi from "../../api/copilot";
 
 /**
  * `F3.32f` slice 3 (ADR 0086 decisions 4, 6, 7; plan D10) — the Symbol Libraries admin page,
@@ -67,6 +68,7 @@ function stubAll(orgs: OrganizationsListResponse = ORGS) {
 
 function mount(as: AuthUser = user("organization_admin")): void {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
+  vi.spyOn(copilotApi, "fetchCopilotStatus").mockResolvedValue({ available: false, configured: false });
   render(
     <QueryClientProvider client={client}>
       <MemoryRouter initialEntries={["/admin/mimic-symbol-libraries"]}>

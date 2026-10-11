@@ -13,6 +13,7 @@ import * as systemStatusApi from "../api/system-status";
 import { OPERATIONAL } from "../components/system-status-indicator.spec";
 import type { AuthUser } from "../stores/auth-store";
 import { DashboardViewerPage } from "./dashboard-viewer-page";
+import * as copilotApi from "../api/copilot";
 
 /**
  * `F3.69` U1 DV1 — after the extraction, the viewer must still render a bound
@@ -127,6 +128,7 @@ function renderPage(user: AuthUser, entry = "/dashboards/site-a-overview"): void
   // API on :4000, answers 401 and clears the session (`dashboard-builder-page.spec.tsx`'s precedent).
   vi.spyOn(systemStatusApi, "fetchSystemStatus").mockResolvedValue(OPERATIONAL);
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  vi.spyOn(copilotApi, "fetchCopilotStatus").mockResolvedValue({ available: false, configured: false });
   render(
     <QueryClientProvider client={queryClient}>
       <MemoryRouter initialEntries={[entry]}>

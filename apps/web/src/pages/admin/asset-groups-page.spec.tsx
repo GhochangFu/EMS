@@ -12,6 +12,7 @@ import * as vocabApi from "../../api/vocabularies";
 import { ApiError } from "../../lib/api-error";
 import type { AuthUser } from "../../stores/auth-store";
 import { AssetGroupsAdminPage } from "./asset-groups-page";
+import * as copilotApi from "../../api/copilot";
 
 /**
  * `F3.37` (ADR 0049 decision 5) — the asset-group screen, rendered (ADR 0042).
@@ -149,6 +150,7 @@ function renderPage(as: AuthUser = user): void {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   });
+  vi.spyOn(copilotApi, "fetchCopilotStatus").mockResolvedValue({ available: false, configured: false });
   render(
     <QueryClientProvider client={queryClient}>
       <MemoryRouter>
@@ -518,6 +520,7 @@ export async function choosingAnOrganizationStaysOnTheScreen(): Promise<void> {
     items: [{ id: "33333333-3333-3333-3333-333333333333", code: "ORG", name: "Org" }],
   } as never);
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  vi.spyOn(copilotApi, "fetchCopilotStatus").mockResolvedValue({ available: false, configured: false });
   render(
     <QueryClientProvider client={queryClient}>
       <MemoryRouter initialEntries={["/admin/asset-groups"]}>

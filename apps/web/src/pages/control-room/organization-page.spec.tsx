@@ -12,6 +12,7 @@ import * as systemStatusApi from "../../api/system-status";
 import { OPERATIONAL } from "../../components/system-status-indicator.spec";
 import { ControlRoomOrganizationPage } from "./organization-page";
 import { ORG_A, ORG_B, site, USER } from "./organizations-page.spec";
+import * as copilotApi from "../../api/copilot";
 
 /**
  * `F3.66` U3 — `/control-room/org/:organizationId`, the organization overview
@@ -129,6 +130,7 @@ function LandedOnSite() {
 
 function renderAt(organizationId: string): void {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  vi.spyOn(copilotApi, "fetchCopilotStatus").mockResolvedValue({ available: false, configured: false });
   render(
     <QueryClientProvider client={queryClient}>
       <MemoryRouter initialEntries={[`/control-room/org/${organizationId}`]}>
@@ -319,6 +321,7 @@ export async function anUnreadableOrganizationRendersNoRail(): Promise<void> {
 export async function theOrganizationIdPropOverridesTheRoute(): Promise<void> {
   stubReads(TWO_ORGS);
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  vi.spyOn(copilotApi, "fetchCopilotStatus").mockResolvedValue({ available: false, configured: false });
   render(
     <QueryClientProvider client={queryClient}>
       <MemoryRouter initialEntries={[`/control-room/org/${ORG_B.id}`]}>
@@ -454,6 +457,7 @@ export async function anotherOrganizationMountsANewSiteMap(): Promise<void> {
       </MemoryRouter>
     </QueryClientProvider>
   );
+  vi.spyOn(copilotApi, "fetchCopilotStatus").mockResolvedValue({ available: false, configured: false });
   const view = render(tree(ORG_A.id));
   await siteGrid();
   expect(siteMapMounts.count).toBe(1);

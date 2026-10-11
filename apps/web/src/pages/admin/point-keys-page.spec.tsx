@@ -11,6 +11,7 @@ import * as systemStatusApi from "../../api/system-status";
 import { ApiError } from "../../lib/api-error";
 import type { AuthUser } from "../../stores/auth-store";
 import { PointKeysAdminPage } from "./point-keys-page";
+import * as copilotApi from "../../api/copilot";
 
 /**
  * `F3.68` / ADR 0076 decision 7 — the headline rank on `/admin/point-keys`
@@ -80,6 +81,7 @@ function renderPage(as: AuthUser): void {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   });
+  vi.spyOn(copilotApi, "fetchCopilotStatus").mockResolvedValue({ available: false, configured: false });
   render(
     <QueryClientProvider client={queryClient}>
       <MemoryRouter initialEntries={["/admin/point-keys"]}>

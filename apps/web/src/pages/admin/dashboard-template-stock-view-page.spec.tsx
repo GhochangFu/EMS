@@ -12,6 +12,7 @@ import * as orgApi from "../../api/admin/organizations";
 import * as vocabApi from "../../api/vocabularies";
 import type { AuthUser } from "../../stores/auth-store";
 import { DashboardTemplateStockViewPage } from "./dashboard-template-stock-view-page";
+import * as copilotApi from "../../api/copilot";
 
 /**
  * `F3.44` — the read-only viewer for one stock dashboard-template entry (ADR
@@ -195,6 +196,7 @@ function DraftLanding() {
 
 function renderViewer(path: string, user: AuthUser = admin): HTMLElement {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  vi.spyOn(copilotApi, "fetchCopilotStatus").mockResolvedValue({ available: false, configured: false });
   const { container } = render(
     <QueryClientProvider client={queryClient}>
       <MemoryRouter initialEntries={[path]}>

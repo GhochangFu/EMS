@@ -12,6 +12,7 @@ import { ApiError } from "../../lib/api-error";
 import { OPERATIONAL } from "../../components/system-status-indicator.spec";
 import type { AuthUser } from "../../stores/auth-store";
 import { LocationTypesAdminPage } from "./location-types-page";
+import * as copilotApi from "../../api/copilot";
 
 /**
  * `F4.162` U4 (ADR 0077 Amendment 1, plan D6/D7) — the Location Types admin
@@ -84,6 +85,7 @@ function renderPage(as: AuthUser): void {
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   });
+  vi.spyOn(copilotApi, "fetchCopilotStatus").mockResolvedValue({ available: false, configured: false });
   render(
     <QueryClientProvider client={client}>
       <MemoryRouter initialEntries={["/admin/location-types"]}>

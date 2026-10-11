@@ -16,6 +16,7 @@ import * as systemStatusApi from "../../api/system-status";
 import { OPERATIONAL } from "../../components/system-status-indicator.spec";
 import { useAuthStore, type AuthUser } from "../../stores/auth-store";
 import { DashboardBuilderPage } from "./dashboard-builder-page";
+import * as copilotApi from "../../api/copilot";
 
 /**
  * `F3.1d` Unit 7 — the dashboard create page.
@@ -98,6 +99,7 @@ function stubMasterData(): void {
 
 function renderPage(user: AuthUser): void {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  vi.spyOn(copilotApi, "fetchCopilotStatus").mockResolvedValue({ available: false, configured: false });
   render(
     <QueryClientProvider client={queryClient}>
       <MemoryRouter>

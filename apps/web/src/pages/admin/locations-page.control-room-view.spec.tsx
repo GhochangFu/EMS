@@ -17,6 +17,7 @@ import * as orgApi from "../../api/admin/organizations";
 import * as dashboardsApi from "../../api/dashboards";
 import type { AuthUser } from "../../stores/auth-store";
 import { LocationsAdminPage } from "./locations-page";
+import * as copilotApi from "../../api/copilot";
 
 /**
  * `F3.67` U5 / ADR 0076 decision 3, plan OQ1 — the "Control Room view" field on
@@ -159,6 +160,7 @@ const GROUPS: AdminAssetGroupListResponse = {
 
 function renderPage(role: "admin" | "organization_admin" = "admin"): void {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  vi.spyOn(copilotApi, "fetchCopilotStatus").mockResolvedValue({ available: false, configured: false });
   render(
     <QueryClientProvider client={queryClient}>
       <MemoryRouter>

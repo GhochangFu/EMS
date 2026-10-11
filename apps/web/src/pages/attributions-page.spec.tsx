@@ -11,6 +11,7 @@ import type { AuthUser } from "../stores/auth-store";
 import { AttributionsList } from "../components/attributions-list";
 import { MIMIC_LIBRARY_CREDITS, libraryCredits } from "../components/widgets/mimic-symbol-libraries/credits";
 import { AttributionsPage } from "./attributions-page";
+import * as copilotApi from "../api/copilot";
 
 // Slice 2 (plan U5) — the per-file credits come from `libraryCredits`; the mock defaults to the real
 // one so T1–T8 read the vendored modules, and the credits claims set an implementation.
@@ -36,6 +37,7 @@ const viewer = {
 async function renderPage(): Promise<void> {
   // AppShell's status indicator fetches; an unstubbed fetch would reach the real API on :4000.
   vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response("{}", { status: 200 })));
+  vi.spyOn(copilotApi, "fetchCopilotStatus").mockResolvedValue({ available: false, configured: false });
   render(
     <MemoryRouter>
       <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
@@ -63,6 +65,7 @@ function renderPageWithCatalog(catalog: MimicSymbolLibrariesResponse): ReturnTyp
     return Promise.resolve(new Response(JSON.stringify(body), { status: 200 }));
   });
   vi.stubGlobal("fetch", fetchMock);
+  vi.spyOn(copilotApi, "fetchCopilotStatus").mockResolvedValue({ available: false, configured: false });
   render(
     <MemoryRouter>
       <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
@@ -181,6 +184,7 @@ export function aNoticeIsTextNotMarkup(): void {
     credits: [],
     symbolCredits: [],
   };
+  vi.spyOn(copilotApi, "fetchCopilotStatus").mockResolvedValue({ available: false, configured: false });
   const { container } = render(<AttributionsList entries={[entry]} />);
   expect(container.querySelector("pre")?.textContent).toBe("<b>x</b>");
   expect(container.querySelector("b")).toBeNull();
@@ -198,6 +202,7 @@ export function aCreditRendersOneListItem(): void {
     credits: [{ file: "pump.svg", author: "A. Author", licence: "CC-BY 4.0" }],
     symbolCredits: [],
   };
+  vi.spyOn(copilotApi, "fetchCopilotStatus").mockResolvedValue({ available: false, configured: false });
   const { container } = render(<AttributionsList entries={[entry]} />);
   const items = container.querySelectorAll("li");
   expect(items).toHaveLength(1);

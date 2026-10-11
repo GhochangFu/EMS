@@ -21,6 +21,7 @@ import { siteViewNoticeText } from "../../lib/site-view-notice";
 import { useAuthStore, type AuthUser } from "../../stores/auth-store";
 import { ORG_A, site, USER } from "./organizations-page.spec";
 import { ControlRoomSitePage } from "./site-page";
+import * as copilotApi from "../../api/copilot";
 
 /**
  * `F3.73` plan Task 5.1 (D10, ruling Q5) — the **Make site layout** action on the site page's
@@ -126,6 +127,7 @@ function stubReads(
 function renderPage(role: UserRole = "admin"): void {
   const user = { ...USER, role } as AuthUser;
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  vi.spyOn(copilotApi, "fetchCopilotStatus").mockResolvedValue({ available: false, configured: false });
   render(
     <QueryClientProvider client={queryClient}>
       <MemoryRouter initialEntries={[`/control-room/site/${LOCATION_ID}`]}>

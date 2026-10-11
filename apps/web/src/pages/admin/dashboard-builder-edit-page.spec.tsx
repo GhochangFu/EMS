@@ -17,6 +17,7 @@ import * as vocabulariesApi from "../../api/vocabularies";
 import { OPERATIONAL } from "../../components/system-status-indicator.spec";
 import { useAuthStore, type AuthUser } from "../../stores/auth-store";
 import { DashboardBuilderEditPage } from "./dashboard-builder-edit-page";
+import * as copilotApi from "../../api/copilot";
 
 /**
  * `F3.1d` Unit 7 — the dashboard edit page; `F3.34` (ADR 0047 Amendment 5) for the
@@ -254,6 +255,7 @@ async function waitForAssetPrefill(): Promise<void> {
 
 export function renderPage(user: AuthUser): void {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  vi.spyOn(copilotApi, "fetchCopilotStatus").mockResolvedValue({ available: false, configured: false });
   render(
     <QueryClientProvider client={queryClient}>
       <MemoryRouter initialEntries={["/admin/dashboards/site-a-overview"]}>

@@ -15,6 +15,7 @@ import { OPERATIONAL } from "../../components/system-status-indicator.spec";
 import { useAuthStore } from "../../stores/auth-store";
 import { ORG_A, site, USER } from "./organizations-page.spec";
 import { ControlRoomSitePage } from "./site-page";
+import * as copilotApi from "../../api/copilot";
 
 /**
  * `F3.77` (ADR 0087 Amendment 3 ruling 7, plan D8, owner rulings OQ2 and OQ3) — the site page's
@@ -120,6 +121,7 @@ function LocationProbe() {
 
 function renderPage(entry: string): void {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  vi.spyOn(copilotApi, "fetchCopilotStatus").mockResolvedValue({ available: false, configured: false });
   render(
     <QueryClientProvider client={queryClient}>
       <MemoryRouter initialEntries={[entry]}>
