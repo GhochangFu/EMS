@@ -50,8 +50,8 @@ import * as copilotApi from "../../api/copilot";
  * **The review's foreign-scope pair** (`assetGroupAdminOnAForeignGroupCannotSave`,
  * `locationAdminOnAForeignLocationCannotSave`): a role can OPEN a dashboard on a group or a
  * location it does not hold, and before the fix a rename enabled Save and the PATCH met the
- * server's 404. `isScopeAuthorised` in the page's `blocked` keeps Save disabled. Mutation: drop it
- * from `blocked` ⇒ both red; the own-group rename case beside them is the positive control.
+ * server's 404. `isScopeAuthorised` in the page's refusal reasons (`F3.85` PR 9: `sharedReason`) keeps the
+ * Submit from sending. Mutation: drop it from those reasons ⇒ both red; the own-group rename case beside them is the positive control.
  *
  * **The post-merge sweep's three** (`adminOnADashboardWhoseLocationIsAbsentFromTheActiveListCanSave`,
  * `assetGroupAdminOnAForeignGroupSeesWhyItCannotSave`, `assetGroupAdminOnItsOwnGroupSeesNoScopeReason`):
@@ -66,8 +66,68 @@ import * as copilotApi from "../../api/copilot";
 export const ORG_ID = "22222222-2222-4222-8222-222222222222";
 const OTHER_ORG_ID = "33333333-3333-4333-8333-333333333333";
 
+/** `F3.85` PR 9 — the wizards parse every id a request carries (`z.string().uuid()`), so the
+ * fixtures' location, group and widget ids are uuids (they were `loc-1`, `grp-1`, `w-overview`…). */
+export const LOC_1 = "10000000-0000-4000-8000-000000000001";
+export const LOC_2 = "10000000-0000-4000-8000-000000000002";
+const LOC_9 = "10000000-0000-4000-8000-000000000009";
+export const GRP_1 = "20000000-0000-4000-8000-000000000001";
+export const GRP_2 = "20000000-0000-4000-8000-000000000002";
+const GRP_FOREIGN = "20000000-0000-4000-8000-0000000000ff";
+const MIMIC_1 = "40000000-0000-4000-8000-000000000001";
+const WIDGET_IDS: Readonly<Record<string, string>> = {
+  "w-overview": "50000000-0000-4000-8000-000000000001",
+  "w-electrical": "50000000-0000-4000-8000-000000000002",
+  "w-1": "50000000-0000-4000-8000-000000000003",
+};
+/** A fixture widget's uuid, by the short name its canvas title shows (`Tile w-overview`). */
+export function widgetId(name: string): string {
+  const id = WIDGET_IDS[name];
+  if (id === undefined) throw new Error(`no fixture widget id for ${name}`);
+  return id;
+}
+
+/** `F3.85` PR 9 — the page's two wizards. */
+export const detailsWizard = (): HTMLElement => screen.getByRole("region", { name: "Dashboard details" });
+export const widgetsWizard = (): HTMLElement => screen.getByRole("region", { name: "Dashboard widgets" });
+
+/** Basics → Scope in the details wizard (Next; the Scope step's fields render). */
+export async function openScopeStep(): Promise<void> {
+  await userEvent.click(within(detailsWizard()).getByRole("button", { name: "Next" }));
+  await within(detailsWizard()).findByRole("region", { name: "Scope" });
+}
+
+/** Scope → Basics (Back never checks), so the Name field shows again. */
+export async function backToBasics(): Promise<void> {
+  await userEvent.click(within(detailsWizard()).getByRole("button", { name: "Back" }));
+  await within(detailsWizard()).findByRole("region", { name: "Basics" });
+}
+
+/** Types onto the prefilled name, from whichever step the details wizard shows. */
+export async function typeOntoName(text: string): Promise<void> {
+  if (within(detailsWizard()).queryByLabelText("Name") === null) {
+    await backToBasics();
+  }
+  await userEvent.type(within(detailsWizard()).getByLabelText("Name"), text);
+}
+
+/** Next until Review, then Submit — the wizard's save. A step that refuses to move on leaves no
+ * Submit to click, so a refused save is asserted by the spy it never reached. */
+export async function submitWizard(region: () => HTMLElement): Promise<void> {
+  for (let guard = 0; guard < 4; guard += 1) {
+    const next = within(region()).queryByRole("button", { name: "Next" });
+    if (next === null) break;
+    await userEvent.click(next);
+  }
+  const submit = within(region()).queryByRole("button", { name: "Submit" });
+  if (submit !== null) await userEvent.click(submit);
+}
+
+export const submitDetails = (): Promise<void> => submitWizard(detailsWizard);
+export const submitWidgets = (): Promise<void> => submitWizard(widgetsWizard);
+
 export const LOCATION = {
-  id: "loc-1",
+  id: LOC_1,
   organizationId: ORG_ID,
   organizationCode: "IONX",
   organizationName: "Ion Exchange",
@@ -94,7 +154,7 @@ export const DTO: DashboardDto = {
   slug: "site-a-overview",
   name: "Site A Overview",
   description: null,
-  locationId: "loc-1",
+  locationId: LOC_1,
   assetGroupId: null,
   assetId: null,
   assetTemplateId: null,
@@ -106,7 +166,7 @@ export const DTO: DashboardDto = {
 };
 
 /** The same dashboard, scoped to an asset group — `locationId` NULL, `assetGroupId` set. */
-const GROUP_DTO: DashboardDto = { ...DTO, id: "dash-2", slug: "hvac-kolkata", locationId: null, assetGroupId: "grp-1" };
+export const GROUP_DTO: DashboardDto = { ...DTO, id: "dash-2", slug: "hvac-kolkata", locationId: null, assetGroupId: GRP_1 };
 
 /** The same dashboard, instantiated onto an asset (ADR 0067) — `assetId` set and BOTH scope
  * columns NULL, as the merged-singularity guard stores it. A fixture with `assetId` beside a
@@ -140,23 +200,23 @@ const ASSET: AssetListRow = {
 /** `fetchAdminAssetGroups`'s real response shape — the full `AdminAssetGroupDto`, no cast, so a
  * missing `organizationId` fails the compiler rather than the run. */
 export const GROUP: AdminAssetGroupDto = {
-  id: "grp-1",
+  id: GRP_1,
   code: "hvac",
   name: "Hvac",
   description: null,
-  locationId: "loc-1",
+  locationId: LOC_1,
   locationName: "Kolkata Works",
   organizationId: ORG_ID,
   memberCount: 3,
   createdAt: new Date(0).toISOString(),
 };
-export const SECOND_GROUP: AdminAssetGroupDto = { ...GROUP, id: "grp-2", code: "electrical", name: "Electrical" };
+export const SECOND_GROUP: AdminAssetGroupDto = { ...GROUP, id: GRP_2, code: "electrical", name: "Electrical" };
 /** A group in another organization — `GET /admin/asset-groups` is unfiltered for `admin`, so
  * the page must narrow the list to the dashboard's own organization itself. */
 const FOREIGN_GROUP: AdminAssetGroupDto = {
   ...GROUP,
-  id: "grp-foreign",
-  locationId: "loc-9",
+  id: GRP_FOREIGN,
+  locationId: LOC_9,
   locationName: "Elsewhere",
   organizationId: OTHER_ORG_ID,
 };
@@ -209,16 +269,16 @@ function signInAsAssetGroupAdmin(): void {
     scope: {
       kind: "asset_group",
       locations: [
-        { id: "loc-1", code: "WC", slug: "western-cape", name: "Western Cape", type: "smoc_campus", province: null, parentId: null },
+        { id: LOC_1, code: "WC", slug: "western-cape", name: "Western Cape", type: "smoc_campus", province: null, parentId: null },
       ],
-      assetGroups: [{ id: "grp-1", locationId: "loc-1", code: "hvac", name: "Hvac", organizationId: ORG_ID }],
+      assetGroups: [{ id: GRP_1, locationId: LOC_1, code: "hvac", name: "Hvac", organizationId: ORG_ID }],
       assetIds: ["a1"],
     },
   });
 }
 
 /** Stubs the two save calls and returns the `updateDashboard` spy the body assertions read. */
-function stubSave() {
+export function stubSave() {
   const updateSpy = vi.spyOn(dashboardsApi, "updateDashboard").mockResolvedValue(DTO);
   vi.spyOn(dashboardsApi, "putDashboardWidgets").mockResolvedValue(DTO);
   return updateSpy;
@@ -243,13 +303,19 @@ function stubSave() {
  * those failures are "Asset group" callers; unmutated, the clamp and the prefill share one update.
  */
 export async function waitForPrefill(kind: "Location" | "Asset group"): Promise<void> {
+  // `F3.85` PR 9 — the radios are the details wizard's Scope step: the filled Name (Basics) is the
+  // commit, then the wait moves to Scope and finds the prefilled radio there. It leaves the
+  // wizard on Scope; `typeOntoName` goes back.
+  await waitFor(() => expect(within(detailsWizard()).getByLabelText("Name")).not.toHaveValue(""));
+  await openScopeStep();
   await screen.findByRole("radio", { name: kind, checked: true });
-  await waitFor(() => expect(screen.getByLabelText("Name")).not.toHaveValue(""));
 }
 
 /** The asset-kind wait: there is no radio for it, so the read-only scope line — rendered only
  * once the dto effect has applied `scopeFromDashboard` — is what proves the prefill landed. */
 async function waitForAssetPrefill(): Promise<void> {
+  await waitFor(() => expect(within(detailsWizard()).getByLabelText("Name")).not.toHaveValue(""));
+  await openScopeStep();
   await screen.findByText(/Scoped to asset Chiller 1\./);
 }
 
@@ -275,9 +341,9 @@ export function renderPage(user: AuthUser): void {
  * The body is matched **exactly**, not with `objectContaining` (review finding). The key that
  * must stay absent is `assetId`: `updateDashboard` merges on presence, so an `assetId: null`
  * in this body would clear an instantiated asset dashboard's provenance on a rename
- * (`DashboardsService.update`'s forged-provenance case). `tsc` refuses that key today because
- * `UpdateDashboardPayload` lacks it, but that gate disappears the day the type gains the field
- * (`F3.63`), so the spec pins it too — mutation: spread `assetId: null` into the body ⇒ red.
+ * (`DashboardsService.update`'s forged-provenance case). No compile-time gate holds this:
+ * the shared `UpdateDashboardBody` accepts `assetId` (`F3.63`), so this exact-keys assertion is
+ * the only gate — mutation: spread `assetId: null` into the body ⇒ red.
  */
 export async function renamingAGroupScopedDashboardKeepsItsGroup(): Promise<void> {
   stubLoads({ dto: GROUP_DTO, groups: [GROUP] });
@@ -290,15 +356,15 @@ export async function renamingAGroupScopedDashboardKeepsItsGroup(): Promise<void
   // (`isScopeAuthorised`). The Name input renders before either and is not a wait.
   await waitForPrefill("Asset group");
   await screen.findByRole("option", { name: "Hvac — Kolkata Works" });
-  await userEvent.type(screen.getByLabelText("Name"), " (renamed)");
-  await userEvent.click(screen.getByRole("button", { name: "Save dashboard" }));
+  await typeOntoName(" (renamed)");
+  await submitDetails();
 
   await waitFor(() => {
     expect(updateSpy).toHaveBeenCalledWith(GROUP_DTO.id, {
       name: `${GROUP_DTO.name} (renamed)`,
       description: null,
       locationId: null,
-      assetGroupId: "grp-1",
+      assetGroupId: GRP_1,
     });
   });
 }
@@ -313,11 +379,11 @@ export async function movingALocationDashboardOntoAGroupSendsTheGroupAndClearsTh
 
   await waitForPrefill("Location");
   await userEvent.click(screen.getByRole("radio", { name: "Asset group" }));
-  await userEvent.selectOptions(await screen.findByRole("combobox", { name: "Asset group" }), "grp-1");
-  await userEvent.click(screen.getByRole("button", { name: "Save dashboard" }));
+  await userEvent.selectOptions(await screen.findByRole("combobox", { name: "Asset group" }), GRP_1);
+  await submitDetails();
 
   await waitFor(() => {
-    expect(updateSpy).toHaveBeenCalledWith(DTO.id, expect.objectContaining({ locationId: null, assetGroupId: "grp-1" }));
+    expect(updateSpy).toHaveBeenCalledWith(DTO.id, expect.objectContaining({ locationId: null, assetGroupId: GRP_1 }));
   });
 }
 
@@ -336,13 +402,15 @@ export async function anUneditedGroupScopedDashboardIsNotDirty(): Promise<void> 
  * columns, not `locationId` alone. */
 export async function choosingADifferentGroupMakesItDirty(): Promise<void> {
   stubLoads({ dto: GROUP_DTO, groups: [GROUP, SECOND_GROUP] });
+  const updateSpy = stubSave();
 
   renderPage(asUser("admin"));
 
   await waitForPrefill("Asset group");
-  await userEvent.selectOptions(await screen.findByRole("combobox", { name: "Asset group" }), "grp-2");
+  await userEvent.selectOptions(await screen.findByRole("combobox", { name: "Asset group" }), GRP_2);
 
-  expect(screen.getByRole("button", { name: "Save dashboard" })).toBeEnabled();
+  await submitDetails();
+  await waitFor(() => expect(updateSpy).toHaveBeenCalledTimes(1));
 }
 
 /** The LOCATION half of the rewritten dirty check (post-merge sweep, Medium). The row rewrote
@@ -351,15 +419,17 @@ export async function choosingADifferentGroupMakesItDirty(): Promise<void> {
  * and Save stayed disabled, and every case stayed green. Mutation: compare `assetGroupId`
  * only ⇒ red. */
 export async function choosingADifferentLocationMakesItDirty(): Promise<void> {
-  const SECOND_LOCATION = { ...LOCATION, id: "loc-2", code: "MUM", slug: "mumbai-works", name: "Mumbai Works" };
+  const SECOND_LOCATION = { ...LOCATION, id: LOC_2, code: "MUM", slug: "mumbai-works", name: "Mumbai Works" };
   stubLoads({ dto: DTO, groups: [GROUP], locations: [LOCATION, SECOND_LOCATION] });
+  const updateSpy = stubSave();
 
   renderPage(asUser("admin"));
 
   await waitForPrefill("Location");
-  await userEvent.selectOptions(await screen.findByRole("combobox", { name: "Location" }), "loc-2");
+  await userEvent.selectOptions(await screen.findByRole("combobox", { name: "Location" }), LOC_2);
 
-  expect(screen.getByRole("button", { name: "Save dashboard" })).toBeEnabled();
+  await submitDetails();
+  await waitFor(() => expect(updateSpy).toHaveBeenCalledTimes(1));
 }
 
 /** The group list is narrowed to the dashboard's own organization — one option besides the
@@ -376,7 +446,7 @@ export async function theGroupListIsTheDashboardsOrganizationOnly(): Promise<voi
       .getAllByRole("option")
       .map((option) => (option as HTMLOptionElement).value)
       .filter((value) => value !== "");
-    expect(values).toEqual(["grp-1"]);
+    expect(values).toEqual([GRP_1]);
   });
 }
 
@@ -394,8 +464,8 @@ export async function renamingAnAssetScopedDashboardSendsOnlyNameAndDescription(
   renderPage(asUser("admin"));
 
   await waitForAssetPrefill();
-  await userEvent.type(screen.getByLabelText("Name"), " (renamed)");
-  await userEvent.click(screen.getByRole("button", { name: "Save dashboard" }));
+  await typeOntoName(" (renamed)");
+  await submitDetails();
 
   await waitFor(() => {
     expect(updateSpy).toHaveBeenCalledWith(ASSET_DTO.id, {
@@ -416,8 +486,8 @@ export async function thePatchBodyForAnAssetScopedDashboardHasExactlyTwoKeys(): 
   renderPage(asUser("admin"));
 
   await waitForAssetPrefill();
-  await userEvent.type(screen.getByLabelText("Name"), " (renamed)");
-  await userEvent.click(screen.getByRole("button", { name: "Save dashboard" }));
+  await typeOntoName(" (renamed)");
+  await submitDetails();
 
   await waitFor(() => expect(updateSpy).toHaveBeenCalled());
   expect(Object.keys(updateSpy.mock.calls[0]?.[1] ?? {}).sort()).toEqual(["description", "name"]);
@@ -429,6 +499,8 @@ export async function anAssetScopedDashboardNamesItsAsset(): Promise<void> {
   stubLoads({ dto: ASSET_DTO, groups: [GROUP] });
 
   renderPage(asUser("admin"));
+  await waitFor(() => expect(within(detailsWizard()).getByLabelText("Name")).not.toHaveValue(""));
+  await openScopeStep();
 
   expect(await screen.findByText(/Scoped to asset Chiller 1\./)).toBeInTheDocument();
 }
@@ -462,6 +534,8 @@ export async function anAssetScopedDashboardWithTheAssetAbsentShowsTheId(): Prom
   stubLoads({ dto: ASSET_DTO, groups: [GROUP], assets: [] });
 
   renderPage(asUser("admin"));
+  await waitFor(() => expect(within(detailsWizard()).getByLabelText("Name")).not.toHaveValue(""));
+  await openScopeStep();
 
   expect(await screen.findByText(new RegExp(`Scoped to asset ${ASSET_DTO.assetId}\\.`))).toBeInTheDocument();
 }
@@ -526,13 +600,13 @@ export async function assetGroupAdminRenamesItsGroupDashboardAndKeepsTheGroup():
   await renderAssetGroupAdminsGroupDashboard();
 
   await screen.findByRole("option", { name: "Hvac — Western Cape" });
-  await userEvent.type(screen.getByLabelText("Name"), " (renamed)");
-  await userEvent.click(screen.getByRole("button", { name: "Save dashboard" }));
+  await typeOntoName(" (renamed)");
+  await submitDetails();
 
   await waitFor(() => {
     expect(updateSpy).toHaveBeenCalledWith(
       GROUP_DTO.id,
-      expect.objectContaining({ name: `${GROUP_DTO.name} (renamed)`, assetGroupId: "grp-1", locationId: null }),
+      expect.objectContaining({ name: `${GROUP_DTO.name} (renamed)`, assetGroupId: GRP_1, locationId: null }),
     );
   });
 }
@@ -553,7 +627,7 @@ export async function assetGroupAdminsWidgetInspectorOffersTheAssetChain(): Prom
  * to the role, so the clamp does not fire), the select has no matching option, and after a rename
  * Save stays disabled. Positive control: `assetGroupAdminRenamesItsGroupDashboardAndKeepsTheGroup`
  * above, same role and same shape on its OWN group, has Save enabled. Mutation: drop
- * `isScopeAuthorised` from `blocked` ⇒ red. */
+ * `isScopeAuthorised` from the refusal reasons ⇒ red. */
 export async function assetGroupAdminOnAForeignGroupCannotSave(): Promise<void> {
   stubLoads({ dto: { ...GROUP_DTO, assetGroupId: FOREIGN_GROUP.id }, groups: [GROUP] });
   const updateSpy = stubSave();
@@ -562,10 +636,12 @@ export async function assetGroupAdminOnAForeignGroupCannotSave(): Promise<void> 
 
   await waitForPrefill("Asset group");
   await screen.findByRole("option", { name: "Hvac — Western Cape" });
-  await userEvent.type(screen.getByLabelText("Name"), " (renamed)");
+  await typeOntoName(" (renamed)");
 
-  expect(screen.getByRole("button", { name: "Save dashboard" })).toBeDisabled();
-  await userEvent.click(screen.getByRole("button", { name: "Save dashboard" }));
+  await submitDetails();
+  // Review fix (F1) — the wizard reached Review and it is the page's scope rule that refused it,
+  // not a step parse that stopped short of Submit.
+  expect(within(detailsWizard()).getByText(OUTSIDE_SCOPE_REASON)).toBeInTheDocument();
   expect(updateSpy).not.toHaveBeenCalled();
 }
 
@@ -573,19 +649,20 @@ export async function assetGroupAdminOnAForeignGroupCannotSave(): Promise<void> 
  * locations only (`writableLocationIds`), so the stub returns a second location and NOT the
  * dashboard's `loc-1`. The location radio prefills checked, the select has no matching option, and
  * after a rename Save stays disabled. Positive control: `choosingADifferentLocationMakesItDirty`
- * has Save enabled for an offered location. Mutation: drop `isScopeAuthorised` from `blocked` ⇒ red. */
+ * has Save enabled for an offered location. Mutation: drop `isScopeAuthorised` from the refusal reasons ⇒ red. */
 export async function locationAdminOnAForeignLocationCannotSave(): Promise<void> {
-  const OWN_LOCATION = { ...LOCATION, id: "loc-2", code: "MUM", slug: "mumbai-works", name: "Mumbai Works" };
+  const OWN_LOCATION = { ...LOCATION, id: LOC_2, code: "MUM", slug: "mumbai-works", name: "Mumbai Works" };
   stubLoads({ dto: DTO, groups: [], locations: [OWN_LOCATION] });
   const updateSpy = stubSave();
   renderPage(asUser("location_admin"));
 
   await waitForPrefill("Location");
   await screen.findByRole("option", { name: "Mumbai Works" });
-  await userEvent.type(screen.getByLabelText("Name"), " (renamed)");
+  await typeOntoName(" (renamed)");
 
-  expect(screen.getByRole("button", { name: "Save dashboard" })).toBeDisabled();
-  await userEvent.click(screen.getByRole("button", { name: "Save dashboard" }));
+  await submitDetails();
+  // Review fix (F1) — Review reached, and the page's scope rule names the refusal.
+  expect(within(detailsWizard()).getByText(OUTSIDE_SCOPE_REASON)).toBeInTheDocument();
   expect(updateSpy).not.toHaveBeenCalled();
 }
 
@@ -602,7 +679,7 @@ export async function assetGroupAdminOnAForeignGroupSeesWhyItCannotSave(): Promi
 
   await waitForPrefill("Asset group");
   await screen.findByRole("option", { name: "Hvac — Western Cape" });
-  await userEvent.type(screen.getByLabelText("Name"), " (renamed)");
+  await typeOntoName(" (renamed)");
 
   expect(screen.getByText(OUTSIDE_SCOPE_REASON)).toBeInTheDocument();
 }
@@ -615,7 +692,7 @@ export async function assetGroupAdminOnItsOwnGroupSeesNoScopeReason(): Promise<v
   await renderAssetGroupAdminsGroupDashboard();
 
   await screen.findByRole("option", { name: "Hvac — Western Cape" });
-  await userEvent.type(screen.getByLabelText("Name"), " (renamed)");
+  await typeOntoName(" (renamed)");
 
   expect(screen.queryByText(OUTSIDE_SCOPE_REASON)).toBeNull();
 }
@@ -656,21 +733,22 @@ export async function locationAdminOnAGroupDashboardSeesNoOutsideScopeReason(): 
  * `""` as the reason. Mutation: gate on `isScopeOffered` for every role ⇒ red, while the two
  * scoped-role foreign cases above stay green. */
 export async function adminOnADashboardWhoseLocationIsAbsentFromTheActiveListCanSave(): Promise<void> {
-  const ACTIVE_LOCATION = { ...LOCATION, id: "loc-2", code: "MUM", slug: "mumbai-works", name: "Mumbai Works" };
+  const ACTIVE_LOCATION = { ...LOCATION, id: LOC_2, code: "MUM", slug: "mumbai-works", name: "Mumbai Works" };
   stubLoads({ dto: DTO, groups: [GROUP], locations: [ACTIVE_LOCATION] });
-  stubSave();
+  const updateSpy = stubSave();
   renderPage(asUser("admin"));
 
   await waitForPrefill("Location");
   await screen.findByRole("option", { name: "Mumbai Works" });
-  await userEvent.type(screen.getByLabelText("Name"), " (renamed)");
+  await typeOntoName(" (renamed)");
 
-  expect(screen.getByRole("button", { name: "Save dashboard" })).toBeEnabled();
+  await submitDetails();
+  await waitFor(() => expect(updateSpy).toHaveBeenCalledTimes(1));
 }
 
 /** `F3.32` — a group dashboard holding one plant mimic, the only scope a mimic saves on. */
 const MIMIC_WIDGET: DashboardWidgetDto = {
-  id: "mimic-1",
+  id: MIMIC_1,
   dashboardId: "dash-2",
   organizationId: ORG_ID,
   title: "Water train",
@@ -684,7 +762,7 @@ const MIMIC_WIDGET: DashboardWidgetDto = {
   widgetType: "mimic",
   config: { source: "preset", preset: "water_train" },
 };
-const MIMIC_GROUP_DTO: DashboardDto = { ...GROUP_DTO, widgets: [MIMIC_WIDGET] };
+export const MIMIC_GROUP_DTO: DashboardDto = { ...GROUP_DTO, widgets: [MIMIC_WIDGET] };
 
 /**
  * `F3.32` review finding (High) — moving a group dashboard that holds a mimic onto a location.
@@ -700,25 +778,28 @@ export async function movingAMimicDashboardOffItsGroupBlocksSave(): Promise<void
 
   await waitForPrefill("Asset group");
   await userEvent.click(screen.getByRole("radio", { name: "Location" }));
-  await userEvent.selectOptions(await screen.findByRole("combobox", { name: "Location" }), "loc-1");
+  await userEvent.selectOptions(await screen.findByRole("combobox", { name: "Location" }), LOC_1);
 
-  expect(screen.getByRole("button", { name: "Save dashboard" })).toBeDisabled();
+  await submitDetails();
   expect(screen.getByText(/A plant mimic needs an asset-group scope./)).toBeInTheDocument();
+  // Review fix (F1) — Review reached, and the page's problem rule names the refusal.
+  expect(within(detailsWizard()).getByText("Fix the problems below to save.")).toBeInTheDocument();
   expect(updateSpy).not.toHaveBeenCalled();
 }
 
 /** The positive control: the same mimic dashboard, renamed on its own group, can save. */
 export async function renamingAMimicDashboardOnItsGroupCanSave(): Promise<void> {
   stubLoads({ dto: MIMIC_GROUP_DTO, groups: [GROUP] });
-  stubSave();
+  const updateSpy = stubSave();
 
   renderPage(asUser("admin"));
 
   await waitForPrefill("Asset group");
   await screen.findByRole("option", { name: "Hvac — Kolkata Works" });
-  await userEvent.type(screen.getByLabelText("Name"), " (renamed)");
+  await typeOntoName(" (renamed)");
 
-  expect(screen.getByRole("button", { name: "Save dashboard" })).toBeEnabled();
+  await submitDetails();
+  await waitFor(() => expect(updateSpy).toHaveBeenCalledTimes(1));
   expect(screen.queryByText(/A plant mimic needs an asset-group scope./)).not.toBeInTheDocument();
 }
 
@@ -738,20 +819,21 @@ export const ELECTRICAL_TAB: DashboardDto["tabs"][number] = {
   key: "electrical",
   label: "Electrical",
   sortOrder: 1,
-  assetGroupId: "grp-1",
+  assetGroupId: GRP_1,
 };
-export const tileOnTab = (id: string, tabId: string, gridY: number): DashboardWidgetDto => ({
-  id,
+/** A value tile on a tab. `name` is its canvas title (`Tile w-overview`); its id is `widgetId(name)`. */
+export const tileOnTab = (name: string, tabId: string, gridY: number): DashboardWidgetDto => ({
+  id: widgetId(name),
   dashboardId: DTO.id,
   organizationId: ORG_ID,
-  title: `Tile ${id}`,
+  title: `Tile ${name}`,
   gridX: 0,
   gridY,
   gridW: 3,
   gridH: 2,
   points: [
     {
-      id: `${id}-p`,
+      id: `${name}-p`,
       pointId: "55555555-5555-4555-8555-555555555555",
       role: "primary",
       sortOrder: 0,
@@ -777,6 +859,9 @@ export const TABBED_DTO: DashboardDto = {
  * each widget's `tabKey`: the API's diff deletes every stored tab a PUT omits, with its widgets.
  * Every other fixture here has `tabs: []`, so nothing gated this. Mutation: pass `[]` to
  * `buildPutWidgetsPayload` in the page => red.
+ *
+ * `F3.85` PR 9 — the widgets are their own wizard now, so a rename alone sends no PUT: the edit
+ * that is not a tab edit is a widget's title, and the save is the widgets wizard's.
  */
 export async function renamingATabbedDashboardReSendsItsTabs(): Promise<void> {
   stubLoads({ dto: TABBED_DTO, groups: [GROUP] });
@@ -787,8 +872,9 @@ export async function renamingATabbedDashboardReSendsItsTabs(): Promise<void> {
 
   await waitForPrefill("Location");
   await screen.findByRole("option", { name: "Kolkata Works" });
-  await userEvent.type(screen.getByLabelText("Name"), " (renamed)");
-  await userEvent.click(screen.getByRole("button", { name: "Save dashboard" }));
+  await userEvent.click(await screen.findByText("Tile w-overview"));
+  await userEvent.type(screen.getByLabelText("Title"), " (edited)");
+  await submitWidgets();
 
   await waitFor(() => {
     expect(putSpy).toHaveBeenCalledTimes(1);
@@ -796,10 +882,10 @@ export async function renamingATabbedDashboardReSendsItsTabs(): Promise<void> {
   const body = putSpy.mock.calls[0]![1];
   expect(body.tabs).toEqual([
     { id: OVERVIEW_TAB.id, key: "overview", label: "Overview", sortOrder: 0, assetGroupId: null },
-    { id: ELECTRICAL_TAB.id, key: "electrical", label: "Electrical", sortOrder: 1, assetGroupId: "grp-1" },
+    { id: ELECTRICAL_TAB.id, key: "electrical", label: "Electrical", sortOrder: 1, assetGroupId: GRP_1 },
   ]);
   expect(body.widgets.map((widget) => [widget.id, widget.tabKey])).toEqual([
-    ["w-overview", "overview"],
-    ["w-electrical", "electrical"],
+    [widgetId("w-overview"), "overview"],
+    [widgetId("w-electrical"), "electrical"],
   ]);
 }

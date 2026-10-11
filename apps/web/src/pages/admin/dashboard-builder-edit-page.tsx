@@ -1,15 +1,13 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useSearchParams } from "react-router-dom";
+
+import type { UpdateDashboardBody } from "@bms/shared/contracts";
+import { catalogEntry } from "@bms/shared/copilot";
 
 import { adminAssetGroupsQueryKey, fetchAdminAssetGroups } from "../../api/admin/asset-groups";
 import { fetchAssets } from "../../api/assets";
-import {
-  fetchDashboard,
-  putDashboardWidgets,
-  updateDashboard,
-  type UpdateDashboardPayload,
-} from "../../api/dashboards";
+import { fetchDashboard, putDashboardWidgets, updateDashboard } from "../../api/dashboards";
 import { useDashboardScopeOptions } from "../../hooks/use-dashboard-scope-options";
 import { siteWidgetsQueryPrefix } from "../../hooks/use-site-widgets";
 import { firstStoredTabKey, useTabMarkers, type TabMarkers } from "../../hooks/use-tab-markers";
@@ -41,28 +39,44 @@ import {
   unselectedDashboardBuilderProblems,
   type BuilderTabsState,
   type DashboardWidgetRow,
+  type PutDashboardWidgetsPayload,
   type TabWritePayload,
 } from "../../lib/dashboard-builder-form";
+import type { WizardStep } from "../../lib/wizard-steps";
 import { withDefaultMimicTabKey } from "../../lib/dashboard-builder-mimic-tab";
+import { chosenScopeFromFill } from "../../lib/dashboard-scope-fill";
 import { metricCatalogLabel } from "../../lib/metric-catalog";
 import { WIDGET_CATALOG } from "../../lib/widget-catalog";
 import { AppShell } from "../../layouts/app-shell";
 import { PageHeader } from "../../components/page-header";
 import { SectionCard } from "../../components/section-card";
 import { DashboardCanvas, type CanvasTile } from "../../components/dashboards/dashboard-canvas";
-import { DashboardScopeFields, type DashboardScopeValue } from "../../components/dashboards/dashboard-scope-fields";
+import {
+  clampScopeToRole,
+  DashboardScopeFields,
+  type DashboardScopeValue,
+} from "../../components/dashboards/dashboard-scope-fields";
 import { DashboardTabStrip } from "../../components/dashboards/dashboard-tab-strip";
 import { DashboardTabsPanel, type TabGroups } from "../../components/dashboards/dashboard-tabs-panel";
 import { DuplicateDashboardDialog } from "../../components/dashboards/duplicate-dashboard-dialog";
 import { WidgetInspector } from "../../components/dashboards/widget-inspector";
+import { WizardShell } from "../../components/wizard/wizard-shell";
 import type { AuthUser } from "../../stores/auth-store";
-import type { SiteWidgetTab, WidgetType } from "@bms/shared";
+import type { DashboardDto, SiteWidgetTab, WidgetType } from "@bms/shared";
 
 type DashboardBuilderEditPageProps = {
   user: AuthUser;
 };
 
+
 type WidgetTile = CanvasTile & { row: DashboardWidgetRow; index: number };
+
+/** Review fix (C1) — the details wizard's refusal when the SAVED widgets do not fit the new scope. */
+const SAVED_WIDGETS_DO_NOT_FIT_REASON =
+  "The saved widgets do not fit this scope. Put the scope back, save the widget changes, then change the scope.";
+/** Review fix (C1, PR9-SEC-1) — the widgets wizard's refusal while the scope has unsaved changes. */
+const UNSAVED_SCOPE_REASON =
+  "The scope has unsaved changes. Save the dashboard details, or put the scope back, before you save the widgets.";
 
 /** `F3.73` critique fix — what a canvas tile binds: its catalog metric(s) when it binds one ("Active
  * alarms metric"), else its point count. A catalog-bound tile used to read "0 point(s)". */
@@ -81,11 +95,18 @@ function tileBindingText(row: DashboardWidgetRow): string {
  * `DashboardScopeFields`'s organization-wide branch is fed a single,
  * already-fixed option rather than a real picker: there is nothing to choose.
  *
- * Save is the same two calls Unit 7's create page makes, in the same order:
- * `PATCH /dashboards/:id`, then `PUT /:id/widgets` with the whole set —
- * preserving every server-issued widget `id` so a re-save does not invent new
- * rows for widgets that already exist (`dashboardRowsFromDto` is what carries
- * them forward).
+ * **`F3.85` PR 9 (ADR 0099 decision 6, plan §11.1) — two wizards on one page.** The
+ * dashboard's own fields are the `dashboard.update` wizard (Basics → Scope → Review,
+ * `PATCH /dashboards/:id`; Review shows the stored value beside the new one), and the
+ * widgets are the `dashboard.widgets.replace` wizard (Layout → Review, `PUT /:id/widgets`
+ * with the whole set — preserving every server-issued widget `id` so a re-save does not
+ * invent new rows for widgets that already exist; `dashboardRowsFromDto` carries them
+ * forward). Each saves on its own, so a widgets-only edit sends no PATCH; a save re-seeds
+ * only its own half, so the other wizard's unsaved edits survive it. Each half is judged against
+ * the other's STORED half, as the server judges it (see `detailsReason`). The page's own rules
+ * (the builder problems, the scope rules, "no changes") refuse a Submit the shell's parse
+ * cannot see, and the Review card names why. Neither wizard sends `X-Copilot-Change` — a
+ * copilot write goes through the dock's Confirm card only.
  *
  * `F3.63` (ADR 0047 Amendment 6): the option lists come from `useDashboardScopeOptions` by
  * role, so an `asset_group_admin` — admitted by `DashboardAuthorRoute` — edits its group
@@ -126,27 +147,66 @@ export function DashboardBuilderEditPage({ user }: DashboardBuilderEditPageProps
   // plant. A dialog no page renders satisfies none of that, so the entry point is part of the
   // obligation rather than a nicety on top of it.
   const [duplicating, setDuplicating] = useState(false);
+  // `F3.85` PR 9 — bumped by a save or a Cancel: that wizard remounts on its first step.
+  const [detailsRound, setDetailsRound] = useState(0);
+  const [widgetsRound, setWidgetsRound] = useState(0);
+  // Which half the next dto re-seeds: both for a newly loaded dashboard, else only the half
+  // whose wizard just saved — so a PATCH answer does not wipe unsaved widget edits, nor a PUT
+  // answer unsaved name or scope edits.
+  const reseed = useRef<{ id: string | null; fields: boolean; widgets: boolean }>({
+    id: null,
+    fields: true,
+    widgets: true,
+  });
+  // Review fix (C2) — the dashboard the form has been seeded from. The wizards mount only once it
+  // is this `dto`: a copilot fill that waited in `useWizardStore` is taken by the shell's mount
+  // effect, and a seed in the same commit (parent effects run after the child's) overwrote it.
+  const [seededFor, setSeededFor] = useState<string | null>(null);
 
-  useEffect(() => {
-    if (!dto) {
-      return;
-    }
-    setName(dto.name);
-    setDescription(dto.description ?? "");
+  function seedFields(from: DashboardDto): void {
+    setName(from.name);
+    setDescription(from.description ?? "");
     // Four-way (`F3.34`, then `F3.63`): an asset-group dashboard prefills as one, and an
     // asset-scoped row as the read-only `asset` kind. Before `F3.34` the prefill was two-way and
     // a rename silently widened a group dashboard to the tenant. Before `F3.63` an asset-scoped
     // row showed a false organization radio; a rename kept its `assetId` (the two nulls merged
     // onto one axis, so the save succeeded silently) and choosing a location or a group was a
     // 400 (Amendment 6 §Q2).
-    setScope(scopeFromDashboard(dto));
-    setRows(dashboardRowsFromDto(dto));
+    setScope(scopeFromDashboard(from));
+  }
+
+  function seedWidgets(from: DashboardDto): void {
+    setRows(dashboardRowsFromDto(from));
     setSelected(null);
     // The read orders the tabs by `sortOrder`, so the first is the default.
-    const storedTabs = tabWritesFromDto(dto.tabs);
+    const storedTabs = tabWritesFromDto(from.tabs);
     setTabs(storedTabs);
     setSelectedTabKey(storedTabs[0]?.key ?? null);
+  }
+
+  useEffect(() => {
+    if (!dto) {
+      return;
+    }
+    const fresh = reseed.current.id !== dto.id;
+    if (fresh || reseed.current.fields) {
+      seedFields(dto);
+    }
+    if (fresh || reseed.current.widgets) {
+      seedWidgets(dto);
+    }
+    reseed.current = { id: dto.id, fields: false, widgets: false };
+    setSeededFor(dto.id);
   }, [dto]);
+
+  // `DashboardScopeFields`'s clamp, applied by the page too: the fields mount on the Scope step
+  // only, and the reasons below (and the Tabs panel) read the clamped scope from the first render.
+  useEffect(() => {
+    const clamped = clampScopeToRole(user.role, scope);
+    if (clamped !== null) {
+      setScope(clamped);
+    }
+  }, [user.role, scope]);
 
   // Both lists narrowed to the dashboard's own organization (`F3.34`), read by role (`F3.63`).
   const { locations, assetGroups } = useDashboardScopeOptions({
@@ -228,8 +288,6 @@ export function DashboardBuilderEditPage({ user }: DashboardBuilderEditPageProps
   // one place the role rule lives; the duplicate dialog composes the same helper. See
   // `isScopeOffered`'s docblock for why a still-loading list counts as "not offered".
   const scopeAuthorised = isScopeAuthorised(user.role, scope, { locations, assetGroups });
-  const scopeChosen = isScopeChosen(scope) && scopeAuthorised;
-  const blocked = !dto || name.trim() === "" || !scopeChosen || problems.length > 0 || !changed;
   // Save never disables with a reason nothing on the page shows (the `F3.34` review's rule):
   // the two scope reasons rank above "No changes yet.", which is also true of an unedited
   // foreign-scope dashboard and would otherwise mask them. UNCHOSEN is judged before
@@ -246,52 +304,145 @@ export function DashboardBuilderEditPage({ user }: DashboardBuilderEditPageProps
           : !changed
             ? "No changes yet."
             : "";
+  // `F3.85` PR 9 — each wizard's own refusal, in the same order: the problems and the two scope
+  // reasons hold both (a widget PUT on a scope the role cannot write meets the same 404), and
+  // "No changes yet." is judged on that wizard's half alone. `null` lets its Submit send.
+  const sharedReason =
+    problems.length > 0
+      ? "Fix the problems below to save."
+      : !isScopeChosen(scope)
+        ? "Choose a scope to save."
+        : !scopeAuthorised
+          ? "This dashboard is scoped to a location or asset group outside your scope, so it cannot be saved here."
+          : null;
+  //
+  // Review fix (C1, PR9-SEC-1) — each write is judged against the STORED other half, because that
+  // is what the server judges it against. The PATCH writes the scope beside the SAVED widgets
+  // (`DashboardsService.update` never reads them), so a scope change is also checked against the
+  // stored rows and tabs: removing a mimic without saving it, then moving off the group, must not
+  // PATCH. The PUT writes onto the SAVED scope (`putWidgets` checks a mimic and a group tab against
+  // it), so the widgets wizard refuses while the scope has unsaved changes: then the scope it was
+  // judged on above (`problems`, `isScopeChosen`, `isScopeAuthorised`) IS the stored one.
+  const scopeIsUnsaved = dto ? scopeChanged(scope, dto) : false;
+  const savedWidgetsProblems =
+    dto && scopeIsUnsaved ? dashboardBuilderErrors(dashboardRowsFromDto(dto), scope.kind, tabWritesFromDto(dto.tabs)) : [];
+  const detailsReason = !dto
+    ? "Dashboard has not loaded yet"
+    : problems.length === 0 && savedWidgetsProblems.length > 0
+      ? SAVED_WIDGETS_DO_NOT_FIT_REASON
+      : (sharedReason ?? (fieldsChanged ? null : "No changes yet."));
+  const widgetsReason = !dto
+    ? "Dashboard has not loaded yet"
+    : // After the shared reasons: a clamp-rewritten scope (a role on a kind it is not offered) asks
+      // to choose a scope, not to "put it back" — the page moved it, not the author.
+      (sharedReason ?? (scopeIsUnsaved ? UNSAVED_SCOPE_REASON : widgetsChanged ? null : "No changes yet."));
 
-  const saveM = useMutation({
-    mutationFn: async () => {
+  // The `dashboard.update` body is the first wizard's values.
+  // Both scope columns are sent explicitly on every save of a CHOSEN kind (`F3.34`, plan
+  // §10 Q1). `updateDashboard`'s body merges on presence, so an explicit `null` clears a
+  // column — which is correct here because the prefill is `scopeFromDashboard` and this
+  // form renders the asset-group control: a group source round-trips its own id, and a
+  // null is only ever sent for the axis the author did not choose. `scopePatch` never
+  // yields two non-nulls, so `DashboardsService.update`'s merged singularity guard holds.
+  // For the read-only `asset` kind (`F3.63`, ADR 0047 Amendment 6 §Q2) `scopePatch` is
+  // `{}`: both scope columns are OMITTED, not sent as null, so a rename of an asset-scoped
+  // dashboard touches neither — the spec pins the body's keys exactly. `assetId` (ADR 0067)
+  // is never sent either, so an asset-scoped row keeps it — pinned exactly too, because the
+  // merge-on-presence would read `assetId: null` as "clear the provenance". A
+  // `location_admin` CAN open a group-scoped dashboard here (the read is `getBySlug`,
+  // organization-wide by ADR 0047 Amendment 2, and `DashboardAuthorRoute` admits the role),
+  // but two controls hold: the fields' clamp rewrites a kind the role is not offered to an
+  // unchosen location, so Save stays disabled until a location is picked, and the PATCH
+  // that then follows meets `update`'s STORED-scope check first, which refuses the role on
+  // the group arm with a 404 (review finding — the refusal is at save, not at load). The
+  // same two roles can also open a dashboard of THEIR OWN kind but outside their grant — a
+  // `location_admin` on a location it does not hold, an `asset_group_admin` on a group it
+  // does not hold (`F3.63` review): the clamp does not fire (the kind is offered), so it is
+  // `isScopeAuthorised` in `detailsReason` above that refuses the Submit there, and the 404 the
+  // PATCH would otherwise meet is never reached.
+  // `slug` is left unset: this page has no slug field, so the body never renames the address.
+  const updateValues: Record<string, unknown> = {
+    name: name.trim(),
+    description: description.trim() === "" ? null : description.trim(),
+    ...scopePatch(scope),
+  };
+  // The stored values the Review card shows beside the new ones.
+  const updateCurrent: Record<string, unknown> | null = dto
+    ? { name: dto.name, description: dto.description, locationId: dto.locationId, assetGroupId: dto.assetGroupId }
+    : null;
+  // `F3.73` D11 — the edited tabs, labels trimmed; stored ids kept, so the API's diff keeps them.
+  const widgetsValues: Record<string, unknown> = {
+    ...buildPutWidgetsPayload(
+      rows,
+      tabs.map((tab) => ({ ...tab, label: tab.label.trim() })),
+    ),
+  };
+
+  /** A copilot `fill_step` mapped back onto the typed state: the name, the description and a
+   * chosen scope. An asset-scoped row keeps its read-only scope; `slug` has no field here. */
+  function applyUpdateValues(next: Record<string, unknown>): void {
+    if (typeof next.name === "string") setName(next.name);
+    if (typeof next.description === "string" || next.description === null) setDescription(next.description ?? "");
+    // Review fix (C3) — the kind is read from the column the fill changed (`chosenScopeFromFill`).
+    // The edit wizard's Scope step has no organization field, so the tenant stays the dashboard's.
+    setScope((current) =>
+      current.kind === "asset"
+        ? current
+        : chosenScopeFromFill(current, { ...next, organizationId: current.organizationId }),
+    );
+  }
+
+  /** The answer to either write: the cache takes it, and the tab markers re-read. */
+  function stored(next: DashboardDto): void {
+    queryClient.setQueryData(["dashboards", "detail", slug, organizationIdParam], next);
+    // `F3.77` review fix — the tab markers' read: a rebound group shows its status now, not at the next poll.
+    void queryClient.invalidateQueries({ queryKey: [...siteWidgetsQueryPrefix, next.id] });
+  }
+
+  const updateM = useMutation({
+    // The plain request: a wizard used alone sends no `X-Copilot-Change` header (plan §10.5).
+    mutationFn: (body: UpdateDashboardBody) => {
       if (!dto) {
         throw new Error("Dashboard has not loaded yet");
       }
-      // Both scope columns are sent explicitly on every save of a CHOSEN kind (`F3.34`, plan
-      // §10 Q1). `updateDashboard`'s body merges on presence, so an explicit `null` clears a
-      // column — which is correct here because the prefill is `scopeFromDashboard` and this
-      // form renders the asset-group control: a group source round-trips its own id, and a
-      // null is only ever sent for the axis the author did not choose. `scopePatch` never
-      // yields two non-nulls, so `DashboardsService.update`'s merged singularity guard holds.
-      // For the read-only `asset` kind (`F3.63`, ADR 0047 Amendment 6 §Q2) `scopePatch` is
-      // `{}`: both scope columns are OMITTED, not sent as null, so a rename of an asset-scoped
-      // dashboard touches neither — the spec pins the body's keys exactly. `assetId` (ADR 0067)
-      // is never sent either, so an asset-scoped row keeps it — pinned exactly too, because the
-      // merge-on-presence would read `assetId: null` as "clear the provenance". A
-      // `location_admin` CAN open a group-scoped dashboard here (the read is `getBySlug`,
-      // organization-wide by ADR 0047 Amendment 2, and `DashboardAuthorRoute` admits the role),
-      // but two controls hold: the fields' clamp rewrites a kind the role is not offered to an
-      // unchosen location, so Save stays disabled until a location is picked, and the PATCH
-      // that then follows meets `update`'s STORED-scope check first, which refuses the role on
-      // the group arm with a 404 (review finding — the refusal is at save, not at load). The
-      // same two roles can also open a dashboard of THEIR OWN kind but outside their grant — a
-      // `location_admin` on a location it does not hold, an `asset_group_admin` on a group it
-      // does not hold (`F3.63` review): the clamp does not fire (the kind is offered), so it is
-      // `isScopeAuthorised` in `blocked` above that keeps Save disabled there, and the 404 the
-      // PATCH would otherwise meet is never reached.
-      const body: UpdateDashboardPayload = {
-        name: name.trim(),
-        description: description.trim() === "" ? null : description.trim(),
-        ...scopePatch(scope),
-      };
-      const updated = await updateDashboard(dto.id, body);
-      // `F3.73` D11 — the edited tabs, labels trimmed; stored ids kept, so the API's diff keeps them.
-      const tabWrites = tabs.map((tab) => ({ ...tab, label: tab.label.trim() }));
-      return putDashboardWidgets(updated.id, buildPutWidgetsPayload(rows, tabWrites));
+      return updateDashboard(dto.id, body);
     },
     onSuccess: (next) => {
       setError(null);
-      queryClient.setQueryData(["dashboards", "detail", slug, organizationIdParam], next);
-      // `F3.77` review fix — the tab markers' read: a rebound group shows its status now, not at the next poll.
-      void queryClient.invalidateQueries({ queryKey: [...siteWidgetsQueryPrefix, next.id] });
+      reseed.current = { ...reseed.current, fields: true };
+      stored(next);
+      setDetailsRound((current) => current + 1);
     },
     onError: (cause: Error) => setError(apiErrorMessage(cause)),
   });
+
+  const widgetsM = useMutation({
+    mutationFn: (body: PutDashboardWidgetsPayload) => {
+      if (!dto) {
+        throw new Error("Dashboard has not loaded yet");
+      }
+      return putDashboardWidgets(dto.id, body);
+    },
+    onSuccess: (next) => {
+      setError(null);
+      reseed.current = { ...reseed.current, widgets: true };
+      stored(next);
+      setWidgetsRound((current) => current + 1);
+    },
+    onError: (cause: Error) => setError(apiErrorMessage(cause)),
+  });
+
+  function cancelDetails(): void {
+    if (dto) seedFields(dto);
+    updateM.reset();
+    setDetailsRound((current) => current + 1);
+  }
+
+  function cancelWidgets(): void {
+    if (dto) seedWidgets(dto);
+    widgetsM.reset();
+    setWidgetsRound((current) => current + 1);
+  }
 
   function addWidget(widgetType: WidgetType): void {
     // `F3.73` D11 — a new widget lands on the tab the canvas shows.
@@ -418,6 +569,101 @@ export function DashboardBuilderEditPage({ user }: DashboardBuilderEditPageProps
       />
     );
 
+  const updateEntry = catalogEntry("dashboard.update");
+  const widgetsEntry = catalogEntry("dashboard.widgets.replace");
+
+  /** The `dashboard.update` wizard's two field steps: Basics (name, description) and Scope. */
+  function renderDetailsStep(step: WizardStep) {
+    if (step.id === "basics") {
+      return (
+        <div className="grid gap-3 md:grid-cols-2">
+          <label className="block space-y-1 text-xs">
+            <span className="font-semibold uppercase tracking-wide text-ink-muted">Name</span>
+            <input
+              value={name}
+              onChange={(event) => setName(event.target.value)}
+              className="w-full surface-field px-2 py-1.5 text-xs"
+            />
+          </label>
+          <label className="block space-y-1 text-xs">
+            <span className="font-semibold uppercase tracking-wide text-ink-muted">Description</span>
+            <input
+              value={description}
+              onChange={(event) => setDescription(event.target.value)}
+              className="w-full surface-field px-2 py-1.5 text-xs"
+            />
+          </label>
+        </div>
+      );
+    }
+    return (
+      <DashboardScopeFields
+        role={user.role}
+        value={scope}
+        onChange={setScope}
+        organizations={dto ? [{ id: dto.organizationId, name: "This dashboard's organization" }] : []}
+        locations={locations}
+        assetGroups={assetGroups}
+        assets={assets}
+      />
+    );
+  }
+
+  /** The `dashboard.widgets.replace` wizard's Layout step: the Tabs panel, the canvas and the inspector. */
+  function renderLayoutStep() {
+    return (
+      <div className="space-y-4">
+        <DashboardTabsPanel
+          tabs={tabs}
+          groups={tabGroups}
+          widgetCounts={widgetCounts}
+          onAdd={addTab}
+          onLabel={(index, label) => updateTab(index, { label })}
+          onKey={rekeyTab}
+          onGroup={(index, assetGroupId) => updateTab(index, { assetGroupId })}
+          onMove={(index, delta) => setTabs(moveBuilderTab(tabs, index, delta))}
+          onRemove={removeTab}
+        />
+
+        <SectionCard
+          title="Widgets"
+          actions={
+            <div className="flex flex-wrap gap-2">
+              {/* `F3.32` — the live scope's kind, so a scope switch removes "Plant mimic" at once;
+                  `F3.73` D11 — and the selected tab, so a group-bound tab offers it. */}
+              {offerableWidgetTypesOnTab(scope.kind, selectedTab, tabs).map((type) => (
+                <button key={type} type="button" onClick={() => addWidget(type)} className="surface-button px-2 py-1">
+                  + {WIDGET_CATALOG[type].label}
+                </button>
+              ))}
+            </div>
+          }
+        >
+          {/* `F3.73` critique fix — the strip owns the tabpanel, so the canvas is its child. */}
+          {tabs.length > 0 ? (
+            <DashboardTabStrip tabs={tabs} selectedKey={selectedTabKey} onSelect={selectTab} markers={markers}>
+              {canvas}
+            </DashboardTabStrip>
+          ) : (
+            canvas
+          )}
+        </SectionCard>
+
+        {selected !== null && selectedRow && dto ? (
+          <WidgetInspector
+            row={selectedRow}
+            role={user.role}
+            problems={problems.filter((problem) => problem.widget === selected)}
+            organizationId={dto.organizationId}
+            tabs={tabs}
+            onChange={(patch) => updateWidget(selected, patch)}
+            onRemove={() => removeWidget(selected)}
+          />
+        ) : null}
+      </div>
+    );
+  }
+
   return (
     <AppShell user={user} kpiRibbon={<span className="text-ink">{dto?.name ?? "Edit dashboard"}</span>}>
       <div className="mx-auto max-w-[1400px] space-y-4 pb-8">
@@ -430,37 +676,35 @@ export function DashboardBuilderEditPage({ user }: DashboardBuilderEditPageProps
         ) : null}
         {error ? <p className="rounded border border-critical-line bg-critical-wash p-3 text-sm text-critical-ink-strong">{error}</p> : null}
 
-        {dto ? (
+        {dto && seededFor === dto.id ? (
           <>
             <SectionCard title="Dashboard">
-              <div className="grid gap-3 md:grid-cols-2">
-                <label className="block space-y-1 text-xs">
-                  <span className="font-semibold uppercase tracking-wide text-ink-muted">Name</span>
-                  <input
-                    value={name}
-                    onChange={(event) => setName(event.target.value)}
-                    className="w-full surface-field px-2 py-1.5 text-xs"
+              <div role="region" aria-label="Dashboard details">
+                {updateEntry ? (
+                  <WizardShell
+                    key={`details-${detailsRound}`}
+                    entry={catalogEntry("dashboard.update")!}
+                    values={updateValues}
+                    onChange={applyUpdateValues}
+                    renderStep={renderDetailsStep}
+                    // Review fix (C4) — Cancel discards click-only work too (a scope radio), so it asks first.
+                    dirty={fieldsChanged}
+                    onSubmit={(body) => {
+                      // The page's own rules refuse what the shell's parse cannot see; the card says why.
+                      if (detailsReason === null) updateM.mutate(body as UpdateDashboardBody);
+                    }}
+                    onCancel={cancelDetails}
+                    submitting={updateM.isPending}
+                    submitError={detailsReason}
+                    current={updateCurrent}
+                    summary={updateEntry.summary({
+                      body: updateValues,
+                      params: { id: dto.id },
+                      targetName: dto.name,
+                      organizationName: "",
+                    })}
                   />
-                </label>
-                <label className="block space-y-1 text-xs">
-                  <span className="font-semibold uppercase tracking-wide text-ink-muted">Description</span>
-                  <input
-                    value={description}
-                    onChange={(event) => setDescription(event.target.value)}
-                    className="w-full surface-field px-2 py-1.5 text-xs"
-                  />
-                </label>
-              </div>
-              <div className="mt-3">
-                <DashboardScopeFields
-                  role={user.role}
-                  value={scope}
-                  onChange={setScope}
-                  organizations={[{ id: dto.organizationId, name: "This dashboard's organization" }]}
-                  locations={locations}
-                  assetGroups={assetGroups}
-                  assets={assets}
-                />
+                ) : null}
               </div>
               <div className="mt-3 border-t border-well-deep pt-3">
                 <button
@@ -477,69 +721,36 @@ export function DashboardBuilderEditPage({ user }: DashboardBuilderEditPageProps
               </div>
             </SectionCard>
 
-            <DashboardTabsPanel
-              tabs={tabs}
-              groups={tabGroups}
-              widgetCounts={widgetCounts}
-              onAdd={addTab}
-              onLabel={(index, label) => updateTab(index, { label })}
-              onKey={rekeyTab}
-              onGroup={(index, assetGroupId) => updateTab(index, { assetGroupId })}
-              onMove={(index, delta) => setTabs(moveBuilderTab(tabs, index, delta))}
-              onRemove={removeTab}
-            />
-
-            <SectionCard
-              title="Widgets"
-              actions={
-                <div className="flex flex-wrap gap-2">
-                  {/* `F3.32` — the live scope's kind, so a scope switch removes "Plant mimic" at once;
-                      `F3.73` D11 — and the selected tab, so a group-bound tab offers it. */}
-                  {offerableWidgetTypesOnTab(scope.kind, selectedTab, tabs).map((type) => (
-                    <button
-                      key={type}
-                      type="button"
-                      onClick={() => addWidget(type)}
-                      className="surface-button px-2 py-1"
-                    >
-                      + {WIDGET_CATALOG[type].label}
-                    </button>
-                  ))}
-                </div>
-              }
-            >
-              {/* `F3.73` critique fix — the strip owns the tabpanel, so the canvas is its child. */}
-              {tabs.length > 0 ? (
-                <DashboardTabStrip tabs={tabs} selectedKey={selectedTabKey} onSelect={selectTab} markers={markers}>
-                  {canvas}
-                </DashboardTabStrip>
-              ) : (
-                canvas
-              )}
-            </SectionCard>
-
-            {selected !== null && selectedRow ? (
-              <WidgetInspector
-                row={selectedRow}
-                role={user.role}
-                problems={problems.filter((problem) => problem.widget === selected)}
-                organizationId={dto.organizationId}
-                tabs={tabs}
-                onChange={(patch) => updateWidget(selected, patch)}
-                onRemove={() => removeWidget(selected)}
-              />
-            ) : null}
+            <div role="region" aria-label="Dashboard widgets">
+              {widgetsEntry ? (
+                <WizardShell
+                  key={`widgets-${widgetsRound}`}
+                  entry={catalogEntry("dashboard.widgets.replace")!}
+                  values={widgetsValues}
+                  // The rows are the builder's own state; a copilot fill of whole widget payloads is
+                  // not mapped back onto them (see the PR 9 notes). The shell marks a fill changed itself.
+                  onChange={() => undefined}
+                  renderStep={renderLayoutStep}
+                  // Review fix (C4) — the builder's work is mostly clicks (add, drag, remove), so it asks first.
+                  dirty={widgetsChanged}
+                  onSubmit={(body) => {
+                    if (widgetsReason === null) widgetsM.mutate(body as PutDashboardWidgetsPayload);
+                  }}
+                  onCancel={cancelWidgets}
+                  submitting={widgetsM.isPending}
+                  submitError={widgetsReason}
+                  summary={widgetsEntry.summary({
+                    body: widgetsValues,
+                    params: { id: dto.id },
+                    targetName: dto.name,
+                    organizationName: "",
+                    currentWidgetIds: dto.widgets.map((widget) => widget.id),
+                  })}
+                />
+              ) : null}
+            </div>
 
             <div className="flex items-start gap-3 border-t border-line pt-3">
-              <button
-                type="button"
-                disabled={blocked || saveM.isPending}
-                aria-busy={saveM.isPending}
-                onClick={() => saveM.mutate()}
-                className="rounded bg-accent px-4 py-1.5 text-xs font-semibold text-on-accent disabled:opacity-60"
-              >
-                {saveM.isPending ? "Saving…" : "Save dashboard"}
-              </button>
               <div className="text-[11px] text-ink-muted">
                 <p>{saveReason}</p>
                 {summaryProblems.length > 0 ? (

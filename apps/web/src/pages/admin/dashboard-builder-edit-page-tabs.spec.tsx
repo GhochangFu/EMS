@@ -11,16 +11,25 @@ import { ApiError } from "../../lib/api-error";
 import { TAB_LOCATION_MOVE_PROBLEM } from "../../lib/dashboard-builder-form";
 import {
   DTO,
+  GRP_1,
+  GRP_2,
   GROUP,
+  LOC_1,
+  LOC_2,
   LOCATION,
   OVERVIEW_TAB,
   SECOND_GROUP,
   TABBED_DTO,
   asUser,
+  detailsWizard,
   renderPage,
   stubLoads,
+  submitDetails,
+  submitWidgets,
   tileOnTab,
   waitForPrefill,
+  widgetId,
+  widgetsWizard,
 } from "./dashboard-builder-edit-page.spec";
 
 /**
@@ -39,7 +48,7 @@ const TAB_LOCATION_MOVE_MESSAGE =
   "this dashboard has tabs bound to asset groups at its site, so it cannot leave that site — " +
   "clear the tabs' asset groups first";
 
-const SECOND_LOCATION = { ...LOCATION, id: "loc-2", code: "PUN", slug: "pune-works", name: "Pune Works" };
+const SECOND_LOCATION = { ...LOCATION, id: LOC_2, code: "PUN", slug: "pune-works", name: "Pune Works" };
 
 function stubPut(dto: DashboardDto) {
   vi.spyOn(dashboardsApi, "updateDashboard").mockResolvedValue(dto);
@@ -92,11 +101,11 @@ export async function addingATabSendsItWithItsWidget(): Promise<void> {
   expect(within(await strip()).getByRole("tab", { name: "Main hall" })).toHaveAttribute("aria-selected", "true");
   expect(canvasTitles()).toEqual(["Tile w-1"]);
 
-  await userEvent.click(screen.getByRole("button", { name: "Save dashboard" }));
+  await submitWidgets();
   await waitFor(() => expect(putSpy).toHaveBeenCalledTimes(1));
   const body = putSpy.mock.calls[0]![1];
   expect(body.tabs).toEqual([{ key: "main", label: "Main hall", sortOrder: 0, assetGroupId: null }]);
-  expect(body.widgets.map((widget) => [widget.id, widget.tabKey])).toEqual([["w-1", "main"]]);
+  expect(body.widgets.map((widget) => [widget.id, widget.tabKey])).toEqual([[widgetId("w-1"), "main"]]);
 }
 
 /** The group select reads the groups AT the dashboard's site, and the chosen group is sent.
@@ -109,14 +118,14 @@ export async function bindingATabToAGroupReadsTheSitesGroups(): Promise<void> {
 
   const select = await screen.findByRole("combobox", { name: "Tab 1 asset group" });
   await within(select).findByRole("option", { name: "Electrical" });
-  expect(assetGroupsApi.fetchAdminAssetGroups).toHaveBeenCalledWith("loc-1");
-  await userEvent.selectOptions(select, "grp-2");
-  await userEvent.click(screen.getByRole("button", { name: "Save dashboard" }));
+  expect(assetGroupsApi.fetchAdminAssetGroups).toHaveBeenCalledWith(LOC_1);
+  await userEvent.selectOptions(select, GRP_2);
+  await submitWidgets();
 
   await waitFor(() => expect(putSpy).toHaveBeenCalledTimes(1));
   expect(putSpy.mock.calls[0]![1].tabs.map((tab) => [tab.key, tab.assetGroupId])).toEqual([
-    ["overview", "grp-2"],
-    ["electrical", "grp-1"],
+    ["overview", GRP_2],
+    ["electrical", GRP_1],
   ]);
 }
 
@@ -137,11 +146,11 @@ export async function movingAWidgetToAnotherTab(): Promise<void> {
   expect(within(await strip()).getByRole("tab", { name: "Overview" })).toHaveAttribute("aria-selected", "true");
   expect(canvasTitles()).toEqual(["Tile w-overview", "Tile w-electrical"]);
 
-  await userEvent.click(screen.getByRole("button", { name: "Save dashboard" }));
+  await submitWidgets();
   await waitFor(() => expect(putSpy).toHaveBeenCalledTimes(1));
   expect(putSpy.mock.calls[0]![1].widgets.map((widget) => [widget.id, widget.tabKey])).toEqual([
-    ["w-overview", "overview"],
-    ["w-electrical", "overview"],
+    [widgetId("w-overview"), "overview"],
+    [widgetId("w-electrical"), "overview"],
   ]);
 }
 
@@ -264,8 +273,8 @@ export async function aSaveRefreshesTheTabMarkers(): Promise<void> {
 
   const select = await screen.findByRole("combobox", { name: "Tab 1 asset group" });
   await within(select).findByRole("option", { name: "Electrical" });
-  await userEvent.selectOptions(select, "grp-2");
-  await userEvent.click(screen.getByRole("button", { name: "Save dashboard" }));
+  await userEvent.selectOptions(select, GRP_2);
+  await submitWidgets();
 
   await waitFor(() => expect(putSpy).toHaveBeenCalledTimes(1));
   await waitFor(() => expect(markersRead.mock.calls.length).toBeGreaterThan(readsBeforeSave));
@@ -317,6 +326,7 @@ export async function aCatalogBoundTileNamesItsMetric(): Promise<void> {
 /** A tab keyed `assets` is refused before the save, and the summary says why. */
 export async function aReservedTabKeyBlocksTheSave(): Promise<void> {
   stubLoads({ dto: TABBED_DTO, groups: [GROUP] });
+  const putSpy = stubPut(TABBED_DTO);
   renderPage(asUser("admin"));
   await waitForPrefill("Location");
 
@@ -328,7 +338,11 @@ export async function aReservedTabKeyBlocksTheSave(): Promise<void> {
   expect(
     await screen.findByText('Tab 2: the key "assets" is reserved for the site\'s Assets & RTUs page.'),
   ).toBeInTheDocument();
-  expect(screen.getByRole("button", { name: "Save dashboard" })).toBeDisabled();
+  await submitWidgets();
+  // Review fix (F1) — the guard that fired is the Layout step's parse (`dashboardTabKeySchema`'s
+  // reserved-key refine): the wizard stays on Layout, so this case does not reach `widgetsReason`.
+  expect(within(widgetsWizard()).getByRole("alert")).toHaveTextContent("that tab key is reserved");
+  expect(putSpy).not.toHaveBeenCalled();
 }
 
 /** A key another tab holds is refused at the field, so two tabs' widgets never merge. */
@@ -357,20 +371,24 @@ export async function aLocationMoveWithSavedGroupTabsBlocksTheSave(): Promise<vo
   const patchSpy = vi.spyOn(dashboardsApi, "updateDashboard").mockRejectedValue(
     new ApiError(JSON.stringify({ message: TAB_LOCATION_MOVE_MESSAGE, error: "Bad Request", statusCode: 400 }), 400),
   );
+  const putSpy = vi.spyOn(dashboardsApi, "putDashboardWidgets").mockResolvedValue(TABBED_DTO);
   renderPage(asUser("admin"));
   await waitForPrefill("Location");
 
   await userEvent.selectOptions(await screen.findByRole("combobox", { name: "Tab 2 asset group" }), "");
-  await userEvent.selectOptions(await screen.findByRole("combobox", { name: "Location" }), "loc-2");
+  await userEvent.selectOptions(await screen.findByRole("combobox", { name: "Location" }), LOC_2);
 
   expect(await screen.findByText(TAB_LOCATION_MOVE_PROBLEM)).toBeInTheDocument();
-  expect(screen.getByRole("button", { name: "Save dashboard" })).toBeDisabled();
-  await userEvent.click(screen.getByRole("button", { name: "Save dashboard" }));
+  await submitDetails();
   expect(patchSpy).not.toHaveBeenCalled();
 
-  await userEvent.selectOptions(screen.getByRole("combobox", { name: "Location" }), "loc-1");
+  // `F3.85` PR 9 — back from Review to the Scope step, and the site put back.
+  await userEvent.click(within(detailsWizard()).getByRole("button", { name: "Back" }));
+  await userEvent.selectOptions(await screen.findByRole("combobox", { name: "Location" }), LOC_1);
   expect(screen.queryByText(TAB_LOCATION_MOVE_PROBLEM)).toBeNull();
-  expect(screen.getByRole("button", { name: "Save dashboard" })).toBeEnabled();
+  // The cleared group is a widgets change, and its save now goes through.
+  await submitWidgets();
+  await waitFor(() => expect(putSpy).toHaveBeenCalledTimes(1));
 }
 
 const ANOTHER_SITE_LABEL = "A group at another site";
@@ -379,7 +397,7 @@ const ANOTHER_SITE_LABEL = "A group at another site";
  * scope-option read with `[GROUP]`, so only the Tabs panel's read is pending or failed. */
 function stubSiteGroupsRead(site: () => Promise<{ items: (typeof GROUP)[] }>): void {
   vi.spyOn(assetGroupsApi, "fetchAdminAssetGroups").mockImplementation((locationId?: string) =>
-    locationId === "loc-1" ? site() : Promise.resolve({ items: [GROUP] }),
+    locationId === LOC_1 ? site() : Promise.resolve({ items: [GROUP] }),
   );
 }
 
@@ -453,7 +471,7 @@ export async function aDisabledGroupsReadDoesNotMislabelABoundTab(): Promise<voi
     expect(options).toContain("Its group (not loaded)");
     expect(options).not.toContain(ANOTHER_SITE_LABEL);
   }
-  expect(assetGroupsApi.fetchAdminAssetGroups).not.toHaveBeenCalledWith("loc-1");
+  expect(assetGroupsApi.fetchAdminAssetGroups).not.toHaveBeenCalledWith(LOC_1);
 }
 
 /** Review fix — the positive half: once the groups have loaded and the bound group is not among
@@ -474,19 +492,43 @@ export async function aLoadedListWithoutTheBoundGroupSaysAnotherSite(): Promise<
  * move reason stays after the clear. Mutation: drop the client rule => red. */
 export async function aGroupTabOffALocationScopeBlocksTheSave(): Promise<void> {
   stubLoads({ dto: TABBED_DTO, groups: [GROUP] });
+  const patchSpy = vi.spyOn(dashboardsApi, "updateDashboard").mockResolvedValue(TABBED_DTO);
   renderPage(asUser("admin"));
   await waitForPrefill("Location");
 
   await userEvent.click(screen.getByRole("radio", { name: "Asset group" }));
-  await userEvent.selectOptions(await screen.findByRole("combobox", { name: "Asset group" }), "grp-1");
+  await userEvent.selectOptions(await screen.findByRole("combobox", { name: "Asset group" }), GRP_1);
   const reason =
     "Tab 2 binds an asset group, and only a location dashboard carries group tabs. Clear its group or choose a location.";
   expect(await screen.findByText(reason)).toBeInTheDocument();
-  expect(screen.getByRole("button", { name: "Save dashboard" })).toBeDisabled();
+  await submitDetails();
+  // Review fix (F1) — Review reached, and the page's problem rule names the refusal.
+  expect(within(detailsWizard()).getByText("Fix the problems below to save.")).toBeInTheDocument();
+  expect(patchSpy).not.toHaveBeenCalled();
 
   await userEvent.click(screen.getByRole("button", { name: "Clear tab 2 group" }));
   expect(screen.queryByText(reason)).toBeNull();
   // The STORED tab still binds the group, so the move off the site stays refused until that saves.
   expect(screen.getByText(TAB_LOCATION_MOVE_PROBLEM)).toBeInTheDocument();
-  expect(screen.getByRole("button", { name: "Save dashboard" })).toBeDisabled();
+  await submitDetails();
+  expect(within(detailsWizard()).getByText("Fix the problems below to save.")).toBeInTheDocument();
+  expect(patchSpy).not.toHaveBeenCalled();
+}
+
+/** `F3.85` PR 9 — the page's own refusal on the widgets Submit: the scope moved off the location
+ * while a tab binds a group is a builder problem the Layout step's parse does not see, so the
+ * widgets wizard reaches Review and its Submit is refused there; no PUT. Mutation: ignore
+ * `widgetsReason` in the widgets `onSubmit` => red. */
+export async function aScopeProblemRefusesTheWidgetsSubmit(): Promise<void> {
+  stubLoads({ dto: TABBED_DTO, groups: [GROUP] });
+  const putSpy = stubPut(TABBED_DTO);
+  renderPage(asUser("admin"));
+  await waitForPrefill("Location");
+
+  await userEvent.click(screen.getByRole("radio", { name: "Asset group" }));
+  await userEvent.selectOptions(await screen.findByRole("combobox", { name: "Asset group" }), GRP_1);
+  await submitWidgets();
+
+  expect(screen.getByRole("region", { name: "Dashboard widgets" })).toHaveTextContent("Fix the problems below to save.");
+  expect(putSpy).not.toHaveBeenCalled();
 }

@@ -3,7 +3,9 @@ import { afterEach, describe, it, vi } from "vitest";
 import { cleanup } from "@testing-library/react";
 
 import { useAuthStore } from "../../stores/auth-store";
+import { resetWizardStore } from "../../stores/wizard-store";
 import {
+  aScopeProblemRefusesTheWidgetsSubmit,
   aBoundTabIsNotMislabelledWhileTheGroupsLoad,
   aCatalogBoundTileNamesItsMetric,
   aProblemOnAnotherTabNamesAndSelectsIt,
@@ -34,6 +36,8 @@ describe("F3.73 D11 dashboard builder edit page — tabs", () => {
     cleanup();
     vi.restoreAllMocks();
     useAuthStore.setState({ scope: null });
+    // A copilot fill a case left waiting must not reach the next case's wizard.
+    resetWizardStore();
   });
 
   it("the strip shows the selected tab's widgets only", async () => {
@@ -110,5 +114,9 @@ describe("F3.73 D11 dashboard builder edit page — tabs", () => {
 
   it("F3.77 review fix: a save refreshes the tab markers' read", async () => {
     await aSaveRefreshesTheTabMarkers();
+  });
+
+  it("a scope problem refuses the widgets Submit at Review (F3.85 PR 9)", async () => {
+    await aScopeProblemRefusesTheWidgetsSubmit();
   });
 });
