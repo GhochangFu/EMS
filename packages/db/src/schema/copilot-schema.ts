@@ -1,6 +1,7 @@
 import {
   boolean,
   char,
+  date,
   index,
   integer,
   jsonb,
@@ -160,4 +161,34 @@ export const copilotPendingChanges = bmsSchema.table(
     index("copilot_pending_changes_user_status_idx").on(t.userId, t.status),
     index("copilot_pending_changes_conversation_idx").on(t.conversationId),
   ],
+);
+
+/**
+ * One user's copilot turns on one day (`F3.85` PR 6, migration `0106`, ADR 0099
+ * decision 11). `day` is the date in the user's home organization's timezone
+ * (A2); the global admin's is the UTC date. `user_isolation` policy.
+ */
+export const copilotUsage = bmsSchema.table(
+  "copilot_usage",
+  {
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    day: date("day").notNull(),
+    turns: integer("turns").notNull().default(0),
+  },
+  (t) => [primaryKey({ columns: [t.userId, t.day] })],
+);
+
+/** One organization's copilot turns on one day, `day` in that organization's timezone (A2). `tenant_isolation` policy. */
+export const copilotOrgUsage = bmsSchema.table(
+  "copilot_org_usage",
+  {
+    organizationId: uuid("organization_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    day: date("day").notNull(),
+    turns: integer("turns").notNull().default(0),
+  },
+  (t) => [primaryKey({ columns: [t.organizationId, t.day] })],
 );

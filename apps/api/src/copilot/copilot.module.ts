@@ -9,11 +9,13 @@ import { CopilotAccessGuard } from "./copilot-access.guard";
 import { CopilotAccessService } from "./copilot-access.service";
 import { CopilotAvailabilityService } from "./copilot-availability.service";
 import { CopilotChangeInterceptor } from "./copilot-change.interceptor";
+import { COPILOT_USAGE_LIMITS, readCopilotUsageLimits } from "./copilot-config";
 import { CopilotContextMiddleware } from "./copilot-context.middleware";
 import { CopilotConversationsController } from "./copilot-conversations.controller";
 import { CopilotConversationsService } from "./copilot-conversations.service";
 import { CopilotPendingChangesService } from "./copilot-pending-changes.service";
 import { CopilotStatusController } from "./copilot-status.controller";
+import { CopilotUsageService } from "./copilot-usage.service";
 
 /**
  * `F3.85` / ADR 0099 — the administrator copilot. PR 3 holds availability:
@@ -37,6 +39,10 @@ import { CopilotStatusController } from "./copilot-status.controller";
  * the controller by `JwtAuthGuard` and `CopilotAccessGuard` (never global).
  * The queries live in `CopilotConversationsService`, exported for the turn
  * service PR 7 adds, so history is read and written through one place.
+ *
+ * PR 6 adds `CopilotUsageService` (the daily turn limits, Amendment 1 A1/A2),
+ * exported for the turn service, and its limits read once from the environment
+ * through the `COPILOT_USAGE_LIMITS` token.
  */
 @Module({
   imports: [DatabaseModule, AuthModule],
@@ -47,10 +53,12 @@ import { CopilotStatusController } from "./copilot-status.controller";
     CopilotAvailabilityService,
     CopilotConversationsService,
     CopilotPendingChangesService,
+    CopilotUsageService,
+    { provide: COPILOT_USAGE_LIMITS, useFactory: () => readCopilotUsageLimits(process.env) },
     MasterDataAuditService,
     { provide: APP_INTERCEPTOR, useClass: CopilotChangeInterceptor },
   ],
-  exports: [CopilotAvailabilityService, CopilotConversationsService, CopilotPendingChangesService],
+  exports: [CopilotAvailabilityService, CopilotConversationsService, CopilotPendingChangesService, CopilotUsageService],
 })
 export class CopilotModule implements NestModule {
   configure(consumer: MiddlewareConsumer): void {

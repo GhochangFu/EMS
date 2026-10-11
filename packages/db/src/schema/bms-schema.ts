@@ -46,6 +46,10 @@ export const organizations = bmsSchema.table("organizations", {
   // backfills ESKOM/PHEWB and aborts on any other NULL row); the write path
   // checks membership through Intl.supportedValuesOf("currency").
   currency: char("currency", { length: 3 }).notNull(),
+  // F3.85 PR 6 / ADR 0099 Amendment 1 A2 (migration 0106): the IANA zone whose
+  // calendar date keys the copilot daily turn counters. Validated on write
+  // against the runtime zone list; UTC unless an administrator sets it.
+  timezone: varchar("timezone", { length: 64 }).notNull().default("UTC"),
   createdAt: timestamp("created_at", { withTimezone: true })
     .notNull()
     .defaultNow(),

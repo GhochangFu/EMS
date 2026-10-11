@@ -238,10 +238,11 @@ export function assertReportSchedulesServiceFleetSlot(): void {
 /**
  * `F3.85` PR 5 — `CopilotPurgeService(tenantDb, fleetDb)` (ADR 0099
  * decision 8). Unlike `ReportDispatchService`, it injects both pools: the
- * fleet pool only lists `users.id` (0105 revokes the copilot tables from
- * `bms_fleet`), and every delete runs on slot 0 inside `withUser`. A swap
- * would run the deletes on the BYPASSRLS pool, where `user_isolation` binds
- * nothing. `WorkerHostService` appended the service in slot 8; the slot-1/2
+ * fleet pool only lists `users.id` and `organizations.id` (0105 and 0106
+ * revoke the copilot tables from `bms_fleet`), and every delete runs on slot
+ * 0 inside `withUser` or (the organization counters, PR 6) `withTenant`. A
+ * swap would run the deletes on the BYPASSRLS pool, where neither policy
+ * binds anything. `WorkerHostService` appended the service in slot 8; the slot-1/2
  * rows above are re-run unchanged. Two claims, one function each.
  */
 export function assertCopilotPurgeServiceTenantSlot(): void {

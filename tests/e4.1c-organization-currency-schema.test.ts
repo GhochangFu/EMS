@@ -189,6 +189,15 @@ describe("E4.1c organizations.currency (ADR 0070 decision 7)", () => {
     expect(insert).toMatch(/\('PHEWB',[^)]*'INR'[^)]*\)/);
     expect(insert).toContain("currency = EXCLUDED.currency");
     // Positive control for the slice: the statement's own column list is inside it.
-    expect(insert).toContain("INSERT INTO bms.organizations (code, name, meta, currency)");
+    expect(insert).toContain("INSERT INTO bms.organizations (code, name, meta, currency, timezone)");
+    // F3.85 PR 6 (ADR 0099 A2): the seed fills the demo organizations' timezone once, while it
+    // is still the 0106 default 'UTC', and keeps an administrator's later edit on every re-seed.
+    expect(insert).toContain(
+      "timezone = CASE WHEN bms.organizations.timezone = 'UTC' THEN EXCLUDED.timezone ELSE bms.organizations.timezone END",
+    );
+    expect(insert).not.toMatch(/timezone = EXCLUDED\.timezone\s*(,|$)/m);
+    // Owner ruling 2026-10-11: ESKOM's zone is its sites' zone, PHEWB's is India's.
+    expect(insert).toMatch(/\('ESKOM',[^)]*'Africa\/Johannesburg'\)/);
+    expect(insert).toMatch(/\('PHEWB',[^)]*'Asia\/Kolkata'\)/);
   });
 });

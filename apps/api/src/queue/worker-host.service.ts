@@ -200,7 +200,7 @@ export class WorkerHostService implements OnModuleInit, OnModuleDestroy {
     const purge = runProcessor(copilotPurgeQueue, dbs, async () => {
       const s = await this.copilotPurge.purge();
       this.logger.log(
-        `copilot-purge finished: users=${s.users} conversationsDeleted=${s.conversationsDeleted} pendingChangesDeleted=${s.pendingChangesDeleted} claimsFailed=${s.claimsFailed} durationMs=${s.durationMs}`,
+        `copilot-purge finished: users=${s.users} conversationsDeleted=${s.conversationsDeleted} pendingChangesDeleted=${s.pendingChangesDeleted} claimsFailed=${s.claimsFailed} usageRowsDeleted=${s.usageRowsDeleted} orgUsageRowsDeleted=${s.orgUsageRowsDeleted} durationMs=${s.durationMs}`,
       );
     });
 

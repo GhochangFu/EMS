@@ -1,5 +1,7 @@
 import { z } from "zod";
 
+import { isValidTimeZone } from "../../reports/report-period";
+
 /**
  * E4.1c / ADR 0070 decision 7 — is `code` a currency ISO 4217 knows? The
  * shape (`^[A-Z]{3}$`) is the regex's job and the database CHECK's; this is
@@ -24,6 +26,27 @@ const currencySchema = z
   // ADR 0029 decision 10: zod-to-json-schema emits nothing for a refinement.
   .describe("ISO 4217 currency code: three upper-case letters the runtime's Intl.supportedValuesOf('currency') lists (e.g. INR, ZAR, USD).");
 
+/**
+ * F3.85 / ADR 0099 A2 — is `zone` one the organization may carry? `UTC` is the
+ * column default, and `isValidTimeZone` refuses every slash-less name (R-6), so
+ * `UTC` is accepted EXPLICITLY here: without it an organization left on the
+ * default could never be re-saved through the form. Every other zone goes
+ * through the same validator the report schedules use.
+ */
+export function isValidOrganizationTimeZone(zone: string): boolean {
+  return zone === "UTC" || isValidTimeZone(zone);
+}
+
+const timezoneSchema = z
+  .string()
+  .min(1)
+  .max(64)
+  .refine(isValidOrganizationTimeZone, {
+    message: "timezone must be UTC or an IANA zone name (e.g. Asia/Kolkata, Africa/Johannesburg)",
+  })
+  // ADR 0029 decision 10: zod-to-json-schema emits nothing for a refinement.
+  .describe("IANA time zone name, or UTC (e.g. Asia/Kolkata). Governs the copilot's daily usage boundary. Default UTC.");
+
 export const createOrganizationBodySchema = z
   .object({
     code: z
@@ -35,6 +58,8 @@ export const createOrganizationBodySchema = z
     // E4.1c (plan Q12): required on create — the column is NOT NULL with no
     // default, so a create without it would otherwise be a 500 off 23502.
     currency: currencySchema,
+    // F3.85: optional — the column default ('UTC') applies when absent.
+    timezone: timezoneSchema.optional(),
     meta: z.record(z.unknown()).optional(),
   })
   .strict();
@@ -43,6 +68,7 @@ export const updateOrganizationBodySchema = z
   .object({
     name: z.string().min(2).max(255).optional(),
     currency: currencySchema.optional(),
+    timezone: timezoneSchema.optional(),
     meta: z.record(z.unknown()).optional(),
   })
   .strict();

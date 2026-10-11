@@ -68,6 +68,12 @@ export const FORCED_TABLES = [
   "copilot_conversations",
   "copilot_messages",
   "copilot_pending_changes",
+  // `F3.85` PR 6 (ADR 0099 decision 7, migration `0106`). `copilot_usage` is a
+  // `user_isolation` table and `copilot_org_usage` a strict tenant table; the
+  // count-0 check below is VACUOUS for both (the seed writes no counter row).
+  // `copilot-usage.integration.spec.ts` holds the non-vacuous half.
+  "copilot_usage",
+  "copilot_org_usage",
 ] as const;
 
 function assert(condition: boolean, message: string): void {

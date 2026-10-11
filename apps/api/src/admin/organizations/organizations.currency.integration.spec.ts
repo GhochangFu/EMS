@@ -176,6 +176,56 @@ export async function dtoParsesWithTheSharedContract(ctx: CurrencyCtx): Promise<
   expect(parsed.success && parsed.data.currency).toBe("INR");
 }
 
+async function readTimezone(ctx: CurrencyCtx, id: string): Promise<string | undefined> {
+  const { rows } = await ctx.fleetPool.query<{ timezone: string }>(
+    "SELECT timezone FROM bms.organizations WHERE id = $1",
+    [id],
+  );
+  return rows[0]?.timezone;
+}
+
+/**
+ * `F3.85` T7 — `timezone` on the write path: a create without the key lands on
+ * the column default `UTC`; a create with a zone stores it; an update changes
+ * it, and an update without the key keeps it. DTO and row agree at each step.
+ */
+export async function timezoneDefaultsStoresAndUpdates(ctx: CurrencyCtx): Promise<void> {
+  const plain = await ctx.svc.create(
+    ctx.jwt,
+    createOrganizationBodySchema.parse({ ...body(ctx, "T7A"), currency: "INR" }),
+  );
+  ctx.register(plain.id);
+  expect(plain.timezone, "absent key → the column default").toBe("UTC");
+  expect(await readTimezone(ctx, plain.id)).toBe("UTC");
+
+  const zoned = await ctx.svc.create(
+    ctx.jwt,
+    createOrganizationBodySchema.parse({ ...body(ctx, "T7B"), currency: "INR", timezone: "Asia/Kolkata" }),
+  );
+  ctx.register(zoned.id);
+  expect(zoned.timezone).toBe("Asia/Kolkata");
+  expect(await readTimezone(ctx, zoned.id)).toBe("Asia/Kolkata");
+
+  const moved = await ctx.svc.update(
+    ctx.jwt,
+    zoned.id,
+    updateOrganizationBodySchema.parse({ timezone: "Africa/Johannesburg" }),
+  );
+  expect(moved.timezone).toBe("Africa/Johannesburg");
+  expect(await readTimezone(ctx, zoned.id)).toBe("Africa/Johannesburg");
+
+  const renamed = await ctx.svc.update(
+    ctx.jwt,
+    zoned.id,
+    updateOrganizationBodySchema.parse({ name: "F3.85 timezone T7B renamed" }),
+  );
+  expect(renamed.timezone, "an update without the key leaves the zone as it was").toBe("Africa/Johannesburg");
+
+  const back = await ctx.svc.update(ctx.jwt, zoned.id, updateOrganizationBodySchema.parse({ timezone: "UTC" }));
+  expect(back.timezone, "UTC can be written back through the schema").toBe("UTC");
+  expect(adminOrganizationDtoSchema.safeParse(back).success).toBe(true);
+}
+
 /**
  * `F4.211` — a second create with a code that exists is a 409 naming the
  * code, not pg's `23505` as a 500. The first row is registered for cleanup.

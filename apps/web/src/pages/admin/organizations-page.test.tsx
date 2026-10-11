@@ -5,7 +5,11 @@ import { cleanup } from "@testing-library/react";
 import {
   editPrefillsTheCurrencyAndSendsIt,
   formHasACurrencyInputWithADatalist,
+  formHasATimezoneInputOfferingUtc,
   listRendersTheCurrencyColumn,
+  listRendersTheTimezoneColumnAndEditPrefills,
+  typedTimezoneIsSubmittedOnCreate,
+  untouchedTimezoneSendsUtc,
   saveAnnouncesSavingWhilePending,
   saveIsNamedSaveAndNotBusyAtIdle,
   saveLosesItsIdleNameWhilePending,
@@ -45,6 +49,22 @@ describe("E4.1c organizations page — the Currency field", () => {
 
   it("O4 editing a row prefills the Currency input and the update sends it", async () => {
     await editPrefillsTheCurrencyAndSendsIt();
+  });
+
+  it("F3.85 Z1 the form has a required Time zone input whose datalist offers UTC first", async () => {
+    await formHasATimezoneInputOfferingUtc();
+  });
+
+  it("F3.85 Z2 a typed zone is submitted on create", async () => {
+    await typedTimezoneIsSubmittedOnCreate();
+  });
+
+  it("F3.85 Z3 an untouched zone sends UTC", async () => {
+    await untouchedTimezoneSendsUtc();
+  });
+
+  it("F3.85 Z4 the list carries each row's zone and edit prefills it", async () => {
+    await listRendersTheTimezoneColumnAndEditPrefills();
   });
 
   it("B1 Save is named Save and not busy at idle", async () => {

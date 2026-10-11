@@ -35,6 +35,7 @@ function organization(overrides: Partial<AdminOrganizationDto>): AdminOrganizati
     name: "Spec organization",
     active: true,
     currency: "ZAR",
+    timezone: "UTC",
     meta: null,
     createdAt: new Date(0).toISOString(),
     ...overrides,
@@ -55,6 +56,7 @@ const ORGANIZATIONS = {
       code: "E41C-INR",
       name: "Rupee organization",
       currency: "INR",
+      timezone: "Asia/Kolkata",
     }),
   ],
 };
@@ -168,7 +170,75 @@ export async function editPrefillsTheCurrencyAndSendsIt(): Promise<void> {
   });
   const [id, payload] = vi.mocked(api.updateAdminOrganization).mock.calls[0]!;
   expect(id).toBe("22222222-2222-2222-2222-222222222222");
-  expect(payload).toEqual({ name: "Rupee organization", currency: "USD" });
+  expect(payload).toEqual({ name: "Rupee organization", currency: "USD", timezone: "Asia/Kolkata" });
+}
+
+/** F3.85 Z1 — the Time zone input offers UTC (first) and the engine's zones; it is required. */
+export async function formHasATimezoneInputOfferingUtc(): Promise<void> {
+  stubApi();
+  renderPage();
+  await openCreateForm();
+
+  const input = screen.getByLabelText("Time zone (IANA)") as HTMLInputElement;
+  expect(input.getAttribute("list")).toBe("organization-timezone-list");
+  expect(input.required).toBe(true);
+  expect(input.value, "a new organization starts on the column default").toBe("UTC");
+  const list = document.getElementById("organization-timezone-list");
+  expect(list, "the datalist the input names must exist").not.toBeNull();
+  const values = [...list!.querySelectorAll("option")].map((o) => o.getAttribute("value"));
+  expect(values[0], "UTC is offered even where Intl.supportedValuesOf omits it").toBe("UTC");
+  expect(values.filter((v) => v === "UTC")).toHaveLength(1);
+  expect(values.length, "the engine's own zones follow UTC").toBeGreaterThan(1);
+}
+
+/** F3.85 Z2 — a typed zone is submitted on create, beside the code and name. */
+export async function typedTimezoneIsSubmittedOnCreate(): Promise<void> {
+  stubApi();
+  renderPage();
+  await openCreateForm();
+  await userEvent.type(screen.getByLabelText("Code"), "e41c-new");
+  await userEvent.type(screen.getByLabelText("Name"), "New organization");
+  await userEvent.type(screen.getByLabelText("Currency (ISO 4217)"), "inr");
+  const tz = screen.getByLabelText("Time zone (IANA)");
+  await userEvent.clear(tz);
+  await userEvent.type(tz, "Asia/Kolkata");
+  await userEvent.click(screen.getByRole("button", { name: "Save" }));
+
+  await waitFor(() => expect(api.createAdminOrganization).toHaveBeenCalledTimes(1));
+  const payload = vi.mocked(api.createAdminOrganization).mock.calls[0]![0];
+  expect(payload.timezone).toBe("Asia/Kolkata");
+  expect(payload.currency, "adjacent: the neighbouring field is not overwritten").toBe("INR");
+}
+
+/** F3.85 Z3 — a create left on the default sends UTC. */
+export async function untouchedTimezoneSendsUtc(): Promise<void> {
+  stubApi();
+  renderPage();
+  await openCreateForm();
+  await userEvent.type(screen.getByLabelText("Code"), "e41c-new");
+  await userEvent.type(screen.getByLabelText("Name"), "New organization");
+  await userEvent.type(screen.getByLabelText("Currency (ISO 4217)"), "inr");
+  await userEvent.click(screen.getByRole("button", { name: "Save" }));
+
+  await waitFor(() => expect(api.createAdminOrganization).toHaveBeenCalledTimes(1));
+  expect(vi.mocked(api.createAdminOrganization).mock.calls[0]![0].timezone).toBe("UTC");
+}
+
+/** F3.85 Z4 — the list has a Time zone column carrying each row's own zone; edit prefills it. */
+export async function listRendersTheTimezoneColumnAndEditPrefills(): Promise<void> {
+  stubApi();
+  renderPage();
+  const rand = (await screen.findByText("Rand organization")).closest("tr")!;
+  const rupee = screen.getByText("Rupee organization").closest("tr")!;
+
+  expect(screen.getByRole("columnheader", { name: "Time zone" })).toBeInTheDocument();
+  expect(within(rupee).getByText("Asia/Kolkata")).toBeInTheDocument();
+  expect(within(rand).getByText("UTC")).toBeInTheDocument();
+  expect(within(rand).queryByText("Asia/Kolkata")).toBeNull();
+
+  await userEvent.click(within(rupee).getByRole("button", { name: "Edit" }));
+  await screen.findByRole("heading", { name: "Edit organization" });
+  expect((screen.getByLabelText("Time zone (IANA)") as HTMLInputElement).value).toBe("Asia/Kolkata");
 }
 
 /** `F4.168` B1 arrange — the create form, filled, with `createAdminOrganization` held pending. */

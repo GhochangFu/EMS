@@ -40,6 +40,18 @@ function browserCurrencies(): string[] {
   return typeof Intl.supportedValuesOf === "function" ? Intl.supportedValuesOf("currency") : [];
 }
 
+/**
+ * F3.85 (ADR 0099 A2): the zone list the form OFFERS is the browser's, with
+ * `UTC` put first — `Intl.supportedValuesOf("timeZone")` omits it on many V8
+ * builds, and it is the column default, so the form must always be able to
+ * name it. The server validates on write (`isValidOrganizationTimeZone`).
+ */
+function organizationTimezoneOptions(): string[] {
+  const zones =
+    typeof Intl.supportedValuesOf === "function" ? Intl.supportedValuesOf("timeZone") : [];
+  return ["UTC", ...zones.filter((z) => z !== "UTC")];
+}
+
 /** Organization master data list with drill-down to locations. */
 export function OrganizationsAdminPage({ user }: OrganizationsAdminPageProps) {
   const navigate = useNavigate();
@@ -55,8 +67,10 @@ export function OrganizationsAdminPage({ user }: OrganizationsAdminPageProps) {
   const [code, setCode] = useState("");
   const [name, setName] = useState("");
   const [currency, setCurrency] = useState("");
+  const [timezone, setTimezone] = useState("UTC");
   const [error, setError] = useState<string | null>(null);
   const currencies = useMemo(browserCurrencies, []);
+  const timezones = useMemo(organizationTimezoneOptions, []);
 
   const listQ = useQuery({
     queryKey: ["admin", "organizations", activeFilter],
@@ -78,12 +92,17 @@ export function OrganizationsAdminPage({ user }: OrganizationsAdminPageProps) {
   const saveMutation = useMutation({
     mutationFn: async () => {
       if (editing) {
-        return updateAdminOrganization(editing.id, { name, currency: currency.toUpperCase() });
+        return updateAdminOrganization(editing.id, {
+          name,
+          currency: currency.toUpperCase(),
+          timezone: timezone.trim(),
+        });
       }
       return createAdminOrganization({
         code: code.toUpperCase(),
         name,
         currency: currency.toUpperCase(),
+        timezone: timezone.trim(),
       });
     },
     onSuccess: async () => {
@@ -92,6 +111,7 @@ export function OrganizationsAdminPage({ user }: OrganizationsAdminPageProps) {
       setCode("");
       setName("");
       setCurrency("");
+      setTimezone("UTC");
       setError(null);
       await queryClient.invalidateQueries({ queryKey: ["admin", "organizations"] });
     },
@@ -113,6 +133,7 @@ export function OrganizationsAdminPage({ user }: OrganizationsAdminPageProps) {
     setCode("");
     setName("");
     setCurrency("");
+    setTimezone("UTC");
     setError(null);
     setModalOpen(true);
   }
@@ -122,6 +143,7 @@ export function OrganizationsAdminPage({ user }: OrganizationsAdminPageProps) {
     setCode(item.code);
     setName(item.name);
     setCurrency(item.currency);
+    setTimezone(item.timezone);
     setError(null);
     setModalOpen(true);
   }
@@ -171,6 +193,7 @@ export function OrganizationsAdminPage({ user }: OrganizationsAdminPageProps) {
                     <th className="px-2 py-2">Code</th>
                     <th className="px-2 py-2">Name</th>
                     <th className="px-2 py-2">Currency</th>
+                    <th className="px-2 py-2">Time zone</th>
                     <th className="px-2 py-2">Status</th>
                     <th className="px-2 py-2">Actions</th>
                   </tr>
@@ -185,6 +208,7 @@ export function OrganizationsAdminPage({ user }: OrganizationsAdminPageProps) {
                       <td className="px-2 py-2 font-mono">{item.code}</td>
                       <td className="px-2 py-2 font-semibold text-accent-strong">{item.name}</td>
                       <td className="px-2 py-2 font-mono text-xs">{item.currency}</td>
+                      <td className="px-2 py-2 font-mono text-xs">{item.timezone}</td>
                       <td className="px-2 py-2">
                         <StatusPill
                           label={item.active ? "Active" : "Inactive"}
@@ -289,6 +313,23 @@ export function OrganizationsAdminPage({ user }: OrganizationsAdminPageProps) {
                 <datalist id="currency-list">
                   {currencies.map((c) => (
                     <option key={c} value={c} />
+                  ))}
+                </datalist>
+              </label>
+              <label className="block text-xs font-semibold text-ink-muted">
+                Time zone (IANA)
+                <input
+                  className="mt-1 w-full surface-field px-3 py-2 font-mono text-sm"
+                  list="organization-timezone-list"
+                  placeholder="Asia/Kolkata"
+                  maxLength={64}
+                  value={timezone}
+                  onChange={(event) => setTimezone(event.target.value)}
+                  required
+                />
+                <datalist id="organization-timezone-list">
+                  {timezones.map((z) => (
+                    <option key={z} value={z} />
                   ))}
                 </datalist>
               </label>
