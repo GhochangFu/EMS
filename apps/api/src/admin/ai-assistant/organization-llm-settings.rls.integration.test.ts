@@ -21,6 +21,7 @@ import {
   anUnknownProviderIsRefused,
   deletingTheOrganizationCascades,
   type LlmSettingsCtx,
+  theActiveListLeavesOutAnInactiveOrganization,
 } from "./organization-llm-settings.rls.integration.spec";
 
 /**
@@ -139,6 +140,10 @@ describe.skipIf(!connectionString)("F3.21 — bms.organization_llm_settings (mig
 
   it("deletingTheOrganizationCascades", async () => {
     await deletingTheOrganizationCascades(ctx);
+  });
+
+  it("theActiveListLeavesOutAnInactiveOrganization", async () => {
+    await theActiveListLeavesOutAnInactiveOrganization(ctx);
   });
 
   // The lock-race cases (8–14) poll up to BLOCK_WAIT_MS for the service to block, so

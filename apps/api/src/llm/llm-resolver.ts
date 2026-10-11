@@ -200,6 +200,16 @@ export class LlmResolver implements OnModuleInit {
     return rows.map((row) => row.id);
   }
 
+  /** The active organizations' ids, in a fixed order — the copilot's platform scope reads only these. */
+  async listActiveOrganizationIds(): Promise<string[]> {
+    const rows = await this.tenantDb
+      .select({ id: organizations.id })
+      .from(organizations)
+      .where(eq(organizations.active, true))
+      .orderBy(asc(organizations.id));
+    return rows.map((row) => row.id);
+  }
+
   /**
    * `F3.85` / ADR 0099 decision 10 — the key scope of a cross-organization
    * turn (the global admin, a conversation bound to no organization).
@@ -209,7 +219,8 @@ export class LlmResolver implements OnModuleInit {
    * row, read per organization in `withTenant` — **and** whose copilot switch
    * is on. An organization with its own key, or in the guided mode, is
    * excluded and never sent ("an organization row never uses the platform
-   * key", ADR 0090 Amendment 1).
+   * key", ADR 0090 Amendment 1). An inactive organization is left out too
+   * (owner ruling 2026-10-11).
    *
    * `switchOn` is the caller's: this module is the generic LLM core and knows
    * nothing of the copilot's switches.
@@ -223,7 +234,7 @@ export class LlmResolver implements OnModuleInit {
       return { kind: "guided", reason: "platform_incomplete" };
     }
     const allowedOrganizationIds: string[] = [];
-    for (const organizationId of await this.listOrganizationIds()) {
+    for (const organizationId of await this.listActiveOrganizationIds()) {
       if ((await this.readSetting(organizationId)) !== null) {
         continue;
       }

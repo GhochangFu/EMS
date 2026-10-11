@@ -9,6 +9,7 @@ import {
   assertNoRowUsesThePlatformDefault,
   assertOffLogsNoWarning,
   assertOpenRouterNeedsAModelAndTheOthersDefault,
+  assertPlatformScopeExcludesAnInactiveOrganization,
   assertPlatformScopeExcludesAnOffRow,
   assertPlatformScopeExcludesAnOwnKeyRow,
   assertPlatformScopeExcludesASwitchedOffOrganization,
@@ -76,6 +77,10 @@ describe("LLM resolver — the platform key scope of a cross-organization turn (
 
   it("excludes an organization whose copilot switch is off", async () => {
     await assertPlatformScopeExcludesASwitchedOffOrganization();
+  });
+
+  it("excludes an inactive organization", async () => {
+    await assertPlatformScopeExcludesAnInactiveOrganization();
   });
 
   it("is the guided mode when the platform key is off or incomplete", async () => {
