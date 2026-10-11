@@ -13,6 +13,7 @@ import * as pointKeyApi from "../../api/admin/point-keys";
 import * as vocabApi from "../../api/vocabularies";
 import type { AuthUser } from "../../stores/auth-store";
 import { AssetTemplateStockViewPage } from "./asset-template-stock-view-page";
+import * as copilotApi from "../../api/copilot";
 
 /**
  * `F2.14` — the read-only viewer for one stock catalog entry (ADR 0052
@@ -283,6 +284,7 @@ function DraftLanding() {
 
 function renderViewer(path: string, user: AuthUser = admin): HTMLElement {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  vi.spyOn(copilotApi, "fetchCopilotStatus").mockResolvedValue({ available: false, configured: false });
   const { container } = render(
     <QueryClientProvider client={queryClient}>
       <MemoryRouter initialEntries={[path]}>

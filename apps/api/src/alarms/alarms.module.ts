@@ -47,6 +47,10 @@ import { AlarmsService } from "./alarms.service";
   // raises through the same engine as the streaming path. Re-exporting the
   // module, not the provider, is how Nest hands on a provider it did not
   // declare itself.
-  exports: [AlarmRaiseModule],
+  //
+  // `F3.85` PR 7: `AlarmsService` is exported for the copilot's `list_alarms`
+  // read tool. It injects `AlarmsGateway`, so a second copy in `CopilotModule`
+  // would be a second socket gateway; exporting shares this one.
+  exports: [AlarmRaiseModule, AlarmsService],
 })
 export class AlarmsModule {}

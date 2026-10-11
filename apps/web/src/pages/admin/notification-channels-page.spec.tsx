@@ -10,6 +10,7 @@ import * as orgApi from "../../api/admin/organizations";
 import * as api from "../../api/notifications";
 import type { AuthUser } from "../../stores/auth-store";
 import { NotificationChannelsPage } from "./notification-channels-page";
+import * as copilotApi from "../../api/copilot";
 
 /**
  * `F3.8` U8 — the channels screen, rendered (ADR 0042).
@@ -96,6 +97,7 @@ function renderPage(as: AuthUser = user): void {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   });
+  vi.spyOn(copilotApi, "fetchCopilotStatus").mockResolvedValue({ available: false, configured: false });
   render(
     <QueryClientProvider client={queryClient}>
       <MemoryRouter>

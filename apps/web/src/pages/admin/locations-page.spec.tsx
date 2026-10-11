@@ -13,6 +13,7 @@ import * as systemStatusApi from "../../api/system-status";
 import { ApiError } from "../../lib/api-error";
 import type { AuthUser } from "../../stores/auth-store";
 import { LocationsAdminPage } from "./locations-page";
+import * as copilotApi from "../../api/copilot";
 
 /**
  * `E4.1b` / ADR 0070 decision 6 — the location form's Timezone field, rendered
@@ -97,6 +98,7 @@ const LOCATIONS = {
 
 function renderPage(): void {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  vi.spyOn(copilotApi, "fetchCopilotStatus").mockResolvedValue({ available: false, configured: false });
   render(
     <QueryClientProvider client={queryClient}>
       <MemoryRouter>

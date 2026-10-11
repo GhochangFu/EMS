@@ -14,6 +14,7 @@ import { OPERATIONAL } from "../../components/system-status-indicator.spec";
 import { ApiError } from "../../lib/api-error";
 import type { AuthUser } from "../../stores/auth-store";
 import { RtusAdminPage } from "./rtus-page";
+import * as copilotApi from "../../api/copilot";
 
 /**
  * `F4.182` — the RTUs admin screen sets `rtus.rtu_code`, the device key the
@@ -87,6 +88,7 @@ function renderPage(): void {
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   });
+  vi.spyOn(copilotApi, "fetchCopilotStatus").mockResolvedValue({ available: false, configured: false });
   render(
     <QueryClientProvider client={client}>
       <MemoryRouter initialEntries={["/admin/rtus"]}>

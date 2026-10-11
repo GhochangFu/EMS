@@ -20,6 +20,7 @@ import { siteViewNoticeText } from "../../lib/site-view-notice";
 import { useAuthStore } from "../../stores/auth-store";
 import { ORG_A, ORG_B, site, USER } from "./organizations-page.spec";
 import { ControlRoomSitePage } from "./site-page";
+import * as copilotApi from "../../api/copilot";
 
 /**
  * `F3.68` U7 — the site page hosts `GeneratedSiteView` for the `generated`
@@ -235,6 +236,7 @@ function renderAt(
   tab?: string,
 ): void {
   const path = `/control-room/site/${locationId}${tab === undefined ? "" : `/${tab}`}`;
+  vi.spyOn(copilotApi, "fetchCopilotStatus").mockResolvedValue({ available: false, configured: false });
   render(
     <QueryClientProvider client={queryClient}>
       <MemoryRouter initialEntries={[path]}>
@@ -722,6 +724,7 @@ export async function aPendingKpiReadDoesNotRedirectATab(): Promise<void> {
 export async function theLocationIdPropOverridesTheRoute(): Promise<void> {
   stubReads(TWO_ORGS, view("a1"));
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  vi.spyOn(copilotApi, "fetchCopilotStatus").mockResolvedValue({ available: false, configured: false });
   render(
     <QueryClientProvider client={queryClient}>
       <MemoryRouter initialEntries={["/control-room/site/b1"]}>

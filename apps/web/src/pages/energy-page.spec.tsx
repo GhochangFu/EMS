@@ -8,6 +8,7 @@ import type { EnergyCentreSummary, UserRole } from "@bms/shared";
 import * as energyApi from "../api/energy-dashboard";
 import type { AuthUser } from "../stores/auth-store";
 import { EnergyPage } from "./energy-page";
+import * as copilotApi from "../api/copilot";
 
 /**
  * `F2.8` — the Energy Centre PUE tile, on a measured ratio and on a null.
@@ -59,6 +60,7 @@ function stubEnergyApi(pueEstimate: number | null, cost: Partial<EnergyCentreSum
 
 function renderPage(): void {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  vi.spyOn(copilotApi, "fetchCopilotStatus").mockResolvedValue({ available: false, configured: false });
   render(
     <QueryClientProvider client={queryClient}>
       <MemoryRouter>

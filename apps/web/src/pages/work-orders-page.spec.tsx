@@ -11,6 +11,7 @@ import * as assetsApi from "../api/assets";
 import * as workOrdersApi from "../api/work-orders";
 import type { AuthUser } from "../stores/auth-store";
 import { priorityRailStyle, priorityStyle, WorkOrdersPage } from "./work-orders-page";
+import * as copilotApi from "../api/copilot";
 
 /**
  * `F3.65b` owner ruling R-f (2026-09-28) — priority `high` and `medium` must not
@@ -138,6 +139,7 @@ async function renderPage(): Promise<void> {
       throw new CommitBoundExceeded(`the page committed ${commits} times`);
     }
   };
+  vi.spyOn(copilotApi, "fetchCopilotStatus").mockResolvedValue({ available: false, configured: false });
   render(
     <Profiler id="work-orders" onRender={onRender}>
       <QueryClientProvider client={queryClient}>
@@ -281,6 +283,7 @@ export async function aFailedListReadSettles(): Promise<void> {
 
   let boundExceeded = false;
   try {
+    vi.spyOn(copilotApi, "fetchCopilotStatus").mockResolvedValue({ available: false, configured: false });
     render(
       <Profiler id="work-orders" onRender={onRender}>
         <QueryClientProvider client={queryClient}>

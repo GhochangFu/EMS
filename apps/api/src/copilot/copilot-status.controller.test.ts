@@ -3,6 +3,7 @@ import { describe, it } from "vitest";
 import {
   assertABadQueryIs400,
   assertAnUnprovisionedTokenGets403,
+  assertConfiguredComesFromTheResolver,
   assertOperatorsAndViewersGet403AndNoDecision,
   assertTheDecisionMapsOntoTheDto,
   assertTheDefaultOrganizationFollowsTheRole,
@@ -14,4 +15,6 @@ describe("F3.85 — GET /copilot/status (ADR 0099 decision 5, plan §5.2)", () =
   it("asks about the organization the role defaults to", () => assertTheDefaultOrganizationFollowsTheRole());
   it("maps the decision onto the DTO", () => assertTheDecisionMapsOntoTheDto());
   it("answers a malformed query with a 400", () => assertABadQueryIs400());
+  it("takes configured from the resolver for the scope asked about (F3.85 PR 7)", () =>
+    assertConfiguredComesFromTheResolver());
 });

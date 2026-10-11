@@ -103,7 +103,13 @@ export type StoredContractContext =
   | "asset_images.to_dto.row"
   | "report_files.to_dto.row"
   | "report_schedules.to_dto.row"
-  | "site_layout.read_template.content";
+  | "site_layout.read_template.content"
+  | "copilot_tools.get_asset_kpis.result"
+  | "copilot_tools.get_health_summary.result"
+  | "copilot_tools.list_alarms.page"
+  | "copilot_tools.list_assets.rows"
+  | "copilot_tools.list_dashboards.page"
+  | "copilot_tools.list_locations.page";
 
 const logger = new Logger("StoredContract");
 

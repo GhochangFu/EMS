@@ -16,6 +16,7 @@ import * as systemStatusApi from "../../api/system-status";
 import { ApiError } from "../../lib/api-error";
 import type { AuthUser } from "../../stores/auth-store";
 import { AssetPointsAdminPage } from "./asset-points-page";
+import * as copilotApi from "../../api/copilot";
 
 /**
  * `F4.204` — the Asset Points page reads a refused save through
@@ -77,6 +78,7 @@ function renderPage(assetPath?: string): void {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   });
+  vi.spyOn(copilotApi, "fetchCopilotStatus").mockResolvedValue({ available: false, configured: false });
   render(
     <QueryClientProvider client={queryClient}>
       <MemoryRouter initialEntries={[assetPath ?? "/admin/asset-points"]}>

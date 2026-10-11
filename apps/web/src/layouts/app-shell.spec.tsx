@@ -16,6 +16,7 @@ import {
   SETTINGS_LOCKED_REASON,
   collapsedRailEntries,
 } from "./app-shell";
+import * as copilotApi from "../api/copilot";
 
 /**
  * `F3.66` U6 (ADR 0076 decision 1, OQ4, plan D9) — one sidebar entry,
@@ -76,6 +77,7 @@ function renderShell(
   vi.spyOn(assetsApi, "fetchAssets").mockResolvedValue([]);
   useAuthStore.setState({ scope });
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  vi.spyOn(copilotApi, "fetchCopilotStatus").mockResolvedValue({ available: false, configured: false });
   render(
     <QueryClientProvider client={client}>
       <MemoryRouter initialEntries={[path]}>

@@ -11,6 +11,7 @@ import * as orgsApi from "../../api/admin/organizations";
 import { ApiError } from "../../lib/api-error";
 import type { AuthUser } from "../../stores/auth-store";
 import { CalcParametersAdminPage } from "./calc-parameters-page";
+import * as copilotApi from "../../api/copilot";
 
 /**
  * `E4.1a` U9 (ADR 0070 decision 2) — the calc-parameters admin screen,
@@ -166,6 +167,7 @@ function renderPage(as: AuthUser): void {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   });
+  vi.spyOn(copilotApi, "fetchCopilotStatus").mockResolvedValue({ available: false, configured: false });
   render(
     <QueryClientProvider client={queryClient}>
       <MemoryRouter>

@@ -15,6 +15,7 @@ import * as dashboardPage from "../dashboard-page";
 import * as organizationPage from "./organization-page";
 import { ControlRoomOrganizationsPage } from "./organizations-page";
 import * as sitePage from "./site-page";
+import * as copilotApi from "../../api/copilot";
 
 /**
  * `F3.66` U3 — `/control-room`, the organization list (ADR 0076 decision 2),
@@ -120,6 +121,7 @@ function stubLevels(): void {
 function renderPage(opts: { entry?: boolean } = {}): void {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   const entry = opts.entry === true;
+  vi.spyOn(copilotApi, "fetchCopilotStatus").mockResolvedValue({ available: false, configured: false });
   render(
     <QueryClientProvider client={queryClient}>
       <MemoryRouter initialEntries={[entry ? "/" : "/control-room"]}>

@@ -11,6 +11,7 @@ import { AUTH_DRIZZLE } from "../database/database.tokens";
 import { copilotStatusQuerySchema } from "./copilot-access.schema";
 import { COPILOT_ROLES } from "./copilot-availability";
 import { CopilotAvailabilityService } from "./copilot-availability.service";
+import { CopilotTurnService } from "./copilot-turn.service";
 
 export const COPILOT_STATUS_ROLE_MESSAGE = "The copilot is offered to administrators only";
 
@@ -22,8 +23,10 @@ export const COPILOT_STATUS_ROLE_MESSAGE = "The copilot is offered to administra
  * `available: false`: the copilot is not offered to them at all (the ADR's
  * live-stack claim). An administrator gets the decision and its reason.
  * `organizationId` omitted means the caller's own organization, or none for the
- * global admin (a cross-organization conversation). `configured` stays `false`
- * until the model wiring lands (plan PR 7).
+ * global admin (a cross-organization conversation). `configured` (plan PR 7) is
+ * whether a key resolves for that scope — the organization's rule, or the
+ * platform key for a cross-organization one (decision 10); `false` whenever
+ * the copilot is not available.
  */
 @Controller("copilot/status")
 @UseGuards(JwtAuthGuard)
@@ -31,6 +34,7 @@ export class CopilotStatusController {
   constructor(
     @Inject(AUTH_DRIZZLE) private readonly authDb: BmsDb,
     private readonly availability: CopilotAvailabilityService,
+    private readonly turns: CopilotTurnService,
   ) {}
 
   @Get()
@@ -51,7 +55,7 @@ export class CopilotStatusController {
     const asked = organizationId ?? (identity.role === "admin" ? null : identity.organizationId);
     const decision = await this.availability.decide(identity, asked);
     return decision.available
-      ? { available: true, configured: false }
+      ? { available: true, configured: await this.turns.isConfigured(asked) }
       : { available: false, reason: decision.reason, configured: false };
   }
 }

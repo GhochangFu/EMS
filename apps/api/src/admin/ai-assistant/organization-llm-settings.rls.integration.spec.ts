@@ -233,6 +233,23 @@ export async function deletingTheOrganizationCascades(ctx: LlmSettingsCtx): Prom
   expect(await fleetCount(ctx, ctx.orgB), "the row went with its organization").toBe(0);
 }
 
+/**
+ * `F3.85` / ADR 0099 decision 10, owner ruling 2026-10-11 — the copilot's
+ * platform scope lists active organizations only, on the real table. The
+ * positive control: the full list (the health rollup's) still holds A.
+ */
+export async function theActiveListLeavesOutAnInactiveOrganization(ctx: LlmSettingsCtx): Promise<void> {
+  const resolver = new LlmResolver(ctx.tenantDb, new CredentialCryptoService());
+  expect(await resolver.listActiveOrganizationIds(), "control: active A is listed").toContain(ctx.orgA);
+  await ctx.fleetPool.query("UPDATE bms.organizations SET active = false WHERE id = $1", [ctx.orgA]);
+  try {
+    expect(await resolver.listActiveOrganizationIds(), "inactive A is left out").not.toContain(ctx.orgA);
+    expect(await resolver.listOrganizationIds(), "the full list still holds A").toContain(ctx.orgA);
+  } finally {
+    await ctx.fleetPool.query("UPDATE bms.organizations SET active = true WHERE id = $1", [ctx.orgA]);
+  }
+}
+
 type RecordedAudit = { action: string; payload: Record<string, unknown> };
 
 /**

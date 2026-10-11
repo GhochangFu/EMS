@@ -10,6 +10,7 @@ import { AdminHubPage } from "../../pages/admin/admin-hub-page";
 import { useAuthStore, type AuthUser } from "../../stores/auth-store";
 import { OPERATIONAL } from "../system-status-indicator.spec";
 import { MasterDataLayout } from "./master-data-layout";
+import * as copilotApi from "../../api/copilot";
 
 /**
  * `F3.76` — the Master Data chrome: area tabs, the selected area's sub-tabs,
@@ -29,6 +30,7 @@ function renderAt(path: string, role: UserRole, page: "layout" | "hub"): void {
   vi.spyOn(systemStatusApi, "fetchSystemStatus").mockResolvedValue(OPERATIONAL);
   useAuthStore.setState({ scope: GLOBAL });
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  vi.spyOn(copilotApi, "fetchCopilotStatus").mockResolvedValue({ available: false, configured: false });
   render(
     <QueryClientProvider client={client}>
       <MemoryRouter initialEntries={[path]}>

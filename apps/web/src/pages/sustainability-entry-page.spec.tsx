@@ -8,6 +8,7 @@ import type { DashboardsListResponse, DashboardSummaryDto, UserRole } from "@bms
 import * as dashboardsApi from "../api/dashboards";
 import type { AuthUser } from "../stores/auth-store";
 import { SustainabilityEntryPage } from "./sustainability-entry-page";
+import * as copilotApi from "../api/copilot";
 
 /**
  * `E4.2` U11, ADR 0072 decision 1 — the Sustainability sidebar entry.
@@ -61,6 +62,7 @@ const LIST_LANDING = "landed on the dashboards list";
 function renderEntry(response: DashboardsListResponse): void {
   vi.spyOn(dashboardsApi, "fetchDashboards").mockResolvedValue(response);
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  vi.spyOn(copilotApi, "fetchCopilotStatus").mockResolvedValue({ available: false, configured: false });
   render(
     <QueryClientProvider client={queryClient}>
       <MemoryRouter initialEntries={["/sustainability"]}>
@@ -203,6 +205,7 @@ export async function theEntryAsksTheApiForTheSection(): Promise<void> {
 export function theLoadingStateNamesWhatItIsOpening(): void {
   vi.spyOn(dashboardsApi, "fetchDashboards").mockReturnValue(new Promise(() => {}));
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  vi.spyOn(copilotApi, "fetchCopilotStatus").mockResolvedValue({ available: false, configured: false });
   render(
     <QueryClientProvider client={queryClient}>
       <MemoryRouter initialEntries={["/sustainability"]}>
@@ -232,6 +235,7 @@ export function theLoadingStateNamesWhatItIsOpening(): void {
 export async function theErrorStateShowsTheApiMessage(): Promise<void> {
   vi.spyOn(dashboardsApi, "fetchDashboards").mockRejectedValue(new Error("dashboards 503"));
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  vi.spyOn(copilotApi, "fetchCopilotStatus").mockResolvedValue({ available: false, configured: false });
   render(
     <QueryClientProvider client={queryClient}>
       <MemoryRouter initialEntries={["/sustainability"]}>

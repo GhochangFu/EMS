@@ -16,6 +16,7 @@ import { siteViewNoticeText } from "../../lib/site-view-notice";
 import { useAuthStore } from "../../stores/auth-store";
 import { ORG_A, site, USER } from "./organizations-page.spec";
 import { ControlRoomSitePage } from "./site-page";
+import * as copilotApi from "../../api/copilot";
 
 /**
  * `F3.69` U3 — the key binding between `SiteDashboardView`'s `Try again` and
@@ -107,6 +108,7 @@ function stubReads(...resolveAnswers: ResolvedSiteControlRoomViewDto[]): {
 
 function renderPage(): QueryClient {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  vi.spyOn(copilotApi, "fetchCopilotStatus").mockResolvedValue({ available: false, configured: false });
   render(
     <QueryClientProvider client={queryClient}>
       <MemoryRouter initialEntries={[`/control-room/site/${LOCATION_ID}`]}>

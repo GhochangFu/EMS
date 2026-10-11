@@ -20,3 +20,6 @@ export type CopilotConversationDto = z.infer<typeof C.copilotConversationDtoSche
 export type CopilotMessageDto = z.infer<typeof C.copilotMessageDtoSchema>;
 export type CopilotConversationDetailDto = z.infer<typeof C.copilotConversationDetailDtoSchema>;
 export type CopilotCreateConversationBody = z.infer<typeof C.copilotCreateConversationBodySchema>;
+export type CopilotTurnBody = z.infer<typeof C.copilotTurnBodySchema>;
+export type CopilotTurnOutcome = z.infer<typeof C.copilotTurnOutcomeSchema>;
+export type CopilotTurnResponseDto = z.infer<typeof C.copilotTurnResponseDtoSchema>;

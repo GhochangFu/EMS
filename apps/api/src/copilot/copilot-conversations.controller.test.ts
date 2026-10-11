@@ -5,6 +5,10 @@ import { describe, it } from "vitest";
 import {
   assertABadBodyIs400,
   assertANonUuidIdIs404,
+  assertATurnBodyNamingAnOrganizationIs400,
+  assertATurnOnANonUuidIdIs404,
+  assertTheTurnRouteAnswers200,
+  assertTheTurnRoutePassesTheCallerAndTheMessage,
   assertAScopedAdminBindsTheHomeOrganization,
   assertEveryRouteSweepsForTheCaller,
   assertTheControllerCarriesBothGuards,
@@ -29,4 +33,13 @@ describe("F3.85 — /copilot/conversations (ADR 0099 decision 8, plan section 7 
   it("the controller carries the JWT guard and the copilot guard", () => assertTheControllerCarriesBothGuards());
   it("the controller injects no database pool; the service owns the queries", () =>
     assertTheControllerTouchesNoDatabase());
+});
+
+describe("F3.85 — POST /copilot/conversations/:id/turns (ADR 0099 decisions 1, 9, 10, plan section 9 PR 7)", () => {
+  it("passes the caller, the id and the message to the turn service", () =>
+    assertTheTurnRoutePassesTheCallerAndTheMessage());
+  it("answers a body naming an organization, an empty or an over-long message with a 400", () =>
+    assertATurnBodyNamingAnOrganizationIs400());
+  it("answers a non-uuid id with a 404", () => assertATurnOnANonUuidIdIs404());
+  it("answers 200", () => assertTheTurnRouteAnswers200());
 });

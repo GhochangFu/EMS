@@ -11,6 +11,7 @@ import * as api from "../../api/notifications";
 import { NotificationReadinessBanner } from "../../components/notification-readiness-banner";
 import type { AuthUser } from "../../stores/auth-store";
 import { NotificationDeliveriesPage } from "./notification-deliveries-page";
+import * as copilotApi from "../../api/copilot";
 
 /**
  * `F3.8` U9 — the deliveries view and the readiness banner (ADR 0042).
@@ -117,6 +118,7 @@ const ALL_SIX: NotificationDeliveryDto[] = [
 function renderWith(node: React.ReactElement, organizations = ORGANIZATIONS): void {
   vi.spyOn(orgApi, "fetchAdminOrganizations").mockResolvedValue({ items: organizations });
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  vi.spyOn(copilotApi, "fetchCopilotStatus").mockResolvedValue({ available: false, configured: false });
   render(
     <QueryClientProvider client={queryClient}>
       <MemoryRouter>{node}</MemoryRouter>

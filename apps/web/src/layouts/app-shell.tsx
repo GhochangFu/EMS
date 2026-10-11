@@ -13,6 +13,7 @@ import {
 } from "../lib/admin-access";
 import { roleLabel } from "../lib/role-label";
 import { useAuthStore, type AuthUser } from "../stores/auth-store";
+import { CopilotDock } from "../components/copilot/copilot-dock";
 import { StatusBarClock } from "../components/status-bar-clock";
 import { SystemStatusIndicator } from "../components/system-status-indicator";
 import { SurfaceSwitch } from "../components/surface-switch";
@@ -415,6 +416,9 @@ export function AppShell({ user, children, kpiRibbon }: AppShellProps) {
           </span>
         </span>
       </footer>
+      {/* F3.85 PR 7: the copilot dock. It renders nothing for a role outside
+          `canAuthorDashboards` or when `GET /copilot/status` says unavailable. */}
+      <CopilotDock user={user} />
     </div>
   );
 }

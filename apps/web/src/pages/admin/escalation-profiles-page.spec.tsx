@@ -16,6 +16,7 @@ import * as notificationsApi from "../../api/notifications";
 import * as vocabApi from "../../api/vocabularies";
 import type { AuthUser } from "../../stores/auth-store";
 import { EscalationProfilesPage } from "./escalation-profiles-page";
+import * as copilotApi from "../../api/copilot";
 
 /**
  * `F3.10` U11 — the escalation-profile screen, rendered (ADR 0042, ADR 0057
@@ -196,6 +197,7 @@ function stubApi({
 
 function renderPage(as: AuthUser = admin): void {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  vi.spyOn(copilotApi, "fetchCopilotStatus").mockResolvedValue({ available: false, configured: false });
   render(
     <QueryClientProvider client={queryClient}>
       <MemoryRouter>

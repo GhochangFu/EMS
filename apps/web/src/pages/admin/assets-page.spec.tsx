@@ -15,6 +15,7 @@ import * as vocabApi from "../../api/vocabularies";
 import { ApiError } from "../../lib/api-error";
 import type { AuthUser } from "../../stores/auth-store";
 import { AssetsAdminPage } from "./assets-page";
+import * as copilotApi from "../../api/copilot";
 
 /**
  * `F3.4` Unit 8 — the "Images" row action on the admin assets screen (owner
@@ -116,6 +117,7 @@ function stubApi(items: readonly AdminAssetDto[] = [FIRST, SECOND]): void {
 
 function renderPage(): void {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  vi.spyOn(copilotApi, "fetchCopilotStatus").mockResolvedValue({ available: false, configured: false });
   render(
     <QueryClientProvider client={queryClient}>
       <MemoryRouter>

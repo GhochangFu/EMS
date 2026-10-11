@@ -38,5 +38,7 @@ import { AssetsService } from "./assets.service";
     AssetKpisService,
     MasterDataAuditService,
   ],
+  // `F3.85` PR 7: the copilot's `list_assets` and `get_asset_kpis` read tools.
+  exports: [AssetsService, AssetKpisService],
 })
 export class AssetsModule {}

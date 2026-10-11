@@ -56,4 +56,13 @@ export class CopilotAvailabilityService {
       decideCopilotAvailability(identity, organizationId, (id) => readsIn(tx, id)),
     );
   }
+
+  /**
+   * Whether the organization's copilot switch is on — absent is off (ruling
+   * 15). `F3.85` PR 7: the platform key scope of a cross-organization turn
+   * (`LlmResolver.resolvePlatformScope`, decision 10) admits only these.
+   */
+  async organizationSwitchOn(organizationId: string): Promise<boolean> {
+    return withTenant(this.tenantDb, organizationId, async (tx) => (await readsIn(tx, organizationId).orgEnabled()) === true);
+  }
 }

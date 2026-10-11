@@ -19,6 +19,7 @@ import { WIDGET_ICON_PATH } from "../lib/widget-catalog";
 import type { AuthUser } from "../stores/auth-store";
 import { ORG_A, ORG_B, site } from "./control-room/organizations-page.spec";
 import { DashboardPage } from "./dashboard-page";
+import * as copilotApi from "../api/copilot";
 
 /**
  * `F2.8` — the Executive Dashboard PUE tile, on a measured ratio and on a null.
@@ -98,6 +99,7 @@ function stubDashboard(
 
 function renderPage(): void {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  vi.spyOn(copilotApi, "fetchCopilotStatus").mockResolvedValue({ available: false, configured: false });
   render(
     <QueryClientProvider client={queryClient}>
       <MemoryRouter>

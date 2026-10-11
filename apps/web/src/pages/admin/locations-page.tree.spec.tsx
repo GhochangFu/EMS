@@ -14,6 +14,7 @@ import * as systemStatusApi from "../../api/system-status";
 import { ApiError } from "../../lib/api-error";
 import { useAuthStore, type AuthUser } from "../../stores/auth-store";
 import { LocationsAdminPage } from "./locations-page";
+import * as copilotApi from "../../api/copilot";
 
 /**
  * `F2.10` (ADR 0098 decisions 5, 12, B6, B8, B10, ruling 16) — the Locations admin page over
@@ -131,6 +132,7 @@ function stubApi(): ReturnType<typeof vi.fn> {
 
 function renderPage(role: AuthUser["role"] = "admin"): void {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  vi.spyOn(copilotApi, "fetchCopilotStatus").mockResolvedValue({ available: false, configured: false });
   render(
     <QueryClientProvider client={queryClient}>
       <MemoryRouter>

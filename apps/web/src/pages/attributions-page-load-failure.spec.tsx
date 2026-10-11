@@ -5,6 +5,7 @@ import { expect, vi } from "vitest";
 
 import type { AuthUser } from "../stores/auth-store";
 import { AttributionsPage } from "./attributions-page";
+import * as copilotApi from "../api/copilot";
 
 // `F3.32h`: the credits chunk fails to load, as a removed or unreachable chunk does. Its own file,
 // so the failing module never reaches the registry the other attributions claims read.
@@ -28,6 +29,7 @@ const viewer = {
 export async function aFailedCreditsLoadShowsTheAlert(): Promise<void> {
   // AppShell's status indicator fetches; an unstubbed fetch would reach the real API on :4000.
   vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response("{}", { status: 200 })));
+  vi.spyOn(copilotApi, "fetchCopilotStatus").mockResolvedValue({ available: false, configured: false });
   render(
     <MemoryRouter>
       <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>

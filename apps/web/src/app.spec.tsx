@@ -9,6 +9,7 @@ import * as loginApi from "./api/login";
 import { App } from "./app";
 import { RETURN_PATH_KEY } from "./lib/return-path";
 import { useAuthStore, type AuthUser } from "./stores/auth-store";
+import * as copilotApi from "./api/copilot";
 
 /**
  * `F4.156` — the `/me` effect in `App` keeps the stored OIDC id token.
@@ -60,6 +61,7 @@ export async function theMeEffectKeepsTheStoredIdToken(): Promise<void> {
     .mockResolvedValue({ user: USER, scope: SCOPE });
   useAuthStore.setState({ accessToken, oidcIdToken: ID_TOKEN, user: USER, scope: null });
 
+  vi.spyOn(copilotApi, "fetchCopilotStatus").mockResolvedValue({ available: false, configured: false });
   render(
     <QueryClientProvider client={new QueryClient()}>
       <MemoryRouter initialEntries={["/login"]}>
@@ -93,6 +95,7 @@ export async function aViewerReachesTheAttributionsPage(): Promise<void> {
   vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response("{}", { status: 200 })));
   useAuthStore.setState({ accessToken, oidcIdToken: ID_TOKEN, user: viewer, scope: null });
 
+  vi.spyOn(copilotApi, "fetchCopilotStatus").mockResolvedValue({ available: false, configured: false });
   render(
     <QueryClientProvider client={new QueryClient()}>
       <MemoryRouter initialEntries={["/attributions"]}>
@@ -129,6 +132,7 @@ function renderAtTheWallUrl(): void {
   window.history.replaceState(null, "", WALL_URL);
   // AppShell's status indicator fetches; an unstubbed fetch would reach the real API on :4000.
   vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response("{}", { status: 200 })));
+  vi.spyOn(copilotApi, "fetchCopilotStatus").mockResolvedValue({ available: false, configured: false });
   render(
     <QueryClientProvider client={new QueryClient()}>
       <MemoryRouter initialEntries={[WALL_URL]}>
@@ -199,6 +203,7 @@ function renderWithARefusedMe(body: unknown): ReturnType<typeof vi.fn> {
   );
   vi.stubGlobal("fetch", fetchStub);
   useAuthStore.setState({ accessToken: unexpiredAccessToken(), oidcIdToken: null, user: USER, scope: null });
+  vi.spyOn(copilotApi, "fetchCopilotStatus").mockResolvedValue({ available: false, configured: false });
   render(
     <QueryClientProvider client={new QueryClient()}>
       <MemoryRouter initialEntries={["/login"]}>
@@ -267,6 +272,7 @@ export async function aStoredScopeIsReplacedOnLoad(): Promise<void> {
     .mockResolvedValue({ user: USER, scope: FRESH_SCOPE });
   useAuthStore.setState({ accessToken, oidcIdToken: ID_TOKEN, user: USER, scope: STALE_SCOPE });
 
+  vi.spyOn(copilotApi, "fetchCopilotStatus").mockResolvedValue({ available: false, configured: false });
   render(
     <QueryClientProvider client={new QueryClient()}>
       <MemoryRouter initialEntries={["/login"]}>
@@ -299,6 +305,7 @@ export async function aLateLoadAnswerDoesNotReplaceANewerScope(): Promise<void> 
   );
   useAuthStore.setState({ accessToken, oidcIdToken: ID_TOKEN, user: USER, scope: STALE_SCOPE });
 
+  vi.spyOn(copilotApi, "fetchCopilotStatus").mockResolvedValue({ available: false, configured: false });
   render(
     <QueryClientProvider client={new QueryClient()}>
       <MemoryRouter initialEntries={["/login"]}>
@@ -331,6 +338,7 @@ export async function aFailedRefetchKeepsAStoredSession(): Promise<void> {
   );
   useAuthStore.setState({ accessToken, oidcIdToken: ID_TOKEN, user: USER, scope: STALE_SCOPE });
 
+  vi.spyOn(copilotApi, "fetchCopilotStatus").mockResolvedValue({ available: false, configured: false });
   render(
     <QueryClientProvider client={new QueryClient()}>
       <MemoryRouter initialEntries={["/login"]}>

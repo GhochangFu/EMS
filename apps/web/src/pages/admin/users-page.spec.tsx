@@ -6,6 +6,7 @@ import { expect, vi } from "vitest";
 
 import type { AuthUser } from "../../stores/auth-store";
 import { UsersAdminPage } from "./users-page";
+import * as copilotApi from "../../api/copilot";
 
 /**
  * `F3.78` (ADR 0089, plan U7) — the users and access screen, rendered (ADR 0042).
@@ -121,6 +122,7 @@ function stubOidc(): void {
 
 function renderPage(as: AuthUser = orgAdmin): void {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  vi.spyOn(copilotApi, "fetchCopilotStatus").mockResolvedValue({ available: false, configured: false });
   render(
     <QueryClientProvider client={queryClient}>
       <MemoryRouter initialEntries={["/admin/users"]}>

@@ -214,3 +214,88 @@ export async function assertTheKeyIsNotCached(): Promise<void> {
     assert(decrypts.n === 2, `each turn decrypts again, got ${decrypts.n}`);
   });
 }
+
+/**
+ * `F3.85` / ADR 0099 decision 10 — four organizations for `resolvePlatformScope`:
+ * `org-open` has no row and its switch on; `org-off` has an `off` row;
+ * `org-own` has a complete row with its own key; `org-dark` has no row and its
+ * switch off; `org-asleep` has no row and its switch on but is inactive
+ * (owner ruling 2026-10-11). Only `org-open` may reach the platform provider.
+ */
+async function platformScope(): Promise<{ allowed: readonly string[] | null; built: Built[]; switchAsked: string[] }> {
+  return withEnv({ LLM_PROVIDER: "openai", OPENAI_API_KEY: "plat-key" }, async () => {
+    const { r, built } = resolver(null);
+    const rows: Record<string, Row | null> = {
+      "org-open": null,
+      "org-off": orgRow({ organizationId: "org-off", provider: "off", model: null }),
+      "org-own": orgRow({ organizationId: "org-own", provider: "anthropic", model: "claude-sonnet-5-5", apiKey: "org-key" }),
+      "org-dark": null,
+    };
+    // Every organization, the inactive one included; the active list leaves it out.
+    r.listOrganizationIds = async () => [...Object.keys(rows), "org-asleep"];
+    r.listActiveOrganizationIds = async () => Object.keys(rows);
+    r.readSetting = async (id) => rows[id] ?? null;
+    const switchAsked: string[] = [];
+    const scope = await r.resolvePlatformScope(async (id) => {
+      switchAsked.push(id);
+      return id !== "org-dark";
+    });
+    return { allowed: scope.kind === "ready" ? scope.allowedOrganizationIds : null, built, switchAsked };
+  });
+}
+
+/** The positive control: no row and the switch on is in the set, on the platform key. */
+export async function assertPlatformScopeIncludesAnOpenOrganization(): Promise<void> {
+  const { allowed, built } = await platformScope();
+  assert(allowed !== null && allowed.includes("org-open"), `org-open is allowed, got ${JSON.stringify(allowed)}`);
+  assert(JSON.stringify(built) === JSON.stringify([{ name: "openai", apiKey: "plat-key", model: "gpt-4o-mini" }]), "with the platform key");
+}
+
+/** An organization whose row says `off` (the guided mode) is excluded. */
+export async function assertPlatformScopeExcludesAnOffRow(): Promise<void> {
+  const { allowed } = await platformScope();
+  assert(allowed !== null && !allowed.includes("org-off"), `org-off is excluded, got ${JSON.stringify(allowed)}`);
+}
+
+/** An organization with its own complete key is excluded: its row never uses the platform key. */
+export async function assertPlatformScopeExcludesAnOwnKeyRow(): Promise<void> {
+  const { allowed } = await platformScope();
+  assert(allowed !== null && !allowed.includes("org-own"), `org-own is excluded, got ${JSON.stringify(allowed)}`);
+}
+
+/** An organization with no row but its copilot switch off is excluded. */
+export async function assertPlatformScopeExcludesASwitchedOffOrganization(): Promise<void> {
+  const { allowed, switchAsked } = await platformScope();
+  assert(switchAsked.includes("org-dark"), "the switch of org-dark was read");
+  assert(allowed !== null && !allowed.includes("org-dark"), `org-dark is excluded, got ${JSON.stringify(allowed)}`);
+}
+
+/** An inactive organization is excluded (owner ruling 2026-10-11): the scope lists active organizations only. */
+export async function assertPlatformScopeExcludesAnInactiveOrganization(): Promise<void> {
+  const { allowed, switchAsked } = await platformScope();
+  assert(allowed !== null && !allowed.includes("org-asleep"), `org-asleep is excluded, got ${JSON.stringify(allowed)}`);
+  assert(!switchAsked.includes("org-asleep"), "an inactive organization is not even read");
+}
+
+/** No platform key: the guided mode, and no organization is read or built. */
+export async function assertPlatformScopeIsGuidedWithoutThePlatformKey(): Promise<void> {
+  await withEnv({ LLM_PROVIDER: "openai" }, async () => {
+    const { r, built } = resolver(null);
+    let listed = 0;
+    r.listOrganizationIds = async () => {
+      listed += 1;
+      return ["org-open"];
+    };
+    r.listActiveOrganizationIds = async () => {
+      listed += 1;
+      return ["org-open"];
+    };
+    const scope = await r.resolvePlatformScope(async () => true);
+    assert(scope.kind === "guided" && scope.reason === "platform_incomplete", "an incomplete platform is the guided mode");
+    assert(listed === 0 && built.length === 0, "nothing is listed or built");
+  });
+  await withEnv({}, async () => {
+    const scope = await resolver(null).r.resolvePlatformScope(async () => true);
+    assert(scope.kind === "guided" && scope.reason === "platform_off", "an off platform is the guided mode");
+  });
+}

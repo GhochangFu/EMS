@@ -109,7 +109,7 @@ export const copilotConversations = bmsSchema.table(
   ],
 );
 
-/** One turn of a conversation. `organizationIds`: the organizations an assistant or action message's tools read. */
+/** One turn of a conversation. `organizationIds`: the organizations an assistant or action message's tools read, plus the provenance of the history it was made from (F3.85 PR 7). */
 export const copilotMessages = bmsSchema.table(
   "copilot_messages",
   {
