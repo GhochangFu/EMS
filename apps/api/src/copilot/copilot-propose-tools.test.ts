@@ -20,6 +20,16 @@ import {
   eachScopeCheckRefusesAlone,
   everyEntryHasOneSlimProposeTool,
   fillStepChecksOneStepAndWritesNothing,
+  anInvalidTemplatePointFormulaStoresNothing,
+  anInvalidTemplateKpiExpressionStoresNothing,
+  aKpiNamingAPointTheTemplateLacksStoresNothing,
+  aKpiMayNameAPointTheBodyDeclares,
+  aKpiMayNotNameAStoredPointTheBodyDrops,
+  aKpiProposalStoresTheMergedBody,
+  aBodyWithoutContentStoresNoContent,
+  aStoredUnsafeKeyIsNotCarried,
+  storedContentThatCannotBeWrittenBackStoresNothing,
+  aTemplatePublishStoresTheEmptyObject,
 } from "./copilot-propose-tools.spec";
 
 /** Vitest entry point — assertions live in the sibling `.spec` (ADR 0014). */
@@ -43,4 +53,17 @@ describe("F3.85 PR 8 — the copilot propose tools (ADR 0099 decisions 2, 3, 4, 
   it("describes a part of a large body on demand", () => describeChangeReadsAPartOfTheBody());
   it("limits describe_change per turn", () => describeChangeHasAPerTurnBudget());
   it("checks a fill_step and writes nothing", () => fillStepChecksOneStepAndWritesNothing());
+});
+
+describe("F3.85 PR 11a — the asset-template propose tools (plan §11.3 Unit 2, ruling Q10)", () => {
+  it("stores nothing for an invalid points[0].formula", () => anInvalidTemplatePointFormulaStoresNothing());
+  it("stores nothing for an invalid content.kpis[0].expression", () => anInvalidTemplateKpiExpressionStoresNothing());
+  it("stores nothing for a KPI naming a point the template lacks", () => aKpiNamingAPointTheTemplateLacksStoresNothing());
+  it("lets a KPI name a point the body declares", () => aKpiMayNameAPointTheBodyDeclares());
+  it("refuses a KPI naming a stored point the body drops", () => aKpiMayNotNameAStoredPointTheBodyDrops());
+  it("stores the merged body for a KPI proposal", () => aKpiProposalStoresTheMergedBody());
+  it("adds no content to a body without it", () => aBodyWithoutContentStoresNoContent());
+  it("does not carry a stored unsafe key", () => aStoredUnsafeKeyIsNotCarried());
+  it("stores nothing when stored content cannot be written back", () => storedContentThatCannotBeWrittenBackStoresNothing());
+  it("stores {} for a template publish", () => aTemplatePublishStoresTheEmptyObject());
 });

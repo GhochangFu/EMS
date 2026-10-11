@@ -12,6 +12,9 @@ import {
   draftDoesNotOfferCreateDefaultDashboards,
   locationAdminIsNotOfferedCreateDefaultDashboards,
   publishedVersionOffersCreateDefaultDashboards,
+  publishOpensTheReviewAndSendsNothing,
+  publishSubmitSendsThePublish,
+  thePublishWizardSendsNoCopilotHeader,
   theBackfillReportNamesASlugConflictRow,
   theBackfillReportRendersASummaryAndARowPerAsset,
   theBackfillSummaryNamesTheSlugCollision,
@@ -79,5 +82,24 @@ describe("F3.2 asset template detail page", () => {
 
   it("B6 Instantiate stays disabled while Archive pends", async () => {
     await instantiateIsDisabledWhileArchivePends();
+  });
+});
+
+describe("F3.85 PR 11a Publish is the assetTemplate.publish wizard (ADR 0099 decision 6)", () => {
+  afterEach(() => {
+    cleanup();
+    vi.restoreAllMocks();
+  });
+
+  it("opens the Review on Publish and sends nothing yet", async () => {
+    await publishOpensTheReviewAndSendsNothing();
+  });
+
+  it("sends the publish for this template on Submit", async () => {
+    await publishSubmitSendsThePublish();
+  });
+
+  it("sends the publish with no X-Copilot-Change header", async () => {
+    await thePublishWizardSendsNoCopilotHeader();
   });
 });

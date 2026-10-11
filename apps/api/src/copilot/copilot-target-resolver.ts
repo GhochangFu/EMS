@@ -5,6 +5,7 @@ import {
   assetGroups,
   assetPoints,
   assets,
+  assetTemplates,
   type BmsDb,
   calcParameters,
   dashboards,
@@ -12,6 +13,7 @@ import {
   dashboardWidgets,
   locations,
   organizations,
+  templatePoints,
 } from "@bms/db";
 import type { JwtPayload } from "@bms/shared";
 import type { CatalogEntry, CatalogRef } from "@bms/shared/copilot";
@@ -28,8 +30,10 @@ export type ResolvedTarget = {
   readonly targetName: string;
   /** `dashboard` targets: the dashboard's widgets now (decision 4.9's summary). */
   readonly currentWidgetIds?: readonly string[];
-  /** `asset` targets: the asset's point keys, the refs a formula may name. */
+  /** `asset` and `assetTemplate` targets: the point keys now, the refs a formula may name. */
   readonly pointKeys?: readonly string[];
+  /** `assetTemplate` targets: the stored `content`, which a proposal's sections merge over (ruling Q10). */
+  readonly currentContent?: Readonly<Record<string, unknown>>;
 };
 
 /** The resolver as the propose tools use it; specs pass a fake. */
@@ -45,7 +49,14 @@ export interface CopilotTargets {
 
 export const COPILOT_TARGETS = Symbol("COPILOT_TARGETS");
 
-type Found = { organizationId: string; name: string; scope?: Scope; currentWidgetIds?: string[]; pointKeys?: string[] };
+type Found = {
+  organizationId: string;
+  name: string;
+  scope?: Scope;
+  currentWidgetIds?: string[];
+  pointKeys?: string[];
+  currentContent?: Record<string, unknown>;
+};
 type Scope = { locationId: string | null; assetGroupId: string | null; assetId: string | null };
 
 /**
@@ -108,6 +119,7 @@ export class CopilotTargetResolver implements CopilotTargets {
       targetName: found.name,
       ...(found.currentWidgetIds ? { currentWidgetIds: found.currentWidgetIds } : {}),
       ...(found.pointKeys ? { pointKeys: found.pointKeys } : {}),
+      ...(found.currentContent ? { currentContent: found.currentContent } : {}),
     };
   }
 
@@ -194,6 +206,27 @@ export class CopilotTargetResolver implements CopilotTargets {
           .where(and(eq(assetPoints.assetId, id), eq(assetPoints.organizationId, organizationId)));
         return { organizationId, name: row.name, pointKeys: points.map((point) => point.pointKey) };
       }
+      case "assetTemplate": {
+        const [row] = await tx
+          .select({ name: assetTemplates.name, content: assetTemplates.content })
+          .from(assetTemplates)
+          .where(and(eq(assetTemplates.id, id), eq(assetTemplates.organizationId, organizationId)))
+          .limit(1);
+        if (!row) return null;
+        const points = await tx
+          .select({ pointKey: templatePoints.pointKey })
+          .from(templatePoints)
+          .where(and(eq(templatePoints.templateId, id), eq(templatePoints.organizationId, organizationId)));
+        const content = row.content;
+        return {
+          organizationId,
+          name: row.name,
+          pointKeys: points.map((point) => point.pointKey),
+          // The column is `jsonb NOT NULL`; anything but an object merges as empty (ruling Q10).
+          currentContent:
+            typeof content === "object" && content !== null && !Array.isArray(content) ? (content as Record<string, unknown>) : {},
+        };
+      }
     }
   }
 
@@ -248,6 +281,10 @@ export class CopilotTargetResolver implements CopilotTargets {
       case "dashboard":
         return this.access.canManageDashboard(user, found.organizationId, found.scope as Scope);
       case "dashboardTemplate":
+        return this.access.canManageTemplate(user, found.organizationId);
+      // The route's `assertCanAuthor`: `requireMasterDataUser`, no `location_admin`, then this
+      // check, which is already false for a `location_admin`; a throw is the same refusal (`safely`).
+      case "assetTemplate":
         return this.access.canManageTemplate(user, found.organizationId);
       case "calcParameter": {
         const scope = found.scope as Scope;

@@ -8,12 +8,14 @@ import {
   catalogPath,
   COPILOT_CATALOG,
   EXCLUDED_ROUTES,
+  formulaRefsOf,
+  formulaSitesOf,
   pathParamsOf,
   proposeToolName,
 } from "./index";
 import { bodyFieldsOf, objectShapeOf, stepValuesSchema } from "./object-shape";
 import { emptyBody } from "./summary-text";
-import type { CatalogEntry } from "./types";
+import type { CatalogEntry, CatalogFormula } from "./types";
 
 /**
  * `F3.85` PR 8 / ADR 0099 decisions 2, 3, 6 (plan §10.1) — the catalog's own
@@ -61,6 +63,18 @@ export const FIXTURES: Readonly<
     params: { assetId: ROW, pointKey: "kw_total" },
     names: TARGET_NAME,
   },
+  "assetTemplate.update": {
+    body: {
+      points: [
+        { pointKey: "kw", kind: "measured" },
+        { pointKey: "kw_x2", kind: "derived", formula: "{kw} * 2", formulaDialect: "bms-calc-v1", calcTrigger: "streaming" },
+      ],
+      content: { kpis: [{ code: "kw_avg", name: "Average kW", pointKeys: ["kw"], expression: "{kw}", dialect: "bms-calc-v1" }] },
+    },
+    params: { id: ROW },
+    names: TARGET_NAME,
+  },
+  "assetTemplate.publish": { body: {}, params: { id: ROW }, names: TARGET_NAME },
 };
 
 const summaryOf = (entry: CatalogEntry) => {
@@ -144,15 +158,115 @@ export function everyBodyFieldIsInExactlyOneStep(): void {
   }
 }
 
+/** Through refinements, optionals, defaults and a pipeline's output, to the schema that holds the value. */
+function unwrapValue(schema: ZodTypeAny): ZodTypeAny {
+  let current = schema;
+  for (;;) {
+    if (current instanceof z.ZodEffects) current = current._def.schema as ZodTypeAny;
+    else if (current instanceof z.ZodOptional || current instanceof z.ZodNullable || current instanceof z.ZodDefault) {
+      current = current._def.innerType as ZodTypeAny;
+    } else if (current instanceof z.ZodPipeline) current = current._def.out as ZodTypeAny;
+    else return current;
+  }
+}
+
+/** The schema at a catalog formula path (`content.kpis[].expression`), or `undefined` when the body has no such field. */
+export function schemaAtPath(schema: ZodTypeAny, path: string): ZodTypeAny | undefined {
+  let current: ZodTypeAny = schema;
+  for (const segment of path.split(".")) {
+    const many = segment.endsWith("[]");
+    const key = many ? segment.slice(0, -2) : segment;
+    const object = unwrapValue(current);
+    if (!(object instanceof z.ZodObject)) return undefined;
+    const next = (object.shape as Record<string, ZodTypeAny>)[key];
+    if (next === undefined) return undefined;
+    current = next;
+    if (many) {
+      const array = unwrapValue(current);
+      if (!(array instanceof z.ZodArray)) return undefined;
+      current = array.element as ZodTypeAny;
+    }
+  }
+  return current;
+}
+
 export function refsAndFormulasNameBodyFields(): void {
   for (const entry of COPILOT_CATALOG) {
     const fields = bodyFieldsOf(entry.body);
     for (const ref of entry.refs) expect(fields, `${entry.id} ref`).toContain(ref.field);
     for (const formula of entry.formulas) {
-      expect(fields, `${entry.id} formula`).toContain(formula.field);
-      expect(fields, `${entry.id} dialect`).toContain(formula.dialectField);
+      for (const path of [formula.field, formula.dialectField, formula.refsField]) {
+        if (path === undefined) continue;
+        expect(schemaAtPath(entry.body, path), `${entry.id} ${path}`).toBeDefined();
+      }
     }
   }
+}
+
+/** The path check is not vacuous: a misspelled leaf and a non-array segment resolve to nothing; the real path resolves. */
+export function aFormulaPathTheBodyLacksResolvesToNothing(): void {
+  const body = catalogEntry("assetTemplate.update")?.body;
+  if (!body) throw new Error("assetTemplate.update");
+  expect(schemaAtPath(body, "content.kpis[].expression")).toBeDefined();
+  expect(schemaAtPath(body, "content.kpis[].expresion")).toBeUndefined();
+  expect(schemaAtPath(body, "name[].expression")).toBeUndefined();
+}
+
+const KPI_FORMULA: CatalogFormula = {
+  field: "content.kpis[].expression",
+  dialectField: "content.kpis[].dialect",
+  refsField: "points[].pointKey",
+};
+const KPI_BODY = {
+  points: [{ pointKey: "kw" }, { pointKey: "kva" }],
+  content: {
+    kpis: [
+      { expression: "{kw}", dialect: "bms-calc-v1" },
+      { expression: "{kva}", dialect: "unvalidated" },
+    ],
+  },
+};
+
+/** An array path names one site per item, each with the dialect from the same item. */
+export function aFormulaPathNamesOneSitePerItem(): void {
+  expect(formulaSitesOf(KPI_BODY, KPI_FORMULA)).toEqual([
+    { path: "content.kpis.0.expression", expression: "{kw}", dialect: "bms-calc-v1" },
+    { path: "content.kpis.1.expression", expression: "{kva}", dialect: "unvalidated" },
+  ]);
+}
+
+/** A refs path collects every name at it across the body. */
+export function aRefsPathCollectsEveryName(): void {
+  expect(formulaRefsOf(KPI_BODY, KPI_FORMULA)).toEqual(["kw", "kva"]);
+}
+
+/** A body that does not carry the formula path has no site. */
+export function aBodyWithoutTheFormulaPathHasNoSite(): void {
+  expect(formulaSitesOf({ name: "x" }, KPI_FORMULA)).toEqual([]);
+}
+
+/** A body that does not carry the refs path answers `null`: the target's names apply. */
+export function aBodyWithoutTheRefsPathHasNoRefs(): void {
+  expect(formulaRefsOf({ name: "x" }, KPI_FORMULA)).toBeNull();
+}
+
+const TOP_LEVEL_FORMULA: CatalogFormula = { field: "formula", dialectField: "formulaDialect" };
+
+/** A top-level formula is one site at its own key. */
+export function aTopLevelFormulaIsOneSite(): void {
+  expect(formulaSitesOf({ formula: "{kw}", formulaDialect: "bms-calc-v2" }, TOP_LEVEL_FORMULA)).toEqual([
+    { path: "formula", expression: "{kw}", dialect: "bms-calc-v2" },
+  ]);
+}
+
+/** A formula with no refs path takes the target's names (`null`). */
+export function aFormulaWithoutARefsPathHasNoRefs(): void {
+  expect(formulaRefsOf({ formula: "{kw}" }, TOP_LEVEL_FORMULA)).toBeNull();
+}
+
+/** A dialect outside the formula's own item is a catalog error, not a silent mismatch. */
+export function aDialectOutsideTheFormulasItemIsAnError(): void {
+  expect(() => formulaSitesOf(KPI_BODY, { field: "content.kpis[].expression", dialectField: "dialect" })).toThrow(/same item/);
 }
 
 export function noRouteIsBothAnEntryAndExcluded(): void {

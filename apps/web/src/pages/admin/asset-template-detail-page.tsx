@@ -57,6 +57,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import type { AdminAssetTemplateDto } from "@bms/shared";
+import { catalogEntry } from "@bms/shared/copilot";
 
 import {
   archiveAdminAssetTemplate,
@@ -82,6 +83,7 @@ import { TemplateTabStrip } from "../../components/asset-templates/template-tab-
 import { PageHeader } from "../../components/page-header";
 import { SectionCard } from "../../components/section-card";
 import { StatusPill } from "../../components/status-pill";
+import { WizardShell } from "../../components/wizard/wizard-shell";
 import { unwritableContentKeys } from "../../lib/template-content-merge";
 import {
   buildInstantiatePayload,
@@ -149,6 +151,8 @@ export function AssetTemplateDetailPage({ user }: AssetTemplateDetailPageProps) 
   const [searchParams, setSearchParams] = useSearchParams();
   const [actionError, setActionError] = useState<string | null>(null);
   const [instantiateOpen, setInstantiateOpen] = useState(false);
+  // `F3.85` PR 11a — Publish opens its Review; only the Review's Submit sends.
+  const [publishOpen, setPublishOpen] = useState(false);
 
   const templateQ = useQuery({
     queryKey: ["admin", "asset-template", templateId],
@@ -204,8 +208,12 @@ export function AssetTemplateDetailPage({ user }: AssetTemplateDetailPageProps) 
   const onActionError = (cause: Error) => setActionError(apiErrorMessage(cause));
 
   const publishM = useMutation({
+    // A plain request — no `X-Copilot-Change` header (plan §10.5 as built).
     mutationFn: () => publishAdminAssetTemplate(templateId ?? ""),
-    onSuccess: afterChange,
+    onSuccess: (next: AdminAssetTemplateDto) => {
+      setPublishOpen(false);
+      afterChange(next);
+    },
     onError: onActionError,
   });
   const archiveM = useMutation({
@@ -306,7 +314,12 @@ export function AssetTemplateDetailPage({ user }: AssetTemplateDetailPageProps) 
   const blockedKeys = unwritableContentKeys(template.content);
 
   const runners: Record<TemplateLifecycleAction, () => void> = {
-    publish: () => publishM.mutate(),
+    // Opens the Review and sends nothing; `runAction`'s guard still runs first.
+    publish: () => {
+      setActionError(null);
+      publishM.reset();
+      setPublishOpen(true);
+    },
     archive: () => archiveM.mutate(),
     createDraft: () => draftM.mutate(),
     delete: () => deleteM.mutate(),
@@ -643,6 +656,30 @@ export function AssetTemplateDetailPage({ user }: AssetTemplateDetailPageProps) 
                 {pendingDecision.confirmLabel}
               </button>
             </div>
+          </div>
+        </div>
+      ) : null}
+
+      {publishOpen ? (
+        <div className="fixed inset-0 z-40 flex items-center justify-center bg-scrim/30 p-4">
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-label="Publish this version"
+            className="w-full max-w-md surface-dialog p-4"
+          >
+            <WizardShell
+              entry={catalogEntry("assetTemplate.publish")!}
+              values={{}}
+              onChange={() => undefined}
+              renderStep={() => null}
+              onSubmit={() => publishM.mutate()}
+              onCancel={() => setPublishOpen(false)}
+              submitting={publishM.isPending}
+              submitError={publishM.error ? apiErrorMessage(publishM.error) : null}
+              current={null}
+              summary={`Publish ${template.name} v${template.version}. A published version is frozen; editing it again makes a new draft.`}
+            />
           </div>
         </div>
       ) : null}

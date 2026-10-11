@@ -23,20 +23,36 @@ export type CatalogMethod = "POST" | "PUT" | "PATCH";
  * - `organization`: the body's `organizationId` (a create); `manage` names
  *   the route's own authority check for it (a dashboard checks its body
  *   scope, a template the organization, a parameter its body scope);
- * - `dashboard`, `dashboardTemplate`, `calcParameter`: the row the path
- *   parameter `id` names;
+ * - `dashboard`, `dashboardTemplate`, `calcParameter`, `assetTemplate`: the
+ *   row the path parameter `id` names (`assetTemplate` since `F3.85` PR 11a;
+ *   the resolver also reads its stored content and point keys);
  * - `asset`: the asset the path parameter `assetId` names.
  */
 export type CatalogTarget =
   | { readonly kind: "organization"; readonly manage: "dashboard" | "template" | "calcParameter" }
-  | { readonly kind: "dashboard" | "dashboardTemplate" | "calcParameter"; readonly param: "id" }
+  | { readonly kind: "dashboard" | "dashboardTemplate" | "calcParameter" | "assetTemplate"; readonly param: "id" }
   | { readonly kind: "asset"; readonly param: "assetId" };
 
 /** A body field holding the id of a row that must belong to the change's organization. */
 export type CatalogRef = { readonly field: string; readonly kind: "location" | "assetGroup" | "asset" };
 
-/** A top-level body field holding a formula, and the field holding its dialect. */
-export type CatalogFormula = { readonly field: string; readonly dialectField: string };
+/**
+ * A body field holding a formula, and the field holding its dialect.
+ *
+ * Each is a path: keys joined by `.`, and `[]` after a key for every item of
+ * that array (`points[].formula`, `content.kpis[].expression`). The dialect
+ * sits in the same item as its formula (`formulaSitesOf`).
+ */
+export type CatalogFormula = {
+  readonly field: string;
+  readonly dialectField: string;
+  /**
+   * Where the point keys the formula may name come from: every string at this
+   * path across the body (`points[].pointKey`). Absent, or a body that does
+   * not carry the path: the target's point keys (`formulaRefsOf`).
+   */
+  readonly refsField?: string;
+};
 
 /** One wizard step: the top-level body fields it edits. The Review step is not listed; every wizard ends with it. */
 export type CatalogStep = { readonly id: string; readonly title: string; readonly fields: readonly string[] };

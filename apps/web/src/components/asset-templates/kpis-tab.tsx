@@ -43,13 +43,26 @@
  * ADR 0038 decision 4's, and the Calculations tab owns those fields. A KPI
  * computes at read time on the asset page (`GET /assets/:assetId/kpis`, ADR
  * 0097, `F2.33`). Nothing on this tab may read as a computed value.
+ *
+ * ## Save is the `assetTemplate.update` wizard
+ *
+ * `F3.85` PR 11a (ADR 0099 decision 6, plan §11.3 unit 3). **Save KPIs** no
+ * longer sends: it snapshots the merged content and opens `WizardShell` for
+ * the catalog's `assetTemplate.update` entry, with the stored content as the
+ * Review's "Now". Only the Review's **Submit** sends, as a plain `PATCH` —
+ * never with `X-Copilot-Change` (plan §10.5 as built: a copilot write goes
+ * only through the dock's ConfirmCard). The entry's points and details steps
+ * say this save leaves them unchanged.
  */
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useMutation } from "@tanstack/react-query";
 import type { AdminAssetTemplateDto, CalcDialect, TemplateKpi } from "@bms/shared";
 import { CALC_DIALECT, CALC_DIALECTS, isCrossAssetDialect, isParameterDialect } from "@bms/shared";
+import { catalogEntry } from "@bms/shared/copilot";
 
-import { updateAdminAssetTemplate } from "../../api/admin/asset-templates";
+import { updateAdminAssetTemplate, type UpdateAssetTemplateInput } from "../../api/admin/asset-templates";
+import type { WizardStep } from "../../lib/wizard-steps";
+import { WizardShell } from "../wizard/wizard-shell";
 import { apiErrorMessage } from "../../lib/api-error-message";
 import { V2_REFERENCE_FORMS, validateEditorFormula } from "../../lib/formula-editor-rules";
 import { V3_PARAMETER_HELP, V3_WINDOW_HELP, dialectOptions } from "../../lib/template-calc-config";
@@ -82,6 +95,36 @@ type KpisTabProps = {
   onDirtyChange: (dirty: boolean) => void;
 };
 
+/** `UNSAFE_KEYS` from `asset-templates-content.schema.ts` — never copied, see below. */
+const UNSAFE_KEYS = ["__proto__", "constructor", "prototype"];
+
+function isPlainRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+/**
+ * A copilot `fill_step` on the content step, merged section by section over the
+ * content the wizard already holds (`F3.85` PR 11a review finding C1).
+ *
+ * The frozen `applyFill` replaces the `content` field wholesale, and a `PATCH`
+ * that sends `content` replaces the column — so a fill naming only `kpis`
+ * would delete every other stored section on Submit, behind a Review cell cut
+ * at 160 characters. Ruling Q10 merges on the propose path; this is the same
+ * merge on the fill path. A fill can replace a section it names; it can never
+ * remove one it does not. The copy is the filtered loop `mergeTemplateContent`
+ * uses, not a spread, so an unsafe key never reaches `merged[key] = value`.
+ */
+function mergeFilledContent(held: unknown, filled: Record<string, unknown>): Record<string, unknown> {
+  const merged: Record<string, unknown> = {};
+  for (const source of [isPlainRecord(held) ? held : {}, filled]) {
+    for (const key of Object.keys(source)) {
+      if (UNSAFE_KEYS.includes(key)) continue;
+      merged[key] = source[key];
+    }
+  }
+  return merged;
+}
+
 /** The stored section, read from the loose `content` record. */
 function storedKpis(template: AdminAssetTemplateDto): TemplateKpi[] | undefined {
   const section = template.content.kpis;
@@ -101,6 +144,9 @@ export function KpisTab({ template, editable, onSaved, onDirtyChange }: KpisTabP
   // because the row has no dialect to store until it validates (ADR 0038
   // decision 9). Absent means `bms-calc-v1`, decision 9's path unchanged.
   const [validateTargets, setValidateTargets] = useState<Record<number, CalcDialect>>({});
+  // The open wizard's values (`F3.85` PR 11a): a snapshot of the merged body
+  // taken when Save is pressed, or `null` while the wizard is closed.
+  const [wizardValues, setWizardValues] = useState<Record<string, unknown> | null>(null);
 
   // Keyed on the row id and the lifecycle status — see `details-tab.tsx`.
   useEffect(() => {
@@ -108,7 +154,27 @@ export function KpisTab({ template, editable, onSaved, onDirtyChange }: KpisTabP
     setError(null);
     setValidationErrors({});
     setValidateTargets({});
+    setWizardValues(null);
   }, [template.id, template.status]);
+
+  // The stored KPI section can change under the same id and status — a dock
+  // Confirm of `assetTemplate.update` invalidates the template and it refetches
+  // (`F3.85` PR 11a review finding C2). The rows follow it only while they
+  // still equal the list they were seeded from: a clean tab shows the new KPIs
+  // and stays clean, and an edit in progress is never overwritten.
+  const storedSignature = JSON.stringify(storedKpis(template) ?? null);
+  const seededFrom = useRef<{ id: string; kpis: TemplateKpi[] | undefined }>({
+    id: template.id,
+    kpis: storedKpis(template),
+  });
+  useEffect(() => {
+    const next = storedKpis(template);
+    const previous = seededFrom.current;
+    seededFrom.current = { id: template.id, kpis: next };
+    if (previous.id !== template.id) return; // the id/status effect above reseeds.
+    setRows((current) => (kpisHaveChanged(current, previous.kpis) ? current : kpiRowsFrom(next)));
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed on the stored section's content, not its identity.
+  }, [storedSignature]);
 
   const declaredPointKeys = template.points.map((point) => point.pointKey);
   const problems = kpiFormErrors(rows, declaredPointKeys);
@@ -125,22 +191,78 @@ export function KpisTab({ template, editable, onSaved, onDirtyChange }: KpisTabP
   const blocked = problems.length > 0 || blockedKeys.length > 0;
 
   const saveM = useMutation({
-    mutationFn: () =>
-      updateAdminAssetTemplate(template.id, {
-        // The whole content object, not a partial — every other section is
-        // carried byte for byte, because a `PATCH` that sends `content`
-        // replaces it.
-        content: mergeTemplateContent(template.content, {
-          section: "kpis",
-          value: buildKpiPayload(rows),
-        }),
-      }),
+    // The wizard's body, sent as it was reviewed: a plain request, no
+    // `X-Copilot-Change` header.
+    mutationFn: (body: Record<string, unknown>) =>
+      updateAdminAssetTemplate(template.id, body as UpdateAssetTemplateInput),
     onSuccess: (next) => {
       setError(null);
+      setWizardValues(null);
       onSaved(next);
     },
     onError: (cause: Error) => setError(apiErrorMessage(cause)),
   });
+
+  function openWizard() {
+    saveM.reset();
+    setError(null);
+    setWizardValues({
+      // The whole content object, not a partial — every other section is
+      // carried byte for byte, because a `PATCH` that sends `content`
+      // replaces it.
+      content: mergeTemplateContent(template.content, {
+        section: "kpis",
+        value: buildKpiPayload(rows),
+      }),
+    });
+  }
+
+  if (wizardValues !== null) {
+    const sending = (wizardValues.content as { kpis?: unknown } | undefined)?.kpis;
+    const sentKpis = Array.isArray(sending) ? (sending as TemplateKpi[]) : [];
+    const renderStep = (step: WizardStep) =>
+      step.id === "content" ? (
+        <ul className="space-y-2 text-xs">
+          {sentKpis.length === 0 ? <li className="text-ink-muted">This save removes every KPI.</li> : null}
+          {sentKpis.map((kpi, index) => (
+            <li key={index} className="surface-raised-sm space-y-1 p-2">
+              <p className="font-semibold text-ink">
+                {kpi.code} · {kpi.name} · {kpi.dialect}
+              </p>
+              <pre className="whitespace-pre-wrap break-all rounded bg-well-deep px-2 py-1">{kpi.expression}</pre>
+            </li>
+          ))}
+          <li className="text-ink-muted">Every other content section is carried unchanged.</li>
+        </ul>
+      ) : step.fields.some((field) => wizardValues[field] !== undefined) ? (
+        // Only a copilot `fill_step` can set these here; the Review shows the values.
+        <p className="text-xs text-ink">
+          This save also sets {step.fields.filter((field) => wizardValues[field] !== undefined).join(", ")}.
+        </p>
+      ) : (
+        <p className="text-xs text-ink-muted">This save does not change the template's {step.title.toLowerCase()}.</p>
+      );
+    return (
+      <WizardShell
+        entry={catalogEntry("assetTemplate.update")!}
+        values={wizardValues}
+        onChange={(next) =>
+          setWizardValues((held) =>
+            isPlainRecord(next.content)
+              ? { ...next, content: mergeFilledContent(held?.content ?? template.content, next.content) }
+              : next,
+          )
+        }
+        renderStep={renderStep}
+        onSubmit={(body) => saveM.mutate(body)}
+        onCancel={() => setWizardValues(null)}
+        submitting={saveM.isPending}
+        submitError={error}
+        current={{ content: template.content }}
+        summary={`Save the KPIs of ${template.name} v${template.version}`}
+      />
+    );
+  }
 
   function update(index: number, patch: Partial<TemplateKpiRow>) {
     setRows((current) =>
@@ -466,7 +588,7 @@ export function KpisTab({ template, editable, onSaved, onDirtyChange }: KpisTabP
             type="button"
             disabled={blocked || !changed || saveM.isPending}
             aria-busy={saveM.isPending}
-            onClick={() => saveM.mutate()}
+            onClick={openWizard}
             className="surface-button-primary bg-accent px-4 py-1.5 text-xs font-semibold text-on-accent disabled:opacity-60"
           >
             {saveM.isPending ? "Saving…" : "Save KPIs"}

@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { expect, vi } from "vitest";
@@ -482,4 +482,75 @@ export async function instantiateIsNotBusyWhileArchivePends(): Promise<void> {
 export async function instantiateIsDisabledWhileArchivePends(): Promise<void> {
   await archiveHeldPending();
   expect(screen.getByRole("button", { name: "Instantiate" })).toBeDisabled();
+}
+
+/**
+ * `F3.85` PR 11a (ADR 0099 decision 6, plan §11.3 unit 3) — **Publish** opens
+ * the `assetTemplate.publish` wizard, which is Review alone (a bodyless
+ * entry), and sends nothing until **Submit**. The absence (no call) sits
+ * beside its positive: the wizard dialog with its Review step is on screen.
+ */
+export async function publishOpensTheReviewAndSendsNothing(): Promise<void> {
+  const publish = vi.fn(() => Promise.resolve(publishedTemplate()));
+  stubApi({
+    fetchAdminAssetTemplate: () => Promise.resolve(draftTemplate()),
+    publishAdminAssetTemplate: publish,
+  });
+  renderPage(admin);
+
+  await userEvent.click(await screen.findByRole("button", { name: "Publish" }));
+
+  const dialog = screen.getByRole("dialog", { name: "Publish this version" });
+  expect(within(dialog).getByRole("button", { name: "Submit" })).toBeInTheDocument();
+  expect(publish).not.toHaveBeenCalled();
+}
+
+/** `F3.85` PR 11a — Submit on the publish Review sends the publish for this template. */
+export async function publishSubmitSendsThePublish(): Promise<void> {
+  const publish = vi.fn(() => Promise.resolve(publishedTemplate()));
+  stubApi({
+    fetchAdminAssetTemplate: () => Promise.resolve(draftTemplate()),
+    publishAdminAssetTemplate: publish,
+  });
+  renderPage(admin);
+
+  await userEvent.click(await screen.findByRole("button", { name: "Publish" }));
+  await userEvent.click(screen.getByRole("button", { name: "Submit" }));
+
+  await waitFor(() => {
+    expect(publish).toHaveBeenCalledTimes(1);
+  });
+  expect(publish).toHaveBeenCalledWith(TEMPLATE_ID);
+}
+
+/**
+ * `F3.85` PR 11a — the publish wizard alone sends **no** `X-Copilot-Change`
+ * header (plan §10.5 as built). `publishAdminAssetTemplate` is left unspied
+ * and the global `fetch` is stubbed, because the header is only observable on
+ * the request. The positive comes first: the `POST …/publish` fired.
+ */
+export async function thePublishWizardSendsNoCopilotHeader(): Promise<void> {
+  stubApi({ fetchAdminAssetTemplate: () => Promise.resolve(draftTemplate()) });
+  const seen: { url: string; init: RequestInit }[] = [];
+  vi.stubGlobal("fetch", async (url: string, init: RequestInit) => {
+    seen.push({ url, init });
+    return new Response(JSON.stringify(publishedTemplate()), { status: 200 });
+  });
+  try {
+    renderPage(admin);
+
+    await userEvent.click(await screen.findByRole("button", { name: "Publish" }));
+    await userEvent.click(screen.getByRole("button", { name: "Submit" }));
+    await waitFor(() => {
+      expect(seen.map((request) => request.url).filter((url) => url.endsWith("/publish"))).toHaveLength(1);
+    });
+
+    const request = seen.find((candidate) => candidate.url.endsWith("/publish"));
+    expect(request?.url).toMatch(new RegExp(`/api/v1/admin/asset-templates/${TEMPLATE_ID}/publish$`));
+    expect(request?.init.method).toBe("POST");
+    const headers = new Headers(request?.init.headers);
+    expect([...headers.keys()].filter((name) => name.toLowerCase() === "x-copilot-change")).toEqual([]);
+  } finally {
+    vi.unstubAllGlobals();
+  }
 }
