@@ -34,6 +34,7 @@ import type { AdminAssetTemplateDto, TemplateAlarm } from "@bms/shared";
 
 import { updateAdminAssetTemplate } from "../../api/admin/asset-templates";
 import { apiErrorMessage } from "../../lib/api-error-message";
+import { useFollowStoredWhenClean } from "../../lib/use-follow-stored-when-clean";
 import { fetchVocabularies, vocabulariesQueryKey } from "../../api/vocabularies";
 import {
   ALARM_OPERATORS,
@@ -81,6 +82,16 @@ export function AlarmsTab({ template, editable, onSaved, onDirtyChange }: Alarms
     setRows(alarmRowsFrom(storedAlarms(template)));
     setError(null);
   }, [template.id, template.status]);
+
+  // A refetch under the same id and status (a dock Confirm of
+  // `assetTemplate.update`) is followed only while the tab is clean
+  // (`useFollowStoredWhenClean`).
+  useFollowStoredWhenClean(
+    template.id,
+    storedAlarms(template),
+    (previous) => !alarmsHaveChanged(rows, previous),
+    (next) => setRows(alarmRowsFrom(next)),
+  );
 
   const vocabQ = useQuery({ queryKey: vocabulariesQueryKey, queryFn: fetchVocabularies });
   const vocabularies = {

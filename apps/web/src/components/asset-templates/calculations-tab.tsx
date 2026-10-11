@@ -28,6 +28,7 @@ import { CALC_DIALECT, CALC_TRIGGERS, isCrossAssetDialect, isParameterDialect } 
 
 import { updateAdminAssetTemplate } from "../../api/admin/asset-templates";
 import { apiErrorMessage } from "../../lib/api-error-message";
+import { useFollowStoredWhenClean } from "../../lib/use-follow-stored-when-clean";
 import { V2_REFERENCE_FORMS, validateEditorFormula } from "../../lib/formula-editor-rules";
 import { formulaFieldsAreReadOnly } from "../../lib/template-lifecycle";
 import {
@@ -82,6 +83,16 @@ export function CalculationsTab({
     setRows(pointRowsFrom(template));
     setError(null);
   }, [template.id, template.status]);
+
+  // A refetch under the same id and status (a dock Confirm of
+  // `assetTemplate.update`) is followed only while the tab is clean
+  // (`useFollowStoredWhenClean`).
+  useFollowStoredWhenClean(
+    template.id,
+    template.points,
+    (previous) => !pointsHaveChanged(rows, { ...template, points: previous }),
+    (next) => setRows(pointRowsFrom({ ...template, points: next })),
+  );
 
   const saveM = useMutation({
     mutationFn: () => updateAdminAssetTemplate(template.id, { points: buildPointsPayload(rows) }),

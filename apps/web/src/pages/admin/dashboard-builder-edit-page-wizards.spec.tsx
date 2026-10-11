@@ -1,3 +1,4 @@
+import type { QueryClient } from "@tanstack/react-query";
 import { act, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, vi } from "vitest";
@@ -16,10 +17,12 @@ import {
   MIMIC_GROUP_DTO,
   OVERVIEW_TAB,
   asUser,
+  backToBasics,
   detailsWizard,
   renderPage,
   stubLoads,
   stubSave,
+  submitWizard,
   submitDetails,
   submitWidgets,
   tileOnTab,
@@ -180,4 +183,104 @@ export async function discardingClickOnlyWidgetWorkClearsIt(): Promise<void> {
   await addATileByClicksThenCancel();
   await userEvent.click(within(widgetsWizard()).getByRole("button", { name: "Discard and leave" }));
   expect(await within(widgetsWizard()).findByText("Add a widget to start composing this dashboard.")).toBeInTheDocument();
+}
+/** A dock Confirm of `dashboard.update` or `dashboard.widgets.replace`, as the page sees it:
+ * `copilot-invalidations.ts` invalidates `["dashboards"]` and the detail read answers `next`. */
+async function refetchAfterADockConfirm(queryClient: QueryClient, next: DashboardDto): Promise<void> {
+  vi.spyOn(dashboardsApi, "fetchDashboard").mockResolvedValue(next);
+  await act(async () => {
+    await queryClient.invalidateQueries({ queryKey: ["dashboards"] });
+  });
+}
+
+/** Post-merge finding F2 — a clean page handed a refetched dto with a new name shows the new
+ * name. Before the fix PR 9's seed effect reseeded only after the page's own saves, so the Name
+ * kept the old value. Mutation: drop `fieldsFollow` from the seed effect => red. */
+export async function aCleanPageShowsARefetchedName(): Promise<void> {
+  stubLoads({ dto: DTO, groups: [GROUP] });
+  const queryClient = renderPage(asUser("admin"));
+  await waitForPrefill("Location");
+
+  await refetchAfterADockConfirm(queryClient, { ...DTO, name: "Copilot name" });
+  await backToBasics();
+
+  await waitFor(() => expect(within(detailsWizard()).getByLabelText("Name")).toHaveValue("Copilot name"));
+}
+
+/** The same refetch reports no change the user never made: the details wizard still refuses with
+ * "No changes yet." Before the fix it found the stale name a change, so its Submit would revert
+ * the copilot's write. */
+export async function aCleanPageReportsNoChangeAfterARefetch(): Promise<void> {
+  stubLoads({ dto: DTO, groups: [GROUP] });
+  const queryClient = renderPage(asUser("admin"));
+  await waitForPrefill("Location");
+
+  await refetchAfterADockConfirm(queryClient, { ...DTO, name: "Copilot name" });
+  await backToBasics();
+  await waitFor(() => expect(within(detailsWizard()).getByLabelText("Name")).toHaveValue("Copilot name"));
+
+  await submitWizard(detailsWizard);
+  expect(within(detailsWizard()).getByText("No changes yet.")).toBeInTheDocument();
+}
+
+/** The positive control: a name the user typed survives the refetch. The Review's "Now" cell
+ * reads the stored name, so it turning to the copilot's name is the wait that proves the refetch
+ * landed; the "After" cell is the claim. Mutation: reseed the fields half on every same-id dto
+ * (drop the clean check) => red. */
+export async function aTypedNameSurvivesARefetch(): Promise<void> {
+  stubLoads({ dto: DTO, groups: [GROUP] });
+  const queryClient = renderPage(asUser("admin"));
+  await waitForPrefill("Location");
+  await typeOntoName(" x");
+
+  await refetchAfterADockConfirm(queryClient, { ...DTO, name: "Copilot name" });
+  await userEvent.click(within(detailsWizard()).getByRole("button", { name: "Next" }));
+  await userEvent.click(within(detailsWizard()).getByRole("button", { name: "Next" }));
+
+  const cells = () =>
+    [...(within(detailsWizard()).getByRole("rowheader", { name: "Name" }).closest("tr")?.querySelectorAll("td") ?? [])].map(
+      (cell) => cell.textContent,
+    );
+  await waitFor(() => expect(cells()[0]).toBe("Copilot name"));
+  expect(cells()[1]).toBe(`${DTO.name} x`);
+}
+
+const TILE_ONLY_DTO: DashboardDto = { ...DTO, widgets: [{ ...tileOnTab("w-1", OVERVIEW_TAB.id, 0), tabId: null }] };
+
+/** The tile's title edited on the Layout step (not saved), then a refetch that renames the
+ * dashboard: the two halves are judged apart. */
+async function editATileThenRefetchARename(): Promise<void> {
+  stubLoads({ dto: TILE_ONLY_DTO, groups: [GROUP] });
+  const queryClient = renderPage(asUser("admin"));
+  await waitForPrefill("Location");
+  await userEvent.click(await within(widgetsWizard()).findByText("Tile w-1"));
+  await userEvent.type(within(widgetsWizard()).getByLabelText("Title"), " (edited)");
+
+  await refetchAfterADockConfirm(queryClient, { ...TILE_ONLY_DTO, name: "Copilot name" });
+  await backToBasics();
+}
+
+/** The clean fields half follows the refetch while the widgets half holds an edit. */
+export async function theCleanHalfFollowsWhileTheOtherIsEdited(): Promise<void> {
+  await editATileThenRefetchARename();
+  await waitFor(() => expect(within(detailsWizard()).getByLabelText("Name")).toHaveValue("Copilot name"));
+}
+
+/** The edited widgets half keeps the title edit through that refetch. */
+export async function theEditedHalfKeepsItsEditThroughARefetch(): Promise<void> {
+  await editATileThenRefetchARename();
+  await waitFor(() => expect(within(detailsWizard()).getByLabelText("Name")).toHaveValue("Copilot name"));
+  expect(within(widgetsWizard()).getByLabelText("Title")).toHaveValue("Tile w-1 (edited)");
+}
+
+/** A clean widgets half follows a `dashboard.widgets.replace` refetch: the new tile is on the
+ * canvas. Mutation: drop `widgetsFollow` from the seed effect => red. */
+export async function aCleanWidgetsHalfShowsARefetchedTile(): Promise<void> {
+  stubLoads({ dto: DTO, groups: [GROUP] });
+  const queryClient = renderPage(asUser("admin"));
+  await waitForPrefill("Location");
+
+  await refetchAfterADockConfirm(queryClient, TILE_ONLY_DTO);
+
+  expect(await within(widgetsWizard()).findByText("Tile w-1")).toBeInTheDocument();
 }

@@ -68,6 +68,7 @@ import { V2_REFERENCE_FORMS, validateEditorFormula } from "../../lib/formula-edi
 import { V3_PARAMETER_HELP, V3_WINDOW_HELP, dialectOptions } from "../../lib/template-calc-config";
 import { checkedDialect } from "../../lib/template-formula-validation";
 import { formulaFieldsAreReadOnly } from "../../lib/template-lifecycle";
+import { useFollowStoredWhenClean } from "../../lib/use-follow-stored-when-clean";
 import {
   mergeTemplateContent,
   unwritableContentKeys,
@@ -161,20 +162,29 @@ export function KpisTab({ template, editable, onSaved, onDirtyChange }: KpisTabP
   // Confirm of `assetTemplate.update` invalidates the template and it refetches
   // (`F3.85` PR 11a review finding C2). The rows follow it only while they
   // still equal the list they were seeded from: a clean tab shows the new KPIs
-  // and stays clean, and an edit in progress is never overwritten.
-  const storedSignature = JSON.stringify(storedKpis(template) ?? null);
-  const seededFrom = useRef<{ id: string; kpis: TemplateKpi[] | undefined }>({
-    id: template.id,
-    kpis: storedKpis(template),
-  });
-  useEffect(() => {
-    const next = storedKpis(template);
-    const previous = seededFrom.current;
-    seededFrom.current = { id: template.id, kpis: next };
-    if (previous.id !== template.id) return; // the id/status effect above reseeds.
-    setRows((current) => (kpisHaveChanged(current, previous.kpis) ? current : kpiRowsFrom(next)));
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed on the stored section's content, not its identity.
-  }, [storedSignature]);
+  // and stays clean, and an edit in progress is never overwritten. Both
+  // position-keyed maps are cleared with the rows, as the id/status effect
+  // above and Remove do: a clean tab can still hold a failed Validate's error
+  // or a picked grammar, and they must not land on the new KPI at that
+  // position (post-merge review finding R1).
+  const reseedFrom = useFollowStoredWhenClean(
+    template.id,
+    storedKpis(template),
+    (previous) => !kpisHaveChanged(rows, previous),
+    (next) => {
+      setRows(kpiRowsFrom(next));
+      setValidationErrors({});
+      setValidateTargets({});
+    },
+  );
+  // The rows the open wizard was opened on, and the rows now. The wizard's
+  // Cancel stays live while Submit is pending, so the user can leave and edit
+  // before the save answers; the answer reseeds only rows nobody touched since
+  // (compliance review finding R1). Read through a ref because the mutation's
+  // callbacks are bound when `mutate` runs.
+  const openedRows = useRef<TemplateKpiRow[] | null>(null);
+  const currentRows = useRef(rows);
+  currentRows.current = rows;
 
   const declaredPointKeys = template.points.map((point) => point.pointKey);
   const problems = kpiFormErrors(rows, declaredPointKeys);
@@ -198,6 +208,9 @@ export function KpisTab({ template, editable, onSaved, onDirtyChange }: KpisTabP
     onSuccess: (next) => {
       setError(null);
       setWizardValues(null);
+      // The saved section, not the rows the wizard opened on: a copilot
+      // `fill_step` may have replaced the content after Save was pressed.
+      if (currentRows.current === openedRows.current) reseedFrom(storedKpis(next));
       onSaved(next);
     },
     onError: (cause: Error) => setError(apiErrorMessage(cause)),
@@ -206,6 +219,7 @@ export function KpisTab({ template, editable, onSaved, onDirtyChange }: KpisTabP
   function openWizard() {
     saveM.reset();
     setError(null);
+    openedRows.current = rows;
     setWizardValues({
       // The whole content object, not a partial — every other section is
       // carried byte for byte, because a `PATCH` that sends `content`

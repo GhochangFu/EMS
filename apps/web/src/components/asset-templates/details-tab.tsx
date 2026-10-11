@@ -31,6 +31,7 @@ import {
   detailsFormFrom,
   type TemplateDetailsForm,
 } from "../../lib/template-details-form";
+import { useFollowStoredWhenClean } from "../../lib/use-follow-stored-when-clean";
 import { Field } from "./field";
 
 type DetailsTabProps = {
@@ -67,13 +68,39 @@ export function DetailsTab({ template, editable, onSaved, onDirtyChange }: Detai
   // `["admin", "asset-template"]` after
   // every lifecycle action. Reseeding on a newer `updatedAt` would mean: type
   // into Details, click Publish in the header, and watch the typed text vanish
-  // with no message. A save needs no reseed either — the form already holds
-  // what was sent, and `buildDetailsPatch` compares against the refreshed
-  // template, so Save disables itself.
+  // with no message.
   useEffect(() => {
     setForm(detailsFormFrom(template));
     setError(null);
   }, [template.id, template.status]);
+
+  // A refetch under the same id and status — a dock Confirm of
+  // `assetTemplate.update` — is followed **field by field**
+  // (`useFollowStoredWhenClean`, post-merge review finding R2). The four
+  // fields are sent independently, so a field the user never touched takes the
+  // copilot's write, and a field with typed text keeps it: an edit to one
+  // field never makes the next Save send the stale value of another back over
+  // the copilot's write. "Touched" is `buildDetailsPatch`'s own comparison
+  // against the template the form was seeded from, so the trim and the
+  // empty-description rule cannot drift from what Save sends. A save needs no
+  // reseed: the form already holds what was sent, and `buildDetailsPatch`
+  // compares against the refreshed template, so Save disables itself.
+  useFollowStoredWhenClean(
+    template.id,
+    template,
+    () => true,
+    (next, previous) =>
+      setForm((current) => {
+        const edited = buildDetailsPatch(current, previous) ?? {};
+        const followed = detailsFormFrom(next);
+        return {
+          name: "name" in edited ? current.name : followed.name,
+          assetType: "assetType" in edited ? current.assetType : followed.assetType,
+          domain: "domain" in edited ? current.domain : followed.domain,
+          description: "description" in edited ? current.description : followed.description,
+        };
+      }),
+  );
 
   const errors = detailsFormErrors(form);
   const patch = buildDetailsPatch(form, template);

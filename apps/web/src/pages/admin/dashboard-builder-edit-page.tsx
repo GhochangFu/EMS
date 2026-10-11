@@ -184,19 +184,41 @@ export function DashboardBuilderEditPage({ user }: DashboardBuilderEditPageProps
     setSelectedTabKey(storedTabs[0]?.key ?? null);
   }
 
+  // Post-merge finding F2 — the dashboard the form was last seeded from. A refetch under the same
+  // id (a dock Confirm of `dashboard.update` or `dashboard.widgets.replace` invalidates
+  // `["dashboards"]`) reseeds each half that still equals it: a clean half shows the copilot's
+  // write, an edited half is kept. Without it the page reported changes the user never made and
+  // its next Submit reverted the copilot's write. A clean half the new dto did not change is left
+  // alone, so a refetch never drops the selected widget or tab.
+  const seededDto = useRef<DashboardDto | null>(null);
+
   useEffect(() => {
     if (!dto) {
       return;
     }
     const fresh = reseed.current.id !== dto.id;
-    if (fresh || reseed.current.fields) {
+    const previous = fresh ? null : seededDto.current;
+    const fieldsFollow =
+      previous !== null &&
+      name === previous.name &&
+      description === (previous.description ?? "") &&
+      !scopeChanged(scope, previous) &&
+      (name !== dto.name || description !== (dto.description ?? "") || scopeChanged(scope, dto));
+    const widgetsFollow =
+      previous !== null &&
+      !builderHasChanged(rows, previous) &&
+      !tabsHaveChanged(tabs, previous) &&
+      (builderHasChanged(rows, dto) || tabsHaveChanged(tabs, dto));
+    if (fresh || reseed.current.fields || fieldsFollow) {
       seedFields(dto);
     }
-    if (fresh || reseed.current.widgets) {
+    if (fresh || reseed.current.widgets || widgetsFollow) {
       seedWidgets(dto);
     }
     reseed.current = { id: dto.id, fields: false, widgets: false };
+    seededDto.current = dto;
     setSeededFor(dto.id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- reseeds on a new dto; the form state is read, not tracked.
   }, [dto]);
 
   // `DashboardScopeFields`'s clamp, applied by the page too: the fields mount on the Scope step

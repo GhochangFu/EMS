@@ -554,3 +554,38 @@ export async function thePublishWizardSendsNoCopilotHeader(): Promise<void> {
     vi.unstubAllGlobals();
   }
 }
+
+const PUBLISH_REFUSED = "Point kw is referenced by a KPI but is not declared.";
+
+/** Publish, Submit, and the server refuses. */
+async function submitARefusedPublish(): Promise<void> {
+  stubApi({
+    fetchAdminAssetTemplate: () => Promise.resolve(draftTemplate()),
+    publishAdminAssetTemplate: () => Promise.reject(new Error(PUBLISH_REFUSED)),
+  });
+  renderPage(admin);
+  await userEvent.click(await screen.findByRole("button", { name: "Publish" }));
+  await userEvent.click(screen.getByRole("button", { name: "Submit" }));
+}
+
+/**
+ * Post-merge finding N3 — a refused Publish shows its sentence on the wizard
+ * card, inside the Publish dialog. The positive half of the next case.
+ */
+export async function aRefusedPublishShowsTheSentenceOnTheCard(): Promise<void> {
+  await submitARefusedPublish();
+  const dialog = screen.getByRole("dialog", { name: "Publish this version" });
+  expect(await within(dialog).findByText(PUBLISH_REFUSED)).toBeInTheDocument();
+}
+
+/**
+ * N3 — and only there: the page banner behind the 30% scrim does not repeat
+ * it. Before the fix `publishM`'s `onError` also set the page's action error.
+ * Mutation: restore `onError: onActionError` on `publishM` => red.
+ */
+export async function aRefusedPublishShowsTheSentenceOnce(): Promise<void> {
+  await submitARefusedPublish();
+  const dialog = screen.getByRole("dialog", { name: "Publish this version" });
+  await within(dialog).findByText(PUBLISH_REFUSED);
+  expect(screen.getAllByText(PUBLISH_REFUSED)).toHaveLength(1);
+}

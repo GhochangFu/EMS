@@ -209,9 +209,10 @@ function CalcOverrideWizard({
   const fields = { config, draft, busy, onDraftChange };
   // The step elements are built HERE and `renderStep` returns the same
   // references. Built inside `renderStep`, they are new elements on every
-  // shell render — and the shell re-renders on the `input` event that comes
-  // before a `<select>`'s `change` (its `dirty` flag), which re-commits the
-  // controlled value and loses the first pick in a clean wizard.
+  // shell render, and a new element on a render between a `<select>`'s
+  // events re-commits the controlled value and can lose the first pick in a
+  // clean wizard. (The shell marks itself dirty on the bubbled `onChange`
+  // since `F3.85` PR 9, not on `input`; stable elements keep that safe.)
   const formulaStep = (
     <>
       <div className="grid gap-2 sm:grid-cols-2">
