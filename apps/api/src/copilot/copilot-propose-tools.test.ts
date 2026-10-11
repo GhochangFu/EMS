@@ -15,6 +15,7 @@ import {
   aSecondProposalWhileOneIsOpenIsRefused,
   aTargetOutsideTheAllowedSetStoresNothing,
   aValidBodyStoresTheCanonicalHash,
+  describeChangeHasAPerTurnBudget,
   describeChangeReadsAPartOfTheBody,
   eachScopeCheckRefusesAlone,
   everyEntryHasOneSlimProposeTool,
@@ -40,5 +41,6 @@ describe("F3.85 PR 8 — the copilot propose tools (ADR 0099 decisions 2, 3, 4, 
   it("never shows a clientOnly field to the model", () => aClientOnlyFieldNeverReachesTheModel());
   it("has one slim propose tool per entry", () => everyEntryHasOneSlimProposeTool());
   it("describes a part of a large body on demand", () => describeChangeReadsAPartOfTheBody());
+  it("limits describe_change per turn", () => describeChangeHasAPerTurnBudget());
   it("checks a fill_step and writes nothing", () => fillStepChecksOneStepAndWritesNothing());
 });

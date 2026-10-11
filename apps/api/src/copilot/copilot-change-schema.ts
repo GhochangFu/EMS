@@ -97,14 +97,36 @@ export function describeBody(body: ZodTypeAny, path: readonly string[]): { ok: t
   return { ok: true, schema: outlineOf(node), outline: true };
 }
 
-/** The `body` property of a propose tool's definition: the schema itself when small, else a field list. */
+/**
+ * One line per top-level field of a large body: its type, and for an array of
+ * union members (the widgets) or a union, the member tags and the exact path
+ * that reads one. The model then reads the one member it needs in a single
+ * `describe_change` call — a live follow-up turn (2026-10-11) explored the
+ * widget shape level by level until it hit the eight-call cap.
+ */
+export function fieldHintsOf(schema: Node, fields: readonly string[]): string[] {
+  const properties = isNode(schema.properties) ? schema.properties : {};
+  return fields.map((field) => {
+    const property = properties[field];
+    if (!isNode(property)) return field;
+    const items = isNode(property.items) ? property.items : null;
+    const unionOf = (node: Node) => membersOf(node).map((member, index) => discriminatorOf(member) ?? String(index));
+    if (items !== null && membersOf(items).length > 0) {
+      return `${field}: array of one of [${unionOf(items).join(", ")}]; read one with path ["${field}", "[]", "<member>"]`;
+    }
+    if (membersOf(property).length > 0) return `${field}: one of [${unionOf(property).join(", ")}]`;
+    return `${field}: ${String(property.type ?? "object")}${items !== null ? ` of ${String(items.type ?? "object")}` : ""}`;
+  });
+}
+
+/** The `body` property of a propose tool's definition: the schema itself when small, else a field guide. */
 export function bodyDefinitionOf(body: ZodTypeAny, catalogId: string, fields: readonly string[]): Node {
   const schema = jsonSchemaOf(body);
   if (JSON.stringify(schema).length <= INLINE_BODY_SCHEMA_MAX_CHARS) return schema;
   return {
     type: "object",
     description:
-      `The request body. Fields: ${fields.join(", ")}. Its full shape is large: call describe_change with ` +
-      `catalogId "${catalogId}" (and a path such as ["widgets", "[]", "chart"]) to read it before proposing.`,
+      `The request body. Its full shape is large; read only the part you need with describe_change ` +
+      `(catalogId "${catalogId}" and a path), once, then propose. Fields — ${fieldHintsOf(schema, fields).join("; ")}.`,
   };
 }

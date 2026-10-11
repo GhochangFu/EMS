@@ -33,6 +33,15 @@ export const UNKNOWN_CHANGE_ERROR = "There is no such change in the catalog.";
 export const UNKNOWN_STEP_ERROR = "That wizard has no such step.";
 export const UNKNOWN_PATH_ERROR = "That path is not in the body's shape.";
 
+/**
+ * `describe_change` reads per turn. A live follow-up turn (2026-10-11) read
+ * the widget shape again and again until the eight-call cap stopped it; past
+ * this budget the tool refuses and says to propose.
+ */
+export const DESCRIBE_CHANGE_BUDGET = 3;
+export const DESCRIBE_BUDGET_ERROR =
+  "You have read enough of the shape this turn. Propose the change with what you read, or tell the user what is missing.";
+
 /** What the propose tools need; specs pass fakes with call counters. */
 export interface CopilotProposeServices {
   readonly targets: CopilotTargets;
@@ -136,6 +145,9 @@ export function createCopilotProposeTools(
     parameters: jsonSchemaOf(schemas[DESCRIBE_CHANGE_TOOL]),
   });
 
+  // One count per turn: the turn service builds a new context for each turn.
+  const describeReads = new WeakMap<CopilotToolContext, number>();
+
   const registry: ToolRegistry<string> = {
     definitions,
     schemas,
@@ -228,6 +240,9 @@ export function createCopilotProposeTools(
         };
       }
       if (name === DESCRIBE_CHANGE_TOOL) {
+        const reads = (describeReads.get(ctx) ?? 0) + 1;
+        describeReads.set(ctx, reads);
+        if (reads > DESCRIBE_CHANGE_BUDGET) return { ok: false, error: DESCRIBE_BUDGET_ERROR };
         const target = byId.get(args.catalogId as string);
         if (target === undefined) return { ok: false, error: UNKNOWN_CHANGE_ERROR };
         const described = describeBody(target.body, (args.path as string[] | undefined) ?? []);

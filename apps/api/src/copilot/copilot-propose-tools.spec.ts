@@ -11,6 +11,8 @@ import { bodyHash } from "./body-hash";
 import type { NewPendingChange } from "./copilot-pending-changes.service";
 import {
   createCopilotProposeTools,
+  DESCRIBE_BUDGET_ERROR,
+  DESCRIBE_CHANGE_BUDGET,
   DESCRIBE_CHANGE_TOOL,
   FILL_STEP_TOOL,
   modelBodySchema,
@@ -132,7 +134,7 @@ export function proposeHarness(options: Options = {}) {
       },
       COPILOT_TOOL_GUARDS,
     );
-  return { tools, stored, resolved, call, lastResult: () => last };
+  return { tools, stored, resolved, call, ctx, lastResult: () => last };
 }
 
 /** A valid body stores one row whose hash is the canonical hash of the shared vector. */
@@ -319,6 +321,9 @@ export function everyEntryHasOneSlimProposeTool(): void {
   expect(JSON.stringify(h.tools.registry.definitions).length).toBeLessThan(20_000);
   const widgets = h.tools.registry.definitions.find((d) => d.name === "propose_dashboard_widgets_replace");
   expect(JSON.stringify(widgets)).toContain("describe_change");
+  // The guide names each widget type and the one path that reads it (a live follow-up hit the call cap without it).
+  expect(JSON.stringify(widgets)).toContain("active_alarms_rail");
+  expect(JSON.stringify(widgets)).toContain('read one with path [\\"widgets\\", \\"[]\\", \\"<member>\\"]');
   const create = h.tools.registry.definitions.find((d) => d.name === "propose_dashboard_create");
   expect(JSON.stringify(create)).toContain('"slug"');
 }
@@ -333,6 +338,20 @@ export async function describeChangeReadsAPartOfTheBody(): Promise<void> {
   expect((await h.call(DESCRIBE_CHANGE_TOOL, { catalogId: "dashboard.widgets.replace", path: ["nope"] })).ok).toBe(false);
   expect((await h.call(DESCRIBE_CHANGE_TOOL, { catalogId: "dashboard.delete" })).ok).toBe(false);
   expect(h.stored).toEqual([]);
+}
+
+/** `describe_change` refuses past its per-turn budget, so a model cannot spend the call cap on it; a new turn starts again. */
+export async function describeChangeHasAPerTurnBudget(): Promise<void> {
+  const h = proposeHarness();
+  const turn = h.ctx();
+  const results: CopilotToolResult[] = [];
+  for (let i = 0; i < DESCRIBE_CHANGE_BUDGET + 1; i++) {
+    results.push(await h.tools.dispatch(DESCRIBE_CHANGE_TOOL, { catalogId: "dashboard.widgets.replace" }, turn));
+  }
+  expect(results.slice(0, DESCRIBE_CHANGE_BUDGET).every((r) => r.ok)).toBe(true);
+  expect(results.at(-1)).toEqual({ ok: false, error: DESCRIBE_BUDGET_ERROR });
+  // The next turn (a new context) reads again.
+  expect((await h.tools.dispatch(DESCRIBE_CHANGE_TOOL, { catalogId: "dashboard.widgets.replace" }, h.ctx())).ok).toBe(true);
 }
 
 /** `fill_step` checks the values against the step's fields and writes nothing. */
