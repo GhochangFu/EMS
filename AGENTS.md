@@ -1155,10 +1155,12 @@
 > took the overview spec off `AppShell`); `F4.161` is closed (#578).
 > And **a site-wide copilot for administrators** is promoted (**ADR 0099**,
 > accepted 2026-10-10 in #797 `1de15f33` after twenty owner rulings; rows
-> `F3.85`–`F3.87`, **not built yet** — `F3.85` is eligible since `F4.150`
-> closed, #799 `e7efcb04`). It promotes
-> §6's general copilot item for `admin`, `organization_admin`, `location_admin`
-> and `asset_group_admin` only; operators and viewers get none. It answers
+> `F3.85`–`F3.87`). **`F3.85`, release 1, is built**: fourteen PRs from #802
+> `381bf200` to #815 `32fab953`, 2026-10-10 to 2026-10-12, with
+> **ADR 0099 Amendment 1** (two usage counters, the organization's day
+> boundary) in #805 `eb85237e`. **`F3.86` and `F3.87` are not built yet.**
+> It promotes §6's general copilot item for `admin`, `organization_admin`,
+> `location_admin` and `asset_group_admin` only; operators and viewers get none. It answers
 > read-only questions within the user's own read scope and proposes admin
 > writes from an action catalog in `packages/shared/src/copilot/`; the model
 > never writes — the server validates a proposal against the existing Zod
@@ -1171,7 +1173,26 @@
 > availability chain (organization switch → role switches → named exceptions;
 > a new organization starts off), daily usage limits, and ADR 0090
 > Amendment 1's key rule kept for every organization. The onboarding agent
-> becomes a copilot skill in `F3.86`.
+> becomes a copilot skill in `F3.86`. As built: the generic LLM core moved out
+> of onboarding to `apps/api/src/llm/` (#803) and onboarding wraps it; the
+> module is `apps/api/src/copilot/`; the release-1 write bodies moved to
+> `packages/shared/src/contracts/*-writes.ts` (#802, #813); the schema is
+> migrations `0104` (the availability switches), `0105` (the history and
+> pending-change tables) and `0106` (the two daily counters and
+> `bms.organizations.timezone`); the
+> history tables bind to `app.current_user`, which `withUser` sets (§4.4). The
+> web mounts the dock in `layouts/app-shell.tsx`, and every catalog wizard
+> renders `components/wizard/wizard-shell.tsx`. Gates (seven `tests/` files):
+> `tests/f3.85-copilot-access-schema.test.ts`,
+> `tests/f3.85-copilot-history-schema.test.ts` and
+> `tests/f3.85-copilot-usage-schema.test.ts` (the three migrations);
+> `tests/f3.85-copilot-interceptor-wiring.test.ts` (the `X-Copilot-Change`
+> seam: no global pipe, the global interceptor, the middleware on every route,
+> CORS for the header, the `./copilot` subpath);
+> `tests/f3.85-audit-via-mark.test.ts` (the `via: "copilot"` audit mark);
+> `tests/f3.85-catalog-coverage.test.ts` (the catalog against the controllers
+> it covers); and `tests/f3.85-stepper-coverage.test.ts` (every catalog entry
+> is the `entry` of a `WizardShell`).
 > EMQX and the **non-MQTT**
 > protocol adapters remain deferred — the framework, the host and the MQTT
 > adapter are promoted; each further protocol still needs its own ADR (§9.4).
@@ -1251,7 +1272,8 @@ superseded decision 4's one-RTU limit: live ingest now covers five of the twelve
 catalogued RTUs**, measured rather than chosen. These promotions are partial and scoped: EMQX
 and non-MQTT protocol adapters remain out of scope, and a site-wide AI copilot
 is promoted for the four administrator roles only (**ADR 0099**, rows
-`F3.85`–`F3.87`, not built yet).
+`F3.85`–`F3.87`; `F3.85`, release 1, is built, #802–#815, and `F3.86` and
+`F3.87` are not built yet).
 
 ---
 
@@ -1563,6 +1585,18 @@ bms/
 │   │                            location-move-dialog.tsx asks before a move,
 │   │                            and components/map-subtree-filter.tsx is the
 │   │                            parent filter both maps share.
+│   │                            F3.85 (ADR 0099): components/copilot/ is the
+│   │                            dock (copilot-dock.tsx, 529 lines, mounted in
+│   │                            layouts/app-shell.tsx) and its Confirm card,
+│   │                            over api/copilot.ts, copilot-confirm.ts and
+│   │                            copilot-current.ts, with lib/copilot-diff.ts,
+│   │                            copilot-body-hash.ts and
+│   │                            copilot-invalidations.ts.
+│   │                            components/wizard/wizard-shell.tsx is the one
+│   │                            stepper every catalog wizard renders, over
+│   │                            lib/wizard-steps.ts; change-card.tsx is the
+│   │                            card both the Confirm card and a wizard's
+│   │                            Review step show.
 │   ├── api/                   ← NestJS REST + WebSocket (incl. src/admin, src/security)
 │   │                            src/admin/asset-templates/ holds ADR 0015's
 │   │                            lifecycle + instantiation services, and
@@ -1623,15 +1657,10 @@ bms/
 │   │                            F3.23, 29 at F3.26; the seven template
 │   │                            tools are in onboarding-template-tools.ts
 │   │                            and the three mapping tools in
-│   │                            onboarding-mapping-tools.ts),
-│   │                            onboarding-llm-port.ts and two adapters,
-│   │                            onboarding-openai-provider.ts (it also
-│   │                            serves OpenRouter) and
-│   │                            onboarding-anthropic-provider.ts;
-│   │                            onboarding-llm-factory.ts,
-│   │                            onboarding-llm-resolver.ts (the only reader
-│   │                            of the LLM variables in .env) and
-│   │                            onboarding-commit-proposal.ts. ADR 0091
+│   │                            onboarding-mapping-tools.ts) and
+│   │                            onboarding-commit-proposal.ts; the LLM port,
+│   │                            its adapters, factory and resolver moved to
+│   │                            src/llm/ in F3.85 (below). ADR 0091
 │   │                            (F3.22) adds onboarding-template-refs.ts
 │   │                            (the pure template read seam),
 │   │                            onboarding-template-catalog.service.ts (the
@@ -1665,6 +1694,27 @@ bms/
 │   │                            RTU location_inactive check);
 │   │                            src/dashboard-builder/sustainability-
 │   │                            grouping.ts is by_location's groupDepth.
+│   │                            src/llm/ is the generic LLM core (F3.85, #803),
+│   │                            moved out of src/admin/onboarding/ so the
+│   │                            copilot and the onboarding agent share it:
+│   │                            llm-port.ts and two adapters, openai-provider.ts
+│   │                            (it also serves OpenRouter) and
+│   │                            anthropic-provider.ts; llm-factory.ts,
+│   │                            llm-resolver.ts (the only reader of the LLM
+│   │                            variables in .env), agent-loop.ts,
+│   │                            tool-registry.ts and credential-detect.ts.
+│   │                            onboarding-agent-loop.ts wraps agent-loop.ts;
+│   │                            onboarding-credential-detect.ts re-exports
+│   │                            looksLikeCredential.
+│   │                            src/copilot/ is the ADR 0099 module (F3.85):
+│   │                            availability and access settings, the
+│   │                            X-Copilot-Change interceptor (APP_INTERCEPTOR)
+│   │                            and context middleware, the pending changes,
+│   │                            conversations, usage limits, the 30-day purge,
+│   │                            the turn service and the read tools in tools/.
+│   │                            src/database/user-context.ts is withUser
+│   │                            (§4.4), which the history and usage services
+│   │                            and the purge use.
 │   │                            src/alarm-kb/ (ADR 0059, E2.2) is a read over
 │   │                            template content for an OPERATIONS audience, so
 │   │                            it answers to neither src/alarms/ nor
@@ -1817,7 +1867,30 @@ bms/
 │   │                            everything for that reason, as ./ingest already
 │   │                            documents. REQUEST schemas stay in apps/api
 │   │                            (ADR 0030 decision 3) — moving them would break
-│   │                            ADR 0029's registry and its guard
+│   │                            ADR 0029's registry and its guard — except the
+│   │                            write bodies in contracts/*-writes.ts: F3.78's
+│   │                            asset-group-writes.ts, and the release-1 copilot
+│   │                            bodies F3.85 moved (#802, #813; ADR 0099
+│   │                            decision 2), which tests/adr-0029-openapi-
+│   │                            contract.test.ts scans in a second walk.
+│   │                            src/copilot/ is the ADR 0099 action catalog
+│   │                            (catalog/) and canonical-json.ts, exported as
+│   │                            @bms/shared/copilot: an exports entry plus a
+│   │                            typesVersions entry, as for ./site-templates,
+│   │                            so the subpath also resolves under apps/api's
+│   │                            node10 resolution (apps/api/src/copilot/
+│   │                            imports it). contracts/copilot.ts and
+│   │                            types/copilot.ts are its DTOs.
+│   │                            src/stack-safe-json.ts (299 lines) is F4.115's
+│   │                            stack-safe JSON walker, moved from apps/api/
+│   │                            src/admin/ by F3.85 (#813) so the asset-
+│   │                            template content schema in contracts/asset-
+│   │                            template-content-writes.ts keeps its depth
+│   │                            guard; apps/api/src/admin/stack-safe-json.ts
+│   │                            is a 20-line re-export, and tests/f4.115-
+│   │                            iterative-draft-walkers.test.ts holds that no
+│   │                            second copy lives there. Moving it here also
+│   │                            took it out of the coverage denominator (above)
 │   └── db/                    ← Drizzle schema, migrations, seeds (incl. phe-catalog.json).
 │                                src/schema/ splits the drizzle declarations:
 │                                bms-schema.ts, telemetry-schema.ts, and since
@@ -2027,6 +2100,18 @@ Do not add top-level folders without updating this section.
   `SET`, leaks the previous caller's tenant to the next one on the same
   connection. If a read path cannot be wrapped in a transaction, it is not
   permitted to touch a tenant table.
+- **A per-user copilot table is read and written inside `withUser`**
+  (`apps/api/src/database/user-context.ts`, `F3.85`; ADR 0099 decision 8
+  amends ADR 0043 decision 10). It is `withTenant`'s sibling: one transaction
+  that sets a second setting, `app.current_user`, transaction-local for the
+  same reason, and always through `set_config` with a bind parameter, never
+  `SET` (`current_user` is a reserved word, so `SET LOCAL app.current_user`
+  does not parse). `opts.organizationId` also sets `app.current_organization`
+  in the same transaction, for the organization usage counter. Migrations
+  `0105` and `0106` bind `bms.copilot_conversations`, `copilot_messages`,
+  `copilot_pending_changes` and `copilot_usage` to it with a strict
+  `user_isolation` policy under `FORCE`; with the setting unset they match
+  nothing.
 - Migrations are forward-only. Never edit a merged migration. Stamp a journal
   entry's `when` with `Date.now()` and never hand-pin it ahead of the clock: a
   future stamp makes the next generated migration sort below it and skip,
@@ -2046,7 +2131,10 @@ Do not add top-level folders without updating this section.
   `F4.162` — written only by the global `admin` through
   `/api/v1/admin/vocabularies/location-types` on the fleet pool, with an
   org-less audit row) or the
-  stated `telemetry.*` exception (decision 9).
+  stated `telemetry.*` exception (decision 9), or — since **ADR 0099**
+  decision 8, `F3.85` — one of the four per-user copilot tables above, which
+  carry `user_isolation` and no `tenant_isolation` policy
+  (`bms.copilot_org_usage` follows the rule).
   **The ruling is not only about a NEW table.** `bms.point_keys` was tenant
   data for the whole of its life until migration `0057` dropped its
   `organization_id`, its unique index, its policy and its FORCE flag together —
@@ -2059,7 +2147,10 @@ Do not add top-level folders without updating this section.
   organization's row of `bms.organization_llm_settings` (`arwd`, measured by
   the `F3.21` migration review). Encryption, not the grant, keeps that
   table's key column private: `bms_fleet` cannot decrypt it without the
-  credential key.
+  credential key. The copilot tables depart from this on purpose (ADR 0099
+  decision 8): migrations `0105` and `0106` `REVOKE ALL` from `bms_fleet` on
+  the five copilot history and usage tables: its `BYPASSRLS` would defeat the
+  per-user policy, and it has no use for the organization counter.
 - **Never `tx.insert(users)`** (`F3.78`, migration `0098`). drizzle-orm 0.38
   names every column in an `INSERT` and sends `default` for an omitted one, so
   the statement names `password_hash`, which no pool role may insert. Under
@@ -3748,7 +3839,8 @@ These are intentionally deferred. Do not implement them yet:
 - Three.js Control Room 3D
 - General site-wide AI Copilot / chatbot **for operators and viewers** (since
   ADR 0099, 2026-10-10, a site-wide copilot is **promoted for the four
-  administrator roles**, rows `F3.85`–`F3.87`, not built yet; the **scoped admin
+  administrator roles**, rows `F3.85`–`F3.87` — `F3.85`, release 1, built
+  2026-10-10 to 2026-10-12, `F3.86` and `F3.87` not built yet; the **scoped admin
   onboarding wizard is promoted** via ADR 0011, and since ADR 0090 it runs a
   tool-calling loop over the session draft; since ADR 0091 that loop also
   onboards asset templates; since ADR 0092–0095 it also maps source tags, reads
