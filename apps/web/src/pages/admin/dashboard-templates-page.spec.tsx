@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import { expect, vi } from "vitest";
@@ -8,6 +8,7 @@ import * as api from "../../api/admin/dashboard-templates";
 import * as orgApi from "../../api/admin/organizations";
 import * as vocabApi from "../../api/vocabularies";
 import type { AuthUser } from "../../stores/auth-store";
+import { resetWizardStore, useWizardStore } from "../../stores/wizard-store";
 import { DashboardTemplatesAdminPage } from "./dashboard-templates-page";
 import * as copilotApi from "../../api/copilot";
 
@@ -62,8 +63,11 @@ const STOCK = {
   ],
 };
 
+/** A uuid: the wizards parse `organizationId` with the route's body schema (`z.string().uuid()`). */
+const ORG_ID = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+
 const ORGS = {
-  items: [{ id: "org-1", code: "IX", name: "Ion Exchange" }],
+  items: [{ id: ORG_ID, code: "IX", name: "Ion Exchange" }],
 };
 
 /** Deliberately not the seeded six sections — the `F4.43` guard's fixture shape. */
@@ -191,14 +195,16 @@ export async function importCallsTheApiWithTheChosenOrganization(): Promise<void
   expect(importButton).toBeDisabled();
 
   const orgSelect = screen.getByRole("combobox", { name: "Import into organization" });
-  await userEvent.selectOptions(orgSelect, "org-1");
+  await userEvent.selectOptions(orgSelect, ORG_ID);
   expect(importButton).not.toBeDisabled();
 
   await userEvent.click(importButton);
+  await userEvent.click(screen.getByRole("button", { name: "Next" }));
+  await userEvent.click(screen.getByRole("button", { name: "Submit" }));
   await waitFor(() => {
     expect(api.importAdminStockDashboardTemplate).toHaveBeenCalledWith(
       "electrical-default",
-      "org-1",
+      ORG_ID,
     );
   });
 }
@@ -227,8 +233,10 @@ async function importElectricalHeldPending(): Promise<HTMLElement> {
 
   const importButton = await screen.findByRole("button", { name: "Import Electrical (stock)" });
   const orgSelect = screen.getByRole("combobox", { name: "Import into organization" });
-  await userEvent.selectOptions(orgSelect, "org-1");
+  await userEvent.selectOptions(orgSelect, ORG_ID);
   await userEvent.click(importButton);
+  await userEvent.click(screen.getByRole("button", { name: "Next" }));
+  await userEvent.click(screen.getByRole("button", { name: "Submit" }));
 
   return screen.findByRole("button", { name: "Importing Electrical (stock)…" });
 }
@@ -257,4 +265,268 @@ export async function anotherEntryKeepsItsNameWhileOneImports(): Promise<void> {
   await importElectricalHeldPending();
   const other = screen.getByRole("button", { name: "Import Water (stock)" });
   expect(other).toHaveAttribute("aria-busy", "false");
+}
+
+/* --------------------------------------------------------------------------
+ * `F3.85` PR 10a / ADR 0099 decision 6 (plan §11.2) — the create and the
+ * stock import are steppers on the shared `WizardShell`.
+ * ------------------------------------------------------------------------ */
+
+const BASE = import.meta.env.VITE_API_URL ?? "http://localhost:4000";
+
+/** The step list's items, in order. */
+function stepTitles(): string[] {
+  const list = screen.getByRole("list", { name: "Steps" });
+  return within(list)
+    .getAllByRole("listitem")
+    .map((item) => item.textContent ?? "");
+}
+
+/** A DTO the write's response schema parses, so a stubbed response is not an error. */
+const CREATED_DTO = {
+  ...LIST.items[0],
+  organizationId: ORG_ID,
+  target: "asset_group",
+  content: { widgets: [] },
+  createdBy: null,
+};
+
+type Seen = { url: string; init: RequestInit };
+
+/**
+ * Every request reaching `fetch` — the write is NOT spied, so the real
+ * `adminFetch` puts it on the wire. The reads are spied in `stubApi`.
+ */
+function captureFetch(): Seen[] {
+  const seen: Seen[] = [];
+  vi.stubGlobal("fetch", async (url: string, init: RequestInit = {}) => {
+    seen.push({ url, init });
+    return new Response(JSON.stringify(CREATED_DTO), { status: 201, headers: { "Content-Type": "application/json" } });
+  });
+  return seen;
+}
+
+/** Opens the create wizard and fills its Basics step. */
+async function fillCreateBasics(): Promise<void> {
+  await userEvent.click(await screen.findByRole("button", { name: "New template" }));
+  const org = await screen.findByRole("combobox", { name: "Organization" });
+  await waitFor(() => expect(org.textContent).toContain("Ion Exchange"));
+  await userEvent.selectOptions(org, ORG_ID);
+  // `fireEvent.change`, not `userEvent.type`: typing each key ran past the 5 s case timeout.
+  fireEvent.change(screen.getByRole("textbox", { name: "Code" }), { target: { value: "  ELEC " } });
+  fireEvent.change(screen.getByRole("textbox", { name: "Name" }), { target: { value: " Electrical overview " } });
+  const sectionSelect = screen.getByRole("combobox", { name: "Section" });
+  await waitFor(() => expect(sectionSelect.textContent).toContain("Spec Section"));
+  await userEvent.selectOptions(sectionSelect, "f336-spec-section");
+}
+
+/** The create wizard's steps are the entry's Basics and Content, then Review. */
+export async function createWizardStepsAreBasicsContentReview(): Promise<void> {
+  stubApi();
+  renderPage();
+  await userEvent.click(await screen.findByRole("button", { name: "New template" }));
+
+  expect(stepTitles()).toEqual(["1. Basics", "2. Content", "3. Review"]);
+  expect(within(screen.getByRole("list", { name: "Steps" })).getByText("1. Basics")).toHaveAttribute(
+    "aria-current",
+    "step",
+  );
+}
+
+/** Submit on Review sends today's body: code and name trimmed, a blank description as null. */
+export async function createWizardSendsTheTrimmedBody(): Promise<void> {
+  stubApi();
+  const create = vi.spyOn(api, "createAdminDashboardTemplate").mockResolvedValue(CREATED_DTO as never);
+  renderPage();
+  await fillCreateBasics();
+
+  await userEvent.click(screen.getByRole("button", { name: "Next" }));
+  await userEvent.click(screen.getByRole("button", { name: "Next" }));
+  await userEvent.click(screen.getByRole("button", { name: "Submit" }));
+
+  await waitFor(() => expect(create).toHaveBeenCalledTimes(1));
+  expect(create).toHaveBeenCalledWith({
+    organizationId: ORG_ID,
+    code: "ELEC",
+    name: "Electrical overview",
+    section: "f336-spec-section",
+    description: null,
+  });
+}
+
+/** Nothing is sent before Review's Submit: Next through the steps never creates. */
+export async function createWizardSendsNothingBeforeSubmit(): Promise<void> {
+  stubApi();
+  const create = vi.spyOn(api, "createAdminDashboardTemplate").mockResolvedValue(CREATED_DTO as never);
+  renderPage();
+  await fillCreateBasics();
+  await userEvent.click(screen.getByRole("button", { name: "Next" }));
+  await userEvent.click(screen.getByRole("button", { name: "Next" }));
+
+  expect(screen.getByRole("button", { name: "Submit" })).toBeInTheDocument();
+  expect(create).not.toHaveBeenCalled();
+}
+
+/**
+ * The create wizard alone sends the plain request: it fires with the body
+ * (the positive), and with no `X-Copilot-Change` header (plan §10.5).
+ */
+export async function createWizardAloneSendsNoCopilotHeader(): Promise<void> {
+  stubApi();
+  const seen = captureFetch();
+  renderPage();
+  await fillCreateBasics();
+  await userEvent.click(screen.getByRole("button", { name: "Next" }));
+  await userEvent.click(screen.getByRole("button", { name: "Next" }));
+  await userEvent.click(screen.getByRole("button", { name: "Submit" }));
+
+  await waitFor(() => expect(seen.filter((call) => call.init.method === "POST")).toHaveLength(1));
+  const post = seen.find((call) => call.init.method === "POST") as Seen;
+  expect(post.url).toBe(`${BASE}/api/v1/admin/dashboard-templates`);
+  expect(JSON.parse(post.init.body as string)).toEqual({
+    organizationId: ORG_ID,
+    code: "ELEC",
+    name: "Electrical overview",
+    section: "f336-spec-section",
+    description: null,
+  });
+  expect(new Headers(post.init.headers).get("X-Copilot-Change")).toBeNull();
+}
+
+/** Import opens the importStock wizard — Organization, then Review — and sends nothing yet. */
+export async function importOpensAWizardBeforeTheRequest(): Promise<void> {
+  stubApi();
+  renderPage();
+  const importButton = await screen.findByRole("button", { name: "Import Electrical (stock)" });
+  await userEvent.selectOptions(screen.getByRole("combobox", { name: "Import into organization" }), ORG_ID);
+  await userEvent.click(importButton);
+
+  expect(stepTitles()).toEqual(["1. Organization", "2. Review"]);
+  expect(api.importAdminStockDashboardTemplate).not.toHaveBeenCalled();
+}
+
+/**
+ * The import wizard alone sends the entry's body `{organizationId}` to the
+ * stock code's route (the positive), with no `X-Copilot-Change` header.
+ */
+export async function importWizardAloneSendsNoCopilotHeader(): Promise<void> {
+  stubApi();
+  vi.mocked(api.importAdminStockDashboardTemplate).mockRestore();
+  const seen = captureFetch();
+  renderPage();
+  const importButton = await screen.findByRole("button", { name: "Import Electrical (stock)" });
+  await userEvent.selectOptions(screen.getByRole("combobox", { name: "Import into organization" }), ORG_ID);
+  await userEvent.click(importButton);
+  await userEvent.click(screen.getByRole("button", { name: "Next" }));
+  await userEvent.click(screen.getByRole("button", { name: "Submit" }));
+
+  await waitFor(() => expect(seen.filter((call) => call.init.method === "POST")).toHaveLength(1));
+  const post = seen.find((call) => call.init.method === "POST") as Seen;
+  expect(post.url).toBe(`${BASE}/api/v1/admin/dashboard-templates/stock/electrical-default/import`);
+  expect(JSON.parse(post.init.body as string)).toEqual({ organizationId: ORG_ID });
+  expect(new Headers(post.init.headers).get("X-Copilot-Change")).toBeNull();
+}
+
+/**
+ * A refused create, then Back to Basics with Code cleared, then on to Review
+ * again — the review finding C1 path.
+ */
+async function refuseCreateThenClearCode(): Promise<HTMLElement> {
+  stubApi();
+  vi.spyOn(api, "createAdminDashboardTemplate").mockRejectedValue(new Error("The code is taken"));
+  renderPage();
+  await fillCreateBasics();
+  await userEvent.click(screen.getByRole("button", { name: "Next" }));
+  await userEvent.click(screen.getByRole("button", { name: "Next" }));
+  await userEvent.click(screen.getByRole("button", { name: "Submit" }));
+  await screen.findByText("The code is taken");
+  await userEvent.click(screen.getByRole("button", { name: "Back" }));
+  await userEvent.click(screen.getByRole("button", { name: "Back" }));
+  fireEvent.change(screen.getByRole("textbox", { name: "Code" }), { target: { value: "" } });
+  await userEvent.click(screen.getByRole("button", { name: "Next" }));
+  await userEvent.click(screen.getByRole("button", { name: "Next" }));
+  return screen.getByRole("region", { name: "Create a dashboard template" });
+}
+
+/** Review finding C1 — after a refused create, a value change clears the old server error from Review. */
+export async function aValueChangeClearsTheCreateRefusal(): Promise<void> {
+  const card = await refuseCreateThenClearCode();
+  expect(within(card).queryByText("The code is taken")).toBeNull();
+}
+
+/** The positive beside the absence above: Review names the problem that now blocks Submit. */
+export async function reviewNamesTheClearedCodeAfterARefusal(): Promise<void> {
+  const card = await refuseCreateThenClearCode();
+  expect(within(card).getByText(/^code: /)).toBeInTheDocument();
+}
+
+/** A refused import, then Back with the organization cleared, then Review again. */
+async function refuseImportThenClearOrganization(): Promise<HTMLElement> {
+  stubApi();
+  vi.mocked(api.importAdminStockDashboardTemplate).mockRejectedValue(new Error("Already imported"));
+  renderPage();
+  const importButton = await screen.findByRole("button", { name: "Import Electrical (stock)" });
+  await userEvent.selectOptions(screen.getByRole("combobox", { name: "Import into organization" }), ORG_ID);
+  await userEvent.click(importButton);
+  await userEvent.click(screen.getByRole("button", { name: "Next" }));
+  await userEvent.click(screen.getByRole("button", { name: "Submit" }));
+  await screen.findAllByText("Already imported");
+  await userEvent.click(screen.getByRole("button", { name: "Back" }));
+  await userEvent.selectOptions(screen.getByRole("combobox", { name: "Organization" }), "");
+  await userEvent.click(screen.getByRole("button", { name: "Next" }));
+  return screen.getByRole("region", { name: "Import a stock dashboard template" });
+}
+
+/** Review finding C1 — the import wizard clears the old server error on a value change too. */
+export async function aValueChangeClearsTheImportRefusal(): Promise<void> {
+  const card = await refuseImportThenClearOrganization();
+  expect(within(card).queryByText("Already imported")).toBeNull();
+}
+
+/** The positive beside the absence above: Review names the missing organization. */
+export async function reviewNamesTheClearedOrganizationAfterARefusal(): Promise<void> {
+  const card = await refuseImportThenClearOrganization();
+  expect(within(card).getByText(/^organizationId: /)).toBeInTheDocument();
+}
+
+/** Opens the create wizard and hands it a copilot fill, as the dock does. */
+async function openCreateWithFill(stepId: string, values: Record<string, unknown>): Promise<void> {
+  resetWizardStore();
+  stubApi();
+  renderPage();
+  await userEvent.click(await screen.findByRole("button", { name: "New template" }));
+  act(() => {
+    useWizardStore.getState().receiveFill({ catalogId: "dashboardTemplate.create", stepId, values });
+  });
+}
+
+/** Review finding C2 — the create Content step describes a content the copilot filled, which Submit sends. */
+export async function createContentStepDescribesAFilledContent(): Promise<void> {
+  await openCreateWithFill("content", { content: { widgets: [{}, {}] } });
+  await userEvent.click(screen.getByRole("button", { name: "Next" }));
+
+  expect(screen.getByRole("region", { name: "Content" }).textContent).toContain(
+    "The template is created with the filled content: 2 widgets.",
+  );
+}
+
+/** Review finding PR10a-3 — a `target` the copilot filled is shown on Basics, which has no input for it. */
+export async function createBasicsShowsAFilledTarget(): Promise<void> {
+  await openCreateWithFill("basics", { target: "site" });
+
+  expect(screen.getByRole("region", { name: "Basics" }).textContent).toContain(
+    "Target: site (filled by the copilot).",
+  );
+}
+
+/** Review finding PR10a-3 — Review names an organization that is not in the list by its id, not "the organization". */
+export async function createSummaryNamesAnUnlistedOrganizationById(): Promise<void> {
+  const unlisted = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
+  await openCreateWithFill("basics", { organizationId: unlisted, code: "ELEC", name: "Electrical overview" });
+  await userEvent.click(screen.getByRole("button", { name: "Next" }));
+  await userEvent.click(screen.getByRole("button", { name: "Next" }));
+
+  expect(screen.getByRole("region", { name: "Create a dashboard template" }).textContent).toContain(
+    `(ELEC) in ${unlisted}.`,
+  );
 }

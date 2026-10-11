@@ -49,7 +49,11 @@ import {
 } from "../../api/admin/dashboard-templates";
 import type {
   SectionTemplateWidgetInput,
+  UpdateDashboardTemplateInput,
 } from "../../api/admin/dashboard-templates";
+import { type CatalogEntry, catalogEntry } from "@bms/shared/copilot";
+import { WizardShell } from "../../components/wizard/wizard-shell";
+import type { WizardStep } from "../../lib/wizard-steps";
 import { fetchAdminAssetGroups } from "../../api/admin/asset-groups";
 import { DashboardCanvas } from "../../components/dashboards/dashboard-canvas";
 import { MasterDataLayout } from "../../components/admin/master-data-layout";
@@ -88,6 +92,56 @@ function freshWidgetKey(): string {
   return `widget-${Date.now()}-${nextWidgetOrdinal++}`;
 }
 
+/** The catalog entry a wizard submits, by its literal id (the stepper coverage gate reads the id). */
+function wizardEntry(id: string): CatalogEntry {
+  const found = catalogEntry(id);
+  if (found === undefined) throw new Error(`No copilot catalog entry "${id}".`);
+  return found;
+}
+
+/** `values` with `field` set, or removed when the input is cleared — a wizard sends no key it left unset. */
+function withField(values: Record<string, unknown>, field: string, raw: string): Record<string, unknown> {
+  const next = { ...values };
+  if (raw === "") delete next[field];
+  else next[field] = raw;
+  return next;
+}
+
+/**
+ * The widget count of a `content` value — the top-level widgets plus every
+ * tab's, as the header counts them — or null when it has no `widgets` array
+ * (a copilot fill can put anything there).
+ */
+function widgetCountOf(content: unknown): number | null {
+  if (typeof content !== "object" || content === null) return null;
+  const { widgets, tabs } = content as { widgets?: unknown; tabs?: unknown };
+  if (!Array.isArray(widgets)) return null;
+  const inTabs = Array.isArray(tabs)
+    ? tabs.reduce<number>((sum, tab) => {
+        const tabWidgets = (tab as { widgets?: unknown } | null)?.widgets;
+        return sum + (Array.isArray(tabWidgets) ? tabWidgets.length : 0);
+      }, 0)
+    : 0;
+  return widgets.length + inTabs;
+}
+
+/**
+ * The update body as sent: a name or a description trimmed, and dropped when
+ * it is blank after the trim — the create path trims the same way, and the
+ * route's `min(1)` would take a name of spaces.
+ */
+function saveBody(body: Record<string, unknown>): Record<string, unknown> {
+  const next = { ...body };
+  for (const field of ["name", "description"]) {
+    const value = next[field];
+    if (typeof value !== "string") continue;
+    const trimmed = value.trim();
+    if (trimmed === "") delete next[field];
+    else next[field] = trimmed;
+  }
+  return next;
+}
+
 /** Admin screen for one section dashboard template version. */
 export function DashboardTemplateDetailPage({ user }: DashboardTemplateDetailPageProps) {
   const { templateId } = useParams();
@@ -98,6 +152,8 @@ export function DashboardTemplateDetailPage({ user }: DashboardTemplateDetailPag
   const [instantiateOpen, setInstantiateOpen] = useState(false);
   const [applyOpen, setApplyOpen] = useState(false);
   const [archiveOpen, setArchiveOpen] = useState(false);
+  // `F3.85` PR 10a — the open `dashboardTemplate.update` wizard's values; null when closed.
+  const [saveValues, setSaveValues] = useState<Record<string, unknown> | null>(null);
 
   const templateQ = useQuery({
     queryKey: ["admin", "dashboard-template", templateId],
@@ -152,13 +208,13 @@ export function DashboardTemplateDetailPage({ user }: DashboardTemplateDetailPag
     onError: onActionError,
   });
   const saveM = useMutation({
-    // `F3.73` — the stored tabs go back unchanged. This canvas edits the top-level widgets
-    // only, and a site template's content without `tabs` is refused rather than cleared.
-    mutationFn: () =>
-      updateAdminDashboardTemplate(templateId ?? "", {
-        content: { widgets: rows, tabs: templateQ.data?.content.tabs },
-      }),
-    onSuccess: afterChange,
+    // `F3.85` PR 10a — the body is the update wizard's (`saveValues`, seeded by Save canvas).
+    mutationFn: (body: Record<string, unknown>) =>
+      updateAdminDashboardTemplate(templateId ?? "", body as UpdateDashboardTemplateInput),
+    onSuccess: (next: DashboardTemplateDto) => {
+      setSaveValues(null);
+      afterChange(next);
+    },
     onError: onActionError,
   });
 
@@ -192,6 +248,71 @@ export function DashboardTemplateDetailPage({ user }: DashboardTemplateDetailPag
   const mayAuthor = canAuthorTemplates(user.role);
   const mayInstantiate = canInstantiateTemplates(user.role);
   const editable = mayAuthor && canMutate(template.status);
+
+  // A value change clears the last server error: the shell shows `submitError`
+  // in place of Review's own problems, so a stale error would hide them.
+  function updateSave(next: Record<string, unknown>): void {
+    setActionError(null);
+    setSaveValues(next);
+  }
+
+  // `F3.85` PR 10a — the update wizard's steps. Basics sends a name or a
+  // description only when one is typed; `section` has no input (it is chosen
+  // when the template is created) and is shown when the copilot fills it.
+  // Content describes `values.content` — what Submit sends — never the canvas
+  // alone, since a copilot fill can replace it.
+  function renderSaveStep(step: WizardStep, values: Record<string, unknown>) {
+    if (step.id === "content") {
+      const count = widgetCountOf(values.content);
+      const isCanvas =
+        JSON.stringify(values.content) === JSON.stringify({ widgets: rows, tabs: template.content.tabs });
+      return (
+        <p className="text-[11px] text-ink-muted">
+          {count === null
+            ? "The content to save is not a widget list."
+            : `The content to save: ${count} widget${count === 1 ? "" : "s"}.`}
+          {isCanvas
+            ? " It is the canvas as edited on this screen."
+            : ` It is not the canvas on this screen (${widgetCount} widget${widgetCount === 1 ? "" : "s"}).`}
+        </p>
+      );
+    }
+    if (step.id !== "basics") return null;
+    const text = (field: string) => (typeof values[field] === "string" ? (values[field] as string) : "");
+    return (
+      <>
+        <label className="block text-xs font-semibold text-ink">
+          Name
+          <input
+            value={text("name")}
+            onChange={(event) => updateSave(withField(values, "name", event.target.value))}
+            // Trimmed on leaving the field, so Review shows the name Submit sends.
+            onBlur={() => setSaveValues(saveBody(values))}
+            placeholder={template.name}
+            className="mt-1 w-full surface-field px-2 py-1 text-xs font-normal"
+          />
+        </label>
+        <label className="block text-xs font-semibold text-ink">
+          Description
+          <textarea
+            value={text("description")}
+            onChange={(event) => updateSave(withField(values, "description", event.target.value))}
+            onBlur={() => setSaveValues(saveBody(values))}
+            placeholder={template.description ?? ""}
+            rows={2}
+            className="mt-1 w-full surface-field px-2 py-1 text-xs font-normal"
+          />
+        </label>
+        {values.section !== undefined ? (
+          <p className="text-[11px] text-ink-muted">
+            Section: {typeof values.section === "string" ? values.section : JSON.stringify(values.section)} (filled by
+            the copilot; now {template.section}).
+          </p>
+        ) : null}
+        <p className="text-[11px] text-ink-muted">Leave a field empty to keep it as it is.</p>
+      </>
+    );
+  }
 
   // Derived from the one declared transition table — never a restated status
   // array (`tests/f3.36-template-lifecycle-single-source.test.ts`).
@@ -275,7 +396,13 @@ export function DashboardTemplateDetailPage({ user }: DashboardTemplateDetailPag
                 type="button"
                 disabled={saveM.isPending}
                 aria-busy={saveM.isPending}
-                onClick={() => saveM.mutate()}
+                // `F3.73` — the stored tabs go back unchanged. This canvas edits the top-level
+                // widgets only, and a site template's content without `tabs` is refused rather
+                // than cleared. `F3.85` PR 10a — Save opens the update wizard with the canvas.
+                onClick={() => {
+                  setActionError(null);
+                  setSaveValues({ content: { widgets: rows, tabs: template.content.tabs } });
+                }}
                 className="rounded bg-accent px-3 py-1.5 text-xs font-semibold text-on-accent disabled:opacity-60"
               >
                 {saveM.isPending ? "Saving…" : "Save canvas"}
@@ -357,6 +484,36 @@ export function DashboardTemplateDetailPage({ user }: DashboardTemplateDetailPag
         <p className="rounded border border-critical-line bg-critical-wash p-3 text-sm text-critical-ink-strong">
           {actionError}
         </p>
+      ) : null}
+
+      {saveValues !== null && editable ? (
+        <div className="fixed inset-0 z-40 flex items-center justify-center bg-scrim/30 p-4">
+          <div className="w-full max-w-lg space-y-3 surface-dialog p-4">
+            <h2 className="font-condensed text-base font-bold text-ink">Save canvas</h2>
+            <WizardShell
+              entry={wizardEntry("dashboardTemplate.update")}
+              values={saveValues}
+              onChange={updateSave}
+              renderStep={(step: WizardStep) => renderSaveStep(step, saveValues)}
+              onSubmit={(body) => saveM.mutate(saveBody(body))}
+              onCancel={() => setSaveValues(null)}
+              submitting={saveM.isPending}
+              submitError={actionError}
+              current={{
+                name: template.name,
+                section: template.section,
+                description: template.description,
+                content: template.content,
+              }}
+              summary={wizardEntry("dashboardTemplate.update").summary({
+                body: saveValues,
+                params: { id: template.id },
+                targetName: template.name,
+                organizationName: "",
+              })}
+            />
+          </div>
+        </div>
       ) : null}
 
       {!editable ? (
