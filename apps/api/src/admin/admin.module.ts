@@ -180,5 +180,8 @@ import { UsersService } from "./users/users.service";
     UsersService,
     UserGrantsService,
   ],
+  // F3.86 PR 5 (ADR 0099 decision 7) — the copilot's onboarding skill calls the onboarding service itself
+  // (`COPILOT_ONBOARDING_SKILL` in `CopilotModule`), never a second copy of its provider tree.
+  exports: [OnboardingService],
 })
 export class AdminModule {}

@@ -13,7 +13,7 @@ import {
   varchar,
 } from "drizzle-orm/pg-core";
 
-import { bmsSchema, organizations, users } from "./bms-schema";
+import { bmsSchema, onboardingSessions, organizations, users } from "./bms-schema";
 
 /**
  * The administrator copilot's availability tables — `F3.85` PR 3, migration
@@ -102,6 +102,8 @@ export const copilotConversations = bmsSchema.table(
     title: varchar("title", { length: 200 }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     lastTurnAt: timestamp("last_turn_at", { withTimezone: true }).notNull().defaultNow(),
+    // `F3.86` PR 5, migration 0107 (decision 7): the onboarding session the skill's turns run; its partial index is in the SQL.
+    onboardingSessionId: uuid("onboarding_session_id").references(() => onboardingSessions.id, { onDelete: "set null" }),
   },
   (t) => [
     index("copilot_conversations_user_last_turn_idx").on(t.userId, t.lastTurnAt),

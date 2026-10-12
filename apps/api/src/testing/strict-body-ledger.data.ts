@@ -388,6 +388,9 @@ export const STRICTNESS_LEDGER: Record<string, LedgerEntry> = {
   "putCopilotAccessBodySchema/override": STRICT(CALLER_ERROR),
   copilotCreateConversationBodySchema: STRICT(CALLER_ERROR),
   copilotTurnBodySchema: STRICT(CALLER_ERROR),
+  // `F3.86` PR 5 (ADR 0099 decision 7).
+  copilotStartOnboardingSkillBodySchema: STRICT(CALLER_ERROR),
+  commitOnboardingBodySchema: STRICT(CALLER_ERROR),
   createPointKeyBodySchema: STRICT(CALLER_ERROR),
   createRtuBodySchema: STRICT(CALLER_ERROR),
   createSessionBodySchema: STRICT(CALLER_ERROR),

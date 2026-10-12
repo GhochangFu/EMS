@@ -13,7 +13,9 @@ import {
   listDashboardTemplatesQuerySchema,
   updateDashboardTemplateBodySchema,
   createCalcParameterBodySchema,
+  commitOnboardingBodySchema,
   copilotCreateConversationBodySchema,
+  copilotStartOnboardingSkillBodySchema,
   copilotTurnBodySchema,
   listCalcParametersQuerySchema,
   updateCalcParameterBodySchema,
@@ -295,6 +297,11 @@ export const BODY_SCHEMAS: Record<string, ZodTypeAny> = {
   // `F3.85` PR 7. Strict: a body naming an organization must be a 400 — the turn's
   // organization is the conversation row's alone (decision 10).
   copilotTurnBodySchema,
+  // `F3.86` PR 5. Strict: a session id sent with the organization must be a 400 — the
+  // route creates the session; it never binds one the caller names.
+  copilotStartOnboardingSkillBodySchema,
+  // `F3.86` PR 5. Strict: a key beside `draftHash` must be a 400, never a silent page commit.
+  commitOnboardingBodySchema,
   createRtuBodySchema,
   createSessionBodySchema,
   createWorkOrderBodySchema,

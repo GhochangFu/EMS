@@ -2,11 +2,16 @@ import "reflect-metadata";
 
 import { expect } from "vitest";
 
+import { AdminModule } from "../admin/admin.module";
+import { OnboardingService } from "../admin/onboarding/onboarding.service";
 import { UserGrantsService } from "../admin/users/user-grants.service";
 import { UsersService } from "../admin/users/users.service";
 import { MasterDataAuditService } from "../admin/master-data-audit.service";
 import { IDENTITY_ADMIN, IdentityAdminModule } from "../identity/identity-admin.module";
+import { COPILOT_ONBOARDING_SKILL } from "./copilot-onboarding-skill";
+import { CopilotSkillService } from "./copilot-skill.service";
 import { CopilotTargetResolver } from "./copilot-target-resolver";
+import { CopilotTurnService } from "./copilot-turn.service";
 import { CopilotModule } from "./copilot.module";
 
 /**
@@ -56,4 +61,22 @@ export function assertTheIdentityAdminTokenResolves(): void {
   expect([...injected(UsersService).values()]).toContain(IDENTITY_ADMIN);
   expect(moduleList(IdentityAdminModule, "exports")).toContain(IDENTITY_ADMIN);
   expect(moduleList(CopilotModule, "imports")).toContain(IdentityAdminModule);
+}
+
+/** `F3.86` PR 5: `COPILOT_ONBOARDING_SKILL` is `OnboardingService` itself, from `AdminModule`, which exports it. */
+export function assertTheOnboardingSkillIsTheOnboardingService(): void {
+  const raw = (Reflect.getMetadata("providers", CopilotModule) as unknown[]) ?? [];
+  const binding = raw.find(
+    (entry) => typeof entry === "object" && entry !== null && "provide" in entry && (entry as { provide: unknown }).provide === COPILOT_ONBOARDING_SKILL,
+  ) as { useExisting?: unknown } | undefined;
+  expect(binding?.useExisting).toBe(OnboardingService);
+  expect(moduleList(CopilotModule, "providers")).toContain(CopilotSkillService);
+  expect(moduleList(CopilotModule, "imports")).toContain(AdminModule);
+  expect(moduleList(AdminModule, "exports")).toContain(OnboardingService);
+}
+
+/** `F3.86` PR 5: the turn service and the skill service inject the seam by token (the controller's class-typed parameters carry none: `copilot-conversations.controller.spec.ts`). */
+export function assertTheSkillSeamIsInjectedByToken(): void {
+  expect([...injected(CopilotTurnService).values()]).toContain(COPILOT_ONBOARDING_SKILL);
+  expect([...injected(CopilotSkillService).values()]).toContain(COPILOT_ONBOARDING_SKILL);
 }

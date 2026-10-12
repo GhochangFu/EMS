@@ -1,0 +1,18 @@
+import { describe, it } from "vitest";
+
+import {
+  aBoundConversationReadCarriesTheSkill,
+  aPlainConversationReadCarriesNoSkill,
+  theEndRouteAnswersWithNoSkill,
+  theStartRouteAnswersTheConversationWithTheSkill,
+  theStartRouteRefusesABadBodyOrId,
+} from "./copilot-skill-routes.spec";
+
+/** Vitest entry point — assertions live in the sibling `.spec` (ADR 0014). */
+describe("F3.86 PR 5 — the onboarding skill on the conversation routes (ADR 0099 decision 7)", () => {
+  it("carries the bound session's state on a read", () => aBoundConversationReadCarriesTheSkill());
+  it("carries no skill key on a plain conversation's read", () => aPlainConversationReadCarriesNoSkill());
+  it("answers the start with the conversation and the skill", () => theStartRouteAnswersTheConversationWithTheSkill());
+  it("refuses a bad start body or id before the start", () => theStartRouteRefusesABadBodyOrId());
+  it("answers the end with skill null", () => theEndRouteAnswersWithNoSkill());
+});

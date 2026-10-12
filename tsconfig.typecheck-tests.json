@@ -216,6 +216,7 @@
     "tests/f3.78-users-admin-reachable.test.ts",
     "tests/f3.22-template-cores.test.ts",
     "tests/f4.204-raw-error-message-render.test.ts",
-    "tests/f4.7-e2e-invariants.test.ts"
+    "tests/f4.7-e2e-invariants.test.ts",
+    "tests/f3.86-copilot-skill-schema.test.ts"
   ]
 }

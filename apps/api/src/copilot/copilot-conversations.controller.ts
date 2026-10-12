@@ -2,6 +2,7 @@ import {
   BadRequestException,
   Body,
   Controller,
+  Delete,
   ForbiddenException,
   Get,
   HttpCode,
@@ -16,6 +17,8 @@ import {
   type CopilotConversationDetailDto,
   type CopilotConversationDto,
   copilotCreateConversationBodySchema,
+  type CopilotSkillStateDto,
+  copilotStartOnboardingSkillBodySchema,
   copilotTurnBodySchema,
   type CopilotTurnResponseDto,
   type JwtPayload,
@@ -29,6 +32,7 @@ import { COPILOT_UNAVAILABLE_MESSAGE, CopilotAccessGuard, CopilotIdentity } from
 import { CopilotAvailabilityService } from "./copilot-availability.service";
 import { CopilotConversationsService } from "./copilot-conversations.service";
 import { CopilotPendingChangesService } from "./copilot-pending-changes.service";
+import { CopilotSkillService } from "./copilot-skill.service";
 import { CopilotTurnService } from "./copilot-turn.service";
 
 /**
@@ -47,6 +51,7 @@ export class CopilotConversationsController {
     private readonly availability: CopilotAvailabilityService,
     private readonly pendingChanges: CopilotPendingChangesService,
     private readonly turns: CopilotTurnService,
+    private readonly skills: CopilotSkillService,
   ) {}
 
   @Post()
@@ -80,14 +85,73 @@ export class CopilotConversationsController {
   async get(
     @Param("id") id: string,
     @CopilotIdentity() identity: ResolvedIdentity,
+    @CurrentUser() user: JwtPayload,
   ): Promise<CopilotConversationDetailDto> {
     await this.pendingChanges.sweepStuck(identity.id);
     const parsed = idParamSchema.safeParse(id);
     if (!parsed.success) throw new NotFoundException("Conversation not found");
-    const found = await this.conversations.get(identity.id, parsed.data);
+    // F3.86 PR 5: a skill conversation carries its session's state, so the dock reloads into the skill.
+    return this.detail(identity, parsed.data, (sessionId) => (sessionId ? this.skills.stateOf(user, sessionId) : undefined));
+  }
+
+  /**
+   * `F3.86` PR 5 / ADR 0099 decision 7 — starts the onboarding skill in this
+   * conversation (`CopilotSkillService.start` holds the order). 201 with the
+   * conversation, its opening line and the new session's state.
+   */
+  @Post(":id/skills/onboarding")
+  @HttpCode(201)
+  async startOnboarding(
+    @Param("id") id: string,
+    @Body() body: unknown,
+    @CopilotIdentity() identity: ResolvedIdentity,
+    @CurrentUser() user: JwtPayload,
+  ): Promise<CopilotConversationDetailDto> {
+    await this.pendingChanges.sweepStuck(identity.id);
+    const parsed = idParamSchema.safeParse(id);
+    if (!parsed.success) throw new NotFoundException("Conversation not found");
+    let organizationId: string;
+    try {
+      organizationId = copilotStartOnboardingSkillBodySchema.parse(body).organizationId;
+    } catch (err) {
+      if (err instanceof ZodError) throw new BadRequestException(err.flatten());
+      throw err;
+    }
+    const skill = await this.skills.start(identity, user, parsed.data, organizationId);
+    return this.detail(identity, parsed.data, () => skill);
+  }
+
+  /** `F3.86` PR 5 — ends the skill here; the draft stays for the onboarding page. 200 with the conversation. */
+  @Delete(":id/skills/onboarding")
+  @HttpCode(200)
+  async endOnboarding(
+    @Param("id") id: string,
+    @CopilotIdentity() identity: ResolvedIdentity,
+  ): Promise<CopilotConversationDetailDto> {
+    await this.pendingChanges.sweepStuck(identity.id);
+    const parsed = idParamSchema.safeParse(id);
+    if (!parsed.success) throw new NotFoundException("Conversation not found");
+    await this.skills.end(identity, parsed.data);
+    return this.detail(identity, parsed.data, () => null);
+  }
+
+  /**
+   * The conversation, its open changes and its skill: `skillOf` gets the bound
+   * session id (or null) and answers the state, `null`, or `undefined` for a
+   * plain conversation, which carries no `skill` key.
+   */
+  private async detail(
+    identity: ResolvedIdentity,
+    conversationId: string,
+    skillOf: (sessionId: string | null) => CopilotSkillStateDto | null | undefined | Promise<CopilotSkillStateDto | null | undefined>,
+  ): Promise<CopilotConversationDetailDto> {
+    const found = await this.conversations.get(identity.id, conversationId);
     if (!found) throw new NotFoundException("Conversation not found");
+    const { onboardingSessionId, ...conversation } = found;
+    const skill = await skillOf(onboardingSessionId ?? null);
     // F3.85 PR 8: the cards still waiting, so a remount or the poll after a Confirm shows a follow-up's proposal.
-    return { ...found, pendingChanges: await this.pendingChanges.listOpen(identity.id, parsed.data) };
+    const pendingChanges = await this.pendingChanges.listOpen(identity.id, conversationId);
+    return { ...conversation, pendingChanges, ...(skill !== undefined ? { skill } : {}) };
   }
 
   /**

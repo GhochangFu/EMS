@@ -17,7 +17,7 @@ import { FileInterceptor } from "@nestjs/platform-express";
 import type { Response } from "express";
 import { ZodError } from "zod";
 
-import type { JwtPayload } from "@bms/shared";
+import { commitOnboardingBodySchema, type JwtPayload } from "@bms/shared";
 
 import { CurrentUser } from "../../auth/current-user.decorator";
 import { JwtAuthGuard } from "../../auth/jwt-auth.guard";
@@ -185,9 +185,21 @@ export class OnboardingController {
     return this.service.validate(user, idParamSchema.parse(id));
   }
 
+  /**
+   * `F3.86` PR 5 (ADR 0099 decision 7): an empty body is the page's Commit; a
+   * `draftHash` binds the commit to that draft (400 when it has changed).
+   */
   @Post("sessions/:id/commit")
   @HttpCode(HttpStatus.OK)
-  async commit(@Param("id") id: string, @CurrentUser() user: JwtPayload) {
-    return this.service.commit(user, idParamSchema.parse(id));
+  async commit(@Param("id") id: string, @Body() body: unknown, @CurrentUser() user: JwtPayload) {
+    try {
+      const { draftHash } = commitOnboardingBodySchema.parse(body ?? {});
+      return await this.service.commit(user, idParamSchema.parse(id), draftHash);
+    } catch (err) {
+      if (err instanceof ZodError) {
+        throw new BadRequestException(err.flatten());
+      }
+      throw err;
+    }
   }
 }

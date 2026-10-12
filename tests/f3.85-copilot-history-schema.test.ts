@@ -229,6 +229,8 @@ describe("F3.85 migration 0105 — the copilot history and pending-change tables
       "title",
       "created_at",
       "last_turn_at",
+      // `F3.86` PR 5, migration 0107 (`tests/f3.86-copilot-skill-schema.test.ts` pins its SQL).
+      "onboarding_session_id",
     ]);
     expect(columnsOf(drizzleBlock(schema, "copilotMessages"))).toEqual([
       "id",

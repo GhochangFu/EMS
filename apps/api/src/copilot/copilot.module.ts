@@ -1,7 +1,9 @@
 import { type MiddlewareConsumer, Module, type NestModule } from "@nestjs/common";
 import { APP_INTERCEPTOR } from "@nestjs/core";
 
+import { AdminModule } from "../admin/admin.module";
 import { LocationsAdminService } from "../admin/locations/locations.service";
+import { OnboardingService } from "../admin/onboarding/onboarding.service";
 import { UserGrantsService } from "../admin/users/user-grants.service";
 import { UsersService } from "../admin/users/users.service";
 import { MasterDataAuditService } from "../admin/master-data-audit.service";
@@ -24,7 +26,9 @@ import { COPILOT_USAGE_LIMITS, readCopilotUsageLimits } from "./copilot-config";
 import { CopilotContextMiddleware } from "./copilot-context.middleware";
 import { CopilotConversationsController } from "./copilot-conversations.controller";
 import { CopilotConversationsService } from "./copilot-conversations.service";
+import { COPILOT_ONBOARDING_SKILL } from "./copilot-onboarding-skill";
 import { CopilotPendingChangesService } from "./copilot-pending-changes.service";
+import { CopilotSkillService } from "./copilot-skill.service";
 import { COPILOT_PROPOSE_TOOLS, CopilotProposeToolSet } from "./copilot-propose-tools";
 import { COPILOT_READ_TOOLS } from "./copilot-read-tools";
 import { CopilotStatusController } from "./copilot-status.controller";
@@ -90,9 +94,18 @@ import { CopilotReadToolSet } from "./tools/copilot-read-tool-set";
  * `DatabaseModule`'s tokens — and `IdentityAdminModule` gives `UsersService`
  * its `IDENTITY_ADMIN` (the resolver never calls Keycloak). Neither module
  * imports this one.
+ *
+ * `F3.86` PR 5 (decision 7): the onboarding skill. `AdminModule` exports
+ * `OnboardingService` and this module imports it, so the skill runs the one
+ * onboarding provider tree; `COPILOT_ONBOARDING_SKILL` narrows it to the three
+ * methods the copilot calls. `AdminModule`'s imports (vocabularies, calc,
+ * control room, identity, LLM) never reach this module, and the worker never
+ * reaches either (`CopilotPurgeModule` is the worker's leaf), so the graph
+ * stays acyclic. `CopilotSkillService` starts, ends and reads the skill.
  */
 @Module({
   imports: [
+    AdminModule,
     DatabaseModule,
     AuthModule,
     IdentityAdminModule,
@@ -121,6 +134,8 @@ import { CopilotReadToolSet } from "./tools/copilot-read-tool-set";
     { provide: COPILOT_TARGETS, useExisting: CopilotTargetResolver },
     CopilotProposeToolSet,
     { provide: COPILOT_PROPOSE_TOOLS, useExisting: CopilotProposeToolSet },
+    { provide: COPILOT_ONBOARDING_SKILL, useExisting: OnboardingService },
+    CopilotSkillService,
     { provide: COPILOT_USAGE_LIMITS, useFactory: () => readCopilotUsageLimits(process.env) },
     MasterDataAuditService,
     { provide: APP_INTERCEPTOR, useClass: CopilotChangeInterceptor },

@@ -743,6 +743,13 @@
       "when": 1791653100000,
       "tag": "0106_copilot_usage",
       "breakpoints": true
+    },
+    {
+      "idx": 108,
+      "version": "7",
+      "when": 1791822800000,
+      "tag": "0107_copilot_skill",
+      "breakpoints": true
     }
   ]
 }
