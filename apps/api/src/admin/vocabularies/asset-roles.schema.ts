@@ -20,7 +20,7 @@ import { z } from "zod";
  * here removes the distinction rather than relying on it.
  *
  * The bound is `min(1).max(64)`, the same as `assetRoleCodeSchema` and the same
- * as `code varchar(64)`. `point-keys.schema.ts` declares its own bound locally
+ * as `code varchar(64)`. `contracts/point-key-writes.ts` declares its own bound locally
  * for the same reason, so this is the house pattern and not a new one.
  * `tests/f3.40-asset-role-write-path.test.ts` holds the two together.
  */

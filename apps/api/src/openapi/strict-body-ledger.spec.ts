@@ -400,7 +400,7 @@ export const BODY_SCHEMAS: Record<string, ZodTypeAny> = {
  * a multipart `file` part rather than as JSON. It is `.strict()` anyway — a
  * caller who spells the parameter wrong must be told, not handed a whole
  * location's mappings — with the reasoning beside the schema in
- * `asset-points.schema.ts`. It carries **no** `STRICTNESS_LEDGER` entry, and
+ * `packages/shared/src/contracts/asset-point-writes.ts`. It carries **no** `STRICTNESS_LEDGER` entry, and
  * that is not an omission: the walker reads `BODY_SCHEMAS` only, so an entry
  * here would be a decision no gate holds, and
  * `testTheLedgerHasNoEntriesForNodesThatAreGone` refuses one.

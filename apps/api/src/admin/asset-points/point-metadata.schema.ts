@@ -6,7 +6,7 @@
  * in `F3.85` PR 11a (plan §11.3 Unit 1), because the template point body that
  * spreads `pointMetadataBodyShape` moved to `packages/shared` so the copilot
  * catalog can name it by identity. This file re-exports them, so
- * `asset-points.schema.ts`, the asset-point service, the mapping-sheet plan and
+ * the asset-point service, the mapping-sheet plan and
  * the template migration keep their imports unchanged.
  */
 export {
