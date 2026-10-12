@@ -75,7 +75,7 @@ const BY_ENTRY: Readonly<Record<string, readonly QueryKey[]>> = {
   // A rename or move also changes the labels the point rows and a group's members join in
   // (`assetCode`, `assetName`, `locationName`; `assetDomain`).
   "asset.update": [ASSETS, ASSET_SUMMARY, ASSET_POINTS, ASSET_GROUPS],
-  "asset.deactivate": [ASSETS, ASSET_SUMMARY],
+  "asset.deactivate": [ASSETS, ASSET_SUMMARY, ASSET_POINTS],
   "asset.reactivate": [ASSETS, ASSET_SUMMARY],
   "assetPoint.create": [ASSET_POINTS],
   "assetPoint.update": [ASSET_POINTS],
