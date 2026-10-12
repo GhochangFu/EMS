@@ -32,11 +32,17 @@ if (missing.length > 0) {
 const JWT_SECRET: string = (process.env.JWT_SECRET ??= randomBytes(32).toString("hex"));
 process.env.E2E_RUN_ID ??= `E2E-${Date.now().toString(36).toUpperCase()}`;
 
-/** `process.env` with the unset entries dropped, plus the overrides. */
+/**
+ * Variables no server may inherit. `roles` and `migrate` need the superuser
+ * URL; `apps/api/.env.example` says it "must never reach the running API".
+ */
+const WITHHELD = new Set(["DATABASE_URL_SUPERUSER"]);
+
+/** `process.env` with the unset and withheld entries dropped, plus the overrides. */
 function envWith(overrides: Record<string, string>): Record<string, string> {
   const base: Record<string, string> = {};
   for (const [key, value] of Object.entries(process.env)) {
-    if (value !== undefined) base[key] = value;
+    if (value !== undefined && !WITHHELD.has(key)) base[key] = value;
   }
   return { ...base, ...overrides };
 }
