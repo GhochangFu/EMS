@@ -679,9 +679,9 @@ Process (`AGENTS.md` §10).
   and correcting its §2 CI/CD row~~ — **done**, AGENTS.md §4.6.
 
 
-### End-to-end browser suite (F4.7) — built, awaiting CI
-- **Status:** built on `feat/f4-7-playwright-e2e`; the labeled CI run is the
-  remaining gate (ADR 0100).
+### End-to-end browser suite (F4.7) — done
+- **Status:** done 2026-10-12 (ADR 0100, #819). The labeled CI run passed
+  7 tests in 16.9 s; the job took 3 min 18 s.
 - **Goal:** a browser layer that runs on demand. Five Playwright specs on
   Chromium (local login, live simulator value, alarm acknowledge, master-data
   chain, location scope) against the built web bundle, the API from source and
