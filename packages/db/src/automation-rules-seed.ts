@@ -702,7 +702,7 @@ export function ladderSuffixesNotHeld(assetRules: readonly AssetRuleForLadder[])
  * Code review and migration review, PR #100: an earlier draft keyed only
  * `DEMAND_HIGH` on the condition tuple and left the other four on
  * `upsertRuleByCode`'s code match. Asset `code` is operator-editable
- * (`apps/api/src/admin/assets/assets.schema.ts` has no case/charset
+ * (`packages/shared/src/contracts/asset-writes.ts` has no case/charset
  * constraint on it) and `upsertRuleByCode` only case-folds its *stored* side
  * — a rename, or a lowercase code, generates a code that does not match the
  * existing row, so a re-seed inserted a second rule with the identical

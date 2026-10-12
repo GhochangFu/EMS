@@ -42,7 +42,7 @@ export async function fetchResolvedSiteControlRoomView(
   );
 }
 
-/** The body of `POST /admin/locations/:id/site-layout` (`siteLayoutBodySchema`, `site-layout.schema.ts`). */
+/** The body of `POST /admin/locations/:id/site-layout` (`siteLayoutBodySchema`, `site-layout-writes.ts`). */
 export type MakeSiteLayoutBody = {
   /** Template tab key → asset group id, for the tabs the last answer called ambiguous. */
   tabGroups?: Record<string, string>;

@@ -1,8 +1,13 @@
-import { randomUUID } from "node:crypto";
+import { assetPointBulkUpdateBodySchema } from "./asset-point-writes";
+import { MAX_ASSET_POINT_BULK_IDS } from "./point-metadata";
 
-import { MAX_ASSET_POINT_BULK_IDS } from "@bms/shared";
-
-import { assetPointBulkUpdateBodySchema } from "./asset-points.schema";
+/**
+ * A random v4 uuid. `packages/shared` has no Node types, so this stands in for the
+ * `randomUUID` of `node:crypto` that the spec used while it lived in `apps/api` (`F3.86` PR 1).
+ */
+function randomUUID(): string {
+  return "xxxxxxxx-xxxx-4xxx-8xxx-xxxxxxxxxxxx".replace(/x/g, () => Math.floor(Math.random() * 16).toString(16));
+}
 
 /**
  * `F2.7` Unit I / ADR 0056 decision 8 — the bulk-update body, which is the only

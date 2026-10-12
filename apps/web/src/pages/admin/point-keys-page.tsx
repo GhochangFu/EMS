@@ -21,7 +21,7 @@ import type { AuthUser } from "../../stores/auth-store";
 
 type PointKeysAdminPageProps = { user: AuthUser };
 
-/** `smallint`'s ceiling — the API body's `.max()` (`point-keys.schema.ts`). */
+/** `smallint`'s ceiling — the API body's `.max()` (`point-key-writes.ts`). */
 const HEADLINE_RANK_MAX = 32767;
 const HEADLINE_RANK_ERROR = `Headline rank must be a whole number from 1 to ${HEADLINE_RANK_MAX}.`;
 

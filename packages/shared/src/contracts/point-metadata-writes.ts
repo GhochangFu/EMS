@@ -17,7 +17,7 @@ type PointMetadataFields = z.infer<typeof pointMetadataFieldsSchema>;
  * `F2.7` / ADR 0056 decisions 2 and 3 — the **write** side of the five point
  * metadata fields, shared by every body that authors them: the template point
  * (`asset-templates.schema.ts`), the single asset point
- * (`asset-points.schema.ts`), and later the bulk editor and the mapping sheet.
+ * (`asset-point-writes.ts`), and later the bulk editor and the mapping sheet.
  *
  * Three rules, in two places, and the split is the ADR's:
  *

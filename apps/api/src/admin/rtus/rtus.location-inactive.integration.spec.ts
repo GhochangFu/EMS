@@ -13,7 +13,7 @@ import type { RtusAdminService } from "./rtus.service";
  * ruling 15, Amendment 1 A4 and A5): `create` and `reactivate` answer 409
  * `location_inactive`; a rename of an RTU that already sits on an inactive
  * node is still allowed. The RTU update cannot move an RTU (`locationId` is
- * not in its schema — `rtus.schema.spec.ts` pins that), so A4's move arm is
+ * not in its schema — `rtu-writes.spec.ts` pins that), so A4's move arm is
  * N/A here. Assertions live here (§4.6);
  * `rtus.location-inactive.integration.test.ts` owns the pools.
  */

@@ -8,7 +8,7 @@ import {
   assertGeneratedShapeParses,
   assertMismatchedPairIsRefused,
   assertUnknownKeyIsRefused,
-} from "./site-control-room-view.schema.spec";
+} from "./site-control-room-view-writes.spec";
 
 /**
  * `F3.67` — Vitest wrapper for `putSiteControlRoomViewBodySchema`. Assertions

@@ -1,4 +1,4 @@
-import { createAssetBodySchema, updateAssetBodySchema } from "./assets.schema";
+import { createAssetBodySchema, updateAssetBodySchema } from "./asset-writes";
 
 /**
  * F3.74 (ADR 0088) — `rating` and `tripCause` are trimmed on the server, and a blank value is

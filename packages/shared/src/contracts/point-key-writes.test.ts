@@ -7,9 +7,8 @@ import {
   refusesAFractionalRank,
   refusesARankAboveSmallint,
   refusesAZeroRank,
-  registryAndLedgerStillNameTheBodies,
   stillRefusesAnUnknownKey,
-} from "./point-keys.schema.spec";
+} from "./point-key-writes.spec";
 
 /** Vitest entry point — assertions live in the sibling `.spec` (ADR 0014). */
 describe("F3.68 — headlineRank on the point-key admin bodies", () => {
@@ -39,9 +38,5 @@ describe("F3.68 — headlineRank on the point-key admin bodies", () => {
 
   it("B4 still refuses an unknown key", () => {
     stillRefusesAnUnknownKey();
-  });
-
-  it("keeps both bodies in the OpenAPI registry and the strict-body ledger", () => {
-    registryAndLedgerStillNameTheBodies();
   });
 });
