@@ -3,7 +3,14 @@ import {
   adminRtuSummaryDtoSchema,
   rtusListResponseSchema,
 } from "@bms/shared/contracts";
-import type { AdminRtuDto, AdminRtuSummaryDto, MasterDataActiveFilter, RtusListResponse } from "@bms/shared";
+import type {
+  AdminRtuDto,
+  AdminRtuSummaryDto,
+  CreateRtuBody,
+  MasterDataActiveFilter,
+  RtusListResponse,
+  UpdateRtuBody,
+} from "@bms/shared";
 
 import { adminFetch } from "./client";
 
@@ -25,19 +32,8 @@ export async function fetchAdminRtuSummary(id: string): Promise<AdminRtuSummaryD
   return adminFetch(`/admin/rtus/${id}`, adminRtuSummaryDtoSchema);
 }
 
-export async function createAdminRtu(
-  input: {
-    locationId: string;
-    code: string;
-    displayName: string;
-    sourceType: AdminRtuDto["sourceType"];
-    domain?: string;
-    externalRtuId?: number;
-    rtuCode?: string;
-    mqttTopic?: string;
-    ingestEnabled?: boolean;
-  },
-): Promise<AdminRtuDto> {
+/** `POST /admin/rtus`. `F3.86` PR 3a: the body is the route's own (`@bms/shared`, ADR 0030). */
+export async function createAdminRtu(input: CreateRtuBody): Promise<AdminRtuDto> {
   return adminFetch("/admin/rtus", adminRtuDtoSchema, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -45,19 +41,11 @@ export async function createAdminRtu(
   });
 }
 
-export async function updateAdminRtu(
-  id: string,
-  input: Partial<{
-    code: string;
-    displayName: string;
-    sourceType: AdminRtuDto["sourceType"];
-    domain: string;
-    // `""` clears the column: the PATCH body is optional-but-not-nullable
-    // (`rtu-writes.ts`, `F4.60`), so omit the key to leave it unchanged.
-    rtuCode: string;
-    ingestEnabled: boolean;
-  }>,
-): Promise<AdminRtuDto> {
+/**
+ * `PATCH /admin/rtus/:id`. `""` clears `rtuCode`: the body is optional-but-not-nullable
+ * (`rtu-writes.ts`, `F4.60`), so omit a key to leave it unchanged.
+ */
+export async function updateAdminRtu(id: string, input: UpdateRtuBody): Promise<AdminRtuDto> {
   return adminFetch(`/admin/rtus/${id}`, adminRtuDtoSchema, {
     method: "PATCH",
     headers: { "Content-Type": "application/json" },

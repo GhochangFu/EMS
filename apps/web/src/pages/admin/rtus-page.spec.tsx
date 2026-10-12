@@ -116,6 +116,22 @@ function onlyBody(fn: unknown): Record<string, unknown> {
   return args[args.length - 1] as Record<string, unknown>;
 }
 
+/**
+ * `F3.86` PR 3a — the form is the `rtu.create` / `rtu.update` wizard: the device ID is on
+ * the Source step, after Basics; Next through the steps, then Submit on Review.
+ */
+async function toSourceStep(): Promise<void> {
+  await userEvent.click(screen.getByRole("button", { name: "Next" }));
+  await screen.findByRole("region", { name: "Source" });
+}
+
+async function submitWizard(): Promise<void> {
+  for (let step = 0; step < 5 && !screen.queryByRole("button", { name: "Submit" }); step += 1) {
+    await userEvent.click(screen.getByRole("button", { name: "Next" }));
+  }
+  await userEvent.click(screen.getByRole("button", { name: "Submit" }));
+}
+
 async function openEdit(code: string): Promise<void> {
   const row = await rowOf(code);
   await userEvent.click(within(row).getByRole("button", { name: "Edit" }));
@@ -141,8 +157,9 @@ export async function createSendsTheTrimmedDeviceId(): Promise<void> {
   await user.selectOptions(await screen.findByLabelText("Location"), LOCATION_ID);
   await user.type(screen.getByLabelText("Code"), "F4182-NEW");
   await user.type(screen.getByLabelText("Display name"), "Spec new");
+  await toSourceStep();
   await user.type(screen.getByLabelText(DEVICE_ID_LABEL), "  861736076128260 ");
-  await user.click(screen.getByRole("button", { name: "Save" }));
+  await submitWizard();
   await waitFor(() => expect(rtusApi.createAdminRtu).toHaveBeenCalledTimes(1));
   const body = onlyBody(rtusApi.createAdminRtu);
   expect(body.rtuCode).toBe("861736076128260");
@@ -158,8 +175,9 @@ export async function createWithABlankDeviceIdOmitsTheKey(): Promise<void> {
   await user.selectOptions(await screen.findByLabelText("Location"), LOCATION_ID);
   await user.type(screen.getByLabelText("Code"), "F4182-NEW");
   await user.type(screen.getByLabelText("Display name"), "Spec new");
+  await toSourceStep();
   await user.type(screen.getByLabelText(DEVICE_ID_LABEL), "   ");
-  await user.click(screen.getByRole("button", { name: "Save" }));
+  await submitWizard();
   await waitFor(() => expect(rtusApi.createAdminRtu).toHaveBeenCalledTimes(1));
   const body = onlyBody(rtusApi.createAdminRtu);
   expect(body.code).toBe("F4182-NEW");
@@ -171,12 +189,12 @@ export async function editWithTheDeviceIdUntouchedOmitsTheKey(): Promise<void> {
   const user = userEvent.setup();
   renderPage();
   await openEdit(UNROUTED.code);
-  const field = screen.getByLabelText(DEVICE_ID_LABEL);
-  expect(field).toHaveValue("");
-  const name = screen.getByLabelText("Display name");
+  const name = await screen.findByLabelText("Display name");
   await user.clear(name);
   await user.type(name, "Renamed B");
-  await user.click(screen.getByRole("button", { name: "Save" }));
+  await toSourceStep();
+  expect(screen.getByLabelText(DEVICE_ID_LABEL)).toHaveValue("");
+  await submitWizard();
   await waitFor(() => expect(rtusApi.updateAdminRtu).toHaveBeenCalledTimes(1));
   const body = onlyBody(rtusApi.updateAdminRtu);
   expect(body.displayName).toBe("Renamed B");
@@ -188,11 +206,12 @@ export async function editSendsAChangedDeviceId(): Promise<void> {
   const user = userEvent.setup();
   renderPage();
   await openEdit(ROUTED.code);
+  await toSourceStep();
   const field = screen.getByLabelText(DEVICE_ID_LABEL);
   expect(field).toHaveValue("861736076081915");
   await user.clear(field);
   await user.type(field, "861736076128245 ");
-  await user.click(screen.getByRole("button", { name: "Save" }));
+  await submitWizard();
   await waitFor(() => expect(rtusApi.updateAdminRtu).toHaveBeenCalledTimes(1));
   expect(vi.mocked(rtusApi.updateAdminRtu).mock.calls[0]?.[0]).toBe(ROUTED.id);
   expect(onlyBody(rtusApi.updateAdminRtu).rtuCode).toBe("861736076128245");
@@ -203,8 +222,9 @@ export async function editClearingTheDeviceIdSendsEmpty(): Promise<void> {
   const user = userEvent.setup();
   renderPage();
   await openEdit(ROUTED.code);
+  await toSourceStep();
   await user.clear(screen.getByLabelText(DEVICE_ID_LABEL));
-  await user.click(screen.getByRole("button", { name: "Save" }));
+  await submitWizard();
   await waitFor(() => expect(rtusApi.updateAdminRtu).toHaveBeenCalledTimes(1));
   expect(onlyBody(rtusApi.updateAdminRtu).rtuCode).toBe("");
 }
@@ -222,8 +242,9 @@ export async function aTakenDeviceIdShowsTheApiSentence(): Promise<void> {
     new ApiError(JSON.stringify({ message: TAKEN_MESSAGE, error: "Conflict", statusCode: 409 }), 409),
   );
   await openEdit(UNROUTED.code);
+  await toSourceStep();
   await user.type(screen.getByLabelText(DEVICE_ID_LABEL), "861736076081915");
-  await user.click(screen.getByRole("button", { name: "Save" }));
+  await submitWizard();
   expect(await screen.findByText(TAKEN_MESSAGE)).toBeInTheDocument();
   expect(screen.queryByText(/"statusCode"/)).toBeNull();
   // The dialog stays open, so the admin can correct the value.
