@@ -71,6 +71,8 @@ function recorder(answers: Partial<Record<string, boolean>> = {}, role: UserRole
       answer("canManageDashboard", organizationId, scope),
     canManageTemplate: (_user: JwtPayload, organizationId: string) => answer("canManageTemplate", organizationId),
     isGlobalAdmin: () => answer("isGlobalAdmin"),
+    isOrganizationLevelAdmin: (_user: JwtPayload, organizationId: string) =>
+      answer("isOrganizationLevelAdmin", organizationId),
   };
   return { calls, access: access as never };
 }
@@ -113,6 +115,39 @@ export async function aLocationResolvesWithItsSiteCheck(ctx: ResolverCtx): Promi
   const denied = recorder({ canManageLocation: false });
   expect(await resolverWith(ctx, denied.access).resolve(entry, { id: ctx.locationA }, {}, [ctx.orgA], JWT)).toBeNull();
   expect(denied.calls).toContainEqual(["canManageLocation", ctx.locationA]);
+}
+
+/**
+ * `F3.86` PR 3a (plan §4.9, owed by this PR) — a location update whose body
+ * names `parentId` is a move, which `LocationsAdminService.update` allows an
+ * organization-level administrator of the node's organization only, whatever
+ * the value (`null`, a move to the top level, included). The resolver asks
+ * `isOrganizationLevelAdmin` on the location's organization, after the site
+ * check; a body without `parentId` never asks it.
+ */
+export async function aLocationMoveNeedsAnOrganizationLevelAdmin(ctx: ResolverCtx): Promise<void> {
+  const entry = fixture({ kind: "location", param: "id" });
+  const toRoot = { parentId: null };
+  // The refusal first, so a resolver that skips the check reddens here, at the claim.
+  const below = recorder({ isOrganizationLevelAdmin: false });
+  expect(await resolverWith(ctx, below.access).resolve(entry, { id: ctx.locationA }, toRoot, [ctx.orgA], JWT)).toBeNull();
+  expect(below.calls).toContainEqual(["isOrganizationLevelAdmin", ctx.orgA]);
+  const orgAdmin = recorder();
+  expect(await resolverWith(ctx, orgAdmin.access).resolve(entry, { id: ctx.locationA }, toRoot, [ctx.orgA], JWT)).toMatchObject({
+    organizationId: ctx.orgA,
+    targetName: RESOLVER_NAMES.locationA,
+  });
+  expect(orgAdmin.calls).toEqual([
+    ["requireMasterDataUser"],
+    ["canManageLocation", ctx.locationA],
+    ["isOrganizationLevelAdmin", ctx.orgA],
+  ]);
+  // The same caller, without `parentId`: the route asks nothing more, so neither does the resolver.
+  const rename = recorder({ isOrganizationLevelAdmin: false });
+  expect(await resolverWith(ctx, rename.access).resolve(entry, { id: ctx.locationA }, { name: "Renamed" }, [ctx.orgA], JWT)).toMatchObject({
+    organizationId: ctx.orgA,
+  });
+  expect(rename.calls.map(([name]) => name)).not.toContain("isOrganizationLevelAdmin");
 }
 
 /** `rtu`, `assetGroup`, `assetGroupMember`: the row's own site is the one checked, not the id in the path. */

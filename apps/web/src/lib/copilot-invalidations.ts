@@ -27,6 +27,11 @@ const LOCATIONS: QueryKey = ["admin", "locations"];
 const SITE_VIEW: QueryKey = ["control-room", "site-view"];
 // `F3.86` PR 3c: the point-key page and the two pickers that list the catalog.
 const POINT_KEYS: QueryKey = ["admin", "point-keys"];
+// `F3.86` PR 3a: the summaries the breadcrumb and the RTU and asset pages name (`admin-breadcrumb.tsx`),
+// and the RTU lists (`rtus-page.tsx`, `hierarchy-filter-bar.tsx`, `assets-page.tsx`).
+const LOCATION_SUMMARY: QueryKey = ["admin", "location-summary"];
+const RTUS: QueryKey = ["admin", "rtus"];
+const RTU_SUMMARY: QueryKey = ["admin", "rtu-summary"];
 
 const BY_ENTRY: Readonly<Record<string, readonly QueryKey[]>> = {
   "dashboard.create": [DASHBOARDS],
@@ -52,6 +57,14 @@ const BY_ENTRY: Readonly<Record<string, readonly QueryKey[]>> = {
   "user.reactivate": [USERS],
   "userGrant.add": [USERS],
   "userGrant.remove": [USERS],
+  "location.create": [LOCATIONS, LOCATION_SUMMARY],
+  "location.update": [LOCATIONS, LOCATION_SUMMARY],
+  "location.deactivate": [LOCATIONS, LOCATION_SUMMARY],
+  "location.reactivate": [LOCATIONS, LOCATION_SUMMARY],
+  "rtu.create": [RTUS, RTU_SUMMARY],
+  "rtu.update": [RTUS, RTU_SUMMARY],
+  "rtu.deactivate": [RTUS, RTU_SUMMARY],
+  "rtu.reactivate": [RTUS, RTU_SUMMARY],
   "location.controlRoomView.set": [LOCATIONS, SITE_VIEW],
   // The copy makes a dashboard, possibly asset groups, and sets the site's view to the copy.
   "location.siteLayout.make": [SITE_VIEW, LOCATIONS, DASHBOARDS, ASSET_GROUPS],
