@@ -123,6 +123,18 @@ export async function makeSiteLayoutPostsTheBody(): Promise<void> {
   expect(answer).toEqual({ kind: "made", result: MADE_BODY });
 }
 
+/**
+ * A4b (`F3.86` PR 3d) — the site-layout wizard sends this request alone, so it is not a copilot
+ * change: no `X-Copilot-Change` header, beside the route and body as the positive.
+ */
+export async function makeSiteLayoutSendsNoCopilotHeader(): Promise<void> {
+  const seen = stubFetch(201, MADE_BODY);
+  await makeSiteLayout(LOCATION_ID, {});
+  expect(new URL(seen().url).pathname).toBe(`/api/v1/admin/locations/${LOCATION_ID}/site-layout`);
+  expect(JSON.parse(String(seen().init.body))).toEqual({});
+  expect(new Headers(seen().init.headers).get("X-Copilot-Change")).toBeNull();
+}
+
 /** A5 — a 409 whose body lists `ambiguous` answers the candidates from that body (no second read). */
 export async function makeSiteLayoutReadsTheAmbiguousBody(): Promise<void> {
   stubFetch(409, AMBIGUOUS_BODY);

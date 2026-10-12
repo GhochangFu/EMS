@@ -4,22 +4,18 @@ import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import type { AdminLocationDto, MasterDataActiveFilter } from "@bms/shared";
 
-import { adminAssetGroupsQueryKey, fetchAdminAssetGroups } from "../../api/admin/asset-groups";
 import { fetchAdminOrganizations } from "../../api/admin/organizations";
 import {
   createAdminLocation,
   deactivateAdminLocation,
   fetchAdminLocations,
   fetchAdminLocationTypes,
-  fetchSiteControlRoomView,
-  putSiteControlRoomView,
   reactivateAdminLocation,
   updateAdminLocation,
 } from "../../api/admin/locations";
-import { fetchDashboards } from "../../api/dashboards";
 import { refreshScope } from "../../api/login";
 import { ActiveFilterBar } from "../../components/admin/active-filter-bar";
-import { ControlRoomViewField } from "../../components/admin/control-room-view-field";
+import { ControlRoomViewWizard } from "../../components/admin/control-room-view-wizard";
 import {
   HierarchyFilterBar,
   type HierarchySelection,
@@ -31,13 +27,6 @@ import { SectionCard } from "../../components/section-card";
 import { StatusPill } from "../../components/status-pill";
 import { canCreateLocations, canMoveLocations, isGlobalAdmin } from "../../lib/admin-access";
 import { locationTreeOptions, subtreeIds } from "../../lib/location-tree";
-import {
-  isEligibleSiteViewDashboard,
-  siteViewDraftChanged,
-  siteViewDraftFromSetting,
-  siteViewPayloadFromDraft,
-  type SiteViewDraft,
-} from "../../lib/site-control-room-view";
 import { apiErrorMessage } from "../../lib/api-error-message";
 import { useAuthStore, type AuthUser } from "../../stores/auth-store";
 
@@ -89,9 +78,8 @@ export function LocationsAdminPage({ user }: LocationsAdminPageProps) {
   const [listError, setListError] = useState<string | null>(null);
   /** `F2.10` — the move the administrator is asked to confirm; `null` while none is pending. */
   const [pendingMove, setPendingMove] = useState<{ toParentId: string | null } | null>(null);
-  /** `F3.67` — `null` until the admin touches the Control Room view field, so an untouched
-   * field is never "changed" and never `PUT`. */
-  const [viewDraft, setViewDraft] = useState<SiteViewDraft | null>(null);
+  /** `F3.86` PR 3d — the location whose Control Room view wizard is open; `null` while none is. */
+  const [viewing, setViewing] = useState<AdminLocationDto | null>(null);
   const timezones = useMemo(browserTimezones, []);
 
   useEffect(() => {
@@ -140,37 +128,6 @@ export function LocationsAdminPage({ user }: LocationsAdminPageProps) {
   /** On edit, whether the administrator picked another parent — the only save that sends `parentId`. */
   const parentChanged =
     editing !== null && canMove && form.parentId !== (editing.parentId ?? "");
-
-  // `F3.67` / ADR 0076 decision 3 — the Control Room view field, Edit modal only. The
-  // setting's key sits under `["admin", "locations"]`, so the save's invalidation refreshes it.
-  const viewEnabled = modalOpen && editing !== null;
-  const viewQ = useQuery({
-    queryKey: ["admin", "locations", editing?.id, "control-room-view"],
-    queryFn: () => fetchSiteControlRoomView(editing!.id),
-    enabled: viewEnabled,
-  });
-  const viewDashboardsQ = useQuery({
-    queryKey: ["dashboards", "list", editing?.organizationId],
-    queryFn: () => fetchDashboards(editing!.organizationId),
-    enabled: viewEnabled,
-  });
-  const viewGroupsQ = useQuery({
-    queryKey: adminAssetGroupsQueryKey(editing?.id),
-    queryFn: () => fetchAdminAssetGroups(editing!.id),
-    enabled: viewEnabled,
-  });
-  const storedView = viewQ.data ? siteViewDraftFromSetting(viewQ.data) : null;
-  const eligibleDashboards = useMemo(() => {
-    if (!editing) return [];
-    const groupIds = new Set(
-      (viewGroupsQ.data?.items ?? [])
-        .filter((group) => group.locationId === editing.id)
-        .map((group) => group.id),
-    );
-    return (viewDashboardsQ.data?.items ?? []).filter((dashboard) =>
-      isEligibleSiteViewDashboard(dashboard, editing.id, groupIds),
-    );
-  }, [editing, viewDashboardsQ.data?.items, viewGroupsQ.data?.items]);
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -228,11 +185,7 @@ export function LocationsAdminPage({ user }: LocationsAdminPageProps) {
         // `F2.10` — a move rides in the same body as the other changed fields (Drafter choice 5).
         const updatePayload =
           toParentId === undefined ? typedPayload : { ...typedPayload, parentId: toParentId };
-        const updated = await updateAdminLocation(editing.id, updatePayload);
-        if (storedView && viewDraft && siteViewDraftChanged(storedView, viewDraft)) {
-          await putSiteControlRoomView(editing.id, siteViewPayloadFromDraft(viewDraft));
-        }
-        return updated;
+        return updateAdminLocation(editing.id, updatePayload);
       }
       return createAdminLocation({ ...payload, parentId: form.parentId || null });
     },
@@ -250,11 +203,7 @@ export function LocationsAdminPage({ user }: LocationsAdminPageProps) {
         await refreshScope(accessToken).catch(() => undefined);
       }
     },
-    onError: async (err: unknown) => {
-      setError(apiErrorMessage(err));
-      // The location update may have landed before the view `PUT` failed.
-      await queryClient.invalidateQueries({ queryKey: ["admin", "locations"] });
-    },
+    onError: (err: unknown) => setError(apiErrorMessage(err)),
   });
 
   const toggleMutation = useMutation({
@@ -271,7 +220,6 @@ export function LocationsAdminPage({ user }: LocationsAdminPageProps) {
   function openCreate(): void {
     setEditing(null);
     setForm({ ...emptyForm, organizationId: orgFilter });
-    setViewDraft(null);
     setError(null);
     setModalOpen(true);
   }
@@ -291,7 +239,6 @@ export function LocationsAdminPage({ user }: LocationsAdminPageProps) {
       longitude: String(item.longitude),
       parentId: item.parentId ?? "",
     });
-    setViewDraft(null);
     setError(null);
     setModalOpen(true);
   }
@@ -379,6 +326,14 @@ export function LocationsAdminPage({ user }: LocationsAdminPageProps) {
                       onClick={() => openEdit(item)}
                     >
                       Edit
+                    </button>
+                    {/* `F3.86` PR 3d — the view is its own wizard; the Edit form sends one write. */}
+                    <button
+                      type="button"
+                      className="text-xs font-semibold text-accent-strong"
+                      onClick={() => setViewing(item)}
+                    >
+                      Control Room view
                     </button>
                     <button
                       type="button"
@@ -530,25 +485,6 @@ export function LocationsAdminPage({ user }: LocationsAdminPageProps) {
                   onChange={(event) => setForm({ ...form, longitude: event.target.value })}
                 />
               </label>
-              {editing ? (
-                viewQ.data && storedView ? (
-                  <ControlRoomViewField
-                    value={viewDraft ?? storedView}
-                    onChange={setViewDraft}
-                    dashboards={eligibleDashboards}
-                    dashboardsLoaded={!viewDashboardsQ.isPending && !viewGroupsQ.isPending}
-                    touched={viewDraft !== null}
-                    stored={storedView}
-                    canSetBuiltin={isGlobalAdmin(user.role)}
-                  />
-                ) : (
-                  <div className="text-xs text-ink-muted sm:col-span-2">
-                    {viewQ.isError
-                      ? "The Control Room view could not be loaded."
-                      : "Loading the Control Room view…"}
-                  </div>
-                )
-              ) : null}
             </div>
             {error ? <div className="mt-2 text-xs text-critical-ink">{error}</div> : null}
             <div className="mt-4 flex justify-end gap-2">
@@ -568,6 +504,15 @@ export function LocationsAdminPage({ user }: LocationsAdminPageProps) {
             </div>
           </form>
         </div>
+      ) : null}
+
+      {viewing ? (
+        <ControlRoomViewWizard
+          key={viewing.id}
+          location={viewing}
+          canSetBuiltin={isGlobalAdmin(user.role)}
+          onClose={() => setViewing(null)}
+        />
       ) : null}
 
       {pendingMove && editing ? (

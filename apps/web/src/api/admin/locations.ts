@@ -8,10 +8,10 @@ import {
 import type {
   AdminLocationDto,
   AdminLocationSummaryDto,
-  BuiltinSiteViewKey,
   LocationsListResponse,
   LocationTypesListResponse,
   MasterDataActiveFilter,
+  PutSiteControlRoomViewBody,
   SiteControlRoomViewSettingDto,
 } from "@bms/shared";
 
@@ -99,18 +99,6 @@ export async function reactivateAdminLocation(id: string): Promise<AdminLocation
   return adminFetch(`/admin/locations/${id}/reactivate`, adminLocationDtoSchema, { method: "POST" });
 }
 
-/**
- * `F3.67` / ADR 0076 decision 5 — `PUT /admin/locations/:id/control-room-view`'s body.
- * Declared locally (`apps/web` does not depend on `apps/api`), mirroring
- * `putSiteControlRoomViewBodySchema` (`packages/shared/src/contracts/site-control-room-view-writes.ts`).
- * That schema is `.strict()` with a two-way pair rule, so the union admits exactly the three
- * shapes it accepts and no stray key.
- */
-export type PutSiteControlRoomViewPayload =
-  | { kind: "generated" }
-  | { kind: "dashboard"; dashboardId: string }
-  | { kind: "builtin"; builtinKey: BuiltinSiteViewKey };
-
 /** `GET /admin/locations/:id/control-room-view` — the stored setting, or the no-row default
  * (`kind: "generated"`, every optional field `null`). */
 export async function fetchSiteControlRoomView(id: string): Promise<SiteControlRoomViewSettingDto> {
@@ -122,7 +110,7 @@ export async function fetchSiteControlRoomView(id: string): Promise<SiteControlR
  * view is `builtin` (OQ3); an ineligible dashboard answers 400. */
 export async function putSiteControlRoomView(
   id: string,
-  body: PutSiteControlRoomViewPayload,
+  body: PutSiteControlRoomViewBody,
 ): Promise<SiteControlRoomViewSettingDto> {
   return adminFetch(`/admin/locations/${id}/control-room-view`, siteControlRoomViewSettingDtoSchema, {
     method: "PUT",

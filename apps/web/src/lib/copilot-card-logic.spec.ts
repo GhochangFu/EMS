@@ -38,6 +38,10 @@ export function everyEntryHasInvalidations(): void {
   expect(invalidationKeysFor("dashboard.create")).toEqual([["dashboards"]]);
   expect(invalidationKeysFor("dashboardTemplate.instantiate")).toContainEqual(["dashboards"]);
   expect(invalidationKeysFor("nope")).toEqual([]);
+  // `F3.86` PR 3d: both site-view writes re-resolve the site page; the copy also makes a dashboard.
+  expect(invalidationKeysFor("location.controlRoomView.set")).toEqual([["admin", "locations"], ["control-room", "site-view"]]);
+  expect(invalidationKeysFor("location.siteLayout.make")).toContainEqual(["control-room", "site-view"]);
+  expect(invalidationKeysFor("location.siteLayout.make")).toContainEqual(["dashboards"]);
 }
 
 export function aCreateHasNoBeforeValues(): void {

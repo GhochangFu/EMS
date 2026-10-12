@@ -1,14 +1,14 @@
 import type {
   DashboardSummaryDto,
+  PutSiteControlRoomViewBody,
   SiteControlRoomViewKind,
   SiteControlRoomViewSettingDto,
 } from "@bms/shared";
 
-import type { PutSiteControlRoomViewPayload } from "../api/admin/locations";
-
 /**
- * `F3.67` U5 / ADR 0076 decision 5, plan D6 — whether the location admin page
- * offers a dashboard as a site's Control Room view: scoped to the site itself,
+ * `F3.67` U5 / ADR 0076 decision 5, plan D6 — whether the Control Room view
+ * wizard (`components/admin/control-room-view-wizard.tsx`) offers a dashboard
+ * as a site's Control Room view: scoped to the site itself,
  * or to one of the site's asset groups. The client mirror of the API's
  * `dashboardIsScopedToSite` (`apps/api/src/control-room/site-control-room-view.pure.ts`);
  * the server re-checks on `PUT` and answers 400 for an ineligible dashboard, so
@@ -19,7 +19,7 @@ import type { PutSiteControlRoomViewPayload } from "../api/admin/locations";
  * column), but this predicate reads a response, not the table, so it fails
  * closed on `assetId` rather than trust the CHECK.
  *
- * The organization is not compared: the page reads dashboards with
+ * The organization is not compared: the wizard reads dashboards with
  * `fetchDashboards(<the site's organizationId>)`.
  */
 export function isEligibleSiteViewDashboard(
@@ -51,16 +51,16 @@ export function siteViewDraftFromSetting(setting: SiteControlRoomViewSettingDto)
   };
 }
 
-/** Whether a draft differs from the stored setting — the page `PUT`s only when it does. */
+/** Whether a draft differs from the stored setting — the wizard `PUT`s only when it does. */
 export function siteViewDraftChanged(stored: SiteViewDraft, draft: SiteViewDraft): boolean {
   return stored.kind !== draft.kind || stored.dashboardId !== draft.dashboardId;
 }
 
 /** A draft as the `PUT` body: exactly one of the three shapes the `.strict()` server schema
- * accepts. A `dashboard` draft with no dashboard chosen throws, and the page's error line
- * shows the message (once the user touches the field the picker is `required`, so a browser
- * submit does not reach this; an untouched field is never `PUT`). */
-export function siteViewPayloadFromDraft(draft: SiteViewDraft): PutSiteControlRoomViewPayload {
+ * accepts. A `dashboard` draft with no dashboard chosen throws; the wizard never calls this for
+ * one (`bodyOf` in `control-room-view-wizard.tsx` sends `{ kind: "dashboard" }` to Review,
+ * which shows the schema's sentence instead). */
+export function siteViewPayloadFromDraft(draft: SiteViewDraft): PutSiteControlRoomViewBody {
   if (draft.kind === "dashboard") {
     if (!draft.dashboardId) {
       throw new Error("Choose a dashboard for the Control Room view");

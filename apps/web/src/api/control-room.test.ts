@@ -5,6 +5,7 @@ import {
   fetchResolvedSiteControlRoomViewThrowsOn404,
   fetchResolvedSiteControlRoomViewThrowsOnSchemaMismatch,
   makeSiteLayoutPostsTheBody,
+  makeSiteLayoutSendsNoCopilotHeader,
   makeSiteLayoutReadsTheAmbiguousBody,
   makeSiteLayoutThrowsOnAnotherConflict,
 } from "./control-room.spec";
@@ -41,6 +42,10 @@ describe("F3.73 makeSiteLayout client — what it puts on the wire", () => {
 
   it("A4 POSTs the body as JSON to /admin/locations/:id/site-layout and answers made", async () => {
     await makeSiteLayoutPostsTheBody();
+  });
+
+  it("A4b sends no X-Copilot-Change header", async () => {
+    await makeSiteLayoutSendsNoCopilotHeader();
   });
 
   it("A5 answers the 409 body's ambiguous candidates", async () => {
