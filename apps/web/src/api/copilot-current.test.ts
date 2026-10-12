@@ -1,6 +1,12 @@
 import { afterEach, describe, it, vi } from "vitest";
 
-import { theViewCardReadsTheStoredSetting } from "./copilot-current.spec";
+import {
+  anUnknownLocationReadsNull,
+  anUnknownRtuReadsNull,
+  theLocationCardReadsTheListedRow,
+  theRtuCardReadsTheListedRow,
+  theViewCardReadsTheStoredSetting,
+} from "./copilot-current.spec";
 
 /** Vitest entry point — assertions live in the sibling `.spec` (ADR 0014). */
 describe("F3.86 PR 3d — an edit card's Now values", () => {
@@ -9,4 +15,15 @@ describe("F3.86 PR 3d — an edit card's Now values", () => {
   });
 
   it("reads a site's stored Control Room view for the view card", () => theViewCardReadsTheStoredSetting());
+});
+
+describe("F3.86 PR 3a review — the location and RTU edit cards' Now values", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("maps the listed location row to the update body's fields", () => theLocationCardReadsTheListedRow());
+  it("reads null for a location the list does not hold", () => anUnknownLocationReadsNull());
+  it("maps the listed RTU row to the update body's fields", () => theRtuCardReadsTheListedRow());
+  it("reads null for an RTU the list does not hold", () => anUnknownRtuReadsNull());
 });

@@ -5,7 +5,8 @@ import { catalogEntry, catalogParamsOf } from "@bms/shared/copilot";
 import { fetchAdminAssetCalcPoints } from "./admin/asset-points";
 import { adminFetch } from "./admin/client";
 import { fetchAdminDashboardTemplate } from "./admin/dashboard-templates";
-import { fetchSiteControlRoomView } from "./admin/locations";
+import { fetchAdminLocations, fetchSiteControlRoomView } from "./admin/locations";
+import { fetchAdminRtus } from "./admin/rtus";
 import { fetchDashboards } from "./dashboards";
 
 /**
@@ -54,6 +55,44 @@ export async function fetchCopilotCurrent(change: CopilotPendingChangeDto): Prom
     case "location.controlRoomView.set": {
       const setting = await fetchSiteControlRoomView(params.id as string);
       return { kind: setting.kind, dashboardId: setting.dashboardId, builtinKey: setting.builtinKey };
+    }
+    // `F3.86` PR 3a review: the by-id reads answer a summary only; the list carries the
+    // editable fields (the `dashboard.update` rule), read with inactive rows included.
+    case "location.update": {
+      const found = (await fetchAdminLocations("all")).items.find((item) => item.id === params.id);
+      return found
+        ? {
+            code: found.code,
+            slug: found.slug,
+            name: found.name,
+            type: found.type,
+            parentId: found.parentId,
+            province: found.province,
+            capital: found.capital,
+            latitude: found.latitude,
+            longitude: found.longitude,
+            timezone: found.timezone,
+            meta: found.meta,
+          }
+        : null;
+    }
+    case "rtu.update": {
+      const found = (await fetchAdminRtus("all")).items.find((item) => item.id === params.id);
+      return found
+        ? {
+            code: found.code,
+            displayName: found.displayName,
+            sourceType: found.sourceType,
+            domain: found.domain,
+            externalRtuId: found.externalRtuId,
+            rtuCode: found.rtuCode,
+            mqttTopic: found.mqttTopic,
+            stationCode: found.stationCode,
+            stationName: found.stationName,
+            ingestEnabled: found.ingestEnabled,
+            meta: found.meta,
+          }
+        : null;
     }
     default:
       return null;
