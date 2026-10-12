@@ -27,6 +27,18 @@ import {
   showsTheServerRefusal,
   theOtherRowsKeepTheirName,
   theRowBeingRemovedAnnouncesIt,
+  aFillFillsTheNamedStepOnly,
+  aLocationPickedFirstStays,
+  aNameOnlyEditLeavesTheStoredDomain,
+  aRolePickWaitsForTheReview,
+  anUnpickedAssetHoldsTheMemberStep,
+  anUnpickedLocationHoldsTheBasicsStep,
+  createStepsAreBasicsDetailsReview,
+  theAddReviewNamesThePickedRole,
+  theEditReviewShowsNowBesideAfter,
+  theEditReviewShowsTheStoredDomain,
+  theRemoveReviewIsTheRedCard,
+  theWizardsSendNoCopilotHeader,
 } from "./asset-groups-page.spec";
 
 /**
@@ -86,6 +98,10 @@ describe("F3.37 asset groups page", () => {
     await addSendsTheAssetId();
   });
 
+  it("the add Review's sentence names the picked role", async () => {
+    await theAddReviewNamesThePickedRole();
+  });
+
   it("re-reads the members after a removal", async () => {
     await removeInvalidatesTheMembersQuery();
   });
@@ -136,5 +152,57 @@ describe("F3.37 asset groups page", () => {
 
   it("F4.202: changing the filter closes an open member-remove dialog", async () => {
     await changingTheFilterClosesTheMemberRemoveDialog();
+  });
+});
+
+describe("F3.86 PR 3c asset groups page — the catalog wizards (ADR 0099 decisions 3, 6, ruling Q9)", () => {
+  afterEach(() => {
+    cleanup();
+    vi.restoreAllMocks();
+    vi.unstubAllGlobals();
+  });
+
+  it("the create wizard's steps are Basics, Details, Review", async () => {
+    await createStepsAreBasicsDetailsReview();
+  });
+
+  it("a location picked first in a fresh wizard stays picked", async () => {
+    await aLocationPickedFirstStays();
+  });
+
+  it("an unpicked location holds the Basics step and sends nothing", async () => {
+    await anUnpickedLocationHoldsTheBasicsStep();
+  });
+
+  it("the create and the DELETE send no X-Copilot-Change header", async () => {
+    await theWizardsSendNoCopilotHeader();
+  });
+
+  it("a copilot fill fills the named step's fields only", async () => {
+    await aFillFillsTheNamedStepOnly();
+  });
+
+  it("an edit's Review shows Now beside After", async () => {
+    await theEditReviewShowsNowBesideAfter();
+  });
+
+  it("the edit Review shows the stored domain as Now, and re-picking it is no change", async () => {
+    await theEditReviewShowsTheStoredDomain();
+  });
+
+  it("a name-only edit of a classified group neither shows nor sends a domain change", async () => {
+    await aNameOnlyEditLeavesTheStoredDomain();
+  });
+
+  it("a role pick sends nothing until the role wizard's Submit", async () => {
+    await aRolePickWaitsForTheReview();
+  });
+
+  it("an unpicked asset holds the Member step", async () => {
+    await anUnpickedAssetHoldsTheMemberStep();
+  });
+
+  it("the member remove Review is the red card", async () => {
+    await theRemoveReviewIsTheRedCard();
   });
 });

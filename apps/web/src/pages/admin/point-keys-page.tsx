@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import type { FormEvent } from "react";
 import { useMemo, useState } from "react";
 import type { AdminPointKeyDto, MasterDataActiveFilter } from "@bms/shared";
+import { type CatalogEntry, catalogEntry } from "@bms/shared/copilot";
 
 import {
   createAdminPointKey,
@@ -15,6 +15,7 @@ import { MasterDataLayout } from "../../components/admin/master-data-layout";
 import { PageHeader } from "../../components/page-header";
 import { SectionCard } from "../../components/section-card";
 import { StatusPill } from "../../components/status-pill";
+import { WizardShell } from "../../components/wizard/wizard-shell";
 import { canWritePointKeys } from "../../lib/admin-access";
 import { apiErrorMessage } from "../../lib/api-error-message";
 import type { AuthUser } from "../../stores/auth-store";
@@ -25,11 +26,23 @@ type PointKeysAdminPageProps = { user: AuthUser };
 const HEADLINE_RANK_MAX = 32767;
 const HEADLINE_RANK_ERROR = `Headline rank must be a whole number from 1 to ${HEADLINE_RANK_MAX}.`;
 
+/** The form's text, one string per body field. */
+type FormState = {
+  code: string;
+  name: string;
+  domain: string;
+  unit: string;
+  description: string;
+  headlineRank: string;
+};
+
+const EMPTY_FORM: FormState = { code: "", name: "", domain: "", unit: "", description: "", headlineRank: "" };
+
 /**
- * `F3.68` / ADR 0076 decision 7 — the modal's rank text to the body value.
+ * `F3.68` / ADR 0076 decision 7 — the rank text to the body value.
  * Empty means unranked, so it is `null` (sent explicitly: `JSON.stringify`
  * drops `undefined`, and the rank would never clear). Anything that is not a
- * whole number in range is refused here, before a request is made.
+ * whole number in range is `"invalid"`.
  */
 function parseHeadlineRank(text: string): number | null | "invalid" {
   const trimmed = text.trim();
@@ -40,16 +53,93 @@ function parseHeadlineRank(text: string): number | null | "invalid" {
 }
 
 /**
+ * The rank as a wizard value. An invalid text is passed through as typed, so
+ * the body schema refuses it and Next holds the Details step (the field shows
+ * {@link HEADLINE_RANK_ERROR} beside it).
+ */
+function rankValue(text: string): unknown {
+  const rank = parseHeadlineRank(text);
+  return rank === "invalid" ? text : rank;
+}
+
+/**
+ * `F3.86` PR 3c (ADR 0099 decision 6) — the catalog entry a wizard submits.
+ * Each `WizardShell` writes the literal id on its `entry` prop, the form the
+ * stepper gate (`tests/f3.85-stepper-coverage`) detects. A missing entry is a
+ * build defect, so it throws.
+ */
+function wizardEntry(id: string): CatalogEntry {
+  const entry = catalogEntry(id);
+  if (!entry) throw new Error(`F3.86: the catalog has no entry "${id}"`);
+  return entry;
+}
+
+/**
+ * The `pointKey.create` values. Code and name stay `""` when empty (never
+ * `undefined`), so the step check refuses them on Basics; the optional text
+ * fields are left out when empty, as the old form sent them.
+ */
+function createValues(form: FormState): Record<string, unknown> {
+  return {
+    code: form.code,
+    name: form.name,
+    domain: form.domain || undefined,
+    unit: form.unit || undefined,
+    description: form.description || undefined,
+    headlineRank: rankValue(form.headlineRank),
+  };
+}
+
+/** The `pointKey.update` values: the old form's PATCH, field for field (the code is not editable). */
+function updateValues(form: FormState): Record<string, unknown> {
+  return {
+    name: form.name,
+    domain: form.domain || undefined,
+    unit: form.unit || undefined,
+    description: form.description || undefined,
+    headlineRank: rankValue(form.headlineRank),
+  };
+}
+
+/** A copilot `fill_step` (merged by the shell into the named step) written back into the form's text. */
+function formWithValues(form: FormState, values: Readonly<Record<string, unknown>>): FormState {
+  const next = { ...form };
+  for (const key of ["code", "name", "domain", "unit", "description"] as const) {
+    if (typeof values[key] === "string") next[key] = values[key] as string;
+  }
+  if (values.headlineRank === null) next.headlineRank = "";
+  else if (typeof values.headlineRank === "number") next.headlineRank = String(values.headlineRank);
+  return next;
+}
+
+function formOf(item: AdminPointKeyDto): FormState {
+  return {
+    code: item.code,
+    name: item.name,
+    domain: item.domain ?? "",
+    unit: item.unit ?? "",
+    description: item.description ?? "",
+    headlineRank: item.headlineRank === null ? "" : String(item.headlineRank),
+  };
+}
+
+/**
  * Admin screen for the fleet-wide point key catalog.
  *
  * **`F3.39` / ADR 0051 — this screen lost its organization axis entirely.** The
- * organization column, the `HierarchyFilterBar`, the `?organizationId=` deep
- * link and the create form's organization picker all named a column migration
- * `0057` drops. What is left is one list for the whole fleet, which is what
- * makes a stock dashboard template's `pointKey` resolvable anywhere.
+ * organization column, the `HierarchyFilterBar`, the deep link and the create
+ * form's organization picker all named a column migration `0057` drops. What
+ * is left is one list for the whole fleet, which is what makes a stock
+ * dashboard template's `pointKey` resolvable anywhere.
  *
  * `canWritePointKeys` narrowed to the global `admin` in the same row, so an
  * organization administrator reads this screen and cannot edit it.
+ *
+ * `F3.86` PR 3c (ADR 0099 decision 6, ruling Q9) — Add and Edit are the
+ * `pointKey.create` / `pointKey.update` wizards (Basics → Details → Review),
+ * and Deactivate / Reactivate are Review-alone wizards, so every write here is
+ * the catalog route the copilot proposes. A wizard used alone sends no
+ * `X-Copilot-Change` header.
  */
 export function PointKeysAdminPage({ user }: PointKeysAdminPageProps) {
   const queryClient = useQueryClient();
@@ -58,15 +148,11 @@ export function PointKeysAdminPage({ user }: PointKeysAdminPageProps) {
   const [search, setSearch] = useState("");
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState<AdminPointKeyDto | null>(null);
-  const [form, setForm] = useState({
-    code: "",
-    name: "",
-    domain: "",
-    unit: "",
-    description: "",
-    headlineRank: "",
-  });
+  const [form, setFormState] = useState<FormState>(EMPTY_FORM);
   const [error, setError] = useState<string | null>(null);
+  // Ruling Q9: the key whose deactivate or reactivate Review is open.
+  const [toggling, setToggling] = useState<AdminPointKeyDto | null>(null);
+  const [toggleError, setToggleError] = useState<string | null>(null);
 
   const listQ = useQuery({
     queryKey: ["admin", "point-keys", activeFilter],
@@ -85,25 +171,20 @@ export function PointKeysAdminPage({ user }: PointKeysAdminPageProps) {
     );
   }, [listQ.data?.items, search]);
 
+  /** A refusal names the values it refused; once they change it is stale. */
+  function setForm(next: FormState): void {
+    setError(null);
+    setFormState(next);
+  }
+
+  // The wizard's Review parsed `body` against the entry's schema, and the
+  // request is that body: what Review showed is what is sent.
   const saveMutation = useMutation({
-    mutationFn: async (headlineRank: number | null) => {
+    mutationFn: async (body: Record<string, unknown>) => {
       if (editing) {
-        return updateAdminPointKey(editing.id, {
-          name: form.name,
-          domain: form.domain || undefined,
-          unit: form.unit || undefined,
-          description: form.description || undefined,
-          headlineRank,
-        });
+        return updateAdminPointKey(editing.id, body as Parameters<typeof updateAdminPointKey>[1]);
       }
-      return createAdminPointKey({
-        code: form.code,
-        name: form.name,
-        domain: form.domain || undefined,
-        unit: form.unit || undefined,
-        description: form.description || undefined,
-        headlineRank,
-      });
+      return createAdminPointKey(body as Parameters<typeof createAdminPointKey>[0]);
     },
     onSuccess: async () => {
       setModalOpen(false);
@@ -118,23 +199,113 @@ export function PointKeysAdminPage({ user }: PointKeysAdminPageProps) {
     mutationFn: async (item: AdminPointKeyDto) =>
       item.active ? deactivateAdminPointKey(item.id) : reactivateAdminPointKey(item.id),
     onSuccess: async () => {
+      setToggling(null);
+      setToggleError(null);
       await queryClient.invalidateQueries({ queryKey: ["admin", "point-keys"] });
     },
+    onError: (err: unknown) => setToggleError(apiErrorMessage(err)),
   });
 
   function openCreate(): void {
     setEditing(null);
-    setForm({
-      code: "",
-      name: "",
-      domain: "",
-      unit: "",
-      description: "",
-      headlineRank: "",
-    });
+    setFormState(EMPTY_FORM);
     setError(null);
     setModalOpen(true);
   }
+
+  function openEdit(item: AdminPointKeyDto): void {
+    setEditing(item);
+    setFormState(formOf(item));
+    setError(null);
+    setModalOpen(true);
+  }
+
+  function openToggle(item: AdminPointKeyDto): void {
+    setToggleError(null);
+    setToggling(item);
+  }
+
+  const rankInvalid = parseHeadlineRank(form.headlineRank) === "invalid";
+
+  const textField = (key: "code" | "name" | "domain" | "unit", label: string) => (
+    <label className="block text-xs font-semibold text-ink-muted">
+      {label}
+      <input
+        className="mt-1 w-full surface-field px-3 py-2 text-sm"
+        value={form[key]}
+        onChange={(event) => setForm({ ...form, [key]: event.target.value })}
+      />
+    </label>
+  );
+
+  // Every step's elements are built here, once per render, and `renderStep`
+  // only picks one (the `calc-parameters-page.tsx` rule: an element built
+  // inside `renderStep` is new on every shell render).
+  const basicsFields = (
+    <div className="grid gap-3 sm:grid-cols-2">
+      {editing ? (
+        <p className="text-xs text-ink-muted sm:col-span-2">
+          Code <span className="font-mono">{editing.code}</span> cannot be changed.
+        </p>
+      ) : (
+        textField("code", "Code")
+      )}
+      {textField("name", "Name")}
+      {textField("domain", "Domain")}
+      {textField("unit", "Unit")}
+    </div>
+  );
+
+  const detailsFields = (
+    <div className="grid gap-3">
+      <div>
+        <label htmlFor="point-key-headline-rank" className="block text-xs font-semibold text-ink-muted">
+          Headline rank
+        </label>
+        <input
+          id="point-key-headline-rank"
+          type="text"
+          inputMode="numeric"
+          aria-describedby="point-key-headline-rank-hint"
+          aria-invalid={rankInvalid}
+          className="mt-1 w-full surface-field px-3 py-2 text-sm"
+          value={form.headlineRank}
+          onChange={(event) => setForm({ ...form, headlineRank: event.target.value })}
+        />
+        <p id="point-key-headline-rank-hint" className="mt-1 text-xs text-ink-muted">
+          Lower shows first on a generated site card. Leave empty to unrank; a seeded code gets its default
+          rank again on the next seed.
+        </p>
+        {rankInvalid ? <p className="mt-1 text-xs text-critical-ink">{HEADLINE_RANK_ERROR}</p> : null}
+      </div>
+      <label className="block text-xs font-semibold text-ink-muted">
+        Description
+        <textarea
+          className="mt-1 w-full surface-field px-3 py-2 text-sm"
+          value={form.description}
+          rows={3}
+          onChange={(event) => setForm({ ...form, description: event.target.value })}
+        />
+      </label>
+    </div>
+  );
+
+  const renderStep = (step: { id: string }) => (step.id === "basics" ? basicsFields : detailsFields);
+  const toggleProps = {
+    values: {},
+    onChange: () => undefined,
+    renderStep: () => null,
+    onSubmit: () => {
+      if (toggling) toggleMutation.mutate(toggling);
+    },
+    onCancel: () => setToggling(null),
+    submitting: toggleMutation.isPending,
+    submitError: toggleError,
+  };
+  const toggleSummary = (id: string) =>
+    toggling
+      ? wizardEntry(id).summary({ body: {}, params: { id: toggling.id }, targetName: toggling.code, organizationName: "" })
+      : undefined;
 
   return (
     <MasterDataLayout user={user}>
@@ -196,27 +367,14 @@ export function PointKeysAdminPage({ user }: PointKeysAdminPageProps) {
                       <button
                         type="button"
                         className="text-xs font-semibold text-accent-strong"
-                        onClick={() => {
-                          setEditing(item);
-                          setForm({
-                            code: item.code,
-                            name: item.name,
-                            domain: item.domain ?? "",
-                            unit: item.unit ?? "",
-                            description: item.description ?? "",
-                            headlineRank:
-                              item.headlineRank === null ? "" : String(item.headlineRank),
-                          });
-                          setError(null);
-                          setModalOpen(true);
-                        }}
+                        onClick={() => openEdit(item)}
                       >
                         Edit
                       </button>
                       <button
                         type="button"
                         className="text-xs font-semibold text-ink-muted"
-                        onClick={() => toggleMutation.mutate(item)}
+                        onClick={() => openToggle(item)}
                       >
                         {item.active ? "Deactivate" : "Reactivate"}
                       </button>
@@ -233,105 +391,78 @@ export function PointKeysAdminPage({ user }: PointKeysAdminPageProps) {
 
       {modalOpen && canWrite ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-scrim/40 p-4">
-          <form
+          <div
+            role="dialog"
+            aria-label={editing ? "Edit point key" : "Add point key"}
+            className="max-h-[90vh] w-full max-w-lg overflow-y-auto surface-dialog p-4"
+          >
+            <h2 className="font-condensed text-lg font-bold">{editing ? "Edit point key" : "Add point key"}</h2>
+            <div className="mt-3">
+              {editing ? (
+                <WizardShell
+                  key={`update-${editing.id}`}
+                  entry={wizardEntry("pointKey.update")}
+                  values={updateValues(form)}
+                  onChange={(values) => setForm(formWithValues(form, values))}
+                  renderStep={renderStep}
+                  onSubmit={(body) => saveMutation.mutate(body)}
+                  onCancel={() => setModalOpen(false)}
+                  submitting={saveMutation.isPending}
+                  submitError={error}
+                  current={{
+                    name: editing.name,
+                    domain: editing.domain,
+                    unit: editing.unit,
+                    description: editing.description,
+                    headlineRank: editing.headlineRank,
+                  }}
+                />
+              ) : (
+                <WizardShell
+                  key="create"
+                  entry={wizardEntry("pointKey.create")}
+                  values={createValues(form)}
+                  onChange={(values) => setForm(formWithValues(form, values))}
+                  renderStep={renderStep}
+                  onSubmit={(body) => saveMutation.mutate(body)}
+                  onCancel={() => setModalOpen(false)}
+                  submitting={saveMutation.isPending}
+                  submitError={error}
+                />
+              )}
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {toggling !== null && canWrite ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-scrim/40 p-4">
+          <div
+            role="dialog"
+            aria-label={toggling.active ? "Deactivate point key" : "Reactivate point key"}
             className="w-full max-w-lg surface-dialog p-4"
-            onSubmit={(event: FormEvent) => {
-              event.preventDefault();
-              const headlineRank = parseHeadlineRank(form.headlineRank);
-              if (headlineRank === "invalid") {
-                setError(HEADLINE_RANK_ERROR);
-                return;
-              }
-              saveMutation.mutate(headlineRank);
-            }}
           >
             <h2 className="font-condensed text-lg font-bold">
-              {editing ? "Edit point key" : "Add point key"}
+              {toggling.active ? "Deactivate" : "Reactivate"} {toggling.code}
             </h2>
-            <div className="mt-3 grid gap-3 sm:grid-cols-2">
-              <label className="block text-xs font-semibold text-ink-muted">
-                Code
-                <input
-                  className="mt-1 w-full surface-field px-3 py-2 text-sm disabled:opacity-60"
-                  value={form.code}
-                  disabled={Boolean(editing)}
-                  required
-                  onChange={(event) => setForm({ ...form, code: event.target.value })}
+            <div className="mt-3">
+              {toggling.active ? (
+                <WizardShell
+                  key={`deactivate-${toggling.id}`}
+                  entry={wizardEntry("pointKey.deactivate")}
+                  {...toggleProps}
+                  summary={toggleSummary("pointKey.deactivate")}
                 />
-              </label>
-              <label className="block text-xs font-semibold text-ink-muted">
-                Name
-                <input
-                  className="mt-1 w-full surface-field px-3 py-2 text-sm"
-                  value={form.name}
-                  required
-                  onChange={(event) => setForm({ ...form, name: event.target.value })}
+              ) : (
+                <WizardShell
+                  key={`reactivate-${toggling.id}`}
+                  entry={wizardEntry("pointKey.reactivate")}
+                  {...toggleProps}
+                  summary={toggleSummary("pointKey.reactivate")}
                 />
-              </label>
-              <label className="block text-xs font-semibold text-ink-muted">
-                Domain
-                <input
-                  className="mt-1 w-full surface-field px-3 py-2 text-sm"
-                  value={form.domain}
-                  onChange={(event) => setForm({ ...form, domain: event.target.value })}
-                />
-              </label>
-              <label className="block text-xs font-semibold text-ink-muted">
-                Unit
-                <input
-                  className="mt-1 w-full surface-field px-3 py-2 text-sm"
-                  value={form.unit}
-                  onChange={(event) => setForm({ ...form, unit: event.target.value })}
-                />
-              </label>
-              <div className="sm:col-span-2">
-                <label
-                  htmlFor="point-key-headline-rank"
-                  className="block text-xs font-semibold text-ink-muted"
-                >
-                  Headline rank
-                </label>
-                <input
-                  id="point-key-headline-rank"
-                  type="text"
-                  inputMode="numeric"
-                  aria-describedby="point-key-headline-rank-hint"
-                  className="mt-1 w-full surface-field px-3 py-2 text-sm"
-                  value={form.headlineRank}
-                  onChange={(event) => setForm({ ...form, headlineRank: event.target.value })}
-                />
-                <p id="point-key-headline-rank-hint" className="mt-1 text-xs text-ink-muted">
-                  Lower shows first on a generated site card. Leave empty to unrank; a seeded code gets its default
-                  rank again on the next seed.
-                </p>
-              </div>
-              <label className="block text-xs font-semibold text-ink-muted sm:col-span-2">
-                Description
-                <textarea
-                  className="mt-1 w-full surface-field px-3 py-2 text-sm"
-                  value={form.description}
-                  rows={3}
-                  onChange={(event) => setForm({ ...form, description: event.target.value })}
-                />
-              </label>
+              )}
             </div>
-            {error ? <div className="mt-2 text-xs text-critical-ink">{error}</div> : null}
-            <div className="mt-4 flex justify-end gap-2">
-              <button
-                type="button"
-                className="surface-button px-3 py-2"
-                onClick={() => setModalOpen(false)}
-              >
-                Cancel
-              </button>
-              <button
-                type="submit"
-                className="surface-button-primary bg-accent px-3 py-2 text-xs font-semibold text-on-accent"
-              >
-                Save
-              </button>
-            </div>
-          </form>
+          </div>
         </div>
       ) : null}
     </MasterDataLayout>

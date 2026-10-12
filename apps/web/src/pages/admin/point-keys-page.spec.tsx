@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import { expect, vi } from "vitest";
@@ -10,6 +10,7 @@ import * as assetsApi from "../../api/assets";
 import * as systemStatusApi from "../../api/system-status";
 import { ApiError } from "../../lib/api-error";
 import type { AuthUser } from "../../stores/auth-store";
+import { resetWizardStore, useWizardStore } from "../../stores/wizard-store";
 import { PointKeysAdminPage } from "./point-keys-page";
 import * as copilotApi from "../../api/copilot";
 
@@ -23,6 +24,11 @@ import * as copilotApi from "../../api/copilot";
  * is stubbed: an unstubbed fetch reaches the real API on :4000 (the `F4.160`
  * lesson). `fetchAssets` is also stubbed, kept from the F4.156 interim gate
  * (removed as of `F3.70` U5b) in case another render path still reaches it.
+ *
+ * `F3.86` PR 3c (ADR 0099 decision 6, ruling Q9): Add and Edit are the
+ * `pointKey.create` / `pointKey.update` wizards (Basics → Details → Review),
+ * and Deactivate / Reactivate are Review-alone wizards. The rank field sits
+ * on Details, so an edit walks Basics first.
  */
 
 const admin: AuthUser = {
@@ -67,13 +73,28 @@ const UNRANKED: AdminPointKeyDto = {
   headlineRank: null,
 };
 
+/** An inactive key, for the reactivate wizard. */
+const RETIRED: AdminPointKeyDto = {
+  id: "aaaa0000-0000-4000-8000-000000000003",
+  code: "f386_spec_retired",
+  name: "Spec retired",
+  domain: "electrical",
+  unit: "V",
+  description: null,
+  active: false,
+  createdAt: new Date(0).toISOString(),
+  headlineRank: null,
+};
+
 function stubApi() {
   vi.spyOn(systemStatusApi, "fetchSystemStatus").mockRejectedValue(new Error("not under test"));
   vi.spyOn(assetsApi, "fetchAssets").mockResolvedValue([] as never);
-  vi.spyOn(api, "fetchAdminPointKeys").mockResolvedValue({ items: [RANKED, UNRANKED] });
+  vi.spyOn(api, "fetchAdminPointKeys").mockResolvedValue({ items: [RANKED, UNRANKED, RETIRED] });
   return {
     update: vi.spyOn(api, "updateAdminPointKey").mockResolvedValue(RANKED),
     create: vi.spyOn(api, "createAdminPointKey").mockResolvedValue(RANKED),
+    deactivate: vi.spyOn(api, "deactivateAdminPointKey").mockResolvedValue({ ...RANKED, active: false }),
+    reactivate: vi.spyOn(api, "reactivateAdminPointKey").mockResolvedValue({ ...RETIRED, active: true }),
   };
 }
 
@@ -107,10 +128,59 @@ function rankCell(row: HTMLElement): string {
   return within(row).getAllByRole("cell")[index]?.textContent?.trim() ?? "";
 }
 
+/** Presses the wizard's Next. */
+async function next(): Promise<void> {
+  await userEvent.click(screen.getByRole("button", { name: "Next" }));
+}
+
+/** The wizard's step list, as rendered: "1. Basics", … */
+function stepTitles(): string[] {
+  return within(screen.getByRole("list", { name: "Steps" }))
+    .getAllByRole("listitem")
+    .map((item) => item.textContent ?? "");
+}
+
+/** The step the wizard has open (`aria-current="step"`). */
+function currentStep(): string {
+  return screen.getByRole("list", { name: "Steps" }).querySelector('[aria-current="step"]')?.textContent ?? "";
+}
+
+/** Opens Edit on `code` and walks Basics → Details, where the rank field is. */
 async function openEdit(code: string): Promise<HTMLInputElement> {
   const row = await rowFor(code);
   await userEvent.click(within(row).getByRole("button", { name: "Edit" }));
+  await screen.findByRole("textbox", { name: "Name" });
+  await next();
   return (await screen.findByLabelText("Headline rank")) as HTMLInputElement;
+}
+
+/** From the Details step: Next to Review, then Submit. */
+async function reviewAndSubmit(): Promise<void> {
+  await next();
+  await userEvent.click(await screen.findByRole("button", { name: "Submit" }));
+}
+
+/** Opens the create wizard on Basics. */
+async function openCreate(): Promise<void> {
+  await userEvent.click(await screen.findByRole("button", { name: "Add point key" }));
+  await screen.findByRole("textbox", { name: "Code" });
+}
+
+/** The body the create walk below sends, and Review shows. */
+const CREATED = { code: "f386_spec_new", name: "Spec new", domain: "electrical", unit: "kW", description: "A spec key", headlineRank: 4 };
+
+/** Fills Basics and Details of the create wizard with {@link CREATED} and stops on Review. */
+async function walkCreateToReview(): Promise<void> {
+  await openCreate();
+  fireEvent.change(screen.getByRole("textbox", { name: "Code" }), { target: { value: CREATED.code } });
+  fireEvent.change(screen.getByRole("textbox", { name: "Name" }), { target: { value: CREATED.name } });
+  fireEvent.change(screen.getByRole("textbox", { name: "Domain" }), { target: { value: CREATED.domain } });
+  fireEvent.change(screen.getByRole("textbox", { name: "Unit" }), { target: { value: CREATED.unit } });
+  await next();
+  fireEvent.change(await screen.findByLabelText("Headline rank"), { target: { value: "4" } });
+  fireEvent.change(screen.getByRole("textbox", { name: "Description" }), { target: { value: CREATED.description } });
+  await next();
+  await screen.findByRole("button", { name: "Submit" });
 }
 
 /**
@@ -149,9 +219,9 @@ export async function clearingSendsNull(): Promise<void> {
   const { update } = stubApi();
   renderPage(admin);
   const field = await openEdit(RANKED.code);
-  expect(field.value, "the modal must open with the stored rank").toBe("3");
-  await userEvent.clear(field);
-  await userEvent.click(screen.getByRole("button", { name: "Save" }));
+  expect(field.value, "the wizard must open with the stored rank").toBe("3");
+  fireEvent.change(field, { target: { value: "" } });
+  await reviewAndSubmit();
   await waitFor(() => expect(update).toHaveBeenCalledTimes(1));
   const [id, body] = update.mock.calls[0]!;
   expect(id).toBe(RANKED.id);
@@ -169,24 +239,25 @@ export async function typingTwoSendsTwo(): Promise<void> {
   expect(field).toHaveAttribute("type", "text");
   expect(field).toHaveAttribute("inputmode", "numeric");
   await userEvent.type(field, "2");
-  await userEvent.click(screen.getByRole("button", { name: "Save" }));
+  await reviewAndSubmit();
   await waitFor(() => expect(update).toHaveBeenCalledTimes(1));
   const [id, body] = update.mock.calls[0]!;
   expect(id).toBe(UNRANKED.id);
   expect(body).toHaveProperty("headlineRank", 2);
 }
 
-/** W4 — `x` is refused on the page, with no API call. */
+/** W4 — `x` is refused on the page: the field says why, Next holds the Details step, and no API call is made. */
 export async function aNonNumberIsRefusedWithoutACall(): Promise<void> {
   const { update } = stubApi();
-  // A request that never settles: were the page to send one, the modal and
-  // its error text would stay, so only the no-call assertion can fail.
+  // A request that never settles: were the page to send one, only the no-call assertion could fail.
   update.mockImplementation(() => new Promise(() => undefined));
   renderPage(admin);
   const field = await openEdit(UNRANKED.code);
   await userEvent.type(field, "x");
-  await userEvent.click(screen.getByRole("button", { name: "Save" }));
   expect(await screen.findByText(/must be a whole number/)).toBeInTheDocument();
+  await next();
+  await screen.findByRole("alert");
+  expect(currentStep()).toBe("2. Details");
   expect(update).not.toHaveBeenCalled();
 }
 
@@ -220,7 +291,116 @@ export async function aRefusedSaveShowsTheSentence(): Promise<void> {
   );
   renderPage(admin);
   await openEdit(UNRANKED.code);
-  await userEvent.click(screen.getByRole("button", { name: "Save" }));
+  await reviewAndSubmit();
   const banner = await screen.findByText(/That headline rank is already taken/);
   expect(banner.textContent).not.toContain('{"');
+}
+
+/** `F3.86` PR 3c — the create wizard's steps are the catalog entry's, in its order, then Review. */
+export async function createStepsAreBasicsDetailsReview(): Promise<void> {
+  stubApi();
+  renderPage(admin);
+  await openCreate();
+  expect(stepTitles()).toEqual(["1. Basics", "2. Details", "3. Review"]);
+}
+
+/** `F3.86` PR 3c — Submit sends exactly the body Review showed, once. */
+export async function theCreateWizardSendsTheReviewedBody(): Promise<void> {
+  const { create } = stubApi();
+  renderPage(admin);
+  await walkCreateToReview();
+  await userEvent.click(screen.getByRole("button", { name: "Submit" }));
+  await waitFor(() => expect(create.mock.calls).toEqual([[CREATED]]));
+}
+
+/** An empty code holds the Basics step: the wizard is not a `<form>`, so `required` cannot. */
+export async function anEmptyCodeHoldsTheBasicsStep(): Promise<void> {
+  const { create } = stubApi();
+  renderPage(admin);
+  await openCreate();
+  fireEvent.change(screen.getByRole("textbox", { name: "Name" }), { target: { value: "No code" } });
+  await next();
+  await screen.findByRole("alert");
+  expect(currentStep()).toBe("1. Basics");
+  expect(create).not.toHaveBeenCalled();
+}
+
+/**
+ * The header rule (plan §10.5 of release 1): the wizard used alone sends the
+ * plain request — no `X-Copilot-Change`. Read on the wire: `fetch` is stubbed
+ * and the REAL `createAdminPointKey` runs. The positive sits beside the
+ * absence: the POST went out, to the route.
+ */
+export async function theCreateWizardSendsNoCopilotHeader(): Promise<void> {
+  stubApi();
+  vi.mocked(api.createAdminPointKey).mockRestore();
+  const calls: Array<{ url: string; init: RequestInit }> = [];
+  vi.stubGlobal("fetch", async (url: string, init: RequestInit) => {
+    calls.push({ url, init });
+    return new Response(JSON.stringify({ ...RANKED, ...CREATED, id: RETIRED.id }), { status: 201 });
+  });
+  renderPage(admin);
+  await walkCreateToReview();
+  await userEvent.click(screen.getByRole("button", { name: "Submit" }));
+
+  const base = import.meta.env.VITE_API_URL ?? "http://localhost:4000";
+  await waitFor(() => expect(calls.some((call) => call.init.method === "POST")).toBe(true));
+  const post = calls.find((call) => call.init.method === "POST") as { url: string; init: RequestInit };
+  expect(post.url).toBe(`${base}/api/v1/admin/point-keys`);
+  expect(new Headers(post.init.headers).get("X-Copilot-Change")).toBeNull();
+}
+
+/** A copilot `fill_step` fills the open step's fields only; a field of another step is ignored. */
+export async function aFillFillsTheNamedStepOnly(): Promise<void> {
+  resetWizardStore();
+  stubApi();
+  renderPage(admin);
+  await openCreate();
+  act(() => {
+    useWizardStore.getState().receiveFill({
+      catalogId: "pointKey.create",
+      stepId: "basics",
+      values: { code: "f386_filled", name: "Filled", description: "not a Basics field" },
+    });
+  });
+  await waitFor(() => expect(screen.getByRole("textbox", { name: "Code" })).toHaveValue("f386_filled"));
+  expect(screen.getByRole("textbox", { name: "Name" })).toHaveValue("Filled");
+  await next();
+  expect(await screen.findByRole("textbox", { name: "Description" })).toHaveValue("");
+}
+
+/** An edit's Review shows the stored value beside the new one. */
+export async function theEditReviewShowsNowBesideAfter(): Promise<void> {
+  stubApi();
+  renderPage(admin);
+  await userEvent.click(within(await rowFor(RANKED.code)).getByRole("button", { name: "Edit" }));
+  fireEvent.change(await screen.findByRole("textbox", { name: "Name" }), { target: { value: "Spec renamed" } });
+  await next();
+  await next();
+  const card = await screen.findByRole("region", { name: "Edit a point key" });
+  const row = within(card).getByRole("row", { name: /^Name/ });
+  expect(within(row).getAllByRole("cell").map((cell) => cell.textContent)).toEqual(["Spec ranked", "Spec renamed"]);
+}
+
+/** Ruling Q9 — Deactivate is a Review-alone wizard, red, and Submit fires the plain deactivate for that key. */
+export async function deactivateIsARedReviewThatPostsDeactivate(): Promise<void> {
+  const { deactivate } = stubApi();
+  renderPage(admin);
+  await userEvent.click(within(await rowFor(RANKED.code)).getByRole("button", { name: "Deactivate" }));
+  expect(stepTitles()).toEqual(["1. Review"]);
+  expect(screen.getByRole("region", { name: "Deactivate a point key" })).toHaveAttribute("data-risk", "deactivate");
+  expect(deactivate, "the click deactivated before the Review was answered").not.toHaveBeenCalled();
+  await userEvent.click(screen.getByRole("button", { name: "Submit" }));
+  await waitFor(() => expect(deactivate.mock.calls).toEqual([[RANKED.id]]));
+}
+
+/** Reactivate is a Review-alone wizard too, not red, and fires the plain reactivate. */
+export async function reactivateIsAReviewThatPostsReactivate(): Promise<void> {
+  const { reactivate, deactivate } = stubApi();
+  renderPage(admin);
+  await userEvent.click(within(await rowFor(RETIRED.code)).getByRole("button", { name: "Reactivate" }));
+  expect(screen.getByRole("region", { name: "Reactivate a point key" })).toHaveAttribute("data-risk", "edit");
+  await userEvent.click(screen.getByRole("button", { name: "Submit" }));
+  await waitFor(() => expect(reactivate.mock.calls).toEqual([[RETIRED.id]]));
+  expect(deactivate).not.toHaveBeenCalled();
 }

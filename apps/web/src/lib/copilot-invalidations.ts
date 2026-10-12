@@ -25,6 +25,8 @@ const USERS: QueryKey = ["admin", "users"];
 // page's resolve read (`site-page.tsx`).
 const LOCATIONS: QueryKey = ["admin", "locations"];
 const SITE_VIEW: QueryKey = ["control-room", "site-view"];
+// `F3.86` PR 3c: the point-key page and the two pickers that list the catalog.
+const POINT_KEYS: QueryKey = ["admin", "point-keys"];
 
 const BY_ENTRY: Readonly<Record<string, readonly QueryKey[]>> = {
   "dashboard.create": [DASHBOARDS],
@@ -53,6 +55,17 @@ const BY_ENTRY: Readonly<Record<string, readonly QueryKey[]>> = {
   "location.controlRoomView.set": [LOCATIONS, SITE_VIEW],
   // The copy makes a dashboard, possibly asset groups, and sets the site's view to the copy.
   "location.siteLayout.make": [SITE_VIEW, LOCATIONS, DASHBOARDS, ASSET_GROUPS],
+  // `F3.86` PR 3c — `["admin","asset-groups"]` is the prefix of both the
+  // group list and a group's members (`api/admin/asset-groups.ts`).
+  "assetGroup.create": [ASSET_GROUPS],
+  "assetGroup.update": [ASSET_GROUPS],
+  "assetGroup.member.add": [ASSET_GROUPS],
+  "assetGroup.member.setRole": [ASSET_GROUPS],
+  "assetGroup.member.remove": [ASSET_GROUPS],
+  "pointKey.create": [POINT_KEYS],
+  "pointKey.update": [POINT_KEYS],
+  "pointKey.deactivate": [POINT_KEYS],
+  "pointKey.reactivate": [POINT_KEYS],
 };
 
 /** The query-key prefixes to invalidate after the change `catalogId` is applied. */

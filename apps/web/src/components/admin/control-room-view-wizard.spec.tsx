@@ -87,6 +87,7 @@ const GROUPS: AdminAssetGroupListResponse = {
       code: "F367-G1",
       name: "Site group",
       description: null,
+      domain: null,
       locationId: SITE_ID,
       locationName: "RSMOC-like site",
       organizationId: ORG_ID,

@@ -410,6 +410,30 @@ export async function assertCreateRejectsAnUnknownDomain(ctx: GroupFixtures, jwt
   expect(await count(ctx, "SELECT count(*) AS n FROM bms.asset_groups WHERE code = $1", [code])).toBe(0);
 }
 
+/**
+ * F3.86 review fix: every group response carries the stored `domain` — create, list and update
+ * — and a group nobody classified reads `null`, so the edit wizard's Review can show it as Now.
+ */
+export async function assertResponsesCarryTheDomain(ctx: GroupFixtures, jwt: JwtPayload): Promise<void> {
+  const created = await ctx.svc.create(jwt, {
+    locationId: ctx.scopedLocationId,
+    code: uniqueCode(),
+    name: "F3.86 domain group",
+    domain: "electrical",
+  });
+  ctx.createdGroupIds.push(created.id);
+  expect(created.domain).toBe("electrical");
+
+  const listed = (await ctx.svc.list(jwt, ctx.scopedLocationId)).items.find((g) => g.id === created.id);
+  expect(listed?.domain).toBe("electrical");
+
+  const updated = await ctx.svc.update(jwt, created.id, { domain: "water" });
+  expect(updated.domain).toBe("water");
+
+  const unclassified = await createGroup(ctx, jwt, ctx.scopedLocationId);
+  expect(unclassified.domain).toBeNull();
+}
+
 /** A member whose asset sits at another location of the SAME organization is a 400 naming no asset. */
 export async function assertMemberFromOtherLocationIs400(ctx: GroupFixtures, jwt: JwtPayload): Promise<void> {
   const asset = ctx.otherLocationAsset;

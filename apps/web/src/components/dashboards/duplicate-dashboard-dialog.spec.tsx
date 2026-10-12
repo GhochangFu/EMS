@@ -209,6 +209,7 @@ const GROUP: AdminAssetGroupDto = {
   organizationId: SOURCE_ORG,
   memberCount: 3,
   createdAt: new Date(0).toISOString(),
+  domain: null,
 };
 /** A group in another organization — the dialog narrows the unfiltered list to the source's. */
 const FOREIGN_GROUP: AdminAssetGroupDto = {

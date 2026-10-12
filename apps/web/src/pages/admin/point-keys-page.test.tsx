@@ -3,12 +3,20 @@ import { cleanup } from "@testing-library/react";
 import { afterEach, describe, it, vi } from "vitest";
 
 import {
+  aFillFillsTheNamedStepOnly,
   aNonNumberIsRefusedWithoutACall,
+  anEmptyCodeHoldsTheBasicsStep,
   clearingSendsNull,
   columnShowsADashForNoRank,
   columnShowsTheRank,
+  createStepsAreBasicsDetailsReview,
+  deactivateIsARedReviewThatPostsDeactivate,
   organizationAdminSeesNoEdit,
   rankHintSaysASeededCodeIsReRanked,
+  reactivateIsAReviewThatPostsReactivate,
+  theCreateWizardSendsNoCopilotHeader,
+  theCreateWizardSendsTheReviewedBody,
+  theEditReviewShowsNowBesideAfter,
   typingTwoSendsTwo,
   aRefusedSaveShowsTheSentence,
 } from "./point-keys-page.spec";
@@ -22,6 +30,7 @@ describe("F3.68 point keys page — headline rank", () => {
   afterEach(() => {
     cleanup();
     vi.restoreAllMocks();
+    vi.unstubAllGlobals();
   });
 
   it("W1 shows a ranked key's rank in the Headline rank column", async () => {
@@ -54,5 +63,45 @@ describe("F3.68 point keys page — headline rank", () => {
 
   it("F4.204 a refused save shows the sentence, not the envelope", async () => {
     await aRefusedSaveShowsTheSentence();
+  });
+});
+
+describe("F3.86 PR 3c point keys page — the catalog wizards (ADR 0099 decision 6, ruling Q9)", () => {
+  afterEach(() => {
+    cleanup();
+    vi.restoreAllMocks();
+    vi.unstubAllGlobals();
+  });
+
+  it("the create wizard's steps are Basics, Details, Review", async () => {
+    await createStepsAreBasicsDetailsReview();
+  });
+
+  it("Submit sends exactly the body Review showed", async () => {
+    await theCreateWizardSendsTheReviewedBody();
+  });
+
+  it("an empty code holds the Basics step and sends nothing", async () => {
+    await anEmptyCodeHoldsTheBasicsStep();
+  });
+
+  it("the create wizard sends no X-Copilot-Change header", async () => {
+    await theCreateWizardSendsNoCopilotHeader();
+  });
+
+  it("a copilot fill fills the named step's fields only", async () => {
+    await aFillFillsTheNamedStepOnly();
+  });
+
+  it("an edit's Review shows Now beside After", async () => {
+    await theEditReviewShowsNowBesideAfter();
+  });
+
+  it("Deactivate is a red Review that posts the plain deactivate", async () => {
+    await deactivateIsARedReviewThatPostsDeactivate();
+  });
+
+  it("Reactivate is a Review that posts the plain reactivate", async () => {
+    await reactivateIsAReviewThatPostsReactivate();
   });
 });

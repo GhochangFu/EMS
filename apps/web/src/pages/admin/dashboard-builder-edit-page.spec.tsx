@@ -209,6 +209,7 @@ export const GROUP: AdminAssetGroupDto = {
   organizationId: ORG_ID,
   memberCount: 3,
   createdAt: new Date(0).toISOString(),
+  domain: null,
 };
 export const SECOND_GROUP: AdminAssetGroupDto = { ...GROUP, id: GRP_2, code: "electrical", name: "Electrical" };
 /** A group in another organization — `GET /admin/asset-groups` is unfiltered for `admin`, so

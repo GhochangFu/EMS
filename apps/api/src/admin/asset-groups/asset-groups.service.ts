@@ -110,6 +110,7 @@ export class AssetGroupsAdminService {
           WHERE m.asset_group_id = ${assetGroups.id}
         )`,
         createdAt: assetGroups.createdAt,
+        domain: assetGroups.domain,
       })
       .from(assetGroups)
       .leftJoin(locations, eq(assetGroups.locationId, locations.id))

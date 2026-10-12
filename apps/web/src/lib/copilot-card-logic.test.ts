@@ -10,6 +10,7 @@ import {
   everyWizardEndsWithReview,
   leavingADirtyWizardAsks,
   longAndStructuredValuesAreShortened,
+  theAssetGroupAndPointKeyEntriesInvalidateTheirPages,
 } from "./copilot-card-logic.spec";
 
 /** Vitest entry point — assertions live in the sibling `.spec` (ADR 0014). */
@@ -23,4 +24,6 @@ describe("F3.85 PR 8 — Confirm card and wizard logic (ADR 0099 decisions 4, 6)
   it("takes a fill only for its step's fields", () => aFillIsTakenOnlyForItsStepsFields());
   it("asks before leaving a dirty wizard", () => leavingADirtyWizardAsks());
   it("does not ask the Review step for a clientOnly field (F3.86 PR 2)", () => theReviewStepDoesNotAskForAClientOnlyField());
+  it("re-reads the asset-group and point-key pages after their changes (F3.86 PR 3c)", () =>
+    theAssetGroupAndPointKeyEntriesInvalidateTheirPages());
 });

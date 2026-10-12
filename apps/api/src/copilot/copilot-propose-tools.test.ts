@@ -29,6 +29,8 @@ import {
   eachScopeCheckRefusesAlone,
   everyEntryHasOneSlimProposeTool,
   fillStepChecksOneStepAndWritesNothing,
+  noToolDefinitionCarriesALargeBody,
+  theToolDefinitionsStayInTheTurnBudget,
   anInvalidTemplatePointFormulaStoresNothing,
   anInvalidTemplateKpiExpressionStoresNothing,
   aKpiNamingAPointTheTemplateLacksStoresNothing,
@@ -68,6 +70,8 @@ describe("F3.85 PR 8 — the copilot propose tools (ADR 0099 decisions 2, 3, 4, 
   it("never proposes the global admin role", () => aUserCreateNeverProposesTheGlobalAdmin());
   it("gates fill_step and describe_change on an access entry", () => aFillOrDescribeOfAnAccessEntryNeedsTheUsersOwnAsk());
   it("has one slim propose tool per entry", () => everyEntryHasOneSlimProposeTool());
+  it("inlines no large body in any one tool definition", () => noToolDefinitionCarriesALargeBody());
+  it("keeps the tool definitions in the per-turn budget", () => theToolDefinitionsStayInTheTurnBudget());
   it("describes a part of a large body on demand", () => describeChangeReadsAPartOfTheBody());
   it("limits describe_change per turn", () => describeChangeHasAPerTurnBudget());
   it("checks a fill_step and writes nothing", () => fillStepChecksOneStepAndWritesNothing());

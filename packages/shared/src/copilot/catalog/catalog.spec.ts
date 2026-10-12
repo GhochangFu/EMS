@@ -90,6 +90,24 @@ export const FIXTURES: Readonly<
   "userGrant.remove": { body: {}, params: { id: ROW, kind: "location", grantId: ROW }, names: TARGET_NAME },
   "location.controlRoomView.set": { body: { kind: "dashboard", dashboardId: ROW }, params: { id: ROW }, names: TARGET_NAME },
   "location.siteLayout.make": { body: {}, params: { id: ROW }, names: TARGET_NAME },
+  // `F3.86` PR 3c — asset groups and their members, and the point-key catalog (ruling Q1).
+  "assetGroup.create": {
+    body: { locationId: ROW, code: "WATER", name: "Water Plant", description: null, domain: "water" },
+    params: {},
+    names: "Water Plant",
+  },
+  "assetGroup.update": { body: { name: "Renamed", description: "x" }, params: { id: ROW }, names: TARGET_NAME },
+  "assetGroup.member.add": { body: { assetId: ORG, role: "raw_water_pump" }, params: { id: ROW }, names: TARGET_NAME },
+  "assetGroup.member.setRole": { body: { role: null }, params: { id: ROW }, names: TARGET_NAME },
+  "assetGroup.member.remove": { body: {}, params: { id: ROW }, names: TARGET_NAME },
+  "pointKey.create": {
+    body: { code: "kw_total", name: "Total kW", domain: "electrical", unit: "kW", headlineRank: null },
+    params: {},
+    names: "kw_total",
+  },
+  "pointKey.update": { body: { name: "Renamed", headlineRank: 3 }, params: { id: ROW }, names: TARGET_NAME },
+  "pointKey.deactivate": { body: {}, params: { id: ROW }, names: TARGET_NAME },
+  "pointKey.reactivate": { body: {}, params: { id: ROW }, names: TARGET_NAME },
 };
 
 const summaryOf = (entry: CatalogEntry) => {
@@ -159,8 +177,8 @@ function deletesOutsideTheAllowance(entries: readonly Pick<CatalogEntry, "id" | 
 
 /**
  * Decision 3, ruling 19 (`F3.86` PR 2): the allowance names exactly the two
- * removals; no `DELETE` entry is outside it. PRs 3c and 4 add the two
- * entries; until then the catalog holds no `DELETE` at all.
+ * removals; no `DELETE` entry is outside it. PR 3c adds the member removal;
+ * PR 4 adds `userGrant.remove` beside it.
  */
 export function theOnlyDeleteEntriesAreTheTwoRemovals(): void {
   expect(DELETE_ALLOWANCE.map((route) => route.path).sort()).toEqual([
@@ -169,7 +187,36 @@ export function theOnlyDeleteEntriesAreTheTwoRemovals(): void {
   ]);
   expect(deletesOutsideTheAllowance(COPILOT_CATALOG)).toEqual([]);
   // PR 4 adds the grant revoke; PR 3c adds the member removal.
-  expect(COPILOT_CATALOG.filter((entry) => entry.method === "DELETE").map((entry) => entry.id)).toEqual(["userGrant.remove"]);
+  expect(COPILOT_CATALOG.filter((entry) => entry.method === "DELETE").map((entry) => entry.id).sort()).toEqual([
+    "assetGroup.member.remove",
+    "userGrant.remove",
+  ]);
+}
+
+/** Decision 3, ruling 19 (`F3.86` PR 3c): a removal is red on the card — its risk is `deactivate` — and takes no body. */
+export function theMemberRemovalIsARedBodylessDelete(): void {
+  const entry = catalogEntry("assetGroup.member.remove");
+  if (!entry) throw new Error("assetGroup.member.remove");
+  expect({ method: entry.method, path: entry.path, risk: entry.risk, bodyName: entry.bodyName, steps: entry.steps }).toEqual({
+    method: "DELETE",
+    path: "/admin/asset-group-members/:id",
+    risk: "deactivate",
+    bodyName: null,
+    steps: [],
+  });
+}
+
+/** Ruling Q1 (`F3.86` PR 3c): a point-key write lives in the bound organization — a `fleet` create, a `pointKey` row. */
+export function thePointKeyEntriesAreFleetTargets(): void {
+  const targets = ["pointKey.create", "pointKey.update", "pointKey.deactivate", "pointKey.reactivate"].map(
+    (id) => catalogEntry(id)?.target,
+  );
+  expect(targets).toEqual([
+    { kind: "fleet" },
+    { kind: "pointKey", param: "id" },
+    { kind: "pointKey", param: "id" },
+    { kind: "pointKey", param: "id" },
+  ]);
 }
 
 /** The rule is not vacuous: an allowed removal passes it and any other `DELETE` does not. */

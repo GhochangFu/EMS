@@ -860,8 +860,8 @@ const OTHER_GROUP_ID = "99999999-9999-9999-9999-999999999999";
 /** Two locations, each with an "HVAC" group: the name alone cannot tell them apart. */
 const ASSET_GROUPS = {
   items: [
-    { id: GROUP_ID, code: "hvac", name: "HVAC", description: null, locationId: "55555555-5555-5555-5555-555555555555", locationName: "Plant North", organizationId: ORG_ID, memberCount: 2, createdAt: new Date(0).toISOString() },
-    { id: OTHER_GROUP_ID, code: "hvac", name: "HVAC", description: null, locationId: "56565656-5656-5656-5656-565656565656", locationName: "Plant South", organizationId: ORG_ID, memberCount: 1, createdAt: new Date(0).toISOString() },
+    { id: GROUP_ID, code: "hvac", name: "HVAC", description: null, locationId: "55555555-5555-5555-5555-555555555555", locationName: "Plant North", organizationId: ORG_ID, memberCount: 2, createdAt: new Date(0).toISOString(), domain: null },
+    { id: OTHER_GROUP_ID, code: "hvac", name: "HVAC", description: null, locationId: "56565656-5656-5656-5656-565656565656", locationName: "Plant South", organizationId: ORG_ID, memberCount: 1, createdAt: new Date(0).toISOString(), domain: null },
   ],
 };
 
