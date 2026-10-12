@@ -21,6 +21,10 @@ const ASSET_TEMPLATES: QueryKey = ["admin", "asset-templates"];
 const ASSET_TEMPLATE: QueryKey = ["admin", "asset-template"];
 // `F3.86` PR 4: the users list, and by prefix each user's grants (`api/admin/users.ts`).
 const USERS: QueryKey = ["admin", "users"];
+// `F3.86` PR 3d: the locations page (and the stored view setting, keyed under it) and the site
+// page's resolve read (`site-page.tsx`).
+const LOCATIONS: QueryKey = ["admin", "locations"];
+const SITE_VIEW: QueryKey = ["control-room", "site-view"];
 
 const BY_ENTRY: Readonly<Record<string, readonly QueryKey[]>> = {
   "dashboard.create": [DASHBOARDS],
@@ -46,6 +50,9 @@ const BY_ENTRY: Readonly<Record<string, readonly QueryKey[]>> = {
   "user.reactivate": [USERS],
   "userGrant.add": [USERS],
   "userGrant.remove": [USERS],
+  "location.controlRoomView.set": [LOCATIONS, SITE_VIEW],
+  // The copy makes a dashboard, possibly asset groups, and sets the site's view to the copy.
+  "location.siteLayout.make": [SITE_VIEW, LOCATIONS, DASHBOARDS, ASSET_GROUPS],
 };
 
 /** The query-key prefixes to invalidate after the change `catalogId` is applied. */

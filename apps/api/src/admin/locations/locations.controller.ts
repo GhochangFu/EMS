@@ -15,12 +15,12 @@ import {
 import { ZodError } from "zod";
 
 import type { JwtPayload } from "@bms/shared";
+// `F3.86` PR 3d — the copilot catalog's bodies, by identity (`tests/f3.85-catalog-coverage`).
+import { putSiteControlRoomViewBodySchema, siteLayoutBodySchema } from "@bms/shared";
 
 import { CurrentUser } from "../../auth/current-user.decorator";
 import { JwtAuthGuard } from "../../auth/jwt-auth.guard";
 import { SiteControlRoomViewService } from "../../control-room/site-control-room-view.service";
-import { putSiteControlRoomViewBodySchema } from "../../control-room/site-control-room-view.schema";
-import { siteLayoutBodySchema } from "../../control-room/site-layout.schema";
 import { SiteLayoutService } from "../../control-room/site-layout.service";
 import { idParamSchema, parseActiveFilter } from "../admin.schema";
 import {

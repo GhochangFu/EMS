@@ -88,6 +88,8 @@ export const FIXTURES: Readonly<
   "user.reactivate": { body: {}, params: { id: ROW }, names: TARGET_NAME },
   "userGrant.add": { body: { kind: "location", targetId: ROW }, params: { id: ROW }, names: TARGET_NAME },
   "userGrant.remove": { body: {}, params: { id: ROW, kind: "location", grantId: ROW }, names: TARGET_NAME },
+  "location.controlRoomView.set": { body: { kind: "dashboard", dashboardId: ROW }, params: { id: ROW }, names: TARGET_NAME },
+  "location.siteLayout.make": { body: {}, params: { id: ROW }, names: TARGET_NAME },
 };
 
 const summaryOf = (entry: CatalogEntry) => {

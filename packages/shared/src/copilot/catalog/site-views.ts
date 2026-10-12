@@ -1,17 +1,78 @@
+import { putSiteControlRoomViewBodySchema } from "../../contracts/site-control-room-view-writes";
+import { siteLayoutBodySchema } from "../../contracts/site-layout-writes";
+import { plural, quoted, text, uuidParam } from "./summary-text";
 import type { CatalogEntry, ExcludedRoute } from "./types";
 
+/** What a view body sets the site to, as the card reads it. */
+function viewTarget(body: Readonly<Record<string, unknown>>): string {
+  if (body.kind === "dashboard") return `dashboard ${text(body, "dashboardId")}`;
+  if (body.kind === "builtin") return "the built-in SMOC view";
+  return "the generated view";
+}
+
+/** The site template a site-layout body copies. */
+function layoutSource(body: Readonly<Record<string, unknown>>): string {
+  const templateId = text(body, "templateId");
+  return templateId === "" ? "the organization's newest published site template" : `template ${templateId}`;
+}
+
 /**
- * `F3.86` (ADR 0099 release 2) — the catalog entries for the two location Control Room view routes (ruling Q7(b)).
- * One file per area, so the wizard PRs never edit the same catalog file
- * (plan §4.5). Until its PR lands, each write route of the area waits in
- * {@link SITE_VIEW_PENDING}; the PR moves it to {@link SITE_VIEW_ENTRIES}.
+ * `F3.86` PR 3d (ADR 0099 release 2, ruling Q7(b), plan §5.5) — the two
+ * location sub-routes of `LocationsAdminController`: a site's Control Room
+ * view, and the site-layout copy. One file per area, so the wizard PRs never
+ * edit the same catalog file (plan §4.5).
+ *
+ * The resolver mirrors each route's own checks (`siteControlRoomView`: the
+ * site, then a built-in view is the global admin's only; `siteLayout`: the
+ * site, then a dashboard on the site's scope), and the route checks again at
+ * Confirm. `tabGroups` maps tab keys to group ids, so it is no `CatalogRef`:
+ * the route's planner refuses a group that is not at the site with its own
+ * 400, which the card shows. An `ambiguous` 409 after a Confirm is a failed
+ * change; the card lists the candidates and links the site page's wizard
+ * (plan §5.5) — the card never re-proposes.
  */
-export const SITE_VIEW_ENTRIES: readonly CatalogEntry[] = [];
-
-const PENDING = "F3.86 PR 3d";
-
-/** The area's write routes that are not entries: waiting for their PR, or excluded for good (with the reason). */
-export const SITE_VIEW_PENDING: readonly ExcludedRoute[] = [
-  { method: "PUT", path: "/admin/locations/:id/control-room-view", reason: PENDING },
-  { method: "POST", path: "/admin/locations/:id/site-layout", reason: PENDING },
+export const SITE_VIEW_ENTRIES: readonly CatalogEntry[] = [
+  {
+    id: "location.controlRoomView.set",
+    title: "Set a site's Control Room view",
+    method: "PUT",
+    path: "/admin/locations/:id/control-room-view",
+    params: { id: uuidParam },
+    body: putSiteControlRoomViewBodySchema,
+    bodyName: "putSiteControlRoomViewBodySchema",
+    clientOnly: [],
+    risk: "edit",
+    target: { kind: "siteControlRoomView", param: "id" },
+    refs: [{ field: "dashboardId", kind: "dashboard" }],
+    formulas: [],
+    steps: [{ id: "view", title: "View", fields: ["kind", "dashboardId", "builtinKey"] }],
+    summary: ({ body, targetName, organizationName }) =>
+      `Set the Control Room view of ${quoted(targetName)} in ${organizationName} to ${viewTarget(body)}.`,
+  },
+  {
+    id: "location.siteLayout.make",
+    title: "Make a site layout",
+    method: "POST",
+    path: "/admin/locations/:id/site-layout",
+    params: { id: uuidParam },
+    body: siteLayoutBodySchema,
+    bodyName: "siteLayoutBodySchema",
+    clientOnly: [],
+    risk: "create",
+    target: { kind: "siteLayout", param: "id" },
+    refs: [{ field: "templateId", kind: "dashboardTemplate" }],
+    formulas: [],
+    steps: [{ id: "groups", title: "Groups", fields: ["tabGroups", "templateId"] }],
+    summary: ({ body, targetName, organizationName }) => {
+      const tabGroups = body.tabGroups;
+      const tabs =
+        tabGroups !== null && typeof tabGroups === "object"
+          ? `, with the chosen groups for ${plural(Object.keys(tabGroups).length, "tab")}`
+          : "";
+      return `Make the site layout for ${quoted(targetName)} in ${organizationName} from ${layoutSource(body)}${tabs}.`;
+    },
+  },
 ];
+
+/** The area's write routes that are not entries. Both are entries since PR 3d. */
+export const SITE_VIEW_PENDING: readonly ExcludedRoute[] = [];

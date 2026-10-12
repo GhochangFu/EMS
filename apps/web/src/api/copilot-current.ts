@@ -5,6 +5,7 @@ import { catalogEntry, catalogParamsOf } from "@bms/shared/copilot";
 import { fetchAdminAssetCalcPoints } from "./admin/asset-points";
 import { adminFetch } from "./admin/client";
 import { fetchAdminDashboardTemplate } from "./admin/dashboard-templates";
+import { fetchSiteControlRoomView } from "./admin/locations";
 import { fetchDashboards } from "./dashboards";
 
 /**
@@ -48,6 +49,11 @@ export async function fetchCopilotCurrent(change: CopilotPendingChangeDto): Prom
       const points = await fetchAdminAssetCalcPoints(params.assetId as string);
       const point = points.items.find((item) => item.pointKey === params.pointKey);
       return point ? { ...point.override } : null;
+    }
+    // `F3.86` PR 3d: the stored setting, through the route the locations page reads it with.
+    case "location.controlRoomView.set": {
+      const setting = await fetchSiteControlRoomView(params.id as string);
+      return { kind: setting.kind, dashboardId: setting.dashboardId, builtinKey: setting.builtinKey };
     }
     default:
       return null;
