@@ -34,16 +34,12 @@ const SOURCE_KEY = `${RUN_ID}-kw`;
 type Listed = { id: string; code: string };
 type AssetPoint = { id: string; assetId: string; pointKey: string; sourceDataKey: string };
 
-/** The modal form the page opened: the element that holds that heading. */
-function modal(page: Page, heading: string) {
-  return page.getByRole("heading", { level: 2, name: heading, exact: true }).locator("xpath=..");
-}
-
 /**
- * `F3.86` PR 3a — a wizard the page opened (ADR 0099 decision 6): the dialog
- * the frame names after its heading (`components/admin/location-wizards.tsx`
- * `AdminWizardFrame`, `role="dialog"` with that `aria-label`). The location
- * and RTU forms are wizards; the asset and mapping forms are still modals.
+ * `F3.86` PRs 3a and 3b — a wizard the page opened (ADR 0099 decision 6): the
+ * dialog the frame names after its heading
+ * (`components/admin/admin-wizard-frame.tsx` `AdminWizardFrame`,
+ * `role="dialog"` with that `aria-label`). All four forms of this path are
+ * wizards.
  */
 function wizard(page: Page, heading: string) {
   return page.getByRole("dialog", { name: heading, exact: true });
@@ -130,14 +126,16 @@ test.describe("path 4 — master data", () => {
     await test.step("add an asset on the RTU", async () => {
       await page.getByRole("button", { name: "Add asset", exact: true }).click();
 
-      const form = modal(page, "Add asset");
+      // Basics → Classification → Metadata → Review (`asset.create`); Domain is on Classification.
+      const form = wizard(page, "Add asset");
       await form.getByLabel("Code", { exact: true }).fill(ASSET_CODE);
       await form.getByLabel("Name", { exact: true }).fill(ASSET_NAME);
       await form.getByLabel("Site name", { exact: true }).fill(SITE_NAME);
       await expect(form.getByRole("combobox", { name: "Location", exact: true })).toHaveValue(locationId);
       await expect(form.getByRole("combobox", { name: "RTU", exact: true })).toHaveValue(rtuId);
+      await form.getByRole("button", { name: "Next", exact: true }).click();
       await form.getByRole("combobox", { name: "Domain", exact: true }).selectOption("electrical");
-      await form.getByRole("button", { name: "Save", exact: true }).click();
+      await nextThenSubmit(form, 2);
       await expect(form).toHaveCount(0);
 
       await expect(rowByCode(page, ASSET_CODE)).toHaveCount(1);
@@ -151,10 +149,11 @@ test.describe("path 4 — master data", () => {
     await test.step("map the kw point and keep it after a reload", async () => {
       await page.getByRole("button", { name: "Add mapping", exact: true }).click();
 
-      const form = modal(page, "Add mapping");
+      // Mapping → Instrument → Review (`assetPoint.create`); the routed asset is named, not picked.
+      const form = wizard(page, "Add mapping");
       await form.getByRole("combobox", { name: "Point key", exact: true }).selectOption(POINT_KEY);
       await form.getByLabel("Source data key", { exact: true }).fill(SOURCE_KEY);
-      await form.getByRole("button", { name: "Save", exact: true }).click();
+      await nextThenSubmit(form, 2);
       await expect(form).toHaveCount(0);
 
       const mapping = () =>

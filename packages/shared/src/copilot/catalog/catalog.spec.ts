@@ -125,6 +125,23 @@ export const FIXTURES: Readonly<
   "rtu.update": { body: { displayName: "Renamed" }, params: { id: ROW }, names: TARGET_NAME },
   "rtu.deactivate": { body: {}, params: { id: ROW }, names: TARGET_NAME },
   "rtu.reactivate": { body: {}, params: { id: ROW }, names: TARGET_NAME },
+  // `F3.86` PR 3b: assets and asset points.
+  "asset.create": {
+    body: { code: "PUMP-7", name: "Feed Pump Seven", siteName: "Pune Works", locationId: ROW, domain: "water" },
+    params: {},
+    names: "Feed Pump Seven",
+  },
+  "asset.update": { body: { name: "Renamed", locationId: ROW }, params: { id: ROW }, names: TARGET_NAME },
+  "asset.deactivate": { body: {}, params: { id: ROW }, names: TARGET_NAME },
+  "asset.reactivate": { body: {}, params: { id: ROW }, names: TARGET_NAME },
+  "assetPoint.create": {
+    body: { assetId: ROW, pointKey: "kw", sourceDataKey: "pump7_kw", scaleMultiplier: 0.1 },
+    params: {},
+    names: TARGET_NAME,
+  },
+  "assetPoint.update": { body: { unit: "kW", engMax: 500 }, params: { id: ROW }, names: TARGET_NAME },
+  "assetPoint.deactivate": { body: {}, params: { id: ROW }, names: TARGET_NAME },
+  "assetPoint.reactivate": { body: {}, params: { id: ROW }, names: TARGET_NAME },
 };
 
 const summaryOf = (entry: CatalogEntry) => {

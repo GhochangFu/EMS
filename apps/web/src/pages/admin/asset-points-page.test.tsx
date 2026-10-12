@@ -19,6 +19,7 @@ import {
   addWithNoLocationDisablesTheRtuSelect,
   anEditSendsOnlyTheChangedField,
   anUntouchedEditSendsNothing,
+  pickingAnAssetFollowsItsLocationAndResetsTheRtu,
   choosingUnwiredSendsNull,
   theEditRtuSelectShowsTheStoredRtu,
   theListShowsTheInheritedEffectiveRange,
@@ -43,6 +44,10 @@ describe("asset points page — refusals, effective metadata, the Add/Edit dialo
     vi.restoreAllMocks();
     vi.unstubAllGlobals();
   });
+
+  it("F3.86 picking an asset on the unrouted Add fetches its location's RTUs and clears the RTU choice", async () => {
+    await pickingAnAssetFollowsItsLocationAndResetsTheRtu();
+  }, CASE_TIMEOUT_MS);
 
   it("F4.204 a refused add-mapping save shows the sentence, not the envelope", async () => {
     await aRefusedCreateShowsTheSentence();

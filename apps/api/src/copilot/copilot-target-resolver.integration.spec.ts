@@ -31,6 +31,8 @@ export type ResolverCtx = {
   locationB: string;
   rtuA: string;
   assetA: string;
+  /** The asset's code: an asset-point card names `<code> <pointKey>`. */
+  assetCodeA: string;
   groupA: string;
   memberA: string;
   assetPointA: string;
@@ -177,7 +179,7 @@ export async function anAssetRowIsCheckedOnItsAsset(ctx: ResolverCtx): Promise<v
   const allowed = recorder();
   expect(await resolverWith(ctx, allowed.access).resolve(point, { id: ctx.assetPointA }, {}, [ctx.orgA], JWT)).toMatchObject({
     organizationId: ctx.orgA,
-    targetName: ctx.pointKeyCode,
+    targetName: `${ctx.assetCodeA} ${ctx.pointKeyCode}`,
   });
   expect(allowed.calls).toEqual([["canManageAsset", ctx.assetA]]);
   expect(await resolverWith(ctx, recorder({ canManageAsset: false }).access).resolve(point, { id: ctx.assetPointA }, {}, [ctx.orgA], JWT)).toBeNull();
@@ -188,6 +190,37 @@ export async function anAssetRowIsCheckedOnItsAsset(ctx: ResolverCtx): Promise<v
     targetName: RESOLVER_NAMES.assetA,
   });
   expect(byId.calls).toEqual([["canManageAsset", ctx.assetA]]);
+}
+
+/**
+ * `F3.86` PR 3b (plan §4.9, owed by this PR) — an asset update whose body
+ * names `locationId` moves the asset, and `AssetsAdminService.update` checks
+ * `canManageLocation` on the **new** site after `canManageAsset` (the asset
+ * sits at `locationA`; the move names `locationA2`). The resolver asks the
+ * same, on the same row; a body without `locationId` never asks it.
+ */
+export async function anAssetMoveNeedsTheNewSiteToo(ctx: ResolverCtx): Promise<void> {
+  const entry = fixture({ kind: "asset", param: "id" });
+  const move = { locationId: ctx.locationA2 };
+  // The refusal first, so a resolver that skips the check reddens here, at the claim.
+  const denied = recorder({ canManageLocation: false });
+  expect(await resolverWith(ctx, denied.access).resolve(entry, { id: ctx.assetA }, move, [ctx.orgA], JWT)).toBeNull();
+  // The new site, not the asset's own: an argument swap is the known survivor of a "was it called" check.
+  expect(denied.calls).toEqual([
+    ["canManageAsset", ctx.assetA],
+    ["canManageLocation", ctx.locationA2],
+  ]);
+  const allowed = recorder();
+  expect(await resolverWith(ctx, allowed.access).resolve(entry, { id: ctx.assetA }, move, [ctx.orgA], JWT)).toMatchObject({
+    organizationId: ctx.orgA,
+    targetName: RESOLVER_NAMES.assetA,
+  });
+  // The same caller, without `locationId`: the route asks nothing more, so neither does the resolver.
+  const rename = recorder({ canManageLocation: false });
+  expect(await resolverWith(ctx, rename.access).resolve(entry, { id: ctx.assetA }, { name: "Renamed" }, [ctx.orgA], JWT)).toMatchObject({
+    organizationId: ctx.orgA,
+  });
+  expect(rename.calls).toEqual([["canManageAsset", ctx.assetA]]);
 }
 
 /** `parent`: a create's organization is the row the body names, checked by the route's own rule; another organization's row is `null`. */

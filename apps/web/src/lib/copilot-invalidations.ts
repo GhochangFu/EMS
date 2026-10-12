@@ -32,6 +32,12 @@ const POINT_KEYS: QueryKey = ["admin", "point-keys"];
 const LOCATION_SUMMARY: QueryKey = ["admin", "location-summary"];
 const RTUS: QueryKey = ["admin", "rtus"];
 const RTU_SUMMARY: QueryKey = ["admin", "rtu-summary"];
+// `F3.86` PR 3b: the asset lists (`assets-page.tsx`, `hierarchy-filter-bar.tsx`), the summary the
+// breadcrumb and the points page name (`admin-breadcrumb.tsx`, `asset-points-page.tsx`), and the
+// point mappings (`asset-points-page.tsx`, `point-picker.tsx`'s `dashboard-scope` read under it).
+const ASSETS: QueryKey = ["admin", "assets"];
+const ASSET_SUMMARY: QueryKey = ["admin", "asset-summary"];
+const ASSET_POINTS: QueryKey = ["admin", "asset-points"];
 
 const BY_ENTRY: Readonly<Record<string, readonly QueryKey[]>> = {
   "dashboard.create": [DASHBOARDS],
@@ -65,6 +71,16 @@ const BY_ENTRY: Readonly<Record<string, readonly QueryKey[]>> = {
   "rtu.update": [RTUS, RTU_SUMMARY],
   "rtu.deactivate": [RTUS, RTU_SUMMARY],
   "rtu.reactivate": [RTUS, RTU_SUMMARY],
+  "asset.create": [ASSETS, ASSET_SUMMARY],
+  // A rename or move also changes the labels the point rows and a group's members join in
+  // (`assetCode`, `assetName`, `locationName`; `assetDomain`).
+  "asset.update": [ASSETS, ASSET_SUMMARY, ASSET_POINTS, ASSET_GROUPS],
+  "asset.deactivate": [ASSETS, ASSET_SUMMARY, ASSET_POINTS],
+  "asset.reactivate": [ASSETS, ASSET_SUMMARY],
+  "assetPoint.create": [ASSET_POINTS],
+  "assetPoint.update": [ASSET_POINTS],
+  "assetPoint.deactivate": [ASSET_POINTS],
+  "assetPoint.reactivate": [ASSET_POINTS],
   "location.controlRoomView.set": [LOCATIONS, SITE_VIEW],
   // The copy makes a dashboard, possibly asset groups, and sets the site's view to the copy.
   "location.siteLayout.make": [SITE_VIEW, LOCATIONS, DASHBOARDS, ASSET_GROUPS],

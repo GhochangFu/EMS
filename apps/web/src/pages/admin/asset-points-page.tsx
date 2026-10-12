@@ -1,14 +1,11 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import type { FormEvent } from "react";
 import { useEffect, useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
-import { QUALITY_POLICIES } from "@bms/shared";
 import type {
   AdminAssetPointDto,
   AssetPointCalcConfigDto,
   AssetPointCalcOverrideFields,
   MasterDataActiveFilter,
-  QualityPolicy,
 } from "@bms/shared";
 import { type CatalogEntry, catalogEntry } from "@bms/shared/copilot";
 
@@ -23,9 +20,9 @@ import {
   updateAdminAssetPoint,
 } from "../../api/admin/asset-points";
 import { fetchAdminAssetSummary } from "../../api/admin/assets";
-import { fetchAdminPointKeys } from "../../api/admin/point-keys";
-import { fetchAdminRtus } from "../../api/admin/rtus";
 import { ActiveFilterBar } from "../../components/admin/active-filter-bar";
+import { AssetPointStatusWizard } from "../../components/admin/asset-point-status-wizard";
+import { AssetPointWizard } from "../../components/admin/asset-point-wizard";
 import {
   HierarchyFilterBar,
   type HierarchySelection,
@@ -44,13 +41,7 @@ import {
 import { SectionCard } from "../../components/section-card";
 import { WizardShell } from "../../components/wizard/wizard-shell";
 import { apiErrorMessage } from "../../lib/api-error-message";
-import {
-  createBodyFrom,
-  editBodyFrom,
-  emptyAssetPointForm,
-  formFrom,
-  type AssetPointForm,
-} from "../../lib/asset-point-form";
+import { emptyAssetPointForm, type AssetPointForm } from "../../lib/asset-point-form";
 import {
   effectivePointMetadata,
   inheritedFields,
@@ -104,16 +95,6 @@ function CalcRuntimePill({ runtime }: { runtime: AssetPointCalcConfigDto["runtim
  * value, and an "inherited" marker where the shown value comes from the
  * asset's template. The title names the template-supplied fields.
  */
-/**
- * The suffix on the synthetic option that holds a stored RTU the location list
- * does not. "loading" only while the fetch runs: a query that is disabled (no
- * location) or failed never succeeds, and "loading" there would read as forever.
- */
-function storedRtuLabel(rtusQ: { isSuccess: boolean; isFetching: boolean }): string {
-  if (rtusQ.isSuccess) return "not in this location";
-  return rtusQ.isFetching ? "loading" : "unknown RTU";
-}
-
 function MetadataCell({
   text,
   effective,
@@ -273,16 +254,27 @@ function CalcOverrideWizard({
 
 type AssetPointsAdminPageProps = { user: AuthUser };
 
-/** Admin screen for asset point mappings with asset drill-down. */
+/**
+ * Admin screen for asset point mappings with asset drill-down.
+ *
+ * `F3.86` PR 3b (ADR 0099 decision 6) — Add mapping and Edit are the
+ * `assetPoint.create` and `assetPoint.update` wizards
+ * (`components/admin/asset-point-wizard.tsx`), and Deactivate and Reactivate
+ * are Review-only wizards (ruling Q9). This page sends what Review parsed,
+ * with no `X-Copilot-Change` header. The bulk panel and the mapping sheet
+ * stay (ruling Q6).
+ */
 export function AssetPointsAdminPage({ user }: AssetPointsAdminPageProps) {
   const { assetId } = useParams();
   const queryClient = useQueryClient();
   const [activeFilter, setActiveFilter] = useState<MasterDataActiveFilter>("all");
   const [selection, setSelection] = useState<HierarchySelection>({ assetId });
   const [search, setSearch] = useState("");
-  const [modalOpen, setModalOpen] = useState(false);
+  /** The form a create opens with, or `null` while no create is open. */
+  const [opened, setOpened] = useState<AssetPointForm | null>(null);
   const [editing, setEditing] = useState<AdminAssetPointDto | null>(null);
-  const [form, setForm] = useState<AssetPointForm>(() => emptyAssetPointForm(assetId ?? ""));
+  /** `F3.86` PR 3b — the mapping whose deactivate or reactivate wizard is open. */
+  const [statusTarget, setStatusTarget] = useState<AdminAssetPointDto | null>(null);
   const [error, setError] = useState<string | null>(null);
   // `F2.7` / ADR 0056 decision 8 — the rows "Edit selected" applies to.
   const [selectedIds, setSelectedIds] = useState<ReadonlySet<string>>(new Set());
@@ -304,7 +296,6 @@ export function AssetPointsAdminPage({ user }: AssetPointsAdminPageProps) {
         rtuId: assetSummaryQ.data.rtuId ?? undefined,
         assetId,
       });
-      setForm((current) => ({ ...current, assetId }));
     }
   }, [assetId, assetSummaryQ.data]);
 
@@ -355,31 +346,6 @@ export function AssetPointsAdminPage({ user }: AssetPointsAdminPageProps) {
     onSuccess: afterOverride,
     onError: (cause: Error) => setOverrideError(apiErrorMessage(cause)),
   });
-
-  const catalogQ = useQuery({
-    // `F3.39`: one fleet-wide catalog, so no organization in the key and no
-    // organization to wait for before fetching it.
-    queryKey: ["admin", "point-keys", "true"],
-    queryFn: () => fetchAdminPointKeys("true"),
-    enabled: modalOpen,
-  });
-
-  // ADR 0056 Amendment 3 part A (`F2.27`) — the dialog's RTU picker lists the
-  // RTUs of the asset's location: the row's own on Edit, the routed asset's
-  // or the filter's on Add. Unknown → the select is disabled with a hint.
-  const formLocationId =
-    editing?.locationId ?? assetSummaryQ.data?.locationId ?? selection.locationId ?? null;
-  const rtusQ = useQuery({
-    queryKey: ["admin", "rtus", "all", formLocationId],
-    queryFn: () => fetchAdminRtus("all", formLocationId ?? undefined),
-    enabled: modalOpen && formLocationId !== null,
-  });
-  const rtuOptions = rtusQ.data?.items ?? [];
-  // The stored RTU may be one the location list no longer holds (moved or
-  // deleted). Without an option holding it, the controlled `<select>` shows
-  // blank, and the operator reads the point as unwired when it is not.
-  const storedRtuMissing =
-    editing?.rtuId != null && !rtuOptions.some((option) => option.id === editing.rtuId);
 
   const listQ = useQuery({
     queryKey: ["admin", "asset-points", activeFilter, assetId, selection.locationId],
@@ -435,14 +401,14 @@ export function AssetPointsAdminPage({ user }: AssetPointsAdminPageProps) {
   }
 
   const saveMutation = useMutation({
-    mutationFn: async () => {
-      // ADR 0056 Amendment 3 part A (`F2.31`): an edit sends the diff against
-      // the loaded row (`editBodyFrom`), so the API's `statedPointMetadata`
-      // sees only what the operator changed.
+    // The body the wizard's Review parsed. ADR 0056 Amendment 3 part A (`F2.31`): an
+    // edit's is the diff against the loaded row (`editBodyFrom`), so the API's
+    // `statedPointMetadata` sees only what the operator changed.
+    mutationFn: async (body: Record<string, unknown>) => {
       if (editing) {
-        return updateAdminAssetPoint(editing.id, editBodyFrom(editing, form));
+        return updateAdminAssetPoint(editing.id, body as Parameters<typeof updateAdminAssetPoint>[1]);
       }
-      return createAdminAssetPoint(createBodyFrom(form));
+      return createAdminAssetPoint(body as Parameters<typeof createAdminAssetPoint>[0]);
     },
     onSuccess: async () => {
       closeDialog();
@@ -452,7 +418,7 @@ export function AssetPointsAdminPage({ user }: AssetPointsAdminPageProps) {
   });
 
   function closeDialog(): void {
-    setModalOpen(false);
+    setOpened(null);
     setEditing(null);
     setError(null);
   }
@@ -486,8 +452,8 @@ export function AssetPointsAdminPage({ user }: AssetPointsAdminPageProps) {
               className="surface-button-primary bg-accent px-3 py-2 text-xs font-semibold text-on-accent"
               onClick={() => {
                 setEditing(null);
-                setForm(emptyAssetPointForm(assetId ?? selection.assetId ?? ""));
-                setModalOpen(true);
+                setError(null);
+                setOpened(emptyAssetPointForm(assetId ?? selection.assetId ?? ""));
               }}
             >
               Add mapping
@@ -595,9 +561,9 @@ export function AssetPointsAdminPage({ user }: AssetPointsAdminPageProps) {
                       type="button"
                       className="text-xs font-semibold text-accent-strong"
                       onClick={() => {
+                        setOpened(null);
+                        setError(null);
                         setEditing(item);
-                        setForm(formFrom(item));
-                        setModalOpen(true);
                       }}
                     >
                       Edit
@@ -605,7 +571,7 @@ export function AssetPointsAdminPage({ user }: AssetPointsAdminPageProps) {
                     <button
                       type="button"
                       className="text-xs font-semibold text-ink-muted"
-                      onClick={() => toggleMutation.mutate(item)}
+                      onClick={() => setStatusTarget(item)}
                     >
                       {item.active ? "Deactivate" : "Reactivate"}
                     </button>
@@ -712,201 +678,36 @@ export function AssetPointsAdminPage({ user }: AssetPointsAdminPageProps) {
         </SectionCard>
       ) : null}
 
-      {modalOpen ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-scrim/40 p-4">
-          <form
-            className="w-full max-w-lg surface-dialog p-4"
-            onSubmit={(event: FormEvent) => {
-              event.preventDefault();
-              // `F2.31`: an edit that changed nothing has nothing to send.
-              if (editing && Object.keys(editBodyFrom(editing, form)).length === 0) {
-                closeDialog();
-                return;
-              }
-              saveMutation.mutate();
-            }}
-          >
-            <h2 className="font-condensed text-lg font-bold">
-              {editing ? "Edit mapping" : "Add mapping"}
-            </h2>
-            <div className="mt-3 grid gap-3">
-              <label className="block text-xs font-semibold text-ink-muted">
-                Point key
-                <select
-                  className="mt-1 w-full surface-field px-3 py-2 text-sm"
-                  value={form.pointKey}
-                  required
-                  onChange={(event) => {
-                    const selected = (catalogQ.data?.items ?? []).find(
-                      (item) => item.code === event.target.value,
-                    );
-                    setForm({
-                      ...form,
-                      pointKey: event.target.value,
-                      unit: selected?.unit ?? form.unit,
-                    });
-                  }}
-                >
-                  <option value="">Select catalog point key</option>
-                  {(catalogQ.data?.items ?? []).map((item) => (
-                    <option key={item.id} value={item.code}>
-                      {item.code} · {item.name}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label className="block text-xs font-semibold text-ink-muted">
-                Source data key
-                <input
-                  className="mt-1 w-full surface-field px-3 py-2 text-sm"
-                  value={form.sourceDataKey}
-                  required
-                  onChange={(event) => setForm({ ...form, sourceDataKey: event.target.value })}
-                />
-              </label>
-              <label className="block text-xs font-semibold text-ink-muted">
-                Sensor code
-                <input
-                  className="mt-1 w-full surface-field px-3 py-2 text-sm"
-                  value={form.sensorCode}
-                  onChange={(event) => setForm({ ...form, sensorCode: event.target.value })}
-                />
-              </label>
-              <label className="block text-xs font-semibold text-ink-muted">
-                Unit
-                <input
-                  className="mt-1 w-full surface-field px-3 py-2 text-sm"
-                  value={form.unit}
-                  onChange={(event) => setForm({ ...form, unit: event.target.value })}
-                />
-              </label>
-              {/* `F2.27` / ADR 0056 Amendment 3 part A. Blank on Add is omitted
-                  (the point follows the asset's gateway); blank on Edit is
-                  `rtuId: null` (unwire) — sent only when changed
-                  (`editBodyFrom`), so a computed row stays editable. */}
-              <label className="block text-xs font-semibold text-ink-muted">
-                RTU
-                <select
-                  aria-label="RTU"
-                  className="mt-1 w-full surface-field px-3 py-2 text-sm"
-                  value={form.rtuId}
-                  disabled={formLocationId === null}
-                  onChange={(event) => setForm({ ...form, rtuId: event.target.value })}
-                >
-                  <option value="">{editing ? "Unwired" : "Inherit the asset's gateway"}</option>
-                  {rtuOptions.map((option) => (
-                    <option key={option.id} value={option.id}>
-                      {option.code} · {option.displayName}
-                      {option.active ? "" : " (inactive)"}
-                    </option>
-                  ))}
-                  {storedRtuMissing && editing?.rtuId ? (
-                    <option value={editing.rtuId}>
-                      {editing.rtuId} ({storedRtuLabel(rtusQ)})
-                    </option>
-                  ) : null}
-                </select>
-                <span className="mt-1 block text-[11px] font-normal">
-                  {formLocationId === null
-                    ? "Choose a location to pick an RTU"
-                    : editing
-                      ? "On an existing mapping, blank unwires the point (a measured point becomes unmapped)."
-                      : "Blank keeps the asset's own gateway."}
-                </span>
-              </label>
-              {/* `F2.7` / ADR 0056 decision 1 — the per-asset override of the
-                  five. Empty means "follow the template", which is an omitted
-                  field on a create and an explicit `null` on an edit
-                  (`asset-point-form.ts`; an edit sends only a changed box). */}
-              <p className="text-[11px] text-ink-muted">
-                Leave a field below empty to follow this asset&apos;s template default. Clearing one
-                on an existing mapping puts it back on the template.
-              </p>
-              <div className="grid grid-cols-2 gap-3">
-                <label className="block text-xs font-semibold text-ink-muted">
-                  Scale multiplier
-                  <input
-                    type="number"
-                    step="any"
-                    aria-label="Scale multiplier"
-                    className="mt-1 w-full surface-field px-3 py-2 text-sm"
-                    value={form.scaleMultiplier}
-                    onChange={(event) => setForm({ ...form, scaleMultiplier: event.target.value })}
-                  />
-                </label>
-                <label className="block text-xs font-semibold text-ink-muted">
-                  Scale offset
-                  <input
-                    type="number"
-                    step="any"
-                    aria-label="Scale offset"
-                    className="mt-1 w-full surface-field px-3 py-2 text-sm"
-                    value={form.scaleOffset}
-                    onChange={(event) => setForm({ ...form, scaleOffset: event.target.value })}
-                  />
-                </label>
-                <label className="block text-xs font-semibold text-ink-muted">
-                  Engineering minimum
-                  <input
-                    type="number"
-                    step="any"
-                    aria-label="Engineering minimum"
-                    className="mt-1 w-full surface-field px-3 py-2 text-sm"
-                    value={form.engMin}
-                    onChange={(event) => setForm({ ...form, engMin: event.target.value })}
-                  />
-                </label>
-                <label className="block text-xs font-semibold text-ink-muted">
-                  Engineering maximum
-                  <input
-                    type="number"
-                    step="any"
-                    aria-label="Engineering maximum"
-                    className="mt-1 w-full surface-field px-3 py-2 text-sm"
-                    value={form.engMax}
-                    onChange={(event) => setForm({ ...form, engMax: event.target.value })}
-                  />
-                </label>
-                <label className="block text-xs font-semibold text-ink-muted">
-                  Quality policy
-                  <select
-                    aria-label="Quality policy"
-                    className="mt-1 w-full surface-field px-3 py-2 text-sm"
-                    value={form.qualityPolicy}
-                    onChange={(event) =>
-                      setForm({ ...form, qualityPolicy: event.target.value as QualityPolicy | "" })
-                    }
-                  >
-                    {/* The two policies are `packages/shared`'s vocabulary,
-                        never a second list of options (§4.8). */}
-                    <option value="">Follow the template</option>
-                    {QUALITY_POLICIES.map((policy) => (
-                      <option key={policy} value={policy}>
-                        {policy}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-              </div>
-            </div>
-            {error ? <div className="mt-2 text-xs text-critical-ink">{error}</div> : null}
-            <div className="mt-4 flex justify-end gap-2">
-              <button
-                type="button"
-                className="surface-button px-3 py-2"
-                onClick={() => setModalOpen(false)}
-              >
-                Cancel
-              </button>
-              <button
-                type="submit"
-                className="surface-button-primary bg-accent px-3 py-2 text-xs font-semibold text-on-accent"
-              >
-                Save
-              </button>
-            </div>
-          </form>
-        </div>
+      {editing !== null || opened !== null ? (
+        <AssetPointWizard
+          key={editing?.id ?? "create"}
+          editing={editing}
+          initial={opened ?? emptyAssetPointForm("")}
+          assetLabel={assetId ? (assetSummaryQ.data?.code ?? assetId) : null}
+          locationId={assetSummaryQ.data?.locationId ?? selection.locationId ?? null}
+          pending={saveMutation.isPending}
+          error={error}
+          onSubmit={(body) => {
+            // `F2.31`: an edit that changed nothing has nothing to send.
+            if (editing && Object.keys(body).length === 0) {
+              closeDialog();
+              return;
+            }
+            saveMutation.mutate(body);
+          }}
+          onCancel={closeDialog}
+        />
+      ) : null}
+
+      {statusTarget ? (
+        <AssetPointStatusWizard
+          target={statusTarget}
+          onCancel={() => setStatusTarget(null)}
+          onSubmit={() => {
+            setStatusTarget(null);
+            toggleMutation.mutate(statusTarget);
+          }}
+        />
       ) : null}
     </MasterDataLayout>
   );

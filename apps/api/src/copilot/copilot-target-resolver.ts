@@ -313,11 +313,12 @@ export class CopilotTargetResolver implements CopilotTargets {
       }
       case "assetPoint": {
         const [row] = await tx
-          .select({ pointKey: assetPoints.pointKey, assetId: assetPoints.assetId })
+          .select({ pointKey: assetPoints.pointKey, assetId: assetPoints.assetId, assetCode: assets.code })
           .from(assetPoints)
+          .innerJoin(assets, eq(assets.id, assetPoints.assetId))
           .where(and(eq(assetPoints.id, id), eq(assetPoints.organizationId, organizationId)))
           .limit(1);
-        return row ? { organizationId, name: row.pointKey, assetId: row.assetId } : null;
+        return row ? { organizationId, name: `${row.assetCode} ${row.pointKey}`, assetId: row.assetId } : null;
       }
       case "pointKey":
         // Never read per organization: `resolve` reads a point key on the fleet path.
@@ -516,8 +517,13 @@ export class CopilotTargetResolver implements CopilotTargets {
         if (scope.locationId !== null) return this.access.canManageLocation(user, scope.locationId);
         return this.access.canManageOrganization(user, found.organizationId);
       }
+      // `F3.86` PR 3b: `AssetsAdminService.update` — a body that names `locationId` moves the
+      // asset, and the route checks the new site too (its own truthiness test, mirrored).
+      // A create under an asset (`parent`) passes `{}`; `calcOverride.set`'s body has no `locationId`.
       case "asset":
-        return this.access.canManageAsset(user, id);
+        if (!(await this.access.canManageAsset(user, id))) return false;
+        if (!body.locationId) return true;
+        return this.access.canManageLocation(user, body.locationId as string);
     }
   }
 

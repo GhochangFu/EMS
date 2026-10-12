@@ -92,18 +92,41 @@ function renderPage(assetPath?: string): void {
   );
 }
 
+/**
+ * `F3.86` PR 3b — the dialog is the `assetPoint.create` / `assetPoint.update` wizard:
+ * Mapping, then Instrument (the five metadata boxes), then Review, whose Submit sends.
+ */
+async function submitWizard(): Promise<void> {
+  for (let step = 0; step < 5 && !screen.queryByRole("button", { name: "Submit" }); step += 1) {
+    await userEvent.click(screen.getByRole("button", { name: "Next" }));
+  }
+  await userEvent.click(screen.getByRole("button", { name: "Submit" }));
+}
+
+async function toInstrumentStep(): Promise<void> {
+  await userEvent.click(screen.getByRole("button", { name: "Next" }));
+  await screen.findByRole("region", { name: "Instrument" });
+}
+
+/** An asset the Add wizard's picker offers on the unrouted page (Review refuses a create without one). */
+const PICKED_ASSET = { id: "f4204000-0000-4000-8000-0000000000a1", code: "F4204-PUMP", name: "Spec pump", locationId: null };
+
 /** F4.204 — a refused add-mapping save shows the sentence, not the envelope. */
 export async function aRefusedCreateShowsTheSentence(): Promise<void> {
   const { create } = stubApi();
   create.mockRejectedValue(
     new ApiError(`{"statusCode":409,"message":"${SENTENCE}","error":"Conflict"}`, 409),
   );
+  vi.mocked(assetsAdminApi.fetchAdminAssets).mockResolvedValue({ items: [PICKED_ASSET] } as never);
   renderPage();
   await userEvent.click(await screen.findByRole("button", { name: "Add mapping" }));
+  const asset = screen.getByLabelText("Asset");
+  await within(asset).findByText("F4204-PUMP · Spec pump");
+  await userEvent.selectOptions(asset, PICKED_ASSET.id);
   await screen.findByText(`${POINT_KEY} · Spec power`);
   await userEvent.selectOptions(screen.getByDisplayValue("Select catalog point key"), POINT_KEY);
   await userEvent.type(screen.getByLabelText("Source data key"), "spec_kw_raw");
-  await userEvent.click(screen.getByRole("button", { name: "Save" }));
+  await submitWizard();
   // By pattern, so a raw read is FOUND and fails on its text rather than timing
   // out: the element holding the sentence must hold nothing else.
   const banner = await screen.findByText(new RegExp(SENTENCE));
@@ -233,8 +256,9 @@ export async function anEditSendsOnlyTheChangedField(): Promise<void> {
   stubApi();
   const item = pointItem({ engMin: 5, sensorCode: "S1" });
   const { update } = await openEdit(item);
+  await toInstrumentStep();
   await userEvent.type(screen.getByLabelText("Engineering maximum"), "9");
-  await userEvent.click(screen.getByRole("button", { name: "Save" }));
+  await submitWizard();
   await vi.waitFor(() => expect(update).toHaveBeenCalledTimes(1));
   expect(update).toHaveBeenCalledWith(item.id, { engMax: 9 });
   // `toHaveBeenCalledWith` reads an `undefined` key as absent; the key list does not.
@@ -246,15 +270,17 @@ export async function anUntouchedEditSendsNothing(): Promise<void> {
   stubApi();
   const item = pointItem({ engMin: 5 });
   const { update } = await openEdit(item);
-  await userEvent.click(screen.getByRole("button", { name: "Save" }));
+  await submitWizard();
   await vi.waitFor(() => expect(screen.queryByRole("heading", { name: "Edit mapping" })).toBeNull());
   expect(update).not.toHaveBeenCalled();
 }
 
 const LOCATION = "c1000000-0000-4000-8000-0000000000l1";
-const RTU_A = "c1000000-0000-4000-8000-0000000000ra";
-const RTU_B = "c1000000-0000-4000-8000-0000000000rb";
-const RTU_Z = "c1000000-0000-4000-8000-0000000000rz";
+// `F3.86` PR 3b: real uuids — the wizard's Review checks `rtuId` with the route's own
+// `uuid()` before it sends (the old dialog sent anything and the mock answered).
+const RTU_A = "c1000000-0000-4000-8000-0000000000aa";
+const RTU_B = "c1000000-0000-4000-8000-0000000000ab";
+const RTU_Z = "c1000000-0000-4000-8000-0000000000af";
 
 function rtu(id: string, code: string, active: boolean): AdminRtuDto {
   return {
@@ -304,7 +330,7 @@ export async function theEditRtuSelectShowsTheStoredRtu(): Promise<void> {
   expect(within(rtuSelect()).getByRole("option", { name: /RTU-B/ }).textContent).toContain("(inactive)");
   expect(within(rtuSelect()).getByRole("option", { name: /RTU-A/ }).textContent).not.toContain("(inactive)");
   await userEvent.type(screen.getByLabelText("Sensor code"), "S9");
-  await userEvent.click(screen.getByRole("button", { name: "Save" }));
+  await submitWizard();
   await vi.waitFor(() => expect(update).toHaveBeenCalledTimes(1));
   expect(update).toHaveBeenCalledWith(item.id, { sensorCode: "S9" });
   // `toHaveBeenCalledWith` reads an `undefined` key as absent; the key list does not.
@@ -319,7 +345,7 @@ export async function choosingUnwiredSendsNull(): Promise<void> {
   const { update } = await openEdit(item);
   await within(rtuSelect()).findByRole("option", { name: /RTU-A/ });
   await userEvent.selectOptions(rtuSelect(), within(rtuSelect()).getByRole("option", { name: "Unwired" }));
-  await userEvent.click(screen.getByRole("button", { name: "Save" }));
+  await submitWizard();
   await vi.waitFor(() => expect(update).toHaveBeenCalledTimes(1));
   expect(update).toHaveBeenCalledWith(item.id, { rtuId: null });
 }
@@ -343,7 +369,7 @@ export async function aFailedRtuFetchLabelsTheStoredRtuUnknown(): Promise<void> 
   expect(synthetic.value).toBe(RTU_Z);
   expect(rtuSelect().value).toBe(RTU_Z);
   await userEvent.type(screen.getByLabelText("Sensor code"), "S9");
-  await userEvent.click(screen.getByRole("button", { name: "Save" }));
+  await submitWizard();
   await vi.waitFor(() => expect(update).toHaveBeenCalledTimes(1));
   expect(Object.keys(update.mock.calls[0][1])).toEqual(["sensorCode"]);
 }
@@ -367,7 +393,7 @@ export async function aStoredRtuOutsideTheListKeepsItsOption(): Promise<void> {
   expect(synthetic.value).toBe(RTU_Z);
   expect(rtuSelect().value).toBe(RTU_Z);
   await userEvent.type(screen.getByLabelText("Sensor code"), "S9");
-  await userEvent.click(screen.getByRole("button", { name: "Save" }));
+  await submitWizard();
   await vi.waitFor(() => expect(update).toHaveBeenCalledTimes(1));
   expect(update).toHaveBeenCalledWith(item.id, { sensorCode: "S9" });
   // `toHaveBeenCalledWith` reads an `undefined` key as absent; the key list does not.
@@ -400,7 +426,7 @@ export async function addPicksAnRtuOfTheAssetsLocation(): Promise<void> {
   await screen.findByText(`${POINT_KEY} · Spec power`);
   await userEvent.selectOptions(screen.getByDisplayValue("Select catalog point key"), POINT_KEY);
   await userEvent.type(screen.getByLabelText("Source data key"), "spec_kw_raw");
-  await userEvent.click(screen.getByRole("button", { name: "Save" }));
+  await submitWizard();
   await vi.waitFor(() => expect(create).toHaveBeenCalledTimes(1));
   expect(create.mock.calls[0][0].sourceDataKey).toBe("spec_kw_raw");
   expect(Object.keys(create.mock.calls[0][0])).not.toContain("rtuId");
@@ -411,7 +437,7 @@ export async function addPicksAnRtuOfTheAssetsLocation(): Promise<void> {
   await userEvent.selectOptions(screen.getByDisplayValue("Select catalog point key"), POINT_KEY);
   await userEvent.type(screen.getByLabelText("Source data key"), "spec_kw_raw2");
   await userEvent.selectOptions(rtuSelect(), RTU_A);
-  await userEvent.click(screen.getByRole("button", { name: "Save" }));
+  await submitWizard();
   await vi.waitFor(() => expect(create).toHaveBeenCalledTimes(2));
   expect(create.mock.calls[1][0].rtuId).toBe(RTU_A);
 }
@@ -679,4 +705,36 @@ export async function addWithNoLocationDisablesTheRtuSelect(): Promise<void> {
   await userEvent.click(await screen.findByRole("button", { name: "Add mapping" }));
   expect(rtuSelect().disabled).toBe(true);
   expect(screen.getByText("Choose a location to pick an RTU")).toBeTruthy();
+}
+
+/**
+ * `F3.86` PR 3b — the unrouted, unfiltered Add mapping picks its asset in the
+ * wizard: the RTU list follows the picked asset's location, and picking another
+ * asset clears the RTU choice. Both RTUs are served for every location, so the
+ * chosen id stays an option and only the reset can blank the select.
+ */
+export async function pickingAnAssetFollowsItsLocationAndResetsTheRtu(): Promise<void> {
+  const SITE_1 = "f3860000-0000-4000-8000-0000000000b1";
+  const SITE_2 = "f3860000-0000-4000-8000-0000000000b2";
+  stubApi();
+  const fetchRtus = stubRtus();
+  vi.mocked(assetsAdminApi.fetchAdminAssets).mockResolvedValue({
+    items: [
+      { id: "f3860000-0000-4000-8000-0000000000a1", code: "PMP-1", name: "Pump one", locationId: SITE_1 },
+      { id: "f3860000-0000-4000-8000-0000000000a2", code: "PMP-2", name: "Pump two", locationId: SITE_2 },
+    ],
+  } as never);
+  renderPage();
+  await userEvent.click(await screen.findByRole("button", { name: "Add mapping" }));
+  const asset = screen.getByLabelText("Asset");
+  await within(asset).findByText("PMP-2 · Pump two");
+  expect(rtuSelect().disabled).toBe(true);
+  await userEvent.selectOptions(asset, "f3860000-0000-4000-8000-0000000000a1");
+  await vi.waitFor(() => expect(fetchRtus).toHaveBeenCalledWith("all", SITE_1));
+  await within(rtuSelect()).findByRole("option", { name: /RTU-A/ });
+  await userEvent.selectOptions(rtuSelect(), RTU_A);
+  expect(rtuSelect().value).toBe(RTU_A);
+  await userEvent.selectOptions(asset, "f3860000-0000-4000-8000-0000000000a2");
+  await vi.waitFor(() => expect(fetchRtus).toHaveBeenCalledWith("all", SITE_2));
+  expect(rtuSelect().value).toBe("");
 }

@@ -143,7 +143,8 @@ describe("E4.3 water balance role vocabulary (ADR 0073 decision 1)", () => {
    * a stub; this asserts the source never grew a literal.
    */
   it("builds the asset form's water balance select from the vocabulary, not from literal options", () => {
-    const page = read("apps/web/src/pages/admin/assets-page.tsx");
+    // `F3.86` PR 3b: the asset form is the asset wizard now (`components/admin/asset-wizard.tsx`).
+    const page = read("apps/web/src/components/admin/asset-wizard.tsx");
 
     // Anti-vacuity: the select exists and is fed by the vocabulary fetch, so deleting it cannot
     // turn the absence check below green.
@@ -155,7 +156,7 @@ describe("E4.3 water balance role vocabulary (ADR 0073 decision 1)", () => {
     const literalOptions = [...page.matchAll(/<option value="([^"]*)"/g)].map((m) => m[1]);
     expect(
       literalOptions.filter((value) => value !== ""),
-      "assets-page.tsx spells a code into an <option>. The balance roles live in " +
+      "asset-wizard.tsx spells a code into an <option>. The balance roles live in " +
         "bms.water_balance_roles and arrive through GET /api/v1/vocabularies; a hardcoded list " +
         "that falls behind renders the FIRST option for an unknown value. That is F4.43.",
     ).toEqual([]);

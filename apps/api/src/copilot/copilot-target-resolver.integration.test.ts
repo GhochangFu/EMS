@@ -15,6 +15,7 @@ import {
   aLocationCreateRefusesALocationAdmin,
   aLocationMoveNeedsAnOrganizationLevelAdmin,
   aLocationResolvesWithItsSiteCheck,
+  anAssetMoveNeedsTheNewSiteToo,
   anAssetRowIsCheckedOnItsAsset,
   aSiteLayoutNeedsTheDashboardCheckToo,
   aSiteRowIsCheckedOnItsOwnSite,
@@ -153,6 +154,7 @@ describe.skipIf(!connectionString)("F3.86 PR 2 — the copilot target resolver's
       locationB,
       rtuA,
       assetA,
+      assetCodeA: `${FAMILY}-ASSET`,
       groupA,
       memberA,
       assetPointA,
@@ -173,6 +175,7 @@ describe.skipIf(!connectionString)("F3.86 PR 2 — the copilot target resolver's
     aLocationMoveNeedsAnOrganizationLevelAdmin(ctx));
   it("checks an RTU, a group and a member on their own site", () => aSiteRowIsCheckedOnItsOwnSite(ctx));
   it("checks an asset point on its asset, and an asset by :id", () => anAssetRowIsCheckedOnItsAsset(ctx));
+  it("checks the new site too when an asset update names locationId (PR 3b)", () => anAssetMoveNeedsTheNewSiteToo(ctx));
   it("gives a create under a parent the parent's organization", () => aCreateUnderAParentTakesTheParentsOrganization(ctx));
   it("puts a fleet row in the bound organization (ruling Q1)", () => aFleetRowLivesInTheBoundOrganization(ctx));
   it("keeps the built-in view rule (ruling Q7(b))", () => aSiteViewKeepsTheBuiltinRule(ctx));
