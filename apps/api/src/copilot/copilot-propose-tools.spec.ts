@@ -10,6 +10,7 @@ import type { ToolOutcome } from "../llm/tool-result";
 import { LOCAL_MODE_READ_ONLY } from "../admin/users/users.service";
 import { bodyHash } from "./body-hash";
 import { PROPOSE_ACCESS_NOT_ASKED_ERROR } from "./copilot-access-intent";
+import { INLINE_BODY_SCHEMA_MAX_CHARS } from "./copilot-change-schema";
 import type { NewPendingChange } from "./copilot-pending-changes.service";
 import {
   createCopilotProposeTools,
@@ -450,13 +451,41 @@ export async function aServerProposedEntryHasNoProposeTool(): Promise<void> {
   expect((await h.call(DESCRIBE_CHANGE_TOOL, { catalogId: server.id })).ok).toBe(true);
 }
 
-/** Every catalog entry has one propose tool; the definitions stay small enough to send on every turn. */
+/**
+ * `F3.86` PR 3c — no one tool definition carries a large body schema. A body
+ * whose JSON Schema is at most {@link INLINE_BODY_SCHEMA_MAX_CHARS} is inlined
+ * by design; a larger one becomes a field list read with `describe_change`.
+ * The 1,000 above the constant is the wrapper, the params and the description
+ * (the largest definition was 1,388 at PR 3c). The widget save alone is 45 KB
+ * as JSON Schema, so an inlined large body fails here however few entries the
+ * catalog has — the total budget below cannot say that.
+ */
+export function noToolDefinitionCarriesALargeBody(): void {
+  const h = proposeHarness();
+  const oversized = h.tools.registry.definitions
+    .map((d) => ({ name: d.name, size: JSON.stringify(d).length }))
+    .filter((d) => d.size > INLINE_BODY_SCHEMA_MAX_CHARS + 1_000);
+  expect(oversized).toEqual([]);
+}
+
+/**
+ * Every definition is sent on every turn. Release 1 (16 entries) was under
+ * 20,000 characters; release 2 adds one tool per entry, and `fill_step` and
+ * `describe_change` name every catalog id. Measured at PR 3c (33 entries):
+ * 24,218, of which 20,851 without the access tools. The 16 entries of PRs 3a
+ * and 3b bring the estimate to about 36,000 (about 9k tokens); the cap is that
+ * plus headroom, not room to grow into.
+ */
+export function theToolDefinitionsStayInTheTurnBudget(): void {
+  const h = proposeHarness();
+  expect(JSON.stringify(h.tools.registry.definitions).length).toBeLessThan(40_000);
+}
+
+/** Every catalog entry has one propose tool; a large body is read on demand. */
 export function everyEntryHasOneSlimProposeTool(): void {
   const h = proposeHarness();
   const names = h.tools.registry.definitions.map((d) => d.name);
   expect(names).toEqual([...COPILOT_CATALOG.map(proposeToolName), FILL_STEP_TOOL, DESCRIBE_CHANGE_TOOL]);
-  // The widget save alone is 45 KB as JSON Schema; inlined, the set was about 87 KB.
-  expect(JSON.stringify(h.tools.registry.definitions).length).toBeLessThan(20_000);
   const widgets = h.tools.registry.definitions.find((d) => d.name === "propose_dashboard_widgets_replace");
   expect(JSON.stringify(widgets)).toContain("describe_change");
   // The guide names each widget type and the one path that reads it (a live follow-up hit the call cap without it).
