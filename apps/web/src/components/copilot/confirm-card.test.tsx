@@ -3,10 +3,14 @@ import { focusManager } from "@tanstack/react-query";
 import { cleanup } from "@testing-library/react";
 import { afterEach, describe, it, vi } from "vitest";
 
+import { useAuthStore } from "../../stores/auth-store";
 import { resetCopilotStore } from "../../stores/copilot-store";
 import { resetWizardStore } from "../../stores/wizard-store";
 import {
   aClientOnlyFieldIsTypedOnTheCard,
+  aCopilotLocationCreateRefreshesTheScope,
+  aCopilotLocationMoveRefreshesTheScope,
+  aCopilotLocationRenameKeepsTheScope,
   a5xxKeepsTheCardOpen,
   anAmbiguous409ListsTheCandidates,
   anUnavailableCopilotKeepsTheCardOpen,
@@ -77,4 +81,14 @@ describe("F3.85 PR 8 copilot Confirm card — Confirm, Reject and the record now
   it("compares an edit with the record now", () => anEditCardComparesWithTheRecordNow());
   it("reads no record for a create", () => aCreateCardReadsNoRecord());
   it("hands a fillStep to the wizard store", () => aFillStepReachesTheWizardStore());
+});
+
+describe("F3.86 PR 3a review — a copilot location create or move refreshes the access scope (ADR 0098 B8)", () => {
+  afterEach(() => {
+    useAuthStore.setState({ accessToken: null });
+  });
+
+  it("refreshes the scope after a location create", () => aCopilotLocationCreateRefreshesTheScope(), 10_000);
+  it("refreshes the scope after a location move", () => aCopilotLocationMoveRefreshesTheScope(), 10_000);
+  it("does not refresh the scope after a location rename", () => aCopilotLocationRenameKeepsTheScope(), 10_000);
 });

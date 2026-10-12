@@ -8,7 +8,10 @@ import { COPILOT_CHANGE_REFUSED_MESSAGE, COPILOT_UNAVAILABLE_MESSAGE } from "@bm
 import * as templatesApi from "../../api/admin/dashboard-templates";
 import * as copilotApi from "../../api/copilot";
 import * as confirmApi from "../../api/copilot-confirm";
+import * as currentApi from "../../api/copilot-current";
+import * as loginApi from "../../api/login";
 import { ApiError } from "../../lib/api-error";
+import { useAuthStore } from "../../stores/auth-store";
 import { useCopilotStore } from "../../stores/copilot-store";
 import { useWizardStore } from "../../stores/wizard-store";
 import { answered, CONVERSATION_ID, message, openPanel, renderDock, send, settle, stub } from "./copilot-dock.spec";
@@ -402,6 +405,74 @@ export async function aCreateCardReadsNoRecord(): Promise<void> {
   expect(within(card).queryByRole("columnheader", { name: "Now" })).toBeNull();
   await settle();
   expect(current).not.toHaveBeenCalled();
+}
+
+const LOCATION = "77777777-7777-4777-8777-777777777777";
+const PARENT = "88888888-8888-4888-8888-888888888888";
+const TOKEN = "tok-copilot-scope";
+
+/**
+ * Confirms one location change and waits for the dock's "Applied" line, which
+ * follows the refresh: an absence read before it would prove nothing.
+ */
+async function confirmLocationChange(pending: CopilotPendingChangeDto, title: string): Promise<{ mock: { calls: unknown[][] } }> {
+  useAuthStore.setState({ accessToken: TOKEN });
+  // An edit card reads the record now; the read is not under test here.
+  vi.spyOn(currentApi, "fetchCopilotCurrent").mockResolvedValue(null);
+  const sent = vi.spyOn(confirmApi, "confirmCopilotChange").mockResolvedValue({ id: LOCATION });
+  vi.spyOn(copilotApi, "fetchCopilotConversation").mockResolvedValue(EMPTY_CONVERSATION);
+  const refresh = vi.spyOn(loginApi, "refreshScope").mockResolvedValue(undefined);
+  await proposed(pending);
+  const card = await screen.findByRole("region", { name: title });
+  fireEvent.click(within(card).getByRole("button", { name: "Confirm" }));
+  await waitFor(() => expect(sent).toHaveBeenCalledTimes(1));
+  expect(await screen.findByText("Applied. Waiting for the copilot…")).toBeTruthy();
+  return refresh;
+}
+
+function locationChange(over: Partial<CopilotPendingChangeDto>): CopilotPendingChangeDto {
+  return change({ method: "PATCH", path: `/api/v1/admin/locations/${LOCATION}`, ...over });
+}
+
+/**
+ * `F3.86` PR 3a review (ADR 0098 B8) — a location the copilot created makes the
+ * stored scope stale, so Confirm refreshes it, as the locations page does.
+ * Mutation: drop the call → this reddens.
+ */
+export async function aCopilotLocationCreateRefreshesTheScope(): Promise<void> {
+  const refresh = await confirmLocationChange(
+    locationChange({
+      catalogId: "location.create",
+      method: "POST",
+      path: "/api/v1/admin/locations",
+      risk: "create",
+      body: { organizationId: LOCATION, code: "WC", slug: "wc", name: "West Campus", type: "rsmoc", latitude: 0, longitude: 0 },
+      summary: 'Create the location "West Campus".',
+    }),
+    "Create a location",
+  );
+  expect(refresh.mock.calls).toEqual([[TOKEN]]);
+}
+
+/** A copilot move (an update naming `parentId`) refreshes the scope too. */
+export async function aCopilotLocationMoveRefreshesTheScope(): Promise<void> {
+  const refresh = await confirmLocationChange(
+    locationChange({ catalogId: "location.update", body: { parentId: PARENT }, summary: 'Move the location "West Campus".' }),
+    "Edit a location",
+  );
+  expect(refresh.mock.calls).toEqual([[TOKEN]]);
+}
+
+/**
+ * A rename leaves the tree as it was: no refresh. Mutation: refresh on every
+ * `location.update` → this reddens.
+ */
+export async function aCopilotLocationRenameKeepsTheScope(): Promise<void> {
+  const refresh = await confirmLocationChange(
+    locationChange({ catalogId: "location.update", body: { name: "East Campus" }, summary: 'Rename the location "West Campus".' }),
+    "Edit a location",
+  );
+  expect(refresh.mock.calls).toEqual([]);
 }
 
 /** A turn's `fillStep` goes to the wizard store for an open wizard. */
