@@ -9,30 +9,24 @@ import type {
   OnboardingFieldError,
   OnboardingSessionDto,
 } from "@bms/shared";
-import { MAX_RTU_TOPIC_CHARS } from "@bms/shared/contracts";
 
 import {
   commitOnboardingSession,
   createOnboardingSession,
-  downloadOnboardingTemplate,
   fetchOnboardingSession,
-  patchOnboardingDraft,
   rollbackOnboardingSession,
   sendOnboardingChat,
-  setOnboardingCredentials,
-  uploadOnboardingExcel,
   validateOnboardingSession,
 } from "../../api/admin/onboarding";
 import { AssistantText } from "../../components/copilot/assistant-text";
-import { StatusPill } from "../../components/status-pill";
+import { DraftDrawer } from "../../components/onboarding/draft-drawer";
+import { ExcelActions } from "../../components/onboarding/excel-actions";
+import { ReplyChips } from "../../components/onboarding/reply-chips";
+import { UndoPicker } from "../../components/onboarding/undo-picker";
 import { AppShell } from "../../layouts/app-shell";
 import { ApiError } from "../../lib/api-error";
 import { apiErrorMessage } from "../../lib/api-error-message";
-import {
-  draftRtuTopic,
-  formatOnboardingDraftSummary,
-  formatOnboardingValidationErrors,
-} from "../../lib/onboarding-draft-summary";
+import { offeredReplies } from "../../lib/onboarding-offered-replies";
 import { shouldAutoOpenPreview } from "../../lib/onboarding-preview-auto-open";
 import type { AuthUser } from "../../stores/auth-store";
 
@@ -96,38 +90,6 @@ async function openSession(orgId: string, resumeId: string | null): Promise<Onbo
   return createOnboardingSession(orgId);
 }
 
-/**
- * `F4.199`: the phrases the client never offers as a button — "confirm commit"
- * (ADR 0090 decision 5) and "undo" (ADR 0094 decision 9: undo has its own control).
- */
-const NEVER_OFFERED_REPLIES: readonly string[] = ["confirm commit", "undo"];
-
-/** The replies to render: the server's list, minus the acting phrases (trim, lower case). */
-function offeredReplies(replies: readonly string[] | undefined): string[] {
-  return (replies ?? []).filter((r) => !NEVER_OFFERED_REPLIES.includes(r.trim().toLowerCase()));
-}
-
-/**
- * The config a Save topic writes (`F4.236`, owner ruling): the typed topic, and
- * no legacy `mqttTopic`. The topic readers take that key second, but the
- * validator's protocol-schema check still reads a shadowed one (spec V4c), so a
- * wildcard left there would refuse the draft on a key this page cannot edit.
- */
-function withSavedTopic(config: Record<string, unknown>, topic: string): Record<string, unknown> {
-  const next: Record<string, unknown> = { ...config, topic };
-  delete next.mqttTopic;
-  return next;
-}
-
-/**
- * A string `topic` with a legacy `mqttTopic` beside it — the state V4c refuses.
- * Save topic stays enabled on it even when the edit equals the topic, so one
- * save repairs it (`F4.236`, owner ruling). A legacy key alone is not shadowed.
- */
-function hasShadowedLegacyTopic(config: Record<string, unknown>): boolean {
-  return typeof config.topic === "string" && "mqttTopic" in config;
-}
-
 /** Where a committed session lands — one target for the Commit button and a chat commit. */
 function rtusPathFor(locationId: string): string {
   return `/admin/locations/${locationId}/rtus`;
@@ -147,13 +109,6 @@ export function OnboardingChatPage({ user }: OnboardingChatPageProps) {
   );
   const [chatError, setChatError] = useState<string | null>(null);
   const [validationErrors, setValidationErrors] = useState<OnboardingFieldError[]>([]);
-  const [uploadBusy, setUploadBusy] = useState(false);
-  // ADR 0022: credentials are typed here, never into the chat. Held in local
-  // state only until the request resolves, then cleared — see `clearCredForm`.
-  const [credRtuIndex, setCredRtuIndex] = useState<number | null>(null);
-  const [credUsername, setCredUsername] = useState("");
-  const [credPassword, setCredPassword] = useState("");
-  const [credError, setCredError] = useState<string | null>(null);
   // F4.199: the latest turn's suggested replies, replaced on every turn. The
   // F4.194 resume path (`openSession` with a stored session) carries none, so a
   // reloaded page shows no buttons until the next turn.
@@ -161,7 +116,6 @@ export function OnboardingChatPage({ user }: OnboardingChatPageProps) {
   // F3.25: the checkpoint the Undo button rolls back to; empty means the newest.
   const [undoChoice, setUndoChoice] = useState<string>("");
   const threadRef = useRef<HTMLDivElement>(null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
   const startedRef = useRef(false);
 
   const startMutation = useMutation({
@@ -183,65 +137,6 @@ export function OnboardingChatPage({ user }: OnboardingChatPageProps) {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- run once per org
   }, [orgId]);
-
-  const clearCredForm = useCallback(() => {
-    setCredRtuIndex(null);
-    setCredUsername("");
-    setCredPassword("");
-  }, []);
-
-  const credentialsMutation = useMutation({
-    mutationFn: (vars: { rtuIndex: number; username: string; password: string }) =>
-      setOnboardingCredentials(session!.id, vars.rtuIndex, {
-        username: vars.username,
-        password: vars.password,
-      }),
-    onSuccess: (updated) => {
-      // The response is the ordinary redacted session — it never echoes what
-      // was sent. Clearing the form is what keeps the plaintext from lingering
-      // in component state after the request resolves.
-      setSession(updated);
-      setCredError(null);
-      clearCredForm();
-    },
-    onError: (err: Error) => {
-      // Clear on failure too. The 503 from an unconfigured
-      // CREDENTIAL_ENCRYPTION_KEY is the common case, and leaving the password
-      // in component state there contradicts the reasoning applied to the chat
-      // input below (second review, L4).
-      setCredError(apiErrorMessage(err));
-      clearCredForm();
-    },
-  });
-
-  // F4.208: an MQTT RTU's topic, saved through `PATCH :id/draft`. The server
-  // keeps the stored credential (`mergeDraft` re-attaches it by RTU code). The
-  // client draft is the redacted copy, so a `config` value under a
-  // secret-looking key would go back as `[REDACTED]` — none of host, port, tls
-  // or topic is one, and ADR 0022 keeps secrets out of `config`. F4.236: the
-  // field reads the topic as `rtuTopic` does, and Save writes `config.topic`
-  // and drops a legacy `mqttTopic` (`withSavedTopic`).
-  const [topicEdits, setTopicEdits] = useState<Record<number, string>>({});
-  const topicMutation = useMutation({
-    mutationFn: (vars: { index: number; topic: string }) =>
-      patchOnboardingDraft(session!.id, {
-        rtus: (session!.draft?.rtus ?? []).map((rtu, i) =>
-          i === vars.index ? { ...rtu, config: withSavedTopic(rtu.config, vars.topic) } : rtu,
-        ),
-      }),
-    onSuccess: (updated, vars) => {
-      setSession(updated);
-      queryClient.setQueryData(["onboarding", updated.id], updated);
-      setTopicEdits((edits) => {
-        const next = { ...edits };
-        delete next[vars.index];
-        return next;
-      });
-      setCredError(null);
-    },
-    // The drawer's one banner: a refused save reads like a refused credential.
-    onError: (err: Error) => setCredError(apiErrorMessage(err)),
-  });
 
   const chatMutation = useMutation({
     mutationFn: (message: string) => sendOnboardingChat(session!.id, message),
@@ -437,53 +332,17 @@ export function OnboardingChatPage({ user }: OnboardingChatPageProps) {
           <span className="rounded bg-well-deep px-2 py-0.5 text-xs font-semibold text-ink-muted">
             {PHASE_LABELS[session?.currentPhase ?? "location"] ?? "Location"}
           </span>
-          <button
-            type="button"
-            onClick={() => {
-              // `void download…()` swallowed every refusal as an unhandled
-              // rejection: a 401 cleared the session while the operator saw
-              // nothing at all.
-              downloadOnboardingTemplate().catch((err: Error) =>
-                setChatError(apiErrorMessage(err)),
+          <ExcelActions
+            sessionId={session?.id ?? null}
+            onUploaded={(data) => {
+              applyChatResponse(data);
+              setChatError(
+                data.validationErrors?.length
+                  ? `Validation found ${data.validationErrors.length} issue(s) — fix them in chat before commit.`
+                  : null,
               );
             }}
-            className="surface-button px-3 py-1"
-          >
-            Excel template
-          </button>
-          <button
-            type="button"
-            onClick={() => fileInputRef.current?.click()}
-            disabled={!session || uploadBusy}
-            aria-busy={uploadBusy}
-            className="surface-button px-3 py-1 disabled:opacity-50"
-          >
-            {uploadBusy ? "Uploading…" : "Upload Excel"}
-          </button>
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept=".xlsx,.xls"
-            className="hidden"
-            onChange={(e) => {
-              const file = e.target.files?.[0];
-              e.target.value = "";
-              if (!file || !session) {
-                return;
-              }
-              setUploadBusy(true);
-              uploadOnboardingExcel(session.id, file)
-                .then((data) => {
-                  applyChatResponse(data);
-                  setChatError(
-                    data.validationErrors?.length
-                      ? `Validation found ${data.validationErrors.length} issue(s) — fix them in chat before commit.`
-                      : null,
-                  );
-                })
-                .catch((err: Error) => setChatError(apiErrorMessage(err)))
-                .finally(() => setUploadBusy(false));
-            }}
+            onError={setChatError}
           />
           <button
             type="button"
@@ -551,54 +410,19 @@ export function OnboardingChatPage({ user }: OnboardingChatPageProps) {
             </div>
 
             {showUndo && (
-              <div className="flex flex-wrap items-center gap-2 border-t border-line px-4 pt-3">
-                <select
-                  aria-label="Undo to"
-                  data-testid="undo-select"
-                  value={undoTarget}
-                  onChange={(e) => setUndoChoice(e.target.value)}
-                  disabled={undoMutation.isPending || chatMutation.isPending}
-                  className="surface-field px-2 py-1 text-xs"
-                >
-                  {undoCheckpoints.map((c) => (
-                    <option key={c.id} value={c.id}>
-                      {`Step ${c.seq}: ${c.label}`}
-                    </option>
-                  ))}
-                </select>
-                <button
-                  type="button"
-                  data-testid="undo-button"
-                  onClick={() => undoMutation.mutate(undoTarget)}
-                  // Review finding (F3.25): one write in flight at a time — a turn
-                  // that overlaps an undo would write its pre-undo draft back.
-                  disabled={session.draftHash === null || undoMutation.isPending || chatMutation.isPending}
-                  aria-busy={undoMutation.isPending}
-                  className="surface-button px-3 py-1 text-xs disabled:opacity-50"
-                >
-                  {undoMutation.isPending ? "Undoing…" : "Undo"}
-                </button>
-              </div>
+              <UndoPicker
+                checkpoints={undoCheckpoints}
+                value={undoTarget}
+                onChange={setUndoChoice}
+                onUndo={(checkpointId) => undoMutation.mutate(checkpointId)}
+                undoing={undoMutation.isPending}
+                blocked={chatMutation.isPending}
+                canUndo={session.draftHash !== null}
+              />
             )}
 
             {replies.length > 0 && !chatMutation.isPending && !undoMutation.isPending && (
-              <div
-                role="group"
-                aria-label="Suggested replies"
-                className="flex flex-wrap gap-2 border-t border-line px-4 pt-3"
-              >
-                {replies.map((reply, i) => (
-                  <button
-                    key={`${i}-${reply}`}
-                    type="button"
-                    onClick={() => sendText(reply)}
-                    disabled={!session}
-                    className="surface-button px-3 py-1 text-xs disabled:opacity-50"
-                  >
-                    {reply}
-                  </button>
-                ))}
-              </div>
+              <ReplyChips replies={replies} onPick={sendText} disabled={!session} />
             )}
 
             <form onSubmit={onSubmit} className="border-t border-line p-4">
@@ -624,204 +448,27 @@ export function OnboardingChatPage({ user }: OnboardingChatPageProps) {
             </form>
           </div>
 
-          {previewOpen && (
-            <>
-              <div
-                className="absolute inset-0 z-10 bg-scrim/20 lg:hidden"
-                onClick={closePreview}
-                aria-hidden
-              />
-              <aside className="absolute right-0 top-0 z-20 flex h-full w-[90%] max-w-[380px] flex-col surface-dialog">
-                <div className="flex items-center justify-between border-b border-line px-3 py-2">
-                  <span className="text-xs font-semibold uppercase tracking-wide text-ink-muted">
-                    Draft preview
-                  </span>
-                  <button type="button" onClick={closePreview} className="text-xs text-ink-muted">
-                    ×
-                  </button>
-                </div>
-                <div className="flex-1 space-y-3 overflow-y-auto p-3 text-xs">
-                  <div>
-                    <div className="mb-1 font-semibold uppercase tracking-wide text-ink-muted">
-                      Summary
-                    </div>
-                    <pre className="whitespace-pre-wrap break-words font-mono text-[11px]">
-                      {formatOnboardingDraftSummary(session?.draft ?? {})}
-                    </pre>
-                  </div>
-                  <div>
-                    <div className="mb-1 font-semibold uppercase tracking-wide text-ink-muted">
-                      Credentials
-                    </div>
-                    {(session?.draft?.rtus ?? []).length === 0 ? (
-                      <p className="text-[11px] text-ink-muted">
-                        Add an RTU first, then set its credentials here.
-                      </p>
-                    ) : (
-                      <ul className="space-y-2">
-                        {(session?.draft?.rtus ?? []).map((rtu, index) => (
-                          <li key={rtu.code ?? index} className="surface-raised-sm p-2">
-                            <div className="flex items-center justify-between gap-2">
-                              <span className="font-mono text-[11px]">{rtu.code ?? `RTU ${index + 1}`}</span>
-                              {rtu.credentialsSet ? (
-                                <StatusPill label="Set" />
-                              ) : (
-                                <button
-                                  type="button"
-                                  className="text-[11px] underline"
-                                  onClick={() => {
-                                    setCredError(null);
-                                    setCredRtuIndex(index === credRtuIndex ? null : index);
-                                  }}
-                                >
-                                  {credRtuIndex === index ? "Cancel" : "Add credentials"}
-                                </button>
-                              )}
-                            </div>
-                            {rtu.protocol === "mqtt" && (
-                              <form
-                                className="mt-2 flex gap-1"
-                                onSubmit={(event) => {
-                                  event.preventDefault();
-                                  topicMutation.mutate({ index, topic: (topicEdits[index] ?? "").trim() });
-                                }}
-                              >
-                                <input
-                                  className="min-w-0 flex-1 surface-field px-2 py-1 font-mono text-[11px]"
-                                  aria-label={`Topic for ${rtu.code ?? `RTU ${index + 1}`}`}
-                                  placeholder="MQTT topic"
-                                  autoComplete="off"
-                                  maxLength={MAX_RTU_TOPIC_CHARS}
-                                  value={topicEdits[index] ?? draftRtuTopic(rtu.config)}
-                                  onChange={(event) => {
-                                    const value = event.target.value;
-                                    setTopicEdits((edits) => ({ ...edits, [index]: value }));
-                                  }}
-                                />
-                                <button
-                                  type="submit"
-                                  // A chat turn and a credentials save both write
-                                  // the `rtus` list too, so one waits for the other.
-                                  disabled={
-                                    topicMutation.isPending ||
-                                    chatMutation.isPending ||
-                                    credentialsMutation.isPending ||
-                                    topicEdits[index] === undefined ||
-                                    (topicEdits[index].trim() === draftRtuTopic(rtu.config) &&
-                                      !hasShadowedLegacyTopic(rtu.config))
-                                  }
-                                  aria-busy={topicMutation.isPending}
-                                  className="shrink-0 surface-button px-2 py-1 text-[11px] disabled:opacity-50"
-                                >
-                                  {topicMutation.isPending ? "Saving topic…" : "Save topic"}
-                                </button>
-                              </form>
-                            )}
-                            {credRtuIndex === index && (
-                              <form
-                                className="mt-2 space-y-1"
-                                onSubmit={(event) => {
-                                  event.preventDefault();
-                                  credentialsMutation.mutate({
-                                    rtuIndex: index,
-                                    username: credUsername,
-                                    password: credPassword,
-                                  });
-                                }}
-                              >
-                                <input
-                                  className="w-full surface-field px-2 py-1 text-[11px]"
-                                  placeholder="Username"
-                                  autoComplete="off"
-                                  value={credUsername}
-                                  onChange={(event) => setCredUsername(event.target.value)}
-                                />
-                                <input
-                                  className="w-full surface-field px-2 py-1 text-[11px]"
-                                  placeholder="Password"
-                                  type="password"
-                                  autoComplete="new-password"
-                                  value={credPassword}
-                                  onChange={(event) => setCredPassword(event.target.value)}
-                                />
-                                <button
-                                  type="submit"
-                                  disabled={
-                                    credentialsMutation.isPending ||
-                                    (!credUsername && !credPassword)
-                                  }
-                                  aria-busy={credentialsMutation.isPending}
-                                  className="w-full surface-button-primary bg-accent px-2 py-1 text-[11px] font-semibold text-on-accent disabled:opacity-50"
-                                >
-                                  {credentialsMutation.isPending ? "Encrypting…" : "Save encrypted"}
-                                </button>
-                              </form>
-                            )}
-                          </li>
-                        ))}
-                      </ul>
-                    )}
-                    {credError && (
-                      // Same banner treatment as `chatError` above. This is
-                      // where the fail-closed 503 surfaces when
-                      // CREDENTIAL_ENCRYPTION_KEY is unset, so it is the last
-                      // message that should read as an aside.
-                      <p
-                        role="alert"
-                        className="mt-1 rounded border border-critical-line bg-critical-wash px-3 py-2 text-[11px] text-critical-ink"
-                      >
-                        {credError}
-                      </p>
-                    )}
-                    <p className="mt-1 text-[11px] text-ink-muted">
-                      Credentials are encrypted before storage and never sent to the assistant.
-                      Do not type them into the chat — those messages are stored.
-                    </p>
-                  </div>
-                  <div>
-                    <div className="mb-1 font-semibold uppercase tracking-wide text-ink-muted">
-                      Validation
-                    </div>
-                    <pre
-                      className={`whitespace-pre-wrap break-words font-mono text-[11px] ${
-                        validationErrors.length > 0 ? "text-critical-ink" : "text-ink-muted"
-                      }`}
-                    >
-                      {formatOnboardingValidationErrors(validationErrors)}
-                    </pre>
-                  </div>
-                  <div>
-                    <div className="mb-1 font-semibold uppercase tracking-wide text-ink-muted">
-                      Output JSON
-                    </div>
-                    <pre className="whitespace-pre-wrap break-words font-mono text-[11px]">
-                      {JSON.stringify(session?.draft ?? {}, null, 2)}
-                    </pre>
-                  </div>
-                </div>
-                <div className="flex gap-2 border-t border-line p-3">
-                  <button
-                    type="button"
-                    onClick={() => validateMutation.mutate()}
-                    className="flex-1 surface-button py-2"
-                    disabled={!session || validateMutation.isPending}
-                    aria-busy={validateMutation.isPending}
-                  >
-                    {validateMutation.isPending ? "Validating…" : "Validate"}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => commitMutation.mutate()}
-                    className="flex-1 rounded bg-accent py-2 text-xs font-semibold text-on-accent disabled:opacity-50"
-                    disabled={!session || commitMutation.isPending}
-                    aria-busy={commitMutation.isPending}
-                  >
-                    {commitMutation.isPending ? "Committing…" : "Commit"}
-                  </button>
-                </div>
-              </aside>
-            </>
-          )}
+          <DraftDrawer
+            open={previewOpen}
+            session={session}
+            validationErrors={validationErrors}
+            onClose={closePreview}
+            onSessionChange={setSession}
+            busy={chatMutation.isPending}
+            onValidate={() => validateMutation.mutate()}
+            validating={validateMutation.isPending}
+            commit={
+              <button
+                type="button"
+                onClick={() => commitMutation.mutate()}
+                className="flex-1 rounded bg-accent py-2 text-xs font-semibold text-on-accent disabled:opacity-50"
+                disabled={!session || commitMutation.isPending}
+                aria-busy={commitMutation.isPending}
+              >
+                {commitMutation.isPending ? "Committing…" : "Commit"}
+              </button>
+            }
+          />
         </div>
       </div>
     </AppShell>
