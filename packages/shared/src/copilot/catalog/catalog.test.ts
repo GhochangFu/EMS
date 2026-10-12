@@ -31,6 +31,8 @@ import {
   aTopLevelFormulaIsOneSite,
   aFormulaWithoutARefsPathHasNoRefs,
   aDialectOutsideTheFormulasItemIsAnError,
+  theMemberRemovalIsARedBodylessDelete,
+  thePointKeyEntriesAreFleetTargets,
 } from "./catalog.spec";
 
 /** Vitest entry point — assertions live in the sibling `.spec` (ADR 0014). */
@@ -60,6 +62,11 @@ describe("F3.86 PR 2 — the DELETE allowance and the model's body (ADR 0099 dec
   it("refuses a modelBody that keeps a clientOnly field", () => aModelBodyThatKeepsAClientOnlyFieldIsRefused());
   it("omits clientOnly from a plain body and refuses a refined one without a modelBody", () => modelBodyOfOmitsOrRefuses());
   it("names the grant target in a grant summary (PR 4)", () => aGrantSummaryNamesItsTarget());
+});
+
+describe("F3.86 PR 3c — asset groups and point keys (ADR 0099 decision 3, ruling Q1)", () => {
+  it("makes the member removal a red, bodyless DELETE", () => theMemberRemovalIsARedBodylessDelete());
+  it("targets the point-key entries at the fleet", () => thePointKeyEntriesAreFleetTargets());
 });
 
 describe("F3.85 PR 11a — formula paths into array items (plan §11.3 Unit 2)", () => {

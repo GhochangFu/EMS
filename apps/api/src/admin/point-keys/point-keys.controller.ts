@@ -14,14 +14,13 @@ import {
 import { ZodError } from "zod";
 
 import type { JwtPayload } from "@bms/shared";
+// `F3.86` PR 3c: from `@bms/shared` itself — each body is a copilot catalog
+// entry's, and `tests/f3.85-catalog-coverage` requires the very export.
+import { createPointKeyBodySchema, updatePointKeyBodySchema } from "@bms/shared";
 
 import { CurrentUser } from "../../auth/current-user.decorator";
 import { JwtAuthGuard } from "../../auth/jwt-auth.guard";
 import { idParamSchema, parseActiveFilter } from "../admin.schema";
-import {
-  createPointKeyBodySchema,
-  updatePointKeyBodySchema,
-} from "./point-keys.schema";
 import { PointKeysAdminService } from "./point-keys.service";
 
 @Controller("admin/point-keys")

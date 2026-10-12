@@ -44,6 +44,28 @@ export function everyEntryHasInvalidations(): void {
   expect(invalidationKeysFor("location.siteLayout.make")).toContainEqual(["dashboards"]);
 }
 
+/**
+ * `F3.86` PR 3c — a confirmed asset-group or point-key change re-reads the
+ * page's own lists: every key `asset-groups-page.tsx` reads (the groups, and
+ * a group's members) starts with `["admin","asset-groups"]`, and every
+ * point-key read (the page, the asset-point and manual-reading pickers) with
+ * `["admin","point-keys"]`.
+ */
+export function theAssetGroupAndPointKeyEntriesInvalidateTheirPages(): void {
+  for (const id of [
+    "assetGroup.create",
+    "assetGroup.update",
+    "assetGroup.member.add",
+    "assetGroup.member.setRole",
+    "assetGroup.member.remove",
+  ]) {
+    expect(invalidationKeysFor(id), id).toEqual([["admin", "asset-groups"]]);
+  }
+  for (const id of ["pointKey.create", "pointKey.update", "pointKey.deactivate", "pointKey.reactivate"]) {
+    expect(invalidationKeysFor(id), id).toEqual([["admin", "point-keys"]]);
+  }
+}
+
 export function aCreateHasNoBeforeValues(): void {
   const rows = changeRows({ name: "Main", slug: "main", description: null }, null);
   expect(rows).toEqual([
