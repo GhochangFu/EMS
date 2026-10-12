@@ -2,6 +2,8 @@ import { type MiddlewareConsumer, Module, type NestModule } from "@nestjs/common
 import { APP_INTERCEPTOR } from "@nestjs/core";
 
 import { LocationsAdminService } from "../admin/locations/locations.service";
+import { UserGrantsService } from "../admin/users/user-grants.service";
+import { UsersService } from "../admin/users/users.service";
 import { MasterDataAuditService } from "../admin/master-data-audit.service";
 import { AlarmsModule } from "../alarms/alarms.module";
 import { AssetHealthModule } from "../asset-health/asset-health.module";
@@ -9,6 +11,7 @@ import { AssetsModule } from "../assets/assets.module";
 import { AuthModule } from "../auth/auth.module";
 import { DashboardBuilderModule } from "../dashboard-builder/dashboard-builder.module";
 import { DatabaseModule } from "../database/database.module";
+import { IdentityAdminModule } from "../identity/identity-admin.module";
 import { LlmModule } from "../llm/llm.module";
 import { VocabulariesModule } from "../vocabularies/vocabularies.module";
 import { CopilotAccessController } from "./copilot-access.controller";
@@ -80,11 +83,19 @@ import { CopilotReadToolSet } from "./tools/copilot-read-tool-set";
  * `AccessControlService`'s manage checks; and `CopilotChangesController`, the
  * Reject button's route. The interceptor starts the follow-up turn
  * (`CopilotTurnService.followUp`) after it records an outcome.
+ *
+ * `F3.86` PR 4: the resolver's user targets call `UsersService` and
+ * `UserGrantsService` (ADR 0089's checks, never a copy). Both are provided
+ * here the way `LocationsAdminService` is — their handles come from
+ * `DatabaseModule`'s tokens — and `IdentityAdminModule` gives `UsersService`
+ * its `IDENTITY_ADMIN` (the resolver never calls Keycloak). Neither module
+ * imports this one.
  */
 @Module({
   imports: [
     DatabaseModule,
     AuthModule,
+    IdentityAdminModule,
     LlmModule,
     AlarmsModule,
     AssetsModule,
@@ -102,6 +113,8 @@ import { CopilotReadToolSet } from "./tools/copilot-read-tool-set";
     CopilotUsageService,
     CopilotTurnService,
     LocationsAdminService,
+    UsersService,
+    UserGrantsService,
     CopilotReadToolSet,
     { provide: COPILOT_READ_TOOLS, useExisting: CopilotReadToolSet },
     CopilotTargetResolver,

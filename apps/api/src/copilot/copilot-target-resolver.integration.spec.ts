@@ -5,6 +5,7 @@ import type { BmsDb } from "@bms/db";
 import type { JwtPayload, UserRole } from "@bms/shared";
 import type { CatalogEntry, CatalogRef, CatalogTarget } from "@bms/shared/copilot";
 
+import { NO_GRANTS, NO_USERS } from "../testing/copilot-user-checks";
 import { CopilotTargetResolver, refKindOf } from "./copilot-target-resolver";
 
 /**
@@ -96,7 +97,7 @@ function fixture(target: CatalogTarget, refs: readonly CatalogRef[] = []): Catal
   };
 }
 
-const resolverWith = (ctx: ResolverCtx, access: never) => new CopilotTargetResolver(ctx.tenantDb, access);
+const resolverWith = (ctx: ResolverCtx, access: never) => new CopilotTargetResolver(ctx.tenantDb, access, NO_USERS, NO_GRANTS);
 
 /** `location`: found in its organization only; the route's `canManageLocation` on that site. */
 export async function aLocationResolvesWithItsSiteCheck(ctx: ResolverCtx): Promise<void> {
@@ -278,4 +279,103 @@ export function refKindOfReadsTheKindField(): void {
   expect(refKindOf(grant, { kind: "location" })).toBeNull();
   expect(refKindOf(grant, { kind: 7 })).toBeNull();
   expect(refKindOf(grant, { kind: "__proto__" })).toBeNull();
+}
+
+// --- F3.86 PR 4: the user targets, through the users services (called, never copied) ---
+
+/** Recording fakes of `UsersService` and `UserGrantsService`'s checks; `throws` names the ones that refuse. */
+function userServices(
+  ctx: ResolverCtx,
+  over: { throws?: string[]; homeOrganization?: string | null; managerRole?: string; writable?: string[] | null; grantOrganization?: string } = {},
+) {
+  const calls: Call[] = [];
+  const step = <T>(name: string, value: T, ...args: unknown[]): Promise<T> => {
+    calls.push([name, ...args]);
+    return over.throws?.includes(name) ? Promise.reject(new Error(`403 from ${name}`)) : Promise.resolve(value);
+  };
+  const manager = { role: over.managerRole ?? "admin", writable: over.writable ?? null };
+  const row = { id: "user-1", displayName: "Priya Rao", organizationId: over.homeOrganization === undefined ? ctx.orgA : over.homeOrganization };
+  const users = {
+    requireManager: () => step("requireManager", manager),
+    requireManageableTarget: (_m: unknown, id: string) => step("requireManageableTarget", row, id),
+  };
+  const grants = {
+    assertGrantAddable: (_j: unknown, _m: unknown, _u: unknown, body: unknown) =>
+      step("assertGrantAddable", { organizationId: over.grantOrganization ?? ctx.orgA, targetId: "t", targetName: RESOLVER_NAMES.locationA }, body),
+    assertGrantRemovable: (_j: unknown, _m: unknown, _u: unknown, kind: string, grantId: string) =>
+      step("assertGrantRemovable", { organizationId: ctx.orgA, targetId: "t", targetName: RESOLVER_NAMES.groupA }, kind, grantId),
+  };
+  return { calls, users: users as never, grants: grants as never };
+}
+
+const withUsers = (ctx: ResolverCtx, s: ReturnType<typeof userServices>) =>
+  new CopilotTargetResolver(ctx.tenantDb, recorder().access, s.users, s.grants);
+
+/** `user`: the target's home organization, through `requireManager` then `requireManageableTarget`; any refusal is `null`. */
+export async function aUserTargetUsesTheUsersServicesChecks(ctx: ResolverCtx): Promise<void> {
+  const entry = fixture({ kind: "user", param: "id" });
+  const ok = userServices(ctx);
+  expect(await withUsers(ctx, ok).resolve(entry, { id: "user-1" }, {}, [ctx.orgA], JWT)).toMatchObject({
+    organizationId: ctx.orgA,
+    targetName: "Priya Rao",
+  });
+  expect(ok.calls).toEqual([["requireManager"], ["requireManageableTarget", "user-1"]]);
+  expect(await withUsers(ctx, userServices(ctx, { throws: ["requireManageableTarget"] })).resolve(entry, { id: "user-1" }, {}, [ctx.orgA], JWT)).toBeNull();
+  expect(await withUsers(ctx, userServices(ctx, { throws: ["requireManager"] })).resolve(entry, { id: "user-1" }, {}, [ctx.orgA], JWT)).toBeNull();
+  // A global admin (no home organization) is never a target; a target outside the allowed set is the same refusal.
+  expect(await withUsers(ctx, userServices(ctx, { homeOrganization: null })).resolve(entry, { id: "user-1" }, {}, [ctx.orgA], JWT)).toBeNull();
+  expect(await withUsers(ctx, userServices(ctx)).resolve(entry, { id: "user-1" }, {}, [ctx.orgB], JWT)).toBeNull();
+}
+
+/** `userGrantAdd` and `userGrant`: the grant's organization and name, from the grants service's own asserts. */
+export async function aGrantTargetUsesTheGrantsServicesChecks(ctx: ResolverCtx): Promise<void> {
+  const add = fixture({ kind: "userGrantAdd", param: "id" });
+  const ok = userServices(ctx);
+  const body = { kind: "location", targetId: ctx.locationA };
+  expect(await withUsers(ctx, ok).resolve(add, { id: "user-1" }, body, [ctx.orgA], JWT)).toMatchObject({
+    organizationId: ctx.orgA,
+    targetName: "Priya Rao",
+    refName: RESOLVER_NAMES.locationA,
+  });
+  expect(ok.calls).toContainEqual(["assertGrantAddable", body]);
+  expect(await withUsers(ctx, userServices(ctx, { throws: ["assertGrantAddable"] })).resolve(add, { id: "user-1" }, body, [ctx.orgA], JWT)).toBeNull();
+  expect(await withUsers(ctx, userServices(ctx)).resolve(add, { id: "user-1" }, { kind: "nope", targetId: "x" }, [ctx.orgA], JWT)).toBeNull();
+
+  const remove = fixture({ kind: "userGrant", param: "grantId", kindParam: "kind", userParam: "id" });
+  const removing = userServices(ctx);
+  const params = { id: "user-1", kind: "asset_group", grantId: "grant-9" };
+  expect(await withUsers(ctx, removing).resolve(remove, params, {}, [ctx.orgA], JWT)).toMatchObject({ refName: RESOLVER_NAMES.groupA });
+  expect(removing.calls).toContainEqual(["assertGrantRemovable", "asset_group", "grant-9"]);
+  // The user is looked up by the user parameter, never by the grant id (code review).
+  expect(removing.calls).toContainEqual(["requireManageableTarget", "user-1"]);
+  expect(removing.calls).not.toContainEqual(["requireManageableTarget", "grant-9"]);
+  expect(await withUsers(ctx, userServices(ctx, { throws: ["assertGrantRemovable"] })).resolve(remove, params, {}, [ctx.orgA], JWT)).toBeNull();
+  expect(await withUsers(ctx, userServices(ctx)).resolve(remove, { ...params, kind: "site" }, {}, [ctx.orgA], JWT)).toBeNull();
+}
+
+/** A user create: a manager, a role it may give (`mayAssignRole`), an organization it may write. */
+export async function aUserCreateRunsTheRoutesManagerChecks(ctx: ResolverCtx): Promise<void> {
+  const entry = fixture({ kind: "organization", manage: "user" });
+  const body = (role: string) => ({ organizationId: ctx.orgA, role });
+  const orgAdmin = (writable: string[]) => userServices(ctx, { managerRole: "organization_admin", writable });
+  expect(await withUsers(ctx, orgAdmin([ctx.orgA])).resolve(entry, {}, body("viewer"), [ctx.orgA], JWT)).toMatchObject({ organizationId: ctx.orgA });
+  expect(await withUsers(ctx, orgAdmin([ctx.orgA])).resolve(entry, {}, body("admin"), [ctx.orgA], JWT)).toBeNull();
+  expect(await withUsers(ctx, orgAdmin([ctx.orgB])).resolve(entry, {}, body("viewer"), [ctx.orgA], JWT)).toBeNull();
+  expect(await withUsers(ctx, userServices(ctx, { throws: ["requireManager"] })).resolve(entry, {}, body("viewer"), [ctx.orgA], JWT)).toBeNull();
+}
+
+/**
+ * A cross-organization grant (code review): the change lives in the grant
+ * target's organization, not the user's home; and the user's home must be in
+ * the turn's scope too (decision 10 — the user's name reaches the model).
+ */
+export async function aGrantLivesInItsTargetsOrganizationAndNeedsTheUsersHomeInScope(ctx: ResolverCtx): Promise<void> {
+  const add = fixture({ kind: "userGrantAdd", param: "id" });
+  const body = { kind: "location", targetId: ctx.locationB };
+  const crossing = () => userServices(ctx, { grantOrganization: ctx.orgB });
+  expect(await withUsers(ctx, crossing()).resolve(add, { id: "user-1" }, body, [ctx.orgA, ctx.orgB], JWT)).toMatchObject({
+    organizationId: ctx.orgB,
+  });
+  // The user's home (A) outside the turn's scope: refused, though the grant target (B) is in it.
+  expect(await withUsers(ctx, crossing()).resolve(add, { id: "user-1" }, body, [ctx.orgB], JWT)).toBeNull();
 }

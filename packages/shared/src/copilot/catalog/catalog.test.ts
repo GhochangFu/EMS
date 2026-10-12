@@ -15,6 +15,7 @@ import {
   noClientOnlyFieldReachesTheModelBody,
   aModelBodyThatKeepsAClientOnlyFieldIsRefused,
   modelBodyOfOmitsOrRefuses,
+  aGrantSummaryNamesItsTarget,
   noRouteIsBothAnEntryAndExcluded,
   objectShapeUnwrapsEffectsAndUnions,
   pathParamsAndTheirSchemasAgree,
@@ -58,6 +59,7 @@ describe("F3.86 PR 2 — the DELETE allowance and the model's body (ADR 0099 dec
   it("keeps every clientOnly field out of the model's body", () => noClientOnlyFieldReachesTheModelBody());
   it("refuses a modelBody that keeps a clientOnly field", () => aModelBodyThatKeepsAClientOnlyFieldIsRefused());
   it("omits clientOnly from a plain body and refuses a refined one without a modelBody", () => modelBodyOfOmitsOrRefuses());
+  it("names the grant target in a grant summary (PR 4)", () => aGrantSummaryNamesItsTarget());
 });
 
 describe("F3.85 PR 11a — formula paths into array items (plan §11.3 Unit 2)", () => {

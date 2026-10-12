@@ -29,7 +29,8 @@ import { COPILOT_UNAVAILABLE_MESSAGE } from "./copilot-access.guard";
 import { CopilotAvailabilityService } from "./copilot-availability.service";
 import { CopilotConversationsService } from "./copilot-conversations.service";
 import { CopilotPendingChangesService, type FinishedChange } from "./copilot-pending-changes.service";
-import { COPILOT_PROPOSE_TOOLS } from "./copilot-propose-tools";
+import { accessIntentOf } from "./copilot-access-intent";
+import { COPILOT_PROPOSE_TOOLS, type CopilotProposeTools } from "./copilot-propose-tools";
 import { COPILOT_READ_TOOLS, type CopilotReadTools, type CopilotToolContext } from "./copilot-read-tools";
 import {
   argumentsCarryCredential,
@@ -247,7 +248,7 @@ export class CopilotTurnService {
     private readonly resolver: LlmResolver,
     private readonly usage: CopilotUsageService,
     @Inject(COPILOT_READ_TOOLS) private readonly tools: CopilotReadTools,
-    @Inject(COPILOT_PROPOSE_TOOLS) private readonly proposeTools: CopilotReadTools,
+    @Inject(COPILOT_PROPOSE_TOOLS) private readonly proposeTools: CopilotProposeTools,
     private readonly pending: CopilotPendingChangesService,
   ) {}
 
@@ -355,9 +356,14 @@ export class CopilotTurnService {
       conversationOrganizationId: organizationId,
       allowedOrganizationIds: scope.allowed,
       turnKind: kind,
+      // Ruling Q3: from the user's own message, before any tool runs; a follow-up never asks.
+      accessIntent: input.kind === "user" && accessIntentOf(input.message),
       now: this.clock(),
     };
-    const registry = combineToolRegistries(this.tools.registry, this.proposeTools.registry);
+    const registry = combineToolRegistries(
+      this.tools.registry,
+      ctx.accessIntent === true ? this.proposeTools.registry : this.proposeTools.registryWithoutAccess,
+    );
     const result = await runAgentLoop({
       messages: [
         { role: "system", content: COPILOT_SYSTEM_PROMPT },

@@ -2,12 +2,14 @@ import { expect } from "vitest";
 import { z } from "zod";
 
 import type { CopilotPendingChangeDto, JwtPayload } from "@bms/shared";
-import { type CatalogEntry, COPILOT_CATALOG, proposeToolName } from "@bms/shared/copilot";
+import { type CatalogEntry, catalogEntry, COPILOT_CATALOG, proposeToolName } from "@bms/shared/copilot";
 
 import type { ResolvedIdentity } from "../auth/identity-resolver";
 import { jsonSchemaOf, runToolCall } from "../llm/tool-registry";
 import type { ToolOutcome } from "../llm/tool-result";
+import { LOCAL_MODE_READ_ONLY } from "../admin/users/users.service";
 import { bodyHash } from "./body-hash";
+import { PROPOSE_ACCESS_NOT_ASKED_ERROR } from "./copilot-access-intent";
 import type { NewPendingChange } from "./copilot-pending-changes.service";
 import {
   createCopilotProposeTools,
@@ -79,6 +81,8 @@ type Options = {
   /** Another turn stored a change between `hasOpen` and the insert: the store answers `null`. */
   raced?: boolean;
   catalog?: readonly CatalogEntry[];
+  /** `F3.86` PR 4: the environment the tools read the auth mode from (ruling Q8). */
+  env?: Record<string, string | undefined>;
 };
 
 export function proposeHarness(options: Options = {}) {
@@ -114,6 +118,7 @@ export function proposeHarness(options: Options = {}) {
       },
     },
     options.catalog,
+    options.env ?? { AUTH_MODE: "oidc" },
   );
   const ctx = (over: Partial<CopilotToolContext> = {}): CopilotToolContext => ({
     identity: { id: USER, role: "admin", organizationId: null } as ResolvedIdentity,
@@ -296,8 +301,77 @@ export async function anAccessChangeIsRefusedOnAFollowUp(): Promise<void> {
   const refused = await h.call(proposeToolName(ACCESS_ENTRY), { body: VECTOR }, { turnKind: "follow_up" });
   expect(refused.error).toBe(PROPOSE_ACCESS_ON_FOLLOW_UP_ERROR);
   expect(h.stored).toEqual([]);
-  expect((await h.call(proposeToolName(ACCESS_ENTRY), { body: VECTOR }, { turnKind: "user" })).ok).toBe(true);
+  expect((await h.call(proposeToolName(ACCESS_ENTRY), { body: VECTOR }, { turnKind: "user", accessIntent: true })).ok).toBe(true);
   expect(h.stored).toHaveLength(1);
+}
+
+/**
+ * `F3.86` PR 4, ruling Q3 — the second guard: an access entry dispatched in a
+ * user turn whose own message did not ask is refused with the sentence, and
+ * stores nothing; the same call with the intent stores one. Mutation: drop
+ * the `accessIntent` check → the refusal reddens.
+ */
+export async function anAccessChangeNeedsTheUsersOwnAsk(): Promise<void> {
+  const h = proposeHarness({ catalog: [ACCESS_ENTRY] });
+  for (const accessIntent of [false, undefined]) {
+    const refused = await h.tools.dispatch(proposeToolName(ACCESS_ENTRY), { body: VECTOR }, h.ctx({ accessIntent }));
+    expect(refused, String(accessIntent)).toEqual({ ok: false, error: PROPOSE_ACCESS_NOT_ASKED_ERROR });
+  }
+  expect(h.stored).toEqual([]);
+  expect((await h.tools.dispatch(proposeToolName(ACCESS_ENTRY), { body: VECTOR }, h.ctx({ accessIntent: true }))).ok).toBe(true);
+  expect(h.stored).toHaveLength(1);
+}
+
+/** The second registry names no access tool; every other tool is in both (positive control). */
+export function theRegistryWithoutAccessNamesNoAccessTool(): void {
+  const h = proposeHarness();
+  const all = h.tools.registry.definitions.map((d) => d.name);
+  const without = h.tools.registryWithoutAccess.definitions.map((d) => d.name);
+  const access = COPILOT_CATALOG.filter((entry) => entry.risk === "access").map(proposeToolName);
+  expect(access).toEqual(expect.arrayContaining(["propose_user_create", "propose_userGrant_add", "propose_userGrant_remove"]));
+  for (const name of access) {
+    expect(all, name).toContain(name);
+    expect(without, name).not.toContain(name);
+    expect(h.tools.registryWithoutAccess.isToolName(name), name).toBe(false);
+  }
+  expect(without).toEqual(all.filter((name) => !access.includes(name)));
+  expect(without).toContain("propose_dashboard_create");
+}
+
+const ORG = "55555555-5555-4555-8555-555555555555";
+const NEW_USER = { email: "priya@example.test", displayName: "Priya Rao", role: "viewer", organizationId: ORG };
+
+/**
+ * `F3.86` ruling Q8 — in local sign-in a user-account entry is refused with
+ * the route's own sentence and stores nothing; a grant (database-only) is
+ * still proposed. Mutation: drop the mode check → the first reddens.
+ */
+export async function aUserAccountEntryIsRefusedInLocalMode(): Promise<void> {
+  const create = catalogEntry("user.create") as CatalogEntry;
+  const grant = catalogEntry("userGrant.add") as CatalogEntry;
+  const local = proposeHarness({ catalog: [create, grant], env: { AUTH_MODE: "local", OIDC_ISSUER: "" } });
+  const asked = local.ctx({ accessIntent: true });
+  expect(await local.tools.dispatch(proposeToolName(create), { body: NEW_USER }, asked)).toEqual({ ok: false, error: LOCAL_MODE_READ_ONLY });
+  expect(local.stored).toEqual([]);
+  expect((await local.tools.dispatch(proposeToolName(grant), { id: ROW, body: { kind: "location", targetId: ROW } }, asked)).ok).toBe(true);
+  expect(local.stored.map((change) => change.catalogId)).toEqual(["userGrant.add"]);
+  // In OIDC the same create is stored (the positive control for the refusal).
+  const oidc = proposeHarness({ catalog: [create] });
+  expect((await oidc.tools.dispatch(proposeToolName(create), { body: NEW_USER }, oidc.ctx({ accessIntent: true }))).ok).toBe(true);
+}
+
+/** The copilot never proposes the global admin role; the stored create has no password and the clientOnly hash. */
+export async function aUserCreateNeverProposesTheGlobalAdmin(): Promise<void> {
+  const create = catalogEntry("user.create") as CatalogEntry;
+  const h = proposeHarness({ catalog: [create] });
+  const asked = h.ctx({ accessIntent: true });
+  const admin = await h.tools.dispatch(proposeToolName(create), { body: { ...NEW_USER, role: "admin", organizationId: null } }, asked);
+  expect(admin.ok).toBe(false);
+  expect(admin.ok ? "" : admin.error).toMatch(/global admin role/);
+  expect(h.stored).toEqual([]);
+  expect((await h.tools.dispatch(proposeToolName(create), { body: NEW_USER }, asked)).ok).toBe(true);
+  expect(h.stored[0]?.body).toEqual(NEW_USER);
+  expect(h.stored[0]?.bodyHash).toBe(bodyHash({ ...NEW_USER, temporaryPassword: "typed-on-the-card" }, ["temporaryPassword"]));
 }
 
 /** A `clientOnly` field is in no tool definition and no stored body; the model's body omits it. */
@@ -587,4 +661,34 @@ export async function aFleetChangeNeedsABoundConversation(): Promise<void> {
     expect((await h.call(proposeToolName(entry), args)).ok, target.kind).toBe(true);
     expect(h.resolved[0]?.bound, target.kind).toBe(ORG_X);
   }
+}
+
+/**
+ * `F3.86` PR 4, ruling Q3 (security review) — a tool result cannot pre-fill
+ * an access wizard nor read its shape: `fill_step` and `describe_change` on
+ * an access entry need the user's own ask, as the propose tool does; with
+ * the ask, a fill still never names the global admin role. Mutation: drop
+ * the `accessAsked` check in `fill_step` → the first reddens.
+ */
+export async function aFillOrDescribeOfAnAccessEntryNeedsTheUsersOwnAsk(): Promise<void> {
+  const update = catalogEntry("user.update") as CatalogEntry;
+  const grant = catalogEntry("userGrant.add") as CatalogEntry;
+  const h = proposeHarness({ catalog: [update, grant] });
+  const fill = { catalogId: "userGrant.add", stepId: "grant", values: { kind: "location", targetId: ROW } };
+  for (const over of [{ accessIntent: false }, { accessIntent: true, turnKind: "follow_up" as const }]) {
+    expect(await h.tools.dispatch(FILL_STEP_TOOL, fill, h.ctx(over)), JSON.stringify(over)).toEqual({
+      ok: false,
+      error: PROPOSE_ACCESS_NOT_ASKED_ERROR,
+    });
+    expect(await h.tools.dispatch(DESCRIBE_CHANGE_TOOL, { catalogId: "userGrant.add" }, h.ctx(over))).toEqual({
+      ok: false,
+      error: PROPOSE_ACCESS_NOT_ASKED_ERROR,
+    });
+  }
+  const asked = h.ctx({ accessIntent: true });
+  expect((await h.tools.dispatch(FILL_STEP_TOOL, fill, asked)).ok).toBe(true);
+  expect((await h.tools.dispatch(DESCRIBE_CHANGE_TOOL, { catalogId: "userGrant.add" }, asked)).ok).toBe(true);
+  const admin = await h.tools.dispatch(FILL_STEP_TOOL, { catalogId: "user.update", stepId: "role", values: { role: "admin" } }, asked);
+  expect(admin.ok).toBe(false);
+  expect((await h.tools.dispatch(FILL_STEP_TOOL, { catalogId: "user.update", stepId: "role", values: { role: "viewer" } }, asked)).ok).toBe(true);
 }

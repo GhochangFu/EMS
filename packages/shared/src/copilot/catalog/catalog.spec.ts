@@ -77,6 +77,17 @@ export const FIXTURES: Readonly<
     names: TARGET_NAME,
   },
   "assetTemplate.publish": { body: {}, params: { id: ROW }, names: TARGET_NAME },
+  // `F3.86` PR 4: what the model proposes (`modelBodyOf`) — a create has no password.
+  "user.create": {
+    body: { email: "priya@example.test", displayName: "Priya Rao", role: "viewer", organizationId: ORG },
+    params: {},
+    names: "Priya Rao",
+  },
+  "user.update": { body: { displayName: "Renamed" }, params: { id: ROW }, names: TARGET_NAME },
+  "user.deactivate": { body: {}, params: { id: ROW }, names: TARGET_NAME },
+  "user.reactivate": { body: {}, params: { id: ROW }, names: TARGET_NAME },
+  "userGrant.add": { body: { kind: "location", targetId: ROW }, params: { id: ROW }, names: TARGET_NAME },
+  "userGrant.remove": { body: {}, params: { id: ROW, kind: "location", grantId: ROW }, names: TARGET_NAME },
 };
 
 const summaryOf = (entry: CatalogEntry) => {
@@ -111,7 +122,8 @@ export function everyFixtureBodyAndPathParses(): void {
   for (const entry of COPILOT_CATALOG) {
     const fixture = FIXTURES[entry.id];
     if (!fixture) throw new Error(entry.id);
-    const parsed = entry.body.safeParse(fixture.body);
+    // The body the model proposes (`F3.86` PR 2): an entry's `clientOnly` fields are not in it.
+    const parsed = modelBodyOf(entry).safeParse(fixture.body);
     expect(parsed.success, `${entry.id}: ${parsed.success ? "" : JSON.stringify(parsed.error.issues)}`).toBe(true);
     for (const [name, schema] of Object.entries(entry.params)) {
       expect((schema as ZodTypeAny).safeParse(fixture.params[name]).success, `${entry.id} :${name}`).toBe(true);
@@ -154,7 +166,8 @@ export function theOnlyDeleteEntriesAreTheTwoRemovals(): void {
     "/admin/users/:id/grants/:kind/:grantId",
   ]);
   expect(deletesOutsideTheAllowance(COPILOT_CATALOG)).toEqual([]);
-  expect(COPILOT_CATALOG.filter((entry) => entry.method === "DELETE").map((entry) => entry.id)).toEqual([]);
+  // PR 4 adds the grant revoke; PR 3c adds the member removal.
+  expect(COPILOT_CATALOG.filter((entry) => entry.method === "DELETE").map((entry) => entry.id)).toEqual(["userGrant.remove"]);
 }
 
 /** The rule is not vacuous: an allowed removal passes it and any other `DELETE` does not. */
@@ -438,4 +451,19 @@ export function theWidgetSummaryCountsRemovedWidgets(): void {
   });
   expect(summary).toContain("with 2 widgets");
   expect(summary).toContain("2 current widgets are removed");
+}
+
+/** `F3.86` PR 4: the grant summaries name the grant target when the server resolved it, and the id otherwise. */
+export function aGrantSummaryNamesItsTarget(): void {
+  const add = catalogEntry("userGrant.add");
+  const remove = catalogEntry("userGrant.remove");
+  if (!add || !remove) throw new Error("userGrant entries");
+  const base = { targetName: "Priya Rao", organizationName: ORG_NAME };
+  expect(add.summary({ ...base, body: { kind: "location", targetId: ROW }, params: { id: ROW }, refName: "RSMOC-WC" })).toBe(
+    'Grant "Priya Rao" access to the site "RSMOC-WC".',
+  );
+  expect(remove.summary({ ...base, body: {}, params: { id: ROW, kind: "asset_group", grantId: ROW }, refName: "LV boards" })).toBe(
+    'Revoke the access of "Priya Rao" to the asset group "LV boards".',
+  );
+  expect(add.summary({ ...base, body: { kind: "organization", targetId: ROW }, params: { id: ROW } })).toContain(ROW);
 }

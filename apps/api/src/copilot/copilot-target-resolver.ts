@@ -19,9 +19,12 @@ import {
   siteControlRoomViews,
   templatePoints,
 } from "@bms/db";
-import type { JwtPayload } from "@bms/shared";
+import { type JwtPayload, userGrantKindSchema, userRoleSchema } from "@bms/shared";
 import type { CatalogEntry, CatalogRef, CatalogRefKind } from "@bms/shared/copilot";
 
+import { UserGrantsService } from "../admin/users/user-grants.service";
+import { mayAssignRole } from "../admin/users/user-management-rules";
+import { UsersService } from "../admin/users/users.service";
 import { AccessControlService } from "../auth/access-control.service";
 import { TENANT_DRIZZLE } from "../database/database.tokens";
 import { type BmsTx, withTenant } from "../database/tenant-context";
@@ -38,6 +41,14 @@ export type ResolvedTarget = {
   readonly pointKeys?: readonly string[];
   /** `assetTemplate` targets: the stored `content`, which a proposal's sections merge over (ruling Q10). */
   readonly currentContent?: Readonly<Record<string, unknown>>;
+  /** `F3.86` PR 4, `userGrantAdd` and `userGrant`: the grant target's name, for the summary. */
+  readonly refName?: string;
+};
+
+/** What the user targets need from the users services: their own checks, called, never copied (plan §6.3). */
+export type CopilotUserChecks = {
+  readonly users: Pick<UsersService, "requireManager" | "requireManageableTarget">;
+  readonly grants: Pick<UserGrantsService, "assertGrantAddable" | "assertGrantRemovable">;
 };
 
 /** The resolver as the propose tools use it; specs pass a fake. */
@@ -69,12 +80,15 @@ type Found = {
   assetId?: string;
   /** `siteControlRoomView`: the stored view's `kind`, or `null` when the site has none. */
   storedKind?: string | null;
+  refName?: string;
   currentWidgetIds?: string[];
   pointKeys?: string[];
   currentContent?: Record<string, unknown>;
 };
 type Scope = { locationId: string | null; assetGroupId: string | null; assetId: string | null };
-type RowKind = Exclude<CatalogEntry["target"]["kind"], "organization" | "parent" | "fleet">;
+type RowKind = Exclude<CatalogEntry["target"]["kind"], "organization" | "parent" | "fleet" | UserKind>;
+type UserKind = "user" | "userGrantAdd" | "userGrant";
+type UserTarget = Extract<CatalogEntry["target"], { kind: UserKind }>;
 
 /**
  * `F3.85` PR 8 / ADR 0099 decision 10 (plan §10.2) — the organization and
@@ -96,10 +110,18 @@ type RowKind = Exclude<CatalogEntry["target"]["kind"], "organization" | "parent"
  */
 @Injectable()
 export class CopilotTargetResolver implements CopilotTargets {
+  private readonly users: CopilotUserChecks["users"];
+  private readonly grants: CopilotUserChecks["grants"];
+
   constructor(
     @Inject(TENANT_DRIZZLE) private readonly tenantDb: BmsDb,
     @Inject(AccessControlService) private readonly access: AccessControlService,
-  ) {}
+    @Inject(UsersService) users: UsersService,
+    @Inject(UserGrantsService) grants: UserGrantsService,
+  ) {
+    this.users = users;
+    this.grants = grants;
+  }
 
   async resolve(
     entry: CatalogEntry,
@@ -124,6 +146,10 @@ export class CopilotTargetResolver implements CopilotTargets {
       const of = target.of;
       found = await this.findRow(of, parentId, allowedOrganizationIds);
       if (found !== null && !(await this.safely(() => this.mayManage(of, parentId, found as Found, user, body)))) found = null;
+    } else if (target.kind === "user" || target.kind === "userGrantAdd" || target.kind === "userGrant") {
+      // `F3.86` PR 4: the users services' own checks; a 403 or 404 from them is the one refusal.
+      found = await this.findUserTarget(target, params, body, user, allowedOrganizationIds).catch(() => null);
+      if (found !== null && !allowedOrganizationIds.includes(found.organizationId)) found = null;
     } else if (target.kind === "fleet" || target.kind === "pointKey") {
       // Ruling Q1: a row with no organization lives in the conversation's bound organization.
       if (boundOrganizationId === null || !allowedOrganizationIds.includes(boundOrganizationId)) return null;
@@ -161,7 +187,46 @@ export class CopilotTargetResolver implements CopilotTargets {
       ...(found.currentWidgetIds ? { currentWidgetIds: found.currentWidgetIds } : {}),
       ...(found.pointKeys ? { pointKeys: found.pointKeys } : {}),
       ...(found.currentContent ? { currentContent: found.currentContent } : {}),
+      ...(found.refName !== undefined ? { refName: found.refName } : {}),
     };
+  }
+
+  /**
+   * `F3.86` PR 4 / ADR 0099 decision 3 — a user target, through
+   * `UsersService.requireManager` and `requireManageableTarget` (ADR 0089's
+   * who-may-manage-whom), then for a grant `UserGrantsService`'s pre-write
+   * checks. A global admin (no home organization) is never a target: changing
+   * that role is the Users page's. Throws what the services throw.
+   */
+  private async findUserTarget(
+    target: UserTarget,
+    params: Readonly<Record<string, string>>,
+    body: Readonly<Record<string, unknown>>,
+    user: JwtPayload,
+    allowedOrganizationIds: readonly string[],
+  ): Promise<Found | null> {
+    const manager = await this.users.requireManager(user);
+    const userId = params[target.kind === "userGrant" ? target.userParam : target.param];
+    if (userId === undefined) return null;
+    const row = await this.users.requireManageableTarget(manager, userId);
+    if (row.organizationId === null) return null;
+    // Decision 10: the user's name reaches the model, so the user's own organization must be in the
+    // turn's scope too — for a grant as well, whose change lives in the grant target's organization.
+    if (!allowedOrganizationIds.includes(row.organizationId)) return null;
+    const name = row.displayName;
+    if (target.kind === "user") return { organizationId: row.organizationId, name };
+    if (target.kind === "userGrantAdd") {
+      const kind = userGrantKindSchema.safeParse(body.kind);
+      if (!kind.success || typeof body.targetId !== "string") return null;
+      const checked = await this.grants.assertGrantAddable(user, manager, row, { kind: kind.data, targetId: body.targetId });
+      return { organizationId: checked.organizationId, name, refName: checked.targetName };
+    }
+    if (target.kind !== "userGrant") return null;
+    const kind = userGrantKindSchema.safeParse(params[target.kindParam]);
+    const grantId = params[target.param];
+    if (!kind.success || grantId === undefined) return null;
+    const checked = await this.grants.assertGrantRemovable(user, manager, row, kind.data, grantId);
+    return { organizationId: checked.organizationId, name, refName: checked.targetName };
   }
 
   private async organizationName(organizationId: string): Promise<string | null> {
@@ -376,6 +441,13 @@ export class CopilotTargetResolver implements CopilotTargets {
         if (assetId !== null) return this.access.canManageAsset(user, assetId);
         if (locationId !== null) return this.access.canManageLocation(user, locationId);
         return this.access.canManageOrganization(user, organizationId);
+      }
+      // `users.service.ts` `create` (ADR 0089): a manager, a role it may give, an organization it may write.
+      case "user": {
+        const manager = await this.users.requireManager(user);
+        const role = userRoleSchema.safeParse(body.role);
+        if (!role.success || !mayAssignRole(manager.role, role.data)) return false;
+        return manager.writable === null || manager.writable.includes(organizationId);
       }
       // `locations.service.ts` `create`: a master-data user, never a `location_admin`, who manages the organization.
       case "location": {

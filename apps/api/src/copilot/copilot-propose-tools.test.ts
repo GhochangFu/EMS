@@ -8,6 +8,11 @@ import {
   aRefinedBodyProposesWithItsModelBody,
   aServerProposedEntryHasNoProposeTool,
   aFleetChangeNeedsABoundConversation,
+  anAccessChangeNeedsTheUsersOwnAsk,
+  theRegistryWithoutAccessNamesNoAccessTool,
+  aUserAccountEntryIsRefusedInLocalMode,
+  aUserCreateNeverProposesTheGlobalAdmin,
+  aFillOrDescribeOfAnAccessEntryNeedsTheUsersOwnAsk,
   aCredentialInAProposeArgumentIsRefused,
   aCrossOrganizationProposalUsesTheAllowedSet,
   aMissingTargetStoresNothing,
@@ -57,6 +62,11 @@ describe("F3.85 PR 8 — the copilot propose tools (ADR 0099 decisions 2, 3, 4, 
   it("proposes a refined body with its modelBody", () => aRefinedBodyProposesWithItsModelBody());
   it("makes no propose tool for a server-proposed entry", () => aServerProposedEntryHasNoProposeTool());
   it("refuses a point-key change outside a bound conversation (ruling Q1)", () => aFleetChangeNeedsABoundConversation());
+  it("refuses an access change the user's own message did not ask for (ruling Q3)", () => anAccessChangeNeedsTheUsersOwnAsk());
+  it("names no access tool in the second registry", () => theRegistryWithoutAccessNamesNoAccessTool());
+  it("refuses a user-account entry in local sign-in (ruling Q8)", () => aUserAccountEntryIsRefusedInLocalMode());
+  it("never proposes the global admin role", () => aUserCreateNeverProposesTheGlobalAdmin());
+  it("gates fill_step and describe_change on an access entry", () => aFillOrDescribeOfAnAccessEntryNeedsTheUsersOwnAsk());
   it("has one slim propose tool per entry", () => everyEntryHasOneSlimProposeTool());
   it("describes a part of a large body on demand", () => describeChangeReadsAPartOfTheBody());
   it("limits describe_change per turn", () => describeChangeHasAPerTurnBudget());

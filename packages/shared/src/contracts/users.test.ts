@@ -1,6 +1,10 @@
 import { describe, it } from "vitest";
 
 import {
+  assertCopilotCreateAgreesWithTheRouteOtherwise,
+  assertCopilotCreateNeverProposesTheGlobalAdmin,
+  assertCopilotCreateRefusesAPassword,
+  assertCopilotUpdateNeverProposesTheGlobalAdmin,
   assertCreateAcceptsAnAdminWithANullOrganization,
   assertCreateAcceptsATwelveCharacterPassword,
   assertCreateRefusesAnAdminWithAnOrganization,
@@ -88,5 +92,21 @@ describe("F3.78 — users API contracts (ADR 0089 decision 1)", () => {
 
   it("list response refuses a row without linked", () => {
     assertListResponseRefusesARowWithoutLinked();
+  });
+
+  it("the copilot create body refuses a password (F3.86 PR 4)", () => {
+    assertCopilotCreateRefusesAPassword();
+  });
+
+  it("the copilot create body never proposes the global admin", () => {
+    assertCopilotCreateNeverProposesTheGlobalAdmin();
+  });
+
+  it("the copilot create body agrees with the route otherwise", () => {
+    assertCopilotCreateAgreesWithTheRouteOtherwise();
+  });
+
+  it("the copilot update body never proposes the global admin", () => {
+    assertCopilotUpdateNeverProposesTheGlobalAdmin();
   });
 });

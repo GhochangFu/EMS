@@ -37,6 +37,11 @@ import {
   assertTheTurnLogCarriesNoText,
   assertTheTurnStoresUserThenAssistantWithProvenance,
   assertUsageIsCountedOnTheConversationsOrganization,
+  assertATurnThatDoesNotAskOffersNoAccessTool,
+  assertAnAccessToolCalledAnywayIsUnknown,
+  assertAnInjectedAccessInstructionIsRefused,
+  assertATurnThatAsksOffersTheAccessTools,
+  assertAFollowUpOffersNoAccessTool,
 } from "./copilot-turn.service.spec";
 
 /** Vitest entry point — see `admin.schema.test.ts` for the pattern (ADR 0014). One `it()` per claim. */
@@ -146,4 +151,12 @@ describe("F3.85 PR 8 — proposals and the follow-up turn (ADR 0099 decisions 2,
   it("replays action lines as marked data", async () => {
     await assertActionLinesReachTheModelAsMarkedData();
   });
+});
+
+describe("F3.86 PR 4 — the access-intent gate in a turn (ruling Q3)", () => {
+  it("offers no access tool when the message does not ask", () => assertATurnThatDoesNotAskOffersNoAccessTool());
+  it("answers an access tool called anyway as unknown", () => assertAnAccessToolCalledAnywayIsUnknown());
+  it("refuses an access change an asset name asks for", () => assertAnInjectedAccessInstructionIsRefused());
+  it("offers the access tools when the message asks", () => assertATurnThatAsksOffersTheAccessTools());
+  it("offers no access tool on a follow-up", () => assertAFollowUpOffersNoAccessTool());
 });

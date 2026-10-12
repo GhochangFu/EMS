@@ -40,11 +40,8 @@ import {
 } from "../../identity/identity-admin.client";
 import { IDENTITY_ADMIN, NotConfiguredIdentityAdmin } from "../../identity/identity-admin.module";
 import { MasterDataAuditService } from "../master-data-audit.service";
-import {
-  createUserBodySchema,
-  temporaryPasswordBodySchema,
-  updateUserBodySchema,
-} from "./users.schema";
+// `F3.86` PR 4: from `@bms/shared` itself, so the catalog gate sees the parse (`SERVICE_PARSERS`).
+import { createUserBodySchema, temporaryPasswordBodySchema, updateUserBodySchema } from "@bms/shared";
 import {
   canManageTarget,
   isManagerRole,

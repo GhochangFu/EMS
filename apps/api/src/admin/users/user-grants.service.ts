@@ -81,8 +81,14 @@ export const GRANT_TARGET_CHANGED = "The grant target changed under you; reload 
 /** Postgres's answer to a row-level-security `WITH CHECK` refusal. */
 const INSUFFICIENT_PRIVILEGE = "42501";
 
-/** What a grant names, read on `fleetDb`. `locationId` is what `canManageLocation` checks; `null` for an organization. */
-type GrantTarget = { readonly organizationId: string; readonly locationId: string | null };
+/**
+ * What a grant names, read on `fleetDb`. `locationId` is what `canManageLocation` checks; `null` for an organization.
+ * `name` (`F3.86` PR 4) is the target's name, for a copilot card's summary.
+ */
+type GrantTarget = { readonly organizationId: string; readonly locationId: string | null; readonly name: string };
+
+/** `F3.86` PR 4 — what a grant change would touch, once ADR 0089's checks passed. */
+export type CheckedGrant = { readonly organizationId: string; readonly targetId: string; readonly targetName: string };
 
 type RawGrantRow = {
   id: string;
@@ -125,13 +131,7 @@ export class UserGrantsService {
     }
     const { kind, targetId } = parsed.data;
     const user = await this.users.requireManageableTarget(manager, userId);
-
-    const grantTarget = await this.readGrantTarget(kind, targetId);
-    if (grantTarget === null || !(await this.inCallerScope(jwt, kind, targetId, grantTarget))) {
-      throw new NotFoundException(GRANT_TARGET_NOT_FOUND);
-    }
-    this.assertCrossOrganizationRule(manager, user, grantTarget.organizationId);
-    await this.assertReachStaysInScope(manager, user, grantTarget.organizationId);
+    const grantTarget = await this.assertGrantAddable(jwt, manager, user, { kind, targetId });
 
     await translateConstraintErrors(
       () =>
@@ -167,12 +167,7 @@ export class UserGrantsService {
     }
     const kind = kindResult.data;
     const user = await this.users.requireManageableTarget(manager, userId);
-
-    const grant = await this.readGrant(kind, grantId, userId);
-    if (grant === null || !(await this.inCallerScope(jwt, kind, grant.targetId, grant))) {
-      throw new NotFoundException(GRANT_NOT_FOUND);
-    }
-    this.assertCrossOrganizationRule(manager, user, grant.organizationId);
+    const grant = await this.assertGrantRemovable(jwt, manager, user, kind, grantId);
 
     await this.inGrantOrganization(grant.organizationId, async (tx) => {
       const deleted = await deleteGrant(tx, kind, grantId, userId);
@@ -193,6 +188,44 @@ export class UserGrantsService {
       );
     });
     return this.grantsOf(user);
+  }
+
+  /**
+   * `F3.86` PR 4 / ADR 0099 decision 3 — `add`'s checks before the write
+   * (ADR 0089: the target exists and is in the caller's scope, the
+   * cross-organization rule, the user's reach stays in the caller's
+   * organizations), public so the copilot calls them rather than copying them.
+   * Throws the route's own 404 or 403.
+   */
+  async assertGrantAddable(
+    jwt: JwtPayload,
+    manager: Manager,
+    user: UserRow,
+    body: { readonly kind: UserGrantKind; readonly targetId: string },
+  ): Promise<CheckedGrant> {
+    const grantTarget = await this.readGrantTarget(body.kind, body.targetId);
+    if (grantTarget === null || !(await this.inCallerScope(jwt, body.kind, body.targetId, grantTarget))) {
+      throw new NotFoundException(GRANT_TARGET_NOT_FOUND);
+    }
+    this.assertCrossOrganizationRule(manager, user, grantTarget.organizationId);
+    await this.assertReachStaysInScope(manager, user, grantTarget.organizationId);
+    return { organizationId: grantTarget.organizationId, targetId: body.targetId, targetName: grantTarget.name };
+  }
+
+  /** `F3.86` PR 4 — `remove`'s checks before the write, public for the copilot. Throws the route's own 404 or 403. */
+  async assertGrantRemovable(
+    jwt: JwtPayload,
+    manager: Manager,
+    user: UserRow,
+    kind: UserGrantKind,
+    grantId: string,
+  ): Promise<CheckedGrant> {
+    const grant = await this.readGrant(kind, grantId, user.id);
+    if (grant === null || !(await this.inCallerScope(jwt, kind, grant.targetId, grant))) {
+      throw new NotFoundException(GRANT_NOT_FOUND);
+    }
+    this.assertCrossOrganizationRule(manager, user, grant.organizationId);
+    return { organizationId: grant.organizationId, targetId: grant.targetId, targetName: grant.name };
   }
 
   // -- Helpers --------------------------------------------------------------
@@ -244,26 +277,26 @@ export class UserGrantsService {
   private async readGrantTarget(kind: UserGrantKind, targetId: string): Promise<GrantTarget | null> {
     if (kind === "organization") {
       const [row] = await this.fleetDb
-        .select({ id: organizations.id })
+        .select({ id: organizations.id, name: organizations.name })
         .from(organizations)
         .where(eq(organizations.id, targetId))
         .limit(1);
-      return row ? { organizationId: row.id, locationId: null } : null;
+      return row ? { organizationId: row.id, locationId: null, name: row.name } : null;
     }
     if (kind === "location") {
       const [row] = await this.fleetDb
-        .select({ organizationId: locations.organizationId })
+        .select({ organizationId: locations.organizationId, name: locations.name })
         .from(locations)
         .where(eq(locations.id, targetId))
         .limit(1);
-      return row ? { organizationId: row.organizationId, locationId: targetId } : null;
+      return row ? { organizationId: row.organizationId, locationId: targetId, name: row.name } : null;
     }
     const [row] = await this.fleetDb
-      .select({ organizationId: assetGroups.organizationId, locationId: assetGroups.locationId })
+      .select({ organizationId: assetGroups.organizationId, locationId: assetGroups.locationId, name: assetGroups.name })
       .from(assetGroups)
       .where(eq(assetGroups.id, targetId))
       .limit(1);
-    return row ? { organizationId: row.organizationId, locationId: row.locationId } : null;
+    return row ? { organizationId: row.organizationId, locationId: row.locationId, name: row.name } : null;
   }
 
   /** The grant `grantId` of `userId` in `kind`'s table, with its target's organization; `null` for another user's id. */
@@ -274,32 +307,38 @@ export class UserGrantsService {
   ): Promise<(GrantTarget & { readonly targetId: string }) | null> {
     if (kind === "organization") {
       const [row] = await this.fleetDb
-        .select({ targetId: userOrganizationAccess.organizationId })
+        .select({ targetId: userOrganizationAccess.organizationId, name: organizations.name })
         .from(userOrganizationAccess)
+        .innerJoin(organizations, eq(organizations.id, userOrganizationAccess.organizationId))
         .where(and(eq(userOrganizationAccess.id, grantId), eq(userOrganizationAccess.userId, userId)))
         .limit(1);
-      return row ? { targetId: row.targetId, organizationId: row.targetId, locationId: null } : null;
+      return row ? { targetId: row.targetId, organizationId: row.targetId, locationId: null, name: row.name } : null;
     }
     if (kind === "location") {
       const [row] = await this.fleetDb
-        .select({ targetId: userLocationAccess.locationId, organizationId: locations.organizationId })
+        .select({ targetId: userLocationAccess.locationId, organizationId: locations.organizationId, name: locations.name })
         .from(userLocationAccess)
         .innerJoin(locations, eq(locations.id, userLocationAccess.locationId))
         .where(and(eq(userLocationAccess.id, grantId), eq(userLocationAccess.userId, userId)))
         .limit(1);
-      return row ? { targetId: row.targetId, organizationId: row.organizationId, locationId: row.targetId } : null;
+      return row
+        ? { targetId: row.targetId, organizationId: row.organizationId, locationId: row.targetId, name: row.name }
+        : null;
     }
     const [row] = await this.fleetDb
       .select({
         targetId: userAssetGroupAccess.assetGroupId,
         organizationId: assetGroups.organizationId,
         locationId: assetGroups.locationId,
+        name: assetGroups.name,
       })
       .from(userAssetGroupAccess)
       .innerJoin(assetGroups, eq(assetGroups.id, userAssetGroupAccess.assetGroupId))
       .where(and(eq(userAssetGroupAccess.id, grantId), eq(userAssetGroupAccess.userId, userId)))
       .limit(1);
-    return row ? { targetId: row.targetId, organizationId: row.organizationId, locationId: row.locationId } : null;
+    return row
+      ? { targetId: row.targetId, organizationId: row.organizationId, locationId: row.locationId, name: row.name }
+      : null;
   }
 
   /** Target scope: `canManageOrganization` for an organization, `canManageLocation` for a location or a group's location. */
