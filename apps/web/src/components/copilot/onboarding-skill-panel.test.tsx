@@ -9,6 +9,8 @@ import {
   aChipSendsItsTextAsATurn,
   aLocationAdminIsNotOfferedOnboarding,
   aLostSessionReturnsToThePlainConversation,
+  aNewCommitCardReplacesTheOld,
+  aSwitchedOffOrganizationOffersNoOnboarding,
   aRefusalWithoutASkillKeyKeepsThePanel,
   aSkillConversationRendersTheChips,
   aSkillTakesInputWithNoKey,
@@ -38,10 +40,12 @@ describe("F3.86 PR 6 — the dock's onboarding skill (ADR 0099 decision 7)", () 
   it("commits from the drawer through the wizard, without the header", theDrawerCommitIsTheWizardWithoutTheHeader);
   it("returns to the plain conversation when the skill ends", aLostSessionReturnsToThePlainConversation);
   it("keeps the panel on a refusal with no skill key", aRefusalWithoutASkillKeyKeepsThePanel);
+  it("replaces the old commit card with the new one", aNewCommitCardReplacesTheOld);
 });
 
 describe("F3.86 PR 6 — starting the onboarding skill (ruling Q4)", () => {
   it("makes the conversation and starts the skill in its organization", onboardASiteStartsTheSkill);
   it("offers a location_admin no start", aLocationAdminIsNotOfferedOnboarding);
   it("makes the global admin pick an organization first", theGlobalAdminPicksAnOrganizationFirst);
+  it("offers no onboarding where the organization's copilot is off", aSwitchedOffOrganizationOffersNoOnboarding);
 });

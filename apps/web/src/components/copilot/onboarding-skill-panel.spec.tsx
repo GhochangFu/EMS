@@ -229,14 +229,53 @@ export async function theDrawerCommitIsTheWizardWithoutTheHeader(): Promise<void
   expect(await screen.findByText(/The site is committed/)).toBeInTheDocument();
 }
 
-/** A turn that answers `skill: null` (the session is no longer readable) returns the dock to the plain conversation. */
+/**
+ * A turn that answers `skill: null` (the session is no longer readable) stores
+ * nothing — the server's shape: no messages — and returns the dock to the
+ * plain conversation; the sentence is the banner.
+ */
 export async function aLostSessionReturnsToThePlainConversation(): Promise<void> {
   const stubs = await openSkill();
-  stubs.turn.mockResolvedValue({ ...answered("next", "The onboarding has ended."), skill: null });
+  const lost = "This onboarding is no longer available to you here, so it has ended in this conversation.";
+  stubs.turn.mockResolvedValue({ ...answered("next", lost), messages: [], pendingChanges: [], skill: null });
   fireEvent.click(screen.getByRole("button", { name: "Add an RTU" }));
+  expect(await screen.findByRole("alert")).toHaveTextContent(lost);
   await waitFor(() => expect(screen.queryByText("Welcome to onboarding.")).not.toBeInTheDocument());
-  expect(screen.getByText("The onboarding has ended.")).toBeInTheDocument();
   expect(screen.getByRole("button", { name: "Onboard a site" })).toBeInTheDocument();
+}
+
+/** A new commit card replaces the old one (the server discarded it): one Confirm, the new card's. */
+export async function aNewCommitCardReplacesTheOld(): Promise<void> {
+  const stubs = await openSkill({ cards: [COMMIT_CARD] });
+  const next: CopilotPendingChangeDto = {
+    ...COMMIT_CARD,
+    id: "77777777-7777-4777-8777-777777777777",
+    body: { draftHash: "d".repeat(64) },
+    summary: 'Commit the onboarding draft for site "Plant 5". It creates 2 RTUs, 0 assets and 0 mappings.',
+  };
+  await screen.findByText(COMMIT_CARD.summary);
+  stubs.turn.mockResolvedValue({ ...answered("commit it", "Ready."), pendingChanges: [next], skill: skillState() });
+  fireEvent.click(screen.getByRole("button", { name: "Add an RTU" }));
+  expect(await screen.findByText(next.summary)).toBeInTheDocument();
+  expect(screen.queryByText(COMMIT_CARD.summary)).not.toBeInTheDocument();
+  expect(screen.getAllByRole("button", { name: "Confirm" })).toHaveLength(1);
+}
+
+/** Ruling Q4: an organization whose copilot is off offers no onboarding — the dock's off state covers it. */
+export async function aSwitchedOffOrganizationOffersNoOnboarding(): Promise<void> {
+  const stubs = stub(READY);
+  stubs.status.mockImplementation(async (organizationId?: string) =>
+    organizationId ? { available: false, configured: false } : READY,
+  );
+  renderDock("admin");
+  await openPanel();
+  // Positive: before the pick the action is there (waiting for an organization).
+  expect(await screen.findByRole("button", { name: "Onboard a site" })).toBeInTheDocument();
+  const select = screen.getByRole("combobox", { name: "Organization" });
+  const option = await within(select).findByRole("option", { name: "PHE Water" });
+  fireEvent.change(select, { target: { value: (option as HTMLOptionElement).value } });
+  expect(await screen.findByText("The copilot is off for this organization.")).toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "Onboard a site" })).not.toBeInTheDocument();
 }
 
 /** A credential refusal answers with no `skill` key: the panel and its state stay. */

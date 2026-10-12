@@ -119,6 +119,9 @@ const NOT_CONFIGURED_SENTENCE =
 /** The sentence a picked organization whose copilot is off shows instead of the input. */
 const SCOPE_OFF_SENTENCE = "The copilot is off for this organization.";
 
+/** The server-made onboarding commit's catalog id: a conversation shows one such card at a time. */
+const ONBOARDING_COMMIT = "onboarding.commit";
+
 /** "Onboard a site" needs an organization: the global administrator's cross-organization scope names none. */
 const ONBOARD_PICK_SENTENCE = "Pick an organization to onboard a site.";
 
@@ -377,7 +380,12 @@ function DockPanel({ user, homeConfigured }: CopilotDockProps & { homeConfigured
               ...prev,
               messages: [...prev.messages, ...data.messages],
               pendingChanges: [
-                ...prev.pendingChanges.filter((c) => !data.pendingChanges.some((n) => n.id === c.id)),
+                ...prev.pendingChanges.filter(
+                  (c) =>
+                    !data.pendingChanges.some((n) => n.id === c.id) &&
+                    // `F3.86` PR 6: a new onboarding commit card replaces the old one (the server discarded it).
+                    !(c.catalogId === ONBOARDING_COMMIT && data.pendingChanges.some((n) => n.catalogId === ONBOARDING_COMMIT)),
+                ),
                 ...data.pendingChanges,
               ],
             }
