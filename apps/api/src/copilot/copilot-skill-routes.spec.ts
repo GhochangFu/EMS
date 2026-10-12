@@ -24,7 +24,7 @@ const COMMITTED_STATE = { kind: "onboarding", sessionId: SESSION, session: { sta
 
 function routes(boundSessionId: string | null, options: { state?: CopilotSkillStateDto; open?: CopilotPendingChangeDto[] } = {}) {
   const state = options.state ?? STATE;
-  const record = { stateOf: [] as Array<[JwtPayload, string | null]>, start: [] as unknown[][], end: 0, discarded: [] as string[][] };
+  const record = { stateOf: [] as Array<[JwtPayload, string | null]>, start: [] as unknown[][], end: 0, discarded: [] as string[][], listOpen: [] as Array<[string, string]>, discardUsers: [] as string[] };
   const conversations = {
     get: async (_userId: string, id: string) =>
       id === CONVERSATION
@@ -41,8 +41,12 @@ function routes(boundSessionId: string | null, options: { state?: CopilotSkillSt
   };
   const pending = {
     sweepStuck: async () => undefined,
-    listOpen: async () => [...(options.open ?? [])],
-    discard: async (_userId: string, ids: readonly string[]) => {
+    listOpen: async (userId: string, conversationId: string) => {
+      record.listOpen.push([userId, conversationId]);
+      return [...(options.open ?? [])];
+    },
+    discard: async (userId: string, ids: readonly string[]) => {
+      record.discardUsers.push(userId);
       record.discarded.push([...ids]);
     },
   };
@@ -119,6 +123,8 @@ export async function aReadOfACommittedSkillDropsItsCommitCard(): Promise<void> 
   const h = routes(SESSION, { state: COMMITTED_STATE, open: [OPEN_COMMIT_CARD, OPEN_OTHER_CARD] });
   const detail = await h.controller.get(CONVERSATION, ORG_ADMIN, JWT);
   expect(h.record.discarded).toEqual([[OPEN_COMMIT_ID]]);
+  expect(h.record.listOpen).toEqual([[ORG_ADMIN.id, CONVERSATION]]);
+  expect(h.record.discardUsers).toEqual([ORG_ADMIN.id]);
   expect(detail.pendingChanges).toEqual([OPEN_OTHER_CARD]);
 }
 

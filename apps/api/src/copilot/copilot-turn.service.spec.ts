@@ -172,6 +172,8 @@ export function harness(llm: FakeLlmProvider, options: Options = {}) {
   // PR 8: the real propose tools over a fake resolver and a fake pending store.
   const proposed: NewPendingChange[] = [];
   const discarded: string[][] = [];
+  /** The user and conversation each `listOpen` named, and the user each `discard` named (two same-typed strings). */
+  const pendingAsked = { listOpen: [] as Array<[string, string]>, discardUsers: [] as string[] };
   const target: ResolvedTarget | null =
     options.target === undefined ? { organizationId: ORG_X, organizationName: "Org X", targetName: "T" } : options.target;
   const pending = {
@@ -190,10 +192,14 @@ export function harness(llm: FakeLlmProvider, options: Options = {}) {
         expiresAt: "2026-10-11T06:15:00.000Z",
       };
     },
-    discard: async (_userId: string, ids: readonly string[]) => {
+    discard: async (userId: string, ids: readonly string[]) => {
+      pendingAsked.discardUsers.push(userId);
       discarded.push([...ids]);
     },
-    listOpen: async () => [...(options.open ?? [])],
+    listOpen: async (userId: string, conversationId: string) => {
+      pendingAsked.listOpen.push([userId, conversationId]);
+      return [...(options.open ?? [])];
+    },
     finished: async (_userId: string, id: string) => (id === CHANGE_ID ? (options.finished ?? null) : null),
   };
   const proposeTools = createCopilotProposeTools({ targets: { resolve: async () => target }, pending });
@@ -209,7 +215,7 @@ export function harness(llm: FakeLlmProvider, options: Options = {}) {
     (options.commitReader ?? UNUSED_COMMIT_READER) as never,
   );
   service.clock = () => new Date("2026-10-11T06:00:00Z");
-  return { service, counts, history, seenTools: seen, proposed, discarded, setPlatform: (p: Options["platform"]) => (options.platform = p) };
+  return { service, counts, history, seenTools: seen, proposed, discarded, pendingAsked, setPlatform: (p: Options["platform"]) => (options.platform = p) };
 }
 
 function turn(h: ReturnType<typeof harness>, message: string, who: ResolvedIdentity = GLOBAL_ADMIN) {

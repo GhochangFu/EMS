@@ -389,11 +389,13 @@ export async function aWizardCommitDropsTheCommitCard(): Promise<void> {
  * shows no dead card. The end's answer is the server's, with no open change.
  */
 export async function anEndDropsAKeptCommitCard(): Promise<void> {
-  await openSkill({ cards: [COMMIT_CARD] });
+  const stubs = await openSkill({ cards: [COMMIT_CARD] });
   stubFetch(() => ({ status: 400, json: { statusCode: 400, message: DRAFT_CHANGED, error: "Bad Request" } }));
   fireEvent.click(await screen.findByRole("button", { name: "Confirm" }));
   expect(await screen.findByText(DRAFT_CHANGED)).toBeInTheDocument();
   const end = vi.spyOn(copilotApi, "endCopilotOnboardingSkill").mockResolvedValue(detail(null, []));
+  // A follow-up poll after the End reads the plain conversation, as the server answers it.
+  stubs.load.mockResolvedValue(detail(null, []));
   fireEvent.click(screen.getByRole("button", { name: "End onboarding" }));
   await waitFor(() => expect(end).toHaveBeenCalledWith(CONVERSATION_ID));
   expect(await screen.findByRole("button", { name: "Onboard a site" })).toBeInTheDocument();

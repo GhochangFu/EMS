@@ -261,4 +261,6 @@ export async function aLostSessionDiscardsItsCommitCardOnly(): Promise<void> {
   const response = await h.turn("Add an asset");
   expect(response.skill).toBeNull();
   expect(h.discarded).toEqual([[OPEN_COMMIT_ID]]);
+  expect(h.pendingAsked.listOpen).toEqual([[ORG_ADMIN.id, CONVERSATION]]);
+  expect(h.pendingAsked.discardUsers).toEqual([ORG_ADMIN.id]);
 }

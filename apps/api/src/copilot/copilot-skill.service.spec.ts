@@ -29,7 +29,7 @@ function service(options: {
   onboarding?: CopilotOnboardingSkill;
 } = {}) {
   const row = options.row === undefined ? { id: CONVERSATION, organizationId: ORG_X, onboardingSessionId: null } : options.row;
-  const record = { discarded: [] as string[][], binds: [] as string[], unbinds: 0, appended: [] as Array<{ role: CopilotMessageDto["role"]; content: string }>, decided: [] as string[] };
+  const record = { listOpen: [] as Array<[string, string]>, discardUsers: [] as string[], discarded: [] as string[][], binds: [] as string[], unbinds: 0, appended: [] as Array<{ role: CopilotMessageDto["role"]; content: string }>, decided: [] as string[] };
   const conversations = {
     findConversation: async () => row,
     bindOnboardingSession: async (_userId: string, _id: string, sessionId: string) => {
@@ -51,8 +51,12 @@ function service(options: {
     },
   };
   const pending = {
-    listOpen: async () => [OPEN_COMMIT_CARD, OPEN_OTHER_CARD],
-    discard: async (_userId: string, ids: readonly string[]) => {
+    listOpen: async (userId: string, conversationId: string) => {
+      record.listOpen.push([userId, conversationId]);
+      return [OPEN_COMMIT_CARD, OPEN_OTHER_CARD];
+    },
+    discard: async (userId: string, ids: readonly string[]) => {
+      record.discardUsers.push(userId);
       record.discarded.push([...ids]);
     },
   };
@@ -149,6 +153,8 @@ export async function anEndDiscardsTheOpenCommitCardOnly(): Promise<void> {
   const h = service({ row: { id: CONVERSATION, organizationId: ORG_X, onboardingSessionId: SESSION } });
   await h.skills.end(ORG_ADMIN, CONVERSATION);
   expect(h.record.discarded).toEqual([[OPEN_COMMIT_ID]]);
+  expect(h.record.listOpen).toEqual([[ORG_ADMIN.id, CONVERSATION]]);
+  expect(h.record.discardUsers).toEqual([ORG_ADMIN.id]);
 }
 
 /** A read: the bound session's state; `null` with none bound, and when the caller can no longer read it. */
