@@ -1,4 +1,4 @@
-import { putSiteControlRoomViewBodySchema } from "./site-control-room-view.schema";
+import { putSiteControlRoomViewBodySchema } from "./site-control-room-view-writes";
 
 /**
  * `F3.67` U4 — the write body's pair rule and strictness (ADR 0076 decision 5).
