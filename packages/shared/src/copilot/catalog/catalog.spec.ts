@@ -187,9 +187,9 @@ export function theOnlyDeleteEntriesAreTheTwoRemovals(): void {
   ]);
   expect(deletesOutsideTheAllowance(COPILOT_CATALOG)).toEqual([]);
   // PR 4 adds the grant revoke; PR 3c adds the member removal.
-  expect(COPILOT_CATALOG.filter((entry) => entry.method === "DELETE").map((entry) => entry.id)).toEqual(["userGrant.remove"]);
-  expect(COPILOT_CATALOG.filter((entry) => entry.method === "DELETE").map((entry) => entry.id)).toEqual([
+  expect(COPILOT_CATALOG.filter((entry) => entry.method === "DELETE").map((entry) => entry.id).sort()).toEqual([
     "assetGroup.member.remove",
+    "userGrant.remove",
   ]);
 }
 
