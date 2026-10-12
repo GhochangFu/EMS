@@ -19,7 +19,8 @@ import { CopilotModule } from "./copilot.module";
 import { COPILOT_REDACTED, COPILOT_REPLY_REDACTED } from "./copilot-secret-scrub";
 import { COPILOT_ONBOARDING_SKILL, type CopilotOnboardingSkill } from "./copilot-onboarding-skill";
 import type { ResolvedTarget } from "./copilot-target-resolver";
-import { UNUSED_ONBOARDING_SKILL } from "../testing/copilot-onboarding-fakes";
+import { UNUSED_COMMIT_READER, UNUSED_ONBOARDING_SKILL } from "../testing/copilot-onboarding-fakes";
+import type { OnboardingCommitReader } from "./copilot-onboarding-commit";
 import {
   COPILOT_CREDENTIAL_REFUSAL,
   COPILOT_HISTORY_LIMIT,
@@ -103,6 +104,9 @@ type Options = {
   /** `F3.86` PR 5: the onboarding session the conversation binds, and the skill seam's fake. */
   onboardingSessionId?: string | null;
   onboarding?: CopilotOnboardingSkill;
+  /** `F3.86` PR 6: the stored commit proposal's reader, and the conversation's open changes. */
+  commitReader?: OnboardingCommitReader;
+  open?: CopilotPendingChangeDto[];
 };
 
 export const CHANGE_ID = "44444444-4444-4444-8444-444444444444";
@@ -189,6 +193,7 @@ export function harness(llm: FakeLlmProvider, options: Options = {}) {
     discard: async (_userId: string, ids: readonly string[]) => {
       discarded.push([...ids]);
     },
+    listOpen: async () => [...(options.open ?? [])],
     finished: async (_userId: string, id: string) => (id === CHANGE_ID ? (options.finished ?? null) : null),
   };
   const proposeTools = createCopilotProposeTools({ targets: { resolve: async () => target }, pending });
@@ -201,6 +206,7 @@ export function harness(llm: FakeLlmProvider, options: Options = {}) {
     proposeTools,
     pending as never,
     options.onboarding ?? UNUSED_ONBOARDING_SKILL,
+    (options.commitReader ?? UNUSED_COMMIT_READER) as never,
   );
   service.clock = () => new Date("2026-10-11T06:00:00Z");
   return { service, counts, history, seenTools: seen, proposed, discarded, setPlatform: (p: Options["platform"]) => (options.platform = p) };

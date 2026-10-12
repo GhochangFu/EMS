@@ -63,7 +63,12 @@ export type CatalogMethod = "POST" | "PUT" | "PATCH" | "DELETE";
  * - `userGrant`: one grant of the user `userParam` names, by `param` and
  *   `kindParam`, in its target's organization.
  *
- * `onboardingSession` is PR 5's.
+ * `F3.86` PR 6 (decision 7):
+ *
+ * - `onboardingSession`: the onboarding session the path parameter names.
+ *   Only a `proposer: "server"` entry has it (the onboarding commit): the
+ *   copilot makes that change after a skill turn the onboarding service
+ *   answered, so the resolver never resolves it and refuses it if asked.
  */
 export type CatalogTarget =
   | {
@@ -86,6 +91,7 @@ export type CatalogTarget =
     }
   | { readonly kind: "parent"; readonly field: "locationId" | "assetId"; readonly of: "location" | "asset" }
   | { readonly kind: "fleet" }
+  | { readonly kind: "onboardingSession"; readonly param: "id" }
   | { readonly kind: "user" | "userGrantAdd"; readonly param: "id" }
   | { readonly kind: "userGrant"; readonly param: "grantId"; readonly kindParam: "kind"; readonly userParam: "id" };
 

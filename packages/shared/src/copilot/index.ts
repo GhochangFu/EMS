@@ -22,6 +22,11 @@ export {
   proposeToolName,
 } from "./catalog";
 export { modelBodyOf } from "./catalog/model-body";
+export {
+  onboardingCommitCounts,
+  type OnboardingCommitDraft,
+  onboardingCommitSiteName,
+} from "./catalog/onboarding";
 export { bodyFieldsOf, objectShapeOf, stepValuesSchema } from "./catalog/object-shape";
 export type {
   CatalogEntry,

@@ -86,7 +86,7 @@ type Found = {
   currentContent?: Record<string, unknown>;
 };
 type Scope = { locationId: string | null; assetGroupId: string | null; assetId: string | null };
-type RowKind = Exclude<CatalogEntry["target"]["kind"], "organization" | "parent" | "fleet" | UserKind>;
+type RowKind = Exclude<CatalogEntry["target"]["kind"], "organization" | "parent" | "fleet" | "onboardingSession" | UserKind>;
 type UserKind = "user" | "userGrantAdd" | "userGrant";
 type UserTarget = Extract<CatalogEntry["target"], { kind: UserKind }>;
 
@@ -133,6 +133,11 @@ export class CopilotTargetResolver implements CopilotTargets {
   ): Promise<ResolvedTarget | null> {
     const target = entry.target;
     let found: Found | null;
+    if (target.kind === "onboardingSession") {
+      // `F3.86` PR 6: only a server-made change has this target (the onboarding commit, decision 7);
+      // no propose tool reaches the resolver with it, so a call is refused.
+      return null;
+    }
     if (target.kind === "organization") {
       const organizationId = body.organizationId;
       if (typeof organizationId !== "string" || !allowedOrganizationIds.includes(organizationId)) return null;

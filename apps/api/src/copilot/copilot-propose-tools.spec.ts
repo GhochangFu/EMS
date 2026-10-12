@@ -485,7 +485,11 @@ export function theToolDefinitionsStayInTheTurnBudget(): void {
 export function everyEntryHasOneSlimProposeTool(): void {
   const h = proposeHarness();
   const names = h.tools.registry.definitions.map((d) => d.name);
-  expect(names).toEqual([...COPILOT_CATALOG.map(proposeToolName), FILL_STEP_TOOL, DESCRIBE_CHANGE_TOOL]);
+  // `F3.86` PR 6: a server-made entry (the onboarding commit) has no propose tool.
+  const modelEntries = COPILOT_CATALOG.filter((entry) => entry.proposer !== "server");
+  expect(modelEntries.length).toBe(COPILOT_CATALOG.length - 1);
+  expect(names).toEqual([...modelEntries.map(proposeToolName), FILL_STEP_TOOL, DESCRIBE_CHANGE_TOOL]);
+  expect(names).not.toContain("propose_onboarding_commit");
   const widgets = h.tools.registry.definitions.find((d) => d.name === "propose_dashboard_widgets_replace");
   expect(JSON.stringify(widgets)).toContain("describe_change");
   // The guide names each widget type and the one path that reads it (a live follow-up hit the call cap without it).

@@ -37,6 +37,7 @@ import {
   skillStateOf,
   skillStateOfSession,
 } from "./copilot-onboarding-skill";
+import { CopilotOnboardingCommitReader, onboardingCommitCards } from "./copilot-onboarding-commit";
 import { CopilotPendingChangesService, type FinishedChange } from "./copilot-pending-changes.service";
 import { accessIntentOf } from "./copilot-access-intent";
 import { COPILOT_PROPOSE_TOOLS, type CopilotProposeTools } from "./copilot-propose-tools";
@@ -279,6 +280,7 @@ export class CopilotTurnService {
     @Inject(COPILOT_PROPOSE_TOOLS) private readonly proposeTools: CopilotProposeTools,
     private readonly pending: CopilotPendingChangesService,
     @Inject(COPILOT_ONBOARDING_SKILL) private readonly onboarding: CopilotOnboardingSkill,
+    private readonly commitReader: CopilotOnboardingCommitReader,
   ) {}
 
   async turn(
@@ -516,8 +518,17 @@ export class CopilotTurnService {
       // replays it as a marked record, never as the model's own words (security review L1, the review L4 rule).
       { role: "action", content: reply, organizationIds: [organizationId] },
     ]);
-    this.logger.log({ conversationId, kind: "skill", sessionId, actions: actions.length }, "copilot skill turn");
-    return respond(conversationId, "answered", reply, { messages: stored, skill: skillStateOf(sessionId, answer) });
+    // `F3.86` PR 6 (plan §8.2): a turn whose agent proposed the commit gets the one Confirm card, bound to
+    // the hash of the draft this turn stored. After the store, so a failed store leaves no orphan card.
+    const pendingChanges = await onboardingCommitCards(
+      { reader: this.commitReader, pending: this.pending },
+      { userId: identity.id, conversationId, organizationId, sessionId, answer, wrote: own },
+    );
+    this.logger.log(
+      { conversationId, kind: "skill", sessionId, actions: actions.length, proposed: pendingChanges.length },
+      "copilot skill turn",
+    );
+    return respond(conversationId, "answered", reply, { messages: stored, pendingChanges, skill: skillStateOf(sessionId, answer) });
   }
 
   /** `GET /copilot/status`'s `configured`: whether a key resolves for this scope (`null`: cross-organization). */
