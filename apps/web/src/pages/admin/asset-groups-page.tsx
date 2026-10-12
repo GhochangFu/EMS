@@ -1,5 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
+import type { AdminAssetGroupDto, AdminAssetGroupMemberDto } from "@bms/shared";
+import { type CatalogEntry, catalogEntry } from "@bms/shared/copilot";
 
 import {
   addAdminAssetGroupMember,
@@ -20,9 +22,9 @@ import {
   type HierarchySelection,
 } from "../../components/admin/hierarchy-filter-bar";
 import { MasterDataLayout } from "../../components/admin/master-data-layout";
-import { ConfirmDialog } from "../../components/confirm-dialog";
 import { PageHeader } from "../../components/page-header";
 import { SectionCard } from "../../components/section-card";
+import { WizardShell } from "../../components/wizard/wizard-shell";
 import { isMasterDataAdmin } from "../../lib/admin-access";
 // `F4.197`: an `ApiError` carries the whole response body; this reads the sentence out of it.
 import { apiErrorMessage } from "../../lib/api-error-message";
@@ -30,8 +32,68 @@ import type { AuthUser } from "../../stores/auth-store";
 
 type AssetGroupsAdminPageProps = { user: AuthUser };
 
-type GroupForm = { locationId: string; code: string; name: string; description: string };
-const EMPTY_FORM: GroupForm = { locationId: "", code: "", name: "", description: "" };
+/** The group wizards' text. `domain` `""` is "not picked": never sent (the list does not carry the stored one). */
+type GroupForm = { locationId: string; code: string; name: string; description: string; domain: string };
+const EMPTY_FORM: GroupForm = { locationId: "", code: "", name: "", description: "", domain: "" };
+
+/**
+ * `F3.86` PR 3c: the member wizard that is open. A role change carries the
+ * role picked in the row (`""` is "No role", sent as `null`); a removal
+ * carries the group's name, taken at click time (`F4.202`), so it can never
+ * name a group other than the member's.
+ */
+type MemberWizard =
+  | { kind: "add"; assetId: string; role: string }
+  | { kind: "setRole"; member: AdminAssetGroupMemberDto; role: string }
+  | { kind: "remove"; member: AdminAssetGroupMemberDto; groupName: string };
+
+/**
+ * `F3.86` PR 3c (ADR 0099 decision 6) — the catalog entry a wizard submits.
+ * Each `WizardShell` writes the literal id on its `entry` prop, the form the
+ * stepper gate (`tests/f3.85-stepper-coverage`) detects. A missing entry is a
+ * build defect, so it throws.
+ */
+function wizardEntry(id: string): CatalogEntry {
+  const entry = catalogEntry(id);
+  if (!entry) throw new Error(`F3.86: the catalog has no entry "${id}"`);
+  return entry;
+}
+
+/** An emptied description is `null`, as the old form sent it. */
+function descriptionOf(form: GroupForm): string | null {
+  return form.description.trim() === "" ? null : form.description.trim();
+}
+
+/** The `assetGroup.create` values; the required text stays `""` when empty, so Basics refuses it. */
+function createValues(form: GroupForm): Record<string, unknown> {
+  return {
+    locationId: form.locationId,
+    code: form.code,
+    name: form.name,
+    description: descriptionOf(form),
+    domain: form.domain === "" ? undefined : form.domain,
+  };
+}
+
+/** The `assetGroup.update` values: name and description as the old form sent them, a domain only when picked. */
+function updateValues(form: GroupForm): Record<string, unknown> {
+  return {
+    name: form.name,
+    description: descriptionOf(form),
+    domain: form.domain === "" ? undefined : form.domain,
+  };
+}
+
+/** A copilot `fill_step` (merged by the shell into the named step) written back into the form's text. */
+function formWithValues(form: GroupForm, values: Readonly<Record<string, unknown>>): GroupForm {
+  const next = { ...form };
+  for (const key of ["locationId", "code", "name", "description", "domain"] as const) {
+    if (typeof values[key] === "string") next[key] = values[key] as string;
+  }
+  if (values.description === null) next.description = "";
+  if (values.domain === null) next.domain = "";
+  return next;
+}
 
 /**
  * `F3.37` (ADR 0049 decision 5) — set the role each asset plays in its group.
@@ -46,6 +108,12 @@ const EMPTY_FORM: GroupForm = { locationId: "", code: "", name: "", description:
  * renders its **first** option, so a hand-kept list falling behind does not
  * look broken — it looks like a different value. That is `F4.43`, and
  * `tests/f3.37-asset-role-vocabulary.test.ts` guards the same construct here.
+ *
+ * `F3.86` PR 3c (ADR 0099 decisions 3 and 6, ruling Q9) — every write is a
+ * catalog wizard: group create and edit (Basics → Details → Review), member
+ * add (Member → Review), a role change (Role → Review; the row's role picker
+ * opens it) and member remove (Review alone, red — one of the two `DELETE`
+ * entries). A wizard used alone sends no `X-Copilot-Change` header.
  */
 export function AssetGroupsAdminPage({ user }: AssetGroupsAdminPageProps) {
   const queryClient = useQueryClient();
@@ -54,18 +122,11 @@ export function AssetGroupsAdminPage({ user }: AssetGroupsAdminPageProps) {
   const [error, setError] = useState<string | null>(null);
   const [selection, setSelection] = useState<HierarchySelection>({});
 
-  // `F3.78`: null is closed; "create" and "edit" share one modal.
+  // `F3.78`: null is closed; "create" and "edit" are the two group wizards.
   const [modal, setModal] = useState<"create" | "edit" | null>(null);
-  const [form, setForm] = useState<GroupForm>(EMPTY_FORM);
-  const [addAssetId, setAddAssetId] = useState("");
-  // `F4.202`: a member's Remove asks first; the confirm starts the request and closes the dialog.
-  // The group's name is taken at click time, and a change of group or filter clears the dialog,
-  // so it can never name a group other than the member's.
-  const [removingMember, setRemovingMember] = useState<{
-    membershipId: string;
-    assetName: string;
-    groupName: string;
-  } | null>(null);
+  const [form, setFormState] = useState<GroupForm>(EMPTY_FORM);
+  // A change of group or filter clears it (`F4.202`).
+  const [memberWizard, setMemberWizard] = useState<MemberWizard | null>(null);
 
   const locationId = selection.locationId ?? undefined;
 
@@ -106,24 +167,31 @@ export function AssetGroupsAdminPage({ user }: AssetGroupsAdminPageProps) {
   const invalidateGroups = () =>
     queryClient.invalidateQueries({ queryKey: ["admin", "asset-groups"] });
 
+  /** A refusal names the values it refused; once they change it is stale. */
+  function setForm(next: GroupForm): void {
+    setError(null);
+    setFormState(next);
+  }
+
+  function openMemberWizard(next: MemberWizard | null): void {
+    setError(null);
+    setMemberWizard(next);
+  }
+
+  // Each wizard's Review parsed `body` against its entry's schema, and the
+  // request is that body: what Review showed is what is sent.
   const saveGroup = useMutation({
-    mutationFn: async () => {
-      const description = form.description.trim() === "" ? null : form.description.trim();
+    mutationFn: async (body: Record<string, unknown>) => {
       if (modal === "create") {
-        return createAdminAssetGroup({
-          locationId: form.locationId,
-          code: form.code,
-          name: form.name,
-          description,
-        });
+        return createAdminAssetGroup(body as Parameters<typeof createAdminAssetGroup>[0]);
       }
       // No `code`: the update route is strict, and a code is the group's identity.
-      return updateAdminAssetGroup(selectedGroupId as string, { name: form.name, description });
+      return updateAdminAssetGroup(selectedGroupId as string, body as Parameters<typeof updateAdminAssetGroup>[1]);
     },
     onSuccess: async (saved) => {
       setError(null);
       setModal(null);
-      // The modal can save at a location other than the filter's. The list is keyed on the
+      // The wizard can save at a location other than the filter's. The list is keyed on the
       // filter, so move it to the saved group's location or the selected group is not in it.
       if (locationId !== undefined && saved.locationId !== locationId) {
         setSelection({ ...selection, locationId: saved.locationId });
@@ -137,11 +205,11 @@ export function AssetGroupsAdminPage({ user }: AssetGroupsAdminPageProps) {
   });
 
   const addMember = useMutation({
-    mutationFn: (assetId: string) =>
-      addAdminAssetGroupMember(selectedGroupId as string, { assetId }),
+    mutationFn: (body: Record<string, unknown>) =>
+      addAdminAssetGroupMember(selectedGroupId as string, body as Parameters<typeof addAdminAssetGroupMember>[1]),
     onSuccess: async () => {
       setError(null);
-      setAddAssetId("");
+      setMemberWizard(null);
       await invalidateGroups();
     },
     onError: (err: unknown) => {
@@ -153,6 +221,7 @@ export function AssetGroupsAdminPage({ user }: AssetGroupsAdminPageProps) {
     mutationFn: (membershipId: string) => removeAdminAssetGroupMember(membershipId),
     onSuccess: async () => {
       setError(null);
+      setMemberWizard(null);
       await invalidateGroups();
     },
     onError: (err: unknown) => {
@@ -165,6 +234,7 @@ export function AssetGroupsAdminPage({ user }: AssetGroupsAdminPageProps) {
       setAdminAssetGroupMemberRole(membershipId, role),
     onSuccess: () => {
       setError(null);
+      setMemberWizard(null);
       // The member list carries `roleCounts`, which this write changes, so the
       // whole read is invalidated rather than the one row patched in place.
       void queryClient.invalidateQueries({
@@ -181,11 +251,172 @@ export function AssetGroupsAdminPage({ user }: AssetGroupsAdminPageProps) {
   const members = membersQ.data?.items ?? [];
   const roleCounts = membersQ.data?.roleCounts ?? {};
   const roles = vocabQ.data?.assetRoles ?? [];
+  const domains = vocabQ.data?.assetDomains ?? [];
   const selectedGroup = groups.find((g) => g.id === selectedGroupId) ?? null;
   const memberAssetIds = new Set(members.map((m) => m.assetId));
   const pickable = (pickerAssetsQ.data?.items ?? []).filter(
     (a) => a.active && !memberAssetIds.has(a.id),
   );
+  // An open wizard shows a refusal on its own Review card; the banner would say it twice.
+  const wizardOpen = modal !== null || memberWizard !== null;
+
+  function openEdit(group: AdminAssetGroupDto): void {
+    setFormState({
+      locationId: group.locationId,
+      code: group.code,
+      name: group.name,
+      description: group.description ?? "",
+      domain: "",
+    });
+    setError(null);
+    setModal("edit");
+  }
+
+  // Every step's elements are built here, once per render, and `renderStep`
+  // only picks one (the `calc-parameters-page.tsx` rule: an element built
+  // inside `renderStep` is new on every shell render, and a select-first pick
+  // could be lost).
+  const groupBasics = (
+    <div className="grid gap-3">
+      {modal === "create" ? (
+        <>
+          <label className="block text-xs font-semibold text-ink-muted">
+            Location
+            <select
+              className="mt-1 w-full surface-field px-3 py-2 text-sm"
+              value={form.locationId}
+              onChange={(event) => setForm({ ...form, locationId: event.target.value })}
+            >
+              <option value="">Select a location</option>
+              {(formLocationsQ.data?.items ?? []).map((loc) => (
+                <option key={loc.id} value={loc.id}>
+                  {loc.name}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="block text-xs font-semibold text-ink-muted">
+            Code
+            <input
+              className="mt-1 w-full surface-field px-3 py-2 text-sm"
+              value={form.code}
+              maxLength={64}
+              onChange={(event) => setForm({ ...form, code: event.target.value })}
+            />
+          </label>
+        </>
+      ) : (
+        <p className="text-xs text-ink-muted">
+          Code <span className="font-mono">{form.code}</span> cannot be changed: dashboards
+          and site templates find the group by it.
+        </p>
+      )}
+      <label className="block text-xs font-semibold text-ink-muted">
+        Name
+        <input
+          className="mt-1 w-full surface-field px-3 py-2 text-sm"
+          value={form.name}
+          maxLength={255}
+          onChange={(event) => setForm({ ...form, name: event.target.value })}
+        />
+      </label>
+    </div>
+  );
+
+  const groupDetails = (
+    <div className="grid gap-3">
+      <label className="block text-xs font-semibold text-ink-muted">
+        Description
+        <textarea
+          className="mt-1 w-full surface-field px-3 py-2 text-sm"
+          value={form.description}
+          maxLength={2000}
+          onChange={(event) => setForm({ ...form, description: event.target.value })}
+        />
+      </label>
+      <label className="block text-xs font-semibold text-ink-muted">
+        Domain
+        <select
+          className="mt-1 w-full surface-field px-3 py-2 text-sm"
+          value={form.domain}
+          onChange={(event) => setForm({ ...form, domain: event.target.value })}
+        >
+          <option value="">{modal === "edit" ? "Keep the current domain" : "No domain"}</option>
+          {domains.map((domain) => (
+            <option key={domain.code} value={domain.code}>
+              {domain.label}
+            </option>
+          ))}
+        </select>
+      </label>
+    </div>
+  );
+
+  /** One role picker, from the vocabulary (`F4.43`): "No role" is the only option this file spells. */
+  const roleOptions = (
+    <>
+      <option value="">No role</option>
+      {roles.map((role) => (
+        <option key={role.code} value={role.code}>
+          {role.label}
+        </option>
+      ))}
+    </>
+  );
+
+  const addMemberStep =
+    memberWizard?.kind === "add" ? (
+      <div className="grid gap-3">
+        <label className="block text-xs font-semibold text-ink-muted">
+          Asset to add
+          <select
+            className="mt-1 w-full surface-field px-3 py-2 text-sm"
+            value={memberWizard.assetId}
+            onChange={(event) => openMemberWizard({ ...memberWizard, assetId: event.target.value })}
+          >
+            <option value="">Pick an asset…</option>
+            {pickable.map((asset) => (
+              <option key={asset.id} value={asset.id}>
+                {asset.name} ({asset.code})
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="block text-xs font-semibold text-ink-muted">
+          Role
+          <select
+            className="mt-1 w-full surface-field px-3 py-2 text-sm"
+            value={memberWizard.role}
+            onChange={(event) => openMemberWizard({ ...memberWizard, role: event.target.value })}
+          >
+            {roleOptions}
+          </select>
+        </label>
+      </div>
+    ) : null;
+
+  const roleStep =
+    memberWizard?.kind === "setRole" ? (
+      <label className="block text-xs font-semibold text-ink-muted">
+        Role
+        <select
+          className="mt-1 w-full surface-field px-3 py-2 text-sm"
+          value={memberWizard.role}
+          onChange={(event) => openMemberWizard({ ...memberWizard, role: event.target.value })}
+        >
+          {roleOptions}
+        </select>
+      </label>
+    ) : null;
+
+  const groupWizardProps = {
+    onChange: (values: Record<string, unknown>) => setForm(formWithValues(form, values)),
+    renderStep: (step: { id: string }) => (step.id === "basics" ? groupBasics : groupDetails),
+    onSubmit: (body: Record<string, unknown>) => saveGroup.mutate(body),
+    onCancel: () => setModal(null),
+    submitting: saveGroup.isPending,
+    submitError: error,
+  };
 
   return (
     <MasterDataLayout user={user}>
@@ -195,7 +426,7 @@ export function AssetGroupsAdminPage({ user }: AssetGroupsAdminPageProps) {
         subtitle="Set the role each asset plays in its group — what a section dashboard binds to"
       />
 
-      {error ? (
+      {error && !wizardOpen ? (
         <div role="alert" className="mb-4 rounded border border-critical-line-strong bg-critical-wash p-3 text-sm text-critical-ink-strong">
           {error}
         </div>
@@ -221,7 +452,7 @@ export function AssetGroupsAdminPage({ user }: AssetGroupsAdminPageProps) {
             // would keep its member list on screen beside a list that no
             // longer contains it.
             setSelectedGroupId(null);
-            setRemovingMember(null);
+            setMemberWizard(null);
           }}
         />
       </div>
@@ -233,7 +464,8 @@ export function AssetGroupsAdminPage({ user }: AssetGroupsAdminPageProps) {
               type="button"
               className="surface-button mb-2 px-3 py-2 text-xs"
               onClick={() => {
-                setForm({ ...EMPTY_FORM, locationId: selection.locationId ?? "" });
+                setFormState({ ...EMPTY_FORM, locationId: selection.locationId ?? "" });
+                setError(null);
                 setModal("create");
               }}
             >
@@ -251,7 +483,7 @@ export function AssetGroupsAdminPage({ user }: AssetGroupsAdminPageProps) {
                   type="button"
                   onClick={() => {
                     setSelectedGroupId(group.id);
-                    setRemovingMember(null);
+                    setMemberWizard(null);
                   }}
                   aria-current={group.id === selectedGroupId ? "true" : undefined}
                   className={`w-full px-2 py-2 text-left text-sm ${
@@ -272,42 +504,15 @@ export function AssetGroupsAdminPage({ user }: AssetGroupsAdminPageProps) {
         <SectionCard title={selectedGroup ? `Members — ${selectedGroup.name}` : "Members"}>
           {canWrite && selectedGroup ? (
             <div className="mb-3 flex flex-wrap items-center gap-2">
-              <button
-                type="button"
-                className="surface-button px-3 py-2 text-xs"
-                onClick={() => {
-                  setForm({
-                    locationId: selectedGroup.locationId,
-                    code: selectedGroup.code,
-                    name: selectedGroup.name,
-                    description: selectedGroup.description ?? "",
-                  });
-                  setModal("edit");
-                }}
-              >
+              <button type="button" className="surface-button px-3 py-2 text-xs" onClick={() => openEdit(selectedGroup)}>
                 Edit group
               </button>
-              <select
-                aria-label="Asset to add"
-                value={addAssetId}
-                onChange={(event) => setAddAssetId(event.target.value)}
-                className="surface-field px-2 py-1 text-sm"
-              >
-                <option value="">Add an asset…</option>
-                {pickable.map((asset) => (
-                  <option key={asset.id} value={asset.id}>
-                    {asset.name} ({asset.code})
-                  </option>
-                ))}
-              </select>
               <button
                 type="button"
                 className="surface-button px-3 py-2 text-xs"
-                disabled={addAssetId === "" || addMember.isPending}
-                aria-busy={addMember.isPending}
-                onClick={() => addMember.mutate(addAssetId)}
+                onClick={() => openMemberWizard({ kind: "add", assetId: "", role: "" })}
               >
-                {addMember.isPending ? "Adding…" : "Add to group"}
+                Add an asset
               </button>
             </div>
           ) : null}
@@ -344,26 +549,17 @@ export function AssetGroupsAdminPage({ user }: AssetGroupsAdminPageProps) {
                         <span className="block text-xs text-ink-muted">{member.assetCode}</span>
                       </td>
                       <td className="py-2">
+                        {/* Ruling Q9: a pick opens the role wizard; nothing is sent until its Submit. */}
                         <select
                           aria-label={`Role for ${member.assetName}`}
                           value={member.role ?? ""}
                           disabled={!canWrite || setRole.isPending}
                           onChange={(event) =>
-                            setRole.mutate({
-                              membershipId: member.membershipId,
-                              // "" is the cleared state; the API takes an
-                              // explicit null, never an empty string.
-                              role: event.target.value === "" ? null : event.target.value,
-                            })
+                            openMemberWizard({ kind: "setRole", member, role: event.target.value })
                           }
                           className="surface-field px-2 py-1"
                         >
-                          <option value="">No role</option>
-                          {roles.map((role) => (
-                            <option key={role.code} value={role.code}>
-                              {role.label}
-                            </option>
-                          ))}
+                          {roleOptions}
                         </select>
                       </td>
                       <td className="py-2 text-xs text-ink-muted">
@@ -391,11 +587,7 @@ export function AssetGroupsAdminPage({ user }: AssetGroupsAdminPageProps) {
                             className="surface-button px-2 py-1 text-xs"
                             disabled={removeMember.isPending}
                             onClick={() =>
-                              setRemovingMember({
-                                membershipId: member.membershipId,
-                                assetName: member.assetName,
-                                groupName: selectedGroup?.name ?? "",
-                              })
+                              openMemberWizard({ kind: "remove", member, groupName: selectedGroup?.name ?? "" })
                             }
                           >
                             {removingThis ? "Removing…" : "Remove"}
@@ -411,100 +603,129 @@ export function AssetGroupsAdminPage({ user }: AssetGroupsAdminPageProps) {
         </SectionCard>
       </div>
 
-      {removingMember ? (
-        <ConfirmDialog
-          title={`Remove ${removingMember.assetName} from ${removingMember.groupName}`}
-          body="Dashboards bound to this group no longer read this asset."
-          confirmLabel="Confirm remove"
-          onClose={() => setRemovingMember(null)}
-          onConfirm={() => {
-            setRemovingMember(null);
-            removeMember.mutate(removingMember.membershipId);
-          }}
-        />
+      {memberWizard !== null && canWrite && selectedGroup ? (
+        <div className="fixed inset-0 z-40 flex items-center justify-center bg-scrim/40 p-4">
+          {memberWizard.kind === "add" ? (
+            <div role="dialog" aria-label={`Add an asset to ${selectedGroup.name}`} className="w-full max-w-md surface-dialog p-4">
+              <h2 className="font-condensed text-lg font-bold">Add an asset to {selectedGroup.name}</h2>
+              <div className="mt-3">
+                <WizardShell
+                  key={`add-${selectedGroup.id}`}
+                  entry={wizardEntry("assetGroup.member.add")}
+                  values={{ assetId: memberWizard.assetId, role: memberWizard.role === "" ? undefined : memberWizard.role }}
+                  onChange={(values) =>
+                    openMemberWizard({
+                      kind: "add",
+                      assetId: typeof values.assetId === "string" ? values.assetId : memberWizard.assetId,
+                      role: typeof values.role === "string" ? values.role : values.role === null ? "" : memberWizard.role,
+                    })
+                  }
+                  renderStep={() => addMemberStep}
+                  onSubmit={(body) => addMember.mutate(body)}
+                  onCancel={() => setMemberWizard(null)}
+                  submitting={addMember.isPending}
+                  submitError={error}
+                  summary={wizardEntry("assetGroup.member.add").summary({
+                    body: { assetId: pickable.find((a) => a.id === memberWizard.assetId)?.name ?? memberWizard.assetId },
+                    params: { id: selectedGroup.id },
+                    targetName: selectedGroup.name,
+                    organizationName: "",
+                  })}
+                />
+              </div>
+            </div>
+          ) : null}
+          {memberWizard.kind === "setRole" ? (
+            <div role="dialog" aria-label={`Set the role of ${memberWizard.member.assetName}`} className="w-full max-w-md surface-dialog p-4">
+              <h2 className="font-condensed text-lg font-bold">Set the role of {memberWizard.member.assetName}</h2>
+              <div className="mt-3">
+                <WizardShell
+                  key={`role-${memberWizard.member.membershipId}`}
+                  entry={wizardEntry("assetGroup.member.setRole")}
+                  // "No role" is an explicit `null`, never `""` or a dropped key: the route takes `null` to clear.
+                  values={{ role: memberWizard.role === "" ? null : memberWizard.role }}
+                  onChange={(values) =>
+                    openMemberWizard({ ...memberWizard, role: typeof values.role === "string" ? values.role : "" })
+                  }
+                  renderStep={() => roleStep}
+                  onSubmit={(body) =>
+                    setRole.mutate({
+                      membershipId: memberWizard.member.membershipId,
+                      role: (body.role as string | null | undefined) ?? null,
+                    })
+                  }
+                  onCancel={() => setMemberWizard(null)}
+                  submitting={setRole.isPending}
+                  submitError={error}
+                  current={{ role: memberWizard.member.role }}
+                />
+              </div>
+            </div>
+          ) : null}
+          {memberWizard.kind === "remove" ? (
+            <div
+              role="dialog"
+              aria-label={`Remove ${memberWizard.member.assetName} from ${memberWizard.groupName}`}
+              className="w-full max-w-md surface-dialog p-4"
+            >
+              <h2 className="font-condensed text-lg font-bold">
+                Remove {memberWizard.member.assetName} from {memberWizard.groupName}
+              </h2>
+              <p className="mt-1 text-xs text-ink-muted">Dashboards bound to this group no longer read this asset.</p>
+              <div className="mt-3">
+                <WizardShell
+                  key={`remove-${memberWizard.member.membershipId}`}
+                  entry={wizardEntry("assetGroup.member.remove")}
+                  values={{}}
+                  onChange={() => undefined}
+                  renderStep={() => null}
+                  onSubmit={() => removeMember.mutate(memberWizard.member.membershipId)}
+                  onCancel={() => setMemberWizard(null)}
+                  submitting={removeMember.isPending}
+                  submitError={error}
+                  summary={wizardEntry("assetGroup.member.remove").summary({
+                    body: {},
+                    params: { id: memberWizard.member.membershipId },
+                    // The resolver's name for a membership (`copilot-target-resolver.ts`).
+                    targetName: `${memberWizard.member.assetName} in ${memberWizard.groupName}`,
+                    organizationName: "",
+                  })}
+                />
+              </div>
+            </div>
+          ) : null}
+        </div>
       ) : null}
 
       {modal !== null ? (
         <div className="fixed inset-0 z-40 flex items-center justify-center bg-scrim/40 p-4">
-          <form
+          <div
             role="dialog"
             aria-label={modal === "create" ? "New asset group" : "Edit asset group"}
-            className="w-full max-w-md surface-dialog p-4"
-            onSubmit={(event) => {
-              event.preventDefault();
-              saveGroup.mutate();
-            }}
+            className="max-h-[90vh] w-full max-w-md overflow-y-auto surface-dialog p-4"
           >
-            <div className="grid gap-3">
+            <h2 className="font-condensed text-lg font-bold">
+              {modal === "create" ? "New asset group" : "Edit asset group"}
+            </h2>
+            <div className="mt-3">
               {modal === "create" ? (
-                <>
-                  <label className="block text-xs font-semibold text-ink-muted">
-                    Location
-                    <select
-                      className="mt-1 w-full surface-field px-3 py-2 text-sm"
-                      value={form.locationId}
-                      required
-                      onChange={(event) => setForm({ ...form, locationId: event.target.value })}
-                    >
-                      <option value="">Select a location</option>
-                      {(formLocationsQ.data?.items ?? []).map((loc) => (
-                        <option key={loc.id} value={loc.id}>
-                          {loc.name}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                  <label className="block text-xs font-semibold text-ink-muted">
-                    Code
-                    <input
-                      className="mt-1 w-full surface-field px-3 py-2 text-sm"
-                      value={form.code}
-                      required
-                      maxLength={64}
-                      onChange={(event) => setForm({ ...form, code: event.target.value })}
-                    />
-                  </label>
-                </>
-              ) : (
-                <p className="text-xs text-ink-muted">
-                  Code <span className="font-mono">{form.code}</span> cannot be changed: dashboards
-                  and site templates find the group by it.
-                </p>
-              )}
-              <label className="block text-xs font-semibold text-ink-muted">
-                Name
-                <input
-                  className="mt-1 w-full surface-field px-3 py-2 text-sm"
-                  value={form.name}
-                  required
-                  maxLength={255}
-                  onChange={(event) => setForm({ ...form, name: event.target.value })}
+                <WizardShell
+                  key="create"
+                  entry={wizardEntry("assetGroup.create")}
+                  values={createValues(form)}
+                  {...groupWizardProps}
                 />
-              </label>
-              <label className="block text-xs font-semibold text-ink-muted">
-                Description
-                <textarea
-                  className="mt-1 w-full surface-field px-3 py-2 text-sm"
-                  value={form.description}
-                  maxLength={2000}
-                  onChange={(event) => setForm({ ...form, description: event.target.value })}
+              ) : selectedGroup ? (
+                <WizardShell
+                  key={`update-${selectedGroup.id}`}
+                  entry={wizardEntry("assetGroup.update")}
+                  values={updateValues(form)}
+                  {...groupWizardProps}
+                  current={{ name: selectedGroup.name, description: selectedGroup.description }}
                 />
-              </label>
+              ) : null}
             </div>
-            <div className="mt-4 flex justify-end gap-2">
-              <button type="button" className="surface-button px-3 py-2" onClick={() => setModal(null)}>
-                Cancel
-              </button>
-              <button
-                type="submit"
-                disabled={saveGroup.isPending}
-                aria-busy={saveGroup.isPending}
-                className="surface-button-primary bg-accent px-3 py-2 text-xs font-semibold text-on-accent"
-              >
-                {saveGroup.isPending ? "Saving…" : "Save"}
-              </button>
-            </div>
-          </form>
+          </div>
         </div>
       ) : null}
     </MasterDataLayout>
