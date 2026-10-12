@@ -115,11 +115,14 @@ const TEMPLATE_T = "55555555-5555-4555-8555-555555555555";
 export function harness(llm: FakeLlmProvider, options: Options = {}) {
   const conversationOrg = options.conversationOrg === undefined ? ORG_X : options.conversationOrg;
   const history: CopilotMessageDto[] = [...(options.stored ?? [])];
-  const counts = { resolveForOrganization: [] as string[], resolvePlatformScope: 0, consumeTurn: [] as Array<{ identity: UsageIdentity; organizationId: string | null }>, appendTurn: 0, recentLimit: [] as number[] };
+  const counts = { resolveForOrganization: [] as string[], resolvePlatformScope: 0, consumeTurn: [] as Array<{ identity: UsageIdentity; organizationId: string | null }>, appendTurn: 0, recentLimit: [] as number[], unbind: 0 };
   let tick = 0;
   const conversations = {
     findConversation: async (userId: string, id: string) =>
       options.conversationExists === false || userId !== USER || id !== CONVERSATION ? null : { id, organizationId: conversationOrg, onboardingSessionId: options.onboardingSessionId ?? null },
+    unbindOnboardingSession: async () => {
+      counts.unbind += 1;
+    },
     recentMessages: async (_userId: string, _id: string, limit: number) => {
       counts.recentLimit.push(limit);
       return history.slice(-limit);

@@ -574,8 +574,7 @@ export class OnboardingService {
     };
   }
 
-  /** Commits session via commit service. */
-  /** With `draftHash`, commits only the draft that hash names (`F3.86` PR 5); without, the stored draft. */
+  /** Commits the session through the commit service. With `draftHash`, commits only the draft that hash names (`F3.86` PR 5); without, the stored draft. */
   commit(jwt: JwtPayload, sessionId: string, expectedDraftHash?: string) {
     if (expectedDraftHash !== undefined) return this.commitService.commitProposed(jwt, sessionId, expectedDraftHash);
     return this.commitService.commit(jwt, sessionId);

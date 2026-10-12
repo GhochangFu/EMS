@@ -25,6 +25,10 @@ export const COPILOT_ONBOARDING_SKILL = Symbol("COPILOT_ONBOARDING_SKILL");
 export const COPILOT_SKILL_SESSION_CLOSED_REPLY =
   "This onboarding is no longer a draft. End the onboarding in this conversation to start another.";
 
+/** The skill turn's answer when the caller can no longer read the session: the skill ends, nothing is counted. */
+export const COPILOT_SKILL_SESSION_LOST_REPLY =
+  "This onboarding is no longer available to you here, so it has ended in this conversation. Ask again to continue without it.";
+
 /** A second start on a conversation that already runs the skill (409). */
 export const COPILOT_SKILL_ALREADY_BOUND = "This conversation already runs an onboarding.";
 

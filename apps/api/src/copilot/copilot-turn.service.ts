@@ -32,6 +32,7 @@ import { CopilotConversationsService } from "./copilot-conversations.service";
 import {
   COPILOT_ONBOARDING_SKILL,
   COPILOT_SKILL_SESSION_CLOSED_REPLY,
+  COPILOT_SKILL_SESSION_LOST_REPLY,
   type CopilotOnboardingSkill,
   skillStateOf,
   skillStateOfSession,
@@ -180,7 +181,7 @@ type TurnExtras = {
   pendingChanges?: CopilotPendingChangeDto[];
   fillStep?: CopilotFillStepDto | null;
   /** `F3.86` PR 5: a skill turn's state; a plain turn's answer carries no `skill` key. */
-  skill?: CopilotSkillStateDto;
+  skill?: CopilotSkillStateDto | null;
 };
 
 function respond(
@@ -470,7 +471,8 @@ export class CopilotTurnService {
    * with `commitByPhrase: false`: in the dock only the Confirm card commits.
    * A session that is no longer a draft answers a fixed reply, uncounted. The
    * turn is counted before `chat` (ruling Q4). It stores the user message, the
-   * onboarding action lines this turn added, and the reply, each scrubbed.
+   * onboarding action lines this turn added, and the reply, each scrubbed — the
+   * reply as an `action` row: the onboarding wrote it, not the copilot model.
    */
   private async skillTurn(
     caller: CopilotTurnCaller,
@@ -480,7 +482,16 @@ export class CopilotTurnService {
     message: string,
   ): Promise<CopilotTurnResponseDto> {
     const { identity, user } = caller;
-    const before = await this.onboarding.getSession(user, sessionId);
+    let before: Awaited<ReturnType<CopilotOnboardingSkill["getSession"]>>;
+    try {
+      before = await this.onboarding.getSession(user, sessionId);
+    } catch (err) {
+      if (!(err instanceof ForbiddenException || err instanceof NotFoundException)) throw err;
+      // The caller can no longer read the session (a role or scope change, or it is gone): the read already
+      // shows a plain conversation (`CopilotSkillService.stateOf`), so the turn ends the skill to agree with it.
+      await this.conversations.unbindOnboardingSession(identity.id, conversationId);
+      return respond(conversationId, "answered", COPILOT_SKILL_SESSION_LOST_REPLY, { skill: null });
+    }
     if (before.status !== "draft") {
       return respond(conversationId, "answered", COPILOT_SKILL_SESSION_CLOSED_REPLY, { skill: skillStateOfSession(before) });
     }
@@ -501,7 +512,9 @@ export class CopilotTurnService {
         content: looksLikeCredential(line) ? COPILOT_REDACTED : line,
         organizationIds: [organizationId],
       })),
-      { role: "assistant", content: reply, organizationIds: [organizationId] },
+      // The onboarding service wrote the reply, not the copilot model: an `action` row, so a later plain turn
+      // replays it as a marked record, never as the model's own words (security review L1, the review L4 rule).
+      { role: "action", content: reply, organizationIds: [organizationId] },
     ]);
     this.logger.log({ conversationId, kind: "skill", sessionId, actions: actions.length }, "copilot skill turn");
     return respond(conversationId, "answered", reply, { messages: stored, skill: skillStateOf(sessionId, answer) });

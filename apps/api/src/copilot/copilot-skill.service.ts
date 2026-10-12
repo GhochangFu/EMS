@@ -28,7 +28,9 @@ import {
  * `POST` / `DELETE /copilot/conversations/:id/skills/onboarding`; the skill's
  * turns run in `CopilotTurnService`.
  *
- * **The start's order, so a refused start leaves no draft session behind:**
+ * **The start's order, so a refused start leaves no draft session behind** (one
+ * exception: two starts racing — the loser's session is created before its bind
+ * fails, and stays a draft the onboarding page can resume):
  * the conversation is the caller's (404) and bound to the body's organization
  * (400; a cross-organization conversation never runs it) → the copilot is
  * available there (403, ruling Q4) → no skill is bound yet (409) →
@@ -63,9 +65,10 @@ export class CopilotSkillService {
     if (!(await this.conversations.bindOnboardingSession(identity.id, conversationId, opening.session.id))) {
       throw new ConflictException(COPILOT_SKILL_ALREADY_BOUND);
     }
-    // The onboarding's opening line, so the conversation reads as it ran; it names the organization.
+    // The onboarding's opening line, so the conversation reads as it ran; it names the organization. An `action`
+    // row: the onboarding wrote it, so a later plain turn replays it as a record, not as the model's words.
     await this.conversations.appendTurn(identity.id, conversationId, [
-      { role: "assistant", content: opening.assistantMessage, organizationIds: [organizationId] },
+      { role: "action", content: opening.assistantMessage, organizationIds: [organizationId] },
     ]);
     return skillStateOf(opening.session.id, opening);
   }

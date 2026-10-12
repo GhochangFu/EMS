@@ -1,11 +1,15 @@
-import { ForbiddenException, HttpException } from "@nestjs/common";
+import { ForbiddenException, HttpException, NotFoundException } from "@nestjs/common";
 import { expect } from "vitest";
 
 import type { JwtPayload, OnboardingChatMessage, OnboardingChatResponseDto, OnboardingSessionDto } from "@bms/shared";
 
 import { FakeLlmProvider } from "../admin/onboarding/onboarding-agent-loop.spec";
 import type { FinishedChange } from "./copilot-pending-changes.service";
-import { type CopilotOnboardingSkill, COPILOT_SKILL_SESSION_CLOSED_REPLY } from "./copilot-onboarding-skill";
+import {
+  type CopilotOnboardingSkill,
+  COPILOT_SKILL_SESSION_CLOSED_REPLY,
+  COPILOT_SKILL_SESSION_LOST_REPLY,
+} from "./copilot-onboarding-skill";
 import { COPILOT_CREDENTIAL_REFUSAL, changeOutcomeLine } from "./copilot-turn.service";
 import { CHANGE_ID, CONVERSATION, harness, identity, JWT, ORG_X } from "./copilot-turn.service.spec";
 
@@ -149,7 +153,8 @@ export async function aSkillTurnStoresItsOwnRows(): Promise<void> {
   expect(response.messages.map((m) => [m.role, m.content, m.organizationIds])).toEqual([
     ["user", "Add an MQTT RTU named RTU-1", []],
     ["action", "Added RTU RTU-1 (mqtt)", [ORG_X]],
-    ["assistant", "Added RTU-1.", [ORG_X]],
+    // The onboarding wrote the reply: an action row, replayed later as a record (security review L1).
+    ["action", "Added RTU-1.", [ORG_X]],
   ]);
 }
 
@@ -164,7 +169,7 @@ export async function aSkillTurnDropsActionLinesItCannotOwn(): Promise<void> {
   });
   const h = skillHarness(fake);
   const response = await h.turn("Add an MQTT RTU named RTU-1");
-  expect(response.messages.map((m) => m.role)).toEqual(["user", "assistant"]);
+  expect(response.messages.map((m) => m.content)).toEqual(["Add an MQTT RTU named RTU-1", "Added RTU-1."]);
 }
 
 /** A committed session is terminal: a fixed reply, nothing counted, `chat` never runs, nothing stored. */
@@ -212,4 +217,32 @@ export async function aPlainConversationNeverReachesTheSkill(): Promise<void> {
   const response = await h.service.turn({ identity: ORG_ADMIN, user: JWT }, CONVERSATION, "How many alarms?", "user");
   expect(response.reply).toBe("plain answer");
   expect("skill" in response).toBe(false);
+}
+
+/**
+ * The caller can no longer read the session (demoted, out of scope, or it is gone): the read shows a plain
+ * conversation, so the turn ends the skill — unbinds, answers a fixed reply with `skill: null`, counts and
+ * chats nothing (code review C1). Any other error propagates and unbinds nothing.
+ */
+export async function aSessionTheCallerLostEndsTheSkill(): Promise<void> {
+  for (const lost of [new ForbiddenException("Onboarding requires admin or organization_admin role"), new NotFoundException("gone")]) {
+    const fake = fakeOnboarding();
+    fake.skill.getSession = async () => {
+      throw lost;
+    };
+    const h = skillHarness(fake);
+    const response = await h.turn("Add an asset");
+    expect(response.reply).toBe(COPILOT_SKILL_SESSION_LOST_REPLY);
+    expect(response.skill).toBeNull();
+    expect(h.counts.unbind).toBe(1);
+    expect(h.fake.calls.chat).toHaveLength(0);
+    expect(h.counts.consumeTurn).toHaveLength(0);
+  }
+  const broken = fakeOnboarding();
+  broken.skill.getSession = async () => {
+    throw new Error("database down");
+  };
+  const h = skillHarness(broken);
+  await expect(h.turn("Add an asset")).rejects.toThrow("database down");
+  expect(h.counts.unbind).toBe(0);
 }

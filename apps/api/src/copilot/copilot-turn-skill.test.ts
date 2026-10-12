@@ -13,6 +13,7 @@ import {
   aSkillTurnStoresItsOwnRows,
   theCommitPhraseInASkillTurnIsNotACommit,
   theCredentialRefusalComesBeforeTheSkill,
+  aSessionTheCallerLostEndsTheSkill,
 } from "./copilot-turn-skill.spec";
 
 /** Vitest entry point — assertions live in the sibling `.spec` (ADR 0014). */
@@ -29,4 +30,5 @@ describe("F3.86 PR 5 — a turn of the onboarding skill (ADR 0099 decision 7, ru
   it("refuses a credential before the skill", () => theCredentialRefusalComesBeforeTheSkill());
   it("stores only the outcome line for a follow-up", () => aFollowUpOnASkillConversationStoresTheOutcomeOnly());
   it("never reaches the skill on a plain conversation", () => aPlainConversationNeverReachesTheSkill());
+  it("ends the skill when the caller can no longer read the session", () => aSessionTheCallerLostEndsTheSkill());
 });

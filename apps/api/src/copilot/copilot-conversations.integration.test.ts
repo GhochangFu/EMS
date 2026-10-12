@@ -6,6 +6,7 @@ import { createDb } from "@bms/db";
 import { openIntegrationPool, requireIntegrationDb } from "../testing/integration-db-gate";
 import { asRole } from "../testing/role-urls";
 import {
+  aBindHoldsOnlyWhileNoneIsBound,
   anotherUsersConversationIs404,
   type ConversationsCtx,
   createRecordsTheBinding,
@@ -47,6 +48,7 @@ describe.skipIf(!connectionString)("F3.85 — the copilot conversation routes (m
     const stale = `SELECT id FROM bms.organizations WHERE code LIKE $1 AND created_at < now() - interval '30 minutes'`;
     await superPool.query(`DELETE FROM bms.audit_log WHERE organization_id IN (${stale})`, [FAMILY_PATTERN]);
     await superPool.query(`DELETE FROM bms.users WHERE organization_id IN (${stale})`, [FAMILY_PATTERN]);
+    await superPool.query(`DELETE FROM bms.onboarding_sessions WHERE organization_id IN (${stale})`, [FAMILY_PATTERN]);
     await superPool.query(`DELETE FROM bms.organizations WHERE id IN (${stale})`, [FAMILY_PATTERN]);
     const org = await superPool.query<{ id: string }>(
       "INSERT INTO bms.organizations (code, name, currency) VALUES ($1, 'F3.85 conversations', 'INR') RETURNING id",
@@ -63,13 +65,30 @@ describe.skipIf(!connectionString)("F3.85 — the copilot conversation routes (m
       if (!id) throw new Error(`F3.85: fixture user ${suffix} was not created`);
       return id;
     };
-    ctx = { tenantDb: createDb(tenantPool), orgA: orgId, userA: await user("a"), userB: await user("b") };
+    // F3.86 PR 5: two draft sessions to bind; the superuser writes them under FORCE, as it writes the users.
+    const session = async (): Promise<string> => {
+      const { rows } = await superPool.query<{ id: string }>(
+        "INSERT INTO bms.onboarding_sessions (organization_id) VALUES ($1) RETURNING id",
+        [orgId],
+      );
+      const id = rows[0]?.id;
+      if (!id) throw new Error("F3.86: fixture onboarding session was not created");
+      return id;
+    };
+    ctx = {
+      tenantDb: createDb(tenantPool),
+      orgA: orgId,
+      userA: await user("a"),
+      userB: await user("b"),
+      sessions: [await session(), await session()],
+    };
   });
 
   afterAll(async () => {
     if (orgId) {
       await superPool.query("DELETE FROM bms.audit_log WHERE organization_id = $1", [orgId]);
       await superPool.query("DELETE FROM bms.users WHERE organization_id = $1", [orgId]);
+      await superPool.query("DELETE FROM bms.onboarding_sessions WHERE organization_id = $1", [orgId]);
       await superPool.query("DELETE FROM bms.organizations WHERE id = $1", [orgId]);
     }
     await Promise.all([tenantPool?.end(), superPool?.end()]);
@@ -83,5 +102,8 @@ describe.skipIf(!connectionString)("F3.85 — the copilot conversation routes (m
   });
   it("listIsNewestFirstAndMessagesAreOrdered", async () => {
     await listIsNewestFirstAndMessagesAreOrdered(ctx);
+  });
+  it("F3.86 PR 5: a bind holds only while none is bound", async () => {
+    await aBindHoldsOnlyWhileNoneIsBound(ctx);
   });
 });

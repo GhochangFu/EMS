@@ -13,7 +13,9 @@ import {
   listDashboardTemplatesQuerySchema,
   updateDashboardTemplateBodySchema,
   createCalcParameterBodySchema,
+  commitOnboardingBodySchema,
   copilotCreateConversationBodySchema,
+  copilotStartOnboardingSkillBodySchema,
   copilotTurnBodySchema,
   listCalcParametersQuerySchema,
   updateCalcParameterBodySchema,
@@ -344,6 +346,8 @@ export const REQUEST_SCHEMAS: Record<string, ZodTypeAny> = {
   OnboardingController_createSession: createSessionBodySchema,
   OnboardingController_patchDraft: patchDraftBodySchema,
   OnboardingController_rollback: rollbackBodySchema,
+  // `F3.86` PR 5 (ADR 0099 decision 7): `{}` is the page's Commit; `draftHash` binds it to that draft.
+  OnboardingController_commit: commitOnboardingBodySchema,
   OnboardingController_setCredentials: setCredentialsBodySchema,
   OrganizationsAdminController_create: createOrganizationBodySchema,
   OrganizationsAdminController_update: updateOrganizationBodySchema,
@@ -356,6 +360,8 @@ export const REQUEST_SCHEMAS: Record<string, ZodTypeAny> = {
   CopilotConversationsController_create: copilotCreateConversationBodySchema,
   // `F3.85` PR 7 (ADR 0099 decisions 1, 9, 10): the message only, plus one path parameter.
   CopilotConversationsController_turn: copilotTurnBodySchema,
+  // `F3.86` PR 5 (decision 7): the organization the skill runs in. `_endOnboarding` takes no body.
+  CopilotConversationsController_startOnboarding: copilotStartOnboardingSkillBodySchema,
   PointKeysAdminController_create: createPointKeyBodySchema,
   PointKeysAdminController_update: updatePointKeyBodySchema,
   // `F3.5a` (ADR 0071 decision 11). `_download` and `_remove` are absent —

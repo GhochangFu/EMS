@@ -60,7 +60,8 @@ export async function aStartCreatesAndBindsASession(): Promise<void> {
   const skill = await h.skills.start(ORG_ADMIN, JWT, CONVERSATION, ORG_X);
   expect(h.calls.createSession).toEqual([[JWT, ORG_X]]);
   expect(h.record.binds).toEqual([SESSION]);
-  expect(h.record.appended).toEqual([{ role: "assistant", content: "Welcome to onboarding." }]);
+  // The onboarding wrote the line: an action row, replayed later as a record (security review L1).
+  expect(h.record.appended).toEqual([{ role: "action", content: "Welcome to onboarding." }]);
   expect(skill).toMatchObject({ kind: "onboarding", sessionId: SESSION, suggestedReplies: ["Start"] });
 }
 

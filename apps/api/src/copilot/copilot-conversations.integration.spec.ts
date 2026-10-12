@@ -24,6 +24,8 @@ export type ConversationsCtx = {
   orgA: string;
   userA: string;
   userB: string;
+  /** `F3.86` PR 5: two draft onboarding sessions of `orgA`, for the conditional bind. */
+  sessions: readonly [string, string];
 };
 
 const available = { decide: async () => ({ available: true }) } as unknown as CopilotAvailabilityService;
@@ -104,4 +106,25 @@ export async function listIsNewestFirstAndMessagesAreOrdered(ctx: ConversationsC
   const detail = await controller(ctx).get(older.id, caller, SPEC_JWT);
   expect(detail.messages.map((m) => m.content)).toEqual(["first", "second"]);
   expect(detail.messages.map((m) => m.role)).toEqual(["user", "assistant"]);
+}
+
+/**
+ * `F3.86` PR 5 (code review, false green 1) — the bind holds only while none
+ * is bound: a second bind answers false and leaves the first session bound;
+ * after an unbind a bind answers true again (the positive control). Run as
+ * `bms_tenant` in `withUser`, so the `user_isolation` policy applies too:
+ * another user's bind of the same conversation changes nothing.
+ */
+export async function aBindHoldsOnlyWhileNoneIsBound(ctx: ConversationsCtx): Promise<void> {
+  const store = new CopilotConversationsService(ctx.tenantDb);
+  const conversation = await store.create(ctx.userA, ctx.orgA);
+  const [first, second] = ctx.sessions;
+  expect(await store.bindOnboardingSession(ctx.userA, conversation.id, first)).toBe(true);
+  expect(await store.bindOnboardingSession(ctx.userA, conversation.id, second)).toBe(false);
+  expect((await store.findConversation(ctx.userA, conversation.id))?.onboardingSessionId).toBe(first);
+  expect(await store.bindOnboardingSession(ctx.userB, conversation.id, second)).toBe(false);
+  await store.unbindOnboardingSession(ctx.userA, conversation.id);
+  expect((await store.findConversation(ctx.userA, conversation.id))?.onboardingSessionId).toBeNull();
+  expect(await store.bindOnboardingSession(ctx.userA, conversation.id, second)).toBe(true);
+  expect((await store.findConversation(ctx.userA, conversation.id))?.onboardingSessionId).toBe(second);
 }
