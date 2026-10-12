@@ -9,7 +9,8 @@ import {
   onboardingCommitSiteName,
 } from "@bms/shared/copilot";
 
-import { commitOnboardingDraft } from "../../api/admin/onboarding";
+import { commitOnboardingDraft, fetchOnboardingSession } from "../../api/admin/onboarding";
+import { ApiError } from "../../lib/api-error";
 import { apiErrorMessage } from "../../lib/api-error-message";
 import { formatOnboardingDraftSummary } from "../../lib/onboarding-draft-summary";
 import { WizardShell } from "../wizard/wizard-shell";
@@ -21,9 +22,18 @@ function wizardEntry(id: string): CatalogEntry {
   return entry;
 }
 
+/** A refused Submit whose session was read again: the draft changed, so this wizard now holds its new hash. */
+export const ONBOARDING_COMMIT_DRAFT_CHANGED =
+  "The draft changed since this wizard read it, so nothing was committed. Review the draft again, then Submit.";
+
+/** A refused Submit whose session is no longer a draft (committed elsewhere). */
+export const ONBOARDING_COMMIT_NOT_A_DRAFT = "This onboarding is no longer a draft, so nothing was committed.";
+
 type OnboardingCommitWizardProps = {
   session: OnboardingSessionDto;
   onCommitted: (result: OnboardingCommitResponseDto) => void;
+  /** A 400's fresh read of the session, handed up so the next Submit carries the new hash. */
+  onSessionRefreshed: (session: OnboardingSessionDto) => void;
   onClose: () => void;
 };
 
@@ -34,19 +44,44 @@ type OnboardingCommitWizardProps = {
  * gate. Submit sends the plain `{ draftHash }` request with no
  * `X-Copilot-Change` header, so a manual commit is hash-bound too: a draft
  * that changed since this wizard read it answers 400 `PROPOSED_DRAFT_CHANGED`,
- * shown on the Review card, and nothing is written. A session with no hash
- * (a draft too deep to hash) offers no Submit, because an empty body is the
- * unbound commit.
+ * and nothing is written. The wizard then reads the session again and hands
+ * it up (`onSessionRefreshed`), so the next Submit carries the new hash. When
+ * the fresh read shows a new hash or a session no longer a draft, the sentence
+ * is the wizard's own, not the route's (which speaks of a proposal this wizard
+ * did not make). A session with no hash (a draft too deep to hash) offers no
+ * Submit, because an empty body is the unbound commit.
  */
-export function OnboardingCommitWizard({ session, onCommitted, onClose }: OnboardingCommitWizardProps) {
+export function OnboardingCommitWizard({ session, onCommitted, onSessionRefreshed, onClose }: OnboardingCommitWizardProps) {
   const [error, setError] = useState<string | null>(null);
+  // The title and the summary read this; the `<WizardShell entry=…>` below keeps its own literal call,
+  // because the stepper gate (`tests/f3.85-stepper-coverage.test.ts`) reads only that form, not a variable.
   const entry = wizardEntry("onboarding.commit");
   const draft = (session.draft ?? {}) as OnboardingCommitDraft;
   const hash = session.draftHash;
   const commitM = useMutation({
     mutationFn: (draftHash: string) => commitOnboardingDraft(session.id, draftHash),
     onSuccess: onCommitted,
-    onError: (cause: unknown) => setError(apiErrorMessage(cause)),
+    onError: async (cause: unknown, sent: string) => {
+      if (!(cause instanceof ApiError && cause.status === 400)) {
+        setError(apiErrorMessage(cause));
+        return;
+      }
+      let fresh: OnboardingSessionDto;
+      try {
+        fresh = await fetchOnboardingSession(session.id);
+      } catch {
+        setError(apiErrorMessage(cause));
+        return;
+      }
+      onSessionRefreshed(fresh);
+      setError(
+        fresh.status !== "draft"
+          ? ONBOARDING_COMMIT_NOT_A_DRAFT
+          : fresh.draftHash !== sent
+            ? ONBOARDING_COMMIT_DRAFT_CHANGED
+            : apiErrorMessage(cause),
+      );
+    },
   });
 
   return (

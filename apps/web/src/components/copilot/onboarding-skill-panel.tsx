@@ -58,6 +58,8 @@ type OnboardingSkillPanelProps = {
   onError: (message: string | null) => void;
   onEnd: () => void;
   ending: boolean;
+  /** An undo is in flight (or no longer): the dock's Send waits for it (F3.25, one write at a time). */
+  onUndoingChange: (undoing: boolean) => void;
 };
 
 /**
@@ -87,6 +89,7 @@ export function OnboardingSkillPanel({
   onError,
   onEnd,
   ending,
+  onUndoingChange,
 }: OnboardingSkillPanelProps) {
   const queryClient = useQueryClient();
   const session = skill.session;
@@ -109,7 +112,10 @@ export function OnboardingSkillPanel({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [skill]);
 
-  const withSession = (next: OnboardingSessionDto): void => onSkillChange({ ...skill, session: next });
+  // A local update (a credential save, a drawer edit, the wizard's commit or its fresh read) is not an
+  // answer: it carries no hint, or the drawer would open again on an old answer's hint.
+  const withSession = (next: OnboardingSessionDto): void =>
+    onSkillChange({ ...skill, session: next, autoOpenPreview: false, autoOpenReason: undefined });
 
   const validateM = useMutation({
     mutationFn: () => validateOnboardingSession(session.id),
@@ -143,6 +149,12 @@ export function OnboardingSkillPanel({
       );
     },
   });
+
+  useEffect(() => {
+    onUndoingChange(undoM.isPending);
+  }, [undoM.isPending, onUndoingChange]);
+  // Unmounted mid-undo (the skill ended): Send must not stay blocked.
+  useEffect(() => () => onUndoingChange(false), [onUndoingChange]);
 
   function pick(reply: string): void {
     if (reply.trim().toLowerCase() === "view draft") {
@@ -280,6 +292,7 @@ export function OnboardingSkillPanel({
             setPreviewOpen(false);
             withSession({ ...session, status: "committed", result: { ...(session.result ?? {}), locationId: result.locationId } });
           }}
+          onSessionRefreshed={withSession}
           onClose={() => setCommitting(false)}
         />
       )}

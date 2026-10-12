@@ -240,6 +240,9 @@ function DockPanel({ user, homeConfigured }: CopilotDockProps & { homeConfigured
   const skill = conversationId === null ? null : (thread.data?.skill ?? null);
   const receiveFill = useWizardStore((s) => s.receiveFill);
   const [input, setInput] = useState("");
+  // `F3.86` PR 6 review: the skill panel's undo is a write too (F3.25, one write at a time): Send waits for it.
+  const [skillUndoing, setSkillUndoing] = useState(false);
+
   const [banner, setBanner] = useState<string | null>(null);
   const [turnNotConfigured, setTurnNotConfigured] = useState(false);
   const threadRef = useRef<HTMLDivElement>(null);
@@ -310,6 +313,17 @@ function DockPanel({ user, homeConfigured }: CopilotDockProps & { homeConfigured
     queryClient.setQueryData<CopilotConversationDetailDto>(copilotConversationKey(id), (prev) =>
       prev ? { ...prev, skill: next } : prev,
     );
+    // `F3.86` PR 6 review: a skill no longer on a draft (committed by the drawer's wizard or elsewhere,
+    // or ended) leaves no live commit card; the server rejects it at the next read too.
+    if (next === null || next.session.status !== "draft") dropCommitCards(id);
+  }
+
+  /** Drops the `onboarding.commit` cards, cached and kept: their Confirm could only answer 400 now. */
+  function dropCommitCards(id: string): void {
+    queryClient.setQueryData<CopilotConversationDetailDto>(copilotConversationKey(id), (prev) =>
+      prev ? { ...prev, pendingChanges: prev.pendingChanges.filter((c) => c.catalogId !== ONBOARDING_COMMIT) } : prev,
+    );
+    setKept((prev) => prev.filter((c) => c.catalogId !== ONBOARDING_COMMIT));
   }
 
   /** The conversation the skill route answered, in the cache: its messages, open changes and skill. */
@@ -435,9 +449,13 @@ function DockPanel({ user, homeConfigured }: CopilotDockProps & { homeConfigured
     onSuccess: (detail) => {
       setBanner(null);
       putConversation(detail);
+      dropCommitCards(detail.id);
     },
     onError: (err: Error) => setBanner(apiErrorMessage(err)),
   });
+
+  // A turn, a follow-up or the skill panel's undo is in flight: Send waits.
+  const busy = turn.isPending || followUp !== null || skillUndoing;
 
   // A global admin onboards in the organization picked above; "All organizations" names none.
   const canOnboard = canAccessOnboarding(user.role) && !scopeOff;
@@ -458,7 +476,7 @@ function DockPanel({ user, homeConfigured }: CopilotDockProps & { homeConfigured
 
   function sendText(raw: string): void {
     const text = raw.trim();
-    if (!text || turn.isPending || followUp !== null) {
+    if (!text || busy) {
       return;
     }
     setKept([]);
@@ -466,7 +484,7 @@ function DockPanel({ user, homeConfigured }: CopilotDockProps & { homeConfigured
   }
 
   function submit(): void {
-    if (!input.trim() || turn.isPending || followUp !== null) {
+    if (!input.trim() || busy) {
       return;
     }
     sendText(input);
@@ -591,6 +609,7 @@ function DockPanel({ user, homeConfigured }: CopilotDockProps & { homeConfigured
               onError={setBanner}
               onEnd={() => endSkill.mutate()}
               ending={endSkill.isPending}
+              onUndoingChange={setSkillUndoing}
             />
           ) : (
             <div
@@ -661,8 +680,8 @@ function DockPanel({ user, homeConfigured }: CopilotDockProps & { homeConfigured
                 />
                 <button
                   type="submit"
-                  disabled={turn.isPending || followUp !== null || input.trim() === ""}
-                  aria-busy={turn.isPending || followUp !== null}
+                  disabled={busy || input.trim() === ""}
+                  aria-busy={busy}
                   className="surface-button px-3 py-1 text-xs disabled:opacity-50"
                 >
                   {turn.isPending ? "Sending…" : followUp !== null ? "Waiting…" : "Send"}

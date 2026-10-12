@@ -12,6 +12,7 @@ import type {
 import { COPILOT_CHANGE_HEADER } from "@bms/shared/copilot";
 
 import * as copilotApi from "../../api/copilot";
+import { ONBOARDING_COMMIT_DRAFT_CHANGED } from "../onboarding/onboarding-commit-wizard";
 import { useCopilotStore } from "../../stores/copilot-store";
 import { CONVERSATION_ID, answered, openPanel, READY, renderDock, settle, stub } from "./copilot-dock.spec";
 
@@ -323,4 +324,144 @@ export async function theGlobalAdminPicksAnOrganizationFirst(): Promise<void> {
   await openPanel();
   expect(await screen.findByRole("button", { name: "Onboard a site" })).toBeDisabled();
   expect(screen.getByText("Pick an organization to onboard a site.")).toBeInTheDocument();
+}
+
+/** Opens the drawer's Commit wizard and Submits it; returns the dialog. */
+async function submitTheWizard(): Promise<HTMLElement> {
+  if (screen.queryByRole("button", { name: "Commit" }) === null) {
+    fireEvent.click(screen.getByRole("button", { name: /^Preview/ }));
+  }
+  fireEvent.click(await screen.findByRole("button", { name: "Commit" }));
+  const wizard = await screen.findByRole("dialog");
+  fireEvent.click(within(wizard).getByRole("button", { name: "Next" }));
+  fireEvent.click(await within(wizard).findByRole("button", { name: "Submit" }));
+  return wizard;
+}
+
+/**
+ * `F3.86` PR 6 review — a wizard Submit refused with 400 reads the session
+ * again and hands it up, so the next Submit carries the new hash; the sentence
+ * is the wizard's own (no proposal was made), never the route's.
+ */
+export async function aRefusedWizardSubmitRetriesWithTheNewHash(): Promise<void> {
+  await openSkill();
+  const fresh = "e".repeat(64);
+  let commits = 0;
+  const sent = stubFetch((url) => {
+    if (url.endsWith("/commit")) {
+      commits += 1;
+      return commits === 1
+        ? { status: 400, json: { statusCode: 400, message: DRAFT_CHANGED, error: "Bad Request" } }
+        : { status: 201, json: COMMITTED };
+    }
+    return { status: 200, json: session({ draftHash: fresh }) };
+  });
+  const wizard = await submitTheWizard();
+  expect(await within(wizard).findByText(ONBOARDING_COMMIT_DRAFT_CHANGED)).toBeInTheDocument();
+  expect(screen.queryByText(DRAFT_CHANGED)).not.toBeInTheDocument();
+  expect(sent.map((r) => [r.method, r.url.replace(/^.*\/api\/v1/, "")])).toEqual([
+    ["POST", `/admin/onboarding/sessions/${SESSION}/commit`],
+    ["GET", `/admin/onboarding/sessions/${SESSION}`],
+  ]);
+  fireEvent.click(within(wizard).getByRole("button", { name: "Submit" }));
+  await waitFor(() => expect(sent).toHaveLength(3));
+  expect(JSON.parse(sent[0]!.body)).toEqual({ draftHash: HASH });
+  expect(JSON.parse(sent[2]!.body)).toEqual({ draftHash: fresh });
+  expect(await screen.findByText(/The site is committed/)).toBeInTheDocument();
+}
+
+/** `F3.86` PR 6 review — a commit through the wizard drops the open commit card: its Confirm could only answer 400. */
+export async function aWizardCommitDropsTheCommitCard(): Promise<void> {
+  const stubs = await openSkill({ cards: [COMMIT_CARD] });
+  // Every read still carries the card, so only the client's own drop can remove it.
+  stubs.load.mockResolvedValue(detail(skillState(), [COMMIT_CARD]));
+  expect(await screen.findByText(COMMIT_CARD.summary)).toBeInTheDocument();
+  stubFetch(() => ({ status: 201, json: COMMITTED }));
+  await submitTheWizard();
+  expect(await screen.findByText(/The site is committed/)).toBeInTheDocument();
+  expect(screen.queryByText(COMMIT_CARD.summary)).not.toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "Confirm" })).not.toBeInTheDocument();
+}
+
+/**
+ * `F3.86` PR 6 review — "End onboarding" drops a commit card the dock still
+ * keeps (a Confirm the route refused keeps its card): the plain conversation
+ * shows no dead card. The end's answer is the server's, with no open change.
+ */
+export async function anEndDropsAKeptCommitCard(): Promise<void> {
+  await openSkill({ cards: [COMMIT_CARD] });
+  stubFetch(() => ({ status: 400, json: { statusCode: 400, message: DRAFT_CHANGED, error: "Bad Request" } }));
+  fireEvent.click(await screen.findByRole("button", { name: "Confirm" }));
+  expect(await screen.findByText(DRAFT_CHANGED)).toBeInTheDocument();
+  const end = vi.spyOn(copilotApi, "endCopilotOnboardingSkill").mockResolvedValue(detail(null, []));
+  fireEvent.click(screen.getByRole("button", { name: "End onboarding" }));
+  await waitFor(() => expect(end).toHaveBeenCalledWith(CONVERSATION_ID));
+  expect(await screen.findByRole("button", { name: "Onboard a site" })).toBeInTheDocument();
+  expect(screen.queryByText(COMMIT_CARD.summary)).not.toBeInTheDocument();
+}
+
+/**
+ * `F3.86` PR 6 review — the preview's hint is an answer's: the drawer opened
+ * on it, and a wizard commit (a local update) closes it for good.
+ */
+export async function aWizardCommitDoesNotReopenThePreview(): Promise<void> {
+  await openSkill({ skill: skillState({ autoOpenPreview: true, autoOpenReason: "ready_to_commit" }) });
+  expect(await screen.findByRole("button", { name: "Preview ◀" })).toBeInTheDocument();
+  stubFetch(() => ({ status: 201, json: COMMITTED }));
+  await submitTheWizard();
+  expect(await screen.findByText(/The site is committed/)).toBeInTheDocument();
+  await settle();
+  expect(screen.getByRole("button", { name: "Preview ▶" })).toBeInTheDocument();
+}
+
+const CHECKPOINTED = skillState({
+  session: session({ checkpoints: [{ id: "cp1", seq: 1, label: "Added RTU-1", takenAt: "2026-10-12T00:00:00.000Z" }] }),
+});
+
+/** The undo's request waits until `release` is called; nothing else is answered. */
+function deferUndo(): { release: () => void } {
+  let release: () => void = () => undefined;
+  const held = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async () => {
+      await held;
+      const body = { assistantMessage: "Undone.", session: CHECKPOINTED.session };
+      return new Response(JSON.stringify(body), { status: 200, headers: { "Content-Type": "application/json" } });
+    }),
+  );
+  return { release: () => release() };
+}
+
+/** `F3.86` PR 6 review (F3.25, one write at a time) — the dock's Send is disabled while the panel's undo is in flight. */
+export async function sendIsDisabledWhileAnUndoIsInFlight(): Promise<void> {
+  await openSkill({ skill: CHECKPOINTED });
+  const undo = deferUndo();
+  fireEvent.change(screen.getByRole("textbox", { name: "Message the copilot" }), { target: { value: "Add an asset" } });
+  expect(screen.getByRole("button", { name: "Send" })).toBeEnabled();
+  fireEvent.click(screen.getByRole("button", { name: "Undo" }));
+  await screen.findByRole("button", { name: "Undoing…" });
+  expect(screen.getByRole("button", { name: "Send" })).toBeDisabled();
+  undo.release();
+  await waitFor(() => expect(screen.getByRole("button", { name: "Send" })).toBeEnabled());
+}
+
+/** `F3.86` PR 6 review — Enter sends no turn while the panel's undo is in flight, and does once it is done. */
+export async function enterSendsNothingWhileAnUndoIsInFlight(): Promise<void> {
+  const stubs = await openSkill({ skill: CHECKPOINTED });
+  stubs.turn.mockResolvedValue({ ...answered("Add an asset", "ok"), skill: CHECKPOINTED });
+  const undo = deferUndo();
+  const box = screen.getByRole("textbox", { name: "Message the copilot" });
+  fireEvent.change(box, { target: { value: "Add an asset" } });
+  fireEvent.click(screen.getByRole("button", { name: "Undo" }));
+  await screen.findByRole("button", { name: "Undoing…" });
+  fireEvent.keyDown(box, { key: "Enter" });
+  await settle();
+  expect(stubs.turn).not.toHaveBeenCalled();
+  undo.release();
+  await screen.findByRole("button", { name: "Undo" });
+  fireEvent.keyDown(box, { key: "Enter" });
+  await waitFor(() => expect(stubs.turn).toHaveBeenCalledWith(CONVERSATION_ID, "Add an asset"));
 }

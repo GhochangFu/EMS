@@ -6,6 +6,12 @@ import { useAuthStore } from "../../stores/auth-store";
 import { resetCopilotStore } from "../../stores/copilot-store";
 import {
   aChangedDraftShowsTheRoutesSentence,
+  anEndDropsAKeptCommitCard,
+  aRefusedWizardSubmitRetriesWithTheNewHash,
+  aWizardCommitDoesNotReopenThePreview,
+  aWizardCommitDropsTheCommitCard,
+  enterSendsNothingWhileAnUndoIsInFlight,
+  sendIsDisabledWhileAnUndoIsInFlight,
   aChipSendsItsTextAsATurn,
   aLocationAdminIsNotOfferedOnboarding,
   aLostSessionReturnsToThePlainConversation,
@@ -41,6 +47,15 @@ describe("F3.86 PR 6 — the dock's onboarding skill (ADR 0099 decision 7)", () 
   it("returns to the plain conversation when the skill ends", aLostSessionReturnsToThePlainConversation);
   it("keeps the panel on a refusal with no skill key", aRefusalWithoutASkillKeyKeepsThePanel);
   it("replaces the old commit card with the new one", aNewCommitCardReplacesTheOld);
+});
+
+describe("F3.86 PR 6 review — the dock's onboarding skill", () => {
+  it("retries a refused wizard Submit with the fresh session's hash", aRefusedWizardSubmitRetriesWithTheNewHash);
+  it("drops the commit card after a wizard commit", aWizardCommitDropsTheCommitCard);
+  it("drops a kept commit card on End onboarding", anEndDropsAKeptCommitCard);
+  it("does not reopen the preview after a wizard commit", aWizardCommitDoesNotReopenThePreview);
+  it("disables Send while an undo is in flight", sendIsDisabledWhileAnUndoIsInFlight);
+  it("sends nothing on Enter while an undo is in flight", enterSendsNothingWhileAnUndoIsInFlight);
 });
 
 describe("F3.86 PR 6 — starting the onboarding skill (ruling Q4)", () => {
