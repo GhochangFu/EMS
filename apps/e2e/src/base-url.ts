@@ -15,6 +15,7 @@ export class E2eBaseUrlError extends Error {
 
 const LOCAL_HOSTS: ReadonlySet<string> = new Set(["127.0.0.1", "localhost"]);
 
+/** Parses `url` and throws `E2eBaseUrlError` unless its host is `127.0.0.1` or `localhost`. */
 export function assertLocalBaseUrl(url: string): URL {
   let parsed: URL;
   try {

@@ -101,10 +101,12 @@ describe("F4.7 — the e2e suite shape (ADR 0100)", () => {
 });
 
 /**
- * I4 — the workflow. `.github/workflows/e2e.yml` lands in plan task T9; that
- * unit removes `.skip` here and must see every assertion below go green. Do
- * not turn this into `runIf(existsSync(...))`: a missing workflow would then
- * pass silently.
+ * I4 — the workflow. `.github/workflows/e2e.yml` must run only on the `e2e`
+ * label or by manual dispatch, read no secret, never use
+ * `pull_request_target`, and use ci.yml's Postgres and Redis images; its
+ * Chromium cache key follows the pinned Playwright version. The read is
+ * unguarded on purpose: do not turn this into `runIf(existsSync(...))`, or a
+ * missing workflow would pass silently.
  */
 describe("F4.7 — I4 the e2e workflow", () => {
   it("I4 runs on the e2e label or by hand, with no secret, on ci.yml's images", () => {

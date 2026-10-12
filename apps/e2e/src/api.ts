@@ -35,6 +35,7 @@ export const ROLES = {
 export type Role = keyof typeof ROLES;
 export const DEMO_PASSWORD = "admin123";
 
+/** The `storageState` file of one seeded role, as an absolute path. */
 export function authFile(role: Role): string {
   return join(AUTH_DIR, `${role}.json`);
 }
@@ -47,6 +48,7 @@ export type Fixtures = {
   readonly eskomOrganizationId: string;
 };
 
+/** The fixture ids the global setup wrote to `.auth/fixtures.json`. */
 export function readFixtures(): Fixtures {
   return JSON.parse(readFileSync(FIXTURES_FILE, "utf8")) as Fixtures;
 }

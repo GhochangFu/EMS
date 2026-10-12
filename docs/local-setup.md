@@ -675,6 +675,12 @@ pnpm test:e2e
 docker compose up -d web api sim
 ```
 
+Each local run leaves rows in the compose database (ADR 0100, plan §8
+ruling 3): the `E2E-*` location, RTU, asset and point mapping; an archived
+rule named `E2E <run id> demand`; and one acknowledged "Asset demand high"
+warning on `CR-MAIN-BUS`, which stays active because archiving a rule does
+not clear its alarms. A cold start (an empty Postgres volume) removes them.
+
 In CI the suite runs only when a pull request gets the `e2e` label, or by
 manual dispatch (`.github/workflows/e2e.yml`).
 

@@ -35,15 +35,19 @@ process.env.E2E_RUN_ID ??= `E2E-${Date.now().toString(36).toUpperCase()}`;
 /**
  * Variables no server may inherit. `roles` and `migrate` need the superuser
  * URL; `apps/api/.env.example` says it "must never reach the running API".
+ * Each is passed as an empty string, not dropped: the API and the sim load
+ * `apps/api/.env` through dotenv, which fills an absent key but never
+ * overwrites a set one.
  */
 const WITHHELD = new Set(["DATABASE_URL_SUPERUSER"]);
 
-/** `process.env` with the unset and withheld entries dropped, plus the overrides. */
+/** `process.env` with the unset entries dropped and the withheld ones emptied, plus the overrides. */
 function envWith(overrides: Record<string, string>): Record<string, string> {
   const base: Record<string, string> = {};
   for (const [key, value] of Object.entries(process.env)) {
-    if (value !== undefined && !WITHHELD.has(key)) base[key] = value;
+    if (value !== undefined) base[key] = value;
   }
+  for (const key of WITHHELD) base[key] = "";
   return { ...base, ...overrides };
 }
 

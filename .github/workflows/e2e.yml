@@ -10,7 +10,9 @@ on:
   workflow_dispatch:
 
 concurrency:
-  group: e2e-${{ github.event.pull_request.number || github.run_id }}
+  # The label name is in the key: every `labeled` event starts a run, and a
+  # run for another label must not cancel a running e2e suite.
+  group: e2e-${{ github.event.pull_request.number || github.run_id }}-${{ github.event.label.name || 'dispatch' }}
   cancel-in-progress: true
 
 permissions:

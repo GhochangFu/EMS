@@ -12,14 +12,9 @@ import {
   type Role,
 } from "./src/api.js";
 
-/**
- * ADR 0100 decision 6 — sign in once per seeded role and save each session as
- * a Playwright `storageState`; resolve the seeded ids the specs need. Runs
- * after the `webServer`s answer, so the API is up. The files are git-ignored
- * and rewritten every run.
- */
 type Coded = { id: string; code: string; organizationCode?: string };
 
+/** A seeded row the specs need is missing or ambiguous. */
 export class E2eFixtureError extends Error {
   override readonly name = "E2eFixtureError";
 }
@@ -35,6 +30,12 @@ function one(items: readonly Coded[], what: string, match: (item: Coded) => bool
   return found[0].id;
 }
 
+/**
+ * ADR 0100 decision 6 — sign in once per seeded role and save each session as
+ * a Playwright `storageState`; resolve the seeded ids the specs need. Runs
+ * after the `webServer`s answer, so the API is up. The files are git-ignored
+ * and rewritten every run.
+ */
 export default async function globalSetup(): Promise<void> {
   mkdirSync(AUTH_DIR, { recursive: true });
 
