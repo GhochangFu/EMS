@@ -2,6 +2,7 @@
 import { afterEach, describe, it } from "vitest";
 
 import {
+  aCopyMadeAfterCancelRereadsTheResolveRead,
   aFillStepFillsTheTemplate,
   aMadeCopyRereadsTheResolveRead,
   anAmbiguousAnswerOpensThePicker,
@@ -80,4 +81,8 @@ describe("F3.73 / F3.86 PR 3d Make site layout on the site page's notice", () =>
   it("M9 shows the API's sentence on any other refusal", async () => {
     await aRefusalShowsTheApiMessage();
   });
+
+  it("M10 re-reads the resolve read when a copy is made after Cancel", async () => {
+    await aCopyMadeAfterCancelRereadsTheResolveRead();
+  }, 20_000);
 });

@@ -382,3 +382,28 @@ export async function aViewChangedBackIsNotPut(): Promise<void> {
   await waitFor(() => expect(onClose).toHaveBeenCalledTimes(1), FAIL_FAST);
   expect(puts(calls)).toEqual([]);
 }
+
+/**
+ * A failed read offers Close: the dialog's overlay covers the page, so a wizard with no stored
+ * setting must still give a way out. Mutation: drop the Close from the `stored === null` branch.
+ */
+export async function aFailedReadOffersClose(): Promise<void> {
+  const { onClose } = stub(setting());
+  vi.spyOn(api, "fetchSiteControlRoomView").mockRejectedValue(new Error("read failed"));
+  renderWizard(true, onClose);
+
+  expect(await screen.findByText("The Control Room view could not be loaded.", undefined, FAIL_FAST)).toBeInTheDocument();
+  await userEvent.click(screen.getByRole("button", { name: "Close" }));
+  expect(onClose).toHaveBeenCalledTimes(1);
+}
+
+/** A read still in flight offers Close too (the same branch). */
+export async function aLoadingReadOffersClose(): Promise<void> {
+  const { onClose } = stub(setting());
+  vi.spyOn(api, "fetchSiteControlRoomView").mockReturnValue(new Promise(() => undefined));
+  renderWizard(true, onClose);
+
+  expect(screen.getByText("Loading the Control Room view…")).toBeInTheDocument();
+  await userEvent.click(screen.getByRole("button", { name: "Close" }));
+  expect(onClose).toHaveBeenCalledTimes(1);
+}

@@ -70,9 +70,10 @@ export const SITE_VIEW_ENTRIES: readonly CatalogEntry[] = [
     steps: [{ id: "groups", title: "Groups", fields: ["tabGroups", "templateId"] }],
     summary: ({ body, targetName, organizationName }) => {
       const tabGroups = body.tabGroups;
+      const chosen = tabGroups !== null && typeof tabGroups === "object" ? Object.keys(tabGroups).length : 0;
       const tabs =
-        tabGroups !== null && typeof tabGroups === "object"
-          ? `, with the chosen groups for ${plural(Object.keys(tabGroups).length, "tab")}`
+        chosen > 0
+          ? `, with the chosen groups for ${plural(chosen, "tab")}`
           : "";
       return `Make the site layout for ${quoted(targetName)}${inOrganization(organizationName)} from ${layoutSource(body)}${tabs}.`;
     },

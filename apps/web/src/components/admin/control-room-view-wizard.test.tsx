@@ -5,6 +5,8 @@ import { afterEach, describe, it, vi } from "vitest";
 import { resetWizardStore } from "../../stores/wizard-store";
 import {
   aDashboardViewSendsItsId,
+  aFailedReadOffersClose,
+  aLoadingReadOffersClose,
   aDashboardViewWithNoDashboardSendsNothing,
   aFillStepFillsTheView,
   anAdminOverABuiltinGetsAnEnabledField,
@@ -59,4 +61,6 @@ describe("F3.86 PR 3d — the Control Room view wizard", () => {
   it("W5 does not put an unchanged view", () => anUnchangedViewIsNotPut(), WAIT_BUDGET_MS);
   it("W5b does not put a view changed and changed back", () => aViewChangedBackIsNotPut(), WAIT_BUDGET_MS);
   it("takes a copilot fill for the View step", () => aFillStepFillsTheView(), WAIT_BUDGET_MS);
+  it("offers Close when the read fails", () => aFailedReadOffersClose(), WAIT_BUDGET_MS);
+  it("offers Close while the read loads", () => aLoadingReadOffersClose(), WAIT_BUDGET_MS);
 });

@@ -90,4 +90,8 @@ export function theSiteLayoutSummaryCountsTheChosenTabs(): void {
   expect(summary("location.siteLayout.make", { tabGroups: { sld: GROUP_A } })).toContain(
     "with the chosen groups for 1 tab.",
   );
+  // An empty map (the wizard sets one on an ambiguous answer) chose nothing, so it counts nothing.
+  const empty = summary("location.siteLayout.make", { tabGroups: {} });
+  expect(empty).toContain("the organization's newest published site template.");
+  expect(empty).not.toContain("tab");
 }

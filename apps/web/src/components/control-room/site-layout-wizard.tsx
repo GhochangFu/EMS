@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { type ReactNode, useState } from "react";
+import { type ReactNode, useRef, useState } from "react";
 import type { SiteLayoutBody, SiteLayoutResultDto } from "@bms/shared";
 import { type CatalogEntry, catalogEntry } from "@bms/shared/copilot";
 
@@ -67,11 +67,14 @@ type SiteLayoutWizardProps = {
  * A made copy shows its summary; Close invalidates the page's resolve read
  * (`["control-room", "site-view", locationId]`, `site-page.tsx`) and nothing wider, so the page
  * re-resolves to the new `dashboard` view — after the summary was read, since the re-resolve
- * drops the notice this wizard sits in. Submit sends no `X-Copilot-Change` header.
+ * drops the notice this wizard sits in. A copy made after Cancel closed the wizard invalidates the
+ * same key at once. Submit sends no `X-Copilot-Change` header.
  */
 export function SiteLayoutWizard({ locationId, siteName }: SiteLayoutWizardProps) {
   const queryClient = useQueryClient();
   const [open, setOpen] = useState(false);
+  /** Read by the mutation's `onSuccess`, which can run after Cancel closed the wizard. */
+  const openRef = useRef(false);
   const [values, setValues] = useState<Record<string, unknown>>({});
   const [ambiguous, setAmbiguous] = useState<AmbiguousTabs | null>(null);
   /** A new shell per answer: the shell owns its step index, and a re-mount is the way back to Groups. */
@@ -100,6 +103,12 @@ export function SiteLayoutWizard({ locationId, siteName }: SiteLayoutWizardProps
         return;
       }
       setMade(answer.result);
+      // Cancel during a pending Submit closed the wizard with no summary to Close, so the
+      // success invalidates the resolve read itself: else the stale notice stays, and a second
+      // Make site layout gets 409 `has_view`.
+      if (!openRef.current) {
+        void queryClient.invalidateQueries({ queryKey: ["control-room", "site-view", locationId] });
+      }
     },
     onError: (cause: unknown) => setError(apiErrorMessage(cause)),
   });
@@ -110,10 +119,12 @@ export function SiteLayoutWizard({ locationId, siteName }: SiteLayoutWizardProps
     setError(null);
     setMade(null);
     setAttempt((current) => current + 1);
+    openRef.current = true;
     setOpen(true);
   }
 
   function close(): void {
+    openRef.current = false;
     setOpen(false);
     if (made !== null) {
       void queryClient.invalidateQueries({ queryKey: ["control-room", "site-view", locationId] });

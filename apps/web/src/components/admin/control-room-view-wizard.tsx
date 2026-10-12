@@ -120,10 +120,18 @@ export function ControlRoomViewWizard({ location, canSetBuiltin, onClose }: Cont
 
   let content: ReactNode;
   if (stored === null) {
+    // The overlay covers the page, so a wizard with no stored setting still offers its way out.
     content = (
-      <p className="text-xs text-ink-muted">
-        {viewQ.isError ? "The Control Room view could not be loaded." : "Loading the Control Room view…"}
-      </p>
+      <>
+        <p className="text-xs text-ink-muted">
+          {viewQ.isError ? "The Control Room view could not be loaded." : "Loading the Control Room view…"}
+        </p>
+        <div className="flex justify-end">
+          <button type="button" onClick={onClose} className="surface-button px-3 py-1.5">
+            Close
+          </button>
+        </div>
+      </>
     );
   } else if (stored.kind === "builtin" && !canSetBuiltin) {
     content = (

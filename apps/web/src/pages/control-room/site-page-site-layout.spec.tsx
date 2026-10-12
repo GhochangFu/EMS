@@ -350,3 +350,33 @@ export function cleanupSiteLayout(): void {
   resetWizardStore();
   expect(networkCalls, "a read reached the network").toEqual([]);
 }
+
+/**
+ * M10 — Cancel while Submit is pending, then the request makes the copy: the wizard is closed
+ * with no summary to Close, so the success itself invalidates the page's resolve read — else the
+ * page keeps the stale notice and a second click gets 409 `has_view`. Mutation: invalidate on
+ * Close only.
+ */
+export async function aCopyMadeAfterCancelRereadsTheResolveRead(): Promise<void> {
+  const { resolve, make } = stubReads([generatedWith("no_site_layout"), generatedWith(null)]);
+  let answer: (made: controlRoomApi.MakeSiteLayoutAnswer) => void = () => undefined;
+  make.mockReturnValueOnce(
+    new Promise<controlRoomApi.MakeSiteLayoutAnswer>((resolveMake) => {
+      answer = resolveMake;
+    }),
+  );
+  renderPage();
+  const dialog = await openTheWizard();
+  await submitFromGroups(dialog);
+  await waitFor(() => expect(make).toHaveBeenCalledTimes(1));
+
+  fireEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
+  expect(screen.queryByRole("dialog")).toBeNull();
+  expect(resolve).toHaveBeenCalledTimes(1);
+
+  await act(async () => {
+    answer(MADE);
+  });
+  await waitFor(() => expect(resolve).toHaveBeenCalledTimes(2));
+  await waitFor(() => expect(screen.queryByTestId("site-view-notice")).toBeNull());
+}
