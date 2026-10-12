@@ -6,7 +6,8 @@ import { type CatalogEntry, catalogEntry } from "@bms/shared/copilot";
 import { fetchAdminLocations } from "../../api/admin/locations";
 import { wizardBody, type WizardStep } from "../../lib/wizard-steps";
 import { WizardShell } from "../wizard/wizard-shell";
-import { AdminWizardFrame, fieldClass, labelClass, MetadataStep, metaOf, numberOf } from "./location-wizards";
+import { AdminWizardFrame, fieldClass, labelClass, metaOf, numberOf } from "./admin-wizard-frame";
+import { MetadataStep } from "./metadata-step";
 
 /**
  * `F3.86` PR 3a (ADR 0099 decision 6, plan §5.2) — the RTUs page's wizards on
@@ -46,6 +47,7 @@ export type RtuForm = {
   meta?: Record<string, unknown>;
 };
 
+/** The form a create opens with: blank fields, a catalog source, under the given location. */
 export function emptyRtuForm(locationId: string): RtuForm {
   return {
     locationId,
@@ -62,6 +64,7 @@ export function emptyRtuForm(locationId: string): RtuForm {
   };
 }
 
+/** The form an edit opens with: the stored row, every optional text `""` when null. */
 export function rtuFormOf(row: AdminRtuDto): RtuForm {
   return {
     locationId: row.locationId,

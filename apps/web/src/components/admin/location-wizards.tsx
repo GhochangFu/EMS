@@ -7,7 +7,9 @@ import { fetchAdminLocations, fetchAdminLocationTypes } from "../../api/admin/lo
 import { locationTreeOptions, subtreeIds } from "../../lib/location-tree";
 import { wizardBody, type WizardStep } from "../../lib/wizard-steps";
 import { WizardShell } from "../wizard/wizard-shell";
+import { AdminWizardFrame, fieldClass, labelClass, metaOf, numberOf } from "./admin-wizard-frame";
 import { LocationMoveDialog } from "./location-move-dialog";
+import { MetadataStep } from "./metadata-step";
 
 /**
  * `F3.86` PR 3a (ADR 0099 decision 6, plan §5.2) — the locations page's
@@ -32,56 +34,6 @@ function wizardEntry(id: string): CatalogEntry {
   const entry = catalogEntry(id);
   if (!entry) throw new Error(`F3.86: the catalog has no entry "${id}"`);
   return entry;
-}
-
-export const labelClass = "block text-xs font-semibold text-ink-muted";
-export const fieldClass = "mt-1 w-full surface-field px-3 py-2 text-sm";
-
-/** The modal around a wizard: a dialog named by its heading (the e2e path locates it by name). */
-export function AdminWizardFrame({ title, children }: { title: string; children: ReactNode }) {
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-scrim/40 p-4">
-      <div
-        role="dialog"
-        aria-modal="true"
-        aria-label={title}
-        className="max-h-[90vh] w-full max-w-lg space-y-3 overflow-y-auto surface-dialog p-4"
-      >
-        <h2 className="font-condensed text-lg font-bold">{title}</h2>
-        {children}
-      </div>
-    </div>
-  );
-}
-
-/**
- * The Metadata step: no form on these pages edits `meta`. A copilot
- * `fill_step` may carry it; the step then shows what will be sent.
- */
-export function MetadataStep({ meta, what }: { meta: Record<string, unknown> | undefined; what: string }) {
-  if (meta === undefined) {
-    return (
-      <p className="text-xs text-ink-muted">
-        This form sets no metadata: a new {what} starts with none, and an edit keeps the stored metadata.
-      </p>
-    );
-  }
-  return (
-    <>
-      <p className="text-xs text-ink-muted">The copilot filled this metadata; it is sent as shown.</p>
-      <pre className="overflow-x-auto surface-field px-3 py-2 font-mono text-xs">{JSON.stringify(meta, null, 2)}</pre>
-    </>
-  );
-}
-
-/** A number typed as text: `undefined` when empty, so Review asks for it rather than sending `0`. */
-export function numberOf(text: string): number | undefined {
-  return text.trim() === "" ? undefined : Number(text);
-}
-
-/** A plain object from a fill, or `undefined`. */
-export function metaOf(value: unknown): Record<string, unknown> | undefined {
-  return value !== null && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : undefined;
 }
 
 export type LocationForm = {
@@ -118,6 +70,7 @@ export const EMPTY_LOCATION_FORM: LocationForm = {
   parentId: "",
 };
 
+/** The form an edit opens with: the stored row, every optional text `""` when null. */
 export function locationFormOf(row: AdminLocationDto): LocationForm {
   return {
     organizationId: row.organizationId,
