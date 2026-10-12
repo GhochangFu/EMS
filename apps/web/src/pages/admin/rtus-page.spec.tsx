@@ -198,7 +198,7 @@ export async function editSendsAChangedDeviceId(): Promise<void> {
   expect(onlyBody(rtusApi.updateAdminRtu).rtuCode).toBe("861736076128245");
 }
 
-/** R6 — clearing a stored device ID sends `''`, the only value that clears the column (`rtus.schema.ts`, `F4.60`). */
+/** R6 — clearing a stored device ID sends `''`, the only value that clears the column (`rtu-writes.ts`, `F4.60`). */
 export async function editClearingTheDeviceIdSendsEmpty(): Promise<void> {
   const user = userEvent.setup();
   renderPage();

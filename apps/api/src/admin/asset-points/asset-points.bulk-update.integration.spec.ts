@@ -19,7 +19,7 @@ import type { AssetPointsAdminService } from "./asset-points.service";
  * Two of the four refusals also span rows the request never names: the merged
  * band is this row's `eng_min` beside its *template's* `eng_max`, and the
  * organization check is over the `assets` of every selected point.
- * `asset-points.schema.spec.ts` holds the pure half — the cap, the empty patch
+ * `asset-point-writes.spec.ts` (`packages/shared`) holds the pure half — the cap, the empty patch
  * and the within-row rules.
  *
  * The service is constructed with real, non-owner role connections the way

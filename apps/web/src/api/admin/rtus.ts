@@ -53,7 +53,7 @@ export async function updateAdminRtu(
     sourceType: AdminRtuDto["sourceType"];
     domain: string;
     // `""` clears the column: the PATCH body is optional-but-not-nullable
-    // (`rtus.schema.ts`, `F4.60`), so omit the key to leave it unchanged.
+    // (`rtu-writes.ts`, `F4.60`), so omit the key to leave it unchanged.
     rtuCode: string;
     ingestEnabled: boolean;
   }>,

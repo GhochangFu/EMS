@@ -243,7 +243,7 @@ export const STOCK_POINT_KEY_CODES: readonly string[] = GLOBAL_CATALOG.map((row)
  *
  * `name` and `domain` stay assigned outright, AND THAT IS A COST TOO — this
  * paragraph used to claim neither was administrator-editable, which is false:
- * `updatePointKeyBodySchema` in `apps/api/src/admin/point-keys/point-keys.schema.ts`
+ * `updatePointKeyBodySchema` in `packages/shared/src/contracts/point-key-writes.ts`
  * is a `.partial()` over `name`, `domain`, `unit` and `description`, so a
  * global administrator's `PATCH` of a `name` is reverted on the next
  * `compose up`, with the `master.point_key.update` audit row left asserting

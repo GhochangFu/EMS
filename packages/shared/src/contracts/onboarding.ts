@@ -85,7 +85,7 @@ export const onboardingAutoOpenReasonSchema = z.enum([
  *   so the column supplies no bound at all — it is the one field of the 24 that
  *   was unbounded on every producer, including the two that parse. The number
  *   comes from the sibling route writing the *same column*:
- *   `apps/api/src/admin/point-keys/point-keys.schema.ts` bounds
+ *   `packages/shared/src/contracts/point-key-writes.ts` bounds
  *   `createPointKeyBodySchema.description` at 2000, and that schema's other
  *   four string fields (128 / 255 / 64 / 32) are exactly this one's; its
  *   `headlineRank` (F3.68) has no onboarding counterpart by design. The

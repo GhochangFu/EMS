@@ -102,7 +102,7 @@ export async function reactivateAdminLocation(id: string): Promise<AdminLocation
 /**
  * `F3.67` / ADR 0076 decision 5 — `PUT /admin/locations/:id/control-room-view`'s body.
  * Declared locally (`apps/web` does not depend on `apps/api`), mirroring
- * `putSiteControlRoomViewBodySchema` (`apps/api/src/control-room/site-control-room-view.schema.ts`).
+ * `putSiteControlRoomViewBodySchema` (`packages/shared/src/contracts/site-control-room-view-writes.ts`).
  * That schema is `.strict()` with a two-way pair rule, so the union admits exactly the three
  * shapes it accepts and no stray key.
  */
