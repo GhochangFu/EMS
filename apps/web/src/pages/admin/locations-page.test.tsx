@@ -21,6 +21,9 @@ import {
   aRefusedSaveShowsTheSentence,
 } from "./locations-page.spec";
 
+/** `F3.86` PR 3a: the form is a wizard, and a walk through its steps takes seconds under jsdom. */
+const WIZARD_WALK_MS = 20_000;
+
 /**
  * Vitest entry point — assertions live in the sibling `.spec` (ADR 0014).
  *
@@ -97,4 +100,4 @@ describe("E4.1b locations page — the Timezone field", () => {
   it("F4.204 a refused save shows the sentence, not the envelope", async () => {
     await aRefusedSaveShowsTheSentence();
   });
-});
+}, WIZARD_WALK_MS);

@@ -170,6 +170,17 @@ async function openCreate(): Promise<void> {
   await userEvent.type(screen.getByLabelText("name"), "New node");
 }
 
+/**
+ * `F3.86` PR 3a — the form is the `location.create` / `location.update` wizard: Next through
+ * the steps, then Submit on Review. Deactivate and Reactivate are Review-only wizards.
+ */
+async function submitWizard(): Promise<void> {
+  for (let step = 0; step < 5 && !screen.queryByRole("button", { name: "Submit" }); step += 1) {
+    await userEvent.click(screen.getByRole("button", { name: "Next" }));
+  }
+  await userEvent.click(screen.getByRole("button", { name: "Submit" }));
+}
+
 async function openEdit(name: string, role: AuthUser["role"] = "admin"): Promise<void> {
   stubApi();
   renderPage(role);
@@ -224,6 +235,7 @@ export async function aRefusedDeactivateShowsTheSentence(): Promise<void> {
   );
   renderPage();
   await userEvent.click(within(await rowOf("Root")).getByRole("button", { name: "Deactivate" }));
+  await submitWizard();
   const alert = await screen.findByRole("alert");
   expect(alert.textContent).toBe("Cannot deactivate a location with active child locations");
   expect(alert.textContent).not.toContain('{"');
@@ -240,6 +252,7 @@ export async function aRefusedReactivateShowsTheSentence(): Promise<void> {
   );
   renderPage();
   await userEvent.click(within(await rowOf("Inactive")).getByRole("button", { name: "Reactivate" }));
+  await submitWizard();
   expect((await screen.findByRole("alert")).textContent).toBe("The parent location is inactive");
 }
 
@@ -249,7 +262,7 @@ export async function anUntouchedCreatePostsNoParent(): Promise<void> {
   renderPage();
   await openCreate();
   await parentSelect("Sibling");
-  await userEvent.click(screen.getByRole("button", { name: "Save" }));
+  await submitWizard();
   await waitFor(() => {
     expect(api.createAdminLocation).toHaveBeenCalledTimes(1);
   });
@@ -262,7 +275,7 @@ export async function pickingAParentOnCreatePostsIt(): Promise<void> {
   renderPage();
   await openCreate();
   await userEvent.selectOptions(await parentSelect("— Child"), C);
-  await userEvent.click(screen.getByRole("button", { name: "Save" }));
+  await submitWizard();
   await waitFor(() => {
     expect(api.createAdminLocation).toHaveBeenCalledTimes(1);
   });
@@ -296,7 +309,7 @@ export async function aLocationAdminSeesTheParentAsText(): Promise<void> {
 /** P9b — a location_admin's save sends no `parentId` key (any value is a 403). */
 export async function aLocationAdminSaveSendsNoParentKey(): Promise<void> {
   await openEdit("Child", "location_admin");
-  await userEvent.click(screen.getByRole("button", { name: "Save" }));
+  await submitWizard();
   await waitFor(() => {
     expect(api.updateAdminLocation).toHaveBeenCalledTimes(1);
   });
@@ -309,7 +322,7 @@ export async function aLocationAdminSaveSendsNoParentKey(): Promise<void> {
 export async function anUntouchedParentSendsNoParentKey(): Promise<void> {
   await openEdit("Child");
   await parentSelect("Sibling");
-  await userEvent.click(screen.getByRole("button", { name: "Save" }));
+  await submitWizard();
   await waitFor(() => {
     expect(api.updateAdminLocation).toHaveBeenCalledTimes(1);
   });
@@ -321,7 +334,7 @@ export async function anUntouchedParentSendsNoParentKey(): Promise<void> {
 async function moveChildToSibling(): Promise<void> {
   await openEdit("Child");
   await userEvent.selectOptions(await parentSelect("Sibling"), S);
-  await userEvent.click(screen.getByRole("button", { name: "Save" }));
+  await submitWizard();
 }
 
 /** P11 — a changed parent opens the move dialog instead of saving. */
@@ -352,7 +365,7 @@ export async function cancelSendsNothing(): Promise<void> {
   const dialog = await screen.findByRole("dialog", { name: "Move Child under Sibling" });
   await userEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
   await waitFor(() => {
-    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(screen.queryByRole("dialog", { name: "Move Child under Sibling" })).toBeNull();
   });
   expect(api.updateAdminLocation).not.toHaveBeenCalled();
 }
@@ -421,7 +434,7 @@ export async function switchingTheOrganizationDropsThePickedParent(): Promise<vo
   await waitFor(() => {
     expect(within(screen.getByLabelText("Parent")).queryByRole("option", { name: "— Child" })).toBeNull();
   });
-  await userEvent.click(screen.getByRole("button", { name: "Save" }));
+  await submitWizard();
   await waitFor(() => {
     expect(api.createAdminLocation).toHaveBeenCalledTimes(1);
   });
@@ -437,7 +450,7 @@ export async function aCreateRefreshesTheScope(): Promise<void> {
   renderPage();
   await openCreate();
   await parentSelect("Sibling");
-  await userEvent.click(screen.getByRole("button", { name: "Save" }));
+  await submitWizard();
   await waitFor(() => {
     expect(api.createAdminLocation).toHaveBeenCalledTimes(1);
   });
