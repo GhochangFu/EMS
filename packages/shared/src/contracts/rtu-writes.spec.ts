@@ -1,6 +1,6 @@
 import { expect } from "vitest";
 
-import { updateRtuBodySchema } from "./rtus.schema";
+import { updateRtuBodySchema } from "./rtu-writes";
 
 /**
  * `F4.60` — the empty string is the **only** way to clear `rtus.rtu_code`

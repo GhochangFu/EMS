@@ -4,7 +4,7 @@ import {
   assertAnEmptyMqttTopicIsAcceptedByTheUpdateSchema,
   assertAnEmptyRtuCodeIsAcceptedByTheUpdateSchema,
   assertTheUpdateSchemaRefusesALocationId,
-} from "./rtus.schema.spec";
+} from "./rtu-writes.spec";
 
 /**
  * `F4.60` — Vitest entry point. Assertions live in the sibling `.spec`
