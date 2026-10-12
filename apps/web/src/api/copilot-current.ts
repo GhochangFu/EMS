@@ -2,7 +2,8 @@ import { calcParameterDtoSchema } from "@bms/shared/contracts";
 import type { CopilotPendingChangeDto } from "@bms/shared";
 import { catalogEntry, catalogParamsOf } from "@bms/shared/copilot";
 
-import { fetchAdminAssetCalcPoints } from "./admin/asset-points";
+import { fetchAdminAssetCalcPoints, fetchAdminAssetPoints } from "./admin/asset-points";
+import { fetchAdminAssets } from "./admin/assets";
 import { adminFetch } from "./admin/client";
 import { fetchAdminDashboardTemplate } from "./admin/dashboard-templates";
 import { fetchAdminLocations, fetchSiteControlRoomView } from "./admin/locations";
@@ -91,6 +92,43 @@ export async function fetchCopilotCurrent(change: CopilotPendingChangeDto): Prom
             stationName: found.stationName,
             ingestEnabled: found.ingestEnabled,
             meta: found.meta,
+          }
+        : null;
+    }
+    // `F3.86` PR 3b: the same rule — the asset summary carries no editable field, and no
+    // by-id read of a point mapping exists; each list is read with inactive rows included.
+    case "asset.update": {
+      const found = (await fetchAdminAssets("all")).items.find((item) => item.id === params.id);
+      return found
+        ? {
+            code: found.code,
+            name: found.name,
+            siteName: found.siteName,
+            locationId: found.locationId,
+            rtuId: found.rtuId,
+            domain: found.domain,
+            waterBalanceRole: found.waterBalanceRole,
+            rating: found.rating,
+            tripCause: found.tripCause,
+            meta: found.meta,
+          }
+        : null;
+    }
+    case "assetPoint.update": {
+      const found = (await fetchAdminAssetPoints("all")).items.find((item) => item.id === params.id);
+      // What the row stores, never the template's effective value (`asset-point-form.ts`'s rule).
+      return found
+        ? {
+            pointKey: found.pointKey,
+            sourceDataKey: found.sourceDataKey,
+            sensorCode: found.sensorCode,
+            unit: found.unit,
+            rtuId: found.rtuId,
+            scaleMultiplier: found.scaleMultiplier,
+            scaleOffset: found.scaleOffset,
+            engMin: found.engMin,
+            engMax: found.engMax,
+            qualityPolicy: found.qualityPolicy,
           }
         : null;
     }

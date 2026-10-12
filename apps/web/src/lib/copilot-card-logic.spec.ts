@@ -49,6 +49,13 @@ export function everyEntryHasInvalidations(): void {
   for (const id of ["rtu.create", "rtu.update", "rtu.deactivate", "rtu.reactivate"]) {
     expect(invalidationKeysFor(id), id).toEqual([["admin", "rtus"], ["admin", "rtu-summary"]]);
   }
+  // `F3.86` PR 3b: `assets-page.tsx`, `admin-breadcrumb.tsx` and `asset-points-page.tsx`.
+  for (const id of ["asset.create", "asset.update", "asset.deactivate", "asset.reactivate"]) {
+    expect(invalidationKeysFor(id), id).toEqual([["admin", "assets"], ["admin", "asset-summary"]]);
+  }
+  for (const id of ["assetPoint.create", "assetPoint.update", "assetPoint.deactivate", "assetPoint.reactivate"]) {
+    expect(invalidationKeysFor(id), id).toEqual([["admin", "asset-points"]]);
+  }
 }
 
 /**

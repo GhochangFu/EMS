@@ -1,6 +1,8 @@
 import { expect, vi } from "vitest";
 import type { CopilotPendingChangeDto } from "@bms/shared";
 
+import * as assetPointsApi from "./admin/asset-points";
+import * as assetsApi from "./admin/assets";
 import * as locationsApi from "./admin/locations";
 import * as rtusApi from "./admin/rtus";
 import { fetchCopilotCurrent } from "./copilot-current";
@@ -151,5 +153,111 @@ export async function theRtuCardReadsTheListedRow(): Promise<void> {
 export async function anUnknownRtuReadsNull(): Promise<void> {
   const list = vi.spyOn(rtusApi, "fetchAdminRtus").mockResolvedValue({ items: [RTU_ROW] });
   expect(await fetchCopilotCurrent(updateChange("rtu.update", `/api/v1/admin/rtus/${UNKNOWN}`))).toBeNull();
+  expect(list).toHaveBeenCalledTimes(1);
+}
+
+/*
+ * `F3.86` PR 3b — the asset and point-mapping edit cards, by the same rule:
+ * the listed row (inactive included), as the update body's field names.
+ */
+
+const ASSET = "77777777-7777-4777-8777-777777777777";
+const POINT = "88888888-8888-4888-8888-888888888888";
+
+const ASSET_ROW = {
+  id: ASSET,
+  code: "PUMP-1",
+  name: "Feed pump",
+  siteName: "Lotapata",
+  locationId: LOCATION,
+  locationName: "Lotapata",
+  organizationCode: "PHE",
+  rtuId: RTU,
+  rtuDisplayName: "Pump RTU",
+  domain: "water",
+  waterBalanceRole: "intake",
+  rating: "630A",
+  tripCause: null,
+  active: false,
+  templateId: null,
+  templateCode: null,
+  templateVersion: null,
+  meta: { tag: "p1" },
+  createdAt: "2026-10-01T00:00:00.000Z",
+};
+
+const POINT_ROW = {
+  id: POINT,
+  assetId: ASSET,
+  assetCode: "PUMP-1",
+  assetName: "Feed pump",
+  locationId: LOCATION,
+  locationName: "Lotapata",
+  pointKey: "kw",
+  sourceDataKey: "pump1_kw",
+  sensorCode: null,
+  unit: "kW",
+  active: true,
+  sourceKind: "measured" as const,
+  rtuId: RTU,
+  createdAt: "2026-10-01T00:00:00.000Z",
+  scaleMultiplier: 0.1,
+  scaleOffset: null,
+  engMin: 0,
+  engMax: null,
+  qualityPolicy: null,
+  // The template's effective values are never the card's Now (the row stores `null`).
+  templateDefaults: { scaleMultiplier: 1, scaleOffset: 5, engMin: null, engMax: 900, qualityPolicy: "discard_bad" as const },
+};
+
+/** An asset edit card's Now values: the listed row, as `updateAssetBodySchema`'s fields. */
+export async function theAssetCardReadsTheListedRow(): Promise<void> {
+  const list = vi.spyOn(assetsApi, "fetchAdminAssets").mockResolvedValue({ items: [ASSET_ROW] });
+
+  expect(await fetchCopilotCurrent(updateChange("asset.update", `/api/v1/admin/assets/${ASSET}`))).toEqual({
+    code: "PUMP-1",
+    name: "Feed pump",
+    siteName: "Lotapata",
+    locationId: LOCATION,
+    rtuId: RTU,
+    domain: "water",
+    waterBalanceRole: "intake",
+    rating: "630A",
+    tripCause: null,
+    meta: { tag: "p1" },
+  });
+  expect(list).toHaveBeenCalledWith("all");
+}
+
+/** An asset id the list does not hold reads as no record. */
+export async function anUnknownAssetReadsNull(): Promise<void> {
+  const list = vi.spyOn(assetsApi, "fetchAdminAssets").mockResolvedValue({ items: [ASSET_ROW] });
+  expect(await fetchCopilotCurrent(updateChange("asset.update", `/api/v1/admin/assets/${UNKNOWN}`))).toBeNull();
+  expect(list).toHaveBeenCalledTimes(1);
+}
+
+/** A point-mapping edit card's Now values: what the row stores, never the template's defaults. */
+export async function thePointCardReadsTheStoredRow(): Promise<void> {
+  const list = vi.spyOn(assetPointsApi, "fetchAdminAssetPoints").mockResolvedValue({ items: [POINT_ROW] });
+
+  expect(await fetchCopilotCurrent(updateChange("assetPoint.update", `/api/v1/admin/asset-points/${POINT}`))).toEqual({
+    pointKey: "kw",
+    sourceDataKey: "pump1_kw",
+    sensorCode: null,
+    unit: "kW",
+    rtuId: RTU,
+    scaleMultiplier: 0.1,
+    scaleOffset: null,
+    engMin: 0,
+    engMax: null,
+    qualityPolicy: null,
+  });
+  expect(list).toHaveBeenCalledWith("all");
+}
+
+/** A point-mapping id the list does not hold reads as no record. */
+export async function anUnknownPointReadsNull(): Promise<void> {
+  const list = vi.spyOn(assetPointsApi, "fetchAdminAssetPoints").mockResolvedValue({ items: [POINT_ROW] });
+  expect(await fetchCopilotCurrent(updateChange("assetPoint.update", `/api/v1/admin/asset-points/${UNKNOWN}`))).toBeNull();
   expect(list).toHaveBeenCalledTimes(1);
 }

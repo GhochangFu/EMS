@@ -516,8 +516,13 @@ export class CopilotTargetResolver implements CopilotTargets {
         if (scope.locationId !== null) return this.access.canManageLocation(user, scope.locationId);
         return this.access.canManageOrganization(user, found.organizationId);
       }
+      // `F3.86` PR 3b: `AssetsAdminService.update` — a body that names `locationId` moves the
+      // asset, and the route checks the new site too (its own truthiness test, mirrored).
+      // A create under an asset (`parent`) passes `{}`; `calcOverride.set`'s body has no `locationId`.
       case "asset":
-        return this.access.canManageAsset(user, id);
+        if (!(await this.access.canManageAsset(user, id))) return false;
+        if (!body.locationId) return true;
+        return this.access.canManageLocation(user, body.locationId as string);
     }
   }
 

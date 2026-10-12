@@ -14,11 +14,12 @@ import {
 import { ZodError } from "zod";
 
 import type { JwtPayload } from "@bms/shared";
+// `F3.86` PR 3b — the copilot catalog's bodies, by identity (`tests/f3.85-catalog-coverage`).
+import { createAssetBodySchema, updateAssetBodySchema } from "@bms/shared";
 
 import { CurrentUser } from "../../auth/current-user.decorator";
 import { JwtAuthGuard } from "../../auth/jwt-auth.guard";
 import { idParamSchema, parseActiveFilter } from "../admin.schema";
-import { createAssetBodySchema, updateAssetBodySchema } from "./assets.schema";
 import { AssetsAdminService } from "./assets.service";
 
 @Controller("admin/assets")
