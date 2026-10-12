@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useEffect, useRef, useState, type FormEvent, type ReactNode, type RefObject } from "react";
+import { useState, type FormEvent, type ReactNode } from "react";
 import { userRoleSchema } from "@bms/shared/contracts";
 import type { AdminUserDto, UpdateUserBody, UserRole, UserWriteResponse } from "@bms/shared";
 
@@ -15,7 +15,16 @@ import {
 } from "../../api/admin/users";
 import { isOidcEnabled } from "../../api/oidc";
 import { MasterDataLayout } from "../../components/admin/master-data-layout";
-import { ConfirmDialog } from "../../components/confirm-dialog";
+import {
+  CreateUserWizard,
+  MIN_TEMPORARY_PASSWORD_LENGTH,
+  OrganizationSelect,
+  PASSWORD_TOO_SHORT_SENTENCE,
+  PasswordField,
+  UpdateUserWizard,
+  UserStatusWizard,
+  usePasswordRef,
+} from "../../components/admin/user-wizards";
 import { PageHeader } from "../../components/page-header";
 import { SectionCard } from "../../components/section-card";
 import { StatusPill } from "../../components/status-pill";
@@ -43,10 +52,8 @@ export const LOCAL_MODE_SENTENCE = "User administration needs Keycloak; this dep
 export const UNLINKED_SENTENCE = "This user must sign in once before it can be changed.";
 
 /** The shared contract's own floor (`temporaryPasswordSchema`), checked before any request. */
-export const MIN_TEMPORARY_PASSWORD_LENGTH = 12;
-const MAX_TEMPORARY_PASSWORD_LENGTH = 128;
+export { MIN_TEMPORARY_PASSWORD_LENGTH };
 
-const PASSWORD_TOO_SHORT_SENTENCE = `The temporary password must be at least ${MIN_TEMPORARY_PASSWORD_LENGTH} characters.`;
 const NO_ACCESS_SENTENCE =
   "User administration is open to administrators and organization administrators only.";
 
@@ -66,7 +73,7 @@ export function UsersAdminPage({ user }: UsersAdminPageProps) {
 }
 
 /** Which row action a user write is, so its button can name itself while it is in flight. */
-type RowActionKind = "edit" | "deactivate" | "reactivate" | "password";
+type RowActionKind = "edit" | "role" | "deactivate" | "reactivate" | "password";
 type UserWrite = {
   /** The row and action in flight; null for a create, which has no row. */
   row: { userId: string; action: RowActionKind } | null;
@@ -79,6 +86,12 @@ const ROW_ACTION_TEXT: Record<
   { label: string; text: string; pendingLabel: string; pendingText: string }
 > = {
   edit: { label: "Edit", text: "Edit", pendingLabel: "Saving", pendingText: "Saving…" },
+  role: {
+    label: "Global role for",
+    text: "Global role",
+    pendingLabel: "Saving the global role for",
+    pendingText: "Saving…",
+  },
   deactivate: {
     label: "Deactivate",
     text: "Deactivate",
@@ -99,9 +112,17 @@ const ROW_ACTION_TEXT: Record<
   },
 };
 
+/**
+ * `F3.86` PR 4 (plan §6.5, ruling Q9): create, a non-`admin` row's edit, deactivate and reactivate
+ * are wizards (`components/admin/user-wizards.tsx`). `roleModal` is the old, non-wizard edit form:
+ * an `admin` row's Edit, and the global admin's "Global role" action on any other row — the
+ * promotion to `admin` the wizards never offer (ADR 0099 decision 3, "the Users page keeps it").
+ */
 type Modal =
   | { kind: "create" }
   | { kind: "edit"; target: AdminUserDto }
+  | { kind: "roleModal"; target: AdminUserDto; action: "edit" | "role" }
+  | { kind: "deactivate" | "reactivate"; target: AdminUserDto }
   | { kind: "password"; target: AdminUserDto };
 
 function UsersAdminScreen({ user }: UsersAdminPageProps) {
@@ -112,8 +133,6 @@ function UsersAdminScreen({ user }: UsersAdminPageProps) {
   const [modalFeedback, setModalFeedback] = useState<Feedback | null>(null);
   const [pageFeedback, setPageFeedback] = useState<Feedback | null>(null);
   const [grantsFor, setGrantsFor] = useState<AdminUserDto | null>(null);
-  // `F4.202`: Deactivate ends the user's sessions, so it asks first. Reactivate does not.
-  const [confirmDeactivate, setConfirmDeactivate] = useState<AdminUserDto | null>(null);
 
   const usersQ = useQuery({ queryKey: adminUsersQueryKey, queryFn: fetchAdminUsers });
   const orgsQ = useQuery({
@@ -268,17 +287,21 @@ function UsersAdminScreen({ user }: UsersAdminPageProps) {
                       <div className="flex flex-wrap gap-2">
                         {rowAction(row, "edit", () => {
                           setModalFeedback(null);
-                          setModal({ kind: "edit", target: row });
+                          setModal(
+                            row.role === "admin"
+                              ? { kind: "roleModal", target: row, action: "edit" }
+                              : { kind: "edit", target: row },
+                          );
                         })}
-                        {row.disabledAt
-                          ? rowAction(row, "reactivate", () => {
-                              setPageFeedback(null);
-                              write.mutate({
-                                row: { userId: row.id, action: "reactivate" },
-                                run: () => reactivateAdminUser(row.id),
-                              });
+                        {user.role === "admin" && row.role !== "admin"
+                          ? rowAction(row, "role", () => {
+                              setModalFeedback(null);
+                              setModal({ kind: "roleModal", target: row, action: "role" });
                             })
-                          : rowAction(row, "deactivate", () => setConfirmDeactivate(row))}
+                          : null}
+                        {row.disabledAt
+                          ? rowAction(row, "reactivate", () => setModal({ kind: "reactivate", target: row }))
+                          : rowAction(row, "deactivate", () => setModal({ kind: "deactivate", target: row }))}
                         {rowAction(row, "password", () => {
                           setModalFeedback(null);
                           setModal({ kind: "password", target: row });
@@ -307,8 +330,7 @@ function UsersAdminScreen({ user }: UsersAdminPageProps) {
       </SectionCard>
 
       {modal?.kind === "create" ? (
-        <CreateUserModal
-          caller={user}
+        <CreateUserWizard
           organizations={organizations}
           pending={write.isPending}
           feedback={modalFeedback}
@@ -317,10 +339,10 @@ function UsersAdminScreen({ user }: UsersAdminPageProps) {
         />
       ) : null}
       {modal?.kind === "edit" ? (
-        <EditUserModal
-          caller={user}
+        <UpdateUserWizard
+          key={modal.target.id}
           target={modal.target}
-          organizations={organizations}
+          organizationName={orgName(modal.target.organizationId)}
           pending={write.isPending}
           feedback={modalFeedback}
           onCancel={closeModal}
@@ -330,6 +352,39 @@ function UsersAdminScreen({ user }: UsersAdminPageProps) {
               run: () => updateAdminUser(modal.target.id, body),
             })
           }
+        />
+      ) : null}
+      {modal?.kind === "roleModal" ? (
+        <EditUserModal
+          caller={user}
+          target={modal.target}
+          organizations={organizations}
+          pending={write.isPending}
+          feedback={modalFeedback}
+          onCancel={closeModal}
+          onSubmit={(body) =>
+            write.mutate({
+              row: { userId: modal.target.id, action: modal.action },
+              run: () => updateAdminUser(modal.target.id, body),
+            })
+          }
+        />
+      ) : null}
+      {modal?.kind === "deactivate" || modal?.kind === "reactivate" ? (
+        <UserStatusWizard
+          action={modal.kind}
+          target={modal.target}
+          onCancel={closeModal}
+          onSubmit={() => {
+            // The wizard closes in the click that starts the write; the row shows it in flight.
+            const { kind, target } = modal;
+            closeModal();
+            setPageFeedback(null);
+            write.mutate({
+              row: { userId: target.id, action: kind },
+              run: () => (kind === "deactivate" ? deactivateAdminUser(target.id) : reactivateAdminUser(target.id)),
+            });
+          }}
         />
       ) : null}
       {modal?.kind === "password" ? (
@@ -344,20 +399,6 @@ function UsersAdminScreen({ user }: UsersAdminPageProps) {
               run: () => setAdminUserTemporaryPassword(modal.target.id, password),
             })
           }
-        />
-      ) : null}
-      {confirmDeactivate ? (
-        <ConfirmDialog
-          title={`Deactivate ${confirmDeactivate.displayName}`}
-          body="This ends the user's sessions and closes its live connections. You can reactivate the user later."
-          confirmLabel="Confirm deactivate"
-          onClose={() => setConfirmDeactivate(null)}
-          onConfirm={() => {
-            const { id } = confirmDeactivate;
-            setConfirmDeactivate(null);
-            setPageFeedback(null);
-            write.mutate({ row: { userId: id, action: "deactivate" }, run: () => deactivateAdminUser(id) });
-          }}
         />
       ) : null}
       {grantsFor ? (
@@ -422,174 +463,15 @@ function ModalButtons({
   );
 }
 
-/** The roles a caller may hand out: only the global `admin` may create another `admin`. */
+/** The roles the old edit form offers: only the global `admin` may hand out `admin`. */
 function assignableRoles(caller: AuthUser): readonly UserRole[] {
   return userRoleSchema.options.filter((role) => role !== "admin" || caller.role === "admin");
 }
 
-function OrganizationSelect({
-  organizations,
-  value,
-  onChange,
-}: {
-  organizations: Organizations;
-  value: string;
-  onChange: (id: string) => void;
-}) {
-  return (
-    <label className={labelClass}>
-      Organization
-      <select
-        className={fieldClass}
-        value={value}
-        required
-        onChange={(event) => onChange(event.target.value)}
-      >
-        <option value="">Select an organization</option>
-        {organizations.map((org) => (
-          <option key={org.id} value={org.id}>
-            {org.name}
-          </option>
-        ))}
-      </select>
-    </label>
-  );
-}
-
 /**
- * The password input is uncontrolled: no `value` prop, so React never mirrors the secret into the
- * `value` attribute and the markup never holds it. The modal reads it through the ref on submit.
+ * The old, non-wizard edit form (`F3.78`): an `admin` row's Edit, and the global admin's
+ * "Global role" action — the only path that promotes to, or demotes from, the global `admin` role.
  */
-function PasswordField({ inputRef }: { inputRef: RefObject<HTMLInputElement> }) {
-  return (
-    <label className={labelClass}>
-      Temporary password
-      <input
-        type="password"
-        autoComplete="new-password"
-        className={fieldClass}
-        maxLength={MAX_TEMPORARY_PASSWORD_LENGTH}
-        ref={inputRef}
-      />
-      <span className="mt-1 block font-normal">
-        At least {MIN_TEMPORARY_PASSWORD_LENGTH} characters. The user must change it at the next sign-in.
-      </span>
-    </label>
-  );
-}
-
-/**
- * The password input's ref, emptied whenever the server refuses the write. The modal stays open on a
- * refusal, so without this the typed secret would outlive the failed request.
- */
-function usePasswordRef(feedback: Feedback | null): RefObject<HTMLInputElement> {
-  const ref = useRef<HTMLInputElement>(null);
-  useEffect(() => {
-    if (feedback && ref.current) {
-      ref.current.value = "";
-    }
-  }, [feedback]);
-  return ref;
-}
-
-function CreateUserModal({
-  caller,
-  organizations,
-  pending,
-  feedback,
-  onCancel,
-  onSubmit,
-}: {
-  caller: AuthUser;
-  organizations: Organizations;
-  pending: boolean;
-  feedback: Feedback | null;
-  onCancel: () => void;
-  onSubmit: (input: {
-    email: string;
-    displayName: string;
-    role: UserRole;
-    organizationId: string | null;
-    temporaryPassword: string;
-  }) => void;
-}) {
-  const [email, setEmail] = useState("");
-  const [displayName, setDisplayName] = useState("");
-  const [role, setRole] = useState<UserRole>("viewer");
-  const [organizationId, setOrganizationId] = useState("");
-  const passwordRef = usePasswordRef(feedback);
-  const [localError, setLocalError] = useState<string | null>(null);
-  const chosenOrg = organizationId || (organizations.length === 1 ? (organizations[0]?.id ?? "") : "");
-
-  function handleSubmit(event: FormEvent): void {
-    event.preventDefault();
-    const password = passwordRef.current?.value ?? "";
-    if (password.length < MIN_TEMPORARY_PASSWORD_LENGTH) {
-      setLocalError(PASSWORD_TOO_SHORT_SENTENCE);
-      return;
-    }
-    setLocalError(null);
-    onSubmit({
-      email,
-      displayName,
-      role,
-      organizationId: role === "admin" ? null : chosenOrg,
-      temporaryPassword: password,
-    });
-  }
-
-  return (
-    <ModalFrame title="Create user" onSubmit={handleSubmit}>
-      <div className="mt-3 space-y-3">
-        <label className={labelClass}>
-          Email
-          <input
-            type="email"
-            className={fieldClass}
-            value={email}
-            required
-            onChange={(event) => setEmail(event.target.value)}
-          />
-        </label>
-        <label className={labelClass}>
-          Display name
-          <input
-            className={fieldClass}
-            value={displayName}
-            required
-            onChange={(event) => setDisplayName(event.target.value)}
-          />
-        </label>
-        <label className={labelClass}>
-          Role
-          <select
-            className={fieldClass}
-            value={role}
-            onChange={(event) => setRole(event.target.value as UserRole)}
-          >
-            {assignableRoles(caller).map((value) => (
-              <option key={value} value={value}>
-                {roleLabel(value)}
-              </option>
-            ))}
-          </select>
-        </label>
-        {role === "admin" ? null : (
-          <OrganizationSelect organizations={organizations} value={chosenOrg} onChange={setOrganizationId} />
-        )}
-        <PasswordField inputRef={passwordRef} />
-        {localError ? (
-          <p role="alert" className="text-xs text-critical-ink">
-            {localError}
-          </p>
-        ) : null}
-        <FeedbackBox feedback={feedback} />
-      </div>
-      <ModalButtons pending={pending} submitLabel="Create" onCancel={onCancel} />
-    </ModalFrame>
-  );
-}
-
 function EditUserModal({
   caller,
   target,

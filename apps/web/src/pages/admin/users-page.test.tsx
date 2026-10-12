@@ -20,7 +20,6 @@ import {
   aPendingTemporaryPasswordAnnouncesItsRow,
   aPendingRemoveAnnouncesOnlyItsOwnGrant,
   aSuccessfulWriteReadsTheListAgain,
-  aGlobalAdminMayCreateAnAdmin,
   addingAGrantSendsItsKindAndTarget,
   anIneffectiveGrantShowsTheNote,
   anOrganizationAdminIsNotOfferedAdmin,
@@ -51,7 +50,6 @@ import {
   cancellingGrantRemoveSendsNothing,
   confirmingDeactivateSendsOneRequest,
   confirmingGrantRemoveSendsOneRequest,
-  reactivateSendsAtOnce,
   temporaryPasswordOpensNoSecondConfirm,
   theDeactivateConfirmNamesTheUserAndTheResult,
   unlinkedEditIsDisabledWithTheSentence,
@@ -189,10 +187,6 @@ describe("F3.78 users page", () => {
     await addingAGrantSendsItsKindAndTarget();
   });
 
-  it("offers the admin role to a global admin", async () => {
-    await aGlobalAdminMayCreateAnAdmin();
-  });
-
   it("does not offer the admin role to an organization_admin", async () => {
     await anOrganizationAdminIsNotOfferedAdmin();
   });
@@ -267,10 +261,6 @@ describe("F3.78 users page", () => {
 
   it("F4.202: confirming a grant's Remove sends one request", async () => {
     await confirmingGrantRemoveSendsOneRequest();
-  });
-
-  it("F4.202: Reactivate sends at once, with no confirm", async () => {
-    await reactivateSendsAtOnce();
   });
 
   it("F4.202: Temporary password keeps its modal and opens no second confirm", async () => {

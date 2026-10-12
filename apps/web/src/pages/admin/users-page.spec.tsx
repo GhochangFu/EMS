@@ -27,19 +27,19 @@ import * as copilotApi from "../../api/copilot";
 const LOCAL_SENTENCE = "User administration needs Keycloak; this deployment runs local sign-in.";
 const UNLINKED_SENTENCE = "This user must sign in once before it can be changed.";
 
-const orgAdmin = { id: "u-oa", email: "oa@bms.local", displayName: "Org Admin", role: "organization_admin" } as unknown as AuthUser;
-const globalAdmin = { id: "u-ga", email: "ga@bms.local", displayName: "Global Admin", role: "admin" } as unknown as AuthUser;
+export const orgAdmin = { id: "u-oa", email: "oa@bms.local", displayName: "Org Admin", role: "organization_admin" } as unknown as AuthUser;
+export const globalAdmin = { id: "u-ga", email: "ga@bms.local", displayName: "Global Admin", role: "admin" } as unknown as AuthUser;
 const locationAdmin = { id: "u-la", email: "la@bms.local", displayName: "Loc Admin", role: "location_admin" } as unknown as AuthUser;
 
-const ORG_ID = "33333333-3333-3333-3333-333333333333";
-const LINKED_ID = "11111111-1111-1111-1111-111111111111";
+export const ORG_ID = "33333333-3333-3333-3333-333333333333";
+export const LINKED_ID = "11111111-1111-1111-1111-111111111111";
 const UNLINKED_ID = "22222222-2222-2222-2222-222222222222";
-const DEACTIVATED_ID = "44444444-4444-4444-4444-444444444444";
+export const DEACTIVATED_ID = "44444444-4444-4444-4444-444444444444";
 const ORG_ADMIN_ROW_ID = "77777777-7777-7777-7777-777777777777";
-const GRANT_A_ID = "aaaaaaaa-0000-0000-0000-00000000000a";
+export const GRANT_A_ID = "aaaaaaaa-0000-0000-0000-00000000000a";
 const GRANT_B_ID = "bbbbbbbb-0000-0000-0000-00000000000b";
 
-function userRow(id: string, displayName: string, over: Record<string, unknown> = {}) {
+export function userRow(id: string, displayName: string, over: Record<string, unknown> = {}) {
   return {
     id,
     email: `${displayName.split(" ")[0]?.toLowerCase()}@example.test`,
@@ -54,7 +54,7 @@ function userRow(id: string, displayName: string, over: Record<string, unknown> 
   };
 }
 
-const USERS = {
+export const USERS = {
   items: [
     userRow(LINKED_ID, "Ada Linked"),
     userRow(UNLINKED_ID, "Uma Unlinked", { linked: false }),
@@ -81,18 +81,22 @@ function grant(id: string, targetName: string, effective: boolean) {
   };
 }
 
-const GRANTS = { items: [grant(GRANT_A_ID, "Plant North", true), grant(GRANT_B_ID, "Plant South", false)] };
+export const GRANTS = { items: [grant(GRANT_A_ID, "Plant North", true), grant(GRANT_B_ID, "Plant South", false)] };
 
-function written(user: Record<string, unknown>, followUp: string | null = null) {
+export function written(user: Record<string, unknown>, followUp: string | null = null) {
   return { user, followUp };
 }
 
-type Call = { path: string; method: string; body: unknown };
+export type Call = { path: string; method: string; body: unknown };
+/** `F3.86` PR 4: each request's headers, beside `calls` (whose exact shape the older cases compare). */
+let sentHeaders: { path: string; method: string; headers: Headers }[] = [];
+/** The headers of every request since the last `stubFetch`. */
+export const headersSent = () => sentHeaders;
 type Reply = { status: number; body: unknown };
 type Routes = Record<string, Reply | (() => Reply)>;
 
 /** Replaces `fetch`; `routes` keys are `"METHOD /api/v1/path"`. Returns the call log. */
-function stubFetch(routes: Routes = {}): Call[] {
+export function stubFetch(routes: Routes = {}): Call[] {
   const defaults: Routes = {
     "GET /api/v1/admin/users": { status: 200, body: USERS },
     "GET /api/v1/admin/organizations": { status: 200, body: ORGS },
@@ -100,12 +104,14 @@ function stubFetch(routes: Routes = {}): Call[] {
   };
   const table = { ...defaults, ...routes };
   const calls: Call[] = [];
+  sentHeaders = [];
   vi.stubGlobal(
     "fetch",
     vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const path = new URL(String(input)).pathname;
       const method = init?.method ?? "GET";
       calls.push({ path, method, body: typeof init?.body === "string" ? JSON.parse(init.body) : undefined });
+      sentHeaders.push({ path, method, headers: new Headers(init?.headers) });
       const hit = table[`${method} ${path}`];
       const reply = typeof hit === "function" ? hit() : (hit ?? { status: 404, body: { message: "unstubbed" } });
       return new Response(JSON.stringify(reply.body), { status: reply.status, headers: { "Content-Type": "application/json" } });
@@ -114,13 +120,13 @@ function stubFetch(routes: Routes = {}): Call[] {
   return calls;
 }
 
-function stubOidc(): void {
+export function stubOidc(): void {
   vi.stubEnv("VITE_AUTH_MODE", "oidc");
   vi.stubEnv("VITE_OIDC_ISSUER", "http://keycloak.test/realms/bms");
   vi.stubEnv("VITE_OIDC_CLIENT_ID", "bms-web");
 }
 
-function renderPage(as: AuthUser = orgAdmin): void {
+export function renderPage(as: AuthUser = orgAdmin): void {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   vi.spyOn(copilotApi, "fetchCopilotStatus").mockResolvedValue({ available: false, configured: false });
   render(
@@ -132,7 +138,7 @@ function renderPage(as: AuthUser = orgAdmin): void {
   );
 }
 
-const writes = (calls: Call[]) => calls.filter((call) => call.method !== "GET");
+export const writes = (calls: Call[]) => calls.filter((call) => call.method !== "GET");
 const listReads = (calls: Call[]) => calls.filter((call) => call.method === "GET" && call.path === "/api/v1/admin/users");
 
 async function openPasswordModal(name = "Ada Linked") {
@@ -141,7 +147,7 @@ async function openPasswordModal(name = "Ada Linked") {
   return { dialog, input: within(dialog).getByLabelText(/Temporary password/) as HTMLInputElement };
 }
 
-async function openCreateModal() {
+export async function openCreateModal() {
   await userEvent.click(await screen.findByRole("button", { name: "Create user" }));
   return screen.findByRole("dialog", { name: "Create user" });
 }
@@ -153,27 +159,70 @@ async function openCreateModal() {
 async function deactivateAndConfirm(name: string): Promise<void> {
   await userEvent.click(await screen.findByRole("button", { name: `Deactivate ${name}` }));
   const dialog = await screen.findByRole("dialog", { name: `Deactivate ${name}` });
-  await userEvent.click(within(dialog).getByRole("button", { name: "Confirm deactivate" }));
+  // `F3.86` PR 4 (ruling Q9): the confirm is a Review-only wizard; its Submit sends.
+  await userEvent.click(within(dialog).getByRole("button", { name: "Submit" }));
+}
+
+/** `F3.86` PR 4 (ruling Q9): Reactivate is a Review-only wizard too. */
+async function reactivateAndSubmit(name: string): Promise<void> {
+  await userEvent.click(await screen.findByRole("button", { name: `Reactivate ${name}` }));
+  const dialog = await screen.findByRole("dialog", { name: `Reactivate ${name}` });
+  await userEvent.click(within(dialog).getByRole("button", { name: "Submit" }));
 }
 
 /** `F4.202`: a grant's Remove asks first, in a dialog outside the drawer and above it. */
-async function removeGrantAndConfirm(drawer: HTMLElement, grantName: string): Promise<void> {
+export async function removeGrantAndConfirm(drawer: HTMLElement, grantName: string): Promise<void> {
   await userEvent.click(await within(drawer).findByRole("button", { name: `Remove ${grantName}` }));
   const dialog = await screen.findByRole("dialog", { name: `Remove ${grantName}` });
-  await userEvent.click(within(dialog).getByRole("button", { name: "Confirm remove" }));
+  await userEvent.click(within(dialog).getByRole("button", { name: "Submit" }));
 }
 
 /**
  * A request starts a tick after the click that asked for it, so "nothing was sent" is read only
  * after the timers have had a chance to run.
  */
-const settle = () => new Promise((resolve) => setTimeout(resolve, 50));
+export const settle = () => new Promise((resolve) => setTimeout(resolve, 50));
 
-async function fillCreate(dialog: HTMLElement, password: string): Promise<void> {
+/**
+ * `F3.86` PR 4: the create wizard — Account, Next, Role, Next — to its Review step, then the
+ * temporary password, which is not a step: its input sits below the wizard for the modal's life.
+ */
+export async function fillCreate(dialog: HTMLElement, password: string): Promise<void> {
   await userEvent.type(within(dialog).getByLabelText("Email"), "new.person@example.test");
   await userEvent.type(within(dialog).getByLabelText("Display name"), "New Person");
+  await userEvent.click(within(dialog).getByRole("button", { name: "Next" }));
   await userEvent.selectOptions(within(dialog).getByLabelText("Organization"), ORG_ID);
+  await userEvent.click(within(dialog).getByRole("button", { name: "Next" }));
+  await within(dialog).findByRole("region", { name: "Create a user" });
   await userEvent.type(within(dialog).getByLabelText(/Temporary password/), password);
+}
+
+/** The create wizard's Role step (the Account step's Next does not check an empty field). */
+export async function openCreateRoleStep(): Promise<HTMLElement> {
+  const dialog = await openCreateModal();
+  await userEvent.click(within(dialog).getByRole("button", { name: "Next" }));
+  return dialog;
+}
+
+/** `F3.86` PR 4: a non-`admin` row's Edit is the `user.update` wizard; returns its dialog. */
+export async function openEditWizard(name = "Ada Linked"): Promise<HTMLElement> {
+  await userEvent.click(await screen.findByRole("button", { name: `Edit ${name}` }));
+  return screen.findByRole("dialog", { name: `Edit ${name}` });
+}
+
+/** Account → Role → Review, then Submit. */
+export async function submitEditWizard(dialog: HTMLElement): Promise<void> {
+  await userEvent.click(within(dialog).getByRole("button", { name: "Next" }));
+  await userEvent.click(within(dialog).getByRole("button", { name: "Next" }));
+  await userEvent.click(await within(dialog).findByRole("button", { name: "Submit" }));
+}
+
+/** `F3.86` PR 4: the drawer's add-grant wizard, Grant → Review. */
+export async function addOrganizationGrant(drawer: HTMLElement): Promise<void> {
+  await userEvent.selectOptions(within(drawer).getByLabelText("Grant kind"), "organization");
+  await within(drawer).findByRole("option", { name: "Acme Works" });
+  await userEvent.selectOptions(within(drawer).getByLabelText("Grant target"), ORG_ID);
+  await userEvent.click(within(drawer).getByRole("button", { name: "Next" }));
 }
 
 /** Tab — visible to an organization_admin, absent for a location_admin (whose page also refuses). */
@@ -269,7 +318,7 @@ export async function refusesAShortPasswordOnCreateBeforeFetch(): Promise<void> 
   renderPage();
   const dialog = await openCreateModal();
   await fillCreate(dialog, "elevenchars");
-  await userEvent.click(within(dialog).getByRole("button", { name: "Create" }));
+  await userEvent.click(within(dialog).getByRole("button", { name: "Submit" }));
   expect(await within(dialog).findByText("The temporary password must be at least 12 characters.")).toBeInTheDocument();
   expect(writes(calls)).toEqual([]);
 }
@@ -325,7 +374,7 @@ export async function rendersKeycloakEnableFailed(): Promise<void> {
     [`POST /api/v1/admin/users/${DEACTIVATED_ID}/reactivate`]: { status: 200, body: written(USERS.items[2] as Record<string, unknown>, "keycloak_enable_failed") },
   });
   renderPage();
-  await userEvent.click(await screen.findByRole("button", { name: "Reactivate Dev Deactivated" }));
+  await reactivateAndSubmit("Dev Deactivated");
   await expectFollowUp(ENABLE, without(ENABLE));
 }
 
@@ -363,7 +412,7 @@ export async function rendersKeycloakOrphanDisabledAccount(): Promise<void> {
   renderPage();
   const dialog = await openCreateModal();
   await fillCreate(dialog, "twelvechars!");
-  await userEvent.click(within(dialog).getByRole("button", { name: "Create" }));
+  await userEvent.click(within(dialog).getByRole("button", { name: "Submit" }));
   await expectFollowUp(ORPHAN, without(ORPHAN));
 }
 
@@ -378,7 +427,7 @@ export async function rendersKeycloakCreateOutcomeUnknown(): Promise<void> {
   renderPage();
   const dialog = await openCreateModal();
   await fillCreate(dialog, "twelvechars!");
-  await userEvent.click(within(dialog).getByRole("button", { name: "Create" }));
+  await userEvent.click(within(dialog).getByRole("button", { name: "Submit" }));
   await expectFollowUp(UNKNOWN, without(UNKNOWN));
 }
 
@@ -391,12 +440,11 @@ export async function a503ShowsASentenceAndWritesNothingElse(): Promise<void> {
     },
   });
   renderPage();
-  await userEvent.click(await screen.findByRole("button", { name: "Edit Ada Linked" }));
-  const dialog = await screen.findByRole("dialog", { name: "Edit Ada Linked" });
+  const dialog = await openEditWizard();
   const name = within(dialog).getByLabelText("Display name");
   await userEvent.clear(name);
   await userEvent.type(name, "Ada Renamed");
-  await userEvent.click(within(dialog).getByRole("button", { name: "Save" }));
+  await submitEditWizard(dialog);
   expect(await within(dialog).findByText(/Keycloak is not configured on the server/)).toBeInTheDocument();
   // Exactly the one refused write, and the list was not read again.
   expect(writes(calls)).toHaveLength(1);
@@ -483,7 +531,7 @@ export async function aFailedCreateLeavesNoPasswordInTheMarkup(): Promise<void> 
   renderPage();
   const dialog = await openCreateModal();
   await fillCreate(dialog, secret);
-  await userEvent.click(within(dialog).getByRole("button", { name: "Create" }));
+  await userEvent.click(within(dialog).getByRole("button", { name: "Submit" }));
   expect(await within(dialog).findByText("The password does not meet the sign-in policy")).toBeInTheDocument();
   expect(document.body.innerHTML).not.toContain(secret);
 }
@@ -499,11 +547,12 @@ export async function aFailedCreateClearsThePasswordInput(): Promise<void> {
   renderPage();
   const dialog = await openCreateModal();
   await fillCreate(dialog, "Correct-Horse-9!");
-  await userEvent.click(within(dialog).getByRole("button", { name: "Create" }));
+  await userEvent.click(within(dialog).getByRole("button", { name: "Submit" }));
   expect(await within(dialog).findByText("The password does not meet the sign-in policy")).toBeInTheDocument();
   expect((within(dialog).getByLabelText(/Temporary password/) as HTMLInputElement).value).toBe("");
-  // The rest of the form survives, so the admin corrects only the password.
-  expect((within(dialog).getByLabelText("Email") as HTMLInputElement).value).toBe("new.person@example.test");
+  // The rest of the form survives, so the admin corrects only the password: the wizard is still
+  // on Review, and its card still holds the email (`F3.86` PR 4 — the Email input is a step behind).
+  expect(within(dialog).getByRole("region", { name: "Create a user" })).toHaveTextContent("new.person@example.test");
 }
 
 export async function a404ShowsANotFoundSentence(): Promise<void> {
@@ -516,7 +565,7 @@ export async function a404ShowsANotFoundSentence(): Promise<void> {
   expect(await screen.findByText("This user was not found, or it is outside your scope.")).toBeInTheDocument();
 }
 
-async function openGrants() {
+export async function openGrants() {
   await userEvent.click(await screen.findByRole("button", { name: "Grants for Ada Linked" }));
   return screen.findByRole("dialog", { name: "Grants for Ada Linked" });
 }
@@ -588,11 +637,10 @@ export async function aPendingAddAnnouncesItself(): Promise<void> {
   );
   renderPage();
   const drawer = await openGrants();
-  await userEvent.selectOptions(within(drawer).getByLabelText("Grant kind"), "organization");
-  await within(drawer).findByRole("option", { name: "Acme Works" });
-  await userEvent.selectOptions(within(drawer).getByLabelText("Grant target"), ORG_ID);
-  await userEvent.click(within(drawer).getByRole("button", { name: "Add grant" }));
-  const busy = await within(drawer).findByRole("button", { name: "Adding…" });
+  await addOrganizationGrant(drawer);
+  await userEvent.click(await within(drawer).findByRole("button", { name: "Submit" }));
+  // `F3.86` PR 4: the add wizard's Review card names the write in flight.
+  const busy = await within(drawer).findByRole("button", { name: "Submitting…" });
   expect(busy).toHaveAttribute("aria-busy", "true");
 }
 
@@ -606,10 +654,8 @@ async function addOrganizationGrantRefusedWith404(message: string) {
   });
   renderPage();
   const drawer = await openGrants();
-  await userEvent.selectOptions(within(drawer).getByLabelText("Grant kind"), "organization");
-  await within(drawer).findByRole("option", { name: "Acme Works" });
-  await userEvent.selectOptions(within(drawer).getByLabelText("Grant target"), ORG_ID);
-  await userEvent.click(within(drawer).getByRole("button", { name: "Add grant" }));
+  await addOrganizationGrant(drawer);
+  await userEvent.click(await within(drawer).findByRole("button", { name: "Submit" }));
   return drawer;
 }
 
@@ -682,7 +728,7 @@ export async function aPendingReactivateAnnouncesItself(): Promise<void> {
   stubOidc();
   holdWrites();
   renderPage();
-  await userEvent.click(await screen.findByRole("button", { name: "Reactivate Dev Deactivated" }));
+  await reactivateAndSubmit("Dev Deactivated");
   const busy = await screen.findByRole("button", { name: "Reactivating Dev Deactivated…" });
   expect(busy).toHaveAttribute("aria-busy", "true");
   expect(busy).toHaveTextContent("Reactivating…");
@@ -700,10 +746,9 @@ export async function aPendingEditAnnouncesItsRow(): Promise<void> {
     ),
   );
   renderPage();
-  await userEvent.click(await screen.findByRole("button", { name: "Edit Ada Linked" }));
-  const dialog = await screen.findByRole("dialog", { name: /Edit/ });
+  const dialog = await openEditWizard();
   await userEvent.type(within(dialog).getByLabelText("Display name"), " Jr");
-  await userEvent.click(within(dialog).getByRole("button", { name: /^Save/ }));
+  await submitEditWizard(dialog);
   const busy = await screen.findByRole("button", { name: "Saving Ada Linked…", hidden: true });
   expect(busy).toHaveAttribute("aria-busy", "true");
   expect(screen.getByRole("button", { name: "Edit Dev Deactivated", hidden: true })).not.toHaveAttribute("aria-busy", "true");
@@ -741,10 +786,9 @@ export async function localModeKeepsAddGrantEnabled(): Promise<void> {
   renderPage();
   expect(await screen.findByRole("button", { name: "Edit Ada Linked" })).toBeDisabled();
   const drawer = await openGrants();
-  await userEvent.selectOptions(within(drawer).getByLabelText("Grant kind"), "organization");
-  await within(drawer).findByRole("option", { name: "Acme Works" });
-  await userEvent.selectOptions(within(drawer).getByLabelText("Grant target"), ORG_ID);
-  const add = within(drawer).getByRole("button", { name: "Add grant" });
+  await addOrganizationGrant(drawer);
+  // `F3.86` PR 4: the add wizard reached Review; its Submit is the old "Add grant".
+  const add = await within(drawer).findByRole("button", { name: "Submit" });
   expect(add).toBeEnabled();
   expect(add).not.toHaveAccessibleDescription(LOCAL_SENTENCE);
 }
@@ -756,9 +800,8 @@ export async function addingAGrantSendsItsKindAndTarget(): Promise<void> {
   });
   renderPage();
   const drawer = await openGrants();
-  await userEvent.selectOptions(within(drawer).getByLabelText("Grant kind"), "organization");
-  await userEvent.selectOptions(await within(drawer).findByRole("option", { name: "Acme Works" }).then(() => within(drawer).getByLabelText("Grant target")), ORG_ID);
-  await userEvent.click(within(drawer).getByRole("button", { name: "Add grant" }));
+  await addOrganizationGrant(drawer);
+  await userEvent.click(await within(drawer).findByRole("button", { name: "Submit" }));
   await waitFor(() => {
     expect(writes(calls)).toEqual([
       { path: `/api/v1/admin/users/${LINKED_ID}/grants`, method: "POST", body: { kind: "organization", targetId: ORG_ID } },
@@ -766,22 +809,12 @@ export async function addingAGrantSendsItsKindAndTarget(): Promise<void> {
   });
 }
 
-export async function aGlobalAdminMayCreateAnAdmin(): Promise<void> {
-  stubOidc();
-  stubFetch();
-  renderPage(globalAdmin);
-  const dialog = await openCreateModal();
-  const roles = within(within(dialog).getByLabelText("Role")).getAllByRole("option").map((o) => o.textContent);
-  expect(roles).toContain("Administrator");
-  expect(roles).toContain("Viewer");
-}
-
 export async function anOrganizationAdminIsNotOfferedAdmin(): Promise<void> {
   stubOidc();
   stubFetch();
   renderPage(orgAdmin);
-  const dialog = await openCreateModal();
-  const roles = within(within(dialog).getByLabelText("Role")).getAllByRole("option").map((o) => o.textContent);
+  const dialog = await openCreateRoleStep();
+  const roles = within(within(dialog).getByRole("combobox", { name: "Role" })).getAllByRole("option").map((o) => o.textContent);
   // `F4.200`: the options read the shared labels, so the absence is checked on "Administrator"
   // and the positive control is "Viewer" — the lower-case codes would pass vacuously here.
   expect(roles).not.toContain("Administrator");
@@ -805,8 +838,8 @@ export async function theCreateRoleSelectShowsTheSharedLabels(): Promise<void> {
   stubOidc();
   stubFetch();
   renderPage();
-  const dialog = await openCreateModal();
-  const select = within(dialog).getByLabelText("Role");
+  const dialog = await openCreateRoleStep();
+  const select = within(dialog).getByRole("combobox", { name: "Role" });
   expect(within(select).getByRole("option", { name: "Location Administrator" })).toBeInTheDocument();
 }
 
@@ -814,9 +847,9 @@ export async function theEditRoleSelectShowsTheSharedLabels(): Promise<void> {
   stubOidc();
   stubFetch();
   renderPage();
-  await userEvent.click(await screen.findByRole("button", { name: "Edit Ada Linked" }));
-  const dialog = await screen.findByRole("dialog", { name: "Edit Ada Linked" });
-  const select = within(dialog).getByLabelText("Role");
+  const dialog = await openEditWizard();
+  await userEvent.click(within(dialog).getByRole("button", { name: "Next" }));
+  const select = within(dialog).getByRole("combobox", { name: "Role" });
   expect(within(select).getByRole("option", { name: "Location Administrator" })).toBeInTheDocument();
 }
 
@@ -940,20 +973,6 @@ export async function confirmingGrantRemoveSendsOneRequest(): Promise<void> {
   ]);
 }
 
-/** Reactivate needs no confirm (owner ruling): one click, one request, no dialog. */
-export async function reactivateSendsAtOnce(): Promise<void> {
-  stubOidc();
-  const calls = stubFetch({
-    [`POST /api/v1/admin/users/${DEACTIVATED_ID}/reactivate`]: { status: 200, body: written(USERS.items[2] as Record<string, unknown>) },
-  });
-  renderPage();
-  await userEvent.click(await screen.findByRole("button", { name: "Reactivate Dev Deactivated" }));
-  await waitFor(() => {
-    expect(writes(calls)).toEqual([{ path: `/api/v1/admin/users/${DEACTIVATED_ID}/reactivate`, method: "POST", body: undefined }]);
-  });
-  expect(screen.queryByRole("dialog")).toBeNull();
-}
-
 /** "Temporary password" keeps its modal and gets no second confirm: Set password sends. */
 export async function temporaryPasswordOpensNoSecondConfirm(): Promise<void> {
   stubOidc();
@@ -967,3 +986,4 @@ export async function temporaryPasswordOpensNoSecondConfirm(): Promise<void> {
   await waitFor(() => expect(writes(calls)).toHaveLength(1));
   expect(screen.queryByRole("button", { name: /^Confirm/ })).toBeNull();
 }
+
