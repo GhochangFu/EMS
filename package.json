@@ -12,12 +12,13 @@
     "db:refresh-aggregates": "pnpm --filter @bms/db refresh-aggregates",
     "db:generate": "pnpm --filter @bms/db generate",
     "csv:formula-probe": "tsx apps/api/src/testing/csv-formula-probe.ts",
-    "typecheck:tests": "pnpm --filter api exec tsc -p tsconfig.json --noEmit && tsc -p packages/db/tsconfig.json --noEmit && tsc -p packages/shared/tsconfig.json --noEmit && tsc -p apps/ingest/tsconfig.json --noEmit && tsc -p tsconfig.typecheck-tests.json",
+    "typecheck:tests": "pnpm --filter api exec tsc -p tsconfig.json --noEmit && tsc -p packages/db/tsconfig.json --noEmit && tsc -p packages/shared/tsconfig.json --noEmit && tsc -p apps/ingest/tsconfig.json --noEmit && tsc -p tsconfig.typecheck-tests.json && tsc -p apps/e2e/tsconfig.json --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
     "test:onboarding": "vitest run onboarding credential-crypto admin-access rtu-config",
-    "hooks:install": "node .githooks/install.mjs"
+    "hooks:install": "node .githooks/install.mjs",
+    "test:e2e": "pnpm --filter e2e e2e"
   },
   "devDependencies": {
     "@vitest/coverage-v8": "^4.1.10",

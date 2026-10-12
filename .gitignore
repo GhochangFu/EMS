@@ -42,6 +42,10 @@ coverage/
 .vitest-cache/
 playwright-report/
 test-results/
+# F4.7 / ADR 0100 — per-run Playwright sign-in state (bearer tokens) and output.
+apps/e2e/.auth/
+apps/e2e/playwright-report/
+apps/e2e/test-results/
 
 # --- IDE / OS ---------------------------------------------------------------
 .DS_Store

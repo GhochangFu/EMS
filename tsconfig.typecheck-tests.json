@@ -215,6 +215,7 @@
     "tests/f3.25-onboarding-session-checkpoints-schema.test.ts",
     "tests/f3.78-users-admin-reachable.test.ts",
     "tests/f3.22-template-cores.test.ts",
-    "tests/f4.204-raw-error-message-render.test.ts"
+    "tests/f4.204-raw-error-message-render.test.ts",
+    "tests/f4.7-e2e-invariants.test.ts"
   ]
 }
