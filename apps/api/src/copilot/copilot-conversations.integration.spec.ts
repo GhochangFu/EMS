@@ -10,6 +10,7 @@ import { CopilotConversationsService } from "./copilot-conversations.service";
 import type { CopilotAvailabilityService } from "./copilot-availability.service";
 import { CopilotPendingChangesService } from "./copilot-pending-changes.service";
 import type { CopilotTurnService } from "./copilot-turn.service";
+import { SPEC_JWT, UNUSED_SKILL_SERVICE } from "../testing/copilot-onboarding-fakes";
 
 /**
  * `F3.85` PR 5 / ADR 0099 decision 8 — the conversation routes against migration
@@ -34,6 +35,7 @@ function controller(ctx: ConversationsCtx) {
     new CopilotPendingChangesService(ctx.tenantDb),
     // These cases never reach the turn route (`copilot-history.rls.integration.spec.ts` does).
     {} as CopilotTurnService,
+    UNUSED_SKILL_SERVICE,
   );
 }
 
@@ -63,7 +65,7 @@ async function expectNotFound(run: () => Promise<unknown>): Promise<void> {
 export async function createRecordsTheBinding(ctx: ConversationsCtx): Promise<void> {
   const scoped = await controller(ctx).create({ organizationId: null }, identity(ctx, ctx.userA, "organization_admin"));
   expect(scoped.organizationId).toBe(ctx.orgA);
-  const read = await controller(ctx).get(scoped.id, identity(ctx, ctx.userA, "organization_admin"));
+  const read = await controller(ctx).get(scoped.id, identity(ctx, ctx.userA, "organization_admin"), SPEC_JWT);
   expect(read).toMatchObject({ id: scoped.id, organizationId: ctx.orgA, messages: [] });
 
   const global = await controller(ctx).create({ organizationId: null }, identity(ctx, ctx.userA, "admin"));
@@ -74,11 +76,11 @@ export async function createRecordsTheBinding(ctx: ConversationsCtx): Promise<vo
 export async function anotherUsersConversationIs404(ctx: ConversationsCtx): Promise<void> {
   const mine = await controller(ctx).create({ organizationId: null }, identity(ctx, ctx.userA, "organization_admin"));
   const asB = identity(ctx, ctx.userB, "organization_admin");
-  await expectNotFound(() => controller(ctx).get(mine.id, asB));
+  await expectNotFound(() => controller(ctx).get(mine.id, asB, SPEC_JWT));
   const listed = await controller(ctx).list(asB);
   expect(listed.map((c) => c.id)).not.toContain(mine.id);
   // The positive control: the owner reads it.
-  const own = await controller(ctx).get(mine.id, identity(ctx, ctx.userA, "organization_admin"));
+  const own = await controller(ctx).get(mine.id, identity(ctx, ctx.userA, "organization_admin"), SPEC_JWT);
   expect(own.id).toBe(mine.id);
 }
 
@@ -99,7 +101,7 @@ export async function listIsNewestFirstAndMessagesAreOrdered(ctx: ConversationsC
   const ids = (await controller(ctx).list(caller)).map((c) => c.id);
   expect(ids.indexOf(newer.id)).toBeGreaterThanOrEqual(0);
   expect(ids.indexOf(newer.id)).toBeLessThan(ids.indexOf(older.id));
-  const detail = await controller(ctx).get(older.id, caller);
+  const detail = await controller(ctx).get(older.id, caller, SPEC_JWT);
   expect(detail.messages.map((m) => m.content)).toEqual(["first", "second"]);
   expect(detail.messages.map((m) => m.role)).toEqual(["user", "assistant"]);
 }

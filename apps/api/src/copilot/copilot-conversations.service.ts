@@ -1,5 +1,5 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { and, asc, desc, eq, sql } from "drizzle-orm";
+import { and, asc, desc, eq, isNull, sql } from "drizzle-orm";
 
 import { type BmsDb, copilotConversations, copilotMessages, organizations } from "@bms/db";
 import type { CopilotConversationDetailDto, CopilotConversationDto, CopilotMessageDto } from "@bms/shared";
@@ -90,8 +90,14 @@ export class CopilotConversationsService {
    * distinct `created_at` — `clock_timestamp()` or an explicit increasing
    * value — and pin that in its own test, or a migration adds an ordinal.
    */
-  /** The conversation and its messages; the controller adds its open changes (`pendingChanges`, F3.85 PR 8). */
-  async get(userId: string, conversationId: string): Promise<Omit<CopilotConversationDetailDto, "pendingChanges"> | null> {
+  /**
+   * The conversation and its messages; the controller adds its open changes
+   * (`pendingChanges`, F3.85 PR 8) and, from `onboardingSessionId`, its skill (F3.86 PR 5).
+   */
+  async get(
+    userId: string,
+    conversationId: string,
+  ): Promise<(Omit<CopilotConversationDetailDto, "pendingChanges" | "skill"> & { onboardingSessionId: string | null }) | null> {
     const found = await withUser(this.tenantDb, userId, async (tx) => {
       const [conversation] = await tx
         .select()
@@ -107,26 +113,67 @@ export class CopilotConversationsService {
       return { conversation, messages };
     });
     if (!found) return null;
-    return { ...toConversation(found.conversation), messages: found.messages.map(toMessage) };
+    return {
+      ...toConversation(found.conversation),
+      messages: found.messages.map(toMessage),
+      onboardingSessionId: found.conversation.onboardingSessionId,
+    };
   }
 
   /**
    * `F3.85` PR 7 — the caller's conversation and its bound organization, or
    * null when the policy hides it or it does not exist. The turn service
    * reads a turn's organization **here and nowhere else** (decision 10).
+   * `F3.86` PR 5: and the onboarding session the skill binds, or null.
    */
   async findConversation(
     userId: string,
     conversationId: string,
-  ): Promise<{ id: string; organizationId: string | null } | null> {
+  ): Promise<{ id: string; organizationId: string | null; onboardingSessionId: string | null } | null> {
     const [row] = await withUser(this.tenantDb, userId, (tx) =>
       tx
-        .select({ id: copilotConversations.id, organizationId: copilotConversations.organizationId })
+        .select({
+          id: copilotConversations.id,
+          organizationId: copilotConversations.organizationId,
+          onboardingSessionId: copilotConversations.onboardingSessionId,
+        })
         .from(copilotConversations)
         .where(and(eq(copilotConversations.id, conversationId), eq(copilotConversations.userId, userId)))
         .limit(1),
     );
     return row ?? null;
+  }
+
+  /**
+   * `F3.86` PR 5 (decision 7) — binds the onboarding session to the caller's
+   * conversation, only while it binds none: false when another start won the
+   * race, so the route answers 409 rather than replacing the bound session.
+   */
+  async bindOnboardingSession(userId: string, conversationId: string, sessionId: string): Promise<boolean> {
+    const rows = await withUser(this.tenantDb, userId, (tx) =>
+      tx
+        .update(copilotConversations)
+        .set({ onboardingSessionId: sessionId })
+        .where(
+          and(
+            eq(copilotConversations.id, conversationId),
+            eq(copilotConversations.userId, userId),
+            isNull(copilotConversations.onboardingSessionId),
+          ),
+        )
+        .returning({ id: copilotConversations.id }),
+    );
+    return rows.length === 1;
+  }
+
+  /** `F3.86` PR 5 — ends the skill in the caller's conversation; the session stays a draft the page can resume. */
+  async unbindOnboardingSession(userId: string, conversationId: string): Promise<void> {
+    await withUser(this.tenantDb, userId, (tx) =>
+      tx
+        .update(copilotConversations)
+        .set({ onboardingSessionId: null })
+        .where(and(eq(copilotConversations.id, conversationId), eq(copilotConversations.userId, userId))),
+    );
   }
 
   /** The conversation's last `limit` messages, oldest first. */

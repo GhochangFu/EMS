@@ -61,6 +61,9 @@ export const EXCLUDED_ROUTES: readonly ExcludedRoute[] = [
   { method: "PUT", path: "/admin/organizations/:orgId/copilot-access", reason: COPILOT_OWN },
   { method: "POST", path: "/copilot/conversations", reason: COPILOT_OWN },
   { method: "POST", path: "/copilot/conversations/:id/turns", reason: COPILOT_OWN },
+  // `F3.86` PR 5: starting and ending the onboarding skill in a conversation (decision 7).
+  { method: "POST", path: "/copilot/conversations/:id/skills/onboarding", reason: COPILOT_OWN },
+  { method: "DELETE", path: "/copilot/conversations/:id/skills/onboarding", reason: COPILOT_OWN },
   { method: "POST", path: "/copilot/changes/:id/reject", reason: COPILOT_OWN },
   // A temporary password is typed by a person, never proposed.
   { method: "POST", path: "/admin/users/:id/temporary-password", reason: "a credential route" },

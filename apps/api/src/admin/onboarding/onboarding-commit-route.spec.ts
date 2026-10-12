@@ -31,7 +31,7 @@ function serviceWithRecordingCommit() {
     },
   };
   // Only `commit` is exercised: it reads nothing but `commitService`.
-  const service = Object.assign(Object.create(OnboardingService.prototype) as OnboardingService, { commitService });
+  const service = Object.assign(Object.create(OnboardingService.prototype), { commitService }) as OnboardingService;
   return { service, calls };
 }
 

@@ -12,6 +12,7 @@ import type {
   CopilotFillStepDto,
   CopilotMessageDto,
   CopilotPendingChangeDto,
+  CopilotSkillStateDto,
   CopilotTurnOutcome,
   CopilotTurnResponseDto,
   JwtPayload,
@@ -28,6 +29,13 @@ import { fail, succeed, toolResultContent } from "../llm/tool-result";
 import { COPILOT_UNAVAILABLE_MESSAGE } from "./copilot-access.guard";
 import { CopilotAvailabilityService } from "./copilot-availability.service";
 import { CopilotConversationsService } from "./copilot-conversations.service";
+import {
+  COPILOT_ONBOARDING_SKILL,
+  COPILOT_SKILL_SESSION_CLOSED_REPLY,
+  type CopilotOnboardingSkill,
+  skillStateOf,
+  skillStateOfSession,
+} from "./copilot-onboarding-skill";
 import { CopilotPendingChangesService, type FinishedChange } from "./copilot-pending-changes.service";
 import { accessIntentOf } from "./copilot-access-intent";
 import { COPILOT_PROPOSE_TOOLS, type CopilotProposeTools } from "./copilot-propose-tools";
@@ -171,6 +179,8 @@ type TurnExtras = {
   navigateTo?: string | null;
   pendingChanges?: CopilotPendingChangeDto[];
   fillStep?: CopilotFillStepDto | null;
+  /** `F3.86` PR 5: a skill turn's state; a plain turn's answer carries no `skill` key. */
+  skill?: CopilotSkillStateDto;
 };
 
 function respond(
@@ -188,7 +198,24 @@ function respond(
     navigateTo: extras.navigateTo ?? null,
     pendingChanges: extras.pendingChanges ?? [],
     fillStep: extras.fillStep ?? null,
+    ...(extras.skill !== undefined ? { skill: extras.skill } : {}),
   };
+}
+
+/** Step 4's refusal (and the skill turn's, ruling Q4): 429 with the scope that ran out and when it resets. */
+function usageLimitException(usage: { scope: "user" | "organization"; resetsAt: string }): HttpException {
+  return new HttpException(
+    {
+      statusCode: HttpStatus.TOO_MANY_REQUESTS,
+      message:
+        usage.scope === "user"
+          ? "You have reached your daily copilot limit."
+          : "This organization has reached its daily copilot limit.",
+      scope: usage.scope,
+      resetsAt: usage.resetsAt,
+    },
+    HttpStatus.TOO_MANY_REQUESTS,
+  );
 }
 
 /** The action line a confirmed change leaves in its conversation (decision 4.7). */
@@ -250,6 +277,7 @@ export class CopilotTurnService {
     @Inject(COPILOT_READ_TOOLS) private readonly tools: CopilotReadTools,
     @Inject(COPILOT_PROPOSE_TOOLS) private readonly proposeTools: CopilotProposeTools,
     private readonly pending: CopilotPendingChangesService,
+    @Inject(COPILOT_ONBOARDING_SKILL) private readonly onboarding: CopilotOnboardingSkill,
   ) {}
 
   async turn(
@@ -306,6 +334,15 @@ export class CopilotTurnService {
       return respond(conversationId, "credential_refused", COPILOT_CREDENTIAL_REFUSAL);
     }
 
+    // The onboarding skill (decision 7), before key resolution: its guided mode answers with no key.
+    // Ruling Q4: availability (step 1) has run, and the turn is counted (step 4) before chat.
+    const sessionId = conversation.onboardingSessionId ?? null;
+    if (sessionId !== null && organizationId !== null) {
+      // The committed session is terminal: a confirmed change's follow-up stores its outcome line only.
+      if (input.kind === "follow_up") return storeOutcomeOnly("answered", changeOutcomeLine(input.change));
+      return this.skillTurn(caller, conversationId, organizationId, sessionId, input.message);
+    }
+
     // 3. Key resolution (decision 10). No key: not configured, and not counted.
     const scope = await this.resolveScope(organizationId);
     if (scope === null) {
@@ -323,18 +360,7 @@ export class CopilotTurnService {
     const usage = await this.usage.consumeTurn(identity, organizationId, this.clock());
     if (!usage.ok) {
       if (input.kind === "follow_up") return storeOutcomeOnly("failed", COPILOT_TURN_FAILED_REPLY);
-      throw new HttpException(
-        {
-          statusCode: HttpStatus.TOO_MANY_REQUESTS,
-          message:
-            usage.scope === "user"
-              ? "You have reached your daily copilot limit."
-              : "This organization has reached its daily copilot limit.",
-          scope: usage.scope,
-          resetsAt: usage.resetsAt,
-        },
-        HttpStatus.TOO_MANY_REQUESTS,
-      );
+      throw usageLimitException(usage);
     }
 
     // 5. History.
@@ -436,6 +462,49 @@ export class CopilotTurnService {
       throw err;
     }
     return respond(conversationId, "answered", reply, { messages: stored, navigateTo, pendingChanges: proposed, fillStep });
+  }
+
+  /**
+   * `F3.86` PR 5 / ADR 0099 decision 7 — one turn of the onboarding skill. The
+   * onboarding service answers it (its agent, or its guided mode with no key),
+   * with `commitByPhrase: false`: in the dock only the Confirm card commits.
+   * A session that is no longer a draft answers a fixed reply, uncounted. The
+   * turn is counted before `chat` (ruling Q4). It stores the user message, the
+   * onboarding action lines this turn added, and the reply, each scrubbed.
+   */
+  private async skillTurn(
+    caller: CopilotTurnCaller,
+    conversationId: string,
+    organizationId: string,
+    sessionId: string,
+    message: string,
+  ): Promise<CopilotTurnResponseDto> {
+    const { identity, user } = caller;
+    const before = await this.onboarding.getSession(user, sessionId);
+    if (before.status !== "draft") {
+      return respond(conversationId, "answered", COPILOT_SKILL_SESSION_CLOSED_REPLY, { skill: skillStateOfSession(before) });
+    }
+    const usage = await this.usage.consumeTurn(identity, organizationId, this.clock());
+    if (!usage.ok) throw usageLimitException(usage);
+
+    const answer = await this.onboarding.chat(user, sessionId, message, { commitByPhrase: false });
+    // The rows this turn added. Another writer (the page) can add rows at the same time, so the action
+    // lines are taken only when the first new row is this turn's own message; otherwise none are.
+    const added = answer.session.messages.slice(before.messages.length);
+    const own = added[0]?.role === "user" && added[0].content === message;
+    const actions = own ? added.filter((row) => row.role === "action").map((row) => row.content) : [];
+    const reply = looksLikeCredential(answer.assistantMessage) ? COPILOT_REPLY_REDACTED : answer.assistantMessage;
+    const stored = await this.conversations.appendTurn(identity.id, conversationId, [
+      { role: "user", content: message, organizationIds: [] },
+      ...actions.map((line) => ({
+        role: "action" as const,
+        content: looksLikeCredential(line) ? COPILOT_REDACTED : line,
+        organizationIds: [organizationId],
+      })),
+      { role: "assistant", content: reply, organizationIds: [organizationId] },
+    ]);
+    this.logger.log({ conversationId, kind: "skill", sessionId, actions: actions.length }, "copilot skill turn");
+    return respond(conversationId, "answered", reply, { messages: stored, skill: skillStateOf(sessionId, answer) });
   }
 
   /** `GET /copilot/status`'s `configured`: whether a key resolves for this scope (`null`: cross-organization). */

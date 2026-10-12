@@ -12,6 +12,7 @@ import { CopilotConversationsController } from "./copilot-conversations.controll
 import { CopilotConversationsService } from "./copilot-conversations.service";
 import type { CopilotPendingChangesService } from "./copilot-pending-changes.service";
 import type { CopilotTurnService } from "./copilot-turn.service";
+import { SPEC_JWT, UNUSED_SKILL_SERVICE } from "../testing/copilot-onboarding-fakes";
 
 /** Vitest entry point lives in the sibling `.test.ts` (ADR 0014). */
 
@@ -111,7 +112,7 @@ function controllerWith(
   const sweep = sweepFake();
   const fake = conversationsFake({ organizations: options.organizations });
   const turns = turnsFake();
-  const controller = new CopilotConversationsController(fake.service, availability.service, sweep.service, turns.service);
+  const controller = new CopilotConversationsController(fake.service, availability.service, sweep.service, turns.service, UNUSED_SKILL_SERVICE);
   return {
     controller,
     identity: identityFor(role),
@@ -203,7 +204,7 @@ export async function assertEveryRouteSweepsForTheCaller(): Promise<void> {
   expect(listed.swept).toEqual([USER_ID]);
 
   const read = controllerWith("organization_admin");
-  await rejectsWith(() => read.controller.get(OTHER, read.identity), NotFoundException);
+  await rejectsWith(() => read.controller.get(OTHER, read.identity, SPEC_JWT), NotFoundException);
   expect(read.swept).toEqual([USER_ID]);
 
   // Even a rejected body sweeps first: the sweep is the route's first act.
@@ -215,7 +216,7 @@ export async function assertEveryRouteSweepsForTheCaller(): Promise<void> {
 /** An id that is not a uuid is a 404, not a 500. */
 export async function assertANonUuidIdIs404(): Promise<void> {
   const h = controllerWith("admin");
-  await rejectsWith(() => h.controller.get("not-a-uuid", h.identity), NotFoundException);
+  await rejectsWith(() => h.controller.get("not-a-uuid", h.identity, SPEC_JWT), NotFoundException);
 }
 
 /** The guard turns an operator, a viewer, an unprovisioned token and an unavailable decision into 403. */
@@ -332,8 +333,8 @@ export async function assertTheDetailCarriesTheOpenChanges(): Promise<void> {
       return [card];
     },
   } as unknown as CopilotPendingChangesService;
-  const controller = new CopilotConversationsController(conversations, availabilityFake().service, pending, turnsFake().service);
-  const detail = await controller.get(conversationId, identityFor("admin", null));
+  const controller = new CopilotConversationsController(conversations, availabilityFake().service, pending, turnsFake().service, UNUSED_SKILL_SERVICE);
+  const detail = await controller.get(conversationId, identityFor("admin", null), SPEC_JWT);
   expect(detail.pendingChanges).toEqual([card]);
   expect(asked).toEqual([[USER_ID, conversationId]]);
 }
