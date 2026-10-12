@@ -681,7 +681,8 @@ function DockPanel({ user, homeConfigured }: CopilotDockProps & { homeConfigured
                 <button
                   type="submit"
                   disabled={busy || input.trim() === ""}
-                  aria-busy={busy}
+                  // F4.164: name the label's own flag; `busy` is turn.isPending, a follow-up or a skill undo.
+                  aria-busy={turn.isPending || followUp !== null || skillUndoing}
                   className="surface-button px-3 py-1 text-xs disabled:opacity-50"
                 >
                   {turn.isPending ? "Sending…" : followUp !== null ? "Waiting…" : "Send"}
