@@ -3,6 +3,7 @@ import { expect } from "vitest";
 
 import type { CopilotMessageDto } from "@bms/shared";
 
+import { OPEN_COMMIT_CARD, OPEN_COMMIT_ID, OPEN_OTHER_CARD } from "../testing/copilot-onboarding-fakes";
 import type { CopilotOnboardingSkill } from "./copilot-onboarding-skill";
 import { COPILOT_SKILL_ALREADY_BOUND, COPILOT_SKILL_ORGANIZATION_MISMATCH } from "./copilot-onboarding-skill";
 import { CopilotSkillService } from "./copilot-skill.service";
@@ -28,7 +29,7 @@ function service(options: {
   onboarding?: CopilotOnboardingSkill;
 } = {}) {
   const row = options.row === undefined ? { id: CONVERSATION, organizationId: ORG_X, onboardingSessionId: null } : options.row;
-  const record = { binds: [] as string[], unbinds: 0, appended: [] as Array<{ role: CopilotMessageDto["role"]; content: string }>, decided: [] as string[] };
+  const record = { discarded: [] as string[][], binds: [] as string[], unbinds: 0, appended: [] as Array<{ role: CopilotMessageDto["role"]; content: string }>, decided: [] as string[] };
   const conversations = {
     findConversation: async () => row,
     bindOnboardingSession: async (_userId: string, _id: string, sessionId: string) => {
@@ -49,8 +50,14 @@ function service(options: {
       return options.available === false ? { available: false, reason: "organization_off" } : { available: true };
     },
   };
+  const pending = {
+    listOpen: async () => [OPEN_COMMIT_CARD, OPEN_OTHER_CARD],
+    discard: async (_userId: string, ids: readonly string[]) => {
+      record.discarded.push([...ids]);
+    },
+  };
   const fake = fakeOnboarding();
-  const skills = new CopilotSkillService(conversations as never, availability as never, options.onboarding ?? fake.skill);
+  const skills = new CopilotSkillService(conversations as never, availability as never, options.onboarding ?? fake.skill, pending as never);
   return { skills, record, calls: fake.calls };
 }
 
@@ -131,6 +138,17 @@ export async function anEndUnbinds(): Promise<void> {
   await h.skills.end(ORG_ADMIN, CONVERSATION);
   expect(h.record.unbinds).toBe(1);
   expect(h.calls.getSession).toEqual([]);
+}
+
+/**
+ * `F3.86` PR 6 review — the end rejects the open `onboarding.commit` card (its
+ * Confirm could only answer 400, and it would block every later proposal);
+ * another open change stays.
+ */
+export async function anEndDiscardsTheOpenCommitCardOnly(): Promise<void> {
+  const h = service({ row: { id: CONVERSATION, organizationId: ORG_X, onboardingSessionId: SESSION } });
+  await h.skills.end(ORG_ADMIN, CONVERSATION);
+  expect(h.record.discarded).toEqual([[OPEN_COMMIT_ID]]);
 }
 
 /** A read: the bound session's state; `null` with none bound, and when the caller can no longer read it. */

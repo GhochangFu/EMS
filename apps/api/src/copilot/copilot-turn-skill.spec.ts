@@ -4,6 +4,7 @@ import { expect } from "vitest";
 import type { JwtPayload, OnboardingChatMessage, OnboardingChatResponseDto, OnboardingSessionDto } from "@bms/shared";
 
 import { FakeLlmProvider } from "../admin/onboarding/onboarding-agent-loop.spec";
+import { OPEN_COMMIT_CARD, OPEN_COMMIT_ID, OPEN_OTHER_CARD } from "../testing/copilot-onboarding-fakes";
 import type { FinishedChange } from "./copilot-pending-changes.service";
 import {
   type CopilotOnboardingSkill,
@@ -245,4 +246,19 @@ export async function aSessionTheCallerLostEndsTheSkill(): Promise<void> {
   const h = skillHarness(broken);
   await expect(h.turn("Add an asset")).rejects.toThrow("database down");
   expect(h.counts.unbind).toBe(0);
+}
+
+/**
+ * `F3.86` PR 6 review — the lost session's unbind takes the open commit card
+ * with it (it would block the next plain proposal); any other open change stays.
+ */
+export async function aLostSessionDiscardsItsCommitCardOnly(): Promise<void> {
+  const fake = fakeOnboarding();
+  fake.skill.getSession = async () => {
+    throw new NotFoundException("gone");
+  };
+  const h = skillHarness(fake, { open: [OPEN_COMMIT_CARD, OPEN_OTHER_CARD] });
+  const response = await h.turn("Add an asset");
+  expect(response.skill).toBeNull();
+  expect(h.discarded).toEqual([[OPEN_COMMIT_ID]]);
 }

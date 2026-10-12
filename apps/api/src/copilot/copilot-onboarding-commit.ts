@@ -66,6 +66,36 @@ export type OnboardingCommitReader = Pick<CopilotOnboardingCommitReader, "stored
 /** The pending-change calls the server-made card needs. */
 type PendingStore = Pick<CopilotPendingChangesService, "propose" | "listOpen" | "discard">;
 
+/** The open `onboarding.commit` cards that are dead: all of them once the skill no longer runs on a draft. */
+export function deadOnboardingCommitCards(
+  open: readonly CopilotPendingChangeDto[],
+  draftRunning: boolean,
+): CopilotPendingChangeDto[] {
+  return draftRunning ? [] : open.filter((c) => c.catalogId === ONBOARDING_COMMIT_ID);
+}
+
+/**
+ * `F3.86` PR 6 review — rejects the conversation's open `onboarding.commit`
+ * cards. A card outlives the draft it commits when the skill ends or the
+ * session is committed another way (the drawer's wizard, the onboarding page):
+ * its Confirm can only answer 400, and because a conversation holds one open
+ * change (`propose`), it would block every later proposal there until it
+ * expired. Any other open change is left alone.
+ */
+export async function discardOnboardingCommitCards(
+  pending: Pick<CopilotPendingChangesService, "listOpen" | "discard">,
+  userId: string,
+  conversationId: string,
+): Promise<void> {
+  const dead = deadOnboardingCommitCards(await pending.listOpen(userId, conversationId), false);
+  if (dead.length > 0) {
+    await pending.discard(
+      userId,
+      dead.map((c) => c.id),
+    );
+  }
+}
+
 /**
  * `F3.86` PR 6 / ADR 0099 decision 7 (plan §8.2) — after a skill turn the
  * onboarding answered, the `onboarding.commit` card, or none.

@@ -1,7 +1,9 @@
 import { BadRequestException, NotFoundException } from "@nestjs/common";
 import { expect } from "vitest";
 
-import type { CopilotSkillStateDto, JwtPayload } from "@bms/shared";
+import type { CopilotPendingChangeDto, CopilotSkillStateDto, JwtPayload } from "@bms/shared";
+
+import { OPEN_COMMIT_CARD, OPEN_COMMIT_ID, OPEN_OTHER_CARD } from "../testing/copilot-onboarding-fakes";
 
 import { CopilotConversationsController } from "./copilot-conversations.controller";
 import type { CopilotSkillService } from "./copilot-skill.service";
@@ -17,10 +19,12 @@ import { CONVERSATION, identity, JWT, ORG_X } from "./copilot-turn.service.spec"
 
 const ORG_ADMIN = identity("organization_admin", ORG_X);
 const SESSION = "77777777-7777-4777-8777-777777777777";
-const STATE = { kind: "onboarding", sessionId: SESSION } as unknown as CopilotSkillStateDto;
+const STATE = { kind: "onboarding", sessionId: SESSION, session: { status: "draft" } } as unknown as CopilotSkillStateDto;
+const COMMITTED_STATE = { kind: "onboarding", sessionId: SESSION, session: { status: "committed" } } as unknown as CopilotSkillStateDto;
 
-function routes(boundSessionId: string | null) {
-  const record = { stateOf: [] as Array<[JwtPayload, string | null]>, start: [] as unknown[][], end: 0 };
+function routes(boundSessionId: string | null, options: { state?: CopilotSkillStateDto; open?: CopilotPendingChangeDto[] } = {}) {
+  const state = options.state ?? STATE;
+  const record = { stateOf: [] as Array<[JwtPayload, string | null]>, start: [] as unknown[][], end: 0, discarded: [] as string[][] };
   const conversations = {
     get: async (_userId: string, id: string) =>
       id === CONVERSATION
@@ -35,11 +39,17 @@ function routes(boundSessionId: string | null) {
           }
         : null,
   };
-  const pending = { sweepStuck: async () => undefined, listOpen: async () => [] };
+  const pending = {
+    sweepStuck: async () => undefined,
+    listOpen: async () => [...(options.open ?? [])],
+    discard: async (_userId: string, ids: readonly string[]) => {
+      record.discarded.push([...ids]);
+    },
+  };
   const skills = {
     stateOf: async (user: JwtPayload, sessionId: string | null) => {
       record.stateOf.push([user, sessionId]);
-      return STATE;
+      return state;
     },
     start: async (...args: unknown[]) => {
       record.start.push(args);
@@ -97,4 +107,33 @@ export async function theEndRouteAnswersWithNoSkill(): Promise<void> {
   const detail = await h.controller.endOnboarding(CONVERSATION, ORG_ADMIN);
   expect(h.record.end).toBe(1);
   expect(detail.skill).toBeNull();
+}
+
+/**
+ * `F3.86` PR 6 review — the read is the point every reload passes: a session
+ * committed another way (the drawer's wizard, the onboarding page) leaves its
+ * commit card dead, so the read rejects it and does not show it. Another open
+ * change stays, and is shown.
+ */
+export async function aReadOfACommittedSkillDropsItsCommitCard(): Promise<void> {
+  const h = routes(SESSION, { state: COMMITTED_STATE, open: [OPEN_COMMIT_CARD, OPEN_OTHER_CARD] });
+  const detail = await h.controller.get(CONVERSATION, ORG_ADMIN, JWT);
+  expect(h.record.discarded).toEqual([[OPEN_COMMIT_ID]]);
+  expect(detail.pendingChanges).toEqual([OPEN_OTHER_CARD]);
+}
+
+/** A draft skill keeps its commit card: it is live, and nothing is discarded. */
+export async function aReadOfADraftSkillKeepsItsCommitCard(): Promise<void> {
+  const h = routes(SESSION, { open: [OPEN_COMMIT_CARD, OPEN_OTHER_CARD] });
+  const detail = await h.controller.get(CONVERSATION, ORG_ADMIN, JWT);
+  expect(h.record.discarded).toEqual([]);
+  expect(detail.pendingChanges).toEqual([OPEN_COMMIT_CARD, OPEN_OTHER_CARD]);
+}
+
+/** A plain conversation (the skill ended) holds no live commit card: a left one is rejected, the other change shown. */
+export async function aPlainReadDropsALeftCommitCard(): Promise<void> {
+  const h = routes(null, { open: [OPEN_COMMIT_CARD, OPEN_OTHER_CARD] });
+  const detail = await h.controller.get(CONVERSATION, ORG_ADMIN, JWT);
+  expect(h.record.discarded).toEqual([[OPEN_COMMIT_ID]]);
+  expect(detail.pendingChanges).toEqual([OPEN_OTHER_CARD]);
 }

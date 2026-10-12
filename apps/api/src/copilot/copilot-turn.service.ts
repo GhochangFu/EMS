@@ -37,7 +37,7 @@ import {
   skillStateOf,
   skillStateOfSession,
 } from "./copilot-onboarding-skill";
-import { CopilotOnboardingCommitReader, onboardingCommitCards } from "./copilot-onboarding-commit";
+import { CopilotOnboardingCommitReader, discardOnboardingCommitCards, onboardingCommitCards } from "./copilot-onboarding-commit";
 import { CopilotPendingChangesService, type FinishedChange } from "./copilot-pending-changes.service";
 import { accessIntentOf } from "./copilot-access-intent";
 import { COPILOT_PROPOSE_TOOLS, type CopilotProposeTools } from "./copilot-propose-tools";
@@ -492,6 +492,8 @@ export class CopilotTurnService {
       // The caller can no longer read the session (a role or scope change, or it is gone): the read already
       // shows a plain conversation (`CopilotSkillService.stateOf`), so the turn ends the skill to agree with it.
       await this.conversations.unbindOnboardingSession(identity.id, conversationId);
+      // `F3.86` PR 6 review: as at an end, its open commit card goes too, or it blocks the next plain proposal.
+      await discardOnboardingCommitCards(this.pending, identity.id, conversationId);
       return respond(conversationId, "answered", COPILOT_SKILL_SESSION_LOST_REPLY, { skill: null });
     }
     if (before.status !== "draft") {

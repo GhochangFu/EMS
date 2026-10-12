@@ -3,6 +3,9 @@ import { describe, it } from "vitest";
 import {
   aBoundConversationReadCarriesTheSkill,
   aPlainConversationReadCarriesNoSkill,
+  aPlainReadDropsALeftCommitCard,
+  aReadOfACommittedSkillDropsItsCommitCard,
+  aReadOfADraftSkillKeepsItsCommitCard,
   theEndRouteAnswersWithNoSkill,
   theStartRouteAnswersTheConversationWithTheSkill,
   theStartRouteRefusesABadBodyOrId,
@@ -15,4 +18,7 @@ describe("F3.86 PR 5 — the onboarding skill on the conversation routes (ADR 00
   it("answers the start with the conversation and the skill", () => theStartRouteAnswersTheConversationWithTheSkill());
   it("refuses a bad start body or id before the start", () => theStartRouteRefusesABadBodyOrId());
   it("answers the end with skill null", () => theEndRouteAnswersWithNoSkill());
+  it("rejects and hides the commit card of a committed session on a read", () => aReadOfACommittedSkillDropsItsCommitCard());
+  it("keeps the commit card of a draft skill on a read", () => aReadOfADraftSkillKeepsItsCommitCard());
+  it("rejects and hides a commit card left on a plain conversation", () => aPlainReadDropsALeftCommitCard());
 });
