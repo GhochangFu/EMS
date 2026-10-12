@@ -118,7 +118,7 @@ describe.skipIf(!connectionString)("F3.86 PR 2 — the copilot target resolver's
       assetA,
     ]);
     const { rows: keys } = await superPool.query<{ id: string; code: string }>(
-      "SELECT id, code FROM bms.point_keys WHERE active ORDER BY code LIMIT 1",
+      "SELECT id, code FROM bms.point_keys WHERE active ORDER BY created_at, id LIMIT 1",
     );
     const key = keys[0];
     if (!key) throw new Error("F3.86: the point-key catalog is empty; run the migrations");

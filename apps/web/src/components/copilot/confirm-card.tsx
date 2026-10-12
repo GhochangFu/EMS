@@ -13,7 +13,7 @@ import {
 import { rejectCopilotChange } from "../../api/copilot";
 import { confirmCopilotChange } from "../../api/copilot-confirm";
 import { fetchCopilotCurrent } from "../../api/copilot-current";
-import { ambiguousTabsOf } from "../../api/control-room";
+import { ambiguousTabsOfError } from "../../api/control-room";
 import { ApiError } from "../../lib/api-error";
 import { apiErrorMessage } from "../../lib/api-error-message";
 import { changeRows, fieldLabel } from "../../lib/copilot-diff";
@@ -141,7 +141,7 @@ export function ConfirmCard({ change, onApplied, onRejected, onGone, onRouteFail
     setError(apiErrorMessage(err));
     if (kind === "route") {
       setFinished(true);
-      if (err instanceof ApiError && err.status === 409) setAmbiguous(ambiguousTabsOf(err.message));
+      setAmbiguous(ambiguousTabsOfError(err));
       onRouteFailed(change);
     }
   };
@@ -213,7 +213,7 @@ export function ConfirmCard({ change, onApplied, onRejected, onGone, onRouteFail
                   type="password"
                   autoComplete="new-password"
                   onChange={(event) => onType(field, event.target.value)}
-                  className="mt-0.5 block w-full rounded border border-line bg-surface px-2 py-1 text-xs"
+                  className="surface-field mt-0.5 block w-full px-2 py-1 text-xs"
                 />
                 {problems[field] && <span className="text-[11px] text-critical-ink">{problems[field]}</span>}
               </label>
