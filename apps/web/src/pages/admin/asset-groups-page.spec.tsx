@@ -401,13 +401,17 @@ export async function sendsTheCodeAndClearsWithNull(): Promise<void> {
 
 /** Ruling Q9: picking a role sends nothing until the wizard's Submit; the Review shows Now beside After. */
 export async function aRolePickWaitsForTheReview(): Promise<void> {
-  stubApi();
+  // A write that never settles: were the pick to send one, the wizard would stay open and only
+  // the no-call assertions below could fail.
+  stubApi({ setAdminAssetGroupMemberRole: () => new Promise<never>(() => {}) });
   renderPage();
   await userEvent.click(await screen.findByRole("button", { name: /Electrical train/ }));
   const select = await screen.findByRole("combobox", { name: "Role for Transformer 1" });
   await waitFor(() => expect(within(select).getAllByRole("option").length).toBe(3));
   await userEvent.selectOptions(select, "f337-spec-beta");
   await screen.findByRole("dialog", { name: "Set the role of Transformer 1" });
+  await settle();
+  expect(api.setAdminAssetGroupMemberRole, "the pick sent the role before the Review").not.toHaveBeenCalled();
   await next();
   const card = await screen.findByRole("region", { name: "Set a member's role" });
   const row = within(card).getByRole("row", { name: /^Role/ });
