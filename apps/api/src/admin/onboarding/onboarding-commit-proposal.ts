@@ -31,6 +31,9 @@ import {
 
 export const CONFIRM_COMMIT_PHRASE = "confirm commit";
 
+/** `F3.86` PR 5 (ADR 0099 decision 7): the phrase's answer in the copilot's skill, where only the Confirm card commits. */
+export const CONFIRM_CARD_COMMIT_REPLY = "Use the Confirm card to commit.";
+
 export const COMMIT_PROPOSAL_KEY = "_commitProposal";
 
 /** Bounds the stored summary; `commitSummary` stays far below it. */

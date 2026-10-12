@@ -18,6 +18,7 @@ import {
   assertTheConfirmLineNamesTheTemplateCounts,
   assertTheCredentialRefusalStillAnswersFirst,
   assertHistoryAndActionLinesAreScrubbed,
+  assertThePhraseInTheSkillCommitsNothing,
 } from "./onboarding-chat-confirm.spec";
 
 /** Vitest entry point — see `admin.schema.test.ts` for the pattern (ADR 0014). One `it()` per claim. */
@@ -36,6 +37,10 @@ describe("OnboardingService.chat — the confirm path and action messages (F3.21
 
   it("F4.199: does not commit on confirm commit. with a full stop", async () => {
     await assertConfirmCommitWithAFullStopDoesNotCommit();
+  });
+
+  it("F3.86: commits nothing on the phrase in the copilot's skill (commitByPhrase: false)", async () => {
+    await assertThePhraseInTheSkillCommitsNothing();
   });
 
   it("names the template counts in the confirm line (F3.22, ADR 0091 d4)", async () => {

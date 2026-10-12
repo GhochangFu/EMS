@@ -7,6 +7,7 @@ import { OnboardingChatService } from "./onboarding-chat.service";
 import { fakeDb, type Recorder } from "./onboarding-chat-caps.spec";
 import {
   COMMIT_PROPOSAL_KEY,
+  CONFIRM_CARD_COMMIT_REPLY,
   NO_PROPOSAL_REPLY,
   STALE_PROPOSAL_REPLY,
   attachCommitProposal,
@@ -153,6 +154,23 @@ export async function assertConfirmCommitWithAFullStopDoesNotCommit(): Promise<v
   await service.chat(JWT, "s-1", "confirm commit.");
   assert(commit.calls.length === 0, `nothing is committed, got ${commit.calls.length}`);
   assert(llm.calls === 1, `positive control: it went on as an ordinary turn, got ${llm.calls} model calls`);
+}
+
+/**
+ * `F3.86` PR 5 (ADR 0099 decision 7): in the copilot's skill the typed phrase
+ * commits nothing, even with a matching proposal — it answers the fixed reply,
+ * writes nothing and calls no model; the same session commits by the phrase
+ * on the page (the positive control, `assertAMatchingProposalCommitsOnce`).
+ */
+export async function assertThePhraseInTheSkillCommitsNothing(): Promise<void> {
+  const session = sessionRow(proposed(readyDraft()));
+  const { service, record, commit, llm } = build({ results: [[session], ORG] });
+  const response = await service.chat(JWT, "s-1", "confirm commit", { commitByPhrase: false });
+  assert(commit.calls.length === 0, `nothing is committed, got ${commit.calls.length}`);
+  assert(response.assistantMessage === CONFIRM_CARD_COMMIT_REPLY, `the fixed reply, got ${response.assistantMessage}`);
+  assert(record.updates.length === 0, `nothing is written, got ${record.updates.length} updates`);
+  assert(llm.calls === 0, `no model call, got ${llm.calls}`);
+  assert(response.session.id === "s-1", "the session as loaded");
 }
 
 export async function assertAStaleProposalIsClearedAndNotCommitted(): Promise<void> {

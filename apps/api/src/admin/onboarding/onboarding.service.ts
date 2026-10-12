@@ -34,6 +34,7 @@ import { OnboardingTemplateCatalogService } from "./onboarding-template-catalog.
 import { OnboardingExcelService } from "./onboarding-excel.service";
 import { looksLikeCredential, scrubMessages } from "./onboarding-credential-detect";
 import {
+  CONFIRM_CARD_COMMIT_REPLY,
   NO_PROPOSAL_REPLY,
   STALE_PROPOSAL_REPLY,
   attachCommitProposal,
@@ -247,11 +248,15 @@ export class OnboardingService {
     return this.mapSession(updated, org?.code ?? "", org?.name ?? "");
   }
 
-  /** Processes a user chat message. */
+  /**
+   * Processes a user chat message. `commitByPhrase: false` is the copilot's
+   * onboarding skill (`F3.86` PR 5): the typed phrase commits nothing there.
+   */
   async chat(
     jwt: JwtPayload,
     sessionId: string,
     message: string,
+    options: { readonly commitByPhrase?: boolean } = {},
   ): Promise<OnboardingChatResponseDto> {
     const session = await this.loadSession(jwt, sessionId);
     if (session.status !== "draft") {
@@ -290,6 +295,10 @@ export class OnboardingService {
     // after the credential refusal and before any model call. The model is
     // not on the commit path at all.
     if (isConfirmCommitPhrase(message)) {
+      if (options.commitByPhrase === false) {
+        // Stores and changes nothing: in the skill the Confirm card is the one way to commit.
+        return { assistantMessage: CONFIRM_CARD_COMMIT_REPLY, session: await this.mapSessionWithOrg(session), suggestedReplies: [] };
+      }
       return this.confirmCommit(jwt, session, message);
     }
 
@@ -566,7 +575,9 @@ export class OnboardingService {
   }
 
   /** Commits session via commit service. */
-  commit(jwt: JwtPayload, sessionId: string) {
+  /** With `draftHash`, commits only the draft that hash names (`F3.86` PR 5); without, the stored draft. */
+  commit(jwt: JwtPayload, sessionId: string, expectedDraftHash?: string) {
+    if (expectedDraftHash !== undefined) return this.commitService.commitProposed(jwt, sessionId, expectedDraftHash);
     return this.commitService.commit(jwt, sessionId);
   }
 
