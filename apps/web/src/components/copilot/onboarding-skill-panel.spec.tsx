@@ -12,7 +12,7 @@ import type {
 import { COPILOT_CHANGE_HEADER } from "@bms/shared/copilot";
 
 import * as copilotApi from "../../api/copilot";
-import { ONBOARDING_COMMIT_DRAFT_CHANGED } from "../onboarding/onboarding-commit-wizard";
+import { ONBOARDING_COMMIT_DRAFT_CHANGED, ONBOARDING_COMMIT_NOT_A_DRAFT } from "../onboarding/onboarding-commit-wizard";
 import { useCopilotStore } from "../../stores/copilot-store";
 import { CONVERSATION_ID, answered, openPanel, READY, renderDock, settle, stub } from "./copilot-dock.spec";
 
@@ -368,6 +368,49 @@ export async function aRefusedWizardSubmitRetriesWithTheNewHash(): Promise<void>
   expect(JSON.parse(sent[0]!.body)).toEqual({ draftHash: HASH });
   expect(JSON.parse(sent[2]!.body)).toEqual({ draftHash: fresh });
   expect(await screen.findByText(/The site is committed/)).toBeInTheDocument();
+}
+
+/**
+ * `F3.86` PR 6 review — the page committed the session while the drawer's wizard
+ * was open: the 400's fresh read is a committed session, so the wizard says so
+ * (its own sentence, not the draft-changed one), and the dock drops the open
+ * commit card beside the committed message.
+ */
+export async function aSessionCommittedElsewhereSaysSoAndDropsTheCard(): Promise<void> {
+  const stubs = await openSkill({ cards: [COMMIT_CARD] });
+  stubs.load.mockResolvedValue(detail(skillState(), [COMMIT_CARD]));
+  expect(await screen.findByText(COMMIT_CARD.summary)).toBeInTheDocument();
+  let commits = 0;
+  stubFetch((url) => {
+    if (url.endsWith("/commit")) {
+      commits += 1;
+      return { status: 400, json: { statusCode: 400, message: DRAFT_CHANGED, error: "Bad Request" } };
+    }
+    return { status: 200, json: session({ status: "committed", draftHash: "e".repeat(64), committedAt: "2026-10-12T00:05:00.000Z" }) };
+  });
+  const wizard = await submitTheWizard();
+  expect(await within(wizard).findByText(ONBOARDING_COMMIT_NOT_A_DRAFT)).toBeInTheDocument();
+  expect(within(wizard).queryByText(ONBOARDING_COMMIT_DRAFT_CHANGED)).not.toBeInTheDocument();
+  expect(screen.queryByText(DRAFT_CHANGED)).not.toBeInTheDocument();
+  expect(commits).toBe(1);
+  expect(await screen.findByText(/The site is committed/)).toBeInTheDocument();
+  expect(screen.queryByText(COMMIT_CARD.summary)).not.toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "Confirm" })).not.toBeInTheDocument();
+}
+
+/** `F3.86` PR 6 review — a 400 whose fresh read fails shows the route's own sentence, and nothing is refreshed. */
+export async function aFailedFreshReadShowsTheRoutesSentence(): Promise<void> {
+  await openSkill();
+  const sent = stubFetch((url) =>
+    url.endsWith("/commit")
+      ? { status: 400, json: { statusCode: 400, message: DRAFT_CHANGED, error: "Bad Request" } }
+      : { status: 500, json: { statusCode: 500, message: "boom", error: "Internal Server Error" } },
+  );
+  const wizard = await submitTheWizard();
+  expect(await within(wizard).findByText(DRAFT_CHANGED)).toBeInTheDocument();
+  expect(within(wizard).queryByText(ONBOARDING_COMMIT_DRAFT_CHANGED)).not.toBeInTheDocument();
+  expect(within(wizard).queryByText(ONBOARDING_COMMIT_NOT_A_DRAFT)).not.toBeInTheDocument();
+  expect(sent.map((r) => r.method)).toEqual(["POST", "GET"]);
 }
 
 /** `F3.86` PR 6 review — a commit through the wizard drops the open commit card: its Confirm could only answer 400. */

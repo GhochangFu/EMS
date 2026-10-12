@@ -7,7 +7,9 @@ import { resetCopilotStore } from "../../stores/copilot-store";
 import {
   aChangedDraftShowsTheRoutesSentence,
   anEndDropsAKeptCommitCard,
+  aFailedFreshReadShowsTheRoutesSentence,
   aRefusedWizardSubmitRetriesWithTheNewHash,
+  aSessionCommittedElsewhereSaysSoAndDropsTheCard,
   aWizardCommitDoesNotReopenThePreview,
   aWizardCommitDropsTheCommitCard,
   enterSendsNothingWhileAnUndoIsInFlight,
@@ -51,6 +53,8 @@ describe("F3.86 PR 6 — the dock's onboarding skill (ADR 0099 decision 7)", () 
 
 describe("F3.86 PR 6 review — the dock's onboarding skill", () => {
   it("retries a refused wizard Submit with the fresh session's hash", aRefusedWizardSubmitRetriesWithTheNewHash);
+  it("says the session is no longer a draft and drops the card", aSessionCommittedElsewhereSaysSoAndDropsTheCard);
+  it("shows the route's sentence when the fresh read fails", aFailedFreshReadShowsTheRoutesSentence);
   it("drops the commit card after a wizard commit", aWizardCommitDropsTheCommitCard);
   it("drops a kept commit card on End onboarding", anEndDropsAKeptCommitCard);
   it("does not reopen the preview after a wizard commit", aWizardCommitDoesNotReopenThePreview);
