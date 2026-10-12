@@ -1153,6 +1153,10 @@
 > Next: `F4.160` is open (of the three spec files the row names, two remain,
 > `dashboard-builder-page` and `dashboard-builder-edit-page`, because `F3.70`
 > took the overview spec off `AppShell`); `F4.161` is closed (#578).
+> And **a Playwright end-to-end layer** is built (**ADR 0100**, `F4.7`,
+> #819 `731ccf31`): `apps/e2e` runs five critical paths against the built
+> bundle and the API in local auth, on the `e2e` pull-request label only
+> (§4.6).
 > And **a site-wide copilot for administrators** is promoted (**ADR 0099**,
 > accepted 2026-10-10 in #797 `1de15f33` after twenty owner rulings; rows
 > `F3.85`–`F3.87`). **`F3.85`, release 1, is built**: fourteen PRs from #802
@@ -1796,6 +1800,10 @@ bms/
 │   │                            `worker`, :4100) — a second root that starts
 │   │                            no loop the API starts, fenced by
 │   │                            tests/f4.24-worker-imports-no-api-loop.test.ts
+│   ├── e2e/                   ← Playwright end-to-end suite (ADR 0100, F4.7):
+│   │                            specs/*.e2e.ts, playwright.config.ts starts the
+│   │                            API, vite preview and the sim itself; never a
+│   │                            Vitest project (§4.6)
 │   ├── sim/                   ← telemetry simulator (Node script)
 │   └── ingest/                ← PHE MQTT TLS subscriber (ADR 0007), five RTUs.
 │                                ONE entry point since §6 commit 4 (2026-08-14):
@@ -2506,6 +2514,25 @@ Do not add top-level folders without updating this section.
 ### 4.6 Testing (ADR 0014)
 - **Runner: Vitest.** `pnpm test` runs everything; `pnpm test:coverage` is what
   CI enforces. Never add a second runner without an ADR (§9.4).
+- **The one second runner: Playwright, for end-to-end tests only (ADR 0100).**
+  Specs live in `apps/e2e/specs/` and are named `*.e2e.ts` — never `*.spec.ts`,
+  which is Vitest's. `pnpm test:e2e` runs them; `pnpm test` and
+  `test:coverage` never do, and `apps/e2e` never joins the Vitest `projects`
+  list (`tests/f4.7-e2e-invariants.test.ts`). The suite tests the built web
+  bundle (`vite preview` on `127.0.0.1:5173`, the only CORS origin) against the
+  API in local auth, and refuses a non-local base URL.
+  - **Add the `e2e` label** to a PR that touches a covered path: the login,
+    the site view's live values, alarms, the master-data admin pages, users
+    and grants, or location scope. The label starts
+    `.github/workflows/e2e.yml` once (about 4 billed minutes); the PR body
+    records the result. A PR without the label runs nothing extra.
+  - **What a green run replaces, and what it does not.** It stands for the
+    browser checks of *logic* at step 6 on the paths it covers. It never runs
+    the Docker images, so it does **not** replace reading what is actually
+    served — that check stays at step 6 (`.claude/skills/verify/SKILL.md`
+    §4.1).
+  - A new spec needs a mutation that reddens it before it lands; a spec that
+    cannot fail is not a gate.
 - **Assertions live in `*.spec.ts`; `*.test.ts` is the wrapper that runs them.**
   A `.spec` without its sibling `.test` is dead code — `tests/repo-invariants.test.ts`
   fails the build if you add one. Do not delete the spec to make it pass.
