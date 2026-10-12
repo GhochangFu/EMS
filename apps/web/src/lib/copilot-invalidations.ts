@@ -72,7 +72,9 @@ const BY_ENTRY: Readonly<Record<string, readonly QueryKey[]>> = {
   "rtu.deactivate": [RTUS, RTU_SUMMARY],
   "rtu.reactivate": [RTUS, RTU_SUMMARY],
   "asset.create": [ASSETS, ASSET_SUMMARY],
-  "asset.update": [ASSETS, ASSET_SUMMARY],
+  // A rename or move also changes the labels the point rows and a group's members join in
+  // (`assetCode`, `assetName`, `locationName`; `assetDomain`).
+  "asset.update": [ASSETS, ASSET_SUMMARY, ASSET_POINTS, ASSET_GROUPS],
   "asset.deactivate": [ASSETS, ASSET_SUMMARY],
   "asset.reactivate": [ASSETS, ASSET_SUMMARY],
   "assetPoint.create": [ASSET_POINTS],
