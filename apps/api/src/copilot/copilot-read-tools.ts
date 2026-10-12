@@ -41,6 +41,12 @@ export interface CopilotToolContext {
   readonly allowedOrganizationIds: readonly string[];
   /** `follow_up` is an automatic turn after a Confirm (PR 8); a release-2 access tool refuses on it. */
   readonly turnKind: "user" | "follow_up";
+  /**
+   * `F3.86` PR 4, ruling Q3: the user's own message in this turn asks for an
+   * access change (`accessIntentOf`), decided before any tool ran. Absent is
+   * `false`: an access propose tool refuses.
+   */
+  readonly accessIntent?: boolean;
   readonly now: Date;
 }
 
@@ -71,7 +77,9 @@ export interface CopilotReadTools {
 export const COPILOT_READ_TOOLS = Symbol("COPILOT_READ_TOOLS");
 
 /** No tools: every call the model makes is an unknown name. For specs that need none; `CopilotModule` binds `CopilotReadToolSet`. */
-export const EMPTY_COPILOT_READ_TOOLS: CopilotReadTools = {
+export const EMPTY_COPILOT_READ_TOOLS: CopilotReadTools & { readonly registryWithoutAccess: CopilotReadTools["registry"] } = {
   registry: defineToolRegistry<string>({}, {}),
+  // `F3.86` PR 4: also an empty propose tool set, which has the second registry.
+  registryWithoutAccess: defineToolRegistry<string>({}, {}),
   dispatch: async () => ({ ok: false, error: "No such tool." }),
 };
